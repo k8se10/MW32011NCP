@@ -5726,6 +5726,9 @@ namespace dxvk {
 
 
   bool DxvkContext::renderPassStartUnsynchronized() {
+    // TODO re-enable once we iron out the bugs.
+    return false;
+
     // Don't even try if there is a depth buffer bound, this is most likely
     // either a shadow pass or an otherwise expensive main render pass.
     //
