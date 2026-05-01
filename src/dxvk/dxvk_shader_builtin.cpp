@@ -788,7 +788,7 @@ namespace dxvk {
     const ir::Op& op = builder.getOp(constant);
 
     dxbc_spv_assert(op.isConstant());
-    dxbc_spv_assert(op.getType().getBaseType(0u) == type);
+    dxbc_spv_assert(op.getType().getBaseType(0u) == type.getBaseType());
 
     ir::Op vector(ir::OpCode::eConstant, type);
 
