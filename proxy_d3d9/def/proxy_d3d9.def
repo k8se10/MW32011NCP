@@ -1,0 +1,25 @@
+; proxy_d3d9.def
+;
+; Even with __declspec(dllexport) on each stdcall function in dllmain.cpp, the linker
+; would otherwise export decorated names (e.g. "Direct3DCreate9@4") because these are
+; __stdcall. Listing bare names here forces the linker to export the exact undecorated
+; name the game's import table expects, matching the real d3d9.dll's export names.
+LIBRARY d3d9
+EXPORTS
+    Direct3DCreate9
+    D3DPERF_BeginEvent
+    D3DPERF_EndEvent
+    D3DPERF_GetStatus
+    D3DPERF_QueryRepeatFrame
+    D3DPERF_SetMarker
+    D3DPERF_SetOptions
+    D3DPERF_SetRegion
+    DebugSetLevel
+    DebugSetMute
+    Direct3D9EnableMaximizedWindowedModeShim
+    Direct3DCreate9Ex
+    Direct3DCreate9On12
+    Direct3DCreate9On12Ex
+    Direct3DShaderValidatorCreate9
+    PSGPError
+    PSGPSampleTexture

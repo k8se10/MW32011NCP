@@ -1,0 +1,14 @@
+# Build outputs (proxy DLL is deployed straight into the game root, not committed)
+proxy_d3d9/obj/
+proxy_d3d9/Debug/
+proxy_d3d9/Release/
+*.obj
+*.pdb
+*.ilk
+*.log
+*.exp
+*.lib
+d3d9.dll
+
+# Never commit a copy of any Microsoft system DLL, even accidentally staged for testing.
+d3d9_orig.dll
