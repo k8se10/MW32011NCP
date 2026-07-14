@@ -1,20 +1,17 @@
 // analog_input_hooks.cpp — real analog movement + look injection (task #5).
 //
-// Both hooks are strictly ADDITIVE post-hooks: call the original function first
-// (preserving 100% of existing keyboard/mouse behavior), then add our controller-
-// derived contribution on top. See re_notes/iw5sp.md ("Calling convention CONFIRMED
-// live", 2026-07-14) for how the register roles below were verified against actual
-// running gameplay, not just Ghidra's static guesses.
+// Movement is a strictly ADDITIVE post-hook on FUN_0057d430: call the original
+// keyboard-movement function first (100% of keyboard behavior preserved), then add
+// the controller's contribution on top of usercmd_t.forwardmove/rightmove.
 //
-// KNOWN OPEN ITEM: sign conventions (does pushing the left stick up increase or
-// decrease forwardmove; does positive right-stick X need to add or subtract from the
-// mouse-X output) are a best-effort guess below, matching the most common convention
-// (XInput Y-up-positive == "forward" positive, XInput X-right-positive == mouse-X-
-// right-positive). This has NOT been visually confirmed against actual in-game
-// character movement yet -- that requires a real controller and a human watching the
-// screen, which isn't something this automated pass can do. Flip the relevant sign(s)
-// in Controller_GetLeftStick/Controller_GetRightStick call sites below if movement
-// or look comes out inverted during first playtest.
+// Look is a pre-hook directly on the pitch/yaw angle-delta accumulator (see the
+// comment above InjectControllerLookAngles) -- deliberately NOT routed through the
+// mouse-delta pipeline, so it doesn't inherit sensitivity/m_yaw/m_pitch/cl_mouseAccel/
+// m_filter and has its own independent feel, confirmed both directionally and as
+// architecturally "true" native input (not mouse emulation) with the user 2026-07-14.
+//
+// All sign conventions below are confirmed against actual real-controller-hardware
+// playtest, not just Ghidra's static guesses -- see re_notes/iw5sp.md.
 
 #include <windows.h>
 #include <cstdint>
@@ -47,6 +44,8 @@ extern "C" void __cdecl InjectControllerMovement(unsigned char* cmd)
     // keyboard path also just produces +-127 for a held key -- the engine's own
     // movement/physics code treats forwardmove/rightmove as a continuous fraction of
     // max speed, so this still gives real analog speed control, not just on/off).
+    // Confirmed correct as-is (no inversion) via real-hardware playtest, 2026-07-14 --
+    // only look (right stick) was reported inverted, not movement.
     int addForward = static_cast<int>(ly * 127.0f);
     int addRight = static_cast<int>(lx * 127.0f);
 
@@ -73,10 +72,33 @@ __declspec(naked) void Hook_0057d430()
     }
 }
 
-// ---- Look: right stick -> raw mouse-delta output floats (*ESI = dx, *EDI = dy) ----
-extern "C" void __cdecl InjectControllerLook(float* outX, float* outY)
+// ---- Look: right stick -> the pitch/yaw angle-delta accumulator directly -------
+//
+// Superseded 2026-07-14: this used to hook FUN_0057d680 (the raw mouse-delta
+// source) so controller look would inherit sensitivity/m_yaw/m_pitch/cl_mouseAccel/
+// m_filter "for free." User correctly flagged that as look effectively still being
+// mouse emulation under the hood, not true native input. Switched to hooking
+// FUN_0057de60 instead (the finalize step that packs the accumulated angle deltas
+// into the final usercmd_t.angles) and writing directly to the accumulator globals,
+// completely bypassing every mouse-specific cvar -- controller look now has its own
+// independent sensitivity constant, no acceleration, no filtering.
+//
+// _DAT_00b36408 (pitch) / _DAT_00b3640c (yaw) are a float[3] PITCH/YAW/ROLL array
+// (see re_notes/iw5sp.md), in DEGREES (confirmed via FUN_0057de60's own ANGLE2SHORT-
+// style packing math). Not per-player-strided in the code that touches them (bare
+// symbol, no offset arithmetic) -- fine since SP only ever has player 0 anyway.
+//
+// Sign convention derived (not guessed) from the OLD confirmed-correct mouse-pipeline
+// behavior: FUN_0057d7e0 does `yaw -= mouseX * m_yaw` and `pitch += mouseY * m_pitch`
+// (m_yaw/m_pitch cvars are positive by default). The old hook's confirmed-correct
+// injected values were mouseX=+rx, mouseY=-ry -- substituting through both formulas
+// gives yaw change proportional to -rx and pitch change proportional to -ry, so the
+// direct-write equivalent subtracts both.
+float* const kPitchAccum = reinterpret_cast<float*>(0x00B36408);
+float* const kYawAccum = reinterpret_cast<float*>(0x00B3640C);
+
+extern "C" void __cdecl InjectControllerLookAngles()
 {
-    if (!outX || !outY) return;
     float rx, ry;
     if (!Controller_GetRightStick(rx, ry)) return;
     if (rx == 0.0f && ry == 0.0f) return;
@@ -84,38 +106,28 @@ extern "C" void __cdecl InjectControllerLook(float* outX, float* outY)
     float dt = Controller_DeltaTimeSeconds();
     if (dt <= 0.0f) return;
 
-    // Tunable look speed in raw-mouse-delta units per second at full deflection.
-    // The rest of the pipeline (FUN_0057d740's sensitivity/accel, FUN_0057d7e0's
-    // m_yaw/m_pitch) scales this exactly like real mouse movement, so this constant
-    // is deliberately a rough starting point, not a finished sensitivity value --
-    // task #6's options screen is where a real user-facing sensitivity setting
-    // belongs, not a hardcoded constant here.
-    constexpr float kLookUnitsPerSecond = 4000.0f;
+    // Degrees per second at full stick deflection -- independent of every mouse cvar.
+    // Rough starting point; task #6's options screen is where a real user-facing
+    // sensitivity setting belongs, not a hardcoded constant here.
+    constexpr float kLookDegreesPerSecond = 250.0f;
 
-    *outX += rx * kLookUnitsPerSecond * dt;
-    // Inverted so pushing the stick up (XInput Y positive) looks up (matches the
-    // default, non-inverted console convention) -- flip if this reads backwards
-    // during playtest.
-    *outY += -ry * kLookUnitsPerSecond * dt;
+    *kYawAccum -= rx * kLookDegreesPerSecond * dt;
+    *kPitchAccum -= ry * kLookDegreesPerSecond * dt;
 }
 
 namespace {
-void* g_orig_0057d680 = nullptr;
+void* g_orig_0057de60 = nullptr;
 }
 
-__declspec(naked) void Hook_0057d680()
+// Pure pre-hook: inject our angle delta, then tail-jump into the untouched original
+// (which does its own packing/return -- no need to intercept its return at all).
+__declspec(naked) void Hook_0057de60()
 {
     __asm {
-        push esi          // save outX ptr
-        push edi          // save outY ptr
-        call dword ptr [g_orig_0057d680]
-        pop edi           // restore outY ptr
-        pop esi           // restore outX ptr
-        push edi
-        push esi
-        call InjectControllerLook
-        add esp, 8
-        ret
+        pushad
+        call InjectControllerLookAngles
+        popad
+        jmp dword ptr [g_orig_0057de60]
     }
 }
 
@@ -123,7 +135,7 @@ void InstallAnalogInputHooks()
 {
     MH_Initialize();
     MH_STATUS s1 = MH_CreateHook(reinterpret_cast<LPVOID>(0x0057d430), &Hook_0057d430, &g_orig_0057d430);
-    MH_STATUS s2 = MH_CreateHook(reinterpret_cast<LPVOID>(0x0057d680), &Hook_0057d680, &g_orig_0057d680);
+    MH_STATUS s2 = MH_CreateHook(reinterpret_cast<LPVOID>(0x0057de60), &Hook_0057de60, &g_orig_0057de60);
     if (s1 == MH_OK) MH_EnableHook(reinterpret_cast<LPVOID>(0x0057d430));
-    if (s2 == MH_OK) MH_EnableHook(reinterpret_cast<LPVOID>(0x0057d680));
+    if (s2 == MH_OK) MH_EnableHook(reinterpret_cast<LPVOID>(0x0057de60));
 }

@@ -315,13 +315,60 @@ diagnostic hooks with the real thing, following the confirmed calling convention
   Win32 calls): game runs the full hook chain without crashing, with no controller
   connected (graceful "not connected" path exercised, not just the connected path).
 
-**Known open item, NOT yet verified:** sign conventions (stick-up = forward vs. back,
-stick-right = look-right vs. look-left) are a best-effort guess matching the most common
-XInput convention, documented inline in `analog_input_hooks.cpp`. This needs an actual
-controller and a human watching the character move on screen to confirm/flip — nothing
-in this automated session can verify visual correctness without one. **Next real
-playtest with a physical Xbox controller should confirm this before task #5 is called
-done**, plus tune `kCurveExponent`/`kLookUnitsPerSecond`/deadzone-feel to taste.
+**Correction (2026-07-14):** the visual playtest below (ViGEmBus virtual pad connected)
+showed a "Controller Connected — Xbox 360 controller" toast top-right. Initially
+misattributed this to MW3's own HUD. **User correctly caught this — that notification
+is Steam's client overlay** (fires for any XInput connect/disconnect event in any Steam
+game, regardless of whether that game has its own controller support), not evidence of
+a native in-game controller-detection feature. Retracted — doesn't change task #6 scope
+or the earlier "no native controller support" conclusion.
+
+**Verified live with a real physical controller (2026-07-14).** Initial testing used a
+ViGEmBus virtual pad (screenshot-driven, compass-HUD-based direction inference) — that
+methodology turned out unreliable (misread the compass rotation direction once) and was
+superseded by the user directly playtesting with real hardware, which is authoritative.
+Final confirmed sign conventions:
+- **Movement: no inversion needed on either axis** (`ly`/`lx` used as-is) — the very
+  first implementation was already correct.
+- **Look X (yaw): no inversion.** **Look Y (pitch): inverted** (negated) relative to
+  raw XInput Y.
+
+**Architecture change (2026-07-14): look decoupled from the mouse pipeline entirely.**
+User correctly pointed out that hooking `FUN_0057d680` (raw mouse-delta source) meant
+controller look was still conceptually "mouse emulation" under the hood — it inherited
+`sensitivity`/`m_yaw`/`m_pitch`/`cl_mouseAccel`/`m_filter`, none of which make sense for
+a controller stick (mouse acceleration and smoothing are compensating for noisy physical
+mouse sensor data, not relevant to a clean digital stick reading). **Switched to
+pre-hooking `FUN_0057de60`** (the finalize function that packs the accumulated pitch/
+yaw deltas into `usercmd_t.angles`) and writing directly to the accumulator globals
+(`_DAT_00b36408` pitch / `_DAT_00b3640c` yaw, both in degrees, confirmed via the
+ANGLE2SHORT-style packing math in `FUN_0057de60`) — completely bypassing every
+mouse-specific cvar. Controller look now has its own independent `kLookDegreesPerSecond`
+constant with no acceleration or filtering baked in. Sign for the direct-write form was
+*derived*, not re-guessed: `FUN_0057d7e0` does `yaw -= mouseX * m_yaw` and
+`pitch += mouseY * m_pitch` (both cvars positive by default); substituting the
+confirmed-correct old mouse-pipeline values (mouseX=+rx, mouseY=-ry) through both
+formulas gives yaw change proportional to `-rx` and pitch change proportional to `-ry`,
+so the direct-write hook subtracts both (`*kYawAccum -= rx * ...; *kPitchAccum -= ry * ...;`).
+Movement (`FUN_0057d430`) is unaffected by this change — it was already a direct
+`usercmd_t.forwardmove`/`.rightmove` write, never routed through any keyboard-emulation
+layer, so it was already "true" native input.
+
+**Playtest tooling built along the way:** `tools/vcontroller_sim/` — a small dev-only
+console tool (ViGEmClient, MIT license) that plugs in a virtual Xbox 360 controller via
+ViGEmBus (kernel driver, installed with explicit user go-ahead since it's a system-level
+change) and reads simple stdin commands (`LX`/`LY`/`RX`/`RY`/`RESET`/`QUIT`) to drive
+stick axes programmatically. Useful for automated smoke-testing that the hook chain
+doesn't crash, but proved unreliable for judging *directional correctness* by screenshot
+alone — real playtesting caught two sign errors this virtual-pad methodology got wrong.
+**Lesson for future work: prefer real-hardware playtest for anything direction/feel-
+sensitive; keep the virtual pad for crash/regression smoke-testing only.**
+
+**Still open:** deadzone size, `kCurveExponent` (currently 1.6), and
+`kLookDegreesPerSecond` (currently 250) are unTuned defaults, not confirmed-good feel —
+revisit once task #6's options screen exists to make this adjustable rather than a
+hardcoded constant. Buttons (fire/jump/reload/ADS/sprint/etc.) are not mapped at all yet
+— next concrete step.
 
 ### Remaining open items (lower priority, not blocking task #5 start)
 - Purpose of `usercmd_t+0x1e`/`+0x1f` (movement bytes #3/#4) and `+0x24`..`+0x34` (5 int fields) not

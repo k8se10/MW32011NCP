@@ -12,3 +12,8 @@ d3d9.dll
 
 # Never commit a copy of any Microsoft system DLL, even accidentally staged for testing.
 d3d9_orig.dll
+
+# Build outputs for dev-only test tools (not shipped, not part of the mod)
+tools/*/bin/
+tools/*/obj/
+vcontroller_sim.exe
