@@ -1,14 +1,15 @@
-// analog_input_hooks.cpp — real analog movement + look injection (task #5).
+// analog_input_hooks.cpp — real analog movement/look/buttons/ADS injection.
 //
-// Movement is a strictly ADDITIVE post-hook on FUN_0057d430: call the original
-// keyboard-movement function first (100% of keyboard behavior preserved), then add
-// the controller's contribution on top of usercmd_t.forwardmove/rightmove.
-//
-// Look is a pre-hook directly on the pitch/yaw angle-delta accumulator (see the
-// comment above InjectControllerLookAngles) -- deliberately NOT routed through the
-// mouse-delta pipeline, so it doesn't inherit sensitivity/m_yaw/m_pitch/cl_mouseAccel/
-// m_filter and has its own independent feel, confirmed both directionally and as
-// architecturally "true" native input (not mouse emulation) with the user 2026-07-14.
+// ARCHITECTURE (restructured 2026-07-14 -- see InjectAllControllerInput's comment for
+// the full reasoning): everything hooks a single point, FUN_0057de60, the per-frame
+// pipeline's always-running finalize step. Movement is additive (reads whatever
+// usercmd_t.forwardmove/rightmove keyboard input already wrote, if any, and adds the
+// controller's contribution on top). Look writes directly to the pitch/yaw angle-delta
+// accumulator globals, deliberately NOT routed through the mouse-delta pipeline, so it
+// doesn't inherit sensitivity/m_yaw/m_pitch/cl_mouseAccel/m_filter and has its own
+// independent feel -- confirmed both directionally and as architecturally "true" native
+// input (not mouse emulation) with the user 2026-07-14. ADS calls the real engine
+// KeyDown/KeyUp kbutton handlers directly (see InjectControllerAds).
 //
 // All sign conventions below are confirmed against actual real-controller-hardware
 // playtest, not just Ghidra's static guesses -- see re_notes/iw5sp.md.
@@ -224,29 +225,6 @@ extern "C" void __cdecl InjectControllerAds()
     }
 }
 
-namespace {
-void* g_orig_0057d430 = nullptr;
-}
-
-__declspec(naked) void Hook_0057d430()
-{
-    __asm {
-        push eax          // save player index
-        push edi          // save usercmd_t* (== esi at entry, confirmed live)
-        call dword ptr [g_orig_0057d430]
-        pop edi           // restore usercmd_t* (original may have clobbered edi/esi)
-        pop eax           // restore player index
-        push edi
-        call InjectControllerMovement
-        add esp, 4
-        push edi
-        call InjectControllerButtonsDiagnostic
-        add esp, 4
-        call InjectControllerAds
-        ret
-    }
-}
-
 // ---- Look: right stick -> the pitch/yaw angle-delta accumulator directly -------
 //
 // Superseded 2026-07-14: this used to hook FUN_0057d680 (the raw mouse-delta
@@ -274,30 +252,6 @@ float* const kYawAccum = reinterpret_cast<float*>(0x00B3640C);
 
 extern "C" void __cdecl InjectControllerLookAngles()
 {
-    // "Needs a click" fix (2026-07-14, settled after two failed attempts at being
-    // clever about WHEN to clear this bit -- see git history for "take 2"/"take 3",
-    // a rising-edge/time-window scheme that didn't reliably re-detect level RELOADS,
-    // and reintroduced the original stuck-movement bug on checkpoint reload).
-    //
-    // Raw disassembly of FUN_0057e480 (not just the decompile, which drops constant
-    // call arguments) shows the real gate: `FUN_00416150(EBX, 0x10)` right at function
-    // entry, before even the keyboard-turn call -- if bit 0x10 of a per-player flags
-    // dword at DAT_00b36210 (stride 0x188, offset 0 for SP's player index 0) is set,
-    // movement/buttons/look are all skipped. The game also uses this SAME bit
-    // legitimately for interactive menus (e.g. Survival buy stations) -- there is no
-    // reliable way found so far to distinguish "residual load-screen cursor" from "a
-    // real menu wants the cursor" just from this bit or its timing.
-    //
-    // DECISION (2026-07-14, explicit user call): rather than keep chasing a fragile
-    // heuristic, controller mode simply doesn't support mouse/keyboard-driven menus
-    // (buy stations, etc.) at all for now -- this bit is unconditionally cleared every
-    // frame, same as the original fix. See README/CLAUDE.md: "K+M menu interaction is
-    // not supported while the controller mod is active" is a documented, known
-    // limitation, not a bug to keep fixing. It goes away entirely once task #6 (native
-    // controller menu navigation) replaces the need for this gate to ever engage in
-    // the first place -- real controller menu nav will set/clear it correctly itself.
-    *reinterpret_cast<volatile uint32_t*>(0x00B36210) &= ~0x10u;
-
     float rx, ry;
     if (!Controller_GetRightStick(rx, ry)) return;
     if (rx == 0.0f && ry == 0.0f) return;
@@ -314,6 +268,36 @@ extern "C" void __cdecl InjectControllerLookAngles()
     *kPitchAccum -= ry * kLookDegreesPerSecond * dt;
 }
 
+// ---- Combined per-frame entry point -- all controller injection lives here now ----
+//
+// RESTRUCTURED 2026-07-14 (see re_notes/iw5sp.md): movement/buttons/ADS injection used
+// to hook FUN_0057d430 directly. Problem: FUN_0057e480 (the top-level per-frame
+// orchestrator) SKIPS calling FUN_0057d430/FUN_0057dc90/FUN_0057d300 entirely whenever
+// a per-player gate bit (0x10 at DAT_00b36210) is set -- which the game also uses
+// legitimately for interactive menus (Survival buy stations, etc.), not just the
+// residual loading-screen state we originally found it for. The previous fix force-
+// cleared that bit every frame so our FUN_0057d430 hook would keep firing, which
+// broke real K+M menu interaction (confirmed live).
+//
+// FUN_0057de60 (the finalize step) is the one call in the pipeline that ALWAYS runs
+// regardless of that gate -- our look injection already lived there for unrelated
+// reasons (bypassing the mouse-delta pipeline) and confirmed to always fire. Moving
+// ALL controller injection here means we never need to touch the gate bit at all: the
+// game's own menu/cursor routing behaves completely naturally, and controller input
+// keeps working every frame regardless of whatever menu state the game thinks it's in.
+// `cmd` is `unaff_ESI` at FUN_0057de60's entry (confirmed by the existing usercmd_t
+// field-offset notes in re_notes/iw5sp.md, e.g. "unaff_ESI[0] = DAT_01e06e88" for
+// serverTime) -- captured by the naked hook stub below and passed through here.
+extern "C" void __cdecl InjectAllControllerInput(unsigned char* cmd)
+{
+    InjectControllerLookAngles();
+    if (cmd) {
+        InjectControllerMovement(cmd);
+        InjectControllerButtonsDiagnostic(cmd);
+    }
+    InjectControllerAds();
+}
+
 namespace {
 void* g_orig_0057de60 = nullptr;
 }
@@ -324,26 +308,17 @@ __declspec(naked) void Hook_0057de60()
 {
     __asm {
         pushad
-        call InjectControllerLookAngles
+        push esi          // usercmd_t* (confirmed as ESI at this function's entry)
+        call InjectAllControllerInput
+        add esp, 4
         popad
         jmp dword ptr [g_orig_0057de60]
     }
 }
 
-// NOTE (2026-07-14): the FUN_0057e480 bit-0x80000 gate-clear hook that used to live
-// here was based on a wrong theory -- diagnostic logging showed that flag already
-// reads 0 even while the "needs a click" problem is present, so it isn't the real
-// mechanism. User pinpointed the actual cause directly: the in-engine menu/loading-
-// screen mouse cursor doesn't auto-hide when a level starts, and a click is literally
-// just dismissing that visible cursor (confirmed as fully in-engine, not a Windows
-// focus issue). Real fix belongs on the ui_cursor cvar/cursor-visibility state
-// instead -- see re_notes/iw5sp.md, investigation in progress.
-
 void InstallAnalogInputHooks()
 {
     MH_Initialize();
-    MH_STATUS s1 = MH_CreateHook(reinterpret_cast<LPVOID>(0x0057d430), &Hook_0057d430, &g_orig_0057d430);
     MH_STATUS s2 = MH_CreateHook(reinterpret_cast<LPVOID>(0x0057de60), &Hook_0057de60, &g_orig_0057de60);
-    if (s1 == MH_OK) MH_EnableHook(reinterpret_cast<LPVOID>(0x0057d430));
     if (s2 == MH_OK) MH_EnableHook(reinterpret_cast<LPVOID>(0x0057de60));
 }
