@@ -299,14 +299,35 @@ extern "C" void __cdecl InjectControllerLookAngles()
 // the pause menu (instant to open) before trusting it for buy stations (which need a
 // full wave to reach) -- if pause menu interaction stays intact while this is active,
 // that's strong evidence the same generic menu-state field covers buy stations too.
+void LogFromController(const char* msg); // defined in dllmain.cpp
+
 namespace {
 constexpr uintptr_t kMenuPtrAddr = 0x021CD678;
+
+// DIAGNOSTIC (2026-07-14): the "0 == closed" theory produced a cursor stuck visible on
+// fresh level load, meaning the field reads nonzero at that moment too -- logging every
+// observed (menuPtr, state) transition to proxy_d3d9.log so the actual value at that
+// moment (vs. a real menu like pause) can be read back without another blind rebuild.
+uintptr_t g_lastLoggedMenuPtr = 0xFFFFFFFF; // sentinel that can't match a real value
+int32_t g_lastLoggedState = 0x7FFFFFFF;
+
 bool IsRealMenuOpen()
 {
     uintptr_t menuPtr = *reinterpret_cast<volatile uintptr_t*>(kMenuPtrAddr);
-    if (menuPtr == 0) return false;
-    int32_t state = *reinterpret_cast<volatile int32_t*>(menuPtr + 0xC);
-    return state != 0;
+    int32_t state = 0;
+    if (menuPtr != 0) {
+        state = *reinterpret_cast<volatile int32_t*>(menuPtr + 0xC);
+    }
+
+    if (menuPtr != g_lastLoggedMenuPtr || state != g_lastLoggedState) {
+        char buf[128];
+        sprintf_s(buf, "menu-state: menuPtr=0x%08X state=%d", static_cast<unsigned int>(menuPtr), state);
+        LogFromController(buf);
+        g_lastLoggedMenuPtr = menuPtr;
+        g_lastLoggedState = state;
+    }
+
+    return menuPtr != 0 && state != 0;
 }
 } // namespace
 

@@ -139,6 +139,14 @@ bool ResolveRealExports()
 
 } // namespace
 
+// Diagnostic logging entry point for other translation units (e.g.
+// analog_input_hooks.cpp) -- Log()/g_log above stay internal-linkage, this is just a
+// thin forwarder so hook code can log without duplicating the log-file setup.
+void LogFromController(const char* msg)
+{
+    Log(msg);
+}
+
 // ---- Direct3DCreate9: the real interception point --------------------------------
 // Implemented (not forwarded) so we can hold onto / hook the returned IDirect3D9
 // interface (CreateDevice -> device vtable -> Present) once real hooking begins.
