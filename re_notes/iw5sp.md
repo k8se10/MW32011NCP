@@ -408,6 +408,41 @@ Halo/Battlefield/etc. of the same era) — so **fire is RT, ADS is LT, and grena
 to the bumpers (RB=lethal, LB=tactical)** on the Xbox-convention mapping this mod
 targets. Table above already corrected to reflect this.
 
+## "Needs a click" issue — SOLVED (2026-07-14)
+
+Full arc of this investigation, kept for the record since two earlier theories were
+wrong and it's a good example of why live verification beats static-only guessing:
+
+1. **First theory (wrong):** bit 0x80000 of a state field at `DAT_00b37444`, gating a
+   later branch of `FUN_0057e480`. Diagnostic logging showed this bit already reads 0
+   even while the bug is present — not the real gate.
+2. **Second theory (wrong):** the in-engine cursor-visibility flag (`DAT_01c00474`,
+   set by `FUN_005385d0` based on mouse position bounds, read by the cursor-draw call
+   in `FUN_00478540`). User's own diagnosis pointed here (visually, a leftover cursor
+   sprite really does linger after level load, and a click really does dismiss it) —
+   but forcing this flag to 0 didn't unblock movement either. Correlated symptom, not
+   the actual code-level input gate.
+3. **Real fix:** raw disassembly (not just decompile, which drops constant call
+   arguments the decompiler can't resolve) of `FUN_0057e480` shows the true first gate:
+   `FUN_00416150(EBX, 0x10)` right at function entry, before even the keyboard-turn
+   call (`FUN_0057d300`) runs. `FUN_00416150(idx, mask)` is a generic per-player
+   bitmask test: `(*(uint*)(DAT_00b36210 + idx*0x188) & mask) != 0`. If bit `0x10` is
+   set, the entire function short-circuits to just the always-running finalize call —
+   skipping buttons, movement, and mouse/stick look entirely. This is a **third,
+   distinct state block** from both earlier guesses (`DAT_00b37444` gates a different,
+   less-restrictive branch further down; the cursor flag is UI-only, not a code gate
+   at all). Force-clearing this bit every frame (`*(uint32_t*)0x00B36210 &= ~0x10`,
+   offset 0 since SP is always player index 0) in `InjectControllerLookAngles` (which
+   fires in every branch, including the one this bit gates) fixed it — **confirmed
+   working by the user, real hardware, full normal menu flow, no click needed at any
+   point.**
+
+Whatever this bit actually represents semantically (not identified — plausibly
+something like "no local client input source yet" or an initial-connect/spectator
+flag) doesn't matter for our purposes; forcing it clear unconditionally has shown no
+observed downside so far. Revisit only if some other real gameplay state (actual
+legitimate pause, a real spectator mode, etc.) turns out to depend on it later.
+
 **ADS must be true hold-to-aim, not toggle (user requirement, 2026-07-14):** PC
 keyboard/mouse ADS binding on this game may default to (or support) toggle-style aim,
 which is not the desired feel for a controller — the trigger should only aim while
