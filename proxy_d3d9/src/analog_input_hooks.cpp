@@ -76,12 +76,18 @@ extern "C" void __cdecl InjectControllerMovement(unsigned char* cmd)
 //        bit covers both, confirmed working)
 //   LB -> Tactical (smoke) -- moved here off D-pad Left
 //   RB -> Lethal (frag) -- moved here off D-pad Down
-//   Back -> Crouch (confirmed live)
+//   B -> Crouch (tap) / Prone (hold) -- moved here off Back (user, 2026-07-14), classic
+//        CoD tap/hold behavior. Crouch is bit 0x200 (confirmed live). Prone is bit
+//        0x100 (+actionslot2 per the kbutton table -- user-confirmed live as "goes
+//        down to prone, holdstate" when held, exactly matching the desired hold-to-
+//        prone behavior). Distinguished by how long B has been continuously held --
+//        below the threshold sends crouch, at/above it switches to prone instead
+//        (never both at once).
 //   LT (analog trigger) -> ADS -- NOT handled here, see InjectControllerAds (needs the
 //        real KeyDown/KeyUp kbutton calls, not a simple bit-OR)
 //
 // NOT YET IMPLEMENTED (left unmapped, not guessed at):
-//   B -> freed up when Melee moved to right stick click; no action assigned yet
+//   Back -> freed up when Crouch moved to B; no action assigned yet
 //   Y -> should be weapnext (one-shot command, not a held kbutton -- the console-
 //        command-execution function for one-shot commands like weapnext/togglemenu/
 //        toggleprone hasn't been located yet, separate investigation from this bit
@@ -91,13 +97,19 @@ extern "C" void __cdecl InjectControllerMovement(unsigned char* cmd)
 //        underlying bits (+actionslot 1-4 per the kbutton table) are still uncertain/
 //        largely untested individually -- not part of this pass, revisit later.
 namespace {
-constexpr unsigned short kXI_BACK = 0x0020;
 constexpr unsigned short kXI_RIGHT_THUMB = 0x0080;
 constexpr unsigned short kXI_A = 0x1000;
+constexpr unsigned short kXI_B = 0x2000;
 constexpr unsigned short kXI_X = 0x4000;
 constexpr unsigned short kXI_LEFT_SHOULDER = 0x0100;
 constexpr unsigned short kXI_RIGHT_SHOULDER = 0x0200;
 constexpr unsigned char kTriggerThresholdFire = 30; // XInput's documented trigger threshold
+
+// Tap B = crouch, hold past this long = prone instead. Not user-tunable yet; task #6's
+// options screen is the right place for that, not a hardcoded constant here.
+constexpr DWORD kProneHoldThresholdMs = 400;
+DWORD g_crouchButtonPressStartMs = 0;
+bool g_crouchButtonWasHeld = false;
 }
 
 extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
@@ -109,12 +121,21 @@ extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
 
     uint32_t out = 0;
     if (rightTrigger >= kTriggerThresholdFire) out |= 0x1;      // Fire (+attack)
-    if (xiButtons & kXI_RIGHT_THUMB) out |= 0x4;                // Melee -- moved off B (user, 2026-07-14)
+    if (xiButtons & kXI_RIGHT_THUMB) out |= 0x4;                // Melee
     if (xiButtons & kXI_X) out |= 0x8;                          // Use/Reload (+usereload)
     if (xiButtons & kXI_LEFT_SHOULDER) out |= 0x8000;           // Tactical (smoke)
     if (xiButtons & kXI_RIGHT_SHOULDER) out |= 0x4000;          // Lethal (frag)
-    if (xiButtons & kXI_BACK) out |= 0x200;                     // Crouch
     if (xiButtons & kXI_A) out |= 0x400;                        // Jump (+gostand)
+
+    bool bHeld = (xiButtons & kXI_B) != 0;
+    if (bHeld) {
+        if (!g_crouchButtonWasHeld) {
+            g_crouchButtonPressStartMs = GetTickCount();
+        }
+        DWORD heldMs = GetTickCount() - g_crouchButtonPressStartMs;
+        out |= (heldMs < kProneHoldThresholdMs) ? 0x200u : 0x100u; // Crouch (tap) / Prone (hold)
+    }
+    g_crouchButtonWasHeld = bHeld;
 
     if (out == 0) return;
     uint32_t* buttonsField = reinterpret_cast<uint32_t*>(cmd + 4);
