@@ -272,46 +272,31 @@ __declspec(naked) void Hook_0057d430()
 float* const kPitchAccum = reinterpret_cast<float*>(0x00B36408);
 float* const kYawAccum = reinterpret_cast<float*>(0x00B3640C);
 
-namespace {
-// Same "is actually in a level" signal used by tools/memdiff -- the very first thing
-// FUN_0057d7e0 checks each frame (`CMP dword ptr [0x00a98acc],0x0; JBE <skip>`).
-constexpr uintptr_t kInLevelFlagAddr = 0x00A98ACC;
-bool g_wasInLevel = false;
-DWORD g_gateClearUntilMs = 0;
-// The real bug is a one-time residual loading-screen cursor, not a persistent
-// condition -- 3 seconds of coverage after a level starts is generous margin.
-constexpr DWORD kGateClearWindowMs = 3000;
-} // namespace
-
 extern "C" void __cdecl InjectControllerLookAngles()
 {
-    // "Needs a click" fix, take 3 (2026-07-14): the previous version force-cleared this
-    // gate bit EVERY frame forever, which turned out to also suppress the game's own
-    // legitimate use of the same gate for interactive menus (e.g. Survival's buy
-    // stations wouldn't open their menu until the game was paused -- confirmed live by
-    // the user). The real bug only ever exists for a moment right after a level loads
-    // (residual loading-screen cursor), so only clear it for a short window after
-    // detecting a fresh level-start (rising edge on the in-level flag), then let the
-    // game's normal gating resume so legitimate menu contexts work again.
+    // "Needs a click" fix (2026-07-14, settled after two failed attempts at being
+    // clever about WHEN to clear this bit -- see git history for "take 2"/"take 3",
+    // a rising-edge/time-window scheme that didn't reliably re-detect level RELOADS,
+    // and reintroduced the original stuck-movement bug on checkpoint reload).
     //
-    // Take 2's finding is still the real mechanism: raw disassembly of FUN_0057e480
-    // (not just the decompile, which dropped the constant args) shows the REAL first
-    // gate: `FUN_00416150(EBX, 0x10)` right at entry, before even the keyboard-turn
-    // call -- if bit 0x10 of a per-player flags dword at DAT_00b36210 (stride 0x188,
-    // offset 0 for SP's player index 0) is set, EVERYTHING is skipped except the
-    // always-running finalize call. This is a different state block than
-    // DAT_00b37444 (gates a LATER, less restrictive branch) or the cursor flag
-    // (a UI-only symptom, not a code-level gate at all).
-    int32_t inLevelVal = *reinterpret_cast<volatile int32_t*>(kInLevelFlagAddr);
-    bool nowInLevel = inLevelVal > 0;
-    if (nowInLevel && !g_wasInLevel) {
-        g_gateClearUntilMs = GetTickCount() + kGateClearWindowMs;
-    }
-    g_wasInLevel = nowInLevel;
-
-    if (GetTickCount() < g_gateClearUntilMs) {
-        *reinterpret_cast<volatile uint32_t*>(0x00B36210) &= ~0x10u;
-    }
+    // Raw disassembly of FUN_0057e480 (not just the decompile, which drops constant
+    // call arguments) shows the real gate: `FUN_00416150(EBX, 0x10)` right at function
+    // entry, before even the keyboard-turn call -- if bit 0x10 of a per-player flags
+    // dword at DAT_00b36210 (stride 0x188, offset 0 for SP's player index 0) is set,
+    // movement/buttons/look are all skipped. The game also uses this SAME bit
+    // legitimately for interactive menus (e.g. Survival buy stations) -- there is no
+    // reliable way found so far to distinguish "residual load-screen cursor" from "a
+    // real menu wants the cursor" just from this bit or its timing.
+    //
+    // DECISION (2026-07-14, explicit user call): rather than keep chasing a fragile
+    // heuristic, controller mode simply doesn't support mouse/keyboard-driven menus
+    // (buy stations, etc.) at all for now -- this bit is unconditionally cleared every
+    // frame, same as the original fix. See README/CLAUDE.md: "K+M menu interaction is
+    // not supported while the controller mod is active" is a documented, known
+    // limitation, not a bug to keep fixing. It goes away entirely once task #6 (native
+    // controller menu navigation) replaces the need for this gate to ever engage in
+    // the first place -- real controller menu nav will set/clear it correctly itself.
+    *reinterpret_cast<volatile uint32_t*>(0x00B36210) &= ~0x10u;
 
     float rx, ry;
     if (!Controller_GetRightStick(rx, ry)) return;
