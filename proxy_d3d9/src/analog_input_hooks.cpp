@@ -272,20 +272,46 @@ __declspec(naked) void Hook_0057d430()
 float* const kPitchAccum = reinterpret_cast<float*>(0x00B36408);
 float* const kYawAccum = reinterpret_cast<float*>(0x00B3640C);
 
+namespace {
+// Same "is actually in a level" signal used by tools/memdiff -- the very first thing
+// FUN_0057d7e0 checks each frame (`CMP dword ptr [0x00a98acc],0x0; JBE <skip>`).
+constexpr uintptr_t kInLevelFlagAddr = 0x00A98ACC;
+bool g_wasInLevel = false;
+DWORD g_gateClearUntilMs = 0;
+// The real bug is a one-time residual loading-screen cursor, not a persistent
+// condition -- 3 seconds of coverage after a level starts is generous margin.
+constexpr DWORD kGateClearWindowMs = 3000;
+} // namespace
+
 extern "C" void __cdecl InjectControllerLookAngles()
 {
-    // "Needs a click" fix, take 2 (2026-07-14): forcing the cursor-visibility flag
-    // (DAT_01c00474, see git history) didn't unblock movement -- wrong theory. Raw
-    // disassembly of FUN_0057e480 (not just the decompile, which dropped the constant
-    // args) shows the REAL first gate: `FUN_00416150(EBX, 0x10)` right at entry, before
-    // even the keyboard-turn call -- if bit 0x10 of a per-player flags dword at
-    // DAT_00b36210 (stride 0x188, offset 0 for SP's player index 0) is set, EVERYTHING
-    // is skipped except the always-running finalize call. This is a different state
-    // block than DAT_00b37444 (which gates a LATER, less restrictive branch) or the
-    // cursor flag (a UI-only symptom, not a code-level gate at all). Force this bit
-    // clear every frame, unconditionally, before any early return below -- this hook
-    // fires in every branch of FUN_0057e480, including the one this bit itself gates.
-    *reinterpret_cast<volatile uint32_t*>(0x00B36210) &= ~0x10u;
+    // "Needs a click" fix, take 3 (2026-07-14): the previous version force-cleared this
+    // gate bit EVERY frame forever, which turned out to also suppress the game's own
+    // legitimate use of the same gate for interactive menus (e.g. Survival's buy
+    // stations wouldn't open their menu until the game was paused -- confirmed live by
+    // the user). The real bug only ever exists for a moment right after a level loads
+    // (residual loading-screen cursor), so only clear it for a short window after
+    // detecting a fresh level-start (rising edge on the in-level flag), then let the
+    // game's normal gating resume so legitimate menu contexts work again.
+    //
+    // Take 2's finding is still the real mechanism: raw disassembly of FUN_0057e480
+    // (not just the decompile, which dropped the constant args) shows the REAL first
+    // gate: `FUN_00416150(EBX, 0x10)` right at entry, before even the keyboard-turn
+    // call -- if bit 0x10 of a per-player flags dword at DAT_00b36210 (stride 0x188,
+    // offset 0 for SP's player index 0) is set, EVERYTHING is skipped except the
+    // always-running finalize call. This is a different state block than
+    // DAT_00b37444 (gates a LATER, less restrictive branch) or the cursor flag
+    // (a UI-only symptom, not a code-level gate at all).
+    int32_t inLevelVal = *reinterpret_cast<volatile int32_t*>(kInLevelFlagAddr);
+    bool nowInLevel = inLevelVal > 0;
+    if (nowInLevel && !g_wasInLevel) {
+        g_gateClearUntilMs = GetTickCount() + kGateClearWindowMs;
+    }
+    g_wasInLevel = nowInLevel;
+
+    if (GetTickCount() < g_gateClearUntilMs) {
+        *reinterpret_cast<volatile uint32_t*>(0x00B36210) &= ~0x10u;
+    }
 
     float rx, ry;
     if (!Controller_GetRightStick(rx, ry)) return;
