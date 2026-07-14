@@ -114,19 +114,85 @@ strafing is an edge case, not the primary movement source) — the primary keybo
 accumulation function (reading `+forward`/`+back`/`+moveleft`/`+moveright` kbutton state
 into forwardmove/rightmove) has not been located yet.
 
-### Next steps
-- Find the per-frame top-level caller that invokes `FUN_0057d7e0` and `FUN_0057d300`
-  each frame (likely `CL_CreateCmd`-equivalent) — that caller is where usercmd
-  construction is orchestrated and is the natural place to also inject left-stick
-  movement.
-- Find the keyboard-kbutton-sum function that writes forwardmove/rightmove from
-  `+forward`/`+back`/`+moveleft`/`+moveright` state (separate from the mouse-strafe
-  edge case in `FUN_0057d7e0`).
-- Confirm calling convention on `FUN_0057d680`/`FUN_0057d740`/`FUN_0057d7e0` precisely
-  (register-passed struct pointers, not normal stack args) using x64dbg live tracing
-  before writing any hook — Ghidra's decompiled `unaff_ESI`/`unaff_EAX`/`unaff_EDI`
-  register guesses need runtime confirmation, not just static inference.
-- Map the confirmed `usercmd_t` struct layout so far: `+0` (unconfirmed, likely
-  serverTime), `+4` buttons (uint), `+0x1c` forwardmove (byte), `+0x1d` rightmove
-  (byte), `+0x38` a short (unconfirmed field, written in `FUN_0057d7e0`'s tail),
-  `+0x3e`/`+0x3f` melee-lunge-direction bytes (tentative).
+### Next steps (superseded — see "Full per-frame usercmd pipeline" below, found 2026-07-14)
+
+## Full per-frame usercmd pipeline — CONFIRMED (2026-07-14)
+
+The complete per-frame call chain is now traced end to end. Top-level orchestrator:
+
+### `FUN_0057e480 @ 0057e480` — the `CL_CreateCmd` equivalent
+This is **the** per-frame usercmd-build entry point and the natural top-level hook site:
+```
+memset(cmd, 0, 0x40)                          // usercmd_t is 0x40 (64) bytes
+FUN_0057d300()                                 // keyboard hold-turn -> angle-delta floats
+[if paused/menu-open flag set: melee-charge encode path (FUN_0057e360), early return]
+FUN_0057dc90()                                 // button-bit summer -> cmd.buttons (+4)
+FUN_0057d430()                                 // keyboard analog movement -> forwardmove/rightmove/+0x1e/+0x1f
+FUN_0057d7e0(fovScale)                         // mouse-look / mouse-strafe
+[pitch-delta clamp against a max-per-frame cvar-ish value]
+FUN_0057de60()                                 // finalize: angle-delta floats -> cmd.angles[3] shorts
+```
+
+### Confirmed `usercmd_t` struct layout (0x40 / 64 bytes total)
+| offset | field | evidence |
+|---|---|---|
+| `+0x00` | serverTime (int) | `unaff_ESI[0] = DAT_01e06e88` in `FUN_0057de60` |
+| `+0x04` | buttons (uint, bitflags) | OR'd throughout `FUN_0057dc90`/`FUN_0057d430`/`FUN_0057d7e0` |
+| `+0x08`,`+0x0c`,`+0x10` | angles[PITCH,YAW,ROLL] (short, ANGLE2SHORT-packed) | `FUN_0057de60`'s 3-iteration loop over `_DAT_00b36408[0..2]` |
+| `+0x14`,`+0x18` | weapon-related (2 fields) | `unaff_ESI[5]/[6]` in `FUN_0057de60`, also fed into `FUN_005df010` |
+| `+0x1c` | **forwardmove** (signed byte) | `FUN_0057d430` (keyboard) and `FUN_0057d7e0` (mouse-strafe branch) both write here |
+| `+0x1d` | **rightmove** (signed byte) | same, both functions |
+| `+0x1e` | movement byte #3 (unidentified — up/down or lean?) | written by `FUN_0057d430` via the same `FUN_004c0830` clamp-to-byte helper |
+| `+0x1f` | movement byte #4 (unidentified) | same |
+| `+0x24`..`+0x34` | 5 more int fields | `unaff_ESI[9..13]` in `FUN_0057de60`, copied from `_DAT_00b363e4..f4` — purpose not yet identified |
+| `+0x38` | a short field | written in `FUN_0057d7e0`'s tail (unrelated to the melee-lunge bytes below) |
+| `+0x3e`,`+0x3f` | melee-lunge-direction bytes (tentative) | `FUN_0057e360`, quantized via `FUN_0057e300` |
+
+### View-angle delta accumulator: `_DAT_00b36408` is a `float[3]` (PITCH, YAW, ROLL)
+Not two separate globals as first thought — `_DAT_00b36408` is index 0 (pitch), `_DAT_00b3640c` is
+index 1 (yaw) of one 3-float array, per-player-strided by `0xbe5c`. Both the keyboard-turn function
+(`FUN_0057d300`) and the mouse-look function (`FUN_0057d7e0`) accumulate into this same array each
+frame; `FUN_0057de60` converts it to the final packed `cmd.angles[3]` shorts at the end.
+
+### `FUN_0057d430 @ 0057d430` — keyboard analog movement summer (the function that had been missing)
+Uses `FUN_0057d250()`+`FUN_007380e0()` pairs (fractional-hold-time helpers — same pattern as classic
+`CL_KeyState`, giving smoother analog-ish response from a digital key based on how much of the frame
+it was held) to accumulate forward/back and left/right contributions, then clamps each to a signed
+byte via `FUN_004c0830` (`ClampChar`-equivalent) before writing `+0x1c`/`+0x1d`/`+0x1e`/`+0x1f`. Also
+handles some crouch/prone/stance-toggle flag bits unrelated to movement bytes.
+
+### Kbutton state storage layout (confirmed via `ScanStructRegion.java`)
+A flat array of kbutton-state byte-pairs starts around `00a98b00`-ish, stride **20 (0x14) bytes**
+per kbutton, each entry being (at minimum) 2 relevant bytes: byte 0 = current held state, byte 1 =
+one-shot "pressed since last read" latch (cleared after `FUN_0057dc90` reads it — classic
+edge-triggered button latch pattern). `FUN_00438710 @ 00438710` is the bind-index dispatcher (`switch`
+on bind index, handling one-shot/special binds like `+mlook` toggling `DAT_00a98bec`, "center view"
+snapping `_DAT_00b36408[0]`, weapon-related binds, etc.) — this only covers bind indices roughly 1-77
+(the *special-case* binds); the 32 simple hold-movement binds found in the name table (`+forward`
+etc., indices likely 0-31) don't need special-case code since they're plain active/inactive kbuttons
+consumed generically by `FUN_0057dc90`/`FUN_0057d430`.
+
+### Hook strategy — CONFIRMED (task #5 groundwork)
+- **Movement (left stick):** hook `FUN_0057d430`. Cleanest approach: let it run normally (keyboard
+  still works), then in a post-hook ADD our own clamped stick-derived forwardmove/rightmove on top of
+  whatever it wrote at `+0x1c`/`+0x1d` (re-clamping the sum through the same `FUN_004c0830` helper, or
+  our own equivalent, so keyboard+stick can't overflow a signed byte).
+- **Look (right stick):** hook `FUN_0057d680` (raw mouse-delta source, found earlier) — unchanged
+  from the earlier finding, still the best site since it inherits `m_pitch`/`m_yaw`/sensitivity/accel/
+  ADS-scale for free rather than reimplementing that feel.
+- **Calling convention warning:** every function in this chain uses custom/register-passed arguments
+  (Ghidra reports them as `unaff_ESI`/`unaff_EDI`/`unaff_EBX`/`in_EAX`, i.e. values the *caller*
+  leaves in specific registers rather than passing on the stack or via a clean `__fastcall`). **Do
+  not** write hooks assuming a normal C signature — these need either (a) a trampoline that preserves
+  the exact register state Ghidra inferred, confirmed live via x32dbg before shipping, or (b) hooking
+  one level up/down the call chain at a point with a cleaner signature. Static inference alone is not
+  enough to trust blindly — next real implementation step should start with x32dbg confirmation of
+  register contents at the `FUN_0057d430`/`FUN_0057d680` call sites during live play.
+
+### Remaining open items (lower priority, not blocking task #5 start)
+- Purpose of `usercmd_t+0x1e`/`+0x1f` (movement bytes #3/#4) and `+0x24`..`+0x34` (5 int fields) not
+  yet identified — likely upmove/lean or vehicle-related, not needed for basic ground movement/look.
+- Menu/UI controller navigation is a separate investigation (task #6), not covered by this pipeline
+  at all — the UI reads keyboard/mouse binds through an entirely different system (see the
+  `FUN_00539530`/`DAT_00a98e4c` key-binding-table detour above, which turned out to be UI-side, not
+  gameplay-side).
