@@ -686,6 +686,19 @@ Sprint (`+breath_sprint`) remains unresolved — the same manual live-diff metho
 that found ADS should work for it too, just watching Shift/sprint-key transitions instead
 of the right mouse button.
 
+**First attempt wired up (2026-07-14), EXPERIMENTAL/NOT YET LIVE-VERIFIED:** rather than
+run the memdiff process first, tried the existing struct+0xb0 lead directly (user's
+explicit call, prioritizing speed over certainty). `InjectControllerSprint()` in
+`analog_input_hooks.cpp` writes a byte at `0x00A98B88` (per-player struct base
+`0x00A98AD8` + `0xb0`) to 1 while left stick click (L3) is held, 0 otherwise — this is
+the flag `FUN_0057d430` reads to gate its extra forward/right movement summation pass.
+Bound to L3 per user request (console reference table above says L3 = Sprint by
+default, so this also matches the intended control scheme, not just a free slot).
+**Needs live playtest to confirm or retract** — if holding L3 while moving forward
+doesn't visibly increase speed / trigger sprint animation/stamina, this flag is likely a
+downstream reflection of some other state (same trap the Prone bit-forcing hit), and
+Sprint should get the same live memdiff treatment ADS got instead of more guessing.
+
 **ADS must be true hold-to-aim, not toggle (user requirement, 2026-07-14):** PC
 keyboard/mouse ADS binding on this game may default to (or support) toggle-style aim,
 which is not the desired feel for a controller — the trigger should only aim while

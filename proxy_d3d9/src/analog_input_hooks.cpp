@@ -97,6 +97,9 @@ extern "C" void __cdecl InjectControllerMovement(unsigned char* cmd)
 //        reached during that press.
 //   LT (analog trigger) -> ADS -- NOT handled here, see InjectControllerAds (needs the
 //        real KeyDown/KeyUp kbutton calls, not a simple bit-OR)
+//   Left stick click (L3) -> Sprint -- NOT handled here, see InjectControllerSprint.
+//        EXPERIMENTAL/unconfirmed (2026-07-14): writes a speculative locomotion flag,
+//        not a verified kbutton -- needs live playtest confirmation.
 //
 // NOT YET IMPLEMENTED (left unmapped, not guessed at):
 //   Back -> freed up when Crouch moved to B; no action assigned yet
@@ -105,9 +108,9 @@ extern "C" void __cdecl InjectControllerMovement(unsigned char* cmd)
 //        toggleprone hasn't been located yet, separate investigation from this bit
 //        mapping)
 //   Start -> should be pause/togglemenu (same one-shot-command blocker as Y)
-//   D-pad (all four directions), left thumbstick click -> left unassigned. The
-//        underlying bits (+actionslot 1-4 per the kbutton table) are still uncertain/
-//        largely untested individually -- not part of this pass, revisit later.
+//   D-pad (all four directions) -> left unassigned. The underlying bits
+//        (+actionslot 1-4 per the kbutton table) are still uncertain/largely untested
+//        individually -- not part of this pass, revisit later.
 namespace {
 constexpr unsigned short kXI_RIGHT_THUMB = 0x0080;
 constexpr unsigned short kXI_A = 0x1000;
@@ -330,6 +333,37 @@ extern "C" void __cdecl InjectControllerAds()
     }
 }
 
+// ---- Sprint: left stick click (L3) -> EXPERIMENTAL, unconfirmed lead -------------
+//
+// NOT YET LIVE-VERIFIED (2026-07-14). `+breath_sprint`'s real kbutton/bit was never
+// pinned down the way ADS was -- the earlier table-order-correlation guess (bit 0x4)
+// was retracted after live testing showed it's actually Melee (see re_notes/iw5sp.md,
+// the `0x4` retraction). The only remaining lead is a flag at per-player struct offset
+// +0xb0 (base 0x00A98AD8, player 0 for SP -- same struct/stride as the kbutton array
+// and as the ADS kbuttons at +0xB4/+0x1E0, so +0xb0 lands at 0x00A98B88, four bytes
+// before kAdsKbutton1) that FUN_0057d430 (the movement summer) reads to gate an *extra*
+// forward/right movement summation pass reusing the +forward/+back hold-time helpers --
+// plausibly "is currently sprinting," but re_notes is explicit this is a guess, not a
+// finding, and could just as easily be a downstream reflection of some other state we'd
+// need to drive instead (same class of trap the Prone bit-forcing hit).
+//
+// User explicitly chose to try this lead directly rather than run the ADS-style live
+// memdiff process first (2026-07-14) -- treat this as a first attempt to be confirmed
+// or retracted by real playtest, not a shipped/production-ready feature yet.
+namespace {
+constexpr unsigned short kXI_LEFT_THUMB = 0x0040;
+volatile uint8_t* const kSprintFlag = reinterpret_cast<volatile uint8_t*>(0x00A98B88);
+} // namespace
+
+extern "C" void __cdecl InjectControllerSprint()
+{
+    unsigned short buttons;
+    unsigned char leftTrigger, rightTrigger;
+    if (!Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger)) return;
+
+    *kSprintFlag = (buttons & kXI_LEFT_THUMB) ? 1 : 0;
+}
+
 // ---- Look: right stick -> the pitch/yaw angle-delta accumulator directly -------
 //
 // Superseded 2026-07-14: this used to hook FUN_0057d680 (the raw mouse-delta
@@ -421,6 +455,7 @@ extern "C" void __cdecl InjectAllControllerInput(unsigned char* cmd)
         InjectControllerButtons(cmd);
     }
     InjectControllerAds();
+    InjectControllerSprint();
 }
 
 namespace {
