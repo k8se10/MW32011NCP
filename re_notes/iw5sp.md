@@ -513,10 +513,14 @@ press-edge — not yet located, separate investigation from the kbutton-address 
 1. ~~Correlate kbutton table position/order against `FUN_0057dc90`'s disassembly order
    to resolve each named held-bind's real memory address.~~ DONE, see below (2026-07-14).
 2. Find the console-command-execution function for the one-shot commands
-   (`toggleprone`/`weapnext`/`togglemenu`).
-3. `+reload` (R key) doesn't have a controller input assigned yet in the user's config
-   — needs a spot (D-Pad is full; consider whether X should be reload instead of use,
-   or find another free input).
+   (`toggleprone`/`weapnext`/`togglemenu`). **Attempted and retracted (2026-07-14):**
+   `FUN_004d6da0` looked promising (called with a bind-name string from
+   `FUN_0061f590`'s alias-expansion logic) but turned out to be a thin wrapper around
+   `FUN_0057e770`, which is a HUD/UI keybind-display formatter (looks up "KEY_UNBOUND"
+   style text for on-screen prompts), not a command-execution/dispatch function at all.
+   Still not located — separate investigation needed.
+3. ~~`+reload` (R key) doesn't have a controller input assigned yet.~~ **RESOLVED
+   (2026-07-14), see "Reload — RESOLVED" below.**
 
 ### Kbutton table position ↔ `usercmd.buttons` bit correlation — CONFIRMED (2026-07-14)
 
@@ -722,13 +726,78 @@ led to the real consumer:
   to the actual struct; `+0xc` is the flags dword; bit `0x4000` is sprint.
 
 **Fix implemented (2026-07-14):** removed the disproven `struct+0xb0` write entirely.
-`InjectControllerSprint()` now just polls L3 each frame into a `g_sprintHeld` bool. A new
-hook on `FUN_00644ed0` (`Hook_00644ed0` in `analog_input_hooks.cpp`) grabs the live
-`param_1` straight off the stack every call (no stored/hardcoded data address — same
-live-pointer-capture pattern already used for `cmd`/ESI in the `FUN_0057de60` hook),
-dereferences it, and sets/clears pm_flags bit `0x4000` on the live struct to match
-`g_sprintHeld`. **Live-verify next**: hold L3 while moving forward in Survival and
-confirm real speed increase / sprint animation / stamina depletion.
+`InjectControllerSprint()` now just polls L3 each frame into a `g_sprintHeld` bool. A
+hook on `FUN_00644ed0` (`Hook_00644ed0`) grabs the live `param_1` straight off the stack
+every call (no stored/hardcoded data address — same live-pointer-capture pattern already
+used for `cmd`/ESI in the `FUN_0057de60` hook), dereferences it, and sets/clears pm_flags
+bit `0x4000` on the live struct to match `g_sprintHeld`.
+
+**First live test still failed** — bit forced correctly at `FUN_00644ed0`'s entry
+(`before=0x0`, `after=0x4000` every tick, confirmed via temporary instrumentation), but
+by the time `FUN_00643870` (the actual consumer, several calls deeper) read the same
+struct address moments later in the same tick, it read back `0x0`. Neither
+`FUN_00644ed0` nor `FUN_00643ce0`'s own decompiled logic explicitly clears bit `0x4000`
+— it happens somewhere in one of the many sub-calls between them (never fully
+identified). Separately confirmed via a comparison test that real keyboard Shift-sprint
+keeps this exact bit set on every fresh per-tick struct copy, matching our understanding
+of the mechanism — so the bit/struct was right, just not surviving the trip.
+
+**Real fix: reassert one level deeper.** Added a second hook on `FUN_00643ce0`
+(`Hook_00643ce0` / `ReassertSprintPmFlags`), which re-forces the same bit on the same
+live struct right at that function's entry — past most of the intervening code — and
+that's what actually survives through to `FUN_00643870`'s read. **CONFIRMED WORKING
+live by the user (2026-07-14).**
+
+**Crash during this investigation, root-caused and fixed:** the first version of
+`Hook_00643ce0` used raw-entry `[ESP+8]` for the pml pointer, based on misreading the
+function's own prologue (`FUN_00643ce0`'s `PUSH ESI` instruction executes *between* two
+`MOV reg,[ESP+0x74]` reads, so they read different stack slots, not the same one twice).
+This dereferenced the wrong argument (a local scratch-buffer address) as if it were the
+struct pointer, and crashed the game (`0xc0000005` access violation, confirmed via
+Windows Event Log Application Error → proxy `d3d9.dll` offset `0x4e` →
+`ReassertSprintPmFlags`'s `MOV ECX,[EAX+0xc]`, mapped via a throwaway Ghidra import of
+our own built DLL). The real call site (`PUSH EDX` for the local buffer, then `PUSH EBX`
+for the pml pointer, then `CALL`) confirms the pml pointer is the *last*-pushed arg,
+landing at raw-entry `[ESP+4]` — same slot/formula as every other hook in this file.
+Fixed and re-verified working with no further crashes.
+
+**Diagnostic logging added during this investigation (hook install status, first-call
+confirmation, raw-button edge logging, per-tick before/after snapshots) has since been
+removed** now that Sprint is confirmed working — see git history if it's ever needed
+again for a similar investigation. The permanent hook install/enable status logging in
+`InstallAnalogInputHooks()` was kept (required by CLAUDE.md's logging rules).
+
+### Reload (`+reload`) — RESOLVED (2026-07-14), no new hook needed
+
+User reported X interacts/uses fine but never reloads. Checked the real keybind config
+(`players2/config.cfg`): `bind R "+reload"` and `bind F "+activate"` — confirming
+`+usereload` (bit `0x8`'s old label) doesn't exist as a real bind anywhere in the
+default config. That label was almost certainly another table-order-correlation guess
+(same unreliable technique already retracted once for Sprint/Melee at idx 4) — bit
+`0x8` empirically does trigger Use/Interact, just probably isn't literally named
+`+usereload`.
+
+Found the real `+reload` bit **without memdiff or a new hook**, reusing data already in
+this file: `FindStringRefs.java` found `"+reload"`'s table entry at `0092a074`. The
+32-entry bind-name table base is `0092a014`, stride 8 bytes, so
+`(0092a074 - 0092a014) / 8 = 12` — table idx 12. Cross-referencing the already-known
+contiguous kbutton array (`0x128 + idx*0x14`, confirmed for idx 0–9 above): idx 10 lands
+at struct `+0x1f0` (bit `0x80000`, previously untested) and idx 11 at struct `+0x204`
+(bit `0x2`, already confirmed as `+stance`) — the pattern continues cleanly to idx 12 at
+struct `+0x218`, **bit `0x40000`**. This is the real `+reload` bit, part of the same
+already-working generic kbutton mechanism as Fire/Frag/Smoke/Jump/Prone/Crouch — no new
+RE or hook required, just an unassigned bit in the array already mapped.
+
+**Fix:** X now asserts both `0x8` (Interact) and `0x40000` (Reload) together. PC has no
+native single-button interact-or-reload context switch (that's a console-only
+control-scheme layer — `+activate` and `+reload` are genuinely separate binds on PC).
+Asserting both bits together works natively because the game's own logic no-ops
+`+activate` when nothing's interactable and no-ops `+reload` when it doesn't apply,
+reproducing the console behavior without any synthetic/emulated logic.
+
+**Not yet live-verified** — needs a playtest confirming X reloads correctly (with and
+without a nearby interactable) before this is fully confirmed, same as Sprint required
+a second look before it actually worked.
 
 **ADS must be true hold-to-aim, not toggle (user requirement, 2026-07-14):** PC
 keyboard/mouse ADS binding on this game may default to (or support) toggle-style aim,

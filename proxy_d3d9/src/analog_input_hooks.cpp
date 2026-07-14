@@ -76,8 +76,17 @@ extern "C" void __cdecl InjectControllerMovement(unsigned char* cmd)
 //        mapping melee to the right thumbstick click. An earlier struct-offset-
 //        correlation guess briefly mislabeled this bit as Sprint; that theory was
 //        retracted -- it's genuinely Melee)
-//   X -> Use/Reload (+usereload -- context-sensitive by the game's own design, same
-//        bit covers both, confirmed working)
+//   X -> Interact + Reload, both real bits fired together (2026-07-14 fix -- see
+//        re_notes/iw5sp.md). Bit 0x8 empirically triggers Use/Interact (its
+//        "+usereload" label was table-order-correlation guessing, same unreliable
+//        technique already retracted once for Sprint/Melee -- real bind name unclear,
+//        but the behavior is confirmed). Bit 0x40000 (struct+0x218, table idx 12) is
+//        the real `+reload` bind, confirmed via the literal string's table position --
+//        extends the already-known contiguous kbutton array (0x128 + idx*0x14) one
+//        further than previously mapped. PC has no native single-button
+//        interact-or-reload context switch (that's console-only); asserting both bits
+//        together works because the game's own logic no-ops +activate when nothing's
+//        interactable and no-ops +reload when it doesn't apply.
 //   LB -> Tactical (smoke) -- moved here off D-pad Left
 //   RB -> Lethal (frag) -- moved here off D-pad Down
 //   B -> Crouch/Prone stance button, real Xbox 360 CoD semantics (user-specified,
@@ -97,9 +106,12 @@ extern "C" void __cdecl InjectControllerMovement(unsigned char* cmd)
 //        reached during that press.
 //   LT (analog trigger) -> ADS -- NOT handled here, see InjectControllerAds (needs the
 //        real KeyDown/KeyUp kbutton calls, not a simple bit-OR)
-//   Left stick click (L3) -> Sprint -- NOT handled here, see InjectControllerSprint.
-//        EXPERIMENTAL/unconfirmed (2026-07-14): writes a speculative locomotion flag,
-//        not a verified kbutton -- needs live playtest confirmation.
+//   Left stick click (L3) -> Sprint -- NOT handled here, see InjectControllerSprint /
+//        InjectControllerSprintPmFlags. CONFIRMED WORKING live (2026-07-14) -- forces
+//        the real pm_flags bit (0x4000) that drives `player_sprintSpeedScale`, via a
+//        hook on the Pmove entry point (FUN_00644ed0) plus a reassert hook one level
+//        deeper (FUN_00643ce0) to survive whatever clears it in between. See
+//        re_notes/iw5sp.md for the full investigation.
 //
 // NOT YET IMPLEMENTED (left unmapped, not guessed at):
 //   Back -> freed up when Crouch moved to B; no action assigned yet
@@ -130,24 +142,6 @@ Stance g_stance = Stance::Standing;
 DWORD g_crouchButtonPressStartMs = 0;
 bool g_crouchButtonWasHeld = false;
 bool g_holdActionConsumed = false; // true once this press has already fired its hold action
-
-// TEMP DIAGNOSTIC (2026-07-14): tracing the "engine auto-stands the player up on
-// physical B release" bug. Not a permanent feature -- remove once the root cause is
-// found (see re_notes/iw5sp.md). Logs every stance-machine transition unconditionally,
-// plus a short window of frame-by-frame usercmd.buttons snapshots after each release so
-// we can see whether OUR write is what changes, or something downstream of this hook
-// overrides it independent of what we assert here.
-int g_postReleaseWatchFrames = 0;
-
-const char* StanceName(Stance s)
-{
-    switch (s) {
-        case Stance::Standing: return "Standing";
-        case Stance::Crouched: return "Crouched";
-        case Stance::Prone:    return "Prone";
-    }
-    return "?";
-}
 }
 
 extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
@@ -160,7 +154,7 @@ extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
     uint32_t out = 0;
     if (rightTrigger >= kTriggerThresholdFire) out |= 0x1;      // Fire (+attack)
     if (xiButtons & kXI_RIGHT_THUMB) out |= 0x4;                // Melee
-    if (xiButtons & kXI_X) out |= 0x8;                          // Use/Reload (+usereload)
+    if (xiButtons & kXI_X) out |= 0x8 | 0x40000;                // Interact (0x8) + Reload (0x40000, +reload)
     if (xiButtons & kXI_LEFT_SHOULDER) out |= 0x8000;           // Tactical (smoke)
     if (xiButtons & kXI_RIGHT_SHOULDER) out |= 0x4000;          // Lethal (frag)
     if (xiButtons & kXI_A) out |= 0x400;                        // Jump (+gostand)
@@ -170,40 +164,23 @@ extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
         // Rising edge: new press starting.
         g_crouchButtonPressStartMs = GetTickCount();
         g_holdActionConsumed = false;
-        char buf[128];
-        sprintf_s(buf, "[stance] B DOWN  stance=%s", StanceName(g_stance));
-        LogFromController(buf);
     }
     if (bHeld && !g_holdActionConsumed) {
         DWORD heldMs = GetTickCount() - g_crouchButtonPressStartMs;
         if (heldMs >= kProneHoldThresholdMs) {
             // Hold action fires once, the instant the threshold is crossed: Prone
             // reverses back to Standing, anything else goes to Prone.
-            Stance prev = g_stance;
             g_stance = (g_stance == Stance::Prone) ? Stance::Standing : Stance::Prone;
             g_holdActionConsumed = true;
-            char buf[128];
-            sprintf_s(buf, "[stance] HOLD fired  %s -> %s", StanceName(prev), StanceName(g_stance));
-            LogFromController(buf);
         }
     }
-    if (!bHeld && g_crouchButtonWasHeld) {
-        if (!g_holdActionConsumed) {
-            // Falling edge and the hold threshold was never reached -- this was a tap.
-            Stance prev = g_stance;
-            switch (g_stance) {
-                case Stance::Standing: g_stance = Stance::Crouched; break;
-                case Stance::Crouched: g_stance = Stance::Standing; break;
-                case Stance::Prone:    g_stance = Stance::Crouched; break;
-            }
-            char buf[128];
-            sprintf_s(buf, "[stance] TAP fired  %s -> %s", StanceName(prev), StanceName(g_stance));
-            LogFromController(buf);
+    if (!bHeld && g_crouchButtonWasHeld && !g_holdActionConsumed) {
+        // Falling edge and the hold threshold was never reached -- this was a tap.
+        switch (g_stance) {
+            case Stance::Standing: g_stance = Stance::Crouched; break;
+            case Stance::Crouched: g_stance = Stance::Standing; break;
+            case Stance::Prone:    g_stance = Stance::Crouched; break;
         }
-        char buf[128];
-        sprintf_s(buf, "[stance] B UP  stance now=%s -- watching next 90 frames", StanceName(g_stance));
-        LogFromController(buf);
-        g_postReleaseWatchFrames = 90; // ~1.5s at 60fps -- long enough to see any delayed override
     }
     g_crouchButtonWasHeld = bHeld;
 
@@ -213,17 +190,9 @@ extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
         default: break;
     }
 
+    if (out == 0) return;
     uint32_t* buttonsField = reinterpret_cast<uint32_t*>(cmd + 4);
-    uint32_t beforeOr = *buttonsField;
-    if (out != 0) *buttonsField |= out;
-
-    if (g_postReleaseWatchFrames > 0) {
-        char buf[160];
-        sprintf_s(buf, "[stance] watch  stance=%s before=0x%08X after=0x%08X",
-                  StanceName(g_stance), beforeOr, *buttonsField);
-        LogFromController(buf);
-        --g_postReleaseWatchFrames;
-    }
+    *buttonsField |= out;
 }
 
 // ---- ADS: left trigger -> true hold-to-aim via the real +toggleads_throw kbuttons ----
@@ -404,6 +373,48 @@ __declspec(naked) void Hook_00644ed0()
     }
 }
 
+// REASSERT POINT: our write at FUN_00644ed0's entry succeeds, but something between
+// there and the actual pm_flags read in FUN_00643870 clears it every tick -- neither
+// FUN_00644ed0 nor FUN_00643ce0's own decompiled logic explicitly clears bit 0x4000, so
+// it happens in one of the many sub-calls in between (confirmed via temporary read-site
+// instrumentation during investigation, since removed -- see re_notes/iw5sp.md for the
+// full trace). Reasserting here, one level deeper, is what makes it survive through to
+// the actual read.
+namespace {
+void* g_orig_00643ce0 = nullptr;
+}
+
+extern "C" void __cdecl ReassertSprintPmFlags(uint32_t pmlPtr)
+{
+    if (!g_sprintHeld) return;
+    if (!pmlPtr) return;
+    uint32_t ps = *reinterpret_cast<uint32_t*>(pmlPtr);
+    if (!ps) return;
+    *reinterpret_cast<uint32_t*>(ps + 0xc) |= kPmFlagSprint;
+}
+
+// CRASH FIX (2026-07-14): first version of this hook used raw-entry [ESP+8] and
+// crashed the game (confirmed via Windows Event Log Application Error -> proxy d3d9.dll
+// offset 0x4e -> ReassertSprintPmFlags's `MOV ECX,[EAX+0xc]`, i.e. dereferencing a
+// garbage pointer). Root cause: misread the prologue -- FUN_00643ce0's `PUSH ESI`
+// instruction executes BETWEEN the two `MOV reg,[ESP+0x74]` reads, so they read
+// DIFFERENT stack slots, not the same one twice. Confirmed via the real call site
+// (`PUSH EDX` for a local scratch buffer, THEN `PUSH EBX` for the pml pointer, THEN
+// `CALL`) that the pml pointer is the LAST-pushed arg, landing at raw-entry [ESP+4] --
+// same slot/formula as every other hook in this file, not [ESP+8].
+__declspec(naked) void Hook_00643ce0()
+{
+    __asm {
+        pushad
+        mov eax, dword ptr [esp + 0x24]
+        push eax
+        call ReassertSprintPmFlags
+        add esp, 4
+        popad
+        jmp dword ptr [g_orig_00643ce0]
+    }
+}
+
 // ---- Look: right stick -> the pitch/yaw angle-delta accumulator directly -------
 //
 // Superseded 2026-07-14: this used to hook FUN_0057d680 (the raw mouse-delta
@@ -519,9 +530,32 @@ __declspec(naked) void Hook_0057de60()
 void InstallAnalogInputHooks()
 {
     MH_Initialize();
+
     MH_STATUS s2 = MH_CreateHook(reinterpret_cast<LPVOID>(0x0057de60), &Hook_0057de60, &g_orig_0057de60);
-    if (s2 == MH_OK) MH_EnableHook(reinterpret_cast<LPVOID>(0x0057de60));
+    char buf[128];
+    sprintf_s(buf, "[hooks] MH_CreateHook(0057de60) = %d", static_cast<int>(s2));
+    LogFromController(buf);
+    if (s2 == MH_OK) {
+        MH_STATUS e2 = MH_EnableHook(reinterpret_cast<LPVOID>(0x0057de60));
+        sprintf_s(buf, "[hooks] MH_EnableHook(0057de60) = %d", static_cast<int>(e2));
+        LogFromController(buf);
+    }
 
     MH_STATUS s3 = MH_CreateHook(reinterpret_cast<LPVOID>(0x00644ed0), &Hook_00644ed0, &g_orig_00644ed0);
-    if (s3 == MH_OK) MH_EnableHook(reinterpret_cast<LPVOID>(0x00644ed0));
+    sprintf_s(buf, "[hooks] MH_CreateHook(00644ed0) = %d", static_cast<int>(s3));
+    LogFromController(buf);
+    if (s3 == MH_OK) {
+        MH_STATUS e3 = MH_EnableHook(reinterpret_cast<LPVOID>(0x00644ed0));
+        sprintf_s(buf, "[hooks] MH_EnableHook(00644ed0) = %d", static_cast<int>(e3));
+        LogFromController(buf);
+    }
+
+    MH_STATUS s4 = MH_CreateHook(reinterpret_cast<LPVOID>(0x00643ce0), &Hook_00643ce0, &g_orig_00643ce0);
+    sprintf_s(buf, "[hooks] MH_CreateHook(00643ce0) = %d", static_cast<int>(s4));
+    LogFromController(buf);
+    if (s4 == MH_OK) {
+        MH_STATUS e4 = MH_EnableHook(reinterpret_cast<LPVOID>(0x00643ce0));
+        sprintf_s(buf, "[hooks] MH_EnableHook(00643ce0) = %d", static_cast<int>(e4));
+        LogFromController(buf);
+    }
 }
