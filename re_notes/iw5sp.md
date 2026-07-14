@@ -381,12 +381,12 @@ is the same for the 360/PC-equivalent layout, just different button names. PS3�
 button correspondence is the standard universal positional mapping (Triangle=Y,
 Circle=B, Cross=A, Square=X, L1=LB, R1=RB, L2=LT, R2=RT, L3/R3 = stick clicks):
 
-| Action | PS3 button | Xbox/XInput equivalent |
+| Action | PS3 button (manual) | Xbox/XInput equivalent |
 |---|---|---|
-| Fire | R1 | RB |
-| ADS (aim down sights) | L1 | LB |
-| Throw Lethal | R2 | RT |
-| Throw Tactical | L2 | LT |
+| Fire | R1 | **RT** (trigger) |
+| ADS (aim down sights) | L1 | **LT** (trigger) |
+| Throw Lethal | R2 | **RB** (bumper) |
+| Throw Tactical | L2 | **LB** (bumper) |
 | Change Weapon | Triangle | Y |
 | Change Stance | Circle | B |
 | Jump | Cross | A |
@@ -399,14 +399,24 @@ Circle=B, Cross=A, Square=X, L1=LB, R1=RB, L2=LT, R2=RT, L3/R3 = stick clicks):
 | Scoreboard (MP only) | Select | Back |
 | Pointstreak cycle / equip | D-Pad up/down cycle, right to equip | D-Pad |
 
-**Caveat:** PS3 and Xbox 360 CoD titles from this era sometimes shipped with
-DIFFERENT default trigger/bumper assignments for fire/ADS (PS3 often defaulted to
-bumpers for fire/aim since early DualShock 3 triggers weren't as precise; Xbox 360
-CoD's actual shipped default *may* have used RT/LT instead of RB/LB for fire/ADS —
-not confirmed either way). Used the straightforward positional translation above as
-the implementation starting point since it's the only concretely documented mapping
-available; flag and swap RT/RB (and LT/LB) if real controller testing shows fire/ADS
-feel like they're on the wrong input.
+**Confirmed by user 2026-07-14 (real Xbox 360 hardware/convention knowledge):**
+PS3 and Xbox 360 shipped with a genuinely different physical layout for this pair,
+not just cosmetic button-name differences — PS3 defaulted fire/ADS to the bumpers
+(R1/L1) and grenades to the triggers (R2/L2); Xbox 360's actual default swapped this,
+matching the universal Xbox FPS convention (RT/LT triggers for fire/aim, matching
+Halo/Battlefield/etc. of the same era) — so **fire is RT, ADS is LT, and grenades move
+to the bumpers (RB=lethal, LB=tactical)** on the Xbox-convention mapping this mod
+targets. Table above already corrected to reflect this.
+
+**ADS must be true hold-to-aim, not toggle (user requirement, 2026-07-14):** PC
+keyboard/mouse ADS binding on this game may default to (or support) toggle-style aim,
+which is not the desired feel for a controller — the trigger should only aim while
+physically held, matching console behavior. If usercmd's ADS bit is interpreted as a
+simple "currently held" state by the underlying game logic (classic Quake3-style
++/- semantics), just setting the bit only while the trigger is actually pressed each
+frame should naturally give correct hold-to-aim behavior with no extra work. If real
+testing shows it toggling instead, look for an `ads_toggle`-style cvar to force off
+rather than trying to fight it with edge-detection logic on our end.
 
 ### Remaining open items (lower priority, not blocking task #5 start)
 - Purpose of `usercmd_t+0x1e`/`+0x1f` (movement bytes #3/#4) and `+0x24`..`+0x34` (5 int fields) not
