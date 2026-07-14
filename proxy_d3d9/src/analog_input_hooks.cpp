@@ -54,42 +54,68 @@ extern "C" void __cdecl InjectControllerMovement(unsigned char* cmd)
     cmd[0x1d] = static_cast<unsigned char>(ClampToSByte(curRight + addRight));
 }
 
-// ---- Buttons: NOT YET IMPLEMENTED (task #10, in progress 2026-07-14) ------------
+// ---- Buttons: NATIVE raw-bit diagnostic pass (task #10, in progress 2026-07-14) --
 //
 // A keybd_event/mouse_event-based synthetic-key approach was tried and REJECTED --
 // user wants true native in-engine calls, not OS-level input emulation, matching the
-// same principle already applied to movement/look. Kept as design reference only
-// (see git history for the reverted implementation).
+// same principle already applied to movement/look.
 //
-// Real plan: read players2/config.cfg (the actual default keybind file, found in the
-// game root) to get the authoritative action->bind-command mapping, matching it
-// against the user-supplied controller-button->key list:
-//   A=SPACE="+gostand" (Jump)          LB=G="+frag" (grenade)
-//   B=CTRL="toggleprone" (ONE-SHOT!)   RB=Q="+smoke" (equipment)
-//   X=F="+activate" (Use)              LT=MOUSE2="+toggleads_throw" (ADS)
-//   Y=1/2="weapnext" (ONE-SHOT!)       RT=MOUSE1="+attack" (Fire)
-//   LeftThumb=SHIFT="+breath_sprint"   D-Up=N="+actionslot 1"
-//   RightThumb=E="+melee_zoom"         D-Down=3="+actionslot 3"
-//   Start=ESCAPE="togglemenu" (ONE-SHOT)   D-Left=4="+actionslot 4"
-//   Back=TAB="+scores"                 D-Right=5="+actionslot 2" (not slot 5!)
-//   (R="+reload" not directly bound above -- still needs a controller input assigned)
+// Real bind data (players2/config.cfg, genuine Infinity Ward default binds) confirmed
+// which actions are HELD kbuttons already present in the known 32-entry kbutton name
+// table (+gostand/+activate/+frag/+smoke/+breath_sprint/+melee_zoom/+actionslot 1-4/
+// +scores/+toggleads_throw/+attack/+reload) vs. ONE-SHOT console commands not in that
+// table at all (togglemenu/weapnext/toggleprone) -- see re_notes/iw5sp.md for the full
+// table. X (F key = "+activate") is confirmed context-sensitive on console too
+// (reload when ammo allows, interact/use otherwise), so it covers both without a
+// separate reload input.
 //
-// Two different mechanisms needed, not one:
-//   1. HELD kbuttons (+xxx style) -- +gostand/+activate/+frag/+smoke/+breath_sprint/
-//      +melee_zoom/+actionslot N/+scores/+toggleads_throw/+attack/+reload are ALL
-//      confirmed present in the same 32-entry kbutton name table already mapped in
-//      re_notes/iw5sp.md (0092a014 region) -- these should be settable the same
-//      table-driven way real keypresses are, once their specific per-bind memory
-//      addresses are found (same technique used for FUN_0057dc90's known bits).
-//   2. ONE-SHOT commands (togglemenu/weapnext/toggleprone) are NOT held kbuttons at
-//      all -- they don't appear in the 32-entry table, meaning they're plain console
-//      commands. Native equivalent is calling the engine's own command-execution
-//      function (Cbuf_AddText/Cmd_ExecuteString-equivalent) directly with the command
-//      string, once per press-edge -- not yet located.
-//
-// Next RE step: correlate kbutton table position/order against FUN_0057dc90's
-// disassembly order to resolve each named bind's actual memory address, and find the
-// command-execution function for the one-shot commands.
+// This diagnostic writes DIRECTLY to usercmd_t.buttons (offset +4) -- fully native,
+// no OS-level input emulation at all -- one XInput input per known bit, purely so a
+// single self-driven test pass (virtual controller + screenshots, not requiring the
+// user's time) can identify each bit's real action via its visual tell (muzzle
+// flash=fire, stance change=crouch/prone, etc.) before committing to a final mapping.
+namespace {
+constexpr unsigned short kXI_DPAD_UP = 0x0001;
+constexpr unsigned short kXI_DPAD_DOWN = 0x0002;
+constexpr unsigned short kXI_DPAD_LEFT = 0x0004;
+constexpr unsigned short kXI_DPAD_RIGHT = 0x0008;
+constexpr unsigned short kXI_START = 0x0010;
+constexpr unsigned short kXI_BACK = 0x0020;
+constexpr unsigned short kXI_LEFT_THUMB = 0x0040;
+constexpr unsigned short kXI_LEFT_SHOULDER = 0x0100;
+constexpr unsigned short kXI_RIGHT_SHOULDER = 0x0200;
+constexpr unsigned short kXI_A = 0x1000;
+constexpr unsigned short kXI_B = 0x2000;
+constexpr unsigned short kXI_X = 0x4000;
+constexpr unsigned short kXI_Y = 0x8000;
+}
+
+extern "C" void __cdecl InjectControllerButtonsDiagnostic(unsigned char* cmd)
+{
+    if (!cmd) return;
+    unsigned short xiButtons;
+    unsigned char lt, rt;
+    if (!Controller_GetRawButtonsAndTriggers(xiButtons, lt, rt)) return;
+
+    uint32_t out = 0;
+    if (xiButtons & kXI_A) out |= 0x1;
+    if (xiButtons & kXI_B) out |= 0x4;
+    if (xiButtons & kXI_X) out |= 0x8;
+    if (xiButtons & kXI_Y) out |= 0x10;
+    if (xiButtons & kXI_LEFT_SHOULDER) out |= 0x20;
+    if (xiButtons & kXI_RIGHT_SHOULDER) out |= 0x100;
+    if (xiButtons & kXI_BACK) out |= 0x200;
+    if (xiButtons & kXI_START) out |= 0x400;
+    if (xiButtons & kXI_DPAD_UP) out |= 0x2000;
+    if (xiButtons & kXI_DPAD_DOWN) out |= 0x4000;
+    if (xiButtons & kXI_DPAD_LEFT) out |= 0x8000;
+    if (xiButtons & kXI_DPAD_RIGHT) out |= 0x40000;
+    if (xiButtons & kXI_LEFT_THUMB) out |= 0x80000;
+
+    if (out == 0) return;
+    uint32_t* buttonsField = reinterpret_cast<uint32_t*>(cmd + 4);
+    *buttonsField |= out;
+}
 
 namespace {
 void* g_orig_0057d430 = nullptr;
@@ -105,6 +131,9 @@ __declspec(naked) void Hook_0057d430()
         pop eax           // restore player index
         push edi
         call InjectControllerMovement
+        add esp, 4
+        push edi
+        call InjectControllerButtonsDiagnostic
         add esp, 4
         ret
     }
