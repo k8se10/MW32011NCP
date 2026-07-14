@@ -686,18 +686,49 @@ Sprint (`+breath_sprint`) remains unresolved — the same manual live-diff metho
 that found ADS should work for it too, just watching Shift/sprint-key transitions instead
 of the right mouse button.
 
-**First attempt wired up (2026-07-14), EXPERIMENTAL/NOT YET LIVE-VERIFIED:** rather than
-run the memdiff process first, tried the existing struct+0xb0 lead directly (user's
-explicit call, prioritizing speed over certainty). `InjectControllerSprint()` in
-`analog_input_hooks.cpp` writes a byte at `0x00A98B88` (per-player struct base
-`0x00A98AD8` + `0xb0`) to 1 while left stick click (L3) is held, 0 otherwise — this is
-the flag `FUN_0057d430` reads to gate its extra forward/right movement summation pass.
-Bound to L3 per user request (console reference table above says L3 = Sprint by
-default, so this also matches the intended control scheme, not just a free slot).
-**Needs live playtest to confirm or retract** — if holding L3 while moving forward
-doesn't visibly increase speed / trigger sprint animation/stamina, this flag is likely a
-downstream reflection of some other state (same trap the Prone bit-forcing hit), and
-Sprint should get the same live memdiff treatment ADS got instead of more guessing.
+**First attempt (struct+0xb0), CONFIRMED WRONG live ("SPRINT NOT WORKING", 2026-07-14).**
+Decompiling `FUN_0057d430` explained why: the flag at `0x00A98B88` (struct base
+`0x00A98AD8` + `0xb0`) genuinely does gate an extra forward/right movement summation
+pass, but that pass reuses the real keyboard `+forward`/`+back` hold-time helpers
+(`FUN_0057d250`/`FUN_007380e0`). Our movement hook writes `forwardmove`/`rightmove` as
+raw bytes instead of driving real kbuttons, so those helpers always return 0 for us --
+the flag was gating a summation of zero. Right mechanism, wrong layer, same class of trap
+Prone and ADS both hit before being solved properly.
+
+**Real mechanism CONFIRMED (2026-07-14), found via string-xref tracing, not memdiff:**
+extracted ASCII strings from `iw5sp.exe` directly (no `strings` binary in this shell's
+PATH -- used a small Python one-liner instead) and found real GSC-exposed cvars
+`player_sprintSpeedScale`, `player_sprintUnlimited`, `perk_sprintMultiplier`, etc.
+`FUN_00494310` turned out to be a giant `Dvar_Register*`-style cvar-registration dump
+(not a GSC accessor); `player_sprintSpeedScale` is registered there with its dvar_t*
+stored in global `DAT_01d397e4`. Tracing *reads* of that global (`DescribeRefs.java`)
+led to the real consumer:
+
+- `FUN_00643870(int* param_1)`: `iVar2 = *param_1; uVar7 = *(uint*)(iVar2+0xc);` --
+  `if ((uVar7 & 0x4000) != 0) { local_8 = *(float*)(DAT_01d397e4 + 0xc); local_c = local_8 * local_c; }`
+  -- bit `0x4000` of a flags dword at struct offset `+0xc` gates whether
+  `player_sprintSpeedScale` gets multiplied into movement speed. This is a genuine
+  `pm_flags`-style bit on a live playerState-like struct, **not** a heap struct we'd need
+  to locate and hardcode.
+- Traced up the call chain: `FUN_00643870` ← `FUN_00643ce0` ← `FUN_00644ed0`. All three
+  pass the *same* pointer (`param_1`) straight through; `FUN_00644ed0(int* param_1)` is
+  the real Pmove-equivalent top-level entry (a big switch on move-type: normal/water/
+  ladder/etc, matching classic Quake3 `pmove_state_t` structure and flag usage
+  throughout).
+- Confirmed calling convention via raw disasm of `FUN_00644ed0`'s prologue: `SUB ESP,0x90`
+  then `PUSH EBX` then `MOV EBX,[ESP+0x98]` -- relative to the function's *raw* entry
+  (before its own prologue runs, i.e. exactly when a MinHook detour fires), that's
+  `[ESP+0x98] - 0x94 = [ESP+0x04]`, a plain single stack argument. `*param_1` dereferences
+  to the actual struct; `+0xc` is the flags dword; bit `0x4000` is sprint.
+
+**Fix implemented (2026-07-14):** removed the disproven `struct+0xb0` write entirely.
+`InjectControllerSprint()` now just polls L3 each frame into a `g_sprintHeld` bool. A new
+hook on `FUN_00644ed0` (`Hook_00644ed0` in `analog_input_hooks.cpp`) grabs the live
+`param_1` straight off the stack every call (no stored/hardcoded data address — same
+live-pointer-capture pattern already used for `cmd`/ESI in the `FUN_0057de60` hook),
+dereferences it, and sets/clears pm_flags bit `0x4000` on the live struct to match
+`g_sprintHeld`. **Live-verify next**: hold L3 while moving forward in Survival and
+confirm real speed increase / sprint animation / stamina depletion.
 
 **ADS must be true hold-to-aim, not toggle (user requirement, 2026-07-14):** PC
 keyboard/mouse ADS binding on this game may default to (or support) toggle-style aim,

@@ -333,26 +333,33 @@ extern "C" void __cdecl InjectControllerAds()
     }
 }
 
-// ---- Sprint: left stick click (L3) -> EXPERIMENTAL, unconfirmed lead -------------
+// ---- Sprint: left stick click (L3) -> real pm_flags bit via a Pmove-entry hook ---
 //
-// NOT YET LIVE-VERIFIED (2026-07-14). `+breath_sprint`'s real kbutton/bit was never
-// pinned down the way ADS was -- the earlier table-order-correlation guess (bit 0x4)
-// was retracted after live testing showed it's actually Melee (see re_notes/iw5sp.md,
-// the `0x4` retraction). The only remaining lead is a flag at per-player struct offset
-// +0xb0 (base 0x00A98AD8, player 0 for SP -- same struct/stride as the kbutton array
-// and as the ADS kbuttons at +0xB4/+0x1E0, so +0xb0 lands at 0x00A98B88, four bytes
-// before kAdsKbutton1) that FUN_0057d430 (the movement summer) reads to gate an *extra*
-// forward/right movement summation pass reusing the +forward/+back hold-time helpers --
-// plausibly "is currently sprinting," but re_notes is explicit this is a guess, not a
-// finding, and could just as easily be a downstream reflection of some other state we'd
-// need to drive instead (same class of trap the Prone bit-forcing hit).
+// FIRST ATTEMPT (struct+0xb0, 2026-07-14) confirmed WRONG by live playtest ("SPRINT NOT
+// WORKING") and then confirmed WHY via decompile: FUN_0057d430 does read that flag, but
+// only to gate an EXTRA forward/right movement summation that reuses the real keyboard
+// +forward/+back hold-time helpers (FUN_0057d250/FUN_007380e0) -- since our movement hook
+// writes forwardmove/rightmove as raw bytes instead of driving real kbuttons, those
+// helpers always return 0 for us, so the flag gated a summation of zero. Right mechanism
+// existed, wrong layer -- same trap Prone and ADS both hit before being solved properly.
 //
-// User explicitly chose to try this lead directly rather than run the ADS-style live
-// memdiff process first (2026-07-14) -- treat this as a first attempt to be confirmed
-// or retracted by real playtest, not a shipped/production-ready feature yet.
+// REAL MECHANISM (found 2026-07-14 via string xref -> dvar -> read-site tracing, not
+// memdiff): the GSC-exposed dvar `player_sprintSpeedScale` (registered in FUN_00494310,
+// pointer stored at DAT_01d397e4) is applied in FUN_00643870, gated by
+// `*(uint*)(iVar2+0xc) & 0x4000` where iVar2 is a live playerState-style struct pointer.
+// That same bit is read at the very top of the whole Pmove state machine,
+// FUN_00644ed0(int* param_1) -- confirmed via disasm that param_1 is a plain stack arg
+// (raw entry: [ESP+4], matching Ghidra's decompile of the prologue's
+// `MOV EBX,[ESP+0x98]` after `SUB ESP,0x90`+`PUSH EBX`), and `*param_1` dereferences to
+// the actual struct whose +0xc dword is pm_flags. This is read fresh from a register at
+// every real call, so we hook FUN_00644ed0's entry and force/clear bit 0x4000 on the
+// LIVE pointer each time -- no stored/hardcoded data address at all, matching the
+// project's live-pointer-capture pattern already used for `cmd` in FUN_0057de60.
 namespace {
 constexpr unsigned short kXI_LEFT_THUMB = 0x0040;
-volatile uint8_t* const kSprintFlag = reinterpret_cast<volatile uint8_t*>(0x00A98B88);
+constexpr uint32_t kPmFlagSprint = 0x4000u;
+bool g_sprintHeld = false;
+void* g_orig_00644ed0 = nullptr;
 } // namespace
 
 extern "C" void __cdecl InjectControllerSprint()
@@ -361,7 +368,40 @@ extern "C" void __cdecl InjectControllerSprint()
     unsigned char leftTrigger, rightTrigger;
     if (!Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger)) return;
 
-    *kSprintFlag = (buttons & kXI_LEFT_THUMB) ? 1 : 0;
+    g_sprintHeld = (buttons & kXI_LEFT_THUMB) != 0;
+}
+
+// Called from Hook_00644ed0 with the live `param_1` (the pml/movement-locals pointer)
+// pulled straight off the stack -- see the comment above for how that address was
+// confirmed. Forces or clears the real sprint pm_flags bit every Pmove tick to match our
+// polled controller state, same as a real held/released key would.
+extern "C" void __cdecl InjectControllerSprintPmFlags(uint32_t pmlPtr)
+{
+    if (!pmlPtr) return;
+    uint32_t ps = *reinterpret_cast<uint32_t*>(pmlPtr);
+    if (!ps) return;
+    uint32_t* flags = reinterpret_cast<uint32_t*>(ps + 0xc);
+    if (g_sprintHeld) {
+        *flags |= kPmFlagSprint;
+    } else {
+        *flags &= ~kPmFlagSprint;
+    }
+}
+
+// Pure pre-hook, same shape as Hook_0057de60: grab the live stack argument, call our
+// injector, then tail-jump into the untouched original. pushad shifts the stack by
+// 0x20 (8 pushed registers), so the original [ESP+4] argument is now at [ESP+0x24].
+__declspec(naked) void Hook_00644ed0()
+{
+    __asm {
+        pushad
+        mov eax, dword ptr [esp + 0x24]
+        push eax
+        call InjectControllerSprintPmFlags
+        add esp, 4
+        popad
+        jmp dword ptr [g_orig_00644ed0]
+    }
 }
 
 // ---- Look: right stick -> the pitch/yaw angle-delta accumulator directly -------
@@ -481,4 +521,7 @@ void InstallAnalogInputHooks()
     MH_Initialize();
     MH_STATUS s2 = MH_CreateHook(reinterpret_cast<LPVOID>(0x0057de60), &Hook_0057de60, &g_orig_0057de60);
     if (s2 == MH_OK) MH_EnableHook(reinterpret_cast<LPVOID>(0x0057de60));
+
+    MH_STATUS s3 = MH_CreateHook(reinterpret_cast<LPVOID>(0x00644ed0), &Hook_00644ed0, &g_orig_00644ed0);
+    if (s3 == MH_OK) MH_EnableHook(reinterpret_cast<LPVOID>(0x00644ed0));
 }
