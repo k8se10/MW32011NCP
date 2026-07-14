@@ -55,63 +55,62 @@ extern "C" void __cdecl InjectControllerMovement(unsigned char* cmd)
     cmd[0x1d] = static_cast<unsigned char>(ClampToSByte(curRight + addRight));
 }
 
-// ---- Buttons: NATIVE raw-bit diagnostic pass (task #10, in progress 2026-07-14) --
+// ---- Buttons: FINAL native mapping (task #10), confirmed against real hardware -----
 //
-// A keybd_event/mouse_event-based synthetic-key approach was tried and REJECTED --
-// user wants true native in-engine calls, not OS-level input emulation, matching the
-// same principle already applied to movement/look.
+// A keybd_event/mouse_event-based synthetic-key approach was tried and REJECTED early
+// on -- this writes DIRECTLY to usercmd_t.buttons (offset +4), fully native, no OS-level
+// input emulation at all.
 //
-// Real bind data (players2/config.cfg, genuine Infinity Ward default binds) confirmed
-// which actions are HELD kbuttons already present in the known 32-entry kbutton name
-// table (+gostand/+activate/+frag/+smoke/+breath_sprint/+melee_zoom/+actionslot 1-4/
-// +scores/+toggleads_throw/+attack/+reload) vs. ONE-SHOT console commands not in that
-// table at all (togglemenu/weapnext/toggleprone) -- see re_notes/iw5sp.md for the full
-// table. X (F key = "+activate") is confirmed context-sensitive on console too
-// (reload when ammo allows, interact/use otherwise), so it covers both without a
-// separate reload input.
+// This replaces the earlier raw-bit diagnostic pass (arbitrary XInput-button-to-bit
+// test assignment) now that every bit below has a real, user-confirmed identity from
+// live playtesting -- see re_notes/iw5sp.md for the full investigation. Mapped to
+// standard Xbox-convention CoD controls (RT=fire, LT=ADS, bumpers=grenades):
+//   RT (analog trigger, not a digital XInput button) -> Fire
+//   A -> Jump (moved off Start)
+//   B -> Melee (confirmed "100% knife" live, 2026-07-14 -- an earlier struct-offset-
+//        correlation guess briefly mislabeled this as Sprint; that theory was retracted)
+//   X -> Use/Reload (+usereload -- context-sensitive by the game's own design, same
+//        bit covers both, confirmed working)
+//   LB -> Tactical (smoke) -- moved here off D-pad Left
+//   RB -> Lethal (frag) -- moved here off D-pad Down
+//   Back -> Crouch (confirmed live)
+//   LT (analog trigger) -> ADS -- NOT handled here, see InjectControllerAds (needs the
+//        real KeyDown/KeyUp kbutton calls, not a simple bit-OR)
 //
-// This diagnostic writes DIRECTLY to usercmd_t.buttons (offset +4) -- fully native,
-// no OS-level input emulation at all -- one XInput input per known bit, purely so a
-// single self-driven test pass (virtual controller + screenshots, not requiring the
-// user's time) can identify each bit's real action via its visual tell (muzzle
-// flash=fire, stance change=crouch/prone, etc.) before committing to a final mapping.
+// NOT YET IMPLEMENTED (left unmapped, not guessed at):
+//   Y -> should be weapnext (one-shot command, not a held kbutton -- the console-
+//        command-execution function for one-shot commands like weapnext/togglemenu/
+//        toggleprone hasn't been located yet, separate investigation from this bit
+//        mapping)
+//   Start -> should be pause/togglemenu (same one-shot-command blocker as Y)
+//   D-pad (all four directions), both thumbstick clicks -> left unassigned. The
+//        underlying bits (+actionslot 1-4 per the kbutton table) are still uncertain/
+//        largely untested individually -- not part of this pass, revisit later.
 namespace {
-constexpr unsigned short kXI_DPAD_UP = 0x0001;
-constexpr unsigned short kXI_DPAD_DOWN = 0x0002;
-constexpr unsigned short kXI_DPAD_LEFT = 0x0004;
-constexpr unsigned short kXI_DPAD_RIGHT = 0x0008;
-constexpr unsigned short kXI_START = 0x0010;
 constexpr unsigned short kXI_BACK = 0x0020;
-constexpr unsigned short kXI_LEFT_THUMB = 0x0040;
-constexpr unsigned short kXI_LEFT_SHOULDER = 0x0100;
-constexpr unsigned short kXI_RIGHT_SHOULDER = 0x0200;
 constexpr unsigned short kXI_A = 0x1000;
 constexpr unsigned short kXI_B = 0x2000;
 constexpr unsigned short kXI_X = 0x4000;
-constexpr unsigned short kXI_Y = 0x8000;
+constexpr unsigned short kXI_LEFT_SHOULDER = 0x0100;
+constexpr unsigned short kXI_RIGHT_SHOULDER = 0x0200;
+constexpr unsigned char kTriggerThresholdFire = 30; // XInput's documented trigger threshold
 }
 
-extern "C" void __cdecl InjectControllerButtonsDiagnostic(unsigned char* cmd)
+extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
 {
     if (!cmd) return;
     unsigned short xiButtons;
-    unsigned char lt, rt;
-    if (!Controller_GetRawButtonsAndTriggers(xiButtons, lt, rt)) return;
+    unsigned char leftTrigger, rightTrigger;
+    if (!Controller_GetRawButtonsAndTriggers(xiButtons, leftTrigger, rightTrigger)) return;
 
     uint32_t out = 0;
-    if (xiButtons & kXI_A) out |= 0x1;
-    if (xiButtons & kXI_B) out |= 0x4;
-    if (xiButtons & kXI_X) out |= 0x8;
-    if (xiButtons & kXI_Y) out |= 0x10;
-    if (xiButtons & kXI_LEFT_SHOULDER) out |= 0x20;
-    if (xiButtons & kXI_RIGHT_SHOULDER) out |= 0x100;
-    if (xiButtons & kXI_BACK) out |= 0x200;
-    if (xiButtons & kXI_START) out |= 0x400;
-    if (xiButtons & kXI_DPAD_UP) out |= 0x2000;
-    if (xiButtons & kXI_DPAD_DOWN) out |= 0x4000;
-    if (xiButtons & kXI_DPAD_LEFT) out |= 0x8000;
-    if (xiButtons & kXI_DPAD_RIGHT) out |= 0x40000;
-    if (xiButtons & kXI_LEFT_THUMB) out |= 0x80000;
+    if (rightTrigger >= kTriggerThresholdFire) out |= 0x1;      // Fire (+attack)
+    if (xiButtons & kXI_B) out |= 0x4;                          // Melee
+    if (xiButtons & kXI_X) out |= 0x8;                          // Use/Reload (+usereload)
+    if (xiButtons & kXI_LEFT_SHOULDER) out |= 0x8000;           // Tactical (smoke)
+    if (xiButtons & kXI_RIGHT_SHOULDER) out |= 0x4000;          // Lethal (frag)
+    if (xiButtons & kXI_BACK) out |= 0x200;                     // Crouch
+    if (xiButtons & kXI_A) out |= 0x400;                        // Jump (+gostand)
 
     if (out == 0) return;
     uint32_t* buttonsField = reinterpret_cast<uint32_t*>(cmd + 4);
@@ -313,7 +312,7 @@ extern "C" void __cdecl InjectAllControllerInput(unsigned char* cmd)
     InjectControllerLookAngles();
     if (cmd) {
         InjectControllerMovement(cmd);
-        InjectControllerButtonsDiagnostic(cmd);
+        InjectControllerButtons(cmd);
     }
     InjectControllerAds();
 }
