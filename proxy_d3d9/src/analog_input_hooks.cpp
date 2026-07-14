@@ -329,10 +329,46 @@ bool IsRealMenuOpen()
 
     return menuPtr != 0 && state != 0;
 }
+
+// DIAGNOSTIC RESULT (2026-07-14): proxy_d3d9.log showed the menu-state field logged
+// exactly ONCE for the whole session, holding at state=1 the entire time -- meaning
+// this hook barely ran during the actual "cursor still visible" window, and the field
+// isn't oscillating the way a real menu-open/close signal would. That theory isn't the
+// active mechanism for what the user is now describing ("still requires that initial
+// focus"), which sounds like a plain Windows input-focus issue: a mouse/keyboard player
+// naturally focuses the game window with their first click, but a controller-only
+// player never generates any window-focus-triggering input at all. Ensuring OS
+// foreground focus ourselves is a UI/window-management call, not input emulation --
+// doesn't touch keyboard/mouse/game state at all, just which window the OS routes
+// input to, so it's not in tension with the native-only rule.
+BOOL CALLBACK FindOwnWindowProc(HWND hwnd, LPARAM lParam)
+{
+    DWORD winPid = 0;
+    GetWindowThreadProcessId(hwnd, &winPid);
+    if (winPid == GetCurrentProcessId() && IsWindowVisible(hwnd) && GetWindow(hwnd, GW_OWNER) == nullptr) {
+        *reinterpret_cast<HWND*>(lParam) = hwnd;
+        return FALSE;
+    }
+    return TRUE;
+}
+
+void EnsureGameWindowFocused()
+{
+    static HWND s_gameHwnd = nullptr;
+    if (!s_gameHwnd) {
+        EnumWindows(FindOwnWindowProc, reinterpret_cast<LPARAM>(&s_gameHwnd));
+        if (!s_gameHwnd) return;
+    }
+    if (GetForegroundWindow() != s_gameHwnd) {
+        SetForegroundWindow(s_gameHwnd);
+    }
+}
 } // namespace
 
 extern "C" void __cdecl InjectAllControllerInput(unsigned char* cmd)
 {
+    EnsureGameWindowFocused();
+
     if (!IsRealMenuOpen()) {
         *reinterpret_cast<volatile uint32_t*>(0x00B36210) &= ~0x10u;
     }
