@@ -11,6 +11,21 @@ engine) — analog movement, look, and buttons driven directly through the game'
 engine calls, not keyboard/mouse emulation. See `re_notes/` for the full reverse-
 engineering writeup.
 
+## Why native, not an emulator
+
+Every other "controller support" option for this game works by faking keyboard/mouse
+input (synthetic key taps, injected mouse deltas) underneath a mapper tool. That adds
+a real, measurable translation layer between the stick and the game: poll → convert to
+a key/mouse event → OS input queue → the game's own keyboard/mouse-delta processing.
+
+This mod instead writes straight into the engine's real per-frame input path —
+`usercmd_t.forwardmove/rightmove`/`.buttons` and the raw pitch/yaw angle accumulators —
+from inside the game's own process, on the game's own frame tick. There is no OS-level
+input event, no intermediate queue, and no keyboard/mouse pipeline to pass through at
+all. That's a full layer of translation and buffering removed, which is the mod's core
+advantage: input feel and latency that matches (not approximates) native console analog
+input, not a keyboard/mouse emulation layer with a controller icon on it.
+
 ## Known limitations
 
 - Controller menu/UI navigation (D-pad/stick item selection, button-glyph prompts, a
