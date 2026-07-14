@@ -839,8 +839,7 @@ already-confirmed `active` field offset exactly — strong confirmation this is 
 **Fix:** `InjectControllerReload()` calls the real `CallKbuttonDown`/`CallKbuttonUp`
 (same engine functions used for ADS) on kbutton `0x00A98C68`, edge-triggered on X,
 using a distinct bind index (15) from ADS's (13). Kept alongside the existing `0x8`
-(Interact) bit-OR. **Needs live playtest** to confirm X now reloads correctly (with and
-without a nearby interactable).
+(Interact) bit-OR. **CONFIRMED WORKING live by the user (2026-07-15).**
 
 **ADS must be true hold-to-aim, not toggle (user requirement, 2026-07-14):** PC
 keyboard/mouse ADS binding on this game may default to (or support) toggle-style aim,
