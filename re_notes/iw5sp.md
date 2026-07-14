@@ -370,6 +370,44 @@ revisit once task #6's options screen exists to make this adjustable rather than
 hardcoded constant. Buttons (fire/jump/reload/ADS/sprint/etc.) are not mapped at all yet
 — next concrete step.
 
+## Official control scheme reference (2026-07-14, from `mw3 manual.pdf` in game root)
+
+User supplied the official retail manual (PS3 edition — file had ~32 bytes of stray
+header junk before the real `%PDF-` start, stripped before reading). Its "Game
+Controls" page (p.3) gives the full DualShock 3 button→action mapping. Doesn't give
+raw `usercmd_t.buttons` bit values (still needs empirical confirmation, see task #10),
+but gives the authoritative **action list and control scheme** to map against — this
+is the same for the 360/PC-equivalent layout, just different button names. PS3→Xbox
+button correspondence is the standard universal positional mapping (Triangle=Y,
+Circle=B, Cross=A, Square=X, L1=LB, R1=RB, L2=LT, R2=RT, L3/R3 = stick clicks):
+
+| Action | PS3 button | Xbox/XInput equivalent |
+|---|---|---|
+| Fire | R1 | RB |
+| ADS (aim down sights) | L1 | LB |
+| Throw Lethal | R2 | RT |
+| Throw Tactical | L2 | LT |
+| Change Weapon | Triangle | Y |
+| Change Stance | Circle | B |
+| Jump | Cross | A |
+| Interact/Use | Square | X |
+| Move | Left stick | Left stick |
+| Sprint | L3 (stick click) | Left stick click |
+| Aim/Look | Right stick | Right stick |
+| Melee Attack | R3 (stick click) | Right stick click |
+| Pause | Start | Start |
+| Scoreboard (MP only) | Select | Back |
+| Pointstreak cycle / equip | D-Pad up/down cycle, right to equip | D-Pad |
+
+**Caveat:** PS3 and Xbox 360 CoD titles from this era sometimes shipped with
+DIFFERENT default trigger/bumper assignments for fire/ADS (PS3 often defaulted to
+bumpers for fire/aim since early DualShock 3 triggers weren't as precise; Xbox 360
+CoD's actual shipped default *may* have used RT/LT instead of RB/LB for fire/ADS —
+not confirmed either way). Used the straightforward positional translation above as
+the implementation starting point since it's the only concretely documented mapping
+available; flag and swap RT/RB (and LT/LB) if real controller testing shows fire/ADS
+feel like they're on the wrong input.
+
 ### Remaining open items (lower priority, not blocking task #5 start)
 - Purpose of `usercmd_t+0x1e`/`+0x1f` (movement bytes #3/#4) and `+0x24`..`+0x34` (5 int fields) not
   yet identified — likely upmove/lean or vehicle-related, not needed for basic ground movement/look.

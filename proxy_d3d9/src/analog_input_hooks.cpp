@@ -131,11 +131,53 @@ __declspec(naked) void Hook_0057de60()
     }
 }
 
+// ---- Force-clear the "input not engaged" gate every frame -----------------------
+//
+// Confirmed 2026-07-14 (real playtest, twice): the game requires a real mouse click
+// before it starts processing movement/buttons at all -- not just once at launch, but
+// again every time a level finishes loading (even after going through the front-end
+// menus normally first). A synthetic click (SetCursorPos + mouse_event from within our
+// own DLL) did not reliably reproduce whatever a genuine click does, so faking the
+// click was abandoned in favor of removing the gate itself.
+//
+// FUN_0057e480 (the per-frame usercmd orchestrator) early-returns into a degraded
+// melee-charge-only path whenever bit 0x80000 is set in a state field at 0x00B37444
+// (see re_notes/iw5sp.md's pipeline writeup) -- skipping FUN_0057dc90 (buttons) and
+// FUN_0057d430 (movement) entirely. This is almost certainly the actual "not engaged"
+// gate a real click clears. Rather than reproduce whatever sets/clears it, just force
+// it clear every frame before the game's own check runs.
+//
+// CAVEAT: 0x00B37444 is very likely a general state bitfield, not single-purpose --
+// this bit might also correlate with legitimate pause-menu/cutscene state. Forcing it
+// clear could theoretically let movement continue during a cutscene or ESC-pause.
+// Not yet observed to cause a problem, but flag this if pause/cutscene behavior looks
+// wrong -- the fix then is finding this bit's real setter and being more selective
+// about when we clear it, not clearing it unconditionally like this.
+namespace {
+void* g_orig_0057e480 = nullptr;
+}
+
+__declspec(naked) void Hook_0057e480()
+{
+    __asm {
+        // MSVC inline asm can't take a bare literal as a memory operand directly --
+        // load the absolute address into a register first, then dereference through
+        // it. Preserve eax since we don't know FUN_0057e480's own use of it.
+        push eax
+        mov eax, 0x00B37444
+        and dword ptr [eax], 0xFFF7FFFF   // ~0x80000, clear the gate bit
+        pop eax
+        jmp dword ptr [g_orig_0057e480]
+    }
+}
+
 void InstallAnalogInputHooks()
 {
     MH_Initialize();
     MH_STATUS s1 = MH_CreateHook(reinterpret_cast<LPVOID>(0x0057d430), &Hook_0057d430, &g_orig_0057d430);
     MH_STATUS s2 = MH_CreateHook(reinterpret_cast<LPVOID>(0x0057de60), &Hook_0057de60, &g_orig_0057de60);
+    MH_STATUS s3 = MH_CreateHook(reinterpret_cast<LPVOID>(0x0057e480), &Hook_0057e480, &g_orig_0057e480);
     if (s1 == MH_OK) MH_EnableHook(reinterpret_cast<LPVOID>(0x0057d430));
     if (s2 == MH_OK) MH_EnableHook(reinterpret_cast<LPVOID>(0x0057de60));
+    if (s3 == MH_OK) MH_EnableHook(reinterpret_cast<LPVOID>(0x0057e480));
 }
