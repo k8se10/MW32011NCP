@@ -150,14 +150,26 @@ constexpr uintptr_t kFrameTimeMsAddr = 0x0176B544;
 constexpr int kAdsBindIndexDown = 13;
 constexpr int kAdsBindIndexUp = 14;
 
+// FUN_0057d1c0's real signature (confirmed via decompile, 2026-07-14): EAX=kbutton_t*
+// (implicit self), ECX=bindIndex, and a THIRD arg -- current time in ms -- passed on
+// the stack (PUSH before the call, caller cleans up after -- confirmed by the
+// "PUSH EDI ... CALL ... ADD ESP,0x8" pattern around FUN_00438710's two calls to this
+// function). The first implementation missed this stack argument entirely, leaving
+// downtime (in_EAX[2] inside the callee) set to whatever garbage was on the stack --
+// root cause of the "activates once then stays stuck" bug.
 void CallKbuttonDown(uintptr_t kbutton, int bindIndex)
 {
+    uint32_t timeMs = *reinterpret_cast<volatile uint32_t*>(kFrameTimeMsAddr);
     constexpr uintptr_t kFn = 0x0057d1c0;
     __asm {
+        push ebx
         mov eax, kbutton
         mov ecx, bindIndex
-        mov edx, kFn
-        call edx
+        mov ebx, kFn
+        push timeMs
+        call ebx
+        add esp, 4
+        pop ebx
     }
 }
 

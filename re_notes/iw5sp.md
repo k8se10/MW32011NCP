@@ -631,9 +631,33 @@ the dispatcher case above) — this goes through the same code path a real `+tog
 keypress would, so hold-time/msec bookkeeping stays correct automatically instead of us
 having to reverse-engineer and replicate it by hand. Matches the project's "call real
 engine functions, don't synthesize state" principle better than a raw memory write would.
-Calling convention for `FUN_0057d1c0`/`FUN_0057d200` not yet confirmed live (EAX=kbutton
-pointer via LEA, ECX=EBX which is likely a millisecond timestamp — needs live debugger
-confirmation before hooking, per CLAUDE.md's "verify signatures live" rule).
+**Calling convention CONFIRMED via decompile (2026-07-14), after a real bug from the
+first guess.** First implementation only set `EAX`/`ECX` for `FUN_0057d1c0` (KeyDown) and
+was missing a third argument passed on the stack — result: ADS "activated once then got
+stuck / stopped responding," confirmed live by the user. Decompiling both functions
+(`DecompileFuncs.java`) revealed the real classic-Quake3 `kbutton_t` layout and exact
+signatures:
+```c
+struct kbutton_t {
+    int down[2];      // +0x00, +0x04 -- up to two key-identifiers currently holding this
+    int downtime;      // +0x08
+    int msec;           // +0x0c
+    char active;         // +0x10
+    char wasPressed;      // +0x11 (latch, cleared on read elsewhere)
+};
+
+// EAX = kbutton_t* (implicit, not a numbered param), ECX = key identifier, THIRD arg
+// (time in ms) is pushed on the stack before the call, caller cleans up after --
+// confirmed by "PUSH EDI ... CALL 0x57d1c0 ... ADD ESP,0x8" bracketing both calls in
+// FUN_00438710's case block.
+void KeyDown(int keyId /*ECX*/, int timeMs /*stack*/);
+
+// EAX = kbutton_t*, ECX = time in ms, EDX = key identifier -- both register args, no
+// stack arg (this one WAS correct in the first implementation).
+void KeyUp(int timeMs /*ECX*/, int keyId /*EDX*/);
+```
+Fixed in `analog_input_hooks.cpp`'s `CallKbuttonDown` to push the timestamp on the stack
+before the call, matching the real signature. `CallKbuttonUp` was already correct.
 
 Sprint (`+breath_sprint`) remains unresolved — the same manual live-diff methodology
 that found ADS should work for it too, just watching Shift/sprint-key transitions instead
