@@ -502,13 +502,142 @@ call the engine's own command-execution function (a `Cbuf_AddText`/
 press-edge — not yet located, separate investigation from the kbutton-address work.
 
 **Next RE steps for task #10:**
-1. Correlate kbutton table position/order against `FUN_0057dc90`'s disassembly order
-   to resolve each named held-bind's real memory address.
+1. ~~Correlate kbutton table position/order against `FUN_0057dc90`'s disassembly order
+   to resolve each named held-bind's real memory address.~~ DONE, see below (2026-07-14).
 2. Find the console-command-execution function for the one-shot commands
    (`toggleprone`/`weapnext`/`togglemenu`).
 3. `+reload` (R key) doesn't have a controller input assigned yet in the user's config
    — needs a spot (D-Pad is full; consider whether X should be reload instead of use,
    or find another free input).
+
+### Kbutton table position ↔ `usercmd.buttons` bit correlation — CONFIRMED (2026-07-14)
+
+Resolved the "second field" of each 8-byte table entry (`0092a014` region): it is **not**
+a `kbutton_t*` and **not** a handler function pointer — it's a pointer to the matching
+`-<bindname>` string (e.g. `+attack`'s entry is `{"+attack"*, "-attack"*}`). Both strings
+have exactly one code reference each (the table itself), meaning the table is purely a
+registration list consumed generically by whatever walks it — individual binds are
+**not** looked up by name/string anywhere else in the binary.
+
+The real per-bind runtime state lives in a **per-player context struct** at
+`playerIndex*0x230 + 0x00A98AD8` (player 0 for SP ⇒ bare `0x00A98AD8`). Found via raw
+disassembly (`DumpDisasm.java`) of `FUN_0057dc90` (buttons-summer): it computes exactly
+this base (`LEA EAX,[EAX*0x230 + 0xa98ad8]`, `EAX`=player index) then tests a **10-entry
+contiguous sub-array at struct offset `0x128`, stride `0x14` (20) bytes**, each entry
+being a `{down:byte, pressedLatch:byte}` pair (latch cleared after read — classic
+edge-triggered pattern, matches the "kbutton state storage" note above). Confirmed the
+array's slot order **exactly matches the 32-entry name table's position order** (not
+just plausible — directly verified against known-good empirical results, see below).
+
+**Bit ↔ struct-offset ↔ table-index ↔ bind name (all confirmed together):**
+
+| usercmd.buttons bit | struct offset | table idx | bind name | empirical real action |
+|---|---|---|---|---|
+| `0x1` | `+0x128` | 0 | `+attack` | Fire (confirmed exact match) |
+| `0x2000` | `+0x13c` | 1 | `+melee` | dead/no visible effect (real melee is `+melee_zoom`, not this) |
+| `0x4000` | `+0x150` | 2 | `+frag` | Frag grenade (confirmed exact match) |
+| `0x8000` | `+0x164` | 3 | `+smoke` | Tactical/smoke (confirmed exact match) |
+| `0x4` | `+0x178` | 4 | `+breath_sprint` (per table-order correlation) | **RETRACTED** — user confirmed live, 100% certain: bit `0x4` is really Melee, not sprint. This directly contradicts the "array slot order == name-table order" assumption at idx 4 (idx 0/2/3 matching `+attack`/`+frag`/`+smoke` was likely coincidental — those are simply the first few, most universally-needed actions, not proof of a strict 1:1 order). **The table-order-correlation technique is unreliable beyond idx ~3 and should not be trusted without empirical confirmation.** Sprint's real bit/address is still unknown; `struct+0xb0` (the derived "is sprinting" locomotion flag found in `FUN_0057d430`, see below) is a separate, still-unconfirmed lead. |
+| `0x8` | `+0x18c` | 5 | `+usereload` | Use (bind name literally means combined use/reload — explains why it's context-sensitive) |
+| `0x10` | `+0x1a0` | 6 | `+speed_throw` | logged as "Reload" empirically — name mismatch not yet reconciled, may be a quick/cook-throw variant whose visual tell was misread during manual testing |
+| `0x20` | `+0x1b4` | 7 | `+actionslot 1` | dead in test — plausibly just contextual (night-vision goggles bind, no visible effect without NVGs equipped) |
+| `0x100` | `+0x1c8` | 8 | `+actionslot 2` | logged as "Prone/holdstate" — plausible reinterpretation: this is likely opening the inventory/killstreak wheel (a hold-to-browse stance), not literal prone |
+| `0x200` | `+0x1dc` | 9 | `+actionslot 3` | logged as "Crouch" — real bind is weapon-attachment select; needs re-test |
+| `0x2` | `+0x204` | 11 | `+stance` | **newly found, never tested** — no XInput button was ever mapped to raw bit `0x2` in the diagnostic pass. Needs a fresh diagnostic build assigning an unused button to this bit and testing. |
+
+(Table idx 10, `+actionslot 4`, and idx 12, `+gostand`, were not observed being tested in
+`FUN_0057dc90`'s disassembly — `+gostand`/jump's real bit `0x400` and the `0xd8`/`0x100`/
+`0x218`/`0x1f0`-offset bits come from a separate, non-contiguous part of the same struct,
+see the raw disasm dump `iw5sp_0057dc90_disasm.txt` for the exact instructions.)
+
+**`FUN_0057d430` (movement summer) touches the same struct independently:**
+`LEA ESI,[ESI+0xa98ad8]`, same `playerIndex*0x230` scaling as `FUN_0057dc90` — confirms
+this is genuinely one shared per-player struct, not coincidence. It reads struct offset
+`0x204` (bit `0x2` in the table-order-correlation guess above — **name/identity not
+confirmed**, only that it's an untested bit worth trying) to gate a branch, and separately
+reads a flag at struct offset `0xb0` (not part of the `0x14`-stride array) that gates an
+*extra* forward/right movement summation pass reusing the same `+forward`/`+back`
+hold-time helpers — plausibly a client-side "is currently sprinting" locomotion flag, but
+**this is now an unconfirmed lead, not a finding** (per the `0x4` retraction above, don't
+trust struct-offset-to-bind-name correlation without a live test backing it).
+
+**ADS (`+toggleads_throw`, table idx 29) — ruled out of this struct entirely.** The
+uniform 10-entry array (offset `0x128`, stride `0x14`) cannot physically extend to idx 29
+— at that stride it would land at struct offset `0x36C`, past the `0x230`-byte per-player
+slot boundary (i.e. into the *next* player's data). Confirmed empirically too: a whole-binary
+scalar scan (`FindConstantRefs.java`, ~1.17M instructions) for both the raw base `0xa98ad8`
+and the fused address `0xa98e44` (`0xa98ad8+0x36C`) found no reference to the fused
+address inside any of the four usercmd-pipeline functions (`FUN_0057d430`, `FUN_0057d7e0`,
+`FUN_0057de60`, `FUN_0057dc90`) — the only hits on `0xa98e44` are in `FUN_0057e690`/
+`FUN_0057e710`, which are UI/config-side (a 256-entry, `0xd28`-stride keybind-config-row
+array — matches the already-documented `DAT_00a98e4c` UI-side detour above, not gameplay).
+This is a coincidental address collision, not a real lead — ADS's held-state is **not**
+part of this per-player kbutton array at all, same as `+mlook` (whose flag,
+`DAT_00a98bec`, is an individually-placed single-byte global elsewhere in the same larger
+per-player struct, handled by a dedicated case in the special-bind dispatcher
+`FUN_00438710`, not by array indexing). `FUN_00438710`'s ~77-case switch was checked for
+a similar dedicated single-flag write near `+toggleads_throw`'s or `+sprint`'s identity
+and found none obviously — either it's handled by the default/generic case (same
+mechanism as ordinary held binds, meaning it likely *does* have a scattered individual
+address somewhere, just not yet located), or it's consumed entirely outside the input-
+registration code, most plausibly inside the weapon-state machine that reads the
+ADS-sensitivity multiplier already found at `unaff_EBX+0x48` in `FUN_0057d740` (that
+`EBX` is a caller-supplied per-weapon/view context, not a global — tracing it means
+finding `FUN_0057d740`'s caller next, not more table work).
+
+**ADS found — CONFIRMED (2026-07-14), combining live differential testing + static
+verification.** Built `tools/memdiff/` (dev-only diagnostic, not part of the mod): a
+manual-mode tool that watches `GetAsyncKeyState(VK_RBUTTON)` and snapshots full process
+memory (~500-700 committed regions, ~400MB cap) on every real press/release edge the user
+makes in-game, then narrows to bytes that are consistently one value while ADS is held
+and consistently a different value while released. Across 24 real transitions (12 full
+press/release cycles), narrowed from ~11M initial diff bytes down to **10 stable
+candidates**, all reading `0x00` when released:
+
+| address | held value | notes |
+|---|---|---|
+| `0x00A98CB8` | `0xC9` (varies) | struct offset `+0x1E0` from the kbutton-context base `0xA98AD8` |
+| `0x00A98CC8` | `0x01` | struct offset `+0x1F0`, clean boolean |
+| `0x00A997B0` | `0x01` | clean boolean |
+| `0x00A997B4` | `0x01` | clean boolean, +4 from the above |
+| `0x0094D346` | `0x08` | |
+| `0x00A86B02` | `0x08` | part of a repeating array pattern also seen in earlier automated runs |
+| `0x00A86B1B` | `0x7F` | paired with the above, +0x19 offset |
+| `0x01CD942C` | `0x02` | different region entirely — plausibly a HUD/reticle-visibility flag |
+| `0x0094D346`, `0x003A7888` | varies | lower confidence, different regions |
+
+**Static confirmation on the strongest candidate:** whole-binary scalar scan
+(`FindConstantRefs.java`) for `0xA98CB8` found it referenced **inside
+`FUN_00438710`** — the exact special-bind dispatcher already confirmed to own `+mlook`'s
+dedicated flag (`DAT_00a98bec`). The specific case (disassembly around `004388d1`-
+`00438928`) updates **two** kbutton pointers together in the same case —
+`LEA EAX,[ESI+0xa98b8c]` then `LEA EAX,[ESI+0xa98cb8]`, each followed by
+`CALL 0x0057d1c0` (down-transition handler) or `CALL 0x0057d200` (up-transition
+handler) — i.e. **one physical bind driving two separate kbutton_t structs
+simultaneously**. This is exactly the shape you'd expect for `+toggleads_throw`, whose
+name literally means "toggle ADS **or** throw" (context-dependent on whether a grenade
+is primed) — a single bind that needs to feed two different downstream systems. The
+`0xA98CB8`/`0xA98CC8` pair (16 bytes apart) is consistent with one `kbutton_t` struct's
+two relevant fields (a classic Quake3-style `kbutton_t` is `down[2]`, `downtime`, `msec`,
+`active`, `wasPressed` — `0xA98CB8`'s varying byte value fits a hold-duration/`msec`-style
+field, `0xA98CC8`'s clean 0/1 fits `active`).
+
+**Recommended implementation path (not yet built):** rather than hand-writing raw bytes
+into this struct (fragile — the exact field layout/size isn't 100% pinned down), call the
+real engine functions the game itself uses: `FUN_0057d1c0(kbutton_ptr, time)` on the
+ADS-press edge and `FUN_0057d200(kbutton_ptr, time)` on the release edge, using
+`kbutton_ptr = playerContext + 0xCB8` (and likely also the paired `+0xB8C` kbutton, per
+the dispatcher case above) — this goes through the same code path a real `+toggleads_throw`
+keypress would, so hold-time/msec bookkeeping stays correct automatically instead of us
+having to reverse-engineer and replicate it by hand. Matches the project's "call real
+engine functions, don't synthesize state" principle better than a raw memory write would.
+Calling convention for `FUN_0057d1c0`/`FUN_0057d200` not yet confirmed live (EAX=kbutton
+pointer via LEA, ECX=EBX which is likely a millisecond timestamp — needs live debugger
+confirmation before hooking, per CLAUDE.md's "verify signatures live" rule).
+
+Sprint (`+breath_sprint`) remains unresolved — the same manual live-diff methodology
+that found ADS should work for it too, just watching Shift/sprint-key transitions instead
+of the right mouse button.
 
 **ADS must be true hold-to-aim, not toggle (user requirement, 2026-07-14):** PC
 keyboard/mouse ADS binding on this game may default to (or support) toggle-style aim,
