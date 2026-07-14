@@ -659,6 +659,21 @@ void KeyUp(int timeMs /*ECX*/, int keyId /*EDX*/);
 Fixed in `analog_input_hooks.cpp`'s `CallKbuttonDown` to push the timestamp on the stack
 before the call, matching the real signature. `CallKbuttonUp` was already correct.
 
+**Second bug, fixed same day:** down/up calls used different "key identifier" values (13
+for the down-case, 14 for the up-case -- the two separate jump-table dispatch indices for
+the `+`/`-toggleads_throw` command pair). `KeyUp` only clears a `down[]` slot if its
+`keyId` argument matches what `KeyDown` stored there, so 13 vs 14 never matched -- `KeyUp`
+silently no-op'd every time, confirmed live as "activates, can never be released." The
+dispatch index and the `down[]`-slot identifier are two different concepts that just
+happen to reuse the same `EBX` register value at the real call sites -- since we call
+`FUN_0057d1c0`/`FUN_0057d200` directly rather than through the real command dispatcher,
+both calls now use the same constant (13) so our own claim/release stay self-consistent.
+
+**ADS is now CONFIRMED WORKING (2026-07-14)** -- true hold-to-aim on the left trigger,
+clean release every cycle, verified live by the user across multiple hold/release
+cycles. Fully native: drives the real engine's own `KeyDown`/`KeyUp` kbutton handlers,
+no OS-level input emulation, no raw memory-state guessing.
+
 Sprint (`+breath_sprint`) remains unresolved — the same manual live-diff methodology
 that found ADS should work for it too, just watching Shift/sprint-key transitions instead
 of the right mouse button.
