@@ -134,6 +134,47 @@ bool GetByte(const Snapshot& snap, uintptr_t addr, uint8_t& out)
     return true;
 }
 
+// Pointer scan: given a candidate byte address whose VALUE correlates with a real
+// input toggle (found by the transition-narrowing loop above), this finds every
+// 4-byte-aligned dword anywhere in the snapshot that equals the BASE of the memory
+// region containing that address. For a moving heap allocation, any hit low enough to
+// be a static .data/.bss global (not another heap/stack address) is a candidate
+// "stable pointer to the block" -- dereferencing it at runtime gives the current heap
+// base without ever hardcoding the heap address itself.
+void PointerScanForCandidate(const Snapshot& snap, uintptr_t candidateAddr)
+{
+    const Region* target = FindRegion(snap, candidateAddr);
+    if (!target) {
+        printf("  (pointer scan: containing region not found for 0x%08zX)\n", candidateAddr);
+        return;
+    }
+    uintptr_t base = target->base;
+    printf("  Pointer-scanning for references to containing region base 0x%08zX (size 0x%zX)...\n",
+           base, target->size);
+
+    std::vector<uintptr_t> hits;
+    for (const auto& r : snap.regions) {
+        if (r.size < 4) continue;
+        size_t limit = r.size - 4;
+        for (size_t i = 0; i <= limit; i += 4) {
+            uint32_t v;
+            memcpy(&v, &r.data[i], 4);
+            if (v == static_cast<uint32_t>(base)) {
+                hits.push_back(r.base + i);
+            }
+        }
+    }
+
+    printf("  Found %zu reference(s):\n", hits.size());
+    for (uintptr_t h : hits) {
+        printf("    0x%08zX%s\n", h, h < 0x02000000 ? "  <-- low/static, likely dereferenceable from our own code" : "");
+    }
+    if (hits.empty()) {
+        printf("    (none -- base may not be stored as a raw pointer anywhere scannable,\n"
+               "     or it's reached via a multi-level chain not visible in one scan)\n");
+    }
+}
+
 constexpr uintptr_t kInLevelFlagAddr = 0x00A98ACC;
 
 bool IsInLevel(HANDLE proc)
@@ -269,6 +310,15 @@ int main(int argc, char** argv)
     if (candidates.empty()) {
         printf("  (none survived -- either too few transitions, or ADS state isn't at a\n"
                "   fixed address at all)\n");
+    } else {
+        printf("\n================ POINTER SCAN ================\n");
+        printf("Taking a fresh snapshot to scan for stable references to each candidate's\n"
+               "containing memory region (moving-heap-address -> static-pointer lookup)...\n");
+        Snapshot finalSnap = TakeSnapshot(proc);
+        for (const auto& c : candidates) {
+            printf("\nCandidate 0x%08zX:\n", c.addr);
+            PointerScanForCandidate(finalSnap, c.addr);
+        }
     }
 
     CloseHandle(proc);

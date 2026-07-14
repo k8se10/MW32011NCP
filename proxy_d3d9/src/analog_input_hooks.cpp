@@ -76,17 +76,12 @@ extern "C" void __cdecl InjectControllerMovement(unsigned char* cmd)
 //        mapping melee to the right thumbstick click. An earlier struct-offset-
 //        correlation guess briefly mislabeled this bit as Sprint; that theory was
 //        retracted -- it's genuinely Melee)
-//   X -> Interact only for now (bit 0x8). Reload is NOT yet resolved -- see
-//        "Reload" in re_notes/iw5sp.md. First fix attempt (0x40000, derived from a
-//        table-index calculation using a wrong base address) was confirmed WRONG live:
-//        it turned out to trigger a color-grading/visual-tint toggle, not reload.
-//        Reverted. A follow-up probe of the runtime scancode->special-bind-dispatch
-//        table (DAT_00a98e4c, found via FUN_00541020) read back all zeros for 'R',
-//        meaning +reload isn't handled by the special dispatcher (FUN_00438710)
-//        either -- it's tracked by some other generic kbutton mechanism not yet
-//        identified. Real empirical lead exists (memdiff found 0x02F0252A, a heap
-//        address matching kbutton-style down/up semantics) but hasn't been traced to
-//        real code yet.
+//   X -> Interact (bit 0x8) + real Reload kbutton (see InjectControllerReload).
+//        Two earlier raw-usercmd-bit attempts both failed live (one had no effect, one
+//        turned out to be an unrelated color-grading toggle) -- see re_notes/iw5sp.md.
+//        Real fix: memdiff (watching actual R-key transitions, tuned to avoid noise
+//        from shooting/ammo changes) found a real static kbutton_t at 0x00A98C68,
+//        confirmed via CallKbuttonDown/CallKbuttonUp, same technique as ADS.
 //   LB -> Tactical (smoke) -- moved here off D-pad Left
 //   RB -> Lethal (frag) -- moved here off D-pad Down
 //   B -> Crouch/Prone stance button, real Xbox 360 CoD semantics (user-specified,
@@ -299,6 +294,40 @@ extern "C" void __cdecl InjectControllerAds()
     } else {
         CallKbuttonUp(kAdsKbutton1, kAdsBindIndex);
         CallKbuttonUp(kAdsKbutton2, kAdsBindIndex);
+    }
+}
+
+// ---- Reload: X -> real +reload kbutton, found via memdiff + pointer scan (2026-07-15) --
+//
+// Two prior attempts on X (raw usercmd bits 0x40000, then ruled out) both failed live --
+// see re_notes/iw5sp.md. Real mechanism found via memdiff watching real R-key
+// transitions: a clean single candidate at 0x00A98C68 (held=0x72 'r' ASCII,
+// released=0x00), a STATIC address in the same per-player struct region already used
+// for the ADS kbuttons -- not a moving heap address like the first memdiff pass caught.
+// 0x00A98C78 (+0x10 from it) also correlated (held=0x01/released=0x00), matching
+// kbutton_t's confirmed `active` field offset exactly -- strong confirmation this is a
+// real kbutton_t, same struct layout as ADS's, not a coincidental correlate.
+namespace {
+constexpr uintptr_t kReloadKbutton = 0x00A98C68;
+constexpr int kReloadBindIndex = 15; // distinct from ADS's 13 -- arbitrary but must be
+                                      // self-consistent between our own down/up calls
+bool g_reloadHeld = false;
+} // namespace
+
+extern "C" void __cdecl InjectControllerReload()
+{
+    unsigned short buttons;
+    unsigned char leftTrigger, rightTrigger;
+    if (!Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger)) return;
+
+    bool nowHeld = (buttons & kXI_X) != 0;
+    if (nowHeld == g_reloadHeld) return; // only fire on the edge, matching a real keypress
+
+    g_reloadHeld = nowHeld;
+    if (nowHeld) {
+        CallKbuttonDown(kReloadKbutton, kReloadBindIndex);
+    } else {
+        CallKbuttonUp(kReloadKbutton, kReloadBindIndex);
     }
 }
 
@@ -517,6 +546,7 @@ extern "C" void __cdecl InjectAllControllerInput(unsigned char* cmd)
     }
     InjectControllerAds();
     InjectControllerSprint();
+    InjectControllerReload();
 }
 
 namespace {

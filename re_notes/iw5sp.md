@@ -767,7 +767,7 @@ removed** now that Sprint is confirmed working — see git history if it's ever 
 again for a similar investigation. The permanent hook install/enable status logging in
 `InstallAnalogInputHooks()` was kept (required by CLAUDE.md's logging rules).
 
-### Reload (`+reload`) — STILL UNRESOLVED (2026-07-15)
+### Reload (`+reload`) — RESOLVED (2026-07-15)
 
 User reported X interacts/uses fine but never reloads. Checked the real keybind config
 (`players2/config.cfg`): `bind R "+reload"` and `bind F "+activate"` — confirming
@@ -810,14 +810,37 @@ memdiff's earlier Reload hit; `0x52` = `VK_R`). **Both read back 0** — meaning
 is *not* handled through the special dispatcher either, for either key-code
 interpretation tried.
 
-**Where this leaves it:** `+reload` is apparently tracked through some third mechanism
-— neither the compact usercmd-bit array, nor the special single-kbutton dispatcher.
-The one real empirical lead still on the table is the memdiff hit from the actual R-key
-test: `0x02F0252A` (a heap address, `held=0x72` released=`0x00`, matching kbutton-style
-down/up semantics) — this hasn't been traced to real code yet. `X` is reverted to
-Interact-only (bit `0x8`) until this is properly resolved; **do not guess another bit
-onto X without live-verifying it first** — this is now the second guess in a row to
-fail live (first caused no effect, second caused a wrong, unrelated visual toggle).
+**Third attempt: `g_reloading` GSC flag, dead end.** Broadened the string search beyond
+the literal `+reload`/`-reload` bind names and found `+usereload`/`-usereload` DO exist
+as real strings in the binary (contradicting the earlier claim they don't) — table idx
+5 with the corrected base, i.e. exactly the slot already mapped to bit `0x8`. So bit
+`0x8` really is `+usereload`, not a mislabeled `+activate` as guessed — it's real
+context-sensitive use/reload behavior that (like ADS/Sprint before it) must depend on
+some condition our raw bit-forcing doesn't satisfy. Also found `g_reloading` (a
+GSC-exposed "is reloading" dvar) with 3 code references — all three turned out to be
+dead ends: two are cvar registration (`FUN_005c2230`, `FUN_0047d680`), and the third
+(`FUN_0041fb00`, a reload-state-reset utility) is only ever called from main-menu/
+matchmaking code (banned/beta-closed checks, friend-join popups) — nothing in the
+actual gameplay trigger path.
+
+**Fourth attempt, CONFIRMED WORKING (2026-07-15):** went back to memdiff with a cleaner
+test protocol (stand still, don't fire, just toggle R — avoids shooting/ammo-count
+churn producing spurious candidates) and added a pointer-scan feature to `memdiff`
+itself (see `tools/memdiff/main.cpp`): after narrowing to final candidates, it now finds
+each candidate's containing memory region and scans all other readable memory for a
+4-byte value matching that region's base, surfacing any static reference. This run's
+final candidates included **`0x00A98C68`** (`held=0x72` 'r' ASCII, `released=0x00`) — a
+**static** address in the same per-player struct region already used for the ADS
+kbuttons, not a moving heap address like the earlier pass caught. `0x00A98C78` (exactly
+`+0x10` from it) also correlated (`held=0x01`/`released=0x00`), matching `kbutton_t`'s
+already-confirmed `active` field offset exactly — strong confirmation this is a real
+`kbutton_t`, same struct layout as ADS's, not a coincidental correlate.
+
+**Fix:** `InjectControllerReload()` calls the real `CallKbuttonDown`/`CallKbuttonUp`
+(same engine functions used for ADS) on kbutton `0x00A98C68`, edge-triggered on X,
+using a distinct bind index (15) from ADS's (13). Kept alongside the existing `0x8`
+(Interact) bit-OR. **Needs live playtest** to confirm X now reloads correctly (with and
+without a nearby interactable).
 
 **ADS must be true hold-to-aim, not toggle (user requirement, 2026-07-14):** PC
 keyboard/mouse ADS binding on this game may default to (or support) toggle-style aim,
