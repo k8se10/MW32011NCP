@@ -76,13 +76,21 @@ extern "C" void __cdecl InjectControllerMovement(unsigned char* cmd)
 //        bit covers both, confirmed working)
 //   LB -> Tactical (smoke) -- moved here off D-pad Left
 //   RB -> Lethal (frag) -- moved here off D-pad Down
-//   B -> Crouch (tap) / Prone (hold) -- moved here off Back (user, 2026-07-14), classic
-//        CoD tap/hold behavior. Crouch is bit 0x200 (confirmed live). Prone is bit
-//        0x100 (+actionslot2 per the kbutton table -- user-confirmed live as "goes
-//        down to prone, holdstate" when held, exactly matching the desired hold-to-
-//        prone behavior). Distinguished by how long B has been continuously held --
-//        below the threshold sends crouch, at/above it switches to prone instead
-//        (never both at once).
+//   B -> Crouch/Prone stance button, real Xbox 360 CoD semantics (user-specified,
+//        2026-07-14): a 3-state ladder (Standing / Crouched / Prone) tracked in our
+//        own g_stance, not a raw hold of either bit. Both 0x200 (crouch) and 0x100
+//        (+actionslot2, prone) are hold-state bits at the engine level, so we assert
+//        whichever one matches the current g_stance every frame, independent of
+//        whether B is currently physically held:
+//          Standing + tap  -> Crouched
+//          Standing + hold -> Prone
+//          Crouched + tap  -> Standing
+//          Crouched + hold -> Prone
+//          Prone    + tap  -> Crouched
+//          Prone    + hold -> Standing   (reverse of Standing+hold, per user spec)
+//        "Hold" fires the instant the press crosses the threshold (no need to also
+//        release); "tap" only fires on release, and only if the threshold was never
+//        reached during that press.
 //   LT (analog trigger) -> ADS -- NOT handled here, see InjectControllerAds (needs the
 //        real KeyDown/KeyUp kbutton calls, not a simple bit-OR)
 //
@@ -105,11 +113,16 @@ constexpr unsigned short kXI_LEFT_SHOULDER = 0x0100;
 constexpr unsigned short kXI_RIGHT_SHOULDER = 0x0200;
 constexpr unsigned char kTriggerThresholdFire = 30; // XInput's documented trigger threshold
 
-// Tap B = crouch, hold past this long = prone instead. Not user-tunable yet; task #6's
-// options screen is the right place for that, not a hardcoded constant here.
+// How long a B press must be held before it counts as "hold" instead of "tap". Not
+// user-tunable yet; task #6's options screen is the right place for that, not a
+// hardcoded constant here.
 constexpr DWORD kProneHoldThresholdMs = 400;
+
+enum class Stance { Standing, Crouched, Prone };
+Stance g_stance = Stance::Standing;
 DWORD g_crouchButtonPressStartMs = 0;
 bool g_crouchButtonWasHeld = false;
+bool g_holdActionConsumed = false; // true once this press has already fired its hold action
 }
 
 extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
@@ -128,14 +141,35 @@ extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
     if (xiButtons & kXI_A) out |= 0x400;                        // Jump (+gostand)
 
     bool bHeld = (xiButtons & kXI_B) != 0;
-    if (bHeld) {
-        if (!g_crouchButtonWasHeld) {
-            g_crouchButtonPressStartMs = GetTickCount();
-        }
+    if (bHeld && !g_crouchButtonWasHeld) {
+        // Rising edge: new press starting.
+        g_crouchButtonPressStartMs = GetTickCount();
+        g_holdActionConsumed = false;
+    }
+    if (bHeld && !g_holdActionConsumed) {
         DWORD heldMs = GetTickCount() - g_crouchButtonPressStartMs;
-        out |= (heldMs < kProneHoldThresholdMs) ? 0x200u : 0x100u; // Crouch (tap) / Prone (hold)
+        if (heldMs >= kProneHoldThresholdMs) {
+            // Hold action fires once, the instant the threshold is crossed: Prone
+            // reverses back to Standing, anything else goes to Prone.
+            g_stance = (g_stance == Stance::Prone) ? Stance::Standing : Stance::Prone;
+            g_holdActionConsumed = true;
+        }
+    }
+    if (!bHeld && g_crouchButtonWasHeld && !g_holdActionConsumed) {
+        // Falling edge and the hold threshold was never reached -- this was a tap.
+        switch (g_stance) {
+            case Stance::Standing: g_stance = Stance::Crouched; break;
+            case Stance::Crouched: g_stance = Stance::Standing; break;
+            case Stance::Prone:    g_stance = Stance::Crouched; break;
+        }
     }
     g_crouchButtonWasHeld = bHeld;
+
+    switch (g_stance) {
+        case Stance::Crouched: out |= 0x200u; break;
+        case Stance::Prone:    out |= 0x100u; break;
+        default: break;
+    }
 
     if (out == 0) return;
     uint32_t* buttonsField = reinterpret_cast<uint32_t*>(cmd + 4);

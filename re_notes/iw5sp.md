@@ -439,9 +439,17 @@ wrong and it's a good example of why live verification beats static-only guessin
 
 Whatever this bit actually represents semantically (not identified — plausibly
 something like "no local client input source yet" or an initial-connect/spectator
-flag) doesn't matter for our purposes; forcing it clear unconditionally has shown no
-observed downside so far. Revisit only if some other real gameplay state (actual
-legitimate pause, a real spectator mode, etc.) turns out to depend on it later.
+flag) doesn't matter for our purposes.
+
+**Correction (2026-07-14): forcing it clear unconditionally DID have a downside.**
+Survival's buy stations wouldn't open their purchase menu until the game was fully
+paused — the same bit is legitimately used by the game for interactive-menu contexts,
+not just the loading-screen cursor, and permanently suppressing it broke that. Fixed by
+only clearing the bit for a 3-second window starting on a rising edge of the in-level
+flag (`0x00A98ACC`, rising-edge-detected the same way `tools/memdiff` detects level
+load), then letting the game's normal gating resume. **Confirmed working by the user,
+real hardware: both the original no-click-needed behavior AND normal buy-station menu
+access now work correctly together.**
 
 ## Button mapping — approach change and real bind data (2026-07-14)
 

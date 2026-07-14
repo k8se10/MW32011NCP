@@ -17,3 +17,4 @@ d3d9_orig.dll
 tools/*/bin/
 tools/*/obj/
 vcontroller_sim.exe
+memdiff.exe
