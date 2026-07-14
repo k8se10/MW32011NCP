@@ -67,8 +67,11 @@ extern "C" void __cdecl InjectControllerMovement(unsigned char* cmd)
 // standard Xbox-convention CoD controls (RT=fire, LT=ADS, bumpers=grenades):
 //   RT (analog trigger, not a digital XInput button) -> Fire
 //   A -> Jump (moved off Start)
-//   B -> Melee (confirmed "100% knife" live, 2026-07-14 -- an earlier struct-offset-
-//        correlation guess briefly mislabeled this as Sprint; that theory was retracted)
+//   Right stick click -> Melee (confirmed "100% knife" live, 2026-07-14 -- moved here
+//        off B per user preference, matching the original Steam-config reference
+//        mapping melee to the right thumbstick click. An earlier struct-offset-
+//        correlation guess briefly mislabeled this bit as Sprint; that theory was
+//        retracted -- it's genuinely Melee)
 //   X -> Use/Reload (+usereload -- context-sensitive by the game's own design, same
 //        bit covers both, confirmed working)
 //   LB -> Tactical (smoke) -- moved here off D-pad Left
@@ -78,18 +81,19 @@ extern "C" void __cdecl InjectControllerMovement(unsigned char* cmd)
 //        real KeyDown/KeyUp kbutton calls, not a simple bit-OR)
 //
 // NOT YET IMPLEMENTED (left unmapped, not guessed at):
+//   B -> freed up when Melee moved to right stick click; no action assigned yet
 //   Y -> should be weapnext (one-shot command, not a held kbutton -- the console-
 //        command-execution function for one-shot commands like weapnext/togglemenu/
 //        toggleprone hasn't been located yet, separate investigation from this bit
 //        mapping)
 //   Start -> should be pause/togglemenu (same one-shot-command blocker as Y)
-//   D-pad (all four directions), both thumbstick clicks -> left unassigned. The
+//   D-pad (all four directions), left thumbstick click -> left unassigned. The
 //        underlying bits (+actionslot 1-4 per the kbutton table) are still uncertain/
 //        largely untested individually -- not part of this pass, revisit later.
 namespace {
 constexpr unsigned short kXI_BACK = 0x0020;
+constexpr unsigned short kXI_RIGHT_THUMB = 0x0080;
 constexpr unsigned short kXI_A = 0x1000;
-constexpr unsigned short kXI_B = 0x2000;
 constexpr unsigned short kXI_X = 0x4000;
 constexpr unsigned short kXI_LEFT_SHOULDER = 0x0100;
 constexpr unsigned short kXI_RIGHT_SHOULDER = 0x0200;
@@ -105,7 +109,7 @@ extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
 
     uint32_t out = 0;
     if (rightTrigger >= kTriggerThresholdFire) out |= 0x1;      // Fire (+attack)
-    if (xiButtons & kXI_B) out |= 0x4;                          // Melee
+    if (xiButtons & kXI_RIGHT_THUMB) out |= 0x4;                // Melee -- moved off B (user, 2026-07-14)
     if (xiButtons & kXI_X) out |= 0x8;                          // Use/Reload (+usereload)
     if (xiButtons & kXI_LEFT_SHOULDER) out |= 0x8000;           // Tactical (smoke)
     if (xiButtons & kXI_RIGHT_SHOULDER) out |= 0x4000;          // Lethal (frag)
