@@ -86,6 +86,21 @@ bool Controller_GetRightStick(float& x, float& y)
     return true;
 }
 
+bool Controller_GetRawButtonsAndTriggers(unsigned short& buttons, unsigned char& leftTrigger, unsigned char& rightTrigger)
+{
+    buttons = 0; leftTrigger = 0; rightTrigger = 0;
+    EnsureLoaded();
+    if (!g_XInputGetState) return false;
+
+    XINPUT_STATE state{};
+    if (g_XInputGetState(0, &state) != ERROR_SUCCESS) return false;
+
+    buttons = state.Gamepad.wButtons;
+    leftTrigger = state.Gamepad.bLeftTrigger;
+    rightTrigger = state.Gamepad.bRightTrigger;
+    return true;
+}
+
 float Controller_DeltaTimeSeconds()
 {
     if (!g_qpcInit) {

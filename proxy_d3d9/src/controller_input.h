@@ -14,3 +14,8 @@ bool Controller_GetRightStick(float& x, float& y);  // both in [-1, 1], deadzone
 // a continuous stick deflection into a per-frame look delta, since (unlike a real mouse)
 // the stick reports a position, not an already-frame-scaled delta.
 float Controller_DeltaTimeSeconds();
+
+// Raw XInput digital buttons (XINPUT_GAMEPAD_* bitmask) and analog trigger values
+// (0-255), unshaped -- for button-mapping work (task #10), not stick movement/look.
+// Returns false (zeroing outputs) if no controller is connected.
+bool Controller_GetRawButtonsAndTriggers(unsigned short& buttons, unsigned char& leftTrigger, unsigned char& rightTrigger);

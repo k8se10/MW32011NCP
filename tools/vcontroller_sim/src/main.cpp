@@ -10,6 +10,9 @@
 //   LY <float -1..1>   -- set left stick Y
 //   RX <float -1..1>   -- set right stick X
 //   RY <float -1..1>   -- set right stick Y
+//   BTN <hex>          -- set wButtons directly to this bitmask (XINPUT_GAMEPAD_* bits)
+//   LT <0-255>         -- set left trigger value
+//   RT <0-255>         -- set right trigger value
 //   RESET              -- zero all axes/buttons
 //   QUIT                -- unplug and exit
 
@@ -67,6 +70,9 @@ int main()
         else if (cmd == "LY") { float v; iss >> v; report.sThumbLY = ToAxis(v); }
         else if (cmd == "RX") { float v; iss >> v; report.sThumbRX = ToAxis(v); }
         else if (cmd == "RY") { float v; iss >> v; report.sThumbRY = ToAxis(v); }
+        else if (cmd == "BTN") { std::string hex; iss >> hex; report.wButtons = static_cast<USHORT>(std::stoul(hex, nullptr, 16)); }
+        else if (cmd == "LT") { int v; iss >> v; report.bLeftTrigger = static_cast<BYTE>(v); }
+        else if (cmd == "RT") { int v; iss >> v; report.bRightTrigger = static_cast<BYTE>(v); }
         else if (cmd == "RESET") { XUSB_REPORT_INIT(&report); }
         else if (cmd == "QUIT") { break; }
         else { std::cerr << "unknown command: " << cmd << "\n"; continue; }

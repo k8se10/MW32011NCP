@@ -54,6 +54,43 @@ extern "C" void __cdecl InjectControllerMovement(unsigned char* cmd)
     cmd[0x1d] = static_cast<unsigned char>(ClampToSByte(curRight + addRight));
 }
 
+// ---- Buttons: NOT YET IMPLEMENTED (task #10, in progress 2026-07-14) ------------
+//
+// A keybd_event/mouse_event-based synthetic-key approach was tried and REJECTED --
+// user wants true native in-engine calls, not OS-level input emulation, matching the
+// same principle already applied to movement/look. Kept as design reference only
+// (see git history for the reverted implementation).
+//
+// Real plan: read players2/config.cfg (the actual default keybind file, found in the
+// game root) to get the authoritative action->bind-command mapping, matching it
+// against the user-supplied controller-button->key list:
+//   A=SPACE="+gostand" (Jump)          LB=G="+frag" (grenade)
+//   B=CTRL="toggleprone" (ONE-SHOT!)   RB=Q="+smoke" (equipment)
+//   X=F="+activate" (Use)              LT=MOUSE2="+toggleads_throw" (ADS)
+//   Y=1/2="weapnext" (ONE-SHOT!)       RT=MOUSE1="+attack" (Fire)
+//   LeftThumb=SHIFT="+breath_sprint"   D-Up=N="+actionslot 1"
+//   RightThumb=E="+melee_zoom"         D-Down=3="+actionslot 3"
+//   Start=ESCAPE="togglemenu" (ONE-SHOT)   D-Left=4="+actionslot 4"
+//   Back=TAB="+scores"                 D-Right=5="+actionslot 2" (not slot 5!)
+//   (R="+reload" not directly bound above -- still needs a controller input assigned)
+//
+// Two different mechanisms needed, not one:
+//   1. HELD kbuttons (+xxx style) -- +gostand/+activate/+frag/+smoke/+breath_sprint/
+//      +melee_zoom/+actionslot N/+scores/+toggleads_throw/+attack/+reload are ALL
+//      confirmed present in the same 32-entry kbutton name table already mapped in
+//      re_notes/iw5sp.md (0092a014 region) -- these should be settable the same
+//      table-driven way real keypresses are, once their specific per-bind memory
+//      addresses are found (same technique used for FUN_0057dc90's known bits).
+//   2. ONE-SHOT commands (togglemenu/weapnext/toggleprone) are NOT held kbuttons at
+//      all -- they don't appear in the 32-entry table, meaning they're plain console
+//      commands. Native equivalent is calling the engine's own command-execution
+//      function (Cbuf_AddText/Cmd_ExecuteString-equivalent) directly with the command
+//      string, once per press-edge -- not yet located.
+//
+// Next RE step: correlate kbutton table position/order against FUN_0057dc90's
+// disassembly order to resolve each named bind's actual memory address, and find the
+// command-execution function for the one-shot commands.
+
 namespace {
 void* g_orig_0057d430 = nullptr;
 }
