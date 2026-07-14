@@ -189,6 +189,63 @@ consumed generically by `FUN_0057dc90`/`FUN_0057d430`.
   enough to trust blindly — next real implementation step should start with x32dbg confirmation of
   register contents at the `FUN_0057d430`/`FUN_0057d680` call sites during live play.
 
+## Re-verification: is there dormant/disabled native Xbox 360 controller code? (2026-07-14)
+
+User pushed back on the 2026-07-13 "no controller support at all" conclusion, reasonably
+suspecting the console-ported codebase might have real but disabled controller-reading
+code left in from the Xbox 360/PS3 build. Did a materially more rigorous re-check than
+the original strings-only pass:
+
+1. **Authoritative import table via `dumpbin /imports`** (not just a strings scan) on
+   both `iw5mp.exe` and `iw5sp.exe` — confirmed no `dinput8.dll`, `xinput*.dll`,
+   `hid.dll`, or `setupapi.dll` statically imported by either.
+2. **Broad substring search for dynamic-loading evidence** — searched all strings in
+   both binaries for `xinput`, `dinput`, `hid.dll`, `setupapi`, `xenon`, `x360`, `pad`
+   (i.e. checking whether the game might `LoadLibraryA("xinput1_3.dll")` at runtime
+   with a graceful-fallback pattern, which wouldn't show up in the static import table).
+   **Zero matches** for any controller-API DLL name, in either binary. The only "pad"
+   hits are false positives (crypto padding text, and "game pad" appearing in
+   `cl_yawspeed`/`cl_pitchspeed`'s cvar *description* text — leftover flavor text from
+   the shared codebase, not evidence of an actual gamepad reader).
+3. **Traced every controller-sounding string found in the original pass** to its actual
+   referencing code, in both binaries:
+   - `attachedcontrollercount`, `splitscreenactivegamepadcount`,
+     `getsplitscreencontrollerclientnum` — each sits inside a large (40+ entries seen),
+     alphabetically-ish ordered, **flat array of plain `char*` strings** with no
+     interleaved function pointers. Neighboring entries (`issplitscreenonlinepossible`,
+     `splitscreenplayercount`, `anysplitscreenprofilesaresignedin`,
+     `isguestsplitscreen`, `showFriendPlayercard`, `getgameinvitescount`,
+     `isPayingSubscriber`, ...) make clear this is the **front-end menu-scripting
+     system's table of callable UI-expression function names** — real, live
+     infrastructure used by `.menu` files for Xbox-Live-style party/profile/splitscreen
+     UI logic (show/hide elements based on signed-in profile count etc.), **not** a
+     physical-hardware joystick reader. The paired native implementation (if reachable
+     from here at all) is a session/profile bookkeeping function, not a controller
+     hardware poll — and per points 1-2 above, it structurally *cannot* be reading real
+     gamepad hardware since no controller API is linked into the process at all.
+   - `Unable to IDirectInputJoyConfig_Acquire because...` — decompiled its one reference
+     (`FUN_006d0f20` in `iw5sp.exe`, `FUN_006ca4b6` in `iw5mp.exe`): a large generic
+     **HRESULT-to-error-string decoder** (long `if`/`else` chain over raw HRESULT
+     values covering hundreds of unrelated COM/DirectX/DirectPlay/DirectInput error
+     codes, for crash/log diagnostics). The DirectInput joystick string is one entry in
+     that boilerplate table — not evidence the game ever calls the corresponding API.
+   - `@PLATFORM_USECONTROLLER1` — a single data reference in both binaries, consistent
+     with being an unused/orphaned localization key (never actually displayed on PC).
+   - `setct-HODInput` — traced through a couple more table-indirection hops but hit
+     unresolved data-only chains in both binaries; doesn't obviously connect to
+     controller input either way, deprioritized (not worth more time given the
+     structural finding below already settles the question).
+
+**Verdict: confirmed, not dormant.** There is no disabled-but-functional native
+Xbox-360-controller-reading code in either PC binary. What exists is (a) generic
+Windows/DirectX error-string boilerplate that happens to mention DirectInput, and (b)
+real but hardware-independent menu-scripting infrastructure for splitscreen/profile UI
+state, which cannot poll physical controllers because — reconfirmed twice now, via
+static imports and full binary string search — **zero controller-input API (XInput,
+DirectInput, RawInput) is linked into either executable, statically or dynamically.**
+The from-scratch approach (own XInput integration + the usercmd hooks mapped above)
+remains correct; there's nothing to unlock.
+
 ### Remaining open items (lower priority, not blocking task #5 start)
 - Purpose of `usercmd_t+0x1e`/`+0x1f` (movement bytes #3/#4) and `+0x24`..`+0x34` (5 int fields) not
   yet identified — likely upmove/lean or vehicle-related, not needed for basic ground movement/look.
