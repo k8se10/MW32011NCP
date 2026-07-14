@@ -337,20 +337,30 @@ extern "C" void __cdecl InjectControllerSprint()
     unsigned char leftTrigger, rightTrigger;
     if (!Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger)) return;
 
-    g_sprintHeld = (buttons & kXI_LEFT_THUMB) != 0;
+    bool held = (buttons & kXI_LEFT_THUMB) != 0;
+    if (held && !g_sprintHeld && g_stance != Stance::Standing) {
+        // Rising edge while crouched/prone: real console sprint stands the player back
+        // up to full upright first, same as pressing forward while ducked/prone does --
+        // forcing the pm_flags bit alone doesn't touch our own stance state at all, so
+        // without this, sprint would just run while still crouched/prone (bug found
+        // 2026-07-15).
+        g_stance = Stance::Standing;
+    }
+    g_sprintHeld = held;
 }
 
 // Called from Hook_00644ed0 with the live `param_1` (the pml/movement-locals pointer)
 // pulled straight off the stack -- see the comment above for how that address was
 // confirmed. Forces or clears the real sprint pm_flags bit every Pmove tick to match our
-// polled controller state, same as a real held/released key would.
+// polled controller state, same as a real held/released key would. Gated on being
+// upright -- never assert sprint while crouched/prone (see InjectControllerSprint).
 extern "C" void __cdecl InjectControllerSprintPmFlags(uint32_t pmlPtr)
 {
     if (!pmlPtr) return;
     uint32_t ps = *reinterpret_cast<uint32_t*>(pmlPtr);
     if (!ps) return;
     uint32_t* flags = reinterpret_cast<uint32_t*>(ps + 0xc);
-    if (g_sprintHeld) {
+    if (g_sprintHeld && g_stance == Stance::Standing) {
         *flags |= kPmFlagSprint;
     } else {
         *flags &= ~kPmFlagSprint;
@@ -386,7 +396,7 @@ void* g_orig_00643ce0 = nullptr;
 
 extern "C" void __cdecl ReassertSprintPmFlags(uint32_t pmlPtr)
 {
-    if (!g_sprintHeld) return;
+    if (!g_sprintHeld || g_stance != Stance::Standing) return;
     if (!pmlPtr) return;
     uint32_t ps = *reinterpret_cast<uint32_t*>(pmlPtr);
     if (!ps) return;
