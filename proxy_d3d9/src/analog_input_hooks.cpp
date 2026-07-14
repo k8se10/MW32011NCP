@@ -20,6 +20,10 @@
 #include "../third_party/minhook/include/MinHook.h"
 #include "controller_input.h"
 
+// Forwarder defined in dllmain.cpp -- lets this translation unit log to the same
+// proxy_d3d9.log file without duplicating the log-file setup.
+extern void LogFromController(const char* msg);
+
 namespace {
 
 inline int8_t ClampToSByte(int v)
@@ -123,6 +127,24 @@ Stance g_stance = Stance::Standing;
 DWORD g_crouchButtonPressStartMs = 0;
 bool g_crouchButtonWasHeld = false;
 bool g_holdActionConsumed = false; // true once this press has already fired its hold action
+
+// TEMP DIAGNOSTIC (2026-07-14): tracing the "engine auto-stands the player up on
+// physical B release" bug. Not a permanent feature -- remove once the root cause is
+// found (see re_notes/iw5sp.md). Logs every stance-machine transition unconditionally,
+// plus a short window of frame-by-frame usercmd.buttons snapshots after each release so
+// we can see whether OUR write is what changes, or something downstream of this hook
+// overrides it independent of what we assert here.
+int g_postReleaseWatchFrames = 0;
+
+const char* StanceName(Stance s)
+{
+    switch (s) {
+        case Stance::Standing: return "Standing";
+        case Stance::Crouched: return "Crouched";
+        case Stance::Prone:    return "Prone";
+    }
+    return "?";
+}
 }
 
 extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
@@ -145,23 +167,40 @@ extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
         // Rising edge: new press starting.
         g_crouchButtonPressStartMs = GetTickCount();
         g_holdActionConsumed = false;
+        char buf[128];
+        sprintf_s(buf, "[stance] B DOWN  stance=%s", StanceName(g_stance));
+        LogFromController(buf);
     }
     if (bHeld && !g_holdActionConsumed) {
         DWORD heldMs = GetTickCount() - g_crouchButtonPressStartMs;
         if (heldMs >= kProneHoldThresholdMs) {
             // Hold action fires once, the instant the threshold is crossed: Prone
             // reverses back to Standing, anything else goes to Prone.
+            Stance prev = g_stance;
             g_stance = (g_stance == Stance::Prone) ? Stance::Standing : Stance::Prone;
             g_holdActionConsumed = true;
+            char buf[128];
+            sprintf_s(buf, "[stance] HOLD fired  %s -> %s", StanceName(prev), StanceName(g_stance));
+            LogFromController(buf);
         }
     }
-    if (!bHeld && g_crouchButtonWasHeld && !g_holdActionConsumed) {
-        // Falling edge and the hold threshold was never reached -- this was a tap.
-        switch (g_stance) {
-            case Stance::Standing: g_stance = Stance::Crouched; break;
-            case Stance::Crouched: g_stance = Stance::Standing; break;
-            case Stance::Prone:    g_stance = Stance::Crouched; break;
+    if (!bHeld && g_crouchButtonWasHeld) {
+        if (!g_holdActionConsumed) {
+            // Falling edge and the hold threshold was never reached -- this was a tap.
+            Stance prev = g_stance;
+            switch (g_stance) {
+                case Stance::Standing: g_stance = Stance::Crouched; break;
+                case Stance::Crouched: g_stance = Stance::Standing; break;
+                case Stance::Prone:    g_stance = Stance::Crouched; break;
+            }
+            char buf[128];
+            sprintf_s(buf, "[stance] TAP fired  %s -> %s", StanceName(prev), StanceName(g_stance));
+            LogFromController(buf);
         }
+        char buf[128];
+        sprintf_s(buf, "[stance] B UP  stance now=%s -- watching next 90 frames", StanceName(g_stance));
+        LogFromController(buf);
+        g_postReleaseWatchFrames = 90; // ~1.5s at 60fps -- long enough to see any delayed override
     }
     g_crouchButtonWasHeld = bHeld;
 
@@ -171,9 +210,17 @@ extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
         default: break;
     }
 
-    if (out == 0) return;
     uint32_t* buttonsField = reinterpret_cast<uint32_t*>(cmd + 4);
-    *buttonsField |= out;
+    uint32_t beforeOr = *buttonsField;
+    if (out != 0) *buttonsField |= out;
+
+    if (g_postReleaseWatchFrames > 0) {
+        char buf[160];
+        sprintf_s(buf, "[stance] watch  stance=%s before=0x%08X after=0x%08X",
+                  StanceName(g_stance), beforeOr, *buttonsField);
+        LogFromController(buf);
+        --g_postReleaseWatchFrames;
+    }
 }
 
 // ---- ADS: left trigger -> true hold-to-aim via the real +toggleads_throw kbuttons ----
