@@ -46,6 +46,7 @@
       <PreprocessorDefinitions>WIN32;_WINDOWS;_USRDLL;PROXYD3D9_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalIncludeDirectories>third_party\minhook\include;third_party\minhook\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -78,9 +79,17 @@
 
   <ItemGroup>
     <ClCompile Include="src\dllmain.cpp" />
+    <ClCompile Include="src\diag_hooks.cpp" />
+    <!-- MinHook (BSD-style license, see third_party\minhook\LICENSE.txt;
+         attribution required if this mod is ever shipped, see CLAUDE.md paragraph 6). -->
+    <ClCompile Include="third_party\minhook\src\buffer.c" />
+    <ClCompile Include="third_party\minhook\src\hook.c" />
+    <ClCompile Include="third_party\minhook\src\trampoline.c" />
+    <ClCompile Include="third_party\minhook\src\hde\hde32.c" />
   </ItemGroup>
   <ItemGroup>
     <None Include="def\proxy_d3d9.def" />
+    <None Include="third_party\minhook\LICENSE.txt" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

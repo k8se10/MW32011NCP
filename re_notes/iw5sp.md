@@ -246,6 +246,54 @@ DirectInput, RawInput) is linked into either executable, statically or dynamical
 The from-scratch approach (own XInput integration + the usercmd hooks mapped above)
 remains correct; there's nothing to unlock.
 
+## Calling convention CONFIRMED live (2026-07-14)
+
+Static analysis alone (Ghidra's `unaff_ESI`/`unaff_EDI`/`in_EAX` guesses) wasn't
+trustworthy enough to hook blindly — confirmed live instead via a passive MinHook
+diagnostic pass (`proxy_d3d9/src/diag_hooks.cpp`, PUSHAD/log/POPAD around each target,
+zero behavior change, logs to `proxy_d3d9_diag.log`). **Getting a live gameplay session
+required a devmap launch, not just sitting at the main menu** — confirmed hooks don't
+fire at all at the front-end (matches the "paused/menu flag early-return" branch found
+in `FUN_0057e480`). Launch command that worked: `iw5sp.exe +set developer 1 +devmap
+hamburg` (bypasses the front-end entirely, standard Quake3-derived-engine trick).
+
+**`FUN_0057d680` (raw mouse-delta source) — confirmed roles:**
+- `EAX == EBX == EBP == 0x00B363B0` in every capture — a **stable client-input-context
+  pointer**, constant across calls and shared with `FUN_0057d430` too (see below). This
+  is the "raw mouse state" context the function reads from (per the earlier static
+  decompile's `in_EAX+4/+8/+0xc/+0x10/+0x14` double-buffer access).
+- `ESI` and `EDI` are **output** pointers, NOT an input struct as first guessed from
+  static analysis — `ESI` points to where the computed X delta (float) gets written,
+  `EDI = ESI + 4` for the Y delta. Both point into the *caller's* stack frame (a local
+  variable pair), confirmed by the `0x0014Fxxx`-range addresses seen live (typical
+  stack range for this process).
+- **Hook implication: call through to the original, then ADD our right-stick delta to
+  `*(float*)ESI` and `*(float*)EDI`** — safe, since these are just plain output floats
+  the rest of the pipeline (`FUN_0057d740`, `FUN_0057d7e0`) consumes afterward exactly
+  like real mouse movement, inheriting all existing sensitivity/accel/ADS-scale logic.
+
+**`FUN_0057d430` (keyboard analog movement summer) — confirmed roles:**
+- `EAX = 0` at entry (in single-player) — this is the **per-player index** (matches the
+  `param_1 * 0xbe5c` / `param_1 * 0x230` per-player-stride pattern used throughout every
+  other function in this pipeline).
+- `ESI == EDI`, both holding the same address — **this is the `usercmd_t*` pointer**
+  the static decompile referred to as `unaff_EDI` when it wrote `forwardmove`/
+  `rightmove` at `+0x1c`/`+0x1d`. Confirmed live: at hook-entry (right after
+  `FUN_0057e480`'s `memset(cmd, 0, 0x40)`, before this function's own writes), all 0x40
+  bytes at this address read as zero — exactly as expected.
+- `EBP = 0x00B363B0` — same context pointer seen in `FUN_0057d680`, confirming it's a
+  single shared "client input state" base used consistently across this whole source
+  file (likely kept resident in a register across the whole translation unit rather
+  than reloaded from a global each time — common compiler behavior for a hot, large
+  file).
+- **Hook implication: call through to the original, then ADD our clamped left-stick
+  delta to `*(signed char*)(EDI + 0x1c)` (forwardmove) and `*(signed char*)(EDI + 0x1d)`
+  (rightmove)**, re-clamping the sum to a signed byte so keyboard+stick can't overflow.
+
+Both confirmed strategies are additive post-hooks (call original first, then add on
+top) — keyboard and mouse keep working completely unaffected; controller input is
+strictly additive. This is now ready to implement for real (task #5).
+
 ### Remaining open items (lower priority, not blocking task #5 start)
 - Purpose of `usercmd_t+0x1e`/`+0x1f` (movement bytes #3/#4) and `+0x24`..`+0x34` (5 int fields) not
   yet identified — likely upmove/lean or vehicle-related, not needed for basic ground movement/look.
