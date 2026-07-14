@@ -117,6 +117,90 @@ extern "C" void __cdecl InjectControllerButtonsDiagnostic(unsigned char* cmd)
     *buttonsField |= out;
 }
 
+// ---- ADS: left trigger -> true hold-to-aim via the real +toggleads_throw kbuttons ----
+//
+// Found 2026-07-14 via a combination of live memory diffing (24 real ADS toggles,
+// narrowed ~11M candidate bytes down to a handful) and static confirmation: the two
+// surviving struct offsets (per-player kbutton context base 0x00A98AD8, stride 0x230)
+// are individually-registered kbuttons at +0xB4 and +0x1E0, both driven together by
+// the same special-bind case in FUN_00438710 (the same dispatcher that owns +mlook's
+// flag) -- consistent with +toggleads_throw's real semantics ("toggle ADS OR
+// cook-throw", context-dependent on whether a grenade is primed, hence needing two
+// kbutton_t's fed from one physical bind).
+//
+// Rather than hand-writing kbutton_t bytes directly (fragile -- the full struct layout
+// isn't pinned down), this calls the REAL engine KeyDown/KeyUp handlers the game itself
+// uses, with the bind-index constants read directly off the jump table in
+// FUN_00438710 (case index 13 = "+toggleads_throw" down-edge, 14 = "-toggleads_throw"
+// up-edge -- the classic plus/minus command-pair convention, immediately adjacent in
+// the dispatch table). This keeps hold-time/msec bookkeeping correct automatically
+// since it's the same code path a real keypress would take, instead of us having to
+// replicate that bookkeeping by hand.
+//
+// Calling convention confirmed via static analysis of the dispatcher's own call sites
+// (FUN_0057d1c0: EAX=kbutton_t*, ECX=bindIndex; FUN_0057d200: EAX=kbutton_t*,
+// ECX=currentTimeMs read from the same global the dispatcher reads, EDX=bindIndex) --
+// not yet confirmed live with a debugger single-step, so this is a first attempt to be
+// validated by real playtest per CLAUDE.md's "verify live" rule, same as the movement/
+// look hooks were.
+namespace {
+constexpr uintptr_t kAdsKbutton1 = 0x00A98B8C;
+constexpr uintptr_t kAdsKbutton2 = 0x00A98CB8;
+constexpr uintptr_t kFrameTimeMsAddr = 0x0176B544;
+constexpr int kAdsBindIndexDown = 13;
+constexpr int kAdsBindIndexUp = 14;
+
+void CallKbuttonDown(uintptr_t kbutton, int bindIndex)
+{
+    constexpr uintptr_t kFn = 0x0057d1c0;
+    __asm {
+        mov eax, kbutton
+        mov ecx, bindIndex
+        mov edx, kFn
+        call edx
+    }
+}
+
+void CallKbuttonUp(uintptr_t kbutton, int bindIndex)
+{
+    uint32_t timeMs = *reinterpret_cast<volatile uint32_t*>(kFrameTimeMsAddr);
+    constexpr uintptr_t kFn = 0x0057d200;
+    __asm {
+        push ebx
+        mov eax, kbutton
+        mov ecx, timeMs
+        mov edx, bindIndex
+        mov ebx, kFn
+        call ebx
+        pop ebx
+    }
+}
+
+// XInput's own documented trigger threshold -- avoids a barely-touched trigger
+// registering as a full press.
+constexpr unsigned char kTriggerThreshold = 30;
+bool g_adsHeld = false;
+} // namespace
+
+extern "C" void __cdecl InjectControllerAds()
+{
+    unsigned short buttons;
+    unsigned char leftTrigger, rightTrigger;
+    if (!Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger)) return;
+
+    bool nowHeld = leftTrigger >= kTriggerThreshold;
+    if (nowHeld == g_adsHeld) return; // only fire on the edge, matching a real keypress
+
+    g_adsHeld = nowHeld;
+    if (nowHeld) {
+        CallKbuttonDown(kAdsKbutton1, kAdsBindIndexDown);
+        CallKbuttonDown(kAdsKbutton2, kAdsBindIndexDown);
+    } else {
+        CallKbuttonUp(kAdsKbutton1, kAdsBindIndexUp);
+        CallKbuttonUp(kAdsKbutton2, kAdsBindIndexUp);
+    }
+}
+
 namespace {
 void* g_orig_0057d430 = nullptr;
 }
@@ -135,6 +219,7 @@ __declspec(naked) void Hook_0057d430()
         push edi
         call InjectControllerButtonsDiagnostic
         add esp, 4
+        call InjectControllerAds
         ret
     }
 }

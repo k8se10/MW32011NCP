@@ -154,9 +154,17 @@ struct Candidate {
 
 } // namespace
 
-int main()
+int main(int argc, char** argv)
 {
-    printf("memdiff (manual mode) -- toggle ADS yourself, I watch and correlate\n");
+    // Optional args: <vkHex> <label>. Defaults to VK_RBUTTON / "ADS" (right mouse,
+    // the default +toggleads_throw bind). For Sprint, run with: memdiff.exe 10 Sprint
+    // (VK_SHIFT is 0x10, the default +breath_sprint bind).
+    int vk = VK_RBUTTON;
+    const char* label = "ADS";
+    if (argc >= 2) vk = static_cast<int>(strtol(argv[1], nullptr, 16));
+    if (argc >= 3) label = argv[2];
+
+    printf("memdiff (manual mode) -- toggle %s yourself, I watch and correlate (VK=0x%02X)\n", label, vk);
     printf("Looking for iw5sp.exe...\n");
 
     DWORD pid = 0;
@@ -181,15 +189,15 @@ int main()
     }
     printf("Level detected. Ready.\n\n");
     printf("================================================================\n");
-    printf(" Toggle ADS (right mouse button) naturally, as many times as you\n");
-    printf(" like -- short taps or long holds, doesn't matter. I'll watch and\n");
-    printf(" take a snapshot on every press/release. Aim for at least 6-8\n");
-    printf(" toggles for a solid result. Press F11 at any time to stop early\n");
-    printf(" and see the current results.\n");
+    printf(" Toggle %s naturally, as many times as you like -- short taps\n"
+           " or long holds, doesn't matter. I'll watch and take a snapshot\n"
+           " on every press/release. Aim for at least 6-8 toggles for a\n"
+           " solid result. Press F11 at any time to stop early and see the\n"
+           " current results.\n", label);
     printf("================================================================\n\n");
 
-    bool lastDown = (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0;
-    printf("Starting state: ADS is currently %s\n", lastDown ? "HELD" : "released");
+    bool lastDown = (GetAsyncKeyState(vk) & 0x8000) != 0;
+    printf("Starting state: %s is currently %s\n", label, lastDown ? "HELD" : "released");
 
     std::vector<Candidate> candidates;
     bool seeded = false;
@@ -205,14 +213,14 @@ int main()
             printf("\nF11 pressed -- stopping early.\n");
             break;
         }
-        bool nowDown = (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0;
+        bool nowDown = (GetAsyncKeyState(vk) & 0x8000) != 0;
         if (nowDown == lastDown) {
             Sleep(15);
             continue;
         }
         lastDown = nowDown;
         transitions++;
-        printf("Transition %d: ADS now %s -- snapshotting...\n", transitions, nowDown ? "HELD" : "released");
+        printf("Transition %d: %s now %s -- snapshotting...\n", transitions, label, nowDown ? "HELD" : "released");
         Snapshot snap = TakeSnapshot(proc);
 
         if (!seeded) {
