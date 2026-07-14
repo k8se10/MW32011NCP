@@ -270,26 +270,52 @@ extern "C" void __cdecl InjectControllerLookAngles()
 
 // ---- Combined per-frame entry point -- all controller injection lives here now ----
 //
-// RESTRUCTURED 2026-07-14 (see re_notes/iw5sp.md): movement/buttons/ADS injection used
-// to hook FUN_0057d430 directly. Problem: FUN_0057e480 (the top-level per-frame
-// orchestrator) SKIPS calling FUN_0057d430/FUN_0057dc90/FUN_0057d300 entirely whenever
-// a per-player gate bit (0x10 at DAT_00b36210) is set -- which the game also uses
-// legitimately for interactive menus (Survival buy stations, etc.), not just the
-// residual loading-screen state we originally found it for. The previous fix force-
-// cleared that bit every frame so our FUN_0057d430 hook would keep firing, which
-// broke real K+M menu interaction (confirmed live).
+// Restructured 2026-07-14 to hook FUN_0057de60 (the always-running finalize step)
+// instead of FUN_0057d430 directly, so controller injection keeps firing every frame
+// regardless of the per-player gate bit (0x10 at DAT_00b36210) that FUN_0057e480 uses
+// to skip FUN_0057d430/FUN_0057dc90/FUN_0057d300 entirely. `cmd` is `unaff_ESI` at
+// FUN_0057de60's entry (confirmed by the existing usercmd_t field-offset notes in
+// re_notes/iw5sp.md, e.g. "unaff_ESI[0] = DAT_01e06e88" for serverTime) -- captured by
+// the naked hook stub below and passed through here.
 //
-// FUN_0057de60 (the finalize step) is the one call in the pipeline that ALWAYS runs
-// regardless of that gate -- our look injection already lived there for unrelated
-// reasons (bypassing the mouse-delta pipeline) and confirmed to always fire. Moving
-// ALL controller injection here means we never need to touch the gate bit at all: the
-// game's own menu/cursor routing behaves completely naturally, and controller input
-// keeps working every frame regardless of whatever menu state the game thinks it's in.
-// `cmd` is `unaff_ESI` at FUN_0057de60's entry (confirmed by the existing usercmd_t
-// field-offset notes in re_notes/iw5sp.md, e.g. "unaff_ESI[0] = DAT_01e06e88" for
-// serverTime) -- captured by the naked hook stub below and passed through here.
+// ATTEMPT 2, leaving the gate alone entirely (2026-07-14, same day): tried never
+// touching the bit at all, on the theory that our injection no longer needed it cleared
+// since it no longer depends on FUN_0057d430 actually running. Confirmed live this was
+// wrong -- with the bit left to whatever the game naturally leaves it at, the game's own
+// visible UI cursor stayed shown during real gameplay (no real mouse ever moves to
+// trigger its normal hide logic) AND several other systems broke, ADS included -- the
+// bit apparently gates more than just the three functions we bypass.
+//
+// ATTEMPT 3 (context-aware, 2026-07-14): raw disassembly of FUN_0047e700 (the same
+// function that routes mouse input to either look or the UI cursor based on this gate)
+// reveals a real "is a menu actually open" signal it already uses itself:
+//   mov edx, [0x021cd678]      ; global pointer -- current menu context, presumably
+//   cmp dword ptr [edx+0xc], 0 ; a state field on that struct: 0 looks like "closed"
+// (checked in two places in that function, once against 0 and once against the literal
+// 2 -- consistent with a small state enum, not just a bool). Using this: only force the
+// gate bit clear when this state reads as "no menu" (0) -- if a real menu genuinely has
+// something open (buy station, pause, etc.), leave the bit alone so the game's own
+// mouse-driven menu handling keeps working exactly as vanilla. Cheap to validate against
+// the pause menu (instant to open) before trusting it for buy stations (which need a
+// full wave to reach) -- if pause menu interaction stays intact while this is active,
+// that's strong evidence the same generic menu-state field covers buy stations too.
+namespace {
+constexpr uintptr_t kMenuPtrAddr = 0x021CD678;
+bool IsRealMenuOpen()
+{
+    uintptr_t menuPtr = *reinterpret_cast<volatile uintptr_t*>(kMenuPtrAddr);
+    if (menuPtr == 0) return false;
+    int32_t state = *reinterpret_cast<volatile int32_t*>(menuPtr + 0xC);
+    return state != 0;
+}
+} // namespace
+
 extern "C" void __cdecl InjectAllControllerInput(unsigned char* cmd)
 {
+    if (!IsRealMenuOpen()) {
+        *reinterpret_cast<volatile uint32_t*>(0x00B36210) &= ~0x10u;
+    }
+
     InjectControllerLookAngles();
     if (cmd) {
         InjectControllerMovement(cmd);
