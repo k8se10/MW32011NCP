@@ -147,8 +147,19 @@ namespace {
 constexpr uintptr_t kAdsKbutton1 = 0x00A98B8C;
 constexpr uintptr_t kAdsKbutton2 = 0x00A98CB8;
 constexpr uintptr_t kFrameTimeMsAddr = 0x0176B544;
-constexpr int kAdsBindIndexDown = 13;
-constexpr int kAdsBindIndexUp = 14;
+
+// FIX (2026-07-14): originally used 13 for the down-case and 14 for the up-case,
+// mirroring FUN_00438710's two DIFFERENT jump-table dispatch indices for the
+// "+toggleads_throw"/"-toggleads_throw" command pair. That was wrong -- confirmed live
+// (ADS would engage but could never be released, i.e. "toggles on, can't disable").
+// Per the decompiled kbutton_t logic, KeyUp only clears a down[] slot if its keyId
+// argument MATCHES what KeyDown originally stored there -- 13 and 14 never match, so
+// KeyUp was a silent no-op every time. The dispatch index and the down[]-slot key
+// identifier don't have to be the same value at all (they just happened to reuse the
+// same EBX register at the real call sites) -- since we're calling these functions
+// directly rather than going through the real dispatcher, we're free to pick any
+// identifier as long as our own down/up calls agree with each other.
+constexpr int kAdsBindIndex = 13;
 
 // FUN_0057d1c0's real signature (confirmed via decompile, 2026-07-14): EAX=kbutton_t*
 // (implicit self), ECX=bindIndex, and a THIRD arg -- current time in ms -- passed on
@@ -205,11 +216,11 @@ extern "C" void __cdecl InjectControllerAds()
 
     g_adsHeld = nowHeld;
     if (nowHeld) {
-        CallKbuttonDown(kAdsKbutton1, kAdsBindIndexDown);
-        CallKbuttonDown(kAdsKbutton2, kAdsBindIndexDown);
+        CallKbuttonDown(kAdsKbutton1, kAdsBindIndex);
+        CallKbuttonDown(kAdsKbutton2, kAdsBindIndex);
     } else {
-        CallKbuttonUp(kAdsKbutton1, kAdsBindIndexUp);
-        CallKbuttonUp(kAdsKbutton2, kAdsBindIndexUp);
+        CallKbuttonUp(kAdsKbutton1, kAdsBindIndex);
+        CallKbuttonUp(kAdsKbutton2, kAdsBindIndex);
     }
 }
 
