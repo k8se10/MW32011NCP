@@ -76,17 +76,17 @@ extern "C" void __cdecl InjectControllerMovement(unsigned char* cmd)
 //        mapping melee to the right thumbstick click. An earlier struct-offset-
 //        correlation guess briefly mislabeled this bit as Sprint; that theory was
 //        retracted -- it's genuinely Melee)
-//   X -> Interact + Reload, both real bits fired together (2026-07-14 fix -- see
-//        re_notes/iw5sp.md). Bit 0x8 empirically triggers Use/Interact (its
-//        "+usereload" label was table-order-correlation guessing, same unreliable
-//        technique already retracted once for Sprint/Melee -- real bind name unclear,
-//        but the behavior is confirmed). Bit 0x40000 (struct+0x218, table idx 12) is
-//        the real `+reload` bind, confirmed via the literal string's table position --
-//        extends the already-known contiguous kbutton array (0x128 + idx*0x14) one
-//        further than previously mapped. PC has no native single-button
-//        interact-or-reload context switch (that's console-only); asserting both bits
-//        together works because the game's own logic no-ops +activate when nothing's
-//        interactable and no-ops +reload when it doesn't apply.
+//   X -> Interact only for now (bit 0x8). Reload is NOT yet resolved -- see
+//        "Reload" in re_notes/iw5sp.md. First fix attempt (0x40000, derived from a
+//        table-index calculation using a wrong base address) was confirmed WRONG live:
+//        it turned out to trigger a color-grading/visual-tint toggle, not reload.
+//        Reverted. A follow-up probe of the runtime scancode->special-bind-dispatch
+//        table (DAT_00a98e4c, found via FUN_00541020) read back all zeros for 'R',
+//        meaning +reload isn't handled by the special dispatcher (FUN_00438710)
+//        either -- it's tracked by some other generic kbutton mechanism not yet
+//        identified. Real empirical lead exists (memdiff found 0x02F0252A, a heap
+//        address matching kbutton-style down/up semantics) but hasn't been traced to
+//        real code yet.
 //   LB -> Tactical (smoke) -- moved here off D-pad Left
 //   RB -> Lethal (frag) -- moved here off D-pad Down
 //   B -> Crouch/Prone stance button, real Xbox 360 CoD semantics (user-specified,
@@ -154,7 +154,7 @@ extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
     uint32_t out = 0;
     if (rightTrigger >= kTriggerThresholdFire) out |= 0x1;      // Fire (+attack)
     if (xiButtons & kXI_RIGHT_THUMB) out |= 0x4;                // Melee
-    if (xiButtons & kXI_X) out |= 0x8 | 0x40000;                // Interact (0x8) + Reload (0x40000, +reload)
+    if (xiButtons & kXI_X) out |= 0x8;                          // Interact -- Reload still unresolved, see re_notes/iw5sp.md
     if (xiButtons & kXI_LEFT_SHOULDER) out |= 0x8000;           // Tactical (smoke)
     if (xiButtons & kXI_RIGHT_SHOULDER) out |= 0x4000;          // Lethal (frag)
     if (xiButtons & kXI_A) out |= 0x400;                        // Jump (+gostand)

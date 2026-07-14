@@ -767,7 +767,7 @@ removed** now that Sprint is confirmed working — see git history if it's ever 
 again for a similar investigation. The permanent hook install/enable status logging in
 `InstallAnalogInputHooks()` was kept (required by CLAUDE.md's logging rules).
 
-### Reload (`+reload`) — RESOLVED (2026-07-14), no new hook needed
+### Reload (`+reload`) — STILL UNRESOLVED (2026-07-15)
 
 User reported X interacts/uses fine but never reloads. Checked the real keybind config
 (`players2/config.cfg`): `bind R "+reload"` and `bind F "+activate"` — confirming
@@ -777,27 +777,47 @@ default config. That label was almost certainly another table-order-correlation 
 `0x8` empirically does trigger Use/Interact, just probably isn't literally named
 `+usereload`.
 
-Found the real `+reload` bit **without memdiff or a new hook**, reusing data already in
-this file: `FindStringRefs.java` found `"+reload"`'s table entry at `0092a074`. The
-32-entry bind-name table base is `0092a014`, stride 8 bytes, so
-`(0092a074 - 0092a014) / 8 = 12` — table idx 12. Cross-referencing the already-known
-contiguous kbutton array (`0x128 + idx*0x14`, confirmed for idx 0–9 above): idx 10 lands
-at struct `+0x1f0` (bit `0x80000`, previously untested) and idx 11 at struct `+0x204`
-(bit `0x2`, already confirmed as `+stance`) — the pattern continues cleanly to idx 12 at
-struct `+0x218`, **bit `0x40000`**. This is the real `+reload` bit, part of the same
-already-working generic kbutton mechanism as Fire/Frag/Smoke/Jump/Prone/Crouch — no new
-RE or hook required, just an unassigned bit in the array already mapped.
+**First attempt, CONFIRMED WRONG live (2026-07-14 → 2026-07-15).** Used
+`FindStringRefs.java` to find `"+reload"`'s table entry at `0092a074`, then computed a
+table index using an approximate base address (`0092a014`) quoted in older notes above,
+getting idx 12 → struct `+0x218` → bit `0x40000` (extending the known contiguous
+kbutton array pattern). **This was wrong on two counts:**
+1. The base address itself was imprecise. Cross-checking against two *other*
+   already-confirmed binds' real string-table addresses (`+actionslot 4` at `00929ff4`,
+   `+stance` at `00929ffc`) against the true base (`+attack`'s entry, confirmed at
+   `00929fa4`) gives `+reload`'s *real* table index as **26**, not 12.
+2. Bit `0x40000` (whatever idx 12 actually is) was wired to X anyway and confirmed live
+   to trigger a color-grading/visual-tint toggle, not reload. Reverted immediately.
 
-**Fix:** X now asserts both `0x8` (Interact) and `0x40000` (Reload) together. PC has no
-native single-button interact-or-reload context switch (that's a console-only
-control-scheme layer — `+activate` and `+reload` are genuinely separate binds on PC).
-Asserting both bits together works natively because the game's own logic no-ops
-`+activate` when nothing's interactable and no-ops `+reload` when it doesn't apply,
-reproducing the console behavior without any synthetic/emulated logic.
+Idx 26 is well past the last offset `FUN_0057dc90` (the buttons-summer) actually checks
+— its full disassembly ends at idx 10's check (`+0x1f0`). So `+reload` isn't part of
+the compact usercmd-bit array at all, meaning it needs the same kind of individually-
+placed-kbutton treatment ADS and `+mlook` needed, not another array-index guess.
 
-**Not yet live-verified** — needs a playtest confirming X reloads correctly (with and
-without a nearby interactable) before this is fully confirmed, same as Sprint required
-a second look before it actually worked.
+**Second attempt: the special-bind dispatcher, INCONCLUSIVE.** `FUN_00541020` (the real
+`CL_KeyEvent` handler, confirmed via `CL_KeyEvent_Add/Sub/Mul` cvar-name references near
+its top) contains a lookup table, `DAT_00a98e4c`, indexed by raw key code (stride 3 per
+code, `param_1 * 0x34a` per-player row): if the table entry for a given key is nonzero,
+that value is the dispatch index passed to `FUN_00438710` (the same special-bind
+dispatcher ADS's kbuttons were found through); if zero, the key isn't specially
+dispatched at all. This looked like a clean way to find `+reload`'s real dispatch index
+directly from R's key code — no guessing needed.
+
+Read this table live (one-shot diagnostic fired from inside `InjectAllControllerInput`,
+since the table is populated at runtime from the user's keybind config, not static
+data) for both candidate key-code guesses for 'R' (`0x72` = ASCII `'r'`, matching
+memdiff's earlier Reload hit; `0x52` = `VK_R`). **Both read back 0** — meaning `+reload`
+is *not* handled through the special dispatcher either, for either key-code
+interpretation tried.
+
+**Where this leaves it:** `+reload` is apparently tracked through some third mechanism
+— neither the compact usercmd-bit array, nor the special single-kbutton dispatcher.
+The one real empirical lead still on the table is the memdiff hit from the actual R-key
+test: `0x02F0252A` (a heap address, `held=0x72` released=`0x00`, matching kbutton-style
+down/up semantics) — this hasn't been traced to real code yet. `X` is reverted to
+Interact-only (bit `0x8`) until this is properly resolved; **do not guess another bit
+onto X without live-verifying it first** — this is now the second guess in a row to
+fail live (first caused no effect, second caused a wrong, unrelated visual toggle).
 
 **ADS must be true hold-to-aim, not toggle (user requirement, 2026-07-14):** PC
 keyboard/mouse ADS binding on this game may default to (or support) toggle-style aim,
