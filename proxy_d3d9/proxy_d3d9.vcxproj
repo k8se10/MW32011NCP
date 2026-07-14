@@ -79,7 +79,8 @@
 
   <ItemGroup>
     <ClCompile Include="src\dllmain.cpp" />
-    <ClCompile Include="src\diag_hooks.cpp" />
+    <ClCompile Include="src\analog_input_hooks.cpp" />
+    <ClCompile Include="src\controller_input.cpp" />
     <!-- MinHook (BSD-style license, see third_party\minhook\LICENSE.txt;
          attribution required if this mod is ever shipped, see CLAUDE.md paragraph 6). -->
     <ClCompile Include="third_party\minhook\src\buffer.c" />
@@ -90,6 +91,9 @@
   <ItemGroup>
     <None Include="def\proxy_d3d9.def" />
     <None Include="third_party\minhook\LICENSE.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\controller_input.h" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

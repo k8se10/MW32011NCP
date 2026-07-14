@@ -14,7 +14,7 @@
 #include <windows.h>
 #include <cstdio>
 
-void InstallDiagHooks(); // defined in diag_hooks.cpp — task #5 groundwork
+void InstallAnalogInputHooks(); // defined in analog_input_hooks.cpp
 
 // Deliberately NOT including <d3d9.h>: its prototypes for Direct3DCreate9/D3DPERF_*/etc.
 // would collide with the untyped naked-stub exports below (whose whole point is to not
@@ -192,8 +192,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID)
         LogInit();
         if (!LoadRealD3D9()) return FALSE;
         if (!ResolveRealExports()) return FALSE;
-        Log("proxy_d3d9 init OK — pure pass-through, no mod logic active yet.");
-        InstallDiagHooks(); // task #5 groundwork -- see diag_hooks.cpp
+        Log("proxy_d3d9 init OK — analog movement/look hooks installing.");
+        InstallAnalogInputHooks(); // task #5 -- see analog_input_hooks.cpp
         break;
     case DLL_PROCESS_DETACH:
         Log("proxy_d3d9 detach");

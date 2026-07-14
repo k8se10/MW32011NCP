@@ -294,6 +294,35 @@ Both confirmed strategies are additive post-hooks (call original first, then add
 top) — keyboard and mouse keep working completely unaffected; controller input is
 strictly additive. This is now ready to implement for real (task #5).
 
+## Real analog movement + look hooks implemented (2026-07-14)
+
+`proxy_d3d9/src/analog_input_hooks.cpp` + `controller_input.cpp` replace the throwaway
+diagnostic hooks with the real thing, following the confirmed calling convention above:
+
+- **Movement:** `Hook_0057d430` — naked stub saves `EAX`/`EDI` (player index, `usercmd_t*`)
+  across the call to the original trampoline, then calls `InjectControllerMovement(cmd)`
+  which reads the left stick (radial deadzone + `^1.6` response curve, see
+  `controller_input.cpp`), scales full deflection to `+-127`, and adds it onto whatever
+  `forwardmove`/`rightmove` the keyboard path already wrote, clamped to a signed byte.
+- **Look:** `Hook_0057d680` — same pattern for the right stick, added onto the raw
+  mouse-delta output floats, scaled by a `kLookUnitsPerSecond` constant and real
+  delta-time (`Controller_DeltaTimeSeconds()`, since a stick reports a *position*, not
+  an already-frame-scaled delta the way a real mouse does).
+- **XInput:** loaded dynamically via `xinput9_1_0.dll` (present on every Vista+ install,
+  never statically linked) — confirmed the base game links nothing controller-related at
+  all (see the dormant-code re-verification section above), so this is entirely new.
+- Smoke-tested live (`+devmap hamburg`, simulated W key + mouse move via `SendInput`-style
+  Win32 calls): game runs the full hook chain without crashing, with no controller
+  connected (graceful "not connected" path exercised, not just the connected path).
+
+**Known open item, NOT yet verified:** sign conventions (stick-up = forward vs. back,
+stick-right = look-right vs. look-left) are a best-effort guess matching the most common
+XInput convention, documented inline in `analog_input_hooks.cpp`. This needs an actual
+controller and a human watching the character move on screen to confirm/flip — nothing
+in this automated session can verify visual correctness without one. **Next real
+playtest with a physical Xbox controller should confirm this before task #5 is called
+done**, plus tune `kCurveExponent`/`kLookUnitsPerSecond`/deadzone-feel to taste.
+
 ### Remaining open items (lower priority, not blocking task #5 start)
 - Purpose of `usercmd_t+0x1e`/`+0x1f` (movement bytes #3/#4) and `+0x24`..`+0x34` (5 int fields) not
   yet identified — likely upmove/lean or vehicle-related, not needed for basic ground movement/look.
