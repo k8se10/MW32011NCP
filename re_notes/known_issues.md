@@ -196,3 +196,6 @@ partially done — see issue #2 above).
 - **Buy-station + pause movement lockout (issue #1 above):** reinstated the 3-second
   rising-edge gate window that an unrelated same-day architecture change had silently
   replaced. Confirmed working live across the full test matrix.
+- **Start opens the pause menu (issue #2 above):** found the real hardcoded ESCAPE
+  path in the key-event handler (`FUN_00541020`) and wired Start to it directly.
+  Confirmed working live. Closing/unpausing via controller remains open (see issue #2).

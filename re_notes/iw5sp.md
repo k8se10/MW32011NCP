@@ -858,3 +858,80 @@ rather than trying to fight it with edge-detection logic on our end.
   at all — the UI reads keyboard/mouse binds through an entirely different system (see the
   `FUN_00539530`/`DAT_00a98e4c` key-binding-table detour above, which turned out to be UI-side, not
   gameplay-side).
+
+## One-shot command dispatch and the real ESCAPE/pause-menu path (2026-07-15)
+
+Investigated to unblock Y (`weapnext`) and Start (pause/`togglemenu`) — both are
+one-shot commands, not held kbuttons, so neither the ADS/Reload technique nor the
+Sprint pm_flags technique applies directly. Full narrative and dead ends are in
+`re_notes/known_issues.md` issue #2; this section records the confirmed function
+signatures for future reference.
+
+**`FUN_00457c90` = `Cbuf_AddText(int clientIndex, const char* text)`.** Found via the
+classic CoD-RE technique of searching for a hardcoded `"screenshot"` command string as
+an anchor (the real call site is `FUN_00457c90(*param_1, "screenshot\n")` inside
+`FUN_004dfd30`, itself gated behind the `developer` cvar). Lock-protected
+(`FUN_00428af0`/`FUN_00528fe0` acquire/release critical section `0x1f`) per-client
+text-buffer append: special-cases a `"p0 "` prefix to redirect the target client index
+(irrelevant for SP, always client 0), then appends the string (including its null
+terminator) into a per-client buffer at `&DAT_017507e4/e8/ec + clientIndex*0xc`
+(base/capacity/writeOffset triplet), bounds-checked against capacity (`0x4000` /
+16384 bytes — exactly Quake3's classic `MAX_CMD_BUFFER`). Write-offset advances by the
+string length only (not length+1), so the caller must supply its own trailing `\n`.
+Plain `__cdecl`, confirmed via the real call site's disassembly (push string, push
+client index, call, caller cleans 8 bytes).
+
+**`FUN_00605f60` = `Cbuf_Execute`, `FUN_004d6960` = `Cmd_ExecuteString`.**
+`FUN_00605f60` is gated by a `DAT_017507e0` "wait" counter (classic Quake3 `cmd_wait`),
+splits the buffer into lines (respecting quoted strings, splitting on `;`/`\n`/`\r`),
+and hands each extracted line to `FUN_004d6960(clientIndex, contextArg, lineText)`.
+That function tokenizes the line and walks a linked list at `DAT_017507d8` (nodes
+shaped `{next, namePtr, callbackPtr}`), doing a case-insensitive name compare
+(`FUN_00463bb0`) before calling the matched callback directly (with a move-to-front
+cache reorder on hit) — falls through to a cvar-set check and a "forward to server"
+call if no match. **Confirmed this is real and live** (append/drain telemetry all
+correct: writeOffset advances by the exact string length on append, resets to 0 the
+following frame). A one-time live dump of the full `DAT_017507d8` list (132 entries)
+proved `weapnext`/`togglemenu`/`screenshot` are **not** registered there — the list
+skews almost entirely toward UI/profile/social/debug commands (`closemenu`,
+`openmenu`, `profile_toggleAutoAim`, `coopLaunch`, etc.), essentially no core gameplay
+verbs. So this whole real mechanism is confirmed working, just not how weapnext/pause
+are actually triggered.
+
+**The real ESCAPE/pause-menu path: hardcoded directly in the key-event handler,
+`FUN_00541020`.** (Ghidra's decompile mis-detects this function's parameter count as 3;
+the real call site in `FUN_0054b9f0` passes 4 args — `FUN_00541020(0, local_38[3],
+local_28, local_38[1])` — trust the disassembly over the decompile here.) ESCAPE
+(`0x1b`) is special-cased entirely separately from the generic command dispatcher:
+```
+gate  = *(uint32_t*)(0x00B36210 + playerIndex*0x188)   // same gate the buy-station fix uses
+state = *(int32_t*)(0x00B36218 + playerIndex*0x188)    // per-player game-state
+if (gate & 0x10)              -> FUN_004d9850(playerIndex, 0x1b, isDown)  // forward
+                                   // ESC to the currently open menu (real "close" action)
+else if (state == 1 || 2)     -> FUN_004d6620(playerIndex)                // open pause menu
+else if (state == 6)          -> FUN_004396d0(playerIndex, 2)   // (after extra guard
+                                   // checks, skipped in our first live implementation) --
+                                   // this is the branch real SP/Survival gameplay hits
+```
+For SP, `playerIndex` is always 0 (all three addresses collapse to flat constants). All
+three callees confirmed plain `__cdecl` via their real call sites' disassembly:
+- `FUN_004d6620(playerIndex)` — 1 arg (`0x0054126e`: `PUSH ECX; CALL; ADD ESP,4`).
+- `FUN_004d9850(playerIndex, keyCode, isDown)` — 3 args (`0x00541281`: pushes EDX
+  (playerIndex) last, so it's the first declared arg; `ADD ESP,0xc` after).
+- `FUN_004396d0(playerIndex, mode)` — 2 args (`0x00541259`: `PUSH 0x2; PUSH EAX; CALL;
+  ADD ESP,8`).
+
+**Confirmed live:** Start (wired to this exact logic) genuinely opens the pause menu
+via the `state==6` branch. Closing/unpausing it is blocked on a separate, unresolved
+issue — the mod's whole per-frame injection normally lives inside the gameplay-
+simulation pipeline, which halts while paused (confirmed via a heartbeat diagnostic).
+A real `IDirect3DDevice9::Present` hook was implemented for this (`d3d9_hook.cpp` —
+hooks `IDirect3D9::CreateDevice` via its vtable slot, filtered to `DeviceType ==
+D3DDEVTYPE_HAL` to avoid a documented D3D9-hooking pitfall where games create a
+throwaway probe device first) but its detour doesn't fire live for reasons not yet
+found, even though `MH_CreateHook`/`MH_EnableHook` both report success on what's
+confirmed to be the real HAL device. See `re_notes/known_issues.md` issue #2 for the
+full account, including a dead-end side investigation into whether this build has a
+working developer console (it does not appear to — no `toggleconsole` string exists,
+and the one promising-looking `"monkeytoy"` console-restriction dvar is never read
+anywhere in the binary besides its own registration).
