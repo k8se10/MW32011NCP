@@ -42,7 +42,7 @@ resume no longer breaks movement.
 
 ## 2. No real one-shot command dispatcher found yet
 
-**Status:** Open. Three dead ends found so far (2026-07-15 session).
+**Status:** Open. Multiple dead ends found so far (2026-07-15 session).
 
 **Blocks:** Y (weapnext), Start (pause/togglemenu). Also relevant to any future one-shot
 command work (toggleprone already works via a different mechanism — direct usercmd bit
@@ -68,13 +68,32 @@ generic function, not as a literal operand anywhere per-command.
 - `FUN_00541020`/`FUN_0057e710`/`FUN_0054b9f0`: real key-event message-pump handlers,
   but none contain a generic "look up and execute a named command" branch — they only
   route to the special-bind dispatcher (`FUN_00438710`) or do nothing further.
+- `FUN_00478ad0` (`"Reliable command buffer overflow"` string): looked exactly like a
+  classic `Cbuf_AddText`, but turned out to be `SV_AddServerCommand`-equivalent — a
+  server→client reliable-command *queue* (per-client ring buffer, `MAX_RELIABLE_
+  COMMANDS`-style masking). Sends things like print/scoreboard messages from server to
+  client; not the local client-side one-shot input dispatcher we need (weapon
+  switching needs no server round-trip).
+- **memdiff on `togglemenu` (ESC), false lead:** edge-sequence mode narrowed to 218
+  candidates, all showing the identical `0xFF`/`0x00` alternating pattern, densely
+  packed across a single ~56KB region. Pointer-scanning a diverse sample (including
+  two addresses that looked "isolated" from the repeating cluster) found all 10 sampled
+  addresses point to the *same* 2MB memory block via the *same* 12 static references.
+  Dumping that block's contents (new `memdiff dump` mode) revealed it's **Steam API's
+  own internal protobuf message data** (`CMsgNetworkDevicesData`,
+  `CCloud_PendingRemoteOperation`, `CMsgFactoryResetState`, `CSteamOSManagerState`,
+  etc.) — completely unrelated to the game's menu system. This was a false
+  correlation: Steam's background overlay/networking activity happened to change on a
+  cadence that coincidentally lined up with real human press-and-pause timing, not
+  because the pause menu toggled. Worth remembering as a general risk for this
+  methodology — background OS/Steam processes can produce consistent-looking but
+  spurious correlates.
 
 **Next step (not yet tried):** find where a *typed console command* gets parsed and
 executed (the developer console input path) — that code must call the real generic
-dispatcher directly with a raw string, which the key-event path may obscure. Also
-consider live memdiff/pointer-chasing tied to an actual one-shot action's observable
-side effect (similar to how Sprint/Reload were eventually found), rather than more
-static string-reference tracing.
+dispatcher directly with a raw string, which the key-event path may obscure. If
+retrying memdiff on a one-shot command, consider excluding known Steam/non-game module
+memory ranges from the scan to reduce false correlates like the one above.
 
 ---
 
