@@ -42,7 +42,55 @@ resume no longer breaks movement.
 
 ## 2. No real one-shot command dispatcher found yet
 
-**Status:** Open. Multiple dead ends found so far (2026-07-15 session).
+**Status:** Likely RESOLVED (2026-07-15), built and deployed, awaiting live verification.
+
+**Found via:** external research, per explicit user direction to use it instead of
+continuing blind RE. A community write-up on classic CoD-engine reverse engineering
+(kiwidog.me) describes the standard technique: search the binary for a hardcoded
+`"screenshot"` command string, since that dev command is almost always issued through
+the real `Cbuf_AddText`-equivalent somewhere. We already had this exact anchor sitting
+in earlier session data without recognizing it — `FUN_004dfd30` (decompiled hours
+earlier while chasing callers of the special-bind dispatcher `FUN_00438710`) contains
+`FUN_00457c90(*param_1, "screenshot\n")`.
+
+**`FUN_00457c90` confirmed as `Cbuf_AddText(int clientIndex, const char* text)`:**
+lock-protected (`FUN_00428af0`/`FUN_00528fe0` acquire/release critical section `0x1f`),
+per-client text-buffer append. Special-cases a `"p0 "` prefix to redirect the target
+client index (irrelevant for SP — always client 0). Computes the string length, then
+indexes a per-client 12-byte bookkeeping struct (`base`/`capacity`/`writeOffset` at
+`&DAT_017507e4/e8/ec + clientIndex*0xc`), and if there's room, appends the string
+(including its null terminator) at the current write offset, advancing the offset by
+the string length only (not length+1) — so the buffer is a flat concatenated command
+stream and the *caller* must supply a trailing `\n` (confirmed by `"screenshot\n"`
+including one; nothing here adds it automatically). This is exactly the textbook
+Quake3-lineage `Cbuf_AddText` behavior.
+
+**Calling convention:** confirmed via the real call site in `FUN_004dfd30`
+(`PUSH 0x827e64` [the string] ; `PUSH EAX` [client index] ; `CALL 0x00457c90` ;
+`ADD ESP,0x8`) — plain `__cdecl`, arguments in normal declared order. No register-passed
+weirdness at all, unlike almost every other hook in this project — callable directly as
+an ordinary C function pointer, no naked-ASM hook stub needed.
+
+**Implementation:** `analog_input_hooks.cpp` declares
+`using CbufAddTextFn = void(__cdecl*)(int, const char*);` bound to `0x00457c90`, and
+calls it directly (not hooked — we're just *invoking* the real engine function) from
+two new edge-triggered injectors:
+- `InjectControllerWeaponNext()` (Y button) → `CbufAddText(0, "weapnext\n")`
+- `InjectControllerPauseMenu()` (Start button) → `CbufAddText(0, "togglemenu\n")`
+
+Both fire once per rising edge only (not every frame held) — since this appends into a
+growing buffer rather than setting a hold-state, holding the button down would spam the
+command into the buffer every single frame.
+
+**Not yet done:** live verification (does Y actually cycle weapons in-game, does Start
+actually open/close the pause menu the same way real ESC does, and does it interact
+safely with the buy-station gate-window fix from issue #1). Once confirmed, this also
+unblocks a "real" native `toggleprone` via the same mechanism if ever wanted (current
+prone/crouch ladder already works fine via direct usercmd-bit forcing, so no urgency
+there) and gives us a general-purpose way to invoke any one-shot console command
+natively for future buttons.
+
+**Dead ends ruled out along the way (superseded by the above, kept for the record):**
 
 **Blocks:** Y (weapnext), Start (pause/togglemenu). Also relevant to any future one-shot
 command work (toggleprone already works via a different mechanism — direct usercmd bit
@@ -103,9 +151,9 @@ memory ranges from the scan to reduce false correlates like the one above.
 
 | Input | Intended action | Blocker |
 |---|---|---|
-| Y | `weapnext` | Needs issue #2 resolved first |
-| Start | `pause`/`togglemenu` | Needs issue #2 resolved first |
-| Back | Likely `+scores` (scoreboard) | Not yet investigated — may need its own bit/offset confirmation, same as any other kbutton-array entry |
+| Y | `weapnext` | Wired via issue #2's fix (2026-07-15) — awaiting live confirmation |
+| Start | `pause`/`togglemenu` | Wired via issue #2's fix (2026-07-15) — awaiting live confirmation |
+| Back | Likely `+scores` (scoreboard) | Not yet investigated — this is a hold (`+`/`-` pair) command, not a one-shot, so it needs its own real `kbutton_t` found the same way ADS/Reload were, not the `Cbuf_AddText` mechanism above |
 | D-pad (all 4) | `+actionslot 1-4` variants | Bits are known from the confirmed usercmd-bit table but individually unconfirmed against real gameplay effects — old table-order-guessed identities (inventory wheel, weapon attachment, NVG toggle) are unreliable and need live playtest confirmation the same way every other button on this project has required |
 
 ---

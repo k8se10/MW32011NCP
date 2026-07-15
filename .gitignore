@@ -18,3 +18,7 @@ tools/*/bin/
 tools/*/obj/
 vcontroller_sim.exe
 memdiff.exe
+
+# memdiff full-process memory snapshots (~400MB each) -- diagnostic scratch data, never
+# meant to be committed
+tools/memdiff/*.snap

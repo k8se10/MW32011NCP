@@ -497,6 +497,76 @@ extern "C" void __cdecl InjectControllerLookAngles()
     *kPitchAccum -= ry * kLookDegreesPerSecond * dt;
 }
 
+// ---- One-shot commands (Y=weapnext, Start=togglemenu) via the real command dispatcher --
+//
+// Found 2026-07-15 by using external research instead of continuing blind: a community
+// write-up on classic CoD-engine RE (kiwidog.me) describes searching a binary for a
+// hardcoded "screenshot" command string as an anchor to find the real
+// Cbuf_AddText-equivalent, since that dev command is almost always issued through it
+// somewhere. We already had exactly this in hand from hours earlier in the same
+// investigation (decompiling callers of the special-bind dispatcher FUN_00438710 turned
+// up FUN_004dfd30, which contains `FUN_00457c90(*param_1, "screenshot\n")`) -- it just
+// hadn't been recognized as the anchor until the research named the pattern.
+//
+// FUN_00457c90 decompiles to a lock-protected (FUN_00428af0/FUN_00528fe0 acquire/release
+// a critical section, id 0x1f), per-client text-buffer append: it takes a client index
+// and a command string, special-cases a "p0 " prefix to redirect the target client index
+// (irrelevant for SP, always client 0), computes the string length, and appends the
+// string (including its null terminator) into a per-client buffer whose base/capacity/
+// write-offset triplet lives at &DAT_017507e4/e8/ec + clientIndex*0xc, bounds-checked
+// against capacity. The write-offset only advances by the string length (NOT length+1),
+// so the next append overwrites the terminator -- meaning the buffer is a plain
+// concatenated command stream, not individually-delimited entries, and the caller MUST
+// supply its own trailing "\n" (confirmed by "screenshot\n" including one) since nothing
+// here adds one automatically. This is exactly Cbuf_AddText's textbook Quake3-lineage
+// behavior ("adds command text at the end of the buffer, does not add a final \n").
+//
+// Calling convention confirmed via the real call site in FUN_004dfd30 (PUSH the string,
+// PUSH the client index, CALL, caller does ADD ESP,0x8 afterward) -- plain __cdecl, args
+// in normal declared order, no register-passed weirdness at all (unlike almost every
+// other hook in this file). Callable directly as an ordinary C function pointer.
+namespace {
+using CbufAddTextFn = void(__cdecl*)(int clientIndex, const char* text);
+CbufAddTextFn const CbufAddText = reinterpret_cast<CbufAddTextFn>(0x00457c90);
+constexpr int kLocalClientIndex = 0; // SP only ever has player 0
+
+constexpr unsigned short kXI_Y = 0x8000;
+constexpr unsigned short kXI_START = 0x0010;
+bool g_weaponNextHeld = false;
+bool g_startHeld = false;
+} // namespace
+
+// Y -> weapnext. Edge-triggered (fires once per press, not every frame held) -- this
+// appends into a growing text buffer, so holding the button would spam "weapnext\n"
+// into it every single frame, same class of bug as any key-repeat issue.
+extern "C" void __cdecl InjectControllerWeaponNext()
+{
+    unsigned short buttons;
+    unsigned char leftTrigger, rightTrigger;
+    if (!Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger)) return;
+
+    bool held = (buttons & kXI_Y) != 0;
+    if (held && !g_weaponNextHeld) {
+        CbufAddText(kLocalClientIndex, "weapnext\n");
+    }
+    g_weaponNextHeld = held;
+}
+
+// Start -> togglemenu (the real ESC/pause-menu bind command). Edge-triggered, same
+// reasoning as weapnext above.
+extern "C" void __cdecl InjectControllerPauseMenu()
+{
+    unsigned short buttons;
+    unsigned char leftTrigger, rightTrigger;
+    if (!Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger)) return;
+
+    bool held = (buttons & kXI_START) != 0;
+    if (held && !g_startHeld) {
+        CbufAddText(kLocalClientIndex, "togglemenu\n");
+    }
+    g_startHeld = held;
+}
+
 // ---- Combined per-frame entry point -- all controller injection lives here now ----
 //
 // Restructured 2026-07-14 to hook FUN_0057de60 (the always-running finalize step)
@@ -575,6 +645,12 @@ extern "C" void __cdecl InjectAllControllerInput(unsigned char* cmd)
         *reinterpret_cast<volatile uint32_t*>(0x00B36210) &= ~0x10u;
     }
 
+    // ATTEMPT 3 RE-TEST (2026-07-15): re-checked the 0x021cd678+0xc "menu field" lead with
+    // change-triggered diagnostic logging across 9 real ESC presses in and out of the
+    // pause menu -- the field never changed once across all 9 transitions. Confirmed dead
+    // for real this time (the original dismissal was right; it just hadn't been tested
+    // this rigorously before). Diagnostic block removed now that this is settled.
+
     InjectControllerLookAngles();
     if (cmd) {
         InjectControllerMovement(cmd);
@@ -583,6 +659,8 @@ extern "C" void __cdecl InjectAllControllerInput(unsigned char* cmd)
     InjectControllerAds();
     InjectControllerSprint();
     InjectControllerReload();
+    InjectControllerWeaponNext();
+    InjectControllerPauseMenu();
 }
 
 namespace {

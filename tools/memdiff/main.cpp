@@ -39,6 +39,55 @@ struct Snapshot {
     std::vector<Region> regions; // kept sorted ascending by base (scan order guarantees this)
 };
 
+// Simple on-disk format for named/labeled snapshots: [u32 regionCount] then per region
+// [u32 base][u32 size][size bytes]. Lets the user manually navigate to a specific,
+// labeled state (e.g. "pause menu open") and snapshot it on demand, then have any two
+// labeled snapshots diffed later -- much more precise than inferring state purely from
+// blind key-press timing, which risks picking up coincidental background activity
+// unrelated to the actual state change (see re_notes/known_issues.md #2, the Steam-data
+// false lead from a timing-only ESC-press correlation).
+bool SaveSnapshot(const Snapshot& snap, const char* path)
+{
+    FILE* f = nullptr;
+    fopen_s(&f, path, "wb");
+    if (!f) return false;
+    uint32_t count = static_cast<uint32_t>(snap.regions.size());
+    fwrite(&count, sizeof(count), 1, f);
+    for (const auto& r : snap.regions) {
+        uint32_t base = static_cast<uint32_t>(r.base);
+        uint32_t size = static_cast<uint32_t>(r.size);
+        fwrite(&base, sizeof(base), 1, f);
+        fwrite(&size, sizeof(size), 1, f);
+        fwrite(r.data.data(), 1, r.data.size(), f);
+    }
+    fclose(f);
+    return true;
+}
+
+bool LoadSnapshot(Snapshot& snap, const char* path)
+{
+    FILE* f = nullptr;
+    fopen_s(&f, path, "rb");
+    if (!f) return false;
+    uint32_t count = 0;
+    if (fread(&count, sizeof(count), 1, f) != 1) { fclose(f); return false; }
+    snap.regions.clear();
+    snap.regions.reserve(count);
+    for (uint32_t i = 0; i < count; i++) {
+        uint32_t base = 0, size = 0;
+        if (fread(&base, sizeof(base), 1, f) != 1) { fclose(f); return false; }
+        if (fread(&size, sizeof(size), 1, f) != 1) { fclose(f); return false; }
+        Region r;
+        r.base = base;
+        r.size = size;
+        r.data.resize(size);
+        if (size > 0 && fread(r.data.data(), 1, size, f) != size) { fclose(f); return false; }
+        snap.regions.push_back(std::move(r));
+    }
+    fclose(f);
+    return true;
+}
+
 DWORD FindProcessId(const wchar_t* exeName)
 {
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
@@ -380,6 +429,138 @@ int main(int argc, char** argv)
             printf("\n");
         }
         CloseHandle(proc);
+        return 0;
+    }
+
+    // Special mode: memdiff.exe snapshot <name> -- takes ONE snapshot right now and
+    // saves it to "<name>.snap". Meant for manual, labeled state capture: navigate to
+    // an exact state in-game (e.g. "pause menu open"), then run this to save it, move
+    // to the next state, save again under a different name, etc.
+    if (argc >= 3 && _stricmp(argv[1], "snapshot") == 0) {
+        DWORD pid = FindProcessId(L"iw5sp.exe");
+        if (pid == 0) {
+            printf("iw5sp.exe not found -- launch the game first.\n");
+            return 1;
+        }
+        HANDLE proc = OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, FALSE, pid);
+        if (!proc) {
+            printf("OpenProcess failed (%lu) -- run this tool as Administrator.\n", GetLastError());
+            return 1;
+        }
+        printf("Taking snapshot...\n");
+        Snapshot snap = TakeSnapshot(proc);
+        char path[MAX_PATH];
+        sprintf_s(path, "%s.snap", argv[2]);
+        if (SaveSnapshot(snap, path)) {
+            printf("Saved %s (%zu regions)\n", path, snap.regions.size());
+        } else {
+            printf("Failed to save %s\n", path);
+        }
+        CloseHandle(proc);
+        return 0;
+    }
+
+    // Special mode: memdiff.exe diff <nameA> <nameB> -- loads two saved snapshots and
+    // reports every byte address that differs between them, with both values. No
+    // narrowing/candidate logic -- meant for comparing two precisely labeled states
+    // (e.g. "pause_open.snap" vs "pause_closed.snap") where the state difference is
+    // already known and controlled, unlike the press-timing-based modes above.
+    if (argc >= 4 && _stricmp(argv[1], "diff") == 0) {
+        char pathA[MAX_PATH], pathB[MAX_PATH];
+        sprintf_s(pathA, "%s.snap", argv[2]);
+        sprintf_s(pathB, "%s.snap", argv[3]);
+        Snapshot a, b;
+        if (!LoadSnapshot(a, pathA)) { printf("Failed to load %s\n", pathA); return 1; }
+        if (!LoadSnapshot(b, pathB)) { printf("Failed to load %s\n", pathB); return 1; }
+        printf("Diffing %s (%zu regions) vs %s (%zu regions)...\n",
+               pathA, a.regions.size(), pathB, b.regions.size());
+        size_t diffCount = 0;
+        constexpr size_t kMaxPrint = 300;
+        for (const auto& rb : b.regions) {
+            const Region* ra = FindRegion(a, rb.base);
+            if (!ra || ra->size != rb.size) continue;
+            for (size_t i = 0; i < rb.size; i++) {
+                if (ra->data[i] != rb.data[i]) {
+                    diffCount++;
+                    if (diffCount <= kMaxPrint) {
+                        printf("  0x%08zX : %s=0x%02X %s=0x%02X\n", rb.base + i,
+                               argv[2], ra->data[i], argv[3], rb.data[i]);
+                    }
+                }
+            }
+        }
+        printf("\nTotal differing bytes: %zu%s\n", diffCount,
+               diffCount > kMaxPrint ? " (only first 300 printed)" : "");
+        return 0;
+    }
+
+    // Special mode: memdiff.exe correlate <name1> <name2> <name3> ... -- loads an
+    // alternating sequence of labeled snapshots (odd positions = state A, even
+    // positions = state B, e.g. closed1 open1 closed2 open2 closed3 open3) and applies
+    // the SAME proven candidate-narrowing algorithm as the live held/released mode
+    // above, just against pre-saved, manually-confirmed states instead of inferring
+    // state from key-press timing. Combines the precision of labeled snapshots (no
+    // risk of a coincidental background-activity correlation, see the Steam-data false
+    // lead in re_notes/known_issues.md #2) with the statistical robustness repeated
+    // transitions give against this game's very high per-frame memory volatility
+    // (13M+ bytes differ between two otherwise-identical "closed" snapshots just
+    // seconds apart -- a single before/after diff alone is hopeless here).
+    if (argc >= 4 && _stricmp(argv[1], "correlate") == 0) {
+        int n = argc - 2;
+        std::vector<Snapshot> snaps(n);
+        for (int i = 0; i < n; i++) {
+            char path[MAX_PATH];
+            sprintf_s(path, "%s.snap", argv[2 + i]);
+            if (!LoadSnapshot(snaps[i], path)) {
+                printf("Failed to load %s\n", path);
+                return 1;
+            }
+            printf("Loaded %s (%s, %zu regions)\n", path, (i % 2 == 0) ? "state A" : "state B",
+                   snaps[i].regions.size());
+        }
+
+        std::vector<Candidate> candidates;
+        for (const auto& ra : snaps[0].regions) {
+            const Region* rb = FindRegion(snaps[1], ra.base);
+            if (!rb || rb->size != ra.size) continue;
+            for (size_t i = 0; i < ra.size; i++) {
+                if (ra.data[i] != rb->data[i]) {
+                    candidates.push_back({ ra.base + i, ra.data[i], rb->data[i] });
+                }
+            }
+        }
+        printf("Initial candidates (from %s vs %s): %zu\n", argv[2], argv[3], candidates.size());
+
+        for (int i = 2; i < n; i++) {
+            bool isStateA = (i % 2 == 0);
+            size_t before = candidates.size();
+            std::vector<Candidate> next;
+            next.reserve(candidates.size());
+            for (const auto& c : candidates) {
+                uint8_t actual;
+                if (!GetByte(snaps[i], c.addr, actual)) continue;
+                uint8_t want = isStateA ? c.downVal : c.upVal;
+                if (actual == want) next.push_back(c);
+            }
+            candidates = std::move(next);
+            printf("  after %s (%s): %zu -> %zu\n", argv[2 + i], isStateA ? "state A" : "state B",
+                   before, candidates.size());
+        }
+
+        printf("\n================ FINAL CORRELATE CANDIDATES (%zu) ================\n",
+               candidates.size());
+        for (const auto& c : candidates) {
+            printf("  0x%08zX : stateA=0x%02X stateB=0x%02X\n", c.addr, c.downVal, c.upVal);
+        }
+        if (!candidates.empty() && candidates.size() <= kMaxPointerScanCandidates) {
+            printf("\n================ POINTER SCAN ================\n");
+            for (const auto& c : candidates) {
+                printf("\nCandidate 0x%08zX:\n", c.addr);
+                PointerScanForCandidate(snaps.back(), c.addr);
+            }
+        } else if (!candidates.empty()) {
+            printf("\n(skipping pointer scan -- %zu candidates is too many)\n", candidates.size());
+        }
         return 0;
     }
 
