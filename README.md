@@ -2,8 +2,8 @@
 
 **Status: ALPHA — actively in development (as of 2026-07-15).** Analog movement, look,
 and most buttons are confirmed working live against `iw5sp.exe` (Campaign/Survival).
-Start now natively opens the pause menu (see the control map below for the current
-partial-functionality caveat). A couple of buttons are still unassigned, full menu/UI
+Start now natively opens **and closes** the pause menu, and Y (weapon switch) works.
+Back and D-pad are still unassigned, killstreaks need per-killstreak work, full menu/UI
 navigation isn't implemented, and Multiplayer (`iw5mp.exe`) hasn't been started. Not
 feature-complete, not fully tested end-to-end.
 
@@ -44,10 +44,10 @@ keyboard/mouse emulation layer with a controller icon on it.
 | Right stick click (R3) | Melee | ✅ Confirmed |
 | Left bumper (LB) | Tactical (smoke) | ✅ Confirmed |
 | Right bumper (RB) | Lethal (frag) | ✅ Confirmed |
-| Y | Weapon switch (`weapnext`) | ⬜ Not yet implemented |
-| Start | Opens pause menu (real native call, not a keypress emulation) | 🟡 Partial — opens the menu; closing/unpausing via controller doesn't work yet (use keyboard ESC or mouse to resume for now) |
-| Back | *(unassigned)* | ⬜ Not yet implemented |
-| D-pad (all 4 directions) | *(unassigned)* | ⬜ Not yet implemented |
+| Y | Weapon switch (`weapnext`) | ✅ Confirmed |
+| Start | Opens **and closes** the pause menu (real native calls, not a keypress emulation) | ✅ Confirmed |
+| Back | *(unassigned)* | ⬜ Not yet implemented — a first attempt regressed live (see `re_notes/known_issues.md`), reverted, deprioritized (nice-to-have, not gameplay-defining) |
+| D-pad (all 4 directions) | Killstreaks/attachments (e.g. noob tube) — normally numbered keys on PC | ⬜ In progress |
 | Menu/UI navigation | Buy stations, pause menu, options, etc. | ⬜ Not yet implemented — mouse/keyboard still required |
 
 **B's stance ladder**, matching real Xbox 360 CoD behavior (not a raw hold of either
@@ -64,26 +64,22 @@ and only if the hold threshold was never reached.
 
 ## What's blocking the remaining buttons
 
-- **Y (`weapnext`):** not a held kbutton — it's a one-shot console-style command. The
-  engine's real `Cbuf_AddText`/`Cmd_ExecuteString` pair was found and confirmed working
-  (see `re_notes/known_issues.md`), but a live dump of every registered command proved
-  `weapnext` isn't invoked through that generic dispatcher at all — core gameplay verbs
-  like weapon switching go through the same bind-index/`kbutton_t` mechanism already
-  used for ADS and Reload instead. Needs the same live-verified bind-index hunt those
-  got, not a text-command guess.
-- **Start, closing the menu:** opening the pause menu is solved (a real hardcoded
-  ESCAPE-key path in the engine's key-event handler, not a text command — see
-  `re_notes/known_issues.md`). Closing it needs the mod's per-frame injection to keep
-  running while the game is paused, which the current hook doesn't do (it lives in the
-  gameplay-simulation pipeline, which pausing halts by design). A real
-  `IDirect3DDevice9::Present` hook now exists for this purpose, but its detour doesn't
-  fire live yet for reasons not yet root-caused — deferred until the real controller
-  UI/menu-navigation effort below, which will need to solve this same class of problem
-  anyway.
-- **Back:** unassigned — likely `+scores`, a held (not one-shot) kbutton that needs its
-  own real address found the same way ADS/Reload were.
-- **D-pad:** the underlying `+actionslot 1-4` bits are known but largely unconfirmed
-  individually against real gameplay effects — not yet assigned.
+- **Back:** a first attempt wired `0x00A98B14` in as `+scores`'s kbutton, based on an
+  unvalidated assumption (a bind-name-table index treated as if it were a
+  `FUN_00438710` switch case number). Confirmed WRONG live — it made the player walk
+  backward (it's almost certainly the real `+back` movement kbutton). Reverted
+  immediately; Back is a no-op again. Needs the same live-keycode-table technique that
+  correctly solved weapnext (see `re_notes/known_issues.md`) applied to TAB instead.
+  Deprioritized — scoreboard isn't gameplay-defining, unlike D-pad/killstreaks.
+- **D-pad:** intended for killstreaks and attachment toggles (e.g. a grenade-launcher
+  underbarrel), which map to `+actionslot 1-4` and normally sit on numbered keys on PC.
+  The old table-order-guessed bit identities for these are flagged unreliable, and two
+  of them (`0x100`/`0x200`) are already claimed by the confirmed-working B-button
+  crouch/prone system — so those guesses are doubly suspect. In progress: live-reading
+  the real keycode dispatch table for the actual bound keys instead.
+- **Killstreaks:** user's first live test (Predator missile) showed partial
+  functionality — needs its own per-killstreak investigation once D-pad/scoreboard
+  settle, likely a distinct mechanism per killstreak type.
 - **Full menu/UI navigation:** a genuinely separate system from in-game movement/look
   (menus read keyboard/mouse binds, not `usercmd`). Deliberately saved for last per the
   project's locked scope order — needs its own hook/input-synthesis path plus
@@ -97,22 +93,23 @@ iw5sp.exe (unmodified game logic)
     ▼
 our proxy d3d9.dll                         ← real injection point, ships beside the exe
     │  forwards all real d3d9 exports to the genuine system d3d9.dll
-    │  hooks IDirect3D9::CreateDevice (vtable) -> hooks the real device's Present
+    │  hooks IDirect3D9::CreateDevice (vtable) -> subclasses the real device's window
     ▼
 XInput poll (linked by us, game has none)  → deadzone + response curve
     ▼
 TWO separate per-frame injection points, because they run at different times:
     │  FUN_0057de60 (gameplay-simulation tick, halts while paused)
-    │      — movement, look, buttons, ADS, Sprint, Reload all inject here
-    │  IDirect3DDevice9::Present (rendering tick, keeps running even while paused)
-    │      — intended for menu-related input (Start); currently not reliably firing
-    │        live, so Start's pause-menu handling also still runs from the gameplay
-    │        tick as a fallback (see re_notes/known_issues.md)
+    │      — movement, look, buttons, ADS, Sprint, Reload, weapon switch inject here
+    │  WndProc subclass + a SetTimer-driven ~60Hz WM_TIMER (keeps running even while
+    │  paused, since it's a plain Win32 window hook, not a D3D9 vtable)
+    │      — Start's pause-menu open/close inject here (a real Present hook was tried
+    │        first but confirmed dead — see re_notes/known_issues.md)
     ▼
 real KeyDown/KeyUp kbutton calls — ADS, Reload (not raw usercmd bits)
 real Cbuf_AddText/Cmd_ExecuteString pair — confirmed working, but not the mechanism
     for weapnext/togglemenu (see re_notes/known_issues.md)
-real hardcoded ESCAPE-key path in the key-event handler — Start's pause-menu open
+real hardcoded ESCAPE-key path + FUN_004396d0's open/close cases — Start's pause menu
+real FUN_00541020 raw-keycode dispatch table + FUN_00438710 jump table — weapon switch
     ▼
 separate hook/path still needed for FULL menu & UI navigation (not implemented yet)
 ```
@@ -132,9 +129,6 @@ See `re_notes/known_issues.md` for the full, actively-tracked list.
   real controller options screen) is not implemented yet — for now, menus (buy
   stations, pause, etc.) still need mouse/keyboard, and that continues to work
   normally alongside controller gameplay.
-- Start opens the pause menu natively but can't close/unpause it yet — use keyboard
-  ESC or mouse to resume for now. Root cause and what's already been tried are
-  documented in `re_notes/known_issues.md`.
 - Full console-style aim assist (rotational friction, target magnetism) is not yet
   implemented — that requires reading live entity/aim-target data out of the game's
   process memory, planned as a later layer on top of the current stick response curves.

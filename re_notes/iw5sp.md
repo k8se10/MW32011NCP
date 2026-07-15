@@ -935,3 +935,144 @@ full account, including a dead-end side investigation into whether this build ha
 working developer console (it does not appear to — no `toggleconsole` string exists,
 and the one promising-looking `"monkeytoy"` console-restriction dvar is never read
 anywhere in the binary besides its own registration).
+
+## Start unpause, Y/weapnext solved, Back reverted (2026-07-15, later session)
+
+Picked back up after the previous session's docs/push. Three outcomes this session:
+Start's unpause finally solved, Y/weapnext solved cleanly, and a Back-button attempt
+that regressed live and was caught/reverted immediately — kept here for the record
+since the root cause (an unvalidated assumption) directly informed how weapnext was
+then solved correctly. Full narrative in `re_notes/known_issues.md` issues #2-3; this
+section is the technical reference.
+
+### Start unpause: the `Present` hook was dead, not just pause-specific
+
+Added a fire counter (`g_presentFireCount`, incremented inside `Hook_Present`, logged
+on change from the gameplay tick) to settle the previous session's open question. Live
+result: the counter stayed at **exactly zero** through a full normal, UNPAUSED play
+session with dozens of confirmed gameplay-tick frames elapsing — conclusive proof the
+detour never fires at all, not just during pause. This rules out every pause-specific
+theory from the prior session and points at an external hook on the same vtable slot
+(Steam Overlay is the leading suspect: well documented to hook `Present` itself, active
+by default for any Steam-launched title). Not worth fighting a third party's hook.
+
+**Real fix: abandoned `Present`, subclassed the game's own `WndProc` instead.**
+`d3d9_hook.cpp`'s `Hook_CreateDevice` now calls `InstallWndProcHook(hFocusWindow)` once
+the real HAL device is confirmed (the same `hFocusWindow` parameter `CreateDevice`
+already receives — no need to touch `D3DPRESENT_PARAMETERS` at all). This is a plain
+Win32 API (`SetWindowLongPtr(hwnd, GWLP_WNDPROC, ...)`), not a COM vtable, so nothing
+D3D9-related can silently steal it. A `SetTimer`-driven ~60Hz `WM_TIMER` on the
+subclassed window guarantees the hook keeps ticking even during totally idle periods
+with zero other window messages arriving (e.g. the mouse motionless over an idle paused
+menu) — without it, `HookWndProc` would only fire as often as real messages happen to
+arrive, not reliably frequent enough to catch a quick Start press/release. Runs on the
+game's own thread (whichever thread owns/pumps the window), matching every other hook
+in this project — deliberately not a separate free-running thread, which would call
+real engine functions unsynchronized with the game's own thread and risk exactly the
+kind of corruption CLAUDE.md's hook-safety rules warn against.
+
+**The actual unpause call:** decompiling `FUN_004396d0` fully (previously only its
+`mode == 2` case, "open," had been read closely) revealed a genuine `mode == 0` case:
+```c
+case 0:
+  FUN_0053ada0(param_1, 0xffffffef);
+  thunk_FUN_0057e710(param_1);
+  FUN_005396b0("cl_paused", 0);   // clears cl_paused -- this IS resume/unpause
+  FUN_004a1280(0);
+  FUN_004ae120(&DAT_01c00458);
+  return 1;
+```
+`InjectControllerPauseMenu` now tracks its own `g_paused` bool (set/cleared on the same
+physical Start press that opened/closed the menu) and calls
+`SetMenuState(kLocalClientIndex, 0)` on the second press instead of re-opening. Both the
+gameplay tick and the new `WndProc`-driven `InjectMenuInputTick` call it (safe/idempotent,
+debounced by the shared `g_startHeld`/`g_paused` state) — redundancy kept from the prior
+session's architecture in case one hook point ever misses an edge.
+
+**CONFIRMED WORKING LIVE across multiple full cycles** — `proxy_d3d9.log` shows clean
+`Start pressed (opening): state=6` → `Start pressed (closing): calling SetMenuState(0,
+unpause)` → `Start pressed (opening): state=6` transitions repeating cleanly.
+
+### Y/weapnext: solved via the real raw-keycode dispatch table
+
+First attempt (WRONG, see the Back section below for the shared root cause): computed
+`weapnext`'s index in the 8-byte-stride bind-name string table (base `0x00929fa4`) and
+fed it straight into `FUN_00438710` as a case number. Should have been a red flag on its
+own — `weapnext`'s hit in that table (`0x0092a0a8`) didn't even land on a clean multiple
+of 8 (offset 260, `260/8 = 32.5`), unlike every genuinely-confirmed entry (`+reload`=26,
+`+actionslot4`=10, `+stance`=11, `pause`=33, all exact).
+
+**Real fix:** live-read `FUN_00541020`'s own raw-keycode dispatch table (`DAT_00a98e4c`)
+for weapnext's actual bound keys (`'1'`=0x31, `'2'`=0x32 per `players2/config.cfg`) — the
+same lookup the game performs on a real keypress, so it can't be wrong by construction.
+Confirmed exact formula from `FUN_00541020`'s disassembly:
+```
+LEA ECX,[ESI + ESI*0x2]              ; ECX = keyCode*3
+MOV EAX,[EBP + ECX*0x4 + 0xa98e4c]   ; table[keyCode] -- 12 bytes/entry (3 dwords)
+```
+`EBP = playerIndex*0xD28` (from the function's prologue), collapsing to 0 for SP's
+player 0. So for SP: `value = *(int32_t*)(0xA98E4C + keyCode*12)`. A one-shot diagnostic
+read both `'1'` and `'2'` live: **both returned 66 (0x42)** — expected, since both keys
+bind to the identical command.
+
+`FUN_00438710`'s decompile shows case `0x42` (66 decimal) calling
+`FUN_004a5f70(param_1, 1)`, paired with case `0x46` calling `FUN_004a5f70(param_1, 0)` —
+a clean next/prev-direction pair, structurally different from ADS/Reload's down/up
+kbutton pairs (this is a genuine one-shot call with no held state to track). Decompiled
+`FUN_004a5f70`:
+```c
+void FUN_004a5f70(undefined4 param_1, undefined4 param_2)
+{
+  if (DAT_0096f0b8 != 0 && FUN_005791d0() && !FUN_00579240()) {
+    DAT_009945c4 = DAT_00984b78;
+    FUN_0049e350(param_1, 1);
+    FUN_0057a670(param_1, param_2, 0, 0);
+  }
+}
+```
+`FUN_0057a670(playerIndex, direction, 0, 0)` is unambiguous once decompiled: modulo-15
+weapon-inventory-slot cycling (`uVar6 = (uVar6 + 0xf + local_4) % 0xf`, where `local_4 =
+(param_2 != 0)*2 - 1` gives a `+1`/`-1` step from the direction argument), ending in a
+real `FUN_0042d6b0(playerIndex, weaponIndex, uVar8)` weapon-SET call. This is genuinely
+`weapnext`/`weapprev`, not a guess.
+
+`InjectControllerWeaponNext()` calls `WeaponNext(kLocalClientIndex, 1)` on Y's rising
+edge only (a true one-shot, no release action, unlike every held kbutton in this file).
+**CONFIRMED WORKING LIVE by the user.**
+
+### Back regression: bind-name-table index ≠ `FUN_00438710` case number
+
+Wired Back to `0x00A98B14` using the SAME flawed technique weapnext's first attempt
+used: `"+scores"`'s bind-name-table index (31, a clean `idx*8` fit, unlike weapnext's
+messy hit) fed directly into `FUN_00438710` as a case number (`0x1f` = 31). Statically
+traced case `0x1f`'s disassembly (`0x438aff`: `MOV EAX,ESI; IMUL EAX,EAX,0x230; ADD
+EAX,0xa98b14; CALL 0x0057d1c0`) and case `0x20`'s (`-scores`, same `0xa98b14` address,
+`CALL 0x0057d200`) — a clean down/up kbutton pair, structurally identical to ADS/Reload,
+which made the wrong case number look validated when it wasn't.
+
+**CONFIRMED WRONG LIVE:** holding Back made the player walk backward. `0x00A98B14` is
+almost certainly the real `+back` (move-backward) kbutton, not `+scores` — the
+bind-name table and `FUN_00438710`'s switch are apparently numbered independently of
+each other. The methodological error: ADS's and Reload's real case numbers were each
+found by searching `FUN_00438710`'s disassembly for an address **already confirmed
+independently** (via memdiff or an xref chain from a known-good lead) — never by
+trusting a bind-name-table index as if it were the switch's own case numbering. That
+assumption was never actually validated for ADS/Reload either; it just happened not to
+come up, since their real case numbers were derived a different way from the start.
+
+Reverted immediately (`InjectControllerBack` and its call site removed) before it could
+ship. Three earlier live `memdiff` attempts on TAB itself had also failed to find a
+trustworthy candidate: two runs collapsed all the way to zero candidates after
+narrowing promisingly (37→1→0 and 5→5→5→5→0 patterns, both dying on the very last
+transition — possibly a timing/polling issue, never conclusively diagnosed); a third
+produced a stable 6-candidate cluster (`0x0304xxxx` region, held/released values fitting
+a plausible `kbutton_t`-style pattern) that looked promising, but `FindGlobalRefs.java`
+against all 57 of the pointer-scan's "low/static, likely dereferenceable" hit addresses
+came back with **zero real code references** for every single one — confirming the
+whole cluster was a heap-region coincidence, not a real kbutton, despite passing
+memdiff's own address-range heuristic.
+
+Back remains unassigned, deprioritized per explicit user call (scoreboard isn't
+gameplay-defining, unlike D-pad/killstreaks). Next attempt should use the same
+live-keycode-table technique that correctly solved weapnext, applied to TAB (`0x09`),
+instead of another bind-name-table-index guess.
