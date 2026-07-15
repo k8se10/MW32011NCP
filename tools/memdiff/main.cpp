@@ -18,10 +18,16 @@
 #include <tlhelp32.h>
 #include <cstdio>
 #include <cstdint>
+#include <cstring>
 #include <vector>
 #include <algorithm>
+#include <iterator>
 
 namespace {
+
+// A full pointer scan re-reads the whole snapshot memory per candidate, so it must
+// only ever run when there are few enough candidates left for that to finish quickly.
+constexpr size_t kMaxPointerScanCandidates = 50;
 
 struct Region {
     uintptr_t base;
@@ -193,17 +199,125 @@ struct Candidate {
     uint8_t upVal;
 };
 
+// Edge-sequence mode: for one-shot commands (weapnext, togglemenu, toggleprone) that
+// don't have a sustained "held" state for the held/released diff method above to lock
+// onto. Reuses that EXACT same proven matching algorithm, though -- if you're cycling
+// between exactly 2 weapons, weapnext alternates a weapon-index-like value between two
+// fixed states on every press, exactly like a held/released toggle just triggered by
+// discrete presses instead of a continuous hold. Press 1/2 seed the two expected values
+// (evens must match press 2's value, odds press 1's), then every later press narrows
+// the set exactly like the original loop does.
+//
+// Uses GetAsyncKeyState's low bit ("pressed since the last call", not "currently down")
+// so a quick tap can't be missed while TakeSnapshot (a few hundred ms) is in progress --
+// an earlier version used the high bit only and silently dropped most real presses.
+void RunEdgeSequenceMode(HANDLE proc, int vk, const char* label)
+{
+    const int kMaxPresses = 14;
+    printf("================================================================\n");
+    printf(" EDGE-SEQUENCE mode for one-shot command '%s' (VK=0x%02X).\n"
+           " Works best with exactly 2 weapons equipped, so it alternates between\n"
+           " two states. Press %s exactly %d times, naturally, pausing briefly\n"
+           " between each -- the tool exits on its own once it counts %d presses.\n",
+           label, vk, label, kMaxPresses, kMaxPresses);
+    printf("================================================================\n\n");
+
+    GetAsyncKeyState(vk); // clear any stale "pressed since last call" latch before we start
+
+    std::vector<Candidate> candidates;
+    bool seeded = false;
+    Snapshot seedA, seedB;
+    int presses = 0;
+
+    while (presses < kMaxPresses) {
+        if (!(GetAsyncKeyState(vk) & 0x0001)) {
+            Sleep(15);
+            continue;
+        }
+        presses++;
+        bool isOddPress = (presses % 2) == 1;
+        printf("Press %d detected -- snapshotting...\n", presses);
+        Snapshot snap = TakeSnapshot(proc);
+
+        if (!seeded) {
+            if (isOddPress) seedA = std::move(snap); else seedB = std::move(snap);
+            if (presses == 2) {
+                printf("Have both phases -- building initial candidate set...\n");
+                for (const auto& ra : seedA.regions) {
+                    const Region* rb = FindRegion(seedB, ra.base);
+                    if (!rb || rb->size != ra.size) continue;
+                    for (size_t i = 0; i < ra.size; i++) {
+                        if (ra.data[i] != rb->data[i]) {
+                            candidates.push_back({ ra.base + i, ra.data[i], rb->data[i] });
+                        }
+                    }
+                }
+                printf("Initial candidates: %zu\n", candidates.size());
+                seeded = true;
+            }
+            continue;
+        }
+
+        size_t before = candidates.size();
+        std::vector<Candidate> next;
+        next.reserve(candidates.size());
+        for (const auto& c : candidates) {
+            uint8_t actual;
+            if (!GetByte(snap, c.addr, actual)) continue;
+            uint8_t want = isOddPress ? c.downVal : c.upVal;
+            if (actual == want) next.push_back(c);
+        }
+        candidates = std::move(next);
+        printf("  candidates: %zu -> %zu\n", before, candidates.size());
+    }
+
+    if (presses < 3) {
+        printf("\nNot enough presses captured (got %d, need at least 3) -- try again.\n", presses);
+        return;
+    }
+
+    printf("\n================ FINAL EDGE-SEQUENCE CANDIDATES (%zu) ================\n",
+           candidates.size());
+    for (const auto& c : candidates) {
+        printf("  0x%08zX : odd-press=0x%02X even-press=0x%02X\n", c.addr, c.downVal, c.upVal);
+    }
+    if (candidates.empty()) {
+        printf("  (none survived -- try again with more presses, or you may have more\n"
+               "   or fewer than 2 weapons equipped, breaking the alternating-pair\n"
+               "   assumption this mode relies on)\n");
+    } else if (candidates.size() > kMaxPointerScanCandidates) {
+        printf("\n(skipping pointer scan -- %zu candidates is too many to scan\n"
+               " individually in reasonable time; run again with more presses to\n"
+               " narrow further, or inspect the list above by hand)\n", candidates.size());
+    } else {
+        printf("\n================ POINTER SCAN ================\n");
+        Snapshot finalSnap = TakeSnapshot(proc);
+        for (const auto& c : candidates) {
+            printf("\nCandidate 0x%08zX:\n", c.addr);
+            PointerScanForCandidate(finalSnap, c.addr);
+        }
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv)
 {
-    // Optional args: <vkHex> <label>. Defaults to VK_RBUTTON / "ADS" (right mouse,
-    // the default +toggleads_throw bind). For Sprint, run with: memdiff.exe 10 Sprint
-    // (VK_SHIFT is 0x10, the default +breath_sprint bind).
+    // Optional args: <vkHex> <label> [edge]. Defaults to VK_RBUTTON / "ADS" (right
+    // mouse, the default +toggleads_throw bind). For Sprint: memdiff.exe 10 Sprint
+    // (VK_SHIFT). For one-shot commands with no sustained held state (weapnext,
+    // togglemenu, toggleprone): memdiff.exe 31 weapnext edge (VK '1', edge-sequence
+    // mode instead of held/released -- see RunEdgeSequenceMode).
+    setvbuf(stdout, nullptr, _IONBF, 0); // unbuffered -- lets progress be checked by
+                                         // reading the redirected output file mid-run,
+                                         // instead of only ever seeing it after exit
+
     int vk = VK_RBUTTON;
     const char* label = "ADS";
+    bool edgeMode = false;
     if (argc >= 2) vk = static_cast<int>(strtol(argv[1], nullptr, 16));
     if (argc >= 3) label = argv[2];
+    if (argc >= 4 && _stricmp(argv[3], "edge") == 0) edgeMode = true;
 
     printf("memdiff (manual mode) -- toggle %s yourself, I watch and correlate (VK=0x%02X)\n", label, vk);
     printf("Looking for iw5sp.exe...\n");
@@ -229,6 +343,14 @@ int main(int argc, char** argv)
         Sleep(500);
     }
     printf("Level detected. Ready.\n\n");
+
+    if (edgeMode) {
+        RunEdgeSequenceMode(proc, vk, label);
+        CloseHandle(proc);
+        printf("\nDone.\n");
+        return 0;
+    }
+
     printf("================================================================\n");
     printf(" Toggle %s naturally, as many times as you like -- short taps\n"
            " or long holds, doesn't matter. I'll watch and take a snapshot\n"
@@ -310,6 +432,10 @@ int main(int argc, char** argv)
     if (candidates.empty()) {
         printf("  (none survived -- either too few transitions, or ADS state isn't at a\n"
                "   fixed address at all)\n");
+    } else if (candidates.size() > kMaxPointerScanCandidates) {
+        printf("\n(skipping pointer scan -- %zu candidates is too many to scan\n"
+               " individually in reasonable time; keep toggling for more confidence,\n"
+               " or inspect the list above by hand)\n", candidates.size());
     } else {
         printf("\n================ POINTER SCAN ================\n");
         printf("Taking a fresh snapshot to scan for stable references to each candidate's\n"
