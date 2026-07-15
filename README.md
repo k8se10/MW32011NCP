@@ -201,3 +201,14 @@ See `re_notes/known_issues.md` for the full, actively-tracked list.
   anti-cheat exposure from code injection on `iw5mp.exe` that needs to be discussed
   before that work begins.
 - Vanilla keyboard/mouse play is unaffected by design — the mod is strictly additive.
+
+---
+
+## Credits
+
+This mod vendors and links the following third-party library:
+
+- **[MinHook](https://github.com/TsudaKageyu/minhook)** (`proxy_d3d9/third_party/minhook/`) — Copyright (C) 2009-2017 Tsuda Kageyu. BSD 2-Clause-style license (see `proxy_d3d9/third_party/minhook/LICENSE.txt`). Used for all API hooking (vtable and inline detours) in the proxy DLL.
+- **Hacker Disassembler Engine (HDE) 32/64 C**, bundled with MinHook — Copyright (c) 2008-2009, Vyacheslav Patkov. Same style of license (see the same `LICENSE.txt`).
+
+Full license text for both is reproduced verbatim in `proxy_d3d9/third_party/minhook/LICENSE.txt`.
