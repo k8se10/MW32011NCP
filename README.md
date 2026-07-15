@@ -212,3 +212,16 @@ This mod vendors and links the following third-party library:
 - **Hacker Disassembler Engine (HDE) 32/64 C**, bundled with MinHook — Copyright (c) 2008-2009, Vyacheslav Patkov. Same style of license (see the same `LICENSE.txt`).
 
 Full license text for both is reproduced verbatim in `proxy_d3d9/third_party/minhook/LICENSE.txt`.
+
+## License
+
+This project's own source is released under a custom, permissive, fully
+open-source license — see [`LICENSE`](LICENSE). It does not grant any rights
+to Call of Duty: Modern Warfare 3 itself; you need your own legitimate copy of
+the game to use this mod.
+
+## Contributing
+
+Contributions are welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md) for the
+ground rules (native RE only, no hardcoded addresses, verify live, SP/MP are
+separate efforts) before opening a PR.

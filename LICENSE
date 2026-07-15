@@ -1,0 +1,48 @@
+MW3 Native Controller Project (MW3NCP) License
+Copyright (c) 2026 Kye Savage
+
+This license applies to the original source code of this project (the "Mod") —
+everything in this repository except the third-party components listed under
+"Third-party components" below, which remain under their own licenses.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so, subject to the following conditions:
+
+1. The above copyright notice and this permission notice shall be included in
+   all copies or substantial portions of the Software.
+
+2. Any distribution of the Software, or a derivative of it, must retain clear
+   attribution to this project and a link to its original source repository.
+
+3. This license covers only the Mod's own original source code. It does not
+   grant, and cannot grant, any rights to Call of Duty: Modern Warfare 3 (2011),
+   its executables, assets, or any other Activision/Infinity Ward-owned
+   intellectual property. The Mod is an unofficial, fan-made project and is
+   not affiliated with, endorsed by, or sponsored by Activision, Infinity
+   Ward, or any of their affiliates. Using the Mod requires a legitimate,
+   separately-owned copy of the base game.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE. This includes, without limitation, any risk associated with running
+third-party code alongside an online-connected game client — see the
+Multiplayer section of README.md for a known, unresolved anti-cheat-exposure
+question that has not yet been evaluated for `iw5mp.exe`.
+
+--------------------------------------------------------------------------------
+Third-party components
+
+This repository vendors the following third-party library, under its own
+license, unmodified in license terms:
+
+- MinHook (`proxy_d3d9/third_party/minhook/`), including the bundled Hacker
+  Disassembler Engine (HDE) 32/64 C — see
+  `proxy_d3d9/third_party/minhook/LICENSE.txt` for full terms.
