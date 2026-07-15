@@ -40,120 +40,116 @@ resume no longer breaks movement.
 
 ---
 
-## 2. No real one-shot command dispatcher found yet
+## 2. No real one-shot command dispatcher for weapnext — still open; Start solved a
+    different way
 
-**Status:** Likely RESOLVED (2026-07-15), built and deployed, awaiting live verification.
+**Status:** Split into two outcomes (2026-07-15). Start/pause-menu SOLVED via a real
+hardcoded engine path (not a text command). Y/weapnext remains unsolved.
 
-**Found via:** external research, per explicit user direction to use it instead of
-continuing blind RE. A community write-up on classic CoD-engine reverse engineering
-(kiwidog.me) describes the standard technique: search the binary for a hardcoded
-`"screenshot"` command string, since that dev command is almost always issued through
-the real `Cbuf_AddText`-equivalent somewhere. We already had this exact anchor sitting
-in earlier session data without recognizing it — `FUN_004dfd30` (decompiled hours
-earlier while chasing callers of the special-bind dispatcher `FUN_00438710`) contains
-`FUN_00457c90(*param_1, "screenshot\n")`.
+**`Cbuf_AddText`/`Cmd_ExecuteString` are real and confirmed, but were the wrong
+mechanism for these buttons.** Found `FUN_00457c90` (a genuine, confirmed
+`Cbuf_AddText(int clientIndex, const char* text)` — lock-protected per-client
+text-buffer append, base/capacity/writeOffset triplet at
+`&DAT_017507e4/e8/ec + clientIndex*0xc`, plain `__cdecl`) via the classic "search for a
+hardcoded `screenshot` command string" CoD-RE anchor technique (found via external
+research, per explicit user direction to use it instead of continuing blind RE — the
+anchor call site, `FUN_00457c90(*param_1, "screenshot\n")` in `FUN_004dfd30`, had
+already been captured hours earlier without being recognized as the anchor). Also found
+the real drain/dispatch pair: `FUN_00605f60` (`Cbuf_Execute` — splits the buffer into
+lines, respecting quotes) and `FUN_004d6960` (`Cmd_ExecuteString` — tokenizes each line
+and walks a linked list at `DAT_017507d8`, nodes shaped `{next, namePtr, callbackPtr}`,
+case-insensitive name match, calls the matched callback directly).
 
-**`FUN_00457c90` confirmed as `Cbuf_AddText(int clientIndex, const char* text)`:**
-lock-protected (`FUN_00428af0`/`FUN_00528fe0` acquire/release critical section `0x1f`),
-per-client text-buffer append. Special-cases a `"p0 "` prefix to redirect the target
-client index (irrelevant for SP — always client 0). Computes the string length, then
-indexes a per-client 12-byte bookkeeping struct (`base`/`capacity`/`writeOffset` at
-`&DAT_017507e4/e8/ec + clientIndex*0xc`), and if there's room, appends the string
-(including its null terminator) at the current write offset, advancing the offset by
-the string length only (not length+1) — so the buffer is a flat concatenated command
-stream and the *caller* must supply a trailing `\n` (confirmed by `"screenshot\n"`
-including one; nothing here adds it automatically). This is exactly the textbook
-Quake3-lineage `Cbuf_AddText` behavior.
+Both mechanisms checked out structurally and were confirmed live (append/drain
+telemetry all correct: `writeOffset` advances by the exact string length on append,
+resets to 0 the following frame, proving something genuinely processes the buffer every
+frame) — but calling `CbufAddText(0, "weapnext\n")`, `"togglemenu\n"`, and (as an
+isolation control) the literal `"screenshot\n"` anchor string all had **zero observable
+effect** live (no weapon switch, no menu, no screenshot file on disk). A one-time live
+dump of the full `DAT_017507d8` list (132 entries, code added temporarily to
+`analog_input_hooks.cpp` then removed once its job was done) proved why: **none of
+those three strings are registered there at all.** The list skews almost entirely
+toward UI/profile/social/debug commands (e.g. `closemenu`, `openmenu`,
+`profile_toggleAutoAim`, `coopLaunch`) — essentially no core gameplay verbs.
 
-**Calling convention:** confirmed via the real call site in `FUN_004dfd30`
-(`PUSH 0x827e64` [the string] ; `PUSH EAX` [client index] ; `CALL 0x00457c90` ;
-`ADD ESP,0x8`) — plain `__cdecl`, arguments in normal declared order. No register-passed
-weirdness at all, unlike almost every other hook in this project — callable directly as
-an ordinary C function pointer, no naked-ASM hook stub needed.
+**Start/pause-menu: SOLVED.** Traced the real key-event handler, `FUN_00541020`
+(confirmed live-relevant via its disassembly — Ghidra's decompile mis-detected the
+parameter count, since `FUN_0054b9f0` calls it with 4 args but Ghidra only inferred 3).
+ESCAPE (`0x1b`) is hardcoded there as a special case, entirely bypassing the generic
+command dispatcher:
+```
+gate  = *(uint32_t*)(0x00B36210 + playerIndex*0x188)   // same gate our buy-station fix uses
+state = *(int32_t*)(0x00B36218 + playerIndex*0x188)    // per-player game-state
+if (gate & 0x10)              -> FUN_004d9850(playerIndex, 0x1b, isDown)  // forward ESC
+                                   // to the currently open menu (real "close" action)
+else if (state == 1 || 2)     -> FUN_004d6620(playerIndex)                // open pause menu
+else if (state == 6)          -> FUN_004396d0(playerIndex, 2)   // (after extra guard
+                                   // checks we skipped for the first live test) — this is
+                                   // the branch REAL SP/Survival gameplay actually hits
+```
+For SP, `playerIndex` is always 0, so all three addresses collapse to flat constants.
+All three callees confirmed plain `__cdecl` via their real call sites' disassembly.
+**Confirmed live: Start now genuinely opens the pause menu** via `FUN_004396d0`
+(state==6 branch) — first attempt assumed state would be 1 or 2 based on a surface
+reading of the disasm; live testing showed real gameplay reports state 6 instead, which
+uses a different callee.
 
-**Implementation:** `analog_input_hooks.cpp` declares
-`using CbufAddTextFn = void(__cdecl*)(int, const char*);` bound to `0x00457c90`, and
-calls it directly (not hooked — we're just *invoking* the real engine function) from
-two new edge-triggered injectors:
-- `InjectControllerWeaponNext()` (Y button) → `CbufAddText(0, "weapnext\n")`
-- `InjectControllerPauseMenu()` (Start button) → `CbufAddText(0, "togglemenu\n")`
+**Start: still can't close/unpause via controller.** Root cause found: the entire
+injection hook (`InjectAllControllerInput`) lives inside `FUN_0057de60`, part of the
+per-frame *gameplay simulation* pipeline — confirmed via a heartbeat diagnostic that
+this hook **completely stops firing while genuinely paused** (pausing halts simulation
+by design). So Start's second press could never be detected: the code path needed to
+notice it doesn't run while paused. Fixed the architecture (implemented a real
+`IDirect3DDevice9::Present` hook — `d3d9_hook.cpp`, hooks `IDirect3D9::CreateDevice` via
+its vtable slot to reach the device, then hooks `Present` on it via MinHook — and moved
+Start handling to a new `InjectMenuInputTick`, driven by `Present` instead of the
+gameplay tick, since Present keeps firing every rendered frame regardless of pause
+state). Both hooks installed successfully live (`MH_CreateHook`/`MH_EnableHook` both
+returned `MH_OK`) — but after this fix, Start *still* didn't unpause, and no
+`InjectMenuInputTick` log output appeared at all after the hooks installed, suggesting
+our `Present` hook may be attaching to a probe/capability-check device rather than the
+real render device (the game called `Direct3DCreate9` twice; our `CreateDevice` hook
+fired for both, but only the second attempt met the guard conditions to hook `Present`
+— worth re-checking whether that second device is actually the one driving the visible
+frame, or whether the game also uses `Direct3DCreate9Ex`, which we don't intercept at
+all). **Deferred per explicit user call** ("accept the limitation... we will surely
+find this anyway" once real controller UI/menu-navigation work begins) — not worth
+chasing further right now. The Present-hook infrastructure itself is legitimate,
+reusable groundwork for that future work regardless.
 
-Both fire once per rising edge only (not every frame held) — since this appends into a
-growing buffer rather than setting a hold-state, holding the button down would spam the
-command into the buffer every single frame.
+**Y/weapnext: still unsolved.** Cross-referencing against the real key-event handler
+confirms this engine resolves core gameplay actions through the SAME bind-index/kbutton
+mechanism already used for ADS and Reload (`FUN_00438710`'s jump table), not through
+`Cbuf_AddText`/`Cmd_ExecuteString` at all. Needs the same live-verified bind-index hunt
+ADS/Reload got — find weapnext's real case in `FUN_00438710`, not a text command guess.
 
-**Not yet done:** live verification (does Y actually cycle weapons in-game, does Start
-actually open/close the pause menu the same way real ESC does, and does it interact
-safely with the buy-station gate-window fix from issue #1). Once confirmed, this also
-unblocks a "real" native `toggleprone` via the same mechanism if ever wanted (current
-prone/crouch ladder already works fine via direct usercmd-bit forcing, so no urgency
-there) and gives us a general-purpose way to invoke any one-shot console command
-natively for future buttons.
-
-**Dead ends ruled out along the way (superseded by the above, kept for the record):**
-
-**Blocks:** Y (weapnext), Start (pause/togglemenu). Also relevant to any future one-shot
-command work (toggleprone already works via a different mechanism — direct usercmd bit
-forcing for the 3-state stance ladder — so it's not blocked by this, but a real
-`toggleprone` command would have been the "correct" native mechanism if we'd found it
-first).
-
-**What we know:** `weapnext`, `togglemenu`, `toggleprone`, `vote yes`, `vote no` are all
-one-shot commands (no `+`/`-` pair) living in a flat name-only table (base ~`0x00929fa4`
-region, established via cross-checking against confirmed binds' real addresses). Every
-one of these strings' code references are pure `DATA` references — no function
-anywhere hardcodes an individual command name — meaning they're all executed through a
-single generic command-table/hash-lookup dispatcher (a real
-`Cmd_ExecuteString`/`Cbuf_AddText`-equivalent) that string-reference tracing cannot
-reveal, since the command name only ever exists as *runtime data* passed into that
-generic function, not as a literal operand anywhere per-command.
-
-**Dead ends ruled out:**
-- `FUN_004d6da0` → `FUN_0057e770`: turned out to be a HUD/UI keybind-display formatter
-  (looks up "KEY_UNBOUND"-style text for on-screen prompts), not a dispatcher.
-- `FUN_00567a00`: turned out to be the stance-hint icon/text lookup (which bind is
-  currently assigned to crouch/prone, for HUD display), not a dispatcher.
-- `FUN_00541020`/`FUN_0057e710`/`FUN_0054b9f0`: real key-event message-pump handlers,
-  but none contain a generic "look up and execute a named command" branch — they only
-  route to the special-bind dispatcher (`FUN_00438710`) or do nothing further.
+**Dead ends ruled out along the way (kept for the record):**
+- `FUN_004d6da0` → `FUN_0057e770`: HUD/UI keybind-display formatter, not a dispatcher.
+- `FUN_00567a00`: stance-hint icon/text lookup for HUD display, not a dispatcher.
+- `FUN_00541020`/`FUN_0057e710`/`FUN_0054b9f0`: real key-event message-pump handlers —
+  turned out to be exactly the right place to look (see Start/pause-menu above), just
+  not for a generic string-command lookup as first assumed.
 - `FUN_00478ad0` (`"Reliable command buffer overflow"` string): looked exactly like a
-  classic `Cbuf_AddText`, but turned out to be `SV_AddServerCommand`-equivalent — a
-  server→client reliable-command *queue* (per-client ring buffer, `MAX_RELIABLE_
-  COMMANDS`-style masking). Sends things like print/scoreboard messages from server to
-  client; not the local client-side one-shot input dispatcher we need (weapon
-  switching needs no server round-trip).
+  classic `Cbuf_AddText`, but is `SV_AddServerCommand`-equivalent — a server→client
+  reliable-command *queue*, not the local client-side dispatcher.
 - **memdiff on `togglemenu` (ESC), false lead:** edge-sequence mode narrowed to 218
-  candidates, all showing the identical `0xFF`/`0x00` alternating pattern, densely
-  packed across a single ~56KB region. Pointer-scanning a diverse sample (including
-  two addresses that looked "isolated" from the repeating cluster) found all 10 sampled
-  addresses point to the *same* 2MB memory block via the *same* 12 static references.
-  Dumping that block's contents (new `memdiff dump` mode) revealed it's **Steam API's
-  own internal protobuf message data** (`CMsgNetworkDevicesData`,
-  `CCloud_PendingRemoteOperation`, `CMsgFactoryResetState`, `CSteamOSManagerState`,
-  etc.) — completely unrelated to the game's menu system. This was a false
-  correlation: Steam's background overlay/networking activity happened to change on a
-  cadence that coincidentally lined up with real human press-and-pause timing, not
-  because the pause menu toggled. Worth remembering as a general risk for this
-  methodology — background OS/Steam processes can produce consistent-looking but
-  spurious correlates.
-
-**Next step (not yet tried):** find where a *typed console command* gets parsed and
-executed (the developer console input path) — that code must call the real generic
-dispatcher directly with a raw string, which the key-event path may obscure. If
-retrying memdiff on a one-shot command, consider excluding known Steam/non-game module
-memory ranges from the scan to reduce false correlates like the one above.
+  candidates all pointing to the same 2MB block, which turned out to be Steam API's own
+  internal protobuf message data — a coincidental background-activity correlation, not
+  game state. General risk for this methodology: background OS/Steam processes can
+  produce consistent-looking but spurious correlates.
 
 ---
 
 ## 3. Remaining unassigned controller inputs
 
-**Status:** Open, tracked as tasks #3–#6 in this session.
+**Status:** Open, tracked as tasks #3, #5, #6 in this session (#4/Start is
+partially done — see issue #2 above).
 
 | Input | Intended action | Blocker |
 |---|---|---|
-| Y | `weapnext` | Wired via issue #2's fix (2026-07-15) — awaiting live confirmation |
-| Start | `pause`/`togglemenu` | Wired via issue #2's fix (2026-07-15) — awaiting live confirmation |
-| Back | Likely `+scores` (scoreboard) | Not yet investigated — this is a hold (`+`/`-` pair) command, not a one-shot, so it needs its own real `kbutton_t` found the same way ADS/Reload were, not the `Cbuf_AddText` mechanism above |
+| Y | `weapnext` | Needs the real bind-index case in `FUN_00438710` (ADS/Reload's mechanism), not a text command — see issue #2 |
+| Start | `pause`/`togglemenu` | Opens the pause menu natively (confirmed working). Closing/unpausing via controller deferred — needs the `Present`-hook-vs-render-device issue from issue #2 root-caused, folded into the future controller UI/menu-navigation effort |
+| Back | Likely `+scores` (scoreboard) | Not yet investigated — this is a hold (`+`/`-` pair) command, not a one-shot, so it needs its own real `kbutton_t` found the same way ADS/Reload were |
 | D-pad (all 4) | `+actionslot 1-4` variants | Bits are known from the confirmed usercmd-bit table but individually unconfirmed against real gameplay effects — old table-order-guessed identities (inventory wheel, weapon attachment, NVG toggle) are unreliable and need live playtest confirmation the same way every other button on this project has required |
 
 ---

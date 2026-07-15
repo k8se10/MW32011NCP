@@ -16,6 +16,7 @@
 #include <share.h>
 
 void InstallAnalogInputHooks(); // defined in analog_input_hooks.cpp
+extern "C" void HookD3D9CreateDevice(void* realD3D9); // defined in d3d9_hook.cpp
 
 // Deliberately NOT including <d3d9.h>: its prototypes for Direct3DCreate9/D3DPERF_*/etc.
 // would collide with the untyped naked-stub exports below (whose whole point is to not
@@ -161,7 +162,9 @@ extern "C" __declspec(dllexport) IDirect3D9* WINAPI Direct3DCreate9(UINT SDKVers
     Log("Direct3DCreate9 called");
     if (!g_real_Direct3DCreate9) return nullptr;
     IDirect3D9* real = g_real_Direct3DCreate9(SDKVersion);
-    // TODO (task #3): hook real->CreateDevice via vtable once we're ready to reach Present.
+    if (real) {
+        HookD3D9CreateDevice(real);
+    }
     return real;
 }
 

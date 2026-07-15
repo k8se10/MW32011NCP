@@ -38,8 +38,16 @@ public class DecompileFuncs extends GhidraScript {
                 Function func = currentProgram.getFunctionManager().getFunctionAt(addr);
                 w.println("================================================================");
                 if (func == null) {
-                    w.println("No function found at " + hex);
-                    continue;
+                    // No function boundary defined here (e.g. a runtime callback pointer the
+                    // auto-analyzer never reached) -- disassemble and create one on the fly.
+                    if (getInstructionAt(addr) == null) {
+                        disassemble(addr);
+                    }
+                    func = createFunction(addr, null);
+                    if (func == null) {
+                        w.println("No function found at " + hex + " (and could not create one)");
+                        continue;
+                    }
                 }
                 w.println("Function: " + func.getName() + " @ " + func.getEntryPoint());
                 w.println("Signature: " + func.getSignature());

@@ -497,72 +497,153 @@ extern "C" void __cdecl InjectControllerLookAngles()
     *kPitchAccum -= ry * kLookDegreesPerSecond * dt;
 }
 
-// ---- One-shot commands (Y=weapnext, Start=togglemenu) via the real command dispatcher --
+// ---- Investigation record: Cbuf_AddText / Cmd_ExecuteString exist, but aren't the
+// mechanism for weapnext/togglemenu (2026-07-15) -----------------------------------
 //
-// Found 2026-07-15 by using external research instead of continuing blind: a community
-// write-up on classic CoD-engine RE (kiwidog.me) describes searching a binary for a
-// hardcoded "screenshot" command string as an anchor to find the real
-// Cbuf_AddText-equivalent, since that dev command is almost always issued through it
-// somewhere. We already had exactly this in hand from hours earlier in the same
-// investigation (decompiling callers of the special-bind dispatcher FUN_00438710 turned
-// up FUN_004dfd30, which contains `FUN_00457c90(*param_1, "screenshot\n")`) -- it just
-// hadn't been recognized as the anchor until the research named the pattern.
-//
-// FUN_00457c90 decompiles to a lock-protected (FUN_00428af0/FUN_00528fe0 acquire/release
-// a critical section, id 0x1f), per-client text-buffer append: it takes a client index
-// and a command string, special-cases a "p0 " prefix to redirect the target client index
-// (irrelevant for SP, always client 0), computes the string length, and appends the
-// string (including its null terminator) into a per-client buffer whose base/capacity/
-// write-offset triplet lives at &DAT_017507e4/e8/ec + clientIndex*0xc, bounds-checked
-// against capacity. The write-offset only advances by the string length (NOT length+1),
-// so the next append overwrites the terminator -- meaning the buffer is a plain
-// concatenated command stream, not individually-delimited entries, and the caller MUST
-// supply its own trailing "\n" (confirmed by "screenshot\n" including one) since nothing
-// here adds one automatically. This is exactly Cbuf_AddText's textbook Quake3-lineage
-// behavior ("adds command text at the end of the buffer, does not add a final \n").
-//
-// Calling convention confirmed via the real call site in FUN_004dfd30 (PUSH the string,
-// PUSH the client index, CALL, caller does ADD ESP,0x8 afterward) -- plain __cdecl, args
-// in normal declared order, no register-passed weirdness at all (unlike almost every
-// other hook in this file). Callable directly as an ordinary C function pointer.
-namespace {
-using CbufAddTextFn = void(__cdecl*)(int clientIndex, const char* text);
-CbufAddTextFn const CbufAddText = reinterpret_cast<CbufAddTextFn>(0x00457c90);
-constexpr int kLocalClientIndex = 0; // SP only ever has player 0
+// Found FUN_00457c90 (a real, confirmed Cbuf_AddText -- lock-protected per-client
+// text-buffer append, found via the classic "search for a hardcoded screenshot command
+// string" CoD-RE anchor technique) and FUN_00605f60/FUN_004d6960 (the real
+// Cbuf_Execute -> Cmd_ExecuteString pair: tokenizes each buffered line and walks a
+// linked list at DAT_017507d8, nodes shaped {next, namePtr, callbackPtr}, doing a
+// case-insensitive name match before calling the matched callback directly). Both
+// mechanisms check out structurally and were confirmed live (append/drain telemetry
+// all correct), but calling them with "weapnext\n"/"togglemenu\n"/"screenshot\n" had no
+// visible effect. A one-time live dump of the full registered-command list (132
+// entries) proved why: none of those three strings are registered there at all -- the
+// list skews almost entirely toward UI/profile/social/debug commands, essentially no
+// core gameplay verbs. This is genuinely the wrong mechanism for these buttons; see
+// the Start/pause-menu section below for what the real one turned out to be (ESCAPE is
+// hardcoded directly in the key-event handler, bypassing this dispatcher entirely).
+// weapnext is still unimplemented -- almost certainly needs the same bind-index/
+// FUN_00438710 technique already proven for ADS/Reload, not a text command. See
+// re_notes/known_issues.md issue #2 for the full trace.
 
-constexpr unsigned short kXI_Y = 0x8000;
+namespace {
+constexpr int kLocalClientIndex = 0; // SP only ever has player 0
 constexpr unsigned short kXI_START = 0x0010;
-bool g_weaponNextHeld = false;
 bool g_startHeld = false;
 } // namespace
 
-// Y -> weapnext. Edge-triggered (fires once per press, not every frame held) -- this
-// appends into a growing text buffer, so holding the button would spam "weapnext\n"
-// into it every single frame, same class of bug as any key-repeat issue.
-extern "C" void __cdecl InjectControllerWeaponNext()
-{
-    unsigned short buttons;
-    unsigned char leftTrigger, rightTrigger;
-    if (!Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger)) return;
+// ---- Y (weapnext), reopened -- Cbuf_AddText was the wrong mechanism -------------
+//
+// FOUND 2026-07-15: dumped every command genuinely registered in the real
+// Cmd_ExecuteString linked list (DAT_017507d8, 132 entries) live -- "weapnext",
+// "togglemenu", and "screenshot" are ALL absent. The dump skews almost entirely
+// toward UI/profile/social/debug commands, essentially no core gameplay verbs at all.
+// Cross-checked against the real key-event handler (FUN_00541020, see the Start/
+// pause-menu writeup below): ESCAPE is hardcoded there as a special case entirely
+// separate from the generic command dispatcher -- confirming this engine resolves
+// core gameplay actions (movement, weapon switching, menu-toggle) through the SAME
+// bind-index/kbutton mechanism already used for ADS and Reload (FUN_00438710's jump
+// table), not through Cbuf_AddText/Cmd_ExecuteString at all. Left unimplemented for
+// now -- needs the same live-verified bind-index hunt ADS/Reload got, not a guess.
+// See re_notes/known_issues.md issue #2 for the full trace.
 
-    bool held = (buttons & kXI_Y) != 0;
-    if (held && !g_weaponNextHeld) {
-        CbufAddText(kLocalClientIndex, "weapnext\n");
+// ---- Start -> real pause-menu toggle, via FUN_00541020's hardcoded ESC path -----
+//
+// FOUND 2026-07-15: "togglemenu" isn't a registered command at all (confirmed via the
+// live Cmd list dump above) -- ESCAPE is hardcoded directly in the real key-event
+// handler, FUN_00541020, completely bypassing the generic command dispatcher. Traced
+// via its disassembly (not the decompile, which mis-detected the parameter count --
+// FUN_0054b9f0 calls it with 4 args, Ghidra only inferred 3):
+//
+//   gate = *(uint32_t*)(0x00B36210 + playerIndex*0x188)   // same gate bit our own
+//                                                          // buy-station fix touches
+//   state = *(int32_t*)(0x00B36218 + playerIndex*0x188)   // per-player game-state
+//   if (gate & 0x10) {              // a menu is currently active
+//       FUN_004d9850(playerIndex, 0x1b, isDown);  // forward ESC to it -- this IS the
+//                                                   // real "close current menu" action
+//   } else if (state == 1 || state == 2) {          // normal gameplay, no menu open
+//       FUN_004d6620(playerIndex);                   // opens the pause menu
+//   }
+//   // any other state (loading, cutscene, etc.) -- real engine does nothing; so do we
+//
+// For SP, playerIndex is always 0, so both reads collapse to flat addresses (no stride
+// math needed). Both callback signatures confirmed via the real call sites' disasm
+// (0x0054126e-73 for FUN_004d6620, 0x00541281-89 for FUN_004d9850): plain __cdecl,
+// integer args pushed right-to-left, caller cleans the stack -- same easy pattern as
+// Cbuf_AddText, no register-passed weirdness.
+namespace {
+using OpenPauseMenuFn = void(__cdecl*)(int playerIndex);
+using ForwardMenuKeyFn = void(__cdecl*)(int playerIndex, int keyCode, int isDown);
+OpenPauseMenuFn const OpenPauseMenu = reinterpret_cast<OpenPauseMenuFn>(0x004d6620);
+ForwardMenuKeyFn const ForwardMenuKey = reinterpret_cast<ForwardMenuKeyFn>(0x004d9850);
+// FOUND live 2026-07-15: real SP/Survival gameplay reports player-state 6, not 1/2 as
+// first assumed from the disasm -- a THIRD branch handles state==6, calling a different
+// function after some extra guard checks (a narrow "can't pause right now" edge case,
+// e.g. mid-QTE/cutscene). Calling it unconditionally for now (skipping that guard) as
+// the first live test; confirmed cdecl via the real call site (0x00541259-60: PUSH 0x2,
+// PUSH playerIndex, CALL, caller cleans 8 bytes).
+using OpenPauseMenuState6Fn = void(__cdecl*)(int playerIndex, int mode);
+OpenPauseMenuState6Fn const OpenPauseMenuState6 = reinterpret_cast<OpenPauseMenuState6Fn>(0x004396d0);
+constexpr uintptr_t kMenuGateAddr = 0x00B36210;  // same address our gate-window fix uses
+constexpr uintptr_t kPlayerStateAddr = 0x00B36218;
+constexpr int kKeyCodeEscape = 0x1b;
+} // namespace
+
+// TEMP DIAGNOSTIC (2026-07-15): Start correctly triggers pause (state==6 branch) but a
+// second press doesn't unpause -- gate stayed 0x00000000 and state stayed 6 across both
+// presses in the log, meaning this exact address pair doesn't distinguish "paused" from
+// "not paused" for this particular pause routine. Logging both continuously (on change,
+// not gated on the button) to see what ACTUALLY changes while the real pause screen is
+// up, regardless of what triggers it (our own Start press or a real ESC tap).
+extern "C" void __cdecl MonitorPauseState()
+{
+    static uint32_t s_lastGate = 0xffffffff;
+    static int32_t s_lastState = 0x7fffffff;
+    uint32_t gate = *reinterpret_cast<volatile uint32_t*>(kMenuGateAddr);
+    int32_t state = *reinterpret_cast<volatile int32_t*>(kPlayerStateAddr);
+    if (gate != s_lastGate || state != s_lastState) {
+        s_lastGate = gate;
+        s_lastState = state;
+        char buf[96];
+        sprintf_s(buf, "[pause-diag] state change: gate=0x%08X state=%d", gate, state);
+        LogFromController(buf);
     }
-    g_weaponNextHeld = held;
 }
 
-// Start -> togglemenu (the real ESC/pause-menu bind command). Edge-triggered, same
-// reasoning as weapnext above.
 extern "C" void __cdecl InjectControllerPauseMenu()
 {
     unsigned short buttons;
     unsigned char leftTrigger, rightTrigger;
     if (!Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger)) return;
 
+    // TEMP DIAGNOSTIC (2026-07-15): live test showed no observable change from Start.
+    // Logging raw buttons on change (rules out Start simply never arriving via XInput --
+    // Steam Input is known to sometimes intercept Start/Guide-style buttons before they
+    // reach raw XInput) and the gate/state values plus each call, so a crash or an
+    // unexpected branch shows up even if nothing crashes visibly.
+    static unsigned short s_lastLoggedButtons = 0;
+    if (buttons != s_lastLoggedButtons) {
+        s_lastLoggedButtons = buttons;
+        char buf[64];
+        sprintf_s(buf, "[pause-diag] raw buttons=0x%04X", buttons);
+        LogFromController(buf);
+    }
+
     bool held = (buttons & kXI_START) != 0;
     if (held && !g_startHeld) {
-        CbufAddText(kLocalClientIndex, "togglemenu\n");
+        uint32_t gate = *reinterpret_cast<volatile uint32_t*>(kMenuGateAddr);
+        int32_t state = *reinterpret_cast<volatile int32_t*>(kPlayerStateAddr);
+        char buf[128];
+        sprintf_s(buf, "[pause-diag] Start pressed: gate=0x%08X state=%d", gate, state);
+        LogFromController(buf);
+
+        if (gate & 0x10u) {
+            LogFromController("[pause-diag] calling ForwardMenuKey...");
+            ForwardMenuKey(kLocalClientIndex, kKeyCodeEscape, 1);
+            LogFromController("[pause-diag] ForwardMenuKey returned");
+        } else if (state == 1 || state == 2) {
+            LogFromController("[pause-diag] calling OpenPauseMenu...");
+            OpenPauseMenu(kLocalClientIndex);
+            LogFromController("[pause-diag] OpenPauseMenu returned");
+        } else if (state == 6) {
+            LogFromController("[pause-diag] calling OpenPauseMenuState6...");
+            OpenPauseMenuState6(kLocalClientIndex, 2);
+            LogFromController("[pause-diag] OpenPauseMenuState6 returned");
+        } else {
+            LogFromController("[pause-diag] neither branch taken (unrecognized state, gate bit clear)");
+        }
     }
     g_startHeld = held;
 }
@@ -659,8 +740,23 @@ extern "C" void __cdecl InjectAllControllerInput(unsigned char* cmd)
     InjectControllerAds();
     InjectControllerSprint();
     InjectControllerReload();
-    InjectControllerWeaponNext();
+}
+
+// ---- Menu input tick -- driven by the real Present hook, NOT this file's gameplay tick
+//
+// FOUND 2026-07-15: a heartbeat diagnostic confirmed InjectAllControllerInput (this
+// function, called from FUN_0057de60) completely stops firing while genuinely paused --
+// it lives inside the per-frame GAMEPLAY SIMULATION pipeline, and pausing halts
+// simulation by design. That's irrelevant for movement/look/buttons (meaningless while
+// paused anyway), but it meant Start's second press could never be detected: pausing the
+// game also paused the only code path checking for the unpause press. Fixed by driving
+// Start/pause-menu handling from a genuine IDirect3DDevice9::Present hook instead (see
+// d3d9_hook.cpp) -- Present keeps firing every rendered frame regardless of pause state,
+// since the pause menu itself still needs to be drawn.
+extern "C" void __cdecl InjectMenuInputTick()
+{
     InjectControllerPauseMenu();
+    MonitorPauseState();
 }
 
 namespace {
