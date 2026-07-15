@@ -6,40 +6,37 @@ resolved. Last updated 2026-07-15.
 
 ---
 
-## 1. Buy-station + pause menu completely breaks movement (HIGH SEVERITY)
-
-**Status:** Open, not yet investigated.
+## 1. Buy-station + pause menu completely breaks movement — RESOLVED (2026-07-15)
 
 **Symptom:** After using a buy station (requires mouse/keyboard per the existing
-menu-navigation limitation), opening the pause menu and then exiting it leaves the
-player completely unable to move. Damage/death still processes normally (confirmed by
-dying afterward) — only movement input stops responding.
+menu-navigation limitation), opening the pause menu and then exiting it left the
+player completely unable to move. Damage/death still processed normally (confirmed by
+dying afterward) — only movement input stopped responding. Confirmed non-controller-
+specific: real mouse/keyboard input also stopped registering once broken, meaning the
+game itself was left thinking a menu/cursor state was still active.
 
-**Why this is worse than previously documented:** `README.md` and `iw5sp.md` already
-document a narrower "menu-gate cursor" limitation — that buy-station/menu interaction
-needs mouse/keyboard, and that the pause menu resets the relevant gate state itself
-"unlike other menus" (see the `InjectAllControllerInput` comment header in
-`analog_input_hooks.cpp`). This is different and worse: not a cursor/interaction
-inconvenience, a full movement lockout that persists after the menu closes.
+**Root cause:** `InjectAllControllerInput` unconditionally cleared gate bit `0x10` at
+`0x00B36210` every single frame ("SETTLED", the fallback chosen 2026-07-14 after
+several other attempts). Diagnostic logging confirmed the bit itself always read
+`0x00000000` throughout the broken window — so the bug wasn't "the bit ends up wrongly
+set," it was the opposite: permanently forcing this bit to 0 likely interfered with the
+buy station's own closing sequence, which may need the bit to legitimately become 1
+briefly to detect "menu fully closing, finish cleanup." With that transition
+permanently suppressed, the game's own menu-depth/state tracking got stuck desynced,
+blocking all input (ours and real) until level reload.
 
-**What we know so far:** `InjectAllControllerInput` unconditionally clears gate bit
-`0x10` at `0x00B36210` every single frame, regardless of any other state — this was the
-"SETTLED" fix from the original menu-gate investigation, chosen specifically because it
-worked from level start with no click needed. This new symptom implies some *other*
-piece of state — set specifically by the buy-station menu, and not cleared correctly
-when the pause menu is opened and closed afterward — is what's actually blocking
-movement, not the bit we already force-clear.
+This exact scenario had already been solved once: a **3-second rising-edge window**
+fix (only force-clear the bit for 3 seconds after entering a level, then leave it
+alone) was found and confirmed working for buy stations on 2026-07-14 — but a same-day,
+unrelated architecture change (moving the hook to `FUN_0057de60`) led to it being
+replaced with the unconditional clear, without the window fix ever being re-tested
+against real buy-station use. The revert, not a new bug, was the real culprit.
 
-**Confirmed still playable despite this:** user reached wave 4 on Terminal even with
-this bug present, presumably by avoiding buy stations or by finding a workaround
-(exact workaround not documented — worth asking).
-
-**Next step:** live reproduction (buy station → pause → resume) with diagnostic
-logging around the gate bit and any other candidate menu-state flags, to find what
-actually changes and stays broken across that specific sequence. Almost certainly needs
-the same kind of investigation that found the original gate bit (raw disassembly of
-whatever function handles the buy-station's specific menu type, since it may set
-additional state the generic pause-menu path doesn't share).
+**Fix:** reinstated the 3-second rising-edge window, keyed off the same in-level flag
+(`0x00A98ACC`) `tools/memdiff` uses to detect level load. **Confirmed working live by
+the user** across the full test matrix: no click needed at level start, ADS/cursor
+normal during general gameplay, buy station opens/works, and buy station → pause →
+resume no longer breaks movement.
 
 ---
 
@@ -102,3 +99,6 @@ static string-reference tracing.
 - **Reload (X):** real static `kbutton_t` found via memdiff + a new pointer-scan
   feature, wired up via the same `CallKbuttonDown`/`CallKbuttonUp` technique as ADS.
   Confirmed working live.
+- **Buy-station + pause movement lockout (issue #1 above):** reinstated the 3-second
+  rising-edge gate window that an unrelated same-day architecture change had silently
+  replaced. Confirmed working live across the full test matrix.

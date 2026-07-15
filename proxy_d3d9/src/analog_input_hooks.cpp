@@ -530,14 +530,50 @@ extern "C" void __cdecl InjectControllerLookAngles()
 // clear every frame, same as the very first fix. Movement/look/buttons/ADS all work
 // immediately from level start with no click needed; K+M menu interaction (buy
 // stations, etc.) is a known, documented limitation (see README.md) until task #6
-// (native controller UI/menu navigation) is built -- that's the right place to solve
-// this properly, since it requires actually understanding the in-engine menu open/close
-// signal well enough to toggle this state correctly, not guessing at it from the
-// outside. (Pause menu is specifically NOT a good test for that future work, either --
-// it appears to reset this state itself when opened, unlike other menus.)
+// (native controller UI/menu navigation) is built.
+//
+// REOPENED (2026-07-15): confirmed WORSE than "known limitation" -- using a buy station
+// then opening and closing the pause menu leaves the player completely unable to move,
+// and diagnostic logging showed this isn't controller-specific: real mouse/keyboard
+// input stops registering too. Since our own logging also confirmed the gate bit itself
+// reads 0x00000000 (already cleared) throughout the whole broken window, the bug isn't
+// "the bit ends up wrongly set" -- it's the opposite: forcibly holding this bit at 0
+// *permanently* likely interferes with the buy station's own closing sequence, which may
+// need the bit to legitimately become 1 briefly to detect "menu fully closing, finish
+// cleanup" -- if that transition never gets to happen, the game's own menu-depth/state
+// tracking can get stuck desynced, blocking ALL input (ours and real) until level reload.
+//
+// FIX: reinstated the earlier 3-second rising-edge window (originally found and
+// confirmed working for this exact buy-station scenario on 2026-07-14, before an
+// unrelated same-day architecture change moved the hook to FUN_0057de60 and the window
+// fix was never re-adapted -- it just got replaced with the unconditional clear above
+// without being re-tested against real buy-station use). Only force-clears the bit for
+// 3 seconds after entering a level; leaves it alone for the rest of gameplay, same as
+// the original confirmed-working behavior. Re-verify live: (1) still no click needed at
+// level start, (2) ADS/cursor still behave normally during general gameplay (this is
+// the part ATTEMPT 2 found broken when leaving the bit alone from the start -- unclear
+// whether that was really about the bit itself or about the different hook location at
+// the time), (3) buy station open/use still works, (4) buy station -> pause -> resume no
+// longer breaks movement.
+namespace {
+constexpr uintptr_t kInLevelFlagAddr = 0x00A98ACC; // same flag tools/memdiff uses to detect level load
+constexpr DWORD kGateForceWindowMs = 3000;
+bool g_wasInLevel = false;
+DWORD g_levelEnterTick = 0;
+}
+
 extern "C" void __cdecl InjectAllControllerInput(unsigned char* cmd)
 {
-    *reinterpret_cast<volatile uint32_t*>(0x00B36210) &= ~0x10u;
+    int32_t inLevelVal = *reinterpret_cast<volatile int32_t*>(kInLevelFlagAddr);
+    bool nowInLevel = inLevelVal > 0;
+    if (nowInLevel && !g_wasInLevel) {
+        g_levelEnterTick = GetTickCount();
+    }
+    g_wasInLevel = nowInLevel;
+
+    if (nowInLevel && (GetTickCount() - g_levelEnterTick) < kGateForceWindowMs) {
+        *reinterpret_cast<volatile uint32_t*>(0x00B36210) &= ~0x10u;
+    }
 
     InjectControllerLookAngles();
     if (cmd) {

@@ -105,14 +105,12 @@ every dead end ruled out, and why.
 
 ## Known limitations
 
-See `re_notes/known_issues.md` for the full, actively-tracked list (including a
-gameplay-breaking buy-station + pause menu bug). Summary:
+See `re_notes/known_issues.md` for the full, actively-tracked list.
 
 - Controller menu/UI navigation (D-pad/stick item selection, button-glyph prompts, a
   real controller options screen) is not implemented yet — for now, menus (buy
-  stations, pause, etc.) still need mouse/keyboard. **Known bug:** using a buy station
-  then opening and closing the pause menu currently breaks player movement entirely
-  until the level reloads — see `re_notes/known_issues.md` #1.
+  stations, pause, etc.) still need mouse/keyboard, and that continues to work
+  normally alongside controller gameplay.
 - Full console-style aim assist (rotational friction, target magnetism) is not yet
   implemented — that requires reading live entity/aim-target data out of the game's
   process memory, planned as a later layer on top of the current stick response curves.

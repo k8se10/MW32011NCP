@@ -13,6 +13,7 @@
 
 #include <windows.h>
 #include <cstdio>
+#include <share.h>
 
 void InstallAnalogInputHooks(); // defined in analog_input_hooks.cpp
 
@@ -36,7 +37,11 @@ void LogInit()
     char* lastSlash = strrchr(path, '\\');
     if (lastSlash) *(lastSlash + 1) = '\0';
     strcat_s(path, "proxy_d3d9.log");
-    fopen_s(&g_log, path, "a");
+    // _fsopen with _SH_DENYWR (not fopen_s, which opens exclusively on Windows) so the
+    // log can still be read live while the game is running -- needed for diagnosing
+    // bugs where the game gets stuck in a bad state and can't be closed normally to
+    // release the file.
+    g_log = _fsopen(path, "a", _SH_DENYWR);
     if (g_log) {
         fprintf(g_log, "---- proxy_d3d9 attach ----\n");
         fflush(g_log);
