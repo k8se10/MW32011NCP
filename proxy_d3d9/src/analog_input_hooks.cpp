@@ -737,32 +737,74 @@ bool g_wasInLevel = false;
 DWORD g_levelEnterTick = 0;
 }
 
-// TEMP DIAGNOSTIC (2026-07-15): reads FUN_00541020's real raw-keycode dispatch table
-// (DAT_00a98e4c) live for the actual keys bound to +actionslot 1-4 per players2/
-// config.cfg (N=+actionslot1, 3=+actionslot3, 4=+actionslot4, 5=+actionslot2) -- same
-// formula confirmed for weapnext: value = *(int32_t*)(0xA98E4C + keyCode*12) for SP
-// (playerIndex 0). Removed once its diagnostic job is done.
+// ---- D-pad -> +actionslot 1-4, found via the live raw-keycode dispatch table
+// (2026-07-15) --------------------------------------------------------------------
+//
+// Applied the SAME reliable technique that solved weapnext (never trust a bind-name-
+// table index as a FUN_00438710 case number -- see the Back regression above): live-
+// read FUN_00541020's real raw-keycode table (DAT_00a98e4c) for the actual keys bound
+// to +actionslot 1-4 per players2/config.cfg (N=slot1, 3=slot3, 4=slot4, 5=slot2).
+// Formula confirmed: value = *(int32_t*)(0xA98E4C + keyCode*12) for SP (playerIndex 0).
+// Letter keys use LOWERCASE ASCII in this table (matching the earlier Reload memdiff
+// finding, 'r' not 'R') -- uppercase 'N' read back 0 (unhandled), lowercase 'n' read
+// back the expected 15, fitting the exact same arithmetic pattern as the other three
+// (17/19/21 for slots 2/3/4, each 2 apart) once corrected.
+//
+// FUN_00438710's decompile shows a clean, uniform down/up case pattern for all four:
+//   case 0xf/0x10  (slot1, 'n'): FUN_00410ad0(playerIndex,0) / FUN_0044ec40(playerIndex)
+//   case 0x11/0x12 (slot2, '5'): FUN_00410ad0(playerIndex,1) / FUN_0044ec40(playerIndex)
+//   case 0x13/0x14 (slot3, '3'): FUN_00410ad0(playerIndex,2) / FUN_0044ec40(playerIndex)
+//   case 0x15/0x16 (slot4, '4'): FUN_00410ad0(playerIndex,3) / FUN_0044ec40(playerIndex)
+// Both are plain, simple __cdecl (no special register convention needed, unlike ADS/
+// Reload's KeyDown/KeyUp). Decompiling FUN_00410ad0 shows the real slot behavior is
+// DATA-DRIVEN: it reads DAT_00985064[slotIndex] (a runtime "what's assigned to this
+// slot" type) and either switches weapon (calling the same FUN_0057a670 weapon-cycle
+// function weapnext uses, or a direct FUN_0042d6b0 weapon-set), calls FUN_0057a930
+// (a distinct action -- likely equipment/killstreak use), or ORs a flag
+// (DAT_009a19ec |= 0x40000, likely an NVG-style persistent toggle) -- matching the
+// user's own expectation that D-pad maps to killstreaks/attachments, which vary by
+// loadout/context rather than being one fixed action per direction.
+// FUN_0044ec40(playerIndex) is nearly a no-op (just calls the same FUN_00416040 guard
+// check FUN_00410ad0 itself starts with) -- called anyway on release for correctness,
+// matching the real dispatcher's own down/up pairing.
 namespace {
-void LogActionslotTableOnce()
-{
-    static bool s_logged = false;
-    if (s_logged) return;
-    s_logged = true;
-    auto read = [](int keyCode) { return *reinterpret_cast<volatile int32_t*>(0x00A98E4C + keyCode * 12); };
-    int32_t vN = read('N');
-    int32_t v3 = read('3');
-    int32_t v4 = read('4');
-    int32_t v5 = read('5');
-    char buf[192];
-    sprintf_s(buf, "[dpad-diag] N(slot1)=%d(0x%X) 3(slot3)=%d(0x%X) 4(slot4)=%d(0x%X) 5(slot2)=%d(0x%X)",
-        vN, vN, v3, v3, v4, v4, v5, v5);
-    LogFromController(buf);
+using ActionSlotDownFn = void(__cdecl*)(int playerIndex, int slotIndex);
+using ActionSlotUpFn = void(__cdecl*)(int playerIndex);
+ActionSlotDownFn const ActionSlotDown = reinterpret_cast<ActionSlotDownFn>(0x00410ad0);
+ActionSlotUpFn const ActionSlotUp = reinterpret_cast<ActionSlotUpFn>(0x0044ec40);
+constexpr unsigned short kXI_DPAD_UP = 0x0001;
+constexpr unsigned short kXI_DPAD_DOWN = 0x0002;
+constexpr unsigned short kXI_DPAD_LEFT = 0x0004;
+constexpr unsigned short kXI_DPAD_RIGHT = 0x0008;
+// Mapping per the user's own reference Steam Controller config (re_notes/iw5sp.md):
+// D-Pad Up = actionslot1(0), Right = actionslot2(1), Down = actionslot3(2), Left = actionslot4(3)
+bool g_dpadHeld[4] = { false, false, false, false };
 }
+
+extern "C" void __cdecl InjectControllerDpad()
+{
+    unsigned short buttons;
+    unsigned char leftTrigger, rightTrigger;
+    if (!Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger)) return;
+
+    struct { unsigned short bit; int slot; } kDpad[4] = {
+        { kXI_DPAD_UP, 0 }, { kXI_DPAD_RIGHT, 1 }, { kXI_DPAD_DOWN, 2 }, { kXI_DPAD_LEFT, 3 }
+    };
+    for (int i = 0; i < 4; ++i) {
+        bool held = (buttons & kDpad[i].bit) != 0;
+        if (held != g_dpadHeld[i]) {
+            if (held) {
+                ActionSlotDown(kLocalClientIndex, kDpad[i].slot);
+            } else {
+                ActionSlotUp(kLocalClientIndex);
+            }
+            g_dpadHeld[i] = held;
+        }
+    }
 }
 
 extern "C" void __cdecl InjectAllControllerInput(unsigned char* cmd)
 {
-    LogActionslotTableOnce();
     int32_t inLevelVal = *reinterpret_cast<volatile int32_t*>(kInLevelFlagAddr);
     bool nowInLevel = inLevelVal > 0;
     if (nowInLevel && !g_wasInLevel) {
@@ -789,6 +831,7 @@ extern "C" void __cdecl InjectAllControllerInput(unsigned char* cmd)
     InjectControllerSprint();
     InjectControllerReload();
     InjectControllerWeaponNext();
+    InjectControllerDpad();
 
     // Also called from InjectMenuInputTick (the WndProc hook, see below) -- kept here
     // too purely for redundancy/robustness. Calling it from both places is safe/
