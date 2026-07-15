@@ -218,9 +218,13 @@ Full license text for both is reproduced verbatim in `proxy_d3d9/third_party/min
 This project's own source is released under a custom, permissive license — see
 [`LICENSE`](LICENSE). The source is fully open: free to use, modify, and fork.
 The one restriction is that neither this project nor any fork/derivative of it
-may ever be sold or charged for — it must stay free for everyone. It does not
-grant any rights to Call of Duty: Modern Warfare 3 itself; you need your own
-legitimate copy of the game to use this mod.
+may ever be sold or charged for — it must stay free for everyone. **Because of
+that restriction, this license does not meet the OSI's formal "open source"
+definition** (which requires no limits on commercial use) — it's an open,
+freely-forkable, source-available license with one deliberate carve-out, not
+an OSI-approved one. It does not grant any rights to Call of Duty: Modern
+Warfare 3 itself; you need your own legitimate copy of the game to use this
+mod.
 
 ## Contributing
 
