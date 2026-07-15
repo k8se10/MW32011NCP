@@ -1076,3 +1076,75 @@ Back remains unassigned, deprioritized per explicit user call (scoreboard isn't
 gameplay-defining, unlike D-pad/killstreaks). Next attempt should use the same
 live-keycode-table technique that correctly solved weapnext, applied to TAB (`0x09`),
 instead of another bind-name-table-index guess.
+
+### D-pad / `+actionslot 1-4`: solved with the same live-keycode-table technique
+
+Applied the lesson from the Back regression directly: live-read `FUN_00541020`'s real
+raw-keycode table for the actual keys bound to `+actionslot 1-4` (`N`=slot1, `3`=slot3,
+`4`=slot4, `5`=slot2 per `players2/config.cfg`), rather than trusting the old
+table-order-guessed bit identities (already flagged unreliable in the 2026-07-14 section
+above, and doubly suspect here since two of the guessed bits, `0x100`/`0x200`, are
+already claimed by the confirmed-working B-button crouch/prone system).
+
+**Gotcha caught mid-investigation:** the first live read used uppercase `'N'` (0x4E) and
+got back `0` (unhandled) — but the other three keys, all digits (`'3'`/`'4'`/`'5'`, ASCII
+0x33/0x34/0x35), read back clean values forming an obvious arithmetic pattern:
+```
+'5' (slot2) = 17 (0x11)
+'3' (slot3) = 19 (0x13)
+'4' (slot4) = 21 (0x15)
+```
+Each exactly 2 apart — screaming for a slot1 value of 15 (0x0f) to complete the pattern,
+but `'N'` didn't fit. Recalled the earlier Reload finding (memdiff matched lowercase
+`'r'` ASCII, not uppercase `'R'`/`VK_R`) and re-read with lowercase `'n'` (0x6E) instead:
+**got back exactly 15**, completing the pattern perfectly. Letter keys use lowercase
+ASCII in this dispatch table; digit keys are unambiguous either way since digits have no
+case.
+
+`FUN_00438710`'s decompile confirms a clean, uniform case pattern for all four:
+```c
+case 0xf:  FUN_00410ad0(param_1,0); return;   // slot1 down
+case 0x10: FUN_0044ec40(param_1,0); return;   // slot1 up (note: FUN_0044ec40 only takes 1 arg)
+case 0x11: FUN_00410ad0(param_1,1); return;   // slot2 down
+case 0x12: FUN_0044ec40(param_1,1); return;   // slot2 up
+case 0x13: FUN_00410ad0(param_1,2); return;   // slot3 down
+case 0x14: FUN_0044ec40(param_1,2); return;   // slot3 up
+case 0x15: FUN_00410ad0(param_1,3); return;   // slot4 down
+case 0x16: FUN_0044ec40(param_1,3); return;   // slot4 up
+```
+Both `FUN_00410ad0(playerIndex, slotIndex)` and `FUN_0044ec40(playerIndex)` decompile as
+plain, simple `__cdecl` — no special implicit-register convention needed at all, unlike
+ADS/Reload's `KeyDown`/`KeyUp` (`FUN_0057d1c0`/`FUN_0057d200`).
+
+**`FUN_00410ad0` is genuinely data-driven, not a fixed per-slot action:**
+```c
+void FUN_00410ad0(undefined4 param_1, int param_2 /* slotIndex */)
+{
+  ...
+  iVar4 = *(int *)(&DAT_00985064 + param_2 * 4);  // "what type of thing is in this slot"
+  if (iVar4 == 1) {
+    // weapon in this slot -- either FUN_0057a670(param_1,1,0,0) (the SAME weapon-cycle
+    // function weapnext uses) or a direct FUN_0042d6b0(playerIndex, weaponIndex, ...)
+    // weapon-set call, depending on context
+  } else if (iVar4 == 2) {
+    FUN_0057a930(param_1);       // a distinct action -- likely equipment/killstreak use
+  } else if (iVar4 == 3) {
+    DAT_009a19ec = DAT_009a19ec | 0x40000;   // ORs a persistent flag -- likely an
+                                               // NVG-style toggle
+  }
+}
+```
+This matches the user's own real-world expectation exactly: D-pad correlates to
+killstreaks and attachment toggles (e.g. a grenade-launcher underbarrel) that vary by
+loadout/context, not one fixed action per direction — the engine itself resolves the
+actual behavior per-slot at runtime based on what's equipped. `FUN_0044ec40(playerIndex)`
+(the "up" case) is nearly a no-op — it just repeats the same `FUN_00416040(playerIndex)`
+guard/permission check `FUN_00410ad0` itself starts with.
+
+Wired all four D-pad directions per the user's own reference Steam Controller mapping
+(Up=slot1/`+actionslot1`, Right=slot2/`+actionslot2`, Down=slot3/`+actionslot3`,
+Left=slot4/`+actionslot4`), calling `ActionSlotDown(kLocalClientIndex, slotIndex)` on
+each direction's rising edge and `ActionSlotUp(kLocalClientIndex)` on release.
+**CONFIRMED WORKING LIVE by the user** (at least half the directions explicitly tested;
+all four share the identical confirmed mechanism, so high confidence on the untested
+ones too).

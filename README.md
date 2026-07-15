@@ -2,9 +2,10 @@
 
 **Status: ALPHA — actively in development (as of 2026-07-15).** Analog movement, look,
 and most buttons are confirmed working live against `iw5sp.exe` (Campaign/Survival).
-Start now natively opens **and closes** the pause menu, and Y (weapon switch) works.
-Back and D-pad are still unassigned, killstreaks need per-killstreak work, full menu/UI
-navigation isn't implemented, and Multiplayer (`iw5mp.exe`) hasn't been started. Not
+Start now natively opens **and closes** the pause menu, Y (weapon switch) works, and the
+D-pad (killstreaks/attachment slots) is wired up. Back is still unassigned (deprioritized
+— not gameplay-defining), killstreaks need per-killstreak work, full menu/UI navigation
+isn't implemented, and Multiplayer (`iw5mp.exe`) hasn't been started. Not
 feature-complete, not fully tested end-to-end.
 
 A from-scratch native controller mod for Call of Duty: Modern Warfare 3 (2011, IW5
@@ -47,7 +48,7 @@ keyboard/mouse emulation layer with a controller icon on it.
 | Y | Weapon switch (`weapnext`) | ✅ Confirmed |
 | Start | Opens **and closes** the pause menu (real native calls, not a keypress emulation) | ✅ Confirmed |
 | Back | *(unassigned)* | ⬜ Not yet implemented — a first attempt regressed live (see `re_notes/known_issues.md`), reverted, deprioritized (nice-to-have, not gameplay-defining) |
-| D-pad (all 4 directions) | Killstreaks/attachments (e.g. noob tube) — normally numbered keys on PC | ⬜ In progress |
+| D-pad (Up/Right/Down/Left) | `+actionslot 1-4` — killstreaks/attachments (e.g. noob tube), data-driven by loadout | ✅ Confirmed* (user tested at least half the directions live; all four use the identical confirmed mechanism, so high confidence on the untested ones too) |
 | Menu/UI navigation | Buy stations, pause menu, options, etc. | ⬜ Not yet implemented — mouse/keyboard still required |
 
 **B's stance ladder**, matching real Xbox 360 CoD behavior (not a raw hold of either
@@ -71,12 +72,6 @@ and only if the hold threshold was never reached.
   immediately; Back is a no-op again. Needs the same live-keycode-table technique that
   correctly solved weapnext (see `re_notes/known_issues.md`) applied to TAB instead.
   Deprioritized — scoreboard isn't gameplay-defining, unlike D-pad/killstreaks.
-- **D-pad:** intended for killstreaks and attachment toggles (e.g. a grenade-launcher
-  underbarrel), which map to `+actionslot 1-4` and normally sit on numbered keys on PC.
-  The old table-order-guessed bit identities for these are flagged unreliable, and two
-  of them (`0x100`/`0x200`) are already claimed by the confirmed-working B-button
-  crouch/prone system — so those guesses are doubly suspect. In progress: live-reading
-  the real keycode dispatch table for the actual bound keys instead.
 - **Killstreaks:** user's first live test (Predator missile) showed partial
   functionality — needs its own per-killstreak investigation once D-pad/scoreboard
   settle, likely a distinct mechanism per killstreak type.
@@ -110,6 +105,7 @@ real Cbuf_AddText/Cmd_ExecuteString pair — confirmed working, but not the mech
     for weapnext/togglemenu (see re_notes/known_issues.md)
 real hardcoded ESCAPE-key path + FUN_004396d0's open/close cases — Start's pause menu
 real FUN_00541020 raw-keycode dispatch table + FUN_00438710 jump table — weapon switch
+    and D-pad (+actionslot 1-4, data-driven by loadout: killstreaks/attachments/NVG)
     ▼
 separate hook/path still needed for FULL menu & UI navigation (not implemented yet)
 ```
