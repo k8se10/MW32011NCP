@@ -308,9 +308,80 @@ int main(int argc, char** argv)
     // (VK_SHIFT). For one-shot commands with no sustained held state (weapnext,
     // togglemenu, toggleprone): memdiff.exe 31 weapnext edge (VK '1', edge-sequence
     // mode instead of held/released -- see RunEdgeSequenceMode).
+    //
+    // Special mode: memdiff.exe scan <addr1> [addr2 ...] -- pointer-scans specific
+    // addresses directly against a fresh snapshot, without needing a new press
+    // sequence. Used to dig into a subset of candidates already found by a previous
+    // run (e.g. to check whether any of a large cluster of identical-looking
+    // candidates has a distinctly stable/static reference, without re-running the
+    // whole correlation phase).
     setvbuf(stdout, nullptr, _IONBF, 0); // unbuffered -- lets progress be checked by
                                          // reading the redirected output file mid-run,
                                          // instead of only ever seeing it after exit
+
+    if (argc >= 3 && _stricmp(argv[1], "scan") == 0) {
+        printf("memdiff scan mode -- pointer-scanning %d address(es)\n", argc - 2);
+        DWORD pid = FindProcessId(L"iw5sp.exe");
+        if (pid == 0) {
+            printf("iw5sp.exe not found -- launch the game first.\n");
+            return 1;
+        }
+        HANDLE proc = OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, FALSE, pid);
+        if (!proc) {
+            printf("OpenProcess failed (%lu) -- run this tool as Administrator.\n", GetLastError());
+            return 1;
+        }
+        printf("Taking snapshot...\n");
+        Snapshot snap = TakeSnapshot(proc);
+        for (int i = 2; i < argc; i++) {
+            uintptr_t addr = static_cast<uintptr_t>(strtoull(argv[i], nullptr, 16));
+            printf("\nAddress 0x%08zX:\n", addr);
+            PointerScanForCandidate(snap, addr);
+        }
+        CloseHandle(proc);
+        printf("\nDone.\n");
+        return 0;
+    }
+
+    // Special mode: memdiff.exe dump <addr> <length> -- hex + ASCII dump of raw bytes
+    // at a live address, e.g. to look for an embedded name/label string next to a
+    // pointer slot found by "scan" mode.
+    if (argc >= 4 && _stricmp(argv[1], "dump") == 0) {
+        uintptr_t addr = static_cast<uintptr_t>(strtoull(argv[2], nullptr, 16));
+        size_t len = static_cast<size_t>(strtoul(argv[3], nullptr, 10));
+        DWORD pid = FindProcessId(L"iw5sp.exe");
+        if (pid == 0) {
+            printf("iw5sp.exe not found -- launch the game first.\n");
+            return 1;
+        }
+        HANDLE proc = OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, FALSE, pid);
+        if (!proc) {
+            printf("OpenProcess failed (%lu) -- run this tool as Administrator.\n", GetLastError());
+            return 1;
+        }
+        std::vector<uint8_t> buf(len);
+        SIZE_T bytesRead = 0;
+        if (!ReadProcessMemory(proc, reinterpret_cast<LPCVOID>(addr), buf.data(), len, &bytesRead)) {
+            printf("ReadProcessMemory failed (%lu)\n", GetLastError());
+            CloseHandle(proc);
+            return 1;
+        }
+        for (size_t row = 0; row < bytesRead; row += 16) {
+            printf("0x%08zX: ", addr + row);
+            size_t rowLen = (bytesRead - row) < 16 ? (bytesRead - row) : 16;
+            for (size_t i = 0; i < 16; i++) {
+                if (i < rowLen) printf("%02X ", buf[row + i]); else printf("   ");
+            }
+            printf(" ");
+            for (size_t i = 0; i < rowLen; i++) {
+                uint8_t c = buf[row + i];
+                putchar((c >= 0x20 && c < 0x7f) ? c : '.');
+            }
+            printf("\n");
+        }
+        CloseHandle(proc);
+        return 0;
+    }
 
     int vk = VK_RBUTTON;
     const char* label = "ADS";
