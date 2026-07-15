@@ -331,6 +331,27 @@ extern "C" void __cdecl InjectControllerReload()
     }
 }
 
+// ---- Back: +scores (scoreboard) -- STILL UNRESOLVED, REVERTED (2026-07-15) -------
+//
+// Attempted a static shortcut: found "+scores" in the same 8-byte-stride bind-name table
+// already used to confirm +reload=idx26/+actionslot4=idx10/+stance=idx11 (base
+// 0x00929fa4) -- "+scores" cleanly resolves to idx 31 with zero remainder, same clean fit
+// as every other confirmed entry. ASSUMED (wrongly) that this table's index number is the
+// SAME numbering FUN_00438710's switch dispatches on, and used case 0x1f (31 decimal,
+// address 0xA98B14) directly without independent confirmation. CONFIRMED WRONG LIVE:
+// holding Back made the player walk backward, meaning 0xA98B14 is almost certainly the
+// real +back (movement) kbutton, not +scores. Root cause: ADS/Reload's case numbers were
+// each confirmed by searching FUN_00438710's disassembly for an address ALREADY verified
+// independently (via memdiff or an xref chain) -- never by trusting the bind-name table's
+// index as if it were the same enumeration as the switch's case numbers. That assumption
+// was never actually validated and doesn't hold; the two tables are apparently ordered
+// differently. Three live memdiff attempts on TAB itself also failed (two collapsed to
+// zero candidates, one produced a noisy 67-reference heap cluster Ghidra confirmed has
+// zero real code references -- see re_notes/known_issues.md). Needs a properly
+// independent method next: e.g. live-reading FUN_00541020's raw-keycode dispatch table
+// (DAT_00a98e4c) for VK_TAB to get the REAL case number directly from the same lookup
+// the game itself uses, the same idea already tried (inconclusively) for Reload.
+
 // ---- Sprint: left stick click (L3) -> real pm_flags bit via a Pmove-entry hook ---
 //
 // FIRST ATTEMPT (struct+0xb0, 2026-07-14) confirmed WRONG by live playtest ("SPRINT NOT
@@ -524,19 +545,52 @@ constexpr unsigned short kXI_START = 0x0010;
 bool g_startHeld = false;
 } // namespace
 
-// ---- Y (weapnext), reopened -- Cbuf_AddText was the wrong mechanism -------------
+// ---- Y -> weapnext, SOLVED (2026-07-15) -----------------------------------------
 //
-// FOUND 2026-07-15: dumped every command genuinely registered in the real
-// Cmd_ExecuteString linked list (DAT_017507d8, 132 entries) live -- "weapnext",
-// "togglemenu", and "screenshot" are ALL absent. The dump skews almost entirely
-// toward UI/profile/social/debug commands, essentially no core gameplay verbs at all.
-// Cross-checked against the real key-event handler (FUN_00541020, see the Start/
-// pause-menu writeup below): ESCAPE is hardcoded there as a special case entirely
-// separate from the generic command dispatcher -- confirming this engine resolves
-// core gameplay actions (movement, weapon switching, menu-toggle) through the SAME
-// bind-index/kbutton mechanism already used for ADS and Reload (FUN_00438710's jump
-// table), not through Cbuf_AddText/Cmd_ExecuteString at all. Left unimplemented for
-// now -- needs the same live-verified bind-index hunt ADS/Reload got, not a guess.
+// FOUND: dumped every command genuinely registered in the real Cmd_ExecuteString linked
+// list (DAT_017507d8, 132 entries) live -- "weapnext", "togglemenu", and "screenshot" are
+// ALL absent, confirming this engine resolves core gameplay actions through a different
+// mechanism entirely (see the Start/pause-menu writeup below for the ESCAPE-hardcoded
+// precedent that pointed this way).
+//
+// A first attempt tried reusing ADS/Reload's technique (compute weapnext's index in the
+// bind-name string table, feed it as a FUN_00438710 case number directly) -- this was
+// WRONG (confirmed live: it turned out to be +back's movement kbutton, see the Back
+// section above) because the bind-name table and FUN_00438710's switch aren't the same
+// numbering at all. The reliable fix: live-read FUN_00541020's own raw-keycode dispatch
+// table (DAT_00a98e4c) for weapnext's REAL bound keys ('1'=0x31, '2'=0x32, per
+// players2/config.cfg) -- the exact lookup the game itself performs on a real keypress.
+// Confirmed formula from FUN_00541020's disassembly (EBP = playerIndex*0xd28, collapsing
+// to 0 for SP's player 0): `value = *(int32_t*)(0xA98E4C + keyCode*12)`. Both '1' and '2'
+// read back the identical value **66** (0x42) live -- makes sense, both keys bind to the
+// same command, so they resolve to the same internal dispatch ID.
+//
+// FUN_00438710's case 0x42 (=66) calls `FUN_004a5f70(playerIndex, 1)`, paired with case
+// 0x46 calling `FUN_004a5f70(playerIndex, 0)` -- a clean next/prev-direction pair, unlike
+// ADS/Reload's down/up kbutton pairs (this is a genuine one-shot call, no held state).
+// Decompiling confirmed it: FUN_004a5f70 calls FUN_0057a670(playerIndex, direction, 0, 0),
+// which does modulo-15 weapon-inventory-slot cycling stepped by `direction` and ends with
+// FUN_0042d6b0(playerIndex, weaponIndex, ...) -- a real weapon-SET call. This is
+// unambiguously weapnext/weapprev, not a guess.
+namespace {
+using WeaponNextFn = void(__cdecl*)(int playerIndex, int direction);
+WeaponNextFn const WeaponNext = reinterpret_cast<WeaponNextFn>(0x004a5f70);
+constexpr unsigned short kXI_Y = 0x8000;
+bool g_yHeld = false;
+} // namespace
+
+extern "C" void __cdecl InjectControllerWeaponNext()
+{
+    unsigned short buttons;
+    unsigned char leftTrigger, rightTrigger;
+    if (!Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger)) return;
+
+    bool held = (buttons & kXI_Y) != 0;
+    if (held && !g_yHeld) {
+        WeaponNext(kLocalClientIndex, 1); // one-shot, fires on press only -- no release action
+    }
+    g_yHeld = held;
+}
 // See re_notes/known_issues.md issue #2 for the full trace.
 
 // ---- Start -> real pause-menu toggle, via FUN_00541020's hardcoded ESC path -----
@@ -565,42 +619,27 @@ bool g_startHeld = false;
 // Cbuf_AddText, no register-passed weirdness.
 namespace {
 using OpenPauseMenuFn = void(__cdecl*)(int playerIndex);
-using ForwardMenuKeyFn = void(__cdecl*)(int playerIndex, int keyCode, int isDown);
 OpenPauseMenuFn const OpenPauseMenu = reinterpret_cast<OpenPauseMenuFn>(0x004d6620);
-ForwardMenuKeyFn const ForwardMenuKey = reinterpret_cast<ForwardMenuKeyFn>(0x004d9850);
-// FOUND live 2026-07-15: real SP/Survival gameplay reports player-state 6, not 1/2 as
-// first assumed from the disasm -- a THIRD branch handles state==6, calling a different
-// function after some extra guard checks (a narrow "can't pause right now" edge case,
-// e.g. mid-QTE/cutscene). Calling it unconditionally for now (skipping that guard) as
-// the first live test; confirmed cdecl via the real call site (0x00541259-60: PUSH 0x2,
-// PUSH playerIndex, CALL, caller cleans 8 bytes).
-using OpenPauseMenuState6Fn = void(__cdecl*)(int playerIndex, int mode);
-OpenPauseMenuState6Fn const OpenPauseMenuState6 = reinterpret_cast<OpenPauseMenuState6Fn>(0x004396d0);
-constexpr uintptr_t kMenuGateAddr = 0x00B36210;  // same address our gate-window fix uses
 constexpr uintptr_t kPlayerStateAddr = 0x00B36218;
-constexpr int kKeyCodeEscape = 0x1b;
-} // namespace
 
-// TEMP DIAGNOSTIC (2026-07-15): Start correctly triggers pause (state==6 branch) but a
-// second press doesn't unpause -- gate stayed 0x00000000 and state stayed 6 across both
-// presses in the log, meaning this exact address pair doesn't distinguish "paused" from
-// "not paused" for this particular pause routine. Logging both continuously (on change,
-// not gated on the button) to see what ACTUALLY changes while the real pause screen is
-// up, regardless of what triggers it (our own Start press or a real ESC tap).
-extern "C" void __cdecl MonitorPauseState()
-{
-    static uint32_t s_lastGate = 0xffffffff;
-    static int32_t s_lastState = 0x7fffffff;
-    uint32_t gate = *reinterpret_cast<volatile uint32_t*>(kMenuGateAddr);
-    int32_t state = *reinterpret_cast<volatile int32_t*>(kPlayerStateAddr);
-    if (gate != s_lastGate || state != s_lastState) {
-        s_lastGate = gate;
-        s_lastState = state;
-        char buf[96];
-        sprintf_s(buf, "[pause-diag] state change: gate=0x%08X state=%d", gate, state);
-        LogFromController(buf);
-    }
-}
+// ---- Real unpause path, found 2026-07-15 via decompiling FUN_004396d0 fully ---------
+//
+// FUN_004396d0(playerIndex, mode) is the same function we already call for "open" (mode
+// 2 -- sets cl_paused, opens the "pausedmenu" UI). Its full switch has a mode 0 case too:
+//   case 0: FUN_0053ada0(playerIndex, 0xffffffef); thunk_FUN_0057e710(playerIndex);
+//           FUN_005396b0("cl_paused", 0);   // <-- clears cl_paused: this IS resume/unpause
+//           FUN_004a1280(0); FUN_004ae120(&DAT_01c00458); return 1;
+// This is a genuine, real "resume gameplay" call, not a guess -- confirmed by direct
+// contrast with case 2 (which sets cl_paused non-zero and opens pausedmenu). We track our
+// own g_paused bool (set on the same physical Start press that opened/closed it) rather
+// than re-reading engine state, since we're the only thing calling this function from
+// our own hook right now.
+using SetMenuStateFn = void(__cdecl*)(int playerIndex, int mode);
+SetMenuStateFn const SetMenuState = reinterpret_cast<SetMenuStateFn>(0x004396d0);
+constexpr int kMenuStateUnpause = 0;
+constexpr int kMenuStatePausedMenu = 2;
+bool g_paused = false;
+} // namespace
 
 extern "C" void __cdecl InjectControllerPauseMenu()
 {
@@ -608,41 +647,26 @@ extern "C" void __cdecl InjectControllerPauseMenu()
     unsigned char leftTrigger, rightTrigger;
     if (!Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger)) return;
 
-    // TEMP DIAGNOSTIC (2026-07-15): live test showed no observable change from Start.
-    // Logging raw buttons on change (rules out Start simply never arriving via XInput --
-    // Steam Input is known to sometimes intercept Start/Guide-style buttons before they
-    // reach raw XInput) and the gate/state values plus each call, so a crash or an
-    // unexpected branch shows up even if nothing crashes visibly.
-    static unsigned short s_lastLoggedButtons = 0;
-    if (buttons != s_lastLoggedButtons) {
-        s_lastLoggedButtons = buttons;
-        char buf[64];
-        sprintf_s(buf, "[pause-diag] raw buttons=0x%04X", buttons);
-        LogFromController(buf);
-    }
-
     bool held = (buttons & kXI_START) != 0;
     if (held && !g_startHeld) {
-        uint32_t gate = *reinterpret_cast<volatile uint32_t*>(kMenuGateAddr);
-        int32_t state = *reinterpret_cast<volatile int32_t*>(kPlayerStateAddr);
         char buf[128];
-        sprintf_s(buf, "[pause-diag] Start pressed: gate=0x%08X state=%d", gate, state);
-        LogFromController(buf);
-
-        if (gate & 0x10u) {
-            LogFromController("[pause-diag] calling ForwardMenuKey...");
-            ForwardMenuKey(kLocalClientIndex, kKeyCodeEscape, 1);
-            LogFromController("[pause-diag] ForwardMenuKey returned");
-        } else if (state == 1 || state == 2) {
-            LogFromController("[pause-diag] calling OpenPauseMenu...");
-            OpenPauseMenu(kLocalClientIndex);
-            LogFromController("[pause-diag] OpenPauseMenu returned");
-        } else if (state == 6) {
-            LogFromController("[pause-diag] calling OpenPauseMenuState6...");
-            OpenPauseMenuState6(kLocalClientIndex, 2);
-            LogFromController("[pause-diag] OpenPauseMenuState6 returned");
+        if (!g_paused) {
+            int32_t state = *reinterpret_cast<volatile int32_t*>(kPlayerStateAddr);
+            sprintf_s(buf, "[pause-diag] Start pressed (opening): state=%d", state);
+            LogFromController(buf);
+            // Both live-confirmed real gameplay states (2026-07-15): normal SP/Survival
+            // gameplay reports state 6; state 1/2 kept as a fallback for whatever other
+            // context might report it (menu-transition edge cases, not yet hit live).
+            if (state == 1 || state == 2) {
+                OpenPauseMenu(kLocalClientIndex);
+            } else {
+                SetMenuState(kLocalClientIndex, kMenuStatePausedMenu);
+            }
+            g_paused = true;
         } else {
-            LogFromController("[pause-diag] neither branch taken (unrecognized state, gate bit clear)");
+            LogFromController("[pause-diag] Start pressed (closing): calling SetMenuState(0, unpause)");
+            SetMenuState(kLocalClientIndex, kMenuStateUnpause);
+            g_paused = false;
         }
     }
     g_startHeld = held;
@@ -713,8 +737,32 @@ bool g_wasInLevel = false;
 DWORD g_levelEnterTick = 0;
 }
 
+// TEMP DIAGNOSTIC (2026-07-15): reads FUN_00541020's real raw-keycode dispatch table
+// (DAT_00a98e4c) live for the actual keys bound to +actionslot 1-4 per players2/
+// config.cfg (N=+actionslot1, 3=+actionslot3, 4=+actionslot4, 5=+actionslot2) -- same
+// formula confirmed for weapnext: value = *(int32_t*)(0xA98E4C + keyCode*12) for SP
+// (playerIndex 0). Removed once its diagnostic job is done.
+namespace {
+void LogActionslotTableOnce()
+{
+    static bool s_logged = false;
+    if (s_logged) return;
+    s_logged = true;
+    auto read = [](int keyCode) { return *reinterpret_cast<volatile int32_t*>(0x00A98E4C + keyCode * 12); };
+    int32_t vN = read('N');
+    int32_t v3 = read('3');
+    int32_t v4 = read('4');
+    int32_t v5 = read('5');
+    char buf[192];
+    sprintf_s(buf, "[dpad-diag] N(slot1)=%d(0x%X) 3(slot3)=%d(0x%X) 4(slot4)=%d(0x%X) 5(slot2)=%d(0x%X)",
+        vN, vN, v3, v3, v4, v4, v5, v5);
+    LogFromController(buf);
+}
+}
+
 extern "C" void __cdecl InjectAllControllerInput(unsigned char* cmd)
 {
+    LogActionslotTableOnce();
     int32_t inLevelVal = *reinterpret_cast<volatile int32_t*>(kInLevelFlagAddr);
     bool nowInLevel = inLevelVal > 0;
     if (nowInLevel && !g_wasInLevel) {
@@ -740,40 +788,40 @@ extern "C" void __cdecl InjectAllControllerInput(unsigned char* cmd)
     InjectControllerAds();
     InjectControllerSprint();
     InjectControllerReload();
+    InjectControllerWeaponNext();
 
-    // Also called from InjectMenuInputTick (the Present hook, see below) -- kept here
-    // too since moving it there EXCLUSIVELY regressed Start's confirmed-working "open
-    // pause menu" behavior (the Present hook's detour appears to never actually fire
-    // live, root cause not yet found -- see re_notes/known_issues.md). Calling it from
-    // both places is safe/idempotent: g_startHeld debounces per real button edge
-    // regardless of which hook happens to observe it first in a given frame.
+    // Also called from InjectMenuInputTick (the WndProc hook, see below) -- kept here
+    // too purely for redundancy/robustness. Calling it from both places is safe/
+    // idempotent: g_startHeld debounces per real button edge regardless of which hook
+    // happens to observe it first in a given frame.
     InjectControllerPauseMenu();
-    MonitorPauseState();
 }
 
-// ---- Menu input tick -- driven by the real Present hook, NOT this file's gameplay tick
+// ---- Menu input tick -- driven by a WndProc subclass hook, NOT this file's gameplay tick
 //
 // FOUND 2026-07-15: a heartbeat diagnostic confirmed InjectAllControllerInput (this
 // function, called from FUN_0057de60) completely stops firing while genuinely paused --
 // it lives inside the per-frame GAMEPLAY SIMULATION pipeline, and pausing halts
 // simulation by design. That's irrelevant for movement/look/buttons (meaningless while
 // paused anyway), but it meant Start's second press could never be detected: pausing the
-// game also paused the only code path checking for the unpause press. Attempted fix:
-// drive Start/pause-menu handling from a genuine IDirect3DDevice9::Present hook instead
-// (see d3d9_hook.cpp) -- Present keeps firing every rendered frame regardless of pause
-// state, since the pause menu itself still needs to be drawn.
+// game also paused the only code path checking for the unpause press.
 //
-// STATUS: Present hook installs successfully live (MH_OK, confirmed targeting the real
-// D3DDEVTYPE_HAL device, not a probe/reference device -- ruled out via research) but its
-// detour appears to never actually fire again after install (no further log output at
-// all, despite the game clearly still rendering). Root cause not yet found. Kept wired
-// here in case it starts working (or during future menu-nav work when this gets
-// revisited), but InjectControllerPauseMenu is ALSO still called from the gameplay tick
-// above so Start's "open" behavior keeps working regardless.
+// FIRST FIX ATTEMPT, CONFIRMED DEAD: drove this from a real IDirect3DDevice9::Present
+// hook instead (installed cleanly, MH_OK, confirmed targeting the real HAL device) -- but
+// a fire-counter diagnostic proved its detour never fired even ONCE during an entire
+// normal, unpaused play session, ruling out a pause-specific timing issue and pointing at
+// an external hook on the same vtable slot (Steam Overlay is the prime suspect) stomping
+// ours. Abandoned rather than fought.
+//
+// REAL FIX: d3d9_hook.cpp now subclasses the game's own window procedure (WndProc) once
+// the real device's window handle is known, plus a SetTimer-driven ~60Hz WM_TIMER so this
+// keeps ticking even during totally idle periods with no other window messages. Windows
+// keeps pumping window messages even while the game's own simulation is paused (proven by
+// vanilla keyboard ESC still being able to unpause today) -- and unlike a D3D9 vtable,
+// nothing else has a reason to silently take over our own subclassed window procedure.
 extern "C" void __cdecl InjectMenuInputTick()
 {
     InjectControllerPauseMenu();
-    MonitorPauseState();
 }
 
 namespace {

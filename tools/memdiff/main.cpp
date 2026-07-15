@@ -318,6 +318,14 @@ void RunEdgeSequenceMode(HANDLE proc, int vk, const char* label)
         }
         candidates = std::move(next);
         printf("  candidates: %zu -> %zu\n", before, candidates.size());
+        // Printed live (not just at final exit) so the addresses survive an abrupt kill
+        // of this process -- this loop has no manual early-stop key at all, so whoever's
+        // watching this log needs to be able to act on the last-known-good list.
+        if (candidates.size() <= 30) {
+            for (const auto& c : candidates) {
+                printf("    0x%08zX : held=0x%02X released=0x%02X\n", c.addr, c.downVal, c.upVal);
+            }
+        }
     }
 
     if (presses < 3) {
@@ -674,6 +682,13 @@ int main(int argc, char** argv)
         if (candidates.size() <= 30) {
             printf("  (narrow enough to inspect -- feel free to press F11 to stop, or keep\n"
                    "   toggling for even more confidence)\n");
+            // Printed live (not just at final exit) so the addresses survive an abrupt
+            // kill of this process -- F11 isn't always reliable to deliver (can get
+            // intercepted by other software), so whoever's watching this log needs to be
+            // able to act on the last-known-good list without needing a clean exit.
+            for (const auto& c : candidates) {
+                printf("    0x%08zX : held=0x%02X released=0x%02X\n", c.addr, c.downVal, c.upVal);
+            }
         }
     }
 
