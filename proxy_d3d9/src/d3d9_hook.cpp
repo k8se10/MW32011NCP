@@ -65,6 +65,7 @@ typedef HRESULT(WINAPI* CreateDevice_t)(void* This, UINT Adapter, DWORD DeviceTy
 CreateDevice_t g_origCreateDevice = nullptr;
 WNDPROC g_origWndProc = nullptr;
 bool g_wndProcHooked = false; // only need to subclass once -- the game has one window
+HWND g_gameHwnd = nullptr;
 
 LRESULT CALLBACK HookWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
@@ -76,6 +77,7 @@ void InstallWndProcHook(HWND hwnd)
 {
     if (g_wndProcHooked || !hwnd) return;
     g_wndProcHooked = true;
+    g_gameHwnd = hwnd;
     g_origWndProc = reinterpret_cast<WNDPROC>(
         SetWindowLongPtrA(hwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(&HookWndProc)));
     char buf[128];
@@ -107,6 +109,16 @@ HRESULT WINAPI Hook_CreateDevice(void* This, UINT Adapter, DWORD DeviceType,
 }
 
 } // namespace
+
+// Exposed so analog_input_hooks.cpp can PostMessage a synthetic keypress directly at the
+// game's real window -- used ONLY for the Survival ready-up F5 workaround (see
+// InjectControllerReadyUp), an explicit, narrowly-scoped exception to this project's
+// "no OS-level input emulation" rule, approved by the user specifically for that one
+// case pending a real native fix.
+extern "C" HWND GetGameWindow()
+{
+    return g_gameHwnd;
+}
 
 // Called from dllmain.cpp's Direct3DCreate9 implementation with the real IDirect3D9*
 // (kept as void* across this boundary -- dllmain.cpp deliberately keeps IDirect3D9

@@ -17,6 +17,7 @@
 #include <windows.h>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include "../third_party/minhook/include/MinHook.h"
 #include "controller_input.h"
 
@@ -379,6 +380,87 @@ constexpr unsigned short kXI_LEFT_THUMB = 0x0040;
 constexpr uint32_t kPmFlagSprint = 0x4000u;
 bool g_sprintHeld = false;
 void* g_orig_00644ed0 = nullptr;
+
+// ---- Sprint stamina/cooldown (2026-07-15) --------------------------------------------
+//
+// Our own layer, not the game's real one: forcing kPmFlagSprint every tick (below)
+// bypasses whatever native duration/recovery timer normally limits sprint -- confirmed
+// this gives infinite sprint, unlike real vanilla keyboard play. `player_sprintUnlimited`
+// (a real dvar, default 0) only gets set to 1 in a couple of specific Campaign missions
+// (`dubai_code.gsc`/`intro_code.gsc` per Plutonium's public GSC dump), not universally,
+// meaning Survival and most Campaign missions genuinely have a limited-by-default
+// stamina system we were bypassing entirely. Traced FUN_00643870 (the real
+// `player_sprintSpeedScale` consumer) fully -- confirmed it's pure speed-calculation,
+// no duration/timer logic at all, so the real native clock lives elsewhere in the Pmove
+// chain and wasn't located (see re_notes/known_issues.md). Implemented as our own timer
+// layer instead: 4 seconds of continuous sprint to fully deplete, 2 seconds not
+// sprinting to fully recover (real MW3 values, confirmed).
+//
+// OVERRIDE (flagged by user, 2026-07-15): `player_sprintUnlimited` (real dvar, default
+// 0) is live-set to 1 by specific mission scripts (`dubai_code.gsc`/`intro_code.gsc`
+// confirmed so far via Plutonium's GSC dump, likely others) -- when set, bypass our
+// timer entirely and allow genuinely infinite sprint, matching what real keyboard play
+// gets in those missions. Checked live every tick via `GetDvarInt`, a raw dvar-value
+// getter (NOT `FUN_00498ec0`/`GetDvarString` -- that one blindly returns
+// `*(char**)(dvarPtr+0xc)` as a string pointer, which would crash on a boolean/int dvar
+// like this one, since +0xc holds a raw 0/1 there, not a valid pointer). Still open:
+// the Extreme Conditioning perk doubles sprint duration to 8 seconds -- likely a
+// SEPARATE mechanism (probably `perk_sprintMultiplier`, a real dvar found earlier that
+// scales `player_sprinttime`, not the same on/off flag as sprintUnlimited), not yet
+// investigated -- see task tracking.
+constexpr float kSprintMaxStaminaSeconds = 4.0f;
+constexpr float kSprintRegenSeconds = 2.0f;
+float g_sprintStamina = kSprintMaxStaminaSeconds;
+// FIX (live-confirmed bug, same day): originally cleared g_sprintWinded the instant
+// g_sprintStamina ticked back above zero -- but regen starts adding immediately every
+// frame, so stamina crossed back above zero (a tiny fraction) within a SINGLE frame of
+// hitting empty, clearing the lockout almost instantly and letting sprint resume right
+// away ("our calls keep firing" -- confirmed live). Fixed with a real, fixed-duration
+// cooldown timer, fully decoupled from the continuous stamina float, so hitting empty
+// unconditionally blocks sprint for the whole 2 seconds -- we're the ones deciding and
+// enforcing this, not something the continuous float model could silently undermine.
+float g_sprintCooldownRemaining = 0.0f; // only meaningful while g_sprintWinded is true
+bool g_sprintWinded = false;
+DWORD g_sprintLastTickMs = 0; // NOT Controller_DeltaTimeSeconds() -- that helper uses a
+                              // single process-wide shared static timer (despite its own
+                              // doc comment claiming "for this call site"), already
+                              // consumed every frame by InjectControllerLookAngles().
+                              // Adding a second caller in the same per-frame tick would
+                              // starve this one to a near-zero delta every time (whichever
+                              // call happens first each frame resets the shared clock the
+                              // second call then reads as almost no elapsed time) -- an
+                              // independent GetTickCount()-based timer avoids that entirely.
+
+// Raw dvar-value getter -- calls the same Dvar_FindVar-equivalent FUN_00498ec0 itself
+// calls internally (FUN_0062abe0, confirmed via FUN_00498ec0's disassembly: name arg
+// passed in EDI, not on the stack -- a custom register convention, same class as this
+// file's other non-cdecl engine calls), then reads the raw int at dvarPtr+0xc directly.
+// Deliberately NOT reusing GetDvarString/FUN_00498ec0 here -- that function blindly
+// returns `*(char**)(dvarPtr+0xc)` as a string pointer, which is only valid for actual
+// string-type dvars; calling it on a boolean/int dvar like player_sprintUnlimited would
+// read the raw 0/1 stored there as if it were a memory address and crash dereferencing
+// it as a string.
+int GetDvarInt(const char* name)
+{
+    constexpr uintptr_t kFindDvarFn = 0x0062abe0;
+    void* dvarPtr = nullptr;
+    __asm {
+        push edi
+        mov edi, name
+        mov eax, kFindDvarFn
+        call eax
+        mov dvarPtr, eax
+        pop edi
+    }
+    if (!dvarPtr) return 0;
+    return *reinterpret_cast<int*>(reinterpret_cast<uintptr_t>(dvarPtr) + 0xc);
+}
+
+bool IsSprintActive()
+{
+    if (GetDvarInt("player_sprintUnlimited") != 0) return g_sprintHeld && g_stance == Stance::Standing;
+    return g_sprintHeld && g_stance == Stance::Standing && !g_sprintWinded;
+}
 } // namespace
 
 extern "C" void __cdecl InjectControllerSprint()
@@ -397,20 +479,61 @@ extern "C" void __cdecl InjectControllerSprint()
         g_stance = Stance::Standing;
     }
     g_sprintHeld = held;
+
+    // Keep the tick baseline fresh even while bypassed below -- otherwise, if
+    // player_sprintUnlimited ever toggles back off later in the same session, the next
+    // real tick would compute dt across the WHOLE bypassed interval (potentially minutes)
+    // instead of one frame, corrupting the stamina/cooldown math with a huge bogus jump.
+    DWORD nowMs = GetTickCount();
+    float dt = (g_sprintLastTickMs != 0) ? (nowMs - g_sprintLastTickMs) / 1000.0f : 0.0f;
+    g_sprintLastTickMs = nowMs;
+
+    if (GetDvarInt("player_sprintUnlimited") != 0) {
+        // Unlimited sprint is live for this mission -- don't drain/regen our own timer
+        // at all, so it doesn't sit at some stale mid-depleted value if this dvar is
+        // ever toggled back off later in the same session.
+        return;
+    }
+
+    if (dt > 0.0f) {
+        if (g_sprintWinded) {
+            // Fixed cooldown, deliberately NOT tied to the continuous stamina float --
+            // guarantees sprint stays fully blocked for the whole 2 seconds regardless
+            // of anything else, since that float alone already proved unreliable here.
+            g_sprintCooldownRemaining -= dt;
+            if (g_sprintCooldownRemaining <= 0.0f) {
+                g_sprintWinded = false;
+                g_sprintStamina = kSprintMaxStaminaSeconds; // full refill once cooldown clears
+            }
+        } else if (g_sprintHeld && g_stance == Stance::Standing) {
+            g_sprintStamina -= dt;
+            if (g_sprintStamina <= 0.0f) {
+                g_sprintStamina = 0.0f;
+                g_sprintWinded = true;
+                g_sprintCooldownRemaining = kSprintRegenSeconds;
+            }
+        } else {
+            g_sprintStamina += dt * (kSprintMaxStaminaSeconds / kSprintRegenSeconds);
+            if (g_sprintStamina >= kSprintMaxStaminaSeconds) {
+                g_sprintStamina = kSprintMaxStaminaSeconds;
+            }
+        }
+    }
 }
 
 // Called from Hook_00644ed0 with the live `param_1` (the pml/movement-locals pointer)
 // pulled straight off the stack -- see the comment above for how that address was
 // confirmed. Forces or clears the real sprint pm_flags bit every Pmove tick to match our
-// polled controller state, same as a real held/released key would. Gated on being
-// upright -- never assert sprint while crouched/prone (see InjectControllerSprint).
+// polled controller state AND our own stamina layer, same as a real held/released key
+// with real stamina would. Gated on being upright -- never assert sprint while crouched/
+// prone (see InjectControllerSprint).
 extern "C" void __cdecl InjectControllerSprintPmFlags(uint32_t pmlPtr)
 {
     if (!pmlPtr) return;
     uint32_t ps = *reinterpret_cast<uint32_t*>(pmlPtr);
     if (!ps) return;
     uint32_t* flags = reinterpret_cast<uint32_t*>(ps + 0xc);
-    if (g_sprintHeld && g_stance == Stance::Standing) {
+    if (IsSprintActive()) {
         *flags |= kPmFlagSprint;
     } else {
         *flags &= ~kPmFlagSprint;
@@ -446,7 +569,7 @@ void* g_orig_00643ce0 = nullptr;
 
 extern "C" void __cdecl ReassertSprintPmFlags(uint32_t pmlPtr)
 {
-    if (!g_sprintHeld || g_stance != Stance::Standing) return;
+    if (!IsSprintActive()) return;
     if (!pmlPtr) return;
     uint32_t ps = *reinterpret_cast<uint32_t*>(pmlPtr);
     if (!ps) return;
@@ -579,6 +702,61 @@ constexpr unsigned short kXI_Y = 0x8000;
 bool g_yHeld = false;
 } // namespace
 
+// ---- Survival ready-up (hold Y ~1s): TEMPORARY keypress-synthesis workaround --------
+//
+// F5/"skip" (the real key that triggers Survival's between-wave ready-up) has no
+// locatable native dispatch after an extensive search -- see re_notes/known_issues.md
+// for the full trail (real +gostand kbutton call: wrong system; real togglecrouch/
+// FUN_0057d2c0 call: inert no-op; a mode-2 variant of that same call: confirmed to be a
+// genuine, unrelated toggle-prone command that left the player stuck prone live; GSC
+// notifyonplayercommand/VM_Notify: real but requires live GSC-VM-stack manipulation).
+//
+// EXPLICIT, NARROWLY-SCOPED EXCEPTION (user-approved 2026-07-15): synthesize a real F5
+// keydown/keyup via PostMessage at the game's own window, ONLY for this one case,
+// ONLY while in Survival (IsInSurvivalMode() gate), as a temporary workaround until the
+// real native call is found -- at which point this gets replaced. This is the sole
+// deliberate departure from the project's "no OS-level input emulation" rule; every
+// other button in this file drives the engine's real internal state directly. Safe by
+// construction even without a "is the ready-up wait specifically active" check (which
+// we don't have): IW5 has no DirectInput import at all (confirmed in CLAUDE.md's own
+// findings), so keyboard input is real WM_KEYDOWN/WM_KEYUP messages -- a synthetic F5
+// outside the one context it matters is simply ignored by the game itself, the same as
+// a real, misplaced F5 press would be.
+namespace {
+using GetDvarStringFn = const char*(__cdecl*)(const char*);
+GetDvarStringFn const GetDvarString = reinterpret_cast<GetDvarStringFn>(0x00498ec0);
+extern "C" HWND GetGameWindow(); // defined in d3d9_hook.cpp
+constexpr DWORD kReadyUpHoldThresholdMs = 740;
+// The between-wave break is live gameplay, not a frozen/weapons-disabled wait (unlike
+// the OTHER, wrong "+gostand" system's freezecontrols wait tried earlier) -- weapons
+// stay usable so you can move/shoot/shop freely. That means firing weapnext on Y's
+// PRESS edge unconditionally would ALSO switch weapons on every ready-up hold, an
+// unwanted side effect. Fixed by deferring weapnext to Y's RELEASE, firing it as long as
+// the ready-up threshold was never reached -- so a slightly slow/held tap that isn't
+// actually a ready-up attempt still does something, rather than being silently eaten.
+DWORD g_yPressStartMs = 0;
+bool g_yReadyUpFired = false; // debounces per physical Y hold -- only fires once, even
+                              // if held well past the threshold
+
+bool IsInSurvivalMode()
+{
+    const char* mapName = GetDvarString("mapname");
+    if (!mapName) return false;
+    return _strnicmp(mapName, "so_survival_", 12) == 0; // matches FUN_00526b30's own check
+}
+
+void SendSyntheticF5()
+{
+    HWND hwnd = GetGameWindow();
+    if (!hwnd) return;
+    // lParam bit 24 (extended-key flag) doesn't apply to F5; repeat count 1, scan code
+    // left 0 -- the game reads the virtual-key (wParam), not the scan code, same as
+    // every other key this project has traced through FUN_00541020's dispatch.
+    PostMessageA(hwnd, WM_KEYDOWN, VK_F5, 0x00000001);
+    PostMessageA(hwnd, WM_KEYUP, VK_F5, 0xC0000001);
+}
+} // namespace
+
 extern "C" void __cdecl InjectControllerWeaponNext()
 {
     unsigned short buttons;
@@ -587,7 +765,21 @@ extern "C" void __cdecl InjectControllerWeaponNext()
 
     bool held = (buttons & kXI_Y) != 0;
     if (held && !g_yHeld) {
-        WeaponNext(kLocalClientIndex, 1); // one-shot, fires on press only -- no release action
+        g_yPressStartMs = GetTickCount();
+        g_yReadyUpFired = false;
+    }
+    if (held && !g_yReadyUpFired && (GetTickCount() - g_yPressStartMs) >= kReadyUpHoldThresholdMs) {
+        g_yReadyUpFired = true;
+        if (IsInSurvivalMode()) {
+            SendSyntheticF5();
+        }
+    }
+    if (!held && g_yHeld && !g_yReadyUpFired) {
+        // Falling edge, and the ready-up threshold was never reached this press --
+        // switch weapons. Covers both a quick tap AND a slower-but-not-quite-1s hold,
+        // so an attempted ready-up that didn't quite reach the threshold still does
+        // something instead of being silently eaten.
+        WeaponNext(kLocalClientIndex, 1);
     }
     g_yHeld = held;
 }
