@@ -6,11 +6,10 @@ everything in this repository except the third-party components listed under
 "Third-party components" below, which remain under their own licenses.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
-this software and associated documentation files (the "Software"), to deal in
-the Software without restriction, including without limitation the rights to
-use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
-of the Software, and to permit persons to whom the Software is furnished to do
-so, subject to the following conditions:
+this software and associated documentation files (the "Software"), to use,
+copy, modify, merge, publish, and distribute copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to the
+following conditions:
 
 1. The above copyright notice and this permission notice shall be included in
    all copies or substantial portions of the Software.
@@ -18,7 +17,21 @@ so, subject to the following conditions:
 2. Any distribution of the Software, or a derivative of it, must retain clear
    attribution to this project and a link to its original source repository.
 
-3. This license covers only the Mod's own original source code. It does not
+3. **No charging for the Software or any fork/derivative of it.** Neither the
+   Software, nor any fork, derivative, or modified version of it, may be
+   sold, sublicensed for a fee, placed behind a paywall, or otherwise
+   distributed in exchange for payment, by anyone other than the copyright
+   holder. This includes bundling it with a paid product/service, requiring
+   payment (including "donations" gated behind access) to obtain a copy, or
+   monetizing distribution of it in any other way. The Software must always
+   remain available to end users free of charge. (Note: this is a
+   deliberate restriction the copyright holder has chosen to add — it means
+   this license does not meet the OSI's formal "open source" definition,
+   which requires no restriction on commercial use, even though the source
+   remains fully open, freely modifiable, and freely forkable under the
+   no-charge condition above.)
+
+4. This license covers only the Mod's own original source code. It does not
    grant, and cannot grant, any rights to Call of Duty: Modern Warfare 3 (2011),
    its executables, assets, or any other Activision/Infinity Ward-owned
    intellectual property. The Mod is an unofficial, fan-made project and is
