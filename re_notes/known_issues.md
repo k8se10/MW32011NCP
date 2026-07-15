@@ -2,8 +2,9 @@
 
 Tracked as tasks in the working session; this file is the standalone reference so they
 don't stay buried in `iw5sp.md`'s investigation log. Update status here as each is
-resolved. Last updated 2026-07-15 (later session, same day: Start unpause + Y/weapnext
-both resolved, Back reverted after a live regression, D-pad investigation underway).
+resolved. Last updated 2026-07-15 (later session, same day: Start unpause, Y/weapnext,
+and D-pad all resolved, Back reverted after a live regression, and Survival ready-up
+solved via a deliberate, narrowly-scoped keypress-synthesis exception).
 
 ---
 
@@ -293,16 +294,139 @@ confirmed mechanism, so high confidence on the untested ones too).
 
 ---
 
-## 5. Remaining unassigned controller inputs
+## 5. Survival ready-up (hold Y) — SOLVED via a temporary keypress-synthesis workaround
+    (2026-07-15, later session)
 
-**Status:** Open, tracked as task #5 (Back, deprioritized) and #7 (killstreaks, not
-yet scoped).
+**The feature:** Survival shows "press F5 to ready up" between waves — F5 executes
+`"skip"`, shortening the 30-second prep timer once everyone's ready. Mapped to holding
+Y for ~1 second, gated to Survival maps only.
+
+**Extensive native search, all dead ends** (see issue #2's pattern — same class of
+investigation, this time for F5 specifically):
+- F5's Windows VK code (`0x74`) reads back `0` in the fast raw-keycode dispatch table
+  (`DAT_00a98e4c`) — unhandled.
+- Guessed Quake3-style function-key codes (`0x84`, `0x88`) also read back `0`.
+- A wider scan (`0x80`-`0xA5`) found exactly two nonzero entries: `0x99`=67 (case `0x43`
+  → `FUN_0047da10`, **confirmed live to be the real PAUSE key**, calling the same
+  `FUN_004396d0` toggle Start already uses) and `0x9F`=73 (case `0x49`, mode 2 via
+  `FUN_0057d2c0`). Assumed by elimination that `0x9F` must be F5 (only two
+  non-default keys are bound in `players2/config.cfg`) — **wrong**, confirmed live:
+  calling it put the player in a genuine, stuck PRONE state (had to hold Y again to
+  toggle back out), with zero ready-up effect. The elimination logic doesn't hold; some
+  other, unidentified default/hardcoded key (not in config.cfg's overridable list at
+  all) occupies that slot instead. F5's real dispatch value is still unknown.
+- Researched Plutonium's public GSC decompilation (github.com/SkyN9ne/Plutonium-IW5-GSC)
+  and found the real per-wave ready mechanism is a GSC `notifyonplayercommand`
+  hook listening for the `"+stance"` bind command — but the user correctly flagged this
+  dump may not include Survival-specific compiled scripts at all (two GSC builtins found
+  directly in `iw5sp.exe`'s own method-name table, `coopready` and
+  `isUsingIntermissionTimer`, are never referenced by any script in that dump).
+  `togglecrouch`'s real dispatch (`FUN_00438710` case `0x48` → `FUN_0057d2c0` mode 1) is
+  a real function call but produces zero observable effect, likely blocked by its own
+  guard bytes (`DAT_00a98ca0`/`DAT_00a98bc4`).
+- `coopready`'s native dispatch (a GSC-VM method-table entry, not a keycode) has no
+  locatable code reference via a simple scalar-constant scan — the method table's base
+  address isn't found as a direct LEA immediate anywhere in the binary.
+- Found `VM_Notify`/`SL_GetString` (the real GSC notify primitives) via Plutonium's
+  public `iw5-gsc-utils` source (github.com/alicealys/iw5-gsc-utils) — real, but
+  requires live GSC-VM stack manipulation (`scr_VmPub->top`/`inparamcount`) to call
+  safely, and the published addresses are for the MP binary, not SP.
+
+**Workaround (explicit, narrowly-scoped user exception, 2026-07-15):** synthesize a real
+F5 keydown/keyup via `PostMessage` at the game's own window (`GetGameWindow()`, exposed
+from `d3d9_hook.cpp`'s WndProc hook), gated behind `IsInSurvivalMode()` (the
+`"so_survival_"` mapname-prefix check, via `FUN_00498ec0("mapname")` — a plain
+single-stack-arg `Dvar_GetString`-equivalent). This is the **sole deliberate exception**
+to this project's "no OS-level input emulation" rule in the entire mod — every other
+button drives the engine's real internal state directly. Justified here because: (1) the
+real native call is provably unresolved after an extensive, multi-session search: (2) IW5
+has no DirectInput import at all (confirmed in `CLAUDE.md`'s own findings), so keyboard
+input is genuine `WM_KEYDOWN`/`WM_KEYUP` messages, making this indistinguishable from a
+real keypress; (3) it's safe even without a precise "is the ready-up wait active"
+context check, since a synthetic F5 outside that one moment is simply ignored by the
+game, same as a real, misplaced F5 press would be. **CONFIRMED WORKING LIVE by the
+user** ("works pretty flawlessly"). To be replaced with a real native call if/when one
+is found — see task #8 in the working session's tracker for the full dead-end trail.
+
+---
+
+## 6. Sprint stamina/cooldown — base implemented, mission/perk overrides still open
+    (2026-07-15, later session)
+
+**The bug:** Sprint (L3) forces the real `pm_flags` bit (`0x4000`) every Pmove tick,
+which bypasses whatever native duration/recovery timer normally limits sprint entirely
+— giving infinite sprint, unlike real vanilla keyboard play. Confirmed this is a real
+gap, not intended behavior: `player_sprintUnlimited` (a real dvar, default `0`) only
+gets live-set to `1` by specific Campaign mission scripts (`dubai_code.gsc`/
+`intro_code.gsc` confirmed so far via Plutonium's public GSC dump, likely others), not
+universally — meaning Survival and most Campaign missions genuinely have a
+limited-by-default stamina system in real play that our own forcing hook was bypassing.
+
+**Investigated the real native duration/timer function.** Traced `FUN_00643870` (the
+confirmed real consumer of `player_sprintSpeedScale`) fully — it's pure speed
+calculation (multiplies movement speed when the `pm_flags` bit is set), with no
+duration/timer logic anywhere in it. The real native clock that naturally clears the
+sprint bit after N seconds (and gates recovery) lives elsewhere in the Pmove chain and
+wasn't located.
+
+**Implemented as our own timer layer instead** (not the game's), using real MW3 values
+supplied directly by the user: 4 seconds of continuous sprint to fully deplete, then a
+**fixed 2-second cooldown** before it can resume. First version had a live-confirmed
+bug: clearing the "winded" lockout the instant the continuous stamina float ticked back
+above zero let sprint resume almost immediately after depleting (regen starts adding
+back every frame, so the float crossed back above zero within a single frame of hitting
+empty) — user caught this live ("it tries to stop it but our calls keep firing").
+**Fixed** with a real, fixed-duration cooldown timer fully decoupled from the
+continuous stamina float, so hitting empty unconditionally blocks sprint for the whole
+2 seconds regardless of anything else. **CONFIRMED WORKING LIVE by the user** after the
+fix.
+
+**Real dvars found along the way (from `FUN_0053b960`'s registration dump):**
+`perk_sprintMultiplier` (scales `player_sprinttime`, itself not a native dvar — likely
+a GSC-side script constant, not found in the Plutonium dump either) and
+`perk_sprintRecoveryMultiplierActual`/`Visual` (scale sprint recovery time). These
+imply the Extreme Conditioning perk (community-documented to double sprint duration to
+8 seconds) works via `perk_sprintMultiplier`, a genuinely separate mechanism from
+`player_sprintUnlimited`'s on/off flag.
+
+**`player_sprintUnlimited` override implemented and confirmed correct in design:**
+added `GetDvarInt()`, a raw dvar-value getter — calls the same `Dvar_FindVar`-equivalent
+`FUN_00498ec0` itself calls internally (`FUN_0062abe0`, name arg passed in `EDI`, a
+custom register convention, not on the stack), then reads the raw int directly from
+`dvarPtr+0xc`. Deliberately NOT reusing `GetDvarString`/`FUN_00498ec0` for this — that
+function blindly returns `*(char**)(dvarPtr+0xc)` as a string pointer, which is only
+valid for actual string-type dvars; calling it on a boolean/int dvar like
+`player_sprintUnlimited` would read the raw `0`/`1` there as if it were a memory
+address and crash dereferencing it as a string. When live-nonzero, our stamina timer is
+bypassed entirely (genuinely unlimited sprint, matching real keyboard play in those
+missions) — the tick baseline is still kept fresh during the bypass so the timer
+doesn't see a huge bogus `dt` jump if the dvar is ever toggled back off later in the
+same session.
+
+**Still open:** Extreme Conditioning's `perk_sprintMultiplier` override — not yet
+investigated how to detect whether the perk is actually equipped/active, or how to read
+its live scale value to adjust `kSprintMaxStaminaSeconds` accordingly.
+
+**Separately found and fixed while investigating:** `Controller_DeltaTimeSeconds()`
+(used for look) turned out to use a single **process-wide shared** static timer, not
+one per call site despite its own doc comment claiming otherwise — a second caller in
+the same per-frame tick would starve whichever call runs second to a near-zero delta
+every frame (confirmed via reasoning during this investigation, before it could cause a
+live bug). Sprint's stamina timer uses its own independent `GetTickCount()`-based clock
+instead; the header comment was corrected to warn against this for future callers.
+
+---
+
+## 7. Remaining unassigned controller inputs
+
+**Status:** Open, tracked as task #5 (Back, deprioritized), #7 (killstreaks, not yet
+scoped), and #9 (sprint's Extreme Conditioning override).
 
 | Input | Intended action | Blocker |
 |---|---|---|
 | Back | `+scores` (scoreboard) | Reverted after a live regression (see issue #3 above) — needs the live-keycode-table technique applied to TAB, not another bind-table-index guess. Deprioritized (nice-to-have, not gameplay-defining) |
-| Killstreaks | Predator missile confirmed partially working | Not yet scoped — needs live testing to characterize what's actually broken before any RE work starts |
 | Killstreaks | Predator missile confirmed partially working; needs per-killstreak investigation | Not yet scoped — needs live testing to characterize what's actually broken (camera control? fire trigger? exit-early?) before any RE work starts |
+| Sprint / Extreme Conditioning | Perk should double sprint duration to 8s | Not yet investigated — likely `perk_sprintMultiplier` (a real dvar, confirmed to exist), needs a way to detect the perk is equipped/active and read its live scale value |
 
 ---
 
@@ -328,3 +452,16 @@ yet scoped).
   table for all four slots (catching a lowercase-vs-uppercase key-code gotcha along the
   way), found `FUN_00438710`'s clean case pattern → `FUN_00410ad0`/`FUN_0044ec40`.
   Confirmed working live.
+- **Survival ready-up / hold Y (issue #5 above):** the real native call was never found
+  despite an extensive search across multiple mechanisms — solved instead with an
+  explicit, user-approved exception to this mod's "no OS-level input emulation" rule: a
+  synthetic F5 keypress via `PostMessage`, gated to Survival maps only. Confirmed working
+  live; the only deliberate departure from real-engine-call-only input in the whole mod,
+  to be replaced if a native call is ever found.
+- **Sprint stamina/cooldown (issue #6 above):** the real native duration/timer function
+  was never found (only the speed-scale consumer, with no timer logic, was traced) —
+  implemented as our own 4s-deplete/2s-cooldown layer instead, using real MW3 values,
+  with a fixed-duration cooldown timer (not a continuous-float threshold) after catching
+  a live regen-flicker bug. Bypassed correctly when the real `player_sprintUnlimited`
+  dvar is live-set by a mission. Confirmed working live. Extreme Conditioning's
+  `perk_sprintMultiplier` override remains open (see issue #7 above).
