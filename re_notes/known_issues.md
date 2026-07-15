@@ -99,23 +99,54 @@ injection hook (`InjectAllControllerInput`) lives inside `FUN_0057de60`, part of
 per-frame *gameplay simulation* pipeline — confirmed via a heartbeat diagnostic that
 this hook **completely stops firing while genuinely paused** (pausing halts simulation
 by design). So Start's second press could never be detected: the code path needed to
-notice it doesn't run while paused. Fixed the architecture (implemented a real
-`IDirect3DDevice9::Present` hook — `d3d9_hook.cpp`, hooks `IDirect3D9::CreateDevice` via
-its vtable slot to reach the device, then hooks `Present` on it via MinHook — and moved
+notice it doesn't run while paused. Attempted fix: implemented a real
+`IDirect3DDevice9::Present` hook (`d3d9_hook.cpp` — hooks `IDirect3D9::CreateDevice` via
+its vtable slot to reach the device, then hooks `Present` on it via MinHook) and moved
 Start handling to a new `InjectMenuInputTick`, driven by `Present` instead of the
 gameplay tick, since Present keeps firing every rendered frame regardless of pause
-state). Both hooks installed successfully live (`MH_CreateHook`/`MH_EnableHook` both
-returned `MH_OK`) — but after this fix, Start *still* didn't unpause, and no
-`InjectMenuInputTick` log output appeared at all after the hooks installed, suggesting
-our `Present` hook may be attaching to a probe/capability-check device rather than the
-real render device (the game called `Direct3DCreate9` twice; our `CreateDevice` hook
-fired for both, but only the second attempt met the guard conditions to hook `Present`
-— worth re-checking whether that second device is actually the one driving the visible
-frame, or whether the game also uses `Direct3DCreate9Ex`, which we don't intercept at
-all). **Deferred per explicit user call** ("accept the limitation... we will surely
-find this anyway" once real controller UI/menu-navigation work begins) — not worth
-chasing further right now. The Present-hook infrastructure itself is legitimate,
-reusable groundwork for that future work regardless.
+state. Both hooks installed successfully live (`MH_CreateHook`/`MH_EnableHook` both
+returned `MH_OK`) — but Start still didn't unpause, and no `InjectMenuInputTick` log
+output appeared at all after the hooks installed.
+
+Researched the obvious theory (external web research, per user direction): many D3D9
+games create a throwaway `D3DDEVTYPE_REF`/`NULLREF` probe device (different vtable/
+Present implementation from the real `D3DDEVTYPE_HAL` device) before the real one,
+and a naive "hook whichever CreateDevice call succeeds first" guard can lock onto the
+probe's dead `Present` instead. Added a `DeviceType == D3DDEVTYPE_HAL` filter — but a
+retest showed the hook was already targeting the real HAL device both times (same
+`Present` address, `DeviceType=1` confirmed in the log) — so that wasn't the actual
+cause here, and the detour still never fires post-install. Root cause remains
+unfound. **Regression discovered and fixed:** moving Start handling to be driven
+*exclusively* by `InjectMenuInputTick` (Present) broke even the previously-working
+"open pause menu" behavior (since Present doesn't seem to actually invoke our detour
+live) — fixed by calling `InjectControllerPauseMenu()`/`MonitorPauseState()` from
+*both* the gameplay tick and `InjectMenuInputTick` (safe/idempotent, debounced by a
+shared `g_startHeld`). **Confirmed live after the fix: Start reliably opens the pause
+menu again; unpause still doesn't work.** This is the accepted, deferred state —
+**explicit user call** to not chase this further until the real controller UI/
+menu-navigation initiative (see `CLAUDE.md`) is undertaken, since the Present-hook
+infrastructure and this whole class of problem will need solving properly then
+anyway. The Present-hook code itself is legitimate, reusable groundwork for that
+future work regardless of its current dead detour.
+
+**Also investigated (2026-07-15): does the shipped build have a real developer
+console, which would let us type commands directly and settle several open questions
+at once (does `weapnext` work if typed manually, is `screenshot` really dev-gated,
+etc.)?** No `"toggleconsole"` string exists anywhere in the binary. Backtick (`0x60`)
+and tilde (`0x7e`) — the classic Quake3-family console-toggle keys — DO appear in
+`FUN_00541020`, but only inside the same rapid-repeat debounce guard ESC uses, not in
+any dedicated handling path; they get no special hardcoded treatment beyond that,
+suggesting a console toggle (if bound at all) would go through the ordinary bind-index
+dispatcher (`FUN_00438710`), same as any other key. Found a promising-looking dvar
+registration: `FUN_00538c80` registers a dvar literally named `"monkeytoy"` (a
+deliberately obscure internal name) with default value `1` and description
+`"Restrict console access"` — but cross-referencing shows this is the **only**
+reference to this dvar anywhere in the binary, both by its cached handle
+(`_DAT_00a959f4`) and by the literal string `"monkeytoy"` itself. Nothing else reads
+it back. Either this build's console-restriction check is vestigial/dead code, or it's
+consulted through some other generic mechanism (e.g. a dvar-flag-based check) that
+string/address tracing can't reveal — a dead end for now, not worth pursuing further
+without a more concrete lead.
 
 **Y/weapnext: still unsolved.** Cross-referencing against the real key-event handler
 confirms this engine resolves core gameplay actions through the SAME bind-index/kbutton

@@ -740,6 +740,15 @@ extern "C" void __cdecl InjectAllControllerInput(unsigned char* cmd)
     InjectControllerAds();
     InjectControllerSprint();
     InjectControllerReload();
+
+    // Also called from InjectMenuInputTick (the Present hook, see below) -- kept here
+    // too since moving it there EXCLUSIVELY regressed Start's confirmed-working "open
+    // pause menu" behavior (the Present hook's detour appears to never actually fire
+    // live, root cause not yet found -- see re_notes/known_issues.md). Calling it from
+    // both places is safe/idempotent: g_startHeld debounces per real button edge
+    // regardless of which hook happens to observe it first in a given frame.
+    InjectControllerPauseMenu();
+    MonitorPauseState();
 }
 
 // ---- Menu input tick -- driven by the real Present hook, NOT this file's gameplay tick
@@ -749,10 +758,18 @@ extern "C" void __cdecl InjectAllControllerInput(unsigned char* cmd)
 // it lives inside the per-frame GAMEPLAY SIMULATION pipeline, and pausing halts
 // simulation by design. That's irrelevant for movement/look/buttons (meaningless while
 // paused anyway), but it meant Start's second press could never be detected: pausing the
-// game also paused the only code path checking for the unpause press. Fixed by driving
-// Start/pause-menu handling from a genuine IDirect3DDevice9::Present hook instead (see
-// d3d9_hook.cpp) -- Present keeps firing every rendered frame regardless of pause state,
-// since the pause menu itself still needs to be drawn.
+// game also paused the only code path checking for the unpause press. Attempted fix:
+// drive Start/pause-menu handling from a genuine IDirect3DDevice9::Present hook instead
+// (see d3d9_hook.cpp) -- Present keeps firing every rendered frame regardless of pause
+// state, since the pause menu itself still needs to be drawn.
+//
+// STATUS: Present hook installs successfully live (MH_OK, confirmed targeting the real
+// D3DDEVTYPE_HAL device, not a probe/reference device -- ruled out via research) but its
+// detour appears to never actually fire again after install (no further log output at
+// all, despite the game clearly still rendering). Root cause not yet found. Kept wired
+// here in case it starts working (or during future menu-nav work when this gets
+// revisited), but InjectControllerPauseMenu is ALSO still called from the gameplay tick
+// above so Start's "open" behavior keeps working regardless.
 extern "C" void __cdecl InjectMenuInputTick()
 {
     InjectControllerPauseMenu();
