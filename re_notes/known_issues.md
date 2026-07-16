@@ -805,6 +805,21 @@ synthesis) are workarounds pending the real GSC-side mechanism being found,
 not permanent design choices. **CONFIRMED WORKING LIVE by the user** (2026-07-16):
 squadmate call-in via D-pad Left now succeeds using the synthesized '4' keypress.
 
+**Bonus fix, same mechanism: turret could not be un-toggled once deployed.** Live-
+reported earlier the same session (pulling out a turret via D-pad Left left no way to
+put it away again) and initially parked as a separate investigation pending native-path
+work on this slot, since the input mechanism was mid-change. **Turns out to be the same
+root cause, and genuinely a bug in the OLD implementation, not real console/native
+behavior**: the real native toggle for `+actionslot4` is a plain press-to-toggle (press
+once to deploy, press again to put away) — but the OLD direct `FUN_00410ad0`/
+`FUN_0044ec40` call pair only ever drove the "deploy" side correctly and had no working
+toggle-off path, so turret truly was partially broken before, not just missing a
+"native limitation" the mod correctly reproduced. The key-synthesis fix above resolves
+this too, for free, since the synthesized keypress goes through the real dispatcher's
+own toggle logic exactly like a real key press would. **CONFIRMED WORKING LIVE by the
+user** (2026-07-16): turret can now be deployed and put away with repeated D-pad Left
+presses. No further work needed on this specific report; task tracker entry closed.
+
 ---
 
 ## 7. Remaining unassigned controller inputs
@@ -817,7 +832,6 @@ scoped), and #9 (sprint's Extreme Conditioning override).
 | Back | `+scores` (scoreboard) | Reverted after a live regression (see issue #3 above) — needs the live-keycode-table technique applied to TAB, not another bind-table-index guess. Deprioritized (nice-to-have, not gameplay-defining) |
 | Killstreaks | Predator missile confirmed partially working; needs per-killstreak investigation | Not yet scoped — needs live testing to characterize what's actually broken (camera control? fire trigger? exit-early?) before any RE work starts |
 | Sprint / Extreme Conditioning | Perk should double sprint duration to 8s | Not yet investigated — likely `perk_sprintMultiplier` (a real dvar, confirmed to exist), needs a way to detect the perk is equipped/active and read its live scale value |
-| D-pad Left turret can't be un-toggled once deployed | Live-reported (2026-07-16): pulling out a turret via D-pad Left, there's no way to put it away again | **Explicitly parked by the user (2026-07-16), not investigated.** D-pad Left's whole input mechanism changed mid-session (issue #14's key-synthesis workaround replaced the direct `FUN_00410ad0`/`FUN_0044ec40` call for this slot) — not worth investigating whether this is a real native behavior or a bug in our implementation until work resumes on finding the real native path for actionslot4 (see issue #14's "we will trace all these non natives later on"). Revisit together with that work, not before. |
 
 ---
 

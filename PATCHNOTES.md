@@ -33,6 +33,11 @@ reverse-engineering trail behind each entry.
   weapon-switch function directly, for D-pad Left only (the other three D-pad
   directions are unchanged). Same category of workaround as Survival ready-up's F5
   synthesis, not a general policy change — see `re_notes/known_issues.md` issue #14.
+- **Turret couldn't be un-toggled once deployed via D-pad Left.** Turns out to be a
+  genuine bug in the old direct-call implementation, not a native limitation — the real
+  `+actionslot4` behavior is a plain press-to-toggle, but the old call pair only ever
+  drove the "deploy" side. Fixed for free by the same key-synthesis change above, since
+  it now goes through the real dispatcher's own toggle logic.
 
 ### Added
 - **`AdsSlowdownBaseline`** — a new `[Look]` config value multiplied on top of the
