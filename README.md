@@ -13,7 +13,8 @@ end-to-end.
 A from-scratch native controller mod for Call of Duty: Modern Warfare 3 (2011, IW5
 engine) — analog movement, look, and buttons driven directly through the game's own
 engine calls, not keyboard/mouse emulation. See `re_notes/` for the full reverse-
-engineering writeup this mod is built on.
+engineering writeup this mod is built on, and `PATCHNOTES.md` for what changed in
+each release.
 
 ## Feature list
 
@@ -40,6 +41,10 @@ engineering writeup this mod is built on.
   keypress emulation): the real hardcoded ESCAPE-key path for opening, and the same
   function's real "resume" case for closing, driven by a `WndProc` subclass hook so it
   keeps working even while the game's gameplay-simulation tick halts during pause.
+- **B — back out of menus** — while a menu is open (main menu, pause menu, etc.), B
+  forwards a real ESC keypress to it (the same real mechanism the engine's own key
+  handler uses for ESC generically), backing out one level or closing it, on top of
+  its normal crouch/prone role during gameplay.
 - **D-pad** (all 4 directions) — real `+actionslot 1-4` dispatch, data-driven by
   loadout (killstreaks/attachments/NVG-style toggles, whatever's actually equipped).
 - **Survival ready-up** (hold Y ~740ms between waves) — the one deliberate, documented
