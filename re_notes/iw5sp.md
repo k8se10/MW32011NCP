@@ -1638,15 +1638,51 @@ specific curves (no `friction`/`magnet`-named assets found anywhere in either zo
 These are genuine console-authentic response-curve shapes we can now replicate
 directly in our own stick-response math, instead of guessing at a formula.
 
-**GSC scripts are also technically dumpable** (`common_survival.ff` produced dozens of
-"Dumped scriptfile" log lines) **but not usefully so yet**: they come out as compiled
-`.gscbin` bytecode (numeric IDs, not real script path names) rather than decompiled
-source, and the vast majority failed to dump cleanly (1518 errors on `common_survival.ff`
-alone) -- would need a separate GSC decompiler/bytecode-format effort to actually read
-script logic (e.g. for finally finding ready-up's or squadmate-call-in's real GSC
-trigger). Not pursued further this session -- the curve data above was the actual
-blocker for aim-assist, and is now resolved; GSC decompilation is its own, separate,
-larger undertaking if ever prioritized later.
+**GSC decompilation pipeline completed same session.** The "1518 errors" on
+`common_survival.ff` turned out to be entirely shader-technique dump failures
+(missing `.hlsl` data), unrelated to scripts -- all 184 real `.gscbin` files in that
+zone dumped cleanly (just numerically named, since the tool couldn't resolve their
+real path names). **xensik/gsc-tool** (github.com/xensik/gsc-tool, prebuilt Windows
+release `1.4.10`, downloaded to `D:\Tools\gsc-tool\extracted\`) decompiles these
+directly: `gsc-tool.exe -m decomp -g iw5 -s pc <file.gscbin>` -> readable (if
+hash-named, e.g. `_id_43FF`) GSC source in `decompiled/iw5/`. Bulk-decompiled all 184
+successfully. Function/variable names are opaque hashes for anything not in a
+recognized standard-library namespace (`common_scripts\utility::`, `maps\_audio::`,
+etc. resolve fine; this project's own custom `maps\_specialops`/survival functions
+don't) -- but control flow, string literals, and call structure are all genuine and
+readable.
+
+**Real findings from decompiled Survival scripts (`common_survival.ff`, script
+`1571.gsc`, function `_id_3F83`):**
+- **Ready-up's real trigger, independently confirmed**: `self notifyonplayercommand(
+  "survival_player_ready", "+stance" )`. This upgrades an earlier lead (previously
+  sourced from a third-party Plutonium GSC dump with an open doubt about Survival
+  coverage) to a directly-confirmed fact from our own retail zone. Still a dead end
+  for direct exploitation, though: `+stance` has no default PC keybind at all
+  (confirmed absent from `players2/config.cfg`) -- genuine console-only leftover (real
+  console MW3 readies up via holding B). See `known_issues.md` issue #5 for the full
+  updated trail, including why the existing F5-synthesis workaround is being kept
+  as-is rather than chasing F5's exact native dispatch further.
+- **Turret cancel/un-toggle, independently confirmed** (script `1553.gsc`):
+  `self notifyonplayercommand( "controller_sentry_cancel", "+actionslot 4" )` and
+  `"controller_sentry_cancel", "weapnext"` -- matches our own live-confirmed fix for
+  task #13/issue #14 exactly (D-pad Left's key-synthesis approach naturally covers
+  this real cancel path too, which is why turret un-toggle started working for free).
+  The killstreak-crate table in that same script (`sentry`/`remote_missile`/
+  `precision_airstrike`/`stealth_airstrike`/`carepackage_c4`/`carepackage_ammo`) has no
+  separate "squadmate"/"reinforcement" entry, so that item is likely a different buy
+  category entirely -- not investigated further, since it already works via the same
+  D-pad Left fix.
+- No exact `"skip"` string anywhere in any decompiled script -- confirms `+stance` is
+  the only GSC-level ready mechanism, and F5/`skip` is a separate, native-only PC path
+  (see `known_issues.md` issue #5).
+
+**Entity team/health fields still not found.** Grepped all 184 decompiled scripts and
+the raw entity struct fields identified so far (`+0xcc` type byte, `+0x150` tag
+handle) don't have an obvious GSC-side cross-reference in what's dumped here (this
+zone is mostly wave/economy/HUD logic, not the actual AI-perception/entity-classification
+code, which likely lives natively rather than in GSC anyway). Aim assist's target-
+validity question remains open per the status note below.
 
 **Status / next steps for aim assist:** (1) implement our own stick-response curve
 using the real `view_input_N.graph` shapes (pick one as a config default, expose the

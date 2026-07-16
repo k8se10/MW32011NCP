@@ -332,6 +332,48 @@ investigation, this time for F5 specifically):
   requires live GSC-VM stack manipulation (`scr_VmPub->top`/`inparamcount`) to call
   safely, and the published addresses are for the MP binary, not SP.
 
+**Follow-up investigation, 2026-07-17, using our own real fastfile/GSC extraction**
+(see the new tooling section further down): the `"+stance"` lead above was previously
+sourced from a third-party GSC dump with an open doubt about whether it even covered
+Survival-specific scripts. Now independently confirmed straight from our OWN retail
+`common_survival.ff` (script `1571.gsc`, function `_id_3F83`):
+`self notifyonplayercommand( "survival_player_ready", "+stance" )` is the exact real
+per-wave ready trigger, no longer a third-party-sourced, unverified lead.
+
+However, this remains a dead end for direct exploitation: `+stance` has **no default
+PC keybind at all** (confirmed absent from `players2/config.cfg`) — a genuine
+console-only leftover (real console MW3 readies up via holding B; `+stance` is
+presumably what that maps to on that platform) with no ordinary PC keypress ever
+reaching it. Forcing the raw usercmd bit some earlier session guessed for `+stance`
+(bit `0x2`) was independently re-confirmed wrong this session too (that offset,
+`+0x204`, isn't even touched by `FUN_0057dc90`'s real bit-summing code — the guess was
+never actually disassembly-backed, just a table-position guess, exactly the class of
+mistake issue #3 already warned about).
+
+Also chased whether `F5`'s real command (`"skip"`, a genuine Infinity-Ward-shipped
+default PC bind — confirmed present in the stock `players2/config.cfg`, not something
+this mod or a user added) has a directly-callable native dispatch, to potentially
+replace the `PostMessage` synthesis with a real call:
+- `"skip"` is confirmed **absent** from the live `Cmd_ExecuteString` linked list
+  (`DAT_017507d8`) — walked the full real list live (132 nodes), no match. Same
+  conclusion as issue #2: core/mode-specific gameplay verbs bypass this generic
+  dispatcher.
+- Must therefore route through the same raw-keycode -> `FUN_00438710` case mechanism as
+  `weapnext`/`togglecrouch`, but F5's real internal keycode wasn't found: Win32 `VK_F5`
+  (`0x74`) reads `0` (unhandled) in the live dispatch table, and a live scan of the
+  `0x80`-`0xC8` special-key range found only entries already accounted for by other
+  known bindings (`0x99`=67=real PAUSE, `0x9F`=73=`toggleprone`/CTRL, plus a couple of
+  unexplained values, one of which exceeds the dispatcher's own valid case-number bound
+  and can't be a real case at all).
+- **Conclusion: not pursued further.** The existing `PostMessage`-based F5 synthesis
+  already triggers the real, Infinity-Ward-intended default PC command — it's not a
+  guess or a hack standing in for an unknown mechanism, it's the actual shipped
+  keybind, synthesized rather than pressed. Finding its exact native call point would
+  be a nice-to-have architectural cleanup (one fewer OS-input-emulation exception) but
+  isn't blocking anything, and the keycode space is large enough that further blind
+  scanning has poor odds. Workaround stays as-is unless a future session finds a
+  cleaner lead (e.g. a proper keynum enum reference, rather than more scanning).
+
 **Workaround (explicit, narrowly-scoped user exception, 2026-07-15):** synthesize a real
 F5 keydown/keyup via `PostMessage` at the game's own window (`GetGameWindow()`, exposed
 from `d3d9_hook.cpp`'s WndProc hook), gated behind `IsInSurvivalMode()` (the
