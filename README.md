@@ -1,6 +1,6 @@
 # MW3 Native Controller Support (Campaign & Survival)
 
-**Status: ALPHA — actively in development (as of 2026-07-15).** Analog movement, look,
+**Status: PRE-ALPHA — actively in development (as of 2026-07-15).** Analog movement, look,
 and most buttons are confirmed working live against `iw5sp.exe` (Campaign/Survival),
 including a real sprint stamina/cooldown model, Start's full pause/unpause, weapon
 switching, D-pad killstreak/attachment slots, and Survival's between-wave ready-up. Back
