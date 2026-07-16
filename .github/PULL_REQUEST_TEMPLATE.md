@@ -19,6 +19,7 @@ but hasn't been run against the actual game isn't done. See CONTRIBUTING.md.
 ## Checklist
 
 - [ ] I opened an issue first for anything that wasn't a small, obvious fix (new hook target, `iw5mp.exe` work, new input-emulation exception)
+- [ ] This meets [`CODE_STANDARDS.md`](../CODE_STANDARDS.md) — production-ready, live-verified, no placeholder/half-finished work (applies identically to AI-assisted code)
 - [ ] No hardcoded addresses — every hook target is found via signature scan at runtime
 - [ ] Non-obvious findings (decompile, memdiff, live testing) are documented in `re_notes/iw5sp.md`
 - [ ] Commit messages follow `[type]: [description]`

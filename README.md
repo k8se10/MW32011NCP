@@ -247,4 +247,7 @@ mod.
 
 Contributions are welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md) for the
 ground rules (native RE only, no hardcoded addresses, verify live, SP/MP are
-separate efforts) before opening a PR.
+separate efforts) and [`CODE_STANDARDS.md`](CODE_STANDARDS.md) for the
+production-ready bar every change is held to (no placeholder hooks, no
+half-finished work presented as done — applies identically to AI-assisted
+code) before opening a PR.

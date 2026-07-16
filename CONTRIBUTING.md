@@ -5,6 +5,14 @@ reverse-engineering effort to bring real controller support to Call of Duty:
 Modern Warfare 3 (2011, IW5 engine) — not a keyboard/mouse-emulation mapper.
 Before opening a PR, please read this file in full.
 
+> **Read [`CODE_STANDARDS.md`](CODE_STANDARDS.md) before writing any code.**
+> It is the authoritative statement of the bar every change is held to —
+> production-ready only, no placeholder hooks, no half-finished work
+> presented as done. This applies identically whether the code was written
+> by hand or with AI assistance (this project itself is developed with heavy
+> AI-assistant use, which is explicitly fine — confidently-described AI
+> output that hasn't actually been verified live is not).
+
 ## Ground rules
 
 - **This is native RE, not config tweaking.** The base game ships with zero
@@ -79,15 +87,18 @@ Before opening a PR, please read this file in full.
    especially new hook targets, anything touching `iw5mp.exe`, or new
    input-emulation exceptions — so the approach can be discussed before you
    sink time into it.
-2. Commit messages follow `[type]: [description]` (`feat:`, `fix:`, `docs:`,
+2. Meets every criterion in [`CODE_STANDARDS.md`](CODE_STANDARDS.md) —
+   production-ready, live-verified, no placeholder/half-finished work. This
+   is checked, not assumed, regardless of how the code was written.
+3. Commit messages follow `[type]: [description]` (`feat:`, `fix:`, `docs:`,
    `chore:`, `refactor:`, `test:`).
-3. Describe your live-testing in the PR description: which binary/mode, what
+4. Describe your live-testing in the PR description: which binary/mode, what
    you did, what you observed. Include re-tested vanilla keyboard/mouse play
    if your change touches a shared code path.
-4. If you use a new third-party library, note its license in the PR — it'll
+5. If you use a new third-party library, note its license in the PR — it'll
    need a credit added to `README.md`'s Credits section before merging (see
    `LICENSE`'s "Third-party components" section for the existing pattern).
-5. By submitting a PR, you agree your contribution is licensed under this
+6. By submitting a PR, you agree your contribution is licensed under this
    project's `LICENSE`.
 
 ## Reporting bugs
