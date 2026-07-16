@@ -32,3 +32,12 @@ tools/memdiff/*.snap
 # independently re-verify, never blindly reuse; see re_notes for how any lead from here
 # gets treated). Not ours to redistribute as part of this repo.
 references/
+
+# Extracted MW3 game assets (from OpenAssetTools' Unlinker, run against our own retail
+# .ff fastfiles for RE purposes -- see re_notes/iw5sp.md) are Activision's copyrighted
+# game data, never ours to redistribute. Dumped outside this repo by default (D:\Tools),
+# but ignored here too as a defensive safety net in case any dump output ever lands
+# inside the repo by accident.
+zone_dump/
+ff_dump/
+*.gdt
