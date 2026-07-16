@@ -37,13 +37,103 @@ inline int8_t ClampToSByte(int v)
 
 } // namespace
 
-// ---- Movement: left stick -> usercmd_t.forwardmove(+0x1c) / .rightmove(+0x1d) ----
+// All raw XInput button-bit/trigger constants live here in one place (previously
+// scattered redeclarations across each Inject* section) now that task #15's button-
+// layout remapping needs a single IsPhysicalHeld() usable from every hook function,
+// regardless of where in the file it's defined. Declared this early (before
+// InjectControllerMovement, the file's first hook function) so every later function
+// can use it without a forward-declaration.
+namespace {
+constexpr unsigned short kXI_DPAD_UP = 0x0001;
+constexpr unsigned short kXI_DPAD_DOWN = 0x0002;
+constexpr unsigned short kXI_DPAD_LEFT = 0x0004;
+constexpr unsigned short kXI_DPAD_RIGHT = 0x0008;
+constexpr unsigned short kXI_START = 0x0010;
+constexpr unsigned short kXI_BACK = 0x0020;
+constexpr unsigned short kXI_LEFT_THUMB = 0x0040;
+constexpr unsigned short kXI_RIGHT_THUMB = 0x0080;
+constexpr unsigned short kXI_LEFT_SHOULDER = 0x0100;
+constexpr unsigned short kXI_RIGHT_SHOULDER = 0x0200;
+constexpr unsigned short kXI_A = 0x1000;
+constexpr unsigned short kXI_B = 0x2000;
+constexpr unsigned short kXI_X = 0x4000;
+constexpr unsigned short kXI_Y = 0x8000;
+constexpr unsigned char kTriggerThresholdFire = 30; // XInput's documented trigger threshold
+
+// task #15: resolves a logical action's PhysicalInput (from g_buttonMap, itself
+// resolved from the active ButtonLayout + FlipTriggers) down to an actual XInput
+// button-bit/trigger check. Every Inject* function below should read its physical
+// input through this + g_buttonMap.<action> rather than a hardcoded kXI_* constant,
+// so the whole mod stays consistent under any button layout.
+bool IsPhysicalHeld(PhysicalInput p, unsigned short buttons, unsigned char leftTrigger, unsigned char rightTrigger)
+{
+    switch (p) {
+        case PhysicalInput::RT: return rightTrigger >= kTriggerThresholdFire;
+        case PhysicalInput::LT: return leftTrigger >= kTriggerThresholdFire;
+        case PhysicalInput::RB: return (buttons & kXI_RIGHT_SHOULDER) != 0;
+        case PhysicalInput::LB: return (buttons & kXI_LEFT_SHOULDER) != 0;
+        case PhysicalInput::X: return (buttons & kXI_X) != 0;
+        case PhysicalInput::Y: return (buttons & kXI_Y) != 0;
+        case PhysicalInput::A: return (buttons & kXI_A) != 0;
+        case PhysicalInput::B: return (buttons & kXI_B) != 0;
+        case PhysicalInput::LS: return (buttons & kXI_LEFT_THUMB) != 0;
+        case PhysicalInput::RS: return (buttons & kXI_RIGHT_THUMB) != 0;
+        case PhysicalInput::Start: return (buttons & kXI_START) != 0;
+        case PhysicalInput::Back: return (buttons & kXI_BACK) != 0;
+    }
+    return false;
+}
+
+// ---- Stick layout routing (task #15) ----------------------------------------------
+//
+// Default: left stick = move (fwd/back, strafe), right stick = look (pitch, turn).
+// Southpaw: whole sticks swapped.
+// Legacy: only the HORIZONTAL axes swap between the two sticks -- left stick keeps
+// forward/back, right stick keeps look up/down, but left-stick-X becomes turn and
+// right-stick-X becomes strafe (i.e. left stick handles rotation, right handles
+// strafing -- the historical CoD4-era "Legacy" scheme, per user-supplied reconstruction).
+// LegacySouthpaw: the two sticks swapped again on top of Legacy.
+void RouteStickAxes(float leftX, float leftY, float rightX, float rightY, StickLayout layout,
+                     float& moveX, float& moveY, float& lookX, float& lookY)
+{
+    switch (layout) {
+        case StickLayout::Southpaw:
+            moveX = rightX; moveY = rightY;
+            lookX = leftX;  lookY = leftY;
+            break;
+        case StickLayout::Legacy:
+            moveX = rightX; moveY = leftY;
+            lookX = leftX;  lookY = rightY;
+            break;
+        case StickLayout::LegacySouthpaw:
+            moveX = leftX;  moveY = rightY;
+            lookX = rightX; lookY = leftY;
+            break;
+        default: // Default
+            moveX = leftX;  moveY = leftY;
+            lookX = rightX; lookY = rightY;
+            break;
+    }
+}
+} // namespace
+
+// ---- Movement: move-stick -> usercmd_t.forwardmove(+0x1c) / .rightmove(+0x1d) ----
+//
+// "Move-stick" rather than a hardcoded "left stick" since task #15's Stick Layout
+// (g_modConfig.stickLayout) can route movement off either physical stick -- both are
+// read every frame and RouteStickAxes (defined above) picks which feeds move vs. look
+// per the active layout. Under the default layout this is exactly the original left-
+// stick-only behavior.
 extern "C" void __cdecl InjectControllerMovement(unsigned char* cmd)
 {
     if (!cmd) return;
-    float lx, ly;
-    if (!Controller_GetLeftStick(lx, ly)) return;
-    if (lx == 0.0f && ly == 0.0f) return;
+    float leftX, leftY, rightX, rightY;
+    if (!Controller_GetLeftStick(leftX, leftY)) return;
+    if (!Controller_GetRightStick(rightX, rightY)) return;
+
+    float moveX, moveY, lookX, lookY;
+    RouteStickAxes(leftX, leftY, rightX, rightY, g_modConfig.stickLayout, moveX, moveY, lookX, lookY);
+    if (moveX == 0.0f && moveY == 0.0f) return;
 
     int8_t curForward = static_cast<int8_t>(cmd[0x1c]);
     int8_t curRight = static_cast<int8_t>(cmd[0x1d]);
@@ -54,8 +144,8 @@ extern "C" void __cdecl InjectControllerMovement(unsigned char* cmd)
     // max speed, so this still gives real analog speed control, not just on/off).
     // Confirmed correct as-is (no inversion) via real-hardware playtest, 2026-07-14 --
     // only look (right stick) was reported inverted, not movement.
-    int addForward = static_cast<int>(ly * 127.0f);
-    int addRight = static_cast<int>(lx * 127.0f);
+    int addForward = static_cast<int>(moveY * 127.0f);
+    int addRight = static_cast<int>(moveX * 127.0f);
 
     cmd[0x1c] = static_cast<unsigned char>(ClampToSByte(curForward + addForward));
     cmd[0x1d] = static_cast<unsigned char>(ClampToSByte(curRight + addRight));
@@ -120,15 +210,11 @@ extern "C" void __cdecl InjectControllerMovement(unsigned char* cmd)
 //   D-pad (all four directions) -> left unassigned. The underlying bits
 //        (+actionslot 1-4 per the kbutton table) are still uncertain/largely untested
 //        individually -- not part of this pass, revisit later.
+//
+// kXI_* constants, IsPhysicalHeld(), and RouteStickAxes() (task #15's button/stick-
+// layout remapping) now live near the top of the file, before InjectControllerMovement
+// -- moved there so every Inject* function, including the earliest one, can use them.
 namespace {
-constexpr unsigned short kXI_RIGHT_THUMB = 0x0080;
-constexpr unsigned short kXI_A = 0x1000;
-constexpr unsigned short kXI_B = 0x2000;
-constexpr unsigned short kXI_X = 0x4000;
-constexpr unsigned short kXI_LEFT_SHOULDER = 0x0100;
-constexpr unsigned short kXI_RIGHT_SHOULDER = 0x0200;
-constexpr unsigned char kTriggerThresholdFire = 30; // XInput's documented trigger threshold
-
 // Hold-vs-tap thresholds (B/Interact/ready-up), sensitivity, ADS slowdown strength,
 // and sprint stamina/regen all now come from g_modConfig (task #14, mw3ncp_config.ini)
 // instead of being hardcoded here -- see mod_config.h for the full list and defaults.
@@ -202,17 +288,18 @@ extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
     }
 
     uint32_t out = 0;
-    bool fireHeld = rightTrigger >= kTriggerThresholdFire;
+    bool fireHeld = IsPhysicalHeld(g_buttonMap.fire, xiButtons, leftTrigger, rightTrigger);
     if (fireHeld) out |= 0x1;                                   // Fire (+attack)
-    if (xiButtons & kXI_RIGHT_THUMB) out |= 0x4;                // Melee
-    if (xiButtons & kXI_LEFT_SHOULDER) out |= 0x8000;           // Tactical (smoke)
-    if (xiButtons & kXI_RIGHT_SHOULDER) out |= 0x4000;          // Lethal (frag)
-    if (xiButtons & kXI_A) out |= 0x400;                        // Jump (+gostand)
+    if (IsPhysicalHeld(g_buttonMap.melee, xiButtons, leftTrigger, rightTrigger)) out |= 0x4;       // Melee
+    if (IsPhysicalHeld(g_buttonMap.tactical, xiButtons, leftTrigger, rightTrigger)) out |= 0x8000; // Tactical (smoke)
+    if (IsPhysicalHeld(g_buttonMap.lethal, xiButtons, leftTrigger, rightTrigger)) out |= 0x4000;   // Lethal (frag)
+    if (IsPhysicalHeld(g_buttonMap.jump, xiButtons, leftTrigger, rightTrigger)) out |= 0x400;      // Jump (+gostand)
 
     // Interact (0x8): hold-to-interact, not instant-on-tap -- see the comment on
-    // g_interactPressStartMs above. Reload (a separate real kbutton, same physical X
-    // button) is unaffected and still fires instantly; see InjectControllerReload.
-    bool xHeld = (xiButtons & kXI_X) != 0;
+    // g_interactPressStartMs above. Reload (a separate real kbutton, same physical
+    // button as reloadUse) is unaffected and still fires instantly; see
+    // InjectControllerReload.
+    bool xHeld = IsPhysicalHeld(g_buttonMap.reloadUse, xiButtons, leftTrigger, rightTrigger);
     if (xHeld && !g_interactButtonWasHeld) {
         g_interactPressStartMs = GetTickCount();
     }
@@ -229,7 +316,7 @@ extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
         }
     }
 
-    bool bHeld = (xiButtons & kXI_B) != 0;
+    bool bHeld = IsPhysicalHeld(g_buttonMap.crouchProne, xiButtons, leftTrigger, rightTrigger);
     if (bHeld && !g_crouchButtonWasHeld) {
         // Rising edge: new press starting.
         g_crouchButtonPressStartMs = GetTickCount();
@@ -349,9 +436,6 @@ void CallKbuttonUp(uintptr_t kbutton, int bindIndex)
     }
 }
 
-// XInput's own documented trigger threshold -- avoids a barely-touched trigger
-// registering as a full press.
-constexpr unsigned char kTriggerThreshold = 30;
 bool g_adsHeld = false;
 } // namespace
 
@@ -361,7 +445,7 @@ extern "C" void __cdecl InjectControllerAds()
     unsigned char leftTrigger, rightTrigger;
     if (!Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger)) return;
 
-    bool nowHeld = leftTrigger >= kTriggerThreshold;
+    bool nowHeld = IsPhysicalHeld(g_buttonMap.ads, buttons, leftTrigger, rightTrigger);
     if (nowHeld == g_adsHeld) return; // only fire on the edge, matching a real keypress
 
     g_adsHeld = nowHeld;
@@ -397,7 +481,7 @@ extern "C" void __cdecl InjectControllerReload()
     unsigned char leftTrigger, rightTrigger;
     if (!Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger)) return;
 
-    bool nowHeld = (buttons & kXI_X) != 0;
+    bool nowHeld = IsPhysicalHeld(g_buttonMap.reloadUse, buttons, leftTrigger, rightTrigger);
     if (nowHeld == g_reloadHeld) return; // only fire on the edge, matching a real keypress
 
     g_reloadHeld = nowHeld;
@@ -452,7 +536,6 @@ extern "C" void __cdecl InjectControllerReload()
 // LIVE pointer each time -- no stored/hardcoded data address at all, matching the
 // project's live-pointer-capture pattern already used for `cmd` in FUN_0057de60.
 namespace {
-constexpr unsigned short kXI_LEFT_THUMB = 0x0040;
 constexpr uint32_t kPmFlagSprint = 0x4000u;
 bool g_sprintHeld = false;
 void* g_orig_00644ed0 = nullptr;
@@ -552,7 +635,7 @@ extern "C" void __cdecl InjectControllerSprint()
     unsigned char leftTrigger, rightTrigger;
     if (!Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger)) return;
 
-    bool held = (buttons & kXI_LEFT_THUMB) != 0;
+    bool held = IsPhysicalHeld(g_buttonMap.sprint, buttons, leftTrigger, rightTrigger);
     if (held && !g_sprintHeld && g_stance != Stance::Standing) {
         // Rising edge while crouched/prone: real console sprint stands the player back
         // up to full upright first, same as pressing forward while ducked/prone does --
@@ -793,11 +876,18 @@ float GetAdsLookRateScale()
 }
 } // namespace
 
+// "Look-stick" rather than a hardcoded "right stick" -- see InjectControllerMovement's
+// comment on RouteStickAxes/task #15's Stick Layout. Under the default layout this is
+// exactly the original right-stick-only behavior.
 extern "C" void __cdecl InjectControllerLookAngles()
 {
-    float rx, ry;
-    if (!Controller_GetRightStick(rx, ry)) return;
-    if (rx == 0.0f && ry == 0.0f) return;
+    float leftX, leftY, rightX, rightY;
+    if (!Controller_GetLeftStick(leftX, leftY)) return;
+    if (!Controller_GetRightStick(rightX, rightY)) return;
+
+    float moveX, moveY, lookX, lookY;
+    RouteStickAxes(leftX, leftY, rightX, rightY, g_modConfig.stickLayout, moveX, moveY, lookX, lookY);
+    if (lookX == 0.0f && lookY == 0.0f) return;
 
     float dt = Controller_DeltaTimeSeconds();
     if (dt <= 0.0f) return;
@@ -806,8 +896,8 @@ extern "C" void __cdecl InjectControllerLookAngles()
     // g_modConfig.lookDegreesPerSecond ([Look] Sensitivity in mw3ncp_config.ini, task
     // #14) rather than a hardcoded constant.
     float rate = g_modConfig.lookDegreesPerSecond * GetAdsLookRateScale();
-    float pitchInput = g_modConfig.invertLook ? -ry : ry; // OG console "Invert Look"
-    *kYawAccum -= rx * rate * dt;
+    float pitchInput = g_modConfig.invertLook ? -lookY : lookY; // OG console "Invert Look"
+    *kYawAccum -= lookX * rate * dt;
     *kPitchAccum -= pitchInput * rate * dt;
 }
 
@@ -833,7 +923,6 @@ extern "C" void __cdecl InjectControllerLookAngles()
 // re_notes/known_issues.md issue #2 for the full trace.
 
 namespace {
-constexpr unsigned short kXI_START = 0x0010;
 bool g_startHeld = false;
 } // namespace
 
@@ -867,7 +956,6 @@ bool g_startHeld = false;
 namespace {
 using WeaponNextFn = void(__cdecl*)(int playerIndex, int direction);
 WeaponNextFn const WeaponNext = reinterpret_cast<WeaponNextFn>(0x004a5f70);
-constexpr unsigned short kXI_Y = 0x8000;
 bool g_yHeld = false;
 } // namespace
 
@@ -934,7 +1022,7 @@ extern "C" void __cdecl InjectControllerWeaponNext()
     unsigned char leftTrigger, rightTrigger;
     if (!Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger)) return;
 
-    bool held = (buttons & kXI_Y) != 0;
+    bool held = IsPhysicalHeld(g_buttonMap.weaponSwitch, buttons, leftTrigger, rightTrigger);
     if (held && !g_yHeld) {
         g_yPressStartMs = GetTickCount();
         g_yReadyUpFired = false;
@@ -1010,7 +1098,7 @@ extern "C" void __cdecl InjectControllerPauseMenu()
     unsigned char leftTrigger, rightTrigger;
     if (!Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger)) return;
 
-    bool held = (buttons & kXI_START) != 0;
+    bool held = IsPhysicalHeld(g_buttonMap.pause, buttons, leftTrigger, rightTrigger);
     if (held && !g_startHeld) {
         char buf[128];
         if (!g_paused) {
@@ -1135,10 +1223,6 @@ using ActionSlotDownFn = void(__cdecl*)(int playerIndex, int slotIndex);
 using ActionSlotUpFn = void(__cdecl*)(int playerIndex);
 ActionSlotDownFn const ActionSlotDown = reinterpret_cast<ActionSlotDownFn>(0x00410ad0);
 ActionSlotUpFn const ActionSlotUp = reinterpret_cast<ActionSlotUpFn>(0x0044ec40);
-constexpr unsigned short kXI_DPAD_UP = 0x0001;
-constexpr unsigned short kXI_DPAD_DOWN = 0x0002;
-constexpr unsigned short kXI_DPAD_LEFT = 0x0004;
-constexpr unsigned short kXI_DPAD_RIGHT = 0x0008;
 // Mapping per the user's own reference Steam Controller config (re_notes/iw5sp.md):
 // D-Pad Up = actionslot1(0), Right = actionslot2(1), Down = actionslot3(2), Left = actionslot4(3)
 bool g_dpadHeld[4] = { false, false, false, false };

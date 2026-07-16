@@ -1,11 +1,13 @@
 #include <windows.h>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include "mod_config.h"
 
 extern void LogFromController(const char* msg); // defined in dllmain.cpp
 
 ModConfig g_modConfig;
+ButtonMap g_buttonMap;
 
 namespace {
 
@@ -40,6 +42,58 @@ void ReadUlong(const char* path, const char* section, const char* key, unsigned 
 void ReadBool(const char* path, const char* section, const char* key, bool& outValue)
 {
     outValue = GetPrivateProfileIntA(section, key, outValue ? 1 : 0, path) != 0;
+}
+
+const char* ButtonLayoutName(ButtonLayout v)
+{
+    switch (v) {
+        case ButtonLayout::Tactical: return "Tactical";
+        case ButtonLayout::Lefty: return "Lefty";
+        case ButtonLayout::TacticalLefty: return "TacticalLefty";
+        default: return "Default";
+    }
+}
+
+ButtonLayout ParseButtonLayout(const char* s, ButtonLayout fallback)
+{
+    if (_stricmp(s, "Default") == 0) return ButtonLayout::Default;
+    if (_stricmp(s, "Tactical") == 0) return ButtonLayout::Tactical;
+    if (_stricmp(s, "Lefty") == 0) return ButtonLayout::Lefty;
+    if (_stricmp(s, "TacticalLefty") == 0) return ButtonLayout::TacticalLefty;
+    return fallback;
+}
+
+const char* StickLayoutName(StickLayout v)
+{
+    switch (v) {
+        case StickLayout::Southpaw: return "Southpaw";
+        case StickLayout::Legacy: return "Legacy";
+        case StickLayout::LegacySouthpaw: return "LegacySouthpaw";
+        default: return "Default";
+    }
+}
+
+StickLayout ParseStickLayout(const char* s, StickLayout fallback)
+{
+    if (_stricmp(s, "Default") == 0) return StickLayout::Default;
+    if (_stricmp(s, "Southpaw") == 0) return StickLayout::Southpaw;
+    if (_stricmp(s, "Legacy") == 0) return StickLayout::Legacy;
+    if (_stricmp(s, "LegacySouthpaw") == 0) return StickLayout::LegacySouthpaw;
+    return fallback;
+}
+
+void ReadButtonLayout(const char* path, ButtonLayout& outValue)
+{
+    char buf[32];
+    GetPrivateProfileStringA("Bindings", "ButtonLayout", ButtonLayoutName(outValue), buf, sizeof(buf), path);
+    outValue = ParseButtonLayout(buf, outValue);
+}
+
+void ReadStickLayout(const char* path, StickLayout& outValue)
+{
+    char buf[32];
+    GetPrivateProfileStringA("Bindings", "StickLayout", StickLayoutName(outValue), buf, sizeof(buf), path);
+    outValue = ParseStickLayout(buf, outValue);
 }
 
 // Writes a fresh, fully-commented default INI -- called only when no file exists yet,
@@ -87,7 +141,19 @@ void WriteDefaultConfig(const char* path)
         "; Seconds of continuous sprint before stamina fully depletes.\n"
         "MaxStaminaSeconds=%g\n"
         "; Seconds of NOT sprinting required to fully recover from empty.\n"
-        "RegenSeconds=%g\n",
+        "RegenSeconds=%g\n"
+        "\n"
+        "[Bindings]\n"
+        "; OG console button layout presets, reconstructed from the unchanged CoD4->\n"
+        "; MW2->MW3 console control scheme (NOT independently verified against real\n"
+        "; hardware yet -- TacticalLefty in particular may need a correction pass).\n"
+        "; One of: Default, Tactical, Lefty, TacticalLefty\n"
+        "ButtonLayout=%s\n"
+        "; One of: Default, Southpaw, Legacy, LegacySouthpaw\n"
+        "StickLayout=%s\n"
+        "; Independent toggle: swaps RT<->RB and LT<->LB (0 = off, 1 = on). Combines\n"
+        "; with whichever ButtonLayout is active above.\n"
+        "FlipTriggers=%d\n",
         g_modConfig.lookDegreesPerSecond,
         g_modConfig.adsSlowdownStrength,
         g_modConfig.invertLook ? 1 : 0,
@@ -95,12 +161,80 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.interactHoldThresholdMs,
         g_modConfig.readyUpHoldThresholdMs,
         g_modConfig.sprintMaxStaminaSeconds,
-        g_modConfig.sprintRegenSeconds);
+        g_modConfig.sprintRegenSeconds,
+        ButtonLayoutName(g_modConfig.buttonLayout),
+        StickLayoutName(g_modConfig.stickLayout),
+        g_modConfig.flipTriggers ? 1 : 0);
 
     fclose(f);
 }
 
 } // namespace
+
+// ---- Button layout resolution (task #15) ------------------------------------------
+//
+// Tables below are the user-supplied reconstruction of the unchanged CoD4->MW2->MW3
+// console button layouts (see mod_config.h's enum comments for the confidence caveat).
+// Default/Tactical/Lefty are each independently well-established; TacticalLefty is
+// Lefty with Tactical's face-button swap (Crouch/Melee) applied on top of Lefty's own
+// already-swapped stick-click assignments (Sprint/Melee) -- taken as given directly
+// from the user's own final resolved table, not re-derived here.
+ButtonMap ResolveButtonMap(ButtonLayout layout, bool flipTriggers)
+{
+    ButtonMap m; // struct defaults already match ButtonLayout::Default
+
+    switch (layout) {
+        case ButtonLayout::Default:
+            break; // defaults are already correct
+        case ButtonLayout::Tactical:
+            m.crouchProne = PhysicalInput::RS;
+            m.melee = PhysicalInput::B;
+            break;
+        case ButtonLayout::Lefty:
+            m.fire = PhysicalInput::LT;
+            m.ads = PhysicalInput::RT;
+            m.lethal = PhysicalInput::LB;
+            m.tactical = PhysicalInput::RB;
+            m.sprint = PhysicalInput::RS;
+            m.melee = PhysicalInput::LS;
+            break;
+        case ButtonLayout::TacticalLefty:
+            m.fire = PhysicalInput::LT;
+            m.ads = PhysicalInput::RT;
+            m.lethal = PhysicalInput::LB;
+            m.tactical = PhysicalInput::RB;
+            m.crouchProne = PhysicalInput::LS;
+            m.sprint = PhysicalInput::RS;
+            m.melee = PhysicalInput::B;
+            break;
+    }
+
+    if (flipTriggers) {
+        auto flip = [](PhysicalInput p) {
+            switch (p) {
+                case PhysicalInput::RT: return PhysicalInput::RB;
+                case PhysicalInput::RB: return PhysicalInput::RT;
+                case PhysicalInput::LT: return PhysicalInput::LB;
+                case PhysicalInput::LB: return PhysicalInput::LT;
+                default: return p;
+            }
+        };
+        m.fire = flip(m.fire);
+        m.ads = flip(m.ads);
+        m.lethal = flip(m.lethal);
+        m.tactical = flip(m.tactical);
+        m.reloadUse = flip(m.reloadUse);
+        m.weaponSwitch = flip(m.weaponSwitch);
+        m.jump = flip(m.jump);
+        m.crouchProne = flip(m.crouchProne);
+        m.sprint = flip(m.sprint);
+        m.melee = flip(m.melee);
+        m.pause = flip(m.pause);
+        m.scoreboard = flip(m.scoreboard);
+    }
+
+    return m;
+}
 
 void LoadModConfig()
 {
@@ -111,6 +245,7 @@ void LoadModConfig()
     bool exists = (attrs != INVALID_FILE_ATTRIBUTES) && !(attrs & FILE_ATTRIBUTE_DIRECTORY);
     if (!exists) {
         WriteDefaultConfig(path); // g_modConfig still holds its struct-initializer defaults here
+        g_buttonMap = ResolveButtonMap(g_modConfig.buttonLayout, g_modConfig.flipTriggers);
         LogFromController("[config] no mw3ncp_config.ini found -- wrote a default one");
         return;
     }
@@ -123,15 +258,22 @@ void LoadModConfig()
     ReadUlong(path, "Survival", "ReadyUpHoldThresholdMs", g_modConfig.readyUpHoldThresholdMs);
     ReadFloat(path, "Sprint", "MaxStaminaSeconds", g_modConfig.sprintMaxStaminaSeconds);
     ReadFloat(path, "Sprint", "RegenSeconds", g_modConfig.sprintRegenSeconds);
+    ReadButtonLayout(path, g_modConfig.buttonLayout);
+    ReadStickLayout(path, g_modConfig.stickLayout);
+    ReadBool(path, "Bindings", "FlipTriggers", g_modConfig.flipTriggers);
 
-    char buf[288];
+    g_buttonMap = ResolveButtonMap(g_modConfig.buttonLayout, g_modConfig.flipTriggers);
+
+    char buf[400];
     sprintf_s(buf,
         "[config] loaded mw3ncp_config.ini: sensitivity=%g adsSlowdownStrength=%g "
         "invertLook=%d proneHoldMs=%lu interactHoldMs=%lu readyUpHoldMs=%lu sprintMax=%g "
-        "sprintRegen=%g",
+        "sprintRegen=%g buttonLayout=%s stickLayout=%s flipTriggers=%d",
         g_modConfig.lookDegreesPerSecond, g_modConfig.adsSlowdownStrength,
         g_modConfig.invertLook ? 1 : 0, g_modConfig.proneHoldThresholdMs,
         g_modConfig.interactHoldThresholdMs, g_modConfig.readyUpHoldThresholdMs,
-        g_modConfig.sprintMaxStaminaSeconds, g_modConfig.sprintRegenSeconds);
+        g_modConfig.sprintMaxStaminaSeconds, g_modConfig.sprintRegenSeconds,
+        ButtonLayoutName(g_modConfig.buttonLayout), StickLayoutName(g_modConfig.stickLayout),
+        g_modConfig.flipTriggers ? 1 : 0);
     LogFromController(buf);
 }
