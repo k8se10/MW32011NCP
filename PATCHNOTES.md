@@ -26,6 +26,13 @@ reverse-engineering trail behind each entry.
   plain gameplay. Start now auto-closes any other open menu (the same real ESC-forward
   mechanism B itself uses) before opening the pause menu, so pause always opens cleanly
   on top of gameplay and unpausing always returns straight to it.
+- **D-pad Left (Survival AI-squadmate call-in) failed 100% of the time**, while turret
+  call-ins on the same slot worked fine. Confirmed unique to Survival, not a general
+  regression — real keyboard `'4'` (the same bind) worked correctly the whole time.
+  Fixed by synthesizing a real key press for `'4'` instead of calling the native
+  weapon-switch function directly, for D-pad Left only (the other three D-pad
+  directions are unchanged). Same category of workaround as Survival ready-up's F5
+  synthesis, not a general policy change — see `re_notes/known_issues.md` issue #14.
 
 ### Added
 - **`AdsSlowdownBaseline`** — a new `[Look]` config value multiplied on top of the

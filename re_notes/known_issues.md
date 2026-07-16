@@ -743,6 +743,68 @@ directly to gameplay, not back into the buy-station menu).
 
 ---
 
+## 14. D-pad Left squadmate call-in failed 100% (task #13) — fixed via a narrowly-scoped key-synthesis exception (2026-07-16)
+
+Turret call-ins (D-pad Left, actionslot4) worked fine; AI-squadmate call-ins,
+purchased at the same buy station on the same slot (a different loadout
+choice), failed every single time. Both go through the identical native call
+pair `FUN_00410ad0(playerIndex,3)` / `FUN_0044ec40(playerIndex)` — confirmed
+byte-for-byte identical to what the real key dispatcher (`FUN_00438710`)
+itself calls for the real `'4'` key, via direct disassembly of both call
+sites, not a guess.
+
+**Investigation trail (all ruled out or confirmed in order):**
+- A whole-binary ASCII string search found dozens of native strings for
+  turret/sentry (`ET_TURRET`, `G_SpawnTurret`, `sentry_placement_trace_*`,
+  etc.) and **zero** occurrences of "squad" or any ally-call-in terminology
+  anywhere — strong evidence the squadmate call-in has no native C++
+  implementation at all.
+- A live `memdiff rangewatch` across the known kbutton-neighborhood
+  (`0xA98B00`-`0xA98D00`) found zero candidates correlating with the real
+  `'4'` key — a clean negative, later explained: that region's bytes are a
+  one-frame edge-latch consumed by the engine every tick, not a stable
+  hold-state byte an async external read can reliably catch (unlike ADS/
+  Reload's true kbutton_t's).
+- Direct disassembly of `FUN_0057dc90` (the button-summing function) found a
+  contiguous `{down, latch}` byte-pair array that DOES include an offset
+  matching the position `+actionslot 1-3` were previously found at (`+0x1b4`/
+  `+0x1c8`/`+0x1dc`, extending to `+0x1f0`) — but disassembling the REAL
+  dispatcher's own call sites for the D-pad keys directly (not a table-order
+  guess) showed those cases call `FUN_00410ad0`/`FUN_0044ec40` ONLY, never
+  touching this byte array at all. **The earlier "table idx = actionslot N"
+  mapping was wrong** (exactly the kind of mistake issue #3 already warned
+  about) — that offset family belongs to some other, unrelated set of binds.
+  Caught before a wrong fix shipped.
+- User-confirmed: real keyboard `'4'` (same bind) works perfectly with the
+  mod installed — rules out any global regression; this is specific to the
+  controller injection path only.
+- User-confirmed: deliberately holding D-pad Left longer (vs. a quick tap)
+  made no difference — rules out a switch-completion timing race.
+- User-confirmed: this call-in is unique to Survival, not shared with
+  Campaign's turret/killstreak system — strong signal it's driven by
+  Survival's own GSC scripts (same layer that turned out to own the ready-up
+  mechanic, see issue #5), not native code, and is very likely watching for a
+  genuine key event our direct native call never produces.
+
+**Fix — EXPLICIT, NARROWLY-SCOPED EXCEPTION (user-approved 2026-07-16), same
+category as ready-up's F5 synthesis:** for D-pad Left ONLY, synthesize a real
+`WM_KEYDOWN`/`WM_KEYUP` for `'4'` via `PostMessage` at the game's own window,
+instead of calling `FUN_00410ad0`/`FUN_0044ec40` directly — so whatever's
+actually watching (GSC or otherwise) sees exactly what a real keyboard press
+produces. The synthesized key still flows through the real dispatcher itself,
+so turret-type items on this same slot continue working through the normal
+path (deliberately NOT calling the native functions in addition to the
+synthesis — doing both would double-dispatch). **The other three D-pad
+directions are unchanged**, still using the direct native call, since nothing
+about them has been reported broken.
+
+**Explicitly not a general policy change.** Per the user's own direction:
+"we will trace all these non natives later on" — this (and ready-up's F5
+synthesis) are workarounds pending the real GSC-side mechanism being found,
+not permanent design choices. Rebuilt; live-verification still pending.
+
+---
+
 ## 7. Remaining unassigned controller inputs
 
 **Status:** Open, tracked as task #5 (Back, deprioritized), #7 (killstreaks, not yet

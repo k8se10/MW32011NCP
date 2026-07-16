@@ -1562,6 +1562,57 @@ bool g_dpadHeld[4] = { false, false, false, false };
 // as expected -- the specific mechanism (our own stale bit fighting a real state
 // change mid-sequence) no longer exists. See known_issues.md issue #9 for the full
 // crouch/prone rewrite writeup.
+// ---- D-pad Left / actionslot4 squadmate call-in: EXPLICIT, NARROWLY-SCOPED EXCEPTION
+// (user-approved 2026-07-16) -- same category of workaround as Survival ready-up's F5
+// synthesis above, applied here ONLY to D-pad Left, NOT the other three directions.
+//
+// Task #13: turret call-ins worked via the direct `FUN_00410ad0(playerIndex,3)` /
+// `FUN_0044ec40(playerIndex)` calls below, but AI-squadmate call-ins (purchased at the
+// same buy station, same D-pad Left slot, different loadout choice) failed 100% of the
+// time -- confirmed identical on the native-call side (same addresses, same arguments
+// as what FUN_00438710's real dispatcher itself calls for the real '4' key, verified via
+// direct disassembly of both, not a guess) and confirmed NOT a timing issue (deliberately
+// holding D-pad Left longer live-tested, no change). Whole-binary string search found
+// zero occurrences of "squad" or any ally-call-in terminology anywhere (turret, by
+// contrast, has dozens of native strings: `ET_TURRET`, `G_SpawnTurret`,
+// `sentry_placement_trace_*`, etc.) -- and the user confirmed this call-in is unique to
+// Survival, not shared with Campaign. Together this points at the same root cause as
+// ready-up: a Survival-specific GSC script watching for something our direct native
+// call never produces, most likely a genuine key event (the same category of problem,
+// not yet independently confirmed via a GSC decompile -- still blocked on the same `.ff`
+// unpacker gap noted elsewhere in this file).
+//
+// Fix: for D-pad Left ONLY, synthesize a real WM_KEYDOWN/WM_KEYUP for '4' (the actual
+// bound key for `+actionslot4`, confirmed via the live raw-keycode-table read above)
+// instead of calling FUN_00410ad0/FUN_0044ec40 directly -- so whatever's watching for a
+// real keypress (GSC or otherwise) sees exactly what a real keyboard press produces,
+// same reasoning as ready-up's F5 synthesis (IW5 has no DirectInput import at all, so
+// keyboard input is genuine WM_KEYDOWN/WM_KEYUP -- a synthetic '4' is indistinguishable
+// from a real one, and simply falls through the normal FUN_00438710 dispatch itself,
+// which is what still drives turret-type items correctly through this same path).
+// Deliberately does NOT ALSO call FUN_00410ad0/FUN_0044ec40 for this slot -- doing both
+// would double-dispatch the native side (the synthesized key's own real dispatch already
+// calls FUN_00410ad0 itself). The other three D-pad directions are UNCHANGED, still
+// driven by the direct native call, since nothing has been reported broken about them.
+//
+// EXPLICITLY NOT a general policy change: this is one narrowly-scoped exception for one
+// specific input, same as ready-up's. Per the user's own direction (2026-07-16): "we
+// will trace all these non natives later on" -- the real GSC-side mechanism for this
+// (and ready-up) should eventually be found and this synthesis replaced, not treated as
+// a permanent design choice.
+namespace {
+void SendSyntheticActionSlot4Key(bool down)
+{
+    HWND hwnd = GetGameWindow();
+    if (!hwnd) return;
+    if (down) {
+        PostMessageA(hwnd, WM_KEYDOWN, '4', 0x00000001);
+    } else {
+        PostMessageA(hwnd, WM_KEYUP, '4', 0xC0000001);
+    }
+}
+} // namespace
+
 extern "C" void __cdecl InjectControllerDpad()
 {
     unsigned short buttons;
@@ -1574,14 +1625,23 @@ extern "C" void __cdecl InjectControllerDpad()
     for (int i = 0; i < 4; ++i) {
         bool held = (buttons & kDpad[i].bit) != 0;
         if (held != g_dpadHeld[i]) {
+            bool isSlot4 = (kDpad[i].slot == 3);
             if (held) {
                 char tag[32];
                 sprintf_s(tag, "dpad-press slot=%d", kDpad[i].slot);
                 LogStanceDiag(tag);
-                ActionSlotDown(kLocalClientIndex, kDpad[i].slot);
+                if (isSlot4) {
+                    SendSyntheticActionSlot4Key(true);
+                } else {
+                    ActionSlotDown(kLocalClientIndex, kDpad[i].slot);
+                }
             } else {
                 LogStanceDiag("dpad-release");
-                ActionSlotUp(kLocalClientIndex);
+                if (isSlot4) {
+                    SendSyntheticActionSlot4Key(false);
+                } else {
+                    ActionSlotUp(kLocalClientIndex);
+                }
             }
             g_dpadHeld[i] = held;
         }
