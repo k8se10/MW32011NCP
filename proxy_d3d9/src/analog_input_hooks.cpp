@@ -1120,7 +1120,6 @@ constexpr size_t kEntityStride = 0x194;
 // with margin.
 constexpr int kEntityCount = 400;
 constexpr uintptr_t kEntityPosOffset = 0x10;
-constexpr uintptr_t kEntityTypeOffset = 0xcc;
 constexpr uintptr_t kInLevelFlagAddrForAimAssist = 0x00A98ACC; // same flag used elsewhere in this file
 
 struct Vec3 { float x, y, z; };
@@ -1135,15 +1134,61 @@ Vec3 GetEntityPosition(int index)
     return v;
 }
 
-uint8_t GetEntityType(int index)
+// ---- Movement-based target validity (2026-07-17) -- supersedes the +0xcc type byte
+// as the primary filter -----------------------------------------------------------
+//
+// Three separate live investigations (memdiff polling across multiple sessions,
+// static disassembly of FUN_0055c650/FUN_0055ead0, and tracing the GSC `isai()`
+// builtin -- a dead end, since GSC builtin names turned out to be hash-based, not
+// locatable as strings anywhere in this retail binary) never converged on one type
+// value that reliably tags every real enemy. Live-confirmed the same session: the
+// type-byte filter DID find and lock onto a real enemy at least once (proving the
+// rest of the pipeline -- position reads, angle math, correction -- works), but only
+// ever caught ONE after a long delay, and the user confirmed entity slot indices are
+// dynamic/unstable between spawns, not fixed per enemy.
+//
+// Movement sidesteps the classification question entirely: a static prop's position
+// never changes; a living AI's does the moment it walks anywhere. Sampled
+// periodically rather than every frame -- at 60+fps a single frame's movement is too
+// small relative to float jitter to be a reliable signal, but accumulating over a
+// longer window makes real movement unambiguous. Once confirmed moving, an entity
+// stays "known alive" for a grace period so a briefly-stationary enemy (aiming,
+// posted up behind cover) doesn't immediately drop out of consideration.
+constexpr DWORD kMovementSampleIntervalMs = 250;
+constexpr float kMovementThreshold = 4.0f;  // world units of change over one sample interval
+constexpr DWORD kMovementGraceMs = 8000;    // stays "known alive" this long after last confirmed movement
+
+Vec3 g_lastEntitySamplePos[kEntityCount];
+bool g_hasEntitySample[kEntityCount];
+DWORD g_lastMovedMs[kEntityCount]; // 0 = never confirmed moving
+DWORD g_lastMovementSampleMs = 0;
+
+void SampleEntityMovement()
 {
-    uintptr_t addr = kEntityArrayBase + static_cast<size_t>(index) * kEntityStride + kEntityTypeOffset;
-    return *reinterpret_cast<volatile uint8_t*>(addr);
+    DWORD now = GetTickCount();
+    if (now - g_lastMovementSampleMs < kMovementSampleIntervalMs) return;
+    g_lastMovementSampleMs = now;
+
+    for (int i = 1; i < kEntityCount; ++i) {
+        Vec3 pos = GetEntityPosition(i);
+        if (g_hasEntitySample[i]) {
+            float dx = pos.x - g_lastEntitySamplePos[i].x;
+            float dy = pos.y - g_lastEntitySamplePos[i].y;
+            float dz = pos.z - g_lastEntitySamplePos[i].z;
+            float moved = sqrtf(dx * dx + dy * dy + dz * dz);
+            if (moved >= kMovementThreshold) {
+                g_lastMovedMs[i] = now;
+            }
+        }
+        g_lastEntitySamplePos[i] = pos;
+        g_hasEntitySample[i] = true;
+    }
 }
 
-bool IsAiActorType(uint8_t type)
+bool IsEntityKnownAlive(int index)
 {
-    return type == 0x0d || type == 0x0f;
+    if (g_lastMovedMs[index] == 0) return false;
+    return (GetTickCount() - g_lastMovedMs[index]) < kMovementGraceMs;
 }
 
 // Approximate eye-height offset by stance -- the real per-stance constants weren't
@@ -1218,14 +1263,15 @@ AimAssistTarget FindBestAimAssistTarget(float playerYawDeg, float playerPitchDeg
     if (!g_modConfig.aimAssistEnabled) return best;
     if (*reinterpret_cast<volatile int32_t*>(kInLevelFlagAddrForAimAssist) <= 0) return best;
 
+    SampleEntityMovement();
+
     Vec3 playerPos = GetEntityPosition(0);
     playerPos.z += EyeHeightForStance(GetRealStance());
 
     float bestAngleError = g_modConfig.aimAssistConeDegrees;
 
     for (int i = 1; i < kEntityCount; ++i) {
-        uint8_t type = GetEntityType(i);
-        if (!IsAiActorType(type)) continue;
+        if (!IsEntityKnownAlive(i)) continue;
 
         Vec3 targetPos = GetEntityPosition(i);
         float dx = targetPos.x - playerPos.x;
@@ -1236,12 +1282,28 @@ AimAssistTarget FindBestAimAssistTarget(float playerYawDeg, float playerPitchDeg
         float dist = sqrtf(dx * dx + dy * dy + dz * dz);
         if (dist <= 1.0f || dist > g_modConfig.aimAssistRange) continue;
 
+        // Excludes aerial killstreaks/UAVs (live-confirmed 2026-07-17: a first test's
+        // "aimed at the sky" turned out to be a real, correct lock onto an active
+        // aerial killstreak, not a bug) -- real ground combat, even on multi-level
+        // Survival maps, shouldn't need more than this much vertical separation
+        // (comfortably covers the ~100-130 unit elevated-platform cluster confirmed
+        // live during this session's entity investigation).
+        constexpr float kMaxVerticalOffset = 300.0f;
+        if (fabsf(dz) > kMaxVerticalOffset) continue;
+
+        // REVERTED (2026-07-17): a first live test looked "aimed at the sky" and this
+        // sign got flipped to compensate, but the user confirmed a UAV/aerial
+        // killstreak was active during that exact test -- a real correct lock onto a
+        // genuinely airborne entity, not a math bug. Reverted to the original
+        // (unverified either way, but no longer suspected wrong) sign; the actual fix
+        // is excluding aerial entities below, not this formula.
+        //
         // Standard engine convention (yaw around Z, pitch relative to horizontal) --
         // NOT independently re-verified for this exact computation. If targets pull
-        // the wrong direction on first live test, the fix is flipping this atan2's
-        // sign/argument order, not the overall approach -- same as every other sign
-        // convention in this file that got confirmed via real-hardware playtest
-        // rather than static analysis alone.
+        // the wrong direction on a future live test with no aerial killstreak active,
+        // the fix is flipping this atan2's sign/argument order, not the overall
+        // approach -- same as every other sign convention in this file that got
+        // confirmed via real-hardware playtest rather than static analysis alone.
         float targetYawDeg = atan2f(dy, dx) * (180.0f / 3.14159265f);
         float targetPitchDeg = -atan2f(dz, horizDist) * (180.0f / 3.14159265f);
 
