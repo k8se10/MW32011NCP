@@ -1578,12 +1578,88 @@ we dont need native aim assist"):** build aim assist entirely ourselves, using:
   same globals our own controller-look injection already writes every frame, so no
   native call chain is needed for the actual correction, only for data lookup.
 
-Next steps: (1) empirically confirm what `+0xcc` values mean via a few live entity
-reads while aiming at a known enemy vs. a corpse vs. nothing (safe, passive `memdiff
-dump` reads, no breakpoints), (2) confirm the `+0x150` tag-handle field actually
-resolves to a usable body position via `FUN_00421b20`/`FUN_0055b7d0` for a real
-in-game entity, (3) implement our own target acquisition + correction math, gated
-behind new config values, and live-tune.
+**`+0xcc` live investigation, 2026-07-16 -- inconclusive, entity-type-byte guessing
+abandoned in favor of fastfile extraction (see below).** Passive `memdiff dump` polling
+(pure `ReadProcessMemory`, no breakpoints, same safe class of tool used throughout) of
+`+0xcc` across 48-64 entity slots, in three separate live sessions:
+- Session 1 (game instance A): stable values `0x0F` (7 slots) and `0x0D` (1 slot) held
+  constant across 8 snapshots over ~20 seconds.
+- Session 2 (game instance B, restarted): all-zero across 30 snapshots over ~90 seconds
+  -- turned out the player wasn't actually in a wave yet at the time.
+- Session 3 (same instance B, confirmed live enemies + confirmed several kills during
+  the window): `0x05` dominated (42 of 64 slots) and stayed **completely static** --
+  identical slot indices, zero churn -- across 40 snapshots over ~2 minutes, despite
+  confirmed kills happening. `0x0F` was entirely absent this time.
+
+Slot `[0]` read `0x01` consistently in every session (array resolves correctly, not an
+addressing/ASLR issue), but the type-byte value that dominates evidently differs
+between game sessions/wave states in a way that doesn't cleanly correlate with "is
+this an enemy" via blind value-watching alone -- the large, static, zero-churn block of
+`0x05` entities looks more like static level geometry/props than actively-dying AI.
+**Concluded this blind byte-guessing approach isn't converging fast enough** -- pivoted
+to getting real asset data instead (see next section), which settles curve data
+questions directly rather than needing to guess field semantics from raw memory.
+
+## Real asset access unlocked: OpenAssetTools fastfile extraction (2026-07-16)
+
+The `.ff` fastfile unpacker blocker (flagged repeatedly this project for aim-assist
+curve data and controller-glyph assets) is now resolved. **OpenAssetTools**
+(github.com/Laupetin/OpenAssetTools, actively maintained, explicit IW5/MW3 support)
+provides an `Unlinker.exe` that loads a real retail `.ff` zone and dumps its assets to
+disk in readable form. Downloaded the prebuilt Windows release (`v0.31.0`,
+`oat-windows.zip`) to `D:\Tools\OpenAssetTools\extracted\` (external tool, same
+convention as Ghidra/x64dbg -- not part of this repo). Output is dumped to
+`D:\Tools\OpenAssetTools\zone_dump\` (also outside the repo; `.gitignore` additionally
+covers `zone_dump/`/`ff_dump/`/`*.gdt` as a defensive safety net in case any dump ever
+lands inside the repo -- extracted game assets are Activision's copyrighted data,
+never ours to redistribute).
+
+Usage: `Unlinker.exe -o <outputDir> <pathToZoneFf>`, run from the extracted release
+folder (auto-detects the game install directory and loads IWDs/search paths from the
+`.ff`'s own location). Confirmed working against real retail zones:
+`zone/english/common.ff` (core shared assets -- physpresets, xanims, weapons/, sound/,
+etc.) and `zone/english/code_post_gfx.ff` (leaderboards, and critically the
+`aim_assist/` folder).
+
+**Real aim-assist curve data recovered** (the exact `aim_assist/view_input_N.graph`
+files `FUN_004cb280` loads at startup, finally readable): plain-text `GRAPH_FLOAT_FILE`
+format, each a list of `(X Y)` control points from `(0,0)` to `(1,1)`:
+- `view_input_0.graph`: 15 points, gentlest curve (Y=0.173 at X=0.515).
+- `view_input_1.graph`: 13 points, moderate.
+- `view_input_2.graph`: 12 points, steeper.
+- `view_input_3.graph`: 7 points, steepest (Y=0.351 at X=0.512 -- over 2x view_input_0
+  at a similar X).
+
+All four are classic ease-in analog-stick response shapes (fine control near center,
+progressively faster response toward full deflection), just at four different
+steepness levels -- almost certainly difficulty-tier or curve-preset variants of the
+same base "view input" (stick response) curve, not separate friction/magnetism-
+specific curves (no `friction`/`magnet`-named assets found anywhere in either zone).
+These are genuine console-authentic response-curve shapes we can now replicate
+directly in our own stick-response math, instead of guessing at a formula.
+
+**GSC scripts are also technically dumpable** (`common_survival.ff` produced dozens of
+"Dumped scriptfile" log lines) **but not usefully so yet**: they come out as compiled
+`.gscbin` bytecode (numeric IDs, not real script path names) rather than decompiled
+source, and the vast majority failed to dump cleanly (1518 errors on `common_survival.ff`
+alone) -- would need a separate GSC decompiler/bytecode-format effort to actually read
+script logic (e.g. for finally finding ready-up's or squadmate-call-in's real GSC
+trigger). Not pursued further this session -- the curve data above was the actual
+blocker for aim-assist, and is now resolved; GSC decompilation is its own, separate,
+larger undertaking if ever prioritized later.
+
+**Status / next steps for aim assist:** (1) implement our own stick-response curve
+using the real `view_input_N.graph` shapes (pick one as a config default, expose the
+others or a strength parameter), (2) still need `+0xcc`'s real meaning for target
+validity -- static analysis and the entity-type-byte memory polling above didn't
+converge; either try a cleaner live-correlation method (e.g. cross-reference against
+`weapons/`-adjacent dumped defs, or find the entity-type ENUM meaning via more targeted
+disassembly of a function with clearer semantics) or ship a first version using a
+cruder filter (e.g. distance + FOV cone only, accepting some false positives on
+non-enemy props) and refine later, (3) confirm `+0x150`'s tag-handle actually resolves
+via `FUN_00421b20`/`FUN_0055b7d0` for a real in-game entity, (4) implement target
+acquisition + our own curve-based correction math, added onto `kPitchAccum`/
+`kYawAccum`, gated behind new config values, and live-tune.
 
 ---
 
