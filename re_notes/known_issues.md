@@ -711,10 +711,35 @@ both the tap-fire and hold-fire calls on this flag (not the edge-tracking
 bookkeeping itself, which still runs unconditionally so state never desyncs).
 This makes the suppression scoped to B's actual current press rather than to
 any menu-active transition, so an unrelated menu open/close elsewhere can
-never suppress a genuine gameplay crouch/prone press. Rebuilt; live-
-verification still pending (re-test: B closes pause menu without triggering
-crouch, and normal crouch/prone tap/hold still works when no menu is
-involved).
+never suppress a genuine gameplay crouch/prone press. **CONFIRMED LIVE**
+(2026-07-16): B closes the pause menu without triggering crouch, and B also
+correctly backs out of a buy-station menu the same way, with normal
+crouch/prone tap/hold unaffected elsewhere.
+
+**Third live-reported issue, same session: pausing while a buy-station menu
+is open leaves it stacked underneath the pause menu.** Pressing Start while
+a non-pause menu (buy station, etc.) is already open called
+`SetMenuState(pausedmenu)` directly without closing that menu first, so the
+pause menu opened on top of it instead of replacing it -- and unpausing would
+have dropped the player back inside the buy-station menu rather than
+straight into gameplay.
+
+**Fix:** `InjectControllerPauseMenu`'s opening branch now checks
+`IsMenuActive()` (the same real gate bit B's own menu-back logic reads)
+before opening pause, and if a menu is already active, forwards a synthetic
+ESC down+up via `ForwardKeyToMenu` to close it first -- the exact same real
+mechanism B itself uses, just triggered by Start instead of a physical B
+press. Deliberately does NOT go through `InjectControllerMenuBack` or touch
+`g_currentBPressTouchedMenu`/`g_menuBackHeld`: this is a synthetic close
+tied to Start, not a real B press, and must not interact with B's own
+press-tracking state (see the crouch-misfire fix just above for why that
+state has to stay scoped to B's actual physical presses only). Since the
+buy-station menu is now genuinely closed (not just hidden/suspended) before
+pause opens, unpausing naturally drops the player straight back into
+gameplay with no extra handling needed. Rebuilt; live-verification still
+pending (re-test: Start while a buy-station menu is open closes it and opens
+pause cleanly on top of plain gameplay, and the later unpause returns
+directly to gameplay, not back into the buy-station menu).
 
 ---
 

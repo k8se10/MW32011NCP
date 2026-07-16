@@ -21,6 +21,11 @@ reverse-engineering trail behind each entry.
   open menu, and suppressing crouch/prone for that press if so — scoped to the actual
   current press rather than any menu open/close in general, so it can't suppress a
   genuine crouch/prone elsewhere. See `re_notes/known_issues.md` issue #13.
+- **Pausing while a buy-station menu was open left it stacked underneath the pause
+  menu**, and unpausing would have dropped the player back inside it instead of into
+  plain gameplay. Start now auto-closes any other open menu (the same real ESC-forward
+  mechanism B itself uses) before opening the pause menu, so pause always opens cleanly
+  on top of gameplay and unpausing always returns straight to it.
 
 ### Added
 - **`AdsSlowdownBaseline`** — a new `[Look]` config value multiplied on top of the

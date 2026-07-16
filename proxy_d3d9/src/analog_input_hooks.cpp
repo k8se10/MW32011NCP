@@ -1376,6 +1376,22 @@ extern "C" void __cdecl InjectControllerPauseMenu()
     if (held && !g_startHeld) {
         char buf[128];
         if (!g_paused) {
+            // If some OTHER menu is already open (buy station, etc. -- the same real
+            // gate bit B's own menu-back checks) close it FIRST via the same real
+            // ESC-forward mechanism, so the pause menu doesn't stack on top of it and
+            // unpausing later drops the player straight back into gameplay instead of
+            // back inside that menu. Deliberately calls ForwardKeyToMenu directly
+            // rather than routing through InjectControllerMenuBack/g_menuBackHeld --
+            // this is a synthetic close triggered by Start, not a real physical B
+            // press, so it must NOT touch g_currentBPressTouchedMenu or any of B's own
+            // press-tracking state (see known_issues.md issue #13 for why that state
+            // has to stay scoped to B's actual physical presses only).
+            if (IsMenuActive()) {
+                sprintf_s(buf, "[pause-diag] Start pressed while a menu is open -- auto-closing it first");
+                LogFromController(buf);
+                ForwardKeyToMenu(kLocalClientIndex, kKeyEscape, 1);
+                ForwardKeyToMenu(kLocalClientIndex, kKeyEscape, 0);
+            }
             int32_t state = *reinterpret_cast<volatile int32_t*>(kPlayerStateAddr);
             sprintf_s(buf, "[pause-diag] Start pressed (opening): state=%d", state);
             LogFromController(buf);
