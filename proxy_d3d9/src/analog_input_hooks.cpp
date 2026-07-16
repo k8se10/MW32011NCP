@@ -1337,24 +1337,25 @@ bool g_dpadHeld[4] = { false, false, false, false };
 // that did read this was reverted).
 } // namespace
 
-// GAME-BREAKING BUG, STILL OPEN (live-reported by user after the v0.1.0-prealpha
-// release): using the Predator missile killstreak while prone in the first mission left
-// the player permanently stuck prone -- not recoverable even via real keyboard input.
-// Static RE ruled out the obvious suspect: FUN_0057d2c0 (the function that caused the
-// earlier, similarly-unrecoverable stuck-prone regression during the F5/ready-up hunt)
-// has exactly one caller in the whole binary (FUN_00438710's cases 0x48/0x49, confirmed
-// via FindCallers.java) and neither is invoked anywhere in this file -- so this is a
-// different bug, not a recurrence of that one, despite the identical symptom.
+// GAME-BREAKING BUG, RESOLVED (live-reported after the v0.1.0-prealpha release,
+// fixed and CONFIRMED LIVE 2026-07-16): using the Predator missile killstreak while
+// prone in the first mission used to leave the player permanently stuck prone -- not
+// recoverable even via real keyboard input. Static RE ruled out the obvious suspect:
+// FUN_0057d2c0 (the function that caused the earlier, similarly-unrecoverable
+// stuck-prone regression during the F5/ready-up hunt) has exactly one caller in the
+// whole binary (FUN_00438710's cases 0x48/0x49, confirmed via FindCallers.java) and
+// neither was invoked anywhere in this file -- so this was a different bug, not a
+// recurrence of that one, despite the identical symptom.
 //
-// Working theory, PARTIALLY CONFIRMED live (2026-07-16): InjectControllerButtons used
-// to unconditionally re-assert our OWN tracked g_stance's usercmd bit (0x100/0x200)
-// every single frame regardless of what else the game was doing -- the same general
-// failure pattern as the earlier buy-station+pause bug (known_issues.md issue #1:
-// forcing a bit continuously, ignoring context, breaks a native subsystem's own state
-// transition). Predator missile is used like a "weapon" (select via D-pad, then fire)
-// that puts the local player into a scripted missile-cam sequence; if the player was
-// prone when that sequence started, that old per-frame forcing could keep fighting the
-// prone bit through it and through the exit transition.
+// Root cause: InjectControllerButtons used to unconditionally re-assert our OWN
+// tracked g_stance's usercmd bit (0x100/0x200) every single frame regardless of what
+// else the game was doing -- the same general failure pattern as the earlier buy-
+// station+pause bug (known_issues.md issue #1: forcing a bit continuously, ignoring
+// context, breaks a native subsystem's own state transition). Predator missile is used
+// like a "weapon" (select via D-pad, then fire) that puts the local player into a
+// scripted missile-cam sequence; if the player was prone when that sequence started,
+// that old per-frame forcing kept fighting the prone bit through it and through the
+// exit transition.
 //
 // A first attempt fixed this by auto-standing before a killstreak-type D-pad select
 // (mirroring Sprint's own "auto-stand from crouch/prone first" precedent above) --
@@ -1363,16 +1364,16 @@ bool g_dpadHeld[4] = { false, false, false, false };
 // original game to paper over a bug, which fails this project's console-parity bar.
 // Reverted.
 //
-// Independently, a SEPARATE live repro (a stuck-prone Campaign session B/Sprint
-// couldn't recover, but real keyboard Ctrl could) confirmed our own g_stance-based
-// bit-forcing WAS fighting the real engine's own stance field rather than reading it
-// -- B/Sprint have since been rewired (see ToggleStance/GetRealStance above) to call
-// the real togglecrouch/toggleprone toggle and read the real stance field live every
-// frame, instead of tracking a separate copy that could desync. This may well have
-// fixed this exact bug as a side effect, since the specific mechanism (our own stale
-// bit fighting a real state change mid-sequence) no longer exists -- but that hasn't
-// been confirmed against an actual Predator-missile-while-prone repro yet. LogStanceDiag
-// (now reading the real field directly) is still in place for that retest. See task #10.
+// Actual fix landed indirectly: a SEPARATE live repro (a stuck-prone Campaign session
+// B/Sprint couldn't recover, but real keyboard Ctrl could) confirmed our own
+// g_stance-based bit-forcing WAS fighting the real engine's own stance field rather
+// than reading it -- B/Sprint were rewired (see ToggleStance/GetRealStance above) to
+// call the real togglecrouch/toggleprone toggle and read the real stance field live
+// every frame, instead of tracking a separate copy that could desync. **CONFIRMED
+// LIVE by the user**: this fixed the Predator-missile-while-prone repro too, exactly
+// as expected -- the specific mechanism (our own stale bit fighting a real state
+// change mid-sequence) no longer exists. See known_issues.md issue #9 for the full
+// crouch/prone rewrite writeup.
 extern "C" void __cdecl InjectControllerDpad()
 {
     unsigned short buttons;

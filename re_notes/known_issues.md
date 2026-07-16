@@ -525,9 +525,11 @@ tap/hold transitions, and a live `GetRealStance()` read (of the correct `+0x1C`
 field — the pre-existing `LogStanceDiag` diagnostic had been watching the wrong
 offset, `+0x0`, since it was first added) for the per-frame usercmd-bit assertion
 Pmove still needs. Sprint's stance checks and its "auto-stand from crouch/prone"
-logic were updated to match (`ForceStandingViaRealToggle`). **Also may fix issue
-#10 below as a side effect** (same class of bug: stale bit-forcing fighting a
-real state change mid-sequence) — not yet confirmed against that specific repro.
+logic were updated to match (`ForceStandingViaRealToggle`). **CONFIRMED WORKING
+LIVE** by the user, including recovery from the original stuck-prone repro.
+**Also fixed issue #10 below as a side effect** (same class of bug: stale
+bit-forcing fighting a real state change mid-sequence) — **confirmed live**:
+Predator missile while prone in the first mission no longer gets stuck.
 
 ---
 
