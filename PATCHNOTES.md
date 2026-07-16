@@ -8,6 +8,13 @@ reverse-engineering trail behind each entry.
 
 ## Unreleased
 
+### Fixed
+- **B didn't exit the pause menu.** The ESC-forward logic (`InjectControllerMenuBack`)
+  was only ever wired into the per-frame gameplay tick, which stops running entirely
+  while genuinely paused — so B's menu-back action never fired in the one state it
+  exists to handle. Now also driven from the same always-running WndProc/timer tick
+  that already handles Start's open/close. See `re_notes/known_issues.md` issue #13.
+
 ### Added
 - **`AdsSlowdownBaseline`** — a new `[Look]` config value multiplied on top of the
   existing zoom-proportional ADS slowdown curve. Live feedback: the pure

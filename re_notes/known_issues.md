@@ -662,6 +662,36 @@ game unless a future session gets explicit direction to harden and retry it.
 
 ---
 
+## 13. B doesn't exit pause — RESOLVED (2026-07-16)
+
+**Live-reported regression against the B-as-menu-back feature (task #19).**
+B could open the pause menu fine (via Start) but pressing B while paused did
+nothing — the menu never closed.
+
+**Root cause:** `InjectControllerMenuBack()` (the function that forwards a
+real ESC keypress via `FUN_004d9850` whenever the engine's own "menu active"
+gate bit is set) was only ever called from `InjectAllControllerInput()`. That
+function is explicitly documented (same file, just above
+`InjectMenuInputTick`) to stop firing entirely once the game is genuinely
+paused — it lives on the per-frame gameplay-simulation tick (`FUN_0057de60`),
+and pausing halts simulation by design. This is the exact same reason Start's
+own open/close logic (`InjectControllerPauseMenu`) had to be moved onto the
+separate WndProc-subclass-driven `InjectMenuInputTick` tick (the only one
+confirmed to keep running during pause) — but when `InjectControllerMenuBack`
+was added for B, it was only wired into the dead-while-paused path, never
+added to `InjectMenuInputTick`. So the one piece of logic that exists
+specifically to act on an open menu never actually ran while a menu was open.
+
+**Fix:** added `InjectControllerMenuBack();` to `InjectMenuInputTick()`
+alongside the existing `InjectControllerPauseMenu();` call
+(`analog_input_hooks.cpp`). The call left in `InjectAllControllerInput` stays
+too (harmless/idempotent during normal unpaused gameplay, same redundancy
+rationale already documented for the pause-menu call there). Rebuilt;
+live-verification still pending (re-test: B closes pause menu, and still
+backs out of any other open menu the same way).
+
+---
+
 ## 7. Remaining unassigned controller inputs
 
 **Status:** Open, tracked as task #5 (Back, deprioritized), #7 (killstreaks, not yet

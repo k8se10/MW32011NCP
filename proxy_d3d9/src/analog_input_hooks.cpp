@@ -1597,6 +1597,15 @@ extern "C" void __cdecl InjectAllControllerInput(unsigned char* cmd)
 extern "C" void __cdecl InjectMenuInputTick()
 {
     InjectControllerPauseMenu();
+    // BUG FIX (2026-07-16, live report "B doesn't exit pause"): InjectControllerMenuBack
+    // was only ever called from InjectAllControllerInput, which the comment block above
+    // already documents as completely dead while genuinely paused (it lives on the
+    // gameplay-simulation tick, which pause halts by design). This tick function is the
+    // ONLY one confirmed to keep running during pause (WndProc subclass + SetTimer), same
+    // reason InjectControllerPauseMenu is called from here -- B's ESC-forward needs the
+    // same treatment Start's open/close already got, or it can never fire while a menu is
+    // actually open, which is the one state it exists to handle.
+    InjectControllerMenuBack();
 }
 
 namespace {
