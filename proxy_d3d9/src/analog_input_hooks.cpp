@@ -874,7 +874,27 @@ float GetAdsLookRateScale()
     if (effectiveFov <= 0.0f) return 1.0f;
 
     float ratio = effectiveFov / baseFov;
-    return 1.0f - g_modConfig.adsSlowdownStrength * (1.0f - ratio);
+    float scale = 1.0f - g_modConfig.adsSlowdownStrength * (1.0f - ratio);
+
+    // Diagnostic (task #12/known_issues.md issue #8): rate-limited log of the raw
+    // inputs to this computation, so reproducing the ACOG-2x bug produces concrete
+    // numbers instead of another guess. DAT_00984b9c is the flag FUN_004b0580 itself
+    // checks (bit 2, mask 0x4) to decide between the safe cg_fov-lerp path and the
+    // alt-toggle path (FUN_004f6b70) suspected of returning non-FOV data for
+    // hybrid/alt-toggle-reticle weapons like ACOG's 2x mode.
+    static DWORD s_lastAdsDiagLogMs = 0;
+    DWORD nowMs = GetTickCount();
+    if (nowMs - s_lastAdsDiagLogMs >= 250) {
+        s_lastAdsDiagLogMs = nowMs;
+        uint8_t altPathFlags = *reinterpret_cast<volatile uint8_t*>(0x00984b9c);
+        char buf[200];
+        sprintf_s(buf,
+            "[ads-fov-diag] baseFov=%.3f effectiveFov=%.3f ratio=%.4f scale=%.4f altFlags=0x%02x",
+            baseFov, effectiveFov, ratio, scale, altPathFlags);
+        LogFromController(buf);
+    }
+
+    return scale;
 }
 } // namespace
 
