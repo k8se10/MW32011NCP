@@ -117,6 +117,35 @@ groundwork for now):
   column's pixel slice, defeating the run-detection gap check. Not blocking (icon is
   still recognizable), but worth a manual touch-up pass later.
 
+## Real menu-state groundwork already in place (2026-07-16, from the B/pause work)
+
+Task #6 (full controller menu/UI navigation — D-pad/stick item selection, buy
+stations, options) hasn't been started, but the B-as-menu-back and Start-pause
+fixes landed this session (`analog_input_hooks.cpp`, see `known_issues.md`
+issue #13) already found and validated two of its real prerequisites, purely
+as a side effect of fixing live-reported bugs, not dedicated task #6 work:
+
+- **`IsMenuActive()`** — the real per-player "a menu is currently open" gate
+  bit (`0x10` at `0xB36210`). Confirmed live to correctly detect the pause
+  menu, the main menu, and buy-station menus alike (not pause-specific).
+  Whatever eventually drives D-pad/stick item navigation will need this same
+  gate to know when it should even be active.
+- **`ForwardKeyToMenu` (`FUN_004d9850`)** — the real call that forwards an
+  arbitrary keycode to whatever menu is currently open, confirmed live for
+  keycode `0x1b` (ESC/back). The same mechanism should generalize to other
+  keycodes (arrow keys, Enter) for real D-pad/stick-driven item selection —
+  this hasn't been tried yet, but it's the same call, not a new one to find.
+- **The always-running WndProc/`SetTimer` tick** (`InjectMenuInputTick`,
+  `d3d9_hook.cpp`) — proven necessary because menu-facing input has to keep
+  working while the gameplay-simulation tick is halted (paused, or any menu
+  open). Any future menu-navigation polling belongs on this same tick, not
+  the gameplay one.
+
+None of this is buy-station/options-menu navigation itself — no D-pad/stick
+item selection exists yet — but the three pieces above are exactly the
+foundation task #6 needs to build on, already found and live-verified rather
+than left as open questions.
+
 ## Open questions / next steps for task #6
 - Actually wire up the two rendering pieces above (bind-text-resolver hook +
   in-game-visible glyph font) — not started.
