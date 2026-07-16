@@ -417,6 +417,112 @@ instead; the header comment was corrected to warn against this for future caller
 
 ---
 
+## 8. ADS look-slowdown — live-confirmed bug on ACOG's 2x mode, under active investigation (2026-07-16)
+
+**Status:** Restored to the original formula (no clamp, not disabled) per explicit
+direction — the feature stays ON and active while this gets diagnosed properly,
+rather than being clamped around or turned off. Rate-limited diagnostic logging
+(`[ads-fov-diag]` in `proxy_d3d9.log`, ~every 250ms while ADS is held) was added to
+capture `baseFov`/`effectiveFov`/`ratio`/`scale`/the raw alt-path flag byte on the
+next live repro, instead of guessing again. Full trail below.
+
+**Original implementation:** read `FUN_004b0580(playerIndex)`, confirmed via
+decompile+disassembly to be the game's own live "effective FOV this frame"
+function, each frame while ADS is held, and scaled our own independent look-rate
+by the ratio of that value to the `cg_fov` baseline. Weapon-agnostic by
+construction — reads whatever zoom the engine already computed, no per-weapon
+classification needed. **Confirmed working correctly on live playtest** for
+ordinary scopes before the bug below was found.
+
+**Bug (live-confirmed 2026-07-16):** using an ACOG's 2x toggle mode inverted
+look left/right AND made slowdown far too strong at the same time. A follow-up
+fix clamped the computed ratio to a sane real-world zoom range (`[0.1, 1.5]`) —
+mathematically, this clamp cannot produce a negative scale factor, so it should
+have made inversion *impossible* regardless of root cause. **Live retest showed
+it got WORSE, not better** — which rules out "bad ratio value" as the
+explanation and points at something a value-level clamp can't reach.
+
+**Leading theory, not yet confirmed via live debugging:** `FUN_004b0580` has (at
+least) two internal paths depending on a per-weapon "alt scope toggle" flag
+(`DAT_00984b9c` bit 2). Most weapons take a lerp path (blends `cg_fov`/`cg_fov1`
+toward a real target FOV, safely comparable to our baseline). Weapons with a
+hybrid/alt-toggle reticle — exactly ACOG's 2x switchable mode — instead call
+`FUN_004f6b70` directly, which decompiles to a product of several weapon-struct
+fields and multiple `FUN_0064be20` (trig-like) calls — heavier float10/x87
+arithmetic than the normal path. Our `GetEffectiveFov` is declared as a plain
+`double(__cdecl*)(int)` function pointer, relying on MSVC's x86 convention of
+returning floats/doubles via the x87 ST(0) register — if the alt-toggle path's
+extra intermediate float10 calculations leave the x87 register stack at a
+different depth than a normal single-value return, calling into *that specific
+path* could corrupt ST(0)'s contents in a way that also corrupts OTHER
+floating-point math later in the same frame (potentially including the actual
+look-angle accumulation) — which would explain why a value-only fix (the ratio
+clamp) made things worse instead of better: the corruption isn't in the ratio at
+all, it's upstream of it.
+
+**Current approach:** rather than clamp/disable again, the original (unclamped)
+formula was restored and rate-limited diagnostic logging was added directly to
+`GetAdsLookRateScale()` — `baseFov`, `effectiveFov`, `ratio`, `scale`, and the raw
+`DAT_00984b9c` flag byte, logged every ~250ms while ADS is held. Next step is a
+live repro of the ACOG 2x case with this build so the log shows concrete numbers
+(does `ratio` actually go negative? does the alt-flag byte's bit 2 actually flip?)
+instead of another guess. A live x64dbg session inspecting the x87 FPU register
+stack around `FUN_004b0580`'s alt-toggle branch is the fallback if the log data
+alone doesn't resolve it.
+
+---
+
+## 9. Crouch/prone rewired to the real togglecrouch/toggleprone toggle (2026-07-16)
+
+**Trigger:** live-reported — a Campaign session got stuck prone (unrelated repro
+from issue #10 below) in a way neither the controller's B button nor Sprint could
+recover, but real keyboard Ctrl (bound to `toggleprone`) could. That directly
+implied our own crouch/prone implementation (a tracked `g_stance` enum + per-frame
+raw usercmd-bit forcing) was fighting the real engine's own stance state rather
+than reading/driving it.
+
+**Found the real function** via the exact technique already proven for weapnext/
+D-pad: live-read the raw-keycode dispatch table (`value = *(int32_t*)(0xA98E4C +
+keyCode*12)`) for the actual keys bound to `togglecrouch`/`toggleprone`
+(`players2/config.cfg`: `C` → togglecrouch, `CTRL` → toggleprone). `C` (ASCII
+`0x43`) reads case `0x48`; `CTRL`'s real internal keycode is `0x9F` (**not**
+Windows' `VK_CONTROL`=`0x11` — this table uses the engine's own Quake-derived key
+enum, the same lesson learned the hard way during the F5 hunt), reading case
+`0x49`. **Both dispatch to the same function, `FUN_0057d2c0(playerIndex, mode)`** —
+this is almost certainly the exact function from the earlier F5/ready-up hunt that
+was "confirmed wrong" and got a player stuck prone (see issue #5) — that test was
+never the function's fault; it was our own competing per-frame bit-forcing (active
+throughout that whole test) fighting it, the identical mechanism just confirmed
+here via the Ctrl repro.
+
+**Confirmed via raw disassembly** to be a genuine `__fastcall` (`ECX`=playerIndex,
+`EDX`=mode, no custom register convention needed):
+```
+EAX = playerIndex * 0x230
+if (byte[EAX + 0xA98CA0] != 0) return;      // guard 1
+if (byte[EAX + 0xA98BC4] != 0) return;      // guard 2
+ECX = &DAT_00B363B0 + playerIndex*0xBE5C
+current = *(int*)(ECX + 0x1C)
+*(int*)(ECX + 0x1C) = (current != mode) ? mode : 0;   // genuine toggle
+```
+A real toggle between 0 (standing) and `mode` (1=crouch, 2=prone) — and its own
+semantics already implement this mod's entire B-button stance ladder natively
+(Standing+togglecrouch→Crouched, Crouched+togglecrouch→Standing,
+Crouched+toggleprone→Prone since 2≠1, Prone+toggleprone→Standing since 2==2,
+Prone+togglecrouch→Crouched since 2≠1) — no separate state machine needed.
+
+**Fix:** replaced `g_stance` (enum + tracked copy, asserting a usercmd bit every
+frame based on our own bookkeeping) with direct `ToggleStance()` calls on B's
+tap/hold transitions, and a live `GetRealStance()` read (of the correct `+0x1C`
+field — the pre-existing `LogStanceDiag` diagnostic had been watching the wrong
+offset, `+0x0`, since it was first added) for the per-frame usercmd-bit assertion
+Pmove still needs. Sprint's stance checks and its "auto-stand from crouch/prone"
+logic were updated to match (`ForceStandingViaRealToggle`). **Also may fix issue
+#10 below as a side effect** (same class of bug: stale bit-forcing fighting a
+real state change mid-sequence) — not yet confirmed against that specific repro.
+
+---
+
 ## 7. Remaining unassigned controller inputs
 
 **Status:** Open, tracked as task #5 (Back, deprioritized), #7 (killstreaks, not yet
