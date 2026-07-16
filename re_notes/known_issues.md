@@ -417,14 +417,11 @@ instead; the header comment was corrected to warn against this for future caller
 
 ---
 
-## 8. ADS look-slowdown — live-confirmed bug on ACOG's 2x mode, under active investigation (2026-07-16)
+## 8. ADS look-slowdown — root cause found via diagnostic logging, fixed (2026-07-16)
 
-**Status:** Restored to the original formula (no clamp, not disabled) per explicit
-direction — the feature stays ON and active while this gets diagnosed properly,
-rather than being clamped around or turned off. Rate-limited diagnostic logging
-(`[ads-fov-diag]` in `proxy_d3d9.log`, ~every 250ms while ADS is held) was added to
-capture `baseFov`/`effectiveFov`/`ratio`/`scale`/the raw alt-path flag byte on the
-next live repro, instead of guessing again. Full trail below.
+**Status:** Root cause conclusively identified and fixed via live diagnostic data.
+Pending one more live retest across a range of `AdsSlowdownStrength` values to
+confirm feel, then this can be considered resolved.
 
 **Original implementation:** read `FUN_004b0580(playerIndex)`, confirmed via
 decompile+disassembly to be the game's own live "effective FOV this frame"
@@ -439,36 +436,47 @@ look left/right AND made slowdown far too strong at the same time. A follow-up
 fix clamped the computed ratio to a sane real-world zoom range (`[0.1, 1.5]`) —
 mathematically, this clamp cannot produce a negative scale factor, so it should
 have made inversion *impossible* regardless of root cause. **Live retest showed
-it got WORSE, not better** — which rules out "bad ratio value" as the
-explanation and points at something a value-level clamp can't reach.
+it got WORSE, not better**, which ruled out "bad ratio value" and (wrongly, see
+below) pointed suspicion at something deeper than a value-level fix.
 
-**Leading theory, not yet confirmed via live debugging:** `FUN_004b0580` has (at
-least) two internal paths depending on a per-weapon "alt scope toggle" flag
-(`DAT_00984b9c` bit 2). Most weapons take a lerp path (blends `cg_fov`/`cg_fov1`
-toward a real target FOV, safely comparable to our baseline). Weapons with a
-hybrid/alt-toggle reticle — exactly ACOG's 2x switchable mode — instead call
-`FUN_004f6b70` directly, which decompiles to a product of several weapon-struct
-fields and multiple `FUN_0064be20` (trig-like) calls — heavier float10/x87
-arithmetic than the normal path. Our `GetEffectiveFov` is declared as a plain
-`double(__cdecl*)(int)` function pointer, relying on MSVC's x86 convention of
-returning floats/doubles via the x87 ST(0) register — if the alt-toggle path's
-extra intermediate float10 calculations leave the x87 register stack at a
-different depth than a normal single-value return, calling into *that specific
-path* could corrupt ST(0)'s contents in a way that also corrupts OTHER
-floating-point math later in the same frame (potentially including the actual
-look-angle accumulation) — which would explain why a value-only fix (the ratio
-clamp) made things worse instead of better: the corruption isn't in the ratio at
-all, it's upstream of it.
+**Dead-end theory (recorded for the trail, since it drove a real investigation
+pass): FPU/alt-path corruption.** `FUN_004b0580` has (at least) two internal
+paths depending on a per-weapon "alt scope toggle" flag (`DAT_00984b9c` bit 2) —
+most weapons take a lerp path (blends `cg_fov`/`cg_fov1` toward a real target
+FOV), while weapons with a hybrid/alt-toggle reticle instead call `FUN_004f6b70`
+directly (a product of several weapon-struct fields and trig-like calls, heavier
+float10/x87 arithmetic). Theorized this alternate path could leave the x87 FPU
+register stack at a different depth than our simple double-return calling
+convention expects, corrupting other floating-point math that frame. **Ruled
+out by live diagnostic data**, see below.
 
-**Current approach:** rather than clamp/disable again, the original (unclamped)
-formula was restored and rate-limited diagnostic logging was added directly to
-`GetAdsLookRateScale()` — `baseFov`, `effectiveFov`, `ratio`, `scale`, and the raw
-`DAT_00984b9c` flag byte, logged every ~250ms while ADS is held. Next step is a
-live repro of the ACOG 2x case with this build so the log shows concrete numbers
-(does `ratio` actually go negative? does the alt-flag byte's bit 2 actually flip?)
-instead of another guess. A live x64dbg session inspecting the x87 FPU register
-stack around `FUN_004b0580`'s alt-toggle branch is the fallback if the log data
-alone doesn't resolve it.
+**Actual root cause, found via rate-limited diagnostic logging
+(`[ads-fov-diag]`, added directly to `GetAdsLookRateScale()`: `baseFov`,
+`effectiveFov`, `ratio`, `scale`, and the raw `DAT_00984b9c` flag byte, every
+~250ms while ADS held):** a live ACOG-2x repro showed `altFlags=0x00` on
+**every single sample** — `FUN_004b0580` never took the alt-toggle path at all
+during the whole test; it stayed on the safe, ordinary lerp path throughout,
+with completely legitimate FOV values (`baseFov=65`, `effectiveFov` cycling
+through `65`/`40`/`20` as zoom changed). The alt-path/FPU theory was
+categorically wrong. The actual cause: the config's `AdsSlowdownStrength` was
+set to `2.0` for this test (deliberately, to "test the max threshold"), and the
+OLD linear blend formula (`1 - strength*(1-ratio)`) goes negative for any
+`strength > 1.0` once `ratio` drops below `(1 - 1/strength)`. At
+`ratio=0.3077` (a completely real ACOG zoom level): `1 - 2*(1-0.3077) =
+-0.3846` — a genuine negative scale factor from entirely normal inputs, no
+engine bug involved anywhere.
+
+**Fix:** rejected simply clamping `AdsSlowdownStrength` to a max of `1.0`
+(would remove real customization — someone may legitimately want a
+stronger-than-proportional slowdown on deep zooms). Instead switched the
+formula's shape: `scale = ratio^strength` (a power curve) instead of a linear
+blend. `strength=0` → no slowdown; `strength=1` → exactly `ratio` (matches the
+old formula's own "fully proportional" base case); `strength>1` →
+progressively more aggressive than proportional — but `ratio^strength` can
+never go negative for any `strength >= 0`, no matter how high, since `ratio`
+itself is always positive. Only a negative `strength` is still guarded against
+(clamped to `0` on config load), since `ratio^negative` blows up toward
+infinity as `ratio` approaches `0`.
 
 ---
 
