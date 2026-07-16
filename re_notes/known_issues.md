@@ -336,9 +336,10 @@ investigation, this time for F5 specifically):
 F5 keydown/keyup via `PostMessage` at the game's own window (`GetGameWindow()`, exposed
 from `d3d9_hook.cpp`'s WndProc hook), gated behind `IsInSurvivalMode()` (the
 `"so_survival_"` mapname-prefix check, via `FUN_00498ec0("mapname")` — a plain
-single-stack-arg `Dvar_GetString`-equivalent). This is the **sole deliberate exception**
-to this project's "no OS-level input emulation" rule in the entire mod — every other
-button drives the engine's real internal state directly. Justified here because: (1) the
+single-stack-arg `Dvar_GetString`-equivalent). This was the **sole deliberate exception**
+to this project's "no OS-level input emulation" rule when first landed — a second,
+narrower one was later added for D-pad Left's squadmate call-in (issue #14) — but every
+OTHER button still drives the engine's real internal state directly. Justified here because: (1) the
 real native call is provably unresolved after an extensive, multi-session search: (2) IW5
 has no DirectInput import at all (confirmed in `CLAUDE.md`'s own findings), so keyboard
 input is genuine `WM_KEYDOWN`/`WM_KEYUP` messages, making this indistinguishable from a
@@ -801,7 +802,8 @@ about them has been reported broken.
 **Explicitly not a general policy change.** Per the user's own direction:
 "we will trace all these non natives later on" — this (and ready-up's F5
 synthesis) are workarounds pending the real GSC-side mechanism being found,
-not permanent design choices. Rebuilt; live-verification still pending.
+not permanent design choices. **CONFIRMED WORKING LIVE by the user** (2026-07-16):
+squadmate call-in via D-pad Left now succeeds using the synthesized '4' keypress.
 
 ---
 
@@ -844,8 +846,9 @@ scoped), and #9 (sprint's Extreme Conditioning override).
   despite an extensive search across multiple mechanisms — solved instead with an
   explicit, user-approved exception to this mod's "no OS-level input emulation" rule: a
   synthetic F5 keypress via `PostMessage`, gated to Survival maps only. Confirmed working
-  live; the only deliberate departure from real-engine-call-only input in the whole mod,
-  to be replaced if a native call is ever found.
+  live; the first of two deliberate departures from real-engine-call-only input in the
+  whole mod (the second being D-pad Left's squadmate call-in, issue #14), each to be
+  replaced if a native call is ever found.
 - **Sprint stamina/cooldown (issue #6 above):** the real native duration/timer function
   was never found (only the speed-scale consumer, with no timer logic, was traced) —
   implemented as our own 4s-deplete/2s-cooldown layer instead, using real MW3 values,

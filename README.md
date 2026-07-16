@@ -51,6 +51,10 @@ each release.
   bound keys.
 - **D-pad** (all 4 directions) — real `+actionslot 1-4` dispatch, data-driven by
   loadout (killstreaks/attachments/NVG-style toggles, whatever's actually equipped).
+  Up/Right/Down call the real dispatch function directly; Left is the second of this
+  mod's two deliberate, documented exceptions to native-only input (see below) — it
+  synthesizes the real bound key instead, since Survival's AI-squadmate call-in on
+  that slot needed it (turret call-ins on the same slot are unaffected).
 
 ### Stance & Sprint (real engine state, not our own tracked copy)
 - **Crouch/Prone stance ladder** (B) — a real 3-state ladder driving the game's own
@@ -97,8 +101,8 @@ each release.
   forwards a real ESC keypress to it (the same real mechanism the engine's own key
   handler uses for ESC generically), backing out one level or closing it, on top of
   its normal crouch/prone role during gameplay.
-- **Survival ready-up** (hold Y ~740ms between waves) — the one deliberate, documented
-  exception to this mod's native-only approach (see below); switches weapons instead if
+- **Survival ready-up** (hold Y ~740ms between waves) — one of two deliberate, documented
+  exceptions to this mod's native-only approach (see below); switches weapons instead if
   released before the threshold.
 - **Buy-station + pause interaction fix** — a real native bug (not ours) where using a
   buy station then pausing could permanently break all input (ours and real
@@ -262,8 +266,9 @@ real Cbuf_AddText/Cmd_ExecuteString pair — confirmed working, but not the mech
 real hardcoded ESCAPE-key path + FUN_004396d0's open/close cases — Start's pause menu
 real FUN_00541020 raw-keycode dispatch table + FUN_00438710 jump table — weapon switch
     and D-pad (+actionslot 1-4, data-driven by loadout: killstreaks/attachments/NVG)
-synthetic F5 keydown/keyup via PostMessage — Survival ready-up ONLY (the sole exception
-    to real-engine-calls-only input in this mod; real native trigger not yet found)
+synthetic keydown/keyup via PostMessage — Survival ready-up (F5) and D-pad Left's
+    AI-squadmate call-in ('4') ONLY, the two deliberate exceptions to real-engine-
+    calls-only input in this mod; real native triggers not yet found for either
 our own timer layer (GetTickCount-based, independent per hook site) — sprint stamina/
     cooldown, since forcing the real pm_flags bit bypasses the native limiter entirely;
     bypassed itself when the real player_sprintUnlimited dvar is live-set by a mission

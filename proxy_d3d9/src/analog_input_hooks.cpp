@@ -1176,14 +1176,15 @@ bool g_yHeld = false;
 // EXPLICIT, NARROWLY-SCOPED EXCEPTION (user-approved 2026-07-15): synthesize a real F5
 // keydown/keyup via PostMessage at the game's own window, ONLY for this one case,
 // ONLY while in Survival (IsInSurvivalMode() gate), as a temporary workaround until the
-// real native call is found -- at which point this gets replaced. This is the sole
-// deliberate departure from the project's "no OS-level input emulation" rule; every
-// other button in this file drives the engine's real internal state directly. Safe by
-// construction even without a "is the ready-up wait specifically active" check (which
-// we don't have): IW5 has no DirectInput import at all (confirmed in CLAUDE.md's own
-// findings), so keyboard input is real WM_KEYDOWN/WM_KEYUP messages -- a synthetic F5
-// outside the one context it matters is simply ignored by the game itself, the same as
-// a real, misplaced F5 press would be.
+// real native call is found -- at which point this gets replaced. This was the sole
+// deliberate departure from the project's "no OS-level input emulation" rule until a
+// second, narrower one was added for D-pad Left's squadmate call-in (see that section
+// further down); every OTHER button in this file still drives the engine's real
+// internal state directly. Safe by construction even without a "is the ready-up wait
+// specifically active" check (which we don't have): IW5 has no DirectInput import at
+// all (confirmed in CLAUDE.md's own findings), so keyboard input is real
+// WM_KEYDOWN/WM_KEYUP messages -- a synthetic F5 outside the one context it matters is
+// simply ignored by the game itself, the same as a real, misplaced F5 press would be.
 namespace {
 using GetDvarStringFn = const char*(__cdecl*)(const char*);
 GetDvarStringFn const GetDvarString = reinterpret_cast<GetDvarStringFn>(0x00498ec0);

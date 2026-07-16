@@ -111,10 +111,11 @@ HRESULT WINAPI Hook_CreateDevice(void* This, UINT Adapter, DWORD DeviceType,
 } // namespace
 
 // Exposed so analog_input_hooks.cpp can PostMessage a synthetic keypress directly at the
-// game's real window -- used ONLY for the Survival ready-up F5 workaround (see
-// InjectControllerReadyUp), an explicit, narrowly-scoped exception to this project's
-// "no OS-level input emulation" rule, approved by the user specifically for that one
-// case pending a real native fix.
+// game's real window -- used for two explicit, narrowly-scoped exceptions to this
+// project's "no OS-level input emulation" rule, each approved by the user for that one
+// specific case pending a real native fix: the Survival ready-up F5 workaround (see
+// InjectControllerReadyUp) and D-pad Left's squadmate call-in '4' workaround (see
+// InjectControllerDpad).
 extern "C" HWND GetGameWindow()
 {
     return g_gameHwnd;

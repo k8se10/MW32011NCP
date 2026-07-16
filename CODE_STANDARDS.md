@@ -92,6 +92,6 @@ confident the description of it sounds.
 - Only make changes that are explicitly requested or clearly required by the
   task at hand — don't bundle unrelated fixes or refactors into the same
   change.
-- No hardcoded addresses, no OS-level input emulation beyond the one
-  documented, narrowly-scoped exception (`re_notes/known_issues.md` issue
-  #5) — see `CONTRIBUTING.md` for the full ground rules.
+- No hardcoded addresses, no OS-level input emulation beyond the two
+  documented, narrowly-scoped exceptions (`re_notes/known_issues.md` issues
+  #5 and #14) — see `CONTRIBUTING.md` for the full ground rules.

@@ -1253,11 +1253,12 @@ context check (which was never found): IW5 has no DirectInput import at all (con
 in `CLAUDE.md`'s own original findings), meaning keyboard input is genuine
 `WM_KEYDOWN`/`WM_KEYUP` messages -- a synthetic F5 outside the one moment it matters is
 simply ignored by the game, the same as a real, misplaced F5 press would be.
-**CONFIRMED WORKING LIVE by the user** ("works pretty flawlessly"). This remains the
-sole exception to real-engine-calls-only input anywhere in this mod; every other
-button, including every core movement/look/combat action, drives the engine's actual
-internal state directly. To be replaced with a real native call if one is ever found --
-see `re_notes/known_issues.md` issue #5 for the complete trail.
+**CONFIRMED WORKING LIVE by the user** ("works pretty flawlessly"). This was the sole
+exception to real-engine-calls-only input in this mod until a second, narrower one was
+added for D-pad Left's squadmate call-in (see `known_issues.md` issue #14) -- every
+OTHER button, including every core movement/look/combat action, still drives the
+engine's actual internal state directly. To be replaced with a real native call if one
+is ever found -- see `re_notes/known_issues.md` issue #5 for the complete trail.
 
 ---
 
