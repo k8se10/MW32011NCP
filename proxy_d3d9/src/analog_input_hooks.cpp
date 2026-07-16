@@ -809,6 +809,18 @@ extern "C" void __cdecl InjectControllerSprint()
 // polled controller state AND our own stamina layer, same as a real held/released key
 // with real stamina would. Gated on being upright -- never assert sprint while crouched/
 // prone (see InjectControllerSprint).
+// BIT-OWNERSHIP TRACKING (2026-07-16, revised): the first version of this fix gated
+// on Controller_IsConnected(), but that only covers a fully-unplugged controller --
+// with one connected-but-idle (a very normal setup: controller sitting on the desk
+// while actually playing keyboard/mouse), IsSprintActive() is still false (g_sprintHeld
+// correctly reads "not held" from the idle controller), so the `else` branch would
+// still clear a bit real keyboard input may have just set a moment earlier. The
+// general fix doesn't need to detect "which input device is active" at all -- it only
+// needs to never clear a bit it didn't set itself. Track whether WE are the one
+// currently asserting the bit; only clear what we own, and otherwise leave real
+// pm_flags completely alone (whatever native keyboard/kbutton logic put there stands).
+bool g_weOwnSprintBit = false;
+
 extern "C" void __cdecl InjectControllerSprintPmFlags(uint32_t pmlPtr)
 {
     if (!pmlPtr) return;
@@ -817,8 +829,13 @@ extern "C" void __cdecl InjectControllerSprintPmFlags(uint32_t pmlPtr)
     uint32_t* flags = reinterpret_cast<uint32_t*>(ps + 0xc);
     if (IsSprintActive()) {
         *flags |= kPmFlagSprint;
-    } else {
+        g_weOwnSprintBit = true;
+    } else if (g_weOwnSprintBit) {
+        // Only clear it if we were the one holding it on -- never touch a bit that
+        // real keyboard/native input set on its own (this is exactly what broke
+        // vanilla keyboard sprint: "toggles once, times out, never recovers").
         *flags &= ~kPmFlagSprint;
+        g_weOwnSprintBit = false;
     }
 }
 
@@ -851,11 +868,16 @@ void* g_orig_00643ce0 = nullptr;
 
 extern "C" void __cdecl ReassertSprintPmFlags(uint32_t pmlPtr)
 {
+    // Only ever ORs the bit in (never clears), so it was already safe by construction
+    // w.r.t. the keyboard regression -- still marks ownership so the clearing branch
+    // in InjectControllerSprintPmFlags above knows this tick's bit is ours to release
+    // later.
     if (!IsSprintActive()) return;
     if (!pmlPtr) return;
     uint32_t ps = *reinterpret_cast<uint32_t*>(pmlPtr);
     if (!ps) return;
     *reinterpret_cast<uint32_t*>(ps + 0xc) |= kPmFlagSprint;
+    g_weOwnSprintBit = true;
 }
 
 // CRASH FIX (2026-07-14): first version of this hook used raw-entry [ESP+8] and
@@ -1247,6 +1269,57 @@ constexpr int kMenuStatePausedMenu = 2;
 bool g_paused = false;
 } // namespace
 
+// ---- B -> real ESC-forward-to-menu, for "exit menu / back one step" (2026-07-16) ----
+//
+// Reuses two things already found and confirmed for Start's pause-menu work above,
+// not a fresh discovery: the real per-player "a menu is currently active" gate bit
+// (`0x10` at `0xB36210`, the SAME address this file already force-clears for 3
+// seconds after level entry, see the big writeup above `InjectAllControllerInput`),
+// and `FUN_004d9850(playerIndex, keyCode, isDown)` -- the exact real call the
+// decompiled `FUN_00541020` key-event handler makes to forward a keypress to
+// whatever menu is active when its own gate check is true. That's the literal
+// mechanism real ESC uses to back out of ANY open menu (main menu, pause menu, buy
+// station, options, etc.), not something pause-specific -- so calling it ourselves
+// with keycode `0x1b` (ESC) reproduces exactly what a real ESC press does, in
+// whatever menu context is actually open. Confirmed `__cdecl` via the same real call
+// site disassembly already cited for `OpenPauseMenu`/`SetMenuState` above.
+//
+// Deliberately hardcoded to physical B (not routed through `g_buttonMap`/layout
+// remapping) for the same reason Start/pause is: this is a system-level menu action,
+// not a gameplay bind, so it should behave identically regardless of button-layout
+// preset. Only acts while a menu is genuinely active (`IsMenuActive()`) -- while
+// gameplay is running normally, this function does nothing at all, leaving B's
+// existing crouch/prone handling in `InjectControllerButtons` completely
+// undisturbed (and moot anyway in most real menu states, since those halt the
+// gameplay tick entirely -- see the WndProc-tick writeup below `InjectAllControllerInput`).
+namespace {
+using ForwardKeyToMenuFn = void(__cdecl*)(int playerIndex, int keyCode, int isDown);
+ForwardKeyToMenuFn const ForwardKeyToMenu = reinterpret_cast<ForwardKeyToMenuFn>(0x004d9850);
+constexpr uintptr_t kMenuActiveGateAddr = 0x00B36210;
+constexpr uint32_t kMenuActiveGateBit = 0x10u;
+constexpr int kKeyEscape = 0x1b;
+bool g_menuBackHeld = false;
+
+bool IsMenuActive()
+{
+    uint32_t gate = *reinterpret_cast<volatile uint32_t*>(kMenuActiveGateAddr);
+    return (gate & kMenuActiveGateBit) != 0;
+}
+} // namespace
+
+extern "C" void __cdecl InjectControllerMenuBack()
+{
+    unsigned short buttons;
+    unsigned char leftTrigger, rightTrigger;
+    if (!Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger)) return;
+
+    bool held = IsPhysicalHeld(PhysicalInput::B, buttons, leftTrigger, rightTrigger);
+    if (IsMenuActive() && held != g_menuBackHeld) {
+        ForwardKeyToMenu(kLocalClientIndex, kKeyEscape, held ? 1 : 0);
+    }
+    g_menuBackHeld = held;
+}
+
 extern "C" void __cdecl InjectControllerPauseMenu()
 {
     unsigned short buttons;
@@ -1488,6 +1561,7 @@ extern "C" void __cdecl InjectAllControllerInput(unsigned char* cmd)
     // idempotent: g_startHeld debounces per real button edge regardless of which hook
     // happens to observe it first in a given frame.
     InjectControllerPauseMenu();
+    InjectControllerMenuBack(); // same redundancy rationale as the pause-menu call above
 }
 
 // ---- Menu input tick -- driven by a WndProc subclass hook, NOT this file's gameplay tick

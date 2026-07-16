@@ -136,7 +136,15 @@ bool ShouldScan(const MEMORY_BASIC_INFORMATION& mbi)
     if (mbi.State != MEM_COMMIT) return false;
     if (mbi.Protect & PAGE_NOACCESS) return false;
     if (mbi.Protect & PAGE_GUARD) return false;
-    if (mbi.RegionSize > 32 * 1024 * 1024) return false;
+    // Raised from 32MB (2026-07-16): the sprint-kbutton memdiff session found strong
+    // behavioral candidates (matching ADS/Reload's real kbutton "active"-byte pattern
+    // exactly) at addresses whose CONTAINING region the pointer scan couldn't find at
+    // all -- likely because that region is a single large heap arena bigger than the
+    // old 32MB cap, silently excluded from every snapshot entirely (candidate bytes
+    // still get read/diffed fine via direct ReadProcessMemory in scan/dump mode, but
+    // the pointer-scan step needs the FULL region's bytes in the snapshot to search
+    // for anyone holding its base address as a pointer).
+    if (mbi.RegionSize > 256 * 1024 * 1024) return false;
     return true;
 }
 
@@ -146,7 +154,11 @@ Snapshot TakeSnapshot(HANDLE proc)
     uintptr_t addr = 0x00010000;
     const uintptr_t kMaxAddr = 0x7FFF0000;
     size_t totalBytes = 0;
-    const size_t kTotalCap = 400ull * 1024 * 1024;
+    // Raised from 400MB alongside the per-region cap above (2026-07-16), same reason:
+    // needs to cover enough of the process (~1.9GB observed) to actually include large
+    // heap arenas that hold real, live-confirmed candidate bytes the pointer scan
+    // couldn't find a containing region for at the old cap.
+    const size_t kTotalCap = 1536ull * 1024 * 1024;
 
     while (addr < kMaxAddr) {
         MEMORY_BASIC_INFORMATION mbi{};
@@ -400,6 +412,73 @@ int main(int argc, char** argv)
         return 0;
     }
 
+    // Special mode: memdiff.exe poke <addr> <value> [holdMs] [startDelayMs] -- writes
+    // one byte to a live address, holds it for holdMs (default 3000), then restores
+    // the ORIGINAL byte that was there before the write. Used to behaviorally confirm
+    // a read-only correlation candidate (e.g. task #9's sprint-kbutton search): force
+    // a candidate byte to its observed "held" value while the REAL key is up, and have
+    // a human watch for the matching real effect (here, a visible sprint speed
+    // increase) -- the same live-confirmation bar this project holds every other
+    // discovery to, just applied to a byte instead of a whole function. Needs
+    // PROCESS_VM_WRITE in addition to this tool's usual read-only handle.
+    //
+    // startDelayMs (default 3000) counts down BEFORE the write happens, printed once
+    // per second, so whoever's watching the game has time to get their eyes on the
+    // right spot (e.g. the sprint meter/player feet) before the poke actually fires --
+    // added after the first live test fired immediately with no lead time to react.
+    if (argc >= 4 && _stricmp(argv[1], "poke") == 0) {
+        uintptr_t addr = static_cast<uintptr_t>(strtoull(argv[2], nullptr, 16));
+        int value = static_cast<int>(strtoul(argv[3], nullptr, 16));
+        DWORD holdMs = (argc >= 5) ? static_cast<DWORD>(strtoul(argv[4], nullptr, 10)) : 3000;
+        DWORD startDelayMs = (argc >= 6) ? static_cast<DWORD>(strtoul(argv[5], nullptr, 10)) : 3000;
+
+        DWORD pid = FindProcessId(L"iw5sp.exe");
+        if (pid == 0) {
+            printf("iw5sp.exe not found -- launch the game first.\n");
+            return 1;
+        }
+        HANDLE proc = OpenProcess(PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_QUERY_INFORMATION, FALSE, pid);
+        if (!proc) {
+            printf("OpenProcess failed (%lu) -- run this tool as Administrator.\n", GetLastError());
+            return 1;
+        }
+
+        uint8_t original = 0;
+        SIZE_T bytesRead = 0;
+        if (!ReadProcessMemory(proc, reinterpret_cast<LPCVOID>(addr), &original, 1, &bytesRead) || bytesRead != 1) {
+            printf("ReadProcessMemory failed (%lu) -- can't safely poke without knowing the original byte.\n", GetLastError());
+            CloseHandle(proc);
+            return 1;
+        }
+        printf("0x%08zX: original=0x%02X -- will write 0x%02X for %lu ms.\n", addr, original, value, holdMs);
+        for (DWORD remaining = startDelayMs; remaining > 0; remaining -= (remaining < 1000 ? remaining : 1000)) {
+            printf("  starting in %lu.%01lus...\n", remaining / 1000, (remaining % 1000) / 100);
+            Sleep(remaining < 1000 ? remaining : 1000);
+        }
+        printf("Writing now...\n");
+
+        uint8_t newVal = static_cast<uint8_t>(value);
+        SIZE_T bytesWritten = 0;
+        if (!WriteProcessMemory(proc, reinterpret_cast<LPVOID>(addr), &newVal, 1, &bytesWritten) || bytesWritten != 1) {
+            printf("WriteProcessMemory failed (%lu)\n", GetLastError());
+            CloseHandle(proc);
+            return 1;
+        }
+
+        printf("Written. Watch the game now (do NOT touch the real key) -- restoring in %lu ms.\n", holdMs);
+        Sleep(holdMs);
+
+        SIZE_T bytesRestored = 0;
+        if (!WriteProcessMemory(proc, reinterpret_cast<LPVOID>(addr), &original, 1, &bytesRestored) || bytesRestored != 1) {
+            printf("WARNING: failed to restore original byte 0x%02X (%lu) -- address may be left in the poked state.\n",
+                   original, GetLastError());
+        } else {
+            printf("Restored original byte 0x%02X.\n", original);
+        }
+        CloseHandle(proc);
+        return 0;
+    }
+
     // Special mode: memdiff.exe dump <addr> <length> -- hex + ASCII dump of raw bytes
     // at a live address, e.g. to look for an embedded name/label string next to a
     // pointer slot found by "scan" mode.
@@ -569,6 +648,121 @@ int main(int argc, char** argv)
         } else if (!candidates.empty()) {
             printf("\n(skipping pointer scan -- %zu candidates is too many)\n", candidates.size());
         }
+        return 0;
+    }
+
+    // Special mode: memdiff.exe rangewatch <vkHex> <label> <startAddrHex> <endAddrHex>
+    // -- the SAME held/released narrowing algorithm as the default mode below, but
+    // restricted to one FIXED static address range read directly via ReadProcessMemory
+    // (no VirtualQuery/region enumeration, no heap-region caps at all). Built for task
+    // #9's sprint-kbutton search after the default mode's whole-process heap scan found
+    // only false leads (heap-resident, address shifted between game launches, unlike
+    // the confirmed-real ADS/Reload kbuttons which sit at fixed static addresses). ADS's
+    // kbutton pair (0xA98B8C/0xA98CB8+0xCC8) and Reload's (0xA98C68/0xA98C78) all cluster
+    // within about 0x200 bytes of each other -- restricting the scan to that same known,
+    // already-confirmed-real static neighborhood should surface Sprint's real kbutton
+    // (if it's there) with none of the heap-noise false positives a full-process scan
+    // picks up, since every byte in range is already known to be genuine per-player
+    // engine state, not incidental heap garbage.
+    if (argc >= 6 && _stricmp(argv[1], "rangewatch") == 0) {
+        int vk = static_cast<int>(strtol(argv[2], nullptr, 16));
+        const char* label = argv[3];
+        uintptr_t rangeStart = static_cast<uintptr_t>(strtoull(argv[4], nullptr, 16));
+        uintptr_t rangeEnd = static_cast<uintptr_t>(strtoull(argv[5], nullptr, 16));
+        size_t rangeSize = rangeEnd - rangeStart;
+
+        printf("memdiff rangewatch -- watching 0x%08zX-0x%08zX (%zu bytes) against %s (VK=0x%02X)\n",
+               rangeStart, rangeEnd, rangeSize, label, vk);
+
+        DWORD pid = FindProcessId(L"iw5sp.exe");
+        if (pid == 0) {
+            printf("iw5sp.exe not found -- launch the game first.\n");
+            return 1;
+        }
+        HANDLE proc = OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, FALSE, pid);
+        if (!proc) {
+            printf("OpenProcess failed (%lu) -- run this tool as Administrator.\n", GetLastError());
+            return 1;
+        }
+
+        auto ReadRange = [&](std::vector<uint8_t>& buf) {
+            buf.resize(rangeSize);
+            SIZE_T bytesRead = 0;
+            return ReadProcessMemory(proc, reinterpret_cast<LPCVOID>(rangeStart), buf.data(), rangeSize, &bytesRead)
+                && bytesRead == rangeSize;
+        };
+
+        printf("\nWaiting for a level to actually be loaded...\n");
+        while (!IsInLevel(proc)) Sleep(500);
+        printf("Level detected. Ready.\n\n");
+
+        printf("================================================================\n");
+        printf(" Toggle %s naturally, as many times as you like. Aim for at least\n"
+               " 6-8 toggles. Press F11 at any time to stop early and see results.\n", label);
+        printf("================================================================\n\n");
+
+        bool lastDown = (GetAsyncKeyState(vk) & 0x8000) != 0;
+        printf("Starting state: %s is currently %s\n", label, lastDown ? "HELD" : "released");
+
+        std::vector<Candidate> candidates;
+        bool seeded = false;
+        std::vector<uint8_t> seedDown, seedUp;
+        bool haveSeedDown = lastDown, haveSeedUp = !lastDown;
+        if (lastDown) ReadRange(seedDown); else ReadRange(seedUp);
+
+        int transitions = 0;
+        const int kMaxTransitions = 24;
+        while (transitions < kMaxTransitions) {
+            if (GetAsyncKeyState(VK_F11) & 0x8000) {
+                printf("\nF11 pressed -- stopping early.\n");
+                break;
+            }
+            bool nowDown = (GetAsyncKeyState(vk) & 0x8000) != 0;
+            if (nowDown == lastDown) { Sleep(15); continue; }
+            lastDown = nowDown;
+            transitions++;
+            printf("Transition %d: %s now %s -- reading range...\n", transitions, label, nowDown ? "HELD" : "released");
+            std::vector<uint8_t> buf;
+            ReadRange(buf);
+
+            if (!seeded) {
+                if (nowDown && !haveSeedDown) { seedDown = buf; haveSeedDown = true; }
+                else if (!nowDown && !haveSeedUp) { seedUp = buf; haveSeedUp = true; }
+                if (haveSeedDown && haveSeedUp) {
+                    printf("Have both a HELD and released read -- building initial candidate set...\n");
+                    for (size_t i = 0; i < rangeSize; i++) {
+                        if (seedDown[i] != seedUp[i]) {
+                            candidates.push_back({ rangeStart + i, seedDown[i], seedUp[i] });
+                        }
+                    }
+                    printf("Initial candidates: %zu\n", candidates.size());
+                    seeded = true;
+                }
+                continue;
+            }
+
+            size_t before = candidates.size();
+            std::vector<Candidate> next;
+            next.reserve(candidates.size());
+            for (const auto& c : candidates) {
+                uint8_t actual = buf[c.addr - rangeStart];
+                uint8_t want = nowDown ? c.downVal : c.upVal;
+                if (actual == want) next.push_back(c);
+            }
+            candidates = std::move(next);
+            printf("  candidates: %zu -> %zu\n", before, candidates.size());
+            for (const auto& c : candidates) {
+                printf("    0x%08zX : held=0x%02X released=0x%02X\n", c.addr, c.downVal, c.upVal);
+            }
+        }
+
+        printf("\n================ FINAL RANGEWATCH CANDIDATES (%zu) ================\n", candidates.size());
+        for (const auto& c : candidates) {
+            printf("  0x%08zX : held=0x%02X released=0x%02X (kbutton-struct-relative +0x%zX)\n",
+                   c.addr, c.downVal, c.upVal, c.addr - rangeStart);
+        }
+        CloseHandle(proc);
+        printf("\nDone.\n");
         return 0;
     }
 

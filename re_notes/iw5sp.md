@@ -1475,12 +1475,14 @@ response curves from scratch.
 
 ---
 
-## Sprint's real kbutton -- live memdiff run, strong candidate found but not yet actionable (2026-07-16)
+## Sprint's real kbutton -- PARKED, exhaustive search came back negative (2026-07-16)
 
 Following the corrected sprint-timer finding above (our own pm_flags-forcing masks
 the real timer from observation), went looking for the real sprint-engage trigger
 instead -- the same class of fix already used for ADS/Reload (drive the real
-`kbutton_t` KeyDown/KeyUp, not force a flag ourselves).
+`kbutton_t` KeyDown/KeyUp, not force a flag ourselves). **Conclusion after three
+independent approaches: not found. Parked. Controller sprint keeps the existing
+`pm_flags`-forcing implementation; see the k+m caveat at the end of this section.**
 
 **Real bind confirmed:** `players2/config.cfg`: `bind SHIFT "+breath_sprint"` --
 NOT `+sprint` (that name only showed up as a bind-ALIAS-EXPANSION target inside
@@ -1488,27 +1490,104 @@ NOT `+sprint` (that name only showed up as a bind-ALIAS-EXPANSION target inside
 sprint's actual trigger). `"+breath_sprint"`/`"-breath_sprint"` sit in a data table
 (`0x00929fc4`/`0x00929fc8`, 4 bytes apart) in the exact same layout as ADS's
 confirmed-real `"+toggleads_throw"`/`"-toggleads_throw"` pair -- strong static
-evidence sprint has a genuine dedicated kbutton.
+evidence sprint has a genuine dedicated kbutton somewhere. Static analysis of
+`FUN_00438710`'s ~77-case special-bind dispatcher (the same dispatcher that owns
+ADS's and `+mlook`'s dedicated flags) was checked for a similar dedicated write near
+sprint's identity and **found none obviously** -- first hint this might not be a
+classic kbutton at all, or is handled somewhere this dispatcher doesn't cover.
 
-**Live memdiff** (real keyboard Shift, 18 press/release transitions, `tools/memdiff`)
-narrowed to 31 stable candidates, split into two behavioral groups:
-- Group A (`0x000AC202`-`0x000AC23A`): `held=0x00`, `released=`(varying) -- backwards
-  from a real "active" flag; the varying released-byte pattern looks like
-  coincidentally-timed counter/timestamp noise, not something semantically tied to
-  the key.
-- Group B (`0x02F88782`, `0x02F88783`, `0x02F88788`, `0x02F8879A`, `0x04A7F0F0`,
-  `0x04A7F0F1`): `held=nonzero`, `released=0x00` -- the exact pattern ADS's and
-  Reload's real kbutton "active" bytes already showed. This is the real lead.
+**Approach 1 -- whole-process heap correlation (live memdiff, first session).**
+Real keyboard Shift, 18 press/release transitions, narrowed to 31 stable
+candidates, split into two behavioral groups: Group A (`0x000AC202`-`0x000AC23A`,
+`held=0x00`/`released=`varying, backwards from a real "active" flag, looked like
+coincidentally-timed counter/timestamp noise) and Group B (`0x02F88782`,
+`0x02F88783`, `0x02F88788`, `0x02F8879A`, `0x04A7F0F0`, `0x04A7F0F1`,
+`held=nonzero`/`released=0x00`, the exact pattern ADS's/Reload's real kbutton
+"active" bytes show). The tool's automatic pointer scan found **no stable pointer
+path** to any of the 31 candidates at the time (32MB per-region / 400MB total scan
+caps were silently excluding the heap arena these addresses live in).
 
-**Blocker:** the tool's automatic pointer scan found **no stable pointer path** to
-ANY of the 31 candidates (unlike ADS's/Reload's kbuttons, which lived at fixed,
-static addresses in the main data segment and needed no pointer chain at all).
-Group B's addresses (`0x02F8xxxx`, `0x04A7xxxx`) look like dynamic heap memory --
-plausible to correlate correctly for one play session, but not safely hardcodable
-the way a fixed data-segment address is, since heap layout isn't guaranteed
-consistent across launches.
+**Cap-widening + x64 rebuild.** Raised `ShouldScan`'s per-region cap 32MB->256MB and
+`TakeSnapshot`'s total cap 400MB->1.5GB (`tools/memdiff/main.cpp`). This crashed the
+tool immediately on the next run (deterministically, right after the first
+snapshot) -- `memdiff.exe` was still a 32-bit build, and the widened caps pushed it
+against its own ~2GB address-space ceiling. Since `memdiff` is a standalone
+diagnostic tool, not the injected proxy DLL, it doesn't need to match the game's
+32-bit-ness at all (`ReadProcessMemory` works fine cross-bitness) -- rebuilt it as
+x64 (`build_memdiff.bat` now calls `vcvarsall.bat x64`), which fixed the crash.
 
-**Status:** real, live-confirmed behavioral match found (Group B), but not yet
-actionable for implementation. Next steps: a deeper/broader pointer-scan pass
-(wider region search, multiple indirection hops), or an x64dbg session tracing
-what actually allocates/writes that memory region to find a stable anchor point.
+**Approach 1, re-run with the x64 build.** Fresh session (game relaunched, new PID,
+so all heap addresses shifted from the first run -- expected). 9 final candidates
+this time, and the pointer scan actually resolved (unlike the first run): two
+clusters --
+- `0x02F08782`/`0x02F08783`/`0x02F08788`/`0x02F0879A` (region base `0x02F00000`,
+  same relative offsets and value pattern as the first session's Group B, just a
+  different absolute base -- consistent, reproducible shape, not random noise)
+- `0x048E45F8`/`0x048E45F9` (region base `0x04810000`)
+- Plus `0x0B8E0F8B` (`held=0xFF`/`released=0x00`) and `0x0B91410C`
+  (`held=0x40`/`released=0x80`)
+
+Every "low, likely-static" backreference the pointer scan found (e.g. `0x0095F858`,
+`0x00D6EBA4`) **shifted by inconsistent amounts (0x40-0x60) between the two
+sessions** -- a genuine compile-time `.data`/`.bss` global would be byte-identical
+across launches (no ASLR on this binary otherwise). That inconsistency means these
+"low" addresses are themselves early heap allocations that merely *look* static,
+not real global pointers -- undermining the pointer-scan step's own "low = probably
+dereferenceable" heuristic for this codebase. All 9 final candidate bytes also sit
+above `0x02000000`, i.e. nowhere near the confirmed-real static addresses ADS/Reload
+actually live at.
+
+**Live behavioral write-test (`memdiff.exe poke`, new tool feature this session).**
+Added a `poke <addr> <value> [holdMs] [startDelayMs]` mode: writes one byte to a
+live address, holds it, restores the original -- used to force each candidate to
+its observed "held" value while the real key was up, watching for the matching real
+effect (a visible sprint speed increase). All 4 plausible candidates tested
+negative (`0x02F08782`, `0x048E45F8`, `0x0B8E0F8B`, `0x0B91410C`) -- **no visible
+effect from any of them.** `0x0B91410C` additionally revealed itself as pure
+noise mid-test: its "original" byte was already sitting at `0x40` (its supposed
+"held" value) despite the real key being up the whole time, proving it doesn't
+track real key state at all. Skipped `0x02BCA761` (`held=0x65`/`released=0x6E` --
+ASCII `'e'`/`'n'`, clearly text data, not a boolean flag).
+
+**Approach 2 -- targeted static-range scan (`memdiff.exe rangewatch`, new tool
+mode).** Runs the same held/released narrowing loop as the default mode, but reads
+a single fixed address range directly via `ReadProcessMemory` -- no heap-region
+enumeration, no caps, no pointer-scan false positives possible, since every byte in
+range is already known to be genuine per-player static state. Scanned
+`0xA98A00`-`0xA99200` (2048 bytes), the neighborhood containing every confirmed-real
+kbutton found so far: the per-player struct base (`0xA98AD8`), `+back`'s real
+kbutton (`0xA98B14`), sprint's already-ruled-out `pm_flags`-adjacent flag
+(`0xA98B88`), ADS's paired kbutton (`0xA98B8C`), the `+gostand` pair
+(`0xA98BA0`/`0xA98BC8`), Reload's kbutton (`0xA98C68`/active at `0xA98C78`), and
+ADS's primary kbutton (`0xA98CB8`/active at `0xA98CC8`). Result: **9 initial
+candidates collapsed to 0 by the very next transition, and stayed at 0 through all
+24 transitions.** A clean, decisive negative -- not noise (noise wouldn't vanish
+instantly and stay at zero) -- meaning sprint's kbutton, if it's a classic
+`kbutton_t` at all, is definitively **not** in the same neighborhood as every other
+confirmed kbutton in this struct.
+
+**Overall conclusion:** three independent techniques (whole-heap correlation twice,
+live write-testing the strongest candidates, and a targeted scan of the one region
+we know for certain holds real kbutton state) all came back negative or
+unconfirmable. Combined with the static dispatcher search already turning up
+nothing, sprint's real trigger mechanism remains genuinely unlocated. **Parked** --
+not a small remaining step, a real dead end for now.
+
+**Next idea, not yet attempted:** a live x32dbg write-breakpoint on the real
+`pm_flags` field (`ps+0xc`, bit `0x4000`) while holding real keyboard Shift with our
+own controller-forcing inactive, to catch whatever code writes the bit in the act
+and trace backward from a known-real write site, instead of continuing to guess
+forward from bind names/heap correlation. Needs interactive, human-paced live
+debugging (not a background scan), so it's a different order of effort than
+everything tried above -- deliberately not started without discussing it first.
+
+**Practical consequence, decided 2026-07-16:** since sprint (and by extension any
+future keyboard-side investigation touching this same class of per-tick engine
+hook) has already produced one real, live-shipped regression this session (see
+`known_issues.md` #10 -- our own pm_flags-forcing hooks broke vanilla keyboard
+sprint entirely until fixed with bit-ownership tracking), keyboard/mouse should be
+treated as a **secondary, best-effort input path for the time being**, not a
+first-class target on equal footing with controller. The mod's core purpose is
+native controller support; k+m compatibility is a "must not break" constraint, not
+a feature under active development. See the new caveat in `known_issues.md` and
+`README.md`.

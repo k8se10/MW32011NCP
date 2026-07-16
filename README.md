@@ -200,7 +200,19 @@ See `re_notes/known_issues.md` for the full, actively-tracked list.
   its own full signature-scanning pass. There's also an open, unresolved question about
   anti-cheat exposure from code injection on `iw5mp.exe` that needs to be discussed
   before that work begins.
-- Vanilla keyboard/mouse play is unaffected by design — the mod is strictly additive.
+- **Keyboard/mouse play is intended to be strictly additive and unaffected, but is no
+  longer treated as a fully-verified, first-class input path.** A real regression was
+  found and fixed this session (our own controller-support hooks silently broke native
+  keyboard sprint entirely — see `re_notes/known_issues.md` issue #10) — the kind of bug
+  that's easy to introduce with this project's hooking style and easy to miss unless
+  someone happens to test keyboard specifically. Controller is the actively-verified,
+  primary input method going forward; if you're mainly a keyboard/mouse player, keep a
+  keyboard within reach and expect the occasional oddity while this mod is installed.
+  **This is not a suggestion to avoid the keyboard, though** — it's still required,
+  not optional, for full menu/UI navigation, Back, and most killstreak call-ins, none
+  of which have a controller-native implementation yet. A keyboard needs to stay
+  reachable during any session either way. See `re_notes/known_issues.md` issue #11
+  for the full reasoning.
 
 ---
 

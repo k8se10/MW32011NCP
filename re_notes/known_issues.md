@@ -2,9 +2,9 @@
 
 Tracked as tasks in the working session; this file is the standalone reference so they
 don't stay buried in `iw5sp.md`'s investigation log. Update status here as each is
-resolved. Last updated 2026-07-15 (later session, same day: Start unpause, Y/weapnext,
-and D-pad all resolved, Back reverted after a live regression, and Survival ready-up
-solved via a deliberate, narrowly-scoped keypress-synthesis exception).
+resolved. Last updated 2026-07-16 (fixed a live keyboard-sprint regression caused by
+our own controller hooks — see issue #10 — and, as a direct consequence, deprioritized
+keyboard/mouse as a primary, actively-verified input path going forward — issue #11).
 
 ---
 
@@ -530,6 +530,99 @@ LIVE** by the user, including recovery from the original stuck-prone repro.
 **Also fixed issue #10 below as a side effect** (same class of bug: stale
 bit-forcing fighting a real state change mid-sequence) — **confirmed live**:
 Predator missile while prone in the first mission no longer gets stuck.
+
+---
+
+## 10. Sprint pm_flags hooks broke vanilla keyboard sprint — RESOLVED (2026-07-16)
+
+**Trigger:** live-reported during the same session as the sprint-kbutton memdiff
+investigation (issue #6) — "sprint on k+m is broken it toggles once timesout then
+never recovers."
+
+**Root cause:** `InjectControllerSprintPmFlags` and `ReassertSprintPmFlags` are
+hooked directly into the engine's real Pmove-tick entry points (`FUN_00644ed0`/
+`FUN_00643ce0`), independent of whether `InjectControllerSprint()` (the function
+that updates `g_sprintHeld`/`g_sprintWinded`) ever runs. `InjectControllerSprint()`
+itself early-returns the instant `Controller_GetRawButtonsAndTriggers` fails — which
+it always does with no controller in slot 0 (and, just as much, with an idle
+connected controller nobody's touching) — so on keyboard/mouse play `g_sprintHeld`
+sits permanently at its default-initialized `false`. `IsSprintActive()` reads that
+same frozen `false`, so `InjectControllerSprintPmFlags` unconditionally ran its
+`else` branch — `*flags &= ~kPmFlagSprint;` — clearing the REAL sprint bit on every
+single Pmove tick, forever, regardless of what genuine keyboard Shift/
+`+breath_sprint` input had just set it to a moment earlier. The real bit could
+survive at most one tick before being stomped back off — matching the reported
+"toggles once, times out, never recovers" exactly.
+
+**First fix attempt (superseded same day):** gated both hooks on a new
+`Controller_IsConnected()` (bare `XInputGetState` success check). This only covers a
+fully-unplugged controller, though — user correctly flagged that a connected-but-idle
+controller (a normal setup: controller sitting on the desk while actually playing
+keyboard/mouse) hits the exact same bug, since `IsSprintActive()` is still false in
+that case too. Detecting "which input device is currently active" isn't actually the
+right question to ask at all.
+
+**Actual fix — bit ownership tracking:** added a single `g_weOwnSprintBit` flag.
+`InjectControllerSprintPmFlags` now only clears the real pm_flags bit if
+`g_weOwnSprintBit` says WE were the one who set it (via a prior `IsSprintActive()`
+tick); otherwise it leaves the bit completely alone, whatever native keyboard/kbutton
+logic put there. `ReassertSprintPmFlags` (which only ever ORs the bit in, never
+clears) now also sets `g_weOwnSprintBit = true` when it fires, so the two hooks share
+one consistent ownership record. `Controller_IsConnected()` was removed entirely —
+unused and unnecessary once ownership tracking makes the "is a controller present/
+active" question moot. Rebuilt and redeployed; awaiting live re-confirmation on
+keyboard/mouse.
+
+**Lesson:** for a hook installed directly on a real per-tick engine entry point (as
+opposed to being called from our own per-frame injector functions) that must
+sometimes override native state, "is our input device active" is the wrong gate —
+track literal ownership of the bit instead (only clear what you set), since that's
+correct regardless of controller presence/idleness and needs no device-detection
+heuristic at all. Worth an audit pass across the other Pmove-tick-level hooks in this
+file for the same class of bug.
+
+---
+
+## 11. Keyboard/mouse deprioritized as a primary input path — decided 2026-07-16
+
+**Not a bug in itself — a scope/priority decision, recorded here because it's a
+direct consequence of issue #10 above and of the parked sprint-kbutton search (see
+`iw5sp.md`, "Sprint's real kbutton — PARKED").**
+
+Issue #10 showed our own controller-support hooks can silently break real keyboard
+play when they're installed directly on a per-tick engine entry point rather than
+gated through our own per-frame injector functions — and that class of bug is only
+fully ruled out for the ONE case (sprint) we happened to go looking for this
+session, after it had already shipped and been played on for a while before the
+regression was even noticed. The sprint-kbutton search itself (three independent
+techniques, all negative — see `iw5sp.md`) means we currently have no way to
+migrate sprint's controller path off raw `pm_flags`-forcing onto the real kbutton
+the way ADS/Reload were done, which is the cleaner, lower-risk mechanism —
+so the raw-forcing pattern (the one now confirmed capable of silently breaking
+keyboard input) stays in place for sprint indefinitely, not just temporarily.
+
+**Practical guidance:** with this mod installed, keyboard/mouse play may exhibit
+input weirdness that doesn't exist in a vanilla install — not because k+m support is
+being actively removed, but because it is no longer receiving the same level of
+verification attention as controller input going forward. Any further native input
+work in this project prioritizes controller correctness first; keyboard/mouse is
+tested opportunistically (e.g. "does it still work" spot-checks), not to the same
+live-reproduction bar controller features get. **Recommendation: treat controller as
+the primary, actively-verified input method with this mod installed; keep a
+keyboard within reach and expect to fall back to it if something feels off**, per
+the mod's own README/release notes.
+
+**This is deprioritization of verification attention, not a suggestion to avoid k+m
+— keyboard/mouse remains functionally essential, not optional, for exactly the areas
+controller doesn't cover yet:** full menu/UI navigation (`re_notes/ui_assets.md`),
+Back (`+scores`, task #5, unassigned), most killstreak call-ins (task #7, #13 —
+D-pad squadmate call-in still fails 100%), and anything else without its own
+controller-native implementation. Players will need a keyboard reachable during any
+session regardless of this decision, not as a fallback for edge cases but as a
+requirement for them. This is a standing caveat, not a one-time
+release note — revisit only if a future session finds a reliable way to audit every
+per-tick hook in this file for the ownership-tracking class of bug (see issue #10's
+own "worth an audit pass" note) and re-verifies keyboard parity end to end.
 
 ---
 
