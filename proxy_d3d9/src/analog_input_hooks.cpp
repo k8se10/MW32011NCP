@@ -855,25 +855,26 @@ float GetDvarFloat(const char* name)
 // kAdsSlowdownStrength now comes from g_modConfig.adsSlowdownStrength ([Look]
 // AdsSlowdownStrength in mw3ncp_config.ini, task #14) rather than being hardcoded.
 
-// DISABLED (live-confirmed 2026-07-16): calling the native FUN_004b0580 ("live
-// effective FOV") caused LOOK INVERSION on ACOG's 2x toggle mode. A clamp on the
-// resulting ratio (restricted to [0.1, 1.5], which cannot mathematically produce a
-// negative scale factor) made it WORSE, not better, per live retest -- ruling out a
-// simple bad-ratio explanation and confirming this is something a value-level fix
-// can't reach. Leading theory: FUN_004b0580's alternate weapon-toggle code path,
-// taken specifically by hybrid/alt-toggle reticles like ACOG's 2x mode, does heavier
-// float10/x87 arithmetic (multiple FUN_0064be20 trig-like calls) that may leave the
-// FPU register stack at a different depth than our simple double-return calling
-// convention expects, corrupting OTHER floating-point math later in the same frame
-// (potentially including the actual look-angle accumulation below).
-//
-// Reverted to a known-safe state: no native FOV call at all, flat rate regardless of
-// zoom (the same behavior as before task #12 started). Re-attempting this needs a
-// live x64dbg session to actually inspect the FPU stack state around
-// FUN_004b0580's alt-toggle path before trying again -- see re_notes/known_issues.md.
+// Computes the ADS look-rate scale factor for this frame: 1.0 when not aiming (or
+// strength is 0), otherwise the live effective-FOV/hipfire-FOV ratio (< 1.0 when
+// zoomed in), blended toward 1.0 by (1 - kAdsSlowdownStrength). This is the original
+// formula the user confirmed working live before ACOG's 2x toggle mode specifically
+// was found to invert look -- restored as-is (no clamp) per explicit direction to
+// fix the ACOG case properly (via live x64dbg investigation of FUN_004b0580's
+// alt-toggle path) rather than patch around it blind. See re_notes/known_issues.md
+// issue #8 for the full investigation trail.
 float GetAdsLookRateScale()
 {
-    return 1.0f;
+    if (!g_adsHeld || g_modConfig.adsSlowdownStrength <= 0.0f) return 1.0f;
+
+    float baseFov = GetDvarFloat("cg_fov");
+    if (baseFov <= 0.0f) return 1.0f;
+
+    float effectiveFov = static_cast<float>(GetEffectiveFov(kLocalClientIndex));
+    if (effectiveFov <= 0.0f) return 1.0f;
+
+    float ratio = effectiveFov / baseFov;
+    return 1.0f - g_modConfig.adsSlowdownStrength * (1.0f - ratio);
 }
 } // namespace
 
