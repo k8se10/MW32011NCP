@@ -13,7 +13,14 @@ reverse-engineering trail behind each entry.
   was only ever wired into the per-frame gameplay tick, which stops running entirely
   while genuinely paused — so B's menu-back action never fired in the one state it
   exists to handle. Now also driven from the same always-running WndProc/timer tick
-  that already handles Start's open/close. See `re_notes/known_issues.md` issue #13.
+  that already handles Start's open/close.
+- **Crouch fired unexpectedly when exiting pause with B.** A side effect of the fix
+  above: B is also the crouch/prone button, and its tap/hold tracking went stale while
+  paused, so the same press that closed the menu looked like a fresh crouch tap the
+  instant gameplay resumed. Fixed by tracking, per B press, whether it ever touched an
+  open menu, and suppressing crouch/prone for that press if so — scoped to the actual
+  current press rather than any menu open/close in general, so it can't suppress a
+  genuine crouch/prone elsewhere. See `re_notes/known_issues.md` issue #13.
 
 ### Added
 - **`AdsSlowdownBaseline`** — a new `[Look]` config value multiplied on top of the

@@ -686,9 +686,35 @@ specifically to act on an open menu never actually ran while a menu was open.
 alongside the existing `InjectControllerPauseMenu();` call
 (`analog_input_hooks.cpp`). The call left in `InjectAllControllerInput` stays
 too (harmless/idempotent during normal unpaused gameplay, same redundancy
-rationale already documented for the pause-menu call there). Rebuilt;
-live-verification still pending (re-test: B closes pause menu, and still
-backs out of any other open menu the same way).
+rationale already documented for the pause-menu call there).
+
+**Second live-reported regression from this same fix: crouch fired on exiting
+pause.** B is the same physical button used for both "close menu" and
+crouch/prone (`InjectControllerButtons`), and that function's own tap/hold
+edge-tracking state (`g_crouchButtonWasHeld` etc.) goes stale while paused,
+since the whole function is dead during pause (same root cause as the bug
+above). The still-in-flight B press that closed the menu looked like a brand
+new press the instant gameplay resumed, and its release fired an unwanted
+crouch tap.
+
+A first fix attempt (a one-shot flag set on any global menu-active→inactive
+transition, consumed once by `InjectControllerButtons` to silently resync
+state) was rejected before being tested live: it would misfire if some
+*other* menu opened/closed while B was already held down for an unrelated
+gameplay press, since it reacted to any menu transition rather than tracking
+whether B's own current press had actually touched a menu. **Corrected fix:**
+`g_currentBPressTouchedMenu`, maintained continuously by
+`InjectControllerMenuBack` (which — unlike `InjectControllerButtons` — keeps
+running across a pause): set true the moment B is held while a menu is
+active, reset on B's own next rising edge. `InjectControllerButtons` gates
+both the tap-fire and hold-fire calls on this flag (not the edge-tracking
+bookkeeping itself, which still runs unconditionally so state never desyncs).
+This makes the suppression scoped to B's actual current press rather than to
+any menu-active transition, so an unrelated menu open/close elsewhere can
+never suppress a genuine gameplay crouch/prone press. Rebuilt; live-
+verification still pending (re-test: B closes pause menu without triggering
+crouch, and normal crouch/prone tap/hold still works when no menu is
+involved).
 
 ---
 

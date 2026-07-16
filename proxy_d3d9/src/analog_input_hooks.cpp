@@ -284,6 +284,19 @@ DWORD g_crouchButtonPressStartMs = 0;
 bool g_crouchButtonWasHeld = false;
 bool g_holdActionConsumed = false; // true once this press has already fired its hold action
 
+// Tracks, for B's CURRENT physical press (since its own last rising edge), whether a
+// menu was ever active at any point during it. Maintained entirely by
+// InjectControllerMenuBack (2026-07-16), since that function -- unlike
+// InjectControllerButtons -- keeps running via the always-on WndProc/timer tick even
+// while genuinely paused, so it's the only reliable continuous observer of B's state
+// across a pause. B is the SAME physical button used for both "close menu" and
+// crouch/prone; InjectControllerButtons consults this flag (not a one-shot resync tied
+// to a global menu-active transition, which would misfire if some OTHER menu happened
+// to open/close while B was already down for an unrelated gameplay press) to decide
+// whether THIS press is allowed to fire crouch (tap) or prone (hold) at all. Reset on
+// B's own rising edge, so a later, genuinely menu-free press is unaffected.
+bool g_currentBPressTouchedMenu = false;
+
 // ---- Stuck-prone diagnostic instrumentation (2026-07-15/16, task #10) --------------
 //
 // Log-only (no behavior change) instrumentation added to chase a live-reported,
@@ -385,7 +398,14 @@ extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
         g_crouchButtonPressStartMs = GetTickCount();
         g_holdActionConsumed = false;
     }
-    if (bHeld && !g_holdActionConsumed) {
+    // g_currentBPressTouchedMenu (maintained by InjectControllerMenuBack, which keeps
+    // running across a pause unlike this function) gates BOTH the hold and tap fire
+    // below -- if this press ever overlapped an active menu at any point, it's the
+    // menu's press, not gameplay's, regardless of when InjectControllerButtons happens
+    // to next run relative to the menu closing. Edge-tracking bookkeeping below still
+    // runs unconditionally so state never desyncs once the flag clears on the next
+    // genuinely menu-free press.
+    if (bHeld && !g_holdActionConsumed && !g_currentBPressTouchedMenu) {
         DWORD heldMs = GetTickCount() - g_crouchButtonPressStartMs;
         if (heldMs >= g_modConfig.proneHoldThresholdMs) {
             // Hold action fires once, the instant the threshold is crossed.
@@ -394,7 +414,7 @@ extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
             LogStanceDiag("hold-fire");
         }
     }
-    if (!bHeld && g_crouchButtonWasHeld && !g_holdActionConsumed) {
+    if (!bHeld && g_crouchButtonWasHeld && !g_holdActionConsumed && !g_currentBPressTouchedMenu) {
         // Falling edge and the hold threshold was never reached -- this was a tap.
         ToggleStance(kLocalClientIndex, 1); // togglecrouch
         LogStanceDiag("tap-fire");
@@ -1296,10 +1316,15 @@ bool g_paused = false;
 // remapping) for the same reason Start/pause is: this is a system-level menu action,
 // not a gameplay bind, so it should behave identically regardless of button-layout
 // preset. Only acts while a menu is genuinely active (`IsMenuActive()`) -- while
-// gameplay is running normally, this function does nothing at all, leaving B's
-// existing crouch/prone handling in `InjectControllerButtons` completely
-// undisturbed (and moot anyway in most real menu states, since those halt the
-// gameplay tick entirely -- see the WndProc-tick writeup below `InjectAllControllerInput`).
+// gameplay is running normally, this function does nothing at all. Since B is ALSO
+// the crouch/prone button (`InjectControllerButtons`), and that function's own edge-
+// tracking state goes stale while paused (it's dead during pause, same reason this
+// function had to move onto the always-running WndProc tick -- see known_issues.md
+// issue #13), this function also continuously maintains
+// `g_currentBPressTouchedMenu` (see its declaration comment above
+// `InjectControllerButtons`) so crouch/prone can never fire for a B press that
+// overlapped an open menu, no matter when `InjectControllerButtons` next happens to
+// run relative to the menu closing.
 namespace {
 using ForwardKeyToMenuFn = void(__cdecl*)(int playerIndex, int keyCode, int isDown);
 ForwardKeyToMenuFn const ForwardKeyToMenu = reinterpret_cast<ForwardKeyToMenuFn>(0x004d9850);
@@ -1322,7 +1347,20 @@ extern "C" void __cdecl InjectControllerMenuBack()
     if (!Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger)) return;
 
     bool held = IsPhysicalHeld(PhysicalInput::B, buttons, leftTrigger, rightTrigger);
-    if (IsMenuActive() && held != g_menuBackHeld) {
+    bool menuActive = IsMenuActive();
+
+    if (held && !g_menuBackHeld) {
+        // Rising edge of B itself: a fresh physical press is starting, so whatever the
+        // previous press did is no longer relevant.
+        g_currentBPressTouchedMenu = false;
+    }
+    if (held && menuActive) {
+        // This press has touched an active menu at some point -- mark it as the
+        // menu's press for the remainder of this hold, however long that turns out to
+        // be, so InjectControllerButtons never fires crouch/prone for it.
+        g_currentBPressTouchedMenu = true;
+    }
+    if (menuActive && held != g_menuBackHeld) {
         ForwardKeyToMenu(kLocalClientIndex, kKeyEscape, held ? 1 : 0);
     }
     g_menuBackHeld = held;
