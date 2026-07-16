@@ -18,25 +18,75 @@ each release.
 
 ## Feature list
 
-- **Analog movement** (left stick) — real `usercmd_t.forwardmove`/`.rightmove` bytes,
-  additive on top of any keyboard input already present.
-- **Analog look** (right stick) — writes the raw pitch/yaw angle-delta accumulators
-  directly, bypassing the mouse pipeline entirely (own sensitivity, no mouse
-  accel/filter inherited).
-- **Fire** (RT), **ADS** (LT, true hold via real `kbutton_t` KeyDown/KeyUp calls, not a
-  toggle), **Melee** (R3), **Tactical**/**Lethal** (LB/RB), **Jump** (A).
-- **Crouch/Prone stance ladder** (B) — tap toggles crouch, hold goes prone, full 3-state
-  ladder matching real Xbox 360 CoD behavior (not a raw hold of either bit).
-- **Interact + Reload** (X) — real, context-sensitive `kbutton_t`, found via memdiff.
-- **Sprint** (L3) — real `pm_flags` bit, forced via a Pmove-entry hook; auto-stands from
-  crouch/prone first, matching console. Includes a real **stamina/cooldown model**
-  (our own timer layer, since forcing the bit natively bypasses the game's own limiter
-  entirely): 4 seconds continuous sprint before cutting out, then a real 2-second
-  cooldown before it can resume — not just a cosmetic meter, sprint is genuinely
-  blocked while on cooldown. Automatically bypassed (genuinely unlimited sprint) when
-  the real `player_sprintUnlimited` dvar is live-set by specific missions.
-- **Weapon switch** (Y) — real `weapnext` dispatch via the engine's own bind-index jump
-  table, found by live-reading the raw-keycode dispatch table for the actual bound keys.
+### Movement & look
+- **Analog movement** (move-stick, left by default) — real `usercmd_t.forwardmove`/
+  `.rightmove` bytes, additive on top of any keyboard input already present.
+- **Analog look** (look-stick, right by default) — writes the raw pitch/yaw
+  angle-delta accumulators directly, bypassing the mouse pipeline entirely (own
+  sensitivity, no mouse accel/filter inherited). Sensitivity, invert-Y, and an
+  ADS-zoom-aware slowdown curve are all configurable — see **Configuration** below.
+- **ADS look-slowdown** — look rate scales down while aiming, proportional to the
+  weapon's actual live zoom level (`effectiveFov/hipfireFov`, read-only — your real
+  field of view is never touched), so magnified optics don't feel absurdly twitchy.
+  Configurable strength, mathematically safe at any value (a power curve, not a
+  linear blend — the linear version could invert look direction at high strength on
+  deep zooms; fixed in v0.1.1).
+
+### Combat & interaction
+- **Fire** (RT), **Tactical**/**Lethal** (LB/RB), **Jump** (A).
+- **ADS** (LT) — true hold-to-aim via the real `+toggleads_throw` `kbutton_t`
+  KeyDown/KeyUp calls, not a toggle or a raw bit.
+- **Melee** (R3) — real melee kbutton, confirmed "100% knife" live.
+- **Reload** (X) — real, context-sensitive `kbutton_t`, found via memdiff; fires
+  instantly on press, unaffected by Interact's hold requirement below.
+- **Interact** (X, same physical button as Reload) — **requires a hold** (740ms by
+  default, configurable), not an instant tap: releasing before the threshold simply
+  does nothing (Interact doesn't fire — there's no fallback action on a quick tap).
+  Reload itself is completely unaffected by this: it's a separate real kbutton on
+  the same physical button, and always fires instantly regardless of the hold.
+- **Weapon switch** (Y) — real `weapnext` dispatch via the engine's own bind-index
+  jump table, found by live-reading the raw-keycode dispatch table for the actual
+  bound keys.
+- **D-pad** (all 4 directions) — real `+actionslot 1-4` dispatch, data-driven by
+  loadout (killstreaks/attachments/NVG-style toggles, whatever's actually equipped).
+
+### Stance & Sprint (real engine state, not our own tracked copy)
+- **Crouch/Prone stance ladder** (B) — a real 3-state ladder driving the game's own
+  native togglecrouch/toggleprone toggle directly (not a raw bit force), so it can
+  never desync from the engine's own state:
+
+  | Current stance | B tapped | B held |
+  |---|---|---|
+  | Standing | → Crouched | → Prone |
+  | Crouched | → Standing | → Prone |
+  | Prone | → Crouched | → Standing |
+
+  "Hold" fires the instant the press crosses the threshold (no need to release
+  first); "tap" only fires on release, and only if the hold threshold was never
+  reached during that press. Threshold is configurable (400ms default).
+- **Sprint** (L3) — real `pm_flags` bit, forced via a Pmove-entry hook; auto-stands
+  from crouch/prone first if needed, matching console. Includes a real
+  **stamina/cooldown state machine** (our own timer layer, since forcing the bit
+  natively bypasses the game's own limiter entirely):
+
+  | State | Behavior | Transitions to |
+  |---|---|---|
+  | Ready | Full stamina, sprint available | Sprinting (on L3 held) |
+  | Sprinting | Stamina drains continuously | Winded (stamina hits 0), Regenerating (L3 released early) |
+  | Winded | Sprint fully blocked for a fixed cooldown, independent of stamina float | Ready (cooldown timer expires, full refill) |
+  | Regenerating | Stamina refills while not sprinting | Ready (full) or Sprinting (L3 held again) |
+
+  4 seconds of continuous sprint to fully deplete, a real 2-second cooldown once
+  winded (both configurable) — not just a cosmetic meter, sprint is genuinely
+  blocked while on cooldown, decoupled from the stamina float itself (an earlier
+  version had a regen-flicker bug where continuous regen cleared the cooldown lock
+  almost instantly; fixed with a dedicated cooldown timer). Automatically bypassed
+  (genuinely unlimited sprint) when the real `player_sprintUnlimited` dvar is
+  live-set by specific missions. Real keyboard Shift-to-sprint is left completely
+  untouched by these hooks, regardless of whether a controller is connected or idle
+  (see Known Limitations for the k+m note, and Sprint's real kbutton search).
+
+### Menu & pause
 - **Start button** — opens **and closes** the pause menu via real engine calls (not a
   keypress emulation): the real hardcoded ESCAPE-key path for opening, and the same
   function's real "resume" case for closing, driven by a `WndProc` subclass hook so it
@@ -45,14 +95,59 @@ each release.
   forwards a real ESC keypress to it (the same real mechanism the engine's own key
   handler uses for ESC generically), backing out one level or closing it, on top of
   its normal crouch/prone role during gameplay.
-- **D-pad** (all 4 directions) — real `+actionslot 1-4` dispatch, data-driven by
-  loadout (killstreaks/attachments/NVG-style toggles, whatever's actually equipped).
 - **Survival ready-up** (hold Y ~740ms between waves) — the one deliberate, documented
   exception to this mod's native-only approach (see below); switches weapons instead if
   released before the threshold.
 - **Buy-station + pause interaction fix** — a real native bug (not ours) where using a
   buy station then pausing could permanently break all input (ours and real
   keyboard/mouse) until level reload; fixed by reinstating a rising-edge gate window.
+
+### Configuration & customization
+
+All of the tunable values above — plus button/stick layout — live in
+**`mw3ncp_config.ini`**, written next to the DLL the first time the mod runs (with
+every option pre-filled with its default value and a comment explaining it, so the
+file is self-documenting from the moment it appears — nothing to configure by hand
+to get started). Changes take effect on next launch; there's no live-reload yet, and
+no in-game options screen — this file is the interim way to tune the mod until
+native controller UI navigation exists.
+
+| Section | Key | Default | What it does |
+|---|---|---|---|
+| `[Look]` | `Sensitivity` | `250` | Look-stick turn rate, degrees/second at full deflection (not always the right stick — depends on `StickLayout` below) |
+| `[Look]` | `AdsSlowdownStrength` | `1.0` | ADS zoom-aware look slowdown strength (`0` = off, `1` = fully proportional to zoom, higher = more aggressive than proportional) |
+| `[Look]` | `InvertLook` | `0` | OG console "Invert Look" — flips vertical look |
+| `[Stance]` | `ProneHoldThresholdMs` | `400` | B: hold-vs-tap threshold for the stance ladder |
+| `[Interact]` | `HoldThresholdMs` | `740` | X: how long Interact must be held before it fires |
+| `[Survival]` | `ReadyUpHoldThresholdMs` | `740` | Y: hold-to-ready-up threshold between Survival waves |
+| `[Sprint]` | `MaxStaminaSeconds` | `4` | Seconds of continuous sprint before stamina depletes |
+| `[Sprint]` | `RegenSeconds` | `2` | Seconds not sprinting to fully recover from empty |
+| `[Bindings]` | `ButtonLayout` | `Default` | `Default` / `Tactical` / `Lefty` / `TacticalLefty` — see table below |
+| `[Bindings]` | `StickLayout` | `Default` | `Default` / `Southpaw` / `Legacy` / `LegacySouthpaw` — see table below |
+| `[Bindings]` | `FlipTriggers` | `0` | Independently swaps RT↔RB and LT↔LB, combining with whichever `ButtonLayout` is active |
+
+**Button layout presets** (reconstructed from the unchanged CoD4→MW2→MW3 console
+control scheme; ~90-95% confidence, not independently verified against real
+hardware — `TacticalLefty` in particular may need a correction pass):
+
+| Action | Default | Tactical | Lefty | TacticalLefty |
+|---|---|---|---|---|
+| Fire | RT | RT | LT | LT |
+| ADS | LT | LT | RT | RT |
+| Lethal | RB | RB | LB | LB |
+| Tactical | LB | LB | RB | RB |
+| Crouch/Prone | B | RS | B | LS |
+| Sprint | LS | LS | RS | RS |
+| Melee | RS | B | LS | B |
+
+**Stick layout presets:**
+
+| Layout | Left stick | Right stick |
+|---|---|---|
+| Default | Move | Look |
+| Southpaw | Look | Move |
+| Legacy | Forward/back + turn (horizontal) | Look up/down + strafe (horizontal) |
+| LegacySouthpaw | Look up/down + strafe (horizontal) | Forward/back + turn (horizontal) |
 
 ## Why native, not an emulator
 
