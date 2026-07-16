@@ -1472,3 +1472,43 @@ assist-blend logic, (2) evaluate getting an IW5 `.ff` unpacker working (communit
 tools like Wraith/Greyhound exist for later IW-engine titles; IW5/MW3 compatibility
 not yet confirmed) to pull the real `.graph` curve data instead of guessing at
 response curves from scratch.
+
+---
+
+## Sprint's real kbutton -- live memdiff run, strong candidate found but not yet actionable (2026-07-16)
+
+Following the corrected sprint-timer finding above (our own pm_flags-forcing masks
+the real timer from observation), went looking for the real sprint-engage trigger
+instead -- the same class of fix already used for ADS/Reload (drive the real
+`kbutton_t` KeyDown/KeyUp, not force a flag ourselves).
+
+**Real bind confirmed:** `players2/config.cfg`: `bind SHIFT "+breath_sprint"` --
+NOT `+sprint` (that name only showed up as a bind-ALIAS-EXPANSION target inside
+`FUN_0061f590`, mapping composite input names to real sub-commands, unrelated to
+sprint's actual trigger). `"+breath_sprint"`/`"-breath_sprint"` sit in a data table
+(`0x00929fc4`/`0x00929fc8`, 4 bytes apart) in the exact same layout as ADS's
+confirmed-real `"+toggleads_throw"`/`"-toggleads_throw"` pair -- strong static
+evidence sprint has a genuine dedicated kbutton.
+
+**Live memdiff** (real keyboard Shift, 18 press/release transitions, `tools/memdiff`)
+narrowed to 31 stable candidates, split into two behavioral groups:
+- Group A (`0x000AC202`-`0x000AC23A`): `held=0x00`, `released=`(varying) -- backwards
+  from a real "active" flag; the varying released-byte pattern looks like
+  coincidentally-timed counter/timestamp noise, not something semantically tied to
+  the key.
+- Group B (`0x02F88782`, `0x02F88783`, `0x02F88788`, `0x02F8879A`, `0x04A7F0F0`,
+  `0x04A7F0F1`): `held=nonzero`, `released=0x00` -- the exact pattern ADS's and
+  Reload's real kbutton "active" bytes already showed. This is the real lead.
+
+**Blocker:** the tool's automatic pointer scan found **no stable pointer path** to
+ANY of the 31 candidates (unlike ADS's/Reload's kbuttons, which lived at fixed,
+static addresses in the main data segment and needed no pointer chain at all).
+Group B's addresses (`0x02F8xxxx`, `0x04A7xxxx`) look like dynamic heap memory --
+plausible to correlate correctly for one play session, but not safely hardcodable
+the way a fixed data-segment address is, since heap layout isn't guaranteed
+consistent across launches.
+
+**Status:** real, live-confirmed behavioral match found (Group B), but not yet
+actionable for implementation. Next steps: a deeper/broader pointer-scan pass
+(wider region search, multiple indirection hops), or an x64dbg session tracing
+what actually allocates/writes that memory region to find a stable anchor point.
