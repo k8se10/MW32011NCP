@@ -167,7 +167,24 @@ void WriteDefaultConfig(const char* path)
         "StickLayout=%s\n"
         "; Independent toggle: swaps RT<->RB and LT<->LB (0 = off, 1 = on). Combines\n"
         "; with whichever ButtonLayout is active above.\n"
-        "FlipTriggers=%d\n",
+        "FlipTriggers=%d\n"
+        "\n"
+        "[AimAssist]\n"
+        "; Our own implementation (task #16) -- the native aim-assist chain turned out\n"
+        "; to be shared math bots use to aim at the player, not a player-facing feature,\n"
+        "; so this is built from scratch using real entity data plus our own curves.\n"
+        "; 0 = off, 1 = on.\n"
+        "Enabled=%d\n"
+        "; Max distance (world units) to a target for it to be considered at all.\n"
+        "Range=%g\n"
+        "; Half-angle (degrees) of the \"near crosshair\" cone a target must be within.\n"
+        "ConeDegrees=%g\n"
+        "; How much to slow the look-turn rate while the crosshair is near a valid\n"
+        "; target (rotational friction). 0 = no slowdown, 1 = strongest.\n"
+        "FrictionStrength=%g\n"
+        "; Max degrees/second the crosshair gets pulled toward a valid target\n"
+        "; (magnetism), independent of your own stick input.\n"
+        "MagnetismDegreesPerSecond=%g\n",
         g_modConfig.lookDegreesPerSecond,
         g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
@@ -179,7 +196,12 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.sprintRegenSeconds,
         ButtonLayoutName(g_modConfig.buttonLayout),
         StickLayoutName(g_modConfig.stickLayout),
-        g_modConfig.flipTriggers ? 1 : 0);
+        g_modConfig.flipTriggers ? 1 : 0,
+        g_modConfig.aimAssistEnabled ? 1 : 0,
+        g_modConfig.aimAssistRange,
+        g_modConfig.aimAssistConeDegrees,
+        g_modConfig.aimAssistFrictionStrength,
+        g_modConfig.aimAssistMagnetismDegreesPerSecond);
 
     fclose(f);
 }
@@ -292,21 +314,35 @@ void LoadModConfig()
     ReadButtonLayout(path, g_modConfig.buttonLayout);
     ReadStickLayout(path, g_modConfig.stickLayout);
     ReadBool(path, "Bindings", "FlipTriggers", g_modConfig.flipTriggers);
+    ReadBool(path, "AimAssist", "Enabled", g_modConfig.aimAssistEnabled);
+    ReadFloat(path, "AimAssist", "Range", g_modConfig.aimAssistRange);
+    if (g_modConfig.aimAssistRange < 0.0f) g_modConfig.aimAssistRange = 0.0f;
+    ReadFloat(path, "AimAssist", "ConeDegrees", g_modConfig.aimAssistConeDegrees);
+    if (g_modConfig.aimAssistConeDegrees < 0.0f) g_modConfig.aimAssistConeDegrees = 0.0f;
+    ReadFloat(path, "AimAssist", "FrictionStrength", g_modConfig.aimAssistFrictionStrength);
+    if (g_modConfig.aimAssistFrictionStrength < 0.0f) g_modConfig.aimAssistFrictionStrength = 0.0f;
+    ReadFloat(path, "AimAssist", "MagnetismDegreesPerSecond", g_modConfig.aimAssistMagnetismDegreesPerSecond);
+    if (g_modConfig.aimAssistMagnetismDegreesPerSecond < 0.0f) g_modConfig.aimAssistMagnetismDegreesPerSecond = 0.0f;
 
     g_buttonMap = ResolveButtonMap(g_modConfig.buttonLayout, g_modConfig.flipTriggers);
 
-    char buf[450];
+    char buf[600];
     sprintf_s(buf,
         "[config] loaded mw3ncp_config.ini: sensitivity=%g adsSlowdownStrength=%g "
         "adsSlowdownBaseline=%g invertLook=%d proneHoldMs=%lu interactHoldMs=%lu "
         "readyUpHoldMs=%lu sprintMax=%g "
-        "sprintRegen=%g buttonLayout=%s stickLayout=%s flipTriggers=%d",
+        "sprintRegen=%g buttonLayout=%s stickLayout=%s flipTriggers=%d "
+        "aimAssistEnabled=%d aimAssistRange=%g aimAssistConeDegrees=%g "
+        "aimAssistFrictionStrength=%g aimAssistMagnetismDps=%g",
         g_modConfig.lookDegreesPerSecond, g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
         g_modConfig.invertLook ? 1 : 0, g_modConfig.proneHoldThresholdMs,
         g_modConfig.interactHoldThresholdMs, g_modConfig.readyUpHoldThresholdMs,
         g_modConfig.sprintMaxStaminaSeconds, g_modConfig.sprintRegenSeconds,
         ButtonLayoutName(g_modConfig.buttonLayout), StickLayoutName(g_modConfig.stickLayout),
-        g_modConfig.flipTriggers ? 1 : 0);
+        g_modConfig.flipTriggers ? 1 : 0,
+        g_modConfig.aimAssistEnabled ? 1 : 0, g_modConfig.aimAssistRange,
+        g_modConfig.aimAssistConeDegrees, g_modConfig.aimAssistFrictionStrength,
+        g_modConfig.aimAssistMagnetismDegreesPerSecond);
     LogFromController(buf);
 }

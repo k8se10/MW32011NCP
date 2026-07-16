@@ -33,6 +33,14 @@ each release.
   noticeable effect on its own. Both configurable, mathematically safe at any value
   (a power curve, not a linear blend — the linear version could invert look direction
   at high strength on deep zooms; fixed in v0.1.1).
+- **Aim assist** (rotational friction + magnetism) — a from-scratch implementation,
+  not the game's native aim-assist system (which turned out to be shared math bots use
+  to aim *at* the player, not a player-facing feature — MW3 PC genuinely has no mouse
+  aim-assist). Built from real entity position/type data plus our own curve math (the
+  curve shape recovered from the game's own `aim_assist/view_input_0.graph` asset),
+  applied on top of the same look-angle globals controller look already writes to.
+  Fully configurable (range, cone angle, friction/magnetism strength) — see
+  **Configuration** below. **Newly added, not yet live-tested.**
 
 ### Combat & interaction
 - **Fire** (RT), **Tactical**/**Lethal** (LB/RB), **Jump** (A).
@@ -132,6 +140,11 @@ native controller UI navigation exists.
 | `[Bindings]` | `ButtonLayout` | `Default` | `Default` / `Tactical` / `Lefty` / `TacticalLefty` — see table below |
 | `[Bindings]` | `StickLayout` | `Default` | `Default` / `Southpaw` / `Legacy` / `LegacySouthpaw` — see table below |
 | `[Bindings]` | `FlipTriggers` | `0` | Independently swaps RT↔RB and LT↔LB, combining with whichever `ButtonLayout` is active |
+| `[AimAssist]` | `Enabled` | `1` | Our own from-scratch aim assist (see below) — `0` to disable entirely |
+| `[AimAssist]` | `Range` | `1200` | Max world-unit distance to a target for it to be considered at all |
+| `[AimAssist]` | `ConeDegrees` | `6` | Half-angle of the "near crosshair" cone a target must be within |
+| `[AimAssist]` | `FrictionStrength` | `0.6` | How much to slow the look-turn rate while the crosshair is near a valid target (`0` = no slowdown, `1` = strongest) |
+| `[AimAssist]` | `MagnetismDegreesPerSecond` | `40` | Max degrees/second the crosshair gets pulled toward a valid target, independent of stick input |
 
 **Button layout presets** (reconstructed from the unchanged CoD4→MW2→MW3 console
 control scheme; ~90-95% confidence, not independently verified against real

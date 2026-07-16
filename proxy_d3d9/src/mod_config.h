@@ -89,6 +89,17 @@ struct ModConfig
     ButtonLayout buttonLayout = ButtonLayout::Default;
     StickLayout stickLayout = StickLayout::Default;
     bool flipTriggers = false; // independent toggle: swaps RT<->RB and LT<->LB
+
+    // [AimAssist] (task #16) -- our own implementation, not the native chain (that
+    // turned out to be shared bot-aiming math, not a player-facing feature -- see
+    // re_notes/iw5sp.md). Built from real entity data (position, a live-traced
+    // type/state byte) plus our own targeting/curve math, applied directly onto the
+    // same kPitchAccum/kYawAccum globals our own look injection already writes.
+    bool aimAssistEnabled = true;
+    float aimAssistRange = 1200.0f;         // max world-unit distance to consider a target
+    float aimAssistConeDegrees = 6.0f;      // half-angle of the "near crosshair" cone
+    float aimAssistFrictionStrength = 0.6f; // 0 = no slowdown near a target, 1 = strongest
+    float aimAssistMagnetismDegreesPerSecond = 40.0f; // max pull-toward-target rate
 };
 
 // The loaded config, populated once by LoadModConfig(). Read-only after startup --

@@ -8,6 +8,19 @@ reverse-engineering trail behind each entry.
 
 ## Unreleased
 
+### Added
+- **First implementation of aim assist (rotational friction + magnetism, task #16).**
+  The native aim-assist system turned out to be shared math bots use to aim at the
+  player, not a player-facing feature (MW3 PC genuinely has no mouse aim-assist) — so
+  this is built entirely from scratch instead: real entity position/type data plus our
+  own targeting and curve math (the curve shape recovered from this game's own
+  `aim_assist/view_input_0.graph` asset), applied directly on top of the same look-angle
+  globals controller look already writes to. New `[AimAssist]` config section
+  (`Enabled`, `Range`, `ConeDegrees`, `FrictionStrength`,
+  `MagnetismDegreesPerSecond`). **Not yet live-tested** — sign conventions for the
+  target-angle math and the entity-type filter are based on static analysis; expect a
+  tuning pass, same as every other feature in this mod.
+
 ### Fixed
 - **B didn't exit the pause menu.** The ESC-forward logic (`InjectControllerMenuBack`)
   was only ever wired into the per-frame gameplay tick, which stops running entirely

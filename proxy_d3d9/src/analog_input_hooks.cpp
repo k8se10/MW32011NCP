@@ -1081,6 +1081,190 @@ float GetAdsLookRateScale()
 }
 } // namespace
 
+// ---- Aim assist: our own implementation, not the native chain (task #16) ----------
+//
+// The native aim-assist chain traced earlier this session (FUN_0057d7e0 ->
+// FUN_004a07a0 -> FUN_0055bac0 -> FUN_0055b9d0 -> FUN_0055b7d0) turned out to be
+// shared math bots use to aim AT the player, not a dormant player-facing feature --
+// MW3 PC genuinely has no mouse aim-assist, confirmed by the user. Reusing it for the
+// player's own aim would mean invoking bot-aiming logic in the wrong direction
+// entirely. Built from scratch instead, using real entity data found via static
+// analysis (re_notes/iw5sp.md) plus our own curve math, applied directly onto
+// kPitchAccum/kYawAccum below -- no native call chain needed for the actual
+// correction, only the entity data it's based on.
+//
+// Entity array: base 0x9ac010, stride 0x194 bytes, confirmed via disassembly of the
+// (bot-aiming) native chain and independently cross-validated via a second, float-
+// typed alias into the same array (DAT_009ac020) found in FUN_0055c650. Index 0 is
+// the local player (position and a type byte of 1 confirmed live, repeatably).
+// +0x10/+0x14/+0x18 = position (X/Y/Z floats). +0xcc = a per-entity type/state byte;
+// 0xd/0xf are the two values the native code sends through a tag/bone-lookup path
+// (used for animated/skeletal actors), while 0x49 is by far the most common value
+// elsewhere (static/dynamic props, not characters). Used here as a coarse "is this a
+// living AI actor" filter -- Survival has no neutral AI to exclude besides a co-op
+// partner, who would show up as type 1 like the local player, not 0xd/0xf, so this
+// filter should naturally exclude both self and any co-op partner without needing a
+// separate team field (which wasn't found this session -- see re_notes/iw5sp.md for
+// the full trail, including two live entity-type-byte polling sessions that came back
+// inconclusive before this static approach was settled on instead).
+namespace {
+constexpr uintptr_t kEntityArrayBase = 0x009ac010;
+constexpr size_t kEntityStride = 0x194;
+constexpr int kEntityCount = 64; // plenty for Survival's concurrent AI cap
+constexpr uintptr_t kEntityPosOffset = 0x10;
+constexpr uintptr_t kEntityTypeOffset = 0xcc;
+constexpr uintptr_t kInLevelFlagAddrForAimAssist = 0x00A98ACC; // same flag used elsewhere in this file
+
+struct Vec3 { float x, y, z; };
+
+Vec3 GetEntityPosition(int index)
+{
+    uintptr_t addr = kEntityArrayBase + static_cast<size_t>(index) * kEntityStride + kEntityPosOffset;
+    Vec3 v;
+    v.x = *reinterpret_cast<volatile float*>(addr);
+    v.y = *reinterpret_cast<volatile float*>(addr + 4);
+    v.z = *reinterpret_cast<volatile float*>(addr + 8);
+    return v;
+}
+
+uint8_t GetEntityType(int index)
+{
+    uintptr_t addr = kEntityArrayBase + static_cast<size_t>(index) * kEntityStride + kEntityTypeOffset;
+    return *reinterpret_cast<volatile uint8_t*>(addr);
+}
+
+bool IsAiActorType(uint8_t type)
+{
+    return type == 0x0d || type == 0x0f;
+}
+
+// Approximate eye-height offset by stance -- the real per-stance constants weren't
+// independently found this session (see re_notes/iw5sp.md). Only affects pitch
+// precision, and only by a small, distance-shrinking angular error, not yaw --
+// acceptable for a first pass; tune live if targets consistently aim slightly high/low.
+float EyeHeightForStance(int stance)
+{
+    switch (stance) {
+        case 1: return 40.0f;  // crouch
+        case 2: return 18.0f;  // prone
+        default: return 64.0f; // standing
+    }
+}
+
+float NormalizeDegrees(float deg)
+{
+    while (deg > 180.0f) deg -= 360.0f;
+    while (deg <= -180.0f) deg += 360.0f;
+    return deg;
+}
+
+// Real curve shape recovered from this game's own aim_assist/view_input_0.graph
+// (extracted via OpenAssetTools' Unlinker from code_post_gfx.ff -- re_notes/iw5sp.md),
+// the gentlest of the four real view_input graphs found there. A classic ease-in
+// response: gentle near 0, ramping up toward 1. Reused here as our own falloff shape
+// (input = normalized angular distance from crosshair, inverted so 0 = dead-on-target
+// = full strength) -- not because it's proven to be the "correct" application for
+// this exact purpose (the real graphs are stick-response curves, not confirmed to be
+// friction/magnetism-strength curves specifically), but because it's a genuine
+// console-authentic curve shape to build on rather than a guessed formula.
+constexpr float kCurveX[] = {
+    0.0000f, 0.1218f, 0.1972f, 0.2612f, 0.3244f, 0.3872f, 0.4543f, 0.5149f,
+    0.5723f, 0.6263f, 0.6771f, 0.7288f, 0.7781f, 0.8387f, 1.0000f
+};
+constexpr float kCurveY[] = {
+    0.0000f, 0.0171f, 0.0295f, 0.0451f, 0.0644f, 0.0897f, 0.1281f, 0.1729f,
+    0.2203f, 0.2771f, 0.3483f, 0.4296f, 0.5157f, 0.6301f, 1.0000f
+};
+constexpr int kCurvePoints = sizeof(kCurveX) / sizeof(kCurveX[0]);
+
+float EvaluateCurve(float x)
+{
+    if (x <= 0.0f) return 0.0f;
+    if (x >= 1.0f) return 1.0f;
+    for (int i = 1; i < kCurvePoints; ++i) {
+        if (x <= kCurveX[i]) {
+            float t = (x - kCurveX[i - 1]) / (kCurveX[i] - kCurveX[i - 1]);
+            return kCurveY[i - 1] + t * (kCurveY[i] - kCurveY[i - 1]);
+        }
+    }
+    return 1.0f;
+}
+
+struct AimAssistTarget
+{
+    bool valid = false;
+    float yawErrorDeg = 0.0f;
+    float pitchErrorDeg = 0.0f;
+    float angleErrorDeg = 0.0f; // combined, used for scoring and as the curve input
+};
+
+// Finds the best (smallest angular error) valid AI target within range/cone of the
+// current crosshair. Player world position comes from entity index 0 (confirmed live,
+// repeatably, to be the local player) plus an approximate stance-based eye height;
+// current view direction comes straight from kPitchAccum/kYawAccum, since those are
+// the real, always-current view angles in degrees (see the comment above their
+// declaration) -- no separate native view-origin/angle query needed.
+AimAssistTarget FindBestAimAssistTarget(float playerYawDeg, float playerPitchDeg)
+{
+    AimAssistTarget best;
+    if (!g_modConfig.aimAssistEnabled) return best;
+    if (*reinterpret_cast<volatile int32_t*>(kInLevelFlagAddrForAimAssist) <= 0) return best;
+
+    Vec3 playerPos = GetEntityPosition(0);
+    playerPos.z += EyeHeightForStance(GetRealStance());
+
+    float bestAngleError = g_modConfig.aimAssistConeDegrees;
+
+    for (int i = 1; i < kEntityCount; ++i) {
+        uint8_t type = GetEntityType(i);
+        if (!IsAiActorType(type)) continue;
+
+        Vec3 targetPos = GetEntityPosition(i);
+        float dx = targetPos.x - playerPos.x;
+        float dy = targetPos.y - playerPos.y;
+        float dz = targetPos.z - playerPos.z;
+
+        float horizDist = sqrtf(dx * dx + dy * dy);
+        float dist = sqrtf(dx * dx + dy * dy + dz * dz);
+        if (dist <= 1.0f || dist > g_modConfig.aimAssistRange) continue;
+
+        // Standard engine convention (yaw around Z, pitch relative to horizontal) --
+        // NOT independently re-verified for this exact computation. If targets pull
+        // the wrong direction on first live test, the fix is flipping this atan2's
+        // sign/argument order, not the overall approach -- same as every other sign
+        // convention in this file that got confirmed via real-hardware playtest
+        // rather than static analysis alone.
+        float targetYawDeg = atan2f(dy, dx) * (180.0f / 3.14159265f);
+        float targetPitchDeg = -atan2f(dz, horizDist) * (180.0f / 3.14159265f);
+
+        float yawErr = NormalizeDegrees(targetYawDeg - playerYawDeg);
+        float pitchErr = NormalizeDegrees(targetPitchDeg - playerPitchDeg);
+        float angleErr = sqrtf(yawErr * yawErr + pitchErr * pitchErr);
+
+        if (angleErr < bestAngleError) {
+            bestAngleError = angleErr;
+            best.valid = true;
+            best.yawErrorDeg = yawErr;
+            best.pitchErrorDeg = pitchErr;
+            best.angleErrorDeg = angleErr;
+        }
+    }
+
+    return best;
+}
+
+// [0,1] multiplier to scale the player's own look rate down when the crosshair is
+// near a valid target (rotational friction) -- 1.0 when no target is near, down
+// toward (1 - frictionStrength) exactly on target.
+float GetAimAssistFrictionScale(const AimAssistTarget& target)
+{
+    if (!target.valid || g_modConfig.aimAssistFrictionStrength <= 0.0f) return 1.0f;
+    float normalizedDist = target.angleErrorDeg / g_modConfig.aimAssistConeDegrees;
+    float curveOut = EvaluateCurve(1.0f - normalizedDist); // invert: closer = more friction
+    return 1.0f - g_modConfig.aimAssistFrictionStrength * curveOut;
+}
+} // namespace
+
 // "Look-stick" rather than a hardcoded "right stick" -- see InjectControllerMovement's
 // comment on RouteStickAxes/task #15's Stick Layout. Under the default layout this is
 // exactly the original right-stick-only behavior.
@@ -1092,18 +1276,39 @@ extern "C" void __cdecl InjectControllerLookAngles()
 
     float moveX, moveY, lookX, lookY;
     RouteStickAxes(leftX, leftY, rightX, rightY, g_modConfig.stickLayout, moveX, moveY, lookX, lookY);
-    if (lookX == 0.0f && lookY == 0.0f) return;
 
     float dt = Controller_DeltaTimeSeconds();
     if (dt <= 0.0f) return;
 
-    // Degrees per second at full stick deflection -- independent of every mouse cvar.
-    // g_modConfig.lookDegreesPerSecond ([Look] Sensitivity in mw3ncp_config.ini, task
-    // #14) rather than a hardcoded constant.
-    float rate = g_modConfig.lookDegreesPerSecond * GetAdsLookRateScale();
-    float pitchInput = g_modConfig.invertLook ? -lookY : lookY; // OG console "Invert Look"
-    *kYawAccum -= lookX * rate * dt;
-    *kPitchAccum -= pitchInput * rate * dt;
+    // Evaluated BEFORE this frame's own stick-based update below, against wherever
+    // the crosshair currently sits.
+    AimAssistTarget target = FindBestAimAssistTarget(*kYawAccum, *kPitchAccum);
+    float frictionScale = GetAimAssistFrictionScale(target);
+
+    if (lookX != 0.0f || lookY != 0.0f) {
+        // Degrees per second at full stick deflection -- independent of every mouse
+        // cvar. g_modConfig.lookDegreesPerSecond ([Look] Sensitivity in
+        // mw3ncp_config.ini, task #14) rather than a hardcoded constant.
+        float rate = g_modConfig.lookDegreesPerSecond * GetAdsLookRateScale() * frictionScale;
+        float pitchInput = g_modConfig.invertLook ? -lookY : lookY; // OG console "Invert Look"
+        *kYawAccum -= lookX * rate * dt;
+        *kPitchAccum -= pitchInput * rate * dt;
+    }
+
+    // Magnetism: a small, capped pull toward a valid target's exact angle, applied
+    // regardless of whether the stick moved this frame (matches real console assist
+    // continuing to hold you onto a target even while the stick is centered).
+    if (target.valid && g_modConfig.aimAssistMagnetismDegreesPerSecond > 0.0f) {
+        float maxStep = g_modConfig.aimAssistMagnetismDegreesPerSecond * dt;
+        float yawStep = target.yawErrorDeg;
+        if (yawStep > maxStep) yawStep = maxStep;
+        if (yawStep < -maxStep) yawStep = -maxStep;
+        float pitchStep = target.pitchErrorDeg;
+        if (pitchStep > maxStep) pitchStep = maxStep;
+        if (pitchStep < -maxStep) pitchStep = -maxStep;
+        *kYawAccum += yawStep;
+        *kPitchAccum += pitchStep;
+    }
 }
 
 // ---- Investigation record: Cbuf_AddText / Cmd_ExecuteString exist, but aren't the

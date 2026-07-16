@@ -1684,18 +1684,38 @@ zone is mostly wave/economy/HUD logic, not the actual AI-perception/entity-class
 code, which likely lives natively rather than in GSC anyway). Aim assist's target-
 validity question remains open per the status note below.
 
-**Status / next steps for aim assist:** (1) implement our own stick-response curve
-using the real `view_input_N.graph` shapes (pick one as a config default, expose the
-others or a strength parameter), (2) still need `+0xcc`'s real meaning for target
-validity -- static analysis and the entity-type-byte memory polling above didn't
-converge; either try a cleaner live-correlation method (e.g. cross-reference against
-`weapons/`-adjacent dumped defs, or find the entity-type ENUM meaning via more targeted
-disassembly of a function with clearer semantics) or ship a first version using a
-cruder filter (e.g. distance + FOV cone only, accepting some false positives on
-non-enemy props) and refine later, (3) confirm `+0x150`'s tag-handle actually resolves
-via `FUN_00421b20`/`FUN_0055b7d0` for a real in-game entity, (4) implement target
-acquisition + our own curve-based correction math, added onto `kPitchAccum`/
-`kYawAccum`, gated behind new config values, and live-tune.
+**First implementation landed, 2026-07-17 (`analog_input_hooks.cpp`, right before
+`InjectControllerLookAngles`), not yet live-tested.** Rather than keep chasing
+`+0xcc`'s exact semantics via live memory polling (two sessions of that were
+inconclusive -- see above), settled on the `0x0d`/`0x0f` values already confirmed by
+static analysis to route through the native tag/bone-lookup path (i.e., animated
+skeletal actors, not props) as the target-validity filter, on the reasoning that
+Survival has no neutral AI to exclude besides a co-op partner (who'd show up as type
+`1` like the local player, not `0xd`/`0xf`). Full pipeline:
+
+- `FindBestAimAssistTarget()`: entity index `0` = local player position (+ an
+  approximate stance-based eye-height offset -- real per-stance constants weren't
+  independently found, so this uses reasonable Quake/IW-derived approximations),
+  current view angle read straight from `kPitchAccum`/`kYawAccum` (confirmed to be the
+  real, always-current view angle in degrees, not just a per-frame delta -- see that
+  global's own declaration comment). Scans entities 1-63, filters to type `0xd`/`0xf`,
+  computes yaw/pitch error via `atan2`, tracks the smallest-angular-error candidate
+  within `[AimAssist] Range`/`ConeDegrees`.
+- `GetAimAssistFrictionScale()`: multiplies the look-rate scale (alongside the
+  existing ADS slowdown) using the real `view_input_0.graph` curve shape as a falloff,
+  0 = no target near crosshair, up to `FrictionStrength` at dead-on-target.
+- Magnetism: a capped (`MagnetismDegreesPerSecond`) pull of `kPitchAccum`/`kYawAccum`
+  toward the target's exact angle each frame, applied independently of stick input
+  (so it holds a target even while the stick is centered, like real console assist).
+
+**Known unknowns going into live testing** (flagged in code comments, not hidden):
+the yaw/pitch `atan2` sign convention was never independently confirmed against real
+hardware (if targets pull the wrong direction, the fix is flipping that math, not the
+overall approach); eye-height-by-stance is approximated, not RE'd; and the curve's
+application here (distance-to-target falloff) is a repurposing of a curve that's only
+confirmed to be a stick-response shape in the original game, not proven to be the
+"correct" application for this exact purpose. All standard territory for a first pass
+in this project -- expect a tuning round same as every other feature.
 
 ---
 
