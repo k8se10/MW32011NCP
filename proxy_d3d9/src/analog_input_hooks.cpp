@@ -140,6 +140,11 @@ constexpr DWORD kProneHoldThresholdMs = 400;
 // same value, not a second threshold.
 constexpr DWORD kReadyUpHoldThresholdMs = 740;
 
+// SP only ever has player 0. Moved up here (from its original spot near the weapnext
+// section) so it's declared before the ADS look-slowdown code's earlier use of it in
+// this file -- same constant, not a second one.
+constexpr int kLocalClientIndex = 0;
+
 enum class Stance { Standing, Crouched, Prone };
 Stance g_stance = Stance::Standing;
 DWORD g_crouchButtonPressStartMs = 0;
@@ -699,6 +704,92 @@ __declspec(naked) void Hook_00643ce0()
 float* const kPitchAccum = reinterpret_cast<float*>(0x00B36408);
 float* const kYawAccum = reinterpret_cast<float*>(0x00B3640C);
 
+// ---- ADS look-slowdown via live effective FOV (2026-07-16, task #12) --------------
+//
+// Bug reported after v0.1.0-prealpha: look feels far too sensitive while ADS,
+// especially on magnified scopes. Root cause confirmed via RE, NOT a native engine
+// gap: our own look injection above uses a single flat kLookDegreesPerSecond
+// regardless of ADS/zoom state -- it was never given any zoom awareness at all.
+//
+// Traced the real mouse pipeline (FUN_0057d7e0, sensitivity/m_pitch/m_yaw/
+// cl_mouseAccel) fully and confirmed it has NO ADS/zoom scaling either -- matches
+// the user's own research that OG MW3 never exposed (or apparently implemented, for
+// mouse) a distinct ADS sensitivity multiplier. So this isn't a matter of "inheriting"
+// something we skipped; the scaling genuinely has to be ours.
+//
+// Explicit design constraint from the user: do NOT touch real rendered FOV (cg_fov et
+// al.) to achieve this -- only READ the game's own live effective FOV as a zoom
+// SIGNAL, purely to scale our own independent look-rate. This keeps look input on the
+// same footing as the rest of this file's philosophy (see the comment above this
+// function on why look was deliberately moved OFF the mouse-cvar pipeline in the
+// first place: routing through real engine values as a dependency was previously
+// flagged as "mouse emulation under the hood," not a control we get to depend on
+// wholesale -- reading one piece of state as an input signal to our own curve is a
+// narrower, deliberate exception, not a reversion of that call).
+//
+// FUN_004b0580(playerIndex) confirmed via decompile+disasm to be the real, live
+// "compute this frame's effective FOV" function -- blends base FOV (cg_fov/cg_fov1)
+// toward the current weapon's real ADS zoom target (via FUN_004d4a70/FUN_004f6b70),
+// applies cg_fovScale's transition system (the same one set_lerp_fov/set_pip_fov/
+// set_turret_fov drive) and cg_fovNonVehAdd/cg_fovMin. Plain stack-int-arg, ST(0)
+// float10 return (confirmed via raw disassembly: PUSH/CALL, no custom register
+// convention) -- callable directly as an ordinary function pointer, no inline asm
+// needed, unlike this file's other non-cdecl engine calls. Read-only: this frame's
+// effective FOV is a pure query, no observed side effects in its disassembly.
+//
+// cg_fov itself (confirmed via reference scan: only ever written once, at its own
+// registration) never changes during ADS -- it stays the user's hipfire base value,
+// making it the correct "no zoom" baseline to compare the live effective FOV against.
+namespace {
+using GetEffectiveFovFn = double(__cdecl*)(int playerIndex);
+GetEffectiveFovFn const GetEffectiveFov = reinterpret_cast<GetEffectiveFovFn>(0x004b0580);
+
+// Raw dvar-value getter, float variant -- same Dvar_FindVar-equivalent as GetDvarInt
+// above, reading dvarPtr+0xc as a float instead of an int. Needed for cg_fov (a real
+// float-type dvar, per its own registration: FUN_004f9cc0("cg_fov", ...)).
+float GetDvarFloat(const char* name)
+{
+    constexpr uintptr_t kFindDvarFn = 0x0062abe0;
+    void* dvarPtr = nullptr;
+    __asm {
+        push edi
+        mov edi, name
+        mov eax, kFindDvarFn
+        call eax
+        mov dvarPtr, eax
+        pop edi
+    }
+    if (!dvarPtr) return 0.0f;
+    return *reinterpret_cast<float*>(reinterpret_cast<uintptr_t>(dvarPtr) + 0xc);
+}
+
+// How strongly the ADS look-slowdown applies: 0.0 = off (flat rate regardless of
+// zoom), 1.0 = fully proportional to the live FOV ratio (closest to real console
+// feel). Hardcoded at full strength for now -- task #14's config file is where this
+// becomes a real user-facing slider, not a constant here.
+constexpr float kAdsSlowdownStrength = 1.0f;
+
+// Computes the ADS look-rate scale factor for this frame: 1.0 when not aiming (or
+// strength is 0), otherwise the live effective-FOV/hipfire-FOV ratio (< 1.0 when
+// zoomed in), blended toward 1.0 by (1 - kAdsSlowdownStrength). Weapon-agnostic by
+// construction -- works for every scope/attachment, including future DLC weapons,
+// since it reads the game's own already-computed zoom state rather than classifying
+// weapon/attachment IDs ourselves.
+float GetAdsLookRateScale()
+{
+    if (!g_adsHeld || kAdsSlowdownStrength <= 0.0f) return 1.0f;
+
+    float baseFov = GetDvarFloat("cg_fov");
+    if (baseFov <= 0.0f) return 1.0f;
+
+    float effectiveFov = static_cast<float>(GetEffectiveFov(kLocalClientIndex));
+    if (effectiveFov <= 0.0f) return 1.0f;
+
+    float ratio = effectiveFov / baseFov;
+    return 1.0f - kAdsSlowdownStrength * (1.0f - ratio);
+}
+} // namespace
+
 extern "C" void __cdecl InjectControllerLookAngles()
 {
     float rx, ry;
@@ -713,8 +804,9 @@ extern "C" void __cdecl InjectControllerLookAngles()
     // sensitivity setting belongs, not a hardcoded constant here.
     constexpr float kLookDegreesPerSecond = 250.0f;
 
-    *kYawAccum -= rx * kLookDegreesPerSecond * dt;
-    *kPitchAccum -= ry * kLookDegreesPerSecond * dt;
+    float rate = kLookDegreesPerSecond * GetAdsLookRateScale();
+    *kYawAccum -= rx * rate * dt;
+    *kPitchAccum -= ry * rate * dt;
 }
 
 // ---- Investigation record: Cbuf_AddText / Cmd_ExecuteString exist, but aren't the
@@ -739,7 +831,6 @@ extern "C" void __cdecl InjectControllerLookAngles()
 // re_notes/known_issues.md issue #2 for the full trace.
 
 namespace {
-constexpr int kLocalClientIndex = 0; // SP only ever has player 0
 constexpr unsigned short kXI_START = 0x0010;
 bool g_startHeld = false;
 } // namespace
