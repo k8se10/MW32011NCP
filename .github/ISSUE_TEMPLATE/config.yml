@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Contributing guide
+    url: https://github.com/k8se10/MW32011NCP/blob/main/CONTRIBUTING.md
+    about: Read this before opening an issue for a new hook target, MP work, or a new input-emulation exception.

@@ -1,0 +1,84 @@
+name: Bug report
+description: Something didn't work right (crash, wrong input behavior, stuck state, etc.)
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. This mod hooks a live game process, so
+        crashes matter a lot more here than in most projects — as much repro
+        detail as you can give helps a lot.
+
+  - type: dropdown
+    id: binary
+    attributes:
+      label: Which binary?
+      options:
+        - iw5sp.exe (Campaign/Survival)
+        - iw5mp.exe (Multiplayer) — note: not supported yet, see README
+    validations:
+      required: true
+
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Which mode?
+      options:
+        - Campaign
+        - Survival
+        - Multiplayer
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Mod version
+      description: The release/tag you're using (e.g. v0.1.1), or a commit hash if built from source.
+      placeholder: v0.1.1
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: As specific as you can — what you pressed, what mission/wave, etc.
+    validations:
+      required: false
+
+  - type: textarea
+    id: log
+    attributes:
+      label: proxy_d3d9.log contents
+      description: |
+        Paste the contents of `proxy_d3d9.log` from your game install folder,
+        especially if the game crashed or got stuck. This is the single most
+        useful thing you can attach.
+      render: text
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I'm on the latest release (or a recent commit, if built from source)
+          required: false
+        - label: I've included proxy_d3d9.log, if the issue involved a crash or stuck input
+          required: false
