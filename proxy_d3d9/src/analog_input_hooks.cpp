@@ -872,6 +872,28 @@ float GetAdsLookRateScale()
     if (effectiveFov <= 0.0f) return 1.0f;
 
     float ratio = effectiveFov / baseFov;
+
+    // BUG FIX (live-confirmed 2026-07-16): ACOG's 2x toggle inverted left/right AND
+    // made slowdown far too strong at the same time -- both point at `ratio` coming
+    // back negative/near-zero for that specific weapon mode. Traced via decompile:
+    // FUN_004b0580 has TWO different internal paths depending on a per-weapon "alt
+    // scope toggle" flag (DAT_00984b9c bit 2) -- most weapons take the lerp path
+    // (cg_fov/cg_fov1 blended toward a real target FOV, safely comparable to
+    // baseFov), but weapons with a hybrid/alt-toggle reticle (exactly ACOG's 2x
+    // switchable mode) instead call FUN_004f6b70 directly, which returns a PRODUCT of
+    // several weapon-struct fields and multiple trig-like FUN_0064be20 calls -- not a
+    // plain degrees-FOV at all, and not necessarily even positive. (A second
+    // possibility, not ruled out: that path's heavier float10/x87 arithmetic could
+    // also leave the FPU stack at a different depth than GetEffectiveFov's simple
+    // double-return calling convention expects, corrupting the read for that one
+    // code path specifically -- either way, the fix below is the same.) Rather than
+    // trust an implausible ratio, clamp to a sane real-world zoom range: never
+    // negative (no inversion possible), never near-zero (no near-total slowdown),
+    // never absurdly large. Worst case for an affected weapon/mode is a less
+    // precisely-tuned slowdown that frame, never an inverted or runaway look rate.
+    if (ratio < 0.1f) ratio = 0.1f;
+    if (ratio > 1.5f) ratio = 1.5f;
+
     return 1.0f - g_modConfig.adsSlowdownStrength * (1.0f - ratio);
 }
 } // namespace
