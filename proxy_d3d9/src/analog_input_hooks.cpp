@@ -133,6 +133,13 @@ constexpr unsigned char kTriggerThresholdFire = 30; // XInput's documented trigg
 // hardcoded constant here.
 constexpr DWORD kProneHoldThresholdMs = 400;
 
+// Shared hold-threshold, also reused by Survival's ready-up hold (further down, near
+// Y's ready-up section) and by Interact's hold-to-interact gate below. Moved up here
+// (rather than staying local to the ready-up section it was first added for) purely so
+// it's declared before Interact's earlier use of it in this file -- same constant,
+// same value, not a second threshold.
+constexpr DWORD kReadyUpHoldThresholdMs = 740;
+
 enum class Stance { Standing, Crouched, Prone };
 Stance g_stance = Stance::Standing;
 DWORD g_crouchButtonPressStartMs = 0;
@@ -166,6 +173,19 @@ void LogStanceDiag(const char* tag)
               tag, static_cast<int>(g_stance), realByte, GetTickCount());
     LogFromController(buf);
 }
+
+// ---- Interact: hold-to-interact, not instant-on-tap (2026-07-16) -------------------
+//
+// User feedback after v0.1.0-prealpha: Interact should require a hold, not fire the
+// instant X is pressed. Reusing the same hold threshold already tuned for the Survival
+// ready-up hold (kReadyUpHoldThresholdMs, 740ms, defined further down near Y's ready-up
+// section) per explicit direction ("same timing as the F5 replacement would work
+// fine"). Scoped ONLY to the raw usercmd Interact bit (0x8) below -- Reload
+// (InjectControllerReload, a separate real kbutton on the same physical X button) is
+// untouched and still fires instantly on press/release, since reload isn't the thing
+// that was asked to require a hold.
+DWORD g_interactPressStartMs = 0;
+bool g_interactButtonWasHeld = false;
 }
 
 extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
@@ -185,10 +205,21 @@ extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
     bool fireHeld = rightTrigger >= kTriggerThresholdFire;
     if (fireHeld) out |= 0x1;                                   // Fire (+attack)
     if (xiButtons & kXI_RIGHT_THUMB) out |= 0x4;                // Melee
-    if (xiButtons & kXI_X) out |= 0x8;                          // Interact -- Reload still unresolved, see re_notes/iw5sp.md
     if (xiButtons & kXI_LEFT_SHOULDER) out |= 0x8000;           // Tactical (smoke)
     if (xiButtons & kXI_RIGHT_SHOULDER) out |= 0x4000;          // Lethal (frag)
     if (xiButtons & kXI_A) out |= 0x400;                        // Jump (+gostand)
+
+    // Interact (0x8): hold-to-interact, not instant-on-tap -- see the comment on
+    // g_interactPressStartMs above. Reload (a separate real kbutton, same physical X
+    // button) is unaffected and still fires instantly; see InjectControllerReload.
+    bool xHeld = (xiButtons & kXI_X) != 0;
+    if (xHeld && !g_interactButtonWasHeld) {
+        g_interactPressStartMs = GetTickCount();
+    }
+    if (xHeld && (GetTickCount() - g_interactPressStartMs) >= kReadyUpHoldThresholdMs) {
+        out |= 0x8;
+    }
+    g_interactButtonWasHeld = xHeld;
 
     {
         static bool s_fireHeldForDiag = false;
@@ -771,7 +802,8 @@ namespace {
 using GetDvarStringFn = const char*(__cdecl*)(const char*);
 GetDvarStringFn const GetDvarString = reinterpret_cast<GetDvarStringFn>(0x00498ec0);
 extern "C" HWND GetGameWindow(); // defined in d3d9_hook.cpp
-constexpr DWORD kReadyUpHoldThresholdMs = 740;
+// kReadyUpHoldThresholdMs is now declared near kProneHoldThresholdMs, top of file --
+// shared with Interact's hold-to-interact gate.
 // The between-wave break is live gameplay, not a frozen/weapons-disabled wait (unlike
 // the OTHER, wrong "+gostand" system's freezecontrols wait tried earlier) -- weapons
 // stay usable so you can move/shoot/shop freely. That means firing weapnext on Y's
