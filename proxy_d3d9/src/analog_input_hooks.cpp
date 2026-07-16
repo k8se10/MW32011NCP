@@ -60,6 +60,11 @@ constexpr unsigned short kXI_X = 0x4000;
 constexpr unsigned short kXI_Y = 0x8000;
 constexpr unsigned char kTriggerThresholdFire = 30; // XInput's documented trigger threshold
 
+// SP only ever has player 0. Declared this early so every function in the file
+// (including the ToggleStance/GetRealStance helpers right below) can use it without
+// a forward-declaration.
+constexpr int kLocalClientIndex = 0;
+
 // task #15: resolves a logical action's PhysicalInput (from g_buttonMap, itself
 // resolved from the active ButtonLayout + FlipTriggers) down to an actual XInput
 // button-bit/trigger check. Every Inject* function below should read its physical
@@ -113,6 +118,59 @@ void RouteStickAxes(float leftX, float leftY, float rightX, float rightY, StickL
             moveX = leftX;  moveY = leftY;
             lookX = rightX; lookY = rightY;
             break;
+    }
+}
+
+// ---- Real togglecrouch/toggleprone -- FUN_0057d2c0 (2026-07-16) -------------------
+//
+// Found via the SAME technique already proven for weapnext/D-pad: live-read the real
+// raw-keycode dispatch table (formula: value = *(int32_t*)(0xA98E4C + keyCode*12))
+// for the actual keys bound to togglecrouch/toggleprone (players2/config.cfg: C ->
+// togglecrouch, CTRL -> toggleprone). C (0x43) reads case 0x48; the game's internal
+// keycode for CTRL (0x9F, NOT Windows' VK_CONTROL=0x11 -- this table uses the
+// engine's own Quake-derived key enum, confirmed the hard way during the earlier F5
+// hunt) reads case 0x49. Both dispatch to this SAME function, `FUN_0057d2c0(playerIndex,
+// mode)` -- confirmed via raw disassembly to be a genuine __fastcall (ECX=playerIndex,
+// EDX=mode, no custom register convention needed):
+//
+//   EAX = playerIndex * 0x230
+//   if (byte[EAX + 0xA98CA0] != 0) return;      // guard 1 (unknown gate, e.g. vehicle/menu)
+//   if (byte[EAX + 0xA98BC4] != 0) return;      // guard 2 (same class of gate)
+//   ECX = &DAT_00B363B0 + playerIndex*0xBE5C
+//   current = *(int*)(ECX + 0x1C)
+//   *(int*)(ECX + 0x1C) = (current != mode) ? mode : 0;   // genuine toggle
+//
+// This is a REAL toggle between 0 (standing) and `mode` (1 = crouch, 2 = prone) --
+// and it already implements this mod's entire desired stance ladder natively:
+// Standing+togglecrouch->Crouched, Crouched+togglecrouch->Standing,
+// Crouched+toggleprone->Prone (2!=1), Prone+toggleprone->Standing (2==2),
+// Prone+togglecrouch->Crouched (2!=1). No separate state machine needed on our side
+// at all -- READ this same field live for "what's the current real stance" instead
+// of tracking our own parallel copy, and call this function on tap/hold transitions
+// instead of computing+asserting the ladder ourselves.
+//
+// This replaces the previous design (own g_stance enum + per-frame raw usercmd-bit
+// forcing), which was live-suspected of FIGHTING this exact real toggle state: the
+// user found real keyboard Ctrl could recover a stuck-prone Campaign session that
+// neither our B button nor Sprint could -- strong evidence our own bit-forcing was
+// overriding/conflicting with this authoritative field rather than reading it.
+using ToggleStanceFn = void(__fastcall*)(int playerIndex, unsigned int mode);
+ToggleStanceFn const ToggleStance = reinterpret_cast<ToggleStanceFn>(0x0057d2c0);
+constexpr uintptr_t kRealStanceFieldAddr = 0xB363CC; // player 0 (SP-only, stride*0 offset)
+
+int GetRealStance()
+{
+    return *reinterpret_cast<volatile int*>(kRealStanceFieldAddr);
+}
+
+// Brings the real stance back to Standing (0) from whatever it currently is, by
+// calling ToggleStance with the mode that EQUALS the current value (per the toggle
+// logic above, current==mode always resolves to 0) -- a no-op if already standing.
+void ForceStandingViaRealToggle()
+{
+    int current = GetRealStance();
+    if (current == 1 || current == 2) {
+        ToggleStance(kLocalClientIndex, static_cast<unsigned int>(current));
     }
 }
 } // namespace
@@ -177,11 +235,13 @@ extern "C" void __cdecl InjectControllerMovement(unsigned char* cmd)
 //   LB -> Tactical (smoke) -- moved here off D-pad Left
 //   RB -> Lethal (frag) -- moved here off D-pad Down
 //   B -> Crouch/Prone stance button, real Xbox 360 CoD semantics (user-specified,
-//        2026-07-14): a 3-state ladder (Standing / Crouched / Prone) tracked in our
-//        own g_stance, not a raw hold of either bit. Both 0x200 (crouch) and 0x100
-//        (+actionslot2, prone) are hold-state bits at the engine level, so we assert
-//        whichever one matches the current g_stance every frame, independent of
-//        whether B is currently physically held:
+//        2026-07-14): a 3-state ladder (Standing / Crouched / Prone). Originally
+//        tracked via our own g_stance enum + per-frame raw usercmd-bit forcing;
+//        replaced 2026-07-16 (see the ToggleStance/GetRealStance comment further up)
+//        with calls to the REAL togglecrouch/toggleprone toggle (FUN_0057d2c0) on
+//        tap/hold, and a live read of the real stance field for the per-frame bit
+//        assertion Pmove still needs -- the ladder below is implemented natively by
+//        that real toggle's own semantics, not computed by us:
 //          Standing + tap  -> Crouched
 //          Standing + hold -> Prone
 //          Crouched + tap  -> Standing
@@ -219,13 +279,6 @@ namespace {
 // and sprint stamina/regen all now come from g_modConfig (task #14, mw3ncp_config.ini)
 // instead of being hardcoded here -- see mod_config.h for the full list and defaults.
 
-// SP only ever has player 0. Moved up here (from its original spot near the weapnext
-// section) so it's declared before the ADS look-slowdown code's earlier use of it in
-// this file -- same constant, not a second one.
-constexpr int kLocalClientIndex = 0;
-
-enum class Stance { Standing, Crouched, Prone };
-Stance g_stance = Stance::Standing;
 DWORD g_crouchButtonPressStartMs = 0;
 bool g_crouchButtonWasHeld = false;
 bool g_holdActionConsumed = false; // true once this press has already fired its hold action
@@ -240,21 +293,19 @@ bool g_holdActionConsumed = false; // true once this press has already fired its
 // killstreak-type D-pad select -- REJECTED: real console MW3 doesn't force standing to
 // use a killstreak prone, so that changed behavior instead of fixing a bug. Reverted.
 //
-// This logs g_stance (ours) alongside the real native per-player stance byte
-// (&DAT_00b363b0 + playerIndex*0xbe5c, the same memory FUN_00438710's cases 0x3b/0x4c/
-// 0x4d toggle/clear) on every stance transition, on every D-pad press, and on a ~500ms
-// heartbeat regardless of input -- so a real repro produces a timeline showing exactly
-// when/how the two diverge, without needing to already know the missile-cam's own
-// entry/exit flag. Once a repro log is captured, this can be trimmed back down.
-constexpr uintptr_t kRealStanceByteAddr = 0x00b363b0; // player 0 (SP-only, stride*0 offset)
+// Logs the REAL native stance field (GetRealStance(), &DAT_00B363B0+0x1C -- see the
+// ToggleStance/GetRealStance comment above) on every stance transition, every D-pad
+// press, and a ~500ms heartbeat. Originally this watched &DAT_00b363b0+0x0 (the
+// struct's base address) rather than +0x1c, the actual field FUN_0057d2c0 reads/
+// writes -- fixed now that the real field's exact offset is confirmed via
+// disassembly, rather than guessed at.
 DWORD g_lastStanceDiagLogMs = 0;
 
 void LogStanceDiag(const char* tag)
 {
-    uint8_t realByte = *reinterpret_cast<volatile uint8_t*>(kRealStanceByteAddr);
     char buf[160];
-    sprintf_s(buf, "[stance-diag] %s g_stance=%d realStanceByte=0x%02x t=%lu",
-              tag, static_cast<int>(g_stance), realByte, GetTickCount());
+    sprintf_s(buf, "[stance-diag] %s realStance=%d t=%lu",
+              tag, GetRealStance(), GetTickCount());
     LogFromController(buf);
 }
 
@@ -316,6 +367,17 @@ extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
         }
     }
 
+    // Crouch/Prone (B): drives the REAL togglecrouch/toggleprone toggle
+    // (ToggleStance/FUN_0057d2c0, see the comment above GetRealStance) on tap/hold
+    // transitions, instead of computing our own stance and forcing a usercmd bit
+    // every frame. That older design is what the user's own live testing pointed at
+    // as fighting the real engine's own stance state (a stuck-prone Campaign session
+    // that neither our B nor Sprint could recover, but real keyboard Ctrl could) --
+    // this drives the SAME real toggle a keyboard press does, so there's no separate
+    // state left to desync from it. The real toggle's own semantics already implement
+    // this mod's whole desired ladder (see the ToggleStance comment for the full
+    // per-transition proof), so no ladder logic is needed here beyond hold-vs-tap
+    // detection.
     bool bHeld = IsPhysicalHeld(g_buttonMap.crouchProne, xiButtons, leftTrigger, rightTrigger);
     if (bHeld && !g_crouchButtonWasHeld) {
         // Rising edge: new press starting.
@@ -325,27 +387,27 @@ extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
     if (bHeld && !g_holdActionConsumed) {
         DWORD heldMs = GetTickCount() - g_crouchButtonPressStartMs;
         if (heldMs >= g_modConfig.proneHoldThresholdMs) {
-            // Hold action fires once, the instant the threshold is crossed: Prone
-            // reverses back to Standing, anything else goes to Prone.
-            g_stance = (g_stance == Stance::Prone) ? Stance::Standing : Stance::Prone;
+            // Hold action fires once, the instant the threshold is crossed.
+            ToggleStance(kLocalClientIndex, 2); // toggleprone
             g_holdActionConsumed = true;
             LogStanceDiag("hold-fire");
         }
     }
     if (!bHeld && g_crouchButtonWasHeld && !g_holdActionConsumed) {
         // Falling edge and the hold threshold was never reached -- this was a tap.
-        switch (g_stance) {
-            case Stance::Standing: g_stance = Stance::Crouched; break;
-            case Stance::Crouched: g_stance = Stance::Standing; break;
-            case Stance::Prone:    g_stance = Stance::Crouched; break;
-        }
+        ToggleStance(kLocalClientIndex, 1); // togglecrouch
         LogStanceDiag("tap-fire");
     }
     g_crouchButtonWasHeld = bHeld;
 
-    switch (g_stance) {
-        case Stance::Crouched: out |= 0x200u; break;
-        case Stance::Prone:    out |= 0x100u; break;
+    // Per-frame usercmd bit assertion still needed for actual Pmove movement/
+    // collision behavior -- but now reads the REAL stance field live every frame
+    // (GetRealStance()) instead of our own tracked copy, so it can never desync from
+    // whatever the authoritative value currently is, even if something else in the
+    // engine (e.g. a killstreak's own internal state changes) touches it directly.
+    switch (GetRealStance()) {
+        case 1: out |= 0x200u; break; // crouch
+        case 2: out |= 0x100u; break; // prone
         default: break;
     }
 
@@ -624,8 +686,8 @@ int GetDvarInt(const char* name)
 
 bool IsSprintActive()
 {
-    if (GetDvarInt("player_sprintUnlimited") != 0) return g_sprintHeld && g_stance == Stance::Standing;
-    return g_sprintHeld && g_stance == Stance::Standing && !g_sprintWinded;
+    if (GetDvarInt("player_sprintUnlimited") != 0) return g_sprintHeld && GetRealStance() == 0;
+    return g_sprintHeld && GetRealStance() == 0 && !g_sprintWinded;
 }
 } // namespace
 
@@ -636,13 +698,13 @@ extern "C" void __cdecl InjectControllerSprint()
     if (!Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger)) return;
 
     bool held = IsPhysicalHeld(g_buttonMap.sprint, buttons, leftTrigger, rightTrigger);
-    if (held && !g_sprintHeld && g_stance != Stance::Standing) {
+    if (held && !g_sprintHeld && GetRealStance() != 0) {
         // Rising edge while crouched/prone: real console sprint stands the player back
-        // up to full upright first, same as pressing forward while ducked/prone does --
-        // forcing the pm_flags bit alone doesn't touch our own stance state at all, so
-        // without this, sprint would just run while still crouched/prone (bug found
-        // 2026-07-15).
-        g_stance = Stance::Standing;
+        // up to full upright first, same as pressing forward while ducked/prone does.
+        // Drives the same real toggle B does now (ForceStandingViaRealToggle), not our
+        // own tracked stance -- without this, sprint would just run while still
+        // crouched/prone (bug found 2026-07-15).
+        ForceStandingViaRealToggle();
     }
     g_sprintHeld = held;
 
@@ -671,7 +733,7 @@ extern "C" void __cdecl InjectControllerSprint()
                 g_sprintWinded = false;
                 g_sprintStamina = g_modConfig.sprintMaxStaminaSeconds; // full refill once cooldown clears
             }
-        } else if (g_sprintHeld && g_stance == Stance::Standing) {
+        } else if (g_sprintHeld && GetRealStance() == 0) {
             g_sprintStamina -= dt;
             if (g_sprintStamina <= 0.0f) {
                 g_sprintStamina = 0.0f;
@@ -1266,26 +1328,33 @@ bool g_dpadHeld[4] = { false, false, false, false };
 // via FindCallers.java) and neither is invoked anywhere in this file -- so this is a
 // different bug, not a recurrence of that one, despite the identical symptom.
 //
-// Working theory, NOT yet confirmed live: InjectControllerButtons (above) unconditionally
-// re-asserts g_stance's usercmd bit (0x100/0x200) every single frame regardless of what
-// else the game is doing -- the same general failure pattern as the earlier buy-
-// station+pause bug (known_issues.md issue #1: forcing a bit continuously, ignoring
-// context, breaks a native subsystem's own state transition). Predator missile is used
-// like a "weapon" (select via D-pad, then fire) that puts the local player into a
-// scripted missile-cam sequence; if the player is prone when that sequence starts, our
-// hook may keep forcing the prone bit through it and through the exit transition.
+// Working theory, PARTIALLY CONFIRMED live (2026-07-16): InjectControllerButtons used
+// to unconditionally re-assert our OWN tracked g_stance's usercmd bit (0x100/0x200)
+// every single frame regardless of what else the game was doing -- the same general
+// failure pattern as the earlier buy-station+pause bug (known_issues.md issue #1:
+// forcing a bit continuously, ignoring context, breaks a native subsystem's own state
+// transition). Predator missile is used like a "weapon" (select via D-pad, then fire)
+// that puts the local player into a scripted missile-cam sequence; if the player was
+// prone when that sequence started, that old per-frame forcing could keep fighting the
+// prone bit through it and through the exit transition.
 //
 // A first attempt fixed this by auto-standing before a killstreak-type D-pad select
 // (mirroring Sprint's own "auto-stand from crouch/prone first" precedent above) --
 // REJECTED by the user: real console MW3 does NOT force you to stand to use a
 // killstreak while prone, so that "fix" would have broken behavior parity with the
 // original game to paper over a bug, which fails this project's console-parity bar.
-// Reverted. The real fix needs to identify what's actually different about the missile-
-// cam's entry/exit sequence when the player is prone, via live diagnostic logging
-// (g_stance transitions + the real native stance byte, &DAT_00b363b0 + player*0xbe5c,
-// across a real repro), not a change to normal stance behavior -- log-only
-// instrumentation for exactly this is now in place (LogStanceDiag, defined above near
-// InjectControllerButtons; also logs a D-pad-press event below). See task #10.
+// Reverted.
+//
+// Independently, a SEPARATE live repro (a stuck-prone Campaign session B/Sprint
+// couldn't recover, but real keyboard Ctrl could) confirmed our own g_stance-based
+// bit-forcing WAS fighting the real engine's own stance field rather than reading it
+// -- B/Sprint have since been rewired (see ToggleStance/GetRealStance above) to call
+// the real togglecrouch/toggleprone toggle and read the real stance field live every
+// frame, instead of tracking a separate copy that could desync. This may well have
+// fixed this exact bug as a side effect, since the specific mechanism (our own stale
+// bit fighting a real state change mid-sequence) no longer exists -- but that hasn't
+// been confirmed against an actual Predator-missile-while-prone repro yet. LogStanceDiag
+// (now reading the real field directly) is still in place for that retest. See task #10.
 extern "C" void __cdecl InjectControllerDpad()
 {
     unsigned short buttons;
