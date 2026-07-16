@@ -55,14 +55,28 @@ struct ModConfig
 {
     // [Look]
     float lookDegreesPerSecond = 250.0f;   // right-stick turn rate at full deflection
-    float adsSlowdownStrength = 1.0f;      // 0 = off, 1 = fully proportional to live zoom
+    float adsSlowdownStrength = 1.75f;     // 0 = off, 1 = fully proportional to live zoom;
+                                            // 1.75 confirmed live to feel closer to real
+                                            // console controller CoD than exactly 1.0
+                                            // (1.5 was tried first and improved on, too)
+    float adsSlowdownBaseline = 0.65f;     // multiplied on top of the zoom-proportional
+                                            // curve above -- without this, low-zoom optics
+                                            // (ratio close to 1.0) got almost no slowdown
+                                            // at all regardless of strength, since
+                                            // ratio^strength stays near 1 when ratio does.
+                                            // 0.65 confirmed live better than an initial
+                                            // 0.85 -- more slowdown even on minimal zoom.
+                                            // 1.0 = no baseline effect (old behavior);
+                                            // lower = more slowdown even with minimal zoom.
     bool invertLook = false;               // OG console "Invert Look" -- flips vertical look
 
     // [Stance]
     unsigned long proneHoldThresholdMs = 400; // B: hold vs. tap threshold
 
     // [Interact]
-    unsigned long interactHoldThresholdMs = 740; // X: hold-to-interact threshold
+    unsigned long interactHoldThresholdMs = 300; // X: hold-to-interact threshold;
+                                                  // 300 confirmed live to feel better
+                                                  // than the original 740 default
 
     // [Survival]
     unsigned long readyUpHoldThresholdMs = 740; // Y: hold-to-ready-up threshold (Survival only)

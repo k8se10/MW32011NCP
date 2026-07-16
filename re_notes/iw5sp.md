@@ -1441,37 +1441,111 @@ generic "aim" terms) found `"AimAssist_GetTagPos: Cannot find tag [%s] on entity
 dedicated native aim-assist subsystem exists (this project's confirmed end-goal per
 `CLAUDE.md`, previously not started).
 
-**`FUN_0055b7d0`** (`AimAssist_GetTagPos`-equivalent): looks up a body tag position
-(tag ID read from `+0x150` on the calling context) on a target entity -- consistent
-with real console-style aim assist pulling toward a specific body tag (e.g. the
-`j_spine4`/`j_head`-style tags already seen in the GSC entity-field name table, see
-the earlier sprint/FOV investigation's `FUN_00470d00` dump).
+**Full call chain now traced end-to-end, entirely via static analysis (Ghidra
+decompile + raw disassembly), 2026-07-16 -- no live debugging was needed or used:**
 
-**`FUN_0055b9d0`** (one of two callers of the above): computes
-`delta = targetTagPos - viewOrigin(param_1+0xd0/0xd4/0xd8)`, converts that delta to
-angles via `FUN_004f4ee0`, and stores the result at `param_1+0xe50`/`+0xe58` -- very
-likely the real per-entity "aim-assist target angle" for the frame. This is probably
-the actual core of rotational assist/target magnetism, though the piece that BLENDS
-this target angle into the player's actual stick input (the friction/slowdown/pull
-math itself) hasn't been traced yet -- next step is finding who calls `FUN_0055b9d0`
-and how often/for how many candidate targets.
+```
+FUN_0057e480 (per-frame CL_CreateCmd-equivalent orchestrator)
+  ESI = in_EAX (the usercmd_t* being built, memset 0x40 bytes) -- held live,
+        unclobbered, through the whole function
+  EBX = client index; EBP = &DAT_00b363b0 + EBX*0xbe5c (per-client struct,
+        0xbe5c bytes -- kPitchAccum/kYawAccum live at +0x58/+0x5c of this struct,
+        i.e. DAT_00b36408/0c ARE EBP+0x58/0x5c for client 0)
+  -> FUN_0057d430   (keyboard/stick movement summer -- existing hook target)
+  -> FUN_0057d7e0   (mouse/look pipeline -- existing hook target; confirmed by
+                      disasm this function ONLY ever touches ESI+0x1c/0x1d/
+                      0x20/0x21/0x38/0x3a, i.e. strictly the usercmd_t fields --
+                      it never reaches beyond the 0x40-byte struct itself)
+       builds a small LOCAL stack struct (own weapon index hardcoded to 0,
+       current DAT_00b36408/0c, DAT_00aa41a4 scale) and an output pointer,
+    -> FUN_004a07a0 (copies raw yaw/pitch baseline from the local struct,
+                      looks up `weaponCurveIndex = ctx[0x2c] * 0xe60`, gate-checks
+                      DAT_0094d340[index], then)
+       -> FUN_0055bac0 (param_1=weapon-context ptr from FUN_004a07a0, param_2=
+                         output pitch/yaw delta ptr; EDI = the caller's param_1,
+                         reloadable from the stack whenever needed -- NOT an
+                         implicit/lost register, contrary to earlier assumption)
+          ESI (local to FUN_0055bac0) = &DAT_0094d290 + weaponCurveIndex*0xe60
+               -- the per-weapon AIM-ASSIST STATE entry (curve config AND live
+               per-frame state mixed in the same 0xe60-byte record: locked
+               target id @+0xe48, candidate array @+0x134 (stride 0x34, count
+               @+0xe34), cached view origin @+0xd0/0xd4/0xd8, output correction
+               @+0xe50/0xe58)
+          -> FUN_0055b8b0 (finds/returns a candidate target entity pointer)
+          -> FUN_0055b990 (validates it)
+          -> FUN_004f4bc0 (lock-time byte + off-target-distance magnitude)
+          state machine (curve mode 0xd/0xe/0xf) once locked:
+          -> FUN_0055b9d0 (param_1 = the SAME ESI weapon-state entry, param_2 =
+                            the found target entity)
+             EAX = *(param_1+0xe48)  -- locked target id, sentinel 0x7ff=none
+             if id already cached in the candidate array (@+0x134, stride 0x34):
+                 read cached tag position straight from the candidate slot
+                 (+0x14/0x18/0x1c), skip the entity/tag lookup below entirely
+             else (cold path):
+                 ESI (reassigned, LOCAL to this function) =
+                     0x9ac010 + id * 0x194        <-- REAL ENTITY ARRAY,
+                                                       base 0x9ac010, stride 0x194
+                 EDI = *(WORD*)0x015c608c          -- a global word, likely the
+                                                       local client/entity index
+                 -> FUN_0055b7d0(&local_tag_pos)  -- "AimAssist_GetTagPos"; reads
+                     a tag ID off *this* entity pointer at ESI+0x150 (this is
+                     the "unaff_ESI" Ghidra couldn't name -- it is simply the
+                     entity pointer computed one instruction above, held live
+                     across the call, not a separate/mysterious context)
+             delta = tagPos - viewOrigin(param_1+0xd0/0xd4/0xd8)
+             FUN_004f4ee0(delta) -> angles, stored at param_1+0xe50/+0xe58
+          back in FUN_0055bac0: two FUN_00420950 spring/lerp interpolations,
+          FUN_0043e6a0 clamp, then ADDS the result onto *param_2/param_2[1]
+          (the real aim-assist pitch/yaw CORRECTION for this frame)
+    back in FUN_0057d7e0: writes the corrected local struct's two floats back
+    to DAT_00b36408/DAT_00b3640c == kPitchAccum/kYawAccum
+```
+
+**Open question from the previous session is now CLOSED, by static analysis
+alone, per the user's explicit "static got us most this way so" call to abandon
+the `regbreak` live-breakpoint approach (parked indefinitely -- see
+`known_issues.md` issue #12 for the crash that tool caused and why it was
+abandoned rather than hardened):** `unaff_ESI` in `FUN_0055b7d0` is not a
+usercmd_t, not a per-client struct, and not any mysterious implicit context --
+it is a plain entity pointer computed two instructions earlier in
+`FUN_0055b9d0` as `0x9ac010 + lockedTargetId * 0x194`, and simply left live
+(never respilled/reloaded) across the intervening call. `FUN_0057d7e0`'s own
+`unaff_ESI` (a separate, unrelated usage in a different function) is
+confirmed-by-disassembly to always be the usercmd_t pointer and nothing else --
+it never dereferences past +0x40.
+
+**New, independently-useful finding for the eventual Survival debug menu (task
+#20):** the real live entity array in *our own vanilla* `iw5sp.exe` sits at
+`0x9ac010`, stride `0x194` bytes per entity. This exact stride (0x194) matches
+the cragson/mw3-surviv0r reference repo's `centity` struct size -- strong
+structural cross-validation from a completely independent code path, even
+though that repo's base address doesn't apply here (different, AlterWare-
+patched binary, see the dead-end note above). This address still needs its own
+signature-scan (per `CLAUDE.md` -- no hardcoded addresses in shipped code) before
+any debug-menu code reads it, but it's a real, validated starting point rather
+than a guess.
 
 **Real external data-driven curve system also found:** `FUN_004cb280` loads multiple
-`"aim_assist/view_input_N.graph"` files at startup into a fixed-size table
-(`DAT_0094d290`, `0xe60` bytes per entry). These are almost certainly real response
-curves (stick-input vs. assist-strength, possibly per weapon-type/difficulty). **Not
-present in any plain-zip `.iwd` archive** (confirmed via the full `.iwd` file listing
-already compiled this session) -- like weapon defs, these are compiled into `.ff`
-fastfiles. Getting the actual curve data needs a working IW5 fastfile unpacker --
+`"aim_assist/view_input_N.graph"` files at startup into the same fixed-size table
+(`DAT_0094d290`, `0xe60` bytes per entry, per weapon). These are almost certainly real
+response curves (stick-input vs. assist-strength, possibly per weapon-type/difficulty).
+**Not present in any plain-zip `.iwd` archive** (confirmed via the full `.iwd` file
+listing already compiled this session) -- like weapon defs, these are compiled into
+`.ff` fastfiles. Getting the actual curve data needs a working IW5 fastfile unpacker --
 same blocker already flagged in `re_notes/ui_assets.md` for controller-icon assets,
 not yet resolved.
 
-**Status:** early-stage investigation, not yet enough to implement anything live.
-Next steps: (1) trace `FUN_0055b9d0`'s own callers to find the actual per-frame
-assist-blend logic, (2) evaluate getting an IW5 `.ff` unpacker working (community
-tools like Wraith/Greyhound exist for later IW-engine titles; IW5/MW3 compatibility
-not yet confirmed) to pull the real `.graph` curve data instead of guessing at
-response curves from scratch.
+**Status:** the read path (target selection -> tag lookup -> angle delta -> spring/
+lerp -> clamp -> add onto kPitchAccum/kYawAccum) is now fully traced and, per the
+`kPitchAccum`/`kYawAccum` cross-validation, calling into this chain ourselves with our
+own controller-stick-derived deltas is architecturally reachable. Next steps: (1) get
+real `.graph` curve data (needs the `.ff` unpacker, still blocked) or reverse-engineer
+plausible curve shapes from the `0xe60`-byte table layout fields already identified,
+(2) decide how to actually invoke this chain from our own hook (likely means calling
+`FUN_004a07a0` or `FUN_0055bac0` directly with a real weapon-context pointer we
+construct/borrow, rather than reimplementing the math ourselves), (3) live-test once a
+call path is chosen -- this is real engine code so should be low-risk to invoke
+directly, unlike the abandoned register-inspection approach.
 
 ---
 

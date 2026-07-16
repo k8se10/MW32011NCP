@@ -22,7 +22,13 @@ tools/*/bin/
 tools/*/obj/
 vcontroller_sim.exe
 memdiff.exe
+regbreak.exe
 
 # memdiff full-process memory snapshots (~400MB each) -- diagnostic scratch data, never
 # meant to be committed
 tools/memdiff/*.snap
+
+# Third-party reference material (cloned locally for research only -- learn from and
+# independently re-verify, never blindly reuse; see re_notes for how any lead from here
+# gets treated). Not ours to redistribute as part of this repo.
+references/

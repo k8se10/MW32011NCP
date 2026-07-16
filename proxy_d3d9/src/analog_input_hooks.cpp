@@ -1030,7 +1030,15 @@ float GetAdsLookRateScale()
     if (effectiveFov <= 0.0f) return 1.0f;
 
     float ratio = effectiveFov / baseFov;
-    float scale = powf(ratio, g_modConfig.adsSlowdownStrength);
+    // Live feedback (2026-07-16): pure ratio^strength gave almost no slowdown on
+    // low-zoom optics (ratio close to 1.0 -- iron sights/red dots barely change FOV),
+    // since anything close to 1 raised to any power stays close to 1, regardless of
+    // strength. adsSlowdownBaseline multiplies the whole curve down, applying some
+    // real slowdown even at minimal zoom while preserving the proportional-to-zoom
+    // shape on top for higher-magnification optics. Still mathematically safe at any
+    // combination of values (both factors are guarded >= 0, so the product can never
+    // go negative/invert).
+    float scale = g_modConfig.adsSlowdownBaseline * powf(ratio, g_modConfig.adsSlowdownStrength);
 
     // Diagnostic (task #12/known_issues.md issue #8): rate-limited log of the raw
     // inputs to this computation. DAT_00984b9c is the flag FUN_004b0580 itself

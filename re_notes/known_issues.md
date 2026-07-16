@@ -626,6 +626,42 @@ own "worth an audit pass" note) and re-verifies keyboard parity end to end.
 
 ---
 
+## 12. `regbreak` live-breakpoint tool crashed the running game — abandoned in favor of static analysis (2026-07-16)
+
+**Not a mod bug — a dev-only diagnostic tool (`tools/regbreak/`, never part of the
+shipped mod) that caused a real live crash during use.** Built to automate
+inspecting CPU register/struct state at a chosen address via the Windows Debug
+API (`DebugActiveProcess` + a software `0xCC` breakpoint + `GetThreadContext`),
+specifically to resolve what the aim-assist chain's `unaff_ESI` implicit
+register context actually pointed to (see `iw5sp.md`'s aim-assist section)
+without needing the user to drive an interactive debugger themselves while
+mid-match.
+
+**Root cause of the crash:** the tool only handled ONE thread hitting the
+breakpoint before restoring the original byte and detaching. If a second thread
+executed the same address concurrently before the restore completed, that
+thread's `EIP` would resume one byte past the `INT3` while the underlying byte
+had already reverted to the real instruction — a misaligned resume point that
+decodes garbage mid-instruction. Confirmed via the Windows Application Event
+Log (`Get-WinEvent -FilterHashtable @{LogName='Application'; Id=1000}`):
+`Exception code: 0xc0000005` inside `iw5sp.exe`, fault offset unrelated to
+either breakpoint address actually probed that session — consistent with this
+exact failure mode, not a hang or clean exit.
+
+**Resolution: abandoned, not hardened.** The user's explicit call ("static got
+us most this way so") was to drop live breakpoints entirely rather than harden
+the tool (suspend-all-other-threads + drain-all-pending-debug-events) and
+retry. The very question `regbreak` was built to answer (`unaff_ESI`'s real
+identity in the aim-assist chain) was fully resolved afterward through pure
+static disassembly instead — see `iw5sp.md`'s aim-assist section for the
+result. **Standing guidance:** prefer Ghidra disassembly/decompile
+(`FindCallers.java`, `DumpDisasm.java`, `DecompileFuncs.java` in
+`re_notes/ghidra_scripts/`) over live register inspection for this class of
+question going forward; `regbreak.exe` should not be re-run against the live
+game unless a future session gets explicit direction to harden and retry it.
+
+---
+
 ## 7. Remaining unassigned controller inputs
 
 **Status:** Open, tracked as task #5 (Back, deprioritized), #7 (killstreaks, not yet

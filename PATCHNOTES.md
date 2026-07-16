@@ -6,6 +6,36 @@ reverse-engineering trail behind each entry.
 
 ---
 
+## Unreleased
+
+### Added
+- **`AdsSlowdownBaseline`** — a new `[Look]` config value multiplied on top of the
+  existing zoom-proportional ADS slowdown curve. Live feedback: the pure
+  `ratio^strength` curve gave almost no slowdown at all on low-zoom optics (iron
+  sights/red dots), since the zoom ratio itself stays too close to `1.0` for any
+  power of it to produce a noticeable effect, regardless of strength. This baseline
+  applies real slowdown even at minimal zoom while preserving the proportional shape
+  on top for higher-magnification optics. Default `0.65` (started at `0.85`, further
+  lowered after live testing showed more slowdown felt better even at minimal zoom).
+  Same safety guarantee as strength — guarded `>= 0.0`, so the combined scale factor
+  can never go negative/invert at any value.
+
+### Changed
+- **Default `AdsSlowdownStrength` raised from `1.0` to `1.75`** (via `1.5` first, then
+  further refined live). Confirmed live to feel closer to real console controller CoD
+  than exactly proportional (`1.0`).
+- **Default `[Interact] HoldThresholdMs` lowered from `740` to `300`.** Confirmed live
+  to feel better than the original 740ms default. Comment wording also simplified to
+  describe the observed net effect (a quick tap reloads, same as console) rather than
+  the underlying two-mechanism split (Interact's hold-gated usercmd bit vs. Reload's
+  own always-instant kbutton, which fires on every press regardless of hold duration
+  and is what actually produces the "quick tap reloads" behavior).
+
+Both defaults only affect freshly-generated `mw3ncp_config.ini` files — existing
+configs keep whatever value is already in them; edit by hand to pick up new defaults.
+
+---
+
 ## v0.1.2 (2026-07-16)
 
 Mostly a documentation-accuracy release: several features already present since

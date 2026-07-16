@@ -125,6 +125,12 @@ void WriteDefaultConfig(const char* path)
         "; safe (never inverts/goes negative) no matter how high you set it. Must stay\n"
         "; >= 0.0.\n"
         "AdsSlowdownStrength=%g\n"
+        "; Multiplies on top of the strength curve above. Without this, low-zoom optics\n"
+        "; (iron sights/red dots, where the zoom ratio stays close to 1.0) got almost no\n"
+        "; slowdown at all regardless of strength. 1.0 = no extra effect (pure strength\n"
+        "; curve only); lower values add real slowdown even at minimal zoom, scaling up\n"
+        "; further as strength increases zoom-based slowdown on top. Must stay >= 0.0.\n"
+        "AdsSlowdownBaseline=%g\n"
         "; OG console \"Invert Look\" -- flips vertical (up/down) look. 0 = off, 1 = on.\n"
         "InvertLook=%d\n"
         "\n"
@@ -137,9 +143,7 @@ void WriteDefaultConfig(const char* path)
         "\n"
         "[Interact]\n"
         "; Milliseconds Interact (X) must be held before it fires. A press released\n"
-        "; before this simply does nothing (Interact doesn't fire) -- this is\n"
-        "; independent of Reload, a separate real kbutton on the same physical\n"
-        "; button, which always fires instantly regardless of this setting.\n"
+        "; before this reloads the weapon same as console.\n"
         "HoldThresholdMs=%lu\n"
         "\n"
         "[Survival]\n"
@@ -166,6 +170,7 @@ void WriteDefaultConfig(const char* path)
         "FlipTriggers=%d\n",
         g_modConfig.lookDegreesPerSecond,
         g_modConfig.adsSlowdownStrength,
+        g_modConfig.adsSlowdownBaseline,
         g_modConfig.invertLook ? 1 : 0,
         g_modConfig.proneHoldThresholdMs,
         g_modConfig.interactHoldThresholdMs,
@@ -274,6 +279,10 @@ void LoadModConfig()
     // negative strength, which WOULD still misbehave (ratio^negative blows up as
     // ratio->0).
     if (g_modConfig.adsSlowdownStrength < 0.0f) g_modConfig.adsSlowdownStrength = 0.0f;
+    ReadFloat(path, "Look", "AdsSlowdownBaseline", g_modConfig.adsSlowdownBaseline);
+    // Same guard as strength above -- a negative baseline would flip the sign of the
+    // whole scale factor (baseline * ratio^strength), inverting look direction.
+    if (g_modConfig.adsSlowdownBaseline < 0.0f) g_modConfig.adsSlowdownBaseline = 0.0f;
     ReadBool(path, "Look", "InvertLook", g_modConfig.invertLook);
     ReadUlong(path, "Stance", "ProneHoldThresholdMs", g_modConfig.proneHoldThresholdMs);
     ReadUlong(path, "Interact", "HoldThresholdMs", g_modConfig.interactHoldThresholdMs);
@@ -286,12 +295,14 @@ void LoadModConfig()
 
     g_buttonMap = ResolveButtonMap(g_modConfig.buttonLayout, g_modConfig.flipTriggers);
 
-    char buf[400];
+    char buf[450];
     sprintf_s(buf,
         "[config] loaded mw3ncp_config.ini: sensitivity=%g adsSlowdownStrength=%g "
-        "invertLook=%d proneHoldMs=%lu interactHoldMs=%lu readyUpHoldMs=%lu sprintMax=%g "
+        "adsSlowdownBaseline=%g invertLook=%d proneHoldMs=%lu interactHoldMs=%lu "
+        "readyUpHoldMs=%lu sprintMax=%g "
         "sprintRegen=%g buttonLayout=%s stickLayout=%s flipTriggers=%d",
         g_modConfig.lookDegreesPerSecond, g_modConfig.adsSlowdownStrength,
+        g_modConfig.adsSlowdownBaseline,
         g_modConfig.invertLook ? 1 : 0, g_modConfig.proneHoldThresholdMs,
         g_modConfig.interactHoldThresholdMs, g_modConfig.readyUpHoldThresholdMs,
         g_modConfig.sprintMaxStaminaSeconds, g_modConfig.sprintRegenSeconds,

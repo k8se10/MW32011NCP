@@ -28,9 +28,11 @@ each release.
 - **ADS look-slowdown** — look rate scales down while aiming, proportional to the
   weapon's actual live zoom level (`effectiveFov/hipfireFov`, read-only — your real
   field of view is never touched), so magnified optics don't feel absurdly twitchy.
-  Configurable strength, mathematically safe at any value (a power curve, not a
-  linear blend — the linear version could invert look direction at high strength on
-  deep zooms; fixed in v0.1.1).
+  A separate baseline multiplier applies some slowdown even on low-zoom optics (iron
+  sights/red dots), where the zoom ratio alone stays too close to 1.0 to produce a
+  noticeable effect on its own. Both configurable, mathematically safe at any value
+  (a power curve, not a linear blend — the linear version could invert look direction
+  at high strength on deep zooms; fixed in v0.1.1).
 
 ### Combat & interaction
 - **Fire** (RT), **Tactical**/**Lethal** (LB/RB), **Jump** (A).
@@ -39,11 +41,11 @@ each release.
 - **Melee** (R3) — real melee kbutton, confirmed "100% knife" live.
 - **Reload** (X) — real, context-sensitive `kbutton_t`, found via memdiff; fires
   instantly on press, unaffected by Interact's hold requirement below.
-- **Interact** (X, same physical button as Reload) — **requires a hold** (740ms by
-  default, configurable), not an instant tap: releasing before the threshold simply
-  does nothing (Interact doesn't fire — there's no fallback action on a quick tap).
-  Reload itself is completely unaffected by this: it's a separate real kbutton on
-  the same physical button, and always fires instantly regardless of the hold.
+- **Interact** (X, same physical button as Reload) — **requires a hold** (300ms by
+  default, configurable), not an instant tap: a quick tap reloads the weapon instead,
+  same as console. Reload is a separate real kbutton on the same physical button that
+  fires on every press regardless of hold duration — so a quick tap doesn't fire
+  Interact, but does trigger a real reload.
 - **Weapon switch** (Y) — real `weapnext` dispatch via the engine's own bind-index
   jump table, found by live-reading the raw-keycode dispatch table for the actual
   bound keys.
@@ -115,10 +117,11 @@ native controller UI navigation exists.
 | Section | Key | Default | What it does |
 |---|---|---|---|
 | `[Look]` | `Sensitivity` | `250` | Look-stick turn rate, degrees/second at full deflection (not always the right stick — depends on `StickLayout` below) |
-| `[Look]` | `AdsSlowdownStrength` | `1.0` | ADS zoom-aware look slowdown strength (`0` = off, `1` = fully proportional to zoom, higher = more aggressive than proportional) |
+| `[Look]` | `AdsSlowdownStrength` | `1.75` | ADS zoom-aware look slowdown strength (`0` = off, `1` = fully proportional to zoom, higher = more aggressive than proportional; `1.75` confirmed live to feel closer to real console controller CoD than exactly `1.0`) |
+| `[Look]` | `AdsSlowdownBaseline` | `0.65` | Multiplies on top of the strength curve above — without it, low-zoom optics (iron sights/red dots) got almost no slowdown at all, since the zoom ratio alone stays too close to `1.0` to produce a real effect regardless of strength. `1.0` = no extra effect; lower = more slowdown even at minimal zoom |
 | `[Look]` | `InvertLook` | `0` | OG console "Invert Look" — flips vertical look |
 | `[Stance]` | `ProneHoldThresholdMs` | `400` | B: hold-vs-tap threshold for the stance ladder |
-| `[Interact]` | `HoldThresholdMs` | `740` | X: how long Interact must be held before it fires |
+| `[Interact]` | `HoldThresholdMs` | `300` | X: how long Interact must be held before it fires (a quick tap reloads instead, same as console) |
 | `[Survival]` | `ReadyUpHoldThresholdMs` | `740` | Y: hold-to-ready-up threshold between Survival waves |
 | `[Sprint]` | `MaxStaminaSeconds` | `4` | Seconds of continuous sprint before stamina depletes |
 | `[Sprint]` | `RegenSeconds` | `2` | Seconds not sprinting to fully recover from empty |
