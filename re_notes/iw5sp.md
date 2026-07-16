@@ -1362,3 +1362,86 @@ internally -- confirmed via disassembling `FUN_00498ec0`), then reads the raw in
 Conditioning override (see `re_notes/known_issues.md` issue #6/#7) -- not a workaround
 pending a native fix like ready-up is, since the native timer genuinely couldn't be
 located and this is the intentional design going forward.
+
+---
+
+## Real native sprint timer -- candidate found, needs live confirmation (2026-07-16)
+
+Went looking for the native sprint duration/cooldown clock again (last search gave up
+after `FUN_00643870`, the `player_sprintSpeedScale` consumer, turned out to be pure
+speed-math with no timer logic at all). This time started from the HUD instead of the
+movement code: string search for `sprint`/`stamina` found the real sprint-meter dvars
+(`cg_sprintMeterFullColor`/`EmptyColor`/`DisabledColor`, `hud_fade_sprint`, all
+registered in `FUN_004b5a90`) and, via `DescribeRefs.java` on those dvar caches, the
+real sprint-meter RENDER functions: `FUN_005696d0` and `FUN_005695a0`.
+
+Both compute the meter's fill fraction as:
+```
+fVar4 = (float)FUN_004b9350(&DAT_00984b88, DAT_00984b78) / (float)FUN_007380e0();
+```
+— exactly the shape of a genuine current/max sprint-time ratio, which is precisely
+what a real stamina-fraction calculation should look like.
+
+**`FUN_004b9350(playerStructAddr, currentTimeMs)`** confirmed via disassembly to be a
+plain `__cdecl` (both args pushed on the stack, no custom register convention) --
+safe to call directly ourselves. Internally reads several time-tracking fields off the
+player struct (`+0x1d0`/`+0x1d4`/`+0x1d8`/`+0x1dc`) and, on one branch, calls
+`FUN_007380e0()` itself.
+
+**`FUN_007380e0()`** takes NO arguments and reads an ambient value already sitting in
+the x87 FPU register (`ST0`) at the moment it's called -- i.e. it depends on its
+*caller* having set that register up first. Deliberately NOT calling this one directly
+ourselves (same class of risk already investigated and ruled out the hard way for the
+ADS-FOV bug, see issue #8 in `known_issues.md`) -- `FUN_004b9350` already calls it
+internally, in the correct context, on the branch where it's needed, so we get its
+effect safely by only calling `FUN_004b9350`.
+
+Added rate-limited diagnostic logging (`[sprint-diag]`, every 250ms while sprinting)
+of `FUN_004b9350`'s live return value alongside our own tracked `g_sprintStamina`/
+`g_sprintWinded`, so a real sprint session (run to empty, recover, repeat, ideally
+also in a mission with `player_sprintUnlimited` active and with Extreme Conditioning
+equipped) will show whether/how they correlate -- and if they do, whether reading
+this real value directly (inheriting `perk_sprintMultiplier`/Extreme Conditioning
+overrides for free) can replace our own timer layer entirely. Not yet confirmed live.
+
+---
+
+## Real native aim-assist infrastructure found (2026-07-16)
+
+String search for `aim_assist`/`AimAssist` (much more direct than searching for
+generic "aim" terms) found `"AimAssist_GetTagPos: Cannot find tag [%s] on entity
+%i.\n"` -- a genuine internal function name in an error string, confirming a real,
+dedicated native aim-assist subsystem exists (this project's confirmed end-goal per
+`CLAUDE.md`, previously not started).
+
+**`FUN_0055b7d0`** (`AimAssist_GetTagPos`-equivalent): looks up a body tag position
+(tag ID read from `+0x150` on the calling context) on a target entity -- consistent
+with real console-style aim assist pulling toward a specific body tag (e.g. the
+`j_spine4`/`j_head`-style tags already seen in the GSC entity-field name table, see
+the earlier sprint/FOV investigation's `FUN_00470d00` dump).
+
+**`FUN_0055b9d0`** (one of two callers of the above): computes
+`delta = targetTagPos - viewOrigin(param_1+0xd0/0xd4/0xd8)`, converts that delta to
+angles via `FUN_004f4ee0`, and stores the result at `param_1+0xe50`/`+0xe58` -- very
+likely the real per-entity "aim-assist target angle" for the frame. This is probably
+the actual core of rotational assist/target magnetism, though the piece that BLENDS
+this target angle into the player's actual stick input (the friction/slowdown/pull
+math itself) hasn't been traced yet -- next step is finding who calls `FUN_0055b9d0`
+and how often/for how many candidate targets.
+
+**Real external data-driven curve system also found:** `FUN_004cb280` loads multiple
+`"aim_assist/view_input_N.graph"` files at startup into a fixed-size table
+(`DAT_0094d290`, `0xe60` bytes per entry). These are almost certainly real response
+curves (stick-input vs. assist-strength, possibly per weapon-type/difficulty). **Not
+present in any plain-zip `.iwd` archive** (confirmed via the full `.iwd` file listing
+already compiled this session) -- like weapon defs, these are compiled into `.ff`
+fastfiles. Getting the actual curve data needs a working IW5 fastfile unpacker --
+same blocker already flagged in `re_notes/ui_assets.md` for controller-icon assets,
+not yet resolved.
+
+**Status:** early-stage investigation, not yet enough to implement anything live.
+Next steps: (1) trace `FUN_0055b9d0`'s own callers to find the actual per-frame
+assist-blend logic, (2) evaluate getting an IW5 `.ff` unpacker working (community
+tools like Wraith/Greyhound exist for later IW-engine titles; IW5/MW3 compatibility
+not yet confirmed) to pull the real `.graph` curve data instead of guessing at
+response curves from scratch.
