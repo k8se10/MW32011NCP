@@ -690,6 +690,57 @@ bool IsSprintActive()
     if (GetDvarInt("player_sprintUnlimited") != 0) return g_sprintHeld && GetRealStance() == 0;
     return g_sprintHeld && GetRealStance() == 0 && !g_sprintWinded;
 }
+
+// ---- Investigating a REAL native sprint timer (2026-07-16) ------------------------
+//
+// Found via the sprint-meter HUD render function (FUN_005696d0/FUN_005695a0, which
+// consume the real cg_sprintMeterFullColor/EmptyColor/DisabledColor dvars found via
+// string search): both compute `fVar4 = (float)FUN_004b9350(...) / (float)FUN_007380e0()`
+// and use that as the real meter fill FRACTION -- exactly the shape of a genuine
+// current/max sprint-time ratio. If this is really what it looks like, it may let us
+// read the game's own real stamina state directly (and inherit perk_sprintMultiplier /
+// Extreme Conditioning overrides for free) instead of maintaining our own separate
+// timer at all.
+//
+// `FUN_004b9350(playerStructAddr, currentTimeMs)` confirmed via disassembly to be a
+// genuine __cdecl (both args on the stack, no custom register convention) -- safe to
+// call directly. `FUN_007380e0()` takes NO arguments and reads an ambient value
+// already sitting in the x87 FPU register (ST0) at time of call -- i.e. it depends on
+// its CALLER having set up that register first, so calling it cold ourselves would
+// likely read garbage (the same class of risk investigated and ruled out for the ADS
+// FOV bug). NOT calling it directly for that reason -- FUN_004b9350 already calls it
+// internally, in the correct context, on the branch where it's needed, so we get its
+// effect safely by only calling FUN_004b9350 ourselves.
+//
+// player struct address is `&DAT_00984b88` (a fixed global, passed as the raw address
+// itself, not its dereferenced contents -- confirmed from the real call site's exact
+// argument pattern); current time is `*(int*)0x00984b78` (dereferenced value, the same
+// "current time" global already used elsewhere in this project, e.g. FUN_0057d740's
+// DAT_00984b78 frame-time reads).
+using GetRealSprintValueFn = int(__cdecl*)(uintptr_t playerStructAddr, int currentTimeMs);
+GetRealSprintValueFn const GetRealSprintValue = reinterpret_cast<GetRealSprintValueFn>(0x004b9350);
+constexpr uintptr_t kSprintPlayerStructAddr = 0x00984b88;
+constexpr uintptr_t kSprintCurrentTimeAddr = 0x00984b78;
+
+DWORD g_lastSprintDiagLogMs = 0;
+
+void LogSprintDiag()
+{
+    DWORD nowMs = GetTickCount();
+    if (nowMs - g_lastSprintDiagLogMs < 250) return;
+    g_lastSprintDiagLogMs = nowMs;
+
+    int currentTimeMs = *reinterpret_cast<volatile int*>(kSprintCurrentTimeAddr);
+    int realValue = GetRealSprintValue(kSprintPlayerStructAddr, currentTimeMs);
+
+    char buf[220];
+    sprintf_s(buf,
+        "[sprint-diag] realValue=%d currentTimeMs=%d ourStamina=%.3f ourWinded=%d "
+        "sprintHeld=%d realStance=%d",
+        realValue, currentTimeMs, g_sprintStamina, g_sprintWinded ? 1 : 0,
+        g_sprintHeld ? 1 : 0, GetRealStance());
+    LogFromController(buf);
+}
 } // namespace
 
 extern "C" void __cdecl InjectControllerSprint()
@@ -697,6 +748,8 @@ extern "C" void __cdecl InjectControllerSprint()
     unsigned short buttons;
     unsigned char leftTrigger, rightTrigger;
     if (!Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger)) return;
+
+    LogSprintDiag(); // task #9 -- investigating a real native sprint timer, see comment above
 
     bool held = IsPhysicalHeld(g_buttonMap.sprint, buttons, leftTrigger, rightTrigger);
     if (held && !g_sprintHeld && GetRealStance() != 0) {
