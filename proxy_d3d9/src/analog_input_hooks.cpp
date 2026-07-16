@@ -1110,7 +1110,15 @@ float GetAdsLookRateScale()
 namespace {
 constexpr uintptr_t kEntityArrayBase = 0x009ac010;
 constexpr size_t kEntityStride = 0x194;
-constexpr int kEntityCount = 64; // plenty for Survival's concurrent AI cap
+// BUG FIX (2026-07-17, live-reported "doesn't do anything"): originally 64, on the
+// assumption dynamically-spawned entities (AI included) would sit in early slots.
+// Confirmed wrong via a live positional scan -- real nearby entities (including the
+// only plausible AI-actor cluster found, four 0x0d-type entities at indices 334-338)
+// sit almost entirely above index 330. Static level geometry apparently claims the
+// early slots at load time; anything spawned later (AI, dropped items, etc.) gets
+// allocated into higher-numbered slots instead. 400 covers everything observed live
+// with margin.
+constexpr int kEntityCount = 400;
 constexpr uintptr_t kEntityPosOffset = 0x10;
 constexpr uintptr_t kEntityTypeOffset = 0xcc;
 constexpr uintptr_t kInLevelFlagAddrForAimAssist = 0x00A98ACC; // same flag used elsewhere in this file
