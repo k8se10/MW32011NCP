@@ -82,6 +82,7 @@
     <ClCompile Include="src\analog_input_hooks.cpp" />
     <ClCompile Include="src\controller_input.cpp" />
     <ClCompile Include="src\d3d9_hook.cpp" />
+    <ClCompile Include="src\mod_config.cpp" />
     <!-- MinHook (BSD-style license, see third_party\minhook\LICENSE.txt;
          attribution required if this mod is ever shipped, see CLAUDE.md paragraph 6). -->
     <ClCompile Include="third_party\minhook\src\buffer.c" />
@@ -95,6 +96,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\controller_input.h" />
+    <ClInclude Include="src\mod_config.h" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

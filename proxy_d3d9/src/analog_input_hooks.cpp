@@ -20,6 +20,7 @@
 #include <cstring>
 #include "../third_party/minhook/include/MinHook.h"
 #include "controller_input.h"
+#include "mod_config.h"
 
 // Forwarder defined in dllmain.cpp -- lets this translation unit log to the same
 // proxy_d3d9.log file without duplicating the log-file setup.
@@ -128,17 +129,9 @@ constexpr unsigned short kXI_LEFT_SHOULDER = 0x0100;
 constexpr unsigned short kXI_RIGHT_SHOULDER = 0x0200;
 constexpr unsigned char kTriggerThresholdFire = 30; // XInput's documented trigger threshold
 
-// How long a B press must be held before it counts as "hold" instead of "tap". Not
-// user-tunable yet; task #6's options screen is the right place for that, not a
-// hardcoded constant here.
-constexpr DWORD kProneHoldThresholdMs = 400;
-
-// Shared hold-threshold, also reused by Survival's ready-up hold (further down, near
-// Y's ready-up section) and by Interact's hold-to-interact gate below. Moved up here
-// (rather than staying local to the ready-up section it was first added for) purely so
-// it's declared before Interact's earlier use of it in this file -- same constant,
-// same value, not a second threshold.
-constexpr DWORD kReadyUpHoldThresholdMs = 740;
+// Hold-vs-tap thresholds (B/Interact/ready-up), sensitivity, ADS slowdown strength,
+// and sprint stamina/regen all now come from g_modConfig (task #14, mw3ncp_config.ini)
+// instead of being hardcoded here -- see mod_config.h for the full list and defaults.
 
 // SP only ever has player 0. Moved up here (from its original spot near the weapnext
 // section) so it's declared before the ADS look-slowdown code's earlier use of it in
@@ -182,13 +175,15 @@ void LogStanceDiag(const char* tag)
 // ---- Interact: hold-to-interact, not instant-on-tap (2026-07-16) -------------------
 //
 // User feedback after v0.1.0-prealpha: Interact should require a hold, not fire the
-// instant X is pressed. Reusing the same hold threshold already tuned for the Survival
-// ready-up hold (kReadyUpHoldThresholdMs, 740ms, defined further down near Y's ready-up
-// section) per explicit direction ("same timing as the F5 replacement would work
-// fine"). Scoped ONLY to the raw usercmd Interact bit (0x8) below -- Reload
-// (InjectControllerReload, a separate real kbutton on the same physical X button) is
-// untouched and still fires instantly on press/release, since reload isn't the thing
-// that was asked to require a hold.
+// instant X is pressed. Threshold is g_modConfig.interactHoldThresholdMs ([Interact]
+// HoldThresholdMs in mw3ncp_config.ini, defaults to 740ms to match the Survival
+// ready-up hold, per the original explicit direction "same timing as the F5
+// replacement would work fine") -- independently tunable from ready-up's own
+// threshold now that both live in config, not sharing one hardcoded constant. Scoped
+// ONLY to the raw usercmd Interact bit (0x8) below -- Reload (InjectControllerReload,
+// a separate real kbutton on the same physical X button) is untouched and still fires
+// instantly on press/release, since reload isn't the thing that was asked to require
+// a hold.
 DWORD g_interactPressStartMs = 0;
 bool g_interactButtonWasHeld = false;
 }
@@ -221,7 +216,7 @@ extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
     if (xHeld && !g_interactButtonWasHeld) {
         g_interactPressStartMs = GetTickCount();
     }
-    if (xHeld && (GetTickCount() - g_interactPressStartMs) >= kReadyUpHoldThresholdMs) {
+    if (xHeld && (GetTickCount() - g_interactPressStartMs) >= g_modConfig.interactHoldThresholdMs) {
         out |= 0x8;
     }
     g_interactButtonWasHeld = xHeld;
@@ -242,7 +237,7 @@ extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
     }
     if (bHeld && !g_holdActionConsumed) {
         DWORD heldMs = GetTickCount() - g_crouchButtonPressStartMs;
-        if (heldMs >= kProneHoldThresholdMs) {
+        if (heldMs >= g_modConfig.proneHoldThresholdMs) {
             // Hold action fires once, the instant the threshold is crossed: Prone
             // reverses back to Standing, anything else goes to Prone.
             g_stance = (g_stance == Stance::Prone) ? Stance::Standing : Stance::Prone;
@@ -489,9 +484,16 @@ void* g_orig_00644ed0 = nullptr;
 // SEPARATE mechanism (probably `perk_sprintMultiplier`, a real dvar found earlier that
 // scales `player_sprinttime`, not the same on/off flag as sprintUnlimited), not yet
 // investigated -- see task tracking.
-constexpr float kSprintMaxStaminaSeconds = 4.0f;
-constexpr float kSprintRegenSeconds = 2.0f;
-float g_sprintStamina = kSprintMaxStaminaSeconds;
+//
+// Max stamina/regen seconds now come from g_modConfig ([Sprint] in mw3ncp_config.ini,
+// task #14) rather than being hardcoded. g_sprintStamina's own initializer below is a
+// plain literal, NOT a read of g_modConfig -- global initialization order between two
+// different .cpp files' statics is unspecified in C++, so reading g_modConfig here
+// could run before or after its own default-member-initializers depending on link
+// order. InstallAnalogInputHooks() (called from DllMain strictly after LoadModConfig())
+// re-syncs this to the real configured value, which is what actually matters since no
+// gameplay hook fires before DllMain returns.
+float g_sprintStamina = 4.0f;
 // FIX (live-confirmed bug, same day): originally cleared g_sprintWinded the instant
 // g_sprintStamina ticked back above zero -- but regen starts adding immediately every
 // frame, so stamina crossed back above zero (a tiny fraction) within a SINGLE frame of
@@ -584,19 +586,19 @@ extern "C" void __cdecl InjectControllerSprint()
             g_sprintCooldownRemaining -= dt;
             if (g_sprintCooldownRemaining <= 0.0f) {
                 g_sprintWinded = false;
-                g_sprintStamina = kSprintMaxStaminaSeconds; // full refill once cooldown clears
+                g_sprintStamina = g_modConfig.sprintMaxStaminaSeconds; // full refill once cooldown clears
             }
         } else if (g_sprintHeld && g_stance == Stance::Standing) {
             g_sprintStamina -= dt;
             if (g_sprintStamina <= 0.0f) {
                 g_sprintStamina = 0.0f;
                 g_sprintWinded = true;
-                g_sprintCooldownRemaining = kSprintRegenSeconds;
+                g_sprintCooldownRemaining = g_modConfig.sprintRegenSeconds;
             }
         } else {
-            g_sprintStamina += dt * (kSprintMaxStaminaSeconds / kSprintRegenSeconds);
-            if (g_sprintStamina >= kSprintMaxStaminaSeconds) {
-                g_sprintStamina = kSprintMaxStaminaSeconds;
+            g_sprintStamina += dt * (g_modConfig.sprintMaxStaminaSeconds / g_modConfig.sprintRegenSeconds);
+            if (g_sprintStamina >= g_modConfig.sprintMaxStaminaSeconds) {
+                g_sprintStamina = g_modConfig.sprintMaxStaminaSeconds;
             }
         }
     }
@@ -767,7 +769,8 @@ float GetDvarFloat(const char* name)
 // zoom), 1.0 = fully proportional to the live FOV ratio (closest to real console
 // feel). Hardcoded at full strength for now -- task #14's config file is where this
 // becomes a real user-facing slider, not a constant here.
-constexpr float kAdsSlowdownStrength = 1.0f;
+// kAdsSlowdownStrength now comes from g_modConfig.adsSlowdownStrength ([Look]
+// AdsSlowdownStrength in mw3ncp_config.ini, task #14) rather than being hardcoded.
 
 // Computes the ADS look-rate scale factor for this frame: 1.0 when not aiming (or
 // strength is 0), otherwise the live effective-FOV/hipfire-FOV ratio (< 1.0 when
@@ -777,7 +780,7 @@ constexpr float kAdsSlowdownStrength = 1.0f;
 // weapon/attachment IDs ourselves.
 float GetAdsLookRateScale()
 {
-    if (!g_adsHeld || kAdsSlowdownStrength <= 0.0f) return 1.0f;
+    if (!g_adsHeld || g_modConfig.adsSlowdownStrength <= 0.0f) return 1.0f;
 
     float baseFov = GetDvarFloat("cg_fov");
     if (baseFov <= 0.0f) return 1.0f;
@@ -786,7 +789,7 @@ float GetAdsLookRateScale()
     if (effectiveFov <= 0.0f) return 1.0f;
 
     float ratio = effectiveFov / baseFov;
-    return 1.0f - kAdsSlowdownStrength * (1.0f - ratio);
+    return 1.0f - g_modConfig.adsSlowdownStrength * (1.0f - ratio);
 }
 } // namespace
 
@@ -800,13 +803,12 @@ extern "C" void __cdecl InjectControllerLookAngles()
     if (dt <= 0.0f) return;
 
     // Degrees per second at full stick deflection -- independent of every mouse cvar.
-    // Rough starting point; task #6's options screen is where a real user-facing
-    // sensitivity setting belongs, not a hardcoded constant here.
-    constexpr float kLookDegreesPerSecond = 250.0f;
-
-    float rate = kLookDegreesPerSecond * GetAdsLookRateScale();
+    // g_modConfig.lookDegreesPerSecond ([Look] Sensitivity in mw3ncp_config.ini, task
+    // #14) rather than a hardcoded constant.
+    float rate = g_modConfig.lookDegreesPerSecond * GetAdsLookRateScale();
+    float pitchInput = g_modConfig.invertLook ? -ry : ry; // OG console "Invert Look"
     *kYawAccum -= rx * rate * dt;
-    *kPitchAccum -= ry * rate * dt;
+    *kPitchAccum -= pitchInput * rate * dt;
 }
 
 // ---- Investigation record: Cbuf_AddText / Cmd_ExecuteString exist, but aren't the
@@ -893,8 +895,9 @@ namespace {
 using GetDvarStringFn = const char*(__cdecl*)(const char*);
 GetDvarStringFn const GetDvarString = reinterpret_cast<GetDvarStringFn>(0x00498ec0);
 extern "C" HWND GetGameWindow(); // defined in d3d9_hook.cpp
-// kReadyUpHoldThresholdMs is now declared near kProneHoldThresholdMs, top of file --
-// shared with Interact's hold-to-interact gate.
+// Ready-up hold threshold is g_modConfig.readyUpHoldThresholdMs ([Survival]
+// ReadyUpHoldThresholdMs in mw3ncp_config.ini, task #14), independently tunable from
+// Interact's own hold threshold now that both live in config.
 // The between-wave break is live gameplay, not a frozen/weapons-disabled wait (unlike
 // the OTHER, wrong "+gostand" system's freezecontrols wait tried earlier) -- weapons
 // stay usable so you can move/shoot/shop freely. That means firing weapnext on Y's
@@ -936,7 +939,7 @@ extern "C" void __cdecl InjectControllerWeaponNext()
         g_yPressStartMs = GetTickCount();
         g_yReadyUpFired = false;
     }
-    if (held && !g_yReadyUpFired && (GetTickCount() - g_yPressStartMs) >= kReadyUpHoldThresholdMs) {
+    if (held && !g_yReadyUpFired && (GetTickCount() - g_yPressStartMs) >= g_modConfig.readyUpHoldThresholdMs) {
         g_yReadyUpFired = true;
         if (IsInSurvivalMode()) {
             SendSyntheticF5();
@@ -1287,6 +1290,12 @@ __declspec(naked) void Hook_0057de60()
 
 void InstallAnalogInputHooks()
 {
+    // g_sprintStamina's own initializer is a plain literal, not a read of g_modConfig
+    // (see its declaration comment for why) -- resync here now that LoadModConfig()
+    // (called earlier in DllMain) has definitely run, in case the INI overrode the
+    // default max stamina.
+    g_sprintStamina = g_modConfig.sprintMaxStaminaSeconds;
+
     MH_Initialize();
 
     MH_STATUS s2 = MH_CreateHook(reinterpret_cast<LPVOID>(0x0057de60), &Hook_0057de60, &g_orig_0057de60);

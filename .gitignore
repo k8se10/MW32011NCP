@@ -13,6 +13,10 @@ d3d9.dll
 # Never commit a copy of any Microsoft system DLL, even accidentally staged for testing.
 d3d9_orig.dll
 
+# User-generated config (task #14) -- written fresh with defaults by mod_config.cpp
+# on first run at the game root, never meant to be committed (personal tuning values).
+mw3ncp_config.ini
+
 # Build outputs for dev-only test tools (not shipped, not part of the mod)
 tools/*/bin/
 tools/*/obj/

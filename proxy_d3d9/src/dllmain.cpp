@@ -14,6 +14,7 @@
 #include <windows.h>
 #include <cstdio>
 #include <share.h>
+#include "mod_config.h"
 
 void InstallAnalogInputHooks(); // defined in analog_input_hooks.cpp
 extern "C" void HookD3D9CreateDevice(void* realD3D9); // defined in d3d9_hook.cpp
@@ -206,6 +207,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID)
     case DLL_PROCESS_ATTACH:
         DisableThreadLibraryCalls(hModule);
         LogInit();
+        LoadModConfig(); // task #14 -- must run before InstallAnalogInputHooks reads g_modConfig
         if (!LoadRealD3D9()) return FALSE;
         if (!ResolveRealExports()) return FALSE;
         Log("proxy_d3d9 init OK — analog movement/look hooks installing.");
