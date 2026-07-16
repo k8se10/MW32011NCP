@@ -6,25 +6,25 @@ reverse-engineering trail behind each entry.
 
 ---
 
-## v0.1.1 (2026-07-16)
+## v0.1.2 (2026-07-16)
 
-### Added — configuration & customization
+Mostly a documentation-accuracy release: several features already present since
+v0.1.1 (or earlier) had never been written up in the README or a changelog at all,
+and a proofread pass against the actual source found real inaccuracies in the ones
+that were. Small functional fix included (INI comment text only — no behavior
+change).
+
+### Newly documented (already shipped, not previously covered anywhere)
 - **`mw3ncp_config.ini`** — self-generating configuration file, written next to the
   DLL the first time the mod runs, with every option pre-filled at its default value
-  and a comment explaining it (nothing to configure by hand to get started). Covers:
-  - `[Look]` — look sensitivity (deg/sec), ADS zoom-aware slowdown strength, invert
-    look.
-  - `[Stance]` — the B stance-ladder hold-vs-tap threshold.
-  - `[Interact]` — the new Interact hold threshold (see below).
-  - `[Survival]` — the ready-up hold threshold.
-  - `[Sprint]` — max stamina seconds / regen seconds.
-  - `[Bindings]` — button layout, stick layout, trigger flip (all below).
-
-  No live-reload yet — changes take effect on next launch. See README's
-  **Configuration & customization** section for the full key reference.
+  and a comment explaining it. Covers `[Look]` (sensitivity, ADS slowdown strength,
+  invert look), `[Stance]` (B hold-vs-tap threshold), `[Interact]` (hold threshold),
+  `[Survival]` (ready-up hold threshold), `[Sprint]` (stamina/regen seconds), and
+  `[Bindings]` (button layout, stick layout, trigger flip). No live-reload yet —
+  changes take effect on next launch. See README's **Configuration & customization**
+  section for the full key reference.
 - **Button layout presets** — `Default` / `Tactical` / `Lefty` / `TacticalLefty`,
-  reconstructed from the unchanged CoD4→MW2→MW3 console control scheme. Remaps
-  Fire/ADS/Lethal/Tactical/Crouch-Prone/Sprint/Melee as a set per preset (not
+  reconstructed from the unchanged CoD4→MW2→MW3 console control scheme (not
   independently verified against real hardware yet — `TacticalLefty` in particular
   may need a correction pass; see README for the full per-preset table).
 - **Stick layout presets** — `Default` / `Southpaw` / `Legacy` / `LegacySouthpaw`.
@@ -35,33 +35,36 @@ reverse-engineering trail behind each entry.
 - **`FlipTriggers`** — an independent toggle that swaps RT↔RB and LT↔LB, layered on
   top of whichever button layout is active.
 - **Invert Look** — the OG console option, flips vertical look.
-- **Interact (X) now requires a hold, not an instant tap** — matches feedback that
-  tap-to-interact felt too eager. A press released before the threshold (740ms
-  default, configurable) simply does nothing (no fallback action on a quick tap);
-  Reload (a separate real kbutton on the same physical button) is completely
-  unaffected and still fires instantly.
+- **Interact (X) requires a hold, not an instant tap** (task #11) — a press released
+  before the threshold (740ms default, configurable) simply does nothing; Reload (a
+  separate real kbutton on the same physical button) is completely unaffected and
+  still fires instantly. This was already implemented but wasn't reflected in the
+  task list or any doc until now.
+- **ADS look-slowdown fix and the Crouch/Prone real-toggle rewrite** (see v0.1.1's
+  own entry below for what these actually fixed) are now covered by full mechanic
+  tables in README (the stance ladder's tap/hold-per-state table, and Sprint's
+  ready/sprinting/winded/regenerating state machine) — neither had a full
+  state-transition writeup anywhere before this pass.
 
-### Added — other
-- **B backs out of menus like ESC.** B now forwards a real ESC keypress
-  (`FUN_004d9850`) to whatever menu is currently active — the same real mechanism the
-  engine's own key handler uses for ESC generically, not something pause-specific —
-  so B backs out one level in the main menu, closes the pause menu (same as Start),
-  or exits any other open menu. Hardcoded to physical B regardless of button-layout
-  preset.
-- **106 controller button-glyph icons extracted** (`assets/button_glyphs/`) covering
-  Xbox 360, Xbox One, Xbox Series X|S, PS3, PS4, PS5, D-pad/stick-direction
-  indicators, and shared/extra buttons — source art groundwork for native
-  controller-glyph button prompts. **Not yet wired into any rendering code** — this
-  is asset preparation only; see `re_notes/ui_assets.md` for the two remaining
-  pieces of implementation work (a bind-text-resolver hook, and getting the art into
-  a font the game will actually render) and one known outstanding polish issue (a
-  faint stray text fragment in a couple of PS4 icons).
-- **`tools/memdiff` gained a `poke` mode** (write-test a candidate memory address's
-  behavioral effect live, with a configurable lead-in countdown) and a `rangewatch`
-  mode (live-correlate a real key/button against one fixed, already-known-real
-  address range instead of the whole process heap) — dev-only diagnostic tooling,
-  not shipped as part of the mod itself. Rebuilt as x64 (was x86, which started
-  hitting its own ~2GB address-space ceiling once heap-scan caps were widened).
+### Fixed
+- **Three inaccurate setting descriptions**, found during the proofread pass above,
+  corrected in both `mw3ncp_config.ini`'s self-generated comments
+  (`mod_config.cpp`'s `WriteDefaultConfig`) and the matching README prose:
+  - `[Look] Sensitivity` was described as "right-stick" unconditionally — it's
+    actually whichever stick `StickLayout` currently routes to look, not always the
+    right stick.
+  - `[Stance] ProneHoldThresholdMs` described "hold" as simply "go prone," which is
+    wrong for the Prone→hold transition specifically (that one stands you back up,
+    the reverse). Corrected to describe the full 3-state ladder.
+  - `[Interact] HoldThresholdMs` incorrectly claimed a quick tap "switches weapons
+    instead" — that's Y/ready-up's behavior, not Interact's. A quick Interact tap
+    does nothing; Reload (separate, same physical button) is unaffected either way.
+  - Rebuilt `d3d9.dll` so the corrected INI comments actually ship (no other
+    behavior change in this build vs. v0.1.1).
+
+---
+
+## v0.1.1 (2026-07-16)
 
 ### Fixed
 - **Keyboard/mouse sprint regression.** The controller Sprint hooks
@@ -90,10 +93,32 @@ reverse-engineering trail behind each entry.
   crouch/prone, see README) is unchanged — only the underlying implementation, which
   no longer has a separate copy of stance state that can desync from the engine's own.
 
+### Added
+- **B backs out of menus like ESC.** B now forwards a real ESC keypress
+  (`FUN_004d9850`) to whatever menu is currently active — the same real mechanism the
+  engine's own key handler uses for ESC generically, not something pause-specific —
+  so B backs out one level in the main menu, closes the pause menu (same as Start),
+  or exits any other open menu. Hardcoded to physical B regardless of button-layout
+  preset.
+- **106 controller button-glyph icons extracted** (`assets/button_glyphs/`) covering
+  Xbox 360, Xbox One, Xbox Series X|S, PS3, PS4, PS5, D-pad/stick-direction
+  indicators, and shared/extra buttons — source art groundwork for native
+  controller-glyph button prompts. **Not yet wired into any rendering code** — this
+  is asset preparation only; see `re_notes/ui_assets.md` for the two remaining
+  pieces of implementation work (a bind-text-resolver hook, and getting the art into
+  a font the game will actually render) and one known outstanding polish issue (a
+  faint stray text fragment in a couple of PS4 icons).
+- **`tools/memdiff` gained a `poke` mode** (write-test a candidate memory address's
+  behavioral effect live, with a configurable lead-in countdown) and a `rangewatch`
+  mode (live-correlate a real key/button against one fixed, already-known-real
+  address range instead of the whole process heap) — dev-only diagnostic tooling,
+  not shipped as part of the mod itself. Rebuilt as x64 (was x86, which started
+  hitting its own ~2GB address-space ceiling once heap-scan caps were widened).
+
 ### Changed
 - **Keyboard/mouse deprioritized as a primary input path, not removed.** A direct
-  consequence of the sprint regression above: keyboard/mouse remains functionally
-  required for menu navigation, Back, and most killstreak call-ins (none of which are
+  consequence of the regression above: keyboard/mouse remains functionally required
+  for menu navigation, Back, and most killstreak call-ins (none of which are
   controller-native yet), but is no longer verified to the same live-reproduction
   bar controller features get going forward. Controller is the primary,
   actively-verified input method with this mod installed. See
@@ -105,20 +130,6 @@ reverse-engineering trail behind each entry.
   a targeted scan restricted to the confirmed-real kbutton neighborhood used by
   ADS/Reload) all came back negative. Controller Sprint keeps its existing
   `pm_flags`-forcing implementation. Full trail in `re_notes/iw5sp.md`.
-
-### Docs
-- **Corrected inaccurate setting descriptions** in `mw3ncp_config.ini`'s
-  self-generated comments (and the matching README/PATCHNOTES prose), found during
-  a comprehensive proofread pass against the actual source behavior:
-  - `[Look] Sensitivity` was described as "right-stick" unconditionally — it's
-    actually whichever stick `StickLayout` currently routes to look, not always the
-    right stick.
-  - `[Stance] ProneHoldThresholdMs` described "hold" as simply "go prone," which is
-    wrong for the Prone→hold transition specifically (that one stands you back up,
-    the reverse). Corrected to describe the full 3-state ladder.
-  - `[Interact] HoldThresholdMs` incorrectly claimed a quick tap "switches weapons
-    instead" — that's Y/ready-up's behavior, not Interact's. A quick Interact tap
-    does nothing; Reload (separate, same physical button) is unaffected either way.
 
 ---
 
