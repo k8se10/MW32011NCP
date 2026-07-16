@@ -1536,17 +1536,54 @@ listing already compiled this session) -- like weapon defs, these are compiled i
 same blocker already flagged in `re_notes/ui_assets.md` for controller-icon assets,
 not yet resolved.
 
-**Status:** the read path (target selection -> tag lookup -> angle delta -> spring/
-lerp -> clamp -> add onto kPitchAccum/kYawAccum) is now fully traced and, per the
-`kPitchAccum`/`kYawAccum` cross-validation, calling into this chain ourselves with our
-own controller-stick-derived deltas is architecturally reachable. Next steps: (1) get
-real `.graph` curve data (needs the `.ff` unpacker, still blocked) or reverse-engineer
-plausible curve shapes from the `0xe60`-byte table layout fields already identified,
-(2) decide how to actually invoke this chain from our own hook (likely means calling
-`FUN_004a07a0` or `FUN_0055bac0` directly with a real weapon-context pointer we
-construct/borrow, rather than reimplementing the math ourselves), (3) live-test once a
-call path is chosen -- this is real engine code so should be low-risk to invoke
-directly, unlike the abandoned register-inspection approach.
+**CORRECTED CONCLUSION (2026-07-16, user correction after the read path above was
+already fully traced): this chain is NOT a dormant player-facing aim-assist feature to
+invoke.** The user pointed out the actual, well-known fact that MW3 PC has no mouse
+aim-assist at all -- this system is real, but it's the shared math BOTS use to compute
+their own aim toward a target (the player), reusing the SAME generic per-entity
+view-angle-update plumbing (`FUN_0057d7e0`) that also processes the human player's real
+mouse input each frame. That's *why* it was reachable from what looked like "the mouse
+pipeline" -- `FUN_0057d7e0` is a shared, per-controlled-entity function, not
+exclusively player-specific, and the aim-assist/target-lock portion of it is simply
+inert/gated off for real player input (the whole reason "mouse has no aim assist" is
+true in practice) while still firing for AI-controlled entities that share the same
+code path. Calling `FUN_004a07a0`/`FUN_0055bac0` ourselves for the PLAYER'S aim would
+mean invoking bot-aiming logic in a context it was never meant for -- wrong direction,
+not just architecturally risky.
+
+**Also worth recording, separately still useful:** hunting for what populates the
+per-weapon-state candidate array (`+0x134`, count `+0xe34`) that `FUN_0055b8b0` scans
+came up empty -- none of the 11 functions that reference the weapon-state table base
+(`0x94d290`, found via a whole-binary `FindConstantRefs` scan) populate it, meaning the
+real population function receives the weapon-state pointer as an argument rather than
+recomputing it from the literal base, and lives in a not-yet-mapped per-frame
+entity/AI-perception system. Not worth continued digging given the corrected
+conclusion above -- this was bot-aiming infrastructure anyway.
+
+**Revised plan, per the user's own direction ("we could honestly make our own version
+we dont need native aim assist"):** build aim assist entirely ourselves, using:
+- The entity array (`0x9ac010`, stride `0x194`) directly -- position confirmed at
+  `+0x10` (independently, via a second float-typed alias into the same array,
+  `DAT_009ac020`, discovered in `FUN_0055c650`), and a per-entity state/type byte at
+  `+0xcc` (values `1`/`0xd`/`0xf` observed meaningfully differentiated in code already
+  traced) as the likely primary filter for "valid living AI enemy" -- Survival has no
+  neutral AI to exclude besides a co-op partner, so this may be sufficient without a
+  separate team field.
+- Pure, non-targeting-specific native math helpers, still safe to reuse: `FUN_004f4ee0`
+  (direction vector -> pitch/yaw/roll angles) and possibly `FUN_0055b7d0`/
+  `FUN_00421b20` (entity+tag-handle -> world tag/bone position, a generic animation
+  query, not bot-AI-specific) for a more accurate aim point than raw entity origin.
+- Our own target scoring (nearest to crosshair within a configurable FOV cone) and our
+  own friction/magnetism curves, added directly onto `kPitchAccum`/`kYawAccum` -- the
+  same globals our own controller-look injection already writes every frame, so no
+  native call chain is needed for the actual correction, only for data lookup.
+
+Next steps: (1) empirically confirm what `+0xcc` values mean via a few live entity
+reads while aiming at a known enemy vs. a corpse vs. nothing (safe, passive `memdiff
+dump` reads, no breakpoints), (2) confirm the `+0x150` tag-handle field actually
+resolves to a usable body position via `FUN_00421b20`/`FUN_0055b7d0` for a real
+in-game entity, (3) implement our own target acquisition + correction math, gated
+behind new config values, and live-tune.
 
 ---
 
