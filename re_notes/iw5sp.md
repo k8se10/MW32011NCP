@@ -1365,7 +1365,7 @@ located and this is the intentional design going forward.
 
 ---
 
-## Real native sprint timer -- candidate found, needs live confirmation (2026-07-16)
+## Real native sprint timer -- candidate found, but our own hook masks it from observation (2026-07-16)
 
 Went looking for the native sprint duration/cooldown clock again (last search gave up
 after `FUN_00643870`, the `player_sprintSpeedScale` consumer, turned out to be pure
@@ -1398,11 +1398,38 @@ effect safely by only calling `FUN_004b9350`.
 
 Added rate-limited diagnostic logging (`[sprint-diag]`, every 250ms while sprinting)
 of `FUN_004b9350`'s live return value alongside our own tracked `g_sprintStamina`/
-`g_sprintWinded`, so a real sprint session (run to empty, recover, repeat, ideally
-also in a mission with `player_sprintUnlimited` active and with Extreme Conditioning
-equipped) will show whether/how they correlate -- and if they do, whether reading
-this real value directly (inheriting `perk_sprintMultiplier`/Extreme Conditioning
-overrides for free) can replace our own timer layer entirely. Not yet confirmed live.
+`g_sprintWinded`. **Live result: `realValue` stayed flat at exactly `4000` across an
+entire full deplete/winded/recover cycle** -- never moved, regardless of
+`g_sprintHeld`/`g_sprintWinded`/elapsed time.
+
+**Why, per the user's own read of this (correcting an initial "dead end" read of
+the same data): this isn't the real function failing or returning nonsense -- it's
+our OWN sprint implementation preventing its normal branch from ever running.**
+`FUN_004b9350` early-exits its whole time-based calculation (returning a flat
+baseline instead) whenever a flag bit (`0x4000` at `param_1+0x4b0`) is set --
+and this mod forces the real sprint `pm_flags` bit (also `0x4000`, same value,
+likely the same underlying mechanism/mirror) unconditionally every tick sprint is
+active, via a direct Pmove-entry hook rather than the game's own normal input path.
+That's the same bypass this project's own sprint implementation is already
+documented as doing (see the original sprint stamina writeup above) -- "sprint ==
+sprint" (movement speed is correctly boosted) "but no settings" (the real
+governing timer/duration system, which presumably only runs when sprint is
+engaged through its own normal trigger path, never actually gets to evaluate,
+because we short-circuit straight to the pm_flags bit instead of going through
+whatever real mechanism would normally set it).
+
+**Implication:** this diagnostic can't observe the real timer AS LONG AS our own
+pm_flags-forcing hook is what's driving sprint. Confirming the real values would
+need either (a) temporarily disabling our own forcing and reading this same
+function while sprinting via real KEYBOARD input instead, to see the genuine
+values without our own bypass in the way, or (b) finding the REAL native
+sprint-engage trigger (a kbutton_t or command, the same class of mechanism
+already found for ADS/Reload/crouch-prone) and switching to driving THAT instead
+of forcing pm_flags directly -- which would also make our own sprint naturally
+subject to the real timer, perk multipliers, and Extreme Conditioning without
+needing to replicate any of it ourselves. Not attempted yet -- a real
+architecture change, not a quick tweak, and current sprint behavior is already
+confirmed working well, so this needs a deliberate decision before touching it.
 
 ---
 
