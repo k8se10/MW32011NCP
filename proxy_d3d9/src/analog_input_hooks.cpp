@@ -138,6 +138,34 @@ Stance g_stance = Stance::Standing;
 DWORD g_crouchButtonPressStartMs = 0;
 bool g_crouchButtonWasHeld = false;
 bool g_holdActionConsumed = false; // true once this press has already fired its hold action
+
+// ---- Stuck-prone diagnostic instrumentation (2026-07-15/16, task #10) --------------
+//
+// Log-only (no behavior change) instrumentation added to chase a live-reported,
+// game-breaking bug: using the Predator missile killstreak while prone (confirmed via
+// the user's own repro to get stuck DURING/AFTER the missile-cam sequence, not at the
+// D-pad select itself) leaves the player permanently stuck prone, not recoverable even
+// via real keyboard input. An earlier attempt "fixed" this by auto-standing before a
+// killstreak-type D-pad select -- REJECTED: real console MW3 doesn't force standing to
+// use a killstreak prone, so that changed behavior instead of fixing a bug. Reverted.
+//
+// This logs g_stance (ours) alongside the real native per-player stance byte
+// (&DAT_00b363b0 + playerIndex*0xbe5c, the same memory FUN_00438710's cases 0x3b/0x4c/
+// 0x4d toggle/clear) on every stance transition, on every D-pad press, and on a ~500ms
+// heartbeat regardless of input -- so a real repro produces a timeline showing exactly
+// when/how the two diverge, without needing to already know the missile-cam's own
+// entry/exit flag. Once a repro log is captured, this can be trimmed back down.
+constexpr uintptr_t kRealStanceByteAddr = 0x00b363b0; // player 0 (SP-only, stride*0 offset)
+DWORD g_lastStanceDiagLogMs = 0;
+
+void LogStanceDiag(const char* tag)
+{
+    uint8_t realByte = *reinterpret_cast<volatile uint8_t*>(kRealStanceByteAddr);
+    char buf[160];
+    sprintf_s(buf, "[stance-diag] %s g_stance=%d realStanceByte=0x%02x t=%lu",
+              tag, static_cast<int>(g_stance), realByte, GetTickCount());
+    LogFromController(buf);
+}
 }
 
 extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
@@ -147,13 +175,28 @@ extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
     unsigned char leftTrigger, rightTrigger;
     if (!Controller_GetRawButtonsAndTriggers(xiButtons, leftTrigger, rightTrigger)) return;
 
+    DWORD nowMs = GetTickCount();
+    if (nowMs - g_lastStanceDiagLogMs >= 500) {
+        LogStanceDiag("heartbeat");
+        g_lastStanceDiagLogMs = nowMs;
+    }
+
     uint32_t out = 0;
-    if (rightTrigger >= kTriggerThresholdFire) out |= 0x1;      // Fire (+attack)
+    bool fireHeld = rightTrigger >= kTriggerThresholdFire;
+    if (fireHeld) out |= 0x1;                                   // Fire (+attack)
     if (xiButtons & kXI_RIGHT_THUMB) out |= 0x4;                // Melee
     if (xiButtons & kXI_X) out |= 0x8;                          // Interact -- Reload still unresolved, see re_notes/iw5sp.md
     if (xiButtons & kXI_LEFT_SHOULDER) out |= 0x8000;           // Tactical (smoke)
     if (xiButtons & kXI_RIGHT_SHOULDER) out |= 0x4000;          // Lethal (frag)
     if (xiButtons & kXI_A) out |= 0x400;                        // Jump (+gostand)
+
+    {
+        static bool s_fireHeldForDiag = false;
+        if (fireHeld != s_fireHeldForDiag) {
+            LogStanceDiag(fireHeld ? "fire-press" : "fire-release");
+            s_fireHeldForDiag = fireHeld;
+        }
+    }
 
     bool bHeld = (xiButtons & kXI_B) != 0;
     if (bHeld && !g_crouchButtonWasHeld) {
@@ -168,6 +211,7 @@ extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
             // reverses back to Standing, anything else goes to Prone.
             g_stance = (g_stance == Stance::Prone) ? Stance::Standing : Stance::Prone;
             g_holdActionConsumed = true;
+            LogStanceDiag("hold-fire");
         }
     }
     if (!bHeld && g_crouchButtonWasHeld && !g_holdActionConsumed) {
@@ -177,6 +221,7 @@ extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
             case Stance::Crouched: g_stance = Stance::Standing; break;
             case Stance::Prone:    g_stance = Stance::Crouched; break;
         }
+        LogStanceDiag("tap-fire");
     }
     g_crouchButtonWasHeld = bHeld;
 
@@ -971,8 +1016,44 @@ constexpr unsigned short kXI_DPAD_RIGHT = 0x0008;
 // Mapping per the user's own reference Steam Controller config (re_notes/iw5sp.md):
 // D-Pad Up = actionslot1(0), Right = actionslot2(1), Down = actionslot3(2), Left = actionslot4(3)
 bool g_dpadHeld[4] = { false, false, false, false };
-}
 
+// Per-slot action TYPE table FUN_00410ad0 itself reads (confirmed via decompile,
+// 2026-07-15 later session): int[4] at 0x00985064, one entry per actionslot -- 1 =
+// direct weapon-set, 2 = calls FUN_0057a930 (killstreak/equipment "wield" select, itself
+// a weapon-inventory scan+set, not a stance call), 3 = ORs an NVG-style persistent flag.
+// Not read by our own code (see the stuck-prone note below for why an earlier attempt
+// that did read this was reverted).
+} // namespace
+
+// GAME-BREAKING BUG, STILL OPEN (live-reported by user after the v0.1.0-prealpha
+// release): using the Predator missile killstreak while prone in the first mission left
+// the player permanently stuck prone -- not recoverable even via real keyboard input.
+// Static RE ruled out the obvious suspect: FUN_0057d2c0 (the function that caused the
+// earlier, similarly-unrecoverable stuck-prone regression during the F5/ready-up hunt)
+// has exactly one caller in the whole binary (FUN_00438710's cases 0x48/0x49, confirmed
+// via FindCallers.java) and neither is invoked anywhere in this file -- so this is a
+// different bug, not a recurrence of that one, despite the identical symptom.
+//
+// Working theory, NOT yet confirmed live: InjectControllerButtons (above) unconditionally
+// re-asserts g_stance's usercmd bit (0x100/0x200) every single frame regardless of what
+// else the game is doing -- the same general failure pattern as the earlier buy-
+// station+pause bug (known_issues.md issue #1: forcing a bit continuously, ignoring
+// context, breaks a native subsystem's own state transition). Predator missile is used
+// like a "weapon" (select via D-pad, then fire) that puts the local player into a
+// scripted missile-cam sequence; if the player is prone when that sequence starts, our
+// hook may keep forcing the prone bit through it and through the exit transition.
+//
+// A first attempt fixed this by auto-standing before a killstreak-type D-pad select
+// (mirroring Sprint's own "auto-stand from crouch/prone first" precedent above) --
+// REJECTED by the user: real console MW3 does NOT force you to stand to use a
+// killstreak while prone, so that "fix" would have broken behavior parity with the
+// original game to paper over a bug, which fails this project's console-parity bar.
+// Reverted. The real fix needs to identify what's actually different about the missile-
+// cam's entry/exit sequence when the player is prone, via live diagnostic logging
+// (g_stance transitions + the real native stance byte, &DAT_00b363b0 + player*0xbe5c,
+// across a real repro), not a change to normal stance behavior -- log-only
+// instrumentation for exactly this is now in place (LogStanceDiag, defined above near
+// InjectControllerButtons; also logs a D-pad-press event below). See task #10.
 extern "C" void __cdecl InjectControllerDpad()
 {
     unsigned short buttons;
@@ -986,8 +1067,12 @@ extern "C" void __cdecl InjectControllerDpad()
         bool held = (buttons & kDpad[i].bit) != 0;
         if (held != g_dpadHeld[i]) {
             if (held) {
+                char tag[32];
+                sprintf_s(tag, "dpad-press slot=%d", kDpad[i].slot);
+                LogStanceDiag(tag);
                 ActionSlotDown(kLocalClientIndex, kDpad[i].slot);
             } else {
+                LogStanceDiag("dpad-release");
                 ActionSlotUp(kLocalClientIndex);
             }
             g_dpadHeld[i] = held;
