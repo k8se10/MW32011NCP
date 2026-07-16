@@ -15,6 +15,7 @@
 // playtest, not just Ghidra's static guesses -- see re_notes/iw5sp.md.
 
 #include <windows.h>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -918,13 +919,31 @@ float GetDvarFloat(const char* name)
 // AdsSlowdownStrength in mw3ncp_config.ini, task #14) rather than being hardcoded.
 
 // Computes the ADS look-rate scale factor for this frame: 1.0 when not aiming (or
-// strength is 0), otherwise the live effective-FOV/hipfire-FOV ratio (< 1.0 when
-// zoomed in), blended toward 1.0 by (1 - kAdsSlowdownStrength). This is the original
-// formula the user confirmed working live before ACOG's 2x toggle mode specifically
-// was found to invert look -- restored as-is (no clamp) per explicit direction to
-// fix the ACOG case properly (via live x64dbg investigation of FUN_004b0580's
-// alt-toggle path) rather than patch around it blind. See re_notes/known_issues.md
-// issue #8 for the full investigation trail.
+// strength is 0), otherwise ratio^strength, where ratio is the live effective-FOV/
+// hipfire-FOV ratio (< 1.0 when zoomed in).
+//
+// ROOT-CAUSE FOUND AND FIXED (2026-07-16): the ORIGINAL linear blend formula here
+// (`1 - strength*(1-ratio)`) went NEGATIVE -- inverting look direction -- for any
+// strength > 1.0 once ratio dropped below (1 - 1/strength). Live-confirmed with
+// diagnostic logging: this was NOT a native engine bug, NOT the ACOG-specific
+// alt-FOV-path theory, and NOT FPU corruption (the "risky" alt-path flag,
+// DAT_00984b9c bit 2, never set during the whole repro that exposed this --
+// FUN_004b0580 stayed on its normal, safe lerp path throughout). It was purely this
+// formula's own shape: the user had `AdsSlowdownStrength=2.0` configured (testing
+// how far the value could go), and at ratio=0.31 (a real, legitimate ACOG zoom
+// level), `1 - 2*(1-0.31) = -0.38` -- a real negative scale factor from otherwise
+// completely normal inputs.
+//
+// Fixed by switching to a power curve (`pow(ratio, strength)`) instead of a linear
+// blend: strength=0 -> 1.0 (no slowdown, matches old behavior), strength=1 ->
+// exactly `ratio` (matches the old formula's own "fully proportional" case), and
+// strength>1 gives progressively MORE aggressive slowdown than proportional --
+// but mathematically, `ratio^strength` can NEVER go negative or invert for any
+// strength >= 0, no matter how high, since ratio itself is always positive (both
+// effectiveFov and baseFov are guarded > 0 above). This preserves the ability to
+// configure a stronger-than-1.0 slowdown (rejected a plain clamp-to-1.0 fix for
+// exactly this reason) while making the "overflow" that caused inversion
+// structurally impossible instead of just guarding against one specific value.
 float GetAdsLookRateScale()
 {
     if (!g_adsHeld || g_modConfig.adsSlowdownStrength <= 0.0f) return 1.0f;
@@ -936,14 +955,13 @@ float GetAdsLookRateScale()
     if (effectiveFov <= 0.0f) return 1.0f;
 
     float ratio = effectiveFov / baseFov;
-    float scale = 1.0f - g_modConfig.adsSlowdownStrength * (1.0f - ratio);
+    float scale = powf(ratio, g_modConfig.adsSlowdownStrength);
 
     // Diagnostic (task #12/known_issues.md issue #8): rate-limited log of the raw
-    // inputs to this computation, so reproducing the ACOG-2x bug produces concrete
-    // numbers instead of another guess. DAT_00984b9c is the flag FUN_004b0580 itself
+    // inputs to this computation. DAT_00984b9c is the flag FUN_004b0580 itself
     // checks (bit 2, mask 0x4) to decide between the safe cg_fov-lerp path and the
-    // alt-toggle path (FUN_004f6b70) suspected of returning non-FOV data for
-    // hybrid/alt-toggle-reticle weapons like ACOG's 2x mode.
+    // alt-toggle path (FUN_004f6b70) -- kept here since it's still useful evidence
+    // that the safe path is the one actually in use during normal ADS.
     static DWORD s_lastAdsDiagLogMs = 0;
     DWORD nowMs = GetTickCount();
     if (nowMs - s_lastAdsDiagLogMs >= 250) {

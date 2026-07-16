@@ -115,9 +115,13 @@ void WriteDefaultConfig(const char* path)
         "Sensitivity=%g\n"
         "; How strongly look slows down while aiming down sights on magnified optics,\n"
         "; scaled to the weapon's actual live zoom level (read-only -- never changes\n"
-        "; your real field of view). 0.0 = no slowdown at all (flat sensitivity\n"
-        "; regardless of zoom); 1.0 = fully proportional to zoom (closest to real\n"
-        "; console feel, confirmed live). Values in between blend toward flat.\n"
+        "; your real field of view) as effectiveFov/hipfireFov, raised to this power.\n"
+        "; 0.0 = no slowdown at all (flat sensitivity regardless of zoom); 1.0 = fully\n"
+        "; proportional to zoom (closest to real console feel, confirmed live); higher\n"
+        "; values (2.0, 3.0, ...) apply progressively MORE slowdown than proportional,\n"
+        "; useful if even 1.0 feels too fast on deep zooms -- always mathematically\n"
+        "; safe (never inverts/goes negative) no matter how high you set it. Must stay\n"
+        "; >= 0.0.\n"
         "AdsSlowdownStrength=%g\n"
         "; OG console \"Invert Look\" -- flips vertical (up/down) look. 0 = off, 1 = on.\n"
         "InvertLook=%d\n"
@@ -252,6 +256,18 @@ void LoadModConfig()
 
     ReadFloat(path, "Look", "Sensitivity", g_modConfig.lookDegreesPerSecond);
     ReadFloat(path, "Look", "AdsSlowdownStrength", g_modConfig.adsSlowdownStrength);
+    // Live-confirmed bug (2026-07-16): the OLD linear blend formula
+    // (1 - strength*(1-ratio)) went NEGATIVE for strength > 1.0 once the zoom ratio
+    // dropped below (1 - 1/strength) -- e.g. strength=2.0 inverted look direction on
+    // any scope zoomed in past ~50%. Not a native engine issue at all (confirmed via
+    // diagnostic logging: the "risky" alt-FOV-path flag never set during the repro
+    // that exposed this) -- it was the formula's shape, not the value. Fixed by
+    // switching GetAdsLookRateScale to a power curve (ratio^strength) instead of a
+    // linear blend -- mathematically safe for any strength >= 0, no upper bound
+    // needed (see that function's own comment for why). Only guard against a
+    // negative strength, which WOULD still misbehave (ratio^negative blows up as
+    // ratio->0).
+    if (g_modConfig.adsSlowdownStrength < 0.0f) g_modConfig.adsSlowdownStrength = 0.0f;
     ReadBool(path, "Look", "InvertLook", g_modConfig.invertLook);
     ReadUlong(path, "Stance", "ProneHoldThresholdMs", g_modConfig.proneHoldThresholdMs);
     ReadUlong(path, "Interact", "HoldThresholdMs", g_modConfig.interactHoldThresholdMs);
