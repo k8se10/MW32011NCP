@@ -1181,6 +1181,19 @@ retail game files as a base) is installed locally — direct comparison done:
   "MP anti-cheat exposure" flag from a theoretical concern into a confirmed,
   specific, high risk for Plutonium MP specifically** — do not use this mod with
   Plutonium MP.
+- **Cross-reference, per CLAUDE.md's cross-project policy (2026-07-17, later
+  session)**: the byte-identical-`iw5mp.exe` fact recorded here turned out to
+  have a direct netcode-security consequence, found by the sibling
+  `MW32011NSP` project. Since Plutonium's MP client is unmodified from
+  retail, any CLIENT-side (as opposed to server-side) netcode vulnerability
+  found in retail `iw5mp.exe` is present on Plutonium MP installs too —
+  Plutonium's own mitigation (routing through their own dedicated servers)
+  only addresses server-side code, not client-side message parsing or demo
+  playback. `MW32011NSP` found and confirmed at least one such client-side
+  bug. Full detail: `MW32011NSP/re_notes/vulnerability_research.md`'s
+  "Plutonium's mitigation does not cover client-side bugs" section. Not
+  relevant to this mod's own input-hooking work directly, but worth knowing
+  if this project's own Plutonium-compatibility research continues.
 
 **AlterWare IW5-Mod** — a distinct, closed-source client specifically for MW3
 **Singleplayer + Spec Ops** (not MP), launched via its own separate `iw5-mod.exe`
