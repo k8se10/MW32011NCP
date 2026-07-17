@@ -468,6 +468,19 @@ instead; the header comment was corrected to warn against this for future caller
 
 ---
 
+## 7. Remaining unassigned controller inputs
+
+**Status:** Open, tracked as task #5 (Back, deprioritized), #7 (killstreaks, not yet
+scoped), and #9 (sprint's Extreme Conditioning override).
+
+| Input | Intended action | Blocker |
+|---|---|---|
+| Back | `+scores` (scoreboard/objectives) | **Key-synthesis workaround implemented 2026-07-17** (Back hold → real `WM_KEYDOWN`/`WM_KEYUP` for TAB, the confirmed real bind `bind TAB "+scores"` from `players2/config.cfg`) — third narrow exception to the no-OS-input-emulation rule, same pattern as ready-up (F5) and D-pad Left's squadmate call-in ('4'). **Live-tested in Campaign: no visible effect at all** — no scoreboard, no objectives overlay. Real cause not yet diagnosed; leading theory is `+scores`/scoreboard is fundamentally an MP concept that's a no-op in SP, and SP's actual "mission objectives" display (if player-triggerable at all) uses a completely different, still-unidentified mechanism — not necessarily the same feature CLAUDE.md's console-behavior description assumed. User explicitly parked this as a known UI gap to fill later ("these are both UI gaps we will fill as part of the improvements side of the mod"), not urgent. The synthesis code itself is harmless (real key event, just currently produces no observable result) and stays in the build. |
+| Killstreaks | Predator missile confirmed partially working; needs per-killstreak investigation | **(2026-07-17, full GSC trace done, see issue #26)** `remote_missile` fully traced — real fire (`+attack`) and abort binds confirmed; leading hypothesis is raw-usercmd-bit Fire not reliably triggering the `notifyonplayercommand` the launch is gated on. `precision_airstrike` uses a placement/marker system, not a camera takeover. Turret and squadmate (`friendly_support_delta`/`riotshield`) call-ins are CONFIRMED separate script systems (correction to this row's own earlier framing) — squadmate bug's divergence point narrowed to unresolved function `_id_061C::_id_3DE2`. |
+| Sprint / Extreme Conditioning | Perk should double sprint duration to 8s | **(2026-07-17: genuinely parked, see issue #26)** Perk's real name confirmed (`specialty_longersprint`), but no native `HasPerk`-equivalent query exists — `hasperk` dispatches by compile-time numeric ID with zero string trace in the binary, and `perk_sprintMultiplier` has exactly one reference (its own registration), confirming the scaling is entirely GSC-side. No clean native path without going through GSC itself — same dead-end class as Sprint's own kbutton search. |
+
+---
+
 ## 8. ADS look-slowdown — root cause found via diagnostic logging, fixed (2026-07-16)
 
 **Status:** Root cause conclusively identified and fixed via live diagnostic data.
@@ -1195,16 +1208,55 @@ wording, especially the anti-cheat callout):
 
 ---
 
-## 7. Remaining unassigned controller inputs
+## 26. Full-breadth engine research pass — killstreaks, weapons, perks, HUD/UI, AI/vehicles, physics/health, MP (2026-07-17, later session)
 
-**Status:** Open, tracked as task #5 (Back, deprioritized), #7 (killstreaks, not yet
-scoped), and #9 (sprint's Extreme Conditioning override).
+**Status:** Research complete, no code changes. Full detail in `iw5sp.md`'s "Full-breadth research pass" section — this is an index/summary.
 
-| Input | Intended action | Blocker |
-|---|---|---|
-| Back | `+scores` (scoreboard/objectives) | **Key-synthesis workaround implemented 2026-07-17** (Back hold → real `WM_KEYDOWN`/`WM_KEYUP` for TAB, the confirmed real bind `bind TAB "+scores"` from `players2/config.cfg`) — third narrow exception to the no-OS-input-emulation rule, same pattern as ready-up (F5) and D-pad Left's squadmate call-in ('4'). **Live-tested in Campaign: no visible effect at all** — no scoreboard, no objectives overlay. Real cause not yet diagnosed; leading theory is `+scores`/scoreboard is fundamentally an MP concept that's a no-op in SP, and SP's actual "mission objectives" display (if player-triggerable at all) uses a completely different, still-unidentified mechanism — not necessarily the same feature CLAUDE.md's console-behavior description assumed. User explicitly parked this as a known UI gap to fill later ("these are both UI gaps we will fill as part of the improvements side of the mod"), not urgent. The synthesis code itself is harmless (real key event, just currently produces no observable result) and stays in the build. |
-| Killstreaks | Predator missile confirmed partially working; needs per-killstreak investigation | Not yet scoped — needs live testing to characterize what's actually broken (camera control? fire trigger? exit-early?) before any RE work starts. **(2026-07-17: real killstreak roster now known** via `sp/survival_armories.csv` — `remote_missile` (Predator, the one partially working today), `precision_airstrike`, and `friendly_support_delta`/`friendly_support_riotshield` (very likely what task #13's AI-squadmate call-in bug is actually about — same "friendly support" family). Per-killstreak GSC scripts not yet individually traced.) |
-| Sprint / Extreme Conditioning | Perk should double sprint duration to 8s | Not yet investigated — likely `perk_sprintMultiplier` (a real dvar, confirmed to exist), needs a way to detect the perk is equipped/active and read its live scale value |
+User direction: research "everything" about the engine across SP/Survival/MP via
+a large parallel batch of research-only forks, ahead of wrapping the session.
+
+- **Killstreaks (task #7)**: `remote_missile` (Predator) fully traced — real
+  fire/abort binds confirmed, plus an actionable hypothesis that its "partial"
+  behavior stems from Fire being raw usercmd bits rather than a real `+attack`
+  command dispatch, which the killstreak's `notifyonplayercommand` gate needs.
+  **Important correction to task #13's own framing**: turret call-in and
+  `friendly_support_delta`/`riotshield` (squadmate) call-in are CONFIRMED
+  completely separate script systems, not two branches of one — "works for
+  turrets, fails for squadmates" was never a valid comparison. The squadmate
+  bug's real divergence point is narrowed to one specific unresolved function,
+  `_id_061C::_id_3DE2`.
+- **Weapons**: real `WeaponCompleteDef`/`WeaponDef` struct found and confirmed
+  via exact offset arithmetic. Separate native timers for normal reload vs.
+  reload-from-empty exist — this mod's single-kbutton reload almost certainly
+  already gets correct behavior for free. A per-weapon-animation rumble-
+  notetrack system found, relevant to task #17.
+- **Perks (task #9)**: `HasPerk`-equivalent native query — genuinely parked, not
+  solved. `hasperk` dispatches by compile-time numeric ID with zero string trace
+  in the binary; `perk_sprintMultiplier` has exactly one reference (its own
+  registration) — nothing native reads it, the scaling is entirely GSC-side. No
+  clean native path exists without going through GSC itself.
+- **HUD/UI + buy-station**: confirmed a single central HUD dispatcher
+  (`CG_OwnerDraw`-equivalent, ~150 cases, sprint meter as the anchor). Buy-station
+  reads `sp/survival_armories.csv` via a generic GSC `tablelookup` builtin, not a
+  bespoke function — reusable by any future debug tool.
+- **AI/vehicles**: civilian AI library confirmed genuinely shared across
+  missions. No dedicated vehicle input path found — real evidence (zero vehicle
+  binds, hint text rendered as static strings) suggests vehicles reuse the same
+  `usercmd_t` fields this mod already hooks, meaning movement/look may already
+  work in vehicle sections with no new code.
+- **Physics/health**: mantle's real trigger found — it's the same `+gostand`
+  command already used for standing up, contextually reinterpreted. **Task #20
+  ("god mode")**: a real, unambiguous god-mode-shaped bit found
+  (`entity+0x13c` bit `0x1` fully skips the health-decrement block) — untested
+  live, but the native gating logic is clear.
+- **MP (`iw5mp.exe`) foundational RE** — research only, no hooks/implementation,
+  per CLAUDE.md's still-unresolved anti-cheat question. Confirmed the same core
+  architecture holds (identical `usercmd_t` struct/offsets, same class of
+  boot-time registration function, `d3d9.dll` import present) — not a different
+  engine, just a different compile. One real structural difference flagged (a
+  mouse-Y freelook-mode branch). Menu/zone-loading equivalent not located —
+  genuine gap, not confirmed absent. No implementation should proceed from this
+  without the anti-cheat question being resolved first.
 
 ---
 

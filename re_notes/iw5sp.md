@@ -2417,3 +2417,364 @@ listen for this button" question.
 dubai (to confirm whether the civilian-AI library is shared across missions or
 dubai-specific); confirming a common `_utility.gsc`-style shared include beyond
 the standard `common_scripts\utility::` namespace already known.
+
+## Full-breadth research pass -- killstreaks, weapons, perks, HUD/UI, AI/vehicles, physics/health, MP (2026-07-17, later session)
+
+User direction: research "everything" about the engine, across SP/Survival/MP,
+via a large parallel batch of research-only forks. No code changes in this
+section -- pure findings, organized by topic. `sp_dubai`'s civilian-AI library
+sharing (noted above as unresolved) is answered here too: confirmed identical
+in `sp_warlord.ff`'s dump, genuinely shared across missions, not dubai-specific.
+
+### Killstreaks (task #7) -- full GSC trace
+
+**`remote_missile` (Predator Missile)** -- fully traced, script `1555.gsc`.
+Equipping IS switching to a special weapon (`giveweapon("remote_missile_detonator")`,
+`setactionslot(slot,"weapon","remote_missile_detonator")`, `1554.gsc`) -- no
+separate "activate" step. Camera/control while active shares the real UAV-control
+system (`controlling_UAV`/`exiting_uav_control`/`uav_enabled` in `_id_3C32`) --
+aimed with the normal look stick, no separate aim scheme. **Fire/launch**:
+`notifyonplayercommand("launch_remote_missile", "+attack")` and
+`"+attack_akimbo_accessible"` -- the same `+attack` bind normal Fire uses.
+**Abort**: `notifyonplayercommand("abort_remote_missile", "weapnext")`, `"+stance"`,
+and -- PC-only (`if (!level.console)`) -- `"+gostand"`/`"togglecrouch"`/
+`"toggleprone"`, a real, confirmed PC/console binding difference. On launch,
+`magicbullet(...)` spawns the projectile from a fixed offset behind current view
+angles.
+
+**Actionable hypothesis, not confirmed**: this mod's Fire (RT) is raw `usercmd_t`
+button bits, not a synthesized `+attack` bind/command execution. If
+`notifyonplayercommand` only fires on real bind/command dispatch (not raw usercmd
+bits), that directly explains "Predator missile confirmed partially working" --
+camera/view likely works (generic UAV control, not command-notify-gated), launch
+might not reliably fire the `launch_remote_missile` notify GSC is waiting on.
+Worth a native-side check (does raw usercmd Fire trigger `notifyonplayercommand`
+for `+attack`?) before assuming this is the whole story.
+
+**`precision_airstrike`** -- partially traced, script `1553.gsc`. No dedicated
+camera-takeover/abort-notify block like `remote_missile`'s -- uses a
+placement/marker system instead (`_id_3D05` resolves a placement type via
+`_id_0617::_id_3CD9`, cleaned up via `_id_3CF9()`, same shape as turret/sentry
+placement just above it in the same file). Aim-a-ground-marker-then-confirm, not
+a camera takeover. The actual placement-confirm bind wasn't traced to a specific
+command (`_id_3CD9`'s own body, not reached).
+
+**`friendly_support_delta`/`friendly_support_riotshield`** -- trigger fully
+traced, real divergence point found but not resolved. Both share the IDENTICAL
+trigger/call flow, script `1574.gsc`, function `_id_3F24`:
+```
+notifyoncommand( "friendly_support_called", "+actionslot 4" );
+self waittill( "friendly_support_called" );
+maps\_so_survival::spawn_allies( self.origin, var_0, self );
+```
+`var_0` (the streaktype string) is the only thing distinguishing delta from
+riotshield in this path -- **rules out the input/trigger layer as the bug
+source**; both are gated on the exact same `+actionslot 4` bind this mod's
+existing D-pad Left key-synthesis (`'4'`) already drives successfully for the
+turret case. **Important scope correction on task #13's own framing**: turret
+call-in (`sentry`/`sentry_gl`) is a COMPLETELY SEPARATE script system from
+`friendly_support_delta`/`riotshield` -- it uses
+`sentry_placement_finished`/`sentry_placement_canceled`/`controller_sentry_cancel`,
+not `friendly_support_called`/`spawn_allies` at all. "Works for turrets, fails
+for squadmates" was comparing two genuinely different native/script code paths
+sharing only the same input slot -- the working turret case gives no direct
+guarantee about the ally-spawn case's internals. `spawn_allies` itself (`1571.gsc`
+line 1118) is also identical for both types: `_id_0618::_id_3E3D(...)` (a
+"drop path" airdrop-style spawn) -> `level notify("so_airsupport_incoming", var_1)`
+-> `_id_061C::_id_3DE2(var_1, 3, drop_path, self)`. **The real per-type divergence
+must be inside `_id_061C::_id_3DE2`** (or whatever consumes
+`"so_airsupport_incoming"`) -- not traced to completion, its definition wasn't
+found among currently-decompiled scripts. This is the concrete next step for
+task #13's bug.
+
+**Not reached**: Campaign-zone killstreak scripts beyond a name-only check (no
+distinct Campaign killstreak GSC found in `sp_dubai.ff`); `_id_061C::_id_3DE2`'s
+body (highest-value next step); `_id_3CD9`'s body.
+
+### Weapon/attachment/ADS/reload internals
+
+**Real weapon-data struct confirmed**: `WeaponCompleteDef`/`WeaponDef` (cross-
+referenced against OpenAssetTools' `IW5_Assets.h`). `FUN_004f6b70` (the function
+this mod's ADS look-slowdown already calls via `GetEffectiveFov`) reads a per-
+weapon-slot pointer array (`&DAT_01d39aa8`, indexed 0-255 by weapon ID) and
+dereferences `+0x48` for ADS FOV -- confirmed by exact struct-layout arithmetic
+(summing every field in declared order lands precisely on `0x48`, matching
+OpenAssetTools' `fAdsZoomFov`). Real named fields confirmed present:
+`canHoldBreath` (bool -- confirms hold-breath is a per-weapon flag, presumably
+sniper-class only), separate hip and ADS sway systems
+(`swayMaxAngle`/`LerpSpeed`/`PitchScale`/`YawScale`/`HorizScale`/`VertScale`/
+`ShellShockScale` and matching `adsSway*` fields), a separate ADS idle-sway system
+(`adsIdleLerpStartTime`/`adsIdleLerpTime`/`fAdsIdleAmount`/`adsIdleSpeed`).
+`WeaponCompleteDef` also carries `aiVsAiAccuracyGraphKnots`/
+`aiVsPlayerAccuracyGraphKnots` -- confirms the loose `.accu` files found earlier
+this session are just a dump of this exact struct field.
+
+**Reload -- confirmed real separate empty-reload timers exist**: `iReloadTime`,
+**`iReloadEmptyTime`** (a genuinely distinct "reload from empty" timing path),
+`iReloadAddTime`, `iReloadStartTime`, `iReloadStartAddTime`, `iReloadEndTime` --
+this mod's existing single-kbutton reload almost certainly already gets correct
+behavior for free (the kbutton triggers the same native reload state machine,
+which internally picks the right timer) -- worth a live check, not expected to
+need new code.
+
+**Weapon-switch beyond `weapnext`**: `players2/config.cfg` only binds `weapnext`
+(keys `1`/`2`) -- no default PC bind for `weapprev`/direct-select, matching the
+established pattern of console-native commands with no PC default (Extreme
+Conditioning's `+stance` is the other known example). `weapprev` is confirmed
+real (already noted elsewhere in this doc), just not default-bound -- reusable
+directly for a future D-pad-hold weapon-select feature, no further RE needed.
+
+**Attachments**: not fully traced to a live "current attachment" read.
+`FUN_004f6b70`'s branching logic (a flag at `+0xa1` choosing between two nearby
+float fields) suggests attachment-driven FOV variants exist at the struct level,
+consistent with nearby `iAltRaiseTime`/`altWeapon`/akimbo-variant fields.
+`PLATFORM_CHANGE_ZOOM`'s real native trigger command not independently located.
+
+**`PLATFORM_LOW_AMMO_NO_RELOAD`'s trigger condition**: not traced to a specific
+ammo-count threshold.
+
+**Incidental find for future vibration work**: `WeaponFullDef` has real
+`notetrackRumbleMapKeys`/`notetrackRumbleMapValues` fields (16 entries) -- a
+genuine per-weapon-ANIMATION rumble-notetrack system, more specific than the
+general event-notify rumble hooks found earlier this session (weapon-fired/
+damage). Worth cross-checking against those for task #17.
+
+### Perk system + native HasPerk query (task #9) -- genuinely parked, not solved
+
+`self hasperk(perkName, 1)`/`setperk`/`unsetperk`/`clearperks()` are real,
+callable GSC built-in methods (confirmed in `1557.gsc`). Also surfaced a perk not
+previously in the known roster: `specialty_detectexplosive`. **Tracing `hasperk`
+to its native handler failed**: a raw byte-level scan
+(`RawStringScan.java`, independent of Ghidra's `-noanalysis` data-classification
+gaps) found ZERO occurrences of the literal string `"hasperk"` anywhere in
+`iw5sp.exe` -- the GSC VM dispatches this built-in by a compile-time NUMERIC ID,
+not by name string. `gsc-tool`'s decompiler resolves "hasperk" from its own
+external knowledge of IW5's method table, not from anything present in this
+binary -- same dead-end class already hit for `coopready`'s dispatch address.
+
+Re-examined `FUN_004b9350` (the real sprint-timer function) in full -- no
+perk-bitmask-shaped field found nearby; its "cap" helper `FUN_004faa50` turned
+out to be an unrelated clamped-timer getter (`min(FUN_007380e0(), 0x3fff)`), not
+a perk-multiplier lookup as hypothesized. `perk_sprintMultiplier` has **exactly
+one reference in the entire binary** -- its own registration in `FUN_0053b960` --
+confirming nothing native ever reads it dynamically; the actual scaling math is
+entirely GSC-side, and reading the raw dvar value would not tell you whether the
+perk is currently equipped.
+
+**Practical implication**: no clean native path exists to query "is Extreme
+Conditioning active right now" without going through GSC itself, a fundamentally
+different, heavier mechanism than this mod's native-hook architecture uses
+anywhere else. Genuinely parked, same category as the Sprint kbutton search --
+not a "keep digging" situation.
+
+### HUD/UI rendering architecture + Survival buy-station flow
+
+**Confirmed: a single central HUD dispatcher exists.** `FUN_00459d80` is the
+real `CG_OwnerDraw` handler (confirmed via a literal string reference to
+`"CG_OwnerDraw"` inside the function, gated by `FUN_00493b80("CG_OwnerDraw")`).
+Classic idTech/Quake3-lineage owner-draw pattern -- every `.menu`/HUD element
+needing native-code rendering carries an integer ownerdraw-type ID, this
+function switches on it (~150 distinct case values, `0x5`-`0xd0`). **Case `0x72`
+-> `FUN_005696d0`, case `0x73` -> `FUN_005695a0`** anchors the whole switch as
+genuinely the HUD dispatcher (these are the already-confirmed sprint-meter
+render functions). Several cases come in PAIRS dispatching to the same callee
+with a different literal argument (e.g. `FUN_0049f5b0` with `+0x4fc`/`+0x500` for
+cases `0x67`/`0x68`) -- shape-matches a "current clip / reserve ammo" pairing,
+NOT independently confirmed by field semantics (would need a live diagnostic,
+reading both fields while watching real ammo change). Case `0x77`
+(`FUN_0043ec00`) references `s_333_begin_firing` -- likely a killstreak-weapon
+status HUD element (AC-130-style "press X to begin firing"). A large contiguous
+block (~90 cases) hits a shared no-op `return` -- ownerdraw IDs the menu compiler
+knows about but this SP build never actually dispatches (likely MP-only/debug-
+only elements), not missing coverage.
+
+**Not reached**: definitively naming health/compass/minimap/killstreak-icon
+cases specifically -- several candidate functions decompiled
+(`FUN_0049f5b0`/`FUN_004f14b0`/`FUN_0042c180`/`FUN_004dd9f0`/`FUN_00525ef0`,
+sharing a recognizable weapon-state-table access pattern,
+`(&DAT_01d39e70)[weaponIdx & 0xff] + <offset>`) but none traced to a specific
+labeled element with full confidence. The dispatcher + full case-ID list is the
+solid, reusable deliverable for future cross-referencing.
+
+**Buy-station/armory -- confirmed generic mechanism, no bespoke lookup needed.**
+Found directly in `patch_specialops.ff`'s script `137.gsc` (~line 1934):
+```
+var_1 = tablelookup( "sp/survival_armories.csv", 1, var_0._id_160B, 2 );  // item type
+var_3 = tablelookup( "sp/survival_armories.csv", 1, var_0._id_160B, 6 );  // icon
+```
+`tablelookup(csvPath, matchColumn, matchValue, returnColumn)` is a standard,
+generic CoD GSC scripting primitive -- no dedicated "look up an armory item"
+native function exists to find; any future tool wanting the same data can call
+this exact pattern from a new GSC hook, or just read the CSV directly (already
+fully known). Also found the real HUD-update bridge for buy-station
+notifications: a `_id_18A7(widgetName, propertyName, value)`-shaped GSC function
+pushes `name`/`icon`/`desc`/`icon_width_ratio` properties onto named HUD widgets
+(`"recent_item_1"`, `"surHUD_unlock_hint_0"`) -- the mechanism behind Survival's
+"you just unlocked X" notifications, a real GSC->native dynamic-widget-property
+bridge distinct from menu-file-based rendering.
+
+**Not reached**: the actual purchase/currency-deduction trigger (the traced
+`tablelookup` snippet was for an unlock-notification display, not the purchase
+transaction); confirming controller D-pad/A navigation specifically inside the
+buy-station's own `.menu` layout (a live-test question, not static); the armory
+`.menu` file itself wasn't pulled via Unlinker this pass.
+
+### AI combat behavior + vehicle system
+
+**Civilian AI library confirmed genuinely shared** across missions (identical in
+`sp_warlord.ff`'s dump, not `sp_dubai`-specific -- resolves the "not reached"
+item from the GSC architecture survey earlier this session). Found a distinct
+`aitype/` namespace for named-character allied AI (`ally_hero_price_africa.gsc`,
+`ally_hero_soap_africa.gsc`) -- not decompiled, just noted as existing. **No
+dedicated enemy-combat-AI script library found** (not ruled out -- only
+`sp_warlord.ff` was checked; combat-heavy zones like `sp_paris_a`/`sp_berlin`
+weren't). **Difficulty/accuracy**: `accuracy/aivsplayer/*.accu` files confirmed
+per-weapon-type range-vs-accuracy curves, difficulty-agnostic at the data level
+-- a separate native difficulty multiplier almost certainly exists but wasn't
+located.
+
+**Vehicle system -- clear negative result, worth flagging prominently.** Real
+`players2/config.cfg` has ZERO vehicle-specific bind commands (checked all 26
+real binds). Confirmed via native code: `FUN_0047afc0` (draws the
+`PLATFORM_VEH_THROTTLE`/`_BRAKE`/`_FIRE` HUD hints, gated on a real per-entity
+"in vehicle" state `== 6`) renders these as FIXED instructional text, not
+resolved through the same `&&N`/bind-name-lookup mechanism confirmed this session
+for weapon-pickup hints -- if vehicle throttle/brake/fire had dedicated binds,
+the hint system would resolve and show the actual bound key the same way pickup
+hints do; it doesn't. `PLATFORM_VEH_BOOST` (`FUN_004e4d50`) is gated on a
+separate per-vehicle-type capability byte (`entity+0x18 & 0x10`, not every
+vehicle has boost), same fixed-text pattern. **Conclusion (inferred, not
+live-confirmed)**: vehicle sections almost certainly reuse the same
+`usercmd_t.forwardmove`/`.rightmove`/mouse-look fields this mod's existing
+movement/look hooks already write to, reinterpreted while in vehicle-entity-state
+6 -- meaning the mod's current hooks likely already work in vehicle sections with
+NO vehicle-specific code needed, though the actual vehicle-input-read function
+itself wasn't located to fully confirm this. Real vehicles found in scripts:
+`mi17` helicopter (Warlord), `vehicle_pickup_technical_pb_*` (Payback, an armed
+"technical" pickup truck) -- the shared `maps\_vehicle::` script module lives in
+a different zone (likely `common.ff`), not dumped/traced this pass.
+
+### Physics/Pmove chain + health/damage/revive system
+
+**Pmove dispatcher mapped**: `FUN_00644ed0` (the confirmed real Pmove-entry hook
+Sprint already attaches to) switches on a movement-mode integer at
+`playerState+4` (cases `1`/`7`, `2`, `3` run distinct sub-paths -- likely
+spectator/dead/intermission/freeze classes, not traced further). Normal-gameplay
+fallthrough branches on real flag bits into `FUN_00643ae0` (airborne),
+`FUN_00643ce0` (grounded -- the already-confirmed sprint-speed path),
+`FUN_006432e0` (gated on a distinct "water" bit -- swimming candidate),
+`FUN_00644aa0` (gated on a different bit -- ladder/noclip candidate). Not
+confirmed function-by-function beyond these shapes.
+
+**`FUN_00643870` (real speed-scale calculator) does more than sprint**: bit
+`0x40` OR a boost-flag both scale speed by the same constant `_DAT_0085c848`.
+`*(playerState+4) == 2` or `== 3` select distinct multiplier constants
+`_DAT_0085db40`/`_DAT_00837ec0` -- strong evidence this is the real per-stance
+(crouch/prone) speed-modifier field, with a dynamic `FUN_00643710()` call for the
+standing case. A ground-slope adjustment via `FUN_005303b0`. Bit `0x8000`, gated
+on a byte at `weaponLookup(playerState+0x518)+0x264`, applies `_DAT_0085c848`
+again -- plausibly a perk/weapon-trait speed bonus (a candidate for the real
+native Stalker perk check, `specialty_stalker` -- not chased further).
+
+**Mantle -- found, concretely.** `FindStringRefs` on `PLATFORM_MANTLE`'s
+localized key (the truncated-verb hint string, `"Press^3 &&1 ^7to  "`) resolves
+to exactly one reference, inside `FUN_00568da0` (already decompiled earlier this
+session for unrelated hint-text work). Its real call is
+`FUN_004fafd0(param_1, "+gostand", local_100, 0x100)` -- **mantle's real bind
+command is `+gostand`, the same command already used for standing up**, not a
+separate dedicated bind. The engine contextually reinterprets `+gostand` as
+"mantle" when real condition flags (`DAT_00a760ec`/`DAT_00a7610c`/
+`DAT_00a86390`/`DAT_00a86ae0`, all `+0xc`-offset checks, presumably "is there a
+mantleable ledge ahead") are true. **Actionable**: driving the same real
+`+gostand` kbutton `ForceStandingViaRealToggle` already touches internally, from
+a player-facing button (Jump/A, matching console convention), would get real
+native mantle for free.
+
+**Health/damage (`FUN_0045f770`, already confirmed real this session) --
+further traced**: health field reconfirmed at `entity+0x150`. **Real god-mode-
+shaped flag found**: `entity+0x13c` bit `0x1` gates the ENTIRE health-decrement
+block -- `if ((*(byte*)(param_1+0x13c) & 1) == 0) { ...apply damage... }`. If set,
+damage is fully skipped. Strong, concrete, directly-actionable candidate for task
+#20's "god mode" -- untested live, but the native gating logic is unambiguous.
+Bit `0x20` at the same byte gets set once health reaches 0 with a valid
+inflictor present -- plausible "killed" flag. Death dispatch confirmed consistent
+with the earlier vibration-research finding (`FUN_004895b0(entity,
+DAT_015c60b6 /* "death" */, 3)`). Per-entity-type callback tables found:
+`DAT_0092b488` (on-death), `DAT_0092b484` (on-damage-but-alive/pain), both
+indexed by a byte at `entity+0x127` with stride `0x28`.
+
+**No native "downed" state visible in this function** -- health hitting 0 goes
+straight to the death path with no intermediate branch, strongly suggesting
+Survival's revive mechanic is GSC-managed (not confirmed via GSC decompilation).
+**No native regen logic found** (a separate function, not reached). **No
+armor/plate mechanic found or ruled out** (not reached).
+
+### MP (`iw5mp.exe`) foundational RE -- STATIC RESEARCH ONLY, no hooks/implementation
+
+Given CLAUDE.md's unresolved anti-cheat-exposure flag for MP, this pass was
+explicitly scoped to pure understanding-building -- no hooks installed, nothing
+implemented. `iw5mp.exe` was already imported into the existing `MW3.gpr` Ghidra
+project from 2026-07-14 session work.
+
+**Basics reconfirmed independently** (not trusting the old CLAUDE.md note
+blindly): PE header read directly confirms `IMAGE_FILE_MACHINE_I386` -- genuinely
+32-bit x86. Raw string search: zero occurrences of `xinput1_3.dll`/`xinput1_4.dll`/
+`xinput9_1_0.dll`/`dinput8.dll`/`DirectInput8Create`/`GetRawInputData` -- matches
+the SP finding exactly, no native controller import path in MP either. `d3d9.dll`
+IS a real import -- the same proxy-DLL injection surface exists structurally, IF
+this project ever proceeds with MP.
+
+**Per-frame usercmd pipeline equivalent -- found, strong structural match to
+SP.** Via `FindGlobalRefs` against MP's own boot-time dvar-registration function
+(`FUN_00492560`, real, large, registers `sensitivity`/`m_pitch`/`m_yaw`/
+`m_forward`/`m_side`/`cl_yawspeed`/`cl_pitchspeed`/`cl_anglespeedkey` -- the
+latter three explicitly described in their own registration strings as "for game
+pad and keyboard", the same console-leftover pattern as SP):
+- **`FUN_00489c40`** -- writes signed bytes at `unaff_EDI+0x1c`/`+0x1d` via a
+  clamp helper -- the EXACT SAME `usercmd_t.forwardmove`/`.rightmove` offsets
+  SP's `FUN_0057d430` uses. Same struct layout, different binary/surrounding
+  code, as expected.
+- **`FUN_0048a5d0`** -- assembles kbutton flag-pairs into `usercmd_t.buttons`,
+  writes fixed-point angle bytes at `+0x26`-`0x2a` using `m_yaw`/`m_pitch` --
+  MP's `CL_CreateCmd`-equivalent orchestrator.
+- **`FUN_004896c0`** -- updates real pitch/yaw accumulators using
+  `cl_yawspeed`/`cl_pitchspeed`/`cl_anglespeedkey` scaled by frame time --
+  keyboard/gamepad-arrow-key angle-speed path.
+- **`FUN_00489ba0`** -- reads raw mouse deltas, scales by `sensitivity`/
+  `cl_mouseAccel` -- MP's raw-mouse-delta source, analogous to SP's
+  `FUN_0057d680`.
+
+**Real structural difference flagged, not chased down**: `FUN_00489c40`
+branches on a per-slot state byte to decide whether mouse Y deltas get treated
+as forward/back MOVEMENT vs. look pitch (accumulator) -- a classic idTech
+"non-freelook mode" branch not obviously present in SP's already-documented
+code paths.
+
+**Menu/zone-loading equivalent -- NOT confirmed, genuine gap, not a "checked and
+absent" result.** `FUN_00492560`'s command-registration dump includes real
+menu-adjacent commands (`closemenu`, `resetViewport`, `updateGamerProfile`,
+`resolveItemDefAction`) matching SP's own found menu commands, strongly
+suggesting the same `.menu`-based architecture applies -- but a `LoadZones`-
+shaped veneer or `RegisterMenuList`-shaped function wasn't located this pass
+(probes for `"ui/hud.txt"`/`"ui_mp/hud.txt"` both came back empty).
+
+**MP-specific structures found, no separate work needed**: the same
+registration dump surfaces a large set of real Xbox Live/online-service
+commands entirely absent from SP (`xstartlobby`, `xstartprivateparty`/
+`xstopprivateparty`, `xpartygo`/`xpartyvote`/`xpartybackout`, `connect`/
+`connect_lobby`, `playlist`, `onlinegame`, `useonlinestats`,
+`cl_enableDedicatedServerBrowser`). Notable: `startSingleplayer` is ALSO
+registered here -- MP's binary retains some SP-launch-adjacent command surface,
+an interesting, unexplained overlap. Scoreboard system, killstreak-earning
+economy, spawn system, and team logic were not attempted this pass -- real,
+expected-to-exist, not-yet-located territory.
+
+**Bottom line**: the core architecture (proxy-DLL-injectable, identical
+`usercmd_t` struct layout at the same field offsets, same class of boot-time
+dvar/command registration) genuinely holds for MP -- not a different engine,
+just a different compile with its own address space and real MP-specific
+systems layered on top. Nothing found contradicts this mod's existing approach;
+a future MP implementation pass would need to independently re-derive every
+address (per CLAUDE.md's own mandate) but wouldn't need a different technique.
+Per CLAUDE.md's still-unresolved anti-cheat question, no implementation work
+should proceed from this without that discussion happening first.

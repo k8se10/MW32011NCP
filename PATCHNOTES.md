@@ -6,6 +6,30 @@ reverse-engineering trail behind each entry.
 
 ---
 
+## Unreleased
+
+### Docs
+- **Full-breadth engine research pass** (killstreaks, weapons, perks, HUD/UI, AI/vehicles,
+  physics/health, and a research-only pass on `iw5mp.exe`) — no code changes, pure
+  groundwork. Headline findings: a real, actionable hypothesis for Predator missile's
+  partial-working state (task #7); confirmation that turret and AI-squadmate call-ins
+  are genuinely separate script systems, not two branches of one (correcting task
+  #13's own framing) with the squadmate bug's divergence point narrowed to a single
+  unresolved function; Extreme Conditioning's native detection (task #9) confirmed
+  genuinely parked, not just unstarted; a real, unambiguous god-mode bit found for
+  task #20; and confirmation that MP (`iw5mp.exe`) shares the same core architecture
+  as SP (same `usercmd_t` layout, same class of registration function) without yet
+  resolving CLAUDE.md's open anti-cheat question, which any future MP work still
+  needs first. Full detail in `re_notes/iw5sp.md` and `re_notes/known_issues.md`
+  issue #26.
+- Renamed the mod's project folder from `MW3 Survival and Campaign Controller
+  Support/` to `MW32011NCP/` (same repo/git history) to match the project's actual
+  GitHub name. A new sibling project, `MW32011NSP` (netcode/security modernization),
+  now also lives at the game install root — `re_notes/` cross-referencing between the
+  two is now a standing policy, see `CLAUDE.md`.
+
+---
+
 ## v0.1.3 (2026-07-17)
 
 The biggest research release so far, alongside one real shipped feature. Real,
