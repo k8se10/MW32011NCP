@@ -9,6 +9,14 @@ reverse-engineering trail behind each entry.
 ## Unreleased
 
 ### Fixed
+- **Corrected a stale "Campaign mostly untested" claim in README's
+  killstreak sections (2026-07-18)**, in two places — the control-map
+  table's Killstreaks row and the dedicated killstreak table's own intro
+  line. Both were written before this session's Campaign playtest (8/17
+  missions tested, see `re_notes/compatibility_matrix.md`) and were never
+  updated. Also clarified the dedicated killstreak table is specifically
+  Survival's buy-station roster, distinct from the newer Campaign-mission
+  killstreak-type weapon systems table added earlier this session.
 - **Documentation-drift correction pass, three items (2026-07-18).**
   Verified against the actual source (not assumed from prior docs) that
   Back's real `+scores` implementation (a third key-synthesis exception,

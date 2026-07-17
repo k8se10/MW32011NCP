@@ -238,7 +238,7 @@ combat, drives the engine's real internal state directly, as described above.
 | Start | Opens **and closes** the pause menu (real native calls, not a keypress emulation) | ✅ Confirmed |
 | Back | Real `+scores` (scoreboard/objectives) via a synthetic TAB keypress — third key-synthesis exception, same technique as ready-up/squadmate call-in | 🟡 Implemented, builds clean — not yet separately live-confirmed (see `re_notes/known_issues.md` issue #28) |
 | D-pad (Up/Right/Down/Left) | `+actionslot 1-4` — killstreaks/attachments (e.g. noob tube), data-driven by loadout | ✅ Confirmed* (user tested at least half the directions live; all four use the identical confirmed mechanism, so high confidence on the untested ones too) |
-| Killstreaks (collectively) | Calling in / controlling killstreaks (Predator missile, etc.) — see the dedicated table below | 🟡 Partial — essential to Campaign, which is otherwise mostly untested so far |
+| Killstreaks (collectively) | Calling in / controlling killstreaks (Predator missile, etc.) — see the dedicated table below | 🟡 Partial — see the dedicated killstreak table below and `re_notes/killstreak_reference.md` for per-item status |
 | D-pad + A menu navigation | Item navigation (main menu, pause menu, options screens' two-pane category/settings drill-in-drill-out) | ✅ Confirmed live (task #22) |
 | D-pad + A, buy-station/armory (Survival) | Item navigation on the armory's `itemDef` list | ✅ Confirmed live (2026-07-18) |
 | Slider-type settings (e.g. sensitivity) | Adjusting the actual VALUE of a slider, not just navigating to it | ✅ Confirmed live (2026-07-18) — Left/Right adjusts the value directly, via the same generic menu-forwarding mechanism as everything else in this section |
@@ -256,9 +256,11 @@ bit):
 "Hold" fires the instant the press crosses the threshold; "tap" only fires on release,
 and only if the hold threshold was never reached.
 
-**Killstreaks** — essential to Campaign, which is otherwise mostly untested so far
-(most testing to date has been Survival-focused). Real roster confirmed via the
-game's own buy-station data (`sp/survival_armories.csv`):
+**Killstreaks — Survival's buy-station roster specifically** (distinct from the
+Campaign-mission killstreak-type weapon systems covered in the "Killstreak
+support" section above — see `re_notes/killstreak_reference.md` for that side).
+Real roster confirmed via the game's own buy-station data
+(`sp/survival_armories.csv`):
 
 | Killstreak | Status |
 |---|---|
