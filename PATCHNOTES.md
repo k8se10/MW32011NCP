@@ -34,6 +34,19 @@ reverse-engineering trail behind each entry.
 - Committed `re_notes/ghidra_scripts/FindStrideArrayBase.java` (used during the aim-
   assist entity-classification investigation, task #16) — a general-purpose static-
   analysis tool independent of that investigation's outcome, so kept regardless.
+- **Re-extracted `assets/button_glyphs/` from a cleaner, user-trimmed source sheet**
+  (still pure source-art groundwork, not yet wired into any rendering code — see
+  task #6's other half). Replaces the original 106-icon set (all platforms/
+  generations, with one unresolved text-bleed issue on `ps4_circle`) with 47 icons
+  across three slimmed style groups (Xbox 360/Classic, Xbox Modern, PlayStation)
+  plus universal D-pad/stick-direction indicators. Re-extracted with a proper
+  connected-component labeler instead of row/column-band heuristics, so the old
+  clipping/text-bleed issues can't recur — every icon's bounding box now comes
+  directly from its own alpha-channel content. D-pad only ships one real icon
+  (`dpad_up`); the other three directions are the same asset rotated
+  90°/180°/270° programmatically, per the user's explicit design intent (D-pad
+  glyphs are visually identical across brands, no need for four separate source
+  crops). See `re_notes/ui_assets.md` for the full naming scheme and method.
 
 - **First implementation of aim assist (rotational friction + magnetism, task #16)
   — EXPERIMENTAL, NOT FUNCTIONAL, DISABLED BY DEFAULT. Must stay disabled for any

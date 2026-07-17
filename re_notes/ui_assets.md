@@ -110,12 +110,54 @@ groundwork for now):
   selector per row rather than one universal rule, plus explicit exclusion of each
   row's own group-title text band (a third text layer only present on those two
   rows) from the search window.
-- **Known outstanding polish issue, not yet resolved:** a small number of PS4 icons
-  (at least `ps4_circle`) still show a faint stray text fragment bleeding in from
-  adjacent title text in that specific column — an isolated case where no clean
-  background gap existed between the title-text fragment and the icon in that exact
-  column's pixel slice, defeating the run-detection gap check. Not blocking (icon is
-  still recognizable), but worth a manual touch-up pass later.
+- **Superseded 2026-07-17** — see the section below. The original 106-icon set's
+  text-bleed issue is resolved by starting from a cleaner source sheet instead of
+  patching the extraction heuristics further.
+
+## Glyph source art — re-extracted from a slimmed, user-trimmed sheet (2026-07-17)
+
+The original 106-icon set (all platforms, all generations) had too much real-world
+duplication for this mod's purposes (Xbox One/Series and PS4/PS5 button art are
+functionally near-identical for glyph-prompt purposes) and one unresolved text-bleed
+polish issue (see above). The user manually trimmed the source reference sheet down
+to three representative style groups and removed unwanted label text, saved as
+`buttons.png` at the game install root — same real-alpha-channel PNG format as
+before (`Format32bppArgb`, transparent background at `A=0`, opaque icon content at
+`A=255`), 1536×1024.
+
+**Extraction rebuilt from scratch as a proper connected-component labeler** (not
+row/column-band heuristics, which is what caused the old text-bleed issue) — a
+small C# tool (`csc.exe`-compiled, not checked into the repo as a shipped tool,
+lives in this session's scratch dir), flood-fills every region of `alpha > 30`
+pixels using 8-connectivity, discards blobs under 25px (antialiasing dust), and
+crops each surviving blob straight out of the source bitmap with a 3px padding
+margin. This finds each icon's real bounding box directly from its own pixel
+content — no assumptions about row height, label position, or shared bands, so it
+can't clip a tall icon or bleed in a neighboring label the way the old approach
+did. **44 icons extracted cleanly, spot-checked individually (including the
+specific icon that bled text last time, `ps_circle`, now clean) — zero clipping or
+bleed found.**
+
+**Layout confirmed and named:**
+- **Row 1 — Xbox 360/Classic:** `xbox360_{a,b,x,y,lb,rb,lt,rt,back,start}` (10)
+- **Row 2 — Xbox Modern (One/Series):** `xboxmodern_{a,b,x,y,lb,rb,lt,rt,view,menu,ls,rs}` (12)
+- **Row 3 — PlayStation (PS4/PS5-era):** `ps_{cross,circle,triangle,square,l1,r1,l2,r2,create,options,touchpad,l3,r3}` (13)
+  — `ps_create`/`ps_options` confirmed with the user (not Share/Options or
+  Select/Start) — PS5-style Create (left, hamburger + left-triangle glyph) and
+  Options (right, hamburger + right-triangle glyph).
+- **Row 4 — universal, brand-independent:** `dpad_up` (1) — the user's explicit
+  design intent: D-pad only needs ONE real icon, the other three directions are the
+  identical asset rotated 90°/180°/270°, generated programmatically
+  (`dpad_right`/`dpad_down`/`dpad_left`, `Bitmap.RotateFlip`) rather than as
+  separate source crops — confirmed correct by inspection (highlight moves to the
+  correct segment in each rotation). Plus `stick_{ls,rs}_{up,down,left,right}` (8)
+  — generic stick-direction indicators, same asset regardless of controller brand.
+
+**Total: 47 files** (44 extracted + 3 generated rotations), replacing the old
+106-file set entirely in `assets/button_glyphs/`. Still not wired into any
+rendering code — this remains pure source-art groundwork for the eventual
+bind-resolver-hook + custom-font work described above (task #6's other half,
+`FUN_0061f6f0` hook + glyph font, still unstarted).
 
 ## Real menu-state groundwork already in place (2026-07-16, from the B/pause work)
 
