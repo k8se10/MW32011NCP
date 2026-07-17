@@ -355,6 +355,29 @@ See `re_notes/compatibility_matrix.md` for the full per-mission breakdown
 and `re_notes/known_issues.md` issue #27 for the underlying bug detail
 behind each partial entry.
 
+## Killstreak support
+
+Full detail, including MP's full killstreak list for future reference, is
+in `re_notes/killstreak_reference.md` — this is a condensed summary of the
+Campaign-relevant, controller-tested subset only.
+
+| Weapon system | Mission | Status |
+|---|---|---|
+| Boat | Hunter Killer | ✅ Working |
+| UGV (minigun + grenade launcher) | Persona Non Grata | ✅ Working |
+| Helicopter door gun | Return to Sender | ✅ Working |
+| SMAW (dumb-fire) | Goalpost | ✅ Working |
+| DPV (Diver Propulsion Vehicle) | Hunter Killer | ⚠️ Aim broken, movement works |
+| Mortar | Back on the Grid | ⚠️ Fire input not wired up |
+| Mounted Browning M2 turret | Back on the Grid | ⚠️ Works, but difficulty discrepancy under investigation |
+| SMAW (lock-on vs. aircraft) | Goalpost | ❓ Unconfirmed — may not even be a real bug |
+| Predator Missile | Black Tuesday / Down the Rabbit Hole | ⚠️ Camera/view works, Fire launch uncertain (task #7) |
+| AC-130 | Iron Lady / Fire Mission (Spec Ops) | ❓ Not yet playtested |
+
+Multiplayer's own killstreak system (3 strike packages, ~20+ rewards) is
+untouched — MP support hasn't started at all, see "Known limitations"
+below.
+
 ## Known limitations
 
 See `re_notes/known_issues.md` for the full, actively-tracked list.

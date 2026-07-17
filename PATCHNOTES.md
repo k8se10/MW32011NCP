@@ -9,6 +9,16 @@ reverse-engineering trail behind each entry.
 ## Unreleased
 
 ### Docs
+- **Added `re_notes/killstreak_reference.md` and a "Killstreak support"
+  section to `README.md` (2026-07-18).** Two clearly-separated parts: a
+  real, first-party controller-support status table for the killstreak-
+  type weapon systems actually encountered and tested during this
+  session's Campaign playtest (boat/UGV/door-gun/SMAW dumb-fire working;
+  DPV aim, mortar fire, turret difficulty, SMAW lock-on, and Predator
+  Missile's fire input each tracked with their specific known-issue/task
+  number) — plus a separate, clearly-labeled MP killstreak reference list
+  (3 strike packages, ~20+ rewards) sourced from public research, kept
+  strictly as forward-planning material since MP work hasn't started.
 - **Added a condensed compatibility summary table to `README.md`**, and
   wired `re_notes/compatibility_matrix.md` into the project's documented
   ownership model: `CODE_STANDARDS.md`'s "Documentation Standards" section
