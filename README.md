@@ -353,6 +353,31 @@ See `re_notes/known_issues.md` for the full, actively-tracked list.
 
 ---
 
+## Client compatibility
+
+This mod is built and verified only against **retail Steam MW3**. Long-term goal is
+to support other MW3 client variants too, but none of the following are implemented
+or tested yet — this table is research-stage only, not a compatibility claim. Full
+detail in `re_notes/known_issues.md` issue #25.
+
+| Client | SP/MP | Binary vs. retail | `d3d9.dll` injection viable? | Status |
+|---|---|---|---|---|
+| Retail Steam | Both | — (baseline) | Yes (confirmed, current target) | Actively supported |
+| Plutonium — MP | MP | `iw5mp.exe` byte-identical to retail | Believed yes (same binary) | **Not recommended — see warning below** |
+| Plutonium — SP | SP | `iw5sp.exe` is a different binary (~175KB smaller, differences start almost immediately, not just a few patches) | Unknown, would need independent address re-verification | Not yet investigated |
+| AlterWare IW5-Mod | SP + Spec Ops | Separate `iw5-mod.exe` executable, not `iw5sp.exe` | Unknown, binary not yet acquired for analysis | Not yet investigated — most promising target given this mod's SP-first scope, no known anti-cheat concern found |
+| DeckOps (MW3) | MP (via Plutonium) | Same as Plutonium MP | Unknown — Proton/Wine's D3D9 translation layer untested | Not yet investigated — inherits the Plutonium MP warning below, plus unverified Proton behavior |
+
+> **⚠️ Do not use this mod with Plutonium multiplayer.** Plutonium's anti-cheat is
+> confirmed (from its own documentation) to ban DLL injection and memory access —
+> a 7-day ban on first offense, permanent after. This mod's entire architecture
+> (a proxy `d3d9.dll`, function hooking, and memory-read-based aim assist) is
+> exactly what that system is built to catch, regardless of the mod being
+> input-only rather than a gameplay cheat. This is a real, confirmed risk, not a
+> theoretical one — see `re_notes/known_issues.md` issue #25 for the evidence.
+
+---
+
 ## Credits
 
 This mod vendors and links the following third-party library:

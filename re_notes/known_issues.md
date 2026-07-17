@@ -449,6 +449,14 @@ same session.
 **Still open:** Extreme Conditioning's `perk_sprintMultiplier` override — not yet
 investigated how to detect whether the perk is actually equipped/active, or how to read
 its live scale value to adjust `kSprintMaxStaminaSeconds` accordingly.
+**(2026-07-17 update: the perk's real internal name is confirmed —
+`specialty_longersprint`, independently found twice this session via GSC decompilation
+of `common_survival.ff` — `self setperk("specialty_longersprint",1,0)`/
+`self unsetperk(...)`, and via the buy-station economy CSV,
+`sp/survival_armories.csv`, category `airsupport`, cost 4000, wave-gate 35. Detection
+mechanism itself — how to check "is this equipped right now" from native code — still
+not found; a native `HasPerk`-equivalent function would need to be located, not yet
+attempted.)**
 
 **Separately found and fixed while investigating:** `Controller_DeltaTimeSeconds()`
 (used for look) turned out to use a single **process-wide shared** static timer, not
@@ -916,12 +924,43 @@ plausible range, the value was suspiciously always exactly equal to the centity
 index itself — coincidence, not a real link. `centity+0x150` is not the connector
 (or isn't being read correctly at that offset/width).
 
-**Decision:** parked here per explicit user instruction, rather than immediately
-pivoting to the next diagnostic (sampling `0x01197AD8`'s own `+0xec` position field
-for movement directly, sidestepping the cross-link question entirely — this is the
-natural next step whenever this is picked back up). The disproven diagnostic
-logging was removed from `analog_input_hooks.cpp`; `FindStrideArrayBase.java` was
-kept and committed as a genuinely reusable static-analysis tool.
+**Decision at the time:** parked per explicit user instruction, rather than
+immediately pivoting to the next diagnostic (sampling `0x01197AD8`'s own `+0xec`
+position field for movement directly, sidestepping the cross-link question
+entirely). The disproven diagnostic logging was removed from
+`analog_input_hooks.cpp`; `FindStrideArrayBase.java` was kept and committed as a
+genuinely reusable static-analysis tool.
+
+**Follow-up (2026-07-17): that next diagnostic is done, and the classification
+problem is very likely solved — no live implementation yet, static case is
+strong.** Two more real functions independently confirmed the array's shape,
+entirely without needing the broken `centity` cross-link:
+
+- `FUN_005c9a30` (a real nearby-entity/splash-query function) reads AND writes
+  `+0xec` as a live, mutable Vec3 position (`*(float*)(param_1+0xec) += delta`,
+  used in actual physics/bounds math) — independent reconfirmation from a
+  completely different function than the ones already found.
+- `FUN_005cc530` (a real checkpoint/save-deserialization function) proves the
+  array is fixed-capacity **2048 slots (`0x800`)**, sentinel-terminated (`-1`)
+  during save/load, with a parallel **one-byte-per-slot validity-flag array at
+  `DAT_01357a98`** (nonzero = populated) walked directly alongside it — meaning
+  the WHOLE array is independently walkable with zero dependency on `centity` or
+  any clientnum at all: `for i in 0..2048: if flag[i] then process entity[i]`.
+- The SAME function's deserialization tail contains
+  `if (type == 0x0D || type == 0x0F) { FUN_00449610(..., "defaultactor"); }` —
+  **type `0x0D` (13) independently confirmed as the real AI/actor type**, from our
+  own vanilla binary, not just the external reference repo's own claim. Type `0x0F`
+  (15) is grouped in the same check, plausibly a dead/ragdolled substate, not yet
+  distinguished further.
+
+**Net effect: `type==13 && health>0` (both already-confirmed real fields) is
+genuine native classification, position (`+0xec`) is a separately-confirmed real
+field for aiming math once a valid target is chosen, and the whole thing walks
+independently via the validity-flag array** — no movement heuristic, no broken
+cross-link needed anywhere. This plausibly replaces the oscillating movement
+filter entirely. **Still needs a live diagnostic pass against real moving AI
+before shipping** (same bar as everything else in this project) — not yet
+attempted, next actual implementation step whenever this is picked back up.
 
 ---
 
@@ -1066,8 +1105,93 @@ our own menu content, plus finding/patching whatever real call site opens
 the ORIGINAL name (e.g. `"pc_options_controls_ingame"`) so it redirects to ours —
 keeps `ui.ff` completely untouched, purely additive. Given the materials finding
 above, this only works for backgroundless content, or requires solving the
-level-load-transition problem first. Needs a decision before further
-implementation work.
+level-load-transition problem first. **Update 2026-07-17: the level-load-
+transition path is now believed structurally sound** — see `iw5sp.md`'s
+"Level-load-transition alternative" section for the full mechanism (hook
+`FUN_004ca310` itself, return-address-match two known real call sites, append our
+own zone entry). Recommended next step for this task, before the `ui.ff`-
+replacement installer fallback.
+
+---
+
+## 24. Vibration/rumble — research pass, real trigger points found (2026-07-17)
+
+**Status:** Open, tracked as task #17. Not yet implemented — this is groundwork
+only.
+
+No native vibration infrastructure exists at all (confirmed via a clean
+zero-hit string search for `rumble`/`vibrat`/`forcefeedback`), consistent with
+the project's founding "zero controller path" finding — output must be entirely
+our own `XInputSetState` calls. Research found real, hookable native events for
+WHEN to trigger them:
+
+- **Weapon fire — confirmed, single clean choke point.** `FUN_0045e320`
+  (per-shot fire-effects handler) calls `FUN_004895b0(entity, "weapon_fired"
+  handle, 1)` once per real shot, semi-auto and full-auto alike. Confirmed plain
+  `__cdecl` via raw disassembly — safe to hook with the mod's existing pattern.
+- **Damage — confirmed, with usable intensity data.** `FUN_0045f770` decrements
+  health at `+0x150` (same entity-struct family as the aim-assist `0x01197AD8`
+  array) then calls `FUN_0044cdb0("damage" handle, entity, ...,
+  literalDamageAmount, ...)` — the damage amount is directly available for
+  rumble-intensity scaling. Fires for ANY damageable entity, not just the local
+  player — a real implementation needs a local-player filter, not yet resolved.
+  Death is a separate notify on the same code path.
+- **Not yet reached:** explosions/blast-proximity, melee-hit-landed, killstreak
+  activation, low-ammo. Strong leads exist (an incidentally-found ~600-entry real
+  GSC notify-event-name table at `FUN_00470d00` includes `"explode"`,
+  `"grenade_fire"`, `"missile_fire"`) but none traced to a dispatch site yet.
+
+Full detail, including the two general native notify-dispatch function
+signatures found (`FUN_004895b0`/`FUN_0044cdb0`, useful beyond just this task —
+any future GSC-adjacent hook work will likely hit one or the other), in
+`iw5sp.md`'s "Vibration/rumble trigger points" section.
+
+---
+
+## 25. MW3 client compatibility — Plutonium/AlterWare/DeckOps survey (2026-07-17)
+
+**Status:** Research only, no implementation. Long-term goal (user, 2026-07-17):
+eventually support all major MW3 client variants, not just retail Steam.
+
+**Plutonium** (third-party MP-revival client, closed-source, requires legitimate
+retail game files as a base) is installed locally — direct comparison done:
+- **`iw5mp.exe` is byte-identical to retail Steam** (SHA256 match, exact) — any
+  future MP work would apply with zero re-discovery.
+- **`iw5sp.exe` is a DIFFERENT binary** (~175KB smaller, differences start within
+  the first 100 bytes) — every hardcoded address this project uses would need
+  independent re-verification. Also, Plutonium's own docs confirm campaign isn't
+  really their supported use case even though the file is present.
+- **Anti-cheat concretely confirmed to ban DLL injection and memory access** —
+  7-day first offense, permanent after. This mod's entire architecture (proxy
+  `d3d9.dll`, MinHook, memory-read-based aim-assist) is exactly what it's built to
+  catch, input-only intent notwithstanding. **This sharpens CLAUDE.md's existing
+  "MP anti-cheat exposure" flag from a theoretical concern into a confirmed,
+  specific, high risk for Plutonium MP specifically** — do not use this mod with
+  Plutonium MP.
+
+**AlterWare IW5-Mod** — a distinct, closed-source client specifically for MW3
+**Singleplayer + Spec Ops** (not MP), launched via its own separate `iw5-mod.exe`
+(not `iw5sp.exe`). Not installed locally, not yet acquired/compared. No known
+anti-cheat concern found. **The most promising third-party target given this
+project's own SP+Survival-first scope** — but confirming feasibility needs the
+actual binary, full from-scratch RE, no shortcut available.
+
+**DeckOps** — NOT a separate client. An installer/automation tool for Steam Deck
+that sets up other community clients; for MW3 specifically it uses Plutonium
+under the hood. Inherits every Plutonium finding above (same binaries, same
+anti-cheat risk), plus an untested open question of whether DLL injection/D3D9
+proxying behaves correctly under Proton/Wine's D3D9 translation layer at all.
+
+Draft compatibility table (not yet added to README — pending a decision on final
+wording, especially the anti-cheat callout):
+
+| Client | SP/MP | Binary vs. retail | `d3d9.dll` injection viable? | Status |
+|---|---|---|---|---|
+| Retail Steam | Both | — (baseline) | Yes (confirmed, current target) | Actively supported |
+| Plutonium — MP | MP | `iw5mp.exe` byte-identical | Believed yes (same binary) | **Not recommended — confirmed anti-cheat bans DLL injection/memory access** |
+| Plutonium — SP | SP | `iw5sp.exe` different (~175KB, not just patches) | Unknown, needs re-verification | Not yet investigated |
+| AlterWare IW5-Mod | SP + Spec Ops | Separate `iw5-mod.exe`, not yet acquired | Unknown | Not yet investigated — most promising, no known anti-cheat concern |
+| DeckOps (MW3) | MP (via Plutonium) | Same as Plutonium MP | Unknown — Proton/Wine D3D9 layer untested | Not yet investigated — inherits Plutonium's anti-cheat risk |
 
 ---
 
@@ -1079,7 +1203,7 @@ scoped), and #9 (sprint's Extreme Conditioning override).
 | Input | Intended action | Blocker |
 |---|---|---|
 | Back | `+scores` (scoreboard/objectives) | **Key-synthesis workaround implemented 2026-07-17** (Back hold → real `WM_KEYDOWN`/`WM_KEYUP` for TAB, the confirmed real bind `bind TAB "+scores"` from `players2/config.cfg`) — third narrow exception to the no-OS-input-emulation rule, same pattern as ready-up (F5) and D-pad Left's squadmate call-in ('4'). **Live-tested in Campaign: no visible effect at all** — no scoreboard, no objectives overlay. Real cause not yet diagnosed; leading theory is `+scores`/scoreboard is fundamentally an MP concept that's a no-op in SP, and SP's actual "mission objectives" display (if player-triggerable at all) uses a completely different, still-unidentified mechanism — not necessarily the same feature CLAUDE.md's console-behavior description assumed. User explicitly parked this as a known UI gap to fill later ("these are both UI gaps we will fill as part of the improvements side of the mod"), not urgent. The synthesis code itself is harmless (real key event, just currently produces no observable result) and stays in the build. |
-| Killstreaks | Predator missile confirmed partially working; needs per-killstreak investigation | Not yet scoped — needs live testing to characterize what's actually broken (camera control? fire trigger? exit-early?) before any RE work starts |
+| Killstreaks | Predator missile confirmed partially working; needs per-killstreak investigation | Not yet scoped — needs live testing to characterize what's actually broken (camera control? fire trigger? exit-early?) before any RE work starts. **(2026-07-17: real killstreak roster now known** via `sp/survival_armories.csv` — `remote_missile` (Predator, the one partially working today), `precision_airstrike`, and `friendly_support_delta`/`friendly_support_riotshield` (very likely what task #13's AI-squadmate call-in bug is actually about — same "friendly support" family). Per-killstreak GSC scripts not yet individually traced.) |
 | Sprint / Extreme Conditioning | Perk should double sprint duration to 8s | Not yet investigated — likely `perk_sprintMultiplier` (a real dvar, confirmed to exist), needs a way to detect the perk is equipped/active and read its live scale value |
 
 ---

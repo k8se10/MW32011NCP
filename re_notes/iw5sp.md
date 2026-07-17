@@ -2296,3 +2296,124 @@ command) is verified correct via `players2/config.cfg` line 24
 (see "Sprint's real kbutton" section above) were never chasing the wrong command
 name, the kbutton object itself just wasn't found in memory by those specific
 techniques.
+
+## Vibration/rumble trigger points -- research pass, task #17 (2026-07-17)
+
+No native vibration/rumble infrastructure exists at all -- confirmed via a clean
+string search (`rumble`/`vibrat`/`forcefeedback`, zero hits anywhere in the
+binary), consistent with the project's original "zero controller path" founding
+finding. Output has to be entirely our own `XInputSetState` calls; what this pass
+found is WHEN to trigger them.
+
+**Major incidental find, broadly reusable beyond this task**: `FUN_00470d00` is
+the real GSC notify-event-name interning table (~600 strings, each hashed via
+`FUN_005048b0` into a 2-byte handle) -- the actual native<->GSC `notify()`/
+`waittill()` event vocabulary. Includes `"weapon_fired"`, `"damage"`, `"death"`,
+`"reload"`/`"reload_start"`, `"grenade_fire"`, `"missile_fire"`, `"explode"`,
+`"trigger_damage"`, `"suppression"`/`"suppression_end"`, `"turret_fire"`,
+`"flashbang"`, `"weapon_change"`, and hundreds more -- the master list of every
+real event any future GSC-adjacent hook (rumble, killstreaks, perks, a Survival
+debug menu) could target. Worth its own dedicated catalog later; not fully dumped
+this pass.
+
+**Two general native notify-dispatch functions found, both real, both worth
+knowing as a pair for future work**:
+- `FUN_004895b0(entity, eventHandle, paramCount)` -- simple/few-arg notifies.
+- `FUN_0044cdb0(eventHandle, entity, ...manyParams)` -- carries extra
+  script-visible args (damage amount, etc), used for the richer events.
+
+**Weapon fire -- CONFIRMED, single clean choke point.** `DAT_015c61a6`
+(`"weapon_fired"` handle) has exactly one real read reference: `FUN_0045e320`,
+the per-shot fire-effects handler (muzzle flash, tracer dispatch by fire mode).
+`FUN_004895b0(param_1, DAT_015c61a6, 1)` fires once per real shot for both
+semi-auto and full-auto weapons alike. Confirmed `__cdecl` via raw disassembly
+(`param_1` from a genuine stack slot after `SUB ESP,0x474`, no register-passed-
+arg convention) -- safe to hook with the same pattern used throughout this
+codebase.
+
+**Player/entity damage -- CONFIRMED, with usable intensity data.** `DAT_015c60b2`
+(`"damage"` handle) has 5 real read references across 4 functions. Main path,
+`FUN_0045f770` (also confirmed plain `__cdecl` via disassembly): does
+`*(param_1+0x150) -= param_6` (health decrement -- `+0x150` matches the exact
+`m_iHealth` offset already confirmed this session in the `0x01197AD8` entity-array
+work, same entity-struct family, not player-specific by itself), then calls
+`FUN_0044cdb0(DAT_015c60b2, param_1, param_3, param_4, param_5, param_6, ...)` --
+**`param_6` at the dispatch point is the literal damage amount just applied**,
+directly usable for rumble intensity scaling. Fires for ANY damageable entity
+(player or AI) -- a real implementation needs to filter for "is `param_1` the
+local player," not resolved this pass (would need cross-referencing against
+whatever local-player-entity pointer the mod's existing Sprint/pm_flags code
+already uses). Death is a separate notify on the same path
+(`FUN_0044cdb0(DAT_015c60b6 /* "death" */, ...)`, fires when health drops <= 0
+inside the same function). `FUN_005030a0`/`FUN_0049d320` are alternate damage-
+application paths (scripted/area/melee damage) reaching the same two dispatchers
+-- confirmed real, not individually traced further.
+
+**Not reached this pass**: explosions/blast-proximity, melee-hit-landed,
+killstreak-activation, low-ammo. Strong leads exist in the same interned-string
+table (`"explode"`, `"grenade_fire"`, `"missile_fire"`) but none traced to a
+dispatch site yet.
+
+## GSC mission-scripting architecture survey (2026-07-17)
+
+Broad catalog/architecture pass using the GSC decompilation pipeline (xensik/
+gsc-tool, first used this session on `common_survival.ff` alone) across a wider
+slice of the game's real content, ahead of future killstreak/perk/debug-menu work.
+
+**Zone catalog** (`zone\english\`/`zone\dlc\`, ~140 `.ff` files):
+- **Campaign, 10 missions**: `sp_intro`, `sp_dubai`, `sp_paris_a/b`, `sp_berlin`,
+  `sp_ny_harbor`, `sp_ny_manhattan`, `sp_prague`, `sp_warlord`, `sp_payback`, each
+  with a matching `patch_sp_*.ff` (except dubai -- no patch zone exists for it).
+- **Spec Ops MISSION mode, 15 real ops** (distinct from Survival): e.g.
+  `so_assassin_payback`, `so_ied_berlin`, `so_stealth_prague`,
+  `so_timetrial_london`, `so_deltacamp`/`so_trainer2_so_deltacamp` -- confirmed
+  present in the retail zone files.
+- **Spec Ops SURVIVAL mode** (the mode task #23 actually targets --
+  playing an MP map solo/coop against endless waves): `so_survival_mp_<mapname>.ff`
+  for ~18 real MP maps.
+- **Shared code**: `common.ff`, `common_survival.ff` (188 real scripts, 184
+  already decompiled), `common_specialops.ff`, `code_pre_gfx`/`code_post_gfx`
+  (+`_mp` variants). **MP**: the full multiplayer map set, untouched, out of
+  scope for the project's current SP/Survival-first ordering.
+
+**Major finding: the Survival/Spec Ops buy-station economy is data-driven, not
+GSC-driven.** `common_specialops.ff` dumps almost no GSC at all -- instead it
+contains `sp/survival_armories.csv`, a single 78-row stringtable that IS the
+entire economy: every weapon, attachment, equipment item, killstreak, AND perk,
+with price, wave-unlock gate, icon, and localized name/description all in one
+place. No scattered per-item GSC purchase logic to reverse-engineer -- the buy-
+station UI reads this table directly. Confirmed real content from it:
+- **Extreme Conditioning's real internal name: `specialty_longersprint`**
+  (`PERKS_LONGERSPRINT`, category `airsupport`, cost 4000, wave-gate 35).
+- **Killstreaks**: `remote_missile` (Predator Missile, the one partially working
+  today), `precision_airstrike`, and `friendly_support_delta`/
+  `friendly_support_riotshield` -- the latter two very likely being the real
+  identity of task #13's AI-squadmate call-in items.
+- **Full perk roster**: `specialty_longersprint` (Extreme Conditioning),
+  `specialty_quickdraw`, `specialty_bulletaccuracy` (Steady Aim),
+  `specialty_stalker`, `specialty_fastreload` (Sleight of Hand).
+- Wave-gate column confirms progressive item unlock is data-driven per-item, not
+  scripted per-wave. `accuracy/aivsai/*.accu`/`accuracy/aivsplayer/*.accu` (plain-
+  text weapon accuracy-vs-range curves) confirm difficulty tuning is similarly
+  data-driven, not GSC.
+
+**Campaign mission script shape** (from decompiling `sp_dubai.ff`, 19 real
+scripts): `sp_dubai.gsc`'s `main()` is a thin wrapper calling
+`maps\dubai::main()` -- confirms the real, general **`maps\<levelname>::main()`**
+entry-point convention for any future mission-specific work, even though this
+particular zone dump didn't resolve the full `maps\dubai` script itself. A full,
+reusable **civilian AI behavior library** ships as its own script set
+(`civilian_init/move/stop/combat/pain/death/flashed/grenade_response/reactions/
+scripted/cover_*.gsc`) -- worth knowing exists for any future AI-adjacent work.
+Cutscene camera work is its own separate per-mission script file
+(`dubai_pip.gsc`), not inline in the main mission script.
+
+**General pattern confirmed**: `notifyonplayercommand("event", "+bind")` (already
+known from ready-up/turret-cancel) is the general native<->GSC bridge for
+player-triggered actions -- the default assumption for any future "does GSC
+listen for this button" question.
+
+**Not reached this pass**: a second, more representative Campaign zone beyond
+dubai (to confirm whether the civilian-AI library is shared across missions or
+dubai-specific); confirming a common `_utility.gsc`-style shared include beyond
+the standard `common_scripts\utility::` namespace already known.

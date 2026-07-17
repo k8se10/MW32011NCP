@@ -35,13 +35,29 @@ reverse-engineering trail behind each entry.
   prompts** ahead of wiring the controller-glyph resolver hook (task #6's other
   half). Found three genuinely different substitution mechanisms in the real
   localized strings, not one: `&&1`-token strings (the entire weapon-pickup/perk/
-  stance-hint family — confirmed to all route through the one planned resolver
-  hook), a separate `[{+command}]` syntax embedded directly in some strings
-  (confirmed NOT handled by the same `&&N` engine — a second, not-yet-found
-  resolver, real follow-up work), and literal hardcoded PC-only text
-  (`[Right Mouse]`/`[Left Mouse]`) that no resolver hook can fix at all. Also
-  confirmed Reload has no hint text/bind token whatsoever — it's a plain HUD
-  element, nothing to glyph-swap. See `re_notes/ui_assets.md`.
+  stance-hint family), a separate `[{+command}]` syntax embedded directly in some
+  strings (confirmed NOT handled by the same `&&N` engine), and literal hardcoded
+  PC-only text (`[Right Mouse]`/`[Left Mouse]`) that no resolver hook can fix at
+  all. Also confirmed Reload has no hint text/bind token whatsoever — it's a
+  plain HUD element, nothing to glyph-swap. **Follow-up (2026-07-17): traced the
+  `[{+command}]` mechanism fully — good news, it routes through the exact same
+  `FUN_0061f6f0` bind-resolver the `&&N` path already uses, so one hook covers
+  both, not two.** See `re_notes/ui_assets.md`.
+- **Complete real keycode reference recovered (95 entries)** — traced the real
+  resolution chain from the bind-resolver down to the raw `{name, keynum}` table
+  the game itself uses, ending years of finding individual keycodes ad hoc one at
+  a time. Notably includes `AUX1`-`AUX16`, the idTech/Quake3-lineage joystick-
+  button placeholder range — structurally present and bindable, unused since this
+  build has no XInput import. New reusable script,
+  `re_notes/ghidra_scripts/DumpKeynamesTable.java`. See `re_notes/iw5sp.md`.
+- **GSC mission-scripting architecture survey.** Cataloged the ~140 real `.ff`
+  zones (10 Campaign missions, 15 Spec Ops missions, 18 Spec Ops Survival maps,
+  shared/common code) and found the Survival/Spec Ops buy-station economy is
+  **data-driven, not GSC-driven** — a single CSV (`sp/survival_armories.csv`)
+  defines every weapon/attachment/perk/killstreak with price and wave-gate, no
+  scattered purchase logic to reverse-engineer. Surfaced the full real perk/
+  killstreak roster and the `maps\<levelname>::main()` mission-entry convention.
+  See `re_notes/iw5sp.md`.
 - Committed `re_notes/ghidra_scripts/FindStrideArrayBase.java` (used during the aim-
   assist entity-classification investigation, task #16) — a general-purpose static-
   analysis tool independent of that investigation's outcome, so kept regardless.
@@ -112,30 +128,58 @@ reverse-engineering trail behind each entry.
 ### Investigated, not resolved
 - **Real controller options menu (task #23): native zone/menu injection pipeline
   built and confirmed working for bare content, blocked on a real architectural
-  limit for real content.** Built and live-confirmed an entirely in-memory
-  mechanism to inject a custom-compiled `.menu` asset into the running game via
-  its own real zone-loading system (`LoadZones`/`FindOrLoadMenuList`/menu
-  registry, all real functions) — a bare custom menuDef genuinely rendered in the
-  real pause menu's own slot, real `ui.ff` never touched on disk. Real menu
-  content (anything with a background material, which is virtually all of it)
-  turned out to be fundamentally unsafe via this pipeline: loading a material
-  live triggers a genuine, synchronous D3D9 GPU-resource-creation cascade
-  (shaders + textures) that isn't safe outside the engine's own controlled
-  loading-screen context, and — confirmed via deep decompilation — there is no
-  safe workaround within live injection (referencing an existing `ui.ff` material
-  by name doesn't help; the Linker can only embed a full owned duplicate, never a
-  lazy cross-zone reference). A same-name registry-override approach was also
-  tried and abandoned (fights the engine's own asset-interning system). Full
-  trail in `re_notes/known_issues.md` issue #23 and `re_notes/iw5sp.md`.
-- **Aim assist target classification.** Following a lead from the cragson/
-  mw3-surviv0r reference repo's own aimbot source, found strong static evidence of a
-  real, second entity array in our own binary (base `0x01197AD8`, stride `0x270`,
-  confirmed via ~90 independent cross-references) carrying type/health fields at the
-  same offsets the reference struct uses — but the assumed link from our existing
-  entity array to it (a hypothesized clientnum field) produced garbage values in a
-  live test and was disproven. The movement-based filter currently in place remains
-  the only working (if imperfect) classification method. See
-  `re_notes/known_issues.md` issue #15 and `re_notes/iw5sp.md` for the full trail.
+  limit for real content — but a structurally-sound fix was found the same day.**
+  Built and live-confirmed an entirely in-memory mechanism to inject a
+  custom-compiled `.menu` asset into the running game via its own real
+  zone-loading system — a bare custom menuDef genuinely rendered in the real
+  pause menu's own slot, real `ui.ff` never touched on disk. Real menu content
+  (anything with a background material, virtually all of it) turned out to be
+  fundamentally unsafe via LIVE injection: loading a material triggers a genuine
+  D3D9 GPU-resource-creation cascade unsafe outside the engine's own controlled
+  loading context, with no workaround available from a live hook. **Follow-up
+  research the same day found a real fix, not a workaround**: `LoadZones` has
+  exactly 4 real callers in the whole binary; two of them (a level-load call site
+  and a boot-time/main-menu call site) have enough stack-array headroom to safely
+  append our own zone entry via a single hook, distinguishing real callers by
+  return address. This loads our content through the engine's own genuinely safe
+  context instead of a live hook — recommended next implementation step, before
+  the `ui.ff`-on-disk-replacement fallback (whose backup/hash-verify safety net,
+  `tools/ff_installer/backup_and_verify.ps1`, is already built and live-tested).
+  Full trail in `re_notes/known_issues.md` issue #23 and `re_notes/iw5sp.md`.
+- **Aim assist target classification — likely solved statically, not yet
+  live-verified.** Following a lead from the cragson/mw3-surviv0r reference repo's
+  own aimbot source, found strong static evidence of a real, second entity array
+  in our own binary (base `0x01197AD8`, stride `0x270`) carrying type/health
+  fields — but the assumed link from our existing entity array to it (a
+  hypothesized clientnum field) produced garbage values in a live test and was
+  disproven. **Follow-up research found the array doesn't need that link at
+  all**: a real checkpoint/save-deserialization function proves it's fixed-
+  capacity (2048 slots), independently walkable via its own parallel validity-
+  flag array, with zero dependency on `centity`. The same function independently
+  confirms type `13` is the real AI-actor type (from our own vanilla binary, not
+  just the reference repo). `type==13 && health>0` is genuine native
+  classification with no movement heuristic needed — very likely the actual fix
+  for the oscillation bug that's kept this disabled all along. Still needs a live
+  diagnostic pass before shipping. See `re_notes/known_issues.md` issue #15.
+- **Vibration/rumble (task #17) — real trigger points found, not yet
+  implemented.** No native vibration infrastructure exists (confirmed empty
+  search), so output has to be entirely our own `XInputSetState` calls — research
+  found confirmed, hookable native events for weapon fire (a single clean choke
+  point, fires per-shot for both semi/full-auto) and player/entity damage
+  (carries the literal damage amount, usable for intensity scaling; needs a
+  local-player filter, not yet resolved). Explosions, melee, and killstreak
+  activation not yet traced. See `re_notes/known_issues.md` issue #24.
+- **MW3 client compatibility survey (Plutonium/AlterWare/DeckOps) — research
+  only.** Long-term goal is supporting other MW3 clients, not just retail Steam.
+  Plutonium (installed locally, directly compared): `iw5mp.exe` is byte-identical
+  to retail, but **its anti-cheat is confirmed to ban DLL injection/memory
+  access** — do not use this mod with Plutonium MP. `iw5sp.exe` differs
+  significantly from retail. AlterWare IW5-Mod (SP+Spec Ops specific, its own
+  separate binary, not yet acquired) looks like the most promising third-party
+  target given this project's SP-first scope and no known anti-cheat concern.
+  DeckOps isn't a separate client — it wraps Plutonium for Steam Deck, inheriting
+  its anti-cheat risk. See the new **Client compatibility** section in README.md
+  and `re_notes/known_issues.md` issue #25.
 
 ### Added
 - **`AdsSlowdownBaseline`** — a new `[Look]` config value multiplied on top of the
