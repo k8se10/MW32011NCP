@@ -1156,7 +1156,14 @@ Vec3 GetEntityPosition(int index)
 // posted up behind cover) doesn't immediately drop out of consideration.
 constexpr DWORD kMovementSampleIntervalMs = 250;
 constexpr float kMovementThreshold = 4.0f;  // world units of change over one sample interval
-constexpr DWORD kMovementGraceMs = 8000;    // stays "known alive" this long after last confirmed movement
+// SHORTENED (2026-07-17, live-reported "targeting anything" not the nearest real
+// enemy): 8000ms let one-off movers -- a thrown grenade, a ragdoll settling, physics
+// debris -- stay "known alive" long after they'd actually stopped moving, alongside
+// genuine walking AI. A real enemy re-triggers movement continuously; a thrown object
+// only moves briefly. Shortened so only things ACTIVELY moving right now (or a
+// half-second ago) qualify, filtering out one-off movement without needing to
+// distinguish AI from props by type at all.
+constexpr DWORD kMovementGraceMs = 600;
 
 Vec3 g_lastEntitySamplePos[kEntityCount];
 bool g_hasEntitySample[kEntityCount];
@@ -1307,7 +1314,12 @@ AimAssistTarget FindBestAimAssistTarget(float playerYawDeg, float playerPitchDeg
         float targetYawDeg = atan2f(dy, dx) * (180.0f / 3.14159265f);
         float targetPitchDeg = -atan2f(dz, horizDist) * (180.0f / 3.14159265f);
 
-        float yawErr = NormalizeDegrees(targetYawDeg - playerYawDeg);
+        // SIGN FIX (2026-07-17, live-reported "facing 180 the wrong way"): yaw error
+        // was backwards relative to how kYawAccum actually turns -- magnetism was
+        // pushing away from the target's direction, which converges to facing exactly
+        // opposite as a stable (wrong) equilibrium. Negated. Pitch wasn't reported
+        // wrong this time, left as-is.
+        float yawErr = -NormalizeDegrees(targetYawDeg - playerYawDeg);
         float pitchErr = NormalizeDegrees(targetPitchDeg - playerPitchDeg);
         float angleErr = sqrtf(yawErr * yawErr + pitchErr * pitchErr);
 
