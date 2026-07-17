@@ -39,8 +39,8 @@ using this matrix.
 | 4 | Turbulence | 1 | `hijack`/`sp_hijack` (fairly confident — matches Spec Ops zone `so_milehigh_hijack`) | ⚠️ | Movement hook bypasses the scripted player-freeze during the plane-breaking-apart sequence (bug #4, task #25). Potentially systemic beyond just this mission — see task #25. |
 | 5 | Back on the Grid | 2 | `warlord`/`sp_warlord`? (unconfirmed — needs re-check, "warlord" may instead map to Return to Sender given Waraabe is "the Warlord") | ⚠️ | Two issues: mortar aim works, fire doesn't (bug #5, task #26); mounted turret sequence felt harder on controller, cause unconfirmed (bug #6, task #27 — deep-investigation flagged). |
 | 6 | Mind the Gap | 2 | `london`/`sp_london` | ⚠️ | Opening helicopter/aerial sequence: ✅ fine. Tank-exit prompt (`+usereload`, not plain `+activate`) didn't register on controller (bug #7, task #28). |
-| 7 | Davis Family Vacation | 2 | not yet identified | ❓ | Short camcorder-cinematic sequence, minimal gameplay by design (comparable to "No Russian") — may have little actual input surface to test. Not yet tested. |
-| 8 | Goalpost | 2 | not yet identified | ❓ | Not yet tested — playthrough this session went straight to Return to Sender without an explicit report on this one. |
+| 7 | Davis Family Vacation | 2 | not yet identified | ✅ | Short camcorder-cinematic sequence, minimal gameplay by design (comparable to "No Russian"). Played and fully fine on controller (2026-07-18 confirmation — user reported all missions 2-9 were perfect except those explicitly flagged with bugs). |
+| 8 | Goalpost | 2 | not yet identified | ✅ | Played and fully fine on controller (2026-07-18 confirmation — see note on #7). |
 | 9 | Return to Sender | 2 | `warlord`? (see note on #5 — needs disambiguation) | ✅ | Helicopter door-gun/Remote Turret strafing runs worked fully. |
 | 10 | Bag and Drag | 2 | not yet identified | ❓ | Playtest session paused here — not yet tested, this is where testing will resume. |
 | 11 | Iron Lady | 2 | not yet identified | ❓ | Not yet tested. |

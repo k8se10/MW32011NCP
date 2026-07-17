@@ -10,21 +10,27 @@ reverse-engineering trail behind each entry.
 
 ### Docs
 - **First live Campaign playtest session (2026-07-17/18) — 7 bugs found
-  across Act 1 through the start of Act 2, plus 4 confirmed-working
-  sequences.** Logged in full as `known_issues.md` issue #27: DPV aim
-  broken in Hunter Killer (bug #1); crouch intermittently fails to fire,
-  ~2%, recovers after pause/unpause (bug #2); Hold Breath never
-  implemented + L3 wrongly force-stands the player while ADS+crouched with
-  a sniper (bug #3, task #24); movement hook bypasses the scripted
-  player-freeze during Turbulence's plane-breakup sequence, potentially
-  systemic (bug #4, task #25); mortar aim works but fire doesn't in Back
-  on the Grid (bug #5, task #26); mounted-turret sequence feels harder on
-  controller in the same mission, cause unconfirmed and flagged for
-  dedicated deep investigation (bug #6, task #27); Interact didn't fire
-  for a `+usereload`-gated tank-exit prompt in Mind the Gap (bug #7, task
-  #28, confirmed root cause). Confirmed-working for contrast: Hunter
-  Killer's boat, Persona Non Grata's UGV, Mind the Gap's opening aerial
-  sequence, Return to Sender's door gun.
+  across Act 1 through the start of Act 2 (missions 2-9), against
+  everything else in that range confirmed fully working.** Logged in
+  full as `known_issues.md` issue #27: DPV aim broken in Hunter Killer
+  (bug #1); crouch intermittently fails to fire, ~2%, recovers after
+  pause/unpause (bug #2); Hold Breath never implemented + L3 wrongly
+  force-stands the player while ADS+crouched with a sniper (bug #3, task
+  #24); movement hook bypasses the scripted player-freeze during
+  Turbulence's plane-breakup sequence, potentially systemic (bug #4, task
+  #25); mortar aim works but fire doesn't in Back on the Grid (bug #5,
+  task #26); mounted-turret sequence feels harder on controller in the
+  same mission, cause unconfirmed and flagged for dedicated deep
+  investigation (bug #6, task #27); Interact didn't fire for a
+  `+usereload`-gated tank-exit prompt in Mind the Gap (bug #7, task #28,
+  confirmed root cause). **User confirmed (2026-07-18) every other
+  mission in the missions-2-through-9 range was fully compatible** —
+  Persona Non Grata's UGV, Davis Family Vacation, Goalpost, and Return to
+  Sender's door gun all playable with zero fallback, alongside the
+  partially-working missions' unaffected sequences (Hunter Killer's boat,
+  Mind the Gap's opening aerial sequence). Mission 1 (Black Tuesday) and
+  mission 10 onward (Bag and Drag, where the session paused) remain
+  untested.
 - **Added `re_notes/compatibility_matrix.md`**: a new, living per-
   mission/per-map controller-compatibility tracker (Campaign by mission,
   Special Ops and Survival each as individual entries), separate from
