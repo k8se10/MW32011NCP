@@ -117,3 +117,13 @@ Open an issue with: which binary (`iw5sp.exe`/`iw5mp.exe`), which mode
 and if possible, the mod's log file from the session. Crashes matter a lot
 more here than most projects — this mod hooks a live game process, so please
 include as much repro detail as you can.
+
+**Before reporting a Campaign or Special Ops mission-specific issue**, check
+`re_notes/compatibility_matrix.md` first — it tracks per-mission live
+playtest status and may already have your finding logged (or explain why a
+given moment needs keyboard/mouse fallback). If you're playtesting a
+mission/mode that shows as "not yet tested" there, reports are especially
+useful — that file is actively maintained as testing continues, and PRs
+that add or correct a compatibility entry (with the same precision as a bug
+report: exact mission, exact moment, what worked vs. didn't) are welcome
+alongside code contributions.

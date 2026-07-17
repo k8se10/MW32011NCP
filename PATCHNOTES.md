@@ -9,6 +9,16 @@ reverse-engineering trail behind each entry.
 ## Unreleased
 
 ### Docs
+- **Added a condensed compatibility summary table to `README.md`**, and
+  wired `re_notes/compatibility_matrix.md` into the project's documented
+  ownership model: `CODE_STANDARDS.md`'s "Documentation Standards" section
+  now names it as the file that owns per-mission/per-mode live playtest
+  status (alongside `iw5sp.md` for RE trail, `known_issues.md` for the
+  issue list, `PATCHNOTES.md` for the changelog), and `CONTRIBUTING.md`'s
+  "Reporting bugs" section now points contributors there before filing a
+  mission-specific report, and welcomes PRs that add/correct compatibility
+  entries. Keeps the new matrix file from being an orphaned addition —
+  every doc that should reference it now does.
 - **Simplified Survival tracking in `compatibility_matrix.md` to a single
   overall entry instead of 16 per-map rows (2026-07-18, user direction)**:
   unlike Campaign/Special Ops, Survival's controller support is

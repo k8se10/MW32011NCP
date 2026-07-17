@@ -329,6 +329,32 @@ addresses live in dynamically-allocated per-tick structures, not fixed static me
 See `re_notes/iw5sp.md` for the complete reverse-engineering log: every function found,
 every dead end ruled out, and why.
 
+## Controller compatibility by mission/mode
+
+Started tracking per-mission/per-mode live playtest status after a first
+Campaign playtest session (2026-07-18) found controller support was solid
+overall but genuinely uneven mission-to-mission — a single "Campaign works"
+verdict would have hidden that. Full detail, including exact fallback
+points and open questions, lives in `re_notes/compatibility_matrix.md`;
+this is a condensed summary.
+
+| Mode | Tested | Fully compatible | Partial (fallback needed) | Not yet tested |
+|---|---|---|---|---|
+| Campaign (17 missions) | 8 | 4 | 4 | 9 |
+| Special Ops (16 missions) | 0 | — | — | 16 |
+| Survival | tracked as one entry (map-independent) | Works well overall | 1 known issue (Predator missile killstreak, see below) | — |
+
+Campaign missions confirmed fully compatible so far: Persona Non Grata,
+Davis Family Vacation, Goalpost, Return to Sender. Partial (specific
+fallback points only, not whole-mission failures): Hunter Killer (DPV
+aiming), Turbulence (a scripted-freeze sequence bypassed by our movement
+hook), Back on the Grid (mortar fire input, plus an unconfirmed
+mounted-turret difficulty question flagged for deep investigation), Mind
+the Gap (a vehicle-exit prompt gated on a bind this mod doesn't drive yet).
+See `re_notes/compatibility_matrix.md` for the full per-mission breakdown
+and `re_notes/known_issues.md` issue #27 for the underlying bug detail
+behind each partial entry.
+
 ## Known limitations
 
 See `re_notes/known_issues.md` for the full, actively-tracked list.

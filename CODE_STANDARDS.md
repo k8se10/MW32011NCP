@@ -76,10 +76,17 @@ reference record, not a polished highlight reel — treat it that way:
   never have to guess how solid a claim actually is.
 - **Cross-reference, don't duplicate.** `re_notes/iw5sp.md` is the full RE
   trail, `re_notes/known_issues.md` is the actively-tracked issue list,
-  `PATCHNOTES.md` is the curated player-facing changelog, `README.md` is the
-  feature/status overview. A given fact belongs in exactly the place that owns
-  it, linked from everywhere else that needs it — not copy-pasted across
-  several files that will inevitably drift out of sync.
+  `re_notes/compatibility_matrix.md` is the per-mission/per-mode live
+  playtest status (Campaign by mission, Special Ops by mission, Survival as
+  a single overall entry — see that file for why), `PATCHNOTES.md` is the
+  curated player-facing changelog, `README.md` is the feature/status
+  overview (with a condensed compatibility summary table pointing to the
+  full matrix, not a duplicate of it). A given fact belongs in exactly the
+  place that owns it, linked from everywhere else that needs it — not
+  copy-pasted across several files that will inevitably drift out of sync.
+  When a live playtest surfaces a compatibility finding, it goes in
+  `compatibility_matrix.md` (status) AND `known_issues.md` (the technical
+  bug/RE detail, if any) — not just one or the other.
 - Undocumented work is not done, by the same standard as untested work — see
   **Production Readiness Criteria** above.
 
