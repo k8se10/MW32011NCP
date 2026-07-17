@@ -864,6 +864,67 @@ presses. No further work needed on this specific report; task tracker entry clos
 
 ---
 
+## 15. Aim assist entity classification — PARKED (2026-07-17): a promising `game_entity`-equivalent struct found, but the cross-link to it broke live
+
+**Status:** Open, tracked as task #16. **Aim assist is completely non-functional at
+this stage** — not just unpolished, genuinely broken targeting behavior — and is
+disabled in the shipped config (`[AimAssist] Enabled=0`). Must stay disabled for
+any public/release build until this is resolved; do not re-enable outside active
+development/testing.
+
+**Background:** the movement-based target filter implemented earlier the same
+session (a static prop never moves; a living AI's position changes the moment it
+walks) proved the rest of the aim-assist pipeline works (math, curve, friction,
+magnetism all confirmed correct via live diagnostic logging), but the filter itself
+oscillates between multiple simultaneously-valid movers (a real enemy, a settling
+ragdoll, thrown grenades) and the user explicitly rejected patching this further —
+a real type/health-based classification was needed instead.
+
+**Reference-repo cross-check (user-directed) found a real, second entity array in
+our own binary.** `references/mw3-surviv0r/mw3-surviv0r/ft_aimbot.cpp`'s actual
+validity check reads `m_iType`/`m_iHealth` from a struct called `game_entity`
+(0x270 bytes), completely separate from `centity` (0x194 bytes, the struct our own
+existing entity array — and this whole session's earlier `+0xcc` type-byte
+investigation — has been reading from). A new Ghidra script,
+`FindStrideArrayBase.java` (isolates `IMUL reg,reg,<stride>` + `ADD (same
+reg),<base>` idioms), found **92 clean matches for stride `0x270`, 89 of which
+share the exact same base address, `0x01197AD8`**, across ~40 independent
+functions — very strong static confirmation this is a real, heavily-used array in
+our own vanilla binary, not just an artifact of the differently-patched reference
+binary.
+
+**Field offsets independently confirmed via decompiling ~25 of the 92 call sites**
+(full detail in `iw5sp.md`): `+0xd4` and `+0xec` are both real Vec3 fields
+(matching the reference's `m_vecPositionUp`/`m_vecWritablePosition` exactly),
+`+0x150` is read as `0 < value` in a threat-detection function (matching the
+reference's `m_iHealth` exactly, same offset, same alive-check usage), `+0x110` is
+a pointer null-checked for validity and zeroed on entity teardown, and `+0x0` is a
+type byte checked `== 3` (consistent with an idTech `ET_MISSILE`-style value) in a
+function that also reads a clientnum-style `ushort` at `+0x84` — matching the
+reference's `m_iClientNum` position.
+
+**What broke live:** the missing piece was how to go from an index in our existing
+`centity`-equivalent array to the matching slot in this new array. Hypothesized
+`centity`'s own `+0x150` field was a clientnum cross-link (matching the reference's
+`centity.m_clientnum@0x150` by name/position). Built a diagnostic-only build (extra
+logging only, no gameplay change) to test this against real AI during a live
+Survival session. **Result: disproven.** For real, known-moving AI indices, the
+"clientnum" read back as multi-million garbage values that scaled roughly linearly
+with the centity index (adjacent indices → adjacent huge numbers — looks like a
+counter or address, not a clientnum). For the few reads that landed in a small
+plausible range, the value was suspiciously always exactly equal to the centity
+index itself — coincidence, not a real link. `centity+0x150` is not the connector
+(or isn't being read correctly at that offset/width).
+
+**Decision:** parked here per explicit user instruction, rather than immediately
+pivoting to the next diagnostic (sampling `0x01197AD8`'s own `+0xec` position field
+for movement directly, sidestepping the cross-link question entirely — this is the
+natural next step whenever this is picked back up). The disproven diagnostic
+logging was removed from `analog_input_hooks.cpp`; `FindStrideArrayBase.java` was
+kept and committed as a genuinely reusable static-analysis tool.
+
+---
+
 ## 7. Remaining unassigned controller inputs
 
 **Status:** Open, tracked as task #5 (Back, deprioritized), #7 (killstreaks, not yet

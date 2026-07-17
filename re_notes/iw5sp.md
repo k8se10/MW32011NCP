@@ -1835,3 +1835,109 @@ first-class target on equal footing with controller. The mod's core purpose is
 native controller support; k+m compatibility is a "must not break" constraint, not
 a feature under active development. See the new caveat in `known_issues.md` and
 `README.md`.
+
+## Aim assist entity classification -- `game_entity`-equivalent array found and
+partially confirmed, cross-link disproven, PARKED (2026-07-17)
+
+Continuation of task #16 after the movement-based target filter (implemented
+2026-07-17, see the code comments in `analog_input_hooks.cpp`) was live-tested and
+the user rejected patching it further ("no genuinely this is bad way to pick up
+what is and what isnt an ai entity") -- real classification data was needed instead
+of a movement heuristic.
+
+**Reference-repo cross-check, per explicit user direction** ("so why not check that
+alterware mod we downloaded for how aimbot was done by them"). Read
+`references/mw3-surviv0r/mw3-surviv0r/ft_aimbot.cpp` and `game_structs.hpp` in full
+(gitignored, targets a different AlterWare-patched binary -- struct *shapes* still
+useful as conceptual reference, not addresses). Their aimbot's actual validity check
+(`m_iType != 13 || m_iHealth <= 0`, skip if either) reads from a SEPARATE
+`game_entity` struct (size `0x270`), not from `centity` (size `0x194`, matching our
+own entity array at `0x9ac010` exactly, including the confirmed position field at
+`+0x10`). Neither of `centity`'s three type-like fields (`m_eType1@0x64`,
+`m_eType2@0x88`, `m_eType3@0xDC`) is the field their aimbot actually checks -- the
+whole session's difficulty with the `+0xcc` type byte may have been reading the
+wrong struct entirely, not just the wrong offset.
+
+**Confirmed a real 0x270-stride array exists in OUR OWN vanilla binary too.**
+`FindConstantRefs.java` for the literal `624` (0x270 decimal) found 380 raw
+instruction matches across 130+ distinct `IMUL reg,reg,0x270` sites -- not just an
+AlterWare-binary artifact. Wrote a new script, `FindStrideArrayBase.java`
+(`re_notes/ghidra_scripts/`), to isolate genuine `arrayBase + index*stride` idioms
+(`IMUL reg,reg,<stride>` immediately followed by `ADD (same reg),<constant>`) from
+the noisier raw-constant hits. Run for stride `624`: **92 clean matches, 89 of which
+resolve to the exact same base, `0x01197AD8`** (a handful of outliers at
+`0x1197bc4` = `0x1197ad8 + 0xEC`, almost certainly just a different function
+computing a pointer directly to one field rather than the struct base). This level
+of agreement across ~40 distinct calling functions is about as strong a static
+confirmation as this kind of analysis gets.
+
+**Field-by-field static confirmation, via `DecompileFuncs.java` on ~25 of the 92
+call sites:**
+- `+0xd4`/`+0xd8`/`+0xdc` -- confirmed real Vec3 (`FUN_004ea2b0`, a splash-damage-
+  radius function, reads per-axis position + a per-axis bounds float at
+  `+0xe0`/`+0xe4`/`+0xe8`). Matches the reference's `m_vecPositionUp@0xd4` exactly.
+- `+0xec`/`+0xf0`/`+0xf4` -- confirmed real Vec3 (same function, and independently in
+  `FUN_004278c0`/`FUN_004956f0`). Matches the reference's
+  `m_vecWritablePosition@0xec` exactly.
+- `+0x150` -- an int, checked `0 < value` in `FUN_00546f00` (a nearby-threat/danger
+  detection function iterating a spatial query's results) -- matches the reference's
+  `m_iHealth@0x150` exactly, both in offset and in being used as a literal alive
+  check.
+- `+0x110` -- a pointer, null-checked for validity in `FUN_004e9ab0` (which also
+  dereferences its `+0x13a0` field) and explicitly zeroed during entity teardown in
+  `FUN_0043e240` (right alongside other real cleanup steps) -- a strong, independent
+  "is this entity still alive/active" signal.
+- `+0x0` -- a type byte, checked `== 3` in `FUN_00422b60` (a function that resolves
+  an entity to "the player responsible for it" -- reads an owner-link field at
+  `+0x104` when type is 3, otherwise reads a clientnum-style `ushort` directly at
+  `+0x84`). Consistent with an idTech-style `ET_` enum where `ET_MISSILE == 3`
+  (missiles need an owner lookup; players/actors don't). The specific numeric value
+  for "AI actor" in OUR binary was NOT determined statically -- this needed a live
+  read, hence the diagnostic below. `+0x84` matches the reference's
+  `m_iClientNum@0x84` in position.
+- A consistent 6-float block at `+0xb8/+0xbc/+0xc0/+0xc4/+0xc8/+0xcc` (written by
+  `FUN_00521340`, read by `FUN_00422b60` and `FUN_004278c0` identically) -- likely a
+  bounding-box or vision-cone extent, not yet needed for aim assist so not chased
+  further.
+
+**Diagnostic-only live test, cross-link disproven.** The open question after static
+analysis was how to go from an entity in OUR existing `centity`-equivalent array
+(the one the movement filter already walks) to the matching slot in this new
+`0x01197AD8` array. Hypothesis: `centity`'s own `+0x150` field (previously
+identified in an earlier session as "a handle passed to `FUN_00421b20`") is a
+clientnum that indexes directly into `0x01197AD8`, matching the reference's
+`centity.m_clientnum@0x150` field name/position exactly. Built a diagnostic-only
+build (no gameplay/behavior change -- pure extra logging, gated behind the same
+300ms rate limit as the existing `[aimassist-diag]` line) that read this field for
+whichever entity the movement filter currently considers the best target, then used
+it to index into `0x01197AD8` and log `type`/`health`/`+0x110` validity.
+
+**Result: disproven live.** For the real AI-cluster indices (334, 337, 338, 356,
+357, 361, 371, 389 -- the same indices already known from this session's earlier
+movement-based work to be real, moving entities), the "clientnum" read back as
+multi-million garbage (e.g. idx 337 -> 134152529, idx 338 -> 134152530 -- adjacent
+centity indices producing adjacent huge values, i.e. some kind of monotonic
+counter/address-shaped data, not a small clientnum). For the handful of reads that
+happened to fall in a plausible small range, the "clientnum" value was suspiciously
+always exactly equal to the centity index itself (58->58, 23->23, 371->371,
+390->390, 363->363) -- coincidence, not a real cross-reference. **Conclusion:**
+`centity+0x150` is NOT the clientnum link into this array (or is not read
+correctly at that offset/size) -- the assumed cross-link is wrong. This does not
+disprove the `0x01197AD8` array itself, which still has strong independent static
+support -- only the specific mechanism assumed to connect it to `centity`.
+
+**Decision: PARKED, not abandoned.** Per explicit user instruction, further work on
+this stopped here for now rather than continuing to the next diagnostic (sampling
+`0x01197AD8`'s own position field, `+0xec`, for movement directly -- sidestepping
+the broken cross-link entirely by not needing one). That remains the natural next
+step whenever this is picked back up. The diagnostic-only logging added to test the
+disproven hypothesis was removed from `analog_input_hooks.cpp` after this session
+(dead code testing a wrong theory shouldn't linger in the shipped source); this
+document is the durable record instead. `FindStrideArrayBase.java` was kept and
+committed -- it's a genuinely reusable general-purpose tool independent of this
+specific investigation's outcome.
+
+**Aim assist itself: disabled in the shipped config** (`[AimAssist] Enabled=0` in
+`mw3ncp_config.ini`) pending this classification work, since the movement-based
+filter's known oscillation issue (flip-flopping between simultaneously-valid movers)
+was never fixed and shouldn't be left live-enabled against unsuspecting players.

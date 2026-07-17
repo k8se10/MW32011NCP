@@ -1122,6 +1122,15 @@ constexpr int kEntityCount = 400;
 constexpr uintptr_t kEntityPosOffset = 0x10;
 constexpr uintptr_t kInLevelFlagAddrForAimAssist = 0x00A98ACC; // same flag used elsewhere in this file
 
+// A second, separate 0x270-stride entity array (base 0x01197AD8) was investigated this
+// session as a possible source of real type/health data for target classification --
+// parked, not adopted. Full trail (what was confirmed statically, what failed live,
+// and why) is in re_notes/iw5sp.md rather than duplicated here; the short version is
+// the array itself looks real, but the assumed cross-link from this centity-equivalent
+// array to it (via this array's own +0x150 field as a "clientnum") produced garbage
+// values live and was disproven -- do not resurrect that specific link without new
+// evidence.
+
 struct Vec3 { float x, y, z; };
 
 Vec3 GetEntityPosition(int index)

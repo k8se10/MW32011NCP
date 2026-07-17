@@ -33,14 +33,18 @@ each release.
   noticeable effect on its own. Both configurable, mathematically safe at any value
   (a power curve, not a linear blend — the linear version could invert look direction
   at high strength on deep zooms; fixed in v0.1.1).
-- **Aim assist** (rotational friction + magnetism) — a from-scratch implementation,
-  not the game's native aim-assist system (which turned out to be shared math bots use
-  to aim *at* the player, not a player-facing feature — MW3 PC genuinely has no mouse
-  aim-assist). Built from real entity position/type data plus our own curve math (the
-  curve shape recovered from the game's own `aim_assist/view_input_0.graph` asset),
-  applied on top of the same look-angle globals controller look already writes to.
-  Fully configurable (range, cone angle, friction/magnetism strength) — see
-  **Configuration** below. **Newly added, not yet live-tested.**
+- **Aim assist (rotational friction + magnetism) — EXPERIMENTAL, DISABLED BY DEFAULT,
+  NOT FUNCTIONAL YET.** A from-scratch implementation (the game's native aim-assist
+  system turned out to be shared math bots use to aim *at* the player, not a
+  player-facing feature — MW3 PC genuinely has no mouse aim-assist). The underlying
+  math (angle error, friction curve, magnetism) is confirmed correct via live
+  diagnostic logging, but the target-validity filter is not: it currently uses a
+  movement heuristic that oscillates between multiple simultaneously-moving things
+  (a real enemy, a settling ragdoll, a thrown grenade), producing genuinely broken
+  targeting in practice, not just an unpolished feel. **Ships with `Enabled=0` and
+  must stay that way for any public/release build** until real entity classification
+  replaces the movement heuristic — see `re_notes/known_issues.md` issue #15. Do not
+  enable this for anyone other than active development/testing.
 
 ### Combat & interaction
 - **Fire** (RT), **Tactical**/**Lethal** (LB/RB), **Jump** (A).
@@ -140,7 +144,7 @@ native controller UI navigation exists.
 | `[Bindings]` | `ButtonLayout` | `Default` | `Default` / `Tactical` / `Lefty` / `TacticalLefty` — see table below |
 | `[Bindings]` | `StickLayout` | `Default` | `Default` / `Southpaw` / `Legacy` / `LegacySouthpaw` — see table below |
 | `[Bindings]` | `FlipTriggers` | `0` | Independently swaps RT↔RB and LT↔LB, combining with whichever `ButtonLayout` is active |
-| `[AimAssist]` | `Enabled` | `1` | Our own from-scratch aim assist (see below) — `0` to disable entirely |
+| `[AimAssist]` | `Enabled` | `0` | Our own from-scratch aim assist (see below) — **EXPERIMENTAL, NOT FUNCTIONAL** (broken target classification), must stay `0` for public builds |
 | `[AimAssist]` | `Range` | `1200` | Max world-unit distance to a target for it to be considered at all |
 | `[AimAssist]` | `ConeDegrees` | `6` | Half-angle of the "near crosshair" cone a target must be within |
 | `[AimAssist]` | `FrictionStrength` | `0.6` | How much to slow the look-turn rate while the crosshair is near a valid target (`0` = no slowdown, `1` = strongest) |

@@ -9,17 +9,24 @@ reverse-engineering trail behind each entry.
 ## Unreleased
 
 ### Added
-- **First implementation of aim assist (rotational friction + magnetism, task #16).**
-  The native aim-assist system turned out to be shared math bots use to aim at the
-  player, not a player-facing feature (MW3 PC genuinely has no mouse aim-assist) — so
-  this is built entirely from scratch instead: real entity position/type data plus our
-  own targeting and curve math (the curve shape recovered from this game's own
-  `aim_assist/view_input_0.graph` asset), applied directly on top of the same look-angle
-  globals controller look already writes to. New `[AimAssist]` config section
-  (`Enabled`, `Range`, `ConeDegrees`, `FrictionStrength`,
-  `MagnetismDegreesPerSecond`). **Not yet live-tested** — sign conventions for the
-  target-angle math and the entity-type filter are based on static analysis; expect a
-  tuning pass, same as every other feature in this mod.
+- **First implementation of aim assist (rotational friction + magnetism, task #16)
+  — EXPERIMENTAL, NOT FUNCTIONAL, DISABLED BY DEFAULT. Must stay disabled for any
+  public/release build.** The native aim-assist system turned out to be shared math
+  bots use to aim at the player, not a player-facing feature (MW3 PC genuinely has no
+  mouse aim-assist) — so this is built entirely from scratch instead: real entity
+  position data plus our own targeting and curve math (the curve shape recovered
+  from this game's own `aim_assist/view_input_0.graph` asset), applied directly on
+  top of the same look-angle globals controller look already writes to. New
+  `[AimAssist]` config section (`Enabled`, `Range`, `ConeDegrees`,
+  `FrictionStrength`, `MagnetismDegreesPerSecond`). Live-tested across several
+  tuning passes: the core math (angle error, friction curve, magnetism) is confirmed
+  correct via diagnostic logging, but the target-validity filter (currently
+  movement-based — a real prop never moves, a living AI's position does) is
+  genuinely broken in practice — it oscillates between multiple
+  simultaneously-moving things (a real enemy, a settling ragdoll, a thrown grenade),
+  not just imprecise. Ships with `Enabled=0`; do not flip this on outside active
+  development until a real type/health-based classification replaces the movement
+  heuristic — see `re_notes/known_issues.md` issue #15.
 
 ### Fixed
 - **B didn't exit the pause menu.** The ESC-forward logic (`InjectControllerMenuBack`)
@@ -51,6 +58,17 @@ reverse-engineering trail behind each entry.
   `+actionslot4` behavior is a plain press-to-toggle, but the old call pair only ever
   drove the "deploy" side. Fixed for free by the same key-synthesis change above, since
   it now goes through the real dispatcher's own toggle logic.
+
+### Investigated, not resolved
+- **Aim assist target classification.** Following a lead from the cragson/
+  mw3-surviv0r reference repo's own aimbot source, found strong static evidence of a
+  real, second entity array in our own binary (base `0x01197AD8`, stride `0x270`,
+  confirmed via ~90 independent cross-references) carrying type/health fields at the
+  same offsets the reference struct uses — but the assumed link from our existing
+  entity array to it (a hypothesized clientnum field) produced garbage values in a
+  live test and was disproven. The movement-based filter currently in place remains
+  the only working (if imperfect) classification method. See
+  `re_notes/known_issues.md` issue #15 and `re_notes/iw5sp.md` for the full trail.
 
 ### Added
 - **`AdsSlowdownBaseline`** — a new `[Look]` config value multiplied on top of the
