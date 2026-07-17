@@ -9,6 +9,30 @@ reverse-engineering trail behind each entry.
 ## Unreleased
 
 ### Docs
+- **First live Campaign playtest session (2026-07-17/18) — 7 bugs found
+  across Act 1 through the start of Act 2, plus 4 confirmed-working
+  sequences.** Logged in full as `known_issues.md` issue #27: DPV aim
+  broken in Hunter Killer (bug #1); crouch intermittently fails to fire,
+  ~2%, recovers after pause/unpause (bug #2); Hold Breath never
+  implemented + L3 wrongly force-stands the player while ADS+crouched with
+  a sniper (bug #3, task #24); movement hook bypasses the scripted
+  player-freeze during Turbulence's plane-breakup sequence, potentially
+  systemic (bug #4, task #25); mortar aim works but fire doesn't in Back
+  on the Grid (bug #5, task #26); mounted-turret sequence feels harder on
+  controller in the same mission, cause unconfirmed and flagged for
+  dedicated deep investigation (bug #6, task #27); Interact didn't fire
+  for a `+usereload`-gated tank-exit prompt in Mind the Gap (bug #7, task
+  #28, confirmed root cause). Confirmed-working for contrast: Hunter
+  Killer's boat, Persona Non Grata's UGV, Mind the Gap's opening aerial
+  sequence, Return to Sender's door gun.
+- **Added `re_notes/compatibility_matrix.md`**: a new, living per-
+  mission/per-map controller-compatibility tracker (Campaign by mission,
+  Special Ops and Survival each as individual entries), separate from
+  `known_issues.md`'s technical RE trail — this file answers "what's
+  actually been tested and how did it go," `known_issues.md` stays the
+  place for the underlying bug/fix detail. Seeded with this session's
+  playtest results; Special Ops and Survival rows scaffolded from this
+  install's own real zone files but not yet tested.
 - **Full-breadth engine research pass** (killstreaks, weapons, perks, HUD/UI, AI/vehicles,
   physics/health, and a research-only pass on `iw5mp.exe`) — no code changes, pure
   groundwork. Headline findings: a real, actionable hypothesis for Predator missile's

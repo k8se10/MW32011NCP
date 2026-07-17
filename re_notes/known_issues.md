@@ -1283,6 +1283,254 @@ a large parallel batch of research-only forks, ahead of wrapping the session.
   genuine gap, not confirmed absent. No implementation should proceed from this
   without the anti-cheat question being resolved first.
 
+## 27. Campaign controller playtest, live findings (2026-07-17, later session — in progress)
+
+**Status:** User is playing through Campaign on controller and reporting real
+fallback-to-keyboard/mouse points as they go. Logging each finding here as
+reported; entry will keep growing across the session. Reached "Bag and
+Drag" (Act II) with every mission up to that point fully playable, but with
+targeted fallback needed at specific points — mainly vehicles and
+killstreaks, not blanket failures. Directly relevant to task #7 (killstreak
+input) and refines issue #26's vehicle hypothesis below.
+
+- **Mission "Hunter Killer" (Act 1) — DPV (Diver Propulsion Vehicle)
+  sequence: movement works, aiming does not.** The underwater DPV segment
+  (real name confirmed via web search — matches the user's "seaglide-style
+  thing like Subnautica" description) let the player move/steer on
+  controller fine, but aiming while on the DPV required falling back to
+  mouse. **Vehicle-specific, not blanket**: the same mission's boat section
+  worked fully on controller (movement AND aim) — so this isn't "vehicles
+  in general lack aim input," it's specific to the DPV. This is a real,
+  live-confirmed counterexample to issue #26's AI/vehicles hypothesis
+  ("vehicles reuse the same `usercmd_t` fields this mod already hooks,
+  meaning movement/look may already work in vehicle sections with no new
+  code") — that hypothesis holds for at least the boat, but not for the
+  DPV specifically. Root cause not yet investigated — candidate theories,
+  none confirmed: the DPV may use a separate aim/camera mechanism from
+  normal vehicle-mounted turrets or on-foot look (e.g. a distinct
+  view-angle path our right-stick look hook doesn't reach), or may gate aim
+  input behind a different kbutton/dvar this mod doesn't drive. Needs real
+  RE work (find the DPV's own entity/vehicle type and its input-handling
+  path) before attempting a fix — not diagnosed yet, just captured
+  precisely as reported.
+- **Bug #2 — Crouch intermittently fails to fire, ~98% reliable, ~2% silent
+  no-op; recovers if the player pauses and unpauses in certain
+  sequences.** Reported as a real, reproducible-but-rare live playtest
+  finding, not a one-off fluke — happens often enough to notice a pattern
+  (pause/unpause fixes it) but rare enough to characterize as ~2% of
+  attempts. **Real, plausible lead already on record from issue #9's own
+  `ToggleStance()` (`FUN_0057d2c0`) write-up, worth checking first**: that
+  function has two guard bytes at the very top —
+  `if (byte[playerIndex*0x230 + 0xA98CA0] != 0) return;` and
+  `if (byte[playerIndex*0x230 + 0xA98BC4] != 0) return;` — if EITHER is
+  nonzero, the toggle silently no-ops with no error/feedback, which matches
+  "crouch sometimes just doesn't fire" exactly. Neither guard's real
+  meaning was decoded when issue #9 was written (only the toggle logic
+  itself was needed at the time). **Why pause/unpause would fix it**: this
+  mod has an established pattern of exactly this class of bug elsewhere
+  (the `g_paused`/`cl_paused` desync fix, and issue #9's own root cause —
+  "our own competing per-frame bit-forcing... fighting" real engine state)
+  — a locally-tracked/stale bit getting out of sync with real engine state,
+  where a pause/unpause cycle happens to force a re-read/re-sync. Whether
+  that's literally what's happening here (vs. these two guard bytes being
+  genuine, unrelated engine gating conditions like "in a cutscene" / "stance
+  change locked by animation") is NOT yet confirmed — needs live diagnostic
+  logging on both guard bytes (the same `LogStanceDiag`-style technique
+  issue #9 already used) to catch a real failure in the act, not assumed
+  from this theory alone.
+- **Bug #3 — Hold Breath on sniper scopes was never implemented (a known,
+  forgotten gap, not a new discovery), and its absence causes a real,
+  incorrect side effect: L3 while crouched + ADS with a sniper wrongly
+  fires Sprint's auto-stand-up behavior instead of doing nothing/holding
+  breath.** Two parts, directly connected:
+  1. **Missing feature**: Hold Breath (sniper sway reduction while ADS,
+     normally on the same physical input as Sprint — Left Thumb/L3 on
+     console) was never built. This isn't a bug in existing code, it's a
+     feature that was simply never started.
+  2. **Real bug this causes**: with Hold Breath absent, L3 unconditionally
+     runs this mod's own Sprint implementation — which, per issue #9's
+     fix, auto-stands the player up out of crouch/prone before sprinting
+     (`ForceStandingViaRealToggle`, matching real console Sprint behavior
+     when NOT aiming). But there's no check for "currently ADS with a
+     sniper" before that auto-stand fires, so pressing L3 while crouched
+     and scoped in forces the player upright — breaking cover/stance
+     specifically in the situation (sniping) where staying low matters
+     most, and where a player's real intent was almost certainly "hold
+     breath," not "sprint."
+  - **Direct tie to already-parked research**: the real engine bind is
+    `+breath_sprint` (`players2/config.cfg`: `bind SHIFT "+breath_sprint"`,
+    confirmed via the "Real keycode reference" work below) — a SINGLE,
+    unified native bind for both Sprint and Hold Breath depending on
+    context (the SP default-keybind table in `iw5sp.md` literally labels
+    it "Left Thumb = Sprint/Hold Breath"). The engine itself treats these
+    as one contextual input, not two separate ones. This mod's own Sprint
+    implementation never found/drove the real `+breath_sprint` kbutton
+    (three independent search attempts, all parked — see "Sprint's real
+    kbutton — PARKED" below) and instead forces sprint via raw `pm_flags`
+    manipulation, which has no concept of "context" at all — it's Sprint
+    or nothing. **This strongly suggests Hold Breath was likely always
+    going to be blocked on the same parked kbutton-search work**, since
+    the real native mechanism is one bind, not two. Worth revisiting the
+    kbutton search specifically through this lens (maybe the ADS+scoped
+    context is what was missing from the earlier 3 search attempts, since
+    none of them tried transitioning Shift while already aiming down a
+    scoped weapon).
+  - **Minimum viable fix for the bug (part 2) without waiting on the
+    kbutton search**: gate the existing auto-stand-on-sprint logic behind
+    a real "is ADS with a sniper-class weapon" check before it fires —
+    stops the incorrect stand-up regardless of whether real Hold Breath
+    ever gets implemented. Two separable pieces of work, not one blocking
+    task.
+- **Positive result — Mission "Persona Non Grata" (Act 1, immediately after
+  Hunter Killer): the UGV (Unmanned Ground Vehicle, mounted minigun +
+  grenade launcher, played as Yuri) worked perfectly on controller as
+  expected** — no fallback needed. Second confirmed-working vehicle
+  alongside Hunter Killer's boat, reinforcing that issue #26's "vehicles
+  reuse the same `usercmd_t` fields, may already work with no new code"
+  hypothesis holds broadly — the DPV (bug #1 above) looks like the
+  exception so far, not the rule.
+- **Bug #4 — Mission "Turbulence" (Act 1, the hijacked-plane mission): during
+  the scripted plane-breaking-apart sequence, the player retained free
+  movement on controller when the intended design is for the player to be
+  held still/scripted-locked.** User's own framing: "again a bug none the
+  less," and noted in passing this scenario is thematically "the reverse of"
+  a CoD4 Spec Ops mission (not independently verified, a passing
+  observation not load-bearing for the fix). **Real, plausible, and
+  potentially systemic root cause worth checking first**: this mod injects
+  left-stick movement as a POST-hook, additive pass on top of whatever the
+  real engine's own movement summer (`FUN_0057d430`) already computed for
+  that frame (see the core architecture notes above — "post-hook, additive
+  on top of keyboard"). If the real engine enforces a scripted "player
+  frozen"/cinematic-lock state by zeroing or ignoring `forwardmove`/
+  `rightmove` INSIDE that same original function during such sequences,
+  our additive post-hook would still inject fresh movement afterward,
+  bypassing the lock entirely — the same class of "right mechanism, wrong
+  layer" trap already hit and fixed for Prone/ADS/Sprint (see issue #9).
+  **Not yet confirmed** — needs checking whether a real "movement locked"
+  flag/dvar exists and is set during this sequence, and whether our hook
+  should gate on it (skip injecting movement when set) rather than blindly
+  adding every frame. **Potentially higher-impact than just this one
+  mission** if the same lock mechanism is reused by other scripted
+  sequences elsewhere in the campaign — worth a general fix (respect the
+  real lock flag universally in the movement hook) rather than a
+  single-mission special case, once the real flag is found.
+- **Bug #5 — Mission "Back on the Grid" (Act 1, village mortar sequence):
+  aiming the mortar worked correctly on controller (sensitivity matched
+  keyboard/mouse setup, aim/traverse fully usable), but firing it did
+  not** — had to fall back to keyboard/mouse specifically to fire, despite
+  the mortar being otherwise fully controller-driven for aim. This has a
+  cleaner shape than bugs #1/#3/#4 above: aim/look already routes through
+  this mod's real right-stick-look hook (which is why sensitivity/aim
+  "just worked," consistent with how ADS/normal look already behaves), but
+  the mortar's own FIRE input is very likely a distinct bind/kbutton from
+  normal `+attack` (mortar sequences in this engine family are typically
+  built as a bespoke minigame with their own dedicated fire command, not
+  the regular weapon-fire path) that this mod's RT/`+attack` hook was never
+  wired to reach, or reaches but the mortar-specific handler ignores. Needs
+  the same treatment as any other not-yet-wired input: find the mortar's
+  real fire bind/kbutton (likely via the same raw-keycode-dispatch-table
+  technique already proven for weapnext/D-pad/crouch — see issues #4/#9)
+  and confirm whether it's a distinct command from `+attack` or the same
+  one gated by an unmet mortar-specific condition.
+- **Bug #6 (NOT YET CONFIRMED, two competing hypotheses) — same mission
+  "Back on the Grid": the mounted Browning M2 turret sequence on the
+  captured technical (holding off waves of enemies/other technicals) felt
+  far too hard on controller.** User's own framing, explicitly uncertain
+  between two distinct causes, not yet diagnosed:
+  1. **Hypothesis A — no aim assist.** This mod's aim assist is
+     already a known, confirmed-non-functional, parked gap (task #16 —
+     "disabled for public builds," not just unpolished). A sustained,
+     high-enemy-density defense sequence like this is exactly the kind of
+     moment where the absence of aim assist would be most keenly felt vs.
+     mouse precision. Given task #16 is ALREADY confirmed broken, this is
+     the higher-prior-probability explanation of the two.
+  2. **Hypothesis B — a real CoD-series "mounted turret" survivability
+     buff isn't getting set when mounting via controller. Refined by the
+     user (2026-07-18): more likely FASTER HEALTH REGENERATION while
+     mounted, not flat damage reduction/max-health** ("i think it was
+     faster regen not health if i remember" — explicitly hedged, not
+     certain, but a real, precise refinement worth preserving as stated
+     rather than the earlier, less specific "tankiness" framing). Real,
+     distinct, separately-checkable possibility, NOT just a fallback
+     guess — CoD titles have historically buffed player survivability
+     while manning a mounted turret, precisely because these sequences are
+     designed to feel like short, turret-vs-horde standoffs, not a fair
+     1:1 firefight; a faster/more-aggressive regen rate (rather than a
+     damage multiplier) is a plausible, distinct mechanism for that same
+     design goal. If our controller mount/interact path (X = `+activate`,
+     per the confirmed keybind table) doesn't trigger whatever the real
+     engine normally sets alongside a keyboard-driven mount, the player
+     would regen at the normal rate during a sequence balanced around
+     regenerating faster — independent of and additive to hypothesis A,
+     not mutually exclusive. **Practical consequence for diagnosis**: look
+     for a real regen-RATE field/flag/timer (e.g. a shortened regen-delay
+     or an increased regen-per-tick value gated on "is mounted," analogous
+     in shape to this mod's own Sprint stamina/cooldown timer work in
+     issue #6) rather than a static max-health or damage-taken multiplier —
+     changes where to look, not just what to look for.
+  - **Not yet diagnosed which (or both) is the real cause.** Natural next
+    steps: (a) check live whether Hypothesis A alone plausibly explains the
+    difficulty (informal — does it feel like a normal aim-assist-less
+    firefight, or does damage taken feel unusually high even when landing
+    hits reliably); (b) if suspicion remains on Hypothesis B, live-diff a
+    real health/damage-multiplier field or entity flag between a keyboard-
+    mounted turret session and a controller-mounted one, the same memdiff
+    technique already used elsewhere in this project. Don't attempt a fix
+    before at least one hypothesis is confirmed — could easily spend effort
+    on the wrong one.
+  - **User's own live impression, for the record**: "it did feel a bit
+    different" (comparing controller-mounted vs. presumed keyboard-mounted
+    turret feel) — a genuine, if informal, data point in favor of
+    Hypothesis B being at least partly real, not just theoretical. **User
+    has explicitly flagged this for a dedicated internal deep-investigation
+    + RE pass** (not to be started opportunistically alongside other work —
+    tracked as its own task, see task #27).
+- **Bug #7 (mission NOT YET IDENTIFIED — user will confirm later) — Interact
+  (X = `+activate`) failed to work in one specific mission moment**,
+  despite working correctly everywhere else in the playthrough so far
+  (per issue #11, already resolved as hold-to-interact). **User's own
+  hypothesis, and a real, already-documented lead worth checking first**:
+  this mod's Interact is wired to plain `+activate` only, but issue #9's
+  own keybind table (`iw5sp.md`) already found a SEPARATE, real bit
+  (`0x8`, struct offset `+0x18c`) mapped to `+usereload` — explicitly
+  described there as "combined use/reload — explains why it's
+  context-sensitive," distinct from generic `+activate`. If a specific
+  interact prompt in the game expects that context-sensitive
+  `+usereload` bit rather than plain `+activate`, our X-button hook would
+  correctly handle every normal "use" prompt (matching the otherwise
+  100%-working track record so far) while missing whichever specific
+  prompts are actually gated on `+usereload` instead.
+  **Mission/moment CONFIRMED (2026-07-18): "Mind the Gap" (London) — the
+  tank sequence where a car lands on the roof and the player must press F
+  (`+usereload`, per the bind table above — NOT the plain "F = interact"
+  most prompts use) to exit the tank.** Controller did not react to this
+  specific prompt at all; keyboard F was required. This is a strong,
+  concrete confirmation of the `+usereload` hypothesis above — exiting a
+  vehicle is exactly the kind of context CoD's engine family
+  historically overloads onto a combined use/reload-style bind rather
+  than plain `+activate`. Tracked as task #28.
+- **Positive result — Mission "Mind the Gap" (London, Canary Wharf, playing
+  as Marcus Burns/SAS): the helicopter/aerial-camera sequence at the very
+  start of the mission works fine on controller.** No fallback needed.
+  Mission name confirmed via mission-list research; the exact "helicopter
+  camera" framing wasn't independently re-confirmed beyond the mission's
+  general UAV-surveillance-style opening, but the mission identity itself
+  is solid. Third confirmed-working entry alongside Hunter Killer's boat
+  and Persona Non Grata's UGV.
+- **Positive result — Mission "Return to Sender" (Act 2, Mission 2,
+  Bosaso/Somalia): the camera-based mounted gun on Nikolai's Hind
+  helicopter, doing strafing runs (Yuri operating the door gun/Remote
+  Turret), works fully on controller.** No fallback needed. Confirmed
+  as the correct mission via mission-order research (Act 2: Goalpost →
+  Return to Sender → Bag and Drag → ...), consistent with the user's own
+  playthrough position. Fourth confirmed-working entry alongside Hunter
+  Killer's boat, Persona Non Grata's UGV, and Mind the Gap's opening
+  aerial sequence — and the first Act 2 data point, immediately before
+  "Bag and Drag" where live testing paused for this reporting session.
+- More findings to be appended below as reported (further vehicles,
+  killstreaks, and any other fallback points as testing continues past
+  "Bag and Drag").
+
 ---
 
 ## Resolved this session (for contrast — see `iw5sp.md` for full write-ups)
