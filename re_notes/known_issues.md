@@ -1527,6 +1527,33 @@ input) and refines issue #26's vehicle hypothesis below.
   Killer's boat, Persona Non Grata's UGV, and Mind the Gap's opening
   aerial sequence — and the first Act 2 data point, immediately before
   "Bag and Drag" where live testing paused for this reporting session.
+- **Bug #8 — Mission "Goalpost" (Act 2, Mission 1, Hamburg): the SMAW
+  rocket launcher failed to lock onto an aircraft target on controller.**
+  Confirmed via research: SMAW genuinely has real lock-on capability in
+  this engine (works like MW2's AT4/BO1's M72 LAW — free-fire against
+  ground targets, but lock-on specifically against aircraft), and
+  Goalpost's own SMAW use is documented against both T-90 tanks (ground,
+  correctly dumb-fire-only, NOT a bug) and — per the user's own testing —
+  an aircraft target too, where lock-on should have applied and didn't.
+  **Scoped precisely to avoid over-logging**: no lock-on against the
+  tanks is expected, correct behavior, not a defect — only the aircraft
+  case is a POSSIBLE bug.
+  **NOT YET CONFIRMED as a real bug at all — user's own follow-up
+  caveat**: the helicopter target "may also be due to the heli being
+  scripted." If that aircraft is a non-targetable, scripted/background
+  entity (a common CoD pattern — vehicles that fly through a level for
+  atmosphere without being real, lockable targets), lock-on would
+  correctly fail regardless of input device, and this wouldn't be a
+  controller-specific bug at all — keyboard would fail identically.
+  **Two competing explanations, not yet distinguished**: (a) real
+  controller-specific gap in reaching the lock-on bind (same class as
+  Hold Breath/task #24 and mortar fire/task #26 — a distinct,
+  non-`+attack` held-input state this mod's RT hook was never wired to
+  reach), or (b) the target was never lockable in the first place,
+  independent of input device. **Needs a same-target keyboard comparison
+  test first** (does keyboard lock onto the SAME aircraft in the SAME
+  spot?) before any RE work — if keyboard also fails, this closes as a
+  non-issue, not a bug.
 - More findings to be appended below as reported (further vehicles,
   killstreaks, and any other fallback points as testing continues past
   "Bag and Drag").

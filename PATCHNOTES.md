@@ -9,6 +9,13 @@ reverse-engineering trail behind each entry.
 ## Unreleased
 
 ### Docs
+- **Possible 8th playtest bug, NOT YET CONFIRMED (2026-07-18)**: SMAW may
+  have failed to lock onto an aircraft target in "Goalpost" — but per the
+  user's own follow-up, the target may be a non-targetable scripted
+  entity, which would make this a non-issue rather than a real bug. Needs
+  a same-target keyboard comparison before status changes either way
+  (task #29). Logged as `known_issues.md` issue #27 bug #8, explicitly
+  flagged as unconfirmed rather than treated as a defect.
 - **First live Campaign playtest session (2026-07-17/18) — 7 bugs found
   across Act 1 through the start of Act 2 (missions 2-9), against
   everything else in that range confirmed fully working.** Logged in
