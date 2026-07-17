@@ -236,12 +236,12 @@ combat, drives the engine's real internal state directly, as described above.
 | Right bumper (RB) | Lethal (frag) | ✅ Confirmed |
 | Y | Weapon switch (`weapnext`); hold ~740ms in Survival to ready up between waves | ✅ Confirmed |
 | Start | Opens **and closes** the pause menu (real native calls, not a keypress emulation) | ✅ Confirmed |
-| Back | *(unassigned)* | ⬜ Not yet implemented — a first attempt regressed live (see `re_notes/known_issues.md`), reverted, deprioritized (nice-to-have, not gameplay-defining) |
+| Back | Real `+scores` (scoreboard/objectives) via a synthetic TAB keypress — third key-synthesis exception, same technique as ready-up/squadmate call-in | 🟡 Implemented, builds clean — not yet separately live-confirmed (see `re_notes/known_issues.md` issue #28) |
 | D-pad (Up/Right/Down/Left) | `+actionslot 1-4` — killstreaks/attachments (e.g. noob tube), data-driven by loadout | ✅ Confirmed* (user tested at least half the directions live; all four use the identical confirmed mechanism, so high confidence on the untested ones too) |
 | Killstreaks (collectively) | Calling in / controlling killstreaks (Predator missile, etc.) — see the dedicated table below | 🟡 Partial — essential to Campaign, which is otherwise mostly untested so far |
 | D-pad + A menu navigation | Item navigation (main menu, pause menu, options screens' two-pane category/settings drill-in-drill-out) | ✅ Confirmed live (task #22) |
-| D-pad + A, buy-station/armory (Survival) | Item navigation on the armory's `itemDef` list | 🟡 Believed working (same generic mechanism already confirmed for the pause menu's identical single-pane-list case) — not yet separately live-verified with this exact menu |
-| Slider-type settings (e.g. sensitivity) | Adjusting the actual VALUE of a slider once navigated to | ⬜ Not yet implemented — navigating TO a slider works, changing it doesn't; the real value-adjust path is gated on mouse-wheel keycodes this mod doesn't drive yet |
+| D-pad + A, buy-station/armory (Survival) | Item navigation on the armory's `itemDef` list | ✅ Confirmed live (2026-07-18) |
+| Slider-type settings (e.g. sensitivity) | Adjusting the actual VALUE of a slider, not just navigating to it | ✅ Confirmed live (2026-07-18) — Left/Right adjusts the value directly, via the same generic menu-forwarding mechanism as everything else in this section |
 | Button-glyph UI prompts | Controller icons in hint text (currently keyboard key names only) | ⬜ Not yet started |
 
 **B's stance ladder**, matching real Xbox 360 CoD behavior (not a raw hold of either
@@ -273,18 +273,23 @@ game's own buy-station data (`sp/survival_armories.csv`):
   unvalidated assumption (a bind-name-table index treated as if it were a
   `FUN_00438710` switch case number). Confirmed WRONG live — it made the player walk
   backward (it's almost certainly the real `+back` movement kbutton). Reverted
-  immediately; Back is a no-op again. Needs the same live-keycode-table technique that
-  correctly solved weapnext (see `re_notes/known_issues.md`) applied to TAB instead.
-  Deprioritized — scoreboard isn't gameplay-defining, unlike D-pad/killstreaks.
+  immediately. **Resolved differently, 2026-07-17**: `+scores` turned out not to be a
+  per-frame usercmd kbutton at all — it's a plain keyboard bind read by the UI layer,
+  the same category of problem Survival ready-up and D-pad Left's squadmate call-in
+  already needed key synthesis to solve. Implemented as the third such exception
+  (synthetic TAB keypress) — builds clean, not yet separately live-confirmed. See
+  `re_notes/known_issues.md` issue #28.
 - **Killstreaks:** user's first live test (Predator missile) showed partial
-  functionality — needs its own per-killstreak investigation once D-pad/scoreboard
-  settle, likely a distinct mechanism per killstreak type.
-- **Menu/UI navigation (task #22) — real D-pad/A navigation now implemented and
-  live-confirmed** (main menu, pause menu, options screens including two-pane
-  category/settings drill-in-drill-out) — see the D-pad/A section above. Button-
-  glyph prompt swapping (task #6's other half) is still unstarted, and slider-type
-  settings (sensitivity, etc.) can be navigated to but not yet adjusted by
-  controller — see `re_notes/known_issues.md` issue #22.
+  functionality — needs its own per-killstreak investigation, likely a distinct
+  mechanism per killstreak type. See the dedicated killstreak table above and
+  `re_notes/killstreak_reference.md`.
+- **Menu/UI navigation (task #22) — real D-pad/A navigation implemented and
+  live-confirmed** across the main menu, pause menu, options screens (two-pane
+  category/settings drill-in-drill-out), buy-station/armory item lists, AND slider
+  value adjustment (Left/Right adjusts the value directly, not just navigation to it —
+  corrected 2026-07-18, see `re_notes/known_issues.md` issue #22's correction note).
+  Only genuinely unstarted piece left here: button-glyph prompt swapping (task #6's
+  other half, real controller icons in hint text).
 
 ## Architecture
 
@@ -386,11 +391,10 @@ below.
 See `re_notes/known_issues.md` for the full, actively-tracked list.
 
 - Controller menu/UI navigation (D-pad item selection + A-select, including options
-  screens' category/settings drill-in-drill-out) is implemented and live-confirmed
-  (task #22) — see the D-pad/A section above. Still open: adjusting a slider-type
-  setting's actual value by controller (navigating to one works, changing it
-  doesn't yet), and button-glyph prompts (no controller icons in hint text yet) —
-  keyboard/mouse remains fully functional alongside controller for both.
+  screens' category/settings drill-in-drill-out, buy-station/armory lists, and
+  slider VALUE adjustment) is implemented and live-confirmed (task #22) — see the
+  D-pad/A section above. Still open: button-glyph prompts (no controller icons in
+  hint text yet) — keyboard/mouse remains fully functional alongside controller.
 - Survival ready-up (hold Y) uses a synthetic F5 keypress rather than a real engine
   call — the only such exception in the whole mod. The real native trigger was never
   found despite an extensive search (see `re_notes/known_issues.md` issue #5); this

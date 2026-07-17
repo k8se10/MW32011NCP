@@ -1043,16 +1043,48 @@ are both suppressed while `IsMenuActive()` so D-pad/A can't mean two things at o
 crouch/prone). **Confirmed working live** by the user across the main menu, pause
 menu, and the `pc_options_video`-style two-pane settings screens.
 
-**Not yet covered:** buy-station/armory `itemDef`s (Survival) haven't been
-separately live-verified with this exact mechanism, though the same generic
-Group A/B dispatch should apply identically (they're plain single-pane vertical
-lists, the simpler case already confirmed via the pause menu). Slider-type settings
-items (`type 10`, e.g. `dvarFloat "sensitivity" 5 1 30`) have an empty `action{}`
-block and their only found value-adjust path (`FUN_00625510`) is gated on mouse-
-wheel-shaped keycodes (`200`/`0xc9`/`0xca`), not the Left/Right codes used for
-pane-drilling — adjusting a slider's actual VALUE (not just navigating to/from it)
-with a controller remains unsolved and is a natural next step. Real button-glyph
-UI prompts (task #6's other half, see `ui_assets.md`) also remain unstarted.
+**Corrections (2026-07-18), both confirmed live by the user:**
+- **Buy-station/armory `itemDef` navigation (Survival): CONFIRMED WORKING,
+  100%** — the generic Group A/B dispatch does apply identically, as
+  predicted. The "not yet separately live-verified" caveat below is
+  retracted for this item.
+- **Slider-type settings VALUE adjustment (not just navigation to/from):
+  CONFIRMED WORKING via Left/Right** — this section's own original claim
+  (below, kept for the record) that the only found value-adjust path
+  (`FUN_00625510`) is gated on mouse-wheel-shaped keycodes and that
+  Left/Right can't reach it is WRONG, or at least incomplete: it was based
+  on finding one native function via decompile without checking whether
+  the `.menu` files themselves define their own `execKeyInt`-style Left/
+  Right handler directly on slider `itemDef`s — the same mechanism already
+  confirmed (a few paragraphs above) to handle the options screen's pane
+  drill-in/drill-out entirely at the `.menu`-script level, not through any
+  native function at all. Since `InjectControllerMenuNav`'s Left/Right
+  already forwards generically to whatever handler the currently-focused
+  item defines (`ForwardKeyToMenu`), slider value adjustment was very
+  likely already working for free the whole time this was marked
+  "unsolved" — never independently re-verified against the `.menu` file's
+  actual slider `itemDef` before concluding it needed new work.
+  **Methodology lesson**: don't conclude a native decompile search is
+  exhaustive for "how does X get handled" in this menu system — the
+  `.menu` script layer has its own handler mechanism that can fully bypass
+  native code, as this project has now found twice (pane drilling, and
+  this).
+
+**Original text (2026-07-17), kept for the record — see corrections
+above, not accurate as originally written:** buy-station/armory `itemDef`s
+(Survival) haven't been separately live-verified with this exact
+mechanism, though the same generic Group A/B dispatch should apply
+identically (they're plain single-pane vertical lists, the simpler case
+already confirmed via the pause menu). Slider-type settings items (`type
+10`, e.g. `dvarFloat "sensitivity" 5 1 30`) have an empty `action{}` block
+and their only found value-adjust path (`FUN_00625510`) is gated on
+mouse-wheel-shaped keycodes (`200`/`0xc9`/`0xca`), not the Left/Right codes
+used for pane-drilling — adjusting a slider's actual VALUE (not just
+navigating to/from it) with a controller remains unsolved and is a natural
+next step.
+
+**Still genuinely unstarted**: real button-glyph UI prompts (task #6's
+other half, see `ui_assets.md`).
 
 ---
 
@@ -1560,6 +1592,60 @@ input) and refines issue #26's vehicle hypothesis below.
 
 ---
 
+## 28. Back → real `+scores` (scoreboard/objectives) — implemented via the third key-synthesis exception (2026-07-17), documentation gap fixed (2026-07-18)
+
+**Status:** Implemented, wired up, builds clean (0 warnings/0 errors,
+verified 2026-07-18). **Not yet separately live-confirmed** — high
+confidence given it uses the exact same proven technique as the two
+already-confirmed exceptions (Survival ready-up's F5 synthesis, issue #5;
+D-pad Left squadmate call-in's `'4'` synthesis, issue #14), but per this
+project's own Production Readiness Criteria, "should work by the same
+mechanism as two already-confirmed cases" is not the same as confirmed —
+this entry stays open until it is.
+
+**What it does:** `InjectControllerScoreboard()`
+(`analog_input_hooks.cpp`) synthesizes a real `WM_KEYDOWN`/`WM_KEYUP` for
+`VK_TAB` via `PostMessageA` at the game's own window, mirroring real
+keyboard TAB exactly (`bind TAB "+scores"`, confirmed real in
+`players2/config.cfg`) — hold-through-passthrough, not tap/toggle, since
+`+scores` is itself a real hold-to-show bind. Default physical mapping:
+Xbox Back button (`g_buttonMap.scoreboard = PhysicalInput::Back`,
+`mod_config.h`), remappable like other buttons (task #15).
+
+**Why key synthesis instead of a real native call**: the previous, reverted
+attempt (see the dead-end record directly above this entry, and the
+now-superseded comment block still kept in `analog_input_hooks.cpp` per
+this project's "document dead ends" standard) wired `FUN_00438710`'s
+dispatcher with a case number computed by trusting a bind-name-table index
+as if it were the switch's real case numbering — the same mistake already
+flagged as a standing lesson after weapnext's own correct resolution.
+That regressed live (hit `+back`'s real kbutton instead, made the player
+walk backward). The live-raw-keycode-table technique that correctly
+resolved weapnext/D-pad doesn't apply cleanly here either, since `+scores`
+isn't a per-frame usercmd kbutton at all — it's a plain keyboard bind read
+directly by the scoreboard/objectives overlay UI, the same category of
+problem the two other key-synthesis exceptions already existed to solve.
+
+**Scope/behavior notes**: in Campaign this shows the real
+scoreboard/mission-objectives overlay; Survival has no native scoreboard at
+all (confirmed this session — see the compatibility-matrix/project-memory
+note on Back's Campaign-vs-Survival scope split), so holding Back in
+Survival is expected to do nothing visible, not a bug. Back has no other
+current meaning in this mod (confirmed unused elsewhere), so there's no
+dual-purpose-button conflict to manage.
+
+**Documentation gap, now fixed**: this implementation existed and was
+fully wired up as of 2026-07-17, but was never reflected in this file's own
+"first of two exceptions" summary (now corrected above to "first of
+three"), `README.md`'s control-map table (which still said "unassigned,
+not yet implemented" until 2026-07-18), or the live task list (task #5,
+which stayed "pending" the whole time). Root cause of the gap not
+independently diagnosed — flagged here so the same class of drift is
+easier to catch earlier next time: a feature's implementation landing in
+source doesn't mean its cross-referenced docs update automatically, and
+this project has now hit this exact gap twice in one session (see also
+issue #22's stale slider-adjustment claim, corrected below).
+
 ## Resolved this session (for contrast — see `iw5sp.md` for full write-ups)
 
 - **Sprint (L3):** real `pm_flags` bit (`0x4000`), forced via a Pmove-entry hook plus a
@@ -1586,9 +1672,13 @@ input) and refines issue #26's vehicle hypothesis below.
   despite an extensive search across multiple mechanisms — solved instead with an
   explicit, user-approved exception to this mod's "no OS-level input emulation" rule: a
   synthetic F5 keypress via `PostMessage`, gated to Survival maps only. Confirmed working
-  live; the first of two deliberate departures from real-engine-call-only input in the
-  whole mod (the second being D-pad Left's squadmate call-in, issue #14), each to be
-  replaced if a native call is ever found.
+  live; **the first of THREE deliberate departures from real-engine-call-only input in
+  the whole mod** (the second being D-pad Left's squadmate call-in, issue #14; the third
+  being Back's real `+scores` scoreboard via a synthetic TAB keypress, added 2026-07-17 —
+  see issue #28 below), each to be replaced if a native call is ever found. **Correction
+  (2026-07-18): this summary previously said "first of two," missing the third exception
+  entirely — it was implemented and wired up the same day this summary was originally
+  written, but the summary itself was never updated to reflect it.**
 - **Sprint stamina/cooldown (issue #6 above):** the real native duration/timer function
   was never found (only the speed-scale consumer, with no timer logic, was traced) —
   implemented as our own 4s-deplete/2s-cooldown layer instead, using real MW3 values,

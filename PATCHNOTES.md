@@ -9,6 +9,26 @@ reverse-engineering trail behind each entry.
 ## Unreleased
 
 ### Fixed
+- **Documentation-drift correction pass, three items (2026-07-18).**
+  Verified against the actual source (not assumed from prior docs) that
+  Back's real `+scores` implementation (a third key-synthesis exception,
+  synthetic TAB keypress, same technique as Survival ready-up and D-pad
+  Left's squadmate call-in) was already fully written and wired up as of
+  2026-07-17 — confirmed by rebuilding the project clean (0 warnings, 0
+  errors) — but was never reflected anywhere: `known_issues.md`'s own
+  summary still said "first of two" exceptions (now "first of three," new
+  issue #28 documents the implementation), `README.md`'s control map still
+  showed Back as "unassigned, not yet implemented," and task #5 stayed
+  "pending" the whole time. Also corrected two related stale claims
+  surfaced along the way, both confirmed live by the user: buy-station/
+  armory D-pad navigation is 100% confirmed working (was marked "believed,
+  not verified"), and slider-type settings VALUE adjustment via Left/Right
+  is confirmed working (was marked "unsolved" — the original claim was
+  based on one native function found via decompile without checking
+  whether the `.menu` files' own script-level key handlers, already proven
+  for options-pane drilling, also covered sliders directly). Back itself
+  remains implemented-but-not-yet-separately-live-confirmed, not
+  overclaimed as done.
 - **Corrected a stale, self-contradicting README row (2026-07-18).** The
   "Current control map" table's "Menu/UI navigation" row said "Not yet
   implemented — mouse/keyboard still required," directly contradicting

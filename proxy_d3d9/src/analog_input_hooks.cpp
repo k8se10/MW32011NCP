@@ -591,7 +591,11 @@ extern "C" void __cdecl InjectControllerReload()
     }
 }
 
-// ---- Back: +scores (scoreboard) -- STILL UNRESOLVED, REVERTED (2026-07-15) -------
+// ---- Back: +scores (scoreboard) -- this FIRST attempt REVERTED (2026-07-15) -------
+// SUPERSEDED 2026-07-17 by the real, working implementation further down this file
+// (search "THIRD and final narrow exception" / InjectControllerScoreboard) -- kept here
+// as historical dead-end record per this project's "document every last detail,
+// including dead ends" standard, not because this approach is still in use.
 //
 // Attempted a static shortcut: found "+scores" in the same 8-byte-stride bind-name table
 // already used to confirm +reload=idx26/+actionslot4=idx10/+stance=idx11 (base
