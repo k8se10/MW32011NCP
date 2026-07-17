@@ -66,6 +66,20 @@ constexpr unsigned char kTriggerThresholdFire = 30; // XInput's documented trigg
 // a forward-declaration.
 constexpr int kLocalClientIndex = 0;
 
+// The real per-player "a menu is currently active" gate bit (see the big writeup
+// above InjectControllerMenuBack for how this was found/confirmed). Declared this
+// early, same rationale as everything else on this page: InjectControllerButtons'
+// Jump bit (task #22) needs it too, and that function is defined well before the
+// menu-back code further down the file.
+constexpr uintptr_t kMenuActiveGateAddr = 0x00B36210;
+constexpr uint32_t kMenuActiveGateBit = 0x10u;
+
+bool IsMenuActive()
+{
+    uint32_t gate = *reinterpret_cast<volatile uint32_t*>(kMenuActiveGateAddr);
+    return (gate & kMenuActiveGateBit) != 0;
+}
+
 // task #15: resolves a logical action's PhysicalInput (from g_buttonMap, itself
 // resolved from the active ButtonLayout + FlipTriggers) down to an actual XInput
 // button-bit/trigger check. Every Inject* function below should read its physical
@@ -358,7 +372,9 @@ extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
     if (IsPhysicalHeld(g_buttonMap.melee, xiButtons, leftTrigger, rightTrigger)) out |= 0x4;       // Melee
     if (IsPhysicalHeld(g_buttonMap.tactical, xiButtons, leftTrigger, rightTrigger)) out |= 0x8000; // Tactical (smoke)
     if (IsPhysicalHeld(g_buttonMap.lethal, xiButtons, leftTrigger, rightTrigger)) out |= 0x4000;   // Lethal (frag)
-    if (IsPhysicalHeld(g_buttonMap.jump, xiButtons, leftTrigger, rightTrigger)) out |= 0x400;      // Jump (+gostand)
+    // Suppressed while a menu is open -- A doubles as menu-select there (InjectControllerMenuNav,
+    // task #22), same dual-purpose pattern as B (ESC-forward vs crouch/prone).
+    if (IsPhysicalHeld(g_buttonMap.jump, xiButtons, leftTrigger, rightTrigger) && !IsMenuActive()) out |= 0x400;      // Jump (+gostand)
 
     // Interact (0x8): hold-to-interact, not instant-on-tap -- see the comment on
     // g_interactPressStartMs above. Reload (a separate real kbutton, same physical
@@ -1642,16 +1658,8 @@ bool g_paused = false;
 namespace {
 using ForwardKeyToMenuFn = void(__cdecl*)(int playerIndex, int keyCode, int isDown);
 ForwardKeyToMenuFn const ForwardKeyToMenu = reinterpret_cast<ForwardKeyToMenuFn>(0x004d9850);
-constexpr uintptr_t kMenuActiveGateAddr = 0x00B36210;
-constexpr uint32_t kMenuActiveGateBit = 0x10u;
 constexpr int kKeyEscape = 0x1b;
 bool g_menuBackHeld = false;
-
-bool IsMenuActive()
-{
-    uint32_t gate = *reinterpret_cast<volatile uint32_t*>(kMenuActiveGateAddr);
-    return (gate & kMenuActiveGateBit) != 0;
-}
 } // namespace
 
 extern "C" void __cdecl InjectControllerMenuBack()
@@ -1678,6 +1686,131 @@ extern "C" void __cdecl InjectControllerMenuBack()
         ForwardKeyToMenu(kLocalClientIndex, kKeyEscape, held ? 1 : 0);
     }
     g_menuBackHeld = held;
+}
+
+// ---- D-pad Up/Down + A -> real menu item navigation/select (2026-07-17, task #22) ----
+//
+// Decompiling FUN_00541020 (the real key-event handler, right where the already-
+// confirmed ESC-forward call lives) shows ForwardKeyToMenu (FUN_004d9850) is NOT
+// ESC-specific -- it's called for ANY keycode whenever the same menu-active gate bit
+// (0x10 at 0xB36210) is set:
+//     if ((*(uint*)(&DAT_00b36210 + iVar8) & 0x10) != 0) {
+//         ...
+//         FUN_004d9850(param_1, uVar5, param_3);   // forwards whatever keycode this is
+//         return;
+//     }
+// Real menu items are genuine engine-native focusable objects too (confirmed via the
+// extracted, plain-text .menu assets in zone/english/ui.ff -- e.g.
+// scriptmenus/survival_armory_weapon.menu's itemDef blocks with onFocus/leaveFocus/
+// action callbacks, plus a dormant ui_buttonNavGroupCurrent_popup "selection cursor"
+// and ui_swfSelectionBarVis "highlight bar" var pair that a working nav input would
+// drive). So real D-pad-driven item navigation doesn't need a new mechanism, just the
+// SAME call already wired for B, fed the right keycodes for Up/Down/Enter instead of
+// ESC.
+//
+// UPDATED (2026-07-17, first live test with the standard-idTech-constant guess
+// 128/129 came back "nothing"): decompiled FUN_004dfd30, the real function
+// ForwardKeyToMenu's non-ESC branch calls, and found its actual keycode switch has
+// no case for 128/129 at all -- that guess was wrong. The switch DOES contain two
+// real groups of alternate keycodes, confirmed via decompiling the two functions
+// each group calls:
+//   Group A (case 9, 0x9b, 0x9d, 0xbd, 0xcd) -> FUN_006253d0(param_2, 1), which
+//     increments a focus-index field (param_1[0x2a] item count, wraps at the end)
+//     -- genuine native "move to NEXT item".
+//   Group B (case 0x9a, 0x9c, 0xb7, 0xce) -> FUN_00625290(param_2, 1), which
+//     decrements the same index (wraps at the start) -- genuine native "move to
+//     PREVIOUS item".
+// Any keycode within a group calls the identical function, so one representative
+// value per group was picked (0x9b for next/down, 0x9a for previous/up) -- these
+// are NOT a guess, they're read directly out of the real switch statement. `0xd`
+// (13, Enter) for select/activate WAS already in this same switch (its own case,
+// confirmed handling a "local_188"/selected-item pointer) -- that part of the
+// original guess was correct and is unchanged.
+//
+// A doubles as gameplay Jump normally (InjectControllerButtons) -- same dual-purpose
+// pattern as B (ESC-forward vs crouch/prone), gated the same way: InjectControllerDpad
+// and Jump's own bit are both suppressed while IsMenuActive() so D-pad/A can't mean
+// two things at once.
+// UPDATED AGAIN (2026-07-17, user report: main menu worked with Up/Down but the same
+// screen actually needed real Left/Right, and separately, options-style two-pane
+// screens -- category list on the left, that category's settings on the right (see
+// known_issues.md issue #22 for the screenshot/discussion) -- need a distinct
+// "drill in / drill out" gesture on Left/Right that plain next/prev can't provide,
+// since the two panes are genuinely separate sibling menuDefs (pc_options_video etc
+// open/close each other), not one combined item list. Initially unified Up+Left/
+// Down+Right onto the same two keycodes (0x9a/0x9b) -- WRONG, confirmed by checking
+// the real keyboard behavior the user described ("pressing right on keyboard works
+// and left") and finding the actual mechanism in the extracted .menu scripts
+// (zone/english/ui.ff, e.g. ui/pc_options_video.menu):
+//     execKeyInt 157 { if (getfocuseditemname() == "OPTIONS_LIST_0" || ...) {
+//         setfocus localvarstring(ui_options_focus); } }   // ->  drill IN
+//     execKeyInt 156 { if (getfocuseditemname() == "color_blind" || ...) {
+//         setLocalVarString ui_options_focus getfocuseditemname();
+//         setfocus OPTIONS_LIST_0; } }                     // ->  drill OUT
+// These are REAL keyboard Left(156)/Right(157) codes, distinct from the Up/Down alt-
+// pair (0x9a/0x9b) -- and critically, each menu's execKeyInt only fires when focus
+// matches its specific condition; otherwise 156/157 silently fall through to the
+// exact same generic FUN_006253d0/FUN_00625290 previous/next dispatch Up/Down uses
+// (156/157 are themselves alternate members of those same two groups -- see the
+// group listing above). So real keyboard Left/Right get free, native, per-menu-aware
+// drill-in/drill-out on options-style screens, and plain previous/next everywhere
+// else -- with NO custom "am I inside a submenu" state-tracking needed on our side.
+// Using the real keycodes instead of reusing Up/Down's gets us the same thing.
+namespace {
+constexpr int kKeyPrevItem = 0x9a;  // real Up alt-keycode -- generic previous only, see FUN_00625290
+constexpr int kKeyNextItem = 0x9b;  // real Down alt-keycode -- generic next only, see FUN_006253d0
+constexpr int kKeyLeftNav = 0x9c;   // real Left keycode -- drill-out on options screens, generic previous elsewhere
+constexpr int kKeyRightNav = 0x9d;  // real Right keycode -- drill-in on options screens, generic next elsewhere
+constexpr int kKeyEnter = 13;       // K_ENTER -- confirmed, same case in FUN_004dfd30
+bool g_menuNavUpHeld = false;
+bool g_menuNavDownHeld = false;
+bool g_menuNavLeftHeld = false;
+bool g_menuNavRightHeld = false;
+bool g_menuNavSelectHeld = false;
+} // namespace
+
+extern "C" void __cdecl InjectControllerMenuNav()
+{
+    if (!IsMenuActive()) {
+        // Not stale-tracking across a menu close -- next press should always be seen
+        // as a fresh rising edge once a menu is open again.
+        g_menuNavUpHeld = false;
+        g_menuNavDownHeld = false;
+        g_menuNavLeftHeld = false;
+        g_menuNavRightHeld = false;
+        g_menuNavSelectHeld = false;
+        return;
+    }
+
+    unsigned short buttons;
+    unsigned char leftTrigger, rightTrigger;
+    if (!Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger)) return;
+
+    bool upHeld = (buttons & kXI_DPAD_UP) != 0;
+    if (upHeld != g_menuNavUpHeld) {
+        ForwardKeyToMenu(kLocalClientIndex, kKeyPrevItem, upHeld ? 1 : 0);
+        g_menuNavUpHeld = upHeld;
+    }
+    bool downHeld = (buttons & kXI_DPAD_DOWN) != 0;
+    if (downHeld != g_menuNavDownHeld) {
+        ForwardKeyToMenu(kLocalClientIndex, kKeyNextItem, downHeld ? 1 : 0);
+        g_menuNavDownHeld = downHeld;
+    }
+    bool leftHeld = (buttons & kXI_DPAD_LEFT) != 0;
+    if (leftHeld != g_menuNavLeftHeld) {
+        ForwardKeyToMenu(kLocalClientIndex, kKeyLeftNav, leftHeld ? 1 : 0);
+        g_menuNavLeftHeld = leftHeld;
+    }
+    bool rightHeld = (buttons & kXI_DPAD_RIGHT) != 0;
+    if (rightHeld != g_menuNavRightHeld) {
+        ForwardKeyToMenu(kLocalClientIndex, kKeyRightNav, rightHeld ? 1 : 0);
+        g_menuNavRightHeld = rightHeld;
+    }
+    bool selectHeld = IsPhysicalHeld(PhysicalInput::A, buttons, leftTrigger, rightTrigger);
+    if (selectHeld != g_menuNavSelectHeld) {
+        ForwardKeyToMenu(kLocalClientIndex, kKeyEnter, selectHeld ? 1 : 0);
+        g_menuNavSelectHeld = selectHeld;
+    }
 }
 
 extern "C" void __cdecl InjectControllerPauseMenu()
@@ -1933,6 +2066,13 @@ extern "C" void __cdecl InjectControllerDpad()
     unsigned char leftTrigger, rightTrigger;
     if (!Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger)) return;
 
+    // While a menu is open, D-pad drives item navigation instead (InjectControllerMenuNav,
+    // task #22) -- suppress the gameplay actionslot dispatch below so D-pad can't mean two
+    // things at once, but still update g_dpadHeld unconditionally (not an early return)
+    // so press-tracking never goes stale across a menu open/close, the same staleness bug
+    // already fixed once for B/crouch (known_issues.md issue #13).
+    bool menuActive = IsMenuActive();
+
     struct { unsigned short bit; int slot; } kDpad[4] = {
         { kXI_DPAD_UP, 0 }, { kXI_DPAD_RIGHT, 1 }, { kXI_DPAD_DOWN, 2 }, { kXI_DPAD_LEFT, 3 }
     };
@@ -1944,17 +2084,21 @@ extern "C" void __cdecl InjectControllerDpad()
                 char tag[32];
                 sprintf_s(tag, "dpad-press slot=%d", kDpad[i].slot);
                 LogStanceDiag(tag);
-                if (isSlot4) {
-                    SendSyntheticActionSlot4Key(true);
-                } else {
-                    ActionSlotDown(kLocalClientIndex, kDpad[i].slot);
+                if (!menuActive) {
+                    if (isSlot4) {
+                        SendSyntheticActionSlot4Key(true);
+                    } else {
+                        ActionSlotDown(kLocalClientIndex, kDpad[i].slot);
+                    }
                 }
             } else {
                 LogStanceDiag("dpad-release");
-                if (isSlot4) {
-                    SendSyntheticActionSlot4Key(false);
-                } else {
-                    ActionSlotUp(kLocalClientIndex);
+                if (!menuActive) {
+                    if (isSlot4) {
+                        SendSyntheticActionSlot4Key(false);
+                    } else {
+                        ActionSlotUp(kLocalClientIndex);
+                    }
                 }
             }
             g_dpadHeld[i] = held;
@@ -2034,6 +2178,10 @@ extern "C" void __cdecl InjectMenuInputTick()
     // same treatment Start's open/close already got, or it can never fire while a menu is
     // actually open, which is the one state it exists to handle.
     InjectControllerMenuBack();
+    // D-pad/A menu-item navigation (task #22) needs the same always-running tick as
+    // B's ESC-forward, for the same reason: the gameplay-simulation tick this would
+    // otherwise share with InjectControllerDpad halts entirely during a genuine pause.
+    InjectControllerMenuNav();
 }
 
 namespace {

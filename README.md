@@ -1,12 +1,14 @@
 # MW3 Native Controller Support (Campaign & Survival)
 
-**Status: PRE-ALPHA — actively in development (as of 2026-07-16).** Analog movement, look,
+**Status: PRE-ALPHA — actively in development (as of 2026-07-17).** Analog movement, look,
 and most buttons are confirmed working live against `iw5sp.exe` (Campaign/Survival),
 including a real sprint stamina/cooldown model, Start's full pause/unpause, weapon
-switching, D-pad killstreak/attachment slots, and Survival's between-wave ready-up. Back
+switching, D-pad killstreak/attachment slots, Survival's between-wave ready-up, and now
+real D-pad/A menu navigation (main menu, pause menu, options screens). Back
 is still unassigned (deprioritized — not gameplay-defining), killstreaks need
 per-killstreak work, sprint's mission/perk overrides (unlimited-sprint missions, Extreme
-Conditioning) aren't accounted for yet, full menu/UI navigation isn't implemented, and
+Conditioning) aren't accounted for yet, slider-type settings can be navigated to but not
+adjusted by controller yet, button-glyph UI prompts aren't implemented, and
 Multiplayer (`iw5mp.exe`) hasn't been started. Not feature-complete, not fully tested
 end-to-end.
 
@@ -252,10 +254,12 @@ and only if the hold threshold was never reached.
 - **Killstreaks:** user's first live test (Predator missile) showed partial
   functionality — needs its own per-killstreak investigation once D-pad/scoreboard
   settle, likely a distinct mechanism per killstreak type.
-- **Full menu/UI navigation:** a genuinely separate system from in-game movement/look
-  (menus read keyboard/mouse binds, not `usercmd`). Deliberately saved for last per the
-  project's locked scope order — needs its own hook/input-synthesis path plus
-  button-glyph prompt swapping.
+- **Menu/UI navigation (task #22) — real D-pad/A navigation now implemented and
+  live-confirmed** (main menu, pause menu, options screens including two-pane
+  category/settings drill-in-drill-out) — see the D-pad/A section above. Button-
+  glyph prompt swapping (task #6's other half) is still unstarted, and slider-type
+  settings (sensitivity, etc.) can be navigated to but not yet adjusted by
+  controller — see `re_notes/known_issues.md` issue #22.
 
 ## Architecture
 
@@ -290,7 +294,10 @@ our own timer layer (GetTickCount-based, independent per hook site) — sprint s
     cooldown, since forcing the real pm_flags bit bypasses the native limiter entirely;
     bypassed itself when the real player_sprintUnlimited dvar is live-set by a mission
     ▼
-separate hook/path still needed for FULL menu & UI navigation (not implemented yet)
+real ForwardKeyToMenu (FUN_004d9850) call, generic keycode forward to whatever menu
+    is active — D-pad Up/Down/Left/Right + A now drive real menu item navigation and
+    select/drill-in-drill-out, keycodes read directly out of the decompiled
+    FUN_004dfd30 dispatcher rather than assumed (task #22, see known_issues.md)
 ```
 
 Every hook target is found via byte-pattern/signature scanning or live memory-diffing
@@ -304,10 +311,12 @@ every dead end ruled out, and why.
 
 See `re_notes/known_issues.md` for the full, actively-tracked list.
 
-- Controller menu/UI navigation (D-pad/stick item selection, button-glyph prompts, a
-  real controller options screen) is not implemented yet — for now, menus (buy
-  stations, pause, etc.) still need mouse/keyboard, and that continues to work
-  normally alongside controller gameplay.
+- Controller menu/UI navigation (D-pad item selection + A-select, including options
+  screens' category/settings drill-in-drill-out) is implemented and live-confirmed
+  (task #22) — see the D-pad/A section above. Still open: adjusting a slider-type
+  setting's actual value by controller (navigating to one works, changing it
+  doesn't yet), and button-glyph prompts (no controller icons in hint text yet) —
+  keyboard/mouse remains fully functional alongside controller for both.
 - Survival ready-up (hold Y) uses a synthetic F5 keypress rather than a real engine
   call — the only such exception in the whole mod. The real native trigger was never
   found despite an extensive search (see `re_notes/known_issues.md` issue #5); this
@@ -317,9 +326,11 @@ See `re_notes/known_issues.md` for the full, actively-tracked list.
   handled, but the Extreme Conditioning perk (doubles sprint duration to 8s) is likely a
   separate mechanism (`perk_sprintMultiplier`) and isn't detected yet — see
   `re_notes/known_issues.md`.
-- Full console-style aim assist (rotational friction, target magnetism) is not yet
-  implemented — that requires reading live entity/aim-target data out of the game's
-  process memory, planned as a later layer on top of the current stick response curves.
+- Aim assist (rotational friction, target magnetism) is implemented but currently
+  **non-functional and disabled by default** (`Enabled=0`) — the underlying math is
+  confirmed correct, but real entity classification (telling an AI actor apart from
+  props/debris) hasn't been found yet, so the fallback movement heuristic produces
+  broken targeting. See `re_notes/known_issues.md` issue #15.
 - Multiplayer (`iw5mp.exe`) support has not been started. It's a separately-built binary
   from `iw5sp.exe` — none of the offsets/addresses found so far carry over, and it needs
   its own full signature-scanning pass. There's also an open, unresolved question about
@@ -334,10 +345,11 @@ See `re_notes/known_issues.md` for the full, actively-tracked list.
   primary input method going forward; if you're mainly a keyboard/mouse player, keep a
   keyboard within reach and expect the occasional oddity while this mod is installed.
   **This is not a suggestion to avoid the keyboard, though** — it's still required,
-  not optional, for full menu/UI navigation, Back, and most killstreak call-ins, none
-  of which have a controller-native implementation yet. A keyboard needs to stay
-  reachable during any session either way. See `re_notes/known_issues.md` issue #11
-  for the full reasoning.
+  not optional, for adjusting slider-type settings, Back, and most killstreak
+  call-ins, none of which have a controller-native implementation yet (menu
+  navigation itself now does, as of task #22). A keyboard needs to stay reachable
+  during any session either way. See `re_notes/known_issues.md` issue #11 for the
+  full reasoning.
 
 ---
 

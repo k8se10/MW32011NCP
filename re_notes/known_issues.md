@@ -925,6 +925,85 @@ kept and committed as a genuinely reusable static-analysis tool.
 
 ---
 
+## 22. Real controller menu navigation (D-pad + A) — RESOLVED, confirmed live (2026-07-17)
+
+**Status:** Closed. Task #22. Per the user's direction to go all-in on reverse
+engineering the UI/menu system (task #6's original scope), this delivers real,
+native D-pad item navigation and A-as-select across the main menu, pause menu, and
+options screens.
+
+**Approach:** extracted the game's own plain-text `.menu` UI definitions straight
+out of `zone/english/ui.ff`/`ui_mp.ff` via OpenAssetTools (same pipeline built
+earlier this session for GSC/aim-assist work) — 319 real menu files, including the
+Survival armory/buy-station menus and the full `pc_options_*` settings screens.
+Decompiled the real key-event handler chain already partially known from B's
+ESC-forward work: `FUN_00541020` (real key-event handler) → confirmed
+`FUN_004d9850`/`ForwardKeyToMenu` is NOT ESC-specific, it forwards ANY keycode
+whenever the same menu-active gate bit (`0x10` at `0xB36210`) is set → traced into
+`FUN_004dfd30`, the real generic key-to-menu dispatcher, and read its actual keycode
+switch statement directly rather than assuming standard constants.
+
+**First attempt was wrong, live-tested and corrected.** Initially guessed the
+standard idTech/Quake3 `K_UPARROW`/`K_DOWNARROW` values (128/129), reasoning that
+since ESC (`0x1b`/27) already matched standard ASCII, the whole keycode space
+probably followed the same numbering. **Live test: "nothing" happened.** Decompiling
+`FUN_004dfd30`'s actual switch statement showed 128/129 don't appear anywhere in it
+— the guess was simply wrong. The real values, read directly out of the switch:
+Group A (`9, 0x9b, 0x9d, 0xbd, 0xcd`) all call `FUN_006253d0`, confirmed via
+decompile to increment a focus-index field (wraps at item count) — genuine native
+"next item". Group B (`0x9a, 0x9c, 0xb7, 0xce`) all call `FUN_00625290`, confirmed
+to decrement the same index — genuine native "previous item". `0xd` (13, Enter) was
+already correctly guessed for select/activate, confirmed by its own switch case
+handling a selected-item pointer.
+
+**Second live test revealed Left/Right needed different keycodes than Up/Down, not
+the same ones.** First implementation unified Up+Left → "previous" (`0x9a`) and
+Down+Right → "next" (`0x9b`), reasoning the two functions above have no concept of
+on-screen direction so it wouldn't matter which physical button sent which. This
+partly worked (main menu's horizontally-laid-out first page responded correctly
+once Left/Right were wired at all), but broke down on options-style two-pane
+screens (category list on the left, that category's own settings list on the
+right — see the user-supplied screenshot marking the awkward "green" (working)
+category-list navigation vs "red" (broken, required scrolling all the way through
+past ESC) settings-pane navigation). The user confirmed real keyboard Left/Right
+already does this correctly natively and pointed at checking the `.menu` files for
+how — found the actual mechanism in `ui/pc_options_video.menu`:
+```
+execKeyInt 157 { if (getfocuseditemname() == "OPTIONS_LIST_0" || ...) {
+    setfocus localvarstring(ui_options_focus); } }   // drill IN to settings pane
+execKeyInt 156 { if (getfocuseditemname() == "color_blind" || ...) {
+    setLocalVarString ui_options_focus getfocuseditemname();
+    setfocus OPTIONS_LIST_0; } }                     // drill OUT to category list
+```
+`156`/`157` are real, separate keycodes from `0x9a`/`0x9b` (though still alternate
+members of the same two generic Group A/B next/previous cases) — meaning options
+screens get free, native, context-aware drill-in/drill-out on Left/Right, while
+every other simpler menu (pause menu, armory, main menu) falls through to plain
+generic previous/next, with zero custom "am I inside a submenu" state-tracking
+needed on the mod's own side. This is the real, general mechanism — not a per-menu
+special case the mod has to maintain.
+
+**Final implementation:** Up = `0x9a`, Down = `0x9b`, Left = `0x9c`, Right = `0x9d`,
+A = `0xd` (Enter), all via `ForwardKeyToMenu`. D-pad's normal gameplay actionslot
+dispatch (`InjectControllerDpad`) and A's normal Jump bit (`InjectControllerButtons`)
+are both suppressed while `IsMenuActive()` so D-pad/A can't mean two things at once
+— same dual-purpose-button pattern already established for B (ESC-forward vs
+crouch/prone). **Confirmed working live** by the user across the main menu, pause
+menu, and the `pc_options_video`-style two-pane settings screens.
+
+**Not yet covered:** buy-station/armory `itemDef`s (Survival) haven't been
+separately live-verified with this exact mechanism, though the same generic
+Group A/B dispatch should apply identically (they're plain single-pane vertical
+lists, the simpler case already confirmed via the pause menu). Slider-type settings
+items (`type 10`, e.g. `dvarFloat "sensitivity" 5 1 30`) have an empty `action{}`
+block and their only found value-adjust path (`FUN_00625510`) is gated on mouse-
+wheel-shaped keycodes (`200`/`0xc9`/`0xca`), not the Left/Right codes used for
+pane-drilling — adjusting a slider's actual VALUE (not just navigating to/from it)
+with a controller remains unsolved and is a natural next step. Real button-glyph
+UI prompts (task #6's other half, see `ui_assets.md`) also remain unstarted.
+
+---
+
 ## 7. Remaining unassigned controller inputs
 
 **Status:** Open, tracked as task #5 (Back, deprioritized), #7 (killstreaks, not yet

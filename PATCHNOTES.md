@@ -9,6 +9,32 @@ reverse-engineering trail behind each entry.
 ## Unreleased
 
 ### Added
+- **Real native controller menu navigation (task #22): D-pad + A, confirmed working
+  live across the main menu, pause menu, and options screens.** Extracted the game's
+  own plain-text `.menu` UI definitions from `zone/english/ui.ff`/`ui_mp.ff` via
+  OpenAssetTools, and decompiled the real key-event handler chain
+  (`FUN_00541020` → `FUN_004d9850`/`ForwardKeyToMenu` → `FUN_004dfd30`) to find the
+  actual keycodes real keyboard input uses for menu interaction — the same generic
+  `ForwardKeyToMenu` call B's ESC-back already used turned out to forward ANY
+  keycode, not just ESC. D-pad Up/Down send the real "previous/next item" alt-
+  keycodes (`0x9a`/`0x9b`); D-pad Left/Right send the real, *separate* keycodes
+  (`0x9c`/`0x9d`) that options-style two-pane screens (category list + that
+  category's settings) specifically recognize for drilling in/out between panes —
+  confirmed by finding the actual `execKeyInt 156`/`157` handlers in
+  `ui/pc_options_video.menu` and matching them, rather than assuming Left/Right
+  should behave the same as Up/Down. A sends real Enter (`0xd`) for select/activate.
+  D-pad's normal gameplay actionslot dispatch and A's normal Jump are both
+  suppressed while a menu is open so they can't mean two things at once. An initial
+  guess using the standard idTech `K_UPARROW`/`K_DOWNARROW` constants (128/129) was
+  live-tested and found completely wrong — the real values were read directly out of
+  the decompiled dispatcher instead. See `re_notes/known_issues.md` issue #22 and
+  `re_notes/iw5sp.md` for the full trail.
+
+### Docs
+- Committed `re_notes/ghidra_scripts/FindStrideArrayBase.java` (used during the aim-
+  assist entity-classification investigation, task #16) — a general-purpose static-
+  analysis tool independent of that investigation's outcome, so kept regardless.
+
 - **First implementation of aim assist (rotational friction + magnetism, task #16)
   — EXPERIMENTAL, NOT FUNCTIONAL, DISABLED BY DEFAULT. Must stay disabled for any
   public/release build.** The native aim-assist system turned out to be shared math
