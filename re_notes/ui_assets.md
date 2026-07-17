@@ -188,6 +188,59 @@ item selection exists yet — but the three pieces above are exactly the
 foundation task #6 needs to build on, already found and live-verified rather
 than left as open questions.
 
+## Hint-text content survey — what actually needs replacing (2026-07-17)
+
+Pulled the real English localized string content (via the existing OpenAssetTools
+zone-dump pipeline, `zone_dump/english/localizedstrings/code_post_gfx.str` — 297
+`PLATFORM_*` entries) to see exactly what text the pickup/reload/interact-style
+hints actually contain, ahead of wiring the `FUN_0061f6f0` bind-resolver hook.
+Found **three genuinely different substitution mechanisms** in the string data,
+not one:
+
+1. **`&&1`-token strings — confirmed mechanism, this is what the planned resolver
+   hook covers.** Traced the real hint-builder for weapon pickup/swap,
+   `FUN_00568110` (found via `FindCallers` on `FUN_004fafd0`, a thin wrapper around
+   `FUN_0061f6f0`): resolves a bind command (`"+activate"`/`"+frag"`) to display
+   text via `FUN_004fafd0`, picks the right localized key, splices the resolved
+   text in via `FUN_005098e0` → `FUN_00433a10` (the `&&N` engine, confirmed via
+   full decompile to ONLY handle `"&&"` + digit — nothing else). Real text:
+   - `PLATFORM_PICKUPNEWWEAPON` = `"Press^3 &&1 ^7to pick up"` (`+activate`)
+   - `PLATFORM_SWAPWEAPONS` = `"Press^3 &&1 ^7to swap for"` (`+activate`)
+   - `PLATFORM_THROWBACKGRENADE` = `"^3&&1 ^7throw back"` (`+frag`)
+   - `PLATFORM_MANTLE` = `"Press^3 &&1 ^7to  "` (`+gostand`)
+   - `PLATFORM_STANCEHINT_STAND/_CROUCH/_PRONE/_JUMP` = `"Press^3 &&1 ^7to
+     stand/crouch/go prone/jump"`
+   - `PLATFORM_HOLD_BREATH` = `"Hold^3 &&1 ^7to steady"`
+   - `PLATFORM_PICK_UP_{JUGGERNAUT,MARTYRDOM,STOPPING_POWER,DOUBLE_TAP,
+     LAST_STAND,SLEIGHT_OF_HAND}` = `"Press^3 &&1 ^7to pick up <perk>"`
+
+   This is the entire "picking up weapons/perks, interacting with pickups" family
+   — all of it resolves through `FUN_0061f6f0`, so the planned single hook covers
+   all of it at once.
+
+2. **Reload has no hint text at all.** `PLATFORM_RELOAD` is literally just
+   `"Reload"` — no token, no bind reference. The reload prompt is apparently a HUD
+   ammo-counter/icon element, not a discoverability text prompt — nothing to
+   glyph-swap here.
+
+3. **A second, SEPARATE mechanism: `[{+command}]` embedded directly in the
+   localized string itself**, e.g. `PLATFORM_GET_THUMPER` = `"[{+activate}]Thumper"`,
+   plus `PLATFORM_RESUPPLY`, `PLATFORM_GET_KIT`, `PLATFORM_REVIVE`,
+   `PLATFORM_GET_KILLSTREAK`, `PLATFORM_DETONATE`, `PLATFORM_HOLD_TO_USE/_DROP`.
+   Confirmed via full decompile that `FUN_00433a10` (the `&&N` engine) does NOT
+   handle this syntax — it's a genuinely different resolver, presumably inside
+   whatever function actually draws colored (`^3`/`^7`) hint text at render time,
+   not yet traced. **This is real follow-up work the `FUN_0061f6f0` hook will NOT
+   catch for free** — a second hook point, not yet found, is needed for this
+   category too.
+
+4. **A third category no resolver hook can fix**: literal hardcoded PC-only text
+   baked directly into the string, e.g. `PLATFORM_USE_BUTTONLOOK_TO_AIM` =
+   `"Hold ^3[Right Mouse]^7 to aim"`, `PLATFORM_VEH_FIRE` = `"[Left Mouse] Fire"`.
+   No token, no bind reference — these need actual string replacement/localization
+   overrides if they're ever to say something controller-appropriate, not a
+   resolver hook.
+
 ## Open questions / next steps for task #6
 - Actually wire up the two rendering pieces above (bind-text-resolver hook +
   in-game-visible glyph font) — not started.

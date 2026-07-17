@@ -1004,6 +1004,73 @@ UI prompts (task #6's other half, see `ui_assets.md`) also remain unstarted.
 
 ---
 
+## 23. Real controller options menu — native zone/menu injection, blocked on a real architectural limit (2026-07-17)
+
+**Status:** Open, in progress. Task #23. Full technical trail in `iw5sp.md`'s "Real
+controller options menu" section — this is a summary.
+
+**Goal:** a real controller-options screen integrated into normal in-game Options
+navigation (not a special-combo popup), via injecting a compiled `.menu` asset
+through the game's own real zone-loading system, entirely in memory — the real
+`ui.ff` stays untouched on disk.
+
+**What works, confirmed live:** the full pipeline — `LoadZones` → `FindOrLoadMenuList`
+→ register into the real menu registry (own reimplementation, `RegisterMenu`) →
+switch the engine into paused/menu render mode (`SetDvarByName("cl_paused",1)` +
+`SetPlayerMenuFlags`) → `OpenMenuByName` — genuinely works. A bare custom menuDef
+(no background material) rendered correctly in the real pause menu's own slot,
+screenshot-confirmed, alongside the real Mission Objectives panel.
+
+**What doesn't work, and why (the actual blocker):** any REAL menu content —
+including a modified copy of the real `pc_options_controls_ingame` — produced a
+live black-screen flash. Traced through two wrong theories (menu-stack parent/child
+hierarchy; wrong hook/calling context — both ruled out by direct evidence) to the
+real cause: **real menus have background materials, and loading a material live
+triggers a genuine, synchronous D3D9 GPU-resource-creation cascade** (technique
+set → vertex/pixel shaders, plus real texture creation if the material references
+one) that isn't safe to do outside the engine's own controlled loading-screen
+context. Confirmed via deep decompilation, not inference: `FUN_004b6b70`'s
+material case cascades into the exact same technique-set loader its own shader
+cases use.
+
+A natural fix attempt — reference the material by NAME only, don't embed it,
+relying on the already-loaded real copy in `ui.ff` — turns out not to help: the
+Linker requires an explicit `material,,<name>` zone entry for any material a
+compiled menu references (a hard compile error otherwise), and what it embeds is a
+full, standalone, separately-addressed COPY, not a lazy cross-zone reference. That
+copy gets loaded as our own zone's OWNED asset at `LoadZones` time, unconditionally
+— it never goes through the name-keyed interning/cache-hit path that would
+otherwise skip re-creating an already-loaded material. **Confirmed: rendering an
+already-loaded menu's background is completely safe (a plain pointer dereference,
+no cascade) — the danger is entirely and unavoidably at zone-LOAD time, baked in
+by how the Linker compiles cross-zone material references.**
+
+**Net conclusion: a menu with zero background material is the only content class
+confirmed safe to load via this live-injection pipeline.** Any real menu — even
+one that only references existing `ui.ff` material names — cannot be made safe this
+way. Making real content work would require loading through an actual
+`FUN_0053cbc0`-driven level-load transition instead of a live WndProc/`SetTimer`
+hook, a substantially different architecture not yet attempted.
+
+**Also abandoned, separately:** same-name registry override (overwrite an
+already-registered menu's slot in place to make a modified copy supersede the
+original) — produced its own live black-screen flash, root-caused to skipping the
+real engine's own asset-interning call (`FindOrLoadAsset`), which is architecturally
+built to hand back the EXISTING cached entry for an already-registered name, not
+adopt new content under it. Fixed in the current `RegisterMenu` (always calls the
+real interning step) but the override branch itself was dropped per explicit user
+decision — not pursued further, in favor of unique internal names.
+
+**Current strategic direction (not yet implemented):** unique internal names for
+our own menu content, plus finding/patching whatever real call site opens
+the ORIGINAL name (e.g. `"pc_options_controls_ingame"`) so it redirects to ours —
+keeps `ui.ff` completely untouched, purely additive. Given the materials finding
+above, this only works for backgroundless content, or requires solving the
+level-load-transition problem first. Needs a decision before further
+implementation work.
+
+---
+
 ## 7. Remaining unassigned controller inputs
 
 **Status:** Open, tracked as task #5 (Back, deprioritized), #7 (killstreaks, not yet

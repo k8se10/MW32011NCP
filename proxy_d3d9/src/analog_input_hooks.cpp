@@ -2291,21 +2291,32 @@ void LogMenuRegistry(const char* tag)
     }
 }
 
-// Task #23 (2026-07-17), successor to the single-index-24 idea: given a raw
-// menuDef_t* (name string pointer at +4, matches FUN_00486990's own dereference),
-// either overwrites an EXISTING same-named registry slot in place -- making our copy
-// the one the engine actually shows anywhere that real name is opened, including
-// normal menu-to-menu navigation the player already knows -- or appends it as a new
-// entry, mirroring FUN_0050a350's own real append logic (same array base/count
-// addresses, same 0x27f cap). This is the generic mechanism the "copy all default
-// menus into our own zone, our copies become effective, real ui.ff untouched on disk"
-// plan (user, 2026-07-17) depends on: FUN_0050a350 itself only ever appends and
-// silently SKIPS anything already registered, so it can never override; this
-// reimplements the same append behavior but adds the override branch it lacks.
-// Name compare uses plain CRT _stricmp on memory we already trust (both sides are
-// our own dereferences of real, already-validated pointers) -- no need to call back
-// into the game's own FUN_00463bb0 for this.
-void RegisterOrOverrideMenu(void* menuDefPtr)
+// FUN_0050a350's real per-menu body, confirmed via RAW DISASSEMBLY 2026-07-17 (not
+// just decompile -- the decompile summary omitted a real step): for EVERY menu it
+// processes, BEFORE ever touching the registry array, it calls
+// FindOrLoadAsset(0x1a /*asset type: menu*/, name, 1) -- the SAME generic, thread-
+// safe "find-or-load asset by name" function FindOrLoadMenuList itself calls with
+// type 0x19 for menuLists. ONLY THEN does it check FUN_00486990 (already-registered?)
+// and append if not found. A same-name OVERRIDE attempt (previous version of this
+// function, same day) skipped this interning call entirely, then found a live black-
+// screen flash when overwriting an already-registered slot in place. Root cause
+// belief, not yet proven: FindOrLoadAsset does its own name-keyed lookup
+// (FUN_00585400 internally) and, like any interning/asset-cache system, almost
+// certainly hands back the EXISTING cached entry for an already-registered name
+// rather than adopting new content under it -- meaning same-name override fights the
+// engine's own asset pool, which a raw registry-array write bypasses entirely,
+// leaving the pool and the array pointing at different objects for the same name.
+// User decision 2026-07-17: do NOT pursue same-name override further. Register only
+// under names that don't already exist (this function no longer has an override
+// branch at all -- an existing name is left untouched, logged, nothing more); the
+// "copy all default menus, ours become effective" plan's real mechanism is unique
+// internal names + finding/patching whatever real call sites reference the original
+// names, not same-slot replacement.
+using FindOrLoadAssetFn = void*(__cdecl*)(int assetType, const char* name, int flag);
+FindOrLoadAssetFn const FindOrLoadAsset = reinterpret_cast<FindOrLoadAssetFn>(0x004ff000);
+constexpr int kAssetTypeMenu = 0x1a;
+
+void RegisterMenu(void* menuDefPtr)
 {
     uintptr_t entryPtr = reinterpret_cast<uintptr_t>(menuDefPtr);
     if (!LooksLikeValidPointer(entryPtr)) return;
@@ -2313,46 +2324,46 @@ void RegisterOrOverrideMenu(void* menuDefPtr)
     if (!LooksLikeValidPointer(namePtr)) return;
     const char* name = reinterpret_cast<const char*>(namePtr);
 
+    char buf[192];
+    FindOrLoadAsset(kAssetTypeMenu, name, 1);
+
+    // Real cap is 0x280 (640), confirmed via disassembly (CMP ...,0x280) -- earlier
+    // version of this file used 0x27f, an off-by-one from guessing rather than
+    // reading the real compare. Real code logs an error past this but still proceeds
+    // to write; we choose to just refuse instead, since going out of bounds on
+    // purpose is not something to replicate.
     int32_t count = *reinterpret_cast<volatile int32_t*>(kMenuRegistryCountAddr);
     if (count < 0) count = 0;
-    if (count > 0x27f) count = 0x27f;
+    if (count > 0x280) count = 0x280;
 
-    char buf[192];
     for (int32_t i = 0; i < count; ++i) {
-        uintptr_t* slot = reinterpret_cast<uintptr_t*>(kMenuRegistryArrayBase + static_cast<size_t>(i) * 4);
-        uintptr_t existingPtr = *slot;
+        uintptr_t existingPtr = *reinterpret_cast<uintptr_t*>(kMenuRegistryArrayBase + static_cast<size_t>(i) * 4);
         if (!LooksLikeValidPointer(existingPtr)) continue;
         uintptr_t existingNamePtr = *reinterpret_cast<uintptr_t*>(existingPtr + 4);
         if (!LooksLikeValidPointer(existingNamePtr)) continue;
         if (_stricmp(reinterpret_cast<const char*>(existingNamePtr), name) == 0) {
-            sprintf_s(buf, "[menuoverride] \"%s\" already at slot %d (0x%08X) -- overriding with 0x%08X",
-                name, i, static_cast<unsigned>(existingPtr), static_cast<unsigned>(entryPtr));
+            sprintf_s(buf, "[menureg] \"%s\" already registered at slot %d (0x%08X) -- leaving it alone", name, i, static_cast<unsigned>(existingPtr));
             LogFromController(buf);
-            *slot = entryPtr;
             return;
         }
     }
 
-    if (count >= 0x27f) {
-        sprintf_s(buf, "[menuoverride] registry full (0x27f), cannot append \"%s\"", name);
+    if (count >= 0x280) {
+        sprintf_s(buf, "[menureg] registry full (0x280), cannot append \"%s\"", name);
         LogFromController(buf);
         return;
     }
     uintptr_t* appendSlot = reinterpret_cast<uintptr_t*>(kMenuRegistryArrayBase + static_cast<size_t>(count) * 4);
     *appendSlot = entryPtr;
     *reinterpret_cast<volatile int32_t*>(kMenuRegistryCountAddr) = count + 1;
-    sprintf_s(buf, "[menuoverride] \"%s\" appended at new slot %d (0x%08X)", name, count, static_cast<unsigned>(entryPtr));
+    sprintf_s(buf, "[menureg] \"%s\" appended at new slot %d (0x%08X)", name, count, static_cast<unsigned>(entryPtr));
     LogFromController(buf);
 }
 
 // Iterates a loaded MenuList (menuCount at +4, menuDef_t** menus at +8 -- matches
 // OpenAssetTools' own MenuList{int menuCount; menuDef_t** menus;} struct, same shape
-// FUN_0050a350 itself walks) and registers/overrides every menu it defines. A single
-// compiled .menu file can itself contain many menuDef blocks (or be a #load-
-// referencing list of many .menu files), so one call here can take over an entire
-// family of real menu names at once -- the actual mechanism for "copy all default
-// menus into our zone" at whatever scale we load, not just one name at a time.
-void RegisterOrOverrideMenuList(void* menuList)
+// FUN_0050a350 itself walks) and registers every menu it defines under its own name.
+void RegisterLoadedMenuList(void* menuList)
 {
     if (menuList == nullptr) return;
     uintptr_t base = reinterpret_cast<uintptr_t>(menuList);
@@ -2360,16 +2371,16 @@ void RegisterOrOverrideMenuList(void* menuList)
     void** menus = *reinterpret_cast<void***>(base + 8);
     char buf[160];
     if (menuCount <= 0 || menuCount > 2000 || menus == nullptr) {
-        sprintf_s(buf, "[menuoverride] implausible MenuList (count=%d, menus=0x%08X), aborting",
+        sprintf_s(buf, "[menureg] implausible MenuList (count=%d, menus=0x%08X), aborting",
             menuCount, static_cast<unsigned>(reinterpret_cast<uintptr_t>(menus)));
         LogFromController(buf);
         return;
     }
-    sprintf_s(buf, "[menuoverride] MenuList has %d menu(s)", menuCount);
+    sprintf_s(buf, "[menureg] MenuList has %d menu(s)", menuCount);
     LogFromController(buf);
     for (int32_t i = 0; i < menuCount; ++i) {
         if (menus[i] == nullptr) continue;
-        RegisterOrOverrideMenu(menus[i]);
+        RegisterMenu(menus[i]);
     }
 }
 } // namespace -- closes the one opened above ZoneLoadEntry (was previously closed
@@ -2562,26 +2573,28 @@ void InjectZoneLoadDebugTest()
     }
     if (GetTickCount() - g_zoneLoadTestHoldStartMs < 2000) return;
 
-    // REGISTRY DIAGNOSTIC (2026-07-17): the control test proved FUN_00544a50/
-    // DAT_01c00458 work correctly for names already in the registry ("pausedmenu"
-    // opened live). The remaining question is purely whether loading our own zone
-    // adds its menus to that registry at all. Dumps the registry array before and
-    // right after the zone-load call to observe empirically, since static analysis
-    // couldn't find the write/insert site.
+    // STRATEGY CHANGE 2026-07-17: same-name override abandoned (see RegisterMenu's
+    // own comment above for the full reasoning -- fights the engine's real asset-
+    // interning pool, likely cause of a live black-screen flash). Our test menu was
+    // renamed internally to "controller_mod_options_controls" (a unique name, does
+    // NOT collide with the real "pc_options_controls_ingame") specifically so this
+    // now exercises RegisterMenu's plain APPEND path -- the goal of THIS test is
+    // narrower than before: confirm the disassembly-verified interning-call fix
+    // doesn't itself cause instability when registering a large, real-content-derived
+    // menu (materials + 41 items), isolated from the same-name-override question
+    // entirely. Finding/patching whatever real call site opens
+    // "pc_options_controls_ingame" so it targets our unique name instead is separate,
+    // not-yet-started follow-up work.
     LogFromController("[zoneload-test] LB+RB held 2s -- dumping menu registry BEFORE load");
     LogMenuRegistry("before");
 
-    LogFromController("[zoneload-test] loading zone \"roundtrip\" (contains modified pc_options_controls_ingame)");
+    LogFromController("[zoneload-test] loading zone \"roundtrip\" (contains controller_mod_options_controls)");
     ZoneLoadEntry entry{ "roundtrip", 4, 0 };
     LoadZones(&entry, 1, 0);
     LogFromController("[zoneload-test] FUN_004ca310 returned without crashing");
 
     LogMenuRegistry("after-load");
 
-    // OVERRIDE PIPELINE (2026-07-17): find/load our modified copy, then hand it to
-    // RegisterOrOverrideMenuList (our own function, not the real FUN_0050a350) so the
-    // already-registered real "pc_options_controls_ingame" slot gets overwritten in
-    // place instead of silently skipped.
     LogFromController("[zoneload-test] calling FUN_004adc60(\"ui/pc_options_controls_ingame.menu\")");
     void* menuList = FindOrLoadMenuList("ui/pc_options_controls_ingame.menu");
     char buf[128];
@@ -2589,27 +2602,19 @@ void InjectZoneLoadDebugTest()
     LogFromController(buf);
 
     if (menuList != nullptr) {
-        LogFromController("[zoneload-test] calling RegisterOrOverrideMenuList");
-        RegisterOrOverrideMenuList(menuList);
-        LogFromController("[zoneload-test] RegisterOrOverrideMenuList returned without crashing");
+        LogFromController("[zoneload-test] calling RegisterLoadedMenuList (append-only, with interning fix)");
+        RegisterLoadedMenuList(menuList);
+        LogFromController("[zoneload-test] RegisterLoadedMenuList returned without crashing");
 
-        LogMenuRegistry("after-override");
-
-        // Confirmed live necessary (2026-07-17): without these two, the menu opens
-        // (registers, becomes logically active) but doesn't actually render until
-        // the player separately pauses -- these switch the engine into its paused/
-        // menu render mode, same as SetMenuState's real pausedmenu case does
-        // alongside its own FUN_00544a50 call.
-        LogFromController("[zoneload-test] calling SetDvarByName(\"cl_paused\", 1) and SetPlayerMenuFlags");
-        SetDvarByName("cl_paused", 1);
-        SetPlayerMenuFlags(kLocalClientIndex, 0x10);
-        LogFromController("[zoneload-test] both returned without crashing");
-
-        LogFromController("[zoneload-test] calling FUN_00544a50 to open \"pc_options_controls_ingame\"");
-        OpenMenuByName(reinterpret_cast<void*>(kMenuSystemContext), "pc_options_controls_ingame");
-        LogFromController("[zoneload-test] FUN_00544a50 returned without crashing");
+        LogMenuRegistry("after-register");
+        // Deliberately no open/render step here -- our own synthetic
+        // cl_paused+flags+OpenMenuByName trigger path is independently confirmed
+        // broken (garbled render) regardless of content, so it's not a useful way to
+        // visually verify this. This test's job is just "does register-with-
+        // interning stay crash/flash-free"; visual confirmation waits on the real
+        // call-site-redirect work.
     } else {
-        LogFromController("[zoneload-test] FUN_004adc60 returned null, skipping override+open");
+        LogFromController("[zoneload-test] FUN_004adc60 returned null, skipping register");
     }
 
     g_zoneLoadTestLoadedMs = GetTickCount();

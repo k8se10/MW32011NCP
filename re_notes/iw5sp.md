@@ -1941,3 +1941,234 @@ specific investigation's outcome.
 `mw3ncp_config.ini`) pending this classification work, since the movement-based
 filter's known oscillation issue (flip-flopping between simultaneously-valid movers)
 was never fixed and shouldn't be left live-enabled against unsuspecting players.
+
+## Real controller options menu -- native zone/menu injection pipeline (2026-07-17, task #23)
+
+Goal (per CLAUDE.md's locked "native means UI too" scope): a real controller-options
+screen, integrated into the normal in-game Options navigation, not a special-combo
+popup. User's chosen architecture: inject a compiled `.menu` asset via the game's
+own real zone-loading system, entirely in memory -- the real `ui.ff` on disk is
+never touched, our own zone loads *alongside* it at runtime.
+
+### The full pipeline, confirmed real and live-working end to end
+
+All addresses below are hardcoded literals from static Ghidra analysis, same
+pre-existing convention as every other hook in this file (see the "no hardcoded
+addresses" note under Open questions at the end of this section -- this is a
+standing gap against CLAUDE.md's own rule, not new to this work).
+
+- **`FUN_004ca310` (`LoadZones`)** -- `__cdecl(ZoneLoadEntry* zoneArray, int count,
+  int mode)`, `ZoneLoadEntry = {const char* name; int flags; int unused;}`. The
+  exact real function `FUN_0053cbc0` (the level-load orchestrator) calls to queue
+  zones (`patch_specialops`, `common_survival`, etc, always `flags=4` for auxiliary
+  zones). Disassembly is a 2-instruction tail-dispatch veneer (`CALL 0x00463430;
+  JMP EAX`) -- `FUN_00463430` is a per-CALLER resolver that reads its own return
+  address off the stack (`unaff_retaddr`) to decide what to tail-jump to, an
+  anti-tamper trick that makes the real target genuinely unrecoverable by static
+  analysis alone (it's caller-dependent by design, not a fixed address). Calling
+  `LoadZones` directly is exactly what real game code does, not a bypass.
+- **Real custom-zone file resolution**: a zone name not matching a recognized
+  DLC/campaign identifier (checked via `FUN_006292a0`'s real content-name table)
+  resolves to `zone\<locale>\<name>.ff` (confirmed locale = `"english"`, read from
+  `localization.txt`'s first line via `FUN_0053f060`/`FUN_004aa450`), NOT
+  `zone\dlc\`. Placing a custom `.ff` in the wrong folder produces the real
+  localized `MENU_CONTENT_NOT_AVAILABLE` error and a genuine pre-existing engine
+  bug/quirk where `FUN_005869b0` still registers a zone-table entry with an invalid
+  `-1` file handle even after showing that error -- this combination caused the
+  first live crash of this investigation, before the folder was corrected.
+- **`FUN_00544a50` (`OpenMenuByName`)** -- `__cdecl(void* menuContext, const char*
+  menuName)`. Found by fully decompiling `FUN_004396d0` (`SetMenuState`, already
+  known real for Start's pause menu) -- every menu transition in that function
+  (`"pausedmenu"`, `"briefing"`, `"victoryscreen"`, etc) goes through this exact
+  call, plain string names, native C code, not menu-script bytecode.
+  `DAT_01c00458` (**kMenuSystemContext**) is a real, fixed-address "menu system
+  context" object, not a runtime-allocated pointer -- confirmed by direct
+  live-test: calling `OpenMenuByName(&DAT_01c00458, "pausedmenu")` genuinely opened
+  the real pause menu without the player pressing Start.
+- **`FUN_00486990` (registry search)** -- `__cdecl(ctx, name)`. Walks a
+  fixed-size array of registered menu pointers living INLINE in the context object:
+  array base at `ctx+0x38`, count at `ctx+0xa38` -- confirmed via a live
+  before/after registry dump AND independently re-confirmed via raw disassembly of
+  `FUN_0050a350` below (same two offsets). Since `kMenuSystemContext` is a fixed
+  global, these resolve to fixed absolute addresses: array = `0x01c00490`, count =
+  `0x01c00e90`. Each slot is a `menuDef_t*`; the name string pointer lives at
+  `menuDefPtr+4`.
+- **`FUN_0050a350` (`RegisterMenuList`, the REAL one)** -- `__cdecl(ctx, MenuList*
+  menuList, int flag)`. Raw disassembly (not just decompile -- the decompile
+  summary missed a real step) confirmed the true per-menu body: for EVERY menu,
+  **`FindOrLoadAsset(0x1a /*type: menu*/, name, 1)` runs FIRST, unconditionally**
+  (the interning/asset-pool step, see below), THEN `FUN_00486990` checks if already
+  registered -- if found, skip entirely (no append, and no override either); if
+  not found, append at `ctx+0x38 + count*4`, increment `ctx+0xa38`. Real cap is
+  `0x280` (640), confirmed via disassembly (`CMP ...,0x280`) -- logs an error past
+  that but still writes anyway; our own reimplementation refuses instead. A third
+  arg (`flag`, always `0` in every real call and every call we make) conditionally
+  calls `FUN_004fad60(ctx, menu)` -- an unexplored optional post-registration hook,
+  never exercised.
+- **`FUN_004adc60` (`FindOrLoadMenuList`)** -- `__cdecl(const char* menuListPath)`,
+  confirmed a thin wrapper: `FindOrLoadAsset(0x19 /*type: menuList*/, path, 1)`.
+  Returns a `MenuList{int menuCount; menuDef_t** menus;}`-shaped pointer (matches
+  OpenAssetTools' own struct).
+- **`FUN_004ff000` (`FindOrLoadAsset`)** -- `__cdecl(int assetType, const char*
+  name, int flag)`. A real, generic, thread-synchronized "find or load an asset of
+  type N by name" function (InterlockedIncrement/Decrement on `DAT_00fa9e7c`,
+  spin-wait on `DAT_00fa9e80` via `FUN_00438600`, name lookup via `FUN_00585400`).
+  Its lock globals have 59 distinct callers across the whole binary -- a
+  general-purpose, widely-shared asset-system lock, not something exotic to this
+  call path. On a cache miss it dispatches through **`FUN_004b6b70`, a per-asset-
+  type switch** (0x19=menuList, 0x1a=menu, 5=material, matching OpenAssetTools'
+  `IW5_Assets.h` union ordering) to the real per-type load body.
+- **Render-mode requirement**: registering/opening a menu alone makes it logically
+  active but does NOT render unless the engine is ALSO switched into paused/menu
+  render mode. `SetMenuState`'s real `pausedmenu` case does THREE things, not one:
+  `FUN_005396b0("cl_paused", 1)` (**`SetDvarByName`**, `__cdecl(const char*, int)`),
+  `FUN_005293c0(playerIndex, 0x10)` (**`SetPlayerMenuFlags`**, `__cdecl(int, int)`,
+  sets a flags value at `0xB36210 + playerIndex*0x188` -- the same per-player
+  struct base used elsewhere in this file for the menu-active gate bit), THEN
+  `OpenMenuByName`. All three confirmed `__cdecl` via raw disassembly.
+
+**Live-confirmed working, screenshot-verified**: a bare custom menuDef (`.menu`
+compiled via OpenAssetTools' `Linker.exe`, placed as a NEW `roundtrip.ff` in
+`zone\english\`, nothing real touched) genuinely rendered on screen in the real
+pause menu's own "PAUSED" slot, alongside the real, independently-rendering
+"MISSION OBJECTIVES" panel showing correct real game data (map name, objective
+text, minimap) -- proof `cl_paused`+the flag bit genuinely trigger the real pause
+render path, and our menu correctly takes over the slot a real options screen
+would need to.
+
+### Same-name override: attempted, found architecturally unsupported, abandoned
+
+First approach: `RegisterOrOverrideMenu`, a reimplementation that additionally
+overwrote an EXISTING registry slot's pointer in place when the name already
+existed (e.g. `pc_options_controls_ingame`), to make a modified copy supersede the
+original. **Result: live black-screen flash.** Root cause, established via raw
+disassembly re-verification (not guessing): this reimplementation completely
+omitted the real `FindOrLoadAsset(0x1a, name, 1)` interning call `FUN_0050a350`
+always does first. That call does its own name-keyed lookup and, like any
+interning/asset-cache system, is architecturally built to hand back the EXISTING
+cached entry for an already-registered name rather than adopt new content under
+it -- meaning a raw registry-array overwrite fights the engine's own asset pool,
+leaving the pool and the array pointing at different objects for the same name.
+**User decision: do not pursue same-name override further.** The fixed
+reimplementation (`RegisterMenu`, still in the codebase) always calls the real
+interning step and never overwrites an existing slot -- an already-registered name
+is left untouched and logged, nothing more.
+
+### Black-screen flash, second occurrence -- root cause fully resolved: materials
+
+After removing same-name override and fixing the missing interning call, a test
+loading a REAL, larger menu (a modified copy of `pc_options_controls_ingame`, 41
+items) plus its 6 real background materials (`white`, `line_horizontal`,
+`navbar_edge`, `navbar_selection_bar`, `navbar_selection_bar_shadow`,
+`navbar_tick`) still produced a live black-screen flash -- even under a brand-new,
+non-colliding registry name (ruling out the override theory entirely) and with no
+forced-open call at all (ruling out the render-mode-synthesis theory too, since
+that was also removed and it still flashed). Two wrong theories were tested and
+ruled out before the real cause was found:
+- **Wrong theory: wrong hook/calling context.** Assumed this needed to fire from a
+  different hook than our per-frame gameplay tick. Turned out moot -- this test
+  already ran from `InjectMenuInputTick`, the WndProc/`SetTimer`-driven hook (game's
+  own thread, ~60Hz, NOT the gameplay-simulation tick), same as every other test.
+  Both the working bare-menu test and the flashing material-laden test fired from
+  the identical trigger path -- hook point was never the variable.
+- **Deep static trace confirmed the real cause: materials trigger a genuine D3D9
+  GPU-resource-creation cascade.** `FUN_004b6b70`'s case for asset type `5`
+  (material) calls `FUN_0044bb00` → `FUN_00467de0` (material's real load body):
+  sets `techniqueSet_ptr = material+0x54`, calls `FUN_0046d300` -- **the exact
+  same function `FUN_004b6b70`'s OWN case 9 (techniqueSet) calls** -- so loading a
+  material unconditionally cascades into loading its technique set, which owns
+  real vertex/pixel shaders (`IDirect3DVertexShader9`/`IDirect3DPixelShader9`,
+  cases 6/7/8 in the same dispatcher). If `material+0x58` (an image/texture
+  reference) is non-null, `FUN_0047a2f0` creates a real `IDirect3DTexture9`
+  (case 10, image). **Loading a material is a multi-asset cascade ending in
+  genuine, synchronous D3D9 resource creation, not a flat metadata copy.** By
+  contrast the menu-type load body (`0x1a` → `FUN_004730c0` →
+  `FUN_0040fed0`/`FUN_004d1430`) is shallow, no GPU-resource-shaped calls anywhere
+  in it -- exactly matching the live evidence (bare menu = zero materials = always
+  safe; every materials-included test = always flashed).
+
+**Conclusion**: real D3D9 resource creation done outside the engine's own
+controlled frame/thread discipline (our WndProc/timer callback mid-tick, not
+`Present`, not the real loading-screen path via `FUN_0053cbc0`) is exactly the
+class of operation that produces visible corruption/flashing. This is a structural
+limitation of firing this pipeline live, not a bug in the registration logic
+itself -- confirmed via the earlier (dead, `Present` hook confirmed to never fire
+at all -- see the d3d9_hook.cpp history) that no genuinely equivalent "real frame
+boundary" hook point is even available to us today.
+
+**Follow-up question, now RESOLVED**: whether a real `itemDef`'s background
+material reference, once the *menu itself* is loaded without any materials
+explicitly listed in our own zone (relying purely on the already-loaded real
+copies via the `-l ui.ff` linker fallback), re-triggers the same unsafe cascade at
+RENDER time (every frame the menu is visible) or is a safe, already-resolved
+lookup. **Verdict: rendering itself is safe (`windowDef_t::background` is a raw
+resolved `Material*` pointer per OpenAssetTools' own `IW5_Assets.h` -- a plain
+dereference each frame, no by-name lookup, no cascade risk) -- but this doesn't
+save real menu content, because the danger was never at render time.** The
+Linker's `-l <existing.ff>` dependency resolution (confirmed earlier this session:
+omitting an explicit `material,,<name>` top-level zone entry for a referenced
+material is a hard Linker error, not a lazy reference) means the compiled output
+embeds a **full, standalone, separately-addressed COPY** of the material, not a
+pointer/name reference into `ui.ff`. When our zone loads, that copy is processed
+as our own zone's OWNED asset via the zone's top-level asset-table load path --
+NOT through `FindOrLoadAsset`'s name-keyed interning/cache-hit path (confirmed via
+decompiling `FUN_00585400`: a genuine global, cross-zone name-keyed hash table
+that WOULD cache-hit and skip the cascade for a byname *lookup* -- but the zone's
+own owned-asset load never consults it, it loads unconditionally regardless of an
+identically-named asset already resident elsewhere). **Net effect: any zone
+containing a menu with a background material pays the full GPU-creation cascade
+once, unconditionally, at `LoadZones` time -- not a per-frame risk, but an
+unavoidable per-load one, with no safe pre-warm/cache-priming workaround
+available** (there is no separate "safe" call to route the load through first,
+since the unsafe path IS the zone's own asset-table load, not the interning
+cache). **A menu with zero background material remains the only content class
+confirmed safe to load via this live-injection pipeline at all** -- any real
+menu, even one authored purely to reference existing `ui.ff` material names, is
+unsafe this way, because the Linker cannot produce a lazy cross-zone reference,
+only an owned duplicate. Making real menu content work would require routing the
+load through an actual `FUN_0053cbc0`-driven level-load transition instead of a
+live WndProc/`SetTimer` hook -- not yet attempted, and a substantially different
+architecture from everything built so far.
+
+### Operational mistake worth recording: stale compiled output
+
+Mid-session, a live crash traced back to a mundane deployment bug, not an engine
+issue: OpenAssetTools' `Linker.exe -b . <project>` writes its output to
+`zone_out/<project>/<project>.ff`, but an EARLIER, smaller test run had also left
+a stale `zone_out/<project>.ff` (no subfolder) from a previous, simpler compile.
+The wrong (stale) file was copied into the game's `zone/english/` folder, so the
+game had the OLD simple zone loaded while our code asked it to
+`FindOrLoadMenuList` an asset that was never actually in that loaded zone at all --
+a much more mundane explanation for the resulting crash than any engine-level
+theory. Lesson: always verify the actual `zone_out/<project>/<project>.ff`
+(subfolder path) is what gets deployed, not the bare `zone_out/<project>.ff`.
+
+### Strategic direction (current, not yet implemented)
+
+User's explicit decision after the same-name-override abandonment: **unique
+internal names for our menu copies, plus finding/patching whatever real call
+sites reference the original names** (e.g. whatever native code opens
+`"pc_options_controls_ingame"` from the real parent options list), rather than
+same-slot replacement OR replacing `ui.ff` on disk. Keeps `ui.ff` completely
+untouched -- purely additive, fully reversible. Not yet started: finding those
+real call sites (likely GSC-menu-script `open X;` references compiled to
+something other than a runtime string lookup, since the real menu-script command
+dispatch table found earlier this session has no `open` entry at all, only
+`ingameopen` -- the compiled representation of `open` is still unknown).
+
+### Open questions / next steps for task #23
+- **Live injection of any menu with a background material is confirmed unsafe,
+  full stop** (see above) -- the "unique names + patch call sites" plan only
+  remains viable for content authored with NO background material at all (plain
+  color/no background), or requires solving live-injection-during-a-real-level-
+  load-transition first, a materially different and harder architecture. Needs a
+  decision before more implementation work: scope our own controller-options
+  content to backgroundless menus, or pursue the level-load-transition approach.
+- Find the real compiled representation of `open <menuname>;` (menu-to-menu
+  navigation) so a parent menu's item can be redirected to our unique-named copy.
+- **No hardcoded addresses, still unresolved project-wide**: every function
+  address in this section (and every other hook in this codebase) is a literal
+  hardcoded from static Ghidra analysis, not a runtime signature scan --
+  CLAUDE.md's own rule ("every hook target comes from a runtime signature scan")
+  has never actually been implemented anywhere in this project. Systemic, not
+  specific to this feature; worth its own dedicated task eventually.

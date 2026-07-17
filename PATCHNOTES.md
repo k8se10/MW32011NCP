@@ -31,6 +31,17 @@ reverse-engineering trail behind each entry.
   `re_notes/iw5sp.md` for the full trail.
 
 ### Docs
+- **Surveyed the real hint-text content behind pickup/reload/interact-style
+  prompts** ahead of wiring the controller-glyph resolver hook (task #6's other
+  half). Found three genuinely different substitution mechanisms in the real
+  localized strings, not one: `&&1`-token strings (the entire weapon-pickup/perk/
+  stance-hint family — confirmed to all route through the one planned resolver
+  hook), a separate `[{+command}]` syntax embedded directly in some strings
+  (confirmed NOT handled by the same `&&N` engine — a second, not-yet-found
+  resolver, real follow-up work), and literal hardcoded PC-only text
+  (`[Right Mouse]`/`[Left Mouse]`) that no resolver hook can fix at all. Also
+  confirmed Reload has no hint text/bind token whatsoever — it's a plain HUD
+  element, nothing to glyph-swap. See `re_notes/ui_assets.md`.
 - Committed `re_notes/ghidra_scripts/FindStrideArrayBase.java` (used during the aim-
   assist entity-classification investigation, task #16) — a general-purpose static-
   analysis tool independent of that investigation's outcome, so kept regardless.
@@ -99,6 +110,23 @@ reverse-engineering trail behind each entry.
   it now goes through the real dispatcher's own toggle logic.
 
 ### Investigated, not resolved
+- **Real controller options menu (task #23): native zone/menu injection pipeline
+  built and confirmed working for bare content, blocked on a real architectural
+  limit for real content.** Built and live-confirmed an entirely in-memory
+  mechanism to inject a custom-compiled `.menu` asset into the running game via
+  its own real zone-loading system (`LoadZones`/`FindOrLoadMenuList`/menu
+  registry, all real functions) — a bare custom menuDef genuinely rendered in the
+  real pause menu's own slot, real `ui.ff` never touched on disk. Real menu
+  content (anything with a background material, which is virtually all of it)
+  turned out to be fundamentally unsafe via this pipeline: loading a material
+  live triggers a genuine, synchronous D3D9 GPU-resource-creation cascade
+  (shaders + textures) that isn't safe outside the engine's own controlled
+  loading-screen context, and — confirmed via deep decompilation — there is no
+  safe workaround within live injection (referencing an existing `ui.ff` material
+  by name doesn't help; the Linker can only embed a full owned duplicate, never a
+  lazy cross-zone reference). A same-name registry-override approach was also
+  tried and abandoned (fights the engine's own asset-interning system). Full
+  trail in `re_notes/known_issues.md` issue #23 and `re_notes/iw5sp.md`.
 - **Aim assist target classification.** Following a lead from the cragson/
   mw3-surviv0r reference repo's own aimbot source, found strong static evidence of a
   real, second entity array in our own binary (base `0x01197AD8`, stride `0x270`,
