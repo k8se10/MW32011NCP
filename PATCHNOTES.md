@@ -289,6 +289,19 @@ change).
   a targeted scan restricted to the confirmed-real kbutton neighborhood used by
   ADS/Reload) all came back negative. Controller Sprint keeps its existing
   `pm_flags`-forcing implementation. Full trail in `re_notes/iw5sp.md`.
+- **Real native sprint duration/cooldown timer — found, but unobservable while our
+  own hook drives sprint.** Traced the real sprint-meter HUD render path to
+  `FUN_004b9350`, a genuine current/max stamina-ratio function — but it early-exits
+  to a flat baseline whenever `pm_flags` bit `0x4000` is already set, which this
+  mod's own Sprint hook forces unconditionally every tick. So the real timer can't
+  be observed (or benefited from) as long as sprint is driven by forcing that bit
+  directly rather than through the real native trigger path. Switching to whatever
+  real `kbutton_t`/command actually engages sprint (once found — see the parked
+  `+breath_sprint` search above) would make the mod's own sprint naturally subject
+  to the real timer, perk multipliers, and Extreme Conditioning, without needing to
+  replicate any of it by hand — a real architecture change, not attempted yet, and
+  current sprint behavior is already confirmed working well so this needs a
+  deliberate decision before touching it. Full trail in `re_notes/iw5sp.md`.
 
 ---
 
