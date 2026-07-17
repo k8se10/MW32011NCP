@@ -1,6 +1,6 @@
 # MW3 Native Controller Support (Campaign & Survival)
 
-**Status: PRE-ALPHA — actively in development (as of 2026-07-17).** Analog movement, look,
+**Status: PRE-ALPHA — actively in development (v0.1.3, 2026-07-17).** Analog movement, look,
 and most buttons are confirmed working live against `iw5sp.exe` (Campaign/Survival),
 including a real sprint stamina/cooldown model, Start's full pause/unpause, weapon
 switching, D-pad killstreak/attachment slots, Survival's between-wave ready-up, and now
@@ -43,10 +43,12 @@ each release.
   diagnostic logging, but the target-validity filter is not: it currently uses a
   movement heuristic that oscillates between multiple simultaneously-moving things
   (a real enemy, a settling ragdoll, a thrown grenade), producing genuinely broken
-  targeting in practice, not just an unpolished feel. **Ships with `Enabled=0` and
-  must stay that way for any public/release build** until real entity classification
-  replaces the movement heuristic — see `re_notes/known_issues.md` issue #15. Do not
-  enable this for anyone other than active development/testing.
+  targeting in practice, not just an unpolished feel. A real fix (native type/health-
+  based classification, no movement heuristic needed) is believed found via static
+  analysis but not yet live-verified — see `re_notes/known_issues.md` issue #15.
+  **Ships with `Enabled=0` and must stay that way for any public/release build**
+  until that's confirmed live. Do not enable this for anyone other than active
+  development/testing.
 
 ### Combat & interaction
 - **Fire** (RT), **Tactical**/**Lethal** (LB/RB), **Jump** (A).
@@ -235,11 +237,14 @@ bit):
 and only if the hold threshold was never reached.
 
 **Killstreaks** — essential to Campaign, which is otherwise mostly untested so far
-(most testing to date has been Survival-focused):
+(most testing to date has been Survival-focused). Real roster confirmed via the
+game's own buy-station data (`sp/survival_armories.csv`):
 
 | Killstreak | Status |
 |---|---|
-| Predator missile | 🟡 Partial — confirmed partially working live; needs its own per-killstreak investigation (see `re_notes/known_issues.md`) |
+| Predator missile (`remote_missile`) | 🟡 Partial — confirmed partially working live; needs its own per-killstreak investigation (see `re_notes/known_issues.md`) |
+| Precision airstrike (`precision_airstrike`) | ⬜ Not yet tested |
+| AI squadmate call-in (`friendly_support_delta`/`friendly_support_riotshield`) | 🟡 Partial — likely the same feature behind D-pad Left's known squadmate call-in bug (see `re_notes/known_issues.md` issue #14) |
 | All others | ⬜ Not yet tested |
 
 ## What's blocking the remaining buttons
@@ -323,14 +328,24 @@ See `re_notes/known_issues.md` for the full, actively-tracked list.
   workaround will be replaced if/when one turns up.
 - Sprint's stamina/cooldown model doesn't yet account for two real overrides: specific
   missions that live-set `player_sprintUnlimited` (checked and bypassed correctly) is
-  handled, but the Extreme Conditioning perk (doubles sprint duration to 8s) is likely a
-  separate mechanism (`perk_sprintMultiplier`) and isn't detected yet — see
-  `re_notes/known_issues.md`.
+  handled, but the Extreme Conditioning perk (doubles sprint duration to 8s, real
+  internal name `specialty_longersprint`) is likely a separate mechanism
+  (`perk_sprintMultiplier`) and isn't detected yet — see `re_notes/known_issues.md`.
 - Aim assist (rotational friction, target magnetism) is implemented but currently
   **non-functional and disabled by default** (`Enabled=0`) — the underlying math is
-  confirmed correct, but real entity classification (telling an AI actor apart from
-  props/debris) hasn't been found yet, so the fallback movement heuristic produces
-  broken targeting. See `re_notes/known_issues.md` issue #15.
+  confirmed correct, and real entity classification (telling an AI actor apart from
+  props/debris) is believed found via static analysis, but not yet live-verified, so
+  the fallback movement heuristic remains in place and still produces broken
+  targeting. See `re_notes/known_issues.md` issue #15.
+- **A real, native controller-options menu (task #23) is in active development, not
+  yet shippable.** A working mechanism to inject custom menu content into the game's
+  own real menu system was built and confirmed live for simple content, but real
+  menu content (backgrounds, sliders, etc.) hit a genuine architectural limit —
+  loading a material live triggers unsafe GPU-resource creation outside the engine's
+  controlled loading context. A structurally-sound fix (loading through the engine's
+  own real level-load transition instead) is believed viable but not yet
+  implemented. No player-facing effect from this work exists in this build. See
+  `re_notes/known_issues.md` issue #23.
 - Multiplayer (`iw5mp.exe`) support has not been started. It's a separately-built binary
   from `iw5sp.exe` — none of the offsets/addresses found so far carry over, and it needs
   its own full signature-scanning pass. There's also an open, unresolved question about

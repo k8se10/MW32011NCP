@@ -2698,8 +2698,15 @@ extern "C" void __cdecl InjectMenuInputTick()
     // B's ESC-forward, for the same reason: the gameplay-simulation tick this would
     // otherwise share with InjectControllerDpad halts entirely during a genuine pause.
     InjectControllerMenuNav();
-    InjectZoneLoadDebugTest(); // DEBUG ONLY, task #23 -- see comment above its definition
-    TickMenuDefScan(); // DEBUG ONLY, task #23 -- no-op unless a scan is active (StartMenuDefScan called)
+    // DISABLED for the v0.1.3 public pre-alpha build (2026-07-17): task #23's zone/
+    // menu-injection debug trigger (LB+RB hold) is real, working test code, not a
+    // finished feature -- it's gated behind an internal combo, has no player-facing
+    // purpose yet, and the underlying live-injection approach is now known to be
+    // unsafe for real menu content (see re_notes/known_issues.md issue #23). Left
+    // defined below for when this resumes (the level-load-transition alternative),
+    // just not wired into the live tick for a public build.
+    // InjectZoneLoadDebugTest(); // DEBUG ONLY, task #23 -- see comment above its definition
+    // TickMenuDefScan(); // DEBUG ONLY, task #23 -- no-op unless a scan is active (StartMenuDefScan called)
 }
 
 namespace {

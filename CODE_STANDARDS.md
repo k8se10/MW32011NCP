@@ -52,6 +52,37 @@ A feature/change is **production ready** when:
 A change that fails any one of these is not done, regardless of how
 confident the description of it sounds.
 
+## Documentation Standards
+
+Document every last detail. This project's `re_notes/` directory is the
+reference record, not a polished highlight reel — treat it that way:
+
+- **Dead ends get documented as thoroughly as successes.** A hypothesis that
+  turned out wrong, a technique that crashed the game, an address that looked
+  right but wasn't — all of it goes in `re_notes/`, with *why* it was wrong,
+  not just "didn't work." Future work (including a future AI session with no
+  memory of this one) depends on this to avoid re-treading the exact same dead
+  end blind.
+- **Every user-facing change gets a `PATCHNOTES.md` entry in the same pass as
+  the change itself**, sorted into Added/Fixed/Changed/Investigated-not-
+  resolved/Docs — not a separate cleanup task, not something to batch later.
+  This includes corrections to previously-wrong documentation or config-comment
+  text, not just code changes.
+- **Cite concrete evidence, not conclusions.** A finding is "confirmed via
+  disassembly at address `0x...`" or "live-tested, see screenshot/log," not
+  "should be correct" or "this seems right." Distinguish confirmed-live, from
+  static-analysis-only, from theorized-but-untested — explicitly, every time.
+  Don't let confidence bleed across that line in the writing; a reader should
+  never have to guess how solid a claim actually is.
+- **Cross-reference, don't duplicate.** `re_notes/iw5sp.md` is the full RE
+  trail, `re_notes/known_issues.md` is the actively-tracked issue list,
+  `PATCHNOTES.md` is the curated player-facing changelog, `README.md` is the
+  feature/status overview. A given fact belongs in exactly the place that owns
+  it, linked from everywhere else that needs it — not copy-pasted across
+  several files that will inevitably drift out of sync.
+- Undocumented work is not done, by the same standard as untested work — see
+  **Production Readiness Criteria** above.
+
 ## Native mod code (C/C++)
 
 - **Never hardcode a raw address.** Every hook target is found via

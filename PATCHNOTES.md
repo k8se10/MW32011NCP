@@ -6,7 +6,20 @@ reverse-engineering trail behind each entry.
 
 ---
 
-## Unreleased
+## v0.1.3 (2026-07-17)
+
+The biggest research release so far, alongside one real shipped feature. Real,
+native D-pad/A menu navigation is now confirmed working live across the main
+menu, pause menu, and options screens. Everything else this release is deep
+groundwork — a real controller-options-menu injection mechanism (blocked on a
+genuine architectural limit, with a promising fix already found), a likely
+static-analysis solution to aim assist's classification problem (not yet
+live-verified, still disabled), real vibration trigger points, a complete
+keycode reference, and an MW3-client-compatibility survey that surfaced a
+concrete anti-cheat risk worth knowing about before ever pairing this mod with
+Plutonium multiplayer. The zone/menu-injection debug trigger built during this
+research is disabled for this build (real, working test code, just not a
+finished player-facing feature yet) — see `re_notes/known_issues.md` issue #23.
 
 ### Added
 - **Real native controller menu navigation (task #22): D-pad + A, confirmed working
