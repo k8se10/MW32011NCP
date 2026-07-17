@@ -18,6 +18,23 @@ engine calls, not keyboard/mouse emulation. See `re_notes/` for the full reverse
 engineering writeup this mod is built on, and `PATCHNOTES.md` for what changed in
 each release.
 
+## Project stages
+
+This project uses the standard pre-alpha → alpha → beta → 1.0 progression, but
+"pre-alpha" here means something more specific than "barely started" — a lot of
+this mod's core systems (analog movement/look, real engine-state-driven Sprint
+and Crouch/Prone, real pause menu, real D-pad/A menu navigation) are already
+confirmed working live, on par with the functional bar many shipped mods or
+public betas ship at. The label reflects how much of the mod's *planned* scope
+is still open, not how rough what already works is.
+
+| Stage | Version range | What it means here |
+|---|---|---|
+| **Pre-alpha** *(current)* | `0.1.0` – `0.1.5` | Core systems land one at a time — movement/look/combat, stance/sprint, pause menu, and now menu navigation are done; aim assist, vibration, killstreaks, and the controller options menu are still being built out. Expect real gaps, not just polish issues. |
+| **Alpha** | `0.1.5` – `0.4.0` | The remaining major systems get built and land: full menu/UI navigation (slider adjustment, button glyphs, a real in-game options screen), aim assist taken from "math confirmed, classification unverified" to actually working, killstreaks fully scoped, vibration, and Extreme Conditioning's real override. Multiplayer groundwork may start here, pending the anti-cheat question being resolved first. |
+| **Beta** | `0.4.0` – `1.0.0` | Should be practically feature-complete — remaining work is closing gaps, fixing what live testing surfaces, and extending reach (other MW3 clients, Multiplayer if the anti-cheat question resolves favorably) rather than building brand-new core systems from scratch. |
+| **1.0 (final)** | `1.0.0`+ | Feature-complete against this project's full scope, stable, and treated as a real release rather than an actively-shifting work in progress. |
+
 ## Feature list
 
 ### Movement & look
