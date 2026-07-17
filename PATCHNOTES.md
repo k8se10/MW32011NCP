@@ -27,6 +27,18 @@ reverse-engineering trail behind each entry.
   GitHub name. A new sibling project, `MW32011NSP` (netcode/security modernization),
   now also lives at the game install root — `re_notes/` cross-referencing between the
   two is now a standing policy, see `CLAUDE.md`.
+- **Corrected two factual errors in issue #25's Plutonium client-compatibility
+  survey (2026-07-17, later session).** The "`iw5sp.exe` ~175KB smaller" figure
+  was wrong — direct re-measurement (prompted by the sibling `MW32011NSP`
+  project's own netcode research) found the actual size delta is 2,320 bytes;
+  the ~175KB figure was very likely a byte-difference COUNT (175,411
+  individual differing positions) mistaken for an overall file-size
+  difference. Also added a cross-reference: `MW32011NSP` found that since
+  Plutonium's `iw5mp.exe` is byte-identical to retail (already recorded here),
+  a client-side netcode vulnerability they confirmed in retail `iw5mp.exe` is
+  present on Plutonium MP installs too — Plutonium's routing-through-their-
+  own-servers mitigation only covers server-side code. Full detail in
+  `re_notes/known_issues.md` issue #25.
 
 ---
 
