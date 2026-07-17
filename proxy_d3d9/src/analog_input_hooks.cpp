@@ -783,7 +783,17 @@ extern "C" void __cdecl InjectControllerSprint()
 {
     unsigned short buttons;
     unsigned char leftTrigger, rightTrigger;
-    if (!Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger)) return;
+    if (!Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger)) {
+        // FIXED 2026-07-17 (pre-release review): keep the tick baseline fresh here too,
+        // same reason the player_sprintUnlimited bypass below already does -- without
+        // this, a controller disconnect/reconnect while sprint was held computed dt
+        // across the WHOLE disconnected interval on the next real tick (self-correcting,
+        // since it just clamps stamina to 0 and marks winded, but still an avoidable
+        // inconsistency with the exact pattern this function already established for
+        // the bypass case one branch below).
+        g_sprintLastTickMs = GetTickCount();
+        return;
+    }
 
     LogSprintDiag(); // task #9 -- investigating a real native sprint timer, see comment above
 
@@ -1616,15 +1626,24 @@ constexpr uintptr_t kPlayerStateAddr = 0x00B36218;
 //           FUN_005396b0("cl_paused", 0);   // <-- clears cl_paused: this IS resume/unpause
 //           FUN_004a1280(0); FUN_004ae120(&DAT_01c00458); return 1;
 // This is a genuine, real "resume gameplay" call, not a guess -- confirmed by direct
-// contrast with case 2 (which sets cl_paused non-zero and opens pausedmenu). We track our
-// own g_paused bool (set on the same physical Start press that opened/closed it) rather
-// than re-reading engine state, since we're the only thing calling this function from
-// our own hook right now.
+// contrast with case 2 (which sets cl_paused non-zero and opens pausedmenu).
+//
+// FIXED 2026-07-17 (pre-release review, task v0.1.3): this used to track its own
+// `g_paused` bool, set only on a controller Start press -- exactly the same class of
+// "manually-tracked copy can desync from the engine's own real state" bug the
+// crouch/prone rewrite (see GetRealStance() above) was built to eliminate. Real
+// keyboard ESC also opens/closes the pause menu natively (keyboard/mouse remains
+// fully supported alongside controller per this project's own design) -- if a player
+// paused/unpaused via keyboard, `g_paused` never found out, so the next controller
+// Start press could act on stale belief and call the wrong case (open on an
+// already-paused game, or unpause on an already-running one, silently eating that
+// Start press). Now reads `cl_paused` directly via `GetDvarInt` (the same real dvar
+// SetMenuState's own open/close cases toggle) instead of trusting a local copy --
+// the same fix shape as the crouch/prone rewrite, applied here for the same reason.
 using SetMenuStateFn = void(__cdecl*)(int playerIndex, int mode);
 SetMenuStateFn const SetMenuState = reinterpret_cast<SetMenuStateFn>(0x004396d0);
 constexpr int kMenuStateUnpause = 0;
 constexpr int kMenuStatePausedMenu = 2;
-bool g_paused = false;
 } // namespace
 
 // ---- B -> real ESC-forward-to-menu, for "exit menu / back one step" (2026-07-16) ----
@@ -1822,7 +1841,8 @@ extern "C" void __cdecl InjectControllerPauseMenu()
     bool held = IsPhysicalHeld(g_buttonMap.pause, buttons, leftTrigger, rightTrigger);
     if (held && !g_startHeld) {
         char buf[128];
-        if (!g_paused) {
+        bool currentlyPaused = GetDvarInt("cl_paused") != 0;
+        if (!currentlyPaused) {
             // If some OTHER menu is already open (buy station, etc. -- the same real
             // gate bit B's own menu-back checks) close it FIRST via the same real
             // ESC-forward mechanism, so the pause menu doesn't stack on top of it and
@@ -1850,11 +1870,9 @@ extern "C" void __cdecl InjectControllerPauseMenu()
             } else {
                 SetMenuState(kLocalClientIndex, kMenuStatePausedMenu);
             }
-            g_paused = true;
         } else {
             LogFromController("[pause-diag] Start pressed (closing): calling SetMenuState(0, unpause)");
             SetMenuState(kLocalClientIndex, kMenuStateUnpause);
-            g_paused = false;
         }
     }
     g_startHeld = held;

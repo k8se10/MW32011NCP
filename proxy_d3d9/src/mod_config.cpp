@@ -311,6 +311,16 @@ void LoadModConfig()
     ReadUlong(path, "Survival", "ReadyUpHoldThresholdMs", g_modConfig.readyUpHoldThresholdMs);
     ReadFloat(path, "Sprint", "MaxStaminaSeconds", g_modConfig.sprintMaxStaminaSeconds);
     ReadFloat(path, "Sprint", "RegenSeconds", g_modConfig.sprintRegenSeconds);
+    // FIXED 2026-07-17 (pre-release review): InjectControllerSprint divides by
+    // sprintRegenSeconds every tick (dt * (sprintMaxStaminaSeconds / sprintRegenSeconds)).
+    // A hand-edited RegenSeconds=0 alone is a divide-by-zero (float semantics -> inf,
+    // clamped away same-tick, harmless); MaxStaminaSeconds=0 too makes it 0/0 -> NaN,
+    // and g_sprintStamina goes permanently NaN (the ">= 0" clamp check is always false
+    // for NaN, so it never self-corrects). Only reachable via manual config editing,
+    // not normal play, but cheap to guard the same way every other config value in
+    // this function already is.
+    if (g_modConfig.sprintMaxStaminaSeconds < 0.1f) g_modConfig.sprintMaxStaminaSeconds = 0.1f;
+    if (g_modConfig.sprintRegenSeconds < 0.1f) g_modConfig.sprintRegenSeconds = 0.1f;
     ReadButtonLayout(path, g_modConfig.buttonLayout);
     ReadStickLayout(path, g_modConfig.stickLayout);
     ReadBool(path, "Bindings", "FlipTriggers", g_modConfig.flipTriggers);

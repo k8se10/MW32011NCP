@@ -176,6 +176,21 @@ extern "C" __declspec(dllexport) IDirect3D9* WINAPI Direct3DCreate9(UINT SDKVers
 // real function's own `ret N` returns directly to the ORIGINAL caller — this works
 // regardless of the real export's exact argument count/calling convention, so we
 // don't need to know or replicate their signatures.
+// KNOWN, ACCEPTED LIMITATION (2026-07-17 pre-release review): no null-check on
+// g_real_##name before the jmp -- if the real system d3d9.dll were ever missing one
+// of these obscure exports (ResolveRealExports logs a warning but treats it as
+// non-fatal, since MW3 2011 is not expected to call these directly) AND the game
+// somehow called it anyway, this jumps through a null pointer and crashes. Not fixed
+// because there isn't a clean way to: these are deliberately UNKNOWN-ARITY stdcall/
+// cdecl exports (the entire point of the tail-jump approach is not needing to know
+// each one's real signature) -- a "graceful" fallback can't safely `ret` without
+// knowing how many bytes of the caller's stack to clean up, so a naive null-check
+// would either need to know each function's real signature anyway (defeating the
+// purpose) or risk corrupting the caller's stack on return, which is worse than the
+// crash it would be guarding against. Real-world risk is low: these are all standard
+// exports present on essentially any genuine Windows d3d9.dll. Direct3DCreate9 itself
+// (the one export MW3 unconditionally needs) IS correctly guarded -- ResolveRealExports
+// returns false and DllMain aborts entirely if that specific one is missing.
 #define FORWARD_STUB(name) \
     extern "C" __declspec(dllexport) __declspec(naked) void WINAPI name() \
     { \

@@ -127,6 +127,38 @@ finished player-facing feature yet) — see `re_notes/known_issues.md` issue #23
   local dev config can mask exactly this class of default-value bug — worth a
   fresh-install check (rename/delete the local config, confirm what gets
   regenerated) before any future release, not just before this one.
+- **Start's pause/unpause could desync from the real game state if the player also
+  used keyboard ESC.** `InjectControllerPauseMenu` tracked its own `g_paused` bool,
+  updated only on a controller Start press — the same class of "manually-tracked
+  copy can drift from the engine's own real state" bug the crouch/prone rewrite
+  (see below) was built to eliminate, just not caught in this specific function at
+  the time. Keyboard ESC also natively opens/closes the pause menu (keyboard/mouse
+  stays fully supported alongside controller), so a player switching between the
+  two could leave `g_paused` believing the wrong thing, making the next controller
+  Start press act on stale state — potentially eating that press with no visible
+  effect. Found during a pre-release code review, ahead of v0.1.3. Fixed the same
+  way the crouch/prone rewrite fixed its own version of this bug: reads the real
+  `cl_paused` dvar directly via the existing `GetDvarInt` helper instead of
+  trusting a local copy, eliminating the desync class entirely rather than
+  patching around it.
+- **Sprint's stamina timer could compute a huge, bogus time delta after a
+  controller disconnect/reconnect.** The tick-baseline timestamp only got
+  refreshed on ticks where a controller was actually present — a disconnect while
+  sprint was held, followed by a reconnect, computed `dt` across the entire
+  disconnected duration on the next tick. Self-correcting in practice (clamps
+  stamina to 0, marks winded with the normal cooldown — not a hang or crash), but
+  an avoidable inconsistency with the exact pattern this function had already
+  established for a different case (the `player_sprintUnlimited` bypass path
+  right below it). Found during the same pre-release review; fixed to refresh the
+  baseline on the no-controller path too.
+- **Two `[Sprint]` config values had no lower-bound guard, unlike every other
+  tunable float in the same file.** Hand-editing `RegenSeconds=0` alone produces a
+  divide-by-zero (harmless — clamped away the same tick); `MaxStaminaSeconds=0`
+  together with it makes it `0/0`, permanently setting the stamina value to `NaN`
+  (the existing `>= 0` clamp is always false for `NaN`, so it never
+  self-corrects). Only reachable via manual config editing, not normal play — same
+  found-during-pre-release-review batch. Fixed with the same clamp-on-read pattern
+  already used for every other config value in this function.
 - **B didn't exit the pause menu.** The ESC-forward logic (`InjectControllerMenuBack`)
   was only ever wired into the per-frame gameplay tick, which stops running entirely
   while genuinely paused — so B's menu-back action never fired in the one state it
@@ -158,6 +190,23 @@ finished player-facing feature yet) — see `re_notes/known_issues.md` issue #23
   it now goes through the real dispatcher's own toggle logic.
 
 ### Investigated, not resolved
+- **`dllmain.cpp`'s generic export-forwarding stubs have no null-pointer guard,
+  accepted as a known, low-risk limitation, not fixed.** Found during the same
+  pre-release review as the fixes above: `FORWARD_STUB`'s naked tail-jump forwards
+  ~15 obscure real `d3d9.dll` exports (`D3DPERF_*`, `PSGPError`, etc.) without
+  checking the resolved pointer is non-null first — if the real system `d3d9.dll`
+  were ever missing one AND the game somehow called it, this jumps through a null
+  pointer and crashes. Deliberately not fixed: these are intentionally
+  unknown-arity stdcall/cdecl exports (the whole point of the tail-jump approach
+  is not needing to know each one's real signature), so a "graceful" fallback
+  can't safely `ret` without knowing how many bytes of the caller's stack to
+  clean up — a naive guard would either need the real signature anyway (defeating
+  the point) or risk corrupting the caller's stack on return, worse than the
+  crash it would guard against. Real-world risk is low: these are standard
+  exports present on essentially any genuine Windows `d3d9.dll`.
+  `Direct3DCreate9` — the one export MW3 unconditionally needs — is correctly
+  guarded elsewhere (`ResolveRealExports` returns `false` and `DllMain` aborts
+  entirely if that specific one is missing).
 - **Real controller options menu (task #23): native zone/menu injection pipeline
   built and confirmed working for bare content, blocked on a real architectural
   limit for real content — but a structurally-sound fix was found the same day.**
