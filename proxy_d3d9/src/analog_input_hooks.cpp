@@ -2060,6 +2060,55 @@ void SendSyntheticActionSlot4Key(bool down)
 }
 } // namespace
 
+// ---- Back -> real +scores (scoreboard/objectives) via key synthesis -- THIRD and
+// final narrow exception to the "no OS-level input emulation" rule (2026-07-17) ----
+//
+// Real trigger genuinely never found this session or prior ones: the previous
+// attempt (wiring FUN_00438710's dispatcher directly with a guessed case number)
+// regressed live -- it hit +back's real kbutton instead of +scores' (see
+// known_issues.md issue #3), because the guess was never independently validated,
+// exactly the mistake the live-raw-keycode-table technique exists to avoid. That
+// technique doesn't apply cleanly here since +scores isn't a per-frame usercmd
+// button/kbutton at all -- it's a plain keyboard bind (`bind TAB "+scores"`,
+// confirmed real in players2/config.cfg) read directly by whatever UI draws the
+// scoreboard/objectives overlay, the same category of "genuine WM_KEYDOWN/KEYUP,
+// not a native call" problem ready-up (F5) and D-pad Left's squadmate call-in ('4')
+// already needed the same fix for.
+//
+// Justified as "good enough for now, not essential to gunplay" per explicit user
+// direction -- Back has no other current meaning (confirmed unused elsewhere in this
+// file), so there's no dual-purpose conflict to manage, unlike B/A's menu-context
+// overloading. In Campaign this shows the real scoreboard/mission-objectives
+// overlay; Survival has no native scoreboard at all (confirmed this session, see
+// re_notes/known_issues.md and the project memory on Back's scope split) so holding
+// Back there is expected to do nothing visible -- not a bug, just Survival genuinely
+// having nothing native for TAB to show.
+//
+// Hold-through-passthrough, not tap/toggle: `+scores` is itself a real hold-to-show
+// bind, so Back down -> TAB down, Back up -> TAB up, mirrors real keyboard exactly.
+namespace {
+bool g_scoreboardHeld = false;
+}
+
+extern "C" void __cdecl InjectControllerScoreboard()
+{
+    unsigned short buttons;
+    unsigned char leftTrigger, rightTrigger;
+    if (!Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger)) return;
+
+    bool held = IsPhysicalHeld(g_buttonMap.scoreboard, buttons, leftTrigger, rightTrigger);
+    if (held == g_scoreboardHeld) return;
+    g_scoreboardHeld = held;
+
+    HWND hwnd = GetGameWindow();
+    if (!hwnd) return;
+    if (held) {
+        PostMessageA(hwnd, WM_KEYDOWN, VK_TAB, 0x00000001);
+    } else {
+        PostMessageA(hwnd, WM_KEYUP, VK_TAB, 0xC0000001);
+    }
+}
+
 extern "C" void __cdecl InjectControllerDpad()
 {
     unsigned short buttons;
@@ -2106,6 +2155,467 @@ extern "C" void __cdecl InjectControllerDpad()
     }
 }
 
+// ---- DEBUG-ONLY: live test of the real zone-loading entry point (task #23) ----
+//
+// FUN_004ca310 is the real function FUN_0053cbc0 (the level-load orchestrator) calls
+// repeatedly to queue real zones for loading (patch_specialops, common_survival,
+// etc.), always as {char* name, int flags, int unused} triples: `array, count, mode`.
+// Disassembly shows it's a 2-instruction tail-dispatch veneer (CALL FUN_00463430;
+// JMP EAX) -- not a real jump table Ghidra failed to recover, a genuinely computed
+// redirect. Calling this exact entry point ourselves is exactly what real game code
+// does, not a bypass. FUN_0053cbc0's own call sites decompiled as plain 3-int-arg
+// calls with no register-passed-arg warnings, so treated as __cdecl here.
+//
+// Test zone: zone/dlc/roundtrip.ff (NEW file, nothing existing touched), a known-good
+// round-trip of an UNMODIFIED real game menu (spec_ops_dlc_go_to_store_popup.menu)
+// compiled via OpenAssetTools' Linker -- isolates whether the LOAD call itself works
+// before ever trying custom-authored content. Gated behind a deliberately obscure,
+// impossible-to-hit-by-accident hold (LB+RB, 2s) so this can't fire during normal
+// play; fires once per session (g_zoneLoadTestFired latch).
+namespace {
+using LoadZonesFn = void(__cdecl*)(void* zoneArray, int count, int mode);
+LoadZonesFn const LoadZones = reinterpret_cast<LoadZonesFn>(0x004ca310);
+
+struct ZoneLoadEntry { const char* name; int flags; int unused; };
+
+// FUN_00544a50(&DAT_01c00458, "menuname") -- the real, generic "open menu by name"
+// function, found by fully decompiling FUN_004396d0 (already confirmed real for the
+// pause menu specifically). Every single menu transition in that function goes
+// through this exact call -- "pausedmenu", "briefing", "victoryscreen",
+// "main_specops", "error_popmenu", etc. -- all as plain string names passed straight
+// from native C code, not menu-script bytecode. DAT_01c00458 is a real, shared
+// "menu system context" object passed to every menu operation seen this session
+// (FUN_004c8c00, FUN_00544a50, FUN_004ae120), always by address.
+using OpenMenuByNameFn = void(__cdecl*)(void* menuContext, const char* menuName);
+OpenMenuByNameFn const OpenMenuByName = reinterpret_cast<OpenMenuByNameFn>(0x00544a50);
+constexpr uintptr_t kMenuSystemContext = 0x01c00458;
+
+// The two other real calls SetMenuState's real pausedmenu case makes alongside
+// FUN_00544a50(&DAT_01c00458,"pausedmenu") -- found by fully decompiling
+// FUN_004396d0 (already confirmed real for Start's pause menu). Live-confirmed
+// necessary 2026-07-17: calling FUN_00544a50 with our own custom menu name alone
+// DID register/open it (proven -- it rendered briefly), but only became genuinely
+// VISIBLE once the player separately paused (Start) afterward -- the engine's main
+// render path stays on the 3D world unless these two also run, switching it to the
+// paused/menu render mode. Both confirmed __cdecl via raw disassembly (2 stack
+// args each, plain RET).
+//   FUN_005396b0(dvarName, value) -- generic "set a dvar by name" utility; real
+//     call site uses it for "cl_paused" specifically, with plain 0/1 int values
+//     (0 hardcoded directly in the unpause case elsewhere in the same function).
+//   FUN_005293c0(playerIndex, flags) -- sets a per-player flags value at
+//     0xB36210 + playerIndex*0x188 (the SAME real per-player struct base already
+//     used elsewhere in this file for the menu-active gate bit) -- real call uses
+//     flags=0x10.
+using SetDvarByNameFn = void(__cdecl*)(const char* dvarName, int value);
+SetDvarByNameFn const SetDvarByName = reinterpret_cast<SetDvarByNameFn>(0x005396b0);
+
+using SetPlayerMenuFlagsFn = void(__cdecl*)(int playerIndex, int flags);
+SetPlayerMenuFlagsFn const SetPlayerMenuFlags = reinterpret_cast<SetPlayerMenuFlagsFn>(0x005293c0);
+
+// FUN_004adc60(filePath) -- real "find/load a menuList asset by file path" function,
+// confirmed via raw disassembly of a real call site (FUN_004856b0, loading
+// "ui/hud.txt"/"ui/patch_hud.txt"): only reads its FIRST stack arg (the path
+// string) despite the caller also pushing a second value (0x7) that this specific
+// function's own body never touches -- __cdecl (plain RET, no operand), single
+// real argument. Returns a MenuList-shaped pointer (count at +4, array at +8,
+// matching OpenAssetTools' own MenuList{int menuCount; menuDef_t** menus;} struct).
+using FindOrLoadMenuListFn = void*(__cdecl*)(const char* menuListPath);
+FindOrLoadMenuListFn const FindOrLoadMenuList = reinterpret_cast<FindOrLoadMenuListFn>(0x004adc60);
+
+// FUN_0050a350(ctx, menuList, flag) -- the real registration function: iterates a
+// MenuList's menus, and for each one NOT ALREADY in the registry (checked via
+// FUN_00486990, the same search FUN_00544a50 itself uses), appends its pointer to
+// the registry array (ctx+0x38) and increments the count (ctx+0xa38) -- the exact
+// write FindConstantRefs/DescribeRefs couldn't locate statically. Found by fully
+// decompiling FUN_004856b0 (real UI boot-time init code) and recognizing this
+// exact shape. Confirmed __cdecl via its own plain RET. NOTE: silently SKIPS
+// registering any menu whose name already exists in the registry -- does NOT
+// replace/override an existing entry, so this only helps for uniquely-named new
+// menus, not same-name overrides of already-registered ones like
+// pc_options_controls_ingame (see known_issues.md task #23 for that separate,
+// still-open problem).
+using RegisterMenuListFn = void(__cdecl*)(void* menuContext, void* menuList, int flag);
+RegisterMenuListFn const RegisterMenuList = reinterpret_cast<RegisterMenuListFn>(0x0050a350);
+
+enum class ZoneLoadTestStage { WaitingForCombo, Loaded, Opened };
+ZoneLoadTestStage g_zoneLoadTestStage = ZoneLoadTestStage::WaitingForCombo;
+DWORD g_zoneLoadTestHoldStartMs = 0;
+DWORD g_zoneLoadTestLoadedMs = 0;
+
+// DIAGNOSTIC ONLY (2026-07-17, task #23) -- dumps the real "registered menu" array
+// FUN_00486990 searches by name (array base ctx+0x38, count at ctx+0xa38 -- both
+// confirmed via decompile; since DAT_01c00458 is a fixed global not a runtime
+// pointer, these resolve to fixed absolute addresses 0x01c00490/0x01c00e90). Each
+// slot is a pointer to a menuDef-like struct; the name string pointer lives at
+// +4 within that struct (matches FUN_00486990's own `*(entryPtr+4)` dereference).
+// Used to empirically observe whether/when our own loaded zone's menus actually
+// appear in this registry, since static analysis couldn't find the write/insert
+// site (likely another register-passed-arg function, same recurring obstacle all
+// session).
+constexpr uintptr_t kMenuRegistryArrayBase = 0x01c00490;
+constexpr uintptr_t kMenuRegistryCountAddr = 0x01c00e90;
+
+bool LooksLikeValidPointer(uintptr_t p)
+{
+    return p >= 0x00010000 && p < 0x7FFF0000;
+}
+
+void LogMenuRegistry(const char* tag)
+{
+    int32_t count = *reinterpret_cast<volatile int32_t*>(kMenuRegistryCountAddr);
+    char buf[256];
+    sprintf_s(buf, "[menureg-diag:%s] count=%d", tag, count);
+    LogFromController(buf);
+
+    int32_t safeCount = count;
+    if (safeCount < 0) safeCount = 0;
+    if (safeCount > 300) safeCount = 300; // sanity clamp -- diagnostic only, never trust raw count blindly
+    for (int i = 0; i < safeCount; ++i) {
+        uintptr_t entryPtr = *reinterpret_cast<volatile uintptr_t*>(kMenuRegistryArrayBase + static_cast<size_t>(i) * 4);
+        if (!LooksLikeValidPointer(entryPtr)) {
+            sprintf_s(buf, "[menureg-diag:%s] [%d] entryPtr=0x%08X (implausible, skipped)", tag, i, static_cast<unsigned>(entryPtr));
+            LogFromController(buf);
+            continue;
+        }
+        uintptr_t namePtr = *reinterpret_cast<volatile uintptr_t*>(entryPtr + 4);
+        char nameBuf[64];
+        nameBuf[0] = '\0';
+        if (LooksLikeValidPointer(namePtr)) {
+            const char* src = reinterpret_cast<const char*>(namePtr);
+            size_t j = 0;
+            for (; j < 63 && src[j] != '\0'; ++j) nameBuf[j] = src[j];
+            nameBuf[j] = '\0';
+        }
+        sprintf_s(buf, "[menureg-diag:%s] [%d] entryPtr=0x%08X name=\"%s\"", tag, i, static_cast<unsigned>(entryPtr), nameBuf);
+        LogFromController(buf);
+    }
+}
+
+// Task #23 (2026-07-17), successor to the single-index-24 idea: given a raw
+// menuDef_t* (name string pointer at +4, matches FUN_00486990's own dereference),
+// either overwrites an EXISTING same-named registry slot in place -- making our copy
+// the one the engine actually shows anywhere that real name is opened, including
+// normal menu-to-menu navigation the player already knows -- or appends it as a new
+// entry, mirroring FUN_0050a350's own real append logic (same array base/count
+// addresses, same 0x27f cap). This is the generic mechanism the "copy all default
+// menus into our own zone, our copies become effective, real ui.ff untouched on disk"
+// plan (user, 2026-07-17) depends on: FUN_0050a350 itself only ever appends and
+// silently SKIPS anything already registered, so it can never override; this
+// reimplements the same append behavior but adds the override branch it lacks.
+// Name compare uses plain CRT _stricmp on memory we already trust (both sides are
+// our own dereferences of real, already-validated pointers) -- no need to call back
+// into the game's own FUN_00463bb0 for this.
+void RegisterOrOverrideMenu(void* menuDefPtr)
+{
+    uintptr_t entryPtr = reinterpret_cast<uintptr_t>(menuDefPtr);
+    if (!LooksLikeValidPointer(entryPtr)) return;
+    uintptr_t namePtr = *reinterpret_cast<uintptr_t*>(entryPtr + 4);
+    if (!LooksLikeValidPointer(namePtr)) return;
+    const char* name = reinterpret_cast<const char*>(namePtr);
+
+    int32_t count = *reinterpret_cast<volatile int32_t*>(kMenuRegistryCountAddr);
+    if (count < 0) count = 0;
+    if (count > 0x27f) count = 0x27f;
+
+    char buf[192];
+    for (int32_t i = 0; i < count; ++i) {
+        uintptr_t* slot = reinterpret_cast<uintptr_t*>(kMenuRegistryArrayBase + static_cast<size_t>(i) * 4);
+        uintptr_t existingPtr = *slot;
+        if (!LooksLikeValidPointer(existingPtr)) continue;
+        uintptr_t existingNamePtr = *reinterpret_cast<uintptr_t*>(existingPtr + 4);
+        if (!LooksLikeValidPointer(existingNamePtr)) continue;
+        if (_stricmp(reinterpret_cast<const char*>(existingNamePtr), name) == 0) {
+            sprintf_s(buf, "[menuoverride] \"%s\" already at slot %d (0x%08X) -- overriding with 0x%08X",
+                name, i, static_cast<unsigned>(existingPtr), static_cast<unsigned>(entryPtr));
+            LogFromController(buf);
+            *slot = entryPtr;
+            return;
+        }
+    }
+
+    if (count >= 0x27f) {
+        sprintf_s(buf, "[menuoverride] registry full (0x27f), cannot append \"%s\"", name);
+        LogFromController(buf);
+        return;
+    }
+    uintptr_t* appendSlot = reinterpret_cast<uintptr_t*>(kMenuRegistryArrayBase + static_cast<size_t>(count) * 4);
+    *appendSlot = entryPtr;
+    *reinterpret_cast<volatile int32_t*>(kMenuRegistryCountAddr) = count + 1;
+    sprintf_s(buf, "[menuoverride] \"%s\" appended at new slot %d (0x%08X)", name, count, static_cast<unsigned>(entryPtr));
+    LogFromController(buf);
+}
+
+// Iterates a loaded MenuList (menuCount at +4, menuDef_t** menus at +8 -- matches
+// OpenAssetTools' own MenuList{int menuCount; menuDef_t** menus;} struct, same shape
+// FUN_0050a350 itself walks) and registers/overrides every menu it defines. A single
+// compiled .menu file can itself contain many menuDef blocks (or be a #load-
+// referencing list of many .menu files), so one call here can take over an entire
+// family of real menu names at once -- the actual mechanism for "copy all default
+// menus into our zone" at whatever scale we load, not just one name at a time.
+void RegisterOrOverrideMenuList(void* menuList)
+{
+    if (menuList == nullptr) return;
+    uintptr_t base = reinterpret_cast<uintptr_t>(menuList);
+    int32_t menuCount = *reinterpret_cast<int32_t*>(base + 4);
+    void** menus = *reinterpret_cast<void***>(base + 8);
+    char buf[160];
+    if (menuCount <= 0 || menuCount > 2000 || menus == nullptr) {
+        sprintf_s(buf, "[menuoverride] implausible MenuList (count=%d, menus=0x%08X), aborting",
+            menuCount, static_cast<unsigned>(reinterpret_cast<uintptr_t>(menus)));
+        LogFromController(buf);
+        return;
+    }
+    sprintf_s(buf, "[menuoverride] MenuList has %d menu(s)", menuCount);
+    LogFromController(buf);
+    for (int32_t i = 0; i < menuCount; ++i) {
+        if (menus[i] == nullptr) continue;
+        RegisterOrOverrideMenu(menus[i]);
+    }
+}
+} // namespace -- closes the one opened above ZoneLoadEntry (was previously closed
+  // after the old blocking scan function; that function got replaced by
+  // StartMenuDefScan/TickMenuDefScan below, each in their own separate namespace)
+
+// DIAGNOSTIC ONLY (2026-07-17, task #23) -- FUN_004ca310 loads our zone's data
+// safely but confirmed live (before/after registry dump) NOT to register it into
+// FUN_00486990's searchable array. Since the real registration function wasn't
+// found statically (register-passed-arg obstacle, same recurring wall all
+// session), this scans committed, readable process memory for a SECOND menuDef-like
+// structure whose name matches our target but whose address differs from the known
+// original -- our own loaded copy, wherever the zone loader actually put it.
+//
+// REWRITTEN 2026-07-17 after a live hang: the first version used one __try/__except
+// PER 4-BYTE ADDRESS across the whole scan -- correctness-wise fine (SEH did catch
+// faults, per the log), but the sheer per-iteration SEH setup/teardown cost across
+// potentially gigabytes of memory made the whole scan run far too slowly on the
+// game's own thread, freezing it for an extended period (force-closed live rather
+// than finishing). Two real fixes, not one: (1) resumable, budgeted across many
+// ticks (kBytesPerTick of address space per call, driven from the always-running
+// menu tick) instead of one blocking call, so no single frame ever does more than a
+// small bounded slice of work; (2) coarse-grained SEH -- ONE __try/__except per
+// slice (up to kBytesPerTick), not per address, cutting SEH overhead by ~6+ orders
+// of magnitude. A fault anywhere in a slice abandons just that slice (resumes at
+// the next slice/region boundary), not the whole scan -- an acceptable tradeoff for
+// a debug diagnostic.
+namespace {
+struct MenuDefScanState {
+    bool active = false;
+    uintptr_t currentAddr = 0x00010000;
+    uintptr_t regionEnd = 0; // 0 = need a fresh VirtualQuery for the next region
+    bool currentRegionReadable = false;
+    int found = 0;
+    size_t regionsScanned = 0;
+    size_t bytesScanned = 0;
+    const char* targetName = nullptr;
+    size_t targetLen = 0;
+    uintptr_t excludeAddr = 0;
+};
+MenuDefScanState g_menuDefScan;
+
+constexpr uintptr_t kScanCeiling = 0x7FFF0000;
+constexpr size_t kMaxRegionSize = 16 * 1024 * 1024;
+constexpr size_t kBytesPerTick = 2 * 1024 * 1024; // ~2MB of address space per call
+} // namespace
+
+void StartMenuDefScan(const char* targetName, uintptr_t excludeAddr)
+{
+    g_menuDefScan = MenuDefScanState{};
+    g_menuDefScan.active = true;
+    g_menuDefScan.targetName = targetName;
+    g_menuDefScan.targetLen = strlen(targetName);
+    g_menuDefScan.excludeAddr = excludeAddr;
+    char buf[256];
+    sprintf_s(buf, "[menuscan-diag] starting incremental scan for \"%s\" (excluding known original 0x%08X)",
+        targetName, static_cast<unsigned>(excludeAddr));
+    LogFromController(buf);
+}
+
+// Call every tick while a scan is active. Processes at most kBytesPerTick of address
+// space then returns, resuming from where it left off next call. Returns false once
+// the scan is finished (nothing more to do -- safe to stop calling).
+bool TickMenuDefScan()
+{
+    if (!g_menuDefScan.active) return false;
+    char buf[256];
+    size_t processedThisTick = 0;
+
+    while (processedThisTick < kBytesPerTick) {
+        if (g_menuDefScan.currentAddr >= kScanCeiling) {
+            sprintf_s(buf, "[menuscan-diag] scan complete: %d candidate(s), %zu regions, %zu MB scanned",
+                g_menuDefScan.found, g_menuDefScan.regionsScanned, g_menuDefScan.bytesScanned / (1024 * 1024));
+            LogFromController(buf);
+            g_menuDefScan.active = false;
+            return false;
+        }
+
+        if (g_menuDefScan.regionEnd == 0) {
+            MEMORY_BASIC_INFORMATION mbi;
+            if (VirtualQuery(reinterpret_cast<LPCVOID>(g_menuDefScan.currentAddr), &mbi, sizeof(mbi)) == 0) {
+                LogFromController("[menuscan-diag] VirtualQuery failed, stopping scan");
+                g_menuDefScan.active = false;
+                return false;
+            }
+            uintptr_t regionBase = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
+            uintptr_t regionEndAddr = regionBase + mbi.RegionSize;
+            if (regionEndAddr <= g_menuDefScan.currentAddr) {
+                LogFromController("[menuscan-diag] non-advancing region, stopping scan");
+                g_menuDefScan.active = false;
+                return false;
+            }
+            g_menuDefScan.currentRegionReadable = (mbi.State == MEM_COMMIT)
+                && ((mbi.Protect & (PAGE_READWRITE | PAGE_READONLY | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE)) != 0)
+                && ((mbi.Protect & PAGE_GUARD) == 0)
+                && (mbi.RegionSize <= kMaxRegionSize);
+            g_menuDefScan.regionEnd = regionEndAddr;
+            if (g_menuDefScan.currentRegionReadable) {
+                g_menuDefScan.regionsScanned++;
+                g_menuDefScan.bytesScanned += mbi.RegionSize;
+            }
+        }
+
+        if (!g_menuDefScan.currentRegionReadable) {
+            g_menuDefScan.currentAddr = g_menuDefScan.regionEnd;
+            g_menuDefScan.regionEnd = 0;
+            continue;
+        }
+
+        uintptr_t sliceEnd = g_menuDefScan.currentAddr + (kBytesPerTick - processedThisTick);
+        if (sliceEnd > g_menuDefScan.regionEnd) sliceEnd = g_menuDefScan.regionEnd;
+
+        uintptr_t p = g_menuDefScan.currentAddr;
+        __try {
+            for (; p + 8 <= sliceEnd; p += 4) {
+                uintptr_t candidate = *reinterpret_cast<volatile uintptr_t*>(p);
+                if (candidate == g_menuDefScan.excludeAddr || !LooksLikeValidPointer(candidate)) continue;
+                uintptr_t namePtr = *reinterpret_cast<volatile uintptr_t*>(candidate + 4);
+                if (!LooksLikeValidPointer(namePtr)) continue;
+                const char* s = reinterpret_cast<const char*>(namePtr);
+                bool match = true;
+                for (size_t i = 0; i <= g_menuDefScan.targetLen; ++i) {
+                    if (s[i] != g_menuDefScan.targetName[i]) { match = false; break; }
+                }
+                if (match) {
+                    sprintf_s(buf, "[menuscan-diag] CANDIDATE at 0x%08X (found at scan offset 0x%08X)",
+                        static_cast<unsigned>(candidate), static_cast<unsigned>(p));
+                    LogFromController(buf);
+                    g_menuDefScan.found++;
+                }
+            }
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            // Fault somewhere in this slice -- abandon just the rest of this slice,
+            // not the whole scan.
+            p = sliceEnd;
+        }
+
+        processedThisTick += (p - g_menuDefScan.currentAddr);
+        g_menuDefScan.currentAddr = p;
+        if (g_menuDefScan.currentAddr >= g_menuDefScan.regionEnd) {
+            g_menuDefScan.regionEnd = 0;
+        }
+
+        if (g_menuDefScan.found >= 20) {
+            LogFromController("[menuscan-diag] 20 candidates found, stopping early");
+            g_menuDefScan.active = false;
+            return false;
+        }
+    }
+    return true; // more to do -- call again next tick
+}
+
+// UPDATED AGAIN 2026-07-17: now tests the SAME-NAME OVERRIDE path specifically --
+// loads a modified copy of the REAL pc_options_controls_ingame.menu (marker text
+// "OPTIONS [MODDED]" in place of the real "@MENU_OPTIONS_UPPER_CASE" localized
+// string) and registers it via RegisterOrOverrideMenuList instead of the real
+// FUN_0050a350, which would silently skip it since that name already exists. This is
+// the generic mechanism the "copy all default menus into our own zone, our copies
+// become effective, real ui.ff untouched on disk" plan (user, 2026-07-17) depends on
+// -- proving it works for ONE already-registered real name proves it'll work at
+// whatever scale we later load. The combo still opens the menu directly for a fast
+// isolated look, but the real test is backing out (B/ESC) afterward and navigating
+// there NORMALLY (pause -> Options -> Controller) to confirm the override is visible
+// through the game's own real navigation, not just our direct-open shortcut.
+void InjectZoneLoadDebugTest()
+{
+    if (g_zoneLoadTestStage != ZoneLoadTestStage::WaitingForCombo) return;
+
+    unsigned short buttons;
+    unsigned char leftTrigger, rightTrigger;
+    if (!Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger)) return;
+
+    // Switched from LB+RB+Back (2026-07-17): the pipeline test actually WORKED --
+    // menu genuinely opened -- but closed itself a split second later. Real cause:
+    // Back is also wired to synthesize a real TAB keypress (InjectControllerScoreboard),
+    // and this session's own earlier decompile of the real key handler (FUN_00541020)
+    // found logic that reinterprets certain low keycodes -- TAB included -- as ESC
+    // under specific conditions, closing whatever menu is open. Dropping Back from
+    // the combo entirely removes that interaction. LB+RB alone (no third button) is
+    // still obscure enough not to hit by accident during normal play.
+    bool comboHeld = (buttons & kXI_LEFT_SHOULDER) != 0 && (buttons & kXI_RIGHT_SHOULDER) != 0;
+
+    if (!comboHeld) {
+        g_zoneLoadTestHoldStartMs = 0;
+        return;
+    }
+    if (g_zoneLoadTestHoldStartMs == 0) {
+        g_zoneLoadTestHoldStartMs = GetTickCount();
+        return;
+    }
+    if (GetTickCount() - g_zoneLoadTestHoldStartMs < 2000) return;
+
+    // REGISTRY DIAGNOSTIC (2026-07-17): the control test proved FUN_00544a50/
+    // DAT_01c00458 work correctly for names already in the registry ("pausedmenu"
+    // opened live). The remaining question is purely whether loading our own zone
+    // adds its menus to that registry at all. Dumps the registry array before and
+    // right after the zone-load call to observe empirically, since static analysis
+    // couldn't find the write/insert site.
+    LogFromController("[zoneload-test] LB+RB held 2s -- dumping menu registry BEFORE load");
+    LogMenuRegistry("before");
+
+    LogFromController("[zoneload-test] loading zone \"roundtrip\" (contains modified pc_options_controls_ingame)");
+    ZoneLoadEntry entry{ "roundtrip", 4, 0 };
+    LoadZones(&entry, 1, 0);
+    LogFromController("[zoneload-test] FUN_004ca310 returned without crashing");
+
+    LogMenuRegistry("after-load");
+
+    // OVERRIDE PIPELINE (2026-07-17): find/load our modified copy, then hand it to
+    // RegisterOrOverrideMenuList (our own function, not the real FUN_0050a350) so the
+    // already-registered real "pc_options_controls_ingame" slot gets overwritten in
+    // place instead of silently skipped.
+    LogFromController("[zoneload-test] calling FUN_004adc60(\"ui/pc_options_controls_ingame.menu\")");
+    void* menuList = FindOrLoadMenuList("ui/pc_options_controls_ingame.menu");
+    char buf[128];
+    sprintf_s(buf, "[zoneload-test] FUN_004adc60 returned 0x%08X", static_cast<unsigned>(reinterpret_cast<uintptr_t>(menuList)));
+    LogFromController(buf);
+
+    if (menuList != nullptr) {
+        LogFromController("[zoneload-test] calling RegisterOrOverrideMenuList");
+        RegisterOrOverrideMenuList(menuList);
+        LogFromController("[zoneload-test] RegisterOrOverrideMenuList returned without crashing");
+
+        LogMenuRegistry("after-override");
+
+        // Confirmed live necessary (2026-07-17): without these two, the menu opens
+        // (registers, becomes logically active) but doesn't actually render until
+        // the player separately pauses -- these switch the engine into its paused/
+        // menu render mode, same as SetMenuState's real pausedmenu case does
+        // alongside its own FUN_00544a50 call.
+        LogFromController("[zoneload-test] calling SetDvarByName(\"cl_paused\", 1) and SetPlayerMenuFlags");
+        SetDvarByName("cl_paused", 1);
+        SetPlayerMenuFlags(kLocalClientIndex, 0x10);
+        LogFromController("[zoneload-test] both returned without crashing");
+
+        LogFromController("[zoneload-test] calling FUN_00544a50 to open \"pc_options_controls_ingame\"");
+        OpenMenuByName(reinterpret_cast<void*>(kMenuSystemContext), "pc_options_controls_ingame");
+        LogFromController("[zoneload-test] FUN_00544a50 returned without crashing");
+    } else {
+        LogFromController("[zoneload-test] FUN_004adc60 returned null, skipping override+open");
+    }
+
+    g_zoneLoadTestLoadedMs = GetTickCount();
+    g_zoneLoadTestStage = ZoneLoadTestStage::Loaded;
+}
+
 extern "C" void __cdecl InjectAllControllerInput(unsigned char* cmd)
 {
     int32_t inLevelVal = *reinterpret_cast<volatile int32_t*>(kInLevelFlagAddr);
@@ -2135,6 +2645,7 @@ extern "C" void __cdecl InjectAllControllerInput(unsigned char* cmd)
     InjectControllerReload();
     InjectControllerWeaponNext();
     InjectControllerDpad();
+    InjectControllerScoreboard();
 
     // Also called from InjectMenuInputTick (the WndProc hook, see below) -- kept here
     // too purely for redundancy/robustness. Calling it from both places is safe/
@@ -2182,6 +2693,8 @@ extern "C" void __cdecl InjectMenuInputTick()
     // B's ESC-forward, for the same reason: the gameplay-simulation tick this would
     // otherwise share with InjectControllerDpad halts entirely during a genuine pause.
     InjectControllerMenuNav();
+    InjectZoneLoadDebugTest(); // DEBUG ONLY, task #23 -- see comment above its definition
+    TickMenuDefScan(); // DEBUG ONLY, task #23 -- no-op unless a scan is active (StartMenuDefScan called)
 }
 
 namespace {
