@@ -1073,7 +1073,12 @@ whole cluster was a heap-region coincidence, not a real kbutton, despite passing
 memdiff's own address-range heuristic.
 
 Back remains unassigned, deprioritized per explicit user call (scoreboard isn't
-gameplay-defining, unlike D-pad/killstreaks). Next attempt should use the same
+gameplay-defining, unlike D-pad/killstreaks). **Superseded 2026-07-17**: `+scores`
+turned out not to be a per-frame usercmd kbutton at all, so the live-keycode-table
+technique below doesn't apply — resolved instead via key synthesis (TAB), the third
+of this mod's deliberate OS-level-emulation exceptions. See
+`re_notes/known_issues.md` issue #28. Kept below as historical dead-end record.
+Next attempt should use the same
 live-keycode-table technique that correctly solved weapnext, applied to TAB (`0x09`),
 instead of another bind-name-table-index guess.
 

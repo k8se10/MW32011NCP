@@ -9,6 +9,26 @@ reverse-engineering trail behind each entry.
 ## Unreleased
 
 ### Fixed
+- **Full documentation pass across README.md/CONTRIBUTING.md/iw5sp.md
+  (2026-07-18)** to close out the remaining Back/slider/exception-count
+  drift the earlier targeted fixes didn't fully catch — found by
+  systematically checking every claim rather than just the ones already
+  flagged. Fixed: the top-of-file status summary (still said Back
+  unassigned and sliders unadjustable), the D-pad and Survival ready-up
+  feature descriptions ("one/second of two exceptions" → "of three"), the
+  "Why native, not an emulator" section (only described ONE exception and
+  claimed it was "the only place in the whole mod that does this" — wrong
+  even before Back was added, since it never mentioned D-pad Left's
+  exception either; rewritten to list all three), the squadmate call-in
+  killstreak-table entry (still shown as an open "known bug" despite issue
+  #14 documenting it fixed), the architecture diagram ("two exceptions" →
+  three, added Back/TAB), the keyboard/mouse fallback list (still named
+  sliders and Back as requiring keyboard), `CONTRIBUTING.md`'s own
+  "two existing exceptions" rule text, and a stale Plutonium `iw5sp.exe`
+  "~175KB smaller" figure in README's own client-compatibility table (the
+  correct 2,320-byte figure had already been fixed in `known_issues.md`
+  but never copied over here). Also added a superseding pointer to the old
+  dead-end Back attempt recorded in `iw5sp.md`.
 - **Corrected a stale "Campaign mostly untested" claim in README's
   killstreak sections (2026-07-18)**, in two places — the control-map
   table's Killstreaks row and the dedicated killstreak table's own intro

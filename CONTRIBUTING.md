@@ -52,16 +52,18 @@ Before opening a PR, please read this file in full.
 - **Stay strictly additive.** Vanilla keyboard/mouse play must be unaffected
   by any change. If you're not sure whether a change could regress
   keyboard/mouse play, test that too before opening the PR.
-- **No OS-level input emulation**, with two existing, explicitly scoped
+- **No OS-level input emulation**, with three existing, explicitly scoped
   exceptions: Survival's ready-up (synthesizes an `F5` keypress because the
   real native trigger could not be found after an extensive search — see
-  `re_notes/known_issues.md` issue #5) and D-pad Left's AI-squadmate call-in
+  `re_notes/known_issues.md` issue #5), D-pad Left's AI-squadmate call-in
   (synthesizes a `'4'` keypress for that one slot only, after the same class
   of investigation pointed at a Survival-specific GSC script rather than a
-  native trigger — see `re_notes/known_issues.md` issue #14). Don't add
-  another synthetic-input shortcut without opening an issue to discuss it
-  first; the bar for both exceptions was "every native avenue was actually
-  exhausted and documented," not "convenient."
+  native trigger — see `re_notes/known_issues.md` issue #14), and Back's real
+  `+scores` scoreboard (synthesizes a `TAB` keypress, since `+scores` turned
+  out not to be a native kbutton at all — see `re_notes/known_issues.md`
+  issue #28). Don't add another synthetic-input shortcut without opening an
+  issue to discuss it first; the bar for all three exceptions was "every
+  native avenue was actually exhausted and documented," not "convenient."
 
 ## Code style
 

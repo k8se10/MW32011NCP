@@ -3,14 +3,13 @@
 **Status: PRE-ALPHA — actively in development (v0.1.3, 2026-07-17).** Analog movement, look,
 and most buttons are confirmed working live against `iw5sp.exe` (Campaign/Survival),
 including a real sprint stamina/cooldown model, Start's full pause/unpause, weapon
-switching, D-pad killstreak/attachment slots, Survival's between-wave ready-up, and now
-real D-pad/A menu navigation (main menu, pause menu, options screens). Back
-is still unassigned (deprioritized — not gameplay-defining), killstreaks need
-per-killstreak work, sprint's mission/perk overrides (unlimited-sprint missions, Extreme
-Conditioning) aren't accounted for yet, slider-type settings can be navigated to but not
-adjusted by controller yet, button-glyph UI prompts aren't implemented, and
-Multiplayer (`iw5mp.exe`) hasn't been started. Not feature-complete, not fully tested
-end-to-end.
+switching, D-pad killstreak/attachment slots, Survival's between-wave ready-up, and
+real D-pad/A menu navigation (main menu, pause menu, options screens, buy-station/armory
+lists, and slider value adjustment — all confirmed live). Back (scoreboard/objectives)
+is implemented but not yet separately live-confirmed, killstreaks need per-killstreak
+work, sprint's mission/perk overrides (unlimited-sprint missions, Extreme Conditioning)
+aren't accounted for yet, button-glyph UI prompts aren't implemented, and Multiplayer
+(`iw5mp.exe`) hasn't been started. Not feature-complete, not fully tested end-to-end.
 
 A from-scratch native controller mod for Call of Duty: Modern Warfare 3 (2011, IW5
 engine) — analog movement, look, and buttons driven directly through the game's own
@@ -85,7 +84,7 @@ is still open, not how rough what already works is.
 - **D-pad** (all 4 directions) — real `+actionslot 1-4` dispatch, data-driven by
   loadout (killstreaks/attachments/NVG-style toggles, whatever's actually equipped).
   Up/Right/Down call the real dispatch function directly; Left is the second of this
-  mod's two deliberate, documented exceptions to native-only input (see below) — it
+  mod's three deliberate, documented exceptions to native-only input (see below) — it
   synthesizes the real bound key instead, since Survival's AI-squadmate call-in on
   that slot needed it (turret call-ins on the same slot are unaffected).
 
@@ -134,7 +133,7 @@ is still open, not how rough what already works is.
   forwards a real ESC keypress to it (the same real mechanism the engine's own key
   handler uses for ESC generically), backing out one level or closing it, on top of
   its normal crouch/prone role during gameplay.
-- **Survival ready-up** (hold Y ~740ms between waves) — one of two deliberate, documented
+- **Survival ready-up** (hold Y ~740ms between waves) — one of three deliberate, documented
   exceptions to this mod's native-only approach (see below); switches weapons instead if
   released before the threshold.
 - **Buy-station + pause interaction fix** — a real native bug (not ours) where using a
@@ -211,13 +210,21 @@ layer of translation and buffering removed, which is the mod's core advantage: i
 feel and latency that matches (not approximates) native console analog input, not a
 keyboard/mouse emulation layer with a controller icon on it.
 
-**One narrow, explicit exception:** Survival's between-wave ready-up (hold Y) synthesizes
-a real F5 keypress via `PostMessage` rather than driving an engine call directly. This is
-a deliberate, user-approved workaround for one specific, non-gameplay-critical UI prompt
-after an extensive multi-session search found no locatable native trigger — see
-`re_notes/known_issues.md` issue #5 for the full trail and rationale. It's the only place
-in the whole mod that does this; every other button, including all of movement/look/
-combat, drives the engine's real internal state directly, as described above.
+**Three narrow, explicit exceptions**, each a deliberate, user-approved workaround for one
+specific input where an extensive search found no locatable native trigger — everything
+else in the mod, including all of movement/look/combat, drives the engine's real internal
+state directly, as described above:
+
+1. **Survival's between-wave ready-up** (hold Y) synthesizes a real F5 keypress via
+   `PostMessage`. See `re_notes/known_issues.md` issue #5.
+2. **D-pad Left's AI-squadmate call-in** synthesizes the real bound key (`'4'`) instead
+   of calling the dispatch function directly, since the direct call failed 100% of the
+   time for squadmate call-ins specifically (turret call-ins on the same slot are
+   unaffected). See `re_notes/known_issues.md` issues #13/#14.
+3. **Back's real `+scores`** (scoreboard/objectives) synthesizes a real TAB keypress,
+   since `+scores` turned out not to be a per-frame usercmd kbutton at all — it's a plain
+   keyboard bind read by the UI layer. Implemented, builds clean, not yet separately
+   live-confirmed. See `re_notes/known_issues.md` issue #28.
 
 ## Current control map (`iw5sp.exe`, Xbox-layout controller)
 
@@ -266,7 +273,7 @@ Real roster confirmed via the game's own buy-station data
 |---|---|
 | Predator missile (`remote_missile`) | 🟡 Partial — confirmed partially working live; needs its own per-killstreak investigation (see `re_notes/known_issues.md`) |
 | Precision airstrike (`precision_airstrike`) | ⬜ Not yet tested |
-| AI squadmate call-in (`friendly_support_delta`/`friendly_support_riotshield`) | 🟡 Partial — likely the same feature behind D-pad Left's known squadmate call-in bug (see `re_notes/known_issues.md` issue #14) |
+| AI squadmate call-in (`friendly_support_delta`/`friendly_support_riotshield`) | ✅ Fixed — this is D-pad Left's squadmate call-in, which failed 100% until a narrowly-scoped key-synthesis exception resolved it (see `re_notes/known_issues.md` issue #14) |
 | All others | ⬜ Not yet tested |
 
 ## What's blocking the remaining buttons
@@ -319,9 +326,11 @@ real Cbuf_AddText/Cmd_ExecuteString pair — confirmed working, but not the mech
 real hardcoded ESCAPE-key path + FUN_004396d0's open/close cases — Start's pause menu
 real FUN_00541020 raw-keycode dispatch table + FUN_00438710 jump table — weapon switch
     and D-pad (+actionslot 1-4, data-driven by loadout: killstreaks/attachments/NVG)
-synthetic keydown/keyup via PostMessage — Survival ready-up (F5) and D-pad Left's
-    AI-squadmate call-in ('4') ONLY, the two deliberate exceptions to real-engine-
-    calls-only input in this mod; real native triggers not yet found for either
+synthetic keydown/keyup via PostMessage — Survival ready-up (F5), D-pad Left's
+    AI-squadmate call-in ('4'), and Back's real +scores scoreboard (TAB) ONLY, the
+    three deliberate exceptions to real-engine-calls-only input in this mod; real
+    native triggers not yet found for ready-up/squadmate call-in, and +scores turned
+    out not to be a native kbutton at all (a plain keyboard bind read by the UI layer)
 our own timer layer (GetTickCount-based, independent per hook site) — sprint stamina/
     cooldown, since forcing the real pm_flags bit bypasses the native limiter entirely;
     bypassed itself when the real player_sprintUnlimited dvar is live-set by a mission
@@ -435,11 +444,11 @@ See `re_notes/known_issues.md` for the full, actively-tracked list.
   primary input method going forward; if you're mainly a keyboard/mouse player, keep a
   keyboard within reach and expect the occasional oddity while this mod is installed.
   **This is not a suggestion to avoid the keyboard, though** — it's still required,
-  not optional, for adjusting slider-type settings, Back, and most killstreak
-  call-ins, none of which have a controller-native implementation yet (menu
-  navigation itself now does, as of task #22). A keyboard needs to stay reachable
-  during any session either way. See `re_notes/known_issues.md` issue #11 for the
-  full reasoning.
+  not optional, for most killstreak call-ins and button-glyph-less menu prompts, and
+  as a fallback for Back until it's separately live-confirmed (menu navigation
+  itself, including sliders and buy-station/armory lists, is fully controller-native
+  as of task #22). A keyboard needs to stay reachable during any session either way.
+  See `re_notes/known_issues.md` issue #11 for the full reasoning.
 
 ---
 
@@ -454,7 +463,7 @@ detail in `re_notes/known_issues.md` issue #25.
 |---|---|---|---|---|
 | Retail Steam | Both | — (baseline) | Yes (confirmed, current target) | Actively supported |
 | Plutonium — MP | MP | `iw5mp.exe` byte-identical to retail | Believed yes (same binary) | **Not recommended — see warning below** |
-| Plutonium — SP | SP | `iw5sp.exe` is a different binary (~175KB smaller, differences start almost immediately, not just a few patches) | Unknown, would need independent address re-verification | Not yet investigated |
+| Plutonium — SP | SP | `iw5sp.exe` is a different binary (2,320-byte size delta, ~175K individual differing byte positions across the file — corrected 2026-07-18, previously misstated as "~175KB smaller") | Unknown, would need independent address re-verification | Not yet investigated |
 | AlterWare IW5-Mod | SP + Spec Ops | Separate `iw5-mod.exe` executable, not `iw5sp.exe` | Unknown, binary not yet acquired for analysis | Not yet investigated — most promising target given this mod's SP-first scope, no known anti-cheat concern found |
 | DeckOps (MW3) | MP (via Plutonium) | Same as Plutonium MP | Unknown — Proton/Wine's D3D9 translation layer untested | Not yet investigated — inherits the Plutonium MP warning below, plus unverified Proton behavior |
 
