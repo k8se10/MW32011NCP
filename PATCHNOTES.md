@@ -9,6 +9,13 @@ reverse-engineering trail behind each entry.
 ## Unreleased
 
 ### Docs
+- **Simplified Survival tracking in `compatibility_matrix.md` to a single
+  overall entry instead of 16 per-map rows (2026-07-18, user direction)**:
+  unlike Campaign/Special Ops, Survival's controller support is
+  map-independent (same input/engine hooks apply regardless of map), and
+  live testing across maps confirms this — works well overall, with one
+  known issue (Predator missile killstreak, cross-referenced to the
+  existing task #7/issue #10).
 - **Possible 8th playtest bug, NOT YET CONFIRMED (2026-07-18)**: SMAW may
   have failed to lock onto an aircraft target in "Goalpost" — but per the
   user's own follow-up, the target may be a non-targetable scripted

@@ -1,11 +1,14 @@
 # Controller Compatibility Matrix
 
-Per-mission/per-map tracking of controller compatibility, tracked individually
-rather than as a single "Campaign works" / "Spec Ops works" verdict. Started
-2026-07-18 after a live playtest session through roughly half of Campaign
-surfaced 7 distinct bugs across otherwise-mostly-working missions (see
-`known_issues.md` issue #27) — a single aggregate status would have hidden
-that unevenness. This file is the living source of truth for "what's actually
+Per-mission tracking of controller compatibility for Campaign and Special
+Ops (each mission genuinely different, tracked individually rather than as
+a single aggregate verdict); Survival is tracked as one overall entry
+instead, since its controller support is map-independent (see the Survival
+section below for why). Started 2026-07-18 after a live playtest session
+through roughly half of Campaign surfaced 7 distinct bugs across
+otherwise-mostly-working missions (see `known_issues.md` issue #27) — a
+single aggregate status would have hidden that unevenness for Campaign
+specifically. This file is the living source of truth for "what's actually
 been tested and how it went"; `known_issues.md` stays the place for the
 technical RE trail behind each individual bug.
 
@@ -105,44 +108,27 @@ table is considered fully authoritative for anything beyond test tracking.
 
 ## Survival
 
-**16 real MP map zone identifiers confirmed directly from this install**
-(Survival mode reuses multiplayer maps in MW3): `mp_alpha`, `mp_bootleg`,
-`mp_bravo`, `mp_carbon`, `mp_dome`, `mp_exchange`, `mp_hardhat`,
-`mp_interchange`, `mp_lambeth`, `mp_mogadishu`, `mp_paris`, `mp_plaza2`,
-`mp_radar`, `mp_seatown`, `mp_underground`, `mp_village`.
+**Per-map tracking NOT warranted here, per user direction (2026-07-18)** —
+unlike Campaign (genuinely different scripted content per mission) and
+Special Ops (16 distinct objective-based missions), Survival's controller
+support is map-independent: the same input/engine hooks apply uniformly
+regardless of which MP map Survival is played on, and live testing across
+maps confirms this holds in practice. Tracked as a single overall entry
+instead of 16 per-map rows.
 
-**Not yet confirmed which of these actually support Survival mode in this
-specific retail build** — real MW3 Survival launched on a subset of maps,
-later expanded via DLC; this project hasn't independently verified which
-subset applies here. Listing all 16 as candidates, not asserting all are
-Survival-eligible.
-
-| Map | Status | Notes |
+| Mode | Status | Notes |
 |---|---|---|
-| `mp_alpha` | ❓ | Not yet tested. Survival-eligibility not confirmed. |
-| `mp_bootleg` | ❓ | Not yet tested. Survival-eligibility not confirmed. |
-| `mp_bravo` | ❓ | Not yet tested. Survival-eligibility not confirmed. |
-| `mp_carbon` | ❓ | Not yet tested. Survival-eligibility not confirmed. |
-| `mp_dome` | ❓ | Not yet tested. Survival-eligibility not confirmed. |
-| `mp_exchange` | ❓ | Not yet tested. Survival-eligibility not confirmed. |
-| `mp_hardhat` | ❓ | Not yet tested. Survival-eligibility not confirmed. |
-| `mp_interchange` | ❓ | Not yet tested. Survival-eligibility not confirmed. |
-| `mp_lambeth` | ❓ | Not yet tested. Survival-eligibility not confirmed. |
-| `mp_mogadishu` | ❓ | Not yet tested. Survival-eligibility not confirmed. |
-| `mp_paris` | ❓ | Not yet tested. Survival-eligibility not confirmed. |
-| `mp_plaza2` | ❓ | Not yet tested. Survival-eligibility not confirmed. |
-| `mp_radar` | ❓ | Not yet tested. Survival-eligibility not confirmed. |
-| `mp_seatown` | ❓ | Not yet tested. Survival-eligibility not confirmed. |
-| `mp_underground` | ❓ | Not yet tested. Survival-eligibility not confirmed. |
-| `mp_village` | ❓ | Not yet tested. Survival-eligibility not confirmed. |
+| Survival (all maps) | ⚠️ | Works well overall across maps tested. **One known issue**: Predator missile killstreak — see `known_issues.md` issue #10 (the game-breaking stuck-prone crash is RESOLVED) and the still-open general killstreak input gap (task #7 in the project's main task list) — Predator missile's own input is only partially working (Fire relies on raw usercmd bits rather than a real `+attack`-style bind, per the existing hypothesis in `iw5sp.md`'s killstreak research). |
 
-**Note**: this project's existing Survival work (ready-up, sprint
-stamina/cooldown, D-pad killstreak call-ins, etc. — see `known_issues.md`
-issues #5/#6/#13/#14) was developed and verified live, but not tracked
-per-map until now. Those confirmed-working mechanics almost certainly
-transfer across maps (they're map-independent input/engine hooks, not
-map-specific content), but this table tracks actual per-map playtest
-coverage, which is a different, currently-empty question.
+**Real 16 MP map zone identifiers, for reference only** (not tracked
+per-map above, per the direction this section now follows): `mp_alpha`,
+`mp_bootleg`, `mp_bravo`, `mp_carbon`, `mp_dome`, `mp_exchange`,
+`mp_hardhat`, `mp_interchange`, `mp_lambeth`, `mp_mogadishu`, `mp_paris`,
+`mp_plaza2`, `mp_radar`, `mp_seatown`, `mp_underground`, `mp_village`. Not
+all of these are necessarily Survival-eligible in this retail build (real
+MW3 Survival launched on a subset, later expanded via DLC) — not
+independently verified, kept here only as a reference list, not a claim
+that all 16 support Survival.
 
 ---
 
