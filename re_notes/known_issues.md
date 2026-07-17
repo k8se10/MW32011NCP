@@ -1170,10 +1170,22 @@ eventually support all major MW3 client variants, not just retail Steam.
 retail game files as a base) is installed locally — direct comparison done:
 - **`iw5mp.exe` is byte-identical to retail Steam** (SHA256 match, exact) — any
   future MP work would apply with zero re-discovery.
-- **`iw5sp.exe` is a DIFFERENT binary** (~175KB smaller, differences start within
-  the first 100 bytes) — every hardcoded address this project uses would need
-  independent re-verification. Also, Plutonium's own docs confirm campaign isn't
-  really their supported use case even though the file is present.
+- **`iw5sp.exe` is a DIFFERENT binary.** **Correction (2026-07-17, later
+  session, via the sibling `MW32011NSP` project's direct re-measurement):**
+  the "~175KB smaller" figure recorded here was wrong — actual size delta is
+  only **2,320 bytes** (5,656,120 retail vs. 5,653,800 Plutonium). The
+  ~175KB number was very likely a misremembering of a *byte-difference
+  count* (`cmp -l` reports 175,411 individual differing byte positions
+  across the overlapping region) as if it were an overall file-size
+  difference. That said, 175K differing byte positions across a ~5.6MB
+  binary is still real and substantial (~3%) — consistent with a genuine
+  recompile (even small source changes cascade into widespread shifted
+  call/jump-target immediates), just not the "wholesale rebuild" impression
+  the wrong number gave. Every hardcoded address this project uses would
+  still need independent re-verification against Plutonium's build — that
+  conclusion is unchanged, only the specific size figure was wrong. Also,
+  Plutonium's own docs confirm campaign isn't really their supported use
+  case even though the file is present.
 - **Anti-cheat concretely confirmed to ban DLL injection and memory access** —
   7-day first offense, permanent after. This mod's entire architecture (proxy
   `d3d9.dll`, MinHook, memory-read-based aim-assist) is exactly what it's built to
@@ -1215,7 +1227,7 @@ wording, especially the anti-cheat callout):
 |---|---|---|---|---|
 | Retail Steam | Both | — (baseline) | Yes (confirmed, current target) | Actively supported |
 | Plutonium — MP | MP | `iw5mp.exe` byte-identical | Believed yes (same binary) | **Not recommended — confirmed anti-cheat bans DLL injection/memory access** |
-| Plutonium — SP | SP | `iw5sp.exe` different (~175KB, not just patches) | Unknown, needs re-verification | Not yet investigated |
+| Plutonium — SP | SP | `iw5sp.exe` different (2,320 bytes size delta, ~175K individual differing byte positions — corrected 2026-07-17, was misstated as "~175KB smaller") | Unknown, needs re-verification | Not yet investigated |
 | AlterWare IW5-Mod | SP + Spec Ops | Separate `iw5-mod.exe`, not yet acquired | Unknown | Not yet investigated — most promising, no known anti-cheat concern |
 | DeckOps (MW3) | MP (via Plutonium) | Same as Plutonium MP | Unknown — Proton/Wine D3D9 layer untested | Not yet investigated — inherits Plutonium's anti-cheat risk |
 
