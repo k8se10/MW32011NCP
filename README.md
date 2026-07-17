@@ -239,7 +239,10 @@ combat, drives the engine's real internal state directly, as described above.
 | Back | *(unassigned)* | ⬜ Not yet implemented — a first attempt regressed live (see `re_notes/known_issues.md`), reverted, deprioritized (nice-to-have, not gameplay-defining) |
 | D-pad (Up/Right/Down/Left) | `+actionslot 1-4` — killstreaks/attachments (e.g. noob tube), data-driven by loadout | ✅ Confirmed* (user tested at least half the directions live; all four use the identical confirmed mechanism, so high confidence on the untested ones too) |
 | Killstreaks (collectively) | Calling in / controlling killstreaks (Predator missile, etc.) — see the dedicated table below | 🟡 Partial — essential to Campaign, which is otherwise mostly untested so far |
-| Menu/UI navigation | Buy stations, pause menu, options, etc. | ⬜ Not yet implemented — mouse/keyboard still required |
+| D-pad + A menu navigation | Item navigation (main menu, pause menu, options screens' two-pane category/settings drill-in-drill-out) | ✅ Confirmed live (task #22) |
+| D-pad + A, buy-station/armory (Survival) | Item navigation on the armory's `itemDef` list | 🟡 Believed working (same generic mechanism already confirmed for the pause menu's identical single-pane-list case) — not yet separately live-verified with this exact menu |
+| Slider-type settings (e.g. sensitivity) | Adjusting the actual VALUE of a slider once navigated to | ⬜ Not yet implemented — navigating TO a slider works, changing it doesn't; the real value-adjust path is gated on mouse-wheel keycodes this mod doesn't drive yet |
+| Button-glyph UI prompts | Controller icons in hint text (currently keyboard key names only) | ⬜ Not yet started |
 
 **B's stance ladder**, matching real Xbox 360 CoD behavior (not a raw hold of either
 bit):

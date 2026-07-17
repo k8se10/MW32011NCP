@@ -8,6 +8,18 @@ reverse-engineering trail behind each entry.
 
 ## Unreleased
 
+### Fixed
+- **Corrected a stale, self-contradicting README row (2026-07-18).** The
+  "Current control map" table's "Menu/UI navigation" row said "Not yet
+  implemented — mouse/keyboard still required," directly contradicting
+  the same table's own pause-menu row two lines above (✅ Confirmed) and
+  task #22's full write-up further down the same file — never updated
+  when that work actually landed and was confirmed live. Split into four
+  accurate rows: D-pad+A menu navigation (✅ confirmed), buy-station/armory
+  navigation (🟡 believed working, not separately live-verified), slider
+  value adjustment (⬜ still unsolved), and button-glyph prompts (⬜ not
+  started) — matching what `known_issues.md` issue #22 actually says.
+
 ### Docs
 - **Added `re_notes/killstreak_reference.md` and a "Killstreak support"
   section to `README.md` (2026-07-18).** Two clearly-separated parts: a
