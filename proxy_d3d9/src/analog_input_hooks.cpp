@@ -1329,6 +1329,23 @@ AimAssistTarget FindBestAimAssistTarget(float playerYawDeg, float playerPitchDeg
             best.yawErrorDeg = yawErr;
             best.pitchErrorDeg = pitchErr;
             best.angleErrorDeg = angleErr;
+            // Diagnostic (2026-07-17, task #16 live tuning): exact numbers instead of
+            // guessing from verbal "roughly N degrees off" reports across different,
+            // uncontrolled encounters (the actual enemy position differs every time,
+            // so "180 wrong" then "90 wrong" aren't directly comparable data points).
+            static DWORD s_lastAimAssistDiagLogMs = 0;
+            DWORD nowMsDiag = GetTickCount();
+            if (nowMsDiag - s_lastAimAssistDiagLogMs >= 300) {
+                s_lastAimAssistDiagLogMs = nowMsDiag;
+                char buf[300];
+                sprintf_s(buf,
+                    "[aimassist-diag] idx=%d playerPos=(%.1f,%.1f,%.1f) targetPos=(%.1f,%.1f,%.1f) "
+                    "dx=%.1f dy=%.1f dz=%.1f playerYaw=%.1f playerPitch=%.1f "
+                    "targetYaw=%.1f targetPitch=%.1f yawErr=%.1f pitchErr=%.1f",
+                    i, playerPos.x, playerPos.y, playerPos.z, targetPos.x, targetPos.y, targetPos.z,
+                    dx, dy, dz, playerYawDeg, playerPitchDeg, targetYawDeg, targetPitchDeg, yawErr, pitchErr);
+                LogFromController(buf);
+            }
         }
     }
 
