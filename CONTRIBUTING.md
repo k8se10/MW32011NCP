@@ -22,14 +22,20 @@ Before opening a PR, please read this file in full.
   found via signature scanning, or in a couple of narrowly-scoped cases, our
   own additive timer/state layer on top of them. See `re_notes/iw5sp.md` for
   the full trail of what's been found so far.
-- **No hardcoded addresses.** Every hook target must be found via a
-  byte-pattern/signature scan performed at runtime, not a literal address
-  baked into source — game updates and the fact that `iw5sp.exe` and
-  `iw5mp.exe` are separately built binaries both mean offsets are not stable
-  across versions or between the two executables. Validate a scanned
-  signature actually resolved (non-null, sane surrounding bytes) before
-  installing a hook on it; fail loudly and refuse to hook rather than jumping
-  to garbage.
+- **Hook targets are found via static Ghidra analysis (decompile/disassemble,
+  confirm via disassembly, then hardcode the address) — not a runtime
+  signature scan.** Read that as the honest current state, not the aspiration:
+  a genuine runtime byte-pattern scanner would be strictly better (game
+  updates and the `iw5sp.exe`/`iw5mp.exe` binary split both mean offsets
+  aren't stable across versions or between the two executables), but every
+  single hook in this codebase today — all ~50+ of them — is a literal address
+  found once via static analysis, not a scan performed at runtime. Match the
+  existing pattern (find it in Ghidra, verify the calling convention via raw
+  disassembly, hardcode it, document it in `re_notes/iw5sp.md`) rather than
+  introducing a scanner for just your one new hook while everything else stays
+  hardcoded — that would make the codebase MORE inconsistent, not less. If
+  you want to tackle a real runtime scanner as its own project-wide effort,
+  open an issue to discuss it first, since it would touch every existing hook.
 - **`iw5sp.exe` (Campaign/Survival) and `iw5mp.exe` (Multiplayer) are
   separate efforts.** Don't assume a function or offset found in one binary
   carries over to the other — each needs its own independently-found

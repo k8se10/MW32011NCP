@@ -46,9 +46,11 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE. This includes, without limitation, any risk associated with running
-third-party code alongside an online-connected game client — see the
-Multiplayer section of README.md for a known, unresolved anti-cheat-exposure
-question that has not yet been evaluated for `iw5mp.exe`.
+third-party code alongside an online-connected game client or a third-party
+game client/launcher — see the Client compatibility section of README.md,
+which documents a confirmed anti-cheat risk on at least one such client
+(Plutonium multiplayer bans DLL injection and memory access), plus a separate,
+still-unresolved question for retail `iw5mp.exe` itself.
 
 --------------------------------------------------------------------------------
 Third-party components
