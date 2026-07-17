@@ -228,11 +228,21 @@ not one:
    plus `PLATFORM_RESUPPLY`, `PLATFORM_GET_KIT`, `PLATFORM_REVIVE`,
    `PLATFORM_GET_KILLSTREAK`, `PLATFORM_DETONATE`, `PLATFORM_HOLD_TO_USE/_DROP`.
    Confirmed via full decompile that `FUN_00433a10` (the `&&N` engine) does NOT
-   handle this syntax — it's a genuinely different resolver, presumably inside
-   whatever function actually draws colored (`^3`/`^7`) hint text at render time,
-   not yet traced. **This is real follow-up work the `FUN_0061f6f0` hook will NOT
-   catch for free** — a second hook point, not yet found, is needed for this
-   category too.
+   handle this syntax — it's a genuinely different resolver. **RESOLVED
+   2026-07-17: good news, no second hook point needed.** Traced the real chain:
+   `FUN_005519d0` is the general `[{...}]` bracket-token scanner (splices
+   whatever it captures between `[{` and `}]` out to `FUN_00622020`), and
+   `FUN_00622020` itself calls `FUN_0061f6f0()` FIRST — the exact same
+   bind-resolver function the `&&N` path already calls via its
+   `FUN_004fafd0`/`FUN_004be070` wrappers. Only on failure (unbound) does it fall
+   through to two unrelated tutorial-timer special cases and a `"KEY_UNBOUND"`
+   fallback. **Both mechanisms are calls to the same `FUN_0061f6f0` address — one
+   hook covers both**, though the detour needs to handle two different
+   calling-convention shapes at the call site (the `&&N` path passes the command
+   name as an explicit stack arg via its wrappers; the `[{...}]` path passes it
+   through a register, consistent with this codebase's recurring register-
+   convention pattern elsewhere — not yet confirmed to the exact register, would
+   need a live test before wiring the actual detour).
 
 4. **A third category no resolver hook can fix**: literal hardcoded PC-only text
    baked directly into the string, e.g. `PLATFORM_USE_BUTTONLOOK_TO_AIM` =

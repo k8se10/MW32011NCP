@@ -2158,12 +2158,8 @@ dispatch table found earlier this session has no `open` entry at all, only
 
 ### Open questions / next steps for task #23
 - **Live injection of any menu with a background material is confirmed unsafe,
-  full stop** (see above) -- the "unique names + patch call sites" plan only
-  remains viable for content authored with NO background material at all (plain
-  color/no background), or requires solving live-injection-during-a-real-level-
-  load-transition first, a materially different and harder architecture. Needs a
-  decision before more implementation work: scope our own controller-options
-  content to backgroundless menus, or pursue the level-load-transition approach.
+  full stop** (see above) -- but the level-load-transition alternative below is
+  now believed VIABLE (2026-07-17 follow-up research), which resolves this.
 - Find the real compiled representation of `open <menuname>;` (menu-to-menu
   navigation) so a parent menu's item can be redirected to our unique-named copy.
 - **No hardcoded addresses, still unresolved project-wide**: every function
@@ -2172,3 +2168,131 @@ dispatch table found earlier this session has no `open` entry at all, only
   CLAUDE.md's own rule ("every hook target comes from a runtime signature scan")
   has never actually been implemented anywhere in this project. Systemic, not
   specific to this feature; worth its own dedicated task eventually.
+
+### Level-load-transition alternative -- structurally sound, not yet implemented (2026-07-17)
+
+Follow-up research into the actual root cause above (materials are unsafe to load
+OUTSIDE the engine's own controlled loading-screen context) asked the natural next
+question: rather than fighting that constraint, can our own zone ride along INSIDE
+a real, already-safe `LoadZones` call the engine itself issues, instead of firing
+from our own live WndProc/`SetTimer` hook? **Verdict: yes, structurally sound.**
+
+`FUN_004ca310` (`LoadZones`) has exactly 4 real callers in the whole binary
+(confirmed via `FindCallers`), not just `FUN_0053cbc0`. Two are directly useful:
+
+- **Level-load**: `FUN_0053cbc0`'s FINAL call (`FUN_004ca310(local_bc,3,2)` at
+  `0053ce82`, return address `0053ce87`) -- loads the map-specific patch zones at
+  the end of entering a Campaign/Survival level. Its stack array has 15 slots (5
+  entries) but this call site only populates 3 -- 2 entries of headroom, safely
+  unused.
+- **Boot-time (main-menu-available)**: `FUN_00679680`'s FINAL call
+  (`FUN_004ca310(local_78,iVar1,0)` at `006797bd`, return address `006797c2`).
+  Caller chain traced definitively to the game's core bootstrap:
+  `FUN_00679680` <- `FUN_00679db0` <- `FUN_0067a320`, and `FUN_0067a320` is the
+  function that calls `Direct3DCreate9(0x20)` and `ShowWindow(...,5)` -- the
+  one-time D3D9-device-creation/window-show sequence run once at process
+  startup, before any level ever loads. Its array (`local_78[30]`, 10-entry
+  capacity) has even more headroom (~6 of 10 used).
+
+**Mechanism**: hook `FUN_004ca310` itself (MinHook, same pattern as every other
+hook in this codebase -- its whole body is just `CALL 0x00463430; JMP EAX`, well
+within a standard trampoline relocation). In the detour, read the return address
+off the stack; if it matches either address above, copy the array with one extra
+`{ourZoneName, 4, 0}` entry appended and increment count before forwarding to the
+trampoline; any other caller (including our own existing direct calls) passes
+through completely untouched. `FUN_004ca310` takes its zone array as a plain
+argument, not something buried in another function's private stack frame, so this
+doesn't need to reach into `FUN_0053cbc0`'s/`FUN_00679680`'s own locals at all.
+
+**Why this actually fixes the root problem, not just relocates it**: the original
+blocker was that GPU-resource creation is unsafe OUTSIDE the engine's own
+controlled frame/thread context. Riding inside a `LoadZones` call the engine
+itself issues means our zone loads in the identical call stack, thread, and
+timing the engine already uses successfully for real material-laden zones (`ui.ff`
+itself loads through call site #2 above). There is no more "wrong context" -- it's
+the real one.
+
+**Caveats, not fatal**: `FUN_0067a320` retry-loops on device-creation failure, so
+`FUN_00679680` could theoretically run twice in a retry scenario -- the append
+logic should check "did we already add ourselves" before appending again (cheap
+guard, not a structural problem, and real zone loads already tolerate this
+pre-existing retry behavior regardless of us). Not yet live-tested -- this is a
+static-analysis verdict on structural soundness, not a confirmed-working
+implementation. Exact identity of the `DAT_021d2e68`-family globals
+`FUN_00679680` uses (which real zones ride alongside ours at boot) wasn't fully
+traced -- doesn't affect hookability, only confirms which real content loads
+alongside.
+
+**Recommended next step**: implement and live-test this before falling back to
+the `ui.ff`-on-disk-replacement installer (see `tools/ff_installer/` -- the
+backup/hash-verify safety net for that fallback already exists, but this path
+keeps `ui.ff` completely untouched and should be tried first).
+
+## Real keycode reference -- complete table (2026-07-17)
+
+The mod has repeatedly reverse-engineered individual keycodes ad hoc (ESC=`0x1b`,
+menu-nav prev/next=`0x9a`-`0x9d`, Enter=`0xd`) across several separate
+investigations. Traced the real chain fully this session: `FUN_0061f6f0`
+(bind-resolver) -> `FUN_0061f590` (command-alias table, e.g. `+breath_sprint`/
+`+sprint_zoom` are display-aliased together) -> `FUN_004d6da0` -> `FUN_0057e770`
+-> `FUN_0057e640` (looks up a command's bound keycode(s) by walking
+`DAT_00a98e4c`, the SAME raw dispatch table `FUN_00541020` already uses --
+confirmed 256 entries, per-profile stride `0x34a` bytes, 12 bytes/entry, keycode =
+loop index 0-255) -> `FUN_004bea00` -> `FUN_004bb000` (keycode -> display name).
+
+`FUN_004bb000`'s decompile reveals the real scheme directly: printable ASCII
+(`0x21`-`0x7E`, except `0x22`) IS the keycode, uppercased, no lookup needed.
+Everything else resolves through a real, complete `{const char* name; int
+keynum;}` table at **`0x00929978`** (a second `KEY_`-prefixed alias version lives
+at `0x00929c78`, same keycodes). Dumped via a new reusable script,
+`re_notes/ghidra_scripts/DumpKeynamesTable.java` (walks any such table given its
+address) -- **95 confirmed real entries**:
+
+| Keycode (hex) | Name | Keycode (hex) | Name | Keycode (hex) | Name |
+|---|---|---|---|---|---|
+| `0x09` | TAB | `0xa1` | INS | `0xc7` | KP_EQUALS |
+| `0x0d` | ENTER | `0xa2` | DEL | `0xc8` | MOUSE1 |
+| `0x1b` | ESCAPE | `0xa3` | PGDN | `0xc9` | MOUSE2 |
+| `0x20` | SPACE | `0xa4` | PGUP | `0xca` | MOUSE3 |
+| `0x3b` | SEMICOLON | `0xa5` | HOME | `0xcb` | MOUSE4 |
+| `0x7f` | BACKSPACE | `0xa6` | END | `0xcc` | MOUSE5 |
+| `0x96` | COMMAND | `0xa7`-`0xb2` | F1-F12 | `0xcd` | MWHEELDOWN |
+| `0x97` | CAPSLOCK | `0xb6` | KP_HOME | `0xce` | MWHEELUP |
+| `0x99` | PAUSE | `0xb7` | KP_UPARROW | `0xcf`-`0xde` | **AUX1-AUX16** |
+| `0x9a` | UPARROW | `0xb8` | KP_PGUP | `0x80`-`0x93` | (20 entries, |
+| `0x9b` | DOWNARROW | `0xb9` | KP_LEFTARROW | | numeric names |
+| `0x9c` | LEFTARROW | `0xba` | KP_5 | | only -- likely |
+| `0x9d` | RIGHTARROW | `0xbb` | KP_RIGHTARROW | | extended/intl |
+| `0x9e` | ALT | `0xbc` | KP_END | | scancodes, |
+| `0x9f` | CTRL | `0xbd` | KP_DOWNARROW | | not yet named) |
+| `0xa0` | SHIFT | `0xbe` | KP_PGDN | | |
+| | | `0xbf` | KP_ENTER | | |
+| | | `0xc0` | KP_INS | | |
+| | | `0xc1` | KP_DEL | | |
+| | | `0xc2` | KP_SLASH | | |
+| | | `0xc3` | KP_MINUS | | |
+| | | `0xc4` | KP_PLUS | | |
+| | | `0xc5` | KP_NUMLOCK | | |
+| | | `0xc6` | KP_STAR | | |
+
+**`AUX1`-`AUX16` (`0xcf`-`0xde`) are notable**: the idTech/Quake3-lineage
+joystick-button placeholder range -- virtual keycode slots the native bind system
+already structurally reserves for controller buttons, bindable through the exact
+same `FUN_00541020`/`DAT_00a98e4c` path everything else uses. Unused today since
+this build has no XInput import (per the project's original founding finding),
+but worth knowing they exist as real, valid keycode values in the native bind
+system if any future work wants to represent a "controller button" as a first-
+class bind target rather than only via direct key-synthesis workarounds.
+
+Full raw 95-line dump preserved at the time of writing in this session's scratch
+output; the table above is the durable record. `DumpKeynamesTable.java` is a
+general-purpose tool (walks any `{name, keynum}`-shaped table given its address),
+independent of any specific investigation's outcome -- kept in
+`re_notes/ghidra_scripts/` regardless of future use.
+
+**Also confirmed while tracing this**: `+breath_sprint` (Sprint's real bind
+command) is verified correct via `players2/config.cfg` line 24
+(`bind SHIFT "+breath_sprint"`) -- the three earlier failed kbutton searches
+(see "Sprint's real kbutton" section above) were never chasing the wrong command
+name, the kbutton object itself just wasn't found in memory by those specific
+techniques.
