@@ -95,7 +95,7 @@ struct ModConfig
     // re_notes/iw5sp.md). Built from real entity data (position, a live-traced
     // type/state byte) plus our own targeting/curve math, applied directly onto the
     // same kPitchAccum/kYawAccum globals our own look injection already writes.
-    bool aimAssistEnabled = true;
+    bool aimAssistEnabled = false;
     float aimAssistRange = 1200.0f;         // max world-unit distance to consider a target
     float aimAssistConeDegrees = 6.0f;      // half-angle of the "near crosshair" cone
     float aimAssistFrictionStrength = 0.6f; // 0 = no slowdown near a target, 1 = strongest

@@ -103,11 +103,30 @@ finished player-facing feature yet) — see `re_notes/known_issues.md` issue #23
   movement-based — a real prop never moves, a living AI's position does) is
   genuinely broken in practice — it oscillates between multiple
   simultaneously-moving things (a real enemy, a settling ragdoll, a thrown grenade),
-  not just imprecise. Ships with `Enabled=0`; do not flip this on outside active
-  development until a real type/health-based classification replaces the movement
-  heuristic — see `re_notes/known_issues.md` issue #15.
+  not just imprecise. **Intended** to ship with `Enabled=0` — see the Fixed entry
+  below, this wasn't actually true until a bug found right before release was
+  corrected. Do not flip this on outside active development until a real
+  type/health-based classification replaces the movement heuristic — see
+  `re_notes/known_issues.md` issue #15.
 
 ### Fixed
+- **Aim assist's config default was `true`, not `false` — every brand-new install
+  would have shipped with the confirmed-broken aimbot silently turned on.**
+  `mod_config.h`'s `aimAssistEnabled` struct default was `true` since the feature
+  was first added; every doc (README, this changelog, `known_issues.md`) said the
+  opposite the whole time (`Enabled=0`, "disabled by default"). Went undetected
+  because the config file only gets freshly generated when none exists yet — this
+  development machine already had a hand-corrected `Enabled=0` on disk from
+  earlier testing, which masked the bug locally the entire time. Caught during a
+  pre-release check (explicitly asked for, right before packaging v0.1.3) and
+  confirmed via full trace: the struct default is the only place this value is
+  ever set for a fresh config, `WriteDefaultConfig` writes it verbatim, and an
+  existing file's saved value is otherwise correctly respected on later launches.
+  Fixed to `false`, rebuilt, verified via full code trace (not just "should be
+  fixed"). **A real lesson for this project going forward**: an already-populated
+  local dev config can mask exactly this class of default-value bug — worth a
+  fresh-install check (rename/delete the local config, confirm what gets
+  regenerated) before any future release, not just before this one.
 - **B didn't exit the pause menu.** The ESC-forward logic (`InjectControllerMenuBack`)
   was only ever wired into the per-frame gameplay tick, which stops running entirely
   while genuinely paused — so B's menu-back action never fired in the one state it
