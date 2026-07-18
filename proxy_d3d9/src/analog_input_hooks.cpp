@@ -367,8 +367,10 @@ extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
     }
 
     uint32_t out = 0;
+    // Fire (+attack) moved off raw usercmd bit 0x1 and onto the real +attack kbutton --
+    // see InjectControllerFire() (task #7, 2026-07-18). fireHeld is still computed here
+    // (unaffected) purely for the existing stance diagnostic logging below.
     bool fireHeld = IsPhysicalHeld(g_buttonMap.fire, xiButtons, leftTrigger, rightTrigger);
-    if (fireHeld) out |= 0x1;                                   // Fire (+attack)
     if (IsPhysicalHeld(g_buttonMap.melee, xiButtons, leftTrigger, rightTrigger)) out |= 0x4;       // Melee
     if (IsPhysicalHeld(g_buttonMap.tactical, xiButtons, leftTrigger, rightTrigger)) out |= 0x8000; // Tactical (smoke)
     if (IsPhysicalHeld(g_buttonMap.lethal, xiButtons, leftTrigger, rightTrigger)) out |= 0x4000;   // Lethal (frag)
@@ -588,6 +590,58 @@ extern "C" void __cdecl InjectControllerReload()
         CallKbuttonDown(kReloadKbutton, kReloadBindIndex);
     } else {
         CallKbuttonUp(kReloadKbutton, kReloadBindIndex);
+    }
+}
+
+// ---- Fire: RT -> real +attack kbutton (2026-07-18, task #7) -----------------------
+//
+// Was raw usercmd bit 0x1, forced directly every frame -- confirmed to produce real
+// gunfire (Pmove/weapon-fire code reads cmd->buttons directly, same as movement), but
+// bypasses the real +attack kbutton_t entirely. iw5sp.md's full killstreak GSC trace
+// (2026-07-17) found remote_missile's (Predator Missile) launch is gated behind
+// notifyonplayercommand("launch_remote_missile", "+attack") -- a native<->GSC bridge
+// that fires on real bind/command dispatch, not on raw usercmd bits being set. Standing
+// hypothesis: this is why Predator Missile camera/view works (generic UAV control, not
+// notify-gated) but Fire/launch is unreliable.
+//
+// +attack's real kbutton_t address was already resolved in the SAME bit-correlation
+// table (iw5sp.md, "Kbutton table position <-> usercmd.buttons bit correlation") that
+// found the other bind offsets: struct base 0x00A98AD8 (per-player, playerIndex*0x230,
+// SP player 0 => bare base) + struct offset 0x128 (table idx 0, first entry of the
+// 10-entry/stride-0x14 kbutton array FUN_0057dc90 itself reads) = 0x00A98C00. Same
+// struct FAMILY as ADS's kbuttons (0x00A98B8C/0x00A98CB8) and Reload's (0x00A98C68),
+// same CallKbuttonDown/CallKbuttonUp calling convention already proven live for both.
+//
+// Full replace, not additive: removed the raw-bit force from InjectControllerButtons
+// below and route Fire through this real kbutton instead, same as the crouch/prone
+// migration (issue #9) -- FUN_0057dc90 already reads this exact kbutton every frame
+// and re-derives the same usercmd bit 0x1 from it, so ordinary gunfire should be
+// unaffected, just now via the authentic path instead of a manual force. NOT YET LIVE-
+// CONFIRMED for either regular gunfire (regression risk, since this is the single most
+// exercised input in the game) or the Predator Missile fix itself -- verify both before
+// considering task #7 done.
+namespace {
+constexpr uintptr_t kAttackKbutton = 0x00A98C00;
+constexpr int kAttackBindIndex = 17; // distinct from ADS's 13 / Reload's 15 -- arbitrary
+                                      // but must be self-consistent between our own
+                                      // down/up calls, same rationale as those two
+bool g_attackHeld = false;
+} // namespace
+
+extern "C" void __cdecl InjectControllerFire()
+{
+    unsigned short buttons;
+    unsigned char leftTrigger, rightTrigger;
+    if (!Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger)) return;
+
+    bool nowHeld = IsPhysicalHeld(g_buttonMap.fire, buttons, leftTrigger, rightTrigger);
+    if (nowHeld == g_attackHeld) return; // only fire on the edge, matching a real keypress
+
+    g_attackHeld = nowHeld;
+    if (nowHeld) {
+        CallKbuttonDown(kAttackKbutton, kAttackBindIndex);
+    } else {
+        CallKbuttonUp(kAttackKbutton, kAttackBindIndex);
     }
 }
 
@@ -2668,6 +2722,7 @@ extern "C" void __cdecl InjectAllControllerInput(unsigned char* cmd)
         InjectControllerButtons(cmd);
     }
     InjectControllerAds();
+    InjectControllerFire();
     InjectControllerSprint();
     InjectControllerReload();
     InjectControllerWeaponNext();

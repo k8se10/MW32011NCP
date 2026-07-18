@@ -8,6 +8,36 @@ reverse-engineering trail behind each entry.
 
 ## Unreleased
 
+### Changed
+- **Fire (RT) rewired off the raw usercmd bit onto the real `+attack`
+  kbutton (2026-07-18, task #7).** Killstreak work started with Predator
+  Missile: the GSC trace done earlier this session found its launch is
+  gated behind `notifyonplayercommand("launch_remote_missile", "+attack")`,
+  which fires on real bind/command dispatch, not on a raw usercmd bit being
+  forced — the standing hypothesis for why the missile's camera/view
+  worked but launch didn't reliably. `+attack`'s real kbutton_t address
+  (`0x00A98C00`) was already sitting in an existing bit-correlation table
+  from 2026-07-14, so this reused the same `CallKbuttonDown`/
+  `CallKbuttonUp` mechanism already proven live for ADS/Reload — a full
+  replace, not additive, same precedent as the crouch/prone migration off
+  raw bit-forcing. Builds clean (0 warnings/0 errors). **NOT yet live-
+  tested** — touches the single most-exercised input in the mod, so both
+  regular-gunfire regression and the Predator Missile fix itself need
+  confirming before this is considered done. See `known_issues.md` issue
+  #29.
+
+### Investigated, not resolved
+- **Predator Missile post-fire missile-guidance sequence: movement breaks
+  on controller (2026-07-18, live-reported).** During the phase where the
+  player controls the flying missile in flight (shares the real
+  UAV-control system), controller movement input breaks. Leading
+  hypothesis: a concrete repro of task #25 (the movement hook has no
+  scripted-freeze/cinematic-lock awareness and keeps forcing
+  `forwardmove`/`rightmove` regardless of game state) rather than anything
+  related to the Fire rewiring above. Not yet fixed — needs task #25's
+  general scripted-freeze detection work first. See `known_issues.md`
+  issue #27, bug #9.
+
 ### Docs
 - **Added a scorecard to README.md**: raw functionality (~80/100, from the
   control map, `compatibility_matrix.md`, and `killstreak_reference.md`)

@@ -476,7 +476,7 @@ scoped), and #9 (sprint's Extreme Conditioning override).
 | Input | Intended action | Blocker |
 |---|---|---|
 | Back | `+scores` (scoreboard/objectives) | **Key-synthesis workaround implemented 2026-07-17** (Back hold → real `WM_KEYDOWN`/`WM_KEYUP` for TAB, the confirmed real bind `bind TAB "+scores"` from `players2/config.cfg`) — third narrow exception to the no-OS-input-emulation rule, same pattern as ready-up (F5) and D-pad Left's squadmate call-in ('4'). **Live-tested in Campaign: no visible effect at all** — no scoreboard, no objectives overlay. Real cause not yet diagnosed; leading theory is `+scores`/scoreboard is fundamentally an MP concept that's a no-op in SP, and SP's actual "mission objectives" display (if player-triggerable at all) uses a completely different, still-unidentified mechanism — not necessarily the same feature CLAUDE.md's console-behavior description assumed. User explicitly parked this as a known UI gap to fill later ("these are both UI gaps we will fill as part of the improvements side of the mod"), not urgent. The synthesis code itself is harmless (real key event, just currently produces no observable result) and stays in the build. |
-| Killstreaks | Predator missile confirmed partially working; needs per-killstreak investigation | **(2026-07-17, full GSC trace done, see issue #26)** `remote_missile` fully traced — real fire (`+attack`) and abort binds confirmed; leading hypothesis is raw-usercmd-bit Fire not reliably triggering the `notifyonplayercommand` the launch is gated on. `precision_airstrike` uses a placement/marker system, not a camera takeover. Turret and squadmate (`friendly_support_delta`/`riotshield`) call-ins are CONFIRMED separate script systems (correction to this row's own earlier framing) — squadmate bug's divergence point narrowed to unresolved function `_id_061C::_id_3DE2`. |
+| Killstreaks | Predator missile confirmed partially working; needs per-killstreak investigation | **(2026-07-17, full GSC trace done, see issue #26)** `remote_missile` fully traced — real fire (`+attack`) and abort binds confirmed; leading hypothesis is raw-usercmd-bit Fire not reliably triggering the `notifyonplayercommand` the launch is gated on. `precision_airstrike` uses a placement/marker system, not a camera takeover. Turret and squadmate (`friendly_support_delta`/`riotshield`) call-ins are CONFIRMED separate script systems (correction to this row's own earlier framing) — squadmate bug's divergence point narrowed to unresolved function `_id_061C::_id_3DE2`. **(2026-07-17, implemented, see issue #29)** Fire (RT) rewired off the raw usercmd bit onto the real `+attack` kbutton (`0x00A98C00`), same `CallKbuttonDown`/`CallKbuttonUp` mechanism ADS/Reload already use — directly tests the notify-dispatch hypothesis above. Built clean; **not yet live-confirmed** for either regular gunfire (regression risk — highest-blast-radius input in the mod) or the Predator Missile launch itself. |
 | Sprint / Extreme Conditioning | Perk should double sprint duration to 8s | **(2026-07-17: genuinely parked, see issue #26)** Perk's real name confirmed (`specialty_longersprint`), but no native `HasPerk`-equivalent query exists — `hasperk` dispatches by compile-time numeric ID with zero string trace in the binary, and `perk_sprintMultiplier` has exactly one reference (its own registration), confirming the scaling is entirely GSC-side. No clean native path without going through GSC itself — same dead-end class as Sprint's own kbutton search. |
 
 ---
@@ -1586,6 +1586,37 @@ input) and refines issue #26's vehicle hypothesis below.
   test first** (does keyboard lock onto the SAME aircraft in the SAME
   spot?) before any RE work — if keyboard also fails, this closes as a
   non-issue, not a bug.
+- **Bug #9 — Predator Missile (`remote_missile`), post-fire missile-guidance
+  sequence: movement breaks on controller.** Reported live: after firing,
+  the sequence where the player controls the flying missile in flight
+  (camera takeover, steering it to impact — shares the real UAV-control
+  system per `iw5sp.md`'s GSC trace) is where movement input on controller
+  breaks. Exact symptom not yet detailed (stick unresponsive vs. erratic
+  vs. fighting a scripted camera) — needs a follow-up description from the
+  user before further diagnosis.
+  **Leading hypothesis: this is a concrete repro case for task #25**
+  ("Movement hook bypasses scripted player-freeze/cinematic-lock state") —
+  during missile-guidance the real player entity is presumably frozen
+  (camera/control has shifted to the missile projectile, not the player),
+  but this mod's `InjectControllerMovement` has no scripted-freeze/
+  cinematic-lock awareness and keeps forcing `forwardmove`/`rightmove`
+  into the usercmd unconditionally every frame regardless of what state
+  the game itself is in — the same class of bug already flagged (not yet
+  fixed) for issue #4's plane-breakup sequence in "Turbulence". Distinct
+  from the already-fixed stuck-prone bug (issue #10) — that was a stance
+  desync bug, this is reported as movement itself breaking, not a stuck
+  stance.
+  **Also directly relevant to today's Fire rewiring (task #7, entry #29
+  above)**: since Fire was just moved onto the real `+attack` kbutton
+  specifically to fix this same killstreak's launch reliability, this
+  finding should be re-checked as part of that same live-test pass — note
+  whether the missile-guidance movement bug reproduces identically
+  regardless of how Fire is wired (expected, since they're unrelated
+  mechanisms — Fire vs. movement — but worth confirming they aren't
+  secretly entangled).
+  **Not yet fixed — needs task #25's general scripted-freeze detection
+  work, or a narrower missile-guidance-specific gate, before a real fix
+  can land.**
 - More findings to be appended below as reported (further vehicles,
   killstreaks, and any other fallback points as testing continues past
   "Bag and Drag").
@@ -1645,6 +1676,58 @@ easier to catch earlier next time: a feature's implementation landing in
 source doesn't mean its cross-referenced docs update automatically, and
 this project has now hit this exact gap twice in one session (see also
 issue #22's stale slider-adjustment claim, corrected below).
+
+## 29. Fire (RT) rewired off the raw usercmd bit onto the real `+attack` kbutton — implemented, NOT yet live-confirmed (2026-07-18)
+
+**Status:** Implemented, builds clean (0 warnings/0 errors). **Not yet
+live-tested** — this touches the single most-used input in the entire
+mod (every shot fired, in every mode), so per this project's Production
+Readiness Criteria it stays open until confirmed both ways below, not
+just "should work by the same mechanism as ADS/Reload."
+
+**Why:** task #7's full GSC trace (issue #26) found `remote_missile`
+(Predator Missile)'s launch is gated behind
+`notifyonplayercommand("launch_remote_missile", "+attack")` — a
+native↔GSC bridge that fires on real bind/command dispatch, not on raw
+`usercmd_t` buttons bits being set directly. Fire (RT) has always been
+implemented as a raw-bit force (`cmd->buttons |= 0x1`), bypassing the
+real `+attack` kbutton entirely — the standing, unconfirmed hypothesis
+for why the missile's camera/view works (generic UAV control, not
+notify-gated) but launch doesn't reliably fire.
+
+**What changed:** `+attack`'s real kbutton_t address was already sitting
+in `iw5sp.md`'s existing "Kbutton table position ↔ usercmd.buttons bit
+correlation" table from 2026-07-14 (struct base `0x00A98AD8` + offset
+`0x128` = `0x00A98C00`, table idx 0, first entry of the same 10-entry/
+stride-`0x14` array `FUN_0057dc90` itself reads every frame) — same
+struct family as ADS's kbuttons (`0x00A98B8C`/`0x00A98CB8`) and Reload's
+(`0x00A98C68`), so the existing `CallKbuttonDown`/`CallKbuttonUp` helpers
+(already proven live for both) apply directly, no new calling-convention
+work needed. Added `InjectControllerFire()` (`analog_input_hooks.cpp`),
+edge-triggered exactly like `InjectControllerAds`/`InjectControllerReload`,
+and removed the raw-bit force from `InjectControllerButtons` — a full
+replace, not additive, matching the precedent set by the crouch/prone
+migration off raw bit-forcing onto the real `ToggleStance` call (issue
+#9). `FUN_0057dc90` already reads this exact kbutton every frame and
+re-derives usercmd bit `0x1` from it — the same bit our manual force used
+to set directly — so ordinary gunfire is expected to behave identically,
+just via the authentic path instead of a manual override.
+
+**What's NOT confirmed yet:**
+1. Regular gunfire regression check — semi-auto, full-auto, and burst
+   weapons all need a live pass to confirm shooting still works exactly
+   as before across the full campaign playtest matrix (issue #27).
+2. Whether this actually fixes Predator Missile launch — the open
+   question flagged in `iw5sp.md` (does `CallKbuttonDown` on the real
+   kbutton_t actually trigger whatever native code fires
+   `notifyonplayercommand`, or does that notify happen further upstream,
+   e.g. inside the generic key-press→bind-dispatch path rather than the
+   kbutton_t `KeyDown` function itself) is still genuinely open — this
+   change is a testable hypothesis, not a confirmed fix. If live testing
+   shows the missile still doesn't launch, the next step is locating
+   `notifyonplayercommand`'s actual native trigger point directly (not
+   yet found — see issue #26's "General pattern confirmed" note) rather
+   than assuming the kbutton-level fix was sufficient.
 
 ## Resolved this session (for contrast — see `iw5sp.md` for full write-ups)
 
