@@ -1677,7 +1677,13 @@ readable.
   `precision_airstrike`/`stealth_airstrike`/`carepackage_c4`/`carepackage_ammo`) has no
   separate "squadmate"/"reinforcement" entry, so that item is likely a different buy
   category entirely -- not investigated further, since it already works via the same
-  D-pad Left fix.
+  D-pad Left fix. **CORRECTION (2026-07-18, full killstreak catalog research pass):**
+  this table is NOT the real purchasable killstreak roster -- `stealth_airstrike`/
+  `carepackage_c4`/`carepackage_ammo` only ever appear in precache calls (`1559.gsc`,
+  `_id_3CD8`), never in the real buy-station economy CSV. They're dead/vestigial
+  content (shared from MP or a cut feature), not reachable in retail Survival. See the
+  "Full killstreak/special-weapon GSC catalog" section further down for the real,
+  CSV-verified 4-item list.
 - No exact `"skip"` string anywhere in any decompiled script -- confirms `+stance` is
   the only GSC-level ready mechanism, and F5/`skip` is a separate, native-only PC path
   (see `known_issues.md` issue #5).
@@ -2495,6 +2501,78 @@ task #13's bug.
 **Not reached**: Campaign-zone killstreak scripts beyond a name-only check (no
 distinct Campaign killstreak GSC found in `sp_dubai.ff`); `_id_061C::_id_3DE2`'s
 body (highest-value next step); `_id_3CD9`'s body.
+
+### Full killstreak/special-weapon GSC catalog — both open threads resolved (2026-07-18, research-only pass)
+
+**The real, complete Survival `airsupport` (killstreak) roster** — re-extracted
+`sp/survival_armories.csv` fresh from `common_specialops.ff` (clean, 0
+warnings/0 errors). **Only 4 real purchasable killstreak items exist**, not
+the 6-item "killstreak-crate table" list assumed in earlier sessions (see the
+correction note above):
+
+| id | name | cost | wave-gate | icon asset |
+|---|---|---|---|---|
+| 10000 | `remote_missile` | 2500 | 0 | `dpad_killstreak_predator_missile_static_frontend` |
+| 10001 | `precision_airstrike` | 2500 | 3 | `dpad_killstreak_ac130_static_frontend` |
+| 10002 | `friendly_support_delta` | 3000 | 13 | `menu_so_friendly_assault_team` |
+| 10003 | `friendly_support_riotshield` | 5000 | 20 | `menu_so_friendly_riot_team` |
+
+`sentry`(1007)/`sentry_gl`(1008)/`iw5_riotshield_so`(1009) are a SEPARATE
+`equipment` category, not `airsupport` — different buy-station budget/slot
+from the 4 real killstreaks above. The 5 perks
+(`specialty_quickdraw`/`bulletaccuracy`/`stalker`/`longersprint`/`fastreload`)
+are ALSO sold under the `airsupport` category ID range (10004–10008),
+alongside the real killstreaks, same buy-station tab — worth knowing for any
+future debug-menu/buy-station tooling that enumerates by category rather
+than item type.
+
+**`precision_airstrike` — thread resolved, and it's a THIRD, genuinely
+different input mechanism from both `remote_missile`'s notify-gate and the
+D-pad kbutton path.** `_id_3CD9`'s body (script `1559.gsc`, lines 58-91) is
+built on the real native **`beginlocationselection`/`endlocationselection`**
+builtin API (`self beginlocationselection("map_artillery_selector", var_1,
+var_2)`, line 105) — a placement/marker UI, not a camera takeover and not a
+`notifyonplayercommand` gate at all. Confirmed by an exhaustive search across
+all 207 decompiled scripts: `confirm_location` (the event `_id_3CDB` waits on
+to know placement was confirmed, line 113) is **never sent from GSC
+anywhere** — it fires purely from native engine code inside
+`beginlocationselection`'s own C++ implementation, the same class of event a
+real UI/location-picker click would generate. **Actionable, not yet
+verified**: since this mod's D-pad+A menu navigation (task #22, confirmed
+live) already forwards real UI-select input, A/Fire during an active
+`beginlocationselection` state may already reach this natively for free, or
+may need the same `ForwardKeyToMenu` mechanism rather than any kbutton work
+— worth a live test before writing new code. No native trigger point for
+`confirm_location` itself has been located (would need Ghidra work on
+`beginlocationselection`'s C implementation, not attempted in this
+GSC-only pass).
+
+**`friendly_support_delta`/`friendly_support_riotshield` — thread resolved,
+and the standing hypothesis is REFUTED.** `_id_061C::_id_3DE2`'s body (script
+`1564.gsc`, lines 2122-2165) found and traced: **there is no per-type code
+divergence anywhere in the chain.** Full path: `1574.gsc`'s `_id_3F24` fires
+`notifyoncommand("friendly_support_called", "+actionslot 4")` →
+`spawn_allies(self.origin, var_0, self)` (`var_0`, the type string, is the
+only thing that differs) → `1571.gsc`'s `spawn_allies` (line 1118) computes a
+drop path, fires an independent `level notify("so_airsupport_incoming",
+var_1)` broadcast (confirmed its only real consumer is `1576.gsc`'s
+`_id_3E50`, an HQ announcer-voiceline system, unrelated to spawning), then
+calls `_id_061C::_id_3DE2(var_1, 3, var_3, var_2)` directly and
+synchronously. `_id_3DE2` itself runs **identical spawn logic for both
+types** — same chopper drop, same per-AI spawn call
+(`_id_0618::_id_3DCE`), same threat bias, same AI-setup thread (`_id_3DE9`).
+The only per-type branch anywhere in this function (lines 2153-2157) sets a
+cosmetic `headicon` (`headicon_delta_so` vs `headicon_gign_so`) — nothing
+behavioral. **"The real per-type divergence must be inside
+`_id_061C::_id_3DE2`" is refuted** — it isn't there, or anywhere in this GSC
+chain. If a real bug distinguishes delta from riotshield specifically, it's
+outside this script chain entirely (candidates not checked: per-map
+`drop_path_start`/`chopper_boss_path_start` script-node availability, or
+something in the riot-shield equipment item itself once an AI is holding
+it). **Worth re-verifying live whether EITHER type currently spawns anything
+at all** via the existing D-pad key-synthesis fix, rather than assuming one
+of the two secretly works — both are equally `notifyoncommand`-gated on the
+identical `+actionslot 4` bind.
 
 ### Weapon/attachment/ADS/reload internals
 

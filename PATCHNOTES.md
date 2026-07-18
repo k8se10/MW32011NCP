@@ -8,6 +8,22 @@ reverse-engineering trail behind each entry.
 
 ## Unreleased
 
+### Fixed
+- **Sprint (L3) no longer force-stands the player while ADS'd (2026-07-18,
+  task #24).** `InjectControllerSprint`'s auto-stand-from-crouch/prone call
+  was firing unconditionally on any Sprint rising edge, including while
+  aiming down sights with a sniper — breaking the player's crouch/prone
+  cover the instant they tried to use Hold Breath (which shares the same
+  physical bind as Sprint on console, `+breath_sprint`). Now gated on
+  `!g_adsHeld`. Builds clean, not yet live-tested. **Known simplification**:
+  gates on "ADS'd with any weapon," not specifically "ADS'd with a
+  sniper-class weapon" (no clean native weapon-class query was available),
+  so Sprint's rising edge is now a stance no-op for every ADS'd weapon, not
+  just snipers — real console ADS+Sprint interaction on non-sniper weapons
+  wasn't independently verified and should be checked during live testing.
+  Hold Breath's actual sway-reduction feature remains unimplemented (see
+  Investigated section below).
+
 ### Changed
 - **Fire (RT) rewired off the raw usercmd bit onto the real `+attack`
   kbutton (2026-07-18, task #7).** Killstreak work started with Predator
@@ -20,23 +36,84 @@ reverse-engineering trail behind each entry.
   from 2026-07-14, so this reused the same `CallKbuttonDown`/
   `CallKbuttonUp` mechanism already proven live for ADS/Reload — a full
   replace, not additive, same precedent as the crouch/prone migration off
-  raw bit-forcing. Builds clean (0 warnings/0 errors). **NOT yet live-
-  tested** — touches the single most-exercised input in the mod, so both
-  regular-gunfire regression and the Predator Missile fix itself need
-  confirming before this is considered done. See `known_issues.md` issue
-  #29.
+  raw bit-forcing. Builds clean (0 warnings/0 errors). **Live-tested same
+  day: half confirmed, half refuted.** Regular gunfire — CONFIRMED no
+  regression, shooting still works normally. Predator Missile launch —
+  CONFIRMED still broken, unchanged. The kbutton-level fix stays (it's
+  real and correct, gunfire depends on it) but the hypothesis that a
+  kbutton_t `KeyDown` call alone would reach `notifyonplayercommand`'s
+  native trigger is disproven — that trigger point is still unfound. See
+  `known_issues.md` issue #29.
 
 ### Investigated, not resolved
 - **Predator Missile post-fire missile-guidance sequence: movement breaks
   on controller (2026-07-18, live-reported).** During the phase where the
   player controls the flying missile in flight (shares the real
-  UAV-control system), controller movement input breaks. Leading
-  hypothesis: a concrete repro of task #25 (the movement hook has no
-  scripted-freeze/cinematic-lock awareness and keeps forcing
-  `forwardmove`/`rightmove` regardless of game state) rather than anything
-  related to the Fire rewiring above. Not yet fixed — needs task #25's
-  general scripted-freeze detection work first. See `known_issues.md`
-  issue #27, bug #9.
+  UAV-control system), controller movement input breaks. Not yet fixed.
+  See the major research finding immediately below — this turned out to
+  have a much more concrete, unifying explanation than the original
+  "scripted-freeze" framing.
+- **Major research finding: a third, previously-unknown analog-input
+  channel (`cmd+0x3e`/`0x3f`) likely explains FOUR separately-tracked bugs
+  at once (2026-07-18, task #25 deep dive, `known_issues.md` issue #30).**
+  Decompiling the engine's real per-frame orchestrator revealed it has (at
+  least) 3 control-mode branches — menu-active, a mounted/aim-only mode
+  that routes real mouse-delta into a THIRD analog byte pair
+  (`cmd+0x3e`/`0x3f`, distinct from normal movement and normal look), and
+  vehicle steering — none of which this mod's controller hooks are aware
+  of, since they only ever write the normal movement/look fields. The
+  mounted/aim-only branch is a strong, evidence-backed unifying candidate
+  for DPV aiming not working, the mounted-turret feeling too hard, AND
+  today's Predator Missile guidance bug above — potentially one fix
+  instead of three separate investigations. Not yet implemented; a new
+  task (#30 in the live tracker) captures the concrete implementation
+  plan. Mortar fire appears to be a genuinely separate mechanism (see
+  below), not covered by this finding.
+- **Turret damage/difficulty in "Back on the Grid": the health-regen
+  hypothesis is REFUTED (2026-07-18, task #27, now closed).** Dumped the
+  real mission zone and confirmed the mission DOES use a real
+  faster-regen buff mechanic in two other scripted set-pieces — just never
+  on the turret sequence. No turret-specific damage/regen logic exists in
+  the mission's own scripts at all. The likely real explanation is the
+  same missing-aim-channel issue described above (no aim assist +
+  imprecise mounted aim), not a missing survivability mechanic.
+- **Mortar fire ("Back on the Grid") will very likely still be broken
+  after the Fire rewrite above (2026-07-18, task #26) — do not assume it
+  was fixed for free.** Confirmed the mortar (`bog_mortar`) is deliberately
+  excluded from the engine's generic vehicle-fire pipeline, and — more
+  importantly — the turret in the same mission already fired correctly
+  under the OLD raw-usercmd-bit Fire, which is real evidence mortar and
+  turret don't share a fire mechanism (otherwise both would have failed
+  identically before today's change). The mortar's own fire-control
+  script wasn't located this pass (hash-named, no distinguishing string).
+- **Killstreak catalog correction (2026-07-18): the previously-assumed
+  6-item killstreak list was wrong.** Re-extracting the real buy-station
+  economy CSV directly shows Survival only ever sells 4 real killstreaks
+  (`remote_missile`, `precision_airstrike`, `friendly_support_delta`,
+  `friendly_support_riotshield`) — `stealth_airstrike`/`carepackage_c4`/
+  `carepackage_ammo` don't exist as purchasable items at all (dead/
+  vestigial precache-only content). Also resolved: `precision_airstrike`
+  turns out to use a genuinely different, THIRD input mechanism (a native
+  UI-style placement-marker API, not gated by `notifyonplayercommand` at
+  all — may already work via this mod's existing D-pad+A menu navigation,
+  worth a live test); and the standing hypothesis that AI squadmate
+  call-ins (`friendly_support_delta`/`riotshield`) have a per-type code
+  divergence bug is REFUTED — both run byte-for-byte identical spawn
+  logic, differing only in a cosmetic HUD icon. See
+  `re_notes/killstreak_reference.md`'s corrected roster table.
+- **`notifyonplayercommand`'s native trigger point: reframed, not found
+  (2026-07-18).** A full decompile of the entire input-dispatch chain
+  found it is purely numeric with zero bind-name-string logic anywhere,
+  and a raw byte-level scan confirmed the literal strings
+  `"notifyonplayercommand"`/`"playercommand"` don't exist anywhere in the
+  binary's static data. Conclusion: there is almost certainly no native
+  "keypress pushes a notify" trigger to find — it's very likely a
+  GSC-VM-internal builtin (bytecode polls bind state itself), the same
+  architecture already confirmed for `hasperk` elsewhere in this project.
+  **Cheap next experiment, not yet tried**: hold Fire noticeably longer
+  (1-2 full seconds) before releasing during a Predator Missile attempt,
+  to test whether this is actually a polling-frequency issue rather than
+  a missing call — costs nothing to try before any further RE work.
 
 ### Docs
 - **Added a scorecard to README.md**: raw functionality (~80/100, from the

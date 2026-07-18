@@ -35,7 +35,7 @@ data, not web research.
 | Mounted Browning M2 (vehicle turret) | Back on the Grid | ⚠️ Partial (unconfirmed cause) | Aim/fire both work, but felt notably harder than expected — cause not yet diagnosed (bug #6, task #27: no aim assist vs. missing regen-rate buff). Campaign-unique. |
 | Helicopter door gun (Remote Turret) | Return to Sender | ✅ Working | Fully working, no fallback needed. **Shares its real name ("Remote Turret") with an MP Support Strike Package killstreak below — same weapon-system concept, not confirmed to be the same underlying code.** |
 | SMAW | Goalpost | ✅ Working (dumb-fire) / ❓ Unconfirmed (lock-on) | Free-fire against ground targets (tanks) works. Lock-on against aircraft may be broken, or the target may be non-targetable/scripted — not yet confirmed either way (bug #8, task #29). **Shares its real name with a real-world/CoD-series weapon also usable in MP** (dumb-fire only there, no lock-on in MP per public research — see below), though this project hasn't independently verified that MP fact. |
-| Predator Missile (`remote_missile`) | Black Tuesday, Down the Rabbit Hole (not yet playtested this session — Act 3) | ⚠️ Partial, per this project's own GSC trace (not this session's playtest) | Camera/view control confirmed working (shares the real UAV-control system). **Fire (2026-07-18): rewired off raw usercmd bit onto the real `+attack` kbutton (`known_issues.md` issue #29) — implemented, builds clean, NOT yet live-confirmed.** Separately, live-reported: the post-fire missile-guidance sequence (controlling the flying missile) is where **movement breaks on controller** (`known_issues.md` issue #27 bug #9, task #25 — likely a scripted-freeze/cinematic-lock gap in the movement hook, not a Fire-wiring issue). See `known_issues.md` task #7 and `iw5sp.md`'s full GSC trace. **Also a real MP killstreak — see below.** |
+| Predator Missile (`remote_missile`) | Black Tuesday, Down the Rabbit Hole (not yet playtested this session — Act 3) | ⚠️ Partial | Camera/view control confirmed working (shares the real UAV-control system). **Fire (2026-07-18): rewired off raw usercmd bit onto the real `+attack` kbutton (`known_issues.md` issue #29) — LIVE-TESTED. Regular gunfire unaffected (no regression), but the missile still does not launch — the raw-bit-vs-real-kbutton hypothesis is REFUTED, real fix still not found.** Separately, live-reported: the post-fire missile-guidance sequence (controlling the flying missile) is where **movement breaks on controller** (`known_issues.md` issue #27 bug #9, task #25 — likely a scripted-freeze/cinematic-lock gap in the movement hook, not a Fire-wiring issue). See `known_issues.md` task #7 and `iw5sp.md`'s full GSC trace. **Also a real MP killstreak — see below.** |
 
 Turret and AI-squadmate call-ins (D-pad Left in Survival) are a related
 but structurally separate system from any of the above — see
@@ -48,6 +48,31 @@ but structurally separate system from any of the above — see
   No controller-support status yet, since this mission hasn't been
   playtested. (Sourced from earlier web research this session, kept here
   for completeness — not re-verified against live testing.)
+
+## Survival buy-station killstreak roster — real, CSV-verified (2026-07-18)
+
+**Corrects an earlier assumption.** A prior session's "killstreak-crate
+table" lead (found in one script's precache list, not the actual economy
+data) wrongly implied 6 purchasable killstreak items. Re-extracting
+`sp/survival_armories.csv` directly (the real buy-station economy table)
+shows **only 4 real, purchasable Survival killstreaks exist**:
+
+| Item | Cost | Wave gate | Real input mechanism | `notifyonplayercommand`-gated? |
+|---|---|---|---|---|
+| `remote_missile` (Predator Missile) | 2500 | 0 | Camera takeover (shares real UAV-control system); fire via `notifyonplayercommand("launch_remote_missile", "+attack")` | Yes — this is why it's currently broken (issue #29) |
+| `precision_airstrike` | 2500 | 3 | **Different mechanism entirely**: real native `beginlocationselection`/`endlocationselection` placement-marker API, confirmed NOT gated by `notifyonplayercommand` at all — `confirm_location` fires purely from native code, never sent from any GSC script | No |
+| `friendly_support_delta` (AI squadmates) | 3000 | 13 | `notifyoncommand("friendly_support_called", "+actionslot 4")`, identical spawn logic to riotshield below | Yes |
+| `friendly_support_riotshield` | 5000 | 20 | Same trigger/spawn logic as delta — the two are functionally identical in GSC (only a cosmetic HUD icon differs); a prior hypothesis that a per-type code divergence explains why squadmate call-ins fail is **refuted** — see `known_issues.md` issue #14's updated trail | Yes |
+
+`stealth_airstrike`/`carepackage_c4`/`carepackage_ammo` — **do not exist as
+purchasable Survival items**, confirmed absent from the real economy CSV.
+They only ever appear in one script's precache list alongside other unused
+assets — dead/vestigial content, not reachable in retail Survival. Drop
+these from any future tracking.
+
+`sentry`/`sentry_gl` (turret) and `iw5_riotshield_so` are a separate
+`equipment`-category buy, not `airsupport` — already working via the
+existing D-pad key-synthesis fix, not re-traced this pass.
 
 ## Multiplayer killstreaks — full reference, NOT currently actionable
 
@@ -104,6 +129,9 @@ Sources: [The Complete Guide To MW3's Killstreak Rewards - Game Informer](https:
   CSV/GDT table similar to `sp/survival_armories.csv` already found for the
   buy-station system) to independently confirm exact kill thresholds and
   resolve the tier-9 Assault Package naming inconsistency noted above.
-- Cross-reference this list against whatever Survival mode's own buy-station
-  killstreak set actually offers (may be a subset of the full MP list, not
-  yet confirmed either way).
+- ~~Cross-reference this list against whatever Survival mode's own
+  buy-station killstreak set actually offers~~ **RESOLVED 2026-07-18** — see
+  the new "Survival buy-station killstreak roster" section above. Survival's
+  real roster is a 4-item subset (`remote_missile`, `precision_airstrike`,
+  `friendly_support_delta`, `friendly_support_riotshield`), all sharing
+  names with real MP killstreaks in the table below.

@@ -856,12 +856,20 @@ extern "C" void __cdecl InjectControllerSprint()
     LogSprintDiag(); // task #9 -- investigating a real native sprint timer, see comment above
 
     bool held = IsPhysicalHeld(g_buttonMap.sprint, buttons, leftTrigger, rightTrigger);
-    if (held && !g_sprintHeld && GetRealStance() != 0) {
+    if (held && !g_sprintHeld && GetRealStance() != 0 && !g_adsHeld) {
         // Rising edge while crouched/prone: real console sprint stands the player back
         // up to full upright first, same as pressing forward while ducked/prone does.
         // Drives the same real toggle B does now (ForceStandingViaRealToggle), not our
         // own tracked stance -- without this, sprint would just run while still
         // crouched/prone (bug found 2026-07-15).
+        //
+        // Excluded while ADS'd (task #24, 2026-07-18): the same physical bind is also
+        // Hold Breath while aiming a sniper, and per the original design intent
+        // (CLAUDE.md), crouched/prone + Hold Breath must NOT force standing the way
+        // ordinary Sprint does -- only the hip-fire Sprint case should trigger the
+        // real stance toggle. Hold Breath itself isn't implemented yet (needs its own
+        // sway-reduction layer, see known_issues.md task #24) -- this only stops the
+        // incorrect forced-stand regression, it doesn't add sway reduction.
         ForceStandingViaRealToggle();
     }
     g_sprintHeld = held;

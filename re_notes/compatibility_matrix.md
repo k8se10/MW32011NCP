@@ -118,7 +118,7 @@ instead of 16 per-map rows.
 
 | Mode | Status | Notes |
 |---|---|---|
-| Survival (all maps) | ⚠️ | Works well overall across maps tested. **One known issue**: Predator missile killstreak — see `known_issues.md` issue #10 (the game-breaking stuck-prone crash is RESOLVED) and the still-open general killstreak input gap (task #7 in the project's main task list) — Predator missile's own input is only partially working (Fire relies on raw usercmd bits rather than a real `+attack`-style bind, per the existing hypothesis in `iw5sp.md`'s killstreak research). |
+| Survival (all maps) | ⚠️ | Works well overall across maps tested. **Two known blockers to calling Survival fully complete (2026-07-18):** (1) Predator missile killstreak launch — see `known_issues.md` issue #10 (the game-breaking stuck-prone crash is RESOLVED) and issue #29/task #7 — the raw-usercmd-bit-vs-real-kbutton hypothesis was implemented and **live-tested as WRONG** (regular gunfire unaffected, but the missile still doesn't launch), so the real `notifyonplayercommand` native trigger point is still unfound; (2) Sprint's Extreme Conditioning perk override (task #9) — perk's real name confirmed (`specialty_longersprint`) but no native `HasPerk`-equivalent query exists, genuinely parked pending a GSC-side approach. |
 
 **Real 16 MP map zone identifiers, for reference only** (not tracked
 per-map above, per the direction this section now follows): `mp_alpha`,
