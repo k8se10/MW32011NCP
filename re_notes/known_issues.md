@@ -868,6 +868,21 @@ synthesis) are workarounds pending the real GSC-side mechanism being found,
 not permanent design choices. **CONFIRMED WORKING LIVE by the user** (2026-07-16):
 squadmate call-in via D-pad Left now succeeds using the synthesized '4' keypress.
 
+**Documentation inconsistency flagged, not yet reconciled (2026-07-18):**
+this entry's "CONFIRMED WORKING LIVE" claim for squadmate call-in directly
+contradicts task #13's own live-tracked status ("works for turrets, fails
+100% for squadmate call-ins") and issue #26's later research
+(2026-07-17), which treats the squadmate bug as still open and narrows
+its "divergence point" to `_id_061C::_id_3DE2`. Possible explanations,
+not yet distinguished: (a) this entry's live confirmation actually only
+re-tested turret un-toggle (the "bonus fix" below it) and the "squadmate
+call-in... now succeeds" line above it was a premature/mistaken claim
+never actually re-tested against a real `friendly_support_delta`/
+`riotshield` loadout; or (b) it genuinely worked on 2026-07-16 and
+regressed or was map-specific, consistent with issue #31's new
+map-dependent-failure finding below. Needs a live re-test with an
+explicit squadmate (not turret) loadout to resolve which.
+
 **Bonus fix, same mechanism: turret could not be un-toggled once deployed.** Live-
 reported earlier the same session (pulling out a turret via D-pad Left left no way to
 put it away again) and initially parked as a separate investigation pending native-path
@@ -1843,21 +1858,69 @@ numeric method IDs at GSC compile time, zero string trace natively).
 `notifyonplayercommand` is very likely a GSC-VM-internal builtin: GSC
 bytecode itself polls a bind's down/up state via a generic, numeric-ID-
 keyed intrinsic, rather than the engine pushing an event out synchronously
-on keypress. **If true, this reframes what "fixing" this even means**:
-the productive next step isn't more native xref/string hunting — it's (a)
-confirming whether that polling intrinsic reads the EXACT SAME kbutton_t
-this mod's `CallKbuttonDown` already writes to (in which case the fix
-really is just a timing/frequency issue — e.g. our edge-triggered
-KeyDown/KeyUp pair might not stay "down" long enough for a slower GSC
-polling tick to observe it, unlike a real held keypress that persists
-across many polls), which would need either GSC bytecode-level analysis of
-`1555.gsc`'s compiled `.gscbin` (to identify the actual builtin call
-opcode/ID and trace ITS native implementation from there) or a live/
-runtime approach; or (b) a live experiment — hold Fire for noticeably
-longer than a normal shot (e.g. 1-2 full seconds) before releasing, to
-test the "polling frequency" hypothesis directly without any further RE
-work at all. (b) is by far the cheapest next step and should be tried
-before investing in bytecode-level analysis.
+on keypress.
+
+**Polling-frequency hypothesis RULED OUT (2026-07-18, user-confirmed prior
+live experience): holding Fire for a long duration still does not launch
+the missile.** This rules out "our edge-triggered KeyDown/KeyUp pair
+doesn't stay down long enough for a slow GSC poll to catch it" as the
+explanation — a real held press, which this mod's `CallKbuttonDown`/
+`CallKbuttonUp` pair genuinely produces for the full hold duration (same
+mechanism ADS/Reload already prove works correctly), still doesn't
+trigger the launch even given ample time for any plausible poll rate to
+observe it. **This means the real kbutton_t this mod writes to is either
+never read by whatever GSC-VM intrinsic backs `notifyonplayercommand`, or
+is read but some other precondition is unmet.**
+
+**Bytecode-level trace, real progress (2026-07-18):** using `gsc-tool`'s
+own open-source engine tables (`github.com/xensik/gsc-tool`,
+`src/gsc/engine/iw5_pc_meth.cpp`/`iw5_pc_func.cpp`), confirmed
+`notifyonplayercommand` (entity-scoped) compiles to **method ID `0x82A5`**
+(distinct from `notifyoncommand`'s bare/global function ID `0x00D`,
+consistent with the two-builtin split found separately in issue #31) and
+`OP_CallBuiltinMethod2` (**opcode `0x8D`**, the 2-argument builtin-method
+call, matching `notifyonplayercommand`'s real `(eventName, bindName)`
+signature). Parsed `1555.gscbin`'s real container format (`name\0` + 3
+length fields + zlib-compressed header + raw bytecode) directly from the
+retail file and extracted the raw bytecode. **Decisive, byte-level
+confirmation**: the exact byte sequence `8D A5 82` (opcode + little-endian
+method ID) appears **7 times** in the real compiled bytecode, at offsets
+matching the known source-level `notifyonplayercommand` call sites (lines
+336, 1302-1313). This is the first concrete proof this builtin call is
+findable and identifiable at the bytecode level, not just a theoretical
+GSC-VM-internal hypothesis.
+
+**Not yet reached: the native dispatch table itself.** Finding the GSC
+bytecode interpreter's main opcode-dispatch loop in `iw5sp.exe` (its
+`case 0x8D:` handler specifically) — which would reveal how method ID
+`0x82A5` resolves to an actual native function pointer — needs locating
+that interpreter loop from scratch in Ghidra (a large switch/jump-table
+function with 100+ cases across the known opcode range). Not yet
+attempted. **One flag worth noting for whoever continues**: `0x82A5`
+(33445) is unusually large for a small bounded set of engine methods —
+may be a hash/truncated-hash of the method name rather than a flat
+sequential enum (a pattern seen in some later CoD engine generations),
+which would mean the native side is a hash table lookup, not simple array
+indexing. Not confirmed either way — only the interpreter's actual
+indexing code can settle it. **Concrete next step**: find the opcode
+interpreter loop, its `0x8D` case, and the indexing/lookup formula it
+uses for the embedded method ID.
+
+**Campaign scope confirmed, and corrected (2026-07-18):** a dedicated
+research pass found `remote_missile`'s Campaign usage lives in
+`rescue_2.ff` (= "Down the Rabbit Hole," confirmed via matching
+diamond-mine/rescue subtitle strings) and uses the LITERAL SAME compiled
+`1554.gscbin`/`1555.gscbin` scripts as Survival — byte-for-byte identical
+`notifyonplayercommand` calls for equip/fire/abort. **This means a fix for
+Fire's `notifyonplayercommand` reachability fixes Down the Rabbit Hole and
+Survival simultaneously, not two separate problems.** One mission-specific
+difference: Campaign's equip slot is `+actionslot 2`, not Survival's.
+**Correction**: `killstreak_reference.md`'s earlier claim that "Black
+Tuesday" also uses `remote_missile` was checked against the two best zone
+candidates (`intro.ff`, `berlin.ff`) and found unsupported — neither
+contains real `remote_missile` gameplay scripts (only an unused
+material-asset stub in `berlin.ff`). Likely a mistaken assumption from an
+earlier, non-RE-verified session. Corrected in `killstreak_reference.md`.
 
 **Original hypothesis note (superseded by the live-test result above,
 kept for the record):** this touches the single most-used input in the
@@ -1928,12 +1991,30 @@ at the end of every branch regardless of which one fired:
    **`cmd+0x3e`/`cmd+0x3f`** — a THIRD analog-input byte pair, distinct
    from both normal look (`kPitchAccum`/`kYawAccum`) and normal movement
    (`cmd+0x1c`/`0x1d`).
-3. **Bit `0x8`** on the same `0x00B36210` gate → `FUN_0057df60`, the
-   confirmed real **vehicle steering/throttle handler** (driven by global
-   `DAT_00984d50`), which writes vehicle axes to yet another pair,
-   `cmd+0x3b`/`cmd+0x3c`, and sets special buttons bits `0x10000`/
-   `0x20000` from a per-player vehicle-mode value at
-   `0x00A99A44 + playerIndex*0xD28`.
+3. **Bit `0x8`** on the same `0x00B36210` gate → `FUN_0057df60`. **Refined
+   (2026-07-18, `precision_airstrike` research pass): this is NOT
+   vehicle-specific — it's a shared mode-dispatch function**, gated on
+   global `DAT_00984d50` and reading a per-player mode value at
+   `0x00A99A44 + playerIndex*0xD28`. **Mode 1** computes a clamped 2D
+   cursor position (`cmd+0x3b`/`0x3c`/`0x3d`) using `FUN_0057d680` — the
+   SAME raw mouse-delta source normal look already consumes — scaled by a
+   real, confirmed cvar `cg_mapLocationSelectionCursorSpeed`. **This is
+   `precision_airstrike`'s real artillery-marker cursor-movement path**,
+   confirmed via that cvar and the real `map_location_selector_arrow` HUD
+   material/`confirm_location` interned event name (all found as literal
+   strings in the binary — unlike `notifyonplayercommand`, this system
+   is NOT a zero-string GSC-only builtin). **Mode 2** is the actual
+   vehicle-driving case: just ORs `cmd->buttons |= 0x20000`. **Since
+   Mode 1's cursor math reuses the exact same raw-mouse-delta function
+   this mod's normal look hook already feeds, it's plausible controller
+   aiming during `precision_airstrike`'s placement already works
+   correctly TODAY with zero new code — not confirmed, needs a live
+   check** (aim during a real `precision_airstrike` buy/placement and see
+   if the cursor tracks the right stick). If it does, the only remaining
+   gap for that specific killstreak is the confirm/Fire-detection step
+   into `confirm_location` (not yet traced — not inside `FUN_0057df60`
+   itself, must be a separate check elsewhere for "Fire pressed while
+   mode==1").
 
 **Why this matters:** branch 2's `cmd+0x3e`/`0x3f` channel is a strong,
 evidence-backed unifying candidate for a whole cluster of previously
@@ -1974,6 +2055,140 @@ angle, and issue #27 bugs #1/#5/#6/#9 to point at this single fix
 instead of pursuing each independently** — but confirm live once
 implemented, since the `+0x1094` setter and branch-2 applicability to
 each specific case are still hypotheses, not proven facts.
+
+## 31. Master `notifyonplayercommand`/`notifyoncommand` survey — two distinct builtins found, squadmate call-in's real failure mode identified (2026-07-18, research pass)
+
+**Status:** Research complete, no code changes. Full grep-verified sweep of
+all 240 decompiled Survival GSC scripts for every `notifyonplayercommand(`
+and `notifyoncommand(` call site.
+
+**Major architectural finding, not previously catalogued: these are TWO
+DISTINCT GSC builtins, not one with an optional receiver.** Every single
+`notifyonplayercommand` call in this codebase is invoked ON an entity
+(`self notifyonplayercommand(...)` or `var_0 notifyonplayercommand(...)`
+where `var_0` is a player reference) — player-scoped, zero exceptions.
+Every `notifyoncommand` call is invoked bare, with zero exceptions —
+level/global-scoped, no entity receiver. **`friendly_support_called` (the
+squadmate call-in) uses the BARE/global `notifyoncommand`** (`1574.gsc`
+line 1739), while `remote_missile`'s launch/abort, turret-cancel, and
+ready-up all use the **player-scoped** `notifyonplayercommand`. This means
+the squadmate bug and the Predator Missile bug are gated by two genuinely
+different native mechanisms — a fix/finding for one doesn't automatically
+transfer to the other.
+
+**Full call-site table** (file:line, builtin, event, bind(s), feature):
+`137.gsc:566` notifyoncommand `<id>_is_ready`/`_is_not_ready` on
+`+gostand`/`+stance` (generic pre-mission ready-wait); `137.gsc:1231,1265`
+notifyoncommand `toggle_challenge_timer`/`force_challenge_timer` on
+`+actionslot 1` (Spec Ops challenge timer); `1442.gsc:321` notifyoncommand
+`mag_cycle` on `+melee_zoom`/`+sprint_zoom` (laser item mag-cycle);
+`1442.gsc:531` notifyonplayercommand `use_laser`/`fired_laser` on
+`+actionslot 4`/`+attack`/`+attack_akimbo_accessible` (laser designator);
+`1553.gsc:677,688` notifyonplayercommand `controller_sentry_cancel` on
+`+actionslot 4`/`weapnext` (turret cancel); `1555.gsc:336`
+notifyonplayercommand `switch_to_remotemissile` on a computed actionslot
+(Predator Missile equip); `1555.gsc:1302-1313` notifyonplayercommand
+`abort_remote_missile`/`launch_remote_missile` (already known, see issue
+#29); `1558.gsc:1117` notifyonplayercommand `cancel sentry` on
+`+actionslot 4` (a second, distinct turret-cancel copy); `182.gsc:1025`
+notifyoncommand `autosave_player_nade` on `+frag`/`-smoke`/`+smoke`;
+`1571.gsc:848` notifyonplayercommand `survival_player_ready` on `+stance`
+(ready-up, already known); `183.gsc:4537` notifyoncommand
+`_cheat_player_press_slowmo` on melee binds (dev cheat, not player-facing);
+`1574.gsc:580` notifyonplayercommand `pip_cycle` on `+actionslot 2`
+(picture-in-picture); `1574.gsc:1739` notifyoncommand
+`friendly_support_called` on `+actionslot 4` (squadmate call-in — see
+below); `228.gsc:431` notifyonplayercommand `nag` on `weapnext`;
+`228.gsc:1297` notifyoncommand `draw_attention` on `+attack`/
+`+attack_akimbo_accessible`; `362.gsc:43` notifyoncommand `flare_button`
+on `+frag`/`+usereload`/`+activate`; `dubai_code.gsc:3670`
+notifyonplayercommand `tospecops` on `pause`/`+gostand` (note: `"pause"`
+as a bind-name argument is unusual, not `+`/`-`-prefixed — worth a closer
+look if Campaign→Specops transition input ever matters);
+`dubai_finale.gsc`/`dubai_utils.gsc` notifyoncommand `playerjump` on
+`+gostand`/`+moveup`.
+
+**Correction to the standing assumption that turret's success is evidence
+synthetic input reaches these notify builtins**: turret's actual
+PLACEMENT (not just cancel) is confirmed NOT notify-gated at all —
+`1558.gsc`'s `_id_3CB3`/`_id_3CBE` (lines 1122-1153, 1377-1392) gate on
+`self usebuttonpressed()`/`self attackbuttonpressed()`, direct polled
+boolean button-state queries checked every loop iteration, with placement
+finalized via a ground-trace check (`self isonground() &&
+var_1["result"]`, line 1206), not an event wait. **Turret "working" only
+proves direct button-state polling correctly observes this mod's
+synthetic kbutton writes — it says nothing about whether either notify
+builtin can be reached by synthetic input**, since turret placement uses
+neither. Only turret's CANCEL uses `notifyonplayercommand` — worth
+separately confirming cancel has actually been live-tested (not just
+placement) before treating it as a second confirmed-working notify
+example.
+
+**`friendly_support_called`'s real failure — resolved with concrete
+evidence, and it's NOT primarily an input-reachability bug:**
+1. **Listener chain confirmed intact** — `1574.gsc:1739-1740`, the
+   `notifyoncommand(...)` call and `self waittill("friendly_support_called")`
+   sit on consecutive lines in the same function (`_id_3F24`), itself
+   threaded per-call from `_id_3F23`. No dangling/mismatched listener.
+2. **Real, concrete map-dependent silent-failure path found**, traced all
+   the way through `_id_061C::_id_3DE2` (`1564.gsc:2122-2128` — the exact
+   function a prior session flagged as the unresolved "divergence point"):
+   `var_5 = _id_0618::_id_3DCA(var_0)[0]; if (!isdefined(var_5)) return
+   var_4;` — an explicit defensive early-return for exactly the case where
+   the map has no spawn path. This reads `spawn_allies`'s own drop-path
+   lookup (`1564.gsc:2071`, `getstructarray("drop_path_start",
+   "targetname")` — a per-level struct-array query). **If the specific
+   Survival map being played has no `drop_path_start`-tagged entities
+   placed in it, this silently returns an empty array and nothing spawns
+   — no error, no fallback, completely independent of input device.**
+
+**Practical implication**: before spending more effort chasing this as an
+input-reachability problem, check whether the map(s) actually used for
+testing have `drop_path_start`/`chopper_boss_path_start` structs present,
+or retest on a different Survival map. This is a genuine, evidenced
+alternative explanation this project hadn't considered — quite possibly
+the whole story, or at least a real confound on top of whatever the
+input-device question turns out to be.
+
+**Cross-referenced against a second, independent research pass
+(turret-vs-squadmate mechanism comparison) — two non-mutually-exclusive
+explanations now on record, not a single resolved answer:** that pass
+found turret's initial call-in (not just placement, the WHOLE trigger)
+isn't notify-gated at all — it's driven by a generic native `weapon_change`
+event, via a shared dispatcher `_id_3CE8()`/trigger loop `_id_3CF5()`
+(script `1553.gsc`) that fires a killstreak's handler the instant the
+player's current weapon matches the registered streak weapon.
+`friendly_support_delta`/`riotshield` are confirmed ABSENT from
+`_id_3CE8`'s dispatcher table entirely — they're not weapon-type items at
+all, so they never get this free ride; their `notifyoncommand`-gated
+trigger is a genuinely different, standalone mechanism. That pass argues
+by analogy (same builtin CLASS as `remote_missile`'s `+attack` gate,
+which is independently confirmed unreachable by this mod's synthetic
+input via the long-hold live test) that `friendly_support_called` is
+likely blocked the same way — **but this is an inference, not
+independently confirmed for `notifyoncommand` specifically** (only
+`notifyonplayercommand` has a live-tested negative result). **Both
+explanations may be true simultaneously and aren't in tension**: even if
+`notifyoncommand`'s reachability were fixed, the map-dependent
+`drop_path_start` early-return above would still independently silently
+no-op on any map lacking that struct. Treat as two real, stacked
+candidate causes, not a single resolved root cause — the map-precondition
+angle is the more concretely evidenced of the two (an actual code path
+found and quoted, not an analogy) and is the cheaper one to rule in/out
+live (just check/vary which Survival map is being tested).
+
+**Also confirmed by the same comparison pass**: `FUN_0057a930` (the
+native function this mod's D-pad dispatcher calls for its "likely
+equipment/killstreak use" branch, previously undecompiled) is NOT a
+killstreak-specific call at all — it's a weapon-select fallback that
+ultimately calls the same native weapon-SET function (`FUN_0042d6b0`)
+`weapnext` uses. This means D-pad Left, for any WEAPON-type streak item
+(sentry, remote_missile, precision_airstrike — all three registered by
+weapon name in `_id_3CE8`), always resolves to a genuine native weapon
+switch, which fires the generic `weapon_change` event `_id_3CF5()`'s
+polling loop catches — fully explaining why those three "just work" via
+this mod's existing D-pad key-synthesis with no notify-gate involvement
+at all.
 
 ## Resolved this session (for contrast — see `iw5sp.md` for full write-ups)
 

@@ -110,10 +110,64 @@ reverse-engineering trail behind each entry.
   "keypress pushes a notify" trigger to find — it's very likely a
   GSC-VM-internal builtin (bytecode polls bind state itself), the same
   architecture already confirmed for `hasperk` elsewhere in this project.
-  **Cheap next experiment, not yet tried**: hold Fire noticeably longer
-  (1-2 full seconds) before releasing during a Predator Missile attempt,
-  to test whether this is actually a polling-frequency issue rather than
-  a missing call — costs nothing to try before any further RE work.
+  **Polling-frequency ruled out same day**: user confirmed from prior
+  play that holding Fire for a long duration still never launches the
+  missile, closing off the "our held press doesn't last long enough for a
+  slow poll" theory. The real kbutton_t this mod writes to is either never
+  read by whatever GSC-VM intrinsic backs `notifyonplayercommand`, or some
+  other precondition is unmet — next step is GSC bytecode/opcode-level
+  analysis of `1555.gsc`'s compiled `.gscbin`, not further native
+  dispatch-chain RE.
+- **Second research wave, same day — five more forks, real progress on
+  several fronts (`known_issues.md` issues #29/#30/#31):**
+  - **Bytecode-level breakthrough on `notifyonplayercommand`.** Using
+    `gsc-tool`'s own open-source engine tables, confirmed
+    `notifyonplayercommand` compiles to a real, findable opcode (`0x8D`,
+    `OP_CallBuiltinMethod2`) + method ID (`0x82A5`) — found 7 times in
+    `1555.gsc`'s actual compiled bytecode, matching every known call site
+    exactly. Also confirmed `notifyoncommand` (the bare/global variant
+    `friendly_support_called` uses) is a SEPARATE builtin entirely
+    (function ID `0x00D`), not the same mechanism with an optional
+    receiver — a real architectural distinction missed until now. Native
+    dispatch table (how the ID resolves to an actual function) not yet
+    found — needs the GSC interpreter's opcode-dispatch loop located in
+    Ghidra, a well-defined next step rather than an open question.
+  - **Turret's "success" reframed — it was never evidence about notify
+    gates.** Decompiled `FUN_0057a930` (previously unresolved) and found
+    it's just a weapon-select fallback, not killstreak-specific. All
+    three weapon-type killstreaks (sentry, `remote_missile`,
+    `precision_airstrike`) ride a real native `weapon_change` event fired
+    by an ordinary weapon switch — completely bypassing any notify-gate
+    mechanism. Squadmate call-ins aren't registered in that same
+    dispatcher at all, so they never get this free ride — explaining the
+    working/broken split without it being evidence either way about
+    synthetic input reaching notify gates.
+  - **Squadmate call-in failure: a second, concretely-evidenced
+    explanation found.** A full grep sweep of all 240 decompiled scripts'
+    notify-call sites traced `friendly_support_called`'s real spawn logic
+    to an explicit defensive early-return when a Survival map lacks
+    `drop_path_start` structs — a genuine, silent, map-dependent no-op
+    completely independent of input device. Stacks with (doesn't replace)
+    the notify-reachability theory above as a candidate cause.
+  - **`precision_airstrike` may already partially work today.** Its
+    artillery-marker cursor movement was traced to `FUN_0057df60` — the
+    same function a parallel pass had flagged as "vehicle steering," now
+    understood to be a shared mode dispatcher (mode 1 = artillery cursor,
+    mode 2 = actual vehicle driving). Mode 1's cursor math reuses the
+    exact same raw mouse-delta source normal look already feeds — user
+    confirmed the real in-game mechanic (aim + confirm, like a smoke
+    marker throw) is consistent with this being a real-time cursor rather
+    than a menu interaction, reinforcing that controller aiming may
+    already work with zero new code. Only the confirm/Fire-detection step
+    is still unlocated. Worth a live test before writing anything.
+  - **Predator Missile's Campaign appearance confirmed and corrected.**
+    "Down the Rabbit Hole" (`rescue_2.ff`) runs the LITERAL SAME compiled
+    `1554.gscbin`/`1555.gscbin` scripts as Survival's version — a
+    Survival-side fix for Fire's `notifyonplayercommand` reachability
+    fixes both simultaneously, not two separate problems. Also corrected
+    a stale, unverified claim that "Black Tuesday" also uses this
+    killstreak — checked the two best zone candidates, found no supporting
+    evidence, removed from `killstreak_reference.md`.
 
 ### Docs
 - **Added a scorecard to README.md**: raw functionality (~80/100, from the
