@@ -19,38 +19,62 @@ each release.
 
 ## Scorecard (2026-07-18)
 
-Two different questions, kept deliberately separate rather than blended into one
-number — a feature can be highly functional but low-completeness (a few things built,
-all working great) or the reverse (broad coverage, but shaky):
+Two different questions, kept deliberately separate — a feature can be highly
+functional but low-completeness (a few things built, all working great) or the
+reverse (broad coverage, but shaky):
 
 | | Score | Answers |
 |---|---|---|
-| **Raw functionality** | **~80/100** | Of what's actually implemented and tested, how well does it work? |
-| **Feature completeness (SP/Survival scope)** | **~57/100** | Of the full planned SP/Survival roadmap, how much exists at all? |
+| **Raw functionality** | **~80/100** | Of what's actually implemented and tested, how well does it work? See the methodology note below the matrix. |
+| **Feature completeness (SP/Survival scope)** | **~74/100** | Of the full planned SP/Survival roadmap, how much exists at all? From the matrix below. |
 
-**Multiplayer is excluded from both numbers, not blended in at a low weight** — it's a
-separate, equally-large phase that hasn't started at all (0 of its own tasks even
-exist yet to count), and folding a from-scratch second-binary effort into one blended
-score would misrepresent both numbers. Treat these as SP/Survival-only.
+**Multiplayer is excluded from both numbers** — it's a separate, equally-large phase
+that hasn't started at all; folding a from-scratch second-binary effort into one
+blended score would misrepresent both numbers.
 
-**Methodology (shown, not hidden, so the numbers can be checked/recomputed as new
-data comes in)** — both scores use the same weighting: ✅/confirmed = 1.0, 🟡/partial
-= 0.5, ⬜/❓/untested = 0.0 (excluded entirely from the functionality score, since
-"untested" is a completeness question, not a functionality one).
+### Feature completeness matrix
 
-- **Raw functionality** — average of three real, currently-tracked data sets:
-  - Current control map (this file, above): 17 confirmed / 2 partial / 1 not-started
-    → 18/20 = 90%
-  - Campaign mission compatibility (`re_notes/compatibility_matrix.md`), tested
-    missions only: 4 full / 4 partial out of 8 tested → 6/8 = 75%
-  - Killstreak-type weapon systems (`re_notes/killstreak_reference.md`), tested items
-    only: 4 full / 4 partial out of 8 tested (2 unconfirmed items excluded) → 6/8 = 75%
-  - Average: (90 + 75 + 75) / 3 ≈ **80/100**
-- **Feature completeness** — from this project's own tracked task list (29 tasks,
-  SP/Survival scope): 14 completed / 5 in-progress / 10 pending →
-  (14×1.0 + 5×0.5 + 10×0.0) / 29 = 16.5/29 ≈ **57/100**
+Deliberately broken into atomic done/not-done sub-items rather than one line per
+major system, specifically so that large remaining systems (killstreaks, aim assist,
+the real options menu, vibration, button glyphs) are represented by multiple
+not-done rows instead of a single lightly-weighted "partial" line — a flat list with
+one row each for "stick layout presets" and "aim assist" would understate how much
+work the latter actually has left, since it's a much larger undertaking. Also
+deliberately NOT computed from the live task-tracking list (an ever-expanding
+scratchpad — every bug found adds another entry, so its completed/total ratio gets
+worse the more thoroughly this project tests itself) — sourced instead from this
+file's own Feature List, `known_issues.md`, and the full commit history, the same
+kind of durable record git/`PATCHNOTES.md` provides.
 
-Recompute periodically as tasks close and more of Campaign/Special Ops gets
+| Category | Done | Total | Notes |
+|---|---|---|---|
+| Foundation/infrastructure | 7 | 7 | Proxy DLL injection, engine hook installation, controller detection/raw input, XInput deadzone+curve, config file system, diagnostic logging, dev/safety tooling |
+| Core gameplay input | 17 | 17 | Movement, look, ADS+slowdown, core combat buttons, reload/interact, weapon switch, D-pad actionslots, stance ladder, sprint+stamina+mission-override, pause menu, B menu-back, ready-up, buy-station+pause fix, keyboard/mouse non-interference |
+| Menu/UI navigation | 5 | 5 | Main/pause menu nav, options two-pane drill, buy-station/armory nav, slider adjustment, button/stick layout presets |
+| Back/scoreboard | 1 | 2 | Implementation done (builds clean); live-confirmation not done |
+| Button-glyph UI prompts | 2 | 4 | Icon assets (106) + hook-mechanism research done; actual rendering + in-game swap logic not done |
+| Killstreak support | 1 | 4 | Predator Missile camera/view done; Predator Missile fire, Precision Airstrike, all other Survival buy-station types not done |
+| Real in-game options menu | 1 | 4 | Static injection mechanism done; real content rendering, level-load-transition fix, and shippability all blocked/not done |
+| Aim assist | 2 | 4 | Friction + magnetism math done; entity/target classification (the actual blocker) and live verification not done |
+| Vibration/rumble | 1 | 2 | Trigger-point research done; output implementation not done |
+| Extreme Conditioning override | 0 | 1 | Not started |
+| **Total** | **37** | **50** | **37/50 ≈ 74/100** |
+
+### Raw functionality methodology
+
+Average of three real, currently-tracked data sets (untested items excluded from
+this score entirely, since "untested" is a completeness question, not a
+functionality one): ✅ = 1.0, 🟡/partial = 0.5.
+
+- Current control map (this file, above): 17 confirmed / 2 partial / 1 not-started
+  → 18/20 = 90%
+- Campaign mission compatibility (`re_notes/compatibility_matrix.md`), tested
+  missions only: 4 full / 4 partial out of 8 tested → 6/8 = 75%
+- Killstreak-type weapon systems (`re_notes/killstreak_reference.md`), tested items
+  only: 4 full / 4 partial out of 8 tested (2 unconfirmed items excluded) → 6/8 = 75%
+- Average: (90 + 75 + 75) / 3 ≈ **80/100**
+
+Recompute periodically as sub-items close out and more of Campaign/Special Ops gets
 playtested — these are rough, transparently-weighted estimates for at-a-glance
 tracking, not a precise scientific measurement.
 

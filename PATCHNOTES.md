@@ -9,14 +9,27 @@ reverse-engineering trail behind each entry.
 ## Unreleased
 
 ### Docs
-- **Added a scorecard to README.md**: raw functionality (~80/100) and
-  feature completeness (~57/100, SP/Survival scope), computed transparently
-  from real tracked data (the control map, `compatibility_matrix.md`,
-  `killstreak_reference.md`, and the project's own 29-task list) rather
-  than a gut-feel number — methodology shown in full so it can be
-  recomputed as more testing lands. Multiplayer is explicitly excluded
-  from both scores rather than blended in at a misleadingly low weight,
-  since it's a separate phase that hasn't started at all.
+- **Added a scorecard to README.md**: raw functionality (~80/100, from the
+  control map, `compatibility_matrix.md`, and `killstreak_reference.md`)
+  and a feature-completeness matrix (~74/100, SP/Survival scope).
+  Multiplayer is explicitly excluded from both scores rather than blended
+  in at a misleadingly low weight, since it's a separate phase that hasn't
+  started at all. **Iterated same day, twice**: (1) feature completeness
+  was initially computed from the live task-tracking list (29 tasks,
+  ~57/100) — flagged as not viable, since that list is an ever-expanding
+  scratchpad where every newly-found bug adds another entry, making its
+  completed/total ratio get worse the more thoroughly this project tests
+  itself; recomputed from a curated named-system list instead (climbed to
+  ~75-85/100 across a couple of revisions as genuinely-missing foundational
+  items, like the injection/hooking layer itself and raw controller
+  detection, were found by scanning the full commit history rather than
+  just this file's own Feature List). (2) That flat list was then itself
+  replaced with the current, more granular matrix — a single "aim assist:
+  partial" row and a single "stick layout presets: done" row don't carry
+  equal real-world weight, so large remaining systems (killstreaks, aim
+  assist, the real options menu, vibration, button glyphs) are now broken
+  into their own atomic done/not-done sub-items instead of one lightly-
+  weighted line each, landing at 37/50 ≈ 74/100.
 
 ### Fixed
 - **Full documentation pass across README.md/CONTRIBUTING.md/iw5sp.md
