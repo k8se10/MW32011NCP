@@ -8,6 +8,16 @@ reverse-engineering trail behind each entry.
 
 ## Unreleased
 
+### Docs
+- **Added a scorecard to README.md**: raw functionality (~80/100) and
+  feature completeness (~57/100, SP/Survival scope), computed transparently
+  from real tracked data (the control map, `compatibility_matrix.md`,
+  `killstreak_reference.md`, and the project's own 29-task list) rather
+  than a gut-feel number — methodology shown in full so it can be
+  recomputed as more testing lands. Multiplayer is explicitly excluded
+  from both scores rather than blended in at a misleadingly low weight,
+  since it's a separate phase that hasn't started at all.
+
 ### Fixed
 - **Full documentation pass across README.md/CONTRIBUTING.md/iw5sp.md
   (2026-07-18)** to close out the remaining Back/slider/exception-count
