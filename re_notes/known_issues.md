@@ -517,6 +517,51 @@ mechanism itself — how to check "is this equipped right now" from native code 
 not found; a native `HasPerk`-equivalent function would need to be located, not yet
 attempted.)**
 
+**Sprint's real kbutton — FOUND (2026-07-19), superseding `iw5sp.md`'s "PARKED, exhaustive
+search came back negative" verdict.** All three prior live-memdiff-based techniques
+genuinely came back negative (that conclusion stands, and remains a useful lesson: this
+class of address just isn't reachable via heap correlation for this bind). The bind was
+instead found via a completely different, purely STATIC technique requiring no live game
+process at all: reconstructed `FUN_00438710`'s full real 77-entry jump table (base
+`0x00438f48`, found via its own bounds-check `CMP EAX,0x4c; JA default`) by raw dword walk
+rather than relying on the decompiler's partial switch recovery, and separately dumped the
+real static 81-entry canonical bind-name table at `0x00929fa0` (the one `FUN_005330a0`
+linearly scans — "index 1 = `+attack`"). **The table's index is identical to
+`FUN_00438710`'s case number** — cross-validated four independent ways (index/case 1 =
+`+attack`, 66/`0x42` = `weapnext`, 72/`0x48` = `togglecrouch`, 59-60/`0x3b-0x3c` =
+`+toggleads_throw`/`-toggleads_throw`, matching ADS's already-confirmed `0xA98CB8`
+exactly). This is the properly independent confirmation method the "Back regression"
+lesson (issue #3) called for — the earlier mistake used the WRONG table (the 32-entry
+`{name,-name}` pair table at `0092a014`, not case-ordered); this 81-entry table genuinely
+is, four times over.
+
+Index/case 61-62 (`0x3d`/`0x3e`) = `"+sprint"`/`"-sprint"` — a real, separate bind command
+distinct from the default-bound `"+breath_sprint"` (index/case 9-10). Case `0x3d`'s raw
+disassembly drives a dedicated kbutton_t at (per-player base)+`0xA98CCC`, the same
+"special case, dedicated global" pattern as ADS's `0xA98CB8` (one kbutton_t struct away in
+memory). **Independently cross-confirmed, not just table-adjacency speculation**: case 9
+(`"+breath_sprint"` DOWN, the actual SHIFT-bound default) disassembles to two back-to-back
+kbutton calls — one on `0xA98C04` (a new, previously-unidentified kbutton, very likely the
+real Hold Breath kbutton for task #24) and a second on `0xA98CCC`, the *exact same*
+address `"+sprint"` drives. The real, currently-shipped default Sprint/Hold-Breath key
+press already drives this same kbutton on real hardware today.
+
+**Implemented 2026-07-19**: `InjectControllerSprint()` now drives `0xA98CCC` via
+`CallKbuttonDown`/`CallKbuttonUp` (same convention as ADS/Reload/Fire), gated on
+`IsSprintActive()`'s full logical state (so a real `KeyUp` fires the instant stamina
+empties mid-hold, not just on physical release) rather than the raw pm_flags-bit-forcing
+approach. The old mechanism (`InjectControllerSprintPmFlags`/`ReassertSprintPmFlags`,
+hooks on `FUN_00644ed0`/`FUN_00643ce0`) was removed entirely, not just disabled — full
+replace, same precedent as Fire's migration (issue #29) and the crouch/prone migration.
+Builds clean (0 warnings/0 errors, full rebuild). **Not yet live-tested** — the stamina/
+cooldown timer layer, `player_sprintUnlimited` bypass, and stance/ADS gating logic are
+all unchanged, only the underlying engine call sprint now drives is different.
+**Hold Breath's own kbutton (`0xA98C04`) is a new, ready-to-use lead for task #24**, not
+yet wired up — implementing it would mean also driving `0xA98C04` alongside `0xA98CCC`
+when ADS'd with a scoped weapon, mirroring exactly what `"+breath_sprint"`'s real case 9
+already does unconditionally (the game itself must gate the actual sway-reduction EFFECT
+elsewhere, since this dispatch case fires both calls with no visible context branch).
+
 **Separately found and fixed while investigating:** `Controller_DeltaTimeSeconds()`
 (used for look) turned out to use a single **process-wide shared** static timer, not
 one per call site despite its own doc comment claiming otherwise — a second caller in

@@ -82,6 +82,36 @@ reverse-engineering trail behind each entry.
   kbutton_t `KeyDown` call alone would reach `notifyonplayercommand`'s
   native trigger is disproven — that trigger point is still unfound. See
   `known_issues.md` issue #29.
+- **Sprint (L3) migrated off raw `pm_flags` bit-forcing onto the real
+  `+sprint` kbutton (2026-07-19, task #9).** Three prior live-memdiff
+  searches for Sprint's real kbutton (twice via whole-heap correlation,
+  once via live write-testing, once via a targeted static-range scan) had
+  all come back negative and this was believed a genuine dead end (see
+  `re_notes/iw5sp.md`, "Sprint's real kbutton — PARKED"). Found instead via
+  a completely different, purely static technique needing no live game
+  process: reconstructed `FUN_00438710`'s real 77-entry jump table by raw
+  dword walk (the decompiler's own switch recovery only partially resolved
+  it) and cross-referenced it against the real static 81-entry canonical
+  bind-name table `FUN_005330a0` scans — confirmed the table's index IS
+  `FUN_00438710`'s case number, four independent ways (`+attack`=1,
+  `weapnext`=66, `togglecrouch`=72, ADS's `+toggleads_throw`=59-60,
+  matching its already-confirmed `0xA98CB8` kbutton exactly). Case 61-62 =
+  `"+sprint"`/`"-sprint"`, driving a dedicated kbutton at `0xA98CCC` —
+  independently cross-confirmed because the real default SHIFT bind
+  (`"+breath_sprint"`, case 9-10) disassembles to two kbutton calls, one on
+  a newly-found `0xA98C04` (very likely Hold Breath's own kbutton, a live
+  lead for task #24) and a second on this exact same `0xA98CCC`. Sprint now
+  drives this kbutton via `CallKbuttonDown`/`CallKbuttonUp` (same mechanism
+  as ADS/Reload/Fire), gated on the existing `IsSprintActive()` logical
+  state so a real `KeyUp` fires the instant stamina empties mid-hold, not
+  just on physical release. The old pm_flags-forcing mechanism
+  (`InjectControllerSprintPmFlags`/`ReassertSprintPmFlags`, hooks on
+  `FUN_00644ed0`/`FUN_00643ce0`) was removed entirely, not just disabled —
+  full replace, same precedent as Fire's migration above. The stamina/
+  cooldown timer layer and `player_sprintUnlimited` bypass are unchanged.
+  Builds clean (0 warnings/0 errors, full rebuild). Not yet live-tested.
+  See `known_issues.md` issue #6's 2026-07-19 update for the full
+  disassembly trail.
 
 ### Investigated, not resolved
 - **Predator Missile post-fire missile-guidance sequence: movement breaks

@@ -1730,6 +1730,28 @@ in this project -- expect a tuning round same as every other feature.
 
 ---
 
+## Sprint's real kbutton -- FOUND (2026-07-19), see below this section for the full trail
+
+**Superseded.** The three live-memdiff-based techniques below all genuinely came back
+negative and that conclusion still stands -- this specific bind's real address was never
+going to surface via heap correlation. It was found instead via a purely static technique
+requiring no live game process: reconstructing `FUN_00438710`'s real 77-entry jump table
+(base `0x00438f48`) by raw dword walk, and separately reading the real static 81-entry
+canonical bind-name table at `0x00929fa0` (`FUN_005330a0`'s own table). The table's INDEX
+is identical to `FUN_00438710`'s case number, cross-confirmed four independent ways
+(`+attack`=1, `weapnext`=66, `togglecrouch`=72, `+toggleads_throw`=59-60 matching ADS's
+already-confirmed `0xA98CB8`). Index/case 61-62 = `"+sprint"`/`"-sprint"`, driving a
+dedicated kbutton_t at `0xA98CCC` -- independently cross-confirmed because case 9
+(`"+breath_sprint"`, the real SHIFT-bound default) disassembles to TWO kbutton calls, one
+on a new address `0xA98C04` (very likely Hold Breath's own kbutton, a live lead for task
+#24) and a second on this SAME `0xA98CCC`. Implemented in `analog_input_hooks.cpp`'s
+`InjectControllerSprint()` via `CallKbuttonDown`/`CallKbuttonUp`, replacing the raw
+pm_flags-forcing mechanism entirely. Full detail, including the exact disassembly, in
+`re_notes/known_issues.md`'s issue #6 update (2026-07-19). Builds clean, not yet
+live-tested. The section below is kept verbatim as the historical record of the three
+techniques that didn't find it, since the methodology (and its negative result) is still
+a useful data point for future similar searches.
+
 ## Sprint's real kbutton -- PARKED, exhaustive search came back negative (2026-07-16)
 
 Following the corrected sprint-timer finding above (our own pm_flags-forcing masks

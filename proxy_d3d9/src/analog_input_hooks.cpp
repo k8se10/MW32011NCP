@@ -269,12 +269,11 @@ extern "C" void __cdecl InjectControllerMovement(unsigned char* cmd)
 //        reached during that press.
 //   LT (analog trigger) -> ADS -- NOT handled here, see InjectControllerAds (needs the
 //        real KeyDown/KeyUp kbutton calls, not a simple bit-OR)
-//   Left stick click (L3) -> Sprint -- NOT handled here, see InjectControllerSprint /
-//        InjectControllerSprintPmFlags. CONFIRMED WORKING live (2026-07-14) -- forces
-//        the real pm_flags bit (0x4000) that drives `player_sprintSpeedScale`, via a
-//        hook on the Pmove entry point (FUN_00644ed0) plus a reassert hook one level
-//        deeper (FUN_00643ce0) to survive whatever clears it in between. See
-//        re_notes/iw5sp.md for the full investigation.
+//   Left stick click (L3) -> Sprint -- NOT handled here, see InjectControllerSprint.
+//        CONFIRMED WORKING live (2026-07-14, real kbutton migration 2026-07-19) --
+//        drives the real +sprint kbutton_t (0xA98CCC) via CallKbuttonDown/CallKbuttonUp,
+//        same technique as ADS/Reload/Fire (superseded the original raw pm_flags-bit-
+//        forcing approach). See re_notes/iw5sp.md for the full investigation.
 //
 // NOT YET IMPLEMENTED (left unmapped, not guessed at):
 //   Back -> freed up when Crouch moved to B; no action assigned yet
@@ -833,8 +832,9 @@ extern "C" void __cdecl InjectControllerFire()
 // (DAT_00a98e4c) for VK_TAB to get the REAL case number directly from the same lookup
 // the game itself uses, the same idea already tried (inconclusively) for Reload.
 
-// ---- Sprint: left stick click (L3) -> real pm_flags bit via a Pmove-entry hook ---
+// ---- Sprint: left stick click (L3) -> real +sprint kbutton (2026-07-19) ---------
 //
+// SUPERSEDES the raw pm_flags-forcing mechanism below this comment block's history.
 // FIRST ATTEMPT (struct+0xb0, 2026-07-14) confirmed WRONG by live playtest ("SPRINT NOT
 // WORKING") and then confirmed WHY via decompile: FUN_0057d430 does read that flag, but
 // only to gate an EXTRA forward/right movement summation that reuses the real keyboard
@@ -843,28 +843,61 @@ extern "C" void __cdecl InjectControllerFire()
 // helpers always return 0 for us, so the flag gated a summation of zero. Right mechanism
 // existed, wrong layer -- same trap Prone and ADS both hit before being solved properly.
 //
-// REAL MECHANISM (found 2026-07-14 via string xref -> dvar -> read-site tracing, not
-// memdiff): the GSC-exposed dvar `player_sprintSpeedScale` (registered in FUN_00494310,
-// pointer stored at DAT_01d397e4) is applied in FUN_00643870, gated by
+// SECOND MECHANISM (pm_flags bit 0x4000 force via a Pmove-entry hook, implemented
+// 2026-07-15, REPLACED 2026-07-19): found via string xref -> dvar -> read-site tracing.
+// The GSC-exposed dvar `player_sprintSpeedScale` (registered in FUN_00494310, pointer
+// stored at DAT_01d397e4) is applied in FUN_00643870, gated by
 // `*(uint*)(iVar2+0xc) & 0x4000` where iVar2 is a live playerState-style struct pointer.
 // That same bit is read at the very top of the whole Pmove state machine,
-// FUN_00644ed0(int* param_1) -- confirmed via disasm that param_1 is a plain stack arg
-// (raw entry: [ESP+4], matching Ghidra's decompile of the prologue's
-// `MOV EBX,[ESP+0x98]` after `SUB ESP,0x90`+`PUSH EBX`), and `*param_1` dereferences to
-// the actual struct whose +0xc dword is pm_flags. This is read fresh from a register at
-// every real call, so we hook FUN_00644ed0's entry and force/clear bit 0x4000 on the
-// LIVE pointer each time -- no stored/hardcoded data address at all, matching the
-// project's live-pointer-capture pattern already used for `cmd` in FUN_0057de60.
+// FUN_00644ed0(int* param_1). Worked, but forced a raw engine bit directly rather than
+// driving a real kbutton -- exactly the class of thing this project's later kbutton
+// migrations (Fire, task #7; crouch/prone) moved away from wherever a real kbutton could
+// be found instead. Three prior dedicated searches for Sprint's real kbutton (whole-heap
+// live-diff correlation x2, live write-testing, a targeted static-range scan -- see
+// re_notes/iw5sp.md, "Sprint's real kbutton -- PARKED") all came back negative and this
+// was believed to be a genuine dead end.
+//
+// REAL KBUTTON FOUND (2026-07-19), via a completely different, entirely static technique
+// -- no live process/memdiff needed this time. FUN_00438710 (the ~77-case special-bind
+// dispatcher already confirmed for ADS/weapnext/togglecrouch) has its real 77-entry jump
+// table at 0x00438f48 (bounds-checked `CMP EAX,0x4c; JA default` after `EAX = param_2-1`,
+// so param_2 ranges 1-0x4d = 77, matching the "~77-case" estimate exactly). Reconstructed
+// all 77 entries via DumpRawRange.java + a raw dword walk (not the decompiler's switch
+// recovery, which only partially resolved under -noanalysis). Separately dumped the real,
+// STATIC 81-entry canonical bind-name table at 0x00929fa0 (the one FUN_005330a0 linearly
+// scans, "index 1 = +attack") via DumpRawDwords.java -- entirely compile-time data, no
+// live process required. **The table's own index is confirmed IDENTICAL to
+// FUN_00438710's case number**, cross-validated four independent ways: index/case 1 =
+// "+attack", 66 (0x42) = "weapnext", 72 (0x48) = "togglecrouch", and 59/60 (0x3b/0x3c) =
+// "+toggleads_throw"/"-toggleads_throw" (ADS, matching the already-confirmed 0xa98cb8
+// kbutton exactly). This directly resolves the "Back regression" lesson from
+// known_issues.md issue #3 (never trust a bind-table index as a case number without
+// independent confirmation) -- the earlier mistake used the WRONG table (the 32-entry
+// {name,-name} pair table at 0092a014, which is NOT case-ordered); THIS 81-entry table
+// genuinely is, four times over.
+//
+// Index/case 61/62 (0x3d/0x3e) = "+sprint"/"-sprint" -- a real, separate bind command
+// distinct from the default-bound "+breath_sprint" (index/case 9/10). Raw disassembly of
+// case 0x3d confirms it drives a dedicated kbutton_t at (per-player base)+0xA98CCC, the
+// exact same "special case, dedicated global" pattern as ADS's 0xA98CB8 (immediately
+// adjacent in memory, one kbutton_t struct apart). **Independently cross-confirmed**: case
+// 9 ("+breath_sprint" DOWN, the actual SHIFT-bound default) disassembles to TWO back-to-
+// back kbutton calls -- one on 0xA98C04 (a second, previously-unidentified kbutton, very
+// likely the real Hold Breath kbutton for task #24) and a SECOND on 0xA98CCC, the exact
+// same address "+sprint" drives. I.e. the real default Sprint/Hold-Breath key press
+// already drives this same 0xA98CCC kbutton today, on real hardware -- this is not a
+// guess from table adjacency, it's the literal disassembled behavior of the bind actually
+// shipped and bound by default. See re_notes/iw5sp.md for the full raw disassembly trail.
 namespace {
-constexpr uint32_t kPmFlagSprint = 0x4000u;
 bool g_sprintHeld = false;
-void* g_orig_00644ed0 = nullptr;
 
 // ---- Sprint stamina/cooldown (2026-07-15) --------------------------------------------
 //
-// Our own layer, not the game's real one: forcing kPmFlagSprint every tick (below)
-// bypasses whatever native duration/recovery timer normally limits sprint -- confirmed
-// this gives infinite sprint, unlike real vanilla keyboard play. `player_sprintUnlimited`
+// Our own layer, not the game's real one: driving the real +sprint kbutton for as long
+// as it's physically held bypasses whatever native duration/recovery timer normally
+// limits sprint -- confirmed this gives infinite sprint, unlike real vanilla keyboard
+// play (same conclusion held true back when this forced the raw pm_flags bit directly,
+// before the 2026-07-19 migration to a real kbutton). `player_sprintUnlimited`
 // (a real dvar, default 0) only gets set to 1 in a couple of specific Campaign missions
 // (`dubai_code.gsc`/`intro_code.gsc` per Plutonium's public GSC dump), not universally,
 // meaning Survival and most Campaign missions genuinely have a limited-by-default
@@ -948,6 +981,39 @@ bool IsSprintActive()
     return g_sprintHeld && GetRealStance() == 0 && !g_sprintWinded;
 }
 
+// Sprint's real kbutton_t, found 2026-07-19 -- see the big comment block above this
+// namespace for the full disassembly trail (FUN_00438710 case 0x3d/0x3e = "+sprint",
+// cross-confirmed by case 9/10's "+breath_sprint" driving the exact same address).
+// Same struct family/offset style as ADS (0xA98CB8) and Reload (0xA98C68), same
+// CallKbuttonDown/CallKbuttonUp convention (defined above, ADS section).
+constexpr uintptr_t kSprintKbutton = 0x00A98CCC;
+constexpr int kSprintBindIndex = 16; // distinct from ADS's 13/Reload's 15 -- arbitrary,
+                                      // just needs to be self-consistent between our own
+                                      // down/up calls (see ADS's kAdsBindIndex comment)
+bool g_sprintKbuttonActive = false; // tracks whether OUR CallKbuttonDown is currently
+                                     // "claimed" on the real kbutton, so we call KeyUp
+                                     // exactly once per KeyDown regardless of which of
+                                     // several different conditions (stamina depleting
+                                     // mid-hold, controller disconnect, physical release)
+                                     // caused sprint to stop being active this tick.
+
+// Drives the real kbutton off IsSprintActive()'s full logical state (stamina/cooldown/
+// stance/ADS/sprintUnlimited-dvar), not the raw physical hold -- Sprint needs to
+// genuinely stop (real KeyUp) the instant stamina hits empty even while the button
+// stays physically held, and resume (real KeyDown) automatically once recovered if
+// still held, matching how the game's own kbutton_t would behave under a real timed
+// stamina system.
+void UpdateSprintKbutton(bool active)
+{
+    if (active == g_sprintKbuttonActive) return;
+    g_sprintKbuttonActive = active;
+    if (active) {
+        CallKbuttonDown(kSprintKbutton, kSprintBindIndex);
+    } else {
+        CallKbuttonUp(kSprintKbutton, kSprintBindIndex);
+    }
+}
+
 // ---- Investigating a REAL native sprint timer (2026-07-16) ------------------------
 //
 // Found via the sprint-meter HUD render function (FUN_005696d0/FUN_005695a0, which
@@ -1013,6 +1079,10 @@ extern "C" void __cdecl InjectControllerSprint()
         // inconsistency with the exact pattern this function already established for
         // the bypass case one branch below).
         g_sprintLastTickMs = GetTickCount();
+        // Controller gone -- release the real kbutton if we were holding it, same as a
+        // real keyboard key being physically lifted. Otherwise a disconnect mid-sprint
+        // would leave the engine's own kbutton_t stuck "down" forever.
+        UpdateSprintKbutton(false);
         return;
     }
 
@@ -1049,6 +1119,7 @@ extern "C" void __cdecl InjectControllerSprint()
         // Unlimited sprint is live for this mission -- don't drain/regen our own timer
         // at all, so it doesn't sit at some stale mid-depleted value if this dvar is
         // ever toggled back off later in the same session.
+        UpdateSprintKbutton(IsSprintActive());
         return;
     }
 
@@ -1076,105 +1147,13 @@ extern "C" void __cdecl InjectControllerSprint()
             }
         }
     }
-}
 
-// Called from Hook_00644ed0 with the live `param_1` (the pml/movement-locals pointer)
-// pulled straight off the stack -- see the comment above for how that address was
-// confirmed. Forces or clears the real sprint pm_flags bit every Pmove tick to match our
-// polled controller state AND our own stamina layer, same as a real held/released key
-// with real stamina would. Gated on being upright -- never assert sprint while crouched/
-// prone (see InjectControllerSprint).
-// BIT-OWNERSHIP TRACKING (2026-07-16, revised): the first version of this fix gated
-// on Controller_IsConnected(), but that only covers a fully-unplugged controller --
-// with one connected-but-idle (a very normal setup: controller sitting on the desk
-// while actually playing keyboard/mouse), IsSprintActive() is still false (g_sprintHeld
-// correctly reads "not held" from the idle controller), so the `else` branch would
-// still clear a bit real keyboard input may have just set a moment earlier. The
-// general fix doesn't need to detect "which input device is active" at all -- it only
-// needs to never clear a bit it didn't set itself. Track whether WE are the one
-// currently asserting the bit; only clear what we own, and otherwise leave real
-// pm_flags completely alone (whatever native keyboard/kbutton logic put there stands).
-bool g_weOwnSprintBit = false;
-
-extern "C" void __cdecl InjectControllerSprintPmFlags(uint32_t pmlPtr)
-{
-    if (!pmlPtr) return;
-    uint32_t ps = *reinterpret_cast<uint32_t*>(pmlPtr);
-    if (!ps) return;
-    uint32_t* flags = reinterpret_cast<uint32_t*>(ps + 0xc);
-    if (IsSprintActive()) {
-        *flags |= kPmFlagSprint;
-        g_weOwnSprintBit = true;
-    } else if (g_weOwnSprintBit) {
-        // Only clear it if we were the one holding it on -- never touch a bit that
-        // real keyboard/native input set on its own (this is exactly what broke
-        // vanilla keyboard sprint: "toggles once, times out, never recovers").
-        *flags &= ~kPmFlagSprint;
-        g_weOwnSprintBit = false;
-    }
-}
-
-// Pure pre-hook, same shape as Hook_0057de60: grab the live stack argument, call our
-// injector, then tail-jump into the untouched original. pushad shifts the stack by
-// 0x20 (8 pushed registers), so the original [ESP+4] argument is now at [ESP+0x24].
-__declspec(naked) void Hook_00644ed0()
-{
-    __asm {
-        pushad
-        mov eax, dword ptr [esp + 0x24]
-        push eax
-        call InjectControllerSprintPmFlags
-        add esp, 4
-        popad
-        jmp dword ptr [g_orig_00644ed0]
-    }
-}
-
-// REASSERT POINT: our write at FUN_00644ed0's entry succeeds, but something between
-// there and the actual pm_flags read in FUN_00643870 clears it every tick -- neither
-// FUN_00644ed0 nor FUN_00643ce0's own decompiled logic explicitly clears bit 0x4000, so
-// it happens in one of the many sub-calls in between (confirmed via temporary read-site
-// instrumentation during investigation, since removed -- see re_notes/iw5sp.md for the
-// full trace). Reasserting here, one level deeper, is what makes it survive through to
-// the actual read.
-namespace {
-void* g_orig_00643ce0 = nullptr;
-}
-
-extern "C" void __cdecl ReassertSprintPmFlags(uint32_t pmlPtr)
-{
-    // Only ever ORs the bit in (never clears), so it was already safe by construction
-    // w.r.t. the keyboard regression -- still marks ownership so the clearing branch
-    // in InjectControllerSprintPmFlags above knows this tick's bit is ours to release
-    // later.
-    if (!IsSprintActive()) return;
-    if (!pmlPtr) return;
-    uint32_t ps = *reinterpret_cast<uint32_t*>(pmlPtr);
-    if (!ps) return;
-    *reinterpret_cast<uint32_t*>(ps + 0xc) |= kPmFlagSprint;
-    g_weOwnSprintBit = true;
-}
-
-// CRASH FIX (2026-07-14): first version of this hook used raw-entry [ESP+8] and
-// crashed the game (confirmed via Windows Event Log Application Error -> proxy d3d9.dll
-// offset 0x4e -> ReassertSprintPmFlags's `MOV ECX,[EAX+0xc]`, i.e. dereferencing a
-// garbage pointer). Root cause: misread the prologue -- FUN_00643ce0's `PUSH ESI`
-// instruction executes BETWEEN the two `MOV reg,[ESP+0x74]` reads, so they read
-// DIFFERENT stack slots, not the same one twice. Confirmed via the real call site
-// (`PUSH EDX` for a local scratch buffer, THEN `PUSH EBX` for the pml pointer, THEN
-// `CALL`) that the pml pointer is the LAST-pushed arg, landing at raw-entry [ESP+4] --
-// same slot/formula as every other hook in this file, not [ESP+8].
-__declspec(naked) void Hook_00643ce0()
-{
-    __asm {
-        pushad
-        mov eax, dword ptr [esp + 0x24]
-        push eax
-        call ReassertSprintPmFlags
-        add esp, 4
-        popad
-        jmp dword ptr [g_orig_00643ce0]
-    }
+    // Drive the real +sprint kbutton off the FULL logical state, not just the raw
+    // physical hold -- IsSprintActive() already folds in stance/stamina/winded, so this
+    // naturally issues a real KeyUp the instant stamina empties (even mid-hold) and a
+    // real KeyDown again once recovered, same as ADS/Reload's edge-triggered calls but
+    // driven by our own computed edge instead of the raw button edge.
+    UpdateSprintKbutton(IsSprintActive());
 }
 
 // ---- Look: right stick -> the pitch/yaw angle-delta accumulator directly -------
@@ -2998,23 +2977,12 @@ void InstallAnalogInputHooks()
         LogFromController(buf);
     }
 
-    MH_STATUS s3 = MH_CreateHook(reinterpret_cast<LPVOID>(0x00644ed0), &Hook_00644ed0, &g_orig_00644ed0);
-    sprintf_s(buf, "[hooks] MH_CreateHook(00644ed0) = %d", static_cast<int>(s3));
-    LogFromController(buf);
-    if (s3 == MH_OK) {
-        MH_STATUS e3 = MH_EnableHook(reinterpret_cast<LPVOID>(0x00644ed0));
-        sprintf_s(buf, "[hooks] MH_EnableHook(00644ed0) = %d", static_cast<int>(e3));
-        LogFromController(buf);
-    }
-
-    MH_STATUS s4 = MH_CreateHook(reinterpret_cast<LPVOID>(0x00643ce0), &Hook_00643ce0, &g_orig_00643ce0);
-    sprintf_s(buf, "[hooks] MH_CreateHook(00643ce0) = %d", static_cast<int>(s4));
-    LogFromController(buf);
-    if (s4 == MH_OK) {
-        MH_STATUS e4 = MH_EnableHook(reinterpret_cast<LPVOID>(0x00643ce0));
-        sprintf_s(buf, "[hooks] MH_EnableHook(00643ce0) = %d", static_cast<int>(e4));
-        LogFromController(buf);
-    }
+    // Sprint (L3) no longer hooks FUN_00644ed0/FUN_00643ce0 to force the raw pm_flags
+    // bit -- superseded 2026-07-19 by driving the real +sprint kbutton_t (0xA98CCC)
+    // directly via CallKbuttonDown/CallKbuttonUp from InjectControllerSprint(), same
+    // technique as ADS/Reload/Fire. See the big comment block above InjectControllerSprint
+    // for the full disassembly trail. Both hooks and their trampolines were removed
+    // entirely (not just disabled) now that nothing calls them.
 
     // task #30 -- controlslinkto diagnostic (log-and-forward only, see comment above
     // Hook_ControlsLinkTo for the full disassembly-confirmed calling convention)
