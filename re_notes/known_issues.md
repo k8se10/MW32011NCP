@@ -1944,14 +1944,47 @@ input) and refines issue #26's vehicle hypothesis below.
     slots are only ever touched by that struct's own 4 real references, all
     inside the dispatcher; the two features' arbitrary index choices cannot
     cross-contaminate.
-  - **Fix**: `UpdateHoldBreathKbutton` now manually zeroes `kbutton+0x11`
-    via a direct volatile byte write immediately after calling the real
-    `CallKbuttonUp` — since KeyUp will never do it itself. Re-enabled
-    (`kHoldBreathLiveEnabled = true`). Diagnostic logging kept (both the
-    edge-transition log and a new log line confirming the manual clear
-    fires). Builds clean (0 warnings/0 errors, full rebuild). **Not yet
-    live-tested** — needs a sniper-ADS playtest to confirm the stuck-forever
-    symptom is actually gone, not just theoretically fixed.
+  - **Attempted fix #2**: `UpdateHoldBreathKbutton` manually zeroed
+    `kbutton+0x11` via a direct volatile byte write immediately after calling
+    the real `CallKbuttonUp`. Built clean, re-enabled, **but user's live
+    playtest confirmed STILL stuck** — same symptom, unchanged. The `+0x11`
+    theory was well-evidenced from the decompile alone (a real, confirmed
+    field KeyUp never clears), but is not the (or not the only) real cause of
+    the visible bug — whatever native code actually drives the sway-reduction
+    effect either doesn't read `0xA98C04` directly at all, or reads it via a
+    path not found this pass (a dedicated follow-up Ghidra fork confirmed the
+    native dispatcher's UP-case does nothing beyond a plain symmetric KeyUp,
+    and ruled out bindIndex collision, without finding the real consumer —
+    an exhaustive xref search on both kbuttons found only 4 references each,
+    all inside the dispatcher itself, meaning any real consumer resolves the
+    kbutton dynamically rather than by hardcoded address, beyond what a
+    static xref search reaches in reasonable time).
+  - **REAL FIX, 4th key-synthesis exception (2026-07-19)**: user's call, given
+    two direct-kbutton attempts both failed live and the mechanism clearly
+    isn't fully understood — stop trying to drive `0xA98C04` directly at all,
+    and instead synthesize a REAL Shift keypress (`PostMessage`
+    `WM_KEYDOWN`/`WM_KEYUP`, `VK_SHIFT`) whenever ADS'd, the exact same
+    real bind a keyboard player's Shift press already takes (`bind SHIFT
+    "+breath_sprint"`). This is the FOURTH exception to this project's "no
+    OS-level input emulation" rule, joining Survival ready-up's F5, D-pad
+    Left's squadmate-call-in `'4'`, and Back's scoreboard TAB — same
+    justification each time (IW5 has no DirectInput import at all, so
+    keyboard input is genuine window messages, making a synthetic keypress
+    indistinguishable from a real one). Sidesteps whatever this project's own
+    direct-kbutton approach was missing entirely, by routing through the
+    real native input pipeline instead of trying to replicate it.
+    `SendSyntheticHoldBreathKey()` replaces `UpdateHoldBreathKbutton`/the
+    kbutton constants entirely (removed, not just disabled).
+    **Side effect deliberately accounted for**: a real Shift press also fires
+    Sprint's own kbutton (`0xA98CCC`) natively — `IsSprintActive()` was
+    updated to also exclude `g_adsHeld` (previously only stance-gated), so
+    this project's own direct Sprint-kbutton path and the new synthetic-Shift
+    path are fully mutually exclusive (raw kbutton owns Sprint when NOT
+    aiming; synthetic Shift owns Hold Breath — and harmlessly re-fires
+    Sprint's kbutton too, exactly like a real keyboard press, which the
+    engine itself already ignores while ADS'd) rather than both trying to
+    claim the same kbutton_t's `down[]` slots simultaneously. Builds clean (0
+    warnings/0 errors, full rebuild). **Not yet live-tested.**
 - **Positive result — Mission "Persona Non Grata" (Act 1, immediately after
   Hunter Killer): the UGV (Unmanned Ground Vehicle, mounted minigun +
   grenade launcher, played as Yuri) worked perfectly on controller as

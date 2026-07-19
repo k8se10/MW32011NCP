@@ -1033,6 +1033,12 @@ int GetDvarInt(const char* name)
     return *reinterpret_cast<int*>(reinterpret_cast<uintptr_t>(dvarPtr) + 0xc);
 }
 
+extern "C" HWND GetGameWindow(); // defined in d3d9_hook.cpp -- forward-declared here
+                                  // (this project's own ready-up section, further down
+                                  // this file, has the same declaration for its own
+                                  // synthetic-key use; linkage specs must be at global
+                                  // scope, so it's repeated here rather than nested)
+
 // ---- Sprint (L3): real +sprint kbutton (2026-07-19) ------------------------------
 //
 // Found via a purely static technique -- see the big comment block above this
@@ -1060,9 +1066,20 @@ int GetDvarInt(const char* name)
 // FUN_004b9350) are all gone -- not just disabled, since there's nothing left for any
 // of them to do. See `re_notes/known_issues.md` issue #6 and `PATCHNOTES.md` for the
 // full history, including the three prior dead-end searches this superseded.
+// Excludes g_adsHeld (2026-07-19, Hold Breath exception below): the real SHIFT
+// keypress that drives Sprint's kbutton also unconditionally fires Hold Breath's
+// kbutton on the exact same physical press (per the dispatcher trail above) -- now
+// that Hold Breath is driven via a SYNTHETIC real Shift keypress while ADS'd (see
+// below), that synthetic press would ALSO re-trigger this project's own direct
+// Sprint-kbutton call if this stayed ungated, double-claiming the same kbutton_t's
+// down[] slots from two different sources. Excluding ADS here makes the two paths
+// fully mutually exclusive: this raw-kbutton path owns Sprint whenever NOT aiming,
+// the synthetic-Shift path (which naturally also drives this same kbutton, exactly
+// like a real keyboard press) owns it whenever aiming -- matching real console
+// behavior anyway, since hip-fire sprint speed has no meaning while ADS'd.
 bool IsSprintActive()
 {
-    return g_sprintHeld && GetRealStance() == 0;
+    return g_sprintHeld && GetRealStance() == 0 && !g_adsHeld;
 }
 
 constexpr uintptr_t kSprintKbutton = 0x00A98CCC;
@@ -1090,69 +1107,56 @@ void UpdateSprintKbutton(bool active)
     }
 }
 
-// ---- Hold Breath (L3 while ADS'd): real kbutton (2026-07-19, task #24) ----------
+// ---- Hold Breath (L3 while ADS'd): FOURTH key-synthesis exception (2026-07-19) ---
 //
 // Same physical bind as Sprint on real console/keyboard (`+breath_sprint`) -- the
 // disassembly trail above (case 9, "+breath_sprint" DOWN) showed the real bind fires
-// TWO kbutton calls back-to-back, unconditionally, on every press: this one
-// (0xA98C04, previously unidentified, not touched by any other feature) and
-// 0xA98CCC (Sprint's, above). The engine itself -- not the bind -- decides whether a
-// given press means "sprint" or "hold breath" based on ADS/weapon state; the bind
-// dispatcher has no branch for it at all. Mirrored here the same way: drive this
-// kbutton off the raw physical hold gated on g_adsHeld, independent of stance (unlike
-// Sprint's own kSprintKbutton, which is deliberately standing-only by this project's
-// own design) -- holding breath while crouched or prone and scoped in is a normal,
-// expected case, not one that should be excluded. If the current weapon doesn't
-// support Hold Breath (no `canHoldBreath`), the real engine simply ignores the
-// kbutton state, same as a stray real keypress would -- no weapon-class check needed
-// here, same permissive precedent as the Survival ready-up F5 synthesis.
-constexpr uintptr_t kHoldBreathKbutton = 0x00A98C04;
-constexpr int kHoldBreathBindIndex = 18; // distinct from ADS's 13/Reload's 15/Sprint's
-                                          // 16/Fire's 17 -- arbitrary, just needs to be
-                                          // self-consistent between our own down/up calls
-bool g_holdBreathKbuttonActive = false;
+// TWO kbutton calls back-to-back, unconditionally, on every press: 0xA98C04 (this
+// project's own name for Hold Breath's kbutton) and 0xA98CCC (Sprint's, above).
+//
+// TWO PRIOR ATTEMPTS at driving 0xA98C04 directly both failed live:
+// 1. Plain CallKbuttonDown/CallKbuttonUp (2026-07-19) -- confirmed live regression,
+//    "engages once, never releases."
+// 2. Root-caused via full decompile of KeyDown/KeyUp: kbutton_t has a second flag
+//    byte at +0x11 that KeyDown sets but KeyUp never clears -- fixed by manually
+//    zeroing +0x11 ourselves after KeyUp. **Still confirmed stuck live** -- the
+//    +0x11 theory, while well-evidenced from the decompile alone, was NOT the
+//    (or not the only) real cause. Whatever the real native consumer of "is Hold
+//    Breath active" actually is, it wasn' resolved by fixing kbutton_t's own fields,
+//    meaning it likely doesn't read this kbutton_t directly at all, or reads it via
+//    a path this project hasn't found.
+//
+// FOURTH EXCEPTION to the "no OS-level input emulation" rule (matching Survival
+// ready-up's F5, D-pad Left's squadmate-call-in '4', and Back's scoreboard TAB):
+// synthesize a REAL Shift keypress via PostMessage, ONLY while ADS'd, instead of
+// touching the kbutton_t at all. This routes Hold Breath through the exact same
+// real native input pipeline a real keyboard player's Shift press already takes --
+// sidestepping whatever this project's own direct-kbutton approach was missing,
+// same reasoning as every prior exception (IW5 has no DirectInput import at all, so
+// keyboard input is genuine WM_KEYDOWN/WM_KEYUP -- a synthetic Shift is
+// indistinguishable from a real keypress). The real bind is `bind SHIFT
+// "+breath_sprint"` (`players2/config.cfg`, already confirmed in the Sprint kbutton
+// research). Deliberately NOT gated on stance (holding breath while crouched/prone
+// and scoped is a normal case) -- only on ADS, since a real Shift press while NOT
+// ADS'd is Sprint's own job (still handled by the direct-kbutton path above).
+//
+// IMPORTANT side effect, deliberately accounted for: a real Shift press ALSO fires
+// Sprint's own kbutton (0xA98CCC) natively, exactly as it does for a real keyboard
+// player. `IsSprintActive()` above now excludes `g_adsHeld` specifically so this
+// project's own direct Sprint-kbutton call never double-claims the same kbutton_t
+// while this synthetic press is also active -- the two paths are fully mutually
+// exclusive (raw kbutton owns Sprint when NOT aiming, synthetic Shift owns both
+// Sprint-natively-ignored-by-the-engine and Hold Breath when aiming).
+bool g_holdBreathSyntheticHeld = false;
 
-// CONFIRMED LIVE REGRESSION (2026-07-19): user report -- "once toggled initially, it
-// always holds breath ... theres no way to toggle it off." Root-caused via a
-// dedicated Ghidra pass, not guessed: KeyDown/KeyUp (FUN_0057d1c0/FUN_0057d200) are
-// leaf functions operating on a real kbutton_t with TWO flag bytes, not one --
-// +0x10 ("active", toggles correctly, confirmed via full decompile of both
-// functions) and +0x11 (set to 1 by KeyDown, NEVER cleared anywhere in KeyUp's own
-// body -- confirmed by reading the complete decompiled function, not inferred).
-// Since KeyDown/KeyUp call nothing else, any real gameplay code reading "is Hold
-// Breath active" must read one of this struct's own fields -- +0x10 demonstrably
-// works correctly (proven by Sprint/ADS, which don't exhibit this bug), so +0x11 is
-// the coherent explanation for a "sets once, stays forever" symptom specifically.
-// Real dispatcher's UP-case (`FUN_00438710` case 10) was independently confirmed via
-// full disassembly to be a plain, symmetric KeyUp call with nothing extra -- native
-// code does nothing beyond what CallKbuttonUp already replicates, so the fix has to
-// happen on our own side: manually clear +0x11 ourselves, since KeyUp structurally
-// never will. bindIndex collision between Sprint (16) and Hold Breath (18) was also
-// independently ruled out (exhaustive xref: each kbutton_t's down[] slots are only
-// ever touched by that struct's own 4 real references, all inside the dispatcher).
-constexpr bool kHoldBreathLiveEnabled = true; // re-enabled 2026-07-19 with the +0x11 fix below
-
-void UpdateHoldBreathKbutton(bool active)
+void SendSyntheticHoldBreathKey(bool down)
 {
-    if (active == g_holdBreathKbuttonActive) return;
-    g_holdBreathKbuttonActive = active;
-    char buf[128];
-    sprintf_s(buf, "[hold-breath-diag] edge -> %s (live-call %s)",
-        active ? "DOWN" : "UP", kHoldBreathLiveEnabled ? "enabled" : "DISABLED");
-    LogFromController(buf);
-    if (!kHoldBreathLiveEnabled) return;
-    if (active) {
-        CallKbuttonDown(kHoldBreathKbutton, kHoldBreathBindIndex);
+    HWND hwnd = GetGameWindow();
+    if (!hwnd) return;
+    if (down) {
+        PostMessageA(hwnd, WM_KEYDOWN, VK_SHIFT, 0x00000001);
     } else {
-        CallKbuttonUp(kHoldBreathKbutton, kHoldBreathBindIndex);
-        // THE FIX: KeyUp clears +0x10 (active) but structurally never touches +0x11
-        // (confirmed via full decompile) -- manually zero it ourselves immediately
-        // after the real KeyUp call, since nothing else in the real engine ever will
-        // for a kbutton driven this way. Direct struct poke, same class of operation
-        // as this project's other confirmed-safe direct-field writes elsewhere
-        // (e.g. GetRealStance's own field read/write pattern).
-        *reinterpret_cast<volatile uint8_t*>(kHoldBreathKbutton + 0x11) = 0;
-        LogFromController("[hold-breath-diag] manually cleared kbutton+0x11 latch after KeyUp");
+        PostMessageA(hwnd, WM_KEYUP, VK_SHIFT, 0xC0000001);
     }
 }
 } // namespace
@@ -1195,11 +1199,17 @@ extern "C" void __cdecl InjectControllerSprint()
     // what this replaced).
     UpdateSprintKbutton(IsSprintActive());
 
-    // Hold Breath (task #24): same physical bind, gated on ADS instead of stance --
-    // see the comment above UpdateHoldBreathKbutton for why this ignores stance
-    // entirely (crouched/prone + scoped is a normal case, unlike Sprint's own
-    // standing-only gate).
-    UpdateHoldBreathKbutton(g_sprintHeld && g_adsHeld);
+    // Hold Breath (task #24, 4th key-synthesis exception): same physical bind, gated
+    // on ADS instead of stance -- see the big comment above SendSyntheticHoldBreathKey
+    // for why this ignores stance entirely (crouched/prone + scoped is a normal case,
+    // unlike Sprint's own standing-only gate) and why this synthesizes a real Shift
+    // press instead of driving the kbutton directly (two prior direct-kbutton
+    // attempts both failed live).
+    bool holdBreathActive = g_sprintHeld && g_adsHeld;
+    if (holdBreathActive != g_holdBreathSyntheticHeld) {
+        g_holdBreathSyntheticHeld = holdBreathActive;
+        SendSyntheticHoldBreathKey(holdBreathActive);
+    }
 }
 
 // ---- Look: right stick -> the pitch/yaw angle-delta accumulator directly -------

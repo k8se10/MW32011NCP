@@ -9,25 +9,24 @@ reverse-engineering trail behind each entry.
 ## Unreleased
 
 ### Added
-- **Hold Breath (L3 while ADS'd) wired to its real native kbutton (2026-07-19,
-  task #24), then DISABLED after a confirmed live regression the same day.**
-  The same `+breath_sprint` disassembly that found Sprint's real kbutton
-  (`0xA98CCC`, v0.2.0) also surfaced a second kbutton call on the exact same
-  case (`0xA98C04`) — very likely Hold Breath's own. Implemented via the same
-  `CallKbuttonDown`/`CallKbuttonUp` convention as ADS/Reload/Sprint/Fire,
-  gated on ADS instead of stance. **Live playtest found a real bug**: it
-  engages correctly as a hold on first press, but never releases — stuck
-  permanently active with no way to cancel it, same symptom class as an
-  earlier ADS bug but not caused by either of that bug's known root causes.
-  **Disabled** (the kbutton calls are now skipped; a diagnostic log of every
-  engage/release edge stays active for root-causing) rather than shipped
-  broken. **Root-caused and fixed the same day**: a dedicated Ghidra pass
-  fully decompiled the real KeyDown/KeyUp functions and found the real
-  `kbutton_t` has a second flag byte (`+0x11`) that KeyDown sets but KeyUp
-  structurally never clears — the coherent explanation for "sets once,
-  stays forever." Fix: manually zero that byte ourselves right after the
-  real KeyUp call, since nothing in the native engine ever will for a
-  kbutton driven this way. Re-enabled. Builds clean — not yet live-tested.
+- **Hold Breath (L3 while ADS'd), two direct-kbutton attempts both failed
+  live, fixed via a 4th key-synthesis exception instead (2026-07-19, task
+  #24).** First attempt drove the real kbutton (`0xA98C04`) directly via
+  `CallKbuttonDown`/`CallKbuttonUp` — live playtest found it engages once
+  and never releases. Second attempt root-caused a real, confirmed bug in
+  the engine's own `KeyUp` function (a second kbutton flag byte, `+0x11`,
+  that `KeyDown` sets but `KeyUp` structurally never clears) and manually
+  zeroed it ourselves — **still confirmed stuck live**, meaning that real
+  bug wasn't the (or wasn't the only) actual cause. **Real fix**: stopped
+  driving the kbutton directly altogether and synthesized a real Shift
+  keypress instead (the same real bind a keyboard player's Shift press
+  takes), only while ADS'd — the fourth exception to this project's "no
+  OS-level input emulation" rule, alongside Survival ready-up, D-pad Left's
+  squadmate call-in, and Back's scoreboard. Sprint's own kbutton path was
+  also updated to exclude ADS, so the two paths can never double-claim the
+  same kbutton simultaneously (a real Shift press also fires Sprint's
+  kbutton natively, same as it does for a real keyboard player, harmlessly
+  ignored by the engine while aiming). Builds clean — not yet live-tested.
   See `re_notes/known_issues.md` for the full trail.
 - **Boot-time zone splice for the extended button-glyph font, attempted and
   DISABLED after a confirmed live crash (2026-07-19, task #31/#6).** Hooked
