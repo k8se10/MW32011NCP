@@ -158,8 +158,8 @@ void WriteDefaultConfig(const char* path)
         "\n"
         "[Bindings]\n"
         "; OG console button layout presets, reconstructed from the unchanged CoD4->\n"
-        "; MW2->MW3 console control scheme (NOT independently verified against real\n"
-        "; hardware yet -- TacticalLefty in particular may need a correction pass).\n"
+        "; MW2->MW3 console control scheme. Confirmed correct against real hardware,\n"
+        "; 2026-07-19 -- including TacticalLefty.\n"
         "; One of: Default, Tactical, Lefty, TacticalLefty\n"
         "ButtonLayout=%s\n"
         "; One of: Default, Southpaw, Legacy, LegacySouthpaw\n"
@@ -244,11 +244,12 @@ void WriteDefaultConfig(const char* path)
 // ---- Button layout resolution (task #15) ------------------------------------------
 //
 // Tables below are the user-supplied reconstruction of the unchanged CoD4->MW2->MW3
-// console button layouts (see mod_config.h's enum comments for the confidence caveat).
-// Default/Tactical/Lefty are each independently well-established; TacticalLefty is
-// Lefty with Tactical's face-button swap (Crouch/Melee) applied on top of Lefty's own
-// already-swapped stick-click assignments (Sprint/Melee) -- taken as given directly
-// from the user's own final resolved table, not re-derived here.
+// console button layouts (see mod_config.h's enum comments -- all four presets,
+// including TacticalLefty, are confirmed correct against real hardware as of
+// 2026-07-19). TacticalLefty is Lefty with Tactical's face-button swap (Crouch/
+// Melee) applied on top of Lefty's own already-swapped stick-click assignments
+// (Sprint/Melee) -- taken as given directly from the user's own final resolved
+// table, not re-derived here.
 ButtonMap ResolveButtonMap(ButtonLayout layout, bool flipTriggers)
 {
     ButtonMap m; // struct defaults already match ButtonLayout::Default

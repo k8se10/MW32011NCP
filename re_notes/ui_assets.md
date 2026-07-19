@@ -716,6 +716,17 @@ convention), claiming any specific killstreak works, and any fabricated
 URL. Pick one (Draft C is safest for layout fit) once the technical
 injection mechanism above is actually implemented and live-tested.
 
+**Stale as of the v0.2.0 Alpha release (2026-07-19), not yet revised — this
+feature still isn't implemented, so no shipped content is affected, but
+don't reuse these drafts verbatim without updating them first.** All three
+say "v0.1.3" (now v0.2.0) and frame killstreaks as generically "still in
+progress"/"not finished" — no longer accurate: 3 of Survival's 4 real
+killstreaks (Predator Missile launch, Precision Airstrike, AI squadmate
+call-in) are now confirmed working. The project's stage is now Alpha, not
+Pre-Alpha (Draft A/B's parenthetical). If this MOTD is ever actually
+implemented, rewrite the copy against `README.md`'s "Status at a glance"
+section as it exists at that time, not against these 2026-07-18 drafts.
+
 ## WaW-style colored/animated clan tags — investigated, real risk found, not a quick win (2026-07-18)
 
 Investigated whether Call of Duty: World at War's real "type a magic word

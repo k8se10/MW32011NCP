@@ -1,31 +1,86 @@
 # MW3 Native Controller Support (Campaign & Survival)
 
-**Status: PRE-ALPHA — actively in development (v0.1.3, 2026-07-19; the next
-milestone will be tagged v0.2.0).** Analog movement, look, and most buttons are
-confirmed working live against `iw5sp.exe` (Campaign/Survival), including a real
-sprint stamina/cooldown model, Start's full pause/unpause, weapon switching, D-pad
-killstreak/attachment slots, Survival's between-wave ready-up, and real D-pad/A menu
-navigation — **now confirmed live across every UI surface actually exercised so
-far, including the main menu and title screen**, not just pause/buy-station menus
-as earlier builds only claimed. **Three of Survival's four real killstreaks are now
-confirmed working** (Predator Missile launch, Precision Airstrike, AI squadmate
-call-in), following a from-bytecode-to-native-delivery reverse-engineering pass that
-found and fixed the real reason Predator Missile's launch wasn't reaching its native
-delivery mechanism. Predator Missile's post-fire missile-guidance aim is still
-broken — actively under investigation, with a live diagnostic already deployed.
-Back (scoreboard/objectives) is implemented but not yet separately live-confirmed,
-sprint's mission/perk overrides aren't accounted for yet, button-glyph UI prompts
-have a fully proven build pipeline and confirmed-safe hook points but no shipped
-implementation yet, vibration/rumble was implemented and then found to **crash the
-game at startup** — it's disabled pending a safer reimplementation, and Multiplayer
-(`iw5mp.exe`) hasn't been started. Not feature-complete, not fully tested
-end-to-end.
+**Status: ALPHA — v0.2.0 (2026-07-19).** This release is the first the project
+considers a real milestone rather than incremental groundwork: core movement, look,
+combat, stance, and Sprint are all confirmed working live against `iw5sp.exe`
+(Campaign/Survival) through the engine's own real internal calls, real D-pad/A menu
+navigation now covers every UI surface actually exercised (main menu, title screen,
+pause menu, options, buy-stations, sliders), and 3 of Survival's 4 real killstreaks
+are confirmed working end-to-end. See **Status at a glance** immediately below for
+an explicit, no-guessing breakdown of exactly what's fully working, partial, or not
+implemented at all — read that before assuming any specific feature works. Not
+feature-complete, not fully tested end-to-end, and Multiplayer (`iw5mp.exe`) hasn't
+been started at all.
 
 A from-scratch native controller mod for Call of Duty: Modern Warfare 3 (2011, IW5
 engine) — analog movement, look, and buttons driven directly through the game's own
 engine calls, not keyboard/mouse emulation. See `re_notes/` for the full reverse-
 engineering writeup this mod is built on, and `PATCHNOTES.md` for what changed in
 each release.
+
+## Status at a glance
+
+The single most direct answer to "does X work?" — organized by real confidence
+level, not by feature category. If something isn't listed here, assume it's
+**untested**, not confirmed either way. Everything in ✅ has been personally
+live-tested by the developer during actual play, not just built-and-assumed.
+
+### ✅ Fully working (live-confirmed)
+
+| Feature | Confirmed |
+|---|---|
+| Analog movement (left stick) | Real `usercmd_t` bytes |
+| Analog look (right stick) + ADS zoom-aware slowdown | Real angle accumulators |
+| Fire (RT), Tactical/Lethal (LB/RB), Jump (A) | |
+| ADS hold-to-aim (LT) | Real kbutton, not a toggle |
+| Melee (R3) | Real kbutton |
+| Reload (X) | Real kbutton |
+| Interact hold-vs-tap (X) | 300ms hold, tap reloads instead |
+| Weapon switch (Y) | Real `weapnext` dispatch |
+| D-pad Up/Right/Down — killstreak/attachment slots | Real `+actionslot` dispatch |
+| D-pad Left — AI squadmate call-in (Survival) | Key-synthesis exception, confirmed |
+| Crouch/Prone 3-state stance ladder (B) | Real native toggle, no desync |
+| **Sprint (L3)** | **Real kbutton (2026-07-19) — native duration/recovery timer AND Extreme Conditioning's perk override both apply automatically, no custom code needed** |
+| Start — pause menu open **and** close | Real engine calls, not a keypress |
+| B — back out of open menus | Real ESC-forward |
+| Survival ready-up (hold Y) | Key-synthesis exception, confirmed |
+| Buy-station + pause interaction bug fix | |
+| Menu/UI navigation (D-pad + A) | Main menu, title screen, pause menu, options two-pane drill, buy-station/armory lists, **slider VALUE adjustment** |
+| Predator Missile — **launch only** | Fixed 2026-07-19 via a bind-index command-queue fix |
+| Precision Airstrike (Survival) | Smoke-grenade-throw mechanic, uses Fire as-is |
+| Boat (Hunter Killer), UGV (Persona Non Grata), Helicopter door gun (Return to Sender), SMAW dumb-fire (Goalpost) | Campaign weapon systems |
+| Button/stick layout presets, **including `TacticalLefty`** | **`TacticalLefty` confirmed correct against real hardware, 2026-07-19** — previously this preset's own remap was the one open accuracy question in this system |
+
+### 🟡 Partial (works, but with a specific, known gap)
+
+| Feature | What's missing |
+|---|---|
+| Predator Missile — **post-fire guidance/aim** | Launch works; controlling the flying missile is still broken. Real reader chain found, diagnostic deployed, needs one more live data pull to finish |
+| Back button (`+scores`) | Implemented, builds clean — never separately live-confirmed in play |
+| L3 no longer force-stands while ADS'd | Implemented, builds clean — not yet separately live-confirmed |
+| DPV (Hunter Killer) | Movement works, aiming doesn't |
+| Mortar (Goalpost) | Aim works, fire input not wired |
+| Mounted M2 turret (Goalpost) | Works, but feels too hard — cause not yet diagnosed |
+| SMAW lock-on vs. aircraft (Goalpost) | Unconfirmed whether this is even a real bug |
+| Real in-game controller options menu | Static test injection proven live; real content (sliders, backgrounds) blocked on a GPU-resource-loading limit, not yet shippable |
+
+### ⬜ Not working / not implemented at all
+
+| Feature | Why |
+|---|---|
+| **Aim assist** | Implemented but **disabled by default and non-functional** — target classification is broken (oscillates between multiple movers). Do not enable outside active development |
+| **Vibration/rumble** | Implemented, then **crashed the game at startup** — fully disabled pending a safer reimplementation |
+| Button-glyph controller icons | Full asset + build pipeline proven end-to-end, but nothing renders in-game yet — zero player-visible effect currently |
+| Hold Breath (sniper ADS sway reduction) | Not implemented (a candidate kbutton was found as a side effect of the Sprint fix, not yet wired) |
+| Vehicle-exit prompt (`+usereload`, Mind the Gap) | Not wired |
+| Survival debug menu / dev console | The real console is confirmed permanently dead — a custom debug menu hasn't been built |
+| WaW-style animated clan tags | Research only, genuinely complicated by a dead networked Elite-session dependency |
+| Multiplayer (`iw5mp.exe`) | **Not started at all** — separate binary, needs its own full RE pass, anti-cheat exposure still unresolved |
+
+### ❓ Untested (not known broken, just never exercised)
+
+Special Ops (all 16 missions), AC-130 (Iron Lady/Fire Mission), 9 of 17 Campaign
+missions — see **Controller compatibility by mission/mode** below for the exact list.
 
 ## Scorecard (2026-07-19)
 
@@ -108,8 +163,8 @@ is still open, not how rough what already works is.
 
 | Stage | Version range | What it means here |
 |---|---|---|
-| **Pre-alpha** *(current)* | `0.1.0` – `0.1.5` | Core systems land one at a time — movement/look/combat, stance/sprint, pause menu, and now menu navigation are done; aim assist, vibration, killstreaks, and the controller options menu are still being built out. Expect real gaps, not just polish issues. |
-| **Alpha** | `0.1.5` – `0.4.0` | The remaining major systems get built and land: full menu/UI navigation (slider adjustment, button glyphs, a real in-game options screen), aim assist taken from "math confirmed, classification unverified" to actually working, killstreaks fully scoped, vibration, and Extreme Conditioning's real override. Multiplayer groundwork may start here, pending the anti-cheat question being resolved first. |
+| **Pre-alpha** | `0.1.0` – `0.1.5` | Core systems land one at a time — movement/look/combat, stance/sprint, pause menu, and menu navigation done; aim assist, vibration, killstreaks, and the controller options menu still being built out. |
+| **Alpha** *(current, v0.2.0)* | `0.1.5` – `0.4.0` | The remaining major systems get built and land. **This release**: Sprint fully native (no custom timer, Extreme Conditioning resolved for free), 3 of 4 Survival killstreaks confirmed working, menu/UI navigation extended to the main menu/title screen and slider values. **Still ahead in this stage**: button glyphs, a real in-game options screen, aim assist taken from "math confirmed" to actually working, vibration reimplemented, Predator Missile's guidance aim, and remaining Campaign/Special Ops compatibility gaps. Multiplayer groundwork may start here, pending the anti-cheat question being resolved first. |
 | **Beta** | `0.4.0` – `1.0.0` | Should be practically feature-complete — remaining work is closing gaps, fixing what live testing surfaces, and extending reach (other MW3 clients, Multiplayer if the anti-cheat question resolves favorably) rather than building brand-new core systems from scratch. |
 | **1.0 (final)** | `1.0.0`+ | Feature-complete against this project's full scope, stable, and treated as a real release rather than an actively-shifting work in progress. |
 
@@ -264,8 +319,8 @@ native controller UI navigation exists.
 | `[Experimental]` | `FireNotifyQueueKick` | `1` | Also pushes `"n 1"` onto the real client command queue on Fire's down-edge (alongside the real `+attack` kbutton call) — the confirmed fix that makes Predator Missile's launch reach its native `notifyonplayercommand` listener. Toggle to `0` to fall back to kbutton-only Fire (pre-2026-07-18 behavior) if this is ever suspected of a regression |
 
 **Button layout presets** (reconstructed from the unchanged CoD4→MW2→MW3 console
-control scheme; ~90-95% confidence, not independently verified against real
-hardware — `TacticalLefty` in particular may need a correction pass):
+control scheme. `TacticalLefty` — previously this table's one open accuracy
+question — **confirmed correct against real hardware, 2026-07-19**):
 
 | Action | Default | Tactical | Lefty | TacticalLefty |
 |---|---|---|---|---|

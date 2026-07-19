@@ -1269,6 +1269,14 @@ is ever found -- see `re_notes/known_issues.md` issue #5 for the complete trail.
 
 ## Sprint stamina/cooldown (2026-07-15, later session)
 
+**HISTORICAL — this entire custom timer system was removed 2026-07-19**, once
+Sprint's real `+sprint` kbutton was found (see the section above) and driving it
+directly was confirmed to make the engine's own native duration/recovery timer
+(and Extreme Conditioning's real override) apply automatically, with no detection
+code needed. Kept below as the investigation record for why this layer existed
+and what it took to build correctly at the time — not a description of current
+code. See `re_notes/known_issues.md` issue #6 for the removal detail.
+
 **The gap.** Sprint (L3) forces the real `pm_flags` bit (`0x4000`) every Pmove tick via
 `InjectControllerSprintPmFlags`/`ReassertSprintPmFlags`. This gets real movement-speed
 scaling for free (see `FUN_00643870` below) but bypasses whatever native
@@ -1747,10 +1755,18 @@ on a new address `0xA98C04` (very likely Hold Breath's own kbutton, a live lead 
 #24) and a second on this SAME `0xA98CCC`. Implemented in `analog_input_hooks.cpp`'s
 `InjectControllerSprint()` via `CallKbuttonDown`/`CallKbuttonUp`, replacing the raw
 pm_flags-forcing mechanism entirely. Full detail, including the exact disassembly, in
-`re_notes/known_issues.md`'s issue #6 update (2026-07-19). Builds clean, not yet
-live-tested. The section below is kept verbatim as the historical record of the three
-techniques that didn't find it, since the methodology (and its negative result) is still
-a useful data point for future similar searches.
+`re_notes/known_issues.md`'s issue #6 update (2026-07-19). **LIVE-CONFIRMED WORKING
+the same day** — and, as a direct consequence, the entire custom stamina/cooldown
+timer layer described in the section immediately below this one (from "Implemented as
+our own timer layer instead" onward) was removed entirely, since the engine's own
+native duration/recovery timer now engages automatically through the real kbutton —
+this also resolved Extreme Conditioning's perk-override problem for free, with no
+detection code ever needed. The stamina/cooldown section below is kept as the
+historical record of that now-removed system, not current code — see
+`re_notes/known_issues.md` issue #6 for the full removal detail. The section further
+below this one is kept verbatim as the historical record of the three techniques that
+didn't find the kbutton, since the methodology (and its negative result) is still a
+useful data point for future similar searches.
 
 ## Sprint's real kbutton -- PARKED, exhaustive search came back negative (2026-07-16)
 
@@ -2419,7 +2435,10 @@ station UI reads this table directly. Confirmed real content from it:
 - **Extreme Conditioning's real internal name: `specialty_longersprint`**
   (`PERKS_LONGERSPRINT`, category `airsupport`, cost 4000, wave-gate 35).
 - **Killstreaks**: `remote_missile` (Predator Missile, the one partially working
-  today), `precision_airstrike`, and `friendly_support_delta`/
+  today *(as of 2026-07-17, when this pass was written — launch itself is now
+  FIXED and confirmed working live as of 2026-07-19, see `known_issues.md`
+  issue #29; the post-fire guidance phase is the current open item instead,
+  issue #30)*), `precision_airstrike`, and `friendly_support_delta`/
   `friendly_support_riotshield` -- the latter two very likely being the real
   identity of task #13's AI-squadmate call-in items.
 - **Full perk roster**: `specialty_longersprint` (Extreme Conditioning),

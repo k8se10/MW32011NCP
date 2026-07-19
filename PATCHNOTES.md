@@ -8,6 +8,30 @@ reverse-engineering trail behind each entry.
 
 ## Unreleased
 
+Nothing yet — see `re_notes/known_issues.md` for what's actively being worked on.
+
+---
+
+## v0.2.0 — Alpha (2026-07-19)
+
+**This is the project's first release tagged as a real milestone rather than
+incremental groundwork**, and its first non-pre-release tag on GitHub. Headline
+changes: **Sprint migrated onto its real native kbutton**, which turned out to
+also make its entire custom stamina/cooldown timer layer redundant (removed
+entirely) and resolved the previously-open Extreme Conditioning perk override
+for free — the engine's own native systems now handle both automatically. **3 of
+Survival's 4 real killstreaks are now confirmed working** (Predator Missile
+launch, Precision Airstrike, AI squadmate call-in), found via a
+from-bytecode-to-native-delivery reverse-engineering pass through
+`notifyonplayercommand`'s real GSC command-queue chain. Real D-pad/A menu
+navigation now covers the main menu and title screen, not just in-game menus.
+Also included: a first vibration/rumble implementation that turned out to crash
+the game at startup (root-caused and disabled, not shipped broken), and a fully
+proven, implementation-ready button-glyph asset/build pipeline (not yet wired
+into rendering). See **Status at a glance** in `README.md` for the full,
+explicit fully-working/partial/not-implemented breakdown this release
+introduces. Full detail on every change below.
+
 ### Added
 - **Predator Missile guidance-phase input: real per-frame reader chain
   found, diagnostic deployed (2026-07-19, task #30 follow-up).** User
@@ -453,6 +477,16 @@ reverse-engineering trail behind each entry.
   started) — matching what `known_issues.md` issue #22 actually says.
 
 ### Docs
+- **`TacticalLefty` button layout preset CONFIRMED CORRECT against real
+  hardware (2026-07-19).** This was the one open accuracy question left in
+  the button-layout-presets system (task #15) — all four presets
+  (`Default`/`Tactical`/`Lefty`/`TacticalLefty`) were reconstructed from the
+  known-unchanged CoD4→MW2→MW3 console control scheme, but `TacticalLefty`
+  specifically (Lefty with Tactical's face-button swap layered on top) had
+  never been independently verified. User confirmation closes this out —
+  updated the caveat text in `mod_config.h`/`mod_config.cpp` (the generated
+  INI's own comments) and `README.md` accordingly, no functional code
+  changed.
 - **Added `re_notes/killstreak_reference.md` and a "Killstreak support"
   section to `README.md` (2026-07-18).** Two clearly-separated parts: a
   real, first-party controller-support status table for the killstreak-

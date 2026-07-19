@@ -2,9 +2,11 @@
 
 Tracked as tasks in the working session; this file is the standalone reference so they
 don't stay buried in `iw5sp.md`'s investigation log. Update status here as each is
-resolved. Last updated 2026-07-16 (fixed a live keyboard-sprint regression caused by
-our own controller hooks — see issue #10 — and, as a direct consequence, deprioritized
-keyboard/mouse as a primary, actively-verified input path going forward — issue #11).
+resolved. Last updated 2026-07-19 *(corrected — this line said 2026-07-16 despite 21
+more issues, #10-#31, having been added since then; the mod's v0.2.0 Alpha release
+lands this same day: Sprint's real kbutton migration and its stamina-layer removal,
+issue #6; Predator Missile launch fixed and guidance-phase RE'd further, issues #29/
+#30; a mortar/turret mission mis-attribution corrected, issues #26/#27)*.
 
 ---
 
@@ -594,8 +596,10 @@ existed) are all gone. `IsSprintActive()` is now just `g_sprintHeld && GetRealSt
 one per call site despite its own doc comment claiming otherwise — a second caller in
 the same per-frame tick would starve whichever call runs second to a near-zero delta
 every frame (confirmed via reasoning during this investigation, before it could cause a
-live bug). Sprint's stamina timer uses its own independent `GetTickCount()`-based clock
-instead; the header comment was corrected to warn against this for future callers.
+live bug). Sprint's stamina timer used its own independent `GetTickCount()`-based clock
+instead to avoid this exact trap *(historical note — that timer no longer exists as of
+2026-07-19, see above; this paragraph documents the original investigation, not current
+code)*; the header comment was corrected to warn future callers away from the shared-timer trap regardless.
 
 ---
 
@@ -2810,7 +2814,7 @@ block at the top of this entry):** regular gunfire confirmed unaffected;
 Predator Missile launch confirmed still broken. The kbutton-level fix
 alone was not sufficient — see "Next step" above for where to look next.
 
-## 30. Third analog-input channel (`cmd+0x3e`/`0x3f`) discovered — likely UNIFYING root cause for DPV/mortar/turret/missile-guidance (2026-07-18, research pass, task #25)
+## 30. Third analog-input channel (`cmd+0x3e`/`0x3f`) discovered — likely UNIFYING root cause for DPV/mortar/turret (2026-07-18, research pass, task #25; REFUTED for Predator Missile guidance specifically, 2026-07-19 — see the correction near the end of this entry)
 
 **Status:** Research complete, strong hypothesis, NOT implemented or
 live-tested. Potentially the highest-value single finding of this session
@@ -2882,14 +2886,18 @@ evidence-backed unifying candidate for a whole cluster of previously
 separately-tracked bugs, all of which share the same shape ("aiming/
 control works via the look-stick, but the OUTPUT never reaches the right
 place"): DPV aiming not working (issue #27 bug #1, Hunter Killer), mortar
-aim-works-fire-doesn't (issue #27 bug #5, task #26, "Back on the Grid"),
-mounted-turret feeling notably harder than expected (issue #27 bug #6,
-task #27), and TODAY's new Predator Missile guidance-sequence movement
-break (issue #27 bug #9). All four are plausibly the SAME root cause:
+aim-works-fire-doesn't (issue #27 bug #5, task #26, Goalpost — corrected
+2026-07-19, was misfiled as "Back on the Grid" when this paragraph was
+first written), mounted-turret feeling notably harder than expected
+(issue #27 bug #6, task #27, same Goalpost correction), and Predator
+Missile guidance-sequence movement break (issue #27 bug #9, since REFUTED
+as sharing this mechanism — see below). These were originally believed to
+share the SAME root cause:
 this mod's controller hooks only ever write `cmd+0x1c/0x1d` (movement)
 and the `kPitchAccum`/`kYawAccum` globals (look) — never `cmd+0x3e/0x3f`
 — so whenever the engine switches into branch 2's mode (mounted/aim-only
-contexts: DPV, mortar, turret, missile-guidance), the controller's
+contexts: DPV, mortar, turret — missile-guidance REFUTED as sharing this
+mechanism, see the 2026-07-19 correction below), the controller's
 right-stick input has nowhere real to land.
 
 **Not yet confirmed:** which exact real gameplay contexts set the

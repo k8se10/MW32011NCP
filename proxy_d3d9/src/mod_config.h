@@ -14,10 +14,9 @@
 // in the first place -- consistent with CLAUDE.md's original findings: no native
 // gamepad-nav cvars, no controller-menu asset strings found in any .iwd). These
 // presets are therefore reconstructed from the known-unchanged CoD4->MW2->MW3
-// console control scheme (user-supplied, ~90-95% confidence, NOT independently
-// verified against a real Xbox 360/PS3 unit or console-build memory) rather than
-// RE'd from this binary -- expect the Tactical Lefty combination in particular to
-// need a correction pass once it can be checked against real hardware.
+// console control scheme (user-supplied) rather than RE'd from this binary.
+// CONFIRMED CORRECT against real hardware, 2026-07-19 -- including TacticalLefty,
+// previously the one open accuracy question in this table.
 enum class ButtonLayout { Default, Tactical, Lefty, TacticalLefty };
 enum class StickLayout { Default, Southpaw, Legacy, LegacySouthpaw };
 
