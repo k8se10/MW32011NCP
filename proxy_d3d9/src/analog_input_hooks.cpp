@@ -15,6 +15,7 @@
 // playtest, not just Ghidra's static guesses -- see re_notes/iw5sp.md.
 
 #include <windows.h>
+#include <intrin.h>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -2859,6 +2860,82 @@ void InjectZoneLoadDebugTest()
     g_zoneLoadTestStage = ZoneLoadTestStage::Loaded;
 }
 
+// ---- Boot-time zone splice: auto-load the extended button-glyph font (2026-07-19,
+// task #6 UI scope / controller glyphs) ------------------------------------------
+//
+// Supersedes the LB+RB manual zoneload-test above for real deployment: that trigger
+// proved LoadZones (FUN_004ca310) can be called safely and that a real custom zone
+// loads without crashing, but it's a manual, session-only debug trigger, not
+// something a real player would ever hit. This hooks FUN_004ca310 itself and
+// splices one extra entry into the REAL boot-time zone queue FUN_00679680 already
+// builds and processes -- so this project's extended font zone
+// (assets/zones/bigfont_ext.ff, a copy of the real fonts/bigfont/gamefonts_pc pair
+// plus one new glyph codepoint, see re_notes/ui_assets.md for the full
+// build-pipeline trail) loads automatically through the exact same real code path
+// every other real zone loads through, with no separate call of our own needed.
+//
+// FUN_00679680 calls FUN_004ca310 TWICE (confirmed via disassembly, both call
+// sites within this one function): Call 1 (return address 0x006796EB) is
+// CONDITIONAL, gated on a global; Call 2 (return address 0x006797C2) is
+// UNCONDITIONAL, the function's natural fall-through -- always runs. Splicing
+// into Call 2 only, gated on an EXACT return-address match (not a range), so
+// every other real caller of this same function (FUN_0067a690, FUN_00481e50,
+// FUN_0053cbc0, and Call 1 above) passes through completely untouched -- this
+// hook only ever alters the one specific call it was pressure-tested against.
+//
+// Real entry format confirmed via disassembly at all 4 real callers:
+// {namePtr_or_int, typeFlag, 0} triples, 12 bytes/entry. The real caller's local
+// array is `int[30]` (10 entries x 3 ints) -- this splice trusts the REAL `count`
+// argument (how many of those 10 slots are currently populated) and appends
+// directly at index `count`, rather than scanning for a null-name "unused slot"
+// sentinel: the caller's array is an uninitialized stack local, and a
+// sentinel-based scan was explicitly flagged as unconfirmed/unsafe in the
+// pressure-testing pass (re_notes/ui_assets.md, "Boot-zone splice: pressure-tested,
+// conditional GO"). Appending at `count` and passing `count+1` through needs no
+// sentinel assumption at all -- only the already-confirmed entry layout and the
+// already-confirmed 10-slot physical capacity, with a hard bounds check as the
+// fail-safe (never splice, just forward unmodified, if the array is already full).
+//
+// Idempotency: MinHook detours the function once, process-wide, for its entire
+// lifetime -- `g_bootZoneSpliced` exists only to stop a SECOND matching call
+// (e.g. a hypothetical retry of FUN_00679680 itself) from appending a second
+// duplicate entry, not to protect against a double-hook-install (MH_CreateHook is
+// only ever called once, from InstallAnalogInputHooks).
+namespace {
+LoadZonesFn g_origLoadZonesForBootSplice = nullptr;
+constexpr uintptr_t kBootZoneSpliceReturnAddr = 0x006797C2; // FUN_00679680 Call 2 (unconditional)
+constexpr int kBootZoneArrayCapacity = 10; // int[30] local == 10 entries * 3 ints, confirmed
+bool g_bootZoneSpliced = false; // idempotency guard -- splice at most once per process
+
+void __cdecl Hook_LoadZonesForBootSplice(void* zoneArray, int count, int mode)
+{
+    uintptr_t returnAddr = reinterpret_cast<uintptr_t>(_ReturnAddress());
+    if (!g_bootZoneSpliced && returnAddr == kBootZoneSpliceReturnAddr &&
+        zoneArray != nullptr && count >= 0 && count < kBootZoneArrayCapacity) {
+        ZoneLoadEntry* entries = reinterpret_cast<ZoneLoadEntry*>(zoneArray);
+        entries[count].name = "bigfont_ext"; // bare zone name, no path/extension --
+                                              // matches the confirmed real convention
+                                              // (the existing "roundtrip" zoneload-
+                                              // test uses the same bare form, resolved
+                                              // against zone/english/<name>.ff, where
+                                              // this file is physically placed)
+        entries[count].flags = 1; // matches this exact batch's real neighboring
+                                   // entries' typeFlag for a plain zone name
+        entries[count].unused = 0;
+        g_bootZoneSpliced = true; // claim the splice regardless of what happens
+                                   // below -- never retry into a buffer that may
+                                   // already be consumed
+        LogFromController("[boot-zone-splice] spliced assets/zones/bigfont_ext into the real boot zone queue");
+        g_origLoadZonesForBootSplice(zoneArray, count + 1, mode);
+        return;
+    }
+    // Every other real call site -- or a full/invalid array on this one -- passes
+    // through completely unmodified. Fail-safe, not a silent skip: still forwards
+    // to the real function either way, exactly as if this hook didn't exist.
+    g_origLoadZonesForBootSplice(zoneArray, count, mode);
+}
+} // namespace
+
 extern "C" void __cdecl InjectAllControllerInput(unsigned char* cmd)
 {
     int32_t inLevelVal = *reinterpret_cast<volatile int32_t*>(kInLevelFlagAddr);
@@ -3015,6 +3092,23 @@ void InstallAnalogInputHooks()
     if (s6 == MH_OK) {
         MH_STATUS e6 = MH_EnableHook(reinterpret_cast<LPVOID>(kMissileGuidanceDispatchAddr));
         sprintf_s(buf, "[hooks] MH_EnableHook(missile-guidance-dispatch) = %d", static_cast<int>(e6));
+        LogFromController(buf);
+    }
+
+    // task #6 UI scope (2026-07-19) -- boot-time zone splice, auto-loads the
+    // extended button-glyph font zone through the real boot zone queue (see the
+    // comment above Hook_LoadZonesForBootSplice for the full return-address-gated
+    // splice mechanism). Same low-risk hook shape as controlslinkto/missile-guidance
+    // above (plain __cdecl, all args confirmed on the stack at all 4 real callers) --
+    // not a generic multi-signature dispatcher like the rumble hooks that crashed
+    // the game.
+    MH_STATUS s7 = MH_CreateHook(reinterpret_cast<LPVOID>(0x004ca310),
+        &Hook_LoadZonesForBootSplice, reinterpret_cast<LPVOID*>(&g_origLoadZonesForBootSplice));
+    sprintf_s(buf, "[hooks] MH_CreateHook(boot-zone-splice @ 004ca310) = %d", static_cast<int>(s7));
+    LogFromController(buf);
+    if (s7 == MH_OK) {
+        MH_STATUS e7 = MH_EnableHook(reinterpret_cast<LPVOID>(0x004ca310));
+        sprintf_s(buf, "[hooks] MH_EnableHook(boot-zone-splice) = %d", static_cast<int>(e7));
         LogFromController(buf);
     }
 

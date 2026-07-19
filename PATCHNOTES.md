@@ -19,12 +19,26 @@ reverse-engineering trail behind each entry.
   gated on ADS instead of stance (crouched/prone + scoped is a normal case for
   Hold Breath, unlike Sprint's own standing-only gate). Builds clean (0
   warnings/0 errors, full rebuild) — **not yet live-tested.**
+- **Boot-time zone splice for the extended button-glyph font (2026-07-19,
+  task #31/#6).** Hooks the real zone-loading entry point (`FUN_004ca310`)
+  and splices this project's extended `bigfont_ext` font zone into the
+  real boot-time zone queue, gated on an exact return-address match so
+  only that one real call site is ever touched — every other real caller
+  passes through completely untouched. `bigfont_ext.ff` copied into the
+  live `zone/english/` folder, same purely-additive precedent already
+  established for this project's earlier `roundtrip.ff` menu test. Builds
+  clean — **not yet live-tested**, and this is only the "get the font
+  asset loaded" half of real button-glyph rendering; the bind-resolver
+  hook that actually swaps hint text for a glyph codepoint is separate,
+  still-unstarted work (see `re_notes/ui_assets.md`).
 
 ### Docs
-- Noted a user-reported (Reddit, 2026-07-19, unverified by this project) report
-  that this project's proxy `d3d9.dll` works against retail Steam MW3 running
-  under Proton on Steam Deck/Linux — added to `README.md`'s client
-  compatibility table as untested-but-plausible, not a confirmed claim.
+- Noted user-reported (Reddit, 2026-07-19, unverified by this project)
+  reports that this project's proxy `d3d9.dll` works against retail Steam
+  MW3 running under Proton on Steam Deck/Linux, including a direct report
+  of testing it live on real Deck hardware — added to `README.md`'s client
+  compatibility table as community-confirmed-but-project-untested, not a
+  supported claim.
 
 ---
 

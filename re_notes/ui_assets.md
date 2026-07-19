@@ -1054,3 +1054,25 @@ guard, fail-safe no-splice-if-full path, `{"assets/zones/bigfont_ext",
 1, 0}`-shaped entry). **Not yet attempted**: loading this into the
 running game — the build side is proven, live-loading is the one
 remaining unverified step.
+
+**IMPLEMENTED 2026-07-19** (`analog_input_hooks.cpp`,
+`Hook_LoadZonesForBootSplice`, hooking `0x004ca310`): matches this plan
+exactly, with one correction caught before it could cause a silent
+failure — the zone-name entry must be the BARE name `"bigfont_ext"`, not
+a path like `"assets/zones/bigfont_ext"`. Confirmed against the existing
+`ZoneLoadEntry entry{ "roundtrip", 4, 0 }` test code above (loads the
+real, already-placed `zone/english/roundtrip.ff` via the bare name
+`"roundtrip"`), the same resolution convention every other real boot-zone
+entry uses (e.g. `"code_post_gfx"` -> `zone/english/code_post_gfx.ff`).
+`bigfont_ext.ff` copied into `zone/english/` on the live install
+alongside the existing `roundtrip.ff`, following the exact same
+purely-additive, nothing-existing-touched precedent already established
+and screenshot-verified for that file. Builds clean (0 warnings/0
+errors, full rebuild) with the corrected bare name. **Not yet
+live-tested**: this is a genuine first (the project's first-ever
+boot-sequence splice, as opposed to the LB+RB manual mid-game trigger
+above) — needs an actual game launch to confirm (1) the game still boots
+normally with the spliced entry present, and (2) the new glyph codepoint
+(`0x81`) actually renders wherever `fonts/bigfont` draws text, before
+this is considered proven end-to-end. See `known_issues.md` for the
+live-test tracking entry.

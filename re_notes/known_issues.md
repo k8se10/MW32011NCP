@@ -1239,8 +1239,18 @@ used for pane-drilling — adjusting a slider's actual VALUE (not just
 navigating to/from it) with a controller remains unsolved and is a natural
 next step.
 
-**Still genuinely unstarted**: real button-glyph UI prompts (task #6's
-other half, see `ui_assets.md`).
+**Boot-splice half IMPLEMENTED 2026-07-19** (task #31): `Hook_LoadZonesForBootSplice`
+(`analog_input_hooks.cpp`) hooks `FUN_004ca310` and splices the extended
+`bigfont_ext` font zone into the real boot-time zone queue, gated on an exact
+return-address match so only one specific real call site is ever touched — see
+`ui_assets.md`'s "Boot-zone splice" sections for the full plan and this
+implementation's notes. `bigfont_ext.ff` copied into the live `zone/english/`
+folder. Builds clean; **not yet live-tested** — needs an actual boot to confirm
+the game still starts normally and that the new glyph codepoint renders. The
+bind-resolver hook (`FUN_0061f6f0`, for actually swapping hint text to a glyph
+codepoint at the call site) is a separate, still-unstarted piece of work — this
+splice only gets the font asset itself loaded, it doesn't yet make anything
+display differently. See `ui_assets.md` for the full remaining scope.
 
 ---
 
