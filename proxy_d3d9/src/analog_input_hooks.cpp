@@ -1208,7 +1208,28 @@ extern "C" void __cdecl InjectControllerSprint()
     bool holdBreathActive = g_sprintHeld && g_adsHeld;
     if (holdBreathActive != g_holdBreathSyntheticHeld) {
         g_holdBreathSyntheticHeld = holdBreathActive;
+        char hbBuf[128];
+        sprintf_s(hbBuf, "[hold-breath-diag-v2] synthetic Shift -> %s (g_sprintHeld=%d g_adsHeld=%d)",
+            holdBreathActive ? "DOWN" : "UP", g_sprintHeld ? 1 : 0, g_adsHeld ? 1 : 0);
+        LogFromController(hbBuf);
         SendSyntheticHoldBreathKey(holdBreathActive);
+    }
+
+    // Heartbeat, ONLY while active -- distinguishes "our own tracking got stuck true"
+    // (this log keeps firing with g_sprintHeld/g_adsHeld both still 1 long after the
+    // player believes they released L3) from "our tracking correctly went false but
+    // the native/visual effect just didn't clear" (this log stops firing at the right
+    // time, meaning the bug is on the native side, not in this project's own state).
+    static DWORD s_lastHoldBreathHeartbeatMs = 0;
+    if (holdBreathActive) {
+        DWORD nowMs = GetTickCount();
+        if (nowMs - s_lastHoldBreathHeartbeatMs >= 500) {
+            s_lastHoldBreathHeartbeatMs = nowMs;
+            char hbBuf2[128];
+            sprintf_s(hbBuf2, "[hold-breath-diag-v2] heartbeat: still active (g_sprintHeld=%d g_adsHeld=%d) t=%lu",
+                g_sprintHeld ? 1 : 0, g_adsHeld ? 1 : 0, nowMs);
+            LogFromController(hbBuf2);
+        }
     }
 }
 
