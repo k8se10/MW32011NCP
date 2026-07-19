@@ -2936,6 +2936,144 @@ void __cdecl Hook_LoadZonesForBootSplice(void* zoneArray, int count, int mode)
 }
 } // namespace
 
+// ---- DEBUG-ONLY: live dump of the real Font struct for fonts/bigFont (2026-07-19,
+// task #6 UI scope / glyphs, follow-up to the boot-splice crash) --------------------
+//
+// Read-only diagnostic, zero mutation, zero hooking of anything boot-related --
+// deliberately the safest possible next step after the boot-splice crash (which
+// intercepted the zone-LOADING path itself). This instead calls the same real
+// FindOrLoadFont function the engine's own boot code already calls, well after boot
+// has finished, from the always-safe WndProc/SetTimer tick -- since fonts/bigFont is
+// already loaded and asset-interned by name at this point, this call returns the
+// SAME cached Font* the real boot process created, it does not reload or duplicate
+// anything. Purpose: verify this session's Ghidra-confirmed Font/Glyph struct
+// layout against REAL live memory before ever attempting to mutate it.
+//
+// FUN_0045d040 = FindOrLoadFont, thin __cdecl(const char* path) wrapper hardcoding
+// assetType 0x18 into FUN_004ff000 -- same calling-convention class as the already-
+// proven FindOrLoadMenuList (0x004adc60) above, not a register-arg function like
+// FUN_0061f6f0.
+//
+// Font_s/Glyph_s layout below is exactly what this session's dedicated Ghidra pass
+// confirmed (cross-validated two independent ways: direct decompile of the font
+// load body FUN_005021c0's material/glowMaterial writes at +0xC/+0x10, AND the
+// render-time glyph-lookup function FUN_0047dfa0's direct-index math using +0x8
+// (count) and +0x14 (glyph array), stride 0x18/24 bytes per glyph). NOT yet
+// independently re-confirmed by this project's own Ghidra project -- this diagnostic
+// exists specifically to catch a live mismatch before it could cause a bad write.
+namespace {
+using FindOrLoadFontFn = void*(__cdecl*)(const char* fontPath);
+FindOrLoadFontFn const FindOrLoadFont = reinterpret_cast<FindOrLoadFontFn>(0x0045d040);
+
+#pragma pack(push, 1)
+struct DiagGlyph
+{
+    unsigned short letter; // +0x00
+    signed char x0;        // +0x02
+    signed char y0;        // +0x03
+    unsigned char dx;      // +0x04 -- advance width, confirmed via the render-time
+                             // measure loop's direct *(byte*)(glyph+4) read
+    unsigned char pixelWidth;  // +0x05
+    unsigned char pixelHeight; // +0x06
+    unsigned char _pad07;      // +0x07
+    float s0, t0, s1, t1;      // +0x08 .. +0x17
+};
+struct DiagFont
+{
+    const char* fontName; // +0x00
+    int pixelHeight;       // +0x04
+    int glyphCount;        // +0x08
+    void* material;        // +0x0C
+    void* glowMaterial;     // +0x10
+    DiagGlyph* glyphs;      // +0x14
+};
+#pragma pack(pop)
+static_assert(sizeof(DiagGlyph) == 0x18, "DiagGlyph must match the confirmed 24-byte real glyph stride");
+
+enum class FontDiagStage { WaitingForCombo, Done };
+FontDiagStage g_fontDiagStage = FontDiagStage::WaitingForCombo;
+DWORD g_fontDiagHoldStartMs = 0;
+} // namespace
+
+// Reuses the same obscure LB+RB-held-2s convention as the zoneload-test above (that
+// test is disabled/not wired into the live tick, so no collision) -- deliberately
+// impossible to trigger by accident during normal play.
+void InjectFontStructDebugTest()
+{
+    if (g_fontDiagStage != FontDiagStage::WaitingForCombo) return;
+
+    unsigned short buttons;
+    unsigned char leftTrigger, rightTrigger;
+    if (!Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger)) return;
+
+    bool comboHeld = (buttons & kXI_LEFT_SHOULDER) != 0 && (buttons & kXI_RIGHT_SHOULDER) != 0;
+    if (!comboHeld) {
+        g_fontDiagHoldStartMs = 0;
+        return;
+    }
+    if (g_fontDiagHoldStartMs == 0) {
+        g_fontDiagHoldStartMs = GetTickCount();
+        return;
+    }
+    if (GetTickCount() - g_fontDiagHoldStartMs < 2000) return;
+
+    g_fontDiagStage = FontDiagStage::Done; // fire once per session regardless of outcome below
+
+    LogFromController("[font-struct-diag] LB+RB held 2s -- calling FindOrLoadFont(\"fonts/bigfont\")");
+    void* rawFont = FindOrLoadFont("fonts/bigfont");
+    char buf[256];
+    if (!LooksLikeValidPointer(reinterpret_cast<uintptr_t>(rawFont))) {
+        sprintf_s(buf, "[font-struct-diag] FindOrLoadFont returned implausible pointer 0x%08X -- aborting dump",
+            static_cast<unsigned>(reinterpret_cast<uintptr_t>(rawFont)));
+        LogFromController(buf);
+        return;
+    }
+    DiagFont* font = reinterpret_cast<DiagFont*>(rawFont);
+    sprintf_s(buf, "[font-struct-diag] Font* = 0x%08X, name=0x%08X pixelHeight=%d glyphCount=%d material=0x%08X glowMaterial=0x%08X glyphs=0x%08X",
+        static_cast<unsigned>(reinterpret_cast<uintptr_t>(font)),
+        static_cast<unsigned>(reinterpret_cast<uintptr_t>(font->fontName)),
+        font->pixelHeight, font->glyphCount,
+        static_cast<unsigned>(reinterpret_cast<uintptr_t>(font->material)),
+        static_cast<unsigned>(reinterpret_cast<uintptr_t>(font->glowMaterial)),
+        static_cast<unsigned>(reinterpret_cast<uintptr_t>(font->glyphs)));
+    LogFromController(buf);
+
+    if (LooksLikeValidPointer(reinterpret_cast<uintptr_t>(font->fontName))) {
+        sprintf_s(buf, "[font-struct-diag] fontName string = \"%.63s\"", font->fontName);
+        LogFromController(buf);
+    }
+
+    // Sanity bounds before ever indexing the glyph array -- a plausible font has
+    // somewhere between 96 (bare minimum, hard schema requirement) and a few
+    // hundred glyphs (the real bigFont's atlas covers extended Latin, ~191 known).
+    if (!LooksLikeValidPointer(reinterpret_cast<uintptr_t>(font->glyphs)) ||
+        font->glyphCount < 96 || font->glyphCount > 1000) {
+        sprintf_s(buf, "[font-struct-diag] glyphs ptr or glyphCount looks implausible (count=%d) -- not dumping entries, struct layout may be WRONG",
+            font->glyphCount);
+        LogFromController(buf);
+        return;
+    }
+
+    // Dump a few direct-indexed entries (codepoints 'A'=0x41, 'E'=0x45 -- common
+    // interact-prompt letters) plus the first 2 sorted-tail entries beyond the
+    // required 96, to confirm both the direct-index region AND the sorted-extra
+    // region look sane.
+    auto dumpGlyph = [&](int idx, const char* label) {
+        if (idx < 0 || idx >= font->glyphCount) return;
+        const DiagGlyph& g = font->glyphs[idx];
+        char b2[200];
+        sprintf_s(b2, "[font-struct-diag] glyph[%d] (%s): letter=0x%02X dx=%u pxW=%u pxH=%u s0=%.4f t0=%.4f s1=%.4f t1=%.4f",
+            idx, label, g.letter, g.dx, g.pixelWidth, g.pixelHeight, g.s0, g.t0, g.s1, g.t1);
+        LogFromController(b2);
+    };
+    dumpGlyph('A' - 0x20, "'A', direct-indexed");
+    dumpGlyph('E' - 0x20, "'E', direct-indexed");
+    if (font->glyphCount > 96) dumpGlyph(96, "first sorted-extra entry");
+    if (font->glyphCount > 97) dumpGlyph(97, "second sorted-extra entry");
+
+    LogFromController("[font-struct-diag] dump complete -- compare against re_notes/known_issues.md issue #6/#31 Font struct notes before attempting any patch");
+}
+
 extern "C" void __cdecl InjectAllControllerInput(unsigned char* cmd)
 {
     int32_t inLevelVal = *reinterpret_cast<volatile int32_t*>(kInLevelFlagAddr);
@@ -3026,6 +3164,13 @@ extern "C" void __cdecl InjectMenuInputTick()
     // just not wired into the live tick for a public build.
     // InjectZoneLoadDebugTest(); // DEBUG ONLY, task #23 -- see comment above its definition
     // TickMenuDefScan(); // DEBUG ONLY, task #23 -- no-op unless a scan is active (StartMenuDefScan called)
+
+    // DEBUG ONLY, task #6/#31/#32 follow-up (2026-07-19) -- read-only Font-struct
+    // dump, see comment above InjectFontStructDebugTest's definition. Deliberately
+    // wired live (unlike the two debug calls above): this one never mutates
+    // anything or intercepts the boot path, so it carries none of the risk that got
+    // the zone-load test disabled for public builds.
+    InjectFontStructDebugTest();
 }
 
 namespace {

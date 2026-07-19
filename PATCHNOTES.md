@@ -33,6 +33,18 @@ reverse-engineering trail behind each entry.
   rendering in any case; the bind-resolver hook that actually swaps hint
   text for a glyph codepoint is separate, still-unstarted work (see
   `re_notes/ui_assets.md` and `re_notes/known_issues.md`).
+- **Font-struct read-only diagnostic (2026-07-19, task #6/#31/#32 follow-up).**
+  After the boot-splice crash above, a 6-fork research pass found a completely
+  different, lower-risk mechanism for button glyphs: patch the real
+  `fonts/bigFont` object in memory after it loads normally, instead of
+  intercepting the boot-time zone queue at all. `InjectFontStructDebugTest()`
+  is the first step — calls the real `FindOrLoadFont` for the already-loaded,
+  cached font and logs its confirmed struct fields (glyph count, glyph array,
+  material pointers) and a few real glyph entries to `proxy_d3d9.log`, gated
+  behind the same obscure LB+RB-held-2s combo as the disabled zone-load test.
+  Zero mutation, zero boot-path hooking. Builds clean — **live test still
+  needed** to confirm the struct layout against real memory before any patch
+  is attempted.
 
 ### Docs
 - Noted user-reported (Reddit, 2026-07-19, unverified by this project)

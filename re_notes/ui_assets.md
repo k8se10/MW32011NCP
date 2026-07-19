@@ -1101,3 +1101,147 @@ function (return address included) BEFORE any write is attempted, so the
 next test run shows whether the hook is even being reached safely at
 all, rather than jumping straight back to the full splice-and-write
 attempt.
+
+## Pivot after the boot-splice crash: in-memory Font patch, 6-fork research pass (2026-07-19)
+
+After the boot-splice crash above, the whole approach changed: instead of
+getting a NEW zone into the boot-time load queue, patch the REAL
+`fonts/bigFont` `Font` object in memory, after it has already loaded
+normally through the completely untouched, unmodified real boot path.
+Nothing about the zone-loading mechanism is touched at all under this
+plan — sidesteps the crash entirely rather than root-causing it. Six
+parallel research forks covered every open piece; findings below,
+cross-validated against each other where they overlap.
+
+**1. Font struct layout — CONFIRMED, two independent ways.** One fork
+decompiled the font load dispatch (`FUN_004b6b70` case `0x18` →
+`FUN_004d0730` → `FUN_005021c0`) and cross-checked against OpenAssetTools'
+own `IW5_Assets.h`; a second, independent fork arrived at the identical
+offsets via the RENDER-time consumer instead (`FUN_0047dfa0`, the
+codepoint→glyph lookup). Both agree exactly:
+```c
+struct Glyph {           // 0x18 (24) bytes
+    unsigned short letter;    // +0x00
+    signed char x0, y0;       // +0x02, +0x03
+    unsigned char dx;         // +0x04 -- advance width
+    unsigned char pixelWidth, pixelHeight; // +0x05, +0x06
+    // 1 byte pad             // +0x07
+    float s0, t0, s1, t1;     // +0x08..+0x17
+};
+struct Font_s {           // struct itself
+    const char* fontName;  // +0x00
+    int pixelHeight;        // +0x04
+    int glyphCount;         // +0x08
+    Material* material;     // +0x0C
+    Material* glowMaterial; // +0x10
+    Glyph* glyphs;          // +0x14
+};
+```
+`glyphs` is a flat, indexable array, NOT a list/hash table.
+
+**2. Render-time glyph lookup, exact mechanism (`FUN_0047dfa0`,
+decompiled).** Codepoints in `[0x20, 0x80)` (the 96 required standard
+glyphs) are DIRECT-INDEXED: `glyphs[codepoint - 0x20]`, stride 24 bytes —
+never searched. Codepoints outside that range go through a binary search
+over `glyphs[96 .. glyphCount)`, sorted by the `letter` field — so a new
+glyph (e.g. our candidate `0x81`) must be inserted in sorted position
+within that tail, not just appended at the end. A real, pre-existing
+engine bug (unrelated to this project) was noted in passing: if
+`glyphCount == 96` and a lookup misses, the binary search's empty loop
+body still falls through to returning index 96 anyway — one glyph-slot
+read past the end of a bare 96-entry array. Not exploited, just flagged.
+
+**3. In-place monkeypatch feasibility: NO for growing in place, YES for a
+reallocate-and-repoint patch.** IW5 zones load into tightly-packed
+pool/arena allocations — no guaranteed slack space after the real glyph
+array, so writing a 97th entry past its bounds would very likely corrupt
+whatever asset data follows it in the same zone block. **Correct
+approach**: heap-allocate a fresh `Glyph[glyphCount+1]` array, copy the
+real entries in (inserting the new one in sorted position within the
+`[96, count)` tail), then overwrite the LIVE `Font_s`'s `glyphCount`
+(+0x8) and `glyphs` (+0x14) fields to point at the new heap array. Zone
+memory itself is never touched.
+
+**4. Safe hook/patch timing — CONFIRMED single, one-shot call site.**
+`FUN_00619020` (font boot-registration, already known) has exactly ONE
+real caller: `FUN_0044c250`, a plain one-time UI-init function with no
+threading evidence anywhere in the chain — confirmed via `FindCallers`.
+This is the exactly-once splice point: patch `bigFont`'s glyph array
+immediately after `FUN_00619020` returns, before any text is ever drawn
+through the traced render pipeline (`FUN_0044c250` →
+`FUN_00619020`/`FUN_005181e0`/`FUN_00459b80` font selectors →
+`FUN_0061e0f0`/`FUN_00616d60`/`FUN_0057c490` draw-text callers →
+`FUN_004e9350` width-summing loop → `FUN_0047dfa0` glyph lookup).
+
+**5. Live texture/material patching — the shared atlas is NOT a clean
+target, use a separate texture instead.** A dedicated fork traced
+`Material` struct fields (`+0x54` techniqueSet, `+0x4e` image count byte,
+`+0x58` image-reference array, stride 12 bytes/entry with a flag byte at
+`entry+7` selecting direct-vs-indirect image-pointer resolution) but
+found the path from there to a live `IDirect3DTexture9*` is NOT a simple
+offset chase — it runs through a generic hash-keyed asset-tracking table
+(`FUN_005511c0`/`FUN_00585ae0`), the same class of interning system
+already documented elsewhere in this project, not image-specific.
+**Recommendation: do NOT reach into the real, shared `gamefonts_pc`
+atlas** — this project's proxy DLL already owns a live
+`IDirect3DDevice9*` from its own `CreateDevice` hook, so creating a
+brand-new, separate small texture (+ new content) purely for the custom
+glyph is straightforward and carries zero risk to the real, heavily-
+referenced shared atlas. **Open complication, found only after
+synthesizing this fork's result against the Font struct above**: `Font_s`
+has only ONE `material`/`glowMaterial` pair for the WHOLE font, not a
+per-glyph material — so a genuinely separate texture/material can't just
+be referenced by the new glyph entry alone (`Glyph` has no material field
+of its own, only UV floats into whatever the font's single shared
+material points at). Making a new glyph actually RENDER therefore needs
+one of: (a) a new texture that's a full superset of the original atlas's
+pixel content (so all EXISTING glyphs' UV rects remain valid unchanged)
+plus the new glyph's pixels in extended space, with the font's `material`
+pointer (or the material's own image-reference indirection, `entry+0x40`
+per the fork's finding) repointed at it — the "clone + extend" approach
+the offline `bigfont_ext.ff` build already used, just done at runtime
+instead of build-time; or (b) fabricating an entire new, well-formed
+`Material` object from scratch (blocked on a fuller Material struct trace
+than currently exists — only 3 fields are known). **(a) is the more
+tractable path** given what's already confirmed, but is real, unstarted
+work, not a quick follow-up — flagging honestly rather than understating
+the remaining scope.
+
+**6. Text-swap hook (`FUN_0061f6f0`) — confirmed feasible, one hook
+covers both real hint mechanisms.** Fresh disassembly confirmed the
+already-documented register+stack calling convention (`EAX`=context,
+`ECX`=bind name, `[esp+8]`=output buffer, `[esp+0xc]`=limit-to-1-bind
+flag), with one correction: `EAX`/context is forwarded into only the
+FIRST internal resolve call (`FUN_004d6da0`), not both, as prior notes
+claimed. `FindCallers` found the expected 3 real callers
+(`FUN_004fafd0`/`FUN_004be070` for the `&&1`-token path,
+`FUN_00622020` for the `[{...}]`-bracket path) PLUS a 4th,
+previously-undocumented caller, `FUN_00622970` — shape suggests a
+key-rebind-capture UI ("press any key"), not one of the 3 known hint
+categories; flagged for a future look, not chased further. All three
+known callers independently confirmed to present `EAX`/`ECX` in the same
+convention, confirming one hook on `FUN_0061f6f0` genuinely covers both
+real mechanisms. **Recommended implementation shape**: a small
+`__declspec(naked)` shim that stashes `EAX`/`ECX` into C-visible
+globals/locals before falling through to a normal C++ function (which
+calls the real trampoline via its own tiny asm re-load shim, then patches
+the output buffer) — NOT a single naive naked function that tries to do
+everything, which the fork's own draft attempt showed gets fiddly fast.
+**Bind→glyph mapping recommendation**: don't re-derive which key is
+bound — string-match the REAL resolved key-name text already sitting in
+the buffer after the trampoline call (e.g. `"E"`, `"MOUSE1"`) against this
+project's existing `ButtonLayout`-aware glyph table, piggybacking on the
+resolver's own already-correct output instead of parallel-deriving it.
+Recommends prototyping log-only (no buffer write) first — same lesson as
+both crashes this session.
+
+**Bottom line**: no remaining "is this even possible" unknowns for either
+half of button-glyph rendering (asset side: struct-confirmed,
+patch-confirmed, hook-point-confirmed; text side: calling-convention-
+confirmed, one-hook-covers-both confirmed). What's left is careful,
+incremental implementation — the glyph-texture/material question (item 5
+above) is the single biggest remaining piece of real, unstarted work, not
+just a quick wire-up. `InjectFontStructDebugTest()` (see
+`known_issues.md`) is the first concrete implementation step taken from
+this research, a read-only verification pass before any struct mutation
+is attempted.

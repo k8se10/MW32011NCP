@@ -1239,6 +1239,29 @@ used for pane-drilling — adjusting a slider's actual VALUE (not just
 navigating to/from it) with a controller remains unsolved and is a natural
 next step.
 
+**Font-struct diagnostic ADDED 2026-07-19, safe by construction, live-test pending**
+(task #6/#31/#32 follow-up): after the boot-splice crash below, a fresh 6-fork
+research pass (Font struct layout, render-time glyph lookup, live texture patching,
+docs consolidation, interact-prompt resolver design, menu-architecture deep dive)
+converged on a completely different, much lower-risk mechanism for adding a glyph:
+patch the real `fonts/bigFont` `Font` struct's glyph array IN MEMORY after it has
+already loaded normally, rather than intercepting the boot-time zone queue at all.
+Before attempting that patch, `InjectFontStructDebugTest()`
+(`analog_input_hooks.cpp`) was added as a read-only verification step: calls the
+real `FindOrLoadFont("fonts/bigfont")` (`0x0045d040`) from the always-safe
+WndProc/`SetTimer` tick (gated on the same obscure LB+RB-held-2s combo as the
+disabled zoneload test), which returns the SAME cached `Font*` the real boot
+process already created (asset-interned by name, not reloaded), then logs every
+confirmed struct field (`pixelHeight` +0x4, `glyphCount` +0x8, `material`/
+`glowMaterial` +0xC/+0x10, `glyphs` +0x14) plus a handful of real glyph entries
+(direct-indexed 'A'/'E' and the first two sorted-extra entries past the required
+96) to `proxy_d3d9.log`. Zero mutation, zero hooking of anything boot-related --
+deliberately the safest possible next increment given this session's two crashes.
+Builds clean; **live test still needed** (hold LB+RB 2s, then check the log) to
+confirm the Ghidra-derived struct layout against real memory before ever writing
+to it. See the Font/Glyph struct layout this compares against in `ui_assets.md`'s
+2026-07-19 fork-research section.
+
 **Boot-splice half IMPLEMENTED 2026-07-19, then CONFIRMED LIVE CRASH, DISABLED
 same day** (task #31): `Hook_LoadZonesForBootSplice` (`analog_input_hooks.cpp`)
 hooks `FUN_004ca310` and splices the extended `bigfont_ext` font zone into the
