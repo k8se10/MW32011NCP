@@ -19,18 +19,20 @@ reverse-engineering trail behind each entry.
   gated on ADS instead of stance (crouched/prone + scoped is a normal case for
   Hold Breath, unlike Sprint's own standing-only gate). Builds clean (0
   warnings/0 errors, full rebuild) — **not yet live-tested.**
-- **Boot-time zone splice for the extended button-glyph font (2026-07-19,
-  task #31/#6).** Hooks the real zone-loading entry point (`FUN_004ca310`)
-  and splices this project's extended `bigfont_ext` font zone into the
-  real boot-time zone queue, gated on an exact return-address match so
-  only that one real call site is ever touched — every other real caller
-  passes through completely untouched. `bigfont_ext.ff` copied into the
-  live `zone/english/` folder, same purely-additive precedent already
-  established for this project's earlier `roundtrip.ff` menu test. Builds
-  clean — **not yet live-tested**, and this is only the "get the font
-  asset loaded" half of real button-glyph rendering; the bind-resolver
-  hook that actually swaps hint text for a glyph codepoint is separate,
-  still-unstarted work (see `re_notes/ui_assets.md`).
+- **Boot-time zone splice for the extended button-glyph font, attempted and
+  DISABLED after a confirmed live crash (2026-07-19, task #31/#6).** Hooked
+  the real zone-loading entry point (`FUN_004ca310`) to splice this
+  project's extended `bigfont_ext` font zone into the real boot-time zone
+  queue. Built clean, but the actual live boot crashed — same crash
+  signature as the earlier rumble-hook crash (every hook reports
+  successful install, then an immediate detach with zero gameplay activity
+  ever logged, before this hook's own splice log line could even appear).
+  **Disabled** (code kept, not shipped active) and the zone file removed
+  from the live install to fully revert. Root cause not yet found — this
+  is only the "get the font asset loaded" half of real button-glyph
+  rendering in any case; the bind-resolver hook that actually swaps hint
+  text for a glyph codepoint is separate, still-unstarted work (see
+  `re_notes/ui_assets.md` and `re_notes/known_issues.md`).
 
 ### Docs
 - Noted user-reported (Reddit, 2026-07-19, unverified by this project)

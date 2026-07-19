@@ -1076,3 +1076,28 @@ normally with the spliced entry present, and (2) the new glyph codepoint
 (`0x81`) actually renders wherever `fonts/bigfont` draws text, before
 this is considered proven end-to-end. See `known_issues.md` for the
 live-test tracking entry.
+
+**CONFIRMED LIVE CRASH, DISABLED same day.** The actual game launch
+crashed with this hook active. `proxy_d3d9.log` shows the exact same
+crash signature as the 2026-07-18 rumble-hook crash (`known_issues.md`
+issue #24): every hook including this one reports successful install
+(all MH_OK), then an immediate detach with zero gameplay-tick activity
+ever logged — the crash happens during early boot, before the first
+gameplay frame. This hook's own `"[boot-zone-splice] spliced..."` log
+line never appears anywhere in the log, meaning the return-address-gated
+splice branch itself never actually ran before the crash — either the
+crash happens before `FUN_00679680`'s Call 2 executes at all, or merely
+hooking `FUN_004ca310` (even the plain-passthrough branch every OTHER
+real caller takes) is unsafe in a way the static disassembly/pressure-
+testing review didn't catch. **Disabled** (`MH_CreateHook`/`MH_EnableHook`
+calls commented out in `InstallAnalogInputHooks`, code kept, not deleted)
+and `bigfont_ext.ff` removed from the live `zone/english/` folder to
+fully revert to last-known-good. **Root cause not yet found** — the
+"implementation-ready" conclusion from the 2026-07-18 pressure-testing
+pass was wrong, or at least incomplete: something about this specific
+hook target still isn't understood. Needs a lower-risk diagnostic pass
+before re-attempting — e.g. an unconditional log of every call to this
+function (return address included) BEFORE any write is attempted, so the
+next test run shows whether the hook is even being reached safely at
+all, rather than jumping straight back to the full splice-and-write
+attempt.

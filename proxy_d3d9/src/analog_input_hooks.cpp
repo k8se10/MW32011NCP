@@ -3095,22 +3095,33 @@ void InstallAnalogInputHooks()
         LogFromController(buf);
     }
 
-    // task #6 UI scope (2026-07-19) -- boot-time zone splice, auto-loads the
-    // extended button-glyph font zone through the real boot zone queue (see the
-    // comment above Hook_LoadZonesForBootSplice for the full return-address-gated
-    // splice mechanism). Same low-risk hook shape as controlslinkto/missile-guidance
-    // above (plain __cdecl, all args confirmed on the stack at all 4 real callers) --
-    // not a generic multi-signature dispatcher like the rumble hooks that crashed
-    // the game.
-    MH_STATUS s7 = MH_CreateHook(reinterpret_cast<LPVOID>(0x004ca310),
-        &Hook_LoadZonesForBootSplice, reinterpret_cast<LPVOID*>(&g_origLoadZonesForBootSplice));
-    sprintf_s(buf, "[hooks] MH_CreateHook(boot-zone-splice @ 004ca310) = %d", static_cast<int>(s7));
-    LogFromController(buf);
-    if (s7 == MH_OK) {
-        MH_STATUS e7 = MH_EnableHook(reinterpret_cast<LPVOID>(0x004ca310));
-        sprintf_s(buf, "[hooks] MH_EnableHook(boot-zone-splice) = %d", static_cast<int>(e7));
-        LogFromController(buf);
-    }
+    // TEMPORARILY DISABLED (2026-07-19) -- CONFIRMED LIVE CRASH. Game failed to
+    // start with this hook active; proxy_d3d9.log shows the EXACT same crash
+    // signature as the 2026-07-18 rumble-hook crash below: every hook (including
+    // this one) installing successfully (all MH_OK/status 0), then an immediate
+    // detach with ZERO gameplay-tick activity ever logged (no [stance-diag]
+    // heartbeat at all, unlike a normal session) -- meaning the crash happens
+    // during early boot, before the first gameplay frame. Notably, this hook's own
+    // "[boot-zone-splice] spliced..." log line NEVER appears anywhere in the log
+    // either, meaning the return-address-gated splice branch itself never even
+    // ran -- the crash is happening either before FUN_00679680's Call 2 executes,
+    // or the mere act of hooking FUN_004ca310 (even the plain-passthrough branch
+    // every OTHER real caller takes) is unsafe in a way the static disassembly
+    // review didn't catch. Disabling to isolate the cause and get a working build
+    // back -- Hold Breath (added the same session) is untouched and NOT suspected,
+    // since it only ever executes once gameplay ticks are already running, which
+    // this log shows never happened. See known_issues.md issue #6's glyph section
+    // for the live diagnosis in progress. Code kept, not deleted -- same precedent
+    // as the rumble hook below.
+    // MH_STATUS s7 = MH_CreateHook(reinterpret_cast<LPVOID>(0x004ca310),
+    //     &Hook_LoadZonesForBootSplice, reinterpret_cast<LPVOID*>(&g_origLoadZonesForBootSplice));
+    // sprintf_s(buf, "[hooks] MH_CreateHook(boot-zone-splice @ 004ca310) = %d", static_cast<int>(s7));
+    // LogFromController(buf);
+    // if (s7 == MH_OK) {
+    //     MH_STATUS e7 = MH_EnableHook(reinterpret_cast<LPVOID>(0x004ca310));
+    //     sprintf_s(buf, "[hooks] MH_EnableHook(boot-zone-splice) = %d", static_cast<int>(e7));
+    //     LogFromController(buf);
+    // }
 
     // TEMPORARILY DISABLED (2026-07-18) -- game failed to start after this was added;
     // proxy_d3d9.log shows every hook installing successfully (all MH_OK) then an

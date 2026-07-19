@@ -1239,18 +1239,33 @@ used for pane-drilling — adjusting a slider's actual VALUE (not just
 navigating to/from it) with a controller remains unsolved and is a natural
 next step.
 
-**Boot-splice half IMPLEMENTED 2026-07-19** (task #31): `Hook_LoadZonesForBootSplice`
-(`analog_input_hooks.cpp`) hooks `FUN_004ca310` and splices the extended
-`bigfont_ext` font zone into the real boot-time zone queue, gated on an exact
-return-address match so only one specific real call site is ever touched — see
-`ui_assets.md`'s "Boot-zone splice" sections for the full plan and this
-implementation's notes. `bigfont_ext.ff` copied into the live `zone/english/`
-folder. Builds clean; **not yet live-tested** — needs an actual boot to confirm
-the game still starts normally and that the new glyph codepoint renders. The
-bind-resolver hook (`FUN_0061f6f0`, for actually swapping hint text to a glyph
-codepoint at the call site) is a separate, still-unstarted piece of work — this
-splice only gets the font asset itself loaded, it doesn't yet make anything
-display differently. See `ui_assets.md` for the full remaining scope.
+**Boot-splice half IMPLEMENTED 2026-07-19, then CONFIRMED LIVE CRASH, DISABLED
+same day** (task #31): `Hook_LoadZonesForBootSplice` (`analog_input_hooks.cpp`)
+hooks `FUN_004ca310` and splices the extended `bigfont_ext` font zone into the
+real boot-time zone queue, gated on an exact return-address match so only one
+specific real call site is meant to be touched — see `ui_assets.md`'s "Boot-zone
+splice" sections for the full plan. Built clean, `bigfont_ext.ff` copied into the
+live `zone/english/` folder, but **the actual live boot crashed** with this hook
+active. `proxy_d3d9.log` shows the exact same crash signature as the 2026-07-18
+rumble-hook crash: every hook (including this one) reports successful install
+(all MH_OK), then an immediate detach with ZERO gameplay-tick activity ever
+logged (no `[stance-diag]` heartbeat at all) — the crash happens during early
+boot, before the first gameplay frame. Critically, this hook's own
+`"[boot-zone-splice] spliced..."` log line never appears anywhere in the log,
+meaning the return-address-gated splice branch itself never actually ran before
+the crash — either the crash happens before `FUN_00679680`'s Call 2 executes, or
+merely hooking `FUN_004ca310` at all (even the plain-passthrough branch every
+OTHER real caller takes) is unsafe in a way the static disassembly review didn't
+catch. **Disabled** (hook install commented out, code kept — same precedent as
+the rumble hook) and `bigfont_ext.ff` removed from the live `zone/english/`
+folder to fully revert to last-known-good. Hold Breath (added the same session)
+is untouched and not suspected — it only executes once gameplay ticks are
+already running, which this log shows never happened. **Root cause not yet
+found** — needs a lower-risk diagnostic pass (e.g. logging every call to this
+function unconditionally, including its return address, BEFORE attempting any
+write, so the next test run shows whether the hook is even being reached safely
+at all, let alone hitting the intended call site) before re-attempting. The
+bind-resolver hook (`FUN_0061f6f0`) is unaffected and still entirely unstarted.
 
 ---
 
