@@ -8,6 +8,37 @@ reverse-engineering trail behind each entry.
 
 ## Unreleased
 
+### Added
+- **Controller vibration/rumble (2026-07-18, task #17).** No native
+  rumble infrastructure exists in this build at all — entirely this
+  mod's own `XInputSetState` output, driven off two real, disassembly-
+  confirmed native notify choke points: a short pulse on every real
+  shot fired, and a damage-scaled pulse when the local player takes
+  damage (filtered via the same "has a client struct" entity field the
+  real `notifyonplayercommand` registration already gates on). New
+  `[Vibration]` config section (`Enabled`, fire/damage intensity and
+  duration). Known limitation: the local-player filter doesn't yet
+  exclude a co-op partner's entity in 2-player Survival. Explosions, melee
+  hits, killstreak activation, and low-ammo rumble are real leads (a
+  ~600-entry GSC notify-event table already found includes
+  `"explode"`/`"grenade_fire"`/`"missile_fire"`) but not yet wired up.
+  **Correction, same day: live-tested and found to crash the game at
+  startup.** Both native hook targets (`FUN_004895b0`/`FUN_0044cdb0`)
+  turned out to be generic dispatchers with genuinely variable real
+  argument counts across their call sites (confirmed via a disassembly-
+  based push-count survey of every real caller) — the fixed-signature
+  detour corrupted stack reads for unrelated boot-time events on most of
+  them, crashing before any gameplay frame. **Disabled**: the
+  `Rumble_Install()` call site is commented out (code kept, not deleted).
+  A safer reimplementation is planned against a single-call-site-safe
+  target (`FUN_0045e320` for fire) and health-polling (rather than a hook)
+  for damage. See `re_notes/known_issues.md` issue #24.
+- **`[Experimental]` config section (2026-07-18)** — a new pattern for
+  individually-toggleable, not-yet-fully-proven behaviors, so a live
+  hypothesis under test can be flipped off via the INI without a
+  recompile if it turns out to be wrong. First entry:
+  `FireNotifyQueueKick` (see the Fire/killstreak entry below).
+
 ### Fixed
 - **Sprint (L3) no longer force-stands the player while ADS'd (2026-07-18,
   task #24).** `InjectControllerSprint`'s auto-stand-from-crouch/prone call
@@ -69,15 +100,19 @@ reverse-engineering trail behind each entry.
   task (#30 in the live tracker) captures the concrete implementation
   plan. Mortar fire appears to be a genuinely separate mechanism (see
   below), not covered by this finding.
-- **Turret damage/difficulty in "Back on the Grid": the health-regen
-  hypothesis is REFUTED (2026-07-18, task #27, now closed).** Dumped the
+- **Turret damage/difficulty in "Back on the Grid" *(mission attribution
+  corrected 2026-07-19 — this is actually Goalpost, see the Docs entry
+  above)*: the health-regen hypothesis is REFUTED (2026-07-18, task #27, now
+  closed).** Dumped the
   real mission zone and confirmed the mission DOES use a real
   faster-regen buff mechanic in two other scripted set-pieces — just never
   on the turret sequence. No turret-specific damage/regen logic exists in
   the mission's own scripts at all. The likely real explanation is the
   same missing-aim-channel issue described above (no aim assist +
   imprecise mounted aim), not a missing survivability mechanic.
-- **Mortar fire ("Back on the Grid") will very likely still be broken
+- **Mortar fire ("Back on the Grid" *(mission attribution corrected
+  2026-07-19 — this is actually Goalpost, see the Docs entry above)*) will
+  very likely still be broken
   after the Fire rewrite above (2026-07-18, task #26) — do not assume it
   was fixed for free.** Confirmed the mortar (`bog_mortar`) is deliberately
   excluded from the engine's generic vehicle-fire pipeline, and — more
@@ -170,6 +205,38 @@ reverse-engineering trail behind each entry.
     evidence, removed from `killstreak_reference.md`.
 
 ### Docs
+- **Full documentation consistency pass across README.md/PATCHNOTES.md
+  (2026-07-19), ahead of tagging this build toward v0.2.0.** Reconciled every
+  doc against this session's actual findings rather than carrying forward
+  stale claims:
+  - **Mission mis-attribution corrected everywhere**: the mortar-fire and
+    mounted-turret-difficulty bugs were filed under "Back on the Grid"/
+    `dubai.ff` across multiple prior sessions and multiple docs
+    (`README.md`'s compatibility table and killstreak table, `known_issues.md`
+    issues #26/#27, live-tracker tasks #26/#27). A dedicated zone-
+    identification pass found the real mission/zone is **Goalpost**/
+    `hamburg.ff` (matching the mortar impact-FX table and the player-operable
+    M1A1 turret actually present there) — "Back on the Grid" is untested and
+    was wrongly given credit for both a pass ("fully compatible") and a fail
+    (these two bugs) in different places. All four surfaces corrected, with
+    an explicit "(corrected 2026-07-19)" note left in place rather than
+    silently rewriting history.
+  - **Killstreak status updated for real, live-confirmed progress**: README's
+    Survival killstreak table and Campaign killstreak-type-weapon-system
+    table both updated — Predator Missile launch is fixed (see the `"n 1"`
+    fix below), Precision Airstrike is confirmed fully working (a
+    smoke-grenade-throw mechanic, not a HUD/cursor system), and AI squadmate
+    call-in stays confirmed. Predator Missile's post-fire guidance aim is
+    now called out as a separate, still-open bug rather than folded into a
+    generic "partial."
+  - **Vibration/rumble's own "Added" entry (above) corrected in place**,
+    same day it was written, once live testing showed it crashes the game at
+    startup — see that entry for the root cause and the disable.
+  - **Scorecard recomputed**: feature-completeness matrix moved 37/50→42/50
+    given killstreaks (1→4 of 4), button-glyph prompts (2→3 of 4, full build
+    pipeline now proven), and the options-menu implementation plan (1→2 of
+    4); raw-functionality methodology's killstreak dataset and mission-
+    compatibility dataset both recomputed against the corrected numbers.
 - **Added a scorecard to README.md**: raw functionality (~80/100, from the
   control map, `compatibility_matrix.md`, and `killstreak_reference.md`)
   and a feature-completeness matrix (~74/100, SP/Survival scope).

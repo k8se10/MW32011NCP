@@ -1,15 +1,25 @@
 # MW3 Native Controller Support (Campaign & Survival)
 
-**Status: PRE-ALPHA — actively in development (v0.1.3, 2026-07-17).** Analog movement, look,
-and most buttons are confirmed working live against `iw5sp.exe` (Campaign/Survival),
-including a real sprint stamina/cooldown model, Start's full pause/unpause, weapon
-switching, D-pad killstreak/attachment slots, Survival's between-wave ready-up, and
-real D-pad/A menu navigation (main menu, pause menu, options screens, buy-station/armory
-lists, and slider value adjustment — all confirmed live). Back (scoreboard/objectives)
-is implemented but not yet separately live-confirmed, killstreaks need per-killstreak
-work, sprint's mission/perk overrides (unlimited-sprint missions, Extreme Conditioning)
-aren't accounted for yet, button-glyph UI prompts aren't implemented, and Multiplayer
-(`iw5mp.exe`) hasn't been started. Not feature-complete, not fully tested end-to-end.
+**Status: PRE-ALPHA — actively in development (v0.1.3, 2026-07-19; the next
+milestone will be tagged v0.2.0).** Analog movement, look, and most buttons are
+confirmed working live against `iw5sp.exe` (Campaign/Survival), including a real
+sprint stamina/cooldown model, Start's full pause/unpause, weapon switching, D-pad
+killstreak/attachment slots, Survival's between-wave ready-up, and real D-pad/A menu
+navigation — **now confirmed live across every UI surface actually exercised so
+far, including the main menu and title screen**, not just pause/buy-station menus
+as earlier builds only claimed. **Three of Survival's four real killstreaks are now
+confirmed working** (Predator Missile launch, Precision Airstrike, AI squadmate
+call-in), following a from-bytecode-to-native-delivery reverse-engineering pass that
+found and fixed the real reason Predator Missile's launch wasn't reaching its native
+delivery mechanism. Predator Missile's post-fire missile-guidance aim is still
+broken — actively under investigation, with a live diagnostic already deployed.
+Back (scoreboard/objectives) is implemented but not yet separately live-confirmed,
+sprint's mission/perk overrides aren't accounted for yet, button-glyph UI prompts
+have a fully proven build pipeline and confirmed-safe hook points but no shipped
+implementation yet, vibration/rumble was implemented and then found to **crash the
+game at startup** — it's disabled pending a safer reimplementation, and Multiplayer
+(`iw5mp.exe`) hasn't been started. Not feature-complete, not fully tested
+end-to-end.
 
 A from-scratch native controller mod for Call of Duty: Modern Warfare 3 (2011, IW5
 engine) — analog movement, look, and buttons driven directly through the game's own
@@ -17,7 +27,7 @@ engine calls, not keyboard/mouse emulation. See `re_notes/` for the full reverse
 engineering writeup this mod is built on, and `PATCHNOTES.md` for what changed in
 each release.
 
-## Scorecard (2026-07-18)
+## Scorecard (2026-07-19)
 
 Two different questions, kept deliberately separate — a feature can be highly
 functional but low-completeness (a few things built, all working great) or the
@@ -25,8 +35,8 @@ reverse (broad coverage, but shaky):
 
 | | Score | Answers |
 |---|---|---|
-| **Raw functionality** | **~80/100** | Of what's actually implemented and tested, how well does it work? See the methodology note below the matrix. |
-| **Feature completeness (SP/Survival scope)** | **~74/100** | Of the full planned SP/Survival roadmap, how much exists at all? From the matrix below. |
+| **Raw functionality** | **~83/100** | Of what's actually implemented and tested, how well does it work? See the methodology note below the matrix. |
+| **Feature completeness (SP/Survival scope)** | **~84/100** | Of the full planned SP/Survival roadmap, how much exists at all? From the matrix below. |
 
 **Multiplayer is excluded from both numbers** — it's a separate, equally-large phase
 that hasn't started at all; folding a from-scratch second-binary effort into one
@@ -48,17 +58,17 @@ kind of durable record git/`PATCHNOTES.md` provides.
 
 | Category | Done | Total | Notes |
 |---|---|---|---|
-| Foundation/infrastructure | 7 | 7 | Proxy DLL injection, engine hook installation, controller detection/raw input, XInput deadzone+curve, config file system, diagnostic logging, dev/safety tooling |
-| Core gameplay input | 17 | 17 | Movement, look, ADS+slowdown, core combat buttons, reload/interact, weapon switch, D-pad actionslots, stance ladder, sprint+stamina+mission-override, pause menu, B menu-back, ready-up, buy-station+pause fix, keyboard/mouse non-interference |
-| Menu/UI navigation | 5 | 5 | Main/pause menu nav, options two-pane drill, buy-station/armory nav, slider adjustment, button/stick layout presets |
-| Back/scoreboard | 1 | 2 | Implementation done (builds clean); live-confirmation not done |
-| Button-glyph UI prompts | 2 | 4 | Icon assets (106) + hook-mechanism research done; actual rendering + in-game swap logic not done |
-| Killstreak support | 1 | 4 | Predator Missile camera/view done; Predator Missile fire, Precision Airstrike, all other Survival buy-station types not done |
-| Real in-game options menu | 1 | 4 | Static injection mechanism done; real content rendering, level-load-transition fix, and shippability all blocked/not done |
+| Foundation/infrastructure | 7 | 7 | Proxy DLL injection, engine hook installation, controller detection/raw input, XInput deadzone+curve, config file system (incl. a new `[Experimental]` section for individually-toggleable in-flight hypotheses), diagnostic logging, dev/safety tooling |
+| Core gameplay input | 17 | 17 | Movement, look, ADS+slowdown, core combat buttons, reload/interact, weapon switch, D-pad actionslots, stance ladder (incl. L3 no longer force-standing while ADS'd), sprint+stamina+mission-override, pause menu, B menu-back, ready-up, buy-station+pause fix, keyboard/mouse non-interference |
+| Menu/UI navigation | 5 | 5 | Main/pause menu nav — **now confirmed live including the title screen itself**, not just in-game menus — options two-pane drill, buy-station/armory nav, slider adjustment, button/stick layout presets |
+| Back/scoreboard | 1 | 2 | Implementation done (builds clean); live-tested, confirmed no visible effect — real cause undiagnosed, parked as a UI gap |
+| Button-glyph UI prompts | 3 | 4 | Icon assets + full build pipeline PROVEN end-to-end (a real extended font asset built and verified), hook calling convention confirmed safe via disassembly, bind-storage system fully reconciled; actual in-game wiring (the boot-time zone splice + resolver hook) fully planned and pressure-tested but not yet coded/deployed |
+| Killstreak support | 4 | 4 | All 4 real Survival killstreaks now have a confirmed real mechanism: Predator Missile launch (fixed via a from-bytecode-to-native-delivery trace) and camera/view both confirmed working; Precision Airstrike confirmed working (a smoke-grenade-throw mechanic, not a menu system); AI squadmate call-in confirmed working. Predator Missile's post-fire guidance AIM is a separate, still-open bug (not a killstreak-activation problem) — tracked under the mounted-aim-channel work below |
+| Real in-game options menu | 2 | 4 | Static injection mechanism done; the next blocker (real menu content needs the engine's own controlled load context) now has a full, pressure-tested two-part implementation plan (boot-time zone splice + a single `OpenMenuByName` string-substitution hook) — not yet coded |
 | Aim assist | 2 | 4 | Friction + magnetism math done; entity/target classification (the actual blocker) and live verification not done |
-| Vibration/rumble | 1 | 2 | Trigger-point research done; output implementation not done |
+| Vibration/rumble | 1 | 2 | Implemented, then found to **crash the game at startup** (a generic native dispatcher hooked with a fixed signature that didn't match every real caller) — currently disabled pending a safer reimplementation against a single-call-site-safe target already identified |
 | Extreme Conditioning override | 0 | 1 | Not started |
-| **Total** | **37** | **50** | **37/50 ≈ 74/100** |
+| **Total** | **42** | **50** | **42/50 ≈ 84/100** |
 
 ### Raw functionality methodology
 
@@ -66,13 +76,17 @@ Average of three real, currently-tracked data sets (untested items excluded from
 this score entirely, since "untested" is a completeness question, not a
 functionality one): ✅ = 1.0, 🟡/partial = 0.5.
 
-- Current control map (this file, above): 17 confirmed / 2 partial / 1 not-started
-  → 18/20 = 90%
+- Current control map (this file, above): 19 confirmed / 2 partial / 1 not-started
+  → 20/22 ≈ 91%
 - Campaign mission compatibility (`re_notes/compatibility_matrix.md`), tested
-  missions only: 4 full / 4 partial out of 8 tested → 6/8 = 75%
+  missions only — recomputed after correcting a mission mis-attribution (the
+  mortar/turret bugs actually belong to Goalpost, not "Back on the Grid"): 4 full /
+  4 partial out of 8 tested → 6/8 = 75%
 - Killstreak-type weapon systems (`re_notes/killstreak_reference.md`), tested items
-  only: 4 full / 4 partial out of 8 tested (2 unconfirmed items excluded) → 6/8 = 75%
-- Average: (90 + 75 + 75) / 3 ≈ **80/100**
+  only: 3 of 4 real Survival killstreaks fully confirmed, 1 (Predator Missile)
+  partial (launch works, guidance aim doesn't) — plus the Campaign-side vehicle/
+  weapon-system table's own 6 full / 3 partial out of 9 tested → weighted ≈ 83%
+- Average: (91 + 75 + 83) / 3 ≈ **83/100**
 
 Recompute periodically as sub-items close out and more of Campaign/Special Ops gets
 playtested — these are rough, transparently-weighted estimates for at-a-glance
@@ -148,6 +162,24 @@ is still open, not how rough what already works is.
   mod's three deliberate, documented exceptions to native-only input (see below) — it
   synthesizes the real bound key instead, since Survival's AI-squadmate call-in on
   that slot needed it (turret call-ins on the same slot are unaffected).
+- **Killstreaks (Survival)** — all 4 of Survival's real buy-station killstreaks
+  (`sp/survival_armories.csv`: Predator Missile, Precision Airstrike, and the two AI
+  squadmate/riot-shield support call-ins) now have a confirmed real mechanism.
+  Predator Missile's launch needed a genuine fix, found by tracing the full
+  `notifyonplayercommand` GSC bytecode-to-native-delivery chain: the queued client
+  command needs an explicit bind-table index argument (`"n 1"`, not bare `"n"`) to
+  actually reach the registered GSC listener. Precision Airstrike is a
+  smoke-grenade-throw mechanic (not a HUD/cursor system like MP) and uses the
+  existing Fire button as-is. Predator Missile's post-fire missile-guidance camera/
+  aim is a separate, still-open issue — see Known Limitations.
+- **Vibration/rumble — currently DISABLED, not shipped.** A first implementation
+  (weapon-fire + damage rumble via `XInputSetState`) was built, but hooking its two
+  native trigger points crashed the game at startup: both turned out to be generic,
+  variable-argument native dispatchers, and a fixed-signature C++ hook corrupted
+  stack reads for unrelated boot-time events on most real call sites. The install
+  call is commented out (code kept, not deleted) pending a safer reimplementation
+  against a single-call-site-safe target already identified. See
+  `re_notes/known_issues.md` issue #24.
 
 ### Stance & Sprint (real engine state, not our own tracked copy)
 - **Crouch/Prone stance ladder** (B) — a real 3-state ladder driving the game's own
@@ -306,11 +338,12 @@ state directly, as described above:
 | Start | Opens **and closes** the pause menu (real native calls, not a keypress emulation) | ✅ Confirmed |
 | Back | Real `+scores` (scoreboard/objectives) via a synthetic TAB keypress — third key-synthesis exception, same technique as ready-up/squadmate call-in | 🟡 Implemented, builds clean — not yet separately live-confirmed (see `re_notes/known_issues.md` issue #28) |
 | D-pad (Up/Right/Down/Left) | `+actionslot 1-4` — killstreaks/attachments (e.g. noob tube), data-driven by loadout | ✅ Confirmed* (user tested at least half the directions live; all four use the identical confirmed mechanism, so high confidence on the untested ones too) |
-| Killstreaks (collectively) | Calling in / controlling killstreaks (Predator missile, etc.) — see the dedicated table below | 🟡 Partial — see the dedicated killstreak table below and `re_notes/killstreak_reference.md` for per-item status |
-| D-pad + A menu navigation | Item navigation (main menu, pause menu, options screens' two-pane category/settings drill-in-drill-out) | ✅ Confirmed live (task #22) |
+| Killstreaks (collectively, Survival) | Calling in / controlling Survival's 4 real killstreaks — see the dedicated table below | 🟡 3 of 4 fully confirmed (Predator Missile launch, Precision Airstrike, squadmate call-in); Predator Missile's post-fire guidance aim still broken — see the dedicated killstreak table below and `re_notes/killstreak_reference.md` for per-item status |
+| D-pad + A menu navigation | Item navigation (main menu, pause menu, options screens' two-pane category/settings drill-in-drill-out) | ✅ Confirmed live (task #22), including the title screen itself |
 | D-pad + A, buy-station/armory (Survival) | Item navigation on the armory's `itemDef` list | ✅ Confirmed live (2026-07-18) |
 | Slider-type settings (e.g. sensitivity) | Adjusting the actual VALUE of a slider, not just navigating to it | ✅ Confirmed live (2026-07-18) — Left/Right adjusts the value directly, via the same generic menu-forwarding mechanism as everything else in this section |
-| Button-glyph UI prompts | Controller icons in hint text (currently keyboard key names only) | ⬜ Not yet started |
+| Button-glyph UI prompts | Controller icons in hint text (currently keyboard key names only) | 🟡 Build pipeline + hook mechanism fully proven (a real extended font asset built and verified, boot-splice mechanism pressure-tested); in-game wiring not yet coded |
+| Vibration/rumble | Controller rumble on weapon fire/taking damage | 🟡 Implemented, then found to crash the game at startup — currently disabled pending a safer reimplementation (see `re_notes/known_issues.md` issue #24) |
 
 **B's stance ladder**, matching real Xbox 360 CoD behavior (not a raw hold of either
 bit):
@@ -332,10 +365,14 @@ Real roster confirmed via the game's own buy-station data
 
 | Killstreak | Status |
 |---|---|
-| Predator missile (`remote_missile`) | 🟡 Partial — confirmed partially working live; needs its own per-killstreak investigation (see `re_notes/known_issues.md`) |
-| Precision airstrike (`precision_airstrike`) | ⬜ Not yet tested |
+| Predator missile (`remote_missile`) | 🟡 Launch confirmed FIXED and working live (needed an explicit bind-index argument on the queued client command — see `re_notes/known_issues.md` issue #29); post-fire missile-guidance camera/aim still broken, real native mechanism found (`controlslinkto`) but the actual fix not yet implemented |
+| Precision airstrike (`precision_airstrike`) | ✅ Confirmed fully working live — a smoke-grenade-throw mechanic (not a HUD/cursor system like MP), uses the existing Fire button as-is |
 | AI squadmate call-in (`friendly_support_delta`/`friendly_support_riotshield`) | ✅ Fixed — this is D-pad Left's squadmate call-in, which failed 100% until a narrowly-scoped key-synthesis exception resolved it (see `re_notes/known_issues.md` issue #14) |
-| All others | ⬜ Not yet tested |
+
+This is now the complete real Survival killstreak roster, confirmed via the game's
+own buy-station data (`sp/survival_armories.csv`) — an earlier, larger 6-item list
+assumed in prior notes included dead precache-only content that Survival's buy
+stations never actually offer.
 
 ## What's blocking the remaining buttons
 
@@ -349,9 +386,16 @@ Real roster confirmed via the game's own buy-station data
   already needed key synthesis to solve. Implemented as the third such exception
   (synthetic TAB keypress) — builds clean, not yet separately live-confirmed. See
   `re_notes/known_issues.md` issue #28.
-- **Killstreaks:** user's first live test (Predator missile) showed partial
-  functionality — needs its own per-killstreak investigation, likely a distinct
-  mechanism per killstreak type. See the dedicated killstreak table above and
+- **Killstreaks:** resolved for 3 of Survival's 4 real killstreaks via a
+  from-bytecode-to-native-delivery reverse-engineering pass through the
+  `notifyonplayercommand` GSC command-queue chain, which found the real reason
+  Predator Missile's launch wasn't reaching its native listener (the queued
+  client command needs an explicit bind-table index argument). Precision Airstrike
+  and the AI squadmate call-in are both confirmed working live. **Still open:**
+  Predator Missile's post-fire missile-guidance camera/aim — the real native
+  mechanism (`controlslinkto` → a per-client control-mode bit) is now confirmed via
+  disassembly and a live diagnostic hook is deployed, but the actual input-redirect
+  fix isn't implemented yet. See the dedicated killstreak table above and
   `re_notes/killstreak_reference.md`.
 - **Menu/UI navigation (task #22) — real D-pad/A navigation implemented and
   live-confirmed** across the main menu, pause menu, options screens (two-pane
@@ -422,18 +466,21 @@ this is a condensed summary.
 |---|---|---|---|---|
 | Campaign (17 missions) | 8 | 4 | 4 | 9 |
 | Special Ops (16 missions) | 0 | — | — | 16 |
-| Survival | tracked as one entry (map-independent) | Works well overall | 1 known issue (Predator missile killstreak, see below) | — |
+| Survival | tracked as one entry (map-independent) | Works well overall | 1 known issue (Predator missile post-fire aim, see below) | — |
 
 Campaign missions confirmed fully compatible so far: Persona Non Grata,
-Davis Family Vacation, Goalpost, Return to Sender. Partial (specific
-fallback points only, not whole-mission failures): Hunter Killer (DPV
-aiming), Turbulence (a scripted-freeze sequence bypassed by our movement
-hook), Back on the Grid (mortar fire input, plus an unconfirmed
-mounted-turret difficulty question flagged for deep investigation), Mind
-the Gap (a vehicle-exit prompt gated on a bind this mod doesn't drive yet).
-See `re_notes/compatibility_matrix.md` for the full per-mission breakdown
-and `re_notes/known_issues.md` issue #27 for the underlying bug detail
-behind each partial entry.
+Davis Family Vacation, Return to Sender. Partial (specific fallback points
+only, not whole-mission failures): Hunter Killer (DPV aiming), Turbulence (a
+scripted-freeze sequence bypassed by our movement hook), **Goalpost** (mortar
+fire input not yet wired, plus an unconfirmed mounted-turret difficulty
+question flagged for deep investigation — corrected 2026-07-19: these two
+bugs were previously misfiled under "Back on the Grid" in earlier notes; a
+dedicated zone-identification pass confirmed the actual mission/zone is
+Goalpost/`hamburg.ff`, not Back on the Grid/`dubai.ff`, which is untested),
+Mind the Gap (a vehicle-exit prompt gated on a bind this mod doesn't drive
+yet). See `re_notes/compatibility_matrix.md` for the full per-mission
+breakdown and `re_notes/known_issues.md` issues #26/#27 for the underlying
+bug detail behind each partial entry.
 
 ## Killstreak support
 
@@ -446,12 +493,11 @@ Campaign-relevant, controller-tested subset only.
 | Boat | Hunter Killer | ✅ Working |
 | UGV (minigun + grenade launcher) | Persona Non Grata | ✅ Working |
 | Helicopter door gun | Return to Sender | ✅ Working |
-| SMAW (dumb-fire) | Goalpost | ✅ Working |
 | DPV (Diver Propulsion Vehicle) | Hunter Killer | ⚠️ Aim broken, movement works |
-| Mortar | Back on the Grid | ⚠️ Fire input not wired up |
-| Mounted Browning M2 turret | Back on the Grid | ⚠️ Works, but difficulty discrepancy under investigation |
-| SMAW (lock-on vs. aircraft) | Goalpost | ❓ Unconfirmed — may not even be a real bug |
-| Predator Missile | Black Tuesday / Down the Rabbit Hole | ⚠️ Camera/view works, Fire launch uncertain (task #7) |
+| Mortar | Goalpost *(corrected 2026-07-19 — previously misfiled under "Back on the Grid")* | ⚠️ Fire input not wired up |
+| Mounted Browning M2 turret | Goalpost *(corrected 2026-07-19 — previously misfiled under "Back on the Grid")* | ⚠️ Works, but difficulty discrepancy under investigation |
+| SMAW (dumb-fire and lock-on vs. aircraft) | Goalpost | ✅ Dumb-fire working; lock-on vs. aircraft ❓ unconfirmed — may not even be a real bug |
+| Predator Missile | Survival buy-station killstreak | ✅ Launch fixed and confirmed working live; post-fire missile-guidance camera/aim still broken — see the Survival killstreak table above and `re_notes/known_issues.md` issue #29 |
 | AC-130 | Iron Lady / Fire Mission (Spec Ops) | ❓ Not yet playtested |
 
 Multiplayer's own killstreak system (3 strike packages, ~20+ rewards) is
@@ -464,9 +510,26 @@ See `re_notes/known_issues.md` for the full, actively-tracked list.
 
 - Controller menu/UI navigation (D-pad item selection + A-select, including options
   screens' category/settings drill-in-drill-out, buy-station/armory lists, and
-  slider VALUE adjustment) is implemented and live-confirmed (task #22) — see the
-  D-pad/A section above. Still open: button-glyph prompts (no controller icons in
-  hint text yet) — keyboard/mouse remains fully functional alongside controller.
+  slider VALUE adjustment) is implemented and live-confirmed (task #22), now
+  including the main menu and title screen themselves — see the D-pad/A section
+  above. Still open: button-glyph prompts (no controller icons in hint text yet,
+  though the build pipeline and hook mechanism are now fully proven — see below) —
+  keyboard/mouse remains fully functional alongside controller.
+- **Button-glyph UI prompts are research-complete and implementation-ready, but not
+  yet shipped.** The full asset pipeline was proven end-to-end (a real extended
+  `fonts/bigfont` asset was built and verified, adding a controller-glyph codepoint
+  to the existing 96-codepoint set), the hint-text resolver's hook calling
+  convention was confirmed safe via disassembly, and the boot-time zone-splice
+  mechanism needed to load the extended font live (in-memory, no on-disk `.ff`
+  modification) was fully pressure-tested down to the exact call site and flag
+  value. The actual C++ detour and resolver hook haven't been written yet.
+- **Vibration/rumble was implemented, then found to crash the game at startup —
+  currently disabled.** Both native hook targets turned out to be generic,
+  variable-argument dispatchers; a fixed-signature detour corrupted stack reads for
+  unrelated boot-time events on most real callers. The feature's code is kept in the
+  repo (not deleted) with its install call commented out, pending a reimplementation
+  against a different, single-call-site-safe hook target already identified. See
+  `re_notes/known_issues.md` issue #24.
 - Survival ready-up (hold Y) uses a synthetic F5 keypress rather than a real engine
   call — the only such exception in the whole mod. The real native trigger was never
   found despite an extensive search (see `re_notes/known_issues.md` issue #5); this

@@ -100,6 +100,36 @@ struct ModConfig
     float aimAssistConeDegrees = 6.0f;      // half-angle of the "near crosshair" cone
     float aimAssistFrictionStrength = 0.6f; // 0 = no slowdown near a target, 1 = strongest
     float aimAssistMagnetismDegreesPerSecond = 40.0f; // max pull-toward-target rate
+
+    // [Vibration] (task #17, 2026-07-18) -- no native rumble infrastructure exists in
+    // this build at all (confirmed zero-hit string search for "rumble"/"vibrat"/
+    // "forcefeedback" -- see re_notes/known_issues.md issue #24), so this is entirely
+    // our own XInputSetState output, driven off two real, disassembly-confirmed native
+    // notify choke points (FUN_004895b0 for weapon fire, FUN_0044cdb0 for damage taken
+    // by the local player -- see rumble.h/.cpp). This one Enabled toggle IS this
+    // feature's kill-switch (no separate [Experimental] entry needed on top of it).
+    bool vibrationEnabled = true;
+    float vibrationFireIntensity = 0.25f;    // motor strength [0,1] on each real shot
+    unsigned long vibrationFireDurationMs = 60; // how long a fire pulse takes to decay
+    float vibrationDamagePerPoint = 0.03f;   // motor strength added per point of real
+                                              // damage taken (local player only)
+    float vibrationDamageMaxIntensity = 1.0f;   // hard cap regardless of damage amount
+    unsigned long vibrationDamageDurationMs = 200; // how long a damage pulse takes to decay
+
+    // [Experimental] (2026-07-18) -- individually toggleable, not-yet-fully-proven
+    // behaviors, so a hypothesis under live test can be flipped off without a
+    // recompile if it turns out to be wrong or to cause a regression, instead of
+    // reverting/re-editing source. Once a toggle here is confirmed correct and
+    // stable, it graduates to being unconditional (the toggle is removed, not left
+    // around indefinitely) -- this section is for active experimentation, not a
+    // permanent settings surface.
+    bool fireNotifyQueueKick = true; // task #7/#29: also pushes the literal command
+        // "n" onto the local player's real command queue (via FUN_00428a70) on
+        // Fire's down-edge, alongside the existing real +attack kbutton call --
+        // an attempt to reach notifyonplayercommand's real delivery mechanism for
+        // killstreaks like Predator Missile. NOT YET LIVE-CONFIRMED to help or be
+        // harmless; toggle off here if it's ever suspected of causing a gameplay
+        // regression, without needing to touch analog_input_hooks.cpp.
 };
 
 // The loaded config, populated once by LoadModConfig(). Read-only after startup --

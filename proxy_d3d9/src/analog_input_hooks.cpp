@@ -22,6 +22,7 @@
 #include "../third_party/minhook/include/MinHook.h"
 #include "controller_input.h"
 #include "mod_config.h"
+#include "rumble.h"
 
 // Forwarder defined in dllmain.cpp -- lets this translation unit log to the same
 // proxy_d3d9.log file without duplicating the log-file setup.
@@ -337,6 +338,111 @@ void LogStanceDiag(const char* tag)
     LogFromController(buf);
 }
 
+// ---- Missile-guidance / third-analog-channel diagnostic (2026-07-18, task #30) -----
+//
+// FUN_0057e480's per-frame orchestrator has a control-mode branch, gated on this same
+// per-player struct family (base &DAT_00B363B0 + playerIndex*0xBE5C, SAME base
+// GetRealStance() reads at +0x1C -- confirmed via fresh disassembly this is literally
+// the same struct, just a different field) at offset +0x1094, bit 0x80000: when set,
+// the engine redirects real mouse-delta into a THIRD analog-input channel
+// (cmd+0x3e/0x3f) instead of normal look -- the confirmed root cause of the Predator
+// Missile post-fire guidance sequence breaking controller movement (this mod's look
+// hook only ever writes kPitchAccum/kYawAccum, never cmd+0x3e/0x3f). A whole-binary
+// scalar-operand scan for the literal offset 0x1094 found exactly 2 references, BOTH
+// reads -- the real SETTER isn't a fixed instruction anywhere (almost certainly a
+// generic/data-driven "set entity flag" mechanism, offset passed as a runtime
+// argument), so it can't be found by static scanning alone. Same fallback this
+// project already used successfully for the ADS-slowdown bug: log it live and observe
+// the actual moment it flips during real play, rather than continuing to guess.
+//
+// Also worth watching: bit 0x800 on this SAME dword separately gates whether ANY
+// keyboard/analog movement processing runs at all in FUN_0057d430 (the movement
+// summer) -- a real candidate for the still-unresolved "Turbulence" moves-when-
+// should-be-frozen bug (issue #27 bug #4), found as a side effect of this
+// investigation, not yet chased.
+//
+// Change-triggered (not a fixed-interval heartbeat) -- only logs when the raw value
+// actually changes, so a full playtest session doesn't spam the log file.
+constexpr uintptr_t kMissileGuidanceFlagAddr = 0xB374E4; // player 0: 0xB363B0 + 0x1094
+unsigned int g_lastMissileGuidanceFlagValue = 0xFFFFFFFF; // sentinel: force first log
+
+void LogMissileGuidanceFlagDiag()
+{
+    unsigned int current = *reinterpret_cast<volatile unsigned int*>(kMissileGuidanceFlagAddr);
+    if (current == g_lastMissileGuidanceFlagValue) return;
+
+    char buf[160];
+    sprintf_s(buf, "[missile-guidance-diag] +0x1094=0x%08X (bit0x80000=%d bit0x800=%d) t=%lu",
+              current, (current & 0x80000) != 0 ? 1 : 0, (current & 0x800) != 0 ? 1 : 0,
+              GetTickCount());
+    LogFromController(buf);
+    g_lastMissileGuidanceFlagValue = current;
+}
+
+// ---- controlslinkto diagnostic hook (2026-07-18, task #30 follow-up) ---------------
+//
+// The +0x1094 bit theory above is confirmed WRONG for missile guidance -- a GSC deep
+// read found the real mechanism is a different builtin entirely, `controlslinkto`,
+// called on the missile projectile entity when guidance starts. Its native
+// implementation, FUN_005d7f20, was fully decompiled AND independently re-confirmed
+// from its true entry point via raw disassembly (not just partial/prior analysis,
+// given today's earlier lesson about incompletely-confirmed signatures):
+//   MOV EAX,[ESP+4]                    -- single stack arg: an entity HANDLE, not a
+//                                          raw pointer
+//   (upper 16 bits == 0 fast path) index = handle & 0xFFFF
+//   entity = 0x01197AD8 + index*0x270  -- the SAME entity-handle-resolution array
+//                                          this project's aim-assist research flagged
+//                                          as a parked, uncertain lead (issue #15) --
+//                                          now confirmed real and live-used here
+//   clientStruct = *(int*)(entity + 0x10c)
+//   *(uint*)(clientStruct + 0xc) |= 0x80000   -- SETS THE REAL LINK FLAG
+//   *(uint*)(clientStruct + 0x4c) = linkTargetId
+// Confirmed plain __cdecl, ONE stack arg, bare RET (caller cleanup) -- a simple,
+// safe signature to hook, NOT the same risk class as the rumble dispatchers that
+// crashed the game earlier today (those were generic multi-purpose dispatchers
+// called with genuinely different real argument counts elsewhere; this is a
+// single-purpose builtin implementation with one confirmed call shape).
+//
+// Log-and-forward only -- calls the real original function completely unchanged,
+// then independently re-resolves the SAME entity-handle -> client-struct chain
+// (read-only) to log the resulting +0xc value. No behavior change at all; this
+// exists purely to observe, during a real Predator Missile playtest, whether this
+// fires at the expected moment and what the resulting per-player state looks like --
+// the same live-diagnostic approach that already found this whole mechanism.
+namespace {
+using ControlsLinkToFn = void(__cdecl*)(unsigned int entityHandle);
+constexpr uintptr_t kControlsLinkToAddr = 0x005d7f20;
+ControlsLinkToFn g_origControlsLinkTo = nullptr;
+
+void __cdecl Hook_ControlsLinkTo(unsigned int entityHandle)
+{
+    g_origControlsLinkTo(entityHandle);
+
+    char buf[200];
+    if ((entityHandle >> 16) == 0) {
+        unsigned int index = entityHandle & 0xFFFF;
+        uintptr_t entityPtr = 0x01197AD8 + static_cast<uintptr_t>(index) * 0x270;
+        uintptr_t clientStructPtr = *reinterpret_cast<volatile uintptr_t*>(entityPtr + 0x10c);
+        if (clientStructPtr) {
+            unsigned int flagValue = *reinterpret_cast<volatile unsigned int*>(clientStructPtr + 0xc);
+            sprintf_s(buf,
+                "[controlslinkto-diag] entityHandle=0x%08X entity=0x%08X clientStruct=0x%08X "
+                "+0xc=0x%08X (bit0x80000=%d) t=%lu",
+                entityHandle, static_cast<unsigned int>(entityPtr),
+                static_cast<unsigned int>(clientStructPtr), flagValue,
+                (flagValue & 0x80000) != 0 ? 1 : 0, GetTickCount());
+        } else {
+            sprintf_s(buf, "[controlslinkto-diag] entityHandle=0x%08X entity=0x%08X clientStruct=NULL t=%lu",
+                entityHandle, static_cast<unsigned int>(entityPtr), GetTickCount());
+        }
+    } else {
+        sprintf_s(buf, "[controlslinkto-diag] entityHandle=0x%08X (non-fast-path, unresolved) t=%lu",
+            entityHandle, GetTickCount());
+    }
+    LogFromController(buf);
+}
+} // namespace
+
 // ---- Interact: hold-to-interact, not instant-on-tap (2026-07-16) -------------------
 //
 // User feedback after v0.1.0-prealpha: Interact should require a hold, not fire the
@@ -365,6 +471,7 @@ extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
         LogStanceDiag("heartbeat");
         g_lastStanceDiagLogMs = nowMs;
     }
+    LogMissileGuidanceFlagDiag(); // task #30 -- change-triggered, cheap to call every frame
 
     uint32_t out = 0;
     // Fire (+attack) moved off raw usercmd bit 0x1 and onto the real +attack kbutton --
@@ -626,6 +733,45 @@ constexpr int kAttackBindIndex = 17; // distinct from ADS's 13 / Reload's 15 -- 
                                       // but must be self-consistent between our own
                                       // down/up calls, same rationale as those two
 bool g_attackHeld = false;
+
+// ---- notifyonplayercommand delivery kick, task #7 (2026-07-18) --------------------
+//
+// The real +attack kbutton call above (CallKbuttonDown/Up) was confirmed live to be
+// NECESSARY but NOT SUFFICIENT to launch Predator Missile -- a dedicated Ghidra deep
+// dive traced the full native chain GSC's notifyonplayercommand("launch_remote_missile",
+// "+attack") actually goes through: the missile's own notify REGISTRATION (a real
+// native function, entity-scoped, resolved via the GSC-VM's builtin-method dispatch,
+// method ID 0x82A5) is separate from DELIVERY, which only happens when the literal
+// command string "n" appears in the local player's real per-client command queue --
+// this specific queued command is what makes the engine walk all registered
+// notifyonplayercommand/notifyoncommand listeners and fire matching ones. The normal
+// path that would push "n" for a real keypress (FUN_00528db0, a generic command-
+// forwarder) appears to filter out anything starting with '+'/'-' -- meaning +attack's
+// own down-edge may never reach this queue at all, via ANY input method, real keyboard
+// included. Confirmed via raw disassembly (not just decompiled pseudocode, since a
+// wrong calling convention here risks crashing the game, not just failing silently):
+// FUN_00428a70(int clientIdx, const char* str) is a genuinely plain __cdecl function,
+// both args on the stack, no register tricks, no interned-string requirement (a bounded
+// strncpy-style copy into a 64-byte ring-buffer slot), no lock, and a real but
+// non-fatal 128-slot ring-buffer overflow path (logs a warning, still enqueues,
+// wraps). Safe to call directly.
+//
+// This is a genuine engine-internal call, not OS-level input emulation -- same
+// category as CallKbuttonDown/Up above, not the PostMessage-based key-synthesis
+// exceptions used elsewhere in this file (ready-up/D-pad-squadmate/Back). Pushed only
+// on Fire's down-edge, matching how a real one-shot command dispatch behaves (not
+// every frame while held), additive alongside the existing kbutton call, not a
+// replacement -- if this turns out not to be what's needed, it's a clean, isolated
+// revert. NOT YET LIVE-TESTED whether this actually launches the missile -- the call
+// itself is confirmed safe to make, that says nothing about whether "n" is really the
+// missing piece.
+using PushClientCommandFn = void(__cdecl*)(int clientIdx, const char* str);
+constexpr uintptr_t kPushClientCommandAddr = 0x00428a70;
+
+void PushClientCommand(int clientIdx, const char* str)
+{
+    reinterpret_cast<PushClientCommandFn>(kPushClientCommandAddr)(clientIdx, str);
+}
 } // namespace
 
 extern "C" void __cdecl InjectControllerFire()
@@ -640,6 +786,23 @@ extern "C" void __cdecl InjectControllerFire()
     g_attackHeld = nowHeld;
     if (nowHeld) {
         CallKbuttonDown(kAttackKbutton, kAttackBindIndex);
+        if (g_modConfig.fireNotifyQueueKick) {
+            // FIXED 2026-07-18: "n" ALONE is not sufficient -- a dedicated fork traced
+            // delivery (FUN_0053b1f0) all the way through and found it reads Cmd_Argv(1)
+            // (the token AFTER "n" in the same tokenized command) and parses it with
+            // FUN_00738683 (confirmed to be a plain atol(), not a string hash) as a
+            // DECIMAL INDEX into a distinct 81-entry bind-name table at 0x00929fa0
+            // (confirmed via direct memory dump, NOT the same as the already-known
+            // 32-entry kbutton table -- easy to conflate, verified separately). Index 0
+            // is a deliberate placeholder/empty-string slot (avoids ambiguity with "not
+            // found"); index 1 = "+attack", confirmed by dumping the table directly.
+            // Registration (FUN_00454a30, called from FUN_005BC9A0) stores this same
+            // table's index via FUN_005330a0(bindNameStr) -- so "n 1" is what actually
+            // matches launch_remote_missile's real +attack registration; "n" alone left
+            // Cmd_Argv(1) empty, falling back to a real empty-string constant that could
+            // never match. NOT YET LIVE-TESTED.
+            PushClientCommand(kLocalClientIndex, "n 1");
+        }
     } else {
         CallKbuttonUp(kAttackKbutton, kAttackBindIndex);
     }
@@ -2743,6 +2906,9 @@ extern "C" void __cdecl InjectAllControllerInput(unsigned char* cmd)
     // happens to observe it first in a given frame.
     InjectControllerPauseMenu();
     InjectControllerMenuBack(); // same redundancy rationale as the pause-menu call above
+
+    Rumble_Tick(); // task #17 -- gameplay-tick only, not the menu tick (rumble is a
+                    // gameplay-feedback feature, not a UI one)
 }
 
 // ---- Menu input tick -- driven by a WndProc subclass hook, NOT this file's gameplay tick
@@ -2849,4 +3015,28 @@ void InstallAnalogInputHooks()
         sprintf_s(buf, "[hooks] MH_EnableHook(00643ce0) = %d", static_cast<int>(e4));
         LogFromController(buf);
     }
+
+    // task #30 -- controlslinkto diagnostic (log-and-forward only, see comment above
+    // Hook_ControlsLinkTo for the full disassembly-confirmed calling convention)
+    MH_STATUS s5 = MH_CreateHook(reinterpret_cast<LPVOID>(kControlsLinkToAddr),
+        &Hook_ControlsLinkTo, reinterpret_cast<LPVOID*>(&g_origControlsLinkTo));
+    sprintf_s(buf, "[hooks] MH_CreateHook(controlslinkto @ 005d7f20) = %d", static_cast<int>(s5));
+    LogFromController(buf);
+    if (s5 == MH_OK) {
+        MH_STATUS e5 = MH_EnableHook(reinterpret_cast<LPVOID>(kControlsLinkToAddr));
+        sprintf_s(buf, "[hooks] MH_EnableHook(controlslinkto) = %d", static_cast<int>(e5));
+        LogFromController(buf);
+    }
+
+    // TEMPORARILY DISABLED (2026-07-18) -- game failed to start after this was added;
+    // proxy_d3d9.log shows every hook installing successfully (all MH_OK) then an
+    // immediate detach with zero per-frame activity ever logged, meaning the crash
+    // happens before the first gameplay frame -- before any real weapon-fired/damage
+    // event could have fired. FUN_004895b0/FUN_0044cdb0 are GENERAL native notify
+    // dispatchers (not weapon-fire/damage-specific) -- almost certainly called for
+    // other, unrelated event types during engine init with a genuinely different
+    // real argument count than the one call site (weapon_fired/damage) this hook's
+    // fixed-parameter signature was confirmed against. Disabling to isolate the
+    // cause -- see known_issues.md issue #24 for the live diagnosis in progress.
+    // Rumble_Install(); // task #17 -- its own module, see rumble.h/.cpp
 }

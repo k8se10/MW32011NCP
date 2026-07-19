@@ -7,8 +7,10 @@
 namespace {
 
 typedef DWORD(WINAPI* XInputGetState_t)(DWORD, XINPUT_STATE*);
+typedef DWORD(WINAPI* XInputSetState_t)(DWORD, XINPUT_VIBRATION*);
 
 XInputGetState_t g_XInputGetState = nullptr;
+XInputSetState_t g_XInputSetState = nullptr;
 bool g_triedLoad = false;
 
 // XInput's own documented deadzone constants (thumbstick, not trigger).
@@ -29,6 +31,7 @@ void EnsureLoaded()
     HMODULE h = LoadLibraryA("xinput9_1_0.dll");
     if (!h) return;
     g_XInputGetState = reinterpret_cast<XInputGetState_t>(GetProcAddress(h, "XInputGetState"));
+    g_XInputSetState = reinterpret_cast<XInputSetState_t>(GetProcAddress(h, "XInputSetState"));
 }
 
 // Scaled radial deadzone: rescales the post-deadzone range back to [0,1] smoothly,
@@ -99,6 +102,22 @@ bool Controller_GetRawButtonsAndTriggers(unsigned short& buttons, unsigned char&
     leftTrigger = state.Gamepad.bLeftTrigger;
     rightTrigger = state.Gamepad.bRightTrigger;
     return true;
+}
+
+void Controller_SetVibration(float leftMotor, float rightMotor)
+{
+    EnsureLoaded();
+    if (!g_XInputSetState) return;
+
+    if (leftMotor < 0.0f) leftMotor = 0.0f;
+    if (leftMotor > 1.0f) leftMotor = 1.0f;
+    if (rightMotor < 0.0f) rightMotor = 0.0f;
+    if (rightMotor > 1.0f) rightMotor = 1.0f;
+
+    XINPUT_VIBRATION vib{};
+    vib.wLeftMotorSpeed = static_cast<WORD>(leftMotor * 65535.0f);
+    vib.wRightMotorSpeed = static_cast<WORD>(rightMotor * 65535.0f);
+    g_XInputSetState(0, &vib);
 }
 
 float Controller_DeltaTimeSeconds()

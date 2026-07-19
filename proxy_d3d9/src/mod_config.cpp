@@ -184,7 +184,36 @@ void WriteDefaultConfig(const char* path)
         "FrictionStrength=%g\n"
         "; Max degrees/second the crosshair gets pulled toward a valid target\n"
         "; (magnetism), independent of your own stick input.\n"
-        "MagnetismDegreesPerSecond=%g\n",
+        "MagnetismDegreesPerSecond=%g\n"
+        "\n"
+        "[Vibration]\n"
+        "; No native rumble exists in this build at all -- entirely our own\n"
+        "; XInputSetState output, driven off real weapon-fire and damage-taken events.\n"
+        "; 0 = off, 1 = on.\n"
+        "Enabled=%d\n"
+        "; Motor strength [0,1] on each real shot fired.\n"
+        "FireIntensity=%g\n"
+        "; Milliseconds a fire pulse takes to decay back to zero.\n"
+        "FireDurationMs=%lu\n"
+        "; Motor strength added per point of real damage the LOCAL player takes.\n"
+        "DamagePerPoint=%g\n"
+        "; Hard cap on damage-rumble strength regardless of how much damage lands.\n"
+        "DamageMaxIntensity=%g\n"
+        "; Milliseconds a damage pulse takes to decay back to zero.\n"
+        "DamageDurationMs=%lu\n"
+        "\n"
+        "[Experimental]\n"
+        "; Individually toggleable, not-yet-fully-proven behaviors -- for live\n"
+        "; experimentation. Flip one off (0) if it's ever suspected of causing a\n"
+        "; problem, without needing a recompile. These are not permanent settings --\n"
+        "; expect entries here to eventually graduate to unconditional (and be\n"
+        "; removed from this section) once confirmed correct and stable.\n"
+        "; Task #7/#29: also pushes the command \"n\" onto the real client command\n"
+        "; queue on Fire's down-edge, alongside the real +attack kbutton call, in an\n"
+        "; attempt to reach notifyonplayercommand's delivery mechanism for\n"
+        "; killstreaks like Predator Missile. 0 = off (kbutton call only, pre-\n"
+        "; 2026-07-18 behavior), 1 = on.\n"
+        "FireNotifyQueueKick=%d\n",
         g_modConfig.lookDegreesPerSecond,
         g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
@@ -201,7 +230,14 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.aimAssistRange,
         g_modConfig.aimAssistConeDegrees,
         g_modConfig.aimAssistFrictionStrength,
-        g_modConfig.aimAssistMagnetismDegreesPerSecond);
+        g_modConfig.aimAssistMagnetismDegreesPerSecond,
+        g_modConfig.vibrationEnabled ? 1 : 0,
+        g_modConfig.vibrationFireIntensity,
+        g_modConfig.vibrationFireDurationMs,
+        g_modConfig.vibrationDamagePerPoint,
+        g_modConfig.vibrationDamageMaxIntensity,
+        g_modConfig.vibrationDamageDurationMs,
+        g_modConfig.fireNotifyQueueKick ? 1 : 0);
 
     fclose(f);
 }
@@ -333,17 +369,30 @@ void LoadModConfig()
     if (g_modConfig.aimAssistFrictionStrength < 0.0f) g_modConfig.aimAssistFrictionStrength = 0.0f;
     ReadFloat(path, "AimAssist", "MagnetismDegreesPerSecond", g_modConfig.aimAssistMagnetismDegreesPerSecond);
     if (g_modConfig.aimAssistMagnetismDegreesPerSecond < 0.0f) g_modConfig.aimAssistMagnetismDegreesPerSecond = 0.0f;
+    ReadBool(path, "Vibration", "Enabled", g_modConfig.vibrationEnabled);
+    ReadFloat(path, "Vibration", "FireIntensity", g_modConfig.vibrationFireIntensity);
+    if (g_modConfig.vibrationFireIntensity < 0.0f) g_modConfig.vibrationFireIntensity = 0.0f;
+    ReadUlong(path, "Vibration", "FireDurationMs", g_modConfig.vibrationFireDurationMs);
+    ReadFloat(path, "Vibration", "DamagePerPoint", g_modConfig.vibrationDamagePerPoint);
+    if (g_modConfig.vibrationDamagePerPoint < 0.0f) g_modConfig.vibrationDamagePerPoint = 0.0f;
+    ReadFloat(path, "Vibration", "DamageMaxIntensity", g_modConfig.vibrationDamageMaxIntensity);
+    if (g_modConfig.vibrationDamageMaxIntensity < 0.0f) g_modConfig.vibrationDamageMaxIntensity = 0.0f;
+    ReadUlong(path, "Vibration", "DamageDurationMs", g_modConfig.vibrationDamageDurationMs);
+    ReadBool(path, "Experimental", "FireNotifyQueueKick", g_modConfig.fireNotifyQueueKick);
 
     g_buttonMap = ResolveButtonMap(g_modConfig.buttonLayout, g_modConfig.flipTriggers);
 
-    char buf[600];
+    char buf[820];
     sprintf_s(buf,
         "[config] loaded mw3ncp_config.ini: sensitivity=%g adsSlowdownStrength=%g "
         "adsSlowdownBaseline=%g invertLook=%d proneHoldMs=%lu interactHoldMs=%lu "
         "readyUpHoldMs=%lu sprintMax=%g "
         "sprintRegen=%g buttonLayout=%s stickLayout=%s flipTriggers=%d "
         "aimAssistEnabled=%d aimAssistRange=%g aimAssistConeDegrees=%g "
-        "aimAssistFrictionStrength=%g aimAssistMagnetismDps=%g",
+        "aimAssistFrictionStrength=%g aimAssistMagnetismDps=%g "
+        "vibrationEnabled=%d vibrationFireIntensity=%g vibrationFireDurationMs=%lu "
+        "vibrationDamagePerPoint=%g vibrationDamageMaxIntensity=%g vibrationDamageDurationMs=%lu "
+        "fireNotifyQueueKick=%d",
         g_modConfig.lookDegreesPerSecond, g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
         g_modConfig.invertLook ? 1 : 0, g_modConfig.proneHoldThresholdMs,
@@ -353,6 +402,10 @@ void LoadModConfig()
         g_modConfig.flipTriggers ? 1 : 0,
         g_modConfig.aimAssistEnabled ? 1 : 0, g_modConfig.aimAssistRange,
         g_modConfig.aimAssistConeDegrees, g_modConfig.aimAssistFrictionStrength,
-        g_modConfig.aimAssistMagnetismDegreesPerSecond);
+        g_modConfig.aimAssistMagnetismDegreesPerSecond,
+        g_modConfig.vibrationEnabled ? 1 : 0, g_modConfig.vibrationFireIntensity,
+        g_modConfig.vibrationFireDurationMs, g_modConfig.vibrationDamagePerPoint,
+        g_modConfig.vibrationDamageMaxIntensity, g_modConfig.vibrationDamageDurationMs,
+        g_modConfig.fireNotifyQueueKick ? 1 : 0);
     LogFromController(buf);
 }

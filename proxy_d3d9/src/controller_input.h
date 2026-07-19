@@ -26,3 +26,11 @@ float Controller_DeltaTimeSeconds();
 // (0-255), unshaped -- for button-mapping work (task #10), not stick movement/look.
 // Returns false (zeroing outputs) if no controller is connected.
 bool Controller_GetRawButtonsAndTriggers(unsigned short& buttons, unsigned char& leftTrigger, unsigned char& rightTrigger);
+
+// Sets the controller's two rumble motors directly (task #17). leftMotor/rightMotor
+// are normalized [0, 1] -- clamped internally, so an out-of-range caller can't send a
+// bogus value to XInputSetState. Same controller slot (index 0) as every other XInput
+// call in this codebase. Safe to call every frame; XInputSetState itself is cheap and
+// idempotent for an unchanged value. No-ops (does not error) if no controller is
+// connected or XInput failed to load.
+void Controller_SetVibration(float leftMotor, float rightMotor);

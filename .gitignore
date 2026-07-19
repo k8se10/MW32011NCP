@@ -17,6 +17,10 @@ d3d9_orig.dll
 # on first run at the game root, never meant to be committed (personal tuning values).
 mw3ncp_config.ini
 
+# User's own scratch live-test notes (jotted during playtests, read back in during
+# dev sessions) -- personal working notes, not a project doc, never meant to be committed.
+notes.txt
+
 # Build outputs for dev-only test tools (not shipped, not part of the mod)
 tools/*/bin/
 tools/*/obj/

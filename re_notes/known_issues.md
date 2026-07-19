@@ -179,6 +179,65 @@ consulted through some other generic mechanism (e.g. a dvar-flag-based check) th
 string/address tracing can't reveal — a dead end for now, not worth pursuing further
 without a more concrete lead.
 
+**DECISIVELY re-confirmed dead, not just unchecked (2026-07-18, task #20
+follow-up).** A full binary-wide constant scan (1,170,536 instructions —
+not just handle xrefs like the original pass) for the exact
+`monkeytoy` handle address returned **zero hits** anywhere in the
+binary, via any addressing mode. The dvar's name string also has exactly
+one reference total (its own registration). This is decisively confirmed
+DEAD CODE, not a live restriction check this mod could bypass by forcing
+a value — closing this lead for good, not just parking it.
+**Also searched for classic id-engine console/cheat-command strings**
+(`"notarget"`, `"god"`, `"give"`, any `"con_"`-prefixed string) — all
+absent from the binary (zero raw-byte matches), consistent with (but not
+proof of) a fully string-stripped or fully absent console. **New,
+partially-chased lead**: `"noclip"` IS a real string, referenced from
+`FUN_00470d00` (the already-known ~600-string GSC notify-event-name
+interning table, same mechanism `weapon_fired`/`damage` events use) —
+meaning `"noclip"` is registered as a real GSC `notify()`/`waittill()`
+event name, not a console command. Some cheat/debug-adjacent notify
+survived in the retail build; its interned hash handle and real
+consumer (who fires it, who listens) were NOT traced — worth a follow-up
+if this angle is revisited, though **the working conclusion for task #20
+is that a real developer console is not viable to unlock** — build a
+custom debug menu or dedicated debug key-combos instead.
+
+**God mode bit RE-CONFIRMED via fresh, full disassembly (2026-07-18,
+task #20)** — a prior session's summary claim was independently
+re-verified, not just trusted: `FUN_0045f770` (the real damage-
+application function), line 103: `if ((*(byte*)(entity+0x13c) & 1) ==
+0) { /* entire damage/health-decrement block, including the real
+health-decrement at entity+0x150 */ }` — if bit `0x1` at `entity+0x13c`
+is SET, this whole block is skipped and the function returns 0
+immediately. **Confirmed, exact, disassembly-backed: setting
+`entity+0x13c` bit `0x1` makes all damage to that entity a genuine
+no-op.** Two other bits at the same offset are visible in this function
+but not confirmed to the same depth: bit `0x2` appears to prevent a
+single hit from being lethal (a "can't die from THIS hit" flag, not full
+invulnerability — distinct from bit `0x1`), bit `0x20` is set once
+health drops below 1, likely a "has died" latch. Ammo refill, wave-skip,
+and killstreak-spawn's native pieces were NOT reached this pass —
+genuinely open. For killstreak-spawn specifically, this session's own
+killstreak research already fully traced `remote_missile`'s equip path
+(`giveweapon("remote_missile_detonator")`, `1554.gsc`), the turret/
+sentry weapon-change dispatcher (`_id_3CE8`/`_id_3CF5`, `1553.gsc`), and
+the real native weapon-SET function `weapnext` uses (`FUN_0042d6b0`) —
+more direct starting points than re-deriving from scratch.
+
+**Much simpler god-mode candidate found as a side effect of a different
+investigation (2026-07-18, Survival architecture survey)**: `179.gsc`'s
+`_id_18D0()` (the real mission-failed handler) early-returns entirely if
+`getdvarint("so_nofail")` is true (line 587) — a real, dvar-gated
+"can't fail the mission" switch. This is a GSC-level dvar check, much
+simpler to flip (via this mod's own `GetDvarInt`/dvar-forcing machinery,
+already used elsewhere for `player_sprintUnlimited`) than the
+`entity+0x13c` bit-flag approach above, which requires writing to a
+specific entity's memory each frame. **Not yet confirmed which is the
+better real fix** — `so_nofail` may prevent MISSION FAILURE specifically
+(e.g. Survival's overall "run ended" state) without necessarily stopping
+individual damage/death feedback the way the entity-flag approach does,
+or vice versa; worth live-testing both once implementation starts.
+
 **Y/weapnext: RESOLVED (2026-07-15, later session).** Cross-referencing against the real
 key-event handler confirmed this engine resolves core gameplay actions through the SAME
 bind-index/kbutton mechanism already used for ADS and Reload (`FUN_00438710`'s jump
@@ -868,20 +927,26 @@ synthesis) are workarounds pending the real GSC-side mechanism being found,
 not permanent design choices. **CONFIRMED WORKING LIVE by the user** (2026-07-16):
 squadmate call-in via D-pad Left now succeeds using the synthesized '4' keypress.
 
-**Documentation inconsistency flagged, not yet reconciled (2026-07-18):**
-this entry's "CONFIRMED WORKING LIVE" claim for squadmate call-in directly
-contradicts task #13's own live-tracked status ("works for turrets, fails
-100% for squadmate call-ins") and issue #26's later research
-(2026-07-17), which treats the squadmate bug as still open and narrows
-its "divergence point" to `_id_061C::_id_3DE2`. Possible explanations,
-not yet distinguished: (a) this entry's live confirmation actually only
-re-tested turret un-toggle (the "bonus fix" below it) and the "squadmate
-call-in... now succeeds" line above it was a premature/mistaken claim
-never actually re-tested against a real `friendly_support_delta`/
-`riotshield` loadout; or (b) it genuinely worked on 2026-07-16 and
-regressed or was map-specific, consistent with issue #31's new
-map-dependent-failure finding below. Needs a live re-test with an
-explicit squadmate (not turret) loadout to resolve which.
+**RECONCILED (2026-07-18): this entry's original claim stands — squadmate
+call-in DOES work via the D-pad Left `'4'` key-synthesis.** User
+confirmed directly from real play: squadmates worked because of the
+emulated `'4'` press, same as this entry always said. The later doubt
+(issue #26's "still open, narrowed to `_id_061C::_id_3DE2`") was
+misplaced — likely that later research session re-litigated an already-
+solved bug based on task #13's stale tracked status rather than
+re-verifying against actual play. **Genuinely useful side-effect for the
+Predator Missile investigation (issue #29)**: `friendly_support_called`
+uses the BARE/GLOBAL `notifyoncommand` builtin (per issue #31's two-
+builtin-family finding), and it demonstrably DOES fire correctly from
+this mod's synthetic `'4'` keypress. This is real evidence that
+`notifyoncommand` (bare/global) IS reachable via synthetic/real-feeling
+input — the specific problem for Predator Missile is narrower than "no
+synthetic input reaches any notify builtin at all": it's specific to
+`notifyonplayercommand` (the entity/player-SCOPED variant), which may
+have an additional requirement the bare variant doesn't (e.g. the
+specific entity-registration target actually matching what our kbutton
+call sets up) — worth folding into the ongoing bytecode/native-dispatch
+investigation.
 
 **Bonus fix, same mechanism: turret could not be un-toggled once deployed.** Live-
 reported earlier the same session (pulling out a turret via D-pad Left left no way to
@@ -1160,6 +1225,61 @@ adopt new content under it. Fixed in the current `RegisterMenu` (always calls th
 real interning step) but the override branch itself was dropped per explicit user
 decision — not pursued further, in favor of unique internal names.
 
+**UPDATE (2026-07-18, dedicated deep-dive pass): the level-load-transition
+alternative is confirmed structurally sound, and its next blocker has a
+cleaner solution than previously scoped.** Full detail:
+
+- **Confirmed real, viable mechanism**: `FUN_004ca310` (`LoadZones`) has
+  exactly 4 real callers; two are useful injection points —
+  `FUN_0053cbc0`'s per-level-load zone queue (2 of 5 array slots unused)
+  and `FUN_00679680`'s one-time BOOT-TIME zone queue (run before any
+  level loads, right after `Direct3DCreate9`/`ShowWindow`, ~4 of 10
+  array slots unused). Plan: hook `FUN_004ca310` itself (its whole body
+  is a trivially-trampolineable 2-instruction tail-dispatch veneer), read
+  the return address off the stack in the detour, and if it matches
+  either known caller, splice in one extra `{ourZoneName, 4, 0}` entry
+  before forwarding — any other caller passes through untouched. This
+  fixes the ROOT CAUSE, not just relocates it: riding inside a real
+  `LoadZones` call the engine itself issues puts our zone in the identical
+  call stack/thread/timing context as `ui.ff` itself, which is exactly
+  what makes GPU-resource creation safe there and unsafe in the live
+  WndProc-hook injection path.
+- **Confirmed: the real pause menu's own background material is loaded
+  at BOOT TIME** (via `FUN_00679680`'s zone queue), long before Start is
+  ever pressed — this is WHY opening it later via `OpenMenuByName` is
+  safe (a plain cached-pointer dereference, not a fresh load). Directly
+  confirms the "pre-load during a safe moment, open later via the
+  separately-proven-safe `OpenMenuByName` path" workaround is exactly how
+  the real game already does this for its own menus, not a novel idea.
+- **Real, cleaner solution found for the next blocker** (previously
+  scoped as "find and patch the specific call site that opens
+  `pc_options_controls_ingame`"): decompiled `FUN_0056d4f0`/
+  `FUN_004f1980` (large hardcoded client-command/UI-action string
+  dispatchers) and `FUN_00619600` (`"openMenuOnDvar"`) — all funnel
+  through `FUN_00544a50` (`OpenMenuByName`, already confirmed,
+  `__cdecl(ctx, const char* menuName)`), including `FUN_00619600` passing
+  `menuName` through as a genuine PARAMETER (not hardcoded) — meaning real
+  menu-transition targets live as DATA inside compiled `.menu` files'
+  item-action strings, not scattered across native disassembly call
+  sites. **Recommendation: don't chase individual call sites at all —
+  hook `OpenMenuByName` directly** (MinHook, same pattern as every other
+  hook in this codebase) and do STRING-NAME SUBSTITUTION: when `menuName`
+  matches the real target (e.g. `"pc_options_controls_ingame"`), swap in
+  the unique custom menu's name before forwarding to the trampoline. This
+  transparently catches every real call site — native-hardcoded or
+  `.menu`-data-embedded — with one hook instead of needing to find and
+  patch each one individually.
+- **Not yet chased**: confirming the exact real dvar/menu-name string
+  that opens `pc_options_controls_ingame` specifically (which parent
+  Options menu item triggers it) — needs an OpenAssetTools dump of
+  `ui.ff`'s real compiled `.menu` files (a fresh `Unlinker.exe` pass,
+  not attempted in this Ghidra-only investigation).
+
+**This is now a concrete, two-part implementation plan** (boot-time
+zone-queue injection + `OpenMenuByName` string-substitution hook),
+not an open architectural question — next step is implementation and
+live testing, not more research, whenever this task is picked up.
+
 **Current strategic direction (not yet implemented):** unique internal names for
 our own menu content, plus finding/patching whatever real call site opens
 the ORIGINAL name (e.g. `"pc_options_controls_ingame"`) so it redirects to ours —
@@ -1174,10 +1294,128 @@ replacement installer fallback.
 
 ---
 
-## 24. Vibration/rumble — research pass, real trigger points found (2026-07-17)
+## 24. Vibration/rumble — CONFIRMED LIVE: hooks break game startup entirely, DISABLED (2026-07-18)
 
-**Status:** Open, tracked as task #17. Not yet implemented — this is groundwork
-only.
+**Status regression, same day as implementation.** Live-tested by the
+user: with `Rumble_Install()`'s hooks active, **the game fails to start
+at all.** `proxy_d3d9.log` showed every hook (including both rumble
+hooks) installing successfully (`MH_CreateHook`/`MH_EnableHook` both
+`MH_OK`) followed immediately by `proxy_d3d9 detach`, repeated
+identically across multiple launch attempts, with **zero per-frame
+activity ever logged in between** (no gameplay-tick heartbeat, no
+stance-diag line — nothing this codebase's other hooks log routinely).
+This means whatever crashes happens BEFORE the first real gameplay
+frame, before any weapon could have been fired or damage taken — i.e.
+before the rumble hooks' own trigger conditions could ever be reached.
+
+**Leading hypothesis, not yet confirmed via disassembly**: `FUN_004895b0`
+and `FUN_0044cdb0` are GENERAL native notify-dispatch functions (already
+documented as such — used for `weapon_fired`/`damage` in this mod's own
+research, but the "general dispatcher" framing implies OTHER event types
+route through the same two functions too, likely with genuinely
+different real argument counts per event type, since a generic dispatch
+function serving many unrelated notify events is a natural place for
+that). This mod's hooks declare a FIXED parameter signature for each
+(3 args for the "simple" dispatcher, 12 for the "rich" one) confirmed
+correct for exactly ONE real call site each (weapon-fire, damage) — if
+ANY other real caller (plausibly firing during engine init, well before
+any gameplay frame, matching the observed crash timing) invokes either
+function with a genuinely different argument count, this mod's
+fixed-signature hook would read/forward incorrect stack data for that
+call, which could corrupt behavior in ways a static single-call-site
+disassembly check would never catch.
+
+**Immediate mitigation, deployed**: `Rumble_Install()`'s call site in
+`InstallAnalogInputHooks()` (`analog_input_hooks.cpp`) is commented out
+— rebuilt, redeployed, **confirmed the game starts normally again with
+just this one change**, isolating the two rumble hooks as the cause
+(nothing else changed). All other hooks (movement, look, Fire's
+kbutton+queue-push, D-pad, Sprint's L3-ADS fix, etc.) are unaffected and
+still active.
+
+**Recommended real fix, not yet attempted**: hook the NARROWER, specific
+caller functions instead of the shared generic dispatcher —
+`FUN_0045e320` (the per-shot fire-effects handler, already confirmed to
+unconditionally call `FUN_004895b0(entity, "weapon_fired" handle, 1)`
+internally) and `FUN_0045f770` (the damage-application function,
+already confirmed to unconditionally call `FUN_0044cdb0` with the real
+damage amount internally) — these are each a single, specific,
+narrowly-scoped function rather than a shared dispatcher serving many
+unrelated event types, so hooking them avoids the "some other caller
+passes a different real argument count" risk entirely. **Their OWN
+calling conventions/full parameter signatures were never independently
+confirmed via disassembly** (only their INTERNAL calls into the generic
+dispatcher were) — this needs the same disassembly-first rigor this
+project already applies everywhere else (see the `FUN_00428a70`
+calling-convention check, issue #29) before any new hook attempt, given
+this exact class of mistake (trusting an assumed signature without full
+verification) is very likely what just broke the game.
+
+## Original implementation entry (2026-07-18), superseded by the above
+
+**Status:** Task #17 implemented. Builds clean (0 warnings/0 errors, full rebuild
+confirmed). **Not yet live-tested** — no game access during implementation; needs a
+real playtest before this is considered done, same bar as every other native hook in
+this project.
+
+**New module**: `rumble.h`/`rumble.cpp` (kept separate from `controller_input.cpp`'s
+XInput polling and `analog_input_hooks.cpp`'s gameplay-input translation, per
+CLAUDE.md's module-separation rule). `Controller_SetVibration(left, right)` added to
+`controller_input.cpp`/`.h` (dynamically loads `XInputSetState` from
+`xinput9_1_0.dll`, same lazy-load pattern already used for `XInputGetState`).
+
+**Calling conventions re-confirmed via raw disassembly before hooking** (pseudocode
+alone wasn't trusted, per this project's own standing rule — a wrong calling
+convention risks a crash): both `FUN_004895b0` (weapon-fire notify) and `FUN_0044cdb0`
+(damage notify) are genuinely plain `__cdecl`, flat stack args, bare `RET` (caller
+cleanup) — no custom register convention needed, unlike the kbutton-family calls
+elsewhere in this codebase. `FUN_004895b0`'s own disassembly explicitly confirms its
+event-handle argument is read via `MOVZX ... word ptr` — a real 2-byte handle, not a
+pointer, matching the "each hashed via `FUN_005048b0` into a 2-byte handle"
+documentation already on record.
+
+**Local-player filter, resolved**: both notifies fire for ANY entity (AI included),
+which the original 2026-07-17 research flagged as unresolved. Resolved this pass by
+reusing a field this project ALREADY treats as a real "does this entity have a client
+struct" gate: `entity+0x10c`, non-null-checked as its own precondition by
+`FUN_005BC9A0` (the real native `notifyonplayercommand` registration function, issue
+#29). **Honest caveat**: in solo SP/Survival (this project's only currently-supported
+config) this is equivalent to "is the local player," since there's exactly one client
+entity — but it does NOT specifically exclude a co-op partner's entity in 2-player
+Survival, which would also pass this check. Not resolved this pass, documented rather
+than silently assumed away.
+
+**Hooks installed** (`Rumble_Install()`, called from `InstallAnalogInputHooks()`
+alongside the other MinHook installs, same install/log pattern as every other hook in
+this codebase):
+- `FUN_004895b0` — fires a fixed-intensity/fixed-duration pulse when the event handle
+  matches the live-read `"weapon_fired"` handle (read from its real runtime address,
+  not hardcoded, since the interning hash is computed at startup) AND the entity
+  passes the local-player filter.
+- `FUN_0044cdb0` — fires a pulse scaled by the real damage amount (the function's own
+  6th parameter, confirmed via the real call site's argument order) when the event
+  handle matches `"damage"` and the entity passes the local-player filter, capped by a
+  configurable max intensity.
+
+**Decay**: a simple linear decay over a configurable duration, `GetTickCount()`-based
+(same timer style as `InjectControllerSprint`'s stamina/cooldown timer), ticked once
+per real gameplay frame (`Rumble_Tick()`, called from `InjectAllControllerInput` —
+deliberately NOT the menu tick, since rumble is gameplay feedback, not a UI feature). A
+stronger/longer pulse arriving while an earlier one is still decaying takes over
+(peak intensity + a fresh decay window) rather than being additive or getting cut
+short. **Known v1 simplification, not a placeholder**: both motors (low-frequency/
+high-frequency) are driven equally — this engine's real per-event dual-motor profile
+(if the console version had one) wasn't reverse-engineered or differentiated this pass.
+
+**New config** (`mod_config.h`/`.cpp`, following the exact `[AimAssist]` pattern):
+`[Vibration]` section — `Enabled` (default on, doubles as this feature's own
+kill-switch, no separate `[Experimental]` entry needed on top of it), `FireIntensity`/
+`FireDurationMs`, `DamagePerPoint`/`DamageMaxIntensity`/`DamageDurationMs`.
+
+**Not yet reached** (same as the original research pass, still open): explosions/
+blast-proximity, melee-hit-landed, killstreak activation, low-ammo rumble triggers.
+`FUN_00470d00`'s ~600-entry real GSC notify-event-name table includes `"explode"`/
+`"grenade_fire"`/`"missile_fire"` as leads, none traced to a dispatch site yet.
 
 No native vibration infrastructure exists at all (confirmed via a clean
 zero-hit string search for `rumble`/`vibrat`/`forcefeedback`), consistent with
@@ -1518,10 +1756,11 @@ input) and refines issue #26's vehicle hypothesis below.
   sequences elsewhere in the campaign — worth a general fix (respect the
   real lock flag universally in the movement hook) rather than a
   single-mission special case, once the real flag is found.
-- **Bug #5 — Mission "Back on the Grid" (Act 1, village mortar sequence):
-  aiming the mortar worked correctly on controller (sensitivity matched
-  keyboard/mouse setup, aim/traverse fully usable), but firing it did
-  not** — had to fall back to keyboard/mouse specifically to fire, despite
+- **Bug #5 — MISSION CORRECTED 2026-07-18 (was "Back on the Grid," really
+  "Goalpost" — see task #26's zone-identification entry below): village
+  mortar sequence, aiming worked correctly on controller (sensitivity
+  matched keyboard/mouse setup, aim/traverse fully usable), but firing it
+  did not** — had to fall back to keyboard/mouse specifically to fire, despite
   the mortar being otherwise fully controller-driven for aim. This has a
   cleaner shape than bugs #1/#3/#4 above: aim/look already routes through
   this mod's real right-stick-look hook (which is why sensitivity/aim
@@ -1554,10 +1793,131 @@ input) and refines issue #26's vehicle hypothesis below.
   fire mechanism (otherwise both would have failed identically before
   today's change). A live re-test is still needed either way, but go in
   expecting mortar fire to remain broken, not assuming a free fix.
-- **Bug #6 (NOT YET CONFIRMED, two competing hypotheses) — same mission
-  "Back on the Grid": the mounted Browning M2 turret sequence on the
-  captured technical (holding off waves of enemies/other technicals) felt
-  far too hard on controller.** User's own framing, explicitly uncertain
+  **Turret-polling hypothesis tested and NOT supported (2026-07-18):**
+  checked whether mortar shares the turret/sentry killstreak's real
+  `usebuttonpressed()`/`attackbuttonpressed()` polling mechanism instead
+  — zero hits for either builtin anywhere in `sp_warlord.ff`'s 24 real
+  scripts, and turret's own polling function (`1558.gsc`'s `_id_3CBE`)
+  turned out to be killstreak-sentry-specific (`maketurretsolid()`/
+  `setmode("sentry")`), not a generic mounted-weapon abstraction mortar
+  could share — a full 317-file corpus sweep found no such shared system
+  anywhere. `bog_mortar` is confirmed excluded from the vehicle
+  CLASSIFICATION system entirely (both its appearance-init and its
+  per-vehicletype dispatch-table builder), not just steering — consistent
+  with it being some other kind of entity, but its real handling script
+  remains unlocated.
+  **Important, unresolved mission-identification flag, found as a side
+  effect (2026-07-18): `sp_warlord.ff` may not actually be "Back on the
+  Grid."** This zone's own content includes
+  `aitype/ally_hero_price_africa.gscbin`/`ally_hero_soap_africa.gscbin` —
+  Price and Soap set in AFRICA — which doesn't fit "Back on the Grid"'s
+  real setting (Yuri's Dubai flashback framing story, per the mission
+  content already confirmed in `dubai.ff` for task #27's turret research:
+  Makarov chase, elevator ambush, restaurant collapse, Dubai skyline).
+  `sp_warlord.ff`'s own zone name plausibly matches "Turbulence" instead
+  (Yuri/Soap investigating an African warlord aboard a hijacked plane —
+  issue #27 bug #4's mission) far better than it matches "Back on the
+  Grid." **If this is correct, the mortar sequence being researched under
+  task #26 may actually belong to "Turbulence," not "Back on the Grid" —
+  meaning `dubai.ff` (task #27's turret-regen zone) and `sp_warlord.ff`
+  (task #26's mortar zone) might be two DIFFERENT missions entirely, not
+  the same mission's two set-pieces as this project has been assuming.**
+  Not resolved either way — needs either a live check (what mission name
+  actually displays for the mortar sequence, or which allies are present)
+  or a deeper zone-content cross-reference before treating either
+  attribution as settled. Flagging prominently since it could mean task
+  #27's own "Hypothesis B refuted" conclusion targeted the wrong mission's
+  content.
+  **RESOLVED, decisively (2026-07-18, follow-up targeting-system pass):
+  `sp_warlord.ff` is CONFIRMED NOT "Back on the Grid."** Freshly dumped
+  the zone in isolation and read its real map-entity file
+  (`maps/sp_warlord.mapents`, 329 lines) directly: actual placed entities
+  are `script_vehicle_mi17_africa` (Mi-17 helicopters),
+  `actor_enemy_africa_militia_AK47`, `technical_rider_stealth_function`,
+  `vehicle_pickup_technical` — unambiguous African-militia/helicopter/
+  technical-vehicle content, zero mortar entities, zero turret entities,
+  zero Dubai-consistent content anywhere in the actual map data. This is
+  direct entity-placement evidence, not just a name coincidence — confirms
+  `sp_warlord.ff` is almost certainly "Turbulence" (the African-warlord
+  mission), not "Back on the Grid." **A targeting/placement-system search
+  (mortar/shell/impact/elevation/bearing/indirect/artillery/
+  beginlocationselection/trajectory/ballistic, full corpus) found nothing
+  relevant in `sp_warlord.ff` for the same reason: the mortar was never
+  there to find.**
+  **Also checked `dubai.ff`** (the zone independently confirmed as the
+  REAL "Back on the Grid" via Yuri/Makarov/restaurant-collapse content,
+  used for task #27's turret-regen research) with the same keyword sweep
+  — **also zero mortar hits.** `dubai.ff` genuinely has no mortar content
+  either.
+  **Bottom line: the mortar/turret sequence has never actually been
+  located in ANY zone this project has dumped.** Both prior candidate
+  zones are now ruled out with direct evidence, not absence-of-string-
+  match: `sp_warlord.ff` is a different mission's content entirely, and
+  the REAL "Back on the Grid" (`dubai.ff`) has no mortar/player-turret
+  content in it either — meaning task #27's earlier "Hypothesis B
+  refuted, no turret-specific regen logic exists" conclusion was drawn
+  from a zone that may not even CONTAIN the turret sequence it was
+  searching for, casting real doubt on that conclusion. **Task #27
+  reopened** (was marked completed) pending re-identification of the
+  correct zone. **Needed before any further mortar/turret research can be
+  productive**: identify the real mission fresh, either via a live
+  in-game check (mission name, which allies are present during the
+  mortar/turret sequence) or by dumping the remaining untried Campaign
+  zones (`sp_paris_a/b`, `sp_ny_harbor`, `sp_ny_manhattan`, `sp_prague`,
+  `sp_payback`, `sp_intro`) and checking their `.mapents` files the same
+  direct way this pass used to rule out `sp_warlord.ff`.
+
+  **RESOLVED (2026-07-18, dedicated zone-identification pass): the real
+  mission is GOALPOST, not "Back on the Grid" — a mission-attribution
+  error carried across multiple prior sessions.** All 7 remaining
+  untried `sp_*.ff` loader zones were dumped fresh — zero mortar/turret
+  hits, several turned out to be near-empty thin-loader stubs (their
+  real content lives in separately-named zones, same pattern already
+  known for `sp_dubai.ff`/`sp_berlin.ff`). Widened the search to
+  un-prefixed real-content zone names (`castle`, `hamburg`, `hijack`,
+  `innocent`, `london`, `paris_ac130`, `prague_escape`, `roundtrip`,
+  `warlord`, `payback`) and found a decisive hit in **`hamburg.ff`**:
+  - `745.gsc` — a real `level._effect["mortar"][...]` impact-FX table
+    (`bunker_ceiling`/`dirt_large2`/`mud`/`water`/`concrete`/`dirt`,
+    pointing at `beach_impact_hamburg`/`big_hamburg_river_blowup` FX
+    assets), confirmed to originate specifically from `hamburg.ff`, not
+    shared content.
+  - `32281.gsc` (`_id_7DF4`–`_id_7DF7`) — a real, player-operable mounted
+    turret: `spawnturret("misc_turret", ..., "minigun_m1a1_player_tc")`,
+    `setmodel("weapon_m1a1_minigun")`, `level.player
+    disableturretdismount()`, `level.player playerlinktodelta(...)`
+    (rides a vehicle-linked mount via `maps\_vehicle::get_dummy()` — the
+    same still-unlocated shared vehicle-utility namespace flagged
+    elsewhere in this project; `hamburg.ff` is a new lead for THAT search
+    too).
+  - **`hamburg.ff` also contains the exact real T-90/SMAW assets already
+    tracked for Goalpost** (`weapons/smaw_nolock`, `hud_icon_smaw`,
+    `viewmodel_smaw_reload`, `vehicle_t90_tank_woodland*`,
+    `weapon_dshk_turret_t90`) — confirming the mortar/turret sequence and
+    the tank/SMAW sequence are in the SAME mission (Goalpost), not two
+    separate missions.
+  - **Not yet reconciled**: `compatibility_matrix.md` separately notes
+    Goalpost was "played and fully fine on controller" from live
+    playtest — likely that note was based on the tank/SMAW portion
+    specifically, without realizing the earlier mortar/turret portion
+    (previously misfiled under "Back on the Grid") is the same mission.
+    Needs a live check to confirm, not assumed either way.
+  - **Not yet reached**: the mortar effect table's consuming function
+    (would confirm player-fired vs. ambient enemy shelling); the actual
+    mortar fire-control script within `hamburg.ff`'s 71 scripts (only
+    searched by keyword, not by content, this pass); whether Goalpost has
+    a genuinely separate "village mortar" set-piece distinct from its
+    tank-defense sequence.
+  - **`dubai.ff` and `sp_warlord.ff`/`warlord.ff` are now conclusively
+    ruled OUT** as the mortar/turret zone, with direct entity/asset
+    evidence, not just absence-of-keyword-match — see the earlier entries
+    in this section for that trail.
+- **Bug #6 (NOT YET CONFIRMED, two competing hypotheses) — MISSION
+  CORRECTED 2026-07-18 (was "Back on the Grid," really "Goalpost," same
+  mission as bug #5 above — see task #26/#27's zone-identification entry):
+  the mounted Browning M2 turret sequence on the captured technical
+  (holding off waves of enemies/other technicals) felt far too hard on
+  controller.** User's own framing, explicitly uncertain
   between two distinct causes, not yet diagnosed:
   1. **Hypothesis A — no aim assist.** This mod's aim assist is
      already a known, confirmed-non-functional, parked gap (task #16 —
@@ -1635,6 +1995,59 @@ input) and refines issue #26's vehicle hypothesis below.
     uses a GENERIC "vehicle mounted-weapon position" system rather than
     mission-specific scripting, any damage-reduction logic for that shared
     system would live there, still unfound. Task #27 closed as resolved
+    **UPDATE (2026-07-18, dedicated hunt): still not found — genuinely
+    absent, not just unchecked.** Fresh, isolated dumps (bypassing the
+    shared `zone_dump/` folder, confirmed unreliable for "is X present"
+    questions since it's a merged/overwritten mix of many past sessions)
+    of `common.ff` (188 real scripts, complete), `code_pre_gfx.ff`/
+    `code_post_gfx.ff`/their `_mp` variants (empty/placeholder-only),
+    `dubai.ff` (fresh, complete script list), `sp_dubai.ff`, and
+    `patch_specialops.ff` all confirmed absent of any `_vehicle` script.
+    **Real, useful finding despite the negative result**: fresh
+    `dubai_code.gsc` decompile shows `maps\_vehicle::` is a genuinely
+    richer API than the one call previously logged — real call sites
+    include `_id_2881(<vehicle-targetname-string>)` (a "get vehicle entity
+    by name" accessor), `_id_2A12()` (called 5x, no args) and `_id_2A13()`
+    (1x) — plausibly a mount/dismount or enter/exit pair given the count
+    asymmetry — plus `_id_1F9E`/`_id_29C8`/`_id_29D8`/`_id_29DA`/`_id_29E4`/
+    `_id_29E7`/`_id_2A3D`/`_id_2A3E`. Since these resolve to a literal
+    `maps\_vehicle` path string (not a hash) in the decompile, the
+    compiler's import table genuinely names this file — it's a real
+    compiled asset somewhere, just not in any zone checked so far.
+    **Recommended next zones to check, not yet attempted**: MP-side common
+    zones (vehicles are far more central to actual Multiplayer's design —
+    if this file is shared with MP rather than SP-exclusive, it likely
+    lives there), Spec Ops mission zones (`so_*`, 15 real ops, entirely
+    untouched by this project so far), or other Campaign zones with
+    confirmed vehicle content (`sp_paris_a/b`, `sp_ny_harbor`, `sp_prague`,
+    `sp_payback`, `sp_warlord`, `patch_sp_berlin.ff`).
+    **UPDATE (2026-07-18, full-corpus sweep after `common.ff` was fully
+    dumped): `_vehicle::` usage is far larger than previously known — 28+
+    real call sites across 11 scripts** (`102/1354/1357/1362/1384/1387/
+    1556/1560/1561/1564/1566.gsc`), confirming it's a large, generic
+    entity-utility library (helicopters, airdrops, UAV/missile props,
+    littlebird crash FX), not something specific to "Back on the Grid."
+    Two hits directly tie it to already-open threads: `1560.gsc:109` calls
+    `maps\_vehicle::_id_2A99("remotemissile_uav")` (links `_vehicle::` into
+    the Predator Missile system), and `1564.gsc:1760,2132` — the exact
+    script implementing `friendly_support_delta`/`riotshield`'s spawn
+    logic (issue #31) — calls `_id_2A12()` twice, the SAME function
+    `dubai_code.gsc`'s ambush helicopters use. Its own defining source is
+    still not located anywhere in the corpus checked so far. **Separately,
+    `mountvehicle()`/`dismountvehicle()`'s wrapper functions (`65.gsc`'s
+    `_id_2819`/`_id_281A`) were confirmed to have ZERO literal-name callers
+    anywhere in the full 317-file corpus**, despite clearly being real,
+    used code — meaning they're almost certainly invoked via an indirect/
+    function-pointer call pattern (this GSC dialect's `[[ ... ]]` syntax)
+    that a literal-name grep can't find. Worth a follow-up search
+    specifically for that pattern before concluding the player-mount
+    trigger is unreachable via GSC search. Also ruled out this pass: no
+    shared player-operated mortar script exists in `common.ff` (`1364.gsc`
+    is a real mortar-barrage system, but ambient/enemy-controlled, not the
+    player's own "Back on the Grid" mortar); no sibling
+    `beginlocationselection`-family builtin used anywhere beyond
+    `precision_airstrike`'s own `1559.gsc` — it's a one-off system, not a
+    shared placement-selection framework.
     for the "is it a missing regen buff" question specifically; the
     turret's actual fix is now expected to fall out of issue #30's
     `cmd+0x3e`/`0x3f` implementation work, not a separate investigation.
@@ -1906,6 +2319,220 @@ indexing code can settle it. **Concrete next step**: find the opcode
 interpreter loop, its `0x8D` case, and the indexing/lookup formula it
 uses for the embedded method ID.
 
+**FULL CHAIN RESOLVED, FIX IMPLEMENTED (2026-07-18) — the missing piece
+was a required argument, not a missing native trigger.** A dedicated
+fork traced delivery all the way through with fresh disassembly:
+
+1. `FUN_0044bb50` (recognizes the literal `"n"` command) calls
+   `FUN_0053b1f0(clientId)` with ONLY the client ID — `"n"` itself
+   carries no payload, it's purely a trigger.
+2. **`FUN_0053b1f0` (delivery) reads `Cmd_Argv(1)`** — the token AFTER
+   `"n"` in the same tokenized command, via the same real argc/argv
+   globals (`0x01757218`/`0x0175725c`/`0x0175727c`) already confirmed
+   used by 24-52 other real functions across the binary. If no second
+   argument is present (exactly the case when only `"n"` is pushed),
+   this reads a real empty-string fallback constant — which can never
+   match anything.
+3. **`FUN_00738683` is NOT a string hash — it's literally `atol()`.**
+   Delivery parses `Cmd_Argv(1)` as a DECIMAL INTEGER, not a string, and
+   compares that integer against the stored registration value.
+4. **Registration (`FUN_00454a30`, via `FUN_005BC9A0`) stores
+   `FUN_005330a0(bindNameStr)`** — a linear scan over a DISTINCT 81-entry
+   bind-name table at `0x00929fa0` (confirmed via direct memory dump to
+   be separate from the already-known 32-entry kbutton table — an easy
+   conflation, verified independently), returning the table INDEX where
+   the string matches. Index 0 is a deliberate placeholder/empty-string
+   slot (avoids ambiguity with "not found"). **Index 1 = `"+attack"`**,
+   confirmed by dumping the table directly.
+
+**Fix**: `InjectControllerFire()`'s `PushClientCommand` call changed from
+`PushClientCommand(kLocalClientIndex, "n")` to **`PushClientCommand(
+kLocalClientIndex, "n 1")`** — `"1"` is the decimal index `+attack`
+actually resolves to in this specific 81-entry table, which is what
+delivery's integer comparison needs to match registration's stored
+value. Builds clean (0 warnings/0 errors). **NOT YET LIVE-TESTED** —
+this closes every gap the static trace could find, but only a real
+playtest confirms Predator Missile actually launches now.
+
+**Also added alongside this fix**: a change-triggered diagnostic
+(`LogMissileGuidanceFlagDiag()`, logs to `proxy_d3d9.log`) watching the
+per-client `+0x1094` dword (issue #30's third-analog-channel gate) —
+its real setter couldn't be found via static scanning (a whole-binary
+scalar scan found only 2 references, both reads — the setter is almost
+certainly data-driven, not a fixed instruction), so the same fallback
+that solved the ADS-slowdown bug applies: observe it live during an
+actual Predator Missile playtest to see exactly when bit `0x80000`
+(missile guidance) flips. Also watches bit `0x800` on the same dword — a
+new candidate for the separate, still-unresolved "Turbulence"
+moves-when-frozen bug (issue #27 bug #4), found as a side effect, not
+yet chased.
+
+**LIVE DATA IN (2026-07-18): Predator Missile now launches successfully
+with the `"n 1"` fix — CONFIRMED.** User live-tested immediately after
+this build: "predator missile firing does now work on controller." This
+closes the launch-reliability half of task #7/#29 — the full
+GSC-bytecode-to-native-delivery chain traced this session was correct
+top to bottom.
+
+**Post-fire aim/guidance: still broken, and the real diagnostic log data
+REFUTES the `bit 0x80000` hypothesis.** Across the entire captured
+session (149 log lines spanning the missile-guidance attempt), **bit
+`0x80000` is never once set** — `FUN_0057e360`'s branch is confirmed NOT
+what's active during missile guidance, contrary to the original
+hypothesis. **A real, promising alternative pattern appears in the same
+data**: bit `0x400000` toggles on/off repeatedly for a ~97-second stretch
+in the middle of the log (`t=10567718` to `t=10663687`), visually
+distinct from a separate `0x4` bit that toggles during the periods
+before and after that stretch. The `0x400000` stretch's duration and
+placement (bounded before/after by the `0x4`-toggling pattern, which is
+plausibly just an unrelated per-frame gameplay flag like ground-contact)
+makes it a strong candidate for the REAL missile-guidance indicator —
+just a different bit than originally guessed. **Not yet investigated**:
+what `0x400000` actually does natively (same disassembly technique
+already used for `0x80000`/`0x800` — find every real xref that TESTS
+this bit, trace to its consuming function). If it turns out to gate a
+DIFFERENT control-mode branch than `FUN_0057e360`, that branch — not the
+one already traced — is what needs the `cmd+0x3e`/`0x3f`-style fix for
+post-fire aim.
+
+**Rumble**: user reports it "didn't do anything" in this same test —
+expected and correct, not a new bug. The two rumble hooks are currently
+commented out (disabled after crashing game startup, see the entry
+above) pending the safer `FUN_0045e320`-based reimplementation; no
+rumble output at all is the correct current state.
+
+**MAJOR FINDING (2026-07-18, full GSC deep-read of `1555.gsc`/`1554.gsc`,
+not just keyword-anchored searches): pre-fire aim and post-fire guidance
+use two GENUINELY DIFFERENT link builtins — likely the real root cause,
+and possibly a level ABOVE where the native `+0x1094` bit investigation
+has been looking.**
+
+- **Pre-fire drone-view aiming** (`_id_3C16`, lines 804-819, confirmed
+  WORKING per live playtest): links the player's view/controls to a
+  delta "uavrig" entity via `playerlinkweaponviewtodelta(...)` (Survival's
+  normal path) or `playerlinktodelta(...)` (an alternate branch, gated on
+  `level._id_3C50` being defined). Immediately followed by
+  `freezecontrols(0)` — explicitly UN-freezing controls, confirming input
+  is meant to work here.
+- **Post-fire missile guidance** (same function, lines 892-902, right
+  after `_id_3C35` spawns the `magicbullet` projectile): `var_0 unlink()`
+  (drops the pre-fire delta link) → `var_0 cameralinkto(var_10,
+  "tag_origin")` → **`var_0 controlslinkto(var_10)`**. This is a
+  COMPLETELY DIFFERENT builtin from the pre-fire pair — it links player
+  CONTROL INPUT directly to the projectile entity itself, not to a
+  delta/rig entity. **Nobody has traced `controlslinkto`'s own native
+  implementation** — the ongoing search for a per-client flag bit
+  (`+0x1094`, `0x80000`/`0x400000`) may be looking one level too high if
+  `controlslinkto` routes input through an entirely different mechanism
+  tied to the linked ENTITY rather than a per-client struct flag the
+  normal per-frame orchestrator checks against. **This is now the
+  single most promising lead for post-fire aim — tracing
+  `controlslinkto`'s real native implementation directly should take
+  priority over further `+0x1094`-bit scanning.**
+
+**Real scripted view-angle clamp also found**: `_id_3C48()` (line 1621)
+calls `self lerpviewangleclamp(0,0,0, <fov-scale>×3, <fov-scale>)` —
+scheduled via `delaythread(0.1, ::_id_3C48)`, but **only in the alternate
+branch** (`level._id_3C50` defined) — Survival's normal branch
+(`playerlinkweaponviewtodelta`) does NOT call this. Could independently
+affect aim feel/rate depending on which branch actually applies — not yet
+confirmed which branch Survival vs. Campaign's "Down the Rabbit Hole"
+hits.
+
+**Confirmed: no missing third script.** `maps\_remotemissile` (referenced
+from `1554.gsc`) is `1555.gsc`'s own namespace, not a separate file — all
+ten `_id_3C3C`/`_id_3BE9`/etc. functions it calls are defined locally
+inside `1555.gsc`. Symmetrically `1555.gsc` calls back into `1554.gsc`
+via its real namespace, `_id_0612`. A complete, self-contained pair,
+nothing external missing.
+
+**Full function inventory of `1555.gsc` now catalogued** (hint gates,
+radio-chatter dialogue system, weapon-change watchers dispatching into
+the main sequence, a damage/force-abort watcher, HUD text helpers, three
+real exit/cleanup paths, a real 12-second reload-cooldown timer, kill-
+tracking for post-kill dialogue by vehicle type, the bind-registration
+point, a 50ms abort-poll — checks `uav_enabled`, NOT input, contrary to
+what might be assumed — the launch-origin/`magicbullet` call, on-screen
+target-marker boxes, and multi-target-cycling via `attackbuttonpressed()`
+polling for switching between linked squad members, likely irrelevant to
+solo Predator Missile use) — full detail in `iw5sp.md` if needed for
+future work, not reproduced here in full.
+
+**Related but unconfirmed native finding (2026-07-18, `+0x1094` bit
+`0x400000` follow-up)**: the direct setter for that bit on the
+`+0x1094` field wasn't found (same data-driven-offset pattern as before
+— scalar scanning can't find it). A CLOSELY RELATED finding turned up
+instead, inside `FUN_0057de60` (the exact function this mod's own
+`InjectAllControllerInput` already hooks): a single byte flag at
+`struct+0x30` (same per-player struct family) gates setting/clearing
+**`cmd->buttons` bit `0x400000`** every frame (`OR`/`AND`-complement,
+confirmed via disassembly). Same bit value, same struct family, live at
+a point this mod already has full access to — a plausible sibling
+mechanism, but NOT proven to be the same write as whatever sets
+`+0x1094`'s own bit. `struct+0x30`'s own setter wasn't traced. **Given
+the same-day GSC deep-read found a more direct, better-evidenced lead
+(`controlslinkto`, see above) — a follow-up fork is chasing that first;
+this `struct+0x30`/`cmd->buttons` finding is logged as a fallback lead,
+not the primary path forward right now.**
+
+**RESOLVED, decisively: `controlslinkto`'s real native implementation
+found, explaining exactly why `+0x1094` bit `0x80000` never fired
+(2026-07-18).** `controlslinkto`/`cameralinkto` (GSC builtins, method IDs
+`0x81E3`/`0x81C5`) resolve to native functions `FUN_005d7f20`/
+`FUN_005d7e70` respectively (found via the same builtin-method-dispatch
+technique already proven for `notifyonplayercommand` — batch-
+registration table owned by `FUN_004bc320`). Decompiled
+`FUN_005d7f20` (`controlslinkto`) in full:
+```c
+clientStruct = *(int*)(entity + 0x10c);
+if (*(uint*)(clientStruct + 0xc) & 0x80000) FUN_0042b910();  // guard: already linked
+*(uint*)(clientStruct + 0xc) |= 0x80000;                     // SETS THE REAL LINK FLAG
+*(uint*)(clientStruct + 0x4c) = linkTargetId;
+FUN_004e75c0(entity);
+```
+**This is bit `0x80000` at client-struct offset `+0xc` — reached via
+POINTER INDIRECTION through `entity+0x10c` — a completely different,
+structurally distinct field from `+0x1094` on the flat
+`&DAT_00B363B0 + playerIndex*0xBE5C` array `FUN_0057e480` reads
+directly.** Same bit VALUE, coincidentally, but a different address
+entirely — decisively explains why the live diagnostic log never once
+observed `+0x1094` bit `0x80000` set during missile guidance: **the
+investigation was testing the wrong address the whole time**, not a
+refutation of "there's a real flag," just of "it's at this specific flat
+offset." `cameralinkto`'s own function sets a SEPARATE flag (bit `0x2` at
+client-struct `+0x10`, plus link-target/entity-flag data at `+0x44`/
+`+0x48`) — a second, independent mechanism likely relevant to view-angle
+behavior specifically, not yet needed if the `+0xc` lead fully explains
+things.
+
+**Diagnostic hook IMPLEMENTED (2026-07-18)**: `FUN_005d7f20`'s true entry
+point and calling convention were independently re-confirmed via fresh
+disassembly (plain `__cdecl`, ONE stack arg — an entity HANDLE, not a raw
+pointer — bare `RET`) before hooking, per this project's own "verify via
+disassembly first" standard. `Hook_ControlsLinkTo` (`analog_input_hooks.cpp`)
+is a pure log-and-forward: calls the real original function completely
+unchanged, then independently re-resolves the SAME entity-handle
+(low 16 bits = index when upper 16 bits are zero, `entity = 0x01197AD8 +
+index*0x270` — this confirms the previously-PARKED `0x01197AD8`/`0x270`
+entity-handle-resolution array from issue #15's aim-assist research is
+real and live-used) → client-struct (`+0x10c`) → `+0xc` chain, read-only,
+to log the resulting flag value to `proxy_d3d9.log`. No behavior change
+at all. Builds clean (0 warnings/0 errors). **NOT YET LIVE-TESTED** —
+next Predator Missile playtest should show `[controlslinkto-diag]` lines
+confirming exactly when this fires and what the resolved flag value is.
+
+**Not yet found: the per-frame READER of this `+0xc` bit** — the
+functional equivalent of `FUN_0057e360` for THIS flag (which function
+checks `*(int*)(*(int*)(entity+0x10c) + 0xc) & 0x80000` each frame and
+redirects analog input accordingly). This is the one remaining concrete
+step before a real fix can be implemented — needs an xref sweep on
+`FUN_005d7f20` itself for sibling readers, or a targeted disassembly
+pass over the per-frame usercmd pipeline for this exact two-hop
+pointer-then-bitfield pattern. **Do not assume the destination is still
+`cmd+0x3e`/`0x3f`** — that assumption was tied to the now-irrelevant flat
+`+0x1094` branch specifically; the real reader (once found) may write
+somewhere else entirely.
+
 **Campaign scope confirmed, and corrected (2026-07-18):** a dedicated
 research pass found `remote_missile`'s Campaign usage lives in
 `rescue_2.ff` (= "Down the Rabbit Hole," confirmed via matching
@@ -1921,6 +2548,138 @@ candidates (`intro.ff`, `berlin.ff`) and found unsupported — neither
 contains real `remote_missile` gameplay scripts (only an unused
 material-asset stub in `berlin.ff`). Likely a mistaken assumption from an
 earlier, non-RE-verified session. Corrected in `killstreak_reference.md`.
+
+**BREAKTHROUGH (2026-07-18): the full chain from GSC bytecode to native
+delivery is now mapped end-to-end, real addresses at every hop.** A
+dedicated deep-RE pass (Ghidra, ~208 tool calls) closed off every
+remaining unknown in the dispatch chain:
+
+1. **Interpreter confirmed**: `FUN_00610a40` is the real GSC bytecode
+   opcode-dispatch loop. Its `switchD_00610ab4` case group `0x8b`-`0x90`
+   handles `OP_CallBuiltinMethod{0..5}` (arg count = opcode − `0x8b`) —
+   `case 0x8d` sets arg count 2, matching `notifyonplayercommand`'s real
+   2-arg signature exactly. Independently confirms `gsc-tool`'s public
+   opcode tables against this actual retail binary.
+2. **Dispatch is a flat array indexed directly by method ID, not a hash
+   table** — `(**(code**)(&DAT_0184cdb0 + methodId * 4))(...)`. A
+   parallel table (`DAT_0186c68c`) handles bare functions like
+   `notifyoncommand`, confirmed as a separate call site with its own
+   table (matches issue #31's two-builtin-family finding).
+3. **Method ID `0x82A5`'s real native function found**: `FUN_005BC9A0`,
+   registered at runtime via a generic registrar (`FUN_0049e190`) called
+   from a batch-registration table owned by `FUN_004603a0`. Decompiled in
+   full:
+   ```c
+   void FUN_005bc9a0(entity_handle) {
+       entity = FUN_004ef2e0(entity_handle);  // -> entity struct, same array this project already uses elsewhere
+       if (entity && entity[0x10c] != 0) {    // gate field
+           eventName = FUN_00497530(0);       // GSC VM stack arg 0
+           bindName  = FUN_00497530(1);       // GSC VM stack arg 1
+           FUN_00454a30(entity[0x84], bindName, eventName);  // REGISTERS interest
+       }
+   }
+   ```
+   **This is the subscribe/registration side, not the fire side** —
+   confirms `notifyonplayercommand`'s real semantics: it registers a
+   listener for a future bind-press, matched later by whatever actually
+   delivers the event (below). Entity gate field `entity[0x10c]` being
+   zero would silently no-op this whole call — a real, not-yet-checked
+   candidate precondition.
+4. **Real, hard 64-entry registration cap found**: `FUN_00454a30` interns
+   `(clientID, hash(bindName), hash(eventName))` into a fixed-size table
+   (`DAT_017507dc` count, max `0x40`), reference-counted. **A genuine,
+   independently-actionable finding**: issue #31's master survey found
+   ~18 distinct `notifyonplayercommand`/`notifyoncommand` sites across
+   the game — if enough are simultaneously alive in a real Survival
+   session (plausible with per-instance reference counting), new
+   registrations past the cap would silently fail via a fallback/eviction
+   path. Worth an independent live check (count active registrations)
+   regardless of what else is found.
+5. **Delivery function found and traced**: `FUN_0053b1f0(clientID)` walks
+   the 64-slot table, hashes a "current bind name" string, and fires the
+   real GSC notify (`FUN_004605c0`) for every matching entry.
+6. **Delivery is triggered by a QUEUED COMMAND STRING, not directly by a
+   keypress.** `FUN_0053b1f0`'s only caller is `FUN_0044bb50`, which
+   string-compares an incoming queued command against a handful of
+   literals (`"n"`, `"fogswitch"`, `"mr"`, `"sl"`, `"removecorpse"`) —
+   **the literal string `"n"` specifically triggers the delivery walk**;
+   everything else falls through to generic server-command forwarding.
+   `FUN_0044bb50` is called only from `FUN_0050a460`, which drains a real
+   per-player 128-slot ring-buffer command queue every frame.
+7. **The critical unresolved point, and the most likely real explanation
+   for Predator Missile's failure**: the generic queue-push primitive
+   (`FUN_00428a70(clientIdx, string)`) has 4 real callers. Three are
+   unrelated (a debug/location command, a corpse-cleanup command, a
+   generic formatted-string push). The 4th, `FUN_00528db0`, reads
+   `argv[0]` of what looks like the currently-executing command (same
+   memory region as this project's already-confirmed `Cmd_ExecuteString`
+   argc/argv machinery) and **only enqueues `"n"` when that token does
+   NOT start with `'-'` and does NOT start with `'+'`**. **If this filter
+   genuinely excludes `+`/`-`-prefixed bind commands, `+attack`'s
+   down-edge would never reach the queue at all via this path** —
+   meaning the notify-delivery mechanism may be architecturally
+   unreachable for held movement-class binds like `+attack` through this
+   route, regardless of how the underlying kbutton is driven (explaining
+   why the earlier `CallKbuttonDown` fix, though real and correct, wasn't
+   sufficient). `FUN_00528db0`'s own callers were not traced to confirm
+   exactly when/how it fires for `+attack` specifically — genuinely
+   unresolved, not just unattempted.
+
+**Two concrete, independently-actionable next steps, not mutually
+exclusive:**
+- **(a) Implement a direct workaround**: since `FUN_00428a70(clientIdx,
+  "n")` is a real, callable native function (not OS-level input
+  emulation — a direct internal engine call, arguably even more "native"
+  than the key-synthesis exceptions already in this mod), this mod's own
+  Fire hook could call it directly on Fire's down-edge, bypassing
+  whatever gate normally would have pushed `"n"` for `+`-prefixed binds.
+  Low-risk, purely additive (doesn't remove or change the existing
+  `CallKbuttonDown` call), easily revertible.
+- **(b) Independently verify the 64-entry registration cap isn't itself
+  the blocker** — a live diagnostic counting active `notifyonplayercommand`/
+  `notifyoncommand` registrations during a real Survival session would
+  settle this regardless of (a)'s outcome.
+
+**(a) IMPLEMENTED (2026-07-18), calling convention independently
+disassembly-confirmed first.** Before wiring any call to `FUN_00428a70`,
+a dedicated fork confirmed its exact calling convention via raw
+disassembly (not just decompiled pseudocode, since a wrong convention
+risks a crash, not just a silent no-op): plain `__cdecl(int clientIdx,
+const char* str)`, both args on the stack, no register tricks. `str` is a
+raw C string copied via a bounded `strncpy`-style call into a 64-byte
+ring-buffer slot — no interned-string handle required. No lock/mutex.
+Overflow past the 128-slot ring buffer logs a warning but still enqueues
+(wraps), not a hard failure. **Also corrects a misreading from the
+earlier trace**: `FUN_00528db0` does NOT hardcode the literal `"n"` as
+originally reported — it forwards whatever command is currently
+executing (`argv[0]`), filtered to exclude `+`/`-`-prefixed tokens. This
+doesn't change the plan (this mod calls `FUN_00428a70` directly with its
+own literal `"n"`, bypassing `FUN_00528db0` and its filter entirely), but
+the earlier belief that `FUN_00528db0` itself hardcodes `"n"` was wrong
+and is corrected here.
+
+`InjectControllerFire()` (`analog_input_hooks.cpp`) now calls
+`PushClientCommand(kLocalClientIndex, "n")` on Fire's down-edge only
+(matching a real one-shot command dispatch, not spammed every frame
+Fire is held), additive alongside the existing `CallKbuttonDown` call —
+not a replacement, isolated and easily revertible if wrong. **Gated
+behind a new `[Experimental] FireNotifyQueueKick` toggle in
+`mw3ncp_config.ini`** (default on) — the first entry in a new
+config pattern (`mod_config.h`/`.cpp`) specifically for individually-
+toggleable, not-yet-fully-proven behaviors, so a live hypothesis test
+like this one can be flipped off without a recompile if it's ever
+suspected of causing a problem, rather than needing a source edit and
+rebuild. Entries here are meant to graduate to unconditional (and be
+removed from the section) once confirmed correct and stable — not a
+permanent settings surface. Builds clean (0 warnings/0 errors). **NOT YET
+LIVE-TESTED** — the call itself is
+confirmed safe to make (won't crash), but that says nothing about
+whether pushing `"n"` this way is actually the missing piece for
+Predator Missile's launch. Next live-test pass should check both: does
+the missile now launch, and does anything about normal gunfire/gameplay
+regress from pushing `"n"` into the command queue every time Fire is
+pressed (no reason to expect a regression per the disassembly, but this
+project's own standard is to verify, not assume).
 
 **Original hypothesis note (superseded by the live-test result above,
 kept for the record):** this touches the single most-used input in the
@@ -2015,6 +2774,18 @@ at the end of every branch regardless of which one fired:
    into `confirm_location` (not yet traced — not inside `FUN_0057df60`
    itself, must be a separate check elsewhere for "Fire pressed while
    mode==1").
+   **CORRECTION (2026-07-18, user-confirmed live): this cursor/
+   `confirm_location` system is NOT what Survival's `precision_airstrike`
+   actually uses — that theory was closer to MP's cursor-based version.**
+   Survival's real mechanic, per direct playtest confirmation, is a
+   smoke-grenade-style THROWN marker (aim with the look stick, throw with
+   Fire, same as an ordinary grenade) — **confirmed fully working on
+   controller already**, no separate confirm/placement step needed,
+   since both aim and throw are inputs this mod already drives correctly.
+   `FUN_0057df60` mode 1 may still be real and relevant to something else
+   (MP's version, or a different Campaign-only use), but is NOT the
+   mechanism to chase for Survival's `precision_airstrike` specifically —
+   see `killstreak_reference.md`'s corrected entry.
 
 **Why this matters:** branch 2's `cmd+0x3e`/`0x3f` channel is a strong,
 evidence-backed unifying candidate for a whole cluster of previously
@@ -2034,7 +2805,34 @@ right-stick input has nowhere real to land.
 **Not yet confirmed:** which exact real gameplay contexts set the
 `+0x1094` bit `0x80000` flag (the setter wasn't traced — would need a
 cross-reference sweep) — so it's a strong hypothesis, not yet a proven
-unification across all four bugs individually. Also unresolved: Turbulence's
+unification across all four bugs individually.
+
+**GSC-side search attempted and came back negative (2026-07-18):** a
+dedicated pass freshly dumped and decompiled the ENTIRE `common.ff` shared
+zone for the first time (188 real scripts, previously never reviewed —
+now part of the project's permanent decompiled corpus at
+`decompiled/iw5/`, 317 files total, real, useful infrastructure for any
+future GSC work beyond this specific question). Confirmed `maps\_vehicle`
+is referenced by 28 scripts across this corpus but its own DEFINING
+source file is absent from `common.ff` entirely (matches the separate
+`_vehicle.gsc`-hunt fork's independent finding — treat as doubly
+confirmed). Traced every `_vehicle::_id_2A12`/`_id_2A13` call in the real
+`dubai_code.gsc` (Back on the Grid's actual mission script) and found they
+ALL apply to scripted AI-controlled vehicles (ambush/collapse
+helicopters) — zero GSC-level reference to the player's own manual
+turret-mount sequence anywhere in this mission, no `misc_turret`/
+`mounted`/`browning`-style keyword tied to player input found at all.
+**Conclusion: the `+0x1094`/`DAT_00984d50` setter is very likely NOT
+GSC-visible** — probably set purely natively (e.g. inside `mountvehicle()`
+or a `beginlocationselection`-style builtin's own C++ implementation when
+the player interacts with a specific entity classname, with no separate
+GSC-side "enter aim mode" call to find). **Recommended next step: native-
+side only** — find what natively CALLS `FUN_0057e360`/`FUN_0057df60`
+themselves (an xref sweep on those two function addresses directly, not
+more GSC searching), or trace `mountvehicle()`'s own native implementation
+for where it might set these flags as a side effect of entering a vehicle.
+
+Also unresolved: Turbulence's
 "moves when should be frozen" bug (issue #27 bug #4) doesn't fit this
 pattern as cleanly (that's the OPPOSITE problem — movement happening when
 it shouldn't, not missing) — best candidate there is branch 1
