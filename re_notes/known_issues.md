@@ -3242,3 +3242,54 @@ at all.
   a live regen-flicker bug. Bypassed correctly when the real `player_sprintUnlimited`
   dvar is live-set by a mission. Confirmed working live. Extreme Conditioning's
   `perk_sprintMultiplier` override remains open (see issue #7 above).
+
+---
+
+## 32. Console look input likely had a real acceleration ramp — this project's look currently has none (2026-07-19, web research, not yet implemented)
+
+**Status:** Open, logged as a planned optional config toggle, not yet built.
+
+This project's controller look (`InjectControllerLookAngles`, writes directly to the
+pitch/yaw angle-delta accumulator, see the big comment above that function) is a flat
+per-frame multiply against `g_modConfig.sensitivity` — zero acceleration curve, zero
+smoothing, by deliberate original design (explicitly chosen 2026-07-14 specifically to
+avoid inheriting the mouse-input pipeline's own filtering/accel, see that section's
+history). User raised a real question this session: did real CONSOLE MW3 (Xbox
+360/PS3, 2011) actually have raw, unfiltered stick-to-look response, or was there some
+smoothing baked in that this project's "raw" implementation doesn't match?
+
+**Web research finding** (not a native-binary RE finding — no MW3-specific dev
+documentation was found, this is inference from the same engine lineage): a technical
+blog studying console shooter aim acceleration
+(http://drstrangevolt.blogspot.com/2012/12/aim-acceleration-in-console-shooters-part2.html)
+found that Modern Warfare 2 and Black Ops (same IW-engine lineage immediately
+surrounding MW3 2011) both apply turning speed that ramps LINEARLY from zero to
+maximum over approximately 0.2 seconds, on every stick input regardless of deflection
+magnitude — even a full stick throw ramps up over that same short window rather than
+being instantaneous. This is NOT the same thing as the modern (2019+) exposed
+"Response Curve" (Standard/Linear/Dynamic) settings, which postdate MW3 by years and
+aren't the mechanism being described here. Given MW3 shares that exact engine
+lineage/era, it's plausible (not confirmed via this project's own RE — no iw5sp.exe
+disassembly was done for this, purely an inference from external research) that
+retail console MW3 had the same or a similar ~0.2s linear ramp, meaning this project's
+current "instant, flat" look is actually MORE responsive than real console MW3 was,
+not a case of the project needing to REMOVE unwanted smoothing.
+
+**Decision (2026-07-19): log as a planned OPTIONAL config toggle** (a "custom fix," in
+the user's words), not a default-on behavior change — this project's current flat
+response has already been tuned/played against extensively (see the ADS
+look-slowdown fix, issue #8, and the general sensitivity work in issue's #12/#14) and
+changing default feel without asking would risk regressing already-confirmed-good
+playtest feel. A future `[Look]` config section entry (e.g.
+`AccelerationRampMs`, default `0` = current flat/instant behavior, matching this
+project's existing pattern of additive, opt-in config toggles like
+`SprintStaminaBypassForTesting` was) would let a player opt into a console-accurate
+~0.2s linear ramp-up if they want closer console parity, without changing anyone
+else's existing feel.
+
+**Not yet implemented**: no code changes made this pass, pure documentation of the
+finding + the planned toggle shape. Real next step when picked up: implement the ramp
+in `InjectControllerLookAngles` itself (track time-since-stick-left-neutral per axis,
+scale the per-frame angle delta by `min(1.0, elapsedMs / AccelerationRampMs)` when the
+config value is nonzero), default the config value to `0` (off) until/unless
+live-testing confirms players want it on by default.

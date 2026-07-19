@@ -42,6 +42,18 @@ reverse-engineering trail behind each entry.
   compatibility table as community-confirmed-but-project-untested, not a
   supported claim.
 
+### Investigated, not yet resolved
+- **Console look acceleration ramp (2026-07-19, issue #32).** This
+  project's controller look currently has zero acceleration/smoothing —
+  a deliberate original design choice, not an oversight. Web research
+  (not native RE) found that MW2/Black Ops, the same IW-engine lineage
+  immediately surrounding MW3 2011, applied a real ~0.2s linear turn-speed
+  ramp on console controller look, suggesting retail MW3 likely had
+  similar behavior this project doesn't currently replicate. Logged as a
+  planned OPTIONAL config toggle (default off, preserving today's feel)
+  rather than a default-behavior change, since today's flat response has
+  already been tuned against extensive live playtesting.
+
 ---
 
 ## v0.2.0 — Alpha (2026-07-19)
