@@ -133,6 +133,12 @@ void WriteDefaultConfig(const char* path)
         "AdsSlowdownBaseline=%g\n"
         "; OG console \"Invert Look\" -- flips vertical (up/down) look. 0 = off, 1 = on.\n"
         "InvertLook=%d\n"
+        "; Milliseconds for look turn-rate to ramp from 0 to full speed after the stick\n"
+        "; leaves neutral, matching real console MW2/Black Ops (confirmed via external\n"
+        "; research to apply a real ~0.2s linear ramp rather than instant full-rate\n"
+        "; response) -- this project's own look had none at all until 2026-07-19.\n"
+        "; 0 = off (instant response, the old behavior).\n"
+        "AccelerationRampMs=%lu\n"
         "\n"
         "[Stance]\n"
         "; Milliseconds a Crouch/Prone (B) press must be held to count as \"hold\"\n"
@@ -217,6 +223,7 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
         g_modConfig.invertLook ? 1 : 0,
+        g_modConfig.lookAccelerationRampMs,
         g_modConfig.proneHoldThresholdMs,
         g_modConfig.interactHoldThresholdMs,
         g_modConfig.readyUpHoldThresholdMs,
@@ -340,6 +347,7 @@ void LoadModConfig()
     // whole scale factor (baseline * ratio^strength), inverting look direction.
     if (g_modConfig.adsSlowdownBaseline < 0.0f) g_modConfig.adsSlowdownBaseline = 0.0f;
     ReadBool(path, "Look", "InvertLook", g_modConfig.invertLook);
+    ReadUlong(path, "Look", "AccelerationRampMs", g_modConfig.lookAccelerationRampMs);
     ReadUlong(path, "Stance", "ProneHoldThresholdMs", g_modConfig.proneHoldThresholdMs);
     ReadUlong(path, "Interact", "HoldThresholdMs", g_modConfig.interactHoldThresholdMs);
     ReadUlong(path, "Survival", "ReadyUpHoldThresholdMs", g_modConfig.readyUpHoldThresholdMs);
@@ -375,7 +383,7 @@ void LoadModConfig()
     char buf[900];
     sprintf_s(buf,
         "[config] loaded mw3ncp_config.ini: sensitivity=%g adsSlowdownStrength=%g "
-        "adsSlowdownBaseline=%g invertLook=%d proneHoldMs=%lu interactHoldMs=%lu "
+        "adsSlowdownBaseline=%g invertLook=%d lookAccelRampMs=%lu proneHoldMs=%lu interactHoldMs=%lu "
         "readyUpHoldMs=%lu "
         "buttonLayout=%s stickLayout=%s flipTriggers=%d "
         "aimAssistEnabled=%d aimAssistRange=%g aimAssistConeDegrees=%g "
@@ -385,7 +393,8 @@ void LoadModConfig()
         "fireNotifyQueueKick=%d",
         g_modConfig.lookDegreesPerSecond, g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
-        g_modConfig.invertLook ? 1 : 0, g_modConfig.proneHoldThresholdMs,
+        g_modConfig.invertLook ? 1 : 0, g_modConfig.lookAccelerationRampMs,
+        g_modConfig.proneHoldThresholdMs,
         g_modConfig.interactHoldThresholdMs, g_modConfig.readyUpHoldThresholdMs,
         ButtonLayoutName(g_modConfig.buttonLayout), StickLayoutName(g_modConfig.stickLayout),
         g_modConfig.flipTriggers ? 1 : 0,

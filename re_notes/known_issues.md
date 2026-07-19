@@ -3518,9 +3518,10 @@ at all.
 
 ---
 
-## 32. Console look input likely had a real acceleration ramp — this project's look currently has none (2026-07-19, web research, not yet implemented)
+## 32. Console look input likely had a real acceleration ramp — this project's look currently has none (2026-07-19, web research, IMPLEMENTED same day)
 
-**Status:** Open, logged as a planned optional config toggle, not yet built.
+**Status:** Implemented, set as the active default for live playtest confirmation.
+Builds clean (0 warnings/0 errors). Not yet live-tested.
 
 This project's controller look (`InjectControllerLookAngles`, writes directly to the
 pitch/yaw angle-delta accumulator, see the big comment above that function) is a flat
@@ -3560,9 +3561,17 @@ project's existing pattern of additive, opt-in config toggles like
 ~0.2s linear ramp-up if they want closer console parity, without changing anyone
 else's existing feel.
 
-**Not yet implemented**: no code changes made this pass, pure documentation of the
-finding + the planned toggle shape. Real next step when picked up: implement the ramp
-in `InjectControllerLookAngles` itself (track time-since-stick-left-neutral per axis,
-scale the per-frame angle delta by `min(1.0, elapsedMs / AccelerationRampMs)` when the
-config value is nonzero), default the config value to `0` (off) until/unless
-live-testing confirms players want it on by default.
+**IMPLEMENTED 2026-07-19** (user's own call: "ill test it if its good enough then it
+will be the default"): `GetLookAccelerationScale()` (`analog_input_hooks.cpp`) tracks
+`g_lookAccelStartMs`, the tick the stick left neutral (reset to 0 the instant it
+returns to neutral, in `InjectControllerLookAngles`'s else-branch), and linearly
+scales the look rate by `elapsed / AccelerationRampMs` capped at 1.0 —
+`rampMs == 0` disables it entirely (returns 1.0 unconditionally), a clean revert
+path. New `[Look] AccelerationRampMs` config value (`mod_config.h`/`.cpp`),
+**default 200ms** (matching the researched ~0.2s figure) — set as the ACTIVE
+default straight away for this live playtest, not held back as opt-in-only, per
+the user's explicit request. Falls back correctly to this default even for an
+existing `mw3ncp_config.ini` that predates this key (`GetPrivateProfileIntA`'s own
+fallback mechanism). Builds clean. **Not yet live-tested** — if it doesn't feel
+right, the config default should revert to `0`; if it does, 200 stays as the
+shipped default.

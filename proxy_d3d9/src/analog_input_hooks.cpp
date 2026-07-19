@@ -1390,6 +1390,41 @@ float GetAdsLookRateScale()
 
     return scale;
 }
+
+// ---- Look acceleration ramp (2026-07-19, known_issues.md issue #32) ---------------
+//
+// This project's controller look was deliberately built with NO acceleration/
+// smoothing at all (2026-07-14) -- a flat rate, specifically to avoid inheriting
+// the mouse pipeline's own filtering. External research (not native RE -- no
+// MW3-specific dev documentation exists) found that MW2 and Black Ops, the same
+// IW-engine lineage immediately surrounding MW3 (2011), both applied a real ~0.2s
+// LINEAR ramp from zero to full turn speed on every stick input, regardless of
+// deflection magnitude -- raising the real question of whether retail MW3 had
+// similar behavior this project's "instant" look doesn't currently replicate.
+// User-requested (2026-07-19): implement it, live-test it, and if it feels right,
+// make it the default (not just an opt-in toggle) -- see mod_config.h's
+// lookAccelerationRampMs (default 200ms, i.e. currently ON for this test).
+//
+// Mechanism: track how long the stick has been away from neutral (reset to zero
+// the instant it returns to neutral, in InjectControllerLookAngles' else-branch),
+// and linearly scale the look rate by elapsed/rampMs, capped at 1.0. rampMs=0
+// disables this entirely (returns 1.0 unconditionally) -- the old instant-response
+// behavior, for a clean revert if live-testing says it doesn't feel right.
+DWORD g_lookAccelStartMs = 0;
+
+float GetLookAccelerationScale()
+{
+    if (g_modConfig.lookAccelerationRampMs == 0) return 1.0f;
+
+    DWORD nowMs = GetTickCount();
+    if (g_lookAccelStartMs == 0) {
+        g_lookAccelStartMs = nowMs; // rising edge: stick just left neutral this frame
+    }
+    DWORD elapsed = nowMs - g_lookAccelStartMs;
+    if (elapsed >= g_modConfig.lookAccelerationRampMs) return 1.0f;
+
+    return static_cast<float>(elapsed) / static_cast<float>(g_modConfig.lookAccelerationRampMs);
+}
 } // namespace
 
 // ---- Aim assist: our own implementation, not the native chain (task #16) ----------
@@ -1709,9 +1744,12 @@ extern "C" void __cdecl InjectControllerLookAngles()
         // cvar. g_modConfig.lookDegreesPerSecond ([Look] Sensitivity in
         // mw3ncp_config.ini, task #14) rather than a hardcoded constant.
         float rate = g_modConfig.lookDegreesPerSecond * GetAdsLookRateScale() * frictionScale;
+        rate *= GetLookAccelerationScale();
         float pitchInput = g_modConfig.invertLook ? -lookY : lookY; // OG console "Invert Look"
         *kYawAccum -= lookX * rate * dt;
         *kPitchAccum -= pitchInput * rate * dt;
+    } else {
+        g_lookAccelStartMs = 0; // stick back at neutral -- next push starts the ramp fresh
     }
 
     // Magnetism: a small, capped pull toward a valid target's exact angle, applied

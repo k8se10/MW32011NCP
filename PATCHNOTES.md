@@ -9,6 +9,16 @@ reverse-engineering trail behind each entry.
 ## Unreleased
 
 ### Added
+- **Look acceleration ramp, matching real console MW2/Black Ops behavior
+  (2026-07-19, issue #32).** This project's controller look previously had
+  zero acceleration/smoothing — a flat, instant rate, by original design.
+  External research found that MW2 and Black Ops (same IW-engine lineage
+  immediately around MW3) applied a real ~0.2s linear turn-speed ramp on
+  every stick input. Implemented as a new `[Look] AccelerationRampMs`
+  config value (default 200ms, matching the research, **set active by
+  default for live playtest** rather than opt-in-only) — 0 disables it
+  entirely for a clean revert. Builds clean — **not yet live-tested**; if
+  it doesn't feel right, the default reverts to 0.
 - **Hold Breath (L3 while ADS'd), two direct-kbutton attempts both failed
   live, fixed via a 4th key-synthesis exception instead (2026-07-19, task
   #24).** First attempt drove the real kbutton (`0xA98C04`) directly via
