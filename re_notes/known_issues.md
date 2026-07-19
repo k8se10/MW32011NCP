@@ -2017,14 +2017,33 @@ input) and refines issue #26's vehicle hypothesis below.
     without first understanding what was actually wrong would risk
     reintroducing this exact regression. See issue #30 below for the
     cross-reference.
-  - **Hold Breath itself: CONFIRMED WORKING LIVE (2026-07-19)**, closing task
-    #24's original scope. The 4th key-synthesis exception design (synthetic
-    Shift while ADS'd, `IsSprintActive()` excluding `g_adsHeld`) was correct all
-    along — the entire "stuck forever" saga across all four attempts (raw
-    kbutton, `+0x11` manual clear, key-synthesis, and this final isolation) was
-    ultimately caused by an unrelated, coincidentally-always-active diagnostic
-    hook corrupting shared state, not by anything wrong with Hold Breath's own
-    design or implementation.
+  - **Hold Breath itself: CONFIRMED WORKING LIVE (2026-07-19)** with the 4th
+    key-synthesis exception active (synthetic Shift while ADS'd,
+    `IsSprintActive()` excluding `g_adsHeld`), closing task #24's original
+    scope via that design.
+  - **RETEST, same day**: with the two interfering hooks confirmed disabled,
+    reverted to the ORIGINAL, simplest design (plain `CallKbuttonDown`/
+    `CallKbuttonUp` on `0xA98C04`, no `+0x11` manual clear, no key-synthesis)
+    to check whether that design was actually correct all along and the
+    interference was the only real problem. **CONFIRMED STILL STUCK** — so
+    there IS a genuine, separate problem specific to driving `0xA98C04` as a
+    kbutton, independent of the now-fixed interference. Task #24 reopened.
+    Given a dedicated Ghidra pass already confirmed `KeyDown`/`KeyUp` are leaf
+    functions touching only this kbutton_t's own memory, and an exhaustive
+    xref search found only 4 total references to `0xA98C04` anywhere in the
+    binary (all inside the dispatcher itself, none anywhere else) — no other
+    C++ code reads this kbutton_t by a hardcoded address at all. This means
+    either the real Hold Breath consumer resolves it dynamically (e.g. from
+    GSC, at runtime, by bind name) or the "`0xA98C04` = Hold Breath's kbutton"
+    identification itself is wrong (just an adjacency coincidence in the
+    dispatcher's case 9, which also touches Sprint's real kbutton on the same
+    press). **Pivoting to file-based research** (GSC script corpus + weapon
+    CSV/GDT data for `canHoldBreath` and sway-related fields) rather than
+    further x86 static RE, which has been exhausted for this specific
+    question — research in progress. The working key-synthesis fallback
+    (`SendSyntheticHoldBreathKey`) is kept in the codebase, commented out, as
+    an immediately available revert if the file-based research doesn't pan
+    out.
 - **Positive result — Mission "Persona Non Grata" (Act 1, immediately after
   Hunter Killer): the UGV (Unmanned Ground Vehicle, mounted minigun +
   grenade launcher, played as Yuri) worked perfectly on controller as
