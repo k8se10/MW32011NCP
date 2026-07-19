@@ -9,6 +9,32 @@ reverse-engineering trail behind each entry.
 ## Unreleased
 
 ### Added
+- **Predator Missile guidance-phase input: real per-frame reader chain
+  found, diagnostic deployed (2026-07-19, task #30 follow-up).** User
+  asked to re-investigate via the killstreak's own GSC rather than
+  further native-side flag-guessing. Full re-read of `1555.gsc`'s
+  guidance-phase loop confirms there is NO per-frame input read at the
+  GSC level at all — it's a plain abort-condition poll; steering is 100%
+  native. A whole-binary scan for the literal scalar `0x80000` (the bit
+  `controlslinkto`'s native implementation sets on `clientStruct+0xc`)
+  found the real per-frame dispatcher, `FUN_004554d0` — confirmed via its
+  own caller (`FUN_00644ed0`, the Pmove-tick function) — which, when
+  linked, tail-jumps into `FUN_006423d0`, reading 3 floats from
+  `pml+0xc`/`+0x10`/`+0x14` (Pmove-locals, NOT the real `usercmd_t` this
+  mod's look hook writes to) and angle-wrapping them into
+  `clientStruct+0x10c`/`+0x110`/`+0x114`. **This REFUTES the earlier
+  `cmd+0x3e`/`0x3f` theory (issue #30) as the mechanism for this specific
+  bug** — that theory's `+0x1094` bit is a different address from the
+  `clientStruct+0xc` bit `controlslinkto` actually sets. Whether
+  `pml+0xc/+0x10/+0x14` already receives this mod's look input via some
+  earlier copy step, or needs a direct write, wasn't resolved statically
+  in the time available — a new log-and-forward diagnostic
+  (`Hook_MissileGuidanceDispatch`, gated on the link bit so it's silent
+  during normal play) logs both sides side by side, so the next real
+  missile flight will show which hypothesis is correct. Builds clean (0
+  warnings/0 errors, full rebuild). Not yet live-tested. See
+  `re_notes/known_issues.md` issue #30's 2026-07-19 correction for the
+  full trail.
 - **Controller vibration/rumble (2026-07-18, task #17).** No native
   rumble infrastructure exists in this build at all — entirely this
   mod's own `XInputSetState` output, driven off two real, disassembly-

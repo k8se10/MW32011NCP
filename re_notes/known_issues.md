@@ -2944,6 +2944,73 @@ instead of pursuing each independently** — but confirm live once
 implemented, since the `+0x1094` setter and branch-2 applicability to
 each specific case are still hypotheses, not proven facts.
 
+**CORRECTION for Predator Missile guidance specifically (2026-07-19,
+user-requested RE pass via the killstreak's own GSC + a whole-binary
+static scan) — the `+0x1094`/`cmd+0x3e`/`0x3f` unification does NOT apply
+to this bug; it has its own, separate, now-mostly-traced native
+mechanism.** This was already independently established by the
+`controlslinkto` decompile earlier in this file (`clientStruct+0xc` bit
+`0x80000`, a genuinely different address from `+0x1094` despite sharing a
+bit value) but this section's own text was never updated to reflect it —
+fixed now. Summary of what's actually confirmed for missile guidance:
+
+- **GSC-side, settled**: a full re-read of `1555.gsc`'s guidance-phase
+  loop (lines 916-937) confirms there is NO per-frame input read at the
+  script level at all — it's a plain `while (isdefined(level._id_3C11))
+  { wait 0.05; <abort-condition checks only> }`. Whatever steers the
+  missile is 100% native, engaged once by `controlslinkto` and read every
+  frame by the engine itself, not by GSC bytecode. This settles "is the
+  input path GSC-level or native" definitively in favor of native.
+- **Native-side, the real per-frame reader chain, found via a
+  `FindConstantRefs.java` whole-binary scan for the literal scalar
+  `0x80000`**: four functions test `[reg+0xc] & 0x80000` (the exact bit
+  `controlslinkto`'s `FUN_005d7f20` sets on `clientStruct+0xc`). One of
+  them, `FUN_004554d0`, is the real per-frame per-client dispatcher —
+  confirmed via `FindCallers.java` that ITS OWN caller is `FUN_00644ed0`,
+  the exact Pmove-tick function this mod's PREVIOUS (now-removed) Sprint
+  mechanism used to hook, calling it as
+  `FUN_004554d0(pml, *pml /* clientStruct */, frameDeltaMs, pml+1,
+  someByte)`. Raw disassembly (not just the decompile, which obscures the
+  register-passed tail call) confirms: when `clientStruct+0xc` bit
+  `0x80000` is set, `FUN_004554d0` skips its normal look/movement dispatch
+  entirely and tail-jumps into `FUN_006423d0` with `ECX=pml+4` and
+  `EAX=clientStruct`. `FUN_006423d0` reads 3 sequential floats from
+  **`pml+0xc`/`+0x10`/`+0x14`** (a Pmove-locals field, NOT the real
+  `usercmd_t` this mod's own look hook writes to) and angle-wraps
+  (anglemod-style) each one into **`clientStruct+0x10c`/`+0x110`/`+0x114`**
+  — a concrete, different, more specific target than the old `cmd+0x3e`/
+  `0x3f` theory, which is REFUTED as the relevant mechanism for this
+  specific bug (that theory's `+0x1094` bit is a genuinely different
+  address from the `clientStruct+0xc` bit `controlslinkto` actually sets).
+- **Still open, honestly**: whether `pml+0xc/+0x10/+0x14` is a live
+  per-frame copy of the real `cmd.angles` this mod's look hook already
+  feeds (in which case controller look should already reach the missile,
+  and the bug is that something upstream stops refreshing it while
+  linked) or an independently-fed field that needs this mod's OWN input
+  written into it directly — the copy site wasn't located in the time
+  available for this pass. **Implemented instead of guessing**: a new
+  log-and-forward diagnostic, `Hook_MissileGuidanceDispatch` in
+  `proxy_d3d9/src/analog_input_hooks.cpp`, hooking `FUN_004554d0` itself
+  (a plain `__cdecl` function, safe to hook via a normal MinHook
+  trampoline, not the naked-asm register-capture style most of this
+  file's hooks need). Gated on `clientStruct+0xc` bit `0x80000` so it logs
+  nothing during normal play; change-triggered within that gate so an
+  actual guidance sequence doesn't spam the log. Logs `pml+0xc/+0x10/+0x14`,
+  `clientStruct+0x10c/+0x110/+0x114`, AND this mod's own `kPitchAccum`/
+  `kYawAccum` globals side by side — a real Predator Missile playtest with
+  this build will show directly whether the pml fields track this mod's
+  own look input in real time (fix is elsewhere) or stay frozen while
+  linked (fix is writing controller look into `pml+0xc/+0x10/+0x14`
+  directly). Builds clean (0 warnings/0 errors, full rebuild). Not yet
+  live-tested.
+- **Not re-investigated this pass, so still standing as-is**: whether
+  DPV aiming, mortar aim, and mounted-turret feel (issue #27 bugs #1/#5/
+  #6) genuinely share the `+0x1094`/`cmd+0x3e`/`0x3f` mechanism — that
+  part of this issue's original hypothesis is untouched by today's
+  finding, which is specific to Predator Missile's `controlslinkto` path
+  only. Don't assume the same fix covers both without separately
+  confirming each.
+
 ## 31. Master `notifyonplayercommand`/`notifyoncommand` survey — two distinct builtins found, squadmate call-in's real failure mode identified (2026-07-18, research pass)
 
 **Status:** Research complete, no code changes. Full grep-verified sweep of

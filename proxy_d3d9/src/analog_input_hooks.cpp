@@ -339,20 +339,28 @@ void LogStanceDiag(const char* tag)
 
 // ---- Missile-guidance / third-analog-channel diagnostic (2026-07-18, task #30) -----
 //
+// SUPERSEDED for Predator Missile specifically (2026-07-19): see
+// Hook_MissileGuidanceDispatch further below for the real mechanism, found via a full
+// GSC re-read plus a whole-binary scan for the ACTUAL bit `controlslinkto` sets
+// (clientStruct+0xc bit 0x80000 -- a different address than the +0x1094 flag this
+// comment block is about, despite the same bit VALUE). The `+0x1094`/`cmd+0x3e`/`0x3f`
+// theory below was never confirmed to be what Predator Missile guidance uses, and the
+// real reader chain found today looks nothing like it. Kept running (harmless,
+// change-triggered) since bit 0x800 on this same dword is still an open, SEPARATE lead
+// for the "Turbulence" bug -- just no longer believed relevant to missile guidance.
+//
 // FUN_0057e480's per-frame orchestrator has a control-mode branch, gated on this same
 // per-player struct family (base &DAT_00B363B0 + playerIndex*0xBE5C, SAME base
 // GetRealStance() reads at +0x1C -- confirmed via fresh disassembly this is literally
 // the same struct, just a different field) at offset +0x1094, bit 0x80000: when set,
 // the engine redirects real mouse-delta into a THIRD analog-input channel
-// (cmd+0x3e/0x3f) instead of normal look -- the confirmed root cause of the Predator
-// Missile post-fire guidance sequence breaking controller movement (this mod's look
-// hook only ever writes kPitchAccum/kYawAccum, never cmd+0x3e/0x3f). A whole-binary
-// scalar-operand scan for the literal offset 0x1094 found exactly 2 references, BOTH
-// reads -- the real SETTER isn't a fixed instruction anywhere (almost certainly a
-// generic/data-driven "set entity flag" mechanism, offset passed as a runtime
-// argument), so it can't be found by static scanning alone. Same fallback this
-// project already used successfully for the ADS-slowdown bug: log it live and observe
-// the actual moment it flips during real play, rather than continuing to guess.
+// (cmd+0x3e/0x3f) instead of normal look -- ORIGINALLY believed to be the root cause of
+// the Predator Missile post-fire guidance sequence breaking controller movement, now
+// refuted for that specific bug (see above). A whole-binary scalar-operand scan for the
+// literal offset 0x1094 found exactly 2 references, BOTH reads -- the real SETTER isn't
+// a fixed instruction anywhere (almost certainly a generic/data-driven "set entity
+// flag" mechanism, offset passed as a runtime argument), so it can't be found by static
+// scanning alone.
 //
 // Also worth watching: bit 0x800 on this SAME dword separately gates whether ANY
 // keyboard/analog movement processing runs at all in FUN_0057d430 (the movement
@@ -439,6 +447,110 @@ void __cdecl Hook_ControlsLinkTo(unsigned int entityHandle)
             entityHandle, GetTickCount());
     }
     LogFromController(buf);
+}
+} // namespace
+
+// ---- Missile-guidance per-frame angle dispatcher diagnostic (2026-07-19, task #30
+// follow-up, GSC-plus-static-analysis pass) -----------------------------------------
+//
+// Full GSC re-read of 1555.gsc's guidance-phase while-loop (lines 916-937) confirms
+// there is NO per-frame input read at the script level at all -- it's a plain
+// `while (isdefined(level._id_3C11)) { wait 0.05; <abort checks only> }` poll. Whatever
+// steers the missile is 100% native, engaged once by `controlslinkto` and read every
+// frame by the engine itself -- this settles the "is it GSC-level or native" question
+// definitively in favor of native.
+//
+// Found the real per-frame READER chain via a whole-binary scan for the literal scalar
+// 0x80000 (FindConstantRefs.java) cross-referenced against FUN_005d7f20's own known
+// callers/siblings -- FOUR functions test `[reg+0xc] & 0x80000` (the same clientStruct
+// bit `controlslinkto` sets); one of them, FUN_004554d0, is the real per-frame
+// per-client "process this tick" dispatcher (confirmed via FindCallers.java: its own
+// caller is FUN_00644ed0 -- the exact Pmove-tick function this mod's PREVIOUS Sprint
+// mechanism used to hook, called `FUN_004554d0(pml, *pml /* clientStruct */,
+// frameDeltaMs, pml+1, someByte)`). Raw disassembly of FUN_004554d0 (not just the
+// decompile, which obscures the register-passed tail call) confirms: when clientStruct
+// +0xc bit 0x80000 is set, it does NOT run its normal look/movement dispatch at all --
+// instead it tail-jumps into FUN_006423d0 with ECX=param_4 (pml+4, i.e. pml+0xc/+0x10/
+// +0x14 once inside that function) and EAX=clientStruct. FUN_006423d0 reads 3
+// sequential floats from pml+0xc/+0x10/+0x14 and angle-wraps (anglemod-style) each one
+// into clientStruct+0x10c/+0x110/+0x114 -- a DIFFERENT, more specific target than the
+// old `cmd+0x3e`/`0x3f` theory (issue #30's original guess), which this pass REFUTES
+// as the relevant mechanism for THIS bug specifically: `cmd+0x3e`/`0x3f` was tied to a
+// per-player-struct `+0x1094` bit that's a different address entirely from the
+// clientStruct `+0xc` bit `controlslinkto` actually sets (see the diagnostic above).
+//
+// **Still open, and why this is a diagnostic, not yet a fix**: pml+0xc/+0x10/+0x14
+// (the READ side) is a Pmove-locals field, not the real usercmd_t this mod's own look
+// hook (`kPitchAccum`/`kYawAccum`, packed into `cmd.angles` by `Hook_0057de60`)
+// directly writes to. Whether pml+0xc/+0x10/+0x14 is a live per-frame copy of the real
+// cmd angles (in which case our existing look input should already reach the missile
+// for free, and the bug is that it's frozen/stale for some OTHER reason while linked)
+// or something else entirely wasn't nailed down via static analysis alone in the time
+// available -- the copy site wasn't located. Logging both sides side by side during a
+// real missile flight is what actually answers this: if pml+0xc/+0x10/+0x14 tracks
+// kPitchAccum/kYawAccum in real time, the fix is elsewhere (something upstream isn't
+// running while linked); if it's frozen, the fix is writing this mod's own look input
+// into pml+0xc/+0x10/+0x14 directly instead of (or in addition to) kPitchAccum/
+// kYawAccum while clientStruct+0xc bit 0x80000 is set.
+//
+// Log-and-forward only, same convention as Hook_ControlsLinkTo above -- calls the real
+// original function completely unchanged. Gated on clientStruct+0xc bit 0x80000 so a
+// normal (non-guidance) play session logs nothing at all; change-triggered within that
+// gate so an actual guidance sequence doesn't spam the log every 16ms either.
+namespace {
+using MissileGuidanceDispatchFn = void(__cdecl*)(
+    void* pmlPtr, void* clientStructPtr, float frameDeltaMs, void* pmlPlusOne, char flagByte);
+constexpr uintptr_t kMissileGuidanceDispatchAddr = 0x004554d0;
+MissileGuidanceDispatchFn g_origMissileGuidanceDispatch = nullptr;
+
+float g_lastLoggedPmlPitch = 0.0f;
+bool g_missileGuidanceDiagHasLogged = false;
+
+void __cdecl Hook_MissileGuidanceDispatch(
+    void* pmlPtr, void* clientStructPtr, float frameDeltaMs, void* pmlPlusOne, char flagByte)
+{
+    if (!clientStructPtr) {
+        g_origMissileGuidanceDispatch(pmlPtr, clientStructPtr, frameDeltaMs, pmlPlusOne, flagByte);
+        return;
+    }
+
+    unsigned int linkFlag = *reinterpret_cast<volatile unsigned int*>(
+        reinterpret_cast<uintptr_t>(clientStructPtr) + 0xc);
+    bool linked = (linkFlag & 0x80000) != 0;
+
+    if (linked && pmlPtr) {
+        float pmlPitch = *reinterpret_cast<volatile float*>(reinterpret_cast<uintptr_t>(pmlPtr) + 0xc);
+        float pmlYaw = *reinterpret_cast<volatile float*>(reinterpret_cast<uintptr_t>(pmlPtr) + 0x10);
+        float pmlRoll = *reinterpret_cast<volatile float*>(reinterpret_cast<uintptr_t>(pmlPtr) + 0x14);
+        float clientAngle0 = *reinterpret_cast<volatile float*>(reinterpret_cast<uintptr_t>(clientStructPtr) + 0x10c);
+        float clientAngle1 = *reinterpret_cast<volatile float*>(reinterpret_cast<uintptr_t>(clientStructPtr) + 0x110);
+        float clientAngle2 = *reinterpret_cast<volatile float*>(reinterpret_cast<uintptr_t>(clientStructPtr) + 0x114);
+
+        if (!g_missileGuidanceDiagHasLogged || pmlPitch != g_lastLoggedPmlPitch) {
+            // Read this mod's own look-accumulator globals directly by their known
+            // fixed address (0x00B36408/0x00B3640C, same as kPitchAccum/kYawAccum
+            // declared later in this file) rather than depending on declaration
+            // order -- this diagnostic sits earlier in the file than that pair.
+            float ourPitchAccum = *reinterpret_cast<volatile float*>(0x00B36408);
+            float ourYawAccum = *reinterpret_cast<volatile float*>(0x00B3640C);
+            char buf[280];
+            sprintf_s(buf,
+                "[missile-guidance-dispatch-diag] LINKED pml+0xc/0x10/0x14=%.4f/%.4f/%.4f "
+                "clientStruct+0x10c/0x110/0x114=%.4f/%.4f/%.4f ourPitchAccum=%.4f ourYawAccum=%.4f t=%lu",
+                pmlPitch, pmlYaw, pmlRoll, clientAngle0, clientAngle1, clientAngle2,
+                ourPitchAccum, ourYawAccum, GetTickCount());
+            LogFromController(buf);
+            g_lastLoggedPmlPitch = pmlPitch;
+            g_missileGuidanceDiagHasLogged = true;
+        }
+    } else if (g_missileGuidanceDiagHasLogged && !linked) {
+        // One-shot "we left guidance mode" marker so the log clearly brackets the
+        // whole sequence instead of just trailing off silently.
+        LogFromController("[missile-guidance-dispatch-diag] UNLINKED (guidance ended)");
+        g_missileGuidanceDiagHasLogged = false;
+    }
+
+    g_origMissileGuidanceDispatch(pmlPtr, clientStructPtr, frameDeltaMs, pmlPlusOne, flagByte);
 }
 } // namespace
 
@@ -2844,6 +2956,22 @@ void InstallAnalogInputHooks()
     if (s5 == MH_OK) {
         MH_STATUS e5 = MH_EnableHook(reinterpret_cast<LPVOID>(kControlsLinkToAddr));
         sprintf_s(buf, "[hooks] MH_EnableHook(controlslinkto) = %d", static_cast<int>(e5));
+        LogFromController(buf);
+    }
+
+    // task #30 follow-up (2026-07-19) -- missile-guidance per-frame angle-dispatch
+    // diagnostic (log-and-forward only, see comment above Hook_MissileGuidanceDispatch
+    // for the full GSC + disassembly trail). Plain __cdecl target (all 5 args on the
+    // stack, confirmed via raw disassembly), same low-risk hook class as
+    // Hook_ControlsLinkTo -- not a generic multi-signature dispatcher like the rumble
+    // hooks that crashed the game earlier this session.
+    MH_STATUS s6 = MH_CreateHook(reinterpret_cast<LPVOID>(kMissileGuidanceDispatchAddr),
+        &Hook_MissileGuidanceDispatch, reinterpret_cast<LPVOID*>(&g_origMissileGuidanceDispatch));
+    sprintf_s(buf, "[hooks] MH_CreateHook(missile-guidance-dispatch @ 004554d0) = %d", static_cast<int>(s6));
+    LogFromController(buf);
+    if (s6 == MH_OK) {
+        MH_STATUS e6 = MH_EnableHook(reinterpret_cast<LPVOID>(kMissileGuidanceDispatchAddr));
+        sprintf_s(buf, "[hooks] MH_EnableHook(missile-guidance-dispatch) = %d", static_cast<int>(e6));
         LogFromController(buf);
     }
 
