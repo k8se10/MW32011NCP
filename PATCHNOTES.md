@@ -8,7 +8,23 @@ reverse-engineering trail behind each entry.
 
 ## Unreleased
 
-Nothing yet — see `re_notes/known_issues.md` for what's actively being worked on.
+### Added
+- **Hold Breath (L3 while ADS'd) wired to its real native kbutton (2026-07-19,
+  task #24).** The same `+breath_sprint` disassembly that found Sprint's real
+  kbutton (`0xA98CCC`, v0.2.0) also surfaced a second kbutton call on the exact
+  same case (`0xA98C04`) — very likely Hold Breath's own, since the real
+  default SHIFT bind is a single, context-sensitive Sprint/Hold-Breath input on
+  console. Implemented by driving that kbutton via the same
+  `CallKbuttonDown`/`CallKbuttonUp` convention as ADS/Reload/Sprint/Fire,
+  gated on ADS instead of stance (crouched/prone + scoped is a normal case for
+  Hold Breath, unlike Sprint's own standing-only gate). Builds clean (0
+  warnings/0 errors, full rebuild) — **not yet live-tested.**
+
+### Docs
+- Noted a user-reported (Reddit, 2026-07-19, unverified by this project) report
+  that this project's proxy `d3d9.dll` works against retail Steam MW3 running
+  under Proton on Steam Deck/Linux — added to `README.md`'s client
+  compatibility table as untested-but-plausible, not a confirmed claim.
 
 ---
 

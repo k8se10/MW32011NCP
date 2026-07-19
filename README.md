@@ -635,7 +635,8 @@ detail in `re_notes/known_issues.md` issue #25.
 
 | Client | SP/MP | Binary vs. retail | `d3d9.dll` injection viable? | Status |
 |---|---|---|---|---|
-| Retail Steam | Both | — (baseline) | Yes (confirmed, current target) | Actively supported |
+| Retail Steam (Windows) | Both | — (baseline) | Yes (confirmed, current target) | Actively supported |
+| Retail Steam via Proton (Steam Deck / Linux) | SP/Survival (unspecified) | Same retail binary, run under Proton | **User-reported working** (2026-07-19, a Reddit comment — not independently tested by this project) | Untested by the project itself — plausible, since the whole architecture is a proxy `d3d9.dll` + standard Win32 calls, exactly the surface Proton translates, but not yet verified against a real Deck. Treat as promising, not confirmed, until reproduced. |
 | Plutonium — MP | MP | `iw5mp.exe` byte-identical to retail | Believed yes (same binary) | **Not recommended — see warning below** |
 | Plutonium — SP | SP | `iw5sp.exe` is a different binary (2,320-byte size delta, ~175K individual differing byte positions across the file — corrected 2026-07-18, previously misstated as "~175KB smaller") | Unknown, would need independent address re-verification | Not yet investigated |
 | AlterWare IW5-Mod | SP + Spec Ops | Separate `iw5-mod.exe` executable, not `iw5sp.exe` | Unknown, binary not yet acquired for analysis | Not yet investigated — most promising target given this project's SP-first scope, no known anti-cheat concern found |

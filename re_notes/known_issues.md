@@ -1817,6 +1817,30 @@ input) and refines issue #26's vehicle hypothesis below.
     not a confirmed dead end) — would need a fresh Ghidra pass against the
     existing `MW3` project or OpenAssetTools' `IW5_Assets.h` field order to
     resolve `canHoldBreath`'s exact struct offset before implementing.
+    **SUPERSEDED 2026-07-19**: this recommendation predates the Sprint
+    kbutton discovery below, which reopened this exact search and found it.
+  - **Part 1 IMPLEMENTED 2026-07-19**, once Sprint's own kbutton search (this
+    issue, #6) turned up a second kbutton on the same `+breath_sprint`
+    dispatch case: `0xA98C04`, fired back-to-back with Sprint's `0xA98CCC` on
+    every real SHIFT press, unconditionally — confirming this bind really is
+    the shared, context-sensitive native Sprint/Hold-Breath input the
+    research pass above suspected, and that a real kbutton exists after all
+    (the "dead end" conclusion above was about finding it via memdiff/heap
+    correlation specifically, which never worked for any of this bind
+    family — the static jump-table technique that found Sprint's kbutton
+    found this one too, as a byproduct). `analog_input_hooks.cpp` now drives
+    `0xA98C04` via `CallKbuttonDown`/`CallKbuttonUp` (same convention as
+    ADS/Reload/Sprint/Fire), gated on `g_adsHeld` rather than stance — Hold
+    Breath while crouched or prone and scoped in is a normal case, unlike
+    Sprint's own standing-only gate. No `canHoldBreath` weapon-class check
+    was added: the real bind fires this kbutton unconditionally regardless
+    of weapon, and per the same permissive precedent as the ready-up F5
+    synthesis, the engine simply ignores it on weapons that don't support
+    Hold Breath. Builds clean (0 warnings/0 errors, full rebuild).
+    **Not yet live-tested** — needs a sniper-ADS playtest to confirm actual
+    sway reduction, and a non-sniper-ADS + L3 check to confirm Sprint
+    correctly stays disengaged while aiming (already covered by part 2's
+    `!g_adsHeld` gate on the auto-stand, live-tested 2026-07-18).
 - **Positive result — Mission "Persona Non Grata" (Act 1, immediately after
   Hunter Killer): the UGV (Unmanned Ground Vehicle, mounted minigun +
   grenade launcher, played as Yuri) worked perfectly on controller as

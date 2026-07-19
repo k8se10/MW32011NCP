@@ -269,11 +269,15 @@ extern "C" void __cdecl InjectControllerMovement(unsigned char* cmd)
 //        reached during that press.
 //   LT (analog trigger) -> ADS -- NOT handled here, see InjectControllerAds (needs the
 //        real KeyDown/KeyUp kbutton calls, not a simple bit-OR)
-//   Left stick click (L3) -> Sprint -- NOT handled here, see InjectControllerSprint.
-//        CONFIRMED WORKING live (2026-07-14, real kbutton migration 2026-07-19) --
-//        drives the real +sprint kbutton_t (0xA98CCC) via CallKbuttonDown/CallKbuttonUp,
-//        same technique as ADS/Reload/Fire (superseded the original raw pm_flags-bit-
-//        forcing approach). See re_notes/iw5sp.md for the full investigation.
+//   Left stick click (L3) -> Sprint / Hold Breath (context-sensitive, same as real
+//        console/keyboard) -- NOT handled here, see InjectControllerSprint.
+//        Sprint CONFIRMED WORKING live (2026-07-14, real kbutton migration
+//        2026-07-19) -- drives the real +sprint kbutton_t (0xA98CCC) via
+//        CallKbuttonDown/CallKbuttonUp, same technique as ADS/Reload/Fire (superseded
+//        the original raw pm_flags-bit-forcing approach). Hold Breath (task #24,
+//        2026-07-19) drives a second real kbutton_t (0xA98C04) the same way, gated on
+//        ADS instead of stance -- not yet live-tested. See re_notes/iw5sp.md and
+//        re_notes/known_issues.md issue #6 for the full investigation of both.
 //
 // NOT YET IMPLEMENTED (left unmapped, not guessed at):
 //   Back -> freed up when Crouch moved to B; no action assigned yet
@@ -1084,6 +1088,39 @@ void UpdateSprintKbutton(bool active)
         CallKbuttonUp(kSprintKbutton, kSprintBindIndex);
     }
 }
+
+// ---- Hold Breath (L3 while ADS'd): real kbutton (2026-07-19, task #24) ----------
+//
+// Same physical bind as Sprint on real console/keyboard (`+breath_sprint`) -- the
+// disassembly trail above (case 9, "+breath_sprint" DOWN) showed the real bind fires
+// TWO kbutton calls back-to-back, unconditionally, on every press: this one
+// (0xA98C04, previously unidentified, not touched by any other feature) and
+// 0xA98CCC (Sprint's, above). The engine itself -- not the bind -- decides whether a
+// given press means "sprint" or "hold breath" based on ADS/weapon state; the bind
+// dispatcher has no branch for it at all. Mirrored here the same way: drive this
+// kbutton off the raw physical hold gated on g_adsHeld, independent of stance (unlike
+// Sprint's own kSprintKbutton, which is deliberately standing-only by this project's
+// own design) -- holding breath while crouched or prone and scoped in is a normal,
+// expected case, not one that should be excluded. If the current weapon doesn't
+// support Hold Breath (no `canHoldBreath`), the real engine simply ignores the
+// kbutton state, same as a stray real keypress would -- no weapon-class check needed
+// here, same permissive precedent as the Survival ready-up F5 synthesis.
+constexpr uintptr_t kHoldBreathKbutton = 0x00A98C04;
+constexpr int kHoldBreathBindIndex = 18; // distinct from ADS's 13/Reload's 15/Sprint's
+                                          // 16/Fire's 17 -- arbitrary, just needs to be
+                                          // self-consistent between our own down/up calls
+bool g_holdBreathKbuttonActive = false;
+
+void UpdateHoldBreathKbutton(bool active)
+{
+    if (active == g_holdBreathKbuttonActive) return;
+    g_holdBreathKbuttonActive = active;
+    if (active) {
+        CallKbuttonDown(kHoldBreathKbutton, kHoldBreathBindIndex);
+    } else {
+        CallKbuttonUp(kHoldBreathKbutton, kHoldBreathBindIndex);
+    }
+}
 } // namespace
 
 extern "C" void __cdecl InjectControllerSprint()
@@ -1123,6 +1160,12 @@ extern "C" void __cdecl InjectControllerSprint()
     // 2026-07-19 (see the big comment above IsSprintActive for the full history of
     // what this replaced).
     UpdateSprintKbutton(IsSprintActive());
+
+    // Hold Breath (task #24): same physical bind, gated on ADS instead of stance --
+    // see the comment above UpdateHoldBreathKbutton for why this ignores stance
+    // entirely (crouched/prone + scoped is a normal case, unlike Sprint's own
+    // standing-only gate).
+    UpdateHoldBreathKbutton(g_sprintHeld && g_adsHeld);
 }
 
 // ---- Look: right stick -> the pitch/yaw angle-delta accumulator directly -------
