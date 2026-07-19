@@ -3402,33 +3402,35 @@ void InstallAnalogInputHooks()
     // for the full disassembly trail. Both hooks and their trampolines were removed
     // entirely (not just disabled) now that nothing calls them.
 
-    // task #30 -- controlslinkto diagnostic (log-and-forward only, see comment above
-    // Hook_ControlsLinkTo for the full disassembly-confirmed calling convention)
-    MH_STATUS s5 = MH_CreateHook(reinterpret_cast<LPVOID>(kControlsLinkToAddr),
-        &Hook_ControlsLinkTo, reinterpret_cast<LPVOID*>(&g_origControlsLinkTo));
-    sprintf_s(buf, "[hooks] MH_CreateHook(controlslinkto @ 005d7f20) = %d", static_cast<int>(s5));
-    LogFromController(buf);
-    if (s5 == MH_OK) {
-        MH_STATUS e5 = MH_EnableHook(reinterpret_cast<LPVOID>(kControlsLinkToAddr));
-        sprintf_s(buf, "[hooks] MH_EnableHook(controlslinkto) = %d", static_cast<int>(e5));
-        LogFromController(buf);
-    }
+    // TEMPORARILY DISABLED (2026-07-19) -- isolating the Hold Breath stuck-forever
+    // bug. Confirmed via live testing (DLL removed = fine; DLL installed + PURE
+    // keyboard/mouse, zero controller touch = still stuck) that something in this
+    // DLL corrupts the real mechanism unconditionally, regardless of controller
+    // input -- ruling out every controller-gated Inject* function (all of them
+    // early-return with no meaningful controller state). These two hooks are the
+    // only OTHER things installed that run every single frame regardless of input
+    // device. Disabling both together to test the combined hypothesis before
+    // bisecting further -- re-enable once Hold Breath is confirmed unaffected by
+    // these, or keep disabled and investigate further if it IS one of these.
+    // MH_STATUS s5 = MH_CreateHook(reinterpret_cast<LPVOID>(kControlsLinkToAddr),
+    //     &Hook_ControlsLinkTo, reinterpret_cast<LPVOID*>(&g_origControlsLinkTo));
+    // sprintf_s(buf, "[hooks] MH_CreateHook(controlslinkto @ 005d7f20) = %d", static_cast<int>(s5));
+    // LogFromController(buf);
+    // if (s5 == MH_OK) {
+    //     MH_STATUS e5 = MH_EnableHook(reinterpret_cast<LPVOID>(kControlsLinkToAddr));
+    //     sprintf_s(buf, "[hooks] MH_EnableHook(controlslinkto) = %d", static_cast<int>(e5));
+    //     LogFromController(buf);
+    // }
 
-    // task #30 follow-up (2026-07-19) -- missile-guidance per-frame angle-dispatch
-    // diagnostic (log-and-forward only, see comment above Hook_MissileGuidanceDispatch
-    // for the full GSC + disassembly trail). Plain __cdecl target (all 5 args on the
-    // stack, confirmed via raw disassembly), same low-risk hook class as
-    // Hook_ControlsLinkTo -- not a generic multi-signature dispatcher like the rumble
-    // hooks that crashed the game earlier this session.
-    MH_STATUS s6 = MH_CreateHook(reinterpret_cast<LPVOID>(kMissileGuidanceDispatchAddr),
-        &Hook_MissileGuidanceDispatch, reinterpret_cast<LPVOID*>(&g_origMissileGuidanceDispatch));
-    sprintf_s(buf, "[hooks] MH_CreateHook(missile-guidance-dispatch @ 004554d0) = %d", static_cast<int>(s6));
-    LogFromController(buf);
-    if (s6 == MH_OK) {
-        MH_STATUS e6 = MH_EnableHook(reinterpret_cast<LPVOID>(kMissileGuidanceDispatchAddr));
-        sprintf_s(buf, "[hooks] MH_EnableHook(missile-guidance-dispatch) = %d", static_cast<int>(e6));
-        LogFromController(buf);
-    }
+    // MH_STATUS s6 = MH_CreateHook(reinterpret_cast<LPVOID>(kMissileGuidanceDispatchAddr),
+    //     &Hook_MissileGuidanceDispatch, reinterpret_cast<LPVOID*>(&g_origMissileGuidanceDispatch));
+    // sprintf_s(buf, "[hooks] MH_CreateHook(missile-guidance-dispatch @ 004554d0) = %d", static_cast<int>(s6));
+    // LogFromController(buf);
+    // if (s6 == MH_OK) {
+    //     MH_STATUS e6 = MH_EnableHook(reinterpret_cast<LPVOID>(kMissileGuidanceDispatchAddr));
+    //     sprintf_s(buf, "[hooks] MH_EnableHook(missile-guidance-dispatch) = %d", static_cast<int>(e6));
+    //     LogFromController(buf);
+    // }
 
     // TEMPORARILY DISABLED (2026-07-19) -- CONFIRMED LIVE CRASH. Game failed to
     // start with this hook active; proxy_d3d9.log shows the EXACT same crash
