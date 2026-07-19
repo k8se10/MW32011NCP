@@ -2,7 +2,7 @@
 
 Full trace of `common_survival.ff` script `1571.gsc`, cross-referenced
 against the real data table it consumes. Research only — not used by any
-mod code yet, reference material for future work (debug menu wave-skip,
+project code yet, reference material for future work (debug menu wave-skip,
 a possible difficulty-tuning feature, or just understanding the mode).
 
 ## Wave-loop mechanism

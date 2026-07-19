@@ -12,10 +12,10 @@ implemented at all — read that before assuming any specific feature works. Not
 feature-complete, not fully tested end-to-end, and Multiplayer (`iw5mp.exe`) hasn't
 been started at all.
 
-A from-scratch native controller mod for Call of Duty: Modern Warfare 3 (2011, IW5
+A from-scratch native controller project for Call of Duty: Modern Warfare 3 (2011, IW5
 engine) — analog movement, look, and buttons driven directly through the game's own
 engine calls, not keyboard/mouse emulation. See `re_notes/` for the full reverse-
-engineering writeup this mod is built on, and `PATCHNOTES.md` for what changed in
+engineering writeup this project is built on, and `PATCHNOTES.md` for what changed in
 each release.
 
 ## Status at a glance
@@ -155,10 +155,10 @@ tracking, not a precise scientific measurement.
 
 This project uses the standard pre-alpha → alpha → beta → 1.0 progression, but
 "pre-alpha" here means something more specific than "barely started" — a lot of
-this mod's core systems (analog movement/look, real engine-state-driven Sprint
+this project's core systems (analog movement/look, real engine-state-driven Sprint
 and Crouch/Prone, real pause menu, real D-pad/A menu navigation) are already
 confirmed working live, on par with the functional bar many shipped mods or
-public betas ship at. The label reflects how much of the mod's *planned* scope
+public betas ship at. The label reflects how much of the project's *planned* scope
 is still open, not how rough what already works is.
 
 | Stage | Version range | What it means here |
@@ -218,7 +218,7 @@ is still open, not how rough what already works is.
 - **D-pad** (all 4 directions) — real `+actionslot 1-4` dispatch, data-driven by
   loadout (killstreaks/attachments/NVG-style toggles, whatever's actually equipped).
   Up/Right/Down call the real dispatch function directly; Left is the second of this
-  mod's three deliberate, documented exceptions to native-only input (see below) — it
+  project's three deliberate, documented exceptions to native-only input (see below) — it
   synthesizes the real bound key instead, since Survival's AI-squadmate call-in on
   that slot needed it (turret call-ins on the same slot are unaffected).
 - **Killstreaks (Survival)** — all 4 of Survival's real buy-station killstreaks
@@ -260,11 +260,11 @@ is still open, not how rough what already works is.
   timer needed at all**: an earlier version forced the raw `pm_flags` sprint bit
   directly, which bypassed the engine's own native duration/recovery timer entirely
   (confirmed to give unlimited sprint, unlike real keyboard play) and required this
-  mod to maintain its own hand-rolled 4s-sprint/2s-cooldown timer layer as a
+  project to maintain its own hand-rolled 4s-sprint/2s-cooldown timer layer as a
   workaround. Driving the real kbutton instead means the engine's own native timer
   now engages automatically, **LIVE-CONFIRMED working** — including the Extreme
   Conditioning perk's real duration override applying for free, with zero detection
-  code needed on this mod's side. Real keyboard Shift-to-sprint is left completely
+  code needed on this project's side. Real keyboard Shift-to-sprint is left completely
   untouched by these hooks, regardless of whether a controller is connected or idle.
 
 ### Menu & pause
@@ -277,7 +277,7 @@ is still open, not how rough what already works is.
   handler uses for ESC generically), backing out one level or closing it, on top of
   its normal crouch/prone role during gameplay.
 - **Survival ready-up** (hold Y ~740ms between waves) — one of three deliberate, documented
-  exceptions to this mod's native-only approach (see below); switches weapons instead if
+  exceptions to this project's native-only approach (see below); switches weapons instead if
   released before the threshold.
 - **Buy-station + pause interaction fix** — a real native bug (not ours) where using a
   buy station then pausing could permanently break all input (ours and real
@@ -286,11 +286,11 @@ is still open, not how rough what already works is.
 ### Configuration & customization
 
 All of the tunable values above — plus button/stick layout — live in
-**`mw3ncp_config.ini`**, written next to the DLL the first time the mod runs (with
+**`mw3ncp_config.ini`**, written next to the DLL the first time the project runs (with
 every option pre-filled with its default value and a comment explaining it, so the
 file is self-documenting from the moment it appears — nothing to configure by hand
 to get started). Changes take effect on next launch; there's no live-reload yet, and
-no in-game options screen — this file is the interim way to tune the mod until
+no in-game options screen — this file is the interim way to tune the project until
 native controller UI navigation exists.
 
 | Section | Key | Default | What it does |
@@ -348,19 +348,19 @@ input (synthetic key taps, injected mouse deltas) underneath a mapper tool. That
 real, measurable translation layer between the stick and the game: poll → convert to a
 key/mouse event → OS input queue → the game's own keyboard/mouse-delta processing.
 
-This mod instead writes straight into the engine's real per-frame input path —
+This project instead writes straight into the engine's real per-frame input path —
 `usercmd_t.forwardmove/rightmove`/`.buttons`, the raw pitch/yaw angle accumulators, and
 (where the engine requires it) the real internal `kbutton_t` down/up state and
 `pm_flags` bits the game's own movement code reads — from inside the game's own
 process, on the game's own frame tick. There is no OS-level input event, no
 intermediate queue, and no keyboard/mouse pipeline to pass through at all. That's a full
-layer of translation and buffering removed, which is the mod's core advantage: input
+layer of translation and buffering removed, which is the project's core advantage: input
 feel and latency that matches (not approximates) native console analog input, not a
 keyboard/mouse emulation layer with a controller icon on it.
 
 **Three narrow, explicit exceptions**, each a deliberate, user-approved workaround for one
 specific input where an extensive search found no locatable native trigger — everything
-else in the mod, including all of movement/look/combat, drives the engine's real internal
+else in the project, including all of movement/look/combat, drives the engine's real internal
 state directly, as described above:
 
 1. **Survival's between-wave ready-up** (hold Y) synthesizes a real F5 keypress via
@@ -488,7 +488,7 @@ real FUN_00541020 raw-keycode dispatch table + FUN_00438710 jump table — weapo
     and D-pad (+actionslot 1-4, data-driven by loadout: killstreaks/attachments/NVG)
 synthetic keydown/keyup via PostMessage — Survival ready-up (F5), D-pad Left's
     AI-squadmate call-in ('4'), and Back's real +scores scoreboard (TAB) ONLY, the
-    three deliberate exceptions to real-engine-calls-only input in this mod; real
+    three deliberate exceptions to real-engine-calls-only input in this project; real
     native triggers not yet found for ready-up/squadmate call-in, and +scores turned
     out not to be a native kbutton at all (a plain keyboard bind read by the UI layer)
 our own timer layer (GetTickCount-based, independent per hook site) — sprint stamina/
@@ -503,7 +503,7 @@ real ForwardKeyToMenu (FUN_004d9850) call, generic keycode forward to whatever m
 
 Every hook target is found via byte-pattern/signature scanning or live memory-diffing
 at runtime — never a hardcoded address assumed stable across game updates or even
-between two launches of the same build (several of this mod's real kbutton/flag
+between two launches of the same build (several of this project's real kbutton/flag
 addresses live in dynamically-allocated per-tick structures, not fixed static memory).
 See `re_notes/iw5sp.md` for the complete reverse-engineering log: every function found,
 every dead end ruled out, and why.
@@ -532,7 +532,7 @@ question flagged for deep investigation — corrected 2026-07-19: these two
 bugs were previously misfiled under "Back on the Grid" in earlier notes; a
 dedicated zone-identification pass confirmed the actual mission/zone is
 Goalpost/`hamburg.ff`, not Back on the Grid/`dubai.ff`, which is untested),
-Mind the Gap (a vehicle-exit prompt gated on a bind this mod doesn't drive
+Mind the Gap (a vehicle-exit prompt gated on a bind this project doesn't drive
 yet). See `re_notes/compatibility_matrix.md` for the full per-mission
 breakdown and `re_notes/known_issues.md` issues #26/#27 for the underlying
 bug detail behind each partial entry.
@@ -586,7 +586,7 @@ See `re_notes/known_issues.md` for the full, actively-tracked list.
   against a different, single-call-site-safe hook target already identified. See
   `re_notes/known_issues.md` issue #24.
 - Survival ready-up (hold Y) uses a synthetic F5 keypress rather than a real engine
-  call — the only such exception in the whole mod. The real native trigger was never
+  call — the only such exception in the whole project. The real native trigger was never
   found despite an extensive search (see `re_notes/known_issues.md` issue #5); this
   workaround will be replaced if/when one turns up.
 - Aim assist (rotational friction, target magnetism) is implemented but currently
@@ -616,7 +616,7 @@ See `re_notes/known_issues.md` for the full, actively-tracked list.
   that's easy to introduce with this project's hooking style and easy to miss unless
   someone happens to test keyboard specifically. Controller is the actively-verified,
   primary input method going forward; if you're mainly a keyboard/mouse player, keep a
-  keyboard within reach and expect the occasional oddity while this mod is installed.
+  keyboard within reach and expect the occasional oddity while this project is installed.
   **This is not a suggestion to avoid the keyboard, though** — it's still required,
   not optional, for most killstreak call-ins and button-glyph-less menu prompts, and
   as a fallback for Back until it's separately live-confirmed (menu navigation
@@ -628,7 +628,7 @@ See `re_notes/known_issues.md` for the full, actively-tracked list.
 
 ## Client compatibility
 
-This mod is built and verified only against **retail Steam MW3**. Long-term goal is
+This project is built and verified only against **retail Steam MW3**. Long-term goal is
 to support other MW3 client variants too, but none of the following are implemented
 or tested yet — this table is research-stage only, not a compatibility claim. Full
 detail in `re_notes/known_issues.md` issue #25.
@@ -638,14 +638,14 @@ detail in `re_notes/known_issues.md` issue #25.
 | Retail Steam | Both | — (baseline) | Yes (confirmed, current target) | Actively supported |
 | Plutonium — MP | MP | `iw5mp.exe` byte-identical to retail | Believed yes (same binary) | **Not recommended — see warning below** |
 | Plutonium — SP | SP | `iw5sp.exe` is a different binary (2,320-byte size delta, ~175K individual differing byte positions across the file — corrected 2026-07-18, previously misstated as "~175KB smaller") | Unknown, would need independent address re-verification | Not yet investigated |
-| AlterWare IW5-Mod | SP + Spec Ops | Separate `iw5-mod.exe` executable, not `iw5sp.exe` | Unknown, binary not yet acquired for analysis | Not yet investigated — most promising target given this mod's SP-first scope, no known anti-cheat concern found |
+| AlterWare IW5-Mod | SP + Spec Ops | Separate `iw5-mod.exe` executable, not `iw5sp.exe` | Unknown, binary not yet acquired for analysis | Not yet investigated — most promising target given this project's SP-first scope, no known anti-cheat concern found |
 | DeckOps (MW3) | MP (via Plutonium) | Same as Plutonium MP | Unknown — Proton/Wine's D3D9 translation layer untested | Not yet investigated — inherits the Plutonium MP warning below, plus unverified Proton behavior |
 
-> **⚠️ Do not use this mod with Plutonium multiplayer.** Plutonium's anti-cheat is
+> **⚠️ Do not use this project with Plutonium multiplayer.** Plutonium's anti-cheat is
 > confirmed (from its own documentation) to ban DLL injection and memory access —
-> a 7-day ban on first offense, permanent after. This mod's entire architecture
+> a 7-day ban on first offense, permanent after. This project's entire architecture
 > (a proxy `d3d9.dll`, function hooking, and memory-read-based aim assist) is
-> exactly what that system is built to catch, regardless of the mod being
+> exactly what that system is built to catch, regardless of the project being
 > input-only rather than a gameplay cheat. This is a real, confirmed risk, not a
 > theoretical one — see `re_notes/known_issues.md` issue #25 for the evidence.
 
@@ -653,7 +653,7 @@ detail in `re_notes/known_issues.md` issue #25.
 
 ## Credits
 
-This mod vendors and links the following third-party library:
+This project vendors and links the following third-party library:
 
 - **[MinHook](https://github.com/TsudaKageyu/minhook)** (`proxy_d3d9/third_party/minhook/`) — Copyright (C) 2009-2017 Tsuda Kageyu. BSD 2-Clause-style license (see `proxy_d3d9/third_party/minhook/LICENSE.txt`). Used for all API hooking (vtable and inline detours) in the proxy DLL.
 - **Hacker Disassembler Engine (HDE) 32/64 C**, bundled with MinHook — Copyright (c) 2008-2009, Vyacheslav Patkov. Same style of license (see the same `LICENSE.txt`).
@@ -671,7 +671,7 @@ definition** (which requires no limits on commercial use) — it's an open,
 freely-forkable, source-available license with one deliberate carve-out, not
 an OSI-approved one. It does not grant any rights to Call of Duty: Modern
 Warfare 3 itself; you need your own legitimate copy of the game to use this
-mod.
+project.
 
 ## Contributing
 

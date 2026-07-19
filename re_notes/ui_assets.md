@@ -92,7 +92,7 @@ chroma-key). **106 individual icons extracted and committed** to
 `assets/button_glyphs/` (not yet wired into any rendering code — pure source-art
 groundwork for now):
 
-- Extraction script (ad-hoc, not part of the shipped mod, not currently checked into
+- Extraction script (ad-hoc, not part of the shipped project, not currently checked into
   the repo as a reusable tool — lives only in this session's scratch dir) used the
   source image's real alpha channel directly (`alpha > 40` = real content, not the
   faint background "grain" texture noise) rather than color-keying, since some
@@ -117,7 +117,7 @@ groundwork for now):
 ## Glyph source art — re-extracted from a slimmed, user-trimmed sheet (2026-07-17)
 
 The original 106-icon set (all platforms, all generations) had too much real-world
-duplication for this mod's purposes (Xbox One/Series and PS4/PS5 button art are
+duplication for this project's purposes (Xbox One/Series and PS4/PS5 button art are
 functionally near-identical for glyph-prompt purposes) and one unresolved text-bleed
 polish issue (see above). The user manually trimmed the source reference sheet down
 to three representative style groups and removed unwanted label text, saved as
@@ -301,9 +301,9 @@ tool-supported pipeline exists end to end:
    `objectiveFont`'s `font.v1.json`.
 4. `Linker.exe -l <existingZone> <newProject>` builds a real, loadable `.ff`
    that references existing game assets alongside the new font/material/
-   images — this mod's target for the actual asset build step.
+   images — this project's target for the actual asset build step.
 
-**Runtime-load precedent already exists in this mod's own code.**
+**Runtime-load precedent already exists in this project's own code.**
 `analog_input_hooks.cpp`'s `zoneload-test` code already calls the real
 native `FUN_004ca310` (load-zone-by-name) then `FUN_004adc60` (find-asset-
 by-path — used there for a menuList) — the same two-step pattern (load a
@@ -435,7 +435,7 @@ for a detour on this one function.
 args a naive `__cdecl` signature would misread). Call the real trampoline
 first (so real text still resolves, for any fallback need), then
 overwrite the output buffer at `[esp+8]` with a glyph codepoint sequence
-when this mod's own controller-active state is true (a plain global bool
+when this project's own controller-active state is true (a plain global bool
 already maintained elsewhere in the DLL — safe to read from any hook
 context).
 
@@ -518,7 +518,7 @@ select/confirm action anywhere in it.
 **Real killstreak/perk SELECTION happens entirely in the ordinary
 buy-station LIST menus** (`ui/scriptmenus/survival_armory_airsupport.menu`,
 `ui/ui/survival_armory_frontend_root.menu`) — plain `type 1` button items
-with the same generic button-nav-group pattern this mod's existing D-pad+A
+with the same generic button-nav-group pattern this project's existing D-pad+A
 `InjectControllerMenuNav` (task #22) already handles, confirmed live.
 **No new dedicated wheel-input code is needed** — equipping a killstreak is
 "buy it at the list menu, it now shows in the `dpad.menu` HUD overlay,"
@@ -531,7 +531,7 @@ navigation handling.
 ## Main menu / title screen — CONFIRMED LIVE (2026-07-18)
 
 Investigated whether the main menu/title screen (mode select, profile,
-etc.) uses the SAME generic menu system this mod's D-pad+A navigation
+etc.) uses the SAME generic menu system this project's D-pad+A navigation
 already drives for pause/buy-station menus, or something structurally
 different. **CONFIRMED LIVE by the user (2026-07-18)**: main menu, title
 screen, buy-station screens, settings/options menus, and mission-intro
@@ -546,7 +546,7 @@ correct explanation for WHY this works, not just a plausible theory.
 **Original research, kept for the technical trail — strong
 source-grounded evidence for "same system," independently confirmed
 correct by the live result above:**
-- This mod's `InjectMenuInputTick()` (driving `InjectControllerMenuNav`)
+- This project's `InjectMenuInputTick()` (driving `InjectControllerMenuNav`)
   runs off the WndProc/`SetTimer` subclass hook, installed in
   `Hook_CreateDevice` as soon as the real D3D9 device exists — before any
   level ever loads, and completely independent of the gameplay-simulation
@@ -555,7 +555,7 @@ correct by the live result above:**
   predates the WndProc tick by a day — does not apply here.
 - `IsMenuActive()` (the `0x00B36210` bit `0x10` gate) is a flat,
   unconditional read with no level-loaded dependency anywhere in this
-  mod's own code.
+  project's own code.
 - `OpenMenuByName` (`FUN_00544a50`) is confirmed generic and name-keyed,
   not pause-specific — live-tested previously by opening `"pausedmenu"` by
   name, nothing about its signature implies special-casing for in-game
@@ -621,7 +621,7 @@ anywhere in `ui.ff`.
 
 Investigated whether MW3's real "message of the day"/featured-content
 system (dead along with the rest of the original backend) is a safe
-surface to repurpose for a custom first-launch "here's what this mod
+surface to repurpose for a custom first-launch "here's what this project
 does" welcome message. **Confirmed: yes, a real dedicated system exists
 and is genuinely, permanently inert — a clean target.**
 
@@ -654,7 +654,7 @@ regardless of network/backend state — genuinely inert and safe to touch.
 **Recommendation**: don't repurpose the real `motd-sp-%s.txt` fetch
 pipeline itself (unknown URL base, throttling logic, buffer-size
 constraints, plumbed through dead network code that would need
-intercepting). Instead, use this mod's own already-proven
+intercepting). Instead, use this project's own already-proven
 `RegisterMenu`/`OpenMenuByName` injection pipeline (task #23's
 groundwork) to load a MODIFIED COPY of one of these menus (or a new
 standalone popup) with `visible when(0)` flipped to `1` (gated on a
@@ -680,7 +680,7 @@ of body + a ~58-char parenthetical footnote. That's the realistic target
 shape: one short title, one short paragraph, an optional smaller
 footnote — not a wall of text.
 
-Cross-checked against this mod's own actual documented state (`README.md`,
+Cross-checked against this project's own actual documented state (`README.md`,
 `PATCHNOTES.md`) as of 2026-07-18 — current version **v0.1.3,
 pre-alpha** — to avoid overclaiming. No real GitHub/Reddit/Discord URL is
 documented anywhere in the repo; don't invent one.
@@ -690,12 +690,12 @@ documented anywhere in the repo; don't invent one.
 ```
 Draft C (recommended — closest match to offensive_warning's real
 proportions, lowest layout-fit risk):
-^3Native Controller Mod - v0.1.3
+^3Native Controller Project - v0.1.3
 ^7Full analog movement, look, and menu navigation are live. A few
 systems (killstreaks, aim assist, vibration) are still in progress.
 
 Draft A (adds a footnote line, slightly longer):
-^3MW3 Controller Mod - v0.1.3 (Pre-Alpha)
+^3MW3 Controller Project - v0.1.3 (Pre-Alpha)
 ^7Native controller support for Campaign & Survival - not a keyboard/
 mouse emulator. Movement, look, combat, menus, and pause all work with
 a real controller today.
@@ -703,8 +703,8 @@ a real controller today.
 aren't finished yet - keep a keyboard nearby for menus that need it.)
 
 Draft B (leads with the limitation instead of the feature list):
-^3Welcome - Controller Mod Active (v0.1.3)
-^7This is a pre-alpha native controller mod - most of Campaign and
+^3Welcome - Controller Project Active (v0.1.3)
+^7This is a pre-alpha native controller project - most of Campaign and
 Survival plays great with a pad, but it's not finished. Killstreaks,
 aim assist, and vibration are still being built.
 ^8Something feel off? It's probably a known gap, not your controller.
@@ -926,7 +926,7 @@ reliable test vehicle. **Recommended instead**: hook `FUN_0061f6f0`
 (confirmed-safe calling convention, see above) to unconditionally
 append codepoint `0x81` to any resolved bind-hint, then check a real,
 always-visible Campaign interact prompt (e.g. "Press [E]/[F]" hints) —
-this is this mod's actual real target use case anyway, not a menu-
+this is this project's actual real target use case anyway, not a menu-
 specific detour, and doesn't depend on the main-menu font-override
 question at all.
 
@@ -1048,7 +1048,7 @@ generic relocation/thunk infrastructure, not zone-loading logic) —
 doesn't block implementation, just means `flag=0` should be treated as
 "whatever this batch already uses," not further interpreted.
 
-Next step is writing the actual C++ `FUN_004ca310` detour in the mod
+Next step is writing the actual C++ `FUN_004ca310` detour in the project
 (return-address check against `0x006797C2` specifically, idempotency
 guard, fail-safe no-splice-if-full path, `{"assets/zones/bigfont_ext",
 1, 0}`-shaped entry). **Not yet attempted**: loading this into the

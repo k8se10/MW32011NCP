@@ -3,7 +3,7 @@
 Tracked as tasks in the working session; this file is the standalone reference so they
 don't stay buried in `iw5sp.md`'s investigation log. Update status here as each is
 resolved. Last updated 2026-07-19 *(corrected — this line said 2026-07-16 despite 21
-more issues, #10-#31, having been added since then; the mod's v0.2.0 Alpha release
+more issues, #10-#31, having been added since then; the project's v0.2.0 Alpha release
 lands this same day: Sprint's real kbutton migration and its stamina-layer removal,
 issue #6; Predator Missile launch fixed and guidance-phase RE'd further, issues #29/
 #30; a mortar/turret mission mis-attribution corrected, issues #26/#27)*.
@@ -187,7 +187,7 @@ not just handle xrefs like the original pass) for the exact
 `monkeytoy` handle address returned **zero hits** anywhere in the
 binary, via any addressing mode. The dvar's name string also has exactly
 one reference total (its own registration). This is decisively confirmed
-DEAD CODE, not a live restriction check this mod could bypass by forcing
+DEAD CODE, not a live restriction check this project could bypass by forcing
 a value — closing this lead for good, not just parking it.
 **Also searched for classic id-engine console/cheat-command strings**
 (`"notarget"`, `"god"`, `"give"`, any `"con_"`-prefixed string) — all
@@ -231,7 +231,7 @@ investigation (2026-07-18, Survival architecture survey)**: `179.gsc`'s
 `_id_18D0()` (the real mission-failed handler) early-returns entirely if
 `getdvarint("so_nofail")` is true (line 587) — a real, dvar-gated
 "can't fail the mission" switch. This is a GSC-level dvar check, much
-simpler to flip (via this mod's own `GetDvarInt`/dvar-forcing machinery,
+simpler to flip (via this project's own `GetDvarInt`/dvar-forcing machinery,
 already used elsewhere for `player_sprintUnlimited`) than the
 `entity+0x13c` bit-flag approach above, which requires writing to a
 specific entity's memory each frame. **Not yet confirmed which is the
@@ -413,7 +413,7 @@ mistake issue #3 already warned about).
 
 Also chased whether `F5`'s real command (`"skip"`, a genuine Infinity-Ward-shipped
 default PC bind — confirmed present in the stock `players2/config.cfg`, not something
-this mod or a user added) has a directly-callable native dispatch, to potentially
+this project or a user added) has a directly-callable native dispatch, to potentially
 replace the `PostMessage` synthesis with a real call:
 - `"skip"` is confirmed **absent** from the live `Cmd_ExecuteString` linked list
   (`DAT_017507d8`) — walked the full real list live (132 nodes), no match. Same
@@ -576,7 +576,7 @@ detection mechanism was never found) is now a moot problem: there's nothing left
 detect or apply, since the native perk system already adjusts the real timer this
 kbutton now engages, the exact same way it does for keyboard players.
 
-**As a direct, immediate consequence, this mod's entire custom stamina/cooldown timer
+**As a direct, immediate consequence, this project's entire custom stamina/cooldown timer
 layer — everything described above in this issue from "Implemented as our own timer
 layer instead" onward — was removed in the same pass, not left in place alongside the
 new kbutton:** `g_sprintStamina`/`g_sprintWinded`/`g_sprintCooldownRemaining`/
@@ -611,7 +611,7 @@ scoped), and #9 (sprint's Extreme Conditioning override).
 | Input | Intended action | Blocker |
 |---|---|---|
 | Back | `+scores` (scoreboard/objectives) | **Key-synthesis workaround implemented 2026-07-17** (Back hold → real `WM_KEYDOWN`/`WM_KEYUP` for TAB, the confirmed real bind `bind TAB "+scores"` from `players2/config.cfg`) — third narrow exception to the no-OS-input-emulation rule, same pattern as ready-up (F5) and D-pad Left's squadmate call-in ('4'). **Live-tested in Campaign: no visible effect at all** — no scoreboard, no objectives overlay. Real cause not yet diagnosed; leading theory is `+scores`/scoreboard is fundamentally an MP concept that's a no-op in SP, and SP's actual "mission objectives" display (if player-triggerable at all) uses a completely different, still-unidentified mechanism — not necessarily the same feature CLAUDE.md's console-behavior description assumed. User explicitly parked this as a known UI gap to fill later ("these are both UI gaps we will fill as part of the improvements side of the mod"), not urgent. The synthesis code itself is harmless (real key event, just currently produces no observable result) and stays in the build. |
-| Killstreaks | Predator missile confirmed partially working; needs per-killstreak investigation | **(2026-07-17, full GSC trace done, see issue #26)** `remote_missile` fully traced — real fire (`+attack`) and abort binds confirmed; leading hypothesis is raw-usercmd-bit Fire not reliably triggering the `notifyonplayercommand` the launch is gated on. `precision_airstrike` uses a placement/marker system, not a camera takeover. Turret and squadmate (`friendly_support_delta`/`riotshield`) call-ins are CONFIRMED separate script systems (correction to this row's own earlier framing) — squadmate bug's divergence point narrowed to unresolved function `_id_061C::_id_3DE2`. **(2026-07-17, implemented, see issue #29)** Fire (RT) rewired off the raw usercmd bit onto the real `+attack` kbutton (`0x00A98C00`), same `CallKbuttonDown`/`CallKbuttonUp` mechanism ADS/Reload already use — directly tests the notify-dispatch hypothesis above. Built clean; **not yet live-confirmed** for either regular gunfire (regression risk — highest-blast-radius input in the mod) or the Predator Missile launch itself. |
+| Killstreaks | Predator missile confirmed partially working; needs per-killstreak investigation | **(2026-07-17, full GSC trace done, see issue #26)** `remote_missile` fully traced — real fire (`+attack`) and abort binds confirmed; leading hypothesis is raw-usercmd-bit Fire not reliably triggering the `notifyonplayercommand` the launch is gated on. `precision_airstrike` uses a placement/marker system, not a camera takeover. Turret and squadmate (`friendly_support_delta`/`riotshield`) call-ins are CONFIRMED separate script systems (correction to this row's own earlier framing) — squadmate bug's divergence point narrowed to unresolved function `_id_061C::_id_3DE2`. **(2026-07-17, implemented, see issue #29)** Fire (RT) rewired off the raw usercmd bit onto the real `+attack` kbutton (`0x00A98C00`), same `CallKbuttonDown`/`CallKbuttonUp` mechanism ADS/Reload already use — directly tests the notify-dispatch hypothesis above. Built clean; **not yet live-confirmed** for either regular gunfire (regression risk — highest-blast-radius input in the project) or the Predator Missile launch itself. |
 | Sprint / Extreme Conditioning | Perk should double sprint duration to 8s | **(2026-07-17: genuinely parked, see issue #26)** Perk's real name confirmed (`specialty_longersprint`), but no native `HasPerk`-equivalent query exists — `hasperk` dispatches by compile-time numeric ID with zero string trace in the binary, and `perk_sprintMultiplier` has exactly one reference (its own registration), confirming the scaling is entirely GSC-side. No clean native path without going through GSC itself — same dead-end class as Sprint's own kbutton search. |
 
 ---
@@ -713,7 +713,7 @@ current = *(int*)(ECX + 0x1C)
 *(int*)(ECX + 0x1C) = (current != mode) ? mode : 0;   // genuine toggle
 ```
 A real toggle between 0 (standing) and `mode` (1=crouch, 2=prone) — and its own
-semantics already implement this mod's entire B-button stance ladder natively
+semantics already implement this project's entire B-button stance ladder natively
 (Standing+togglecrouch→Crouched, Crouched+togglecrouch→Standing,
 Crouched+toggleprone→Prone since 2≠1, Prone+toggleprone→Standing since 2==2,
 Prone+togglecrouch→Crouched since 2≠1) — no separate state machine needed.
@@ -800,16 +800,16 @@ the way ADS/Reload were done, which is the cleaner, lower-risk mechanism —
 so the raw-forcing pattern (the one now confirmed capable of silently breaking
 keyboard input) stays in place for sprint indefinitely, not just temporarily.
 
-**Practical guidance:** with this mod installed, keyboard/mouse play may exhibit
+**Practical guidance:** with this project installed, keyboard/mouse play may exhibit
 input weirdness that doesn't exist in a vanilla install — not because k+m support is
 being actively removed, but because it is no longer receiving the same level of
 verification attention as controller input going forward. Any further native input
 work in this project prioritizes controller correctness first; keyboard/mouse is
 tested opportunistically (e.g. "does it still work" spot-checks), not to the same
 live-reproduction bar controller features get. **Recommendation: treat controller as
-the primary, actively-verified input method with this mod installed; keep a
+the primary, actively-verified input method with this project installed; keep a
 keyboard within reach and expect to fall back to it if something feels off**, per
-the mod's own README/release notes.
+the project's own README/release notes.
 
 **This is deprioritization of verification attention, not a suggestion to avoid k+m
 — keyboard/mouse remains functionally essential, not optional, for exactly the areas
@@ -827,8 +827,8 @@ own "worth an audit pass" note) and re-verifies keyboard parity end to end.
 
 ## 12. `regbreak` live-breakpoint tool crashed the running game — abandoned in favor of static analysis (2026-07-16)
 
-**Not a mod bug — a dev-only diagnostic tool (`tools/regbreak/`, never part of the
-shipped mod) that caused a real live crash during use.** Built to automate
+**Not a project bug — a dev-only diagnostic tool (`tools/regbreak/`, never part of the
+shipped project) that caused a real live crash during use.** Built to automate
 inspecting CPU register/struct state at a chosen address via the Windows Debug
 API (`DebugActiveProcess` + a software `0xCC` breakpoint + `GetThreadContext`),
 specifically to resolve what the aim-assist chain's `unaff_ESI` implicit
@@ -975,7 +975,7 @@ sites, not a guess.
   about) — that offset family belongs to some other, unrelated set of binds.
   Caught before a wrong fix shipped.
 - User-confirmed: real keyboard `'4'` (same bind) works perfectly with the
-  mod installed — rules out any global regression; this is specific to the
+  project installed — rules out any global regression; this is specific to the
   controller injection path only.
 - User-confirmed: deliberately holding D-pad Left longer (vs. a quick tap)
   made no difference — rules out a switch-completion timing race.
@@ -1014,7 +1014,7 @@ re-verifying against actual play. **Genuinely useful side-effect for the
 Predator Missile investigation (issue #29)**: `friendly_support_called`
 uses the BARE/GLOBAL `notifyoncommand` builtin (per issue #31's two-
 builtin-family finding), and it demonstrably DOES fire correctly from
-this mod's synthetic `'4'` keypress. This is real evidence that
+this project's synthetic `'4'` keypress. This is real evidence that
 `notifyoncommand` (bare/global) IS reachable via synthetic/real-feeling
 input — the specific problem for Predator Missile is narrower than "no
 synthetic input reaches any notify builtin at all": it's specific to
@@ -1033,7 +1033,7 @@ behavior**: the real native toggle for `+actionslot4` is a plain press-to-toggle
 once to deploy, press again to put away) — but the OLD direct `FUN_00410ad0`/
 `FUN_0044ec40` call pair only ever drove the "deploy" side correctly and had no working
 toggle-off path, so turret truly was partially broken before, not just missing a
-"native limitation" the mod correctly reproduced. The key-synthesis fix above resolves
+"native limitation" the project correctly reproduced. The key-synthesis fix above resolves
 this too, for free, since the synthesized keypress goes through the real dispatcher's
 own toggle logic exactly like a real key press would. **CONFIRMED WORKING LIVE by the
 user** (2026-07-16): turret can now be deployed and put away with repeated D-pad Left
@@ -1188,8 +1188,8 @@ members of the same two generic Group A/B next/previous cases) — meaning optio
 screens get free, native, context-aware drill-in/drill-out on Left/Right, while
 every other simpler menu (pause menu, armory, main menu) falls through to plain
 generic previous/next, with zero custom "am I inside a submenu" state-tracking
-needed on the mod's own side. This is the real, general mechanism — not a per-menu
-special case the mod has to maintain.
+needed on the project's own side. This is the real, general mechanism — not a per-menu
+special case the project has to maintain.
 
 **Final implementation:** Up = `0x9a`, Down = `0x9b`, Left = `0x9c`, Right = `0x9d`,
 A = `0xd` (Enter), all via `ForwardKeyToMenu`. D-pad's normal gameplay actionslot
@@ -1386,17 +1386,17 @@ before the rumble hooks' own trigger conditions could ever be reached.
 
 **Leading hypothesis, not yet confirmed via disassembly**: `FUN_004895b0`
 and `FUN_0044cdb0` are GENERAL native notify-dispatch functions (already
-documented as such — used for `weapon_fired`/`damage` in this mod's own
+documented as such — used for `weapon_fired`/`damage` in this project's own
 research, but the "general dispatcher" framing implies OTHER event types
 route through the same two functions too, likely with genuinely
 different real argument counts per event type, since a generic dispatch
 function serving many unrelated notify events is a natural place for
-that). This mod's hooks declare a FIXED parameter signature for each
+that). This project's hooks declare a FIXED parameter signature for each
 (3 args for the "simple" dispatcher, 12 for the "rich" one) confirmed
 correct for exactly ONE real call site each (weapon-fire, damage) — if
 ANY other real caller (plausibly firing during engine init, well before
 any gameplay frame, matching the observed crash timing) invokes either
-function with a genuinely different argument count, this mod's
+function with a genuinely different argument count, this project's
 fixed-signature hook would read/forward incorrect stack data for that
 call, which could corrupt behavior in ways a static single-call-site
 disassembly check would never catch.
@@ -1520,7 +1520,7 @@ WHEN to trigger them:
 - **Weapon fire — confirmed, single clean choke point.** `FUN_0045e320`
   (per-shot fire-effects handler) calls `FUN_004895b0(entity, "weapon_fired"
   handle, 1)` once per real shot, semi-auto and full-auto alike. Confirmed plain
-  `__cdecl` via raw disassembly — safe to hook with the mod's existing pattern.
+  `__cdecl` via raw disassembly — safe to hook with the project's existing pattern.
 - **Damage — confirmed, with usable intensity data.** `FUN_0045f770` decrements
   health at `+0x150` (same entity-struct family as the aim-assist `0x01197AD8`
   array) then calls `FUN_0044cdb0("damage" handle, entity, ...,
@@ -1566,11 +1566,11 @@ retail game files as a base) is installed locally — direct comparison done:
   Plutonium's own docs confirm campaign isn't really their supported use
   case even though the file is present.
 - **Anti-cheat concretely confirmed to ban DLL injection and memory access** —
-  7-day first offense, permanent after. This mod's entire architecture (proxy
+  7-day first offense, permanent after. This project's entire architecture (proxy
   `d3d9.dll`, MinHook, memory-read-based aim-assist) is exactly what it's built to
   catch, input-only intent notwithstanding. **This sharpens CLAUDE.md's existing
   "MP anti-cheat exposure" flag from a theoretical concern into a confirmed,
-  specific, high risk for Plutonium MP specifically** — do not use this mod with
+  specific, high risk for Plutonium MP specifically** — do not use this project with
   Plutonium MP.
 - **Cross-reference, per CLAUDE.md's cross-project policy (2026-07-17, later
   session)**: the byte-identical-`iw5mp.exe` fact recorded here turned out to
@@ -1583,7 +1583,7 @@ retail game files as a base) is installed locally — direct comparison done:
   playback. `MW32011NSP` found and confirmed at least one such client-side
   bug. Full detail: `MW32011NSP/re_notes/vulnerability_research.md`'s
   "Plutonium's mitigation does not cover client-side bugs" section. Not
-  relevant to this mod's own input-hooking work directly, but worth knowing
+  relevant to this project's own input-hooking work directly, but worth knowing
   if this project's own Plutonium-compatibility research continues.
 
 **AlterWare IW5-Mod** — a distinct, closed-source client specifically for MW3
@@ -1647,10 +1647,10 @@ a large parallel batch of research-only forks, ahead of wrapping the session.
   table, including `precision_airstrike`'s newly-resolved mechanism (a
   THIRD, genuinely different input path — a native `beginlocationselection`
   placement-marker API, not `notifyonplayercommand`-gated at all, possibly
-  already reachable via this mod's existing D-pad+A menu-navigation work).
+  already reachable via this project's existing D-pad+A menu-navigation work).
 - **Weapons**: real `WeaponCompleteDef`/`WeaponDef` struct found and confirmed
   via exact offset arithmetic. Separate native timers for normal reload vs.
-  reload-from-empty exist — this mod's single-kbutton reload almost certainly
+  reload-from-empty exist — this project's single-kbutton reload almost certainly
   already gets correct behavior for free. A per-weapon-animation rumble-
   notetrack system found, relevant to task #17.
 - **Perks (task #9)**: `HasPerk`-equivalent native query — genuinely parked, not
@@ -1660,7 +1660,7 @@ a large parallel batch of research-only forks, ahead of wrapping the session.
   clean native path exists without going through GSC itself.
   **(2026-07-18) New lead, not yet tried, more tractable than another static
   bitmask hunt**: `FUN_004b9350(playerStructAddr, currentTimeMs)` (found
-  2026-07-16, already called by this mod's own `LogSprintDiag` for diagnostic
+  2026-07-16, already called by this project's own `LogSprintDiag` for diagnostic
   logging, player struct `&DAT_00984b88`) returns what looks like the real
   current sprint-meter value the HUD reads. If its return value differs with
   Extreme Conditioning equipped vs. not, that would prove some native code
@@ -1675,7 +1675,7 @@ a large parallel batch of research-only forks, ahead of wrapping the session.
 - **AI/vehicles**: civilian AI library confirmed genuinely shared across
   missions. No dedicated vehicle input path found — real evidence (zero vehicle
   binds, hint text rendered as static strings) suggests vehicles reuse the same
-  `usercmd_t` fields this mod already hooks, meaning movement/look may already
+  `usercmd_t` fields this project already hooks, meaning movement/look may already
   work in vehicle sections with no new code.
 - **Physics/health**: mantle's real trigger found — it's the same `+gostand`
   command already used for standing up, contextually reinterpreted. **Task #20
@@ -1710,14 +1710,14 @@ input) and refines issue #26's vehicle hypothesis below.
   worked fully on controller (movement AND aim) — so this isn't "vehicles
   in general lack aim input," it's specific to the DPV. This is a real,
   live-confirmed counterexample to issue #26's AI/vehicles hypothesis
-  ("vehicles reuse the same `usercmd_t` fields this mod already hooks,
+  ("vehicles reuse the same `usercmd_t` fields this project already hooks,
   meaning movement/look may already work in vehicle sections with no new
   code") — that hypothesis holds for at least the boat, but not for the
   DPV specifically. Root cause not yet investigated — candidate theories,
   none confirmed: the DPV may use a separate aim/camera mechanism from
   normal vehicle-mounted turrets or on-foot look (e.g. a distinct
   view-angle path our right-stick look hook doesn't reach), or may gate aim
-  input behind a different kbutton/dvar this mod doesn't drive. Needs real
+  input behind a different kbutton/dvar this project doesn't drive. Needs real
   RE work (find the DPV's own entity/vehicle type and its input-handling
   path) before attempting a fix — not diagnosed yet, just captured
   precisely as reported.
@@ -1735,7 +1735,7 @@ input) and refines issue #26's vehicle hypothesis below.
   "crouch sometimes just doesn't fire" exactly. Neither guard's real
   meaning was decoded when issue #9 was written (only the toggle logic
   itself was needed at the time). **Why pause/unpause would fix it**: this
-  mod has an established pattern of exactly this class of bug elsewhere
+  project has an established pattern of exactly this class of bug elsewhere
   (the `g_paused`/`cl_paused` desync fix, and issue #9's own root cause —
   "our own competing per-frame bit-forcing... fighting" real engine state)
   — a locally-tracked/stale bit getting out of sync with real engine state,
@@ -1756,7 +1756,7 @@ input) and refines issue #26's vehicle hypothesis below.
      console) was never built. This isn't a bug in existing code, it's a
      feature that was simply never started.
   2. **Real bug this causes**: with Hold Breath absent, L3 unconditionally
-     runs this mod's own Sprint implementation — which, per issue #9's
+     runs this project's own Sprint implementation — which, per issue #9's
      fix, auto-stands the player up out of crouch/prone before sprinting
      (`ForceStandingViaRealToggle`, matching real console Sprint behavior
      when NOT aiming). But there's no check for "currently ADS with a
@@ -1771,7 +1771,7 @@ input) and refines issue #26's vehicle hypothesis below.
     unified native bind for both Sprint and Hold Breath depending on
     context (the SP default-keybind table in `iw5sp.md` literally labels
     it "Left Thumb = Sprint/Hold Breath"). The engine itself treats these
-    as one contextual input, not two separate ones. This mod's own Sprint
+    as one contextual input, not two separate ones. This project's own Sprint
     implementation never found/drove the real `+breath_sprint` kbutton
     (three independent search attempts, all parked — see "Sprint's real
     kbutton — PARKED" below) and instead forces sprint via raw `pm_flags`
@@ -1809,7 +1809,7 @@ input) and refines issue #26's vehicle hypothesis below.
     kbutton — PARKED" (`iw5sp.md`), so re-attempting a kbutton search
     isn't worthwhile. **Recommended approach instead**: implement Hold
     Breath the same way Sprint's own stamina system was implemented — this
-    mod's own additive sway-reduction layer (scale down look-rate or a
+    project's own additive sway-reduction layer (scale down look-rate or a
     tracked sway multiplier while the bind is held + ADS'd + weapon has
     the confirmed-real `canHoldBreath` bool flag from `WeaponCompleteDef`),
     not a native-call-driven feature. The exact native sway-consumer
@@ -1832,7 +1832,7 @@ input) and refines issue #26's vehicle hypothesis below.
   less," and noted in passing this scenario is thematically "the reverse of"
   a CoD4 Spec Ops mission (not independently verified, a passing
   observation not load-bearing for the fix). **Real, plausible, and
-  potentially systemic root cause worth checking first**: this mod injects
+  potentially systemic root cause worth checking first**: this project injects
   left-stick movement as a POST-hook, additive pass on top of whatever the
   real engine's own movement summer (`FUN_0057d430`) already computed for
   that frame (see the core architecture notes above — "post-hook, additive
@@ -1857,12 +1857,12 @@ input) and refines issue #26's vehicle hypothesis below.
   did not** — had to fall back to keyboard/mouse specifically to fire, despite
   the mortar being otherwise fully controller-driven for aim. This has a
   cleaner shape than bugs #1/#3/#4 above: aim/look already routes through
-  this mod's real right-stick-look hook (which is why sensitivity/aim
+  this project's real right-stick-look hook (which is why sensitivity/aim
   "just worked," consistent with how ADS/normal look already behaves), but
   the mortar's own FIRE input is very likely a distinct bind/kbutton from
   normal `+attack` (mortar sequences in this engine family are typically
   built as a bespoke minigame with their own dedicated fire command, not
-  the regular weapon-fire path) that this mod's RT/`+attack` hook was never
+  the regular weapon-fire path) that this project's RT/`+attack` hook was never
   wired to reach, or reaches but the mortar-specific handler ignores. Needs
   the same treatment as any other not-yet-wired input: find the mortar's
   real fire bind/kbutton (likely via the same raw-keycode-dispatch-table
@@ -2013,7 +2013,7 @@ input) and refines issue #26's vehicle hypothesis below.
   (holding off waves of enemies/other technicals) felt far too hard on
   controller.** User's own framing, explicitly uncertain
   between two distinct causes, not yet diagnosed:
-  1. **Hypothesis A — no aim assist.** This mod's aim assist is
+  1. **Hypothesis A — no aim assist.** This project's aim assist is
      already a known, confirmed-non-functional, parked gap (task #16 —
      "disabled for public builds," not just unpolished). A sustained,
      high-enemy-density defense sequence like this is exactly the kind of
@@ -2041,7 +2041,7 @@ input) and refines issue #26's vehicle hypothesis below.
      not mutually exclusive. **Practical consequence for diagnosis**: look
      for a real regen-RATE field/flag/timer (e.g. a shortened regen-delay
      or an increased regen-per-tick value gated on "is mounted," analogous
-     in shape to this mod's own Sprint stamina/cooldown timer work in
+     in shape to this project's own Sprint stamina/cooldown timer work in
      issue #6) rather than a static max-health or damage-taken multiplier —
      changes where to look, not just what to look for.
   - **Not yet diagnosed which (or both) is the real cause.** Natural next
@@ -2078,7 +2078,7 @@ input) and refines issue #26's vehicle hypothesis below.
     unrelated AI spotlight-turret utility. **This converges with task #25's
     new `cmd+0x3e`/`0x3f` finding (issue #30)**: the turret most likely just
     suffers from the same missing-aim-precision-channel issue as DPV aim/
-    mortar fire/missile guidance (no aim assist + this mod's controller
+    mortar fire/missile guidance (no aim assist + this project's controller
     hooks never populate the real mounted-aim byte pair), not a missing
     health mechanic — Hypothesis A. **One unresolved lead, not chased down
     this pass**: `maps\_vehicle::_id_2A12()` is called from
@@ -2150,7 +2150,7 @@ input) and refines issue #26's vehicle hypothesis below.
   despite working correctly everywhere else in the playthrough so far
   (per issue #11, already resolved as hold-to-interact). **User's own
   hypothesis, and a real, already-documented lead worth checking first**:
-  this mod's Interact is wired to plain `+activate` only, but issue #9's
+  this project's Interact is wired to plain `+activate` only, but issue #9's
   own keybind table (`iw5sp.md`) already found a SEPARATE, real bit
   (`0x8`, struct offset `+0x18c`) mapped to `+usereload` — explicitly
   described there as "combined use/reload — explains why it's
@@ -2223,7 +2223,7 @@ input) and refines issue #26's vehicle hypothesis below.
   **Two competing explanations, not yet distinguished**: (a) real
   controller-specific gap in reaching the lock-on bind (same class as
   Hold Breath/task #24 and mortar fire/task #26 — a distinct,
-  non-`+attack` held-input state this mod's RT hook was never wired to
+  non-`+attack` held-input state this project's RT hook was never wired to
   reach), or (b) the target was never lockable in the first place,
   independent of input device. **Needs a same-target keyboard comparison
   test first** (does keyboard lock onto the SAME aircraft in the SAME
@@ -2241,7 +2241,7 @@ input) and refines issue #26's vehicle hypothesis below.
   ("Movement hook bypasses scripted player-freeze/cinematic-lock state") —
   during missile-guidance the real player entity is presumably frozen
   (camera/control has shifted to the missile projectile, not the player),
-  but this mod's `InjectControllerMovement` has no scripted-freeze/
+  but this project's `InjectControllerMovement` has no scripted-freeze/
   cinematic-lock awareness and keeps forcing `forwardmove`/`rightmove`
   into the usercmd unconditionally every frame regardless of what state
   the game itself is in — the same class of bug already flagged (not yet
@@ -2305,7 +2305,7 @@ scoreboard/mission-objectives overlay; Survival has no native scoreboard at
 all (confirmed this session — see the compatibility-matrix/project-memory
 note on Back's Campaign-vs-Survival scope split), so holding Back in
 Survival is expected to do nothing visible, not a bug. Back has no other
-current meaning in this mod (confirmed unused elsewhere), so there's no
+current meaning in this project (confirmed unused elsewhere), so there's no
 dual-purpose-button conflict to manage.
 
 **Documentation gap, now fixed**: this implementation existed and was
@@ -2335,7 +2335,7 @@ live-tested by the user. **Result: half confirmed, half refuted.**
    kbutton_t directly was not sufficient. This means
    `notifyonplayercommand`'s actual native trigger point is NOT inside
    `FUN_0057d1c0` (the kbutton KeyDown function) itself, or isn't reached
-   by calling it directly the way this mod does (vs. however a real
+   by calling it directly the way this project does (vs. however a real
    keypress reaches it). The kbutton-level fix stays in the codebase
    (it's real, correct, and gunfire depends on nothing regressing by
    reverting it) but does NOT close task #7's Predator Missile case.
@@ -2371,11 +2371,11 @@ on keypress.
 live experience): holding Fire for a long duration still does not launch
 the missile.** This rules out "our edge-triggered KeyDown/KeyUp pair
 doesn't stay down long enough for a slow GSC poll to catch it" as the
-explanation — a real held press, which this mod's `CallKbuttonDown`/
+explanation — a real held press, which this project's `CallKbuttonDown`/
 `CallKbuttonUp` pair genuinely produces for the full hold duration (same
 mechanism ADS/Reload already prove works correctly), still doesn't
 trigger the launch even given ample time for any plausible poll rate to
-observe it. **This means the real kbutton_t this mod writes to is either
+observe it. **This means the real kbutton_t this project writes to is either
 never read by whatever GSC-VM intrinsic backs `notifyonplayercommand`, or
 is read but some other precondition is unmet.**
 
@@ -2556,12 +2556,12 @@ future work, not reproduced here in full.
 `0x400000` follow-up)**: the direct setter for that bit on the
 `+0x1094` field wasn't found (same data-driven-offset pattern as before
 — scalar scanning can't find it). A CLOSELY RELATED finding turned up
-instead, inside `FUN_0057de60` (the exact function this mod's own
+instead, inside `FUN_0057de60` (the exact function this project's own
 `InjectAllControllerInput` already hooks): a single byte flag at
 `struct+0x30` (same per-player struct family) gates setting/clearing
 **`cmd->buttons` bit `0x400000`** every frame (`OR`/`AND`-complement,
 confirmed via disassembly). Same bit value, same struct family, live at
-a point this mod already has full access to — a plausible sibling
+a point this project already has full access to — a plausible sibling
 mechanism, but NOT proven to be the same write as whatever sets
 `+0x1094`'s own bit. `struct+0x30`'s own setter wasn't traced. **Given
 the same-day GSC deep-read found a more direct, better-evidenced lead
@@ -2724,7 +2724,7 @@ exclusive:**
 - **(a) Implement a direct workaround**: since `FUN_00428a70(clientIdx,
   "n")` is a real, callable native function (not OS-level input
   emulation — a direct internal engine call, arguably even more "native"
-  than the key-synthesis exceptions already in this mod), this mod's own
+  than the key-synthesis exceptions already in this project), this project's own
   Fire hook could call it directly on Fire's down-edge, bypassing
   whatever gate normally would have pushed `"n"` for `+`-prefixed binds.
   Low-risk, purely additive (doesn't remove or change the existing
@@ -2747,7 +2747,7 @@ Overflow past the 128-slot ring buffer logs a warning but still enqueues
 earlier trace**: `FUN_00528db0` does NOT hardcode the literal `"n"` as
 originally reported — it forwards whatever command is currently
 executing (`argv[0]`), filtered to exclude `+`/`-`-prefixed tokens. This
-doesn't change the plan (this mod calls `FUN_00428a70` directly with its
+doesn't change the plan (this project calls `FUN_00428a70` directly with its
 own literal `"n"`, bypassing `FUN_00528db0` and its filter entirely), but
 the earlier belief that `FUN_00528db0` itself hardcodes `"n"` was wrong
 and is corrected here.
@@ -2777,7 +2777,7 @@ project's own standard is to verify, not assume).
 
 **Original hypothesis note (superseded by the live-test result above,
 kept for the record):** this touches the single most-used input in the
-entire mod (every shot fired, in every mode), so per this project's
+entire project (every shot fired, in every mode), so per this project's
 Production Readiness Criteria it stayed open until confirmed both ways,
 not just "should work by the same mechanism as ADS/Reload."
 
@@ -2823,14 +2823,14 @@ independent investigations.
 
 **What was found:** decompiling the real per-frame orchestrator
 `FUN_0057e480` (the function that calls the movement/look functions this
-mod's own `InjectControllerMovement`/`InjectControllerLookAngles` hooks
+project's own `InjectControllerMovement`/`InjectControllerLookAngles` hooks
 parallel) revealed the engine has **at least three distinct control-mode
 branches**, each of which REPLACES normal movement/look entirely for that
-frame — and this mod's controller hooks are blind to all of them, since
+frame — and this project's controller hooks are blind to all of them, since
 `InjectAllControllerInput` (hooked at `FUN_0057de60`) runs unconditionally
 at the end of every branch regardless of which one fired:
 
-1. **Menu-active** (gate `0x00B36210` bit `0x10`, same bit this mod's own
+1. **Menu-active** (gate `0x00B36210` bit `0x10`, same bit this project's own
    `IsMenuActive()` already reads) → `FUN_0057d3e0`, which only re-derives
    crouch/prone bits from the real stance field — no movement/look input
    at all while a menu is open.
@@ -2839,7 +2839,7 @@ at the end of every branch regardless of which one fired:
    `+attack`'s kbutton at `0x00A98C00` — the same one today's Fire rewire
    uses) into `cmd->buttons`, re-derives stance bits, then calls
    `FUN_0057d740` → `FUN_0057d680` (**the confirmed real raw
-   mouse-delta source** — not the keyboard-summed path, not this mod's
+   mouse-delta source** — not the keyboard-summed path, not this project's
    `kPitchAccum`/`kYawAccum` globals) and writes the scaled result into
    **`cmd+0x3e`/`cmd+0x3f`** — a THIRD analog-input byte pair, distinct
    from both normal look (`kPitchAccum`/`kYawAccum`) and normal movement
@@ -2859,7 +2859,7 @@ at the end of every branch regardless of which one fired:
    is NOT a zero-string GSC-only builtin). **Mode 2** is the actual
    vehicle-driving case: just ORs `cmd->buttons |= 0x20000`. **Since
    Mode 1's cursor math reuses the exact same raw-mouse-delta function
-   this mod's normal look hook already feeds, it's plausible controller
+   this project's normal look hook already feeds, it's plausible controller
    aiming during `precision_airstrike`'s placement already works
    correctly TODAY with zero new code — not confirmed, needs a live
    check** (aim during a real `precision_airstrike` buy/placement and see
@@ -2875,7 +2875,7 @@ at the end of every branch regardless of which one fired:
    smoke-grenade-style THROWN marker (aim with the look stick, throw with
    Fire, same as an ordinary grenade) — **confirmed fully working on
    controller already**, no separate confirm/placement step needed,
-   since both aim and throw are inputs this mod already drives correctly.
+   since both aim and throw are inputs this project already drives correctly.
    `FUN_0057df60` mode 1 may still be real and relevant to something else
    (MP's version, or a different Campaign-only use), but is NOT the
    mechanism to chase for Survival's `precision_airstrike` specifically —
@@ -2893,7 +2893,7 @@ first written), mounted-turret feeling notably harder than expected
 Missile guidance-sequence movement break (issue #27 bug #9, since REFUTED
 as sharing this mechanism — see below). These were originally believed to
 share the SAME root cause:
-this mod's controller hooks only ever write `cmd+0x1c/0x1d` (movement)
+this project's controller hooks only ever write `cmd+0x1c/0x1d` (movement)
 and the `kPitchAccum`/`kYawAccum` globals (look) — never `cmd+0x3e/0x3f`
 — so whenever the engine switches into branch 2's mode (mounted/aim-only
 contexts: DPV, mortar, turret — missile-guidance REFUTED as sharing this
@@ -2975,7 +2975,7 @@ fixed now. Summary of what's actually confirmed for missile guidance:
   `controlslinkto`'s `FUN_005d7f20` sets on `clientStruct+0xc`). One of
   them, `FUN_004554d0`, is the real per-frame per-client dispatcher —
   confirmed via `FindCallers.java` that ITS OWN caller is `FUN_00644ed0`,
-  the exact Pmove-tick function this mod's PREVIOUS (now-removed) Sprint
+  the exact Pmove-tick function this project's PREVIOUS (now-removed) Sprint
   mechanism used to hook, calling it as
   `FUN_004554d0(pml, *pml /* clientStruct */, frameDeltaMs, pml+1,
   someByte)`. Raw disassembly (not just the decompile, which obscures the
@@ -2984,17 +2984,17 @@ fixed now. Summary of what's actually confirmed for missile guidance:
   entirely and tail-jumps into `FUN_006423d0` with `ECX=pml+4` and
   `EAX=clientStruct`. `FUN_006423d0` reads 3 sequential floats from
   **`pml+0xc`/`+0x10`/`+0x14`** (a Pmove-locals field, NOT the real
-  `usercmd_t` this mod's own look hook writes to) and angle-wraps
+  `usercmd_t` this project's own look hook writes to) and angle-wraps
   (anglemod-style) each one into **`clientStruct+0x10c`/`+0x110`/`+0x114`**
   — a concrete, different, more specific target than the old `cmd+0x3e`/
   `0x3f` theory, which is REFUTED as the relevant mechanism for this
   specific bug (that theory's `+0x1094` bit is a genuinely different
   address from the `clientStruct+0xc` bit `controlslinkto` actually sets).
 - **Still open, honestly**: whether `pml+0xc/+0x10/+0x14` is a live
-  per-frame copy of the real `cmd.angles` this mod's look hook already
+  per-frame copy of the real `cmd.angles` this project's look hook already
   feeds (in which case controller look should already reach the missile,
   and the bug is that something upstream stops refreshing it while
-  linked) or an independently-fed field that needs this mod's OWN input
+  linked) or an independently-fed field that needs this project's OWN input
   written into it directly — the copy site wasn't located in the time
   available for this pass. **Implemented instead of guessing**: a new
   log-and-forward diagnostic, `Hook_MissileGuidanceDispatch` in
@@ -3004,9 +3004,9 @@ fixed now. Summary of what's actually confirmed for missile guidance:
   file's hooks need). Gated on `clientStruct+0xc` bit `0x80000` so it logs
   nothing during normal play; change-triggered within that gate so an
   actual guidance sequence doesn't spam the log. Logs `pml+0xc/+0x10/+0x14`,
-  `clientStruct+0x10c/+0x110/+0x114`, AND this mod's own `kPitchAccum`/
+  `clientStruct+0x10c/+0x110/+0x114`, AND this project's own `kPitchAccum`/
   `kYawAccum` globals side by side — a real Predator Missile playtest with
-  this build will show directly whether the pml fields track this mod's
+  this build will show directly whether the pml fields track this project's
   own look input in real time (fix is elsewhere) or stay frozen while
   linked (fix is writing controller look into `pml+0xc/+0x10/+0x14`
   directly). Builds clean (0 warnings/0 errors, full rebuild). Not yet
@@ -3079,7 +3079,7 @@ PLACEMENT (not just cancel) is confirmed NOT notify-gated at all —
 boolean button-state queries checked every loop iteration, with placement
 finalized via a ground-trace check (`self isonground() &&
 var_1["result"]`, line 1206), not an event wait. **Turret "working" only
-proves direct button-state polling correctly observes this mod's
+proves direct button-state polling correctly observes this project's
 synthetic kbutton writes — it says nothing about whether either notify
 builtin can be reached by synthetic input**, since turret placement uses
 neither. Only turret's CANCEL uses `notifyonplayercommand` — worth
@@ -3126,7 +3126,7 @@ player's current weapon matches the registered streak weapon.
 all, so they never get this free ride; their `notifyoncommand`-gated
 trigger is a genuinely different, standalone mechanism. That pass argues
 by analogy (same builtin CLASS as `remote_missile`'s `+attack` gate,
-which is independently confirmed unreachable by this mod's synthetic
+which is independently confirmed unreachable by this project's synthetic
 input via the long-hold live test) that `friendly_support_called` is
 likely blocked the same way — **but this is an inference, not
 independently confirmed for `notifyoncommand` specifically** (only
@@ -3141,7 +3141,7 @@ found and quoted, not an analogy) and is the cheaper one to rule in/out
 live (just check/vary which Survival map is being tested).
 
 **Also confirmed by the same comparison pass**: `FUN_0057a930` (the
-native function this mod's D-pad dispatcher calls for its "likely
+native function this project's D-pad dispatcher calls for its "likely
 equipment/killstreak use" branch, previously undecompiled) is NOT a
 killstreak-specific call at all — it's a weapon-select fallback that
 ultimately calls the same native weapon-SET function (`FUN_0042d6b0`)
@@ -3150,7 +3150,7 @@ ultimately calls the same native weapon-SET function (`FUN_0042d6b0`)
 weapon name in `_id_3CE8`), always resolves to a genuine native weapon
 switch, which fires the generic `weapon_change` event `_id_3CF5()`'s
 polling loop catches — fully explaining why those three "just work" via
-this mod's existing D-pad key-synthesis with no notify-gate involvement
+this project's existing D-pad key-synthesis with no notify-gate involvement
 at all.
 
 ## Resolved this session (for contrast — see `iw5sp.md` for full write-ups)
@@ -3177,10 +3177,10 @@ at all.
   Confirmed working live.
 - **Survival ready-up / hold Y (issue #5 above):** the real native call was never found
   despite an extensive search across multiple mechanisms — solved instead with an
-  explicit, user-approved exception to this mod's "no OS-level input emulation" rule: a
+  explicit, user-approved exception to this project's "no OS-level input emulation" rule: a
   synthetic F5 keypress via `PostMessage`, gated to Survival maps only. Confirmed working
   live; **the first of THREE deliberate departures from real-engine-call-only input in
-  the whole mod** (the second being D-pad Left's squadmate call-in, issue #14; the third
+  the whole project** (the second being D-pad Left's squadmate call-in, issue #14; the third
   being Back's real `+scores` scoreboard via a synthetic TAB keypress, added 2026-07-17 —
   see issue #28 below), each to be replaced if a native call is ever found. **Correction
   (2026-07-18): this summary previously said "first of two," missing the third exception

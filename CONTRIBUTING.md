@@ -116,8 +116,8 @@ Before opening a PR, please read this file in full.
 
 Open an issue with: which binary (`iw5sp.exe`/`iw5mp.exe`), which mode
 (Campaign/Survival/Multiplayer), what you expected, what happened instead,
-and if possible, the mod's log file from the session. Crashes matter a lot
-more here than most projects — this mod hooks a live game process, so please
+and if possible, the project's log file from the session. Crashes matter a lot
+more here than most projects — this project hooks a live game process, so please
 include as much repro detail as you can.
 
 **Before reporting a Campaign or Special Ops mission-specific issue**, check

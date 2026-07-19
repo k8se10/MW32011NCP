@@ -3,7 +3,7 @@
 Broad survey of MW3 Survival's real structure, cross-referencing this
 session's narrower research (buy-station economy, killstreaks, ready-up,
 wave scaling — see `killstreak_reference.md`/`survival_wave_scaling.md`).
-Research only — reference material, not yet used by any mod code.
+Research only — reference material, not yet used by any project code.
 
 ## Overall game-mode structure
 

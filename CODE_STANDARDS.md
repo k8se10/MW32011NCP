@@ -43,11 +43,11 @@ A feature/change is **production ready** when:
    Multiplayer as applicable) — not just "should work"
 3. ✅ No crashes introduced — tested through normal play, not just a single
    happy-path pass
-4. ✅ Vanilla keyboard/mouse control is unaffected — the mod must be strictly
+4. ✅ Vanilla keyboard/mouse control is unaffected — the project must be strictly
    additive for players not using a controller
 5. ✅ Documented — non-obvious signatures/offsets/hook mechanics explained
    in-repo (`re_notes/iw5sp.md`)
-6. ✅ Committed — changes are in the mod's own git repo with a clear message
+6. ✅ Committed — changes are in the project's own git repo with a clear message
 
 A change that fails any one of these is not done, regardless of how
 confident the description of it sounds.
@@ -90,7 +90,7 @@ reference record, not a polished highlight reel — treat it that way:
 - Undocumented work is not done, by the same standard as untested work — see
   **Production Readiness Criteria** above.
 
-## Native mod code (C/C++)
+## Native project code (C/C++)
 
 - **Never hardcode a raw address.** Every hook target is found via
   byte-pattern/signature scanning at runtime, per binary, because game
@@ -111,13 +111,13 @@ reference record, not a polished highlight reel — treat it that way:
 - Log signature-scan results (found/not found, resolved address) and hook
   install/uninstall events to a file the user can pull after a crash —
   silent failure on a missing signature is not acceptable.
-- Wrap injected code paths defensively; a bug in the mod must never be
+- Wrap injected code paths defensively; a bug in the project must never be
   allowed to corrupt or crash the base game silently without a log trail
   explaining why.
 
 ## Input Validation & Security
 
-- Never write secrets, tokens, or account details into mod source or
+- Never write secrets, tokens, or account details into project source or
   committed config.
 - Treat any data read out of the game's process memory (e.g. for aim-assist
   work) as untrusted/variable between binary versions — validate before

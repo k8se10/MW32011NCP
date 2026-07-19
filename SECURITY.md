@@ -13,19 +13,19 @@ reporting an issue.
 
 ## What counts as a security issue here
 
-This mod ships as a proxy `d3d9.dll` that gets loaded by `iw5sp.exe` at launch
+This project ships as a proxy `d3d9.dll` that gets loaded by `iw5sp.exe` at launch
 and hooks real engine functions in that process. Given that shape, the kinds
 of issues that matter most are:
 
-- **Memory-safety bugs in the mod's own code** (out-of-bounds reads/writes,
+- **Memory-safety bugs in the project's own code** (out-of-bounds reads/writes,
   use-after-free, etc.) that could be triggered by in-game state and lead to
   more than a crash — e.g. anything that looks like it could be turned into
   arbitrary code execution inside the game process.
 - **Supply-chain concerns** — e.g. a release artifact that doesn't match its
   published source, or a way to trick a user into loading a malicious
   `d3d9.dll` believing it's this project's.
-- Anything in the mod's hooking/injection mechanism itself that could be
-  abused beyond its intended scope (this mod is input-only — it does not read
+- Anything in the project's hooking/injection mechanism itself that could be
+  abused beyond its intended scope (this project is input-only — it does not read
   or write anything beyond what's needed for controller input and the
   documented sprint-stamina/menu-state logic; a report that it does more than
   that is a security report, not just a bug).

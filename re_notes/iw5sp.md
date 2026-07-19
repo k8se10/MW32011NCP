@@ -405,7 +405,7 @@ not just cosmetic button-name differences — PS3 defaulted fire/ADS to the bump
 (R1/L1) and grenades to the triggers (R2/L2); Xbox 360's actual default swapped this,
 matching the universal Xbox FPS convention (RT/LT triggers for fire/aim, matching
 Halo/Battlefield/etc. of the same era) — so **fire is RT, ADS is LT, and grenades move
-to the bumpers (RB=lethal, LB=tactical)** on the Xbox-convention mapping this mod
+to the bumpers (RB=lethal, LB=tactical)** on the Xbox-convention mapping this project
 targets. Table above already corrected to reflect this.
 
 ## "Needs a click" issue — SOLVED (2026-07-14)
@@ -598,7 +598,7 @@ ADS-sensitivity multiplier already found at `unaff_EBX+0x48` in `FUN_0057d740` (
 finding `FUN_0057d740`'s caller next, not more table work).
 
 **ADS found — CONFIRMED (2026-07-14), combining live differential testing + static
-verification.** Built `tools/memdiff/` (dev-only diagnostic, not part of the mod): a
+verification.** Built `tools/memdiff/` (dev-only diagnostic, not part of the project): a
 manual-mode tool that watches `GetAsyncKeyState(VK_RBUTTON)` and snapshots full process
 memory (~500-700 committed regions, ~400MB cap) on every real press/release edge the user
 makes in-game, then narrows to bytes that are consistently one value while ADS is held
@@ -923,7 +923,7 @@ three callees confirmed plain `__cdecl` via their real call sites' disassembly:
 
 **Confirmed live:** Start (wired to this exact logic) genuinely opens the pause menu
 via the `state==6` branch. Closing/unpausing it is blocked on a separate, unresolved
-issue — the mod's whole per-frame injection normally lives inside the gameplay-
+issue — the project's whole per-frame injection normally lives inside the gameplay-
 simulation pipeline, which halts while paused (confirmed via a heartbeat diagnostic).
 A real `IDirect3DDevice9::Present` hook was implemented for this (`d3d9_hook.cpp` —
 hooks `IDirect3D9::CreateDevice` via its vtable slot, filtered to `DeviceType ==
@@ -1076,7 +1076,7 @@ Back remains unassigned, deprioritized per explicit user call (scoreboard isn't
 gameplay-defining, unlike D-pad/killstreaks). **Superseded 2026-07-17**: `+scores`
 turned out not to be a per-frame usercmd kbutton at all, so the live-keycode-table
 technique below doesn't apply — resolved instead via key synthesis (TAB), the third
-of this mod's deliberate OS-level-emulation exceptions. See
+of this project's deliberate OS-level-emulation exceptions. See
 `re_notes/known_issues.md` issue #28. Kept below as historical dead-end record.
 Next attempt should use the same
 live-keycode-table technique that correctly solved weapnext, applied to TAB (`0x09`),
@@ -1259,7 +1259,7 @@ in `CLAUDE.md`'s own original findings), meaning keyboard input is genuine
 `WM_KEYDOWN`/`WM_KEYUP` messages -- a synthetic F5 outside the one moment it matters is
 simply ignored by the game, the same as a real, misplaced F5 press would be.
 **CONFIRMED WORKING LIVE by the user** ("works pretty flawlessly"). This was the sole
-exception to real-engine-calls-only input in this mod until a second, narrower one was
+exception to real-engine-calls-only input in this project until a second, narrower one was
 added for D-pad Left's squadmate call-in (see `known_issues.md` issue #14) -- every
 OTHER button, including every core movement/look/combat action, still drives the
 engine's actual internal state directly. To be replaced with a real native call if one
@@ -1298,7 +1298,7 @@ scale dvar when set. No duration counter, no recovery timer, nothing time-based 
 The actual native clock that limits real sprint duration and gates its recovery lives
 elsewhere in the Pmove chain (candidates considered: `FUN_00644ed0`, `FUN_00643ce0`)
 but was not located this session -- deprioritized once the user redirected to
-implementing stamina in the mod's own layer instead of continuing the native hunt.
+implementing stamina in the project's own layer instead of continuing the native hunt.
 
 **Real dvars found alongside `player_sprintUnlimited` (from `FUN_0053b960`'s
 registration, same discovery pass):** `perk_sprintMultiplier` ("Multiplier for
@@ -1421,7 +1421,7 @@ the same data): this isn't the real function failing or returning nonsense -- it
 our OWN sprint implementation preventing its normal branch from ever running.**
 `FUN_004b9350` early-exits its whole time-based calculation (returning a flat
 baseline instead) whenever a flag bit (`0x4000` at `param_1+0x4b0`) is set --
-and this mod forces the real sprint `pm_flags` bit (also `0x4000`, same value,
+and this project forces the real sprint `pm_flags` bit (also `0x4000`, same value,
 likely the same underlying mechanism/mirror) unconditionally every tick sprint is
 active, via a direct Pmove-entry hook rather than the game's own normal input path.
 That's the same bypass this project's own sprint implementation is already
@@ -1880,7 +1880,7 @@ hook) has already produced one real, live-shipped regression this session (see
 `known_issues.md` #10 -- our own pm_flags-forcing hooks broke vanilla keyboard
 sprint entirely until fixed with bit-ownership tracking), keyboard/mouse should be
 treated as a **secondary, best-effort input path for the time being**, not a
-first-class target on equal footing with controller. The mod's core purpose is
+first-class target on equal footing with controller. The project's core purpose is
 native controller support; k+m compatibility is a "must not break" constraint, not
 a feature under active development. See the new caveat in `known_issues.md` and
 `README.md`.
@@ -2279,7 +2279,7 @@ keeps `ui.ff` completely untouched and should be tried first).
 
 ## Real keycode reference -- complete table (2026-07-17)
 
-The mod has repeatedly reverse-engineered individual keycodes ad hoc (ESC=`0x1b`,
+The project has repeatedly reverse-engineered individual keycodes ad hoc (ESC=`0x1b`,
 menu-nav prev/next=`0x9a`-`0x9d`, Enter=`0xd`) across several separate
 investigations. Traced the real chain fully this session: `FUN_0061f6f0`
 (bind-resolver) -> `FUN_0061f590` (command-alias table, e.g. `+breath_sprint`/
@@ -2391,7 +2391,7 @@ work, same entity-struct family, not player-specific by itself), then calls
 directly usable for rumble intensity scaling. Fires for ANY damageable entity
 (player or AI) -- a real implementation needs to filter for "is `param_1` the
 local player," not resolved this pass (would need cross-referencing against
-whatever local-player-entity pointer the mod's existing Sprint/pm_flags code
+whatever local-player-entity pointer the project's existing Sprint/pm_flags code
 already uses). Death is a separate notify on the same path
 (`FUN_0044cdb0(DAT_015c60b6 /* "death" */, ...)`, fires when health drops <= 0
 inside the same function). `FUN_005030a0`/`FUN_0049d320` are alternate damage-
@@ -2494,7 +2494,7 @@ and -- PC-only (`if (!level.console)`) -- `"+gostand"`/`"togglecrouch"`/
 `magicbullet(...)` spawns the projectile from a fixed offset behind current view
 angles.
 
-**Actionable hypothesis, not confirmed**: this mod's Fire (RT) is raw `usercmd_t`
+**Actionable hypothesis, not confirmed**: this project's Fire (RT) is raw `usercmd_t`
 button bits, not a synthesized `+attack` bind/command execution. If
 `notifyonplayercommand` only fires on real bind/command dispatch (not raw usercmd
 bits), that directly explains "Predator missile confirmed partially working" --
@@ -2521,7 +2521,7 @@ maps\_so_survival::spawn_allies( self.origin, var_0, self );
 ```
 `var_0` (the streaktype string) is the only thing distinguishing delta from
 riotshield in this path -- **rules out the input/trigger layer as the bug
-source**; both are gated on the exact same `+actionslot 4` bind this mod's
+source**; both are gated on the exact same `+actionslot 4` bind this project's
 existing D-pad Left key-synthesis (`'4'`) already drives successfully for the
 turret case. **Important scope correction on task #13's own framing**: turret
 call-in (`sentry`/`sentry_gl`) is a COMPLETELY SEPARATE script system from
@@ -2579,7 +2579,7 @@ to know placement was confirmed, line 113) is **never sent from GSC
 anywhere** — it fires purely from native engine code inside
 `beginlocationselection`'s own C++ implementation, the same class of event a
 real UI/location-picker click would generate. **Actionable, not yet
-verified**: since this mod's D-pad+A menu navigation (task #22, confirmed
+verified**: since this project's D-pad+A menu navigation (task #22, confirmed
 live) already forwards real UI-select input, A/Fire during an active
 `beginlocationselection` state may already reach this natively for free, or
 may need the same `ForwardKeyToMenu` mechanism rather than any kbutton work
@@ -2619,7 +2619,7 @@ identical `+actionslot 4` bind.
 
 **Real weapon-data struct confirmed**: `WeaponCompleteDef`/`WeaponDef` (cross-
 referenced against OpenAssetTools' `IW5_Assets.h`). `FUN_004f6b70` (the function
-this mod's ADS look-slowdown already calls via `GetEffectiveFov`) reads a per-
+this project's ADS look-slowdown already calls via `GetEffectiveFov`) reads a per-
 weapon-slot pointer array (`&DAT_01d39aa8`, indexed 0-255 by weapon ID) and
 dereferences `+0x48` for ADS FOV -- confirmed by exact struct-layout arithmetic
 (summing every field in declared order lands precisely on `0x48`, matching
@@ -2636,7 +2636,7 @@ this session are just a dump of this exact struct field.
 **Reload -- confirmed real separate empty-reload timers exist**: `iReloadTime`,
 **`iReloadEmptyTime`** (a genuinely distinct "reload from empty" timing path),
 `iReloadAddTime`, `iReloadStartTime`, `iReloadStartAddTime`, `iReloadEndTime` --
-this mod's existing single-kbutton reload almost certainly already gets correct
+this project's existing single-kbutton reload almost certainly already gets correct
 behavior for free (the kbutton triggers the same native reload state machine,
 which internally picks the right timer) -- worth a live check, not expected to
 need new code.
@@ -2687,7 +2687,7 @@ perk is currently equipped.
 
 **Practical implication**: no clean native path exists to query "is Extreme
 Conditioning active right now" without going through GSC itself, a fundamentally
-different, heavier mechanism than this mod's native-hook architecture uses
+different, heavier mechanism than this project's native-hook architecture uses
 anywhere else. Genuinely parked, same category as the Sprint kbutton search --
 not a "keep digging" situation.
 
@@ -2769,9 +2769,9 @@ hints do; it doesn't. `PLATFORM_VEH_BOOST` (`FUN_004e4d50`) is gated on a
 separate per-vehicle-type capability byte (`entity+0x18 & 0x10`, not every
 vehicle has boost), same fixed-text pattern. **Conclusion (inferred, not
 live-confirmed)**: vehicle sections almost certainly reuse the same
-`usercmd_t.forwardmove`/`.rightmove`/mouse-look fields this mod's existing
+`usercmd_t.forwardmove`/`.rightmove`/mouse-look fields this project's existing
 movement/look hooks already write to, reinterpreted while in vehicle-entity-state
-6 -- meaning the mod's current hooks likely already work in vehicle sections with
+6 -- meaning the project's current hooks likely already work in vehicle sections with
 NO vehicle-specific code needed, though the actual vehicle-input-read function
 itself wasn't located to fully confirm this. Real vehicles found in scripts:
 `mi17` helicopter (Warlord), `vehicle_pickup_technical_pb_*` (Payback, an armed
@@ -2897,7 +2897,7 @@ expected-to-exist, not-yet-located territory.
 `usercmd_t` struct layout at the same field offsets, same class of boot-time
 dvar/command registration) genuinely holds for MP -- not a different engine,
 just a different compile with its own address space and real MP-specific
-systems layered on top. Nothing found contradicts this mod's existing approach;
+systems layered on top. Nothing found contradicts this project's existing approach;
 a future MP implementation pass would need to independently re-derive every
 address (per CLAUDE.md's own mandate) but wouldn't need a different technique.
 Per CLAUDE.md's still-unresolved anti-cheat question, no implementation work

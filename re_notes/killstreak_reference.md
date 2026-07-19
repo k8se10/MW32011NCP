@@ -20,7 +20,7 @@ not that this project has verified anything about the MP version.
 
 ## Campaign killstreak-type weapon systems — live-tested this session, real controller-support status
 
-**This is the actionable list for this mod's current SP-first scope** —
+**This is the actionable list for this project's current SP-first scope** —
 mounted/support weapon systems actually encountered and controller-tested
 during the 2026-07-18 Campaign playtest session (`known_issues.md` issue
 #27), each Campaign-unique unless noted otherwise. Real, first-party test
@@ -60,7 +60,7 @@ shows **only 4 real, purchasable Survival killstreaks exist**:
 | Item | Cost | Wave gate | Real input mechanism | `notifyonplayercommand`-gated? |
 |---|---|---|---|---|
 | `remote_missile` (Predator Missile) | 2500 | 0 | Camera takeover (shares real UAV-control system); fire via `notifyonplayercommand("launch_remote_missile", "+attack")` | Yes — **FIXED and LIVE-CONFIRMED 2026-07-18/19 (superseding the "currently broken" status this row previously had).** The real `+attack` kbutton call (issue #29) was necessary but not sufficient on its own — a dedicated Ghidra trace of the full delivery chain (`FUN_0044bb50`→`FUN_0053b1f0`→`Cmd_Argv(1)`→`FUN_00738683`/`atol()`) found the queued client command needs an explicit decimal bind-table index as a second token: `"n 1"` (index 1 = `+attack` in the real 81-entry bind-name table at `0x00929fa0`), not bare `"n"`, which left `Cmd_Argv(1)` empty and never matched. Pushed via `FUN_00428a70` (confirmed plain `__cdecl`, safe to call directly) on Fire's down-edge, gated behind the new `[Experimental] FireNotifyQueueKick` config toggle (default on). **Launch itself confirmed working live** — see `known_issues.md` issue #29 for the full bytecode-to-delivery trace. Post-fire missile-guidance aim is a SEPARATE, still-open bug — see issue #30. |
-| `precision_airstrike` | 2500 | 3 | ✅ **CONFIRMED FULLY WORKING on controller in Survival (2026-07-18, live-confirmed by the user).** Real mechanism, per the user's own direct correction: it's a smoke-grenade-style THROWN marker, not a HUD/cursor-based placement system like MP's version — aim with the look stick, throw with Fire, same as a normal grenade throw. This explains why it "just works": both aiming (the look-stick hook) and throwing (the real `+attack` kbutton, or the underlying grenade-throw input) are inputs this mod already drives correctly, with no separate confirm/placement-UI step needed at all. Corrects the earlier `beginlocationselection`/`confirm_location`-based theory below, which was closer to MP's cursor-based version, not Survival's actual grenade-throw mechanic. | No |
+| `precision_airstrike` | 2500 | 3 | ✅ **CONFIRMED FULLY WORKING on controller in Survival (2026-07-18, live-confirmed by the user).** Real mechanism, per the user's own direct correction: it's a smoke-grenade-style THROWN marker, not a HUD/cursor-based placement system like MP's version — aim with the look stick, throw with Fire, same as a normal grenade throw. This explains why it "just works": both aiming (the look-stick hook) and throwing (the real `+attack` kbutton, or the underlying grenade-throw input) are inputs this project already drives correctly, with no separate confirm/placement-UI step needed at all. Corrects the earlier `beginlocationselection`/`confirm_location`-based theory below, which was closer to MP's cursor-based version, not Survival's actual grenade-throw mechanic. | No |
 | `friendly_support_delta` (AI squadmates) | 3000 | 13 | ✅ **CONFIRMED WORKING** via D-pad Left's key-synthesis fix (see `known_issues.md` issues #13/#14) — `notifyoncommand("friendly_support_called", "+actionslot 4")`, identical spawn logic to riotshield below | Yes |
 | `friendly_support_riotshield` | 5000 | 20 | ✅ **CONFIRMED WORKING**, same mechanism as delta above — the two are functionally identical in GSC (only a cosmetic HUD icon differs); a prior hypothesis that a per-type code divergence explains why squadmate call-ins fail is **refuted** — see `known_issues.md` issue #14's updated trail | Yes |
 
@@ -76,7 +76,7 @@ existing D-pad key-synthesis fix, not re-traced this pass.
 
 ## Multiplayer killstreaks — full reference, NOT currently actionable
 
-**This mod has not started Multiplayer (`iw5mp.exe`) work at all** (see
+**This project has not started Multiplayer (`iw5mp.exe`) work at all** (see
 README's "Known limitations") — the list below is pure forward-planning
 reference, not a to-do list to start working through yet. MW3 MP
 introduced a 3-package killstreak system (a genuine departure from earlier

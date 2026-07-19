@@ -1,6 +1,6 @@
 # Patch Notes
 
-All notable changes to the mod, per release. See `re_notes/known_issues.md` for the
+All notable changes to the project, per release. See `re_notes/known_issues.md` for the
 full, actively-tracked issue list and `re_notes/iw5sp.md` for the underlying
 reverse-engineering trail behind each entry.
 
@@ -45,12 +45,12 @@ introduces. Full detail on every change below.
   own caller (`FUN_00644ed0`, the Pmove-tick function) — which, when
   linked, tail-jumps into `FUN_006423d0`, reading 3 floats from
   `pml+0xc`/`+0x10`/`+0x14` (Pmove-locals, NOT the real `usercmd_t` this
-  mod's look hook writes to) and angle-wrapping them into
+  project's look hook writes to) and angle-wrapping them into
   `clientStruct+0x10c`/`+0x110`/`+0x114`. **This REFUTES the earlier
   `cmd+0x3e`/`0x3f` theory (issue #30) as the mechanism for this specific
   bug** — that theory's `+0x1094` bit is a different address from the
   `clientStruct+0xc` bit `controlslinkto` actually sets. Whether
-  `pml+0xc/+0x10/+0x14` already receives this mod's look input via some
+  `pml+0xc/+0x10/+0x14` already receives this project's look input via some
   earlier copy step, or needs a direct write, wasn't resolved statically
   in the time available — a new log-and-forward diagnostic
   (`Hook_MissileGuidanceDispatch`, gated on the link bit so it's silent
@@ -61,7 +61,7 @@ introduces. Full detail on every change below.
   full trail.
 - **Controller vibration/rumble (2026-07-18, task #17).** No native
   rumble infrastructure exists in this build at all — entirely this
-  mod's own `XInputSetState` output, driven off two real, disassembly-
+  project's own `XInputSetState` output, driven off two real, disassembly-
   confirmed native notify choke points: a short pulse on every real
   shot fired, and a damage-scaled pulse when the local player takes
   damage (filtered via the same "has a client struct" entity field the
@@ -98,7 +98,7 @@ introduces. Full detail on every change below.
 - **`[Experimental] SprintStaminaBypassForTesting` (2026-07-19, task #9) —
   ADDED THEN REMOVED THE SAME DAY.** Added specifically to isolate Sprint's
   real-`+sprint`-kbutton migration (see Changed below) for live testing by
-  skipping this mod's own stamina/cooldown timer entirely. Live-testing
+  skipping this project's own stamina/cooldown timer entirely. Live-testing
   confirmed the kbutton migration works AND that the underlying custom
   timer this toggle bypassed is now permanently redundant (see the Changed
   entry below) — with that timer gone entirely, there's nothing left for
@@ -172,7 +172,7 @@ introduces. Full detail on every change below.
   100%." Driving the real kbutton means the engine's own native sprint
   duration/recovery timer now applies automatically, INCLUDING Extreme
   Conditioning's real duration override — with zero separate detection code
-  needed. **As a direct consequence, this mod's entire custom stamina/
+  needed. **As a direct consequence, this project's entire custom stamina/
   cooldown timer layer (maintained since 2026-07-15 specifically to work
   around the previous pm_flags-forcing approach bypassing the real timer)
   is now dead weight and has been removed in the same pass**: `g_sprintStamina`/
@@ -186,7 +186,7 @@ introduces. Full detail on every change below.
   (see `known_issues.md` issue #6, 2026-07-16) — all gone. Also resolves
   task #9/#24's previously-open "Extreme Conditioning perk override" item:
   no override code was ever needed, since the real kbutton makes it a
-  native, automatic consequence rather than something this mod has to
+  native, automatic consequence rather than something this project has to
   detect and apply itself. See `known_issues.md` issue #6's 2026-07-19
   update for the full disassembly trail and this removal.
 
@@ -205,7 +205,7 @@ introduces. Full detail on every change below.
   least) 3 control-mode branches — menu-active, a mounted/aim-only mode
   that routes real mouse-delta into a THIRD analog byte pair
   (`cmd+0x3e`/`0x3f`, distinct from normal movement and normal look), and
-  vehicle steering — none of which this mod's controller hooks are aware
+  vehicle steering — none of which this project's controller hooks are aware
   of, since they only ever write the normal movement/look fields. The
   mounted/aim-only branch is a strong, evidence-backed unifying candidate
   for DPV aiming not working, the mounted-turret feeling too hard, AND
@@ -244,7 +244,7 @@ introduces. Full detail on every change below.
   vestigial precache-only content). Also resolved: `precision_airstrike`
   turns out to use a genuinely different, THIRD input mechanism (a native
   UI-style placement-marker API, not gated by `notifyonplayercommand` at
-  all — may already work via this mod's existing D-pad+A menu navigation,
+  all — may already work via this project's existing D-pad+A menu navigation,
   worth a live test); and the standing hypothesis that AI squadmate
   call-ins (`friendly_support_delta`/`riotshield`) have a per-type code
   divergence bug is REFUTED — both run byte-for-byte identical spawn
@@ -262,7 +262,7 @@ introduces. Full detail on every change below.
   **Polling-frequency ruled out same day**: user confirmed from prior
   play that holding Fire for a long duration still never launches the
   missile, closing off the "our held press doesn't last long enough for a
-  slow poll" theory. The real kbutton_t this mod writes to is either never
+  slow poll" theory. The real kbutton_t this project writes to is either never
   read by whatever GSC-VM intrinsic backs `notifyonplayercommand`, or some
   other precondition is unmet — next step is GSC bytecode/opcode-level
   analysis of `1555.gsc`'s compiled `.gscbin`, not further native
@@ -564,7 +564,7 @@ introduces. Full detail on every change below.
   resolving CLAUDE.md's open anti-cheat question, which any future MP work still
   needs first. Full detail in `re_notes/iw5sp.md` and `re_notes/known_issues.md`
   issue #26.
-- Renamed the mod's project folder from `MW3 Survival and Campaign Controller
+- Renamed the project's folder from `MW3 Survival and Campaign Controller
   Support/` to `MW32011NCP/` (same repo/git history) to match the project's actual
   GitHub name. A new sibling project, `MW32011NSP` (netcode/security modernization),
   now also lives at the game install root — `re_notes/` cross-referencing between the
@@ -594,7 +594,7 @@ genuine architectural limit, with a promising fix already found), a likely
 static-analysis solution to aim assist's classification problem (not yet
 live-verified, still disabled), real vibration trigger points, a complete
 keycode reference, and an MW3-client-compatibility survey that surfaced a
-concrete anti-cheat risk worth knowing about before ever pairing this mod with
+concrete anti-cheat risk worth knowing about before ever pairing this project with
 Plutonium multiplayer. The zone/menu-injection debug trigger built during this
 research is disabled for this build (real, working test code, just not a
 finished player-facing feature yet) — see `re_notes/known_issues.md` issue #23.
@@ -832,7 +832,7 @@ finished player-facing feature yet) — see `re_notes/known_issues.md` issue #23
   only.** Long-term goal is supporting other MW3 clients, not just retail Steam.
   Plutonium (installed locally, directly compared): `iw5mp.exe` is byte-identical
   to retail, but **its anti-cheat is confirmed to ban DLL injection/memory
-  access** — do not use this mod with Plutonium MP. `iw5sp.exe` differs
+  access** — do not use this project with Plutonium MP. `iw5sp.exe` differs
   significantly from retail. AlterWare IW5-Mod (SP+Spec Ops specific, its own
   separate binary, not yet acquired) looks like the most promising third-party
   target given this project's SP-first scope and no known anti-cheat concern.
@@ -878,7 +878,7 @@ change).
 
 ### Newly documented (already shipped, not previously covered anywhere)
 - **`mw3ncp_config.ini`** — self-generating configuration file, written next to the
-  DLL the first time the mod runs, with every option pre-filled at its default value
+  DLL the first time the project runs, with every option pre-filled at its default value
   and a comment explaining it. Covers `[Look]` (sensitivity, ADS slowdown strength,
   invert look), `[Stance]` (B hold-vs-tap threshold), `[Interact]` (hold threshold),
   `[Survival]` (ready-up hold threshold), `[Sprint]` (stamina/regen seconds), and
@@ -947,7 +947,7 @@ change).
   which can never go negative for any non-negative strength while still allowing a
   stronger-than-proportional slowdown at high strength values.
 - **Crouch/Prone rewired to the real native togglecrouch/toggleprone toggle**,
-  replacing the mod's own tracked stance state and per-frame bit-forcing. Fixes a real
+  replacing the project's own tracked stance state and per-frame bit-forcing. Fixes a real
   stuck-prone bug (a Campaign session neither B nor Sprint could recover from stance
   lock, but real keyboard Ctrl could) and, as a side effect, a separate game-breaking
   bug where using the Predator missile killstreak while prone left the player
@@ -974,7 +974,7 @@ change).
   behavioral effect live, with a configurable lead-in countdown) and a `rangewatch`
   mode (live-correlate a real key/button against one fixed, already-known-real
   address range instead of the whole process heap) — dev-only diagnostic tooling,
-  not shipped as part of the mod itself. Rebuilt as x64 (was x86, which started
+  not shipped as part of the project itself. Rebuilt as x64 (was x86, which started
   hitting its own ~2GB address-space ceiling once heap-scan caps were widened).
 
 ### Changed
@@ -983,7 +983,7 @@ change).
   for menu navigation, Back, and most killstreak call-ins (none of which are
   controller-native yet), but is no longer verified to the same live-reproduction
   bar controller features get going forward. Controller is the primary,
-  actively-verified input method with this mod installed. See
+  actively-verified input method with this project installed. See
   `re_notes/known_issues.md` issues #10-#11.
 
 ### Investigated, not resolved
@@ -996,11 +996,11 @@ change).
   own hook drives sprint.** Traced the real sprint-meter HUD render path to
   `FUN_004b9350`, a genuine current/max stamina-ratio function — but it early-exits
   to a flat baseline whenever `pm_flags` bit `0x4000` is already set, which this
-  mod's own Sprint hook forces unconditionally every tick. So the real timer can't
+  project's own Sprint hook forces unconditionally every tick. So the real timer can't
   be observed (or benefited from) as long as sprint is driven by forcing that bit
   directly rather than through the real native trigger path. Switching to whatever
   real `kbutton_t`/command actually engages sprint (once found — see the parked
-  `+breath_sprint` search above) would make the mod's own sprint naturally subject
+  `+breath_sprint` search above) would make the project's own sprint naturally subject
   to the real timer, perk multipliers, and Extreme Conditioning, without needing to
   replicate any of it by hand — a real architecture change, not attempted yet, and
   current sprint behavior is already confirmed working well so this needs a
@@ -1028,7 +1028,7 @@ live against `iw5sp.exe` (Campaign/Survival):
 - D-pad (all 4 directions) — real `+actionslot 1-4` dispatch, data-driven by
   loadout.
 - Survival ready-up (hold Y ~740ms between waves) — the one deliberate exception to
-  this mod's native-only approach (synthesizes a real F5 keypress; the real native
+  this project's native-only approach (synthesizes a real F5 keypress; the real native
   trigger was never found despite an extensive search).
 - Buy-station + pause interaction fix (a real native engine bug, not ours, that
   could permanently break all input until level reload).
