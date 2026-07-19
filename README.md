@@ -35,7 +35,7 @@ reverse (broad coverage, but shaky):
 
 | | Score | Answers |
 |---|---|---|
-| **Raw functionality** | **~83/100** | Of what's actually implemented and tested, how well does it work? See the methodology note below the matrix. |
+| **Raw functionality** | **~77/100** | Of what's actually implemented and tested, how well does it work? See the methodology note below the matrix. |
 | **Feature completeness (SP/Survival scope)** | **~84/100** | Of the full planned SP/Survival roadmap, how much exists at all? From the matrix below. |
 
 **Multiplayer is excluded from both numbers** — it's a separate, equally-large phase
@@ -80,13 +80,17 @@ functionality one): ✅ = 1.0, 🟡/partial = 0.5.
   → 20/22 ≈ 91%
 - Campaign mission compatibility (`re_notes/compatibility_matrix.md`), tested
   missions only — recomputed after correcting a mission mis-attribution (the
-  mortar/turret bugs actually belong to Goalpost, not "Back on the Grid"): 4 full /
-  4 partial out of 8 tested → 6/8 = 75%
-- Killstreak-type weapon systems (`re_notes/killstreak_reference.md`), tested items
-  only: 3 of 4 real Survival killstreaks fully confirmed, 1 (Predator Missile)
-  partial (launch works, guidance aim doesn't) — plus the Campaign-side vehicle/
-  weapon-system table's own 6 full / 3 partial out of 9 tested → weighted ≈ 83%
-- Average: (91 + 75 + 83) / 3 ≈ **83/100**
+  mortar/turret bugs actually belong to Goalpost, not "Back on the Grid," which
+  reverts to untested rather than fully-compatible): **3 full / 4 partial out of
+  7 tested** (was miscounted as 4/4/8 in an earlier pass this session before the
+  correction's own knock-on effect on this count was caught) → 5/7 ≈ 71%
+- Killstreak-type weapon systems (this file's own "Killstreak support" table,
+  Campaign-relevant subset), tested items only (AC-130 excluded, untested):
+  **3 full (Boat, UGV, Helicopter door gun) / 5 partial (DPV, Mortar, Mounted
+  turret, SMAW, Predator Missile — each has a real open caveat, from unwired
+  fire input to unconfirmed lock-on to a still-broken post-fire aim) out of
+  8 tested** → 5.5/8 ≈ 69%
+- Average: (91 + 71 + 69) / 3 ≈ **77/100**
 
 Recompute periodically as sub-items close out and more of Campaign/Special Ops gets
 playtested — these are rough, transparently-weighted estimates for at-a-glance
@@ -262,6 +266,13 @@ native controller UI navigation exists.
 | `[AimAssist]` | `ConeDegrees` | `6` | Half-angle of the "near crosshair" cone a target must be within |
 | `[AimAssist]` | `FrictionStrength` | `0.6` | How much to slow the look-turn rate while the crosshair is near a valid target (`0` = no slowdown, `1` = strongest) |
 | `[AimAssist]` | `MagnetismDegreesPerSecond` | `40` | Max degrees/second the crosshair gets pulled toward a valid target, independent of stick input |
+| `[Vibration]` | `Enabled` | `1` | ⚠️ **Currently has no effect regardless of value** — the two hooks this flag would gate (`Rumble_Install()`) are disabled at their install call site after crashing the game at startup (see Known Limitations). Defaults `1` because it doubles as this feature's own kill-switch once reimplemented — same "default should be `0` until proven safe" lesson this project already learned once for `[AimAssist] Enabled` (fixed in v0.1.2) applies here again; flip to `0` before ship if `Rumble_Install()` is ever re-enabled without also revisiting this default |
+| `[Vibration]` | `FireIntensity` | `0.25` | Motor strength `[0,1]` on each real shot fired (inert — see `Enabled` above) |
+| `[Vibration]` | `FireDurationMs` | `60` | Milliseconds a fire pulse takes to decay to zero (inert — see `Enabled` above) |
+| `[Vibration]` | `DamagePerPoint` | `0.03` | Motor strength added per point of real damage the local player takes (inert — see `Enabled` above) |
+| `[Vibration]` | `DamageMaxIntensity` | `1.0` | Hard cap on damage-rumble strength regardless of damage amount (inert — see `Enabled` above) |
+| `[Vibration]` | `DamageDurationMs` | `200` | Milliseconds a damage pulse takes to decay to zero (inert — see `Enabled` above) |
+| `[Experimental]` | `FireNotifyQueueKick` | `1` | Also pushes `"n 1"` onto the real client command queue on Fire's down-edge (alongside the real `+attack` kbutton call) — the confirmed fix that makes Predator Missile's launch reach its native `notifyonplayercommand` listener. Toggle to `0` to fall back to kbutton-only Fire (pre-2026-07-18 behavior) if this is ever suspected of a regression |
 
 **Button layout presets** (reconstructed from the unchanged CoD4→MW2→MW3 console
 control scheme; ~90-95% confidence, not independently verified against real
@@ -464,7 +475,7 @@ this is a condensed summary.
 
 | Mode | Tested | Fully compatible | Partial (fallback needed) | Not yet tested |
 |---|---|---|---|---|
-| Campaign (17 missions) | 8 | 4 | 4 | 9 |
+| Campaign (17 missions) | 7 | 3 | 4 | 10 |
 | Special Ops (16 missions) | 0 | — | — | 16 |
 | Survival | tracked as one entry (map-independent) | Works well overall | 1 known issue (Predator missile post-fire aim, see below) | — |
 

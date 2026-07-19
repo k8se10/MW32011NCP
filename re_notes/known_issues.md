@@ -1331,7 +1331,25 @@ disassembly check would never catch.
 just this one change**, isolating the two rumble hooks as the cause
 (nothing else changed). All other hooks (movement, look, Fire's
 kbutton+queue-push, D-pad, Sprint's L3-ADS fix, etc.) are unaffected and
-still active.
+still active. `Rumble_Tick()` itself is NOT commented out (still called
+every gameplay frame from `InjectAllControllerInput`) — harmless as-is,
+since with `Rumble_Install()` disabled nothing can ever call
+`TriggerRumble()` to make `g_rumblePeakIntensity` non-zero, so `Rumble_Tick`'s
+own first check makes it a no-op every frame.
+
+**Doc-audit finding (2026-07-19), flagged not fixed (docs-only pass, no code
+touched)**: `[Vibration] Enabled` still defaults to `true` in
+`mod_config.h`/the generated INI, same bug CLASS this project already found
+and fixed once for `[AimAssist] Enabled` (shipped `true` by default in an
+earlier build — see the v0.1.2 patch note, "aim assist's config default was
+true, not false — fresh installs shipped it enabled"). Currently harmless in
+practice ONLY because `Rumble_Install()` is disabled at its call site, so the
+flag has nothing to gate right now — but it's a landmine for whoever
+reimplements this feature against the safer `FUN_0045e320`/health-poll
+targets recommended above: if `Rumble_Install()` (or its replacement) is
+re-enabled without ALSO flipping this default to `false`, fresh installs
+would ship the not-yet-reproven feature turned on by default. Fix this
+default alongside the reimplementation, not as a separate task.
 
 **Recommended real fix, not yet attempted**: hook the NARROWER, specific
 caller functions instead of the shared generic dispatcher —
@@ -2226,7 +2244,7 @@ source doesn't mean its cross-referenced docs update automatically, and
 this project has now hit this exact gap twice in one session (see also
 issue #22's stale slider-adjustment claim, corrected below).
 
-## 29. Fire (RT) rewired off the raw usercmd bit onto the real `+attack` kbutton — LIVE-TESTED: gunfire unaffected, Predator Missile hypothesis REFUTED (2026-07-18)
+## 29. Fire (RT) rewired off the raw usercmd bit onto the real `+attack` kbutton — Predator Missile launch CONFIRMED WORKING via the `"n 1"` delivery-index fix (2026-07-18/19, heading corrected 2026-07-19 — see below for the full chain; the kbutton-alone hypothesis was refuted first, then superseded by the real fix)
 
 **Status:** Implemented, builds clean (0 warnings/0 errors), and now
 live-tested by the user. **Result: half confirmed, half refuted.**

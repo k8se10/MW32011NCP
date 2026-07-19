@@ -32,7 +32,14 @@ reverse-engineering trail behind each entry.
   `Rumble_Install()` call site is commented out (code kept, not deleted).
   A safer reimplementation is planned against a single-call-site-safe
   target (`FUN_0045e320` for fire) and health-polling (rather than a hook)
-  for damage. See `re_notes/known_issues.md` issue #24.
+  for damage. See `re_notes/known_issues.md` issue #24. **Doc-audit
+  finding, 2026-07-19 (flagged, not fixed — no code touched this pass):**
+  `[Vibration] Enabled` still defaults to `true`, the exact same bug class
+  already found and fixed once for `[AimAssist] Enabled` (v0.1.2).
+  Currently harmless since `Rumble_Install()` is disabled with nothing to
+  gate, but it's a landmine for the eventual reimplementation — flip this
+  default to `false` in the same pass that re-enables real rumble hooks,
+  not as an afterthought.
 - **`[Experimental]` config section (2026-07-18)** — a new pattern for
   individually-toggleable, not-yet-fully-proven behaviors, so a live
   hypothesis under test can be flipped off via the INI without a
@@ -237,6 +244,49 @@ reverse-engineering trail behind each entry.
     pipeline now proven), and the options-menu implementation plan (1→2 of
     4); raw-functionality methodology's killstreak dataset and mission-
     compatibility dataset both recomputed against the corrected numbers.
+  - **Second, deeper audit pass (2026-07-19): every commit since the last
+    pre-session push (`418333f`) re-verified diff-by-diff against the
+    docs, not just re-reading the prior summary.** Found and fixed several
+    real gaps:
+    - README's Configuration table listed every `[Look]`/`[Stance]`/
+      `[Interact]`/`[Survival]`/`[Sprint]`/`[Bindings]`/`[AimAssist]` key
+      but was missing the `[Vibration]` and `[Experimental]` sections
+      entirely, even though both were added to the actual config this
+      session — added all 7 missing rows.
+    - `[Vibration] Enabled` still defaults to `true` in `mod_config.h`/the
+      generated INI — the same bug CLASS already found and fixed once for
+      `[AimAssist] Enabled` (v0.1.2). Currently harmless (nothing can gate
+      on it while `Rumble_Install()` stays disabled) but flagged as a
+      landmine for the eventual reimplementation. See the Vibration/rumble
+      entry above and `known_issues.md` issue #24.
+    - **`re_notes/killstreak_reference.md` was never updated with the
+      `"n 1"` Predator Missile launch fix** — its Campaign and Survival
+      tables both still read "currently broken"/"hypothesis REFUTED, real
+      fix still not found," directly contradicting README/PATCHNOTES'
+      "launch confirmed working live" status. Also still said "Back on the
+      Grid" for the mortar/turret rows. Both corrected, with the squadmate
+      call-in rows also upgraded from unlabeled to explicit ✅ CONFIRMED
+      WORKING to match README.
+    - `known_issues.md` issue #29's own HEADING still read "Predator
+      Missile hypothesis REFUTED" while its own body, several hundred
+      lines later, documents the fix and a live "CONFIRMED" launch —
+      self-contradicting within the same file. Heading corrected to
+      reflect the current, superseding status.
+    - **README's Campaign compatibility summary row was left un-recomputed
+      after the Goalpost correction**: table said "8 tested / 4 full / 4
+      partial / 9 untested," but Goalpost moving from ✅ to ⚠️ (and "Back on
+      the Grid" already having reset to ❓ untested in an earlier session)
+      means the real count is **7 tested / 3 full / 4 partial / 10
+      untested** — fixed. This also changed the Raw Functionality
+      scorecard's own methodology (Campaign-compatibility dataset
+      recomputed 75%→71%, Campaign killstreak-weapon-system dataset
+      recomputed against README's own table 83%→69%, overall Raw
+      Functionality score 83→**77/100**) — Feature Completeness (~84/100)
+      is a separate axis and unaffected.
+    - Everything else audited (all 4 commits' code diffs against their own
+      commit messages, `re_notes/ui_assets.md`, `survival_mode_overview.md`,
+      `survival_wave_scaling.md`, `iw5sp.md` spot checks) matched what was
+      actually implemented — no further gaps found.
 - **Added a scorecard to README.md**: raw functionality (~80/100, from the
   control map, `compatibility_matrix.md`, and `killstreak_reference.md`)
   and a feature-completeness matrix (~74/100, SP/Survival scope).
