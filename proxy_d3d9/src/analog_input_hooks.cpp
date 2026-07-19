@@ -1123,6 +1123,16 @@ extern "C" void __cdecl InjectControllerSprint()
         return;
     }
 
+    if (g_modConfig.sprintStaminaBypassForTesting) {
+        // [Experimental] task #9, 2026-07-19: same bypass shape as the dvar check
+        // above, but user-toggled -- isolates the new real +sprint kbutton migration
+        // for live testing by skipping this mod's own stamina/cooldown timer
+        // entirely, so a test session can confirm the kbutton itself works before
+        // also re-confirming the (unchanged) stamina system on top of it.
+        UpdateSprintKbutton(IsSprintActive());
+        return;
+    }
+
     if (dt > 0.0f) {
         if (g_sprintWinded) {
             // Fixed cooldown, deliberately NOT tied to the continuous stamina float --

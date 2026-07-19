@@ -45,6 +45,14 @@ reverse-engineering trail behind each entry.
   hypothesis under test can be flipped off via the INI without a
   recompile if it turns out to be wrong. First entry:
   `FireNotifyQueueKick` (see the Fire/killstreak entry below).
+- **`[Experimental] SprintStaminaBypassForTesting` (2026-07-19, task #9).**
+  Added specifically to isolate Sprint's real-`+sprint`-kbutton migration
+  (see Changed below) for live testing: when `1`, skips this mod's own
+  stamina/cooldown timer entirely (same bypass shape as the existing
+  `player_sprintUnlimited` dvar check), so a test session confirms the new
+  kbutton mechanism works before the (unchanged) stamina system is back in
+  the loop. Default `0`. Set back to `0` once the kbutton itself is
+  confirmed working live.
 
 ### Fixed
 - **Sprint (L3) no longer force-stands the player while ADS'd (2026-07-18,

@@ -213,7 +213,13 @@ void WriteDefaultConfig(const char* path)
         "; attempt to reach notifyonplayercommand's delivery mechanism for\n"
         "; killstreaks like Predator Missile. 0 = off (kbutton call only, pre-\n"
         "; 2026-07-18 behavior), 1 = on.\n"
-        "FireNotifyQueueKick=%d\n",
+        "FireNotifyQueueKick=%d\n"
+        "; Task #9, 2026-07-19: Sprint just migrated off raw pm_flags-forcing onto\n"
+        "; the real +sprint kbutton. Set to 1 to skip this mod's OWN stamina/\n"
+        "; cooldown timer entirely (no 4s/2s limit) while confirming the new\n"
+        "; kbutton mechanism itself works in isolation. 0 = normal stamina/cooldown\n"
+        "; behavior (default) -- set this back to 0 once the kbutton is confirmed.\n"
+        "SprintStaminaBypassForTesting=%d\n",
         g_modConfig.lookDegreesPerSecond,
         g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
@@ -237,7 +243,8 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.vibrationDamagePerPoint,
         g_modConfig.vibrationDamageMaxIntensity,
         g_modConfig.vibrationDamageDurationMs,
-        g_modConfig.fireNotifyQueueKick ? 1 : 0);
+        g_modConfig.fireNotifyQueueKick ? 1 : 0,
+        g_modConfig.sprintStaminaBypassForTesting ? 1 : 0);
 
     fclose(f);
 }
@@ -379,10 +386,11 @@ void LoadModConfig()
     if (g_modConfig.vibrationDamageMaxIntensity < 0.0f) g_modConfig.vibrationDamageMaxIntensity = 0.0f;
     ReadUlong(path, "Vibration", "DamageDurationMs", g_modConfig.vibrationDamageDurationMs);
     ReadBool(path, "Experimental", "FireNotifyQueueKick", g_modConfig.fireNotifyQueueKick);
+    ReadBool(path, "Experimental", "SprintStaminaBypassForTesting", g_modConfig.sprintStaminaBypassForTesting);
 
     g_buttonMap = ResolveButtonMap(g_modConfig.buttonLayout, g_modConfig.flipTriggers);
 
-    char buf[820];
+    char buf[900];
     sprintf_s(buf,
         "[config] loaded mw3ncp_config.ini: sensitivity=%g adsSlowdownStrength=%g "
         "adsSlowdownBaseline=%g invertLook=%d proneHoldMs=%lu interactHoldMs=%lu "
@@ -392,7 +400,7 @@ void LoadModConfig()
         "aimAssistFrictionStrength=%g aimAssistMagnetismDps=%g "
         "vibrationEnabled=%d vibrationFireIntensity=%g vibrationFireDurationMs=%lu "
         "vibrationDamagePerPoint=%g vibrationDamageMaxIntensity=%g vibrationDamageDurationMs=%lu "
-        "fireNotifyQueueKick=%d",
+        "fireNotifyQueueKick=%d sprintStaminaBypassForTesting=%d",
         g_modConfig.lookDegreesPerSecond, g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
         g_modConfig.invertLook ? 1 : 0, g_modConfig.proneHoldThresholdMs,
@@ -406,6 +414,7 @@ void LoadModConfig()
         g_modConfig.vibrationEnabled ? 1 : 0, g_modConfig.vibrationFireIntensity,
         g_modConfig.vibrationFireDurationMs, g_modConfig.vibrationDamagePerPoint,
         g_modConfig.vibrationDamageMaxIntensity, g_modConfig.vibrationDamageDurationMs,
-        g_modConfig.fireNotifyQueueKick ? 1 : 0);
+        g_modConfig.fireNotifyQueueKick ? 1 : 0,
+        g_modConfig.sprintStaminaBypassForTesting ? 1 : 0);
     LogFromController(buf);
 }

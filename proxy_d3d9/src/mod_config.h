@@ -130,6 +130,16 @@ struct ModConfig
         // killstreaks like Predator Missile. NOT YET LIVE-CONFIRMED to help or be
         // harmless; toggle off here if it's ever suspected of causing a gameplay
         // regression, without needing to touch analog_input_hooks.cpp.
+    bool sprintStaminaBypassForTesting = false; // task #9, 2026-07-19: Sprint just
+        // migrated off raw pm_flags-forcing onto the real +sprint kbutton
+        // (0xA98CCC) -- this isolates that change for live testing by skipping
+        // this mod's OWN stamina/cooldown timer entirely (same code path as the
+        // existing player_sprintUnlimited dvar bypass), so Sprint runs purely off
+        // the new kbutton mechanism with no 4s/2s timeout fighting for attention
+        // while confirming the kbutton itself actually works. Default false --
+        // flip to true in mw3ncp_config.ini for this one test pass, then back to
+        // false once confirmed (the stamina/cooldown system itself is unaffected
+        // by the kbutton migration and isn't what's being tested here).
 };
 
 // The loaded config, populated once by LoadModConfig(). Read-only after startup --
