@@ -151,11 +151,10 @@ void WriteDefaultConfig(const char* path)
         "; press released before this switches weapons instead, same as a normal tap.\n"
         "ReadyUpHoldThresholdMs=%lu\n"
         "\n"
-        "[Sprint]\n"
-        "; Seconds of continuous sprint before stamina fully depletes.\n"
-        "MaxStaminaSeconds=%g\n"
-        "; Seconds of NOT sprinting required to fully recover from empty.\n"
-        "RegenSeconds=%g\n"
+        "; [Sprint] section removed 2026-07-19 (task #9): Sprint now drives the real\n"
+        "; +sprint kbutton directly, so the engine's own native sprint duration/\n"
+        "; recovery timer (and Extreme Conditioning's real override) apply\n"
+        "; automatically -- LIVE-CONFIRMED. No config needed for this anymore.\n"
         "\n"
         "[Bindings]\n"
         "; OG console button layout presets, reconstructed from the unchanged CoD4->\n"
@@ -213,13 +212,7 @@ void WriteDefaultConfig(const char* path)
         "; attempt to reach notifyonplayercommand's delivery mechanism for\n"
         "; killstreaks like Predator Missile. 0 = off (kbutton call only, pre-\n"
         "; 2026-07-18 behavior), 1 = on.\n"
-        "FireNotifyQueueKick=%d\n"
-        "; Task #9, 2026-07-19: Sprint just migrated off raw pm_flags-forcing onto\n"
-        "; the real +sprint kbutton. Set to 1 to skip this mod's OWN stamina/\n"
-        "; cooldown timer entirely (no 4s/2s limit) while confirming the new\n"
-        "; kbutton mechanism itself works in isolation. 0 = normal stamina/cooldown\n"
-        "; behavior (default) -- set this back to 0 once the kbutton is confirmed.\n"
-        "SprintStaminaBypassForTesting=%d\n",
+        "FireNotifyQueueKick=%d\n",
         g_modConfig.lookDegreesPerSecond,
         g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
@@ -227,8 +220,6 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.proneHoldThresholdMs,
         g_modConfig.interactHoldThresholdMs,
         g_modConfig.readyUpHoldThresholdMs,
-        g_modConfig.sprintMaxStaminaSeconds,
-        g_modConfig.sprintRegenSeconds,
         ButtonLayoutName(g_modConfig.buttonLayout),
         StickLayoutName(g_modConfig.stickLayout),
         g_modConfig.flipTriggers ? 1 : 0,
@@ -243,8 +234,7 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.vibrationDamagePerPoint,
         g_modConfig.vibrationDamageMaxIntensity,
         g_modConfig.vibrationDamageDurationMs,
-        g_modConfig.fireNotifyQueueKick ? 1 : 0,
-        g_modConfig.sprintStaminaBypassForTesting ? 1 : 0);
+        g_modConfig.fireNotifyQueueKick ? 1 : 0);
 
     fclose(f);
 }
@@ -352,18 +342,10 @@ void LoadModConfig()
     ReadUlong(path, "Stance", "ProneHoldThresholdMs", g_modConfig.proneHoldThresholdMs);
     ReadUlong(path, "Interact", "HoldThresholdMs", g_modConfig.interactHoldThresholdMs);
     ReadUlong(path, "Survival", "ReadyUpHoldThresholdMs", g_modConfig.readyUpHoldThresholdMs);
-    ReadFloat(path, "Sprint", "MaxStaminaSeconds", g_modConfig.sprintMaxStaminaSeconds);
-    ReadFloat(path, "Sprint", "RegenSeconds", g_modConfig.sprintRegenSeconds);
-    // FIXED 2026-07-17 (pre-release review): InjectControllerSprint divides by
-    // sprintRegenSeconds every tick (dt * (sprintMaxStaminaSeconds / sprintRegenSeconds)).
-    // A hand-edited RegenSeconds=0 alone is a divide-by-zero (float semantics -> inf,
-    // clamped away same-tick, harmless); MaxStaminaSeconds=0 too makes it 0/0 -> NaN,
-    // and g_sprintStamina goes permanently NaN (the ">= 0" clamp check is always false
-    // for NaN, so it never self-corrects). Only reachable via manual config editing,
-    // not normal play, but cheap to guard the same way every other config value in
-    // this function already is.
-    if (g_modConfig.sprintMaxStaminaSeconds < 0.1f) g_modConfig.sprintMaxStaminaSeconds = 0.1f;
-    if (g_modConfig.sprintRegenSeconds < 0.1f) g_modConfig.sprintRegenSeconds = 0.1f;
+    // [Sprint] MaxStaminaSeconds/RegenSeconds removed 2026-07-19 (task #9): the real
+    // +sprint kbutton migration made this mod's own custom stamina/cooldown timer
+    // (and its divide-by-zero guard that used to live here) dead code -- the engine's
+    // own native timer now applies automatically. See mod_config.h's [Sprint] comment.
     ReadButtonLayout(path, g_modConfig.buttonLayout);
     ReadStickLayout(path, g_modConfig.stickLayout);
     ReadBool(path, "Bindings", "FlipTriggers", g_modConfig.flipTriggers);
@@ -386,7 +368,6 @@ void LoadModConfig()
     if (g_modConfig.vibrationDamageMaxIntensity < 0.0f) g_modConfig.vibrationDamageMaxIntensity = 0.0f;
     ReadUlong(path, "Vibration", "DamageDurationMs", g_modConfig.vibrationDamageDurationMs);
     ReadBool(path, "Experimental", "FireNotifyQueueKick", g_modConfig.fireNotifyQueueKick);
-    ReadBool(path, "Experimental", "SprintStaminaBypassForTesting", g_modConfig.sprintStaminaBypassForTesting);
 
     g_buttonMap = ResolveButtonMap(g_modConfig.buttonLayout, g_modConfig.flipTriggers);
 
@@ -394,18 +375,17 @@ void LoadModConfig()
     sprintf_s(buf,
         "[config] loaded mw3ncp_config.ini: sensitivity=%g adsSlowdownStrength=%g "
         "adsSlowdownBaseline=%g invertLook=%d proneHoldMs=%lu interactHoldMs=%lu "
-        "readyUpHoldMs=%lu sprintMax=%g "
-        "sprintRegen=%g buttonLayout=%s stickLayout=%s flipTriggers=%d "
+        "readyUpHoldMs=%lu "
+        "buttonLayout=%s stickLayout=%s flipTriggers=%d "
         "aimAssistEnabled=%d aimAssistRange=%g aimAssistConeDegrees=%g "
         "aimAssistFrictionStrength=%g aimAssistMagnetismDps=%g "
         "vibrationEnabled=%d vibrationFireIntensity=%g vibrationFireDurationMs=%lu "
         "vibrationDamagePerPoint=%g vibrationDamageMaxIntensity=%g vibrationDamageDurationMs=%lu "
-        "fireNotifyQueueKick=%d sprintStaminaBypassForTesting=%d",
+        "fireNotifyQueueKick=%d",
         g_modConfig.lookDegreesPerSecond, g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
         g_modConfig.invertLook ? 1 : 0, g_modConfig.proneHoldThresholdMs,
         g_modConfig.interactHoldThresholdMs, g_modConfig.readyUpHoldThresholdMs,
-        g_modConfig.sprintMaxStaminaSeconds, g_modConfig.sprintRegenSeconds,
         ButtonLayoutName(g_modConfig.buttonLayout), StickLayoutName(g_modConfig.stickLayout),
         g_modConfig.flipTriggers ? 1 : 0,
         g_modConfig.aimAssistEnabled ? 1 : 0, g_modConfig.aimAssistRange,
@@ -414,7 +394,6 @@ void LoadModConfig()
         g_modConfig.vibrationEnabled ? 1 : 0, g_modConfig.vibrationFireIntensity,
         g_modConfig.vibrationFireDurationMs, g_modConfig.vibrationDamagePerPoint,
         g_modConfig.vibrationDamageMaxIntensity, g_modConfig.vibrationDamageDurationMs,
-        g_modConfig.fireNotifyQueueKick ? 1 : 0,
-        g_modConfig.sprintStaminaBypassForTesting ? 1 : 0);
+        g_modConfig.fireNotifyQueueKick ? 1 : 0);
     LogFromController(buf);
 }

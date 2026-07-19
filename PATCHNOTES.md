@@ -45,14 +45,15 @@ reverse-engineering trail behind each entry.
   hypothesis under test can be flipped off via the INI without a
   recompile if it turns out to be wrong. First entry:
   `FireNotifyQueueKick` (see the Fire/killstreak entry below).
-- **`[Experimental] SprintStaminaBypassForTesting` (2026-07-19, task #9).**
-  Added specifically to isolate Sprint's real-`+sprint`-kbutton migration
-  (see Changed below) for live testing: when `1`, skips this mod's own
-  stamina/cooldown timer entirely (same bypass shape as the existing
-  `player_sprintUnlimited` dvar check), so a test session confirms the new
-  kbutton mechanism works before the (unchanged) stamina system is back in
-  the loop. Default `0`. Set back to `0` once the kbutton itself is
-  confirmed working live.
+- **`[Experimental] SprintStaminaBypassForTesting` (2026-07-19, task #9) —
+  ADDED THEN REMOVED THE SAME DAY.** Added specifically to isolate Sprint's
+  real-`+sprint`-kbutton migration (see Changed below) for live testing by
+  skipping this mod's own stamina/cooldown timer entirely. Live-testing
+  confirmed the kbutton migration works AND that the underlying custom
+  timer this toggle bypassed is now permanently redundant (see the Changed
+  entry below) — with that timer gone entirely, there's nothing left for
+  this toggle to bypass, so it was removed the same session rather than
+  left around as dead config surface.
 
 ### Fixed
 - **Sprint (L3) no longer force-stands the player while ADS'd (2026-07-18,
@@ -110,16 +111,34 @@ reverse-engineering trail behind each entry.
   a newly-found `0xA98C04` (very likely Hold Breath's own kbutton, a live
   lead for task #24) and a second on this exact same `0xA98CCC`. Sprint now
   drives this kbutton via `CallKbuttonDown`/`CallKbuttonUp` (same mechanism
-  as ADS/Reload/Fire), gated on the existing `IsSprintActive()` logical
-  state so a real `KeyUp` fires the instant stamina empties mid-hold, not
-  just on physical release. The old pm_flags-forcing mechanism
-  (`InjectControllerSprintPmFlags`/`ReassertSprintPmFlags`, hooks on
-  `FUN_00644ed0`/`FUN_00643ce0`) was removed entirely, not just disabled —
-  full replace, same precedent as Fire's migration above. The stamina/
-  cooldown timer layer and `player_sprintUnlimited` bypass are unchanged.
-  Builds clean (0 warnings/0 errors, full rebuild). Not yet live-tested.
-  See `known_issues.md` issue #6's 2026-07-19 update for the full
-  disassembly trail.
+  as ADS/Reload/Fire), gated on `IsSprintActive()`. The old pm_flags-forcing
+  mechanism (`InjectControllerSprintPmFlags`/`ReassertSprintPmFlags`, hooks
+  on `FUN_00644ed0`/`FUN_00643ce0`) was removed entirely, not just disabled —
+  full replace, same precedent as Fire's migration above. Builds clean (0
+  warnings/0 errors, full rebuild). **LIVE-CONFIRMED WORKING, same day
+  (2026-07-19).** User report: "this fixes multiple issues, having native
+  sprint means no workaround needed for stamina and regen as its embedded
+  naturally by the engine[,] same for extreme conditioning[,] fixed by this
+  100%." Driving the real kbutton means the engine's own native sprint
+  duration/recovery timer now applies automatically, INCLUDING Extreme
+  Conditioning's real duration override — with zero separate detection code
+  needed. **As a direct consequence, this mod's entire custom stamina/
+  cooldown timer layer (maintained since 2026-07-15 specifically to work
+  around the previous pm_flags-forcing approach bypassing the real timer)
+  is now dead weight and has been removed in the same pass**: `g_sprintStamina`/
+  `g_sprintWinded`/`g_sprintCooldownRemaining`/`g_sprintLastTickMs`, the
+  `player_sprintUnlimited`-dvar bypass (redundant — the real kbutton already
+  respects that dvar natively, same as real keyboard sprint does), the
+  `[Sprint]` config section (`MaxStaminaSeconds`/`RegenSeconds`), the
+  just-added `[Experimental] SprintStaminaBypassForTesting` toggle (see
+  Added above), and the `GetRealSprintValue`/`LogSprintDiag` diagnostic code
+  that had been investigating whether a real native timer existed at all
+  (see `known_issues.md` issue #6, 2026-07-16) — all gone. Also resolves
+  task #9/#24's previously-open "Extreme Conditioning perk override" item:
+  no override code was ever needed, since the real kbutton makes it a
+  native, automatic consequence rather than something this mod has to
+  detect and apply itself. See `known_issues.md` issue #6's 2026-07-19
+  update for the full disassembly trail and this removal.
 
 ### Investigated, not resolved
 - **Predator Missile post-fire missile-guidance sequence: movement breaks

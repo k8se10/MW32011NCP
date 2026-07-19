@@ -891,74 +891,15 @@ extern "C" void __cdecl InjectControllerFire()
 namespace {
 bool g_sprintHeld = false;
 
-// ---- Sprint stamina/cooldown (2026-07-15) --------------------------------------------
-//
-// Our own layer, not the game's real one: driving the real +sprint kbutton for as long
-// as it's physically held bypasses whatever native duration/recovery timer normally
-// limits sprint -- confirmed this gives infinite sprint, unlike real vanilla keyboard
-// play (same conclusion held true back when this forced the raw pm_flags bit directly,
-// before the 2026-07-19 migration to a real kbutton). `player_sprintUnlimited`
-// (a real dvar, default 0) only gets set to 1 in a couple of specific Campaign missions
-// (`dubai_code.gsc`/`intro_code.gsc` per Plutonium's public GSC dump), not universally,
-// meaning Survival and most Campaign missions genuinely have a limited-by-default
-// stamina system we were bypassing entirely. Traced FUN_00643870 (the real
-// `player_sprintSpeedScale` consumer) fully -- confirmed it's pure speed-calculation,
-// no duration/timer logic at all, so the real native clock lives elsewhere in the Pmove
-// chain and wasn't located (see re_notes/known_issues.md). Implemented as our own timer
-// layer instead: 4 seconds of continuous sprint to fully deplete, 2 seconds not
-// sprinting to fully recover (real MW3 values, confirmed).
-//
-// OVERRIDE (flagged by user, 2026-07-15): `player_sprintUnlimited` (real dvar, default
-// 0) is live-set to 1 by specific mission scripts (`dubai_code.gsc`/`intro_code.gsc`
-// confirmed so far via Plutonium's GSC dump, likely others) -- when set, bypass our
-// timer entirely and allow genuinely infinite sprint, matching what real keyboard play
-// gets in those missions. Checked live every tick via `GetDvarInt`, a raw dvar-value
-// getter (NOT `FUN_00498ec0`/`GetDvarString` -- that one blindly returns
-// `*(char**)(dvarPtr+0xc)` as a string pointer, which would crash on a boolean/int dvar
-// like this one, since +0xc holds a raw 0/1 there, not a valid pointer). Still open:
-// the Extreme Conditioning perk doubles sprint duration to 8 seconds -- likely a
-// SEPARATE mechanism (probably `perk_sprintMultiplier`, a real dvar found earlier that
-// scales `player_sprinttime`, not the same on/off flag as sprintUnlimited), not yet
-// investigated -- see task tracking.
-//
-// Max stamina/regen seconds now come from g_modConfig ([Sprint] in mw3ncp_config.ini,
-// task #14) rather than being hardcoded. g_sprintStamina's own initializer below is a
-// plain literal, NOT a read of g_modConfig -- global initialization order between two
-// different .cpp files' statics is unspecified in C++, so reading g_modConfig here
-// could run before or after its own default-member-initializers depending on link
-// order. InstallAnalogInputHooks() (called from DllMain strictly after LoadModConfig())
-// re-syncs this to the real configured value, which is what actually matters since no
-// gameplay hook fires before DllMain returns.
-float g_sprintStamina = 4.0f;
-// FIX (live-confirmed bug, same day): originally cleared g_sprintWinded the instant
-// g_sprintStamina ticked back above zero -- but regen starts adding immediately every
-// frame, so stamina crossed back above zero (a tiny fraction) within a SINGLE frame of
-// hitting empty, clearing the lockout almost instantly and letting sprint resume right
-// away ("our calls keep firing" -- confirmed live). Fixed with a real, fixed-duration
-// cooldown timer, fully decoupled from the continuous stamina float, so hitting empty
-// unconditionally blocks sprint for the whole 2 seconds -- we're the ones deciding and
-// enforcing this, not something the continuous float model could silently undermine.
-float g_sprintCooldownRemaining = 0.0f; // only meaningful while g_sprintWinded is true
-bool g_sprintWinded = false;
-DWORD g_sprintLastTickMs = 0; // NOT Controller_DeltaTimeSeconds() -- that helper uses a
-                              // single process-wide shared static timer (despite its own
-                              // doc comment claiming "for this call site"), already
-                              // consumed every frame by InjectControllerLookAngles().
-                              // Adding a second caller in the same per-frame tick would
-                              // starve this one to a near-zero delta every time (whichever
-                              // call happens first each frame resets the shared clock the
-                              // second call then reads as almost no elapsed time) -- an
-                              // independent GetTickCount()-based timer avoids that entirely.
-
 // Raw dvar-value getter -- calls the same Dvar_FindVar-equivalent FUN_00498ec0 itself
 // calls internally (FUN_0062abe0, confirmed via FUN_00498ec0's disassembly: name arg
 // passed in EDI, not on the stack -- a custom register convention, same class as this
 // file's other non-cdecl engine calls), then reads the raw int at dvarPtr+0xc directly.
 // Deliberately NOT reusing GetDvarString/FUN_00498ec0 here -- that function blindly
 // returns `*(char**)(dvarPtr+0xc)` as a string pointer, which is only valid for actual
-// string-type dvars; calling it on a boolean/int dvar like player_sprintUnlimited would
-// read the raw 0/1 stored there as if it were a memory address and crash dereferencing
-// it as a string.
+// string-type dvars; calling it on a boolean/int dvar would read the raw 0/1 stored
+// there as if it were a memory address and crash dereferencing it as a string. General
+// utility, used elsewhere in this file too (e.g. cl_paused), not Sprint-specific.
 int GetDvarInt(const char* name)
 {
     constexpr uintptr_t kFindDvarFn = 0x0062abe0;
@@ -975,17 +916,38 @@ int GetDvarInt(const char* name)
     return *reinterpret_cast<int*>(reinterpret_cast<uintptr_t>(dvarPtr) + 0xc);
 }
 
+// ---- Sprint (L3): real +sprint kbutton (2026-07-19) ------------------------------
+//
+// Found via a purely static technique -- see the big comment block above this
+// namespace for the full disassembly trail (FUN_00438710's real 77-entry jump table
+// cross-referenced against the real static 81-entry canonical bind-name table
+// FUN_005330a0 scans, confirming the table index IS the dispatcher's case number,
+// four independent ways). Case 61-62 ("+sprint"/"-sprint") drives a dedicated
+// kbutton_t at (per-player base)+0xA98CCC -- independently cross-confirmed because the
+// real default SHIFT bind ("+breath_sprint", case 9-10) disassembles to two
+// back-to-back kbutton calls, one on a new, previously-unidentified 0xA98C04 (very
+// likely Hold Breath's own kbutton, a live lead for task #24) and a second on this
+// exact same 0xA98CCC.
+//
+// REMOVED THE SAME DAY, LIVE-CONFIRMED: this migration superseded an entire custom
+// stamina/cooldown timer layer this mod maintained since 2026-07-15, built
+// specifically to work around the PREVIOUS raw pm_flags-forcing approach bypassing
+// the engine's own native sprint duration/recovery timer entirely. Driving the real
+// kbutton instead means that native timer now applies automatically -- **live-tested
+// and confirmed working**, including Extreme Conditioning's real duration override
+// applying for free, with zero separate detection code needed (closing out that half
+// of task #9/#24). The old timer (`g_sprintStamina`/`g_sprintWinded`/
+// `g_sprintCooldownRemaining`), its `[Sprint]` config section, its
+// `player_sprintUnlimited`-dvar bypass, and the diagnostic code that investigated
+// whether a real native timer existed (`GetRealSprintValue`/`LogSprintDiag`, see
+// FUN_004b9350) are all gone -- not just disabled, since there's nothing left for any
+// of them to do. See `re_notes/known_issues.md` issue #6 and `PATCHNOTES.md` for the
+// full history, including the three prior dead-end searches this superseded.
 bool IsSprintActive()
 {
-    if (GetDvarInt("player_sprintUnlimited") != 0) return g_sprintHeld && GetRealStance() == 0;
-    return g_sprintHeld && GetRealStance() == 0 && !g_sprintWinded;
+    return g_sprintHeld && GetRealStance() == 0;
 }
 
-// Sprint's real kbutton_t, found 2026-07-19 -- see the big comment block above this
-// namespace for the full disassembly trail (FUN_00438710 case 0x3d/0x3e = "+sprint",
-// cross-confirmed by case 9/10's "+breath_sprint" driving the exact same address).
-// Same struct family/offset style as ADS (0xA98CB8) and Reload (0xA98C68), same
-// CallKbuttonDown/CallKbuttonUp convention (defined above, ADS section).
 constexpr uintptr_t kSprintKbutton = 0x00A98CCC;
 constexpr int kSprintBindIndex = 16; // distinct from ADS's 13/Reload's 15 -- arbitrary,
                                       // just needs to be self-consistent between our own
@@ -993,16 +955,13 @@ constexpr int kSprintBindIndex = 16; // distinct from ADS's 13/Reload's 15 -- ar
 bool g_sprintKbuttonActive = false; // tracks whether OUR CallKbuttonDown is currently
                                      // "claimed" on the real kbutton, so we call KeyUp
                                      // exactly once per KeyDown regardless of which of
-                                     // several different conditions (stamina depleting
-                                     // mid-hold, controller disconnect, physical release)
+                                     // several different conditions (controller
+                                     // disconnect, physical release, stance change)
                                      // caused sprint to stop being active this tick.
 
-// Drives the real kbutton off IsSprintActive()'s full logical state (stamina/cooldown/
-// stance/ADS/sprintUnlimited-dvar), not the raw physical hold -- Sprint needs to
-// genuinely stop (real KeyUp) the instant stamina hits empty even while the button
-// stays physically held, and resume (real KeyDown) automatically once recovered if
-// still held, matching how the game's own kbutton_t would behave under a real timed
-// stamina system.
+// Drives the real kbutton off IsSprintActive()'s logical state (held + upright stance),
+// not just the raw physical hold -- keeps KeyDown/KeyUp edge-triggered exactly once per
+// real transition, same convention as ADS/Reload/Fire.
 void UpdateSprintKbutton(bool active)
 {
     if (active == g_sprintKbuttonActive) return;
@@ -1013,57 +972,6 @@ void UpdateSprintKbutton(bool active)
         CallKbuttonUp(kSprintKbutton, kSprintBindIndex);
     }
 }
-
-// ---- Investigating a REAL native sprint timer (2026-07-16) ------------------------
-//
-// Found via the sprint-meter HUD render function (FUN_005696d0/FUN_005695a0, which
-// consume the real cg_sprintMeterFullColor/EmptyColor/DisabledColor dvars found via
-// string search): both compute `fVar4 = (float)FUN_004b9350(...) / (float)FUN_007380e0()`
-// and use that as the real meter fill FRACTION -- exactly the shape of a genuine
-// current/max sprint-time ratio. If this is really what it looks like, it may let us
-// read the game's own real stamina state directly (and inherit perk_sprintMultiplier /
-// Extreme Conditioning overrides for free) instead of maintaining our own separate
-// timer at all.
-//
-// `FUN_004b9350(playerStructAddr, currentTimeMs)` confirmed via disassembly to be a
-// genuine __cdecl (both args on the stack, no custom register convention) -- safe to
-// call directly. `FUN_007380e0()` takes NO arguments and reads an ambient value
-// already sitting in the x87 FPU register (ST0) at time of call -- i.e. it depends on
-// its CALLER having set up that register first, so calling it cold ourselves would
-// likely read garbage (the same class of risk investigated and ruled out for the ADS
-// FOV bug). NOT calling it directly for that reason -- FUN_004b9350 already calls it
-// internally, in the correct context, on the branch where it's needed, so we get its
-// effect safely by only calling FUN_004b9350 ourselves.
-//
-// player struct address is `&DAT_00984b88` (a fixed global, passed as the raw address
-// itself, not its dereferenced contents -- confirmed from the real call site's exact
-// argument pattern); current time is `*(int*)0x00984b78` (dereferenced value, the same
-// "current time" global already used elsewhere in this project, e.g. FUN_0057d740's
-// DAT_00984b78 frame-time reads).
-using GetRealSprintValueFn = int(__cdecl*)(uintptr_t playerStructAddr, int currentTimeMs);
-GetRealSprintValueFn const GetRealSprintValue = reinterpret_cast<GetRealSprintValueFn>(0x004b9350);
-constexpr uintptr_t kSprintPlayerStructAddr = 0x00984b88;
-constexpr uintptr_t kSprintCurrentTimeAddr = 0x00984b78;
-
-DWORD g_lastSprintDiagLogMs = 0;
-
-void LogSprintDiag()
-{
-    DWORD nowMs = GetTickCount();
-    if (nowMs - g_lastSprintDiagLogMs < 250) return;
-    g_lastSprintDiagLogMs = nowMs;
-
-    int currentTimeMs = *reinterpret_cast<volatile int*>(kSprintCurrentTimeAddr);
-    int realValue = GetRealSprintValue(kSprintPlayerStructAddr, currentTimeMs);
-
-    char buf[220];
-    sprintf_s(buf,
-        "[sprint-diag] realValue=%d currentTimeMs=%d ourStamina=%.3f ourWinded=%d "
-        "sprintHeld=%d realStance=%d",
-        realValue, currentTimeMs, g_sprintStamina, g_sprintWinded ? 1 : 0,
-        g_sprintHeld ? 1 : 0, GetRealStance());
-    LogFromController(buf);
-}
 } // namespace
 
 extern "C" void __cdecl InjectControllerSprint()
@@ -1071,22 +979,12 @@ extern "C" void __cdecl InjectControllerSprint()
     unsigned short buttons;
     unsigned char leftTrigger, rightTrigger;
     if (!Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger)) {
-        // FIXED 2026-07-17 (pre-release review): keep the tick baseline fresh here too,
-        // same reason the player_sprintUnlimited bypass below already does -- without
-        // this, a controller disconnect/reconnect while sprint was held computed dt
-        // across the WHOLE disconnected interval on the next real tick (self-correcting,
-        // since it just clamps stamina to 0 and marks winded, but still an avoidable
-        // inconsistency with the exact pattern this function already established for
-        // the bypass case one branch below).
-        g_sprintLastTickMs = GetTickCount();
         // Controller gone -- release the real kbutton if we were holding it, same as a
         // real keyboard key being physically lifted. Otherwise a disconnect mid-sprint
         // would leave the engine's own kbutton_t stuck "down" forever.
         UpdateSprintKbutton(false);
         return;
     }
-
-    LogSprintDiag(); // task #9 -- investigating a real native sprint timer, see comment above
 
     bool held = IsPhysicalHeld(g_buttonMap.sprint, buttons, leftTrigger, rightTrigger);
     if (held && !g_sprintHeld && GetRealStance() != 0 && !g_adsHeld) {
@@ -1107,62 +1005,11 @@ extern "C" void __cdecl InjectControllerSprint()
     }
     g_sprintHeld = held;
 
-    // Keep the tick baseline fresh even while bypassed below -- otherwise, if
-    // player_sprintUnlimited ever toggles back off later in the same session, the next
-    // real tick would compute dt across the WHOLE bypassed interval (potentially minutes)
-    // instead of one frame, corrupting the stamina/cooldown math with a huge bogus jump.
-    DWORD nowMs = GetTickCount();
-    float dt = (g_sprintLastTickMs != 0) ? (nowMs - g_sprintLastTickMs) / 1000.0f : 0.0f;
-    g_sprintLastTickMs = nowMs;
-
-    if (GetDvarInt("player_sprintUnlimited") != 0) {
-        // Unlimited sprint is live for this mission -- don't drain/regen our own timer
-        // at all, so it doesn't sit at some stale mid-depleted value if this dvar is
-        // ever toggled back off later in the same session.
-        UpdateSprintKbutton(IsSprintActive());
-        return;
-    }
-
-    if (g_modConfig.sprintStaminaBypassForTesting) {
-        // [Experimental] task #9, 2026-07-19: same bypass shape as the dvar check
-        // above, but user-toggled -- isolates the new real +sprint kbutton migration
-        // for live testing by skipping this mod's own stamina/cooldown timer
-        // entirely, so a test session can confirm the kbutton itself works before
-        // also re-confirming the (unchanged) stamina system on top of it.
-        UpdateSprintKbutton(IsSprintActive());
-        return;
-    }
-
-    if (dt > 0.0f) {
-        if (g_sprintWinded) {
-            // Fixed cooldown, deliberately NOT tied to the continuous stamina float --
-            // guarantees sprint stays fully blocked for the whole 2 seconds regardless
-            // of anything else, since that float alone already proved unreliable here.
-            g_sprintCooldownRemaining -= dt;
-            if (g_sprintCooldownRemaining <= 0.0f) {
-                g_sprintWinded = false;
-                g_sprintStamina = g_modConfig.sprintMaxStaminaSeconds; // full refill once cooldown clears
-            }
-        } else if (g_sprintHeld && GetRealStance() == 0) {
-            g_sprintStamina -= dt;
-            if (g_sprintStamina <= 0.0f) {
-                g_sprintStamina = 0.0f;
-                g_sprintWinded = true;
-                g_sprintCooldownRemaining = g_modConfig.sprintRegenSeconds;
-            }
-        } else {
-            g_sprintStamina += dt * (g_modConfig.sprintMaxStaminaSeconds / g_modConfig.sprintRegenSeconds);
-            if (g_sprintStamina >= g_modConfig.sprintMaxStaminaSeconds) {
-                g_sprintStamina = g_modConfig.sprintMaxStaminaSeconds;
-            }
-        }
-    }
-
-    // Drive the real +sprint kbutton off the FULL logical state, not just the raw
-    // physical hold -- IsSprintActive() already folds in stance/stamina/winded, so this
-    // naturally issues a real KeyUp the instant stamina empties (even mid-hold) and a
-    // real KeyDown again once recovered, same as ADS/Reload's edge-triggered calls but
-    // driven by our own computed edge instead of the raw button edge.
+    // Drive the real +sprint kbutton off held + upright stance -- the engine's own
+    // native sprint duration/recovery timer (and Extreme Conditioning's real override)
+    // now apply automatically once the real kbutton is engaged, LIVE-CONFIRMED
+    // 2026-07-19 (see the big comment above IsSprintActive for the full history of
+    // what this replaced).
     UpdateSprintKbutton(IsSprintActive());
 }
 
@@ -2969,12 +2816,6 @@ __declspec(naked) void Hook_0057de60()
 
 void InstallAnalogInputHooks()
 {
-    // g_sprintStamina's own initializer is a plain literal, not a read of g_modConfig
-    // (see its declaration comment for why) -- resync here now that LoadModConfig()
-    // (called earlier in DllMain) has definitely run, in case the INI overrode the
-    // default max stamina.
-    g_sprintStamina = g_modConfig.sprintMaxStaminaSeconds;
-
     MH_Initialize();
 
     MH_STATUS s2 = MH_CreateHook(reinterpret_cast<LPVOID>(0x0057de60), &Hook_0057de60, &g_orig_0057de60);

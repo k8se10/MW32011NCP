@@ -36,7 +36,7 @@ reverse (broad coverage, but shaky):
 | | Score | Answers |
 |---|---|---|
 | **Raw functionality** | **~77/100** | Of what's actually implemented and tested, how well does it work? See the methodology note below the matrix. |
-| **Feature completeness (SP/Survival scope)** | **~84/100** | Of the full planned SP/Survival roadmap, how much exists at all? From the matrix below. |
+| **Feature completeness (SP/Survival scope)** | **~86/100** | Of the full planned SP/Survival roadmap, how much exists at all? From the matrix below. |
 
 **Multiplayer is excluded from both numbers** — it's a separate, equally-large phase
 that hasn't started at all; folding a from-scratch second-binary effort into one
@@ -59,7 +59,7 @@ kind of durable record git/`PATCHNOTES.md` provides.
 | Category | Done | Total | Notes |
 |---|---|---|---|
 | Foundation/infrastructure | 7 | 7 | Proxy DLL injection, engine hook installation, controller detection/raw input, XInput deadzone+curve, config file system (incl. a new `[Experimental]` section for individually-toggleable in-flight hypotheses), diagnostic logging, dev/safety tooling |
-| Core gameplay input | 17 | 17 | Movement, look, ADS+slowdown, core combat buttons, reload/interact, weapon switch, D-pad actionslots, stance ladder (incl. L3 no longer force-standing while ADS'd), sprint+stamina+mission-override, pause menu, B menu-back, ready-up, buy-station+pause fix, keyboard/mouse non-interference |
+| Core gameplay input | 17 | 17 | Movement, look, ADS+slowdown, core combat buttons, reload/interact, weapon switch, D-pad actionslots, stance ladder (incl. L3 no longer force-standing while ADS'd), sprint (real kbutton, engine's own native duration/recovery timer — LIVE-CONFIRMED 2026-07-19, no custom timer needed), pause menu, B menu-back, ready-up, buy-station+pause fix, keyboard/mouse non-interference |
 | Menu/UI navigation | 5 | 5 | Main/pause menu nav — **now confirmed live including the title screen itself**, not just in-game menus — options two-pane drill, buy-station/armory nav, slider adjustment, button/stick layout presets |
 | Back/scoreboard | 1 | 2 | Implementation done (builds clean); live-tested, confirmed no visible effect — real cause undiagnosed, parked as a UI gap |
 | Button-glyph UI prompts | 3 | 4 | Icon assets + full build pipeline PROVEN end-to-end (a real extended font asset built and verified), hook calling convention confirmed safe via disassembly, bind-storage system fully reconciled; actual in-game wiring (the boot-time zone splice + resolver hook) fully planned and pressure-tested but not yet coded/deployed |
@@ -67,8 +67,8 @@ kind of durable record git/`PATCHNOTES.md` provides.
 | Real in-game options menu | 2 | 4 | Static injection mechanism done; the next blocker (real menu content needs the engine's own controlled load context) now has a full, pressure-tested two-part implementation plan (boot-time zone splice + a single `OpenMenuByName` string-substitution hook) — not yet coded |
 | Aim assist | 2 | 4 | Friction + magnetism math done; entity/target classification (the actual blocker) and live verification not done |
 | Vibration/rumble | 1 | 2 | Implemented, then found to **crash the game at startup** (a generic native dispatcher hooked with a fixed signature that didn't match every real caller) — currently disabled pending a safer reimplementation against a single-call-site-safe target already identified |
-| Extreme Conditioning override | 0 | 1 | Not started |
-| **Total** | **42** | **50** | **42/50 ≈ 84/100** |
+| Extreme Conditioning override | 1 | 1 | **Resolved for free, 2026-07-19** — Sprint's real-kbutton migration means the native perk system now applies its own duration override automatically, same as it does for keyboard players; no separate detection/override code was ever needed once the kbutton was found |
+| **Total** | **43** | **50** | **43/50 ≈ 86/100** |
 
 ### Raw functionality methodology
 
@@ -199,27 +199,18 @@ is still open, not how rough what already works is.
   "Hold" fires the instant the press crosses the threshold (no need to release
   first); "tap" only fires on release, and only if the hold threshold was never
   reached during that press. Threshold is configurable (400ms default).
-- **Sprint** (L3) — real `pm_flags` bit, forced via a Pmove-entry hook; auto-stands
-  from crouch/prone first if needed, matching console. Includes a real
-  **stamina/cooldown state machine** (our own timer layer, since forcing the bit
-  natively bypasses the game's own limiter entirely):
-
-  | State | Behavior | Transitions to |
-  |---|---|---|
-  | Ready | Full stamina, sprint available | Sprinting (on L3 held) |
-  | Sprinting | Stamina drains continuously | Winded (stamina hits 0), Regenerating (L3 released early) |
-  | Winded | Sprint fully blocked for a fixed cooldown, independent of stamina float | Ready (cooldown timer expires, full refill) |
-  | Regenerating | Stamina refills while not sprinting | Ready (full) or Sprinting (L3 held again) |
-
-  4 seconds of continuous sprint to fully deplete, a real 2-second cooldown once
-  winded (both configurable) — not just a cosmetic meter, sprint is genuinely
-  blocked while on cooldown, decoupled from the stamina float itself (an earlier
-  version had a regen-flicker bug where continuous regen cleared the cooldown lock
-  almost instantly; fixed with a dedicated cooldown timer). Automatically bypassed
-  (genuinely unlimited sprint) when the real `player_sprintUnlimited` dvar is
-  live-set by specific missions. Real keyboard Shift-to-sprint is left completely
-  untouched by these hooks, regardless of whether a controller is connected or idle
-  (see Known Limitations for the k+m note, and Sprint's real kbutton search).
+- **Sprint** (L3) — real `+sprint` kbutton_t, found 2026-07-19 and driven directly via
+  the same `CallKbuttonDown`/`CallKbuttonUp` mechanism as ADS/Reload/Fire; auto-stands
+  from crouch/prone first if needed, matching console. **No custom stamina/cooldown
+  timer needed at all**: an earlier version forced the raw `pm_flags` sprint bit
+  directly, which bypassed the engine's own native duration/recovery timer entirely
+  (confirmed to give unlimited sprint, unlike real keyboard play) and required this
+  mod to maintain its own hand-rolled 4s-sprint/2s-cooldown timer layer as a
+  workaround. Driving the real kbutton instead means the engine's own native timer
+  now engages automatically, **LIVE-CONFIRMED working** — including the Extreme
+  Conditioning perk's real duration override applying for free, with zero detection
+  code needed on this mod's side. Real keyboard Shift-to-sprint is left completely
+  untouched by these hooks, regardless of whether a controller is connected or idle.
 
 ### Menu & pause
 - **Start button** — opens **and closes** the pause menu via real engine calls (not a
@@ -256,8 +247,6 @@ native controller UI navigation exists.
 | `[Stance]` | `ProneHoldThresholdMs` | `400` | B: hold-vs-tap threshold for the stance ladder |
 | `[Interact]` | `HoldThresholdMs` | `300` | X: how long Interact must be held before it fires (a quick tap reloads instead, same as console) |
 | `[Survival]` | `ReadyUpHoldThresholdMs` | `740` | Y: hold-to-ready-up threshold between Survival waves |
-| `[Sprint]` | `MaxStaminaSeconds` | `4` | Seconds of continuous sprint before stamina depletes |
-| `[Sprint]` | `RegenSeconds` | `2` | Seconds not sprinting to fully recover from empty |
 | `[Bindings]` | `ButtonLayout` | `Default` | `Default` / `Tactical` / `Lefty` / `TacticalLefty` — see table below |
 | `[Bindings]` | `StickLayout` | `Default` | `Default` / `Southpaw` / `Legacy` / `LegacySouthpaw` — see table below |
 | `[Bindings]` | `FlipTriggers` | `0` | Independently swaps RT↔RB and LT↔LB, combining with whichever `ButtonLayout` is active |
@@ -338,7 +327,7 @@ state directly, as described above:
 | Right stick | Look (independent sensitivity, no mouse-accel/filter inherited) | ✅ Confirmed |
 | Right trigger (RT) | Fire | ✅ Confirmed |
 | Left trigger (LT) | Aim Down Sights (true hold-to-aim, real kbutton) | ✅ Confirmed |
-| Left stick click (L3) | Sprint (real `pm_flags` bit; auto-stands from crouch/prone; real 4s/2s stamina-cooldown model) | ✅ Confirmed |
+| Left stick click (L3) | Sprint (real `+sprint` kbutton; auto-stands from crouch/prone; native duration/recovery timer + Extreme Conditioning apply automatically, no custom timer needed) | ✅ Confirmed live 2026-07-19 |
 | A | Jump | ✅ Confirmed |
 | B | Crouch/Prone — tap toggles crouch, hold goes prone, full 3-state ladder (see below) | ✅ Confirmed |
 | X | Interact **and** Reload (real kbutton, context-sensitive like console) | ✅ Confirmed |
@@ -545,11 +534,6 @@ See `re_notes/known_issues.md` for the full, actively-tracked list.
   call — the only such exception in the whole mod. The real native trigger was never
   found despite an extensive search (see `re_notes/known_issues.md` issue #5); this
   workaround will be replaced if/when one turns up.
-- Sprint's stamina/cooldown model doesn't yet account for two real overrides: specific
-  missions that live-set `player_sprintUnlimited` (checked and bypassed correctly) is
-  handled, but the Extreme Conditioning perk (doubles sprint duration to 8s, real
-  internal name `specialty_longersprint`) is likely a separate mechanism
-  (`perk_sprintMultiplier`) and isn't detected yet — see `re_notes/known_issues.md`.
 - Aim assist (rotational friction, target magnetism) is implemented but currently
   **non-functional and disabled by default** (`Enabled=0`) — the underlying math is
   confirmed correct, and real entity classification (telling an AI actor apart from

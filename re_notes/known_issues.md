@@ -452,8 +452,8 @@ is found — see task #8 in the working session's tracker for the full dead-end 
 
 ---
 
-## 6. Sprint stamina/cooldown — base implemented, mission/perk overrides still open
-    (2026-07-15, later session)
+## 6. Sprint stamina/cooldown — RESOLVED 2026-07-19: real kbutton makes the whole
+    custom timer (and Extreme Conditioning) moot, removed entirely (2026-07-15, later session)
 
 **The bug:** Sprint (L3) forces the real `pm_flags` bit (`0x4000`) every Pmove tick,
 which bypasses whatever native duration/recovery timer normally limits sprint entirely
@@ -553,14 +553,41 @@ empties mid-hold, not just on physical release) rather than the raw pm_flags-bit
 approach. The old mechanism (`InjectControllerSprintPmFlags`/`ReassertSprintPmFlags`,
 hooks on `FUN_00644ed0`/`FUN_00643ce0`) was removed entirely, not just disabled — full
 replace, same precedent as Fire's migration (issue #29) and the crouch/prone migration.
-Builds clean (0 warnings/0 errors, full rebuild). **Not yet live-tested** — the stamina/
-cooldown timer layer, `player_sprintUnlimited` bypass, and stance/ADS gating logic are
-all unchanged, only the underlying engine call sprint now drives is different.
+Builds clean (0 warnings/0 errors, full rebuild).
 **Hold Breath's own kbutton (`0xA98C04`) is a new, ready-to-use lead for task #24**, not
 yet wired up — implementing it would mean also driving `0xA98C04` alongside `0xA98CCC`
 when ADS'd with a scoped weapon, mirroring exactly what `"+breath_sprint"`'s real case 9
 already does unconditionally (the game itself must gate the actual sway-reduction EFFECT
 elsewhere, since this dispatch case fires both calls with no visible context branch).
+
+**LIVE-CONFIRMED WORKING (2026-07-19), and it closes this entire issue's "still open"
+line above for free.** User's direct report after playtesting: "this fixes multiple
+issues, having native sprint means no workaround needed for stamina and regen as its
+embedded naturally by the engine[,] same for extreme conditioning[,] fixed by this
+100%." Driving the real kbutton means the engine's own native sprint duration/recovery
+timer — the one whose native location was searched for and never found earlier in this
+same issue (`FUN_00643870` traced fully, confirmed pure speed-math with no timer logic)
+— now engages automatically simply because the real kbutton is being called, the same
+way it would for a real keyboard press. This also means Extreme Conditioning's real
+override (`perk_sprintMultiplier`/`specialty_longersprint`, discussed above, whose
+detection mechanism was never found) is now a moot problem: there's nothing left to
+detect or apply, since the native perk system already adjusts the real timer this
+kbutton now engages, the exact same way it does for keyboard players.
+
+**As a direct, immediate consequence, this mod's entire custom stamina/cooldown timer
+layer — everything described above in this issue from "Implemented as our own timer
+layer instead" onward — was removed in the same pass, not left in place alongside the
+new kbutton:** `g_sprintStamina`/`g_sprintWinded`/`g_sprintCooldownRemaining`/
+`g_sprintLastTickMs`, the `player_sprintUnlimited`-dvar bypass (redundant now — the real
+kbutton already respects that dvar natively, the same way real keyboard sprint always
+did), the `[Sprint]` config section (`MaxStaminaSeconds`/`RegenSeconds`), a same-day
+`[Experimental] SprintStaminaBypassForTesting` toggle (added to isolate this exact
+change for testing, then removed minutes later once testing confirmed the whole timer
+it bypassed was itself obsolete), and the `GetRealSprintValue`/`LogSprintDiag`
+diagnostic code below (which had been investigating whether a real native timer even
+existed) are all gone. `IsSprintActive()` is now just `g_sprintHeld && GetRealStance()
+== 0`. Full rebuild verified clean (0 warnings/0 errors) after the removal. See
+`PATCHNOTES.md`'s 2026-07-19 entries for the user-facing summary.
 
 **Separately found and fixed while investigating:** `Controller_DeltaTimeSeconds()`
 (used for look) turned out to use a single **process-wide shared** static timer, not

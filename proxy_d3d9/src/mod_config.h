@@ -81,9 +81,14 @@ struct ModConfig
     // [Survival]
     unsigned long readyUpHoldThresholdMs = 740; // Y: hold-to-ready-up threshold (Survival only)
 
-    // [Sprint]
-    float sprintMaxStaminaSeconds = 4.0f; // continuous sprint time before depleting
-    float sprintRegenSeconds = 2.0f;      // time NOT sprinting to fully recover from empty
+    // [Sprint] section removed 2026-07-19 (task #9): Sprint now drives the real
+    // +sprint kbutton_t directly (CallKbuttonDown/CallKbuttonUp), so the engine's own
+    // native sprint duration/recovery timer applies automatically -- LIVE-CONFIRMED
+    // this also correctly picks up Extreme Conditioning's real duration override for
+    // free, with no separate detection code needed. The custom stamina/cooldown
+    // timer layer this project maintained since 2026-07-15 (to work around the
+    // earlier pm_flags-forcing approach bypassing the real timer entirely) is gone;
+    // see re_notes/known_issues.md issue #6 and PATCHNOTES.md for the full history.
 
     // [Bindings] -- OG console layout presets, see the enum comments above.
     ButtonLayout buttonLayout = ButtonLayout::Default;
@@ -130,16 +135,12 @@ struct ModConfig
         // killstreaks like Predator Missile. NOT YET LIVE-CONFIRMED to help or be
         // harmless; toggle off here if it's ever suspected of causing a gameplay
         // regression, without needing to touch analog_input_hooks.cpp.
-    bool sprintStaminaBypassForTesting = false; // task #9, 2026-07-19: Sprint just
-        // migrated off raw pm_flags-forcing onto the real +sprint kbutton
-        // (0xA98CCC) -- this isolates that change for live testing by skipping
-        // this mod's OWN stamina/cooldown timer entirely (same code path as the
-        // existing player_sprintUnlimited dvar bypass), so Sprint runs purely off
-        // the new kbutton mechanism with no 4s/2s timeout fighting for attention
-        // while confirming the kbutton itself actually works. Default false --
-        // flip to true in mw3ncp_config.ini for this one test pass, then back to
-        // false once confirmed (the stamina/cooldown system itself is unaffected
-        // by the kbutton migration and isn't what's being tested here).
+    // sprintStaminaBypassForTesting (task #9) REMOVED 2026-07-19: graduated to
+    // unconditional the same day it was added -- Sprint's real +sprint kbutton
+    // migration was LIVE-CONFIRMED working, and with it confirmed that the real
+    // engine's own native stamina/duration timer (and Extreme Conditioning's real
+    // override) now applies automatically. There's no longer a custom timer left
+    // to bypass, so the toggle itself is dead weight, not just proven-safe.
 };
 
 // The loaded config, populated once by LoadModConfig(). Read-only after startup --
