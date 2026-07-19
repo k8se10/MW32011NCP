@@ -26,8 +26,21 @@ reverse-engineering trail behind each entry.
   also updated to exclude ADS, so the two paths can never double-claim the
   same kbutton simultaneously (a real Shift press also fires Sprint's
   kbutton natively, same as it does for a real keyboard player, harmlessly
-  ignored by the engine while aiming). Builds clean — not yet live-tested.
-  See `re_notes/known_issues.md` for the full trail.
+  ignored by the engine while aiming). **Still confirmed stuck live even
+  after this fix** — surprisingly, reproduced on PURE keyboard/mouse with
+  zero controller involvement at all, which should have made every one of
+  this project's controller-gated features a complete no-op. Root-caused
+  to an unrelated cause entirely: two research-only diagnostic hooks added
+  earlier this session for the Predator Missile guidance investigation
+  (`Hook_ControlsLinkTo`, `Hook_MissileGuidanceDispatch`) run every frame
+  unconditionally and were corrupting shared engine state. **Disabled both
+  — Hold Breath confirmed working live afterward**, including the toughest
+  test (controller ADS held simultaneously with a real keyboard Shift
+  press). The 4th key-synthesis exception design was correct the whole
+  time; the actual bug was somewhere else entirely. See
+  `re_notes/known_issues.md` issues #6 and #30 for the full trail —
+  Predator Missile guidance work (task #30/#31) is now blocked on finding
+  a safer replacement for those two hooks before it can resume.
 - **Boot-time zone splice for the extended button-glyph font, attempted and
   DISABLED after a confirmed live crash (2026-07-19, task #31/#6).** Hooked
   the real zone-loading entry point (`FUN_004ca310`) to splice this

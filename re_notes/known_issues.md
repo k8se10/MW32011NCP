@@ -1984,7 +1984,47 @@ input) and refines issue #26's vehicle hypothesis below.
     Sprint's kbutton too, exactly like a real keyboard press, which the
     engine itself already ignores while ADS'd) rather than both trying to
     claim the same kbutton_t's `down[]` slots simultaneously. Builds clean (0
-    warnings/0 errors, full rebuild). **Not yet live-tested.**
+    warnings/0 errors, full rebuild).
+  - **STILL CONFIRMED STUCK LIVE with the synthetic-Shift fix active** — a genuine
+    surprise: user confirmed the bug reproduced even using PURE keyboard/mouse
+    (zero controller touch at all), which should have made every one of this
+    project's own controller-gated `Inject*` functions a complete no-op. Ruled
+    out via direct testing, in order: (1) NOT a leftover-corruption-from-earlier-
+    testing theory (a full game process restart didn't clear it); (2) NOT a
+    genuine pre-existing retail bug (confirmed working correctly with `d3d9.dll`
+    removed entirely — vanilla MW3 does NOT have this bug); (3) NOT a
+    controller/keyboard input race (still broke with the controller fully
+    disconnected, not just idle). This meant the corruption had to come from
+    something in this DLL that runs unconditionally every frame, regardless of
+    input device — narrowing it to `Hook_ControlsLinkTo` (`0x5d7f20`) and
+    `Hook_MissileGuidanceDispatch` (`0x4554d0`), the only two other hooks
+    installed besides the core movement/look hook, both added this same session
+    for the unrelated Predator Missile guidance investigation (issue #30) and
+    both running every frame regardless of context (`Hook_MissileGuidanceDispatch`
+    especially, confirmed called every single tick from the real Pmove-tick
+    function, not just during an actual missile flight).
+  - **CONFIRMED FIXED**: disabled both hooks (`InstallAnalogInputHooks`, code
+    kept, not deleted — same precedent as the rumble hook). **User confirmed
+    live**, including the strongest test yet (controller ADS held simultaneously
+    with a real keyboard Shift press, the hybrid scenario most likely to expose
+    a race) — Hold Breath now "works perfect." Root-caused to one or both of
+    these two hooks, not fully bisected further (not worth the risk of
+    re-enabling either just to find out which) — **`Hook_MissileGuidanceDispatch`
+    is the leading suspect** given it uniquely runs every single frame
+    unconditionally, but this is not proven over `Hook_ControlsLinkTo`
+    specifically. Both must stay disabled until task #30's missile-guidance work
+    resumes with a properly re-verified, safe hook design — re-enabling either
+    without first understanding what was actually wrong would risk
+    reintroducing this exact regression. See issue #30 below for the
+    cross-reference.
+  - **Hold Breath itself: CONFIRMED WORKING LIVE (2026-07-19)**, closing task
+    #24's original scope. The 4th key-synthesis exception design (synthetic
+    Shift while ADS'd, `IsSprintActive()` excluding `g_adsHeld`) was correct all
+    along — the entire "stuck forever" saga across all four attempts (raw
+    kbutton, `+0x11` manual clear, key-synthesis, and this final isolation) was
+    ultimately caused by an unrelated, coincidentally-always-active diagnostic
+    hook corrupting shared state, not by anything wrong with Hold Breath's own
+    design or implementation.
 - **Positive result — Mission "Persona Non Grata" (Act 1, immediately after
   Hunter Killer): the UGV (Unmanned Ground Vehicle, mounted minigun +
   grenade launcher, played as Yuri) worked perfectly on controller as
@@ -2983,6 +3023,21 @@ Predator Missile launch confirmed still broken. The kbutton-level fix
 alone was not sufficient — see "Next step" above for where to look next.
 
 ## 30. Third analog-input channel (`cmd+0x3e`/`0x3f`) discovered — likely UNIFYING root cause for DPV/mortar/turret (2026-07-18, research pass, task #25; REFUTED for Predator Missile guidance specifically, 2026-07-19 — see the correction near the end of this entry)
+
+**CONFIRMED LIVE REGRESSION, `Hook_ControlsLinkTo`/`Hook_MissileGuidanceDispatch`
+DISABLED (2026-07-19)** — these two diagnostic hooks (installed for this issue's
+own guidance-phase investigation, see below) were root-caused (one or both, not
+fully bisected) to a real, confirmed live bug affecting Hold Breath (issue #6) —
+including, surprisingly, on PURE keyboard/mouse with zero controller involvement
+at all. Both are disabled in `InstallAnalogInputHooks` (code kept, not deleted).
+**This means the guidance-phase diagnostic data this issue's own "still open"
+question depends on can no longer be collected** until a safer hook design is
+found and re-verified — the missile-flight live data pull this issue calls for
+below is blocked on that, not just on finding time to fly a missile in-game. See
+issue #6's own entry for the full regression trail. `Hook_MissileGuidanceDispatch`
+is the leading suspect (confirmed to run every single frame unconditionally,
+unlike `Hook_ControlsLinkTo` which should only fire when an actual guided
+weapon links) but this is not proven.
 
 **Status:** Research complete, strong hypothesis, NOT implemented or
 live-tested. Potentially the highest-value single finding of this session
