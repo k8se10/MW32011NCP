@@ -1914,14 +1914,44 @@ input) and refines issue #26's vehicle hypothesis below.
     hold-while-down toggle at the engine level.
   - **DISABLED (2026-07-19)**: `kHoldBreathLiveEnabled = false` in
     `analog_input_hooks.cpp` — the real `CallKbuttonDown`/`CallKbuttonUp`
-    calls are now skipped entirely (matches the same disable-first,
+    calls were skipped entirely (matches the same disable-first,
     diagnose-after precedent as the rumble-hook and boot-zone-splice crashes
-    this same session), while a `[hold-breath-diag]` log line still fires on
-    every edge transition (DOWN/UP) so the next playtest captures the real
-    transition sequence without touching live game state. Builds clean.
-    **Needs a diagnostic playtest** (confirm the log shows a clean DOWN then
-    UP on a normal L3-tap-while-ADS'd cycle) before re-enabling, to determine
-    which of the two hypotheses above is real.
+    this same session), while a `[hold-breath-diag]` log line still fired on
+    every edge transition (DOWN/UP) so a future playtest could capture the
+    real transition sequence without touching live game state.
+  - **ROOT-CAUSED and FIXED, same day (2026-07-19)**, via a dedicated Ghidra
+    fork rather than a live diagnostic pass (user chose to go straight to a
+    real fix, on the basis that it's cleanly revertible either way): fully
+    decompiled `FUN_0057d1c0`/`FUN_0057d200` (KeyDown/KeyUp) and reconstructed
+    the real `kbutton_t` layout — `down[0]`/`down[1]` keyId slots at
+    `+0x00`/`+0x04`, `downtime` at `+0x08`, `msec` at `+0x0C`, an `active`
+    flag byte at `+0x10`, and a **second flag byte at `+0x11`**. KeyDown sets
+    BOTH `+0x10` and `+0x11` to 1; KeyUp correctly clears `+0x10` once both
+    `down[]` slots are empty, but **structurally never touches `+0x11`
+    anywhere in its own decompiled body** — confirmed by reading the complete
+    function, not inferred. Since KeyDown/KeyUp are leaf functions (call
+    nothing else), any real gameplay code reading "is Hold Breath active"
+    must read one of this struct's own fields — `+0x10` demonstrably works
+    correctly (proven by Sprint/ADS not exhibiting this bug), making `+0x11`
+    the coherent explanation for a "sets once, stays forever" symptom
+    specifically. Independently ruled out along the way: the real
+    dispatcher's UP-case (`FUN_00438710` case 10, disassembled fully) is a
+    plain, symmetric `KeyUp` call with nothing extra — native code does
+    nothing beyond what `CallKbuttonUp` already replicates, so the fix has
+    to happen on this project's own side, not by finding a missing native
+    call. Also ruled out: bindIndex collision between Sprint (16) and Hold
+    Breath (18) — exhaustive xref search confirms each kbutton_t's `down[]`
+    slots are only ever touched by that struct's own 4 real references, all
+    inside the dispatcher; the two features' arbitrary index choices cannot
+    cross-contaminate.
+  - **Fix**: `UpdateHoldBreathKbutton` now manually zeroes `kbutton+0x11`
+    via a direct volatile byte write immediately after calling the real
+    `CallKbuttonUp` — since KeyUp will never do it itself. Re-enabled
+    (`kHoldBreathLiveEnabled = true`). Diagnostic logging kept (both the
+    edge-transition log and a new log line confirming the manual clear
+    fires). Builds clean (0 warnings/0 errors, full rebuild). **Not yet
+    live-tested** — needs a sniper-ADS playtest to confirm the stuck-forever
+    symptom is actually gone, not just theoretically fixed.
 - **Positive result — Mission "Persona Non Grata" (Act 1, immediately after
   Hunter Killer): the UGV (Unmanned Ground Vehicle, mounted minigun +
   grenade launcher, played as Yuri) worked perfectly on controller as

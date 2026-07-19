@@ -21,7 +21,14 @@ reverse-engineering trail behind each entry.
   earlier ADS bug but not caused by either of that bug's known root causes.
   **Disabled** (the kbutton calls are now skipped; a diagnostic log of every
   engage/release edge stays active for root-causing) rather than shipped
-  broken. See `re_notes/known_issues.md` for the full trail.
+  broken. **Root-caused and fixed the same day**: a dedicated Ghidra pass
+  fully decompiled the real KeyDown/KeyUp functions and found the real
+  `kbutton_t` has a second flag byte (`+0x11`) that KeyDown sets but KeyUp
+  structurally never clears — the coherent explanation for "sets once,
+  stays forever." Fix: manually zero that byte ourselves right after the
+  real KeyUp call, since nothing in the native engine ever will for a
+  kbutton driven this way. Re-enabled. Builds clean — not yet live-tested.
+  See `re_notes/known_issues.md` for the full trail.
 - **Boot-time zone splice for the extended button-glyph font, attempted and
   DISABLED after a confirmed live crash (2026-07-19, task #31/#6).** Hooked
   the real zone-loading entry point (`FUN_004ca310`) to splice this

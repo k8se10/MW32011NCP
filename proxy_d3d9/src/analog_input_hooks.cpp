@@ -1113,21 +1113,24 @@ constexpr int kHoldBreathBindIndex = 18; // distinct from ADS's 13/Reload's 15/S
 bool g_holdBreathKbuttonActive = false;
 
 // CONFIRMED LIVE REGRESSION (2026-07-19): user report -- "once toggled initially, it
-// always holds breath ... theres no way to toggle it off." Same class of symptom as
-// the ADS "activates once then stays stuck" bug from 2026-07-14 (see the big comment
-// above CallKbuttonDown), but this reuses those ALREADY-FIXED helpers (consistent
-// bindIndex both directions, correct timeMs third arg) -- so this is NOT a repeat of
-// either of that bug's two known root causes. Real cause not yet found: could be
-// this project's own logic never actually reaching the KeyUp call, or -- a real
-// possibility flagged, not confirmed -- the native Hold Breath EFFECT itself may not
-// be a simple "clears the instant the kbutton goes up" state the way Sprint/ADS are
-// (e.g. a real duration/exit condition this project doesn't know about yet). DISABLED
-// (the live kbutton calls below, not the tracking) rather than shipped broken --
-// matches the same disable-first-diagnose-after precedent as the rumble hook and the
-// boot-zone-splice hook this same session. Logging kept and unconditional so the next
-// playtest captures the real edge-transition sequence without touching live game
-// state -- see re_notes/known_issues.md for the tracked issue.
-constexpr bool kHoldBreathLiveEnabled = false; // flip true only after root-causing
+// always holds breath ... theres no way to toggle it off." Root-caused via a
+// dedicated Ghidra pass, not guessed: KeyDown/KeyUp (FUN_0057d1c0/FUN_0057d200) are
+// leaf functions operating on a real kbutton_t with TWO flag bytes, not one --
+// +0x10 ("active", toggles correctly, confirmed via full decompile of both
+// functions) and +0x11 (set to 1 by KeyDown, NEVER cleared anywhere in KeyUp's own
+// body -- confirmed by reading the complete decompiled function, not inferred).
+// Since KeyDown/KeyUp call nothing else, any real gameplay code reading "is Hold
+// Breath active" must read one of this struct's own fields -- +0x10 demonstrably
+// works correctly (proven by Sprint/ADS, which don't exhibit this bug), so +0x11 is
+// the coherent explanation for a "sets once, stays forever" symptom specifically.
+// Real dispatcher's UP-case (`FUN_00438710` case 10) was independently confirmed via
+// full disassembly to be a plain, symmetric KeyUp call with nothing extra -- native
+// code does nothing beyond what CallKbuttonUp already replicates, so the fix has to
+// happen on our own side: manually clear +0x11 ourselves, since KeyUp structurally
+// never will. bindIndex collision between Sprint (16) and Hold Breath (18) was also
+// independently ruled out (exhaustive xref: each kbutton_t's down[] slots are only
+// ever touched by that struct's own 4 real references, all inside the dispatcher).
+constexpr bool kHoldBreathLiveEnabled = true; // re-enabled 2026-07-19 with the +0x11 fix below
 
 void UpdateHoldBreathKbutton(bool active)
 {
@@ -1142,6 +1145,14 @@ void UpdateHoldBreathKbutton(bool active)
         CallKbuttonDown(kHoldBreathKbutton, kHoldBreathBindIndex);
     } else {
         CallKbuttonUp(kHoldBreathKbutton, kHoldBreathBindIndex);
+        // THE FIX: KeyUp clears +0x10 (active) but structurally never touches +0x11
+        // (confirmed via full decompile) -- manually zero it ourselves immediately
+        // after the real KeyUp call, since nothing else in the real engine ever will
+        // for a kbutton driven this way. Direct struct poke, same class of operation
+        // as this project's other confirmed-safe direct-field writes elsewhere
+        // (e.g. GetRealStance's own field read/write pattern).
+        *reinterpret_cast<volatile uint8_t*>(kHoldBreathKbutton + 0x11) = 0;
+        LogFromController("[hold-breath-diag] manually cleared kbutton+0x11 latch after KeyUp");
     }
 }
 } // namespace
@@ -3096,6 +3107,124 @@ void InjectFontStructDebugTest()
     LogFromController("[font-struct-diag] dump complete -- compare against re_notes/known_issues.md issue #6/#31 Font struct notes before attempting any patch");
 }
 
+// ---- DEBUG-ONLY: live glyph-array patch test, MECHANISM ONLY (2026-07-19) --------
+//
+// Tests the "reallocate + repoint" patch mechanism itself, deliberately isolated
+// from the still-unsolved texture/material problem (see ui_assets.md's 2026-07-19
+// fork-research section, item 5 -- Font_s has only ONE material for the whole font,
+// so a new glyph can't yet get its own real pixel content without more work).
+// Instead of real new pixel content, this test BORROWS an existing glyph's UV rect
+// (a copy of 'A''s s0/t0/s1/t1) for the new codepoint -- if the mechanism works,
+// looking up codepoint 0x81 will render as a visible 'A' (wrong picture, right
+// mechanism), proving the array-growth+repoint patch is sound before ever touching
+// the harder graphics problem. Deliberately gated behind its own separate combo
+// (not the read-only diagnostic's LB+RB) and fires only once per session.
+//
+// Safety ordering, deliberate: writes font->glyphs (the pointer) BEFORE
+// font->glyphCount. If this engine turns out to have any concurrent reader (not
+// expected -- no threading evidence found anywhere in the font boot-registration
+// chain -- but not proven impossible either), a reader using the OLD glyphCount
+// with the NEW glyphs pointer simply ignores the extra entry (safe); the reverse
+// order (count first) would let a reader see the new, larger count while glyphs
+// still pointed at the old, too-small array -- a real out-of-bounds read. This
+// project's own proxy DLL heap (`new[]`) is used for the replacement array, never
+// the engine's own zone/pool memory -- no zone data is touched by this patch.
+namespace {
+enum class FontPatchStage { WaitingForCombo, Done };
+FontPatchStage g_fontPatchStage = FontPatchStage::WaitingForCombo;
+DWORD g_fontPatchHoldStartMs = 0;
+} // namespace
+
+void InjectFontGlyphPatchTest()
+{
+    if (g_fontPatchStage != FontPatchStage::WaitingForCombo) return;
+
+    unsigned short buttons;
+    unsigned char leftTrigger, rightTrigger;
+    if (!Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger)) return;
+
+    // Distinct combo from the read-only diagnostic (LB+RB) so the two tests can't
+    // be confused for each other or accidentally chained -- LB+RB+A, still obscure.
+    bool comboHeld = (buttons & kXI_LEFT_SHOULDER) != 0 && (buttons & kXI_RIGHT_SHOULDER) != 0 &&
+        (buttons & kXI_A) != 0;
+    if (!comboHeld) {
+        g_fontPatchHoldStartMs = 0;
+        return;
+    }
+    if (g_fontPatchHoldStartMs == 0) {
+        g_fontPatchHoldStartMs = GetTickCount();
+        return;
+    }
+    if (GetTickCount() - g_fontPatchHoldStartMs < 2000) return;
+
+    g_fontPatchStage = FontPatchStage::Done; // fire once regardless of outcome below
+
+    LogFromController("[font-patch-test] LB+RB+A held 2s -- attempting glyph-array patch on fonts/bigfont");
+    void* rawFont = FindOrLoadFont("fonts/bigfont");
+    char buf[200];
+    if (!LooksLikeValidPointer(reinterpret_cast<uintptr_t>(rawFont))) {
+        LogFromController("[font-patch-test] FindOrLoadFont returned implausible pointer -- aborting");
+        return;
+    }
+    DiagFont* font = reinterpret_cast<DiagFont*>(rawFont);
+    if (!LooksLikeValidPointer(reinterpret_cast<uintptr_t>(font->glyphs)) ||
+        font->glyphCount < 96 || font->glyphCount > 1000) {
+        sprintf_s(buf, "[font-patch-test] glyphs ptr or glyphCount implausible (count=%d) -- aborting, struct layout may be wrong",
+            font->glyphCount);
+        LogFromController(buf);
+        return;
+    }
+
+    const int oldCount = font->glyphCount;
+    const unsigned short kNewCodepoint = 0x81;
+
+    // Find insertion point in the sorted [96, oldCount) tail (matches FUN_0047dfa0's
+    // real binary-search ordering, confirmed via the render-lookup fork -- codepoints
+    // 0x20-0x7F are direct-indexed and must never move).
+    int insertAt = oldCount; // default: append at the very end
+    for (int i = 96; i < oldCount; ++i) {
+        if (font->glyphs[i].letter > kNewCodepoint) { insertAt = i; break; }
+        if (font->glyphs[i].letter == kNewCodepoint) {
+            sprintf_s(buf, "[font-patch-test] codepoint 0x%02X already exists at index %d -- aborting, nothing to insert",
+                kNewCodepoint, i);
+            LogFromController(buf);
+            return;
+        }
+    }
+
+    DiagGlyph* newArray = new DiagGlyph[oldCount + 1];
+    memcpy(newArray, font->glyphs, sizeof(DiagGlyph) * insertAt);
+    // Borrowed UV rect: a real, valid existing glyph's texture coordinates ('A',
+    // direct-indexed at 'A'-0x20), deliberately NOT new pixel content -- see the
+    // big comment above this function for why.
+    const DiagGlyph& borrowSource = font->glyphs['A' - 0x20];
+    newArray[insertAt].letter = kNewCodepoint;
+    newArray[insertAt].x0 = borrowSource.x0;
+    newArray[insertAt].y0 = borrowSource.y0;
+    newArray[insertAt].dx = borrowSource.dx;
+    newArray[insertAt].pixelWidth = borrowSource.pixelWidth;
+    newArray[insertAt].pixelHeight = borrowSource.pixelHeight;
+    newArray[insertAt].s0 = borrowSource.s0;
+    newArray[insertAt].t0 = borrowSource.t0;
+    newArray[insertAt].s1 = borrowSource.s1;
+    newArray[insertAt].t1 = borrowSource.t1;
+    memcpy(newArray + insertAt + 1, font->glyphs + insertAt, sizeof(DiagGlyph) * (oldCount - insertAt));
+
+    sprintf_s(buf, "[font-patch-test] built replacement array (%d -> %d entries), inserted codepoint 0x%02X at index %d, repointing live Font_s now",
+        oldCount, oldCount + 1, kNewCodepoint, insertAt);
+    LogFromController(buf);
+
+    // Deliberate ordering -- see the big comment above this function.
+    font->glyphs = newArray;
+    font->glyphCount = oldCount + 1;
+    // Old array intentionally leaked, not deleted -- freeing memory the real engine
+    // might still hold a stray reference/iterator into (not proven impossible) is a
+    // worse failure mode than a one-time small leak for a debug-only test. Revisit
+    // if/when this becomes a real shipped feature rather than a mechanism test.
+
+    LogFromController("[font-patch-test] patch applied -- if the mechanism is sound, any UI text containing byte 0x81 should now render as a visible (borrowed) 'A' glyph instead of missing/tofu. Compare against re_notes/known_issues.md before trusting this without a visual confirm.");
+}
+
 extern "C" void __cdecl InjectAllControllerInput(unsigned char* cmd)
 {
     int32_t inLevelVal = *reinterpret_cast<volatile int32_t*>(kInLevelFlagAddr);
@@ -3193,6 +3322,14 @@ extern "C" void __cdecl InjectMenuInputTick()
     // anything or intercepts the boot path, so it carries none of the risk that got
     // the zone-load test disabled for public builds.
     InjectFontStructDebugTest();
+    // DEBUG ONLY, task #6 follow-up (2026-07-19) -- the glyph-array patch MECHANISM
+    // test (borrowed UV, see comment above InjectFontGlyphPatchTest's definition).
+    // Gated behind its own distinct LB+RB+A combo so it can never fire from the
+    // same input as the read-only diagnostic above. This DOES mutate a live game
+    // asset (though only this project's own heap, never zone memory) -- wired live
+    // deliberately so it can actually be tested, same as every other debug trigger
+    // in this file, all gated behind combos that can't be hit by accident.
+    InjectFontGlyphPatchTest();
 }
 
 namespace {
