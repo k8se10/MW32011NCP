@@ -3256,6 +3256,104 @@ void InjectFontGlyphPatchTest()
     LogFromController("[font-patch-test] patch applied -- if the mechanism is sound, any UI text containing byte 0x81 should now render as a visible (borrowed) 'A' glyph instead of missing/tofu. Compare against re_notes/known_issues.md before trusting this without a visual confirm.");
 }
 
+// ---- REAL glyph font extension: safe manual zone load + full field repoint --------
+// (2026-07-19, task #6/#31, supersedes both the crashed boot-splice hook AND the
+// borrowed-UV mechanism test above)
+//
+// The boot-splice hook (hooking FUN_004ca310 to auto-inject into FUN_00679680's
+// real boot-time zone queue) crashed live -- disabled, see known_issues.md issue
+// #30/#31. This is a DIFFERENT, safer mechanism: call the same real LoadZones
+// function directly (a plain function call, NOT a hook on it) from the always-safe
+// WndProc/SetTimer tick, well after boot has already finished -- the EXACT
+// technique the original "roundtrip.ff" zoneload-test already proved safe (that
+// test loaded a real, unmodified game menu this same way, screenshot-verified,
+// zero crash). No boot-sequence timing is touched at all.
+//
+// Naming: `bigfont_ext.ff`'s font/materials/image were all registered under the
+// SAME names as the real stock assets (fonts/bigfont, fonts/gamefonts_pc[_glow],
+// gamefonts_pc) -- loading that zone as-is would hit the same asset-interning
+// collision already found and abandoned for the menu-override work (FindOrLoadAsset
+// always hands back the EXISTING cached entry for an already-registered name,
+// never adopts new content). Rebuilt under unique names instead
+// (`bigfont_glyph_ext.ff`: font "fonts/bigfont_ext", materials
+// "fonts/gamefonts_pc_ext"/"fonts/gamefonts_pc_glow_ext", image
+// "gamefonts_pc_ext") -- these load as genuinely NEW, independent objects, no
+// collision at all.
+//
+// Once loaded, don't grow/patch the real font's glyph array by hand (like the
+// mechanism test above does with a placeholder) -- `bigfont_ext`'s font asset is
+// already a COMPLETE, correctly-built replacement (all 191 real glyphs' UVs
+// rescaled for the taller extended atlas, plus the new glyph in real position),
+// built entirely offline via the already-proven Linker pipeline. So just REPOINT
+// the real "fonts/bigfont" Font_s's 4 relevant fields (material, glowMaterial,
+// glyphCount, glyphs) at the loaded extended font's own already-correct values --
+// no runtime array construction needed at all. Deliberate write order: `glyphs`
+// pointer first (so a hypothetical concurrent reader using the OLD glyphCount with
+// the NEW pointer just ignores the extra entries, safe), `material`/`glowMaterial`
+// next, `glyphCount` last (governs how far the render loop indexes -- must be the
+// last thing updated, after everything it depends on is already valid).
+namespace {
+enum class GlyphFontExtStage { NotStarted, Done };
+GlyphFontExtStage g_glyphFontExtStage = GlyphFontExtStage::NotStarted;
+} // namespace
+
+void InstallGlyphFontExtension()
+{
+    if (g_glyphFontExtStage != GlyphFontExtStage::NotStarted) return;
+    g_glyphFontExtStage = GlyphFontExtStage::Done; // fire once regardless of outcome below
+
+    LogFromController("[glyph-font-ext] loading bigfont_glyph_ext zone (unique names, no boot hook)");
+    ZoneLoadEntry entry{ "bigfont_glyph_ext", 4, 0 }; // flags=4, matches the proven
+                                                        // "roundtrip" manual-call precedent
+                                                        // (a direct call context, NOT the
+                                                        // boot-batch's own flags=1 convention)
+    LoadZones(&entry, 1, 0);
+    LogFromController("[glyph-font-ext] LoadZones returned without crashing");
+
+    void* rawExtFont = FindOrLoadFont("fonts/bigfont_ext");
+    void* rawRealFont = FindOrLoadFont("fonts/bigfont");
+    char buf[200];
+    if (!LooksLikeValidPointer(reinterpret_cast<uintptr_t>(rawExtFont)) ||
+        !LooksLikeValidPointer(reinterpret_cast<uintptr_t>(rawRealFont))) {
+        sprintf_s(buf, "[glyph-font-ext] FindOrLoadFont returned implausible pointer(s) (ext=0x%08X real=0x%08X) -- aborting, not patching",
+            static_cast<unsigned>(reinterpret_cast<uintptr_t>(rawExtFont)),
+            static_cast<unsigned>(reinterpret_cast<uintptr_t>(rawRealFont)));
+        LogFromController(buf);
+        return;
+    }
+    if (rawExtFont == rawRealFont) {
+        // Would mean the "unique name" load still resolved to the SAME cached
+        // object as the real font -- our rename didn't actually work, or the
+        // engine's interning is keyed on something other than the name string.
+        // Abort rather than repoint a font at itself.
+        LogFromController("[glyph-font-ext] ext font pointer == real font pointer -- naming collision NOT actually avoided, aborting");
+        return;
+    }
+
+    DiagFont* extFont = reinterpret_cast<DiagFont*>(rawExtFont);
+    DiagFont* realFont = reinterpret_cast<DiagFont*>(rawRealFont);
+
+    if (!LooksLikeValidPointer(reinterpret_cast<uintptr_t>(extFont->glyphs)) ||
+        extFont->glyphCount < 96 || extFont->glyphCount > 1000) {
+        sprintf_s(buf, "[glyph-font-ext] loaded ext font's glyphs/count looks implausible (count=%d) -- aborting, not patching",
+            extFont->glyphCount);
+        LogFromController(buf);
+        return;
+    }
+
+    sprintf_s(buf, "[glyph-font-ext] real font=0x%08X (glyphCount=%d) ext font=0x%08X (glyphCount=%d) -- repointing real font's fields now",
+        static_cast<unsigned>(reinterpret_cast<uintptr_t>(realFont)), realFont->glyphCount,
+        static_cast<unsigned>(reinterpret_cast<uintptr_t>(extFont)), extFont->glyphCount);
+    LogFromController(buf);
+
+    realFont->glyphs = extFont->glyphs;             // 1st: new pointer, old count still valid
+    realFont->material = extFont->material;         // 2nd: new material (same atlas, extended)
+    realFont->glowMaterial = extFont->glowMaterial;  // 2nd: new glow material
+    realFont->glyphCount = extFont->glyphCount;      // 3rd, last: now safe to advertise the extra entries
+
+    LogFromController("[glyph-font-ext] repoint complete -- real fonts/bigfont now has the extended glyph set and atlas. If sound, codepoint 0x81 should render its real intended glyph wherever bigfont draws text.");
+}
+
 extern "C" void __cdecl InjectAllControllerInput(unsigned char* cmd)
 {
     int32_t inLevelVal = *reinterpret_cast<volatile int32_t*>(kInLevelFlagAddr);
@@ -3346,6 +3444,21 @@ extern "C" void __cdecl InjectMenuInputTick()
     // just not wired into the live tick for a public build.
     // InjectZoneLoadDebugTest(); // DEBUG ONLY, task #23 -- see comment above its definition
     // TickMenuDefScan(); // DEBUG ONLY, task #23 -- no-op unless a scan is active (StartMenuDefScan called)
+
+    // DISABLED BEFORE EVER BEING LIVE-TESTED (2026-07-19) -- caught a direct
+    // contradiction with already-established research before shipping this: loading
+    // MATERIAL-bearing content (not a bare menu) from this WndProc/SetTimer tick was
+    // already found (iw5sp.md, "Black-screen flash... root cause fully resolved:
+    // materials") to trigger a synchronous D3D9 GPU-resource-creation cascade
+    // OUTSIDE the engine's own controlled frame/thread discipline -- exactly the
+    // class of operation confirmed to cause visible corruption/crashing from this
+    // exact call site. bigfont_glyph_ext.ff contains 2 materials + an image +
+    // shaders -- precisely the unsafe content class. The only path confirmed safe
+    // for material-bearing content in that same research is routing the load
+    // through a real FUN_0053cbc0-driven level-load transition instead, which is
+    // NOT what this does. Do not re-enable without either finding that safe path or
+    // independently re-verifying the WndProc-tick timing risk doesn't apply here.
+    // InstallGlyphFontExtension();
 
     // DEBUG ONLY, task #6/#31/#32 follow-up (2026-07-19) -- read-only Font-struct
     // dump, see comment above InjectFontStructDebugTest's definition. Deliberately

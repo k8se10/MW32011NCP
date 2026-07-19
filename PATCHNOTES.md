@@ -36,11 +36,37 @@ reverse-engineering trail behind each entry.
   unconditionally and were corrupting shared engine state. **Disabled both
   — Hold Breath confirmed working live afterward**, including the toughest
   test (controller ADS held simultaneously with a real keyboard Shift
-  press). The 4th key-synthesis exception design was correct the whole
-  time; the actual bug was somewhere else entirely. See
-  `re_notes/known_issues.md` issues #6 and #30 for the full trail —
-  Predator Missile guidance work (task #30/#31) is now blocked on finding
-  a safer replacement for those two hooks before it can resume.
+  press). Disabling those two hooks let a RETEST of the plain direct-kbutton
+  approach happen — **still confirmed stuck**, proving a second, independent
+  bug also existed. A dedicated Ghidra pass found the real, definitive
+  cause: `0xA98C04` was never an independent kbutton at all — it's
+  literally Fire's own `down[1]` slot (`0xA98C00 + 4`), and its `+0x10`/
+  `+0x11` fields physically coincide with a completely unrelated function
+  (`FUN_0057dc90`, the per-frame simple-bind reader) that unconditionally
+  zeroes that exact byte every single frame for its own unrelated bind.
+  Two genuine engine subsystems unknowingly share one memory region — this
+  can never be made reliable via direct kbutton calls, confirming the 4th
+  key-synthesis exception (now reinstated) is the only real fix, not a
+  workaround. See `re_notes/known_issues.md` issues #6 and #30 for the
+  full trail — Predator Missile guidance work (task #30/#31) is now
+  blocked on finding a safer replacement for the two disabled diagnostic
+  hooks before it can resume.
+- **Real font-extension mechanism for button glyphs, attempted and DISABLED
+  before ever being live-tested (2026-07-19, task #6/#31).** Rebuilt the
+  extended glyph font under entirely unique asset names
+  (`bigfont_glyph_ext.ff`) to avoid the same-name asset-interning collision
+  that blocked the earlier boot-splice and menu-override attempts, and
+  implemented loading it via a direct (non-hooked) zone-load call from the
+  same safe tick the project's own `roundtrip.ff` test already proved safe,
+  then repointing the real font's material/glyph fields at the loaded
+  extension. Caught a direct contradiction with already-documented research
+  before shipping it: the new zone contains materials, and loading
+  material-bearing content from that same tick was already found to
+  trigger unsafe D3D9 GPU-resource creation outside the engine's own
+  frame/thread discipline. Disabled before the user ever tested it. See
+  `re_notes/known_issues.md` for the full trail and the one remaining safe
+  path this hasn't tried yet (routing through a real level-load
+  transition).
 - **Boot-time zone splice for the extended button-glyph font, attempted and
   DISABLED after a confirmed live crash (2026-07-19, task #31/#6).** Hooked
   the real zone-loading entry point (`FUN_004ca310`) to splice this

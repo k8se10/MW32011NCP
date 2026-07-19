@@ -1262,6 +1262,51 @@ confirm the Ghidra-derived struct layout against real memory before ever writing
 to it. See the Font/Glyph struct layout this compares against in `ui_assets.md`'s
 2026-07-19 fork-research section.
 
+**Live-CONFIRMED via the diagnostic above (2026-07-19)**: struct layout matches
+exactly against real memory (`glyphCount=191`, direct-indexed 'A'/'E' letters
+correct, sorted-extra tail ascending as expected) — the Ghidra-derived Font/Glyph
+layout is proven correct, not just theorized.
+
+**REAL glyph-array patch mechanism test ADDED, mechanism not yet confirmed
+visually** (`InjectFontGlyphPatchTest`, LB+RB+A combo): grows the real font's
+glyph array by one entry (heap-allocated replacement array, inserted in sorted
+position) and repoints `glyphCount`/`glyphs`, using a BORROWED existing glyph's
+UV rect ('A') as a placeholder — proves the reallocate-and-repoint mechanism
+without yet needing real new pixel content. Builds clean; not yet triggered live.
+
+**Attempted a REAL, complete font-extension mechanism, CAUGHT AND DISABLED before
+ever being live-tested (2026-07-19)** — rebuilt `bigfont_ext.ff` under entirely
+unique asset names (`bigfont_glyph_ext.ff`: font `fonts/bigfont_ext`, materials
+`fonts/gamefonts_pc_ext`/`fonts/gamefonts_pc_glow_ext`, image `gamefonts_pc_ext`)
+to avoid the same-name asset-interning collision that blocked both the boot-splice
+attempt and the earlier menu-override work — confirmed via `Unlinker.exe --list`
+that the original build used the SAME names as the real stock assets, which would
+have silently no-op'd (interning hands back the existing cached object for an
+already-registered name). Rebuild is clean (0 warnings/0 errors) and deployed to
+`assets/zones/bigfont_glyph_ext.ff`. Implemented `InstallGlyphFontExtension()`:
+loads this uniquely-named zone via a direct (non-hooked) `LoadZones` call from the
+WndProc/`SetTimer` tick — the same safe mechanism the original `roundtrip.ff` test
+already proved (screenshot-verified, zero crash) — then repoints the REAL
+`fonts/bigfont`'s `material`/`glowMaterial`/`glyphCount`/`glyphs` fields at the
+loaded extended font's own already-correct values (no runtime array construction
+needed, since the offline-built font is already a complete, correct superset).
+**Before ever shipping this live, caught a direct contradiction with
+already-established research**: `bigfont_glyph_ext.ff` contains 2 materials + an
+image + shaders, and loading MATERIAL-bearing content (not a bare menu) from this
+same WndProc/`SetTimer` tick was already found (see `iw5sp.md`'s "Black-screen
+flash... root cause fully resolved: materials" section) to trigger a synchronous
+D3D9 GPU-resource-creation cascade outside the engine's own controlled
+frame/thread discipline — exactly the class of operation already confirmed to
+cause visible corruption/crashing from this exact call site. **Disabled
+(`InstallGlyphFontExtension()`'s call site commented out, code kept) before the
+user ever tested it** — the physical zone file was also removed from the live
+`zone/english/` folder to fully revert. The only path that research found safe
+for material-bearing content is routing the load through a real
+`FUN_0053cbc0`-driven level-load transition instead of a WndProc/`SetTimer` tick
+call — not yet attempted for this or any content in this project. **Do not
+re-enable without either finding that safe path or independently re-verifying the
+timing risk doesn't apply here.**
+
 **Boot-splice half IMPLEMENTED 2026-07-19, then CONFIRMED LIVE CRASH, DISABLED
 same day** (task #31): `Hook_LoadZonesForBootSplice` (`analog_input_hooks.cpp`)
 hooks `FUN_004ca310` and splices the extended `bigfont_ext` font zone into the
