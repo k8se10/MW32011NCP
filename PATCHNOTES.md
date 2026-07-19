@@ -47,10 +47,11 @@ reverse-engineering trail behind each entry.
   Two genuine engine subsystems unknowingly share one memory region — this
   can never be made reliable via direct kbutton calls, confirming the 4th
   key-synthesis exception (now reinstated) is the only real fix, not a
-  workaround. See `re_notes/known_issues.md` issues #6 and #30 for the
-  full trail — Predator Missile guidance work (task #30/#31) is now
-  blocked on finding a safer replacement for the two disabled diagnostic
-  hooks before it can resume.
+  workaround. **User-confirmed as the adequate permanent fix — task #24
+  closed.** See `re_notes/known_issues.md` issues #6 and #30 for the full
+  trail — Predator Missile guidance work (task #30/#31) is now blocked on
+  finding a safer replacement for the two disabled diagnostic hooks before
+  it can resume.
 - **Real font-extension mechanism for button glyphs, attempted and DISABLED
   before ever being live-tested (2026-07-19, task #6/#31).** Rebuilt the
   extended glyph font under entirely unique asset names

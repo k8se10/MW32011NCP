@@ -2085,10 +2085,45 @@ input) and refines issue #26's vehicle hypothesis below.
     press). **Pivoting to file-based research** (GSC script corpus + weapon
     CSV/GDT data for `canHoldBreath` and sway-related fields) rather than
     further x86 static RE, which has been exhausted for this specific
-    question — research in progress. The working key-synthesis fallback
-    (`SendSyntheticHoldBreathKey`) is kept in the codebase, commented out, as
-    an immediately available revert if the file-based research doesn't pan
-    out.
+    question.
+  - **File-based research: clean negative, zero GSC/weapon-data involvement**
+    (2026-07-19). Full GSC corpus search (317 files) for `breath`/`sway`/
+    `steady`/`holdbreath`/`canholdbreath`/`aimsway`/`scopesway` found nothing
+    relevant — the sway-reduction effect is 100% native, confirming rather
+    than contradicting the Ghidra fork's "leaf function" finding. Weapon data
+    (`iw5_barrett_mp`) confirms `canHoldBreath` is a bare boolean capability
+    flag with no associated sway-magnitude/duration field anywhere in its
+    ~1567-field list — the actual effect strength is a hardcoded native
+    constant, not per-weapon data. No loose "breath" string anywhere in
+    `iw5sp.exe` either, closing off any GSC-builtin-by-name theory.
+  - **DEFINITIVE ROOT CAUSE FOUND (2026-07-19), permanent fix confirmed.** A
+    dedicated Ghidra pass resolved this completely: `0xA98C04` is not an
+    independent kbutton_t at all — it is literally **Fire's own `down[1]`
+    slot** (`0xA98C00 + 4`, Fire's real, already-confirmed kbutton). The real
+    dispatcher's case 9 calls `KeyDown`/`KeyUp` with `self=0xA98C04` anyway,
+    which makes those functions treat that memory as a brand-new struct's own
+    `+0x10`/`+0x11` fields — but those fields land exactly on `0xA98C14`/
+    `0xA98C15`, which is **also** array slot 1 of `FUN_0057dc90` (the
+    per-frame simple-bind reader, already known from earlier `notify` research
+    as a 10-entry/stride-0x14 array starting at `0xA98C00`). That function
+    unconditionally zeroes byte `+1` of its own slot 1 (`= 0xA98C15 =
+    0xA98C04+0x11`) every single frame, for a completely unrelated bind, with
+    no awareness that anything else is using that memory. Two genuine engine
+    subsystems unknowingly share one memory region — this is why every
+    fix attempt targeting `0xA98C04`'s own fields directly (plain kbutton
+    calls, the `+0x11` manual clear) was doomed regardless of how correct the
+    fix logic was: something else stomps the exact byte the mechanism depends
+    on, every frame, unconditionally. (Bonus finding, not chased further:
+    `kAdsKbutton2`'s own `+0x10`/`+0x11` coincide with a different one-off
+    entry in the same array — a second instance of the same aliasing class,
+    though ADS doesn't visibly break, plausibly because its effect doesn't
+    depend on those exact bytes.) **Conclusion: driving `0xA98C04` directly can
+    never be made reliable. The 4th key-synthesis exception
+    (`SendSyntheticHoldBreathKey`, synthetic Shift while ADS'd) is the correct,
+    permanent design — not a workaround to keep chasing away from** — confirmed
+    by the user as the adequate permanent fix. Reverted back to this design
+    (see the commit history for the brief direct-kbutton retest and revert).
+    **Task #24 CLOSED.**
 - **Positive result — Mission "Persona Non Grata" (Act 1, immediately after
   Hunter Killer): the UGV (Unmanned Ground Vehicle, mounted minigun +
   grenade launcher, played as Yuri) worked perfectly on controller as
