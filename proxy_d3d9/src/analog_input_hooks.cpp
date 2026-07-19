@@ -1112,10 +1112,32 @@ constexpr int kHoldBreathBindIndex = 18; // distinct from ADS's 13/Reload's 15/S
                                           // self-consistent between our own down/up calls
 bool g_holdBreathKbuttonActive = false;
 
+// CONFIRMED LIVE REGRESSION (2026-07-19): user report -- "once toggled initially, it
+// always holds breath ... theres no way to toggle it off." Same class of symptom as
+// the ADS "activates once then stays stuck" bug from 2026-07-14 (see the big comment
+// above CallKbuttonDown), but this reuses those ALREADY-FIXED helpers (consistent
+// bindIndex both directions, correct timeMs third arg) -- so this is NOT a repeat of
+// either of that bug's two known root causes. Real cause not yet found: could be
+// this project's own logic never actually reaching the KeyUp call, or -- a real
+// possibility flagged, not confirmed -- the native Hold Breath EFFECT itself may not
+// be a simple "clears the instant the kbutton goes up" state the way Sprint/ADS are
+// (e.g. a real duration/exit condition this project doesn't know about yet). DISABLED
+// (the live kbutton calls below, not the tracking) rather than shipped broken --
+// matches the same disable-first-diagnose-after precedent as the rumble hook and the
+// boot-zone-splice hook this same session. Logging kept and unconditional so the next
+// playtest captures the real edge-transition sequence without touching live game
+// state -- see re_notes/known_issues.md for the tracked issue.
+constexpr bool kHoldBreathLiveEnabled = false; // flip true only after root-causing
+
 void UpdateHoldBreathKbutton(bool active)
 {
     if (active == g_holdBreathKbuttonActive) return;
     g_holdBreathKbuttonActive = active;
+    char buf[128];
+    sprintf_s(buf, "[hold-breath-diag] edge -> %s (live-call %s)",
+        active ? "DOWN" : "UP", kHoldBreathLiveEnabled ? "enabled" : "DISABLED");
+    LogFromController(buf);
+    if (!kHoldBreathLiveEnabled) return;
     if (active) {
         CallKbuttonDown(kHoldBreathKbutton, kHoldBreathBindIndex);
     } else {

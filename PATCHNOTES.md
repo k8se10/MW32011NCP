@@ -10,15 +10,18 @@ reverse-engineering trail behind each entry.
 
 ### Added
 - **Hold Breath (L3 while ADS'd) wired to its real native kbutton (2026-07-19,
-  task #24).** The same `+breath_sprint` disassembly that found Sprint's real
-  kbutton (`0xA98CCC`, v0.2.0) also surfaced a second kbutton call on the exact
-  same case (`0xA98C04`) — very likely Hold Breath's own, since the real
-  default SHIFT bind is a single, context-sensitive Sprint/Hold-Breath input on
-  console. Implemented by driving that kbutton via the same
+  task #24), then DISABLED after a confirmed live regression the same day.**
+  The same `+breath_sprint` disassembly that found Sprint's real kbutton
+  (`0xA98CCC`, v0.2.0) also surfaced a second kbutton call on the exact same
+  case (`0xA98C04`) — very likely Hold Breath's own. Implemented via the same
   `CallKbuttonDown`/`CallKbuttonUp` convention as ADS/Reload/Sprint/Fire,
-  gated on ADS instead of stance (crouched/prone + scoped is a normal case for
-  Hold Breath, unlike Sprint's own standing-only gate). Builds clean (0
-  warnings/0 errors, full rebuild) — **not yet live-tested.**
+  gated on ADS instead of stance. **Live playtest found a real bug**: it
+  engages correctly as a hold on first press, but never releases — stuck
+  permanently active with no way to cancel it, same symptom class as an
+  earlier ADS bug but not caused by either of that bug's known root causes.
+  **Disabled** (the kbutton calls are now skipped; a diagnostic log of every
+  engage/release edge stays active for root-causing) rather than shipped
+  broken. See `re_notes/known_issues.md` for the full trail.
 - **Boot-time zone splice for the extended button-glyph font, attempted and
   DISABLED after a confirmed live crash (2026-07-19, task #31/#6).** Hooked
   the real zone-loading entry point (`FUN_004ca310`) to splice this

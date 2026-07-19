@@ -1889,6 +1889,39 @@ input) and refines issue #26's vehicle hypothesis below.
     sway reduction, and a non-sniper-ADS + L3 check to confirm Sprint
     correctly stays disengaged while aiming (already covered by part 2's
     `!g_adsHeld` gate on the auto-stand, live-tested 2026-07-18).
+  - **CONFIRMED LIVE REGRESSION, DISABLED same day (2026-07-19).** User's live
+    sniper-ADS playtest: "real bug with the ads sniper now it always holds
+    breath once toggled initially you hold LS to hold breath not toggle and
+    theres no way to toggle it off" — i.e. the first engage works as a real
+    hold (matches design intent), but once released it gets stuck permanently
+    active with no way to cancel it. Same OBSERVED symptom class as the ADS
+    "activates once then stays stuck" bug from 2026-07-14 (see
+    `analog_input_hooks.cpp`'s big comment above `CallKbuttonDown`) — but
+    this reuses those already-fixed helper functions with a consistent
+    `bindIndex` both directions and the correct `timeMs` third arg, so
+    neither of that bug's two known root causes (mismatched keyId between
+    Down/Up, missing stack arg) applies here directly. **Real cause NOT yet
+    found** — two live hypotheses, neither confirmed: (a) this project's own
+    `g_sprintHeld`/`g_adsHeld` tracking isn't actually reaching the `KeyUp`
+    call the way the code implies (something about `InjectControllerAds`'s
+    real edge timing relative to `InjectControllerSprint` not yet
+    independently re-verified this pass), or (b) the native Hold Breath
+    EFFECT itself may not be a simple "clears the instant the kbutton goes
+    up" state the way Sprint/ADS demonstrably are — it could have its own
+    real duration/exit condition this project doesn't know about yet, given
+    `0xA98C04` was only ever confirmed as "a kbutton the real SHIFT press
+    also drives," not independently confirmed to behave like a clean
+    hold-while-down toggle at the engine level.
+  - **DISABLED (2026-07-19)**: `kHoldBreathLiveEnabled = false` in
+    `analog_input_hooks.cpp` — the real `CallKbuttonDown`/`CallKbuttonUp`
+    calls are now skipped entirely (matches the same disable-first,
+    diagnose-after precedent as the rumble-hook and boot-zone-splice crashes
+    this same session), while a `[hold-breath-diag]` log line still fires on
+    every edge transition (DOWN/UP) so the next playtest captures the real
+    transition sequence without touching live game state. Builds clean.
+    **Needs a diagnostic playtest** (confirm the log shows a clean DOWN then
+    UP on a normal L3-tap-while-ADS'd cycle) before re-enabling, to determine
+    which of the two hypotheses above is real.
 - **Positive result — Mission "Persona Non Grata" (Act 1, immediately after
   Hunter Killer): the UGV (Unmanned Ground Vehicle, mounted minigun +
   grenade launcher, played as Yuri) worked perfectly on controller as
