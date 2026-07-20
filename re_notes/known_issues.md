@@ -4206,13 +4206,60 @@ determined whether this checks on-disk files specifically (this project's in-mem
 injection approach would sidestep that) or loaded zone content more generally — one of three
 research forks below is chasing this.
 
-**Three more research forks launched (2026-07-20), not yet returned**: (1) direct Ghidra
-confirmation of whether `iw5mp.exe` actually contains a CRC32/checksum computation over its own
-`.text` range specifically (independent of the Xbox documentation), (2) whether `iw5sp.exe` also
-contains the `bdAntiCheat` class family (relevant to Survival's online co-op risk specifically) plus
-a deeper trace of the `sv_pure` system's actual scope (server-enforced-only vs. client self-check;
-file-based vs. loaded-content-based), (3) web research for PC-specific precedent — Plutonium's own
-likely-necessary handling of this exact system, cheat-development community discussion, and any
-reported false-positive bans tied to code-integrity checks specifically (as opposed to VAC). Update
-this entry once those land — do not treat the Xbox-sourced `.text`-checksum finding as PC-confirmed
-until they do.
+**RESOLVED (2026-07-20) — all three follow-up threads returned, plus one direct trace:**
+
+1. **`.text`-checksum question — NOT confirmed for PC, and real evidence points the other way.**
+   Direct decompile of `iw5mp.exe`'s `.text` range (`0x00401000`–`0x007df3ff`, confirmed via PE
+   section listing) found the literal terms `crc32`/`crc32split` genuinely exist in this PC binary
+   too (matching the Xbox documentation's own naming), alongside `sha`/`md4` in the same string
+   cluster — but tracing the ONLY real `crc32(init, buf, len)`-shaped function in the entire binary
+   (`FUN_005e0df0`) back through its only caller (`FUN_005e5f30`) found it's a **generic buffered
+   file/stream-read function** — both of its two call sites to the CRC32 function are inside a
+   chunked file-read loop, incrementally accumulating a running checksum of bytes being read FROM
+   A FILE/STREAM, gated by a per-stream "is CRC tracking enabled" flag. This is asset/file-stream
+   checksumming (almost certainly the same subsystem behind the `sv_pure`/Fast-File integrity check
+   below), not a scan of the running executable's own memory. Since this is the only CRC32
+   implementation found anywhere in the binary, and both its call sites are confirmed
+   file-stream-only, **this is real, substantive evidence against the specific worry that PC's
+   `iw5mp.exe` does a `.text`-section code-integrity scan via CRC32** — not proof that no
+   code-integrity check exists via any other undiscovered mechanism, but a real negative result for
+   the most concrete lead found, not just an absence of proof.
+
+2. **`iw5sp.exe` also contains `bdAntiCheat`** — same class names, same `.\bdAntiCheat\
+   bdAntiCheat.cpp` source reference, confirmed via direct string match (`bdAntiCheat` @
+   `0x008d94d3`, `answerChallenges` @ `0x008d94fd`, etc.). This system is not MP-exclusive — it's
+   compiled identically into both binaries. Reinforces (again) that the real risk boundary is
+   **solo vs. online**, not **SP vs. MP** — the same challenge-response code plausibly activates
+   during Survival's online co-op the same way it would in MP, gated on the same kind of
+   active-connection state.
+
+3. **`sv_pure`/Fast-File checksum — confirmed server-side-only, and file-based, not memory-based.**
+   `FUN_005741f0` is a server-STARTUP dvar registration routine (~50 `sv_*` dvars, including
+   `sv_pure` itself, default `1`) — classic Quake3-lineage SERVER config, only relevant when
+   something is acting as a server/host. `FUN_006369d0` is the CLIENT-side counterpart, but it
+   parses a REMOTE server's advertised info string (for server-browser-style display) — not a
+   local self-check of the client's own files. **Net effect: `sv_pure` requires a real
+   server-vs-client relationship to have any bite at all — zero enforcement point in solo
+   Campaign/Survival — and it operates on IWD/Fast-File CHECKSUMS OF FILES ON DISK, not live
+   process memory.** This project's own established approach (in-memory-only zone injection,
+   never touching files on disk) would not even be visible to this specific check.
+
+4. **Web research: no PC-specific external confirmation found either way.** Correctly flagged and
+   avoided a real trap: most "Modern Warfare 3 anticheat" searches surface the unrelated 2023
+   "Modern Warfare III" title's RICOCHET system — a naming collision, not applicable to this 2011
+   game. Found real, useful era-context (Demonware's anti-cheat had multiple versions; this looks
+   like their in-house v2-era system, distinct from later titles' commercial Arxan protection) and
+   confirmed Plutonium's OWN separate anti-cheat triggers specifically on memory edits/injection
+   (already known, not new), but no direct PC-specific `bdAntiCheat`/`.text`-checksum discussion
+   was found in cheat-development community sources searched.
+
+**Overall bottom line, updated**: the scariest specific hypothesis (a `.text`-section code-integrity
+CRC scan on PC, that would directly catch MinHook-style inline hooking) is **not confirmed and has
+real evidence against it** — the only CRC32 implementation in the binary is asset-stream-only. This
+doesn't eliminate all anti-cheat risk (the actual `bdAntiCheat` challenge-response CONTENT is still
+not fully traced, and a different, undiscovered mechanism could exist) — but it meaningfully
+de-risks the most concrete, actionable worry raised this session. Combined with the already-established
+design implication (prefer vtable hooks / direct calls into existing game code over inline `.text`
+patching for any future MP work, which this project's SP work already does by convention), the
+practical risk picture for a carefully-built MP implementation is more favorable than it looked
+immediately after the Xbox precedent was first found.
