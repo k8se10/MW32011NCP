@@ -1,0 +1,6 @@
+[b]v0.2.1[/b] (2026-07-20) — Added a console-accurate look acceleration ramp; Hold Breath (L3 while ADS'd) is now fully working as genuine native input.
+[b]v0.2.0[/b] (2026-07-19) — Sprint now drives its real native kbutton (no custom timer needed); 3 of 4 Survival killstreaks confirmed working; menu navigation extended to the main menu/title screen.
+[b]v0.1.3[/b] (2026-07-17) — Real D-pad/A menu navigation confirmed working live (main menu, pause menu, options screens).
+[b]v0.1.2[/b] (2026-07-16) — Documentation-accuracy pass; one small INI comment fix, no behavior change.
+[b]v0.1.1[/b] (2026-07-16) — Fixed a regression that broke vanilla keyboard sprint, and a bug that could invert look direction on deep-zoom optics.
+[b]v0.1.0-prealpha[/b] (2026-07-15) — Initial release: analog movement/look, core combat buttons, stance ladder, sprint, pause menu, D-pad, and Survival ready-up.
