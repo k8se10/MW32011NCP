@@ -1,16 +1,19 @@
 # MW3 Native Controller Support (Campaign & Survival)
 
-**Status: ALPHA — v0.2.0 (2026-07-19).** This release is the first the project
-considers a real milestone rather than incremental groundwork: core movement, look,
-combat, stance, and Sprint are all confirmed working live against `iw5sp.exe`
-(Campaign/Survival) through the engine's own real internal calls, real D-pad/A menu
-navigation now covers every UI surface actually exercised (main menu, title screen,
-pause menu, options, buy-stations, sliders), and 3 of Survival's 4 real killstreaks
-are confirmed working end-to-end. See **Status at a glance** immediately below for
-an explicit, no-guessing breakdown of exactly what's fully working, partial, or not
-implemented at all — read that before assuming any specific feature works. Not
-feature-complete, not fully tested end-to-end, and Multiplayer (`iw5mp.exe`) hasn't
-been started at all.
+**Status: ALPHA — v0.2.1 (2026-07-20).** Builds on v0.2.0's first-real-milestone
+release with two more live-confirmed items: a console-accurate look acceleration
+ramp (33ms, tied to this old engine's own locked 30fps tick), and **Hold Breath
+(L3 while ADS'd on a sniper) now fully working** as genuinely native input, after
+an extensive live-debugging pass that ended by isolating a single stuck kbutton_t
+byte. Core movement, look, combat, stance, and Sprint remain confirmed working live
+against `iw5sp.exe` (Campaign/Survival) through the engine's own real internal
+calls, real D-pad/A menu navigation covers every UI surface actually exercised
+(main menu, title screen, pause menu, options, buy-stations, sliders), and 3 of
+Survival's 4 real killstreaks are confirmed working end-to-end. See **Status at a
+glance** immediately below for an explicit, no-guessing breakdown of exactly what's
+fully working, partial, or not implemented at all — read that before assuming any
+specific feature works. Not feature-complete, not fully tested end-to-end, and
+Multiplayer (`iw5mp.exe`) hasn't been started at all.
 
 A from-scratch native controller project for Call of Duty: Modern Warfare 3 (2011, IW5
 engine) — analog movement, look, and buttons driven directly through the game's own
@@ -50,6 +53,8 @@ live-tested by the developer during actual play, not just built-and-assumed.
 | Precision Airstrike (Survival) | Smoke-grenade-throw mechanic, uses Fire as-is |
 | Boat (Hunter Killer), UGV (Persona Non Grata), Helicopter door gun (Return to Sender), SMAW dumb-fire (Goalpost) | Campaign weapon systems |
 | Button/stick layout presets, **including `TacticalLefty`** | **`TacticalLefty` confirmed correct against real hardware, 2026-07-19** — previously this preset's own remap was the one open accuracy question in this system |
+| **Hold Breath (L3 while ADS'd on a sniper)** | **Real kbutton (2026-07-20)** — `CallKbuttonDown`/`CallKbuttonUp` on the real kbutton, paired with a force-clear of the one struct byte that didn't self-clear on release. Steadies aim while held; accuracy drops once breath runs out. Genuinely native input, no key-synthesis needed |
+| Look acceleration ramp | Console-accurate turn-rate ramp (33ms = one 30fps engine frame), on by default |
 
 ### 🟡 Partial (works, but with a specific, known gap)
 
@@ -71,7 +76,6 @@ live-tested by the developer during actual play, not just built-and-assumed.
 | **Aim assist** | Implemented but **disabled by default and non-functional** — target classification is broken (oscillates between multiple movers). Do not enable outside active development |
 | **Vibration/rumble** | Implemented, then **crashed the game at startup** — fully disabled pending a safer reimplementation |
 | Button-glyph controller icons | Full asset + build pipeline proven end-to-end, but nothing renders in-game yet — zero player-visible effect currently |
-| Hold Breath (sniper ADS sway reduction) | Not implemented (a candidate kbutton was found as a side effect of the Sprint fix, not yet wired) |
 | Vehicle-exit prompt (`+usereload`, Mind the Gap) | Not wired |
 | Survival debug menu / dev console | The real console is confirmed permanently dead — a custom debug menu hasn't been built |
 | WaW-style animated clan tags | Research only, genuinely complicated by a dead networked Elite-session dependency |
@@ -164,7 +168,7 @@ is still open, not how rough what already works is.
 | Stage | Version range | What it means here |
 |---|---|---|
 | **Pre-alpha** | `0.1.0` – `0.1.5` | Core systems land one at a time — movement/look/combat, stance/sprint, pause menu, and menu navigation done; aim assist, vibration, killstreaks, and the controller options menu still being built out. |
-| **Alpha** *(current, v0.2.0)* | `0.1.5` – `0.4.0` | The remaining major systems get built and land. **This release**: Sprint fully native (no custom timer, Extreme Conditioning resolved for free), 3 of 4 Survival killstreaks confirmed working, menu/UI navigation extended to the main menu/title screen and slider values. **Still ahead in this stage**: button glyphs, a real in-game options screen, aim assist taken from "math confirmed" to actually working, vibration reimplemented, Predator Missile's guidance aim, and remaining Campaign/Special Ops compatibility gaps. Multiplayer groundwork may start here, pending the anti-cheat question being resolved first. |
+| **Alpha** *(current, v0.2.1)* | `0.1.5` – `0.4.0` | The remaining major systems get built and land. **v0.2.0**: Sprint fully native (no custom timer, Extreme Conditioning resolved for free), 3 of 4 Survival killstreaks confirmed working, menu/UI navigation extended to the main menu/title screen and slider values. **v0.2.1**: console-accurate look acceleration ramp, and Hold Breath (L3 while ADS'd) fully working as genuinely native input after an extensive debugging pass. **Still ahead in this stage**: button glyphs, a real in-game options screen, aim assist taken from "math confirmed" to actually working, vibration reimplemented, Predator Missile's guidance aim, and remaining Campaign/Special Ops compatibility gaps. Multiplayer groundwork may start here, pending the anti-cheat question being resolved first. |
 | **Beta** | `0.4.0` – `1.0.0` | Should be practically feature-complete — remaining work is closing gaps, fixing what live testing surfaces, and extending reach (other MW3 clients, Multiplayer if the anti-cheat question resolves favorably) rather than building brand-new core systems from scratch. |
 | **1.0 (final)** | `1.0.0`+ | Feature-complete against this project's full scope, stable, and treated as a real release rather than an actively-shifting work in progress. |
 
@@ -266,6 +270,18 @@ is still open, not how rough what already works is.
   Conditioning perk's real duration override applying for free, with zero detection
   code needed on this project's side. Real keyboard Shift-to-sprint is left completely
   untouched by these hooks, regardless of whether a controller is connected or idle.
+- **Hold Breath** (L3 while ADS'd on a sniper) — real console/keyboard shares this
+  exact physical bind with Sprint (`+breath_sprint`); while aiming, L3 drives Hold
+  Breath's own kbutton instead of Sprint's, steadying aim while held, with accuracy
+  dropping noticeably once breath runs out. **LIVE-CONFIRMED working (2026-07-20)**
+  after an extensive debugging pass: the real kbutton (`0xA98C04`, actually Fire's
+  own `down[1]` struct slot) has a single byte (`active`, `+0x10`) that doesn't
+  self-clear on `KeyUp` — found via a live memory readback after two failed direct
+  attempts and a since-removed key-synthesis detour. Fixed by force-clearing that
+  byte after every release, driven via the same real `CallKbuttonDown`/
+  `CallKbuttonUp` mechanism as Sprint/ADS/Reload — genuinely native input, no
+  key-synthesis needed. See `re_notes/known_issues.md` issue #6/#24 for the full
+  trail.
 
 ### Menu & pause
 - **Start button** — opens **and closes** the pause menu via real engine calls (not a
@@ -299,6 +315,7 @@ native controller UI navigation exists.
 | `[Look]` | `AdsSlowdownStrength` | `1.75` | ADS zoom-aware look slowdown strength (`0` = off, `1` = fully proportional to zoom, higher = more aggressive than proportional; `1.75` confirmed live to feel closer to real console controller CoD than exactly `1.0`) |
 | `[Look]` | `AdsSlowdownBaseline` | `0.65` | Multiplies on top of the strength curve above — without it, low-zoom optics (iron sights/red dots) got almost no slowdown at all, since the zoom ratio alone stays too close to `1.0` to produce a real effect regardless of strength. `1.0` = no extra effect; lower = more slowdown even at minimal zoom |
 | `[Look]` | `InvertLook` | `0` | OG console "Invert Look" — flips vertical look |
+| `[Look]` | `AccelerationRampMs` | `33` | Milliseconds for look turn-rate to ramp from 0 to full speed after the stick leaves neutral, matching real console MW2/Black Ops behavior. Live-tested against many values — 33ms (one 30fps engine frame) confirmed correct, not the ~0.2s figure external research suggested. `0` = instant response (old behavior) |
 | `[Stance]` | `ProneHoldThresholdMs` | `400` | B: hold-vs-tap threshold for the stance ladder |
 | `[Interact]` | `HoldThresholdMs` | `300` | X: how long Interact must be held before it fires (a quick tap reloads instead, same as console) |
 | `[Survival]` | `ReadyUpHoldThresholdMs` | `740` | Y: hold-to-ready-up threshold between Survival waves |
@@ -379,10 +396,10 @@ state directly, as described above:
 | Input | Action | Status |
 |---|---|---|
 | Left stick | Move (analog forward/back/strafe) | ✅ Confirmed |
-| Right stick | Look (independent sensitivity, no mouse-accel/filter inherited) | ✅ Confirmed |
+| Right stick | Look (independent sensitivity, no mouse-accel/filter inherited); turn-rate ramps up over 33ms (one 30fps engine frame) after leaving neutral, matching real console MW2/Black Ops behavior | ✅ Confirmed |
 | Right trigger (RT) | Fire | ✅ Confirmed |
 | Left trigger (LT) | Aim Down Sights (true hold-to-aim, real kbutton) | ✅ Confirmed |
-| Left stick click (L3) | Sprint (real `+sprint` kbutton; auto-stands from crouch/prone; native duration/recovery timer + Extreme Conditioning apply automatically, no custom timer needed) | ✅ Confirmed live 2026-07-19 |
+| Left stick click (L3) | Sprint (real `+sprint` kbutton; auto-stands from crouch/prone; native duration/recovery timer + Extreme Conditioning apply automatically, no custom timer needed). While ADS'd on a sniper, drives Hold Breath instead (real kbutton + a force-clear fix for a struct byte that didn't self-clear on release) — steadies aim while held, accuracy drops once breath runs out | ✅ Confirmed live 2026-07-19 (Sprint) / 2026-07-20 (Hold Breath) |
 | A | Jump | ✅ Confirmed |
 | B | Crouch/Prone — tap toggles crouch, hold goes prone, full 3-state ladder (see below) | ✅ Confirmed |
 | X | Interact **and** Reload (real kbutton, context-sensitive like console) | ✅ Confirmed |
@@ -474,13 +491,18 @@ XInput poll (linked by us, game has none)  → deadzone + response curve
     ▼
 TWO separate per-frame injection points, because they run at different times:
     │  FUN_0057de60 (gameplay-simulation tick, halts while paused)
-    │      — movement, look, buttons, ADS, Sprint, Reload, weapon switch inject here
+    │      — movement, look, buttons, ADS, Sprint, Hold Breath, Reload, weapon switch
+    │        inject here
     │  WndProc subclass + a SetTimer-driven ~60Hz WM_TIMER (keeps running even while
     │  paused, since it's a plain Win32 window hook, not a D3D9 vtable)
     │      — Start's pause-menu open/close inject here (a real Present hook was tried
     │        first but confirmed dead — see re_notes/known_issues.md)
     ▼
-real KeyDown/KeyUp kbutton calls — ADS, Reload (not raw usercmd bits)
+real KeyDown/KeyUp kbutton calls — ADS, Reload, Sprint, Hold Breath (not raw usercmd
+    bits); Sprint's real native duration/recovery timer and Extreme Conditioning's
+    perk override both apply automatically once the real kbutton is driven, no custom
+    timer layer needed (an earlier hand-rolled stamina/cooldown timer, built to work
+    around a since-abandoned raw pm_flags-forcing approach, was removed 2026-07-19)
 real Cbuf_AddText/Cmd_ExecuteString pair — confirmed working, but not the mechanism
     for weapnext/togglemenu (see re_notes/known_issues.md)
 real hardcoded ESCAPE-key path + FUN_004396d0's open/close cases — Start's pause menu
@@ -490,10 +512,10 @@ synthetic keydown/keyup via PostMessage — Survival ready-up (F5), D-pad Left's
     AI-squadmate call-in ('4'), and Back's real +scores scoreboard (TAB) ONLY, the
     three deliberate exceptions to real-engine-calls-only input in this project; real
     native triggers not yet found for ready-up/squadmate call-in, and +scores turned
-    out not to be a native kbutton at all (a plain keyboard bind read by the UI layer)
-our own timer layer (GetTickCount-based, independent per hook site) — sprint stamina/
-    cooldown, since forcing the real pm_flags bit bypasses the native limiter entirely;
-    bypassed itself when the real player_sprintUnlimited dvar is live-set by a mission
+    out not to be a native kbutton at all (a plain keyboard bind read by the UI layer).
+    Hold Breath went through this same detour for one debugging session (2026-07-20)
+    before a live memory readback found the real fix and returned it to a genuine
+    kbutton call above — see re_notes/known_issues.md issue #6/#24.
     ▼
 real ForwardKeyToMenu (FUN_004d9850) call, generic keycode forward to whatever menu
     is active — D-pad Up/Down/Left/Right + A now drive real menu item navigation and

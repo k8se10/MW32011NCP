@@ -8,6 +8,26 @@ reverse-engineering trail behind each entry.
 
 ## Unreleased
 
+---
+
+## v0.2.1 — Alpha (2026-07-20)
+
+Two headline items, both confirmed live. **Look acceleration ramp**: this
+project's controller look previously had zero acceleration/smoothing;
+added a config-driven ramp matching real console MW2/Black Ops behavior,
+live-tested against many values, and corrected to **33ms (one 30fps engine
+frame)** as the permanent default — tied to this old engine's own locked
+tick rate, not an arbitrary wall-clock duration. **Hold Breath (L3 while
+ADS'd)**: fully fixed after an extensive live-debugging saga — two failed
+direct-kbutton attempts, a detour through a 4th key-synthesis exception
+(also regressed live twice, ruling out the transport layer), and finally a
+live memory readback that isolated the real bug (a single kbutton_t byte,
+`0xA98C04`'s `active` flag at `+0x10`, that never followed `KeyUp`). Now
+shipping as genuinely native input again — no key-synthesis needed for
+this feature — dropping this project's "OS-level input emulation
+exceptions" count back to 3 (Survival ready-up's F5, D-pad Left's `'4'`,
+Back's TAB).
+
 ### Added
 - **Look acceleration ramp, matching real console MW2/Black Ops behavior
   (2026-07-19/2026-07-20, issue #32).** This project's controller look
