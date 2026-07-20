@@ -174,6 +174,12 @@ reverse-engineering trail behind each entry.
   live-tested**. A pure native (no key-synthesis) variant is the natural
   next step if this holds up, held off shipping in the same build to avoid
   confounding which change actually fixed it.
+- **CONFIRMED FIXED LIVE — task #24 closed (2026-07-20).** User confirmed
+  the force-clear resolved Hold Breath completely. Also corrected this
+  project's own description of the effect: it's aim STEADYING while breath
+  is held (not weapon-sway reduction), with accuracy dropping noticeably
+  once breath runs out — the user had zero control over the state once it
+  locked on, matching the "active flag latched forever" root cause exactly.
 
 ### Docs
 - Noted user-reported (Reddit, 2026-07-19, unverified by this project)

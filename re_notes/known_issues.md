@@ -2245,11 +2245,21 @@ input) and refines issue #26's vehicle hypothesis below.
     (cheap — a single byte write) — the live data showed this field never
     recovers on its own once corrupted, so a one-shot clear on the edge
     alone might not be durable enough if the edge is ever missed. Builds
-    clean. **Not yet live-tested.** User separately proposed trying a pure
-    native (direct-kbutton, no key-synthesis) variant once this is
-    confirmed — held off implementing that in the same build to avoid
-    confounding which change actually fixed it; next step if this one
-    holds up live.
+    clean.
+  - **CONFIRMED FIXED LIVE — task #24 CLOSED (2026-07-20).** User confirmed
+    the force-clear resolved it completely: "goodf news completely fixed."
+    Also corrected this project's own understanding of the actual effect
+    while confirming it — it's not a weapon-sway reduction, it's the aim
+    STEADYING while breath is held, with accuracy dropping noticeably once
+    breath runs out; the user previously had zero control over that state
+    once it locked on, matching the observed "active flag latched forever"
+    root cause exactly. Corrected throughout this project's own docs/
+    comments where "sway reduction" was used loosely for this effect. A
+    pure native (direct-kbutton, no key-synthesis) variant was proposed as
+    a possible future cleanup, but the current SendInput +
+    force-clear combination is confirmed working and is not blocking
+    anything — no urgency to revisit unless the synthetic-key approach
+    causes some other issue down the line.
 - **Positive result — Mission "Persona Non Grata" (Act 1, immediately after
   Hunter Killer): the UGV (Unmanned Ground Vehicle, mounted minigun +
   grenade launcher, played as Yuri) worked perfectly on controller as
