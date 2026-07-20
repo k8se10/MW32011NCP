@@ -110,7 +110,7 @@ reverse (broad coverage, but shaky):
 | | Score | Answers |
 |---|---|---|
 | **Raw functionality** | **~77/100** | Of what's actually implemented and tested, how well does it work? See the methodology note below the matrix. |
-| **Feature completeness (SP/Survival scope)** | **~86/100** | Of the full planned SP/Survival roadmap, how much exists at all? From the matrix below. |
+| **Feature completeness (SP/Survival scope)** | **~89/100** | Of the full planned SP/Survival roadmap, how much exists at all? From the matrix below. |
 
 **Multiplayer is excluded from both numbers** — it's a separate, equally-large phase
 that hasn't started at all; folding a from-scratch second-binary effort into one
