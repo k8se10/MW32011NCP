@@ -162,6 +162,18 @@ reverse-engineering trail behind each entry.
   previous heartbeat left exactly the window where the effect is reported
   stuck completely uninstrumented. Builds clean. **Diagnostic only — not
   yet live-tested.**
+- **Diagnostic returned a conclusive answer, force-clear fix shipped
+  (2026-07-20, task #24 still open).** The readback log ruled out the
+  Sprint-kbutton theory — `0xA98CCC` toggles cleanly the entire session —
+  and isolated the real culprit: `0xA98C04`'s (Hold Breath's alias) `active`
+  byte (+0x10) latches to `1` on the very first release and never returns to
+  `0` again, even though its own `down0`/`down1` keep cycling correctly the
+  whole time. Added `ClearHoldBreathActiveFlag()`, force-clearing that byte
+  right after every synthetic release plus a continual per-frame self-heal
+  while Hold Breath isn't supposed to be engaged. Builds clean — **not yet
+  live-tested**. A pure native (no key-synthesis) variant is the natural
+  next step if this holds up, held off shipping in the same build to avoid
+  confounding which change actually fixed it.
 
 ### Docs
 - Noted user-reported (Reddit, 2026-07-19, unverified by this project)

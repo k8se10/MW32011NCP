@@ -2225,6 +2225,31 @@ input) and refines issue #26's vehicle hypothesis below.
     effect is reported stuck, confirming or refuting the Sprint-kbutton
     theory with hard data instead of another guess. Builds clean. **Not
     yet live-tested** (diagnostic only — SendInput synthesis unchanged).
+  - **Diagnostic returned a conclusive answer, Sprint-kbutton theory
+    REFUTED, real culprit isolated (2026-07-20).** A full live session's
+    readback log shows `0xA98CCC` (Sprint's real kbutton) toggling `active`
+    perfectly in sync with its own `down0` on every single cycle —
+    completely clean, ruling out the user's Sprint-interference hypothesis.
+    `0xA98C04` (Hold Breath's alias) tells a different story: `down0`/
+    `down1` cycle correctly (`0 <-> 160` = `VK_LSHIFT`) on every press and
+    release, exactly as expected — but its `active` byte (+0x10) latches to
+    `1` on the very FIRST release in the session and **never returns to `0`
+    again**, for the rest of the log, regardless of how many further
+    DOWN/UP cycles follow. This is direct, repeated, live-measured evidence
+    — not a decompile-based guess like the earlier `+0x11` attempt — that
+    `+0x10` specifically is the field failing to follow `KeyUp` on this
+    alias, while the down-slots themselves are completely fine. **Fix**:
+    added `ClearHoldBreathActiveFlag()`, force-clearing `0xA98C04+0x10`
+    ourselves right after every synthetic release, plus a continual
+    per-frame self-heal while Hold Breath isn't supposed to be engaged
+    (cheap — a single byte write) — the live data showed this field never
+    recovers on its own once corrupted, so a one-shot clear on the edge
+    alone might not be durable enough if the edge is ever missed. Builds
+    clean. **Not yet live-tested.** User separately proposed trying a pure
+    native (direct-kbutton, no key-synthesis) variant once this is
+    confirmed — held off implementing that in the same build to avoid
+    confounding which change actually fixed it; next step if this one
+    holds up live.
 - **Positive result — Mission "Persona Non Grata" (Act 1, immediately after
   Hunter Killer): the UGV (Unmanned Ground Vehicle, mounted minigun +
   grenade launcher, played as Yuri) worked perfectly on controller as

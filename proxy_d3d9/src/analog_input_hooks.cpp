@@ -1239,6 +1239,21 @@ void AppendKbuttonSnapshots(char* buf, size_t bufSize)
         hb.down0, hb.down1, hb.active, hb.flag11, sp.down0, sp.down1, sp.active, sp.flag11);
     strcat_s(buf, bufSize, extra);
 }
+
+// Targeted fix, 2026-07-20, built directly from the readback data above: across a full
+// live session, 0xA98C04's down0/down1 cycled cleanly (0 <-> 160 = VK_LSHIFT) on every
+// single press/release, but its `active` byte (+0x10) latched to 1 on the very FIRST
+// release and never returned to 0 again for the rest of the session -- while
+// 0xA98CCC (Sprint's real kbutton) toggled `active` perfectly in sync with its own
+// down0 the entire time. This is direct, repeated, live-measured evidence (not a
+// decompile guess like the earlier +0x11 attempt) that +0x10 specifically is the field
+// failing to follow KeyUp on this alias. Force-clear it ourselves right after sending
+// the synthetic release, since we now know down0/down1 already self-clear correctly and
+// this is the one field that doesn't.
+void ClearHoldBreathActiveFlag()
+{
+    *reinterpret_cast<volatile unsigned char*>(kHoldBreathAliasAddr + 0x10) = 0;
+}
 } // namespace
 
 extern "C" void __cdecl InjectControllerSprint()
@@ -1297,12 +1312,23 @@ extern "C" void __cdecl InjectControllerSprint()
             AppendKbuttonSnapshots(hbBuf, sizeof(hbBuf));
             LogFromController(hbBuf);
             SendSyntheticHoldBreathKey(holdBreathActive);
+            if (!holdBreathActive) {
+                // Force-clear the one field live data showed doesn't follow KeyUp on
+                // this alias -- see ClearHoldBreathActiveFlag's comment above.
+                ClearHoldBreathActiveFlag();
+            }
         }
         // else: debounced -- desired state changed again before one engine frame
         // elapsed since the last transition we actually sent. Left unsent on purpose;
         // this same block re-checks every frame, so the moment debounce clears it will
         // send whatever the CURRENT desired state is, coalescing the flicker away
         // instead of forwarding every intermediate toggle to the native handler.
+    } else if (!holdBreathActive) {
+        // Continual self-heal, every frame while not held (cheap -- a single byte
+        // write): the live data showed this flag never recovers on its own once
+        // corrupted, so keep stamping it clear the whole time Hold Breath isn't
+        // supposed to be engaged, not just once on the edge above.
+        ClearHoldBreathActiveFlag();
     }
 
     // Heartbeat, widened 2026-07-20 to fire for the WHOLE ADS window, not just while
