@@ -10,15 +10,20 @@ reverse-engineering trail behind each entry.
 
 ### Added
 - **Look acceleration ramp, matching real console MW2/Black Ops behavior
-  (2026-07-19, issue #32).** This project's controller look previously had
-  zero acceleration/smoothing — a flat, instant rate, by original design.
-  External research found that MW2 and Black Ops (same IW-engine lineage
-  immediately around MW3) applied a real ~0.2s linear turn-speed ramp on
-  every stick input. Implemented as a new `[Look] AccelerationRampMs`
-  config value (default 200ms, matching the research, **set active by
-  default for live playtest** rather than opt-in-only) — 0 disables it
-  entirely for a clean revert. Builds clean — **not yet live-tested**; if
-  it doesn't feel right, the default reverts to 0.
+  (2026-07-19/2026-07-20, issue #32).** This project's controller look
+  previously had zero acceleration/smoothing — a flat, instant rate, by
+  original design. External research found that MW2 and Black Ops (same
+  IW-engine lineage immediately around MW3) applied a real linear
+  turn-speed ramp on every stick input. Implemented as a new
+  `[Look] AccelerationRampMs` config value, **set active by default for
+  live playtest** rather than opt-in-only — 0 disables it entirely for a
+  clean revert. First shipped at 200ms (the ~0.2s figure from the external
+  research); **live-tested against real hardware across many values
+  (2026-07-20) and confirmed 200ms was wrong** — the real ramp is tied to
+  this old engine's own locked 30fps tick (33.33ms/frame), not an
+  arbitrary wall-clock duration. **Default corrected to 33ms (one engine
+  frame), confirmed live as the right feel — this is now the shipped
+  default.**
 - **Hold Breath (L3 while ADS'd), two direct-kbutton attempts both failed
   live, fixed via a 4th key-synthesis exception instead (2026-07-19, task
   #24).** First attempt drove the real kbutton (`0xA98C04`) directly via
@@ -112,18 +117,6 @@ reverse-engineering trail behind each entry.
   of testing it live on real Deck hardware — added to `README.md`'s client
   compatibility table as community-confirmed-but-project-untested, not a
   supported claim.
-
-### Investigated, not yet resolved
-- **Console look acceleration ramp (2026-07-19, issue #32).** This
-  project's controller look currently has zero acceleration/smoothing —
-  a deliberate original design choice, not an oversight. Web research
-  (not native RE) found that MW2/Black Ops, the same IW-engine lineage
-  immediately surrounding MW3 2011, applied a real ~0.2s linear turn-speed
-  ramp on console controller look, suggesting retail MW3 likely had
-  similar behavior this project doesn't currently replicate. Logged as a
-  planned OPTIONAL config toggle (default off, preserving today's feel)
-  rather than a default-behavior change, since today's flat response has
-  already been tuned against extensive live playtesting.
 
 ---
 

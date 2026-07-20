@@ -1403,7 +1403,11 @@ float GetAdsLookRateScale()
 // similar behavior this project's "instant" look doesn't currently replicate.
 // User-requested (2026-07-19): implement it, live-test it, and if it feels right,
 // make it the default (not just an opt-in toggle) -- see mod_config.h's
-// lookAccelerationRampMs (default 200ms, i.e. currently ON for this test).
+// lookAccelerationRampMs. First shipped at 200ms (the ~0.2s figure from the
+// external MW2/Black Ops research) -- user live-tested many values against real
+// hardware (2026-07-20) and confirmed 200ms was WRONG: the real ramp is tied to
+// this old engine's locked 30fps tick (33.33ms/frame), not an arbitrary
+// wall-clock duration. Default is now 33ms (one engine frame), confirmed live.
 //
 // Mechanism: track how long the stick has been away from neutral (reset to zero
 // the instant it returns to neutral, in InjectControllerLookAngles' else-branch),

@@ -3572,6 +3572,17 @@ path. New `[Look] AccelerationRampMs` config value (`mod_config.h`/`.cpp`),
 default straight away for this live playtest, not held back as opt-in-only, per
 the user's explicit request. Falls back correctly to this default even for an
 existing `mw3ncp_config.ini` that predates this key (`GetPrivateProfileIntA`'s own
-fallback mechanism). Builds clean. **Not yet live-tested** — if it doesn't feel
-right, the config default should revert to `0`; if it does, 200 stays as the
-shipped default.
+fallback mechanism). Builds clean.
+
+**200ms CONFIRMED WRONG live, corrected to 33ms — task #32 CLOSED (2026-07-20).**
+User live-tested the 200ms default against real hardware across many different
+values and concluded the correct figure isn't an arbitrary wall-clock duration at
+all — it's tied to this old engine's own locked 30fps tick rate (33.33ms/frame).
+The external MW2/Black Ops research's "~0.2s" figure was apparently either an
+approximation of a small number of engine ticks, or simply the wrong reference
+point for this specific engine build — either way, live-testing against the real
+game is the authoritative signal here, not the external research. `mod_config.h`'s
+`lookAccelerationRampMs` default corrected `200 -> 33` (one 30fps frame), matching
+config-file docs (`mod_config.cpp`'s `WriteDefaultConfig`) and the in-code comment
+in `analog_input_hooks.cpp` updated to record the correction. **User-confirmed as
+the right feel live — 33ms is now the permanent shipped default.**

@@ -68,17 +68,20 @@ struct ModConfig
                                             // 1.0 = no baseline effect (old behavior);
                                             // lower = more slowdown even with minimal zoom.
     bool invertLook = false;               // OG console "Invert Look" -- flips vertical look
-    unsigned long lookAccelerationRampMs = 200; // ms for look turn-rate to ramp from 0 to full
+    unsigned long lookAccelerationRampMs = 33; // ms for look turn-rate to ramp from 0 to full
                                                   // speed after the stick leaves neutral, matching
                                                   // real console CoD (MW2/Black Ops, same IW-engine
                                                   // era as MW3) confirmed via external research to
-                                                  // apply a ~0.2s linear turn-speed ramp rather than
+                                                  // apply a linear turn-speed ramp rather than
                                                   // instant full-rate response -- this project's own
-                                                  // look had none at all until 2026-07-19. 0 = off
-                                                  // (old instant-response behavior). Set as the
-                                                  // active default for live playtest confirmation
-                                                  // (re_notes/known_issues.md issue #32) -- revert to
-                                                  // 0 if it doesn't feel right live.
+                                                  // look had none at all until 2026-07-19. 200ms was
+                                                  // tried first and confirmed WRONG live (2026-07-20)
+                                                  // -- user live-tested many values and concluded the
+                                                  // real ramp is tied to this old engine's locked
+                                                  // 30fps tick (33.33ms/frame), not an arbitrary
+                                                  // wall-clock duration: one engine tick, not ~0.2s.
+                                                  // 33 = one 30fps frame, confirmed live as the right
+                                                  // feel. 0 = off (instant-response behavior).
 
     // [Stance]
     unsigned long proneHoldThresholdMs = 400; // B: hold vs. tap threshold
