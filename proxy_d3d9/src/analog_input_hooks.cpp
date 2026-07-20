@@ -1199,6 +1199,46 @@ void SendSyntheticHoldBreathKey(bool down)
     input.ki.dwFlags = down ? 0 : KEYEVENTF_KEYUP;
     SendInput(1, &input, sizeof(INPUT));
 }
+
+// Real-memory kbutton_t readback, added 2026-07-20 after TWO different transport-layer
+// fixes (debounce, PostMessage->SendInput) both failed to unstick a live-reported
+// "perma on" -- neither fix touched what actually happens once the key event reaches
+// the native engine, and this diagnostic-first project shouldn't keep guessing fixes
+// blind a third time. User's own hypothesis: this project's own Sprint-kbutton code
+// (0xA98CCC, driven directly by UpdateSprintKbutton with OUR OWN bindIndex=16,
+// gated !g_adsHeld) might be interacting badly with the SAME kbutton_t also being
+// touched by the native dispatch's own internal bindIndex whenever our synthetic
+// Shift reaches it (per the case-9 disassembly: a real/synthetic Shift press
+// unconditionally drives BOTH 0xA98C04 -- Hold Breath's alias, already proven
+// corrupted by FUN_0057dc90 -- AND this exact same 0xA98CCC Sprint kbutton). Rather
+// than guess a fourth blind fix, log the REAL struct fields (down[0]/down[1]/active/
+// the +0x11 flag byte) for BOTH addresses on every Hold Breath transition and
+// heartbeat, so the next live session gives hard data on which kbutton (if either) is
+// actually stuck down when the sway effect visually latches.
+struct KbuttonSnapshot { unsigned int down0, down1; unsigned char active, flag11; };
+
+KbuttonSnapshot ReadKbutton(uintptr_t addr)
+{
+    KbuttonSnapshot s;
+    s.down0 = *reinterpret_cast<volatile unsigned int*>(addr + 0x00);
+    s.down1 = *reinterpret_cast<volatile unsigned int*>(addr + 0x04);
+    s.active = *reinterpret_cast<volatile unsigned char*>(addr + 0x10);
+    s.flag11 = *reinterpret_cast<volatile unsigned char*>(addr + 0x11);
+    return s;
+}
+
+constexpr uintptr_t kHoldBreathAliasAddr = 0x00A98C04; // = Fire's down[1] slot (confirmed
+                                                         // alias, see known_issues.md #6)
+
+void AppendKbuttonSnapshots(char* buf, size_t bufSize)
+{
+    KbuttonSnapshot hb = ReadKbutton(kHoldBreathAliasAddr);
+    KbuttonSnapshot sp = ReadKbutton(kSprintKbutton);
+    char extra[192];
+    sprintf_s(extra, " | 0xA98C04(hb) down0=%u down1=%u active=%u f11=%u | 0xA98CCC(sp) down0=%u down1=%u active=%u f11=%u",
+        hb.down0, hb.down1, hb.active, hb.flag11, sp.down0, sp.down1, sp.active, sp.flag11);
+    strcat_s(buf, bufSize, extra);
+}
 } // namespace
 
 extern "C" void __cdecl InjectControllerSprint()
@@ -1251,9 +1291,10 @@ extern "C" void __cdecl InjectControllerSprint()
         if (nowMsDebounce - g_lastHoldBreathTransitionMs >= kHoldBreathDebounceMs) {
             g_lastHoldBreathTransitionMs = nowMsDebounce;
             g_holdBreathSyntheticHeld = holdBreathActive;
-            char hbBuf[128];
+            char hbBuf[320];
             sprintf_s(hbBuf, "[hold-breath-diag-v2] synthetic Shift -> %s (g_sprintHeld=%d g_adsHeld=%d)",
                 holdBreathActive ? "DOWN" : "UP", g_sprintHeld ? 1 : 0, g_adsHeld ? 1 : 0);
+            AppendKbuttonSnapshots(hbBuf, sizeof(hbBuf));
             LogFromController(hbBuf);
             SendSyntheticHoldBreathKey(holdBreathActive);
         }
@@ -1264,19 +1305,23 @@ extern "C" void __cdecl InjectControllerSprint()
         // instead of forwarding every intermediate toggle to the native handler.
     }
 
-    // Heartbeat, ONLY while active -- distinguishes "our own tracking got stuck true"
-    // (this log keeps firing with g_sprintHeld/g_adsHeld both still 1 long after the
-    // player believes they released L3) from "our tracking correctly went false but
-    // the native/visual effect just didn't clear" (this log stops firing at the right
-    // time, meaning the bug is on the native side, not in this project's own state).
+    // Heartbeat, widened 2026-07-20 to fire for the WHOLE ADS window, not just while
+    // our own holdBreathActive tracking is true. The prior version only proved "our
+    // own state" was clean; it went silent the instant we sent UP, leaving the entire
+    // rest of a scoped session (where the user reports the sway effect still visually
+    // stuck) completely uninstrumented. Now logs real kbutton_t state at both
+    // addresses throughout the whole ADS period so a live session can show whether
+    // either kbutton is ACTUALLY still down at the moment the effect is reported stuck,
+    // regardless of what our own g_sprintHeld/g_holdBreathSyntheticHeld believe.
     static DWORD s_lastHoldBreathHeartbeatMs = 0;
-    if (holdBreathActive) {
+    if (g_adsHeld) {
         DWORD nowMs = GetTickCount();
         if (nowMs - s_lastHoldBreathHeartbeatMs >= 500) {
             s_lastHoldBreathHeartbeatMs = nowMs;
-            char hbBuf2[128];
-            sprintf_s(hbBuf2, "[hold-breath-diag-v2] heartbeat: still active (g_sprintHeld=%d g_adsHeld=%d) t=%lu",
-                g_sprintHeld ? 1 : 0, g_adsHeld ? 1 : 0, nowMs);
+            char hbBuf2[320];
+            sprintf_s(hbBuf2, "[hold-breath-diag-v2] heartbeat: g_sprintHeld=%d g_adsHeld=%d holdBreathActive=%d t=%lu",
+                g_sprintHeld ? 1 : 0, g_adsHeld ? 1 : 0, holdBreathActive ? 1 : 0, nowMs);
+            AppendKbuttonSnapshots(hbBuf2, sizeof(hbBuf2));
             LogFromController(hbBuf2);
         }
     }

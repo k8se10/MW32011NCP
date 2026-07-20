@@ -144,6 +144,24 @@ reverse-engineering trail behind each entry.
   keystate table, gated on the game holding OS foreground focus since
   `SendInput` is system-wide rather than window-scoped. Builds clean —
   **not yet live-tested**.
+- **SendInput ALSO confirmed stuck live, diagnostic-first pivot instead of a
+  third blind fix (2026-07-20, task #24 still open).** Two different
+  transport mechanisms (PostMessage, SendInput) now fail identically,
+  meaning transport was never the actual problem — something after the key
+  event reaches the native engine is at fault. User's own hypothesis: this
+  project's own Sprint-kbutton code (driven directly on the same `0xA98CCC`
+  the native dispatch also touches internally whenever the synthetic Shift
+  lands) might be the real interference, not Hold Breath's own known-
+  corrupted `0xA98C04` alias — a lingering Sprint kbutton down[] slot would
+  explain a 100%-reproducible stuck symptom better than a timing race would.
+  Rather than guess a third fix, added a real-memory kbutton_t readback
+  (`ReadKbutton`/`AppendKbuttonSnapshots`) logging `down[0]`/`down[1]`/
+  `active`/the `+0x11` flag for BOTH addresses on every Hold Breath
+  transition, and widened the heartbeat to cover the WHOLE ADS window
+  instead of going silent the instant our own tracking releases — the
+  previous heartbeat left exactly the window where the effect is reported
+  stuck completely uninstrumented. Builds clean. **Diagnostic only — not
+  yet live-tested.**
 
 ### Docs
 - Noted user-reported (Reddit, 2026-07-19, unverified by this project)

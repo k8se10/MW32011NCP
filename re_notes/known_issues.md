@@ -2189,6 +2189,42 @@ input) and refines issue #26's vehicle hypothesis below.
     system-wide, not window-scoped like `PostMessage` was — a real
     player's Shift press couldn't reach the game otherwise either. Builds
     clean. **Not yet live-tested.**
+  - **SendInput ALSO confirmed stuck live (2026-07-20)** — identical symptom
+    to the PostMessage attempt. Two different transport mechanisms now
+    failing identically means the transport layer was never the actual
+    problem; something about what happens once the key event reaches the
+    native engine is at fault. **User's own hypothesis, worth taking
+    seriously**: this project's own Sprint-kbutton code
+    (`UpdateSprintKbutton`, driven directly on `0xA98CCC` with this
+    project's own `kSprintBindIndex=16`, gated `!g_adsHeld`) might be
+    interacting badly with the SAME `0xA98CCC` kbutton also being touched by
+    the native engine's own internal dispatch whenever the synthetic Shift
+    reaches it — per the case-9 disassembly already on record, a real (or
+    now genuinely OS-level synthetic) Shift press unconditionally drives
+    BOTH `0xA98C04` (Hold Breath's alias, already proven corrupted by
+    `FUN_0057dc90`) AND this exact same `0xA98CCC` Sprint kbutton, using
+    whatever bindIndex the native dispatch uses internally — not this
+    project's own `16`. If the real sway-reduction check actually reads
+    Sprint's own (otherwise reliable) kbutton state rather than the known-
+    corrupted `0xA98C04` alias, a lingering down[] slot on `0xA98CCC` from
+    either source would explain a 100%-reproducible stuck-on symptom far
+    better than a timing race against `FUN_0057dc90` would (a race would be
+    expected to be intermittent, not perfectly consistent).
+  - **Diagnostic-first, not a third blind fix (2026-07-20).** Rather than
+    guess again, added a real-memory kbutton_t readback
+    (`ReadKbutton`/`AppendKbuttonSnapshots`) that logs `down[0]`/`down[1]`/
+    `active`(+0x10)/the `+0x11` flag byte for BOTH `0xA98C04` and `0xA98CCC`
+    directly from live process memory. Wired into every Hold Breath DOWN/UP
+    transition log AND widened the heartbeat to fire for the ENTIRE ADS
+    window (not just while this project's own `holdBreathActive` tracking
+    believes it's engaged) — the previous heartbeat went silent the instant
+    our own UP fired, leaving the rest of a scoped session (exactly where
+    the user reports the effect still visually stuck) completely
+    uninstrumented. Next live session's `proxy_d3d9.log` should show
+    directly whether either kbutton is actually still down when the sway
+    effect is reported stuck, confirming or refuting the Sprint-kbutton
+    theory with hard data instead of another guess. Builds clean. **Not
+    yet live-tested** (diagnostic only — SendInput synthesis unchanged).
 - **Positive result — Mission "Persona Non Grata" (Act 1, immediately after
   Hunter Killer): the UGV (Unmanned Ground Vehicle, mounted minigun +
   grenade launcher, played as Yuri) worked perfectly on controller as
