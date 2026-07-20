@@ -2159,6 +2159,36 @@ input) and refines issue #26's vehicle hypothesis below.
     native consumer of this key state still isn't understood; don't just
     raise the debounce number blindly if that happens, go back to RE. Task
     #24 reopened pending this retest.
+  - **Debounce theory FALSIFIED live (2026-07-20).** Retested with the 40ms
+    debounce in place — still stuck on, and the user confirmed going in and
+    out of ADS afterward didn't clear it either. Critically, that session's
+    log showed a single, cleanly-spaced `DOWN -> heartbeat -> UP` cycle
+    (~130ms apart, well past the 40ms debounce, no rapid flicker at all)
+    still resulted in a reported stuck state — ruling the debounce theory
+    out definitively, not just leaving it unconfirmed. **Escalated to a
+    different mechanism entirely**: `PostMessage` only queues a window
+    message for the target HWND's own pump to process — it does NOT touch
+    the OS-level keyboard state table `GetKeyState`/`GetAsyncKeyState`
+    read. The other 3 key-synthesis exceptions (Survival ready-up's F5,
+    D-pad Left's `'4'`, Back's TAB) are all one-shot/transient triggers, so
+    a message-driven handler catches them fine — Hold Breath is
+    architecturally different, needing a SUSTAINED "is this key currently
+    down" read every frame for as long as it's held. Working hypothesis:
+    the native check for "is breath currently held" polls a real OS-level
+    keystate rather than watching for `WM_KEYUP`, which fits every
+    symptom observed: the press engages it, but `PostMessage`'s
+    `WM_KEYUP`, never having touched that keystate table, leaves the poll
+    reading "down" forever regardless of pacing or later ADS toggles.
+    **Fix attempt**: switched `SendSyntheticHoldBreathKey` from
+    `PostMessageA(WM_KEYDOWN/WM_KEYUP)` to `SendInput` with a real
+    `INPUT_KEYBOARD` struct — unlike `PostMessage`, `SendInput` actually
+    updates `GetKeyState`/`GetAsyncKeyState`, making it genuinely
+    indistinguishable from a real hardware press even to code that polls
+    key state directly. Gated on the game actually holding OS foreground
+    focus (`GetForegroundWindow() == hwnd`), since `SendInput` is
+    system-wide, not window-scoped like `PostMessage` was — a real
+    player's Shift press couldn't reach the game otherwise either. Builds
+    clean. **Not yet live-tested.**
 - **Positive result — Mission "Persona Non Grata" (Act 1, immediately after
   Hunter Killer): the UGV (Unmanned Ground Vehicle, mounted minigun +
   grenade launcher, played as Yuri) worked perfectly on controller as

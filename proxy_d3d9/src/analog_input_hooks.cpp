@@ -1155,26 +1155,49 @@ bool g_holdBreathSyntheticHeld = false;
 // original "our state gets stuck true" bug this exception was built to fix. The same
 // log also showed a burst of DOWN/UP pairs landing inside the same or adjacent engine
 // frame (no heartbeat between them), right around where the user reports it latched.
-// Same root lesson as issue #32's look-ramp correction, found independently the same
-// day: this old, 30fps-locked engine (33.33ms/frame) cannot be assumed to cleanly
-// process input transitions faster than its own tick -- a WM_KEYUP posted too soon
-// behind a WM_KEYDOWN for the same key is a plausible way for the native handler to
-// silently drop the release and latch on. Debouncing to one frame is a direct, testable
-// fix for that specific mechanism, not a blind guess -- if it doesn't hold up live,
-// the actual native consumer of this key state still isn't understood and needs
-// further RE, not a bigger debounce number.
+// Theory at the time: this 30fps-locked engine (33.33ms/frame) can't be assumed to
+// cleanly process input transitions faster than its own tick, and a WM_KEYUP posted
+// too soon behind a WM_KEYDOWN could get silently dropped. **FALSIFIED same day**: a
+// retest with the debounce in place still latched, even though that session's log
+// showed a single, cleanly-spaced DOWN -> heartbeat -> UP cycle (~130ms apart, well
+// past the 40ms debounce) -- and the user confirmed going in and out of ADS afterward
+// still didn't clear it. Kept anyway (harmless, imperceptible delay) but it is NOT
+// the fix for this bug -- see SendSyntheticHoldBreathKey below for the real
+// escalation attempted next.
 constexpr DWORD kHoldBreathDebounceMs = 40; // slightly over one 30fps frame (33.33ms)
 DWORD g_lastHoldBreathTransitionMs = 0;
 
+// PostMessage -> SendInput escalation, 2026-07-20 (task #24, still open). PostMessage
+// only queues a window message for the target HWND to process on its own message
+// pump -- it does NOT touch the OS-level keyboard state table that GetKeyState/
+// GetAsyncKeyState read. The other 3 key-synthesis exceptions (Survival ready-up's
+// F5, D-pad Left's '4', Back's TAB) are all one-shot/transient triggers -- a
+// message-driven handler catches a press-then-release fine for those. Hold Breath is
+// architecturally different: it needs a SUSTAINED "is this key currently down" read
+// every frame for as long as it's held, not just an edge event. Working hypothesis:
+// whatever native code decides "is breath currently being held" polls a real OS-level
+// keystate for VK_SHIFT rather than watching for WM_KEYUP -- which would explain
+// exactly what's been observed: the press engages it, but PostMessage's WM_KEYUP,
+// never having touched that keystate table, leaves the poll still reading "down"
+// forever, regardless of how it's spaced or how many times ADS is toggled afterward.
+// SendInput (unlike PostMessage) synthesizes real, OS-level input -- it DOES update
+// GetKeyState/GetAsyncKeyState, making it genuinely indistinguishable from a real
+// hardware press even to code that polls key state directly instead of reading
+// window messages. SendInput is system-wide (delivered to whichever window currently
+// has OS input focus), not window-scoped like PostMessage was, so this is gated on
+// the game actually being the foreground window -- a real player's Shift press
+// couldn't reach the game otherwise either.
 void SendSyntheticHoldBreathKey(bool down)
 {
     HWND hwnd = GetGameWindow();
     if (!hwnd) return;
-    if (down) {
-        PostMessageA(hwnd, WM_KEYDOWN, VK_SHIFT, 0x00000001);
-    } else {
-        PostMessageA(hwnd, WM_KEYUP, VK_SHIFT, 0xC0000001);
-    }
+    if (GetForegroundWindow() != hwnd) return;
+
+    INPUT input = {};
+    input.type = INPUT_KEYBOARD;
+    input.ki.wVk = VK_SHIFT;
+    input.ki.dwFlags = down ? 0 : KEYEVENTF_KEYUP;
+    SendInput(1, &input, sizeof(INPUT));
 }
 } // namespace
 

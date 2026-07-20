@@ -130,6 +130,20 @@ reverse-engineering trail behind each entry.
   faster flicker instead of forwarding it. Builds clean — **not yet
   live-tested**; if stuck-on recurs even with the debounce, this theory is
   wrong and the real native consumer of the key state needs further RE.
+- **Debounce theory falsified live, escalated PostMessage -> SendInput
+  (2026-07-20, task #24 still open).** The debounce did not fix it — a
+  retest logged a single, cleanly-spaced key cycle (well past the 40ms
+  debounce, no flicker at all) that still reportedly latched on, and going
+  in/out of ADS afterward didn't clear it. New theory: `PostMessage` only
+  queues a window message, it never touches the OS-level keyboard state
+  table `GetKeyState`/`GetAsyncKeyState` read — fine for the other 3
+  one-shot key-synthesis exceptions, but Hold Breath needs a SUSTAINED
+  "is this key currently down" read every frame, which the native code may
+  be checking via a real keystate poll instead of `WM_KEYUP`. Switched to
+  `SendInput` (a real `INPUT_KEYBOARD` event), which does update that OS
+  keystate table, gated on the game holding OS foreground focus since
+  `SendInput` is system-wide rather than window-scoped. Builds clean —
+  **not yet live-tested**.
 
 ### Docs
 - Noted user-reported (Reddit, 2026-07-19, unverified by this project)
