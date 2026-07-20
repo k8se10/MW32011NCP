@@ -20,6 +20,15 @@ needed. Character counts are noted where Nexus enforces a limit.
 | `page-metadata.md` | Category / tags / requirements / install-instructions fields | Plain Markdown (internal reference only, Nexus has no single free-text field for most of this — it's separate form fields/dropdowns when actually creating the page). |
 | `zip-description.txt` | The per-file "Description" box shown next to each uploaded archive on the Files tab | Plain text. Describes what's IN that specific archive (currently the same contents as the GitHub release zip) — update the version number whenever a new archive is uploaded. |
 
+**The actual file upload to Nexus is automated (2026-07-20)** — see
+`.github/workflows/nexus-upload.yml`, which fires on every published GitHub
+Release, downloads that release's zip asset, and pushes it to Nexus as a new
+version of the existing file (`file_id 7686417`) via Nexus's official
+`Nexus-Mods/upload-action`, using the `NEXUS_API_KEY` repo secret. This
+covers the FILE upload only — the page text fields above (`description`,
+`changelog`, `credits`, etc.) still need manually pasting into the Nexus web
+UI when they change; the Upload API doesn't cover page-content edits yet.
+
 **Update checklist for every release** (mirrors the `PATCHNOTES.md` version-bump habit):
 1. Re-check every ✅/🟡/⬜ claim in `description.bbcode.txt` against `README.md`'s
    current "Status at a glance" table — don't let a feature stay listed as working

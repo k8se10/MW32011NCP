@@ -15,6 +15,15 @@ reverse-engineering trail behind each entry.
   drift out of sync with the project's actual current status. See
   `nexus/README.md` for the per-release update checklist.
 
+### Added
+- **Automated Nexus Mods file upload on release.** New GitHub Actions
+  workflow (`.github/workflows/nexus-upload.yml`) fires on every published
+  GitHub Release, downloads that release's zip asset, and pushes it to
+  Nexus as a new file version via Nexus's official Upload API action —
+  keeps the GitHub and Nexus downloads in sync without a manual re-upload
+  step. Covers the file only; page text (description/changelog/credits)
+  still needs manual updates per `nexus/README.md`'s checklist.
+
 ---
 
 ## v0.2.1 — Alpha (2026-07-20)

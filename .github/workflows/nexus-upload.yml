@@ -1,0 +1,48 @@
+name: Upload release to Nexus Mods
+
+# Fires whenever a GitHub Release is published (see the release process in
+# PATCHNOTES.md/README.md — tag, then `gh release create` with the built zip
+# attached as an asset). Downloads that same zip and pushes it to Nexus Mods
+# as a new file version on the existing MW32011NCP mod page, via Nexus's
+# official Upload API action. Keeps the two distribution points (GitHub,
+# Nexus) in sync from one release action instead of a manual re-upload.
+#
+# Requires the NEXUS_API_KEY repo secret (a Nexus Mods personal API key,
+# Settings -> API Access on nexusmods.com) and the mod's file_id (7686417 --
+# from the Files tab's "API Info" on the public mod page, or the Manage
+# Files edit menu). Neither value is ever logged in plain text by this
+# workflow -- GitHub Actions automatically masks secret values in job output.
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  upload-to-nexus:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download the release's zip asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download "${{ github.event.release.tag_name }}" --repo "${{ github.repository }}" --pattern "*.zip" --dir .
+
+      - name: Identify the downloaded zip and derive the version string
+        id: release_info
+        run: |
+          zip_name=$(ls -- *.zip | head -n1)
+          echo "filename=${zip_name}" >> "$GITHUB_OUTPUT"
+          # Strip a leading "v" from the tag (v0.2.1 -> 0.2.1) -- Nexus wants
+          # a plain version string, matching this project's own tag convention.
+          tag="${{ github.event.release.tag_name }}"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload to Nexus Mods
+        uses: Nexus-Mods/upload-action@v1.0.0-beta.9
+        with:
+          api_key: ${{ secrets.NEXUS_API_KEY }}
+          file_id: "7686417"
+          filename: ${{ steps.release_info.outputs.filename }}
+          version: ${{ steps.release_info.outputs.version }}
+          display_name: ${{ steps.release_info.outputs.filename }}
+          category: main
+          update_mod_version: true
