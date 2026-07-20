@@ -1033,12 +1033,6 @@ int GetDvarInt(const char* name)
     return *reinterpret_cast<int*>(reinterpret_cast<uintptr_t>(dvarPtr) + 0xc);
 }
 
-extern "C" HWND GetGameWindow(); // defined in d3d9_hook.cpp -- forward-declared here
-                                  // (this project's own ready-up section, further down
-                                  // this file, has the same declaration for its own
-                                  // synthetic-key use; linkage specs must be at global
-                                  // scope, so it's repeated here rather than nested)
-
 // ---- Sprint (L3): real +sprint kbutton (2026-07-19) ------------------------------
 //
 // Found via a purely static technique -- see the big comment block above this
@@ -1107,98 +1101,40 @@ void UpdateSprintKbutton(bool active)
     }
 }
 
-// ---- Hold Breath (L3 while ADS'd): FOURTH key-synthesis exception (2026-07-19) ---
+// ---- Hold Breath (L3 while ADS'd): genuine native kbutton (2026-07-20, task #24) --
 //
 // Same physical bind as Sprint on real console/keyboard (`+breath_sprint`) -- the
 // disassembly trail above (case 9, "+breath_sprint" DOWN) showed the real bind fires
 // TWO kbutton calls back-to-back, unconditionally, on every press: 0xA98C04 (this
-// project's own name for Hold Breath's kbutton) and 0xA98CCC (Sprint's, above).
+// project's own name for Hold Breath's kbutton, actually Fire's own down[1] slot --
+// see the aliasing finding in known_issues.md #6) and 0xA98CCC (Sprint's, above).
 //
-// TWO PRIOR ATTEMPTS at driving 0xA98C04 directly both failed live:
-// 1. Plain CallKbuttonDown/CallKbuttonUp (2026-07-19) -- confirmed live regression,
-//    "engages once, never releases."
-// 2. Root-caused via full decompile of KeyDown/KeyUp: kbutton_t has a second flag
-//    byte at +0x11 that KeyDown sets but KeyUp never clears -- fixed by manually
-//    zeroing +0x11 ourselves after KeyUp. **Still confirmed stuck live** -- the
-//    +0x11 theory, while well-evidenced from the decompile alone, was NOT the
-//    (or not the only) real cause. Whatever the real native consumer of "is Hold
-//    Breath active" actually is, it wasn' resolved by fixing kbutton_t's own fields,
-//    meaning it likely doesn't read this kbutton_t directly at all, or reads it via
-//    a path this project hasn't found.
-//
-// FOURTH EXCEPTION to the "no OS-level input emulation" rule (matching Survival
-// ready-up's F5, D-pad Left's squadmate-call-in '4', and Back's scoreboard TAB):
-// synthesize a REAL Shift keypress via PostMessage, ONLY while ADS'd, instead of
-// touching the kbutton_t at all. This routes Hold Breath through the exact same
-// real native input pipeline a real keyboard player's Shift press already takes --
-// sidestepping whatever this project's own direct-kbutton approach was missing,
-// same reasoning as every prior exception (IW5 has no DirectInput import at all, so
-// keyboard input is genuine WM_KEYDOWN/WM_KEYUP -- a synthetic Shift is
-// indistinguishable from a real keypress). The real bind is `bind SHIFT
-// "+breath_sprint"` (`players2/config.cfg`, already confirmed in the Sprint kbutton
-// research). Deliberately NOT gated on stance (holding breath while crouched/prone
-// and scoped is a normal case) -- only on ADS, since a real Shift press while NOT
-// ADS'd is Sprint's own job (still handled by the direct-kbutton path above).
-//
-// IMPORTANT side effect, deliberately accounted for: a real Shift press ALSO fires
-// Sprint's own kbutton (0xA98CCC) natively, exactly as it does for a real keyboard
-// player. `IsSprintActive()` above now excludes `g_adsHeld` specifically so this
-// project's own direct Sprint-kbutton call never double-claims the same kbutton_t
-// while this synthetic press is also active -- the two paths are fully mutually
-// exclusive (raw kbutton owns Sprint when NOT aiming, synthetic Shift owns both
-// Sprint-natively-ignored-by-the-engine and Hold Breath when aiming).
-bool g_holdBreathSyntheticHeld = false;
+// Full saga, condensed (complete trail in re_notes/known_issues.md #6/#24): FOUR
+// attempts before the real fix was found. #1 plain CallKbuttonDown/Up on 0xA98C04 --
+// "engages once, never releases." #2 guessed (from a decompile read, not measured
+// data) that a second flag byte at +0x11 was the culprit and manually cleared it --
+// still stuck; wrong byte. Pivoted to a 4th key-synthesis exception (synthesizing a
+// real Shift keypress instead of touching the kbutton at all) as attempts #3
+// (PostMessage) and #4 (SendInput, after PostMessage also latched) -- both ALSO
+// latched identically, proving the transport layer was never the problem. A live
+// memory readback (AppendKbuttonSnapshots below) finally isolated it: 0xA98C04's
+// down0/down1 cycle perfectly on every press/release, but its `active` byte (+0x10,
+// NOT +0x11) latches to 1 on the first release and never clears again on its own.
+// **Real fix**: go back to driving the kbutton directly (same calls as attempt #1),
+// paired with ClearHoldBreathActiveFlag() force-clearing +0x10 after every release --
+// CONFIRMED WORKING LIVE. This is genuinely native input, no key-synthesis exception
+// needed for this feature after all -- the earlier synthesis detour was a real
+// dead end, not wasted effort, since it's what proved the transport layer innocent
+// and narrowed the search to kbutton_t's own fields.
+bool g_holdBreathSyntheticHeld = false; // name kept for git history continuity; tracks
+                                          // whether we currently believe the kbutton is
+                                          // held, regardless of mechanism
 
-// Debounce, added 2026-07-20 after a live regression report ("perma on... like even
-// native"): the diagnostic log for that session showed OUR OWN tracking transitioning
-// correctly (a clean UP was logged, g_sprintHeld=0, no further DOWN) -- ruling out the
-// original "our state gets stuck true" bug this exception was built to fix. The same
-// log also showed a burst of DOWN/UP pairs landing inside the same or adjacent engine
-// frame (no heartbeat between them), right around where the user reports it latched.
-// Theory at the time: this 30fps-locked engine (33.33ms/frame) can't be assumed to
-// cleanly process input transitions faster than its own tick, and a WM_KEYUP posted
-// too soon behind a WM_KEYDOWN could get silently dropped. **FALSIFIED same day**: a
-// retest with the debounce in place still latched, even though that session's log
-// showed a single, cleanly-spaced DOWN -> heartbeat -> UP cycle (~130ms apart, well
-// past the 40ms debounce) -- and the user confirmed going in and out of ADS afterward
-// still didn't clear it. Kept anyway (harmless, imperceptible delay) but it is NOT
-// the fix for this bug -- see SendSyntheticHoldBreathKey below for the real
-// escalation attempted next.
+// Debounce, added 2026-07-20 during the key-synthesis detour above, kept for the final
+// native design too (cheap, harmless, avoids sending redundant KeyDown/KeyUp pairs
+// faster than this 30fps-locked engine's own tick, 33.33ms/frame).
 constexpr DWORD kHoldBreathDebounceMs = 40; // slightly over one 30fps frame (33.33ms)
 DWORD g_lastHoldBreathTransitionMs = 0;
-
-// PostMessage -> SendInput escalation, 2026-07-20 (task #24, still open). PostMessage
-// only queues a window message for the target HWND to process on its own message
-// pump -- it does NOT touch the OS-level keyboard state table that GetKeyState/
-// GetAsyncKeyState read. The other 3 key-synthesis exceptions (Survival ready-up's
-// F5, D-pad Left's '4', Back's TAB) are all one-shot/transient triggers -- a
-// message-driven handler catches a press-then-release fine for those. Hold Breath is
-// architecturally different: it needs a SUSTAINED "is this key currently down" read
-// every frame for as long as it's held, not just an edge event. Working hypothesis:
-// whatever native code decides "is breath currently being held" polls a real OS-level
-// keystate for VK_SHIFT rather than watching for WM_KEYUP -- which would explain
-// exactly what's been observed: the press engages it, but PostMessage's WM_KEYUP,
-// never having touched that keystate table, leaves the poll still reading "down"
-// forever, regardless of how it's spaced or how many times ADS is toggled afterward.
-// SendInput (unlike PostMessage) synthesizes real, OS-level input -- it DOES update
-// GetKeyState/GetAsyncKeyState, making it genuinely indistinguishable from a real
-// hardware press even to code that polls key state directly instead of reading
-// window messages. SendInput is system-wide (delivered to whichever window currently
-// has OS input focus), not window-scoped like PostMessage was, so this is gated on
-// the game actually being the foreground window -- a real player's Shift press
-// couldn't reach the game otherwise either.
-void SendSyntheticHoldBreathKey(bool down)
-{
-    HWND hwnd = GetGameWindow();
-    if (!hwnd) return;
-    if (GetForegroundWindow() != hwnd) return;
-
-    INPUT input = {};
-    input.type = INPUT_KEYBOARD;
-    input.ki.wVk = VK_SHIFT;
-    input.ki.dwFlags = down ? 0 : KEYEVENTF_KEYUP;
-    SendInput(1, &input, sizeof(INPUT));
-}
 
 // Real-memory kbutton_t readback, added 2026-07-20 after TWO different transport-layer
 // fixes (debounce, PostMessage->SendInput) both failed to unstick a live-reported
@@ -1255,22 +1191,6 @@ void ClearHoldBreathActiveFlag()
     *reinterpret_cast<volatile unsigned char*>(kHoldBreathAliasAddr + 0x10) = 0;
 }
 
-// ---- Third native attempt, 2026-07-20 (task #24 follow-up) -----------------------
-//
-// The first two direct-kbutton attempts on 0xA98C04 (plain CallKbuttonDown/
-// CallKbuttonUp, then a manual +0x11 clear) both failed live BEFORE this project knew
-// which field was actually the problem -- the live readback data above proved it's
-// +0x10 (active) that doesn't follow KeyUp, not +0x11 (which the second attempt
-// guessed, based on a decompile read rather than measured data, and which turned out
-// to be the wrong byte). Now that the real fix (ClearHoldBreathActiveFlag) is
-// confirmed live via the synthetic-Shift path, try driving 0xA98C04 directly again --
-// same CallKbuttonDown/CallKbuttonUp calls as attempt #1, but paired with the same
-// +0x10 clear that's now proven to work. If this holds up live, it drops the 4th
-// key-synthesis exception entirely (no more SendInput/focus-gating dependency for
-// this feature) -- a genuinely native fix instead of input emulation, matching this
-// project's own stated direction. If it regresses again, this is a one-line revert
-// back to SendSyntheticHoldBreathKey (see git history) -- the synthetic path is
-// confirmed working and stays the fallback.
 constexpr int kHoldBreathBindIndex = 17; // distinct from ADS's 13/Reload's 15/Sprint's 16
 } // namespace
 
@@ -1312,13 +1232,11 @@ extern "C" void __cdecl InjectControllerSprint()
     // what this replaced).
     UpdateSprintKbutton(IsSprintActive());
 
-    // Hold Breath (task #24, third native attempt): same physical bind, gated on ADS
-    // instead of stance -- see the big comment above "Third native attempt" for why
-    // this now drives 0xA98C04 directly again (CallKbuttonDown/CallKbuttonUp, same as
-    // the two earlier failed attempts) instead of the synthetic-Shift path -- this
-    // time paired with the live-proven +0x10 force-clear those earlier attempts didn't
-    // have. Confirmed-working fallback if this regresses: SendSyntheticHoldBreathKey
-    // (see git history) -- still defined below, just no longer called from here.
+    // Hold Breath (task #24): same physical bind, gated on ADS instead of stance --
+    // CONFIRMED WORKING LIVE via direct CallKbuttonDown/CallKbuttonUp on 0xA98C04
+    // paired with ClearHoldBreathActiveFlag()'s +0x10 force-clear. See the big
+    // comment above g_holdBreathSyntheticHeld for the full saga of what didn't work
+    // first and why.
     bool holdBreathActive = g_sprintHeld && g_adsHeld;
     if (holdBreathActive != g_holdBreathSyntheticHeld) {
         DWORD nowMsDebounce = GetTickCount();
