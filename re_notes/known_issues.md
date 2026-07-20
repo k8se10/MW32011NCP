@@ -4263,3 +4263,70 @@ design implication (prefer vtable hooks / direct calls into existing game code o
 patching for any future MP work, which this project's SP work already does by convention), the
 practical risk picture for a carefully-built MP implementation is more favorable than it looked
 immediately after the Xbox precedent was first found.
+
+### VAC itself — five more research forks (2026-07-20), decisive finding on the last one
+
+Given `bdAntiCheat` came back less concerning than first feared, research shifted back to VAC
+specifically (Valve's own system, separate from Demonware's), since VAC was already established as
+the primary, still-real risk.
+
+- **VAC's actual mechanism**: user-mode only (no kernel driver, unlike EAC/BattlEye/Vanguard —
+  genuinely less deep visibility than modern kernel-level anti-cheats). Does module enumeration and
+  scans on `DLL_THREAD_ATTACH` (new DLL loads), but detection itself is signature/pattern-matching
+  against KNOWN cheats, not "any unrecognized DLL gets flagged" — real precedent: published,
+  non-public hooking-based bypasses since 2018 reportedly still work without bans, meaning novel
+  code that doesn't match an existing signature isn't routinely caught. A disassembly-reconstructed
+  source project (`danielkrupinski/VAC`) documents VAC's methodology as including both Import
+  Address Table integrity checks (doesn't apply to a DLL-search-order proxy — the IAT itself stays
+  structurally intact regardless of which physical file gets loaded) AND **virtual method table
+  (VMT) pointer validity checks** — genuinely relevant, since this project's technique includes a
+  real vtable hook (`IDirect3D9::CreateDevice`). Unclear whether that check is scoped to VAC's own
+  internal structures specifically or applied more broadly to arbitrary game-side vtables — a real,
+  named overlap, not resolved either way.
+- **ReShade precedent, strong and directly sourced**: ReShade's own creator (crosire) stated on the
+  official forum: "there has never been a proved case where somebody was banned for using a
+  post-processing injector (apart from ENB...)." Valve went further than tolerance — an explicit
+  toggle permits ReShade in CS2 specifically, a deliberate allowance. **Scope limit, stated by
+  ReShade's own developers**: they deliberately never added game-memory/entity-data reading,
+  explicitly because anti-cheat "would likely not appreciate" it — ReShade only ever touches the
+  rendering pipeline (color/depth buffers), never raw gameplay memory.
+- **x360ce precedent**: a community "list of allowed VAC modifications" explicitly lists x360ce (a
+  DLL-replacement controller-emulation tool, swaps `xinput1_3.dll`) as confirmed OK with VAC on Left
+  4 Dead 2 — architecturally close to this project's own technique (DLL swap via normal search
+  order, not an external injector). Caveat: community-tested folk knowledge, not an official Valve
+  statement, and the same source still describes general DLL/EXE tools as "unsafe" as a category —
+  x360ce is a specific tested exception, not proof of a blanket rule.
+- **No official Valve accessibility-vs-cheat carve-out found** anywhere checked (Steam Support's
+  VAC FAQ, Steamworks partner anti-cheat docs, Valve Developer Community's VAC wiki) — VAC policy
+  stays framed generically around "advantage over another player," no explicit exception language.
+  Steam Input (Valve's own first-party controller-remapping layer) is architecturally unrelated —
+  it works via the Steam client/overlay, not DLL injection — so it's not a real technical comparison
+  point, just evidence Valve tolerates input remapping as a concept at the platform level.
+- **Memory-reading community folk-consensus, blunt and pessimistic**: a separate community thread
+  found unhedged consensus — "If you touch the memory of the game you will be VAC banned" — with no
+  distinction drawn between read-only scanning and active modification. More pessimistic than the
+  signature-based framing above, at least at the level of community risk perception. Lands directly
+  on this project's own (already disabled, already earmarked for hard-exclusion from any MP build)
+  aim-assist feature specifically, which reads live entity/target memory — reinforces that
+  exclusion as a hard line, not just a cautious default.
+
+**DECISIVE FINDING, corrects earlier optimism — the real distinguishing risk factor is DEPTH of
+modification, not the loading method.** ReShade (visual-effects-only, never touches gameplay state)
+has essentially zero proven bans. **ENB — a similarly-structured `d3d9.dll` proxy that "goes
+deeper" than pure visual post-processing — is explicitly named as notably riskier, WITH real
+historical precedent: a comparable-depth `opengl32.dll` proxy technique got players banned on
+Counter-Strike/Half-Life.** This is the single most important correction from this whole VAC
+research arc: **this project's own core technique doesn't stop at visuals — it writes real values
+directly into `usercmd_t`/`kbutton_t`, actual gameplay input state, not rendering data. That's
+structurally much closer to ENB's risk category than ReShade's.** The earlier optimism from the
+ReShade precedent (see above) was real but too broadly applied — ReShade's clean record is
+specifically bounded to "visual effects only," and this project's baseline input-remapping work
+(movement/look/buttons — everything currently shipped, not just the disabled aim-assist feature)
+already goes past that boundary. **This meaningfully recalibrates the overall risk picture back
+toward genuine, non-trivial concern** — not because any single new fact is alarming on its own, but
+because the closest real-world precedent for "a `d3d9.dll` proxy that manipulates more than
+visuals" is the one with an actual documented ban history (ENB), not the one with a clean record
+(ReShade). Every other finding in this section (VAC being signature-based, the `bdAntiCheat`
+de-risking, x360ce's OK status) still stands — but none of them override this specific, sobering
+comparison, and it should be weighted as the most decision-relevant single data point from the
+entire VAC investigation.
