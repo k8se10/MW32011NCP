@@ -4351,3 +4351,31 @@ visuals" is the one with an actual documented ban history (ENB), not the one wit
 de-risking, x360ce's OK status) still stands — but none of them override this specific, sobering
 comparison, and it should be weighted as the most decision-relevant single data point from the
 entire VAC investigation.
+
+### Full cross-surface risk matrix (2026-07-20) — 5 parallel forks, verifying every surface separately
+
+Following the aim-assist removal decision above, ran 5 parallel research forks to verify VAC/
+anti-cheat risk across every distinct surface this project touches or could touch (solo Campaign,
+Survival co-op, MP, the hooking technique itself, and category-level precedent), rather than relying
+on one blended risk characterization. Findings:
+
+| Surface | Risk | Basis |
+|---|---|---|
+| Solo offline Campaign (`iw5sp.exe`, no network) | **Near-zero** | Valve's own partner docs (`partner.steamgames.com/doc/features/anticheat/vac_integration`): VAC "does nothing for single player games" — scanning is tied to connecting to a VAC-secured server, not to launching the exe. `bdAntiCheat`'s `network state == 2` gate is consistent with full dormancy in this surface. |
+| Survival online co-op (`iw5sp.exe`, 2-player) | **Low** — closer to solo tier than MP tier | Direct quote, the game's own Steam Community VAC-ban FAQ (steamcommunity.com/app/42690/discussions/0/540739405757612096): a VAC-banned account is blocked from Multiplayer but can still play "Campaign and Spec Ops (along with a partner if you want) with no restrictions." VAC enforcement doesn't reach this mode at all — not just unlikely to trigger, structurally out of scope. |
+| MP, retail public matchmaking (`iw5mp.exe`) | **Real, non-theoretical** | Official Activision matchmaking is dead, but retail Steam MP still has a real live population (~50-175 CCU per steambase.io Steam Charts data, live snapshot ~50 in-game as of 2026-07-20), largely routed through third-party dedicated servers (App 42750, community providers). VAC is confirmed active and automatic on this surface. Not started yet — matches the locked "SP+Survival first" ordering. |
+| MP, private/self-hosted, host vs. client role | **Same as public MP — no reduction** | Steam's own VAC-ban FAQ: VAC cares whether the mod code *runs on your machine*, not which P2P network role you hold — a host-migrated player isn't exempt just for being the host. This project's hooks run identically on the local machine regardless of role, so host/client status doesn't change exposure. |
+| Hooking technique itself (proxy `d3d9.dll`, MinHook, `CreateDevice` vtable hook, inline engine hooks) | **Low, surface-independent** | No clean case found of MinHook itself triggering a ban — the one report (`danielkrupinski/Osiris` issue #2649) is confounded by Osiris being a full aimbot/ESP cheat menu, not attributable to the hooking library. RTSS/MSI Afterburner/OBS hook the identical D3D entry points (`CreateDevice`/`Present`) via Microsoft Detours — functionally the same trampoline-hooking technique as MinHook — at massive scale on VAC-secured games with no bans. VAC's real hook-detection (per `danielkrupinski/VAC`) is scoped to its own module/known system-DLL imports and to *client/engine gameplay* vtables (entity lists, `IVEngineClient` — the standard cheat vector), not a generic scan of every D3D vtable in a process. This project's hook never touches that class of interface. |
+| Category precedent (input-remapping/accessibility tools generally, not this project specifically) | **Low** | **x360ce is a near-exact analog** — a proxy DLL that swaps in for `xinput1_3.dll` (same "proxy DLL the game loads instead of the real system one" technique this project uses for `d3d9.dll`) — with a multi-year clean VAC track record, explicit community reasoning being "it does not affect the DLL or EXE files of the game." No confirmed ban case survived scrutiny for reWASD, DS4Windows, Xpadder, or ViGEm-based tools either (the one DS4Windows anecdote found is disputed as likely misattributed to actual cheat software running alongside it). |
+
+**Net read, corrects/refines the "genuine, non-trivial concern" framing above to be surface-specific
+rather than blanket:** the project's core technique and every surface it currently ships on (solo
+Campaign, Survival co-op) sit at low-to-near-zero risk with strong direct precedent (x360ce,
+RTSS/OBS via Detours) — the earlier ENB-driven "recalibration toward genuine concern" was correct
+about the general *class* of risk (proxy-DLL depth-of-modification) but this pass adds that VAC's
+actual detection surface is scoped to gameplay-relevant vtables/imports, which this project's
+`CreateDevice`-then-engine-input-hooks approach doesn't touch — a meaningfully different profile than
+ENB's rendering-pipeline-deep modifications. The one surface carrying real, non-theoretical exposure
+is **retail public MP**, which is unstarted work per the locked ordering; when MP work does begin,
+this table's MP row (not the SP/Survival rows) is the risk profile that actually applies, and host
+vs. client role doesn't offer any risk reduction to plan around.
