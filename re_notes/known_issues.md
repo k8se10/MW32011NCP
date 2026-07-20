@@ -4379,3 +4379,69 @@ ENB's rendering-pipeline-deep modifications. The one surface carrying real, non-
 is **retail public MP**, which is unstarted work per the locked ordering; when MP work does begin,
 this table's MP row (not the SP/Survival rows) is the risk profile that actually applies, and host
 vs. client role doesn't offer any risk reduction to plan around.
+
+### Second pass, 5 more forks — deeper "in-game" mechanics (2026-07-20)
+
+Follow-up research, going past the cross-surface matrix above into VAC's actual runtime mechanics
+and a real binary re-trace, rather than precedent/inference alone.
+
+- **Ban-wave delay is real, ~3-4 weeks typical (multiple sources: Steam Support's own VAC FAQ,
+  vac-ban.com, the July 2017 CS:GO 40k-account wave, danielkrupinski/Osiris issue #2745).** VAC
+  deliberately withholds bans in a silent-flag-then-batch pattern specifically to prevent
+  cheat-developers correlating a specific change to detection. **Consequence: this project's own
+  ~1-week public clean record (as of this writing) carries close to zero evidentiary weight on its
+  own** — it hasn't cleared even one full wave cycle yet. This does NOT undermine the older
+  cross-tool precedent (x360ce, RTSS/OBS) above, since those have had years to clear many wave
+  cycles — but this project's own short track record should not be cited as independent supporting
+  evidence for at least several more months. No evidence found that wave-delay is severity-scaled
+  (i.e. no basis to assume a low-severity tool surfaces later than an obvious cheat if flagged at
+  all).
+- **Independent same-engine corroboration, different source than the earlier Steam-FAQ finding**:
+  a real, named MW3-specific tool (`marvinlehmann/CoD-SCZ-FoV-Changer` on GitHub, a runtime
+  memory-writing FOV changer supporting MW3 Special Ops among other CoD titles) states in its own
+  README that its supported CoD titles' singleplayer/Spec-Ops executables don't run VAC or
+  PunkBuster at all — corroborating the "VAC doesn't reach Campaign/Survival" finding from a
+  completely unrelated source. FOV-changer tools generally (the closest existing same-engine QoL-mod
+  category) are widely reported safe on CoD MP too (an Infinity Ward developer is quoted as not
+  banning FOV-mod users), with credible reports attributing the rare "banned while using an FOV
+  changer" claims to bundled actual cheat functionality, not the FOV injection itself. **No
+  bespoke same-engine controller-support precedent found either way** — this project appears to be
+  genuinely first-of-kind in that specific niche, neither a positive nor negative data point.
+- **VAC's runtime scan mechanics, real technical detail (danielkrupinski/VAC's own README, general
+  anti-cheat/security literature)**: VAC does re-scan repeatedly throughout a session, not just at
+  connect (exact cadence is server-directed and undisclosed). Its actual injected-code detection
+  heuristic — missing PEB module-list entry, non-file-backed VAD/`MEM_PRIVATE` pages, a thread
+  entrypoint outside any loaded module's range — is the standard signature for
+  `CreateRemoteThread`/manual-map-style runtime injection. **This project's proxy DLL, loaded via
+  the game's own normal `LoadLibrary` DLL-search-order at launch, doesn't match that signature at
+  all** — it's file-backed, PEB-registered, with legitimate module bounds, structurally identical to
+  the real system `d3d9.dll` or any legitimate launch-time overlay (Steam/Discord overlay, RGB
+  software). Risk does not compound with session duration — each scan is an independent check
+  against a module that looks the same every time, not a cumulative-exposure model.
+- **Load-timing as a protective factor — confirmed real in general anti-cheat/EDR literature**
+  (arxiv.org/pdf/2408.00500, Black Hills InfoSec, Palo Alto Unit42 on DLL proxying specifically):
+  a DLL present since process launch via the OS's normal loader is explicitly documented as harder
+  to distinguish from benign activity than `CreateRemoteThread`-style injection, which has
+  "obvious behavioral signatures." No VAC-specific source found confirming or debunking this exact
+  distinction by name, but the general mechanism lines up cleanly with this project's technique.
+- **Direct binary re-trace of `bdAntiCheat` (real Ghidra RE this pass, both binaries)**: only
+  `bdAntiCheat::answerChallenges` is locatable via debug-string xrefs in either binary
+  (`FUN_00714fa0` in `iw5sp.exe`, `FUN_0070f840` in `iw5mp.exe` — identical shell logic in both:
+  validates readiness, virtual-dispatches, queues an async task). **No self-hash/self-integrity
+  function found in either binary** — negative result, consistent with the earlier CRC32
+  file-stream-only trace. A `CreateToolhelp32Snapshot`/`Module32First`/`Module32Next` call chain
+  was found and initially looked concerning, but full tracing re-attributes it as a **stale-PID/
+  improper-shutdown single-instance check** — it reads a PREVIOUS run's PID from a lockfile and only
+  walks THAT old process's modules to check if it's still alive, never the CURRENT process's own
+  loaded-module list. **Real, direct evidence against "the engine enumerates its own modules looking
+  for our proxy d3d9.dll."** An adjacent telemetry-capable system (`bdEventLog::recordEvents`,
+  same task-queue plumbing) exists and is confirmed live-wired (not dead code) in both binaries, but
+  what it actually reports wasn't resolved this pass — flagged open, not a finding either way.
+
+**Net effect of this second pass**: reinforces the low-risk read on solo Campaign/Survival with
+real mechanism-level evidence (load-order legitimacy, no self-hash, module-enum re-attributed away
+from a real concern) rather than precedent-only inference — and adds one honest caveat that cuts
+the other way: this project's own short public track record isn't real supporting evidence yet, so
+don't cite "no bans reported" about MW32011NCP itself as if it carries the same weight as the
+multi-year x360ce/RTSS comparisons. Revisit that specific caveat again once the project has several
+more months of public history.
