@@ -2260,6 +2260,23 @@ input) and refines issue #26's vehicle hypothesis below.
     force-clear combination is confirmed working and is not blocking
     anything — no urgency to revisit unless the synthetic-key approach
     causes some other issue down the line.
+  - **Third native attempt, 2026-07-20, user-requested.** The first two
+    direct-kbutton attempts on `0xA98C04` (plain `CallKbuttonDown`/
+    `CallKbuttonUp`, then a manual `+0x11` clear) both failed live BEFORE
+    this project knew which field was actually the problem — the readback
+    data above proved it's `+0x10` (`active`) that doesn't follow `KeyUp`,
+    not `+0x11` (the second attempt's guess, based on a decompile read
+    rather than measured data, and the wrong byte). Now that the fix
+    (`ClearHoldBreathActiveFlag`) is confirmed live via the synthetic-Shift
+    path, tried driving `0xA98C04` directly again — same
+    `CallKbuttonDown`/`CallKbuttonUp` calls as attempt #1, this time paired
+    with the same `+0x10` clear that's proven to work. If this holds up
+    live, it drops the 4th key-synthesis exception entirely for this
+    feature (no more `SendInput`/foreground-focus dependency) — genuinely
+    native input instead of emulation, matching this project's own stated
+    direction. `SendSyntheticHoldBreathKey` is kept defined (unused) as a
+    one-line revert path if this regresses — the synthetic path is the
+    confirmed-working fallback. Builds clean. **Not yet live-tested.**
 - **Positive result — Mission "Persona Non Grata" (Act 1, immediately after
   Hunter Killer): the UGV (Unmanned Ground Vehicle, mounted minigun +
   grenade launcher, played as Yuri) worked perfectly on controller as

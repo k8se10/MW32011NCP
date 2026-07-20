@@ -1254,6 +1254,24 @@ void ClearHoldBreathActiveFlag()
 {
     *reinterpret_cast<volatile unsigned char*>(kHoldBreathAliasAddr + 0x10) = 0;
 }
+
+// ---- Third native attempt, 2026-07-20 (task #24 follow-up) -----------------------
+//
+// The first two direct-kbutton attempts on 0xA98C04 (plain CallKbuttonDown/
+// CallKbuttonUp, then a manual +0x11 clear) both failed live BEFORE this project knew
+// which field was actually the problem -- the live readback data above proved it's
+// +0x10 (active) that doesn't follow KeyUp, not +0x11 (which the second attempt
+// guessed, based on a decompile read rather than measured data, and which turned out
+// to be the wrong byte). Now that the real fix (ClearHoldBreathActiveFlag) is
+// confirmed live via the synthetic-Shift path, try driving 0xA98C04 directly again --
+// same CallKbuttonDown/CallKbuttonUp calls as attempt #1, but paired with the same
+// +0x10 clear that's now proven to work. If this holds up live, it drops the 4th
+// key-synthesis exception entirely (no more SendInput/focus-gating dependency for
+// this feature) -- a genuinely native fix instead of input emulation, matching this
+// project's own stated direction. If it regresses again, this is a one-line revert
+// back to SendSyntheticHoldBreathKey (see git history) -- the synthetic path is
+// confirmed working and stays the fallback.
+constexpr int kHoldBreathBindIndex = 17; // distinct from ADS's 13/Reload's 15/Sprint's 16
 } // namespace
 
 extern "C" void __cdecl InjectControllerSprint()
@@ -1294,12 +1312,13 @@ extern "C" void __cdecl InjectControllerSprint()
     // what this replaced).
     UpdateSprintKbutton(IsSprintActive());
 
-    // Hold Breath (task #24, 4th key-synthesis exception): same physical bind, gated
-    // on ADS instead of stance -- see the big comment above SendSyntheticHoldBreathKey
-    // for why this ignores stance entirely (crouched/prone + scoped is a normal case,
-    // unlike Sprint's own standing-only gate) and why this synthesizes a real Shift
-    // press instead of driving the kbutton directly (two prior direct-kbutton
-    // attempts both failed live).
+    // Hold Breath (task #24, third native attempt): same physical bind, gated on ADS
+    // instead of stance -- see the big comment above "Third native attempt" for why
+    // this now drives 0xA98C04 directly again (CallKbuttonDown/CallKbuttonUp, same as
+    // the two earlier failed attempts) instead of the synthetic-Shift path -- this
+    // time paired with the live-proven +0x10 force-clear those earlier attempts didn't
+    // have. Confirmed-working fallback if this regresses: SendSyntheticHoldBreathKey
+    // (see git history) -- still defined below, just no longer called from here.
     bool holdBreathActive = g_sprintHeld && g_adsHeld;
     if (holdBreathActive != g_holdBreathSyntheticHeld) {
         DWORD nowMsDebounce = GetTickCount();
@@ -1307,12 +1326,14 @@ extern "C" void __cdecl InjectControllerSprint()
             g_lastHoldBreathTransitionMs = nowMsDebounce;
             g_holdBreathSyntheticHeld = holdBreathActive;
             char hbBuf[320];
-            sprintf_s(hbBuf, "[hold-breath-diag-v2] synthetic Shift -> %s (g_sprintHeld=%d g_adsHeld=%d)",
+            sprintf_s(hbBuf, "[hold-breath-diag-v2] native kbutton -> %s (g_sprintHeld=%d g_adsHeld=%d)",
                 holdBreathActive ? "DOWN" : "UP", g_sprintHeld ? 1 : 0, g_adsHeld ? 1 : 0);
             AppendKbuttonSnapshots(hbBuf, sizeof(hbBuf));
             LogFromController(hbBuf);
-            SendSyntheticHoldBreathKey(holdBreathActive);
-            if (!holdBreathActive) {
+            if (holdBreathActive) {
+                CallKbuttonDown(kHoldBreathAliasAddr, kHoldBreathBindIndex);
+            } else {
+                CallKbuttonUp(kHoldBreathAliasAddr, kHoldBreathBindIndex);
                 // Force-clear the one field live data showed doesn't follow KeyUp on
                 // this alias -- see ClearHoldBreathActiveFlag's comment above.
                 ClearHoldBreathActiveFlag();

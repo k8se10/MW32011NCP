@@ -180,6 +180,15 @@ reverse-engineering trail behind each entry.
   is held (not weapon-sway reduction), with accuracy dropping noticeably
   once breath runs out — the user had zero control over the state once it
   locked on, matching the "active flag latched forever" root cause exactly.
+- **Third native attempt for Hold Breath, user-requested (2026-07-20).**
+  With the real fix (force-clearing `0xA98C04`'s `+0x10` byte) confirmed
+  working via the synthetic-Shift path, tried driving the kbutton directly
+  again instead — same approach as the first (failed) attempt, but now
+  paired with the proven `+0x10` clear the earlier attempts didn't have. If
+  it holds up live, this drops the 4th key-synthesis exception for Hold
+  Breath entirely (genuinely native input, no `SendInput`/focus dependency).
+  The synthetic-Shift path stays defined as a one-line, confirmed-working
+  revert if this regresses. Builds clean — **not yet live-tested**.
 
 ### Docs
 - Noted user-reported (Reddit, 2026-07-19, unverified by this project)
