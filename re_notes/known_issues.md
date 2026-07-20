@@ -4021,3 +4021,198 @@ game is the authoritative signal here, not the external research. `mod_config.h`
 config-file docs (`mod_config.cpp`'s `WriteDefaultConfig`) and the in-code comment
 in `analog_input_hooks.cpp` updated to record the correction. **User-confirmed as
 the right feel live — 33ms is now the permanent shipped default.**
+
+---
+
+## 33. Multiplayer feasibility research (2026-07-20) — technical RE, VAC risk, and a real cross-project correction
+
+**Status:** Open, active research. Task: user-initiated MP feasibility investigation, first real step
+toward eventually starting `iw5mp.exe` work per the locked "SP+Survival first, then MP" ordering.
+Nothing implemented yet — this is groundwork.
+
+### Technical RE feasibility — transfers well
+
+A research fork compared `iw5sp.exe` and `iw5mp.exe` statically (imports, string search, build
+provenance):
+- `iw5mp.exe` has the same "zero controller input path" shape as `iw5sp.exe` — no `xinput`/`dinput8`
+  import, same leftover console-codebase controller strings (`splitscreenactivegamepadcount` etc.).
+- All of this project's already-RE'd SP bind names (`+attack`, `+breath_sprint`, `+actionslot`,
+  `weapnext`, `+usereload`) exist in `iw5mp.exe` too, clustered in the same shape as SP's canonical
+  bind-name table.
+- No packing/anti-tamper blocking static analysis — decompiles as cleanly as `iw5sp.exe` (the sibling
+  MW32011NSP project already independently decompiled real `iw5mp.exe` functions for its own netcode
+  research, corroborating this).
+- One real structural difference: `iw5mp.exe` is a 2018-05-02 build vs. `iw5sp.exe`'s 2012-11-30 —
+  byte-level signatures won't transfer (different compiler pass), but the same signature-scanning
+  APPROACH should. Not yet evaluated: whether MP's netcode-coupled usercmd pipeline (multiple clients,
+  prediction/lag-comp) complicates the "hook the per-frame usercmd builder" approach that worked
+  cleanly in SP.
+
+### Direct RE pass, same session — bind-name table and dispatch architecture
+
+Live Ghidra work (headless, fresh project at `D:\Tools\ghidra_projects_mp\`) found real detail,
+independently corroborated by a parallel session's own `re_notes/iw5mp.md`/
+`re_notes/ghidra_scripts/MP_DispatchAnalysis.java` (same bind-table address, same dispatch
+candidates, same truncation hiccup — good independent confirmation):
+
+- **Real bind-name table found at `0x008aa3bc`–`0x008aa4e8`**, 4-byte-stride array of string
+  pointers, 91 clean `+X`/`-X` pairs (the parallel session's own script used an 8-byte stride by
+  mistake and only captured 39 "+"-only entries — reconciled here, 4-byte stride is confirmed
+  correct via clean, consecutive, known-bind-name pairs).
+- **`FUN_0048c1c0`** is the real bind-name lookup/scan function (walks the table via
+  `FUN_005c2a80` string-compare, 91-entry cap, matches SP's canonical-table-scanner concept).
+- **`FUN_005a3960`, initially suspected as the SP-`FUN_00438710`-equivalent dispatcher, is NOT
+  that** — full decompile shows it's a narrower **bind-alias-expansion helper**: given one of
+  exactly 4 input bind names (`+melee`, `+sprint`, `+holdbreath`, `+changezoom`), it fires a short
+  list of related secondary binds (e.g. `+sprint` also triggers `+breath_sprint` and
+  `+sprint_zoom`) via `thunk_FUN_0048c620`, using the bind NAME as a string argument, not a
+  numeric case. Only caller: `FUN_005a3ac0`.
+- **`thunk_FUN_0048c620` decompiled out to a dead end for hooking purposes**: it's a UI/options-menu
+  **key-name lookup function** — given a bind command, returns the human-readable key name(s)
+  currently bound to it (or "KEY_UNBOUND"), for displaying bind info/hints. Not a live input
+  dispatcher. Caught via decompile before wasting further time assuming it executed binds.
+- **Real architectural finding, not yet exploited**: MP has a genuinely SEPARATE `+holdbreath`/
+  `-holdbreath` bind, distinct from `+breath_sprint` — unlike SP, where Hold Breath turned out to be
+  folded into the Sprint bind (the whole issue #6/#24 saga). If MP's Hold Breath is a clean,
+  dedicated bind with no aliasing bug, it may not need anything like SP's eventual native-kbutton
+  force-clear fix at all. Not yet confirmed either way — needs the real per-frame kbutton dispatch
+  path found (not yet located; `FUN_005a3960`/`FUN_0048c620` are UI-adjacent, not it).
+- **Real next step, not yet done**: find `FUN_005a3960`'s only caller (`FUN_005a3ac0`) and/or do a
+  live-debugger breakpoint pass to find the actual per-frame kbutton dispatch that's structurally
+  equivalent to SP's `FUN_00438710` — the bind-name table and lookup function are confirmed, but the
+  real switch/dispatch consumer is still unlocated.
+
+### VAC/anti-cheat risk — corrected, real and non-zero
+
+Two research forks plus direct user-driven fact-checking converged on a corrected risk picture:
+
+- **A now-corrected error**: this project's own top-level `CLAUDE.md` briefly stated "Confirmed: MP
+  Anti-Cheat (VAC) Not Active," citing "Official Valve VAC list confirms MW3 is not on the list" —
+  **this was never actually verified and was wrong.** Caught the same day via direct cross-check
+  (user-initiated): MW3 (2011)'s own Steam store page genuinely lists "Valve Anti-Cheat enabled,"
+  confirmed via a direct quote from a Steam Community discussion thread on the game's own forum.
+  `CLAUDE.md` corrected in place; see that file's own "CORRECTED 2026-07-20" section for full detail.
+  Sibling project MW32011NSP's `re_notes/vulnerability_research.md` §3 was never actually wrong —
+  it treated VAC as active throughout; only the `CLAUDE.md` summary section was inconsistent with it.
+- **VAC is real, active, and community-confirmed to still ban players** on this specific title
+  (locks Multiplayer access specifically; Campaign/Spec Ops stay playable even if banned) — an
+  active, current topic on the game's own Steam forums, not historical.
+- **VAC is signature/behavior-based, not blanket injection-detection** — real precedent: Discord,
+  OBS, RTSS, MSI Afterburner all inject into game processes constantly without routinely triggering
+  bans. No documented case found either way of a benign/QoL tool being banned on MW3 specifically —
+  genuinely unknown territory, not "confirmed safe." Community-reported real, P2P-driven
+  performance/effectiveness limits ("VAC works a bit for it but not great like it does in other
+  games") — a real, community-documented limitation, not a reason to treat the risk as zero.
+- **`steam_api.dll` forensic pass** (exports/imports dumped via `dumpbin`): the only VAC-adjacent
+  export in this 2011-era SDK build is `SteamGameServer_BSecure` (server-side status query) — and
+  **neither `iw5mp.exe` nor `iw5sp.exe` actually imports/calls it or anything auth/ticket-related.**
+  Both share an identical baseline Steamworks surface; MP's only additions are game-hosting
+  functions (matches its listen-server model), SP's only additions are stats/restart functions.
+  Reassuring in the relative sense (MP's Steam integration isn't doing anything riskier than SP's
+  already-fine one), but doesn't independently prove VAC is inactive — VAC runs as an independent
+  background component, not something the game code has to call into.
+- **Retail matchmaking is NOT dead** (corrects an assumption in MW32011NSP's own notes): current
+  Steam Charts show ~51-61 concurrent MP players as of this session (down hard from an 86,832 peak
+  in 2011, but real and nonzero) — there is a small live population to actually build MP support for.
+- **Bottom line, corrected**: "probably fine but unverified, real non-zero risk" — not "genuinely
+  dangerous" (VAC's real-world behavior favors signature/behavior detection over blanket
+  injection-flagging, precedent from benign overlay tools, stale signature sets on old titles), and
+  not "moot" either (VAC is confirmed still enforcing, and P2P-limited effectiveness doesn't mean
+  zero effectiveness). Cannot be verified to zero risk without either an authoritative VAC technical
+  writeup or accepting some real first-mover risk.
+
+### Fallback considered, not started
+
+User-proposed worst-case fallback if the VAC risk research ever turns up something more concerning:
+a custom/separate MP path (own server + connection layer, bypassing retail Steam's live
+VAC-monitored session entirely) with an ownership-verification step in place of redistributing
+Activision's code — architecturally similar in spirit to Plutonium's own model, but requiring the
+user's own legitimately-owned game files rather than a separate account/matchmaking system. Noted
+as the documented fallback, not attempted — the current plan (RE pass against the real `iw5mp.exe`,
+low-but-uncharacterized risk) is still the first thing being tried.
+
+### A second, separate anti-cheat system found — Demonware's own `bdAntiCheat`, NOT Valve's VAC
+
+Direct Ghidra RE this session found `iw5mp.exe` contains a real, compiled-in anti-cheat system that
+has nothing to do with VAC at all: a class family named **`bdAntiCheat`** (confirmed via real
+RTTI-mangled class names — `bdAntiCheatResponses`, `bdAntiCheatChallenges`, `bdAntiCheatChallenge`,
+`bdAntiCheatChallengeParam` — and a real method `bdAntiCheat::answerChallenges` at `FUN_0070f840`,
+confirmed via embedded debug strings citing the actual source file `.\bdAntiCheat\bdAntiCheat.cpp`
+and real line numbers). `bd` is Demonware's own internal namespace — Activision's backend/
+matchmaking middleware provider for CoD titles of this era, entirely separate from Valve/Steam.
+**This means MW3's real anti-cheat exposure has (at least) two independent systems, not one.**
+
+**What was traced this session**:
+- `bdAntiCheat::answerChallenges` is an orchestration shell (validates readiness, computes a
+  response via a virtual method call, queues an async network task to send it) — its virtual
+  dispatch resolves to generic `bdTaskByteBuffer` network-task plumbing, NOT itself a
+  hashing/scanning function. The actual challenge-CONTENT computation logic is upstream/unlocated.
+- The whole challenge-response chain is **timer-gated and periodic** (compares a live timestamp
+  against stored thresholds, re-triggers repeatedly) rather than a one-time connection check — a
+  real anti-cheat design pattern (harder to bypass than a single handshake).
+- The trigger is gated behind a recurring "network state == 2" check (found at multiple call-chain
+  levels) — strongly suggestive of "connected to an active session," not solo play or mere
+  matchmaking search, though not yet proven down to the exact bit/enum meaning.
+- Broad string search for memory-scan-specific naming (`integrity`, `memoryscan`, `bdSystem`,
+  `bdMatchmaking`) came back clean/absent — no named deep-memory-scanning subsystem found under any
+  plausible name searched so far.
+- **A `"getchallenge"` string sits directly adjacent to `checksum`/`protocol` strings** — this is
+  the SAME ordinary Quake3-lineage connectionless-packet challenge the sibling MW32011NSP project
+  already documented as anti-spoofing (not anti-cheat). Genuinely unresolved: is `bdAntiCheat`'s own
+  "challenge" concept the same thing as this mundane protocol-level challenge, or a distinct, deeper
+  mechanism whose content-logic just wasn't in the specific call chain traced? Flagged, not
+  resolved — three more research forks are chasing this down (see below), don't treat either
+  reading as settled.
+- Confirmed real Demonware backend hostnames referenced in the binary:
+  `mw3-pc-auth.prod.demonware.net`, `mw3-stun.us.demonware.net` — real infrastructure evidence, not
+  itself proof of what gets checked.
+
+**External precedent found, Xbox-specific — the most concrete lead yet, not yet confirmed for PC**:
+a real reverse-engineering project, [`CWest07/COD-Demonware-AntiCheat`](https://github.com/CWest07/COD-Demonware-AntiCheat),
+documents this SAME `bdAntiCheat` system on Xbox 360, stating its two biggest checks are "flags used
+to detect modified consoles" and **"a CRC32 / CRC32 split checksum on the .text (code section)."**
+A code-section checksum is exactly the mechanism that would catch MinHook-style inline/trampoline
+hooking (which overwrites a target function's own bytes with a jump to a detour — a direct `.text`
+modification). The Xbox-specific detection method cited (`GetModuleHandleA("xbdm.xex")`) is
+platform-specific and doesn't apply to PC, but the `.text`-checksum *concept* is a standard
+cross-platform anti-tamper technique, and since the same class family exists in the PC binary, it's
+a reasoned inference (not yet independently confirmed) that it carries over.
+
+**Real, actionable design implication, even before PC confirmation lands**: this draws a genuine
+technical line between two categories of hooking technique for any future MP work —
+- **Inline/trampoline hooks that patch bytes inside `iw5mp.exe`'s own `.text`** (MinHook's default
+  technique when used this way) — plausibly detectable by exactly this documented mechanism.
+- **Vtable hooks (swap a function pointer, `.text` untouched) or plain direct calls into existing
+  game code** (this project's established `CallKbuttonDown`/`CallKbuttonUp` style — calls existing
+  functions directly, modifies nothing) — doesn't trigger this specific check, since no `.text`
+  bytes change. This project's SP work has always preferred exactly this style already (see the
+  architecture notes in `CLAUDE.md`), which is a reassuring, if coincidental, alignment.
+
+**Separate finding, NOT the same mechanism — don't conflate the two**: a real `sv_pure`-style
+Fast-File/IWD checksum system also exists (`"sv_pure...Cannot use modified IWD files"`,
+`"Checksum of all referenced Fast Files/IWD files"`, referenced from `FUN_005741f0`/`FUN_006369d0`).
+This is classically a Quake3-engine-family SERVER-side check against a CONNECTING CLIENT's asset
+files — a check on `.ff`/`.iwd` FILE content, not process/code memory. **This is NOT why the
+boot-splice crash happened** (`re_notes/known_issues.md`'s own boot-splice entry, further up this
+file — that crash is independently, fully explained by the `FUN_004ca310` link-thunk/MinHook-
+trampoline incompatibility, and happened before the hook's own code ever ran, let alone reached any
+asset-validation step) — flagging this explicitly since the two are easy to conflate and the
+crash's real cause is already settled. Where this DOES matter: any future custom Fast-File/zone
+content (the parked button-glyph font-extension work, issue #23/#31) should treat "would this
+survive an `sv_pure`-style check" as a real, separate question specifically for ONLINE contexts
+(MP, or Survival's online co-op) — solo Campaign/Survival has no server present to enforce this
+kind of check against, matching this whole section's own solo-vs-online risk line. Not yet
+determined whether this checks on-disk files specifically (this project's in-memory-only zone
+injection approach would sidestep that) or loaded zone content more generally — one of three
+research forks below is chasing this.
+
+**Three more research forks launched (2026-07-20), not yet returned**: (1) direct Ghidra
+confirmation of whether `iw5mp.exe` actually contains a CRC32/checksum computation over its own
+`.text` range specifically (independent of the Xbox documentation), (2) whether `iw5sp.exe` also
+contains the `bdAntiCheat` class family (relevant to Survival's online co-op risk specifically) plus
+a deeper trace of the `sv_pure` system's actual scope (server-enforced-only vs. client self-check;
+file-based vs. loaded-content-based), (3) web research for PC-specific precedent — Plutonium's own
+likely-necessary handling of this exact system, cheat-development community discussion, and any
+reported false-positive bans tied to code-integrity checks specifically (as opposed to VAC). Update
+this entry once those land — do not treat the Xbox-sourced `.text`-checksum finding as PC-confirmed
+until they do.
