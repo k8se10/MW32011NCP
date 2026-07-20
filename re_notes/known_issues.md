@@ -1335,6 +1335,56 @@ write, so the next test run shows whether the hook is even being reached safely
 at all, let alone hitting the intended call site) before re-attempting. The
 bind-resolver hook (`FUN_0061f6f0`) is unaffected and still entirely unstarted.
 
+**ROOT CAUSE FOUND, definitively (2026-07-20, research fork) — using existing
+disassembly dumps already on disk (`D:\Tools\ghidra_projects_bootzone\`), no
+fresh Ghidra pass needed.** `FUN_004ca310` is **not a real function at all** —
+it's a 7-byte incremental-link/thunk stub: `CALL 0x00463430; JMP EAX`. The
+"trivially trampolineable 2-instruction tail-dispatch veneer" characterization
+in the original plan (see the "UPDATE (2026-07-18...)" entry above, under
+"## 23. Real controller options menu") is wrong in a critical way it didn't
+anticipate: `FUN_00463430` (the real CALL target) is **return-address-
+sensitive** — its own decompile shows the actual return address on the stack
+(`unaff_retaddr`) used directly as an input to a relocation-offset
+computation (`local_8 = unaff_retaddr - iVar1`), feeding a 134-iteration
+fixup/relocation-table walk (`FUN_006cc460`) that ultimately computes the
+real target address `FUN_0045e910(...)` returns, which `JMP EAX` then jumps
+to. **This is the actual crash mechanism**: MinHook's standard inline hook
+overwrites the thunk's 5-byte `CALL` with a detour jump, then relocates and
+re-executes that original `CALL` from freshly-allocated trampoline memory
+when the hook calls through to "the original function." That relocated
+`CALL` pushes a return address pointing INSIDE the trampoline, not the real
+`0x004ca315` — corrupting `FUN_00463430`'s relocation math and producing a
+garbage computed address, which `JMP EAX` then jumps straight to. This
+happens *inside* the trampoline call itself, before the hook's own detour
+logic (the return-address caller-match check, the splice log line) ever gets
+a chance to run — which is exactly why the `"[boot-zone-splice] spliced..."`
+log line never printed, and why this would crash regardless of which of
+`FUN_004ca310`'s 4 real callers triggered it, not just the intended one.
+**The lower-risk "log every call, don't write yet" diagnostic this entry
+called for would NOT have caught this** — the crash happens on the
+trampoline call-through itself, before any of this project's own detour code
+(logging included) executes.
+
+**The other 2 of `FUN_004ca310`'s 4 real callers, not previously
+characterized**: `FUN_0067a690` (engine shutdown/teardown — destroys
+windows, releases COM-style interface pointers via vtable `Release()` calls,
+then calls the thunk with a fixed `{0,0,6}` entry, likely "unload all zones
+on exit") and `FUN_00481e50` (a trivial wrapper, single fixed `{0,0,4}`
+entry, purpose not determined this pass — possibly a restart/reload path).
+
+**Safer approach, concrete**: don't hook `FUN_004ca310` at all — it's
+fundamentally unsafe to trampoline regardless of caller-matching, for ANY
+purpose (font zone, menu zone, or otherwise). Two better options: (1) hook
+`FUN_00679680` itself instead (a real, normal function with an ordinary
+prologue, confirmed safely trampolineable) at its own call site, to
+intercept/append zone-queue entries before IT calls the unsafe thunk; or
+(2) one-time-debugger the real resolved target address out of `EAX` at
+`004ca315` (what the thunk actually jumps to after its relocation math) and
+hook THAT real function directly instead of the thunk. **A follow-up
+research fork (same day) is now evaluating option (1) in more depth for the
+real controller-options-menu work (issue #23) — see that section for the
+concrete next-implementation plan once it lands.**
+
 ---
 
 ## 23. Real controller options menu — native zone/menu injection, blocked on a real architectural limit (2026-07-17)
@@ -1537,6 +1587,41 @@ project already applies everywhere else (see the `FUN_00428a70`
 calling-convention check, issue #29) before any new hook attempt, given
 this exact class of mistake (trusting an assumed signature without full
 verification) is very likely what just broke the game.
+
+**UPDATE (2026-07-20, research fork): calling conventions confirmed, but
+the "narrower/safer" premise itself is WRONG — this needs one more
+investigation layer before attempting.** Both functions ARE called via
+genuine stack args (confirmed: `FUN_0045e320`'s entry reads its first
+parameter with `MOV EDI, dword ptr [ESP+0x480]`), so that part of the
+plan holds. But neither is the single-call-site function this section
+assumed:
+- **`FUN_0045e320`**: exactly 1 real caller (`FUN_005b68c0`), but that
+  caller is itself a large per-frame animation/event-notify dispatcher —
+  a switch statement keyed on a notify-type code — and routes to
+  `FUN_0045e320` from **8 different case values**
+  (`0x24,0x25,0x29,0x2a,0x34,0x35,0x36,0x37`). No confirmation yet all 8
+  mean "weapon fired" specifically; could be different fire-mode/
+  animation-notify sub-events. Hooking it will very likely fire for more
+  than just "a shot was fired."
+- **`FUN_0045f770`**: **12 different real callers**
+  (`FUN_005b5620`, `FUN_004ea2b0`, `FUN_005b5f70`, `FUN_005b68c0`,
+  `FUN_005c6b10`, `FUN_005e2820`, `FUN_005c5f50`, `FUN_005c9a30`,
+  `FUN_00445280`, `FUN_00654020`, `FUN_005dc700`, `FUN_005dc870`), one of
+  which (`FUN_005b68c0`) hits it from two separate branches. Its own body
+  internally calls `FUN_0044cdb0` three separate times with three
+  different event-name data pointers, consistent with it being a general
+  "apply value change + notify" utility (health/armor/ammo/etc.), not
+  damage-specific.
+
+**Net effect**: both candidates are still shared/multiplexed functions,
+just one layer down from the original crash-causing generic dispatcher —
+hooking either risks the exact same "some other real caller/case passes
+different real data" bug class that broke the game the first time. Not
+ready to implement. Needs: decompiling each of `FUN_0045e320`'s 8 case
+branches' surrounding context in `FUN_005b68c0`, and auditing
+`FUN_0045f770`'s 12 callers, before either is safe to hook. Full detail
+(disassembly/decompile dumps, caller lists) at
+`D:\Tools\ghidra_projects_rumblefork\`.
 
 ## Original implementation entry (2026-07-18), superseded by the above
 
@@ -2315,6 +2400,24 @@ input) and refines issue #26's vehicle hypothesis below.
   sequences elsewhere in the campaign — worth a general fix (respect the
   real lock flag universally in the movement hook) rather than a
   single-mission special case, once the real flag is found.
+  **FOUND (2026-07-20, research fork) — real freeze flag confirmed via
+  existing disassembly, no fresh Ghidra pass needed.** Both
+  `FUN_0057d430` (the real movement summer) and `FUN_0057d7e0` (the real
+  view-angle/look updater) gate on the exact SAME bit — `0x800` on the
+  per-client dword at `+0x1094` (issue #30's own flag family; for player
+  0 this resolves to `0xB363B0 + 0x1094 = 0xB37444` — confirmed
+  independently two ways, see the address-bug note in issue #30 above).
+  `FUN_0057d430`: `TEST dword ptr [EBP+0x1094],0x800` → jumps straight to
+  its epilogue, skipping all four `forwardmove`/`rightmove`-family writes
+  for that frame when set. `FUN_0057d7e0`: `TEST dword ptr
+  [0x00b37444],0x800` → same pattern, skips the entire view-angle
+  computation. **This is the real fix**: this project's movement/look
+  hooks (additive post-hooks that run regardless of what the native
+  functions did) should read this same bit and skip injecting
+  movement/look input when it's set, matching native behavior during
+  Turbulence's plane-breakup sequence and any other scripted-freeze
+  moment that reuses the same flag. Not yet implemented — this was a
+  research-only pass, ready for the next implementation session.
 - **Bug #5 — MISSION CORRECTED 2026-07-18 (was "Back on the Grid," really
   "Goalpost" — see task #26's zone-identification entry below): village
   mortar sequence, aiming worked correctly on controller (sensitivity
@@ -2471,6 +2574,43 @@ input) and refines issue #26's vehicle hypothesis below.
     ruled OUT** as the mortar/turret zone, with direct entity/asset
     evidence, not just absence-of-keyword-match — see the earlier entries
     in this section for that trail.
+  - **REOPENED (2026-07-20) — the "Goalpost" attribution above is very
+    likely WRONG, contradicted by external evidence.** A research fork
+    dumped `hamburg.ff` fresh and decompiled all its named + hash-named
+    scripts: **`bog_mortar` does not appear anywhere in `hamburg.ff`** —
+    zero hits. That string's origin traces back to `sp_warlord.ff`, which
+    this project's own research (right above, and issue #27 bug #4) has
+    since separately confirmed is actually "Turbulence," not the mortar
+    mission — meaning the original `bog_mortar` finding this whole
+    Goalpost attribution was partly built on came from the wrong zone and
+    appears to have never been re-verified against `hamburg.ff` directly.
+    The only mortar content actually IN `hamburg.ff` is a purely
+    ambient/scripted enemy-bombardment system (`maps\_mortar::`,
+    timer-triggered via `delaythread`, `"mortar_incoming"` warning audio,
+    impact-FX only) — no player fire input anywhere in it, nothing for a
+    controller hook to reach. **Independent, decisive external evidence,
+    user-supplied (2026-07-20):** a real, publicly-verifiable MW3
+    achievement/trophy guide ("For Whom the Shell Tolls" — a real MW3
+    achievement, 4-shells-only mortar challenge) explicitly states this
+    sequence happens in **"Back on the Grid,"** matching the mission
+    attribution this project had BEFORE the 2026-07-18 "correction" to
+    Goalpost, not after. **Most likely real explanation, not yet
+    confirmed**: `dubai.ff` (independently confirmed as the genuine "Back
+    on the Grid" zone via Yuri/Makarov/restaurant-collapse content) was
+    checked for mortar content and came back negative — but `dubai.ff`'s
+    own script names (`dubai_finale.gsc` in particular) suggest it may
+    only be the BACK HALF of the mission. CoD campaign missions routinely
+    span multiple sequentially-loaded zone files; an earlier
+    village/mortar set-piece could live in a still-undumped zone that's
+    part of the SAME mission as `dubai.ff`, not a separate mission
+    entirely. **Net effect: the mortar/turret sequence is most likely
+    still genuinely in "Back on the Grid" after all — the Goalpost
+    attribution should be treated as unconfirmed/likely wrong until a
+    live in-game mission-name check settles it, and task #26/#27 should
+    NOT proceed on the Goalpost premise.** Needed before further RE:
+    either a live check (what mission name actually displays during the
+    mortar/turret sequence), or dumping whatever zone(s) load
+    sequentially before `dubai.ff` within the same mission.
 - **Bug #6 (NOT YET CONFIRMED, two competing hypotheses) — MISSION
   CORRECTED 2026-07-18 (was "Back on the Grid," really "Goalpost," same
   mission as bug #5 above — see task #26/#27's zone-identification entry):
@@ -2610,6 +2750,16 @@ input) and refines issue #26's vehicle hypothesis below.
     for the "is it a missing regen buff" question specifically; the
     turret's actual fix is now expected to fall out of issue #30's
     `cmd+0x3e`/`0x3f` implementation work, not a separate investigation.
+  - **UPDATE (2026-07-20)**: issue #30's own `+0x1094`/`0x00B36210` setter
+    research (a research fork this session) came back a clean static
+    negative — the setter isn't findable via Ghidra reference/call-graph
+    analysis, needs a live memory-write breakpoint or memdiff during an
+    actual turret-mount session instead (dynamic analysis, not static).
+    Also: the same session's mortar-mission reconciliation (bug #5 above)
+    found real evidence the mortar/turret sequence is likely still in
+    "Back on the Grid," not Goalpost as previously corrected — if that
+    holds up, this bug's own mission attribution needs the same
+    re-check before any further turret-specific RE.
 - **Bug #7 (mission NOT YET IDENTIFIED — user will confirm later) — Interact
   (X = `+activate`) failed to work in one specific mission moment**,
   despite working correctly everywhere else in the playthrough so far
@@ -2649,6 +2799,38 @@ input) and refines issue #26's vehicle hypothesis below.
   remaining untried zones: `sp_paris_a/b`, `sp_ny_harbor`,
   `sp_ny_manhattan`, `sp_prague`, `sp_payback`) before the real
   `+usereload`-vs-`dismountvehicle()` connection can be traced to a fix.
+  **ZONE IDENTIFIED (2026-07-20, research fork): `london.ff`, confirmed
+  with strong evidence, not a guess.** All six previously-untried
+  candidates (`sp_paris_a/b`, `sp_ny_harbor`, `sp_ny_manhattan`,
+  `sp_prague`, `sp_payback`) were dumped and checked directly — none
+  matched (`sp_ny_harbor`/`sp_ny_manhattan` are Sandman/Delta Force
+  Manhattan content, `sp_paris_a` is AC-130-related, the rest are
+  near-empty thin loaders, same pattern already known for
+  `sp_berlin.ff`). `london.ff` is an un-prefixed real-content zone
+  (matching the established naming pattern, same as `hamburg.ff` for
+  Goalpost) containing `london`/`london_docks`/`westminster` script
+  families. Decisive confirmation: `london_docks_code.gsc` (3917 lines)
+  contains a literal `var_9.name = "Sgt. Burns"` cinematic name-tag
+  assignment — direct confirmation of Marcus Burns/SAS content, i.e.
+  Mind the Gap. **Exit-trigger itself still NOT located**: all 13
+  `maps/` scripts in the zone were decompiled and grepped for
+  `dismount`/`usereload`/`activate(`/`exitvehicle`/`tank`/the confirmed
+  `_id_281A`/`_id_2819` `dismountvehicle()` wrapper — zero hits except
+  one unrelated `disableturretdismount()` call in `london_uav.gsc`. No
+  `.mapents` file exists for `london.ff` (unlike `hamburg.ff`), and no
+  literal armored-vehicle "tank" asset appears in the zone's own
+  images/materials/xmodels either (only SAS van, police van, UK utility
+  truck, UCAV drone textures) — the propane/oxygen prop "tanks" that DID
+  match are a red herring. One unchased lead:
+  `animscripts/traverse/london_roof_slide.gscbin` (thematically
+  consistent with "car lands on roof," but generic/reusable, not
+  conclusive on its own). **Recommended next step**: a full content read
+  of `london_docks_code.gsc`'s 3900+ lines (not just keyword grep), or
+  check the native `FUN_00498ec0`-family prompt-binding path directly —
+  the fork's own hypothesis is the tank sequence may be driven by a
+  scripted trigger-volume + generic `activate` prompt this project
+  already handles, with the real `+usereload` distinction happening
+  purely natively rather than via any GSC-visible builtin call.
 - **Positive result — Mission "Mind the Gap" (London, Canary Wharf, playing
   as Marcus Burns/SAS): the helicopter/aerial-camera sequence at the very
   start of the mission works fine on controller.** No fallback needed.
@@ -3417,7 +3599,51 @@ it shouldn't, not missing) — best candidate there is branch 1
 (menu-active) or a still-unidentified freeze gate; `FUN_0057d430`/
 `FUN_0057d7e0` (the real movement/look functions) themselves weren't
 checked for an internal early-return that would also gate real keyboard
-during a freeze.
+during a freeze. **UPDATE (2026-07-20): that specific freeze gate IS now
+found — see issue #27 bug #4's own entry below. Unrelated to this
+issue's own `+0x1094`/`0x00B36210` mounted-aim setter question.**
+
+**Research fork (2026-07-20): xref sweep for the setter came back a clean
+negative, static analysis exhausted for now.** Ran `FindCallers.java`
+against the existing `MW3.gpr` Ghidra project for both `FUN_0057e360`/
+`FUN_0057df60` — each has exactly ONE caller, the already-known
+`FUN_0057e480` orchestrator itself (the branch *selection* happens via an
+inline flag test inside the orchestrator, not a call from elsewhere, so
+"find who calls the branch handler" was a dead end by construction).
+Pivoted to a data-reference sweep on the flag's own memory
+(`DAT_00b37444`, the base symbol Ghidra resolved for the `+0x1094`
+per-client access) — only 3 total references found, and all 3 are READS
+(`FUN_0057d7e0`, `FUN_0057e480`, `FUN_0057d430`, all already known).
+Ghidra's reference resolver correctly catches this addressing pattern for
+reads (confirmed it *can* find this class of access) but found zero
+writes anywhere using the same base-symbol scheme. Also re-checked the
+GSC builtin dispatch table dump and every other prior Ghidra project
+output for `mountvehicle`/`dismountvehicle`/`beginlocationselection` —
+zero hits, consistent with this dialect's builtins often being
+hash-named rather than literal-string-registered (a string search can't
+find `mountvehicle()`'s real native body this way). **Conclusion: the
+setter is real (the branches do fire in actual DPV/turret sessions) but
+isn't reachable via static Ghidra reference analysis alone** — either it
+computes the per-client struct pointer via a different base/register
+scheme than the one Ghidra anchored to, or it's genuinely only
+discoverable dynamically. **Next step is dynamic, not static**: a live
+memory-write breakpoint or before/after memdiff during an actual DPV or
+turret-mount session (the same class of technique already used elsewhere
+in this project, e.g. Sprint's kbutton hunt) — not more static RE time
+until a live session is available.
+
+**Bug found in passing, NOT yet fixed (2026-07-20)**: the SAME research
+fork independently re-derived the `+0x1094` address for player 0 as
+`0xB363B0 + 0x1094 = 0xB37444` (confirmed via two separate disassembly
+sources while researching issue #27 bug #4's freeze flag, see below) —
+but `analog_input_hooks.cpp`'s existing `kMissileGuidanceFlagAddr`
+constant is `0xB374E4`, off by `0xA0` (160 bytes). Independently
+re-verified by hand: `0xB363B0 + 0x1094` really does equal `0xB37444`,
+not `0xB374E4`. This means every `[missile-guidance-diag]` log line
+collected this session (tied to task #30/Predator Missile guidance) was
+reading 160 bytes off from the intended field — that data should be
+treated as unreliable until the constant is corrected and re-tested.
+One-line fix, not yet applied (this was a research-only pass).
 
 **Fix direction, not yet implemented:** a real fix needs the movement/
 look hooks to detect which branch is active this frame (read
