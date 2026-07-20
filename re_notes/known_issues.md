@@ -2124,6 +2124,41 @@ input) and refines issue #26's vehicle hypothesis below.
     by the user as the adequate permanent fix. Reverted back to this design
     (see the commit history for the brief direct-kbutton retest and revert).
     **Task #24 CLOSED.**
+  - **REOPENED 2026-07-20: live regression, "perma on... like even native."**
+    User reported Hold Breath stuck on again during the same session as the
+    look-acceleration-ramp playtest (issue #32). Pulled `proxy_d3d9.log`
+    (`hold-breath-diag-v2`) for that session before touching any code — this
+    time the evidence points somewhere new: every `DOWN` in the log is
+    followed by a clean `UP` (`g_sprintHeld=0`), including the final segment
+    before the user paused and quit (4+ seconds scoped, no further L3 press
+    logged, no stuck-true tracking state). This rules out a repeat of the
+    original "our own tracking never goes false" bug — this project's own
+    `g_sprintHeld`/`g_holdBreathSyntheticHeld` state is behaving correctly.
+    User confirmed (asked directly) that releasing L3 does nothing once
+    stuck — the effect stays on regardless, which the user themselves
+    characterized as behaving "like even native," i.e. the NATIVE
+    breath-hold state itself is latched on despite our synthetic `WM_KEYUP`
+    correctly firing. The same log also shows a burst of `DOWN`/`UP` pairs
+    landing inside the same or adjacent frame (no heartbeat between them) —
+    faster edge transitions than a human could physically produce on a real
+    keyboard, right around where the stuck report originated. **New working
+    hypothesis, tying directly into the same-day issue #32 finding**: this
+    engine is locked to a 30fps tick (33.33ms/frame) and cannot be assumed
+    to cleanly process input transitions faster than that — a `WM_KEYUP`
+    posted too soon behind a `WM_KEYDOWN` for the same key is a plausible
+    way for the native handler to silently drop the release and latch the
+    effect on. **Fix attempt**: added a 40ms debounce
+    (`kHoldBreathDebounceMs`, `analog_input_hooks.cpp`) around
+    `SendSyntheticHoldBreathKey` — a state change is only actually sent to
+    the native window once at least one engine frame has elapsed since the
+    last transition we sent; faster flicker is coalesced (the same check
+    re-runs every frame, so the moment debounce clears it sends whatever the
+    CURRENT desired state is, not a queued backlog of stale transitions).
+    Builds clean. **Not yet live-tested** — if stuck-on recurs even with the
+    debounce, the "too-fast WM_KEYUP dropped" theory is wrong and the real
+    native consumer of this key state still isn't understood; don't just
+    raise the debounce number blindly if that happens, go back to RE. Task
+    #24 reopened pending this retest.
 - **Positive result — Mission "Persona Non Grata" (Act 1, immediately after
   Hunter Killer): the UGV (Unmanned Ground Vehicle, mounted minigun +
   grenade launcher, played as Yuri) worked perfectly on controller as

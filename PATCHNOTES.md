@@ -110,6 +110,27 @@ reverse-engineering trail behind each entry.
   needed** to confirm the struct layout against real memory before any patch
   is attempted.
 
+### Fixed
+- **Hold Breath regressed live ("perma on"), 40ms native-transition debounce
+  added (2026-07-20, task #24 reopened).** After being closed 2026-07-19,
+  Hold Breath got stuck on again live. The diagnostic log for that session
+  showed this project's own tracking behaving correctly this time (a clean
+  synthetic-Shift `UP` was sent, no stuck-true state on our side) — a
+  different failure mode than the original bug. User confirmed releasing L3
+  did nothing once stuck, describing it as behaving "like even native,"
+  meaning the native breath-hold state itself latched on despite our release
+  firing correctly. The same log showed bursts of synthetic key transitions
+  landing inside the same or adjacent engine frame — faster than the
+  30fps-locked engine (33.33ms/frame, see the look-ramp fix above, found the
+  same day) can be assumed to cleanly process; a `WM_KEYUP` posted too soon
+  behind a `WM_KEYDOWN` is a plausible way for the native handler to
+  silently drop the release. Added a 40ms debounce around
+  `SendSyntheticHoldBreathKey` so a transition is only actually sent once at
+  least one engine frame has passed since the last one sent, coalescing any
+  faster flicker instead of forwarding it. Builds clean — **not yet
+  live-tested**; if stuck-on recurs even with the debounce, this theory is
+  wrong and the real native consumer of the key state needs further RE.
+
 ### Docs
 - Noted user-reported (Reddit, 2026-07-19, unverified by this project)
   reports that this project's proxy `d3d9.dll` works against retail Steam

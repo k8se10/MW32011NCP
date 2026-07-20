@@ -1149,6 +1149,23 @@ void UpdateSprintKbutton(bool active)
 // Sprint-natively-ignored-by-the-engine and Hold Breath when aiming).
 bool g_holdBreathSyntheticHeld = false;
 
+// Debounce, added 2026-07-20 after a live regression report ("perma on... like even
+// native"): the diagnostic log for that session showed OUR OWN tracking transitioning
+// correctly (a clean UP was logged, g_sprintHeld=0, no further DOWN) -- ruling out the
+// original "our state gets stuck true" bug this exception was built to fix. The same
+// log also showed a burst of DOWN/UP pairs landing inside the same or adjacent engine
+// frame (no heartbeat between them), right around where the user reports it latched.
+// Same root lesson as issue #32's look-ramp correction, found independently the same
+// day: this old, 30fps-locked engine (33.33ms/frame) cannot be assumed to cleanly
+// process input transitions faster than its own tick -- a WM_KEYUP posted too soon
+// behind a WM_KEYDOWN for the same key is a plausible way for the native handler to
+// silently drop the release and latch on. Debouncing to one frame is a direct, testable
+// fix for that specific mechanism, not a blind guess -- if it doesn't hold up live,
+// the actual native consumer of this key state still isn't understood and needs
+// further RE, not a bigger debounce number.
+constexpr DWORD kHoldBreathDebounceMs = 40; // slightly over one 30fps frame (33.33ms)
+DWORD g_lastHoldBreathTransitionMs = 0;
+
 void SendSyntheticHoldBreathKey(bool down)
 {
     HWND hwnd = GetGameWindow();
@@ -1207,12 +1224,21 @@ extern "C" void __cdecl InjectControllerSprint()
     // attempts both failed live).
     bool holdBreathActive = g_sprintHeld && g_adsHeld;
     if (holdBreathActive != g_holdBreathSyntheticHeld) {
-        g_holdBreathSyntheticHeld = holdBreathActive;
-        char hbBuf[128];
-        sprintf_s(hbBuf, "[hold-breath-diag-v2] synthetic Shift -> %s (g_sprintHeld=%d g_adsHeld=%d)",
-            holdBreathActive ? "DOWN" : "UP", g_sprintHeld ? 1 : 0, g_adsHeld ? 1 : 0);
-        LogFromController(hbBuf);
-        SendSyntheticHoldBreathKey(holdBreathActive);
+        DWORD nowMsDebounce = GetTickCount();
+        if (nowMsDebounce - g_lastHoldBreathTransitionMs >= kHoldBreathDebounceMs) {
+            g_lastHoldBreathTransitionMs = nowMsDebounce;
+            g_holdBreathSyntheticHeld = holdBreathActive;
+            char hbBuf[128];
+            sprintf_s(hbBuf, "[hold-breath-diag-v2] synthetic Shift -> %s (g_sprintHeld=%d g_adsHeld=%d)",
+                holdBreathActive ? "DOWN" : "UP", g_sprintHeld ? 1 : 0, g_adsHeld ? 1 : 0);
+            LogFromController(hbBuf);
+            SendSyntheticHoldBreathKey(holdBreathActive);
+        }
+        // else: debounced -- desired state changed again before one engine frame
+        // elapsed since the last transition we actually sent. Left unsent on purpose;
+        // this same block re-checks every frame, so the moment debounce clears it will
+        // send whatever the CURRENT desired state is, coalescing the flicker away
+        // instead of forwarding every intermediate toggle to the native handler.
     }
 
     // Heartbeat, ONLY while active -- distinguishes "our own tracking got stuck true"
