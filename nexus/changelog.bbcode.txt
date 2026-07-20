@@ -1,0 +1,37 @@
+[b][size=4]v0.2.1 — Alpha (2026-07-20)[/size][/b]
+
+Two headline items, both confirmed live. [b]Look acceleration ramp[/b]: added a console-accurate turn-rate ramp (33ms, tied to this old engine's own locked 30fps tick — live-tested against many values before landing on the right one, not a guess). [b]Hold Breath[/b] (L3 while ADS'd on a sniper) is now [b]fully working[/b] — fixed after an extensive live-debugging pass that ended by isolating a single stuck engine-struct byte; now genuinely native input, no key-synthesis needed.
+
+[hr]
+
+[b][size=4]v0.2.0 — Alpha (2026-07-19)[/size][/b]
+
+First release tagged as a real milestone rather than incremental groundwork. [b]Sprint migrated onto its real native kbutton[/b] — this made its entire custom stamina/cooldown timer layer redundant (removed) and resolved the Extreme Conditioning perk override for free. [b]3 of Survival's 4 real killstreaks confirmed working[/b] (Predator Missile launch, Precision Airstrike, AI squadmate call-in). Real D-pad/A menu navigation extended to the main menu and title screen. A first vibration/rumble attempt crashed the game at startup — root-caused and disabled, not shipped broken.
+
+[hr]
+
+[b][size=4]v0.1.3 (2026-07-17)[/size][/b]
+
+Real, native D-pad/A menu navigation confirmed working live across the main menu, pause menu, and options screens. Deep groundwork this release: a controller-options-menu injection mechanism (blocked on a real engine limit, fix direction found), a likely fix for aim assist's broken target classification (not yet live-verified, still disabled), real vibration trigger points identified, and an MW3-client-compatibility survey that surfaced a real anti-cheat risk — see the Plutonium warning on this page.
+
+[hr]
+
+[b][size=4]v0.1.2 (2026-07-16)[/size][/b]
+
+Mostly a documentation-accuracy pass — several already-shipped features had never been written up anywhere. One small functional fix (comment text only, no behavior change).
+
+[hr]
+
+[b][size=4]v0.1.1 (2026-07-16)[/size][/b]
+
+Fixed a real regression where the controller Sprint hooks silently broke vanilla keyboard Shift-to-sprint regardless of whether a controller was even connected. Fixed a bug where the ADS look-slowdown formula could invert look direction entirely on deep-zoom optics.
+
+[hr]
+
+[b][size=4]v0.1.0-prealpha (2026-07-15)[/size][/b]
+
+Initial pre-alpha release. Analog movement/look, Fire/ADS/Melee/Tactical/Lethal/Jump, Crouch/Prone stance ladder, Interact+Reload, Sprint (an early raw-bit implementation, later replaced), weapon switch, pause menu open/close, D-pad actionslots, and Survival's ready-up prompt all confirmed working live for the first time.
+
+[hr]
+
+[i]Full, unabridged patch notes — including every fix, every reverted attempt, and the reverse-engineering trail behind each change — are maintained in [font=Courier New]PATCHNOTES.md[/font] in the GitHub source repo.[/i]

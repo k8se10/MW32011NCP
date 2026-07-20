@@ -1,0 +1,99 @@
+[center][size=6][b]MW3 (2011) Native Controller Support[/b][/size]
+[size=3]Campaign & Survival[/size][/center]
+
+[center][color=#E74C3C][b]⚠ THIS IS EXPERIMENTAL, ALPHA-STAGE SOFTWARE ⚠[/b][/color][/center]
+
+It hooks directly into a live game process. Expect bugs, rough edges, unfinished features, and the occasional need to fall back to keyboard/mouse. Use at your own risk. Not affiliated with, endorsed by, or sponsored by Activision, Infinity Ward, or any of their affiliates.
+
+[hr]
+
+[size=4][b]Status: ALPHA — v0.2.1 (2026-07-20)[/b][/size]
+
+Not feature-complete, not fully tested end-to-end. Multiplayer ([font=Courier New]iw5mp.exe[/font]) hasn't been started at all. Read [b]What Works / Partial / Not Working[/b] below before assuming any specific feature works — this project is deliberately honest about what's confirmed vs. not, not a marketing pitch.
+
+[hr]
+
+[size=4][b]What This Is[/b][/size]
+
+MW3 (2011) shipped on PC with [b]zero working controller input path[/b] — no [font=Courier New]xinput[/font]/[font=Courier New]dinput8[/font] import anywhere in the binary, no hidden setting to unlock. This is a from-scratch native controller project, not a keyboard/mouse-emulation mapper: analog movement, look, and most buttons are driven directly through the game's own real internal engine calls — the exact same [font=Courier New]usercmd_t[/font] fields, [font=Courier New]kbutton_t[/font] states, and view-angle accumulators a real keyboard/mouse player already uses, just fed from a controller instead.
+
+Every other "controller support" option for this game works by faking keyboard/mouse input underneath a mapper tool — poll → convert to a key/mouse event → OS input queue → the game's own input processing. That's a real, measurable extra layer between the stick and the game. This project writes straight into the engine's real per-frame input path from inside the game's own process, on the game's own frame tick — no OS-level input event, no intermediate queue. That's the core advantage: input feel that matches native console analog input, not an approximation of it.
+
+[b]Three narrow, deliberate exceptions[/b] to that rule exist (documented, not hidden) for inputs where an extensive search found no locatable native trigger: Survival's ready-up prompt, D-pad Left's AI-squadmate call-in, and the Back button's scoreboard/objectives — all three synthesize a real keypress via [font=Courier New]PostMessage[/font]/[font=Courier New]SendInput[/font] rather than driving the engine directly. Everything else — including all of movement, look, and combat — drives real engine state.
+
+[hr]
+
+[size=4][b]✅ What Works (confirmed live, Campaign/Survival)[/b][/size]
+
+[list]
+[*]Analog movement (left stick) and analog look (right stick), own sensitivity curve, independent of the mouse pipeline
+[*]Console-accurate look acceleration ramp (33ms — tied to this old engine's own locked 30fps tick, not a guessed value)
+[*]Fire, Aim Down Sights (true hold, not a toggle), Melee, Tactical/Lethal, Jump
+[*]ADS zoom-aware look slowdown, so magnified scopes don't feel absurdly twitchy
+[*]Crouch/Prone 3-state stance ladder — tap vs. hold, matching console
+[*]Interact vs. Reload on the same button (hold vs. tap, like console)
+[*]Weapon switch, D-pad killstreak/attachment actionslots
+[*][b]Sprint[/b] — drives the real native [font=Courier New]+sprint[/font] kbutton; the engine's own stamina/recovery timer and the Extreme Conditioning perk's duration override both apply automatically, no custom timer code needed
+[*][b]Hold Breath[/b] (L3 while ADS'd on a sniper) — steadies aim while held, accuracy drops once breath runs out; genuinely native input after an extensive debugging pass isolated a single stuck engine-struct byte
+[*]Pause menu open [i]and[/i] close via real engine calls
+[*]B backs out of any open menu, on top of its normal crouch/prone role
+[*]Full D-pad + A menu navigation — main menu, title screen, pause menu, options screens (including slider value adjustment), buy-station/armory lists
+[*]Survival's between-wave ready-up
+[*]3 of Survival's 4 real killstreaks: Predator Missile launch, Precision Airstrike, AI squadmate call-in
+[*]Button/stick layout presets (Default/Tactical/Lefty/TacticalLefty) — [b]all confirmed correct against real hardware[/b]
+[*]Fully configurable via a self-documenting [font=Courier New]mw3ncp_config.ini[/font] (sensitivity, ADS slowdown, hold thresholds, bindings, look ramp)
+[/list]
+
+[size=4][b]🟡 Partial — works, with a specific known gap[/b][/size]
+
+[list]
+[*]Predator Missile's post-fire guidance — launch works, steering the flying missile doesn't yet
+[*]Back button (scoreboard/objectives) — implemented and builds clean, not yet separately confirmed live
+[*]A few Campaign killstreak/vehicle set-pieces (DPV aiming, a mounted turret sequence, one mortar sequence) — aim or fire input has a specific, documented gap; most of Campaign plays fine
+[*]Real in-game controller options menu — a working injection mechanism is proven live for simple content; real menu content (backgrounds, sliders) hit a genuine engine limit and isn't shippable yet
+[/list]
+
+[size=4][b]⬜ Not Working / Not Implemented At All[/b][/size]
+
+[list]
+[*][b]Aim assist[/b] — implemented but disabled by default and non-functional; target classification is broken. Leave off unless actively testing
+[*][b]Controller vibration/rumble[/b] — implemented, then found to crash the game at startup; fully disabled pending a safer reimplementation
+[*]Button-glyph controller icons — the asset/build pipeline is proven end-to-end, but nothing renders in-game yet; menus still show keyboard/mouse key names
+[*]One vehicle-exit prompt (a specific tank-exit sequence) — not wired up
+[*]Survival debug menu / dev console — the real in-game console is confirmed permanently dead
+[*][b]Multiplayer ([font=Courier New]iw5mp.exe[/font])[/b] — not started at all, separate binary, needs its own full reverse-engineering pass
+[/list]
+
+[hr]
+
+[size=4][b]Installation[/b][/size]
+
+[list=1]
+[*]Copy [font=Courier New]d3d9.dll[/font] from this download into your MW3 install folder — the same folder as [font=Courier New]iw5sp.exe[/font].
+[*]Launch the game and start a Campaign or Survival session as normal.
+[*]A [font=Courier New]proxy_d3d9.log[/font] file will appear in that folder once the DLL is running — the first thing to check if something goes wrong, and the most useful thing to attach to a bug report.
+[/list]
+
+[b]Uninstalling:[/b] just delete [font=Courier New]d3d9.dll[/font]. Nothing else is touched — the base game files are never modified.
+
+[color=#F39C12][b]Note:[/b][/color] Steam's "Verify integrity of game files" (or an automatic game update) may silently remove a dropped-in [font=Courier New]d3d9.dll[/font]. If controller input stops working after an update, that's the likely reason — just reinstall.
+
+[hr]
+
+[size=4][color=#E74C3C][b]⚠ Do NOT use this with Plutonium multiplayer[/b][/color][/size]
+
+Plutonium's own anti-cheat is confirmed to ban DLL injection and memory access — a 7-day ban on first offense, permanent after. This project's entire architecture (a proxy [font=Courier New]d3d9.dll[/font], function hooking) is exactly what that system is built to catch, regardless of this being input-only rather than a gameplay cheat. This is a real, confirmed risk, not theoretical. Supported right now: [b]retail Steam Campaign/Survival only[/b].
+
+[hr]
+
+[size=4][b]Credits & License[/b][/size]
+
+This project bundles and links [url=https://github.com/TsudaKageyu/minhook]MinHook[/url] (Copyright © 2009–2017 Tsuda Kageyu, BSD 2-Clause-style license) for all API hooking, and the Hacker Disassembler Engine (HDE) 32/64 C it bundles.
+
+Released under a custom, permissive license: free to use, modify, and fork. The one restriction — neither this project nor any fork/derivative may ever be sold or charged for; it must stay free for everyone. Because of that restriction this doesn't meet the OSI's formal "open source" definition, but the source is fully open. Does not grant any rights to Call of Duty: Modern Warfare 3 itself — you need your own legitimate copy of the game.
+
+[hr]
+
+[size=4][b]Links[/b][/size]
+
+Full source, reverse-engineering write-ups, and the complete patch history live on GitHub — see this page's Source/Files links. Bug reports and contributions welcome there.

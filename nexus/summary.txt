@@ -1,0 +1,1 @@
+Native XInput controller support for MW3 (2011) Campaign & Survival: analog movement/look, console-style ADS, menu navigation, and more, driven directly through the game's own real engine calls, not keyboard/mouse emulation. Alpha, actively developed. Multiplayer not supported.

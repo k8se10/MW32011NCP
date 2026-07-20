@@ -8,6 +8,13 @@ reverse-engineering trail behind each entry.
 
 ## Unreleased
 
+### Docs
+- Added `nexus/` — the source-of-truth for this project's Nexus Mods page
+  (summary, BBCode description, BBCode changelog, page metadata), kept
+  alongside `README.md`/`PATCHNOTES.md` so the Nexus listing can't quietly
+  drift out of sync with the project's actual current status. See
+  `nexus/README.md` for the per-release update checklist.
+
 ---
 
 ## v0.2.1 — Alpha (2026-07-20)
