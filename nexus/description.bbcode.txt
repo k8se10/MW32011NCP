@@ -7,7 +7,11 @@ It hooks directly into a live game process. Expect bugs, rough edges, unfinished
 
 [hr]
 
-[size=4][b]Status: ALPHA — v0.2.1 (2026-07-20)[/b][/size]
+[color=#F39C12][b]⚠ If you have a version earlier than v0.2.2 installed:[/b][/color] earlier builds shipped with an aim-assist feature's code compiled into the DLL (disabled by default, but present in the binary). v0.2.2 permanently removed that code entirely following anti-cheat risk research. Whether the mere presence of that code in earlier builds meaningfully raised VAC exposure is not confirmed — no ban has been reported — but is genuinely suspected enough that updating to the latest version is recommended. See the Changelog tab for full detail.
+
+[hr]
+
+[size=4][b]Status: ALPHA — v0.2.2 (2026-07-20)[/b][/size]
 
 Not feature-complete, not fully tested end-to-end. Multiplayer ([font=Courier New]iw5mp.exe[/font]) hasn't been started at all. Read [b]What Works / Partial / Not Working[/b] below before assuming any specific feature works — this project is deliberately honest about what's confirmed vs. not, not a marketing pitch.
 
@@ -56,7 +60,6 @@ Every other "controller support" option for this game works by faking keyboard/m
 [size=4][b]⬜ Not Working / Not Implemented At All[/b][/size]
 
 [list]
-[*][b]Aim assist[/b] — implemented but disabled by default and non-functional; target classification is broken. Leave off unless actively testing
 [*][b]Controller vibration/rumble[/b] — implemented, then found to crash the game at startup; fully disabled pending a safer reimplementation
 [*]Button-glyph controller icons — the asset/build pipeline is proven end-to-end, but nothing renders in-game yet; menus still show keyboard/mouse key names
 [*]One vehicle-exit prompt (a specific tank-exit sequence) — not wired up

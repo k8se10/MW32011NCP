@@ -1041,13 +1041,34 @@ presses. No further work needed on this specific report; task tracker entry clos
 
 ---
 
-## 15. Aim assist entity classification — PARKED (2026-07-17): a promising `game_entity`-equivalent struct found, but the cross-link to it broke live
+## 15. Aim assist entity classification — PERMANENTLY REMOVED (2026-07-20), superseding the "parked" status below
 
-**Status:** Open, tracked as task #16. **Aim assist is completely non-functional at
-this stage** — not just unpolished, genuinely broken targeting behavior — and is
-disabled in the shipped config (`[AimAssist] Enabled=0`). Must stay disabled for
-any public/release build until this is resolved; do not re-enable outside active
-development/testing.
+**Status: CLOSED, feature deleted.** Task #16. Following issue #33's VAC/anti-cheat
+research, aim assist has been permanently removed from the codebase entirely —
+`analog_input_hooks.cpp`'s implementation, its call site in
+`InjectControllerLookAngles`, and `mod_config.h`/`.cpp`'s entire `[AimAssist]`
+config section are all deleted, not just left disabled. Reasoning: reading live
+entity/target data out of process memory to adjust aim is mechanically identical
+to a soft-aimbot regardless of intent, and issue #33's research found the closest
+real precedent for a proxy-DLL project that manipulates gameplay state beyond
+pure input remapping (ENB, vs. ReShade's clean visual-only record) has actual
+documented ban history. Unlike this project's core input-remapping work (writes
+real values into real input structures, never reads gameplay-entity memory),
+there was no way to make this feature safer without changing what it
+fundamentally is — cut entirely rather than reworked. See `PATCHNOTES.md`'s
+v0.2.2 entry for the release-facing summary and the user-facing security notice
+added to `README.md` for versions v0.2.1 and earlier.
+
+**The rest of this entry is kept as historical record of the real RE work done
+before the removal decision — the technical findings below are still accurate
+and could inform a future project that wants this class of feature with a
+different risk tolerance, but are no longer being pursued here.**
+
+**Prior status (2026-07-17, superseded above):** Open, tracked as task #16. **Aim
+assist is completely non-functional at this stage** — not just unpolished,
+genuinely broken targeting behavior — and is disabled in the shipped config
+(`[AimAssist] Enabled=0`). Must stay disabled for any public/release build until
+this is resolved; do not re-enable outside active development/testing.
 
 **Background:** the movement-based target filter implemented earlier the same
 session (a static prop never moves; a living AI's position changes the moment it

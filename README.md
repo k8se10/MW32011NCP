@@ -1,17 +1,33 @@
 # MW3 Native Controller Support (Campaign & Survival)
 
-**Status: ALPHA — v0.2.1 (2026-07-20).** Builds on v0.2.0's first-real-milestone
-release with two more live-confirmed items: a console-accurate look acceleration
-ramp (33ms, tied to this old engine's own locked 30fps tick), and **Hold Breath
-(L3 while ADS'd on a sniper) now fully working** as genuinely native input, after
-an extensive live-debugging pass that ended by isolating a single stuck kbutton_t
-byte. Core movement, look, combat, stance, and Sprint remain confirmed working live
-against `iw5sp.exe` (Campaign/Survival) through the engine's own real internal
-calls, real D-pad/A menu navigation covers every UI surface actually exercised
-(main menu, title screen, pause menu, options, buy-stations, sliders), and 3 of
-Survival's 4 real killstreaks are confirmed working end-to-end. See **Status at a
-glance** immediately below for an explicit, no-guessing breakdown of exactly what's
-fully working, partial, or not implemented at all — read that before assuming any
+> **⚠️ SECURITY NOTICE — read if you're on any version before v0.2.2.** Versions
+> v0.2.1 and earlier shipped with an aim-assist feature's code compiled into the
+> DLL — disabled by default, but present in the binary. v0.2.2 **permanently
+> removed that code entirely** following VAC-risk research (see Known Limitations
+> below for the full reasoning). Whether the mere presence of that code in earlier
+> builds meaningfully raised VAC exposure over v0.2.2's is **not confirmed — no
+> ban has been reported or observed — but is genuinely suspected enough that this
+> project recommends upgrading to v0.2.2 or later** rather than continuing to run
+> an earlier build. Treat this as a real, disclosed risk, not a confirmed
+> incident.
+
+**Status: ALPHA — v0.2.2 (2026-07-20).** A risk-mitigation release: aim assist
+(rotational friction + magnetism, reading live entity/target memory) has been
+**permanently removed**, not just left disabled, following VAC risk research that
+found the closest real precedent for a proxy-DLL project manipulating gameplay
+state beyond pure input remapping (ENB) has actual documented ban history — see
+Known Limitations. No player-facing feature change otherwise: builds on v0.2.1's
+two live-confirmed items, a console-accurate look acceleration ramp (33ms, tied to
+this old engine's own locked 30fps tick), and **Hold Breath (L3 while ADS'd on a
+sniper) now fully working** as genuinely native input, after an extensive
+live-debugging pass that ended by isolating a single stuck kbutton_t byte. Core
+movement, look, combat, stance, and Sprint remain confirmed working live against
+`iw5sp.exe` (Campaign/Survival) through the engine's own real internal calls, real
+D-pad/A menu navigation covers every UI surface actually exercised (main menu,
+title screen, pause menu, options, buy-stations, sliders), and 3 of Survival's 4
+real killstreaks are confirmed working end-to-end. See **Status at a glance**
+immediately below for an explicit, no-guessing breakdown of exactly what's fully
+working, partial, or not implemented at all — read that before assuming any
 specific feature works. Not feature-complete, not fully tested end-to-end, and
 Multiplayer (`iw5mp.exe`) hasn't been started at all.
 
@@ -73,7 +89,6 @@ live-tested by the developer during actual play, not just built-and-assumed.
 
 | Feature | Why |
 |---|---|
-| **Aim assist** | Implemented but **disabled by default and non-functional** — target classification is broken (oscillates between multiple movers). Do not enable outside active development |
 | **Vibration/rumble** | Implemented, then **crashed the game at startup** — fully disabled pending a safer reimplementation |
 | Button-glyph controller icons | Full asset + build pipeline proven end-to-end, but nothing renders in-game yet — zero player-visible effect currently |
 | Vehicle-exit prompt (`+usereload`, Mind the Gap) | Not wired |
@@ -104,11 +119,11 @@ blended score would misrepresent both numbers.
 ### Feature completeness matrix
 
 Deliberately broken into atomic done/not-done sub-items rather than one line per
-major system, specifically so that large remaining systems (killstreaks, aim assist,
-the real options menu, vibration, button glyphs) are represented by multiple
-not-done rows instead of a single lightly-weighted "partial" line — a flat list with
-one row each for "stick layout presets" and "aim assist" would understate how much
-work the latter actually has left, since it's a much larger undertaking. Also
+major system, specifically so that large remaining systems (killstreaks, the real
+options menu, vibration, button glyphs) are represented by multiple not-done rows
+instead of a single lightly-weighted "partial" line — a flat list with one row
+each for "stick layout presets" and "the real options menu" would understate how
+much work the latter actually has left, since it's a much larger undertaking. Also
 deliberately NOT computed from the live task-tracking list (an ever-expanding
 scratchpad — every bug found adds another entry, so its completed/total ratio gets
 worse the more thoroughly this project tests itself) — sourced instead from this
@@ -124,10 +139,9 @@ kind of durable record git/`PATCHNOTES.md` provides.
 | Button-glyph UI prompts | 3 | 4 | Icon assets + full build pipeline PROVEN end-to-end (a real extended font asset built and verified), hook calling convention confirmed safe via disassembly, bind-storage system fully reconciled; actual in-game wiring (the boot-time zone splice + resolver hook) fully planned and pressure-tested but not yet coded/deployed |
 | Killstreak support | 4 | 4 | All 4 real Survival killstreaks now have a confirmed real mechanism: Predator Missile launch (fixed via a from-bytecode-to-native-delivery trace) and camera/view both confirmed working; Precision Airstrike confirmed working (a smoke-grenade-throw mechanic, not a menu system); AI squadmate call-in confirmed working. Predator Missile's post-fire guidance AIM is a separate, still-open bug (not a killstreak-activation problem) — tracked under the mounted-aim-channel work below |
 | Real in-game options menu | 2 | 4 | Static injection mechanism done; the next blocker (real menu content needs the engine's own controlled load context) now has a full, pressure-tested two-part implementation plan (boot-time zone splice + a single `OpenMenuByName` string-substitution hook) — not yet coded |
-| Aim assist | 2 | 4 | Friction + magnetism math done; entity/target classification (the actual blocker) and live verification not done |
 | Vibration/rumble | 1 | 2 | Implemented, then found to **crash the game at startup** (a generic native dispatcher hooked with a fixed signature that didn't match every real caller) — currently disabled pending a safer reimplementation against a single-call-site-safe target already identified |
 | Extreme Conditioning override | 1 | 1 | **Resolved for free, 2026-07-19** — Sprint's real-kbutton migration means the native perk system now applies its own duration override automatically, same as it does for keyboard players; no separate detection/override code was ever needed once the kbutton was found |
-| **Total** | **43** | **50** | **43/50 ≈ 86/100** |
+| **Total** | **41** | **46** | **41/46 ≈ 89/100** |
 
 ### Raw functionality methodology
 
@@ -168,7 +182,7 @@ is still open, not how rough what already works is.
 | Stage | Version range | What it means here |
 |---|---|---|
 | **Pre-alpha** | `0.1.0` – `0.1.5` | Core systems land one at a time — movement/look/combat, stance/sprint, pause menu, and menu navigation done; aim assist, vibration, killstreaks, and the controller options menu still being built out. |
-| **Alpha** *(current, v0.2.1)* | `0.1.5` – `0.4.0` | The remaining major systems get built and land. **v0.2.0**: Sprint fully native (no custom timer, Extreme Conditioning resolved for free), 3 of 4 Survival killstreaks confirmed working, menu/UI navigation extended to the main menu/title screen and slider values. **v0.2.1**: console-accurate look acceleration ramp, and Hold Breath (L3 while ADS'd) fully working as genuinely native input after an extensive debugging pass. **Still ahead in this stage**: button glyphs, a real in-game options screen, aim assist taken from "math confirmed" to actually working, vibration reimplemented, Predator Missile's guidance aim, and remaining Campaign/Special Ops compatibility gaps. Multiplayer groundwork may start here, pending the anti-cheat question being resolved first. |
+| **Alpha** *(current, v0.2.2)* | `0.1.5` – `0.4.0` | The remaining major systems get built and land. **v0.2.0**: Sprint fully native (no custom timer, Extreme Conditioning resolved for free), 3 of 4 Survival killstreaks confirmed working, menu/UI navigation extended to the main menu/title screen and slider values. **v0.2.1**: console-accurate look acceleration ramp, and Hold Breath (L3 while ADS'd) fully working as genuinely native input after an extensive debugging pass. **v0.2.2**: risk-mitigation release — aim assist permanently removed (not just disabled) following VAC research; see the security notice at the top of this file. **Still ahead in this stage**: button glyphs, a real in-game options screen, vibration reimplemented, Predator Missile's guidance aim, and remaining Campaign/Special Ops compatibility gaps. Multiplayer groundwork may start here, pending the anti-cheat question being resolved first. |
 | **Beta** | `0.4.0` – `1.0.0` | Should be practically feature-complete — remaining work is closing gaps, fixing what live testing surfaces, and extending reach (other MW3 clients, Multiplayer if the anti-cheat question resolves favorably) rather than building brand-new core systems from scratch. |
 | **1.0 (final)** | `1.0.0`+ | Feature-complete against this project's full scope, stable, and treated as a real release rather than an actively-shifting work in progress. |
 
@@ -189,20 +203,17 @@ is still open, not how rough what already works is.
   noticeable effect on its own. Both configurable, mathematically safe at any value
   (a power curve, not a linear blend — the linear version could invert look direction
   at high strength on deep zooms; fixed in v0.1.1).
-- **Aim assist (rotational friction + magnetism) — EXPERIMENTAL, DISABLED BY DEFAULT,
-  NOT FUNCTIONAL YET.** A from-scratch implementation (the game's native aim-assist
-  system turned out to be shared math bots use to aim *at* the player, not a
-  player-facing feature — MW3 PC genuinely has no mouse aim-assist). The underlying
-  math (angle error, friction curve, magnetism) is confirmed correct via live
-  diagnostic logging, but the target-validity filter is not: it currently uses a
-  movement heuristic that oscillates between multiple simultaneously-moving things
-  (a real enemy, a settling ragdoll, a thrown grenade), producing genuinely broken
-  targeting in practice, not just an unpolished feel. A real fix (native type/health-
-  based classification, no movement heuristic needed) is believed found via static
-  analysis but not yet live-verified — see `re_notes/known_issues.md` issue #15.
-  **Ships with `Enabled=0` and must stay that way for any public/release build**
-  until that's confirmed live. Do not enable this for anyone other than active
-  development/testing.
+- **Aim assist — PERMANENTLY REMOVED (2026-07-20).** A from-scratch implementation
+  (rotational friction + magnetism, reading live entity/target data out of process
+  memory) was built and its math confirmed correct via live diagnostic logging, but
+  it was never shipped functional (broken target classification) and has now been
+  cut entirely rather than fixed. Reading gameplay-entity memory to adjust aim is
+  mechanically identical to a soft-aimbot regardless of intent — this project's own
+  VAC research found the closest real precedent for a proxy-DLL project that
+  manipulates gameplay state beyond pure input remapping (ENB, versus ReShade's
+  clean, visual-only track record) has actual documented ban history. Removed as a
+  deliberate risk-reduction decision, not left disabled-by-default — see
+  `re_notes/known_issues.md` issue #15/#16 and #33 for the full reasoning.
 
 ### Combat & interaction
 - **Fire** (RT), **Tactical**/**Lethal** (LB/RB), **Jump** (A).
@@ -322,12 +333,7 @@ native controller UI navigation exists.
 | `[Bindings]` | `ButtonLayout` | `Default` | `Default` / `Tactical` / `Lefty` / `TacticalLefty` — see table below |
 | `[Bindings]` | `StickLayout` | `Default` | `Default` / `Southpaw` / `Legacy` / `LegacySouthpaw` — see table below |
 | `[Bindings]` | `FlipTriggers` | `0` | Independently swaps RT↔RB and LT↔LB, combining with whichever `ButtonLayout` is active |
-| `[AimAssist]` | `Enabled` | `0` | Our own from-scratch aim assist (see below) — **EXPERIMENTAL, NOT FUNCTIONAL** (broken target classification), must stay `0` for public builds |
-| `[AimAssist]` | `Range` | `1200` | Max world-unit distance to a target for it to be considered at all |
-| `[AimAssist]` | `ConeDegrees` | `6` | Half-angle of the "near crosshair" cone a target must be within |
-| `[AimAssist]` | `FrictionStrength` | `0.6` | How much to slow the look-turn rate while the crosshair is near a valid target (`0` = no slowdown, `1` = strongest) |
-| `[AimAssist]` | `MagnetismDegreesPerSecond` | `40` | Max degrees/second the crosshair gets pulled toward a valid target, independent of stick input |
-| `[Vibration]` | `Enabled` | `1` | ⚠️ **Currently has no effect regardless of value** — the two hooks this flag would gate (`Rumble_Install()`) are disabled at their install call site after crashing the game at startup (see Known Limitations). Defaults `1` because it doubles as this feature's own kill-switch once reimplemented — same "default should be `0` until proven safe" lesson this project already learned once for `[AimAssist] Enabled` (fixed in v0.1.2) applies here again; flip to `0` before ship if `Rumble_Install()` is ever re-enabled without also revisiting this default |
+| `[Vibration]` | `Enabled` | `1` | ⚠️ **Currently has no effect regardless of value** — the two hooks this flag would gate (`Rumble_Install()`) are disabled at their install call site after crashing the game at startup (see Known Limitations). Defaults `1` because it doubles as this feature's own kill-switch once reimplemented — same "default should be `0` until proven safe" lesson this project already learned once for the now-removed aim assist feature (which shipped `Enabled=true` by default in an early build, fixed in v0.1.2) applies here again; flip to `0` before ship if `Rumble_Install()` is ever re-enabled without also revisiting this default |
 | `[Vibration]` | `FireIntensity` | `0.25` | Motor strength `[0,1]` on each real shot fired (inert — see `Enabled` above) |
 | `[Vibration]` | `FireDurationMs` | `60` | Milliseconds a fire pulse takes to decay to zero (inert — see `Enabled` above) |
 | `[Vibration]` | `DamagePerPoint` | `0.03` | Motor strength added per point of real damage the local player takes (inert — see `Enabled` above) |
@@ -611,12 +617,14 @@ See `re_notes/known_issues.md` for the full, actively-tracked list.
   call — the only such exception in the whole project. The real native trigger was never
   found despite an extensive search (see `re_notes/known_issues.md` issue #5); this
   workaround will be replaced if/when one turns up.
-- Aim assist (rotational friction, target magnetism) is implemented but currently
-  **non-functional and disabled by default** (`Enabled=0`) — the underlying math is
-  confirmed correct, and real entity classification (telling an AI actor apart from
-  props/debris) is believed found via static analysis, but not yet live-verified, so
-  the fallback movement heuristic remains in place and still produces broken
-  targeting. See `re_notes/known_issues.md` issue #15.
+- **Aim assist was permanently removed (2026-07-20), not just disabled.** A
+  from-scratch implementation (rotational friction, target magnetism) had its math
+  confirmed correct but was never shipped functional, and has now been cut entirely
+  as a deliberate risk-reduction decision: reading gameplay-entity memory to adjust
+  aim is mechanically identical to a soft-aimbot regardless of intent, and this
+  project's own VAC research found the closest real precedent for a proxy-DLL that
+  manipulates gameplay state beyond input remapping (ENB) has actual documented ban
+  history. See `re_notes/known_issues.md` issues #15/#16 and #33.
 - **A real, native controller-options menu (task #23) is in active development, not
   yet shippable.** A working mechanism to inject custom menu content into the game's
   own real menu system was built and confirmed live for simple content, but real
@@ -667,10 +675,10 @@ detail in `re_notes/known_issues.md` issue #25.
 > **⚠️ Do not use this project with Plutonium multiplayer.** Plutonium's anti-cheat is
 > confirmed (from its own documentation) to ban DLL injection and memory access —
 > a 7-day ban on first offense, permanent after. This project's entire architecture
-> (a proxy `d3d9.dll`, function hooking, and memory-read-based aim assist) is
-> exactly what that system is built to catch, regardless of the project being
-> input-only rather than a gameplay cheat. This is a real, confirmed risk, not a
-> theoretical one — see `re_notes/known_issues.md` issue #25 for the evidence.
+> (a proxy `d3d9.dll` and function hooking) is exactly what that system is built to
+> catch, regardless of the project being input-only rather than a gameplay cheat.
+> This is a real, confirmed risk, not a theoretical one — see
+> `re_notes/known_issues.md` issue #25 for the evidence.
 
 ---
 

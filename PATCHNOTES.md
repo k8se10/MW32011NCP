@@ -8,7 +8,54 @@ reverse-engineering trail behind each entry.
 
 ## Unreleased
 
+---
+
+## v0.2.2 — Alpha (2026-07-20) — Risk-mitigation release
+
+**This release exists for one reason: aim assist has been permanently removed,
+not just disabled.** No player-facing feature changes otherwise beyond v0.2.1.
+Deep reverse-engineering this session into VAC and a separate, previously-unknown
+Demonware anti-cheat system (`bdAntiCheat`, found compiled into both `iw5sp.exe`
+and `iw5mp.exe`) converged on one decisive, sobering finding: the real
+distinguishing factor in real-world anti-cheat ban risk for a proxy-`d3d9.dll`
+project isn't the loading technique, it's the DEPTH of what the proxy actually
+does once loaded. ReShade-style visual-only proxies have an essentially clean
+ban record; ENB-style proxies that "go deeper" into gameplay/system state carry
+real, documented ban history. This project's own aim-assist feature — reading
+live entity/target data out of process memory to adjust aim — sits in that
+riskier ENB-like category regardless of how console-authentic the intent was,
+and unlike this project's core input-remapping work (movement/look/buttons,
+which only writes real input values into real input structures and never reads
+gameplay-entity memory), there was no way to make aim assist safer without
+changing what it fundamentally is. Cut entirely rather than reworked. Full
+research trail in `re_notes/known_issues.md` issue #33.
+
+**⚠️ If you're on v0.2.1 or earlier**: those builds shipped with the aim-assist
+code compiled into the DLL, disabled by default but present in the binary.
+Whether that presence alone meaningfully raised VAC exposure over this release
+is **not confirmed — no ban has been reported — but is genuinely suspected
+enough that upgrading to v0.2.2 or later is recommended.** Treat this as a real,
+disclosed risk, not a confirmed incident.
+
+### Removed
+- **Aim assist (rotational friction + magnetism target correction) — permanently
+  deleted, source and config both.** Was never shipped functional (broken target
+  classification, disabled by default since v0.1.2) and is now gone entirely
+  rather than fixed — see the risk-mitigation reasoning above. Removed:
+  `analog_input_hooks.cpp`'s entire aim-assist implementation (entity array
+  reads, target classification, friction/magnetism math) and its call site in
+  `InjectControllerLookAngles`; `mod_config.h`/`.cpp`'s `[AimAssist]` section
+  (`Enabled`/`Range`/`ConeDegrees`/`FrictionStrength`/`MagnetismDegreesPerSecond`)
+  and all INI read/write/log support. An existing `mw3ncp_config.ini` with a
+  leftover `[AimAssist]` section is harmless — those keys are simply no longer
+  read.
+
 ### Docs
+- Added a prominent security notice to `README.md`'s top and status banner
+  covering the above, and corrected every aim-assist reference throughout the
+  file (Status at a glance, Scorecard, Feature List, config table, Known
+  Limitations, the Plutonium warning) to reflect permanent removal rather than
+  "disabled/non-functional."
 - Added `nexus/` — the source-of-truth for this project's Nexus Mods page
   (summary, BBCode description, BBCode changelog, page metadata), kept
   alongside `README.md`/`PATCHNOTES.md` so the Nexus listing can't quietly

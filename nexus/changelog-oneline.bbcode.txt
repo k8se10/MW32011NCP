@@ -1,3 +1,4 @@
+[b]v0.2.2[/b] (2026-07-20) — Risk-mitigation release: aim assist permanently removed (not just disabled) following anti-cheat risk research; updating from v0.2.1 or earlier is recommended.
 [b]v0.2.1[/b] (2026-07-20) — Added a console-accurate look acceleration ramp; Hold Breath (L3 while ADS'd) is now fully working as genuine native input.
 [b]v0.2.0[/b] (2026-07-19) — Sprint now drives its real native kbutton (no custom timer needed); 3 of 4 Survival killstreaks confirmed working; menu navigation extended to the main menu/title screen.
 [b]v0.1.3[/b] (2026-07-17) — Real D-pad/A menu navigation confirmed working live (main menu, pause menu, options screens).

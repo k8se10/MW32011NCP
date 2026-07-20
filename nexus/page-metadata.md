@@ -54,3 +54,7 @@ distribution points, less to keep in sync.
 - Whether Nexus requires separate disclosure of the anti-cheat risk (Plutonium
   ban warning) in a dedicated warning field vs. just in the description body —
   check the current page-creation flow, this may have a dedicated UI element.
+- The pre-v0.2.2 VAC-exposure warning (see `description.bbcode.txt`'s top-of-page
+  callout) is a separate disclosure from the Plutonium ban warning above — both
+  should stay visible on the page, don't let an edit to one accidentally drop
+  the other.

@@ -108,16 +108,14 @@ struct ModConfig
     StickLayout stickLayout = StickLayout::Default;
     bool flipTriggers = false; // independent toggle: swaps RT<->RB and LT<->LB
 
-    // [AimAssist] (task #16) -- our own implementation, not the native chain (that
-    // turned out to be shared bot-aiming math, not a player-facing feature -- see
-    // re_notes/iw5sp.md). Built from real entity data (position, a live-traced
-    // type/state byte) plus our own targeting/curve math, applied directly onto the
-    // same kPitchAccum/kYawAccum globals our own look injection already writes.
-    bool aimAssistEnabled = false;
-    float aimAssistRange = 1200.0f;         // max world-unit distance to consider a target
-    float aimAssistConeDegrees = 6.0f;      // half-angle of the "near crosshair" cone
-    float aimAssistFrictionStrength = 0.6f; // 0 = no slowdown near a target, 1 = strongest
-    float aimAssistMagnetismDegreesPerSecond = 40.0f; // max pull-toward-target rate
+    // Aim assist (task #16) permanently removed 2026-07-20 -- see
+    // re_notes/known_issues.md issue #15/#16 for why: reading live entity/target data
+    // out of process memory to adjust aim is mechanically identical to a soft-aimbot
+    // regardless of intent, and this project's own VAC research found the closest real
+    // precedent for a proxy-DLL that manipulates gameplay state beyond pure input
+    // remapping (ENB, vs. ReShade's visual-only clean record) has actual documented
+    // ban history. Cut entirely rather than left disabled-by-default, since the goal
+    // is removing the risk surface, not just defaulting it off.
 
     // [Vibration] (task #17, 2026-07-18) -- no native rumble infrastructure exists in
     // this build at all (confirmed zero-hit string search for "rumble"/"vibrat"/

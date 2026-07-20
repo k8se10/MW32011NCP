@@ -1,3 +1,9 @@
+[b][size=4]v0.2.2 — Alpha (2026-07-20) — Risk-mitigation release[/size][/b]
+
+[color=#F39C12]⚠ Recommended update for anyone on v0.2.1 or earlier.[/color] [b]Aim assist has been permanently removed[/b] — not just disabled, the code is deleted entirely. Deep anti-cheat research found the closest real precedent for a proxy-DLL project that reads/manipulates gameplay memory beyond pure input remapping (ENB) has actual documented ban history, unlike this project's core input-remapping work, which is architecturally closer to ReShade's clean track record (never reads gameplay memory, only writes real values into real input structures). Whether earlier builds' mere presence of aim-assist code raised VAC exposure is not confirmed — no ban has been reported — but is genuinely suspected enough to warrant this release. No other player-facing changes.
+
+[hr]
+
 [b][size=4]v0.2.1 — Alpha (2026-07-20)[/size][/b]
 
 Two headline items, both confirmed live. [b]Look acceleration ramp[/b]: added a console-accurate turn-rate ramp (33ms, tied to this old engine's own locked 30fps tick — live-tested against many values before landing on the right one, not a guess). [b]Hold Breath[/b] (L3 while ADS'd on a sniper) is now [b]fully working[/b] — fixed after an extensive live-debugging pass that ended by isolating a single stuck engine-struct byte; now genuinely native input, no key-synthesis needed.
