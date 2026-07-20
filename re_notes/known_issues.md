@@ -1381,16 +1381,64 @@ intercept/append zone-queue entries before IT calls the unsafe thunk; or
 (2) one-time-debugger the real resolved target address out of `EAX` at
 `004ca315` (what the thunk actually jumps to after its relocation math) and
 hook THAT real function directly instead of the thunk. **A follow-up
-research fork (same day) is now evaluating option (1) in more depth for the
-real controller-options-menu work (issue #23) — see that section for the
-concrete next-implementation plan once it lands.**
+research fork (same day) evaluated option (1) in more depth for the real
+controller-options-menu work — see issue #23 below for the refined,
+implementation-ready plan.**
+
+**REFINED, implementation-ready (2026-07-20, follow-up research fork) —
+the exact mechanism is more specific than "return-address-sensitive," and
+this changes the recommended fix.** Decompiled `FUN_00679680` cleanly via
+headless Ghidra (existing `MW3.gpr` project). `FUN_004ca310` is a textbook
+**MSVC incremental-link thunk (ILT) that self-patches its own caller's call
+site**: `FUN_00463430` resolves the real function's absolute address
+(`&DAT_008501e8 + DAT_008501e8`, an RVA-recovery pattern), computes a
+relative displacement from the actual return address on the stack, then
+writes that 4-byte displacement directly into the 5-byte `CALL`
+instruction sitting just before the return address — i.e. it rewrites the
+CALLER's own `CALL 0x004ca310` into `CALL <real_function>` in place, so
+future executions of that exact call site skip the thunk entirely
+(standard ILT behavior for faster incremental rebuilds). **This is exactly
+why hooking it crashes**: when MinHook's trampoline calls the thunk, the
+return address points into trampoline-allocated memory, not a real 5-byte
+`CALL` site — the thunk then "patches" 5 bytes of essentially arbitrary
+memory. This risk applies to ANY new call site, not just a MinHook
+trampoline — a plain wrapper function calling the thunk directly would
+corrupt memory the same way.
+
+**Recommendation, refined to a safer variant of option (2) above**: don't
+touch the thunk OR any of its call sites at all. By the time this
+project's own hooks install, the engine's own natural boot sequence has
+already called the thunk from its real call sites at least once, which
+means `DAT_008501e8` (the RVA-recovery data slot) is already resolved and
+stable. Plan: hook `FUN_00679680` itself (confirmed safe — ordinary
+prologue, no thunk involved), let the ORIGINAL run completely unmodified
+via the trampoline (its own internal thunk calls execute exactly as the
+game intends, safely, since nothing about THAT invocation changes), then
+AFTER it returns, in this project's own detour code, read
+`&DAT_008501e8 + *(int*)&DAT_008501e8` directly to get the already-resolved
+real function address, and call THAT function directly with an extra
+`{ourZoneName, type, 0}` entry appended — a plain call to an
+already-patched, non-thunk function, carrying none of the self-modification
+risk. **One live check needed before implementing** (no game-state risk):
+confirm `DAT_008501e8` is non-zero/stable by the time `d3d9.dll`'s hooks
+install — a single log-and-read.
+
+**Zone-queue entry format corrected**: `{zoneNamePtr, type, 0}` where
+`type` is `0`, `1`, or `2` (a zone-category tag: 0=core, 1=optional,
+2=procedurally-named) — NOT `{name, 4, 0}` as the original 2026-07-18 plan
+assumed; that guess was wrong, confirmed via `FUN_00679680`'s actual
+decompiled body, which typically leaves 2-5 of its 10 array slots unused.
 
 ---
 
 ## 23. Real controller options menu — native zone/menu injection, blocked on a real architectural limit (2026-07-17)
 
 **Status:** Open, in progress. Task #23. Full technical trail in `iw5sp.md`'s "Real
-controller options menu" section — this is a summary.
+controller options menu" section — this is a summary. **The blocker below is now
+resolved to an implementation-ready plan — see the "REFINED, implementation-ready
+(2026-07-20...)" entry near the end of the "## 22..." boot-splice discussion further
+up this file (search for `FUN_00679680`) for the concrete, corrected injection
+approach and zone-queue entry format.**
 
 **Goal:** a real controller-options screen integrated into normal in-game Options
 navigation (not a special-combo popup), via injecting a compiled `.menu` asset
