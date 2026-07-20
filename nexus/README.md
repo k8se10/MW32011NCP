@@ -16,7 +16,8 @@ needed. Character counts are noted where Nexus enforces a limit.
 | `description.bbcode.txt` | "Description" (main page body) | BBCode. No hard length limit, but keep it scannable. |
 | `changelog.bbcode.txt` | "Changelog" tab (full, per-version paragraph summaries) | BBCode. Condensed from `PATCHNOTES.md` — link there for full detail rather than reproducing everything. |
 | `changelog-oneline.bbcode.txt` | Per-file-upload "changelog" box (the short one shown when uploading a new file version, not the page's own Changelog tab) | BBCode. One line per version — same content as `changelog.bbcode.txt`, just compressed for the field that doesn't fit a paragraph. |
-| `page-metadata.md` | Category / tags / requirements / permissions / install-instructions fields | Plain Markdown (internal reference only, Nexus has no single free-text field for most of this — it's separate form fields/dropdowns when actually creating the page). |
+| `credits.bbcode.txt` | "Credits" field (Permissions/Credits tab) | BBCode. Author line, bundled-library credits (MinHook/HDE), special thanks, license pointer. |
+| `page-metadata.md` | Category / tags / requirements / install-instructions fields | Plain Markdown (internal reference only, Nexus has no single free-text field for most of this — it's separate form fields/dropdowns when actually creating the page). |
 | `zip-description.txt` | The per-file "Description" box shown next to each uploaded archive on the Files tab | Plain text. Describes what's IN that specific archive (currently the same contents as the GitHub release zip) — update the version number whenever a new archive is uploaded. |
 
 **Update checklist for every release** (mirrors the `PATCHNOTES.md` version-bump habit):

@@ -22,19 +22,17 @@ work-in-progress status)
 No other mods required. Does not modify any base game file on disk — the DLL is
 the entire install.
 
-## Permissions / credits template
-- **Uploaded by**: (Nexus account name)
-- **Original author**: same
-- **This mod bundles**: [MinHook](https://github.com/TsudaKageyu/minhook)
-  (Copyright © 2009–2017 Tsuda Kageyu, BSD 2-Clause-style license) and the
-  Hacker Disassembler Engine (HDE) 32/64 C it bundles, same license style.
-- **Permissions**: source is free to use/modify/fork; the project's own custom
-  license (see `LICENSE` in the source repo) forbids selling or charging for this
-  project or any derivative — it must stay free. Full license text should be
-  linked/quoted on the Nexus page's own permissions tab, not just implied.
-- **This does NOT meet Nexus's usual "ask permission before reuploading" norms
-  automatically** — the no-charge restriction is the one hard rule; otherwise
-  forking/modifying is explicitly welcomed (see `CONTRIBUTING.md`).
+## Permissions / credits
+Full ready-to-paste text is in `credits.bbcode.txt` (Nexus's "Credits" field) —
+don't duplicate it here, update that file instead. Summary of the permissions
+logic behind it: source is free to use/modify/fork; the project's own custom
+license (see `LICENSE` in the source repo) forbids selling or charging for this
+project or any derivative — it must stay free, otherwise forking/modifying is
+explicitly welcomed (see `CONTRIBUTING.md`). This does NOT meet Nexus's usual
+"ask permission before reuploading" norms automatically — the no-charge
+restriction is the one hard rule, nothing else needs asking. Full license text
+should also be linked/quoted on the Nexus page's own dedicated Permissions tab
+if one exists separately from the free-text Credits field.
 
 ## Install instructions (short form, mirrors `description.bbcode.txt`)
 1. Extract `d3d9.dll` into the MW3 install folder (same folder as `iw5sp.exe`).
