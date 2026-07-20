@@ -3676,10 +3676,13 @@ at all.
 
 ---
 
-## 32. Console look input likely had a real acceleration ramp — this project's look currently has none (2026-07-19, web research, IMPLEMENTED same day)
+## 32. Console look input likely had a real acceleration ramp — this project's look currently has none (2026-07-19, web research, IMPLEMENTED same day) — RESOLVED 2026-07-20
 
-**Status:** Implemented, set as the active default for live playtest confirmation.
-Builds clean (0 warnings/0 errors). Not yet live-tested.
+**Status:** CLOSED. Implemented 2026-07-19, first shipped at a 200ms default
+(matching external research), then live-tested against real hardware across many
+values and corrected to **33ms (one 30fps engine frame)** — confirmed live as the
+right feel and now the permanent shipped default. See the final entry below for
+the full correction.
 
 This project's controller look (`InjectControllerLookAngles`, writes directly to the
 pitch/yaw angle-delta accumulator, see the big comment above that function) is a flat
