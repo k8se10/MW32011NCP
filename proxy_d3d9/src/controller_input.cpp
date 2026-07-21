@@ -104,6 +104,14 @@ bool Controller_GetRawButtonsAndTriggers(unsigned short& buttons, unsigned char&
     return true;
 }
 
+bool Controller_IsConnected()
+{
+    EnsureLoaded();
+    if (!g_XInputGetState) return false;
+    XINPUT_STATE state{};
+    return g_XInputGetState(0, &state) == ERROR_SUCCESS;
+}
+
 void Controller_SetVibration(float leftMotor, float rightMotor)
 {
     EnsureLoaded();

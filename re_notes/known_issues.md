@@ -5010,6 +5010,75 @@ have (this pass didn't change what those 3 callers pass, only how the OTHER call
 handled, so this should already have been working for them — worth confirming
 directly rather than assumed).
 
+**Glyph-substitution groundwork ADDED 2026-07-21, OFF by default, independent of the
+font-loading work** (task #6, parallel to the safe-loading investigation in issue
+#23): built the other half of the button-glyph feature — the actual key-name-text →
+glyph-codepoint substitution logic in `BindResolverLogAfterCall`, plus a new
+`GlyphStyle` config option (`mod_config.h`/`.cpp`, same enum/INI pattern as
+`ButtonLayout`/`StickLayout`; values `Xbox360`/`XboxModern`/`PlayStation`, matching
+`assets/button_glyphs/`'s own real file-prefix convention exactly) so a player can
+pick their preferred icon look independent of physical controller brand (XInput can't
+tell them apart on Windows). New `[Experimental] BindResolverGlyphSubstitution`
+toggle, **default `0`, deliberately**: no font asset the running game can currently
+load renders these codepoints (issue #23's safe-loading problem is still open), so
+turning this on today would replace readable key-name text with missing-glyph boxes,
+a regression not an improvement.
+
+**Design, four stages** (`analog_input_hooks.cpp`, right before
+`BindResolverLogAfterCall`): (1) a real key-name string (e.g. `"MOUSE1"`, `"SHIFT"`,
+`"F"`) → a `LogicalAction` enum mirroring `ButtonMap`'s own fields, sourced directly
+from this project's own RE-confirmed real default keyboard binds
+(`players2/config.cfg`, tabulated in `iw5sp.md`'s "Button mapping" section — NOT
+guessed) — covers `MOUSE1`→Fire, `MOUSE2`→Ads, `G`→Lethal, `Q`→Tactical, `F`/`R`→
+ReloadUse (both real keys resolve to the SAME `PhysicalInput`, since this project's
+own X handles interact-vs-reload via hold/tap), `1`/`2`→WeaponSwitch, `SPACE`→Jump,
+`CTRL`→CrouchProne, `SHIFT`→Sprint, `E`→Melee, `ESCAPE`→Pause, `TAB`→Scoreboard, plus a
+separate fixed D-pad-direction table (`N`/`5`/`3`/`4` → Up/Right/Down/Left,
+preserving the real, already-documented `5`→slot-2-not-slot-5 quirk). (2)
+`LogicalAction` → `PhysicalInput` via the EXISTING `g_buttonMap` (already correctly
+resolved per the player's real `ButtonLayout`/`FlipTriggers`) — reused rather than
+re-implementing layout logic. (3) `PhysicalInput` + `GlyphStyle` → a real glyph asset
+name, restricted to files that actually exist in `assets/button_glyphs/` — a missing
+combination returns empty/false rather than guessing. **Real gap found and left
+unmapped, not papered over**: the Xbox360 asset set has no left-stick-click/right-
+stick-click icons at all (only `xboxmodern_ls`/`_rs` and `ps_l3`/`_r3` exist) — Sprint
+(LS) and Melee (RS) have no Xbox360-style glyph, so that specific (key, style)
+combination correctly falls through to "no substitution available." (4) glyph asset
+name → a single-byte codepoint, via a table of PROVISIONAL placeholder values
+(sequential unused extended-ASCII bytes, `0x82`-`0xA9`, deliberately skipping `0x81`
+since that's already spoken for by the existing `InjectFontGlyphPatchTest` mechanism
+test) — only one codepoint has ever actually gone through the real font-build
+pipeline so far, so there is no finalized scheme yet; whoever finishes issue #23's
+font-loading work should reconcile these against whatever the shipped font actually
+assigns, not assume this table is already authoritative.
+
+**Substitution mechanics**: runs on every real hint-resolution call (not gated by the
+existing log-dedup check, since the real hint is re-resolved every frame it's on
+screen and needs the substitution every time, not just on frames this function
+happens to log), gated on its own config flag + `Controller_IsConnected()` (new,
+small helper added to `controller_input.h`/`.cpp` — no such "is a controller active"
+flag existed anywhere in this codebase before, confirmed by checking) + the resolved
+text being at least 1 character with a real mapping. **Safety invariant**: only ever
+writes 2 bytes (codepoint + null terminator) into the real output buffer — since a
+real single-key resolution is never an empty string, this can never exceed whatever
+the trampoline's own just-completed write already used in that exact buffer, without
+needing to know its real allocated size; combo binds (`"%s KEY_OR %s"`) are naturally
+excluded since the lookup only matches single, exact key names. Wrapped in
+`__try`/`__except` around the write itself, same paranoid-but-correct pattern as
+every other real-memory touch in this file. **Refactored the surrounding function
+along the way** (necessary, not scope creep): the old code returned immediately if
+`bindResolverHookLogging` was off, which would have also silently blocked
+substitution from ever running whenever logging was disabled — the two toggles are
+supposed to be independent, so the early-return was moved to only gate the actual
+`LogFromController` calls, not the substitution logic itself.
+
+Builds clean (0 warnings/0 errors, full rebuild, MSBuild Win32/Release). **Not
+live-tested** — no game-automation tool available, and the feature is off by default
+regardless, so there's nothing to observe live yet even if it were tested. This is
+pure preparatory groundwork, ready to enable the moment issue #23's font-loading
+problem is solved and the correct render font is confirmed (a separate, parallel
+thread this session).
+
 ---
 
 ## 36. Local splitscreen co-op — user roadmap idea, NOT YET INVESTIGATED (2026-07-21)

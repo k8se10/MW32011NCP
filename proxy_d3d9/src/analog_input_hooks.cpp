@@ -3652,6 +3652,252 @@ constexpr uintptr_t kMenuBindKeyCaptureCallerRetAddr = 0x006229AC;
 bool g_loggedMenuBindKeyCaptureCallerOnce = false;
 }
 
+// ---- Bind-resolver glyph substitution mapping (task #6/#35, 2026-07-21) -----------
+//
+// Maps a real resolved KEY-NAME string (what FUN_0061f6f0's real trampoline already
+// wrote into the output buffer, e.g. "MOUSE1", "SHIFT", "F") to a controller-glyph
+// codepoint, so a hint like "Press F to interact" can eventually read as a real
+// button icon for a controller player. Built and callable now; NOT wired to mutate
+// anything unless g_modConfig.bindResolverGlyphSubstitution is explicitly turned on
+// (default off, see that field's own comment in mod_config.h for why -- no font asset
+// the running game can load yet actually renders these codepoints). Four-stage design:
+//
+//   1. key-name string -> LogicalAction (or a fixed D-pad direction) -- sourced
+//      directly from this project's own RE-confirmed real default keyboard binds
+//      (players2/config.cfg, tabulated in re_notes/iw5sp.md's "Button mapping --
+//      approach change and real bind data" section), not guessed or re-derived here.
+//   2. LogicalAction -> PhysicalInput, via the EXISTING g_buttonMap (mod_config.h/.cpp)
+//      -- already correctly resolved per the player's real ButtonLayout/FlipTriggers
+//      choice, reused here instead of re-implementing layout logic. D-pad directions
+//      are fixed physical directions in this project's own scheme (not part of
+//      ButtonMap, not remapped by any layout), so they skip this step entirely.
+//   3. PhysicalInput (or D-pad direction) + the player's configured GlyphStyle -> an
+//      actual glyph asset name, restricted to real files that exist in
+//      assets/button_glyphs/ -- an unavailable combination is left unmapped (returns
+//      false), never guessed/invented.
+//   4. glyph asset name -> a single-byte codepoint. PROVISIONAL: only one codepoint
+//      (0x81) has ever actually gone through the real font-build pipeline so far (a
+//      single borrowed-UV test glyph, see re_notes/ui_assets.md's font-pipeline
+//      sections) -- there is no finalized codepoint scheme yet. This table assigns
+//      easy-to-change placeholder codepoints (sequential unused extended-ASCII bytes,
+//      deliberately skipping 0x81) so the substitution LOGIC can be complete and
+//      testable now; whoever finishes the real font-loading work (known_issues.md
+//      issue #23) should reconcile these against whatever the actual shipped font
+//      assigns, not assume this table is already authoritative.
+//
+// KNOWN GAP, not papered over: assets/button_glyphs/'s Xbox360 set has no left-stick-
+// click/right-stick-click icons at all (only xboxmodern_ls/_rs and ps_l3/_r3 exist) --
+// Sprint (LS) and Melee (RS) have no real Xbox360-style glyph asset. Left unmapped for
+// that one style rather than substituting a wrong/placeholder icon.
+namespace {
+
+// Mirrors ButtonMap's own fields (mod_config.h) -- one entry per logical action this
+// project's controller scheme actually assigns a PhysicalInput to. Deliberately NOT
+// using PhysicalInput directly as the key-name table's value type, since several real
+// keyboard keys map to the same PhysicalInput (e.g. F="+activate" and R="+reload" both
+// resolve to this project's own reloadUse=X, which handles both via hold/tap) and
+// this project's rebind-aware ButtonMap is the single source of truth for the actual
+// PhysicalInput, not this table.
+enum class LogicalAction {
+    Fire, Ads, Lethal, Tactical, ReloadUse, WeaponSwitch, Jump, CrouchProne, Sprint, Melee, Pause, Scoreboard
+};
+
+enum class DpadDirection { Up, Down, Left, Right };
+
+PhysicalInput PhysicalInputForAction(LogicalAction action)
+{
+    switch (action) {
+        case LogicalAction::Fire: return g_buttonMap.fire;
+        case LogicalAction::Ads: return g_buttonMap.ads;
+        case LogicalAction::Lethal: return g_buttonMap.lethal;
+        case LogicalAction::Tactical: return g_buttonMap.tactical;
+        case LogicalAction::ReloadUse: return g_buttonMap.reloadUse;
+        case LogicalAction::WeaponSwitch: return g_buttonMap.weaponSwitch;
+        case LogicalAction::Jump: return g_buttonMap.jump;
+        case LogicalAction::CrouchProne: return g_buttonMap.crouchProne;
+        case LogicalAction::Sprint: return g_buttonMap.sprint;
+        case LogicalAction::Melee: return g_buttonMap.melee;
+        case LogicalAction::Pause: return g_buttonMap.pause;
+        default: return g_buttonMap.scoreboard;
+    }
+}
+
+// Real key-name -> LogicalAction, sourced directly from players2/config.cfg's real
+// default binds (re_notes/iw5sp.md, "Button mapping" section). weapnext/togglemenu/
+// toggleprone are real one-shot console commands, not kbutton binds (per that same
+// research), but their BOUND KEYS are still real and the hint-resolver would still
+// resolve their key names, so they're included here.
+struct KeyActionEntry { const char* keyName; LogicalAction action; };
+constexpr KeyActionEntry kKeyActionTable[] = {
+    { "MOUSE1", LogicalAction::Fire },     // bind MOUSE1 "+attack"
+    { "MOUSE2", LogicalAction::Ads },      // bind MOUSE2 "+toggleads_throw"
+    { "G", LogicalAction::Lethal },        // bind G "+frag"
+    { "Q", LogicalAction::Tactical },      // bind Q "+smoke"
+    { "F", LogicalAction::ReloadUse },     // bind F "+activate"
+    { "R", LogicalAction::ReloadUse },     // bind R "+reload" -- same PhysicalInput as F
+    { "1", LogicalAction::WeaponSwitch },  // bind 1 "weapnext"
+    { "2", LogicalAction::WeaponSwitch },  // bind 2 "weapnext"
+    { "SPACE", LogicalAction::Jump },      // bind SPACE "+gostand"
+    { "CTRL", LogicalAction::CrouchProne },// bind CTRL "toggleprone"
+    { "SHIFT", LogicalAction::Sprint },    // bind SHIFT "+breath_sprint"
+    { "E", LogicalAction::Melee },         // bind E "+melee_zoom"
+    { "ESCAPE", LogicalAction::Pause },    // bind ESCAPE "togglemenu"
+    { "TAB", LogicalAction::Scoreboard },  // bind TAB "+scores"
+};
+
+// Real key-name -> fixed D-pad direction (+actionslot 1-4). Not part of ButtonMap --
+// this project's D-pad slot assignment is a fixed physical mapping, not layout-
+// dependent. Real quirk, already documented elsewhere in this project: key "5" binds
+// +actionslot 2, NOT slot 5 -- kept exactly as the real config.cfg has it.
+struct KeyDpadEntry { const char* keyName; DpadDirection dir; };
+constexpr KeyDpadEntry kKeyDpadTable[] = {
+    { "N", DpadDirection::Up },     // bind N "+actionslot 1"
+    { "5", DpadDirection::Right },  // bind 5 "+actionslot 2" (real quirk, not slot 5)
+    { "3", DpadDirection::Down },   // bind 3 "+actionslot 3"
+    { "4", DpadDirection::Left },   // bind 4 "+actionslot 4"
+};
+
+// PhysicalInput/GlyphStyle -> real glyph asset name (assets/button_glyphs/*.png,
+// already extracted/committed). Empty string means no real asset exists for that
+// combination -- checked explicitly by the caller, never falls back to a guess.
+const char* GlyphAssetName(PhysicalInput input, GlyphStyle style)
+{
+    switch (style) {
+        case GlyphStyle::Xbox360:
+            switch (input) {
+                case PhysicalInput::RT: return "xbox360_rt";
+                case PhysicalInput::LT: return "xbox360_lt";
+                case PhysicalInput::RB: return "xbox360_rb";
+                case PhysicalInput::LB: return "xbox360_lb";
+                case PhysicalInput::X: return "xbox360_x";
+                case PhysicalInput::Y: return "xbox360_y";
+                case PhysicalInput::A: return "xbox360_a";
+                case PhysicalInput::B: return "xbox360_b";
+                case PhysicalInput::Start: return "xbox360_start";
+                case PhysicalInput::Back: return "xbox360_back";
+                // KNOWN GAP (see the big comment above this whole section): no
+                // xbox360_ls/xbox360_rs asset exists -- Sprint/Melee unmapped here.
+                default: return "";
+            }
+        case GlyphStyle::XboxModern:
+            switch (input) {
+                case PhysicalInput::RT: return "xboxmodern_rt";
+                case PhysicalInput::LT: return "xboxmodern_lt";
+                case PhysicalInput::RB: return "xboxmodern_rb";
+                case PhysicalInput::LB: return "xboxmodern_lb";
+                case PhysicalInput::X: return "xboxmodern_x";
+                case PhysicalInput::Y: return "xboxmodern_y";
+                case PhysicalInput::A: return "xboxmodern_a";
+                case PhysicalInput::B: return "xboxmodern_b";
+                case PhysicalInput::Start: return "xboxmodern_menu"; // Xbox One/Series
+                                                                       // renamed Start->Menu
+                case PhysicalInput::Back: return "xboxmodern_view";  // ...and Back->View
+                case PhysicalInput::LS: return "xboxmodern_ls";
+                case PhysicalInput::RS: return "xboxmodern_rs";
+                default: return "";
+            }
+        case GlyphStyle::PlayStation:
+            switch (input) {
+                case PhysicalInput::RT: return "ps_r2";
+                case PhysicalInput::LT: return "ps_l2";
+                case PhysicalInput::RB: return "ps_r1";
+                case PhysicalInput::LB: return "ps_l1";
+                case PhysicalInput::X: return "ps_square";
+                case PhysicalInput::Y: return "ps_triangle";
+                case PhysicalInput::A: return "ps_cross";
+                case PhysicalInput::B: return "ps_circle";
+                case PhysicalInput::Start: return "ps_options";
+                case PhysicalInput::Back: return "ps_create";
+                case PhysicalInput::LS: return "ps_l3";
+                case PhysicalInput::RS: return "ps_r3";
+                default: return "";
+            }
+    }
+    return "";
+}
+
+const char* DpadGlyphAssetName(DpadDirection dir)
+{
+    // Universal, brand-independent assets -- same file regardless of GlyphStyle (see
+    // ui_assets.md's "Row 4 -- universal" note).
+    switch (dir) {
+        case DpadDirection::Up: return "dpad_up";
+        case DpadDirection::Down: return "dpad_down";
+        case DpadDirection::Left: return "dpad_left";
+        case DpadDirection::Right: return "dpad_right";
+    }
+    return "";
+}
+
+// Glyph asset name -> PROVISIONAL single-byte codepoint -- see the big comment above
+// this section for why these are placeholders, not a finalized scheme. Deliberately
+// skips 0x81 (already spoken for by the existing InjectFontGlyphPatchTest mechanism
+// test).
+struct GlyphCodepointEntry { const char* assetName; unsigned char codepoint; };
+constexpr GlyphCodepointEntry kGlyphCodepointTable[] = {
+    { "xbox360_a", 0x82 }, { "xbox360_b", 0x83 }, { "xbox360_x", 0x84 }, { "xbox360_y", 0x85 },
+    { "xbox360_lb", 0x86 }, { "xbox360_rb", 0x87 }, { "xbox360_lt", 0x88 }, { "xbox360_rt", 0x89 },
+    { "xbox360_back", 0x8A }, { "xbox360_start", 0x8B },
+    { "xboxmodern_a", 0x8C }, { "xboxmodern_b", 0x8E }, { "xboxmodern_x", 0x8F }, { "xboxmodern_y", 0x90 },
+    { "xboxmodern_lb", 0x91 }, { "xboxmodern_rb", 0x92 }, { "xboxmodern_lt", 0x93 }, { "xboxmodern_rt", 0x94 },
+    { "xboxmodern_view", 0x95 }, { "xboxmodern_menu", 0x96 }, { "xboxmodern_ls", 0x97 }, { "xboxmodern_rs", 0x98 },
+    { "ps_cross", 0x99 }, { "ps_circle", 0x9A }, { "ps_triangle", 0x9B }, { "ps_square", 0x9C },
+    { "ps_l1", 0x9D }, { "ps_r1", 0x9E }, { "ps_l2", 0x9F }, { "ps_r2", 0xA0 },
+    { "ps_create", 0xA1 }, { "ps_options", 0xA2 }, { "ps_touchpad", 0xA3 }, { "ps_l3", 0xA4 }, { "ps_r3", 0xA5 },
+    { "dpad_up", 0xA6 }, { "dpad_down", 0xA7 }, { "dpad_left", 0xA8 }, { "dpad_right", 0xA9 },
+};
+
+// Small, local-only style-name helper for log lines -- deliberately NOT reusing
+// mod_config.cpp's own GlyphStyleName (that one lives in an anonymous namespace in a
+// different translation unit, not exported, per this project's own module-separation
+// convention of keeping config plumbing and gameplay/UI translation logic apart).
+const char* GlyphStyleLogName(GlyphStyle s)
+{
+    switch (s) {
+        case GlyphStyle::XboxModern: return "XboxModern";
+        case GlyphStyle::PlayStation: return "PlayStation";
+        default: return "Xbox360";
+    }
+}
+
+} // namespace
+
+// Real key-name string (already trimmed/validated by the caller) -> a single-byte
+// substitution codepoint for the CURRENTLY configured GlyphStyle, or false if no
+// mapping/asset exists for this (key, style) pair (e.g. the Xbox360 LS/RS gap, or a
+// key this table simply doesn't cover yet). Pure lookup -- no I/O, no mutation.
+bool TryGetGlyphCodepointForKeyName(const char* keyName, unsigned char& outCodepoint)
+{
+    const char* assetName = nullptr;
+    for (const auto& e : kKeyActionTable) {
+        if (_stricmp(e.keyName, keyName) == 0) {
+            assetName = GlyphAssetName(PhysicalInputForAction(e.action), g_modConfig.glyphStyle);
+            break;
+        }
+    }
+    if (!assetName || assetName[0] == '\0') {
+        for (const auto& e : kKeyDpadTable) {
+            if (_stricmp(e.keyName, keyName) == 0) {
+                assetName = DpadGlyphAssetName(e.dir);
+                break;
+            }
+        }
+    }
+    if (!assetName || assetName[0] == '\0') return false;
+
+    for (const auto& e : kGlyphCodepointTable) {
+        if (strcmp(e.assetName, assetName) == 0) {
+            outCodepoint = e.codepoint;
+            return true;
+        }
+    }
+    // Asset exists but has no codepoint assignment in the table above -- shouldn't
+    // happen given that table is meant to cover every real asset GlyphAssetName()/
+    // DpadGlyphAssetName() can return, but fail closed rather than substitute
+    // garbage if it ever does.
+    return false;
+}
+
 // Logs the resolved bind name + resolved output text after the real trampoline has
 // already run. Deliberately tolerant of EAX/ECX/[esp+8] turning out not to be what
 // static analysis expects -- this project's own research flagged real uncertainty
@@ -3661,17 +3907,15 @@ bool g_loggedMenuBindKeyCaptureCallerOnce = false;
 // InjectAllControllerInput already gets for the same reason.
 extern "C" void __cdecl BindResolverLogAfterCall()
 {
-    if (!g_modConfig.bindResolverHookLogging) return;
-
     // See the big comment above kMenuBindKeyCaptureCallerRetAddr -- this one real
     // caller (FUN_00622970, key-rebind-capture UI) pushes a genuinely different
     // stack-arg shape (buffer at [esp+4], size at [esp+8]) than the 3 hint-
-    // resolution callers this hook is actually meant to observe. Logging its
-    // EAX/ECX/[esp+8] as if they were hint-resolution values is misleading, not
-    // useful -- skip it here (once-logged note, not silent, so this doesn't look
-    // like the hook stopped firing).
+    // resolution callers this function is actually meant to observe/substitute for --
+    // there's no real hint text here to substitute either. Checked and returned FIRST,
+    // ahead of both config toggles below, so this is skipped regardless of either
+    // flag's state.
     if (g_bindResolverRealRetAddr == kMenuBindKeyCaptureCallerRetAddr) {
-        if (!g_loggedMenuBindKeyCaptureCallerOnce) {
+        if (g_modConfig.bindResolverHookLogging && !g_loggedMenuBindKeyCaptureCallerOnce) {
             g_loggedMenuBindKeyCaptureCallerOnce = true;
             LogFromController("[bind-resolver-diag] caller ret=0x006229AC is FUN_00622970 "
                 "(key-rebind-capture UI, confirmed via disassembly -- pushes (bufPtr,bufSize,flag) "
@@ -3679,6 +3923,83 @@ extern "C" void __cdecl BindResolverLogAfterCall()
                 "not logging as hint text, see known_issues.md issue #35");
         }
         return;
+    }
+
+    // Read the resolved text ONCE -- both the substitution step and the logging step
+    // below need it, and neither of their two independent toggles gates this read
+    // (either feature alone might need it regardless of the other's state).
+    char textBuf[128] = {};
+    bool textReadOk = false;
+    if (LooksLikeValidPointer(g_bindResolverBufPtr)) {
+        const char* resolved = reinterpret_cast<const char*>(g_bindResolverBufPtr);
+        __try {
+            size_t i = 0;
+            for (; i < sizeof(textBuf) - 1; ++i) {
+                char c = resolved[i];
+                textBuf[i] = c;
+                if (c == '\0') break;
+            }
+            textBuf[sizeof(textBuf) - 1] = '\0';
+            textReadOk = true;
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            sprintf_s(textBuf, "<faulted reading 0x%08X>", static_cast<unsigned>(g_bindResolverBufPtr));
+        }
+    } else {
+        sprintf_s(textBuf, "<buffer ptr 0x%08X not plausible>", static_cast<unsigned>(g_bindResolverBufPtr));
+    }
+
+    // ---- Glyph substitution (task #6/#35, 2026-07-21) -- gated ONLY by its own
+    // config flag, independent of the logging toggle below. Runs on EVERY call, not
+    // gated by the text-changed check further down, since the real hint is re-
+    // resolved and re-drawn every frame it's on screen and needs the substitution
+    // every time, not just on the frames this function happens to log. See the big
+    // comment above the mapping tables (right before this function) and
+    // g_modConfig.bindResolverGlyphSubstitution's own comment in mod_config.h for why
+    // this is off by default.
+    bool substituted = false;
+    unsigned char substitutedCodepoint = 0;
+    if (g_modConfig.bindResolverGlyphSubstitution && textReadOk && Controller_IsConnected() &&
+        strlen(textBuf) >= 1 && TryGetGlyphCodepointForKeyName(textBuf, substitutedCodepoint))
+    {
+        // Safety invariant: only ever write 2 bytes (codepoint + null terminator),
+        // gated above on the real resolved text being at least 1 character -- true
+        // for every real single-key resolution (a real key name is never an empty
+        // string) -- guaranteeing this can never exceed whatever the real
+        // trampoline's own just-completed write already used in this exact buffer,
+        // without needing to know that buffer's actual allocated size. Combo binds
+        // ("%s KEY_OR %s") are naturally excluded since the lookup only matches
+        // single, exact key names.
+        __try {
+            char* dest = reinterpret_cast<char*>(g_bindResolverBufPtr);
+            dest[0] = static_cast<char>(substitutedCodepoint);
+            dest[1] = '\0';
+            substituted = true;
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            // Buffer read fine but the write faulted -- leave the real text in place
+            // (already unmodified from the trampoline's own write) rather than risk
+            // a partial/garbage write.
+        }
+    }
+
+    // Dedup gate for LOGGING only (covers both the substitution note and the regular
+    // diagnostic line below) -- computed once, against the ORIGINAL resolved text
+    // captured above (before any substitution), so this tracker's behavior doesn't
+    // depend on whether substitution happens to be enabled. Updated regardless of
+    // the logging toggle immediately below, so re-enabling logging later doesn't
+    // re-log a hint that's already been sitting on screen unchanged.
+    bool textChanged = strcmp(textBuf, g_bindResolverLastLoggedText) != 0;
+    if (textChanged) {
+        strncpy_s(g_bindResolverLastLoggedText, textBuf, sizeof(g_bindResolverLastLoggedText) - 1);
+    }
+
+    if (!g_modConfig.bindResolverHookLogging) return;
+    if (!textChanged) return;
+
+    if (substituted) {
+        char subBuf[192];
+        sprintf_s(subBuf, "[bind-resolver-glyph] substituted \"%s\" -> codepoint 0x%02X (glyphStyle=%s)",
+            textBuf, static_cast<unsigned>(substitutedCodepoint), GlyphStyleLogName(g_modConfig.glyphStyle));
+        LogFromController(subBuf);
     }
 
     char ctxBuf[160];
@@ -3710,38 +4031,6 @@ extern "C" void __cdecl BindResolverLogAfterCall()
         sprintf_s(ctxBuf, "EAX(ctx)=0x%08X ECX(bindCtx)=0x%08X (not a plausible pointer)",
             static_cast<unsigned>(g_bindResolverCtxEax), static_cast<unsigned>(g_bindResolverCtxEcx));
     }
-
-    char textBuf[128] = {};
-    if (LooksLikeValidPointer(g_bindResolverBufPtr)) {
-        const char* resolved = reinterpret_cast<const char*>(g_bindResolverBufPtr);
-        __try {
-            size_t i = 0;
-            for (; i < sizeof(textBuf) - 1; ++i) {
-                char c = resolved[i];
-                textBuf[i] = c;
-                if (c == '\0') break;
-            }
-            textBuf[sizeof(textBuf) - 1] = '\0';
-        } __except (EXCEPTION_EXECUTE_HANDLER) {
-            sprintf_s(textBuf, "<faulted reading 0x%08X>", static_cast<unsigned>(g_bindResolverBufPtr));
-        }
-    } else {
-        sprintf_s(textBuf, "<buffer ptr 0x%08X not plausible>", static_cast<unsigned>(g_bindResolverBufPtr));
-    }
-
-    // Dedup: only log when textBuf's CONTENT actually changed since last call, so a
-    // hint sitting on screen (re-resolved every frame while visible) logs once, not
-    // continuously. FIXED 2026-07-21 (known_issues.md issue #35): this previously
-    // gated both the compare AND the update behind `bufReadOk`, so whenever the
-    // buffer pointer looked implausible (bufReadOk == false -- exactly the case that
-    // flooded the log live, before the caller-skip fix above), dedup silently never
-    // engaged at all (the guard short-circuited false, and last-logged never got
-    // updated either) -- every call logged unconditionally. textBuf always holds a
-    // deterministic string by this point (the real resolved text, a faulted-read
-    // marker, or the not-plausible marker), so comparing/updating on it directly,
-    // with no bufReadOk gate, is correct in every case, not just the happy path.
-    if (strcmp(textBuf, g_bindResolverLastLoggedText) == 0) return;
-    strncpy_s(g_bindResolverLastLoggedText, textBuf, sizeof(g_bindResolverLastLoggedText) - 1);
 
     char buf[400];
     sprintf_s(buf, "[bind-resolver-diag] %s | limitTo1=%u resolvedText=\"%s\"",
