@@ -52,6 +52,30 @@ reverse-engineering trail behind each entry.
   assets exist, so Sprint/Melee glyphs are unmapped for that one style).
 
 ### Fixed
+- **hudBigFont glyph-patch mechanism test hardcoded codepoint 0x81, which collided
+  with a real existing glyph and silently never fired (task #6/#34 follow-up).** A
+  live playtest of `InjectFontGlyphPatchTest_HudBigFont` (`LB+RB+B`) logged
+  `"codepoint 0x81 already exists at index 128 -- aborting, nothing to insert"` —
+  unlike `fonts/bigfont`, `fonts/hudBigFont` already has a real glyph at 0x81 (this
+  font has 254 real glyph entries total, likely full extended-Latin coverage for
+  localization), so the insert-and-repoint path never actually ran. The abort-on-
+  collision logic itself was correct and intentional (never clobber a real existing
+  glyph) — the bug was purely a bad hardcoded "surely unused" assumption. Fixed by
+  scanning for a genuinely free codepoint at runtime instead: starting from 0x81, the
+  existing sorted-insertion-point search now also walks a `candidate` codepoint,
+  bumping it past any real entry it collides with, so the first entry greater than
+  the (possibly bumped) candidate both proves it's free and gives the correct
+  insertion index in one pass. Logs now report whichever codepoint was actually
+  chosen instead of a hardcoded reference; if every codepoint from 0x81-0xFF is
+  somehow taken, it logs a clear abort instead of looping forever or writing out of
+  bounds. Also widened the function's log buffer (`char buf[200]` -> `char buf[400]`)
+  since the final "patch applied" message is now built via `sprintf_s` with a runtime
+  value and is long enough (~330 chars) that the old 200-byte buffer would have made
+  `sprintf_s` overflow and abort. Only `InjectFontGlyphPatchTest_HudBigFont` changed
+  — the original `fonts/bigfont` test still hardcodes 0x81, which is fine there since
+  bigfont has no glyph at that codepoint. Builds clean (0 warnings/0 errors); **not
+  yet re-verified live** — this is a code fix awaiting the next playtest. See
+  `re_notes/known_issues.md` issue #34 for the full trail.
 - **Bind-resolver hook (`FUN_0061f6f0`) logged implausible data for one real caller;
   root-caused and fixed (task #6/#35 follow-up).** The live-test above traced to a
   genuine, disassembly-confirmed cause, not a bug in the hook's own register-reading:
