@@ -8,6 +8,22 @@ reverse-engineering trail behind each entry.
 
 ## Unreleased
 
+### Docs
+- **Corrected the button-glyph font-patch test's target-font assumption (task #34).**
+  The 2026-07-18 plan picked `fonts/bigfont` as "the best single guess for menu-title
+  text" for the still-untested LB+RB+A glyph-patch mechanism test. A fresh Ghidra
+  decompile of the real `textfont`-value-to-font selector, cross-checked against a
+  tally of every real `textfont` line across all 512 dumped `.menu` files, proves that
+  guess wrong: the main menu's real title/button text uses smallfont/hudsmallfont, not
+  bigfont. Bigfont is real but is used in only 3 places anywhere in `ui.ff`, all on the
+  brightness-calibration screen, which the game only opens once per player profile
+  ever — not the repeatable, always-visible test vehicle earlier notes assumed. No
+  code behavior changed (the struct-layout diagnostic is font-agnostic and stays
+  targeted at bigfont); added correction comments in `analog_input_hooks.cpp` and a
+  full writeup, including the resolved `textfont` enum table, in
+  `re_notes/ui_assets.md`. The mechanism test still cannot be visually confirmed yet —
+  see `re_notes/known_issues.md` issue #34 for what's still needed.
+
 ---
 
 ## v0.2.2 — Alpha (2026-07-20) — Risk-mitigation release
