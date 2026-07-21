@@ -8,6 +8,24 @@ reverse-engineering trail behind each entry.
 
 ## Unreleased
 
+### Added
+- **Boot-thunk resolution diagnostic** (`analog_input_hooks.cpp`, `Hook_FUN_00679680`),
+  task #23 follow-up toward a real native controller options menu. Read-only,
+  wired live: hooks `FUN_00679680` (a real, ordinary function, confirmed safely
+  trampolineable — not the `FUN_004ca310` incremental-link thunk that crashed the
+  game live in a prior attempt, see `re_notes/known_issues.md` issues #22/#30),
+  lets the original run completely unmodified, then logs (a) the existing plan's
+  `DAT_008501e8`-based formula and (b) a more direct, more reliable reading — the
+  raw bytes at the real `LoadZones` call site itself, decoded as a `CALL rel32` —
+  which reveals whether the engine's own MSVC-incremental-link self-patching
+  behavior has replaced that call site with the true resolved `LoadZones` address.
+  Zero mutation of the zone-loading path itself. Builds clean (0 warnings/0
+  errors, full rebuild); **not yet live-tested** — next launch's `proxy_d3d9.log`
+  will show whether the self-patch theory holds and, if so, the real address a
+  future splice implementation should target directly. See
+  `re_notes/known_issues.md` issue #23 for full detail, including a correction to
+  the existing plan's `DAT_008501e8` formula found while implementing this.
+
 ---
 
 ## v0.2.2 — Alpha (2026-07-20) — Risk-mitigation release
