@@ -1500,6 +1500,31 @@ implementation (appending a `{ourZoneName, type, 0}` entry and calling the
 resolved address directly) is still unstarted, deliberately left for a
 follow-up pass once this diagnostic's reading is confirmed live.
 
+**LIVE-TESTED (2026-07-21), self-patch theory REFUTED at this call site.**
+Full user playtest, `MH_OK` on both create+enable, and the whole rest of the
+session ran completely normally afterward (no boot regression, no gameplay
+disruption — same clean signature as every other confirmed-safe read-only
+diagnostic in this file). The actual reading:
+```
+[boot-thunk-diag] DAT_008501e8 raw=0xFFBAFE18, &DAT_008501e8+val=0x00400000 (NOTE: ... only an intermediate ...)
+[boot-thunk-diag] call site 0x006797BD is CALL rel32, decoded target=0x004CA310 (thunk address for comparison: 0x004ca310)
+[boot-thunk-diag] call site target is UNCHANGED (still points at the thunk)
+```
+The decoded target at `0x006797BD` is still `0x004CA310` — i.e. still the thunk itself,
+not a self-patched real address. **The ILT self-patch theory does not hold for this
+specific call site** (at least not by the time this hook reads it, on this run) — this
+is a genuine negative result, not an implementation bug (the hook fired, read, and
+logged exactly as designed). Reproduced identically across two separate launches this
+session, so it's not a one-off fluke. **Implication for the actual splice work**:
+reading a self-patched call site is not a viable way to recover the real `LoadZones`
+address, at least not via this specific call site — the next real step needs either
+(a) checking whether `FUN_0067a690`/`FUN_00481e50`'s OWN call sites to the thunk
+self-patch instead (each patches independently per the ROOT CAUSE research), or (b) a
+different address-recovery approach entirely (e.g. one-time-debugging the resolved
+value directly out of `FUN_00463430`'s `JMP EAX` at a real breakpoint, per the
+original option (2) in the ROOT CAUSE section above). The real splice-and-call
+implementation remains unstarted.
+
 ---
 
 ## 23. Real controller options menu — native zone/menu injection, blocked on a real architectural limit (2026-07-17)
@@ -4807,3 +4832,32 @@ installs (`MH_OK` in `proxy_d3d9.log`) without regressing boot, (2) real hint te
 displays correctly on screen (proving the trampoline forwarding is transparent), and
 (3) the logged `EAX`/`ECX`/resolved-text lines look sane against what's actually
 displayed.
+
+**LIVE-TESTED (2026-07-21), partial pass — safe but the captured data isn't usable
+yet.** Full user playtest with this build: `MH_OK` on both create+enable, and the rest
+of the session ran completely normally afterward (`stance-diag` heartbeats every
+~500ms, fire-press/release, `missile-guidance-diag`, `hold-breath-diag-v2`, `ads-fov-diag`
+all continuing exactly like every known-good log, no detach, no gap) — confirms (1) and
+(2) above: the hook doesn't regress boot or gameplay, and real hint-text resolution
+stays transparent (the trampoline forwarding works). **(3) fails**: the hook fired
+twice during play (two bursts of ~11-40 calls each, so it's genuinely being exercised,
+not dead code), but every capture read as implausible:
+```
+[bind-resolver-diag] EAX(ctx)=0x0084E2DC ECX(bindCtx)=0x00000000 (not a plausible pointer) | limitTo1=0 resolvedText="<buffer ptr 0x00000100 not plausible>"
+```
+`ECX` reads as a flat `0`, and the `[esp+8]` output-buffer pointer reads as `0x100` —
+neither is plausible under the documented calling convention (`ECX`=bind-name context,
+`[esp+8]`=real output buffer). `EAX` itself looks like a real, plausible pointer and
+differs sensibly between the two bursts (`0x0084E2DC` vs `0x0082A6E4`), so the shim is
+clearly executing and reading SOMETHING real — just not what this convention predicts
+for `ECX`/`[esp+8]`. Two live candidate explanations, not yet distinguished: (a) this
+specific call site is the 4th, previously-undocumented caller flagged in the
+2026-07-18 fork research (`FUN_00622970`, suspected key-rebind-capture UI shape) which
+may not conform to the same register convention as the 3 known hint-resolution
+callers; or (b) a real bug in the shim's own register-stash timing/offsets. **Also
+found**: the per-change dedup did not actually suppress the repeated identical lines
+within each burst (all ~11-40 lines per burst are byte-identical) — a second, smaller
+bug in the same code, independent of the register-capture issue. **Status: hook stays
+installed (safe, no behavior risk since it never mutates anything), but the log-only
+data isn't yet a trustworthy foundation for the real glyph-substitution work — needs a
+follow-up debugging pass on the shim before that's true.**
