@@ -3085,6 +3085,81 @@ void InjectFontStructDebugTest()
     LogFromController("[font-struct-diag] dump complete -- compare against re_notes/known_issues.md issue #6/#31 Font struct notes before attempting any patch");
 }
 
+// ---- Live HUD-text font identification (2026-07-21, task #6/#34 follow-up) --------
+//
+// issue #34 found the glyph-patch mechanism test's target (fonts/bigfont) was wrong
+// -- real interact-hint/HUD text doesn't render through it. Static tracing this pass
+// (FUN_00568110, the real weapon-pickup/swap hint-string builder -> FUN_005682f0,
+// its one real caller and the actual interact-hint HUD-element drawer -> FUN_0051f6c0
+// -> FUN_005342a0 -> FUN_0051b100, which writes an opcode-0x11 "print text" entry
+// into a deferred render-command ring buffer (DAT_021ddf30) rather than drawing
+// directly -> FUN_00691ca0, the real consumer that walks that ring buffer and reads
+// each entry's font pointer from byte offset +0x10 -> FUN_00690c80, which passes
+// that pointer straight into FUN_0047dfa0, the already-confirmed real glyph-lookup
+// function) proves the font for this class of HUD text is NOT selected via the
+// generic textfont-int/FUN_005181e0 menu-itemDef mechanism at all -- it's threaded
+// as an explicit argument from a generic, data-driven HUD-element render pipeline.
+// The ultimate origin (whatever populates that data-driven element's font field)
+// wasn't fully traced -- FUN_005096d0, a 24-parameter generic HUD-element dispatcher,
+// is as far upward as this pass reached before concluding further static tracing
+// wasn't the efficient path.
+//
+// Rather than keep chasing the static trace, this hooks the actual render call
+// directly: FUN_00690c80's own disassembly (`PUSH EBP; MOV EBP,ESP; AND ESP,
+// 0xfffffff8; SUB ESP,0x94`, EBP-relative stack args throughout) confirms a plain,
+// ordinary function, no thunk involved -- safe to hook by this project's own
+// established standard (same class of confirmation already applied to
+// FUN_00679680 this session). Its 4th argument is the real, live Font_s* for
+// whatever text is being drawn RIGHT NOW -- confirmed via `*(undefined4*)(param_4+0xc)`
+// matching the real Font_s.material field at +0xC exactly. Logging its fontName
+// (DiagFont+0x00, already-confirmed struct layout, reused directly) every time it
+// CHANGES will empirically reveal every real font that renders during actual play --
+// including, whenever an interact hint is genuinely on screen, exactly which one
+// that is -- without any further static tracing. Zero mutation: forwards to the
+// real trampoline completely unmodified regardless of what's read or logged.
+namespace {
+using DrawGlyphTextFn = void(__cdecl*)(
+    const char* param_1, float param_2, float param_3, void* fontArg, float param_5,
+    float param_6, float param_7, float param_8, float param_9, int param_10,
+    unsigned param_11, int param_12, unsigned param_13, float param_14, unsigned param_15,
+    unsigned param_16, unsigned param_17, unsigned param_18, unsigned param_19,
+    unsigned param_20, unsigned param_21);
+constexpr uintptr_t kDrawGlyphTextAddr = 0x00690c80;
+DrawGlyphTextFn g_origDrawGlyphText = nullptr;
+
+char g_lastLoggedHudFontName[64] = {};
+
+void __cdecl Hook_DrawGlyphText(
+    const char* param_1, float param_2, float param_3, void* fontArg, float param_5,
+    float param_6, float param_7, float param_8, float param_9, int param_10,
+    unsigned param_11, int param_12, unsigned param_13, float param_14, unsigned param_15,
+    unsigned param_16, unsigned param_17, unsigned param_18, unsigned param_19,
+    unsigned param_20, unsigned param_21)
+{
+    if (g_modConfig.hudFontIdLogging && LooksLikeValidPointer(reinterpret_cast<uintptr_t>(fontArg))) {
+        const DiagFont* font = reinterpret_cast<const DiagFont*>(fontArg);
+        __try {
+            if (LooksLikeValidPointer(reinterpret_cast<uintptr_t>(font->fontName)) &&
+                strncmp(font->fontName, g_lastLoggedHudFontName, sizeof(g_lastLoggedHudFontName) - 1) != 0) {
+                strncpy_s(g_lastLoggedHudFontName, font->fontName, sizeof(g_lastLoggedHudFontName) - 1);
+                char logBuf[160];
+                sprintf_s(logBuf, "[hud-font-id] real font in use for on-screen text changed: \"%.63s\" (Font*=0x%08X)",
+                    font->fontName, static_cast<unsigned>(reinterpret_cast<uintptr_t>(fontArg)));
+                LogFromController(logBuf);
+            }
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            // A faulted read just means this call's fontArg wasn't a real Font_s* after
+            // all (e.g. param ordering differs at some call site not yet seen) -- never
+            // let a read-only diagnostic crash the game over that; forward and move on.
+        }
+    }
+
+    g_origDrawGlyphText(param_1, param_2, param_3, fontArg, param_5, param_6, param_7, param_8,
+        param_9, param_10, param_11, param_12, param_13, param_14, param_15, param_16, param_17,
+        param_18, param_19, param_20, param_21);
+}
+} // namespace
+
 // ---- DEBUG-ONLY: live glyph-array patch test, MECHANISM ONLY (2026-07-19) --------
 //
 // Tests the "reallocate + repoint" patch mechanism itself, deliberately isolated
@@ -3744,6 +3819,19 @@ void InstallAnalogInputHooks()
     if (s3 == MH_OK) {
         MH_STATUS e3 = MH_EnableHook(reinterpret_cast<LPVOID>(0x00679680));
         sprintf_s(buf, "[hooks] MH_EnableHook(00679680 boot-thunk-diag) = %d", static_cast<int>(e3));
+        LogFromController(buf);
+    }
+
+    // task #6/#34 follow-up (2026-07-21) -- live HUD-text font identification, see the
+    // big comment above Hook_DrawGlyphText's definition. Same "read-only, forwards
+    // unmodified, wired live because it can never mutate anything" standard as the
+    // boot-thunk diagnostic just above.
+    MH_STATUS s9 = MH_CreateHook(reinterpret_cast<LPVOID>(kDrawGlyphTextAddr), &Hook_DrawGlyphText, reinterpret_cast<LPVOID*>(&g_origDrawGlyphText));
+    sprintf_s(buf, "[hooks] MH_CreateHook(00690c80 hud-font-id) = %d", static_cast<int>(s9));
+    LogFromController(buf);
+    if (s9 == MH_OK) {
+        MH_STATUS e9 = MH_EnableHook(reinterpret_cast<LPVOID>(kDrawGlyphTextAddr));
+        sprintf_s(buf, "[hooks] MH_EnableHook(00690c80 hud-font-id) = %d", static_cast<int>(e9));
         LogFromController(buf);
     }
 

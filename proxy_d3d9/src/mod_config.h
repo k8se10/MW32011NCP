@@ -155,6 +155,16 @@ struct ModConfig
         // during normal play (it's already deduped to log only on text changes, not
         // every frame a hint is on screen, but a busy interact-hint-heavy session
         // could still be chatty).
+    bool hudFontIdLogging = true; // task #6/#34 (2026-07-21): read-only diagnostic hook
+        // on FUN_00690c80 (the real glyph-draw call every on-screen HUD/menu text goes
+        // through) that logs the real Font_s.fontName whenever it CHANGES -- built to
+        // empirically identify which real font renders interact-hint text, after
+        // static tracing (FUN_00568110 -> ... -> FUN_00690c80) confirmed the font is
+        // threaded as a parameter from a data-driven HUD-element source rather than
+        // selected via the generic textfont enum (see known_issues.md issue #34).
+        // Always forwards to the real trampoline completely unmodified regardless of
+        // this toggle; only controls whether it logs. Default on for the first live
+        // test.
     // sprintStaminaBypassForTesting (task #9) REMOVED 2026-07-19: graduated to
     // unconditional the same day it was added -- Sprint's real +sprint kbutton
     // migration was LIVE-CONFIRMED working, and with it confirmed that the real
