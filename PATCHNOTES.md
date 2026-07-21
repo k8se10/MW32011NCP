@@ -9,6 +9,18 @@ reverse-engineering trail behind each entry.
 ## Unreleased
 
 ### Added
+- **Retargeted the glyph-patch mechanism tests at `fonts/hudBigFont`, backed by real
+  usage data (task #6/#34).** A live playtest of this session's `hud-font-id`
+  diagnostic tallied every real font drawn during a long, clean Survival session:
+  `hudBigFont` (7929 uses) dominates by a wide margin over `smallFont` (4860),
+  `hudSmallFont` (2277), `extraBigFont` (1648), `objectiveFont` (1360), and the
+  previously (wrongly) targeted `bigFont` (117, confirmed genuinely rare). Added
+  `InjectFontStructDebugTest_HudBigFont` (`LB+RB+X`) and
+  `InjectFontGlyphPatchTest_HudBigFont` (`LB+RB+B`) — identical, already-proven-safe
+  mechanisms to the existing `bigfont` versions, just retargeted, on their own
+  distinct combos so nothing collides. The `bigfont` versions are untouched. Builds
+  clean; not yet live-tested. Rebuilding real new glyph pixel content for hudBigFont
+  (as opposed to the borrowed-UV mechanism test) is a separate, still-unstarted step.
 - **Bind-resolver glyph-substitution groundwork, OFF by default (task #6).** Built
   the key-name-text → controller-glyph-codepoint substitution logic that the
   bind-resolver hook (`FUN_0061f6f0`) needs to eventually show real button icons in
