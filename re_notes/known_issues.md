@@ -1525,6 +1525,85 @@ value directly out of `FUN_00463430`'s `JMP EAX` at a real breakpoint, per the
 original option (2) in the ROOT CAUSE section above). The real splice-and-call
 implementation remains unstarted.
 
+**SOLVED DIFFERENTLY (2026-07-21) — the address-recovery problem above didn't need
+solving at all.** Re-read this project's own `InstallGlyphFontExtension()` (defined
+earlier in `analog_input_hooks.cpp`, disabled since 2026-07-19) closely: it already
+calls `FUN_004ca310` (`LoadZones`) **directly, un-hooked**, via the `LoadZones`
+function pointer at the top of this file — and the "roundtrip.ff"/zoneload-test
+precedent already screenshot-confirmed this exact call pattern is safe, repeatedly
+("FUN_004ca310 returned without crashing," dozens of times in `proxy_d3d9.log`).
+**Calling the thunk directly was never the problem — only HOOKING it is** (that's
+what corrupts its self-relocation math, per the ROOT CAUSE section above).
+`InstallGlyphFontExtension()` is disabled not because its `LoadZones` call is
+unsafe, but because it's wired to fire from the WndProc/`SetTimer` tick — the wrong
+TIMING for material-bearing content (confirmed root cause: `iw5sp.md`'s
+"Black-screen flash... materials" section). This entry's own text already named
+the fix a session ago: "the only path... confirmed safe for material-bearing
+content is routing the load through a real `FUN_0053cbc0`-driven level-load
+transition instead" — that line was correct, and this pass acts on it directly
+instead of continuing down the address-recovery path.
+
+**`FUN_0053cbc0` confirmed real and safe to hook, via fresh Ghidra disassembly
+(not assumed):**
+```
+0053cbc0  SUB ESP,0xc8
+0053cbc6  PUSH EBX
+0053cbc7  PUSH EBP
+0053cbc8  PUSH ESI
+0053cbc9  PUSH EDI
+0053cbca  MOV EDI,dword ptr [ESP + 0xdc]
+...
+0053ce82  CALL 0x004ca310
+0053ce87  ADD ESP,0x38
+0053ce8a  POP EDI
+0053ce8b  POP ESI
+0053ce8c  POP EBP
+0053ce8d  POP EBX
+0053ce8e  ADD ESP,0xc8
+0053ce94  RET
+```
+A genuine, ordinary `__cdecl`-shaped function (`void FUN_0053cbc0(byte *param_1, int
+param_2)`, `param_1` = a map/mission name string, confirmed via decompile — it
+gates specialops/survival-specific patch-zone loads on `FUN_004d6d40`/
+`FUN_00526b30` calls against that name), body spans `0053cbc0`-`0053ce94` (0x2D4
+bytes) — nothing like `FUN_004ca310`'s literal 7-byte `CALL;JMP EAX` thunk stub,
+plenty of room for MinHook's trampoline. Its own internal direct calls to
+`FUN_004ca310` (confirmed via decompile: it calls the thunk directly, multiple
+times, for `common_specialops`/`common_survival`/`patch_<mapname>` zones) sit well
+past this function's overwritten entry bytes, so they keep their real,
+un-relocated return addresses — the ILT self-patch mechanism inside the thunk's
+target keeps working exactly as intended for all of them. This hook never touches
+or hooks the thunk itself, only `FUN_0053cbc0`'s own outer entry/exit.
+
+**Confirmed real call frequency, not assumed**: exactly ONE real call site
+(xref search), inside `FUN_00447ea0` — the real per-level-load orchestrator
+(decompile confirms `"map_restart"` command dispatch, `"Start Level Save"`
+checkpoint handling, and a guarded `if (*param_1 != '\0') FUN_0053cbc0(param_1,
+param_3);` call) — itself called from exactly one place. So this fires once per
+real level load/restart/checkpoint-reload, not per-frame — the correct
+low-frequency "safe timing window" this project's research already predicted.
+
+**Implemented**: `Hook_FUN_0053cbc0` (`analog_input_hooks.cpp`) — MinHook hook,
+calls the real trampoline completely unmodified first, then logs (every call, with
+a running counter and the real map-name string, read defensively via the same
+SEH-wrapped bounded-copy pattern already established for `BindResolverLogAfterCall`)
+that the hook fired. Wired live (uncommented) since it's pure logging. **The actual
+splice call — `InstallGlyphFontExtension()`, already fully implemented and
+idempotent — is included in the function body but left commented out/disabled by
+default**, matching this codebase's own precedent for shipping an unverified,
+mutating piece disabled until live-confirmed (e.g. `Hook_LoadZonesForBootSplice`).
+This project has crashed live twice already from adjacent boot/zone-loading
+mistakes; "confirmed via fresh disassembly" is not this project's bar for shipping
+a mutating call live by default — an actual confirmed-safe live test is. Builds
+clean (MSBuild, Win32/Release, 0 warnings/0 errors, full rebuild). **Not yet
+live-tested** — next real level load (Campaign mission start, Survival wave
+start/restart, or a checkpoint reload) should show `[level-load-zone-hook]
+FUN_0053cbc0 returned (call #N)...` in `proxy_d3d9.log` with the correct map name
+and no boot/gameplay regression. Once that's confirmed clean across at least one
+real level load, uncommenting the `InstallGlyphFontExtension()` call is the next
+step — that call itself needs its own separate live confirmation before this is
+considered done end-to-end.
+
 ---
 
 ## 23. Real controller options menu — native zone/menu injection, blocked on a real architectural limit (2026-07-17)

@@ -3319,6 +3319,113 @@ void InstallGlyphFontExtension()
     LogFromController("[glyph-font-ext] repoint complete -- real fonts/bigfont now has the extended glyph set and atlas. If sound, codepoint 0x81 should render its real intended glyph wherever bigfont draws text.");
 }
 
+// ---- Level-load-safe trigger for the glyph font extension: hook FUN_0053cbc0 ------
+// (2026-07-21, task #6/#23 follow-up, "safer address-recovery approach" successor to
+// the FUN_00679680 boot-thunk diagnostic above)
+//
+// That diagnostic solved the wrong problem. It was built to recover the real,
+// resolved LoadZones address so a splice could call it directly instead of the
+// unsafe FUN_004ca310 thunk -- but this project ALREADY has a proven-safe way to
+// call FUN_004ca310 directly: `InstallGlyphFontExtension()` above does exactly this
+// (`LoadZones(&entry, 1, 0)`, a plain un-hooked call through the `LoadZones`
+// function pointer at the top of this file), and the "roundtrip.ff"/zoneload-test
+// precedent already screenshot-confirmed this exact call pattern is safe to fire
+// directly, repeatedly ("FUN_004ca310 returned without crashing" dozens of times in
+// proxy_d3d9.log). **Calling the thunk directly was never the problem -- only
+// HOOKING it is** (that's what corrupts its self-relocation math, see the ROOT
+// CAUSE section above `Hook_FUN_00679680`). `InstallGlyphFontExtension()`'s own
+// call to `LoadZones` was never unsafe in itself; it's DISABLED only because it was
+// wired to fire from the WndProc/`SetTimer` tick, the wrong TIMING for
+// material-bearing content (confirmed root cause: `iw5sp.md`'s "Black-screen
+// flash... materials" section -- GPU-resource creation outside the engine's own
+// controlled frame/thread discipline). `known_issues.md` issue #22/#23 already
+// named the fix: "the only path... confirmed safe for material-bearing content is
+// routing the load through a real FUN_0053cbc0-driven level-load transition
+// instead." This hook is that fix, not a new idea.
+//
+// **FUN_0053cbc0 confirmed real and safe to hook this session, via fresh Ghidra
+// disassembly (not assumed)**: `SUB ESP,0xc8; PUSH EBX; PUSH EBP; PUSH ESI; PUSH
+// EDI; MOV EDI,[ESP+0xdc]` at entry, `POP EDI/ESI/EBP/EBX; ADD ESP,0xc8; RET` at
+// exit -- a genuine, ordinary `__cdecl`-shaped function (confirmed real signature
+// via decompile: `void FUN_0053cbc0(byte *param_1, int param_2)`, param_1 = a map/
+// mission name string), body spanning 0053cbc0-0053ce94 (0x2D4 bytes) -- nothing
+// like `FUN_004ca310`'s literal 7-byte `CALL;JMP EAX` thunk stub, more than enough
+// room for MinHook's trampoline, and its own internal direct calls to
+// `FUN_004ca310` (confirmed via decompile: it calls the thunk directly, multiple
+// times, for real content packs like `common_specialops`/`common_survival`/
+// `patch_<mapname>`) sit well past the hook's overwritten entry bytes, so they keep
+// their real, un-relocated return addresses and the ILT self-patch mechanism inside
+// the thunk's target keeps working exactly as the engine intends for all of them --
+// this hook never touches or hooks the thunk itself, only this function's own
+// outer entry/exit.
+//
+// **Confirmed real call frequency, not assumed**: exactly ONE real call site
+// (`FindCallers`-equivalent xref search), inside `FUN_00447ea0` (the real per-
+// level-load orchestrator -- decompile confirms "map_restart" command dispatch,
+// "Start Level Save" checkpoint handling, and a guarded `if (*param_1 != '\0')
+// FUN_0053cbc0(param_1, param_3);" call), itself called from exactly one place.
+// So this hook fires once per real level load/restart/checkpoint-reload -- not
+// per-frame, not spammy, the correct low-frequency "safe timing window" this
+// project's own research already predicted.
+namespace {
+using Fn0053cbc0 = void(__cdecl*)(void* param1, int param2);
+Fn0053cbc0 g_origFUN_0053cbc0 = nullptr;
+int g_levelLoadZoneHookFireCount = 0;
+}
+
+void __cdecl Hook_FUN_0053cbc0(void* param1, int param2)
+{
+    g_origFUN_0053cbc0(param1, param2); // real function, completely unmodified --
+                                          // its own internal FUN_004ca310 calls
+                                          // execute exactly as the engine intends.
+
+    ++g_levelLoadZoneHookFireCount;
+
+    // Read-only diagnostic, logged EVERY call (not just once) so the real call
+    // frequency itself is observable live, not just asserted from static analysis --
+    // param1 read defensively (SEH-wrapped bounded copy), same pattern already
+    // established elsewhere in this file (e.g. BindResolverLogAfterCall) for an
+    // untrusted, engine-owned buffer pointer.
+    char mapNameBuf[64] = {};
+    bool mapNameReadable = false;
+    if (LooksLikeValidPointer(reinterpret_cast<uintptr_t>(param1))) {
+        __try {
+            const char* p = reinterpret_cast<const char*>(param1);
+            size_t i = 0;
+            for (; i < sizeof(mapNameBuf) - 1; ++i) {
+                char c = p[i];
+                mapNameBuf[i] = c;
+                if (c == '\0') break;
+            }
+            mapNameBuf[sizeof(mapNameBuf) - 1] = '\0';
+            mapNameReadable = true;
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            sprintf_s(mapNameBuf, "<faulted reading 0x%08X>", static_cast<unsigned>(reinterpret_cast<uintptr_t>(param1)));
+        }
+    }
+
+    char buf[300];
+    sprintf_s(buf, "[level-load-zone-hook] FUN_0053cbc0 returned (call #%d), param2=%d, mapName=\"%s\"%s",
+        g_levelLoadZoneHookFireCount, param2, mapNameBuf,
+        mapNameReadable ? "" : " (param1 not plausible/unreadable)");
+    LogFromController(buf);
+
+    // DISABLED BY DEFAULT -- the actual splice call. `InstallGlyphFontExtension()`
+    // is already fully implemented and idempotent (fires once via its own
+    // g_glyphFontExtStage guard, safe to call from multiple level loads). Left
+    // commented out, matching this codebase's own established "risky/unverified
+    // piece ships disabled" precedent (e.g. Hook_LoadZonesForBootSplice), because
+    // this project has crashed live TWICE already from adjacent boot/zone-loading
+    // mistakes and this specific call path has never been live-tested. The
+    // reasoning above is believed sound (confirmed via fresh disassembly, not
+    // assumption), but "believed sound" is not this project's bar for shipping a
+    // mutating call live by default -- that bar is an actual confirmed-safe live
+    // test. Enable only after the read-only diagnostic above is confirmed live
+    // (correct call count/timing, no regression) across at least one real level
+    // load.
+    // InstallGlyphFontExtension();
+}
+
 extern "C" void __cdecl InjectAllControllerInput(unsigned char* cmd)
 {
     int32_t inLevelVal = *reinterpret_cast<volatile int32_t*>(kInLevelFlagAddr);
@@ -3744,6 +3851,23 @@ void InstallAnalogInputHooks()
     if (s3 == MH_OK) {
         MH_STATUS e3 = MH_EnableHook(reinterpret_cast<LPVOID>(0x00679680));
         sprintf_s(buf, "[hooks] MH_EnableHook(00679680 boot-thunk-diag) = %d", static_cast<int>(e3));
+        LogFromController(buf);
+    }
+
+    // task #6/#23 follow-up (2026-07-21) -- level-load-safe glyph-font-extension
+    // trigger, see the big comment above Hook_FUN_0053cbc0's definition for the full
+    // rationale. Read-only diagnostic wired live (logs every call + call count +
+    // map name); the actual InstallGlyphFontExtension() splice call inside the hook
+    // stays commented out/disabled by default until that diagnostic is confirmed
+    // live. Hooks a real, ordinary function (confirmed via fresh disassembly this
+    // session -- plain prologue/epilogue, no thunk involved), calls the original
+    // completely unmodified first.
+    MH_STATUS s9 = MH_CreateHook(reinterpret_cast<LPVOID>(0x0053cbc0), &Hook_FUN_0053cbc0, reinterpret_cast<LPVOID*>(&g_origFUN_0053cbc0));
+    sprintf_s(buf, "[hooks] MH_CreateHook(0053cbc0 level-load-zone-hook) = %d", static_cast<int>(s9));
+    LogFromController(buf);
+    if (s9 == MH_OK) {
+        MH_STATUS e9 = MH_EnableHook(reinterpret_cast<LPVOID>(0x0053cbc0));
+        sprintf_s(buf, "[hooks] MH_EnableHook(0053cbc0 level-load-zone-hook) = %d", static_cast<int>(e9));
         LogFromController(buf);
     }
 
