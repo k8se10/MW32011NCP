@@ -8,6 +8,61 @@ reverse-engineering trail behind each entry.
 
 ## Unreleased
 
+### Added
+- **Bind-resolver text hook (`FUN_0061f6f0`), LOG-ONLY first pass (task #6/#35).**
+  A new permanent hook now forwards every real bind-hint-text resolution
+  (e.g. the interact prompts behind "Press [E] to pick up") through to the
+  unmodified real game logic exactly as before, then logs what it observed
+  (the resolved key/bind context and the resolved display text) to
+  `proxy_d3d9.log`, deduped so an on-screen hint logs once per change rather
+  than every frame. **No player-visible behavior changes at all in this
+  pass** — no glyph substitution happens yet, this is deliberately the safe,
+  incremental first step (following two earlier hooks that crashed the game
+  live without one — see `re_notes/known_issues.md` issues #24 and #22/#30)
+  toward real controller-glyph button prompts. New `[Experimental]
+  BindResolverHookLogging` toggle in `mw3ncp_config.ini` (default on) silences
+  the logging without touching the hook itself. Builds clean. **Live-tested
+  (2026-07-21): safe — installs cleanly and a full play session ran with zero
+  regression to boot or gameplay — but the captured `ECX`/output-buffer values
+  read as implausible (0 and a bogus 0x100 pointer), so the logged data isn't
+  usable yet.** See `re_notes/known_issues.md` issue #35 for the full trail and
+  the follow-up needed before this is a foundation for real glyph substitution.
+- **Boot-thunk resolution diagnostic** (`analog_input_hooks.cpp`, `Hook_FUN_00679680`),
+  task #23 follow-up toward a real native controller options menu. Read-only,
+  wired live: hooks `FUN_00679680` (a real, ordinary function, confirmed safely
+  trampolineable — not the `FUN_004ca310` incremental-link thunk that crashed the
+  game live in a prior attempt, see `re_notes/known_issues.md` issues #22/#30),
+  lets the original run completely unmodified, then logs (a) the existing plan's
+  `DAT_008501e8`-based formula and (b) a more direct, more reliable reading — the
+  raw bytes at the real `LoadZones` call site itself, decoded as a `CALL rel32` —
+  which reveals whether the engine's own MSVC-incremental-link self-patching
+  behavior has replaced that call site with the true resolved `LoadZones` address.
+  Zero mutation of the zone-loading path itself. Builds clean (0 warnings/0
+  errors, full rebuild). **Live-tested (2026-07-21), reproduced across two
+  launches: safe (zero regression), but the self-patch theory is REFUTED at
+  this specific call site** — the decoded target is still the raw thunk, not
+  a resolved address. A genuine negative result, not a bug; the real
+  address-recovery approach for the actual options-menu splice needs
+  rethinking before that work can proceed. See `re_notes/known_issues.md`
+  issue #23 for full detail, including the correction to the original plan's
+  `DAT_008501e8` formula found while implementing this.
+
+### Docs
+- **Corrected the button-glyph font-patch test's target-font assumption (task #34).**
+  The 2026-07-18 plan picked `fonts/bigfont` as "the best single guess for menu-title
+  text" for the still-untested LB+RB+A glyph-patch mechanism test. A fresh Ghidra
+  decompile of the real `textfont`-value-to-font selector, cross-checked against a
+  tally of every real `textfont` line across all 512 dumped `.menu` files, proves that
+  guess wrong: the main menu's real title/button text uses smallfont/hudsmallfont, not
+  bigfont. Bigfont is real but is used in only 3 places anywhere in `ui.ff`, all on the
+  brightness-calibration screen, which the game only opens once per player profile
+  ever — not the repeatable, always-visible test vehicle earlier notes assumed. No
+  code behavior changed (the struct-layout diagnostic is font-agnostic and stays
+  targeted at bigfont); added correction comments in `analog_input_hooks.cpp` and a
+  full writeup, including the resolved `textfont` enum table, in
+  `re_notes/ui_assets.md`. The mechanism test still cannot be visually confirmed yet —
+  see `re_notes/known_issues.md` issue #34 for what's still needed.
+
 ---
 
 ## v0.2.2 — Alpha (2026-07-20) — Risk-mitigation release

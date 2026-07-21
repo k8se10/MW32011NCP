@@ -2789,6 +2789,146 @@ void __cdecl Hook_LoadZonesForBootSplice(void* zoneArray, int count, int mode)
 }
 } // namespace
 
+// ---- Boot-thunk resolution diagnostic (2026-07-20, task #23 follow-up) -----------
+//
+// Read-only, zero-mutation diagnostic for the real controller-options-menu work
+// (task #23). The boot-splice hook above (on FUN_004ca310 directly) crashed live --
+// root-caused (see re_notes/known_issues.md, "## 22." boot-splice discussion,
+// "ROOT CAUSE FOUND, definitively") to FUN_004ca310 being an MSVC incremental-link
+// thunk (ILT): `CALL 0x00463430; JMP EAX`, where FUN_00463430 uses the CALLER's own
+// return address as an input to a relocation computation, then self-patches the
+// CALLER'S 5-byte CALL instruction in place to bypass the thunk on future calls.
+// Hooking the thunk (or any new call site that calls it directly) corrupts that
+// return-address-dependent math -- this is what crashed the game.
+//
+// The refined plan (known_issues.md, "REFINED, implementation-ready") is to hook
+// FUN_00679680 instead -- a real, ordinary function (confirmed via the cached
+// disassembly at D:\Tools\ghidra_projects_bootzone\disasm_00679680.txt: plain
+// `SUB ESP,0x78; PUSH EBX; PUSH EBP; PUSH ESI` prologue, no stack-args read, plain
+// `RET` epilogue -- a genuine `void __cdecl(void)`, safely trampolineable, no thunk
+// involved), let the ORIGINAL run completely unmodified, then read out the
+// already-resolved real LoadZones address afterward for logging only.
+//
+// **Correction to the existing plan, found this pass via the cached decompile of
+// FUN_00463430 (D:\Tools\ghidra_projects_bootzone\decomp_463430.txt), not
+// re-guessed:** the plan's formula ("read `&DAT_008501e8 + *(int*)&DAT_008501e8`
+// to get the already-resolved real function address") is an OVERSIMPLIFICATION.
+// That expression (`iVar1` in the decompile) is only an INTERMEDIATE value fed into
+// a 134-iteration relocation walk (`FUN_006cc460`) and a further resolver call
+// (`FUN_0045e910`) -- the actual value FUN_00463430 returns (and which `JMP EAX`
+// then jumps to) is `iVar2 + iVar3`, where `iVar2 = FUN_0045e910(...)`'s return and
+// `iVar3 = iVar1 - imageBase`. Logging `&DAT_008501e8 + *DAT_008501e8` alone would
+// NOT match the real jump target -- it would just be a misleading intermediate.
+// Reimplementing FUN_00463430's full relocation/resolution chain ourselves to get
+// the true value would be substantial, fragile, unwarranted work for a read-only
+// diagnostic.
+//
+// **A simpler, more direct diagnostic exists and is what this hook actually
+// implements**, using the self-patching behavior described in the ROOT CAUSE
+// section directly: "rewrites the CALLER's own CALL 0x004ca310 into
+// CALL <real_function> in place, so future executions of that exact call site skip
+// the thunk entirely." FUN_00679680's own Call 2 (the unconditional one, at
+// `0x006797bd`, return address `0x006797c2` -- both addresses already independently
+// confirmed and reused elsewhere in this file, e.g. `kBootZoneSpliceReturnAddr`)
+// IS that exact call site. So: let FUN_00679680 run its real, unmodified self
+// (including this call, executing under completely normal conditions -- nothing
+// about this hook alters that call in any way), then afterward simply READ THE
+// BYTES at `0x006797bd` directly. If the ILT theory is right, that 5-byte
+// instruction will no longer read `E8 <disp to 004ca310>` -- it'll have been
+// self-patched by the engine's OWN normal execution to `E8 <disp to the real,
+// final LoadZones function>`. Decoding that displacement gives the true resolved
+// address directly, with no need to reimplement any of FUN_00463430's internal
+// math. This is also a strictly safer read than dereferencing DAT_008501e8's chain,
+// since it's reading straight off .text (always mapped, never freed) rather than
+// a data slot whose exact lifetime/reinitialization semantics were never traced.
+//
+// Both readings are logged for completeness (the plan's original DAT_008501e8
+// figure, clearly labeled as not-the-real-target; and this hook's own call-site
+// decode, labeled as the actually-trustworthy one) so a future pass can compare
+// them without needing to re-derive either from scratch.
+//
+// Scope, deliberately narrow: this hook does NOT touch the zone array, does NOT
+// call the resolved address, does NOT construct or append a zone-queue entry --
+// pure after-the-fact logging, per the project's own "log before you ever mutate"
+// discipline (the exact lesson both the rumble-hook and boot-splice crashes taught,
+// see known_issues.md issues #24 and #22/#30). The actual splice-and-call
+// implementation, and confirming this diagnostic's own reading live, are follow-up
+// work, not done here.
+namespace {
+using VoidFn = void(__cdecl*)(void);
+VoidFn g_origFUN_00679680 = nullptr;
+bool g_bootThunkDiagLogged = false; // fire the diagnostic log at most once
+
+// Fixed, statically-known process addresses (same trust level as this file's
+// existing kMenuActiveGateAddr / IsMenuActive -- confirmed-real image addresses,
+// not heap pointers, so no LooksLikeValidPointer gate is needed here, consistent
+// with that precedent).
+constexpr uintptr_t kDAT_008501e8 = 0x008501e8;
+constexpr uintptr_t kBootZoneCallSiteAddr = 0x006797bd; // FUN_00679680's Call 2 -- the
+                                                          // exact CALL 0x004ca310
+                                                          // instruction, same call
+                                                          // site kBootZoneSpliceReturnAddr
+                                                          // (0x006797c2) already
+                                                          // targets the return of.
+
+void __cdecl Hook_FUN_00679680()
+{
+    g_origFUN_00679680(); // real function, completely unmodified -- runs boot exactly
+                            // as the engine intends, including both of its real
+                            // internal thunk calls.
+
+    if (g_bootThunkDiagLogged) return;
+    g_bootThunkDiagLogged = true;
+
+    char buf[256];
+
+    // Reading #1: the plan's original DAT_008501e8-based formula. Logged for
+    // completeness/comparison only -- per the correction above, this is NOT
+    // expected to equal the real resolved LoadZones address.
+    int32_t datValue = *reinterpret_cast<volatile int32_t*>(kDAT_008501e8);
+    uintptr_t iVar1Approx = kDAT_008501e8 + static_cast<uintptr_t>(datValue);
+    sprintf_s(buf, "[boot-thunk-diag] DAT_008501e8 raw=0x%08X, &DAT_008501e8+val=0x%08X "
+        "(NOTE: per FUN_00463430's real decompile this is only an intermediate, "
+        "NOT the final resolved address -- see comment above this function)",
+        static_cast<unsigned>(datValue), static_cast<unsigned>(iVar1Approx));
+    LogFromController(buf);
+
+    // Reading #2: the actually-trustworthy one -- decode whatever is now sitting at
+    // the real call site, after a completely normal, unmodified execution of it.
+    const unsigned char* callSiteBytes = reinterpret_cast<const unsigned char*>(kBootZoneCallSiteAddr);
+    unsigned char opcode = callSiteBytes[0];
+    if (opcode == 0xE8) { // CALL rel32
+        int32_t disp;
+        memcpy(&disp, callSiteBytes + 1, sizeof(disp));
+        uintptr_t callSiteEnd = kBootZoneCallSiteAddr + 5; // rel32 is relative to the
+                                                             // NEXT instruction, i.e.
+                                                             // the return address --
+                                                             // matches the already-
+                                                             // confirmed 0x006797c2.
+        uintptr_t target = callSiteEnd + static_cast<uintptr_t>(disp);
+        sprintf_s(buf, "[boot-thunk-diag] call site 0x%08X is CALL rel32, decoded target=0x%08X "
+            "(thunk address for comparison: 0x004ca310)",
+            static_cast<unsigned>(kBootZoneCallSiteAddr), static_cast<unsigned>(target));
+        LogFromController(buf);
+        if (target == 0x004ca310) {
+            LogFromController("[boot-thunk-diag] call site target is UNCHANGED (still points at the thunk) -- "
+                "either the ILT self-patch theory is wrong, or this specific call site didn't self-patch "
+                "the way FUN_0067a690/FUN_00481e50's calls might have (each call site patches independently)");
+        } else {
+            sprintf_s(buf, "[boot-thunk-diag] call site SELF-PATCHED -- real resolved LoadZones address is 0x%08X. "
+                "This is the address a future splice implementation should call directly (never re-hook "
+                "the thunk or this call site itself).", static_cast<unsigned>(target));
+            LogFromController(buf);
+        }
+    } else {
+        sprintf_s(buf, "[boot-thunk-diag] call site 0x%08X first byte is 0x%02X, not 0xE8 -- not a plain "
+            "CALL rel32 anymore (or my address/offset assumption is wrong), cannot decode a target",
+            static_cast<unsigned>(kBootZoneCallSiteAddr), opcode);
+        LogFromController(buf);
+    }
+}
+} // namespace
+
 // ---- DEBUG-ONLY: live dump of the real Font struct for fonts/bigFont (2026-07-19,
 // task #6 UI scope / glyphs, follow-up to the boot-splice crash) --------------------
 //
@@ -2814,6 +2954,24 @@ void __cdecl Hook_LoadZonesForBootSplice(void* zoneArray, int count, int mode)
 // (count) and +0x14 (glyph array), stride 0x18/24 bytes per glyph). NOT yet
 // independently re-confirmed by this project's own Ghidra project -- this diagnostic
 // exists specifically to catch a live mismatch before it could cause a bad write.
+//
+// CORRECTION (2026-07-21, task #34): "fonts/bigfont" was picked as the patch target
+// on the 2026-07-18 assumption it was "the best single guess for menu-title text."
+// Fresh Ghidra decompile of the real textfont-int -> Font* selector (FUN_005181e0)
+// plus a corpus-wide tally of every real `textfont` value across all 512 dumped
+// `.menu` files (D:\Tools\OpenAssetTools\zone_dump) proves that guess wrong: bigfont
+// is textfont value 2, used in exactly 3 itemDefs anywhere in ui.ff, all three in
+// `ui/ui/brightness_adjust.menu` (the brightness-calibration screen) -- and that
+// screen only opens when `!getprofiledata("hasEverPlayed_MainMenu")`, i.e. once per
+// profile, ever. The main menu's real button-list/title text uses textfont 3
+// (smallfont, 4243 real uses) and textfont 9 (hudsmallfont, 866 uses) -- see
+// ui_assets.md's 2026-07-21 entry for the full textfont->font-name table. The
+// struct-layout diagnostic below is still valid regardless of which font it targets
+// (glyphCount/glyphs/material layout is identical across all 9 registered fonts),
+// so this was NOT changed to avoid re-deriving an already-live-confirmed-safe
+// target; but don't reuse "fonts/bigfont" as a visual test vehicle without first
+// reading known_issues.md issue #34 -- it is real but not a practical, repeatable,
+// always-visible screen the way earlier notes assumed.
 namespace {
 using FindOrLoadFontFn = void*(__cdecl*)(const char* fontPath);
 FindOrLoadFontFn const FindOrLoadFont = reinterpret_cast<FindOrLoadFontFn>(0x0045d040);
@@ -2939,6 +3097,24 @@ void InjectFontStructDebugTest()
 // mechanism), proving the array-growth+repoint patch is sound before ever touching
 // the harder graphics problem. Deliberately gated behind its own separate combo
 // (not the read-only diagnostic's LB+RB) and fires only once per session.
+//
+// KNOWN GAP, not yet closed (2026-07-21, task #34): there is currently no real,
+// always-visible on-screen text anywhere that contains byte 0x81, so this patch's
+// effect cannot actually be SEEN yet even once it fires -- see known_issues.md
+// issue #34 for the full investigation. Short version: `fonts/bigfont` (this
+// patch's target) is real but is only ever drawn by `brightness_adjust.menu`
+// (3 itemDefs), which the game only opens once per profile ever
+// (`!getprofiledata("hasEverPlayed_MainMenu")`); forcing it open synthetically via
+// this project's own SetDvarByName("cl_paused",1)+SetPlayerMenuFlags+OpenMenuByName
+// recipe is ALREADY confirmed broken (garbled render, see InjectZoneLoadDebugTest's
+// own comment above) regardless of content, so that's a dead end, not attempted
+// here. Closing this gap for real needs either (a) a fresh player profile to
+// naturally retrigger the real screen once, or (b) finding the actual native render
+// call site for real gameplay interact-hint text (still untraced -- FUN_00568110
+// builds the hint STRING but never selects a font itself, so the font choice
+// happens at a separate, not-yet-found call site) and retargeting this whole patch
+// at whichever font that turns out to be. Neither attempted this pass -- flagging
+// honestly rather than leaving the false impression this is fully closed out.
 //
 // Safety ordering, deliberate: writes font->glyphs (the pointer) BEFORE
 // font->glyphCount. If this engine turns out to have any concurrent reader (not
@@ -3265,6 +3441,196 @@ extern "C" void __cdecl InjectMenuInputTick()
     InjectFontGlyphPatchTest();
 }
 
+// ---- Bind-resolver text hook, LOG-ONLY first pass (task #6/#35, 2026-07-21) -------
+//
+// Real target: FUN_0061f6f0, the bind->hint-text resolver this project's own research
+// (re_notes/ui_assets.md, "Text-swap hook (FUN_0061f6f0)" and "FUN_0061f6f0's real
+// calling convention, disassembly-confirmed" sections) already fully traced -- it's
+// the single choke point both real hint mechanisms (the "&&1"-token family and the
+// "[{+command}]"-bracket family) funnel through, so one hook here covers both without
+// needing to find every individual call site.
+//
+// Confirmed real calling convention (register+stack hybrid, NOT plain __cdecl/
+// __thiscall -- re-derive nothing here, this is already disassembly-verified):
+//   EAX (register)  = a context value, forwarded into only the FIRST internal resolve
+//                     call (not both, per the 2026-07-19 correction in ui_assets.md).
+//   ECX (register)  = the bind-name/command context -- the "resolve this bind" arg.
+//                     NOTE: which exact register carries a raw C-string bind name into
+//                     the deeper FUN_005330a0 lookup was flagged UNRESOLVED by that
+//                     research ("likely EAX... not confirmed identical to contextA") --
+//                     this hook does NOT assume ECX is safely dereferenceable as a
+//                     string; see BindResolverLogAfterCall's guarded handling below.
+//   [esp+4]         = pushed by every caller but never read in the function body --
+//                     confirmed dead, ignored here too.
+//   [esp+8]         = output buffer pointer -- where the real trampoline writes
+//                     "KEY_UNBOUND", a single key name, or "%s KEY_OR %s".
+//   [esp+0xc]       = bool flag, "limit to 1 bind".
+//   Plain RET (caller-cleanup for the stack portion, i.e. cdecl-shaped stack args).
+//
+// THIS PASS IS DELIBERATELY LOG-ONLY -- no output-buffer mutation, no behavior change
+// at all. Two earlier hooks this project shipped without a safe incremental step first
+// (the rumble dispatcher hook, known_issues.md issue #24; the boot-zone-splice hook,
+// issue #22/#30) both crashed the live game outright. ui_assets.md's own recommendation
+// for this specific hook is explicit: "Recommends prototyping log-only first (no buffer
+// write) -- same lesson as both crashes this session." This is that first increment.
+// Actually swapping in a glyph codepoint is deliberately NOT attempted here.
+//
+// Implementation shape (also per the research's own recommendation, to avoid one naive
+// naked function trying to do everything at once): a small naked shim stashes the
+// register args and the output-buffer/flag values into plain globals (this call site is
+// not proven multi-threaded, same single-threaded assumption every other naked hook in
+// this file already makes), forwards into the real trampoline with the ORIGINAL
+// register/stack state fully intact (so real text resolution is completely untouched),
+// then -- once the trampoline's own `ret` hands control back -- calls a normal C++
+// logging function before resuming the real caller exactly where it would have resumed
+// had this hook never existed.
+//
+// Forwarding mechanic, spelled out since it's easy to get wrong: a plain `call` to the
+// trampoline would push a NEW return address on top of the existing 3 stack args,
+// shifting the trampoline's own [esp+4]/[esp+8]/[esp+0xc] view down by 4 bytes relative
+// to what the real caller set up -- wrong. Instead this OVERWRITES the incoming
+// return-address slot in place with the address of the `afterCall` label (saving the
+// real return address to a global first) and TAIL-JUMPS (not calls) into the
+// trampoline, so it sees the byte-for-byte identical frame the real caller built, just
+// with the return-address slot repointed. When the trampoline's own `ret` fires, it
+// pops that slot and lands at `afterCall` with esp already exactly where the real
+// caller would see it post-return -- at that point this hook only needs to run the
+// (register-preserving) log call and then `jmp` to the saved real return address; there
+// is no return-address slot left on the stack to `ret` through a second time.
+namespace {
+void* g_orig_0061f6f0 = nullptr;
+
+// Scratch globals for the naked shim below -- no stack frame exists to hold these
+// (naked, no prologue), and this call site is not known/proven to be multi-threaded,
+// same assumption every other naked hook in this file already makes (e.g. Hook_0057de60
+// below).
+uintptr_t g_bindResolverCtxEax = 0;
+uintptr_t g_bindResolverCtxEcx = 0;
+uintptr_t g_bindResolverBufPtr = 0;
+uintptr_t g_bindResolverLimitFlag = 0;
+uintptr_t g_bindResolverRealRetAddr = 0;
+
+// Dedup state so a hint that's on screen and getting re-resolved every frame doesn't
+// flood the log -- same "change-triggered diagnostic logging" precedent already used
+// elsewhere in this file (e.g. the pause-menu-field re-test). Independent of, and in
+// addition to, the config toggle below (which is a full off switch).
+char g_bindResolverLastLoggedText[128] = {};
+}
+
+// Logs the resolved bind name + resolved output text after the real trampoline has
+// already run. Deliberately tolerant of EAX/ECX/[esp+8] turning out not to be what
+// static analysis expects -- this project's own research flagged real uncertainty
+// about ECX's exact semantic identity, so every dereference here is validated and
+// wrapped in SEH before use, never assumed safe. extern "C" so the naked shim's plain
+// `call BindResolverLogAfterCall` resolves to an unmangled symbol, same treatment
+// InjectAllControllerInput already gets for the same reason.
+extern "C" void __cdecl BindResolverLogAfterCall()
+{
+    if (!g_modConfig.bindResolverHookLogging) return;
+
+    char ctxBuf[160];
+    if (LooksLikeValidPointer(g_bindResolverCtxEcx)) {
+        const char* asStr = reinterpret_cast<const char*>(g_bindResolverCtxEcx);
+        __try {
+            char nameBuf[64];
+            size_t i = 0;
+            bool stringShaped = true;
+            for (; i < sizeof(nameBuf) - 1; ++i) {
+                char c = asStr[i];
+                if (c == '\0') break;
+                if (c < 0x20 || c >= 0x7f) { stringShaped = false; break; }
+                nameBuf[i] = c;
+            }
+            nameBuf[i] = '\0';
+            if (stringShaped) {
+                sprintf_s(ctxBuf, "EAX(ctx)=0x%08X ECX(bindCtx)=0x%08X as-string=\"%s\"",
+                    static_cast<unsigned>(g_bindResolverCtxEax), static_cast<unsigned>(g_bindResolverCtxEcx), nameBuf);
+            } else {
+                sprintf_s(ctxBuf, "EAX(ctx)=0x%08X ECX(bindCtx)=0x%08X (not string-shaped)",
+                    static_cast<unsigned>(g_bindResolverCtxEax), static_cast<unsigned>(g_bindResolverCtxEcx));
+            }
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            sprintf_s(ctxBuf, "EAX(ctx)=0x%08X ECX(bindCtx)=0x%08X (deref faulted -- not a valid string ptr)",
+                static_cast<unsigned>(g_bindResolverCtxEax), static_cast<unsigned>(g_bindResolverCtxEcx));
+        }
+    } else {
+        sprintf_s(ctxBuf, "EAX(ctx)=0x%08X ECX(bindCtx)=0x%08X (not a plausible pointer)",
+            static_cast<unsigned>(g_bindResolverCtxEax), static_cast<unsigned>(g_bindResolverCtxEcx));
+    }
+
+    char textBuf[128] = {};
+    bool bufReadOk = false;
+    if (LooksLikeValidPointer(g_bindResolverBufPtr)) {
+        const char* resolved = reinterpret_cast<const char*>(g_bindResolverBufPtr);
+        __try {
+            size_t i = 0;
+            for (; i < sizeof(textBuf) - 1; ++i) {
+                char c = resolved[i];
+                textBuf[i] = c;
+                if (c == '\0') break;
+            }
+            textBuf[sizeof(textBuf) - 1] = '\0';
+            bufReadOk = true;
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            sprintf_s(textBuf, "<faulted reading 0x%08X>", static_cast<unsigned>(g_bindResolverBufPtr));
+        }
+    } else {
+        sprintf_s(textBuf, "<buffer ptr 0x%08X not plausible>", static_cast<unsigned>(g_bindResolverBufPtr));
+    }
+
+    // Dedup: only log when the resolved text actually changed since last call, so a
+    // hint sitting on screen (re-resolved every frame while visible) logs once, not
+    // continuously.
+    if (bufReadOk && strcmp(textBuf, g_bindResolverLastLoggedText) == 0) return;
+    if (bufReadOk) {
+        strncpy_s(g_bindResolverLastLoggedText, textBuf, sizeof(g_bindResolverLastLoggedText) - 1);
+    }
+
+    char buf[400];
+    sprintf_s(buf, "[bind-resolver-diag] %s | limitTo1=%u resolvedText=\"%s\"",
+        ctxBuf, static_cast<unsigned>(g_bindResolverLimitFlag), textBuf);
+    LogFromController(buf);
+}
+
+__declspec(naked) void Hook_0061f6f0()
+{
+    __asm {
+        // Stash everything meaningful before it can be clobbered -- register args
+        // first, then the two stack args this pass cares about ([esp+8]/[esp+0xc]).
+        // [esp+4] is confirmed dead by the research above; not read here either.
+        mov dword ptr [g_bindResolverCtxEax], eax
+        mov dword ptr [g_bindResolverCtxEcx], ecx
+        mov eax, dword ptr [esp+8]
+        mov dword ptr [g_bindResolverBufPtr], eax
+        mov eax, dword ptr [esp+0xc]
+        mov dword ptr [g_bindResolverLimitFlag], eax
+
+        // Save the real return address, then repoint that same stack slot at our own
+        // afterCall label -- see the big comment above for why this must be an
+        // in-place overwrite (no push) rather than a plain `call`.
+        mov eax, dword ptr [esp]
+        mov dword ptr [g_bindResolverRealRetAddr], eax
+        mov dword ptr [esp], offset afterCall
+
+        // Restore EAX/ECX exactly as the real caller set them, then tail-jump (NOT
+        // call) into the trampoline so it sees the byte-for-byte original frame.
+        mov eax, dword ptr [g_bindResolverCtxEax]
+        mov ecx, dword ptr [g_bindResolverCtxEcx]
+        jmp dword ptr [g_orig_0061f6f0]
+
+    afterCall:
+        // The trampoline's own `ret` landed us here with esp already back to what the
+        // real caller would see post-return. Preserve every register across the log
+        // call since this function's real return-value convention (if any) in EAX is
+        // not confirmed, then resume the real caller directly -- there is no
+        // return-address slot left on the stack to `ret` through a second time.
+        pushad
+        call BindResolverLogAfterCall
+        popad
+        jmp dword ptr [g_bindResolverRealRetAddr]
+    }
+}
+
 namespace {
 void* g_orig_0057de60 = nullptr;
 }
@@ -3294,6 +3660,40 @@ void InstallAnalogInputHooks()
     if (s2 == MH_OK) {
         MH_STATUS e2 = MH_EnableHook(reinterpret_cast<LPVOID>(0x0057de60));
         sprintf_s(buf, "[hooks] MH_EnableHook(0057de60) = %d", static_cast<int>(e2));
+        LogFromController(buf);
+    }
+
+    // Bind-resolver text hook (task #6/#35, 2026-07-21) -- LOG-ONLY first pass, see the
+    // big comment above Hook_0061f6f0's definition. Installed unconditionally (this is
+    // a permanent hook, not a manually-triggered debug test), but its LOGGING is gated
+    // by g_modConfig.bindResolverHookLogging (default on) so it can be silenced from
+    // the INI without a recompile -- the hook forwards to the real trampoline
+    // completely unmodified either way, so leaving it installed carries no behavior
+    // risk even with logging off.
+    MH_STATUS s8 = MH_CreateHook(reinterpret_cast<LPVOID>(0x0061f6f0), &Hook_0061f6f0, &g_orig_0061f6f0);
+    sprintf_s(buf, "[hooks] MH_CreateHook(0061f6f0 bind-resolver) = %d", static_cast<int>(s8));
+    LogFromController(buf);
+    if (s8 == MH_OK) {
+        MH_STATUS e8 = MH_EnableHook(reinterpret_cast<LPVOID>(0x0061f6f0));
+        sprintf_s(buf, "[hooks] MH_EnableHook(0061f6f0 bind-resolver) = %d", static_cast<int>(e8));
+        LogFromController(buf);
+    }
+
+    // task #23 follow-up (2026-07-20) -- boot-thunk resolution diagnostic, see the
+    // big comment above Hook_FUN_00679680's definition for the full rationale/
+    // correction. Wired live deliberately (like InjectFontStructDebugTest below):
+    // this hooks a real, ordinary function (confirmed safe via its plain
+    // disassembled prologue/epilogue, no thunk involved), calls the original
+    // completely unmodified, and only reads/logs afterward -- zero mutation, zero
+    // interception of the actual zone-loading path that crashed the game twice
+    // before (issues #22/#24/#30). Safe by the same standard that governs every
+    // other "read-only diagnostic wired live" call in this file.
+    MH_STATUS s3 = MH_CreateHook(reinterpret_cast<LPVOID>(0x00679680), &Hook_FUN_00679680, reinterpret_cast<LPVOID*>(&g_origFUN_00679680));
+    sprintf_s(buf, "[hooks] MH_CreateHook(00679680 boot-thunk-diag) = %d", static_cast<int>(s3));
+    LogFromController(buf);
+    if (s3 == MH_OK) {
+        MH_STATUS e3 = MH_EnableHook(reinterpret_cast<LPVOID>(0x00679680));
+        sprintf_s(buf, "[hooks] MH_EnableHook(00679680 boot-thunk-diag) = %d", static_cast<int>(e3));
         LogFromController(buf);
     }
 
