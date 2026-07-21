@@ -29,6 +29,24 @@ reverse-engineering trail behind each entry.
   `re_notes/known_issues.md` issue #35 for the full trail.
 
 ### Added
+- **Level-load-safe glyph-font-extension trigger (`Hook_FUN_0053cbc0`), task #6/#23
+  follow-up.** New permanent hook on `FUN_0053cbc0` (a real, ordinary function
+  confirmed via fresh disassembly — plain prologue/epilogue, no thunk involved —
+  that fires exactly once per real level load/restart/checkpoint-reload). Read-only
+  for now: calls the original completely unmodified, then logs every call with a
+  running counter and the real map/mission name. This is the actual fix for the
+  glyph-font-extension's known timing problem (loading real font content from the
+  WndProc/`SetTimer` tick risks a black-screen GPU-resource-creation cascade) —
+  riding inside a real engine-issued level-load call instead puts the load in the
+  correct safe timing window. The already-implemented, idempotent
+  `InstallGlyphFontExtension()` splice call is present in the hook but **left
+  commented out/disabled by default** pending live confirmation of the diagnostic
+  above — this project has crashed live twice before from adjacent boot/zone-loading
+  mistakes, so "confirmed via disassembly" alone isn't this project's bar for
+  shipping a mutating call enabled. Builds clean. **Not yet live-tested.** See
+  `re_notes/known_issues.md` issue #23 for the full trail, including why the
+  previous session's address-recovery approach (`Hook_FUN_00679680`) turned out to
+  be solving a problem that didn't need solving.
 - **Bind-resolver text hook (`FUN_0061f6f0`), LOG-ONLY first pass (task #6/#35).**
   A new permanent hook now forwards every real bind-hint-text resolution
   (e.g. the interact prompts behind "Press [E] to pick up") through to the
