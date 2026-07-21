@@ -4861,3 +4861,72 @@ bug in the same code, independent of the register-capture issue. **Status: hook 
 installed (safe, no behavior risk since it never mutates anything), but the log-only
 data isn't yet a trustworthy foundation for the real glyph-substitution work — needs a
 follow-up debugging pass on the shim before that's true.**
+
+**ROOT-CAUSED via fresh Ghidra disassembly (2026-07-21, follow-up pass) — hypothesis
+(a) confirmed correct, hypothesis (b) refuted; dedup bug also fixed.** Ran
+`FindCallers.java` against `FUN_0061f6f0` (bindresolver Ghidra project) to get all 4
+real callers' decompiles, then `DumpDisasm.java` on the two most relevant
+(`FUN_00622970` and `FUN_004fafd0`, a known-good hint-resolution caller) to compare
+their real push sequences byte-for-byte, since the decompiler alone doesn't reliably
+show register-vs-stack argument shape for a function whose real convention isn't a
+plain `__cdecl` signature.
+
+`FUN_004fafd0`'s disassembly confirms the documented convention exactly: `EAX`/`ECX`
+loaded from its own stack params right before the call (register args), then three
+stack pushes landing at `[esp+4]`/`[esp+8]`/`[esp+0xc]` at `FUN_0061f6f0`'s entry —
+`[esp+8]` genuinely is that caller's real output-buffer pointer.
+
+`FUN_00622970`'s disassembly (single call site, `00622970 -> CALL 0x0061f6f0 @
+006229a7`) is the smoking gun:
+```
+00622993  MOV ECX,dword ptr [EDI]        ; ECX = *EDI (real bind-ctx reg, per convention)
+00622995  PUSH 0x0                       ; -> [esp+0xc] at entry (flag=0, consistent)
+00622997  LEA EAX,[ESP + 0x4]            ; EAX = &local_100, a REAL valid stack buffer
+0062299b  PUSH 0x100                     ; -> [esp+8] at entry: the literal 0x100 (SIZE, not a pointer!)
+006229a0  PUSH EAX                       ; -> [esp+4] at entry: the REAL buffer pointer
+006229a1  MOV EAX,dword ptr [ESI + 0x114] ; EAX = real context reg, per convention
+006229a7  CALL 0x0061f6f0
+```
+This caller pushes its real buffer pointer at `[esp+4]` and the buffer's SIZE (`0x100`)
+at `[esp+8]` — the reverse of every other caller — which is an exact, disassembly-
+confirmed match for the live symptom (`[esp+8]` reading as `0x100`). `EAX`/`ECX`
+register setup is textbook-correct here too (real context/bind-ctx values), which is
+exactly why hypothesis (b) — a bug in this hook's own register-stash offsets — is
+refuted: the shim reads the textbook-correct offsets for the convention every OTHER
+caller uses; this ONE caller's own real argument shape is just genuinely different. The
+live `ECX=0` is also now explained rather than mysterious: `FUN_00622970`'s body
+(`DAT_01c0b1ac`/`DAT_01c0b1b4` guard, `"@MENU_BIND_KEY_PENDING"` string literal)
+confirms the 2026-07-18 fork research's prediction exactly — a key-rebind-capture UI
+("waiting for the next physical key press to bind"), which has no "current bind name"
+to resolve while capture is pending, hence a null `*EDI`.
+
+**Fix applied** (`analog_input_hooks.cpp`): `BindResolverLogAfterCall` now checks
+`g_bindResolverRealRetAddr` against `kMenuBindKeyCaptureCallerRetAddr` (`0x006229AC`,
+the real return address immediately following `FUN_00622970`'s one call site,
+confirmed via the same disassembly) and skips logging for that caller specifically —
+logging a single one-time note instead of either flooding the log with meaningless
+data or silently looking like the hook stopped firing. The hook itself, its
+installation, and its behavior for the 3 real hint-resolution callers are unchanged.
+
+**Dedup bug also fixed, same pass**: the old code only compared/updated
+`g_bindResolverLastLoggedText` when `bufReadOk` was true (a successful buffer read) —
+so whenever the buffer pointer looked implausible (`bufReadOk == false`, exactly the
+case that flooded the log with the `FUN_00622970` noise before the fix above), dedup
+silently never engaged in either direction (no compare, no update), so every single
+call logged unconditionally. Fixed by comparing/updating on `textBuf`'s content
+directly regardless of `bufReadOk` — `textBuf` always holds a deterministic string by
+that point (real resolved text, a faulted-read marker, or the not-plausible marker), so
+this is correct in every case, not just the happy path. The now-unused `bufReadOk`
+variable was removed rather than left dead.
+
+**Build**: clean, full rebuild, 0 warnings/0 errors (MSBuild, Win32/Release).
+**Not yet live-tested** — this fix could not be launched against the running game in
+this pass (no game-automation tooling available); confidence comes from the
+disassembly comparison above (both callers' real push sequences traced instruction by
+instruction against the confirmed `FUN_0061f6f0` entry-state offsets), not a fresh
+playtest. Next real launch should confirm: (1) the `FUN_00622970` skip-note logs
+exactly once (not per-frame), and (2) any genuine hint-resolution call from the 3
+normal callers now produces a plausible `ECX`/buffer read where it previously would
+have (this pass didn't change what those 3 callers pass, only how the OTHER caller is
+handled, so this should already have been working for them — worth confirming
+directly rather than assumed).
