@@ -20,6 +20,18 @@
 enum class ButtonLayout { Default, Tactical, Lefty, TacticalLefty };
 enum class StickLayout { Default, Southpaw, Legacy, LegacySouthpaw };
 
+// Controller-glyph icon style (task #6, 2026-07-21) -- independent of ButtonLayout:
+// XInput doesn't distinguish an Xbox-branded pad from a PlayStation-branded one on
+// Windows, so which button-prompt ART a player wants can't be auto-detected from the
+// input API alone, same reasoning already documented in re_notes/ui_assets.md's "Open
+// questions" section. Names match assets/button_glyphs/'s own real file-prefix
+// convention exactly (Xbox360 -> xbox360_*, XboxModern -> xboxmodern_*, PlayStation ->
+// ps_*) -- don't invent new naming here. This selects ICON STYLE ONLY; it has no
+// effect yet, since the substitution logic that would use it
+// (BindResolverGlyphSubstitution below) is still off by default pending the font-
+// loading work (see re_notes/known_issues.md issue #23).
+enum class GlyphStyle { Xbox360, XboxModern, PlayStation };
+
 // One entry per logical action; resolves to whichever physical XInput button/trigger
 // the active ButtonLayout (+ FlipTriggers) currently assigns it to. Scoreboard (Back)
 // is included for completeness even though nothing is wired to it yet (task #5).
@@ -107,6 +119,10 @@ struct ModConfig
     ButtonLayout buttonLayout = ButtonLayout::Default;
     StickLayout stickLayout = StickLayout::Default;
     bool flipTriggers = false; // independent toggle: swaps RT<->RB and LT<->LB
+    GlyphStyle glyphStyle = GlyphStyle::Xbox360; // task #6 -- see enum comment above;
+                                                   // purely cosmetic until the
+                                                   // substitution feature below is
+                                                   // both implemented AND enabled
 
     // Aim assist (task #16) permanently removed 2026-07-20 -- see
     // re_notes/known_issues.md issue #15/#16 for why: reading live entity/target data
@@ -155,6 +171,20 @@ struct ModConfig
         // during normal play (it's already deduped to log only on text changes, not
         // every frame a hint is on screen, but a busy interact-hint-heavy session
         // could still be chatty).
+    bool bindResolverGlyphSubstitution = false; // task #6/#35 (2026-07-21): when the
+        // bind-resolver hook (FUN_0061f6f0) resolves real hint text for one of the 3
+        // real hint-resolution callers (the key-rebind-capture caller is always
+        // skipped regardless of this flag -- see known_issues.md issue #35) to a
+        // single, unmodified key name this project has a glyph mapping for (see
+        // analog_input_hooks.cpp's glyph-substitution table), overwrite the real
+        // output buffer with a substitution codepoint sequence instead of leaving the
+        // plain key-name text in place. DEFAULT OFF, DELIBERATELY: this is pure
+        // preparatory groundwork -- no font asset currently loaded in the running
+        // game can render the substitution codepoints yet (see known_issues.md issue
+        // #23's still-open safe-loading problem), so flipping this on today would
+        // just replace readable key-name text with tofu/missing-glyph boxes, a
+        // regression, not an improvement. Turn on only once the font-loading side of
+        // task #6 is confirmed live.
     // sprintStaminaBypassForTesting (task #9) REMOVED 2026-07-19: graduated to
     // unconditional the same day it was added -- Sprint's real +sprint kbutton
     // migration was LIVE-CONFIRMED working, and with it confirmed that the real
