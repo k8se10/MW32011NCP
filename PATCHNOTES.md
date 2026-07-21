@@ -9,6 +9,28 @@ reverse-engineering trail behind each entry.
 ## Unreleased
 
 ### Investigated-not-resolved
+- **WaW-style animated dev clan tags — new roadmap idea, feasibility research only
+  (issue #37).** Brought over World at War's ~22 hidden animated "dev" clan-tag magic
+  words (`....`, `****`, `MOVE`, `RAIN`, `CYCL`, `CYLN`, etc. — real, citable subset
+  documented, not a complete roster) as a candidate feature for this project, built
+  from scratch as our own native-code implementation rather than porting WaW's
+  original save-glitch mechanism. Confirmed MW3's own real clan-tag system
+  (`eliteClanTagText`/`clanPrefix`) is Activision Elite-branded **networked
+  lobby-session presence data**, not a plain local string — a bad fit given SP/
+  Survival's offline scope and the Elite backend already being dead. The one local,
+  natively-populated candidate found (`self.playername`) is too narrowly scoped
+  (one pre-mission lobby screen) and not well-understood enough (native population
+  point untraced) to build on yet. Recommendation: build a fully separate,
+  project-owned overlay (own config toggle, own animation timer, same "build our own
+  layer" precedent as the Sprint stamina timer) instead of reusing either native
+  path. **Biggest blocker, generic to any future "draw something custom every
+  frame" feature in this project, not just this one**: no per-frame D3D9 render hook
+  is confirmed alive today — `Present` is confirmed dead (Steam Overlay suspected),
+  and the untried alternative (`EndScene`, or piggybacking the game's own native
+  HUD-text-draw call from an existing tick hook) needs its own dedicated
+  investigation first. No code shipped this pass — pure research/scoping, see
+  `re_notes/known_issues.md` issue #37 for the full trail, sources, and integration
+  plan.
 - **Bind-resolver hook (task #6/#35): residual garbage-log occurrence, root cause not
   found.** A real playtest after the `FUN_00622970` return-address fix showed the fix
   working far better (1 garbage line all session vs. 51+ before), but that one
