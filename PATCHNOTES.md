@@ -8,6 +8,24 @@ reverse-engineering trail behind each entry.
 
 ## Unreleased
 
+### Added
+- **Bind-resolver glyph-substitution groundwork, OFF by default (task #6).** Built
+  the key-name-text → controller-glyph-codepoint substitution logic that the
+  bind-resolver hook (`FUN_0061f6f0`) needs to eventually show real button icons in
+  interact hints, plus a new `GlyphStyle` config option (`Xbox360`/`XboxModern`/
+  `PlayStation`, same pattern as `ButtonLayout`/`StickLayout`) so players can pick
+  their preferred icon look independent of physical controller brand. New
+  `[Experimental] BindResolverGlyphSubstitution` toggle, **default off on purpose** —
+  no font asset the game can currently load renders these codepoints yet (see
+  `re_notes/known_issues.md` issue #23's still-open safe-loading problem), so
+  enabling this today would show missing-glyph boxes instead of readable text. Also
+  adds a small `Controller_IsConnected()` helper (`controller_input.h`/`.cpp`) since
+  no "is a controller currently active" flag existed anywhere in this codebase
+  before. Builds clean; not live-tested (feature is inert by default regardless) —
+  see `re_notes/known_issues.md` issue #35 for the full design trail, including a
+  real, honestly-documented gap (no Xbox360-style left-stick/right-stick-click icon
+  assets exist, so Sprint/Melee glyphs are unmapped for that one style).
+
 ### Fixed
 - **Bind-resolver hook (`FUN_0061f6f0`) logged implausible data for one real caller;
   root-caused and fixed (task #6/#35 follow-up).** The live-test above traced to a

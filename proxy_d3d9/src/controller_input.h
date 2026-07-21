@@ -27,6 +27,12 @@ float Controller_DeltaTimeSeconds();
 // Returns false (zeroing outputs) if no controller is connected.
 bool Controller_GetRawButtonsAndTriggers(unsigned short& buttons, unsigned char& leftTrigger, unsigned char& rightTrigger);
 
+// True if a real XInput controller currently responds on slot 0 -- a thin wrapper
+// around the same XInputGetState poll every function above already does, exposed
+// standalone for call sites (e.g. the bind-resolver glyph-substitution work, task #6)
+// that only need a yes/no gate and don't otherwise need stick/button data this frame.
+bool Controller_IsConnected();
+
 // Sets the controller's two rumble motors directly (task #17). leftMotor/rightMotor
 // are normalized [0, 1] -- clamped internally, so an out-of-range caller can't send a
 // bogus value to XInputSetState. Same controller slot (index 0) as every other XInput

@@ -82,6 +82,30 @@ StickLayout ParseStickLayout(const char* s, StickLayout fallback)
     return fallback;
 }
 
+const char* GlyphStyleName(GlyphStyle v)
+{
+    switch (v) {
+        case GlyphStyle::XboxModern: return "XboxModern";
+        case GlyphStyle::PlayStation: return "PlayStation";
+        default: return "Xbox360";
+    }
+}
+
+GlyphStyle ParseGlyphStyle(const char* s, GlyphStyle fallback)
+{
+    if (_stricmp(s, "Xbox360") == 0) return GlyphStyle::Xbox360;
+    if (_stricmp(s, "XboxModern") == 0) return GlyphStyle::XboxModern;
+    if (_stricmp(s, "PlayStation") == 0) return GlyphStyle::PlayStation;
+    return fallback;
+}
+
+void ReadGlyphStyle(const char* path, GlyphStyle& outValue)
+{
+    char buf[32];
+    GetPrivateProfileStringA("Bindings", "GlyphStyle", GlyphStyleName(outValue), buf, sizeof(buf), path);
+    outValue = ParseGlyphStyle(buf, outValue);
+}
+
 void ReadButtonLayout(const char* path, ButtonLayout& outValue)
 {
     char buf[32];
@@ -175,6 +199,10 @@ void WriteDefaultConfig(const char* path)
         "; Independent toggle: swaps RT<->RB and LT<->LB (0 = off, 1 = on). Combines\n"
         "; with whichever ButtonLayout is active above.\n"
         "FlipTriggers=%d\n"
+        "; Controller-glyph icon style (task #6) -- purely cosmetic today, has no\n"
+        "; visible effect until BindResolverGlyphSubstitution below is both\n"
+        "; implemented further and enabled. One of: Xbox360, XboxModern, PlayStation\n"
+        "GlyphStyle=%s\n"
         "\n"
         "[Vibration]\n"
         "; No native rumble exists in this build at all -- entirely our own\n"
@@ -208,7 +236,14 @@ void WriteDefaultConfig(const char* path)
         "; and always forwards to the real game logic completely unmodified (log-only\n"
         "; first pass -- no glyph substitution happens yet). This only controls whether\n"
         "; it logs what it observes to proxy_d3d9.log. 0 = off, 1 = on.\n"
-        "BindResolverHookLogging=%d\n",
+        "BindResolverHookLogging=%d\n"
+        "; Task #6/#35: overwrite resolved hint text with a controller-glyph\n"
+        "; codepoint when a mapping exists for the current GlyphStyle and a\n"
+        "; controller is connected. DEFAULT OFF ON PURPOSE -- no font asset the\n"
+        "; running game can load yet actually renders these codepoints (see\n"
+        "; re_notes/known_issues.md issue #23), so enabling this today replaces\n"
+        "; readable text with missing-glyph boxes. Leave at 0 until that's resolved.\n"
+        "BindResolverGlyphSubstitution=%d\n",
         g_modConfig.lookDegreesPerSecond,
         g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
@@ -220,6 +255,7 @@ void WriteDefaultConfig(const char* path)
         ButtonLayoutName(g_modConfig.buttonLayout),
         StickLayoutName(g_modConfig.stickLayout),
         g_modConfig.flipTriggers ? 1 : 0,
+        GlyphStyleName(g_modConfig.glyphStyle),
         g_modConfig.vibrationEnabled ? 1 : 0,
         g_modConfig.vibrationFireIntensity,
         g_modConfig.vibrationFireDurationMs,
@@ -227,7 +263,8 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.vibrationDamageMaxIntensity,
         g_modConfig.vibrationDamageDurationMs,
         g_modConfig.fireNotifyQueueKick ? 1 : 0,
-        g_modConfig.bindResolverHookLogging ? 1 : 0);
+        g_modConfig.bindResolverHookLogging ? 1 : 0,
+        g_modConfig.bindResolverGlyphSubstitution ? 1 : 0);
 
     fclose(f);
 }
@@ -344,6 +381,7 @@ void LoadModConfig()
     ReadButtonLayout(path, g_modConfig.buttonLayout);
     ReadStickLayout(path, g_modConfig.stickLayout);
     ReadBool(path, "Bindings", "FlipTriggers", g_modConfig.flipTriggers);
+    ReadGlyphStyle(path, g_modConfig.glyphStyle);
     ReadBool(path, "Vibration", "Enabled", g_modConfig.vibrationEnabled);
     ReadFloat(path, "Vibration", "FireIntensity", g_modConfig.vibrationFireIntensity);
     if (g_modConfig.vibrationFireIntensity < 0.0f) g_modConfig.vibrationFireIntensity = 0.0f;
@@ -355,29 +393,31 @@ void LoadModConfig()
     ReadUlong(path, "Vibration", "DamageDurationMs", g_modConfig.vibrationDamageDurationMs);
     ReadBool(path, "Experimental", "FireNotifyQueueKick", g_modConfig.fireNotifyQueueKick);
     ReadBool(path, "Experimental", "BindResolverHookLogging", g_modConfig.bindResolverHookLogging);
+    ReadBool(path, "Experimental", "BindResolverGlyphSubstitution", g_modConfig.bindResolverGlyphSubstitution);
 
     g_buttonMap = ResolveButtonMap(g_modConfig.buttonLayout, g_modConfig.flipTriggers);
 
-    char buf[900];
+    char buf[950];
     sprintf_s(buf,
         "[config] loaded mw3ncp_config.ini: sensitivity=%g adsSlowdownStrength=%g "
         "adsSlowdownBaseline=%g invertLook=%d lookAccelRampMs=%lu proneHoldMs=%lu interactHoldMs=%lu "
         "readyUpHoldMs=%lu "
-        "buttonLayout=%s stickLayout=%s flipTriggers=%d "
+        "buttonLayout=%s stickLayout=%s flipTriggers=%d glyphStyle=%s "
         "vibrationEnabled=%d vibrationFireIntensity=%g vibrationFireDurationMs=%lu "
         "vibrationDamagePerPoint=%g vibrationDamageMaxIntensity=%g vibrationDamageDurationMs=%lu "
-        "fireNotifyQueueKick=%d bindResolverHookLogging=%d",
+        "fireNotifyQueueKick=%d bindResolverHookLogging=%d bindResolverGlyphSubstitution=%d",
         g_modConfig.lookDegreesPerSecond, g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
         g_modConfig.invertLook ? 1 : 0, g_modConfig.lookAccelerationRampMs,
         g_modConfig.proneHoldThresholdMs,
         g_modConfig.interactHoldThresholdMs, g_modConfig.readyUpHoldThresholdMs,
         ButtonLayoutName(g_modConfig.buttonLayout), StickLayoutName(g_modConfig.stickLayout),
-        g_modConfig.flipTriggers ? 1 : 0,
+        g_modConfig.flipTriggers ? 1 : 0, GlyphStyleName(g_modConfig.glyphStyle),
         g_modConfig.vibrationEnabled ? 1 : 0, g_modConfig.vibrationFireIntensity,
         g_modConfig.vibrationFireDurationMs, g_modConfig.vibrationDamagePerPoint,
         g_modConfig.vibrationDamageMaxIntensity, g_modConfig.vibrationDamageDurationMs,
         g_modConfig.fireNotifyQueueKick ? 1 : 0,
-        g_modConfig.bindResolverHookLogging ? 1 : 0);
+        g_modConfig.bindResolverHookLogging ? 1 : 0,
+        g_modConfig.bindResolverGlyphSubstitution ? 1 : 0);
     LogFromController(buf);
 }
