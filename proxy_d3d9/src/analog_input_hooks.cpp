@@ -3445,7 +3445,10 @@ void InjectFontGlyphPatchTest_HudBigFont()
 
     LogFromController("[hudbigfont-patch-test] LB+RB+B held 2s -- attempting glyph-array patch on fonts/hudbigfont");
     void* rawFont = FindOrLoadFont("fonts/hudbigfont");
-    char buf[200];
+    // 400, not 200 -- the final "patch applied" message below is long (~330 chars)
+    // once it's sprintf'd with a runtime codepoint instead of being a plain string
+    // literal; a 200-byte buffer would make that sprintf_s overflow and abort().
+    char buf[400];
     if (!LooksLikeValidPointer(reinterpret_cast<uintptr_t>(rawFont))) {
         LogFromController("[hudbigfont-patch-test] FindOrLoadFont returned implausible pointer -- aborting");
         return;
@@ -3460,18 +3463,36 @@ void InjectFontGlyphPatchTest_HudBigFont()
     }
 
     const int oldCount = font->glyphCount;
-    const unsigned short kNewCodepoint = 0x81;
 
-    int insertAt = oldCount;
+    // Find a genuinely free codepoint at runtime instead of hardcoding 0x81 -- a live
+    // playtest (2026-07-21, known_issues.md issue #34) proved 0x81 collides with a
+    // real existing hudBigFont glyph at index 128, so the insert path never actually
+    // ran. The [96, oldCount) tail is kept in ascending `letter` order (see the big
+    // comment above InjectFontGlyphPatchTest), so a single left-to-right walk finds
+    // both the free codepoint AND its correct sorted insertion index together:
+    // whenever an existing entry's letter equals the current candidate, that
+    // candidate is taken -- bump it and keep walking; the first entry whose letter is
+    // GREATER than the (possibly bumped) candidate proves the candidate is free and
+    // is exactly where it sorts in.
+    unsigned int candidate = 0x81;
+    int insertAt = -1;
     for (int i = 96; i < oldCount; ++i) {
-        if (font->glyphs[i].letter > kNewCodepoint) { insertAt = i; break; }
-        if (font->glyphs[i].letter == kNewCodepoint) {
-            sprintf_s(buf, "[hudbigfont-patch-test] codepoint 0x%02X already exists at index %d -- aborting, nothing to insert",
-                kNewCodepoint, i);
-            LogFromController(buf);
-            return;
+        const unsigned short letter = font->glyphs[i].letter;
+        if (letter < candidate) continue; // existing entry below our search floor
+        if (letter == candidate) {
+            ++candidate;
+            if (candidate > 0xFF) break; // exhausted the whole search range
+            continue;
         }
+        insertAt = i; // letter > candidate: candidate is free, and sorts in right here
+        break;
     }
+    if (candidate > 0xFF) {
+        LogFromController("[hudbigfont-patch-test] every codepoint from 0x81 to 0xFF is already taken -- aborting, no free codepoint found to insert");
+        return;
+    }
+    if (insertAt < 0) insertAt = oldCount; // walked off the end still free -> append
+    const unsigned short kNewCodepoint = static_cast<unsigned short>(candidate);
 
     DiagGlyph* newArray = new DiagGlyph[oldCount + 1];
     memcpy(newArray, font->glyphs, sizeof(DiagGlyph) * insertAt);
@@ -3498,7 +3519,9 @@ void InjectFontGlyphPatchTest_HudBigFont()
     // Old array intentionally leaked, not deleted -- same reasoning as the bigfont
     // version above.
 
-    LogFromController("[hudbigfont-patch-test] patch applied -- if the mechanism is sound AND any real HUD text drawn via hudBigFont ever contains byte 0x81, it should render as a visible (borrowed) 'A' glyph. hudBigFont draws constantly during real play (7929 uses/session observed) -- far more likely to actually be checkable than bigfont ever was.");
+    sprintf_s(buf, "[hudbigfont-patch-test] patch applied -- if the mechanism is sound AND any real HUD text drawn via hudBigFont ever contains byte 0x%02X, it should render as a visible (borrowed) 'A' glyph. hudBigFont draws constantly during real play (7929 uses/session observed) -- far more likely to actually be checkable than bigfont ever was.",
+        kNewCodepoint);
+    LogFromController(buf);
 }
 
 // ---- REAL glyph font extension: safe manual zone load + full field repoint --------
