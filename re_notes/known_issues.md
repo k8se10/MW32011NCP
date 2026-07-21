@@ -4593,6 +4593,13 @@ answer is more layered than a single yes/no.
   auth/lobby service is non-responsive today. Most likely explanation: MW3 shares underlying Demonware
   infrastructure/maintenance windows with newer titles as a batch, without anyone specifically restoring or
   prioritizing MW3(2011)'s own service.
+- **Cross-reference (2026-07-21): `iw5mp_server.exe` (App 42750) was installed and directly RE'd this same
+  session**, by the sibling `MW32011NSP` project, comparing its server-side code against `iw5mp.exe`'s own
+  built-in host role — near-identical structure (same source) but not byte-identical, no shared addresses,
+  one real asymmetry (`iw5mp_server.exe` has an extra `"queryserverinfo"` OOB command absent from
+  `iw5mp.exe`). Not VAC-relevant, but directly relevant to this file's own "What retail players actually use
+  today" finding below, since it's the same binary referenced there. Full detail in `MW32011NSP`'s own
+  `re_notes/vulnerability_research.md`, "Extended to `iw5mp_server.exe`" section.
 - **What retail players actually use today, converging evidence from two independent research angles**: a
   small pool of **community-run, third-party dedicated servers** (via the free `iw5mp_server.exe` Steam Tool
   app, App ID 42750) — GameMonitoring.net lists 16 total, 11 currently online, reached via direct-connect or
