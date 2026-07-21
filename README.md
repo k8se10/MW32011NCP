@@ -93,7 +93,7 @@ live-tested by the developer during actual play, not just built-and-assumed.
 | Button-glyph controller icons | Full asset + build pipeline proven end-to-end, but nothing renders in-game yet — zero player-visible effect currently |
 | Vehicle-exit prompt (`+usereload`, Mind the Gap) | Not wired |
 | Survival debug menu / dev console | The real console is confirmed permanently dead — a custom debug menu hasn't been built |
-| WaW-style animated clan tags | Research only, genuinely complicated by a dead networked Elite-session dependency |
+| WaW-style animated dev clan tags | Research only (twice, most recently 2026-07-21), genuinely complicated by a dead networked Elite-session dependency and by the project having no confirmed-alive per-frame render hook yet — see `known_issues.md` #37 |
 | Multiplayer (`iw5mp.exe`) | **Not started at all** — separate binary, needs its own full RE pass, anti-cheat exposure still unresolved |
 
 ### ❓ Untested (not known broken, just never exercised)
@@ -131,7 +131,7 @@ fully live-confirmed working with no known gap (that's the ✅ table above).
 |---|---|---|
 | God-mode / debug-cheat toggles | Real, disassembly-confirmed entity health-immunity bit (`entity+0x13c` bit `0x1`); simpler `so_nofail` "can't fail mission" dvar switch; ammo-refill/wave-skip/killstreak-spawn native pieces not yet reached; a `noclip` GSC notify-event lead not fully traced | `known_issues.md` task #20 |
 | Survival wave-skip / difficulty-tuning tools | Full wave-loop + CSV data-table structure reverse-engineered and logged as reference material for a future debug menu; not implemented | `survival_wave_scaling.md` |
-| WaW-style colored/animated clan tags | Real investigation done; blocked on the clan-tag system being networked session state, not local storage. A promising alternative (`self.playername`, native-sourced local field) found but not fully chased | README (Not-working table above), `ui_assets.md` |
+| WaW-style animated dev clan tags | Real investigation done, twice (2026-07-18 and 2026-07-21). MW3's own clan-tag system is networked Elite-session presence data, a bad fit for offline SP/Survival; `self.playername` (local, native-sourced) is too narrow to build on. Recommended path is a fully project-owned overlay (own config + own timer, same precedent as the Sprint stamina timer), but it's gated on a project-wide unknown: no per-frame D3D9 render hook is confirmed alive today (`Present` is dead, `EndScene` untried) | README (Not-working table above), `ui_assets.md`, `known_issues.md` #37 |
 | First-launch welcome/MOTD message | Real, permanently-dead MOTD UI ticker found and confirmed safe to repurpose (`visible when(0)` hardcoded false); full implementation plan exists (reuse `RegisterMenu`/`OpenMenuByName`); not implemented | `ui_assets.md` |
 | `GlyphStyle` config option (Xbox 360/One/Series/PS3/PS4/PS5 icon choice) | Planned alongside the button-glyph work since XInput can't distinguish controller brand; not implemented | `ui_assets.md` |
 

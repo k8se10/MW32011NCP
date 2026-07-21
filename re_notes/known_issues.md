@@ -5289,3 +5289,216 @@ dormant dual-viewport/dual-simulation path exists (that's still the open feasibi
 question above), but it's a second, independent, real signal consistent with 2-player local
 co-op being a genuinely-supported design target somewhere in this engine, not purely
 speculative from the leftover strings alone.
+
+## 37. WaW-style animated dev clan tags — feasibility research (2026-07-21)
+
+**Status: research/scoping pass only, per explicit user framing this is a
+brand-new standalone feature idea. No code shipped this session** — every
+candidate implementation path found has at least one genuinely unresolved
+unknown, so per this project's own "no placeholder hooks" and "verify live"
+bars, nothing here clears the bar for even a minimal read-only diagnostic yet.
+This entry supersedes nothing — it's additive to, and directly builds on, the
+existing clan-tag research already recorded in `ui_assets.md`'s "WaW-style
+colored/animated clan tags" section (2026-07-18), which this pass re-read in
+full rather than re-deriving.
+
+### 1. Does MW3 have its own native clan-tag mechanism? Yes — and it's a bad fit, for reasons already found
+
+This was already thoroughly RE'd in `ui_assets.md` (2026-07-18 session); summarized
+here for this entry's own completeness, not re-investigated from scratch:
+
+- MW3's real clan-tag system is **entirely Activision Elite-branded** — confirmed
+  strings `use_eliteclan_tag`, `eliteClanTagText`, `clear_eliteclan_tag`,
+  `clanPrefix`, dozens of `elite_clan_*`/`eliteclan_*` strings. There is no plain
+  `clantag`/`cg_clantag`-style free string dvar independent of Elite — direct string
+  search for that pattern in the earlier pass found nothing beyond the Elite-prefixed
+  set.
+- **It is not a simple local string.** Ghidra decompile of `FUN_00580250`/
+  `FUN_00581be0` (the only real cross-references to `eliteClanTagText`) showed both
+  implement a **bitstream session-SYNC protocol**: per-session-member slot data
+  (`clanPrefix`, `useEliteClanTag`, `eliteClanTagText`, plus MP/SO stats) read/written
+  via a generic dvar-style accessor, diffed against cached per-slot values, and pushed
+  as outgoing NETWORK delta strings (`"ectatx \"%s\""`, `"ecuta %i"`) when changed. The
+  clan tag is **networked lobby-member presence state**, not a saved/settable local
+  string — this is a materially bigger blocker than simple color-code stripping.
+  `popup_callsign` (a separate, non-Elite menu, `FUN_0054fe20`) is confirmed grouped
+  with `"menu_xboxlive"`/`"menu_xboxlive_privatelobby"` in a live-session-state gate —
+  strong evidence it's part of the (dead) online-session UI flow too, not an
+  isolated local-only menu.
+- Whether the "generic dvar-style accessor" these functions use is a real registered
+  console dvar (reachable via this project's existing `GetDvarString`/`GetDvarInt`
+  helpers, `analog_input_hooks.cpp`) or a custom per-session-slot struct accessor with
+  a similar calling shape is **still unconfirmed** — not re-traced this pass, and
+  matters a lot: if it's the latter, `GetDvarString("eliteClanTagText")` would not
+  return anything meaningful even as a pure diagnostic.
+- Even setting that aside, **this project's scope (SP/Survival, `iw5sp.exe`) runs
+  entirely offline against a backend already confirmed dead elsewhere in this
+  project** (Elite's social platform, same family of dead service as the
+  matchmaking/master-server findings in issue #33). A live SP/Survival session is
+  very unlikely to ever populate a real, non-empty `eliteClanTagText` value at all —
+  so even a perfectly safe read-only hook on this path would almost certainly log
+  nothing useful in this project's actual target modes. Low safety risk, but also low
+  information value — not a good diagnostic candidate on cost/benefit grounds alone,
+  separate from the accessor-type question above.
+- **The one real local-only alternative already found**: `self.playername`, a GSC
+  entity field with **no GSC-side assignment anywhere in the 317-file SP/Survival
+  corpus** (read-only from script's perspective — strongly implying native
+  engine auto-sync, the common id-engine pattern of fields like `self.health` being
+  populated directly from the internal player struct). Confirmed real usage sites:
+  `137.gsc:562` (`self._id_1819 settext(self.playername)`) and `181.gsc:704`
+  (`var_3._id_16C6["name"] = var_3.playername`), both inside the Special Ops co-op
+  pre-mission "waiting for players" ready-up screen. Displayed via an ordinary 2D HUD
+  text-string builtin — genuinely a better animation-feasibility fit than a 3D
+  world-space nameplate would be (see §3). **But**: only confirmed used on one
+  pre-mission lobby screen, not during actual gameplay/HUD; the field's native
+  population function and entity-struct offset were never traced; whether a remote
+  co-op partner's copy is itself network-synced is unconfirmed. Not well-understood
+  enough yet to hook, read-only or otherwise.
+
+**Conclusion for §1**: MW3 does have a real, working, native "clan tag" concept, but
+it is networked Elite-session presence data, tied to a dead backend, and not simply
+reachable as a local string the way WaW's was. The one local-only candidate
+(`self.playername`) is too narrowly scoped and too poorly understood (native
+population point unknown) to build on directly yet.
+
+### 2. WaW's real dev clan tags — what's actually documented (web research, this pass)
+
+**Consistent with this session's starting background** (Treyarch shipped ~22 hidden
+animated/special clan-tag magic-word strings, reachable only via a since-patched
+save-data/timing glitch — not a legitimate in-game unlock — pure GSC/UI-script-layer
+content on WaW's own engine, no engine-level hooking involved on Treyarch's side).
+This pass's own web research corroborates the shape of this and adds specific,
+citable examples, but **no single source enumerates all ~22 codes with exact visual/
+timing specs** — treat the following as the real, verifiable subset, not the full
+list:
+
+| Code | Documented effect | Source |
+|---|---|---|
+| `....` (four dots) | An "o"/moving dot bounces back and forth through the dots next to the tag | [GameFAQs Q&A](https://gamefaqs.gamespot.com/xbox360/944199-call-of-duty-world-at-war/answers/49283-other-colored-clan-tags), [TheTechGame](https://www.thetechgame.com/Archives/t=471659/waw-clan-tags-glitch-codes.html) |
+| `****` (four asterisks) | A "+" bounces through the tag the same way | same sources |
+| `MOVE` | Tag scrolls/bounces left-to-right across the screen | same sources |
+| `RAIN` | Animated rainbow of colors scrolls through the tag | same sources |
+| `CYCL` | Colors scroll left-to-right through the tag, then the tag itself disappears | same sources |
+| `CYLN` | A red "laser"/highlight sweeps through the tag, alternating letter-by-letter | same sources |
+| `GOLD` | Solid gold-colored tag (static, not animated) | same sources |
+| Static color words (`blue`, `Cyan`, `Grn`/`grn`, `Red`, `YELW`/`yelw`, `RNBW`) | Solid single-color tags; distinct from the animated set above, and some (`RNBW`-style) were legitimately reachable, not glitch-only | [GameRevolution](https://www.gamerevolution.com/guides/49518-call-of-duty-world-at-war-online-clan-tag-codes) |
+
+Additional corroborating detail found this pass: community sources describe Treyarch
+having "put in twenty-two unique clan tags because of the wait for patching glitches
+on the PlayStation 3" — i.e. the ~22 figure and the "these were left in because a fix
+was already queued and PS3 patching lead times were long" rationale are both
+real community claims, not this project's own invention, though **no primary
+Treyarch/Activision source was found confirming the exact number 22 or the full
+roster** — this remains community lore with consistent secondary corroboration, not
+a verified developer statement. **None of these codes function on a patched client**
+(commonly cited as v1.04+) — consistent with the "glitch, since closed" framing in
+this session's background. **No source found specifies an exact animation frame
+rate/timing** for any of the positional effects (bounce speed, scroll speed, etc.) —
+"1:1 timing fidelity" will require eyeballing archival video, not a discoverable spec
+(none of the fetched pages included frame-rate detail; several candidate fan-wiki/
+forum pages, e.g. the CoD Fandom wiki's own `Clan_Tag` article and the NextGenUpdate/
+Se7enSins/Neoseeker threads, returned HTTP 402/403 to direct fetch this pass and were
+only readable via search-result snippets — the codes above are the ones that
+survived to a citable snippet, not necessarily the complete real set).
+
+### 3. Integration plan for MW32011NCP
+
+**Recommendation: do not attempt to reuse either of MW3's own native clan-tag paths
+(Elite-networked, or the narrow `self.playername` field) as the mechanism — build a
+fully separate, project-owned overlay instead.** This mirrors this project's own
+precedent in issue #6 (Sprint stamina/cooldown): when the real native timer/mechanism
+couldn't be found or was a bad fit, the intentional design chosen was **a project-
+owned timer/state layer, not a workaround** — same shape of decision applies here.
+
+Proposed pieces, in dependency order:
+
+1. **Config surface** — a new `[Experimental]` (or standalone `[ClanTag]`) config
+   entry in `mod_config.h`/`.cpp` (same file/pattern as `ButtonLayout`/`GlyphStyle`),
+   e.g. a free-text `DevTag` string plus an effect selector matching the table in §2
+   (`Bounce`, `Plus`, `Move`, `Rain`, `Cycl`, `Cyln`), default off/empty so the
+   feature is fully inert unless a player opts in.
+2. **Our own animation-timer state machine** — a new, standalone source file (e.g.
+   `clantag_overlay.cpp`, not touching `analog_input_hooks.cpp`,
+   `d3d9_hook.cpp`'s existing hooks, or the bind-resolver/hudBigFont code per this
+   task's explicit scope fence) that advances an animation-phase counter once per
+   real frame/tick and rebuilds the display string from it (moving the bounced
+   character's index for `....`/`****`, rotating a color-code table for
+   `RAIN`/`CYCL`/`CYLN`, etc.) — this part is ordinary, low-risk string/timer logic,
+   not an RE unknown.
+3. **A real per-frame drive point** — needs to advance every real frame during actual
+   gameplay/menus. Two candidates, both with open problems:
+   - Piggyback the confirmed-firing `FUN_0057de60` per-frame usercmd hook already in
+     `analog_input_hooks.cpp` purely for **timing** (increment our own counter there,
+     no drawing) — safe and cheap, but per this project's own finding, that hook
+     **halts while the game is paused**, so animation would freeze during pause
+     unlike a real always-running effect. Acceptable for a first cut, not "1:1."
+   - The `WndProc`/`SetTimer`-driven `WM_TIMER` path (`d3d9_hook.cpp`) already proven
+     to keep running during pause (used for Start's pause-menu open/close) is a
+     better timing source for uninterrupted animation, but has never been used to
+     drive anything other than menu-state polling — reusing it for a continuous
+     animation counter is untried, not just unproven-risky.
+4. **Actually drawing the text on screen — the single biggest open unknown.** This
+   project has **no confirmed-working per-frame render hook today.** The obvious
+   candidate, `IDirect3DDevice9::Present`, is **confirmed dead in this exact binary**
+   (see `CLAUDE.md`'s architecture-direction §2 and `d3d9_hook.cpp`'s own comments —
+   a fire-counter diagnostic showed the detour never fires, likely because Steam
+   Overlay already owns that vtable slot). The only vtable hook currently installed
+   and confirmed alive is `IDirect3D9::CreateDevice`, which fires once at device
+   creation, not per-frame — useless for drawing. Two untried options, **neither
+   attempted this pass**:
+   a. Hook `IDirect3DDevice9::EndScene` (a different vtable slot than `Present`,
+      historically a common alternative overlay hook point for exactly this class of
+      external-hook conflict) and draw our own text there via `ID3DXFont`/
+      `ID3DXSprite` or raw vertex/text primitives — entirely independent of the
+      game's own HUD/text-draw system. Untested whether `EndScene` suffers the same
+      fate as `Present` in this binary (plausible, since overlays commonly hook both,
+      but not confirmed either way).
+   b. Instead of a new render hook, call the game's **own** native 2D HUD-text-draw
+      function (the one the MOTD ticker / `self.playername` HUD text ultimately
+      resolves to — not yet located/named) directly, passing our own computed
+      string, from within an already-firing hook. This avoids needing any new render
+      hook at all, but has its own unresolved risk: it's unconfirmed whether calling
+      a HUD-draw native function is safe/valid from a non-render call context (e.g.
+      from inside the usercmd-build tick, which is NOT guaranteed to run between the
+      device's `BeginScene`/`EndScene` or with whatever globals the draw function
+      expects already set up) — could crash if the internal state it assumes isn't
+      actually valid at that call site. Needs a dedicated Ghidra trace of that
+      function's real callers/expected call context before it's touched, not an
+      assumption either way.
+5. **Color rendering** — if path 4b (piggybacking the game's own text-draw call)
+   pans out, the `RAIN`/`CYCL`/`CYLN` color effects likely inherit the already-
+   confirmed `^1`-`^7` color-code renderer used elsewhere in this project's HUD/menu
+   text research "for free" (not independently re-verified for whichever specific
+   draw function ends up being used). If path 4a (our own raw D3D9 draw) is used
+   instead, color cycling has to be implemented ourselves character-by-character —
+   more code, but no dependency on the game's renderer at all.
+
+### Open risks / unknowns, ranked by how much they block the whole feature
+
+1. **No confirmed-alive per-frame render hook exists in this project today** — the
+   biggest blocker. `EndScene` is untried. Until this is resolved, there is no way to
+   put ANY custom pixel on screen every frame, regardless of which clan-tag mechanism
+   is chosen.
+2. Whether the game's own native HUD-text-draw function (path 4b) is even safely
+   callable from a non-render hook context — genuinely unknown, not yet traced.
+3. Whether `eliteClanTagText`'s "generic dvar-style accessor" is a real dvar
+   (`GetDvarString`-reachable) or a custom struct accessor — moot given the decision
+   to not build on this path, but worth resolving if a future pass reconsiders it.
+4. No authoritative source for WaW's exact per-effect animation timing/frame rate —
+   "1:1" fidelity will be achieved by eye against reference footage, not a spec.
+5. Whether all ~22 of WaW's original dev tags are even fully known publicly — this
+   pass found a solid, citable ~7-code subset (§2), not a complete roster; several
+   candidate primary sources (CoD Fandom wiki, NextGenUpdate/Se7enSins/Neoseeker
+   forum threads) were blocked from direct fetch (HTTP 402/403) this pass.
+
+**Bottom line**: this is a real, buildable feature in principle, using only
+techniques this project already has proven elsewhere (project-owned timers, MinHook,
+config-driven toggles) — but it is gated on one genuinely unresolved engine-hooking
+question (a working per-frame render hook, or confirmation that piggybacking a native
+HUD-draw call from a tick hook is safe) that has nothing to do with clan tags
+specifically and would need to be resolved first, generically, before this or any
+other "draw something custom every frame" feature in this project can move forward.
+Per this task's own instructions, no diagnostic hook is being shipped this pass —
+the candidates considered (hooking the Elite bitstream-sync functions, or
+`self.playername`) were both rejected above on low-information-value or
+not-well-understood-enough grounds respectively, not implemented and left untested.
