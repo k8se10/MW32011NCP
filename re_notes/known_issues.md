@@ -4958,6 +4958,205 @@ names to avoid the same interning collision already solved for
 PATCH mechanism works against hudBigFont; real pixel content is still a
 separate, unstarted step, same as it always was for bigfont.
 
+**Follow-up pass (2026-07-21, later session): real glyph-visibility live test
+reported clean-but-invisible; root-caused via fresh Ghidra disassembly of the
+whole draw chain — real bug found, one level upstream of the glyph lookup
+itself, no code change made (the code that would need the fix isn't in this
+repo as committed).**
+
+**Scope note up front, for anyone reading `analog_input_hooks.cpp` against this
+entry:** the task that prompted this pass described an `InjectFontGlyphVisibilityTest_HudBigFont`
+(LB+RB+Y) that arms `Hook_DrawGlyphText` to splice codepoint `0xA0` into a copy
+of the real HUD draw string and forward it. **That function does not exist in
+this repo as committed** — checked via `git status`/`git diff` (clean tree) and
+a full-file grep for "Visibility"/"append". The only committed glyph-append-
+adjacent code is `InjectFontGlyphPatchTest_HudBigFont` (LB+RB+B, codepoint
+`0x81`, array-insert only — no draw-string mutation) and the existing
+`Hook_DrawGlyphText` (`FUN_00690c80`), which its own header comment already
+describes as strictly read-only/logging, "Zero mutation... forwards to the
+real trampoline completely unmodified" — confirmed still true by re-reading it
+this pass. So this entry documents the real root cause for whoever actually
+builds that visibility-test hook next, using real disassembly of the exact
+functions involved — it is not a description of a regression in code that
+exists today.
+
+**Method**: re-used this project's own existing Ghidra project
+(`D:\Tools\ghidra_projects_glyphrenderfork\MW3.gpr`, program `/iw5sp.exe`,
+already analyzed) headlessly via `analyzeHeadless.bat` + this repo's own
+`re_notes/ghidra_scripts/DecompileFuncs.java`, `-process iw5sp.exe -readOnly
+-noanalysis` (skips re-running auto-analysis, ~2s per invocation instead of
+~50s) so nothing was written back to the shared project file. Decompiled, in
+order: `FUN_0047dfa0` (glyph lookup), `FUN_00690c80` (the draw-call this
+project already hooks), `FUN_004db3e0`/`FUN_005323c0` (the char-decode chain
+feeding the lookup), `FUN_004e4010`/`FUN_004b99f0` (caret/color-code escape
+helpers), and `FUN_00691ca0`/`FUN_0051b100` (the ring-buffer consumer/writer
+pair already named in this issue's earlier trace).
+
+**Q1 — live lookup or stale cache?** `FUN_0047dfa0` does a genuine LIVE
+per-character lookup against the real array on every call — confirmed via
+disassembly, not inferred:
+```c
+int FUN_0047dfa0(int param_1 /*Font_s* */, uint param_2 /*codepoint*/) {
+  if (param_2 - 0x20 < 0x60)                      // direct-indexed ASCII 0x20-0x7F
+    return *(int*)(param_1+0x14) + (param_2*3 - 0x60)*8;
+  iVar2 = *(int*)(param_1+8) - 1;                 // glyphCount-1, read fresh
+  iVar4 = 0x60;
+  if (0x5f < iVar2) {                             // binary search over [0x60, glyphCount)
+    do {
+      iVar1 = (iVar4+iVar2)/2;
+      uVar3 = (uint)*(ushort*)(*(int*)(param_1+0x14) + iVar1*0x18);  // glyphs[iVar1].letter, fresh read
+      if (uVar3 == param_2) return glyphs + iVar1*0x18;
+      if (uVar3 < param_2) iVar4 = iVar1+1; else iVar2 = iVar1-1;
+    } while (iVar4 <= iVar2);
+  }
+  return *(int*)(param_1+0x14) + 0x150;           // fallback: FIXED index 14 (='.' in the
+}                                                  // direct-indexed range) -- not a "tofu"/blank
+                                                   // glyph, an ordinary period.
+```
+`param_1+8` (glyphCount) and `param_1+0x14` (glyphs pointer) are re-read from
+the live struct on every single call — no cached/precomputed table anywhere in
+this function. This exactly matches `analog_input_hooks.cpp`'s own `DiagFont`
+layout (`glyphCount` at `+0x08`, `glyphs` at `+0x14`) and `DiagGlyph` layout
+(`letter` as `unsigned short` at `+0x00`, confirmed 24-byte/`0x18` stride via
+the existing `static_assert`) — struct offsets are correct, not the bug.
+**Answer: live lookup, mechanism is sound at this layer; the bug is elsewhere
+in the chain, not a stale cache.**
+
+**Q3 answered before Q2 (checked first per the task's own priority order) —
+signed-vs-unsigned char handling.** Traced the full character pipeline a
+drawn byte actually goes through before reaching `FUN_0047dfa0`:
+`FUN_00690c80`'s per-character loop calls `FUN_004db3e0(&local_78, 0,
+local_3c)` (`local_3c` = a forced-case mode: 0=none, 1=upper, 2=lower, derived
+from the draw call's own flags) to decode the next character, and (for the
+ordinary, non-escape-code path) whatever it returns is passed **byte-for-byte,
+unmodified**, straight into `FUN_0047dfa0` as `param_2` — the two functions
+communicate via a **bit-reinterpret through a `float`, not a numeric
+conversion**: `FUN_00690c80` declares the intermediate as `float fVar7 =
+(float)FUN_004db3e0(...)`, but the values it's later compared against
+(`1.31722e-43`, `1.4013e-44`, `1.82169e-44`) are denormalized floats whose raw
+32-bit patterns equal the small integers `94`('^'), `10`('\n'), `13`('\r')
+respectively — i.e. this is the classic idTech NaN/denormal-boxing trick
+(pass a tagged int through an FPU-register-sized slot by reusing its exact
+bit pattern), not a real int→float value cast. Confirmed this preserves the
+byte's numeric value exactly, both in and out:
+- `FUN_004db3e0` → `FUN_005323c0`: for a non-DBCS codepage (`DAT_01bf6944==0`,
+  the expected case for an English retail install — no CJK double-byte
+  handling), `FUN_005323c0` reduces to `param_1 = param_1 & 0xff; ...; return
+  param_1;` — an explicit **unsigned** mask-and-return of the raw byte, no
+  sign extension anywhere. `0xA0` in, `0xA0` (160) out, every time.
+- `FUN_004db3e0`'s own case-folding tables (`iVar1` = a locale/codepage-variant
+  selector at `*(int*)(DAT_01bf6938+0xc)`, values seen: `0`, `6`, `7`): checked
+  byte `0xA0` against all three variants' upper- AND lower-case tables by
+  hand from the decompile — **`0xA0` is returned completely unmodified in
+  every single branch** (`iVar1==0` returns unconditionally; `iVar1==6`/`7`'s
+  explicit-case switches don't list `0xA0` and its default/range checks all
+  evaluate false for it). `0xA0` survives the whole chain intact regardless of
+  locale variant or forced-case flag.
+- Byte `0x81` (the codepoint the ACTUALLY-committed `InjectFontGlyphPatchTest_HudBigFont`
+  uses) is **not quite as clean**: under `iVar1==6` (one of the two non-default
+  locale table variants) **with lowercase forced** (`param_3==2`), there's an
+  explicit `case 0x81: return 0x83;` — so `0x81` specifically has one real,
+  narrow corruption path in this function, though it requires both a non-
+  English-default locale table AND a lowercase-forcing draw call to trigger,
+  neither of which is expected for ordinary English HUD ammo-count text. Not
+  ruled out with 100% certainty (didn't trace what sets `iVar1` at runtime),
+  but very unlikely to be the actual explanation for a clean English retail
+  session. Worth noting as a concrete, if minor, reason to prefer `0xA0` over
+  `0x81` for any future glyph-injection codepoint choice — `0xA0` has no such
+  collision in any branch checked, `0x81` has exactly one.
+- `FUN_0047dfa0` itself declares `param_2` as `uint` and does every comparison
+  unsigned (`uint uVar3 = (uint)*(ushort*)(...)`) — no signed-char comparison
+  exists anywhere in the actual lookup.
+
+**Answer: the signed-char hypothesis does NOT pan out** for this pipeline —
+confirmed via disassembly, not assumed. Every stage that touches the byte's
+numeric value does so as an explicit unsigned quantity (`& 0xff` masks, `uint`
+locals, `ushort` array reads), and the float hand-off between
+`FUN_004db3e0`/`FUN_0047dfa0` is a bit-preserving reinterpret, not a value-
+converting cast, so it doesn't silently renumber the byte either. `0xA0`
+specifically has zero known corruption paths in this entire chain; `0x81` has
+exactly one, narrow and unlikely to apply here.
+
+**Q2 — off-by-one/insertion-order bug?** Re-checked the ACTUAL committed
+insertion code (`InjectFontGlyphPatchTest_HudBigFont`, the only committed
+patch function) against `FUN_0047dfa0`'s binary-search assumptions: the
+insertion loop (`for (i=96; i<oldCount; ++i) { if (glyphs[i].letter >
+kNewCodepoint) { insertAt=i; break; } ... }`) does a correct ascending-order
+sorted insert — first index whose `letter` exceeds the new codepoint, matching
+the binary search's own ascending-order narrowing (`uVar3 < param_2 ?
+search-right : search-left`). **No off-by-one or reversed-comparison bug
+found in the code that's actually committed.**
+
+**So what actually explains "ran clean, nothing rendered"? Found the real
+answer one level upstream of the glyph lookup, in `FUN_00690c80`'s own draw
+loop — a length/count parameter captured at ENQUEUE time, long before any
+hook on the draw call itself could ever influence it.** `FUN_00690c80`'s
+per-string draw loop is gated by BOTH null-termination AND an explicit
+decrementing counter:
+```c
+iVar6 = param_10;                                  // param_10 = a character COUNT, not just a hint
+while (cVar4 != '\0' && iVar6 != 0) {
+    ...
+    iVar6 = iVar6 - 1;
+}
+```
+Traced `param_10`'s real origin through the two ring-buffer functions this
+issue's earlier session already named:
+- `FUN_0051b100` (the writer, called once at the moment the HUD element's text
+  is originally queued): computes `_Size = strlen(param_1)` **at that exact
+  moment**, sizes the ring-buffer entry to hold EXACTLY `_Size` bytes plus a
+  null terminator (`uVar5 = (_Size+0x54) & ~3`, no reserved slack), and stores
+  the caller's own `param_2` argument into the entry at byte offset `+0x20`.
+- `FUN_00691ca0` (the reader/consumer, called every frame the queued entry is
+  drawn): reads that same stored value straight back out of the entry
+  (`*(undefined4*)(iVar1+0x20)`) and passes it as `FUN_00690c80`'s `param_10`
+  — i.e. **the exact same count captured once at enqueue time, replayed
+  unchanged on every subsequent draw**, confirmed by matching byte offsets
+  between the writer's stores and the reader's loads field-by-field.
+- This project's own `Hook_DrawGlyphText` sits on `FUN_00690c80` itself — by
+  construction, downstream of this entire enqueue/dequeue round trip. Any hook
+  here that appends a byte to a COPY of the string but leaves `param_10`
+  (the loop's actual stop condition) at its original, pre-append value
+  guarantees the loop's `iVar6` hits zero and exits **exactly at the original
+  string's length** — one character short of the appended byte — regardless
+  of what the modified buffer actually contains past that point. The buffer
+  edit is real and safe; the loop simply never gets there.
+
+**This one architectural fact fully explains every observed symptom**: no
+crash (the append itself was always memory-safe, a local-stack copy never
+touching engine memory), no exception (`iVar6` reaching 0 is a completely
+normal, silent loop exit, not a fault), and — this is the detail that
+independently corroborates the count-cap explanation over a "found the wrong
+glyph" explanation — **not even `FUN_0047dfa0`'s own fallback glyph (a plain
+period, index 14, per Q1's disassembly above) rendered at the tail of the
+string.** If the loop HAD reached the appended byte and merely resolved it to
+the wrong glyph (e.g. via a real Q2-style insertion bug), a period would still
+have appeared at the end of "Armor         250" — the total absence of even
+that fallback character is exactly what a loop that never visits the extra
+position at all would produce, and is hard to explain any other way.
+
+**Conclusion for whoever builds the real visibility-test hook next**: splicing
+a byte into a draw-string COPY at `FUN_00690c80`/`Hook_DrawGlyphText` is not
+sufficient by itself — the hook must ALSO increment `param_10` (the `int`
+6th-from-last... precisely, the `DrawGlyphTextFn` typedef's own `param_10`
+argument in `analog_input_hooks.cpp`) by exactly 1 to match the appended
+character, or the real draw loop will silently stop one character short every
+time, with no crash and no visible symptom to distinguish it from "the
+mechanism doesn't work at all." (`param_12`, used only for a cursor/caret-
+blink comparison per the disassembly, does not appear to need the same
+treatment, but wasn't separately stress-tested.) Also prefer codepoint `0xA0`
+over `0x81` going forward per the Q3 finding above — `0x81` has one narrow,
+locale/case-mode-dependent corruption path in `FUN_004db3e0` that `0xA0` does
+not.
+
+**No code change made this pass** — the function that would need this fix
+(`InjectFontGlyphVisibilityTest_HudBigFont`/a mutating `Hook_DrawGlyphText`)
+isn't in this repo as committed (see the scope note above), so there is
+nothing to safely patch without inventing new, un-requested, unverified code.
+This entry documents the real, disassembly-confirmed mechanism so the actual
+implementation can get `param_10` right the first time. Builds untouched
+(doc-only change, no rebuild needed).
+
 ---
 
 ## 35. Bind-resolver text hook (`FUN_0061f6f0`) — LOG-ONLY first pass IMPLEMENTED, not yet live-tested (2026-07-21)

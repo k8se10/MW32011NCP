@@ -9,6 +9,29 @@ reverse-engineering trail behind each entry.
 ## Unreleased
 
 ### Investigated-not-resolved
+- **Glyph-visibility mechanism (task #6/#34): root cause found via fresh Ghidra
+  disassembly, no code change shipped.** A reported live test of a glyph-array patch
+  plus a draw-string append (LB+RB+B / LB+RB+Y) ran clean end-to-end (no crash, no
+  exception) but produced no visible glyph. Disassembled the real draw chain
+  (`FUN_0047dfa0`, `FUN_00690c80`, `FUN_004db3e0`/`FUN_005323c0`, `FUN_00691ca0`/
+  `FUN_0051b100`) fresh via this repo's own headless Ghidra scripts against the
+  existing `MW3.gpr` project. Ruled out a stale glyph cache (the lookup is a genuine
+  live per-character search against the real array on every call) and ruled out a
+  signed-char bug (every stage in the chain treats the byte as unsigned; the
+  float-typed hand-off between functions is a bit-preserving reinterpret, not a value
+  conversion). Found the real cause one level upstream: `FUN_00690c80`'s draw loop is
+  gated by an explicit character-count parameter captured once, at enqueue time, by
+  the HUD text ring-buffer writer (`FUN_0051b100`'s own `strlen` call) and replayed
+  unchanged by the reader (`FUN_00691ca0`) on every subsequent draw — a hook on the
+  draw call itself is downstream of that round trip, so appending a byte to a string
+  copy without also incrementing that same count guarantees the loop exits exactly one
+  character short of the appended byte, silently, every time. Also found byte `0x81`
+  (used by the currently-committed `InjectFontGlyphPatchTest_HudBigFont`) has one
+  narrow, locale/case-mode-dependent corruption path in `FUN_004db3e0` that codepoint
+  `0xA0` does not — worth preferring `0xA0` going forward. No code change made: the
+  hook that would need this fix isn't in this repo as committed (verified via `git
+  status`/full-file grep) — this documents the mechanism for whoever builds it next.
+  Full trail in `re_notes/known_issues.md` issue #34.
 - **Bind-resolver hook (task #6/#35): residual garbage-log occurrence, root cause not
   found.** A real playtest after the `FUN_00622970` return-address fix showed the fix
   working far better (1 garbage line all session vs. 51+ before), but that one
