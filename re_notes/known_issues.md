@@ -1450,6 +1450,81 @@ install — a single log-and-read.
 assumed; that guess was wrong, confirmed via `FUN_00679680`'s actual
 decompiled body, which typically leaves 2-5 of its 10 array slots unused.
 
+**Diagnostic IMPLEMENTED 2026-07-20, correction found to the `DAT_008501e8`
+formula above, not yet live-tested.** Before writing the real splice, confirmed
+`FUN_00679680`'s own real prologue/epilogue directly via the cached disassembly
+already on disk (`D:\Tools\ghidra_projects_bootzone\disasm_00679680.txt`, the
+same project the ROOT CAUSE research above used): `SUB ESP,0x78; PUSH EBX; PUSH
+EBP; PUSH ESI` at entry, plain `RET` at exit, zero stack-args read anywhere —
+a genuine `void __cdecl(void)`, confirmed safely trampolineable, exactly as
+the plan above assumed.
+
+**Real correction, found while implementing, not re-guessed**: re-read the
+cached decompile of `FUN_00463430` itself
+(`D:\Tools\ghidra_projects_bootzone\decomp_463430.txt`) before trusting the
+`&DAT_008501e8 + *(int*)&DAT_008501e8` formula above. That expression
+(`iVar1` in the decompile) is only an INTERMEDIATE value — it feeds a
+134-iteration relocation walk (`FUN_006cc460`) and a further resolver call
+(`FUN_0045e910`); the value `FUN_00463430` actually returns (and that `JMP
+EAX` jumps to) is `iVar2 + iVar3`, where `iVar2 = FUN_0045e910(...)`'s return
+and `iVar3 = iVar1 - imageBase`. **The plan's formula does NOT equal the real
+resolved `LoadZones` address** — it's a misleading intermediate, and
+reimplementing `FUN_00463430`'s full relocation chain to get the true value
+would be substantial, fragile work unwarranted for a read-only diagnostic.
+
+**Simpler, more direct diagnostic implemented instead**, using the ILT
+self-patch behavior described in the ROOT CAUSE section directly ("rewrites
+the CALLER's own `CALL 0x004ca310` into `CALL <real_function>` in place, so
+future executions of that exact call site skip the thunk entirely"):
+`FUN_00679680`'s own Call 2 (`0x006797bd`, return address `0x006797c2` — both
+already independently confirmed and reused elsewhere in this codebase, e.g.
+`kBootZoneSpliceReturnAddr`) IS that exact call site. `Hook_FUN_00679680`
+(`analog_input_hooks.cpp`) hooks `FUN_00679680`, calls the real trampoline
+completely unmodified (so this exact call executes under totally normal
+conditions — nothing about the hook alters it), then reads the raw 5 bytes at
+`0x006797bd` directly. If MSVC's ILT self-patched it (as theorized), those
+bytes decode to `CALL <the true resolved LoadZones address>` instead of `CALL
+0x004ca310` — giving the real target directly, without reimplementing any of
+`FUN_00463430`'s internal math. Both readings (the original DAT_008501e8
+formula, clearly labeled as not-the-real-target, and this call-site decode,
+labeled as the trustworthy one) are logged to `proxy_d3d9.log` for
+comparison. **Deliberately scoped to logging only** — does not touch the
+zone array, does not call the resolved address, does not construct or append
+a zone-queue entry, per this project's own "log before you ever mutate"
+discipline (the lesson both the rumble-hook crash, issue #24, and the
+original boot-splice crash above already taught). Builds clean (0
+warnings/0 errors, full rebuild). **Not yet live-tested** — the next real
+game launch's `proxy_d3d9.log` is what will actually confirm or refute the
+self-patch theory and reveal the real address. The actual splice-and-call
+implementation (appending a `{ourZoneName, type, 0}` entry and calling the
+resolved address directly) is still unstarted, deliberately left for a
+follow-up pass once this diagnostic's reading is confirmed live.
+
+**LIVE-TESTED (2026-07-21), self-patch theory REFUTED at this call site.**
+Full user playtest, `MH_OK` on both create+enable, and the whole rest of the
+session ran completely normally afterward (no boot regression, no gameplay
+disruption — same clean signature as every other confirmed-safe read-only
+diagnostic in this file). The actual reading:
+```
+[boot-thunk-diag] DAT_008501e8 raw=0xFFBAFE18, &DAT_008501e8+val=0x00400000 (NOTE: ... only an intermediate ...)
+[boot-thunk-diag] call site 0x006797BD is CALL rel32, decoded target=0x004CA310 (thunk address for comparison: 0x004ca310)
+[boot-thunk-diag] call site target is UNCHANGED (still points at the thunk)
+```
+The decoded target at `0x006797BD` is still `0x004CA310` — i.e. still the thunk itself,
+not a self-patched real address. **The ILT self-patch theory does not hold for this
+specific call site** (at least not by the time this hook reads it, on this run) — this
+is a genuine negative result, not an implementation bug (the hook fired, read, and
+logged exactly as designed). Reproduced identically across two separate launches this
+session, so it's not a one-off fluke. **Implication for the actual splice work**:
+reading a self-patched call site is not a viable way to recover the real `LoadZones`
+address, at least not via this specific call site — the next real step needs either
+(a) checking whether `FUN_0067a690`/`FUN_00481e50`'s OWN call sites to the thunk
+self-patch instead (each patches independently per the ROOT CAUSE research), or (b) a
+different address-recovery approach entirely (e.g. one-time-debugging the resolved
+value directly out of `FUN_00463430`'s `JMP EAX` at a real breakpoint, per the
+original option (2) in the ROOT CAUSE section above). The real splice-and-call
+implementation remains unstarted.
+
 ---
 
 ## 23. Real controller options menu — native zone/menu injection, blocked on a real architectural limit (2026-07-17)
@@ -1458,7 +1533,10 @@ decompiled body, which typically leaves 2-5 of its 10 array slots unused.
 controller options menu" section — this is a summary. **The blocker below is now
 resolved to an implementation-ready plan — see the "REFINED, implementation-ready
 (2026-07-20...)" entry near the end of the "## 22..." boot-splice discussion further
-up this file (search for `FUN_00679680`) for the concrete, corrected injection
+up this file (search for `FUN_00679680`) for the concrete, corrected injection —
+and its own follow-up "Diagnostic IMPLEMENTED 2026-07-20" entry right below it for
+the read-only `Hook_FUN_00679680` diagnostic now built and awaiting a live-test
+before the actual splice is attempted.**
 approach and zone-queue entry format.**
 
 **Goal:** a real controller-options screen integrated into normal in-game Options
@@ -4628,3 +4706,158 @@ master-server discovery layer in front of it; the only genuinely third-party/com
 unranked dedicated-server pool. **No change to this project's own risk posture or locked ordering** — MP
 work is still unstarted, VAC is still confirmed active regardless of matchmaking health, and this finding is
 informational (corrects a loosely-sourced citation, adds real mechanism detail) rather than decision-changing.
+
+---
+
+## 34. Glyph-patch mechanism test (`InjectFontGlyphPatchTest`, LB+RB+A) still not visually provable — wrong font targeted, corrected; no safe way found yet to actually see it (2026-07-21)
+
+**Status: open, not resolved.** Set out to close the loop on the LB+RB+A
+glyph-array-patch mechanism test (task #6/#31/#32) by making its effect
+actually visible on screen — instead found the test's target,
+`fonts/bigfont`, was picked on a wrong guess, and while that's now corrected
+with a real, useful finding, the underlying "make it visible" problem is
+still open.
+
+**Real `textfont` enum resolved** (fresh Ghidra decompile of
+`FUN_005181e0`, the real int-to-`Font*` selector every itemDef text draw
+call goes through): `2`=bigfont, `3`=smallfont, `4`=boldfont,
+`5`=consolefont, `6`=objectivefont, `7`=normalfont (also the fallback for
+any unhandled value), `8`=extrabigfont, `9`=hudbigfont,
+`10`=hudsmallfont, anything else = auto-selected by measured text width.
+Cross-checked against a tally of every real `textfont` line across all 512
+`.menu` files in the existing full `ui.ff` dump
+(`D:\Tools\OpenAssetTools\zone_dump`): `3` (smallfont) 4243 uses, `9`
+(hudsmallfont) 866, `1` (auto) 150, `6` 12, `4`/`2`/`10` 3 each, `5` once.
+
+**`fonts/bigfont` (the mechanism test's target) is confirmed real but
+confirmed NOT the main menu's title/button-list font** as the 2026-07-18
+plan assumed ("best single guess for menu-title text") — that text actually
+uses smallfont/hudsmallfont. Bigfont's only 3 real uses anywhere in `ui.ff`
+are in `ui/ui/brightness_adjust.menu` (the brightness-calibration screen),
+which only opens when `!getprofiledata("hasEverPlayed_MainMenu")` — a
+real, one-time-per-profile gate, confirmed by tracing its only trigger in
+`ui/ui/player_profile.menu`. Not a repeatable, on-demand test vehicle as
+previously assumed.
+
+**Forcing that screen open synthetically was considered and rejected, not
+attempted**: this project's own `SetDvarByName`+`SetPlayerMenuFlags`+
+`OpenMenuByName` recipe is already documented (this file, `InjectZoneLoadDebugTest`'s
+own comment, and `analog_input_hooks.cpp`) as producing a **garbled render**
+when called from the WndProc/`SetTimer` tick, regardless of content — a
+real, pre-existing dead end, not something this pass discovered new risk
+in. Re-attempting it here for `brightness_adjust` would just re-hit the
+same known-broken path for no new information.
+
+**What's actually still needed, neither done this pass**: (a) a genuinely
+fresh player profile would naturally retrigger `brightness_adjust` once
+through completely ordinary play — not attempted, resetting/faking the
+user's own profile progress wasn't this pass's call to make; or (b) find
+the real native render call site that picks a font for actual gameplay
+interact-hint text (e.g. the weapon-pickup/swap hint string built by
+`FUN_00568110`) and retarget the whole glyph-patch mechanism at THAT font
+instead. Traced `FUN_00568110` fully — it only builds the hint STRING via
+`FUN_005098e0` and never itself touches a font global or the `textfont`
+selector; the actual font choice happens downstream at a still-unfound call
+site. Left for whoever picks up the bind-resolver-hook work (`FUN_0061f6f0`,
+still unstarted, see the 2026-07-18 fork-research section in
+`ui_assets.md`) since that's the natural place this gets resolved anyway.
+
+**No code behavior changed** — `InjectFontStructDebugTest`/
+`InjectFontGlyphPatchTest` still target `fonts/bigfont` exactly as before
+(the struct-layout proof they provide is font-agnostic, no reason to
+re-derive it against a different font just for this). Only doc/comment
+corrections landed: a correction comment in `analog_input_hooks.cpp` right
+above the font-struct-diagnostic code, a flagged known-gap comment above
+`InjectFontGlyphPatchTest` itself, and the full writeup in `ui_assets.md`'s
+2026-07-21 entry. Builds clean (comment-only diff, verified via MSBuild,
+Win32 config, 0 warnings/0 errors). **No live testing performed or possible
+this pass** — no game-automation capability available to this session.
+
+---
+
+## 35. Bind-resolver text hook (`FUN_0061f6f0`) — LOG-ONLY first pass IMPLEMENTED, not yet live-tested (2026-07-21)
+
+**Status:** Built, builds clean (0 warnings/0 errors), NOT yet live-tested. Task #6's
+other half (button-glyph text substitution), first safe increment.
+
+Implements the first, deliberately incremental step of the fully-researched plan
+already documented in `re_notes/ui_assets.md` ("Text-swap hook (`FUN_0061f6f0`)" and
+"`FUN_0061f6f0`'s real calling convention, disassembly-confirmed" sections, both
+2026-07-18/19). That research concluded the hook is safe to install (a structurally
+different situation from the two hooks that crashed the game live this project —
+the rumble dispatcher hook, issue #24, and the boot-zone-splice hook, issue #22/#30)
+and explicitly recommended prototyping log-only first, with no output-buffer
+mutation, before ever attempting the real glyph substitution. This entry is that
+first increment, nothing more.
+
+**What's installed** (`analog_input_hooks.cpp`, `Hook_0061f6f0` + `BindResolverLogAfterCall`):
+a MinHook inline hook on `0x0061f6f0`, installed unconditionally at DLL load (permanent
+hook, not a manually-triggered debug combo — this function fires naturally whenever the
+game resolves bind-hint text). The naked shim stashes `EAX` (context)/`ECX` (bind-name
+context) and the `[esp+8]`/`[esp+0xc]` stack args into globals, overwrites the incoming
+return-address slot with a local label instead of pushing a new one (so the trampoline
+call doesn't shift the stack args by 4 bytes — see the shim's own header comment for
+the full mechanics), tail-jumps into the real trampoline with the byte-for-byte original
+frame intact, then once the trampoline's own `ret` hands control back, runs a normal
+C++ logging function before resuming the real caller exactly where it would have
+resumed had this hook never existed. Real text resolution is completely untouched in
+this pass — no buffer write happens anywhere.
+
+**Logging behavior**: `BindResolverLogAfterCall` logs `EAX`, and `ECX` treated
+tolerantly (this project's own prior research explicitly flagged that ECX's exact
+identity as a safely-dereferenceable C-string pointer was never fully confirmed — "likely
+EAX... not confirmed identical to contextA" — so this does NOT assume it's a string;
+every dereference is validated via the existing `LooksLikeValidPointer` range check and
+wrapped in `__try`/`__except`, same coarse-grained SEH pattern already established
+elsewhere in this file, degrading to a raw hex log if anything looks unsafe). The
+`[esp+8]` output buffer is read the same way after the real call, expected to contain
+`"KEY_UNBOUND"`, a single key name, or `"%s KEY_OR %s"` per the resolver's documented
+real behavior. Deduped against the last-logged resolved text (only logs on a change,
+not every frame a hint happens to be re-resolved on screen) to avoid flooding the log
+during normal play, on top of a full off-switch: `[Experimental] BindResolverHookLogging`
+in `mw3ncp_config.ini` (default `1`) silences the logging entirely without touching the
+hook itself — the hook stays installed and forwarding either way, so toggling this
+carries no behavior risk.
+
+**Not attempted in this pass, by design**: any output-buffer mutation, any glyph
+codepoint substitution, any `ButtonLayout`-aware key-name matching. All of that is the
+next real increment once this log-only pass is confirmed safe and its logged output is
+inspected against a live session.
+
+**Not yet live-tested** — no game-automation tooling is available in this working
+context to launch the game or exercise a controller, so this cannot be confirmed
+working end-to-end here. Next step whenever this is picked up: launch the game, trigger
+a real interact-style hint (e.g. approach a weapon pickup), and confirm (1) the hook
+installs (`MH_OK` in `proxy_d3d9.log`) without regressing boot, (2) real hint text still
+displays correctly on screen (proving the trampoline forwarding is transparent), and
+(3) the logged `EAX`/`ECX`/resolved-text lines look sane against what's actually
+displayed.
+
+**LIVE-TESTED (2026-07-21), partial pass — safe but the captured data isn't usable
+yet.** Full user playtest with this build: `MH_OK` on both create+enable, and the rest
+of the session ran completely normally afterward (`stance-diag` heartbeats every
+~500ms, fire-press/release, `missile-guidance-diag`, `hold-breath-diag-v2`, `ads-fov-diag`
+all continuing exactly like every known-good log, no detach, no gap) — confirms (1) and
+(2) above: the hook doesn't regress boot or gameplay, and real hint-text resolution
+stays transparent (the trampoline forwarding works). **(3) fails**: the hook fired
+twice during play (two bursts of ~11-40 calls each, so it's genuinely being exercised,
+not dead code), but every capture read as implausible:
+```
+[bind-resolver-diag] EAX(ctx)=0x0084E2DC ECX(bindCtx)=0x00000000 (not a plausible pointer) | limitTo1=0 resolvedText="<buffer ptr 0x00000100 not plausible>"
+```
+`ECX` reads as a flat `0`, and the `[esp+8]` output-buffer pointer reads as `0x100` —
+neither is plausible under the documented calling convention (`ECX`=bind-name context,
+`[esp+8]`=real output buffer). `EAX` itself looks like a real, plausible pointer and
+differs sensibly between the two bursts (`0x0084E2DC` vs `0x0082A6E4`), so the shim is
+clearly executing and reading SOMETHING real — just not what this convention predicts
+for `ECX`/`[esp+8]`. Two live candidate explanations, not yet distinguished: (a) this
+specific call site is the 4th, previously-undocumented caller flagged in the
+2026-07-18 fork research (`FUN_00622970`, suspected key-rebind-capture UI shape) which
+may not conform to the same register convention as the 3 known hint-resolution
+callers; or (b) a real bug in the shim's own register-stash timing/offsets. **Also
+found**: the per-change dedup did not actually suppress the repeated identical lines
+within each burst (all ~11-40 lines per burst are byte-identical) — a second, smaller
+bug in the same code, independent of the register-capture issue. **Status: hook stays
+installed (safe, no behavior risk since it never mutates anything), but the log-only
+data isn't yet a trustworthy foundation for the real glyph-substitution work — needs a
+follow-up debugging pass on the shim before that's true.**

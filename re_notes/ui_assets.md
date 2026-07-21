@@ -1245,3 +1245,82 @@ just a quick wire-up. `InjectFontStructDebugTest()` (see
 `known_issues.md`) is the first concrete implementation step taken from
 this research, a read-only verification pass before any struct mutation
 is attempted.
+
+## `textfont` numeric enum resolved, and `fonts/bigfont`'s real on-screen usage found — corrects a 2026-07-18 assumption (2026-07-21, task #34)
+
+Set out to close the loop on the still-untested `InjectFontGlyphPatchTest`
+(LB+RB+A) mechanism test by making its result actually visible on screen —
+found instead that its target, `fonts/bigfont`, was picked on a guess
+(2026-07-18: "best single guess for menu-title text") that turns out to be
+wrong, and a real, precise `textfont`-value-to-font-name mapping did not
+previously exist in this project's notes. Both are now resolved.
+
+**The mapping, fresh Ghidra decompile of the real selector function
+(`FUN_005181e0`, called by the generic itemDef text-draw path with whatever
+integer a `.menu` file's `textfont` field specifies):**
+
+| `textfont` value | Real font |
+|---|---|
+| 2 | `fonts/bigfont` |
+| 3 | `fonts/smallfont` |
+| 4 | `fonts/boldfont` |
+| 5 | `fonts/consolefont` |
+| 6 | `fonts/objectivefont` |
+| 7 | `fonts/normalfont` (also the hard fallback for any unhandled value) |
+| 8 | `fonts/extrabigfont` |
+| 9 | `fonts/hudbigfont` |
+| 10 | `fonts/hudsmallfont` |
+| anything else (e.g. 0/1) | auto-selected by measured text width among normalfont/extrabigfont/bigfont/smallfont — not a fixed font |
+
+Confirmed via `DecompileFuncs.java` against this project's own `MW3.gpr`
+Ghidra project (`iw5sp.exe`), cross-checked against a corpus-wide tally of
+every real `textfont` line across all 512 `.menu` files in
+`D:\Tools\OpenAssetTools\zone_dump` (the existing full `ui.ff` dump used by
+this project's earlier menu-inventory pass): `3` appears 4243 times,
+`9` 866 times, `1` (auto-size) 150 times, `6` 12 times, `4`/`2`/`10` 3 times
+each, `5` once. **`2` (bigfont) is the single rarest font in the entire real
+UI corpus.**
+
+**Where bigfont actually renders, found via those 3 real uses:** all three
+are in `ui/ui/brightness_adjust.menu` — the real brightness-calibration
+screen (`@MENU_BRIGHTNESS_NOT_VISIBLE`/`_BARELY_VISIBLE`/`_EASILY_VISIBLE`).
+Traced its only real trigger (`ui/ui/player_profile.menu`, `execKeyInt 13`
+and `doubleclick` handlers): `open brightness_adjust` fires only inside
+`if (!getprofiledata("hasEverPlayed_MainMenu"))` — a genuine one-time-per-
+profile gate, not a menu reachable again through ordinary navigation once a
+profile has played. **This directly contradicts the 2026-07-18 assumption**
+that bigfont was "menu-title text" (the real main-menu button list/titles
+use textfont `3`/`9` — smallfont/hudsmallfont — never bigfont at all) and
+that it would be an easy, repeatable visual test vehicle.
+
+**Forcing the screen open synthetically was considered and rejected, not
+attempted.** This project's own `SetDvarByName("cl_paused",1)` +
+`SetPlayerMenuFlags` + `OpenMenuByName` recipe (declared in
+`analog_input_hooks.cpp`, originally proven for the pause menu) is already
+documented, in that same file's `InjectZoneLoadDebugTest` comment, as
+producing a **garbled render** when triggered from this project's own
+WndProc/`SetTimer` tick context, regardless of content — a real, previously-
+found dead end, not a new risk introduced by this pass. Re-attempting it for
+`brightness_adjust` specifically would carry the identical risk for no new
+information, so this was not implemented.
+
+**Bottom line / what's still actually needed to visually close out the
+glyph-patch mechanism test**: either (a) a genuinely fresh player profile,
+which would naturally retrigger the real `brightness_adjust` screen once
+through completely ordinary play (not attempted — modifying/resetting the
+user's own profile data wasn't this pass's call to make unilaterally), or
+(b) find the real native call site that selects a font for actual gameplay
+interact-hint text (e.g. the weapon-pickup/swap hints built by
+`FUN_00568110`, per the 2026-07-17 hint-text survey above) and retarget the
+whole patch mechanism at THAT font instead of bigfont. Traced
+`FUN_00568110` fully this pass: it only builds the hint STRING (via
+`FUN_005098e0`) and never itself references a font global or calls the
+`textfont`-int selector — the font is chosen at a separate, still-unfound
+render call site downstream of the string builder. Not chased further this
+pass (this is squarely the bind-resolver-hook work's own natural territory,
+not a detour worth taking alone). Both options are honestly open, neither
+implemented here — see `known_issues.md` issue #34 for the tracked status.
+
+**No live testing possible or attempted this pass** — no game-automation
+capability available; everything above is Ghidra static analysis plus a
+static-corpus tally, not a live game observation.

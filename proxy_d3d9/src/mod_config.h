@@ -146,6 +146,15 @@ struct ModConfig
         // killstreaks like Predator Missile. NOT YET LIVE-CONFIRMED to help or be
         // harmless; toggle off here if it's ever suspected of causing a gameplay
         // regression, without needing to touch analog_input_hooks.cpp.
+    bool bindResolverHookLogging = true; // task #6/#35 (2026-07-21): the bind-resolver
+        // text hook (FUN_0061f6f0) itself is always installed and always forwards to
+        // the real trampoline completely unmodified (log-only first pass, no glyph
+        // substitution yet -- see re_notes/known_issues.md issue #35) -- this toggle
+        // only controls whether it LOGS what it observes. Default on for the first
+        // live test; turn off if the hint-resolution log line ever gets too noisy
+        // during normal play (it's already deduped to log only on text changes, not
+        // every frame a hint is on screen, but a busy interact-hint-heavy session
+        // could still be chatty).
     // sprintStaminaBypassForTesting (task #9) REMOVED 2026-07-19: graduated to
     // unconditional the same day it was added -- Sprint's real +sprint kbutton
     // migration was LIVE-CONFIRMED working, and with it confirmed that the real
