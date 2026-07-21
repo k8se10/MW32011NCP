@@ -2814,6 +2814,24 @@ void __cdecl Hook_LoadZonesForBootSplice(void* zoneArray, int count, int mode)
 // (count) and +0x14 (glyph array), stride 0x18/24 bytes per glyph). NOT yet
 // independently re-confirmed by this project's own Ghidra project -- this diagnostic
 // exists specifically to catch a live mismatch before it could cause a bad write.
+//
+// CORRECTION (2026-07-21, task #34): "fonts/bigfont" was picked as the patch target
+// on the 2026-07-18 assumption it was "the best single guess for menu-title text."
+// Fresh Ghidra decompile of the real textfont-int -> Font* selector (FUN_005181e0)
+// plus a corpus-wide tally of every real `textfont` value across all 512 dumped
+// `.menu` files (D:\Tools\OpenAssetTools\zone_dump) proves that guess wrong: bigfont
+// is textfont value 2, used in exactly 3 itemDefs anywhere in ui.ff, all three in
+// `ui/ui/brightness_adjust.menu` (the brightness-calibration screen) -- and that
+// screen only opens when `!getprofiledata("hasEverPlayed_MainMenu")`, i.e. once per
+// profile, ever. The main menu's real button-list/title text uses textfont 3
+// (smallfont, 4243 real uses) and textfont 9 (hudsmallfont, 866 uses) -- see
+// ui_assets.md's 2026-07-21 entry for the full textfont->font-name table. The
+// struct-layout diagnostic below is still valid regardless of which font it targets
+// (glyphCount/glyphs/material layout is identical across all 9 registered fonts),
+// so this was NOT changed to avoid re-deriving an already-live-confirmed-safe
+// target; but don't reuse "fonts/bigfont" as a visual test vehicle without first
+// reading known_issues.md issue #34 -- it is real but not a practical, repeatable,
+// always-visible screen the way earlier notes assumed.
 namespace {
 using FindOrLoadFontFn = void*(__cdecl*)(const char* fontPath);
 FindOrLoadFontFn const FindOrLoadFont = reinterpret_cast<FindOrLoadFontFn>(0x0045d040);
@@ -2939,6 +2957,24 @@ void InjectFontStructDebugTest()
 // mechanism), proving the array-growth+repoint patch is sound before ever touching
 // the harder graphics problem. Deliberately gated behind its own separate combo
 // (not the read-only diagnostic's LB+RB) and fires only once per session.
+//
+// KNOWN GAP, not yet closed (2026-07-21, task #34): there is currently no real,
+// always-visible on-screen text anywhere that contains byte 0x81, so this patch's
+// effect cannot actually be SEEN yet even once it fires -- see known_issues.md
+// issue #34 for the full investigation. Short version: `fonts/bigfont` (this
+// patch's target) is real but is only ever drawn by `brightness_adjust.menu`
+// (3 itemDefs), which the game only opens once per profile ever
+// (`!getprofiledata("hasEverPlayed_MainMenu")`); forcing it open synthetically via
+// this project's own SetDvarByName("cl_paused",1)+SetPlayerMenuFlags+OpenMenuByName
+// recipe is ALREADY confirmed broken (garbled render, see InjectZoneLoadDebugTest's
+// own comment above) regardless of content, so that's a dead end, not attempted
+// here. Closing this gap for real needs either (a) a fresh player profile to
+// naturally retrigger the real screen once, or (b) finding the actual native render
+// call site for real gameplay interact-hint text (still untraced -- FUN_00568110
+// builds the hint STRING but never selects a font itself, so the font choice
+// happens at a separate, not-yet-found call site) and retargeting this whole patch
+// at whichever font that turns out to be. Neither attempted this pass -- flagging
+// honestly rather than leaving the false impression this is fully closed out.
 //
 // Safety ordering, deliberate: writes font->glyphs (the pointer) BEFORE
 // font->glyphCount. If this engine turns out to have any concurrent reader (not

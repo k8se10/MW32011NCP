@@ -4628,3 +4628,69 @@ master-server discovery layer in front of it; the only genuinely third-party/com
 unranked dedicated-server pool. **No change to this project's own risk posture or locked ordering** — MP
 work is still unstarted, VAC is still confirmed active regardless of matchmaking health, and this finding is
 informational (corrects a loosely-sourced citation, adds real mechanism detail) rather than decision-changing.
+
+---
+
+## 34. Glyph-patch mechanism test (`InjectFontGlyphPatchTest`, LB+RB+A) still not visually provable — wrong font targeted, corrected; no safe way found yet to actually see it (2026-07-21)
+
+**Status: open, not resolved.** Set out to close the loop on the LB+RB+A
+glyph-array-patch mechanism test (task #6/#31/#32) by making its effect
+actually visible on screen — instead found the test's target,
+`fonts/bigfont`, was picked on a wrong guess, and while that's now corrected
+with a real, useful finding, the underlying "make it visible" problem is
+still open.
+
+**Real `textfont` enum resolved** (fresh Ghidra decompile of
+`FUN_005181e0`, the real int-to-`Font*` selector every itemDef text draw
+call goes through): `2`=bigfont, `3`=smallfont, `4`=boldfont,
+`5`=consolefont, `6`=objectivefont, `7`=normalfont (also the fallback for
+any unhandled value), `8`=extrabigfont, `9`=hudbigfont,
+`10`=hudsmallfont, anything else = auto-selected by measured text width.
+Cross-checked against a tally of every real `textfont` line across all 512
+`.menu` files in the existing full `ui.ff` dump
+(`D:\Tools\OpenAssetTools\zone_dump`): `3` (smallfont) 4243 uses, `9`
+(hudsmallfont) 866, `1` (auto) 150, `6` 12, `4`/`2`/`10` 3 each, `5` once.
+
+**`fonts/bigfont` (the mechanism test's target) is confirmed real but
+confirmed NOT the main menu's title/button-list font** as the 2026-07-18
+plan assumed ("best single guess for menu-title text") — that text actually
+uses smallfont/hudsmallfont. Bigfont's only 3 real uses anywhere in `ui.ff`
+are in `ui/ui/brightness_adjust.menu` (the brightness-calibration screen),
+which only opens when `!getprofiledata("hasEverPlayed_MainMenu")` — a
+real, one-time-per-profile gate, confirmed by tracing its only trigger in
+`ui/ui/player_profile.menu`. Not a repeatable, on-demand test vehicle as
+previously assumed.
+
+**Forcing that screen open synthetically was considered and rejected, not
+attempted**: this project's own `SetDvarByName`+`SetPlayerMenuFlags`+
+`OpenMenuByName` recipe is already documented (this file, `InjectZoneLoadDebugTest`'s
+own comment, and `analog_input_hooks.cpp`) as producing a **garbled render**
+when called from the WndProc/`SetTimer` tick, regardless of content — a
+real, pre-existing dead end, not something this pass discovered new risk
+in. Re-attempting it here for `brightness_adjust` would just re-hit the
+same known-broken path for no new information.
+
+**What's actually still needed, neither done this pass**: (a) a genuinely
+fresh player profile would naturally retrigger `brightness_adjust` once
+through completely ordinary play — not attempted, resetting/faking the
+user's own profile progress wasn't this pass's call to make; or (b) find
+the real native render call site that picks a font for actual gameplay
+interact-hint text (e.g. the weapon-pickup/swap hint string built by
+`FUN_00568110`) and retarget the whole glyph-patch mechanism at THAT font
+instead. Traced `FUN_00568110` fully — it only builds the hint STRING via
+`FUN_005098e0` and never itself touches a font global or the `textfont`
+selector; the actual font choice happens downstream at a still-unfound call
+site. Left for whoever picks up the bind-resolver-hook work (`FUN_0061f6f0`,
+still unstarted, see the 2026-07-18 fork-research section in
+`ui_assets.md`) since that's the natural place this gets resolved anyway.
+
+**No code behavior changed** — `InjectFontStructDebugTest`/
+`InjectFontGlyphPatchTest` still target `fonts/bigfont` exactly as before
+(the struct-layout proof they provide is font-agnostic, no reason to
+re-derive it against a different font just for this). Only doc/comment
+corrections landed: a correction comment in `analog_input_hooks.cpp` right
+above the font-struct-diagnostic code, a flagged known-gap comment above
+`InjectFontGlyphPatchTest` itself, and the full writeup in `ui_assets.md`'s
+2026-07-21 entry. Builds clean (comment-only diff, verified via MSBuild,
+Win32 config, 0 warnings/0 errors). **No live testing performed or possible
+this pass** — no game-automation capability available to this session.
