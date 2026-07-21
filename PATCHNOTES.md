@@ -102,6 +102,20 @@ reverse-engineering trail behind each entry.
   rethinking before that work can proceed. See `re_notes/known_issues.md`
   issue #23 for full detail, including the correction to the original plan's
   `DAT_008501e8` formula found while implementing this.
+- **Live HUD-text font identification hook (task #6/#34 follow-up).** The
+  glyph-patch mechanism test's font target (`fonts/bigfont`) was already known to
+  be wrong for real interact-hint/HUD text; static tracing this pass followed the
+  real chain from the weapon-pickup hint builder down through a deferred
+  render-command queue to the actual glyph-draw call, confirming the font is
+  threaded as an explicit argument from a generic, data-driven HUD-element
+  pipeline rather than selected via the menu system's `textfont` mechanism — but
+  stopped short of the ultimate origin. Rather than keep chasing the static
+  trace, a new permanent, read-only hook on `FUN_00690c80` (confirmed ordinary,
+  safe to hook) now logs the real font name in use for on-screen HUD/menu text
+  whenever it changes, which will empirically reveal the real interact-hint font
+  the next time someone plays. New `[Experimental] HudFontIdLogging` toggle
+  (default on). Builds clean. **Not yet live-tested.** See
+  `re_notes/known_issues.md` issue #34 for the full trail.
 
 ### Docs
 - **Corrected the button-glyph font-patch test's target-font assumption (task #34).**

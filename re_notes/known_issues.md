@@ -4852,6 +4852,54 @@ above the font-struct-diagnostic code, a flagged known-gap comment above
 Win32 config, 0 warnings/0 errors). **No live testing performed or possible
 this pass** — no game-automation capability available to this session.
 
+**Follow-up pass (2026-07-21, later session): static trace pushed further, then
+pivoted to a live diagnostic instead of chasing the trace to its end.** Traced
+`FUN_00568110`'s one real caller, `FUN_005682f0` — confirmed as the actual
+interact-hint/HUD-element drawer (health-pickup icon animation, weapon-swap hint
+text, etc., matching the `PLATFORM_PICKUPHEALTH`/`PLATFORM_PICKUPNEWWEAPON`
+strings already known from earlier research). Its hint-text draw call,
+`FUN_0051f6c0`, was followed downward through `FUN_005342a0` → `FUN_0051b100`
+(writes an **opcode-`0x11` "print text" entry into a deferred render-command ring
+buffer**, `DAT_021ddf30` — text drawing here is NOT immediate, it's queued for
+later processing, a real structural finding not previously documented) →
+`FUN_00691ca0` (the real ring-buffer **consumer**, walks entries via their real
+size field at `+0x2`, confirmed via matching offset math against the writer) →
+`FUN_00690c80` → `FUN_0047dfa0` (the already-confirmed real glyph-lookup
+function). **Conclusively confirmed**: the font is NOT selected via the generic
+`textfont`-int/`FUN_005181e0` menu-itemDef mechanism for this class of text at
+all — it's threaded as an explicit argument the entire way down (`FUN_00690c80`'s
+4th parameter, confirmed as the real `Font_s*` via `*(undefined4*)(param_4+0xc)`
+matching the confirmed `Font_s.material` field at `+0xC` exactly), sourced from a
+generic, data-driven HUD-element render pipeline. Traced one level further up
+(`FUN_005682f0`'s own font-carrying parameter came from `FUN_00459d80`, itself
+reachable only from `FUN_005096d0`, a 24-parameter generic HUD-element dispatcher
+with per-element-type special cases) before concluding that continuing to chase
+the static trace to its ultimate origin (whatever populates this specific
+element's font field — a data table or native/GSC hud-element-creation call, not
+yet located) was less efficient than a direct empirical answer.
+
+**Pivoted to a live, read-only diagnostic instead — `Hook_DrawGlyphText` on
+`FUN_00690c80` (disassembly-confirmed ordinary function: plain `PUSH EBP; MOV
+EBP,ESP; AND ESP,0xfffffff8; SUB ESP,0x94` prologue, EBP-relative stack args
+throughout, no thunk involved — safe to hook by this project's own established
+standard).** Installed as a permanent hook (wired live, since it only ever reads
+and forwards, never mutates — same safety class as the boot-thunk diagnostic),
+gated for LOGGING only by a new `[Experimental] HudFontIdLogging` config toggle
+(default on). Reads the real `Font_s*` passed as `FUN_00690c80`'s 4th argument on
+every call, and logs its `fontName` string (reusing the already-confirmed
+`DiagFont` struct layout) whenever it **changes**, deduped so a busy HUD session
+doesn't spam the log. Since this function is the universal glyph-draw call for
+ALL on-screen HUD/menu text (not just interact hints), the next real play session
+will show, empirically and directly, every real font name actually rendered —
+including, whenever a genuine interact hint appears on screen, exactly which one
+that is — without needing to finish the static trace at all. Builds clean (0
+warnings/0 errors, full rebuild, MSBuild Win32/Release). **Not yet live-tested**
+— next launch's `proxy_d3d9.log` should show one or more `[hud-font-id]` lines
+within the first few seconds of reaching any menu or HUD, which is the concrete
+next step whenever this is picked up. The existing `InjectFontStructDebugTest`/
+`InjectFontGlyphPatchTest` (targeting `fonts/bigfont`) are unchanged — this is a
+new, additional, parallel diagnostic, not a replacement.
+
 ---
 
 ## 35. Bind-resolver text hook (`FUN_0061f6f0`) — LOG-ONLY first pass IMPLEMENTED, not yet live-tested (2026-07-21)

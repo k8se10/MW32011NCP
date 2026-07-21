@@ -243,7 +243,11 @@ void WriteDefaultConfig(const char* path)
         "; running game can load yet actually renders these codepoints (see\n"
         "; re_notes/known_issues.md issue #23), so enabling this today replaces\n"
         "; readable text with missing-glyph boxes. Leave at 0 until that's resolved.\n"
-        "BindResolverGlyphSubstitution=%d\n",
+        "BindResolverGlyphSubstitution=%d\n"
+        "; Task #6/#34: read-only diagnostic hook on the real glyph-draw call, logs the\n"
+        "; real font name in use for on-screen HUD/menu text whenever it changes. Always\n"
+        "; forwards unmodified regardless of this toggle. 0 = off, 1 = on.\n"
+        "HudFontIdLogging=%d\n",
         g_modConfig.lookDegreesPerSecond,
         g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
@@ -264,7 +268,8 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.vibrationDamageDurationMs,
         g_modConfig.fireNotifyQueueKick ? 1 : 0,
         g_modConfig.bindResolverHookLogging ? 1 : 0,
-        g_modConfig.bindResolverGlyphSubstitution ? 1 : 0);
+        g_modConfig.bindResolverGlyphSubstitution ? 1 : 0,
+        g_modConfig.hudFontIdLogging ? 1 : 0);
 
     fclose(f);
 }
@@ -394,6 +399,7 @@ void LoadModConfig()
     ReadBool(path, "Experimental", "FireNotifyQueueKick", g_modConfig.fireNotifyQueueKick);
     ReadBool(path, "Experimental", "BindResolverHookLogging", g_modConfig.bindResolverHookLogging);
     ReadBool(path, "Experimental", "BindResolverGlyphSubstitution", g_modConfig.bindResolverGlyphSubstitution);
+    ReadBool(path, "Experimental", "HudFontIdLogging", g_modConfig.hudFontIdLogging);
 
     g_buttonMap = ResolveButtonMap(g_modConfig.buttonLayout, g_modConfig.flipTriggers);
 
@@ -405,7 +411,8 @@ void LoadModConfig()
         "buttonLayout=%s stickLayout=%s flipTriggers=%d glyphStyle=%s "
         "vibrationEnabled=%d vibrationFireIntensity=%g vibrationFireDurationMs=%lu "
         "vibrationDamagePerPoint=%g vibrationDamageMaxIntensity=%g vibrationDamageDurationMs=%lu "
-        "fireNotifyQueueKick=%d bindResolverHookLogging=%d bindResolverGlyphSubstitution=%d",
+        "fireNotifyQueueKick=%d bindResolverHookLogging=%d bindResolverGlyphSubstitution=%d "
+        "hudFontIdLogging=%d",
         g_modConfig.lookDegreesPerSecond, g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
         g_modConfig.invertLook ? 1 : 0, g_modConfig.lookAccelerationRampMs,
@@ -418,6 +425,7 @@ void LoadModConfig()
         g_modConfig.vibrationDamageMaxIntensity, g_modConfig.vibrationDamageDurationMs,
         g_modConfig.fireNotifyQueueKick ? 1 : 0,
         g_modConfig.bindResolverHookLogging ? 1 : 0,
-        g_modConfig.bindResolverGlyphSubstitution ? 1 : 0);
+        g_modConfig.bindResolverGlyphSubstitution ? 1 : 0,
+        g_modConfig.hudFontIdLogging ? 1 : 0);
     LogFromController(buf);
 }
