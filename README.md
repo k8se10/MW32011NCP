@@ -101,6 +101,15 @@ live-tested by the developer during actual play, not just built-and-assumed.
 Special Ops (all 16 missions), AC-130 (Iron Lady/Fire Mission), 9 of 17 Campaign
 missions — see **Controller compatibility by mission/mode** below for the exact list.
 
+### 🔭 Roadmap ideas (not started, not scoped)
+
+Forward-looking ideas that haven't had any RE work done yet — distinct from the
+tables above, which only cover features that have actually been attempted.
+
+| Idea | Notes |
+|---|---|
+| **Local splitscreen co-op** | User-suggested (2026-07-21) as a way to bring back more of the console experience — MW3's Xbox 360/PS3 builds shipped real local splitscreen for Special Ops co-op. Not investigated at all yet: no research into whether the PC build's engine retains a dormant second-viewport/second-local-client path, only whether a *second controller's input* can be read (already solved, unrelated question). The one existing lead, from this project's very first investigation (see `CLAUDE.md`'s "Key technical finding"): `iw5mp.exe`'s strings include `splitscreenactivegamepadcount`, `attachedcontrollercount`, and `@PLATFORM_USECONTROLLER1` — confirmed-real leftovers from the shared console codebase, previously characterized as "not a working PC path" for input purposes specifically, but never checked for whether they (or adjacent code) still drive an actual local dual-viewport/dual-simulation path. Would need its own dedicated feasibility pass — likely one of the largest asks in this project's scope, on the order of a second full client/render pipeline, not a small addition — before any real commitment. See `re_notes/known_issues.md` issue #36 for the tracked entry. |
+
 ## Scorecard (2026-07-19)
 
 Two different questions, kept deliberately separate — a feature can be highly

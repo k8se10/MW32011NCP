@@ -4861,3 +4861,47 @@ bug in the same code, independent of the register-capture issue. **Status: hook 
 installed (safe, no behavior risk since it never mutates anything), but the log-only
 data isn't yet a trustworthy foundation for the real glyph-substitution work — needs a
 follow-up debugging pass on the shim before that's true.**
+
+---
+
+## 36. Local splitscreen co-op — user roadmap idea, NOT YET INVESTIGATED (2026-07-21)
+
+**Status: idea only, zero RE work done.** User suggested adding local splitscreen
+(real dual-player, same-screen, same-machine co-op) to the project's scope as a way
+to bring back more of the console experience — MW3's Xbox 360/PS3 builds shipped
+real local splitscreen for Special Ops co-op. Logged here so it isn't lost, not
+because any investigation has started.
+
+**The one existing, relevant lead**: this project's very first investigation (see
+`CLAUDE.md`'s "Key technical finding," 2026-07-13) already found real strings in
+`iw5mp.exe` — `splitscreenactivegamepadcount`, `attachedcontrollercount`,
+`@PLATFORM_USECONTROLLER1` — confirmed genuine leftovers from the shared console
+codebase. At the time, these were characterized specifically as "not a working PC
+INPUT path" (i.e. no XInput/DirectInput import exists to actually read a second
+controller) — that finding stands and is unrelated to reading a second pad, which
+this project already solved generally via its own XInput polling. **What was never
+checked**: whether any of this splitscreen-adjacent code, or anything near it, still
+drives an actual second local player simulation and a second rendered viewport —
+a completely different and much larger question than "can we read a second
+controller," which is genuinely open and untouched.
+
+**Why this is a big ask, flagged honestly rather than undersold**: real local
+splitscreen needs, at minimum, a second local client-side player/prediction state,
+a second camera/view, and a split or divided render target — architecturally closer
+to standing up a second client pipeline than to any hook this project has built so
+far (all of which inject into a SINGLE existing player's input/usercmd/view-angle
+path). Even if the console build's dual-viewport code is dormant and intact in the
+PC binary (unconfirmed), reviving it would likely be one of the largest single
+undertakings in this project's history — bigger in kind, not just degree, than the
+controller-glyph or options-menu work.
+
+**Not yet done, first real steps whenever this is picked up**: (1) confirm via
+Ghidra whether `iw5sp.exe` specifically (not just `iw5mp.exe`, since Special
+Ops/Survival — the project's actual scope — is the SP binary) carries the same or
+equivalent splitscreen-leftover strings/cvars at all; (2) trace real xrefs on
+whichever splitscreen cvars/strings exist to see if they reach any still-intact
+second-viewport render call or second-player simulation entry point, or whether
+that code was stripped/dead-ended on the PC build the same way the controller input
+path was; (3) only after that feasibility question is answered should any actual
+scoping/design work begin. Nothing here is implementation-ready — this is
+deliberately just the roadmap entry and the one known lead.
