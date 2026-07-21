@@ -31,6 +31,34 @@ reverse-engineering trail behind each entry.
   investigation first. No code shipped this pass — pure research/scoping, see
   `re_notes/known_issues.md` issue #37 for the full trail, sources, and integration
   plan.
+- **Glyph-visibility mechanism (task #6/#34): root cause found via fresh Ghidra
+  disassembly, no code change shipped yet.** A real live test of the glyph-array patch
+  plus the draw-string-append visibility hook (`LB+RB+B` / `LB+RB+Y`,
+  `InjectFontGlyphVisibilityTest_HudBigFont`/`Hook_DrawGlyphText`) ran clean
+  end-to-end (no crash, no exception — log confirmed the modified copy was built and
+  forwarded) but produced no visible glyph on screen. Disassembled the real draw chain
+  (`FUN_0047dfa0`, `FUN_00690c80`, `FUN_004db3e0`/`FUN_005323c0`, `FUN_00691ca0`/
+  `FUN_0051b100`) fresh via this repo's own headless Ghidra scripts against the
+  existing `MW3.gpr` project. Ruled out a stale glyph cache (the lookup is a genuine
+  live per-character search against the real array on every call) and ruled out a
+  signed-char bug (every stage in the chain treats the byte as unsigned; the
+  float-typed hand-off between functions is a bit-preserving reinterpret, not a value
+  conversion). Found the real cause one level upstream: `FUN_00690c80`'s draw loop is
+  gated by an explicit character-count parameter captured once, at enqueue time, by
+  the HUD text ring-buffer writer (`FUN_0051b100`'s own `strlen` call) and replayed
+  unchanged by the reader (`FUN_00691ca0`) on every subsequent draw — our hook on the
+  draw call itself fires downstream of that round trip, so appending a byte to a local
+  string copy without also incrementing that same captured count guarantees the loop
+  exits exactly one character short of the appended byte, silently, every time. Also
+  found byte `0x81` (the codepoint originally used by
+  `InjectFontGlyphPatchTest_HudBigFont` before the runtime-discovery fix) has one
+  narrow, locale/case-mode-dependent corruption path in `FUN_004db3e0` that codepoint
+  `0xA0` (the codepoint actually in use now) does not — good independent confirmation
+  `0xA0` was the right choice. **Not yet fixed**: the visibility-test hook needs to
+  also locate and increment the captured character-count parameter (not just the
+  string content) for the appended byte to actually be walked by the draw loop — a
+  concrete, scoped follow-up, not yet attempted. Full trail in
+  `re_notes/known_issues.md` issue #34.
 - **Bind-resolver hook (task #6/#35): residual garbage-log occurrence, root cause not
   found.** A real playtest after the `FUN_00622970` return-address fix showed the fix
   working far better (1 garbage line all session vs. 51+ before), but that one
