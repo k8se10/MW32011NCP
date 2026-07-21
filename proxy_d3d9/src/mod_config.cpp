@@ -208,7 +208,11 @@ void WriteDefaultConfig(const char* path)
         "; and always forwards to the real game logic completely unmodified (log-only\n"
         "; first pass -- no glyph substitution happens yet). This only controls whether\n"
         "; it logs what it observes to proxy_d3d9.log. 0 = off, 1 = on.\n"
-        "BindResolverHookLogging=%d\n",
+        "BindResolverHookLogging=%d\n"
+        "; Task #6/#34: read-only diagnostic hook on the real glyph-draw call, logs the\n"
+        "; real font name in use for on-screen HUD/menu text whenever it changes. Always\n"
+        "; forwards unmodified regardless of this toggle. 0 = off, 1 = on.\n"
+        "HudFontIdLogging=%d\n",
         g_modConfig.lookDegreesPerSecond,
         g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
@@ -227,7 +231,8 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.vibrationDamageMaxIntensity,
         g_modConfig.vibrationDamageDurationMs,
         g_modConfig.fireNotifyQueueKick ? 1 : 0,
-        g_modConfig.bindResolverHookLogging ? 1 : 0);
+        g_modConfig.bindResolverHookLogging ? 1 : 0,
+        g_modConfig.hudFontIdLogging ? 1 : 0);
 
     fclose(f);
 }
@@ -355,6 +360,7 @@ void LoadModConfig()
     ReadUlong(path, "Vibration", "DamageDurationMs", g_modConfig.vibrationDamageDurationMs);
     ReadBool(path, "Experimental", "FireNotifyQueueKick", g_modConfig.fireNotifyQueueKick);
     ReadBool(path, "Experimental", "BindResolverHookLogging", g_modConfig.bindResolverHookLogging);
+    ReadBool(path, "Experimental", "HudFontIdLogging", g_modConfig.hudFontIdLogging);
 
     g_buttonMap = ResolveButtonMap(g_modConfig.buttonLayout, g_modConfig.flipTriggers);
 
@@ -366,7 +372,7 @@ void LoadModConfig()
         "buttonLayout=%s stickLayout=%s flipTriggers=%d "
         "vibrationEnabled=%d vibrationFireIntensity=%g vibrationFireDurationMs=%lu "
         "vibrationDamagePerPoint=%g vibrationDamageMaxIntensity=%g vibrationDamageDurationMs=%lu "
-        "fireNotifyQueueKick=%d bindResolverHookLogging=%d",
+        "fireNotifyQueueKick=%d bindResolverHookLogging=%d hudFontIdLogging=%d",
         g_modConfig.lookDegreesPerSecond, g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
         g_modConfig.invertLook ? 1 : 0, g_modConfig.lookAccelerationRampMs,
@@ -378,6 +384,7 @@ void LoadModConfig()
         g_modConfig.vibrationFireDurationMs, g_modConfig.vibrationDamagePerPoint,
         g_modConfig.vibrationDamageMaxIntensity, g_modConfig.vibrationDamageDurationMs,
         g_modConfig.fireNotifyQueueKick ? 1 : 0,
-        g_modConfig.bindResolverHookLogging ? 1 : 0);
+        g_modConfig.bindResolverHookLogging ? 1 : 0,
+        g_modConfig.hudFontIdLogging ? 1 : 0);
     LogFromController(buf);
 }
