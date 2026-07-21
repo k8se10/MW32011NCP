@@ -8,6 +8,26 @@ reverse-engineering trail behind each entry.
 
 ## Unreleased
 
+### Fixed
+- **Bind-resolver hook (`FUN_0061f6f0`) logged implausible data for one real caller;
+  root-caused and fixed (task #6/#35 follow-up).** The live-test above traced to a
+  genuine, disassembly-confirmed cause, not a bug in the hook's own register-reading:
+  one of `FUN_0061f6f0`'s 4 real callers, `FUN_00622970` (a key-rebind-capture UI —
+  "waiting for the next physical key press to bind"), pushes its arguments in a
+  different shape than the other 3 (its real buffer pointer at `[esp+4]`, the
+  buffer's *size* at `[esp+8]`) — the reverse of the convention this hook assumed,
+  which is why `[esp+8]` read as the literal `0x100`. `BindResolverLogAfterCall` now
+  detects this specific caller by its confirmed real return address and logs a
+  one-time note instead of misleading placeholder data; the hook's behavior for the
+  3 genuine hint-resolution callers is unchanged. Also fixed an independent dedup bug
+  found in the same pass: repeated identical log lines weren't being suppressed
+  whenever the buffer read as implausible, because the old dedup check was itself
+  gated behind a successful-read flag that never got set in that case — fixed by
+  comparing/updating on the logged text directly, unconditionally. Builds clean;
+  **not yet live-tested** (this fix's confidence comes from tracing both callers'
+  real disassembly instruction-by-instruction, not a fresh playtest) — see
+  `re_notes/known_issues.md` issue #35 for the full trail.
+
 ### Added
 - **Bind-resolver text hook (`FUN_0061f6f0`), LOG-ONLY first pass (task #6/#35).**
   A new permanent hook now forwards every real bind-hint-text resolution
