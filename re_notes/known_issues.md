@@ -4900,6 +4900,64 @@ next step whenever this is picked up. The existing `InjectFontStructDebugTest`/
 `InjectFontGlyphPatchTest` (targeting `fonts/bigfont`) are unchanged — this is a
 new, additional, parallel diagnostic, not a replacement.
 
+**LIVE-TESTED (2026-07-21), real font usage data gathered — retargeted the
+struct/patch mechanism tests at the real winner.** The `hud-font-id` diagnostic
+above got its first real playtest: a long, clean, ~18,500-line Survival session
+(`so_survival_mp_underground`), no crash, clean exit. Real tally of every font
+logged:
+```
+fonts/hudBigFont    7929 uses
+fonts/smallFont     4860 uses
+fonts/hudSmallFont  2277 uses
+fonts/extraBigFont  1648 uses
+fonts/objectiveFont 1360 uses
+fonts/bigFont        117 uses
+```
+`hudBigFont` is the dominant real HUD font by a wide margin — confirms the
+theoretical retarget candidate this entry already flagged (`objectiveFont`, on
+name alone) wasn't the only real option, and gives a data-backed reason to try
+`hudBigFont` first. `bigFont`'s 117 uses are consistent with the earlier
+one-time-brightness-screen finding (117 is plausible for 3 static itemDefs
+redrawn every frame across however many seconds that screen was ever on
+screen this session, not evidence it's a real interact-hint font).
+
+**Retargeted the mechanism, added alongside the bigfont versions, not
+replacing them** (`analog_input_hooks.cpp`): `InjectFontStructDebugTest_HudBigFont`
+(read-only struct dump, `LB+RB+X`) and `InjectFontGlyphPatchTest_HudBigFont`
+(borrowed-UV reallocate-and-repoint mechanism test, `LB+RB+B`) — identical
+mechanisms to the already-proven bigfont versions, just calling
+`FindOrLoadFont("fonts/hudbigfont")` instead. Distinct combos from every existing
+one (`LB+RB` and `LB+RB+A` stay bigfont-only) so nothing can collide. Builds
+clean (0 warnings/0 errors, full rebuild, MSBuild Win32/Release). **Not yet
+live-tested** — next session should hold `LB+RB+X` for 2s to confirm hudBigFont's
+struct layout matches the already-confirmed bigfont one (expected, since
+`FUN_0047dfa0`'s lookup logic is generic across all 9 registered fonts), then
+`LB+RB+B` to confirm the patch mechanism applies cleanly. Unlike bigfont,
+hudBigFont is a genuinely repeatable, always-visible test surface (7929
+real draws in one session) — once a future pass gets byte `0x81` into any
+hudBigFont-rendered string, this is actually checkable on screen, closing the
+long-standing "can't even see the effect" gap this whole issue opened with.
+
+**`objectiveFont` (1360 real uses) intentionally NOT retargeted this pass** —
+one font at a time keeps each test's result unambiguous. If hudBigFont's
+struct dump or patch test comes back wrong/implausible, `objectiveFont` is the
+next real candidate to try, via the exact same pattern (copy
+`InjectFontStructDebugTest_HudBigFont`/`InjectFontGlyphPatchTest_HudBigFont`,
+swap the font-name string, pick two more distinct combos).
+
+**Explicitly NOT attempted this pass**: rebuilding the offline extended-atlas
+asset (`bigfont_glyph_ext.ff`'s equivalent for `hudBigFont`) with REAL new
+glyph pixel content. That's a separate, much bigger undertaking — a full
+`Unlinker`/`Linker` pipeline pass following `ui_assets.md`'s already-documented
+"Font pipeline" steps, but against `hudBigFont`'s own real material/atlas
+(dump it fresh via `Unlinker.exe`, confirm its atlas dimensions/format, extend
+the canvas and rescale existing glyphs' UVs exactly as already done for
+bigfont's `gamefonts_pc` atlas, rebuild via `Linker.exe` under unique asset
+names to avoid the same interning collision already solved for
+`bigfont_glyph_ext.ff`). The borrowed-UV mechanism tests above prove the
+PATCH mechanism works against hudBigFont; real pixel content is still a
+separate, unstarted step, same as it always was for bigfont.
+
 ---
 
 ## 35. Bind-resolver text hook (`FUN_0061f6f0`) — LOG-ONLY first pass IMPLEMENTED, not yet live-tested (2026-07-21)
