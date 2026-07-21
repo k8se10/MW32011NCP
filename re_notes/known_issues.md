@@ -4445,3 +4445,105 @@ the other way: this project's own short public track record isn't real supportin
 don't cite "no bans reported" about MW32011NCP itself as if it carries the same weight as the
 multi-year x360ce/RTSS comparisons. Revisit that specific caveat again once the project has several
 more months of public history.
+
+### Third pass, 6 more forks — closing every remaining chaseable open thread via direct RE (2026-07-21)
+
+User asked to keep digging until a definitive answer, explicitly via RE rather than further precedent-only
+research. Five forks ran direct Ghidra disassembly against the specific gaps the first two passes left open;
+a sixth external-research fork chased the two open precedent questions to their most concrete source; a
+seventh follow-up fork closed the one new loose end the RE forks turned up. Every item below is
+disassembly-backed or a direct-source read, not inference, unless labeled otherwise.
+
+- **`bdEventLog::recordEvents` payload — fully resolved, not just de-risked.** Traced the complete chain in
+  `iw5sp.exe` (`FUN_0070f800`/`FUN_0070f430`/`FUN_0070fb70` → enqueue `FUN_00413d70` → init `FUN_004d0920`,
+  registered as `"LSP_Logging_Init"`, dvar `dw_logging_level` **default 0 = off**, sampled, minutes-interval
+  submission). The only literal payload string found anywhere in the reachable chain is
+  `"results_matchmaking time: %d num_results: %d"` — a matchmaking-latency diagnostic, logged only once a
+  connection is active (same `network state == 2` gate as `bdAntiCheat`). No module list, memory address, or
+  process/thread data anywhere in this system. `iw5mp.exe` has the structurally identical functions at
+  different addresses (`FUN_007075e0`/`FUN_007079b0`) — not independently re-traced call-site-by-call-site,
+  flagged as inferred-by-structural-identity, not a gap that changes the verdict.
+- **`bdAntiCheat`'s actual challenge-response CONTENT — fully resolved, and it's inert.** The virtual call
+  inside `answerChallenges` (`FUN_00714fa0` SP / `FUN_0070f840` MP) resolves to a 2-entry vtable whose real
+  target, `FUN_00715a30`, is confirmed via its own embedded debug string to be
+  **`bdTaskByteBuffer::allocateBuffer`** — generic buffer-size/alignment bookkeeping, not a challenge object
+  at all. The actual response bytes are two **hardcoded literal constants** (`0x26`, `2`) written directly in
+  `answerChallenges` itself via a bounds-checked buffer-write helper — not computed from any read of process,
+  module, or memory state. Identical constants, identical call shape, in both binaries. This closes the
+  single biggest remaining unknown from the prior passes: the challenge-response mechanism does not scan
+  anything, dynamic or otherwise — it's a fixed protocol type-tag/version-ack.
+- **No self-hook / D3D9-vtable / IAT integrity check found in either binary.** Dedicated search found: no
+  code that reads or compares its own `IDirect3DDevice9`/`IDirect3D9` vtable pointer *values* outside normal
+  `(*vtable)[n](...)` call sites; no IAT walk anywhere; every `GetProcAddress`/`GetModuleHandleA/W`/
+  `LoadLibraryA` call site (48/13/7/8 in SP, 40/9/7/7 in MP) is mundane MSVC CRT plumbing targeting standard
+  system DLLs, none referencing `d3d9.dll` or any hooked engine function by name (`"d3d9.dll"` has zero code
+  references in either binary — it's read only by the OS loader's import directory); a scan for `CMP`/`TEST`
+  against the JMP-hook opcode byte (`0xE9`) found exactly one hit per binary, both confirmed false positives
+  inside the CRT's own `_memcmp`. **New, MP-only finding**: `iw5mp.exe` statically imports
+  `SetWindowsHookExA`/`UnhookWindowsHookEx`/`CallNextHookEx` (absent from `iw5sp.exe`) but a full-memory
+  pointer scan found **zero references of any kind** to any of the three anywhere in code or data — a dead
+  transitive import (plausibly pulled in whole by a statically-linked Demonware/Steamworks library), not an
+  active mechanism.
+- **Full process-introspection API audit, both binaries.** Entire API families confirmed **not imported at
+  all** (zero attack surface): `Process32First/Next`, `EnumProcessModules(Ex)`, `EnumProcesses`,
+  `ReadProcessMemory`, `WriteProcessMemory`, `NtQuerySystemInformation`, `NtQueryInformationProcess`,
+  `VirtualQueryEx`, `GetModuleHandleExW`, `LoadLibraryW/ExA/ExW`. The one `CreateToolhelp32Snapshot`/
+  `Module32First/Next` chain already traced for `iw5mp.exe` is now confirmed to exist **identically in
+  `iw5sp.exe` too** (byte-identical logic, only the `OpenProcess` access mask differs) — extends, doesn't
+  change, the prior verdict: it walks a *foreign* PID's modules to check a stale lockfile, never enumerates
+  the current process's own module list. `VirtualQuery`'s only real hits besides that chain are the
+  confirmed-genuine CRT symbol `__ValidateEH3RN` in both binaries, plus one SP-only extra use (see next
+  item).
+- **SP-only Vectored Exception Handler on `STATUS_SINGLE_STEP` — chased to ground, confirmed benign.**
+  `FUN_006c1690` self-locates its own `.text` bounds via the identical `VirtualQuery`-loop pattern
+  `__ValidateEH3RN` uses, then registers `FUN_006c0ec0` via `AddVectoredExceptionHandler`. Full decompile of
+  the handler and its dispatch target (`FUN_0043bd20`) shows a thread-ID-keyed, mutex-guarded frame-record
+  lookup — classic MSVC CRT/SEH continuation machinery (most consistent with `/fp:except`-style precise
+  floating-point-exception handling), not an anti-debug trick: it reads no process/module state and compares
+  against no "expected clean" code bytes. It fires **only** on an actual `STATUS_SINGLE_STEP` exception
+  (trap flag set) inside its own bounds — MinHook's hook install (thread-suspend + trampoline write) never
+  sets the trap flag, and a plain JMP-patch executes as ordinary instructions, so neither this project's
+  install step nor its hooks running during normal play can trigger it; it would only ever fire under an
+  actual attached debugger single-stepping through that address range. Confirmed genuinely absent from
+  `iw5mp.exe` (re-checked directly, not assumed) — a real SP/MP asymmetry, not a prior oversight.
+- **External: `danielkrupinski/VAC`'s VMT check, read directly — resolves the `CreateDevice`-hook overlap
+  question in this project's favor.** The repo's only "VMT" content describes VAC validating the integrity
+  of **its own internal `VacProcessMonitor` object**, sourced from a filemapping `steamservice.dll` itself
+  creates, checking whether ITS OWN 6 method pointers fall within `steamservice.dll`'s own base range. No
+  mention anywhere of `IVEngineClient`, `IBaseClientDLL`, D3D interfaces, or any Source-engine-specific
+  concept — the whole writeup is engine-agnostic and process/handle-level, not a scan of arbitrary
+  game-vtables. Directly answers the open question from the first VAC-forks pass: nothing in VAC's documented
+  methodology would touch this project's `IDirect3D9::CreateDevice` vtable hook.
+- **External: `CWest07/COD-Demonware-AntiCheat`'s `.text`-CRC32 claim, read in full — narrower than
+  previously assumed, MW3 (2011) never named.** The full repo (3 files, Xbox 360 only) explicitly scopes the
+  CRC32 mechanism to **Ghosts (2013), Advanced Warfare (2014), Black Ops III (2015)**, with a separate variant
+  for **Black Ops II (2012)**. MW3 (2011) predates every title actually documented and is not mentioned
+  anywhere in the repo (README, source, issues, or commit history). Combined with this pass's own direct
+  finding of no self-hash/self-integrity function anywhere in either MW3 binary, the `.text`-checksum concern
+  is now weaker than "reasoned inference carrying over" — no such mechanism has been located in MW3 (2011)
+  specifically after two dedicated RE passes plus this narrower-than-assumed source citation.
+- **External: a real MW3-PC-MP-specific precedent, more concrete than anything found before.**
+  `AgentRev/CoD-FoV-Changers` — a real, MW3(2011)-specific memory-writing tool with an explicit MP build
+  targeting `iw5mp.exe` directly — states plainly **"MW3: VAC-safe"** (the same author labels a different
+  title "UNSAFE," so this isn't blanket optimism) and reports **3 ban emails out of 10,000+ users** across
+  2011-2018. Technique differs from this project's (external `OpenProcess`/`WriteProcessMemory`, not DLL
+  injection — a different signature), so it's not a perfect match, but it's the single most concrete
+  MW3-PC-MP "large user base, years of history, near-zero ban rate" data point found across this whole
+  investigation. Separately, one real MW3 VAC ban report was found (Steam Community forum, tied to an FPS
+  unlocker) — but community discussion attributes it to a genuine gameplay advantage the tool grants in this
+  old engine (higher jump/movement speed), not to the hooking/modification technique itself, so it doesn't
+  implicate an input-remapper with no discernible movement/aim advantage.
+
+**Net effect of this third pass — the honest ceiling on "definitive":** every concrete, chaseable question
+raised by the first two passes has now been closed by direct disassembly or a direct-source read, not
+inference: no self-hash, no D3D9-vtable check, no IAT walk, no hidden telemetry content, no anti-debug
+mechanism relevant to this project's hooking technique, and the one external claim that would have mattered
+most (`.text`-CRC32) doesn't actually name this title. This is as close to "definitive" as static analysis of
+the current retail binaries can get. **What it cannot do, and what no amount of further RE against these two
+files can close**: VAC's actual server-side decision logic is proprietary, undisclosed, and runs outside
+either binary — this pass proves there's nothing IN THE GAME'S OWN CODE that flags this project's technique,
+not that Valve's separate, external, closed-source scanner will never flag it by some mechanism this binary
+has no part in. The ~3-4 week ban-wave lag caveat from the second pass still stands unchanged. Absent a live,
+long-duration, multi-wave-cycle public track record (which this project does not yet have), this is the
+correct stopping point for RE-based investigation — further digging into these two binaries has run out of
+concrete, unresolved threads to chase.
