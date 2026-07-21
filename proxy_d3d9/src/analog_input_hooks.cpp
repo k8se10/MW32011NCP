@@ -3515,6 +3515,34 @@ uintptr_t g_bindResolverRealRetAddr = 0;
 // elsewhere in this file (e.g. the pause-menu-field re-test). Independent of, and in
 // addition to, the config toggle below (which is a full off switch).
 char g_bindResolverLastLoggedText[128] = {};
+
+// LIVE-TESTED 2026-07-21 (known_issues.md issue #35): a real playtest logged
+// implausible ECX(=0)/[esp+8] buffer(=0x100) values every call. Root-caused via
+// fresh Ghidra disassembly of all 4 real callers of FUN_0061f6f0
+// (FindCallers.java -> FUN_00622020, FUN_00622970, FUN_004be070, FUN_004fafd0):
+// the 3 hint-resolution callers (FUN_004be070/004fafd0/00622020, the "&&1"-token
+// and "[{...}]"-bracket families) all push their real output-buffer pointer at
+// [esp+8], matching this hook's assumed convention exactly. FUN_00622970 does NOT
+// -- its own disassembly (single call site, 00622970 -> CALL 0061f6f0 @ 006229a7)
+// pushes, in order, PUSH 0x0 (flag, lands at [esp+0xc] -- consistent), then loads
+// EAX=&local_100 (a REAL valid stack buffer) and pushes 0x100 (the buffer's SIZE)
+// BEFORE pushing that EAX -- so at FUN_0061f6f0's entry from this one caller,
+// [esp+4]=the real buffer pointer and [esp+8]=the literal 0x100, the reverse of
+// every other caller. That's an exact, disassembly-confirmed match for the live
+// symptom (buffer read as 0x100) -- this is caller-shape divergence (hypothesis
+// 1), NOT a bug in this hook's own register-stashing (hypothesis 2 is refuted:
+// EAX/ECX/[esp+8]/[esp+0xc] are read at the textbook-correct offsets for the
+// convention every OTHER caller actually uses). FUN_00622970's own body
+// (DAT_01c0b1ac/DAT_01c0b1b4 guard, "@MENU_BIND_KEY_PENDING" string literal)
+// matches the 2026-07-18 fork research's prediction exactly: a key-rebind-capture
+// UI ("waiting for the next physical key press to bind"), not a hint-text
+// resolution call -- explains the live ECX=0 too (no "current bind" exists yet
+// while capture is pending). The real return address for this one call site,
+// confirmed via disassembly (instruction immediately after `CALL 0x0061f6f0` @
+// 006229a7): 0x006229AC. Detected and skipped below rather than logged as
+// (meaningless, misleading) hint text.
+constexpr uintptr_t kMenuBindKeyCaptureCallerRetAddr = 0x006229AC;
+bool g_loggedMenuBindKeyCaptureCallerOnce = false;
 }
 
 // Logs the resolved bind name + resolved output text after the real trampoline has
@@ -3527,6 +3555,24 @@ char g_bindResolverLastLoggedText[128] = {};
 extern "C" void __cdecl BindResolverLogAfterCall()
 {
     if (!g_modConfig.bindResolverHookLogging) return;
+
+    // See the big comment above kMenuBindKeyCaptureCallerRetAddr -- this one real
+    // caller (FUN_00622970, key-rebind-capture UI) pushes a genuinely different
+    // stack-arg shape (buffer at [esp+4], size at [esp+8]) than the 3 hint-
+    // resolution callers this hook is actually meant to observe. Logging its
+    // EAX/ECX/[esp+8] as if they were hint-resolution values is misleading, not
+    // useful -- skip it here (once-logged note, not silent, so this doesn't look
+    // like the hook stopped firing).
+    if (g_bindResolverRealRetAddr == kMenuBindKeyCaptureCallerRetAddr) {
+        if (!g_loggedMenuBindKeyCaptureCallerOnce) {
+            g_loggedMenuBindKeyCaptureCallerOnce = true;
+            LogFromController("[bind-resolver-diag] caller ret=0x006229AC is FUN_00622970 "
+                "(key-rebind-capture UI, confirmed via disassembly -- pushes (bufPtr,bufSize,flag) "
+                "at [esp+4,+8,+0xc], not (unused,buf,flag) like the 3 hint-resolution callers) -- "
+                "not logging as hint text, see known_issues.md issue #35");
+        }
+        return;
+    }
 
     char ctxBuf[160];
     if (LooksLikeValidPointer(g_bindResolverCtxEcx)) {
@@ -3559,7 +3605,6 @@ extern "C" void __cdecl BindResolverLogAfterCall()
     }
 
     char textBuf[128] = {};
-    bool bufReadOk = false;
     if (LooksLikeValidPointer(g_bindResolverBufPtr)) {
         const char* resolved = reinterpret_cast<const char*>(g_bindResolverBufPtr);
         __try {
@@ -3570,7 +3615,6 @@ extern "C" void __cdecl BindResolverLogAfterCall()
                 if (c == '\0') break;
             }
             textBuf[sizeof(textBuf) - 1] = '\0';
-            bufReadOk = true;
         } __except (EXCEPTION_EXECUTE_HANDLER) {
             sprintf_s(textBuf, "<faulted reading 0x%08X>", static_cast<unsigned>(g_bindResolverBufPtr));
         }
@@ -3578,13 +3622,19 @@ extern "C" void __cdecl BindResolverLogAfterCall()
         sprintf_s(textBuf, "<buffer ptr 0x%08X not plausible>", static_cast<unsigned>(g_bindResolverBufPtr));
     }
 
-    // Dedup: only log when the resolved text actually changed since last call, so a
+    // Dedup: only log when textBuf's CONTENT actually changed since last call, so a
     // hint sitting on screen (re-resolved every frame while visible) logs once, not
-    // continuously.
-    if (bufReadOk && strcmp(textBuf, g_bindResolverLastLoggedText) == 0) return;
-    if (bufReadOk) {
-        strncpy_s(g_bindResolverLastLoggedText, textBuf, sizeof(g_bindResolverLastLoggedText) - 1);
-    }
+    // continuously. FIXED 2026-07-21 (known_issues.md issue #35): this previously
+    // gated both the compare AND the update behind `bufReadOk`, so whenever the
+    // buffer pointer looked implausible (bufReadOk == false -- exactly the case that
+    // flooded the log live, before the caller-skip fix above), dedup silently never
+    // engaged at all (the guard short-circuited false, and last-logged never got
+    // updated either) -- every call logged unconditionally. textBuf always holds a
+    // deterministic string by this point (the real resolved text, a faulted-read
+    // marker, or the not-plausible marker), so comparing/updating on it directly,
+    // with no bufReadOk gate, is correct in every case, not just the happy path.
+    if (strcmp(textBuf, g_bindResolverLastLoggedText) == 0) return;
+    strncpy_s(g_bindResolverLastLoggedText, textBuf, sizeof(g_bindResolverLastLoggedText) - 1);
 
     char buf[400];
     sprintf_s(buf, "[bind-resolver-diag] %s | limitTo1=%u resolvedText=\"%s\"",
