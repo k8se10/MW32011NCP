@@ -3129,6 +3129,25 @@ DrawGlyphTextFn g_origDrawGlyphText = nullptr;
 
 char g_lastLoggedHudFontName[64] = {};
 
+// ---- HUD-text visibility-test state (task #6/#34 follow-up, 2026-07-21) ------------
+// Declared here (rather than down by the two Inject* functions that actually set/
+// consume them, InjectFontGlyphPatchTest_HudBigFont and the new
+// InjectFontGlyphVisibilityTest_HudBigFont, both defined later in this file) because
+// Hook_DrawGlyphText needs to see them and is defined first -- same relative-ordering
+// convention this file already uses for its other font-test globals (e.g.
+// g_hudFontPatchStage is likewise declared well before the function that drives it).
+//
+// g_hudBigFontPtr / g_hudFontPatchInsertedCodepoint are set ONCE, by
+// InjectFontGlyphPatchTest_HudBigFont (LB+RB+B), immediately after it successfully
+// inserts a new glyph into the live fonts/hudBigFont array -- 0/nullptr sentinel means
+// "no codepoint patched yet this session". g_hudFontVisibilityArmed is set by
+// InjectFontGlyphVisibilityTest_HudBigFont (LB+RB+Y) and consumed right here, in
+// Hook_DrawGlyphText, on the very next real call whose fontArg is confirmed (by
+// pointer identity, not a re-parsed name) to be that exact, already-patched font.
+void* g_hudBigFontPtr = nullptr;
+unsigned short g_hudFontPatchInsertedCodepoint = 0;
+bool g_hudFontVisibilityArmed = false;
+
 void __cdecl Hook_DrawGlyphText(
     const char* param_1, float param_2, float param_3, void* fontArg, float param_5,
     float param_6, float param_7, float param_8, float param_9, int param_10,
@@ -3136,6 +3155,48 @@ void __cdecl Hook_DrawGlyphText(
     unsigned param_16, unsigned param_17, unsigned param_18, unsigned param_19,
     unsigned param_20, unsigned param_21)
 {
+    // ---- one-shot HUD-text visibility injection (task #6/#34 follow-up, 2026-07-21) -
+    // See the big comment above InjectFontGlyphVisibilityTest_HudBigFont's own
+    // definition for the full rationale. Consumes the arm flag exactly once, regardless
+    // of outcome. Compares fontArg against g_hudBigFontPtr by POINTER IDENTITY ONLY (no
+    // dereference needed for the compare itself, so this is always safe to check even
+    // if fontArg is garbage) -- only proceeds into any actual read once that identity
+    // match is confirmed, i.e. this is genuinely the same, already-patched hudBigFont
+    // Font* object, not merely a similarly-named one.
+    //
+    // Safety: builds a LOCAL stack copy of the real text and appends the inserted
+    // codepoint to THAT copy only -- the real buffer the game owns (param_1) is only
+    // ever read from, never written to, so this cannot corrupt anything the game
+    // itself still holds a pointer/iterator into. Wrapped in SEH the same way every
+    // other read of a live engine string is in this file.
+    if (g_hudFontVisibilityArmed && fontArg != nullptr && fontArg == g_hudBigFontPtr) {
+        g_hudFontVisibilityArmed = false; // one-shot regardless of what happens below
+        bool injected = false;
+        __try {
+            if (LooksLikeValidPointer(reinterpret_cast<uintptr_t>(param_1))) {
+                char modified[512];
+                size_t len = strnlen(param_1, sizeof(modified) - 2);
+                memcpy(modified, param_1, len);
+                modified[len] = static_cast<char>(static_cast<unsigned char>(g_hudFontPatchInsertedCodepoint));
+                modified[len + 1] = '\0';
+                char logBuf[400];
+                sprintf_s(logBuf, "[hudbigfont-visibility-test] armed injection firing -- real hudBigFont draw call text was \"%.64s\" (len=%zu), appending codepoint 0x%02X and forwarding a modified COPY (real game buffer untouched)",
+                    param_1, len, g_hudFontPatchInsertedCodepoint);
+                LogFromController(logBuf);
+                g_origDrawGlyphText(modified, param_2, param_3, fontArg, param_5, param_6, param_7,
+                    param_8, param_9, param_10, param_11, param_12, param_13, param_14, param_15,
+                    param_16, param_17, param_18, param_19, param_20, param_21);
+                injected = true;
+                LogFromController("[hudbigfont-visibility-test] forwarded the modified copy to the real draw call with no exception -- check the screen now for a visible borrowed 'A' glyph appended to that HUD text.");
+            } else {
+                LogFromController("[hudbigfont-visibility-test] armed, but this call's param_1 didn't look like a valid pointer -- skipped, one-shot arming already consumed, not retrying this session");
+            }
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            LogFromController("[hudbigfont-visibility-test] exception while building/forwarding the modified copy -- aborted this attempt; falling through below to the normal, unmodified draw call for this frame instead of retrying");
+        }
+        if (injected) return; // already forwarded the modified copy above -- don't also forward/log the unmodified original below
+    }
+
     if (g_modConfig.hudFontIdLogging && LooksLikeValidPointer(reinterpret_cast<uintptr_t>(fontArg))) {
         const DiagFont* font = reinterpret_cast<const DiagFont*>(fontArg);
         __try {
@@ -3522,6 +3583,105 @@ void InjectFontGlyphPatchTest_HudBigFont()
     sprintf_s(buf, "[hudbigfont-patch-test] patch applied -- if the mechanism is sound AND any real HUD text drawn via hudBigFont ever contains byte 0x%02X, it should render as a visible (borrowed) 'A' glyph. hudBigFont draws constantly during real play (7929 uses/session observed) -- far more likely to actually be checkable than bigfont ever was.",
         kNewCodepoint);
     LogFromController(buf);
+
+    // Record what was actually patched (font pointer + the runtime-discovered
+    // codepoint) so InjectFontGlyphVisibilityTest_HudBigFont/Hook_DrawGlyphText below
+    // can later inject exactly this codepoint into a real draw call for this exact
+    // font, once armed. Setting these here rather than duplicating the patch logic is
+    // deliberate -- one single source of truth for "what codepoint did we actually
+    // insert."
+    g_hudBigFontPtr = rawFont;
+    g_hudFontPatchInsertedCodepoint = kNewCodepoint;
+}
+
+// ---- Visibility test for the hudBigFont glyph-array patch (task #6/#34 follow-up,
+// 2026-07-21) ------------------------------------------------------------------------
+//
+// GAP THIS CLOSES: InjectFontGlyphPatchTest_HudBigFont (LB+RB+B, above) proves the
+// insert-and-repoint mechanism itself works -- live-confirmed via log ("built
+// replacement array (254 -> 255 entries), inserted codepoint 0xA0 at index 159,
+// repointing live Font_s now", no crash) -- but nothing in the actual game currently
+// draws any text containing that codepoint, so the newly-inserted glyph has never
+// actually been RENDERED. Nothing about the patch mechanism itself is touched here.
+//
+// APPROACH CHOSEN (option (a) from the two considered): hook the already-installed,
+// already-proven-safe Hook_DrawGlyphText (real function FUN_00690c80, the universal
+// glyph-draw call every single piece of on-screen HUD/menu text already goes through,
+// confirmed via disassembly to be a plain, ordinary function -- no thunk) and, ONLY
+// once armed by holding this function's own distinct combo (LB+RB+Y -- a THIRD,
+// separate combo from LB+RB / LB+RB+A / LB+RB+X / LB+RB+B, so it can never collide
+// with any existing font-test trigger), rewrite a LOCAL STACK COPY of the very next
+// matching draw call's real text (appending the inserted codepoint) and forward that
+// copy instead of the original. The real buffer the game owns is only ever read, never
+// written -- this cannot corrupt anything the game itself still holds a pointer or
+// iterator into. See the big comment inside Hook_DrawGlyphText itself for the
+// injection logic and its own safety notes (SEH-wrapped, one-shot, falls back to a
+// normal unmodified draw call on any exception).
+//
+// OPTION (b) CONSIDERED AND REJECTED: reusing a known, always-registered console
+// command's output as an injection anchor (the same "screenshot" anchor technique
+// already used elsewhere in this project to FIND Cbuf_AddText/Cmd_ExecuteString, see
+// the 2026-07-15 comment block above InjectControllerWeaponNext). That investigation
+// already proved neither "screenshot" nor any other command in the real, live-dumped
+// 132-entry Cmd_ExecuteString list produces output that routes through THIS draw path
+// at all -- Cbuf_AddText/Cmd_ExecuteString append/execute console COMMANDS, they don't
+// print text via FUN_00690c80's glyph-draw pipeline (confirmed separately: real HUD/
+// interact-hint text reaches this function via a completely different, data-driven
+// deferred-render-command-ring-buffer path, see known_issues.md issue #34's earlier
+// entries). There is no known, always-available "print this exact string via
+// hudBigFont" call site to anchor on -- so rather than inventing one (which would mean
+// finding and calling some other not-yet-confirmed-safe function), this instead
+// piggybacks on whatever REAL hudBigFont text is already on screen and already being
+// drawn at the moment of arming (ammo counter, compass, interact hint, etc. -- all
+// independently confirmed by the existing hud-font-id diagnostic to be real hudBigFont
+// content) and appends one byte to it. Lower risk (reuses a real, already-executing
+// call verbatim except for one appended character) and requires no new hook or new
+// call into engine code.
+//
+// Gated on g_hudBigFontPtr/g_hudFontPatchInsertedCodepoint already being set (i.e.
+// InjectFontGlyphPatchTest_HudBigFont, LB+RB+B, must have already run successfully
+// this session) -- arming before that has happened would have nothing valid to
+// inject, so it logs a clear message and still consumes the one-shot trigger rather
+// than silently doing nothing, matching every other font-test combo's "fires once
+// regardless of outcome" convention in this file.
+namespace {
+enum class HudFontVisibilityStage { WaitingForCombo, Done };
+HudFontVisibilityStage g_hudFontVisibilityStage = HudFontVisibilityStage::WaitingForCombo;
+DWORD g_hudFontVisibilityHoldStartMs = 0;
+} // namespace
+
+void InjectFontGlyphVisibilityTest_HudBigFont()
+{
+    if (g_hudFontVisibilityStage != HudFontVisibilityStage::WaitingForCombo) return;
+
+    unsigned short buttons;
+    unsigned char leftTrigger, rightTrigger;
+    if (!Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger)) return;
+
+    bool comboHeld = (buttons & kXI_LEFT_SHOULDER) != 0 && (buttons & kXI_RIGHT_SHOULDER) != 0 &&
+        (buttons & kXI_Y) != 0;
+    if (!comboHeld) {
+        g_hudFontVisibilityHoldStartMs = 0;
+        return;
+    }
+    if (g_hudFontVisibilityHoldStartMs == 0) {
+        g_hudFontVisibilityHoldStartMs = GetTickCount();
+        return;
+    }
+    if (GetTickCount() - g_hudFontVisibilityHoldStartMs < 2000) return;
+
+    g_hudFontVisibilityStage = HudFontVisibilityStage::Done; // fire once regardless of outcome below
+
+    if (g_hudBigFontPtr == nullptr || g_hudFontPatchInsertedCodepoint == 0) {
+        LogFromController("[hudbigfont-visibility-test] LB+RB+Y held 2s, but no codepoint has been inserted yet this session -- hold LB+RB+B first to run the glyph-array patch test, then this combo would need a fresh session to retry (one-shot per session, same as every other font-test combo in this file)");
+        return;
+    }
+
+    char buf[300];
+    sprintf_s(buf, "[hudbigfont-visibility-test] LB+RB+Y held 2s -- arming Hook_DrawGlyphText to inject codepoint 0x%02X into the very next real hudBigFont draw call as a local-copy-only modification (real game buffer will not be touched)",
+        g_hudFontPatchInsertedCodepoint);
+    LogFromController(buf);
+    g_hudFontVisibilityArmed = true;
 }
 
 // ---- REAL glyph font extension: safe manual zone load + full field repoint --------
@@ -3856,6 +4016,13 @@ extern "C" void __cdecl InjectMenuInputTick()
     // real-usage-data evidence behind this retarget.
     InjectFontStructDebugTest_HudBigFont();
     InjectFontGlyphPatchTest_HudBigFont();
+    // DEBUG ONLY, task #6/#34 follow-up (2026-07-21) -- one-shot visibility test for
+    // the patch above (LB+RB+Y, a third distinct combo). Only ever mutates a LOCAL
+    // stack copy of one real draw call's text, inside the already-installed, already
+    // read-only-proven Hook_DrawGlyphText -- see the big comment above
+    // InjectFontGlyphVisibilityTest_HudBigFont's own definition for the full
+    // rationale and the option considered and rejected (a console-command anchor).
+    InjectFontGlyphVisibilityTest_HudBigFont();
 }
 
 // ---- Bind-resolver text hook, LOG-ONLY first pass (task #6/#35, 2026-07-21) -------
