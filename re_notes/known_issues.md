@@ -5011,6 +5011,99 @@ codepoint (expected to be `0x82`, the next value up, since hudBigFont's real
 coverage is unknown beyond "254 entries, has 0x81") and that the insert/
 repoint path actually executes this time instead of aborting.
 
+**LIVE-TESTED, runtime-codepoint fix confirmed working** — the `LB+RB+B`
+patch-mechanism test got its second real playtest with the fix above in
+place. Log showed:
+```
+[hudbigfont-patch-test] built replacement array (254 -> 255 entries), inserted codepoint 0xA0 at index 159, repointing live Font_s now
+```
+No crash. Notably the free codepoint found was `0xA0`, not the `0x82`
+predicted above — hudBigFont's real coverage runs contiguously from `0x81`
+through `0x9F` with no gaps (`0x9D`/`0x9E`/`0x9F` line up exactly with the
+`ps_l1`/`ps_r1`/`ps_l2` controller-glyph codepoints already known from the
+button-glyph substitution table elsewhere in this project — consistent with
+this font already carrying real, in-use extended-Latin-plus-glyph coverage
+for other platforms' builds, not a sparse/arbitrary set). The insert/repoint
+path executed this time (previous test aborted at the `0x81`-collision
+check); mechanism confirmed sound end-to-end, glyph-array level. Still
+unconfirmed: whether the newly-inserted glyph at `0xA0` actually RENDERS —
+nothing in the game draws that byte yet, which is the exact gap the
+visibility-test entry below addresses.
+
+**Visibility-test pass (2026-07-21, this session): implemented and shipped —
+`InjectFontGlyphVisibilityTest_HudBigFont`, `LB+RB+Y`.** Closes the
+long-standing "can't even see the effect" gap this whole issue opened with,
+without touching the glyph-patch mechanism itself.
+
+*Research first, per this task's own instructions*: re-confirmed the full
+real draw-call chain already documented above (`FUN_00568110` →
+`FUN_005682f0` → `FUN_0051f6c0` → `FUN_005342a0` → `FUN_0051b100` [queues an
+opcode-`0x11` entry into deferred ring buffer `DAT_021ddf30`] →
+`FUN_00691ca0` [ring-buffer consumer] → `FUN_00690c80`/`Hook_DrawGlyphText`
+[already hooked, permanently installed, read-only until now] →
+`FUN_0047dfa0` [glyph lookup]) is unchanged and still the right target — no
+new Ghidra pass was needed since this chain, and `Hook_DrawGlyphText`'s own
+disassembly-confirmed safety (plain prologue/epilogue, no thunk, already
+proven live via 7929 real calls/session with zero crash), were already
+established by the earlier passes in this same issue.
+
+Two approaches were weighed, per the task brief:
+- **(a) Hook the already-installed `Hook_DrawGlyphText` and, only when armed
+  by a new combo, rewrite a LOCAL COPY of the very next matching call's
+  string to append the inserted codepoint, forwarding the copy instead of
+  the original.** Chosen. Reuses an already-live, already-safe hook with no
+  new `MH_CreateHook` call at all; the real buffer the game owns is only
+  ever read, never written; one-shot, SEH-wrapped, falls back to a normal
+  unmodified draw call on any exception.
+- **(b) Find a simpler real string source (e.g. the "screenshot" console-
+  command anchor technique) known to route through hudBigFont, and inject
+  there instead.** Investigated and rejected: the existing 2026-07-15
+  investigation record (see the comment block above
+  `InjectControllerWeaponNext` in `analog_input_hooks.cpp`) already proved
+  `Cbuf_AddText`/`Cmd_ExecuteString` (found via that exact "screenshot"
+  anchor) drive the CONSOLE COMMAND dispatcher, which does not print text
+  through `FUN_00690c80` at all — real HUD/interact-hint text reaches that
+  function via the completely separate, data-driven deferred-render-
+  command-ring-buffer path traced earlier in this issue. There is no known,
+  always-available "print this exact string via hudBigFont" call site to
+  anchor on, so (b) would have meant finding and calling some new,
+  not-yet-confirmed-safe function — strictly more risk than (a) for no
+  clear benefit. Not attempted.
+
+**Implementation** (`proxy_d3d9/src/analog_input_hooks.cpp`): three new
+globals declared just above `Hook_DrawGlyphText` (`g_hudBigFontPtr`,
+`g_hudFontPatchInsertedCodepoint`, `g_hudFontVisibilityArmed` — declared
+early because the hook needs to see them, same relative-ordering convention
+this file already uses for its other font-test state). `Hook_DrawGlyphText`
+gained a block at its top: if armed and `fontArg` is confirmed by POINTER
+IDENTITY to be the exact, already-patched hudBigFont `Font*`, builds a
+`char[512]` local stack copy of the real text (`strnlen`-capped, SEH-
+wrapped), appends the inserted codepoint + null terminator, and forwards
+that copy to the real trampoline instead of the original — then returns,
+skipping the normal unmodified forward at the bottom of the function for
+that one call only. `InjectFontGlyphPatchTest_HudBigFont` (`LB+RB+B`) now
+also records `g_hudBigFontPtr`/`g_hudFontPatchInsertedCodepoint` immediately
+after a successful patch (single source of truth for "what did we actually
+insert"). A new function, `InjectFontGlyphVisibilityTest_HudBigFont`, gated
+behind a THIRD distinct combo (`LB+RB+Y` — never collides with `LB+RB`,
+`LB+RB+A`, `LB+RB+X`, or `LB+RB+B`), arms the injection on a 2s hold; if the
+patch test hasn't run yet this session (`g_hudBigFontPtr == nullptr`), it
+logs a clear message and still consumes its one-shot trigger rather than
+silently no-op'ing, matching every other font-test combo's convention in
+this file. Wired live into `InjectMenuInputTick`.
+
+Tagged `[hudbigfont-visibility-test]` throughout. Builds clean (0
+warnings/0 errors, full rebuild, MSBuild Win32/Release, verified this
+pass). **NOT yet live-tested** — next session should: hold `LB+RB+B` (if
+not already done this session) to patch and record the codepoint, then
+hold `LB+RB+Y` for 2s while any real hudBigFont text is on screen (HUD is
+up during normal gameplay/Survival) and watch both the log (should show
+"armed injection firing" then "forwarded the modified copy... check the
+screen now") and the actual screen for a visible borrowed 'A' glyph
+appended to whatever HUD text was on screen at that moment (ammo counter,
+compass, etc. — exact element depends on what's drawn in the very next
+`FUN_00690c80` call after arming, which isn't individually selectable).
+
 ---
 
 ## 35. Bind-resolver text hook (`FUN_0061f6f0`) — LOG-ONLY first pass IMPLEMENTED, not yet live-tested (2026-07-21)

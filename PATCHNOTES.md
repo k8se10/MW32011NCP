@@ -56,6 +56,22 @@ reverse-engineering trail behind each entry.
   distinct combos so nothing collides. The `bigfont` versions are untouched. Builds
   clean; not yet live-tested. Rebuilding real new glyph pixel content for hudBigFont
   (as opposed to the borrowed-UV mechanism test) is a separate, still-unstarted step.
+- **One-shot visibility test for the hudBigFont glyph-patch, `LB+RB+Y` (task #6/#34
+  follow-up).** The glyph-array patch (`LB+RB+B`) inserts a real, valid glyph entry
+  into the live font, but nothing in the game actually draws text containing that
+  codepoint, so the insert could never be visually confirmed on screen. Added
+  `InjectFontGlyphVisibilityTest_HudBigFont`: hold `LB+RB+Y` (a third, distinct combo)
+  to arm the already-installed, already-safe `Hook_DrawGlyphText` hook to rewrite a
+  LOCAL COPY of the very next real hudBigFont draw call's text (appending the
+  patched-in codepoint) and forward that copy instead of the original — the real
+  string the game owns is only ever read, never written. Fires exactly once, falls
+  back to a normal unmodified draw call on any exception. Requires the `LB+RB+B` patch
+  test to have already run successfully this session; logs a clear message and still
+  consumes the one-shot trigger if it hasn't. Tagged `[hudbigfont-visibility-test]`.
+  Builds clean (0 warnings/0 errors); not yet live-tested. See
+  `re_notes/known_issues.md` issue #34 for the full research trail, including the
+  rejected alternative (piggybacking on a console-command anchor, found to not route
+  through this draw path at all).
 - **Bind-resolver glyph-substitution groundwork, OFF by default (task #6).** Built
   the key-name-text → controller-glyph-codepoint substitution logic that the
   bind-resolver hook (`FUN_0061f6f0`) needs to eventually show real button icons in
@@ -95,9 +111,13 @@ reverse-engineering trail behind each entry.
   value and is long enough (~330 chars) that the old 200-byte buffer would have made
   `sprintf_s` overflow and abort. Only `InjectFontGlyphPatchTest_HudBigFont` changed
   — the original `fonts/bigfont` test still hardcodes 0x81, which is fine there since
-  bigfont has no glyph at that codepoint. Builds clean (0 warnings/0 errors); **not
-  yet re-verified live** — this is a code fix awaiting the next playtest. See
-  `re_notes/known_issues.md` issue #34 for the full trail.
+  bigfont has no glyph at that codepoint. Builds clean (0 warnings/0 errors);
+  **live-verified**: a follow-up playtest confirmed the fix works — log showed `"built
+  replacement array (254 -> 255 entries), inserted codepoint 0xA0 at index 159,
+  repointing live Font_s now"`, no crash. hudBigFont's real coverage turned out to run
+  contiguously from 0x81-0x9F with no gaps, so the free codepoint found (0xA0) was
+  higher than the 0x82 originally predicted. See `re_notes/known_issues.md` issue #34
+  for the full trail.
 - **Bind-resolver hook (`FUN_0061f6f0`) logged implausible data for one real caller;
   root-caused and fixed (task #6/#35 follow-up).** The live-test above traced to a
   genuine, disassembly-confirmed cause, not a bug in the hook's own register-reading:
