@@ -4958,6 +4958,59 @@ names to avoid the same interning collision already solved for
 PATCH mechanism works against hudBigFont; real pixel content is still a
 separate, unstarted step, same as it always was for bigfont.
 
+**LIVE-TESTED (2026-07-21), found a real bug: hardcoded 0x81 collided with an
+existing hudBigFont glyph, fixed with runtime codepoint discovery.** The
+`LB+RB+B` patch-mechanism test above got its first real playtest. Log showed:
+
+```
+[hudbigfont-patch-test] codepoint 0x81 already exists at index 128 -- aborting, nothing to insert
+```
+
+**Root cause:** unlike `fonts/bigfont`, `fonts/hudBigFont` already has a real
+glyph defined at codepoint 0x81 — this font has 254 real glyph entries total
+(confirmed via `InjectFontStructDebugTest_HudBigFont`'s struct dump), almost
+certainly full extended-Latin coverage for localization. The test's own
+abort-on-collision logic is correct and intentional (never clobber a real
+existing glyph) — the actual bug was purely that `0x81` was a bad hardcoded
+"surely unused" assumption for this specific font, so the insert-and-repoint
+code path never executed and the test produced no visible change, silent
+failure by design rather than a crash.
+
+**Fix (`InjectFontGlyphPatchTest_HudBigFont` only — the bigfont version,
+`InjectFontGlyphPatchTest`, is untouched and still hardcodes 0x81, which is
+fine there since bigfont has no entry at 0x81):** replaced the hardcoded
+`const unsigned short kNewCodepoint = 0x81;` with a runtime scan. The
+existing insertion-point search loop (over the sorted `[96, oldCount)` tail)
+was extended, not duplicated, to also track a `candidate` codepoint starting
+at `0x81`: whenever a real entry's `letter` equals the current candidate,
+the candidate is taken, so it's bumped to the next value and the walk
+continues; the first entry whose `letter` is greater than the (possibly
+bumped) candidate proves that candidate is free and gives the correct sorted
+insertion index at the same time, in the same single pass. If every
+codepoint from `0x81` through `0xFF` turns out to be taken, the code logs a
+clear abort message (`"every codepoint from 0x81 to 0xFF is already taken"`)
+and returns rather than looping forever or writing out of bounds. The two
+log lines that referenced a hardcoded `0x81` (`"codepoint 0x%02X already
+exists"` and the final `"patch applied"` message) now report whatever
+codepoint was actually chosen at runtime via the same `kNewCodepoint`
+variable, now computed rather than literal.
+
+**Incidental fix required alongside:** the final "patch applied" log message
+is long (~330 characters) and was previously passed to `LogFromController`
+as a plain string literal, so the function's `char buf[200]` never had to
+hold it. Converting that message to a `sprintf_s` (needed to interpolate the
+runtime codepoint) would have overflowed a 200-byte buffer and invoked
+`sprintf_s`'s invalid-parameter handler (i.e. `abort()`) at runtime — `buf`
+was widened to `char buf[400]` in the same commit to make that safe.
+
+**NOT yet re-verified live** — this is a code fix awaiting the next
+playtest, not a confirmed-working fix. Builds clean (0 warnings/0 errors,
+full rebuild, MSBuild Win32/Release, verified this pass). Next session should
+hold `LB+RB+B` again and confirm the log now reports a genuinely free
+codepoint (expected to be `0x82`, the next value up, since hudBigFont's real
+coverage is unknown beyond "254 entries, has 0x81") and that the insert/
+repoint path actually executes this time instead of aborting.
+
 ---
 
 ## 35. Bind-resolver text hook (`FUN_0061f6f0`) — LOG-ONLY first pass IMPLEMENTED, not yet live-tested (2026-07-21)
