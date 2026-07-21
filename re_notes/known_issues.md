@@ -4547,3 +4547,77 @@ has no part in. The ~3-4 week ban-wave lag caveat from the second pass still sta
 long-duration, multi-wave-cycle public track record (which this project does not yet have), this is the
 correct stopping point for RE-based investigation — further digging into these two binaries has run out of
 concrete, unresolved threads to chase.
+
+### Fourth pass, 4 more forks — is official matchmaking actually dead, or does something unofficial run it now? (2026-07-21)
+
+User question, not VAC-risk-focused this time: is it true that official MW3 (2011) servers were "taken down
+long ago" with only unofficial/P2P infrastructure remaining even on retail Steam? The existing "Official
+Activision matchmaking is confirmed dead" line (cross-surface matrix, MP row, above) was sourced only to "a
+2011-era community thread" — worth re-verifying directly rather than continuing to cite loosely. Ran RE +
+local-file archaeology, a live read-only DNS/TCP reachability probe, and two external-research forks. Real
+answer is more layered than a single yes/no.
+
+- **Server discovery is architecturally split into two independent systems, confirmed via decompile
+  (`iw5mp.exe`)**: (1) **Steam's own master-server/browser layer** — `net_masterServerPort` (default `27017`,
+  dvar description literally "UDP port for Steam server browser") and `net_authPort` (`8766`, "UDP port for
+  Steam authentication"), Valve-operated, separate from Activision entirely; (2) **Demonware's
+  auth/lobby/STUN layer** — a real, decompiled state machine (`FUN_0063bae0`) that connects to
+  `mw3-pc-auth.prod.demonware.net` first, then (on a status-code-700 success) to a newly-found
+  `mw3-pc-lobby.prod.demonware.net`, using ports `18409`/`3074`, with STUN hosts (`mw3-stun.us/eu.demonware.net`)
+  for P2P NAT traversal. These two systems can be, and appear to be, independently alive or dead.
+- **Steam's server-browser layer: CONFIRMED non-functional at the application level**, via a direct quote
+  from a retail dedicated-server operator's own Steam Community post, showing the game client's own output:
+  **"No Steam Master Servers found. Server will LAN visible only."** Real players work around this via
+  direct `steam://connect/IP:port` links or manually-added favorite-server slots (this project's own
+  `players2/config_mp.cfg` on the live install has all 16 favorite slots empty — no personal history, but
+  confirms the mechanism exists as a workaround players use).
+- **Demonware's auth/lobby layer: CONFIRMED to resolve via DNS, and to accept TCP connections, but to give
+  zero application-layer response** — a live, read-only probe (this pass, not inferred): both
+  `mw3-pc-auth.prod.demonware.net` and `mw3-stun.us.demonware.net` resolve to real IPs (`185.34.107.28`,
+  `185.34.107.128`); port 443 times out on both; port 80 completes a TCP handshake but returns literally
+  zero bytes to an HTTP request or a raw post-connect wait, on two independent probe methods. **Direct
+  comparison point**: a current, actively-used Activision auth host for newer titles
+  (`auth3.prod.demonware.net`, adjacent IP block) responds on port 80 in ~200ms with a real
+  `HTTP/1.1 503 Service Unavailable` — proof that host has a live application behind it. MW3's own
+  subdomains show no such response at all. **Reading**: the shared Demonware network/hosting layer is up
+  (DNS + TCP listener, likely a shared load balancer), but MW3(2011)'s specific auth/lobby *service* isn't
+  answering — silently dead at the application layer, not a fully decommissioned domain.
+- **Correction to the existing citation**: the Steam thread this project's notes previously described as
+  "a 2011-era community thread" confirming matchmaking's death is actually dated **July 24, 2018** — fetched
+  directly this pass. Treat "matchmaking broke by 2018" as the sourced claim going forward, not "2011-era."
+- **Surprising counter-finding — Activision has NOT walked away from this title's backend entirely.** A
+  scheduled maintenance window on **July 2, 2025** explicitly listed MW3 (2011) among 10 CoD titles taken
+  offline together for ~4 hours (newgamenetwork.com/pcgamesn.com coverage, corroborated). This is real,
+  recent (≈1 year old at time of writing) evidence of active Activision operational involvement with this
+  title's backend — contradicts a clean "abandoned long ago" framing, even though the specific per-title
+  auth/lobby service is non-responsive today. Most likely explanation: MW3 shares underlying Demonware
+  infrastructure/maintenance windows with newer titles as a batch, without anyone specifically restoring or
+  prioritizing MW3(2011)'s own service.
+- **What retail players actually use today, converging evidence from two independent research angles**: a
+  small pool of **community-run, third-party dedicated servers** (via the free `iw5mp_server.exe` Steam Tool
+  app, App ID 42750) — GameMonitoring.net lists 16 total, 11 currently online, reached via direct-connect or
+  favorites, not server-browser discovery. A direct player quote (Steam Community "Is this game dead?"
+  thread) distinguishes this from the real population: **"MW3 has only unranked server[s] that need... to be
+  activated in the main menu... Any ranked (regular) lobby uses [a] P2P system"** — i.e. the
+  community-dedicated-server pool is a low-population unranked side mode; the actual live population plays
+  ranked public matches via **peer-to-peer / host-migration** (consistent with the threat-model note already
+  in `CLAUDE.md`'s MW32011NSP section). No evidence found of a community-run Demonware-matchmaking-emulator
+  specifically for MW3 (2011) — and real evidence the community deliberately avoids building one: the
+  `IW5M`/AlterIW project explicitly states it does NOT emulate matchmaking, citing that a prior project
+  (`alterIW`) received a real Activision C&D specifically for doing so.
+- **Population is real and live right now**, not just "some old CCU stat": SteamCharts (steamcharts.com/app/42690)
+  shows **55 playing at the moment of this check**, ~99 average and 188 24h-peak this period — matches and
+  slightly refines the existing "~50-175 CCU" figure already on record.
+
+**Net answer to the user's question**: partially right, more nuanced than "long ago, only unofficial
+remains." **Right**: the actual matchmaking/server-discovery service is genuinely, confirmably broken — not
+just quiet — verified two independent ways (a direct client-output quote AND this pass's own live probe
+showing silence at the application layer). **Not quite right**: "long ago" is closer to ~7-8 years (sourced
+to 2018) than "since 2011," and Activision has NOT fully abandoned the title's backend infrastructure — they
+performed a real, dated maintenance action touching MW3 as recently as mid-2025, even though it evidently
+didn't restore per-title matchmaking. The live population (~55-99 CCU) isn't purely "unofficial" either — it
+plays through the base game's own real P2P/host-migration public-match code path, just without a working
+master-server discovery layer in front of it; the only genuinely third-party/community piece is the small
+unranked dedicated-server pool. **No change to this project's own risk posture or locked ordering** — MP
+work is still unstarted, VAC is still confirmed active regardless of matchmaking health, and this finding is
+informational (corrects a loosely-sourced citation, adds real mechanism detail) rather than decision-changing.
