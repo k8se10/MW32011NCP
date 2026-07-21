@@ -4974,3 +4974,12 @@ that code was stripped/dead-ended on the PC build the same way the controller in
 path was; (3) only after that feasibility question is answered should any actual
 scoping/design work begin. Nothing here is implementation-ready — this is
 deliberately just the roadmap entry and the one known lead.
+
+**Second, independent lead found (2026-07-21, docs survey pass)**: `survival_mode_overview.md`
+already documents Survival's real structure as built for **2-player co-op specifically** —
+`ui_eog_player1_bestscore`/`_player2_bestscore`, `surHUD_performance`/`_p2` HUD fields — with
+no evidence of >2-player support anywhere in that mode's own data. This doesn't confirm a
+dormant dual-viewport/dual-simulation path exists (that's still the open feasibility
+question above), but it's a second, independent, real signal consistent with 2-player local
+co-op being a genuinely-supported design target somewhere in this engine, not purely
+speculative from the leftover strings alone.

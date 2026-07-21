@@ -77,7 +77,7 @@ live-tested by the developer during actual play, not just built-and-assumed.
 | Feature | What's missing |
 |---|---|
 | Predator Missile — **post-fire guidance/aim** | Launch works; controlling the flying missile is still broken. Real reader chain found, diagnostic deployed, needs one more live data pull to finish |
-| Back button (`+scores`) | Implemented, builds clean — never separately live-confirmed in play |
+| Back button (`+scores`) | **Corrected**: was live-tested (2026-07-17), not just built — and produced zero visible effect (no scoreboard/objectives overlay appears). Real cause undiagnosed; explicitly parked as a UI gap to revisit later, not a "just needs a test" item — see `re_notes/known_issues.md` issues #3/#7/#28 |
 | L3 no longer force-stands while ADS'd | Implemented, builds clean — not yet separately live-confirmed |
 | DPV (Hunter Killer) | Movement works, aiming doesn't |
 | Mortar (Goalpost) | Aim works, fire input not wired |
@@ -101,14 +101,58 @@ live-tested by the developer during actual play, not just built-and-assumed.
 Special Ops (all 16 missions), AC-130 (Iron Lady/Fire Mission), 9 of 17 Campaign
 missions — see **Controller compatibility by mission/mode** below for the exact list.
 
-### 🔭 Roadmap ideas (not started, not scoped)
+### 🔭 Roadmap (planned, partial, and parked features)
 
-Forward-looking ideas that haven't had any RE work done yet — distinct from the
-tables above, which only cover features that have actually been attempted.
+A consolidated forward-looking view across the whole project — pulled from every
+`re_notes/*.md` file, `CLAUDE.md`, and `PATCHNOTES.md`, not just the tables above.
+Organized by how close each item is to done, not by feature category. Deliberately
+excludes aim assist (permanently removed 2026-07-20 by explicit decision, not a
+roadmap item — see `re_notes/known_issues.md` issues #15/#33) and anything already
+fully live-confirmed working with no known gap (that's the ✅ table above).
 
-| Idea | Notes |
-|---|---|
-| **Local splitscreen co-op** | User-suggested (2026-07-21) as a way to bring back more of the console experience — MW3's Xbox 360/PS3 builds shipped real local splitscreen for Special Ops co-op. Not investigated at all yet: no research into whether the PC build's engine retains a dormant second-viewport/second-local-client path, only whether a *second controller's input* can be read (already solved, unrelated question). The one existing lead, from this project's very first investigation (see `CLAUDE.md`'s "Key technical finding"): `iw5mp.exe`'s strings include `splitscreenactivegamepadcount`, `attachedcontrollercount`, and `@PLATFORM_USECONTROLLER1` — confirmed-real leftovers from the shared console codebase, previously characterized as "not a working PC path" for input purposes specifically, but never checked for whether they (or adjacent code) still drive an actual local dual-viewport/dual-simulation path. Would need its own dedicated feasibility pass — likely one of the largest asks in this project's scope, on the order of a second full client/render pipeline, not a small addition — before any real commitment. See `re_notes/known_issues.md` issue #36 for the tracked entry. |
+#### Tier 1 — Partial, close to done
+
+| Item | Status | Cite |
+|---|---|---|
+| Predator Missile post-fire guidance | Launch works; flying-missile control still broken. Real reader chain found, diagnostic deployed, needs one more live data pull | `known_issues.md` #29/#30 |
+| Back button (`+scores`) | Live-tested, zero visible effect (no scoreboard/objectives overlay). Real cause undiagnosed, explicitly parked | `known_issues.md` #3/#7/#28 |
+| DPV aiming (Hunter Killer) | Movement works, aim doesn't; candidate unifying cause (3rd analog channel `cmd+0x3e`/`0x3f`) found, not yet applied here | `known_issues.md` #30 |
+| Mortar fire (Goalpost) | Aim works, fire not wired; confirmed NOT fixed by the Fire-kbutton rewrite; mortar's own fire-control script not yet located | `known_issues.md` #30, PATCHNOTES v0.2.0 |
+| Mounted M2 turret difficulty (Goalpost) | Works, feels too hard; regen-buff hypothesis refuted; likely the same missing-aim-channel cause as DPV | `known_issues.md` #30 |
+| SMAW lock-on vs. aircraft | Unconfirmed whether even a real bug | README (Partial table above) |
+| Real in-game controller options menu (task #23) | Static injection proven live; real content blocked on GPU-resource-load timing. This session's read-only boot-thunk diagnostic confirmed live-safe, but its address-recovery theory was refuted at that call site — needs a different approach before the real splice can be written | `known_issues.md` #23 |
+| Button-glyph icons (task #6) | Asset+build pipeline proven end-to-end. This session's bind-resolver hook is installed and fixed (log-only, live-safe), but still zero player-visible effect | `known_issues.md` #34/#35 |
+| Crouch intermittently fails to fire (~2%, recovers after pause/unpause) | Cross-cutting bug, no task number assigned yet, needs diagnostic logging first | `compatibility_matrix.md` |
+| Vibration/rumble | Crashed at startup, disabled; a safer single-call-site-safe target already identified, not yet reimplemented | README (Not-working table above), `known_issues.md` #24 |
+
+#### Tier 2 — Planned / researched, not implemented
+
+| Item | Status | Cite |
+|---|---|---|
+| God-mode / debug-cheat toggles | Real, disassembly-confirmed entity health-immunity bit (`entity+0x13c` bit `0x1`); simpler `so_nofail` "can't fail mission" dvar switch; ammo-refill/wave-skip/killstreak-spawn native pieces not yet reached; a `noclip` GSC notify-event lead not fully traced | `known_issues.md` task #20 |
+| Survival wave-skip / difficulty-tuning tools | Full wave-loop + CSV data-table structure reverse-engineered and logged as reference material for a future debug menu; not implemented | `survival_wave_scaling.md` |
+| WaW-style colored/animated clan tags | Real investigation done; blocked on the clan-tag system being networked session state, not local storage. A promising alternative (`self.playername`, native-sourced local field) found but not fully chased | README (Not-working table above), `ui_assets.md` |
+| First-launch welcome/MOTD message | Real, permanently-dead MOTD UI ticker found and confirmed safe to repurpose (`visible when(0)` hardcoded false); full implementation plan exists (reuse `RegisterMenu`/`OpenMenuByName`); not implemented | `ui_assets.md` |
+| `GlyphStyle` config option (Xbox 360/One/Series/PS3/PS4/PS5 icon choice) | Planned alongside the button-glyph work since XInput can't distinguish controller brand; not implemented | `ui_assets.md` |
+
+#### Tier 3 — Researched and parked
+
+- **Real developer console** — decisively confirmed dead code; a custom debug menu (see Tier 2) is the path instead, not unlocking the real one. *(`known_issues.md` task #20)*
+- **Vehicle input path** — no dedicated path found; evidence suggests vehicles reuse the same `usercmd_t` fields already hooked (movement/look might already work — untested hypothesis). *(`known_issues.md` #26)*
+- **Survival environmental hazards (barricades)** — inconclusive, not confirmed or ruled out. *(`survival_mode_overview.md`)*
+- **Survival loadout/killstreak persistence** across death/downed state — open question. *(`survival_mode_overview.md`)*
+- **Survival past-wave-21 behavior** (loop/clamp/extrapolate) — unknown. *(`survival_wave_scaling.md`)*
+- **Wave-end bonus tier → named-difficulty mapping** — unconfirmed. *(`survival_mode_overview.md`)*
+- **`_id_061C`'s defining script** (owns real per-wave enemy formulas) — referenced constantly, never located by filename. *(`survival_mode_overview.md`)*
+
+#### Tier 4 — Not started at all
+
+| Item | Status | Cite |
+|---|---|---|
+| **Local splitscreen co-op** | User-suggested (2026-07-21) to bring back more of the console experience — MW3's Xbox 360/PS3 builds shipped real local splitscreen for Special Ops co-op. Not investigated: no research yet into whether the PC build retains a dormant second-viewport/second-local-client path (distinct from reading a second controller's *input*, already solved). One existing lead: `iw5mp.exe`'s leftover `splitscreenactivegamepadcount`/`attachedcontrollercount`/`@PLATFORM_USECONTROLLER1` strings (this project's very first investigation, `CLAUDE.md`'s "Key technical finding"). A second, independent lead found this session: `survival_mode_overview.md` confirms Survival's real structure is built for **2-player co-op specifically** (`ui_eog_player1_bestscore`/`_player2_bestscore`, `surHUD_performance`/`_p2` HUD fields), with no evidence of >2-player support anywhere — consistent with reviving a real, still-present 2-player path rather than building one from scratch, though this remains unconfirmed until the actual render/simulation code is traced. Likely one of the largest single undertakings in this project's history — a second local client/render pipeline, not a hook on the existing single-player path everything else here builds on. | `known_issues.md` #36 |
+| **Multiplayer (`iw5mp.exe`)** | Not started, separate binary, anti-cheat exposure unresolved | README, `known_issues.md` §Multiplayer feasibility |
+| Other MW3 client compatibility (Plutonium SP, AlterWare IW5-Mod, DeckOps) | Research-stage only; Steam Deck/Proton is community-reported, not independently verified by this project | README (Client Compatibility table) |
+| Vehicle-exit prompt (`+usereload`, Mind the Gap) | Not wired at all | README (Not-working table above) |
 
 ## Scorecard (2026-07-19)
 
