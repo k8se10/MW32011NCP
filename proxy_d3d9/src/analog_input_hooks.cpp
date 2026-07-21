@@ -3296,6 +3296,211 @@ void InjectFontGlyphPatchTest()
     LogFromController("[font-patch-test] patch applied -- if the mechanism is sound, any UI text containing byte 0x81 should now render as a visible (borrowed) 'A' glyph instead of missing/tofu. Compare against re_notes/known_issues.md before trusting this without a visual confirm.");
 }
 
+// ---- hudBigFont-targeted retarget of the two tests above (2026-07-21, task #6/#34
+// follow-up, real-data-driven) ------------------------------------------------------
+//
+// The two tests above target fonts/bigfont, confirmed this session (known_issues.md
+// issue #34) to be the WRONG font for real interact-hint/HUD text -- bigfont is real
+// but only ever drawn by a one-time-per-profile brightness-calibration screen. A live
+// playtest of the new Hook_DrawGlyphText diagnostic (see its own comment above)
+// gathered real evidence instead of another guess: a tally of every real font logged
+// during a long, clean ~18,500-line Survival session --
+//   fonts/hudBigFont    7929 uses  (dominant real HUD font, by a wide margin)
+//   fonts/smallFont     4860 uses
+//   fonts/hudSmallFont  2277 uses
+//   fonts/extraBigFont  1648 uses
+//   fonts/objectiveFont 1360 uses  (real and substantial, previously flagged as a
+//                                   theoretical candidate on name alone -- now backed
+//                                   by real usage data too)
+//   fonts/bigFont        117 uses  (confirmed genuinely rare, consistent with the
+//                                   one-time brightness-screen finding)
+// hudBigFont is the strongest real candidate for "the font actual gameplay HUD/
+// interact-hint text renders through" -- these two functions retarget the exact same,
+// already-proven-safe mechanisms at it, gated behind their OWN distinct combos so
+// they can never collide with the bigfont versions (LB+RB, LB+RB+A) or each other.
+// The bigfont versions above are left completely untouched -- this is additive, not a
+// replacement, since bigfont's struct-layout proof is still a valid, live-confirmed
+// reference point regardless of which font turns out to matter for real hint text.
+//
+// objectiveFont is a real, substantial candidate too (1360 uses) but is NOT retargeted
+// here -- one font at a time keeps each test's result unambiguous; if hudBigFont's
+// struct dump or patch test doesn't pan out, objectiveFont is the natural next one to
+// try, following this exact same pattern.
+namespace {
+enum class HudFontDiagStage { WaitingForCombo, Done };
+HudFontDiagStage g_hudFontDiagStage = HudFontDiagStage::WaitingForCombo;
+DWORD g_hudFontDiagHoldStartMs = 0;
+
+enum class HudFontPatchStage { WaitingForCombo, Done };
+HudFontPatchStage g_hudFontPatchStage = HudFontPatchStage::WaitingForCombo;
+DWORD g_hudFontPatchHoldStartMs = 0;
+} // namespace
+
+// Read-only struct-layout diagnostic, retargeted at fonts/hudBigFont. Distinct combo
+// (LB+RB+X) from every existing one (LB+RB = bigfont struct diag, LB+RB+A = bigfont
+// patch test) so it can never fire alongside or be confused with either.
+void InjectFontStructDebugTest_HudBigFont()
+{
+    if (g_hudFontDiagStage != HudFontDiagStage::WaitingForCombo) return;
+
+    unsigned short buttons;
+    unsigned char leftTrigger, rightTrigger;
+    if (!Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger)) return;
+
+    bool comboHeld = (buttons & kXI_LEFT_SHOULDER) != 0 && (buttons & kXI_RIGHT_SHOULDER) != 0 &&
+        (buttons & kXI_X) != 0;
+    if (!comboHeld) {
+        g_hudFontDiagHoldStartMs = 0;
+        return;
+    }
+    if (g_hudFontDiagHoldStartMs == 0) {
+        g_hudFontDiagHoldStartMs = GetTickCount();
+        return;
+    }
+    if (GetTickCount() - g_hudFontDiagHoldStartMs < 2000) return;
+
+    g_hudFontDiagStage = HudFontDiagStage::Done; // fire once per session regardless of outcome below
+
+    LogFromController("[hudbigfont-struct-diag] LB+RB+X held 2s -- calling FindOrLoadFont(\"fonts/hudbigfont\")");
+    void* rawFont = FindOrLoadFont("fonts/hudbigfont");
+    char buf[256];
+    if (!LooksLikeValidPointer(reinterpret_cast<uintptr_t>(rawFont))) {
+        sprintf_s(buf, "[hudbigfont-struct-diag] FindOrLoadFont returned implausible pointer 0x%08X -- aborting dump",
+            static_cast<unsigned>(reinterpret_cast<uintptr_t>(rawFont)));
+        LogFromController(buf);
+        return;
+    }
+    DiagFont* font = reinterpret_cast<DiagFont*>(rawFont);
+    sprintf_s(buf, "[hudbigfont-struct-diag] Font* = 0x%08X, name=0x%08X pixelHeight=%d glyphCount=%d material=0x%08X glowMaterial=0x%08X glyphs=0x%08X",
+        static_cast<unsigned>(reinterpret_cast<uintptr_t>(font)),
+        static_cast<unsigned>(reinterpret_cast<uintptr_t>(font->fontName)),
+        font->pixelHeight, font->glyphCount,
+        static_cast<unsigned>(reinterpret_cast<uintptr_t>(font->material)),
+        static_cast<unsigned>(reinterpret_cast<uintptr_t>(font->glowMaterial)),
+        static_cast<unsigned>(reinterpret_cast<uintptr_t>(font->glyphs)));
+    LogFromController(buf);
+
+    if (LooksLikeValidPointer(reinterpret_cast<uintptr_t>(font->fontName))) {
+        sprintf_s(buf, "[hudbigfont-struct-diag] fontName string = \"%.63s\"", font->fontName);
+        LogFromController(buf);
+    }
+
+    if (!LooksLikeValidPointer(reinterpret_cast<uintptr_t>(font->glyphs)) ||
+        font->glyphCount < 96 || font->glyphCount > 1000) {
+        sprintf_s(buf, "[hudbigfont-struct-diag] glyphs ptr or glyphCount looks implausible (count=%d) -- not dumping entries, struct layout may be WRONG",
+            font->glyphCount);
+        LogFromController(buf);
+        return;
+    }
+
+    auto dumpGlyph = [&](int idx, const char* label) {
+        if (idx < 0 || idx >= font->glyphCount) return;
+        const DiagGlyph& g = font->glyphs[idx];
+        char b2[200];
+        sprintf_s(b2, "[hudbigfont-struct-diag] glyph[%d] (%s): letter=0x%02X dx=%u pxW=%u pxH=%u s0=%.4f t0=%.4f s1=%.4f t1=%.4f",
+            idx, label, g.letter, g.dx, g.pixelWidth, g.pixelHeight, g.s0, g.t0, g.s1, g.t1);
+        LogFromController(b2);
+    };
+    dumpGlyph('A' - 0x20, "'A', direct-indexed");
+    dumpGlyph('E' - 0x20, "'E', direct-indexed");
+    if (font->glyphCount > 96) dumpGlyph(96, "first sorted-extra entry");
+    if (font->glyphCount > 97) dumpGlyph(97, "second sorted-extra entry");
+
+    LogFromController("[hudbigfont-struct-diag] dump complete -- if this struct layout matches the already-confirmed bigfont one (it should, per FUN_0047dfa0's generic lookup logic), hudBigFont is a safe patch target too.");
+}
+
+// Borrowed-UV glyph-array patch mechanism test, retargeted at fonts/hudBigFont. Same
+// mechanism, same safety ordering (glyphs pointer written before glyphCount), same
+// "borrow an existing glyph's UV rather than real new pixel content" scope-limiting
+// as the bigfont version -- see the big comment above InjectFontGlyphPatchTest for
+// the full mechanism rationale, not repeated here. Distinct combo (LB+RB+B) from
+// every existing one.
+//
+// Unlike bigfont (which has no always-visible, repeatable text surface -- issue #34),
+// hudBigFont is confirmed BY REAL USAGE DATA to draw constantly during ordinary HUD
+// display (7929 real draws in one session) -- so if this patch fires and a future
+// pass adds byte 0x81 into any hudBigFont-rendered string, this is a genuinely
+// visible, repeatable test vehicle, not a one-time-per-profile dead end.
+void InjectFontGlyphPatchTest_HudBigFont()
+{
+    if (g_hudFontPatchStage != HudFontPatchStage::WaitingForCombo) return;
+
+    unsigned short buttons;
+    unsigned char leftTrigger, rightTrigger;
+    if (!Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger)) return;
+
+    bool comboHeld = (buttons & kXI_LEFT_SHOULDER) != 0 && (buttons & kXI_RIGHT_SHOULDER) != 0 &&
+        (buttons & kXI_B) != 0;
+    if (!comboHeld) {
+        g_hudFontPatchHoldStartMs = 0;
+        return;
+    }
+    if (g_hudFontPatchHoldStartMs == 0) {
+        g_hudFontPatchHoldStartMs = GetTickCount();
+        return;
+    }
+    if (GetTickCount() - g_hudFontPatchHoldStartMs < 2000) return;
+
+    g_hudFontPatchStage = HudFontPatchStage::Done; // fire once regardless of outcome below
+
+    LogFromController("[hudbigfont-patch-test] LB+RB+B held 2s -- attempting glyph-array patch on fonts/hudbigfont");
+    void* rawFont = FindOrLoadFont("fonts/hudbigfont");
+    char buf[200];
+    if (!LooksLikeValidPointer(reinterpret_cast<uintptr_t>(rawFont))) {
+        LogFromController("[hudbigfont-patch-test] FindOrLoadFont returned implausible pointer -- aborting");
+        return;
+    }
+    DiagFont* font = reinterpret_cast<DiagFont*>(rawFont);
+    if (!LooksLikeValidPointer(reinterpret_cast<uintptr_t>(font->glyphs)) ||
+        font->glyphCount < 96 || font->glyphCount > 1000) {
+        sprintf_s(buf, "[hudbigfont-patch-test] glyphs ptr or glyphCount implausible (count=%d) -- aborting, struct layout may be wrong",
+            font->glyphCount);
+        LogFromController(buf);
+        return;
+    }
+
+    const int oldCount = font->glyphCount;
+    const unsigned short kNewCodepoint = 0x81;
+
+    int insertAt = oldCount;
+    for (int i = 96; i < oldCount; ++i) {
+        if (font->glyphs[i].letter > kNewCodepoint) { insertAt = i; break; }
+        if (font->glyphs[i].letter == kNewCodepoint) {
+            sprintf_s(buf, "[hudbigfont-patch-test] codepoint 0x%02X already exists at index %d -- aborting, nothing to insert",
+                kNewCodepoint, i);
+            LogFromController(buf);
+            return;
+        }
+    }
+
+    DiagGlyph* newArray = new DiagGlyph[oldCount + 1];
+    memcpy(newArray, font->glyphs, sizeof(DiagGlyph) * insertAt);
+    const DiagGlyph& borrowSource = font->glyphs['A' - 0x20];
+    newArray[insertAt].letter = kNewCodepoint;
+    newArray[insertAt].x0 = borrowSource.x0;
+    newArray[insertAt].y0 = borrowSource.y0;
+    newArray[insertAt].dx = borrowSource.dx;
+    newArray[insertAt].pixelWidth = borrowSource.pixelWidth;
+    newArray[insertAt].pixelHeight = borrowSource.pixelHeight;
+    newArray[insertAt].s0 = borrowSource.s0;
+    newArray[insertAt].t0 = borrowSource.t0;
+    newArray[insertAt].s1 = borrowSource.s1;
+    newArray[insertAt].t1 = borrowSource.t1;
+    memcpy(newArray + insertAt + 1, font->glyphs + insertAt, sizeof(DiagGlyph) * (oldCount - insertAt));
+
+    sprintf_s(buf, "[hudbigfont-patch-test] built replacement array (%d -> %d entries), inserted codepoint 0x%02X at index %d, repointing live Font_s now",
+        oldCount, oldCount + 1, kNewCodepoint, insertAt);
+    LogFromController(buf);
+
+    // Deliberate ordering -- see the big comment above InjectFontGlyphPatchTest.
+    font->glyphs = newArray;
+    font->glyphCount = oldCount + 1;
+    // Old array intentionally leaked, not deleted -- same reasoning as the bigfont
+    // version above.
+
+    LogFromController("[hudbigfont-patch-test] patch applied -- if the mechanism is sound AND any real HUD text drawn via hudBigFont ever contains byte 0x81, it should render as a visible (borrowed) 'A' glyph. hudBigFont draws constantly during real play (7929 uses/session observed) -- far more likely to actually be checkable than bigfont ever was.");
+}
+
 // ---- REAL glyph font extension: safe manual zone load + full field repoint --------
 // (2026-07-19, task #6/#31, supersedes both the crashed boot-splice hook AND the
 // borrowed-UV mechanism test above)
@@ -3621,6 +3826,13 @@ extern "C" void __cdecl InjectMenuInputTick()
     // deliberately so it can actually be tested, same as every other debug trigger
     // in this file, all gated behind combos that can't be hit by accident.
     InjectFontGlyphPatchTest();
+    // DEBUG ONLY, task #6/#34 follow-up (2026-07-21) -- hudBigFont-targeted retargets
+    // of the two tests above, gated behind their own distinct combos (LB+RB+X,
+    // LB+RB+B) so they can never collide with the bigfont versions or each other. See
+    // the big comment above InjectFontStructDebugTest_HudBigFont's definition for the
+    // real-usage-data evidence behind this retarget.
+    InjectFontStructDebugTest_HudBigFont();
+    InjectFontGlyphPatchTest_HudBigFont();
 }
 
 // ---- Bind-resolver text hook, LOG-ONLY first pass (task #6/#35, 2026-07-21) -------
