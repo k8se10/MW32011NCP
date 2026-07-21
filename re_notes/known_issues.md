@@ -1450,6 +1450,56 @@ install — a single log-and-read.
 assumed; that guess was wrong, confirmed via `FUN_00679680`'s actual
 decompiled body, which typically leaves 2-5 of its 10 array slots unused.
 
+**Diagnostic IMPLEMENTED 2026-07-20, correction found to the `DAT_008501e8`
+formula above, not yet live-tested.** Before writing the real splice, confirmed
+`FUN_00679680`'s own real prologue/epilogue directly via the cached disassembly
+already on disk (`D:\Tools\ghidra_projects_bootzone\disasm_00679680.txt`, the
+same project the ROOT CAUSE research above used): `SUB ESP,0x78; PUSH EBX; PUSH
+EBP; PUSH ESI` at entry, plain `RET` at exit, zero stack-args read anywhere —
+a genuine `void __cdecl(void)`, confirmed safely trampolineable, exactly as
+the plan above assumed.
+
+**Real correction, found while implementing, not re-guessed**: re-read the
+cached decompile of `FUN_00463430` itself
+(`D:\Tools\ghidra_projects_bootzone\decomp_463430.txt`) before trusting the
+`&DAT_008501e8 + *(int*)&DAT_008501e8` formula above. That expression
+(`iVar1` in the decompile) is only an INTERMEDIATE value — it feeds a
+134-iteration relocation walk (`FUN_006cc460`) and a further resolver call
+(`FUN_0045e910`); the value `FUN_00463430` actually returns (and that `JMP
+EAX` jumps to) is `iVar2 + iVar3`, where `iVar2 = FUN_0045e910(...)`'s return
+and `iVar3 = iVar1 - imageBase`. **The plan's formula does NOT equal the real
+resolved `LoadZones` address** — it's a misleading intermediate, and
+reimplementing `FUN_00463430`'s full relocation chain to get the true value
+would be substantial, fragile work unwarranted for a read-only diagnostic.
+
+**Simpler, more direct diagnostic implemented instead**, using the ILT
+self-patch behavior described in the ROOT CAUSE section directly ("rewrites
+the CALLER's own `CALL 0x004ca310` into `CALL <real_function>` in place, so
+future executions of that exact call site skip the thunk entirely"):
+`FUN_00679680`'s own Call 2 (`0x006797bd`, return address `0x006797c2` — both
+already independently confirmed and reused elsewhere in this codebase, e.g.
+`kBootZoneSpliceReturnAddr`) IS that exact call site. `Hook_FUN_00679680`
+(`analog_input_hooks.cpp`) hooks `FUN_00679680`, calls the real trampoline
+completely unmodified (so this exact call executes under totally normal
+conditions — nothing about the hook alters it), then reads the raw 5 bytes at
+`0x006797bd` directly. If MSVC's ILT self-patched it (as theorized), those
+bytes decode to `CALL <the true resolved LoadZones address>` instead of `CALL
+0x004ca310` — giving the real target directly, without reimplementing any of
+`FUN_00463430`'s internal math. Both readings (the original DAT_008501e8
+formula, clearly labeled as not-the-real-target, and this call-site decode,
+labeled as the trustworthy one) are logged to `proxy_d3d9.log` for
+comparison. **Deliberately scoped to logging only** — does not touch the
+zone array, does not call the resolved address, does not construct or append
+a zone-queue entry, per this project's own "log before you ever mutate"
+discipline (the lesson both the rumble-hook crash, issue #24, and the
+original boot-splice crash above already taught). Builds clean (0
+warnings/0 errors, full rebuild). **Not yet live-tested** — the next real
+game launch's `proxy_d3d9.log` is what will actually confirm or refute the
+self-patch theory and reveal the real address. The actual splice-and-call
+implementation (appending a `{ourZoneName, type, 0}` entry and calling the
+resolved address directly) is still unstarted, deliberately left for a
+follow-up pass once this diagnostic's reading is confirmed live.
+
 ---
 
 ## 23. Real controller options menu — native zone/menu injection, blocked on a real architectural limit (2026-07-17)
@@ -1458,7 +1508,10 @@ decompiled body, which typically leaves 2-5 of its 10 array slots unused.
 controller options menu" section — this is a summary. **The blocker below is now
 resolved to an implementation-ready plan — see the "REFINED, implementation-ready
 (2026-07-20...)" entry near the end of the "## 22..." boot-splice discussion further
-up this file (search for `FUN_00679680`) for the concrete, corrected injection
+up this file (search for `FUN_00679680`) for the concrete, corrected injection —
+and its own follow-up "Diagnostic IMPLEMENTED 2026-07-20" entry right below it for
+the read-only `Hook_FUN_00679680` diagnostic now built and awaiting a live-test
+before the actual splice is attempted.**
 approach and zone-queue entry format.**
 
 **Goal:** a real controller-options screen integrated into normal in-game Options
