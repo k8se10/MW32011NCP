@@ -8,6 +8,19 @@ reverse-engineering trail behind each entry.
 
 ## Unreleased
 
+### Investigated-not-resolved
+- **Bind-resolver hook (task #6/#35): residual garbage-log occurrence, root cause not
+  found.** A real playtest after the `FUN_00622970` return-address fix showed the fix
+  working far better (1 garbage line all session vs. 51+ before), but that one
+  occurrence still wasn't caught by the skip check. A fresh, from-scratch Ghidra
+  re-verification confirmed exactly 4 real callers exist (no 5th), `FUN_00622970` has
+  only its one known call site (no second), and the return-address constant
+  (`0x006229AC`) is exactly correct — ruling out the obvious explanations. Root cause
+  remains unconfirmed (a message-pump-driven reentrancy is suspected but not proven).
+  Shipped a concrete improvement regardless: the diagnostic log line now includes the
+  actual observed return address, so the next occurrence will show real data instead
+  of requiring another round of inference.
+
 ### Added
 - **Bind-resolver glyph-substitution groundwork, OFF by default (task #6).** Built
   the key-name-text → controller-glyph-codepoint substitution logic that the

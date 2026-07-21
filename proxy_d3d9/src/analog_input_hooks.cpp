@@ -4107,9 +4107,26 @@ extern "C" void __cdecl BindResolverLogAfterCall()
             static_cast<unsigned>(g_bindResolverCtxEax), static_cast<unsigned>(g_bindResolverCtxEcx));
     }
 
-    char buf[400];
-    sprintf_s(buf, "[bind-resolver-diag] %s | limitTo1=%u resolvedText=\"%s\"",
-        ctxBuf, static_cast<unsigned>(g_bindResolverLimitFlag), textBuf);
+    // retAddr included from 2026-07-21 (known_issues.md issue #35, "residual miss"
+    // investigation): a real playtest showed this exact garbage shape (ECX=0,
+    // buffer=0x100) getting logged even after the FUN_00622970 return-address skip
+    // was added, but the skip's own one-time note never appeared anywhere in that
+    // log -- meaning the retaddr comparison evaluated false for that one call. A
+    // fresh, from-scratch Ghidra re-verification (exhaustive xref count, full
+    // FUN_00622970 disassembly) confirms exactly 4 real callers exist total, no
+    // second call site inside FUN_00622970, and kMenuBindKeyCaptureCallerRetAddr
+    // (0x006229AC) is exactly the correct return address for its one real call site
+    // -- so the constant and the caller catalog are NOT the bug. Root cause not
+    // conclusively found (see the known_issues.md entry for what was ruled out and
+    // what remains suspected but unconfirmed -- possible reentrancy via a message
+    // pump inside the key-rebind-capture UI's wait state). Logging the real observed
+    // retAddr directly, instead of just inferring it failed to match, means the next
+    // occurrence of this garbage shape will show its own real value directly, closing
+    // this loop with actual data instead of another inference.
+    char buf[420];
+    sprintf_s(buf, "[bind-resolver-diag] %s | limitTo1=%u retAddr=0x%08X resolvedText=\"%s\"",
+        ctxBuf, static_cast<unsigned>(g_bindResolverLimitFlag),
+        static_cast<unsigned>(g_bindResolverRealRetAddr), textBuf);
     LogFromController(buf);
 }
 

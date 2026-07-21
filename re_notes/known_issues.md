@@ -5058,6 +5058,58 @@ have (this pass didn't change what those 3 callers pass, only how the OTHER call
 handled, so this should already have been working for them — worth confirming
 directly rather than assumed).
 
+**RESIDUAL MISS found in the NEXT real playtest (2026-07-21, follow-up investigation)
+— fix mostly works, one still-unexplained occurrence, real logging improvement
+shipped, root cause NOT conclusively found.** A subsequent full session (~18,500 log
+lines, clean boot, clean exit) showed the fix working far better than before — only
+ONE `[bind-resolver-diag]` garbage line the entire session (vs. 51+ across two bursts
+pre-fix), confirming the dedup fix holds. But that one line still showed the exact
+pre-fix symptom (`ECX=0`, buffer=`0x100`), and the `kMenuBindKeyCaptureCallerRetAddr`
+skip-note **never appeared anywhere in that log** — meaning the retaddr comparison
+evaluated false for that one call, i.e. the fix didn't catch it.
+
+**Investigated fresh, from scratch, not by re-trusting the prior pass's conclusions.**
+Ran a brand-new headless Ghidra enumeration of every real reference to `FUN_0061f6f0`
+(`ghidra_projects_bindresolver`, a from-scratch `getReferencesTo` scan, not reusing any
+cached "4 callers" claim as given) — **confirms exactly 4 real call-type references
+exist, byte-for-byte matching the prior research**: `00622037`(`FUN_00622020`),
+`006229a7`(`FUN_00622970`), `004be084`(`FUN_004be070`), `004fafe4`(`FUN_004fafd0`). No
+5th caller anywhere in the binary — hypothesis "an uncatalogued 5th caller with a
+similarly-shaped push exists" is **refuted**. Also dumped `FUN_00622970`'s ENTIRE body
+fresh — confirmed only the one known `CALL 0x0061f6f0` exists inside it, no second call
+site — that hypothesis is **refuted** too. And the instruction immediately following
+that one call site is, byte-for-byte, `006229ac  LEA ECX,[ESP + 0xc]` — confirming
+`kMenuBindKeyCaptureCallerRetAddr = 0x006229AC` is **exactly correct**, not a stale or
+mistranscribed value. The shim's own read ordering was also re-traced by hand
+(`EAX`/`ECX` registers read first, then `[esp+8]`/`[esp+0xc]`, then `[esp]` saved and
+overwritten last) — no ordering bug found; every stashed value is read before anything
+that could invalidate it.
+
+**One lead pursued, not confirmed**: `FUN_00622970` is a "waiting for the next physical
+key press to bind" capture screen (per its own body/strings) — the kind of UI that
+plausibly runs a Windows message pump while blocked waiting for input, which could
+cause genuine reentrancy into `FUN_0061f6f0` (a second, nested call clobbering the
+shared globals mid-flight, before the first invocation's own `BindResolverLogAfterCall`
+reads them). A shallow call-graph check (its one real caller, `FUN_006256a0`; the two
+helper functions `FUN_0061f6f0` itself calls internally, `FUN_004d6da0`/`FUN_0061f590`)
+found no directly message-pump-shaped call one hop deep — but this does NOT rule out a
+pump several hops further down (e.g. inside `FUN_00622100`, the other function
+`FUN_00622970` calls, or deeper inside `FUN_0057e770`) — genuinely unconfirmed either
+way, not chased further given the effort-to-certainty tradeoff at this depth.
+
+**Root cause NOT conclusively found.** With only one post-fix occurrence to go on,
+there's no way to distinguish "the fix has a real, rare failure mode" from "the fix
+works correctly and this was some other anomaly" from a single data point. Rather than
+guess, shipped a concrete, safe improvement instead: **`BindResolverLogAfterCall`'s
+diagnostic line now includes the actual observed `retAddr=0x%08X` value directly**
+(previously only inferable, never logged). The next time this garbage shape appears,
+the log will show the real address that failed to match `0x006229AC` — either
+confirming it's the same caller (pointing hard at reentrancy or some other runtime
+effect) or revealing it's a genuinely different address (pointing at a caller/edge case
+this pass didn't find). This closes the loop with real data next time, instead of
+another round of inference. Builds clean (0 warnings/0 errors, MSBuild, Win32/Release).
+**Not live-tested** — no game-automation tooling available in this pass either.
+
 **Glyph-substitution groundwork ADDED 2026-07-21, OFF by default, independent of the
 font-loading work** (task #6, parallel to the safe-loading investigation in issue
 #23): built the other half of the button-glyph feature — the actual key-name-text →
