@@ -4628,3 +4628,63 @@ master-server discovery layer in front of it; the only genuinely third-party/com
 unranked dedicated-server pool. **No change to this project's own risk posture or locked ordering** — MP
 work is still unstarted, VAC is still confirmed active regardless of matchmaking health, and this finding is
 informational (corrects a loosely-sourced citation, adds real mechanism detail) rather than decision-changing.
+
+---
+
+## 35. Bind-resolver text hook (`FUN_0061f6f0`) — LOG-ONLY first pass IMPLEMENTED, not yet live-tested (2026-07-21)
+
+**Status:** Built, builds clean (0 warnings/0 errors), NOT yet live-tested. Task #6's
+other half (button-glyph text substitution), first safe increment.
+
+Implements the first, deliberately incremental step of the fully-researched plan
+already documented in `re_notes/ui_assets.md` ("Text-swap hook (`FUN_0061f6f0`)" and
+"`FUN_0061f6f0`'s real calling convention, disassembly-confirmed" sections, both
+2026-07-18/19). That research concluded the hook is safe to install (a structurally
+different situation from the two hooks that crashed the game live this project —
+the rumble dispatcher hook, issue #24, and the boot-zone-splice hook, issue #22/#30)
+and explicitly recommended prototyping log-only first, with no output-buffer
+mutation, before ever attempting the real glyph substitution. This entry is that
+first increment, nothing more.
+
+**What's installed** (`analog_input_hooks.cpp`, `Hook_0061f6f0` + `BindResolverLogAfterCall`):
+a MinHook inline hook on `0x0061f6f0`, installed unconditionally at DLL load (permanent
+hook, not a manually-triggered debug combo — this function fires naturally whenever the
+game resolves bind-hint text). The naked shim stashes `EAX` (context)/`ECX` (bind-name
+context) and the `[esp+8]`/`[esp+0xc]` stack args into globals, overwrites the incoming
+return-address slot with a local label instead of pushing a new one (so the trampoline
+call doesn't shift the stack args by 4 bytes — see the shim's own header comment for
+the full mechanics), tail-jumps into the real trampoline with the byte-for-byte original
+frame intact, then once the trampoline's own `ret` hands control back, runs a normal
+C++ logging function before resuming the real caller exactly where it would have
+resumed had this hook never existed. Real text resolution is completely untouched in
+this pass — no buffer write happens anywhere.
+
+**Logging behavior**: `BindResolverLogAfterCall` logs `EAX`, and `ECX` treated
+tolerantly (this project's own prior research explicitly flagged that ECX's exact
+identity as a safely-dereferenceable C-string pointer was never fully confirmed — "likely
+EAX... not confirmed identical to contextA" — so this does NOT assume it's a string;
+every dereference is validated via the existing `LooksLikeValidPointer` range check and
+wrapped in `__try`/`__except`, same coarse-grained SEH pattern already established
+elsewhere in this file, degrading to a raw hex log if anything looks unsafe). The
+`[esp+8]` output buffer is read the same way after the real call, expected to contain
+`"KEY_UNBOUND"`, a single key name, or `"%s KEY_OR %s"` per the resolver's documented
+real behavior. Deduped against the last-logged resolved text (only logs on a change,
+not every frame a hint happens to be re-resolved on screen) to avoid flooding the log
+during normal play, on top of a full off-switch: `[Experimental] BindResolverHookLogging`
+in `mw3ncp_config.ini` (default `1`) silences the logging entirely without touching the
+hook itself — the hook stays installed and forwarding either way, so toggling this
+carries no behavior risk.
+
+**Not attempted in this pass, by design**: any output-buffer mutation, any glyph
+codepoint substitution, any `ButtonLayout`-aware key-name matching. All of that is the
+next real increment once this log-only pass is confirmed safe and its logged output is
+inspected against a live session.
+
+**Not yet live-tested** — no game-automation tooling is available in this working
+context to launch the game or exercise a controller, so this cannot be confirmed
+working end-to-end here. Next step whenever this is picked up: launch the game, trigger
+a real interact-style hint (e.g. approach a weapon pickup), and confirm (1) the hook
+installs (`MH_OK` in `proxy_d3d9.log`) without regressing boot, (2) real hint text still
+displays correctly on screen (proving the trampoline forwarding is transparent), and
+(3) the logged `EAX`/`ECX`/resolved-text lines look sane against what's actually
+displayed.

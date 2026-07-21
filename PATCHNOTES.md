@@ -8,6 +8,23 @@ reverse-engineering trail behind each entry.
 
 ## Unreleased
 
+### Added
+- **Bind-resolver text hook (`FUN_0061f6f0`), LOG-ONLY first pass (task #6/#35).**
+  A new permanent hook now forwards every real bind-hint-text resolution
+  (e.g. the interact prompts behind "Press [E] to pick up") through to the
+  unmodified real game logic exactly as before, then logs what it observed
+  (the resolved key/bind context and the resolved display text) to
+  `proxy_d3d9.log`, deduped so an on-screen hint logs once per change rather
+  than every frame. **No player-visible behavior changes at all in this
+  pass** — no glyph substitution happens yet, this is deliberately the safe,
+  incremental first step (following two earlier hooks that crashed the game
+  live without one — see `re_notes/known_issues.md` issues #24 and #22/#30)
+  toward real controller-glyph button prompts. New `[Experimental]
+  BindResolverHookLogging` toggle in `mw3ncp_config.ini` (default on) silences
+  the logging without touching the hook itself. Builds clean; **not yet
+  live-tested** — see `re_notes/known_issues.md` issue #35 for the full trail
+  and the concrete live-test plan.
+
 ---
 
 ## v0.2.2 — Alpha (2026-07-20) — Risk-mitigation release

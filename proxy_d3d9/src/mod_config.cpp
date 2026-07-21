@@ -203,7 +203,12 @@ void WriteDefaultConfig(const char* path)
         "; attempt to reach notifyonplayercommand's delivery mechanism for\n"
         "; killstreaks like Predator Missile. 0 = off (kbutton call only, pre-\n"
         "; 2026-07-18 behavior), 1 = on.\n"
-        "FireNotifyQueueKick=%d\n",
+        "FireNotifyQueueKick=%d\n"
+        "; Task #6/#35: the bind-resolver text hook (FUN_0061f6f0) is always installed\n"
+        "; and always forwards to the real game logic completely unmodified (log-only\n"
+        "; first pass -- no glyph substitution happens yet). This only controls whether\n"
+        "; it logs what it observes to proxy_d3d9.log. 0 = off, 1 = on.\n"
+        "BindResolverHookLogging=%d\n",
         g_modConfig.lookDegreesPerSecond,
         g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
@@ -221,7 +226,8 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.vibrationDamagePerPoint,
         g_modConfig.vibrationDamageMaxIntensity,
         g_modConfig.vibrationDamageDurationMs,
-        g_modConfig.fireNotifyQueueKick ? 1 : 0);
+        g_modConfig.fireNotifyQueueKick ? 1 : 0,
+        g_modConfig.bindResolverHookLogging ? 1 : 0);
 
     fclose(f);
 }
@@ -348,6 +354,7 @@ void LoadModConfig()
     if (g_modConfig.vibrationDamageMaxIntensity < 0.0f) g_modConfig.vibrationDamageMaxIntensity = 0.0f;
     ReadUlong(path, "Vibration", "DamageDurationMs", g_modConfig.vibrationDamageDurationMs);
     ReadBool(path, "Experimental", "FireNotifyQueueKick", g_modConfig.fireNotifyQueueKick);
+    ReadBool(path, "Experimental", "BindResolverHookLogging", g_modConfig.bindResolverHookLogging);
 
     g_buttonMap = ResolveButtonMap(g_modConfig.buttonLayout, g_modConfig.flipTriggers);
 
@@ -359,7 +366,7 @@ void LoadModConfig()
         "buttonLayout=%s stickLayout=%s flipTriggers=%d "
         "vibrationEnabled=%d vibrationFireIntensity=%g vibrationFireDurationMs=%lu "
         "vibrationDamagePerPoint=%g vibrationDamageMaxIntensity=%g vibrationDamageDurationMs=%lu "
-        "fireNotifyQueueKick=%d",
+        "fireNotifyQueueKick=%d bindResolverHookLogging=%d",
         g_modConfig.lookDegreesPerSecond, g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
         g_modConfig.invertLook ? 1 : 0, g_modConfig.lookAccelerationRampMs,
@@ -370,6 +377,7 @@ void LoadModConfig()
         g_modConfig.vibrationEnabled ? 1 : 0, g_modConfig.vibrationFireIntensity,
         g_modConfig.vibrationFireDurationMs, g_modConfig.vibrationDamagePerPoint,
         g_modConfig.vibrationDamageMaxIntensity, g_modConfig.vibrationDamageDurationMs,
-        g_modConfig.fireNotifyQueueKick ? 1 : 0);
+        g_modConfig.fireNotifyQueueKick ? 1 : 0,
+        g_modConfig.bindResolverHookLogging ? 1 : 0);
     LogFromController(buf);
 }

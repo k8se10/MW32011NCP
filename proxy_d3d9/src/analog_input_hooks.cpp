@@ -3265,6 +3265,196 @@ extern "C" void __cdecl InjectMenuInputTick()
     InjectFontGlyphPatchTest();
 }
 
+// ---- Bind-resolver text hook, LOG-ONLY first pass (task #6/#35, 2026-07-21) -------
+//
+// Real target: FUN_0061f6f0, the bind->hint-text resolver this project's own research
+// (re_notes/ui_assets.md, "Text-swap hook (FUN_0061f6f0)" and "FUN_0061f6f0's real
+// calling convention, disassembly-confirmed" sections) already fully traced -- it's
+// the single choke point both real hint mechanisms (the "&&1"-token family and the
+// "[{+command}]"-bracket family) funnel through, so one hook here covers both without
+// needing to find every individual call site.
+//
+// Confirmed real calling convention (register+stack hybrid, NOT plain __cdecl/
+// __thiscall -- re-derive nothing here, this is already disassembly-verified):
+//   EAX (register)  = a context value, forwarded into only the FIRST internal resolve
+//                     call (not both, per the 2026-07-19 correction in ui_assets.md).
+//   ECX (register)  = the bind-name/command context -- the "resolve this bind" arg.
+//                     NOTE: which exact register carries a raw C-string bind name into
+//                     the deeper FUN_005330a0 lookup was flagged UNRESOLVED by that
+//                     research ("likely EAX... not confirmed identical to contextA") --
+//                     this hook does NOT assume ECX is safely dereferenceable as a
+//                     string; see BindResolverLogAfterCall's guarded handling below.
+//   [esp+4]         = pushed by every caller but never read in the function body --
+//                     confirmed dead, ignored here too.
+//   [esp+8]         = output buffer pointer -- where the real trampoline writes
+//                     "KEY_UNBOUND", a single key name, or "%s KEY_OR %s".
+//   [esp+0xc]       = bool flag, "limit to 1 bind".
+//   Plain RET (caller-cleanup for the stack portion, i.e. cdecl-shaped stack args).
+//
+// THIS PASS IS DELIBERATELY LOG-ONLY -- no output-buffer mutation, no behavior change
+// at all. Two earlier hooks this project shipped without a safe incremental step first
+// (the rumble dispatcher hook, known_issues.md issue #24; the boot-zone-splice hook,
+// issue #22/#30) both crashed the live game outright. ui_assets.md's own recommendation
+// for this specific hook is explicit: "Recommends prototyping log-only first (no buffer
+// write) -- same lesson as both crashes this session." This is that first increment.
+// Actually swapping in a glyph codepoint is deliberately NOT attempted here.
+//
+// Implementation shape (also per the research's own recommendation, to avoid one naive
+// naked function trying to do everything at once): a small naked shim stashes the
+// register args and the output-buffer/flag values into plain globals (this call site is
+// not proven multi-threaded, same single-threaded assumption every other naked hook in
+// this file already makes), forwards into the real trampoline with the ORIGINAL
+// register/stack state fully intact (so real text resolution is completely untouched),
+// then -- once the trampoline's own `ret` hands control back -- calls a normal C++
+// logging function before resuming the real caller exactly where it would have resumed
+// had this hook never existed.
+//
+// Forwarding mechanic, spelled out since it's easy to get wrong: a plain `call` to the
+// trampoline would push a NEW return address on top of the existing 3 stack args,
+// shifting the trampoline's own [esp+4]/[esp+8]/[esp+0xc] view down by 4 bytes relative
+// to what the real caller set up -- wrong. Instead this OVERWRITES the incoming
+// return-address slot in place with the address of the `afterCall` label (saving the
+// real return address to a global first) and TAIL-JUMPS (not calls) into the
+// trampoline, so it sees the byte-for-byte identical frame the real caller built, just
+// with the return-address slot repointed. When the trampoline's own `ret` fires, it
+// pops that slot and lands at `afterCall` with esp already exactly where the real
+// caller would see it post-return -- at that point this hook only needs to run the
+// (register-preserving) log call and then `jmp` to the saved real return address; there
+// is no return-address slot left on the stack to `ret` through a second time.
+namespace {
+void* g_orig_0061f6f0 = nullptr;
+
+// Scratch globals for the naked shim below -- no stack frame exists to hold these
+// (naked, no prologue), and this call site is not known/proven to be multi-threaded,
+// same assumption every other naked hook in this file already makes (e.g. Hook_0057de60
+// below).
+uintptr_t g_bindResolverCtxEax = 0;
+uintptr_t g_bindResolverCtxEcx = 0;
+uintptr_t g_bindResolverBufPtr = 0;
+uintptr_t g_bindResolverLimitFlag = 0;
+uintptr_t g_bindResolverRealRetAddr = 0;
+
+// Dedup state so a hint that's on screen and getting re-resolved every frame doesn't
+// flood the log -- same "change-triggered diagnostic logging" precedent already used
+// elsewhere in this file (e.g. the pause-menu-field re-test). Independent of, and in
+// addition to, the config toggle below (which is a full off switch).
+char g_bindResolverLastLoggedText[128] = {};
+}
+
+// Logs the resolved bind name + resolved output text after the real trampoline has
+// already run. Deliberately tolerant of EAX/ECX/[esp+8] turning out not to be what
+// static analysis expects -- this project's own research flagged real uncertainty
+// about ECX's exact semantic identity, so every dereference here is validated and
+// wrapped in SEH before use, never assumed safe. extern "C" so the naked shim's plain
+// `call BindResolverLogAfterCall` resolves to an unmangled symbol, same treatment
+// InjectAllControllerInput already gets for the same reason.
+extern "C" void __cdecl BindResolverLogAfterCall()
+{
+    if (!g_modConfig.bindResolverHookLogging) return;
+
+    char ctxBuf[160];
+    if (LooksLikeValidPointer(g_bindResolverCtxEcx)) {
+        const char* asStr = reinterpret_cast<const char*>(g_bindResolverCtxEcx);
+        __try {
+            char nameBuf[64];
+            size_t i = 0;
+            bool stringShaped = true;
+            for (; i < sizeof(nameBuf) - 1; ++i) {
+                char c = asStr[i];
+                if (c == '\0') break;
+                if (c < 0x20 || c >= 0x7f) { stringShaped = false; break; }
+                nameBuf[i] = c;
+            }
+            nameBuf[i] = '\0';
+            if (stringShaped) {
+                sprintf_s(ctxBuf, "EAX(ctx)=0x%08X ECX(bindCtx)=0x%08X as-string=\"%s\"",
+                    static_cast<unsigned>(g_bindResolverCtxEax), static_cast<unsigned>(g_bindResolverCtxEcx), nameBuf);
+            } else {
+                sprintf_s(ctxBuf, "EAX(ctx)=0x%08X ECX(bindCtx)=0x%08X (not string-shaped)",
+                    static_cast<unsigned>(g_bindResolverCtxEax), static_cast<unsigned>(g_bindResolverCtxEcx));
+            }
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            sprintf_s(ctxBuf, "EAX(ctx)=0x%08X ECX(bindCtx)=0x%08X (deref faulted -- not a valid string ptr)",
+                static_cast<unsigned>(g_bindResolverCtxEax), static_cast<unsigned>(g_bindResolverCtxEcx));
+        }
+    } else {
+        sprintf_s(ctxBuf, "EAX(ctx)=0x%08X ECX(bindCtx)=0x%08X (not a plausible pointer)",
+            static_cast<unsigned>(g_bindResolverCtxEax), static_cast<unsigned>(g_bindResolverCtxEcx));
+    }
+
+    char textBuf[128] = {};
+    bool bufReadOk = false;
+    if (LooksLikeValidPointer(g_bindResolverBufPtr)) {
+        const char* resolved = reinterpret_cast<const char*>(g_bindResolverBufPtr);
+        __try {
+            size_t i = 0;
+            for (; i < sizeof(textBuf) - 1; ++i) {
+                char c = resolved[i];
+                textBuf[i] = c;
+                if (c == '\0') break;
+            }
+            textBuf[sizeof(textBuf) - 1] = '\0';
+            bufReadOk = true;
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            sprintf_s(textBuf, "<faulted reading 0x%08X>", static_cast<unsigned>(g_bindResolverBufPtr));
+        }
+    } else {
+        sprintf_s(textBuf, "<buffer ptr 0x%08X not plausible>", static_cast<unsigned>(g_bindResolverBufPtr));
+    }
+
+    // Dedup: only log when the resolved text actually changed since last call, so a
+    // hint sitting on screen (re-resolved every frame while visible) logs once, not
+    // continuously.
+    if (bufReadOk && strcmp(textBuf, g_bindResolverLastLoggedText) == 0) return;
+    if (bufReadOk) {
+        strncpy_s(g_bindResolverLastLoggedText, textBuf, sizeof(g_bindResolverLastLoggedText) - 1);
+    }
+
+    char buf[400];
+    sprintf_s(buf, "[bind-resolver-diag] %s | limitTo1=%u resolvedText=\"%s\"",
+        ctxBuf, static_cast<unsigned>(g_bindResolverLimitFlag), textBuf);
+    LogFromController(buf);
+}
+
+__declspec(naked) void Hook_0061f6f0()
+{
+    __asm {
+        // Stash everything meaningful before it can be clobbered -- register args
+        // first, then the two stack args this pass cares about ([esp+8]/[esp+0xc]).
+        // [esp+4] is confirmed dead by the research above; not read here either.
+        mov dword ptr [g_bindResolverCtxEax], eax
+        mov dword ptr [g_bindResolverCtxEcx], ecx
+        mov eax, dword ptr [esp+8]
+        mov dword ptr [g_bindResolverBufPtr], eax
+        mov eax, dword ptr [esp+0xc]
+        mov dword ptr [g_bindResolverLimitFlag], eax
+
+        // Save the real return address, then repoint that same stack slot at our own
+        // afterCall label -- see the big comment above for why this must be an
+        // in-place overwrite (no push) rather than a plain `call`.
+        mov eax, dword ptr [esp]
+        mov dword ptr [g_bindResolverRealRetAddr], eax
+        mov dword ptr [esp], offset afterCall
+
+        // Restore EAX/ECX exactly as the real caller set them, then tail-jump (NOT
+        // call) into the trampoline so it sees the byte-for-byte original frame.
+        mov eax, dword ptr [g_bindResolverCtxEax]
+        mov ecx, dword ptr [g_bindResolverCtxEcx]
+        jmp dword ptr [g_orig_0061f6f0]
+
+    afterCall:
+        // The trampoline's own `ret` landed us here with esp already back to what the
+        // real caller would see post-return. Preserve every register across the log
+        // call since this function's real return-value convention (if any) in EAX is
+        // not confirmed, then resume the real caller directly -- there is no
+        // return-address slot left on the stack to `ret` through a second time.
+        pushad
+        call BindResolverLogAfterCall
+        popad
+        jmp dword ptr [g_bindResolverRealRetAddr]
+    }
+}
+
 namespace {
 void* g_orig_0057de60 = nullptr;
 }
@@ -3294,6 +3484,22 @@ void InstallAnalogInputHooks()
     if (s2 == MH_OK) {
         MH_STATUS e2 = MH_EnableHook(reinterpret_cast<LPVOID>(0x0057de60));
         sprintf_s(buf, "[hooks] MH_EnableHook(0057de60) = %d", static_cast<int>(e2));
+        LogFromController(buf);
+    }
+
+    // Bind-resolver text hook (task #6/#35, 2026-07-21) -- LOG-ONLY first pass, see the
+    // big comment above Hook_0061f6f0's definition. Installed unconditionally (this is
+    // a permanent hook, not a manually-triggered debug test), but its LOGGING is gated
+    // by g_modConfig.bindResolverHookLogging (default on) so it can be silenced from
+    // the INI without a recompile -- the hook forwards to the real trampoline
+    // completely unmodified either way, so leaving it installed carries no behavior
+    // risk even with logging off.
+    MH_STATUS s8 = MH_CreateHook(reinterpret_cast<LPVOID>(0x0061f6f0), &Hook_0061f6f0, &g_orig_0061f6f0);
+    sprintf_s(buf, "[hooks] MH_CreateHook(0061f6f0 bind-resolver) = %d", static_cast<int>(s8));
+    LogFromController(buf);
+    if (s8 == MH_OK) {
+        MH_STATUS e8 = MH_EnableHook(reinterpret_cast<LPVOID>(0x0061f6f0));
+        sprintf_s(buf, "[hooks] MH_EnableHook(0061f6f0 bind-resolver) = %d", static_cast<int>(e8));
         LogFromController(buf);
     }
 
