@@ -5323,6 +5323,43 @@ a live session and visually confirming the borrowed 'A' glyph now appears
 appended to the HUD text (e.g. "Armor         250"), rather than assuming
 success from the build alone.
 
+**First retest (2026-07-22) was INVALID — deploy gap, not the fix, was at
+fault.** The `param_10 + 1` fix was built inside an isolated git worktree
+(a fork's own checkout). `proxy_d3d9.vcxproj`'s `OutDir` is `..\..\`,
+relative to `proxy_d3d9/` — building from the real checkout resolves that to
+the actual game root, but building from a worktree resolves the same
+relative path to the *worktree's own* directory tree instead. The fork's
+clean rebuild (0 warnings/0 errors) never touched the deployed `d3d9.dll`
+next to `iw5sp.exe`; a file-timestamp check confirmed the deployed DLL still
+predated the fix by several hours. Rebuilt directly from the real checkout,
+which correctly deployed the fix-containing DLL (confirmed via timestamp).
+Documented in `CONTRIBUTING.md`'s Building section so this doesn't recur with
+future fork/worktree builds.
+
+**Second retest (2026-07-22), against the correctly-deployed fix — STILL no
+visible glyph.** Log confirmed a clean run against the real fixed DLL:
+`LB+RB+B` → `"built replacement array (254 -> 255 entries), inserted
+codepoint 0xA0 at index 159"`; `LB+RB+Y` → `"armed injection firing -- real
+hudBigFont draw call text was \"Armor         250\" (len=17), appending
+codepoint 0xA0..."` → `"forwarded the modified copy to the real draw call
+with no exception"`. No crash, no exception, and the `param_10 + 1` fix is
+confirmed present in the deployed binary this time — yet still nothing
+rendered. **This rules out the deploy gap as the (sole) explanation and means
+the `param_10` fix, while logically sound per the disassembly, was NOT
+sufficient by itself.** The insertion logic itself (`InjectFontGlyphPatchTest_
+HudBigFont`) was re-read and looks correct — every renderable field (`x0`,
+`y0`, `dx`, `pixelWidth`, `pixelHeight`, `s0`, `t0`, `s1`, `t1`) is copied
+from the real `'A'` glyph entry (`font->glyphs['A' - 0x20]`), not left zeroed,
+so a corrupted/empty inserted glyph is not yet ruled out but doesn't look
+like the obvious culprit from a source read alone. **Not yet root-caused —
+needs a live diagnostic that directly observes whether the draw loop actually
+reaches the appended character** (e.g. a temporary hook/log on the glyph
+lookup `FUN_0047dfa0` itself, counting how many times it's actually called
+during the one draw call this fires on — `len` calls would mean the loop
+still stops short despite the count fix, `len + 1` would mean it reaches the
+new character but resolves/draws it wrong) rather than further disassembly
+speculation. This is the concrete next investigative step, not yet attempted.
+
 ---
 
 ## 35. Bind-resolver text hook (`FUN_0061f6f0`) — LOG-ONLY first pass IMPLEMENTED, not yet live-tested (2026-07-21)
