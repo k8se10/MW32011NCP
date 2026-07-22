@@ -3183,8 +3183,20 @@ void __cdecl Hook_DrawGlyphText(
                 sprintf_s(logBuf, "[hudbigfont-visibility-test] armed injection firing -- real hudBigFont draw call text was \"%.64s\" (len=%zu), appending codepoint 0x%02X and forwarding a modified COPY (real game buffer untouched)",
                     param_1, len, g_hudFontPatchInsertedCodepoint);
                 LogFromController(logBuf);
+                // param_10 is the real draw loop's explicit character count (NOT
+                // null-termination -- confirmed via fresh Ghidra decompile of
+                // FUN_00690c80, task #6/#34 root-cause pass, 2026-07-21). It's
+                // captured once by the ring-buffer writer (FUN_0051b100, a plain
+                // strlen() of the ORIGINAL unmutated string at HUD-text enqueue
+                // time) and replayed unchanged by the reader (FUN_00691ca0) on
+                // every subsequent draw -- so forwarding the original count here
+                // makes the draw loop stop exactly one character short of the
+                // codepoint we just appended to `modified`, every time, with no
+                // crash and no visible glyph (confirmed live: not even the
+                // lookup's own fallback glyph rendered). Forwarding param_10 + 1
+                // matches the loop's gate to the actual appended-string length.
                 g_origDrawGlyphText(modified, param_2, param_3, fontArg, param_5, param_6, param_7,
-                    param_8, param_9, param_10, param_11, param_12, param_13, param_14, param_15,
+                    param_8, param_9, param_10 + 1, param_11, param_12, param_13, param_14, param_15,
                     param_16, param_17, param_18, param_19, param_20, param_21);
                 injected = true;
                 LogFromController("[hudbigfont-visibility-test] forwarded the modified copy to the real draw call with no exception -- check the screen now for a visible borrowed 'A' glyph appended to that HUD text.");
