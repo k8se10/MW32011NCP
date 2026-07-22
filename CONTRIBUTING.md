@@ -91,6 +91,22 @@ Before opening a PR, please read this file in full.
 - Build via the MSBuild project files under `proxy_d3d9/` from a Developer
   Command Prompt (or after running `vcvarsall.bat`).
 - For live debugging, use a 32-bit debugger (e.g. `x32dbg`, not `x64dbg`).
+- **`proxy_d3d9.vcxproj`'s `OutDir` is `..\..\`, relative to `proxy_d3d9/`** —
+  building from the real checkout (this repo, sitting inside the game install
+  root) resolves that straight to the game root and deploys `d3d9.dll` where
+  the game actually loads it. Building from a **git worktree** (e.g. an
+  isolated agent/fork checkout under `.claude/worktrees/agent-*/`) resolves
+  the same relative path to the *worktree's own* two-levels-up directory
+  instead — for this project's worktree layout that lands at the shared
+  `.claude/worktrees/` folder itself (not even a per-worktree path, so
+  concurrent worktree builds can clobber each other's output there). Confirmed
+  2026-07-22: a fork's clean rebuild (0 warnings/errors) left the real deployed
+  DLL untouched, so a live playtest afterward was silently still running the
+  *previous* build — looked exactly like "the fix didn't work" until the
+  timestamp mismatch was caught. **A worktree build only proves the change
+  compiles — it never deploys.** Always do one final rebuild from the real
+  checkout before asking for a live playtest of anything a worktree/fork
+  built.
 
 ## Submitting a PR
 
