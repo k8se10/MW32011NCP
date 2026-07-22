@@ -52,6 +52,22 @@ reverse-engineering trail behind each entry.
   not `hudBigFont`), then test via the real bind-resolver pathway end-to-end rather
   than the manual test combos. No code changed this pass — pure research/
   consolidation. Full trail in `re_notes/known_issues.md` issue #38.
+- **Bind-resolver glyph-substitution safety re-verified fresh via Ghidra (task
+  #35 follow-up).** Rigorously re-checked (not just re-read) the claim that the
+  real bind-resolver substitution mechanism sidesteps issue #34's ring-buffer
+  no-render bug. Fresh decompiles confirm: `FUN_00433a10` (the `&&N` splicing
+  engine) treats the substituted bind-text value as a pure byte-for-byte copy
+  with zero content interpretation beyond its own null terminator, and measures
+  that value's length fresh, synchronously, on every call — there is no
+  separate capture-once/replay-later step analogous to issue #34's
+  `FUN_0051b100`, so the ordering safety is structurally guaranteed, not just
+  probable. **Real gap found**: the provisional glyph-codepoint table
+  (`0x82`-`0xA9`) has never been individually checked against the same
+  `FUN_004db3e0` locale/case-folding corruption pattern that ruled out `0x81`
+  and ruled in `0xA0` earlier — recommend vetting each provisional codepoint (or
+  simply remapping the table onto a run of already-confirmed-clean codepoints)
+  before enabling the feature for real. No code changed, no rebuild needed.
+  Full trail in `re_notes/known_issues.md` issue #35.
 - **WaW-style animated dev clan tags — new roadmap idea, feasibility research only
   (issue #37).** Brought over World at War's ~22 hidden animated "dev" clan-tag magic
   words (`....`, `****`, `MOVE`, `RAIN`, `CYCL`, `CYLN`, etc. — real, citable subset

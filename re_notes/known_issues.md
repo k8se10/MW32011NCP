@@ -5643,6 +5643,72 @@ pure preparatory groundwork, ready to enable the moment issue #23's font-loading
 problem is solved and the correct render font is confirmed (a separate, parallel
 thread this session).
 
+**Substitution-safety re-verified fresh via Ghidra (2026-07-22, task #38 follow-up)
+— reasoning holds, one real gap found in the codepoint table itself.** Issue #38
+inferred (from re-reading existing disassembly notes, not fresh evidence) that this
+mechanism sidesteps issue #34's `param_10` ring-buffer bug because it substitutes
+BEFORE the string gets length-captured, unlike the hudBigFont diagnostic's after-
+the-fact append. Re-verified this rigorously with new decompiles
+(`D:\Tools\ghidra_projects_bindresolver`, `iw5sp.exe`, `-noanalysis -readOnly`):
+
+- **Traced the real data flow end to end**: `FUN_00568110` (hint-builder,
+  e.g. `PLATFORM_PICKUPNEWWEAPON` = `"Press^3 &&1 ^7to pick up"`) resolves the bind
+  name via `FUN_0061f6f0` (our hook point), then calls `FUN_005098e0(templateStr,
+  resolvedBindTextPtr)`, which builds a small args array (`{argCount=1,
+  resolvedBindTextPtr}`) and calls `FUN_00433a10(templateStr, &argsArray,
+  outputBuf, 0x400)` — confirmed via fresh decompile of `FUN_00433a10` itself
+  (full function reproduced in `D:\Tools\ghidra_projects_bindresolver\
+  out_00433a10.txt`) and of its real caller `FUN_005098e0` (matches `FindCallers`
+  output exactly: `local_428=1; FUN_00433a10(param_1,&local_428,local_400,0x400);`).
+- **`FUN_00433a10`'s own body has ZERO content-dependent handling of the
+  substitution value.** It scans ONLY the TEMPLATE string (`param_1`, the fixed
+  localized string like `"Press^3 &&1..."`) for literal `"&&"` + digit; the actual
+  substitution VALUE (our resolved/substituted bind text) is only ever touched by
+  a byte-for-byte copy loop (`*(char*)(iVar8+param_3) = *(char*)(iVar6 +
+  *(int*)(param_2+4+(digit-0x31)*4))`) that runs until ITS OWN null terminator —
+  no ASCII-range check, no case-folding, no locale table, nothing. The "no `&&`
+  found at all" fast path (`FUN_0053a950`) is confirmed to be a plain bounds-
+  checked `strncpy` + explicit null-termination — equally content-agnostic.
+  **This means a glyph-codepoint byte in the substitution value is copied through
+  FUN_00433a10 exactly as safely as any ASCII bind-name text would be.**
+- **Ordering is structurally guaranteed correct, not just probably-fine**: the
+  value string's length is measured FRESH, synchronously, INSIDE `FUN_00433a10`
+  itself (its own null-terminator scan, lines quoted above), on every single call
+  — there is no separate caching/capture-once function analogous to `FUN_0051b100`
+  anywhere in this chain. Since our hook substitutes `FUN_0061f6f0`'s output
+  buffer immediately upon that function's own return — strictly earlier in the
+  SAME synchronous call stack than `FUN_00433a10`'s length scan — there is no
+  possible ordering in which `FUN_00433a10` could see stale, pre-substitution
+  content. This is categorically different from issue #34's bug (a separate
+  function capturing length once, then a LATER, separate draw call replaying that
+  stale count across frames) and confirms issue #38's inference was correct, not
+  just plausible.
+- **Real gap found, not previously flagged: the provisional glyph-codepoint table
+  (`0x82`-`0xA9`, `analog_input_hooks.cpp`) has never been individually checked
+  against the SAME `FUN_004db3e0` case-folding/locale corruption pattern that
+  ruled OUT `0x81` (`case 0x81: return 0x83` under one locale-table variant with
+  lowercase forced) and ruled IN `0xA0` (zero corruption paths in any checked
+  branch) earlier in issue #34's own investigation.** `FUN_00433a10`'s own
+  splicing is byte-safe (previous bullet), but the FINAL spliced hint string still
+  flows into the exact same downstream draw/decode chain as any other on-screen
+  text (`FUN_0051b100`→`FUN_00691ca0`→`FUN_00690c80`→`FUN_004db3e0`/
+  `FUN_0047dfa0`) — so the same class of per-byte locale corruption risk applies
+  equally here, and nothing in this project's own notes confirms any of the 40
+  provisional codepoints (`0x82` through `0xA9`) are clean. Recommend either
+  individually vetting each provisional codepoint against `FUN_004db3e0`'s case-
+  folding tables the same way `0x81`/`0xA0` were checked, or simpler: remap the
+  whole provisional table onto a run of codepoints already confirmed clean by that
+  check (starting from `0xA0`) rather than the untested `0x82`-`0xA9` range.
+- **Go/no-go verdict**: the substitution MECHANISM (buffer-size safety, per the
+  existing exhaustive `[esp+8]`/register-convention disassembly already in this
+  issue above, plus the freshly-confirmed splice-ordering safety above) is sound
+  and safe to live-test. The one concrete blocker before calling this "ready to
+  enable in earnest" is the untested codepoint table gap just above — not a
+  mechanism defect, a data-table gap that's cheap to close.
+
+Build/test note: this pass was pure Ghidra static analysis and documentation, no
+`.cpp` changes, no rebuild performed or needed.
+
 ---
 
 ## 36. Local splitscreen co-op — user roadmap idea, NOT YET INVESTIGATED (2026-07-21)
