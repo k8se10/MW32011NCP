@@ -5307,6 +5307,22 @@ append in the already-committed `Hook_DrawGlyphText` mutation branch) is a
 concrete, scoped follow-up, not yet attempted. Builds untouched by this pass
 (doc-only change, no rebuild needed for this entry's own content).
 
+**Fix implemented 2026-07-21 (follow-up pass, NOT yet live-tested):** the
+one-line fix described above is now in place — the mutating branch of
+`Hook_DrawGlyphText` (the `[hudbigfont-visibility-test]`-tagged code path)
+now forwards `param_10 + 1` instead of the original `param_10` to
+`g_origDrawGlyphText`, matching the real draw loop's character-count gate to
+the actual length of the locally-appended string (`modified`). This is the
+exact, minimal change the root-cause analysis called for — no other part of
+the hook (SEH wrapping, `strnlen` cap, one-shot arm flag, pointer-identity
+check) was touched. Build verified clean (0 warnings/0 errors, Release/
+Win32). **This has NOT been live-tested in-game yet** — a clean build only
+confirms the code compiles and links, not that the glyph actually renders.
+The remaining verification step is holding `LB+RB+B` then `LB+RB+Y` again in
+a live session and visually confirming the borrowed 'A' glyph now appears
+appended to the HUD text (e.g. "Armor         250"), rather than assuming
+success from the build alone.
+
 ---
 
 ## 35. Bind-resolver text hook (`FUN_0061f6f0`) — LOG-ONLY first pass IMPLEMENTED, not yet live-tested (2026-07-21)
