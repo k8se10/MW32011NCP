@@ -6042,3 +6042,87 @@ mechanism, just no longer the active line of investigation). No live testing was
 performed — everything above is a consolidation of this project's own prior Ghidra
 static analysis and prior live-tally data, plus one new structural inference (the
 bind-resolver-vs-diagnostic-test distinction), not a fresh playtest.
+
+### CORRECTION (2026-07-22, follow-up pass): System A does NOT share System B's pipeline — settled via static call-graph enumeration, not a live test
+
+This pass's own recommended next step #4 above ("confirm via a quick live check")
+turned out to be answerable — more conclusively — via pure static analysis, and the
+answer is the OPPOSITE of what the indirect runtime evidence suggested. **Menu
+itemDef text (System A) does NOT go through `FUN_00690c80`, and does not even call
+the same glyph-lookup function (`FUN_0047dfa0`) that System B and the current
+array-patch mechanism both rely on.**
+
+**Method**: exhaustively enumerated real call-references (not data refs) to the two
+key functions, via a Ghidra headless script (`FindCallers.java` against this
+project's own `re_notes/ghidra_scripts/`, `ghidra_projects_optionsmenu/MW3.gpr`,
+`-process iw5sp.exe -readOnly -noanalysis`):
+
+- **`FUN_00690c80` has exactly 2 real callers, full stop**: `FUN_00691ca0` (the
+  already-known ring-buffer consumer, System B's own path) and `FUN_0042aed0` — a
+  thin wrapper passing a hardcoded `param_10 = 0x7fffffff` (i.e. "unbounded, rely on
+  null-termination instead of a captured count"). Traced `FUN_0042aed0`'s own single
+  caller (`FUN_0051ba00`) and confirmed by its content (formats strings like
+  `"TOTAL"` and `"%*s %5.2f %5.2f %5.2f"` with timer names and millisecond/frame
+  values) that this is a **developer performance/timing overlay**, not menu or HUD
+  UI text. So `FUN_00690c80` truly has no menu-related caller anywhere in the
+  binary.
+- **`FUN_0047dfa0` (the glyph lookup) has exactly 6 real callers**: `FUN_0041df00`
+  and `FUN_004e9350` (both text-width/word-wrap measurement functions — they sum
+  glyph widths via this same lookup but never emit a quad), `FUN_0049d0e0` (a
+  ring-buffer-relative measurement variant, masks its cursor with `& (bufSize-1)`
+  arithmetic — measures text already sitting in some other circular buffer),
+  `FUN_00690c80` and its own internal single-glyph-draw helper `FUN_006906a0`
+  (confirmed `FUN_006906a0`'s ONLY caller is `FUN_00690c80` itself — pure internal
+  plumbing, not a separately-reachable entry point), and `FUN_00545570` (a distinct
+  per-glyph draw loop building float-vector vertex/color data and calling
+  `FUN_00691a50` — structurally looks like a 3D/world-space text renderer, e.g.
+  debug overlays drawn in world space rather than 2D screen-space UI; not
+  investigated further as it's also not itemDef-related). **None of these 6 are in,
+  or called by, the itemDef/menu module's address range** (`0x616000`-`0x623000`,
+  where `FUN_005181e0`'s real callers — `FUN_0061e0f0`, `FUN_0061f070`,
+  `FUN_006224f0`, etc. — actually live).
+- Also confirmed the actual quad-emitting primitive (`FUN_00690620`, called by
+  `FUN_006906a0`) has only those same 2 known internal callers — so even the literal
+  GPU draw call at the bottom of the chain is not shared. This rules out "different
+  front-end, same backend" as cleanly as the top-level check did.
+- Traced one real itemDef-text call chain concretely: `FUN_0061e0f0` (itemDef text
+  paint — confirmed via its own field accesses on `unaff_ESI`, matching itemDef
+  struct offsets already used elsewhere in this project's notes for type/flags
+  checks) → resolves font via `FUN_005181e0` → calls `FUN_00429dc0(text, 0, font,
+  scale, colorMode)`, which internally calls `FUN_004e9350` (text-width measure,
+  confirmed above) then two calls, `FUN_007370b0(computedDouble)` /
+  `FUN_007380e0()`, in a completely different address range (`0x737xxx`) not yet
+  identified — **the real glyph-emitting call for menu text was NOT found this
+  pass**; `FUN_00429dc0` measures and positions text but the actual per-glyph draw
+  happens somewhere past `FUN_007370b0`/`FUN_007380e0`, unidentified. `FUN_0061e0f0`
+  also calls `FUN_0045cd60`/`FUN_004e63d0`/`FUN_004c0070` in some branches — all
+  three are STRING-BUILDER/GETTER functions (return `char*`, resolve
+  localized/bind-substituted strings) feeding back into more `FUN_00429dc0` calls,
+  not draw calls themselves.
+
+**What this means for the glyph feature, concretely**:
+- The `param_10`/ring-buffer character-count gotcha (issue #34's root-caused bug)
+  is now confirmed **System-B-specific** — it cannot be assumed to affect menu text
+  at all, since menu text doesn't go through that ring buffer or that draw call.
+  Good news in one sense (one less thing to worry about for menus) and bad news in
+  another (none of the existing `Hook_DrawGlyphText`/array-patch groundwork
+  transfers to menu text without further work).
+- **The real menu-text glyph-draw call is still unidentified** — this is now the
+  concrete, correctly-scoped next research step for anyone picking up menu-entry
+  glyph substitution specifically (as opposed to interact-hint substitution via the
+  bind-resolver path, issue #35, which DOES go through the already-mapped System B
+  chain and is unaffected by this correction). Suggested approach: decompile
+  whatever `FUN_007370b0`/`FUN_007380e0` actually are (not yet attempted), or
+  approach from the opposite direction — find what calls `FUN_00429dc0` beyond
+  `FUN_0061e0f0` (only one caller checked this pass) and look for a nearby sibling
+  function that takes the same `(text, count, font, scale, colorMode)`-shaped
+  signature but actually iterates and draws rather than just measuring.
+- **Recommendation, restated with this correction folded in**: the bind-resolver
+  substitution path (issue #35, `FUN_0061f6f0`) remains the correct, fully-mapped,
+  ready-to-test mechanism for interact/button-prompt hint text specifically. Menu
+  itemDef label text (e.g. options-screen items, main-menu buttons) is a genuinely
+  separate, still-partially-unmapped rendering path and should be treated as its own
+  follow-on task, not assumed to piggyback on anything already built.
+
+No code was written this pass either — pure static analysis, same as the pass being
+corrected. Commit and build status noted in the commit for this correction.
