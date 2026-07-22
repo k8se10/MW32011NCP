@@ -29,6 +29,23 @@ reverse-engineering trail behind each entry.
   not `hudBigFont`), then test via the real bind-resolver pathway end-to-end rather
   than the manual test combos. No code changed this pass — pure research/
   consolidation. Full trail in `re_notes/known_issues.md` issue #38.
+- **Correction to the above (task #38, follow-up pass, same day): menu-entry text
+  does NOT share the interact-hint pipeline after all.** The prior pass's tentative
+  "menu text likely shares `FUN_00690c80`" conclusion was based on indirect runtime
+  evidence and flagged as unconfirmed; a static call-graph enumeration (every real
+  caller of `FUN_00690c80` and of the glyph-lookup function `FUN_0047dfa0`, via
+  Ghidra headless) settled it definitively instead: `FUN_00690c80` has exactly 2
+  real callers — the known ring-buffer consumer, and a developer performance-
+  overlay function, nothing menu-related — and `FUN_0047dfa0` has exactly 6, none
+  in the menu/itemDef module. Menu text uses a fully separate rendering path start
+  to finish (confirmed a real itemDef-text call chain: `FUN_0061e0f0` →
+  `FUN_005181e0` font resolve → `FUN_00429dc0` → `FUN_004e9350` measure — the actual
+  glyph-emit call past this point wasn't found this pass). Practical upshot: the
+  `param_10` ring-buffer fix and all existing array-patch groundwork apply to
+  interact-hint text (issue #35's bind-resolver path) but NOT to menu item labels,
+  which need their own, still-unmapped draw-call investigation before any glyph
+  substitution can target menus specifically. No code changed. Full trail in
+  `re_notes/known_issues.md` issue #38's "CORRECTION" section.
 - **WaW-style animated dev clan tags — new roadmap idea, feasibility research only
   (issue #37).** Brought over World at War's ~22 hidden animated "dev" clan-tag magic
   words (`....`, `****`, `MOVE`, `RAIN`, `CYCL`, `CYLN`, etc. — real, citable subset
