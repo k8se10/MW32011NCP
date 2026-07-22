@@ -9,6 +9,29 @@ reverse-engineering trail behind each entry.
 ## Unreleased
 
 ### Investigated-not-resolved
+- **Font-zone injection (`InstallGlyphFontExtension`, the real-new-art glyph
+  mechanism) — its own enable precondition is now confirmed met live, but it's
+  still targeting the wrong font (task #23/#34/#38, issue #39).** This project has
+  TWO separate glyph mechanisms: the already-tested array-patch-with-borrowed-glyph
+  technique (issue #34, hudBigFont), and this one — loading a genuinely NEW,
+  `Linker.exe`-built font zone with REAL new glyph art via `LoadZones`, then
+  repointing a real font's `glyphs`/`material`/`glyphCount` fields at it. The
+  splice call (`InstallGlyphFontExtension()`) has been commented out pending "a
+  read-only diagnostic confirmed live across at least one real level load" — a
+  fresh read of `proxy_d3d9.log` (both sessions today) shows the level-load hook
+  it depends on (`Hook_FUN_0053cbc0`) HAS now fired cleanly, twice, with the
+  correct map name and zero regression afterward — that precondition is met and
+  wasn't previously recognized as such. Materials (which a font necessarily
+  carries) trigger a real, already-root-caused D3D9 GPU-resource-creation cascade
+  if loaded from the wrong timing context (the cause of both a prior boot-splice
+  crash and a black-screen-flash bug) — this is exactly why the call was moved to
+  this specific, now-confirmed-safe level-load hook in the first place. **Still
+  targets `fonts/bigfont`** (confirmed the rarest font in the whole UI, per issue
+  #38) — needs retargeting to build against `fonts/smallFont` before it's worth
+  enabling, or the mechanism will prove out on a font players essentially never
+  see. No code changed this pass — pure research/documentation. Full trail,
+  including the concrete 4-step next-implementation sequence, in
+  `re_notes/known_issues.md` issue #39.
 - **Controller-glyph feature retargeted at the real UI (menu entries + interact
   prompts), away from the hudBigFont ammo-counter test bed (task #34/#35, research
   pass, issue #38).** Consolidated this project's own prior RE findings into one
