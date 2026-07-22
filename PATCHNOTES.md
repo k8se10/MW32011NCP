@@ -9,6 +9,26 @@ reverse-engineering trail behind each entry.
 ## Unreleased
 
 ### Investigated-not-resolved
+- **Controller-glyph feature retargeted at the real UI (menu entries + interact
+  prompts), away from the hudBigFont ammo-counter test bed (task #34/#35, research
+  pass, issue #38).** Consolidated this project's own prior RE findings into one
+  picture: menu-entry text is font-selected via a `textfont` int (`smallfont`
+  dominates real usage 4243:866 over `hudbigfont` in a full 512-menu corpus tally;
+  `bigfont`, the original mechanism-test target, is the rarest font in the game);
+  interact-hint text (weapon pickups, stance prompts) uses a separate, data-driven
+  font argument but funnels through the exact same universal draw call
+  (`FUN_00690c80`) already reverse-engineered against the hudBigFont ammo counter —
+  so that pipeline knowledge (including the `param_10` ring-buffer gotcha) directly
+  transfers, no re-derivation needed. **New finding**: the real bind-resolver
+  glyph-substitution mechanism (already built, off by default) substitutes a bind's
+  key-name text *before* it's measured/enqueued, unlike the hudBigFont diagnostic
+  test's after-the-fact string append — meaning the diagnostic's still-open
+  no-render bug may be specific to its own test technique, not a defect blocking the
+  real feature. Recommended next steps: solve the real font-loading blocker first,
+  retarget any further mechanism testing at `smallFont` (the real dominant UI font,
+  not `hudBigFont`), then test via the real bind-resolver pathway end-to-end rather
+  than the manual test combos. No code changed this pass — pure research/
+  consolidation. Full trail in `re_notes/known_issues.md` issue #38.
 - **WaW-style animated dev clan tags — new roadmap idea, feasibility research only
   (issue #37).** Brought over World at War's ~22 hidden animated "dev" clan-tag magic
   words (`....`, `****`, `MOVE`, `RAIN`, `CYCL`, `CYLN`, etc. — real, citable subset

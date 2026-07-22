@@ -4806,7 +4806,11 @@ any unhandled value), `8`=extrabigfont, `9`=hudbigfont,
 Cross-checked against a tally of every real `textfont` line across all 512
 `.menu` files in the existing full `ui.ff` dump
 (`D:\Tools\OpenAssetTools\zone_dump`): `3` (smallfont) 4243 uses, `9`
-(hudsmallfont) 866, `1` (auto) 150, `6` 12, `4`/`2`/`10` 3 each, `5` once.
+(hudbigfont) 866, `1` (auto) 150, `6` 12, `4`/`2`/`10` 3 each, `5` once.
+[Correction 2026-07-22, issue #38: this line previously mislabeled `9`'s
+866-count tally as "(hudsmallfont)", contradicting the table two lines above
+(which correctly has `9`=hudbigfont, `10`=hudsmallfont) — a transcription typo,
+not a re-derivation; the table entry itself was always correct.]
 
 **`fonts/bigfont` (the mechanism test's target) is confirmed real but
 confirmed NOT the main menu's title/button-list font** as the 2026-07-18
@@ -5904,3 +5908,137 @@ Per this task's own instructions, no diagnostic hook is being shipped this pass 
 the candidates considered (hooking the Elite bitstream-sync functions, or
 `self.playername`) were both rejected above on low-information-value or
 not-well-understood-enough grounds respectively, not implemented and left untested.
+
+---
+
+## 38. Menu-entry and interact-prompt glyph substitution — real UI pipeline mapped, pivot away from hudBigFont-ammo-counter testing (research pass, 2026-07-22)
+
+**Status: pure research/documentation, no code changed.** User explicitly redirected
+this project away from continuing to chase issue #34's hudBigFont ammo-counter
+visibility bug as an end in itself — that font/element was only ever test scaffolding
+to prove the glyph-array-patch mechanism works at all, never the real feature. The
+real target, restated: controller-glyph icons on **menu entries** and **interact/
+button prompts** ("Press [E] to interact"-style), matching console — and the final
+mechanism must be fully automatic (gated on real controller-active detection, no
+manual test-combo arming), consistent with `CLAUDE.md`'s own definition of "native"
+UI. This pass consolidates everything this project's own prior research (mostly
+already in `ui_assets.md` and `known_issues.md` issues #34/#35 — re-read in full for
+this pass, not re-derived from scratch) actually established about the real UI text
+pipeline, and adds one new structural finding not previously connected.
+
+### The real picture: TWO font-selection systems, ONE shared low-level draw call
+
+**System A — menu itemDef text** (main-menu button lists, options screens, etc.):
+font is chosen via a `textfont` integer field in each `.menu` file, resolved by
+`FUN_005181e0` (fresh Ghidra decompile, already done in issue #34). Real enum:
+`2`=bigfont, `3`=smallfont, `4`=boldfont, `5`=consolefont, `6`=objectivefont,
+`7`=normalfont (fallback), `8`=extrabigfont, `9`=hudbigfont, `10`=hudsmallfont,
+anything else = auto-sized. A full corpus tally across all 512 real `.menu` files
+(`D:\Tools\OpenAssetTools\zone_dump`) shows **`3` (smallfont) dominates by a wide
+margin — 4243 uses** vs. `9` (hudbigfont) at 866, everything else in the single or
+low double digits. **`fonts/bigfont` (issue #34's original test target) is the
+single RAREST font in the entire real UI corpus (3 uses, one gated one-time
+brightness-calibration screen)** — confirms that target was always the wrong choice,
+independent of anything else.
+
+**System B — HUD/interact-hint text** (weapon-pickup/swap prompts, stance hints,
+etc.): does NOT go through the `textfont`/`FUN_005181e0` mechanism at all. Already
+fully traced in issue #34's own follow-up pass: `FUN_00568110` (hint-string builder)
+→ `FUN_005682f0` (the real interact-hint/HUD-element drawer) → `FUN_0051f6c0` →
+`FUN_005342a0` → `FUN_0051b100` (enqueues an opcode-`0x11` "print text" entry into a
+**deferred render-command ring buffer**, `DAT_021ddf30` — text drawing here is
+queued, not immediate) → `FUN_00691ca0` (ring-buffer consumer) → **`FUN_00690c80`**
+(the same universal glyph-draw call already reverse-engineered against hudBigFont's
+ammo counter) → `FUN_0047dfa0` (glyph lookup). The font is threaded as an explicit,
+data-driven per-element argument (traced as far up as `FUN_005096d0`, a 24-parameter
+generic HUD-element dispatcher, without finding the ultimate origin) — never through
+the `textfont` int at all.
+
+**Confirms task #4's question directly: `FUN_00690c80`/the ring-buffer/`param_10`
+knowledge is NOT hudBigFont-specific — it is the literal same shared function chain
+for BOTH the ammo-counter HUD text already tested AND real interact-hint text.**
+Nothing about that pipeline needs to be re-derived for prompts; it already applies.
+
+**Menu-entry text (System A) less certain, but real runtime evidence points the same
+way.** A prior live playtest with the `hud-font-id` diagnostic (issue #34) active
+recorded actual on-screen font usage during real Survival play: `hudBigFont` 7929,
+`smallFont` 4860, `hudSmallFont` 2277, `extraBigFont` 1648, `objectiveFont` 1360,
+`bigFont` 117 (`bigFont`'s low count matches the one-time brightness screen exactly —
+good cross-confirmation the tally is trustworthy). **`smallFont` — the dominant real
+menu-entry font per the corpus tally — was empirically observed firing through the
+same hooked `FUN_00690c80`**, meaning menu text most likely funnels through the exact
+same universal draw call as interact hints, not a separate immediate-mode renderer.
+**Not 100% nailed down**: that session's `smallFont` uses weren't confirmed to
+specifically originate from an open menu (could include other in-game smallFont
+elements) — a cheap, concrete follow-up (open a menu live with `hud-font-id` logging
+on, confirm `smallFont` appears in the log at that moment) would close this gap
+completely and is recommended as an early step of implementation, not a blocking
+unknown.
+
+### New finding this pass: the REAL substitution mechanism likely sidesteps issue #34's still-open bug entirely
+
+Issue #34's `param_10` ring-buffer character-count bug (root-caused, "fixed," but
+still producing no visible glyph on two live retests as of 2026-07-22) is specific to
+**how the diagnostic test injects its codepoint**: `Hook_DrawGlyphText` mutates a
+*copy* of the string *after* `FUN_0051b100` has already captured its length via
+`strlen()` at enqueue time — an artificial append bolted on after the fact, because
+there's no natural draw call that already contains the test byte.
+
+**The real bind-resolver substitution mechanism (already built, issue #35, currently
+OFF via `BindResolverGlyphSubstitution`) works completely differently and does not
+have this problem.** It hooks `FUN_0061f6f0` itself and overwrites the *output
+buffer* (`[esp+8]`) — the bind-name string ("E", "MOUSE1", etc.) — **before** that
+resolved text is spliced into the final hint string by `FUN_00433a10`'s `&&N` engine
+and, later, enqueued by `FUN_0051b100`. By the time `strlen()` runs at enqueue time,
+the substituted glyph codepoint is already baked into the string being measured —
+there is no post-hoc append, so there is no captured-count mismatch to fix in the
+first place. **This means issue #34's still-unresolved no-render bug may be an
+artifact of the diagnostic test's own after-the-fact append technique, not a defect
+in the underlying glyph-array-patch mechanism the real feature actually needs.**
+
+This does NOT mean issue #34 is moot — it's a genuinely open question which this
+pass could not resolve without live-testing, and it does not shortcut past the
+actual remaining hard blocker (issue #23's safe font-loading problem: getting real
+glyph pixel/UV art into a font the running game will actually load — the array-patch
+proven in issue #34 mutates an already-loaded font's glyph list in memory, using a
+BORROWED existing glyph's art as a stand-in; it does not solve loading genuinely new
+glyph art). It does mean the most efficient next diagnostic step is testing the REAL
+pathway directly rather than continuing to debug the artificial append-test
+technique further.
+
+### Recommended concrete next steps, in order
+
+1. **Resolve issue #23's font-loading blocker first** — this is the real remaining
+   hard prerequisite for ANY visible glyph art (interact prompts, menus, or the old
+   ammo-counter test alike). The `.ff` build pipeline (`ImageConverter.exe --iw5` →
+   material JSON → font JSON → `Linker.exe`) is already proven end-to-end in
+   `ui_assets.md`'s "Build pipeline PROVEN end-to-end" section — only the runtime
+   *loading* half (`FUN_004ca310`/`FUN_0045d040`) remains unverified live.
+2. **Retarget any further array-patch mechanism testing at `fonts/smallFont`, not
+   `fonts/hudBigFont`** — smallFont is the real, dominant menu/UI text font (4243
+   corpus uses vs. hudBigFont's 866), confirmed via runtime evidence to share the
+   exact same `FUN_00690c80` pipeline, and — unlike hudBigFont, which per issue #34
+   only ever displays numeric HUD counters — is a font that actually renders
+   human-readable text, making it the one that will genuinely need glyph
+   substitution once `BindResolverGlyphSubstitution` is turned on.
+3. **Once a real font asset with real glyph art loads, test via the REAL bind-
+   resolver pathway** (approach a weapon pickup / open a menu with a controller
+   connected and `BindResolverGlyphSubstitution` enabled) rather than continuing to
+   chase the manual `LB+RB+B`/`LB+RB+Y` append-test combos — those combos were
+   always meant to prove the mechanism in isolation, never to be the shipped
+   feature, and per the finding above may have a bug specific to their own
+   technique that doesn't reflect the real substitution path at all.
+4. **Confirm menu-entry text (System A) actually shares `FUN_00690c80`** via a
+   quick, cheap live check (open any menu with `hud-font-id` logging on, confirm
+   `smallFont` appears in the log) before assuming System A and System B are fully
+   unified — likely true per the runtime evidence above, but not yet directly
+   observed with a menu confirmed open at the same moment.
+
+**Not attempted this pass** (explicitly out of scope, research/documentation only,
+per this pass's own instructions): no hook or feature code was written or modified;
+`analog_input_hooks.cpp`'s existing hudBigFont test code is untouched, left in place
+rather than ripped out (still a valid, working proof of the underlying array-patch
+mechanism, just no longer the active line of investigation). No live testing was
+performed — everything above is a consolidation of this project's own prior Ghidra
+static analysis and prior live-tally data, plus one new structural inference (the
+bind-resolver-vs-diagnostic-test distinction), not a fresh playtest.
