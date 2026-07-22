@@ -6042,3 +6042,144 @@ mechanism, just no longer the active line of investigation). No live testing was
 performed — everything above is a consolidation of this project's own prior Ghidra
 static analysis and prior live-tally data, plus one new structural inference (the
 bind-resolver-vs-diagnostic-test distinction), not a fresh playtest.
+
+---
+
+## 39. Font-zone injection (`InstallGlyphFontExtension`, real-new-art path) — precondition for enabling now MET live; wrong font targeted, needs retargeting first (research pass, 2026-07-22)
+
+**Status: pure research/documentation, no code changed.** Answers the open question
+"is loading a genuinely NEW font zone with real, non-borrowed glyph art actually
+safe and ready to implement" — asked as part of this project's post-issue-#38 pivot
+away from the hudBigFont ammo-counter diagnostic and toward the real menu/interact-
+prompt feature. This entry cross-references issue #23 (the `FUN_004ca310`/zone-
+injection mechanism, shared infrastructure) and issue #34 (the array-patch-with-
+borrowed-glyph mechanism, a different, already-tested technique — see the "Two
+separate mechanisms" clarification below, don't conflate them).
+
+### Two separate glyph mechanisms this project has built — do not conflate
+
+1. **Array-patch, borrowed glyph** (`InjectFontGlyphPatchTest_HudBigFont`, issue
+   #34) — purely in-memory, no `LoadZones` call at all. Heap-allocates a new
+   `Glyph[]` array, copies an EXISTING glyph's real art (`'A'`) into a new
+   codepoint slot, repoints an already-loaded font's `glyphs`/`glyphCount`
+   fields. Proves "can the game draw an extra glyph at all" without needing any
+   new art asset. Already live-tested (array grows cleanly, no crash) but still
+   has an open no-visible-render bug, likely specific to the diagnostic's own
+   after-the-fact string-append technique (see issue #38's finding that the real
+   bind-resolver substitution avoids this by writing the codepoint BEFORE the
+   string is measured/enqueured, not after).
+2. **Zone injection, real new art** (`InstallGlyphFontExtension`, this entry) —
+   calls `LoadZones` to load a genuinely NEW, `Linker.exe`-built font zone
+   (`bigfont_ext`/`bigfont_glyph_ext`) containing REAL new glyph pixel/UV art via
+   a real material+image, then repoints the real font's `glyphs`/`material`/
+   `glowMaterial`/`glyphCount` fields at the new zone's objects. This is the
+   actual feature-ready mechanism for shipping real, non-borrowed button-glyph
+   art — never live-tested at all (the call itself is commented out — see below).
+
+This entry is about mechanism 2 only.
+
+### Precondition for enabling `InstallGlyphFontExtension()` has now been MET live
+
+The call is currently commented out in `Hook_FUN_0053cbc0`'s body
+(`analog_input_hooks.cpp`, `// InstallGlyphFontExtension();`), gated behind an
+explicit, already-written condition in its own comment: *"Enable only after the
+read-only diagnostic above is confirmed live (correct call count/timing, no
+regression) across at least one real level load."* A fresh check of
+`proxy_d3d9.log` (both of today's, 2026-07-22, sessions) shows this precondition
+is now satisfied and was NOT previously documented as such:
+```
+[level-load-zone-hook] FUN_0053cbc0 returned (call #1), param2=0, mapName="so_survival_mp_underground"
+```
+— fired exactly once per session (correct call count for a single level entry),
+correct real map name resolved (proves `param1` is genuinely the map-name string,
+not garbage), and in both cases followed immediately by thousands of ordinary
+`[hud-font-id]` lines with no detach/crash signature anywhere afterward — the same
+"ran completely normally" bar this project already uses elsewhere to certify a
+read-only diagnostic safe. **This is new evidence, not previously connected to the
+"enable now" decision** — the hook firing safely was real but sat undocumented as
+such until this pass. Confirmed via `grep -c` this only ever logged its own
+diagnostic line (23 total occurrences project-wide, all from this and prior
+sessions) and never `InstallGlyphFontExtension`'s own log lines
+(`[glyph-font-ext] ...`) — zero hits — consistent with the splice call still being
+commented out, as expected; nothing about the actual font zone/material load has
+been exercised yet.
+
+### GPU-resource-cascade danger is real, already root-caused, and applies to fonts too — but this hook already sidesteps it
+
+`re_notes/iw5sp.md`'s "Black-screen flash, second occurrence" section (already
+existing, re-confirmed by re-reading, not re-derived) decompiled the real reason
+material-bearing content crashes/flashes when loaded from the wrong timing
+context: `FUN_004b6b70`'s material case (`5`) cascades into `FUN_0046d300`
+(techniqueSet load, real vertex/pixel shader creation) and, if an image
+reference is present, `FUN_0047a2f0` (creates a real `IDirect3DTexture9`
+synchronously). **A font necessarily carries this same risk** — the schema
+requires a `material`/`glowMaterial` pair with a real atlas texture (confirmed
+in `ui_assets.md`'s "Build pipeline PROVEN end-to-end" section) — so
+`InstallGlyphFontExtension()`'s `LoadZones` call is exactly the class of
+operation that crashed/flashed when it was fired from the wrong context (the
+2026-07-19 boot-splice crash, and separately the black-screen-flash bug, both
+root-caused as "GPU resource creation outside the engine's own controlled
+frame/thread discipline"). **This is precisely why `InstallGlyphFontExtension()`
+was rewired to fire from `Hook_FUN_0053cbc0`** (a real, natural, per-level-load
+transition point, confirmed by decompile to be an ordinary trampolineable
+function with zero threading evidence) **instead of the earlier WndProc/`SetTimer`
+tick that caused the black-screen flash for material-bearing menu content.** The
+timing fix is the same one already validated for menu content in principle;
+what's new here is that the level-load hook itself (not just the theory) is now
+confirmed to fire cleanly. **What remains genuinely untested**: the specific
+combination of this exact timing window with a font-type (not menu-type) material
+cascade — reasonable confidence by direct analogy, not yet proven by a live test
+of the actual splice call.
+
+### Wrong font still targeted — retarget before enabling
+
+`InstallGlyphFontExtension()` targets `fonts/bigfont`/`fonts/bigfont_ext`. Per
+issue #38 (this session, already merged to `main`): `fonts/bigfont` is confirmed
+the RAREST font in the entire real UI corpus — 3 uses total, one gated one-time
+brightness-calibration screen — while `fonts/smallFont` is the real dominant
+menu/UI text font (4243 corpus uses) and interact-hint text also funnels through
+the same universal draw call. **Enabling `InstallGlyphFontExtension()` as-is,
+even once live-tested safe, would prove the mechanism but still render on a font
+players essentially never see** — same lesson issue #34/#38 already learned
+about `bigfont`/`hudBigFont`, now applying to this second mechanism too, before
+it repeats the mistake.
+
+### Concrete next steps, in correct order
+
+1. **Build a new font-extension zone targeting `fonts/smallFont`, not
+   `fonts/bigfont`** — clone `smallFont`'s real `font.v1.json`/material
+   following the exact same proven pipeline already used for
+   `bigfont_ext.ff` (`ImageConverter.exe --iw5` → material JSON → font JSON →
+   `Linker.exe`, all 96 standard glyphs required per the schema, "clone +
+   extend" approach), adding one real button-glyph PNG from
+   `assets/button_glyphs/` as the new codepoint's art. This is a rebuild/
+   retarget of already-proven tooling, not new reverse-engineering.
+2. **Retarget `InstallGlyphFontExtension()`'s hardcoded font-name strings**
+   (`"fonts/bigfont_ext"`/`"fonts/bigfont"`) to the new smallFont-based zone
+   and target font name. Keep the exact same field-write ordering already
+   used (`glyphs` → `material`/`glowMaterial` → `glyphCount` last) — that
+   ordering is deliberate (old count stays valid until the new pointers are
+   already in place).
+3. **Uncomment the call in `Hook_FUN_0053cbc0`** — its stated precondition
+   ("confirmed live across at least one real level load") is now met per
+   this entry; this step no longer needs to wait on anything further.
+4. **Live-test**: trigger a real level load (Campaign mission start, Survival
+   wave/restart, or checkpoint reload — matches the hook's own confirmed
+   firing precedent) and check `proxy_d3d9.log` for `[glyph-font-ext]`'s own
+   lines (load/repoint success or the specific abort reason if one fires) and
+   for any crash/regression signature. If clean, the final confirmation is
+   visual: does real on-screen text through `smallFont` ever show the new
+   codepoint — either by piggybacking the existing borrowed-glyph visibility
+   technique (issue #34) now retargeted at `smallFont`, or, better, by
+   enabling the bind-resolver substitution (issue #35) so a REAL interact
+   prompt actually displays the new art in context.
+
+**Not attempted this pass** (research/documentation only, per this pass's own
+scope): no `.cpp` code was written or modified, no live game testing was
+performed, no build was run. Everything above is either a fresh reading of
+`proxy_d3d9.log` (the level-load-zone-hook firing evidence, genuinely new) or a
+consolidation of this project's own existing `iw5sp.md`/`ui_assets.md`/
+`known_issues.md` research (the GPU-cascade root cause, the two-mechanism
+split, the wrong-font-target finding), not fresh Ghidra decompilation — the
+existing decompiles already answer these questions precisely enough that
+re-decompiling would not add new evidence.
