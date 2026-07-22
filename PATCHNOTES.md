@@ -121,6 +121,17 @@ reverse-engineering trail behind each entry.
   code compiles, not that the glyph actually renders; the remaining step is holding
   `LB+RB+B` then `LB+RB+Y` again in a live session and visually confirming the
   borrowed 'A' glyph appears. Full trail in `re_notes/known_issues.md` issue #34.
+  **Retested 2026-07-22, still no visible glyph — but the retest itself was
+  invalid, not the fix**: the `param_10 + 1` fix was built inside an isolated git
+  worktree, whose `proxy_d3d9.vcxproj` (`OutDir` = `..\..\` relative to
+  `proxy_d3d9/`) resolved to that worktree's own directory tree, not the real
+  game root — so the deployed `d3d9.dll` next to `iw5sp.exe` was still the
+  pre-fix build when the retest happened (confirmed via file timestamp: deployed
+  DLL was dated the prior day, hours before the fix was even written). Rebuilt
+  directly from the real checkout, which correctly deployed the fix-containing
+  DLL to the game root. **Still not live-tested against the actual, correctly-
+  deployed fix** — that test is still pending. See `CONTRIBUTING.md`'s Building
+  section for the now-documented worktree/`OutDir` gotcha so this doesn't recur.
 - **hudBigFont glyph-patch mechanism test hardcoded codepoint 0x81, which collided
   with a real existing glyph and silently never fired (task #6/#34 follow-up).** A
   live playtest of `InjectFontGlyphPatchTest_HudBigFont` (`LB+RB+B`) logged
