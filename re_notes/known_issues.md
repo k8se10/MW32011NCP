@@ -6394,3 +6394,65 @@ aiming (see `iw5sp.md`'s look-hook notes).
 **Status: parked on the roadmap, not started.** No RE performed yet, no code
 changed. Revisit alongside, or right after, the gun-type-switching fix above
 since both require getting back into a live AC-130 sequence to trace.
+
+---
+
+## 41. Reframing hypothesis: reported killstreak/vehicle-control bugs may be PC-specific rebalance/reimplementation, not just missing controller wiring (2026-07-23, user-stated, UNVERIFIED)
+
+**Status: hypothesis only, not confirmed, no RE performed. Logged as a lens
+for future investigation, not a rewrite of any existing finding.**
+
+**User-stated context (2026-07-23, no specific source/patch-note citation
+given):** certain killstreaks are believed to have been rebalanced and/or
+had their input mechanism remade specifically for the PC version, rather
+than being a straight console port. If true, this reframes every
+mounted/vehicle/killstreak-control system this project has already flagged
+as buggy — the working hypothesis until now has generally been "console has
+a clean single input for this, PC's port just never got a controller path
+wired to the same native mechanism." This entry raises the alternative:
+for some of these, **PC's own native mechanism may be genuinely different
+from console's by design**, not an incomplete port of the same thing.
+
+**Candidate systems this reframing applies to** (every killstreak/vehicle
+bug this project has open, cross-referenced, not re-investigated this
+pass):
+- Predator Missile post-fire guidance (issue #29/#30) — launch fixed,
+  flying-missile control still broken.
+- Mortar fire (Goalpost, issue #30, task #26) — aim works, fire doesn't.
+- Mounted M2 turret feel (Goalpost, issue #30, task #27) — works but harder
+  than expected.
+- DPV aiming (Hunter Killer, issue #30) — movement works, aim doesn't.
+- SMAW lock-on vs. aircraft (task #29) — unconfirmed whether even a real
+  bug.
+- AC-130 gun-type switching (issue #40, this session) — the newest data
+  point; also the one where a genuinely PC-specific input scheme (e.g. a
+  keyboard-modifier or scroll-wheel-driven switch never designed to map
+  cleanly onto a controller button/D-pad at all) would be a very plausible
+  explanation for why the underlying native trigger has been hard to pin
+  down elsewhere in this project's own vehicle/mount-mode work (see issue
+  #30's own `+0x1094`/`cmd+0x3e`/`0x3f` static-analysis dead end, "next
+  step is dynamic, not static").
+
+**Why this matters for how these get investigated going forward:** if a
+system was genuinely reimplemented for PC (not just missing a controller
+hook), the "find the one real kbutton/dispatch case, same technique as
+ADS/Reload/weapnext" pattern that has worked cleanly elsewhere in this
+project may not apply — there may be no single clean native trigger to
+find, because the PC version's actual design is a multi-step
+keyboard/mouse-specific interaction (e.g. cursor-based aiming, a
+modifier-key combo, or a context-sensitive menu prompt) that has no
+1:1 console equivalent to restore. That would mean the eventual fix for
+some of these is not "find and wire the missing native call" but "design
+a NEW controller-native interaction for a PC-specific system," which is a
+materially different (and larger) scope than every other fix this project
+has shipped so far.
+
+**Not yet investigated:** no specific killstreak has been confirmed to
+actually have a PC-specific rebalance/reimplementation — this is presented
+as a hypothesis to keep in mind during future RE passes on the systems
+listed above, not a finding to act on directly. If pursued, the way to
+test it is per-system: compare PC's actual native code path (already being
+traced for each bug above) against what's independently known/observable
+about console behavior for the same system, and look specifically for
+PC-only interaction steps (cursor movement, modifier keys, menu prompts)
+that wouldn't exist in a straight port.

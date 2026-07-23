@@ -123,6 +123,18 @@ Sources: [The Complete Guide To MW3's Killstreak Rewards - Game Informer](https:
 
 ## Open follow-up
 
+- **Unverified reframing hypothesis (2026-07-23, user-stated, no source
+  cited):** some killstreak/vehicle-control systems on this list may have
+  been rebalanced or had their input mechanism reimplemented specifically
+  for PC, rather than being a straight console port missing only a
+  controller-input hook. If true, the systems most likely affected are the
+  ones already flagged buggy above (Predator Missile guidance, Mortar fire,
+  Mounted M2 turret feel, DPV aiming, SMAW lock-on, AC-130 gun-type
+  switching) — worth keeping in mind during future RE passes on any of
+  them, since it would mean "find the missing native kbutton" may not be
+  the right fix shape for every one of these. See `known_issues.md` issue
+  #41 for full detail. Not confirmed for any specific item yet.
+
 - Locate this install's own real killstreak-definition asset (very likely a
   CSV/GDT table similar to `sp/survival_armories.csv` already found for the
   buy-station system) to independently confirm exact kill thresholds and
