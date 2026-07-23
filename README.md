@@ -114,6 +114,8 @@ fully live-confirmed working with no known gap (that's the ✅ table above).
 
 | Item | Status | Cite |
 |---|---|---|
+| AC-130 gun-type switching (Iron Lady) | Confirmed working on controller (flight/camera/fire) except switching cannon type (105mm/40mm/25mm); real native trigger not yet found | `known_issues.md` #40 |
+| AC-130 camera zoom sensitivity | Look sensitivity not scaled to gunship camera zoom level, feels overly sensitive when zoomed in; roadmap only, not yet investigated | `known_issues.md` #40 |
 | Predator Missile post-fire guidance | Launch works; flying-missile control still broken. Real reader chain found, diagnostic deployed, needs one more live data pull | `known_issues.md` #29/#30 |
 | Back button (`+scores`) | Live-tested, zero visible effect (no scoreboard/objectives overlay). Real cause undiagnosed, explicitly parked | `known_issues.md` #3/#7/#28 |
 | DPV aiming (Hunter Killer) | Movement works, aim doesn't; candidate unifying cause (3rd analog channel `cmd+0x3e`/`0x3f`) found, not yet applied here | `known_issues.md` #30 |
