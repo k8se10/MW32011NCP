@@ -9,6 +9,18 @@ reverse-engineering trail behind each entry.
 ## Unreleased
 
 ### Investigated-not-resolved
+- **AC-130 (Iron Lady / Fire Mission) — confirmed working on controller except
+  gun-type switching; gunship camera zoom sensitivity flagged for later (task
+  #7, issue #40, live playtest 2026-07-23).** User-confirmed live: flight/
+  camera control and firing all work fully on controller, no fallback needed.
+  Two open gaps logged: (1) switching between the gunship's cannon types
+  (105mm/40mm/25mm) doesn't work on controller — real native trigger
+  (kbutton, raw-keycode dispatch, or GSC notify) not yet found; (2) look
+  sensitivity isn't scaled to the gunship camera's own zoom level, feeling
+  overly sensitive when zoomed in versus un-zoomed — scoped specifically to
+  this camera, not general weapon ADS, and parked on the roadmap, not yet
+  investigated. No code changed, no RE performed yet — this is the finding
+  only. Full detail in `re_notes/known_issues.md` issue #40.
 - **Font-zone injection (`InstallGlyphFontExtension`, the real-new-art glyph
   mechanism) — its own enable precondition is now confirmed met live, but it's
   still targeting the wrong font (task #23/#34/#38, issue #39).** This project has

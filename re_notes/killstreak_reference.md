@@ -41,13 +41,11 @@ Turret and AI-squadmate call-ins (D-pad Left in Survival) are a related
 but structurally separate system from any of the above — see
 `known_issues.md` issues #13/#14 for that trace, not this file.
 
-## Campaign killstreaks not yet playtested this session
+## Campaign killstreak-type weapon systems — live-tested, real controller-support status (continued)
 
-- **AC-130** — appears in Campaign mission **"Iron Lady"** (Act 2, not yet
-  reached this session) and the Special Ops mission **"Fire Mission"**.
-  No controller-support status yet, since this mission hasn't been
-  playtested. (Sourced from earlier web research this session, kept here
-  for completeness — not re-verified against live testing.)
+| Weapon system | Mission | Controller status | Notes |
+|---|---|---|---|
+| AC-130 gunship | Iron Lady (Act 2) / Special Ops "Fire Mission" | ⚠️ Partial | **CONFIRMED WORKING 2026-07-23 (user live playtest, task #7):** flight/camera control and firing both fully work on controller, no fallback needed. **Gap 1: switching gun type (105mm/40mm/25mm) does not work on controller** — real native trigger not yet found. **Gap 2 (roadmap only, not yet investigated): look sensitivity isn't scaled to the gunship camera's zoom level**, feels "mega sensitive" when zoomed in vs. un-zoomed — scoped to this camera specifically, not general weapon ADS. See `known_issues.md` issue #40 for both. |
 
 ## Survival buy-station killstreak roster — real, CSV-verified (2026-07-18)
 

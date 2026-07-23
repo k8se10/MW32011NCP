@@ -6333,3 +6333,64 @@ consolidation of this project's own existing `iw5sp.md`/`ui_assets.md`/
 split, the wrong-font-target finding), not fresh Ghidra decompilation — the
 existing decompiles already answer these questions precisely enough that
 re-decompiling would not add new evidence.
+
+---
+
+## 40. AC-130 (Iron Lady / Fire Mission) — CONFIRMED WORKING on controller except gun-type switching (2026-07-23, live playtest, task #7)
+
+**User-confirmed live playtest.** AC-130 gunship sequences work fully on
+controller — flight/camera control and firing all confirmed working, no
+fallback needed. **The one gap: switching between the gunship's cannon types
+(105mm/40mm/25mm) does not work on controller.** This updates
+`killstreak_reference.md`'s "Campaign killstreaks not yet playtested this
+session" entry for AC-130 (previously listed with no status at all) to a
+concrete ⚠️ Partial, and is the first real data point for task #7's AC-130
+row.
+
+**Not yet investigated:** the real native trigger for gun-type switching.
+Likely candidates, none confirmed yet:
+- A dedicated `kbutton_t` (own bind, distinct from `+attack`/`+reload`/etc.),
+  found the same way ADS/Reload/Sprint's real kbuttons were found (memdiff
+  during an actual gun-switch keypress).
+- A raw-keycode dispatch table entry off `FUN_00541020` (the same real
+  per-key dispatcher weapnext's `'1'`/`'2'` case and the D-pad actionslot
+  keys were found through) — plausible given the vanilla keyboard bind for
+  gunship weapon-select is very likely the number-row keys, which would
+  collide with this project's existing weapon-switch/D-pad-slot key
+  assumptions and needs disambiguating by context (gunship-active vs.
+  normal on-foot).
+- A GSC-side `notifyonplayercommand`-gated call similar to `remote_missile`'s
+  Fire gate (task #7/#29) — plausible since AC-130 sequences are
+  script-driven set-pieces, not raw engine mode switches.
+
+**Next step:** live-keycode-table trace (the same proven technique used for
+weapnext and D-pad actionslots) during an actual AC-130 sequence — read
+`FUN_00541020`'s real dispatch table for whatever key vanilla keyboard/mouse
+actually uses to switch cannons while riding the gunship, then confirm
+whether that resolves to a `kbutton_t` toggle, a raw dispatcher case, or a
+GSC notify, and wire the equivalent controller input (most likely a
+D-pad direction or bumper, not yet assigned in this context) to it. Not
+started — this entry is the finding only, no RE performed yet.
+
+### Second finding, same playtest: gunship camera zoom sensitivity not scaled (2026-07-23)
+
+**User-reported, roadmap only, NOT to be implemented now.** While riding the
+AC-130 (this same playtest), look sensitivity felt "mega sensitive" whenever
+the gunship's own camera is zoomed in, compared to its un-zoomed level —
+i.e. this project's look-delta hook applies a flat sensitivity regardless of
+the gunship camera's current zoom/FOV state. Console behavior (and this
+project's own normal ADS handling for on-foot weapons, unaffected —
+**scoped specifically to the AC-130 gunship camera, not general weapon
+ADS**) scales sensitivity down proportionally as zoom increases.
+
+**Not yet investigated:** the real native zoom/FOV-scale value the gunship
+camera uses per zoom level — likely a per-camera-mode FOV or zoom-multiplier
+field already read natively by the engine's own zoom-transition code, not
+yet located. Fix direction (once found): multiply the controller look-delta
+by the same scale factor the native camera zoom uses, the same pattern as
+letting ADS inherit the game's existing sensitivity/accel scale for on-foot
+aiming (see `iw5sp.md`'s look-hook notes).
+
+**Status: parked on the roadmap, not started.** No RE performed yet, no code
+changed. Revisit alongside, or right after, the gun-type-switching fix above
+since both require getting back into a live AC-130 sequence to trace.
