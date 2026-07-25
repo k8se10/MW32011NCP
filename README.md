@@ -1,8 +1,10 @@
 # MW3 Native Controller Support (Campaign & Survival)
 
 > **⏸️ DEVELOPMENT ON A SHORT BREAK.** Active development is paused as of
-> 2026-07-23 and will resume as normal from **31 July 2026**. No new commits
-> expected before then — this isn't a project status change, just a planned
+> 2026-07-23 and will resume as normal from **31 July 2026** — deliberately
+> giving the current release some time to sit and stabilize before more
+> changes land. No new commits expected before then. **v0.2.2 is the current
+> most stable alpha build** and the recommended version to run during the
 > pause.
 
 > **⚠️ SECURITY NOTICE — read if you're on any version before v0.2.2.** Versions
