@@ -1,5 +1,10 @@
 # MW3 Native Controller Support (Campaign & Survival)
 
+> **⏸️ DEVELOPMENT ON A SHORT BREAK.** Active development is paused as of
+> 2026-07-23 and will resume as normal from **31 July 2026**. No new commits
+> expected before then — this isn't a project status change, just a planned
+> pause.
+
 > **⚠️ SECURITY NOTICE — read if you're on any version before v0.2.2.** Versions
 > v0.2.1 and earlier shipped with an aim-assist feature's code compiled into the
 > DLL — disabled by default, but present in the binary. v0.2.2 **permanently
