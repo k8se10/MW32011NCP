@@ -2149,7 +2149,12 @@ input) and refines issue #26's vehicle hypothesis below.
   change locked by animation") is NOT yet confirmed — needs live diagnostic
   logging on both guard bytes (the same `LogStanceDiag`-style technique
   issue #9 already used) to catch a real failure in the act, not assumed
-  from this theory alone.
+  from this theory alone. **Fix attempt shipped 2026-07-31 under issue #42**
+  (same symptom, reported again on the user's return from break) —
+  `RequestStanceToggle()`/`ProcessPendingStanceRetry()` now verify+retry
+  every tap/hold call against the real stance field instead of trusting a
+  single call, without needing the guard bytes' meaning decoded first. See
+  issue #42 for the full writeup; NOT yet live-confirmed.
 - **Bug #3 — Hold Breath on sniper scopes was never implemented (a known,
   forgotten gap, not a new discovery), and its absence causes a real,
   incorrect side effect: L3 while crouched + ADS with a sniper wrongly
@@ -6456,3 +6461,75 @@ traced for each bug above) against what's independently known/observable
 about console behavior for the same system, and look specifically for
 PC-only interaction steps (cursor movement, modifier keys, menu prompts)
 that wouldn't exist in a straight port.
+
+## 42. Crouch sometimes doesn't fire until B is pressed first — first bug from the user's 0.2.2 stream (2026-07-31, reported pre-break-return, live playtest, NOT consistently reproducible)
+
+**Status: reported, not yet diagnosed. First of an expected multi-bug list
+from the user's recent v0.2.2 livestream — logged individually as each is
+reported, per [[project_post_break_priorities]], rather than waiting for
+the full list.**
+
+**User-reported symptom (verbatim intent, cleaned up):** sometimes crouch
+does not fire on the normal input. On at least one occasion this happened
+on a "Tactical"-style button-layout preset where B is bound to Knife
+(melee), not Crouch/Stance — and pressing B (triggering the knife/melee
+action) immediately before crouch seemed to make crouch start working
+again, i.e. crouch needed a knife press first before it would respond.
+**User explicitly flagged this is NOT a consistent repro** — "something is
+making a weird state there," not a reliable "press B to fix it" sequence.
+Treat the B/knife detail as a possible clue about what state is involved,
+not a confirmed trigger or workaround.
+
+**Likely connection to existing research, not yet confirmed:** this is the
+same class of symptom already on record as **Bug #2 under issue #27**
+("Crouch intermittently fails to fire, ~98% reliable, ~2% silent no-op;
+recovers if the player pauses and unpauses in certain sequences") — that
+entry already has a real, plausible, unconfirmed lead: `ToggleStance()`
+(`FUN_0057d2c0`) has two guard bytes at its top
+(`playerIndex*0x230 + 0xA98CA0` and `+0xA98BC4`) that silently no-op the
+toggle if either is nonzero, with the real meaning of either byte never
+decoded. This new report doesn't confirm that theory, but it adds a
+second, independent "does something unrelated first" recovery data point
+(knife/melee press) alongside the already-known "pause/unpause" one — both
+consistent with some stale/locked engine bit getting cleared as a side
+effect of an unrelated action, but neither is confirmed as the real
+mechanism yet.
+
+**Not yet investigated:** whether melee/knife firing shares any real
+engine state with the two `ToggleStance()` guard bytes above; whether the
+active button-layout preset (Tactical vs. default) changes which physical
+button this project reads for crouch/stance at all (open question — this
+project's B-button stance wiring per issue #9 may be hardcoded to physical
+B regardless of the user's selected layout preset, which would be a
+separate, real bug from the intermittent-failure issue itself if the user
+is actually playing on a non-default layout). Needs the live
+`LogStanceDiag`-style guard-byte logging issue #27's Bug #2 already
+proposed, ideally captured across both a knife-then-crouch attempt and a
+plain intermittent failure, before concluding anything.
+
+**Fix attempt shipped 2026-07-31, NOT YET LIVE-CONFIRMED (dev resumed post-break,
+this is the first CTA of the session):** rather than waiting on a live capture of
+what the two guard bytes actually mean, `RequestStanceToggle()`
+(`analog_input_hooks.cpp`) now calls `ToggleStance()` and verifies against the real
+stance field (`GetRealStance()`) whether it actually took effect, instead of just
+trusting a single call the way the original tap/hold code did. This works regardless
+of the guard bytes' real meaning: the disassembly in issue #9 shows a blocked call
+`return`s before ever touching the real stance field, so it's a guaranteed no-op --
+retrying the exact same call on a later frame can never mis-fire, only eventually
+succeed once whatever transient gate is active clears. `ProcessPendingStanceRetry()`
+does that retry once per frame (via `InjectControllerButtons`) for up to 500ms,
+suppressed while a menu is active (B's real intent there is "close menu", not
+"resolve a stale gameplay stance request"), then gives up if the gate never clears.
+Every attempt (`RequestStanceToggle`) now also logs both guard-byte values alongside
+before/after/expected stance, in `proxy_d3d9.log` under `[stance-diag]` -- so if this
+DOESN'T fully resolve the symptom, the next occurrence will finally show real guard-
+byte data instead of requiring another round of inference. This should also subsume
+both independently-reported "something unrelated seems to unstick it" patterns
+(pause/unpause from Bug #2's own original report, and this issue's knife/melee
+press) without needing the player to find the right unrelated action -- if either
+one works by coincidentally landing after the same transient gate clears, the
+per-frame retry loop reaches that same clearing moment on its own. **Needs a real
+live playtest to confirm** (both that intermittent crouch failures stop, and that
+the `[stance-diag]` log lines look sane) before this can be called resolved --
+builds clean (Win32/Release) but that's necessary, not sufficient, per this
+project's own "Verify Live" standard.

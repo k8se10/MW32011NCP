@@ -132,6 +132,15 @@ reverse-engineering trail behind each entry.
   of requiring another round of inference.
 
 ### Added
+- **Separate horizontal/vertical look sensitivity (task #14 follow-up, user request
+  2026-07-31).** `[Look] Sensitivity` in `mw3ncp_config.ini` was one shared
+  degrees/second value driving both stick axes; split into `SensitivityHorizontal`
+  (yaw) and `SensitivityVertical` (pitch), matching how console CoD titles expose
+  these as independent sliders. `InjectControllerLookAngles` now computes yaw and
+  pitch rates separately (still sharing the same ADS-zoom-slowdown and acceleration-
+  ramp scale factors) instead of one shared rate. Old single-key configs simply get
+  both new keys at their existing default (250) on next launch since neither key
+  exists yet in an old file — no migration needed.
 - **Retargeted the glyph-patch mechanism tests at `fonts/hudBigFont`, backed by real
   usage data (task #6/#34).** A live playtest of this session's `hud-font-id`
   diagnostic tallied every real font drawn during a long, clean Survival session:
@@ -178,6 +187,23 @@ reverse-engineering trail behind each entry.
   assets exist, so Sprint/Melee glyphs are unmapped for that one style).
 
 ### Fixed
+- **Crouch/prone intermittently not firing on B — fix attempt shipped, PENDING LIVE
+  CONFIRMATION (issue #27 Bug #2 / issue #42, first CTA on dev resuming
+  2026-07-31).** Reported twice now (Campaign playtest 2026-07-17, and again from
+  the v0.2.2 livestream, reported 2026-07-31) — a B tap/hold occasionally didn't
+  change stance at all, no error, no feedback. The real `ToggleStance()`
+  (`FUN_0057d2c0`) has two undecoded guard bytes that make the whole call silently
+  no-op if either is set; rather than waiting on a live capture to decode their
+  meaning, `RequestStanceToggle()` now verifies every tap/hold call against the
+  real stance field and, if it was silently blocked, `ProcessPendingStanceRetry()`
+  retries once per frame (up to 500ms, suppressed while a menu is open) until it
+  takes effect. Safe regardless of what the guard bytes mean: a blocked call is a
+  guaranteed no-op, so retrying it can only ever succeed once the real gate clears,
+  never mis-fire early. Every attempt now also logs both guard-byte values
+  alongside before/after stance in `proxy_d3d9.log`, so a future occurrence (if any)
+  finally has real data instead of requiring more inference. Builds clean
+  (Win32/Release) — **not yet live-tested**; needs a real playtest before this can
+  be called resolved. Full trail in `re_notes/known_issues.md` issues #27 and #42.
 - **Glyph-visibility mechanism (task #6/#34): root cause fixed, pending live
   confirmation.** A real live test of the glyph-array patch plus the draw-string-append
   visibility hook (`LB+RB+B` / `LB+RB+Y`,

@@ -135,10 +135,14 @@ void WriteDefaultConfig(const char* path)
         "; interim way to tune these values until then.\n"
         "\n"
         "[Look]\n"
-        "; Look-stick turn rate in degrees/second at full stick deflection. Which\n"
-        "; physical stick (and axes) actually drive look depends on the StickLayout\n"
-        "; setting under [Bindings] below -- this is not always the right stick.\n"
-        "Sensitivity=%g\n"
+        "; Look-stick turn rate in degrees/second at full stick deflection, split into\n"
+        "; horizontal (yaw, left/right) and vertical (pitch, up/down) axes -- separated\n"
+        "; 2026-07-31 per user request, matching console CoD titles' own separate\n"
+        "; sensitivity sliders. Which physical stick (and axes) actually drive look\n"
+        "; depends on the StickLayout setting under [Bindings] below -- this is not\n"
+        "; always the right stick.\n"
+        "SensitivityHorizontal=%g\n"
+        "SensitivityVertical=%g\n"
         "; How strongly look slows down while aiming down sights on magnified optics,\n"
         "; scaled to the weapon's actual live zoom level (read-only -- never changes\n"
         "; your real field of view) as effectiveFov/hipfireFov, raised to this power.\n"
@@ -248,7 +252,8 @@ void WriteDefaultConfig(const char* path)
         "; real font name in use for on-screen HUD/menu text whenever it changes. Always\n"
         "; forwards unmodified regardless of this toggle. 0 = off, 1 = on.\n"
         "HudFontIdLogging=%d\n",
-        g_modConfig.lookDegreesPerSecond,
+        g_modConfig.lookDegreesPerSecondHorizontal,
+        g_modConfig.lookDegreesPerSecondVertical,
         g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
         g_modConfig.invertLook ? 1 : 0,
@@ -356,7 +361,8 @@ void LoadModConfig()
         return;
     }
 
-    ReadFloat(path, "Look", "Sensitivity", g_modConfig.lookDegreesPerSecond);
+    ReadFloat(path, "Look", "SensitivityHorizontal", g_modConfig.lookDegreesPerSecondHorizontal);
+    ReadFloat(path, "Look", "SensitivityVertical", g_modConfig.lookDegreesPerSecondVertical);
     ReadFloat(path, "Look", "AdsSlowdownStrength", g_modConfig.adsSlowdownStrength);
     // Live-confirmed bug (2026-07-16): the OLD linear blend formula
     // (1 - strength*(1-ratio)) went NEGATIVE for strength > 1.0 once the zoom ratio
@@ -405,7 +411,7 @@ void LoadModConfig()
 
     char buf[950];
     sprintf_s(buf,
-        "[config] loaded mw3ncp_config.ini: sensitivity=%g adsSlowdownStrength=%g "
+        "[config] loaded mw3ncp_config.ini: sensitivityH=%g sensitivityV=%g adsSlowdownStrength=%g "
         "adsSlowdownBaseline=%g invertLook=%d lookAccelRampMs=%lu proneHoldMs=%lu interactHoldMs=%lu "
         "readyUpHoldMs=%lu "
         "buttonLayout=%s stickLayout=%s flipTriggers=%d glyphStyle=%s "
@@ -413,7 +419,8 @@ void LoadModConfig()
         "vibrationDamagePerPoint=%g vibrationDamageMaxIntensity=%g vibrationDamageDurationMs=%lu "
         "fireNotifyQueueKick=%d bindResolverHookLogging=%d bindResolverGlyphSubstitution=%d "
         "hudFontIdLogging=%d",
-        g_modConfig.lookDegreesPerSecond, g_modConfig.adsSlowdownStrength,
+        g_modConfig.lookDegreesPerSecondHorizontal, g_modConfig.lookDegreesPerSecondVertical,
+        g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
         g_modConfig.invertLook ? 1 : 0, g_modConfig.lookAccelerationRampMs,
         g_modConfig.proneHoldThresholdMs,

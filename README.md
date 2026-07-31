@@ -131,7 +131,7 @@ fully live-confirmed working with no known gap (that's the ✅ table above).
 | SMAW lock-on vs. aircraft | Unconfirmed whether even a real bug | README (Partial table above) |
 | Real in-game controller options menu (task #23) | Static injection proven live; real content blocked on GPU-resource-load timing. This session's read-only boot-thunk diagnostic confirmed live-safe, but its address-recovery theory was refuted at that call site — needs a different approach before the real splice can be written | `known_issues.md` #23 |
 | Button-glyph icons (task #6) | Asset+build pipeline proven end-to-end. This session's bind-resolver hook is installed and fixed (log-only, live-safe), but still zero player-visible effect | `known_issues.md` #34/#35 |
-| Crouch intermittently fails to fire (~2%, recovers after pause/unpause) | Cross-cutting bug, no task number assigned yet, needs diagnostic logging first | `compatibility_matrix.md` |
+| Crouch intermittently fails to fire (~2%, recovered via pause/unpause or an unrelated button press) | Fix attempt shipped 2026-07-31: verifies each B tap/hold against the real stance field and retries once per frame (up to 500ms) if the real toggle silently no-op'd, instead of dropping the press. Builds clean, **not yet live-confirmed** | `known_issues.md` #27/#42 |
 | Vibration/rumble | Crashed at startup, disabled; a safer single-call-site-safe target already identified, not yet reimplemented | README (Not-working table above), `known_issues.md` #24 |
 
 #### Tier 2 — Planned / researched, not implemented
@@ -384,7 +384,8 @@ native controller UI navigation exists.
 
 | Section | Key | Default | What it does |
 |---|---|---|---|
-| `[Look]` | `Sensitivity` | `250` | Look-stick turn rate, degrees/second at full deflection (not always the right stick — depends on `StickLayout` below) |
+| `[Look]` | `SensitivityHorizontal` | `250` | Look-stick yaw (left/right) turn rate, degrees/second at full deflection (not always the right stick — depends on `StickLayout` below) |
+| `[Look]` | `SensitivityVertical` | `250` | Look-stick pitch (up/down) turn rate, degrees/second at full deflection — separate from horizontal since 2026-07-31 |
 | `[Look]` | `AdsSlowdownStrength` | `1.75` | ADS zoom-aware look slowdown strength (`0` = off, `1` = fully proportional to zoom, higher = more aggressive than proportional; `1.75` confirmed live to feel closer to real console controller CoD than exactly `1.0`) |
 | `[Look]` | `AdsSlowdownBaseline` | `0.65` | Multiplies on top of the strength curve above — without it, low-zoom optics (iron sights/red dots) got almost no slowdown at all, since the zoom ratio alone stays too close to `1.0` to produce a real effect regardless of strength. `1.0` = no extra effect; lower = more slowdown even at minimal zoom |
 | `[Look]` | `InvertLook` | `0` | OG console "Invert Look" — flips vertical look |

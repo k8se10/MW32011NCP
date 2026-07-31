@@ -65,7 +65,13 @@ ButtonMap ResolveButtonMap(ButtonLayout layout, bool flipTriggers);
 struct ModConfig
 {
     // [Look]
-    float lookDegreesPerSecond = 250.0f;   // right-stick turn rate at full deflection
+    float lookDegreesPerSecondHorizontal = 250.0f; // right-stick turn rate at full
+                                                    // deflection, yaw (left/right) axis
+    float lookDegreesPerSecondVertical = 250.0f;   // right-stick turn rate at full
+                                                    // deflection, pitch (up/down) axis --
+                                                    // split from horizontal 2026-07-31 per
+                                                    // user request (console CoD titles
+                                                    // expose these as separate sliders)
     float adsSlowdownStrength = 1.75f;     // 0 = off, 1 = fully proportional to live zoom;
                                             // 1.75 confirmed live to feel closer to real
                                             // console controller CoD than exactly 1.0
