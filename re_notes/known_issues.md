@@ -8,9 +8,62 @@ lands this same day: Sprint's real kbutton migration and its stamina-layer remov
 issue #6; Predator Missile launch fixed and guidance-phase RE'd further, issues #29/
 #30; a mortar/turret mission mis-attribution corrected, issues #26/#27)*.
 
+## Index
+
+One line per issue: number, one-line title, current status. Issue numbers
+16–21 don't exist in this file (never assigned to a standalone entry) — not a
+gap to fill, just how the numbering happened. Full detail lives in each
+issue's own section below; this is a scan aid, not a replacement.
+
+- [#1](#1-buy-station--pause-menu-completely-breaks-movement--resolved-2026-07-15) — Buy-station + pause menu completely breaks movement — **Resolved**
+- [#2](#2-no-real-one-shot-command-dispatcher-for-weapnext--start-unpause--both-resolved) — No real one-shot command dispatcher for weapnext / Start unpause — **Resolved**
+- [#3](#3-back-scores-regression--bind-name-table-index--fun_00438710-case-number) — Back (`+scores`) regression — bind-name-table index ≠ dispatcher case number — **Resolved** (reverted; real fix in #28)
+- [#4](#4-d-pad-actionslot-1-4--resolved-2026-07-15-later-session) — D-pad (`+actionslot 1-4`) — **Resolved**
+- [#5](#5-survival-ready-up-hold-y--solved-via-a-temporary-keypress-synthesis-workaround) — Survival ready-up (hold Y) — **Resolved**
+- [#6](#6-sprint-staminacooldown--resolved-2026-07-19-real-kbutton-makes-the-whole) — Sprint stamina/cooldown — **Resolved**
+- [#7](#7-remaining-unassigned-controller-inputs) — Remaining unassigned controller inputs — **Open**
+- [#8](#8-ads-look-slowdown--root-cause-found-via-diagnostic-logging-fixed-2026-07-16) — ADS look-slowdown — root cause found, fixed — **Resolved**
+- [#9](#9-crouchprone-rewired-to-the-real-togglecrouchtoggleprone-toggle-2026-07-16) — Crouch/prone rewired to the real togglecrouch/toggleprone toggle — **Resolved**
+- [#10](#10-sprint-pm_flags-hooks-broke-vanilla-keyboard-sprint--resolved-2026-07-16) — Sprint `pm_flags` hooks broke vanilla keyboard sprint — **Resolved**
+- [#11](#11-keyboardmouse-deprioritized-as-a-primary-input-path--decided-2026-07-16) — Keyboard/mouse deprioritized as a primary input path — **Deferred** (standing decision)
+- [#12](#12-regbreak-live-breakpoint-tool-crashed-the-running-game--abandoned-in-favor-of-static-analysis-2026-07-16) — `regbreak` live-breakpoint tool crashed the game — **Deferred**
+- [#13](#13-b-doesnt-exit-pause--resolved-2026-07-16) — B doesn't exit pause — **Partially Resolved**
+- [#14](#14-d-pad-left-squadmate-call-in-failed-100-task-13--fixed-via-a-narrowly-scoped-key-synthesis-exception-2026-07-16) — D-pad Left squadmate call-in failed 100% — **Resolved**
+- [#15](#15-aim-assist-entity-classification--permanently-removed-2026-07-20-superseding-the-parked-status-below) — Aim assist entity classification — **Resolved** (feature permanently removed)
+- *(#16–#21 don't exist in this file)*
+- [#22](#22-real-controller-menu-navigation-d-pad--a--resolved-confirmed-live-2026-07-17) — Real controller menu navigation (D-pad + A) — **Resolved**
+- [#23](#23-real-controller-options-menu--native-zonemenu-injection-blocked-on-a-real-architectural-limit-2026-07-17) — Real controller options menu — **Investigating**
+- [#24](#24-vibrationrumble--confirmed-live-hooks-break-game-startup-entirely-disabled-2026-07-18) — Vibration/rumble — **Open** (disabled, crashes on startup if enabled)
+- [#25](#25-mw3-client-compatibility--plutoniumalterwaredeckops-survey-2026-07-17) — MW3 client compatibility survey — **Deferred**
+- [#26](#26-full-breadth-engine-research-pass--killstreaks-weapons-perks-hudui-aivehicles-physicshealth-mp-2026-07-17-later-session) — Full-breadth engine research pass — **Resolved** (research complete)
+- [#27](#27-campaign-controller-playtest-live-findings-2026-07-17-later-session--in-progress) — Campaign controller playtest, live findings (multi-bug) — **Open** (mixed — see the entry's own per-bug summary)
+- [#28](#28-back--real-scores-scoreboardobjectives--implemented-via-the-third-key-synthesis-exception-2026-07-17-documentation-gap-fixed-2026-07-18) — Back → real `+scores` (scoreboard/objectives) — **Partially Resolved**
+- [#29](#29-fire-rt-rewired-off-the-raw-usercmd-bit-onto-the-real-attack-kbutton--predator-missile-launch-confirmed-working-via-the-n-1-delivery-index-fix-2026-07-1819-heading-corrected-2026-07-19--see-below-for-the-full-chain-the-kbutton-alone-hypothesis-was-refuted-first-then-superseded-by-the-real-fix) — Fire (RT) real kbutton / Predator Missile launch — **Resolved**
+- [#30](#30-third-analog-input-channel-cmd0x3e0x3f-discovered--likely-unifying-root-cause-for-dvpmortarturret-2026-07-18-research-pass-task-25-refuted-for-predator-missile-guidance-specifically-2026-07-19--see-the-correction-near-the-end-of-this-entry) — Third analog-input channel (DPV/mortar/turret) — **Open** (data collection blocked)
+- [#31](#31-master-notifyonplayercommandnotifyoncommand-survey--two-distinct-builtins-found-squadmate-call-ins-real-failure-mode-identified-2026-07-18-research-pass) — Master `notifyonplayercommand`/`notifyoncommand` survey — **Resolved**
+- [#32](#32-console-look-input-likely-had-a-real-acceleration-ramp--this-projects-look-currently-has-none-2026-07-19-web-research-implemented-same-day--resolved-2026-07-20) — Console look-acceleration ramp — **Resolved**
+- [#33](#33-multiplayer-feasibility-research-2026-07-20--technical-re-vac-risk-and-a-real-cross-project-correction) — Multiplayer feasibility research (VAC risk) — **Investigating**
+- [#34](#34-glyph-patch-mechanism-test-injectfontglyphpatchtest-lbrba-still-not-visually-provable--wrong-font-targeted-corrected-no-safe-way-found-yet-to-actually-see-it-2026-07-21) — Glyph-patch mechanism test — **Open**
+- [#35](#35-bind-resolver-text-hook-fun_0061f6f0--log-only-first-pass-implemented-not-yet-live-tested-2026-07-21) — Bind-resolver text hook — **Partially Resolved**
+- [#36](#36-local-splitscreen-co-op--user-roadmap-idea-not-yet-investigated-2026-07-21) — Local splitscreen co-op — **Roadmap Idea**
+- [#37](#37-waw-style-animated-dev-clan-tags--feasibility-research-2026-07-21) — WaW-style animated dev clan tags — **Roadmap Idea**
+- [#38](#38-menu-entry-and-interact-prompt-glyph-substitution--real-ui-pipeline-mapped-pivot-away-from-hudbigfont-ammo-counter-testing-research-pass-2026-07-22) — Menu-entry/interact-prompt glyph substitution — **Investigating**
+- [#39](#39-font-zone-injection-installglyphfontextension-real-new-art-path--precondition-for-enabling-now-met-live-wrong-font-targeted-needs-retargeting-first-research-pass-2026-07-22) — Font-zone injection (real-new-art path) — **Investigating**
+- [#40](#40-ac-130-iron-lady--fire-mission--confirmed-working-on-controller-except-gun-type-switching-2026-07-23-live-playtest-task-7) — AC-130 (Iron Lady / Fire Mission) — **Partially Resolved**
+- [#41](#41-reframing-hypothesis-reported-killstreakvehicle-control-bugs-may-be-pc-specific-rebalancereimplementation-not-just-missing-controller-wiring-2026-07-23-user-stated-unverified) — Reframing hypothesis: PC-specific rebalance? — **Investigating**
+- [#42](#42-crouch-sometimes-doesnt-fire-until-b-is-pressed-first--first-bug-from-the-users-022-stream-2026-07-31-reported-pre-break-return-live-playtest-not-consistently-reproducible--resolved-2026-07-31) — Crouch sometimes doesn't fire until B is pressed first — **Resolved**
+- [#43](#43-roadmap-idea-not-a-bug-not-implemented-the-pre-native-sprint-implementation-had-a-sprint-while-crouched-side-effect-worth-remembering-recalled-2026-07-31) — Sprint-while-crouched side effect (roadmap idea) — **Roadmap Idea**
+- [#44](#44-ads-look-slowdown-heavily-skewed-toward-3x-scopes-pistolsiron-sights-barely-slowed--tuning-pass-not-yet-live-confirmed-2026-07-31) — ADS look-slowdown skewed toward 3x+ scopes — **Partially Resolved**
+- [#45](#45-config-auto-migration-added--existing-mw3ncp_configini-files-now-carry-forward-across-key-renames-and-retuned-defaults-2026-07-31-implemented--unit-tested-against-real-files-at-every-stage) — Config auto-migration — **Partially Resolved**
+- [#46](#46-critical--cant-fire-while-holding-breath-on-a-sniper--root-caused-via-existing-research-fixed-not-yet-live-confirmed-2026-07-31) — CRITICAL: can't fire while holding breath on a sniper — **Resolved**
+- [#47](#47-on-screen-top-right-notifications-startup-message--config-hot-reload--new-capability-first-real-render-hook-this-project-has-ever-had-2026-07-31-user-requested-qol) — On-screen notifications (startup message + config hot-reload) — **Resolved**
+- [#48](#48-roadmap-idea-high-value-render-controller-glyph-icons-as-independent-overlay-quads-instead-of-injecting-them-into-the-games-own-font-system-2026-07-31-user-identified-not-yet-implemented) — Render glyphs as independent overlay quads (not in-font injection) — **Roadmap Idea**
+
 ---
 
 ## 1. Buy-station + pause menu completely breaks movement — RESOLVED (2026-07-15)
+
+**Status:** Resolved.
 
 **Symptom:** After using a buy station (requires mouse/keyboard per the existing
 menu-navigation limitation), opening the pause menu and then exiting it left the
@@ -42,12 +95,21 @@ the user** across the full test matrix: no click needed at level start, ADS/curs
 normal during general gameplay, buy station opens/works, and buy station → pause →
 resume no longer breaks movement.
 
+**Cross-reference, 2026-07-31 (issue #42):** a near-identical symptom shape (crouch
+needing an initial click at launch) turned up in a completely different system
+months later, and was fixed the same way this issue always suspected but never
+proved — feeding a genuine activation/click event into the game as early as
+possible (see `SendSyntheticActivationClick()`, `d3d9_hook.cpp`). That fix fires
+before any buy-station interaction is even possible, so it may have also closed
+this issue's own original gap as a side effect — plausible, not independently
+re-tested against a real buy-station repro. See issue #42 for the full detail.
+
 ---
 
 ## 2. No real one-shot command dispatcher for weapnext / Start unpause — BOTH RESOLVED
     (2026-07-15, later session)
 
-**Status:** Fully resolved. Start now genuinely opens AND closes the pause menu via
+**Status:** Resolved. Start now genuinely opens AND closes the pause menu via
 controller, and Y/weapnext works live. Kept below for the full investigation trail.
 
 **`Cbuf_AddText`/`Cmd_ExecuteString` are real and confirmed, but were the wrong
@@ -285,6 +347,9 @@ weapon-inventory-slot cycling stepped by `direction`, ending in a real
 ## 3. Back (`+scores`) regression — bind-name-table index ≠ `FUN_00438710` case number
     (2026-07-15, later session)
 
+**Status:** Resolved (reverted here as a regression; the real fix shipped later in
+issue #28, which superseded the "deprioritized" note below).
+
 **Symptom (live, real hardware):** wired Back to `0x00A98B14` via `CallKbuttonDown`/
 `CallKbuttonUp`, using `FUN_00438710` case `0x1f` (31 decimal). Holding Back made the
 player **walk backward** instead of showing anything scoreboard-related.
@@ -319,6 +384,8 @@ D-pad/killstreaks.
 ---
 
 ## 4. D-pad (`+actionslot 1-4`) — RESOLVED (2026-07-15, later session)
+
+**Status:** Resolved.
 
 Applied the exact lesson from issue #3: never trust a bind-name-table index as a
 `FUN_00438710` case number — live-read `FUN_00541020`'s real raw-keycode dispatch table
@@ -357,6 +424,8 @@ confirmed mechanism, so high confidence on the untested ones too).
 
 ## 5. Survival ready-up (hold Y) — SOLVED via a temporary keypress-synthesis workaround
     (2026-07-15, later session)
+
+**Status:** Resolved (via a deliberate, permanent key-synthesis exception — see below).
 
 **The feature:** Survival shows "press F5 to ready up" between waves — F5 executes
 `"skip"`, shortening the 30-second prep timer once everyone's ready. Mapped to holding
@@ -456,6 +525,8 @@ is found — see task #8 in the working session's tracker for the full dead-end 
 
 ## 6. Sprint stamina/cooldown — RESOLVED 2026-07-19: real kbutton makes the whole
     custom timer (and Extreme Conditioning) moot, removed entirely (2026-07-15, later session)
+
+**Status:** Resolved.
 
 **The bug:** Sprint (L3) forces the real `pm_flags` bit (`0x4000`) every Pmove tick,
 which bypasses whatever native duration/recovery timer normally limits sprint entirely
@@ -618,9 +689,9 @@ scoped), and #9 (sprint's Extreme Conditioning override).
 
 ## 8. ADS look-slowdown — root cause found via diagnostic logging, fixed (2026-07-16)
 
-**Status:** Root cause conclusively identified and fixed via live diagnostic data.
-Pending one more live retest across a range of `AdsSlowdownStrength` values to
-confirm feel, then this can be considered resolved.
+**Status:** Resolved (root cause conclusively identified and fixed via live
+diagnostic data). Later tuning of the same slowdown system happened separately
+in issue #44 — that's a refinement, not a reopening of this bug.
 
 **Original implementation:** read `FUN_004b0580(playerIndex)`, confirmed via
 decompile+disassembly to be the game's own live "effective FOV this frame"
@@ -681,6 +752,10 @@ infinity as `ratio` approaches `0`.
 
 ## 9. Crouch/prone rewired to the real togglecrouch/toggleprone toggle (2026-07-16)
 
+**Status:** Resolved. (The two guard bytes found here are the same ones later
+fully diagnosed and fixed in issue #42 — this entry's own root fix stands
+independently of that later work.)
+
 **Trigger:** live-reported — a Campaign session got stuck prone (unrelated repro
 from issue #10 below) in a way neither the controller's B button nor Sprint could
 recover, but real keyboard Ctrl (bound to `toggleprone`) could. That directly
@@ -734,6 +809,8 @@ Predator missile while prone in the first mission no longer gets stuck.
 
 ## 10. Sprint pm_flags hooks broke vanilla keyboard sprint — RESOLVED (2026-07-16)
 
+**Status:** Resolved.
+
 **Trigger:** live-reported during the same session as the sprint-kbutton memdiff
 investigation (issue #6) — "sprint on k+m is broken it toggles once timesout then
 never recovers."
@@ -784,6 +861,10 @@ file for the same class of bug.
 
 ## 11. Keyboard/mouse deprioritized as a primary input path — decided 2026-07-16
 
+**Status:** Deferred (a standing decision, not a bug to fix — revisit only if a
+future session audits every per-tick hook for issue #10's class of bug and
+re-verifies keyboard parity end to end).
+
 **Not a bug in itself — a scope/priority decision, recorded here because it's a
 direct consequence of issue #10 above and of the parked sprint-kbutton search (see
 `iw5sp.md`, "Sprint's real kbutton — PARKED").**
@@ -827,6 +908,9 @@ own "worth an audit pass" note) and re-verifies keyboard parity end to end.
 
 ## 12. `regbreak` live-breakpoint tool crashed the running game — abandoned in favor of static analysis (2026-07-16)
 
+**Status:** Deferred (dev-tool abandoned in favor of a different technique;
+not a project-facing bug).
+
 **Not a project bug — a dev-only diagnostic tool (`tools/regbreak/`, never part of the
 shipped project) that caused a real live crash during use.** Built to automate
 inspecting CPU register/struct state at a chosen address via the Windows Debug
@@ -862,6 +946,11 @@ game unless a future session gets explicit direction to harden and retry it.
 ---
 
 ## 13. B doesn't exit pause — RESOLVED (2026-07-16)
+
+**Status:** Partially Resolved (three rounds of live-reported regressions the
+same day; the first two are confirmed live, the third — buy-station menu
+stacking under pause — was fixed and rebuilt but live-verification was still
+pending as of this entry's last update).
 
 **Live-reported regression against the B-as-menu-back feature (task #19).**
 B could open the pause menu fine (via Start) but pressing B while paused did
@@ -943,6 +1032,8 @@ directly to gameplay, not back into the buy-station menu).
 ---
 
 ## 14. D-pad Left squadmate call-in failed 100% (task #13) — fixed via a narrowly-scoped key-synthesis exception (2026-07-16)
+
+**Status:** Resolved.
 
 Turret call-ins (D-pad Left, actionslot4) worked fine; AI-squadmate call-ins,
 purchased at the same buy station on the same slot (a different loadout
@@ -1043,7 +1134,7 @@ presses. No further work needed on this specific report; task tracker entry clos
 
 ## 15. Aim assist entity classification — PERMANENTLY REMOVED (2026-07-20), superseding the "parked" status below
 
-**Status: CLOSED, feature deleted.** Task #16. Following issue #33's VAC/anti-cheat
+**Status:** Resolved (closed, feature deleted — see below). Task #16. Following issue #33's VAC/anti-cheat
 research, aim assist has been permanently removed from the codebase entirely —
 `analog_input_hooks.cpp`'s implementation, its call site in
 `InjectControllerLookAngles`, and `mod_config.h`/`.cpp`'s entire `[AimAssist]`
@@ -1156,7 +1247,7 @@ attempted, next actual implementation step whenever this is picked back up.
 
 ## 22. Real controller menu navigation (D-pad + A) — RESOLVED, confirmed live (2026-07-17)
 
-**Status:** Closed. Task #22. Per the user's direction to go all-in on reverse
+**Status:** Resolved. Task #22. Per the user's direction to go all-in on reverse
 engineering the UI/menu system (task #6's original scope), this delivers real,
 native D-pad item navigation and A-as-select across the main menu, pause menu, and
 options screens.
@@ -1608,7 +1699,7 @@ considered done end-to-end.
 
 ## 23. Real controller options menu — native zone/menu injection, blocked on a real architectural limit (2026-07-17)
 
-**Status:** Open, in progress. Task #23. Full technical trail in `iw5sp.md`'s "Real
+**Status:** Investigating. Task #23. Full technical trail in `iw5sp.md`'s "Real
 controller options menu" section — this is a summary. **The blocker below is now
 resolved to an implementation-ready plan — see the "REFINED, implementation-ready
 (2026-07-20...)" entry near the end of the "## 22..." boot-splice discussion further
@@ -1741,6 +1832,13 @@ replacement installer fallback.
 
 ## 24. Vibration/rumble — CONFIRMED LIVE: hooks break game startup entirely, DISABLED (2026-07-18)
 
+**Status:** Open. Feature is disabled (`Rumble_Install()`'s call site commented
+out) after its hooks were found to crash the game at startup. Two candidate
+narrower/safer hook targets were investigated (2026-07-20) but both turned out
+to still be shared/multiplexed functions with the same "another real caller
+passes different data" risk that caused the original crash — not yet safe to
+re-implement. Full round-by-round history below, oldest first.
+
 **Status regression, same day as implementation.** Live-tested by the
 user: with `Rumble_Install()`'s hooks active, **the game fails to start
 at all.** `proxy_d3d9.log` showed every hook (including both rumble
@@ -1849,12 +1947,11 @@ branches' surrounding context in `FUN_005b68c0`, and auditing
 (disassembly/decompile dumps, caller lists) at
 `D:\Tools\ghidra_projects_rumblefork\`.
 
-## Original implementation entry (2026-07-18), superseded by the above
+## Original implementation entry (2026-07-18) — chronologically FIRST, kept below the later research for continuity of the narrative above
 
-**Status:** Task #17 implemented. Builds clean (0 warnings/0 errors, full rebuild
-confirmed). **Not yet live-tested** — no game access during implementation; needs a
-real playtest before this is considered done, same bar as every other native hook in
-this project.
+Task #17, originally implemented and builds clean (0 warnings/0 errors, full rebuild
+confirmed) — this is the version whose live test produced the startup-crash regression
+described at the top of this entry.
 
 **New module**: `rumble.h`/`rumble.cpp` (kept separate from `controller_input.cpp`'s
 XInput polling and `analog_input_hooks.cpp`'s gameplay-input translation, per
@@ -1946,7 +2043,10 @@ any future GSC-adjacent hook work will likely hit one or the other), in
 
 ## 25. MW3 client compatibility — Plutonium/AlterWare/DeckOps survey (2026-07-17)
 
-**Status:** Research only, no implementation. Long-term goal (user, 2026-07-17):
+**Status:** Deferred (research-only survey toward a long-term goal, no active
+implementation work).
+
+Long-term goal (user, 2026-07-17):
 eventually support all major MW3 client variants, not just retail Steam.
 
 **Plutonium** (third-party MP-revival client, closed-source, requires legitimate
@@ -2018,7 +2118,8 @@ wording, especially the anti-cheat callout):
 
 ## 26. Full-breadth engine research pass — killstreaks, weapons, perks, HUD/UI, AI/vehicles, physics/health, MP (2026-07-17, later session)
 
-**Status:** Research complete, no code changes. Full detail in `iw5sp.md`'s "Full-breadth research pass" section — this is an index/summary.
+**Status:** Resolved (research complete, no code changes needed — this section
+is an index/summary). Full detail in `iw5sp.md`'s "Full-breadth research pass" section.
 
 User direction: research "everything" about the engine across SP/Survival/MP via
 a large parallel batch of research-only forks, ahead of wrapping the session.
@@ -2097,13 +2198,26 @@ a large parallel batch of research-only forks, ahead of wrapping the session.
 
 ## 27. Campaign controller playtest, live findings (2026-07-17, later session — in progress)
 
-**Status:** User is playing through Campaign on controller and reporting real
-fallback-to-keyboard/mouse points as they go. Logging each finding here as
-reported; entry will keep growing across the session. Reached "Bag and
-Drag" (Act II) with every mission up to that point fully playable, but with
-targeted fallback needed at specific points — mainly vehicles and
-killstreaks, not blanket failures. Directly relevant to task #7 (killstreak
-input) and refines issue #26's vehicle hypothesis below.
+**Status:** Open (multi-bug umbrella entry, mixed sub-statuses — see the
+per-bug summary immediately below before reading the full findings). User
+played through Campaign on controller reporting real fallback-to-keyboard/
+mouse points as they went; reached "Bag and Drag" (Act II) with every mission
+up to that point fully playable, but targeted fallback needed at specific
+points — mainly vehicles and killstreaks, not blanket failures.
+
+**Per-bug status summary** (each bug is documented in full, in the order
+found, in the findings below — this is a scan aid, not a replacement):
+- DPV aiming (Hunter Killer) — **Open**, root cause not diagnosed.
+- Bug #2, crouch intermittent failure — **Resolved**, see issue #42.
+- Bug #3, Hold Breath never implemented — **Resolved**, final native design shipped 2026-07-20.
+- Bug #4, Turbulence movement-lock bypass — **Open**, real freeze flag found (`+0x1094` bit `0x800`), fix not yet implemented.
+- Bug #5, Goalpost mortar/turret — **Resolved**, decisively (both the mission mis-ID and the regen-buff hypothesis were run down).
+- Bug #6, mounted-turret feels harder — **Resolved** (Hypothesis A: missing aim-precision channel, same as DPV/mortar; Hypothesis B, a scripted regen buff, was refuted).
+- Bug #7, "Mind the Gap" vehicle-exit prompt — **Open**, real exit-trigger not located.
+- Bug #8, SMAW lock-on vs. an aircraft — **Open**, not even confirmed to be a real bug (may be a non-targetable scripted entity).
+- Bug #9, Predator Missile post-fire guidance — **Resolved**, full chain found and fixed 2026-07-18.
+
+Directly relevant to task #7 (killstreak input) and refines issue #26's vehicle hypothesis below.
 
 - **Mission "Hunter Killer" (Act 1) — DPV (Diver Propulsion Vehicle)
   sequence: movement works, aiming does not.** The underwater DPV segment
@@ -2127,7 +2241,8 @@ input) and refines issue #26's vehicle hypothesis below.
   precisely as reported.
 - **Bug #2 — Crouch intermittently fails to fire, ~98% reliable, ~2% silent
   no-op; recovers if the player pauses and unpauses in certain
-  sequences.** Reported as a real, reproducible-but-rare live playtest
+  sequences.** RESOLVED 2026-07-31, see the fix note at the end of this
+  entry. Reported as a real, reproducible-but-rare live playtest
   finding, not a one-off fluke — happens often enough to notice a pattern
   (pause/unpause fixes it) but rare enough to characterize as ~2% of
   attempts. **Real, plausible lead already on record from issue #9's own
@@ -3146,9 +3261,9 @@ input) and refines issue #26's vehicle hypothesis below.
 
 ## 28. Back → real `+scores` (scoreboard/objectives) — implemented via the third key-synthesis exception (2026-07-17), documentation gap fixed (2026-07-18)
 
-**Status:** Implemented, wired up, builds clean (0 warnings/0 errors,
-verified 2026-07-18). **Not yet separately live-confirmed** — high
-confidence given it uses the exact same proven technique as the two
+**Status:** Partially Resolved. Implemented, wired up, builds clean (0
+warnings/0 errors, verified 2026-07-18). **Not yet separately live-confirmed**
+— high confidence given it uses the exact same proven technique as the two
 already-confirmed exceptions (Survival ready-up's F5 synthesis, issue #5;
 D-pad Left squadmate call-in's `'4'` synthesis, issue #14), but per this
 project's own Production Readiness Criteria, "should work by the same
@@ -3200,8 +3315,13 @@ issue #22's stale slider-adjustment claim, corrected below).
 
 ## 29. Fire (RT) rewired off the raw usercmd bit onto the real `+attack` kbutton — Predator Missile launch CONFIRMED WORKING via the `"n 1"` delivery-index fix (2026-07-18/19, heading corrected 2026-07-19 — see below for the full chain; the kbutton-alone hypothesis was refuted first, then superseded by the real fix)
 
-**Status:** Implemented, builds clean (0 warnings/0 errors), and now
-live-tested by the user. **Result: half confirmed, half refuted.**
+**Status:** Resolved (Predator Missile LAUNCH specifically — see the
+`"n 1"` delivery-index fix confirmed live near the end of this entry; the
+separate post-fire guidance problem is tracked in issue #30, not this one).
+
+**Round 1 status (superseded by the fix later in this entry):** Implemented,
+builds clean (0 warnings/0 errors), and now live-tested by the user. **Result:
+half confirmed, half refuted.**
 1. Regular gunfire — **CONFIRMED no regression.** Shooting still works
    normally after the switch off the raw usercmd bit onto the real
    `+attack` kbutton. The "safe because `FUN_0057dc90` re-derives the
@@ -3694,6 +3814,11 @@ alone was not sufficient — see "Next step" above for where to look next.
 
 ## 30. Third analog-input channel (`cmd+0x3e`/`0x3f`) discovered — likely UNIFYING root cause for DPV/mortar/turret (2026-07-18, research pass, task #25; REFUTED for Predator Missile guidance specifically, 2026-07-19 — see the correction near the end of this entry)
 
+**Status:** Open. The diagnostic hooks this issue's own investigation depends
+on were disabled after being root-caused to a real live regression (issue #6)
+— data collection is blocked until a safer hook design is found, separate
+from the DPV/mortar/turret hypothesis itself still being unconfirmed.
+
 **CONFIRMED LIVE REGRESSION, `Hook_ControlsLinkTo`/`Hook_MissileGuidanceDispatch`
 DISABLED (2026-07-19)** — these two diagnostic hooks (installed for this issue's
 own guidance-phase investigation, see below) were root-caused (one or both, not
@@ -3958,9 +4083,9 @@ fixed now. Summary of what's actually confirmed for missile guidance:
 
 ## 31. Master `notifyonplayercommand`/`notifyoncommand` survey — two distinct builtins found, squadmate call-in's real failure mode identified (2026-07-18, research pass)
 
-**Status:** Research complete, no code changes. Full grep-verified sweep of
-all 240 decompiled Survival GSC scripts for every `notifyonplayercommand(`
-and `notifyoncommand(` call site.
+**Status:** Resolved (research question answered, no code changes needed).
+Full grep-verified sweep of all 240 decompiled Survival GSC scripts for every
+`notifyonplayercommand(` and `notifyoncommand(` call site.
 
 **Major architectural finding, not previously catalogued: these are TWO
 DISTINCT GSC builtins, not one with an optional receiver.** Every single
@@ -4135,7 +4260,7 @@ at all.
 
 ## 32. Console look input likely had a real acceleration ramp — this project's look currently has none (2026-07-19, web research, IMPLEMENTED same day) — RESOLVED 2026-07-20
 
-**Status:** CLOSED. Implemented 2026-07-19, first shipped at a 200ms default
+**Status:** Resolved. Implemented 2026-07-19, first shipped at a 200ms default
 (matching external research), then live-tested against real hardware across many
 values and corrected to **33ms (one 30fps engine frame)** — confirmed live as the
 right feel and now the permanent shipped default. See the final entry below for
@@ -4209,9 +4334,9 @@ the right feel live — 33ms is now the permanent shipped default.**
 
 ## 33. Multiplayer feasibility research (2026-07-20) — technical RE, VAC risk, and a real cross-project correction
 
-**Status:** Open, active research. Task: user-initiated MP feasibility investigation, first real step
-toward eventually starting `iw5mp.exe` work per the locked "SP+Survival first, then MP" ordering.
-Nothing implemented yet — this is groundwork.
+**Status:** Investigating. Task: user-initiated MP feasibility investigation,
+first real step toward eventually starting `iw5mp.exe` work per the locked
+"SP+Survival first, then MP" ordering. Nothing implemented yet — this is groundwork.
 
 ### Technical RE feasibility — transfers well
 
@@ -4795,7 +4920,10 @@ informational (corrects a loosely-sourced citation, adds real mechanism detail) 
 
 ## 34. Glyph-patch mechanism test (`InjectFontGlyphPatchTest`, LB+RB+A) still not visually provable — wrong font targeted, corrected; no safe way found yet to actually see it (2026-07-21)
 
-**Status: open, not resolved.** Set out to close the loop on the LB+RB+A
+**Status:** Open. (A `param_10` ring-buffer fix was found and deployed
+correctly but confirmed, via a real retest, NOT sufficient by itself — the
+glyph still doesn't render. See the end of this entry for the latest state.)
+Set out to close the loop on the LB+RB+A
 glyph-array-patch mechanism test (task #6/#31/#32) by making its effect
 actually visible on screen — instead found the test's target,
 `fonts/bigfont`, was picked on a wrong guess, and while that's now corrected
@@ -5373,8 +5501,12 @@ speculation. This is the concrete next investigative step, not yet attempted.
 
 ## 35. Bind-resolver text hook (`FUN_0061f6f0`) — LOG-ONLY first pass IMPLEMENTED, not yet live-tested (2026-07-21)
 
-**Status:** Built, builds clean (0 warnings/0 errors), NOT yet live-tested. Task #6's
-other half (button-glyph text substitution), first safe increment.
+**Status:** Partially Resolved. The log-only hook itself was later live-tested
+and confirmed safe (see `PATCHNOTES.md`'s "residual garbage-log occurrence"
+entry for a follow-up fix to one edge case) — the actual glyph-substitution
+half of task #6 stays off pending the font-loading blocker (issues #23/#39).
+
+Task #6's other half (button-glyph text substitution), first safe increment.
 
 Implements the first, deliberately incremental step of the fully-researched plan
 already documented in `re_notes/ui_assets.md` ("Text-swap hook (`FUN_0061f6f0`)" and
@@ -5718,7 +5850,7 @@ Build/test note: this pass was pure Ghidra static analysis and documentation, no
 
 ## 36. Local splitscreen co-op — user roadmap idea, NOT YET INVESTIGATED (2026-07-21)
 
-**Status: idea only, zero RE work done.** User suggested adding local splitscreen
+**Status:** Roadmap Idea. User suggested adding local splitscreen
 (real dual-player, same-screen, same-machine co-op) to the project's scope as a way
 to bring back more of the console experience — MW3's Xbox 360/PS3 builds shipped
 real local splitscreen for Special Ops co-op. Logged here so it isn't lost, not
@@ -5769,8 +5901,9 @@ speculative from the leftover strings alone.
 
 ## 37. WaW-style animated dev clan tags — feasibility research (2026-07-21)
 
-**Status: research/scoping pass only, per explicit user framing this is a
-brand-new standalone feature idea. No code shipped this session** — every
+**Status:** Roadmap Idea (research/scoping pass only, per explicit user
+framing this is a brand-new standalone feature idea. No code shipped this
+session) — every
 candidate implementation path found has at least one genuinely unresolved
 unknown, so per this project's own "no placeholder hooks" and "verify live"
 bars, nothing here clears the bar for even a minimal read-only diagnostic yet.
@@ -5984,7 +6117,9 @@ not-well-understood-enough grounds respectively, not implemented and left untest
 
 ## 38. Menu-entry and interact-prompt glyph substitution — real UI pipeline mapped, pivot away from hudBigFont-ammo-counter testing (research pass, 2026-07-22)
 
-**Status: pure research/documentation, no code changed.** User explicitly redirected
+**Status:** Investigating (pure research/documentation this pass, no code
+changed — part of the ongoing glyph effort spanning issues #34/#35/#38/#39).
+User explicitly redirected
 this project away from continuing to chase issue #34's hudBigFont ammo-counter
 visibility bug as an end in itself — that font/element was only ever test scaffolding
 to prove the glyph-array-patch mechanism works at all, never the real feature. The
@@ -6202,7 +6337,9 @@ corrected. Commit and build status noted in the commit for this correction.
 
 ## 39. Font-zone injection (`InstallGlyphFontExtension`, real-new-art path) — precondition for enabling now MET live; wrong font targeted, needs retargeting first (research pass, 2026-07-22)
 
-**Status: pure research/documentation, no code changed.** Answers the open question
+**Status:** Investigating (pure research/documentation this pass, no code
+changed — part of the ongoing glyph effort spanning issues #34/#35/#38/#39;
+retargeting from `bigfont` to `smallFont` is the next concrete step). Answers the open question
 "is loading a genuinely NEW font zone with real, non-borrowed glyph art actually
 safe and ready to implement" — asked as part of this project's post-issue-#38 pivot
 away from the hudBigFont ammo-counter diagnostic and toward the real menu/interact-
@@ -6343,6 +6480,10 @@ re-decompiling would not add new evidence.
 
 ## 40. AC-130 (Iron Lady / Fire Mission) — CONFIRMED WORKING on controller except gun-type switching (2026-07-23, live playtest, task #7)
 
+**Status:** Partially Resolved. Flight/camera/fire all confirmed working live;
+two open gaps remain, both unstarted (gun-type switching — no RE done yet;
+gunship camera zoom sensitivity — parked on the roadmap, see below).
+
 **User-confirmed live playtest.** AC-130 gunship sequences work fully on
 controller — flight/camera control and firing all confirmed working, no
 fallback needed. **The one gap: switching between the gunship's cannon types
@@ -6404,8 +6545,8 @@ since both require getting back into a live AC-130 sequence to trace.
 
 ## 41. Reframing hypothesis: reported killstreak/vehicle-control bugs may be PC-specific rebalance/reimplementation, not just missing controller wiring (2026-07-23, user-stated, UNVERIFIED)
 
-**Status: hypothesis only, not confirmed, no RE performed. Logged as a lens
-for future investigation, not a rewrite of any existing finding.**
+**Status:** Investigating (hypothesis only, no RE performed yet — logged as a
+lens for future investigation, not a rewrite of any existing finding).
 
 **User-stated context (2026-07-23, no specific source/patch-note citation
 given):** certain killstreaks are believed to have been rebalanced and/or
@@ -6462,12 +6603,15 @@ about console behavior for the same system, and look specifically for
 PC-only interaction steps (cursor movement, modifier keys, menu prompts)
 that wouldn't exist in a straight port.
 
-## 42. Crouch sometimes doesn't fire until B is pressed first — first bug from the user's 0.2.2 stream (2026-07-31, reported pre-break-return, live playtest, NOT consistently reproducible)
+## 42. Crouch sometimes doesn't fire until B is pressed first — first bug from the user's 0.2.2 stream (2026-07-31, reported pre-break-return, live playtest, NOT consistently reproducible) — RESOLVED 2026-07-31
 
-**Status: reported, not yet diagnosed. First of an expected multi-bug list
-from the user's recent v0.2.2 livestream — logged individually as each is
-reported, per [[project_post_break_priorities]], rather than waiting for
-the full list.**
+**Status:** Resolved — both the repeated-intermittent-failure symptom (verify+
+retry fix) AND the "needs an initial click at launch" symptom (synthetic
+activation-click experiment) are now user-confirmed live. See the two
+fix-history sections below for the full detail. First of an expected
+multi-bug list from the user's recent v0.2.2 livestream — logged individually
+as each is reported, per [[project_post_break_priorities]], rather than
+waiting for the full list.**
 
 **User-reported symptom (verbatim intent, cleaned up):** sometimes crouch
 does not fire on the normal input. On at least one occasion this happened
@@ -6481,7 +6625,7 @@ Treat the B/knife detail as a possible clue about what state is involved,
 not a confirmed trigger or workaround.
 
 **Likely connection to existing research, not yet confirmed:** this is the
-same class of symptom already on record as **Bug #2 under issue #27**
+same class of symptom already on record as **issue #27 Bug #2**
 ("Crouch intermittently fails to fire, ~98% reliable, ~2% silent no-op;
 recovers if the player pauses and unpauses in certain sequences") — that
 entry already has a real, plausible, unconfirmed lead: `ToggleStance()`
@@ -6503,12 +6647,12 @@ project's B-button stance wiring per issue #9 may be hardcoded to physical
 B regardless of the user's selected layout preset, which would be a
 separate, real bug from the intermittent-failure issue itself if the user
 is actually playing on a non-default layout). Needs the live
-`LogStanceDiag`-style guard-byte logging issue #27's Bug #2 already
+`LogStanceDiag`-style guard-byte logging issue #27 Bug #2 already
 proposed, ideally captured across both a knife-then-crouch attempt and a
 plain intermittent failure, before concluding anything.
 
-**Fix attempt shipped 2026-07-31, NOT YET LIVE-CONFIRMED (dev resumed post-break,
-this is the first CTA of the session):** rather than waiting on a live capture of
+**Fix shipped 2026-07-31, CONFIRMED WORKING LIVE by the user the same day
+(dev resumed post-break, this was the first CTA of the session).** Rather than waiting on a live capture of
 what the two guard bytes actually mean, `RequestStanceToggle()`
 (`analog_input_hooks.cpp`) now calls `ToggleStance()` and verifies against the real
 stance field (`GetRealStance()`) whether it actually took effect, instead of just
@@ -6528,18 +6672,159 @@ both independently-reported "something unrelated seems to unstick it" patterns
 (pause/unpause from Bug #2's own original report, and this issue's knife/melee
 press) without needing the player to find the right unrelated action -- if either
 one works by coincidentally landing after the same transient gate clears, the
-per-frame retry loop reaches that same clearing moment on its own. **Needs a real
-live playtest to confirm** (both that intermittent crouch failures stop, and that
-the `[stance-diag]` log lines look sane) before this can be called resolved --
-builds clean (Win32/Release) but that's necessary, not sufficient, per this
-project's own "Verify Live" standard.
+per-frame retry loop reaches that same clearing moment on its own. **User confirmed
+live (2026-07-31): "fix worked."** No detailed repro/log breakdown given alongside
+that confirmation (e.g. whether the retry path ever actually fired vs. the toggle
+succeeding on the first attempt every time) -- if a future session wants that level
+of detail, it's sitting in `proxy_d3d9.log`'s `[stance-diag]` lines from this
+session's playtest. Status upgraded to RESOLVED on the strength of the user's direct
+confirmation at the time; **downgraded again to PARTIALLY RESOLVED after further
+play the same day surfaced the initial-click caveat below** — the guard bytes'
+own real meaning remains formally undecoded, and there IS still a real,
+reproducible gap (first attempt after launch), just not the one this fix
+originally targeted (repeated intermittent failures during an ongoing session).
+
+**User-supplied theory on the underlying mechanism (2026-07-31, after the fix was
+already confirmed working — recorded for the still-open "why" question, not
+reopening this issue's status):** the user connected this bug's likely real cause
+to **issue #1** (2026-07-15, "Buy-station + pause menu completely breaks
+movement") — that issue's root cause was a real engine gate bit
+(`0x00B36210` bit `0x10`) needing to genuinely transition (briefly become `1`,
+"finish cleanup") to stay in sync with the game's own menu-depth tracking;
+permanently forcing it to a fixed value desynced real engine state. The user's
+framing: crouch's own guard-byte no-op is "the click being needed by the
+engine," the same class of bug as day-1's issue #1 — some engine-side
+state expects a genuine transition/event (a "click") to occur, and this
+project's own input synthesis doesn't naturally produce it the way a real,
+organic input sequence would. This is consistent with, and reinforces rather
+than contradicts, the theory already on record two paragraphs up (a
+locally-tracked/stale bit desyncing from real engine state, with pause/unpause
+or an unrelated action happening to force a re-sync) — issue #1 is now a
+second, independently-confirmed-and-RESOLVED precedent for this exact CLASS of
+bug in this codebase, not just a hypothesis. The retry-based fix above works
+around the symptom regardless of the exact mechanism (per its own safety
+argument — a blocked call is a guaranteed no-op, so retrying can only ever
+help), so this doesn't change what's already shipped; it's additional context
+for if the guard bytes' real meaning is ever chased down properly, and a
+reminder that this class of "needs a genuine transition, not just a forced
+value" bug has a real, direct precedent in this project rather than being a
+one-off theory.
+
+**STATUS DOWNGRADED, same day: PARTIALLY resolved, not fully.** Live playtest
+after the fix shipped: crouch was reliable for the whole rest of the session
+once play got going, but the VERY FIRST crouch attempt after launch still
+needed an initial "click" before it would fire — matching, almost verbatim,
+issue #1's own original symptom shape (a real engine gate needing a genuine
+transition to sync up before it behaves correctly), and the user's own
+assessment: **issue #1 was likely never truly, fully fixed** — its own "3-second
+rising-edge window" fix (reinstated 2026-07-15, keyed off the in-level flag
+`0x00A98ACC`) may just be papering over the same missing initial transition
+this bug's own retry loop now also has to work around on every launch, rather
+than the real mechanism ever having been identified. **Candidate lead, not
+yet chased down (deferred — see session note on prioritization)**: the shared
+per-player gate struct at `0x00B36210` (issue #1's own root-cause address,
+also reused by `IsMenuActive()`'s bit `0x10`, and by other bits this project
+has found over time — see the `+0x8`/`+0x1094` cross-references elsewhere in
+this file) is the most likely "focus gate" candidate the user is recalling
+from earlier RE sessions, given it's already the SAME class of "needs a real
+transition" gate as issue #1's own bug and is a rich, multi-bit, frequently-
+revisited struct in this codebase's own history — but this is a lead to
+verify, not a confirmed connection to `ToggleStance`'s own, separate guard
+bytes (`0xA98CA0`/`0xA98BC4`) yet.
+
+**Investigation resumed same day, per the user's explicit go-ahead ("research
+it") — real progress, root cause STILL not fully pinned down.** Fresh Ghidra
+work (headless `DecompileFuncs`/`FindConstantRefs` against `iw5sp.exe`, this
+project's existing `MW3.gpr`/scripts):
+
+- **The two guard bytes' real meaning is now confirmed, not just theorized.**
+  A whole-binary scan for both exact addresses (`0xA98CA0`/`0xA98BC4`) found
+  exactly 4 functions that ever reference them, all reads: `ToggleStance`
+  itself (`FUN_0057d2c0`), plus three PREVIOUSLY UNINVESTIGATED functions:
+  - `FUN_0057d190()` — a plain, one-line `IsStanceLocked()`-equivalent:
+    `return (guard1==0 && guard2==0) ? 0 : 1;`. Confirms these two bytes are
+    genuinely a paired "stance change is locked" flag, not two independent,
+    unrelated conditions.
+  - `FUN_0050b770(playerIndex, newStance)` — a `SetStanceIfUnlocked()`-
+    equivalent: writes `newStance` directly to the same real stance field
+    `GetRealStance()` reads (`0xB363CC`), but ONLY if both guards are 0 —
+    i.e., a second, independent path (besides `ToggleStance`) that respects
+    the exact same lock.
+  - **`FUN_0057d430` — genuinely significant: this IS the real per-frame
+    keyboard-movement function this project's OWN `InjectControllerMovement`
+    hook already sits on top of** (per this file's own architecture notes).
+    While EITHER guard is set, it takes a completely different branch: forces
+    the real stance field to `0` (standing) directly, AND forces real usercmd
+    button bits — `0x200` (crouch, matching this project's own bit for that
+    state) if guard1 is the one that's clear but guard2 isn't, or `0x100`
+    (prone) if guard1 itself is set. **This is a real, native "forced
+    stance during a lock" mechanic** (very plausibly used for mantling,
+    entering/exiting a vehicle, a scripted sequence, etc.) — not an inert or
+    theoretical gate, an actively-firing one with real gameplay
+    side-effects whenever it's engaged.
+- **No writer found anywhere in the binary.** The same exact-address scan
+  found ZERO instructions that ever WRITE either guard byte via a literal
+  matching operand — only the 4 readers above. This means either the write
+  happens through a base-pointer-plus-small-relative-offset form that doesn't
+  surface the same literal constant (a real limitation of this scan
+  technique, not proof no writer exists), or the bytes are simply never
+  explicitly written in the disassembled code paths reached so far and start
+  at their `.bss`-default `0` — genuinely unresolved either way with the
+  techniques tried this pass.
+
+**Fix experiment shipped (2026-07-31), NOT a confirmed root-cause fix —
+testing the user's own proposed mechanism directly:** user's fix idea —
+"when controller input is detected, force focus of MW3 through the engine
+call... not Windows, so the game still detects input from the controller
+always." Implemented as `SendSyntheticActivationClick()`
+(`proxy_d3d9/src/d3d9_hook.cpp`), called once from `InstallWndProcHook`,
+right after the D3D9 device's real window handle is first known (before any
+real rendering/menu could exist yet — about the safest possible moment).
+Feeds a synthetic `WM_ACTIVATE`(`WA_ACTIVE`) → `WM_SETFOCUS` →
+`WM_LBUTTONDOWN`+`WM_LBUTTONUP` (at client coords `(1,1)`, chosen to make it
+essentially impossible to land on a real UI element) sequence DIRECTLY into
+the game's own real `WndProc` via `CallWindowProcA` — bypasses the OS message
+queue entirely (no `SetForegroundWindow`, no stealing focus from another
+window), matching the user's own "through the engine, not Windows" framing,
+while still triggering whatever the engine itself does in reaction to a
+genuine activation/click sequence. **Explicitly experimental**: no confirmed
+writer to the guard bytes was found, so this cannot be verified correct by
+static analysis alone — it tests the user's theory empirically. Also upgraded
+`LogStanceDiag`'s heartbeat (every ~500ms, including from level load) to log
+both guard-byte values on every call, not just tap/hold attempts — if this
+experiment doesn't fully resolve the symptom, the next playtest will have a
+full guard-byte timeline from launch instead of only the moment of a failed
+press. Builds clean (Win32/Release, confirmed 2026-07-31), deployed. **Needs
+a real playtest to know if the "needs an initial click" symptom is actually
+gone.**
+
+**CONFIRMED WORKING LIVE (2026-07-31, same day): user played from a fresh
+launch, never clicked the game window even once, and crouch fired correctly
+on the very first attempt.** The synthetic `WM_ACTIVATE`/`WM_SETFOCUS`/click
+sequence fed into the real `WndProc` is doing exactly what the user's own
+theory predicted — issue fully RESOLVED. The guard bytes' own real *writer*
+is still not identified (the whole-binary constant scan found none), so the
+precise mechanism remains formally unconfirmed, but the practical symptom is
+gone and the fix is real, not a workaround masking a still-present bug: this
+is a genuine engine-level trigger (an activation/click reaching the game's
+own `WndProc`), not a retry loop working around an unknown gate. **This also
+strongly suggests issue #1 (2026-07-15, buy-station+pause breaking movement)
+shares the exact same root mechanism and may now be fixed as a side effect**
+— `SendSyntheticActivationClick()` fires once, very early (at D3D9 device
+creation, before any buy-station interaction could even be possible), so if
+issue #1's own gate needed the same kind of activation event, it should now
+also always receive one at the earliest possible moment rather than
+depending on the player happening to click first. NOT independently
+re-tested against a real buy-station+pause repro this session — flagged as a
+likely bonus fix, not confirmed as one, until someone actually re-runs that
+specific scenario.
 
 ---
 
 ## 43. Roadmap idea (not a bug, not implemented): the pre-native Sprint implementation had a "sprint while crouched" side effect worth remembering (recalled 2026-07-31)
 
-**Status: pure idea/note for a possible future feature. No code exists for this
-today and none is planned right now — logged purely so it isn't forgotten.**
+**Status:** Roadmap Idea (pure note for a possible future feature — no code
+exists today and none is planned right now, logged purely so it isn't forgotten).
 
 Before Sprint was migrated onto the real `+sprint` kbutton (issue #6/#9's
 `ToggleStance`/`GetRealStance` work, 2026-07-16/19), the earlier implementation
@@ -6564,3 +6849,416 @@ that's ever wanted — it would need to be built as its own explicit, understood
 mechanic on top of the current real-kbutton Sprint, not resurrected via the
 old blind bit-forcing technique. No further action needed unless/until the
 user wants to actually pursue it.
+
+---
+
+## 44. ADS look-slowdown heavily skewed toward 3x+ scopes, pistols/iron sights barely slowed — tuning pass, NOT YET LIVE-CONFIRMED (2026-07-31)
+
+**Status:** Partially Resolved. Three same-day rounds (baseline 0.65→0.45,
+found insufficient for pistols due to a config-mechanics gap; corrected, then
+found to over-slow 3x+ scopes; reverted to 0.65 plus a new decoupled
+`AdsCloseRangeSlowdownStrength` knob) — the final combination is deployed and
+unit-tested but **not yet live-confirmed together** on both pistol and
+high-zoom feel. See the end of this entry for the full round-by-round history.
+
+User feedback during
+2026-07-31's live session: the ADS zoom-aware look-slowdown (`GetAdsLookRateScale()`,
+`analog_input_hooks.cpp`) feels "heavily skewed towards 3x scopes" — high-zoom
+optics get strongly slowed, but pistols and iron sights barely feel slowed at all
+by comparison.
+
+**Root cause (by formula inspection, not new RE — the formula itself is already
+fully understood and documented at `GetAdsLookRateScale()`'s definition):**
+`scale = adsSlowdownBaseline * ratio^adsSlowdownStrength`, where `ratio =
+effectiveFov/baseFov`. For a low-zoom weapon (pistol/iron sights), `ratio` sits
+close to 1.0, so `ratio^strength` contributes almost nothing regardless of
+`strength` — `adsSlowdownBaseline` (previously `0.65`) is effectively the ENTIRE
+scale factor at that end, i.e. a flat ~35% speed reduction no matter how the
+weapon looks/feels. For a 3x+ scope, `ratio` is much smaller (e.g. ~0.3-0.4), so
+`ratio^strength` alone already drives scale down to ~0.1-0.2 before `baseline`
+even multiplies it further. The two ends were never independently tunable through
+one shared multiplicative constant — this is a real, structural property of the
+formula, not a bug in the sense of behaving unlike its own design.
+
+**Fix (tuning, not a new mechanism):** lowered `adsSlowdownBaseline`'s default
+from `0.65` to `0.45` (`mod_config.h`). Since this constant dominates the
+near-`ratio=1` (pistol/iron sight) case almost completely, this reads as a real,
+perceptible increase in low-zoom slowdown (35%→55% reduction). Its effect on the
+already-small high-zoom `ratio^strength` values is comparatively tiny in absolute
+terms (multiplying an already-small number by a smaller constant), so 3x+ scopes
+shouldn't feel meaningfully different.
+
+**First live test (2026-07-31) showed NO pistol change at all, correctly diagnosed
+by the user** ("I know exactly why the pistol doesn't change — the FOV is the
+same") **— but the real reason was a config mechanic gap, not just the FOV
+finding.** Confirmed by directly inspecting the deployed `mw3ncp_config.ini`: it
+already had `AdsSlowdownBaseline=0.65` written explicitly (from 2026-07-20, under
+the OLD compiled default). A plain compiled-default change can't reach an
+existing file the way issue #45's key-rename migration can — the key never
+disappeared, so `ReadFloat`'s "file value always wins over a compiled default"
+behavior meant the player's live baseline was STILL `0.65` throughout the entire
+test, unrelated to migration existing or not. The user's own FOV finding is also
+independently correct and mechanistically important: for a weapon whose ADS
+genuinely never changes FOV (`ratio` ≡ `1.0` exactly, confirmed true for pistol),
+`ratio^strength` contributes nothing at all (`1^anything = 1`), so `scale`
+reduces to EXACTLY `adsSlowdownBaseline` — meaning `adsSlowdownBaseline` already
+*is* a flat/base ADS slowdown for that class of weapon, not a missing mechanism;
+shotgun iron sights apparently shave FOV slightly (`ratio` a bit under `1.0`),
+which is why they already got a bit more slowdown than pistol under the exact
+same formula/baseline value, independent of anything changed today.
+
+**Second fix (2026-07-31, same day): `ReadFloatWithDefaultRetune()` added to
+`mod_config.cpp`.** User-decided policy for this exact situation (a pure
+value-retune, as opposed to a key rename): only adopt the new compiled default
+for a file whose on-disk value still EXACTLY matches the previous shipped
+default — anything else is treated as a deliberate customization and is always
+respected, unconditionally, the same as a plain `ReadFloat`. Required bumping
+`kCurrentConfigVersion` a 2nd time (0→1→2, still all pre-release/same day) since
+a file already migrated to version 1 by the Sensitivity-split alone would
+otherwise read `configVersion < fromVersion` as false and skip this new rule
+entirely — the retune check is gated at `fromVersion=2` specifically so it still
+reaches an already-once-migrated file. **Verified via an isolated standalone
+test** (compiled and run outside the game, scratch directory, cleaned up after)
+against a COPY of this install's own real, already-migrated (`ConfigVersion=1`)
+config file: confirmed `AdsSlowdownBaseline` correctly resolves to the new `0.45`
+instead of the stale `0.65`, and a separate test with a genuinely customized
+value (`0.85`) confirmed it's correctly left untouched. Builds clean
+(Win32/Release). **Still not yet confirmed via an actual live game launch with
+the corrected value** — the previous "no pistol change" test used the stale
+`0.65` the whole time, so the real `0.45` value hasn't been felt in-game yet.
+
+**Second live test (2026-07-31, same day): `0.45` DID reach the pistol this
+time (config-retune fix confirmed working) — but now high-zoom scopes feel
+"too harsh."** Exactly the predicted, unavoidable consequence of using one
+shared multiplicative constant for two independent goals: `adsSlowdownBaseline`
+scales EVERY `ratio` value by the same relative percentage, so `0.65→0.45`
+(a ~31% relative cut) makes a 3x+ scope's already-small scale (e.g. `0.65 *
+0.35^1.75 ≈ 0.103`) drop by that same ~31% (`≈0.072`) — small in absolute
+terms, but a big, very perceptible relative cut to turn speed when you're
+already moving the stick to compensate for an already-slow scope. The
+"comparatively tiny in absolute terms" framing in this entry's own first Fix
+note was wrong about perceptual impact, even though the raw numbers were
+correctly computed.
+
+**Third and final fix (2026-07-31, same day): `adsSlowdownBaseline` REVERTED
+back to `0.65` (its original, already-proven-good value); a genuinely
+separate, decoupled `adsCloseRangeSlowdownStrength` (default `0.35`) added
+instead (`mod_config.h`/`.cpp`, `analog_input_hooks.cpp`).** A single shared
+multiplicative constant structurally cannot tune the `ratio≈1` and `ratio≈0`
+ends independently — the real fix needed a second, independent knob whose
+effect decays away for real zoom levels. `GetAdsLookRateScale()` now computes
+`closeRangeFactor = 1 - adsCloseRangeSlowdownStrength * ratio^8` (the exponent
+`8` is an internal-only "how sharply does this taper off" constant, not
+player-configurable — no real reason for a player to need to reshape the
+taper, only its strength) and multiplies it into the existing `baseline *
+ratio^strength` scale. At `ratio=1` (pistol): `closeRangeFactor = 1 - 0.35 =
+0.65`, giving a real, meaningful extra reduction (`0.65 * 0.65 ≈ 0.42` total).
+By the time `ratio` drops to a real 3x+ scope's range (~0.3-0.4),
+`ratio^8` is already astronomically small, so `closeRangeFactor ≈ 1` —
+restoring high-zoom feel to EXACTLY what it was before any of today's
+`adsSlowdownBaseline` tuning touched anything. Mathematically safe for any
+`adsCloseRangeSlowdownStrength` in `[0, 1]` (clamped on load): `ratio` is
+always in `(0, 1]`, so `ratio^8` is always in `(0, 1]`, so `closeRangeFactor`
+is always in `[1-strength, 1]` — never negative, can't invert look direction
+the way the old linear-blend bug (see issue #9's own writeup on
+`adsSlowdownStrength`) did.
+
+**Required a 3rd `ConfigVersion` bump (0→1→2→3, still all pre-release/same
+day)** since a file already carrying the now-reverted, short-lived `0.45`
+(written by a version-2 build) needs correcting back to `0.65` too — the same
+`ReadFloatWithDefaultRetune()` mechanism from the second fix, just re-pointed
+at the newer stale value (`fromVersion=3`, `oldDefault=0.45`) instead of the
+original one. **Verified via a fresh isolated standalone test** against a copy
+of this install's own actual real file (`ConfigVersion=2`,
+`AdsSlowdownBaseline=0.45`, i.e. the exact state left behind by the SECOND
+fix's live test): confirmed the value correctly resolves back to `0.65`.
+Builds clean (Win32/Release, confirmed 2026-07-31), deployed. **Still not yet
+live-confirmed at these final values** (`0.65` baseline + `0.35` close-range
+strength together) — this is the third round of the same day's live-tune-fix
+loop; needs an actual playtest verdict on pistol AND high-zoom feel together
+before this can be called settled.
+
+---
+
+## 45. Config auto-migration added — existing `mw3ncp_config.ini` files now carry forward across key renames AND retuned defaults (2026-07-31, implemented + unit-tested against real files at every stage)
+
+**Status:** Partially Resolved (implemented and unit-tested against real
+files at every stage, not yet live-tested end-to-end in-game). User-requested
+(2026-07-31, same session as the sensitivity split):
+existing configs should carry over the same (or an equivalent, if a key
+changed) setting across a mod update, rather than silently reverting to a new
+default whenever a key gets renamed or restructured — which is exactly what
+would otherwise have happened to every existing player's `[Look] Sensitivity`
+value the moment v0.2.5's `SensitivityHorizontal`/`SensitivityVertical` split
+shipped (issue happened to be caught before release, not after).
+
+**Mechanism (`mod_config.cpp`):** a new internal `[Meta] ConfigVersion` marker
+(not a player-facing setting) tracks which schema revision a given file is
+already on. Missing entirely == version 0 (any file predating this system,
+i.e. v0.2.2 and earlier). On load, if `ConfigVersion < kCurrentConfigVersion`
+(currently `3`, after two further same-day bumps — see issue #44's own
+writeup for why each one was needed), version-gated migration blocks run BEFORE the normal
+`ReadFloat`/`ReadBool`/etc. calls — e.g. the v0.2.5 migration reads a legacy
+`[Look] Sensitivity` value (via the new `TryReadLegacyFloat`, which — unlike
+`ReadFloat` — can distinguish "key genuinely absent" from "key present but
+unparsable", needed here since an absent key means nothing to migrate) and
+pre-seeds BOTH `lookDegreesPerSecondHorizontal`/`Vertical` with it. Because
+`ReadFloat`'s own existing fallback behavior is "use whatever's already in the
+output variable if the key is missing," this pre-seed is naturally picked up
+as the effective default for the new keys on an old file, with an explicit
+new-key value in the file (if a user already hand-added one) still correctly
+taking priority. After a full normal load, if any migration ran, the file is
+rewritten once via the existing `WriteDefaultConfig()` (already sources every
+printed value from `g_modConfig`, so this naturally preserves every OTHER
+setting the player had tuned, not just the migrated one) with `ConfigVersion`
+bumped to current — so the migration doesn't re-run on every future launch,
+and the file is left in the current, fully-current-schema format.
+
+**Verified two ways:** (1) builds clean (Win32/Release), and (2) a standalone
+isolated test (compiled and run outside the game, scratch directory, cleaned
+up after) against a COPY of this install's own real, genuinely-old
+`mw3ncp_config.ini` (dated 2026-07-20, pre-dating the sensitivity split, real
+`Sensitivity=250`, no `[Meta]` section) confirmed: `ConfigVersion` correctly
+reads as `0` on that file, `TryReadLegacyFloat` correctly finds and parses
+`Sensitivity=250`, and the new `SensitivityHorizontal`/`Vertical` keys are
+confirmed genuinely absent from it (so the fallback-seeding path is the one
+that would actually engage). **Not yet confirmed via an actual live game
+launch** — the isolated test only exercises the ini-parsing logic itself
+(standard, well-documented `GetPrivateProfileString`/`Int` behavior), not the
+full `LoadModConfig()` call path inside the running DLL.
+
+---
+
+## 46. CRITICAL — can't fire while holding breath on a sniper — root-caused via existing research, FIXED, CONFIRMED LIVE (2026-07-31)
+
+**Status:** Resolved. User confirmed live: sniper + Hold Breath + Fire
+together now works. Fixed via a direct code-level root cause (a bind-index
+collision), not a live-diagnostic capture. Live-reported the same session as
+issue #44's ADS work: firing
+while Hold Breath is engaged on a sniper doesn't work, described as "weird."
+Marked critical since it breaks a core weapon class's usability, not an edge
+case.
+
+**Root cause, found by re-reading this project's OWN existing, already-
+documented research rather than fresh RE:** two independent facts already on
+record, never previously cross-checked against each other:
+1. Issue #6's own "DEFINITIVE ROOT CAUSE FOUND" section (2026-07-19) already
+   established that `kHoldBreathAliasAddr` (`0xA98C04`) is not an independent
+   kbutton_t at all — it is literally **Fire's own real kbutton's `down[1]`
+   field** (`kAttackKbutton` = `0xA98C00`, `down[1]` = `+0x04` =
+   `0xA98C04`). Driving it via `CallKbuttonDown`/`CallKbuttonUp` writes
+   directly into Fire's own kbutton state, not a separate one.
+2. **Newly noticed this session**: `kHoldBreathBindIndex` was `17` —
+   IDENTICAL to `kAttackBindIndex` (Fire's own bind index, also `17`,
+   defined in a completely different section of `analog_input_hooks.cpp`,
+   never cross-referenced against Hold Breath's own "distinct from ADS's
+   13/Reload's 15/Sprint's 16" comment, which never mentioned Fire's 17 at
+   all — a straightforward oversight, not a deep engine mystery).
+
+Combined: every time Hold Breath engages, `CallKbuttonDown(0xA98C04, 17)`
+writes bind-index `17` into what is really Fire's own `down[1]` slot — the
+EXACT SAME bind-index value a genuine Fire press writes into Fire's `down[0]`
+slot via `CallKbuttonDown(0xA98C00, 17)`. With both of Fire's real down-slots
+now holding identical bind-index values from two logically different
+sources, the kbutton's real down/up edge-transition logic has no way to tell
+"a genuine new Fire press" apart from "the slot Hold Breath already claimed"
+— fully sufficient on its own to explain a broken/suppressed fire transition
+while breath is held, no further live capture needed to know WHY.
+
+**Fix:** changed `kHoldBreathBindIndex` from `17` to `18` (`analog_input_hooks.cpp`)
+— the only used bind-index value that hadn't already been claimed by ADS
+(`13`), Reload (`15`), Sprint (`16`), or Fire (`17`). No other code changed;
+this is a single-constant fix directly addressing a real, concrete collision,
+not a workaround or a guess. Builds clean (Win32/Release, confirmed
+2026-07-31), deployed. **CONFIRMED LIVE (2026-07-31)** — user played a
+sniper with ADS + Hold Breath + Fire together and confirmed it now works;
+this project's own history with this exact aliased memory region (issue #6,
+four prior blind-fix attempts before the real root cause was found) made this
+worth confirming live rather than treating the plausible fix as done on
+reasoning alone.
+
+---
+
+## 47. On-screen top-right notifications (startup message + config hot-reload) — new capability, first real render hook this project has ever had (2026-07-31, user-requested QoL)
+
+**Status:** Resolved, fully confirmed live (2026-07-31) — the startup
+message, config hot-reload message, and the intro-video shader-corruption fix
+(round 3, see below) are all user-confirmed working. This project's first
+real per-frame render capability, working correctly in the main menu,
+gameplay, AND the intro logo/waveform bumper video.
+
+**User request:** an "MW32011NCP Started" message (rare 1-in-20 variant:
+"MW32011NCP Started - Thanks For Supporting The Project :P") shown top-right
+for 15 seconds on launch, plus a matching "MW32011NCP Config Reloaded"
+message whenever `mw3ncp_config.ini` changes on disk while the game is
+running — i.e. config hot-reload, a genuinely new capability (config was
+load-once-at-startup-only before this).
+
+**Blocker this ran into immediately: this project had no confirmed-alive
+per-frame D3D9 render hook at all.** Already flagged as an open gap in issue
+#37 (WaW clan-tag idea, parked partly for this reason) — `Present` is
+confirmed dead (`d3d9_hook.cpp`'s own history: a fire-counter diagnostic
+proved it never fires even during ordinary unpaused rendering, almost
+certainly Steam Overlay silently taking that vtable slot). `EndScene` was
+flagged "untried."
+
+**Round 1: hooked `EndScene`, drew via GDI directly on the backbuffer
+(`GetBackBuffer` → `surface->GetDC` → `TextOutA`/`DrawTextA` → `ReleaseDC`).**
+`EndScene` genuinely fires — confirmed live via the same fire-counter
+technique that caught `Present` being dead
+(`MH_CreateHook`/`MH_EnableHook` both `MH_OK`, and a first-fire log line
+appeared). **A real, different blocker surfaced instead**: user reported
+nothing drew on screen. The initial version had zero failure logging for the
+actual drawing calls (only for the hook install itself) — a real gap given
+this project's own standing rule that silent failure isn't acceptable. Added
+explicit logging for every step, and the very next test showed exactly where
+it broke: `surface->GetDC failed: hr=0x8876086C` (`D3DERR_INVALIDCALL`). This
+is the textbook signature of a **multisampled (anti-aliased) backbuffer** —
+GDI's `GetDC` fundamentally cannot write to a multisampled D3D9 surface at
+all, regardless of format or driver. Not a bug in the code; a hard D3D9
+limitation this technique was always going to hit if the player has
+anti-aliasing enabled.
+
+**Round 2 (user chose this over just testing with AA disabled): rewrote the
+renderer as a real textured quad through the normal 3D pipeline instead of
+touching the backbuffer via GDI at all.** Normal draw calls resolve into a
+multisampled render target correctly (that's what MSAA render targets are
+for) — the limitation only applies to GDI's own surface-DC path, not to the
+device's ordinary draw calls. New approach (`overlay_hud.cpp`, fully
+rewritten): text is still rendered via GDI, but into a plain, off-device
+32bpp ARGB memory bitmap (`CreateDIBSection`, never touches D3D9) — white
+text on black, `ANTIALIASED_QUALITY` (grayscale AA, no ClearType color
+fringing) so R=G=B on every edge pixel, letting that shared value become the
+pixel's alpha directly (clean per-pixel alpha with real edge smoothing, no
+separate alpha pass needed). That buffer is uploaded into a small
+(512×64) `D3DFMT_A8R8G8B8`/`D3DPOOL_MANAGED` texture (created once, re-locked
+and re-rendered only when the message text actually changes, not every
+frame), then drawn each `EndScene` as an alpha-blended,
+pre-transformed (`D3DFVF_XYZRHW`) screen-space quad via `DrawPrimitiveUP`,
+with every touched render/texture-stage state saved and restored around the
+draw.
+
+**Vtable-index risk, explicitly noted:** the `EndScene`/`GetBackBuffer`/
+`IUnknown::Release` indices from round 1 were empirically confirmed correct
+by that round's own live test (a wrong index would have crashed or returned
+garbage, not the exact, meaningful `D3DERR_INVALIDCALL` that came back).
+Round 2 adds several MORE vtable indices (`CreateTexture`,
+`IDirect3DTexture9::GetSurfaceLevel`, `IDirect3DSurface9::LockRect`/
+`UnlockRect`, `SetTexture`, `SetFVF`, `Set`/`GetRenderState`,
+`SetTextureStageState`, `DrawPrimitiveUP`) that are the same well-documented,
+stable public D3D9 vtable layout but have NOT yet been individually
+live-verified the way round 1's were — each has its own diagnostic log line
+(`CreateTexture failed`, `GetSurfaceLevel failed`, `LockRect failed`, or a
+`DrawPrimitiveUP hr=...` success/failure line) so a next occurrence, if any,
+identifies exactly which one rather than requiring another guess. Builds
+clean (Win32/Release, confirmed 2026-07-31), deployed.
+
+**Also new, independent of the rendering question:** `CheckConfigHotReload()`
+(`mod_config.cpp`) polls `mw3ncp_config.ini`'s real last-write-time
+(rate-limited to once/second) from `InjectMenuInputTick` (the always-running
+WndProc/`SetTimer` tick, so this works even at the main menu/while paused)
+and re-runs `LoadModConfig()` on a genuine change. Guards against a real
+feedback-loop risk: `LoadModConfig()` can itself rewrite the file (a pending
+schema migration), so the write-time baseline is re-read AFTER calling
+`LoadModConfig()`, not before — otherwise the mod's own rewrite would look
+like another external change on the very next check and loop the reload (and
+its on-screen message) forever.
+
+**Round 2 live test: CONFIRMED WORKING for both messages, at the main menu and
+during gameplay — but a real, visible corruption bug during the intro
+logo/waveform bumper video specifically** (screenshot evidence: the bumper's
+own energy-waveform VFX renders warped/duplicated exactly where the quad
+draws, only during that video — main menu and gameplay onward are clean).
+
+**Round 3 (same day): root-caused and fixed.** `DrawPrimitiveUP` with only an
+FVF specified uses the fixed-function pipeline ONLY when no vertex/pixel
+shader is currently bound on the device — it does NOT override an
+already-bound programmable shader. Ordinary menu/gameplay HUD compositing
+happens to leave no shader bound by the time `EndScene` fires each frame, so
+this went unnoticed there; the intro bumper's own VFX almost certainly runs a
+real shader for its effect, and our fixed-function vertex data was being fed
+through THAT leftover shader — a classic, well-documented D3D9 overlay gotcha
+that fully explains warped/duplicated-looking output specifically (not just
+"missing text"), and specifically only during shader-heavy content. **Fix:**
+explicitly save (`GetVertexShader`/`GetPixelShader`), null
+(`SetVertexShader(NULL)`/`SetPixelShader(NULL)`), draw, then restore both
+around the quad draw in `DrawTexturedQuad`. Correctly handles the COM
+reference-counting subtlety this requires: `Get*Shader` AddRefs its
+out-param, so the saved pointer is `Release`d (via `IUnknown::Release` at the
+universal vtable index 2, valid for any COM interface including shaders) once
+restored via `Set*Shader` (which re-AddRefs for the device's own internal
+reference) — otherwise every frame the overlay is visible would leak one
+reference on whatever shader the game had bound, a slow but real bug. Builds
+clean (Win32/Release, confirmed 2026-07-31), deployed. **CONFIRMED FIXED
+LIVE** — user re-tested through the intro video and confirmed the corruption
+is gone.
+
+---
+
+## 48. Roadmap idea, high-value: render controller-glyph icons as INDEPENDENT overlay quads instead of injecting them into the game's own font system (2026-07-31, user-identified, not yet implemented)
+
+**Status:** Roadmap Idea (not started — a real, substantial next feature, not
+a quick follow-on to issue #47). Logged in detail so it isn't lost, since it
+meaningfully changes the recommended path forward for the whole
+controller-glyph effort (issues #23/#34/#35/#38/#39).
+
+**The realization:** issue #47's overlay work (`overlay_hud.cpp`) — built for
+a startup/config-reload toast notification, seemingly unrelated to the glyph
+effort — is a confirmed-working, general-purpose "draw an arbitrary textured
+quad on screen every frame, with real per-pixel alpha, via `EndScene`"
+capability, verified working in the main menu, live gameplay, AND the intro
+cutscene (a real corruption bug there was found and fixed the same session —
+see this issue's own history above). The ENTIRE controller-glyph struggle to
+date (issues #23/#34/#35/#38/#39) has been about injecting new glyph art INTO
+the game's own internal font/rendering system — font-zone loading with
+GPU-resource-creation timing crashes (issue #39), array-patch corruption and
+a ring-buffer no-render bug (issue #34), hudBigFont-vs-smallFont targeting
+mismatches (issue #38) — because every attempt assumed the game's own
+renderer had to be the one to draw the glyph. **It doesn't.** A completely
+independent overlay quad, positioned near the real hint text, sidesteps that
+entire class of problem.
+
+**Why this is plausible, not just hopeful:** the pieces this would need
+already exist, separately, all previously built by this project:
+- **106 real controller-icon PNGs already extracted** (real alpha channel,
+  per-icon bounding boxes) and committed to `assets/button_glyphs/` — no new
+  art needed.
+- **The bind-resolver hook (`FUN_0061f6f0`, issue #35) is already fully
+  traced and installed** (log-only mode) — it fires exactly when the game is
+  about to show a hint for a specific bind, telling us WHICH glyph is needed
+  and WHEN, without needing to touch the game's own text-substitution logic
+  at all.
+- **The universal glyph-draw call (`FUN_00690c80`) is already deeply
+  understood** (issues #34/#38's own research — the `param_10` ring-buffer
+  gotcha, the real call chain from both menu itemDef text and interact-hint
+  text) — this is the natural place to also read the REAL screen position
+  the original text is about to draw at, so our own quad can be positioned
+  correctly relative to it, without needing new position-finding research.
+- **The overlay renderer itself is confirmed working, including through
+  cutscenes** — the one piece that was missing before issue #47.
+
+**Not yet worked out, real open questions before this could be built:**
+1. Exact position/sizing convention — does drawing "near" the resolved hint
+   text need pixel-perfect alignment with the text baseline, or is an
+   approximate offset acceptable? Needs a live look at how console MW3
+   actually composited glyph+text in prompts, if any reference exists.
+2. Mapping a resolved bind name to the correct one of the 106 icon assets,
+   per the active `GlyphStyle` (Xbox360/XboxModern/PlayStation) — the
+   mapping logic itself doesn't exist yet (only the substitution-codepoint
+   table for the abandoned in-font approach does).
+3. Menu-entry text (System A, issue #38) uses a genuinely different pipeline
+   from interact-hint text (System B) per issue #38's own finding — this
+   idea may need two separate position-sourcing hooks, not one.
+4. Performance/timing: doing this per-visible-prompt, potentially several
+   at once (e.g. multiple interact prompts or a menu list with several
+   items), needs its own texture-atlas or per-icon-texture management, not
+   just the single always-one-message design issue #47 built.
+
+**Recommendation:** this is very likely the right long-term direction for
+issues #34/#35/#38/#39's shared goal, and should probably supersede further
+work on the in-font substitution path (`BindResolverGlyphSubstitution`,
+`InstallGlyphFontExtension`) rather than running both in parallel — but this
+is a real architectural decision worth confirming with the user explicitly
+before abandoning the in-font approach's own, separately-already-done work.
+Not started this session; a good candidate for the next dedicated glyph-work
+session per [[project_post_break_priorities]].

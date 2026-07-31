@@ -8,6 +8,62 @@ reverse-engineering trail behind each entry.
 
 ## Unreleased
 
+The user is still reviewing both v0.2.2 livestreams for any further bugs found
+during them (none reported as gamebreaking so far, mostly Campaign-related) —
+those are unrelated to the crouch fix that prompted v0.2.5 and remain relevant
+to check for even on this new version; log each as its own
+`re_notes/known_issues.md` entry as reported (see [[project_post_break_priorities]]).
+
+---
+
+## v0.2.5 — Alpha (2026-07-31) — Hotfix: crouch/stance reliability + on-screen notifications
+
+**RENUMBERED from v0.2.3 (same day, before release) — this heading and every
+cross-reference to it were originally written as "v0.2.3"; the user
+redesignated it v0.2.5 once the on-screen-notification work below was folded
+into the same release. No content changed as part of the rename itself.**
+
+### Added
+- **On-screen top-right notifications: startup message + config hot-reload,
+  five rounds same day, all user-confirmed live (2026-07-31, user-requested
+  QoL, issue #47).** This project's first working per-frame render capability
+  (`overlay_hud.cpp`/`.h`, hooks `EndScene` — confirmed genuinely alive,
+  unlike the already-dead `Present`). Shows a startup message for 15 seconds
+  on launch (a 1-in-3 roll picks one of four "vibes" variants homaging WaW's
+  real documented hidden dev clan-tag codes — Gold, Rainbow, Sweep, plus a
+  "Thanks For Supporting" text, issue #37), and a matching message whenever
+  `mw3ncp_config.ini` changes on disk. **Config hot-reload is a genuinely new
+  capability**, not just the message — config was load-once-at-startup-only
+  before this. Text uses italic Barlow Condensed with a real black outline
+  (`[Overlay] FontItalic` toggles italic); `[Overlay] TestCycleAllVariants`
+  (strictly a testing toggle, default off) cycles every variant on demand.
+  Real iteration to get here, each caught by an actual live test: GDI-on-
+  backbuffer drawing failed on multisampled (AA) displays; the textured-quad
+  rewrite that fixed that corrupted the intro cutscene via a leftover shader;
+  the first Sweep/Gold visuals needed their own follow-up fixes once actually
+  seen live (Sweep was ignoring the text's alpha entirely, painting a hard
+  rectangular bar instead of a masked glint; Gold was a flat single color
+  with no shading, reading as plain yellow — both fixed, Gold now a real
+  light-to-dark gradient). Bumped `ConfigVersion` a 4th time (existing
+  configs were already at the current version, which — unlike a version
+  behind — meant new `[Overlay]` keys never got written into the real file
+  even though the compiled defaults still applied correctly in memory; a real
+  gap in the schema-versioning approach, not just an edge case). Full trail
+  in `re_notes/known_issues.md` issue #47.
+
+**Crouch/prone intermittently failing to fire is FULLY fixed, two rounds,
+both user-confirmed live** (issue #27 Bug #2 / issue #42). **A critical
+regression is fixed, user-confirmed live: couldn't fire while holding breath
+on a sniper** (issue #46). Also splits look sensitivity into independent
+horizontal/vertical values; fixes pistols/iron sights barely being slowed
+while aiming via a new, genuinely separate close-range slowdown knob (issue
+#44, not yet live-confirmed at final values, see the Changed entry below);
+and adds config auto-migration so existing `mw3ncp_config.ini` files carry
+settings forward across key renames and retuned defaults (issue #45). The
+research/investigation entries below accumulated since v0.2.2 are included
+for completeness; the fixes above are the only actual behavior changes in
+this release.
+
 ### Investigated-not-resolved
 - **Roadmap idea, not implemented: the pre-native Sprint implementation's
   "sprint while crouched" side effect, recalled 2026-07-31 (issue #43).**
@@ -144,15 +200,30 @@ reverse-engineering trail behind each entry.
   of requiring another round of inference.
 
 ### Added
+- **Config auto-migration — existing `mw3ncp_config.ini` files carry settings
+  forward across key renames AND retuned defaults instead of silently resetting
+  (issue #45, 2026-07-31).** A new internal `[Meta] ConfigVersion` marker
+  (`mod_config.cpp`) tracks schema revision; version-gated migration blocks run
+  before the normal key reads, then the file is rewritten in the current format
+  via the existing `WriteDefaultConfig()` (preserves every other tuned setting
+  too). `ReadFloatWithDefaultRetune()` extends this to plain compiled-default
+  changes (not just renames): only adopts a new default if the file's value
+  still exactly matches the OLD default, otherwise respects it as a deliberate
+  customization. Used three times the same day as `ConfigVersion` climbed
+  0→1→2→3 (once for the sensitivity split below, twice more for issue #44's own
+  two-round ADS-slowdown false start) — each retune correctly reached files
+  already migrated by the prior round. Verified via standalone tests against
+  copies of this install's own real config at each stage, plus a synthetic
+  customized-value case. Builds clean; full in-game `LoadModConfig()` path not
+  yet live-tested end-to-end. Full trail in `re_notes/known_issues.md` issue
+  #45.
 - **Separate horizontal/vertical look sensitivity (task #14 follow-up, user request
-  2026-07-31).** `[Look] Sensitivity` in `mw3ncp_config.ini` was one shared
-  degrees/second value driving both stick axes; split into `SensitivityHorizontal`
-  (yaw) and `SensitivityVertical` (pitch), matching how console CoD titles expose
-  these as independent sliders. `InjectControllerLookAngles` now computes yaw and
-  pitch rates separately (still sharing the same ADS-zoom-slowdown and acceleration-
-  ramp scale factors) instead of one shared rate. Old single-key configs simply get
-  both new keys at their existing default (250) on next launch since neither key
-  exists yet in an old file — no migration needed.
+  2026-07-31).** `[Look] Sensitivity` was one shared value driving both stick
+  axes; split into `SensitivityHorizontal`/`SensitivityVertical`, matching
+  console CoD titles' own independent sliders. `InjectControllerLookAngles` now
+  computes yaw/pitch rates separately (still sharing the same ADS-zoom-slowdown/
+  acceleration-ramp scale factors). An existing single-key config's value is
+  carried over to both new keys via the config auto-migration above (issue #45).
 - **Retargeted the glyph-patch mechanism tests at `fonts/hudBigFont`, backed by real
   usage data (task #6/#34).** A live playtest of this session's `hud-font-id`
   diagnostic tallied every real font drawn during a long, clean Survival session:
@@ -198,24 +269,66 @@ reverse-engineering trail behind each entry.
   real, honestly-documented gap (no Xbox360-style left-stick/right-stick-click icon
   assets exist, so Sprint/Melee glyphs are unmapped for that one style).
 
+### Changed
+- **ADS look-slowdown — pistols/iron sights barely slowed vs. 3x+ scopes, fixed
+  via a genuinely separate close-range knob after two false starts (issue #44,
+  2026-07-31, three rounds same day).** Live feedback: the zoom-aware ADS
+  slowdown felt "heavily skewed towards 3x scopes." **Round 1** lowered
+  `AdsSlowdownBaseline`'s default `0.65`→`0.45`, but the deployed
+  `mw3ncp_config.ini` already had an explicit `0.65`, so the new default never
+  reached the file (a plain compiled-default change can't override an existing
+  explicit value the way a key rename can). **Round 2** added
+  `ReadFloatWithDefaultRetune()` to fix that — `0.45` then reached the pistol,
+  but made 3x+ scopes feel "too harsh": a single shared multiplicative constant
+  scales every zoom ratio by the same relative percentage, so it can never fix
+  low zoom without also over-slowing high zoom. **Round 3 (the real fix)**
+  reverted `AdsSlowdownBaseline` to `0.65` and added a genuinely separate
+  `AdsCloseRangeSlowdownStrength` (default `0.35`) that only meaningfully
+  affects `ratio` close to `1.0` and decays to negligible at any real optic's
+  zoom level, restoring high-zoom feel while still slowing pistols
+  independently. Required bumping `ConfigVersion` to `3` to correct
+  already-migrated files off the abandoned `0.45`. Verified via standalone
+  tests at every round against copies of this install's own real config.
+  Builds clean; **final values not yet live-confirmed together.** Full detail
+  in `re_notes/known_issues.md` issue #44.
+
 ### Fixed
-- **Crouch/prone intermittently not firing on B — fix attempt shipped, PENDING LIVE
-  CONFIRMATION (issue #27 Bug #2 / issue #42, first CTA on dev resuming
-  2026-07-31).** Reported twice now (Campaign playtest 2026-07-17, and again from
-  the v0.2.2 livestream, reported 2026-07-31) — a B tap/hold occasionally didn't
-  change stance at all, no error, no feedback. The real `ToggleStance()`
-  (`FUN_0057d2c0`) has two undecoded guard bytes that make the whole call silently
-  no-op if either is set; rather than waiting on a live capture to decode their
-  meaning, `RequestStanceToggle()` now verifies every tap/hold call against the
-  real stance field and, if it was silently blocked, `ProcessPendingStanceRetry()`
-  retries once per frame (up to 500ms, suppressed while a menu is open) until it
-  takes effect. Safe regardless of what the guard bytes mean: a blocked call is a
-  guaranteed no-op, so retrying it can only ever succeed once the real gate clears,
-  never mis-fire early. Every attempt now also logs both guard-byte values
-  alongside before/after stance in `proxy_d3d9.log`, so a future occurrence (if any)
-  finally has real data instead of requiring more inference. Builds clean
-  (Win32/Release) — **not yet live-tested**; needs a real playtest before this can
-  be called resolved. Full trail in `re_notes/known_issues.md` issues #27 and #42.
+- **CRITICAL: can't fire while holding breath on a sniper (issue #46,
+  2026-07-31).** Live-reported: Hold Breath + Fire together on a sniper just
+  didn't work. Root cause found by cross-referencing this project's own
+  existing research rather than fresh RE: issue #6 already established
+  Hold Breath's "kbutton" address (`0xA98C04`) is literally Fire's own real
+  kbutton's `down[1]` field, not an independent kbutton at all — and
+  `kHoldBreathBindIndex` turned out to be `17`, IDENTICAL to Fire's own
+  `kAttackBindIndex` (also `17`, defined in an unrelated part of the file,
+  never cross-checked). Every Hold Breath engagement was writing the exact
+  same bind-index Fire itself uses into Fire's own kbutton state, breaking the
+  down/up edge-transition Fire's fire logic depends on. Fixed by changing
+  `kHoldBreathBindIndex` to `18` (the only bind-index not already claimed by
+  ADS/Reload/Sprint/Fire) — a single-constant fix, not a workaround. **User
+  confirmed live: sniper + Hold Breath + Fire now works.** Full detail in
+  `re_notes/known_issues.md` issue #46.
+- **Crouch/prone intermittently not firing on B — FULLY FIXED, two rounds
+  same day, both user-confirmed live (issue #27 Bug #2 / issue #42, first CTA
+  on dev resuming 2026-07-31).** A B tap/hold occasionally didn't change
+  stance at all, no error, no feedback. **Round 1**: `ToggleStance()`'s two
+  guard bytes can silently no-op the call; `RequestStanceToggle()`/
+  `ProcessPendingStanceRetry()` verify and retry against the real stance field
+  (up to 500ms) — fixed repeated intermittent failures during play, but the
+  very first crouch attempt after launch still needed an initial "click"
+  (connected to issue #1, day one of the mod, same bug class). **Round 2**:
+  fresh Ghidra research confirmed the guard bytes are a genuine
+  `IsStanceLocked()` pair with real native side effects (`FUN_0057d430`, the
+  per-frame function this project's own movement hook sits on top of, forces
+  stance to 0 and forces usercmd crouch/prone bits while locked), but no
+  writer to either byte was found anywhere in the binary. Shipped
+  `SendSyntheticActivationClick()` (`d3d9_hook.cpp`) instead — feeds a
+  synthetic `WM_ACTIVATE`/`WM_SETFOCUS`/click sequence directly into the
+  game's real `WndProc` (no OS focus stolen), testing the user's own "force
+  focus through the engine" idea directly. **User confirmed live: fresh
+  launch, never clicked the window, crouch fired on the first attempt.** May
+  have also fixed issue #1 as a side effect (not independently re-tested).
+  Full trail in `re_notes/known_issues.md` issues #1, #27, and #42.
 - **Glyph-visibility mechanism (task #6/#34): root cause fixed, pending live
   confirmation.** A real live test of the glyph-array patch plus the draw-string-append
   visibility hook (`LB+RB+B` / `LB+RB+Y`,

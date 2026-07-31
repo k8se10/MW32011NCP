@@ -47,7 +47,9 @@
 #include <windows.h>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include "../third_party/minhook/include/MinHook.h"
+#include "overlay_hud.h"
 
 extern void LogFromController(const char* msg);
 extern "C" void __cdecl InjectMenuInputTick(); // defined in analog_input_hooks.cpp
@@ -73,6 +75,87 @@ LRESULT CALLBACK HookWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     return CallWindowProcA(g_origWndProc, hwnd, msg, wParam, lParam);
 }
 
+// ---- Issue #1/#42 "needs an initial click" experiment (2026-07-31) -----------------
+//
+// User theory, backed by a real precedent already in this codebase (issue #1, day
+// one of the mod): some real engine gate needs a genuine window-activation/click
+// transition to sync up before certain systems behave correctly -- without it, the
+// very first attempt after launch can silently fail even though everything works
+// fine afterward. Fresh Ghidra work this session (re_notes/known_issues.md issue
+// #42) confirmed crouch's own ToggleStance guard bytes (0xA98CA0/0xA98BC4) are a
+// genuine "stance change locked" pair (FUN_0057d190 is a plain IsStanceLocked()
+// query; FUN_0057d430, the per-frame keyboard-movement function this project's own
+// movement hook already sits on top of, forces real stance to 0 and forces usercmd
+// crouch/prone button bits while locked) -- but an exhaustive whole-binary scan for
+// both exact addresses found only 4 reader functions and ZERO writers, so what
+// actually sets/clears them (and whether that's the same mechanism a real click
+// would trigger) could not be pinned down via static analysis alone.
+//
+// This tests the user's own fix idea empirically: synthesize a real activation +
+// click sequence DIRECTLY into the game's own real WndProc via CallWindowProcA --
+// bypasses the OS message queue entirely (no SetForegroundWindow, no stealing focus
+// from another window -- "through the engine, not Windows", per the user's own
+// framing) while still triggering whatever the engine itself does in reaction to a
+// genuine WM_ACTIVATE/WM_SETFOCUS/click sequence. Fires once, as early as possible
+// (right after the D3D9 device's real window handle is known, before any real
+// rendering/menu could exist yet -- about the safest possible moment to synthesize
+// input, and (1,1) as the click coordinate to make it essentially impossible to land
+// on a real UI element even if one somehow already existed). EXPERIMENTAL, not a
+// confirmed fix -- see re_notes/known_issues.md issue #42 for the full reasoning and
+// what to check in proxy_d3d9.log's [stance-diag] lines (now logging both guard
+// bytes on every heartbeat) if this doesn't fully resolve the symptom.
+void SendSyntheticActivationClick(HWND hwnd)
+{
+    if (!g_origWndProc) return;
+    CallWindowProcA(g_origWndProc, hwnd, WM_ACTIVATE, MAKEWPARAM(WA_ACTIVE, 0),
+                     reinterpret_cast<LPARAM>(hwnd));
+    CallWindowProcA(g_origWndProc, hwnd, WM_SETFOCUS, 0, 0);
+    CallWindowProcA(g_origWndProc, hwnd, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(1, 1));
+    CallWindowProcA(g_origWndProc, hwnd, WM_LBUTTONUP, 0, MAKELPARAM(1, 1));
+    LogFromController("[focus-gate-fix] synthesized WM_ACTIVATE/WM_SETFOCUS/"
+                       "WM_LBUTTONDOWN+UP into the real WndProc (issue #42 experiment)");
+}
+
+// ---- "MW32011NCP Started" QoL notification (2026-07-31, user request) -------------
+//
+// Fires once, right after the real HAL device exists (the earliest point overlay_hud
+// can actually draw anything). A 1-in-3 (~33%) roll shows one of several alternate
+// variants -- exact odds are just a tunable constant here, not derived from
+// anything (raised from an original 1-in-20 the same day, per user request, so the
+// variants are actually seen during normal play rather than needing
+// [Overlay] TestCycleAllVariants). Three of the four variants are a "vibes" homage
+// to WaW's real, documented hidden dev clan-tag codes (re_notes/known_issues.md
+// issue #37: GOLD, RAIN, CYLN) now that overlay_hud can actually animate/color the
+// quad -- not a literal recreation (those were clan tags, this is a toast message),
+// just a nod.
+constexpr int kVariantMessageOneInN = 3;
+constexpr int kVariantCount = 4;
+
+void ShowStartupMessage()
+{
+    srand(GetTickCount());
+    if ((rand() % kVariantMessageOneInN) != 0) {
+        ShowOverlayMessage("MW32011NCP Started", 15000, OverlayAnimStyle::Plain);
+        return;
+    }
+
+    switch (rand() % kVariantCount) {
+        case 0:
+            ShowOverlayMessage("MW32011NCP Started - Thanks For Supporting The Project :P",
+                                15000, OverlayAnimStyle::Plain);
+            break;
+        case 1:
+            ShowOverlayMessage("MW32011NCP Started", 15000, OverlayAnimStyle::Gold); // WaW "GOLD" homage
+            break;
+        case 2:
+            ShowOverlayMessage("MW32011NCP Started", 15000, OverlayAnimStyle::Rainbow); // WaW "RAIN" homage
+            break;
+        default:
+            ShowOverlayMessage("MW32011NCP Started", 15000, OverlayAnimStyle::Sweep); // WaW "CYLN" homage
+            break;
+    }
+}
+
 void InstallWndProcHook(HWND hwnd)
 {
     if (g_wndProcHooked || !hwnd) return;
@@ -88,6 +171,7 @@ void InstallWndProcHook(HWND hwnd)
     // without this, HookWndProc would only tick as often as real messages happen to
     // arrive, which isn't reliably frequent enough to catch a quick Start press/release.
     SetTimer(hwnd, kPollTimerId, 16, nullptr);
+    SendSyntheticActivationClick(hwnd);
 }
 
 HRESULT WINAPI Hook_CreateDevice(void* This, UINT Adapter, DWORD DeviceType,
@@ -104,6 +188,10 @@ HRESULT WINAPI Hook_CreateDevice(void* This, UINT Adapter, DWORD DeviceType,
 
     if (SUCCEEDED(hr) && DeviceType == kD3DDEVTYPE_HAL) {
         InstallWndProcHook(hFocusWindow);
+        if (ppReturnedDeviceInterface && *ppReturnedDeviceInterface) {
+            InstallEndSceneHook(*ppReturnedDeviceInterface);
+            ShowStartupMessage();
+        }
     }
     return hr;
 }

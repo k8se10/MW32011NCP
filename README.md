@@ -2,13 +2,13 @@
 
 > **▶️ DEVELOPMENT HAS RESUMED AS OF 2026-07-31**, as planned — the short break
 > (2026-07-23 to 2026-07-31) is over and active work is back to normal. First
-> item addressed on return: a fix attempt for the intermittent crouch/B failure
-> reported during the break's v0.2.2 livestream (see `re_notes/known_issues.md`
-> issues #27/#42) — shipped, builds clean, **not yet live-confirmed**. The
-> user is also still reviewing both v0.2.2 streams for any further bugs found
-> during them (none reported as gamebreaking so far, mostly Campaign-related).
-> **v0.2.2 remains the current most stable alpha build** until a new release
-> is cut.
+> item addressed on return: the intermittent crouch/B failure reported during
+> the break's v0.2.2 livestreams (see `re_notes/known_issues.md` issues #27/#42)
+> is **fixed and user-confirmed live**, shipped as **v0.2.5**, a hotfix release.
+> The user is still reviewing both v0.2.2 streams for any further bugs found
+> during them (none reported as gamebreaking so far, mostly Campaign-related,
+> and unrelated to the crouch fix — still relevant to check even on v0.2.5).
+> **v0.2.5 is the current most stable alpha build.**
 
 > **⚠️ SECURITY NOTICE — read if you're on any version before v0.2.2.** Versions
 > v0.2.1 and earlier shipped with an aim-assist feature's code compiled into the
@@ -21,25 +21,26 @@
 > an earlier build. Treat this as a real, disclosed risk, not a confirmed
 > incident.
 
-**Status: ALPHA — v0.2.2 (2026-07-20).** A risk-mitigation release: aim assist
-(rotational friction + magnetism, reading live entity/target memory) has been
-**permanently removed**, not just left disabled, following VAC risk research that
-found the closest real precedent for a proxy-DLL project manipulating gameplay
-state beyond pure input remapping (ENB) has actual documented ban history — see
-Known Limitations. No player-facing feature change otherwise: builds on v0.2.1's
-two live-confirmed items, a console-accurate look acceleration ramp (33ms, tied to
-this old engine's own locked 30fps tick), and **Hold Breath (L3 while ADS'd on a
-sniper) now fully working** as genuinely native input, after an extensive
-live-debugging pass that ended by isolating a single stuck kbutton_t byte. Core
-movement, look, combat, stance, and Sprint remain confirmed working live against
-`iw5sp.exe` (Campaign/Survival) through the engine's own real internal calls, real
-D-pad/A menu navigation covers every UI surface actually exercised (main menu,
-title screen, pause menu, options, buy-stations, sliders), and 3 of Survival's 4
-real killstreaks are confirmed working end-to-end. See **Status at a glance**
-immediately below for an explicit, no-guessing breakdown of exactly what's fully
-working, partial, or not implemented at all — read that before assuming any
-specific feature works. Not feature-complete, not fully tested end-to-end, and
-Multiplayer (`iw5mp.exe`) hasn't been started at all.
+**Status: ALPHA — v0.2.5 (2026-07-31).** A hotfix release, all changes below user-confirmed live:
+
+- Crouch/prone intermittent failures — including a "needs an initial click at launch" gap sharing a root cause with day-one's issue #1 (see Known Limitations) — fully fixed (`known_issues.md` #1/#27/#42)
+- A critical regression where holding breath on a sniper blocked firing entirely — fixed (issue #46, bind-index collision with Fire's own kbutton)
+- Look sensitivity split into independent horizontal/vertical values (`[Look] SensitivityHorizontal`/`SensitivityVertical`)
+- Pistols/iron sights barely slowed while aiming vs. 3x+ scopes — fixed via a new, independent `AdsCloseRangeSlowdownStrength` knob (issue #44)
+- Config auto-migration (issue #45) now carries existing settings forward across renamed keys and retuned defaults
+- New: on-screen top-right notifications (issue #47) — a startup message and a config-hot-reload confirmation, this project's first working per-frame render capability; see **Configuration & customization** below
+
+No other player-facing behavior changed from v0.2.2, itself a risk-mitigation release: aim assist
+(rotational friction + magnetism, reading live entity/target memory) was **permanently removed**,
+not just disabled, following VAC risk research — see Known Limitations. Builds on v0.2.1's two
+live-confirmed items (console-accurate look acceleration ramp, Hold Breath fully working as native
+input). Core movement, look, combat, stance, and Sprint remain confirmed working live against
+`iw5sp.exe` (Campaign/Survival), real D-pad/A menu navigation covers every UI surface actually
+exercised (main menu, title screen, pause menu, options, buy-stations, sliders), and 3 of Survival's 4
+real killstreaks are confirmed working end-to-end. See **Status at a glance** immediately below for an
+explicit, no-guessing breakdown of exactly what's fully working, partial, or not implemented at all —
+read that before assuming any specific feature works. Not feature-complete, not fully tested
+end-to-end, and Multiplayer (`iw5mp.exe`) hasn't been started at all.
 
 A from-scratch native controller project for Call of Duty: Modern Warfare 3 (2011, IW5
 engine) — analog movement, look, and buttons driven directly through the game's own
@@ -68,7 +69,7 @@ live-tested by the developer during actual play, not just built-and-assumed.
 | Weapon switch (Y) | Real `weapnext` dispatch |
 | D-pad Up/Right/Down — killstreak/attachment slots | Real `+actionslot` dispatch |
 | D-pad Left — AI squadmate call-in (Survival) | Key-synthesis exception, confirmed |
-| Crouch/Prone 3-state stance ladder (B) | Real native toggle, no desync |
+| Crouch/Prone 3-state stance ladder (B) | Real native toggle, no desync. Two bugs (intermittent ~2% silent failures; a separate "needs an initial click at launch" gap) fixed and user-confirmed live in v0.2.5 — `known_issues.md` #1/#27/#42 |
 | **Sprint (L3)** | **Real kbutton (2026-07-19) — native duration/recovery timer AND Extreme Conditioning's perk override both apply automatically, no custom code needed** |
 | Start — pause menu open **and** close | Real engine calls, not a keypress |
 | B — back out of open menus | Real ESC-forward |
@@ -79,7 +80,7 @@ live-tested by the developer during actual play, not just built-and-assumed.
 | Precision Airstrike (Survival) | Smoke-grenade-throw mechanic, uses Fire as-is |
 | Boat (Hunter Killer), UGV (Persona Non Grata), Helicopter door gun (Return to Sender), SMAW dumb-fire (Goalpost) | Campaign weapon systems |
 | Button/stick layout presets, **including `TacticalLefty`** | **`TacticalLefty` confirmed correct against real hardware, 2026-07-19** — previously this preset's own remap was the one open accuracy question in this system |
-| **Hold Breath (L3 while ADS'd on a sniper)** | **Real kbutton (2026-07-20)** — `CallKbuttonDown`/`CallKbuttonUp` on the real kbutton, paired with a force-clear of the one struct byte that didn't self-clear on release. Steadies aim while held; accuracy drops once breath runs out. Genuinely native input, no key-synthesis needed |
+| **Hold Breath (L3 while ADS'd on a sniper)** | **Real kbutton (2026-07-20)**, genuinely native, no key-synthesis needed — steadies aim while held, accuracy drops once breath runs out. A critical regression (couldn't fire while breath was held, issue #46) was fixed and user-confirmed live 2026-07-31 |
 | Look acceleration ramp | Console-accurate turn-rate ramp (33ms = one 30fps engine frame), on by default |
 
 ### 🟡 Partial (works, but with a specific, known gap)
@@ -134,7 +135,6 @@ fully live-confirmed working with no known gap (that's the ✅ table above).
 | SMAW lock-on vs. aircraft | Unconfirmed whether even a real bug | README (Partial table above) |
 | Real in-game controller options menu (task #23) | Static injection proven live; real content blocked on GPU-resource-load timing. This session's read-only boot-thunk diagnostic confirmed live-safe, but its address-recovery theory was refuted at that call site — needs a different approach before the real splice can be written | `known_issues.md` #23 |
 | Button-glyph icons (task #6) | Asset+build pipeline proven end-to-end. This session's bind-resolver hook is installed and fixed (log-only, live-safe), but still zero player-visible effect | `known_issues.md` #34/#35 |
-| Crouch intermittently fails to fire (~2%, recovered via pause/unpause or an unrelated button press) | Fix attempt shipped 2026-07-31: verifies each B tap/hold against the real stance field and retries once per frame (up to 500ms) if the real toggle silently no-op'd, instead of dropping the press. Builds clean, **not yet live-confirmed** | `known_issues.md` #27/#42 |
 | Vibration/rumble | Crashed at startup, disabled; a safer single-call-site-safe target already identified, not yet reimplemented | README (Not-working table above), `known_issues.md` #24 |
 
 #### Tier 2 — Planned / researched, not implemented
@@ -381,16 +381,33 @@ All of the tunable values above — plus button/stick layout — live in
 **`mw3ncp_config.ini`**, written next to the DLL the first time the project runs (with
 every option pre-filled with its default value and a comment explaining it, so the
 file is self-documenting from the moment it appears — nothing to configure by hand
-to get started). Changes take effect on next launch; there's no live-reload yet, and
-no in-game options screen — this file is the interim way to tune the project until
-native controller UI navigation exists.
+to get started). There's no in-game options screen yet — this file is the interim
+way to tune the project until native controller UI navigation exists.
+
+**Config changes now hot-reload while the game is running (added same day as the
+notification below, not yet live-confirmed).** Save the ini and the mod picks up the
+change within about a second — no restart needed — with a short on-screen
+confirmation ("MW32011NCP Config Reloaded") in the top-right corner. You'll also see
+a "MW32011NCP Started" message for 15 seconds on launch (rarely, a small thank-you
+variant instead) — both use a new on-screen text mechanism (issue #47) that's a
+first for this project, so treat it as freshly-added until confirmed working live.
+
+**Existing config files carry forward automatically across updates (v0.2.5+).**
+An internal `[Meta] ConfigVersion` marker (not a setting — don't edit it by hand)
+lets the mod detect an older file and migrate it: every setting you already had
+tuned is kept, and any key that got renamed or restructured (e.g. v0.2.5 splitting
+`Sensitivity` into `SensitivityHorizontal`/`SensitivityVertical`) is carried over
+to its closest equivalent under the new key(s) instead of silently resetting to
+the new default. The file is rewritten once, in the current format, right after a
+migration runs — nothing to do on your end, and nothing is lost.
 
 | Section | Key | Default | What it does |
 |---|---|---|---|
 | `[Look]` | `SensitivityHorizontal` | `250` | Look-stick yaw (left/right) turn rate, degrees/second at full deflection (not always the right stick — depends on `StickLayout` below) |
 | `[Look]` | `SensitivityVertical` | `250` | Look-stick pitch (up/down) turn rate, degrees/second at full deflection — separate from horizontal since 2026-07-31 |
 | `[Look]` | `AdsSlowdownStrength` | `1.75` | ADS zoom-aware look slowdown strength (`0` = off, `1` = fully proportional to zoom, higher = more aggressive than proportional; `1.75` confirmed live to feel closer to real console controller CoD than exactly `1.0`) |
-| `[Look]` | `AdsSlowdownBaseline` | `0.65` | Multiplies on top of the strength curve above — without it, low-zoom optics (iron sights/red dots) got almost no slowdown at all, since the zoom ratio alone stays too close to `1.0` to produce a real effect regardless of strength. `1.0` = no extra effect; lower = more slowdown even at minimal zoom |
+| `[Look]` | `AdsSlowdownBaseline` | `0.65` (a v0.2.5 tuning attempt lowered this to `0.45`, reverted same day — see `AdsCloseRangeSlowdownStrength`) | Multiplies the strength curve above across EVERY zoom level equally. `1.0` = no extra effect; lower = more slowdown, but at all zoom levels, not just low ones |
+| `[Look]` | `AdsCloseRangeSlowdownStrength` | `0.35` (new in v0.2.5, issue #44, not yet live-confirmed) | Extra slowdown that only meaningfully affects low-zoom weapons (`ratio` close to `1.0`, e.g. pistols/iron sights) and decays to negligible at any real optic's zoom level — fixes "pistols barely feel slowed" without over-slowing 3x+ scopes the way lowering `AdsSlowdownBaseline` did. `0` = off; must stay in `[0, 1]` |
 | `[Look]` | `InvertLook` | `0` | OG console "Invert Look" — flips vertical look |
 | `[Look]` | `AccelerationRampMs` | `33` | Milliseconds for look turn-rate to ramp from 0 to full speed after the stick leaves neutral, matching real console MW2/Black Ops behavior. Live-tested against many values — 33ms (one 30fps engine frame) confirmed correct, not the ~0.2s figure external research suggested. `0` = instant response (old behavior) |
 | `[Stance]` | `ProneHoldThresholdMs` | `400` | B: hold-vs-tap threshold for the stance ladder |
@@ -471,7 +488,7 @@ state directly, as described above:
 | Right stick | Look (independent sensitivity, no mouse-accel/filter inherited); turn-rate ramps up over 33ms (one 30fps engine frame) after leaving neutral, matching real console MW2/Black Ops behavior | ✅ Confirmed |
 | Right trigger (RT) | Fire | ✅ Confirmed |
 | Left trigger (LT) | Aim Down Sights (true hold-to-aim, real kbutton) | ✅ Confirmed |
-| Left stick click (L3) | Sprint (real `+sprint` kbutton; auto-stands from crouch/prone; native duration/recovery timer + Extreme Conditioning apply automatically, no custom timer needed). While ADS'd on a sniper, drives Hold Breath instead (real kbutton + a force-clear fix for a struct byte that didn't self-clear on release) — steadies aim while held, accuracy drops once breath runs out | ✅ Confirmed live 2026-07-19 (Sprint) / 2026-07-20 (Hold Breath) |
+| Left stick click (L3) | Sprint (real `+sprint` kbutton; auto-stands from crouch/prone; native duration/recovery timer + Extreme Conditioning apply automatically, no custom timer needed). While ADS'd on a sniper, drives Hold Breath instead (real kbutton + a force-clear fix for a struct byte that didn't self-clear on release) — steadies aim while held, accuracy drops once breath runs out | ✅ Confirmed live (Sprint 2026-07-19, Hold Breath 2026-07-20); issue #46 fire-while-holding-breath regression fixed 2026-07-31 |
 | A | Jump | ✅ Confirmed |
 | B | Crouch/Prone — tap toggles crouch, hold goes prone, full 3-state ladder (see below) | ✅ Confirmed |
 | X | Interact **and** Reload (real kbutton, context-sensitive like console) | ✅ Confirmed |

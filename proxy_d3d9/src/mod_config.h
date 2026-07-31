@@ -81,10 +81,47 @@ struct ModConfig
                                             // (ratio close to 1.0) got almost no slowdown
                                             // at all regardless of strength, since
                                             // ratio^strength stays near 1 when ratio does.
-                                            // 0.65 confirmed live better than an initial
-                                            // 0.85 -- more slowdown even on minimal zoom.
+                                            // 0.65 confirmed live better than an initial 0.85.
+                                            // REVERTED BACK to 0.65 (2026-07-31) after a
+                                            // same-day round-trip to 0.45 and back: lowering
+                                            // this SHARED constant to fix pistols/iron sights
+                                            // (issue #44) also multiplies down the already-
+                                            // small high-zoom ratio^strength term by the same
+                                            // proportion, and live testing confirmed that WAS
+                                            // perceptible ("too harsh on higher zoom") even
+                                            // though the absolute numbers looked tiny -- a
+                                            // single multiplicative constant structurally
+                                            // cannot tune the ratio~1 and ratio~0 ends
+                                            // independently, since it scales every ratio value
+                                            // by the same relative percentage. The real fix is
+                                            // adsCloseRangeSlowdownStrength below, a genuinely
+                                            // separate, decoupled knob -- this constant is back
+                                            // to being ONLY "how strongly zoom itself slows you
+                                            // down," its original, proven-good role.
                                             // 1.0 = no baseline effect (old behavior);
                                             // lower = more slowdown even with minimal zoom.
+    float adsCloseRangeSlowdownStrength = 0.35f; // Issue #44's real fix (2026-07-31):
+                                            // an EXTRA slowdown multiplier that only matters
+                                            // for low-zoom weapons (ratio close to 1.0, e.g.
+                                            // pistols/iron sights) and decays away rapidly as
+                                            // ratio drops, so it does NOT compound with
+                                            // adsSlowdownBaseline/Strength's existing,
+                                            // already-tuned high-zoom feel the way lowering
+                                            // adsSlowdownBaseline itself did. Computed as
+                                            // (1 - this * ratio^kCloseRangeFocusPower) in
+                                            // GetAdsLookRateScale() -- at ratio=1 (pistol) this
+                                            // multiplies scale by (1-0.35)=0.65 on top of
+                                            // baseline, giving ~0.65*0.65=0.42 total (a real,
+                                            // meaningful slowdown); by ~0.4 zoom ratio (a 3x+
+                                            // scope) ratio^kCloseRangeFocusPower is already
+                                            // negligible, so this contributes essentially
+                                            // nothing there -- restoring high-zoom feel to
+                                            // exactly what it was before issue #44 touched
+                                            // anything. 0 = off (no extra low-zoom slowdown,
+                                            // pre-issue-44 behavior). Must stay in [0, 1] --
+                                            // clamped on load (1.0 would fully zero out
+                                            // look at ratio=1, almost certainly too extreme).
+                                            // NOT YET LIVE-CONFIRMED at this exact value.
     bool invertLook = false;               // OG console "Invert Look" -- flips vertical look
     unsigned long lookAccelerationRampMs = 33; // ms for look turn-rate to ramp from 0 to full
                                                   // speed after the stick leaves neutral, matching
@@ -153,6 +190,25 @@ struct ModConfig
                                               // damage taken (local player only)
     float vibrationDamageMaxIntensity = 1.0f;   // hard cap regardless of damage amount
     unsigned long vibrationDamageDurationMs = 200; // how long a damage pulse takes to decay
+
+    // [Overlay] (task #47/#48, 2026-07-31) -- the top-right on-screen notification
+    // text (overlay_hud.cpp). Barlow Condensed is requested by face name only --
+    // this project doesn't vendor/privately-load the actual font file, so if it
+    // isn't installed system-wide, GDI silently substitutes a default font instead
+    // of failing. Not a bug, just a known limitation until the .ttf is vendored.
+    bool overlayFontItalic = true; // GDI fakes an oblique slant for a TrueType font
+                                     // that has no dedicated italic style file, so
+                                     // this still does something even without a real
+                                     // italic Barlow Condensed weight installed.
+    bool overlayTestCycleAllVariants = false; // STRICTLY A TESTING TOGGLE, default off.
+                                     // When on, continuously cycles through every
+                                     // known message/animation-style variant (Plain,
+                                     // the rare "Thanks" text, Gold, Rainbow, Sweep)
+                                     // every few seconds for as long as this stays
+                                     // enabled, instead of the normal one-shot
+                                     // startup roll -- lets every variant actually be
+                                     // seen on demand rather than waiting on a 1-in-20
+                                     // RNG roll. Never enable this for normal play.
 
     // [Experimental] (2026-07-18) -- individually toggleable, not-yet-fully-proven
     // behaviors, so a hypothesis under live test can be flipped off without a
