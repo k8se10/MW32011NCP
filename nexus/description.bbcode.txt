@@ -11,7 +11,7 @@ It hooks directly into a live game process. Expect bugs, rough edges, unfinished
 
 [hr]
 
-[size=4][b]Status: ALPHA — v0.2.2 (2026-07-20)[/b][/size]
+[size=4][b]Status: ALPHA — v0.2.5 (2026-07-31)[/b][/size]
 
 Not feature-complete, not fully tested end-to-end. Multiplayer ([font=Courier New]iw5mp.exe[/font]) hasn't been started at all. Read [b]What Works / Partial / Not Working[/b] below before assuming any specific feature works — this project is deliberately honest about what's confirmed vs. not, not a marketing pitch.
 
@@ -30,22 +30,23 @@ Every other "controller support" option for this game works by faking keyboard/m
 [size=4][b]✅ What Works (confirmed live, Campaign/Survival)[/b][/size]
 
 [list]
-[*]Analog movement (left stick) and analog look (right stick), own sensitivity curve, independent of the mouse pipeline
+[*]Analog movement (left stick) and analog look (right stick), with independently configurable horizontal/vertical sensitivity, separate from the mouse pipeline
 [*]Console-accurate look acceleration ramp (33ms — tied to this old engine's own locked 30fps tick, not a guessed value)
 [*]Fire, Aim Down Sights (true hold, not a toggle), Melee, Tactical/Lethal, Jump
-[*]ADS zoom-aware look slowdown, so magnified scopes don't feel absurdly twitchy
-[*]Crouch/Prone 3-state stance ladder — tap vs. hold, matching console
+[*]ADS zoom-aware look slowdown, so magnified scopes don't feel absurdly twitchy, plus a separately-tunable close-range slowdown for pistols/iron sights
+[*]Crouch/Prone 3-state stance ladder — tap vs. hold, matching console. Two intermittent-failure bugs fixed and user-confirmed live in v0.2.5
 [*]Interact vs. Reload on the same button (hold vs. tap, like console)
 [*]Weapon switch, D-pad killstreak/attachment actionslots
 [*][b]Sprint[/b] — drives the real native [font=Courier New]+sprint[/font] kbutton; the engine's own stamina/recovery timer and the Extreme Conditioning perk's duration override both apply automatically, no custom timer code needed
-[*][b]Hold Breath[/b] (L3 while ADS'd on a sniper) — steadies aim while held, accuracy drops once breath runs out; genuinely native input after an extensive debugging pass isolated a single stuck engine-struct byte
+[*][b]Hold Breath[/b] (L3 while ADS'd on a sniper) — steadies aim while held, accuracy drops once breath runs out; genuinely native input. A critical regression (couldn't fire while breath was held) was fixed and user-confirmed live in v0.2.5
 [*]Pause menu open [i]and[/i] close via real engine calls
 [*]B backs out of any open menu, on top of its normal crouch/prone role
 [*]Full D-pad + A menu navigation — main menu, title screen, pause menu, options screens (including slider value adjustment), buy-station/armory lists
 [*]Survival's between-wave ready-up
 [*]3 of Survival's 4 real killstreaks: Predator Missile launch, Precision Airstrike, AI squadmate call-in
 [*]Button/stick layout presets (Default/Tactical/Lefty/TacticalLefty) — [b]all confirmed correct against real hardware[/b]
-[*]Fully configurable via a self-documenting [font=Courier New]mw3ncp_config.ini[/font] (sensitivity, ADS slowdown, hold thresholds, bindings, look ramp)
+[*]Fully configurable via a self-documenting [font=Courier New]mw3ncp_config.ini[/font] (sensitivity, ADS slowdown, hold thresholds, bindings, look ramp, notification style). [b]New in v0.2.5:[/b] the config now auto-migrates existing files across updates, and [b]hot-reloads live[/b] while the game is running — no relaunch needed to see most changes
+[*][b]New in v0.2.5:[/b] a small on-screen top-right notification on startup and whenever the config is hot-reloaded, with a rare chance of a stylized variant. Uses a self-contained, DLL-embedded font — no font install required
 [/list]
 
 [size=4][b]🟡 Partial — works, with a specific known gap[/b][/size]
