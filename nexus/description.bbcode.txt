@@ -7,7 +7,7 @@ It hooks directly into a live game process. Expect bugs, rough edges, unfinished
 
 [hr]
 
-[color=#F39C12][b]⚠ If you have a version earlier than v0.2.2 installed:[/b][/color] earlier builds shipped with an aim-assist feature's code compiled into the DLL (disabled by default, but present in the binary). v0.2.2 permanently removed that code entirely following anti-cheat risk research. Whether the mere presence of that code in earlier builds meaningfully raised VAC exposure is not confirmed — no ban has been reported — but is genuinely suspected enough that updating to the latest version is recommended. See the Changelog tab for full detail.
+[color=#E74C3C][b]⚠ Versions before v0.2.2 are no longer distributed:[/b][/color] those builds shipped with an aim-assist feature's code compiled into the DLL (disabled by default, but present in the binary). v0.2.2 permanently removed that code entirely following anti-cheat risk research. Whether the mere presence of that code in earlier builds meaningfully raised VAC exposure was never confirmed — no ban was ever reported — but as a further, deliberate risk-mitigation step, every file version older than v0.2.2 has been removed from this page's Files tab and unpublished from GitHub Releases. Nothing has been deleted — full source history for those versions remains available in the GitHub repository — only the downloadable packages are no longer offered. [b]v0.2.2 is the oldest version this project still distributes or supports.[/b] See the Changelog tab for full detail.
 
 [hr]
 
