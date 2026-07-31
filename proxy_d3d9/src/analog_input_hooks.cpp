@@ -3166,7 +3166,68 @@ static_assert(sizeof(DiagGlyph) == 0x18, "DiagGlyph must match the confirmed 24-
 enum class FontDiagStage { WaitingForCombo, Done };
 FontDiagStage g_fontDiagStage = FontDiagStage::WaitingForCombo;
 DWORD g_fontDiagHoldStartMs = 0;
+
+// Issue #48 (2026-07-31): sums direct-indexed glyph advance widths (DiagGlyph.dx,
+// codepoint-0x20 direct index -- the confirmed-safe common-ASCII region, same
+// convention InjectFontStructDebugTest's own dumpGlyph already relies on) for every
+// character strictly before charIndex in `text`, giving the RAW (unscaled -- the real
+// draw call's own scale param is not confirmed yet, see the hud-glyph-pos diagnostic)
+// pixel-width sum leading up to that character. Returns -1 if any preceding character
+// falls outside the guaranteed-direct-index-safe range (space through DEL) rather than
+// guess at the sorted-extra lookup FUN_0047dfa0 itself uses for extended characters --
+// good enough for common ASCII interact-hint text ("Press F to interact"), not meant
+// to handle extended/localized text.
+int SumDirectIndexedGlyphWidthsBefore(const DiagFont* font, const char* text, size_t charIndex)
+{
+    if (!font || !text || !LooksLikeValidPointer(reinterpret_cast<uintptr_t>(font->glyphs))) return -1;
+    int sum = 0;
+    for (size_t i = 0; i < charIndex; ++i) {
+        unsigned char c = static_cast<unsigned char>(text[i]);
+        if (c < 0x20 || c > 0x7F) return -1;
+        int idx = static_cast<int>(c) - 0x20;
+        if (idx < 0 || idx >= 96 || idx >= font->glyphCount) return -1;
+        sum += font->glyphs[idx].dx;
+    }
+    return sum;
+}
+
+// Issue #48 (2026-07-31 live-test finding): the drawn hint string itself already
+// marks the button-name portion with the engine's own "^N...^7" color-code
+// convention (^N = a single-digit highlight color, e.g. ^3 or ^2; ^7 = reset to
+// plain white) -- confirmed against real captured strings ("Press^3 F ^7to pick
+// up", "Hold ^3F^7 to use Weapon Armory", "Back ^2ESC^7"). This is a more robust
+// way to locate the button-name span than cross-referencing the bind-resolver
+// hook's separately-resolved text (GetLastResolvedBindKeyName): it's self-
+// contained in the exact same string this hook already has, and doesn't depend
+// on that other hook's read succeeding (which it did NOT do even once during the
+// 2026-07-31 live test -- see this file's own bind-resolver section for that
+// separate, still-open problem). NOT a claim that ^N is always color 3 or always
+// means "this is a button name" in every possible context -- just the pattern
+// actually observed marking button names in every hint string captured so far.
+struct ColorHighlightSpan { size_t contentStart; size_t contentLen; bool found; };
+
+ColorHighlightSpan FindColorHighlightSpan(const char* text, size_t textLen)
+{
+    for (size_t i = 0; i + 1 < textLen; ++i) {
+        if (text[i] == '^' && text[i + 1] >= '0' && text[i + 1] <= '9') {
+            size_t contentStart = i + 2;
+            for (size_t j = contentStart; j + 1 < textLen; ++j) {
+                if (text[j] == '^' && text[j + 1] >= '0' && text[j + 1] <= '9') {
+                    return { contentStart, j - contentStart, true };
+                }
+            }
+            break; // opening marker with no closing marker -- don't guess an end
+        }
+    }
+    return { 0, 0, false };
+}
 } // namespace
+
+// Forward declaration -- defined near the bind-resolver hook (issue #35) further down
+// this file. Issue #48's position-logging diagnostic (in Hook_DrawGlyphText, above
+// that hook in file order) needs to cross-reference the last-resolved key name (e.g.
+// "F") against the drawn hint text to find which character it corresponds to.
+const char* GetLastResolvedBindKeyName();
 
 // Reuses the same obscure LB+RB-held-2s convention as the zoneload-test above (that
 // test is disabled/not wired into the live tick, so no collision) -- deliberately
@@ -3291,6 +3352,12 @@ DrawGlyphTextFn g_origDrawGlyphText = nullptr;
 
 char g_lastLoggedHudFontName[64] = {};
 
+// Issue #48 (2026-07-31): separate dedup state for the new position-logging
+// diagnostic below -- dedup'd by DRAWN TEXT changing, not by font changing, since
+// the goal here is "what are the real x/y/scale/color params for THIS specific
+// interact-hint string", not "when does the font change".
+char g_lastLoggedGlyphPosText[128] = {};
+
 // ---- HUD-text visibility-test state (task #6/#34 follow-up, 2026-07-21) ------------
 // Declared here (rather than down by the two Inject* functions that actually set/
 // consume them, InjectFontGlyphPatchTest_HudBigFont and the new
@@ -3386,6 +3453,82 @@ void __cdecl Hook_DrawGlyphText(
             // A faulted read just means this call's fontArg wasn't a real Font_s* after
             // all (e.g. param ordering differs at some call site not yet seen) -- never
             // let a read-only diagnostic crash the game over that; forward and move on.
+        }
+    }
+
+    // Issue #48 (2026-07-31): position/scale/color investigation for the proposed
+    // overlay-quad glyph-icon pivot -- dedup'd by DRAWN TEXT changing (not font
+    // changing) so a real interact-hint's full raw parameter set gets logged exactly
+    // once per distinct string, giving a direct correlation between a known hint
+    // string and the params suspected (not yet confirmed) to be its x/y/scale/color.
+    // Read-only: never mutates param_1 or anything else, same SEH-guarded pattern as
+    // the hud-font-id block above so a bad param_1 pointer on some not-yet-seen call
+    // site can't crash the game.
+    if (g_modConfig.hudGlyphPositionLogging) {
+        __try {
+            if (LooksLikeValidPointer(reinterpret_cast<uintptr_t>(param_1)) &&
+                strncmp(param_1, g_lastLoggedGlyphPosText, sizeof(g_lastLoggedGlyphPosText) - 1) != 0) {
+                strncpy_s(g_lastLoggedGlyphPosText, param_1, sizeof(g_lastLoggedGlyphPosText) - 1);
+                char logBuf[512];
+                sprintf_s(logBuf,
+                    "[hud-glyph-pos] text=\"%.63s\" p2=%.3f p3=%.3f p5=%.3f p6=%.3f p7=%.3f "
+                    "p8=%.3f p9=%.3f p10=%d p11=%u p12=%d p13=%u p14=%.3f Font*=0x%08X",
+                    param_1, param_2, param_3, param_5, param_6, param_7, param_8, param_9,
+                    param_10, param_11, param_12, param_13, param_14,
+                    static_cast<unsigned>(reinterpret_cast<uintptr_t>(fontArg)));
+                LogFromController(logBuf);
+
+                // Issue #48 follow-up, self-contained approach (2026-07-31 live-test
+                // finding, see FindColorHighlightSpan's own comment): locate the
+                // "^N...^7" highlighted button-name span directly in THIS string, then
+                // compute its raw (unscaled) leading pixel-width sum from the same
+                // font's own glyph metrics -- this is the actual data a future overlay
+                // glyph icon needs to position itself over just that span rather than
+                // the whole hint string. Logged in the SAME diagnostic pass as the raw
+                // params above so one live test validates all of it at once.
+                const DiagFont* font = LooksLikeValidPointer(reinterpret_cast<uintptr_t>(fontArg))
+                    ? reinterpret_cast<const DiagFont*>(fontArg) : nullptr;
+                size_t textLen = strlen(param_1);
+                ColorHighlightSpan span = FindColorHighlightSpan(param_1, textLen);
+                if (span.found) {
+                    int rawOffset = SumDirectIndexedGlyphWidthsBefore(font, param_1, span.contentStart);
+                    char highlighted[64] = {};
+                    size_t copyLen = span.contentLen < sizeof(highlighted) - 1 ? span.contentLen : sizeof(highlighted) - 1;
+                    memcpy(highlighted, param_1 + span.contentStart, copyLen);
+                    highlighted[copyLen] = '\0';
+                    char subBuf[256];
+                    sprintf_s(subBuf,
+                        "[hud-glyph-pos] color-highlight span \"%s\" at char index %zu (len %zu) in this "
+                        "string -- raw (unscaled) leading pixel-width sum = %d (-1 means it bailed out, "
+                        "e.g. extended-charset char before the span)",
+                        highlighted, span.contentStart, span.contentLen, rawOffset);
+                    LogFromController(subBuf);
+                } else {
+                    LogFromController("[hud-glyph-pos] no \"^N...^7\" color-highlight span found in this string");
+                }
+
+                // Secondary/independent cross-reference against the bind-resolver
+                // hook's last-resolved key name -- kept as a sanity check the two
+                // methods agree, not the primary signal anymore (see the big comment
+                // above FindColorHighlightSpan for why the color-highlight approach is
+                // now preferred).
+                const char* resolvedKey = GetLastResolvedBindKeyName();
+                if (resolvedKey && resolvedKey[0] != '\0') {
+                    const char* match = strstr(param_1, resolvedKey);
+                    char subBuf[256];
+                    if (match) {
+                        sprintf_s(subBuf, "[hud-glyph-pos] (cross-check) resolved key \"%s\" found at char index %zu",
+                            resolvedKey, static_cast<size_t>(match - param_1));
+                    } else {
+                        sprintf_s(subBuf, "[hud-glyph-pos] (cross-check) resolved key \"%s\" NOT found as a substring here",
+                            resolvedKey);
+                    }
+                    LogFromController(subBuf);
+                }
+            }
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            // Same rationale as the hud-font-id block above -- never let this
+            // read-only diagnostic crash the game over an unexpected param_1 shape.
         }
     }
 
@@ -4283,6 +4426,19 @@ uintptr_t g_bindResolverRealRetAddr = 0;
 // elsewhere in this file (e.g. the pause-menu-field re-test). Independent of, and in
 // addition to, the config toggle below (which is a full off switch).
 char g_bindResolverLastLoggedText[128] = {};
+} // namespace
+
+// Definition of the forward declaration near Hook_DrawGlyphText (issue #48) -- just
+// exposes the dedup buffer above by name. NOT thread-synchronized, same single-
+// threaded assumption as the rest of this file's naked-hook globals; safe as long as
+// this project never becomes multi-threaded without revisiting that assumption
+// everywhere at once.
+const char* GetLastResolvedBindKeyName()
+{
+    return g_bindResolverLastLoggedText;
+}
+
+namespace {
 
 // LIVE-TESTED 2026-07-21 (known_issues.md issue #35): a real playtest logged
 // implausible ECX(=0)/[esp+8] buffer(=0x100) values every call. Root-caused via

@@ -14,6 +14,44 @@ those are unrelated to the crouch fix that prompted v0.2.5 and remain relevant
 to check for even on this new version; log each as its own
 `re_notes/known_issues.md` entry as reported (see [[project_post_break_priorities]]).
 
+### Changed
+- **Versions before v0.2.2 are no longer publicly distributed.** As a further
+  VAC-risk mitigation step beyond v0.2.2's own aim-assist removal, all six
+  releases that ever shipped with that code compiled in (`v0.1.0-prealpha`
+  through `v0.2.1`) have been unpublished from GitHub Releases (converted to
+  drafts) — nothing was deleted, and every git tag/commit remains fully
+  available in this repository. **v0.2.2 is now the oldest supported/
+  distributed version.** See `re_notes/known_issues.md` issue #15 and
+  `README.md`'s updated security notice.
+
+### Added
+- **On-screen notification text no longer depends on Barlow Condensed being
+  installed system-wide.** The actual Barlow Condensed SemiBold (Regular + Italic)
+  font files are now embedded directly in the DLL (`proxy_d3d9/proxy_d3d9.rc`) and
+  loaded as a private, in-process-only font via `AddFontMemResourceEx` at startup
+  — previously the font was requested from GDI by face name only, which silently
+  fell back to a default system font if Barlow Condensed wasn't installed. Fully
+  self-contained now; nothing extra to install. SIL Open Font License 1.1,
+  credited in README.md's Credits section.
+
+### Investigated-not-resolved
+- **Controller-glyph icons, architecture pivot underway (`re_notes/known_issues.md`
+  issue #48).** Decided to pursue rendering the 106 already-extracted glyph icons as
+  independent overlay quads (reusing v0.2.5's new `EndScene`-based render capability)
+  drawn directly on top of the existing F/E button-prompt character within real
+  interact-hint text (not replacing the whole hint sentence), instead of continuing
+  to inject glyph art into the game's own font system. A new read-only diagnostic,
+  `[Experimental] HudGlyphPositionLogging` (default off), on the already-installed,
+  already-proven-safe `Hook_DrawGlyphText` hook logs the full raw parameter set for a
+  given hint string, plus per-character pixel-offset math from the font's own
+  glyph metrics. **Live-tested 2026-07-31**: confirmed real x/y position and a
+  uniform scale factor among the hook's params, and found the drawn text itself
+  already marks the button-name portion with the engine's own `^N...^7` color-code
+  convention — a more robust way to locate it than the bind-resolver hook, which
+  (separately, see issue #35, reopened) failed to return a plausible value even once
+  during this test. No icon is drawn yet; next step is confirming the color-highlight
+  span detection against a fresh playtest.
+
 ---
 
 ## v0.2.5 — Alpha (2026-07-31) — Hotfix: crouch/stance reliability + on-screen notifications

@@ -15,6 +15,23 @@
 // already uses. Hooks EndScene via MinHook.
 void InstallEndSceneHook(void* realDevice);
 
+// Loads Barlow Condensed SemiBold (regular + italic) as a PRIVATE, in-process-only
+// font via AddFontMemResourceEx, from the .ttf data embedded directly in this DLL
+// (proxy_d3d9.rc/resource.h) -- so overlay text no longer depends on the real font
+// being installed system-wide (previously requested from GDI by face name only,
+// which silently substitutes a default font if missing). Call once from DllMain's
+// DLL_PROCESS_ATTACH, before any overlay text is ever drawn. Returns false (and logs
+// why) if either resource/AddFontMemResourceEx call fails -- CreateFontA's own
+// system-font fallback still applies in that case, same graceful-degradation
+// behavior as before this change, just no longer the expected path.
+bool LoadOverlayFonts(void* selfModuleHandle);
+
+// Call once from DllMain's DLL_PROCESS_DETACH, before closing the log file. Releases
+// the private font resource(s) loaded by LoadOverlayFonts (RemoveFontMemResourceEx)
+// so GDI never holds a reference into this DLL's own mapped memory after it unloads.
+// Safe to call even if LoadOverlayFonts was never called or failed.
+void UnloadOverlayFonts();
+
 // Visual flourishes for ShowOverlayMessage, added 2026-07-31 as a "vibes" homage to
 // WaW's real documented hidden dev clan tags (re_notes/known_issues.md issue #37 --
 // GOLD: solid gold tag; RAIN: animated rainbow scrolling through the tag; CYLN: a red
