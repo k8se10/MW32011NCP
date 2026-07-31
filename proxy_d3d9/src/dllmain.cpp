@@ -15,6 +15,7 @@
 #include <cstdio>
 #include <share.h>
 #include "mod_config.h"
+#include "overlay_hud.h"
 
 void InstallAnalogInputHooks(); // defined in analog_input_hooks.cpp
 extern "C" void HookD3D9CreateDevice(void* realD3D9); // defined in d3d9_hook.cpp
@@ -223,12 +224,17 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID)
         DisableThreadLibraryCalls(hModule);
         LogInit();
         LoadModConfig(); // task #14 -- must run before InstallAnalogInputHooks reads g_modConfig
+        LoadOverlayFonts(hModule); // 2026-07-31 follow-up -- self-contained Barlow
+            // Condensed, embedded in this DLL rather than depending on a system
+            // install; logs its own success/failure, never fatal to DLL init either way
         if (!LoadRealD3D9()) return FALSE;
         if (!ResolveRealExports()) return FALSE;
         Log("proxy_d3d9 init OK — analog movement/look hooks installing.");
         InstallAnalogInputHooks(); // task #5 -- see analog_input_hooks.cpp
         break;
     case DLL_PROCESS_DETACH:
+        UnloadOverlayFonts(); // release the private font resource before this DLL's
+            // own memory (where the embedded font data lives) goes away
         Log("proxy_d3d9 detach");
         if (g_log) fclose(g_log);
         break;

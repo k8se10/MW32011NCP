@@ -44,7 +44,7 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#32](#32-console-look-input-likely-had-a-real-acceleration-ramp--this-projects-look-currently-has-none-2026-07-19-web-research-implemented-same-day--resolved-2026-07-20) — Console look-acceleration ramp — **Resolved**
 - [#33](#33-multiplayer-feasibility-research-2026-07-20--technical-re-vac-risk-and-a-real-cross-project-correction) — Multiplayer feasibility research (VAC risk) — **Investigating**
 - [#34](#34-glyph-patch-mechanism-test-injectfontglyphpatchtest-lbrba-still-not-visually-provable--wrong-font-targeted-corrected-no-safe-way-found-yet-to-actually-see-it-2026-07-21) — Glyph-patch mechanism test — **Open**
-- [#35](#35-bind-resolver-text-hook-fun_0061f6f0--log-only-first-pass-implemented-not-yet-live-tested-2026-07-21) — Bind-resolver text hook — **Partially Resolved**
+- [#35](#35-bind-resolver-text-hook-fun_0061f6f0--log-only-first-pass-implemented-not-yet-live-tested-2026-07-21) — Bind-resolver text hook — **Investigating**
 - [#36](#36-local-splitscreen-co-op--user-roadmap-idea-not-yet-investigated-2026-07-21) — Local splitscreen co-op — **Roadmap Idea**
 - [#37](#37-waw-style-animated-dev-clan-tags--feasibility-research-2026-07-21) — WaW-style animated dev clan tags — **Roadmap Idea**
 - [#38](#38-menu-entry-and-interact-prompt-glyph-substitution--real-ui-pipeline-mapped-pivot-away-from-hudbigfont-ammo-counter-testing-research-pass-2026-07-22) — Menu-entry/interact-prompt glyph substitution — **Investigating**
@@ -57,7 +57,8 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#45](#45-config-auto-migration-added--existing-mw3ncp_configini-files-now-carry-forward-across-key-renames-and-retuned-defaults-2026-07-31-implemented--unit-tested-against-real-files-at-every-stage) — Config auto-migration — **Partially Resolved**
 - [#46](#46-critical--cant-fire-while-holding-breath-on-a-sniper--root-caused-via-existing-research-fixed-not-yet-live-confirmed-2026-07-31) — CRITICAL: can't fire while holding breath on a sniper — **Resolved**
 - [#47](#47-on-screen-top-right-notifications-startup-message--config-hot-reload--new-capability-first-real-render-hook-this-project-has-ever-had-2026-07-31-user-requested-qol) — On-screen notifications (startup message + config hot-reload) — **Resolved**
-- [#48](#48-roadmap-idea-high-value-render-controller-glyph-icons-as-independent-overlay-quads-instead-of-injecting-them-into-the-games-own-font-system-2026-07-31-user-identified-not-yet-implemented) — Render glyphs as independent overlay quads (not in-font injection) — **Roadmap Idea**
+- [#48](#48-roadmap-idea-high-value-render-controller-glyph-icons-as-independent-overlay-quads-instead-of-injecting-them-into-the-games-own-font-system-2026-07-31-user-identified-not-yet-implemented) — Render glyphs as independent overlay quads (not in-font injection) — **Investigating**
+- [#49](#49-roadmap-idea-generalize-the-overlay-technique-to-arbitrary-in-game-text-not-just-button-glyphs--live-capture-block-original-render-redraw-with-a-custom-font-at-the-same-position-2026-07-31-user-identified-not-yet-implemented) — Generalize overlay technique to arbitrary in-game text/fonts — **Roadmap Idea**
 
 ---
 
@@ -1149,6 +1150,21 @@ there was no way to make this feature safer without changing what it
 fundamentally is — cut entirely rather than reworked. See `PATCHNOTES.md`'s
 v0.2.2 entry for the release-facing summary and the user-facing security notice
 added to `README.md` for versions v0.2.1 and earlier.
+
+**Further mitigation, 2026-07-31: pre-v0.2.2 releases unpublished (not
+deleted).** User decision to fully unsupport every version that ever shipped
+with the aim-assist code compiled in, as a further, deliberate step beyond the
+2026-07-20 disclosure. All six releases predating v0.2.2 (`v0.1.0-prealpha`,
+`v0.1.1`, `v0.1.2`, `v0.1.3`, `v0.2.0`, `v0.2.1`) were converted to GitHub
+Releases drafts (`gh release edit <tag> --draft`) — unpublished from the public
+`/releases` page and no longer offered as a download, while their release
+notes and uploaded zip assets remain fully intact and could be re-published
+instantly if ever needed. **Git tags/commits for all six were explicitly left
+untouched** — confirmed via `git ls-remote --tags` still listing all of
+`v0.1.0-prealpha` through `v0.2.5` on the remote — per the user's explicit
+instruction to keep full source history available while hiding only the built
+release packages. **v0.2.2 is now the oldest version this project distributes
+or supports**; see `README.md`'s updated security notice.
 
 **The rest of this entry is kept as historical record of the real RE work done
 before the removal decision — the technical findings below are still accurate
@@ -5501,10 +5517,22 @@ speculation. This is the concrete next investigative step, not yet attempted.
 
 ## 35. Bind-resolver text hook (`FUN_0061f6f0`) — LOG-ONLY first pass IMPLEMENTED, not yet live-tested (2026-07-21)
 
-**Status:** Partially Resolved. The log-only hook itself was later live-tested
-and confirmed safe (see `PATCHNOTES.md`'s "residual garbage-log occurrence"
-entry for a follow-up fix to one edge case) — the actual glyph-substitution
-half of task #6 stays off pending the font-loading blocker (issues #23/#39).
+**Status:** Investigating (downgraded from Partially Resolved 2026-07-31 — see
+below). The log-only hook itself was live-tested and confirmed safe (see
+`PATCHNOTES.md`'s "residual garbage-log occurrence" entry for a follow-up fix
+to one edge case) — the actual glyph-substitution half of task #6 stays off
+pending the font-loading blocker (issues #23/#39). **Reopened 2026-07-31**:
+issue #48's own live test found every single resolution this session (main
+menu + a buy station, both weapon-pickup and ready-up hints on screen) came
+back with the exact "not a plausible pointer" symptom this issue previously
+root-caused as specific to ONE known caller — but this session's return
+address (`0x004FAFE9`, inside `FUN_004fafd0`, one of the 3 callers previously
+confirmed "correct-shaped") differs from the one previously fixed/explained
+(`0x006229AC`). Either a genuinely new caller-shape edge case, or something
+about this session's specific UI context that the original 2026-07-21 test
+didn't cover — not yet investigated. Not currently blocking issue #48's own
+progress (see that issue's own note on why), but this issue's own fix should
+not be treated as complete until this is understood.
 
 Task #6's other half (button-glyph text substitution), first safe increment.
 
@@ -7197,10 +7225,130 @@ is gone.
 
 ## 48. Roadmap idea, high-value: render controller-glyph icons as INDEPENDENT overlay quads instead of injecting them into the game's own font system (2026-07-31, user-identified, not yet implemented)
 
-**Status:** Roadmap Idea (not started — a real, substantial next feature, not
-a quick follow-on to issue #47). Logged in detail so it isn't lost, since it
-meaningfully changes the recommended path forward for the whole
-controller-glyph effort (issues #23/#34/#35/#38/#39).
+**Status:** Investigating (2026-07-31, same day). User confirmed the overlay-quad
+pivot as the direction to pursue, with one hard requirement: the result must not
+be user-noticeable (i.e. it has to read as real, correctly-positioned in-game
+text/icon compositing, not a visibly separate/misaligned overlay). Open question
+#1 below (real position/sizing convention) is the load-bearing one for that
+requirement, so it's the first thing being resolved — see "Current round" below.
+
+**Direction refined same day, user-specified:** overlay the glyph icon directly
+ON TOP OF the existing button-prompt character (usually F or E) within the real
+hint text, rather than replacing/hiding the whole hint string — i.e. "Press F to
+interact" keeps its real text, but the "F" itself gets a controller icon drawn
+over it in the exact same screen position, so it reads as if the game natively
+drew an icon there. This is a narrower, lower-risk target than a general
+text-replacement approach: the real hint sentence, font, and every other
+character stay completely untouched; only one already-identified character's
+position needs to be found.
+
+**Current round (2026-07-31): position/scale/color AND per-character-offset
+investigation started.** Added a new read-only diagnostic,
+`[Experimental] HudGlyphPositionLogging` (default off, `mod_config.h`/`.cpp`,
+config schema bumped v4->v5), on the same already-installed, already-proven-safe
+`Hook_DrawGlyphText` hook that issue #34/#38's `HudFontIdLogging` diagnostic
+already uses (`FUN_00690c80`) — dedup'd by the DRAWN TEXT changing rather than
+by the font changing, logging two things per distinct hint string under a new
+`[hud-glyph-pos]` log tag:
+1. The hook's full raw parameter set (`param_2`/`param_3`/`param_5`..`param_9`/
+   `param_14`, suspected but NOT yet confirmed to be x/y/scale/color).
+2. A cross-reference against the bind-resolver hook's (issue #35) own
+   last-resolved key name (e.g. "F") via a new `GetLastResolvedBindKeyName()`
+   getter: locates that key name as a substring inside the drawn hint string
+   (`strstr`), then sums the already-confirmed real per-glyph advance widths
+   (`DiagGlyph.dx`, direct-indexed at codepoint-0x20, the same safe common-ASCII
+   region `InjectFontStructDebugTest`'s own `dumpGlyph` already relies on) for
+   every character before that match via a new `SumDirectIndexedGlyphWidthsBefore()`
+   helper — giving a raw (not yet scale-corrected) leading pixel-width sum right
+   up to where the "F"/"E" character starts.
+
+Purely additive, read-only, forwards to the real trampoline completely
+unmodified regardless of the toggle — same safety class as the existing
+hud-font-id diagnostic it sits right next to. Builds clean (Win32/Release).
+
+**LIVE-TESTED 2026-07-31 — real position/scale data confirmed, plus one
+better-than-expected finding.** User reproduced both a weapon-pickup hint and
+a buy-station hint (Campaign). Real captured examples: `"Press^3 F ^7to pick
+up"` at (773, 718), `"Hold ^3F^7 to use Weapon Armory"` at (776, 718),
+`"Press^3 F5^7 to ready up: N"` (Survival) at (1322, 329), plus main-menu
+items (`"SPECIAL OPS"`/`"CAMPAIGN"`/`"MULTIPLAYER"` evenly spaced along a
+fixed Y) and menu hint text (`"Back ^2ESC^7"`, `"Friends ^2F^7"`).
+
+Confirmed parameter meanings (repeated, consistent across many draws of the
+same string):
+- **`param_2`/`param_3` = real screen-space x/y** — the same string always
+  logged the same (x, y) across repeated frames; distinct fixed-position UI
+  elements (e.g. the 3 main-menu buttons) showed evenly-spaced x values at a
+  shared y, exactly as expected for a real screen-position pair.
+- **`param_5`/`param_6` = a uniform x/y scale factor** — always equal to each
+  other, and consistent per element type (0.964 for interact-hint-sized HUD
+  text, 1.125 for the larger Survival ready-up prompt, 1.2/1.5 for other menu
+  text sizes).
+- **`param_7` always 0.000, `param_8` always 1.000** across every real capture
+  — plausible as an unused/rotation field and an alpha/enabled flag
+  respectively, but not independently confirmed either way.
+- **`param_9`, `param_12`, `param_13`, `param_14` are unreliable/garbage for
+  this call path** — the SAME literal string, drawn repeatedly, logged wildly
+  different (including `-nan` and absurd-magnitude) values for these across
+  calls, the classic signature of an uninitialized stack slot this particular
+  caller just doesn't populate. Do not use these for anything.
+- **`param_10` = 2147483647 (`INT_MAX`) on every real capture** — a "no
+  explicit character limit" sentinel for this caller class, unlike the
+  hudBigFont ring-buffer path documented earlier in this file (which passes a
+  real, exact character count).
+- **`param_11` = 4 for every string containing a `^N...^7` color-code token,
+  0 for plain-color strings** — strongly suggestive of a "this string uses
+  color codes" flag, not independently proven beyond this correlation.
+
+**Better-than-expected finding: the drawn hint string already marks the
+button-name portion itself**, via the engine's own `^N...^7` color-highlight
+convention (`^N` = a single-digit highlight color, `^7` = reset to plain
+white) — e.g. `^3 F ^7`, `^3F^7`, `^2ESC^7`. This is a more robust way to find
+the button-name span than cross-referencing the bind-resolver hook's (issue
+#35) separately-resolved text: it's self-contained in the exact same string
+this hook already has, and doesn't depend on that OTHER hook's read
+succeeding — which, separately and concerningly, it did not do even once
+during this entire live test (every single `[bind-resolver-diag]` line this
+whole session read `ECX=0`/`buffer=0x100`, the exact "not a plausible
+pointer" symptom issue #35 previously root-caused as specific to ONE known
+caller (`FUN_00622970`, return address `0x006229AC`) — but this session's own
+diagnostic shows a DIFFERENT return address, `0x004FAFE9` (inside
+`FUN_004fafd0`, one of the 3 callers issue #35 previously confirmed as
+"correct-shaped"), hitting the identical symptom. This is either a
+genuinely new caller-shape edge case inside `FUN_004fafd0` itself, or
+something about the current UI context (main menu / buy station) that wasn't
+covered by issue #35's original live test. Logged here as a real, open,
+NOT-YET-INVESTIGATED discrepancy — issue #35's own status should be revisited
+before assuming its fix is complete. Not currently blocking issue #48, since
+the `^N...^7` self-contained approach doesn't need this hook's output at all.
+
+Added `FindColorHighlightSpan()` (`analog_input_hooks.cpp`) to scan `param_1`
+directly for this pattern and feed the same `SumDirectIndexedGlyphWidthsBefore()`
+pixel-offset math already built; the bind-resolver cross-reference is kept as
+a secondary sanity check, not the primary signal anymore. Builds clean
+(Win32/Release), **deployed but not yet live-tested itself** (requires a
+relaunch, not just hot-reload, since this is a code change) — next playtest
+should confirm the color-highlight span detection and its computed pixel
+offset against how the real prompt renders on screen.
+
+**Correction to issue #38's "itemDef text does NOT go through `FUN_00690c80`
+at all" finding:** this session's live capture shows main-menu button labels
+(`"SPECIAL OPS"`, `"CAMPAIGN"`, `"MULTIPLAYER"`) AND menu hint text (`"Back
+^2ESC^7"`, `"Friends ^2F^7"`, `"Game Summary ^2G^7"`) both going through this
+exact hook — genuinely useful news for scope (one glyph-rendering
+implementation could plausibly cover both menu prompts and in-game interact
+hints, per the user's own observation), but it sits awkwardly next to issue
+#38's specific, disassembly-confirmed claim that itemDef text doesn't reach
+this function at all. Most likely explanation (not yet confirmed): the main
+menu's title-screen button labels/hints may use a different, HUD-style text
+path than the itemDef list rendering issue #38 specifically traced (e.g.
+nested options-menu lists) — genuinely two different UI elements that could
+both be true at once — but this needs a closer look before treating either
+claim as fully reconciled. Logged here rather than silently overriding #38's
+own finding.
+
+**Original framing (2026-07-31, kept below for the full rationale and open
+questions this investigation is working through):**
 
 **The realization:** issue #47's overlay work (`overlay_hud.cpp`) — built for
 a startup/config-reload toast notification, seemingly unrelated to the glyph
@@ -7262,3 +7410,63 @@ is a real architectural decision worth confirming with the user explicitly
 before abandoning the in-font approach's own, separately-already-done work.
 Not started this session; a good candidate for the next dedicated glyph-work
 session per [[project_post_break_priorities]].
+
+---
+
+## 49. Roadmap idea: generalize the overlay technique to arbitrary in-game text, not just button glyphs — live capture, block original render, redraw with a custom font at the same position (2026-07-31, user-identified, not yet implemented)
+
+**Status:** Roadmap Idea (not started — a future generalization, explicitly
+framed by the user as "in future," not part of the current issue #48 glyph
+work). Logged so it isn't lost.
+
+**The idea:** issue #48 is scoped to placing a controller-glyph icon over one
+already-identified character (the F/E button-prompt letter) inside real hint
+text, leaving the rest of that text drawing natively. This issue generalizes
+the same underlying technique one step further, to arbitrary in-game text
+generally (not just the one button-prompt character): capture a piece of
+text and its real screen position live (the same `Hook_DrawGlyphText`
+call-site issue #48 already uses), SUPPRESS the game's own native draw of
+that text for this call (skip calling the real trampoline, or forward a
+blanked/space-filled string instead of the real one), then redraw the exact
+same text ourselves via the overlay renderer (`overlay_hud.cpp`) using a
+custom (bundled, self-contained per issue #47's follow-up work) font,
+anchored at the same original position the real draw call would have used.
+This would let menu/HUD/hint text render in an arbitrary custom font/style
+this project controls directly, rather than only ever the game's own real
+fonts — a materially bigger scope than issue #48's narrow glyph-over-one-
+character idea.
+
+**Why this is plausible, not just hopeful:** every piece this would need has
+now been built or is actively being built for OTHER reasons:
+- The real per-call position data issue #48 is already extracting (raw
+  `Hook_DrawGlyphText` params, not yet fully decoded) is exactly what a
+  full-text redraw would also need for placement.
+- The overlay renderer (issue #47) already draws arbitrary text via GDI into
+  a texture and composites it through the real D3D9 pipeline every frame,
+  including through cutscenes.
+- Self-contained font embedding (issue #47's 2026-07-31 follow-up,
+  `AddFontMemResourceEx` via `proxy_d3d9.rc`) means ANY font could be bundled
+  this way, not just Barlow Condensed for the notification toast specifically.
+
+**Real open questions, genuinely harder than issue #48's:**
+1. Suppressing the original draw safely — forwarding an empty/space string to
+   `g_origDrawGlyphText` still needs to preserve whatever screen-space this
+   call reserves/advances for subsequent draws in the same frame (menu lists,
+   multi-line hints), or layout could visibly shift. Not yet investigated.
+2. Per-frame cost of a GDI-texture redraw for EVERY piece of text this
+   applies to (not just one toast message) — issue #47's design assumes a
+   single, infrequent message, not continuous full-HUD text replacement.
+3. Multi-line / word-wrap / dynamic-width text (menu lists, objective text)
+   is a substantially harder text-layout problem than a single fixed toast
+   string — GDI's own `DrawTextA` wrapping would need to match the real
+   engine's layout choices for this to look native, or it will visibly differ.
+4. Scope/value question the user hasn't weighed in on yet: is this worth
+   pursuing for its own sake (a fully custom UI font/style throughout the
+   game), or mainly interesting as a fallback if issue #48's narrower
+   glyph-over-one-character approach hits a wall? Treat as genuinely open,
+   don't assume either answer.
+
+**Recommendation:** don't start this before issue #48's narrower, already-
+in-progress work reaches a real conclusion (live-tested, confirmed
+not-user-noticeable) — this is a strict superset of the same technique with
+a materially harder set of open questions, not a quick add-on.

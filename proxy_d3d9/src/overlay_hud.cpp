@@ -37,6 +37,7 @@
 #include "../third_party/minhook/include/MinHook.h"
 #include "mod_config.h"
 #include "overlay_hud.h"
+#include "../resource.h"
 
 extern void LogFromController(const char* msg);
 extern "C" HWND GetGameWindow(); // defined in d3d9_hook.cpp
@@ -164,15 +165,21 @@ bool RenderMaskLuminance(const char* text, const POINT* offsets, int offsetCount
     RECT full = { 0, 0, kTextureWidth, kTextureHeight };
     FillRect(memDC, &full, static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH)));
 
-    // "Barlow Condensed" requested by face name only -- this project doesn't vendor/
-    // privately-load the actual .ttf, so if it isn't installed system-wide, GDI
-    // silently substitutes a default font instead of failing (documented limitation,
-    // see mod_config.h's [Overlay] comment). GDI fakes an oblique slant for a
-    // TrueType font with no dedicated italic style file, so the italic flag still
-    // does something even without a real italic Barlow Condensed weight installed.
-    HFONT font = CreateFontA(20, 0, 0, 0, FW_SEMIBOLD, italic ? TRUE : FALSE, FALSE, FALSE,
+    // Bundled, self-contained font (2026-07-31 follow-up) -- LoadOverlayFonts (DllMain)
+    // already registered the real Barlow Condensed SemiBold .ttf/.ttf-italic embedded
+    // in this DLL as a PRIVATE, in-process-only font via AddFontMemResourceEx, so this
+    // no longer depends on the font being installed system-wide. Family name is
+    // "Barlow Condensed SemiBold", NOT "Barlow Condensed" -- confirmed directly against
+    // the actual downloaded font files (GDI+ PrivateFontCollection enumeration): Google
+    // Fonts ships each static weight as its own family for legacy GDI/GDI+ compatibility
+    // (only Regular/Italic exist within it, which is exactly what nItalic selects
+    // between). FW_DONTCARE since the weight is already baked into which family this
+    // is, not requested at lookup time. If LoadOverlayFonts ever failed (logged at
+    // startup), GDI falls back to a default system font here exactly as before this
+    // change -- same graceful degradation, just no longer the expected path.
+    HFONT font = CreateFontA(20, 0, 0, 0, FW_DONTCARE, italic ? TRUE : FALSE, FALSE, FALSE,
                               ANSI_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-                              ANTIALIASED_QUALITY, DEFAULT_PITCH, "Barlow Condensed");
+                              ANTIALIASED_QUALITY, DEFAULT_PITCH, "Barlow Condensed SemiBold");
     HFONT oldFont = static_cast<HFONT>(SelectObject(memDC, font));
     SetBkMode(memDC, TRANSPARENT);
     SetTextColor(memDC, RGB(255, 255, 255));
@@ -558,6 +565,73 @@ void InstallEndSceneHook(void* realDevice)
         MH_STATUS e = MH_EnableHook(realEndScene);
         sprintf_s(buf, "[overlay-hud] MH_EnableHook(EndScene) = %d", static_cast<int>(e));
         LogFromController(buf);
+    }
+}
+
+namespace {
+// Handles from AddFontMemResourceEx -- each represents this DLL's own private,
+// in-process-only registration of one embedded .ttf. nullptr means "not loaded"
+// (either LoadOverlayFonts was never called, or it failed and was logged).
+HANDLE g_fontResourceRegular = nullptr;
+HANDLE g_fontResourceItalic = nullptr;
+
+bool LoadOneFontResource(HMODULE selfModule, int resourceId, HANDLE& outHandle, const char* label)
+{
+    HRSRC res = FindResourceA(selfModule, MAKEINTRESOURCEA(resourceId), RT_RCDATA);
+    if (!res) {
+        char buf[192];
+        sprintf_s(buf, "[overlay-font] FindResourceA failed for %s (id %d) -- GetLastError=%lu",
+            label, resourceId, GetLastError());
+        LogFromController(buf);
+        return false;
+    }
+    HGLOBAL loaded = LoadResource(selfModule, res);
+    void* data = loaded ? LockResource(loaded) : nullptr;
+    DWORD size = SizeofResource(selfModule, res);
+    if (!data || size == 0) {
+        char buf[192];
+        sprintf_s(buf, "[overlay-font] LoadResource/LockResource failed for %s -- GetLastError=%lu",
+            label, GetLastError());
+        LogFromController(buf);
+        return false;
+    }
+    DWORD numFontsAdded = 0;
+    HANDLE fontHandle = AddFontMemResourceEx(data, size, nullptr, &numFontsAdded);
+    if (!fontHandle || numFontsAdded == 0) {
+        char buf[192];
+        sprintf_s(buf, "[overlay-font] AddFontMemResourceEx failed for %s (%lu bytes) -- GetLastError=%lu",
+            label, size, GetLastError());
+        LogFromController(buf);
+        return false;
+    }
+    outHandle = fontHandle;
+    char buf[192];
+    sprintf_s(buf, "[overlay-font] %s loaded as a private in-process font (%lu bytes, %lu face(s))",
+        label, size, numFontsAdded);
+    LogFromController(buf);
+    return true;
+}
+} // namespace
+
+bool LoadOverlayFonts(void* selfModuleHandle)
+{
+    HMODULE selfModule = static_cast<HMODULE>(selfModuleHandle);
+    bool okRegular = LoadOneFontResource(selfModule, IDR_FONT_BARLOWCONDENSED_SEMIBOLD,
+        g_fontResourceRegular, "Barlow Condensed SemiBold");
+    bool okItalic = LoadOneFontResource(selfModule, IDR_FONT_BARLOWCONDENSED_SEMIBOLD_ITALIC,
+        g_fontResourceItalic, "Barlow Condensed SemiBold Italic");
+    return okRegular && okItalic;
+}
+
+void UnloadOverlayFonts()
+{
+    if (g_fontResourceRegular) {
+        RemoveFontMemResourceEx(g_fontResourceRegular);
+        g_fontResourceRegular = nullptr;
+    }
+    if (g_fontResourceItalic) {
+        RemoveFontMemResourceEx(g_fontResourceItalic);
+        g_fontResourceItalic = nullptr;
     }
 }
 

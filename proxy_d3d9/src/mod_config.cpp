@@ -69,8 +69,11 @@ void ReadBool(const char* path, const char* section, const char* key, bool& outV
 // anyone already on v3 would never see the new keys appear in their real ini file
 // at all, even though the compiled defaults would still apply correctly in memory --
 // confirmed live: exactly this happened, config hot-reload alone doesn't add new
-// keys to an already-current-version file.
-constexpr unsigned long kCurrentConfigVersion = 4;
+// keys to an already-current-version file; v4->v5 when the new [Experimental]
+// HudGlyphPositionLogging key (issue #48) was added -- same reasoning as the v3->v4
+// bump immediately above, applies every time going forward: any new config key needs
+// a version bump or it silently never appears for already-current-version users.
+constexpr unsigned long kCurrentConfigVersion = 5;
 
 // Reads a legacy key's raw value, returning true only if the key genuinely existed
 // (unlike ReadFloat, which can't distinguish "absent" from "present but unparsable" --
@@ -200,7 +203,8 @@ void WriteDefaultConfig(const char* path)
 
     fprintf(f,
         "; MW3 Native Controller Support -- configuration\n"
-        "; Changes take effect on next launch (no live reload yet).\n"
+        "; Save this file while the game is running and it hot-reloads within about a\n"
+        "; second (v0.2.5+) -- no need to relaunch to see most changes take effect.\n"
         "; A real in-game options screen (sliders) is planned -- this file is the\n"
         "; interim way to tune these values until then.\n"
         "\n"
@@ -293,8 +297,8 @@ void WriteDefaultConfig(const char* path)
         "; with whichever ButtonLayout is active above.\n"
         "FlipTriggers=%d\n"
         "; Controller-glyph icon style (task #6) -- purely cosmetic today, has no\n"
-        "; visible effect until BindResolverGlyphSubstitution below is both\n"
-        "; implemented further and enabled. One of: Xbox360, XboxModern, PlayStation\n"
+        "; visible effect yet (glyph rendering itself is still being built -- see\n"
+        "; re_notes/known_issues.md issue #48). One of: Xbox360, XboxModern, PlayStation\n"
         "GlyphStyle=%s\n"
         "\n"
         "[Vibration]\n"
@@ -315,10 +319,8 @@ void WriteDefaultConfig(const char* path)
         "\n"
         "[Overlay]\n"
         "; Top-right on-screen notification text (startup message, config hot-reload).\n"
-        "; Requests \"Barlow Condensed\" by face name only -- if it isn't installed\n"
-        "; system-wide, GDI silently substitutes a default font instead of failing.\n"
-        "; 1 = italic (GDI fakes an oblique slant even without a real italic weight\n"
-        "; installed), 0 = upright.\n"
+        "; Uses Barlow Condensed SemiBold, bundled directly in this DLL (2026-07-31\n"
+        "; follow-up) -- no system font install required. 1 = italic, 0 = upright.\n"
         "FontItalic=%d\n"
         "; STRICTLY A TESTING TOGGLE, default off. When on, continuously cycles\n"
         "; through every known message/animation-style variant every few seconds\n"
@@ -354,7 +356,14 @@ void WriteDefaultConfig(const char* path)
         "; Task #6/#34: read-only diagnostic hook on the real glyph-draw call, logs the\n"
         "; real font name in use for on-screen HUD/menu text whenever it changes. Always\n"
         "; forwards unmodified regardless of this toggle. 0 = off, 1 = on.\n"
-        "HudFontIdLogging=%d\n",
+        "HudFontIdLogging=%d\n"
+        "; Issue #48: read-only diagnostic, same hook site as HudFontIdLogging above but\n"
+        "; dedup'd by drawn text changing and logs the full raw position/scale/color\n"
+        "; parameter set instead of just the font name. Investigation-only toggle for\n"
+        "; the overlay-quad glyph-icon pivot -- turn on, reproduce a real interact-hint\n"
+        "; prompt, check proxy_d3d9.log for \"[hud-glyph-pos]\" lines, then turn back off.\n"
+        "; Always forwards unmodified regardless of this toggle. 0 = off, 1 = on.\n"
+        "HudGlyphPositionLogging=%d\n",
         kCurrentConfigVersion,
         g_modConfig.lookDegreesPerSecondHorizontal,
         g_modConfig.lookDegreesPerSecondVertical,
@@ -381,7 +390,8 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.fireNotifyQueueKick ? 1 : 0,
         g_modConfig.bindResolverHookLogging ? 1 : 0,
         g_modConfig.bindResolverGlyphSubstitution ? 1 : 0,
-        g_modConfig.hudFontIdLogging ? 1 : 0);
+        g_modConfig.hudFontIdLogging ? 1 : 0,
+        g_modConfig.hudGlyphPositionLogging ? 1 : 0);
 
     fclose(f);
 }
@@ -557,6 +567,7 @@ void LoadModConfig()
     ReadBool(path, "Experimental", "BindResolverHookLogging", g_modConfig.bindResolverHookLogging);
     ReadBool(path, "Experimental", "BindResolverGlyphSubstitution", g_modConfig.bindResolverGlyphSubstitution);
     ReadBool(path, "Experimental", "HudFontIdLogging", g_modConfig.hudFontIdLogging);
+    ReadBool(path, "Experimental", "HudGlyphPositionLogging", g_modConfig.hudGlyphPositionLogging);
 
     g_buttonMap = ResolveButtonMap(g_modConfig.buttonLayout, g_modConfig.flipTriggers);
 
@@ -570,7 +581,7 @@ void LoadModConfig()
         "vibrationDamagePerPoint=%g vibrationDamageMaxIntensity=%g vibrationDamageDurationMs=%lu "
         "overlayFontItalic=%d overlayTestCycleAllVariants=%d "
         "fireNotifyQueueKick=%d bindResolverHookLogging=%d bindResolverGlyphSubstitution=%d "
-        "hudFontIdLogging=%d",
+        "hudFontIdLogging=%d hudGlyphPositionLogging=%d",
         g_modConfig.lookDegreesPerSecondHorizontal, g_modConfig.lookDegreesPerSecondVertical,
         g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
@@ -588,7 +599,8 @@ void LoadModConfig()
         g_modConfig.fireNotifyQueueKick ? 1 : 0,
         g_modConfig.bindResolverHookLogging ? 1 : 0,
         g_modConfig.bindResolverGlyphSubstitution ? 1 : 0,
-        g_modConfig.hudFontIdLogging ? 1 : 0);
+        g_modConfig.hudFontIdLogging ? 1 : 0,
+        g_modConfig.hudGlyphPositionLogging ? 1 : 0);
     LogFromController(buf);
 
     // Rewrite the file once, now that g_modConfig holds every existing setting PLUS
@@ -609,9 +621,10 @@ void LoadModConfig()
 
 // ---- Config hot-reload QoL feature (2026-07-31, user request) ---------------------
 //
-// mw3ncp_config.ini was load-once-at-startup-only until now (see this file's own
-// long-standing "no live reload yet" comment, written into every default config it
-// generates). Polls the file's real last-write-time (not a content hash -- cheap,
+// mw3ncp_config.ini was load-once-at-startup-only until now (the default-config
+// header comment above previously said as much -- "no live reload yet" -- updated
+// the same day this feature landed). Polls the file's real last-write-time (not a
+// content hash -- cheap,
 // and a real edit always bumps this) from InjectMenuInputTick (analog_input_hooks.cpp,
 // the always-running WndProc/SetTimer tick, so this works even at the main menu/while
 // paused), rate-limited internally so the actual GetFileAttributesEx stat call only

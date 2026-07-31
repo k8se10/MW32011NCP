@@ -27,9 +27,10 @@ enum class StickLayout { Default, Southpaw, Legacy, LegacySouthpaw };
 // questions" section. Names match assets/button_glyphs/'s own real file-prefix
 // convention exactly (Xbox360 -> xbox360_*, XboxModern -> xboxmodern_*, PlayStation ->
 // ps_*) -- don't invent new naming here. This selects ICON STYLE ONLY; it has no
-// effect yet, since the substitution logic that would use it
-// (BindResolverGlyphSubstitution below) is still off by default pending the font-
-// loading work (see re_notes/known_issues.md issue #23).
+// effect yet -- the actual glyph rendering it would drive is still being built
+// (pivoted 2026-07-31 from in-font substitution to independent overlay quads
+// drawn over the real button-prompt character; see re_notes/known_issues.md
+// issue #48 for the current approach and status).
 enum class GlyphStyle { Xbox360, XboxModern, PlayStation };
 
 // One entry per logical action; resolves to whichever physical XInput button/trigger
@@ -192,14 +193,15 @@ struct ModConfig
     unsigned long vibrationDamageDurationMs = 200; // how long a damage pulse takes to decay
 
     // [Overlay] (task #47/#48, 2026-07-31) -- the top-right on-screen notification
-    // text (overlay_hud.cpp). Barlow Condensed is requested by face name only --
-    // this project doesn't vendor/privately-load the actual font file, so if it
-    // isn't installed system-wide, GDI silently substitutes a default font instead
-    // of failing. Not a bug, just a known limitation until the .ttf is vendored.
-    bool overlayFontItalic = true; // GDI fakes an oblique slant for a TrueType font
-                                     // that has no dedicated italic style file, so
-                                     // this still does something even without a real
-                                     // italic Barlow Condensed weight installed.
+    // text (overlay_hud.cpp). Uses Barlow Condensed SemiBold, bundled directly in
+    // this DLL as a private, in-process-only font (proxy_d3d9.rc/resource.h,
+    // AddFontMemResourceEx in overlay_hud.cpp's LoadOverlayFonts) since the
+    // 2026-07-31 follow-up -- no longer depends on the font being installed
+    // system-wide (previously requested by face name only, silently falling back
+    // to a default font if missing; see re_notes/known_issues.md issue #47).
+    bool overlayFontItalic = true; // selects the bundled font's real Italic style
+                                     // (both Regular and Italic .ttf weights are
+                                     // embedded, not a GDI-faked oblique slant).
     bool overlayTestCycleAllVariants = false; // STRICTLY A TESTING TOGGLE, default off.
                                      // When on, continuously cycles through every
                                      // known message/animation-style variant (Plain,
@@ -245,8 +247,12 @@ struct ModConfig
         // game can render the substitution codepoints yet (see known_issues.md issue
         // #23's still-open safe-loading problem), so flipping this on today would
         // just replace readable key-name text with tofu/missing-glyph boxes, a
-        // regression, not an improvement. Turn on only once the font-loading side of
-        // task #6 is confirmed live.
+        // regression, not an improvement. SUPERSEDED, NOT JUST BLOCKED, as of
+        // 2026-07-31: the project pivoted away from in-font glyph substitution
+        // entirely, toward independent overlay quads drawn over the real button-
+        // prompt character instead (see known_issues.md issue #48) -- this toggle
+        // stays here only in case that pivot doesn't pan out; don't assume it's on
+        // the critical path for glyph work going forward.
     bool hudFontIdLogging = true; // task #6/#34 (2026-07-21): read-only diagnostic hook
         // on FUN_00690c80 (the real glyph-draw call every on-screen HUD/menu text goes
         // through) that logs the real Font_s.fontName whenever it CHANGES -- built to
@@ -257,6 +263,20 @@ struct ModConfig
         // Always forwards to the real trampoline completely unmodified regardless of
         // this toggle; only controls whether it logs. Default on for the first live
         // test.
+    bool hudGlyphPositionLogging = false; // issue #48 (2026-07-31): read-only diagnostic,
+        // same hook site as hudFontIdLogging above (FUN_00690c80/Hook_DrawGlyphText) but
+        // dedup'd by DRAWN TEXT changing rather than by font changing, and logs the full
+        // raw parameter set (param_2/param_3/param_5..param_9/param_14 -- x/y/scale/color
+        // are suspected but NOT yet confirmed among these) instead of just the font name.
+        // Purpose: empirically determine the real screen-space position/size convention
+        // interact-hint text draws at, so a future overlay-quad glyph icon (issue #48's
+        // proposed pivot away from in-font glyph injection) can be positioned against it
+        // without guessing. DEFAULT OFF -- this is a one-off investigation toggle, not
+        // meant to stay on during normal play; turn on, reproduce a real interact-hint
+        // prompt (e.g. stand near a weapon/ammo pickup), then check proxy_d3d9.log for
+        // "[hud-glyph-pos]" lines and turn back off. Always forwards to the real
+        // trampoline completely unmodified regardless of this toggle; only controls
+        // whether it logs.
     // sprintStaminaBypassForTesting (task #9) REMOVED 2026-07-19: graduated to
     // unconditional the same day it was added -- Sprint's real +sprint kbutton
     // migration was LIVE-CONFIRMED working, and with it confirmed that the real
@@ -265,8 +285,9 @@ struct ModConfig
     // to bypass, so the toggle itself is dead weight, not just proven-safe.
 };
 
-// The loaded config, populated once by LoadModConfig(). Read-only after startup --
-// nothing in this mod hot-reloads the INI mid-session.
+// The loaded config, populated by LoadModConfig() at startup and re-populated live by
+// CheckConfigHotReload() (added v0.2.5) whenever mw3ncp_config.ini's on-disk write time
+// changes -- no longer strictly read-only after startup.
 extern ModConfig g_modConfig;
 
 // Reads mw3ncp_config.ini from the same directory as this DLL, filling in any

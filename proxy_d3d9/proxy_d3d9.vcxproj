@@ -95,12 +95,21 @@
   <ItemGroup>
     <None Include="def\proxy_d3d9.def" />
     <None Include="third_party\minhook\LICENSE.txt" />
+    <!-- Barlow Condensed (SIL OFL 1.1), bundled font source, embedded via
+         proxy_d3d9.rc; see resource.h for the licensing note. -->
+    <None Include="..\assets\fonts\BarlowCondensed-OFL.txt" />
+    <None Include="..\assets\fonts\BarlowCondensed-SemiBold.ttf" />
+    <None Include="..\assets\fonts\BarlowCondensed-SemiBoldItalic.ttf" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="proxy_d3d9.rc" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\controller_input.h" />
     <ClInclude Include="src\mod_config.h" />
     <ClInclude Include="src\rumble.h" />
     <ClInclude Include="src\overlay_hud.h" />
+    <ClInclude Include="resource.h" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

@@ -10,16 +10,21 @@
 > and unrelated to the crouch fix — still relevant to check even on v0.2.5).
 > **v0.2.5 is the current most stable alpha build.**
 
-> **⚠️ SECURITY NOTICE — read if you're on any version before v0.2.2.** Versions
-> v0.2.1 and earlier shipped with an aim-assist feature's code compiled into the
-> DLL — disabled by default, but present in the binary. v0.2.2 **permanently
-> removed that code entirely** following VAC-risk research (see Known Limitations
-> below for the full reasoning). Whether the mere presence of that code in earlier
-> builds meaningfully raised VAC exposure over v0.2.2's is **not confirmed — no
-> ban has been reported or observed — but is genuinely suspected enough that this
-> project recommends upgrading to v0.2.2 or later** rather than continuing to run
-> an earlier build. Treat this as a real, disclosed risk, not a confirmed
-> incident.
+> **⚠️ SECURITY NOTICE — versions before v0.2.2 are no longer distributed.**
+> Versions v0.2.1 and earlier shipped with an aim-assist feature's code compiled
+> into the DLL — disabled by default, but present in the binary. v0.2.2
+> **permanently removed that code entirely** following VAC-risk research (see
+> Known Limitations below for the full reasoning). Whether the mere presence of
+> that code in earlier builds meaningfully raised VAC exposure over v0.2.2's was
+> never confirmed — no ban was ever reported or observed — but as a further,
+> deliberate risk-mitigation step (2026-07-31), **releases v0.1.0-prealpha
+> through v0.2.1 have been unpublished from both GitHub Releases and Nexus
+> Mods** — they are no longer offered as a download anywhere this project
+> distributes from. Nothing has been deleted: the underlying git tags, commits,
+> and full source history for every one of those versions remain fully
+> available in this repository for anyone who needs to inspect them; only the
+> built, downloadable release packages are hidden. **v0.2.2 is the oldest
+> version this project still distributes or supports.**
 
 **Status: ALPHA — v0.2.5 (2026-07-31).** A hotfix release, all changes below user-confirmed live:
 
@@ -104,7 +109,7 @@ live-tested by the developer during actual play, not just built-and-assumed.
 | Button-glyph controller icons | Full asset + build pipeline proven end-to-end, but nothing renders in-game yet — zero player-visible effect currently |
 | Vehicle-exit prompt (`+usereload`, Mind the Gap) | Not wired |
 | Survival debug menu / dev console | The real console is confirmed permanently dead — a custom debug menu hasn't been built |
-| WaW-style animated dev clan tags | Research only (twice, most recently 2026-07-21), genuinely complicated by a dead networked Elite-session dependency and by the project having no confirmed-alive per-frame render hook yet — see `known_issues.md` #37 |
+| WaW-style animated dev clan tag *presence data above players* | Still not implemented — genuinely complicated by a dead networked Elite-session dependency, see `known_issues.md` #37. (The per-frame render hook blocker this previously depended on is resolved as of v0.2.5 — see the on-screen notifications feature below, which reuses the same Gold/Rainbow/Sweep *visual style* for a different, unrelated purpose, not this feature itself.) |
 | Multiplayer (`iw5mp.exe`) | **Not started at all** — separate binary, needs its own full RE pass, anti-cheat exposure still unresolved |
 
 ### ❓ Untested (not known broken, just never exercised)
@@ -143,8 +148,8 @@ fully live-confirmed working with no known gap (that's the ✅ table above).
 |---|---|---|
 | God-mode / debug-cheat toggles | Real, disassembly-confirmed entity health-immunity bit (`entity+0x13c` bit `0x1`); simpler `so_nofail` "can't fail mission" dvar switch; ammo-refill/wave-skip/killstreak-spawn native pieces not yet reached; a `noclip` GSC notify-event lead not fully traced | `known_issues.md` task #20 |
 | Survival wave-skip / difficulty-tuning tools | Full wave-loop + CSV data-table structure reverse-engineered and logged as reference material for a future debug menu; not implemented | `survival_wave_scaling.md` |
-| WaW-style animated dev clan tags | Real investigation done, twice (2026-07-18 and 2026-07-21). MW3's own clan-tag system is networked Elite-session presence data, a bad fit for offline SP/Survival; `self.playername` (local, native-sourced) is too narrow to build on. Recommended path is a fully project-owned overlay (own config + own timer, same precedent as the Sprint stamina timer), but it's gated on a project-wide unknown: no per-frame D3D9 render hook is confirmed alive today (`Present` is dead, `EndScene` untried) | README (Not-working table above), `ui_assets.md`, `known_issues.md` #37 |
-| First-launch welcome/MOTD message | Real, permanently-dead MOTD UI ticker found and confirmed safe to repurpose (`visible when(0)` hardcoded false); full implementation plan exists (reuse `RegisterMenu`/`OpenMenuByName`); not implemented | `ui_assets.md` |
+| WaW-style animated dev clan tag *presence data above players* | Real investigation done, twice (2026-07-18 and 2026-07-21). MW3's own clan-tag system is networked Elite-session presence data, a bad fit for offline SP/Survival; `self.playername` (local, native-sourced) is too narrow to build on. Recommended path is a fully project-owned overlay (own config + own timer, same precedent as the Sprint stamina timer). The project-wide render-hook blocker this was gated on is now resolved (v0.2.5's `EndScene` hook, see below) — this specific feature (per-player floating tags) is still not implemented, just no longer blocked on the render side | README (Not-working table above), `ui_assets.md`, `known_issues.md` #37 |
+| ~~First-launch welcome/MOTD message~~ | **Superseded by v0.2.5's on-screen notification feature** (a startup message + config-hot-reload message, with Gold/Rainbow/Sweep visual variants inspired by WaW's dev-clan-tag aesthetic) — same end-user goal (a native, non-console welcome message), delivered via the new overlay-quad render hook instead of the originally-planned MOTD-ticker repurpose. Shipped, not just planned. | `known_issues.md` #47 |
 | `GlyphStyle` config option (Xbox 360/One/Series/PS3/PS4/PS5 icon choice) | Planned alongside the button-glyph work since XInput can't distinguish controller brand; not implemented | `ui_assets.md` |
 
 #### Tier 3 — Researched and parked
@@ -773,6 +778,10 @@ This project vendors and links the following third-party library:
 - **Hacker Disassembler Engine (HDE) 32/64 C**, bundled with MinHook — Copyright (c) 2008-2009, Vyacheslav Patkov. Same style of license (see the same `LICENSE.txt`).
 
 Full license text for both is reproduced verbatim in `proxy_d3d9/third_party/minhook/LICENSE.txt`.
+
+This project also embeds the following font, bundled directly in the proxy DLL (`proxy_d3d9/proxy_d3d9.rc`) as a private, in-process-only font so it never depends on being installed on the user's system:
+
+- **[Barlow Condensed](https://github.com/jpt/barlow)** SemiBold (Regular and Italic) — Copyright 2017 The Barlow Project Authors. SIL Open Font License, Version 1.1 (see `assets/fonts/BarlowCondensed-OFL.txt`). Used for the top-right on-screen notification text.
 
 ## License
 

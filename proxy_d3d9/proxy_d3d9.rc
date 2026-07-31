@@ -1,0 +1,9 @@
+#include "resource.h"
+
+// Embedded as raw RCDATA (not a Windows FONT resource, which triggers a system-wide
+// AddFontResource-style install) -- loaded at runtime via AddFontMemResourceEx
+// (overlay_hud.cpp) as a private, in-process-only font, never touching the user's
+// system font list. Files are the actual, unmodified Google Fonts static instances;
+// see resource.h for the licensing note and README.md for attribution.
+IDR_FONT_BARLOWCONDENSED_SEMIBOLD        RCDATA "..\\assets\\fonts\\BarlowCondensed-SemiBold.ttf"
+IDR_FONT_BARLOWCONDENSED_SEMIBOLD_ITALIC RCDATA "..\\assets\\fonts\\BarlowCondensed-SemiBoldItalic.ttf"
