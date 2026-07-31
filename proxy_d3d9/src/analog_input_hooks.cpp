@@ -29,6 +29,15 @@
 // proxy_d3d9.log file without duplicating the log-file setup.
 extern void LogFromController(const char* msg);
 
+// Defined in mod_config.cpp (2026-07-31, config hot-reload QoL feature) -- stats
+// mw3ncp_config.ini's last-write-time (internally rate-limited) and re-runs
+// LoadModConfig() if it changed since the last check, showing an on-screen
+// confirmation via ShowOverlayMessage (overlay_hud.cpp).
+extern "C" void CheckConfigHotReload();
+// Defined in overlay_hud.cpp -- a no-op unless [Overlay] TestCycleAllVariants is on,
+// strictly a testing aid (see that config key's own comment).
+void TickOverlayTestCycle();
+
 namespace {
 
 inline int8_t ClampToSByte(int v)
@@ -427,11 +436,24 @@ bool g_currentBPressTouchedMenu = false;
 // disassembly, rather than guessed at.
 DWORD g_lastStanceDiagLogMs = 0;
 
+// Guard-byte values now included on EVERY call, not just tap/hold attempts (2026-07-31,
+// issue #42 follow-up) -- the heartbeat call (every ~500ms, including right from level
+// load) is what can actually answer "were the guards already locked at launch, and
+// exactly when did they clear relative to some other event" -- data this project has
+// never had a continuous timeline for before now that these bytes' real meaning is
+// understood (see the big comment block above ProcessPendingStanceRetry: FUN_0050b770/
+// FUN_0057d190/FUN_0057d430 confirm they're a genuine "stance change locked" pair, with
+// FUN_0057d430 -- the per-frame keyboard-movement function this project's own movement
+// hook already sits on top of -- forcing real stance to 0 and forcing usercmd crouch/
+// prone button bits while locked, guard1-set = force prone, guard2-only-set = force
+// crouch).
 void LogStanceDiag(const char* tag)
 {
-    char buf[160];
-    sprintf_s(buf, "[stance-diag] %s realStance=%d t=%lu",
-              tag, GetRealStance(), GetTickCount());
+    uint8_t guard1, guard2;
+    GetStanceGuardBytes(guard1, guard2);
+    char buf[200];
+    sprintf_s(buf, "[stance-diag] %s realStance=%d guard1=%d guard2=%d t=%lu",
+              tag, GetRealStance(), guard1, guard2, GetTickCount());
     LogFromController(buf);
 }
 
@@ -1294,7 +1316,19 @@ void ClearHoldBreathActiveFlag()
     *reinterpret_cast<volatile unsigned char*>(kHoldBreathAliasAddr + 0x10) = 0;
 }
 
-constexpr int kHoldBreathBindIndex = 17; // distinct from ADS's 13/Reload's 15/Sprint's 16
+// CRITICAL FIX (2026-07-31, issue #46): this was 17, colliding directly with
+// kAttackBindIndex (Fire's own bind index, also 17 -- see kAttackKbutton above).
+// Combined with kHoldBreathAliasAddr being literally Fire's own down[1] memory
+// field (see the aliasing writeup above), Hold Breath's CallKbuttonDown was
+// writing the SAME bind-index value into Fire's own kbutton state that a real
+// Fire press also writes -- live-reported as "can't shoot while holding breath
+// with a sniper." The two calls' bind-index values need to be distinct from
+// EVERY other bind index touching this aliased memory region, not just the
+// other three this comment used to enumerate (which never included Fire's,
+// since Fire's own constant lives in a different section of this file).
+constexpr int kHoldBreathBindIndex = 18; // distinct from ADS's 13/Reload's 15/Sprint's
+                                          // 16/Fire's 17 -- was 17 (WRONG, collided
+                                          // with Fire) until the fix above.
 } // namespace
 
 extern "C" void __cdecl InjectControllerSprint()
@@ -1533,6 +1567,28 @@ float GetAdsLookRateScale()
     // go negative/invert).
     float scale = g_modConfig.adsSlowdownBaseline * powf(ratio, g_modConfig.adsSlowdownStrength);
 
+    // Issue #44's real fix (2026-07-31): a genuinely SEPARATE, decoupled extra
+    // slowdown for low-zoom weapons (pistols confirmed live to sit at ratio EXACTLY
+    // 1.0 -- their ADS never changes FOV at all), instead of lowering
+    // adsSlowdownBaseline itself -- that was tried first and reverted after live
+    // testing found it also made high-zoom scopes "too harsh" (baseline multiplies
+    // EVERY ratio value by the same relative percentage, so there is no way to
+    // target low zoom only through it). kCloseRangeFocusPower is a high, internal-
+    // only exponent (not configurable -- there's no player-facing reason to change
+    // the SHAPE of the taper, only its strength) so ratio^kCloseRangeFocusPower
+    // stays close to 1.0 (this term barely engages) once ratio drops much below
+    // ~0.9, meaning it's negligible for any real optic with actual zoom (3x+
+    // scopes: ratio ~0.3-0.4, ratio^8 is astronomically small) -- restoring their
+    // feel to exactly what it was before adsSlowdownBaseline was ever touched
+    // today. At ratio=1.0 (pistol), closeRangeFactor = 1 - strength exactly, giving
+    // a real, meaningful extra reduction. Mathematically safe for any
+    // adsCloseRangeSlowdownStrength in [0, 1] (clamped on config load): ratio is
+    // always in (0, 1], so ratio^power is always in (0, 1], so closeRangeFactor is
+    // always in [1-strength, 1] -- never negative, never inverts.
+    constexpr float kCloseRangeFocusPower = 8.0f;
+    float closeRangeFactor = 1.0f - g_modConfig.adsCloseRangeSlowdownStrength * powf(ratio, kCloseRangeFocusPower);
+    scale *= closeRangeFactor;
+
     // Diagnostic (task #12/known_issues.md issue #8): rate-limited log of the raw
     // inputs to this computation. DAT_00984b9c is the flag FUN_004b0580 itself
     // checks (bit 2, mask 0x4) to decide between the safe cg_fov-lerp path and the
@@ -1543,10 +1599,10 @@ float GetAdsLookRateScale()
     if (nowMs - s_lastAdsDiagLogMs >= 250) {
         s_lastAdsDiagLogMs = nowMs;
         uint8_t altPathFlags = *reinterpret_cast<volatile uint8_t*>(0x00984b9c);
-        char buf[200];
+        char buf[220];
         sprintf_s(buf,
-            "[ads-fov-diag] baseFov=%.3f effectiveFov=%.3f ratio=%.4f scale=%.4f altFlags=0x%02x",
-            baseFov, effectiveFov, ratio, scale, altPathFlags);
+            "[ads-fov-diag] baseFov=%.3f effectiveFov=%.3f ratio=%.4f closeRangeFactor=%.4f scale=%.4f altFlags=0x%02x",
+            baseFov, effectiveFov, ratio, closeRangeFactor, scale, altPathFlags);
         LogFromController(buf);
     }
 
@@ -4141,6 +4197,16 @@ extern "C" void __cdecl InjectMenuInputTick()
     // InjectFontGlyphVisibilityTest_HudBigFont's own definition for the full
     // rationale and the option considered and rejected (a console-command anchor).
     InjectFontGlyphVisibilityTest_HudBigFont();
+
+    // Config hot-reload QoL feature (2026-07-31, user request) -- checked from this
+    // always-running (WndProc/SetTimer) tick rather than the gameplay tick so it keeps
+    // working even at the main menu/while paused, same reasoning as everything else on
+    // this function. Internally rate-limited (CheckConfigHotReload only actually stats
+    // the file once every ~1s) so this adds no meaningful per-tick cost.
+    CheckConfigHotReload();
+    // Testing-only overlay variant cycler (2026-07-31) -- a no-op unless [Overlay]
+    // TestCycleAllVariants is explicitly enabled; see that config key's own comment.
+    TickOverlayTestCycle();
 }
 
 // ---- Bind-resolver text hook, LOG-ONLY first pass (task #6/#35, 2026-07-21) -------

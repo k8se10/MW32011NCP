@@ -1,8 +1,10 @@
 #include <windows.h>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include "mod_config.h"
+#include "overlay_hud.h"
 
 extern void LogFromController(const char* msg); // defined in dllmain.cpp
 
@@ -42,6 +44,74 @@ void ReadUlong(const char* path, const char* section, const char* key, unsigned 
 void ReadBool(const char* path, const char* section, const char* key, bool& outValue)
 {
     outValue = GetPrivateProfileIntA(section, key, outValue ? 1 : 0, path) != 0;
+}
+
+// ---- Config migration (task #14 follow-up, 2026-07-31) ----------------------------
+//
+// mw3ncp_config.ini has no live-reload, but it DOES persist across mod updates -- an
+// existing file predating a key rename (e.g. v0.2.2's single [Look] Sensitivity,
+// split into SensitivityHorizontal/SensitivityVertical in v0.2.5) must not silently
+// fall back to the new keys' hardcoded defaults and lose a player's tuned value.
+// ConfigVersion is an internal schema marker (not a user-facing setting) tracking
+// which migrations a given file has already had applied. Missing entirely ==
+// version 0, i.e. any file from before this system existed. Bumped several times the
+// same day (all still pre-release): v1->v2 when issue #44's AdsSlowdownBaseline
+// reset-if-untouched rule was added after some files had already been migrated to
+// v1 by the Sensitivity-split migration alone (their ConfigVersion=1 would
+// otherwise skip the new rule, since it's not < 1); v2->v3 when live testing found
+// the 0.65->0.45 baseline retune itself was the wrong fix (see mod_config.h's own
+// comment on adsSlowdownBaseline) and got reverted back to 0.65 in favor of the
+// new, decoupled adsCloseRangeSlowdownStrength; v3->v4 when the new [Overlay]
+// section (FontItalic, TestCycleAllVariants) was added -- WriteDefaultConfig() only
+// runs when `configVersion < kCurrentConfigVersion` (see the bottom of
+// LoadModConfig()), so a file already sitting AT the current version never gets
+// rewritten just because new keys were added to the template; without this bump,
+// anyone already on v3 would never see the new keys appear in their real ini file
+// at all, even though the compiled defaults would still apply correctly in memory --
+// confirmed live: exactly this happened, config hot-reload alone doesn't add new
+// keys to an already-current-version file.
+constexpr unsigned long kCurrentConfigVersion = 4;
+
+// Reads a legacy key's raw value, returning true only if the key genuinely existed
+// (unlike ReadFloat, which can't distinguish "absent" from "present but unparsable" --
+// migration needs to know "was there anything here to carry over at all").
+bool TryReadLegacyFloat(const char* path, const char* section, const char* key, float& outValue)
+{
+    char buf[64];
+    GetPrivateProfileStringA(section, key, "", buf, sizeof(buf), path);
+    if (buf[0] == '\0') return false;
+    char* end = nullptr;
+    float parsed = strtof(buf, &end);
+    if (end == buf) return false;
+    outValue = parsed;
+    return true;
+}
+
+// Reads a float key the same as ReadFloat, EXCEPT: a plain compiled-default change
+// (e.g. AdsSlowdownBaseline 0.65 -> 0.45, issue #44) can't reach an existing config
+// the way a key rename can -- the key never disappeared, so the file's own explicit
+// value always wins over a new compiled default regardless of whether the player
+// ever deliberately touched it. User-decided policy (2026-07-31): only adopt the
+// new default for a file that's still sitting on the EXACT old default untouched;
+// anything else is treated as a deliberate customization and always respected,
+// unconditionally, same as ReadFloat. Gated by fromVersion so this reset rule only
+// ever applies once, to files that predate it -- a file already migrated (or a
+// fresh install already on the new default) never re-triggers it even if the player
+// later happens to dial the value back to exactly the old number.
+void ReadFloatWithDefaultRetune(const char* path, const char* section, const char* key,
+                                 unsigned long configVersion, unsigned long fromVersion,
+                                 float oldDefault, float& outValue)
+{
+    char buf[64];
+    GetPrivateProfileStringA(section, key, "", buf, sizeof(buf), path);
+    if (buf[0] == '\0') return; // key absent -- outValue already holds the current compiled default
+    char* end = nullptr;
+    float onDisk = strtof(buf, &end);
+    if (end == buf) return; // unparsable -- leave outValue alone, same as ReadFloat's own behavior
+    if (configVersion < fromVersion && fabsf(onDisk - oldDefault) < 0.0001f) {
+        return; // stale, never-customized old default -- adopt the new compiled default instead
+    }
+    outValue = onDisk; // explicit real value (post-retune file, or a genuine customization) -- respect it
 }
 
 const char* ButtonLayoutName(ButtonLayout v)
@@ -134,6 +204,14 @@ void WriteDefaultConfig(const char* path)
         "; A real in-game options screen (sliders) is planned -- this file is the\n"
         "; interim way to tune these values until then.\n"
         "\n"
+        "[Meta]\n"
+        "; Internal schema marker, not a setting -- do not edit by hand. Lets this mod\n"
+        "; carry your tuned values forward automatically across updates that rename or\n"
+        "; restructure config keys (e.g. v0.2.5 splitting Sensitivity into\n"
+        "; SensitivityHorizontal/SensitivityVertical), instead of silently reverting to\n"
+        "; the new keys' defaults.\n"
+        "ConfigVersion=%lu\n"
+        "\n"
         "[Look]\n"
         "; Look-stick turn rate in degrees/second at full stick deflection, split into\n"
         "; horizontal (yaw, left/right) and vertical (pitch, up/down) axes -- separated\n"
@@ -158,7 +236,18 @@ void WriteDefaultConfig(const char* path)
         "; slowdown at all regardless of strength. 1.0 = no extra effect (pure strength\n"
         "; curve only); lower values add real slowdown even at minimal zoom, scaling up\n"
         "; further as strength increases zoom-based slowdown on top. Must stay >= 0.0.\n"
+        "; NOTE: this affects EVERY zoom level by the same relative percentage --\n"
+        "; lowering it to fix low-zoom weapons also makes high-zoom scopes proportionally\n"
+        "; slower, which live testing found perceptible (\"too harsh\"). For low-zoom-only\n"
+        "; tuning, use AdsCloseRangeSlowdownStrength below instead.\n"
         "AdsSlowdownBaseline=%g\n"
+        "; Extra slowdown that only matters for low-zoom weapons (pistols/iron sights,\n"
+        "; where the zoom ratio stays close to 1.0) and decays away rapidly as zoom\n"
+        "; increases, so it does NOT compound with the AdsSlowdownBaseline/Strength\n"
+        "; curve's existing high-zoom feel the way lowering AdsSlowdownBaseline itself\n"
+        "; does. 0 = off (no extra low-zoom slowdown); must stay in [0, 1] -- 1.0 would\n"
+        "; fully zero out look while ADS'd with zero zoom, almost certainly too extreme.\n"
+        "AdsCloseRangeSlowdownStrength=%g\n"
         "; OG console \"Invert Look\" -- flips vertical (up/down) look. 0 = off, 1 = on.\n"
         "InvertLook=%d\n"
         "; Milliseconds for look turn-rate to ramp from 0 to full speed after the stick\n"
@@ -224,6 +313,20 @@ void WriteDefaultConfig(const char* path)
         "; Milliseconds a damage pulse takes to decay back to zero.\n"
         "DamageDurationMs=%lu\n"
         "\n"
+        "[Overlay]\n"
+        "; Top-right on-screen notification text (startup message, config hot-reload).\n"
+        "; Requests \"Barlow Condensed\" by face name only -- if it isn't installed\n"
+        "; system-wide, GDI silently substitutes a default font instead of failing.\n"
+        "; 1 = italic (GDI fakes an oblique slant even without a real italic weight\n"
+        "; installed), 0 = upright.\n"
+        "FontItalic=%d\n"
+        "; STRICTLY A TESTING TOGGLE, default off. When on, continuously cycles\n"
+        "; through every known message/animation-style variant every few seconds\n"
+        "; instead of the normal one-shot startup roll, so every variant can actually\n"
+        "; be seen on demand rather than waiting on a 1-in-20 RNG roll. Never enable\n"
+        "; this for normal play.\n"
+        "TestCycleAllVariants=%d\n"
+        "\n"
         "[Experimental]\n"
         "; Individually toggleable, not-yet-fully-proven behaviors -- for live\n"
         "; experimentation. Flip one off (0) if it's ever suspected of causing a\n"
@@ -252,10 +355,12 @@ void WriteDefaultConfig(const char* path)
         "; real font name in use for on-screen HUD/menu text whenever it changes. Always\n"
         "; forwards unmodified regardless of this toggle. 0 = off, 1 = on.\n"
         "HudFontIdLogging=%d\n",
+        kCurrentConfigVersion,
         g_modConfig.lookDegreesPerSecondHorizontal,
         g_modConfig.lookDegreesPerSecondVertical,
         g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
+        g_modConfig.adsCloseRangeSlowdownStrength,
         g_modConfig.invertLook ? 1 : 0,
         g_modConfig.lookAccelerationRampMs,
         g_modConfig.proneHoldThresholdMs,
@@ -271,6 +376,8 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.vibrationDamagePerPoint,
         g_modConfig.vibrationDamageMaxIntensity,
         g_modConfig.vibrationDamageDurationMs,
+        g_modConfig.overlayFontItalic ? 1 : 0,
+        g_modConfig.overlayTestCycleAllVariants ? 1 : 0,
         g_modConfig.fireNotifyQueueKick ? 1 : 0,
         g_modConfig.bindResolverHookLogging ? 1 : 0,
         g_modConfig.bindResolverGlyphSubstitution ? 1 : 0,
@@ -361,6 +468,29 @@ void LoadModConfig()
         return;
     }
 
+    unsigned long configVersion = static_cast<unsigned long>(GetPrivateProfileIntA("Meta", "ConfigVersion", 0, path));
+    bool migratedLegacyValue = false;
+
+    // v0.2.5 (task #14 follow-up): [Look] Sensitivity split into
+    // SensitivityHorizontal/SensitivityVertical. Carry an existing single value over
+    // to BOTH new axes -- the only sane "equivalent" reading of a pre-split value,
+    // since the split only matters once a player actually wants to diverge them --
+    // rather than silently reverting a tuned value back to the new keys' 250.0f
+    // struct-initializer default. Pre-seeds the two fields BEFORE the normal
+    // ReadFloat calls below run, so ReadFloat's own "use current value as fallback if
+    // the key is missing" behavior picks up the migrated value instead of the
+    // compile-time default on an old file that has Sensitivity but not yet either new
+    // key (an explicit SensitivityHorizontal/Vertical in the file, e.g. if a user
+    // hand-edited one in already, still wins over this, same as any other key).
+    if (configVersion < 1) {
+        float legacySensitivity;
+        if (TryReadLegacyFloat(path, "Look", "Sensitivity", legacySensitivity)) {
+            g_modConfig.lookDegreesPerSecondHorizontal = legacySensitivity;
+            g_modConfig.lookDegreesPerSecondVertical = legacySensitivity;
+            migratedLegacyValue = true;
+        }
+    }
+
     ReadFloat(path, "Look", "SensitivityHorizontal", g_modConfig.lookDegreesPerSecondHorizontal);
     ReadFloat(path, "Look", "SensitivityVertical", g_modConfig.lookDegreesPerSecondVertical);
     ReadFloat(path, "Look", "AdsSlowdownStrength", g_modConfig.adsSlowdownStrength);
@@ -376,10 +506,29 @@ void LoadModConfig()
     // negative strength, which WOULD still misbehave (ratio^negative blows up as
     // ratio->0).
     if (g_modConfig.adsSlowdownStrength < 0.0f) g_modConfig.adsSlowdownStrength = 0.0f;
-    ReadFloat(path, "Look", "AdsSlowdownBaseline", g_modConfig.adsSlowdownBaseline);
+    // issue #44 (2026-07-31): a same-day round trip. The default first dropped
+    // 0.65 -> 0.45 to make pistols/iron sights more slowed, then got reverted back
+    // to 0.65 once live testing showed that also made high-zoom scopes "too harsh"
+    // (see mod_config.h's own comment on adsSlowdownBaseline for the full math). A
+    // plain default change can't reach an existing file the way a key rename can
+    // (the key never disappeared), so this corrects a file still sitting on the
+    // now-wrong, short-lived 0.45 back to the restored 0.65 -- see
+    // ReadFloatWithDefaultRetune's own comment for the full policy. Gated at
+    // fromVersion=3 since this correction was added after some files may already
+    // have been bumped past version 2 while 0.45 was still the compiled default.
+    ReadFloatWithDefaultRetune(path, "Look", "AdsSlowdownBaseline", configVersion, 3, 0.45f,
+                               g_modConfig.adsSlowdownBaseline);
     // Same guard as strength above -- a negative baseline would flip the sign of the
     // whole scale factor (baseline * ratio^strength), inverting look direction.
     if (g_modConfig.adsSlowdownBaseline < 0.0f) g_modConfig.adsSlowdownBaseline = 0.0f;
+    // Issue #44's real, decoupled fix (2026-07-31) -- see mod_config.h's own comment.
+    // Clamped to [0, 1]: negative would ADD speed at low zoom (nonsensical), and
+    // above 1.0 the (1 - strength*ratio^power) term could go negative, which would
+    // invert look direction the same class of bug as the old AdsSlowdownStrength
+    // linear-blend issue this project already fixed once before (see that comment).
+    ReadFloat(path, "Look", "AdsCloseRangeSlowdownStrength", g_modConfig.adsCloseRangeSlowdownStrength);
+    if (g_modConfig.adsCloseRangeSlowdownStrength < 0.0f) g_modConfig.adsCloseRangeSlowdownStrength = 0.0f;
+    if (g_modConfig.adsCloseRangeSlowdownStrength > 1.0f) g_modConfig.adsCloseRangeSlowdownStrength = 1.0f;
     ReadBool(path, "Look", "InvertLook", g_modConfig.invertLook);
     ReadUlong(path, "Look", "AccelerationRampMs", g_modConfig.lookAccelerationRampMs);
     ReadUlong(path, "Stance", "ProneHoldThresholdMs", g_modConfig.proneHoldThresholdMs);
@@ -402,6 +551,8 @@ void LoadModConfig()
     ReadFloat(path, "Vibration", "DamageMaxIntensity", g_modConfig.vibrationDamageMaxIntensity);
     if (g_modConfig.vibrationDamageMaxIntensity < 0.0f) g_modConfig.vibrationDamageMaxIntensity = 0.0f;
     ReadUlong(path, "Vibration", "DamageDurationMs", g_modConfig.vibrationDamageDurationMs);
+    ReadBool(path, "Overlay", "FontItalic", g_modConfig.overlayFontItalic);
+    ReadBool(path, "Overlay", "TestCycleAllVariants", g_modConfig.overlayTestCycleAllVariants);
     ReadBool(path, "Experimental", "FireNotifyQueueKick", g_modConfig.fireNotifyQueueKick);
     ReadBool(path, "Experimental", "BindResolverHookLogging", g_modConfig.bindResolverHookLogging);
     ReadBool(path, "Experimental", "BindResolverGlyphSubstitution", g_modConfig.bindResolverGlyphSubstitution);
@@ -412,16 +563,18 @@ void LoadModConfig()
     char buf[950];
     sprintf_s(buf,
         "[config] loaded mw3ncp_config.ini: sensitivityH=%g sensitivityV=%g adsSlowdownStrength=%g "
-        "adsSlowdownBaseline=%g invertLook=%d lookAccelRampMs=%lu proneHoldMs=%lu interactHoldMs=%lu "
+        "adsSlowdownBaseline=%g adsCloseRangeSlowdownStrength=%g invertLook=%d lookAccelRampMs=%lu proneHoldMs=%lu interactHoldMs=%lu "
         "readyUpHoldMs=%lu "
         "buttonLayout=%s stickLayout=%s flipTriggers=%d glyphStyle=%s "
         "vibrationEnabled=%d vibrationFireIntensity=%g vibrationFireDurationMs=%lu "
         "vibrationDamagePerPoint=%g vibrationDamageMaxIntensity=%g vibrationDamageDurationMs=%lu "
+        "overlayFontItalic=%d overlayTestCycleAllVariants=%d "
         "fireNotifyQueueKick=%d bindResolverHookLogging=%d bindResolverGlyphSubstitution=%d "
         "hudFontIdLogging=%d",
         g_modConfig.lookDegreesPerSecondHorizontal, g_modConfig.lookDegreesPerSecondVertical,
         g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
+        g_modConfig.adsCloseRangeSlowdownStrength,
         g_modConfig.invertLook ? 1 : 0, g_modConfig.lookAccelerationRampMs,
         g_modConfig.proneHoldThresholdMs,
         g_modConfig.interactHoldThresholdMs, g_modConfig.readyUpHoldThresholdMs,
@@ -430,9 +583,79 @@ void LoadModConfig()
         g_modConfig.vibrationEnabled ? 1 : 0, g_modConfig.vibrationFireIntensity,
         g_modConfig.vibrationFireDurationMs, g_modConfig.vibrationDamagePerPoint,
         g_modConfig.vibrationDamageMaxIntensity, g_modConfig.vibrationDamageDurationMs,
+        g_modConfig.overlayFontItalic ? 1 : 0,
+        g_modConfig.overlayTestCycleAllVariants ? 1 : 0,
         g_modConfig.fireNotifyQueueKick ? 1 : 0,
         g_modConfig.bindResolverHookLogging ? 1 : 0,
         g_modConfig.bindResolverGlyphSubstitution ? 1 : 0,
         g_modConfig.hudFontIdLogging ? 1 : 0);
     LogFromController(buf);
+
+    // Rewrite the file once, now that g_modConfig holds every existing setting PLUS
+    // any migrated legacy value, so it's expressed in the current schema (current key
+    // names, bumped ConfigVersion) and this migration doesn't need to re-run on every
+    // future launch. Reuses WriteDefaultConfig as-is -- it already sources every
+    // value it prints from g_modConfig, so this naturally preserves everything the
+    // player had tuned, not just the migrated key.
+    if (configVersion < kCurrentConfigVersion) {
+        WriteDefaultConfig(path);
+        LogFromController(migratedLegacyValue
+            ? "[config] migrated mw3ncp_config.ini to the current schema -- carried "
+              "legacy [Look] Sensitivity over into SensitivityHorizontal/SensitivityVertical"
+            : "[config] upgraded mw3ncp_config.ini's schema marker (no legacy values "
+              "needed carrying over)");
+    }
+}
+
+// ---- Config hot-reload QoL feature (2026-07-31, user request) ---------------------
+//
+// mw3ncp_config.ini was load-once-at-startup-only until now (see this file's own
+// long-standing "no live reload yet" comment, written into every default config it
+// generates). Polls the file's real last-write-time (not a content hash -- cheap,
+// and a real edit always bumps this) from InjectMenuInputTick (analog_input_hooks.cpp,
+// the always-running WndProc/SetTimer tick, so this works even at the main menu/while
+// paused), rate-limited internally so the actual GetFileAttributesEx stat call only
+// happens once every kHotReloadCheckIntervalMs, not every ~16ms tick.
+namespace {
+constexpr DWORD kHotReloadCheckIntervalMs = 1000;
+DWORD g_lastHotReloadCheckMs = 0;
+FILETIME g_lastConfigWriteTime = {};
+bool g_haveLastConfigWriteTime = false;
+} // namespace
+
+extern "C" void CheckConfigHotReload()
+{
+    DWORD nowMs = GetTickCount();
+    if (nowMs - g_lastHotReloadCheckMs < kHotReloadCheckIntervalMs) return;
+    g_lastHotReloadCheckMs = nowMs;
+
+    char path[MAX_PATH];
+    GetConfigPath(path, sizeof(path));
+
+    WIN32_FILE_ATTRIBUTE_DATA attrData;
+    if (!GetFileAttributesExA(path, GetFileExInfoStandard, &attrData)) return; // file missing/inaccessible -- nothing to reload
+
+    if (!g_haveLastConfigWriteTime) {
+        // First check since DLL load -- LoadModConfig() already read this exact file
+        // at startup, so just record its current write-time as the baseline rather
+        // than treating "first observation" as a change.
+        g_lastConfigWriteTime = attrData.ftLastWriteTime;
+        g_haveLastConfigWriteTime = true;
+        return;
+    }
+
+    if (CompareFileTime(&attrData.ftLastWriteTime, &g_lastConfigWriteTime) == 0) return; // unchanged
+
+    LogFromController("[config] mw3ncp_config.ini changed on disk -- hot-reloading");
+    LoadModConfig();
+    ShowOverlayMessage("MW32011NCP Config Reloaded", 15000);
+
+    // Re-read the write-time AFTER LoadModConfig() rather than trusting the
+    // pre-reload snapshot above: LoadModConfig() can itself rewrite the file (a
+    // pending schema migration, or just re-persisting current values), which would
+    // otherwise look like ANOTHER external change on the very next check and loop
+    // this reload (and its on-screen message) forever, once every check interval.
+    if (GetFileAttributesExA(path, GetFileExInfoStandard, &attrData)) {
+        g_lastConfigWriteTime = attrData.ftLastWriteTime;
+    }
 }
