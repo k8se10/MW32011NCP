@@ -6533,3 +6533,34 @@ live playtest to confirm** (both that intermittent crouch failures stop, and tha
 the `[stance-diag]` log lines look sane) before this can be called resolved --
 builds clean (Win32/Release) but that's necessary, not sufficient, per this
 project's own "Verify Live" standard.
+
+---
+
+## 43. Roadmap idea (not a bug, not implemented): the pre-native Sprint implementation had a "sprint while crouched" side effect worth remembering (recalled 2026-07-31)
+
+**Status: pure idea/note for a possible future feature. No code exists for this
+today and none is planned right now — logged purely so it isn't forgotten.**
+
+Before Sprint was migrated onto the real `+sprint` kbutton (issue #6/#9's
+`ToggleStance`/`GetRealStance` work, 2026-07-16/19), the earlier implementation
+forced Sprint's `pm_flags` bit directly every tick
+(`InjectControllerSprintPmFlags`/`ReassertSprintPmFlags`, see issue #10's
+writeup for the full mechanism and why it was superseded). A side effect of
+that raw bit-forcing, recalled by the user (not previously written down
+anywhere in this file): it let the player **sprint while crouched** — not a
+real vanilla MW3 behavior (crouched movement is normally capped at crouch
+walk speed, no sprint), and not something the current native-kbutton Sprint
+implementation reproduces, since the real engine's own `+sprint` kbutton
+naturally respects whatever speed cap the real crouch stance imposes.
+
+**Not a bug, not part of the mod today** — purely a "huh, that was neat"
+artifact of an implementation approach this project has since intentionally
+moved away from (raw bit-forcing was replaced specifically because it fought
+real engine state elsewhere, per issue #9/#10 — reviving it generally is not
+on the table). Worth remembering only as a hint for a possible **future,
+deliberately-built additional feature** (something like a real console-style
+tac-sprint/mantle-slide variant, or a dedicated "crouch-sprint" toggle) if
+that's ever wanted — it would need to be built as its own explicit, understood
+mechanic on top of the current real-kbutton Sprint, not resurrected via the
+old blind bit-forcing technique. No further action needed unless/until the
+user wants to actually pursue it.
