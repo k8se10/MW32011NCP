@@ -9,6 +9,18 @@ reverse-engineering trail behind each entry.
 ## Unreleased
 
 ### Investigated-not-resolved
+- **Roadmap idea, not implemented: the pre-native Sprint implementation's
+  "sprint while crouched" side effect, recalled 2026-07-31 (issue #43).**
+  Before Sprint moved onto the real `+sprint` kbutton (issue #6/#9), the
+  earlier raw `pm_flags`-bit-forcing implementation had a side effect of
+  letting the player sprint while crouched — not real vanilla MW3 behavior,
+  and not reproduced by the current native-kbutton Sprint. Not a bug, not
+  part of the mod today, and reviving the old bit-forcing approach generally
+  is off the table (it's what fought real engine state elsewhere and got
+  replaced) — logged purely as a memorable data point in case a deliberate,
+  properly-built future feature (e.g. a real tac-sprint/crouch-sprint
+  variant) is ever wanted. No code changed. Full detail in
+  `re_notes/known_issues.md` issue #43.
 - **AC-130 (Iron Lady / Fire Mission) — confirmed working on controller except
   gun-type switching; gunship camera zoom sensitivity flagged for later (task
   #7, issue #40, live playtest 2026-07-23).** User-confirmed live: flight/

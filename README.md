@@ -1,11 +1,14 @@
 # MW3 Native Controller Support (Campaign & Survival)
 
-> **⏸️ DEVELOPMENT ON A SHORT BREAK.** Active development is paused as of
-> 2026-07-23 and will resume as normal from **31 July 2026** — deliberately
-> giving the current release some time to sit and stabilize before more
-> changes land. No new commits expected before then. **v0.2.2 is the current
-> most stable alpha build** and the recommended version to run during the
-> pause.
+> **▶️ DEVELOPMENT HAS RESUMED AS OF 2026-07-31**, as planned — the short break
+> (2026-07-23 to 2026-07-31) is over and active work is back to normal. First
+> item addressed on return: a fix attempt for the intermittent crouch/B failure
+> reported during the break's v0.2.2 livestream (see `re_notes/known_issues.md`
+> issues #27/#42) — shipped, builds clean, **not yet live-confirmed**. The
+> user is also still reviewing both v0.2.2 streams for any further bugs found
+> during them (none reported as gamebreaking so far, mostly Campaign-related).
+> **v0.2.2 remains the current most stable alpha build** until a new release
+> is cut.
 
 > **⚠️ SECURITY NOTICE — read if you're on any version before v0.2.2.** Versions
 > v0.2.1 and earlier shipped with an aim-assist feature's code compiled into the
