@@ -190,6 +190,99 @@ void ForceStandingViaRealToggle()
         ToggleStance(kLocalClientIndex, static_cast<unsigned int>(current));
     }
 }
+
+// Forward declaration -- defined further down the file (its own diagnostic-log
+// section); needed here since ProcessPendingStanceRetry below logs through it and
+// this reopened anonymous namespace still resolves to the same one defined later.
+void LogStanceDiag(const char* tag);
+
+// ---- Bug #2/#42 fix attempt: ToggleStance's guard bytes can silently no-op a
+// legitimate tap/hold (2026-07-31) --------------------------------------------------
+//
+// re_notes/known_issues.md issue #27 (Bug #2) and issue #42 both report crouch
+// intermittently just not firing -- no crash, no error, the press is simply dropped.
+// The real lead on record since issue #9: ToggleStance() (FUN_0057d2c0) has two guard
+// bytes at its very top (playerIndex*0x230 + 0xA98CA0 / +0xA98BC4) that make the whole
+// call a silent no-op if either is nonzero. Their real meaning (vehicle? cutscene?
+// mid-animation? something else entirely) was never decoded, and still isn't -- but
+// deciding what to DO about the symptom doesn't require decoding them: a blocked call
+// is guaranteed to leave the real stance field completely untouched (see the
+// disassembly above -- the guard `return`s before ever touching +0x1C), so retrying
+// the exact same call on a later frame can never mis-fire. If still gated, the retry
+// is just as harmless a no-op as the original; the instant the gate clears, the retry
+// reproduces exactly the transition the original press asked for, instead of it being
+// silently lost. This mirrors -- and should subsume -- both independently-reported
+// "something unrelated seems to unstick it" patterns (pause/unpause, and issue #42's
+// knife/melee press): if either one works by coincidentally landing after the same
+// transient gate clears, a same-frame-onward retry loop reaches that same clearing
+// moment on its own, every time, without needing the player to find the right
+// unrelated action first.
+constexpr uintptr_t kStanceGuard1Addr = 0xA98CA0; // playerIndex*0x230 offset omitted --
+constexpr uintptr_t kStanceGuard2Addr = 0xA98BC4; // kLocalClientIndex is always 0 in SP
+constexpr DWORD kStanceRetryTimeoutMs = 500; // give up chasing stale intent after this long
+
+int g_pendingStanceMode = 0; // 0 = no retry pending; 1/2 = togglecrouch/toggleprone mode
+int g_pendingStanceExpected = 0;
+DWORD g_pendingStanceStartMs = 0;
+
+void GetStanceGuardBytes(uint8_t& guard1, uint8_t& guard2)
+{
+    guard1 = *reinterpret_cast<volatile uint8_t*>(kStanceGuard1Addr);
+    guard2 = *reinterpret_cast<volatile uint8_t*>(kStanceGuard2Addr);
+}
+
+// Calls the real ToggleStance and confirms, against the real stance field, that it
+// actually took effect -- rather than trusting the call the way the original
+// tap/hold code did. Logs guard-byte values on every attempt (the diagnostic issue
+// #27's Bug #2 write-up asked for), and arms a short retry window if the call was
+// silently blocked instead of dropping the press.
+void RequestStanceToggle(unsigned int mode, const char* tag)
+{
+    int before = GetRealStance();
+    ToggleStance(kLocalClientIndex, mode);
+    int after = GetRealStance();
+    int expected = (before != static_cast<int>(mode)) ? static_cast<int>(mode) : 0;
+
+    uint8_t guard1, guard2;
+    GetStanceGuardBytes(guard1, guard2);
+    char buf[220];
+    sprintf_s(buf,
+              "[stance-diag] %s before=%d after=%d expected=%d guard1=%d guard2=%d t=%lu",
+              tag, before, after, expected, guard1, guard2, GetTickCount());
+    LogFromController(buf);
+
+    if (after == expected) {
+        g_pendingStanceMode = 0; // took effect immediately -- nothing to chase
+        return;
+    }
+    // Silently blocked -- arm the retry instead of letting the press vanish.
+    g_pendingStanceMode = static_cast<int>(mode);
+    g_pendingStanceExpected = expected;
+    g_pendingStanceStartMs = GetTickCount();
+}
+
+// Re-attempts a blocked stance toggle once per frame until it takes effect or
+// kStanceRetryTimeoutMs elapses. Safe for the same reason RequestStanceToggle's own
+// first retry is: ToggleStance is a guaranteed no-op while genuinely gated, so calling
+// it again every frame can only ever succeed once, never mis-fire early.
+void ProcessPendingStanceRetry()
+{
+    if (g_pendingStanceMode == 0) return;
+    if (GetRealStance() == g_pendingStanceExpected) {
+        g_pendingStanceMode = 0; // reached the target some other way -- done
+        return;
+    }
+    if (GetTickCount() - g_pendingStanceStartMs >= kStanceRetryTimeoutMs) {
+        LogStanceDiag("stance-retry-timeout");
+        g_pendingStanceMode = 0;
+        return;
+    }
+    ToggleStance(kLocalClientIndex, static_cast<unsigned int>(g_pendingStanceMode));
+    if (GetRealStance() == g_pendingStanceExpected) {
+        LogStanceDiag("stance-retry-success");
+        g_pendingStanceMode = 0;
+    }
+}
 } // namespace
 
 // ---- Movement: move-stick -> usercmd_t.forwardmove(+0x1c) / .rightmove(+0x1d) ----
@@ -635,9 +728,12 @@ extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
     // detection.
     bool bHeld = IsPhysicalHeld(g_buttonMap.crouchProne, xiButtons, leftTrigger, rightTrigger);
     if (bHeld && !g_crouchButtonWasHeld) {
-        // Rising edge: new press starting.
+        // Rising edge: new press starting. Any still-pending retry from a stale
+        // prior press (see RequestStanceToggle/ProcessPendingStanceRetry above) is
+        // superseded by this fresh input rather than left to fire underneath it.
         g_crouchButtonPressStartMs = GetTickCount();
         g_holdActionConsumed = false;
+        g_pendingStanceMode = 0;
     }
     // g_currentBPressTouchedMenu (maintained by InjectControllerMenuBack, which keeps
     // running across a pause unlike this function) gates BOTH the hold and tap fire
@@ -650,17 +746,24 @@ extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
         DWORD heldMs = GetTickCount() - g_crouchButtonPressStartMs;
         if (heldMs >= g_modConfig.proneHoldThresholdMs) {
             // Hold action fires once, the instant the threshold is crossed.
-            ToggleStance(kLocalClientIndex, 2); // toggleprone
+            RequestStanceToggle(2, "hold-fire"); // toggleprone
             g_holdActionConsumed = true;
-            LogStanceDiag("hold-fire");
         }
     }
     if (!bHeld && g_crouchButtonWasHeld && !g_holdActionConsumed && !g_currentBPressTouchedMenu) {
         // Falling edge and the hold threshold was never reached -- this was a tap.
-        ToggleStance(kLocalClientIndex, 1); // togglecrouch
-        LogStanceDiag("tap-fire");
+        RequestStanceToggle(1, "tap-fire"); // togglecrouch
     }
     g_crouchButtonWasHeld = bHeld;
+
+    // Issue #27 Bug #2 / issue #42: chase a stance toggle that RequestStanceToggle()
+    // above found silently blocked, once per frame, until it takes effect or times
+    // out. Suppressed while a menu is active for the same reason the fresh-press
+    // paths above are -- B's real intent while a menu is open is "close menu", not
+    // "resolve a stale gameplay stance request".
+    if (!IsMenuActive()) {
+        ProcessPendingStanceRetry();
+    }
 
     // Per-frame usercmd bit assertion still needed for actual Pmove movement/
     // collision behavior -- but now reads the REAL stance field live every frame
@@ -1507,13 +1610,16 @@ extern "C" void __cdecl InjectControllerLookAngles()
 
     if (lookX != 0.0f || lookY != 0.0f) {
         // Degrees per second at full stick deflection -- independent of every mouse
-        // cvar. g_modConfig.lookDegreesPerSecond ([Look] Sensitivity in
-        // mw3ncp_config.ini, task #14) rather than a hardcoded constant.
-        float rate = g_modConfig.lookDegreesPerSecond * GetAdsLookRateScale();
-        rate *= GetLookAccelerationScale();
+        // cvar. Horizontal (yaw) and vertical (pitch) are separate config values
+        // ([Look] SensitivityHorizontal/SensitivityVertical in mw3ncp_config.ini,
+        // task #14, split 2026-07-31 per user request) rather than a single shared
+        // rate or a hardcoded constant.
+        float sharedScale = GetAdsLookRateScale() * GetLookAccelerationScale();
+        float yawRate = g_modConfig.lookDegreesPerSecondHorizontal * sharedScale;
+        float pitchRate = g_modConfig.lookDegreesPerSecondVertical * sharedScale;
         float pitchInput = g_modConfig.invertLook ? -lookY : lookY; // OG console "Invert Look"
-        *kYawAccum -= lookX * rate * dt;
-        *kPitchAccum -= pitchInput * rate * dt;
+        *kYawAccum -= lookX * yawRate * dt;
+        *kPitchAccum -= pitchInput * pitchRate * dt;
     } else {
         g_lookAccelStartMs = 0; // stick back at neutral -- next push starts the ramp fresh
     }

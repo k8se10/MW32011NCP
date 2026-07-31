@@ -55,10 +55,13 @@ using this matrix.
 | 17 | Dust to Dust (final mission) | 3 | not yet identified | ❓ | Not yet tested. |
 
 **Cross-cutting issue, not mission-specific**: Crouch intermittently fails to
-fire (~2% of attempts), recovers after pause/unpause (bug #2, no task yet —
-needs live diagnostic logging first). Observed during this session's
-playthrough but not tied to any one mission; assume present everywhere
-until diagnosed otherwise.
+fire (~2% of attempts), recovers after pause/unpause or an unrelated button
+press (bug #2, `known_issues.md` #27/#42). Observed during this session's
+playthrough and again on the v0.2.2 livestream; not tied to any one mission.
+**Fix attempt shipped 2026-07-31** (verify+retry the real stance toggle
+against the real stance field instead of trusting a single call) — builds
+clean, not yet live-confirmed; treat as still-present until a playtest
+confirms the retry actually stops the symptom.
 
 **Also cross-cutting, feature gap not a regression**: Hold Breath on sniper
 ADS was never implemented, and its absence causes L3 to wrongly force-stand
