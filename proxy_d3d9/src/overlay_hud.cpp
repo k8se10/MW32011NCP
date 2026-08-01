@@ -47,6 +47,7 @@
 
 extern void LogFromController(const char* msg);
 extern "C" HWND GetGameWindow(); // defined in d3d9_hook.cpp
+extern "C" bool GetLastMouseMoveClientPos(int& outX, int& outY); // defined in d3d9_hook.cpp
 // Live-reported 2026-08-01: calling this from the WndProc/SetTimer tick (~60Hz,
 // asynchronous relative to rendering) caused a visible flicker -- the menu-hint slot
 // pool is consumed and reset once per RENDERED frame (EndScene), and on any frame
@@ -57,6 +58,12 @@ extern "C" HWND GetGameWindow(); // defined in d3d9_hook.cpp
 // from Hook_DrawGlyphText, which always runs before this frame's own EndScene)
 // never had this problem to begin with.
 extern "C" void __cdecl InjectSyntheticBackHintIfNeeded(); // defined in analog_input_hooks.cpp
+// Highlighted-item A-glyph investigation (2026-08-01) -- a per-frame ordinal counter
+// (how many plain, no-color-span menu-item text draws have fired so far this frame)
+// needs resetting once per real frame, same reasoning as every other per-frame
+// accumulator in this file -- called from here so it's on the same cadence as
+// everything else that resets at the top of a new frame.
+extern "C" void __cdecl ResetMenuListItemOrdinalForFrame(); // defined in analog_input_hooks.cpp
 
 namespace {
 
@@ -1324,6 +1331,108 @@ void DrawDebugMarkerIfRequested(void* device)
     }
 }
 
+// ---- Custom mouse cursor (2026-08-01, user-requested) -----------------------------
+//
+// This project's own overlay draws happen at end-of-frame, after the real game has
+// already drawn everything for the frame -- including its own native software cursor
+// (this engine, like every PC CoD title, draws its own cursor sprite rather than
+// using a real Windows hardware cursor). That means the native cursor was rendering
+// UNDER this project's own glyph icons/hints instead of on top, wherever they
+// overlapped. Fix: suppress the native cursor's own draw call (see Hook_004d48f0 in
+// analog_input_hooks.cpp, a return-address-gated hook on the shared quad-draw
+// primitive the native cursor happens to share with 30 other unrelated UI draw
+// call sites) and redraw our own cursor art here instead, as the LAST thing drawn
+// each frame, guaranteeing correct z-order over everything else this project draws.
+//
+// Visibility gated on the same real globals the native cursor code itself reads
+// (re_notes/iw5sp.md, confirmed via decompile of FUN_00478540): DAT_01c00474
+// (visibility flag), DAT_01c0ad14 (current UI/menu state -- cursor hidden for
+// states 0/6/10, matching the native switch). Does NOT replicate the native code's
+// own case-3 "accept invite" sub-check (a narrow, low-frequency edge case) --
+// worst case there is a redundant cursor draw during that one specific flow, not a
+// missing one.
+//
+// POSITION, by contrast, does NOT use the internal DAT_01c00468/DAT_01c0046c
+// globals -- live-reported 2026-08-01: the drawn cursor landed nowhere near the
+// real one (which was clearly hovering the Special Ops tile, confirmed by that
+// tile being highlighted, while the drawn icon rendered up near the logo).
+// Whatever coordinate space those two globals are actually in, it is NOT the same
+// 1920x1080 design space this project's own glyph draws use. A follow-up attempt
+// using GetCursorPos+ScreenToClient (already in real client pixels, no coordinate-
+// space guessing) ALSO landed wrong -- live-reported to grow increasingly off the
+// further from the top-left corner, the classic symptom of a DPI-awareness-context
+// mismatch between this DLL and the host process (GetCursorPos silently returns
+// virtualized/scaled coordinates for a DPI-unaware caller vs. real physical pixels
+// for a DPI-aware one). Fixed by sidestepping the whole question: read the exact
+// same WM_MOUSEMOVE client-coordinate values the game's own WndProc already
+// receives and uses for its own hit-testing (GetLastMouseMoveClientPos,
+// d3d9_hook.cpp) -- guaranteed to agree with whatever the game itself considers
+// "the mouse is here," since it's literally the same message data.
+void DrawCustomCursorIfNeeded(void* device)
+{
+    __try {
+        constexpr uintptr_t kCursorVisibleFlagAddr = 0x01c00474;
+        constexpr uintptr_t kCursorUiStateAddr = 0x01c0ad14;
+
+        int visFlag = *reinterpret_cast<int*>(kCursorVisibleFlagAddr);
+        if (visFlag == 0) return;
+        int uiState = *reinterpret_cast<int*>(kCursorUiStateAddr);
+        if (uiState == 0 || uiState == 6 || uiState == 10) return;
+
+        int mouseX = 0, mouseY = 0;
+        if (!GetLastMouseMoveClientPos(mouseX, mouseY)) return;
+
+        // Live-confirmed 2026-08-01 (two-point corner calibration: both cursors
+        // overlap correctly at the top-left corner, but diverge by a consistent
+        // ~1.33x -- exactly 4/3 -- toward the bottom-right): WM_MOUSEMOVE's lParam
+        // is reported relative to the game WINDOW's own real client size, which is
+        // NOT the same as the D3D9 device's actual render-target (viewport) size --
+        // this engine renders to a smaller/different-sized backbuffer than the
+        // window it's displayed in (an old stretch-blit-to-fill-the-window
+        // technique). Two earlier theories were wrong: the internal DAT_01c00468/
+        // 046c globals (unknown coordinate space) and a naive GetResolutionScale
+        // multiply (that scale is always 1.0 when the viewport already matches
+        // 1920x1080 -- it does nothing for THIS specific window-vs-viewport gap).
+        // The correct fix: measure the real window client rect directly and scale
+        // by (viewport size / window client size), not by any 1920x1080 assumption.
+        HWND hwnd = GetGameWindow();
+        RECT clientRect{};
+        if (hwnd && GetClientRect(hwnd, &clientRect) &&
+            (clientRect.right - clientRect.left) > 0 && (clientRect.bottom - clientRect.top) > 0) {
+            int windowW = clientRect.right - clientRect.left;
+            int windowH = clientRect.bottom - clientRect.top;
+            int viewportW = 0, viewportH = 0;
+            GetRealScreenSize(device, viewportW, viewportH);
+            mouseX = static_cast<int>(mouseX * (static_cast<float>(viewportW) / static_cast<float>(windowW)));
+            mouseY = static_cast<int>(mouseY * (static_cast<float>(viewportH) / static_cast<float>(windowH)));
+        }
+        POINT pt{ mouseX, mouseY };
+
+        void* texture = nullptr;
+        int texW = 0, texH = 0;
+        if (!GetOrLoadGlyphIconTexture(device, "cursor_arrow", texture, texW, texH)) return;
+
+        float scaleX = 1.0f, scaleY = 1.0f;
+        GetResolutionScale(device, scaleX, scaleY);
+        // Live-reported 2026-08-01: needed to be roughly 2.5x bigger than the first
+        // attempt (32 design px). Re-cropped since then to pin the tip exactly at
+        // (0,0) (see cursor_arrow.png's own generation notes) -- no longer square
+        // (80x128 native), so scale by HEIGHT and derive width from the texture's
+        // own real aspect ratio rather than stretching it back to square.
+        constexpr float kCursorDesignHeight = 80.0f;
+        float drawH = kCursorDesignHeight * scaleY;
+        float drawW = texH > 0 ? drawH * (static_cast<float>(texW) / static_cast<float>(texH)) : drawH;
+        // The source art's hotspot (the arrow's actual click point) sits at its own
+        // top-left corner (confirmed during cropping -- the tip is right at the
+        // image edge with only a few pixels of margin), so the real cursor position
+        // maps directly to the quad's top-left with no centering offset needed.
+        DrawGenericTexturedQuad(device, texture, static_cast<float>(pt.x), static_cast<float>(pt.y), drawW, drawH);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        // Never let a bad read of these fixed addresses (e.g. too early in boot,
+        // before the real UI system has initialized them) crash the game.
+    }
+}
+
 // ---- IDirect3DDevice9::Reset hook (2026-07-31, live-reported CRITICAL bug) --------
 //
 // User report: "changing display mode crashes the whole game." This project creates
@@ -1394,6 +1503,10 @@ HRESULT WINAPI Hook_EndScene(void* device)
     InjectSyntheticBackHintIfNeeded();
     DrawMenuHintsIfRequested(device);
     DrawDebugMarkerIfRequested(device);
+    ResetMenuListItemOrdinalForFrame();
+    // Always last -- see DrawCustomCursorIfNeeded's own comment for why the cursor
+    // specifically needs to be the final thing drawn each frame.
+    DrawCustomCursorIfNeeded(device);
     return g_origEndScene(device);
 }
 

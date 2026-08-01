@@ -1,15 +1,31 @@
 # Security Policy
 
+*Last updated 2026-08-01.*
+
 ## Supported Versions
 
-This project is pre-alpha software under active development. Only the most
-recent release is supported — please update to the latest `d3d9.dll` before
-reporting an issue.
+This project is pre-alpha software under active development. **v0.2.2 and
+every release since are supported** — please update to at least v0.2.2
+before reporting an issue if you're on something older. Every release before
+v0.2.2 has been unpublished from GitHub Releases as a VAC-risk mitigation
+step (aim assist, present in those builds, was permanently removed in
+v0.2.2 — see `re_notes/known_issues.md` issue #15); their git tags/commits
+remain fully intact in this repository, just not offered as downloads.
 
 | Version | Supported |
 | ------- | --------- |
-| Latest release (see [Releases](../../releases)) | ✅ |
-| Older releases | ❌ |
+| v0.2.2 and later (see [Releases](../../releases)) | ✅ |
+| Pre-v0.2.2 | ❌ (unpublished, VAC-risk mitigation — see issue #15) |
+
+## A note on VAC (Valve Anti-Cheat)
+
+This is a proxy-DLL/code-injection project, and Multiplayer's `iw5mp.exe`
+does have VAC active. That's a real, non-zero risk-to-the-user question, not
+a code vulnerability in the sense described below — full research and
+reasoning is in `re_notes/known_issues.md` issue #33. If you're specifically
+concerned about anti-cheat exposure, read that first; this document covers
+vulnerabilities in the project's own code, not that broader risk
+disclosure.
 
 ## What counts as a security issue here
 

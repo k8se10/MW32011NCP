@@ -33,8 +33,6 @@ to check for even on this new version; log each as its own
   fell back to a default system font if Barlow Condensed wasn't installed. Fully
   self-contained now; nothing extra to install. SIL Open Font License 1.1,
   credited in README.md's Credits section.
-
-### Added
 - **Controller-glyph icons for real in-game interact hints, confirmed live
   (`re_notes/known_issues.md` issue #48).** After two overlay-alignment attempts
   landed visibly off, the game's own hint text is now fully suppressed and this
@@ -42,8 +40,16 @@ to check for even on this new version; log each as its own
   + suffix text, own embedded font, matching the active `[Bindings] GlyphStyle`).
   Covers weapon pickup/swap, buy-station, mantle, Reload (a console-style pulsing
   icon with static "Press X To Reload" text), grenade throwback (RB/R1), and
-  Survival's ready-up prompt (F5→Y). Correctly suppressed while paused; does NOT
-  apply to main-menu UI hints (different, non-gameplay bind mapping).
+  Survival's ready-up prompt (F5→Y). Correctly suppressed while paused.
+- **Controller-glyph icons extended to menu UI corner hints (Back/Friends),
+  confirmed live (`re_notes/known_issues.md` issue #50).** Same technique as
+  the in-game hints, through a separate menu-specific bind mapping (ESC→B,
+  F→Y, Enter→A — fixed regardless of gameplay `ButtonLayout`, per explicit
+  design, unlike the in-game hints above). Supports multiple simultaneous menu
+  hints (MW3 shows several at once, unlike a single in-game interact hint). Y
+  now genuinely opens the Friends list (previously the glyph swap was cosmetic
+  only) via a synthesized keypress, the same technique already used for
+  Survival's ready-up.
 
 ### Fixed
 - **CRITICAL: changing display mode crashed the whole game.** Root cause: this
@@ -56,6 +62,69 @@ to check for even on this new version; log each as its own
   at other resolutions (reported at 1440p). Root cause: the window's client
   rect isn't reliable ground truth for this engine's real backbuffer size —
   now read directly from the D3D9 device's own viewport instead. See issue #48.
+- **Grenade throwback and Survival ready-up glyphs always showed RB/Y
+  regardless of the configured `ButtonLayout`**, showing the wrong button for
+  anyone not on the default layout. Now resolve through the same
+  layout-aware path every other gameplay glyph already uses. See issue #50.
+- **Menu corner hint showed "Friends" instead of "Back" while inside Special
+  Ops' modal popups, RESOLVED (`re_notes/known_issues.md` issue #50).**
+  Three earlier fix attempts were tried and ruled out live (documented as
+  "investigated, not resolved" in an earlier pass) before issue #51's
+  research unblocked the real fix: `getfocuseditemname()`, a safe, single-
+  caller native signal none of the earlier attempts had available. Also
+  fixed the same underlying screen's "Friends" hint persisting while the
+  Friends list itself was open, and added a B glyph to the main title
+  screen's "Quit" (visual-only — input already worked via B's existing
+  ESC-forward).
+- **Custom mouse cursor overlay (`re_notes/known_issues.md` issue #52).**
+  This project's own glyph/hint overlays draw at end-of-frame, after the
+  game's own native software cursor — meaning the native cursor rendered
+  UNDER this project's icons wherever they overlapped. Fixed by suppressing
+  the native cursor's draw (a return-address-gated hook so only that one
+  call site among 31 shared callers is affected) and redrawing a custom
+  cursor as the literal last thing drawn each frame. Position required
+  ruling out three wrong theories in turn (an internal engine global in an
+  unknown coordinate space; `GetCursorPos`, broken by a DPI-awareness
+  mismatch; raw `WM_MOUSEMOVE`, broken by this engine rendering to a
+  differently-sized backbuffer than the actual game window) before a
+  two-point corner calibration found the real fix. User-supplied cursor art.
+
+### Investigated-not-resolved
+- **Highlighted-item A-glyph in vertical list menus, not yet implemented**
+  (`re_notes/known_issues.md` issue #51). Two approaches ruled out this
+  round: per-frame ordinal counting (breaks when a background list keeps
+  drawing under a different focused list), and a read-only diagnostic hook
+  on a candidate local-var lookup function (crashed the game on launch,
+  reverted immediately — same failure class as issue #50's Attempt 3).
+  Follow-up research (cross-referencing the open-source OpenAssetTools
+  project's own `.menu` compiler internals) has since found the real,
+  narrow, single-caller native functions behind this — `FUN_00613ac0`
+  (localvarstring) and its three siblings — plus confirmed they need a
+  naked-asm trampoline rather than a plain hook, since they take implicit
+  register arguments. Not yet implemented or live-tested; full trail in
+  issue #51.
+
+### Docs
+- **Corrected several stale entries found by a full sweep of
+  `re_notes/known_issues.md`'s other open/investigating issues (2026-08-01).**
+  Issue #23's planned real controller-options menu name was corrected from
+  an unverified guess (`pc_options_controls_ingame`) to the actual
+  zone-dumped name (`pc_options_controls`), and its `OpenMenuByName` hook
+  is now noted as de-risked (run live without incident during issues
+  #50/#51's work). Issue #7's Back/`+scores` and killstreak-Fire rows, and
+  issue #28's own status line, no longer contradict each other or the
+  actual confirmed-live results from issues #28/#29. Issues #34, #38, and
+  #39 (font-glyph-injection mechanisms) are marked Resolved by supersession
+  — issue #48/#50 shipped controller-glyph icons via a completely different
+  mechanism (independent overlay quads) instead, so the font-injection path
+  those three entries were chasing is moot rather than merely stalled.
+  Issue #35's glyph-substitution half is similarly noted as orphaned by the
+  same supersession, while its own diagnostic bug stays open on its own
+  merits. Issue #38 also gained a note flagging a direct contradiction
+  between its own static call-graph finding ("`FUN_00690c80` has exactly 2
+  callers, neither menu-related") and this session's live evidence that
+  menu text does go through that exact function — left as an open
+  discrepancy, not silently resolved either way.
 
 ---
 
@@ -1002,7 +1071,7 @@ introduces. Full detail on every change below.
   detect and apply itself. See `known_issues.md` issue #6's 2026-07-19
   update for the full disassembly trail and this removal.
 
-### Investigated, not resolved
+### Investigated-not-resolved
 - **Predator Missile post-fire missile-guidance sequence: movement breaks
   on controller (2026-07-18, live-reported).** During the phase where the
   player controls the flying missile in flight (shares the real
@@ -1579,7 +1648,7 @@ finished player-facing feature yet) — see `re_notes/known_issues.md` issue #23
   drove the "deploy" side. Fixed for free by the same key-synthesis change above, since
   it now goes through the real dispatcher's own toggle logic.
 
-### Investigated, not resolved
+### Investigated-not-resolved
 - **`dllmain.cpp`'s generic export-forwarding stubs have no null-pointer guard,
   accepted as a known, low-risk limitation, not fixed.** Found during the same
   pre-release review as the fixes above: `FORWARD_STUB`'s naked tail-jump forwards
@@ -1798,7 +1867,7 @@ change).
   actively-verified input method with this project installed. See
   `re_notes/known_issues.md` issues #10-#11.
 
-### Investigated, not resolved
+### Investigated-not-resolved
 - **Sprint's real `+breath_sprint` kbutton — parked.** Three independent techniques
   (whole-process heap correlation, live write-testing the strongest candidates, and
   a targeted scan restricted to the confirmed-real kbutton neighborhood used by

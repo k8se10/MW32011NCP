@@ -83,8 +83,12 @@ fields). No evidence of >2-player support found anywhere.
 
 ## Open threads for a future pass
 
-- `_id_061C`'s own defining script (owns the real per-wave enemy-count/
-  type formulas) — referenced constantly, never located by filename.
+- ~~`_id_061C`'s own defining script (owns the real per-wave enemy-count/
+  type formulas) — referenced constantly, never located by filename.~~
+  **Resolved — found (2026-08-01 correction, this was already located
+  earlier and this file just wasn't updated to reflect it): `_id_061C`'s
+  body (specifically `_id_061C::_id_3DE2`) is traced to `1564.gsc:2122-2128`,
+  confirmed via `known_issues.md`'s own full killstreak-catalog pass.**
 - Loadout/killstreak persistence on death/downed state.
 - Environmental hazards beyond a surface grep.
 - Which wave-end bonus tier maps to which named difficulty.

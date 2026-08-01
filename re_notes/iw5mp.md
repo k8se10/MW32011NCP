@@ -1,7 +1,18 @@
 # iw5mp.exe Reverse-Engineering Notes
 
 **Binary:** `iw5mp.exe` (Call of Duty: Modern Warfare 3 Multiplayer, 32-bit x86)  
-**Status:** Active RE pass (2026-07-20, session 2 of MP work)  
+**Status (corrected 2026-08-01):** Exploratory research only, NOT an active
+implementation effort — this file's real candidate offsets (bind-name table,
+dispatch function, lookup function) below are genuine static-analysis
+findings, but **zero MP-specific hook or signature-scan code exists anywhere
+in `proxy_d3d9/src/`** as of this correction. This file was last touched
+2026-07-20 (one commit, `d879b7e`, bundled incidentally into an unrelated
+v0.2.2 release commit message) and hasn't been picked back up since — the
+"70% ready" self-assessment and unchecked checklist below describe where
+this RESEARCH stood on that date, not an in-progress implementation. Consistent
+with this project's own locked scope decision (SP + Survival first, then
+port to MP) — this was a research-only detour that happened out of that
+order, not a violation of it, and MP implementation genuinely has not begun.  
 **Scope:** Controller input architecture, signature-scanning targets, hook points
 
 ---

@@ -28,14 +28,23 @@ Before opening a PR, please read this file in full.
   a genuine runtime byte-pattern scanner would be strictly better (game
   updates and the `iw5sp.exe`/`iw5mp.exe` binary split both mean offsets
   aren't stable across versions or between the two executables), but every
-  single hook in this codebase today — all ~50+ of them — is a literal address
-  found once via static analysis, not a scan performed at runtime. Match the
-  existing pattern (find it in Ghidra, verify the calling convention via raw
-  disassembly, hardcode it, document it in `re_notes/iw5sp.md`) rather than
-  introducing a scanner for just your one new hook while everything else stays
-  hardcoded — that would make the codebase MORE inconsistent, not less. If
-  you want to tackle a real runtime scanner as its own project-wide effort,
-  open an issue to discuss it first, since it would touch every existing hook.
+  single engine-function hook in this codebase (10 currently active, plus a
+  handful more implemented and kept in the source but disabled — corrected
+  2026-08-01, the "~50+" this line previously said was never an accurate
+  count of hook installations) is a literal address found once via static
+  analysis, not a scan performed at runtime. **Exception**: the three D3D9
+  hooks (`IDirect3DDevice9::EndScene`/`Reset` in `overlay_hud.cpp`,
+  `IDirect3D9::CreateDevice` in `d3d9_hook.cpp`) resolve their real target
+  address live from the actual COM vtable at runtime — not a hardcoded
+  literal — since that's the standard, correct way to hook a COM interface
+  method regardless of this project's own engine-function convention. Match
+  the existing pattern for a NEW engine-function hook (find it in Ghidra,
+  verify the calling convention via raw disassembly, hardcode it, document it
+  in `re_notes/iw5sp.md`) rather than introducing a scanner for just your one
+  new hook while everything else stays hardcoded — that would make the
+  codebase MORE inconsistent, not less. If you want to tackle a real runtime
+  scanner as its own project-wide effort, open an issue to discuss it first,
+  since it would touch every existing hook.
 - **`iw5sp.exe` (Campaign/Survival) and `iw5mp.exe` (Multiplayer) are
   separate efforts.** Don't assume a function or offset found in one binary
   carries over to the other — each needs its own independently-found
@@ -52,18 +61,23 @@ Before opening a PR, please read this file in full.
 - **Stay strictly additive.** Vanilla keyboard/mouse play must be unaffected
   by any change. If you're not sure whether a change could regress
   keyboard/mouse play, test that too before opening the PR.
-- **No OS-level input emulation**, with three existing, explicitly scoped
-  exceptions: Survival's ready-up (synthesizes an `F5` keypress because the
-  real native trigger could not be found after an extensive search — see
+- **No OS-level input emulation**, with four existing, explicitly scoped
+  exceptions (corrected 2026-08-01 — a fourth was added and this list wasn't
+  updated to match): Survival's ready-up (synthesizes an `F5` keypress because
+  the real native trigger could not be found after an extensive search — see
   `re_notes/known_issues.md` issue #5), D-pad Left's AI-squadmate call-in
   (synthesizes a `'4'` keypress for that one slot only, after the same class
   of investigation pointed at a Survival-specific GSC script rather than a
-  native trigger — see `re_notes/known_issues.md` issue #14), and Back's real
+  native trigger — see `re_notes/known_issues.md` issue #14), Back's real
   `+scores` scoreboard (synthesizes a `TAB` keypress, since `+scores` turned
   out not to be a native kbutton at all — see `re_notes/known_issues.md`
-  issue #28). Don't add another synthetic-input shortcut without opening an
-  issue to discuss it first; the bar for all three exceptions was "every
-  native avenue was actually exhausted and documented," not "convenient."
+  issue #28), and Y opening the Friends list from a menu (synthesizes an `F`
+  keypress, since Friends is a real keyboard bind the game's key-event
+  handler listens for directly, not one of the menu system's own generic
+  navigation keycodes — see `re_notes/known_issues.md` issue #50). Don't add
+  another synthetic-input shortcut without opening an issue to discuss it
+  first; the bar for all four exceptions was "every native avenue was
+  actually exhausted and documented," not "convenient."
 
 ## Code style
 

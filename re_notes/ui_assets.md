@@ -1,5 +1,30 @@
 # Controller UI assets — scope note (2026-07-14)
 
+> **STATUS UPDATE (2026-08-01) — the plan described throughout most of this file
+> was abandoned; read this note before the rest.** Everything below through the
+> "6-fork research pass" section documents the in-font glyph-substitution plan
+> (patching a real font's glyph array/material via a boot-time zone splice,
+> hooking the bind-resolver `FUN_0061f6f0` to inject a glyph codepoint into hint
+> text, `[Experimental] BindResolverGlyphSubstitution` in `mw3ncp_config.ini`).
+> That plan was fully researched and, per this file's own last dated entry
+> (2026-07-21), declared "implementation-ready" — but it was never actually
+> shipped. On 2026-07-31 the project pivoted to a completely different
+> mechanism instead: suppress the game's own native hint-text draw call
+> entirely and redraw the whole hint (prefix text + a real controller-glyph
+> PNG icon + suffix text) as independent textured quads, in this project's own
+> embedded font — no in-font codepoint injection, no boot-time zone splice.
+> This overlay-quad technique is what's actually shipped and confirmed live
+> today, for both in-game interact hints and menu UI corner hints. See
+> `re_notes/known_issues.md` issues #48 (the pivot and core mechanism) and #50
+> (the menu-UI extension). The `BindResolverGlyphSubstitution` config flag
+> still exists in `mw3ncp_config.ini` but is dead code — nothing reads it to
+> drive the shipped feature. **The research below is kept, unedited, as the
+> real historical investigation trail** (per this project's own
+> "preserve investigation history" documentation standard) — it is not wrong
+> as a record of what was investigated and found, just no longer the active
+> plan. Treat anything below that describes glyph work as future intent or
+> "not yet shipped" as referring to the OLD, abandoned plan, not the new one.
+
 ## Locked scope clarification (user, 2026-07-14)
 "Native" support means more than analog movement/look/aim-assist — it also means:
 1. **In-game/menu button-prompt icons swap to controller glyphs** (Xbox-style
@@ -559,7 +584,16 @@ correct by the live result above:**
 - `OpenMenuByName` (`FUN_00544a50`) is confirmed generic and name-keyed,
   not pause-specific — live-tested previously by opening `"pausedmenu"` by
   name, nothing about its signature implies special-casing for in-game
-  menus only.
+  menus only. **Important nuance found later (issue #50, 2026-08-01): this
+  is only true for native C-code callers.** A live hook on this exact
+  function, across a full Special Ops navigation test, showed it only ever
+  fires for menu names opened by hardcoded native transitions (`"main"`,
+  `"pausedmenu"`) — it never fires for the compiled `.menu` script's own
+  `open <name>;` action keyword (confirmed: `open main_specops;` exists
+  verbatim in the real `.menu` file, but never triggered this hook). So
+  `FUN_00544a50` is NOT a reliable hook point for observing script-driven
+  menu navigation specifically, only native-code-driven menu opens — see
+  `known_issues.md` issue #50's "Attempt 2" for the full trail.
 - A real front-end "menu-scripting system" (a table of callable UI-
   expression function names used by `.menu` files for profile/party/
   splitscreen logic) is independently confirmed to exist — consistent
