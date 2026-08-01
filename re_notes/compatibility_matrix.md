@@ -61,10 +61,14 @@ press — bug #2, `known_issues.md` #27/#42) is fixed and user-confirmed live
 trusting a single call). Was cross-cutting, not tied to any one mission; no
 longer expected to reproduce as of v0.2.5.
 
-**Also cross-cutting, feature gap not a regression**: Hold Breath on sniper
-ADS was never implemented, and its absence causes L3 to wrongly force-stand
-the player while crouched + ADS with a sniper (bug #3, task #24) — relevant
-to any mission with sniper gameplay, not just where first noticed.
+**Corrected 2026-08-01 — stale, this was fixed months ago and confirmed
+working since**: Hold Breath on sniper ADS (L3 while ADS'd) is implemented as
+a real native kbutton (2026-07-20) and no longer causes L3 to wrongly
+force-stand the player while crouched + ADS with a sniper. A separate,
+later critical regression (couldn't fire while Hold Breath was held, caused
+by a bind-index collision) was found and fixed 2026-07-31, confirmed live —
+see `re_notes/known_issues.md` issue #46. No known residual gap remains for
+Hold Breath as of this correction.
 
 ## Special Ops
 

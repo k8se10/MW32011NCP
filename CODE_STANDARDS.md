@@ -92,16 +92,33 @@ reference record, not a polished highlight reel — treat it that way:
 
 ## Native project code (C/C++)
 
-- **Never hardcode a raw address.** Every hook target is found via
+- **Aspirational goal, not current practice (corrected 2026-08-01 — this
+  standard previously claimed as already-true something the codebase has
+  never actually done): every hook target should ideally be found via
   byte-pattern/signature scanning at runtime, per binary, because game
-  updates and the SP/MP binary split both shift offsets.
+  updates and the SP/MP binary split both shift offsets.** The ACTUAL current
+  practice, honestly: every real engine-function hook in this codebase is a
+  literal hardcoded address, found once via static Ghidra analysis and never
+  re-resolved at runtime — see `CONTRIBUTING.md`'s own matching correction
+  for the exact wording this project has settled on. A genuine runtime
+  scanner would be strictly better and remains a real, open, project-wide
+  idea — but until one exists, match the established pattern (static
+  analysis, hardcode, document) rather than hardcoding one new hook while
+  claiming this standard is met.
 - Validate a scanned signature actually resolved (non-null, sane surrounding
   bytes) before installing a hook on it — fail loudly and refuse to hook
-  rather than jumping to garbage.
+  rather than jumping to garbage. (Inapplicable today since no runtime
+  scanning exists yet — kept as the standard for whenever it does.)
 - All hook callbacks must be safe to call from the game's own thread(s) — no
   blocking calls, no heavy work inline; queue/defer anything expensive.
-- Clean up hooks/hold no dangling trampolines on DLL unload — a proxy DLL
-  that crashes the host game on exit is not acceptable.
+- **Not currently done (corrected 2026-08-01 — this standard also previously
+  claimed as already-true something the codebase has never actually done):
+  clean up hooks/hold no dangling trampolines on DLL unload.** `dllmain.cpp`'s
+  `DLL_PROCESS_DETACH` currently only unloads fonts and closes the log file —
+  no `MH_DisableHook`/`MH_RemoveHook`/`MH_Uninitialize` call exists anywhere
+  in the codebase, so every installed hook's trampoline is left dangling on
+  unload today. Kept as the standard to hold new work to; a real project-wide
+  cleanup pass to actually satisfy it hasn't happened yet.
 - Keep XInput polling, hook installation, and gameplay-input translation in
   clearly separate modules — don't let pattern-scan/hook plumbing and
   aim-assist/curve logic tangle together.

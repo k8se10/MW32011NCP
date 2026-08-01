@@ -2,7 +2,12 @@
 
 Tracked as tasks in the working session; this file is the standalone reference so they
 don't stay buried in `iw5sp.md`'s investigation log. Update status here as each is
-resolved. Last updated 2026-07-19 *(corrected — this line said 2026-07-16 despite 21
+resolved. Last updated 2026-08-01 *(corrected again — this line had drifted to
+2026-07-19 despite issues #40-#52 having been added since then, spanning the
+crouch-reliability/Hold-Breath hotfix (v0.2.5), the on-screen notification system,
+and the full controller-glyph icon overlay for both in-game and menu UI hints;
+same repeat-offender pattern as the last correction noted below, kept for the
+record)*. *(Prior correction, 2026-07-19: this line said 2026-07-16 despite 21
 more issues, #10-#31, having been added since then; the project's v0.2.0 Alpha release
 lands this same day: Sprint's real kbutton migration and its stamina-layer removal,
 issue #6; Predator Missile launch fixed and guidance-phase RE'd further, issues #29/
@@ -32,23 +37,23 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#15](#15-aim-assist-entity-classification--permanently-removed-2026-07-20-superseding-the-parked-status-below) — Aim assist entity classification — **Resolved** (feature permanently removed)
 - *(#16–#21 don't exist in this file)*
 - [#22](#22-real-controller-menu-navigation-d-pad--a--resolved-confirmed-live-2026-07-17) — Real controller menu navigation (D-pad + A) — **Resolved**
-- [#23](#23-real-controller-options-menu--native-zonemenu-injection-blocked-on-a-real-architectural-limit-2026-07-17) — Real controller options menu — **Investigating**
+- [#23](#23-real-controller-options-menu--native-zonemenu-injection-blocked-on-a-real-architectural-limit-2026-07-17) — Real controller options menu — **Investigating** (implementation-ready plan, real menu name corrected to `pc_options_controls`)
 - [#24](#24-vibrationrumble--confirmed-live-hooks-break-game-startup-entirely-disabled-2026-07-18) — Vibration/rumble — **Open** (disabled, crashes on startup if enabled)
 - [#25](#25-mw3-client-compatibility--plutoniumalterwaredeckops-survey-2026-07-17) — MW3 client compatibility survey — **Deferred**
 - [#26](#26-full-breadth-engine-research-pass--killstreaks-weapons-perks-hudui-aivehicles-physicshealth-mp-2026-07-17-later-session) — Full-breadth engine research pass — **Resolved** (research complete)
 - [#27](#27-campaign-controller-playtest-live-findings-2026-07-17-later-session--in-progress) — Campaign controller playtest, live findings (multi-bug) — **Open** (mixed — see the entry's own per-bug summary)
-- [#28](#28-back--real-scores-scoreboardobjectives--implemented-via-the-third-key-synthesis-exception-2026-07-17-documentation-gap-fixed-2026-07-18) — Back → real `+scores` (scoreboard/objectives) — **Partially Resolved**
+- [#28](#28-back--real-scores-scoreboardobjectives--implemented-via-the-third-key-synthesis-exception-2026-07-17-documentation-gap-fixed-2026-07-18) — Back → real `+scores` (scoreboard/objectives) — **Partially Resolved** (live-tested, no visible effect in SP — see #7)
 - [#29](#29-fire-rt-rewired-off-the-raw-usercmd-bit-onto-the-real-attack-kbutton--predator-missile-launch-confirmed-working-via-the-n-1-delivery-index-fix-2026-07-1819-heading-corrected-2026-07-19--see-below-for-the-full-chain-the-kbutton-alone-hypothesis-was-refuted-first-then-superseded-by-the-real-fix) — Fire (RT) real kbutton / Predator Missile launch — **Resolved**
 - [#30](#30-third-analog-input-channel-cmd0x3e0x3f-discovered--likely-unifying-root-cause-for-dvpmortarturret-2026-07-18-research-pass-task-25-refuted-for-predator-missile-guidance-specifically-2026-07-19--see-the-correction-near-the-end-of-this-entry) — Third analog-input channel (DPV/mortar/turret) — **Open** (data collection blocked)
 - [#31](#31-master-notifyonplayercommandnotifyoncommand-survey--two-distinct-builtins-found-squadmate-call-ins-real-failure-mode-identified-2026-07-18-research-pass) — Master `notifyonplayercommand`/`notifyoncommand` survey — **Resolved**
 - [#32](#32-console-look-input-likely-had-a-real-acceleration-ramp--this-projects-look-currently-has-none-2026-07-19-web-research-implemented-same-day--resolved-2026-07-20) — Console look-acceleration ramp — **Resolved**
 - [#33](#33-multiplayer-feasibility-research-2026-07-20--technical-re-vac-risk-and-a-real-cross-project-correction) — Multiplayer feasibility research (VAC risk) — **Investigating**
-- [#34](#34-glyph-patch-mechanism-test-injectfontglyphpatchtest-lbrba-still-not-visually-provable--wrong-font-targeted-corrected-no-safe-way-found-yet-to-actually-see-it-2026-07-21) — Glyph-patch mechanism test — **Open**
-- [#35](#35-bind-resolver-text-hook-fun_0061f6f0--log-only-first-pass-implemented-not-yet-live-tested-2026-07-21) — Bind-resolver text hook — **Investigating**
+- [#34](#34-glyph-patch-mechanism-test-injectfontglyphpatchtest-lbrba-still-not-visually-provable--wrong-font-targeted-corrected-no-safe-way-found-yet-to-actually-see-it-2026-07-21) — Glyph-patch mechanism test — **Resolved** (by supersession — #48/#50 shipped a different mechanism)
+- [#35](#35-bind-resolver-text-hook-fun_0061f6f0--log-only-first-pass-implemented-not-yet-live-tested-2026-07-21) — Bind-resolver text hook — **Investigating** (substitution half superseded by #48/#50; diagnostic half still open)
 - [#36](#36-local-splitscreen-co-op--user-roadmap-idea-not-yet-investigated-2026-07-21) — Local splitscreen co-op — **Roadmap Idea**
 - [#37](#37-waw-style-animated-dev-clan-tags--feasibility-research-2026-07-21) — WaW-style animated dev clan tags — **Roadmap Idea**
-- [#38](#38-menu-entry-and-interact-prompt-glyph-substitution--real-ui-pipeline-mapped-pivot-away-from-hudbigfont-ammo-counter-testing-research-pass-2026-07-22) — Menu-entry/interact-prompt glyph substitution — **Investigating**
-- [#39](#39-font-zone-injection-installglyphfontextension-real-new-art-path--precondition-for-enabling-now-met-live-wrong-font-targeted-needs-retargeting-first-research-pass-2026-07-22) — Font-zone injection (real-new-art path) — **Investigating**
+- [#38](#38-menu-entry-and-interact-prompt-glyph-substitution--real-ui-pipeline-mapped-pivot-away-from-hudbigfont-ammo-counter-testing-research-pass-2026-07-22) — Menu-entry/interact-prompt glyph substitution — **Resolved** (by supersession — #48/#50 shipped this exact goal a different way)
+- [#39](#39-font-zone-injection-installglyphfontextension-real-new-art-path--precondition-for-enabling-now-met-live-wrong-font-targeted-needs-retargeting-first-research-pass-2026-07-22) — Font-zone injection (real-new-art path) — **Resolved** (by supersession — #48/#50 shipped a different mechanism)
 - [#40](#40-ac-130-iron-lady--fire-mission--confirmed-working-on-controller-except-gun-type-switching-2026-07-23-live-playtest-task-7) — AC-130 (Iron Lady / Fire Mission) — **Partially Resolved**
 - [#41](#41-reframing-hypothesis-reported-killstreakvehicle-control-bugs-may-be-pc-specific-rebalancereimplementation-not-just-missing-controller-wiring-2026-07-23-user-stated-unverified) — Reframing hypothesis: PC-specific rebalance? — **Investigating**
 - [#42](#42-crouch-sometimes-doesnt-fire-until-b-is-pressed-first--first-bug-from-the-users-022-stream-2026-07-31-reported-pre-break-return-live-playtest-not-consistently-reproducible--resolved-2026-07-31) — Crouch sometimes doesn't fire until B is pressed first — **Resolved**
@@ -59,6 +64,9 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#47](#47-on-screen-top-right-notifications-startup-message--config-hot-reload--new-capability-first-real-render-hook-this-project-has-ever-had-2026-07-31-user-requested-qol) — On-screen notifications (startup message + config hot-reload) — **Resolved**
 - [#48](#48-roadmap-idea-high-value-render-controller-glyph-icons-as-independent-overlay-quads-instead-of-injecting-them-into-the-games-own-font-system-2026-07-31-user-identified-not-yet-implemented) — Render glyphs as independent overlay quads (not in-font injection) — **Resolved** (full custom-hint-redraw system, confirmed live: pickup/swap/buy-station/mantle/reload/grenade/ready-up, plus a critical crash-on-display-mode-change fix and a resolution-scaling fix)
 - [#49](#49-roadmap-idea-generalize-the-overlay-technique-to-arbitrary-in-game-text-not-just-button-glyphs--live-capture-block-original-render-redraw-with-a-custom-font-at-the-same-position-2026-07-31-user-identified-not-yet-implemented) — Generalize overlay technique to arbitrary in-game text/fonts — **Roadmap Idea**
+- [#50](#50-menu-ui-corner-hint-glyphs-backfriends-extended-to-full-menu-system--resolved-confirmed-live-2026-08-01) — Menu corner-hint glyphs (Back/Friends), Friends-list suppression, Quit B-glyph — **Resolved**
+- [#51](#51-highlighted-item-a-glyph-in-vertical-list-menus--ordinal-counting-approach-refuted-live-localvar-lookup-hook-crashed-the-game-blocked-2026-08-01) — Highlighted-item A-glyph in vertical list menus — **Open** (blocked on finding a safe per-list scoping signal)
+- [#52](#52-custom-mouse-cursor-overlay--resolved-confirmed-live-2026-08-01) — Custom mouse cursor overlay (native cursor replaced, correct z-order over glyphs) — **Resolved**
 
 ---
 
@@ -682,8 +690,8 @@ scoped), and #9 (sprint's Extreme Conditioning override).
 
 | Input | Intended action | Blocker |
 |---|---|---|
-| Back | `+scores` (scoreboard/objectives) | **Key-synthesis workaround implemented 2026-07-17** (Back hold → real `WM_KEYDOWN`/`WM_KEYUP` for TAB, the confirmed real bind `bind TAB "+scores"` from `players2/config.cfg`) — third narrow exception to the no-OS-input-emulation rule, same pattern as ready-up (F5) and D-pad Left's squadmate call-in ('4'). **Live-tested in Campaign: no visible effect at all** — no scoreboard, no objectives overlay. Real cause not yet diagnosed; leading theory is `+scores`/scoreboard is fundamentally an MP concept that's a no-op in SP, and SP's actual "mission objectives" display (if player-triggerable at all) uses a completely different, still-unidentified mechanism — not necessarily the same feature CLAUDE.md's console-behavior description assumed. User explicitly parked this as a known UI gap to fill later ("these are both UI gaps we will fill as part of the improvements side of the mod"), not urgent. The synthesis code itself is harmless (real key event, just currently produces no observable result) and stays in the build. |
-| Killstreaks | Predator missile confirmed partially working; needs per-killstreak investigation | **(2026-07-17, full GSC trace done, see issue #26)** `remote_missile` fully traced — real fire (`+attack`) and abort binds confirmed; leading hypothesis is raw-usercmd-bit Fire not reliably triggering the `notifyonplayercommand` the launch is gated on. `precision_airstrike` uses a placement/marker system, not a camera takeover. Turret and squadmate (`friendly_support_delta`/`riotshield`) call-ins are CONFIRMED separate script systems (correction to this row's own earlier framing) — squadmate bug's divergence point narrowed to unresolved function `_id_061C::_id_3DE2`. **(2026-07-17, implemented, see issue #29)** Fire (RT) rewired off the raw usercmd bit onto the real `+attack` kbutton (`0x00A98C00`), same `CallKbuttonDown`/`CallKbuttonUp` mechanism ADS/Reload already use — directly tests the notify-dispatch hypothesis above. Built clean; **not yet live-confirmed** for either regular gunfire (regression risk — highest-blast-radius input in the project) or the Predator Missile launch itself. |
+| Back | `+scores` (scoreboard/objectives) | **Key-synthesis workaround implemented 2026-07-17, see issue #28** (Back hold → real `WM_KEYDOWN`/`WM_KEYUP` for TAB, the confirmed real bind `bind TAB "+scores"` from `players2/config.cfg`) — third narrow exception to the no-OS-input-emulation rule, same pattern as ready-up (F5) and D-pad Left's squadmate call-in ('4'). **Live-tested in Campaign: no visible effect at all** — no scoreboard, no objectives overlay. Real cause not yet diagnosed; leading theory is `+scores`/scoreboard is fundamentally an MP concept that's a no-op in SP, and SP's actual "mission objectives" display (if player-triggerable at all) uses a completely different, still-unidentified mechanism — not necessarily the same feature CLAUDE.md's console-behavior description assumed. User explicitly parked this as a known UI gap to fill later ("these are both UI gaps we will fill as part of the improvements side of the mod"), not urgent. The synthesis code itself is harmless (real key event, just currently produces no observable result) and stays in the build. *(Doc-audit note, 2026-08-01: issue #28's own status line still said "not yet separately live-confirmed" — stale, since this row already records the actual live-test result above; #28 corrected to match.)* |
+| Killstreaks | Predator missile confirmed partially working; needs per-killstreak investigation | **(2026-07-17, full GSC trace done, see issue #26)** `remote_missile` fully traced — real fire (`+attack`) and abort binds confirmed; leading hypothesis is raw-usercmd-bit Fire not reliably triggering the `notifyonplayercommand` the launch is gated on. `precision_airstrike` uses a placement/marker system, not a camera takeover. Turret and squadmate (`friendly_support_delta`/`riotshield`) call-ins are CONFIRMED separate script systems (correction to this row's own earlier framing) — squadmate bug's divergence point narrowed to unresolved function `_id_061C::_id_3DE2`. **(2026-07-17, implemented; RESOLVED 2026-07-18/19, see issue #29)** Fire (RT) rewired off the raw usercmd bit onto the real `+attack` kbutton (`0x00A98C00`), same `CallKbuttonDown`/`CallKbuttonUp` mechanism ADS/Reload already use. **Both now live-confirmed** (stale as of this row's original writing): regular gunfire — no regression; Predator Missile launch — confirmed working via the separate `"n 1"` delivery-index fix (issue #29). Post-fire guidance remains a separate, still-open problem tracked in issue #30. |
 | Sprint / Extreme Conditioning | Perk should double sprint duration to 8s | **(2026-07-17: genuinely parked, see issue #26)** Perk's real name confirmed (`specialty_longersprint`), but no native `HasPerk`-equivalent query exists — `hasperk` dispatches by compile-time numeric ID with zero string trace in the binary, and `perk_sprintMultiplier` has exactly one reference (its own registration), confirming the scaling is entirely GSC-side. No clean native path without going through GSC itself — same dead-end class as Sprint's own kbutton search. |
 
 ---
@@ -946,7 +954,7 @@ game unless a future session gets explicit direction to harden and retry it.
 
 ---
 
-## 13. B doesn't exit pause — RESOLVED (2026-07-16)
+## 13. B doesn't exit pause — PARTIALLY RESOLVED (2026-07-16)
 
 **Status:** Partially Resolved (three rounds of live-reported regressions the
 same day; the first two are confirmed live, the third — buy-station menu
@@ -1738,7 +1746,7 @@ switch the engine into paused/menu render mode (`SetDvarByName("cl_paused",1)` +
 screenshot-confirmed, alongside the real Mission Objectives panel.
 
 **What doesn't work, and why (the actual blocker):** any REAL menu content —
-including a modified copy of the real `pc_options_controls_ingame` — produced a
+including a modified copy of the real `pc_options_controls` — produced a
 live black-screen flash. Traced through two wrong theories (menu-stack parent/child
 hierarchy; wrong hook/calling context — both ruled out by direct evidence) to the
 real cause: **real menus have background materials, and loading a material live
@@ -1805,7 +1813,7 @@ cleaner solution than previously scoped.** Full detail:
   the real game already does this for its own menus, not a novel idea.
 - **Real, cleaner solution found for the next blocker** (previously
   scoped as "find and patch the specific call site that opens
-  `pc_options_controls_ingame`"): decompiled `FUN_0056d4f0`/
+  `pc_options_controls`"): decompiled `FUN_0056d4f0`/
   `FUN_004f1980` (large hardcoded client-command/UI-action string
   dispatchers) and `FUN_00619600` (`"openMenuOnDvar"`) — all funnel
   through `FUN_00544a50` (`OpenMenuByName`, already confirmed,
@@ -1816,16 +1824,24 @@ cleaner solution than previously scoped.** Full detail:
   sites. **Recommendation: don't chase individual call sites at all —
   hook `OpenMenuByName` directly** (MinHook, same pattern as every other
   hook in this codebase) and do STRING-NAME SUBSTITUTION: when `menuName`
-  matches the real target (e.g. `"pc_options_controls_ingame"`), swap in
+  matches the real target (e.g. `"pc_options_controls"`), swap in
   the unique custom menu's name before forwarding to the trampoline. This
   transparently catches every real call site — native-hardcoded or
   `.menu`-data-embedded — with one hook instead of needing to find and
   patch each one individually.
-- **Not yet chased**: confirming the exact real dvar/menu-name string
-  that opens `pc_options_controls_ingame` specifically (which parent
-  Options menu item triggers it) — needs an OpenAssetTools dump of
-  `ui.ff`'s real compiled `.menu` files (a fresh `Unlinker.exe` pass,
-  not attempted in this Ghidra-only investigation).
+- **Corrected (2026-08-01, doc-audit pass):** the real menu name is
+  `pc_options_controls` — this entry previously said
+  `pc_options_controls_ingame` throughout, an unconfirmed guess never
+  actually checked against a zone dump. Confirmed directly against
+  `D:\Tools\OpenAssetTools\zone_dump\ui\ui\`, which contains
+  `pc_options_controls.menu` and no `..._ingame` variant. All references
+  in this entry corrected to the real name.
+- **De-risked (2026-08-01):** the plan's `OpenMenuByName` (`FUN_00544a50`)
+  string-substitution hook was a theoretical MinHook target when this
+  entry was written. It's since been installed and run live without
+  incident during issue #50/#51's menu-glyph work (tracking Special Ops
+  menu transitions) — confirmed safe to hook directly, not just a
+  same-pattern-as-other-hooks assumption anymore.
 
 **This is now a concrete, two-part implementation plan** (boot-time
 zone-queue injection + `OpenMenuByName` string-substitution hook),
@@ -1834,7 +1850,7 @@ live testing, not more research, whenever this task is picked up.
 
 **Current strategic direction (not yet implemented):** unique internal names for
 our own menu content, plus finding/patching whatever real call site opens
-the ORIGINAL name (e.g. `"pc_options_controls_ingame"`) so it redirects to ours —
+the ORIGINAL name (e.g. `"pc_options_controls"`) so it redirects to ours —
 keeps `ui.ff` completely untouched, purely additive. Given the materials finding
 above, this only works for backgroundless content, or requires solving the
 level-load-transition problem first. **Update 2026-07-17: the level-load-
@@ -2231,7 +2247,15 @@ found, in the findings below — this is a scan aid, not a replacement):
 - Bug #6, mounted-turret feels harder — **Resolved** (Hypothesis A: missing aim-precision channel, same as DPV/mortar; Hypothesis B, a scripted regen buff, was refuted).
 - Bug #7, "Mind the Gap" vehicle-exit prompt — **Open**, real exit-trigger not located.
 - Bug #8, SMAW lock-on vs. an aircraft — **Open**, not even confirmed to be a real bug (may be a non-targetable scripted entity).
-- Bug #9, Predator Missile post-fire guidance — **Resolved**, full chain found and fixed 2026-07-18.
+- Bug #9, Predator Missile post-fire guidance — **corrected 2026-08-01, this
+  line previously overclaimed a full fix**: only the LAUNCH half is
+  **Resolved** (the `"n 1"` delivery-index fix, 2026-07-18, issue #29). The
+  actual post-fire GUIDANCE (steering the missile in flight, what this bug
+  is about) remains **Open** — see issue #30's own correction section and
+  its still-blocked diagnostic hooks, and issue #41's later (2026-07-23)
+  restatement of this as still-broken. This entry's own detailed writeup
+  below was never actually updated to say "fixed" and still correctly says
+  "Not yet fixed" — only this summary line drifted.
 
 Directly relevant to task #7 (killstreak input) and refines issue #26's vehicle hypothesis below.
 
@@ -3278,13 +3302,16 @@ Directly relevant to task #7 (killstreak input) and refines issue #26's vehicle 
 ## 28. Back → real `+scores` (scoreboard/objectives) — implemented via the third key-synthesis exception (2026-07-17), documentation gap fixed (2026-07-18)
 
 **Status:** Partially Resolved. Implemented, wired up, builds clean (0
-warnings/0 errors, verified 2026-07-18). **Not yet separately live-confirmed**
-— high confidence given it uses the exact same proven technique as the two
-already-confirmed exceptions (Survival ready-up's F5 synthesis, issue #5;
-D-pad Left squadmate call-in's `'4'` synthesis, issue #14), but per this
-project's own Production Readiness Criteria, "should work by the same
-mechanism as two already-confirmed cases" is not the same as confirmed —
-this entry stays open until it is.
+warnings/0 errors, verified 2026-07-18). **Corrected 2026-08-01 (doc-audit
+pass):** this line previously said "not yet separately live-confirmed,"
+which had gone stale — issue #7's own "Back" row already records the real
+live-test result: the synthesized TAB keypress produces no visible effect
+in Campaign (no scoreboard, no objectives overlay), most likely because
+`+scores`/scoreboard is fundamentally an MP concept that's a no-op in SP.
+The synthesis mechanism itself works exactly as designed (same proven
+technique as issues #5/#14); the gap is that SP has no real feature for it
+to surface. User explicitly parked this as a known UI gap to fill later,
+not urgent — see issue #7 for the full note.
 
 **What it does:** `InjectControllerScoreboard()`
 (`analog_input_hooks.cpp`) synthesizes a real `WM_KEYDOWN`/`WM_KEYUP` for
@@ -4936,10 +4963,21 @@ informational (corrects a loosely-sourced citation, adds real mechanism detail) 
 
 ## 34. Glyph-patch mechanism test (`InjectFontGlyphPatchTest`, LB+RB+A) still not visually provable — wrong font targeted, corrected; no safe way found yet to actually see it (2026-07-21)
 
-**Status:** Open. (A `param_10` ring-buffer fix was found and deployed
-correctly but confirmed, via a real retest, NOT sufficient by itself — the
-glyph still doesn't render. See the end of this entry for the latest state.)
-Set out to close the loop on the LB+RB+A
+**Status:** Resolved (by supersession, 2026-08-01 doc-audit pass). This
+entry was chasing font-glyph-array injection as the mechanism to make
+controller icons render in real UI text — issue #48 (2026-07-31) shipped a
+completely different, working approach instead: independent overlay quads
+drawn over native text, not injected into the game's own font system. The
+font-injection path documented below never actually worked ("no safe way
+found yet") and is now moot rather than still pending — the end-user goal
+this entry was chasing is achieved a different way. Kept for the historical
+investigation record, not as an active blocker.
+
+**Original entry (2026-07-21), kept for the record:** (A `param_10`
+ring-buffer fix was found and deployed correctly but confirmed, via a real
+retest, NOT sufficient by itself — the glyph still doesn't render. See the
+end of this entry for the latest state.) Set out to close the loop on the
+LB+RB+A
 glyph-array-patch mechanism test (task #6/#31/#32) by making its effect
 actually visible on screen — instead found the test's target,
 `fonts/bigfont`, was picked on a wrong guess, and while that's now corrected
@@ -5521,7 +5559,17 @@ speculation. This is the concrete next investigative step, not yet attempted.
 below). The log-only hook itself was live-tested and confirmed safe (see
 `PATCHNOTES.md`'s "residual garbage-log occurrence" entry for a follow-up fix
 to one edge case) — the actual glyph-substitution half of task #6 stays off
-pending the font-loading blocker (issues #23/#39). **Reopened 2026-07-31**:
+pending the font-loading blocker (issues #23/#39). **Doc-audit note,
+2026-08-01: the substitution half's own blocker (#39) is now marked
+Resolved-by-supersession, not just still-pending** — issue #48/#50 shipped
+controller glyphs via independent overlay quads instead, so this hook's
+`bindResolverGlyphSubstitution` code path (`Hook_0061f6f0` in
+`analog_input_hooks.cpp`, real and functional, gated off by default) is now
+an orphaned alternate mechanism rather than a feature still working toward
+completion — kept in the build (harmless while disabled), but not expected
+to be finished/enabled going forward. The hook's diagnostic/logging half
+(this entry's actual open bug, below) still has standalone value and stays
+open on its own merits. **Reopened 2026-07-31**:
 issue #48's own live test found every single resolution this session (main
 menu + a buy station, both weapon-pickup and ready-up hints on screen) came
 back with the exact "not a plausible pointer" symptom this issue previously
@@ -6145,7 +6193,17 @@ not-well-understood-enough grounds respectively, not implemented and left untest
 
 ## 38. Menu-entry and interact-prompt glyph substitution — real UI pipeline mapped, pivot away from hudBigFont-ammo-counter testing (research pass, 2026-07-22)
 
-**Status:** Investigating (pure research/documentation this pass, no code
+**Status:** Resolved (by supersession, 2026-08-01 doc-audit pass). This
+entry's real target -- controller-glyph icons on menu entries and interact/
+button prompts, matching console -- is exactly what issue #48/#50 shipped,
+via independent overlay quads rather than the font-injection pipeline
+mapping below. Kept for the historical UI-pipeline mapping record (the
+`FUN_00690c80`/`FUN_0047dfa0` caller analysis below is still accurate and
+directly informed how the overlay hook was built), not as an active
+blocker.
+
+**Original entry (2026-07-22), kept for the record:** Investigating (pure
+research/documentation this pass, no code
 changed — part of the ongoing glyph effort spanning issues #34/#35/#38/#39).
 User explicitly redirected
 this project away from continuing to chase issue #34's hudBigFont ammo-counter
@@ -6314,7 +6372,25 @@ project's own `re_notes/ghidra_scripts/`, `ghidra_projects_optionsmenu/MW3.gpr`,
   investigated further as it's also not itemDef-related). **None of these 6 are in,
   or called by, the itemDef/menu module's address range** (`0x616000`-`0x623000`,
   where `FUN_005181e0`'s real callers — `FUN_0061e0f0`, `FUN_0061f070`,
-  `FUN_006224f0`, etc. — actually live).
+  `FUN_006224f0`, etc. actually live).
+
+**Contradicted by later live evidence (2026-08-01, doc-audit pass, see issue
+#51's investigation trail):** the "exactly 2 real callers, neither
+menu-related" finding above is directly contradicted by this session's own
+live captures -- both the menu corner-hint itemDefs ("@PLATFORM_BACK_
+SHORTCUT"/Friends) and real button-list items ("FIND ONLINE MATCH", etc.)
+are confirmed live going through FUN_00690c80/Hook_DrawGlyphText via
+fonts/smallFont, and this is exactly how issue #50's menu-hint overlay
+work is built. Not yet root-caused -- most likely explanation is that at
+least some itemDef types (dynamically-positioned/localvar-driven ones,
+like platform shortcuts and nav-group button lists) route through this
+generic HUD-print/ring-buffer path at runtime even though the static
+call-graph enumeration above found no compile-time caller reaching it from
+the itemDef/menu module's own address range -- possibly via a
+function-pointer table or thunk this xref method didn't trace through.
+Left as an open discrepancy rather than silently overwritten, since both
+findings are independently well-evidenced.
+
 - Also confirmed the actual quad-emitting primitive (`FUN_00690620`, called by
   `FUN_006906a0`) has only those same 2 known internal callers — so even the literal
   GPU draw call at the bottom of the chain is not shared. This rules out "different
@@ -6365,7 +6441,14 @@ corrected. Commit and build status noted in the commit for this correction.
 
 ## 39. Font-zone injection (`InstallGlyphFontExtension`, real-new-art path) — precondition for enabling now MET live; wrong font targeted, needs retargeting first (research pass, 2026-07-22)
 
-**Status:** Investigating (pure research/documentation this pass, no code
+**Status:** Resolved (by supersession, 2026-08-01 doc-audit pass). The
+font-zone-injection path this entry was preparing to retarget is moot --
+issue #48/#50 shipped controller-glyph icons via independent overlay quads
+instead, never needing real glyph art loaded into the game's own font
+system at all. Kept for the historical research record.
+
+**Original entry (2026-07-22), kept for the record:** Investigating (pure
+research/documentation this pass, no code
 changed — part of the ongoing glyph effort spanning issues #34/#35/#38/#39;
 retargeting from `bigfont` to `smallFont` is the next concrete step). Answers the open question
 "is loading a genuinely NEW font zone with real, non-borrowed glyph art actually
@@ -7024,8 +7107,13 @@ shipped (issue happened to be caught before release, not after).
 (not a player-facing setting) tracks which schema revision a given file is
 already on. Missing entirely == version 0 (any file predating this system,
 i.e. v0.2.2 and earlier). On load, if `ConfigVersion < kCurrentConfigVersion`
-(currently `3`, after two further same-day bumps — see issue #44's own
-writeup for why each one was needed), version-gated migration blocks run BEFORE the normal
+(`3` at the time this entry was originally written — 2026-07-31, after two
+further same-day bumps described in issue #44's own writeup — **now `6`** as
+of this correction: bumped to `4` later the same day shipping v0.2.5 itself,
+then `5` (Barlow Condensed/glyph-positioning work, 2026-07-31), then `6`
+(the controller-glyph menu-overlay work, 2026-08-01) — see `git log -- 
+proxy_d3d9/src/mod_config.cpp` for the exact commit-by-commit history),
+version-gated migration blocks run BEFORE the normal
 `ReadFloat`/`ReadBool`/etc. calls — e.g. the v0.2.5 migration reads a legacy
 `[Look] Sensitivity` value (via the new `TryReadLegacyFloat`, which — unlike
 `ReadFloat` — can distinguish "key genuinely absent" from "key present but
@@ -7233,8 +7321,13 @@ throwback, and Survival's ready-up prompt all now suppress the game's own native
 draw and render themselves (prefix text + real controller-glyph icon + suffix
 text, this project's own embedded font) at the correct position, confirmed
 correctly centered/aligned across all three `GlyphStyle` values, working while
-paused is correctly suppressed, and NOT applied to main-menu UI hints (which
-keep native rendering, since their bind mapping differs from gameplay binds).
+paused is correctly suppressed. **At the time this entry was written (2026-07-31)
+this was NOT applied to main-menu UI hints** (which kept native rendering, since
+their bind mapping differs from gameplay binds) — **that scope has since
+expanded**: issue #50 (2026-08-01) extends this exact same custom-hint-redraw
+system to menu UI corner hints too (Back/Friends), through a separate
+menu-specific bind table. Read this entry for the in-game-hint mechanism itself;
+see issue #50 for the menu-UI extension and its one remaining open bug.
 Two additional CRITICAL bugs surfaced during hardening and are both fixed and
 user-confirmed live — see "Round 3" at the end of this entry for both:
 1. Changing display mode crashed the whole game (a graceful
@@ -7690,3 +7783,417 @@ now been built or is actively being built for OTHER reasons:
 in-progress work reaches a real conclusion (live-tested, confirmed
 not-user-noticeable) — this is a strict superset of the same technique with
 a materially harder set of open questions, not a quick add-on.
+
+---
+
+## 50. Menu UI corner-hint glyphs (Back/Friends) extended to full menu system — RESOLVED, confirmed live (2026-08-01)
+
+**Status:** Resolved. Extending issue #48's custom-hint-overlay technique to menu
+UI (as opposed to in-game hints) is confirmed live end to end — see "Confirmed
+working" below for the original round, and "Final fix" for how the originally-
+parked Friends/Back-under-modal bug was actually resolved later the same day,
+once issue #51's research unblocked a native signal (`getfocuseditemname()`)
+this bug had been missing the whole time.
+
+### Final fix: Friends/Back under Special Ops modals + Friends-list-itself (2026-08-01, later same day)
+
+The three attempts documented below (and the parked status they led to) predate
+this fix. Issue #51's research fork found `getfocuseditemname()` (opcode 151 in
+the menu-VM's expression evaluator, dispatching to the genuinely single-caller
+`FUN_00616230`) as a directly usable, safe-to-hook signal — something none of
+the three attempts below had available. Built as `Hook_00616230`
+(`analog_input_hooks.cpp`), same naked-asm-trampoline safety pattern as the
+`localvarstring` hook (issue #51).
+
+**Root-cause correction found while implementing this**: `g_inSpecOpsFlow` (the
+`OpenMenuByName`-based flag the three attempts below were built around) was
+confirmed to have **never once become true** across every logged live session —
+`OpenMenuByName` only ever fires for `"main"`/`"pausedmenu"`/`"coop_lobby"`/
+`"popup_connecting"`, never a Special Ops name. The originally-shipped mitigation
+was therefore completely inert in practice, not "mostly working with one
+remaining gap" as this entry previously said.
+
+**`IsInsideSpecOpsNestedModal()` went through four design iterations, each a
+real live-reported regression caught and fixed**, not smooth-first-try work:
+- **v1** (`g_inSpecOpsFlow`): confirmed dead, see above.
+- **v2** (staleness-based: last known `ui_swf_selection` group was Special-Ops-
+  flavored, but current `getfocuseditemname()` doesn't match it): correctly
+  caught the real modal, but **false-triggered on the plain main-menu tile row**
+  — `g_currentSelGroupName`'s own staleness (deliberately relied on for the
+  signal itself) never got cleared on returning to the main menu. A follow-up
+  fix resetting it on `OpenMenuByName("main")` didn't work either — returning to
+  the main menu via an in-menu "MAIN MENU" list item goes through the same
+  compiled `.menu` script `open` action already known to bypass
+  `OpenMenuByName` entirely (same limitation that broke `g_inSpecOpsFlow`
+  itself).
+- **v3** (allowlist of confirmed modal-only focused-item names —
+  `"Chaos"`/`"Mission"`/`"Survival"`/`"game_select_button_1/2/3"`): the
+  `game_select_button_*` names were **live-reported to ALSO appear on the plain
+  main-menu tile row** — a shared/generic naming convention, not modal-specific
+  as first assumed. Removed from the allowlist.
+- **v4, shipped**: sticky boolean state instead of a stateless match. Set only
+  by the confirmed-exclusive names (`"Chaos"`/`"Mission"`/`"Survival"`), carried
+  forward through ambiguous/generic focus states (including the on-disk/DLC
+  picker's own `"SWF_COMMON_POPUP_NAME_0"` — a confirmed-generic shared popup
+  template, verified via a separate `localvarstring-diag` capture showing the
+  bare name elsewhere unrelated), and cleared only on a CONFIRMED return to a
+  real, non-`"SWF_"`-prefixed indexed list item (`"<name>_<digits>"` shape) —
+  moved this clear into `UpdateNavGroupTrackingFromResolvedValue`
+  (the `localvarstring`/`ui_swf_selection` hook) rather than
+  `getfocuseditemname()`, since the latter is evidently cached/event-driven
+  (doesn't re-fire if you land back on the same index you left from) while the
+  former reliably re-fires every frame a list is on screen — the actual reason
+  a real live regression ("Back persists on the root list until you highlight a
+  new item") happened with the getfocuseditemname-only clear.
+
+**Bonus fix, same investigation**: the Friends corner hint's underlying screen
+also kept showing its own native "Friends ^2F^7" hint while the **Friends list
+itself** was open (same root cause as the modal case — the underlying screen
+doesn't know it's obscured). Fixed via `IsFriendsListOpen()`, a simple
+stateless check (`getfocuseditemname() == "friendList"`, confirmed live,
+distinct from Chaos/Mission/Survival's own shape) added to the same
+suppression condition.
+
+**Also shipped, same day**: a B glyph next to the main title screen's "Quit"
+text (visual-only — confirmed via `.menu` file inspection that its real action
+is `open quit_popmenu;`, and B's existing ESC-forward call already reaches this
+natively, so no new input synthesis needed). Case-sensitive exact match on
+`"Quit"` specifically (not the Special Ops hub's own separate all-caps `"QUIT"`
+item, which leads to a different confirmation flow not confirmed reachable the
+same way).
+
+### Original three attempts (2026-08-01, superseded by the fix above, kept for the record)
+
+### Confirmed working (live-tested, 2026-08-01)
+
+- **Static menu corner hints** ("Back ^2ESC^7", "Friends ^2F^7") now go through
+  the same custom-hint-overlay pipeline as in-game hints, via a NEW, separate
+  menu-specific bind table (`ResolveMenuGlyphAssetNameForKeyName`) rather than
+  the gameplay one — reusing the gameplay table would have mapped ESC to
+  Start (gameplay's own pause button) instead of B (the real ESC-forward
+  button), and F to X instead of Y for Friends.
+- **Multi-slot hint pool**: MW3's menu UI shows MULTIPLE corner hints
+  simultaneously (e.g. Back AND Friends), not one at a time like an in-game
+  interact hint. The original single-slot `RequestCustomHintOverlay` could
+  only hold one request per frame, silently losing whichever call didn't run
+  last. Fixed with a separate 4-slot pool (`RequestMenuHintOverlay`/
+  `DrawMenuHintsIfRequested`, `overlay_hud.cpp`) that appends per call instead
+  of overwriting, with same-position calls overwriting each other (last wins,
+  approximating native paint order) rather than stacking.
+- **Y now actually opens Friends**: the glyph swap alone was cosmetic (still
+  showed native X input handling underneath). Added `SendSyntheticF()`
+  (`analog_input_hooks.cpp`), the same proven `PostMessage` WM_KEYDOWN/KEYUP
+  technique as Survival's ready-up F5 synthesis (issue #5), fired on Y's
+  rising edge while a menu is active.
+- **Control-scheme correctness** (explicit standing user requirement, 2026-08-01:
+  "glyphs must represent the current control scheme defined in settings...
+  this doesn't affect menus"): gameplay-hint special cases (grenade
+  throwback, Survival ready-up) were hardcoded to `PhysicalInput::RB`/`Y`
+  regardless of the configured `ButtonLayout` — fixed to resolve through
+  `PhysicalInputForAction(LogicalAction::Lethal)`/`WeaponSwitch`, the same
+  layout-aware path every other gameplay glyph already uses. Explicitly does
+  NOT apply to the menu-specific table (ESC/F/Enter), per the same
+  instruction — those stay fixed regardless of gameplay button layout.
+- **Flicker fix**: an early synthetic-Back-hint attempt was driven by the
+  WndProc/SetTimer ~60Hz tick, which isn't synchronized with the RENDER frame
+  that consumes/resets the hint-slot pool (`EndScene`) — on frames where the
+  independent timer tick didn't happen to fire first, nothing was requested
+  that frame, causing a visible flicker. Fixed by moving the check
+  (`InjectSyntheticBackHintIfNeeded`) to be called from `Hook_EndScene`
+  itself, the exact same per-frame cadence as the consumption.
+
+### The open bug: "Friends" persists under Special Ops modals
+
+**Symptom**, confirmed via multiple screenshots: on "Choose Game Mode" (over
+Special Ops) and the on-disk-vs-DLC-content picker one level deeper, the
+native "Friends" corner hint keeps showing (this project's own overlay
+faithfully reproduces whatever the native call provides — it is not
+inventing this) instead of "Back". Confirmed present regardless of whether
+the modal is opened by mouse or controller (D-pad+A).
+
+**`.menu` file inspection (`D:\Tools\OpenAssetTools\zone_dump\ui\ui\`, this
+project's own already-extracted corpus) directly disproves the initial
+assumption that the modal "has no Back hint of its own":**
+`popmenu_specops_survival.menu` (the real "Choose Game Mode" popup file, a
+genuine separate `menuDef { fullscreen 1 }`) contains its OWN
+`"@PLATFORM_BACK_SHORTCUT"` itemDef, `visible when(1)` (always on). Its own
+`"@PLATFORM_FRIENDS_SHORTCUT"` itemDef in the SAME file is correctly gated
+behind `isprofilesignedin()`-style checks (should be off, matching this
+session's own not-signed-in test state). So the modal's own native Back hint
+should be showing — it just never reaches this project's hook.
+
+**Attempt 1 — nested-modal detection via the D-pad focus-tracking hook
+(`g_lastMenuListStruct`, cached from `FUN_004dfd30`).** Reasoning: opening a
+nested modal should change which list is focused, comparing against a
+snapshotted "root" list would distinguish "still on the root screen" (trust
+native hints) from "inside a nested modal" (override with a synthetic Back).
+**Confirmed live NOT to apply here at all** — across a full test navigating
+BOTH modal levels via controller, `[menu-focus-diag]` logged ZERO changes,
+staying pinned at the exact same single-item struct the whole time. Special
+Ops' tile-row navigation (`execKeyInt 31/23/30/22` + `setFocus <itemName>;`
+inside the `.menu` files themselves, confirmed via direct file inspection)
+does NOT go through the generic listbox next/prev dispatch
+(`FUN_006253d0`/`FUN_00625290`/`FUN_004dfd30`) that vertical text lists use
+at all — a genuinely different, untraced navigation mechanism. This signal
+simply never engages for this screen type, regardless of input method.
+
+**Attempt 2 — track Special Ops entry via `OpenMenuByName` (`FUN_00544a50`),
+already-documented (`re_notes/iw5sp.md`) as the one real function every menu
+transition supposedly goes through.** Hooked it (first time — previously only
+referenced/documented, never intercepted) and logged every call.
+**Confirmed live NOT to fire for this flow at all** — across the full test,
+it only ever logged `"main"` and `"pausedmenu"`, never `"main_specops"` or
+any `"popmenu_specops_*"`, despite the `.menu` files containing literal
+`open main_specops;` script actions. Real conclusion: `FUN_00544a50` and the
+compiled `.menu` script's own `open <name>;` keyword are TWO SEPARATE
+mechanisms — `FUN_00544a50` is only confirmed called from native C code
+(`SetMenuState`'s hardcoded pausedmenu/briefing/victoryscreen transitions),
+not from the menu-script bytecode interpreter's own "open" instruction.
+
+**Attempt 3 — trace the real caller empirically via `_ReturnAddress()` on
+`FUN_00486990` (the registry search-by-name function every "open"-shaped
+candidate calls).** Reasoning: rather than keep guessing candidate functions
+via call-graph inspection, hook the one function all of them share and log
+which address actually calls it when Special Ops opens. **CRASHED THE GAME —
+it would not even launch with this hook installed.** `FUN_00486990` has 14+
+known callers and is very likely on a hot/early boot path (see
+`FUN_0050a350`/`RegisterMenuList`, already known to call it during startup
+menu registration) — hooking it was unsafe in a way static call-graph
+analysis alone didn't reveal. **Reverted immediately** (install call
+commented out in `InstallAnalogInputHooks`, `Hook_00486990`'s definition
+kept dormant, same "ship disabled, code kept" precedent as
+`Hook_LoadZonesForBootSplice`) — confirmed the game launches normally again
+with it disabled. **Do not re-enable without a much more cautious approach**
+(e.g. a live debugger session with a hardware breakpoint, which can pause
+without patching game code the way a MinHook detour does, rather than
+another blind runtime hook on an unknown hot-path function).
+
+**Working theory for why all three attempts failed, formed after Attempt 3**:
+`Linker.exe` compiles `.menu` files OFFLINE, and very likely resolves
+`open main_specops;` to a pre-known menu reference (an index or embedded
+pointer) at COMPILE TIME, since every menu name is already known when the
+`.ff` is built. If so, the runtime "open" opcode for a compiled script
+action may never perform a STRING NAME lookup at all — unlike
+`OpenMenuByName`, which exists specifically for native C code that needs to
+open a menu by a name only known at runtime. This would explain why hooking
+anything keyed on a name-string argument (`FUN_00544a50`, `FUN_00486990`)
+never caught it. Not independently confirmed — a reasonable inference from
+the negative results, not a decompiled fact.
+
+**Real next step, if resumed**: this needs actual menu-script bytecode
+interpreter reverse engineering — finding the compiled `.menu` opcode
+format and its native dispatch table (or a live x32dbg session with a
+hardware breakpoint on a known-safe, low-traffic point, single-stepping
+through an actual "open" action to observe the real call chain directly) —
+not another blind runtime hook on a call-graph-derived guess. Materially
+bigger scope than the rest of this issue; explicitly parked rather than
+continued, per direct user decision after the Attempt 3 crash.
+
+**Also still open, not part of this specific bug**: the "Quit" button on the
+root main menu (`main_selection.menu`, a plain unconditional itemDef with no
+`^N...^7` span at all, confirmed via both live capture and `.menu` file
+inspection) should show a B glyph per explicit user request, and the
+highlighted-tile "A to select" glyph feature (Special Ops/Campaign/
+Multiplayer tiles) remains unimplemented — both are the same underlying
+"plain itemDef text with no color-highlight span" problem, requiring the
+itemDef's own real screen-rect field (not yet found) rather than anything
+built for this issue's span-based hints. See issue #49 for the related,
+more general "arbitrary text replacement" roadmap idea.
+
+---
+
+## 51. Highlighted-item A-glyph in vertical list menus — ordinal-counting approach refuted live; localvar-lookup hook crashed the game; blocked (2026-08-01)
+
+**Status:** Open. Blocked on finding a safe way to read which native list is
+actually focused right now, scoped to just that list's own items. Two
+approaches tried and ruled out this round; feature not implemented (no draw
+code written yet, this is still all diagnostic).
+
+**Goal** (explicit user request): draw an A-glyph icon after whichever menu
+item is CURRENTLY HIGHLIGHTED in real console-style vertical list menus —
+confirmed out of scope: the title-screen tile row (Campaign/Special Ops/
+Multiplayer), which uses a different, untraced navigation mechanism. User's
+own framing: "there is room still allowed for this where spacing wasn't
+redone when ported to PC... should be as simple as importing a glyph over
+the end of the selected button."
+
+### Approach 1 — per-frame ordinal counting, refuted live
+
+`TryGetCurrentMenuFocusIndex` (extracted from issue #48/#50's own
+`g_lastMenuListStruct`/`FUN_004dfd30` work) reliably gives a focus INDEX and
+item COUNT for the currently-tracked list. The missing piece was mapping
+that index to a specific `Hook_DrawGlyphText` call this frame, to get a real
+screen position. Approach: count plain (no `^N...^7` span), `fonts/
+smallFont` text draws in draw order as a per-frame ordinal — for a
+non-scrolled list this is a stable, predictable 1:1 order (confirmed live:
+"FIND ONLINE MATCH" always ordinal 0, "PRIVATE ONLINE MATCH" always ordinal
+1, etc., in Special Ops' own list).
+
+- **Blank-text pollution, found and fixed**: a blank `" "` decorative draw
+  (likely a `.menu` `_vscroll`-companion element, `visible when
+  (getfocuseditemname()==...)`) was firing as ordinal 0 in some frames,
+  shifting every real item's ordinal by one ("QUIT" observed at both ordinal
+  8 and ordinal 9 depending on the frame). Fixed by skipping whitespace-only
+  text before incrementing the ordinal counter.
+- **Fatal flaw, found after the above fix**: the ordinal counter has no way
+  to scope itself to only the currently-focused list's own items. Live
+  `[list-item-diag]` captures showed the Special Ops root screen's own items
+  (e.g. "FIND ONLINE MATCH", always ordinal 0) being compared against
+  `focusIndex`/`itemCount` pairs belonging to an entirely different,
+  currently-focused list (`itemCount=81`, `itemCount=44` — nowhere near
+  Special Ops' own ~9 items) — because that root screen keeps drawing its
+  own items in the background even while a different menu is focused on top
+  of or instead of it. This isn't a bug in the counting, it's a structural
+  mismatch: `g_lastMenuListStruct` tracks whichever list most recently
+  received a forwarded key, not which list a given `Hook_DrawGlyphText` call
+  this frame actually belongs to. **Ruled out — needs a real per-list scoping
+  signal, not a global per-frame counter.**
+
+### Approach 2 — `.menu` localvar table lookup, hook crashed the game
+
+Per direct user redirect ("why not re the menu files directly to find
+exactly what to look for"), re-read `main_specops.menu` directly and found
+the real per-list scoping mechanism the compiled `.menu` corpus already uses
+pervasively: `ui_buttonNavGroupName` (which named nav group is active,
+e.g. `"SPECOPS_BUTTON_LIST"`), `ui_buttonNavGroupCurrent`/
+`ui_buttonNavGroupOffset` (selected index / scroll offset within it — this
+would also solve the still-separately-unsolved scrolled-list case), and
+`ui_swf_selection` (literal name of the selected item), all set via
+`setLocalVarInt`/`setLocalVarString` and read via
+`localvarint()`/`localvarstring()` — with a real row-position formula
+visible directly in the file: `((localvarint("ui_buttonNavGroupCurrent") -
+localvarint("ui_buttonNavGroupOffset")) * 20) + 34.667 + 0.667`.
+
+- A raw `grep -a` for these literal name strings across the whole
+  `iw5sp.exe` file came back with **zero matches** — at first indistinguishable
+  from the same "compiled away, no runtime string" wall that blocked issue
+  #50's "open" keyword investigation.
+- **Checked against OpenAssetTools' own source** (github.com/Laupetin/
+  OpenAssetTools, the real open-source implementation of this exact `.menu`
+  compiler/linker — a documented format, not a guess): `SetLocalVarData::
+  localVarName` (`src/Common/Game/IW5/IW5_Assets.h`) is declared as a plain
+  `const char*`, not a hash. The names ARE real, literal C strings — they
+  just live in the **compiled `.ff` zone data loaded into the process heap
+  at runtime**, not the executable's own static `.rdata` string table. Wrong
+  search location, not a wrong theory about the mechanism.
+- This reframed an already-decompiled function, `FUN_00552e70(ctx, name)`
+  (linear scan: count at `*(ctx+0xa8)`, pointer array at `*(ctx+0xac)`,
+  each entry's own first field string-compared against `name` via
+  `FUN_00463bb0`), as a strong candidate for the real native "find local-var
+  entry by name" lookup — exactly the shape needed to resolve
+  `"ui_buttonNavGroupName"` etc. at runtime.
+- **Hooked read-only to confirm** (forward to the real trampoline completely
+  unmodified, log `ctx`/`name`/`result` afterward, zero behavior change by
+  design) — **crashed the game, would not even launch with the hook
+  installed.** Same failure signature as issue #50's Attempt 3
+  (`FUN_00486990`). `FUN_00552e70`'s own decompile looked clean (no
+  `unaff_ESI`/`unaff_EDI` register-passed-args weirdness, simple two-arg
+  shape) — this is the important new lesson: **a clean-looking decompiled
+  signature is not sufficient evidence a function is safe to trampoline.**
+  Call frequency, timing relative to engine init, or a calling-convention
+  mismatch invisible to static analysis can still crash the game on hook
+  install. **Reverted immediately** (install call commented out in
+  `InstallAnalogInputHooks`, `Hook_00552e70`'s definition kept dormant, same
+  "ship disabled, code kept" precedent as `FUN_00486990`) — confirmed the
+  game launches normally again with it disabled.
+
+**Do not re-enable `Hook_00552e70`'s install** without a materially safer
+verification method — e.g. a live x32dbg session with a hardware breakpoint
+(observes without permanently patching the function's prologue the way a
+MinHook detour does), rather than another permanently-installed runtime
+hook on an unconfirmed-safe function.
+
+**Real next step, if resumed**: same class of problem as issue #50's parked
+bug — needs either (a) a live debugger breakpoint session instead of a
+MinHook detour, to observe `FUN_00552e70` (or whatever the real local-var
+lookup turns out to be) without installing a permanent hook, or (b) finding
+a different, confirmed-low-traffic call site further down the same call
+chain that's safer to intercept. Not yet attempted. This is now the shared
+blocker for BOTH this issue and issue #50's parked Friends/Back bug — a
+success here would very plausibly unblock that one too, since both need the
+same class of "read a live menu-script-level signal safely" capability.
+
+**Update, later same day (2026-08-01): issue #50 IS now resolved**, via
+exactly the `getfocuseditemname()` signal this issue's own research found —
+see issue #50's own "Final fix" section for the full trail. This issue
+(#51's own original A-glyph-position problem) remains open; the shared
+blocker described above was about the GENERAL safe-hooking recipe, which is
+now proven and reusable, not this specific issue's own remaining position-
+mapping gap.
+
+---
+
+## 52. Custom mouse cursor overlay — RESOLVED, confirmed live (2026-08-01)
+
+**Status:** Resolved. User-requested: since this project's own glyph/hint
+overlays draw at end-of-frame (after the real game has already drawn
+everything, including its own native software cursor — confirmed via
+decompile of `FUN_00478540`, this engine draws its own cursor sprite rather
+than using a real Windows hardware cursor, same as every PC CoD title), the
+native cursor was rendering UNDER this project's own icons wherever they
+overlapped. Fixed by suppressing the native cursor's draw and redrawing a
+custom one as the literal last thing drawn each frame.
+
+**Suppression**: `Hook_004d48f0` (`analog_input_hooks.cpp`), a plain
+`__cdecl` MinHook detour on the real quad-draw primitive the native cursor
+happens to share with 30 other unrelated UI draw call sites (confirmed via
+`FindCallers.java`) — confirmed safe via BOTH decompile and disassembly (the
+caller's own `ADD ESP,0x24` right after the call proves `__cdecl`, no
+implicit registers), so no naked-asm trampoline was needed here, unlike most
+of this session's other new hooks. Gated by return address (same established
+technique as this file's own `kMenuBindKeyCaptureCallerRetAddr`, issue #35)
+so only the ONE cursor-specific call site (`0x004786D7`, return address
+`0x004786DC`) is suppressed — the other 30 real callers pass through
+completely unmodified.
+
+**Redraw**: `DrawCustomCursorIfNeeded` (`overlay_hud.cpp`), called last in
+`Hook_EndScene`, after every other draw this project does. Visibility gated
+on the same real globals the native cursor code itself reads (`DAT_01c00474`
+visibility flag, `DAT_01c0ad14` UI state — hidden for states 0/6/10, matching
+the native switch) — does NOT persist unconditionally, only shows when the
+native cursor itself would have.
+
+**Position — three wrong theories before the real one, each caught via live
+screenshot comparison, not guessed blind:**
+1. The internal `DAT_01c00468`/`DAT_01c0046c` globals (the position values
+   the native draw code itself uses) — live-reported to land nowhere near
+   the real cursor. Whatever coordinate space those are in, it isn't one
+   this project could easily reuse.
+2. `GetCursorPos`+`ScreenToClient` (real OS API, no engine-internal
+   coordinate space to guess) — live-reported to grow increasingly wrong
+   the further from the top-left corner, the classic signature of a
+   DPI-awareness-context mismatch between this DLL and the host process.
+3. Raw `WM_MOUSEMOVE` client coordinates (captured via the existing WndProc
+   subclass hook, `GetLastMouseMoveClientPos` in `d3d9_hook.cpp`) — fixed
+   the DPI issue, but a two-point corner calibration (both cursors overlap
+   correctly at the top-left corner, diverge by a consistent ~1.33x — exactly
+   4/3 — toward the bottom-right) revealed the REAL cause: this engine
+   renders to a D3D9 backbuffer that's a DIFFERENT size than the actual game
+   window (an old stretch-blit-to-fill-the-window technique) —
+   `WM_MOUSEMOVE` reports coordinates relative to the WINDOW's real client
+   size, not the smaller D3D9 viewport size every other draw in this project
+   targets. **Real fix**: measure the actual window client rect
+   (`GetClientRect`) and the D3D9 viewport size (`GetRealScreenSize`)
+   directly each frame and scale by their real ratio, rather than assuming
+   any fixed relationship (1920x1080 design space, DPI scale, or otherwise).
+   User-confirmed correct across the whole screen after this fix, not just
+   near the origin.
+
+**Art**: user-supplied cursor image, cropped to remove background/glow
+(confirmed the visible "gray gradient" in the original file was just this
+tool's own transparency-preview compositing, not real pixel data — the
+actual alpha channel was already clean), then re-cropped a second time after
+a live-reported "drawn cursor is down-right of the tip" bug traced to the
+source art's own solid tip sitting at roughly (65,28) in a 128x128 canvas
+rather than at (0,0) — found the true topmost-leftmost fully-opaque pixel
+programmatically (minimizing `x+y` over all `alpha>=250` pixels) and
+re-cropped from exactly that point, pinning the hotspot precisely at the
+texture's own origin. Final asset is 80x128 (not square), drawn preserving
+its own aspect ratio rather than stretched.
+
+**Not yet done**: a broader pass checking whether any of this project's
+OTHER draws have a similar window-vs-viewport assumption baked in (everything
+else uses `GetResolutionScale`, which is a DIFFERENT ratio — design-space-vs-
+viewport, not window-vs-viewport — so probably fine, but not independently
+re-verified against a window/viewport mismatch specifically). Requested by
+the user as a follow-up, not yet started.

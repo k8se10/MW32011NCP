@@ -65,3 +65,12 @@ xboxmodern_rt RCDATA "..\\assets\\button_glyphs\\xboxmodern_rt.png"
 xboxmodern_view RCDATA "..\\assets\\button_glyphs\\xboxmodern_view.png"
 xboxmodern_x RCDATA "..\\assets\\button_glyphs\\xboxmodern_x.png"
 xboxmodern_y RCDATA "..\\assets\\button_glyphs\\xboxmodern_y.png"
+
+// Custom mouse cursor (2026-08-01) -- replaces the native software cursor so it
+// draws correctly on top of this project's own glyph overlays (this project's
+// redraw happens at end-of-frame, after the native cursor's own draw call, so the
+// native cursor would otherwise render UNDER our icons). User-supplied art,
+// background/glow-cropped and resized to 128x128, real alpha channel. See
+// overlay_hud.cpp's cursor-draw code and analog_input_hooks.cpp's
+// Hook_004d48f0 for the suppress-native/redraw-ours mechanism.
+cursor_arrow RCDATA "..\\assets\\cursor_arrow.png"

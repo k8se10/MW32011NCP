@@ -2024,6 +2024,8 @@ bool g_menuNavLeftHeld = false;
 bool g_menuNavRightHeld = false;
 bool g_menuNavSelectHeld = false;
 bool g_menuNavYHeld = false;
+bool g_menuNavXHeld = false;
+bool g_menuNavBackButtonHeld = false; // physical Back/Select/View, distinct from g_menuNavSelectHeld (A) and g_menuBackHeld (B/ESC-forward)
 
 // Live-reported 2026-08-01: the menu-hint glyph work correctly shows a Y icon next
 // to "Friends" (console's real mapping, per the user's own earlier correction), but
@@ -2043,6 +2045,29 @@ void SendSyntheticF()
     PostMessageA(hwnd, WM_KEYDOWN, 'F', 0x00000001);
     PostMessageA(hwnd, WM_KEYUP, 'F', 0xC0000001);
 }
+
+// Same technique as SendSyntheticF above -- Game Summary's real bind is "G"
+// (live-captured: "Game Summary ^2G^7"). 2026-08-01, quick completeness fix
+// (X on controller).
+void SendSyntheticG()
+{
+    HWND hwnd = GetGameWindow();
+    if (!hwnd) return;
+    PostMessageA(hwnd, WM_KEYDOWN, 'G', 0x00000001);
+    PostMessageA(hwnd, WM_KEYUP, 'G', 0xC0000001);
+}
+
+// Same technique again -- Leaderboards' real bind is "F1" (live-captured:
+// "Leaderboards ^2Right Mouse^7/^2F1^7", the function-key half of the combo
+// per explicit user instruction). 2026-08-01, quick completeness fix (real
+// Back/Select/View button on controller, PhysicalInput::Back).
+void SendSyntheticF1()
+{
+    HWND hwnd = GetGameWindow();
+    if (!hwnd) return;
+    PostMessageA(hwnd, WM_KEYDOWN, VK_F1, 0x00000001);
+    PostMessageA(hwnd, WM_KEYUP, VK_F1, 0xC0000001);
+}
 } // namespace
 
 extern "C" void __cdecl InjectControllerMenuNav()
@@ -2056,6 +2081,8 @@ extern "C" void __cdecl InjectControllerMenuNav()
         g_menuNavRightHeld = false;
         g_menuNavSelectHeld = false;
         g_menuNavYHeld = false;
+        g_menuNavXHeld = false;
+        g_menuNavBackButtonHeld = false;
         return;
     }
 
@@ -2095,6 +2122,23 @@ extern "C" void __cdecl InjectControllerMenuNav()
         SendSyntheticF();
     }
     g_menuNavYHeld = yHeld;
+
+    // Game Summary (2026-08-01) -- see SendSyntheticG. X isn't used for anything
+    // else in the menu-nav context, so no conflict.
+    bool xHeld = IsPhysicalHeld(PhysicalInput::X, buttons, leftTrigger, rightTrigger);
+    if (xHeld && !g_menuNavXHeld) {
+        SendSyntheticG();
+    }
+    g_menuNavXHeld = xHeld;
+
+    // Leaderboards (2026-08-01) -- see SendSyntheticF1. The physical Back/Select/
+    // View button (XInput's own BACK bit) isn't used for anything else in this
+    // project at all, so no conflict.
+    bool backButtonHeld = IsPhysicalHeld(PhysicalInput::Back, buttons, leftTrigger, rightTrigger);
+    if (backButtonHeld && !g_menuNavBackButtonHeld) {
+        SendSyntheticF1();
+    }
+    g_menuNavBackButtonHeld = backButtonHeld;
 }
 
 extern "C" void __cdecl InjectControllerPauseMenu()
@@ -2594,70 +2638,757 @@ void __cdecl Hook_004dfd30(int* param_1, int* param_2, unsigned param_3, int par
 // them. Gated on g_modConfig.glyphIconOverlayEnabled (same toggle as the rest of the
 // custom-hint-overlay work) rather than its own separate config key, since this is
 // investigation scaffolding for that same feature, not a standalone toggle.
-void LogMenuFocusDiagnosticIfChanged()
+// Extracted 2026-08-01 from LogMenuFocusDiagnosticIfChanged's own inline reads
+// (below) so the highlighted-item A-glyph feature can reuse the exact same,
+// already-confirmed-live struct-field theory rather than duplicating it.
+// Wrapped in SEH -- never let an unconfirmed offset crash the game.
+bool TryGetCurrentMenuFocusIndex(int& outIndex, int& outItemCount)
 {
-    if (!g_modConfig.glyphIconOverlayEnabled) return;
-    if (!LooksLikeValidPointer(reinterpret_cast<uintptr_t>(g_lastMenuListStruct))) return;
-    static void* s_lastLoggedStruct = nullptr;
-    static int s_lastLoggedFocus = INT_MIN;
+    if (!LooksLikeValidPointer(reinterpret_cast<uintptr_t>(g_lastMenuListStruct))) return false;
     __try {
         int* listStruct = static_cast<int*>(g_lastMenuListStruct);
         int* nested = *reinterpret_cast<int**>(listStruct);
-        if (!LooksLikeValidPointer(reinterpret_cast<uintptr_t>(nested))) return;
-        int focusIndex = *reinterpret_cast<int*>(reinterpret_cast<char*>(nested) + 0x68);
-        int itemCount = listStruct[0x2a];
-        if (g_lastMenuListStruct != s_lastLoggedStruct || focusIndex != s_lastLoggedFocus) {
-            s_lastLoggedStruct = g_lastMenuListStruct;
-            s_lastLoggedFocus = focusIndex;
-            char buf[160];
-            sprintf_s(buf, "[menu-focus-diag] listStruct=%p focusIndex=%d itemCount=%d",
-                       g_lastMenuListStruct, focusIndex, itemCount);
+        if (!LooksLikeValidPointer(reinterpret_cast<uintptr_t>(nested))) return false;
+        outIndex = *reinterpret_cast<int*>(reinterpret_cast<char*>(nested) + 0x68);
+        outItemCount = listStruct[0x2a];
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+void LogMenuFocusDiagnosticIfChanged()
+{
+    if (!g_modConfig.glyphIconOverlayEnabled) return;
+    static void* s_lastLoggedStruct = nullptr;
+    static int s_lastLoggedFocus = INT_MIN;
+    int focusIndex = 0, itemCount = 0;
+    if (!TryGetCurrentMenuFocusIndex(focusIndex, itemCount)) return;
+    if (g_lastMenuListStruct != s_lastLoggedStruct || focusIndex != s_lastLoggedFocus) {
+        s_lastLoggedStruct = g_lastMenuListStruct;
+        s_lastLoggedFocus = focusIndex;
+        char buf[160];
+        sprintf_s(buf, "[menu-focus-diag] listStruct=%p focusIndex=%d itemCount=%d",
+                   g_lastMenuListStruct, focusIndex, itemCount);
+        LogFromController(buf);
+    }
+}
+
+// ---- Special Ops flow detection via the real OpenMenuByName call (2026-08-01) -----
+//
+// Live-reported: a stale corner hint ("Friends") kept showing on modal popups inside
+// the Special Ops flow ("Choose Game Mode", and the on-disk-vs-DLC-content picker
+// one level deeper) that either have no corner hint of their own, or have one that
+// renders through a path this project can't currently hook (confirmed via
+// `.menu` file inspection: `popmenu_specops_survival.menu` DOES define its own
+// always-visible "@PLATFORM_BACK_SHORTCUT" itemDef, but it never once fired through
+// Hook_DrawGlyphText across a full live test -- most likely the still-unidentified
+// "System A" itemDef draw path known_issues.md issue #38 already flagged as a
+// separate open problem, distinct from the "System B" FUN_00690c80 path this
+// project's hook actually sees). A prior attempt to detect "am I inside a nested
+// modal" via the D-pad focus-tracking hook (g_lastMenuListStruct) was confirmed
+// LIVE to not apply here at all -- Special Ops' tile-row navigation doesn't appear
+// to go through the same generic listbox dispatch (FUN_004dfd30) that vertical
+// text lists do, so that signal never changed across the whole flow regardless of
+// input method.
+//
+// Simpler, more direct fix per explicit user direction: detect Special Ops opening
+// via the one real, universal, input-method-agnostic signal that exists for this --
+// `FUN_00544a50` (OpenMenuByName), confirmed via this project's own earlier RE
+// (re_notes/iw5sp.md) to be the single real function EVERY menu transition goes
+// through, regardless of whether it was triggered by mouse or controller. Hooking
+// it directly (first time -- previously only referenced, never intercepted) and
+// checking the opened menu's own name against the real file names found in the
+// `.menu` corpus ("main_specops", "popmenu_specops_*") gives a simple, exact
+// "are we currently inside the Special Ops flow" flag -- while true, hide any
+// Friends hint that fires and always show this project's own synthetic Back
+// instead; everywhere else, default behavior (the existing span-based Back/Friends
+// handling) is untouched.
+bool g_inSpecOpsFlow = false;
+
+// ---- Highlighted-item A-glyph investigation (2026-08-01) --------------------------
+//
+// Per explicit user direction: draw an A-glyph icon after whichever menu item is
+// CURRENTLY HIGHLIGHTED, in real console-style vertical LIST menus (confirmed
+// distinct from the title screen's tile row, which uses a different, untraced
+// navigation mechanism and isn't in scope here). The focus INDEX itself is already
+// reliably readable (TryGetCurrentMenuFocusIndex, confirmed live all session via
+// real D-pad navigation), but knowing the index alone isn't enough -- this also
+// needs to know which THIS FRAME'S Hook_DrawGlyphText call corresponds to that same
+// item, to find its real screen position. Scoped (per explicit user agreement) to
+// non-scrolled, short lists only for this first pass -- a scrolled list's visible
+// window doesn't map 1:1 to absolute item index without also knowing the scroll
+// offset, which hasn't been located yet.
+//
+// Approach: count plain, no-"^N...^7"-span, fonts/smallFont text draws THIS FRAME
+// (candidate list items -- corner hints like Back/Friends always DO have a span, so
+// this naturally excludes them) in the order they're drawn, which -- for a
+// non-scrolled list -- is confirmed live to be a stable, predictable per-item order
+// (e.g. the real Special Ops submenu: "FIND ONLINE MATCH" always first, "PRIVATE
+// ONLINE MATCH" always second, etc., at fixed 45px row spacing). If ordinal N this
+// frame matches the confirmed focus index, that draw call's own (param_2, param_3)
+// plus its measured text width gives the real on-screen end-of-text position to
+// draw the A icon at. DIAGNOSTIC-ONLY for now -- logs the correlation instead of
+// drawing anything, so it can be confirmed live before building the actual feature
+// on top of an unverified assumption (this project's own standing methodology).
+int g_menuListItemOrdinalThisFrame = 0;
+
+namespace {
+using OpenMenuByNameFn = int(__cdecl*)(void* ctx, const char* name);
+void* g_orig_00544a50 = nullptr;
+
+int __cdecl Hook_00544a50(void* ctx, const char* name)
+{
+    __try {
+        if (LooksLikeValidPointer(reinterpret_cast<uintptr_t>(name))) {
+            g_inSpecOpsFlow = (_strnicmp(name, "main_specops", 12) == 0) ||
+                               (_strnicmp(name, "popmenu_specops_", 16) == 0);
+            // Live-reported 2026-08-01: no observed change in behavior after wiring
+            // this up -- first thing to confirm is whether this hook is even firing
+            // for real menu transitions at all, and with what name, before assuming
+            // the prefix-match logic itself is wrong. Deduped by name so it doesn't
+            // spam every re-open of the same menu.
+            static char s_lastLoggedName[64] = {};
+            if (strncmp(s_lastLoggedName, name, sizeof(s_lastLoggedName) - 1) != 0) {
+                strncpy_s(s_lastLoggedName, name, _TRUNCATE);
+                char buf[128];
+                sprintf_s(buf, "[open-menu-diag] OpenMenuByName(\"%s\") -> g_inSpecOpsFlow=%d",
+                           name, static_cast<int>(g_inSpecOpsFlow));
+                LogFromController(buf);
+            }
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        // Never let this crash the game over an unexpected name-pointer shape.
+    }
+    return reinterpret_cast<OpenMenuByNameFn>(g_orig_00544a50)(ctx, name);
+}
+} // namespace
+
+// ---- Local-var lookup trace, FUN_00552e70 (2026-08-01) ---------------------------
+//
+// Continuation of the highlighted-item A-glyph investigation after the ordinal-count
+// approach above was confirmed live to break whenever a background list (e.g. the
+// Special Ops root screen) keeps drawing its own items while a DIFFERENT list is
+// actually focused on top of it -- ordinals from the wrong list were being compared
+// against the wrong focusIndex/itemCount pair. Per explicit user redirect ("why not
+// re the menu files directly to find exactly what to look for"), re-read
+// main_specops.menu directly and found a real per-list SCOPING mechanism already
+// used pervasively in the compiled `.menu` corpus: `ui_buttonNavGroupName` (which
+// NAMED list is currently active), `ui_buttonNavGroupCurrent`/`ui_buttonNavGroupOffset`
+// (selected index / scroll offset within it), and `ui_swf_selection` (the literal
+// name of the selected item) -- all set via `setLocalVarInt`/`setLocalVarString` and
+// read via `localvarint()`/`localvarstring()` expression calls.
+//
+// A raw `grep -a` for these literal name strings across the whole `iw5sp.exe` file
+// came back with ZERO matches -- initially looked like the same "compiled away, no
+// runtime string" dead end that blocked the "open" keyword investigation above. But
+// checking OpenAssetTools' own source (github.com/Laupetin/OpenAssetTools, the actual
+// open-source implementation of this exact `.menu` compiler/linker, so this is a
+// documented format, not a guess) shows `SetLocalVarData::localVarName` is declared
+// as a plain `const char*` in its own runtime asset struct (src/Common/Game/IW5/
+// IW5_Assets.h) -- NOT a hash. The name strings are real, uncompressed C strings --
+// they just live in the COMPILED `.ff` ZONE DATA loaded into the process heap once
+// that menu asset is actually loaded, not in the executable's own static .rdata
+// string table. That's exactly why the raw-exe grep found nothing: wrong location,
+// not a wrong theory.
+//
+// This reframes an already-decompiled function as a strong candidate for the real
+// native "find local var entry by name" lookup: FUN_00552e70(ctx, name) linearly
+// scans an array of pointers (count at *(ctx+0xa8), array at *(ctx+0xac)), string-
+// comparing each entry's own first field against `name` via FUN_00463bb0, returning
+// the matching array slot. That shape -- "count + pointer array + per-entry string
+// compare, called with a runtime name argument" -- matches a local-var-by-name table
+// lookup called with literal names like "ui_buttonNavGroupName" far better than a
+// coincidence. Hooking it read-only (forward to the real trampoline completely
+// unmodified, log ctx/name/result afterward, same "log then forward unchanged"
+// convention as every other diagnostic hook in this file) is the direct way to
+// confirm this live rather than assuming further from static analysis alone.
+namespace {
+using FindLocalVarFn = void*(__cdecl*)(void* ctx, const char* name);
+void* g_orig_00552e70 = nullptr;
+
+void* __cdecl Hook_00552e70(void* ctx, const char* name)
+{
+    void* result = reinterpret_cast<FindLocalVarFn>(g_orig_00552e70)(ctx, name);
+    __try {
+        if (LooksLikeValidPointer(reinterpret_cast<uintptr_t>(name))) {
+            static char s_lastLoggedName[64] = {};
+            if (strncmp(s_lastLoggedName, name, sizeof(s_lastLoggedName) - 1) != 0) {
+                strncpy_s(s_lastLoggedName, name, _TRUNCATE);
+                char buf[160];
+                sprintf_s(buf, "[localvar-lookup-diag] ctx=%p name=\"%.48s\" -> entry=%p",
+                           ctx, name, result);
+                LogFromController(buf);
+            }
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        // Never let this crash the game over an unexpected name-pointer shape.
+    }
+    return result;
+}
+} // namespace
+
+// ---- localvarstring getter hook, FUN_00613ac0 (2026-08-01) -----------------------
+//
+// Direct follow-up to the FUN_00552e70 crash above. Two sibling forks independently
+// traced the real opcode-specific dispatch: the menu-VM's expression evaluator
+// (FUN_0054cc50, an 11KB switch keyed on the same opcode numbers OAT's own
+// `g_expFunctionNames[]` uses) has cases 0x4f/0x50/0x51/0x52 = 79/80/81/82 =
+// localvarint/localvarbool/localvarfloat/localvarstring, each calling a genuinely
+// SINGLE-CALLER getter -- FUN_00613b70/b20/bb0/ac0 respectively -- unlike
+// FUN_00552e70's 12 call sites spanning dvar/keybinding/tablelookup/etc. Confirmed
+// via direct Ghidra re-decompile of FUN_00613ac0 itself (not inferred from its
+// siblings' shape, since its call site `FUN_00613ac0(local_88, 0x20)` visibly
+// differs from the other three's zero-visible-arg calls):
+//
+//   void __thiscall FUN_00613ac0(undefined4 param_1, undefined4 param_2, undefined4 param_3)
+//   {
+//       int *in_EAX; undefined4 *unaff_ESI;
+//       if (*in_EAX == 2) {
+//           ... resolve in_EAX[1] via FUN_00532ad0/FUN_004566d0 to a name string ...
+//           *unaff_ESI = 2;
+//           unaff_ESI[1] = FUN_0050f570(resolvedName, param_2 /*buffer*/, param_3 /*size*/);
+//           return;
+//       }
+//       *unaff_ESI = 2; unaff_ESI[1] = &DAT_0085f9c3; // empty-string fallback
+//   }
+//
+// ECX=param_1 (context, __thiscall), EAX=a name-entry pointer populated by the
+// caller's own `FUN_00413ef0(param_4, &local_148)` just before the call, ESI=an
+// output-operand pointer the callee writes `{2, resolvedStringPtr}` through --
+// none of these three are expressible in a clean C signature, exactly the same
+// implicit-register shape as this project's existing, proven-safe Hook_0057de60/
+// Hook_0061f6f0 naked hooks. A plain MinHook C-signature detour would clobber
+// EAX/ESI and almost certainly crash the same way FUN_00552e70's did -- this uses
+// the same "stash to globals, tail-jump into the trampoline with everything
+// restored, redirect the return address to log afterward" technique as
+// Hook_0061f6f0 above instead.
+//
+// DIAGNOSTIC-ONLY for now: logs the resolved VALUE string (deduped) after the real
+// call completes, to confirm live that this is the right function and see real
+// ui_buttonNavGroupName/ui_swf_selection-shaped values before building anything on
+// top of it. Does not yet capture the NAME being looked up (would require
+// replicating FUN_00532ad0/FUN_004566d0's own resolution logic on in_EAX) --
+// deferred to a follow-up pass once this hook itself is confirmed safe live.
+namespace {
+void* g_orig_00613ac0 = nullptr;
+uintptr_t g_localVarStringInEax = 0;
+uintptr_t g_localVarStringInEcx = 0;
+uintptr_t g_localVarStringOutEsi = 0;
+uintptr_t g_localVarStringRealRetAddr = 0;
+
+// Live-confirmed 2026-08-01: this hook's resolved values are a mix of real
+// ui_buttonNavGroupName-shaped names ("SPECOPS_BUTTON_LIST"), real
+// ui_swf_selection-shaped names ("SPECOPS_BUTTON_LIST_3"), and unrelated noise
+// from every OTHER localvarstring() call sharing this same opcode (localized
+// "@MENU_..." description strings, "SWF_POPUP_BUTTON_NAME(...)"-formatted popup
+// text, etc.) -- this hook can't distinguish WHICH query produced a given value
+// without also resolving the name argument (in_EAX), not yet attempted. Instead
+// of trying to classify "is this a nav-group-name," classify by SHAPE: any value
+// ending in "_<digits>" is treated as a ui_swf_selection-style value, giving BOTH
+// the owning group's base name AND the selected index in one parse -- removes the
+// need to separately track/trust a bare group-name value at all. Anything else
+// (including a bare "SPECOPS_BUTTON_LIST" with no suffix) is ignored here.
+struct NavGroupCacheEntry { char name[64]; int maxIndexSeen; };
+constexpr int kNavGroupCacheSize = 4;
+NavGroupCacheEntry g_navGroupCache[kNavGroupCacheSize] = {};
+int g_navGroupCacheNext = 0; // round-robin claim slot -- a rolling "recently active groups" cache, not a registry
+
+char g_currentSelGroupName[64] = {};
+int g_currentSelIndex = -1;
+
+// Declared here (rather than down by IsInsideSpecOpsNestedModal, which reads it)
+// so UpdateNavGroupTrackingFromResolvedValue below can clear it directly -- see
+// the big comment right before that clear for why this needed to move.
+bool g_specOpsModalSticky = false;
+
+void UpdateNavGroupTrackingFromResolvedValue(const char* value)
+{
+    size_t len = strlen(value);
+    if (len == 0 || len >= sizeof(g_currentSelGroupName)) return;
+    size_t i = len;
+    while (i > 0 && isdigit(static_cast<unsigned char>(value[i - 1]))) --i;
+    if (i == len || i == 0 || value[i - 1] != '_') return; // no trailing "_<digits>" -- not a selection value
+    size_t baseLen = i - 1;
+    if (baseLen == 0 || baseLen >= sizeof(g_currentSelGroupName)) return;
+    int index = atoi(value + i);
+
+    char baseName[64];
+    memcpy(baseName, value, baseLen);
+    baseName[baseLen] = '\0';
+
+    strncpy_s(g_currentSelGroupName, baseName, _TRUNCATE);
+    g_currentSelIndex = index;
+
+    // Live-reported 2026-08-01: the modal-sticky clear that lived in
+    // IsInsideSpecOpsNestedModal (keyed on getfocuseditemname()) only fired when
+    // that call's OWN result actually changed -- but getfocuseditemname() is
+    // evidently cached/event-driven, not re-evaluated every frame, so returning
+    // from the modal to the SAME index you left from never produces a fresh value
+    // to clear against. Symptom: Back kept showing on the real root list
+    // (Survival/Special Ops hub) until the player pressed up/down to actually
+    // change the highlighted item. ui_swf_selection (this function's own value),
+    // by contrast, is confirmed live to re-fire continuously every frame a list is
+    // on screen (repeated identical captures seen with zero navigation in
+    // between) -- a far more reliable "we are definitely back on a real list"
+    // signal. Clearing here instead, on every parse of a real (non-"SWF_"-
+    // prefixed) game-specific group name, regardless of whether the index
+    // actually changed.
+    if (_strnicmp(baseName, "SWF_", 4) != 0) {
+        g_specOpsModalSticky = false;
+    }
+
+    for (int slot = 0; slot < kNavGroupCacheSize; ++slot) {
+        if (strcmp(g_navGroupCache[slot].name, baseName) == 0) {
+            if (index > g_navGroupCache[slot].maxIndexSeen) g_navGroupCache[slot].maxIndexSeen = index;
+            return;
+        }
+    }
+    NavGroupCacheEntry& fresh = g_navGroupCache[g_navGroupCacheNext];
+    g_navGroupCacheNext = (g_navGroupCacheNext + 1) % kNavGroupCacheSize;
+    strncpy_s(fresh.name, baseName, _TRUNCATE);
+    fresh.maxIndexSeen = index;
+}
+
+// Returns the most recently observed (group, index) pair, plus that group's own
+// highest-observed index (NOT a reliable item COUNT -- it under-counts until the
+// player has actually visited the group's last item at least once this session,
+// a known limitation; used as one of two independent cross-check signals below,
+// not the sole gate). Kept as its own function so future callers don't need to
+// know the parsing/cache details above.
+bool TryGetCurrentSelectionGroupAndIndex(int& outIndex, int& outMaxIndexSeen)
+{
+    if (g_currentSelGroupName[0] == '\0' || g_currentSelIndex < 0) return false;
+    for (int slot = 0; slot < kNavGroupCacheSize; ++slot) {
+        if (strcmp(g_navGroupCache[slot].name, g_currentSelGroupName) == 0) {
+            outIndex = g_currentSelIndex;
+            outMaxIndexSeen = g_navGroupCache[slot].maxIndexSeen;
+            return true;
+        }
+    }
+    return false;
+}
+
+void LogLocalVarStringResult()
+{
+    __try {
+        if (!LooksLikeValidPointer(g_localVarStringOutEsi)) return;
+        int* out = reinterpret_cast<int*>(g_localVarStringOutEsi);
+        if (out[0] != 2) return; // not the string-operand shape we expect -- skip rather than guess
+        const char* value = reinterpret_cast<const char*>(out[1]);
+        if (!LooksLikeValidPointer(reinterpret_cast<uintptr_t>(value))) return;
+        UpdateNavGroupTrackingFromResolvedValue(value);
+        static char s_lastLoggedValue[64] = {};
+        if (strncmp(s_lastLoggedValue, value, sizeof(s_lastLoggedValue) - 1) != 0) {
+            strncpy_s(s_lastLoggedValue, value, _TRUNCATE);
+            char buf[128];
+            sprintf_s(buf, "[localvarstring-diag] resolved value=\"%.80s\"", value);
             LogFromController(buf);
         }
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        // Same rationale as every other struct-field-read diagnostic in this file --
-        // never let an unconfirmed offset theory crash the game.
+        // Never let this crash the game over an unexpected operand shape.
+    }
+}
+} // namespace
+
+__declspec(naked) void Hook_00613ac0()
+{
+    __asm {
+        // Stash the two register args this call depends on (ECX=context,
+        // EAX=name-entry pointer) before EAX gets reused as scratch below -- both
+        // restored byte-for-byte immediately before the tail-jump. ESI (the
+        // output-operand pointer the callee writes through) is never touched here
+        // at all, so it reaches the trampoline completely unchanged -- stash a COPY
+        // for the post-call logger to read afterward.
+        mov dword ptr [g_localVarStringInEax], eax
+        mov dword ptr [g_localVarStringInEcx], ecx
+        mov dword ptr [g_localVarStringOutEsi], esi
+
+        // Save the real return address, then repoint that same stack slot at our
+        // own afterCall label -- in-place overwrite, not a push, so the __thiscall
+        // stack shape below it (param_2/param_3) stays exactly what the trampoline
+        // expects.
+        mov eax, dword ptr [esp]
+        mov dword ptr [g_localVarStringRealRetAddr], eax
+        mov dword ptr [esp], offset afterCall
+
+        // Restore EAX/ECX exactly as the real caller set them, then tail-jump (NOT
+        // call) into the trampoline so it sees the byte-for-byte original frame.
+        mov eax, dword ptr [g_localVarStringInEax]
+        mov ecx, dword ptr [g_localVarStringInEcx]
+        jmp dword ptr [g_orig_00613ac0]
+
+    afterCall:
+        // Trampoline's own `ret` landed us here with esp already restored to what
+        // the real caller would see post-return. Preserve every register across
+        // the log call, then resume the real caller directly.
+        pushad
+        call LogLocalVarStringResult
+        popad
+        jmp dword ptr [g_localVarStringRealRetAddr]
     }
 }
 
-// ---- Nested-modal detection via the focus-tracking hook (2026-08-01) --------------
+// ---- getfocuseditemname() hook, FUN_00616230 (2026-08-01, issue #50 follow-up) ---
 //
-// Live-reported: a stale corner hint (e.g. "Friends") kept showing on a modal popup
-// ("Choose Game Mode" over Special Ops) that has no native corner hint of its own --
-// the underlying screen's "Friends" call keeps firing every frame even while
-// obscured, since its owning screen doesn't know/care a modal now covers it.
-// Naively forcing a synthetic "Back" over ANY recently-active corner hint would also
-// incorrectly override a LEGITIMATE "Friends" hint on a screen where it's actually
-// correct (that screen is also IsMenuActive()==true). The real distinguishing
-// signal: g_lastMenuListStruct (cached from FUN_004dfd30, confirmed live via the
-// D-pad focus-index test) reflects whichever list is CURRENTLY receiving input --
-// opening a nested modal changes this to a genuinely different struct pointer than
-// whatever was focused on the outer/root screen. Snapshots that root pointer the
-// moment a menu first opens (IsMenuActive() transitioning false->true) so later code
-// can tell "am I still on the root screen" (trust whatever native hint fires) from
-// "am I inside a nested modal" (any corner hint currently showing is suspect, since
-// it may belong to the now-obscured parent -- always prefer this project's own Back
-// hint in that case).
-void* g_menuRootListStruct = nullptr;
-bool g_wasMenuActiveLastTick = false;
+// A sibling research fork (dug into whether the FUN_00552e70/FUN_00613ac0 recipe
+// generalizes) found this directly answers issue #50's still-parked "Friends
+// persists under Special Ops modal" bug: `getfocuseditemname` is opcode 151/0x97 in
+// the same menu-VM opcode space, dispatching to FUN_00616230 -- confirmed via
+// FindCallers.java to have exactly 1 caller (the switch itself), same safe class as
+// FUN_00613ac0. Its own decompile is even simpler -- genuinely zero input
+// arguments:
+//
+//   void FUN_00616230(void) {
+//       undefined4 *unaff_ESI;
+//       uVar1 = FUN_00495de0();           // kMenuSystemContext global, already known
+//       puVar2 = FUN_004c1220(uVar1);     // -> focused item's name-holding struct
+//       ... *unaff_ESI = 2; unaff_ESI[1] = (the resolved name string, or a fallback);
+//   }
+//
+// Confirmed via its own call site in FUN_0054cc50 (case 0x97: `FUN_00616230();
+// FUN_006156b0();`, no preceding FUN_00413ef0 call) that EAX/ECX carry no meaningful
+// input for this specific getter, unlike FUN_00613ac0 -- only ESI (output pointer)
+// needs preserving. DIAGNOSTIC-ONLY for now: logs the resolved focused-item name
+// (deduped) so the real values can be seen live (e.g. across a Special-Ops-modal
+// open/close) before building any suppress/redirect logic on top of them -- same
+// "confirm live before using" discipline as every other new hook this session.
+namespace {
+void* g_orig_00616230 = nullptr;
+uintptr_t g_focusedItemOutEsi = 0;
+uintptr_t g_focusedItemRealRetAddr = 0;
+char g_focusedItemName[64] = {};
 
-void UpdateMenuRootListTracking()
+void LogFocusedItemNameResult()
 {
-    bool activeNow = IsMenuActive();
-    if (activeNow && !g_wasMenuActiveLastTick) {
-        g_menuRootListStruct = g_lastMenuListStruct;
+    __try {
+        if (!LooksLikeValidPointer(g_focusedItemOutEsi)) return;
+        int* out = reinterpret_cast<int*>(g_focusedItemOutEsi);
+        if (out[0] != 2) return;
+        const char* value = reinterpret_cast<const char*>(out[1]);
+        if (!LooksLikeValidPointer(reinterpret_cast<uintptr_t>(value))) return;
+        strncpy_s(g_focusedItemName, value, _TRUNCATE);
+        static char s_lastLoggedValue[64] = {};
+        if (strncmp(s_lastLoggedValue, value, sizeof(s_lastLoggedValue) - 1) != 0) {
+            strncpy_s(s_lastLoggedValue, value, _TRUNCATE);
+            char buf[128];
+            sprintf_s(buf, "[focused-item-diag] getfocuseditemname() -> \"%.80s\"", value);
+            LogFromController(buf);
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        // Never let this crash the game over an unexpected operand shape.
     }
-    if (!activeNow) {
-        g_menuRootListStruct = nullptr;
+}
+} // namespace
+
+// ---- Special Ops nested-modal detection v3, allowlist-based (2026-08-01) ---------
+//
+// v1 (g_inSpecOpsFlow, OpenMenuByName-based): doc-audit found it has NEVER once
+// become true across every logged live session -- OpenMenuByName only ever fires
+// for "main"/"pausedmenu"/"coop_lobby"/"popup_connecting", never a Special Ops
+// name. The shipped Friends-suppress/Back-force logic gated on it was therefore
+// completely inert in practice.
+//
+// v2 (g_currentSelGroupName-staleness-based): "last known selection group was
+// Special-Ops-flavored, but current focus doesn't match it" correctly caught the
+// real modal, but false-triggered on the plain MAIN MENU tile row -- the staleness
+// this relies on (ui_swf_selection freezing once you leave that list, deliberately
+// used as part of the signal) doesn't get cleared on returning to the main menu.
+// Tried resetting it on OpenMenuByName("main") -- but returning to the main menu
+// via an in-menu "MAIN MENU" list item goes through the same compiled `.menu`
+// script `open` action already known (from issue #50's own original investigation)
+// to bypass OpenMenuByName entirely, so the reset never fired either. Confirmed
+// live: OpenMenuByName("main") appears exactly once per session (the very first
+// boot), never again on any subsequent return-to-main.
+//
+// v3, allowlist-based: matched the CURRENTLY focused item's name directly against
+// confirmed modal-only names ("Chaos"/"Mission"/"Survival", the mode picker's own
+// real mode names -- "game_select_button_1/2/3" was tried first and removed after
+// a live-confirmed false positive on the main tile row, a shared naming convention
+// not unique to the modal). This correctly covered the mode-picker screen itself,
+// but NOT the on-disk/DLC content picker one level deeper -- live-reported still
+// showing Friends. Investigated: that screen's own focused-item name resolves to
+// "SWF_COMMON_POPUP_NAME_0" -- confirmed via a SEPARATE localvarstring-diag capture
+// that "SWF_COMMON_POPUP_NAME" (no suffix) is itself a real, bare ui_swf_selection-
+// style value elsewhere in the log, i.e. a genuinely shared/generic popup-button
+// template ("COMMON" is literal, not an assumption) -- adding it to the allowlist
+// would very likely repeat the same false-positive mistake a third time on some
+// unrelated confirm/error dialog using the same template.
+//
+// v4, this version: sticky state instead of a stateless name match, to span this
+// generic-named screen without trusting its own name at all. The mode picker's own
+// group context resolves as "MODE_POPUP" (confirmed via localvarstring-diag,
+// distinctly named, not generic) right before Chaos/Mission/Survival get focus --
+// treat entering that flow as "sticky true," carry the sticky flag forward through
+// ambiguous/generic focus states (a generic popup name, or "none" during a
+// transition), and only clear it on a CONFIRMED return to the real root list (a
+// "<name>_<digits>"-shaped focused item, the same shape ui_swf_selection's own
+// per-item names use) -- never on reaching the main menu specifically, sidestepping
+// the return-to-main detection problem that broke v2 entirely. A false CLEAR here
+// is low-risk (worst case: reverts to the original bug, Friends shows instead of
+// Back, on some edge case) -- a false SET is the expensive mistake (a visible
+// regression elsewhere), so the trigger stays narrow while the carry-forward stays
+// broad on purpose. g_specOpsModalSticky itself is declared earlier in this file
+// (right before UpdateNavGroupTrackingFromResolvedValue), which ALSO clears it --
+// see that function's own comment for why the clear moved there.
+bool IsInsideSpecOpsNestedModal()
+{
+    if (g_focusedItemName[0] == '\0') return g_specOpsModalSticky;
+
+    static const char* const kKnownModalItemNames[] = {
+        "Chaos", "Mission", "Survival",
+    };
+    for (const char* known : kKnownModalItemNames) {
+        if (_stricmp(g_focusedItemName, known) == 0) {
+            g_specOpsModalSticky = true;
+            return true;
+        }
     }
-    g_wasMenuActiveLastTick = activeNow;
+
+    if (_stricmp(g_focusedItemName, "none") == 0) return g_specOpsModalSticky;
+
+    // Confirmed back on a real, indexed list item ("<name>_<digits>", the same
+    // shape ui_swf_selection's own values use) -- definitively not inside a modal
+    // anymore, regardless of which list it is. Clears stickiness even for a list
+    // this project doesn't otherwise recognize, by design (see the false-CLEAR-is-
+    // cheap reasoning above). Explicitly excludes names starting with "SWF_" --
+    // caught before this shipped: "SWF_COMMON_POPUP_NAME_0" (the on-disk/DLC
+    // picker's own generic button name) ALSO matches "<name>_<digits>", which
+    // would have cleared stickiness the instant that screen gained focus, the
+    // exact opposite of what this is for. Every confirmed real game list group
+    // seen so far (SPECOPS_BUTTON_LIST_N, SO_LEVELS_BUTTON_LIST_N,
+    // LEADERBOARDS_BUTTON_LIST_N) uses a game-specific name, never an "SWF_"
+    // prefix -- that prefix consistently marks the shared UI-framework template
+    // layer instead, both here and in "SWF_COMMON_DESC_RESIZE_POPUP_NAME" seen
+    // elsewhere in this file's own captures.
+    size_t len = strlen(g_focusedItemName);
+    size_t i = len;
+    while (i > 0 && isdigit(static_cast<unsigned char>(g_focusedItemName[i - 1]))) --i;
+    bool looksLikeIndexedListItem = (i < len && i > 0 && g_focusedItemName[i - 1] == '_') &&
+                                      _strnicmp(g_focusedItemName, "SWF_", 4) != 0;
+    if (looksLikeIndexedListItem) {
+        g_specOpsModalSticky = false;
+        return false;
+    }
+
+    // Anything else (a generic "SWF_"-prefixed shape, or something not otherwise
+    // recognized) carries the sticky flag forward unchanged rather than guessing.
+    return g_specOpsModalSticky;
 }
 
-bool IsInsideNestedMenu()
+// Live-reported 2026-08-01: same class of bug as the Special Ops modal above, this
+// time for the Friends list itself -- opening it correctly shows this project's own
+// Back hint, but the underlying screen's native "Friends ^2F^7" hint keeps showing
+// too, since that screen doesn't know it's now obscured (same root cause as issue
+// #50's original bug: this project's own redraw happens at end-of-frame, after
+// native paint order would have hidden it). getfocuseditemname() reports
+// "friendList" while this screen is focused (confirmed live) -- no sticky/staleness
+// concerns needed here, unlike the Special Ops case, since this is a direct,
+// stateless check: Friends is either the currently focused thing or it isn't.
+bool IsFriendsListOpen()
 {
-    return g_menuRootListStruct != nullptr && g_lastMenuListStruct != nullptr &&
-           g_lastMenuListStruct != g_menuRootListStruct;
+    return _strnicmp(g_focusedItemName, "friendList", 10) == 0;
 }
+
+__declspec(naked) void Hook_00616230()
+{
+    __asm {
+        // ESI (output pointer) is never touched here, so it reaches the trampoline
+        // completely unchanged -- stash a COPY for the post-call logger. EAX is
+        // free to use as pure scratch (confirmed via the decompile above: this
+        // getter reads no implicit input register besides ESI), unlike
+        // Hook_00613ac0's EAX which had to be preserved.
+        mov dword ptr [g_focusedItemOutEsi], esi
+
+        mov eax, dword ptr [esp]
+        mov dword ptr [g_focusedItemRealRetAddr], eax
+        mov dword ptr [esp], offset afterCall
+        jmp dword ptr [g_orig_00616230]
+
+    afterCall:
+        pushad
+        call LogFocusedItemNameResult
+        popad
+        jmp dword ptr [g_focusedItemRealRetAddr]
+    }
+}
+
+// ---- localvarint() hook, FUN_00613b70 (2026-08-01, issue #51 follow-up) ----------
+//
+// The A-glyph feature's ordinal-vs-logical-index cross-check (issue #51) was
+// confirmed live to never agree: the per-frame "ordinal of plain smallFont text"
+// counter also catches subtitle/legal text and (live-confirmed by the user) the
+// Special-Ops-modal's OWN mode-selection buttons ("CHAOS"/"MISSIONS") drawing in
+// the same frame -- not scoped to one list's own items at all. Real fix: read
+// `ui_buttonNavGroupCurrent`/`ui_buttonNavGroupOffset` directly (opcode 79/
+// localvarint, case 0x4f in FUN_0054cc50) and compute the target row position from
+// the `.menu` files' own real formula (`((current - offset) * 20) + 34.667 +
+// 0.667`) instead of trying to correlate against draw order at all. Same
+// EAX(name-entry)/ECX(context)/ESI(output) shape as FUN_00613ac0, confirmed via
+// its own decompile:
+//
+//   void __fastcall FUN_00613b70(undefined4 param_1) {
+//       int *in_EAX; undefined4 *unaff_ESI;
+//       if (*in_EAX == 2) { ... unaff_ESI[0] = 0; unaff_ESI[1] = resolvedIntValue; }
+//   }
+//
+// (discriminant 0 = int type here, vs 2 = string type for FUN_00613ac0/FUN_00616230
+// above.) DIAGNOSTIC-ONLY: this opcode serves EVERY localvarint() call project-wide,
+// not just the two names this feature cares about, so logged values are a mix
+// (scroll offsets, selection indices, unrelated flags) -- logs the raw resolved int
+// (deduped) to see what's actually live before trying to identify which stream is
+// which by behavior (e.g. one value should visibly track D-pad up/down by ±1).
+namespace {
+void* g_orig_00613b70 = nullptr;
+uintptr_t g_localVarIntInEax = 0;
+uintptr_t g_localVarIntInEcx = 0;
+uintptr_t g_localVarIntOutEsi = 0;
+uintptr_t g_localVarIntRealRetAddr = 0;
+
+// Live-confirmed 2026-08-01: dedup-by-value-change alone hid the real signal -- a
+// STABLE value (what ui_buttonNavGroupCurrent should be while a given item stays
+// selected) only logs once, right when it first becomes that value, then goes
+// quiet; meanwhile an unrelated per-frame 0/1 toggle (almost certainly a cursor-
+// blink/highlight-pulse animation flag sharing this same opcode) re-logs constantly
+// and buries it. Fixed by keying the dedup on the PAIR (this value, the ALREADY-
+// tracked ui_swf_selection index from the localvarstring hook above) instead of the
+// value alone -- logs a fresh line whenever EITHER changes, so a value that tracks
+// the real selection index in lockstep becomes directly visible by comparison
+// against selIndex in the SAME line, without needing to manually correlate
+// timestamps across two separate diagnostic tags.
+void LogLocalVarIntResult()
+{
+    __try {
+        if (!LooksLikeValidPointer(g_localVarIntOutEsi)) return;
+        int* out = reinterpret_cast<int*>(g_localVarIntOutEsi);
+        if (out[0] != 0) return; // not the int-operand shape we expect -- skip rather than guess
+        int value = out[1];
+        static int s_lastLoggedValue = INT_MIN;
+        static int s_lastLoggedSelIndex = INT_MIN;
+        if (value != s_lastLoggedValue || g_currentSelIndex != s_lastLoggedSelIndex) {
+            s_lastLoggedValue = value;
+            s_lastLoggedSelIndex = g_currentSelIndex;
+            char buf[160];
+            sprintf_s(buf, "[localvarint-diag] resolved value=%d (current selGroup=\"%s\" selIndex=%d)",
+                       value, g_currentSelGroupName, g_currentSelIndex);
+            LogFromController(buf);
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        // Never let this crash the game over an unexpected operand shape.
+    }
+}
+} // namespace
+
+__declspec(naked) void Hook_00613b70()
+{
+    __asm {
+        mov dword ptr [g_localVarIntInEax], eax
+        mov dword ptr [g_localVarIntInEcx], ecx
+        mov dword ptr [g_localVarIntOutEsi], esi
+
+        mov eax, dword ptr [esp]
+        mov dword ptr [g_localVarIntRealRetAddr], eax
+        mov dword ptr [esp], offset afterCall
+
+        mov eax, dword ptr [g_localVarIntInEax]
+        mov ecx, dword ptr [g_localVarIntInEcx]
+        jmp dword ptr [g_orig_00613b70]
+
+    afterCall:
+        pushad
+        call LogLocalVarIntResult
+        popad
+        jmp dword ptr [g_localVarIntRealRetAddr]
+    }
+}
+
+// ---- Cursor-draw suppression hook, FUN_004d48f0 (2026-08-01, user-requested) -----
+//
+// Real, generic quad-draw primitive shared by 31 call sites project-wide (confirmed
+// via FindCallers.java) -- NOT safe to intercept unconditionally (same class of
+// mistake that made the FUN_00552e70 attempt crash the game). Unlike that case,
+// though, this function's own signature is completely clean -- confirmed via both
+// decompile AND disassembly (not just decompiler inference): plain stack args, no
+// implicit registers, and the caller cleans the stack with `ADD ESP,0x24` right
+// after the call at the one cursor-specific site (0x004786d7, inside FUN_00478540,
+// confirmed via disassembly to be a standard 5-byte `CALL rel32`, so its return
+// address is exactly 0x004786DC) -- definitively __cdecl, safe for a plain
+// C-signature MinHook detour, no naked-asm trampoline needed here at all.
+//
+// Gated by return address (same established technique as this file's own
+// kMenuBindKeyCaptureCallerRetAddr, issue #35): only the ONE cursor call site is
+// suppressed (skipped entirely, not forwarded) -- every other one of the 31 real
+// callers passes through to the real trampoline completely unmodified. See
+// overlay_hud.cpp's DrawCustomCursorIfNeeded for what redraws the cursor instead,
+// as the last thing drawn each frame.
+namespace {
+constexpr uintptr_t kCursorDrawCallReturnAddr = 0x004786DC;
+void* g_orig_004d48f0 = nullptr;
+
+void __cdecl Hook_004d48f0(void* param_1, void* param_2, void* param_3, float param_4, float param_5,
+                             void* param_6, void* param_7, void* param_8, void* param_9)
+{
+    uintptr_t returnAddr = reinterpret_cast<uintptr_t>(_ReturnAddress());
+    if (returnAddr == kCursorDrawCallReturnAddr) {
+        // Confirmed live 2026-08-01 via a two-point corner calibration (top-left
+        // and bottom-right) that the real bug was a window-client-size-vs-D3D9-
+        // viewport-size mismatch in WM_MOUSEMOVE's own coordinate space (see
+        // DrawCustomCursorIfNeeded in overlay_hud.cpp for the full fix) -- two
+        // earlier theories (the internal DAT_01c00468/046c globals, and a naive
+        // GetResolutionScale multiply) were both wrong. User-confirmed correct
+        // across the whole screen, not just near the origin.
+        return; // suppress the native cursor draw entirely -- this project redraws it instead
+    }
+    using DrawQuadFn = void(__cdecl*)(void*, void*, void*, float, float, void*, void*, void*, void*);
+    reinterpret_cast<DrawQuadFn>(g_orig_004d48f0)(param_1, param_2, param_3, param_4, param_5,
+                                                    param_6, param_7, param_8, param_9);
+}
+} // namespace
+
+// ---- Empirical trace of the REAL menu-script "open" builtin (2026-08-01) ----------
+//
+// Live-confirmed OpenMenuByName (FUN_00544a50) is the WRONG function to watch:
+// across a full test navigating the entire Special Ops flow, it only ever fired for
+// "main" and "pausedmenu" -- never "main_specops" or any "popmenu_specops_*", despite
+// the real `.menu` files containing literal `open main_specops;`-style script
+// actions. This means the compiled `.menu` SCRIPT's own "open" keyword and the
+// native C-code menu-opening API (FUN_00544a50, confirmed only called from
+// SetMenuState's own hardcoded transitions -- pausedmenu/briefing/victoryscreen) are
+// two SEPARATE mechanisms, not the same one as originally assumed. Rather than keep
+// guessing candidate functions via call-graph inspection (FUN_00518d00 had 21
+// callers -- too generic to be a single opcode's dispatch site), this hooks
+// FUN_00486990 (the registry search-by-name every "open"-shaped candidate function
+// calls, confirmed via FindCallers.java) directly and logs `_ReturnAddress()` --
+// the actual calling function's own return address -- alongside the name being
+// searched. This identifies the REAL caller empirically, directly, without needing
+// a live debugger session or further blind guessing.
+namespace {
+using RegistrySearchFn = int(__cdecl*)(void* ctx, const char* name);
+void* g_orig_00486990 = nullptr;
+
+int __cdecl Hook_00486990(void* ctx, const char* name)
+{
+    __try {
+        if (LooksLikeValidPointer(reinterpret_cast<uintptr_t>(name))) {
+            static char s_lastLoggedName[64] = {};
+            static void* s_lastLoggedRetAddr = nullptr;
+            void* retAddr = _ReturnAddress();
+            if (strncmp(s_lastLoggedName, name, sizeof(s_lastLoggedName) - 1) != 0 ||
+                retAddr != s_lastLoggedRetAddr) {
+                strncpy_s(s_lastLoggedName, name, _TRUNCATE);
+                s_lastLoggedRetAddr = retAddr;
+                char buf[160];
+                sprintf_s(buf, "[registry-search-diag] FUN_00486990(\"%s\") called from retAddr=%p",
+                           name, retAddr);
+                LogFromController(buf);
+            }
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        // Never let this crash the game over an unexpected name-pointer shape.
+    }
+    return reinterpret_cast<RegistrySearchFn>(g_orig_00486990)(ctx, name);
+}
+} // namespace
 
 void LogMenuRegistry(const char* tag)
 {
@@ -3581,29 +4312,6 @@ bool WasInteractHintRecentlyActive()
     return (GetTickCount() - g_lastInteractHintTickMs) < kInteractHintRecencyWindowMs;
 }
 
-// Live-reported 2026-08-01: on a modal popup with no native corner-hint of its own
-// (e.g. "Choose Game Mode" over Special Ops), NOTHING shows -- the user's own
-// correction after an initial wrong diagnosis: "the modal has no back[,] we need to
-// add one in the standard place." Unlike Back/Friends (which DO have a real native
-// "^N...^7" hint this project can intercept and replace), this modal has no such
-// call at all to hook -- there is nothing to suppress or redraw, a synthetic hint
-// has to be created from nothing. Tracks whether a REAL native corner hint (Back or
-// Friends, both resolved via ResolveMenuGlyphAssetNameForKeyName at the standard
-// corner position) fired recently, same short-recency-window convention as
-// WasInteractHintRecentlyActive above (a real hint persists across many consecutive
-// frames while active, so acting on a slightly-stale flag is imperceptible) -- if
-// nothing has, and a menu is genuinely open (IsMenuActive(), the same real gate bit
-// B's own ESC-forward already relies on, confirmed all session to correctly exclude
-// the root main menu -- there's nowhere to back out of there), synthesizes a "Back"
-// hint of this project's own at the exact same standard position the real
-// Back/Friends hints use (see InjectSyntheticBackHintIfNeeded, called every tick).
-DWORD g_lastNativeMenuCornerHintTickMs = 0;
-constexpr DWORD kMenuCornerHintRecencyWindowMs = 150;
-bool WasNativeMenuCornerHintRecentlyActive()
-{
-    return (GetTickCount() - g_lastNativeMenuCornerHintTickMs) < kMenuCornerHintRecencyWindowMs;
-}
-
 // Live-captured 2026-08-01 (proxy_d3d9.log): the real "Back ^2ESC^7" hint's own
 // native position, at 2560x1440 -- this is the "standard place" the user asked for
 // the synthetic Back hint below to reuse, so it lines up exactly with wherever a
@@ -3641,22 +4349,24 @@ extern "C" void __cdecl InjectSyntheticBackHintIfNeeded()
 {
     if (!g_modConfig.glyphIconOverlayEnabled) return;
     if (!IsMenuActive()) return;
-    if (IsInsideNestedMenu()) {
-        // Live-reported 2026-08-01: a nested modal (e.g. "Choose Game Mode" over
-        // Special Ops) with no native corner hint of its own left a STALE "Friends"
-        // (the obscured parent screen's own hint, which keeps firing every frame
-        // regardless) on screen. See IsInsideNestedMenu's own big comment -- being
-        // inside a nested modal at all means any corner-hint text currently firing
-        // is suspect (it may belong to the now-obscured parent), so always prefer
-        // this project's own Back hint here, unconditionally.
-        RequestSyntheticBackHint();
-        return;
-    }
-    // Still the root/outer screen -- only synthesize Back if nothing native fired
-    // recently, so a LEGITIMATE native hint (e.g. Friends, correct on this screen)
-    // is never overridden.
-    if (WasNativeMenuCornerHintRecentlyActive()) return;
+    // Live-reported 2026-08-01: simplified per explicit user direction after the
+    // focus-struct-based nested-modal detection was confirmed live to not apply to
+    // Special Ops' tile-row navigation at all. **Doc-audit correction, same day:**
+    // the OpenMenuByName-based g_inSpecOpsFlow this used to gate on was confirmed
+    // dead (never once true in any logged session) -- replaced with
+    // IsInsideSpecOpsNestedModal(), confirmed live via getfocuseditemname(). Friends
+    // is explicitly suppressed for the same condition in the menu-hint detection
+    // block above, so there's no competing native hint to worry about overriding
+    // incorrectly.
+    if (!IsInsideSpecOpsNestedModal()) return;
     RequestSyntheticBackHint();
+}
+
+// See the big comment above g_menuListItemOrdinalThisFrame. Called from
+// overlay_hud.cpp's Hook_EndScene, once per real rendered frame.
+extern "C" void __cdecl ResetMenuListItemOrdinalForFrame()
+{
+    g_menuListItemOrdinalThisFrame = 0;
 }
 
 // ---- HUD-text visibility-test state (task #6/#34 follow-up, 2026-07-21) ------------
@@ -4049,8 +4759,69 @@ void __cdecl Hook_DrawGlyphText(
                 LooksLikeValidPointer(reinterpret_cast<uintptr_t>(fontArg))) {
                 const DiagFont* font = reinterpret_cast<const DiagFont*>(fontArg);
                 if (IsMenuHintFont(font)) {
-                    size_t textLen = strlen(param_1);
-                    ColorHighlightSpan span = FindColorHighlightSpan(param_1, textLen);
+                    // Leaderboards special case (2026-08-01, quick completeness fix,
+                    // per explicit user instruction: "leaderboard should run off the
+                    // function key and be bound to back on controller"). Live-captured
+                    // real string: "Leaderboards ^2Right Mouse^7/^2F1^7" -- TWO
+                    // separate ^N...^7 spans in one string ("Right Mouse" and "F1"),
+                    // unlike every other menu hint (exactly one span each).
+                    // FindColorHighlightSpan below only ever finds the FIRST span
+                    // ("Right Mouse", which doesn't map to any single controller
+                    // button anyway), so this needs its own literal-prefix detection
+                    // instead -- same precedent as the gameplay Reload hint's bare-
+                    // literal-text match. Keys off the function-key half of the real
+                    // combo bind ("F1") and maps it to B -- there's no dedicated
+                    // separate leaderboard button on console; B is a pragmatic choice
+                    // for a quick completeness fix, not a claim console binds it there.
+                    constexpr float kMenuHintVerticalNudge = -18.0f; // matches the row's own empirical nudge
+                    // Main-title "Quit" (2026-08-01, user-requested visual completeness
+                    // fix). Confirmed via `.menu` file inspection (main_selection.menu)
+                    // its real action is `open quit_popmenu;` -- a real confirmation
+                    // dialog, not an instant exit. Per explicit user direction, input is
+                    // already correctly handled: B's existing ESC-forward call
+                    // (FUN_004d9850) already reaches this same action natively on this
+                    // screen -- this is visual-only, no new input synthesis. "Quit" itself
+                    // is a plain itemDef with no "^N...^7" span at all (confirmed live and
+                    // via the `.menu` file, `exp text "@MENU_QUIT"` with no bind-resolved
+                    // key text appended), so it needs its own literal-text match, same
+                    // precedent as the Leaderboards case right below. Case-SENSITIVE and
+                    // exact-match deliberately: the Special Ops hub list has its own,
+                    // separate "QUIT" item (all-caps, confirmed live via list-item-diag
+                    // captures) that leads to a different confirmation flow ("Are you sure
+                    // you want to quit?") not confirmed to be reachable via B's existing
+                    // ESC-forward the same way -- this must not also match that one.
+                    if (strcmp(param_1, "Quit") == 0) {
+                        char bAsset[32] = {};
+                        if (TryGetMenuGlyphAssetNameForKeyName("ESC", bAsset, sizeof(bAsset))) {
+                            // Live-reported 2026-08-01: without the same vertical nudge every
+                            // other corner hint in this file uses, the B icon rendered
+                            // spilling outside the "Quit" box's bottom-right edge. This item's
+                            // own p3 (995) matches Back/Friends' own baseline (also ~995)
+                            // exactly, where kMenuHintVerticalNudge already renders correctly --
+                            // applying the same nudge here for consistency.
+                            // Live-reported 2026-08-01: icon needed to move slightly left --
+                            // dropping the trailing space after "Quit" (present on every other
+                            // corner hint's prefix text) tightens the icon gap by exactly one
+                            // space-glyph's width, a small, precise nudge rather than adding a
+                            // new bespoke X-offset constant.
+                            RequestMenuHintOverlay(param_2, param_3 + kMenuHintVerticalNudge, "Quit", "", bAsset);
+                            suppressRealDraw = true;
+                        }
+                    }
+                    if (_strnicmp(param_1, "Leaderboards", 12) == 0) {
+                        char backAsset[32] = {};
+                        // "F1" resolves to PhysicalInput::Back (the real Back/Select/View
+                        // button, NOT the B face button used for ESC-forward) in
+                        // ResolveMenuGlyphAssetNameForKeyName -- per explicit user
+                        // correction, these are two distinct physical inputs.
+                        if (TryGetMenuGlyphAssetNameForKeyName("F1", backAsset, sizeof(backAsset))) {
+                            RequestMenuHintOverlay(param_2, param_3 + kMenuHintVerticalNudge,
+                                "Leaderboards ", "", backAsset);
+                            suppressRealDraw = true;
+                        }
+                    }
+                    size_t textLen = suppressRealDraw ? 0 : strlen(param_1);
+                    ColorHighlightSpan span = suppressRealDraw ? ColorHighlightSpan{} : FindColorHighlightSpan(param_1, textLen);
                     if (span.found) {
                         char highlighted[64] = {};
                         size_t copyLen = span.contentLen < sizeof(highlighted) - 1 ? span.contentLen : sizeof(highlighted) - 1;
@@ -4095,11 +4866,34 @@ void __cdecl Hook_DrawGlyphText(
                             // interact hint. RequestCustomHintOverlay's single slot could only
                             // hold one of them per frame; switched to RequestMenuHintOverlay's
                             // multi-slot pool (see overlay_hud.h) so both can coexist.
-                            constexpr float kMenuHintVerticalNudge = -18.0f;
-                            RequestMenuHintOverlay(param_2, param_3 + kMenuHintVerticalNudge, prefixText, suffixText,
-                                assetName);
+                            //
+                            // Live-reported 2026-08-01 (round 4, simplified per explicit user
+                            // direction after the focus-struct nested-modal theory was confirmed
+                            // live not to apply here at all): Special Ops' own "Friends" hint
+                            // keeps firing even under modals that either have no corner hint of
+                            // their own or render one through a path this project can't hook
+                            // (see the big comment above Hook_00544a50/g_inSpecOpsFlow). **Doc-
+                            // audit correction, 2026-08-01: g_inSpecOpsFlow was confirmed dead
+                            // (OpenMenuByName never fires for any Special Ops name in any logged
+                            // session) -- replaced with IsInsideSpecOpsNestedModal(), the
+                            // getfocuseditemname()-based signal (see its own big comment above),
+                            // which IS confirmed live to distinguish the nested modal from the
+                            // root list.** Suppress Friends specifically while inside the modal --
+                            // don't even request our own replacement for it, just hide the native
+                            // text -- since InjectSyntheticBackHintIfNeeded unconditionally shows
+                            // this project's own Back for the same condition.
+                            // Live-reported 2026-08-01: also suppress this same "Friends" hint
+                            // while the Friends list itself is open -- the underlying screen
+                            // doesn't know it's now obscured by that modal either, same root
+                            // cause as the Special Ops case above (see IsFriendsListOpen()'s own
+                            // comment).
+                            bool isFriendsHint = _stricmp(highlighted, "F") == 0;
                             suppressRealDraw = true;
-                            g_lastNativeMenuCornerHintTickMs = GetTickCount(); // see WasNativeMenuCornerHintRecentlyActive
+                            if (!(isFriendsHint && (IsInsideSpecOpsNestedModal() || IsFriendsListOpen()))) {
+                                constexpr float kMenuHintVerticalNudge = -18.0f;
+                                RequestMenuHintOverlay(param_2, param_3 + kMenuHintVerticalNudge, prefixText, suffixText,
+                                    assetName);
+                            }
                         }
                     }
                 }
@@ -4108,6 +4902,93 @@ void __cdecl Hook_DrawGlyphText(
             // Same rationale as every other read-only-turned-behavior block in this
             // file -- never let this crash the game over an unexpected param_1/fontArg
             // shape on some not-yet-seen call site.
+        }
+    }
+
+    // Highlighted-item A-glyph investigation (2026-08-01) -- DIAGNOSTIC ONLY, see
+    // the big comment above g_menuListItemOrdinalThisFrame. Any call that reached
+    // here (not already consumed as Back/Friends/Game Summary/Leaderboards above)
+    // and is plain fonts/smallFont text with NO "^N...^7" span is a CANDIDATE list
+    // item -- corner hints always have a span, so this naturally excludes them
+    // (still may catch unrelated decorative smallFont text with no span, e.g. a
+    // header -- a known, accepted imprecision for this diagnostic pass, per the
+    // scoping already agreed with the user).
+    if (!suppressRealDraw && g_modConfig.glyphIconOverlayEnabled) {
+        __try {
+            if (LooksLikeValidPointer(reinterpret_cast<uintptr_t>(param_1)) &&
+                LooksLikeValidPointer(reinterpret_cast<uintptr_t>(fontArg))) {
+                const DiagFont* font = reinterpret_cast<const DiagFont*>(fontArg);
+                if (IsMenuHintFont(font)) {
+                    size_t textLen = strlen(param_1);
+                    ColorHighlightSpan span = FindColorHighlightSpan(param_1, textLen);
+                    // Live-reported 2026-08-01: the ordinal count was thrown off by a
+                    // blank/whitespace-only text draw (a real, confirmed-live decorative
+                    // element -- almost certainly a per-item subtitle/stat companion the
+                    // .menu files gate on `visible when(getfocuseditemname() == "...")`,
+                    // which can legitimately render blank content while still firing a
+                    // draw call) landing BEFORE the real list items and shifting every
+                    // subsequent ordinal by one. Real navigable menu items are never
+                    // blank (`.menu` files always give them a real `exp text` locstring),
+                    // so blank/whitespace-only text is filtered out of the ordinal count
+                    // entirely rather than trying to special-case this one element.
+                    bool isBlank = true;
+                    for (size_t i = 0; i < textLen; ++i) {
+                        if (!isspace(static_cast<unsigned char>(param_1[i]))) { isBlank = false; break; }
+                    }
+                    if (!span.found && !isBlank) {
+                        int focusIndex = -1, itemCount = -1;
+                        bool haveFocus = TryGetCurrentMenuFocusIndex(focusIndex, itemCount);
+                        int selIndex = -1, selMaxIndexSeen = -1;
+                        bool haveSelection = TryGetCurrentSelectionGroupAndIndex(selIndex, selMaxIndexSeen);
+                        int ordinal = g_menuListItemOrdinalThisFrame;
+
+                        // Cross-check (2026-08-01, issue #51 follow-up): the ordinal-counting
+                        // signal alone was already confirmed live to be broken by background-
+                        // list bleeding (issue #51) -- a background list's own items land at
+                        // low ordinals while g_lastMenuListStruct's focusIndex/itemCount belong
+                        // to a completely different, actually-focused list. Requiring BOTH
+                        // independent signals (the struct-based focusIndex AND the
+                        // localvarstring-derived selIndex, from a completely separate native
+                        // mechanism) to agree with THIS SAME ordinal is a much stronger bar
+                        // than trusting either alone -- the two would have to be wrong in
+                        // exactly the same way to produce a false match. Does not yet check
+                        // group identity/item count (selMaxIndexSeen under-counts until the
+                        // player has visited a group's last item at least once this session,
+                        // so it isn't a reliable count to gate on) -- first live test of this
+                        // two-signal-agreement bar, may need tightening.
+                        bool trustworthyMatch = haveFocus && haveSelection &&
+                            focusIndex == ordinal && selIndex == ordinal;
+
+                        char buf[256];
+                        sprintf_s(buf, "[list-item-diag] ordinal=%d text=\"%.60s\" p2=%.1f p3=%.1f "
+                                        "focusIndex=%d itemCount=%d selGroup=\"%s\" selIndex=%d trustworthy=%d",
+                                   ordinal, param_1, param_2, param_3,
+                                   haveFocus ? focusIndex : -1, haveFocus ? itemCount : -1,
+                                   haveSelection ? g_currentSelGroupName : "?",
+                                   haveSelection ? selIndex : -1, trustworthyMatch ? 1 : 0);
+                        LogFromController(buf);
+
+                        if (trustworthyMatch) {
+                            // Redraw the item's own text ourselves (same "suppress native,
+                            // redraw prefix + icon via our own font" technique already shipped
+                            // for every other hint in this file) followed by a real A/Cross
+                            // glyph icon, instead of trying to measure the NATIVE font's glyph
+                            // widths (a path this project has never built/proven) -- reuses
+                            // RequestMenuHintOverlay exactly as the corner-hint system does.
+                            char aAsset[32] = {};
+                            if (TryGetMenuGlyphAssetNameForKeyName("ENTER", aAsset, sizeof(aAsset))) {
+                                char itemText[64] = {};
+                                strncpy_s(itemText, param_1, _TRUNCATE);
+                                RequestMenuHintOverlay(param_2, param_3, itemText, "", aAsset);
+                                suppressRealDraw = true;
+                            }
+                        }
+                        ++g_menuListItemOrdinalThisFrame;
+                    }
+                }
+            }
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            // Same rationale as every other read-only diagnostic in this file.
         }
     }
 
@@ -4890,10 +5771,6 @@ extern "C" void __cdecl InjectMenuInputTick()
     // B's ESC-forward, for the same reason: the gameplay-simulation tick this would
     // otherwise share with InjectControllerDpad halts entirely during a genuine pause.
     InjectControllerMenuNav();
-    // Nested-modal root tracking (2026-08-01) -- needs to run every tick to catch the
-    // false->true IsMenuActive() transition reliably; the actual DECISION using this
-    // state (InjectSyntheticBackHintIfNeeded) runs elsewhere, see below.
-    UpdateMenuRootListTracking();
     // Synthetic "Back" hint for modals with no native corner hint of their own
     // (2026-08-01) -- see its own big comment. NOT called from here (live-reported:
     // this 60Hz timer tick isn't synchronized with the render frame that consumes
@@ -5398,6 +6275,21 @@ const char* ResolveMenuGlyphAssetNameForKeyName(const char* rawKeyName)
         const char* assetName = GlyphAssetName(PhysicalInput::A, g_modConfig.glyphStyle);
         if (assetName && assetName[0] != '\0') return assetName;
     }
+    if (_stricmp(trimmed, "G") == 0) {
+        // Game Summary (2026-08-01, quick completeness fix, real capture: "Game
+        // Summary ^2G^7"). Per explicit user instruction: X on controller.
+        const char* assetName = GlyphAssetName(PhysicalInput::X, g_modConfig.glyphStyle);
+        if (assetName && assetName[0] != '\0') return assetName;
+    }
+    if (_stricmp(trimmed, "F1") == 0) {
+        // Leaderboards (2026-08-01, quick completeness fix) -- see the big comment
+        // at the Leaderboards call site in Hook_DrawGlyphText for the full real
+        // string this comes from. Per explicit user correction: the real Back/
+        // Select/View button (PhysicalInput::Back), NOT the B face button already
+        // used for ESC-forward -- these are two distinct physical inputs.
+        const char* assetName = GlyphAssetName(PhysicalInput::Back, g_modConfig.glyphStyle);
+        if (assetName && assetName[0] != '\0') return assetName;
+    }
     return "";
 }
 
@@ -5705,6 +6597,114 @@ void InstallAnalogInputHooks()
         sprintf_s(buf, "[hooks] MH_EnableHook(004dfd30 menu-focus-track) = %d", static_cast<int>(eFocus));
         LogFromController(buf);
     }
+
+    // OpenMenuByName hook (2026-08-01, issue #48 menu-glyph work) -- see the big
+    // comment above Hook_00544a50/g_inSpecOpsFlow. First time this project has
+    // hooked FUN_00544a50 itself (previously only referenced/documented via
+    // re_notes/iw5sp.md, never intercepted) -- purely reads the opened menu's own
+    // name string and forwards everything unmodified.
+    MH_STATUS sOpenMenu = MH_CreateHook(reinterpret_cast<LPVOID>(0x00544a50), &Hook_00544a50, &g_orig_00544a50);
+    sprintf_s(buf, "[hooks] MH_CreateHook(00544a50 open-menu-track) = %d", static_cast<int>(sOpenMenu));
+    LogFromController(buf);
+    if (sOpenMenu == MH_OK) {
+        MH_STATUS eOpenMenu = MH_EnableHook(reinterpret_cast<LPVOID>(0x00544a50));
+        sprintf_s(buf, "[hooks] MH_EnableHook(00544a50 open-menu-track) = %d", static_cast<int>(eOpenMenu));
+        LogFromController(buf);
+    }
+
+    // Local-var lookup trace hook (2026-08-01, A-glyph investigation continuation) --
+    // DISABLED, live-reported to prevent the game from launching at all (same failure
+    // signature as the FUN_00486990 revert below -- see that comment for the general
+    // lesson). FUN_00552e70's own decompile looked clean (no unaff_ESI/EDI register
+    // weirdness, simple two-arg shape), so a clean-looking signature is NOT sufficient
+    // evidence a function is safe to intercept -- call frequency/timing/calling-
+    // convention mismatches invisible to static analysis can still crash the game on
+    // hook install. Reverted immediately rather than investigated further with a game
+    // that won't even boot; do not re-enable without confirming (via a safer method,
+    // e.g. a live debugger breakpoint instead of a permanently-installed hook) that
+    // this specific function is actually safe to trampoline.
+    // MH_STATUS sLocalVar = MH_CreateHook(reinterpret_cast<LPVOID>(0x00552e70), &Hook_00552e70, &g_orig_00552e70);
+    // sprintf_s(buf, "[hooks] MH_CreateHook(00552e70 localvar-lookup-track) = %d", static_cast<int>(sLocalVar));
+    // LogFromController(buf);
+    // if (sLocalVar == MH_OK) {
+    //     MH_STATUS eLocalVar = MH_EnableHook(reinterpret_cast<LPVOID>(0x00552e70));
+    //     sprintf_s(buf, "[hooks] MH_EnableHook(00552e70 localvar-lookup-track) = %d", static_cast<int>(eLocalVar));
+    //     LogFromController(buf);
+    // }
+
+    // localvarstring getter hook (2026-08-01, issue #51 follow-up) -- see the big
+    // comment above Hook_00613ac0's own definition. Unlike the disabled attempt
+    // above, this targets a genuinely single-caller, opcode-specific function
+    // (confirmed via direct decompile + xref, not inference) and uses a naked-asm
+    // trampoline that preserves EAX/ECX/ESI exactly, the same proven-safe pattern
+    // as Hook_0057de60/Hook_0061f6f0 elsewhere in this file -- not a plain
+    // MinHook C-signature detour, which is what made the FUN_00552e70 attempt
+    // unsafe. Still a genuinely new hook on first live test; watch the first
+    // launch closely regardless.
+    MH_STATUS sLocalVarStr = MH_CreateHook(reinterpret_cast<LPVOID>(0x00613ac0), &Hook_00613ac0, &g_orig_00613ac0);
+    sprintf_s(buf, "[hooks] MH_CreateHook(00613ac0 localvarstring-track) = %d", static_cast<int>(sLocalVarStr));
+    LogFromController(buf);
+    if (sLocalVarStr == MH_OK) {
+        MH_STATUS eLocalVarStr = MH_EnableHook(reinterpret_cast<LPVOID>(0x00613ac0));
+        sprintf_s(buf, "[hooks] MH_EnableHook(00613ac0 localvarstring-track) = %d", static_cast<int>(eLocalVarStr));
+        LogFromController(buf);
+    }
+
+    // getfocuseditemname() hook (2026-08-01, issue #50 follow-up) -- see the big
+    // comment above Hook_00616230's own definition. Single confirmed caller, zero
+    // implicit input registers (only ESI for output) -- an even simpler shape than
+    // Hook_00613ac0 above. Diagnostic-only for now.
+    MH_STATUS sFocusedItem = MH_CreateHook(reinterpret_cast<LPVOID>(0x00616230), &Hook_00616230, &g_orig_00616230);
+    sprintf_s(buf, "[hooks] MH_CreateHook(00616230 focused-item-track) = %d", static_cast<int>(sFocusedItem));
+    LogFromController(buf);
+    if (sFocusedItem == MH_OK) {
+        MH_STATUS eFocusedItem = MH_EnableHook(reinterpret_cast<LPVOID>(0x00616230));
+        sprintf_s(buf, "[hooks] MH_EnableHook(00616230 focused-item-track) = %d", static_cast<int>(eFocusedItem));
+        LogFromController(buf);
+    }
+
+    // localvarint() hook (2026-08-01, issue #51 follow-up) -- see the big comment
+    // above Hook_00613b70's own definition. Same confirmed-safe EAX/ECX/ESI shape
+    // as Hook_00613ac0. Diagnostic-only for now.
+    MH_STATUS sLocalVarInt = MH_CreateHook(reinterpret_cast<LPVOID>(0x00613b70), &Hook_00613b70, &g_orig_00613b70);
+    sprintf_s(buf, "[hooks] MH_CreateHook(00613b70 localvarint-track) = %d", static_cast<int>(sLocalVarInt));
+    LogFromController(buf);
+    if (sLocalVarInt == MH_OK) {
+        MH_STATUS eLocalVarInt = MH_EnableHook(reinterpret_cast<LPVOID>(0x00613b70));
+        sprintf_s(buf, "[hooks] MH_EnableHook(00613b70 localvarint-track) = %d", static_cast<int>(eLocalVarInt));
+        LogFromController(buf);
+    }
+
+    // Cursor-draw suppression hook (2026-08-01, user-requested custom cursor) -- see
+    // the big comment above Hook_004d48f0's own definition. Plain C-signature detour
+    // (confirmed __cdecl via both decompile and disassembly), gated by return
+    // address so only the one cursor-specific call site among 31 real callers is
+    // affected.
+    MH_STATUS sCursorDraw = MH_CreateHook(reinterpret_cast<LPVOID>(0x004d48f0), &Hook_004d48f0, &g_orig_004d48f0);
+    sprintf_s(buf, "[hooks] MH_CreateHook(004d48f0 cursor-suppress) = %d", static_cast<int>(sCursorDraw));
+    LogFromController(buf);
+    if (sCursorDraw == MH_OK) {
+        MH_STATUS eCursorDraw = MH_EnableHook(reinterpret_cast<LPVOID>(0x004d48f0));
+        sprintf_s(buf, "[hooks] MH_EnableHook(004d48f0 cursor-suppress) = %d", static_cast<int>(eCursorDraw));
+        LogFromController(buf);
+    }
+
+    // Registry-search caller trace hook (2026-08-01) -- DISABLED, live-reported to
+    // prevent the game from launching at all. FUN_00486990 is called extremely
+    // early/frequently (14+ known callers, likely including boot-time menu
+    // registration -- see FUN_0050a350/RegisterMenuList) -- hooking it was unsafe in
+    // a way static analysis alone didn't catch. Reverted immediately rather than
+    // investigated further; do not re-enable without a much more cautious approach
+    // (e.g. gating the hook body itself behind a "safe to run yet" flag, or finding
+    // a lower-traffic call site closer to the actual menu-script action instead).
+    // MH_STATUS sRegSearch = MH_CreateHook(reinterpret_cast<LPVOID>(0x00486990), &Hook_00486990, &g_orig_00486990);
+    // sprintf_s(buf, "[hooks] MH_CreateHook(00486990 registry-search-track) = %d", static_cast<int>(sRegSearch));
+    // LogFromController(buf);
+    // if (sRegSearch == MH_OK) {
+    //     MH_STATUS eRegSearch = MH_EnableHook(reinterpret_cast<LPVOID>(0x00486990));
+    //     sprintf_s(buf, "[hooks] MH_EnableHook(00486990 registry-search-track) = %d", static_cast<int>(eRegSearch));
+    //     LogFromController(buf);
+    // }
 
     // task #23 follow-up (2026-07-20) -- boot-thunk resolution diagnostic, see the
     // big comment above Hook_FUN_00679680's definition for the full rationale/

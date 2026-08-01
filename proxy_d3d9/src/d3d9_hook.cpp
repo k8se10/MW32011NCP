@@ -69,8 +69,27 @@ WNDPROC g_origWndProc = nullptr;
 bool g_wndProcHooked = false; // only need to subclass once -- the game has one window
 HWND g_gameHwnd = nullptr;
 
+// Live-reported 2026-08-01 (custom cursor overlay): GetCursorPos+ScreenToClient
+// produced a position that grew increasingly wrong further from the top-left of the
+// screen -- classic symptom of a DPI-awareness-context mismatch between this DLL
+// and the host process (GetCursorPos silently returns virtualized/scaled
+// coordinates for a DPI-unaware caller, real physical pixels for a DPI-aware one).
+// Rather than fight that, capture the exact same WM_MOUSEMOVE client-coordinate
+// values the game's own WndProc already receives and uses for its own hit-testing
+// -- guaranteed to agree with whatever the game itself considers "the mouse is
+// here," since it's literally the same message data, no separate coordinate
+// system to reconcile.
+int g_lastMouseMoveClientX = -1;
+int g_lastMouseMoveClientY = -1;
+bool g_haveMouseMovePos = false;
+
 LRESULT CALLBACK HookWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+    if (msg == WM_MOUSEMOVE) {
+        g_lastMouseMoveClientX = static_cast<short>(LOWORD(lParam));
+        g_lastMouseMoveClientY = static_cast<short>(HIWORD(lParam));
+        g_haveMouseMovePos = true;
+    }
     InjectMenuInputTick();
     return CallWindowProcA(g_origWndProc, hwnd, msg, wParam, lParam);
 }
@@ -221,6 +240,20 @@ HRESULT WINAPI Hook_CreateDevice(void* This, UINT Adapter, DWORD DeviceType,
 extern "C" HWND GetGameWindow()
 {
     return g_gameHwnd;
+}
+
+// Exposed so overlay_hud.cpp's custom-cursor draw can position itself using the
+// exact same WM_MOUSEMOVE client-coordinate values the game's own WndProc already
+// received and used for its own hit-testing -- see the big comment above
+// g_lastMouseMoveClientX for why this replaced a GetCursorPos-based approach.
+// Returns false (leaving outX/outY untouched) until the very first WM_MOUSEMOVE
+// this session, which should always have happened well before any menu is visible.
+extern "C" bool GetLastMouseMoveClientPos(int& outX, int& outY)
+{
+    if (!g_haveMouseMovePos) return false;
+    outX = g_lastMouseMoveClientX;
+    outY = g_lastMouseMoveClientY;
+    return true;
 }
 
 // Called from dllmain.cpp's Direct3DCreate9 implementation with the real IDirect3D9*
