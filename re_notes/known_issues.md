@@ -57,7 +57,7 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#45](#45-config-auto-migration-added--existing-mw3ncp_configini-files-now-carry-forward-across-key-renames-and-retuned-defaults-2026-07-31-implemented--unit-tested-against-real-files-at-every-stage) — Config auto-migration — **Partially Resolved**
 - [#46](#46-critical--cant-fire-while-holding-breath-on-a-sniper--root-caused-via-existing-research-fixed-not-yet-live-confirmed-2026-07-31) — CRITICAL: can't fire while holding breath on a sniper — **Resolved**
 - [#47](#47-on-screen-top-right-notifications-startup-message--config-hot-reload--new-capability-first-real-render-hook-this-project-has-ever-had-2026-07-31-user-requested-qol) — On-screen notifications (startup message + config hot-reload) — **Resolved**
-- [#48](#48-roadmap-idea-high-value-render-controller-glyph-icons-as-independent-overlay-quads-instead-of-injecting-them-into-the-games-own-font-system-2026-07-31-user-identified-not-yet-implemented) — Render glyphs as independent overlay quads (not in-font injection) — **Investigating**
+- [#48](#48-roadmap-idea-high-value-render-controller-glyph-icons-as-independent-overlay-quads-instead-of-injecting-them-into-the-games-own-font-system-2026-07-31-user-identified-not-yet-implemented) — Render glyphs as independent overlay quads (not in-font injection) — **Resolved** (full custom-hint-redraw system, confirmed live: pickup/swap/buy-station/mantle/reload/grenade/ready-up, plus a critical crash-on-display-mode-change fix and a resolution-scaling fix)
 - [#49](#49-roadmap-idea-generalize-the-overlay-technique-to-arbitrary-in-game-text-not-just-button-glyphs--live-capture-block-original-render-redraw-with-a-custom-font-at-the-same-position-2026-07-31-user-identified-not-yet-implemented) — Generalize overlay technique to arbitrary in-game text/fonts — **Roadmap Idea**
 
 ---
@@ -7223,14 +7223,77 @@ is gone.
 
 ---
 
-## 48. Roadmap idea, high-value: render controller-glyph icons as INDEPENDENT overlay quads instead of injecting them into the game's own font system (2026-07-31, user-identified, not yet implemented)
+## 48. Controller-glyph icons rendered as a full custom hint-redraw system — RESOLVED, confirmed live (2026-07-31)
 
-**Status:** Investigating (2026-07-31, same day). User confirmed the overlay-quad
-pivot as the direction to pursue, with one hard requirement: the result must not
-be user-noticeable (i.e. it has to read as real, correctly-positioned in-game
-text/icon compositing, not a visibly separate/misaligned overlay). Open question
-#1 below (real position/sizing convention) is the load-bearing one for that
-requirement, so it's the first thing being resolved — see "Current round" below.
+**Status:** Resolved. What started as "overlay an icon on top of the game's own
+text" (see the original framing further down this entry) went through two full
+architecture pivots the same day and ended as a complete, working
+custom-hint-redraw system: pickup/swap, buy-station, mantle, Reload, grenade
+throwback, and Survival's ready-up prompt all now suppress the game's own native
+draw and render themselves (prefix text + real controller-glyph icon + suffix
+text, this project's own embedded font) at the correct position, confirmed
+correctly centered/aligned across all three `GlyphStyle` values, working while
+paused is correctly suppressed, and NOT applied to main-menu UI hints (which
+keep native rendering, since their bind mapping differs from gameplay binds).
+Two additional CRITICAL bugs surfaced during hardening and are both fixed and
+user-confirmed live — see "Round 3" at the end of this entry for both:
+1. Changing display mode crashed the whole game (a graceful
+   `Direct3DDevice9::Present failed` engine dialog, not a raw crash — audio kept
+   running). Root cause: this engine doesn't call `Reset()` on a display-mode
+   change, it destroys the whole device and calls `CreateDevice` again from
+   scratch — every texture this project had cached against the old, now-dead
+   device was left dangling.
+2. The whole overlay's position/size was only ever correct at 1920x1080 --
+   at other resolutions (reported at 1440p) text/icons landed badly out of
+   place. Root cause: `GetClientRect` on the game's window isn't reliable
+   ground truth for this engine's real backbuffer size.
+
+Full round-by-round trail (including the original 2026-07-31 framing/open
+questions this investigation started from) is kept below for continuity.
+
+**SECOND PIVOT, same day: replace the whole in-game hint instead of overlaying an
+icon on top of it.** Two live rounds of "draw an icon on top of the game's own
+text" (see "Current round" below for both) each landed visibly off after
+correcting the previous round's specific bug (first: warped/non-square icon,
+wrong axis scale; second: icon rendered nowhere near the real text even after
+squaring it, and a debug marker proved the raw `Hook_DrawGlyphText` position
+params aren't in the same coordinate space the game's own text ultimately
+renders in — real cause not fully pinned down; see the "position debugging"
+sub-section below for the Ghidra trail). User's call: stop chasing pixel-perfect
+alignment against the game's own rendering and instead **suppress the real draw
+entirely and render the whole hint ourselves** (prefix text + real icon + suffix
+text, sequentially, using this project's own embedded font) — since there's no
+game-drawn text left to align against, only the hint's approximate STARTING
+position matters, which is far more forgiving than per-character precision.
+**Implemented and deployed same day, not yet live-tested**:
+- `IsGameplayHintFont()` (`analog_input_hooks.cpp`) restricts this to the two
+  real fonts actually used for in-game gameplay hints (`fonts/extraBigFont`,
+  `fonts/hudSmallFont`, confirmed via `hud-font-id` captures) — explicitly
+  EXCLUDES menu UI hints like `"Friends ^2F^7"` (`fonts/smallFont`) and main-menu
+  titles (`fonts/hudBigFont`). **User explicitly confirmed this exclusion is
+  correct** and separately noted the real console mapping for Friends is Y, not
+  X — this project's gameplay keybind table (`kKeyActionTable`) would have
+  mapped it wrong anyway if it were allowed to apply there, since it's scoped to
+  gameplay binds, not menu-specific ones.
+- `ColorHighlightSpan` extended with `markerStart`/`markerEnd` (the full
+  `^N...^7` run including both tokens) so the string can be cleanly split into
+  prefix/suffix once the highlighted content becomes an icon instead of text.
+- `overlay_hud.cpp` gained a second, independent rendering path
+  (`RequestCustomHintOverlay`/`DrawCustomHintIfRequested`): two LEFT-aligned text
+  textures (prefix/suffix, reusing the toast's own outline-compositing technique
+  via a generalized `alignFlag` parameter on `RenderMaskLuminance`/
+  `RenderTextToArgbBuffer`), measured via `GetTextExtentPoint32A` so the icon
+  sits with no gap/overlap between the two text pieces, and `DrawGenericTexturedQuad`
+  gained UV-range parameters so a text texture's actual (measured) width can be
+  drawn without stretching or including empty canvas.
+- `Hook_DrawGlyphText` now sets `suppressRealDraw` when this path handles a
+  string, skipping the call to the real trampoline entirely for that draw.
+- Starting position still uses the best surviving hypothesis from the prior
+  overlay-alignment attempt (`param_2 * param_5`, `param_3 * param_6` — see
+  "position debugging" below) — not yet independently re-verified now that only
+  approximate placement matters, but carried over as the best available guess.
+
+---
 
 **Direction refined same day, user-specified:** overlay the glyph icon directly
 ON TOP OF the existing button-prompt character (usually F or E) within the real
@@ -7410,6 +7473,163 @@ is a real architectural decision worth confirming with the user explicitly
 before abandoning the in-font approach's own, separately-already-done work.
 Not started this session; a good candidate for the next dedicated glyph-work
 session per [[project_post_break_priorities]].
+
+---
+
+## Round 3 (2026-07-31, same day continued): full custom-hint-redraw system built out, then two CRITICAL post-ship bugs found and fixed
+
+Everything above this round was still "not yet live-tested" / open questions.
+This round is where the custom-hint-redraw pivot (already scaffolded above)
+was actually built out feature-by-feature against live playtests, then
+hardened against two real, user-reported CRITICAL bugs.
+
+**Detection paths implemented (`analog_input_hooks.cpp`'s `Hook_DrawGlyphText`),
+all suppressing the real draw and calling `RequestCustomHintOverlay`:**
+- **Highlighted-span hints** (pickup/swap, buy-station, mantle) — parsed via
+  `FindColorHighlightSpan`'s `markerStart`/`markerEnd`, split into prefix/
+  suffix text around the real `^N...^7` button-name span. A real bug here:
+  the extracted highlighted text wasn't trimmed, so mantle's `" Space "`
+  never matched a plain `"SPACE"` comparison and its position nudge silently
+  never applied — fixed by trimming in place before the comparison.
+- **Live weapon-name continuation** — a pickup hint's weapon name (e.g.
+  `" Model 1887"`) draws as its own SEPARATE call sharing the same font and Y
+  position as the just-suppressed hint, with no color span of its own.
+  Detected via `g_awaitingHintContinuation*` state and appended live
+  (`AppendCustomHintSuffix`) — nothing hardcoded, read straight off the real
+  string.
+- **Reload** — has no button-name span at all natively, just the bare literal
+  string `"Reload"`. Detected via a case-insensitive literal match (a
+  different code path from the span-based hints), synthesizes `"Press "` +
+  pulsing-icon + `" To Reload"` (only the "Press "/" To " template text is
+  this project's own addition). Console-accurate pulsing icon: a smooth
+  sine-wave alpha fade (~1200ms period, not a hard on/off blink — corrected
+  live same day after an initial blink implementation read wrong), text
+  stays solid throughout.
+- **Grenade throwback** and **Survival ready-up** — both non-standard
+  prompts with no entry in the normal bind→icon table
+  (`ResolveGlyphAssetNameForKeyName`), so both got explicit hardcoded special
+  cases: the real combo-bind text `"G or Middle Mouse"` → RB/R1, and `"F5"`
+  (Survival's real native ready-up key) → Y, matching this project's own
+  Y-holds-to-ready-up mapping (issue #5).
+
+**Position/sizing bugs found and fixed via direct screenshot pixel-measurement**
+(the user's explicit, standing methodology for this feature — theorizing from
+engine knowledge alone repeatedly produced visibly wrong results and was
+called out directly: "why not work it out from my actual full screen
+screenshots"):
+- Icon aspect ratio: RB/R1 (a real 94x54 wide source PNG, unlike X/A's
+  roughly-square ~70x70) was being squeezed into a fixed square box — fixed
+  by deriving draw width from the source PNG's own real aspect ratio, height
+  held fixed.
+- Icon-to-text gap read as "massive" (~26px for a ~36px icon) — caused by
+  `RenderMaskLuminance`'s hardcoded 8px left margin showing up as dead space
+  on these LEFT-aligned segments (harmless for the toast's own right-aligned
+  use) — fixed by cropping the UV source past that known-empty margin instead
+  of shifting the quad, plus tightening the gap constant itself.
+- Text clipping the last character (e.g. the "s" in "Press") — the plain
+  `GetTextExtentPoint32A` measurement didn't account for that same 8px margin
+  or italic overhang — fixed by padding the DRAWN width (not the cursor
+  advance) by an extra margin.
+- Pickup/buy-station/Reload centered on real screen width (using total
+  measured content width); mantle and ready-up stay left-anchored near their
+  own native sprite/HUD slot instead.
+- Reload's Y was initially inherited from ITS OWN native p3 (626, a
+  genuinely different UI slot) landing at "right vertical middle" instead of
+  below the weapon like the other hints — fixed with a hardcoded row-Y
+  constant matching pickup/buy-station's own resolved position instead.
+
+**Other bugs fixed:** the whole overlay kept drawing while the game was
+paused (render-frame draw isn't naturally gated by the simulation-frame pause
+the rest of this project's hooks already respect) — gated behind the existing
+`IsMenuActive()` check. Reload and an active interact hint could show
+simultaneously — added a short (100ms) recency window so Reload suppresses
+itself if an interact hint fired very recently, since draw order between the
+two within one frame isn't controlled by this project.
+
+**Config verified, not just assumed:** confirmed (grep + a `FindResourceA`
+check against the built DLL) that every icon resolution path
+(`ResolveGlyphAssetNameForKeyName` → `GlyphAssetName`) respects the live
+`[Bindings] GlyphStyle` setting, and that all required assets (X, A, RB
+across Xbox360/XboxModern/PlayStation) are actually embedded in the DLL.
+
+---
+
+### CRITICAL bug #1: changing display mode crashed the whole game
+
+**User report, verbatim:** "still crashes on display mode change but audio
+still running" — a real `Direct3DDevice9::Present failed: An undetermined
+error occurred` dialog box, not a raw access-violation crash (explains the
+audio continuing: the main thread was blocked in the dialog's own message
+loop, not dead).
+
+**First attempt (defensive, later found insufficient on its own):** added an
+`IDirect3DDevice9::Reset` hook that releases every texture this project owns
+before the real `Reset()` runs, reasoning that Reset() needs D3DPOOL_DEFAULT
+resources released first (this project's own resources are all
+D3DPOOL_MANAGED, which the D3D9 runtime is supposed to survive automatically,
+but the hook was added defensively anyway since the crash predated any live
+debugging). Built and shipped; user re-tested — **still crashed**.
+
+**Root cause, found via the project's own log rather than more guessing:**
+checked `proxy_d3d9.log` and found `Hook_Reset`'s own "Reset() called" line
+**never appears anywhere** after a display-mode change — but a SECOND real
+`[d3d9-hook] CreateDevice called` log line does, well after the first
+device's install. This engine does not call `Reset()` on a display-mode
+change at all: it destroys the entire `IDirect3DDevice9` and calls
+`CreateDevice` again from scratch. Every texture this project had cached
+(toast, hint prefix/suffix, glyph icons, debug marker) was created against
+the OLD, now-destroyed device — using those stale COM pointers against the
+NEW device on the very next `EndScene` is invalid cross-device resource
+usage, which is what actually produced the Present-failure dialog.
+
+**Fix:** `d3d9_hook.cpp`'s `Hook_CreateDevice` now tracks whether a device
+already existed (`g_deviceEverCreated`); on every call after the first, it
+calls a new `OnDeviceRecreated()` (`overlay_hud.cpp`/`.h`) which releases all
+cached textures the same way `Hook_Reset` does, so they lazily recreate
+against the new device. The `Reset()` hook was kept too, in case some other
+mode-change path does go through a genuine `Reset()`. **User-confirmed live:
+"the crash is fixed now."**
+
+### CRITICAL bug #2: glyphs/text positioned and sized wrong at non-1080p resolutions
+
+**User report** (via a separate findings note): "the glyphs dont scale
+properly across different sized/res monitors, also it locks res to 1080p we
+need to make it work with all resolutions cleanly." Every position/size
+constant this feature uses (icon size, gaps, margins, font height, the
+empirical position nudges) was tuned and validated ONLY at 1920x1080, the one
+resolution where a missing scale step is invisible.
+
+**First fix attempt:** added `GetResolutionScale()` (real client
+width/1920, height/1080, read via the game window's `GetClientRect`) and
+threaded it through every position and size constant. Built and shipped;
+user re-tested at 1440p — **Reload's prompt still landed far too low on
+screen** (pixel-measured against the real screenshot: ~87% down the screen
+vs. an intended ~65%, a mismatch far bigger than the expected 1440p/1080p
+ratio, roughly matching that ratio SQUARED rather than applied once — pointed
+at either a double-scaling bug or a bad "real screen size" reading, not
+resolved by pure arithmetic alone).
+
+**User's architectural correction:** "let's not make res a factor except for
+size scaling and just do things proportional to the edges + centre of the
+screen" — i.e. stop reasoning about "design space vs. real space" and just
+compute position as a direct proportion of the real screen's edges/center.
+
+**Actual root cause, found by questioning the "real screen size" source
+itself rather than the position formula:** `GetClientRect` on the game's
+window is not reliable ground truth for this old engine's real D3D9
+backbuffer size — a window's client area is not guaranteed to match the
+actual render target 1:1 for an engine like this one (render-resolution/
+supersampling settings, etc.), and this project's own overlay quads
+(`D3DFVF_XYZRHW`, pre-transformed) draw directly into the REAL backbuffer's
+pixel space, not the window's. Switched `GetResolutionScale`/added
+`GetRealScreenSize` to query `IDirect3DDevice9::GetViewport` directly instead
+— the actual pixel space this project's own quads render into — falling back
+to `GetClientRect` only if that call ever fails. Also fixed the horizontal-
+centering code, which had been calling its OWN separate `GetClientRect`
+instead of using the same viewport-based source as everything else — two
+different "real screen width" readings disagreeing with each other would
+have broken centering on its own, independent of the main bug. **User-
+confirmed live: "fixed now."**
 
 ---
 

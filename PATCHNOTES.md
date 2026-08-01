@@ -34,23 +34,28 @@ to check for even on this new version; log each as its own
   self-contained now; nothing extra to install. SIL Open Font License 1.1,
   credited in README.md's Credits section.
 
-### Investigated-not-resolved
-- **Controller-glyph icons, architecture pivot underway (`re_notes/known_issues.md`
-  issue #48).** Decided to pursue rendering the 106 already-extracted glyph icons as
-  independent overlay quads (reusing v0.2.5's new `EndScene`-based render capability)
-  drawn directly on top of the existing F/E button-prompt character within real
-  interact-hint text (not replacing the whole hint sentence), instead of continuing
-  to inject glyph art into the game's own font system. A new read-only diagnostic,
-  `[Experimental] HudGlyphPositionLogging` (default off), on the already-installed,
-  already-proven-safe `Hook_DrawGlyphText` hook logs the full raw parameter set for a
-  given hint string, plus per-character pixel-offset math from the font's own
-  glyph metrics. **Live-tested 2026-07-31**: confirmed real x/y position and a
-  uniform scale factor among the hook's params, and found the drawn text itself
-  already marks the button-name portion with the engine's own `^N...^7` color-code
-  convention — a more robust way to locate it than the bind-resolver hook, which
-  (separately, see issue #35, reopened) failed to return a plausible value even once
-  during this test. No icon is drawn yet; next step is confirming the color-highlight
-  span detection against a fresh playtest.
+### Added
+- **Controller-glyph icons for real in-game interact hints, confirmed live
+  (`re_notes/known_issues.md` issue #48).** After two overlay-alignment attempts
+  landed visibly off, the game's own hint text is now fully suppressed and this
+  project draws the whole thing itself (prefix text + a real controller-glyph icon
+  + suffix text, own embedded font, matching the active `[Bindings] GlyphStyle`).
+  Covers weapon pickup/swap, buy-station, mantle, Reload (a console-style pulsing
+  icon with static "Press X To Reload" text), grenade throwback (RB/R1), and
+  Survival's ready-up prompt (F5→Y). Correctly suppressed while paused; does NOT
+  apply to main-menu UI hints (different, non-gameplay bind mapping).
+
+### Fixed
+- **CRITICAL: changing display mode crashed the whole game.** Root cause: this
+  engine destroys and fully recreates its Direct3D device on a display-mode
+  change instead of calling `Reset()` on the existing one — every texture this
+  project had cached against the old device was left dangling, corrupting the
+  next frame. Fixed by releasing all cached textures whenever a new device is
+  detected. See `re_notes/known_issues.md` issue #48.
+- **Controller-glyph hints were positioned/sized for 1920x1080 only** and broke
+  at other resolutions (reported at 1440p). Root cause: the window's client
+  rect isn't reliable ground truth for this engine's real backbuffer size —
+  now read directly from the D3D9 device's own viewport instead. See issue #48.
 
 ---
 

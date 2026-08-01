@@ -189,6 +189,20 @@ HRESULT WINAPI Hook_CreateDevice(void* This, UINT Adapter, DWORD DeviceType,
     if (SUCCEEDED(hr) && DeviceType == kD3DDEVTYPE_HAL) {
         InstallWndProcHook(hFocusWindow);
         if (ppReturnedDeviceInterface && *ppReturnedDeviceInterface) {
+            // Live-reported 2026-07-31 CRITICAL bug: "changing display mode crashes the
+            // whole game." Confirmed via proxy_d3d9.log that this engine does NOT call
+            // IDirect3DDevice9::Reset on a display-mode change -- it destroys the whole
+            // device and calls CreateDevice again from scratch (this exact log line
+            // fires a second time, well after the first device's install). See
+            // overlay_hud.h's own OnDeviceRecreated comment for the full trail. Detected
+            // here via g_deviceEverCreated: every call after the first means the
+            // previous device (and every texture this project cached against it) is
+            // already gone.
+            static bool g_deviceEverCreated = false;
+            if (g_deviceEverCreated) {
+                OnDeviceRecreated();
+            }
+            g_deviceEverCreated = true;
             InstallEndSceneHook(*ppReturnedDeviceInterface);
             ShowStartupMessage();
         }

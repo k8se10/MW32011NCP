@@ -34,24 +34,42 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <wincodec.h>
+#include <shlwapi.h>
 #include "../third_party/minhook/include/MinHook.h"
 #include "mod_config.h"
 #include "overlay_hud.h"
 #include "../resource.h"
 
+#pragma comment(lib, "windowscodecs.lib")
+#pragma comment(lib, "ole32.lib")
+#pragma comment(lib, "shlwapi.lib")
+
 extern void LogFromController(const char* msg);
 extern "C" HWND GetGameWindow(); // defined in d3d9_hook.cpp
+// Live-reported 2026-08-01: calling this from the WndProc/SetTimer tick (~60Hz,
+// asynchronous relative to rendering) caused a visible flicker -- the menu-hint slot
+// pool is consumed and reset once per RENDERED frame (EndScene), and on any frame
+// where the independent 60Hz timer tick didn't happen to fire first, nothing was
+// requested that frame, so it blinked off. Moved to be called from here, in
+// Hook_EndScene, so it runs on the EXACT SAME per-frame cadence as the consumption
+// that follows it -- same reason the native corner hints (Back/Friends, requested
+// from Hook_DrawGlyphText, which always runs before this frame's own EndScene)
+// never had this problem to begin with.
+extern "C" void __cdecl InjectSyntheticBackHintIfNeeded(); // defined in analog_input_hooks.cpp
 
 namespace {
 
 // ---- Vtable indices (stable D3D9 COM layout, see file header comment) -------------
 constexpr int kEndSceneVtableIndex = 42;          // IDirect3DDevice9::EndScene
+constexpr int kResetVtableIndex = 16;             // IDirect3DDevice9::Reset
 constexpr int kCreateTextureVtableIndex = 23;     // IDirect3DDevice9::CreateTexture
 constexpr int kSetTextureVtableIndex = 65;        // IDirect3DDevice9::SetTexture
 constexpr int kSetFVFVtableIndex = 89;            // IDirect3DDevice9::SetFVF
 constexpr int kSetRenderStateVtableIndex = 57;    // IDirect3DDevice9::SetRenderState
 constexpr int kGetRenderStateVtableIndex = 58;    // IDirect3DDevice9::GetRenderState
 constexpr int kSetTextureStageStateVtableIndex = 67; // IDirect3DDevice9::SetTextureStageState
+constexpr int kGetViewportVtableIndex = 48;       // IDirect3DDevice9::GetViewport
 constexpr int kDrawPrimitiveUPVtableIndex = 83;   // IDirect3DDevice9::DrawPrimitiveUP
 constexpr int kSetVertexShaderVtableIndex = 92;   // IDirect3DDevice9::SetVertexShader
 constexpr int kGetVertexShaderVtableIndex = 93;   // IDirect3DDevice9::GetVertexShader
@@ -97,6 +115,17 @@ typedef HRESULT(WINAPI* CreateTexture_t)(void* This, UINT Width, UINT Height, UI
                                           DWORD Usage, DWORD Format, DWORD Pool,
                                           void** ppTexture, HANDLE* pSharedHandle);
 typedef HRESULT(WINAPI* GetSurfaceLevel_t)(void* This, UINT Level, void** ppSurfaceLevel);
+// Matches real D3DVIEWPORT9 layout exactly. Live-reported 2026-07-31: GetClientRect on
+// the game's HWND is NOT reliable ground truth for "real screen pixels" -- this old
+// engine's actual D3D9 backbuffer/render target can legitimately differ from the
+// window's client area (render-resolution/supersampling settings, etc.), and our own
+// quads (D3DFVF_XYZRHW, pre-transformed) draw directly into the REAL backbuffer's pixel
+// space, not the window's. GetViewport reads that real space directly from the device
+// itself -- the actual "edges of the screen" our own coordinate math needs to be
+// proportional to, immune to any window/DPI-vs-backbuffer mismatch GetClientRect can't
+// see.
+struct D3DViewport9 { DWORD X, Y, Width, Height; float MinZ, MaxZ; };
+typedef HRESULT(WINAPI* GetViewport_t)(void* This, D3DViewport9* pViewport);
 struct LockedRect { INT Pitch; void* pBits; }; // matches real D3DLOCKED_RECT layout exactly
 typedef HRESULT(WINAPI* SurfaceLockRect_t)(void* This, LockedRect* pLockedRect, const RECT* pRect, DWORD Flags);
 typedef HRESULT(WINAPI* SurfaceUnlockRect_t)(void* This);
@@ -130,6 +159,140 @@ bool g_overlayActive = false;
 void* g_textTexture = nullptr;        // IDirect3DTexture9*, created lazily, kept for the DLL's lifetime
 char g_textureRenderedFor[160] = {};  // which message string the texture currently shows
 
+// Set once by LoadOverlayFonts (DllMain, DLL_PROCESS_ATTACH) -- needed here too so the
+// glyph-icon loader below can FindResourceA against THIS DLL's own embedded resources
+// (proxy_d3d9.rc) without threading the handle through every call site separately.
+HMODULE g_selfModule = nullptr;
+
+// ---- Controller-glyph icon overlay state (issue #48, 2026-07-31) -----------------
+constexpr int kMaxCachedGlyphIcons = 64; // real asset count is 47; headroom, not exact
+struct GlyphIconEntry { char assetName[32]; void* texture; int width; int height; };
+GlyphIconEntry g_glyphIconCache[kMaxCachedGlyphIcons] = {};
+int g_glyphIconCacheCount = 0;
+
+// A single pending request, refreshed every frame the caller (Hook_DrawGlyphText)
+// still wants it shown -- NOT a queue. This project's glyph work so far only ever
+// resolves one hint at a time; multi-hint support (issue #48's own open question #4)
+// would need a real per-hint list instead, deliberately not built ahead of need.
+char g_pendingIconAssetName[32] = {};
+float g_pendingIconX = 0.0f, g_pendingIconY = 0.0f, g_pendingIconW = 0.0f, g_pendingIconH = 0.0f;
+bool g_pendingIconRequestedThisFrame = false;
+
+// TEMPORARY debug scaffolding (2026-07-31, issue #48 position-tuning round) -- draws
+// a small solid-red marker at the raw (param_2, param_3) point Hook_DrawGlyphText
+// receives, with NO offset/scale applied, so a live screenshot can show exactly what
+// that raw point anchors relative to the real text (top-left? baseline? center?) --
+// the first live icon placement was visually "way off," and guessing a second
+// correction blind risks another wasted round. Remove once the real anchor
+// convention is confirmed and the icon math below is corrected to match.
+void* g_debugMarkerTexture = nullptr; // a single 1x1 white pixel, tinted via diffuse
+constexpr int kMaxDebugMarkerSlots = 4;
+float g_pendingMarkerX[kMaxDebugMarkerSlots] = {};
+float g_pendingMarkerY[kMaxDebugMarkerSlots] = {};
+bool g_pendingMarkerRequestedThisFrame[kMaxDebugMarkerSlots] = {};
+constexpr DWORD kDebugMarkerColors[kMaxDebugMarkerSlots] = {
+    0xFFFF0000, // slot 0: red
+    0xFF00FF00, // slot 1: green
+    0xFFFFFF00, // slot 2: yellow
+    0xFF00FFFF, // slot 3: cyan
+};
+
+// ---- Custom in-game hint overlay (2026-07-31 pivot, issue #48/#49) ----------------
+//
+// Replaces trying to overlay a glyph icon on top of the game's OWN pixel-exact text
+// rendering (issue #48's original plan -- proved fiddly to line up precisely across
+// different fonts/scales) with fully replacing the hint's on-screen text: the real
+// draw call is suppressed entirely (Hook_DrawGlyphText skips forwarding to the real
+// trampoline for calls this feature handles) and this project draws the WHOLE hint
+// itself -- prefix text, the real controller-glyph icon, suffix text -- using its own
+// embedded font and its own layout math. No pixel-perfect alignment against the
+// game's own font metrics needed anymore, since there's no game-drawn text left to
+// align against. Only used for real in-game hints (gated by font name, see
+// IsGameplayHintFont in analog_input_hooks.cpp) -- NOT applied to main-menu UI hints
+// (e.g. "Friends F"), which keep rendering natively.
+void* g_hintPrefixTexture = nullptr;
+void* g_hintSuffixTexture = nullptr;
+char g_hintPrefixRenderedFor[128] = {};
+char g_hintSuffixRenderedFor[128] = {};
+int g_hintPrefixLastFontHeight = 0; // resolution-scaling cache invalidation, see EnsureLeftAlignedTextTexture
+int g_hintSuffixLastFontHeight = 0;
+int g_hintPrefixMeasuredWidth = 0;
+int g_hintSuffixMeasuredWidth = 0;
+
+char g_pendingHintPrefixText[128] = {};
+char g_pendingHintSuffixText[128] = {};
+char g_pendingHintAssetName[32] = {};
+float g_pendingHintX = 0.0f, g_pendingHintY = 0.0f;
+bool g_pendingHintRequestedThisFrame = false;
+bool g_pendingHintCenterOnScreen = false; // set by RequestCustomHintOverlay's own caller
+bool g_pendingHintFlashIcon = false; // Reload prompt only -- see RequestCustomHintOverlay's own comment
+
+// ---- Menu-hint overlay -- MULTI-SLOT, unlike the single gameplay slot above --------
+//
+// Live-reported 2026-08-01: "Friends doesn't show on some screens" / "Friends stays
+// on screen when it should say Back." Root cause: unlike a gameplay interact hint
+// (confirmed, all session, to only ever have ONE on screen at a time), MW3's menu UI
+// shows a persistent LEGEND BAR -- multiple hints (e.g. "Back" and "Friends") drawn
+// SIMULTANEOUSLY, every frame, as separate Hook_DrawGlyphText calls. The gameplay
+// hint's single g_pendingHint* slot above can only hold one request per frame --
+// whichever menu hint's draw call happened to run last in a given frame silently won
+// that one slot, and the other's native text was suppressed with nothing drawn in
+// its place. This is a SEPARATE small pool of slots (own textures, own state) so
+// menu hints don't fight over one slot; the gameplay path above is untouched.
+constexpr int kMaxMenuHintSlots = 4; // MW3's own legend bars never observed to need more than 2 at once; headroom for a 3rd/4th without another resize
+struct MenuHintSlot {
+    char prefixText[128];
+    char suffixText[128];
+    char assetName[32];
+    float x, y;
+    void* prefixTexture;
+    void* suffixTexture;
+    char prefixRenderedFor[128];
+    char suffixRenderedFor[128];
+    int prefixLastFontHeight;
+    int suffixLastFontHeight;
+    int prefixMeasuredWidth;
+    int suffixMeasuredWidth;
+};
+MenuHintSlot g_menuHintSlots[kMaxMenuHintSlots] = {};
+int g_menuHintSlotCountThisFrame = 0; // how many of the slots above are live for the CURRENT frame
+
+// In-game hint text renders noticeably larger than the toast notification's own 20px
+// (live-reported 2026-07-31: default 20px read as too small next to a 34px icon,
+// "text scaling is ass") -- its own constant, independent of kTextureHeight/the
+// toast's own font size, so tuning one never affects the other.
+constexpr int kHintFontHeightPx = 30;
+constexpr float kHintIconSize = 42.0f; // sized to match kHintFontHeightPx, not the old flat 34px
+
+// Extra pixels added on top of the measured text width before cropping a rendered
+// segment's texture (see DrawCustomHintIfRequested) -- RenderMaskLuminance always
+// draws with an 8px left margin (see its own DrawTextA rect below) that
+// GetTextExtentPoint32A's measurement doesn't include, and italic text's slant can
+// extend a few pixels past its own nominal advance width. Without this, live testing
+// 2026-07-31 showed the last character of a segment (e.g. the "s" in "Press")
+// visibly clipped off. Generous rather than exact -- a little extra transparent
+// canvas showing costs nothing, a clipped glyph is very visible.
+constexpr int kHintTextWidthMarginPx = 20;
+
+// Measures how wide `text` actually renders at the given font size -- needed so the
+// prefix/icon/suffix pieces can be placed sequentially with no gap or overlap, since
+// each is rendered into a fixed-size (kTextureWidth x kTextureHeight) canvas that's
+// almost always wider than the actual text.
+int MeasureTextWidthPx(const char* text, bool italic, int fontHeightPx)
+{
+    HDC screenDC = GetDC(nullptr);
+    HFONT font = CreateFontA(fontHeightPx, 0, 0, 0, FW_DONTCARE, italic ? TRUE : FALSE, FALSE, FALSE,
+                              ANSI_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                              ANTIALIASED_QUALITY, DEFAULT_PITCH, "Barlow Condensed SemiBold");
+    HFONT oldFont = static_cast<HFONT>(SelectObject(screenDC, font));
+    SIZE sz = {};
+    GetTextExtentPoint32A(screenDC, text, static_cast<int>(strlen(text)), &sz);
+    SelectObject(screenDC, oldFont);
+    DeleteObject(font);
+    ReleaseDC(nullptr, screenDC);
+    return sz.cx;
+}
+
 // Renders `text` into a fresh kTextureWidth x kTextureHeight top-down 32bpp memory
 // bitmap (a plain GDI DC/DIB, never touches D3D9), drawing it once at each (dx,dy) in
 // `offsets` in white on a black background, then extracts each pixel's own luminance
@@ -139,7 +302,8 @@ char g_textureRenderedFor[160] = {};  // which message string the texture curren
 // and once with a single (0,0) offset to build the fill-only mask -- see that
 // function's own comment for how the two masks combine into a real black-outlined,
 // white-filled result.
-bool RenderMaskLuminance(const char* text, const POINT* offsets, int offsetCount, bool italic, BYTE* outLuminance)
+bool RenderMaskLuminance(const char* text, const POINT* offsets, int offsetCount, bool italic, BYTE* outLuminance,
+                          UINT alignFlag = DT_RIGHT, int fontHeightPx = 20)
 {
     BITMAPINFO bmi = {};
     bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
@@ -177,7 +341,7 @@ bool RenderMaskLuminance(const char* text, const POINT* offsets, int offsetCount
     // is, not requested at lookup time. If LoadOverlayFonts ever failed (logged at
     // startup), GDI falls back to a default system font here exactly as before this
     // change -- same graceful degradation, just no longer the expected path.
-    HFONT font = CreateFontA(20, 0, 0, 0, FW_DONTCARE, italic ? TRUE : FALSE, FALSE, FALSE,
+    HFONT font = CreateFontA(fontHeightPx, 0, 0, 0, FW_DONTCARE, italic ? TRUE : FALSE, FALSE, FALSE,
                               ANSI_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
                               ANTIALIASED_QUALITY, DEFAULT_PITCH, "Barlow Condensed SemiBold");
     HFONT oldFont = static_cast<HFONT>(SelectObject(memDC, font));
@@ -187,7 +351,7 @@ bool RenderMaskLuminance(const char* text, const POINT* offsets, int offsetCount
     for (int i = 0; i < offsetCount; ++i) {
         RECT textRect = { 8 + offsets[i].x, offsets[i].y,
                            kTextureWidth - 8 + offsets[i].x, kTextureHeight + offsets[i].y };
-        DrawTextA(memDC, text, -1, &textRect, DT_RIGHT | DT_SINGLELINE | DT_NOCLIP | DT_VCENTER);
+        DrawTextA(memDC, text, -1, &textRect, alignFlag | DT_SINGLELINE | DT_NOCLIP | DT_VCENTER);
     }
 
     SelectObject(memDC, oldFont);
@@ -216,7 +380,7 @@ bool RenderMaskLuminance(const char* text, const POINT* offsets, int offsetCount
 // deep inside the glyph) -- this naturally anti-aliases the black-to-white
 // transition at the fill's real edge using the fill mask's own coverage value,
 // with no extra blending step needed.
-bool RenderTextToArgbBuffer(const char* text, DWORD* outPixels)
+bool RenderTextToArgbBuffer(const char* text, DWORD* outPixels, UINT alignFlag = DT_RIGHT, int fontHeightPx = 20)
 {
     static BYTE outlineMask[kTextureWidth * kTextureHeight];
     static BYTE fillMask[kTextureWidth * kTextureHeight];
@@ -228,10 +392,10 @@ bool RenderTextToArgbBuffer(const char* text, DWORD* outPixels)
         { -1, 0 },  { 0, 0 },  { 1, 0 },
         { -1, 1 },  { 0, 1 },  { 1, 1 },
     };
-    if (!RenderMaskLuminance(text, kOutlineOffsets, 9, italic, outlineMask)) return false;
+    if (!RenderMaskLuminance(text, kOutlineOffsets, 9, italic, outlineMask, alignFlag, fontHeightPx)) return false;
 
     const POINT kFillOffset[1] = { { 0, 0 } };
-    if (!RenderMaskLuminance(text, kFillOffset, 1, italic, fillMask)) return false;
+    if (!RenderMaskLuminance(text, kFillOffset, 1, italic, fillMask, alignFlag, fontHeightPx)) return false;
 
     for (int i = 0; i < kTextureWidth * kTextureHeight; ++i) {
         DWORD alpha = outlineMask[i];
@@ -302,6 +466,63 @@ void EnsureTextTexture(void* device)
         }
     }
     releaseSurface(surface);
+}
+
+// Generic version of EnsureTextTexture above, parameterized by which texture/cache-
+// string to (re)use instead of always the toast's own g_textTexture/g_overlayText --
+// used for the custom in-game hint overlay's prefix/suffix text segments, which need
+// two independent textures shown side-by-side around a glyph icon. Always renders
+// LEFT-aligned (DT_LEFT) since these segments are composed left-to-right, unlike the
+// toast's own right-anchored text. empty string is valid input (renders nothing,
+// still creates/keeps the texture) so a hint with no prefix or no suffix text doesn't
+// need special-casing by the caller.
+bool EnsureLeftAlignedTextTexture(void* device, void*& texture, char* renderedForBuf, size_t renderedForBufSize,
+                                   const char* text, int& lastFontHeightPx, int fontHeightPx)
+{
+    // Live-reported 2026-07-31: resolution scaling means fontHeightPx can change
+    // between calls with the SAME text (e.g. the user resizes the window) -- the
+    // cache must invalidate on a scale change too, not just a text change, or a
+    // stale texture rendered at the old resolution's font size would stick around.
+    if (texture && lastFontHeightPx == fontHeightPx && strncmp(renderedForBuf, text, renderedForBufSize - 1) == 0) return true;
+
+    if (!texture) {
+        void** deviceVtbl = *reinterpret_cast<void***>(device);
+        auto createTexture = reinterpret_cast<CreateTexture_t>(deviceVtbl[kCreateTextureVtableIndex]);
+        HRESULT hr = createTexture(device, kTextureWidth, kTextureHeight, 1, 0,
+                                    kD3DFMT_A8R8G8B8, kD3DPOOL_MANAGED, &texture, nullptr);
+        if (FAILED(hr) || !texture) {
+            texture = nullptr;
+            return false;
+        }
+    }
+
+    void** texVtbl = *reinterpret_cast<void***>(texture);
+    auto getSurfaceLevel = reinterpret_cast<GetSurfaceLevel_t>(texVtbl[kGetSurfaceLevelVtableIndex]);
+    void* surface = nullptr;
+    if (FAILED(getSurfaceLevel(texture, 0, &surface)) || !surface) return false;
+
+    void** surfaceVtbl = *reinterpret_cast<void***>(surface);
+    auto lockRect = reinterpret_cast<SurfaceLockRect_t>(surfaceVtbl[kSurfaceLockRectVtableIndex]);
+    auto unlockRect = reinterpret_cast<SurfaceUnlockRect_t>(surfaceVtbl[kSurfaceUnlockRectVtableIndex]);
+    auto releaseSurface = reinterpret_cast<Release_t>(surfaceVtbl[kSurfaceReleaseVtableIndex]);
+
+    bool ok = false;
+    LockedRect locked = {};
+    if (SUCCEEDED(lockRect(surface, &locked, nullptr, 0)) && locked.pBits) {
+        static DWORD pixels[kTextureWidth * kTextureHeight];
+        if (RenderTextToArgbBuffer(text, pixels, DT_LEFT, fontHeightPx)) {
+            for (int y = 0; y < kTextureHeight; ++y) {
+                memcpy(static_cast<BYTE*>(locked.pBits) + y * locked.Pitch,
+                       pixels + y * kTextureWidth, kTextureWidth * sizeof(DWORD));
+            }
+            strncpy_s(renderedForBuf, renderedForBufSize, text, _TRUNCATE);
+            lastFontHeightPx = fontHeightPx;
+            ok = true;
+        }
+        unlockRect(surface);
+    }
+    releaseSurface(surface);
+    return ok;
 }
 
 // Vertex diffuse color(s) for the base quad, per animation style -- these modulate
@@ -424,7 +645,10 @@ void DrawTexturedQuad(void* device, DWORD elapsedMs)
     }
 
     float right = static_cast<float>(width) - 12.0f;
-    float top = 12.0f;
+    // Live-reported 2026-07-31 (QoL): Steam's own overlay notification indicator
+    // (friend messages, achievements, etc.) occupies the very top-right corner and was
+    // rendering UNDER this toast at the original 12px offset. Pushed down to clear it.
+    float top = 48.0f;
     float texW = static_cast<float>(kTextureWidth);
     float texH = static_cast<float>(kTextureHeight);
     DWORD topColor, bottomColor;
@@ -538,6 +762,626 @@ void DrawOverlayMessage(void* device)
     DrawTexturedQuad(device, elapsed);
 }
 
+// Decodes a PNG already sitting in memory (an embedded RCDATA resource -- see
+// proxy_d3d9.rc) into a top-down 32bpp BGRA buffer via WIC, matching D3DFMT_A8R8G8B8's
+// real in-memory byte order exactly (GUID_WICPixelFormat32bppBGRA -- B,G,R,A per pixel
+// in a little-endian DWORD -- needs no channel-swizzling before upload). WIC is a
+// built-in Windows component (wincodec.h/windowscodecs.lib) -- no new third-party
+// dependency, consistent with this project's "MinHook is the only vendored library"
+// stance. CoInitializeEx is safe to call even if some other component already
+// initialized COM on this thread (idempotent per MSDN, returns S_FALSE not an error).
+bool DecodePngFromMemory(const void* data, DWORD size, DWORD*& outPixels, UINT& outWidth, UINT& outHeight)
+{
+    outPixels = nullptr;
+    outWidth = outHeight = 0;
+    HRESULT coHr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    bool needCoUninit = SUCCEEDED(coHr) && coHr != S_FALSE;
+
+    IWICImagingFactory* factory = nullptr;
+    HRESULT hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
+                                    IID_PPV_ARGS(&factory));
+    IStream* stream = nullptr;
+    IWICBitmapDecoder* decoder = nullptr;
+    IWICBitmapFrameDecode* frame = nullptr;
+    IWICFormatConverter* converter = nullptr;
+    bool ok = false;
+
+    if (SUCCEEDED(hr)) {
+        stream = SHCreateMemStream(static_cast<const BYTE*>(data), size);
+        if (stream) {
+            hr = factory->CreateDecoderFromStream(stream, nullptr, WICDecodeMetadataCacheOnLoad, &decoder);
+        } else {
+            hr = E_OUTOFMEMORY;
+        }
+    }
+    if (SUCCEEDED(hr)) hr = decoder->GetFrame(0, &frame);
+    if (SUCCEEDED(hr)) hr = factory->CreateFormatConverter(&converter);
+    if (SUCCEEDED(hr)) {
+        hr = converter->Initialize(frame, GUID_WICPixelFormat32bppBGRA, WICBitmapDitherTypeNone,
+                                     nullptr, 0.0, WICBitmapPaletteTypeCustom);
+    }
+    UINT w = 0, h = 0;
+    if (SUCCEEDED(hr)) hr = converter->GetSize(&w, &h);
+    if (SUCCEEDED(hr) && w > 0 && h > 0) {
+        DWORD* pixels = new DWORD[static_cast<size_t>(w) * h];
+        hr = converter->CopyPixels(nullptr, w * 4, w * h * 4, reinterpret_cast<BYTE*>(pixels));
+        if (SUCCEEDED(hr)) {
+            outPixels = pixels;
+            outWidth = w;
+            outHeight = h;
+            ok = true;
+        } else {
+            delete[] pixels;
+        }
+    }
+
+    if (converter) converter->Release();
+    if (frame) frame->Release();
+    if (decoder) decoder->Release();
+    if (stream) stream->Release();
+    if (factory) factory->Release();
+    if (needCoUninit) CoUninitialize();
+    return ok;
+}
+
+// Loads one glyph icon (by its real assets/button_glyphs/ name, no extension -- e.g.
+// "xbox360_x") from this DLL's own embedded resources into a real D3D9 texture, via
+// the same CreateTexture/GetSurfaceLevel/LockRect upload pattern EnsureTextTexture
+// above already uses for the toast-notification text texture. Returns false (leaving
+// outTexture untouched) if the resource doesn't exist or WIC decoding fails -- never
+// crashes or substitutes a placeholder; the caller (RequestGlyphIconOverlay's cache
+// lookup) just won't draw anything for an asset name that didn't load.
+bool LoadGlyphIconTexture(void* device, const char* assetName, void*& outTexture, int& outWidth, int& outHeight)
+{
+    if (!g_selfModule) return false;
+    HRSRC res = FindResourceA(g_selfModule, assetName, RT_RCDATA);
+    if (!res) {
+        char buf[128];
+        sprintf_s(buf, "[overlay-glyph-icon] FindResourceA failed for \"%.31s\" -- GetLastError=%lu",
+            assetName, GetLastError());
+        LogFromController(buf);
+        return false;
+    }
+    HGLOBAL loaded = LoadResource(g_selfModule, res);
+    void* data = loaded ? LockResource(loaded) : nullptr;
+    DWORD size = SizeofResource(g_selfModule, res);
+    if (!data || size == 0) return false;
+
+    DWORD* pixels = nullptr;
+    UINT w = 0, h = 0;
+    if (!DecodePngFromMemory(data, size, pixels, w, h)) {
+        char buf[128];
+        sprintf_s(buf, "[overlay-glyph-icon] WIC decode failed for \"%.31s\"", assetName);
+        LogFromController(buf);
+        return false;
+    }
+
+    void** deviceVtbl = *reinterpret_cast<void***>(device);
+    auto createTexture = reinterpret_cast<CreateTexture_t>(deviceVtbl[kCreateTextureVtableIndex]);
+    void* texture = nullptr;
+    HRESULT hr = createTexture(device, w, h, 1, 0, kD3DFMT_A8R8G8B8, kD3DPOOL_MANAGED, &texture, nullptr);
+    if (FAILED(hr) || !texture) {
+        char buf[128];
+        sprintf_s(buf, "[overlay-glyph-icon] CreateTexture failed for \"%.31s\": hr=0x%08lX", assetName, hr);
+        LogFromController(buf);
+        delete[] pixels;
+        return false;
+    }
+
+    void** texVtbl = *reinterpret_cast<void***>(texture);
+    auto getSurfaceLevel = reinterpret_cast<GetSurfaceLevel_t>(texVtbl[kGetSurfaceLevelVtableIndex]);
+    void* surface = nullptr;
+    bool uploaded = false;
+    if (SUCCEEDED(getSurfaceLevel(texture, 0, &surface)) && surface) {
+        void** surfaceVtbl = *reinterpret_cast<void***>(surface);
+        auto lockRect = reinterpret_cast<SurfaceLockRect_t>(surfaceVtbl[kSurfaceLockRectVtableIndex]);
+        auto unlockRect = reinterpret_cast<SurfaceUnlockRect_t>(surfaceVtbl[kSurfaceUnlockRectVtableIndex]);
+        auto releaseSurface = reinterpret_cast<Release_t>(surfaceVtbl[kSurfaceReleaseVtableIndex]);
+        LockedRect locked = {};
+        if (SUCCEEDED(lockRect(surface, &locked, nullptr, 0)) && locked.pBits) {
+            for (UINT y = 0; y < h; ++y) {
+                memcpy(static_cast<BYTE*>(locked.pBits) + y * locked.Pitch,
+                       pixels + static_cast<size_t>(y) * w, static_cast<size_t>(w) * sizeof(DWORD));
+            }
+            unlockRect(surface);
+            uploaded = true;
+        }
+        releaseSurface(surface);
+    }
+    delete[] pixels;
+
+    if (!uploaded) {
+        void** vtbl = *reinterpret_cast<void***>(texture);
+        reinterpret_cast<Release_t>(vtbl[kSurfaceReleaseVtableIndex])(texture);
+        return false;
+    }
+
+    outTexture = texture;
+    outWidth = static_cast<int>(w);
+    outHeight = static_cast<int>(h);
+    return true;
+}
+
+// Cache lookup (linear scan -- kMaxCachedGlyphIcons is 64, this runs at most a few
+// times per second while a hint is on screen, not a hot path). Loads and caches on
+// first request for a given assetName; every later request for the same name is free.
+bool GetOrLoadGlyphIconTexture(void* device, const char* assetName, void*& outTexture, int& outWidth, int& outHeight)
+{
+    for (int i = 0; i < g_glyphIconCacheCount; ++i) {
+        if (strcmp(g_glyphIconCache[i].assetName, assetName) == 0) {
+            if (!g_glyphIconCache[i].texture) return false; // cached failure, don't retry every frame
+            outTexture = g_glyphIconCache[i].texture;
+            outWidth = g_glyphIconCache[i].width;
+            outHeight = g_glyphIconCache[i].height;
+            return true;
+        }
+    }
+    if (g_glyphIconCacheCount >= kMaxCachedGlyphIcons) return false; // shouldn't happen, real asset count is 47
+
+    void* texture = nullptr;
+    int w = 0, h = 0;
+    bool loaded = LoadGlyphIconTexture(device, assetName, texture, w, h);
+    GlyphIconEntry& entry = g_glyphIconCache[g_glyphIconCacheCount++];
+    strncpy_s(entry.assetName, assetName, _TRUNCATE);
+    entry.texture = loaded ? texture : nullptr; // cache the failure too, see the early-out above
+    entry.width = w;
+    entry.height = h;
+    if (!loaded) return false;
+    outTexture = texture;
+    outWidth = w;
+    outHeight = h;
+    return true;
+}
+
+// Draws an arbitrary texture as a plain, white-modulated, alpha-blended screen-space
+// quad at (x, y, w, h) -- the same safe render-state save/restore and shader-null/
+// restore pattern DrawTexturedQuad above uses (see that function's own comment for
+// why the shader handling is necessary), generalized to take a texture and rect
+// instead of always drawing the fixed toast texture at its fixed top-right position.
+void DrawGenericTexturedQuad(void* device, void* texture, float x, float y, float w, float h, DWORD color = 0xFFFFFFFF,
+                              float u0 = 0.0f, float v0 = 0.0f, float u1 = 1.0f, float v1 = 1.0f)
+{
+    void** deviceVtbl = *reinterpret_cast<void***>(device);
+    auto setTexture = reinterpret_cast<SetTexture_t>(deviceVtbl[kSetTextureVtableIndex]);
+    auto setFVF = reinterpret_cast<SetFVF_t>(deviceVtbl[kSetFVFVtableIndex]);
+    auto setRenderState = reinterpret_cast<SetRenderState_t>(deviceVtbl[kSetRenderStateVtableIndex]);
+    auto getRenderState = reinterpret_cast<GetRenderState_t>(deviceVtbl[kGetRenderStateVtableIndex]);
+    auto setTss = reinterpret_cast<SetTextureStageState_t>(deviceVtbl[kSetTextureStageStateVtableIndex]);
+    auto drawPrimitiveUP = reinterpret_cast<DrawPrimitiveUP_t>(deviceVtbl[kDrawPrimitiveUPVtableIndex]);
+    auto setVertexShader = reinterpret_cast<SetVertexShader_t>(deviceVtbl[kSetVertexShaderVtableIndex]);
+    auto getVertexShader = reinterpret_cast<GetVertexShader_t>(deviceVtbl[kGetVertexShaderVtableIndex]);
+    auto setPixelShader = reinterpret_cast<SetPixelShader_t>(deviceVtbl[kSetPixelShaderVtableIndex]);
+    auto getPixelShader = reinterpret_cast<GetPixelShader_t>(deviceVtbl[kGetPixelShaderVtableIndex]);
+
+    DWORD oldZEnable = 0, oldLighting = 0, oldAlphaBlend = 0, oldSrcBlend = 0, oldDestBlend = 0, oldCull = 0;
+    getRenderState(device, kD3DRS_ZENABLE, &oldZEnable);
+    getRenderState(device, kD3DRS_LIGHTING, &oldLighting);
+    getRenderState(device, kD3DRS_ALPHABLENDENABLE, &oldAlphaBlend);
+    getRenderState(device, kD3DRS_SRCBLEND, &oldSrcBlend);
+    getRenderState(device, kD3DRS_DESTBLEND, &oldDestBlend);
+    getRenderState(device, kD3DRS_CULLMODE, &oldCull);
+
+    void* oldVertexShader = nullptr;
+    void* oldPixelShader = nullptr;
+    getVertexShader(device, &oldVertexShader);
+    getPixelShader(device, &oldPixelShader);
+    setVertexShader(device, nullptr);
+    setPixelShader(device, nullptr);
+
+    setRenderState(device, kD3DRS_ZENABLE, kD3DZB_FALSE);
+    setRenderState(device, kD3DRS_LIGHTING, FALSE);
+    setRenderState(device, kD3DRS_ALPHABLENDENABLE, TRUE);
+    setRenderState(device, kD3DRS_SRCBLEND, kD3DBLEND_SRCALPHA);
+    setRenderState(device, kD3DRS_DESTBLEND, kD3DBLEND_INVSRCALPHA);
+    setRenderState(device, kD3DRS_CULLMODE, kD3DCULL_NONE);
+
+    setTss(device, 0, kD3DTSS_COLOROP, kD3DTOP_MODULATE);
+    setTss(device, 0, kD3DTSS_COLORARG1, kD3DTA_TEXTURE);
+    setTss(device, 0, kD3DTSS_COLORARG2, kD3DTA_DIFFUSE);
+    setTss(device, 0, kD3DTSS_ALPHAOP, kD3DTOP_MODULATE);
+    setTss(device, 0, kD3DTSS_ALPHAARG1, kD3DTA_TEXTURE);
+    setTss(device, 0, kD3DTSS_ALPHAARG2, kD3DTA_DIFFUSE);
+    setTss(device, 1, kD3DTSS_COLOROP, kD3DTOP_DISABLE);
+
+    setTexture(device, 0, texture);
+    setFVF(device, kFVF);
+
+    ScreenVertex verts[4] = {
+        { x - 0.5f,     y - 0.5f,     0.0f, 1.0f, color, u0, v0 },
+        { x + w - 0.5f, y - 0.5f,     0.0f, 1.0f, color, u1, v0 },
+        { x - 0.5f,     y + h - 0.5f, 0.0f, 1.0f, color, u0, v1 },
+        { x + w - 0.5f, y + h - 0.5f, 0.0f, 1.0f, color, u1, v1 },
+    };
+    drawPrimitiveUP(device, kD3DPT_TRIANGLESTRIP, 2, verts, sizeof(ScreenVertex));
+
+    setTexture(device, 0, nullptr);
+    setRenderState(device, kD3DRS_ZENABLE, oldZEnable);
+    setRenderState(device, kD3DRS_LIGHTING, oldLighting);
+    setRenderState(device, kD3DRS_ALPHABLENDENABLE, oldAlphaBlend);
+    setRenderState(device, kD3DRS_SRCBLEND, oldSrcBlend);
+    setRenderState(device, kD3DRS_DESTBLEND, oldDestBlend);
+    setRenderState(device, kD3DRS_CULLMODE, oldCull);
+
+    setVertexShader(device, oldVertexShader);
+    setPixelShader(device, oldPixelShader);
+    if (oldVertexShader) {
+        void** vtbl = *reinterpret_cast<void***>(oldVertexShader);
+        reinterpret_cast<Release_t>(vtbl[kSurfaceReleaseVtableIndex])(oldVertexShader);
+    }
+    if (oldPixelShader) {
+        void** vtbl = *reinterpret_cast<void***>(oldPixelShader);
+        reinterpret_cast<Release_t>(vtbl[kSurfaceReleaseVtableIndex])(oldPixelShader);
+    }
+}
+
+// Consumes the pending icon request (if any was made since the last EndScene) and
+// draws it -- clears the "requested this frame" flag unconditionally afterward so a
+// hint that stops resolving stops showing its icon within one frame, with no separate
+// teardown call needed from the caller's side.
+void DrawGlyphIconIfRequested(void* device)
+{
+    if (!g_pendingIconRequestedThisFrame) return;
+    g_pendingIconRequestedThisFrame = false; // consume regardless of outcome below
+
+    void* texture = nullptr;
+    int texW = 0, texH = 0;
+    if (!GetOrLoadGlyphIconTexture(device, g_pendingIconAssetName, texture, texW, texH)) return;
+    DrawGenericTexturedQuad(device, texture, g_pendingIconX, g_pendingIconY, g_pendingIconW, g_pendingIconH);
+}
+
+// Draws prefix-text + real controller-glyph icon + suffix-text sequentially at
+// (g_pendingHintX, g_pendingHintY), all self-rendered (see the big comment above
+// g_hintPrefixTexture) -- consumed once per frame like the plain icon overlay above,
+// must be re-requested every frame to keep showing.
+void DrawCustomHintIfRequested(void* device)
+{
+    if (!g_pendingHintRequestedThisFrame) return;
+    g_pendingHintRequestedThisFrame = false;
+
+    // Live-reported 2026-07-31 (second round, 1440p): still wrong even after the first
+    // scale-factor pass. Per explicit direction: "let's not make res a factor except
+    // for size scaling, and just do things proportional to the edges + centre of the
+    // screen." Every position/size value fed into this function (g_pendingHintX/Y,
+    // kIconGap, kHintIconSize, etc.) is authored against a fixed 1920x1080 reference --
+    // scaleX/scaleY convert that reference fraction directly against the REAL current
+    // screen size, so "698 out of 1080" always lands at the same fraction of the real
+    // screen's height regardless of resolution (proportional to the edges), and every
+    // SIZE constant grows/shrinks by the same fraction. GetResolutionScale itself was
+    // also switched from the window's GetClientRect (unreliable -- this old engine's
+    // real backbuffer isn't guaranteed to match the window's client area) to the
+    // device's actual GetViewport (ground truth for the pixel space our own quads draw
+    // into) -- see its own comment in overlay_hud.h for why that switch mattered.
+    float scaleX = 1.0f, scaleY = 1.0f;
+    GetResolutionScale(device, scaleX, scaleY);
+    auto drawScaledQuad = [&](void* texture, float x, float y, float w, float h, DWORD color,
+                               float u0 = 0.0f, float v0 = 0.0f, float u1 = 1.0f, float v1 = 1.0f) {
+        DrawGenericTexturedQuad(device, texture, x * scaleX, y * scaleY, w * scaleX, h * scaleY, color, u0, v0, u1, v1);
+    };
+
+    if (!EnsureLeftAlignedTextTexture(device, g_hintPrefixTexture, g_hintPrefixRenderedFor,
+                                       sizeof(g_hintPrefixRenderedFor), g_pendingHintPrefixText,
+                                       g_hintPrefixLastFontHeight, kHintFontHeightPx)) return;
+    g_hintPrefixMeasuredWidth = MeasureTextWidthPx(g_pendingHintPrefixText, g_modConfig.overlayFontItalic, kHintFontHeightPx);
+
+    if (!EnsureLeftAlignedTextTexture(device, g_hintSuffixTexture, g_hintSuffixRenderedFor,
+                                       sizeof(g_hintSuffixRenderedFor), g_pendingHintSuffixText,
+                                       g_hintSuffixLastFontHeight, kHintFontHeightPx)) return;
+    g_hintSuffixMeasuredWidth = MeasureTextWidthPx(g_pendingHintSuffixText, g_modConfig.overlayFontItalic, kHintFontHeightPx);
+
+    void* iconTexture = nullptr;
+    int iconTexW = 0, iconTexH = 0;
+    bool haveIcon = GetOrLoadGlyphIconTexture(device, g_pendingHintAssetName, iconTexture, iconTexW, iconTexH);
+    // Live-reported 2026-07-31: RB/R1 (a real 94x54 wide rectangle, unlike X/A's
+    // roughly-square ~70x70/70x71 source art) looked squished -- forcing every icon
+    // into the same fixed square box distorted its real aspect ratio. Height stays
+    // fixed at kHintIconSize (consistent visual weight against the text regardless of
+    // which icon); width is derived from the source PNG's own real dimensions
+    // (iconTexW/iconTexH, already read by GetOrLoadGlyphIconTexture) so wide icons
+    // stay wide instead of being squeezed into a square.
+    float iconDrawWidth = kHintIconSize;
+    float iconDrawHeight = kHintIconSize;
+    if (haveIcon && iconTexH > 0) {
+        iconDrawWidth = kHintIconSize * (static_cast<float>(iconTexW) / static_cast<float>(iconTexH));
+    }
+
+    // Live-reported 2026-07-31: the space between the icon and the following text
+    // read as "massive" -- pixel-measured against a real screenshot (buy-station
+    // hint): icon's own visible right edge to the real text's visible left edge was
+    // ~26px for a ~36px-wide icon, clearly disproportionate. Two contributing causes,
+    // both fixed here: (1) RenderMaskLuminance always draws with an 8px left margin
+    // (fine for the toast's own right-aligned use, where it sits on the far side from
+    // the visible edge that matters) -- for these LEFT-aligned segments it added dead
+    // space directly where the icon meets text. kHintTextRenderLeftMarginPx lets the
+    // UV sample SKIP that known-empty leading margin instead of shifting the
+    // destination quad, so the visible glyph starts right at the quad's own left edge.
+    // (2) kIconGap itself was more generous (8px) than actually needed once (1) is
+    // fixed -- reduced to a tighter, still-readable gap.
+    constexpr float kIconGap = 3.0f;
+    constexpr int kHintTextRenderLeftMarginPx = 8; // matches RenderMaskLuminance's own hardcoded left inset
+    // Pixel-measured 2026-07-31 (round 6, against the real static " Model 1887" HUD
+    // text via direct screenshot pixel scanning): g_pendingHintY is the caller's
+    // intended VERTICAL CENTER of the line (matching the same real HUD element's own
+    // measured center), not the top of the drawn box -- text quads below derive their
+    // top from this center by subtracting half the canvas height, same convention the
+    // icon already used.
+    float iconVerticalCenter = g_pendingHintY;
+    float textQuadTop = g_pendingHintY - static_cast<float>(kTextureHeight) * 0.5f;
+
+    // Live-tested 2026-07-31: the plain measured width clipped the last character of
+    // a segment (e.g. the "s" in "Press") -- RenderMaskLuminance always draws with an
+    // 8px left margin GetTextExtentPoint32A's measurement doesn't include, and italic
+    // slant can extend a little past its own nominal advance width. kHintTextWidthMarginPx
+    // pads the DRAWN width (not the cursor advance -- see cursorX below, which still
+    // uses the plain measured width so the next piece isn't pushed too far right) so
+    // the crop includes the real trailing pixels.
+    int prefixDrawWidth = g_hintPrefixMeasuredWidth > 0 ? g_hintPrefixMeasuredWidth + kHintTextWidthMarginPx : 0;
+    int suffixDrawWidth = g_hintSuffixMeasuredWidth > 0 ? g_hintSuffixMeasuredWidth + kHintTextWidthMarginPx : 0;
+
+    float cursorX = g_pendingHintX;
+    if (g_pendingHintCenterOnScreen) {
+        // Live-reported 2026-07-31: several hints (pickup/swap, and now buy-station
+        // too) read better horizontally CENTERED on screen than left-anchored at the
+        // game's own real x. Uses the total real (unpadded) content width -- prefix +
+        // gap + icon + gap + suffix -- not the padded draw widths. Content width is
+        // computed in DESIGN-space pixels (same as everything else here); the real
+        // screen width is real pixels, so it's converted to design-space (divided by
+        // scaleX) before centering against it -- otherwise this would silently mix
+        // the two spaces and mis-center on any non-1080p resolution.
+        float totalContentWidth = static_cast<float>(g_hintPrefixMeasuredWidth) + kIconGap
+            + (haveIcon ? iconDrawWidth + kIconGap : 0.0f)
+            + static_cast<float>(g_hintSuffixMeasuredWidth);
+        // Uses the SAME real-screen-size source as scaleX/scaleY above (GetViewport,
+        // not a separate GetClientRect call) -- two different sources for "real screen
+        // width" disagreeing with each other would silently break centering on its own.
+        int screenWidthPx = 1920, screenHeightPxUnused = 1080;
+        GetRealScreenSize(device, screenWidthPx, screenHeightPxUnused);
+        float screenWidthDesign = static_cast<float>(screenWidthPx) / scaleX;
+        cursorX = (screenWidthDesign - totalContentWidth) * 0.5f;
+    }
+
+    // Live-reported 2026-07-31: still mis-positioned at 1440p even with scaleX/scaleY
+    // wired through -- logged once per distinct (assetName, design cursorX/Y, scale)
+    // combination so a live repro's proxy_d3d9.log can be compared directly against a
+    // pixel-measured screenshot, instead of guessing at another fix blind.
+    {
+        static char s_lastLoggedKey[96] = {};
+        char key[96];
+        sprintf_s(key, "%s|%.1f|%.1f|%.4f|%.4f", g_pendingHintAssetName, cursorX, g_pendingHintY, scaleX, scaleY);
+        if (strncmp(s_lastLoggedKey, key, sizeof(s_lastLoggedKey) - 1) != 0) {
+            strncpy_s(s_lastLoggedKey, key, _TRUNCATE);
+            char buf[224];
+            sprintf_s(buf, "[overlay-hud][res-scale] hint asset=%s designCursorX=%.1f designHintY=%.1f "
+                             "scaleX=%.4f scaleY=%.4f -> screenX=%.1f screenY=%.1f",
+                       g_pendingHintAssetName, cursorX, g_pendingHintY, scaleX, scaleY,
+                       cursorX * scaleX, g_pendingHintY * scaleY);
+            LogFromController(buf);
+        }
+    }
+
+    if (prefixDrawWidth > 0) {
+        float prefixU0 = static_cast<float>(kHintTextRenderLeftMarginPx) / static_cast<float>(kTextureWidth);
+        float prefixU1 = static_cast<float>(kHintTextRenderLeftMarginPx + prefixDrawWidth) / static_cast<float>(kTextureWidth);
+        drawScaledQuad(g_hintPrefixTexture, cursorX, textQuadTop,
+            static_cast<float>(prefixDrawWidth), static_cast<float>(kTextureHeight),
+            0xFFFFFFFF, prefixU0, 0.0f, prefixU1, 1.0f);
+        cursorX += static_cast<float>(g_hintPrefixMeasuredWidth) + kIconGap;
+    }
+
+    if (haveIcon) {
+        DWORD iconColor = 0xFFFFFFFF;
+        if (g_pendingHintFlashIcon) {
+            // Console-style Reload prompt (live-reported 2026-07-31, corrected same
+            // day: "it is a pulsing fade" -- not a hard on/off blink): smooth sine-
+            // wave alpha pulse, surrounding text stays solid regardless.
+            constexpr float kPulsePeriodMs = 1200.0f;
+            constexpr BYTE kPulseMinAlpha = 60;
+            float phase = fmodf(static_cast<float>(GetTickCount()), kPulsePeriodMs) / kPulsePeriodMs;
+            float wave = (sinf(phase * 6.2831853f) + 1.0f) * 0.5f; // 0..1
+            BYTE alpha = static_cast<BYTE>(kPulseMinAlpha + wave * (255 - kPulseMinAlpha));
+            iconColor = (static_cast<DWORD>(alpha) << 24) | 0x00FFFFFF;
+        }
+        drawScaledQuad(iconTexture, cursorX, iconVerticalCenter - iconDrawHeight * 0.5f,
+            iconDrawWidth, iconDrawHeight, iconColor);
+        cursorX += iconDrawWidth + kIconGap;
+    }
+
+    if (suffixDrawWidth > 0) {
+        float suffixU0 = static_cast<float>(kHintTextRenderLeftMarginPx) / static_cast<float>(kTextureWidth);
+        float suffixU1 = static_cast<float>(kHintTextRenderLeftMarginPx + suffixDrawWidth) / static_cast<float>(kTextureWidth);
+        drawScaledQuad(g_hintSuffixTexture, cursorX, textQuadTop,
+            static_cast<float>(suffixDrawWidth), static_cast<float>(kTextureHeight),
+            0xFFFFFFFF, suffixU0, 0.0f, suffixU1, 1.0f);
+    }
+}
+
+// Draws ONE menu-hint slot (2026-08-01, see the big comment above g_menuHintSlots).
+// Deliberately a near-duplicate of DrawCustomHintIfRequested's own per-hint layout
+// math (icon aspect ratio, gap/margin handling) rather than a shared refactor -- the
+// gameplay hint path above is proven and live-tested across many rounds this
+// session; duplicating a page of layout code here is a smaller, lower-risk change
+// than reshaping that already-working function to also serve N slots. Menu hints
+// never center on screen or pulse (no Reload-style prompt exists in menu UI), so
+// this omits both of those branches entirely -- always left-anchored at (x, y).
+void DrawOneMenuHintSlot(void* device, MenuHintSlot& slot, float scaleX, float scaleY)
+{
+    auto drawScaledQuad = [&](void* texture, float x, float y, float w, float h, DWORD color,
+                               float u0 = 0.0f, float v0 = 0.0f, float u1 = 1.0f, float v1 = 1.0f) {
+        DrawGenericTexturedQuad(device, texture, x * scaleX, y * scaleY, w * scaleX, h * scaleY, color, u0, v0, u1, v1);
+    };
+
+    if (!EnsureLeftAlignedTextTexture(device, slot.prefixTexture, slot.prefixRenderedFor,
+                                       sizeof(slot.prefixRenderedFor), slot.prefixText,
+                                       slot.prefixLastFontHeight, kHintFontHeightPx)) return;
+    slot.prefixMeasuredWidth = MeasureTextWidthPx(slot.prefixText, g_modConfig.overlayFontItalic, kHintFontHeightPx);
+
+    if (!EnsureLeftAlignedTextTexture(device, slot.suffixTexture, slot.suffixRenderedFor,
+                                       sizeof(slot.suffixRenderedFor), slot.suffixText,
+                                       slot.suffixLastFontHeight, kHintFontHeightPx)) return;
+    slot.suffixMeasuredWidth = MeasureTextWidthPx(slot.suffixText, g_modConfig.overlayFontItalic, kHintFontHeightPx);
+
+    void* iconTexture = nullptr;
+    int iconTexW = 0, iconTexH = 0;
+    bool haveIcon = GetOrLoadGlyphIconTexture(device, slot.assetName, iconTexture, iconTexW, iconTexH);
+    float iconDrawWidth = kHintIconSize;
+    float iconDrawHeight = kHintIconSize;
+    if (haveIcon && iconTexH > 0) {
+        iconDrawWidth = kHintIconSize * (static_cast<float>(iconTexW) / static_cast<float>(iconTexH));
+    }
+
+    constexpr float kIconGap = 3.0f;
+    constexpr int kHintTextRenderLeftMarginPx = 8;
+    float iconVerticalCenter = slot.y;
+    float textQuadTop = slot.y - static_cast<float>(kTextureHeight) * 0.5f;
+
+    int prefixDrawWidth = slot.prefixMeasuredWidth > 0 ? slot.prefixMeasuredWidth + kHintTextWidthMarginPx : 0;
+    int suffixDrawWidth = slot.suffixMeasuredWidth > 0 ? slot.suffixMeasuredWidth + kHintTextWidthMarginPx : 0;
+
+    float cursorX = slot.x;
+    if (prefixDrawWidth > 0) {
+        float prefixU0 = static_cast<float>(kHintTextRenderLeftMarginPx) / static_cast<float>(kTextureWidth);
+        float prefixU1 = static_cast<float>(kHintTextRenderLeftMarginPx + prefixDrawWidth) / static_cast<float>(kTextureWidth);
+        drawScaledQuad(slot.prefixTexture, cursorX, textQuadTop,
+            static_cast<float>(prefixDrawWidth), static_cast<float>(kTextureHeight),
+            0xFFFFFFFF, prefixU0, 0.0f, prefixU1, 1.0f);
+        cursorX += static_cast<float>(slot.prefixMeasuredWidth) + kIconGap;
+    }
+
+    if (haveIcon) {
+        drawScaledQuad(iconTexture, cursorX, iconVerticalCenter - iconDrawHeight * 0.5f,
+            iconDrawWidth, iconDrawHeight, 0xFFFFFFFF);
+        cursorX += iconDrawWidth + kIconGap;
+    }
+
+    if (suffixDrawWidth > 0) {
+        float suffixU0 = static_cast<float>(kHintTextRenderLeftMarginPx) / static_cast<float>(kTextureWidth);
+        float suffixU1 = static_cast<float>(kHintTextRenderLeftMarginPx + suffixDrawWidth) / static_cast<float>(kTextureWidth);
+        drawScaledQuad(slot.suffixTexture, cursorX, textQuadTop,
+            static_cast<float>(suffixDrawWidth), static_cast<float>(kTextureHeight),
+            0xFFFFFFFF, suffixU0, 0.0f, suffixU1, 1.0f);
+    }
+}
+
+// Consumes and draws every menu-hint slot accumulated so far THIS FRAME (see the big
+// comment above g_menuHintSlots for why menu hints need N slots, unlike the single
+// gameplay slot), then resets the count to 0 -- same "must be re-requested every
+// frame to keep showing" convention as the gameplay hint, just per-slot instead of
+// a single flag, so a screen with fewer menu hints than last frame doesn't redraw
+// stale ones.
+void DrawMenuHintsIfRequested(void* device)
+{
+    int count = g_menuHintSlotCountThisFrame;
+    g_menuHintSlotCountThisFrame = 0;
+    if (count == 0) return;
+    float scaleX = 1.0f, scaleY = 1.0f;
+    GetResolutionScale(device, scaleX, scaleY);
+    for (int i = 0; i < count; ++i) {
+        DrawOneMenuHintSlot(device, g_menuHintSlots[i], scaleX, scaleY);
+    }
+}
+
+// TEMPORARY debug scaffolding -- see the big comment above g_debugMarkerTexture.
+bool EnsureDebugMarkerTexture(void* device)
+{
+    if (g_debugMarkerTexture) return true;
+    void** deviceVtbl = *reinterpret_cast<void***>(device);
+    auto createTexture = reinterpret_cast<CreateTexture_t>(deviceVtbl[kCreateTextureVtableIndex]);
+    HRESULT hr = createTexture(device, 1, 1, 1, 0, kD3DFMT_A8R8G8B8, kD3DPOOL_MANAGED, &g_debugMarkerTexture, nullptr);
+    if (FAILED(hr) || !g_debugMarkerTexture) return false;
+
+    void** texVtbl = *reinterpret_cast<void***>(g_debugMarkerTexture);
+    auto getSurfaceLevel = reinterpret_cast<GetSurfaceLevel_t>(texVtbl[kGetSurfaceLevelVtableIndex]);
+    void* surface = nullptr;
+    if (FAILED(getSurfaceLevel(g_debugMarkerTexture, 0, &surface)) || !surface) return false;
+    void** surfaceVtbl = *reinterpret_cast<void***>(surface);
+    auto lockRect = reinterpret_cast<SurfaceLockRect_t>(surfaceVtbl[kSurfaceLockRectVtableIndex]);
+    auto unlockRect = reinterpret_cast<SurfaceUnlockRect_t>(surfaceVtbl[kSurfaceUnlockRectVtableIndex]);
+    auto releaseSurface = reinterpret_cast<Release_t>(surfaceVtbl[kSurfaceReleaseVtableIndex]);
+    LockedRect locked = {};
+    if (SUCCEEDED(lockRect(surface, &locked, nullptr, 0)) && locked.pBits) {
+        *static_cast<DWORD*>(locked.pBits) = 0xFFFFFFFF; // opaque white, tinted via diffuse at draw time
+        unlockRect(surface);
+    }
+    releaseSurface(surface);
+    return true;
+}
+
+void DrawDebugMarkerIfRequested(void* device)
+{
+    bool anyRequested = false;
+    for (int i = 0; i < kMaxDebugMarkerSlots; ++i) if (g_pendingMarkerRequestedThisFrame[i]) anyRequested = true;
+    if (!anyRequested) return;
+    if (!EnsureDebugMarkerTexture(device)) return;
+    // A small filled square CENTERED on each requested point, one distinct color per
+    // slot (see kDebugMarkerColors) so multiple position hypotheses can be visually
+    // compared against the real text in a single screenshot.
+    constexpr float kMarkerSize = 8.0f;
+    for (int i = 0; i < kMaxDebugMarkerSlots; ++i) {
+        if (!g_pendingMarkerRequestedThisFrame[i]) continue;
+        g_pendingMarkerRequestedThisFrame[i] = false;
+        DrawGenericTexturedQuad(device, g_debugMarkerTexture,
+            g_pendingMarkerX[i] - kMarkerSize * 0.5f, g_pendingMarkerY[i] - kMarkerSize * 0.5f,
+            kMarkerSize, kMarkerSize, kDebugMarkerColors[i]);
+    }
+}
+
+// ---- IDirect3DDevice9::Reset hook (2026-07-31, live-reported CRITICAL bug) --------
+//
+// User report: "changing display mode crashes the whole game." This project creates
+// several textures of its own (the toast, hint prefix/suffix, cached glyph icons, the
+// debug marker) via CreateTexture in D3DPOOL_MANAGED -- normally the D3D9 runtime
+// keeps a system-memory backup of MANAGED resources and re-uploads them across a
+// Reset() automatically, with no explicit handling required. This project never
+// participated in that lifecycle at all before now (no Reset hook existed) -- purely
+// as a defensive fix (not yet confirmed as the exact root cause, since reproducing
+// and live-debugging the actual crash wasn't done first): release every texture this
+// project owns immediately BEFORE the real Reset() runs, and let them lazily recreate
+// on next use afterward (EnsureTextTexture/EnsureLeftAlignedTextTexture/
+// GetOrLoadGlyphIconTexture/EnsureDebugMarkerTexture already all check for a null
+// pointer and recreate on demand -- no new "on reset" rebuild path needed, just
+// clearing the stale handles is enough). If this doesn't fully resolve the crash,
+// the next step is a real live-debugger repro (x32dbg) to get the actual fault
+// address rather than guessing further.
+typedef HRESULT(WINAPI* Reset_t)(void* This, void* pPresentationParameters);
+Reset_t g_origReset = nullptr;
+
+void ReleaseAllCachedTextures()
+{
+    auto releaseIfSet = [](void*& tex) {
+        if (!tex) return;
+        void** vtbl = *reinterpret_cast<void***>(tex);
+        reinterpret_cast<Release_t>(vtbl[kSurfaceReleaseVtableIndex])(tex);
+        tex = nullptr;
+    };
+    releaseIfSet(g_textTexture);
+    g_textureRenderedFor[0] = '\0';
+    releaseIfSet(g_hintPrefixTexture);
+    g_hintPrefixRenderedFor[0] = '\0';
+    releaseIfSet(g_hintSuffixTexture);
+    g_hintSuffixRenderedFor[0] = '\0';
+    releaseIfSet(g_debugMarkerTexture);
+    for (int i = 0; i < g_glyphIconCacheCount; ++i) {
+        releaseIfSet(g_glyphIconCache[i].texture);
+    }
+    g_glyphIconCacheCount = 0;
+    for (auto& slot : g_menuHintSlots) {
+        releaseIfSet(slot.prefixTexture);
+        slot.prefixRenderedFor[0] = '\0';
+        releaseIfSet(slot.suffixTexture);
+        slot.suffixRenderedFor[0] = '\0';
+    }
+}
+
+HRESULT WINAPI Hook_Reset(void* device, void* pPresentationParameters)
+{
+    LogFromController("[overlay-hud] Reset() called -- releasing this project's own cached textures first");
+    ReleaseAllCachedTextures();
+    HRESULT hr = g_origReset(device, pPresentationParameters);
+    char buf[96];
+    sprintf_s(buf, "[overlay-hud] real Reset() returned hr=0x%08lX", hr);
+    LogFromController(buf);
+    return hr;
+}
+
 HRESULT WINAPI Hook_EndScene(void* device)
 {
     ++g_endSceneFireCount;
@@ -545,10 +1389,69 @@ HRESULT WINAPI Hook_EndScene(void* device)
         LogFromController("[overlay-hud] EndScene hook fired for the first time -- confirmed alive");
     }
     DrawOverlayMessage(device);
+    DrawGlyphIconIfRequested(device);
+    DrawCustomHintIfRequested(device);
+    InjectSyntheticBackHintIfNeeded();
+    DrawMenuHintsIfRequested(device);
+    DrawDebugMarkerIfRequested(device);
     return g_origEndScene(device);
 }
 
 } // namespace
+
+void GetRealScreenSize(void* deviceIn, int& outWidth, int& outHeight)
+{
+    outWidth = 1920;
+    outHeight = 1080;
+    bool gotViewport = false;
+    if (deviceIn) {
+        void** deviceVtbl = *reinterpret_cast<void***>(deviceIn);
+        auto getViewport = reinterpret_cast<GetViewport_t>(deviceVtbl[kGetViewportVtableIndex]);
+        D3DViewport9 vp = {};
+        if (SUCCEEDED(getViewport(deviceIn, &vp)) && vp.Width > 0 && vp.Height > 0) {
+            outWidth = static_cast<int>(vp.Width);
+            outHeight = static_cast<int>(vp.Height);
+            gotViewport = true;
+        }
+    }
+    if (!gotViewport) {
+        HWND hwnd = GetGameWindow();
+        RECT clientRect;
+        if (hwnd && GetClientRect(hwnd, &clientRect)) {
+            outWidth = clientRect.right - clientRect.left;
+            outHeight = clientRect.bottom - clientRect.top;
+        }
+    }
+
+    // Live-reported 2026-07-31 (second round, 1440p): glyphs/text still landed wrong
+    // even after scaling by the window's GetClientRect -- logged once per distinct
+    // reading (not every frame) so a live repro's proxy_d3d9.log shows whether the real
+    // viewport (ground truth for our own quads' coordinate space) ever actually
+    // disagreed with the window's client rect, confirming or ruling out that theory.
+    static int s_lastLoggedWidth = -1, s_lastLoggedHeight = -1;
+    if (outWidth != s_lastLoggedWidth || outHeight != s_lastLoggedHeight) {
+        s_lastLoggedWidth = outWidth;
+        s_lastLoggedHeight = outHeight;
+        char buf[160];
+        sprintf_s(buf, "[overlay-hud][res-scale] real screen size=%dx%d (source=%s)",
+                   outWidth, outHeight, gotViewport ? "GetViewport" : "GetClientRect-fallback");
+        LogFromController(buf);
+    }
+}
+
+void GetResolutionScale(void* deviceIn, float& outScaleX, float& outScaleY)
+{
+    int width = 1920, height = 1080;
+    GetRealScreenSize(deviceIn, width, height);
+    outScaleX = static_cast<float>(width) / 1920.0f;
+    outScaleY = static_cast<float>(height) / 1080.0f;
+}
+
+void OnDeviceRecreated()
+{
+    LogFromController("[overlay-hud] device recreated (no Reset() call seen) -- releasing this project's own cached textures");
+    ReleaseAllCachedTextures();
+}
 
 void InstallEndSceneHook(void* realDevice)
 {
@@ -565,6 +1468,21 @@ void InstallEndSceneHook(void* realDevice)
         MH_STATUS e = MH_EnableHook(realEndScene);
         sprintf_s(buf, "[overlay-hud] MH_EnableHook(EndScene) = %d", static_cast<int>(e));
         LogFromController(buf);
+    }
+
+    // See the big comment above Hook_Reset for why this exists (live-reported
+    // CRITICAL crash on display-mode change).
+    if (!g_origReset) {
+        void* realReset = deviceVtbl[kResetVtableIndex];
+        MH_STATUS rs = MH_CreateHook(realReset, reinterpret_cast<void*>(&Hook_Reset),
+                                      reinterpret_cast<void**>(&g_origReset));
+        sprintf_s(buf, "[overlay-hud] MH_CreateHook(Reset @ %p) = %d", realReset, static_cast<int>(rs));
+        LogFromController(buf);
+        if (rs == MH_OK) {
+            MH_STATUS re = MH_EnableHook(realReset);
+            sprintf_s(buf, "[overlay-hud] MH_EnableHook(Reset) = %d", static_cast<int>(re));
+            LogFromController(buf);
+        }
     }
 }
 
@@ -616,6 +1534,7 @@ bool LoadOneFontResource(HMODULE selfModule, int resourceId, HANDLE& outHandle, 
 bool LoadOverlayFonts(void* selfModuleHandle)
 {
     HMODULE selfModule = static_cast<HMODULE>(selfModuleHandle);
+    g_selfModule = selfModule; // also needed by the glyph-icon loader (issue #48)
     bool okRegular = LoadOneFontResource(selfModule, IDR_FONT_BARLOWCONDENSED_SEMIBOLD,
         g_fontResourceRegular, "Barlow Condensed SemiBold");
     bool okItalic = LoadOneFontResource(selfModule, IDR_FONT_BARLOWCONDENSED_SEMIBOLD_ITALIC,
@@ -642,6 +1561,91 @@ void ShowOverlayMessage(const char* text, unsigned long durationMs, OverlayAnimS
     g_overlayDurationMs = durationMs;
     g_overlayStyle = style;
     g_overlayActive = true;
+}
+
+void RequestGlyphIconOverlay(float x, float y, float w, float h, const char* assetName)
+{
+    strncpy_s(g_pendingIconAssetName, assetName, _TRUNCATE);
+    g_pendingIconX = x;
+    g_pendingIconY = y;
+    g_pendingIconW = w;
+    g_pendingIconH = h;
+    g_pendingIconRequestedThisFrame = true;
+}
+
+void RequestCustomHintOverlay(float x, float y, const char* prefixText, const char* suffixText,
+                               const char* assetName, bool centerOnScreen, bool flashIcon)
+{
+    strncpy_s(g_pendingHintPrefixText, prefixText, _TRUNCATE);
+    strncpy_s(g_pendingHintSuffixText, suffixText, _TRUNCATE);
+    strncpy_s(g_pendingHintAssetName, assetName, _TRUNCATE);
+    g_pendingHintX = x;
+    g_pendingHintY = y;
+    g_pendingHintCenterOnScreen = centerOnScreen;
+    g_pendingHintFlashIcon = flashIcon;
+    g_pendingHintRequestedThisFrame = true;
+}
+
+void AppendCustomHintSuffix(const char* extraText)
+{
+    if (!g_pendingHintRequestedThisFrame) return;
+    strncat_s(g_pendingHintSuffixText, extraText, _TRUNCATE);
+}
+
+// Menu-hint counterpart to RequestCustomHintOverlay above -- see the big comment
+// above g_menuHintSlots for why this is a small pool of slots (appended to, one per
+// call THIS FRAME) rather than a single overwritten request. Silently drops the
+// request if more than kMaxMenuHintSlots menu hints somehow fire in one frame --
+// safe degradation (that hint just doesn't get its icon this frame) rather than a
+// buffer overrun or a crash.
+void RequestMenuHintOverlay(float x, float y, const char* prefixText, const char* suffixText,
+                             const char* assetName)
+{
+    // Live-reported 2026-08-01: on a modal popup (e.g. "Choose Game Mode" over
+    // Special Ops), the UNDERLYING screen's own corner hint ("Friends") kept
+    // showing instead of the modal's own ("Back") -- "the game doesnt show it
+    // [Friends], friends is meant to be behind the greyed out background." Root
+    // cause: the underlying screen's hint call still fires every frame even while
+    // a modal covers it (its owning screen doesn't know/care it's obscured) --
+    // natively it gets painted over by the modal's own darkening overlay and
+    // disappears, but this project's redraw happens at end-of-frame (EndScene),
+    // after everything else, so it always ends up on top regardless of native
+    // paint order. Fix: if a NEW request this frame lands at roughly the same
+    // screen position as an EARLIER one this same frame (both hints share one
+    // fixed corner-hint box, confirmed live: Friends/Back's own p2 values are only
+    // 5px apart), OVERWRITE that earlier slot instead of adding a new one -- since
+    // Hook_DrawGlyphText calls happen in the same order the game itself issues its
+    // draw commands, "last call wins" for a shared position approximates native
+    // paint order (the modal's own hint, drawn after the screen it covers,
+    // naturally overwrites the obscured one). Genuinely different positions still
+    // coexist as separate slots.
+    constexpr float kSamePositionToleragePx = 20.0f;
+    for (int i = 0; i < g_menuHintSlotCountThisFrame; ++i) {
+        MenuHintSlot& existing = g_menuHintSlots[i];
+        if (fabsf(existing.x - x) < kSamePositionToleragePx && fabsf(existing.y - y) < kSamePositionToleragePx) {
+            strncpy_s(existing.prefixText, prefixText, _TRUNCATE);
+            strncpy_s(existing.suffixText, suffixText, _TRUNCATE);
+            strncpy_s(existing.assetName, assetName, _TRUNCATE);
+            existing.x = x;
+            existing.y = y;
+            return;
+        }
+    }
+    if (g_menuHintSlotCountThisFrame >= kMaxMenuHintSlots) return;
+    MenuHintSlot& slot = g_menuHintSlots[g_menuHintSlotCountThisFrame++];
+    strncpy_s(slot.prefixText, prefixText, _TRUNCATE);
+    strncpy_s(slot.suffixText, suffixText, _TRUNCATE);
+    strncpy_s(slot.assetName, assetName, _TRUNCATE);
+    slot.x = x;
+    slot.y = y;
+}
+
+void RequestDebugPositionMarker(int slot, float x, float y)
+{
+    if (slot < 0 || slot >= kMaxDebugMarkerSlots) return;
+    g_pendingMarkerX[slot] = x;
+    g_pendingMarkerY[slot] = y;
+    g_pendingMarkerRequestedThisFrame[slot] = true;
 }
 
 namespace {

@@ -277,6 +277,17 @@ struct ModConfig
         // "[hud-glyph-pos]" lines and turn back off. Always forwards to the real
         // trampoline completely unmodified regardless of this toggle; only controls
         // whether it logs.
+    bool glyphIconOverlayEnabled = false; // issue #48 (2026-07-31): the actual behavior-
+        // changing step -- draws a real controller-glyph icon (assets/button_glyphs/,
+        // embedded in this DLL) as an overlay quad directly on top of the button-name
+        // portion of a real hint string (e.g. the "F" in "Press F to pick up"),
+        // positioned via Hook_DrawGlyphText's own draw-call params plus the font's real
+        // glyph-advance metrics. DEFAULT OFF -- first live-test round for the actual
+        // drawing step (position/scale param meanings and the color-highlight-span
+        // detection are already confirmed via hudGlyphPositionLogging above; this is the
+        // next, less-proven step). Never mutates the real hint text or draw call itself
+        // -- only ever draws an additional quad after it, same layering as the startup/
+        // config-reload toast notification.
     // sprintStaminaBypassForTesting (task #9) REMOVED 2026-07-19: graduated to
     // unconditional the same day it was added -- Sprint's real +sprint kbutton
     // migration was LIVE-CONFIRMED working, and with it confirmed that the real

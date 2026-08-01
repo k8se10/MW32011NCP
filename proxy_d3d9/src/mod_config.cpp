@@ -70,10 +70,11 @@ void ReadBool(const char* path, const char* section, const char* key, bool& outV
 // at all, even though the compiled defaults would still apply correctly in memory --
 // confirmed live: exactly this happened, config hot-reload alone doesn't add new
 // keys to an already-current-version file; v4->v5 when the new [Experimental]
-// HudGlyphPositionLogging key (issue #48) was added -- same reasoning as the v3->v4
-// bump immediately above, applies every time going forward: any new config key needs
-// a version bump or it silently never appears for already-current-version users.
-constexpr unsigned long kCurrentConfigVersion = 5;
+// HudGlyphPositionLogging key (issue #48) was added; v5->v6 when GlyphIconOverlay
+// (issue #48's actual icon-drawing toggle) was added -- same reasoning applies every
+// time going forward: any new config key needs a version bump or it silently never
+// appears for already-current-version users.
+constexpr unsigned long kCurrentConfigVersion = 6;
 
 // Reads a legacy key's raw value, returning true only if the key genuinely existed
 // (unlike ReadFloat, which can't distinguish "absent" from "present but unparsable" --
@@ -363,7 +364,11 @@ void WriteDefaultConfig(const char* path)
         "; the overlay-quad glyph-icon pivot -- turn on, reproduce a real interact-hint\n"
         "; prompt, check proxy_d3d9.log for \"[hud-glyph-pos]\" lines, then turn back off.\n"
         "; Always forwards unmodified regardless of this toggle. 0 = off, 1 = on.\n"
-        "HudGlyphPositionLogging=%d\n",
+        "HudGlyphPositionLogging=%d\n"
+        "; Issue #48: draws a real controller-glyph icon on top of the button-name\n"
+        "; portion of a real hint string (e.g. the F in \"Press F to pick up\"). DEFAULT\n"
+        "; OFF -- first live-test round for this actual drawing step. 0 = off, 1 = on.\n"
+        "GlyphIconOverlay=%d\n",
         kCurrentConfigVersion,
         g_modConfig.lookDegreesPerSecondHorizontal,
         g_modConfig.lookDegreesPerSecondVertical,
@@ -391,7 +396,8 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.bindResolverHookLogging ? 1 : 0,
         g_modConfig.bindResolverGlyphSubstitution ? 1 : 0,
         g_modConfig.hudFontIdLogging ? 1 : 0,
-        g_modConfig.hudGlyphPositionLogging ? 1 : 0);
+        g_modConfig.hudGlyphPositionLogging ? 1 : 0,
+        g_modConfig.glyphIconOverlayEnabled ? 1 : 0);
 
     fclose(f);
 }
@@ -568,6 +574,7 @@ void LoadModConfig()
     ReadBool(path, "Experimental", "BindResolverGlyphSubstitution", g_modConfig.bindResolverGlyphSubstitution);
     ReadBool(path, "Experimental", "HudFontIdLogging", g_modConfig.hudFontIdLogging);
     ReadBool(path, "Experimental", "HudGlyphPositionLogging", g_modConfig.hudGlyphPositionLogging);
+    ReadBool(path, "Experimental", "GlyphIconOverlay", g_modConfig.glyphIconOverlayEnabled);
 
     g_buttonMap = ResolveButtonMap(g_modConfig.buttonLayout, g_modConfig.flipTriggers);
 
@@ -581,7 +588,7 @@ void LoadModConfig()
         "vibrationDamagePerPoint=%g vibrationDamageMaxIntensity=%g vibrationDamageDurationMs=%lu "
         "overlayFontItalic=%d overlayTestCycleAllVariants=%d "
         "fireNotifyQueueKick=%d bindResolverHookLogging=%d bindResolverGlyphSubstitution=%d "
-        "hudFontIdLogging=%d hudGlyphPositionLogging=%d",
+        "hudFontIdLogging=%d hudGlyphPositionLogging=%d glyphIconOverlayEnabled=%d",
         g_modConfig.lookDegreesPerSecondHorizontal, g_modConfig.lookDegreesPerSecondVertical,
         g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
@@ -600,7 +607,8 @@ void LoadModConfig()
         g_modConfig.bindResolverHookLogging ? 1 : 0,
         g_modConfig.bindResolverGlyphSubstitution ? 1 : 0,
         g_modConfig.hudFontIdLogging ? 1 : 0,
-        g_modConfig.hudGlyphPositionLogging ? 1 : 0);
+        g_modConfig.hudGlyphPositionLogging ? 1 : 0,
+        g_modConfig.glyphIconOverlayEnabled ? 1 : 0);
     LogFromController(buf);
 
     // Rewrite the file once, now that g_modConfig holds every existing setting PLUS
