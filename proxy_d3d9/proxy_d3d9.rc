@@ -7,3 +7,61 @@
 // see resource.h for the licensing note and README.md for attribution.
 IDR_FONT_BARLOWCONDENSED_SEMIBOLD        RCDATA "..\\assets\\fonts\\BarlowCondensed-SemiBold.ttf"
 IDR_FONT_BARLOWCONDENSED_SEMIBOLD_ITALIC RCDATA "..\\assets\\fonts\\BarlowCondensed-SemiBoldItalic.ttf"
+
+// Controller-glyph icons (issue #48, 2026-07-31) -- the real, already-extracted PNGs
+// from assets/button_glyphs/, embedded directly rather than loaded from loose files
+// on disk, same reasoning as the fonts above: no separate deployment step, no
+// silently-missing-file failure mode. Named as BAREWORD string resource names (NOT
+// quoted string literals -- rc.exe accepts quoted names but FindResourceA then can't
+// look them up by the same plain ANSI string, confirmed live 2026-07-31: every lookup
+// returned a null handle until the quotes were removed) so overlay_hud.cpp's icon
+// loader can look one up directly by the same asset-name string
+// analog_input_hooks.cpp's existing GlyphAssetName() table already returns, with no
+// ID-mapping table to keep in sync on either side.
+dpad_down RCDATA "..\\assets\\button_glyphs\\dpad_down.png"
+dpad_left RCDATA "..\\assets\\button_glyphs\\dpad_left.png"
+dpad_right RCDATA "..\\assets\\button_glyphs\\dpad_right.png"
+dpad_up RCDATA "..\\assets\\button_glyphs\\dpad_up.png"
+ps_circle RCDATA "..\\assets\\button_glyphs\\ps_circle.png"
+ps_create RCDATA "..\\assets\\button_glyphs\\ps_create.png"
+ps_cross RCDATA "..\\assets\\button_glyphs\\ps_cross.png"
+ps_l1 RCDATA "..\\assets\\button_glyphs\\ps_l1.png"
+ps_l2 RCDATA "..\\assets\\button_glyphs\\ps_l2.png"
+ps_l3 RCDATA "..\\assets\\button_glyphs\\ps_l3.png"
+ps_options RCDATA "..\\assets\\button_glyphs\\ps_options.png"
+ps_r1 RCDATA "..\\assets\\button_glyphs\\ps_r1.png"
+ps_r2 RCDATA "..\\assets\\button_glyphs\\ps_r2.png"
+ps_r3 RCDATA "..\\assets\\button_glyphs\\ps_r3.png"
+ps_square RCDATA "..\\assets\\button_glyphs\\ps_square.png"
+ps_touchpad RCDATA "..\\assets\\button_glyphs\\ps_touchpad.png"
+ps_triangle RCDATA "..\\assets\\button_glyphs\\ps_triangle.png"
+stick_ls_down RCDATA "..\\assets\\button_glyphs\\stick_ls_down.png"
+stick_ls_left RCDATA "..\\assets\\button_glyphs\\stick_ls_left.png"
+stick_ls_right RCDATA "..\\assets\\button_glyphs\\stick_ls_right.png"
+stick_ls_up RCDATA "..\\assets\\button_glyphs\\stick_ls_up.png"
+stick_rs_down RCDATA "..\\assets\\button_glyphs\\stick_rs_down.png"
+stick_rs_left RCDATA "..\\assets\\button_glyphs\\stick_rs_left.png"
+stick_rs_right RCDATA "..\\assets\\button_glyphs\\stick_rs_right.png"
+stick_rs_up RCDATA "..\\assets\\button_glyphs\\stick_rs_up.png"
+xbox360_a RCDATA "..\\assets\\button_glyphs\\xbox360_a.png"
+xbox360_b RCDATA "..\\assets\\button_glyphs\\xbox360_b.png"
+xbox360_back RCDATA "..\\assets\\button_glyphs\\xbox360_back.png"
+xbox360_lb RCDATA "..\\assets\\button_glyphs\\xbox360_lb.png"
+xbox360_lt RCDATA "..\\assets\\button_glyphs\\xbox360_lt.png"
+xbox360_rb RCDATA "..\\assets\\button_glyphs\\xbox360_rb.png"
+xbox360_rt RCDATA "..\\assets\\button_glyphs\\xbox360_rt.png"
+xbox360_start RCDATA "..\\assets\\button_glyphs\\xbox360_start.png"
+xbox360_x RCDATA "..\\assets\\button_glyphs\\xbox360_x.png"
+xbox360_y RCDATA "..\\assets\\button_glyphs\\xbox360_y.png"
+xboxmodern_a RCDATA "..\\assets\\button_glyphs\\xboxmodern_a.png"
+xboxmodern_b RCDATA "..\\assets\\button_glyphs\\xboxmodern_b.png"
+xboxmodern_lb RCDATA "..\\assets\\button_glyphs\\xboxmodern_lb.png"
+xboxmodern_ls RCDATA "..\\assets\\button_glyphs\\xboxmodern_ls.png"
+xboxmodern_lt RCDATA "..\\assets\\button_glyphs\\xboxmodern_lt.png"
+xboxmodern_menu RCDATA "..\\assets\\button_glyphs\\xboxmodern_menu.png"
+xboxmodern_rb RCDATA "..\\assets\\button_glyphs\\xboxmodern_rb.png"
+xboxmodern_rs RCDATA "..\\assets\\button_glyphs\\xboxmodern_rs.png"
+xboxmodern_rt RCDATA "..\\assets\\button_glyphs\\xboxmodern_rt.png"
+xboxmodern_view RCDATA "..\\assets\\button_glyphs\\xboxmodern_view.png"
+xboxmodern_x RCDATA "..\\assets\\button_glyphs\\xboxmodern_x.png"
+xboxmodern_y RCDATA "..\\assets\\button_glyphs\\xboxmodern_y.png"

@@ -15,6 +15,51 @@
 // already uses. Hooks EndScene via MinHook.
 void InstallEndSceneHook(void* realDevice);
 
+// Live-reported 2026-07-31 (critical findings file): "glyphs and text are moved to
+// incorrect pos based on resolution... it should scale based on the current res."
+// Root cause: every SIZE constant this project's glyph-icon overlay work uses (icon
+// pixel size, gaps, margins, font height) was tuned and validated ONLY at 1920x1080 --
+// the one resolution where a missing scale step is invisible. Returns (real backbuffer
+// width / 1920, real backbuffer height / 1080) so callers can multiply their own
+// 1080p-authored SIZE constants by the right axis. Reads the device's actual
+// IDirect3DDevice9::GetViewport (falling back to the game window's GetClientRect only
+// if that fails) rather than assuming the window's client rect matches the real
+// backbuffer 1:1 -- live-reported 2026-07-31 (second round, 1440p): it doesn't
+// necessarily, since this old engine's backbuffer/render-target size isn't guaranteed
+// to equal the window's client area. deviceIn may be null (falls back to
+// GetClientRect immediately) for call sites without a live device handle.
+//
+// POSITION is intentionally NOT derived from this scale factor (per explicit
+// 2026-07-31 direction: "let's not make res a factor except for size scaling, and just
+// do things proportional to the edges + centre of the screen"). Positions are computed
+// directly as fractions of the real viewport width/height (screen-edge-relative) or
+// centered against it -- see DrawCustomHintIfRequested's own cursorX/Y math.
+void GetResolutionScale(void* deviceIn, float& outScaleX, float& outScaleY);
+
+// Real current backbuffer/viewport width and height in pixels (same ground-truth
+// source as GetResolutionScale above) -- for positioning hints as fractions of the
+// real screen edges/center, independent of any 1920x1080 reference.
+void GetRealScreenSize(void* deviceIn, int& outWidth, int& outHeight);
+
+// Live-reported 2026-07-31: the IDirect3DDevice9::Reset hook added to fix "changing
+// display mode crashes the whole game" did NOT fix it -- confirmed via proxy_d3d9.log:
+// Hook_Reset's own "Reset() called" line never appears anywhere after a display-mode
+// change, but a SECOND real IDirect3D9::CreateDevice call does (d3d9_hook.cpp's own
+// CreateDevice log line fires again, with hr=0x00000000, well after the first device's
+// install). This engine doesn't call Reset() on a display-mode change at all -- it
+// destroys the whole IDirect3DDevice9 and creates a brand new one. Every texture this
+// project cached (toast, hint prefix/suffix, glyph icons, debug marker) was created
+// against the OLD, now-destroyed device -- using those stale COM pointers against the
+// NEW device on the very next EndScene is invalid cross-device resource usage, and is
+// the real cause of the "Direct3DDevice9::Present failed: An undetermined error
+// occurred" dialog (a graceful engine-side failure, not a raw crash -- matches the
+// live report of audio continuing to run under the error dialog). Call this from
+// d3d9_hook.cpp's Hook_CreateDevice whenever a HAL device is (re)created and a prior
+// device already existed -- releases every cached texture (same underlying release
+// path Hook_Reset already used) so they lazily recreate against the new device on next
+// use, exactly like a genuine lost-device recovery.
+void OnDeviceRecreated();
+
 // Loads Barlow Condensed SemiBold (regular + italic) as a PRIVATE, in-process-only
 // font via AddFontMemResourceEx, from the .ttf data embedded directly in this DLL
 // (proxy_d3d9.rc/resource.h) -- so overlay text no longer depends on the real font
@@ -55,3 +100,81 @@ void ShowOverlayMessage(const char* text, unsigned long durationMs, OverlayAnimS
 // variant can actually be inspected on demand instead of waiting on the real 1-in-20
 // startup RNG roll. Never enable the underlying config toggle for normal play.
 void TickOverlayTestCycle();
+
+// ---- Controller-glyph icon overlay (issue #48, 2026-07-31) -----------------------
+//
+// Requests a controller-glyph icon (one of the real PNGs in assets/button_glyphs/,
+// e.g. "xbox360_x") be drawn THIS FRAME as a screen-space quad at (x, y), sized
+// (w, h) -- all already in real screen pixels, computed by the caller
+// (analog_input_hooks.cpp's Hook_DrawGlyphText) from the real draw call's own
+// position/scale params plus the font's own glyph-advance metrics, so the icon lands
+// exactly over the button-name character(s) it's replacing visually (not literally
+// replacing the underlying text draw -- this draws ON TOP of it, same layering the
+// startup/config-reload toast already uses). Safe to call every frame a hint is on
+// screen: state is a single "current request" that must be re-requested every frame
+// to keep showing (drawn once per EndScene, then cleared) -- if a hint stops being
+// resolved, its icon disappears within one frame with no separate teardown call
+// needed. Loads and caches the PNG texture (via WIC, decoded once per assetName,
+// kept for the DLL's lifetime) the first time each distinct assetName is requested.
+void RequestGlyphIconOverlay(float x, float y, float w, float h, const char* assetName);
+
+// Requests THIS project's own complete replacement rendering for an in-game hint
+// (2026-07-31 pivot, issue #48/#49): prefixText, then the real controller-glyph icon,
+// then suffixText, drawn sequentially at (x, y) using this project's own embedded
+// font -- NOT an overlay on top of the game's own text draw. The caller
+// (Hook_DrawGlyphText) is expected to suppress the real draw call entirely when it
+// uses this, since there's no game-drawn text left underneath to align against.
+// Empty prefixText/suffixText are valid (a hint that's ALL icon, or has nothing after
+// it). Safe to call every frame a hint is on screen; expires if not refreshed, same
+// "current request" model as RequestGlyphIconOverlay above.
+//
+// centerOnScreen (live-reported 2026-07-31): if true, x is IGNORED for the final
+// horizontal position -- the whole composite (using its real measured content width)
+// is centered on the real screen width instead, since most of these hints read
+// better centered than left-anchored at the game's own raw coordinate. If false, x is
+// used as the literal left edge (e.g. the mantle/jump hint, which is instead nudged
+// to sit near a separately-drawn native sprite at a specific screen position, not
+// screen-center).
+//
+// flashIcon (live-reported 2026-07-31, the Reload prompt): the real native reload
+// reminder has no button-name text at all -- it just flashes the bare word "Reload"
+// -- unlike every other hint's real "^N...^7"-highlighted phrasing. Matching
+// console's own look for this one (button glyph blinks, the surrounding text stays
+// solid) needs actual per-frame animation, not just a static composite -- when true,
+// the icon's own opacity pulses over time (GetTickCount()-driven); prefix/suffix text
+// always draws at full opacity regardless.
+void RequestCustomHintOverlay(float x, float y, const char* prefixText, const char* suffixText,
+                               const char* assetName, bool centerOnScreen, bool flashIcon = false);
+
+// Appends extraText to the CURRENTLY pending hint's suffix (e.g. a weapon name that
+// draws as its own separate, unhighlighted continuation right after the interact
+// hint's own text -- see analog_input_hooks.cpp's continuation-matching logic for how
+// that's detected). No-op if no hint is currently pending this frame (RequestCustomHintOverlay
+// hasn't been called yet), so a stray/unrelated call can't corrupt an unrelated later
+// request. Reads the real string live -- nothing about the appended text is
+// hardcoded, it's whatever the caller actually observed on screen.
+void AppendCustomHintSuffix(const char* extraText);
+
+// Menu-hint counterpart to RequestCustomHintOverlay above (2026-08-01, live-reported
+// bug: "Friends doesn't show on some screens" / "Friends stays on screen when it
+// should say Back"). Unlike a gameplay interact hint (confirmed all session to only
+// ever have ONE on screen at a time), MW3's menu UI shows a persistent legend bar --
+// multiple hints (e.g. "Back" AND "Friends") drawn simultaneously, every frame, as
+// separate calls. RequestCustomHintOverlay's single slot could only hold one of
+// them per frame, silently losing whichever call didn't happen to run last. This
+// APPENDS to a small pool of slots instead (up to 4 simultaneous menu hints per
+// frame) so multiple menu hints can coexist. Always left-anchored at (x, y) --
+// menu hints never center on screen or pulse (no Reload-style prompt exists in menu
+// UI), unlike the gameplay version above.
+void RequestMenuHintOverlay(float x, float y, const char* prefixText, const char* suffixText,
+                             const char* assetName);
+
+// TEMPORARY debug aid (2026-07-31, issue #48 position-tuning round) -- draws a small
+// solid-colored 8x8 marker centered exactly at (x, y), no further offset/scale
+// applied by the drawing code itself, so a live screenshot can show what a given
+// position HYPOTHESIS actually lands on relative to the real text on screen. Slot is
+// 0-3 (up to 4 simultaneous markers, each a different color, so multiple position
+// hypotheses can be tested in ONE live round instead of guessing sequentially).
+// Remove once the real coordinate-space convention is confirmed and this no longer
+// needs visual verification.
+void RequestDebugPositionMarker(int slot, float x, float y);

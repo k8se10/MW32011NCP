@@ -23,6 +23,7 @@
 #include "../third_party/minhook/include/MinHook.h"
 #include "controller_input.h"
 #include "mod_config.h"
+#include "overlay_hud.h"
 #include "rumble.h"
 
 // Forwarder defined in dllmain.cpp -- lets this translation unit log to the same
@@ -2022,6 +2023,26 @@ bool g_menuNavDownHeld = false;
 bool g_menuNavLeftHeld = false;
 bool g_menuNavRightHeld = false;
 bool g_menuNavSelectHeld = false;
+bool g_menuNavYHeld = false;
+
+// Live-reported 2026-08-01: the menu-hint glyph work correctly shows a Y icon next
+// to "Friends" (console's real mapping, per the user's own earlier correction), but
+// pressing physical Y did nothing -- that work only ever replaced the ON-SCREEN
+// ICON, it never wired an actual keypress. Friends is a real keyboard bind ("F") the
+// game's own key-event handler listens for directly -- NOT one of FUN_004dfd30's
+// generic menu-navigation keycodes (Up/Down/Left/Right/Enter above), so this can't
+// go through ForwardKeyToMenu the way those do. Uses the exact same technique as
+// Survival's ready-up F5 synthesis (SendSyntheticF5): a real WM_KEYDOWN/WM_KEYUP
+// posted straight at the game's own window, indistinguishable from an actual
+// keypress since this game has no DirectInput import at all (keyboard input is
+// genuine window messages either way).
+void SendSyntheticF()
+{
+    HWND hwnd = GetGameWindow();
+    if (!hwnd) return;
+    PostMessageA(hwnd, WM_KEYDOWN, 'F', 0x00000001);
+    PostMessageA(hwnd, WM_KEYUP, 'F', 0xC0000001);
+}
 } // namespace
 
 extern "C" void __cdecl InjectControllerMenuNav()
@@ -2034,6 +2055,7 @@ extern "C" void __cdecl InjectControllerMenuNav()
         g_menuNavLeftHeld = false;
         g_menuNavRightHeld = false;
         g_menuNavSelectHeld = false;
+        g_menuNavYHeld = false;
         return;
     }
 
@@ -2066,6 +2088,13 @@ extern "C" void __cdecl InjectControllerMenuNav()
         ForwardKeyToMenu(kLocalClientIndex, kKeyEnter, selectHeld ? 1 : 0);
         g_menuNavSelectHeld = selectHeld;
     }
+    // Friends (2026-08-01) -- see the big comment above SendSyntheticF. Fires on Y's
+    // rising edge only (not a held/repeat key), same convention as a real keypress.
+    bool yHeld = IsPhysicalHeld(PhysicalInput::Y, buttons, leftTrigger, rightTrigger);
+    if (yHeld && !g_menuNavYHeld) {
+        SendSyntheticF();
+    }
+    g_menuNavYHeld = yHeld;
 }
 
 extern "C" void __cdecl InjectControllerPauseMenu()
@@ -2512,6 +2541,122 @@ constexpr uintptr_t kMenuRegistryCountAddr = 0x01c00e90;
 bool LooksLikeValidPointer(uintptr_t p)
 {
     return p >= 0x00010000 && p < 0x7FFF0000;
+}
+
+// ---- Menu highlighted-item tracking (2026-08-01, menu-glyph work, issue #48) ------
+//
+// User's own framing: "highlighted entries must get the appropriate glyph next to
+// them" (e.g. an A glyph next to whichever main-menu tile currently has focus) --
+// and the correction that this project ALREADY has the RE needed for this, rather
+// than it being a fresh unknown: issue #22's own decompile of FUN_006253d0/
+// FUN_00625290 (the real native "next item"/"previous item" functions D-pad
+// navigation already forwards into) found a real per-list focus-index field at
+// `*(int*)(*param_1 + 0x68 + column*4)`, plus a real item-count field (`param_1[0x2a]`)
+// and item-pointer array (`param_1[0x2b]`) on the same struct. What issue #22 never
+// captured is what that `param_1` pointer actually IS at any given moment -- it's an
+// argument threaded through the call chain, not a fixed address. Re-decompiling
+// FUN_004dfd30 (the real generic key-to-menu dispatcher this project's own
+// ForwardKeyToMenu/FUN_004d9850 already calls into for every D-pad/A/B menu
+// keypress -- same function issue #22's own switch-statement trace already came
+// from) shows it receives this exact struct as its OWN `param_2` argument, and
+// passes it straight through to FUN_006253d0/FUN_00625290 unchanged. Hooking
+// FUN_004dfd30 directly (a hook this project has never installed before -- it was
+// previously only ever CALLED INTO, via ForwardKeyToMenu, never intercepted) lets
+// this project observe and cache that same pointer for its own later use (reading
+// the current focus index at render time), with zero risk to the real dispatch
+// logic since the hook only reads an argument and forwards everything unmodified.
+namespace {
+using FUN_004dfd30_t = void(__cdecl*)(int* param_1, int* param_2, unsigned param_3, int param_4);
+// Declared as plain void* (not FUN_004dfd30_t) so its address matches MinHook's own
+// LPVOID* out-parameter directly, same convention every other hook in this file
+// uses (e.g. g_orig_0061f6f0/g_orig_0057de60) -- cast back to the real function type
+// only at the call site inside Hook_004dfd30 below.
+void* g_orig_004dfd30 = nullptr;
+// Cached raw pointer to whatever menu item-list struct most recently received a
+// forwarded key -- NOT validated/dereferenced here, only stored. Consumers must
+// treat it as untrusted (validate via LooksLikeValidPointer, wrap reads in SEH)
+// since it can go stale the instant the menu that owned it closes.
+void* g_lastMenuListStruct = nullptr;
+
+void __cdecl Hook_004dfd30(int* param_1, int* param_2, unsigned param_3, int param_4)
+{
+    g_lastMenuListStruct = param_2;
+    reinterpret_cast<FUN_004dfd30_t>(g_orig_004dfd30)(param_1, param_2, param_3, param_4);
+}
+} // namespace
+
+// Read-only diagnostic (2026-08-01, first live-test pass for the mechanism above,
+// same "diagnostic before feature" convention this project uses for every other new
+// struct-field read -- see e.g. issue #22's own font-struct diagnostic). Reads the
+// cached list struct's real focus-index/item-count fields and logs them, deduped by
+// value so it doesn't spam every frame -- confirms live whether this struct pointer
+// and field-offset theory are actually correct before anything draws a glyph off of
+// them. Gated on g_modConfig.glyphIconOverlayEnabled (same toggle as the rest of the
+// custom-hint-overlay work) rather than its own separate config key, since this is
+// investigation scaffolding for that same feature, not a standalone toggle.
+void LogMenuFocusDiagnosticIfChanged()
+{
+    if (!g_modConfig.glyphIconOverlayEnabled) return;
+    if (!LooksLikeValidPointer(reinterpret_cast<uintptr_t>(g_lastMenuListStruct))) return;
+    static void* s_lastLoggedStruct = nullptr;
+    static int s_lastLoggedFocus = INT_MIN;
+    __try {
+        int* listStruct = static_cast<int*>(g_lastMenuListStruct);
+        int* nested = *reinterpret_cast<int**>(listStruct);
+        if (!LooksLikeValidPointer(reinterpret_cast<uintptr_t>(nested))) return;
+        int focusIndex = *reinterpret_cast<int*>(reinterpret_cast<char*>(nested) + 0x68);
+        int itemCount = listStruct[0x2a];
+        if (g_lastMenuListStruct != s_lastLoggedStruct || focusIndex != s_lastLoggedFocus) {
+            s_lastLoggedStruct = g_lastMenuListStruct;
+            s_lastLoggedFocus = focusIndex;
+            char buf[160];
+            sprintf_s(buf, "[menu-focus-diag] listStruct=%p focusIndex=%d itemCount=%d",
+                       g_lastMenuListStruct, focusIndex, itemCount);
+            LogFromController(buf);
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        // Same rationale as every other struct-field-read diagnostic in this file --
+        // never let an unconfirmed offset theory crash the game.
+    }
+}
+
+// ---- Nested-modal detection via the focus-tracking hook (2026-08-01) --------------
+//
+// Live-reported: a stale corner hint (e.g. "Friends") kept showing on a modal popup
+// ("Choose Game Mode" over Special Ops) that has no native corner hint of its own --
+// the underlying screen's "Friends" call keeps firing every frame even while
+// obscured, since its owning screen doesn't know/care a modal now covers it.
+// Naively forcing a synthetic "Back" over ANY recently-active corner hint would also
+// incorrectly override a LEGITIMATE "Friends" hint on a screen where it's actually
+// correct (that screen is also IsMenuActive()==true). The real distinguishing
+// signal: g_lastMenuListStruct (cached from FUN_004dfd30, confirmed live via the
+// D-pad focus-index test) reflects whichever list is CURRENTLY receiving input --
+// opening a nested modal changes this to a genuinely different struct pointer than
+// whatever was focused on the outer/root screen. Snapshots that root pointer the
+// moment a menu first opens (IsMenuActive() transitioning false->true) so later code
+// can tell "am I still on the root screen" (trust whatever native hint fires) from
+// "am I inside a nested modal" (any corner hint currently showing is suspect, since
+// it may belong to the now-obscured parent -- always prefer this project's own Back
+// hint in that case).
+void* g_menuRootListStruct = nullptr;
+bool g_wasMenuActiveLastTick = false;
+
+void UpdateMenuRootListTracking()
+{
+    bool activeNow = IsMenuActive();
+    if (activeNow && !g_wasMenuActiveLastTick) {
+        g_menuRootListStruct = g_lastMenuListStruct;
+    }
+    if (!activeNow) {
+        g_menuRootListStruct = nullptr;
+    }
+    g_wasMenuActiveLastTick = activeNow;
+}
+
+bool IsInsideNestedMenu()
+{
+    return g_menuRootListStruct != nullptr && g_lastMenuListStruct != nullptr &&
+           g_lastMenuListStruct != g_menuRootListStruct;
 }
 
 void LogMenuRegistry(const char* tag)
@@ -3204,7 +3349,11 @@ int SumDirectIndexedGlyphWidthsBefore(const DiagFont* font, const char* text, si
 // separate, still-open problem). NOT a claim that ^N is always color 3 or always
 // means "this is a button name" in every possible context -- just the pattern
 // actually observed marking button names in every hint string captured so far.
-struct ColorHighlightSpan { size_t contentStart; size_t contentLen; bool found; };
+// markerStart/markerEnd (added 2026-07-31, custom-hint-overlay pivot) bound the WHOLE
+// "^N...^7" run including both marker tokens themselves -- needed to cleanly split
+// the full string into prefix (before markerStart) and suffix (after markerEnd) once
+// the highlighted content is being replaced by a real icon instead of drawn as text.
+struct ColorHighlightSpan { size_t contentStart; size_t contentLen; size_t markerStart; size_t markerEnd; bool found; };
 
 ColorHighlightSpan FindColorHighlightSpan(const char* text, size_t textLen)
 {
@@ -3213,21 +3362,61 @@ ColorHighlightSpan FindColorHighlightSpan(const char* text, size_t textLen)
             size_t contentStart = i + 2;
             for (size_t j = contentStart; j + 1 < textLen; ++j) {
                 if (text[j] == '^' && text[j + 1] >= '0' && text[j + 1] <= '9') {
-                    return { contentStart, j - contentStart, true };
+                    return { contentStart, j - contentStart, i, j + 2, true };
                 }
             }
             break; // opening marker with no closing marker -- don't guess an end
         }
     }
-    return { 0, 0, false };
+    return { 0, 0, 0, 0, false };
+}
+
+// Restricts the custom hint-overlay replacement (issue #48/#49) to the two real fonts
+// actually used for in-game gameplay HUD hints -- confirmed via hud-font-id live
+// captures 2026-07-31: "Press F to pick up"/"Hold F to use Weapon Armory" both use
+// fonts/extraBigFont; Survival's "Press F5 to ready up" uses fonts/hudSmallFont. Main-
+// menu UI hints ("Friends ^2F^7", "Back ^2ESC^7") use fonts/smallFont, and main-menu
+// titles use fonts/hudBigFont -- explicitly EXCLUDED: the user confirmed this
+// shouldn't apply to menu UI at all (console used a different button there anyway --
+// Y for Friends, not X -- so even this project's own gameplay keybind table would map
+// it wrong if it were allowed to apply).
+// hudBigFont added 2026-07-31: the flashing "Reload" reminder (no "^N...^7" span of
+// its own -- a completely different detection path, see the Reload-specific block in
+// Hook_DrawGlyphText) uses this font too. Safe to include here even though main-menu
+// titles also use it, since those never match either detection path (no span, and
+// never literally say "Reload").
+bool IsGameplayHintFont(const DiagFont* font)
+{
+    if (!font || !LooksLikeValidPointer(reinterpret_cast<uintptr_t>(font->fontName))) return false;
+    return _stricmp(font->fontName, "fonts/extraBigFont") == 0 ||
+           _stricmp(font->fontName, "fonts/hudSmallFont") == 0 ||
+           _stricmp(font->fontName, "fonts/hudBigFont") == 0;
+}
+
+// Menu-hint counterpart to IsGameplayHintFont above (issue #48, menu-glyph pass,
+// 2026-08-01) -- fonts/smallFont is the real font used for menu UI hints like
+// "Back ^2ESC^7"/"Friends ^2F^7" (confirmed via hud-font-id captures), previously
+// EXCLUDED entirely from the custom-hint-overlay pipeline (see IsGameplayHintFont's
+// own comment) because the gameplay bind table would have mapped these keys wrong.
+// Now handled through its own separate detection block (below, in
+// Hook_DrawGlyphText) that resolves through ResolveMenuGlyphAssetNameForKeyName
+// instead of the gameplay table.
+bool IsMenuHintFont(const DiagFont* font)
+{
+    if (!font || !LooksLikeValidPointer(reinterpret_cast<uintptr_t>(font->fontName))) return false;
+    return _stricmp(font->fontName, "fonts/smallFont") == 0;
 }
 } // namespace
 
-// Forward declaration -- defined near the bind-resolver hook (issue #35) further down
+// Forward declarations -- defined near the bind-resolver hook (issue #35) further down
 // this file. Issue #48's position-logging diagnostic (in Hook_DrawGlyphText, above
 // that hook in file order) needs to cross-reference the last-resolved key name (e.g.
-// "F") against the drawn hint text to find which character it corresponds to.
+// "F") against the drawn hint text to find which character it corresponds to, and its
+// own icon-drawing block needs to map a color-highlighted key name to a real glyph
+// asset name.
 const char* GetLastResolvedBindKeyName();
+bool TryGetGlyphAssetNameForKeyName(const char* keyName, char* outAssetName, size_t outSize);
+bool TryGetMenuGlyphAssetNameForKeyName(const char* keyName, char* outAssetName, size_t outSize);
 
 // Reuses the same obscure LB+RB-held-2s convention as the zoneload-test above (that
 // test is disabled/not wired into the live tick, so no collision) -- deliberately
@@ -3357,6 +3546,118 @@ char g_lastLoggedHudFontName[64] = {};
 // the goal here is "what are the real x/y/scale/color params for THIS specific
 // interact-hint string", not "when does the font change".
 char g_lastLoggedGlyphPosText[128] = {};
+
+// Issue #48/#49 (2026-07-31 follow-up): "read the weapon name live, no hardcoding"
+// -- the weapon name that follows a pickup/swap hint (e.g. " Model 1887") draws as
+// its OWN separate Hook_DrawGlyphText call, with no "^N...^7" span of its own, so it
+// was never touched by the suppression logic above and kept rendering natively
+// (independently positioned from our own replacement). Detected here instead by a
+// simple, tight heuristic: whenever a hint IS suppressed below, remember its real
+// font pointer and p3 (screen row); the very next call this frame that shares BOTH
+// exactly and has no highlight span of its own is treated as that hint's real
+// continuation text -- suppressed too, and its actual live string content appended
+// to the already-pending composite via AppendCustomHintSuffix (never a hardcoded
+// weapon name -- whatever the game's real string says is what gets appended).
+// One-shot per hint (cleared once consumed or once a new hint is suppressed).
+void* g_awaitingHintContinuationFont = nullptr;
+float g_awaitingHintContinuationP3 = 0.0f;
+bool g_awaitingHintContinuation = false;
+
+// Live-reported 2026-07-31: the Reload prompt should be suppressed whenever a real
+// interact hint (pickup/swap/buy-station/mantle/grenade-throwback -- the highlighted-
+// span path above) is also on screen, to avoid both showing at once. Tracked as a
+// timestamp rather than a same-frame flag deliberately: within a single frame, the
+// Reload text and an interact hint could be processed in EITHER order (this project
+// doesn't control the game's own per-element draw order), so a flag that's only valid
+// "later in this same frame" would miss the case where Reload happens to be checked
+// first. A short recency WINDOW (checked via GetTickCount() elapsed, not an exact
+// frame boundary) sidesteps that ordering question entirely -- a real hint persists
+// for many consecutive frames while active, so a 100ms lag on the Reload suppression
+// clearing is completely imperceptible.
+DWORD g_lastInteractHintTickMs = 0;
+constexpr DWORD kInteractHintRecencyWindowMs = 100;
+bool WasInteractHintRecentlyActive()
+{
+    return (GetTickCount() - g_lastInteractHintTickMs) < kInteractHintRecencyWindowMs;
+}
+
+// Live-reported 2026-08-01: on a modal popup with no native corner-hint of its own
+// (e.g. "Choose Game Mode" over Special Ops), NOTHING shows -- the user's own
+// correction after an initial wrong diagnosis: "the modal has no back[,] we need to
+// add one in the standard place." Unlike Back/Friends (which DO have a real native
+// "^N...^7" hint this project can intercept and replace), this modal has no such
+// call at all to hook -- there is nothing to suppress or redraw, a synthetic hint
+// has to be created from nothing. Tracks whether a REAL native corner hint (Back or
+// Friends, both resolved via ResolveMenuGlyphAssetNameForKeyName at the standard
+// corner position) fired recently, same short-recency-window convention as
+// WasInteractHintRecentlyActive above (a real hint persists across many consecutive
+// frames while active, so acting on a slightly-stale flag is imperceptible) -- if
+// nothing has, and a menu is genuinely open (IsMenuActive(), the same real gate bit
+// B's own ESC-forward already relies on, confirmed all session to correctly exclude
+// the root main menu -- there's nowhere to back out of there), synthesizes a "Back"
+// hint of this project's own at the exact same standard position the real
+// Back/Friends hints use (see InjectSyntheticBackHintIfNeeded, called every tick).
+DWORD g_lastNativeMenuCornerHintTickMs = 0;
+constexpr DWORD kMenuCornerHintRecencyWindowMs = 150;
+bool WasNativeMenuCornerHintRecentlyActive()
+{
+    return (GetTickCount() - g_lastNativeMenuCornerHintTickMs) < kMenuCornerHintRecencyWindowMs;
+}
+
+// Live-captured 2026-08-01 (proxy_d3d9.log): the real "Back ^2ESC^7" hint's own
+// native position, at 2560x1440 -- this is the "standard place" the user asked for
+// the synthetic Back hint below to reuse, so it lines up exactly with wherever a
+// REAL corner hint would have appeared instead. Deliberately reused verbatim
+// (same raw numeric treatment as the live param_2/param_3 passthrough elsewhere in
+// this function) rather than re-derived as a resolution-independent fraction --
+// guarantees pixel-consistency with the already-accepted-correct real hints; only
+// confirmed live at 2560x1440 so far, may need adjustment if ever tested at another
+// resolution.
+constexpr float kStandardCornerHintX = 1634.0f;
+constexpr float kStandardCornerHintY = 995.0f;
+
+// Live-reported 2026-08-01: "the modal has no back[,] we need to add one in the
+// standard place" -- unlike Back/Friends (real native "^N...^7" hints this project
+// can intercept and replace), some modals (e.g. "Choose Game Mode" over Special
+// Ops) have NO native corner hint at all to hook -- there's nothing to suppress or
+// redraw, so a hint has to be synthesized from nothing. Whenever a menu is open
+// (IsMenuActive(), the same gate B's own real ESC-forward already relies on --
+// confirmed all session to correctly exclude the root main menu, since there's
+// nowhere to back out of there) and no REAL corner hint has fired recently (i.e.
+// this specific screen doesn't already have its own native Back/Friends), requests
+// this project's own "Back" hint at the same standard position. B's ESC-forward
+// itself (InjectControllerMenuBack) is completely untouched by this -- pressing B
+// already correctly closes any menu regardless of whether a hint is visible for it;
+// this only adds the missing VISUAL indicator.
+void RequestSyntheticBackHint()
+{
+    char assetName[32] = {};
+    if (!TryGetMenuGlyphAssetNameForKeyName("ESC", assetName, sizeof(assetName))) return;
+    constexpr float kMenuHintVerticalNudge = -18.0f; // matches the real corner hints' own empirical nudge
+    RequestMenuHintOverlay(kStandardCornerHintX, kStandardCornerHintY + kMenuHintVerticalNudge, "Back ", "", assetName);
+}
+
+extern "C" void __cdecl InjectSyntheticBackHintIfNeeded()
+{
+    if (!g_modConfig.glyphIconOverlayEnabled) return;
+    if (!IsMenuActive()) return;
+    if (IsInsideNestedMenu()) {
+        // Live-reported 2026-08-01: a nested modal (e.g. "Choose Game Mode" over
+        // Special Ops) with no native corner hint of its own left a STALE "Friends"
+        // (the obscured parent screen's own hint, which keeps firing every frame
+        // regardless) on screen. See IsInsideNestedMenu's own big comment -- being
+        // inside a nested modal at all means any corner-hint text currently firing
+        // is suspect (it may belong to the now-obscured parent), so always prefer
+        // this project's own Back hint here, unconditionally.
+        RequestSyntheticBackHint();
+        return;
+    }
+    // Still the root/outer screen -- only synthesize Back if nothing native fired
+    // recently, so a LEGITIMATE native hint (e.g. Friends, correct on this screen)
+    // is never overridden.
+    if (WasNativeMenuCornerHintRecentlyActive()) return;
+    RequestSyntheticBackHint();
+}
 
 // ---- HUD-text visibility-test state (task #6/#34 follow-up, 2026-07-21) ------------
 // Declared here (rather than down by the two Inject* functions that actually set/
@@ -3532,9 +3833,311 @@ void __cdecl Hook_DrawGlyphText(
         }
     }
 
-    g_origDrawGlyphText(param_1, param_2, param_3, fontArg, param_5, param_6, param_7, param_8,
-        param_9, param_10, param_11, param_12, param_13, param_14, param_15, param_16, param_17,
-        param_18, param_19, param_20, param_21);
+    // Issue #48/#49 (2026-07-31 pivot): replace the WHOLE in-game hint with this
+    // project's own text+icon render, gated by glyphIconOverlayEnabled. Superseded
+    // the earlier "overlay an icon on top of the game's own text" plan -- lining up a
+    // real icon against the game's own pixel-exact font rendering proved fiddly
+    // (confirmed live: two rounds of position math still landed visibly off) and
+    // multiple RESTRICTED to the two real in-game HUD hint fonts (see
+    // IsGameplayHintFont) -- explicitly NOT applied to menu UI hints like
+    // "Friends ^2F^7" (fonts/smallFont), which the user confirmed should keep
+    // rendering natively (console used a different button there anyway -- Y, not
+    // X -- so this project's gameplay keybind table would have mapped it wrong even
+    // if it did apply). When this successfully finds a mapped icon, it SUPPRESSES the
+    // real draw call entirely (sets suppressRealDraw) rather than drawing an overlay
+    // on top of it, since there's no need to align against text that no longer draws.
+    // Live-reported 2026-07-31: the replacement hint kept showing while the game was
+    // paused, when it shouldn't. Root cause: this HUD text's own draw call chain is
+    // tied to the RENDER frame, not the simulation/usercmd tick this project's other
+    // injected input halts on during pause -- it (and, by extension, our replacement)
+    // keeps getting called every rendered frame even while paused. The real native
+    // hint is presumably hidden behind the pause menu's own dimming overlay in that
+    // state; our own EndScene-based draw happens AFTER that overlay, so it would show
+    // ON TOP of the dimming instead of being hidden by it. Gated behind the same real
+    // menu-active gate bit (IsMenuActive(), 0x10 @ 0xB36210) several other features in
+    // this file already use for the identical reason.
+    bool suppressRealDraw = false;
+    if (g_modConfig.glyphIconOverlayEnabled && !IsMenuActive()) {
+        __try {
+            if (LooksLikeValidPointer(reinterpret_cast<uintptr_t>(param_1)) &&
+                LooksLikeValidPointer(reinterpret_cast<uintptr_t>(fontArg))) {
+                const DiagFont* font = reinterpret_cast<const DiagFont*>(fontArg);
+                if (IsGameplayHintFont(font)) {
+                    size_t textLen = strlen(param_1);
+                    ColorHighlightSpan span = FindColorHighlightSpan(param_1, textLen);
+                    if (span.found) {
+                        char highlighted[64] = {};
+                        size_t copyLen = span.contentLen < sizeof(highlighted) - 1 ? span.contentLen : sizeof(highlighted) - 1;
+                        memcpy(highlighted, param_1 + span.contentStart, copyLen);
+                        highlighted[copyLen] = '\0';
+                        // Bug found 2026-07-31: the mantle-specific X nudge below compared this
+                        // buffer directly against "SPACE" and never matched, because the raw
+                        // span content is " Space " (surrounding spaces baked into the color-
+                        // code span itself, e.g. "Press^3 Space ^7to") -- TryGetGlyphAssetNameForKeyName
+                        // already trims internally before its OWN lookup, which is why the icon
+                        // itself still resolved correctly despite this, masking the bug. Trim
+                        // in place here too so every later use of `highlighted` (asset lookup,
+                        // the SPACE comparison, anything added later) sees the same clean form.
+                        {
+                            size_t start = 0, end = strlen(highlighted);
+                            while (start < end && isspace(static_cast<unsigned char>(highlighted[start]))) ++start;
+                            while (end > start && isspace(static_cast<unsigned char>(highlighted[end - 1]))) --end;
+                            size_t trimmedLen = end - start;
+                            if (start > 0) memmove(highlighted, highlighted + start, trimmedLen);
+                            highlighted[trimmedLen] = '\0';
+                        }
+
+                        char assetName[32] = {};
+                        if (TryGetGlyphAssetNameForKeyName(highlighted, assetName, sizeof(assetName))) {
+                            char prefixText[128] = {};
+                            size_t prefixLen = span.markerStart < sizeof(prefixText) - 1 ? span.markerStart : sizeof(prefixText) - 1;
+                            memcpy(prefixText, param_1, prefixLen);
+                            prefixText[prefixLen] = '\0';
+
+                            char suffixText[128] = {};
+                            if (span.markerEnd < textLen) {
+                                size_t suffixLen = textLen - span.markerEnd;
+                                if (suffixLen >= sizeof(suffixText)) suffixLen = sizeof(suffixText) - 1;
+                                memcpy(suffixText, param_1 + span.markerEnd, suffixLen);
+                                suffixText[suffixLen] = '\0';
+                            }
+
+                            // Round 6: measured directly against real pixels (PowerShell
+                            // System.Drawing scan of a live screenshot, not another guess) --
+                            // " Model 1887" (a real, STATIC 2D HUD element, confirmed by the
+                            // user; the earlier "world-space floating label" theory was wrong)
+                            // has its real text ink centered at screen y ~= 698 while sharing
+                            // this hint's own p3 (718). 718 * param_6 (0.964) = 692.2, a close
+                            // match (~1% off, within measurement/glyph-metric noise) -- Y needs
+                            // the same scale factor param_5/param_6 already apply to glyph
+                            // advances. X needed NO correction (measured text-left-edge matched
+                            // raw param_2 within a few px of normal font left-bearing). This is
+                            // the CENTER of the line, not its top -- see
+                            // DrawCustomHintIfRequested's own use of this value.
+                            // Live-reported 2026-07-31: weapon pickup needs to sit very
+                            // slightly lower than the pure measured-center formula above gives
+                            // -- small empirical nudge, not a new transform.
+                            constexpr float kHintVerticalNudge = 6.0f;
+                            bool isMantleHint = _stricmp(highlighted, "SPACE") == 0;
+                            // Survival's ready-up hint (F5) sits at a genuinely different native
+                            // row (p3=329 vs. pickup/buy-station's shared 718) -- user wants its
+                            // position kept "similar to original" rather than pulled into the
+                            // interact-hint row's own tuning, so it skips both the vertical nudge
+                            // (empirically tuned for THAT row specifically) and screen-centering.
+                            bool isReadyUpHint = _stricmp(highlighted, "F5") == 0;
+                            float startX = param_2;
+                            float startY = param_3 * param_6 + (isReadyUpHint ? 0.0f : kHintVerticalNudge);
+
+                            // Live-reported 2026-07-31: the mantle/jump prompt ("Press A to")
+                            // sits far to the left of the real, separately-drawn mantle arrow
+                            // sprite (~107px measured against a live screenshot) -- that sprite
+                            // isn't text at all (a distinct native icon draw this project
+                            // doesn't hook), so there's no live position to read for it; nudged
+                            // empirically instead, scoped tightly to the Jump/mantle hint only
+                            // (detected via the resolved key name) so pickup/swap/buy-station
+                            // are untouched. Every OTHER hint (pickup, swap, buy-station --
+                            // live-reported 2026-07-31 to all read better centered) uses
+                            // RequestCustomHintOverlay's own screen-centering instead, so mantle
+                            // and ready-up are the two cases that keep an explicit left-anchor
+                            // position.
+                            if (isMantleHint) {
+                                constexpr float kMantleHintXNudge = 82.0f;
+                                startX += kMantleHintXNudge;
+                            }
+
+                            bool centerOnScreen = !isMantleHint && !isReadyUpHint;
+                            RequestCustomHintOverlay(startX, startY, prefixText, suffixText, assetName, centerOnScreen);
+                            suppressRealDraw = true;
+                            g_lastInteractHintTickMs = GetTickCount(); // see WasInteractHintRecentlyActive()
+
+                            // See the big comment above g_awaitingHintContinuationFont --
+                            // arms the next matching call this frame to be treated as this
+                            // hint's own live weapon-name continuation, if one exists.
+                            g_awaitingHintContinuationFont = fontArg;
+                            g_awaitingHintContinuationP3 = param_3;
+                            g_awaitingHintContinuation = true;
+                        }
+                    } else {
+                        // Live-reported 2026-07-31: the real reload reminder has no
+                        // "^N...^7" button-name span at all -- it's just the bare word
+                        // "Reload", flashed/pulsed on its own, a completely different
+                        // native UI pattern from every other hint here. Matched by
+                        // literal text instead (trimmed, case-insensitive) since
+                        // there's no embedded key reference to key off. User wants it
+                        // read as "Press X To Reload" (console's own phrasing) -- "Press "
+                        // and " To " are this project's own added template text (the
+                        // real string has neither), the actual "Reload" word is still
+                        // read live from param_1, not hardcoded.
+                        char trimmedText[32] = {};
+                        size_t tlen = textLen < sizeof(trimmedText) - 1 ? textLen : sizeof(trimmedText) - 1;
+                        memcpy(trimmedText, param_1, tlen);
+                        trimmedText[tlen] = '\0';
+                        size_t tStart = 0, tEnd = strlen(trimmedText);
+                        while (tStart < tEnd && isspace(static_cast<unsigned char>(trimmedText[tStart]))) ++tStart;
+                        while (tEnd > tStart && isspace(static_cast<unsigned char>(trimmedText[tEnd - 1]))) --tEnd;
+                        if (tEnd - tStart > 0) memmove(trimmedText, trimmedText + tStart, tEnd - tStart);
+                        trimmedText[tEnd - tStart] = '\0';
+
+                        // Live-reported 2026-07-31: suppress the Reload prompt whenever a
+                        // real interact hint is also active -- see WasInteractHintRecentlyActive's
+                        // own comment for why this is a short recency window, not a same-frame flag.
+                        if (_stricmp(trimmedText, "Reload") == 0 && !WasInteractHintRecentlyActive()) {
+                            char assetName[32] = {};
+                            if (TryGetGlyphAssetNameForKeyName("F", assetName, sizeof(assetName))) {
+                                // "F" is the real default keyboard bind for ReloadUse
+                                // (kKeyActionTable) -- reused here directly since this
+                                // prompt has no key reference of its own to resolve from.
+                                char suffixText[48] = {};
+                                sprintf_s(suffixText, " To %s", trimmedText);
+                                float startX = param_2;
+                                // Live-reported 2026-07-31: this prompt's own real p3
+                                // (626, vs. pickup/buy-station's shared 718) is a
+                                // genuinely different, higher native UI slot -- not a
+                                // transform bug -- and rendered noticeably above the
+                                // weapon (screen vertical-middle) instead of in the
+                                // same row as the other interact hints. User wants it
+                                // in that same row, so anchored directly to the same
+                                // known-good target pickup/buy-station's own formula
+                                // resolves to (718 * 0.964 + 6 ~= 698), rather than
+                                // deriving a position from this prompt's unrelated p3.
+                                constexpr float kInteractHintRowY = 698.0f;
+                                float startY = kInteractHintRowY;
+                                RequestCustomHintOverlay(startX, startY, "Press ", suffixText, assetName,
+                                    /*centerOnScreen=*/true, /*flashIcon=*/true);
+                                suppressRealDraw = true;
+                            }
+                        }
+                    }
+                }
+            }
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            // Same rationale as every other read-only-turned-behavior block in this
+            // file -- never let this crash the game over an unexpected param_1/fontArg
+            // shape on some not-yet-seen call site.
+        }
+    }
+
+    // Menu UI hints (2026-08-01, "next step is menus" -- the user's own framing:
+    // "highlighted entries must get the appropriate glyph next to them... some dont
+    // need to be highlighted for glyphs like esc equivalents which shows B glyph").
+    // This block covers the SECOND half of that: static, always-shown menu hints
+    // like "Back ^2ESC^7"/"Friends ^2F^7" that don't depend on which item is
+    // currently highlighted -- they use the exact same `^N...^7` color-highlight
+    // convention and the exact same Hook_DrawGlyphText call site as gameplay hints,
+    // just on fonts/smallFont (previously excluded entirely, see IsMenuHintFont's
+    // own comment) and resolved through the SEPARATE menu-specific table
+    // (ResolveMenuGlyphAssetNameForKeyName) instead of the gameplay one, since the
+    // same key text means a different physical button in this context (ESCAPE is
+    // Start in gameplay's own table, but B is the real button that forwards ESC to
+    // an open menu; F is Y here, not gameplay's X). Deliberately NOT gated on
+    // !IsMenuActive() (unlike the gameplay block above) -- these hints only ever
+    // draw WHILE a menu is active, so suppressing them in that state would suppress
+    // them entirely. Deliberately does NOT reuse any of the gameplay block's
+    // position nudges/centering (kHintVerticalNudge, mantle/ready-up special
+    // cases) -- none of that has been live-verified for menu hints yet, so this
+    // starts as a plain, unmodified reading of the real position, same convention
+    // (param_3 * param_6 as vertical CENTER) as everything else in this file.
+    // The FIRST half of the user's request -- an A/select glyph next to whichever
+    // menu ITEM is currently highlighted (e.g. the CAMPAIGN/MULTIPLAYER tiles) --
+    // is a materially different, harder problem (no `^N...^7` span exists on plain
+    // itemDef text at all) and needs its own investigation before it can be
+    // implemented; not part of this block. See known_issues.md issue #48's newest
+    // round for the plan.
+    if (!suppressRealDraw && g_modConfig.glyphIconOverlayEnabled) {
+        __try {
+            if (LooksLikeValidPointer(reinterpret_cast<uintptr_t>(param_1)) &&
+                LooksLikeValidPointer(reinterpret_cast<uintptr_t>(fontArg))) {
+                const DiagFont* font = reinterpret_cast<const DiagFont*>(fontArg);
+                if (IsMenuHintFont(font)) {
+                    size_t textLen = strlen(param_1);
+                    ColorHighlightSpan span = FindColorHighlightSpan(param_1, textLen);
+                    if (span.found) {
+                        char highlighted[64] = {};
+                        size_t copyLen = span.contentLen < sizeof(highlighted) - 1 ? span.contentLen : sizeof(highlighted) - 1;
+                        memcpy(highlighted, param_1 + span.contentStart, copyLen);
+                        highlighted[copyLen] = '\0';
+
+                        char assetName[32] = {};
+                        if (TryGetMenuGlyphAssetNameForKeyName(highlighted, assetName, sizeof(assetName))) {
+                            char prefixText[128] = {};
+                            size_t prefixLen = span.markerStart < sizeof(prefixText) - 1 ? span.markerStart : sizeof(prefixText) - 1;
+                            memcpy(prefixText, param_1, prefixLen);
+                            prefixText[prefixLen] = '\0';
+
+                            char suffixText[128] = {};
+                            if (span.markerEnd < textLen) {
+                                size_t suffixLen = textLen - span.markerEnd;
+                                if (suffixLen >= sizeof(suffixText)) suffixLen = sizeof(suffixText) - 1;
+                                memcpy(suffixText, param_1 + span.markerEnd, suffixLen);
+                                suffixText[suffixLen] = '\0';
+                            }
+
+                            // Live-reported 2026-08-01: nothing drew at all (native text
+                            // suppressed, no replacement visible) -- proxy_d3d9.log shows why:
+                            // "Friends ^2F^7" logs p3=995, p6=1.500, and the gameplay hints'
+                            // own "param_3 * param_6 = vertical center" formula (validated only
+                            // against extraBigFont/hudSmallFont HUD text) gives 1492.5 here --
+                            // off the bottom of a 1080-tall screen. That formula does not
+                            // transfer to fonts/smallFont; use the raw, unscaled param_3 instead
+                            // (995 alone is a plausible near-bottom-of-screen Y).
+                            // Live-reported 2026-08-01 (round 2, screenshot of the real
+                            // "Friends" hover tooltip box): drew, but sitting too low --
+                            // text/icon read as hanging out the bottom of the highlight box
+                            // instead of centered in it. Pixel-measured against that
+                            // screenshot (box spans roughly y=94-162 in the cropped image,
+                            // center ~128; drawn content's own visible center sat ~144-148,
+                            // ~18px low) -- empirical upward nudge, same convention as the
+                            // gameplay hints' own kHintVerticalNudge.
+                            // Live-reported 2026-08-01 (round 3): "Friends doesn't show on some
+                            // screens" / "Friends stays on screen when it should say Back" --
+                            // MW3's menu UI shows multiple hints (e.g. Back AND Friends)
+                            // simultaneously every frame, not one at a time like a gameplay
+                            // interact hint. RequestCustomHintOverlay's single slot could only
+                            // hold one of them per frame; switched to RequestMenuHintOverlay's
+                            // multi-slot pool (see overlay_hud.h) so both can coexist.
+                            constexpr float kMenuHintVerticalNudge = -18.0f;
+                            RequestMenuHintOverlay(param_2, param_3 + kMenuHintVerticalNudge, prefixText, suffixText,
+                                assetName);
+                            suppressRealDraw = true;
+                            g_lastNativeMenuCornerHintTickMs = GetTickCount(); // see WasNativeMenuCornerHintRecentlyActive
+                        }
+                    }
+                }
+            }
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            // Same rationale as every other read-only-turned-behavior block in this
+            // file -- never let this crash the game over an unexpected param_1/fontArg
+            // shape on some not-yet-seen call site.
+        }
+    }
+
+    // Issue #48/#49 continuation match -- see the big comment above
+    // g_awaitingHintContinuationFont. Independent of the block above (a call is either
+    // the highlighted hint itself, handled above, or a plain-text continuation of one
+    // already suppressed this frame, handled here -- never both).
+    if (g_awaitingHintContinuation && !suppressRealDraw && g_modConfig.glyphIconOverlayEnabled && !IsMenuActive()) {
+        __try {
+            if (LooksLikeValidPointer(reinterpret_cast<uintptr_t>(param_1)) &&
+                fontArg == g_awaitingHintContinuationFont &&
+                fabsf(param_3 - g_awaitingHintContinuationP3) < 0.5f) {
+                size_t textLen = strlen(param_1);
+                ColorHighlightSpan span = FindColorHighlightSpan(param_1, textLen);
+                if (!span.found) {
+                    AppendCustomHintSuffix(param_1);
+                    suppressRealDraw = true;
+                }
+            }
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            // Same rationale as every other block in this function.
+        }
+        g_awaitingHintContinuation = false; // one-shot regardless of outcome
+    }
+
+    if (!suppressRealDraw) {
+        g_origDrawGlyphText(param_1, param_2, param_3, fontArg, param_5, param_6, param_7, param_8,
+            param_9, param_10, param_11, param_12, param_13, param_14, param_15, param_16, param_17,
+            param_18, param_19, param_20, param_21);
+    }
 }
 } // namespace
 
@@ -4287,6 +4890,18 @@ extern "C" void __cdecl InjectMenuInputTick()
     // B's ESC-forward, for the same reason: the gameplay-simulation tick this would
     // otherwise share with InjectControllerDpad halts entirely during a genuine pause.
     InjectControllerMenuNav();
+    // Nested-modal root tracking (2026-08-01) -- needs to run every tick to catch the
+    // false->true IsMenuActive() transition reliably; the actual DECISION using this
+    // state (InjectSyntheticBackHintIfNeeded) runs elsewhere, see below.
+    UpdateMenuRootListTracking();
+    // Synthetic "Back" hint for modals with no native corner hint of their own
+    // (2026-08-01) -- see its own big comment. NOT called from here (live-reported:
+    // this 60Hz timer tick isn't synchronized with the render frame that consumes
+    // it, causing a visible flicker) -- called from overlay_hud.cpp's Hook_EndScene
+    // instead, on the same per-frame cadence as the slot pool it feeds.
+    // Menu highlighted-item focus tracking diagnostic (2026-08-01, issue #48
+    // menu-glyph work) -- read-only, deduped-by-value logging, see its own comment.
+    LogMenuFocusDiagnosticIfChanged();
     // DISABLED for the v0.1.3 public pre-alpha build (2026-07-17): task #23's zone/
     // menu-injection debug trigger (LB+RB hold) is real, working test code, not a
     // finished feature -- it's gated behind an internal combo, has no player-facing
@@ -4677,6 +5292,115 @@ const char* GlyphStyleLogName(GlyphStyle s)
     }
 }
 
+// Shared by both TryGetGlyphCodepointForKeyName (in-font substitution, parked per
+// issue #48's pivot) and TryGetGlyphAssetNameForKeyName (the overlay-icon path
+// actually being used now) -- the first 3 stages of the 4-stage design described in
+// the big comment above this section: key-name string -> LogicalAction/DpadDirection
+// -> PhysicalInput -> real asset name. Returns "" (never guessed/invented) if no
+// mapping/asset exists for this (key, style) pair, e.g. the Xbox360 LS/RS gap.
+//
+// Trims surrounding whitespace first (issue #48's own live capture found real drawn
+// hint text with the key name padded inside its color-highlight span, e.g. "Press^3
+// F ^7to pick up" -> highlighted span " F "), and aliases "ESC" -> "ESCAPE" (the real
+// bound key name kKeyActionTable stores, per config.cfg) since "Back ^2ESC^7" is a
+// real observed menu-hint abbreviation, not the literal bind name.
+const char* ResolveGlyphAssetNameForKeyName(const char* rawKeyName)
+{
+    char trimmed[32] = {};
+    size_t start = 0, end = strlen(rawKeyName);
+    while (start < end && isspace(static_cast<unsigned char>(rawKeyName[start]))) ++start;
+    while (end > start && isspace(static_cast<unsigned char>(rawKeyName[end - 1]))) --end;
+    size_t len = end - start;
+    if (len == 0 || len >= sizeof(trimmed)) return "";
+    memcpy(trimmed, rawKeyName + start, len);
+    trimmed[len] = '\0';
+
+    const char* keyName = (_stricmp(trimmed, "ESC") == 0) ? "ESCAPE" : trimmed;
+
+    // Live-reported 2026-07-31: the real grenade-throwback hint resolves to a
+    // genuine combo-key string, "G or Middle Mouse" (confirmed via proxy_d3d9.log --
+    // "^3G or Middle Mouse ^7throw back") -- neither half matches a single entry in
+    // kKeyActionTable, and combo binds like this were never meant to. This is really
+    // just the Lethal action in a different context (catching/throwing back an
+    // enemy grenade uses the same physical input as throwing your own) -- resolved
+    // through PhysicalInputForAction(LogicalAction::Lethal), NOT a hardcoded
+    // PhysicalInput::RB, per explicit standing correction (2026-08-01): "glyphs must
+    // represent the current control scheme defined in settings... this doesn't
+    // affect menus" -- a hardcoded physical button would show the wrong glyph for
+    // any ButtonLayout other than whichever one RB happened to be Lethal on.
+    if (_stricmp(keyName, "G or Middle Mouse") == 0) {
+        const char* assetName = GlyphAssetName(PhysicalInputForAction(LogicalAction::Lethal), g_modConfig.glyphStyle);
+        if (assetName && assetName[0] != '\0') return assetName;
+    }
+    // Survival's ready-up hint resolves to "F5" (the real synthetic key this project
+    // itself presses -- see InjectControllerReadyUp/issue #5's own PostMessage
+    // workaround), not a real default keyboard bind, so it was never in
+    // kKeyActionTable to begin with. A quick tap of the same button also just does a
+    // normal weapon switch (see InjectControllerReadyUp's own release-before-
+    // threshold fallback) -- this IS the WeaponSwitch action, so resolved the same
+    // layout-aware way as everything else rather than a hardcoded PhysicalInput::Y.
+    if (_stricmp(keyName, "F5") == 0) {
+        const char* assetName = GlyphAssetName(PhysicalInputForAction(LogicalAction::WeaponSwitch), g_modConfig.glyphStyle);
+        if (assetName && assetName[0] != '\0') return assetName;
+    }
+
+    for (const auto& e : kKeyActionTable) {
+        if (_stricmp(e.keyName, keyName) == 0) {
+            const char* assetName = GlyphAssetName(PhysicalInputForAction(e.action), g_modConfig.glyphStyle);
+            if (assetName && assetName[0] != '\0') return assetName;
+            break;
+        }
+    }
+    for (const auto& e : kKeyDpadTable) {
+        if (_stricmp(e.keyName, keyName) == 0) {
+            const char* assetName = DpadGlyphAssetName(e.dir);
+            if (assetName && assetName[0] != '\0') return assetName;
+            break;
+        }
+    }
+    return "";
+}
+
+// Menu UI hints (fonts/smallFont -- "Back ^2ESC^7", "Friends ^2F^7") use a
+// COMPLETELY DIFFERENT bind vocabulary than gameplay hints, so this is a
+// deliberately SEPARATE table from ResolveGlyphAssetNameForKeyName above, not a
+// fallback path through it. Reusing the gameplay table here would silently map
+// keys to the wrong physical button: "ESCAPE" is in kKeyActionTable, but it
+// resolves to g_buttonMap.pause (Start, whatever opens the pause menu) -- the
+// button that actually forwards ESC to an already-open menu is B (this
+// project's own real ESC-forward implementation, hardcoded regardless of
+// ButtonLayout), a completely different mapping only true in this menu-hint
+// context. Likewise "F" here means the Friends list, which the user explicitly
+// confirmed is Y on console, not gameplay's F=X (ReloadUse/Interact). Returns ""
+// (never guessed) for any key this table doesn't explicitly cover -- menus this
+// project hasn't verified a real console mapping for keep rendering natively,
+// same fail-closed convention as the gameplay resolver.
+const char* ResolveMenuGlyphAssetNameForKeyName(const char* rawKeyName)
+{
+    char trimmed[32] = {};
+    size_t start = 0, end = strlen(rawKeyName);
+    while (start < end && isspace(static_cast<unsigned char>(rawKeyName[start]))) ++start;
+    while (end > start && isspace(static_cast<unsigned char>(rawKeyName[end - 1]))) --end;
+    size_t len = end - start;
+    if (len == 0 || len >= sizeof(trimmed)) return "";
+    memcpy(trimmed, rawKeyName + start, len);
+    trimmed[len] = '\0';
+
+    if (_stricmp(trimmed, "ESC") == 0 || _stricmp(trimmed, "ESCAPE") == 0) {
+        const char* assetName = GlyphAssetName(PhysicalInput::B, g_modConfig.glyphStyle);
+        if (assetName && assetName[0] != '\0') return assetName;
+    }
+    if (_stricmp(trimmed, "F") == 0) {
+        const char* assetName = GlyphAssetName(PhysicalInput::Y, g_modConfig.glyphStyle);
+        if (assetName && assetName[0] != '\0') return assetName;
+    }
+    if (_stricmp(trimmed, "ENTER") == 0 || _stricmp(trimmed, "RETURN") == 0) {
+        const char* assetName = GlyphAssetName(PhysicalInput::A, g_modConfig.glyphStyle);
+        if (assetName && assetName[0] != '\0') return assetName;
+    }
+    return "";
+}
+
 } // namespace
 
 // Real key-name string (already trimmed/validated by the caller) -> a single-byte
@@ -4685,22 +5409,8 @@ const char* GlyphStyleLogName(GlyphStyle s)
 // key this table simply doesn't cover yet). Pure lookup -- no I/O, no mutation.
 bool TryGetGlyphCodepointForKeyName(const char* keyName, unsigned char& outCodepoint)
 {
-    const char* assetName = nullptr;
-    for (const auto& e : kKeyActionTable) {
-        if (_stricmp(e.keyName, keyName) == 0) {
-            assetName = GlyphAssetName(PhysicalInputForAction(e.action), g_modConfig.glyphStyle);
-            break;
-        }
-    }
-    if (!assetName || assetName[0] == '\0') {
-        for (const auto& e : kKeyDpadTable) {
-            if (_stricmp(e.keyName, keyName) == 0) {
-                assetName = DpadGlyphAssetName(e.dir);
-                break;
-            }
-        }
-    }
-    if (!assetName || assetName[0] == '\0') return false;
+    const char* assetName = ResolveGlyphAssetNameForKeyName(keyName);
+    if (assetName[0] == '\0') return false;
 
     for (const auto& e : kGlyphCodepointTable) {
         if (strcmp(e.assetName, assetName) == 0) {
@@ -4713,6 +5423,29 @@ bool TryGetGlyphCodepointForKeyName(const char* keyName, unsigned char& outCodep
     // DpadGlyphAssetName() can return, but fail closed rather than substitute
     // garbage if it ever does.
     return false;
+}
+
+// Issue #48's overlay-icon path: key-name string -> real asset name directly (no
+// codepoint indirection needed, since this draws the PNG as its own textured quad
+// rather than injecting a codepoint into the game's own font). Returns false if no
+// mapping/asset exists, same fail-closed behavior as TryGetGlyphCodepointForKeyName.
+bool TryGetGlyphAssetNameForKeyName(const char* keyName, char* outAssetName, size_t outSize)
+{
+    const char* assetName = ResolveGlyphAssetNameForKeyName(keyName);
+    if (assetName[0] == '\0') return false;
+    strncpy_s(outAssetName, outSize, assetName, _TRUNCATE);
+    return true;
+}
+
+// Same as TryGetGlyphAssetNameForKeyName above, but resolves through the SEPARATE
+// menu-hint table (ResolveMenuGlyphAssetNameForKeyName) -- see that function's own
+// comment for why menu UI hints (fonts/smallFont) can't share the gameplay table.
+bool TryGetMenuGlyphAssetNameForKeyName(const char* keyName, char* outAssetName, size_t outSize)
+{
+    const char* assetName = ResolveMenuGlyphAssetNameForKeyName(keyName);
+    if (assetName[0] == '\0') return false;
+    strncpy_s(outAssetName, outSize, assetName, _TRUNCATE);
+    return true;
 }
 
 // Logs the resolved bind name + resolved output text after the real trampoline has
@@ -4956,6 +5689,20 @@ void InstallAnalogInputHooks()
     if (s8 == MH_OK) {
         MH_STATUS e8 = MH_EnableHook(reinterpret_cast<LPVOID>(0x0061f6f0));
         sprintf_s(buf, "[hooks] MH_EnableHook(0061f6f0 bind-resolver) = %d", static_cast<int>(e8));
+        LogFromController(buf);
+    }
+
+    // Menu highlighted-item tracking (2026-08-01, issue #48 menu-glyph work) -- see
+    // the big comment above Hook_004dfd30's own definition. First time this project
+    // has hooked FUN_004dfd30 itself (previously only ever called INTO via
+    // ForwardKeyToMenu) -- purely a read-only argument cache, forwards everything
+    // unmodified.
+    MH_STATUS sFocus = MH_CreateHook(reinterpret_cast<LPVOID>(0x004dfd30), &Hook_004dfd30, &g_orig_004dfd30);
+    sprintf_s(buf, "[hooks] MH_CreateHook(004dfd30 menu-focus-track) = %d", static_cast<int>(sFocus));
+    LogFromController(buf);
+    if (sFocus == MH_OK) {
+        MH_STATUS eFocus = MH_EnableHook(reinterpret_cast<LPVOID>(0x004dfd30));
+        sprintf_s(buf, "[hooks] MH_EnableHook(004dfd30 menu-focus-track) = %d", static_cast<int>(eFocus));
         LogFromController(buf);
     }
 
