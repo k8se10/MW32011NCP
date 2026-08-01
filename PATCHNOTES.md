@@ -88,21 +88,27 @@ to check for even on this new version; log each as its own
   mismatch; raw `WM_MOUSEMOVE`, broken by this engine rendering to a
   differently-sized backbuffer than the actual game window) before a
   two-point corner calibration found the real fix. User-supplied cursor art.
-
-### Investigated-not-resolved
-- **Highlighted-item A-glyph in vertical list menus, not yet implemented**
-  (`re_notes/known_issues.md` issue #51). Two approaches ruled out this
-  round: per-frame ordinal counting (breaks when a background list keeps
-  drawing under a different focused list), and a read-only diagnostic hook
-  on a candidate local-var lookup function (crashed the game on launch,
-  reverted immediately — same failure class as issue #50's Attempt 3).
-  Follow-up research (cross-referencing the open-source OpenAssetTools
-  project's own `.menu` compiler internals) has since found the real,
-  narrow, single-caller native functions behind this — `FUN_00613ac0`
-  (localvarstring) and its three siblings — plus confirmed they need a
-  naked-asm trampoline rather than a plain hook, since they take implicit
-  register arguments. Not yet implemented or live-tested; full trail in
-  issue #51.
+- **Custom cursor stopped tracking mouse movement after a display-mode
+  change**, while every other overlay element kept working. Root cause: a
+  display-mode change creates an entirely new game window (confirmed via a
+  direct `hwnd` comparison in the logs), not just a new D3D9 device on the
+  same window — contradicting this project's own long-standing "the game has
+  one window" assumption. The old window stayed subclassed for input
+  tracking; the new one never got wired up. Fixed by re-subclassing whenever
+  the window handle actually changes. General infrastructure fix, not
+  cursor-specific. See `re_notes/known_issues.md` issue #52.
+- **Highlighted-item A-glyph in vertical list menus, RESOLVED**
+  (`re_notes/known_issues.md` issue #51). Once issue #50's
+  `getfocuseditemname()` signal was available, this drew after all — adds
+  the A/select glyph icon after the item's own native text (no suppression
+  or redraw of the text itself, per explicit design), positioned using the
+  item's real measured text width. Went through several corrections after
+  going live: dropped a focus-tracking signal that turned out to never apply
+  to Special Ops' own navigation at all, then replaced two narrow bug fixes
+  (icon persisting with nothing highlighted; icon persisting under an
+  unrelated modal) with one general check instead. Known scope limit: only
+  works on lists using the real `ui_swf_selection` mechanism — at least one
+  other menu panel doesn't use it and isn't covered yet.
 
 ### Docs
 - **Corrected several stale entries found by a full sweep of

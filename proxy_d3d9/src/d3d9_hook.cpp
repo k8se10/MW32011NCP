@@ -177,7 +177,26 @@ void ShowStartupMessage()
 
 void InstallWndProcHook(HWND hwnd)
 {
-    if (g_wndProcHooked || !hwnd) return;
+    if (!hwnd) return;
+    // Live-reported 2026-08-01 (custom cursor overlay stopped updating after a
+    // display-mode change): this function's own original comment ("only need to
+    // subclass once -- the game has one window") was confirmed WRONG for at least
+    // this transition -- a real log comparison showed CreateDevice's own hwnd
+    // differs between the initial launch and a mid-session display-mode-change
+    // recreation (two genuinely different HWNDs, not just a new device on the same
+    // window). The stale one-shot guard left the OLD window subclassed and the NEW
+    // one never receiving HookWndProc at all, so WM_MOUSEMOVE tracking
+    // (GetLastMouseMoveClientPos) silently froze at its last value from before the
+    // transition -- the custom cursor kept "working" in the sense of drawing, just
+    // never updating position again. Fixed by re-subclassing whenever the hwnd
+    // actually changes, restoring the previous window's original WndProc first
+    // (cleanup, even though that window is very likely already destroyed by this
+    // point) rather than assuming the game has exactly one window for its whole
+    // lifetime.
+    if (g_wndProcHooked && hwnd == g_gameHwnd) return; // already subclassed, same window
+    if (g_wndProcHooked && g_origWndProc) {
+        SetWindowLongPtrA(g_gameHwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(g_origWndProc));
+    }
     g_wndProcHooked = true;
     g_gameHwnd = hwnd;
     g_origWndProc = reinterpret_cast<WNDPROC>(
