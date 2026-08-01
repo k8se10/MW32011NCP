@@ -47,6 +47,7 @@ Every other "controller support" option for this game works by faking keyboard/m
 [*]Button/stick layout presets (Default/Tactical/Lefty/TacticalLefty) — [b]all confirmed correct against real hardware[/b]
 [*]Fully configurable via a self-documenting [font=Courier New]mw3ncp_config.ini[/font] (sensitivity, ADS slowdown, hold thresholds, bindings, look ramp, notification style). [b]New in v0.2.5:[/b] the config now auto-migrates existing files across updates, and [b]hot-reloads live[/b] while the game is running — no relaunch needed to see most changes
 [*][b]New in v0.2.5:[/b] a small on-screen top-right notification on startup and whenever the config is hot-reloaded, with a rare chance of a stylized variant. Uses a self-contained, DLL-embedded font — no font install required
+[*][b]New, not yet in a numbered release:[/b] real controller-glyph icons — in-game interact hints (pickup/swap, buy-station, mantle, Reload, grenade throwback, Survival ready-up), menu corner hints (Back/Friends), and a highlighted-item glyph in vertical list menus. Also new: a custom mouse cursor overlay so the cursor draws correctly on top of these icons instead of underneath them
 [/list]
 
 [size=4][b]🟡 Partial — works, with a specific known gap[/b][/size]
@@ -62,7 +63,6 @@ Every other "controller support" option for this game works by faking keyboard/m
 
 [list]
 [*][b]Controller vibration/rumble[/b] — implemented, then found to crash the game at startup; fully disabled pending a safer reimplementation
-[*]Button-glyph controller icons — the asset/build pipeline is proven end-to-end, but nothing renders in-game yet; menus still show keyboard/mouse key names
 [*]One vehicle-exit prompt (a specific tank-exit sequence) — not wired up
 [*]Survival debug menu / dev console — the real in-game console is confirmed permanently dead
 [*][b]Multiplayer ([font=Courier New]iw5mp.exe[/font])[/b] — not started at all, separate binary, needs its own full reverse-engineering pass

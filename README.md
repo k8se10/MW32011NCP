@@ -87,6 +87,7 @@ live-tested by the developer during actual play, not just built-and-assumed.
 | Button/stick layout presets, **including `TacticalLefty`** | **`TacticalLefty` confirmed correct against real hardware, 2026-07-19** — previously this preset's own remap was the one open accuracy question in this system |
 | **Hold Breath (L3 while ADS'd on a sniper)** | **Real kbutton (2026-07-20)**, genuinely native, no key-synthesis needed — steadies aim while held, accuracy drops once breath runs out. A critical regression (couldn't fire while breath was held, issue #46) was fixed and user-confirmed live 2026-07-31 |
 | Look acceleration ramp | Console-accurate turn-rate ramp (33ms = one 30fps engine frame), on by default |
+| **Button-glyph controller icons** | **Shipped and confirmed live in full** (2026-08-01) — in-game interact hints (pickup/swap, buy-station, mantle, Reload, grenade throwback, Survival ready-up), menu UI corner hints (Back/Friends), a highlighted-item A-glyph in vertical list menus, and a custom mouse cursor overlay replacing the native software cursor. The Special Ops modal corner-hint bug (previously the one open gap here) is genuinely resolved — see `known_issues.md` #48/#50/#51/#52 |
 
 ### 🟡 Partial (works, but with a specific, known gap)
 
@@ -100,7 +101,6 @@ live-tested by the developer during actual play, not just built-and-assumed.
 | Mounted M2 turret (Goalpost) | Works, but feels too hard — cause not yet diagnosed |
 | SMAW lock-on vs. aircraft (Goalpost) | Unconfirmed whether this is even a real bug |
 | Real in-game controller options menu | Static test injection proven live; real content (sliders, backgrounds) blocked on a GPU-resource-loading limit, not yet shippable |
-| **Button-glyph controller icons** | **Shipped and confirmed live** (2026-08-01) for both in-game interact hints (pickup/swap, buy-station, mantle, Reload, grenade throwback, Survival ready-up) AND menu UI corner hints (Back/Friends) — see `known_issues.md` #48/#50. One known gap: on Special Ops' modal popups (Choose Game Mode, on-disk/DLC content picker), the native "Friends" hint incorrectly persists instead of showing "Back" — root cause needs menu-script bytecode-interpreter RE, parked as a scoped future task (`known_issues.md` #50) |
 
 ### ⬜ Not working / not implemented at all
 
@@ -169,7 +169,7 @@ fully live-confirmed working with no known gap (that's the ✅ table above).
 | Other MW3 client compatibility (Plutonium SP, AlterWare IW5-Mod, DeckOps) | Research-stage only; Steam Deck/Proton is community-reported, not independently verified by this project | README (Client Compatibility table) |
 | Vehicle-exit prompt (`+usereload`, Mind the Gap) | Not wired at all | README (Not-working table above) |
 
-## Scorecard (2026-07-19, Button-glyph row updated 2026-08-01 — see note)
+## Scorecard (2026-07-19, Button-glyph row updated again 2026-08-01 — see note)
 
 Two different questions, kept deliberately separate — a feature can be highly
 functional but low-completeness (a few things built, all working great) or the
@@ -204,12 +204,12 @@ kind of durable record git/`PATCHNOTES.md` provides.
 | Core gameplay input | 17 | 17 | Movement, look, ADS+slowdown, core combat buttons, reload/interact, weapon switch, D-pad actionslots, stance ladder (incl. L3 no longer force-standing while ADS'd), sprint (real kbutton, engine's own native duration/recovery timer — LIVE-CONFIRMED 2026-07-19, no custom timer needed), pause menu, B menu-back, ready-up, buy-station+pause fix, keyboard/mouse non-interference |
 | Menu/UI navigation | 5 | 5 | Main/pause menu nav — **now confirmed live including the title screen itself**, not just in-game menus — options two-pane drill, buy-station/armory nav, slider adjustment, button/stick layout presets |
 | Back/scoreboard | 1 | 2 | Implementation done (builds clean); live-tested, confirmed no visible effect — real cause undiagnosed, parked as a UI gap |
-| Button-glyph UI prompts | 4 | 4 | **Updated 2026-08-01** — the boot-time-zone-splice/resolver-hook plan described here previously was abandoned; the shipped mechanism is a completely different custom-hint-redraw overlay (suppress the native draw, redraw prefix+icon+suffix with this project's own font), confirmed live for both in-game interact hints AND menu UI corner hints (`known_issues.md` #48/#50). One known remaining gap (Special Ops modal popups show the wrong corner hint) is tracked as its own open bug in #50, not held back as an undone row here |
+| Button-glyph UI prompts | 6 | 6 | **Updated 2026-08-01** — the boot-time-zone-splice/resolver-hook plan described here previously was abandoned; the shipped mechanism is a completely different custom-hint-redraw overlay (suppress the native draw, redraw prefix+icon+suffix with this project's own font), confirmed live for in-game interact hints, menu UI corner hints, and a highlighted-item A-glyph in vertical list menus (native text left untouched, icon added after it). The Special Ops modal corner-hint bug (previously tracked as an open gap here) is genuinely resolved, not just the earlier inert mitigation. Also shipped in the same pass: a custom mouse cursor overlay so the native cursor no longer renders underneath these icons (`known_issues.md` #48/#50/#51/#52) |
 | Killstreak support | 4 | 4 | All 4 real Survival killstreaks now have a confirmed real mechanism: Predator Missile launch (fixed via a from-bytecode-to-native-delivery trace) and camera/view both confirmed working; Precision Airstrike confirmed working (a smoke-grenade-throw mechanic, not a menu system); AI squadmate call-in confirmed working. Predator Missile's post-fire guidance AIM is a separate, still-open bug (not a killstreak-activation problem) — tracked under the mounted-aim-channel work below |
 | Real in-game options menu | 2 | 4 | Static injection mechanism done; the next blocker (real menu content needs the engine's own controlled load context) now has a full, pressure-tested two-part implementation plan (boot-time zone splice + a single `OpenMenuByName` string-substitution hook) — not yet coded |
 | Vibration/rumble | 1 | 2 | Implemented, then found to **crash the game at startup** (a generic native dispatcher hooked with a fixed signature that didn't match every real caller) — currently disabled pending a safer reimplementation against a single-call-site-safe target already identified |
 | Extreme Conditioning override | 1 | 1 | **Resolved for free, 2026-07-19** — Sprint's real-kbutton migration means the native perk system now applies its own duration override automatically, same as it does for keyboard players; no separate detection/override code was ever needed once the kbutton was found |
-| **Total** | **42** | **46** | **42/46 ≈ 91/100** (Button-glyph row bumped 3→4 on 2026-08-01; every other row is still as of 2026-07-19 and not independently re-verified in this pass) |
+| **Total** | **44** | **48** | **44/48 ≈ 92/100** (Button-glyph row bumped 4→6 done/total on 2026-08-01, reflecting two newly-shipped capabilities — the highlighted-item A-glyph and the custom cursor overlay — added as scope, not just re-verified; every other row is still as of 2026-07-19 and not independently re-verified in this pass) |
 
 ### Raw functionality methodology
 
@@ -250,7 +250,7 @@ is still open, not how rough what already works is.
 | Stage | Version range | What it means here |
 |---|---|---|
 | **Pre-alpha** | `0.1.0` – `0.1.5` | Core systems land one at a time — movement/look/combat, stance/sprint, pause menu, and menu navigation done; aim assist, vibration, killstreaks, and the controller options menu still being built out. |
-| **Alpha** *(current, v0.2.5)* | `0.1.5` – `0.4.0` | The remaining major systems get built and land. **v0.2.0**: Sprint fully native (no custom timer, Extreme Conditioning resolved for free), 3 of 4 Survival killstreaks confirmed working, menu/UI navigation extended to the main menu/title screen and slider values. **v0.2.1**: console-accurate look acceleration ramp, and Hold Breath (L3 while ADS'd) fully working as genuinely native input after an extensive debugging pass. **v0.2.2**: risk-mitigation release — aim assist permanently removed (not just disabled) following VAC research; see the security notice at the top of this file. **v0.2.5**: crouch/stance reliability hotfix and the on-screen notification system. **Button-glyph controller icons have since shipped** (2026-08-01, not yet in a numbered release — see `PATCHNOTES.md`'s Unreleased section and `known_issues.md` #48/#50), with one open gap on Special Ops modal popups. **Still ahead in this stage**: a real in-game options screen, vibration reimplemented, Predator Missile's guidance aim, and remaining Campaign/Special Ops compatibility gaps. Multiplayer groundwork may start here, pending the anti-cheat question being resolved first. |
+| **Alpha** *(current, v0.2.5)* | `0.1.5` – `0.4.0` | The remaining major systems get built and land. **v0.2.0**: Sprint fully native (no custom timer, Extreme Conditioning resolved for free), 3 of 4 Survival killstreaks confirmed working, menu/UI navigation extended to the main menu/title screen and slider values. **v0.2.1**: console-accurate look acceleration ramp, and Hold Breath (L3 while ADS'd) fully working as genuinely native input after an extensive debugging pass. **v0.2.2**: risk-mitigation release — aim assist permanently removed (not just disabled) following VAC research; see the security notice at the top of this file. **v0.2.5**: crouch/stance reliability hotfix and the on-screen notification system. **Button-glyph controller icons have since shipped in full** (2026-08-01, not yet in a numbered release — see `PATCHNOTES.md`'s Unreleased section and `known_issues.md` #48/#50/#51/#52): in-game hints, menu corner hints, the Special Ops modal Back/Friends bug (genuinely resolved, not just the earlier inert mitigation), a highlighted-item A-glyph in vertical list menus, and a custom mouse cursor overlay (drawn on top of this project's own icons instead of underneath them, replacing the native software cursor). **Still ahead in this stage**: a real in-game options screen, vibration reimplemented, Predator Missile's guidance aim, and remaining Campaign/Special Ops compatibility gaps. Multiplayer groundwork may start here, pending the anti-cheat question being resolved first. |
 | **Beta** | `0.4.0` – `1.0.0` | Should be practically feature-complete — remaining work is closing gaps, fixing what live testing surfaces, and extending reach (other MW3 clients, Multiplayer if the anti-cheat question resolves favorably) rather than building brand-new core systems from scratch. |
 | **1.0 (final)** | `1.0.0`+ | Feature-complete against this project's full scope, stable, and treated as a real release rather than an actively-shifting work in progress. |
 
@@ -506,7 +506,7 @@ state directly, as described above:
 | D-pad + A menu navigation | Item navigation (main menu, pause menu, options screens' two-pane category/settings drill-in-drill-out) | ✅ Confirmed live (task #22), including the title screen itself |
 | D-pad + A, buy-station/armory (Survival) | Item navigation on the armory's `itemDef` list | ✅ Confirmed live (2026-07-18) |
 | Slider-type settings (e.g. sensitivity) | Adjusting the actual VALUE of a slider, not just navigating to it | ✅ Confirmed live (2026-07-18) — Left/Right adjusts the value directly, via the same generic menu-forwarding mechanism as everything else in this section |
-| Button-glyph UI prompts | Real controller-glyph icons in in-game interact hints AND menu UI corner hints | 🟡 Shipped and confirmed live (2026-08-01) via a custom-hint-redraw overlay — see `re_notes/known_issues.md` issue #48/#50. One known gap: Special Ops modal popups show the wrong corner hint (issue #50) |
+| Button-glyph UI prompts | Real controller-glyph icons in in-game interact hints, menu UI corner hints, and highlighted list items; custom mouse cursor overlay | ✅ Shipped and confirmed live (2026-08-01) via a custom-hint-redraw overlay — see `re_notes/known_issues.md` issues #48/#50/#51/#52. The Special Ops modal corner-hint bug is genuinely resolved, not just the earlier inert mitigation |
 | Vibration/rumble | Controller rumble on weapon fire/taking damage | 🟡 Implemented, then found to crash the game at startup — currently disabled pending a safer reimplementation (see `re_notes/known_issues.md` issue #24) |
 
 **B's stance ladder**, matching real Xbox 360 CoD behavior (not a raw hold of either
@@ -567,10 +567,10 @@ stations never actually offer.
   value adjustment (Left/Right adjusts the value directly, not just navigation to it —
   corrected 2026-07-18, see `re_notes/known_issues.md` issue #22's correction note).
   Button-glyph prompt swapping (task #6's other half, real controller icons in hint
-  text) is no longer unstarted — shipped and confirmed live 2026-08-01, see
-  `re_notes/known_issues.md` issue #48/#50. The one remaining gap there (Special Ops
-  modal popups showing the wrong corner hint) is tracked in issue #50, not held back
-  as an undone item here.
+  text) is no longer unstarted — shipped and confirmed live in full, 2026-08-01,
+  including the Special Ops modal corner-hint bug (genuinely resolved, not just the
+  earlier inert mitigation), a highlighted-item A-glyph, and a custom mouse cursor
+  overlay. See `re_notes/known_issues.md` issues #48/#50/#51/#52.
 
 ## Architecture
 
@@ -687,20 +687,22 @@ See `re_notes/known_issues.md` for the full, actively-tracked list.
   above. Button-glyph prompts (real controller icons in hint text) are now shipped
   for both in-game hints and menu UI corner hints — see below — keyboard/mouse
   remains fully functional alongside controller either way.
-- **Button-glyph UI prompts are shipped and confirmed live** (2026-08-01) for
-  in-game interact hints (pickup/swap, buy-station, mantle, Reload, grenade
-  throwback, Survival ready-up) and menu UI corner hints (Back/Friends) — a
-  custom-hint-redraw overlay that suppresses the game's own native hint text and
-  draws prefix text + a real controller-glyph icon + suffix text itself, in this
-  project's own embedded font. This replaced an earlier, different plan (an
-  in-font glyph-codepoint substitution via a boot-time zone splice) that was
-  fully researched but abandoned in favor of the overlay technique actually
-  shipped. **One known gap**: on Special Ops' modal popups (Choose Game Mode,
-  the on-disk/DLC content picker), the native "Friends" hint incorrectly
-  persists instead of showing "Back" — root cause needs menu-script
-  bytecode-interpreter reverse engineering, parked as a scoped future task. See
-  `re_notes/known_issues.md` issue #48 (the core mechanism) and #50 (the menu-UI
-  extension and this remaining gap).
+- **Button-glyph UI prompts are shipped and confirmed live in full** (2026-08-01)
+  for in-game interact hints (pickup/swap, buy-station, mantle, Reload, grenade
+  throwback, Survival ready-up), menu UI corner hints (Back/Friends), and a
+  highlighted-item A-glyph in vertical list menus (native text left untouched,
+  the icon added after it at its real measured width) — a custom-hint-redraw
+  overlay that suppresses the game's own native hint text and draws prefix text
+  + a real controller-glyph icon + suffix text itself, in this project's own
+  embedded font. This replaced an earlier, different plan (an in-font
+  glyph-codepoint substitution via a boot-time zone splice) that was fully
+  researched but abandoned in favor of the overlay technique actually shipped.
+  The Special Ops modal corner-hint bug (previously an open gap here) is
+  genuinely resolved — the earlier shipped mitigation had never actually
+  activated in any logged session, and the real fix uses a safe native
+  `getfocuseditemname()` signal instead. Also shipped in the same pass: a
+  custom mouse cursor overlay, so the native software cursor no longer renders
+  underneath these icons. See `re_notes/known_issues.md` issues #48/#50/#51/#52.
 - **Vibration/rumble was implemented, then found to crash the game at startup —
   currently disabled.** Both native hook targets turned out to be generic,
   variable-argument dispatchers; a fixed-signature detour corrupted stack reads for
