@@ -4942,22 +4942,56 @@ void __cdecl Hook_DrawGlyphText(
                         bool haveSelection = TryGetCurrentSelectionGroupAndIndex(selIndex, selMaxIndexSeen);
                         int ordinal = g_menuListItemOrdinalThisFrame;
 
-                        // Cross-check (2026-08-01, issue #51 follow-up): the ordinal-counting
-                        // signal alone was already confirmed live to be broken by background-
-                        // list bleeding (issue #51) -- a background list's own items land at
-                        // low ordinals while g_lastMenuListStruct's focusIndex/itemCount belong
-                        // to a completely different, actually-focused list. Requiring BOTH
-                        // independent signals (the struct-based focusIndex AND the
-                        // localvarstring-derived selIndex, from a completely separate native
-                        // mechanism) to agree with THIS SAME ordinal is a much stronger bar
-                        // than trusting either alone -- the two would have to be wrong in
-                        // exactly the same way to produce a false match. Does not yet check
-                        // group identity/item count (selMaxIndexSeen under-counts until the
-                        // player has visited a group's last item at least once this session,
-                        // so it isn't a reliable count to gate on) -- first live test of this
-                        // two-signal-agreement bar, may need tightening.
-                        bool trustworthyMatch = haveFocus && haveSelection &&
-                            focusIndex == ordinal && selIndex == ordinal;
+                        // Cross-check v1 (2026-08-01): required BOTH focusIndex (from
+                        // g_lastMenuListStruct/FUN_004dfd30) AND selIndex (from
+                        // ui_swf_selection) to agree with the ordinal. Live-reported to
+                        // NEVER pass on the Special Ops root list -- and the log confirms
+                        // why: selIndex tracks the real navigation correctly (8, 7, 6, 5...
+                        // as the player moved up), but focusIndex/itemCount stayed pinned
+                        // to a completely unrelated list (itemCount 44/81, nowhere near this
+                        // list's real ~9 items) THE WHOLE TIME. This matches an already-
+                        // documented finding (known_issues.md issue #50's Attempt 1): Special
+                        // Ops' own tile/list navigation never routes through the generic
+                        // listbox dispatcher FUN_004dfd30 tracks at all -- focusIndex was
+                        // never a valid signal for this specific screen, not an intermittent
+                        // failure. Dropped it from the trustworthy condition entirely; still
+                        // logged below for visibility. selIndex is kept as the sole ordinal
+                        // cross-check, plus !g_specOpsModalSticky (2026-08-01, issue #50) to
+                        // skip matching entirely during the one confirmed real background-
+                        // bleed case (the root list drawing behind the Chaos/Mission/Survival
+                        // modal).
+                        //
+                        // Live-reported 2026-08-01 (two follow-up bugs after first success):
+                        // (1) the A icon persisted on the last-selected item even once nothing
+                        // was highlighted at all -- a real keyboard/mouse-only state (cursor
+                        // not hovering any item) that never happens on controller. (2) it also
+                        // kept showing on the root list's own items while a DIFFERENT modal
+                        // (not the one Special-Ops-specific case g_specOpsModalSticky covers)
+                        // was open on top of it. Root cause for both: g_currentSelGroupName/
+                        // g_currentSelIndex are frozen at their last real value by design
+                        // (`ui_swf_selection` stops updating once you leave that list's own
+                        // navigation) -- neither "nothing highlighted" nor "a different modal
+                        // opened" clears them.
+                        //
+                        // Fixed both with one general check instead of two narrow ones:
+                        // getfocuseditemname() gives the actual CURRENTLY focused item's name,
+                        // live, regardless of cause. The expected name for THIS list's own
+                        // selIndex is always exactly "<group>_<selIndex>" (confirmed live
+                        // shape, e.g. "SPECOPS_BUTTON_LIST_3") -- if the real focused name
+                        // doesn't match that exact string, focus is on something else right
+                        // now (nothing, a different modal, a different list entirely), so this
+                        // list's own A-glyph shouldn't draw. Subsumes both the "nothing
+                        // highlighted" case (focused name is "none", never matches) and the
+                        // "any modal is open" case (focused name is the modal's own item,
+                        // never matches this list's pattern) without needing a per-modal
+                        // allowlist or sticky flag at all.
+                        char expectedFocusedName[80] = {};
+                        if (haveSelection) {
+                            sprintf_s(expectedFocusedName, "%s_%d", g_currentSelGroupName, selIndex);
+                        }
+                        bool focusMatchesThisList = haveSelection &&
+                            _stricmp(g_focusedItemName, expectedFocusedName) == 0;
+                        bool trustworthyMatch = focusMatchesThisList && selIndex == ordinal;
 
                         char buf[256];
                         sprintf_s(buf, "[list-item-diag] ordinal=%d text=\"%.60s\" p2=%.1f p3=%.1f "
@@ -4969,18 +5003,28 @@ void __cdecl Hook_DrawGlyphText(
                         LogFromController(buf);
 
                         if (trustworthyMatch) {
-                            // Redraw the item's own text ourselves (same "suppress native,
-                            // redraw prefix + icon via our own font" technique already shipped
-                            // for every other hint in this file) followed by a real A/Cross
-                            // glyph icon, instead of trying to measure the NATIVE font's glyph
-                            // widths (a path this project has never built/proven) -- reuses
-                            // RequestMenuHintOverlay exactly as the corner-hint system does.
+                            // Per explicit user direction: don't touch the native text at
+                            // all (no suppress, no redraw) -- just add the A/select glyph
+                            // icon AFTER it, at its real measured width. Uses
+                            // SumDirectIndexedGlyphWidthsBefore (built for issue #48's own
+                            // diagnostic pass, common-ASCII-only, returns -1 for anything
+                            // outside the safe range) scaled by this draw call's own real
+                            // X scale factor (param_5, confirmed live to match the
+                            // "p5=1.500"-style values already captured in hud-glyph-pos
+                            // diagnostics) to get the item's actual on-screen text width,
+                            // rather than assuming a fixed reserved column per list.
                             char aAsset[32] = {};
-                            if (TryGetMenuGlyphAssetNameForKeyName("ENTER", aAsset, sizeof(aAsset))) {
-                                char itemText[64] = {};
-                                strncpy_s(itemText, param_1, _TRUNCATE);
-                                RequestMenuHintOverlay(param_2, param_3, itemText, "", aAsset);
-                                suppressRealDraw = true;
+                            int rawWidth = SumDirectIndexedGlyphWidthsBefore(font, param_1, textLen);
+                            if (rawWidth >= 0 && TryGetMenuGlyphAssetNameForKeyName("ENTER", aAsset, sizeof(aAsset))) {
+                                constexpr float kIconGapAfterText = 12.0f;
+                                // Live-reported 2026-08-01 (first successful appearance --
+                                // needed a position tweak): every OTHER corner-hint icon at
+                                // this same fonts/smallFont param_3 baseline in this file
+                                // already applies kMenuHintVerticalNudge (-18) -- this was
+                                // the one call site that skipped it.
+                                constexpr float kMenuHintVerticalNudge = -18.0f;
+                                float iconX = param_2 + static_cast<float>(rawWidth) * param_5 + kIconGapAfterText;
+                                RequestMenuHintOverlay(iconX, param_3 + kMenuHintVerticalNudge, "", "", aAsset);
                             }
                         }
                         ++g_menuListItemOrdinalThisFrame;

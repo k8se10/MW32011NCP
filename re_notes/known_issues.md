@@ -65,7 +65,7 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#48](#48-roadmap-idea-high-value-render-controller-glyph-icons-as-independent-overlay-quads-instead-of-injecting-them-into-the-games-own-font-system-2026-07-31-user-identified-not-yet-implemented) — Render glyphs as independent overlay quads (not in-font injection) — **Resolved** (full custom-hint-redraw system, confirmed live: pickup/swap/buy-station/mantle/reload/grenade/ready-up, plus a critical crash-on-display-mode-change fix and a resolution-scaling fix)
 - [#49](#49-roadmap-idea-generalize-the-overlay-technique-to-arbitrary-in-game-text-not-just-button-glyphs--live-capture-block-original-render-redraw-with-a-custom-font-at-the-same-position-2026-07-31-user-identified-not-yet-implemented) — Generalize overlay technique to arbitrary in-game text/fonts — **Roadmap Idea**
 - [#50](#50-menu-ui-corner-hint-glyphs-backfriends-extended-to-full-menu-system--resolved-confirmed-live-2026-08-01) — Menu corner-hint glyphs (Back/Friends), Friends-list suppression, Quit B-glyph — **Resolved**
-- [#51](#51-highlighted-item-a-glyph-in-vertical-list-menus--ordinal-counting-approach-refuted-live-localvar-lookup-hook-crashed-the-game-blocked-2026-08-01) — Highlighted-item A-glyph in vertical list menus — **Open** (blocked on finding a safe per-list scoping signal)
+- [#51](#51-highlighted-item-a-glyph-in-vertical-list-menus--resolved-confirmed-live-2026-08-01) — Highlighted-item A-glyph in vertical list menus — **Resolved** (known scope limit: only lists using `ui_swf_selection`)
 - [#52](#52-custom-mouse-cursor-overlay--resolved-confirmed-live-2026-08-01) — Custom mouse cursor overlay (native cursor replaced, correct z-order over glyphs) — **Resolved**
 
 ---
@@ -8002,12 +8002,54 @@ more general "arbitrary text replacement" roadmap idea.
 
 ---
 
-## 51. Highlighted-item A-glyph in vertical list menus — ordinal-counting approach refuted live; localvar-lookup hook crashed the game; blocked (2026-08-01)
+## 51. Highlighted-item A-glyph in vertical list menus — RESOLVED, confirmed live (2026-08-01)
 
-**Status:** Open. Blocked on finding a safe way to read which native list is
-actually focused right now, scoped to just that list's own items. Two
-approaches tried and ruled out this round; feature not implemented (no draw
-code written yet, this is still all diagnostic).
+**Status:** Resolved, with a known scope limit (see "Final fix" below) — works
+on lists that use the real `ui_swf_selection` mechanism (confirmed live on
+Special Ops' root list), does not yet work on at least one other menu panel
+that doesn't use that mechanism (a secondary options-style hub list showing
+SOLO PLAY/CALLSIGN/BARRACKS/Store/OPTIONS/MAIN MENU/QUIT — its own selection
+tracking was never identified). The two approaches below were tried and ruled
+out before the eventual fix; kept for the record.
+
+### Final fix (2026-08-01, same day as the approaches below)
+
+Landed once issue #50's `getfocuseditemname()` work (found for a completely
+different bug) turned out to solve this one too. Per explicit user direction,
+does NOT suppress or redraw the native item text at all -- only adds the A/
+select glyph icon after it, positioned using the item's own real measured
+text width (`SumDirectIndexedGlyphWidthsBefore`, already built for issue #48's
+diagnostic pass, scaled by the draw call's own real X-scale factor) rather
+than assuming a fixed reserved column.
+
+**Match condition went through several corrections, each a real live-reported
+bug**, not a smooth first pass:
+- **v1** (both `focusIndex` from `g_lastMenuListStruct`/`FUN_004dfd30` AND
+  `selIndex` from `ui_swf_selection` must agree with the per-frame ordinal):
+  **never passed on the Special Ops root list** — `selIndex` tracked real
+  navigation correctly, but `focusIndex`/`itemCount` stayed pinned to a
+  completely unrelated list the whole time. Root cause: Special Ops' own
+  list navigation never routes through the generic listbox dispatcher
+  `focusIndex` depends on at all (the exact same limitation already
+  documented in issue #50's own "Attempt 1") — `focusIndex` was never a
+  valid signal for this specific screen, not an intermittent failure.
+  Dropped from the condition entirely.
+- **v2** (`selIndex == ordinal` alone, plus `!g_specOpsModalSticky` to avoid
+  the one known Special-Ops-modal background-bleed case, plus a check that
+  something is highlighted at all): first version to actually draw the icon
+  live. Two follow-up bugs: the icon persisted on the last-selected item with
+  nothing highlighted (a real keyboard/mouse-only state that never happens on
+  controller), and it also kept showing while a DIFFERENT modal (not the one
+  `g_specOpsModalSticky` covers) was open on top of the list.
+- **v3, shipped**: replaced BOTH narrow fixes with one general check —
+  `getfocuseditemname()` gives the actual currently-focused item's name
+  live; the expected name for this list's own `selIndex` is always exactly
+  `"<group>_<selIndex>"` (confirmed live shape). If the real focused name
+  doesn't match that exact string, focus is on something else right now
+  (nothing, a different modal, a different list), so this list's own icon
+  shouldn't draw — subsumes both bugs above without a per-modal allowlist.
+
+### Approaches tried and ruled out before the fix (kept for the record)
 
 **Goal** (explicit user request): draw an A-glyph icon after whichever menu
 item is CURRENTLY HIGHLIGHTED in real console-style vertical list menus —
@@ -8191,9 +8233,34 @@ re-cropped from exactly that point, pinning the hotspot precisely at the
 texture's own origin. Final asset is 80x128 (not square), drawn preserving
 its own aspect ratio rather than stretched.
 
-**Not yet done**: a broader pass checking whether any of this project's
-OTHER draws have a similar window-vs-viewport assumption baked in (everything
-else uses `GetResolutionScale`, which is a DIFFERENT ratio — design-space-vs-
-viewport, not window-vs-viewport — so probably fine, but not independently
-re-verified against a window/viewport mismatch specifically). Requested by
-the user as a follow-up, not yet started.
+**Resolution-safety follow-up (2026-08-01, later same day)**: reviewed
+whether any of this project's OTHER draws have a similar window-vs-viewport
+assumption baked in. Confirmed safe — `RequestMenuHintOverlay`/
+`DrawOneMenuHintSlot` (the shared pipeline behind every corner hint, the
+Quit B-glyph, and issue #51's A-glyph) already scales both position AND
+size by the real `GetResolutionScale` ratio internally (`x * scaleX, y *
+scaleY, w * scaleX, h * scaleY`), the same design-space-vs-viewport fix
+already proven at 1440p back in issue #48 — every caller inherits this for
+free. The cursor's own position fix (above) is the only place in the project
+computing a window-vs-viewport ratio directly, and it does so dynamically
+every frame (no hardcoded resolution assumption) with a safe fallback
+(raw, unscaled position) if `GetClientRect` ever returns a degenerate size.
+
+**Critical follow-up bug found via this exact feature, fixed same day: WndProc
+subclass never re-attached to a new window.** Live-reported: the custom
+cursor stopped tracking mouse movement entirely after a display-mode change
+(resolution change), while every other overlay element kept working fine.
+Root-caused by comparing `CreateDevice`'s own logged `hwnd` between the
+initial launch and a mid-session recreation: **two genuinely different
+window handles** — a display-mode change creates an entirely new window,
+not just a new D3D9 device on the same one, contradicting this project's own
+long-standing `InstallWndProcHook` comment ("only need to subclass once --
+the game has one window"). The old window stayed subclassed (and was very
+likely already destroyed); the new one never received `HookWndProc` at all,
+so `WM_MOUSEMOVE` tracking silently froze at its last value — the cursor
+kept drawing, just never updated position again. Fixed in `d3d9_hook.cpp`:
+`InstallWndProcHook` now detects when the hwnd actually changes and
+re-subclasses the new window (restoring the previous window's original
+WndProc first). User-confirmed fixed live. This is general infrastructure,
+not cursor-specific — any future feature relying on window messages
+benefits from the same fix.
