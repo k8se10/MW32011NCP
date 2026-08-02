@@ -50,6 +50,12 @@ to check for even on this new version; log each as its own
   now genuinely opens the Friends list (previously the glyph swap was cosmetic
   only) via a synthesized keypress, the same technique already used for
   Survival's ready-up.
+- **All controller glyph/hint overlays now hide automatically whenever
+  keyboard/mouse becomes the active input method**, mirroring console (never a
+  cursor and button-prompt glyphs on screen together). Shares the exact same
+  input-method signal the custom cursor overlay already used for its own
+  visibility (issue #55), extracted into one function so the two can never
+  disagree. See `re_notes/known_issues.md` issue #61.
 
 ### Fixed
 - **CRITICAL: changing display mode crashed the whole game.** Root cause: this
@@ -109,6 +115,101 @@ to check for even on this new version; log each as its own
   unrelated modal) with one general check instead. Known scope limit: only
   works on lists using the real `ui_swf_selection` mechanism — at least one
   other menu panel doesn't use it and isn't covered yet.
+- **Survival ready-up prompt read "Press Y" instead of "Hold Y"** (it's a
+  hold, not a tap), and could **silently vanish this project's own custom
+  text/glyphs entirely** whenever it overlapped a real interact hint or the
+  Reload reminder. Root cause: the interact-hint renderer used a single
+  shared slot for every gameplay hint, on the (previously true, now
+  disproven by co-op testing) assumption only one is ever on screen at once.
+  Fixed by giving ready-up/interact/Reload each their own independent slot
+  (same technique already proven for the menu corner-hint pool) so they
+  coexist by default, with one explicit, named rule (hide Reload while
+  ready-up or an interact hint is also up) decided once per frame instead of
+  racing an unreliable 100ms window. See `re_notes/known_issues.md` issue #54.
+- **Custom cursor overlay stayed visible during Survival co-op** even with no
+  real mouse/keyboard input, something solo play never triggered. First fix
+  attempt (comparing real `WM_MOUSEMOVE` recency against controller activity
+  recency) shipped the same day and immediately regressed live in two ways:
+  the cursor stayed visible at menus while actively using the controller
+  (only hid once real gameplay started), and flickered constantly during
+  gameplay. Both root-caused and fixed same day: (1) controller-activity
+  tracking had only been wired into the gameplay-tick functions, which halt
+  during menus — moved to a single, centralized point in every controller
+  read (`controller_input.cpp`) so menu navigation counts as activity too;
+  (2) the in-gameplay flicker traced to the native cursor-visible state
+  likely generating real mouse-move events on its own (contaminating the
+  "most recent" comparison) — replaced the comparison with a flat "hide if
+  the controller was used at all in the last 300ms" override, immune to
+  whatever the mouse-move timestamp is doing. That override then regressed
+  a third time, live-reported as "comes back too fast" — it only required
+  controller silence, never genuine mouse movement. Fixed by adding a real
+  pixel deadzone to `WM_MOUSEMOVE` (`kMouseMoveDeadzonePx`, same concept as
+  this project's own controller-stick deadzones) so native jitter/snaps no
+  longer count as real activity, then requiring the mouse timestamp to be
+  newer than the controller's last touch again now that it's trustworthy.
+  A fourth round then revealed the original symptom was never solo-vs-co-op
+  specific to begin with: a keyboard/mouse player saw the cursor persist
+  through ordinary ACTIVE gameplay, proving the native `uiState` exclusion
+  list this project's cursor overlay checks (`0`/`6`/`10`, guessed at the
+  overlay's original implementation) never actually covered "normal
+  gameplay, no menu open" — a live capture caught real `uiState` values
+  (`1`, `9` held 20+ seconds straight, `2`) none of which were excluded.
+  Rather than guess more magic numbers, the cursor now also requires this
+  project's own already-proven "a real menu is open" signal before drawing
+  at all. Confirmed fixed live. See `re_notes/known_issues.md` issue #55.
+  Buy-station cursor re-centering is a separate, still-open half of the
+  same report.
+- **Menu text replacement (Quit's B-glyph, Leaderboards' controller binding)
+  could hijack an unrelated, genuine navigable menu ITEM that happened to
+  share the same label**, mangling that item's real text instead of the
+  intended corner-hint legend. Both matches relied on text content alone
+  with no positional check. Fixed by requiring the match to also sit at the
+  known corner-hint row (same row Back/Friends/Quit are already confirmed to
+  share), the same position-based discriminator technique already proven for
+  the menu-hint pool. See `re_notes/known_issues.md` issue #56.
+- **Jump from crouch/prone didn't stand the player up first**, unlike Sprint's
+  already-working equivalent. Same root cause class as Sprint's own original
+  fix: the raw `+gostand` usercmd bit alone isn't enough to force a stance
+  change. Now calls the same real `ToggleStance` toggle Sprint already uses,
+  on Jump's own rising edge. See `re_notes/known_issues.md` issue #59.
+- **Crouch input occasionally stops responding (regression), root cause
+  confirmed live and fixed.** Diagnostics added earlier the same day caught
+  it directly: a player mashing crouch 24 times over ~5.4 seconds while
+  `IsMenuActive()` was confirmed false the entire time, every single press
+  still silently eaten by a stale "this is the menu's press" latch
+  (`g_currentBPressTouchedMenu`) that only a SEPARATE, independently-polled
+  edge tracker (`InjectControllerMenuBack`'s own) was responsible for
+  clearing — and that tracker had desynced from the real button state, with
+  no way to self-correct until it eventually caught up on its own. This also
+  fully explains the "restored after melee/knifing" pattern reported both
+  here and originally in issue #42 — that was always coincidental timing,
+  never causal. Fixed by giving `InjectControllerButtons`' own (proven
+  reliable) rising-edge detection a second, independent path to clear the
+  same latch whenever no menu is genuinely active right now, instead of
+  relying solely on the other tracker. Confirmed fixed live. See
+  `re_notes/known_issues.md` issue #53.
+- **Turret placement prompt showed mouse text ("Press Left Mouse to place
+  the turret") on controller.** The real string was already sitting in an
+  earlier session's log — same row/font/format as every other pickup/
+  buy-station hint, just missing a glyph-resolution alias for the literal
+  display text "Left Mouse" (only the raw bind-name form was mapped).
+  Resolves through the current `ButtonLayout`'s real Fire button, same as
+  the existing "G or Middle Mouse" case — no new draw code needed. See
+  `re_notes/known_issues.md` issue #58; not yet live-verified.
+
+### Investigated, not yet resolved
+- **Co-op money-sharing has no dedicated controller prompt.** A genuine gap
+  (missed controller conversion, not broken functionality) but needs a live
+  `proxy_d3d9.log`/screenshot capture of the real native prompt text before
+  implementing — every other hint in this project needed that same ground
+  truth to get right the first time rather than guessing. See
+  `re_notes/known_issues.md` issue #57.
+- **Freeze while loading a map, crash reporter, then recovered.** Checked
+  the full session's `proxy_d3d9.log` — no exception marker, no repeated
+  device recreation, very little gameplay logged (consistent with the
+  freeze happening early). Not linked to any of this session's changes;
+  needs a repro with more detail before a real cause can be identified. See
+  `re_notes/known_issues.md` issue #60.
 
 ### Docs
 - **Corrected several stale entries found by a full sweep of

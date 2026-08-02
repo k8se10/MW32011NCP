@@ -82,13 +82,44 @@ HWND g_gameHwnd = nullptr;
 int g_lastMouseMoveClientX = -1;
 int g_lastMouseMoveClientY = -1;
 bool g_haveMouseMovePos = false;
+// BUG-001 follow-up (2026-08-02, stream co-op report): "recent input method" signal
+// for the custom cursor -- see GetLastMouseMoveTickMs()'s own comment for why this
+// is WM_MOUSEMOVE specifically, not WM_KEYDOWN/other messages too.
+DWORD g_lastMouseMoveTickMs = 0;
+// Live-reported same day: the cursor came back too fast after using the controller --
+// the fix at the time only checked "has the controller been quiet for a bit," never
+// actually required genuine mouse movement to have happened. Root cause of THAT is a
+// real pixel deadzone missing here: any WM_MOUSEMOVE at all (even a 1px native
+// engine-driven snap/clamp, unrelated to the player's hand) was counted as "real
+// mouse activity." Mirrors the same deadzone concept this project's own controller
+// sticks already use -- only counts as real activity once cumulative movement since
+// the last confirmed real move exceeds a small pixel radius; anchors re-baseline
+// every time the deadzone is cleared, so slow deliberate movement still accumulates
+// and eventually counts, same semantics as a stick deadzone measured from center.
+int g_lastMouseActivityBaselineX = -1;
+int g_lastMouseActivityBaselineY = -1;
+constexpr int kMouseMoveDeadzonePx = 4;
 
 LRESULT CALLBACK HookWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     if (msg == WM_MOUSEMOVE) {
-        g_lastMouseMoveClientX = static_cast<short>(LOWORD(lParam));
-        g_lastMouseMoveClientY = static_cast<short>(HIWORD(lParam));
+        int newX = static_cast<short>(LOWORD(lParam));
+        int newY = static_cast<short>(HIWORD(lParam));
+        g_lastMouseMoveClientX = newX;
+        g_lastMouseMoveClientY = newY;
         g_haveMouseMovePos = true;
+
+        if (g_lastMouseActivityBaselineX < 0) {
+            g_lastMouseActivityBaselineX = newX;
+            g_lastMouseActivityBaselineY = newY;
+        }
+        int dx = newX - g_lastMouseActivityBaselineX;
+        int dy = newY - g_lastMouseActivityBaselineY;
+        if (dx * dx + dy * dy >= kMouseMoveDeadzonePx * kMouseMoveDeadzonePx) {
+            g_lastMouseMoveTickMs = GetTickCount();
+            g_lastMouseActivityBaselineX = newX;
+            g_lastMouseActivityBaselineY = newY;
+        }
     }
     InjectMenuInputTick();
     return CallWindowProcA(g_origWndProc, hwnd, msg, wParam, lParam);
@@ -273,6 +304,27 @@ extern "C" bool GetLastMouseMoveClientPos(int& outX, int& outY)
     outX = g_lastMouseMoveClientX;
     outY = g_lastMouseMoveClientY;
     return true;
+}
+
+// BUG-001 (stream co-op report, 2026-08-02): "mouse cursor appears during co-op
+// gameplay despite this not occurring during solo gameplay" -- root cause is that
+// the custom cursor's visibility gate (DrawCustomCursorIfNeeded) mirrors the NATIVE
+// cursor's own visibility flags exactly (by design, see that function's comment),
+// and co-op's own nameplate-display state apparently makes the native game consider
+// the cursor "visible" even though the player is actively using a controller with no
+// real mouse/keyboard input at all -- something solo play never triggers. Report's
+// own suggested fix: track which input method was used more recently and only show
+// the cursor for real keyboard/mouse activity. This is that signal for the
+// keyboard/mouse side (see analog_input_hooks.cpp's GetLastControllerActivityTickMs
+// for the controller side) -- deliberately WM_MOUSEMOVE only, not WM_KEYDOWN/other
+// messages: several real gameplay features in this project (ready-up's F5, the
+// squadmate call-in, Hold Breath) synthesize real keyboard messages via PostMessageA
+// in reaction to a CONTROLLER press, and those must never be misread as "the user
+// just touched the keyboard" -- mouse movement is never something this project
+// synthesizes anywhere, so it's a clean, unambiguous real-input-only signal.
+extern "C" DWORD GetLastMouseMoveTickMs()
+{
+    return g_lastMouseMoveTickMs;
 }
 
 // Called from dllmain.cpp's Direct3DCreate9 implementation with the real IDirect3D9*

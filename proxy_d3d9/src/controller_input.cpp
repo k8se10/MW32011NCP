@@ -63,6 +63,36 @@ bool g_qpcInit = false;
 
 } // namespace
 
+// BUG-001 follow-up (2026-08-02): centralized here rather than at each of this
+// project's ~17 call sites for these two getters. Live-reported regression from the
+// first attempt: the cursor stayed visible even during controller-driven MENU
+// navigation ("until gameplay") because MarkControllerActivity() had only been added
+// to the gameplay-tick functions (InjectControllerMovement/Buttons), which halt
+// during menus/pause -- menu-nav functions run via the always-on WndProc/timer tick
+// and read these SAME getters, so marking activity HERE instead covers every caller,
+// present and future, without relying on remembering to add the call at each one
+// individually (the exact class of mistake CLAUDE.md's own Hold-Breath/Fire
+// bind-index lesson warns about for "must be distinct" constants -- same principle
+// applies to "every reader of real input must mark activity").
+extern void MarkControllerActivity(); // defined in analog_input_hooks.cpp
+extern "C" DWORD GetLastControllerActivityTickMs(); // defined in analog_input_hooks.cpp
+extern "C" DWORD GetLastMouseMoveTickMs(); // defined in d3d9_hook.cpp
+
+// See controller_input.h's own comment on IsControllerActiveInputMethod for the
+// rationale (shared by the cursor overlay and the glyph-hint overlays). Same
+// recency-window-then-comparison logic already live-proven for the cursor
+// (overlay_hud.cpp's DrawCustomCursorIfNeeded, BUG-001/#55): controller counts as
+// the active method outright if used within the last kRecentControllerActivityMs,
+// otherwise whichever of controller/(deadzone-filtered) mouse movement is more
+// recent wins.
+bool IsControllerActiveInputMethod()
+{
+    constexpr DWORD kRecentControllerActivityMs = 300;
+    DWORD lastController = GetLastControllerActivityTickMs();
+    if (GetTickCount() - lastController < kRecentControllerActivityMs) return true;
+    return lastController > GetLastMouseMoveTickMs();
+}
+
 bool Controller_GetLeftStick(float& x, float& y)
 {
     x = 0.0f; y = 0.0f;
@@ -73,6 +103,7 @@ bool Controller_GetLeftStick(float& x, float& y)
     if (g_XInputGetState(0, &state) != ERROR_SUCCESS) return false;
 
     ShapeStick(state.Gamepad.sThumbLX, state.Gamepad.sThumbLY, kLeftDeadzone, x, y);
+    if (x != 0.0f || y != 0.0f) MarkControllerActivity();
     return true;
 }
 
@@ -86,6 +117,7 @@ bool Controller_GetRightStick(float& x, float& y)
     if (g_XInputGetState(0, &state) != ERROR_SUCCESS) return false;
 
     ShapeStick(state.Gamepad.sThumbRX, state.Gamepad.sThumbRY, kRightDeadzone, x, y);
+    if (x != 0.0f || y != 0.0f) MarkControllerActivity();
     return true;
 }
 
@@ -101,6 +133,7 @@ bool Controller_GetRawButtonsAndTriggers(unsigned short& buttons, unsigned char&
     buttons = state.Gamepad.wButtons;
     leftTrigger = state.Gamepad.bLeftTrigger;
     rightTrigger = state.Gamepad.bRightTrigger;
+    if (buttons != 0 || leftTrigger != 0 || rightTrigger != 0) MarkControllerActivity();
     return true;
 }
 

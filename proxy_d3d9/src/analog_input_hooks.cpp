@@ -92,6 +92,55 @@ bool IsMenuActive()
     return (gate & kMenuActiveGateBit) != 0;
 }
 
+// User-requested (2026-08-02): the glyph/hint overlay system should turn itself off
+// whenever keyboard/mouse becomes the active input method, same as console never
+// shows button-prompt glyphs alongside a mouse cursor -- uses the exact same shared
+// decision (controller_input.h's IsControllerActiveInputMethod) the custom cursor
+// overlay's own visibility already depends on, so the two can never disagree. Every
+// real DRAW gate in this file that previously checked g_modConfig.glyphIconOverlayEnabled
+// directly now calls this instead; the one exception (LogMenuFocusDiagnosticIfChanged)
+// is a read-only diagnostic that never draws anything, so it stays on the plain
+// config flag alone.
+bool ShouldDrawGlyphOverlay()
+{
+    return g_modConfig.glyphIconOverlayEnabled && IsControllerActiveInputMethod();
+}
+
+// ---- BUG-003 follow-up (2026-08-02): B-press/crouch-drop diagnostics --------------
+//
+// Stream-reported symptom: crouch occasionally stops responding, user-confirmed via
+// direct playtest log analysis to correlate with (but per the user's own earlier
+// Campaign testing, NOT exclusively caused by) a Survival round transition -- user
+// has also directly confirmed this happens with NO menu/buy-station involved at all,
+// so IsMenuActive() being genuinely true is not a required precondition. Two prior
+// suspects were fully RULED OUT by analyzing the actual stream's proxy_d3d9.log: the
+// game window/device was only ever created once that whole session (no repeated
+// SendSyntheticActivationClick misfires), and every single ToggleStance attempt (102
+// of them) succeeded on the first try with clean guard bytes -- so whatever's
+// dropping the press happens upstream of RequestStanceToggle entirely, and is not
+// (at least not in that specific session) the already-instrumented guard-byte lock.
+// This logging doesn't presume a specific mechanism -- it just makes every previously
+// invisible step in B's own gating path (menu-active state, and whether THIS press
+// got latched as "the menu's press" per g_currentBPressTouchedMenu below) visible, so
+// the next real occurrence gives a conclusive answer instead of another guess.
+// Change-triggered (not a heartbeat), so a full session doesn't spam the log.
+namespace {
+bool g_lastMenuActiveGateState = false;
+bool g_menuActiveGateStateInitialized = false;
+}
+
+void LogMenuActiveGateDiag()
+{
+    bool current = IsMenuActive();
+    if (g_menuActiveGateStateInitialized && current == g_lastMenuActiveGateState) return;
+    g_menuActiveGateStateInitialized = true;
+    g_lastMenuActiveGateState = current;
+
+    char buf[96];
+    sprintf_s(buf, "[menu-active-gate-diag] IsMenuActive()=%d t=%lu", current ? 1 : 0, GetTickCount());
+    LogFromController(buf);
+}
+
 // task #15: resolves a logical action's PhysicalInput (from g_buttonMap, itself
 // resolved from the active ButtonLayout + FlipTriggers) down to an actual XInput
 // button-bit/trigger check. Every Inject* function below should read its physical
@@ -295,6 +344,22 @@ void ProcessPendingStanceRetry()
 }
 } // namespace
 
+// BUG-001 follow-up (2026-08-02): IsMenuActive() above lives in an anonymous
+// namespace (internal linkage -- fine for every OTHER caller in this same
+// translation unit, but invisible to overlay_hud.cpp). Live log evidence showed the
+// cursor's own uiState exclusion list (0/6/10) doesn't actually cover ordinary
+// active gameplay at all (real values seen during a live "cursor persists through
+// gameplay" repro: 1, 9 -- held for 20+ seconds straight -- and 2, none excluded)
+// -- rather than keep guessing more magic uiState values one at a time, the cursor
+// overlay now also requires this project's own already-proven-reliable "a real menu
+// is open" signal, the same one every corner hint/ESC-forward call in this file
+// already trusts. Thin exported wrapper so the internal IsMenuActive() everything
+// else in this file already calls doesn't need to move/lose its current scope.
+extern "C" bool IsMenuActive_Exported()
+{
+    return IsMenuActive();
+}
+
 // ---- Movement: move-stick -> usercmd_t.forwardmove(+0x1c) / .rightmove(+0x1d) ----
 //
 // "Move-stick" rather than a hardcoded "left stick" since task #15's Stick Layout
@@ -302,6 +367,21 @@ void ProcessPendingStanceRetry()
 // read every frame and RouteStickAxes (defined above) picks which feeds move vs. look
 // per the active layout. Under the default layout this is exactly the original left-
 // stick-only behavior.
+// BUG-001 follow-up (2026-08-02): "recent input method" signal, controller side --
+// see d3d9_hook.cpp's GetLastMouseMoveTickMs() for the keyboard/mouse side and the
+// full rationale. Only marked on genuine post-deadzone stick deflection or an actual
+// button/trigger press, never merely "a controller is connected and polling
+// succeeded" -- otherwise this would read as "recently active" every single frame
+// regardless of whether the player touched anything. MarkControllerActivity() itself
+// is called centrally from controller_input.cpp's four Controller_Get*() functions
+// (every caller, gameplay AND menu-nav ticks alike, goes through those), not
+// scattered at each of this project's ~17 call sites -- see that file's own comment
+// for why (a live-reported regression from a first attempt that only instrumented
+// the gameplay-tick functions, which halt during menus).
+DWORD g_lastControllerActivityTickMs = 0;
+void MarkControllerActivity() { g_lastControllerActivityTickMs = GetTickCount(); }
+extern "C" DWORD GetLastControllerActivityTickMs() { return g_lastControllerActivityTickMs; }
+
 extern "C" void __cdecl InjectControllerMovement(unsigned char* cmd)
 {
     if (!cmd) return;
@@ -689,6 +769,7 @@ void __cdecl Hook_MissileGuidanceDispatch(
 // a hold.
 DWORD g_interactPressStartMs = 0;
 bool g_interactButtonWasHeld = false;
+bool g_jumpButtonWasHeld = false; // user-reported gap (2026-08-02): Jump from prone should stand up first
 }
 
 extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
@@ -704,6 +785,7 @@ extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
         g_lastStanceDiagLogMs = nowMs;
     }
     LogMissileGuidanceFlagDiag(); // task #30 -- change-triggered, cheap to call every frame
+    LogMenuActiveGateDiag(); // BUG-003 follow-up -- change-triggered, see its own comment above
 
     uint32_t out = 0;
     // Fire (+attack) moved off raw usercmd bit 0x1 and onto the real +attack kbutton --
@@ -715,7 +797,18 @@ extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
     if (IsPhysicalHeld(g_buttonMap.lethal, xiButtons, leftTrigger, rightTrigger)) out |= 0x4000;   // Lethal (frag)
     // Suppressed while a menu is open -- A doubles as menu-select there (InjectControllerMenuNav,
     // task #22), same dual-purpose pattern as B (ESC-forward vs crouch/prone).
-    if (IsPhysicalHeld(g_buttonMap.jump, xiButtons, leftTrigger, rightTrigger) && !IsMenuActive()) out |= 0x400;      // Jump (+gostand)
+    bool jumpHeld = IsPhysicalHeld(g_buttonMap.jump, xiButtons, leftTrigger, rightTrigger) && !IsMenuActive();
+    if (jumpHeld) out |= 0x400;      // Jump (+gostand)
+    // User-reported gap (2026-08-02): jumping from crouch/prone didn't stand the
+    // player up first -- the raw +gostand usercmd bit alone isn't enough, same
+    // reason Sprint needed a real ToggleStance call (ForceStandingViaRealToggle)
+    // rather than relying on its own raw usercmd bit (see InjectControllerSprint's
+    // own "auto-stand from crouch/prone" precedent, task #6). Mirrors that exact
+    // condition (any non-standing stance, on Jump's own rising edge only).
+    if (jumpHeld && !g_jumpButtonWasHeld && GetRealStance() != 0) {
+        ForceStandingViaRealToggle();
+    }
+    g_jumpButtonWasHeld = jumpHeld;
 
     // Interact (0x8): hold-to-interact, not instant-on-tap -- see the comment on
     // g_interactPressStartMs above. Reload (a separate real kbutton, same physical
@@ -757,6 +850,37 @@ extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
         g_crouchButtonPressStartMs = GetTickCount();
         g_holdActionConsumed = false;
         g_pendingStanceMode = 0;
+        // BUG-003 -- ROOT CAUSE CONFIRMED via live proxy_d3d9.log (2026-08-02): a
+        // ~5.4s stretch showed 24 separate fresh rising edges here, EVERY one still
+        // carrying touchedMenu=1, while [menu-active-gate-diag] confirmed
+        // IsMenuActive() was false the ENTIRE time -- g_currentBPressTouchedMenu is
+        // only ever cleared by InjectControllerMenuBack's own, SEPARATE edge tracker
+        // (g_menuBackHeld), polled independently via the WndProc/timer tick, and it
+        // had desynced from reality (this function's own tracker kept detecting the
+        // real presses correctly the whole time). The flag had no way to self-correct
+        // until MenuBack's tracker eventually caught up on its own. Fix: this
+        // function's own rising-edge detection is proven reliable (it's the one that
+        // caught all 24 real presses) -- if no menu is genuinely active RIGHT NOW,
+        // there is no legitimate reason a BRAND NEW press could be "the menu's
+        // press" (that classification is only ever valid for a press that itself
+        // overlapped an active menu), so force-clear the stale latch here too,
+        // independent of whatever MenuBack's own tracker is doing. Does not weaken
+        // the original protection: a press that starts WHILE a menu is genuinely
+        // active is untouched (menuActive is false in exactly the case being fixed).
+        if (!IsMenuActive()) {
+            g_currentBPressTouchedMenu = false;
+        }
+        // BUG-003 follow-up (2026-08-02): every rising edge logged unconditionally --
+        // this is the one signal that proves the physical press was even seen by this
+        // function at all, regardless of what happens to it afterward. Deliberately
+        // NOT gated on anything (menu-touched, guard bytes, etc.) so a future "crouch
+        // did nothing" report can be checked against whether this line even exists at
+        // the right timestamp -- if it doesn't, the drop is upstream of this function
+        // entirely (controller read / layout mapping), not anything below this point.
+        char rBuf[160];
+        sprintf_s(rBuf, "[bpress-diag] rising-edge touchedMenu=%d realStance=%d t=%lu",
+                  g_currentBPressTouchedMenu ? 1 : 0, GetRealStance(), GetTickCount());
+        LogFromController(rBuf);
     }
     // g_currentBPressTouchedMenu (maintained by InjectControllerMenuBack, which keeps
     // running across a pause unlike this function) gates BOTH the hold and tap fire
@@ -772,10 +896,24 @@ extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
             RequestStanceToggle(2, "hold-fire"); // toggleprone
             g_holdActionConsumed = true;
         }
+    } else if (bHeld && !g_holdActionConsumed && g_currentBPressTouchedMenu) {
+        // BUG-003 follow-up: this press crossed the hold threshold but is being
+        // suppressed because it's latched as "the menu's press" -- logged once per
+        // press (via g_holdActionConsumed) so a future repro shows exactly when/why a
+        // hold was silently eaten instead of just absence of a hold-fire line.
+        DWORD heldMs = GetTickCount() - g_crouchButtonPressStartMs;
+        if (heldMs >= g_modConfig.proneHoldThresholdMs) {
+            LogStanceDiag("bpress-suppressed-hold-menu-touch");
+            g_holdActionConsumed = true; // still consume so this doesn't spam every frame
+        }
     }
     if (!bHeld && g_crouchButtonWasHeld && !g_holdActionConsumed && !g_currentBPressTouchedMenu) {
         // Falling edge and the hold threshold was never reached -- this was a tap.
         RequestStanceToggle(1, "tap-fire"); // togglecrouch
+    } else if (!bHeld && g_crouchButtonWasHeld && !g_holdActionConsumed && g_currentBPressTouchedMenu) {
+        // BUG-003 follow-up: a tap that would have fired togglecrouch, but got
+        // silently dropped because this press was latched as "the menu's press".
+        LogStanceDiag("bpress-suppressed-tap-menu-touch");
     }
     g_crouchButtonWasHeld = bHeld;
 
@@ -1795,6 +1933,10 @@ void SendSyntheticF5()
     // every other key this project has traced through FUN_00541020's dispatch.
     PostMessageA(hwnd, WM_KEYDOWN, VK_F5, 0x00000001);
     PostMessageA(hwnd, WM_KEYUP, VK_F5, 0xC0000001);
+    // BUG-003 follow-up (2026-08-02): clean timestamp anchor for "a round transition's
+    // ready-up just fired here" -- lets a future proxy_d3d9.log correlate a reported
+    // crouch failure against how long after this line it happened.
+    LogFromController("[ready-up-diag] SendSyntheticF5 fired");
 }
 } // namespace
 
@@ -4293,24 +4435,16 @@ char g_lastLoggedGlyphPosText[128] = {};
 void* g_awaitingHintContinuationFont = nullptr;
 float g_awaitingHintContinuationP3 = 0.0f;
 bool g_awaitingHintContinuation = false;
+GameplayHintSlotId g_awaitingHintContinuationSlot = GameplayHintSlotId::Interact; // BUG-004 follow-up: which named slot armed this
 
-// Live-reported 2026-07-31: the Reload prompt should be suppressed whenever a real
-// interact hint (pickup/swap/buy-station/mantle/grenade-throwback -- the highlighted-
-// span path above) is also on screen, to avoid both showing at once. Tracked as a
-// timestamp rather than a same-frame flag deliberately: within a single frame, the
-// Reload text and an interact hint could be processed in EITHER order (this project
-// doesn't control the game's own per-element draw order), so a flag that's only valid
-// "later in this same frame" would miss the case where Reload happens to be checked
-// first. A short recency WINDOW (checked via GetTickCount() elapsed, not an exact
-// frame boundary) sidesteps that ordering question entirely -- a real hint persists
-// for many consecutive frames while active, so a 100ms lag on the Reload suppression
-// clearing is completely imperceptible.
-DWORD g_lastInteractHintTickMs = 0;
-constexpr DWORD kInteractHintRecencyWindowMs = 100;
-bool WasInteractHintRecentlyActive()
-{
-    return (GetTickCount() - g_lastInteractHintTickMs) < kInteractHintRecencyWindowMs;
-}
+// Reload-vs-interact-hint suppression (originally live-reported 2026-07-31) now
+// lives entirely in DrawGameplayHintSlotsIfRequested (overlay_hud.cpp), decided once
+// per frame AFTER every Hook_DrawGlyphText call for that frame has already populated
+// its slot -- naturally immune to which of Reload/interact happened to be processed
+// first within the frame, which is exactly the ordering problem the old
+// WasInteractHintRecentlyActive() 100ms-window heuristic existed to route around (see
+// git history / PATCHNOTES for that version if the old approach is ever needed for
+// reference). See BUG-004 in re_notes/known_issues.md.
 
 // Live-captured 2026-08-01 (proxy_d3d9.log): the real "Back ^2ESC^7" hint's own
 // native position, at 2560x1440 -- this is the "standard place" the user asked for
@@ -4347,7 +4481,7 @@ void RequestSyntheticBackHint()
 
 extern "C" void __cdecl InjectSyntheticBackHintIfNeeded()
 {
-    if (!g_modConfig.glyphIconOverlayEnabled) return;
+    if (!ShouldDrawGlyphOverlay()) return;
     if (!IsMenuActive()) return;
     // Live-reported 2026-08-01: simplified per explicit user direction after the
     // focus-struct-based nested-modal detection was confirmed live to not apply to
@@ -4567,7 +4701,7 @@ void __cdecl Hook_DrawGlyphText(
     // menu-active gate bit (IsMenuActive(), 0x10 @ 0xB36210) several other features in
     // this file already use for the identical reason.
     bool suppressRealDraw = false;
-    if (g_modConfig.glyphIconOverlayEnabled && !IsMenuActive()) {
+    if (ShouldDrawGlyphOverlay() && !IsMenuActive()) {
         __try {
             if (LooksLikeValidPointer(reinterpret_cast<uintptr_t>(param_1)) &&
                 LooksLikeValidPointer(reinterpret_cast<uintptr_t>(fontArg))) {
@@ -4635,6 +4769,15 @@ void __cdecl Hook_DrawGlyphText(
                             // interact-hint row's own tuning, so it skips both the vertical nudge
                             // (empirically tuned for THAT row specifically) and screen-centering.
                             bool isReadyUpHint = _stricmp(highlighted, "F5") == 0;
+                            // BUG-004 (stream co-op report, 2026-08-02): the real native string is
+                            // "Press F5 to ready up" -- correct for a tap, but ready-up is actually a
+                            // HOLD (see InjectControllerWeaponNext's own g_modConfig.readyUpHoldThresholdMs).
+                            // This project already fully replaces the draw for this hint (suppressRealDraw
+                            // below), so the wrong verb is entirely on this project, not the game --
+                            // override it here rather than passing the native "Press " through.
+                            if (isReadyUpHint) {
+                                strcpy_s(prefixText, sizeof(prefixText), "Hold ");
+                            }
                             float startX = param_2;
                             float startY = param_3 * param_6 + (isReadyUpHint ? 0.0f : kHintVerticalNudge);
 
@@ -4656,15 +4799,21 @@ void __cdecl Hook_DrawGlyphText(
                             }
 
                             bool centerOnScreen = !isMantleHint && !isReadyUpHint;
-                            RequestCustomHintOverlay(startX, startY, prefixText, suffixText, assetName, centerOnScreen);
+                            // BUG-004 follow-up: ready-up gets its own named slot (GameplayHintSlotId::
+                            // ReadyUp) instead of sharing the generic Interact slot every other hint here
+                            // uses -- see RequestCustomHintOverlay's own comment for why they used to fight
+                            // over one slot and silently evict each other.
+                            GameplayHintSlotId slotId = isReadyUpHint ? GameplayHintSlotId::ReadyUp : GameplayHintSlotId::Interact;
+                            RequestCustomHintOverlay(startX, startY, prefixText, suffixText, assetName, centerOnScreen,
+                                                       /*flashIcon=*/false, slotId);
                             suppressRealDraw = true;
-                            g_lastInteractHintTickMs = GetTickCount(); // see WasInteractHintRecentlyActive()
 
                             // See the big comment above g_awaitingHintContinuationFont --
                             // arms the next matching call this frame to be treated as this
                             // hint's own live weapon-name continuation, if one exists.
                             g_awaitingHintContinuationFont = fontArg;
                             g_awaitingHintContinuationP3 = param_3;
+                            g_awaitingHintContinuationSlot = slotId;
                             g_awaitingHintContinuation = true;
                         }
                     } else {
@@ -4688,10 +4837,14 @@ void __cdecl Hook_DrawGlyphText(
                         if (tEnd - tStart > 0) memmove(trimmedText, trimmedText + tStart, tEnd - tStart);
                         trimmedText[tEnd - tStart] = '\0';
 
-                        // Live-reported 2026-07-31: suppress the Reload prompt whenever a
-                        // real interact hint is also active -- see WasInteractHintRecentlyActive's
-                        // own comment for why this is a short recency window, not a same-frame flag.
-                        if (_stricmp(trimmedText, "Reload") == 0 && !WasInteractHintRecentlyActive()) {
+                        // BUG-004 follow-up (2026-08-02): used to gate on !WasInteractHintRecentlyActive()
+                        // here (a 100ms wall-clock window, since Reload and an interact hint could be
+                        // processed in either order within a frame) -- replaced by giving Reload its own
+                        // named slot and deciding the actual suppression at draw time
+                        // (DrawGameplayHintSlotsIfRequested in overlay_hud.cpp), which can check same-frame
+                        // state exactly instead of racing a timer. Always requests the Reload slot here;
+                        // whether it actually draws is decided once, at the end of the frame.
+                        if (_stricmp(trimmedText, "Reload") == 0) {
                             char assetName[32] = {};
                             if (TryGetGlyphAssetNameForKeyName("F", assetName, sizeof(assetName))) {
                                 // "F" is the real default keyboard bind for ReloadUse
@@ -4713,7 +4866,7 @@ void __cdecl Hook_DrawGlyphText(
                                 constexpr float kInteractHintRowY = 698.0f;
                                 float startY = kInteractHintRowY;
                                 RequestCustomHintOverlay(startX, startY, "Press ", suffixText, assetName,
-                                    /*centerOnScreen=*/true, /*flashIcon=*/true);
+                                    /*centerOnScreen=*/true, /*flashIcon=*/true, GameplayHintSlotId::Reload);
                                 suppressRealDraw = true;
                             }
                         }
@@ -4753,7 +4906,7 @@ void __cdecl Hook_DrawGlyphText(
     // itemDef text at all) and needs its own investigation before it can be
     // implemented; not part of this block. See known_issues.md issue #48's newest
     // round for the plan.
-    if (!suppressRealDraw && g_modConfig.glyphIconOverlayEnabled) {
+    if (!suppressRealDraw && ShouldDrawGlyphOverlay()) {
         __try {
             if (LooksLikeValidPointer(reinterpret_cast<uintptr_t>(param_1)) &&
                 LooksLikeValidPointer(reinterpret_cast<uintptr_t>(fontArg))) {
@@ -4790,7 +4943,24 @@ void __cdecl Hook_DrawGlyphText(
                     // captures) that leads to a different confirmation flow ("Are you sure
                     // you want to quit?") not confirmed to be reachable via B's existing
                     // ESC-forward the same way -- this must not also match that one.
-                    if (strcmp(param_1, "Quit") == 0) {
+                    // BUG-006 (stream report, 2026-08-02): both the "Quit" and "Leaderboards"
+                    // literal-text matches below used to fire on ANY on-screen text with that
+                    // exact/prefix content, with no positional check at all -- live-reported to
+                    // occasionally hijack a genuine, unrelated NAVIGABLE MENU LIST ITEM that just
+                    // happens to share the same label (e.g. a real "Leaderboards" button that
+                    // navigates TO that screen, not the screen's own corner-hint legend), mangling
+                    // that item's real text into a corner-hint-style render instead. Both Quit and
+                    // Leaderboards' own legend-bar text are already confirmed (via live capture,
+                    // see the comments below) to sit at the SAME real corner-hint row as Back/
+                    // Friends (p3 ~= 995, kStandardCornerHintY) -- a genuine navigable list item
+                    // with the same text sits at a completely different row (wherever that list is
+                    // laid out), so a tolerance check against that known row is a real, precedented
+                    // discriminator (same technique RequestMenuHintOverlay already uses to collapse
+                    // same-position hints) rather than relying on text content alone, per the
+                    // report's own suggested fix.
+                    constexpr float kCornerHintRowTolerancePx = 40.0f;
+                    bool looksLikeCornerHintRow = fabsf(param_3 - kStandardCornerHintY) < kCornerHintRowTolerancePx;
+                    if (looksLikeCornerHintRow && strcmp(param_1, "Quit") == 0) {
                         char bAsset[32] = {};
                         if (TryGetMenuGlyphAssetNameForKeyName("ESC", bAsset, sizeof(bAsset))) {
                             // Live-reported 2026-08-01: without the same vertical nudge every
@@ -4808,7 +4978,7 @@ void __cdecl Hook_DrawGlyphText(
                             suppressRealDraw = true;
                         }
                     }
-                    if (_strnicmp(param_1, "Leaderboards", 12) == 0) {
+                    if (looksLikeCornerHintRow && _strnicmp(param_1, "Leaderboards", 12) == 0) {
                         char backAsset[32] = {};
                         // "F1" resolves to PhysicalInput::Back (the real Back/Select/View
                         // button, NOT the B face button used for ESC-forward) in
@@ -4913,7 +5083,7 @@ void __cdecl Hook_DrawGlyphText(
     // (still may catch unrelated decorative smallFont text with no span, e.g. a
     // header -- a known, accepted imprecision for this diagnostic pass, per the
     // scoping already agreed with the user).
-    if (!suppressRealDraw && g_modConfig.glyphIconOverlayEnabled) {
+    if (!suppressRealDraw && ShouldDrawGlyphOverlay()) {
         __try {
             if (LooksLikeValidPointer(reinterpret_cast<uintptr_t>(param_1)) &&
                 LooksLikeValidPointer(reinterpret_cast<uintptr_t>(fontArg))) {
@@ -5040,7 +5210,7 @@ void __cdecl Hook_DrawGlyphText(
     // g_awaitingHintContinuationFont. Independent of the block above (a call is either
     // the highlighted hint itself, handled above, or a plain-text continuation of one
     // already suppressed this frame, handled here -- never both).
-    if (g_awaitingHintContinuation && !suppressRealDraw && g_modConfig.glyphIconOverlayEnabled && !IsMenuActive()) {
+    if (g_awaitingHintContinuation && !suppressRealDraw && ShouldDrawGlyphOverlay() && !IsMenuActive()) {
         __try {
             if (LooksLikeValidPointer(reinterpret_cast<uintptr_t>(param_1)) &&
                 fontArg == g_awaitingHintContinuationFont &&
@@ -5048,7 +5218,7 @@ void __cdecl Hook_DrawGlyphText(
                 size_t textLen = strlen(param_1);
                 ColorHighlightSpan span = FindColorHighlightSpan(param_1, textLen);
                 if (!span.found) {
-                    AppendCustomHintSuffix(param_1);
+                    AppendCustomHintSuffix(param_1, g_awaitingHintContinuationSlot);
                     suppressRealDraw = true;
                 }
             }
@@ -6262,6 +6432,19 @@ const char* ResolveGlyphAssetNameForKeyName(const char* rawKeyName)
     // layout-aware way as everything else rather than a hardcoded PhysicalInput::Y.
     if (_stricmp(keyName, "F5") == 0) {
         const char* assetName = GlyphAssetName(PhysicalInputForAction(LogicalAction::WeaponSwitch), g_modConfig.glyphStyle);
+        if (assetName && assetName[0] != '\0') return assetName;
+    }
+    // Turret placement (issue #58, 2026-08-02): real string confirmed via a live
+    // proxy_d3d9.log capture -- "Press ^3Left Mouse^7 to place the turret." at
+    // p2=734/p3=718, the exact same row/font/format the generic pickup/buy-station
+    // interact hint already handles correctly, so no new draw-site code is needed --
+    // only this resolution. "Left Mouse" is real vanilla Fire's own default bind text
+    // (kKeyActionTable already has the raw "MOUSE1" form mapping to the same action,
+    // used elsewhere) -- resolved the same layout-aware way as the G-or-Middle-Mouse/
+    // F5 cases above (PhysicalInputForAction, not a hardcoded PhysicalInput::RT) so
+    // this always shows whichever physical button the current ButtonLayout has Fire on.
+    if (_stricmp(keyName, "Left Mouse") == 0) {
+        const char* assetName = GlyphAssetName(PhysicalInputForAction(LogicalAction::Fire), g_modConfig.glyphStyle);
         if (assetName && assetName[0] != '\0') return assetName;
     }
 
