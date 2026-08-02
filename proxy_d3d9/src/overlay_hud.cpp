@@ -39,6 +39,7 @@
 #include "../third_party/minhook/include/MinHook.h"
 #include "mod_config.h"
 #include "overlay_hud.h"
+#include "controller_input.h"
 #include "../resource.h"
 
 #pragma comment(lib, "windowscodecs.lib")
@@ -48,6 +49,7 @@
 extern void LogFromController(const char* msg);
 extern "C" HWND GetGameWindow(); // defined in d3d9_hook.cpp
 extern "C" bool GetLastMouseMoveClientPos(int& outX, int& outY); // defined in d3d9_hook.cpp
+extern "C" bool IsMenuActive_Exported(); // defined in analog_input_hooks.cpp -- BUG-001 follow-up
 // Live-reported 2026-08-01: calling this from the WndProc/SetTimer tick (~60Hz,
 // asynchronous relative to rendering) caused a visible flicker -- the menu-hint slot
 // pool is consumed and reset once per RENDERED frame (EndScene), and on any frame
@@ -217,22 +219,33 @@ constexpr DWORD kDebugMarkerColors[kMaxDebugMarkerSlots] = {
 // align against. Only used for real in-game hints (gated by font name, see
 // IsGameplayHintFont in analog_input_hooks.cpp) -- NOT applied to main-menu UI hints
 // (e.g. "Friends F"), which keep rendering natively.
-void* g_hintPrefixTexture = nullptr;
-void* g_hintSuffixTexture = nullptr;
-char g_hintPrefixRenderedFor[128] = {};
-char g_hintSuffixRenderedFor[128] = {};
-int g_hintPrefixLastFontHeight = 0; // resolution-scaling cache invalidation, see EnsureLeftAlignedTextTexture
-int g_hintSuffixLastFontHeight = 0;
-int g_hintPrefixMeasuredWidth = 0;
-int g_hintSuffixMeasuredWidth = 0;
-
-char g_pendingHintPrefixText[128] = {};
-char g_pendingHintSuffixText[128] = {};
-char g_pendingHintAssetName[32] = {};
-float g_pendingHintX = 0.0f, g_pendingHintY = 0.0f;
-bool g_pendingHintRequestedThisFrame = false;
-bool g_pendingHintCenterOnScreen = false; // set by RequestCustomHintOverlay's own caller
-bool g_pendingHintFlashIcon = false; // Reload prompt only -- see RequestCustomHintOverlay's own comment
+// ---- Gameplay hint overlay -- NAMED, independent slots (2026-08-02, BUG-004) -------
+//
+// Was a single shared g_pendingHint* slot for every gameplay hint (interact/pickup/
+// mantle/ready-up/reload), on the assumption (documented, and true at the time) that
+// only one is ever on screen at once. Live Survival co-op testing disproved that --
+// see GameplayHintSlotId's own comment in overlay_hud.h for the full story. Each
+// named slot keeps its own render-cache state (own textures, own measured widths)
+// exactly like MenuHintSlot below, so switching which hints are simultaneously live
+// doesn't thrash a shared cache.
+struct GameplayHintSlot {
+    char prefixText[128] = {};
+    char suffixText[128] = {};
+    char assetName[32] = {};
+    float x = 0.0f, y = 0.0f;
+    bool centerOnScreen = false;
+    bool flashIcon = false;
+    bool requestedThisFrame = false;
+    void* prefixTexture = nullptr;
+    void* suffixTexture = nullptr;
+    char prefixRenderedFor[128] = {};
+    char suffixRenderedFor[128] = {};
+    int prefixLastFontHeight = 0;
+    int suffixLastFontHeight = 0;
+    int prefixMeasuredWidth = 0;
+    int suffixMeasuredWidth = 0;
+};
+GameplayHintSlot g_gameplayHintSlots[kGameplayHintSlotCount];
 
 // ---- Menu-hint overlay -- MULTI-SLOT, unlike the single gameplay slot above --------
 //
@@ -272,7 +285,7 @@ constexpr int kHintFontHeightPx = 30;
 constexpr float kHintIconSize = 42.0f; // sized to match kHintFontHeightPx, not the old flat 34px
 
 // Extra pixels added on top of the measured text width before cropping a rendered
-// segment's texture (see DrawCustomHintIfRequested) -- RenderMaskLuminance always
+// segment's texture (see DrawOneGameplayHintSlot) -- RenderMaskLuminance always
 // draws with an 8px left margin (see its own DrawTextA rect below) that
 // GetTextExtentPoint32A's measurement doesn't include, and italic text's slant can
 // extend a few pixels past its own nominal advance width. Without this, live testing
@@ -1037,14 +1050,13 @@ void DrawGlyphIconIfRequested(void* device)
 }
 
 // Draws prefix-text + real controller-glyph icon + suffix-text sequentially at
-// (g_pendingHintX, g_pendingHintY), all self-rendered (see the big comment above
-// g_hintPrefixTexture) -- consumed once per frame like the plain icon overlay above,
-// must be re-requested every frame to keep showing.
-void DrawCustomHintIfRequested(void* device)
+// (slot.x, slot.y), all self-rendered (see the big comment above GameplayHintSlot) --
+// consumed once per frame like the plain icon overlay above, must be re-requested
+// every frame to keep showing. Deliberately a near-duplicate of DrawOneMenuHintSlot's
+// layout math further down, same reasoning as that function's own comment: this path
+// is proven/live-tested and a shared refactor isn't worth the risk right now.
+void DrawOneGameplayHintSlot(void* device, GameplayHintSlot& slot, float scaleX, float scaleY)
 {
-    if (!g_pendingHintRequestedThisFrame) return;
-    g_pendingHintRequestedThisFrame = false;
-
     // Live-reported 2026-07-31 (second round, 1440p): still wrong even after the first
     // scale-factor pass. Per explicit direction: "let's not make res a factor except
     // for size scaling, and just do things proportional to the edges + centre of the
@@ -1058,26 +1070,24 @@ void DrawCustomHintIfRequested(void* device)
     // real backbuffer isn't guaranteed to match the window's client area) to the
     // device's actual GetViewport (ground truth for the pixel space our own quads draw
     // into) -- see its own comment in overlay_hud.h for why that switch mattered.
-    float scaleX = 1.0f, scaleY = 1.0f;
-    GetResolutionScale(device, scaleX, scaleY);
     auto drawScaledQuad = [&](void* texture, float x, float y, float w, float h, DWORD color,
                                float u0 = 0.0f, float v0 = 0.0f, float u1 = 1.0f, float v1 = 1.0f) {
         DrawGenericTexturedQuad(device, texture, x * scaleX, y * scaleY, w * scaleX, h * scaleY, color, u0, v0, u1, v1);
     };
 
-    if (!EnsureLeftAlignedTextTexture(device, g_hintPrefixTexture, g_hintPrefixRenderedFor,
-                                       sizeof(g_hintPrefixRenderedFor), g_pendingHintPrefixText,
-                                       g_hintPrefixLastFontHeight, kHintFontHeightPx)) return;
-    g_hintPrefixMeasuredWidth = MeasureTextWidthPx(g_pendingHintPrefixText, g_modConfig.overlayFontItalic, kHintFontHeightPx);
+    if (!EnsureLeftAlignedTextTexture(device, slot.prefixTexture, slot.prefixRenderedFor,
+                                       sizeof(slot.prefixRenderedFor), slot.prefixText,
+                                       slot.prefixLastFontHeight, kHintFontHeightPx)) return;
+    slot.prefixMeasuredWidth = MeasureTextWidthPx(slot.prefixText, g_modConfig.overlayFontItalic, kHintFontHeightPx);
 
-    if (!EnsureLeftAlignedTextTexture(device, g_hintSuffixTexture, g_hintSuffixRenderedFor,
-                                       sizeof(g_hintSuffixRenderedFor), g_pendingHintSuffixText,
-                                       g_hintSuffixLastFontHeight, kHintFontHeightPx)) return;
-    g_hintSuffixMeasuredWidth = MeasureTextWidthPx(g_pendingHintSuffixText, g_modConfig.overlayFontItalic, kHintFontHeightPx);
+    if (!EnsureLeftAlignedTextTexture(device, slot.suffixTexture, slot.suffixRenderedFor,
+                                       sizeof(slot.suffixRenderedFor), slot.suffixText,
+                                       slot.suffixLastFontHeight, kHintFontHeightPx)) return;
+    slot.suffixMeasuredWidth = MeasureTextWidthPx(slot.suffixText, g_modConfig.overlayFontItalic, kHintFontHeightPx);
 
     void* iconTexture = nullptr;
     int iconTexW = 0, iconTexH = 0;
-    bool haveIcon = GetOrLoadGlyphIconTexture(device, g_pendingHintAssetName, iconTexture, iconTexW, iconTexH);
+    bool haveIcon = GetOrLoadGlyphIconTexture(device, slot.assetName, iconTexture, iconTexW, iconTexH);
     // Live-reported 2026-07-31: RB/R1 (a real 94x54 wide rectangle, unlike X/A's
     // roughly-square ~70x70/70x71 source art) looked squished -- forcing every icon
     // into the same fixed square box distorted its real aspect ratio. Height stays
@@ -1111,8 +1121,8 @@ void DrawCustomHintIfRequested(void* device)
     // measured center), not the top of the drawn box -- text quads below derive their
     // top from this center by subtracting half the canvas height, same convention the
     // icon already used.
-    float iconVerticalCenter = g_pendingHintY;
-    float textQuadTop = g_pendingHintY - static_cast<float>(kTextureHeight) * 0.5f;
+    float iconVerticalCenter = slot.y;
+    float textQuadTop = slot.y - static_cast<float>(kTextureHeight) * 0.5f;
 
     // Live-tested 2026-07-31: the plain measured width clipped the last character of
     // a segment (e.g. the "s" in "Press") -- RenderMaskLuminance always draws with an
@@ -1121,11 +1131,11 @@ void DrawCustomHintIfRequested(void* device)
     // pads the DRAWN width (not the cursor advance -- see cursorX below, which still
     // uses the plain measured width so the next piece isn't pushed too far right) so
     // the crop includes the real trailing pixels.
-    int prefixDrawWidth = g_hintPrefixMeasuredWidth > 0 ? g_hintPrefixMeasuredWidth + kHintTextWidthMarginPx : 0;
-    int suffixDrawWidth = g_hintSuffixMeasuredWidth > 0 ? g_hintSuffixMeasuredWidth + kHintTextWidthMarginPx : 0;
+    int prefixDrawWidth = slot.prefixMeasuredWidth > 0 ? slot.prefixMeasuredWidth + kHintTextWidthMarginPx : 0;
+    int suffixDrawWidth = slot.suffixMeasuredWidth > 0 ? slot.suffixMeasuredWidth + kHintTextWidthMarginPx : 0;
 
-    float cursorX = g_pendingHintX;
-    if (g_pendingHintCenterOnScreen) {
+    float cursorX = slot.x;
+    if (slot.centerOnScreen) {
         // Live-reported 2026-07-31: several hints (pickup/swap, and now buy-station
         // too) read better horizontally CENTERED on screen than left-anchored at the
         // game's own real x. Uses the total real (unpadded) content width -- prefix +
@@ -1134,9 +1144,9 @@ void DrawCustomHintIfRequested(void* device)
         // screen width is real pixels, so it's converted to design-space (divided by
         // scaleX) before centering against it -- otherwise this would silently mix
         // the two spaces and mis-center on any non-1080p resolution.
-        float totalContentWidth = static_cast<float>(g_hintPrefixMeasuredWidth) + kIconGap
+        float totalContentWidth = static_cast<float>(slot.prefixMeasuredWidth) + kIconGap
             + (haveIcon ? iconDrawWidth + kIconGap : 0.0f)
-            + static_cast<float>(g_hintSuffixMeasuredWidth);
+            + static_cast<float>(slot.suffixMeasuredWidth);
         // Uses the SAME real-screen-size source as scaleX/scaleY above (GetViewport,
         // not a separate GetClientRect call) -- two different sources for "real screen
         // width" disagreeing with each other would silently break centering on its own.
@@ -1153,14 +1163,14 @@ void DrawCustomHintIfRequested(void* device)
     {
         static char s_lastLoggedKey[96] = {};
         char key[96];
-        sprintf_s(key, "%s|%.1f|%.1f|%.4f|%.4f", g_pendingHintAssetName, cursorX, g_pendingHintY, scaleX, scaleY);
+        sprintf_s(key, "%s|%.1f|%.1f|%.4f|%.4f", slot.assetName, cursorX, slot.y, scaleX, scaleY);
         if (strncmp(s_lastLoggedKey, key, sizeof(s_lastLoggedKey) - 1) != 0) {
             strncpy_s(s_lastLoggedKey, key, _TRUNCATE);
             char buf[224];
             sprintf_s(buf, "[overlay-hud][res-scale] hint asset=%s designCursorX=%.1f designHintY=%.1f "
                              "scaleX=%.4f scaleY=%.4f -> screenX=%.1f screenY=%.1f",
-                       g_pendingHintAssetName, cursorX, g_pendingHintY, scaleX, scaleY,
-                       cursorX * scaleX, g_pendingHintY * scaleY);
+                       slot.assetName, cursorX, slot.y, scaleX, scaleY,
+                       cursorX * scaleX, slot.y * scaleY);
             LogFromController(buf);
         }
     }
@@ -1168,15 +1178,15 @@ void DrawCustomHintIfRequested(void* device)
     if (prefixDrawWidth > 0) {
         float prefixU0 = static_cast<float>(kHintTextRenderLeftMarginPx) / static_cast<float>(kTextureWidth);
         float prefixU1 = static_cast<float>(kHintTextRenderLeftMarginPx + prefixDrawWidth) / static_cast<float>(kTextureWidth);
-        drawScaledQuad(g_hintPrefixTexture, cursorX, textQuadTop,
+        drawScaledQuad(slot.prefixTexture, cursorX, textQuadTop,
             static_cast<float>(prefixDrawWidth), static_cast<float>(kTextureHeight),
             0xFFFFFFFF, prefixU0, 0.0f, prefixU1, 1.0f);
-        cursorX += static_cast<float>(g_hintPrefixMeasuredWidth) + kIconGap;
+        cursorX += static_cast<float>(slot.prefixMeasuredWidth) + kIconGap;
     }
 
     if (haveIcon) {
         DWORD iconColor = 0xFFFFFFFF;
-        if (g_pendingHintFlashIcon) {
+        if (slot.flashIcon) {
             // Console-style Reload prompt (live-reported 2026-07-31, corrected same
             // day: "it is a pulsing fade" -- not a hard on/off blink): smooth sine-
             // wave alpha pulse, surrounding text stays solid regardless.
@@ -1195,9 +1205,45 @@ void DrawCustomHintIfRequested(void* device)
     if (suffixDrawWidth > 0) {
         float suffixU0 = static_cast<float>(kHintTextRenderLeftMarginPx) / static_cast<float>(kTextureWidth);
         float suffixU1 = static_cast<float>(kHintTextRenderLeftMarginPx + suffixDrawWidth) / static_cast<float>(kTextureWidth);
-        drawScaledQuad(g_hintSuffixTexture, cursorX, textQuadTop,
+        drawScaledQuad(slot.suffixTexture, cursorX, textQuadTop,
             static_cast<float>(suffixDrawWidth), static_cast<float>(kTextureHeight),
             0xFFFFFFFF, suffixU0, 0.0f, suffixU1, 1.0f);
+    }
+}
+
+// Consumes and draws every gameplay hint slot requested THIS FRAME (2026-08-02,
+// BUG-004), applying the ONE deliberate, named suppression this project actually
+// wants: hide the Reload reminder specifically while ready-up OR a real interact
+// hint (pickup/swap/buy-station/mantle) is also showing this frame, since either
+// combination is redundant clutter -- this replaces the old single-slot system's
+// "was an interact hint active in the last 100ms" wall-clock heuristic, itself the
+// source of the report's "Reload occasionally fails to display" note, with an exact
+// same-frame check that can't race. Every OTHER combination of slots coexists by
+// default -- this is NOT a "pick one winner" priority scheme, it's independent-by-
+// default with one explicit, named exception, per the user's own direction.
+void DrawGameplayHintSlotsIfRequested(void* device)
+{
+    bool anyRequested = false;
+    for (auto& slot : g_gameplayHintSlots) {
+        if (slot.requestedThisFrame) { anyRequested = true; break; }
+    }
+    if (!anyRequested) return;
+
+    float scaleX = 1.0f, scaleY = 1.0f;
+    GetResolutionScale(device, scaleX, scaleY);
+
+    bool readyUpOrInteractShowing =
+        g_gameplayHintSlots[static_cast<int>(GameplayHintSlotId::ReadyUp)].requestedThisFrame ||
+        g_gameplayHintSlots[static_cast<int>(GameplayHintSlotId::Interact)].requestedThisFrame;
+
+    for (int i = 0; i < kGameplayHintSlotCount; ++i) {
+        GameplayHintSlot& slot = g_gameplayHintSlots[i];
+        if (!slot.requestedThisFrame) continue;
+        slot.requestedThisFrame = false; // consume regardless of outcome below
+        if (static_cast<GameplayHintSlotId>(i) == GameplayHintSlotId::Reload && readyUpOrInteractShowing) {
+            continue; // the one named suppression rule -- see this function's own comment
+        }
+        DrawOneGameplayHintSlot(device, slot, scaleX, scaleY);
     }
 }
 
@@ -1375,9 +1421,85 @@ void DrawCustomCursorIfNeeded(void* device)
         constexpr uintptr_t kCursorUiStateAddr = 0x01c0ad14;
 
         int visFlag = *reinterpret_cast<int*>(kCursorVisibleFlagAddr);
+        // Live-reported 2026-08-02: with the input-method gating now working
+        // correctly, a keyboard/mouse player sees the cursor persist through
+        // ACTIVE gameplay (not just menus/pause) -- meaning the uiState exclusion
+        // list below (0/6/10, guessed at issue #52's own original implementation)
+        // never actually covered "ordinary live gameplay, no menu open" as its own
+        // distinct state, and this was never solo-vs-co-op specific -- the
+        // controller-priority hiding was just masking it for controller players the
+        // whole time. Change-triggered logging (not gated on visFlag/uiState
+        // passing, so it also logs the exact moment either one changes) to capture
+        // real values during a live "cursor incorrectly showing mid-gameplay" repro
+        // before guessing at another exclusion value.
+        {
+            static int s_lastLoggedVisFlag = -1;
+            static int s_lastLoggedUiState = -1;
+            if (visFlag != s_lastLoggedVisFlag || (visFlag != 0 && *reinterpret_cast<int*>(kCursorUiStateAddr) != s_lastLoggedUiState)) {
+                s_lastLoggedVisFlag = visFlag;
+                s_lastLoggedUiState = visFlag != 0 ? *reinterpret_cast<int*>(kCursorUiStateAddr) : s_lastLoggedUiState;
+                char buf[96];
+                sprintf_s(buf, "[cursor-gate-diag] visFlag=%d uiState=%d t=%lu", visFlag,
+                          visFlag != 0 ? *reinterpret_cast<int*>(kCursorUiStateAddr) : -1, GetTickCount());
+                LogFromController(buf);
+            }
+        }
         if (visFlag == 0) return;
         int uiState = *reinterpret_cast<int*>(kCursorUiStateAddr);
         if (uiState == 0 || uiState == 6 || uiState == 10) return;
+        // Real fix (2026-08-02): a live capture showed uiState taking on several
+        // values during ordinary active gameplay (1, 9 -- held 20+ seconds straight
+        // -- and 2) that were never in the exclusion list above, and guessing more
+        // magic numbers one at a time is a losing game. Require this project's own
+        // already-proven-reliable "a real menu is open" signal instead (the same one
+        // every corner hint/ESC-forward call already trusts) -- ordinary gameplay
+        // reliably reads false here regardless of what uiState happens to be.
+        if (!IsMenuActive_Exported()) return;
+
+        // BUG-004 co-op report (2026-08-02): the native visFlag/uiState combo above
+        // can consider the cursor "visible" during co-op-only states (e.g. co-op's own
+        // nameplate display) even when the player is actively on a controller with no
+        // real mouse/keyboard input at all -- something solo play never triggers.
+        //
+        // FIRST ATTEMPT (same day) compared GetLastMouseMoveTickMs() vs.
+        // GetLastControllerActivityTickMs() and drew whichever was more recent --
+        // live-reported to flicker constantly during actual gameplay. Root cause,
+        // reasoned from the symptom rather than re-guessed: this native visFlag/
+        // uiState pair is exactly the same state this project suspects drives real
+        // mouse behavior natively (e.g. any native cursor-clamping/repositioning
+        // while "visible"), so treating mouse-move recency as a proxy for "the user
+        // touched the mouse" is contaminated by the SAME native cursor logic this
+        // whole check exists to override -- a race between two signals where one
+        // side can be artificially refreshed by the very state being tested was
+        // never going to be stable.
+        //
+        // FIX: make controller activity a plain, one-sided override with a short
+        // decay window, not a comparison. As long as the controller was used within
+        // the last kRecentControllerActivityMs, hide the cursor outright, full stop
+        // -- immune to whatever the mouse-move timestamp is doing. Only once the
+        // controller has been silent for that whole window does this fall through
+        // to the native flags again (covers genuine keyboard/mouse play).
+        //
+        // Live-reported same day, round 2: the cursor came back "too fast" after
+        // using the controller -- this check alone only asked "has the controller
+        // been quiet for a bit," it never actually required genuine mouse movement
+        // to have happened, so a normal brief pause in stick/button input (routine
+        // during real gameplay -- aiming without moving, a half-second decision
+        // pause) was enough to bring it back with a stale mouse position. Fixed at
+        // the source: WM_MOUSEMOVE now applies a real pixel deadzone
+        // (d3d9_hook.cpp, kMouseMoveDeadzonePx) before ever updating
+        // GetLastMouseMoveTickMs(), filtering out any native engine-driven
+        // snap/clamp along with genuine sensor jitter -- so it's now safe to also
+        // require the mouse timestamp to be newer than the controller's last real
+        // touch, not just require silence.
+        //
+        // User-requested (2026-08-02): this exact decision is now shared with the
+        // glyph-hint overlays too (analog_input_hooks.cpp's ShouldDrawGlyphOverlay)
+        // -- console never shows a mouse cursor and button-prompt glyphs at once,
+        // and neither should this project. Single shared function
+        // (controller_input.cpp's IsControllerActiveInputMethod) so the two
+        // systems can never disagree about which input method is active.
+        if (IsControllerActiveInputMethod()) return;
 
         int mouseX = 0, mouseY = 0;
         if (!GetLastMouseMoveClientPos(mouseX, mouseY)) return;
@@ -1463,10 +1585,12 @@ void ReleaseAllCachedTextures()
     };
     releaseIfSet(g_textTexture);
     g_textureRenderedFor[0] = '\0';
-    releaseIfSet(g_hintPrefixTexture);
-    g_hintPrefixRenderedFor[0] = '\0';
-    releaseIfSet(g_hintSuffixTexture);
-    g_hintSuffixRenderedFor[0] = '\0';
+    for (auto& slot : g_gameplayHintSlots) {
+        releaseIfSet(slot.prefixTexture);
+        slot.prefixRenderedFor[0] = '\0';
+        releaseIfSet(slot.suffixTexture);
+        slot.suffixRenderedFor[0] = '\0';
+    }
     releaseIfSet(g_debugMarkerTexture);
     for (int i = 0; i < g_glyphIconCacheCount; ++i) {
         releaseIfSet(g_glyphIconCache[i].texture);
@@ -1499,7 +1623,7 @@ HRESULT WINAPI Hook_EndScene(void* device)
     }
     DrawOverlayMessage(device);
     DrawGlyphIconIfRequested(device);
-    DrawCustomHintIfRequested(device);
+    DrawGameplayHintSlotsIfRequested(device);
     InjectSyntheticBackHintIfNeeded();
     DrawMenuHintsIfRequested(device);
     DrawDebugMarkerIfRequested(device);
@@ -1687,22 +1811,25 @@ void RequestGlyphIconOverlay(float x, float y, float w, float h, const char* ass
 }
 
 void RequestCustomHintOverlay(float x, float y, const char* prefixText, const char* suffixText,
-                               const char* assetName, bool centerOnScreen, bool flashIcon)
+                               const char* assetName, bool centerOnScreen, bool flashIcon,
+                               GameplayHintSlotId slotId)
 {
-    strncpy_s(g_pendingHintPrefixText, prefixText, _TRUNCATE);
-    strncpy_s(g_pendingHintSuffixText, suffixText, _TRUNCATE);
-    strncpy_s(g_pendingHintAssetName, assetName, _TRUNCATE);
-    g_pendingHintX = x;
-    g_pendingHintY = y;
-    g_pendingHintCenterOnScreen = centerOnScreen;
-    g_pendingHintFlashIcon = flashIcon;
-    g_pendingHintRequestedThisFrame = true;
+    GameplayHintSlot& slot = g_gameplayHintSlots[static_cast<int>(slotId)];
+    strncpy_s(slot.prefixText, prefixText, _TRUNCATE);
+    strncpy_s(slot.suffixText, suffixText, _TRUNCATE);
+    strncpy_s(slot.assetName, assetName, _TRUNCATE);
+    slot.x = x;
+    slot.y = y;
+    slot.centerOnScreen = centerOnScreen;
+    slot.flashIcon = flashIcon;
+    slot.requestedThisFrame = true;
 }
 
-void AppendCustomHintSuffix(const char* extraText)
+void AppendCustomHintSuffix(const char* extraText, GameplayHintSlotId slotId)
 {
-    if (!g_pendingHintRequestedThisFrame) return;
-    strncat_s(g_pendingHintSuffixText, extraText, _TRUNCATE);
+    GameplayHintSlot& slot = g_gameplayHintSlots[static_cast<int>(slotId)];
+    if (!slot.requestedThisFrame) return;
+    strncat_s(slot.suffixText, extraText, _TRUNCATE);
 }
 
 // Menu-hint counterpart to RequestCustomHintOverlay above -- see the big comment

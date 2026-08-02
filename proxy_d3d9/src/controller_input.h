@@ -33,6 +33,20 @@ bool Controller_GetRawButtonsAndTriggers(unsigned short& buttons, unsigned char&
 // that only need a yes/no gate and don't otherwise need stick/button data this frame.
 bool Controller_IsConnected();
 
+// User-requested (2026-08-02): the same "which input method is actually being used
+// right now" signal that drives the custom cursor overlay's own visibility
+// (overlay_hud.cpp's DrawCustomCursorIfNeeded -- controller activity within the last
+// 300ms, or otherwise whichever of controller/real-deadzone-filtered-mouse-movement
+// was more recent) should ALSO drive whether this project's own controller-glyph
+// hint overlays draw at all: on console you never see both a mouse cursor and
+// button-prompt glyphs at once, and the same should hold here. True = controller is
+// currently the active input method (glyphs should show, cursor should hide); false
+// = keyboard/mouse is (cursor should show, glyphs should hide). Single shared
+// definition (controller_input.cpp) rather than two separate call sites re-deriving
+// the same decision, so the cursor and the glyph overlays can never disagree with
+// each other about which input method is "active" right now.
+bool IsControllerActiveInputMethod();
+
 // Sets the controller's two rumble motors directly (task #17). leftMotor/rightMotor
 // are normalized [0, 1] -- clamped internally, so an out-of-range caller can't send a
 // bogus value to XInputSetState. Same controller slot (index 0) as every other XInput

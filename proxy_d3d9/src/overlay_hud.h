@@ -33,7 +33,7 @@ void InstallEndSceneHook(void* realDevice);
 // 2026-07-31 direction: "let's not make res a factor except for size scaling, and just
 // do things proportional to the edges + centre of the screen"). Positions are computed
 // directly as fractions of the real viewport width/height (screen-edge-relative) or
-// centered against it -- see DrawCustomHintIfRequested's own cursorX/Y math.
+// centered against it -- see DrawOneGameplayHintSlot's own cursorX/Y math.
 void GetResolutionScale(void* deviceIn, float& outScaleX, float& outScaleY);
 
 // Real current backbuffer/viewport width and height in pixels (same ground-truth
@@ -143,17 +143,38 @@ void RequestGlyphIconOverlay(float x, float y, float w, float h, const char* ass
 // solid) needs actual per-frame animation, not just a static composite -- when true,
 // the icon's own opacity pulses over time (GetTickCount()-driven); prefix/suffix text
 // always draws at full opacity regardless.
-void RequestCustomHintOverlay(float x, float y, const char* prefixText, const char* suffixText,
-                               const char* assetName, bool centerOnScreen, bool flashIcon = false);
+//
+// BUG-004 follow-up (2026-08-02, stream co-op report): this used to be a SINGLE
+// shared slot for every gameplay hint (interact/pickup/mantle/ready-up/reload),
+// under the same "only one is ever on screen at once" assumption the menu-hint pool
+// comment above already documents being wrong for menu UI -- live co-op testing
+// showed it's ALSO wrong here: Survival's ready-up prompt and a real interact hint
+// (or the Reload reminder) CAN legitimately be on screen the same frame, and
+// whichever happened to be the last Hook_DrawGlyphText call that frame silently won
+// the one slot, making the other's custom text/glyph vanish. Fixed the same way the
+// menu-hint bug was: named, independent slots (GameplayHintSlotId) that each keep
+// their own state and draw every frame they're requested, by default coexisting --
+// NOT a "pick one winner" priority scheme. The one genuinely-wanted suppression
+// (hide the Reload reminder specifically while ready-up is showing, since the two
+// together are redundant clutter) is applied explicitly at draw time, replacing the
+// old, unreliable "was an interact hint active in the last 100ms" heuristic (itself
+// a source of "Reload occasionally fails to display" per the same report) with a
+// same-frame check that can't race.
+enum class GameplayHintSlotId { Interact = 0, ReadyUp = 1, Reload = 2 };
+constexpr int kGameplayHintSlotCount = 3;
 
-// Appends extraText to the CURRENTLY pending hint's suffix (e.g. a weapon name that
-// draws as its own separate, unhighlighted continuation right after the interact
-// hint's own text -- see analog_input_hooks.cpp's continuation-matching logic for how
-// that's detected). No-op if no hint is currently pending this frame (RequestCustomHintOverlay
-// hasn't been called yet), so a stray/unrelated call can't corrupt an unrelated later
-// request. Reads the real string live -- nothing about the appended text is
-// hardcoded, it's whatever the caller actually observed on screen.
-void AppendCustomHintSuffix(const char* extraText);
+void RequestCustomHintOverlay(float x, float y, const char* prefixText, const char* suffixText,
+                               const char* assetName, bool centerOnScreen, bool flashIcon = false,
+                               GameplayHintSlotId slotId = GameplayHintSlotId::Interact);
+
+// Appends extraText to the CURRENTLY pending hint's suffix in the given slot (e.g. a
+// weapon name that draws as its own separate, unhighlighted continuation right after
+// the interact hint's own text -- see analog_input_hooks.cpp's continuation-matching
+// logic for how that's detected). No-op if that slot wasn't requested this frame, so
+// a stray/unrelated call can't corrupt an unrelated later request. Reads the real
+// string live -- nothing about the appended text is hardcoded, it's whatever the
+// caller actually observed on screen.
+void AppendCustomHintSuffix(const char* extraText, GameplayHintSlotId slotId = GameplayHintSlotId::Interact);
 
 // Menu-hint counterpart to RequestCustomHintOverlay above (2026-08-01, live-reported
 // bug: "Friends doesn't show on some screens" / "Friends stays on screen when it
