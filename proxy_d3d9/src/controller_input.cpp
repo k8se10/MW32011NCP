@@ -3,6 +3,9 @@
 #include <windows.h>
 #include <xinput.h>   // struct definitions only -- resolved dynamically below, never linked
 #include <cmath>
+#include <cstdio>
+
+extern void LogFromController(const char* msg); // defined in dllmain.cpp
 
 namespace {
 
@@ -26,12 +29,39 @@ void EnsureLoaded()
 {
     if (g_triedLoad) return;
     g_triedLoad = true;
-    // xinput9_1_0.dll ships on every Windows Vista+ install (widest compatibility);
-    // GetState's ABI is identical across all XInput DLL versions.
-    HMODULE h = LoadLibraryA("xinput9_1_0.dll");
-    if (!h) return;
+    // Issue #24 follow-up (2026-08-03): xinput9_1_0.dll -- the "legacy" DLL this
+    // project originally loaded for its widest-compatibility guarantee (ships on
+    // every Windows Vista+ install with zero extra dependencies) -- is a documented,
+    // deliberately cut-down compatibility shim: on real Windows installs its own
+    // XInputSetState either isn't exported at all or is a silent no-op, since it
+    // predates/bypasses the "full" XInput redistributable vibration support
+    // entirely. This is a well-known XInput gotcha, not specific to this project --
+    // live-confirmed here as the actual root cause of "vibration hook fires clean,
+    // zero crash, but no physical rumble ever happens" once the rumble feature
+    // itself (issue #24) was finally reimplemented and needed a REAL SetState.
+    // GetState's ABI/behavior is identical and fine across every XInput DLL version,
+    // so this only matters for vibration -- fixed by trying the full-featured DLLs
+    // FIRST (xinput1_4, Windows 8+; xinput1_3, the older DirectX-redist version)
+    // and falling back to xinput9_1_0 last, so a system with either of the real
+    // DLLs available gets working vibration, and a system with neither still gets
+    // the exact same GetState-only behavior this project already had and relied on.
+    const char* kCandidateDlls[] = { "xinput1_4.dll", "xinput1_3.dll", "xinput9_1_0.dll" };
+    HMODULE h = nullptr;
+    const char* loadedDllName = nullptr;
+    for (const char* dllName : kCandidateDlls) {
+        h = LoadLibraryA(dllName);
+        if (h) { loadedDllName = dllName; break; }
+    }
+    if (!h) {
+        LogFromController("[xinput] LoadLibrary FAILED for xinput1_4/xinput1_3/xinput9_1_0 -- no controller input or vibration this session");
+        return;
+    }
     g_XInputGetState = reinterpret_cast<XInputGetState_t>(GetProcAddress(h, "XInputGetState"));
     g_XInputSetState = reinterpret_cast<XInputSetState_t>(GetProcAddress(h, "XInputSetState"));
+    char buf[160];
+    sprintf_s(buf, "[xinput] loaded %s -- GetState=%s SetState=%s",
+        loadedDllName, g_XInputGetState ? "OK" : "MISSING", g_XInputSetState ? "OK" : "MISSING");
+    LogFromController(buf);
 }
 
 // Scaled radial deadzone: rescales the post-deadzone range back to [0,1] smoothly,

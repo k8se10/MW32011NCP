@@ -73,8 +73,22 @@ void ReadBool(const char* path, const char* section, const char* key, bool& outV
 // HudGlyphPositionLogging key (issue #48) was added; v5->v6 when GlyphIconOverlay
 // (issue #48's actual icon-drawing toggle) was added -- same reasoning applies every
 // time going forward: any new config key needs a version bump or it silently never
-// appears for already-current-version users.
-constexpr unsigned long kCurrentConfigVersion = 6;
+// appears for already-current-version users. v6->v7 (2026-08-03) when the new
+// [Movement] section (AutoMantleEnabled/AutoMantleForwardConeDegrees/
+// AutoMantleMinStickMagnitude) was added.
+//
+// POLICY WIDENED 2026-08-03 (explicit user direction: "make sure the config always
+// updates outdated comment text"): a version bump is now required not just for new
+// keys, but for ANY correction to an existing key's comment text too (e.g. a stale
+// explanation, a corrected default-value citation, a fixed typo) -- WriteDefaultConfig()
+// only re-runs when `configVersion < kCurrentConfigVersion`, so a comment-only fix
+// with no version bump would silently never reach anyone already on the current
+// version, identical to the "new key never appears" gap this same mechanism already
+// exists to prevent. v7->v8 (2026-08-03) when the [Vibration] section's comments were
+// corrected (the "no native rumble exists" framing was stale post-issue-#24
+// reimplementation) and its default values were retuned (FireIntensity 0.25->0.55,
+// FireDurationMs 60->90, DamagePerPoint 0.03->0.05 -- see mod_config.h's own comment).
+constexpr unsigned long kCurrentConfigVersion = 8;
 
 // Reads a legacy key's raw value, returning true only if the key genuinely existed
 // (unlike ReadFloat, which can't distinguish "absent" from "present but unparsable" --
@@ -281,6 +295,22 @@ void WriteDefaultConfig(const char* path)
         "; press released before this switches weapons instead, same as a normal tap.\n"
         "ReadyUpHoldThresholdMs=%lu\n"
         "\n"
+        "[Movement]\n"
+        "; Auto-mantle: STRICTLY OFF BY DEFAULT, explicit opt-in only. When enabled,\n"
+        "; automatically drives the real native mantle command (the same +gostand\n"
+        "; command Jump already uses) whenever you're sprinting AND pushing the left\n"
+        "; stick within the cone below of straight-forward, at or near full\n"
+        "; deflection -- no separate Jump press needed near a real mantleable ledge.\n"
+        "; A no-op on flat ground (the engine's own real condition flags decide\n"
+        "; whether anything actually happens). 0 = off, 1 = on.\n"
+        "AutoMantleEnabled=%d\n"
+        "; Total cone width (not half-angle), in degrees, centered on straight-forward,\n"
+        "; the left stick must fall within to count as \"pushing forward enough\".\n"
+        "AutoMantleForwardConeDegrees=%g\n"
+        "; Left stick deflection (0..1) must be at least this close to full to count\n"
+        "; as \"full analog stick forward\", not just \"roughly forward\".\n"
+        "AutoMantleMinStickMagnitude=%g\n"
+        "\n"
         "; [Sprint] section removed 2026-07-19 (task #9): Sprint now drives the real\n"
         "; +sprint kbutton directly, so the engine's own native sprint duration/\n"
         "; recovery timer (and Extreme Conditioning's real override) apply\n"
@@ -303,15 +333,22 @@ void WriteDefaultConfig(const char* path)
         "GlyphStyle=%s\n"
         "\n"
         "[Vibration]\n"
-        "; No native rumble exists in this build at all -- entirely our own\n"
-        "; XInputSetState output, driven off real weapon-fire and damage-taken events.\n"
-        "; 0 = off, 1 = on.\n"
+        "; Real XInputSetState output, driven off real weapon-fire and damage-taken\n"
+        "; events (fixed 2026-08-03 -- was silently a no-op before, see\n"
+        "; known_issues.md issue #24: xinput9_1_0.dll's own SetState doesn't produce\n"
+        "; real vibration on most Windows installs; now tries xinput1_4/xinput1_3\n"
+        "; first). 0 = off, 1 = on.\n"
         "Enabled=%d\n"
-        "; Motor strength [0,1] on each real shot fired.\n"
+        "; Motor strength [0,1] on each real shot fired. Bumped 0.25->0.55\n"
+        "; (2026-08-03, user-reported \"works but extremely weak\" once vibration\n"
+        "; became physically real) -- tune to taste.\n"
         "FireIntensity=%g\n"
-        "; Milliseconds a fire pulse takes to decay back to zero.\n"
+        "; Milliseconds a fire pulse takes to decay back to zero. Bumped 60->90\n"
+        "; (2026-08-03) -- 60ms barely gave a real motor time to spin up before\n"
+        "; decaying.\n"
         "FireDurationMs=%lu\n"
         "; Motor strength added per point of real damage the LOCAL player takes.\n"
+        "; Bumped 0.03->0.05 (2026-08-03), same \"too weak\" pass as FireIntensity.\n"
         "DamagePerPoint=%g\n"
         "; Hard cap on damage-rumble strength regardless of how much damage lands.\n"
         "DamageMaxIntensity=%g\n"
@@ -380,6 +417,9 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.proneHoldThresholdMs,
         g_modConfig.interactHoldThresholdMs,
         g_modConfig.readyUpHoldThresholdMs,
+        g_modConfig.autoMantleEnabled ? 1 : 0,
+        g_modConfig.autoMantleForwardConeDegrees,
+        g_modConfig.autoMantleMinStickMagnitude,
         ButtonLayoutName(g_modConfig.buttonLayout),
         StickLayoutName(g_modConfig.stickLayout),
         g_modConfig.flipTriggers ? 1 : 0,
@@ -550,6 +590,13 @@ void LoadModConfig()
     ReadUlong(path, "Stance", "ProneHoldThresholdMs", g_modConfig.proneHoldThresholdMs);
     ReadUlong(path, "Interact", "HoldThresholdMs", g_modConfig.interactHoldThresholdMs);
     ReadUlong(path, "Survival", "ReadyUpHoldThresholdMs", g_modConfig.readyUpHoldThresholdMs);
+    ReadBool(path, "Movement", "AutoMantleEnabled", g_modConfig.autoMantleEnabled);
+    ReadFloat(path, "Movement", "AutoMantleForwardConeDegrees", g_modConfig.autoMantleForwardConeDegrees);
+    if (g_modConfig.autoMantleForwardConeDegrees < 1.0f) g_modConfig.autoMantleForwardConeDegrees = 1.0f;
+    if (g_modConfig.autoMantleForwardConeDegrees > 180.0f) g_modConfig.autoMantleForwardConeDegrees = 180.0f;
+    ReadFloat(path, "Movement", "AutoMantleMinStickMagnitude", g_modConfig.autoMantleMinStickMagnitude);
+    if (g_modConfig.autoMantleMinStickMagnitude < 0.0f) g_modConfig.autoMantleMinStickMagnitude = 0.0f;
+    if (g_modConfig.autoMantleMinStickMagnitude > 1.0f) g_modConfig.autoMantleMinStickMagnitude = 1.0f;
     // [Sprint] MaxStaminaSeconds/RegenSeconds removed 2026-07-19 (task #9): the real
     // +sprint kbutton migration made this mod's own custom stamina/cooldown timer
     // (and its divide-by-zero guard that used to live here) dead code -- the engine's

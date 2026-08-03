@@ -150,6 +150,29 @@ struct ModConfig
     // [Survival]
     unsigned long readyUpHoldThresholdMs = 740; // Y: hold-to-ready-up threshold (Survival only)
 
+    // [Movement] Auto-mantle (2026-08-03) -- STRICTLY opt-in, OFF by default per
+    // explicit user direction. The real native mantle trigger is the same +gostand
+    // command Jump already drives (ForceStandingViaRealToggle) -- confirmed via
+    // FindStringRefs on the PLATFORM_MANTLE hint string, resolving to a single real
+    // call site (FUN_00568da0 -> FUN_004fafd0(param_1, "+gostand", ...)); the engine
+    // itself contextually reinterprets +gostand as mantle-over-a-ledge vs. stand-up
+    // based on its own real condition flags (see re_notes/iw5sp.md's "Mantle --
+    // found, concretely" section) -- this project never needs to detect the ledge
+    // itself, only decide WHEN to drive the same real command automatically instead
+    // of waiting for an explicit Jump press. When enabled, driving +gostand every
+    // frame the player is real-sprinting AND pushing the left stick within
+    // AutoMantleForwardConeDegrees of straight-forward at at least
+    // AutoMantleMinStickMagnitude deflection -- a no-op on flat ground (same
+    // command Jump already spams harmlessly while held), only doing anything when
+    // the engine's own mantle condition is separately true.
+    bool autoMantleEnabled = false;
+    float autoMantleForwardConeDegrees = 45.0f; // total cone width (not half-angle),
+                                                 // centered on straight-forward --
+                                                 // user-specified as "top 45 degree cone"
+    float autoMantleMinStickMagnitude = 0.9f;   // stick deflection (0..1) must be at
+                                                 // least this close to full to count as
+                                                 // "full analog stick forward"
+
     // [Sprint] section removed 2026-07-19 (task #9): Sprint now drives the real
     // +sprint kbutton_t directly (CallKbuttonDown/CallKbuttonUp), so the engine's own
     // native sprint duration/recovery timer applies automatically -- LIVE-CONFIRMED
@@ -185,9 +208,16 @@ struct ModConfig
     // by the local player -- see rumble.h/.cpp). This one Enabled toggle IS this
     // feature's kill-switch (no separate [Experimental] entry needed on top of it).
     bool vibrationEnabled = true;
-    float vibrationFireIntensity = 0.25f;    // motor strength [0,1] on each real shot
-    unsigned long vibrationFireDurationMs = 60; // how long a fire pulse takes to decay
-    float vibrationDamagePerPoint = 0.03f;   // motor strength added per point of real
+    // Strength/duration bumped 2026-08-03 (user-reported "works but extremely weak"
+    // after the xinput1_4/1_3 DLL fix made vibration physically real for the first
+    // time): a 60ms pulse barely gives a real motor time to spin up before decaying
+    // back down, and 0.25 strength alone is faint on most controllers -- both raised
+    // together rather than either alone, since a longer pulse at the old low
+    // strength would still read as weak, and a stronger pulse that's still only 60ms
+    // wouldn't fix the "motor never gets going" half of the problem.
+    float vibrationFireIntensity = 0.55f;    // motor strength [0,1] on each real shot
+    unsigned long vibrationFireDurationMs = 90; // how long a fire pulse takes to decay
+    float vibrationDamagePerPoint = 0.05f;   // motor strength added per point of real
                                               // damage taken (local player only)
     float vibrationDamageMaxIntensity = 1.0f;   // hard cap regardless of damage amount
     unsigned long vibrationDamageDurationMs = 200; // how long a damage pulse takes to decay

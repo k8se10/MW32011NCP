@@ -163,9 +163,23 @@ void RequestGlyphIconOverlay(float x, float y, float w, float h, const char* ass
 enum class GameplayHintSlotId { Interact = 0, ReadyUp = 1, Reload = 2 };
 constexpr int kGameplayHintSlotCount = 3;
 
+// topLineText (2026-08-02): some real native hints turn out to be a SINGLE draw call
+// combining two logically separate lines with an embedded '\n' -- confirmed via a live
+// log capture of Survival's ready-up prompt when a teammate has already readied up:
+// "Teammate ready\nPress ^3F5^7 to ready up: 23" is ONE string, ONE color-highlight
+// span, not two separate hints. This project's own hint renderer has no concept of an
+// embedded newline (it draws prefix/icon/suffix as one horizontal line), so passing
+// that raw text straight into prefixText either garbled the line (rendering the
+// newline as part of the text) or, after the "Hold Y" fix, silently dropped
+// "Teammate ready" entirely. topLineText (optional, empty = no top line) draws as its
+// own plain text line directly above the main hint row, so the caller can split on the
+// embedded newline instead of losing or garbling either half -- kept generic (not
+// ready-up-specific) in case another hint turns out to have the same combined-string
+// shape.
 void RequestCustomHintOverlay(float x, float y, const char* prefixText, const char* suffixText,
                                const char* assetName, bool centerOnScreen, bool flashIcon = false,
-                               GameplayHintSlotId slotId = GameplayHintSlotId::Interact);
+                               GameplayHintSlotId slotId = GameplayHintSlotId::Interact,
+                               const char* topLineText = "");
 
 // Appends extraText to the CURRENTLY pending hint's suffix in the given slot (e.g. a
 // weapon name that draws as its own separate, unhighlighted continuation right after
