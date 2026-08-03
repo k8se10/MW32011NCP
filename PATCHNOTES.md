@@ -8,6 +8,14 @@ reverse-engineering trail behind each entry.
 
 ## v0.3.0 — Alpha (2026-08-03) — Controller-glyph icons, vibration, auto-mantle (disabled)
 
+**The most significant release to date by code volume**: 8,057 lines changed
+overall, 5,725 of them in `proxy_d3d9/src` alone — more than double the prior
+record (v0.2.2→v0.2.5's 2,739 source lines). A brand-new subsystem (vibration)
+built from zero, the longest-running single bug investigation in this
+project's history (the A-glyph saga, ~15 rounds across three days), and the
+full crouch/UI bug batch from the first public Survival co-op stream all
+landed in this one release.
+
 Everything below accumulated since v0.2.5 (2026-07-31). **Known gaps in this
 release, stated plainly rather than left implicit:**
 - **Auto-mantle while sprinting is NOT WORKING and shipped disabled

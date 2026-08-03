@@ -1,9 +1,11 @@
 # MW3 Native Controller Support (Campaign & Survival)
 
-> **▶️ v0.3.0 (2026-08-03)** ships controller-glyph icons (in-game hints + menu
-> corner hints + a custom cursor overlay), real controller vibration, and the
-> crouch/UI bug batch from the first public Survival co-op stream — see
-> `PATCHNOTES.md` for the full list. **Two things in this release are honestly
+> **▶️ v0.3.0 (2026-08-03) — the most significant release to date** (8,057
+> lines changed, 5,725 of them source code — more than double the prior
+> record). Ships controller-glyph icons (in-game hints + menu corner hints +
+> a custom cursor overlay), real controller vibration, and the crouch/UI bug
+> batch from the first public Survival co-op stream — see `PATCHNOTES.md` for
+> the full list. **Two things in this release are honestly
 > flagged as NOT working, not just "unpolished":** auto-mantle while sprinting
 > (implemented, live-tested twice, still doesn't reliably fire — shipped
 > disabled by default) and vibration for damage absorbed by Survival's
