@@ -208,19 +208,27 @@ struct ModConfig
     // by the local player -- see rumble.h/.cpp). This one Enabled toggle IS this
     // feature's kill-switch (no separate [Experimental] entry needed on top of it).
     bool vibrationEnabled = true;
-    // Strength/duration bumped 2026-08-03 (user-reported "works but extremely weak"
-    // after the xinput1_4/1_3 DLL fix made vibration physically real for the first
-    // time): a 60ms pulse barely gives a real motor time to spin up before decaying
-    // back down, and 0.25 strength alone is faint on most controllers -- both raised
-    // together rather than either alone, since a longer pulse at the old low
-    // strength would still read as weak, and a stronger pulse that's still only 60ms
-    // wouldn't fix the "motor never gets going" half of the problem.
-    float vibrationFireIntensity = 0.55f;    // motor strength [0,1] on each real shot
-    unsigned long vibrationFireDurationMs = 90; // how long a fire pulse takes to decay
-    float vibrationDamagePerPoint = 0.05f;   // motor strength added per point of real
+    // Strength/duration bumped three times now (2026-08-03): 0.25->0.55->0.85 /
+    // 60->90->150ms across rounds 1-2 (see rumble.cpp's kRumbleSustainFraction for
+    // round 2's sustain/decay-envelope fix, addressing real ERM motors' ~50-100ms
+    // physical spin-up lag) -- still user-reported "better now but kinda weak" after
+    // round 2. Round 3: FireIntensity raised to its own ceiling (1.0 -- there's no
+    // headroom left above this; XInputSetState's wLeftMotorSpeed/wRightMotorSpeed are
+    // already commanded at their real maximum, 65535, at this value), duration
+    // extended further, and the sustain fraction itself raised alongside it
+    // (kRumbleSustainFraction 0.6->0.7) so more of an already-longer pulse sits at
+    // that ceiling before decaying. If this is STILL reported weak on the same
+    // physical controller, the remaining variable is very likely the controller's own
+    // hardware (third-party/Bluetooth pads commonly have materially weaker real motor
+    // response than a genuine Xbox controller) rather than anything left to tune in
+    // software -- there is no higher intensity value to send. Still fully
+    // user-tunable; not yet live-retested.
+    float vibrationFireIntensity = 1.0f;    // motor strength [0,1] on each real shot -- already at the ceiling
+    unsigned long vibrationFireDurationMs = 180; // how long a fire pulse takes to decay
+    float vibrationDamagePerPoint = 0.12f;   // motor strength added per point of real
                                               // damage taken (local player only)
     float vibrationDamageMaxIntensity = 1.0f;   // hard cap regardless of damage amount
-    unsigned long vibrationDamageDurationMs = 200; // how long a damage pulse takes to decay
+    unsigned long vibrationDamageDurationMs = 280; // how long a damage pulse takes to decay
 
     // [Overlay] (task #47/#48, 2026-07-31) -- the top-right on-screen notification
     // text (overlay_hud.cpp). Uses Barlow Condensed SemiBold, bundled directly in
@@ -318,6 +326,23 @@ struct ModConfig
         // next, less-proven step). Never mutates the real hint text or draw call itself
         // -- only ever draws an additional quad after it, same layering as the startup/
         // config-reload toast notification.
+    bool armorFieldScanLogging = false; // issue #63 follow-up (2026-08-03): user-reported
+        // the damage-rumble health poll (rumble.cpp's PollDamageRumble) never fires while
+        // Survival's purchasable Body Armor is absorbing hits, since armor is a separate
+        // value from real health and doesn't touch the +0x150 health field this project
+        // already polls -- no prior research in this codebase has located that separate
+        // armor field. DEFAULT OFF -- a one-off investigation toggle, not meant to stay on
+        // during normal play. When enabled, scans a window of the local player's entity
+        // struct every tick for any value that was STABLE for at least 2 consecutive
+        // frames and then dropped by a plausible single-hit amount (filters out
+        // continuously-ticking countdown timers, which are never stable beforehand) --
+        // candidates are logged tagged "[armor-scan-diag]". Turn on, play a Survival wave
+        // with Body Armor purchased and equipped, take a few hits while armored (confirm
+        // on the real HUD that the armor number is what's dropping, not health), then send
+        // back proxy_d3d9.log so the real offset can be picked out of the candidates.
+        // Capped at 100 total log lines per session so a noisy candidate can't flood the
+        // log across a long play session.
+
     // sprintStaminaBypassForTesting (task #9) REMOVED 2026-07-19: graduated to
     // unconditional the same day it was added -- Sprint's real +sprint kbutton
     // migration was LIVE-CONFIRMED working, and with it confirmed that the real

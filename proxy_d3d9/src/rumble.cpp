@@ -112,6 +112,16 @@ DWORD g_rumbleDecayStartMs = 0;
 DWORD g_rumbleDecayDurationMs = 0;
 float g_rumblePeakIntensity = 0.0f;
 
+// Fraction of a pulse's total duration spent HOLDING the full commanded peak before
+// decaying, rather than ramping down from t=0 (2026-08-03, issue #63 round 2 -- still
+// "extremely weak" after the first strength/duration bump). Real ERM vibration motors
+// have genuine physical spin-up lag (~50-100ms) before reaching a speed a human can
+// feel; a pure linear decay from t=0 spends a short pulse's ENTIRE duration commanding
+// a strength the motor is still ramping toward, so it may barely become perceptible
+// right as it's told to stop. Holding at peak first, then decaying only for the tail,
+// gives the physical motor real time at the commanded strength.
+constexpr float kRumbleSustainFraction = 0.6f;
+
 // A stronger/longer pulse arriving while an earlier one is still decaying takes over
 // (peak intensity + a fresh decay window) rather than being additive or getting cut
 // short -- simple, predictable behavior for what is, honestly, a single-shared-motor-
@@ -143,6 +153,20 @@ void __cdecl Hook_FireEffects(int entity, unsigned int unusedParam2)
     // ourselves (a plain read, no extra native call) avoids rumbling on whichever
     // of those 8 cases DON'T represent an actual shot.
     if (*reinterpret_cast<volatile unsigned char*>(entity + 0x7c) == 0) return;
+
+    // Rate-limited cadence diagnostic (issue #63 round 2) -- logs the first 30 real
+    // fire-rumble triggers each session so a live retest can show how often this
+    // actually fires (e.g. whether a full-auto weapon retriggers faster than the
+    // pulse's own duration, which would read as one sustained buzz rather than
+    // distinct pulses) without flooding the log for a whole play session.
+    static int s_fireRumbleLogCount = 0;
+    if (s_fireRumbleLogCount < 30) {
+        ++s_fireRumbleLogCount;
+        char buf[128];
+        sprintf_s(buf, "[rumble-diag] fire trigger #%d, intensity=%.2f durationMs=%lu",
+            s_fireRumbleLogCount, g_modConfig.vibrationFireIntensity, g_modConfig.vibrationFireDurationMs);
+        LogFromController(buf);
+    }
 
     TriggerRumble(g_modConfig.vibrationFireIntensity, g_modConfig.vibrationFireDurationMs);
 }
@@ -227,6 +251,83 @@ void PollDamageRumble()
     TriggerRumble(intensity, g_modConfig.vibrationDamageDurationMs);
 }
 
+// ---- ARMOR candidate scan, OFF by default (issue #63 follow-up, 2026-08-03) --------
+//
+// User-reported: PollDamageRumble above never fires while Survival's purchasable
+// Body Armor is absorbing a hit, since armor is tracked separately from real health
+// and this project has no prior research locating that separate field. Rather than
+// guess an offset (this project's own standing rule -- never hardcode a value that
+// hasn't actually been confirmed), this scans a window of the same per-player entity
+// struct PollDamageRumble already reads (kLocalPlayerEntity, the same 0x270-stride
+// struct the confirmed health field at +0x150 lives in) for a value that behaves like
+// armor should: STABLE for at least two consecutive frames, then a single-frame drop
+// of a plausible hit-sized amount. The stability requirement is the key filter -- it's
+// what tells a real "absorbed a hit" event apart from an ordinary countdown timer
+// (ammo reload clocks, cooldowns, animation timers), which are never stable
+// beforehand since they tick down every single frame regardless of player action.
+//
+// Scoped to [0x00, 0x270) in 4-byte steps -- the same struct stride already confirmed
+// for the entity array itself, so armor (if it lives in the per-player entity struct
+// at all, rather than in GSC-VM-only script storage this project can't read this way)
+// should fall somewhere in this window.
+constexpr int kArmorScanWindowBytes = 0x270;
+constexpr int kArmorScanSlotCount = kArmorScanWindowBytes / 4;
+int g_armorScanPrevValue[kArmorScanSlotCount];
+int g_armorScanPrevPrevValue[kArmorScanSlotCount];
+bool g_armorScanPrimed = false; // needs 2 real frames of history before the stability check means anything
+int g_armorScanLogLinesEmitted = 0;
+constexpr int kArmorScanMaxLogLines = 300; // hard cap so a noisy candidate can't flood the log all session
+int g_armorScanPerSlotCount[kArmorScanSlotCount]; // per-offset cap (see below) -- zero-initialized (global array)
+constexpr int kArmorScanMaxLogsPerSlot = 3; // round 1 (100-line global cap) got entirely eaten by ONE noisy
+    // offset (entity+0x58, confirmed by its own log shape -- constant, mostly drop=1, occasional resets
+    // upward -- to be current ammo in the clip, not armor) before any other candidate got a chance to
+    // appear at all. Capping PER OFFSET instead guarantees a spread of distinct candidates even if
+    // another noisy field exists elsewhere in the window.
+constexpr int kArmorScanExcludedOffset = 0x58; // confirmed ammo count (round 1 capture, 2026-08-03) -- skip
+    // logging it entirely rather than waste any of the per-slot budget re-confirming what's already known.
+
+void PollArmorFieldScanDiag()
+{
+    if (!g_modConfig.armorFieldScanLogging) return;
+    if (g_armorScanLogLinesEmitted >= kArmorScanMaxLogLines) return;
+
+    if (!IsRealPlayerEntity(static_cast<int>(kLocalPlayerEntity))) {
+        g_armorScanPrimed = false; // no real player right now -- history is stale once one exists again
+        return;
+    }
+
+    constexpr int kMinPlausibleDrop = 1;
+    constexpr int kMaxPlausibleDrop = 250; // generous vs. any real single-hit weapon damage, same order as PollDamageRumble's own cap
+
+    for (int slot = 0; slot < kArmorScanSlotCount; ++slot) {
+        int offset = slot * 4;
+        int current = *reinterpret_cast<volatile int*>(kLocalPlayerEntity + offset);
+
+        if (g_armorScanPrimed && offset != kArmorScanExcludedOffset
+            && g_armorScanPerSlotCount[slot] < kArmorScanMaxLogsPerSlot) {
+            int prev = g_armorScanPrevValue[slot];
+            int prevPrev = g_armorScanPrevPrevValue[slot];
+            if (prev == prevPrev) { // stable for the 2 frames before this one
+                int drop = prev - current;
+                if (drop >= kMinPlausibleDrop && drop <= kMaxPlausibleDrop
+                    && current >= 0 && current <= 1000
+                    && g_armorScanLogLinesEmitted < kArmorScanMaxLogLines) {
+                    char buf[128];
+                    sprintf_s(buf, "[armor-scan-diag] entity+0x%X: %d -> %d (drop=%d)",
+                        offset, prev, current, drop);
+                    LogFromController(buf);
+                    ++g_armorScanLogLinesEmitted;
+                    ++g_armorScanPerSlotCount[slot];
+                }
+            }
+        }
+
+        g_armorScanPrevPrevValue[slot] = g_armorScanPrevValue[slot];
+        g_armorScanPrevValue[slot] = current;
+    }
+    g_armorScanPrimed = true;
+}
+
 } // namespace
 
 void Rumble_Install()
@@ -260,6 +361,7 @@ void Rumble_Install()
 void Rumble_Tick()
 {
     PollDamageRumble();
+    PollArmorFieldScanDiag(); // OFF by default -- see its own comment (issue #63 follow-up)
 
     if (!g_modConfig.vibrationEnabled || g_rumblePeakIntensity <= 0.0f) return;
 
@@ -270,7 +372,20 @@ void Rumble_Tick()
         return;
     }
 
-    float remaining = 1.0f - (static_cast<float>(elapsed) / static_cast<float>(g_rumbleDecayDurationMs));
-    float current = g_rumblePeakIntensity * remaining;
+    // Sustain-then-release envelope (see kRumbleSustainFraction's own comment) --
+    // hold the full commanded peak for the first portion of the pulse, only decay
+    // the tail, instead of ramping down for the pulse's entire duration.
+    DWORD sustainMs = static_cast<DWORD>(static_cast<float>(g_rumbleDecayDurationMs) * kRumbleSustainFraction);
+    float current;
+    if (elapsed < sustainMs) {
+        current = g_rumblePeakIntensity;
+    } else {
+        DWORD decayElapsed = elapsed - sustainMs;
+        DWORD decayDurationMs = g_rumbleDecayDurationMs - sustainMs;
+        float remaining = decayDurationMs > 0
+            ? 1.0f - (static_cast<float>(decayElapsed) / static_cast<float>(decayDurationMs))
+            : 0.0f;
+        current = g_rumblePeakIntensity * remaining;
+    }
     Controller_SetVibration(current, current);
 }
