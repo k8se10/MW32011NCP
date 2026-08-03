@@ -80,6 +80,7 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#61](#61-glyph-overlays-now-hide-whenever-keyboardmouse-is-the-active-input-method-user-requested-2026-08-02) — Glyph overlays now hide whenever keyboard/mouse is the active input method — **Resolved, confirmed live**
 - [#62](#62-auto-mantle-while-sprinting--not-working-shipped-disabled-for-v030-2026-08-03) — Auto-mantle while sprinting — **Open / Not Working** (shipped disabled, `AutoMantleEnabled=0`, for v0.3.0 — two rounds attempted, neither confirmed working)
 - [#63](#63-vibration-strengthreload-vibration-follow-up-2026-08-03--strength-maxed-out-for-v030-armor-support-and-reload-rumble-deferred) — Vibration strength + Survival armor support — **Open / Partially Resolved** (FireIntensity maxed to its software ceiling for v0.3.0, round 4 not yet live-retested; armor field still unidentified, diagnostic improved; reload-vibration deferred to final scope)
+- [#64](#64-single-av-vendor-flags-the-v030-release-dll--assessed-as-a-false-positive-2026-08-03) — Single AV vendor (VBA32) flags the v0.3.0 release DLL — **Resolved** (assessed as a generic heuristic false positive; every major vendor clean)
 
 ---
 
@@ -8678,3 +8679,21 @@ Built and deployed 2026-08-03.
 **User's own final scope call, same conversation**: "historically... CoD always did a vibration per step in the animation for reload, this is too advanced rn but it has to be in the final scope." **Deliberately deferred, not abandoned** — full per-animation-step reload rumble (matching every real beat of the reload animation, not just two approximate pulses) is a real, committed final-scope target, just not for this release.
 
 **Head start already on record for whoever picks this up**: `re_notes/iw5sp.md` already documents real per-weapon reload TIMING fields in `WeaponCompleteDef` — `iReloadTime`, `iReloadEmptyTime` (a genuinely distinct "reload from empty" path), `iReloadAddTime`, `iReloadStartTime`, `iReloadStartAddTime`, `iReloadEndTime`. These give the real, per-weapon-accurate duration/phase-boundary data needed to sync rumble pulses to each weapon's own actual animation length (a two-handed rifle's mag-out/mag-in timing is not the same as a pistol's) — the missing piece is a real "reload is currently active" trigger signal (a live ammo-count or weapon-state field to poll), plus mapping this data's own phase boundaries to however many discrete "steps" the final feature ends up modeling. Not yet independently re-verified this session; treat as a lead, not confirmed-current.
+
+---
+
+## 64. Single AV vendor flags the v0.3.0 release DLL — assessed as a false positive (2026-08-03)
+
+**Status:** Resolved (assessed, not a real detection). No action taken against the binary.
+
+**Report:** a VirusTotal scan of the published `MW32011NCP-v0.3.0.zip`/`d3d9.dll` showed 1/67 vendors flagging it — `VBA32`, label `BScope.Trojan.DBadur` (family `dbadur`). Every other vendor, including every major engine (Microsoft, Kaspersky, ESET, Malwarebytes, CrowdStrike, BitDefender, Sophos, TrendMicro, Avast, McAfee, Google), returned clean/undetected.
+
+**Assessment: very likely a generic heuristic false positive, not a real detection of malicious behavior.** Reasoning:
+- `dbadur` is a broad heuristic/generic family label, not a named family tied to a specific known-bad payload or sample match.
+- VBA32 is a heuristic-heavy engine with a known tendency to flag generic "hooks/injects into another process" behavior shapes.
+- This project's real, intentional behavior — a proxy `d3d9.dll` that installs MinHook detours and does runtime byte-pattern scanning inside the host game process — is structurally identical to what plenty of legitimate, widely-used tools do (ReShade, RivaTuner Statistics Server, other controller-remapping utilities), and heuristic engines routinely flag that general pattern regardless of actual intent.
+- 1 low-prevalence vendor out of 67, with every major vendor clean, is the classic shape of a heuristic false positive rather than a real finding.
+
+**Deliberately not "fixed" in the binary.** Altering the DLL specifically to dodge one heuristic vendor's detection would look far more like active evasion than the openly-documented input-hooking this project already does — inconsistent with this project's own standing transparency policy on security/anti-cheat questions (see issue #33). The correct response is disclosure, not obfuscation.
+
+**Action taken:** documented here and given a short, honest mention in the README/Nexus page so a user who runs their own scan and sees this isn't left to wonder or assume the worst — matching this project's existing practice of being upfront about VAC/anti-cheat risk rather than staying silent on uncomfortable findings.
