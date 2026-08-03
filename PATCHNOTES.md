@@ -6,6 +6,21 @@ reverse-engineering trail behind each entry.
 
 ---
 
+## Unreleased
+
+### Fixed
+- **Vertical look sensitivity default corrected, confirmed live.** Real MW3
+  console has only one Sensitivity slider (no independent vertical control at
+  all) at roughly 55-60% of the horizontal turn rate — this project's own
+  `SensitivityVertical` default (200 against `SensitivityHorizontal`'s 250, an
+  ~80% ratio) had wrongly assumed MW3 matched other console CoD titles' fully
+  separate sliders. Corrected default to `145` (~58%), confirmed as the right
+  feel via direct live retest after two rounds (an initial 75/~30% estimate
+  from feel alone tested "way too slow" first). `ConfigVersion` bumped 10→12.
+  See `re_notes/known_issues.md` issue #65.
+
+---
+
 ## v0.3.0 — Alpha (2026-08-03) — Controller-glyph icons, vibration, auto-mantle (disabled)
 
 **The most significant release to date by code volume**: 8,057 lines changed

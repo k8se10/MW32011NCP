@@ -98,7 +98,14 @@ void ReadBool(const char* path, const char* section, const char* key, bool& outV
 // FireDurationMs 150->180, DamagePerPoint 0.08->0.12, DamageDurationMs 250->280, and
 // the sustain fraction itself raised (rumble.cpp, 0.6->0.7). Comment text also
 // corrected throughout [Vibration] to describe round 3 instead of round 2.
-constexpr unsigned long kCurrentConfigVersion = 10;
+// v10->v11 (2026-08-03, same day, issue #65): SensitivityVertical default corrected
+// 250->75 -- real MW3 console vertical sensitivity is ~30% of horizontal per direct
+// user testimony from actual console play (corroborated by the real console Options
+// menu having only one Sensitivity slider at all, no independent vertical control),
+// not the ~80% ratio the 2026-07-31 split's own default wrongly assumed.
+// v11->v12 (2026-08-03, same day): 75 (the initial ~30% feel-estimate) live-tested and
+// reported "way too slow" -- corrected to 145 (~58%, "closer to about 55-60%").
+constexpr unsigned long kCurrentConfigVersion = 12;
 
 // Reads a legacy key's raw value, returning true only if the key genuinely existed
 // (unlike ReadFloat, which can't distinguish "absent" from "present but unparsable" --
@@ -244,11 +251,15 @@ void WriteDefaultConfig(const char* path)
         "[Look]\n"
         "; Look-stick turn rate in degrees/second at full stick deflection, split into\n"
         "; horizontal (yaw, left/right) and vertical (pitch, up/down) axes -- separated\n"
-        "; 2026-07-31 per user request, matching console CoD titles' own separate\n"
-        "; sensitivity sliders. Which physical stick (and axes) actually drive look\n"
-        "; depends on the StickLayout setting under [Bindings] below -- this is not\n"
-        "; always the right stick.\n"
+        "; 2026-07-31 per user request, as a deliberate PC-side enhancement (real MW3\n"
+        "; console has only ONE Sensitivity slider driving both axes through a fixed\n"
+        "; internal ratio, not independently tunable). Which physical stick (and axes)\n"
+        "; actually drive look depends on the StickLayout setting under [Bindings]\n"
+        "; below -- this is not always the right stick.\n"
         "SensitivityHorizontal=%g\n"
+        "; Corrected twice 2026-08-03 (issue #65): 250 (~80%% of Horizontal, wrongly assumed\n"
+        "; to match console) -> 75 (an initial ~30%% feel-estimate, live-tested and found\n"
+        "; way too slow) -> 145 (~58%%, corrected estimate: \"closer to about 55-60%%\").\n"
         "SensitivityVertical=%g\n"
         "; How strongly look slows down while aiming down sights on magnified optics,\n"
         "; scaled to the weapon's actual live zoom level (read-only -- never changes\n"
@@ -580,7 +591,14 @@ void LoadModConfig()
     }
 
     ReadFloat(path, "Look", "SensitivityHorizontal", g_modConfig.lookDegreesPerSecondHorizontal);
-    ReadFloat(path, "Look", "SensitivityVertical", g_modConfig.lookDegreesPerSecondVertical);
+    // Corrected 2026-08-03 (issue #65): the 250 default was an ~80% ratio of Horizontal,
+    // wrongly assumed to match console -- real MW3 console vertical sensitivity is ~30% of
+    // horizontal per direct user testimony from actual console play, corroborated by the
+    // real console Options menu having only ONE Sensitivity slider at all (no independent
+    // vertical control there). Retuned to 75 (30% of Horizontal's 250). Gated at
+    // fromVersion=11 so a file already customized away from 250 is never silently overwritten.
+    ReadFloatWithDefaultRetune(path, "Look", "SensitivityVertical", configVersion, 11, 250.0f,
+                               g_modConfig.lookDegreesPerSecondVertical);
     ReadFloat(path, "Look", "AdsSlowdownStrength", g_modConfig.adsSlowdownStrength);
     // Live-confirmed bug (2026-07-16): the OLD linear blend formula
     // (1 - strength*(1-ratio)) went NEGATIVE for strength > 1.0 once the zoom ratio
