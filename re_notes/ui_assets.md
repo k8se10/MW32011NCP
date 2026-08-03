@@ -14,13 +14,20 @@
 > PNG icon + suffix text) as independent textured quads, in this project's own
 > embedded font — no in-font codepoint injection, no boot-time zone splice.
 > This overlay-quad technique is what's actually shipped and confirmed live
-> today, for in-game interact hints, menu UI corner hints, a highlighted-item
-> A-glyph in vertical list menus, and (a related but separate use of the same
-> underlying draw primitives) a custom mouse cursor overlay. See
-> `re_notes/known_issues.md` issues #48 (the pivot and core mechanism), #50
+> today, for in-game interact hints, menu UI corner hints, and (a related but
+> separate use of the same underlying draw primitives) a custom mouse cursor
+> overlay. **Correction (2026-08-03):** the highlighted-item A-glyph in vertical
+> list menus was ALSO built on this same mechanism, but is NOT shipped in full —
+> a same-day audit found several screens previously assumed working had never
+> been independently re-confirmed, and at least one was confirmed actively
+> broken. It now shows only on an explicit, live-verified allowlist (currently
+> the main menu, the Campaign hub, and two popups), not project-wide — see
+> `re_notes/known_issues.md` issue #51's own coverage table for the full
+> per-screen breakdown of what's confirmed, broken, or still unverified. See
+> also `re_notes/known_issues.md` issues #48 (the pivot and core mechanism), #50
 > (the menu-UI extension, including the Special Ops modal corner-hint bug —
-> now genuinely resolved, not just the earlier inert mitigation), #51 (the
-> A-glyph) and #52 (the cursor). The `BindResolverGlyphSubstitution` config flag
+> now genuinely resolved, not just the earlier inert mitigation), and #52 (the
+> cursor). The `BindResolverGlyphSubstitution` config flag
 > still exists in `mw3ncp_config.ini` but is dead code — nothing reads it to
 > drive the shipped feature. **The research below is kept, unedited, as the
 > real historical investigation trail** (per this project's own

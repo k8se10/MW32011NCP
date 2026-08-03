@@ -16,6 +16,7 @@
 
 #include <windows.h>
 #include <intrin.h>
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -92,6 +93,195 @@ bool IsMenuActive()
     return (gate & kMenuActiveGateBit) != 0;
 }
 
+// Real native menu-stack depth (2026-08-02, dedicated Ghidra research pass -- see
+// menu_stack_findings.md / re_notes/known_issues.md for the full decompiled evidence).
+// A genuine menu stack hangs off one global context object at 0x01c00458: this int
+// field (offset 0xA7C, int-index 0x29F from the struct base) is literally "how many
+// menus are currently open" (0 = none, 1 = exactly one screen, 2+ = a popup/modal is
+// stacked on top of something else). Confirmed via THREE independent real functions
+// that all walk this exact [0x29f]-depth/[0x28e/0x28f]-array shape, including
+// FUN_00547980 -- the engine's own real "get the current topmost active menu"
+// accessor, called directly by ForwardKeyToMenu (0x004d9850, already used throughout
+// this file for every synthetic keypress) right before it decides where to route
+// input. This is a plain memory read, no hooking needed.
+constexpr uintptr_t kMenuStackCtx = 0x01c00458;
+constexpr int kMenuStackDepthOffset = 0xA7C;
+int GetMenuStackDepth()
+{
+    return *reinterpret_cast<volatile int*>(kMenuStackCtx + kMenuStackDepthOffset);
+}
+
+// Same research (4 passes total, see re_notes/known_issues.md): FUN_00547980(&ctx) is
+// the engine's own real "get current topmost active menu" accessor -- called directly
+// by ForwardKeyToMenu (0x004d9850) before it routes input, confirmed via decompile to
+// walk the stack top-down and return the first entry whose per-player flags mark it
+// genuinely visible/focused (not just present on the stack). Returned menu object has
+// a real itemDef array: menu+0xa8 = item count, menu+0xac = itemDef*[count] -- this is
+// literally what getfocuseditemname()'s own real implementation (FUN_004c1220) walks
+// internally. Calling the real function rather than reimplementing its per-player-flag
+// walk ourselves, per this project's own established preference. Wrapped in SEH since
+// this is the first call-through to this specific address -- its calling convention
+// (assumed __cdecl, matching every other "clean" FUN_ pointer in this file) was
+// inferred from a clean decompile with no unaff_ESI/EDI register-guess artifacts, but
+// hasn't been live-exercised yet.
+using GetTopmostActiveMenuFn = void*(__cdecl*)(void* ctx);
+GetTopmostActiveMenuFn const GetTopmostActiveMenuNative = reinterpret_cast<GetTopmostActiveMenuFn>(0x00547980);
+
+void* GetTopmostActiveMenu()
+{
+    __try {
+        return GetTopmostActiveMenuNative(reinterpret_cast<void*>(kMenuStackCtx));
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
+// menu+0xa8 -- confirmed via FUN_004c1220's own decompile (see the big comment above).
+int GetActiveMenuItemCount()
+{
+    void* menu = GetTopmostActiveMenu();
+    if (!menu) return -1;
+    __try {
+        return *reinterpret_cast<int*>(static_cast<char*>(menu) + 0xa8);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+}
+
+// A plain, local sanity check (not LooksLikeValidPointer -- that's declared later in
+// this file and using it here would be a use-before-declaration, a mistake this
+// project has already made and fixed once for GetActiveMenuItemCount() above).
+inline bool LooksSane(uintptr_t p)
+{
+    return p >= 0x10000 && p < 0x80000000u;
+}
+
+// Direct itemDef-array focus read (2026-08-03, issue #51 follow-up) -- confirmed
+// live that getfocuseditemname()'s own native call is NOT invoked by every
+// screen's .menu script (e.g. CAMPAIGN_BUTTON_LIST never calls it at all), so
+// g_focusedItemName can sit frozen on a stale value from whatever screen last
+// happened to trigger it, indefinitely, breaking any check that depends on it
+// being fresh for the CURRENT screen. This reads the exact same real memory this
+// project's own live-memory-dump analysis (issue #51's calibration tooling)
+// already proved reliable: walk the topmost menu's real itemDef array
+// (menu+0xa8=count, menu+0xac=itemDef*[count], both already confirmed) and check
+// each item's own per-player focus-flag byte (+0x48, bits 0x4+0x2) directly --
+// a plain memory read, true every frame regardless of whether any script ever
+// calls getfocuseditemname(). The focused item's own real internal name (+0x0)
+// is parsed the same way UpdateNavGroupTrackingFromResolvedValue already parses
+// ui_swf_selection values (strip a trailing "_<digits>" suffix).
+bool TryGetRealFocusedGroupAndIndex(char* outGroupName, size_t outGroupNameSize, int& outIndex, int& outSiblingCount);
+
+bool TryGetRealFocusedGroupAndIndex(char* outGroupName, size_t outGroupNameSize, int& outIndex)
+{
+    int unusedSiblingCount = -1;
+    return TryGetRealFocusedGroupAndIndex(outGroupName, outGroupNameSize, outIndex, unusedSiblingCount);
+}
+
+// Overload adding outSiblingCount (2026-08-03, issue #51 follow-up): the REAL number
+// of items in the SAME array sharing this exact base name (i.e. how many real
+// "<group>_<N>" items actually exist in THIS instance of the screen), not just the
+// focused one's own index. Needed because some shared groups (e.g.
+// SWF_COMMON_POPUP_NAME) are reused for variants with different real item counts --
+// live-confirmed via "Choose Content Pack" (2 real items: On Disk Content/DLC
+// Content) vs. the 3-item "Leave Lobby?" variant the manual position table was
+// originally calibrated against. The table's own per-index Y values are BOTTOM-
+// anchored in practice (confirmed live: the 2-item variant's real items land at the
+// table's OWN index1/index2 Y values, 554/603, not index0/index1's 504/554) --
+// TryGetManualGlyphPosition uses this count to shift into the shared table
+// correctly instead of assuming the focused item's own local index (always
+// 0-based per instance) lines up with the table's absolute row.
+bool TryGetRealFocusedGroupAndIndex(char* outGroupName, size_t outGroupNameSize, int& outIndex, int& outSiblingCount)
+{
+    void* menu = GetTopmostActiveMenu();
+    if (!menu) return false;
+    __try {
+        int count = *reinterpret_cast<int*>(static_cast<char*>(menu) + 0xa8);
+        uintptr_t arr = *reinterpret_cast<uintptr_t*>(static_cast<char*>(menu) + 0xac);
+        if (count <= 0 || count > 500 || !LooksSane(arr)) return false;
+        for (int i = 0; i < count; ++i) {
+            uintptr_t itemPtr = *reinterpret_cast<uintptr_t*>(arr + i * 4);
+            if (!LooksSane(itemPtr)) continue;
+            uint32_t flags0 = *reinterpret_cast<uint32_t*>(itemPtr + 0x48);
+            if ((flags0 & 0x4) == 0 || ((flags0 >> 1) & 1) == 0) continue;
+            uintptr_t nameAddr = *reinterpret_cast<uintptr_t*>(itemPtr + 0x0);
+            if (!LooksSane(nameAddr)) return false;
+            const char* name = reinterpret_cast<const char*>(nameAddr);
+            size_t len = strnlen(name, 128);
+            size_t j = len;
+            while (j > 0 && isdigit(static_cast<unsigned char>(name[j - 1]))) --j;
+            if (j == len || j == 0 || name[j - 1] != '_') return false;
+            size_t baseLen = j - 1;
+            if (baseLen == 0 || baseLen >= outGroupNameSize) return false;
+            memcpy(outGroupName, name, baseLen);
+            outGroupName[baseLen] = '\0';
+            outIndex = atoi(name + j);
+
+            // Second pass: count real siblings sharing this exact base name (bounded
+            // by the same validated count/arr from above, so no extra validation needed).
+            int siblingCount = 0;
+            for (int k = 0; k < count; ++k) {
+                uintptr_t siblingPtr = *reinterpret_cast<uintptr_t*>(arr + k * 4);
+                if (!LooksSane(siblingPtr)) continue;
+                uintptr_t siblingNameAddr = *reinterpret_cast<uintptr_t*>(siblingPtr + 0x0);
+                if (!LooksSane(siblingNameAddr)) continue;
+                const char* siblingName = reinterpret_cast<const char*>(siblingNameAddr);
+                if (_strnicmp(siblingName, outGroupName, baseLen) != 0) continue;
+                if (siblingName[baseLen] != '_') continue;
+                size_t sj = baseLen + 1;
+                size_t slen = strnlen(siblingName, 128);
+                if (sj >= slen) continue;
+                bool allDigits = true;
+                for (size_t d = sj; d < slen; ++d) {
+                    if (!isdigit(static_cast<unsigned char>(siblingName[d]))) { allDigits = false; break; }
+                }
+                if (allDigits) ++siblingCount;
+            }
+            outSiblingCount = siblingCount;
+            return true;
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    return false;
+}
+
+// BUG-051 diagnostic (2026-08-02) -- user question: is FUN_00547980 itself returning
+// the wrong stack entry for a lightweight popup? That function walks the stack
+// top-down but SKIPS any entry whose per-player flags (+0x4c+player*4, bits 0x4+0x2)
+// aren't both set -- a real filter for "genuinely visible/focused," not just
+// "present." A small fixed popup might not set those exact bits the same way a full
+// menu screen does, which would make FUN_00547980 silently fall through to the
+// screen underneath -- explaining a suspiciously large activeMenuItemCount (the
+// hub's real total itemDef count, not garbage) at the same time depth() correctly
+// shows 2+ (the popup genuinely is on the stack, just skipped by the flag filter).
+// This reads index [depth-1] of the SAME inline stack array directly, no flag
+// filtering at all, so its result can be compared against GetTopmostActiveMenu()'s.
+constexpr int kMenuStackArrayOffset = 0xA3C;
+
+void* GetRawTopOfStackMenu()
+{
+    int depth = GetMenuStackDepth();
+    if (depth <= 0) return nullptr;
+    __try {
+        void* const* stackArray = reinterpret_cast<void* const*>(kMenuStackCtx + kMenuStackArrayOffset);
+        return stackArray[depth - 1];
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
+int GetRawTopOfStackItemCount()
+{
+    void* menu = GetRawTopOfStackMenu();
+    if (!menu) return -1;
+    __try {
+        return *reinterpret_cast<int*>(static_cast<char*>(menu) + 0xa8);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+}
+
 // User-requested (2026-08-02): the glyph/hint overlay system should turn itself off
 // whenever keyboard/mouse becomes the active input method, same as console never
 // shows button-prompt glyphs alongside a mouse cursor -- uses the exact same shared
@@ -151,8 +341,15 @@ bool IsPhysicalHeld(PhysicalInput p, unsigned short buttons, unsigned char leftT
     switch (p) {
         case PhysicalInput::RT: return rightTrigger >= kTriggerThresholdFire;
         case PhysicalInput::LT: return leftTrigger >= kTriggerThresholdFire;
-        case PhysicalInput::RB: return (buttons & kXI_RIGHT_SHOULDER) != 0;
-        case PhysicalInput::LB: return (buttons & kXI_LEFT_SHOULDER) != 0;
+        // LB+RB held together is reserved as this project's own out-of-band
+        // capture/diagnostic chord (2026-08-02, live memory-dump tool) -- suppressed
+        // here, centrally, so NEITHER shoulder button's normal mapped action fires
+        // for any logical action layout maps them to, regardless of ButtonLayout.
+        // Matches this file's own pre-existing convention of using LB+RB-held as an
+        // "impossible to trigger by accident during normal play" combo (see the
+        // zone-load-test/font-struct-diag comments elsewhere in this file).
+        case PhysicalInput::RB: return (buttons & kXI_RIGHT_SHOULDER) != 0 && (buttons & kXI_LEFT_SHOULDER) == 0;
+        case PhysicalInput::LB: return (buttons & kXI_LEFT_SHOULDER) != 0 && (buttons & kXI_RIGHT_SHOULDER) == 0;
         case PhysicalInput::X: return (buttons & kXI_X) != 0;
         case PhysicalInput::Y: return (buttons & kXI_Y) != 0;
         case PhysicalInput::A: return (buttons & kXI_A) != 0;
@@ -770,6 +967,42 @@ void __cdecl Hook_MissileGuidanceDispatch(
 DWORD g_interactPressStartMs = 0;
 bool g_interactButtonWasHeld = false;
 bool g_jumpButtonWasHeld = false; // user-reported gap (2026-08-02): Jump from prone should stand up first
+
+// Issue #57 follow-up (2026-08-02, full .menu-file audit): co-op money-sharing's real
+// mechanism was found in every survival_armory_*.menu shell -- a menu-level
+// `execKeyInt 168` handler (self-gated on `iscoop() && credits>=500`) that fires
+// `scriptmenuresponse share`, with hint text `"[{+activate}]"` (an engine template
+// resolving to whatever key is really bound to +activate). The real default bind,
+// confirmed directly from this install's own `players2/config.cfg`, is
+// `bind F "+activate"` -- a genuinely different command from Reload's own real
+// `bind R "+reload"` (this project's own X button already covers both Interact and
+// Reload as one combined controller action, but on keyboard they're two separate
+// keys/commands). Forwarded as a real 'F' keydown/keyup through the exact same
+// ForwardKeyToMenu call (0x004d9850) this file's own ESC-forward/D-pad-nav code
+// already uses for every other real menu keypress -- not a new mechanism, the same
+// one.
+//
+// User-caught bug, same day, before this ever shipped: the FIRST version of this
+// gated purely on IsMenuActive() -- far too broad, since 'F' is ALSO the real menu
+// bind for opening the Friends list (see this file's own "Friends ^2F^7" corner-hint
+// work). That would have fired on X in the MAIN MENU, OPTIONS, or any other menu
+// entirely unrelated to a buy station, incorrectly popping Friends open. Buy
+// stations are NOT a real pause (confirmed by this project's own established
+// understanding -- Survival gameplay keeps running with a buy station open, unlike
+// the real pause menu), so `cl_paused` (already read elsewhere in this file via
+// GetDvarInt for the exact same "genuinely paused, not just some menu" distinction)
+// combined with IsInSurvivalMode() narrows this to "a menu is open, during a
+// Survival match, that isn't the real pause menu" -- excludes the main menu
+// (IsInSurvivalMode() false there) and the Survival pause menu (cl_paused != 0)
+// while still covering buy stations and any other in-Survival-gameplay menu.
+using ForwardKeyToMenuFn = void(__cdecl*)(int playerIndex, int keyCode, int isDown);
+ForwardKeyToMenuFn const ForwardKeyToMenuForShare = reinterpret_cast<ForwardKeyToMenuFn>(0x004d9850);
+constexpr int kKeyMoneyShare = 'F';
+int GetDvarInt(const char* name); // defined later in this file
+bool IsInSurvivalMode(); // defined later in this file
+bool IsSprintActive(); // defined later in this file -- auto-mantle needs it in InjectControllerButtons
+bool IsMantleHintCurrentlyShowing(); // defined later in this file -- auto-mantle's real ledge gate
+bool g_moneyShareButtonWasHeld = false;
 }
 
 extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
@@ -822,6 +1055,19 @@ extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
         out |= 0x8;
     }
     g_interactButtonWasHeld = xHeld;
+
+    // Issue #57: money-sharing forward -- see g_moneyShareButtonWasHeld's own comment
+    // above. Scoped to "a menu is open, during Survival, that isn't the real pause
+    // menu" -- NOT the broad IsMenuActive() alone (would also fire in the main menu/
+    // options and incorrectly pop Friends open, since 'F' is Friends' own real menu
+    // bind). On X's own rising edge so a held press doesn't spam repeated keydowns.
+    if (xHeld && !g_moneyShareButtonWasHeld && IsMenuActive() && IsInSurvivalMode() &&
+        GetDvarInt("cl_paused") == 0) {
+        LogFromController("[money-share-diag] X pressed in a Survival menu (not paused) -- forwarding real 'F' (+activate)");
+        ForwardKeyToMenuForShare(kLocalClientIndex, kKeyMoneyShare, 1);
+        ForwardKeyToMenuForShare(kLocalClientIndex, kKeyMoneyShare, 0);
+    }
+    g_moneyShareButtonWasHeld = xHeld;
 
     {
         static bool s_fireHeldForDiag = false;
@@ -935,6 +1181,56 @@ extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
         case 1: out |= 0x200u; break; // crouch
         case 2: out |= 0x100u; break; // prone
         default: break;
+    }
+
+    // Auto-mantle (2026-08-03) -- STRICTLY opt-in, see mod_config.h's own comment
+    // for the full rationale/citation. Drives the exact same real +gostand command
+    // (0x400) Jump already uses -- confirmed the real, contextual mantle trigger
+    // (re_notes/iw5sp.md's "Mantle -- found, concretely" section: FUN_00568da0's
+    // real call FUN_004fafd0(param_1, "+gostand", ...), the engine's own real
+    // condition flags decide mantle-vs-stand-vs-nothing).
+    //
+    // REGRESSION FIXED same day, live-reported: "the sprint mantle is borked... it
+    // jumps always when trying to sprint." Root cause: +gostand is NOT a safe no-op
+    // absent a real ledge -- it's literally the SAME usercmd bit (0x400) as Jump, so
+    // forcing it continuously while sprinting+forward with nothing to mantle over
+    // just makes the player jump repeatedly, exactly like holding Jump would. Fixed
+    // by gating on the game's own REAL "is there actually a mantleable ledge right
+    // now" signal instead of inferring it from stance+stick alone: this project
+    // already detects the real native "Press A to..." mantle hint text draw
+    // elsewhere in this file (isMantleHint, matched on its real resolved key name
+    // "SPACE") to render it -- IsMantleHintCurrentlyShowing() exposes that exact
+    // same detection (accumulated during rendering, committed once per frame; see
+    // its own comment for the one-frame-lag this introduces, imperceptible at
+    // 60fps) read-only here. Auto-mantle now only fires when the engine itself has
+    // ALREADY decided a ledge is mantleable, sprinting+stick-cone is additionally
+    // required, and the real "any" mantle attempt still only reduces to Jump's own
+    // existing behavior at that specific moment (never idle-frame jump-spam again).
+    // Cooldown (2026-08-03, user-requested): once a real auto-mantle fires, suppress
+    // re-triggering for kAutoMantleCooldownMs -- the mantle hint can plausibly stay
+    // showing for more than one frame around the same ledge (still sprinting into
+    // it, or a cluster of low obstacles), and without a cooldown that would fire
+    // every single frame the condition holds, not just once per real mantle.
+    static DWORD s_lastAutoMantleTriggerMs = 0;
+    constexpr DWORD kAutoMantleCooldownMs = 750;
+    if (g_modConfig.autoMantleEnabled && IsSprintActive() && IsMantleHintCurrentlyShowing() &&
+        (GetTickCount() - s_lastAutoMantleTriggerMs) >= kAutoMantleCooldownMs) {
+        float amLeftX, amLeftY, amRightX, amRightY;
+        if (Controller_GetLeftStick(amLeftX, amLeftY) && Controller_GetRightStick(amRightX, amRightY)) {
+            float amMoveX, amMoveY, amLookX, amLookY;
+            RouteStickAxes(amLeftX, amLeftY, amRightX, amRightY, g_modConfig.stickLayout,
+                            amMoveX, amMoveY, amLookX, amLookY);
+            float amMagnitude = sqrtf(amMoveX * amMoveX + amMoveY * amMoveY);
+            if (amMoveY > 0.0f && amMagnitude >= g_modConfig.autoMantleMinStickMagnitude) {
+                constexpr float kPi = 3.14159265f;
+                float amHalfConeRad = (g_modConfig.autoMantleForwardConeDegrees * 0.5f) * (kPi / 180.0f);
+                float amAngleFromForward = atan2f(fabsf(amMoveX), amMoveY);
+                if (amAngleFromForward <= amHalfConeRad) {
+                    out |= 0x400u; // +gostand
+                    s_lastAutoMantleTriggerMs = GetTickCount();
+                }
+            }
+        }
     }
 
     if (out == 0) return;
@@ -2875,6 +3171,107 @@ bool g_inSpecOpsFlow = false;
 // on top of an unverified assumption (this project's own standing methodology).
 int g_menuListItemOrdinalThisFrame = 0;
 
+// ---- Auto-mantle's real ledge-availability gate (2026-08-03, issue #62 follow-up) -
+//
+// g_mantleHintDrawnThisFrame accumulates during THIS frame's Hook_DrawGlyphText
+// calls (set true wherever isMantleHint fires, see that block's own comment) --
+// rendering and the gameplay-tick InjectControllerButtons run on different hook
+// points, so a value can't be read directly across them within the same frame.
+// Committed to the stable g_mantleHintShowingLastFrame once per frame (in
+// ResetMenuListItemOrdinalForFrame, alongside every other per-frame reset), which
+// IsMantleHintCurrentlyShowing() below exposes read-only. This introduces at most
+// one frame (~16ms at 60fps) of lag between the native hint appearing and
+// auto-mantle noticing -- imperceptible, same accepted precedent as this file's
+// other one-frame-lag fixes.
+bool g_mantleHintDrawnThisFrame = false;
+bool g_mantleHintShowingLastFrame = false;
+bool IsMantleHintCurrentlyShowing() { return g_mantleHintShowingLastFrame; }
+
+// ---- Automatic list-glyph positioning (2026-08-03, issue #51 follow-up) -----------
+//
+// Every hand-built kManualGlyphPositions entry this session (CAMPAIGN_BUTTON_LIST's
+// nested-modal fix, the main-menu row, SWF_COMMON_POPUP_NAME's bottom-anchor variant,
+// SO_LEVELS_BUTTON_LIST's depth=4 reuse, ...) was ultimately built from the SAME three
+// live-reliable signals: TryGetRealFocusedGroupAndIndex() (real focused index, direct
+// itemDef memory read, no script-cooperation dependency), SumDirectIndexedGlyphWidthsBefore()
+// (real measured text-end position, no per-screen estimate needed), and this frame's
+// own real (param_2, param_3) draw calls. Every regression this session (game_select_button's
+// off-by-one, SWF_COMMON_POPUP_NAME's bottom-anchor, SO_LEVELS_BUTTON_LIST's centered-vs-
+// right-aligned confusion, the corner-hint slot-starvation bug) came from hand-copying a
+// SNAPSHOT of these signals into a static table entry instead of re-deriving them live
+// every frame -- a static table can only ever be as correct as the one screen state it was
+// calibrated against, and every new reuse of a shared group name needs its own entry, its
+// own live capture, its own round of live-testing. This block re-derives the position from
+// those same three signals FRESH every frame instead, needing no per-screen table entry at
+// all.
+//
+// User-requested (2026-08-03): keep kManualGlyphPositions / TryGetManualGlyphPosition and
+// the ordinal-fallback path's own draw logic FULLY INTACT (not deleted) behind this same
+// toggle, until this automatic path is confirmed reliable across the screens the manual
+// table already covers. Flip to false to fall back to the old behavior instantly; nothing
+// about the old code paths was changed.
+//
+// DISABLED 2026-08-03, same day, after a live test: user-reported "it regressed, this
+// method is proven unreliable and per menu screenshot based setup is the correct method."
+// Reverted to false per that direct verdict. Code kept in place (not deleted) in case a
+// future attempt wants to build on the run-detection idea, but the manual per-screen
+// table + live-measurement calibration approach is the standing method going forward,
+// not this one.
+constexpr bool kUseAutomaticListGlyphPositioning = false;
+
+struct AutoGlyphCandidate { float y; float textEndX; };
+constexpr int kMaxAutoGlyphCandidates = 48;
+AutoGlyphCandidate g_autoGlyphCandidates[kMaxAutoGlyphCandidates];
+int g_autoGlyphCandidateCount = 0;
+
+// Finds the longest run of candidates (already collected this frame by
+// Hook_DrawGlyphText, sorted here by Y) whose consecutive Y-spacing is constant
+// (within a small tolerance) -- the signature of a real, evenly-spaced list, which
+// unrelated decorative/preview-panel text essentially never coincidentally matches.
+// realIndex then indexes directly into that run (0-based). No group-specific
+// calibration, no static table, no per-screen offset -- self-calibrates from
+// whatever this exact frame actually drew. Returns false (don't draw) if realIndex
+// falls outside the best run's length, e.g. the focused item scrolled out of the
+// currently-drawn range this frame, rather than guessing a wrong position.
+bool TryGetAutomaticGlyphPosition(int realIndex, float& outX, float& outY)
+{
+    int n = g_autoGlyphCandidateCount;
+    if (realIndex < 0 || n < 2) return false;
+
+    AutoGlyphCandidate sorted[kMaxAutoGlyphCandidates];
+    memcpy(sorted, g_autoGlyphCandidates, sizeof(AutoGlyphCandidate) * n);
+    std::sort(sorted, sorted + n, [](const AutoGlyphCandidate& a, const AutoGlyphCandidate& b) {
+        return a.y < b.y;
+    });
+
+    constexpr float kMinRealListStepPx = 20.0f; // filters out near-duplicate Y from unrelated overlapping draws
+    constexpr float kStepToleragePx = 4.0f;
+    int bestStart = 0, bestLen = 1;
+    int curStart = 0, curLen = 1;
+    float curStep = -1.0f;
+    for (int i = 1; i < n; ++i) {
+        float step = sorted[i].y - sorted[i - 1].y;
+        if (step > kMinRealListStepPx && (curStep < 0.0f || fabsf(step - curStep) < kStepToleragePx)) {
+            if (curStep < 0.0f) curStep = step;
+            ++curLen;
+        } else {
+            if (curLen > bestLen) { bestLen = curLen; bestStart = curStart; }
+            curStart = i;
+            curLen = 1;
+            curStep = -1.0f;
+        }
+    }
+    if (curLen > bestLen) { bestLen = curLen; bestStart = curStart; }
+
+    if (bestLen < 2 || realIndex >= bestLen) return false;
+    const AutoGlyphCandidate& c = sorted[bestStart + realIndex];
+    constexpr float kIconGapAfterText = 12.0f; // matches the ordinal-fallback path's own established gap
+    constexpr float kMenuHintVerticalNudge = -18.0f; // matches every other corner/list hint in this file
+    outX = c.textEndX + kIconGapAfterText;
+    outY = c.y + kMenuHintVerticalNudge;
+    return true;
+}
+
 namespace {
 using OpenMenuByNameFn = int(__cdecl*)(void* ctx, const char* name);
 void* g_orig_00544a50 = nullptr;
@@ -3044,21 +3441,15 @@ int g_currentSelIndex = -1;
 // the big comment right before that clear for why this needed to move.
 bool g_specOpsModalSticky = false;
 
-void UpdateNavGroupTrackingFromResolvedValue(const char* value)
+// Shared by both real ui_swf_selection shapes below (plain "<name>_<digit>" and the
+// macro-call "SWF_POPUP_BUTTON_NAME(<name>,<index>)") -- factored out (2026-08-02,
+// full .menu-file audit) so a future third shape only needs to parse out
+// (groupName, index) and call this, rather than re-implementing the sticky-clear +
+// nav-group-cache bookkeeping a second time. baseName must already be NUL-terminated
+// and within g_currentSelGroupName's size limit -- callers are expected to have
+// validated that before calling.
+void ApplyResolvedSelection(const char* baseName, int index)
 {
-    size_t len = strlen(value);
-    if (len == 0 || len >= sizeof(g_currentSelGroupName)) return;
-    size_t i = len;
-    while (i > 0 && isdigit(static_cast<unsigned char>(value[i - 1]))) --i;
-    if (i == len || i == 0 || value[i - 1] != '_') return; // no trailing "_<digits>" -- not a selection value
-    size_t baseLen = i - 1;
-    if (baseLen == 0 || baseLen >= sizeof(g_currentSelGroupName)) return;
-    int index = atoi(value + i);
-
-    char baseName[64];
-    memcpy(baseName, value, baseLen);
-    baseName[baseLen] = '\0';
-
     strncpy_s(g_currentSelGroupName, baseName, _TRUNCATE);
     g_currentSelIndex = index;
 
@@ -3090,6 +3481,69 @@ void UpdateNavGroupTrackingFromResolvedValue(const char* value)
     g_navGroupCacheNext = (g_navGroupCacheNext + 1) % kNavGroupCacheSize;
     strncpy_s(fresh.name, baseName, _TRUNCATE);
     fresh.maxIndexSeen = index;
+}
+
+// Full .menu-file audit (2026-08-02, forked across the whole 319-file ui_swf_selection
+// corpus) found exactly TWO real runtime shapes ui_swf_selection ever actually takes
+// (a third, "SWF_COMMON_POPUP_NAME_<digit>", already matches the plain shape below and
+// needs no new code) -- confirmed via live proxy_d3d9.log capture, not just the .menu
+// source: plain "<name>_<digit>" (handled below), and a macro-call-shaped
+// "SWF_POPUP_BUTTON_NAME(<name>,<index>)" (real captured examples:
+// "SWF_POPUP_BUTTON_NAME(ASR_POPUP,10)", "SWF_POPUP_BUTTON_NAME(LB_FILTER,0)") used by
+// difficulty popups, friend/clan/recent context menus, leaderboard filter popups, and
+// both character-select screens. This is a real, literal runtime string -- NOT a macro
+// that expands to something else at runtime, confirmed by grepping actual resolved
+// values in the log. Tried FIRST since it can never collide with the plain shape (it
+// ends in ')', which the plain parser's own trailing-digit check already safely
+// rejects -- confirmed this does NOT silently misparse today, it just falls through
+// unrecognized).
+bool TryParsePopupButtonNameSelection(const char* value, size_t len, char* outBaseName, int& outIndex)
+{
+    constexpr char kPrefix[] = "SWF_POPUP_BUTTON_NAME(";
+    constexpr size_t kPrefixLen = sizeof(kPrefix) - 1;
+    if (len <= kPrefixLen || value[len - 1] != ')') return false;
+    if (_strnicmp(value, kPrefix, kPrefixLen) != 0) return false;
+
+    const char* inner = value + kPrefixLen;
+    size_t innerLen = len - kPrefixLen - 1; // drop the trailing ')'
+    const char* comma = static_cast<const char*>(memchr(inner, ',', innerLen));
+    if (!comma || comma == inner) return false;
+
+    size_t groupLen = comma - inner;
+    if (groupLen == 0 || groupLen >= sizeof(g_currentSelGroupName)) return false;
+    const char* indexStr = comma + 1;
+    size_t indexLen = (inner + innerLen) - indexStr;
+    if (indexLen == 0 || !isdigit(static_cast<unsigned char>(indexStr[0]))) return false;
+
+    memcpy(outBaseName, inner, groupLen);
+    outBaseName[groupLen] = '\0';
+    outIndex = atoi(indexStr);
+    return true;
+}
+
+void UpdateNavGroupTrackingFromResolvedValue(const char* value)
+{
+    size_t len = strlen(value);
+    if (len == 0 || len >= sizeof(g_currentSelGroupName)) return;
+
+    char macroBaseName[64];
+    int macroIndex = 0;
+    if (TryParsePopupButtonNameSelection(value, len, macroBaseName, macroIndex)) {
+        ApplyResolvedSelection(macroBaseName, macroIndex);
+        return;
+    }
+
+    size_t i = len;
+    while (i > 0 && isdigit(static_cast<unsigned char>(value[i - 1]))) --i;
+    if (i == len || i == 0 || value[i - 1] != '_') return; // no trailing "_<digits>" -- not a selection value
+    size_t baseLen = i - 1;
+    if (baseLen == 0 || baseLen >= sizeof(g_currentSelGroupName)) return;
+    int index = atoi(value + i);
+
+    char baseName[64];
+    memcpy(baseName, value, baseLen);
+    baseName[baseLen] = '\0';
+    ApplyResolvedSelection(baseName, index);
 }
 
 // Returns the most recently observed (group, index) pair, plus that group's own
@@ -3222,6 +3676,459 @@ void LogFocusedItemNameResult()
     }
 }
 } // namespace
+
+// Shared "is THIS list's own selIndex genuinely the currently-focused item" check
+// (2026-08-02) -- factored out of the highlighted-item A-glyph block below so the
+// manual glyph-position table (see kManualGlyphPositions) can use the exact same
+// name-based verification without needing a live text-draw call in scope. Reliable
+// two ways: independently confirmed live via `sameObject=1` cross-checks against
+// the raw menu-stack array (see known_issues.md issue #51's live-memory-analysis
+// section) and via getfocuseditemname()'s own real name string, which cannot
+// coincidentally match a background/dimmed layer's item (different group name).
+bool GetGenuinelyFocusedGroupSelection(int& outIndex)
+{
+    int selIndex = -1, selMaxIndexSeen = -1;
+    if (!TryGetCurrentSelectionGroupAndIndex(selIndex, selMaxIndexSeen)) return false;
+    char expectedFocusedName[80] = {};
+    sprintf_s(expectedFocusedName, "%s_%d", g_currentSelGroupName, selIndex);
+    if (_stricmp(g_focusedItemName, expectedFocusedName) != 0) return false;
+    outIndex = selIndex;
+    return true;
+}
+
+// Manual per-screen/per-group A-glyph position table (2026-08-02, known_issues.md
+// issue #51's "Nested-modal positioning bug"). Six Ghidra passes (static, -noanalysis)
+// plus a live full-process-memory dump of the real print-command record (confirmed
+// via MiniDumpWriteDump + a raw byte scan for the record's own real X/Y floats) all
+// converge on the same conclusion: the engine's text-draw command queue carries
+// ONLY rendering data (X, Y, font, X/Y scale, color, inline text) with zero back-
+// reference to the itemDef that produced it -- confirmed empirically by reading the
+// ENTIRE real 0x54-byte record for this exact popup's "Yes"/"No" buttons out of a
+// live memory dump and finding every field accounted for by known rendering fields,
+// none of them pointing into the itemDef heap range. This is not a "not found yet"
+// gap -- the link does not exist at the data level, so no amount of further static
+// or dynamic tracing will recover it. A manual, per-group calibrated position table
+// is the correct architecture here, not a stopgap.
+//
+// Coordinates are REAL, not estimated: read directly from the live record for the
+// quit-confirmation variant of this shared popup group (also used for the display-
+// resize confirmation) -- "Yes" text drawn at (686.0, 603.0), "No" at (686.0, 653.0),
+// both at font scale 1.5. The icon X offset is a fixed estimate past these short
+// 2-4 letter labels (not a live text-width measurement, since the manual-position
+// path doesn't have a real draw call in scope to measure) -- may want a small visual
+// nudge after in-game confirmation.
+// Explicit per-index positions rather than a uniform base+delta formula: the
+// batch capture below found real lists that aren't evenly spaced in a single
+// axis (right-aligned text with variable width, or genuinely irregular gaps),
+// so a linear formula would silently be wrong for those. requiredDepth
+// disambiguates the same literal group name reused at different nesting depths
+// with a genuinely different on-screen position (e.g. LEVELS_BUTTON_LIST is
+// reused for both the act's mission list and a deeper per-mission sub-list).
+constexpr int kManualGlyphMaxItems = 16; // bumped from 15 (2026-08-03) for Survival's own 16-item map-select list
+struct ManualGlyphEntry {
+    const char* groupName;
+    int requiredDepth; // -1 = match at any depth
+    float iconOffsetX; // added to the item's own real X (append-after-text convention)
+    int count;
+    float itemX[kManualGlyphMaxItems];
+    float itemY[kManualGlyphMaxItems];
+    // bottomAnchorPopup (2026-08-03, issue #51 follow-up): opt-in only. When true,
+    // TryGetManualGlyphPosition() shifts the focused item's own local index up by
+    // (count - siblingCount) whenever this instance has fewer real items than
+    // `count` -- for shared popup groups genuinely reused across variants with
+    // different real item counts, bottom-anchored to the same grid (confirmed live
+    // for SWF_COMMON_POPUP_NAME: "Choose Content Pack"'s 2 real items land on the
+    // 3-item "Leave Lobby?" table's own index1/index2 rows, not index0/index1).
+    // MUST default false: `game_select_button`'s own table entry uses a similar-
+    // looking count/index scheme for a COMPLETELY different reason (a placeholder
+    // slot 0 that's never a real sibling at all, see its own comment) -- applying
+    // this same shift there corrupted an already-correct index by +1, a real,
+    // shipped regression caught live the same day this field was added. Only ever
+    // enable per-entry, never make this the default behavior.
+    bool bottomAnchorPopup = false;
+};
+
+constexpr float kManualGlyphVerticalNudge = -18.0f; // matches kMenuHintVerticalNudge elsewhere
+
+// Batch capture (2026-08-02, 25 live MiniDumpWriteDump snapshots across screens
+// reachable in one pass, cross-referenced against each dump's real menu-stack/
+// itemDef state). Six Ghidra passes (static, -noanalysis) plus this live dump
+// analysis (MiniDumpWriteDump + a raw byte scan for the real print-command
+// records) converged on: the engine's text-draw command queue carries only
+// rendering data (X, Y, font, scale, color, inline text) with zero itemDef
+// back-reference -- confirmed by reading an entire real 0x54-byte record and
+// finding every field accounted for by known rendering fields, none pointing
+// into the itemDef heap range. Not a "not found yet" gap; the link does not
+// exist at the data level, so a manual per-screen table is the correct
+// architecture, not a stopgap. Coordinates below are real, read directly from
+// the live print-command records, not estimated.
+//
+// Known partial gap: SWF_COMMON_DESC_RESIZE_POPUP_NAME is not fully uniform --
+// the quit-confirm and video-restore-confirm variants both land at Yes=603/
+// No=653 (used below), but the "New Game overwrite" variant (reached via
+// CAMPAIGN_BUTTON_LIST's New Game item) shifts to Yes=628/No=678 because two
+// extra lines of description text push the buttons down -- same shared group
+// name, genuinely different position. Left uncorrected for that one specific
+// variant rather than blocking on a way to disambiguate it from the other two.
+//
+// KEY FINDING (2026-08-02, verified across 5 independent lists by computing each
+// real captured item's own text-end position -- start X + charCount*~13.3px --
+// and checking convergence): every vertical hub/list-style menu in this game
+// (CAMPAIGN_BUTTON_LIST, OPTIONS_LIST's tab selector, SPECOPS_BUTTON_LIST,
+// SWF_BUTTON_LIST, LEVELS_BUTTON_LIST) right-aligns its text to the SAME shared
+// column, averaging ~594-608 across all five with no per-list pattern to the
+// small variance (just noise from the char-width estimate) -- a single,
+// game-wide UI convention, not five separate ones. All of them use a common
+// itemX=605 below rather than each item's own real (variable, left-edge) X,
+// exactly like LEVELS_BUTTON_LIST's own reasoning. This was caught and fixed
+// after an initial version of this table wrongly used each item's own real X
+// (a left-aligned assumption) for CAMPAIGN_BUTTON_LIST/OPTIONS_LIST, which
+// would have scattered the icon across a ~500-650px range instead of a
+// consistent column.
+//
+// Popups (SWF_COMMON_DESC_RESIZE_POPUP_NAME, SWF_COMMON_POPUP_NAME,
+// popmenu_difficulty, popup_friend_list_actions) are DIFFERENT: confirmed
+// fixed-left at X=686 regardless of label length (e.g. "Yes"/"No" both at
+// exactly 686), not right-aligned -- kept as per-item real X for those.
+//
+// game_select_button (SP main menu) is ALSO different again: a horizontal row
+// of 3 independent buttons (not a shared vertical column), each left-aligned
+// within its own button area -- kept as per-item real X + a fixed offset sized
+// for the longest label.
+//
+// Deliberately NOT covered this pass (left on the pre-existing ordinal-based
+// fallback, not worse than before):
+//  - LEVELS_BUTTON_LIST at depth=4 (a deeper per-mission sub-list reached from
+//    within the depth=3 mission list) -- its capture showed duplicate near-
+//    identical text at slightly different positions (a drop-shadow/outline
+//    rendering artifact, not separate items) mixed with genuinely new content,
+//    not clean enough to calibrate confidently.
+//  - OPTIONS_LIST indices 3+ (Look/Movement/Actions/Advanced Video/Voice tabs)
+//    -- a resize-popup capture with OPTIONS_LIST_6 focused showed no visible
+//    7th row at the naive 45px-spacing prediction, meaning tabs beyond index 2
+//    are NOT evenly spaced the same way; guessing here would be confidently
+//    wrong rather than just imprecise.
+//  - Keybind editing screens (Movement/Actions/Look sub-lists -- real item
+//    names like "forward"/"attack" as the focused name, e.g. dump13/14/15) --
+//    these don't populate a valid ui_swf_selection group/index pair at all
+//    (TryGetCurrentSelectionGroupAndIndex returns false), so neither the
+//    ordinal path nor this manual table can key off them today. This is a
+//    separate, deeper architectural gap (would need matching directly on
+//    g_focusedItemName's own real per-item name, bypassing the group/index
+//    scheme entirely), not a missing table entry.
+//  - PAUSE_LIST -- the only capture taken was contaminated by an end-game
+//    credits scroll running in the background at the same time, producing an
+//    unreliable merged text read ("Resume Credits"); needs a clean re-capture.
+//  - The "New Game overwrite" variant of SWF_COMMON_DESC_RESIZE_POPUP_NAME
+//    (shifts to Yes=628/No=678 due to extra description text, no
+//    disambiguating signal found from the same shared group name).
+constexpr ManualGlyphEntry kManualGlyphPositions[] = {
+    { "SWF_COMMON_DESC_RESIZE_POPUP_NAME", -1, 55.0f, 2, {686.0f, 686.0f}, {603.0f, 653.0f} },
+    // Covers "Choose Content Pack" (DLC/on-disk-content picker) and "Leave Lobby?"
+    // (Yes/No) -- confirmed live to share this exact container/position despite
+    // very different content. bottomAnchorPopup=true (2026-08-03): the 2-item
+    // "Choose Content Pack" variant is bottom-anchored to this 3-row grid (its
+    // real items land on this table's own index1/index2 Y values, not
+    // index0/index1) -- live-confirmed via issue #51's own diagnostic trail.
+    //
+    // OFFSET MODEL CHANGED (2026-08-03): originally text-relative (686 + a flat
+    // offset "past the label"), same convention as the other popups. User
+    // feedback on a "Leave Lobby?" screenshot: this box is noticeably WIDER than
+    // the others, so a text-relative offset left a large, inconsistent gap before
+    // the icon -- wanted it box-relative instead (icon sitting a fixed 10px
+    // margin from the box's own right edge, matching how the other popups already
+    // read visually). Since itemX is already uniform (686) across every slot in
+    // this shared table, a flat offsetX is *already* box-relative in effect once
+    // sized correctly -- no structural change needed, just a bigger value.
+    // Re-estimated from the screenshot (box right edge back-computed from the
+    // known real text-start X=686 and the icon's own previous X=986, using the
+    // image's own proportions) at ~1290; minus a 10px margin minus the icon's own
+    // ~42px draw width (kHintIconSize) puts the icon's own left edge at ~1238,
+    // i.e. offsetX=552. Still a screenshot-based estimate, not a live text-draw
+    // measurement (same limitation as every other manual-position entry) -- may
+    // need a small nudge once confirmed live.
+    //
+    // FINAL VISUAL NUDGE (2026-08-03): budged 30px left per live confirmation
+    // (552 -> 522).
+    { "SWF_COMMON_POPUP_NAME", -1, 522.0f, 3, {686.0f, 686.0f, 686.0f}, {504.0f, 554.0f, 603.0f}, true },
+    // Difficulty select (RECRUIT/REGULAR/HARDENED/VETERAN).
+    { "popmenu_difficulty", -1, 130.0f, 4, {686.0f, 686.0f, 686.0f, 686.0f}, {455.0f, 504.0f, 554.0f, 603.0f} },
+    // Friend context menu, "invite while in a party" variant (Invite to Party /
+    // Join Game) -- the fuller context menu (View/Message/Block/Report) elsewhere
+    // was not captured this pass and may use a different item count/position.
+    { "popup_friend_list_actions", -1, 200.0f, 2, {686.0f, 686.0f}, {554.0f, 603.0f} },
+    // Campaign hub (Resume/New Game/Mission Select/Options/Credits/Main Menu/Quit)
+    // -- right-aligned, shared column (see KEY FINDING above). requiredDepth
+    // relaxed to -1 (2026-08-03, second batch capture, 63 more live dumps):
+    // the SAME base=198/45px-spacing grid and ~605-615 right-aligned column
+    // was independently confirmed at MANY different depths for this exact
+    // group (Barracks tabs, weapon-category tabs, individual weapon lists all
+    // reuse "SWF_BUTTON_LIST" 3-6 levels deep with an identical grid) -- this
+    // is a single shared game-wide list-menu template, not a per-depth
+    // coincidence, so restricting to one specific depth was unnecessarily
+    // narrow and would miss dozens of real screens that reuse it.
+    { "CAMPAIGN_BUTTON_LIST", -1, 20.0f, 7,
+      {605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f},
+      {198.0f, 243.0f, 288.0f, 333.0f, 378.0f, 423.0f, 468.0f} },
+    // Options tab selector (Video/Audio/Controls) -- right-aligned shared
+    // column; only the first 3 of ~7 real tabs captured this pass (see the
+    // "deliberately not covered" note above for why higher indices aren't
+    // extrapolated).
+    { "OPTIONS_LIST", -1, 20.0f, 3, {605.0f, 605.0f, 605.0f}, {198.0f, 243.0f, 288.0f} },
+    // SP main menu (SPECIAL OPS / CAMPAIGN / MULTIPLAYER) -- a horizontal row,
+    // left-aligned per item (not right-aligned like the vertical lists above).
+    // offsetX sized to clear "MULTIPLAYER", the longest of the three.
+    //
+    // OFF-BY-ONE FIX (2026-08-03): originally indexed 0/1/2 for the three visible
+    // tiles, calibrated against the old ui_swf_selection-based selIndex. Once the
+    // focus signal switched to TryGetRealFocusedGroupAndIndex() (a direct itemDef-
+    // name-suffix read, issue #51's Campaign fix), live diagnostic logging showed
+    // realIndex is NEVER 0 across an extended session that cycled through all three
+    // tiles -- only 1/2/3 -- and using the old 0/1/2 table against these new 1/2/3
+    // indices put every glyph one slot right of the true button (confirmed live:
+    // "glyphs way too far horizontal"). Real cause: the itemDef array's own "_0"
+    // suffix belongs to a non-focusable background/decoration element sharing this
+    // group's naming convention, not a real button -- the 3 real tiles are genuinely
+    // suffixed _1/_2/_3. Index 0 kept as an unused placeholder slot (never looked up,
+    // since it never receives focus) rather than renumbering, so the real observed
+    // indices map directly.
+    //
+    // OFFSET RECALIBRATED (2026-08-03), same live re-test as the fix above: the
+    // original 170px offset landed mid-word on "SPECIAL OPS" ("SPECIAL [X]PS" in
+    // a user-supplied screenshot) rather than clearing it, despite the comment
+    // above claiming it was sized for "MULTIPLAYER" (a similar-length label) --
+    // the original estimate was simply too small for either. Increased to 260px,
+    // a screenshot-based re-estimate (roughly: 170px covered ~73% of "SPECIAL
+    // OPS"'s own rendered width, so ~233px clears it, +~25px gap). Still an
+    // estimate, not a live text-width measurement (this manual-position path has
+    // no draw call in scope to measure against, same limitation as every other
+    // entry in this table) -- may need another visual nudge once confirmed
+    // across all three tiles, not just Special Ops.
+    //
+    // CAMPAIGN SPECIAL-CASED (2026-08-03): confirmed live -- Special Ops and
+    // Multiplayer both look correct at the shared 260px offset now, but a second
+    // user-supplied screenshot showed Campaign's glyph landing almost at the
+    // tile's own right border, well past the word "CAMPAIGN" itself. Root cause:
+    // "CAMPAIGN" is only 8 characters vs. 11 for the other two labels, so the
+    // SAME flat 260px offset (correctly sized for the two longer words) overshoots
+    // a shorter one by a proportional amount. The struct only supports one shared
+    // offsetX per group, so rather than adding per-item offset support for one
+    // outlier, Campaign's own stored X (863) is nudged left by ~65px (to 798) to
+    // compensate -- 798+260=1058 lands the glyph directly after "CAMPAIGN" instead
+    // of near the tile edge. Special Ops (344) unchanged.
+    //
+    // FINAL VISUAL NUDGE (2026-08-03): Campaign and Multiplayer both budged 5px
+    // right per live confirmation (798->803, 1322->1327). Special Ops (344->349)
+    // added to the same +5px treatment in a follow-up request ("all main menu
+    // type entries...including spec ops, the glyphs are a bit too tight to the
+    // text") -- extended to every vertical hub/list entry in this table too, not
+    // just this row; see each entry's own iconOffsetX (15->20) below.
+    { "game_select_button", 1, 260.0f, 4, {0.0f, 349.0f, 803.0f, 1327.0f}, {0.0f, 458.0f, 458.0f, 458.0f} },
+    // Campaign act mission list (e.g. Act I: Hunter Killer/Persona Non
+    // Grata/Turbulence/Back on the Grid/Mind the Gap) -- right-aligned shared
+    // column. Mission NAMES differ per act, but this Y-grid (five 45px-spaced
+    // slots starting at 288) is expected to hold across acts since it's the
+    // same shared list container. Kept depth-specific (unlike the others
+    // above) -- confirmed live this SAME group name is reused one level
+    // deeper for a per-mission sub-list with a genuinely different Y-base.
+    { "LEVELS_BUTTON_LIST", 3, 20.0f, 5,
+      {605.0f, 605.0f, 605.0f, 605.0f, 605.0f},
+      {288.0f, 333.0f, 378.0f, 423.0f, 468.0f} },
+    // Same group, one level deeper (2026-08-03, second batch capture): the
+    // per-mission sub-list under an Act's own mission list (e.g. Act I:
+    // Prologue/Black Tuesday/Hunter Killer/Persona Non Grata/Turbulence/Back
+    // on the Grid/Mind the Gap). An earlier pass wrongly flagged this as "not
+    // clean enough to calibrate" -- what looked like contamination was just
+    // the FIRST entry's own text drawn 3x for a drop-shadow/outline effect
+    // (identical text at 3 near-identical Y values, e.g. 187/191/198),
+    // trivially distinguishable from real extra rows. Right-aligned column
+    // is slightly left of the ~605 norm (~583, still same convention), same
+    // base=198/45px grid as everything else. Acts II/III only populate 6 of
+    // these 7 slots; harmless, unused higher indices are just never reached.
+    { "LEVELS_BUTTON_LIST", 4, 20.0f, 7,
+      {583.0f, 583.0f, 583.0f, 583.0f, 583.0f, 583.0f, 583.0f},
+      {198.0f, 243.0f, 288.0f, 333.0f, 378.0f, 423.0f, 468.0f} },
+    // Special Ops hub (Find Online Match/Private Online Match/Solo Play/
+    // Callsign/Barracks/Store/Options/Main Menu/Quit) -- right-aligned shared
+    // column, 9 real items.
+    { "SPECOPS_BUTTON_LIST", -1, 20.0f, 9,
+      {605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f},
+      {198.0f, 243.0f, 288.0f, 333.0f, 378.0f, 423.0f, 468.0f, 513.0f, 558.0f} },
+    // The single most-reused list template in the game -- confirmed live as:
+    // MP lobby root (Start Op/Change Op/Select Difficulty/Select Role/
+    // Callsign/Barracks), Barracks' own top tab row (Leaderboards/Survival
+    // Armories), the Survival Armories' Weapons/Equipment/Air Support tabs,
+    // each weapon CATEGORY tab row (Handguns/Machine Pistols/Assault
+    // Rifles/...), and each individual weapon list within a category
+    // (Five Seven/USP .45/MP412/...) -- same base=198/45px grid and shared
+    // right-aligned column every time, 3-6 stack levels deep. Extended to 10
+    // items (some weapon-category lists run past the original 6).
+    { "SWF_BUTTON_LIST", -1, 20.0f, 10,
+      {605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f},
+      {198.0f, 243.0f, 288.0f, 333.0f, 378.0f, 423.0f, 468.0f, 513.0f, 558.0f, 603.0f} },
+    // Leaderboard map-row list (Village/Interchange/Underground/Dome/
+    // Mission/Seatown/Carbon/Bootleg/Hardhat/Fallen/Outpost/Lockdown/Arkaden/
+    // Downturn/Bakaara, and separately Bonus Maps variants e.g. Stay Sharp/
+    // Milehigh Jack/...) -- right-aligned shared column, 14 real map rows,
+    // base Y=288 (NOT 198 -- this screen has 2 real header rows, "Bonus Maps"
+    // tab + mode name, before the actual map list starts). This specific
+    // group name covers the team-survival leaderboard family; other
+    // leaderboard mode/duration combinations use differently-named groups
+    // per the .menu audit and were not captured.
+    { "LEADERBOARDS_BUTTON_LIST", -1, 20.0f, 14,
+      {605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f},
+      {288.0f, 333.0f, 378.0f, 423.0f, 468.0f, 513.0f, 558.0f, 603.0f, 648.0f, 693.0f, 738.0f, 783.0f, 828.0f, 873.0f} },
+    // Team Survival leaderboard's map-row list (Village/Interchange/
+    // Underground/Dome/Mission/Seatown/Carbon/Bootleg/Hardhat/Fallen/Outpost/
+    // Lockdown/Arkaden/Downturn/Bakaara) -- right-aligned shared column, 15
+    // real map rows. This specific group name is for the team-survival
+    // variant only; other leaderboard mode/duration combinations use
+    // differently-named groups per the .menu audit and were not captured.
+    { "leaderboard_survival_team_level", 4, 20.0f, 15,
+      {605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f},
+      {243.0f, 288.0f, 333.0f, 378.0f, 423.0f, 468.0f, 513.0f, 558.0f, 603.0f, 648.0f, 693.0f, 738.0f, 783.0f, 828.0f, 873.0f} },
+    // Survival's own solo/co-op map-select screen (RESISTANCE/VILLAGE/
+    // INTERCHANGE/UNDERGROUND/DOME/MISSION/SEATOWN/CARBON/BOOTLEG/HARDHAT/
+    // FALLEN/OUTPOST/LOCKDOWN/ARKADEN/DOWNTURN/BAKAARA), depth=4 -- SAME group
+    // name as the entry below, genuinely different real layout (2026-08-03,
+    // issue #51). First attempt excluded this depth entirely to fall through to
+    // the generic ordinal-based fallback path, live-confirmed WRONG: that path's
+    // frame-wide ordinal counter also counts this screen's own right-hand
+    // preview panel (title/description/difficulty/RANK-PLAYER-WAVES header),
+    // which draws in the SAME frame and throws the count off by a large,
+    // inconsistent amount -- user-reported the glyph landed 5-6 rows off (a
+    // MISSION selection drew the icon on RESISTANCE) and eventually onto the
+    // preview panel's OWN text ("Best Wave: 21") once the offset grew large
+    // enough. Same root cause this table was originally built to fix for OTHER
+    // screens (issue #51's own "ordinal counts every draw call in the frame,
+    // not just this list's own items").
+    //
+    // CORRECTED MODEL (2026-08-03): the first real-position attempt used each
+    // item's own real TEXT-START X (captured live) plus a flat 250px estimated
+    // offset, reasoning these were CENTERED/variable-width -- live-reported "way
+    // out of line horizontally... doesn't correlate with text length... too far
+    // right." Root cause of THAT: 250px was estimated from a much larger-font
+    // screen (game_select_button's main-menu tiles); this list's real font/scale
+    // is the same small size every other list uses. Measuring the REAL text-END
+    // position directly (via SumDirectIndexedGlyphWidthsBefore, the same
+    // technique the ordinal-fallback path already uses, added as a temporary
+    // live diagnostic) proved these items are NOT centered/variable at all --
+    // every single label's real end clusters tightly at 595-620 (Resistance=608,
+    // Village=603.5, Interchange=595, Dome=620, ...), i.e. this list uses the
+    // EXACT SAME universal ~605 right-aligned shared column as every other list
+    // in the table (CAMPAIGN_BUTTON_LIST, SPECOPS_BUTTON_LIST, etc.) -- the
+    // earlier "centered" read came from looking at each item's real START
+    // position only, which naturally varies with length for ANY right-aligned
+    // text, and was mistaken for centering. Simplified to the same
+    // itemX=605/offsetX=20 model as every other list; no per-item real X needed.
+    { "SO_LEVELS_BUTTON_LIST", 4, 20.0f, 16,
+      {605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f},
+      {198.0f, 243.0f, 288.0f, 333.0f, 378.0f, 423.0f, 468.0f, 513.0f, 558.0f, 603.0f, 648.0f, 693.0f, 738.0f, 783.0f, 828.0f, 873.0f} },
+    // Special Ops mission list reached from the MP-hosted lobby path (Village/
+    // Interchange/Underground/Dome/Mission/Seatown/Carbon/Bootleg/Hardhat/
+    // Fallen/Outpost/Lockdown/Arkaden/Downturn/Bakaara) -- right-aligned
+    // shared column, base Y=243 (one header row, the mode name, precedes the
+    // real map list here -- one row higher than LEADERBOARDS_BUTTON_LIST's
+    // base=288 since there's no separate "Bonus Maps" tab row in this path).
+    // requiredDepth=-1 (any OTHER depth than 4, handled by the dedicated entry
+    // above) -- unchanged from before this investigation.
+    { "SO_LEVELS_BUTTON_LIST", -1, 20.0f, 14,
+      {605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f},
+      {243.0f, 288.0f, 333.0f, 378.0f, 423.0f, 468.0f, 513.0f, 558.0f, 603.0f, 648.0f, 693.0f, 738.0f, 783.0f, 828.0f} },
+    // REAL GAMEPLAY, not a menu: Survival's in-game weapon-armory buy station
+    // (Refill Bullet Ammo/Handguns/Machine Pistols/Assault Rifles/Sub Machine
+    // Guns/Light Machine Guns/Sniper Rifles/Shotguns). Left-aligned, FIXED
+    // column (X=584 constant regardless of label length -- confirmed
+    // different convention from every menu list above), base Y=455, ~49.5px
+    // spacing. offsetX sized to clear "Light Machine Guns", the longest label.
+    { "WEAPON_POPUP", -1, 270.0f, 8,
+      {584.0f, 584.0f, 584.0f, 584.0f, 584.0f, 584.0f, 584.0f, 584.0f},
+      {455.0f, 504.0f, 554.0f, 603.0f, 653.0f, 702.0f, 752.0f, 801.0f} },
+    // Real pause menu (Resume Game/Options/Lower Difficulty/Last Checkpoint/
+    // Restart Mission/Quit) -- clean capture this time (the only earlier
+    // attempt was contaminated by a background credits scroll); right-aligned
+    // shared column, matches the universal base=198/45px grid.
+    { "PAUSE_LIST", -1, 20.0f, 6,
+      {605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f},
+      {198.0f, 243.0f, 288.0f, 333.0f, 378.0f, 423.0f} },
+    // In-game "Resume Game?" / "Leave Lobby?" confirm popup -- fixed-left at
+    // X=686 like every other popup, identical position to SWF_COMMON_POPUP_NAME
+    // (504/554/603) despite being a different group name -- another instance
+    // of the shared popup container reused for different content.
+    { "RESUME_POPUP", -1, 300.0f, 3, {686.0f, 686.0f, 686.0f}, {504.0f, 554.0f, 603.0f} },
+};
+
+// Verified-screens allowlist (2026-08-03, v0.3.0 release standard, issue #51).
+// User direction: "make a config toggle for any unconfirmed screens so glyphs
+// wont show broken only on verified screens" -- having an entry in
+// kManualGlyphPositions above is NOT evidence a screen actually works
+// (WEAPON_POPUP had one and was still broken; several other entries were
+// never re-confirmed after this session's repeated regressions). Rather than
+// ship a glyph that might be silently wrong on any of those unverified
+// screens, the actual visible draw is now gated on an explicit allowlist of
+// (groupName, depth) pairs the user has personally confirmed live in THIS
+// investigation -- everything else draws nothing (silent, not wrong) until
+// individually verified and added here. depth=-1 means "verified at any
+// depth" (matches kManualGlyphPositions' own convention). Diagnostic logging
+// (manual-glyph-diag / list-item-diag) stays unconditional so future
+// verification passes still have real data to work from -- only the actual
+// on-screen glyph is suppressed for unverified groups.
+struct VerifiedGlyphGroup { const char* groupName; int depth; };
+constexpr VerifiedGlyphGroup kVerifiedGlyphGroups[] = {
+    { "SWF_COMMON_POPUP_NAME", -1 },  // "Leave Lobby?" and "Choose Content Pack", both confirmed live 2026-08-03
+    { "CAMPAIGN_BUTTON_LIST", -1 },   // Campaign hub, confirmed live 2026-08-03
+    { "game_select_button", 1 },      // Main menu (Special Ops/Campaign/Multiplayer), confirmed live 2026-08-03
+};
+
+bool IsVerifiedGlyphGroup(const char* groupName, int depth)
+{
+    if (!groupName || groupName[0] == '\0') return false;
+    for (const auto& g : kVerifiedGlyphGroups) {
+        if (_stricmp(groupName, g.groupName) != 0) continue;
+        if (g.depth != -1 && g.depth != depth) continue;
+        return true;
+    }
+    return false;
+}
+
+// siblingCount (2026-08-03, issue #51 follow-up): the REAL number of items in
+// THIS instance sharing the focused item's group name, from
+// TryGetRealFocusedGroupAndIndex's own array walk. Some shared groups are reused
+// for variants with fewer real items than the table's calibrated max (e.g.
+// SWF_COMMON_POPUP_NAME's 3-slot "Leave Lobby?" table vs. the 2-item "Choose
+// Content Pack" variant) -- live-confirmed the real items in a smaller variant
+// are BOTTOM-anchored to the shared grid (Content Pack's 2 items land at the
+// table's own index1/index2 Y values, not index0/index1), so when the real
+// count is smaller than the table's, the focused item's own 0-based local index
+// is shifted up by (entry.count - siblingCount) before indexing the table.
+// Pass siblingCount <= 0 to skip this entirely (matches old behavior) for
+// callers that don't have it available.
+bool TryGetManualGlyphPosition(const char* groupName, int depth, int index, int siblingCount, float& outX, float& outY)
+{
+    for (const auto& entry : kManualGlyphPositions) {
+        if (_stricmp(groupName, entry.groupName) != 0) continue;
+        if (entry.requiredDepth != -1 && entry.requiredDepth != depth) continue;
+        int effectiveIndex = index;
+        if (entry.bottomAnchorPopup && siblingCount > 0 && siblingCount < entry.count) {
+            effectiveIndex = index + (entry.count - siblingCount);
+        }
+        if (effectiveIndex < 0 || effectiveIndex >= entry.count) continue;
+        outX = entry.itemX[effectiveIndex] + entry.iconOffsetX;
+        outY = entry.itemY[effectiveIndex] + kManualGlyphVerticalNudge;
+        return true;
+    }
+    return false;
+}
+
+bool HasManualGlyphPositionForGroup(const char* groupName, int depth)
+{
+    for (const auto& entry : kManualGlyphPositions) {
+        if (_stricmp(groupName, entry.groupName) != 0) continue;
+        if (entry.requiredDepth != -1 && entry.requiredDepth != depth) continue;
+        return true;
+    }
+    return false;
+}
 
 // ---- Special Ops nested-modal detection v3, allowlist-based (2026-08-01) ---------
 //
@@ -4500,7 +5407,137 @@ extern "C" void __cdecl InjectSyntheticBackHintIfNeeded()
 // overlay_hud.cpp's Hook_EndScene, once per real rendered frame.
 extern "C" void __cdecl ResetMenuListItemOrdinalForFrame()
 {
+    // BUG-051 nested-modal position bug -- testing the "the active/topmost menu's own
+    // real items are always the LAST N ordinals of the frame" hypothesis live (2026-08-02).
+    // Four dedicated Ghidra passes confirmed the real menu-stack/itemDef-array structures
+    // (see re_notes/known_issues.md) but could not find a direct itemDef->screen-position
+    // bridge -- this logs the data needed to verify or refute the hypothesis from a real
+    // repro instead. Only logs while a popup is actually stacked on something (depth > 1,
+    // the exact scenario that breaks today) and at least one item was counted, so normal
+    // single-layer play never spams this every rendered frame.
+    if (GetMenuStackDepth() > 1 && g_menuListItemOrdinalThisFrame > 0) {
+        void* fnMenu = GetTopmostActiveMenu();
+        void* rawMenu = GetRawTopOfStackMenu();
+        int activeItemCount = GetActiveMenuItemCount();
+        int rawTopItemCount = GetRawTopOfStackItemCount();
+        int selIndex = -1, selMaxIndexSeen = -1;
+        bool haveSelection = TryGetCurrentSelectionGroupAndIndex(selIndex, selMaxIndexSeen);
+        char buf[280];
+        sprintf_s(buf, "[ordinal-hypothesis-diag] frameTotalOrdinals=%d activeMenuItemCount=%d "
+                        "rawTopItemCount=%d fnMenu=%p rawMenu=%p sameObject=%d "
+                        "depth=%d selGroup=\"%s\" selIndex=%d predictedOrdinal=%d",
+                  g_menuListItemOrdinalThisFrame, activeItemCount, rawTopItemCount,
+                  fnMenu, rawMenu, (fnMenu == rawMenu) ? 1 : 0, GetMenuStackDepth(),
+                  haveSelection ? g_currentSelGroupName : "?", haveSelection ? selIndex : -1,
+                  (activeItemCount > 0 && haveSelection) ?
+                      (g_menuListItemOrdinalThisFrame - activeItemCount + selIndex) : -1);
+        LogFromController(buf);
+    }
+
+    // Manual per-group A-glyph position (2026-08-02, issue #51) -- fires once per
+    // frame, completely decoupled from the ordinal/draw-call matching above, for any
+    // group with a real calibrated entry in kManualGlyphPositions. See that table's
+    // own comment for why this replaces ordinal-derived position for these groups
+    // rather than being a temporary stand-in.
+    //
+    // Focus signal FIXED 2026-08-03: originally used the same getfocuseditemname()
+    // (g_focusedItemName) cross-check the older ordinal-based path uses -- live-
+    // confirmed broken for this purpose (not just this one screen): CAMPAIGN_BUTTON_LIST
+    // never calls getfocuseditemname() from its own .menu script at all, so
+    // g_focusedItemName sat frozen on the LAST screen that happened to trigger it
+    // (e.g. "game_select_button_2" from the main menu), never becoming true for
+    // CAMPAIGN_BUTTON_LIST's own items no matter how long you sat on that screen.
+    // Replaced with TryGetRealFocusedGroupAndIndex(), a direct itemDef-array memory
+    // read (same technique this project's own live-memory-dump calibration tooling
+    // already proved reliable) -- always live, every frame, regardless of whether
+    // any script ever calls the native function.
+    if (kUseAutomaticListGlyphPositioning) {
+        // NEW automatic path (2026-08-03) -- see TryGetAutomaticGlyphPosition's own
+        // big comment. Runs once per frame, after Hook_DrawGlyphText has already
+        // buffered every candidate this frame drew (g_autoGlyphCandidates).
+        static char s_lastAutoDiagKey[200] = "";
+        bool overlayOn = ShouldDrawGlyphOverlay();
+        char realGroup[64] = {};
+        int realIndex = -1, siblingCount = -1;
+        bool haveFocus = overlayOn && TryGetRealFocusedGroupAndIndex(realGroup, sizeof(realGroup), realIndex, siblingCount);
+        float autoX = 0.0f, autoY = 0.0f;
+        bool havePos = haveFocus && TryGetAutomaticGlyphPosition(realIndex, autoX, autoY);
+        char dkey[220];
+        sprintf_s(dkey, "%d|%d|%d|%s|%d|%d|%d", overlayOn ? 1 : 0, haveFocus ? 1 : 0,
+                  havePos ? 1 : 0, realGroup, realIndex, siblingCount, g_autoGlyphCandidateCount);
+        if (strcmp(dkey, s_lastAutoDiagKey) != 0) {
+            strncpy_s(s_lastAutoDiagKey, dkey, _TRUNCATE);
+            char dbuf[280];
+            sprintf_s(dbuf, "[auto-glyph-diag] overlayOn=%d haveFocus=%d havePos=%d "
+                            "realGroup=\"%s\" realIndex=%d siblingCount=%d candidates=%d x=%.1f y=%.1f",
+                      overlayOn ? 1 : 0, haveFocus ? 1 : 0, havePos ? 1 : 0,
+                      realGroup, realIndex, siblingCount, g_autoGlyphCandidateCount, autoX, autoY);
+            LogFromController(dbuf);
+        }
+        if (havePos) {
+            char aAsset[32] = {};
+            if (TryGetMenuGlyphAssetNameForKeyName("ENTER", aAsset, sizeof(aAsset))) {
+                RequestMenuHintOverlay(autoX, autoY, "", "", aAsset);
+            } else {
+                static bool s_loggedAutoAssetFail = false;
+                if (!s_loggedAutoAssetFail) {
+                    s_loggedAutoAssetFail = true;
+                    LogFromController("[auto-glyph-diag] TryGetMenuGlyphAssetNameForKeyName(\"ENTER\") FAILED");
+                }
+            }
+        }
+        g_autoGlyphCandidateCount = 0;
+    } else {
+        // OLD manual-table path -- fully preserved, unchanged. See
+        // kManualGlyphPositions' own comment for the full history. Kept available
+        // behind kUseAutomaticListGlyphPositioning=false until the automatic path
+        // above is confirmed reliable across every screen this one already covers.
+        static char s_lastDiagKey[200] = "";
+        bool overlayOn = ShouldDrawGlyphOverlay();
+        char realGroup[64] = {};
+        int manualSelIndex = -1;
+        int siblingCount = -1;
+        bool haveFocus = overlayOn && TryGetRealFocusedGroupAndIndex(realGroup, sizeof(realGroup), manualSelIndex, siblingCount);
+        float manualX = 0.0f, manualY = 0.0f;
+        bool havePos = haveFocus &&
+            TryGetManualGlyphPosition(realGroup, GetMenuStackDepth(), manualSelIndex, siblingCount, manualX, manualY);
+        bool isVerified = havePos && IsVerifiedGlyphGroup(realGroup, GetMenuStackDepth());
+        char dkey[220];
+        sprintf_s(dkey, "%d|%d|%d|%d|%s|%d|%d", overlayOn ? 1 : 0, haveFocus ? 1 : 0,
+                  havePos ? 1 : 0, isVerified ? 1 : 0, realGroup, manualSelIndex, siblingCount);
+        if (strcmp(dkey, s_lastDiagKey) != 0) {
+            strncpy_s(s_lastDiagKey, dkey, _TRUNCATE);
+            char dbuf[300];
+            sprintf_s(dbuf, "[manual-glyph-diag] overlayOn=%d haveFocus=%d havePos=%d verified=%d "
+                            "realGroup=\"%s\" realIndex=%d siblingCount=%d depth=%d x=%.1f y=%.1f",
+                      overlayOn ? 1 : 0, haveFocus ? 1 : 0, havePos ? 1 : 0, isVerified ? 1 : 0,
+                      realGroup, manualSelIndex, siblingCount, GetMenuStackDepth(), manualX, manualY);
+            LogFromController(dbuf);
+        }
+        // v0.3.0 release standard (2026-08-03): only draw on groups explicitly
+        // verified live -- see kVerifiedGlyphGroups' own comment. havePos alone
+        // (a table entry exists and matched) is deliberately NOT sufficient.
+        if (havePos && isVerified) {
+            char aAsset[32] = {};
+            if (TryGetMenuGlyphAssetNameForKeyName("ENTER", aAsset, sizeof(aAsset))) {
+                RequestMenuHintOverlay(manualX, manualY, "", "", aAsset);
+            } else {
+                static bool s_loggedAssetFail = false;
+                if (!s_loggedAssetFail) {
+                    s_loggedAssetFail = true;
+                    LogFromController("[manual-glyph-diag] TryGetMenuGlyphAssetNameForKeyName(\"ENTER\") FAILED");
+                }
+            }
+        }
+    }
+
     g_menuListItemOrdinalThisFrame = 0;
+
+    // Auto-mantle's real ledge-availability gate (issue #62 follow-up): commit this
+    // frame's accumulated mantle-hint-drawn state to the stable flag
+    // InjectControllerButtons reads, then reset the accumulator for the next frame.
+    g_mantleHintShowingLastFrame = g_mantleHintDrawnThisFrame;
+    g_mantleHintDrawnThisFrame = false;
 }
 
 // ---- HUD-text visibility-test state (task #6/#34 follow-up, 2026-07-21) ------------
@@ -4529,6 +5566,33 @@ void __cdecl Hook_DrawGlyphText(
     unsigned param_16, unsigned param_17, unsigned param_18, unsigned param_19,
     unsigned param_20, unsigned param_21)
 {
+    // TEMP diagnostic (2026-08-03, issue #51 follow-up): LEADERBOARDS_BUTTON_LIST
+    // real-position/real-index calibration, per the confirmed manual-per-screen
+    // method. Measures each item's real text-end position (SumDirectIndexedGlyphWidthsBefore)
+    // AND the real itemDef-based focused index (TryGetRealFocusedGroupAndIndex) together
+    // in one line, so the two screens reusing this group name (the map-select list where
+    // "BONUS MAPS" is itself a real navigable index, and the separate 6-item Solo/Team
+    // mode-category sub-screen) can each get their own correctly-indexed table entry.
+    // Remove once both are fixed and confirmed live.
+    {
+        char diagRealGroup[64] = {};
+        int diagRealIndex = -1, diagSiblingCount = -1;
+        if (TryGetRealFocusedGroupAndIndex(diagRealGroup, sizeof(diagRealGroup), diagRealIndex, diagSiblingCount) &&
+            _stricmp(diagRealGroup, "LEADERBOARDS_BUTTON_LIST") == 0 &&
+            LooksLikeValidPointer(reinterpret_cast<uintptr_t>(param_1))) {
+            __try {
+                int rawWidth = SumDirectIndexedGlyphWidthsBefore(
+                    reinterpret_cast<const DiagFont*>(fontArg), param_1, strlen(param_1));
+                float textEndX = (rawWidth >= 0) ? (param_2 + static_cast<float>(rawWidth) * param_5) : -1.0f;
+                char rawBuf[280];
+                sprintf_s(rawBuf, "[leaderboards-verify-diag] text=\"%.60s\" p2=%.1f p3=%.1f p5=%.3f textEndX=%.1f depth=%d realIndex=%d siblingCount=%d",
+                    param_1, param_2, param_3, param_5, textEndX, GetMenuStackDepth(), diagRealIndex, diagSiblingCount);
+                LogFromController(rawBuf);
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+            }
+        }
+    }
+
     // ---- one-shot HUD-text visibility injection (task #6/#34 follow-up, 2026-07-21) -
     // See the big comment above InjectFontGlyphVisibilityTest_HudBigFont's own
     // definition for the full rationale. Consumes the arm flag exactly once, regardless
@@ -4738,6 +5802,22 @@ void __cdecl Hook_DrawGlyphText(
                             memcpy(prefixText, param_1, prefixLen);
                             prefixText[prefixLen] = '\0';
 
+                            // BUG-004 follow-up (2026-08-02): live-captured proof that Survival's
+                            // ready-up hint can be a genuinely TWO-LINE native string joined by an
+                            // embedded '\n' when a teammate has already readied up --
+                            // "Teammate ready\nPress ^3F5^7 to ready up: 23" is ONE draw call, ONE
+                            // color-highlight span. Split it here (generic, not ready-up-specific)
+                            // so the first line renders as its own row instead of either garbling
+                            // the combined text or (after the "Hold Y" override below) silently
+                            // losing "Teammate ready" entirely.
+                            char topLineText[128] = {};
+                            char* embeddedNewline = strchr(prefixText, '\n');
+                            if (embeddedNewline) {
+                                *embeddedNewline = '\0';
+                                strncpy_s(topLineText, prefixText, _TRUNCATE);
+                                memmove(prefixText, embeddedNewline + 1, strlen(embeddedNewline + 1) + 1);
+                            }
+
                             char suffixText[128] = {};
                             if (span.markerEnd < textLen) {
                                 size_t suffixLen = textLen - span.markerEnd;
@@ -4763,6 +5843,17 @@ void __cdecl Hook_DrawGlyphText(
                             // -- small empirical nudge, not a new transform.
                             constexpr float kHintVerticalNudge = 6.0f;
                             bool isMantleHint = _stricmp(highlighted, "SPACE") == 0;
+                            // Auto-mantle gate (2026-08-03, issue #62 follow-up): this
+                            // IS the real, native "is a mantleable ledge actually here right
+                            // now" signal -- the same one this project already detects to
+                            // draw this exact hint. User-reported the naive sprint+stick-cone
+                            // gate alone was wrong: +gostand is literally the same usercmd bit
+                            // as Jump, so forcing it with no real ledge present just makes the
+                            // player jump repeatedly instead of being a safe no-op. Accumulates
+                            // into a per-frame flag (see g_mantleHintDrawnThisFrame's own
+                            // comment) rather than being read directly here, since this draw
+                            // call and InjectControllerButtons run on different hook points.
+                            if (isMantleHint) g_mantleHintDrawnThisFrame = true;
                             // Survival's ready-up hint (F5) sits at a genuinely different native
                             // row (p3=329 vs. pickup/buy-station's shared 718) -- user wants its
                             // position kept "similar to original" rather than pulled into the
@@ -4805,7 +5896,7 @@ void __cdecl Hook_DrawGlyphText(
                             // over one slot and silently evict each other.
                             GameplayHintSlotId slotId = isReadyUpHint ? GameplayHintSlotId::ReadyUp : GameplayHintSlotId::Interact;
                             RequestCustomHintOverlay(startX, startY, prefixText, suffixText, assetName, centerOnScreen,
-                                                       /*flashIcon=*/false, slotId);
+                                                       /*flashIcon=*/false, slotId, topLineText);
                             suppressRealDraw = true;
 
                             // See the big comment above g_awaitingHintContinuationFont --
@@ -5083,7 +6174,18 @@ void __cdecl Hook_DrawGlyphText(
     // (still may catch unrelated decorative smallFont text with no span, e.g. a
     // header -- a known, accepted imprecision for this diagnostic pass, per the
     // scoping already agreed with the user).
-    if (!suppressRealDraw && ShouldDrawGlyphOverlay()) {
+    //
+    // Gate changed 2026-08-02 from ShouldDrawGlyphOverlay() to IsMenuActive(): the
+    // [list-item-diag] log line below is this project's own live calibration data
+    // source for issue #51's manual per-screen position table -- gating it on
+    // ShouldDrawGlyphOverlay() made it silently stop firing whenever keyboard/mouse
+    // was detected as the active input method (issue #61's own hiding behavior),
+    // which is exactly the moment a keyboard-driven capture tool would try to read
+    // it -- a self-defeating race. The actual VISIBLE glyph draw request below still
+    // checks ShouldDrawGlyphOverlay() on its own (see the trustworthyMatch block),
+    // so this change only widens when the DIAGNOSTIC LOG fires, not when the glyph
+    // itself is allowed to render.
+    if (!suppressRealDraw && IsMenuActive()) {
         __try {
             if (LooksLikeValidPointer(reinterpret_cast<uintptr_t>(param_1)) &&
                 LooksLikeValidPointer(reinterpret_cast<uintptr_t>(fontArg))) {
@@ -5105,7 +6207,20 @@ void __cdecl Hook_DrawGlyphText(
                     for (size_t i = 0; i < textLen; ++i) {
                         if (!isspace(static_cast<unsigned char>(param_1[i]))) { isBlank = false; break; }
                     }
-                    if (!span.found && !isBlank) {
+                    if (!span.found && !isBlank && kUseAutomaticListGlyphPositioning) {
+                        // NEW automatic path (2026-08-03): just buffer this candidate's
+                        // real measured text-end position -- see TryGetAutomaticGlyphPosition's
+                        // own big comment for the full rationale. The actual draw decision
+                        // happens once per frame in ResetMenuListItemOrdinalForFrame, after
+                        // every candidate for this frame has been collected.
+                        if (g_autoGlyphCandidateCount < kMaxAutoGlyphCandidates) {
+                            int rawWidth = SumDirectIndexedGlyphWidthsBefore(font, param_1, textLen);
+                            if (rawWidth >= 0) {
+                                float textEndX = param_2 + static_cast<float>(rawWidth) * param_5;
+                                g_autoGlyphCandidates[g_autoGlyphCandidateCount++] = { param_3, textEndX };
+                            }
+                        }
+                    } else if (!span.found && !isBlank) {
                         int focusIndex = -1, itemCount = -1;
                         bool haveFocus = TryGetCurrentMenuFocusIndex(focusIndex, itemCount);
                         int selIndex = -1, selMaxIndexSeen = -1;
@@ -5155,24 +6270,89 @@ void __cdecl Hook_DrawGlyphText(
                         // "any modal is open" case (focused name is the modal's own item,
                         // never matches this list's pattern) without needing a per-modal
                         // allowlist or sticky flag at all.
-                        char expectedFocusedName[80] = {};
-                        if (haveSelection) {
-                            sprintf_s(expectedFocusedName, "%s_%d", g_currentSelGroupName, selIndex);
-                        }
-                        bool focusMatchesThisList = haveSelection &&
-                            _stricmp(g_focusedItemName, expectedFocusedName) == 0;
-                        bool trustworthyMatch = focusMatchesThisList && selIndex == ordinal;
+                        // Cross-check switched 2026-08-03 (issue #51 follow-up) from
+                        // getfocuseditemname()/g_focusedItemName to TryGetRealFocusedGroupAndIndex(),
+                        // the same direct itemDef-array memory read that fixed Campaign's manual-
+                        // position glyph. Same root cause here: g_focusedItemName only updates when
+                        // a screen's OWN .menu script happens to call getfocuseditemname(), and this
+                        // ordinal-based path is the fallback used by every screen WITHOUT a manual
+                        // table entry -- any such screen whose script never calls it would silently
+                        // never draw, identical to Campaign's symptom before its own fix, just via
+                        // this path instead of the manual one. The real-focus read has no such
+                        // dependency.
+                        char realFocusGroup[64] = {};
+                        int realFocusIndex = -1;
+                        bool haveRealFocus = TryGetRealFocusedGroupAndIndex(realFocusGroup, sizeof(realFocusGroup), realFocusIndex);
+                        bool focusMatchesThisList = haveSelection && haveRealFocus &&
+                            _stricmp(realFocusGroup, g_currentSelGroupName) == 0 && realFocusIndex == selIndex;
+                        // Real root cause confirmed live (2026-08-02): the ordinal counter
+                        // (g_menuListItemOrdinalThisFrame) counts EVERY qualifying text draw
+                        // in the whole frame, with no concept of which screen/layer it
+                        // belongs to -- when a popup is open on top of another menu (this
+                        // engine always dims what's behind a modal, confirmed by the user,
+                        // and layers can stack more than once deep), the BACKGROUND screen's
+                        // own items are still drawn and counted every frame too. A live
+                        // capture caught the popup's own real item landing at ordinal=12
+                        // while its real selIndex was 0 -- meaning a "trustworthy" match
+                        // essentially never lands on the real item and instead accidentally
+                        // attaches to whatever unrelated background item happens to occupy
+                        // that small ordinal (captured case: the A-glyph rendered on
+                        // "FIND ONLINE MATCH", a Special Ops hub item, while a completely
+                        // unrelated DLC/on-disk-content popup was actually open on top of
+                        // it).
+                        //
+                        // REVERTED 2026-08-02: a `GetMenuStackDepth() == 1` requirement was
+                        // tried here as a safety net (suppress whenever more than one menu is
+                        // open) -- user-caught regression: the stack is NEVER just 1 deep, even
+                        // for perfectly ordinary navigation (the main menu itself already sits
+                        // nested below a root/splash screen), so this suppressed the A-glyph
+                        // almost everywhere, including the main menu where it previously worked
+                        // fine. Reverted.
+                        //
+                        // CLOSED 2026-08-02 (issue #51): six Ghidra passes plus a live full-
+                        // process-memory dump (MiniDumpWriteDump, raw byte scan for the actual
+                        // print-command record) confirmed the text-draw command queue carries
+                        // no itemDef back-reference at all -- the ordinal-vs-selIndex approach
+                        // here can never be made reliable for a group whose items aren't first
+                        // in the frame's draw order, because background/dimmed layers draw (and
+                        // get ordinal-counted) first. Fixed via a manual, per-group calibrated
+                        // position table instead (kManualGlyphPositions, populated from real
+                        // live-memory-confirmed coordinates) -- see
+                        // ResetMenuListItemOrdinalForFrame's own manual-position block, which
+                        // fires independently of this ordinal match for any group with a table
+                        // entry. Excluding those groups here so they don't also get a (wrong)
+                        // second icon from this legacy path; everything without a manual entry
+                        // still falls back to the original ordinal-based behavior.
+                        bool trustworthyMatch = focusMatchesThisList && selIndex == ordinal &&
+                            !HasManualGlyphPositionForGroup(g_currentSelGroupName, GetMenuStackDepth());
 
-                        char buf[256];
+                        char buf[300];
                         sprintf_s(buf, "[list-item-diag] ordinal=%d text=\"%.60s\" p2=%.1f p3=%.1f "
-                                        "focusIndex=%d itemCount=%d selGroup=\"%s\" selIndex=%d trustworthy=%d",
+                                        "focusIndex=%d itemCount=%d selGroup=\"%s\" selIndex=%d realGroup=\"%s\" "
+                                        "realIndex=%d menuDepth=%d trustworthy=%d",
                                    ordinal, param_1, param_2, param_3,
                                    haveFocus ? focusIndex : -1, haveFocus ? itemCount : -1,
                                    haveSelection ? g_currentSelGroupName : "?",
-                                   haveSelection ? selIndex : -1, trustworthyMatch ? 1 : 0);
+                                   haveSelection ? selIndex : -1,
+                                   haveRealFocus ? realFocusGroup : "?",
+                                   haveRealFocus ? realFocusIndex : -1,
+                                   GetMenuStackDepth(), trustworthyMatch ? 1 : 0);
                         LogFromController(buf);
 
-                        if (trustworthyMatch) {
+                        // ShouldDrawGlyphOverlay() checked here specifically (not on the
+                        // outer block, see the comment above it) so the diagnostic log
+                        // line above always fires while a menu is open, but the actual
+                        // visible icon still respects issue #61's input-method hiding.
+                        // v0.3.0 release standard (2026-08-03): also require this group to
+                        // be on the explicit verified allowlist -- see kVerifiedGlyphGroups'
+                        // own comment. In practice this fallback path (only ever reached for
+                        // groups WITHOUT a manual table entry, per trustworthyMatch's own
+                        // !HasManualGlyphPositionForGroup requirement) never matches anything
+                        // currently on that list, so this suppresses the whole legacy path's
+                        // visible output -- kept as an explicit, self-documenting check rather
+                        // than relying on that being true only by coincidence.
+                        if (trustworthyMatch && ShouldDrawGlyphOverlay() &&
+                            IsVerifiedGlyphGroup(g_currentSelGroupName, GetMenuStackDepth())) {
                             // Per explicit user direction: don't touch the native text at
                             // all (no suppress, no redraw) -- just add the A/select glyph
                             // icon AFTER it, at its real measured width. Uses
@@ -7046,15 +8226,20 @@ void InstallAnalogInputHooks()
     //     LogFromController(buf);
     // }
 
-    // TEMPORARILY DISABLED (2026-07-18) -- game failed to start after this was added;
-    // proxy_d3d9.log shows every hook installing successfully (all MH_OK) then an
-    // immediate detach with zero per-frame activity ever logged, meaning the crash
-    // happens before the first gameplay frame -- before any real weapon-fired/damage
-    // event could have fired. FUN_004895b0/FUN_0044cdb0 are GENERAL native notify
-    // dispatchers (not weapon-fire/damage-specific) -- almost certainly called for
-    // other, unrelated event types during engine init with a genuinely different
-    // real argument count than the one call site (weapon_fired/damage) this hook's
-    // fixed-parameter signature was confirmed against. Disabling to isolate the
-    // cause -- see known_issues.md issue #24 for the live diagnosis in progress.
-    // Rumble_Install(); // task #17 -- its own module, see rumble.h/.cpp
+    // RE-ENABLED (2026-08-03) -- see re_notes/known_issues.md issue #24 for the full
+    // history. The original 2026-07-18 crash was caused by hooking FUN_004895b0/
+    // FUN_0044cdb0 directly (generic multi-purpose native notify dispatchers, not
+    // weapon-fire/damage-specific) -- some other real caller almost certainly passed
+    // a genuinely different real argument shape than this hook's fixed signature
+    // assumed. Reimplemented from scratch this session: FIRE now hooks FUN_0045e320
+    // (a single-purpose function with exactly one real caller, its calling
+    // convention re-verified via fresh raw disassembly of that one call site, found
+    // at runtime via a byte-pattern scan, never a hardcoded address). DAMAGE is NOT
+    // a hook at all -- the documented "safer" replacement candidate for the damage
+    // side (FUN_0045f770) was re-checked the same rigorous way and found to have the
+    // exact same inconsistent-argument-count problem across its 14 real callers, so
+    // it is deliberately not hooked; damage is instead detected via a per-frame poll
+    // of the local player's own real health field. See rumble.h/.cpp for the full
+    // detail on both mechanisms.
+    Rumble_Install(); // task #17 -- its own module, see rumble.h/.cpp
 }

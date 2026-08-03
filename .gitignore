@@ -45,3 +45,9 @@ references/
 zone_dump/
 ff_dump/
 *.gdt
+
+# Full-process MiniDumpWriteDump snapshots + matching screenshots (2026-08-02, issue #51
+# live-memory-analysis toolchain) -- ~1-2GB each, kept locally on purpose for ongoing
+# offline analysis (menu-position calibration, future killstreak/other investigation
+# passes per project notes), never meant to be committed.
+dumps/

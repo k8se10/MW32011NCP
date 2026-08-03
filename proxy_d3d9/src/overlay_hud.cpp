@@ -244,6 +244,15 @@ struct GameplayHintSlot {
     int suffixLastFontHeight = 0;
     int prefixMeasuredWidth = 0;
     int suffixMeasuredWidth = 0;
+    // Optional separate line drawn above the main row (2026-08-02) -- see
+    // RequestCustomHintOverlay's own topLineText comment (overlay_hud.h) for why this
+    // exists (a real native hint turned out to be two logical lines in one draw call,
+    // joined by an embedded '\n'). Empty string = no top line, nothing extra drawn.
+    char topLineText[128] = {};
+    void* topLineTexture = nullptr;
+    char topLineRenderedFor[128] = {};
+    int topLineLastFontHeight = 0;
+    int topLineMeasuredWidth = 0;
 };
 GameplayHintSlot g_gameplayHintSlots[kGameplayHintSlotCount];
 
@@ -259,7 +268,16 @@ GameplayHintSlot g_gameplayHintSlots[kGameplayHintSlotCount];
 // that one slot, and the other's native text was suppressed with nothing drawn in
 // its place. This is a SEPARATE small pool of slots (own textures, own state) so
 // menu hints don't fight over one slot; the gameplay path above is untouched.
-constexpr int kMaxMenuHintSlots = 4; // MW3's own legend bars never observed to need more than 2 at once; headroom for a 3rd/4th without another resize
+// Bumped 4->6 (2026-08-03, issue #51): Survival's own map-select screen shows
+// FOUR corner hints simultaneously (Leaderboards/Game Summary/Friends/Back) --
+// confirmed live these alone fully exhaust the old limit of 4, silently
+// dropping the manual-position list-highlight glyph's own RequestMenuHintOverlay
+// call for that same frame (it simply arrived after the pool was already full).
+// The glyph's OWN position was confirmed correct via diagnostic logging before
+// this was found -- this was a slot-starvation bug, not a positioning bug.
+// +2 headroom over the observed max (4) rather than the exact minimum, same
+// margin philosophy as the original comment.
+constexpr int kMaxMenuHintSlots = 6;
 struct MenuHintSlot {
     char prefixText[128];
     char suffixText[128];
@@ -1155,6 +1173,7 @@ void DrawOneGameplayHintSlot(void* device, GameplayHintSlot& slot, float scaleX,
         float screenWidthDesign = static_cast<float>(screenWidthPx) / scaleX;
         cursorX = (screenWidthDesign - totalContentWidth) * 0.5f;
     }
+    float lineStartX = cursorX; // captured before prefix/icon/suffix advance it -- see the optional top line below
 
     // Live-reported 2026-07-31: still mis-positioned at 1440p even with scaleX/scaleY
     // wired through -- logged once per distinct (assetName, design cursorX/Y, scale)
@@ -1208,6 +1227,26 @@ void DrawOneGameplayHintSlot(void* device, GameplayHintSlot& slot, float scaleX,
         drawScaledQuad(slot.suffixTexture, cursorX, textQuadTop,
             static_cast<float>(suffixDrawWidth), static_cast<float>(kTextureHeight),
             0xFFFFFFFF, suffixU0, 0.0f, suffixU1, 1.0f);
+    }
+
+    // Optional top line (2026-08-02) -- see the struct field's own comment. Drawn
+    // last so a failure to build its texture never blocks the main line above, and
+    // left-aligned at the SAME horizontal start the main line used (whether that
+    // came from raw slot.x or the centered position computed above), directly one
+    // line-height above it.
+    if (slot.topLineText[0] != '\0' &&
+        EnsureLeftAlignedTextTexture(device, slot.topLineTexture, slot.topLineRenderedFor,
+                                       sizeof(slot.topLineRenderedFor), slot.topLineText,
+                                       slot.topLineLastFontHeight, kHintFontHeightPx)) {
+        slot.topLineMeasuredWidth = MeasureTextWidthPx(slot.topLineText, g_modConfig.overlayFontItalic, kHintFontHeightPx);
+        int topLineDrawWidth = slot.topLineMeasuredWidth > 0 ? slot.topLineMeasuredWidth + kHintTextWidthMarginPx : 0;
+        if (topLineDrawWidth > 0) {
+            float topU0 = static_cast<float>(kHintTextRenderLeftMarginPx) / static_cast<float>(kTextureWidth);
+            float topU1 = static_cast<float>(kHintTextRenderLeftMarginPx + topLineDrawWidth) / static_cast<float>(kTextureWidth);
+            drawScaledQuad(slot.topLineTexture, lineStartX, textQuadTop - static_cast<float>(kTextureHeight),
+                static_cast<float>(topLineDrawWidth), static_cast<float>(kTextureHeight),
+                0xFFFFFFFF, topU0, 0.0f, topU1, 1.0f);
+        }
     }
 }
 
@@ -1590,6 +1629,8 @@ void ReleaseAllCachedTextures()
         slot.prefixRenderedFor[0] = '\0';
         releaseIfSet(slot.suffixTexture);
         slot.suffixRenderedFor[0] = '\0';
+        releaseIfSet(slot.topLineTexture);
+        slot.topLineRenderedFor[0] = '\0';
     }
     releaseIfSet(g_debugMarkerTexture);
     for (int i = 0; i < g_glyphIconCacheCount; ++i) {
@@ -1625,9 +1666,15 @@ HRESULT WINAPI Hook_EndScene(void* device)
     DrawGlyphIconIfRequested(device);
     DrawGameplayHintSlotsIfRequested(device);
     InjectSyntheticBackHintIfNeeded();
+    // ResetMenuListItemOrdinalForFrame() must run BEFORE DrawMenuHintsIfRequested()
+    // (2026-08-03 fix): its own manual-position A-glyph block (issue #51) calls
+    // RequestMenuHintOverlay() directly, populating a slot for THIS frame's draw
+    // pass below -- calling it after DrawMenuHintsIfRequested() (the previous
+    // order) meant every manual-position request only ever got drawn one frame
+    // late, off the PREVIOUS frame's now-already-drawn slot array.
+    ResetMenuListItemOrdinalForFrame();
     DrawMenuHintsIfRequested(device);
     DrawDebugMarkerIfRequested(device);
-    ResetMenuListItemOrdinalForFrame();
     // Always last -- see DrawCustomCursorIfNeeded's own comment for why the cursor
     // specifically needs to be the final thing drawn each frame.
     DrawCustomCursorIfNeeded(device);
@@ -1680,6 +1727,12 @@ void GetResolutionScale(void* deviceIn, float& outScaleX, float& outScaleY)
 {
     int width = 1920, height = 1080;
     GetRealScreenSize(deviceIn, width, height);
+    // REVERTED 2026-08-03: a same-day theory that this engine's real UI design
+    // space is 720p (not 1080p) was tried here and confirmed WRONG live -- it
+    // broke the cursor size and corner hints (both previously correct) and
+    // still didn't fix the issue #51 manual-position list glyphs it was meant
+    // to address. Back to the original, proven-correct 1920x1080 reference.
+    // The manual-position glyphs' real problem is still open -- see issue #51.
     outScaleX = static_cast<float>(width) / 1920.0f;
     outScaleY = static_cast<float>(height) / 1080.0f;
 }
@@ -1812,7 +1865,7 @@ void RequestGlyphIconOverlay(float x, float y, float w, float h, const char* ass
 
 void RequestCustomHintOverlay(float x, float y, const char* prefixText, const char* suffixText,
                                const char* assetName, bool centerOnScreen, bool flashIcon,
-                               GameplayHintSlotId slotId)
+                               GameplayHintSlotId slotId, const char* topLineText)
 {
     GameplayHintSlot& slot = g_gameplayHintSlots[static_cast<int>(slotId)];
     strncpy_s(slot.prefixText, prefixText, _TRUNCATE);
@@ -1822,6 +1875,7 @@ void RequestCustomHintOverlay(float x, float y, const char* prefixText, const ch
     slot.y = y;
     slot.centerOnScreen = centerOnScreen;
     slot.flashIcon = flashIcon;
+    strncpy_s(slot.topLineText, topLineText, _TRUNCATE);
     slot.requestedThisFrame = true;
 }
 
