@@ -68,11 +68,25 @@ struct ModConfig
     // [Look]
     float lookDegreesPerSecondHorizontal = 250.0f; // right-stick turn rate at full
                                                     // deflection, yaw (left/right) axis
-    float lookDegreesPerSecondVertical = 250.0f;   // right-stick turn rate at full
+    float lookDegreesPerSecondVertical = 145.0f;   // right-stick turn rate at full
                                                     // deflection, pitch (up/down) axis --
                                                     // split from horizontal 2026-07-31 per
-                                                    // user request (console CoD titles
-                                                    // expose these as separate sliders)
+                                                    // user request, as a deliberate PC-side
+                                                    // enhancement (real MW3 console has only
+                                                    // ONE Sensitivity slider driving both
+                                                    // axes through a fixed internal ratio,
+                                                    // not independently tunable -- confirmed
+                                                    // both by the real console Options menu
+                                                    // itself and by the user's own firsthand
+                                                    // console play experience, 2026-08-03).
+                                                    // Default corrected TWICE the same day:
+                                                    // 250 (an ~80% ratio, wrongly assumed to
+                                                    // match console) -> 75 (an initial ~30%
+                                                    // estimate from feel alone, live-tested
+                                                    // and found way too slow) -> 145 (~58%,
+                                                    // the corrected live-tested estimate,
+                                                    // "closer to about 55-60%"). See
+                                                    // re_notes/known_issues.md issue #65.
     float adsSlowdownStrength = 1.75f;     // 0 = off, 1 = fully proportional to live zoom;
                                             // 1.75 confirmed live to feel closer to real
                                             // console controller CoD than exactly 1.0

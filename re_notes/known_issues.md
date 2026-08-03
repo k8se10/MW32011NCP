@@ -81,6 +81,7 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#62](#62-auto-mantle-while-sprinting--not-working-shipped-disabled-for-v030-2026-08-03) — Auto-mantle while sprinting — **Open / Not Working** (shipped disabled, `AutoMantleEnabled=0`, for v0.3.0 — two rounds attempted, neither confirmed working)
 - [#63](#63-vibration-strengthreload-vibration-follow-up-2026-08-03--strength-maxed-out-for-v030-armor-support-and-reload-rumble-deferred) — Vibration strength + Survival armor support — **Open / Partially Resolved** (FireIntensity maxed to its software ceiling for v0.3.0, round 4 not yet live-retested; armor field still unidentified, diagnostic improved; reload-vibration deferred to final scope)
 - [#64](#64-single-av-vendor-flags-the-v030-release-dll--assessed-as-a-false-positive-2026-08-03) — Single AV vendor (VBA32) flags the v0.3.0 release DLL — **Resolved** (assessed as a generic heuristic false positive; every major vendor clean)
+- [#65](#65-xbox-360-console-ground-truth-sensitivity-setting-memory-location-2026-08-03) — Xbox 360 console ground-truth: Sensitivity setting memory location — **Investigating** (one strong single-pair candidate found via Xenia memory diff, not yet cross-validated against a second independent change; no real degrees-per-second citation found for the console's own slider scale)
 
 ---
 
@@ -543,6 +544,53 @@ context check, since a synthetic F5 outside that one moment is simply ignored by
 game, same as a real, misplaced F5 press would be. **CONFIRMED WORKING LIVE by the
 user** ("works pretty flawlessly"). To be replaced with a real native call if/when one
 is found — see task #8 in the working session's tracker for the full dead-end trail.
+
+**CONFIRMED (2026-08-03), console cross-reference via a real Xbox 360 retail copy
+running in Xenia:** the real console ready-up prompt reads **"Press B to ready up:
+[seconds]"** — directly captured live, two separate times, in
+`tools/xenia_probe/xenia_mark_009.png` and `xenia_mark_016.png` (both real Survival
+sessions, Wave 1 and Wave 2 respectively). This upgrades this entry's own earlier
+line above — "real console MW3 readies up via holding B; `+stance` is presumably
+what that maps to on that platform" — from an inferred guess to a directly observed
+fact: **B is confirmed the real console ready-up button.** This does not by itself
+reveal `+stance`'s native PC dispatch (Xenia's binary is a separately-compiled Xbox
+360 build, not proof of anything about `iw5sp.exe`'s own internals) — but it's a
+strong, no-longer-hedged confirmation of what this section already suspected, and
+worth reading together with a specific existing lead in this same entry:
+
+**A concrete, previously-underweighted re-test candidate this cross-reference
+revives:** this entry's own dead-end trail above already found that
+`togglecrouch`'s real dispatch (`FUN_00438710` case `0x48` → `FUN_0057d2c0` mode 1)
+**is a real function call that reaches `+stance`'s own code path**, but was recorded
+as producing "zero observable effect, likely blocked by its own guard bytes
+(`DAT_00a98ca0`/`DAT_00a98bc4`)" at the time it was tested. Those exact two guard
+bytes are the SAME pair later identified in issues #1/#27/#42 (2026-07-31) as a real
+`IsStanceLocked()` pair — the root cause of crouch's own "needs an initial click at
+launch" bug, ultimately fixed by feeding a synthetic activation event
+(`SendSyntheticActivationClick()`, `d3d9_hook.cpp`) into the game's real `WndProc`
+before the guard could ever wrongly latch. **Console binding B to BOTH crouch/prone
+AND ready-up is a real, structural coincidence worth taking seriously** — it's
+consistent with `+stance`'s ready-up hook and crouch/prone sharing more machinery
+than previously assumed, and raises a genuine, testable possibility that the
+mode-1 `FUN_0057d2c0` dispatch for `+stance` was tried BEFORE the stance-lock/focus
+issue was understood or fixed, and could behave differently now. **Not verified
+this session — no live re-test was performed, this is a documented lead for a
+future session, not a confirmed fix.** If revisited: re-test the mode-1 dispatch
+call for `+stance` specifically during Survival's real ready-up window, after
+`SendSyntheticActivationClick()` has already fired (i.e. well after level load,
+not at the exact moment this project's own initial-click issue would have
+mattered) — a null result would still be informative (rules the coincidence out),
+a positive result would let the existing F5/`PostMessage` synthesis be replaced by
+a real native call, closing this entry's own long-standing "to be replaced... if
+one is found" note above.
+
+**No new console evidence found for D-pad Left's squadmate call-in (issue #14) or
+Back's `+scores` (issue #28)** this session — neither action's real console screen
+(a squadmate-call-in prompt, or Campaign's scoreboard/objectives overlay) was among
+the screenshots captured in `tools/xenia_probe/`. Both entries' existing native-
+search dead-end trails stand unchanged; this is stated explicitly so a future
+reader doesn't assume this cross-reference pass covered them just because it
+covered ready-up.
 
 ---
 
@@ -4147,6 +4195,87 @@ fixed now. Summary of what's actually confirmed for missile guidance:
   finding, which is specific to Predator Missile's `controlslinkto` path
   only. Don't assume the same fix covers both without separately
   confirming each.
+
+**CONSOLE REFERENCE CAPTURED (2026-08-03): real Xbox 360 retail control
+scheme for missile guidance confirmed via a live Xenia (emulator) session
+running an actual Xbox 360 copy of MW3 — see
+`tools/xenia_probe/xenia_mark_020.png` and `xenia_mark_021.png`.** This is
+CONSOLE reference behavior only — it confirms what the feature is supposed
+to feel like and do, not anything about the PC binary's own internals. The
+actual PC implementation (below) is unchanged by this and remains a
+separate, unstarted task.
+
+- **`xenia_mark_021.png`**: on-screen HUD explicitly labels the active
+  camera `CAMERA: MISSILE` and shows two real control-prompt icons:
+  **`RS → Steer`** and **`RT → Boost`**. This is the first direct,
+  first-party confirmation of the real control scheme for this exact
+  broken PC feature — until now this project only knew steering was
+  broken, not what input it should consume. Concretely: **RS drives
+  steering** (this project's existing look-stick input is therefore the
+  right physical source to feed into whatever `pml+0xc/+0x10/+0x14`
+  turns out to need), and **RT is boost**, not fire, while this camera is
+  active.
+- **RT's meaning is context-dependent on console, and the PC
+  implementation will need to replicate that, not just add a new
+  binding.** RT is Fire during normal gameplay (`InjectControllerFire` in
+  `analog_input_hooks.cpp`) — during missile guidance specifically it
+  needs to mean Boost instead, gated on the same `clientStruct+0xc` bit
+  `0x80000` this issue's own `Hook_MissileGuidanceDispatch`/
+  `LogMissileGuidanceFlagDiag` diagnostics already check for the
+  guidance-active state. **Real, concrete, already-catalogued lead for
+  what "Boost" itself might drive natively**: `re_notes/iw5sp.md`
+  (Vehicle system section) already documents a genuine native
+  `PLATFORM_VEH_BOOST` hint string (`FUN_004e4d50`), gated on a real
+  per-vehicle-type capability byte (`entity+0x18 & 0x10`) — a boost
+  mechanic already exists natively in this binary for vehicle-class
+  entities. Missile guidance is very plausibly implemented as a
+  vehicle-like controlled entity internally (this would also explain why
+  camera/view takeover already works via "the real UAV-control system,"
+  per this project's own `killstreak_reference.md`), making
+  `PLATFORM_VEH_BOOST`'s own trigger condition/usercmd bit a concrete,
+  not-yet-checked candidate for what RT needs to set during guidance,
+  rather than an unexplored feature needing fresh RE from zero. **Not
+  confirmed** — this is a plausible, evidence-backed lead to check next,
+  not a verified fact.
+- **`xenia_mark_020.png`** (captured moments earlier, same session): HUD
+  reads `CAMERA: UAV_DRONE_011` — an aerial thermal/overhead view with a
+  `YOU` marker over the player's own ground position, no Steer/Boost
+  prompts shown (this appears to be a distinct camera state, possibly a
+  UAV-recon view shown just before or during missile approach, reusing a
+  named-drone-camera-entity convention — `UAV_DRONE_011` reads like an
+  instanced/numbered entity name, not a generic label). The `CAMERA: X`
+  overlay pattern across both captures suggests this engine build is
+  running with a debug/dev-mode camera-name display enabled (see caveat
+  below) — but it directly confirms this project's own existing
+  "Predator Missile shares the real UAV-control system" finding
+  (`killstreak_reference.md`), since both the pre-launch view and the
+  post-launch missile-cam are drawing through what looks like the same
+  named-camera HUD convention.
+- **Caveat, stated plainly**: the `CAMERA: <name>` text itself, plus a
+  debug-looking numeric readout in the top-left corner of both captures
+  (`2004 1080 5883` / `1650:6610` / `0 276 [257717]`) and a short
+  hex-looking string in the bottom-right of `xenia_mark_021.png`, do not
+  look like normal retail HUD elements — this Xenia/AlterWare setup is
+  plausibly running with a developer/debug cvar enabled that this
+  project has no independent evidence is present in an unmodified retail
+  Xbox 360 session. This does NOT call the Steer/Boost control-prompt
+  icons into question (those use the same consistent icon/prompt style
+  as every other confirmed-real HUD prompt captured this session, e.g.
+  "Press B to ready up," "X Reload") — only the extra debug-looking text
+  should be treated as possibly non-retail.
+- **Existing PC-side code check (2026-08-03)**: `analog_input_hooks.cpp`
+  today only diagnoses the guidance state — `Hook_MissileGuidanceDispatch`
+  (currently commented out/disabled at install time, per this issue's own
+  2026-07-19 regression note above) logs `pml+0xc/+0x10/+0x14` and
+  `clientStruct+0x10c/+0x110/+0x114` side by side with this project's own
+  `kPitchAccum`/`kYawAccum` globals, but nothing WRITES controller input
+  into the guidance path — `InjectControllerFire` still unconditionally
+  treats RT as Fire with no guidance-state gate at all. No existing code
+  implements Steer or Boost. The still-open question from 2026-07-19 (does
+  `pml+0xc/+0x10/+0x14` already track this project's own look input, or
+  does it need direct feeding) is unchanged by this console research and
+  remains the concrete next step once the disabled diagnostic hook is
+  re-enabled safely and live-tested.
 
 ## 31. Master `notifyonplayercommand`/`notifyoncommand` survey — two distinct builtins found, squadmate call-in's real failure mode identified (2026-07-18, research pass)
 
@@ -8680,6 +8809,31 @@ Built and deployed 2026-08-03.
 
 **Head start already on record for whoever picks this up**: `re_notes/iw5sp.md` already documents real per-weapon reload TIMING fields in `WeaponCompleteDef` — `iReloadTime`, `iReloadEmptyTime` (a genuinely distinct "reload from empty" path), `iReloadAddTime`, `iReloadStartTime`, `iReloadStartAddTime`, `iReloadEndTime`. These give the real, per-weapon-accurate duration/phase-boundary data needed to sync rumble pulses to each weapon's own actual animation length (a two-handed rifle's mag-out/mag-in timing is not the same as a pistol's) — the missing piece is a real "reload is currently active" trigger signal (a live ammo-count or weapon-state field to poll), plus mapping this data's own phase boundaries to however many discrete "steps" the final feature ends up modeling. Not yet independently re-verified this session; treat as a lead, not confirmed-current.
 
+**Xbox 360 console ground-truth attempt for the Armor field, 2026-08-03 — thorough search, NO match found, genuine negative result.** Same Xenia live-memory-read technique as issue #65's sensitivity investigation (`tools/xenia_probe/`), applied to the specific open question above (where does Armor actually live in memory).
+
+**Status of this specific sub-investigation: Open, ruled out the straightforward hypotheses.** Not a candidate offset, not a lead — a documented dead end for the simplest search strategy, with a concrete different strategy proposed below for whoever picks this up next.
+
+**Data**: four independent real armor readings, each with a paired guest-RAM snapshot + screenshot (`tools/xenia_probe/xenia_mark_0NN.{snap,png}`), all from the same Survival life (health separately confirmed unchanged at 92 across the first three, ruling out these being health-field false positives):
+- `xenia_mark_004` / `xenia_mark_005`: HUD shows `ARMOR 250` (two separate captures, same value — usable as a same-value stability check)
+- `xenia_mark_007`: HUD shows `ARMOR 201` (a real 49-point drop from a hit)
+- `xenia_mark_008`: HUD shows `ARMOR 185` (a further real drop)
+
+**Method**: extended `tools/xenia_probe/xenia_probe.exe` with a new `findexact` subcommand (committed as project tooling, not a throwaway script — general-purpose enough to reuse for future multi-snapshot exact-value hunts) that loads N snapshots and scans for byte offsets where a value matches an exact expected number in EVERY snapshot simultaneously, checking:
+- 8-bit, 16-bit, and 32-bit widths
+- Every possible unaligned byte offset (not just 4-byte-aligned), since a packed console struct doesn't guarantee alignment for a sub-field
+- Both big-endian-swapped AND raw (unswapped) 32-bit interpretation, in case this specific field is written through a path that doesn't follow the guest CPU's overall big-endian convention
+
+Ran the full 512MB scan requiring simultaneous exact matches of `250, 250, 201` (3-point) and then `250, 250, 201, 185` (4-point, the strongest constraint).
+
+**Result: zero matches at any width, alignment, or endianness once all 4 real data points are required simultaneously.** The 3-point search alone found 268 coincidental single-byte (`0xFA`/`0xC9`) matches — expected noise across 512MB, no 16-bit or 32-bit hits even at 3 points — and every one of those 268 was eliminated once cross-validated against the 4th data point (185). This is a real, thorough negative: it rules out "Armor is stored as a plain fixed-address integer matching the displayed HUD number, at any width/alignment/byte-order," not just "we didn't look hard enough."
+
+**Why this most likely failed (hypotheses, not confirmed)**:
+- The field may not live at a fixed address at all across these captures — if it's part of a per-life or per-spawn allocated structure (rather than the same static array this project's own PC research found for `entity`/health at a fixed base), the same logical field could sit at a different absolute offset in each of these 4 captures, defeating any fixed-offset search regardless of how thorough.
+- The HUD-displayed integer may not be the raw stored representation — e.g. armor could be stored as a float (percentage of a max, or in different units) and rounded/formatted only at display time, in which case an exact-integer search across raw bytes would never match.
+- Armor could be computed from multiple underlying fields (e.g. per-plate/segment values) rather than one scalar, with 250/201/185 being a sum computed at HUD-draw time, never stored as a single number anywhere.
+
+**Concrete next step for whoever picks this up**: don't repeat a blind whole-512MB exact-integer search — it's now been done thoroughly and came back empty. Instead, first locate the real HEALTH field's own Xbox 360 offset (same technique, using known health values as the search target — health was confirmed unchanged at 92 across three of these four captures, so a fresh session deliberately varying HEALTH while holding armor constant would find it the same way issue #65 found the sensitivity candidate), then search the struct NEAR that confirmed health offset for armor — mirroring this project's own PC finding that health and armor (if present) would plausibly sit in the same per-player entity/struct, the same pattern already proven at `entity+0x150` on the PC binary. Searching a few hundred bytes around a confirmed-real anchor is a fundamentally different (and much more likely to succeed) strategy than an unconstrained whole-RAM search.
+
 ---
 
 ## 64. Single AV vendor flags the v0.3.0 release DLL — assessed as a false positive (2026-08-03)
@@ -8697,3 +8851,36 @@ Built and deployed 2026-08-03.
 **Deliberately not "fixed" in the binary.** Altering the DLL specifically to dodge one heuristic vendor's detection would look far more like active evasion than the openly-documented input-hooking this project already does — inconsistent with this project's own standing transparency policy on security/anti-cheat questions (see issue #33). The correct response is disclosure, not obfuscation.
 
 **Action taken:** documented here and given a short, honest mention in the README/Nexus page so a user who runs their own scan and sees this isn't left to wonder or assume the worst — matching this project's existing practice of being upfront about VAC/anti-cheat risk rather than staying silent on uncomfortable findings.
+
+---
+
+## 65. Xbox 360 console ground-truth: Sensitivity setting memory location (2026-08-03)
+
+**Status:** Investigating. One strong single-pair candidate found; not yet cross-validated against a second independent sensitivity change, per this project's own "single reads are NOT sufficient" standard. No real citable degrees-per-second value found for the console's own slider scale.
+
+**Context:** MW32011NCP has had to approximate several console-only look-curve values from scratch on the PC build (`SensitivityHorizontal`/`SensitivityVertical` defaults 250/200, `AccelerationRampMs=33`, ADS slowdown curve constants — see `mod_config.h`'s own `[Look]` comments), since the PC binary never had native controller support to read real values from. This session gained access to Xenia (Xbox 360 emulator) running the real retail MW3 console build, with a live-memory-read technique confirmed working against its guest RAM (see the sibling armor-mechanic investigation, issue #63, for the full technique writeup — same method used here).
+
+**Data**: two guest-RAM snapshots (`tools/xenia_probe/xenia_mark_001.snap`/`xenia_mark_002.snap`, 512MB each), captured on the real console's Options screen with Sensitivity highlighted:
+- `xenia_mark_001`: slider showing "2 (Medium)" (`xenia_mark_001.png`)
+- `xenia_mark_002`: slider showing "5" (`xenia_mark_002.png`)
+
+Same screen, same player, nothing else intentionally changed between captures.
+
+**Method**: `tools/xenia_probe/xenia_probe.exe diff` on this pair produced 383,246 changed bytes total (far too noisy to eyeball — the menu's animated background and other live systems keep large parts of guest RAM in motion even while paused on a menu). Rather than rely on the diff tool's own capped console printout, wrote a one-off `numpy`-based script (`tools/xenia_probe/find_sensitivity.py`, not committed as project tooling — a throwaway analysis script) to exact-match filter the two 512MB dumps directly for (a) single bytes going `0x02 -> 0x05`, and (b) 4-byte big-endian `uint32` values going `0x00000002 -> 0x00000005`.
+
+**Result**: 74 single-byte matches, 12 four-byte-BE matches. All but one cluster tightly inside a ~2MB span (`0x1FA4xxxx`–`0x1FA9xxxx` relative to the guest RAM base), which reads as coincidental noise inside a large data table/array (too many nearby unrelated hits to be a single scalar setting). **One candidate stands apart**: offset `+0x18C67C68` (relative to guest RAM base `0x1C0000000`, i.e. absolute host address `0x1DC67C68` while Xenia was running this session — the offset is what matters, not the session-specific absolute address) is the ONLY 4-byte BE match outside that noisy cluster, and its context (dumped ±0x100 bytes around it in both snapshots) shows a dense block of small integers consistent with a real settings/profile struct: a run of 8-byte-aligned fields (`...01, 11, 01, 01, 04...`), what look like two real pointers, a block of `0xFFFFFFFF` (plausible "unset" sentinels), then the `00000002 -> 00000005` transition itself, followed by more small ints (`10, 17, 01, 3B, 01...`) and what appear to be two duplicate float-bearing sub-structures. This shape (isolated, small-int-dense, pointer-adjacent) is a much better structural match for "one field in an options/profile block" than the array-noise cluster.
+
+**Not yet done / genuine gaps**:
+- No cross-validation: only one before/after pair exists for this specific setting. Per this project's own standing rule (see `.kiro/steering/specter-accuracy-standards.md` in the sibling Specter folder for the general principle, though that's a different project — the same rigor bar applies here), a single diff pair is a **candidate**, not a **confirmed** value, until a second independent capture (e.g. sensitivity changed again, from a different starting value) reproduces the same offset.
+- **No real citation found for what "degrees per second" (or equivalent turn-rate unit) MW3's console sensitivity levels 1–10 actually correspond to.** Web search (Charlie INTEL, Dexerto, GameFAQs, etc.) returned only modern-game or generic "best settings" content, nothing with the original 2011 console build's actual slider-to-turn-rate formula. This means the raw stored value (2, 5, ...) cannot yet be translated into a directly comparable degrees/sec figure against this project's own `SensitivityHorizontal=250`/`SensitivityVertical=200` defaults — that translation is unresolved, not just unattempted.
+- The candidate offset was found in a **specific live Xenia session's memory image** — it has not been checked for stability across a fresh Xenia launch/save reload, so treat the exact offset as this-session-specific until re-confirmed.
+
+**Next steps for whoever picks this up**: capture a third data point (a different before/after sensitivity change, ideally spanning a wider range e.g. 1→10) and confirm the same relative offset moves accordingly; if it holds, that's real cross-validation. Separately, dumping the full surrounding struct (already partially captured above) across a wider set of settings changes (Look Inversion, Vibration, Aim Assist, the two Margin sliders) could map the whole options-profile layout in one pass rather than one field at a time.
+
+**User-supplied ground truth (2026-08-03, direct player testimony, not memory-derived)**: confirmed from firsthand console play experience — real MW3 console vertical look sensitivity felt like roughly **30% of horizontal**, and this ratio was **not independently tunable** on console. This is independently corroborated by the real Options menu itself (`xenia_mark_001.png`/`002.png`, this same session): there is exactly ONE "Sensitivity" row, no separate vertical slider — consistent with a single stored value driving both axes through a fixed internal ratio, not two independently-configurable ones.
+
+**Action taken on this evidence**: this project's `SensitivityVertical` default (200, against `SensitivityHorizontal`'s 250 — an ~80% ratio) was set on 2026-07-31 under the assumption that MW3 "matches console CoD titles' own separate sensitivity sliders" (see `mod_config.h`'s own `[Look]` comment at the time) — a general CoD-series assumption, not verified specifically for MW3, and now directly contradicted by a player who's actually used the real console options. Corrected `SensitivityVertical` default to `75` (250 × 0.3) to match the initial ~30% feel-estimate.
+
+**Round 2 correction (2026-08-03, same day): live-tested and reported "closer to about 55-60%, thats way too slow" at 75.** The initial "~30% from feel alone" estimate undershot. Corrected again to `145` (~58% of Horizontal's 250, the midpoint of the corrected 55-60% estimate). `ConfigVersion` bumped 11→12. Both the compiled default (`mod_config.h`) and the `WriteDefaultConfig()` template (`mod_config.cpp`) reflect the full two-round history.
+
+**Confirmed live, 2026-08-03, same day: "yeah that's the one."** `145` (~58% ratio) is user-confirmed as the correct feel via direct live retest — this is now the settled default, not just an estimate. The underlying memory-offset investigation above (finding the exact real console value/struct) remains open as a separate, lower-priority research thread if a precise ground-truth number is ever wanted, but the practical PC-side tuning question is resolved.

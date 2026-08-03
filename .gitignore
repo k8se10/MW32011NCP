@@ -32,6 +32,15 @@ regbreak.exe
 # meant to be committed
 tools/memdiff/*.snap
 
+# xenia_probe (2026-08-03, Xenia/Xbox 360 console ground-truth research) -- its guest-RAM
+# snapshots (~512MB each) and paired screenshots are diagnostic scratch data, same policy
+# as memdiff's own .snap files above and the dumps/ policy below. Only the tool's own
+# source (main.cpp) and throwaway analysis scripts are committed.
+tools/xenia_probe/*.snap
+tools/xenia_probe/*.bmp
+tools/xenia_probe/*.png
+tools/xenia_probe/xenia_probe.exe
+
 # Third-party reference material (cloned locally for research only -- learn from and
 # independently re-verify, never blindly reuse; see re_notes for how any lead from here
 # gets treated). Not ours to redistribute as part of this repo.
