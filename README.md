@@ -349,11 +349,14 @@ is still open, not how rough what already works is.
   per-frame poll of the local player's own real health field. A separate bug (this
   project loading a legacy XInput DLL whose own vibration output is a documented
   no-op on real Windows installs) made vibration a silent no-op even with the hooks
-  working — also fixed. Default strength/duration were also raised after live
-  feedback that it felt "extremely weak." Not yet independently live-confirmed by
-  the developer outside this session's own testing. **Per-animation-step reload
-  vibration** (a real pulse per animation beat, matching CoD's historical console
-  behavior) is a deliberately deferred, committed final-scope item, not yet started —
+  working — also fixed. Went through four live-reported strength-tuning rounds
+  after that; `FireIntensity` is now maxed at its software ceiling (`1.0`) with
+  a sustain/decay envelope tuned for real ERM motor spin-up lag — physically
+  confirmed working. **Known gap: doesn't register hits absorbed by Survival's
+  purchasable Body Armor** (a separate value from real health this project
+  hasn't located in memory yet). **Per-animation-step reload vibration** (a
+  real pulse per animation beat, matching CoD's historical console behavior)
+  is a deliberately deferred, committed final-scope item, not yet started —
   real per-weapon reload-timing data is already on record to build it from. See
   `re_notes/known_issues.md` issues #24/#63.
 
@@ -395,17 +398,19 @@ is still open, not how rough what already works is.
   `CallKbuttonUp` mechanism as Sprint/ADS/Reload — genuinely native input, no
   key-synthesis needed. See `re_notes/known_issues.md` issue #6/#24 for the full
   trail.
-- **Auto-mantle** (new 2026-08-03, **STRICTLY off by default** — `[Movement]
-  AutoMantleEnabled` in `mw3ncp_config.ini`) — while sprinting and pushing the
-  stick fully forward (within a configurable ~45° cone), automatically drives the
+- **Auto-mantle — NOT WORKING, shipped disabled** (`[Movement] AutoMantleEnabled=0`
+  in `mw3ncp_config.ini`, 2026-08-03). Attempted: while sprinting and pushing the
+  stick fully forward (within a configurable ~45° cone), automatically drive the
   same real native mantle command Jump already uses, vaulting over obstacles
-  without a separate Jump press. Gated on the game's own real "is a ledge
-  actually mantleable right now" signal (reusing this project's own existing
-  detection of the native mantle button-prompt hint) — an initial version without
-  this gate made the player jump continuously any time they sprinted forward,
-  since the mantle command and Jump are literally the same input. Includes a
-  750ms cooldown after each real trigger. Not yet live-confirmed against a real
-  mantleable ledge. See `re_notes/known_issues.md` issue #62.
+  without a separate Jump press. Round 1 gated on the game's own real "is a
+  ledge actually mantleable right now" signal (reusing this project's own
+  existing detection of the native mantle button-prompt hint) after an earlier
+  version without that gate made the player jump continuously any time they
+  sprinted forward, since the mantle command and Jump are literally the same
+  input. Round 2 fixed a timing gap between the render hook that sets the
+  hint-visible signal and the gameplay-tick hook that reads it. **Neither round
+  confirmed the feature actually firing near a real ledge** — treat as not
+  implemented, not as a working opt-in. See `re_notes/known_issues.md` issue #62.
 
 ### Menu & pause
 - **Start button** — opens **and closes** the pause menu via real engine calls (not a
@@ -773,24 +778,32 @@ See `re_notes/known_issues.md` for the full, actively-tracked list.
   per frame. A separate bug (this project loading a legacy XInput DLL whose own
   vibration output is a documented no-op on real Windows installs) made vibration
   silently do nothing even with both mechanisms working correctly — also found
-  and fixed the same day, along with a strength/duration bump after live feedback
-  that it felt too weak. Not yet independently live-confirmed by the developer
-  outside this session's own testing. **Per-animation-step reload vibration**
-  (matching CoD's historical console behavior — a distinct pulse per real
-  animation beat, not just a generic reload cue) is a real, committed final-scope
-  target, deliberately deferred rather than attempted this pass; real per-weapon
-  reload-timing data is already on record (`re_notes/iw5sp.md`) to build it from
-  once a genuine "reload is actually happening" trigger is found. See
+  and fixed the same day. Went through four live-reported strength-tuning
+  rounds after that (still felt weak after the first two bumps); `FireIntensity`
+  is now maxed at its software ceiling (`1.0`) with a sustain/decay envelope
+  tuned for real ERM motor spin-up lag — physically confirmed working. **Known
+  gap: doesn't register hits absorbed by Survival's purchasable Body Armor**
+  (a separate value from real health this project hasn't located in memory
+  yet — an opt-in diagnostic scan exists for the next investigation pass).
+  **Per-animation-step reload vibration** (matching CoD's historical console
+  behavior — a distinct pulse per real animation beat, not just a generic
+  reload cue) is a real, committed final-scope target, deliberately deferred
+  rather than attempted this pass; real per-weapon reload-timing data is
+  already on record (`re_notes/iw5sp.md`) to build it from once a genuine
+  "reload is actually happening" trigger is found. See
   `re_notes/known_issues.md` issues #24/#63.
-- **Auto-mantle while sprinting is new, STRICTLY off by default** (2026-08-03,
-  `[Movement] AutoMantleEnabled` in `mw3ncp_config.ini`). Drives the same real
-  native mantle command Jump already uses whenever the player is sprinting and
-  pushing the stick fully forward within a configurable cone — but only when the
-  game's own real mantle button-prompt hint is actually showing, after an initial
-  version without that gate made the player jump continuously on flat ground
-  (the mantle command and Jump are literally the same input, so "no ledge" isn't
-  a safe no-op the way it first seemed). Not yet live-confirmed against a real
-  mantleable ledge. See `re_notes/known_issues.md` issue #62.
+- **Auto-mantle while sprinting — NOT WORKING, shipped disabled** (2026-08-03,
+  `[Movement] AutoMantleEnabled=0` in `mw3ncp_config.ini`). Attempted to drive
+  the same real native mantle command Jump already uses whenever the player is
+  sprinting and pushing the stick fully forward within a configurable cone,
+  gated on the game's own real mantle button-prompt hint being visible — an
+  initial version without that gate made the player jump continuously on flat
+  ground (the mantle command and Jump are literally the same input, so "no
+  ledge" isn't a safe no-op the way it first seemed). A second round fixed a
+  timing gap between the render hook that sets the hint-visible signal and the
+  gameplay-tick hook that reads it. **Neither round confirmed the feature
+  actually firing near a real ledge** — shipped off by default; treat as not
+  implemented. See `re_notes/known_issues.md` issue #62.
 - Survival ready-up (hold Y) uses a synthetic F5 keypress rather than a real engine
   call — the real native trigger was never found despite an extensive search (see
   `re_notes/known_issues.md` issue #5); this workaround will be replaced if/when one

@@ -9,11 +9,13 @@ It hooks directly into a live game process. Expect bugs, rough edges, unfinished
 
 [color=#E74C3C][b]⚠ Versions before v0.2.2 are no longer distributed:[/b][/color] those builds shipped with an aim-assist feature's code compiled into the DLL (disabled by default, but present in the binary). v0.2.2 permanently removed that code entirely following anti-cheat risk research. Whether the mere presence of that code in earlier builds meaningfully raised VAC exposure was never confirmed — no ban was ever reported — but as a further, deliberate risk-mitigation step, every file version older than v0.2.2 has been removed from this page's Files tab and unpublished from GitHub Releases. Nothing has been deleted — full source history for those versions remains available in the GitHub repository — only the downloadable packages are no longer offered. [b]v0.2.2 is the oldest version this project still distributes or supports.[/b] See the Changelog tab for full detail.
 
+[color=#F39C12][b]A note on antivirus scans:[/b][/color] a VirusTotal scan of v0.3.0 shows 1 out of 67 vendors (VBA32, a heuristic-heavy engine) flagging the DLL with a generic label; every major vendor (Microsoft, Kaspersky, ESET, Malwarebytes, CrowdStrike, BitDefender, and more) shows clean. This is consistent with a heuristic false positive on the DLL's real, intentional behavior — hooking functions inside the game process via MinHook and runtime byte-pattern scanning — the same general shape plenty of legitimate tools (ReShade, RivaTuner Statistics Server) trigger on some scanners. Full source is on GitHub if you want to verify yourself.
+
 [hr]
 
-[size=4][b]Status: ALPHA — v0.2.5 (2026-07-31)[/b][/size]
+[size=4][b]Status: ALPHA — v0.3.0 (2026-08-03) — the most significant release to date[/b][/size]
 
-Not feature-complete, not fully tested end-to-end. Multiplayer ([font=Courier New]iw5mp.exe[/font]) hasn't been started at all. Read [b]What Works / Partial / Not Working[/b] below before assuming any specific feature works — this project is deliberately honest about what's confirmed vs. not, not a marketing pitch.
+By code volume this is the biggest release yet: 8,057 lines changed overall, 5,725 of them source code — more than double the prior record. Not feature-complete, not fully tested end-to-end. Multiplayer ([font=Courier New]iw5mp.exe[/font]) hasn't been started at all. Read [b]What Works / Partial / Not Working[/b] below before assuming any specific feature works — this project is deliberately honest about what's confirmed vs. not, not a marketing pitch, including two things below that were attempted this release and are being reported as NOT working rather than glossed over.
 
 [hr]
 
@@ -47,8 +49,9 @@ Every other "controller support" option for this game works by faking keyboard/m
 [*]Button/stick layout presets (Default/Tactical/Lefty/TacticalLefty) — [b]all confirmed correct against real hardware[/b]
 [*]Fully configurable via a self-documenting [font=Courier New]mw3ncp_config.ini[/font] (sensitivity, ADS slowdown, hold thresholds, bindings, look ramp, notification style). [b]New in v0.2.5:[/b] the config now auto-migrates existing files across updates, and [b]hot-reloads live[/b] while the game is running — no relaunch needed to see most changes
 [*][b]New in v0.2.5:[/b] a small on-screen top-right notification on startup and whenever the config is hot-reloaded, with a rare chance of a stylized variant. Uses a self-contained, DLL-embedded font — no font install required
-[*][b]New, not yet in a numbered release:[/b] real controller-glyph icons — in-game interact hints (pickup/swap, buy-station, mantle, Reload, grenade throwback, Survival ready-up) and menu corner hints (Back/Friends). Also new: a custom mouse cursor overlay so the cursor draws correctly on top of these icons instead of underneath them
-[*][b]New:[/b] controller vibration on weapon fire and taking damage — fully configurable strength/duration
+[*][b]New in v0.3.0, confirmed live:[/b] real controller-glyph icons — in-game interact hints (pickup/swap, buy-station, mantle, Reload, grenade throwback, Survival ready-up) and menu corner hints (Back/Friends). Also new: a custom mouse cursor overlay so the cursor draws correctly on top of these icons instead of underneath them
+[*][b]New in v0.3.0:[/b] real controller vibration on weapon fire and taking damage — went through four tuning rounds and is now maxed out in software; physically confirmed working
+[*][b]New in v0.3.0:[/b] crouch input occasionally not responding, Survival ready-up UI conflicts, mistargeted menu text, Jump not standing you up first, and cursor visibility issues — a full bug batch from the first public Survival co-op stream, all fixed and confirmed live
 [/list]
 
 [size=4][b]🟡 Partial — works, with a specific known gap[/b][/size]
@@ -58,13 +61,14 @@ Every other "controller support" option for this game works by faking keyboard/m
 [*]Back button (scoreboard/objectives) — implemented and builds clean, not yet separately confirmed live
 [*]A few Campaign killstreak/vehicle set-pieces (DPV aiming, a mounted turret sequence, one mortar sequence) — aim or fire input has a specific, documented gap; most of Campaign plays fine
 [*]Real in-game controller options menu — a working injection mechanism is proven live for simple content; real menu content (backgrounds, sliders) hit a genuine engine limit and isn't shippable yet
-[*]Highlighted-item glyph in menu list navigation — shown only on a handful of individually-verified screens (main menu, Campaign hub, a couple of popups) rather than everywhere yet, as a deliberate release-safety choice
-[*]Auto-mantle while sprinting — new, off by default, opt-in via the config file; vaults over obstacles automatically while sprinting into them
+[*]Highlighted-item glyph in menu list navigation — shown only on a handful of individually-verified screens (main menu, Campaign hub, a couple of popups) rather than everywhere yet, as a deliberate release-safety choice after an audit found several "done" screens were never actually re-confirmed
+[*]Vibration doesn't register hits absorbed by Survival's purchasable Body Armor — a separate value from real health this project hasn't located in memory yet
 [/list]
 
 [size=4][b]⬜ Not Working / Not Implemented At All[/b][/size]
 
 [list]
+[*][b]Auto-mantle while sprinting — implemented, live-tested twice, still doesn't reliably fire near a real ledge.[/b] Shipped OFF by default. Two rounds attempted (a jump-spam regression fixed, then a render/gameplay-tick timing gap fixed) but neither confirmed the feature actually firing — treat as not implemented, not as a working opt-in
 [*]Per-animation-step reload vibration (a pulse per real reload animation beat, matching classic console CoD) — a committed future feature, not yet built
 [*]One vehicle-exit prompt (a specific tank-exit sequence) — not wired up
 [*]Survival debug menu / dev console — the real in-game console is confirmed permanently dead
