@@ -1,14 +1,15 @@
 # MW3 Native Controller Support (Campaign & Survival)
 
-> **▶️ DEVELOPMENT HAS RESUMED AS OF 2026-07-31**, as planned — the short break
-> (2026-07-23 to 2026-07-31) is over and active work is back to normal. First
-> item addressed on return: the intermittent crouch/B failure reported during
-> the break's v0.2.2 livestreams (see `re_notes/known_issues.md` issues #27/#42)
-> is **fixed and user-confirmed live**, shipped as **v0.2.5**, a hotfix release.
-> The user is still reviewing both v0.2.2 streams for any further bugs found
-> during them (none reported as gamebreaking so far, mostly Campaign-related,
-> and unrelated to the crouch fix — still relevant to check even on v0.2.5).
-> **v0.2.5 is the current most stable alpha build.**
+> **▶️ v0.3.0 (2026-08-03)** ships controller-glyph icons (in-game hints + menu
+> corner hints + a custom cursor overlay), real controller vibration, and the
+> crouch/UI bug batch from the first public Survival co-op stream — see
+> `PATCHNOTES.md` for the full list. **Two things in this release are honestly
+> flagged as NOT working, not just "unpolished":** auto-mantle while sprinting
+> (implemented, live-tested twice, still doesn't reliably fire — shipped
+> disabled by default) and vibration for damage absorbed by Survival's
+> purchasable Body Armor (a separate value from real health this project
+> hasn't located in memory yet). See Known Limitations below for both.
+> **v0.3.0 is the current alpha build.**
 
 > **⚠️ SECURITY NOTICE — versions before v0.2.2 are no longer distributed.**
 > Versions v0.2.1 and earlier shipped with an aim-assist feature's code compiled
@@ -26,14 +27,16 @@
 > built, downloadable release packages are hidden. **v0.2.2 is the oldest
 > version this project still distributes or supports.**
 
-**Status: ALPHA — v0.2.5 (2026-07-31).** A hotfix release, all changes below user-confirmed live:
+**Status: ALPHA — v0.3.0 (2026-08-03).** Changes below since v0.2.5, most
+user-confirmed live — **two exceptions honestly flagged as not working, see
+their own bullets**:
 
-- Crouch/prone intermittent failures — including a "needs an initial click at launch" gap sharing a root cause with day-one's issue #1 (see Known Limitations) — fully fixed (`known_issues.md` #1/#27/#42)
-- A critical regression where holding breath on a sniper blocked firing entirely — fixed (issue #46, bind-index collision with Fire's own kbutton)
-- Look sensitivity split into independent horizontal/vertical values (`[Look] SensitivityHorizontal`/`SensitivityVertical`)
-- Pistols/iron sights barely slowed while aiming vs. 3x+ scopes — fixed via a new, independent `AdsCloseRangeSlowdownStrength` knob (issue #44)
-- Config auto-migration (issue #45) now carries existing settings forward across renamed keys and retuned defaults
-- New: on-screen top-right notifications (issue #47) — a startup message and a config-hot-reload confirmation, this project's first working per-frame render capability; see **Configuration & customization** below
+- Controller-glyph icons: real in-game interact hints (pickup/swap, buy-station, mantle, Reload, grenade throwback, Survival ready-up) and menu corner hints (Back/Friends), plus a custom mouse cursor overlay drawn correctly on top of them — confirmed live (issues #48/#50/#52)
+- Highlighted-item A-glyph in menu lists — confirmed live, but only on an explicit, short verified allowlist (main menu, Campaign hub, two popups); every other screen is a deliberate, documented gap, not a bug (issue #51)
+- The crouch/UI bug batch from the first public Survival co-op stream — crouch input occasionally not responding, ready-up prompt UI conflicts, mistargeted menu text, Jump not standing you up first, cursor visibility — all fixed and confirmed live (issues #53/#54/#56/#59/#55/#61)
+- Controller vibration on weapon fire and taking damage — real, physically confirmed, but went through four tuning rounds and is now maxed out in software (`FireIntensity=1.0`); if still weak on your controller, further gains would need different hardware, not a config change (issue #24/#63)
+- **NOT WORKING, shipped disabled: auto-mantle while sprinting.** Implemented and live-tested twice, still doesn't reliably fire near a real ledge — `AutoMantleEnabled=0` by default, don't rely on it (issue #62)
+- **Known gap: vibration doesn't register hits absorbed by Survival's Body Armor** — a separate value from real health this project hasn't located in memory yet (issue #63)
 
 No other player-facing behavior changed from v0.2.2, itself a risk-mitigation release: aim assist
 (rotational friction + magnetism, reading live entity/target memory) was **permanently removed**,
@@ -102,13 +105,13 @@ live-tested by the developer during actual play, not just built-and-assumed.
 | SMAW lock-on vs. aircraft (Goalpost) | Unconfirmed whether this is even a real bug |
 | Real in-game controller options menu | Static test injection proven live; real content (sliders, backgrounds) blocked on a GPU-resource-loading limit, not yet shippable |
 | Highlighted-item A-glyph (menu list navigation) | **Corrected 2026-08-03** — an earlier "shipped and confirmed live in full" claim was wrong; this session's own audit found several screens either had never been re-confirmed or were confirmed actively broken (one screen with a calibrated position table entry turned out to not work at all). **Shown only on an explicit, live-verified allowlist as a release-safety policy** — currently the main menu, the Campaign hub, and the Leave Lobby/Choose Content Pack popups; every other menu screen shows no glyph at all (rather than a possibly-wrong one) until individually re-verified. See `re_notes/known_issues.md` issue #51's own coverage table for the full per-screen breakdown |
-| Vibration/rumble | **Reimplemented 2026-08-03** after being fully disabled — fire rumble via a re-verified-safe hook, damage rumble via a per-frame health poll instead of a hook (the previously-recommended damage-hook target turned out unsafe on closer inspection). A separate bug then found vibration was silently a no-op even with hooks working (wrong XInput DLL loaded) — fixed. Not yet independently live-confirmed by the developer outside of this session's own testing; see `re_notes/known_issues.md` issues #24/#63 |
-| Auto-mantle while sprinting | **New, STRICTLY OFF BY DEFAULT** (opt-in via `[Movement] AutoMantleEnabled` in `mw3ncp_config.ini`) — automatically vaults over obstacles while sprinting and pushing the stick fully forward, gated on the game's own real "is a ledge actually mantleable right now" signal so it can't misfire into constant jumping on flat ground. Not yet independently live-confirmed against a real mantleable ledge; see `re_notes/known_issues.md` issue #62 |
+| Vibration/rumble | **Reimplemented 2026-08-03** after being fully disabled — fire rumble via a re-verified-safe hook, damage rumble via a per-frame health poll instead of a hook (the previously-recommended damage-hook target turned out unsafe on closer inspection). Went through four live-reported strength rounds; `FireIntensity` is now maxed at its software ceiling (`1.0`) — if still weak on your controller, that's very likely the controller's own hardware, not a remaining config fix. **Known gap: doesn't register hits absorbed by Survival's Body Armor** (a separate value from real health, not yet located in memory). See `re_notes/known_issues.md` issues #24/#63 |
 
 ### ⬜ Not working / not implemented at all
 
 | Feature | Why |
 |---|---|
+| **Auto-mantle while sprinting** | **Implemented, live-tested twice, still doesn't reliably fire near a real ledge.** Round 1 misfired into constant jumping on flat ground (fixed by gating on the game's own real ledge-hint signal); round 2 fixed a timing gap between the render hook and gameplay-tick hook that made it never fire at all — still not confirmed working after either round. **Shipped OFF by default** (`AutoMantleEnabled=0`) — treat as not implemented, not as a working opt-in. See `re_notes/known_issues.md` issue #62 |
 | Per-animation-step reload vibration | **Committed final-scope target, deliberately deferred, not started.** Real per-weapon reload-timing data already found (`iReloadTime`/`iReloadStartTime`/`iReloadEndTime`/etc. in `WeaponCompleteDef`) to eventually sync pulses to each weapon's own real animation phases; still needs a genuine "reload is actually happening" trigger (a real ammo/reload-state poll, not the Reload button press — that fires on every Interact tap too). See `re_notes/known_issues.md` issue #63 |
 | Vehicle-exit prompt (`+usereload`, Mind the Gap) | Not wired |
 | Survival debug menu / dev console | The real console is confirmed permanently dead — a custom debug menu hasn't been built |
@@ -211,10 +214,10 @@ kind of durable record git/`PATCHNOTES.md` provides.
 | Button-glyph UI prompts | 5 | 6 | **Corrected 2026-08-03** — the highlighted-item A-glyph sub-item is demoted from done to partial: an audit this session found several screens claimed working were never actually re-confirmed, and one (with its own calibrated position table entry) was confirmed outright broken. Now gated behind an explicit, live-verified allowlist (main menu, Campaign hub, two popups) rather than assumed complete; in-game interact hints, menu corner hints, and the custom cursor overlay remain genuinely done. See `known_issues.md` #48/#50/#51/#52 |
 | Killstreak support | 4 | 4 | All 4 real Survival killstreaks now have a confirmed real mechanism: Predator Missile launch (fixed via a from-bytecode-to-native-delivery trace) and camera/view both confirmed working; Precision Airstrike confirmed working (a smoke-grenade-throw mechanic, not a menu system); AI squadmate call-in confirmed working. Predator Missile's post-fire guidance AIM is a separate, still-open bug (not a killstreak-activation problem) — tracked under the mounted-aim-channel work below |
 | Real in-game options menu | 2 | 4 | Static injection mechanism done; the next blocker (real menu content needs the engine's own controlled load context) now has a full, pressure-tested two-part implementation plan (boot-time zone splice + a single `OpenMenuByName` string-substitution hook) — not yet coded |
-| Vibration/rumble | 1.5 | 2 | **Updated 2026-08-03** — reimplemented after the original startup-crash disable: fire rumble via a re-verified-safe hook, damage rumble via a per-frame health poll (the originally-recommended damage-hook target turned out unsafe on closer inspection, so it's deliberately not hooked). A separate DLL-loading bug that made vibration a silent no-op was also found and fixed. Not yet independently live-confirmed by the developer outside this session's own testing, and per-animation-step reload vibration is a real, deliberately-deferred final-scope item (not counted in this row) — see `known_issues.md` #24/#63 |
-| Auto-mantle (sprint) | 0.5 | 1 | **New, 2026-08-03** — implemented, STRICTLY off by default, gated on the game's own real ledge-availability signal (not just stance+stick) after an initial version misfired into constant jumping. Not yet live-confirmed against a real mantleable ledge — see `known_issues.md` #62 |
+| Vibration/rumble | 1.5 | 2 | **Updated 2026-08-03** — reimplemented after the original startup-crash disable: fire rumble via a re-verified-safe hook, damage rumble via a per-frame health poll (the originally-recommended damage-hook target turned out unsafe on closer inspection, so it's deliberately not hooked). Physically confirmed working, went through four strength-tuning rounds and is now maxed out in software. **Known gap: doesn't register hits absorbed by Survival's Body Armor** (not counted against this row — a genuinely separate, unlocated field). Per-animation-step reload vibration is a real, deliberately-deferred final-scope item (also not counted) — see `known_issues.md` #24/#63 |
+| Auto-mantle (sprint) | 0 | 1 | **NOT WORKING, 2026-08-03** — implemented and live-tested twice (a jump-spam regression fixed, then a total-failure regression addressed), still not confirmed actually firing near a real ledge. Shipped OFF by default; scored 0 rather than partial credit since it has never been observed working — see `known_issues.md` #62 |
 | Extreme Conditioning override | 1 | 1 | **Resolved for free, 2026-07-19** — Sprint's real-kbutton migration means the native perk system now applies its own duration override automatically, same as it does for keyboard players; no separate detection/override code was ever needed once the kbutton was found |
-| **Total** | **44** | **49** | **44/49 ≈ 90/100** (2026-08-03: Button-glyph row corrected 6→5 done after this session's own re-audit found several "done" claims were unverified or wrong; Vibration bumped 1→1.5 for the reimplementation, still pending independent live confirmation; Auto-mantle added as a new 0.5/1 row; every other row is still as of 2026-07-19/08-01 and not independently re-verified in this pass) |
+| **Total** | **43.5** | **49** | **43.5/49 ≈ 89/100** (2026-08-03: Auto-mantle corrected from 0.5→0 done — implemented but never confirmed working, so no partial credit; Vibration stays at 1.5 (confirmed working, tuning maxed out, armor gap tracked separately); every other row is still as of 2026-07-19/08-01 and not independently re-verified in this pass) |
 
 ### Raw functionality methodology
 
@@ -222,11 +225,13 @@ Average of three real, currently-tracked data sets (untested items excluded from
 this score entirely, since "untested" is a completeness question, not a
 functionality one): ✅ = 1.0, 🟡/partial = 0.5.
 
-- Current control map (this file, above): 19 confirmed / 4 partial / 1 not-started
-  → 21/24 ≈ 88% (**recomputed 2026-08-03**: 2 new partial rows added — the
-  highlighted-item A-glyph, corrected from an overstated "confirmed" claim, and
-  the new auto-mantle feature; Vibration/rumble's own partial status is
-  unchanged in kind, just updated in description)
+- Current control map (this file, above): 19 confirmed / 3 partial / 2 not-started
+  → 20.5/24 ≈ 85% (**recomputed 2026-08-03**: auto-mantle moved from partial to
+  not-started — implemented and live-tested twice, still not confirmed working,
+  so it gets no partial credit; the highlighted-item A-glyph partial row is
+  unchanged, corrected earlier the same day from an overstated "confirmed"
+  claim; Vibration/rumble's own partial status is unchanged in kind, just
+  updated in description)
 - Campaign mission compatibility (`re_notes/compatibility_matrix.md`), tested
   missions only — recomputed after correcting a mission mis-attribution (the
   mortar/turret bugs actually belong to Goalpost, not "Back on the Grid," which
@@ -239,7 +244,7 @@ functionality one): ✅ = 1.0, 🟡/partial = 0.5.
   turret, SMAW, Predator Missile — each has a real open caveat, from unwired
   fire input to unconfirmed lock-on to a still-broken post-fire aim) out of
   8 tested** → 5.5/8 ≈ 69%
-- Average: (88 + 71 + 69) / 3 ≈ **76/100**
+- Average: (85 + 71 + 69) / 3 ≈ **75/100**
 
 Recompute periodically as sub-items close out and more of Campaign/Special Ops gets
 playtested — these are rough, transparently-weighted estimates for at-a-glance
@@ -258,7 +263,7 @@ is still open, not how rough what already works is.
 | Stage | Version range | What it means here |
 |---|---|---|
 | **Pre-alpha** | `0.1.0` – `0.1.5` | Core systems land one at a time — movement/look/combat, stance/sprint, pause menu, and menu navigation done; aim assist, vibration, killstreaks, and the controller options menu still being built out. |
-| **Alpha** *(current, v0.2.5)* | `0.1.5` – `0.4.0` | The remaining major systems get built and land. **v0.2.0**: Sprint fully native (no custom timer, Extreme Conditioning resolved for free), 3 of 4 Survival killstreaks confirmed working, menu/UI navigation extended to the main menu/title screen and slider values. **v0.2.1**: console-accurate look acceleration ramp, and Hold Breath (L3 while ADS'd) fully working as genuinely native input after an extensive debugging pass. **v0.2.2**: risk-mitigation release — aim assist permanently removed (not just disabled) following VAC research; see the security notice at the top of this file. **v0.2.5**: crouch/stance reliability hotfix and the on-screen notification system. **Button-glyph controller icons have since shipped** (2026-08-01, not yet in a numbered release — see `PATCHNOTES.md`'s Unreleased section and `known_issues.md` #48/#50/#52): in-game hints, menu corner hints, the Special Ops modal Back/Friends bug (genuinely resolved, not just the earlier inert mitigation), and a custom mouse cursor overlay (drawn on top of this project's own icons instead of underneath them, replacing the native software cursor). **Corrected 2026-08-03**: the highlighted-item A-glyph in vertical list menus was previously (wrongly) reported as shipped in full — a same-day audit found several screens either unverified or actively broken, so it now shows only on an explicit, live-verified allowlist rather than everywhere. **Also landed 2026-08-03**: vibration/rumble reimplemented (fire via a re-verified hook, damage via a per-frame health poll instead of a hook) after a DLL-loading bug that silently no-op'd it was found and fixed; and a new, strictly-opt-in auto-mantle-while-sprinting feature. **Still ahead in this stage**: a real in-game options screen, re-verifying the remaining A-glyph screens, per-animation-step reload vibration (a committed final-scope item), Predator Missile's guidance aim, and remaining Campaign/Special Ops compatibility gaps. Multiplayer groundwork may start here, pending the anti-cheat question being resolved first. |
+| **Alpha** *(current, v0.3.0)* | `0.1.5` – `0.4.0` | The remaining major systems get built and land. **v0.2.0**: Sprint fully native (no custom timer, Extreme Conditioning resolved for free), 3 of 4 Survival killstreaks confirmed working, menu/UI navigation extended to the main menu/title screen and slider values. **v0.2.1**: console-accurate look acceleration ramp, and Hold Breath (L3 while ADS'd) fully working as genuinely native input after an extensive debugging pass. **v0.2.2**: risk-mitigation release — aim assist permanently removed (not just disabled) following VAC research; see the security notice at the top of this file. **v0.2.5**: crouch/stance reliability hotfix and the on-screen notification system. **v0.3.0**: controller-glyph icons (in-game hints, menu corner hints, custom cursor overlay), the highlighted-item A-glyph (shown on a verified-only allowlist after an audit found overstated claims), real controller vibration (physically confirmed, strength maxed out in software), and the crouch/UI bug batch from the first public Survival co-op stream. **Two things attempted but NOT working in v0.3.0, shipped honestly flagged rather than silently absent**: auto-mantle while sprinting (implemented, live-tested twice, still doesn't fire reliably — shipped disabled) and vibration for Survival Body Armor hits (a separate, unlocated value). **Still ahead in this stage**: a real in-game options screen, re-verifying the remaining A-glyph screens, actually fixing auto-mantle and armor vibration, per-animation-step reload vibration, Predator Missile's guidance aim, and remaining Campaign/Special Ops compatibility gaps. Multiplayer groundwork may start here, pending the anti-cheat question being resolved first. |
 | **Beta** | `0.4.0` – `1.0.0` | Should be practically feature-complete — remaining work is closing gaps, fixing what live testing surfaces, and extending reach (other MW3 clients, Multiplayer if the anti-cheat question resolves favorably) rather than building brand-new core systems from scratch. |
 | **1.0 (final)** | `1.0.0`+ | Feature-complete against this project's full scope, stable, and treated as a real release rather than an actively-shifting work in progress. |
 
@@ -539,8 +544,8 @@ state directly, as described above:
 | Slider-type settings (e.g. sensitivity) | Adjusting the actual VALUE of a slider, not just navigating to it | ✅ Confirmed live (2026-07-18) — Left/Right adjusts the value directly, via the same generic menu-forwarding mechanism as everything else in this section |
 | Button-glyph UI prompts | Real controller-glyph icons in in-game interact hints and menu UI corner hints; custom mouse cursor overlay | ✅ Shipped and confirmed live (2026-08-01) via a custom-hint-redraw overlay — see `re_notes/known_issues.md` issues #48/#50/#52 |
 | Highlighted-item A-glyph (menu list navigation) | Real controller-glyph icon on whichever menu-list item is currently focused | 🟡 **Corrected 2026-08-03** — shown only on a live-verified allowlist (main menu, Campaign hub, two popups); every other screen intentionally shows nothing rather than a possibly-wrong glyph, pending individual re-verification (see `re_notes/known_issues.md` issue #51) |
-| Vibration/rumble | Controller rumble on weapon fire/taking damage | 🟡 **Reimplemented 2026-08-03** — fire rumble via a re-verified hook, damage rumble via a per-frame health poll (not a hook, after the recommended hook target turned out unsafe); a separate DLL-loading bug that silently no-op'd all vibration was also fixed. Not yet independently live-confirmed by the developer (see `re_notes/known_issues.md` issues #24/#63) |
-| Auto-mantle (sprint) | Automatically mantle over obstacles while sprinting + pushing the stick fully forward | 🟡 **New 2026-08-03, STRICTLY off by default** — gated on the game's own real ledge-availability signal after an initial version misfired into constant jumping; not yet live-confirmed against a real ledge (see `re_notes/known_issues.md` issue #62) |
+| Vibration/rumble | Controller rumble on weapon fire/taking damage | 🟡 **Reimplemented 2026-08-03** — fire rumble via a re-verified hook, damage rumble via a per-frame health poll (not a hook, after the recommended hook target turned out unsafe); a separate DLL-loading bug that silently no-op'd all vibration was also fixed. Physically confirmed working, strength maxed out in software after four tuning rounds. Known gap: doesn't register Survival Body Armor hits (see `re_notes/known_issues.md` issues #24/#63) |
+| Auto-mantle (sprint) | Automatically mantle over obstacles while sprinting + pushing the stick fully forward | ⬜ **NOT WORKING, 2026-08-03** — implemented and live-tested twice (a jump-spam regression fixed, then a total-failure regression addressed), still not confirmed actually firing near a real ledge. Shipped OFF by default; don't rely on it (see `re_notes/known_issues.md` issue #62) |
 
 **B's stance ladder**, matching real Xbox 360 CoD behavior (not a raw hold of either
 bit):

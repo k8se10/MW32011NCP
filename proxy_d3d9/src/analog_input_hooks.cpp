@@ -1213,6 +1213,30 @@ extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
     // every single frame the condition holds, not just once per real mantle.
     static DWORD s_lastAutoMantleTriggerMs = 0;
     constexpr DWORD kAutoMantleCooldownMs = 750;
+
+    // Diagnostic (2026-08-03, live-reported "doesn't fire at all now" -- the
+    // opposite symptom from the earlier jump-spam regression this gate was added
+    // to fix). Logs the two real gate conditions independently, rate-limited, so
+    // a live retest near an actual mantleable ledge while sprinting can show
+    // whether IsMantleHintCurrentlyShowing() ever becomes true AT THE SAME TIME as
+    // IsSprintActive() -- if the hint is never observed showing while sprintActive
+    // is also true, that points to the native hint itself not rendering during a
+    // real sprint state (a possible engine behavior this project hasn't
+    // specifically confirmed either way), not a bug in this gate's own logic.
+    if (g_modConfig.autoMantleEnabled) {
+        static DWORD s_lastAutoMantleDiagLogMs = 0;
+        DWORD nowMsDiag = GetTickCount();
+        bool sprintActiveDiag = IsSprintActive();
+        bool mantleHintDiag = IsMantleHintCurrentlyShowing();
+        if (mantleHintDiag || (nowMsDiag - s_lastAutoMantleDiagLogMs) >= 500) {
+            s_lastAutoMantleDiagLogMs = nowMsDiag;
+            char buf[128];
+            sprintf_s(buf, "[automantle-diag] sprintActive=%d mantleHintShowing=%d",
+                sprintActiveDiag ? 1 : 0, mantleHintDiag ? 1 : 0);
+            LogFromController(buf);
+        }
+    }
+
     if (g_modConfig.autoMantleEnabled && IsSprintActive() && IsMantleHintCurrentlyShowing() &&
         (GetTickCount() - s_lastAutoMantleTriggerMs) >= kAutoMantleCooldownMs) {
         float amLeftX, amLeftY, amRightX, amRightY;
@@ -3177,15 +3201,23 @@ int g_menuListItemOrdinalThisFrame = 0;
 // calls (set true wherever isMantleHint fires, see that block's own comment) --
 // rendering and the gameplay-tick InjectControllerButtons run on different hook
 // points, so a value can't be read directly across them within the same frame.
-// Committed to the stable g_mantleHintShowingLastFrame once per frame (in
-// ResetMenuListItemOrdinalForFrame, alongside every other per-frame reset), which
-// IsMantleHintCurrentlyShowing() below exposes read-only. This introduces at most
-// one frame (~16ms at 60fps) of lag between the native hint appearing and
-// auto-mantle noticing -- imperceptible, same accepted precedent as this file's
-// other one-frame-lag fixes.
+// Committed once per frame (in ResetMenuListItemOrdinalForFrame, alongside every
+// other per-frame reset) into a last-seen TIMESTAMP rather than a plain last-frame
+// bool -- upgraded 2026-08-03 after live-reporting the strict same-frame version
+// never fired auto-mantle at all. A single-frame bool assumes render and gameplay-
+// tick hooks stay in lockstep (one committed value per gameplay tick); if the
+// render hook (EndScene) and the gameplay tick (this old engine's own locked-rate
+// simulation) aren't actually 1:1 -- e.g. multiple gameplay ticks landing between
+// two renders, or vice versa -- a bool can go stale for an entire tick right when
+// auto-mantle checks it, silently missing a real, currently-showing hint.
+// IsMantleHintCurrentlyShowing() below instead accepts anything seen within a
+// short grace window, tolerating that skew without reintroducing the original
+// "fires with no real ledge" regression (see the 750ms auto-mantle cooldown for
+// why a slightly stale "yes" still can't cause a wrong repeated trigger).
 bool g_mantleHintDrawnThisFrame = false;
-bool g_mantleHintShowingLastFrame = false;
-bool IsMantleHintCurrentlyShowing() { return g_mantleHintShowingLastFrame; }
+DWORD g_mantleHintLastSeenMs = 0;
+constexpr DWORD kMantleHintGraceMs = 400;
+bool IsMantleHintCurrentlyShowing() { return (GetTickCount() - g_mantleHintLastSeenMs) <= kMantleHintGraceMs; }
 
 // ---- Automatic list-glyph positioning (2026-08-03, issue #51 follow-up) -----------
 //
@@ -5534,9 +5566,12 @@ extern "C" void __cdecl ResetMenuListItemOrdinalForFrame()
     g_menuListItemOrdinalThisFrame = 0;
 
     // Auto-mantle's real ledge-availability gate (issue #62 follow-up): commit this
-    // frame's accumulated mantle-hint-drawn state to the stable flag
-    // InjectControllerButtons reads, then reset the accumulator for the next frame.
-    g_mantleHintShowingLastFrame = g_mantleHintDrawnThisFrame;
+    // frame's accumulated mantle-hint-drawn state to a last-seen timestamp
+    // (IsMantleHintCurrentlyShowing()'s own grace-window read), then reset the
+    // accumulator for the next frame.
+    if (g_mantleHintDrawnThisFrame) {
+        g_mantleHintLastSeenMs = GetTickCount();
+    }
     g_mantleHintDrawnThisFrame = false;
 }
 

@@ -6,13 +6,27 @@ reverse-engineering trail behind each entry.
 
 ---
 
-## Unreleased
+## v0.3.0 — Alpha (2026-08-03) — Controller-glyph icons, vibration, auto-mantle (disabled)
 
-The user is still reviewing both v0.2.2 livestreams for any further bugs found
-during them (none reported as gamebreaking so far, mostly Campaign-related) —
-those are unrelated to the crouch fix that prompted v0.2.5 and remain relevant
-to check for even on this new version; log each as its own
-`re_notes/known_issues.md` entry as reported (see [[project_post_break_priorities]]).
+Everything below accumulated since v0.2.5 (2026-07-31). **Known gaps in this
+release, stated plainly rather than left implicit:**
+- **Auto-mantle while sprinting is NOT WORKING and shipped disabled
+  (`AutoMantleEnabled=0`).** Implemented, live-tested twice, still doesn't
+  reliably fire near a real ledge — see its own entry below and
+  `re_notes/known_issues.md` issue #62. Treat as not implemented for this
+  release, not as a working opt-in feature.
+- **Vibration doesn't register hits absorbed by Survival's Body Armor** (a
+  separate value from real health this project hasn't located yet) — only
+  real health loss and weapon fire produce rumble. See issue #63.
+- **Vibration strength is maxed out in software** (`FireIntensity=1.0`, the
+  real ceiling) and may still read as weak on some controllers — likely a
+  hardware/motor difference at that point, not something a config value can
+  fix further. See issue #63.
+- Highlighted-item A-glyph in menu lists only shows on a short, explicit
+  verified allowlist (main menu, Campaign hub, two popups) — every other
+  screen is a deliberate, documented gap, not a bug. See issue #51.
+- Per-animation-step reload vibration is a committed future feature, not
+  started. See issue #63.
 
 ### Changed
 - **Versions before v0.2.2 are no longer publicly distributed.** As a further
@@ -56,39 +70,67 @@ to check for even on this new version; log each as its own
   input-method signal the custom cursor overlay already used for its own
   visibility (issue #55), extracted into one function so the two can never
   disagree. See `re_notes/known_issues.md` issue #61.
-- **Auto-mantle while sprinting, STRICTLY OFF BY DEFAULT (opt-in via config).**
-  When enabled, automatically mantles over obstacles while sprinting and
-  pushing the left stick fully forward (within a configurable ~45° cone), no
-  separate Jump press needed — matching modern CoD titles' own sprint-mantle
-  behavior. Drives the same real native mantle command Jump already uses. New
-  `[Movement]` config section (`AutoMantleEnabled`/
-  `AutoMantleForwardConeDegrees`/`AutoMantleMinStickMagnitude`).
-  **Live-reported same day: this made the player jump continuously any time
-  they sprinted forward, ledge or not** — the initial design assumed the real
-  mantle command was a safe no-op with nothing to mantle over, but it's
-  literally the same input as Jump, so forcing it constantly just meant
-  constant jumping. Fixed by gating on the game's own real "is a mantleable
-  ledge actually here" signal (reusing this project's own existing detection
-  of the native mantle button-prompt hint) instead of guessing from
-  sprint+stick alone — now only fires when the game itself would show that
-  prompt. Also added a 750ms cooldown after each real trigger so it can't
-  double-fire on the same ledge. See `re_notes/known_issues.md` issue #62;
-  built and deployed, not yet live-playtested.
-- **Vibration hooks installed cleanly with zero crashes, but no physical
-  rumble was ever actually felt.** Root cause: this project only ever loaded
-  `xinput9_1_0.dll` for controller input — a legacy Windows compatibility DLL
-  whose own vibration output is a documented no-op on real installs (a
-  well-known XInput gotcha, invisible until vibration specifically needed it).
-  Fixed by trying the full-featured XInput DLLs first and only falling back to
-  the legacy one if neither is present. See `re_notes/known_issues.md` issue
-  #24.
-- **Vibration worked once the DLL fix above landed, but felt "extremely
-  weak."** A 60ms pulse barely gave a real motor time to spin up before
-  decaying back down, and the default strength alone was faint on most
-  controllers. Raised both together: `FireIntensity` 0.25→0.55,
-  `FireDurationMs` 60→90, `DamagePerPoint` 0.03→0.05 — all still fully
-  user-configurable under `[Vibration]` in `mw3ncp_config.ini`. See
-  `re_notes/known_issues.md` issue #63; not yet live-retested.
+- **Auto-mantle while sprinting — NOT WORKING, shipped disabled
+  (`AutoMantleEnabled=0`).** Attempted this release: automatically mantle
+  over obstacles while sprinting and pushing the left stick fully forward, no
+  separate Jump press needed, matching modern CoD titles' own sprint-mantle
+  behavior, driving the same real native mantle command Jump already uses.
+  New `[Movement]` config section exists (`AutoMantleEnabled`/
+  `AutoMantleForwardConeDegrees`/`AutoMantleMinStickMagnitude`) but the
+  feature itself does not reliably work: **round 1** made the player jump
+  continuously on flat ground (the mantle command and Jump are literally the
+  same usercmd bit, so gating on sprint+stick alone with no real ledge check
+  wasn't safe) — fixed by gating on the game's own real mantle-hint-visible
+  signal instead. **Round 2, live-retested the same day: swung the other way
+  and never fires at all near a real ledge** — traced to a timing gap between
+  the render hook that sets the hint-visible signal and the gameplay-tick
+  hook that reads it, addressed with a timestamp+grace-window fix and a
+  diagnostic log. **Still not confirmed working after round 2.** Treat this
+  as an unfinished, not-implemented feature for v0.3.0 — shipped off by
+  default and should stay off until a live test confirms it actually fires.
+  See `re_notes/known_issues.md` issue #62.
+- **Controller vibration/rumble, reimplemented from scratch (issue #24).**
+  Previously shipped once, then disabled the same day after crashing the game
+  at startup (the original hooks targeted generic, multi-purpose native
+  functions with inconsistent real argument shapes across callers). Fire
+  rumble now hooks a single-purpose function found via a runtime byte-pattern
+  scan; damage rumble avoids hooking entirely, detected via a per-frame local-
+  player health poll instead, with guards against regen/perk/respawn false
+  positives. **Four rounds of live-reported weakness, three of them fixed the
+  same day:** (1) this project only ever loaded `xinput9_1_0.dll`, a legacy
+  compatibility DLL whose `XInputSetState` is a documented no-op for real
+  vibration on most installs — fixed by trying `xinput1_4`/`xinput1_3` first;
+  (2) even with a real signal, it still felt "extremely weak" — raised
+  `FireIntensity` 0.25→0.55, `FireDurationMs` 60→90, `DamagePerPoint`
+  0.03→0.05; (3) **still "extremely weak, almost impossible to feel" after
+  round 2.** Real ERM vibration motors have physical spin-up lag (~50-100ms)
+  before reaching a speed you can feel — the original decay curve commanded
+  the peak strength only at t=0 and ramped straight down for the pulse's
+  entire duration, so a short pulse could finish decaying before the physical
+  motor ever caught up. Added a sustain-then-release envelope
+  (`kRumbleSustainFraction`), raised strengths again, and added a
+  rate-limited `[rumble-diag]` trigger-cadence log; (4) **live-retested —
+  "better now but kinda weak."** Raised `FireIntensity` to its own ceiling
+  (`1.0` — `XInputSetState`'s real motor-speed fields are already commanded
+  at their maximum here, there is no higher value to send), extended
+  `FireDurationMs` to 180 and the sustain fraction to 0.7, and bumped
+  `DamagePerPoint`/`DamageDurationMs` proportionally. **Known gap: if still
+  weak at these values on the same physical controller, this is very likely
+  the controller's own hardware (weaker real motor response, common on
+  third-party/Bluetooth pads), not a remaining software fix** — not yet
+  independently confirmed either way. `ConfigVersion` bumped 8→10 across all
+  four rounds.
+- **Known gap, not fixed this release: damage-rumble doesn't register hits
+  absorbed by Survival's purchasable Body Armor** (a separate value from real
+  health this project hasn't located yet — armor is tracked outside the
+  entity struct's health field entirely). A diagnostic scan
+  (`[Experimental] ArmorFieldScanLogging`, default off) was added and run
+  once live: it correctly ruled out one loud false-positive candidate
+  (`entity+0x58`, confirmed to be current ammo count, now excluded from the
+  scan) but didn't land on a confirmed armor field in that capture. Needs
+  another live Survival session with armor purchased and a few armored hits
+  taken, then the log, before this can be resolved. See
+  `re_notes/known_issues.md` issue #63.
 
 ### Fixed
 - **CRITICAL: changing display mode crashed the whole game.** Root cause: this
@@ -136,273 +178,64 @@ to check for even on this new version; log each as its own
   tracking; the new one never got wired up. Fixed by re-subclassing whenever
   the window handle actually changes. General infrastructure fix, not
   cursor-specific. See `re_notes/known_issues.md` issue #52.
-- **Highlighted-item A-glyph in vertical list menus, RESOLVED**
-  (`re_notes/known_issues.md` issue #51). Once issue #50's
-  `getfocuseditemname()` signal was available, this drew after all — adds
-  the A/select glyph icon after the item's own native text (no suppression
-  or redraw of the text itself, per explicit design), positioned using the
-  item's real measured text width. Went through several corrections after
-  going live: dropped a focus-tracking signal that turned out to never apply
-  to Special Ops' own navigation at all, then replaced two narrow bug fixes
-  (icon persisting with nothing highlighted; icon persisting under an
-  unrelated modal) with one general check instead. Known scope limit: only
-  works on lists using the real `ui_swf_selection` mechanism — at least one
-  other menu panel doesn't use it and isn't covered yet. **Follow-up
-  (2026-08-02): a nested-modal mispositioning bug found after this shipped —
-  see below.**
-- **A-glyph rendered on the wrong item entirely when a popup was open over a
-  dimmed background screen, PARTIALLY RESOLVED** (`re_notes/known_issues.md`
-  issue #51's "Nested-modal positioning bug"). Root cause, confirmed via a
-  live full-process-memory dump of the actual render command: this engine's
-  text-draw queue carries only rendering data (position, font, color, inline
-  text) with zero link back to the menu item that produced it — not
-  recoverable by any amount of further code tracing. Fixed via a manual,
-  per-screen calibrated position table populated from real coordinates read
-  directly out of live memory dumps across ~11 screens/popups (quit-confirm,
-  DLC/on-disk-content picker, difficulty select, friend-invite popup,
-  Campaign hub, Special Ops hub, MP lobby root, Options tabs, Act mission
-  list, Team Survival leaderboard). A handful of screens remain on the
-  original (imperfect, not worse than before) behavior — see known_issues.md
-  for the exact list (keybind editing screens, Options tabs beyond Video/
-  Audio/Controls, the deepest per-mission sub-list, one description-heavy
-  variant of the quit-confirm popup).
-- **Coverage extended significantly (2026-08-03) with a second, larger live-
-  memory-dump pass (63 more captures spanning menus, real gameplay, loading
-  transitions, and a cutscene).** Key discovery: nearly every vertical list
-  in the game reuses the same shared right-aligned column and row grid
-  regardless of how deep it's nested, so a handful of relaxed table entries
-  now cover dozens of real screens at once — the entire weapon-armory
-  browsing flow (Barracks → weapon category → individual weapon list),
-  Barracks' own stat tabs, the MP-lobby-reached Special Ops mission list, the
-  Barracks-reached leaderboard list, a clean (previously-contaminated) pause
-  menu capture, an in-game "Resume Game?"/"Leave Lobby?" popup, and —
-  correctly excluded from the "menu" position system since it's real
-  gameplay, not a menu — Survival's in-game weapon-armory buy station,
-  handled as its own left-aligned entry. See `re_notes/known_issues.md`
-  issue #51's "Second batch capture" section for the full list and for what's
-  still intentionally uncovered (cutscene subtitles and loading-tip text
-  don't need this system at all; a few menu paths need a follow-up capture).
-- **Campaign mission sub-list (Act I/II/III's own per-mission list) added to
-  the same coverage**, after a closer look found an earlier "not clean enough
-  to calibrate" call was too pessimistic — the apparent noise was just a
-  drop-shadow rendering effect on one row, not real extra items.
-- **Investigated, not yet re-enabled: vibration/rumble's original crash-on-
-  startup cause.** The two replacement hook targets identified back when this
-  feature was disabled are now confirmed safe via a full decompile (both are
-  narrow, single-purpose functions — real weapon-fire and real damage-from-
-  any-source respectively — not the shared multi-purpose dispatchers that
-  caused the original crash). Feature stays disabled pending an actual
-  re-implementation + live playtest; see `re_notes/known_issues.md` issue #24.
-- **Survival ready-up prompt read "Press Y" instead of "Hold Y"** (it's a
-  hold, not a tap), and could **silently vanish this project's own custom
-  text/glyphs entirely** whenever it overlapped a real interact hint or the
-  Reload reminder. Root cause: the interact-hint renderer used a single
-  shared slot for every gameplay hint, on the (previously true, now
-  disproven by co-op testing) assumption only one is ever on screen at once.
-  Fixed by giving ready-up/interact/Reload each their own independent slot
-  (same technique already proven for the menu corner-hint pool) so they
-  coexist by default, with one explicit, named rule (hide Reload while
-  ready-up or an interact hint is also up) decided once per frame instead of
-  racing an unreliable 100ms window. See `re_notes/known_issues.md` issue #54.
-- **Custom cursor overlay stayed visible during Survival co-op** even with no
-  real mouse/keyboard input, something solo play never triggered. First fix
-  attempt (comparing real `WM_MOUSEMOVE` recency against controller activity
-  recency) shipped the same day and immediately regressed live in two ways:
-  the cursor stayed visible at menus while actively using the controller
-  (only hid once real gameplay started), and flickered constantly during
-  gameplay. Both root-caused and fixed same day: (1) controller-activity
-  tracking had only been wired into the gameplay-tick functions, which halt
-  during menus — moved to a single, centralized point in every controller
-  read (`controller_input.cpp`) so menu navigation counts as activity too;
-  (2) the in-gameplay flicker traced to the native cursor-visible state
-  likely generating real mouse-move events on its own (contaminating the
-  "most recent" comparison) — replaced the comparison with a flat "hide if
-  the controller was used at all in the last 300ms" override, immune to
-  whatever the mouse-move timestamp is doing. That override then regressed
-  a third time, live-reported as "comes back too fast" — it only required
-  controller silence, never genuine mouse movement. Fixed by adding a real
-  pixel deadzone to `WM_MOUSEMOVE` (`kMouseMoveDeadzonePx`, same concept as
-  this project's own controller-stick deadzones) so native jitter/snaps no
-  longer count as real activity, then requiring the mouse timestamp to be
-  newer than the controller's last touch again now that it's trustworthy.
-  A fourth round then revealed the original symptom was never solo-vs-co-op
-  specific to begin with: a keyboard/mouse player saw the cursor persist
-  through ordinary ACTIVE gameplay, proving the native `uiState` exclusion
-  list this project's cursor overlay checks (`0`/`6`/`10`, guessed at the
-  overlay's original implementation) never actually covered "normal
-  gameplay, no menu open" — a live capture caught real `uiState` values
-  (`1`, `9` held 20+ seconds straight, `2`) none of which were excluded.
-  Rather than guess more magic numbers, the cursor now also requires this
-  project's own already-proven "a real menu is open" signal before drawing
-  at all. Confirmed fixed live. See `re_notes/known_issues.md` issue #55.
-  Buy-station cursor re-centering is a separate, still-open half of the
-  same report.
+- **Highlighted-item A-glyph in vertical list menus — long investigation,
+  currently gated to a verified-only allowlist (`re_notes/known_issues.md`
+  issue #51, full round-by-round trail there, ~15 rounds across 2026-08-01
+  through 08-03).** Draws the A/select icon after a focused list item's own
+  native text. Root cause behind most rounds: the focus signal
+  (`getfocuseditemname()`) doesn't stay in sync with real navigation on every
+  screen — replaced with a direct itemDef-memory read
+  (`TryGetRealFocusedGroupAndIndex`) that needs no script cooperation. Other
+  fixed bugs along the way: nested-modal mispositioning (popup over a dimmed
+  background screen), several per-screen calibration misses (main-menu row,
+  Choose Content Pack's bottom-anchored variant, Survival's map-select
+  screen), and a corner-hint slot cap that starved the icon on one screen. An
+  automatic self-calibrating positioning mechanism was tried and live-tested
+  unreliable, reverted (kept in code, disabled). **Release policy:** the
+  glyph only shows on an explicit, user-confirmed allowlist now (main menu,
+  Campaign hub, Leave Lobby/Choose Content Pack popups) rather than every
+  screen with a table entry, since an audit found several "done" screens were
+  never actually re-confirmed. Coverage extended significantly via a 63-
+  capture live-memory-dump batch (weapon-armory browsing, Barracks tabs,
+  leaderboards, pause menu, in-game popups, Campaign mission sub-list) — see
+  issue #51 for what's covered vs. still open.
+- **Investigated, not yet re-enabled (superseded by the reimplementation
+  further below): vibration/rumble's original crash-on-startup cause.**
+  Confirmed both replacement hook targets safe via decompile. See issue #24.
+- **Survival ready-up prompt read "Press Y" instead of "Hold Y", and could
+  vanish this project's own hint text/glyphs entirely** when it overlapped
+  another gameplay hint (single shared render slot). Gave ready-up/
+  interact/Reload independent slots plus one explicit suppression rule. See
+  issue #54.
+- **Custom cursor overlay stayed visible during real gameplay** with no
+  mouse/keyboard input — four live-reported regressions fixed same day
+  (controller-activity tracking centralized so menu nav counts as activity;
+  a `WM_MOUSEMOVE` deadzone to filter native jitter; ultimately requiring
+  this project's own "a real menu is open" signal before drawing at all,
+  since the native `uiState` exclusion list it originally checked never
+  actually covered plain gameplay). Confirmed fixed live. Buy-station cursor
+  re-centering is a separate, still-open half of the same report. See issue
+  #55.
 - **Menu text replacement (Quit's B-glyph, Leaderboards' controller binding)
-  could hijack an unrelated, genuine navigable menu ITEM that happened to
-  share the same label**, mangling that item's real text instead of the
-  intended corner-hint legend. Both matches relied on text content alone
-  with no positional check. Fixed by requiring the match to also sit at the
-  known corner-hint row (same row Back/Friends/Quit are already confirmed to
-  share), the same position-based discriminator technique already proven for
-  the menu-hint pool. See `re_notes/known_issues.md` issue #56.
-- **Jump from crouch/prone didn't stand the player up first**, unlike Sprint's
-  already-working equivalent. Same root cause class as Sprint's own original
-  fix: the raw `+gostand` usercmd bit alone isn't enough to force a stance
-  change. Now calls the same real `ToggleStance` toggle Sprint already uses,
-  on Jump's own rising edge. See `re_notes/known_issues.md` issue #59.
-- **Crouch input occasionally stops responding (regression), root cause
-  confirmed live and fixed.** Diagnostics added earlier the same day caught
-  it directly: a player mashing crouch 24 times over ~5.4 seconds while
-  `IsMenuActive()` was confirmed false the entire time, every single press
-  still silently eaten by a stale "this is the menu's press" latch
-  (`g_currentBPressTouchedMenu`) that only a SEPARATE, independently-polled
-  edge tracker (`InjectControllerMenuBack`'s own) was responsible for
-  clearing — and that tracker had desynced from the real button state, with
-  no way to self-correct until it eventually caught up on its own. This also
-  fully explains the "restored after melee/knifing" pattern reported both
-  here and originally in issue #42 — that was always coincidental timing,
-  never causal. Fixed by giving `InjectControllerButtons`' own (proven
-  reliable) rising-edge detection a second, independent path to clear the
-  same latch whenever no menu is genuinely active right now, instead of
-  relying solely on the other tracker. Confirmed fixed live. See
-  `re_notes/known_issues.md` issue #53.
-- **Turret placement prompt showed mouse text ("Press Left Mouse to place
-  the turret") on controller.** The real string was already sitting in an
-  earlier session's log — same row/font/format as every other pickup/
-  buy-station hint, just missing a glyph-resolution alias for the literal
-  display text "Left Mouse" (only the raw bind-name form was mapped).
-  Resolves through the current `ButtonLayout`'s real Fire button, same as
-  the existing "G or Middle Mouse" case — no new draw code needed. See
-  `re_notes/known_issues.md` issue #58; not yet live-verified.
-- **No A-glyph appeared on Campaign menus at all, root-caused and fixed.**
-  The manual-position glyph system's focus check depended on
-  `getfocuseditemname()` (a native function only some screens' own `.menu`
-  scripts actually call) staying in sync with real navigation — live log
-  evidence proved it doesn't for `CAMPAIGN_BUTTON_LIST`, which never calls
-  it at all, leaving the tracked focused-item name frozen on whatever the
-  main menu last focused. Replaced with a direct itemDef-array memory read
-  (`TryGetRealFocusedGroupAndIndex`, same technique this project's own
-  live-dump calibration tooling already used successfully) that needs no
-  script cooperation. A same-day theory that the real cause was a wrong UI
-  reference resolution (1280x720 vs. 1920x1080) was tried, live-confirmed
-  wrong (broke cursor size and corner hints), and reverted. **Live-confirmed
-  fixed on Campaign menus.**
-- **Follow-on: main-menu horizontal row (Special Ops/Campaign/Multiplayer)
-  glyphs landed one tile too far right, found by the same live re-test above.**
-  The position table assumed the three tiles were indices 0/1/2; the real
-  itemDef array's own `_0` name suffix turned out to belong to a non-
-  focusable background element, so the three real tiles are actually indices
-  1/2/3 — every glyph was drawing one slot right of the true button, and the
-  rightmost tile got none at all. Fixed by shifting the table to match the
-  real indices. **Live-confirmed**, then required two further offset
-  recalibrations on the same row, both live-confirmed the same day: the
-  shared text-clearance offset was first too small (landed mid-word on
-  "SPECIAL OPS"), then too large for "CAMPAIGN" specifically once increased
-  (landed near the tile's own edge) — Campaign's own stored position is now a
-  documented special case rather than using the shared offset value, plus a
-  final 5px right nudge on both Campaign and Multiplayer. **All three
-  main-menu tiles confirmed correct live.**
-- **Every other list-style menu glyph nudged 5px further from its text**
-  (Special Ops added to the main-menu row's own nudge; every vertical hub/
-  list entry's shared icon offset bumped 15px→20px project-wide), per
-  feedback that they sat a bit too tight against the label even where
-  correctly positioned. Popups and the Survival buy-station overlay use a
-  different, unaffected offset convention. **Live-confirmed.**
-- **Some menu screens still showed no A-glyph at all, root-caused as a second
-  instance of the exact same bug class as the Campaign fix above.** There are
-  two independent code paths for this feature: the manual-position table
-  (fixed for Campaign above) and a separate, older ordinal-based fallback used
-  by every screen WITHOUT a manual table entry. Only the first was fixed
-  earlier — the fallback path had the identical dependency on
-  `getfocuseditemname()` staying in sync with real navigation, so any screen
-  using it whose own `.menu` script never calls that function was silently
-  never drawing, same root cause, different code path. Fixed the same way:
-  switched to the direct itemDef-memory-read focus signal there too. See
-  `re_notes/known_issues.md` issue #51; not yet live-verified on this build.
-- **"Choose Content Pack" (DLC/on-disk-content picker) never showed a glyph on
-  the highlighted item — a third, distinct root cause.** Its shared position
-  table was calibrated against a different, 3-item variant of the same popup
-  container ("Leave Lobby?"); Choose Content Pack only has 2 real items, and
-  they're bottom-anchored to that same 3-row grid rather than starting at row
-  1. Indexing the table by the item's own local 0-based index landed the
-  glyph one full row above the real highlighted item. Fixed by having the
-  real-focus read also report how many real items exist in the current
-  instance, and shifting into the shared table accordingly whenever that's
-  fewer than the table's calibrated max — a general fix, not specific to this
-  one popup.
-- **The fix above briefly regressed the main-menu row, putting glyphs back on
-  the wrong tile, caught live the same day.** `game_select_button`'s own table
-  entry uses a similar-looking count/index scheme for an unrelated reason (a
-  placeholder slot that's never a real item), which the new logic
-  misinterpreted as "fewer real items than calibrated," shifting an
-  already-correct index by one. Fixed by making the new behavior an explicit
-  per-entry opt-in instead of inferring it automatically — only the one popup
-  group that actually needs it is affected now.
-- **Survival's own solo/co-op map-select screen (RESISTANCE/VILLAGE/
-  INTERCHANGE/...) showed no glyph at all — root-caused as a fourth, distinct
-  bug.** This screen reuses the same group name as the MP-lobby-reached
-  mission list, but with a genuinely different real layout: its items are
-  CENTERED with variable per-item width (confirmed via a live capture:
-  "Dome" and "Underground" differ by ~126px), not the other reuse's
-  right-aligned shared column. First fix attempt fell through to the generic
-  ordinal-based fallback path, live-confirmed wrong (the glyph landed several
-  rows off, and eventually on the right-hand preview panel's own text) since
-  this screen's split layout throws off that path's frame-wide draw counter —
-  the same limitation this whole feature was originally built to work around
-  for other screens. Real fix: a second, depth-specific table entry using
-  each item's own real captured position directly, the same per-item-X
-  technique already used for the popup entries.
-- **Even with the correct position, the glyph still never appeared on that
-  same screen — a fifth, unrelated bug.** A diagnostic trace proved the
-  position fix above was working exactly as intended; the real cause was a
-  hardcoded 4-slot cap on simultaneous corner-hint icons, and this screen
-  uniquely shows all four at once (Leaderboards/Game Summary/Friends/Back),
-  leaving no room for the list's own highlight glyph that same frame. Bumped
-  the cap with headroom.
-- **The glyph then showed but sat "way out of line horizontally," a sixth
-  round on the same screen.** The per-item table had been built from each
-  label's real text-START position plus a flat offset estimated from a much
-  larger-font screen — badly oversized here. Directly measuring each item's
-  real text-END position (same technique the fallback path already uses)
-  showed they all land within a tight ~25px band regardless of label length —
-  this list uses the exact same shared right-aligned column as every other
-  list in the game. Simplified to that same standard model.
-- **Architectural change: the highlighted-item glyph now positions itself
-  automatically instead of using a hand-maintained per-screen table.** After
-  the same "wrong row" bug turned up yet again on two more Leaderboards
-  screens (one where a tab itself turns out to be a real, independently
-  focusable list entry; another entirely new sub-screen never seen before),
-  it was clear every regression in this whole feature — across seven rounds
-  the same day — traced back to the same cause: a static table can only ever
-  encode a snapshot of one screen's layout, and every new reuse of a shared
-  menu-group name needs its own calibration round, indefinitely. Replaced
-  with a self-calibrating mechanism: every frame, it measures each visible
-  list item's own real text-end position directly, finds the evenly-spaced
-  run of items that looks like a real list, and places the glyph on whichever
-  one is actually focused (read directly from game memory, no dependency on
-  the screen's own script logic) — no table, no per-screen tuning, no depth
-  or offset special-casing. The old table-based system is kept fully intact
-  behind a single on/off switch (not deleted) until the new one is confirmed
-  reliable across every screen the old one used to cover.
-- **The automatic approach above was tried live the same day and confirmed
-  unreliable — reverted immediately.** Back on the original per-screen table
-  approach, which is the confirmed, standing method going forward. The new
-  code is kept in place, switched off, rather than deleted, in case it's
-  worth revisiting later. See `re_notes/known_issues.md` issue #51; the
-  Leaderboards screens that prompted this whole detour are still open and
-  need their own per-screen table entries, same as every other screen.
-- **Release policy: the highlighted-list-item A-glyph now only appears on
-  screens explicitly verified live, not just any screen with a position table
-  entry.** A full audit found several screens marked as working in project
-  notes had never actually been re-confirmed, and one (the Survival weapon
-  buy station) was flat-out broken despite having a calibrated entry — having
-  an entry was never actually proof a screen worked. Rather than risk showing
-  a wrong glyph on any of those, this specific glyph (and only this one —
-  corner hints, gameplay interact/reload hints, and everything else are
-  unaffected) now stays hidden on any screen not on a short, explicit,
-  user-confirmed allowlist. Currently: the main menu, the Campaign hub, and
-  the Leave Lobby/Choose Content Pack popups. Every other screen will get
-  added back in individually as each is actually re-verified.
+  could hijack an unrelated menu item sharing the same label.** Fixed by
+  requiring the match to also sit at the known corner-hint row position, not
+  text content alone. See issue #56.
+- **Jump from crouch/prone didn't stand the player up first**, same root
+  cause class as Sprint's own earlier fix. Now calls the real `ToggleStance`
+  toggle on Jump's rising edge. See issue #59.
+- **CROUCH INPUT OCCASIONALLY STOPPED RESPONDING (regression), root cause
+  confirmed live and fixed.** A stale "this is the menu's press" latch
+  (`g_currentBPressTouchedMenu`) was only ever cleared by a separate,
+  independently-polled edge tracker that could desync from the real button
+  state — every crouch press was silently eaten once that happened, with no
+  way to self-correct. This also explains the earlier "restored after
+  melee/knifing" reports (coincidental timing, never causal). Fixed by
+  giving `InjectControllerButtons`' own reliable rising-edge detection a
+  second, independent path to clear the same latch. **Confirmed fixed live.**
+  See issue #53.
+- **Turret placement prompt showed mouse text ("Press Left Mouse...") on
+  controller** — missing a glyph-resolution alias for that literal display
+  text. See issue #58; not yet live-verified.
 
 ### Investigated, not yet resolved
 - **Co-op money-sharing has no dedicated controller prompt.** A genuine gap
@@ -451,29 +284,6 @@ to check for even on this new version; log each as its own
   callers, neither menu-related") and this session's live evidence that
   menu text does go through that exact function — left as an open
   discrepancy, not silently resolved either way.
-
-### Added
-- **Controller vibration/rumble, reimplemented from scratch (2026-08-03).**
-  Previously shipped once, then disabled the same day after it crashed the
-  game at startup — the original hooks targeted two generic, multi-purpose
-  native functions, and some other real caller almost certainly passed a
-  different real argument shape than the fixed hook signature assumed.
-  Fire rumble now hooks a single-purpose function with exactly one real
-  caller instead, found at runtime via a byte-pattern scan (never a
-  hardcoded address) and whose calling convention was independently
-  re-verified against the raw disassembly of that one real call site before
-  being trusted. Damage rumble deliberately avoids hooking anything at all
-  — the previously-recommended replacement target for it was re-checked the
-  same rigorous way and found to have the exact same class of problem
-  (inconsistent real argument counts across its many real callers), so
-  instead it's detected by polling the local player's own real health value
-  once per frame, with explicit guards so health regen, perk effects, and
-  respawn/checkpoint resets never register as a false "hit." See
-  `re_notes/known_issues.md` issue #24 for the full investigation. Built and
-  deployed; **needs a live playtest** — please confirm the game still starts
-  normally, rumble fires on firing a weapon, rumble fires on taking real
-  damage from an enemy, and neither perk-based health regen nor a
-  respawn/checkpoint ever produces a false pulse.
 
 ---
 

@@ -88,7 +88,17 @@ void ReadBool(const char* path, const char* section, const char* key, bool& outV
 // corrected (the "no native rumble exists" framing was stale post-issue-#24
 // reimplementation) and its default values were retuned (FireIntensity 0.25->0.55,
 // FireDurationMs 60->90, DamagePerPoint 0.03->0.05 -- see mod_config.h's own comment).
-constexpr unsigned long kCurrentConfigVersion = 8;
+// v8->v9 (2026-08-03, same day, round 2): still user-reported "extremely weak" after
+// the above -- retuned again (FireIntensity 0.55->0.85, FireDurationMs 90->150,
+// DamagePerPoint 0.05->0.08, DamageDurationMs 200->250) alongside the new sustain/
+// decay envelope in rumble.cpp, and added the new [Experimental] ArmorFieldScanLogging
+// key (issue #63 follow-up, Survival armor doesn't register on the damage-rumble poll).
+// v9->v10 (2026-08-03, same day, round 3, v0.3.0 packaging pass): still reported
+// "better now but kinda weak" -- FireIntensity raised to its ceiling (1.0),
+// FireDurationMs 150->180, DamagePerPoint 0.08->0.12, DamageDurationMs 250->280, and
+// the sustain fraction itself raised (rumble.cpp, 0.6->0.7). Comment text also
+// corrected throughout [Vibration] to describe round 3 instead of round 2.
+constexpr unsigned long kCurrentConfigVersion = 10;
 
 // Reads a legacy key's raw value, returning true only if the key genuinely existed
 // (unlike ReadFloat, which can't distinguish "absent" from "present but unparsable" --
@@ -339,20 +349,30 @@ void WriteDefaultConfig(const char* path)
         "; real vibration on most Windows installs; now tries xinput1_4/xinput1_3\n"
         "; first). 0 = off, 1 = on.\n"
         "Enabled=%d\n"
-        "; Motor strength [0,1] on each real shot fired. Bumped 0.25->0.55\n"
-        "; (2026-08-03, user-reported \"works but extremely weak\" once vibration\n"
-        "; became physically real) -- tune to taste.\n"
+        "; Motor strength [0,1] on each real shot fired. Bumped three times on\n"
+        "; 2026-08-03: 0.25->0.55->0.85->1.0 (its own ceiling -- XInputSetState's real\n"
+        "; motor-speed fields are already commanded at their maximum, 65535, here).\n"
+        "; If STILL weak at this value on the same physical controller, there is no\n"
+        "; higher software value to send -- the remaining variable is very likely the\n"
+        "; controller's own hardware (third-party/Bluetooth pads commonly have\n"
+        "; materially weaker real motor response than a genuine Xbox controller).\n"
         "FireIntensity=%g\n"
-        "; Milliseconds a fire pulse takes to decay back to zero. Bumped 60->90\n"
-        "; (2026-08-03) -- 60ms barely gave a real motor time to spin up before\n"
-        "; decaying.\n"
+        "; Milliseconds a fire pulse takes to decay back to zero. Bumped 60->90->150->180\n"
+        "; across three 2026-08-03 rounds -- real vibration motors have physical\n"
+        "; spin-up lag (~50-100ms) before reaching a speed you can feel; a pulse now\n"
+        "; HOLDS at full strength for its first ~70%% before decaying (rumble.cpp's\n"
+        "; kRumbleSustainFraction) instead of decaying the whole time.\n"
         "FireDurationMs=%lu\n"
         "; Motor strength added per point of real damage the LOCAL player takes.\n"
-        "; Bumped 0.03->0.05 (2026-08-03), same \"too weak\" pass as FireIntensity.\n"
+        "; Bumped 0.03->0.05->0.08->0.12 across the same three \"too weak\" rounds as\n"
+        "; FireIntensity above. NOTE: does not yet register hits absorbed by\n"
+        "; Survival's purchasable Body Armor (a separate value from real health this\n"
+        "; project hasn't located yet -- see known_issues.md issue #63).\n"
         "DamagePerPoint=%g\n"
         "; Hard cap on damage-rumble strength regardless of how much damage lands.\n"
         "DamageMaxIntensity=%g\n"
-        "; Milliseconds a damage pulse takes to decay back to zero.\n"
+        "; Milliseconds a damage pulse takes to decay back to zero. Bumped 200->250->280\n"
+        "; (2026-08-03) alongside the sustain/decay envelope change above.\n"
         "DamageDurationMs=%lu\n"
         "\n"
         "[Overlay]\n"
@@ -405,7 +425,18 @@ void WriteDefaultConfig(const char* path)
         "; Issue #48: draws a real controller-glyph icon on top of the button-name\n"
         "; portion of a real hint string (e.g. the F in \"Press F to pick up\"). DEFAULT\n"
         "; OFF -- first live-test round for this actual drawing step. 0 = off, 1 = on.\n"
-        "GlyphIconOverlay=%d\n",
+        "GlyphIconOverlay=%d\n"
+        "; Issue #63 follow-up: Survival's purchasable Body Armor absorbs hits\n"
+        "; separately from real health, so the damage-rumble health poll never\n"
+        "; fires while armored -- the real armor field's memory location isn't\n"
+        "; known yet (a round-1 capture, 2026-08-03, confirmed entity+0x58 is\n"
+        "; current ammo, not armor, and excluded it; the real field is still\n"
+        "; unidentified). DEFAULT OFF. When on, scans the local player's entity\n"
+        "; struct every tick for a value that was stable then dropped by a\n"
+        "; plausible hit amount, logging candidates (max 3 per offset) as\n"
+        "; \"[armor-scan-diag]\". Turn on, take a few hits while armored in\n"
+        "; Survival, then check proxy_d3d9.log. 0 = off, 1 = on.\n"
+        "ArmorFieldScanLogging=%d\n",
         kCurrentConfigVersion,
         g_modConfig.lookDegreesPerSecondHorizontal,
         g_modConfig.lookDegreesPerSecondVertical,
@@ -437,7 +468,8 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.bindResolverGlyphSubstitution ? 1 : 0,
         g_modConfig.hudFontIdLogging ? 1 : 0,
         g_modConfig.hudGlyphPositionLogging ? 1 : 0,
-        g_modConfig.glyphIconOverlayEnabled ? 1 : 0);
+        g_modConfig.glyphIconOverlayEnabled ? 1 : 0,
+        g_modConfig.armorFieldScanLogging ? 1 : 0);
 
     fclose(f);
 }
@@ -622,6 +654,7 @@ void LoadModConfig()
     ReadBool(path, "Experimental", "HudFontIdLogging", g_modConfig.hudFontIdLogging);
     ReadBool(path, "Experimental", "HudGlyphPositionLogging", g_modConfig.hudGlyphPositionLogging);
     ReadBool(path, "Experimental", "GlyphIconOverlay", g_modConfig.glyphIconOverlayEnabled);
+    ReadBool(path, "Experimental", "ArmorFieldScanLogging", g_modConfig.armorFieldScanLogging);
 
     g_buttonMap = ResolveButtonMap(g_modConfig.buttonLayout, g_modConfig.flipTriggers);
 
@@ -635,7 +668,8 @@ void LoadModConfig()
         "vibrationDamagePerPoint=%g vibrationDamageMaxIntensity=%g vibrationDamageDurationMs=%lu "
         "overlayFontItalic=%d overlayTestCycleAllVariants=%d "
         "fireNotifyQueueKick=%d bindResolverHookLogging=%d bindResolverGlyphSubstitution=%d "
-        "hudFontIdLogging=%d hudGlyphPositionLogging=%d glyphIconOverlayEnabled=%d",
+        "hudFontIdLogging=%d hudGlyphPositionLogging=%d glyphIconOverlayEnabled=%d "
+        "armorFieldScanLogging=%d",
         g_modConfig.lookDegreesPerSecondHorizontal, g_modConfig.lookDegreesPerSecondVertical,
         g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
@@ -655,7 +689,8 @@ void LoadModConfig()
         g_modConfig.bindResolverGlyphSubstitution ? 1 : 0,
         g_modConfig.hudFontIdLogging ? 1 : 0,
         g_modConfig.hudGlyphPositionLogging ? 1 : 0,
-        g_modConfig.glyphIconOverlayEnabled ? 1 : 0);
+        g_modConfig.glyphIconOverlayEnabled ? 1 : 0,
+        g_modConfig.armorFieldScanLogging ? 1 : 0);
     LogFromController(buf);
 
     // Rewrite the file once, now that g_modConfig holds every existing setting PLUS
