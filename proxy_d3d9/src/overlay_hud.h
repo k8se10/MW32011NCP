@@ -213,3 +213,49 @@ void RequestMenuHintOverlay(float x, float y, const char* prefixText, const char
 // Remove once the real coordinate-space convention is confirmed and this no longer
 // needs visual verification.
 void RequestDebugPositionMarker(int slot, float x, float y);
+
+// ---- Custom in-game options overlay (2026-08-04) ----------------------------------
+//
+// A fully custom-drawn settings screen, entirely in this project's own overlay layer
+// -- NOT native menu content injection (that path is confirmed unsafe for real
+// content outside the engine's own controlled load context, see
+// re_notes/known_issues.md issue #23).
+//
+// REWORKED same day (live feedback: "the button should be called from the native
+// options button we no longer need the individual mw32011ncp options seperate") --
+// the original design (an extra "MW32011NCP OPTIONS" row appended below the real
+// OPTIONS_LIST tab bar, reached by scrolling past its last item) is GONE. Invocation
+// is now the real pause menu's own "Options" button itself: itemDef `PAUSE_LIST_1`
+// (confirmed via `pausedmenu.menu` -- index 0 is Resume, index 1's real action opens
+// `pc_options_video_ingame`). The caller (`InjectControllerMenuNav`) detects real
+// focus on that exact button (group "PAUSE_LIST", index 1) and a real A press, and
+// passes that as `openRequestedEdge` -- claimed here (opens the custom menu, returns
+// true) BEFORE the real pause menu ever runs its own "open Options" action, so the
+// real Options screen is never entered at all in this flow. There is nothing left to
+// append a row to; the pause menu's own "Options" IS this screen now.
+//
+// Called once per InjectControllerMenuNav tick (analog_input_hooks.cpp) with this
+// tick's raw edge states (true = rising edge, pressed this tick). Returns true if it
+// claimed this tick's input entirely -- the caller must skip its own
+// ForwardKeyToMenu() calls for this tick when true, since the real native menu
+// should see nothing while this system owns the D-pad.
+//
+// tabPrevEdge/tabNextEdge (issue #66 full-scope pivot): LB/RB rising edges,
+// switching between the replacement screen's own tabs (Controller/Look/Voice/... --
+// see overlay_hud.cpp's UnifiedTab). Only meaningful while the full menu is open;
+// ignored otherwise.
+bool CustomOptionsMenu_TickInput(bool openRequestedEdge,
+                                   bool upEdge, bool downEdge, bool leftEdge, bool rightEdge,
+                                   bool selectEdge, bool backEdge, bool tabPrevEdge, bool tabNextEdge);
+
+// Call whenever the real menu system closes entirely (IsMenuActive() goes false) --
+// resets the menu-open state so a later menu-open always starts fresh rather than
+// reopening mid-interaction.
+void CustomOptionsMenu_ResetOnMenuClose();
+
+// True while the full custom menu is open. Used by InjectControllerMenuBack
+// (analog_input_hooks.cpp) to skip its own real ESC-forward while this overlay owns
+// B -- since the real pause menu was never told to close in this flow (see above),
+// a single B press must close only this overlay and reveal the still-open pause
+// menu underneath, not also forward a real ESC.
+bool CustomOptionsMenu_IsOpen();

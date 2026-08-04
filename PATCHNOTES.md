@@ -8,6 +8,72 @@ reverse-engineering trail behind each entry.
 
 ## Unreleased
 
+### Added
+- **Custom in-game options overlay — LIVE-CONFIRMED WORKING, invoked from the real pause menu's own "Options" button.** New
+  fully-drawn settings screen, invoked by drawing an extra "MW32011NCP
+  Options" row below the real native `OPTIONS_LIST` menu's own last item via
+  the existing overlay layer (the real menu's own item count/content is never
+  touched — see issue #23 on why direct menu-content injection is unsafe).
+  Pressing A on the extra row opens a custom-drawn panel with 6 real, working
+  settings: Sensitivity Horizontal/Vertical, Invert Look, Vibration, Stick
+  Layout, Button Layout — adjustable with Left/Right, closable with B, and
+  persisted live to `mw3ncp_config.ini` via a new `SaveModConfig()`. Round 1
+  worked functionally but was live-rejected on look/feel; round 2's visual
+  fixes were themselves still rejected because round 3 found a genuine
+  rendering bug (crushing all overlay text horizontally, present since round
+  1) plus a visibility/gating bug plus an oversized panel, all fixed in round
+  3 and confirmed working live ("much better"). Round 4 makes the opened
+  panel fullscreen, per request, with the settings list occupying a left
+  content column and the remaining screen space reserved (left blank, not
+  built yet) for a future visual-mapping/controller-diagram feature.
+
+  **Scope pivoted the same day**: rather than extending the real Options
+  screen with an extra row, this is now being rebuilt as a FULL replacement
+  of the entire Options flow — every real vanilla setting (not just this
+  mod's own), gated by a new `[Options] UseCustomOptionsScreen` config
+  toggle (`ConfigVersion` 12→13, **default off**), with `mw3ncp_config.ini`
+  mirroring every real vanilla setting as a genuine local settings backup
+  independent of Steam Cloud sync issues. Groundwork landed this pass: real
+  engine accessors for every dvar type plus the full 256-slot keybind table
+  (`real_settings.h`/`.cpp`), the complete settings catalog covering all 7
+  real tabs including every Movement/Actions keybind (`vanilla_settings_table.h`),
+  and the ini mirror's read/write bridge (`vanilla_settings_sync.h`/`.cpp`,
+  `SyncVanillaSettingsToIni`/`RestoreVanillaSettingsFromIni`). Also added the
+  "Apply Settings?" deferred-write mechanism for restart-required settings
+  (`staged_settings.h`/`.cpp`) — a pending value is held locally and only
+  written to the real dvar (plus a real `vid_restart`/`snd_restart`) once
+  committed, so cancelling never leaves a real setting half-changed.
+
+  **A full render-suppression approach (hiding the real Options screen
+  entirely instead of drawing over it) was built and live-tested the same
+  day — it prevented the game from launching at all and was immediately
+  reverted** (the hook code is kept, disabled, for the record). Reverted to
+  the original lower-risk plan instead: draw fully over the real screen and
+  claim all input while open, with a full-screen dim background matching the
+  real engine's own popup-dimming technique (checked directly — there's no
+  dedicated background image asset for this kind of screen to reuse; the
+  real menu dims the live paused game view instead of showing static art).
+
+  On that foundation, the replacement screen is now genuinely tabbed:
+  **Controller** (this mod's original 6 settings, unchanged), **Look**, and
+  **Voice** (real vanilla settings, switched with LB/RB) are live in this
+  pass, each showing only its fully-editable settings for now — keybind rows
+  and settings without extracted enum choices are deliberately left for a
+  later round rather than half-built. The `[Options] UseCustomOptionsScreen`
+  toggle now actually gates the whole feature (previously built but unused).
+
+  **Confirmed working live, then simplified further the same session**: "the
+  button should be called from the native options button we no longer need
+  the individual mw32011ncp options seperate." The entry-chip row is now
+  GONE entirely — the screen is invoked directly from the real pause menu's
+  own "Options" button (confirmed via `pausedmenu.menu`: itemDef
+  `PAUSE_LIST_1`), intercepted before the real Options screen ever opens.
+  Backing out with B reveals the still-open real pause menu underneath,
+  same as the real Options screen would.
+
+  See `re_notes/known_issues.md` issue #66 and
+  `re_notes/options_menu_full_map.md` for the full research trail.
+
 ### Fixed
 - **Vertical look sensitivity default corrected, confirmed live.** Real MW3
   console has only one Sensitivity slider (no independent vertical control at

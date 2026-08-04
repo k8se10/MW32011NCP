@@ -26,6 +26,7 @@
 #include "mod_config.h"
 #include "overlay_hud.h"
 #include "rumble.h"
+#include "options_render_suppress.h"
 
 // Forwarder defined in dllmain.cpp -- lets this translation unit log to the same
 // proxy_d3d9.log file without duplicating the log-file setup.
@@ -2400,7 +2401,12 @@ extern "C" void __cdecl InjectControllerMenuBack()
         // be, so InjectControllerButtons never fires crouch/prone for it.
         g_currentBPressTouchedMenu = true;
     }
-    if (menuActive && held != g_menuBackHeld) {
+    // Custom options overlay (2026-08-04): while it's open, B closes IT, not the real
+    // Options screen underneath -- CustomOptionsMenu_TickInput (called from
+    // InjectControllerMenuNav) handles that close itself. Without this guard, the
+    // SAME B press would also forward a real ESC here, backing out of both the
+    // overlay AND the real menu in one press.
+    if (menuActive && held != g_menuBackHeld && !CustomOptionsMenu_IsOpen()) {
         ForwardKeyToMenu(kLocalClientIndex, kKeyEscape, held ? 1 : 0);
     }
     g_menuBackHeld = held;
@@ -2487,6 +2493,13 @@ bool g_menuNavRightHeld = false;
 bool g_menuNavSelectHeld = false;
 bool g_menuNavYHeld = false;
 bool g_menuNavXHeld = false;
+// LB/RB tab-switch edges for the custom Options replacement screen's own tab bar
+// (issue #66) -- raw physical shoulder buttons, deliberately NOT run through
+// ButtonMap/IsPhysicalHeld's remapping (same reasoning as D-pad Up/Down/Left/Right
+// above: this project's own menu navigation uses fixed physical buttons, unaffected
+// by whatever ButtonLayout the player has chosen for gameplay).
+bool g_menuNavTabPrevHeld = false;
+bool g_menuNavTabNextHeld = false;
 bool g_menuNavBackButtonHeld = false; // physical Back/Select/View, distinct from g_menuNavSelectHeld (A) and g_menuBackHeld (B/ESC-forward)
 
 // Live-reported 2026-08-01: the menu-hint glyph work correctly shows a Y icon next
@@ -2532,6 +2545,11 @@ void SendSyntheticF1()
 }
 } // namespace
 
+// Physical B state tracked independently here, separate from InjectControllerMenuBack's
+// own g_menuBackHeld -- needed to give CustomOptionsMenu_TickInput its own back-edge
+// signal without disturbing that function's real ESC-forward edge tracking.
+bool g_optMenuBackHeldForCustomMenu = false;
+
 extern "C" void __cdecl InjectControllerMenuNav()
 {
     if (!IsMenuActive()) {
@@ -2545,6 +2563,10 @@ extern "C" void __cdecl InjectControllerMenuNav()
         g_menuNavYHeld = false;
         g_menuNavXHeld = false;
         g_menuNavBackButtonHeld = false;
+        g_menuNavTabPrevHeld = false;
+        g_menuNavTabNextHeld = false;
+        g_optMenuBackHeldForCustomMenu = false;
+        CustomOptionsMenu_ResetOnMenuClose();
         return;
     }
 
@@ -2553,26 +2575,75 @@ extern "C" void __cdecl InjectControllerMenuNav()
     if (!Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger)) return;
 
     bool upHeld = (buttons & kXI_DPAD_UP) != 0;
+    bool upEdge = upHeld && !g_menuNavUpHeld;
+    bool downHeld = (buttons & kXI_DPAD_DOWN) != 0;
+    bool downEdge = downHeld && !g_menuNavDownHeld;
+    bool leftHeld = (buttons & kXI_DPAD_LEFT) != 0;
+    bool leftEdge = leftHeld && !g_menuNavLeftHeld;
+    bool rightHeld = (buttons & kXI_DPAD_RIGHT) != 0;
+    bool rightEdge = rightHeld && !g_menuNavRightHeld;
+    bool selectHeld = IsPhysicalHeld(PhysicalInput::A, buttons, leftTrigger, rightTrigger);
+    bool selectEdge = selectHeld && !g_menuNavSelectHeld;
+    bool backHeldForCustomMenu = IsPhysicalHeld(PhysicalInput::B, buttons, leftTrigger, rightTrigger);
+    bool backEdge = backHeldForCustomMenu && !g_optMenuBackHeldForCustomMenu;
+    g_optMenuBackHeldForCustomMenu = backHeldForCustomMenu;
+    bool tabPrevHeld = IsPhysicalHeld(PhysicalInput::LB, buttons, leftTrigger, rightTrigger);
+    bool tabPrevEdge = tabPrevHeld && !g_menuNavTabPrevHeld;
+    bool tabNextHeld = IsPhysicalHeld(PhysicalInput::RB, buttons, leftTrigger, rightTrigger);
+    bool tabNextEdge = tabNextHeld && !g_menuNavTabNextHeld;
+
+    // Custom options overlay (2026-08-04, see overlay_hud.h's own comment for the
+    // full design). REWORKED same day (live feedback: "the button should be called
+    // from the native options button we no longer need the individual mw32011ncp
+    // options seperate") -- invocation is now the real pause menu's own "Options"
+    // button itself, not a row appended below the real OPTIONS_LIST tab bar.
+    // Confirmed via pausedmenu.menu: the pause menu's own button list is group
+    // "PAUSE_LIST", index 0 is Resume (real action: `close pausedmenu`), index 1 is
+    // Options (real action: `open pc_options_video_ingame; close pausedmenu`). We
+    // intercept exactly that button+press combination, one level higher than the
+    // old design -- the real Options screen is never entered at all in this flow.
+    char focusedGroup[128] = {};
+    int focusedIndex = -1, siblingCount = -1;
+    bool haveFocus = TryGetRealFocusedGroupAndIndex(focusedGroup, sizeof(focusedGroup), focusedIndex, siblingCount);
+    bool onPauseMenuOptionsButton = haveFocus && _stricmp(focusedGroup, "PAUSE_LIST") == 0 && focusedIndex == 1;
+    bool openOptionsRequestedEdge = onPauseMenuOptionsButton && selectEdge && g_modConfig.useCustomOptionsScreen;
+
+    if (CustomOptionsMenu_TickInput(openOptionsRequestedEdge,
+                                      upEdge, downEdge, leftEdge, rightEdge, selectEdge, backEdge,
+                                      tabPrevEdge, tabNextEdge)) {
+        // Claimed entirely this tick -- still update the held-state trackers below so
+        // edge detection stays correct next tick, but skip every ForwardKeyToMenu call
+        // for D-pad/A (the real native menu must see none of this while our own system
+        // owns it). B's own real ESC-forward is separately guarded in
+        // InjectControllerMenuBack via CustomOptionsMenu_IsOpen().
+        g_menuNavUpHeld = upHeld;
+        g_menuNavDownHeld = downHeld;
+        g_menuNavLeftHeld = leftHeld;
+        g_menuNavRightHeld = rightHeld;
+        g_menuNavSelectHeld = selectHeld;
+        g_menuNavTabPrevHeld = tabPrevHeld;
+        g_menuNavTabNextHeld = tabNextHeld;
+        return;
+    }
+    g_menuNavTabPrevHeld = tabPrevHeld;
+    g_menuNavTabNextHeld = tabNextHeld;
+
     if (upHeld != g_menuNavUpHeld) {
         ForwardKeyToMenu(kLocalClientIndex, kKeyPrevItem, upHeld ? 1 : 0);
         g_menuNavUpHeld = upHeld;
     }
-    bool downHeld = (buttons & kXI_DPAD_DOWN) != 0;
     if (downHeld != g_menuNavDownHeld) {
         ForwardKeyToMenu(kLocalClientIndex, kKeyNextItem, downHeld ? 1 : 0);
         g_menuNavDownHeld = downHeld;
     }
-    bool leftHeld = (buttons & kXI_DPAD_LEFT) != 0;
     if (leftHeld != g_menuNavLeftHeld) {
         ForwardKeyToMenu(kLocalClientIndex, kKeyLeftNav, leftHeld ? 1 : 0);
         g_menuNavLeftHeld = leftHeld;
     }
-    bool rightHeld = (buttons & kXI_DPAD_RIGHT) != 0;
     if (rightHeld != g_menuNavRightHeld) {
         ForwardKeyToMenu(kLocalClientIndex, kKeyRightNav, rightHeld ? 1 : 0);
         g_menuNavRightHeld = rightHeld;
     }
-    bool selectHeld = IsPhysicalHeld(PhysicalInput::A, buttons, leftTrigger, rightTrigger);
     if (selectHeld != g_menuNavSelectHeld) {
         ForwardKeyToMenu(kLocalClientIndex, kKeyEnter, selectHeld ? 1 : 0);
         g_menuNavSelectHeld = selectHeld;
@@ -8277,4 +8348,18 @@ void InstallAnalogInputHooks()
     // of the local player's own real health field. See rumble.h/.cpp for the full
     // detail on both mechanisms.
     Rumble_Install(); // task #17 -- its own module, see rumble.h/.cpp
+
+    // Options replacement screen (issue #66 task #11/#21) -- full render-suppression
+    // hooks for the real Options menu, its own module, see
+    // options_render_suppress.h/.cpp. DISABLED 2026-08-04, SAME DAY AS ADDED:
+    // live-reported "doesnt even open now" -- the game fails to launch at all with
+    // these two hooks installed, the exact same failure mode this project already
+    // documented once for the 2026-08-01 registry-search hook (0x00486990), despite
+    // this pair looking structurally safe by the same reasoning that hook wasn't
+    // (confirmed-single-caller, once-per-frame, not boot-time/high-frequency --
+    // that reasoning was evidently insufficient here too). Reverted immediately per
+    // this project's own established response to this exact symptom, not
+    // investigated further in place -- see re_notes/known_issues.md issue #66 for
+    // the standing note on what to check before ever re-enabling this.
+    // InstallOptionsRenderSuppressionHooks();
 }

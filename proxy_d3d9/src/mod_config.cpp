@@ -5,6 +5,8 @@
 #include <cstring>
 #include "mod_config.h"
 #include "overlay_hud.h"
+#include "vanilla_settings_table.h"
+#include "vanilla_settings_sync.h"
 
 extern void LogFromController(const char* msg); // defined in dllmain.cpp
 
@@ -105,7 +107,9 @@ void ReadBool(const char* path, const char* section, const char* key, bool& outV
 // not the ~80% ratio the 2026-07-31 split's own default wrongly assumed.
 // v11->v12 (2026-08-03, same day): 75 (the initial ~30% feel-estimate) live-tested and
 // reported "way too slow" -- corrected to 145 (~58%, "closer to about 55-60%").
-constexpr unsigned long kCurrentConfigVersion = 12;
+// v12->v13 (2026-08-04, issue #66 full-scope pivot): new [Options] section
+// (UseCustomOptionsScreen) added -- the full custom-options-replacement toggle.
+constexpr unsigned long kCurrentConfigVersion = 13;
 
 // Reads a legacy key's raw value, returning true only if the key genuinely existed
 // (unlike ReadFloat, which can't distinguish "absent" from "present but unparsable" --
@@ -353,6 +357,16 @@ void WriteDefaultConfig(const char* path)
         "; re_notes/known_issues.md issue #48). One of: Xbox360, XboxModern, PlayStation\n"
         "GlyphStyle=%s\n"
         "\n"
+        "[Options]\n"
+        "; Issue #66: replaces the ENTIRE real Options screen with a fully custom-drawn\n"
+        "; one covering every real vanilla setting (Look/Video/Audio/Voice/Advanced\n"
+        "; Video/Movement/Actions), not just this mod's own controller settings. STRICTLY\n"
+        "; OPT-IN, default off -- a structurally significant, not-yet-verified change.\n"
+        "; See VanillaLook/VanillaVideo/etc. sections below for the settings BACKUP this\n"
+        "; also enables regardless of whether the replacement screen itself is on.\n"
+        "; 0 = off (real native Options screen, unmodified), 1 = on.\n"
+        "UseCustomOptionsScreen=%d\n"
+        "\n"
         "[Vibration]\n"
         "; Real XInputSetState output, driven off real weapon-fire and damage-taken\n"
         "; events (fixed 2026-08-03 -- was silently a no-op before, see\n"
@@ -466,6 +480,7 @@ void WriteDefaultConfig(const char* path)
         StickLayoutName(g_modConfig.stickLayout),
         g_modConfig.flipTriggers ? 1 : 0,
         GlyphStyleName(g_modConfig.glyphStyle),
+        g_modConfig.useCustomOptionsScreen ? 1 : 0,
         g_modConfig.vibrationEnabled ? 1 : 0,
         g_modConfig.vibrationFireIntensity,
         g_modConfig.vibrationFireDurationMs,
@@ -655,6 +670,7 @@ void LoadModConfig()
     ReadStickLayout(path, g_modConfig.stickLayout);
     ReadBool(path, "Bindings", "FlipTriggers", g_modConfig.flipTriggers);
     ReadGlyphStyle(path, g_modConfig.glyphStyle);
+    ReadBool(path, "Options", "UseCustomOptionsScreen", g_modConfig.useCustomOptionsScreen);
     ReadBool(path, "Vibration", "Enabled", g_modConfig.vibrationEnabled);
     ReadFloat(path, "Vibration", "FireIntensity", g_modConfig.vibrationFireIntensity);
     if (g_modConfig.vibrationFireIntensity < 0.0f) g_modConfig.vibrationFireIntensity = 0.0f;
@@ -682,6 +698,7 @@ void LoadModConfig()
         "adsSlowdownBaseline=%g adsCloseRangeSlowdownStrength=%g invertLook=%d lookAccelRampMs=%lu proneHoldMs=%lu interactHoldMs=%lu "
         "readyUpHoldMs=%lu "
         "buttonLayout=%s stickLayout=%s flipTriggers=%d glyphStyle=%s "
+        "useCustomOptionsScreen=%d "
         "vibrationEnabled=%d vibrationFireIntensity=%g vibrationFireDurationMs=%lu "
         "vibrationDamagePerPoint=%g vibrationDamageMaxIntensity=%g vibrationDamageDurationMs=%lu "
         "overlayFontItalic=%d overlayTestCycleAllVariants=%d "
@@ -697,6 +714,7 @@ void LoadModConfig()
         g_modConfig.interactHoldThresholdMs, g_modConfig.readyUpHoldThresholdMs,
         ButtonLayoutName(g_modConfig.buttonLayout), StickLayoutName(g_modConfig.stickLayout),
         g_modConfig.flipTriggers ? 1 : 0, GlyphStyleName(g_modConfig.glyphStyle),
+        g_modConfig.useCustomOptionsScreen ? 1 : 0,
         g_modConfig.vibrationEnabled ? 1 : 0, g_modConfig.vibrationFireIntensity,
         g_modConfig.vibrationFireDurationMs, g_modConfig.vibrationDamagePerPoint,
         g_modConfig.vibrationDamageMaxIntensity, g_modConfig.vibrationDamageDurationMs,
@@ -779,4 +797,82 @@ extern "C" void CheckConfigHotReload()
     if (GetFileAttributesExA(path, GetFileExInfoStandard, &attrData)) {
         g_lastConfigWriteTime = attrData.ftLastWriteTime;
     }
+}
+
+// Persists the CURRENT in-memory g_modConfig to disk, in the current schema --
+// despite the name, WriteDefaultConfig() always serializes whatever is presently in
+// g_modConfig (not hardcoded compiled defaults; see its own call sites in
+// LoadModConfig() above, which set g_modConfig from either a migrated file or a
+// fresh-install default BEFORE calling it) -- exactly the "save" semantics the new
+// in-game custom options overlay (2026-08-04) needs when the player adjusts a value
+// live. Exposed here (outside the anonymous namespace) so custom_options_menu.cpp can
+// call it without duplicating GetConfigPath()'s own path-resolution logic.
+extern "C" void SaveModConfig()
+{
+    char path[MAX_PATH];
+    GetConfigPath(path, sizeof(path));
+    WriteDefaultConfig(path);
+
+    // Proactively update the hot-reload watcher's own last-known write time to this
+    // save's timestamp -- without this, CheckConfigHotReload's very next poll (within
+    // 1 second) would see the file we just wrote as an EXTERNAL change and reload +
+    // show the "Config Reloaded" toast, which would fire on every single value
+    // adjustment in the new overlay -- confusing, not an external change to react to.
+    WIN32_FILE_ATTRIBUTE_DATA attrData{};
+    if (GetFileAttributesExA(path, GetFileExInfoStandard, &attrData)) {
+        g_lastConfigWriteTime = attrData.ftLastWriteTime;
+        g_haveLastConfigWriteTime = true;
+    }
+}
+
+// ---- Vanilla settings mirror (issue #66, 2026-08-04 full-scope pivot) -------------
+//
+// See mod_config.h's own comment on these two functions for the overall rationale
+// (real dvars/keybinds stay the source of truth for gameplay; the ini mirrors them
+// as a backup). One ini section per tab (VanillaLook/VanillaVideo/etc., matching
+// VanillaSettingTab's own names) rather than one flat section, so a player opening
+// the file to actually read their backup sees it organized the same way the real
+// Options screen groups things, not 40 unsorted keys.
+namespace {
+const char* VanillaTabSectionName(VanillaSettingTab tab)
+{
+    switch (tab) {
+        case VanillaSettingTab::Look:          return "VanillaLook";
+        case VanillaSettingTab::Video:         return "VanillaVideo";
+        case VanillaSettingTab::Audio:         return "VanillaAudio";
+        case VanillaSettingTab::Voice:         return "VanillaVoice";
+        case VanillaSettingTab::AdvancedVideo: return "VanillaAdvancedVideo";
+        case VanillaSettingTab::Movement:      return "VanillaMovement";
+        case VanillaSettingTab::Actions:       return "VanillaActions";
+    }
+    return "VanillaUnknown";
+}
+} // namespace
+
+void SyncVanillaSettingsToIni()
+{
+    char path[MAX_PATH];
+    GetConfigPath(path, sizeof(path));
+
+    char valueBuf[128];
+    for (int i = 0; i < kVanillaSettingCount; ++i) {
+        const VanillaSettingDef& def = kVanillaSettings[i];
+        GetVanillaSettingValueString(def, valueBuf, sizeof(valueBuf));
+        WritePrivateProfileStringA(VanillaTabSectionName(def.tab), def.iniKey, valueBuf, path);
+    }
+}
+
+void RestoreVanillaSettingsFromIni()
+{
+    char path[MAX_PATH];
+    GetConfigPath(path, sizeof(path));
+
+    char valueBuf[128];
+    for (int i = 0; i < kVanillaSettingCount; ++i) {
+        const VanillaSettingDef& def = kVanillaSettings[i];
+        GetPrivateProfileStringA(VanillaTabSectionName(def.tab), def.iniKey, "", valueBuf, sizeof(valueBuf), path);
+        if (valueBuf[0] == '\0') continue; // never synced yet -- nothing to restore, leave the real setting alone
+        SetVanillaSettingFromString(def, valueBuf);
+    }
+    LogFromController("[config] restored vanilla settings from mw3ncp_config.ini backup");
 }
