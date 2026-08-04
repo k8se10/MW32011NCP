@@ -100,6 +100,14 @@ int g_lastMouseActivityBaselineX = -1;
 int g_lastMouseActivityBaselineY = -1;
 constexpr int kMouseMoveDeadzonePx = 4;
 
+// Real left-click held state (2026-08-04, issue #66 follow-up: "our im game cursor
+// to be able to click entries too" -- the custom Options screen's rows/tabs need
+// real mouse-click support, not just controller D-pad/A). Same real WM_LBUTTONDOWN/
+// WM_LBUTTONUP messages the game's own WndProc already receives -- this project's
+// own WndProc subclass just also watches them, exactly like WM_MOUSEMOVE above,
+// rather than adding a second, separate input-capture mechanism.
+bool g_leftMouseButtonHeld = false;
+
 LRESULT CALLBACK HookWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     if (msg == WM_MOUSEMOVE) {
@@ -120,6 +128,10 @@ LRESULT CALLBACK HookWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             g_lastMouseActivityBaselineX = newX;
             g_lastMouseActivityBaselineY = newY;
         }
+    } else if (msg == WM_LBUTTONDOWN) {
+        g_leftMouseButtonHeld = true;
+    } else if (msg == WM_LBUTTONUP) {
+        g_leftMouseButtonHeld = false;
     }
     InjectMenuInputTick();
     return CallWindowProcA(g_origWndProc, hwnd, msg, wParam, lParam);
@@ -304,6 +316,13 @@ extern "C" bool GetLastMouseMoveClientPos(int& outX, int& outY)
     outX = g_lastMouseMoveClientX;
     outY = g_lastMouseMoveClientY;
     return true;
+}
+
+// Real left mouse button held state, for the custom Options screen's own click
+// hit-testing (overlay_hud.cpp) -- see g_leftMouseButtonHeld's own comment.
+extern "C" bool IsLeftMouseButtonHeld()
+{
+    return g_leftMouseButtonHeld;
 }
 
 // BUG-001 (stream co-op report, 2026-08-02): "mouse cursor appears during co-op
