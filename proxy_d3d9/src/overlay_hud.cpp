@@ -2211,6 +2211,18 @@ HRESULT WINAPI Hook_EndScene(void* device)
     if (g_endSceneFireCount == 1) {
         LogFromController("[overlay-hud] EndScene hook fired for the first time -- confirmed alive");
     }
+    // Custom Options menu drawn FIRST (2026-08-05 fix, live-reported: "all our in
+    // game sprites like glyphs and cursor dont show up in the custom ui"). This used
+    // to be drawn after every other overlay element below -- since its own
+    // fullscreen dim layer + panel are large, near-opaque quads, drawing them LAST
+    // painted them directly over every glyph icon/hint slot the earlier calls had
+    // just drawn that same frame, hiding all of them. The real pause menu underneath
+    // is never told to stop rendering (see overlay_hud.h's own comment on why), so
+    // it keeps requesting its own real corner hints every frame regardless -- this
+    // menu is meant to be a BACKGROUND those layer on top of, not the topmost thing.
+    // The cursor already drew last before this fix and still does; it just wasn't
+    // the only thing affected.
+    DrawCustomOptionsMenuIfOpen(device);
     DrawOverlayMessage(device);
     DrawGlyphIconIfRequested(device);
     DrawGameplayHintSlotsIfRequested(device);
@@ -2224,7 +2236,6 @@ HRESULT WINAPI Hook_EndScene(void* device)
     ResetMenuListItemOrdinalForFrame();
     DrawMenuHintsIfRequested(device);
     DrawDebugMarkerIfRequested(device);
-    DrawCustomOptionsMenuIfOpen(device);
     // Always last -- see DrawCustomCursorIfNeeded's own comment for why the cursor
     // specifically needs to be the final thing drawn each frame.
     DrawCustomCursorIfNeeded(device);
