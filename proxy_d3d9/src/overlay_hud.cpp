@@ -52,6 +52,7 @@
 extern void LogFromController(const char* msg);
 extern "C" HWND GetGameWindow(); // defined in d3d9_hook.cpp
 extern "C" bool GetLastMouseMoveClientPos(int& outX, int& outY); // defined in d3d9_hook.cpp
+extern "C" bool IsLeftMouseButtonHeld(); // defined in d3d9_hook.cpp
 extern "C" bool IsMenuActive_Exported(); // defined in analog_input_hooks.cpp -- BUG-001 follow-up
 // Live-reported 2026-08-01: calling this from the WndProc/SetTimer tick (~60Hz,
 // asynchronous relative to rendering) caused a visible flicker -- the menu-hint slot
@@ -1775,6 +1776,31 @@ void DrawCustomOptionsMenuIfOpen(void* device)
     float scaleX = 1.0f, scaleY = 1.0f;
     GetResolutionScale(device, scaleX, scaleY);
 
+    // Mouse click support (2026-08-04, issue #66 follow-up: "our im game cursor to
+    // be able to click entries too") -- hit-tested INLINE with layout/drawing below,
+    // immediate-mode style, rather than storing rects for a separate input pass: the
+    // exact same numbers that position a row/tab on screen this frame are what
+    // click/hover get tested against, so there's no way for the two to drift apart
+    // (and no one-frame lag either, unlike splitting layout and input into separate
+    // per-frame hooks). Real screen-space mouse position, same coordinate space
+    // DrawGenericTexturedQuad's own x/y*scale arguments already use.
+    static bool s_lastLeftMouseHeld = false;
+    bool leftMouseHeld = IsLeftMouseButtonHeld();
+    bool leftClickEdge = leftMouseHeld && !s_lastLeftMouseHeld;
+    s_lastLeftMouseHeld = leftMouseHeld;
+    int mouseX = 0, mouseY = 0;
+    bool haveMouse = GetLastMouseMoveClientPos(mouseX, mouseY);
+    // GetLastMouseMoveClientPos reports real window-client pixels; our own quads are
+    // drawn in the device's real backbuffer pixel space (see GetResolutionScale's own
+    // header comment on why those can legitimately differ) -- scaleX/scaleY converts
+    // between the two the same direction our OWN draw positions already do, so a rect
+    // built the same way (designX * scaleX) lines up with this mouse position
+    // directly with no separate conversion needed.
+    auto PointInRect = [&](float rectX, float rectY, float rectW, float rectH) {
+        return haveMouse && mouseX >= rectX && mouseX < rectX + rectW
+                          && mouseY >= rectY && mouseY < rectY + rectH;
+    };
+
     constexpr DWORD kWhiteColor = 0xFFFFFFFFu;
     constexpr DWORD kGreenHighlight = 0xFF6FCF6Fu; // same family as this project's other
                                                      // green selection accents (A-glyph,
@@ -1828,13 +1854,22 @@ void DrawCustomOptionsMenuIfOpen(void* device)
     // corner-hint system elsewhere in this file already uses for sequential text).
     float tabX = labelX;
     constexpr float kTabGapPx = 50.0f;
+    constexpr float kTabHitPadY = 14.0f; // vertical hit-test padding above/below the glyph baseline
     for (int t = 0; t < kUnifiedTabCount; ++t) {
+        int tabWidth = MeasureTextWidthPx(UnifiedTabDisplayName(kTabOrder[t]), g_modConfig.overlayFontItalic, kTabFontHeightPx);
+
+        bool hovered = PointInRect(tabX * scaleX, (kPanelY + 100.0f - kTabHitPadY) * scaleY,
+                                     static_cast<float>(tabWidth) * scaleX, (static_cast<float>(kTabFontHeightPx) + kTabHitPadY * 2.0f) * scaleY);
+        if (hovered && leftClickEdge && t != g_currentTabIndex) {
+            g_currentTabIndex = t;
+            RebuildTabRowCache();
+            g_optSelectedRow = 0;
+        }
+
         bool isCurrentTab = (t == g_currentTabIndex);
-        DWORD tabColor = isCurrentTab ? kGreenHighlight : 0xFF808080u;
-        const char* tabName = UnifiedTabDisplayName(kTabOrder[t]);
-        DrawOptLeftAlignedText(device, g_tabBarCache[t], tabName, tabX, kPanelY + 100.0f,
+        DWORD tabColor = isCurrentTab ? kGreenHighlight : (hovered ? 0xFFC0C0C0u : 0xFF808080u);
+        DrawOptLeftAlignedText(device, g_tabBarCache[t], UnifiedTabDisplayName(kTabOrder[t]), tabX, kPanelY + 100.0f,
                                  kTabFontHeightPx, tabColor, scaleX, scaleY);
-        int tabWidth = MeasureTextWidthPx(tabName, g_modConfig.overlayFontItalic, kTabFontHeightPx);
         tabX += static_cast<float>(tabWidth) + kTabGapPx;
     }
 
@@ -1847,13 +1882,33 @@ void DrawCustomOptionsMenuIfOpen(void* device)
     float availableH = kPanelH - kHeaderH - kFooterH;
     float rowsH = kListRowSpacingPx * static_cast<float>(rowCount);
     float rowY = kPanelY + kHeaderH + (availableH - rowsH) * 0.5f + kListRowSpacingPx * 0.5f;
+    float rowRectX = kPanelX + 24.0f;
+    float rowRectW = dividerX - 40.0f - kPanelX;
     for (int i = 0; i < rowCount; ++i) {
+        float rowRectY = rowY - kListRowSpacingPx * 0.5f;
+
+        // Hover moves selection (matches the real native menu's own onFocus-on-hover
+        // convention, confirmed in pausedmenu.menu/all_restart_popmenu.menu) -- click
+        // acts: toggles a bool row outright; a float row is split into a left half
+        // (decrement) and right half (increment), same step as Left/Right already use.
+        bool hovered = PointInRect(rowRectX * scaleX, rowRectY * scaleY, rowRectW * scaleX, kListRowSpacingPx * scaleY);
+        if (hovered) {
+            g_optSelectedRow = i;
+            if (leftClickEdge) {
+                if (CurrentTabRowIsBoolToggle(i)) {
+                    AdjustCurrentTabRow(i, +1);
+                } else {
+                    float midX = (rowRectX + rowRectW * 0.5f) * scaleX;
+                    AdjustCurrentTabRow(i, mouseX < midX ? -1 : +1);
+                }
+            }
+        }
+
         bool selected = (i == g_optSelectedRow);
         DWORD rowColor = selected ? kGreenHighlight : kWhiteColor;
         if (selected) {
-            DrawGenericTexturedQuad(device, g_optWhiteTexture, (kPanelX + 24.0f) * scaleX,
-                                      (rowY - kListRowSpacingPx * 0.5f) * scaleY, (dividerX - 40.0f - kPanelX) * scaleX,
-                                      kListRowSpacingPx * scaleY, 0x3AFFFFFFu); // highlight bar behind the row
+            DrawGenericTexturedQuad(device, g_optWhiteTexture, rowRectX * scaleX, rowRectY * scaleY,
+                                      rowRectW * scaleX, kListRowSpacingPx * scaleY, 0x3AFFFFFFu); // highlight bar behind the row
         }
         DrawOptLeftAlignedText(device, g_optRowLabelCache[i], CurrentTabRowLabel(i),
                                  labelX, rowY, kListFontHeightPx, rowColor, scaleX, scaleY);
@@ -1864,7 +1919,16 @@ void DrawCustomOptionsMenuIfOpen(void* device)
         rowY += kListRowSpacingPx;
     }
 
-    DrawOptLeftAlignedText(device, g_optFooterCache, "LB/RB TABS    LEFT/RIGHT ADJUST    A TOGGLE    B CLOSE",
+    // Click anywhere outside the panel closes the menu (common modal-dialog
+    // convention, and the only way a mouse-only player could otherwise close this
+    // screen at all -- B/Backspace is the controller/keyboard equivalent).
+    bool insidePanel = PointInRect((kPanelX - kBorderPad) * scaleX, (kPanelY - kBorderPad) * scaleY,
+                                     (kPanelW + kBorderPad * 2.0f) * scaleX, (kPanelH + kBorderPad * 2.0f) * scaleY);
+    if (leftClickEdge && !insidePanel) {
+        g_optMenuOpen = false;
+    }
+
+    DrawOptLeftAlignedText(device, g_optFooterCache, "LB/RB TABS    LEFT/RIGHT ADJUST    A TOGGLE    B CLOSE    OR CLICK",
                              labelX, kPanelY + kPanelH - kFooterH * 0.5f, 20, 0xFFA0A0A0u, scaleX, scaleY);
 }
 
