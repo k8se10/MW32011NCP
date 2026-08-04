@@ -15,9 +15,6 @@
     <VCProjectVersion>17.0</VCProjectVersion>
     <ProjectGuid>{A1B2C3D4-5E6F-4A7B-8C9D-0E1F2A3B4C5D}</ProjectGuid>
     <RootNamespace>uiharness</RootNamespace>
-    <!-- Win32 to match proxy_d3d9 exactly (same compiled source files, same vtable
-         index assumptions elsewhere in this project), not a hard requirement for
-         this standalone exe itself (no game process involved), just consistency. -->
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
 
@@ -45,10 +42,9 @@
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <!-- Points straight at the real proxy_d3d9 sources; this project compiles
-           them BY PATH (not copies), so the harness can never silently drift from
-           what actually ships in the game. -->
-      <AdditionalIncludeDirectories>..\..\proxy_d3d9\src;..\..\proxy_d3d9;..\..\proxy_d3d9\third_party\minhook\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <!-- Only needs controller_input.h: this is now a thin host with no UI code
+           of its own at all; see ui_hot\ui_hot.vcxproj for the hot-swapped part. -->
+      <AdditionalIncludeDirectories>..\..\proxy_d3d9\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -79,48 +75,15 @@
   </ItemDefinitionGroup>
 
   <ItemGroup>
-    <!-- This harness's own files. -->
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="harness_stubs.cpp" />
-    <ClCompile Include="real_settings_mock.cpp" />
-
-    <!-- The REAL UI/settings code, compiled by path from proxy_d3d9, NOT copies.
-         real_settings.cpp is deliberately excluded (real_settings_mock.cpp above
-         provides the same symbols against fake in-memory state instead), and
-         options_render_suppress.cpp is excluded too (needs a real MinHook-hookable
-         game process, meaningless here, and never called by the Options-menu draw
-         path this harness exercises anyway). -->
-    <ClCompile Include="..\..\proxy_d3d9\src\overlay_hud.cpp" />
-    <ClCompile Include="..\..\proxy_d3d9\src\mod_config.cpp" />
+    <ClCompile Include="host_stubs.cpp" />
+    <!-- Fully self-contained (own XInput loading), reused unmodified: input
+         polling is "platform" code, not "UI" code, so it stays in the host and
+         never needs hot-reloading. -->
     <ClCompile Include="..\..\proxy_d3d9\src\controller_input.cpp" />
-    <ClCompile Include="..\..\proxy_d3d9\src\vanilla_settings_sync.cpp" />
-    <ClCompile Include="..\..\proxy_d3d9\src\staged_settings.cpp" />
-
-    <!-- MinHook is #included by overlay_hud.cpp (InstallEndSceneHook, never called
-         by this harness) but its symbols must still resolve at link time; vendor
-         sources are safe to pull in as-is, MinHook itself does nothing unless
-         explicitly invoked, which this harness's own main() never does. -->
-    <ClCompile Include="..\..\proxy_d3d9\third_party\minhook\src\buffer.c" />
-    <ClCompile Include="..\..\proxy_d3d9\third_party\minhook\src\hook.c" />
-    <ClCompile Include="..\..\proxy_d3d9\third_party\minhook\src\trampoline.c" />
-    <ClCompile Include="..\..\proxy_d3d9\third_party\minhook\src\hde\hde32.c" />
   </ItemGroup>
-
   <ItemGroup>
-    <ClInclude Include="..\..\proxy_d3d9\src\overlay_hud.h" />
-    <ClInclude Include="..\..\proxy_d3d9\src\mod_config.h" />
     <ClInclude Include="..\..\proxy_d3d9\src\controller_input.h" />
-    <ClInclude Include="..\..\proxy_d3d9\src\real_settings.h" />
-    <ClInclude Include="..\..\proxy_d3d9\src\vanilla_settings_table.h" />
-    <ClInclude Include="..\..\proxy_d3d9\src\vanilla_settings_sync.h" />
-    <ClInclude Include="..\..\proxy_d3d9\src\staged_settings.h" />
-    <ClInclude Include="..\..\proxy_d3d9\resource.h" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- Same embedded font (Barlow Condensed SemiBold) the real game uses, for
-         pixel-identical text rendering between this harness and the shipped game. -->
-    <ResourceCompile Include="..\..\proxy_d3d9\proxy_d3d9.rc" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

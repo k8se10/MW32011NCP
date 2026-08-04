@@ -1,25 +1,35 @@
 // main.cpp -- tools/ui_harness: a standalone D3D9 window for iterating on the custom
 // Options replacement screen (re_notes/known_issues.md issue #66) without needing the
-// actual game running. Calls the REAL overlay_hud.cpp drawing/input code by path
-// (proxy_d3d9/src/overlay_hud.cpp is compiled directly into this project, not
-// copied) -- what you see here is exactly what ships in the game, modulo the fake
-// dvar/keybind data real_settings_mock.cpp stands in for (see its own header).
+// actual game running, with true HMR-style hot-reload: the UI code (overlay_hud.cpp
+// and friends) lives in a separate DLL, ui_hot.dll, that this host loads dynamically.
+// Rebuild ui_hot.vcxproj (or run watch.ps1 to do it automatically on file save) and
+// this window updates within about a second, with no visible relaunch.
 //
-// Controls: D-pad/stick-equivalent via a real XInput controller if one's connected,
-// otherwise arrow keys + Enter (A) + Backspace (B) + Q/E (LB/RB, tab switch) on the
-// keyboard. Esc closes the harness window.
+// Hot-swap mechanism (the standard "copy-then-load" pattern for native DLL hot-reload
+// -- Windows won't let a rebuild overwrite a DLL this process has LoadLibrary'd, so
+// this process never loads ui_hot.dll's own real build output directly): every
+// kPollIntervalMs, check that file's last-write-time; if it changed, copy it to a
+// freshly-numbered scratch file next to this exe and LoadLibrary THAT instead, so
+// MSBuild always has exclusive write access to its own real output path regardless
+// of what this process currently has loaded. The old module is freed and its scratch
+// copy deleted (best-effort) right after the new one loads successfully.
+//
+// Menu-open/tab state and cached D3D9 textures live as globals INSIDE ui_hot.dll, so
+// they reset to nothing on every swap -- same trade-off as web dev's fast-refresh
+// sometimes losing component state, and worth it for the iteration speed. The small
+// number of textures (toast/panel/tab-bar caches) the OLD module's globals held a
+// reference to are never explicitly released before that module unloads -- a real,
+// accepted leak of a few small D3D9 resources per reload, fine for a dev-only tool
+// run for a session at a time, not worth the extra complexity to avoid.
 #include <windows.h>
 #include <d3d9.h>
 #include <Xinput.h>
 #include <cstdio>
+#include <cstring>
 
-#include "mod_config.h"
-#include "overlay_hud.h"
 #include "controller_input.h"
 
 #pragma comment(lib, "d3d9.lib")
-
-extern void SetHarnessWindow(HWND hwnd); // harness_stubs.cpp
 
 namespace {
 
@@ -39,8 +49,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     return DefWindowProcA(hwnd, msg, wParam, lParam);
 }
 
-// Rising-edge helper -- mirrors this project's own InjectControllerMenuNav pattern
-// (analog_input_hooks.cpp): held-this-frame vs. held-last-frame.
 struct EdgeTracker {
     bool wasHeld = false;
     bool Tick(bool heldNow)
@@ -50,6 +58,84 @@ struct EdgeTracker {
         return edge;
     }
 };
+
+// ---- Hot-swap plumbing -------------------------------------------------------
+
+using Hot_SetWindowFn = void(__cdecl*)(void*);
+using Hot_LoadOverlayFontsFn = bool(__cdecl*)(void*);
+using Hot_UnloadOverlayFontsFn = void(__cdecl*)();
+using Hot_LoadModConfigFn = void(__cdecl*)();
+using Hot_TickInputFn = bool(__cdecl*)(bool, bool, bool, bool, bool, bool, bool, bool, bool);
+using Hot_IsOpenFn = bool(__cdecl*)();
+using Hot_ResetOnMenuCloseFn = void(__cdecl*)();
+using Hot_DrawFrameFn = void(__cdecl*)(void*);
+
+struct HotModule {
+    HMODULE dll = nullptr;
+    char loadedCopyPath[MAX_PATH] = {};
+    Hot_SetWindowFn SetWindow = nullptr;
+    Hot_LoadOverlayFontsFn LoadOverlayFonts = nullptr;
+    Hot_UnloadOverlayFontsFn UnloadOverlayFonts = nullptr;
+    Hot_LoadModConfigFn LoadModConfig = nullptr;
+    Hot_TickInputFn TickInput = nullptr;
+    Hot_IsOpenFn IsOpen = nullptr;
+    Hot_ResetOnMenuCloseFn ResetOnMenuClose = nullptr;
+    Hot_DrawFrameFn DrawFrame = nullptr;
+
+    bool Valid() const { return dll && TickInput && DrawFrame; }
+};
+
+#ifdef _DEBUG
+constexpr const char* kConfigName = "Debug";
+#else
+constexpr const char* kConfigName = "Release";
+#endif
+
+void GetSourceDllPath(char* outPath, size_t outSize)
+{
+    char exeDir[MAX_PATH];
+    GetModuleFileNameA(nullptr, exeDir, sizeof(exeDir));
+    char* lastSlash = strrchr(exeDir, '\\');
+    if (lastSlash) *lastSlash = '\0';
+    sprintf_s(outPath, outSize, "%s\\..\\..\\ui_hot\\bin\\%s\\ui_hot.dll", exeDir, kConfigName);
+}
+
+void GetScratchCopyPath(char* outPath, size_t outSize, int counter)
+{
+    char exeDir[MAX_PATH];
+    GetModuleFileNameA(nullptr, exeDir, sizeof(exeDir));
+    char* lastSlash = strrchr(exeDir, '\\');
+    if (lastSlash) *lastSlash = '\0';
+    sprintf_s(outPath, outSize, "%s\\ui_hot_live_%d.dll", exeDir, counter);
+}
+
+// Loads `copyPath` and resolves every export this host needs. Returns false (and
+// leaves *out untouched) if the DLL doesn't load or is missing an export -- a stale
+// or partially-written build should never take down the whole harness.
+bool TryBindModule(const char* copyPath, HotModule& out)
+{
+    HMODULE dll = LoadLibraryA(copyPath);
+    if (!dll) return false;
+
+    HotModule m;
+    m.dll = dll;
+    strncpy_s(m.loadedCopyPath, copyPath, _TRUNCATE);
+    m.SetWindow = reinterpret_cast<Hot_SetWindowFn>(GetProcAddress(dll, "Hot_SetWindow"));
+    m.LoadOverlayFonts = reinterpret_cast<Hot_LoadOverlayFontsFn>(GetProcAddress(dll, "Hot_LoadOverlayFonts"));
+    m.UnloadOverlayFonts = reinterpret_cast<Hot_UnloadOverlayFontsFn>(GetProcAddress(dll, "Hot_UnloadOverlayFonts"));
+    m.LoadModConfig = reinterpret_cast<Hot_LoadModConfigFn>(GetProcAddress(dll, "Hot_LoadModConfig"));
+    m.TickInput = reinterpret_cast<Hot_TickInputFn>(GetProcAddress(dll, "Hot_TickInput"));
+    m.IsOpen = reinterpret_cast<Hot_IsOpenFn>(GetProcAddress(dll, "Hot_IsOpen"));
+    m.ResetOnMenuClose = reinterpret_cast<Hot_ResetOnMenuCloseFn>(GetProcAddress(dll, "Hot_ResetOnMenuClose"));
+    m.DrawFrame = reinterpret_cast<Hot_DrawFrameFn>(GetProcAddress(dll, "Hot_DrawFrame"));
+
+    if (!m.Valid()) {
+        FreeLibrary(dll);
+        return false;
+    }
+    out = m;
+    return true;
+}
 
 } // namespace
 
@@ -66,12 +152,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
     constexpr int kWindowH = 1080;
     RECT windowRect = { 0, 0, kWindowW, kWindowH };
     AdjustWindowRect(&windowRect, WS_OVERLAPPEDWINDOW, FALSE);
-    HWND hwnd = CreateWindowA(wc.lpszClassName, "MW32011NCP Options Screen -- UI Harness (not the real game)",
+    HWND hwnd = CreateWindowA(wc.lpszClassName, "MW32011NCP Options Screen -- UI Harness (hot-reload)",
         WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
         windowRect.right - windowRect.left, windowRect.bottom - windowRect.top,
         nullptr, nullptr, hInstance, nullptr);
     if (!hwnd) return 1;
-    SetHarnessWindow(hwnd);
     ShowWindow(hwnd, SW_SHOW);
 
     IDirect3D9* d3d9 = Direct3DCreate9(D3D_SDK_VERSION);
@@ -82,23 +167,82 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
     pp.SwapEffect = D3DSWAPEFFECT_DISCARD;
     pp.BackBufferFormat = D3DFMT_UNKNOWN;
     pp.hDeviceWindow = hwnd;
-    pp.PresentationInterval = D3DPRESENT_INTERVAL_ONE; // vsync -- no reason to peg a core spinning
+    pp.PresentationInterval = D3DPRESENT_INTERVAL_ONE;
 
     IDirect3DDevice9* device = nullptr;
     HRESULT hr = d3d9->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, hwnd,
         D3DCREATE_HARDWARE_VERTEXPROCESSING, &pp, &device);
     if (FAILED(hr)) {
-        // Common on a machine with no real GPU driver available to this session --
-        // software vertex processing is slower but works everywhere.
         hr = d3d9->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, hwnd,
             D3DCREATE_SOFTWARE_VERTEXPROCESSING, &pp, &device);
     }
     if (FAILED(hr)) { MessageBoxA(hwnd, "CreateDevice failed", "UI Harness", MB_OK); return 1; }
 
-    LoadOverlayFonts(hInstance); // same embedded Barlow Condensed font the real game uses
-    LoadModConfig();             // creates/reads its OWN mw3ncp_config.ini next to this exe
+    char sourceDllPath[MAX_PATH];
+    GetSourceDllPath(sourceDllPath, sizeof(sourceDllPath));
+
+    HotModule current;
+    int copyCounter = 0;
+    FILETIME lastLoadedWriteTime = {};
+    bool haveModule = false;
+
+    auto TryHotSwap = [&]() {
+        WIN32_FILE_ATTRIBUTE_DATA attr;
+        if (!GetFileAttributesExA(sourceDllPath, GetFileExInfoStandard, &attr)) return; // not built yet
+        if (haveModule && CompareFileTime(&attr.ftLastWriteTime, &lastLoadedWriteTime) == 0) return; // unchanged
+
+        // Give MSBuild's linker a moment to finish flushing before we copy -- a
+        // changed timestamp can appear slightly before the file is fully written.
+        Sleep(150);
+
+        char scratchPath[MAX_PATH];
+        GetScratchCopyPath(scratchPath, sizeof(scratchPath), ++copyCounter);
+        if (!CopyFileA(sourceDllPath, scratchPath, FALSE)) {
+            printf("[ui_harness] ui_hot.dll changed but copy failed (likely still being written) -- will retry\n");
+            --copyCounter;
+            return;
+        }
+
+        HotModule fresh;
+        if (!TryBindModule(scratchPath, fresh)) {
+            printf("[ui_harness] ui_hot.dll rebuilt but failed to load/bind -- keeping previous version\n");
+            DeleteFileA(scratchPath);
+            return;
+        }
+
+        // New module is good -- tear down the old one (if any) and swap in.
+        char oldCopyPath[MAX_PATH] = {};
+        if (haveModule) {
+            strncpy_s(oldCopyPath, current.loadedCopyPath, _TRUNCATE);
+            if (current.UnloadOverlayFonts) current.UnloadOverlayFonts();
+            FreeLibrary(current.dll);
+        }
+
+        current = fresh;
+        haveModule = true;
+        lastLoadedWriteTime = attr.ftLastWriteTime;
+
+        current.SetWindow(hwnd);
+        current.LoadOverlayFonts(hInstance);
+        current.LoadModConfig();
+        // Menu/tab state reset to zero automatically (fresh DLL globals) -- explicit
+        // call kept here for clarity/documentation, not strictly required.
+        current.ResetOnMenuClose();
+
+        if (oldCopyPath[0]) DeleteFileA(oldCopyPath); // best-effort; fine if it fails
+        printf("[ui_harness] hot-reloaded ui_hot.dll (build #%d)\n", copyCounter);
+        SetWindowTextA(hwnd, "MW32011NCP UI Harness -- hot-reloaded! Press Enter/A to open Options");
+    };
+
+    TryHotSwap();
+    if (!haveModule) {
+        MessageBoxA(hwnd, "ui_hot.dll hasn't been built yet.\nBuild tools\\ui_harness\\ui_hot\\ui_hot.vcxproj first.",
+            "UI Harness", MB_OK);
+    }
 
     EdgeTracker upT, downT, leftT, rightT, selectT, backT, tabPrevT, tabNextT;
+    DWORD lastPollMs = GetTickCount();
+    constexpr DWORD kPollIntervalMs = 500;
 
     MSG msg = {};
     while (g_running) {
@@ -109,10 +253,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
         }
         if (!g_running) break;
 
-        // Real XInput controller if one's connected; keyboard fallback otherwise --
-        // both map onto the SAME fixed physical buttons this project's own menu
-        // navigation always uses (see analog_input_hooks.cpp's own D-pad/LB/RB
-        // handling), never through the remappable ButtonLayout system.
+        DWORD nowMs = GetTickCount();
+        if (nowMs - lastPollMs >= kPollIntervalMs) {
+            lastPollMs = nowMs;
+            TryHotSwap();
+        }
+
         unsigned short buttons = 0;
         unsigned char lt = 0, rt = 0;
         bool haveController = Controller_GetRawButtonsAndTriggers(buttons, lt, rt);
@@ -135,31 +281,25 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
         bool tabPrevEdge = tabPrevT.Tick(tabPrevHeld);
         bool tabNextEdge = tabNextT.Tick(tabNextHeld);
 
-        // No real pause menu here to detect "focused on the Options button" --
-        // openRequestedEdge is just "A/Enter pressed while the menu isn't already
-        // open", which is all CustomOptionsMenu_TickInput actually needs (see
-        // overlay_hud.h's own comment on the real PAUSE_LIST_1 detection this
-        // stands in for).
-        bool openRequestedEdge = !CustomOptionsMenu_IsOpen() && selectEdge;
-
-        CustomOptionsMenu_TickInput(openRequestedEdge, upEdge, downEdge, leftEdge, rightEdge,
-                                      selectEdge, backEdge, tabPrevEdge, tabNextEdge);
-
         device->Clear(0, nullptr, D3DCLEAR_TARGET, D3DCOLOR_XRGB(20, 25, 35), 1.0f, 0);
         device->BeginScene();
-        RunCustomOptionsMenuHarnessFrame(device);
-        if (!CustomOptionsMenu_IsOpen()) {
-            // Nothing else to draw when the menu's closed -- print a hint via the
-            // window title instead of needing our own separate text-draw path.
-            SetWindowTextA(hwnd, "MW32011NCP UI Harness -- press Enter/A to open Options (Esc to quit)");
-        } else {
-            SetWindowTextA(hwnd, "MW32011NCP UI Harness -- Options open (Q/E tabs, Backspace/B closes)");
+
+        if (haveModule) {
+            bool openRequestedEdge = !current.IsOpen() && selectEdge;
+            current.TickInput(openRequestedEdge, upEdge, downEdge, leftEdge, rightEdge,
+                                selectEdge, backEdge, tabPrevEdge, tabNextEdge);
+            current.DrawFrame(device);
         }
+
         device->EndScene();
         device->Present(nullptr, nullptr, nullptr, nullptr);
     }
 
-    UnloadOverlayFonts();
+    if (haveModule) {
+        if (current.UnloadOverlayFonts) current.UnloadOverlayFonts();
+        FreeLibrary(current.dll);
+        DeleteFileA(current.loadedCopyPath);
+    }
     if (device) device->Release();
     if (d3d9) d3d9->Release();
     return 0;

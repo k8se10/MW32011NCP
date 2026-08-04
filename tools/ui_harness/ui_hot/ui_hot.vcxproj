@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <ProjectGuid>{B2C3D4E5-6F7A-4B8C-9D0E-1F2A3B4C5D6E}</ProjectGuid>
+    <RootNamespace>uihot</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries Condition="'$(Configuration)'=='Debug'">true</UseDebugLibraries>
+    <UseDebugLibraries Condition="'$(Configuration)'=='Release'">false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+
+  <PropertyGroup>
+    <TargetName>ui_hot</TargetName>
+    <!-- Fixed, predictable output path: this is the file the host's watcher polls
+         the timestamp of and COPIES from (never LoadLibrary'd directly), so MSBuild
+         always has exclusive write access here regardless of whether an older copy
+         is currently loaded by a running harness. See main.cpp's own comment on the
+         copy-then-load pattern. -->
+    <OutDir>bin\$(Configuration)\</OutDir>
+    <IntDir>obj\$(Configuration)\</IntDir>
+  </PropertyGroup>
+
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalIncludeDirectories>..\..\..\proxy_d3d9\src;..\..\..\proxy_d3d9;..\..\..\proxy_d3d9\third_party\minhook\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+    </ClCompile>
+  </ItemDefinitionGroup>
+
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
+    <ClCompile>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <ItemGroup>
+    <!-- This DLL's own glue code. -->
+    <ClCompile Include="exports.cpp" />
+    <ClCompile Include="dll_stubs.cpp" />
+    <ClCompile Include="real_settings_mock.cpp" />
+
+    <!-- The REAL UI/settings code, compiled by path from proxy_d3d9, NOT copies:
+         this is the part that actually gets hot-swapped on every rebuild.
+         real_settings.cpp is deliberately excluded (real_settings_mock.cpp above
+         substitutes it), and options_render_suppress.cpp is excluded too (needs a
+         real MinHook-hookable game process, meaningless here). -->
+    <ClCompile Include="..\..\..\proxy_d3d9\src\overlay_hud.cpp" />
+    <ClCompile Include="..\..\..\proxy_d3d9\src\mod_config.cpp" />
+    <ClCompile Include="..\..\..\proxy_d3d9\src\vanilla_settings_sync.cpp" />
+    <ClCompile Include="..\..\..\proxy_d3d9\src\staged_settings.cpp" />
+
+    <!-- MinHook is #included by overlay_hud.cpp (InstallEndSceneHook, never called
+         here) but its symbols must still resolve at link time. -->
+    <ClCompile Include="..\..\..\proxy_d3d9\third_party\minhook\src\buffer.c" />
+    <ClCompile Include="..\..\..\proxy_d3d9\third_party\minhook\src\hook.c" />
+    <ClCompile Include="..\..\..\proxy_d3d9\third_party\minhook\src\trampoline.c" />
+    <ClCompile Include="..\..\..\proxy_d3d9\third_party\minhook\src\hde\hde32.c" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ClInclude Include="..\..\..\proxy_d3d9\src\overlay_hud.h" />
+    <ClInclude Include="..\..\..\proxy_d3d9\src\mod_config.h" />
+    <ClInclude Include="..\..\..\proxy_d3d9\src\real_settings.h" />
+    <ClInclude Include="..\..\..\proxy_d3d9\src\vanilla_settings_table.h" />
+    <ClInclude Include="..\..\..\proxy_d3d9\src\vanilla_settings_sync.h" />
+    <ClInclude Include="..\..\..\proxy_d3d9\src\staged_settings.h" />
+    <ClInclude Include="..\..\..\proxy_d3d9\resource.h" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Same embedded font (Barlow Condensed SemiBold) the real game uses, for
+         pixel-identical text rendering between this harness and the shipped game. -->
+    <ResourceCompile Include="..\..\..\proxy_d3d9\proxy_d3d9.rc" />
+  </ItemGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>
