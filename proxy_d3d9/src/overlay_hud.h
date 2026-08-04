@@ -253,6 +253,14 @@ bool CustomOptionsMenu_TickInput(bool openRequestedEdge,
 // reopening mid-interaction.
 void CustomOptionsMenu_ResetOnMenuClose();
 
+// Draws the custom Options menu if open -- the real per-frame draw call, normally
+// only reached via Hook_EndScene inside the game. Exposed here so tools/ui_harness
+// (a standalone D3D9 window with no game/hooks at all) can call the EXACT same
+// drawing code the shipped game uses, guaranteeing zero drift between what's
+// previewed there and what actually ships. Safe to call every frame; no-ops
+// entirely when the menu isn't open.
+void RunCustomOptionsMenuHarnessFrame(void* device);
+
 // True while the full custom menu is open. Used by InjectControllerMenuBack
 // (analog_input_hooks.cpp) to skip its own real ESC-forward while this overlay owns
 // B -- since the real pause menu was never told to close in this flow (see above),
