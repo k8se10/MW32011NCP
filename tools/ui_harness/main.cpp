@@ -223,7 +223,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
         lastLoadedWriteTime = attr.ftLastWriteTime;
 
         current.SetWindow(hwnd);
-        current.LoadOverlayFonts(hInstance);
+        // BUG FIX (2026-08-05, live-reported: "we need all assets from the main dll
+        // to load"): this used to pass the HOST exe's own hInstance here, but the
+        // embedded font + button-glyph-icon resources (proxy_d3d9.rc) are compiled
+        // into ui_hot.dll itself, not this host -- FindResourceA against the wrong
+        // module handle silently finds nothing. current.dll IS the loaded copy of
+        // ui_hot.dll, the correct handle for its own embedded resources.
+        current.LoadOverlayFonts(current.dll);
         current.LoadModConfig();
         // Menu/tab state reset to zero automatically (fresh DLL globals) -- explicit
         // call kept here for clarity/documentation, not strictly required.
