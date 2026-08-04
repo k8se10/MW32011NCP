@@ -85,6 +85,10 @@
     <ClCompile Include="src\mod_config.cpp" />
     <ClCompile Include="src\rumble.cpp" />
     <ClCompile Include="src\overlay_hud.cpp" />
+    <ClCompile Include="src\real_settings.cpp" />
+    <ClCompile Include="src\vanilla_settings_sync.cpp" />
+    <ClCompile Include="src\staged_settings.cpp" />
+    <ClCompile Include="src\options_render_suppress.cpp" />
     <!-- MinHook (BSD-style license, see third_party\minhook\LICENSE.txt;
          attribution required if this mod is ever shipped, see CLAUDE.md paragraph 6). -->
     <ClCompile Include="third_party\minhook\src\buffer.c" />
@@ -109,6 +113,11 @@
     <ClInclude Include="src\mod_config.h" />
     <ClInclude Include="src\rumble.h" />
     <ClInclude Include="src\overlay_hud.h" />
+    <ClInclude Include="src\real_settings.h" />
+    <ClInclude Include="src\vanilla_settings_table.h" />
+    <ClInclude Include="src\vanilla_settings_sync.h" />
+    <ClInclude Include="src\staged_settings.h" />
+    <ClInclude Include="src\options_render_suppress.h" />
     <ClInclude Include="resource.h" />
   </ItemGroup>
 

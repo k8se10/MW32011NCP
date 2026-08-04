@@ -33,6 +33,7 @@
 #include <windows.h>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <wincodec.h>
 #include <shlwapi.h>
@@ -40,6 +41,8 @@
 #include "mod_config.h"
 #include "overlay_hud.h"
 #include "controller_input.h"
+#include "vanilla_settings_table.h"
+#include "vanilla_settings_sync.h"
 #include "../resource.h"
 
 #pragma comment(lib, "windowscodecs.lib")
@@ -1453,6 +1456,481 @@ void DrawDebugMarkerIfRequested(void* device)
 // receives and uses for its own hit-testing (GetLastMouseMoveClientPos,
 // d3d9_hook.cpp) -- guaranteed to agree with whatever the game itself considers
 // "the mouse is here," since it's literally the same message data.
+// ---- Custom in-game options overlay (2026-08-04) ----------------------------------
+//
+// See overlay_hud.h's own comment for the overall design (extend the real OPTIONS_LIST
+// menu with one purely-drawn extra row, since native menu content injection is
+// confirmed unsafe for real content outside the engine's own controlled load context --
+// issue #23). Everything below lives in this file because it needs the same low-level
+// D3D9 text/quad drawing primitives (EnsureLeftAlignedTextTexture, MeasureTextWidthPx,
+// DrawGenericTexturedQuad) already defined above in this same anonymous namespace, and
+// runs off the same EndScene hook.
+//
+// Visual direction (explicit user request, 2026-08-04): faithful to the real console
+// Options screen's structure (a flat list of settings, current value shown per row, no
+// tabs) -- NOT a from-scratch redesign -- with modern polish (this project's own crisp
+// embedded font, smooth highlight bar, real-resolution-aware sizing) rather than a
+// literal 1:1 recreation of the console's exact 2011 art.
+//
+// Scope, deliberately narrow for v1: only settings this mod actually owns and can make
+// DO something (Sensitivity H/V, Invert Look, Vibration Enable, Stick Layout, Button
+// Layout). The real console screen also lists Game Volume/Brightness/Subtitles/Color
+// Blind Assist/Horizontal+Vertical Margin -- those aren't controller-specific and this
+// project doesn't implement any of them, so including them as inert rows would violate
+// this project's own "no placeholder settings" standard (CLAUDE.md 5). Left out
+// entirely rather than faked.
+
+enum class OptRowKind { FloatValue, BoolToggle, StickLayoutEnum, ButtonLayoutEnum };
+
+struct OptRow {
+    const char* label;
+    OptRowKind kind;
+    float* floatPtr;   // FloatValue only
+    float floatStep;
+    float floatMin;
+    float floatMax;
+    bool* boolPtr;      // BoolToggle only
+};
+
+OptRow g_optRows[] = {
+    { "SENSITIVITY HORIZONTAL", OptRowKind::FloatValue, &g_modConfig.lookDegreesPerSecondHorizontal, 10.0f, 50.0f, 500.0f, nullptr },
+    { "SENSITIVITY VERTICAL",   OptRowKind::FloatValue, &g_modConfig.lookDegreesPerSecondVertical,   10.0f, 50.0f, 500.0f, nullptr },
+    { "INVERT LOOK",            OptRowKind::BoolToggle,  nullptr, 0.0f, 0.0f, 0.0f, &g_modConfig.invertLook },
+    { "VIBRATION",              OptRowKind::BoolToggle,  nullptr, 0.0f, 0.0f, 0.0f, &g_modConfig.vibrationEnabled },
+    { "STICK LAYOUT",           OptRowKind::StickLayoutEnum,  nullptr, 0.0f, 0.0f, 0.0f, nullptr },
+    { "BUTTON LAYOUT",          OptRowKind::ButtonLayoutEnum, nullptr, 0.0f, 0.0f, 0.0f, nullptr },
+};
+constexpr int kOptRowCount = sizeof(g_optRows) / sizeof(g_optRows[0]);
+
+// ---- State (2026-08-04) ----
+// No more "reachable but not yet open" chip state (g_optExtraRowReachable/Selected,
+// removed same day as added -- see overlay_hud.h's own header comment): the menu is
+// now either open or not, invoked directly from the real pause menu's own "Options"
+// button rather than a row appended to a real list.
+bool g_optMenuOpen = false;
+int g_optSelectedRow = 0;
+
+struct TextTexCache { void* texture = nullptr; char renderedFor[128] = {}; int lastFontHeightPx = 0; };
+// Sized to kUnifiedTabRowCacheSize (16, matching g_tabVanillaIndices' own capacity),
+// not kOptRowCount -- shared across every tab (Controller's 6 rows and, once a tab
+// switch happens, a vanilla tab's rows) since only one tab's rows are ever drawn in
+// a given frame. A stale cache slot from a previously-shown tab harmlessly
+// re-renders the moment its text differs from what's cached (EnsureLeftAlignedTextTexture's
+// own renderedFor comparison already handles this correctly).
+constexpr int kUnifiedTabRowCacheSize = 16;
+TextTexCache g_optRowLabelCache[kUnifiedTabRowCacheSize];
+TextTexCache g_optRowValueCache[kUnifiedTabRowCacheSize];
+TextTexCache g_tabBarCache[8]; // sized above kUnifiedTabCount (3 today) for future tabs
+TextTexCache g_optTitleCache;
+TextTexCache g_optFooterCache;
+void* g_optWhiteTexture = nullptr; // 1x1 white texture for solid-fill background panels
+
+bool EnsureWhiteTexture(void* device)
+{
+    if (g_optWhiteTexture) return true;
+    void** deviceVtbl = *reinterpret_cast<void***>(device);
+    auto createTexture = reinterpret_cast<CreateTexture_t>(deviceVtbl[kCreateTextureVtableIndex]);
+    HRESULT hr = createTexture(device, 1, 1, 1, 0, kD3DFMT_A8R8G8B8, kD3DPOOL_MANAGED, &g_optWhiteTexture, nullptr);
+    if (FAILED(hr) || !g_optWhiteTexture) { g_optWhiteTexture = nullptr; return false; }
+
+    void** texVtbl = *reinterpret_cast<void***>(g_optWhiteTexture);
+    auto getSurfaceLevel = reinterpret_cast<GetSurfaceLevel_t>(texVtbl[kGetSurfaceLevelVtableIndex]);
+    void* surface = nullptr;
+    if (FAILED(getSurfaceLevel(g_optWhiteTexture, 0, &surface)) || !surface) return false;
+    void** surfaceVtbl = *reinterpret_cast<void***>(surface);
+    auto lockRect = reinterpret_cast<SurfaceLockRect_t>(surfaceVtbl[kSurfaceLockRectVtableIndex]);
+    auto unlockRect = reinterpret_cast<SurfaceUnlockRect_t>(surfaceVtbl[kSurfaceUnlockRectVtableIndex]);
+    auto releaseSurface = reinterpret_cast<Release_t>(surfaceVtbl[kSurfaceReleaseVtableIndex]);
+    LockedRect locked = {};
+    if (SUCCEEDED(lockRect(surface, &locked, nullptr, 0)) && locked.pBits) {
+        *reinterpret_cast<DWORD*>(locked.pBits) = 0xFFFFFFFFu;
+        unlockRect(surface);
+    }
+    releaseSurface(surface);
+    return true;
+}
+
+void FormatOptRowValue(const OptRow& row, char* outBuf, size_t outBufSize)
+{
+    switch (row.kind) {
+        case OptRowKind::FloatValue:
+            sprintf_s(outBuf, outBufSize, "%.0f", *row.floatPtr);
+            break;
+        case OptRowKind::BoolToggle:
+            strcpy_s(outBuf, outBufSize, *row.boolPtr ? "ENABLED" : "DISABLED");
+            break;
+        case OptRowKind::StickLayoutEnum: {
+            static const char* kNames[] = { "DEFAULT", "SOUTHPAW", "LEGACY", "LEGACY SOUTHPAW" };
+            strcpy_s(outBuf, outBufSize, kNames[static_cast<int>(g_modConfig.stickLayout)]);
+            break;
+        }
+        case OptRowKind::ButtonLayoutEnum: {
+            static const char* kNames[] = { "DEFAULT", "TACTICAL", "LEFTY", "TACTICAL LEFTY" };
+            strcpy_s(outBuf, outBufSize, kNames[static_cast<int>(g_modConfig.buttonLayout)]);
+            break;
+        }
+    }
+}
+
+// direction: -1 (Left) or +1 (Right). Bool rows toggle regardless of direction.
+void AdjustOptRow(int rowIndex, int direction)
+{
+    OptRow& row = g_optRows[rowIndex];
+    switch (row.kind) {
+        case OptRowKind::FloatValue: {
+            float v = *row.floatPtr + static_cast<float>(direction) * row.floatStep;
+            if (v < row.floatMin) v = row.floatMin;
+            if (v > row.floatMax) v = row.floatMax;
+            *row.floatPtr = v;
+            break;
+        }
+        case OptRowKind::BoolToggle:
+            *row.boolPtr = !*row.boolPtr;
+            break;
+        case OptRowKind::StickLayoutEnum: {
+            int v = (static_cast<int>(g_modConfig.stickLayout) + direction + 4) % 4;
+            g_modConfig.stickLayout = static_cast<StickLayout>(v);
+            g_buttonMap = ResolveButtonMap(g_modConfig.buttonLayout, g_modConfig.flipTriggers);
+            break;
+        }
+        case OptRowKind::ButtonLayoutEnum: {
+            int v = (static_cast<int>(g_modConfig.buttonLayout) + direction + 4) % 4;
+            g_modConfig.buttonLayout = static_cast<ButtonLayout>(v);
+            g_buttonMap = ResolveButtonMap(g_modConfig.buttonLayout, g_modConfig.flipTriggers);
+            break;
+        }
+    }
+    SaveModConfig();
+}
+
+// ---- Unified tabs (2026-08-04, issue #66 full-scope pivot) ------------------------
+//
+// After the render-suppression approach was live-tested and found to prevent the
+// game from launching at all (re_notes/known_issues.md issue #66), the project owner
+// redirected to the original lower-risk alternative: draw fully over the top of the
+// real screen and claim all input while open (both already true of this menu since
+// round 1), rather than suppressing the real menu's own rendering. This section adds
+// TAB navigation on top of that unchanged foundation, so the single flat 6-row
+// Controller-only list becomes a tabbed screen covering the mod's own settings AND
+// (phase 1) the real vanilla Look/Voice settings, via the vanilla_settings_table.h/
+// vanilla_settings_sync.h layer built earlier this session.
+//
+// Phase 1 scope, deliberately narrow: Controller (unchanged g_optRows), Look, and
+// Voice tabs only, and only their DvarFloat/DvarBool rows (fully editable, no
+// ambiguity). NOT included yet, each for a real, specific reason rather than an
+// oversight: Video/Audio/AdvancedVideo (need the staged-settings Apply-prompt UI,
+// staged_settings.h, wired in -- not done this pass), Movement/Actions (pure
+// keybinds -- need a "press a key to rebind" capture UX, not just display), Look's
+// own 4 keybind rows and Voice's Push-to-Talk (same reason), DvarString/enum rows
+// generally (this project doesn't yet have the real per-dvar enum choice lists, e.g.
+// "Off/2x/4x" for anti-aliasing, only the raw dvar name/type -- adjusting a
+// DvarString row via Left/Right with no real choice list to step through would be
+// guessing, not a real control).
+enum class UnifiedTab { Controller, Look, Voice };
+constexpr UnifiedTab kTabOrder[] = { UnifiedTab::Controller, UnifiedTab::Look, UnifiedTab::Voice };
+constexpr int kUnifiedTabCount = sizeof(kTabOrder) / sizeof(kTabOrder[0]);
+
+const char* UnifiedTabDisplayName(UnifiedTab tab)
+{
+    switch (tab) {
+        case UnifiedTab::Controller: return "CONTROLLER";
+        case UnifiedTab::Look:       return "LOOK";
+        case UnifiedTab::Voice:      return "VOICE";
+    }
+    return "?";
+}
+
+int g_currentTabIndex = 0; // index into kTabOrder; Controller (0) is always the
+                             // opening tab, see CustomOptionsMenu_TickInput's
+                             // selectEdge-into-g_optMenuOpen branch
+
+// Cached kVanillaSettings indices belonging to the CURRENT tab (Controller doesn't
+// use this -- it reads g_optRows directly). Rebuilt only when the tab changes, not
+// every frame/tick. Sized generously above phase 1's actual max (Look: 4 editable
+// rows) for room to grow as later phases add more tabs/rows.
+int g_tabVanillaIndices[16];
+int g_tabVanillaRowCount = 0;
+
+void RebuildTabRowCache()
+{
+    g_tabVanillaRowCount = 0;
+    UnifiedTab tab = kTabOrder[g_currentTabIndex];
+    if (tab == UnifiedTab::Controller) return;
+    VanillaSettingTab wantTab = (tab == UnifiedTab::Look) ? VanillaSettingTab::Look : VanillaSettingTab::Voice;
+    for (int i = 0; i < kVanillaSettingCount; ++i) {
+        const VanillaSettingDef& def = kVanillaSettings[i];
+        if (def.tab != wantTab) continue;
+        // Phase 1: only fully-editable kinds -- see the big comment above this section.
+        if (def.kind != VanillaSettingKind::DvarFloat && def.kind != VanillaSettingKind::DvarBool) continue;
+        if (g_tabVanillaRowCount < 16) g_tabVanillaIndices[g_tabVanillaRowCount++] = i;
+    }
+}
+
+int CurrentTabRowCount()
+{
+    UnifiedTab tab = kTabOrder[g_currentTabIndex];
+    return (tab == UnifiedTab::Controller) ? kOptRowCount : g_tabVanillaRowCount;
+}
+
+const char* CurrentTabRowLabel(int row)
+{
+    UnifiedTab tab = kTabOrder[g_currentTabIndex];
+    if (tab == UnifiedTab::Controller) return g_optRows[row].label;
+    return kVanillaSettings[g_tabVanillaIndices[row]].displayLabel;
+}
+
+void CurrentTabRowValueString(int row, char* outBuf, size_t outBufSize)
+{
+    UnifiedTab tab = kTabOrder[g_currentTabIndex];
+    if (tab == UnifiedTab::Controller) { FormatOptRowValue(g_optRows[row], outBuf, outBufSize); return; }
+    GetVanillaSettingValueString(kVanillaSettings[g_tabVanillaIndices[row]], outBuf, outBufSize);
+}
+
+bool CurrentTabRowIsBoolToggle(int row)
+{
+    UnifiedTab tab = kTabOrder[g_currentTabIndex];
+    if (tab == UnifiedTab::Controller) return g_optRows[row].kind == OptRowKind::BoolToggle;
+    return kVanillaSettings[g_tabVanillaIndices[row]].kind == VanillaSettingKind::DvarBool;
+}
+
+// direction: -1 (Left) or +1 (Right). Bool rows toggle regardless of direction.
+void AdjustCurrentTabRow(int row, int direction)
+{
+    UnifiedTab tab = kTabOrder[g_currentTabIndex];
+    if (tab == UnifiedTab::Controller) { AdjustOptRow(row, direction); return; }
+
+    const VanillaSettingDef& def = kVanillaSettings[g_tabVanillaIndices[row]];
+    char buf[64];
+    GetVanillaSettingValueString(def, buf, sizeof(buf));
+    if (def.kind == VanillaSettingKind::DvarFloat) {
+        float v = static_cast<float>(atof(buf)) + static_cast<float>(direction) * def.floatStep;
+        if (v < def.floatMin) v = def.floatMin;
+        if (v > def.floatMax) v = def.floatMax;
+        char newBuf[64];
+        sprintf_s(newBuf, "%g", v);
+        SetVanillaSettingFromString(def, newBuf);
+    } else if (def.kind == VanillaSettingKind::DvarBool) {
+        bool current = atoi(buf) != 0;
+        SetVanillaSettingFromString(def, current ? "0" : "1");
+    }
+    // DvarString/Keybind rows are never reachable here -- RebuildTabRowCache already
+    // filters them out of g_tabVanillaIndices for phase 1.
+}
+
+// FIXED 2026-08-04 (round 2 live feedback: "way too horizontally squished"): this
+// drew the quad at only measuredWidth+12 screen pixels wide while sampling the FULL
+// texture (default u0=0/u1=1, the whole kTextureWidth=512 canvas) -- since real
+// rendered text only occupies a small leading slice of that 512px canvas, stretching
+// the WHOLE thing into a narrow quad crushed every glyph horizontally by roughly
+// (drawWidth / 512). DrawOneGameplayHintSlot/DrawOneMenuHintSlot (proven working
+// since 2026-07-31) never had this bug because they always crop the UV range to the
+// real rendered-text slice instead of defaulting to the full texture -- this now
+// does the same: samples only [8, 8+drawWidthPx) of the 512px canvas (8 = the fixed
+// left margin RenderMaskLuminance always draws with) so 1 texel of real glyph maps to
+// 1 texel of screen space, same as everywhere else in this file.
+void DrawOptLeftAlignedText(void* device, TextTexCache& cache, const char* text, float x, float yCenter,
+                             int fontHeightPx, DWORD color, float scaleX, float scaleY)
+{
+    if (!EnsureLeftAlignedTextTexture(device, cache.texture, cache.renderedFor, sizeof(cache.renderedFor),
+                                        text, cache.lastFontHeightPx, fontHeightPx)) return;
+    int measuredWidth = MeasureTextWidthPx(text, g_modConfig.overlayFontItalic, fontHeightPx);
+    if (measuredWidth <= 0) return;
+    constexpr int kTextRenderLeftMarginPx = 8; // matches RenderMaskLuminance's own hardcoded left inset
+    int drawWidthPx = measuredWidth + 12; // small trailing margin, same rationale
+                                            // as the hint renderer's own kHintTextWidthMarginPx
+    float u0 = static_cast<float>(kTextRenderLeftMarginPx) / static_cast<float>(kTextureWidth);
+    float u1 = static_cast<float>(kTextRenderLeftMarginPx + drawWidthPx) / static_cast<float>(kTextureWidth);
+    float top = yCenter - static_cast<float>(kTextureHeight) * 0.5f;
+    DrawGenericTexturedQuad(device, cache.texture, x * scaleX, top * scaleY,
+                              static_cast<float>(drawWidthPx) * scaleX, static_cast<float>(kTextureHeight) * scaleY,
+                              color, u0, 0.0f, u1, 1.0f);
+}
+
+// Right-aligns `text` so it ENDS at rightEdgeX -- matching the real native vertical
+// lists in this menu (OPTIONS_LIST included), which right-align every row to a shared
+// column rather than left-aligning (see analog_input_hooks.cpp's own "KEY FINDING"
+// comment on itemX=605). Pass 1 of this feature left-aligned the extra row STARTING
+// at that same column, which put its text nowhere near where the real list's text
+// actually sits -- a real, visible reason it read as un-native. Reuses
+// DrawOptLeftAlignedText/MeasureTextWidthPx rather than a separate DT_RIGHT texture
+// path -- text is still rendered left-aligned into its texture, just anchored in
+// screen space by its own measured width.
+void DrawOptRightAlignedText(void* device, TextTexCache& cache, const char* text, float rightEdgeX, float yCenter,
+                               int fontHeightPx, DWORD color, float scaleX, float scaleY)
+{
+    int measuredWidth = MeasureTextWidthPx(text, g_modConfig.overlayFontItalic, fontHeightPx);
+    float leftX = rightEdgeX - static_cast<float>(measuredWidth);
+    DrawOptLeftAlignedText(device, cache, text, leftX, yCenter, fontHeightPx, color, scaleX, scaleY);
+}
+
+// Called from Hook_EndScene every frame. Draws the full custom menu when open --
+// nothing to draw otherwise, invocation is now the real pause menu's own "Options"
+// button (see overlay_hud.h's header comment), not an appended row that needed
+// drawing even while "reachable but not yet open".
+void DrawCustomOptionsMenuIfOpen(void* device)
+{
+    if (!g_optMenuOpen) return;
+    if (!EnsureWhiteTexture(device)) return;
+
+    float scaleX = 1.0f, scaleY = 1.0f;
+    GetResolutionScale(device, scaleX, scaleY);
+
+    constexpr DWORD kWhiteColor = 0xFFFFFFFFu;
+    constexpr DWORD kGreenHighlight = 0xFF6FCF6Fu; // same family as this project's other
+                                                     // green selection accents (A-glyph,
+                                                     // menu highlight text)
+
+    // Full custom menu -- FULLSCREEN, draw-over-the-top (2026-08-04, direction change
+    // same day: a render-suppression approach was live-tested and found to prevent
+    // the game from launching at all -- reverted; see re_notes/known_issues.md issue
+    // #66 -- in favor of this original, lower-risk alternative: draw fully over the
+    // real screen and claim all input while open, which this menu already did since
+    // round 1). Background is now a full-screen dim layer, matching the REAL
+    // technique this engine's own popups use (all_restart_popmenu.menu: a plain
+    // white material tinted to forecolor 0 0 0 0.8 covering the whole screen) rather
+    // than an arbitrary flat color -- there is no dedicated background IMAGE asset
+    // for this class of screen to extract (checked: real Options/pause menus dim the
+    // live paused game view, they don't use static art), so matching the real DIM
+    // technique is the actual native behavior, not an approximation of it.
+    //
+    // Layout: a bordered content panel sits inset within that full-screen dim, with
+    // a tab bar (LB/RB, see UnifiedTab above) between the title and the row list.
+    DrawGenericTexturedQuad(device, g_optWhiteTexture, 0.0f, 0.0f,
+        1920.0f * scaleX, 1080.0f * scaleY, 0xCC000000u); // full-screen dim, real 0.8-alpha-black convention
+
+    constexpr float kScreenMargin = 60.0f;
+    constexpr float kPanelX = kScreenMargin;
+    constexpr float kPanelY = kScreenMargin;
+    constexpr float kPanelW = 1920.0f - kScreenMargin * 2.0f;
+    constexpr float kPanelH = 1080.0f - kScreenMargin * 2.0f;
+    constexpr float kHeaderH = 165.0f;  // title + tab bar + divider
+    constexpr float kFooterH = 70.0f;   // button-legend line
+    constexpr int kListFontHeightPx = 32;
+    constexpr float kListRowSpacingPx = 62.0f;
+    constexpr int kTitleFontHeightPx = 48;
+    constexpr int kTabFontHeightPx = 26;
+
+    constexpr float kBorderPad = 3.0f;
+    DrawGenericTexturedQuad(device, g_optWhiteTexture, (kPanelX - kBorderPad) * scaleX, (kPanelY - kBorderPad) * scaleY,
+        (kPanelW + kBorderPad * 2) * scaleX, (kPanelH + kBorderPad * 2) * scaleY, 0x80FFFFFFu); // border
+    DrawGenericTexturedQuad(device, g_optWhiteTexture, kPanelX * scaleX, kPanelY * scaleY,
+        kPanelW * scaleX, kPanelH * scaleY, 0xF0101014u); // dark, near-opaque fill
+
+    DrawOptLeftAlignedText(device, g_optTitleCache, "MW32011NCP OPTIONS",
+                             kPanelX + 40.0f, kPanelY + 50.0f, kTitleFontHeightPx, kWhiteColor, scaleX, scaleY);
+
+    float labelX = kPanelX + 60.0f;
+    float valueRightX = kPanelX + 760.0f;       // right-align values within the left content column
+    float dividerX = kPanelX + 840.0f;           // marks off the reserved right-hand area
+
+    // Tab bar -- left-aligned row of tab names, current tab highlighted green, laid
+    // out left-to-right by each label's own measured width (same technique the
+    // corner-hint system elsewhere in this file already uses for sequential text).
+    float tabX = labelX;
+    constexpr float kTabGapPx = 50.0f;
+    for (int t = 0; t < kUnifiedTabCount; ++t) {
+        bool isCurrentTab = (t == g_currentTabIndex);
+        DWORD tabColor = isCurrentTab ? kGreenHighlight : 0xFF808080u;
+        const char* tabName = UnifiedTabDisplayName(kTabOrder[t]);
+        DrawOptLeftAlignedText(device, g_tabBarCache[t], tabName, tabX, kPanelY + 100.0f,
+                                 kTabFontHeightPx, tabColor, scaleX, scaleY);
+        int tabWidth = MeasureTextWidthPx(tabName, g_modConfig.overlayFontItalic, kTabFontHeightPx);
+        tabX += static_cast<float>(tabWidth) + kTabGapPx;
+    }
+
+    DrawGenericTexturedQuad(device, g_optWhiteTexture, (kPanelX + 40.0f) * scaleX, (kPanelY + kHeaderH - 16.0f) * scaleY,
+        (kPanelW - 80.0f) * scaleX, 2.0f * scaleY, 0x50FFFFFFu); // divider under the tab bar
+    DrawGenericTexturedQuad(device, g_optWhiteTexture, dividerX * scaleX, (kPanelY + kHeaderH) * scaleY,
+        2.0f * scaleX, (kPanelH - kHeaderH - kFooterH) * scaleY, 0x30FFFFFFu); // vertical divider, reserved right column
+
+    int rowCount = CurrentTabRowCount();
+    float availableH = kPanelH - kHeaderH - kFooterH;
+    float rowsH = kListRowSpacingPx * static_cast<float>(rowCount);
+    float rowY = kPanelY + kHeaderH + (availableH - rowsH) * 0.5f + kListRowSpacingPx * 0.5f;
+    for (int i = 0; i < rowCount; ++i) {
+        bool selected = (i == g_optSelectedRow);
+        DWORD rowColor = selected ? kGreenHighlight : kWhiteColor;
+        if (selected) {
+            DrawGenericTexturedQuad(device, g_optWhiteTexture, (kPanelX + 24.0f) * scaleX,
+                                      (rowY - kListRowSpacingPx * 0.5f) * scaleY, (dividerX - 40.0f - kPanelX) * scaleX,
+                                      kListRowSpacingPx * scaleY, 0x3AFFFFFFu); // highlight bar behind the row
+        }
+        DrawOptLeftAlignedText(device, g_optRowLabelCache[i], CurrentTabRowLabel(i),
+                                 labelX, rowY, kListFontHeightPx, rowColor, scaleX, scaleY);
+        char valueBuf[64];
+        CurrentTabRowValueString(i, valueBuf, sizeof(valueBuf));
+        DrawOptRightAlignedText(device, g_optRowValueCache[i], valueBuf,
+                                 valueRightX, rowY, kListFontHeightPx, rowColor, scaleX, scaleY);
+        rowY += kListRowSpacingPx;
+    }
+
+    DrawOptLeftAlignedText(device, g_optFooterCache, "LB/RB TABS    LEFT/RIGHT ADJUST    A TOGGLE    B CLOSE",
+                             labelX, kPanelY + kPanelH - kFooterH * 0.5f, 20, 0xFFA0A0A0u, scaleX, scaleY);
+}
+
+} // namespace
+
+// ---- Public API (declared in overlay_hud.h) ----------------------------------------
+
+bool CustomOptionsMenu_TickInput(bool openRequestedEdge,
+                                   bool upEdge, bool downEdge, bool leftEdge, bool rightEdge,
+                                   bool selectEdge, bool backEdge, bool tabPrevEdge, bool tabNextEdge)
+{
+    if (g_optMenuOpen) {
+        if (backEdge) {
+            g_optMenuOpen = false;
+            return true;
+        }
+        if (tabPrevEdge || tabNextEdge) {
+            g_currentTabIndex = (g_currentTabIndex + (tabNextEdge ? 1 : -1) + kUnifiedTabCount) % kUnifiedTabCount;
+            RebuildTabRowCache();
+            g_optSelectedRow = 0; // switching tabs always lands on that tab's first row
+        }
+        int rowCount = CurrentTabRowCount();
+        if (rowCount > 0) {
+            if (upEdge) g_optSelectedRow = (g_optSelectedRow - 1 + rowCount) % rowCount;
+            if (downEdge) g_optSelectedRow = (g_optSelectedRow + 1) % rowCount;
+            if (leftEdge) AdjustCurrentTabRow(g_optSelectedRow, -1);
+            if (rightEdge) AdjustCurrentTabRow(g_optSelectedRow, +1);
+            if (selectEdge && CurrentTabRowIsBoolToggle(g_optSelectedRow)) {
+                AdjustCurrentTabRow(g_optSelectedRow, +1); // A also toggles a bool row, same as Left/Right
+            }
+        }
+        return true; // claim everything while our own menu is open -- the real
+                      // native menu underneath must see none of this input
+    }
+
+    // Gated on [Options] UseCustomOptionsScreen by the caller (analog_input_hooks.cpp
+    // only ever passes openRequestedEdge=true when that's also enabled) -- default
+    // OFF means this whole feature is invisible/inert unless explicitly enabled,
+    // matching this project's standing pattern for structurally significant,
+    // not-yet-verified changes.
+    if (openRequestedEdge) {
+        g_optMenuOpen = true;
+        g_optSelectedRow = 0;
+        g_currentTabIndex = 0; // always opens on the Controller tab
+        RebuildTabRowCache();
+        return true; // claim this press -- do NOT forward it to the real pause menu,
+                      // which would otherwise run its own real "open Options" action
+    }
+
+    return false; // nothing claimed -- caller forwards this tick normally
+}
+
+void CustomOptionsMenu_ResetOnMenuClose()
+{
+    g_optMenuOpen = false;
+    g_optSelectedRow = 0;
+    g_currentTabIndex = 0;
+}
+
+bool CustomOptionsMenu_IsOpen()
+{
+    return g_optMenuOpen;
+}
+
+namespace {
+
 void DrawCustomCursorIfNeeded(void* device)
 {
     __try {
@@ -1675,6 +2153,7 @@ HRESULT WINAPI Hook_EndScene(void* device)
     ResetMenuListItemOrdinalForFrame();
     DrawMenuHintsIfRequested(device);
     DrawDebugMarkerIfRequested(device);
+    DrawCustomOptionsMenuIfOpen(device);
     // Always last -- see DrawCustomCursorIfNeeded's own comment for why the cursor
     // specifically needs to be the final thing drawn each frame.
     DrawCustomCursorIfNeeded(device);

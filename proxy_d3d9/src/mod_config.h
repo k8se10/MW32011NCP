@@ -357,6 +357,16 @@ struct ModConfig
         // Capped at 100 total log lines per session so a noisy candidate can't flood the
         // log across a long play session.
 
+    // [Options] (issue #66, 2026-08-04 full-scope pivot) -- STRICTLY OPT-IN, OFF by
+    // default per this project's own established pattern for structurally significant,
+    // not-yet-verified behavior changes (autoMantleEnabled, glyphIconOverlayEnabled,
+    // etc. all default off the same way). When enabled, replaces the ENTIRE real
+    // Options screen with a fully custom-drawn one covering every real vanilla
+    // setting (not just this mod's own), not just the small extra-row extension
+    // rounds 1-4 built. See re_notes/known_issues.md issue #66 and
+    // re_notes/options_menu_full_map.md for the full design/research trail.
+    bool useCustomOptionsScreen = false;
+
     // sprintStaminaBypassForTesting (task #9) REMOVED 2026-07-19: graduated to
     // unconditional the same day it was added -- Sprint's real +sprint kbutton
     // migration was LIVE-CONFIRMED working, and with it confirmed that the real
@@ -375,3 +385,36 @@ extern ModConfig g_modConfig;
 // if none exists yet, so the file is discoverable and self-documenting on first run.
 // Call once, early in DllMain (before any hook that reads g_modConfig runs).
 void LoadModConfig();
+
+// Persists the CURRENT in-memory g_modConfig back to mw3ncp_config.ini, in the
+// current schema -- for the in-game custom options overlay (2026-08-04) to call
+// after the player adjusts a value live. Safe to call from any thread the game's
+// own hooks already run on (same file I/O this project's existing config code
+// already does synchronously).
+extern "C" void SaveModConfig();
+
+// ---- Vanilla settings mirror (issue #66, 2026-08-04 full-scope pivot) -------------
+//
+// Unlike g_modConfig above (where the ini IS the source of truth, loaded into memory
+// and driving mod behavior), the real vanilla dvars/keybinds remain the source of
+// truth for actual gameplay -- these two functions mirror between the real engine
+// and mw3ncp_config.ini as a genuine local settings BACKUP, independent of Steam
+// Cloud sync issues (explicit user request: "it allows much better settings backups
+// so if people have issue with steam saving options we actually help with that
+// too"). NOT called from LoadModConfig()/DllMain() -- the real dvar/keybind systems
+// are not guaranteed initialized that early; callers must only invoke these once the
+// game is confirmed running (same timing class as this project's other per-frame
+// hooks).
+
+// Reads every real vanilla setting's CURRENT value (live from the real dvar/keybind
+// table, via vanilla_settings_sync.h) and writes it into mw3ncp_config.ini, one
+// section per Options tab. Read-only against the engine -- never changes a real
+// setting. Safe to call periodically to keep the backup fresh.
+void SyncVanillaSettingsToIni();
+
+// The reverse direction: reads every real vanilla setting's LAST-SYNCED value back
+// out of mw3ncp_config.ini and writes it to the real engine. An explicit, user-
+// triggered action (e.g. a "Restore from Backup" UI control) -- never called
+// automatically, since silently overwriting live game settings from a possibly-
+// stale ini on every launch would be surprising, not helpful.
+void RestoreVanillaSettingsFromIni();
