@@ -1929,6 +1929,13 @@ bool CustomOptionsMenu_IsOpen()
     return g_optMenuOpen;
 }
 
+// See overlay_hud.h's own comment -- tools/ui_harness's public entry point onto the
+// exact same DrawCustomOptionsMenuIfOpen the real game calls from Hook_EndScene.
+void RunCustomOptionsMenuHarnessFrame(void* device)
+{
+    DrawCustomOptionsMenuIfOpen(device);
+}
+
 namespace {
 
 void DrawCustomCursorIfNeeded(void* device)
