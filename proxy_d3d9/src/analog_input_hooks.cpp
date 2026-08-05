@@ -5334,6 +5334,33 @@ bool RenderedTextMatchesReferenceKeyPrefix(const char* renderedText, const char*
     return _strnicmp(renderedText, resolved, prefixLen) == 0;
 }
 
+// Structural match for "&&1"-substitution templates (issue #68 follow-up, 2026-08-05
+// live retest) -- e.g. PLATFORM_MANTLE = "Press^3 &&1 ^7to  ", where the real engine
+// splices a bind's own display text in for "&&1" before drawing. A live Italian
+// screenshot proved word-based key names ARE translated for this splice ("Premi
+// Spazio per" instead of "Press SPACE to"), so matching the SUBSTITUTED key text
+// itself (as isMantleHint's old `_stricmp(highlighted, "SPACE")` did) breaks under
+// any language that translates that word. This instead compares the parts of the
+// template OUTSIDE the substitution point -- which never change regardless of what
+// gets spliced in for "&&1" -- against the real rendered text's own matching prefix/
+// suffix, position-based (not marker-based), so it's correct for any substituted
+// key length in any language: `renderedText` must start with the template's own text
+// before "&&1" and end with its text after "&&1", verbatim.
+bool RenderedTextMatchesSubstitutionTemplate(const char* renderedText, const char* referenceKey)
+{
+    const char* tmpl = GetLocalizedString(referenceKey);
+    if (!tmpl || !LooksLikeValidPointer(reinterpret_cast<uintptr_t>(tmpl))) return false;
+    const char* marker = strstr(tmpl, "&&1");
+    if (!marker) return false;
+    size_t prefixLen = static_cast<size_t>(marker - tmpl);
+    size_t suffixLen = strlen(marker + 3); // skip "&&1" itself
+    size_t renderedLen = strlen(renderedText);
+    if (renderedLen < prefixLen + suffixLen) return false;
+    if (strncmp(renderedText, tmpl, prefixLen) != 0) return false;
+    if (suffixLen > 0 && strcmp(renderedText + (renderedLen - suffixLen), marker + 3) != 0) return false;
+    return true;
+}
+
 // Restricts the custom hint-overlay replacement (issue #48/#49) to the two real fonts
 // actually used for in-game gameplay HUD hints -- confirmed via hud-font-id live
 // captures 2026-07-31: "Press F to pick up"/"Hold F to use Weapon Armory" both use
@@ -5380,6 +5407,11 @@ bool IsMenuHintFont(const DiagFont* font)
 const char* GetLastResolvedBindKeyName();
 bool TryGetGlyphAssetNameForKeyName(const char* keyName, char* outAssetName, size_t outSize);
 bool TryGetMenuGlyphAssetNameForKeyName(const char* keyName, char* outAssetName, size_t outSize);
+// Issue #68 follow-up (2026-08-05): resolves the mantle hint's icon directly via its
+// known LogicalAction::Jump mapping, bypassing the translated-key-name text lookup
+// entirely -- see RenderedTextMatchesSubstitutionTemplate's own comment for why the
+// key-name lookup can't be trusted for this hint under other languages.
+bool TryGetMantleGlyphAssetName(char* outAssetName, size_t outSize);
 
 // Reuses the same obscure LB+RB-held-2s convention as the zoneload-test above (that
 // test is disabled/not wired into the live tick, so no collision) -- deliberately
@@ -5964,14 +5996,9 @@ void __cdecl Hook_DrawGlyphText(
                         size_t copyLen = span.contentLen < sizeof(highlighted) - 1 ? span.contentLen : sizeof(highlighted) - 1;
                         memcpy(highlighted, param_1 + span.contentStart, copyLen);
                         highlighted[copyLen] = '\0';
-                        // Bug found 2026-07-31: the mantle-specific X nudge below compared this
-                        // buffer directly against "SPACE" and never matched, because the raw
-                        // span content is " Space " (surrounding spaces baked into the color-
-                        // code span itself, e.g. "Press^3 Space ^7to") -- TryGetGlyphAssetNameForKeyName
-                        // already trims internally before its OWN lookup, which is why the icon
-                        // itself still resolved correctly despite this, masking the bug. Trim
-                        // in place here too so every later use of `highlighted` (asset lookup,
-                        // the SPACE comparison, anything added later) sees the same clean form.
+                        // Bug found 2026-07-31: TryGetGlyphAssetNameForKeyName's own lookup
+                        // trims internally, but nothing else using `highlighted` did -- trim
+                        // in place here too so every later use sees the same clean form.
                         {
                             size_t start = 0, end = strlen(highlighted);
                             while (start < end && isspace(static_cast<unsigned char>(highlighted[start]))) ++start;
@@ -5981,8 +6008,24 @@ void __cdecl Hook_DrawGlyphText(
                             highlighted[trimmedLen] = '\0';
                         }
 
+                        // Issue #68 follow-up (2026-08-05 live retest): used to identify the
+                        // mantle hint by comparing `highlighted` against the literal English
+                        // word "SPACE" -- broken under any language that translates it (live-
+                        // confirmed: Italian renders "Premi Spazio per," and "Spazio" matches
+                        // nothing in kKeyActionTable, so the icon lookup silently failed and
+                        // the real untranslated text fell through instead). Detected
+                        // structurally now instead, via RenderedTextMatchesSubstitutionTemplate
+                        // against the real PLATFORM_MANTLE template -- correct regardless of
+                        // what the substituted key name says in any language -- and resolves
+                        // the icon straight from the known LogicalAction::Jump mapping
+                        // (TryGetMantleGlyphAssetName) rather than the translated-text lookup.
+                        bool isMantleHint = RenderedTextMatchesSubstitutionTemplate(param_1, "PLATFORM_MANTLE");
+
                         char assetName[32] = {};
-                        if (TryGetGlyphAssetNameForKeyName(highlighted, assetName, sizeof(assetName))) {
+                        bool haveAssetName = isMantleHint
+                            ? TryGetMantleGlyphAssetName(assetName, sizeof(assetName))
+                            : TryGetGlyphAssetNameForKeyName(highlighted, assetName, sizeof(assetName));
+                        if (haveAssetName) {
                             char prefixText[128] = {};
                             size_t prefixLen = span.markerStart < sizeof(prefixText) - 1 ? span.markerStart : sizeof(prefixText) - 1;
                             memcpy(prefixText, param_1, prefixLen);
@@ -6028,7 +6071,7 @@ void __cdecl Hook_DrawGlyphText(
                             // slightly lower than the pure measured-center formula above gives
                             // -- small empirical nudge, not a new transform.
                             constexpr float kHintVerticalNudge = 6.0f;
-                            bool isMantleHint = _stricmp(highlighted, "SPACE") == 0;
+                            // isMantleHint computed above (structural template match, issue #68).
                             // Auto-mantle gate (2026-08-03, issue #62 follow-up): this
                             // IS the real, native "is a mantleable ledge actually here right
                             // now" signal -- the same one this project already detects to
@@ -6117,25 +6160,29 @@ void __cdecl Hook_DrawGlyphText(
                         // to never match once the game's own UI language translates that
                         // word (e.g. Italian "Ricarica"), silently dropping the icon for
                         // every non-English player on one of the most common gameplay
-                        // hints there is. Fixed with TWO independent, language-
-                        // independent signals, either sufficient on its own: (1) this
-                        // prompt's real p3 (626) is already documented (see
-                        // kInteractHintRowY's own comment) as genuinely different from
-                        // every other hint sharing this font/no-span branch (pickup/buy-
-                        // station's shared 718); (2) a live comparison against the
-                        // CURRENT resolved text of either real candidate reference key
-                        // this exact word could be sourced from -- confirmed via
-                        // zone_dump (code_post_gfx.str has TWO distinct real keys that
-                        // both resolve to English "Reload": `MENU_RELOAD_WEAPON` and
-                        // `PLATFORM_RELOAD` -- checking both since it's not confirmed
-                        // which one this specific HUD hint actually uses). Kept as an OR
-                        // (either signal fires it) rather than replacing the
-                        // already-working position check, in case a future game update
-                        // shifts this row's real p3 or the real key turns out to be a
-                        // third, not-yet-found reference.
-                        constexpr float kReloadHintP3 = 626.0f;
-                        constexpr float kReloadHintP3TolerancePx = 20.0f;
-                        bool looksLikeReloadHint = fabsf(param_3 - kReloadHintP3) < kReloadHintP3TolerancePx ||
+                        // hints there is. Fixed via a live comparison against the CURRENT
+                        // resolved text of either real candidate reference key this exact
+                        // word could be sourced from -- confirmed via zone_dump
+                        // (code_post_gfx.str has TWO distinct real keys that both resolve
+                        // to English "Reload": `MENU_RELOAD_WEAPON` and `PLATFORM_RELOAD` --
+                        // checking both since it's not confirmed which one this specific
+                        // HUD hint actually uses).
+                        //
+                        // ORIGINALLY also OR'd against this prompt's own real p3 (626,
+                        // documented as distinct from pickup/buy-station's shared 718) as
+                        // a "belt-and-braces" fallback -- REMOVED same day, live-reported
+                        // regression: a Survival end-of-wave bonus-collect prompt
+                        // ("Press X To +$66") shares a similar row under at least one
+                        // other language's layout and got hijacked into rendering through
+                        // this Reload template instead (real screenshots, see
+                        // known_issues.md issue #68). The text check alone already
+                        // correctly rejected both false-positive strings ("+$66"/"0%")
+                        // and is proven sufficient for the real Reload hint too (this same
+                        // retest's own "fixed" confirmation) -- the position fallback was
+                        // only ever a hedge against the text check being wrong, and this
+                        // incident is direct proof the hedge is actively unsafe, not
+                        // merely redundant.
+                        bool looksLikeReloadHint =
                             RenderedTextMatchesReferenceKey(trimmedText, "MENU_RELOAD_WEAPON") ||
                             RenderedTextMatchesReferenceKey(trimmedText, "PLATFORM_RELOAD");
                         // BUG-004 follow-up (2026-08-02): used to gate on !WasInteractHintRecentlyActive()
@@ -7925,6 +7972,31 @@ const char* ResolveMenuGlyphAssetNameForKeyName(const char* rawKeyName)
 }
 
 } // namespace
+
+// Issue #68 follow-up (2026-08-05 live retest): the mantle hint's icon used to be
+// resolved via TryGetGlyphAssetNameForKeyName(highlighted, ...), keying off the
+// SUBSTITUTED key-name text extracted from the "^3...^7" span -- broken under any
+// language that translates that word (confirmed live: Italian renders it "Spazio",
+// which doesn't match kKeyActionTable's English-only "SPACE" entry, so the whole
+// lookup silently fails and the icon never shows). Since the caller already confirmed
+// this IS the mantle hint via RenderedTextMatchesSubstitutionTemplate (a structural
+// match against PLATFORM_MANTLE that doesn't depend on the substituted text at all),
+// this resolves the icon directly from the already-known LogicalAction the mantle
+// bind maps to (kKeyActionTable's own "SPACE" -> LogicalAction::Jump entry) --
+// bypassing the translated-text lookup entirely, same precedent as the G-or-Middle-
+// Mouse/F5/Left-Mouse special cases in ResolveGlyphAssetNameForKeyName. Defined here,
+// outside the anonymous namespace above, for the same reason TryGetGlyphAssetNameForKeyName
+// itself is (its own forward declaration near this file's top is at global scope) --
+// GlyphAssetName/PhysicalInputForAction/LogicalAction, though declared with internal
+// linkage inside that namespace, are still visible by plain name from here since
+// they're in the same translation unit.
+bool TryGetMantleGlyphAssetName(char* outAssetName, size_t outSize)
+{
+    const char* assetName = GlyphAssetName(PhysicalInputForAction(LogicalAction::Jump), g_modConfig.glyphStyle);
+    if (!assetName || assetName[0] == '\0') return false;
+    strncpy_s(outAssetName, outSize, assetName, _TRUNCATE);
+    return true;
+}
 
 // Public wrapper (issue #66 follow-up, 2026-08-05, live-reported: "the lack of
 // actual button glyphs is" the problem with the custom Options screen -- its
