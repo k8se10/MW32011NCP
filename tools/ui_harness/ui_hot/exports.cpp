@@ -61,4 +61,17 @@ __declspec(dllexport) void Hot_DrawFrame(void* device)
     RunCustomOptionsMenuHarnessFrame(device);
 }
 
+// Harness-only diagram anchor editor (2026-08-05) -- see overlay_hud.h's own
+// comment on DiagramEditor_ToggleEditMode for why these exist only here, never
+// called from the real game.
+__declspec(dllexport) void Hot_ToggleDiagramEditMode()
+{
+    DiagramEditor_ToggleEditMode();
+}
+
+__declspec(dllexport) void Hot_ExportDiagramLayout()
+{
+    DiagramEditor_ExportCurrentLayout();
+}
+
 } // extern "C"

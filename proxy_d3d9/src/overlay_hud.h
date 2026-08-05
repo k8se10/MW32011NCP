@@ -267,3 +267,33 @@ void RunCustomOptionsMenuHarnessFrame(void* device);
 // a single B press must close only this overlay and reveal the still-open pause
 // menu underneath, not also forward a real ESC.
 bool CustomOptionsMenu_IsOpen();
+
+// ---- Controller-diagram anchor editor (2026-08-05, HARNESS-ONLY dev tool) ---------
+//
+// User-requested: "give me editing functionality in the harness ... drag the sprites
+// around to the correct pos for you to make the default." The Stick/Button Layout
+// drill-down diagram's anchor positions (issue #66) were being calibrated blind --
+// reasoned about from written fractions, or checked against a standalone crosshair
+// script -- never adjusted live against the actual rendered frame. These three
+// functions are declared here (so both proxy_d3d9.vcxproj and ui_hot.vcxproj, which
+// share overlay_hud.cpp, can see them) but are only ever CALLED from
+// tools/ui_harness's own exports.cpp/main.cpp -- the real game has no key bound to
+// them and no reason to; shipping this active in-game would let a stray keypress
+// silently drift a real player's controller-diagram calibration.
+//
+// While active, DrawStickLayoutDiagram/DrawButtonLayoutDiagram (overlay_hud.cpp)
+// additionally draw a large draggable handle at each of the current GlyphStyle's 11
+// named anchor positions; dragging one with the mouse (the same IsLeftMouseButtonHeld/
+// GetLastMouseMoveClientPos this whole screen's mouse support already uses) updates
+// that anchor's fraction live, in a MUTABLE per-style copy separate from the
+// shipped constexpr defaults -- so toggling edit mode can never silently corrupt
+// what actually ships until Export is explicitly called.
+void DiagramEditor_ToggleEditMode();
+bool DiagramEditor_IsEditModeActive();
+
+// Writes the CURRENTLY ACTIVE GlyphStyle's live (possibly hand-dragged) anchor
+// layout to tools/ui_harness/exported_diagram_layout.txt, formatted as a ready-to-
+// paste replacement for that style's own kDiagLayout* constexpr initializer in
+// overlay_hud.cpp -- so a calibration session ends with "read the file, paste the
+// new defaults in," not manual coordinate transcription.
+void DiagramEditor_ExportCurrentLayout();

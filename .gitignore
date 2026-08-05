@@ -62,3 +62,9 @@ ff_dump/
 # offline analysis (menu-position calibration, future killstreak/other investigation
 # passes per project notes), never meant to be committed.
 dumps/
+
+# ui_harness diagram anchor editor output (2026-08-05, issue #66) -- a scratch
+# hand-off file (drag positions in the harness, read the numbers back out here),
+# never a source of truth on its own; the real defaults live in overlay_hud.cpp's
+# own kDiagLayout* constexpr tables once copied over.
+tools/ui_harness/exported_diagram_layout.txt
