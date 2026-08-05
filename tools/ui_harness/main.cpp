@@ -69,6 +69,8 @@ using Hot_TickInputFn = bool(__cdecl*)(bool, bool, bool, bool, bool, bool, bool,
 using Hot_IsOpenFn = bool(__cdecl*)();
 using Hot_ResetOnMenuCloseFn = void(__cdecl*)();
 using Hot_DrawFrameFn = void(__cdecl*)(void*);
+using Hot_ToggleDiagramEditModeFn = void(__cdecl*)();
+using Hot_ExportDiagramLayoutFn = void(__cdecl*)();
 
 struct HotModule {
     HMODULE dll = nullptr;
@@ -81,6 +83,11 @@ struct HotModule {
     Hot_IsOpenFn IsOpen = nullptr;
     Hot_ResetOnMenuCloseFn ResetOnMenuClose = nullptr;
     Hot_DrawFrameFn DrawFrame = nullptr;
+    // Harness-only diagram anchor editor (2026-08-05) -- optional, not part of
+    // Valid()'s own required-export check, so an older ui_hot.dll build without
+    // these two exports still loads and runs normally, just without edit mode.
+    Hot_ToggleDiagramEditModeFn ToggleDiagramEditMode = nullptr;
+    Hot_ExportDiagramLayoutFn ExportDiagramLayout = nullptr;
 
     bool Valid() const { return dll && TickInput && DrawFrame; }
 };
@@ -233,6 +240,8 @@ bool TryBindModule(const char* copyPath, HotModule& out)
     m.IsOpen = reinterpret_cast<Hot_IsOpenFn>(GetProcAddress(dll, "Hot_IsOpen"));
     m.ResetOnMenuClose = reinterpret_cast<Hot_ResetOnMenuCloseFn>(GetProcAddress(dll, "Hot_ResetOnMenuClose"));
     m.DrawFrame = reinterpret_cast<Hot_DrawFrameFn>(GetProcAddress(dll, "Hot_DrawFrame"));
+    m.ToggleDiagramEditMode = reinterpret_cast<Hot_ToggleDiagramEditModeFn>(GetProcAddress(dll, "Hot_ToggleDiagramEditMode"));
+    m.ExportDiagramLayout = reinterpret_cast<Hot_ExportDiagramLayoutFn>(GetProcAddress(dll, "Hot_ExportDiagramLayout"));
 
     if (!m.Valid()) {
         FreeLibrary(dll);
@@ -356,6 +365,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
     CreateThread(nullptr, 0, SourceWatcherThreadProc, nullptr, 0, nullptr);
 
     EdgeTracker upT, downT, leftT, rightT, selectT, backT, tabPrevT, tabNextT;
+    EdgeTracker editToggleT, exportT; // F2/F3 -- harness-only diagram anchor editor
     DWORD lastPollMs = GetTickCount();
     constexpr DWORD kPollIntervalMs = 500;
 
@@ -395,6 +405,18 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
         bool backEdge = backT.Tick(backHeld);
         bool tabPrevEdge = tabPrevT.Tick(tabPrevHeld);
         bool tabNextEdge = tabNextT.Tick(tabNextHeld);
+
+        // Harness-only diagram anchor editor (2026-08-05, user-requested: "give me
+        // editing functionality in the harness ... drag the sprites around to the
+        // correct pos"). F2 toggles edit mode (drag handles appear on the currently
+        // open Stick/Button Layout diagram); F3 exports the current GlyphStyle's
+        // live-edited layout to exported_diagram_layout.txt. No controller equivalent
+        // -- this is a keyboard-only dev feature, not part of the screen's real
+        // navigation scheme.
+        bool editToggleEdge = editToggleT.Tick((GetAsyncKeyState(VK_F2) & 0x8000) != 0);
+        bool exportEdge = exportT.Tick((GetAsyncKeyState(VK_F3) & 0x8000) != 0);
+        if (haveModule && editToggleEdge && current.ToggleDiagramEditMode) current.ToggleDiagramEditMode();
+        if (haveModule && exportEdge && current.ExportDiagramLayout) current.ExportDiagramLayout();
 
         device->Clear(0, nullptr, D3DCLEAR_TARGET, D3DCOLOR_XRGB(20, 25, 35), 1.0f, 0);
         device->BeginScene();

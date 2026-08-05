@@ -1641,6 +1641,13 @@ TextTexCache g_optCornerBackCache;
 // Layout: 10 ButtonMap-driven labels + 1 static D-pad label = 11), same "shared
 // across whichever one is currently drawn" reasoning as g_optRowLabelCache.
 TextTexCache g_diagLabelCache[16];
+// Separate cache pool for the harness-only anchor editor's own handle labels
+// ("LS"/"A"/etc, 2026-08-05) -- deliberately NOT sharing g_diagLabelCache: that pool's
+// slots are indexed 0..N by draw order and already hold the normal diagram labels
+// ("MOVE FORWARD" etc) at those same indices, so reusing them here would make both
+// ping-pong between two different strings and re-render every single frame instead
+// of caching, while edit mode is active.
+TextTexCache g_diagEditHandleLabelCache[16];
 void* g_optWhiteTexture = nullptr; // 1x1 white texture for solid-fill background panels
 
 bool EnsureWhiteTexture(void* device)
@@ -1984,12 +1991,114 @@ constexpr ControllerDiagramLayout kDiagLayoutPS4 = {
     0.20f, 0.18f,    0.80f, 0.18f,    0.20f, 0.18f,    0.80f, 0.18f,
 };
 
-const ControllerDiagramLayout& GetDiagLayout(GlyphStyle style)
+// Mutable per-style working copies (2026-08-05, harness anchor editor) -- seeded
+// from the shipped constexpr defaults above, live-edited by DiagramEditor_* while
+// edit mode is on. Kept SEPARATE from the constexpr originals (never written back
+// automatically) so toggling edit mode in the harness can never silently change
+// what actually ships -- only an explicit DiagramEditor_ExportCurrentLayout() call
+// produces something meant to be pasted back into source.
+ControllerDiagramLayout g_diagLayoutLive[3] = { kDiagLayoutXbox360, kDiagLayoutXboxModern, kDiagLayoutPS4 };
+
+int DiagLayoutIndexForStyle(GlyphStyle style)
 {
     switch (style) {
-        case GlyphStyle::XboxModern:  return kDiagLayoutXboxModern;
-        case GlyphStyle::PlayStation: return kDiagLayoutPS4;
-        default:                      return kDiagLayoutXbox360;
+        case GlyphStyle::XboxModern:  return 1;
+        case GlyphStyle::PlayStation: return 2;
+        default:                      return 0;
+    }
+}
+
+ControllerDiagramLayout& GetDiagLayout(GlyphStyle style)
+{
+    return g_diagLayoutLive[DiagLayoutIndexForStyle(style)];
+}
+
+// One entry per real named anchor in ControllerDiagramLayout, in the same order the
+// struct's own fields/constexpr initializers list them -- shared by the edit-mode
+// handle drawer and the export formatter so neither can drift from the other.
+struct DiagAnchorFieldRef { float* x; float* y; const char* label; };
+
+int BuildDiagAnchorFieldRefs(ControllerDiagramLayout& layout, DiagAnchorFieldRef* out)
+{
+    int n = 0;
+    out[n++] = { &layout.lsX, &layout.lsY, "LS" };
+    out[n++] = { &layout.rsX, &layout.rsY, "RS" };
+    out[n++] = { &layout.dpadX, &layout.dpadY, "DPAD" };
+    out[n++] = { &layout.aX, &layout.aY, "A" };
+    out[n++] = { &layout.bX, &layout.bY, "B" };
+    out[n++] = { &layout.xX, &layout.xY, "X" };
+    out[n++] = { &layout.yX, &layout.yY, "Y" };
+    out[n++] = { &layout.lbX, &layout.lbY, "LB" };
+    out[n++] = { &layout.rbX, &layout.rbY, "RB" };
+    out[n++] = { &layout.ltX, &layout.ltY, "LT" };
+    out[n++] = { &layout.rtX, &layout.rtY, "RT" };
+    return n;
+}
+
+// ---- Harness-only anchor editor (2026-08-05) --------------------------------------
+//
+// See overlay_hud.h's own comment on DiagramEditor_ToggleEditMode -- never called
+// from the real game, only from tools/ui_harness. Drag state is a single global
+// (which anchor index, if any, is currently being dragged) since only one mouse
+// can ever be dragging one handle at a time.
+bool g_diagramEditModeActive = false;
+int g_diagramDraggingIndex = -1;
+
+// Draws a large, high-contrast draggable handle at each of the current layout's 11
+// anchors and handles mouse drag -- called once per frame from both diagram draw
+// functions (LS/RS/etc. positions are identical between the Stick and Button Layout
+// screens for a given GlyphStyle, so calibrating from either screen edits the same
+// shared g_diagLayoutLive entry). Reuses this screen's own already-proven mouse
+// primitives (IsLeftMouseButtonHeld/GetLastMouseMoveClientPos), same as every other
+// click-handling code in this file.
+void DrawAndEditDiagramAnchors(void* device, ControllerDiagramLayout& layout, float imgX, float imgY,
+                                 float imgW, float imgH, float scaleX, float scaleY)
+{
+    if (!EnsureWhiteTexture(device)) return;
+
+    static bool s_lastLeftMouseHeld = false;
+    bool leftMouseHeld = IsLeftMouseButtonHeld();
+    bool leftClickEdge = leftMouseHeld && !s_lastLeftMouseHeld;
+    s_lastLeftMouseHeld = leftMouseHeld;
+    int mouseX = 0, mouseY = 0;
+    bool haveMouse = GetLastMouseMoveClientPos(mouseX, mouseY);
+
+    DiagAnchorFieldRef refs[16];
+    int count = BuildDiagAnchorFieldRefs(layout, refs);
+
+    constexpr float kHandleRadius = 16.0f;
+    constexpr float kHandleHitRadius = 22.0f; // slightly larger than the drawn radius -- easier to grab
+
+    if (!leftMouseHeld) g_diagramDraggingIndex = -1;
+
+    if (haveMouse && leftClickEdge && g_diagramDraggingIndex < 0) {
+        for (int i = 0; i < count; ++i) {
+            float hx = (imgX + *refs[i].x * imgW) * scaleX;
+            float hy = (imgY + *refs[i].y * imgH) * scaleY;
+            float dx = static_cast<float>(mouseX) - hx, dy = static_cast<float>(mouseY) - hy;
+            if (dx * dx + dy * dy <= kHandleHitRadius * kHandleHitRadius * scaleX * scaleY) {
+                g_diagramDraggingIndex = i;
+                break;
+            }
+        }
+    }
+
+    if (g_diagramDraggingIndex >= 0 && haveMouse) {
+        float fracX = (static_cast<float>(mouseX) / scaleX - imgX) / imgW;
+        float fracY = (static_cast<float>(mouseY) / scaleY - imgY) / imgH;
+        if (fracX < 0.0f) fracX = 0.0f; if (fracX > 1.0f) fracX = 1.0f;
+        if (fracY < 0.0f) fracY = 0.0f; if (fracY > 1.0f) fracY = 1.0f;
+        *refs[g_diagramDraggingIndex].x = fracX;
+        *refs[g_diagramDraggingIndex].y = fracY;
+    }
+
+    for (int i = 0; i < count; ++i) {
+        float hx = imgX + *refs[i].x * imgW, hy = imgY + *refs[i].y * imgH;
+        bool isDragging = (i == g_diagramDraggingIndex);
+        DWORD color = isDragging ? 0xFF00FF00u : 0xFFFFA000u;
+        DrawGenericTexturedQuad(device, g_optWhiteTexture, (hx - kHandleRadius) * scaleX, (hy - kHandleRadius) * scaleY,
+                                  kHandleRadius * 2.0f * scaleX, kHandleRadius * 2.0f * scaleY, 0x90000000u | (color & 0x00FFFFFFu));
+        DrawOptLeftAlignedText(device, g_diagEditHandleLabelCache[i], refs[i].label, hx + kHandleRadius + 4.0f, hy, 18, color, scaleX, scaleY);
     }
 }
 
@@ -2163,7 +2272,7 @@ void DrawOneStickLabels(void* device, float stickX, float stickY, bool isRightSi
 
 void DrawStickLayoutDiagram(void* device, float scaleX, float scaleY, StickLayout previewLayout)
 {
-    const ControllerDiagramLayout& layout = GetDiagLayout(g_modConfig.glyphStyle);
+    ControllerDiagramLayout& layout = GetDiagLayout(g_modConfig.glyphStyle);
     float imgX = 0.0f, imgY = 0.0f, imgW = 0.0f, imgH = 0.0f;
     if (!DrawControllerBodyImage(device, scaleX, scaleY, layout, imgX, imgY, imgW, imgH)) return;
 
@@ -2175,6 +2284,10 @@ void DrawStickLayoutDiagram(void* device, float scaleX, float scaleY, StickLayou
     int cacheIdx = 0;
     DrawOneStickLabels(device, lsX, lsY, false, moveYFromRight, moveXFromRight, cacheIdx, scaleX, scaleY);
     DrawOneStickLabels(device, rsX, rsY, true,  moveYFromRight, moveXFromRight, cacheIdx, scaleX, scaleY);
+
+    if (g_diagramEditModeActive) {
+        DrawAndEditDiagramAnchors(device, layout, imgX, imgY, imgW, imgH, scaleX, scaleY);
+    }
 }
 
 struct DiagAnchor { float x, y; bool onRight; };
@@ -2258,7 +2371,7 @@ void DrawStackedDiagLabels(void* device, DiagLabelEntry* entries, int* indices, 
 
 void DrawButtonLayoutDiagram(void* device, float scaleX, float scaleY, ButtonLayout previewLayout)
 {
-    const ControllerDiagramLayout& layout = GetDiagLayout(g_modConfig.glyphStyle);
+    ControllerDiagramLayout& layout = GetDiagLayout(g_modConfig.glyphStyle);
     float imgX = 0.0f, imgY = 0.0f, imgW = 0.0f, imgH = 0.0f;
     if (!DrawControllerBodyImage(device, scaleX, scaleY, layout, imgX, imgY, imgW, imgH)) return;
 
@@ -2290,6 +2403,10 @@ void DrawButtonLayoutDiagram(void* device, float scaleX, float scaleY, ButtonLay
     int cacheIdx = 0;
     DrawStackedDiagLabels(device, entries, leftIdx, leftN, cacheIdx, scaleX, scaleY);
     DrawStackedDiagLabels(device, entries, rightIdx, rightN, cacheIdx, scaleX, scaleY);
+
+    if (g_diagramEditModeActive) {
+        DrawAndEditDiagramAnchors(device, layout, imgX, imgY, imgW, imgH, scaleX, scaleY);
+    }
 }
 
 // Called from Hook_EndScene every frame. Draws the full custom menu when open --
@@ -2544,6 +2661,61 @@ void DrawCustomOptionsMenuIfOpen(void* device)
 } // namespace
 
 // ---- Public API (declared in overlay_hud.h) ----------------------------------------
+
+// Harness-only diagram anchor editor (2026-08-05) -- these three, unlike everything
+// else in this "Public API" section, are never called from the real game
+// (analog_input_hooks.cpp has no key bound to them); only tools/ui_harness's own
+// exports.cpp calls them. Declared with external linkage (here, not inside the
+// anonymous namespace above) purely so that TU can see them -- everything they
+// touch (g_diagramEditModeActive, g_diagLayoutLive, GetDiagLayout, etc.) is still
+// anonymous-namespace-internal and stays visible to them from here, same as every
+// other function in this "Public API" section already reads namespace-internal
+// state.
+void DiagramEditor_ToggleEditMode()
+{
+    g_diagramEditModeActive = !g_diagramEditModeActive;
+    g_diagramDraggingIndex = -1;
+}
+
+bool DiagramEditor_IsEditModeActive()
+{
+    return g_diagramEditModeActive;
+}
+
+void DiagramEditor_ExportCurrentLayout()
+{
+    ControllerDiagramLayout& layout = GetDiagLayout(g_modConfig.glyphStyle);
+    DiagAnchorFieldRef refs[16];
+    int count = BuildDiagAnchorFieldRefs(layout, refs);
+
+    char exeDir[MAX_PATH] = {};
+    GetModuleFileNameA(nullptr, exeDir, sizeof(exeDir));
+    char* lastSlash = strrchr(exeDir, '\\');
+    if (lastSlash) *lastSlash = '\0';
+    char outPath[MAX_PATH];
+    sprintf_s(outPath, "%s\\..\\..\\exported_diagram_layout.txt", exeDir);
+
+    FILE* f = nullptr;
+    if (fopen_s(&f, outPath, "w") != 0 || !f) {
+        LogFromController("[diagram-editor] failed to open exported_diagram_layout.txt for writing");
+        return;
+    }
+    const char* styleName = (g_modConfig.glyphStyle == GlyphStyle::XboxModern) ? "XboxModern"
+                            : (g_modConfig.glyphStyle == GlyphStyle::PlayStation) ? "PS4" : "Xbox360";
+    fprintf(f, "// Exported from ui_harness diagram anchor editor -- GlyphStyle=%s\n", styleName);
+    fprintf(f, "// Paste this in place of the matching kDiagLayout* initializer in overlay_hud.cpp.\n");
+    fprintf(f, "    \"%s\", %.6ff,\n", layout.imageAssetName, layout.aspect);
+    for (int i = 0; i < count; i += 2) {
+        fprintf(f, "    %.3ff, %.3ff,  ", *refs[i].x, *refs[i].y);
+        if (i + 1 < count) fprintf(f, "%.3ff, %.3ff,", *refs[i + 1].x, *refs[i + 1].y);
+        fprintf(f, "\n");
+    }
+    fclose(f);
+
+    char msg[128];
+    sprintf_s(msg, "[diagram-editor] exported %s layout to exported_diagram_layout.txt", styleName);
+    LogFromController(msg);
+}
 
 bool CustomOptionsMenu_TickInput(bool openRequestedEdge,
                                    bool upEdge, bool downEdge, bool leftEdge, bool rightEdge,
