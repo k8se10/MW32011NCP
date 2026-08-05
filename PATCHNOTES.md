@@ -128,7 +128,10 @@ reverse-engineering trail behind each entry.
   text comparison), and the mantle/vault hint's icon failing to show because
   its key name ("Space") IS actually translated for hint-text substitution,
   contrary to an earlier assumption — fixed with a new structural template
-  match that never needs to know what the translated key name says. **Known,
+  match that never needs to know what the translated key name says. The
+  grenade-throwback hint had the identical risk (its own combo bind text
+  contains the English word "or") and was proactively fixed the same way,
+  before it was even confirmed broken live. **Known,
   deprioritized gap, not fixed**: some menu glyph icons can land in a
   slightly wrong POSITION under other languages (this project's own manual
   per-screen position tables were calibrated against English text length) —
