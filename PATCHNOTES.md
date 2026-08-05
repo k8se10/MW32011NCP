@@ -119,18 +119,23 @@ reverse-engineering trail behind each entry.
   localized-string resolver (`GetLocalizedString`, confirmed via
   disassembly), so detection now compares against whatever text the
   CURRENTLY ACTIVE game language actually renders — correct automatically
-  for every supported language, no per-language guessing. Separately
-  confirmed via decompile that keyboard/mouse key names (Space, Enter,
-  F-keys, etc.) are never translated by this engine at all, closing that
-  remaining risk. **Confirmed live** after switching the game's language
-  locally to retest. **Known, deprioritized gap found during that retest**:
-  some menu glyph icons can land in a slightly wrong POSITION under other
-  languages (this project's own manual per-screen position tables were
-  calibrated against English text length) — icon SELECTION is correct,
-  only fine positioning on a few screens isn't yet. Full translation of
-  this mod's OWN added text (Options screen labels, etc.) is a distinct,
-  much larger effort tracked separately. See `re_notes/known_issues.md`
-  issues #68 and #69.
+  for every supported language, no per-language guessing. **Confirmed live**
+  after switching the game's language locally to retest, then two more
+  real bugs surfaced by that same retest were found and fixed the same day:
+  a Survival end-of-wave bonus prompt getting hijacked into the Reload
+  template under a language-driven layout shift (fixed by dropping an
+  unsafe position-based fallback check, keeping only the language-correct
+  text comparison), and the mantle/vault hint's icon failing to show because
+  its key name ("Space") IS actually translated for hint-text substitution,
+  contrary to an earlier assumption — fixed with a new structural template
+  match that never needs to know what the translated key name says. **Known,
+  deprioritized gap, not fixed**: some menu glyph icons can land in a
+  slightly wrong POSITION under other languages (this project's own manual
+  per-screen position tables were calibrated against English text length) —
+  icon SELECTION is correct, only fine positioning on a few screens isn't
+  yet. Full translation of this mod's OWN added text (Options screen
+  labels, etc.) is a distinct, much larger effort tracked separately. See
+  `re_notes/known_issues.md` issues #68 and #69.
 - **Custom Options screen crash on open, fixed same day it shipped.** The
   first background-blur implementation called `GetSurfaceLevel` through the
   device's own vtable instead of the target texture's — a genuinely different
