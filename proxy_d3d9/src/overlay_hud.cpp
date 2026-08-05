@@ -2348,7 +2348,15 @@ void DrawOneStickLabels(void* device, float stickX, float stickY, bool isRightSi
     // Vertical spacing widened 2026-08-05 (live feedback: "more vertically spaced
     // out") -- 50/90 was tuned for the smaller 20px label font, too tight once that
     // grew to 26px.
-    constexpr float kStickLabelAnchorSpread = 70.0f, kStickLabelTextSpread = 130.0f;
+    //
+    // kStickLabelAnchorSpread shrunk to near-zero the same day, separate follow-up
+    // (live-reported: "the 3 channels starting from diff points when they should
+    // all be coming from the same point maybe 5px apart") -- this constant controls
+    // where each of the 3 leader LINES starts, not where the text lands (that's
+    // still kStickLabelTextSpread, unchanged). All 3 rows describe the SAME physical
+    // stick, so their lines should read as fanning out from one shared point on it,
+    // not from 3 points scattered 140px apart top-to-bottom.
+    constexpr float kStickLabelAnchorSpread = 5.0f, kStickLabelTextSpread = 130.0f;
     // Shared across all 3 rows (2026-08-05, live-reported: "stick tags have
     // misaligned") so the 2-icon Strafe/Rotate row's text lines up with the two
     // 1-icon Move/Look rows' text instead of sitting further out -- must match
