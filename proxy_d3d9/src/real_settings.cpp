@@ -43,6 +43,22 @@ KeynumToDisplayNameFn const KeynumToDisplayNameRaw = reinterpret_cast<KeynumToDi
 // Cbuf_AddText-equivalent -- see header comment.
 using CbufAddTextFn = void(__cdecl*)(int localClientNum, const char*);
 CbufAddTextFn const CbufAddText = reinterpret_cast<CbufAddTextFn>(0x00457c90);
+
+// SEH_GetString-equivalent (issue #68, 2026-08-05 language pass). Confirmed via raw
+// disassembly of FUN_00532230 (re_notes/ghidra_scripts/DumpDisasm.java output): plain
+// __cdecl, single stack arg read at [ESP+8], plain `RET` (not `RET 4`) -- genuinely
+// caller-cleans-the-stack, unlike this file's custom-register Dvar/keybind internals.
+// Found by decompiling FUN_00568110 (the real weapon-pickup/swap hint builder,
+// re_notes/ui_assets.md's own hint-text survey) -- it passes literal reference-key
+// strings like "PLATFORM_PICKUPNEWWEAPON" directly into this function and gets back
+// the resolved display text for splicing into the "&&1" template engine. Internally:
+// if the key starts with the real 0x15 "already-literal" escape byte, skips lookup
+// entirely; otherwise calls FUN_0046df70 (the actual reference->current-language-
+// string table lookup) and, if that returns null (key not found), falls back to
+// echoing the raw key string itself rather than returning null -- so this is always
+// safe to call and never needs a null check on the caller's side.
+using GetLocalizedStringFn = const char*(__cdecl*)(const char*);
+GetLocalizedStringFn const GetLocalizedStringRaw = reinterpret_cast<GetLocalizedStringFn>(0x00532230);
 } // namespace
 
 // Raw Dvar_FindVar-equivalent (FUN_0062abe0) -- custom EDI-register name-argument
@@ -163,4 +179,9 @@ void KeynumToDisplayName(int keynum, char* outBuf, int outBufSize)
 void QueueConsoleCommand(const char* command)
 {
     CbufAddText(0, command);
+}
+
+const char* GetLocalizedString(const char* referenceKey)
+{
+    return GetLocalizedStringRaw(referenceKey);
 }

@@ -27,6 +27,7 @@
 #include "overlay_hud.h"
 #include "rumble.h"
 #include "options_render_suppress.h"
+#include "real_settings.h"
 
 // Forwarder defined in dllmain.cpp -- lets this translation unit log to the same
 // proxy_d3d9.log file without duplicating the log-file setup.
@@ -5295,6 +5296,44 @@ ColorHighlightSpan FindColorHighlightSpan(const char* text, size_t textLen)
     return { 0, 0, 0, 0, false };
 }
 
+// Language-independent replacement for matching rendered UI text against a hardcoded
+// English literal (issue #68, 2026-08-05 language pass -- see known_issues.md for the
+// full root-cause writeup: several hint-detection sites broke entirely under a
+// non-English game language because they matched literal English words like "Reload"/
+// "Quit"/"Leaderboards" against the game's own LOCALIZED on-screen text). Resolves the
+// real internal reference key (e.g. "MENU_QUIT" -- found via the zone_dump
+// localizedstrings extraction, real keys confirmed against real .str data, not
+// guessed) through the engine's own SEH_GetString-equivalent (GetLocalizedString,
+// real_settings.h/.cpp) and compares against THAT live-resolved text instead -- this
+// is correct automatically for every language the game supports, since the engine
+// itself does the translation; no per-language table to maintain.
+// `caseSensitive` defaults to false (most hint text comparisons don't care), but the
+// Quit corner-hint specifically needs case-SENSITIVE matching to avoid colliding with
+// the Special Ops hub's own separate all-caps "QUIT" item (see that call site's own
+// comment) -- exposed as a parameter rather than hardcoding one behavior here.
+bool RenderedTextMatchesReferenceKey(const char* renderedText, const char* referenceKey, bool caseSensitive = false)
+{
+    const char* resolved = GetLocalizedString(referenceKey);
+    if (!resolved || !LooksLikeValidPointer(reinterpret_cast<uintptr_t>(resolved))) return false;
+    return caseSensitive ? strcmp(renderedText, resolved) == 0 : _stricmp(renderedText, resolved) == 0;
+}
+
+// Prefix variant for hints where the real localized string is a TEMPLATE with an
+// embedded "^N...^7" bind reference following a fixed leading phrase (e.g.
+// `PLATFORM_LEADERBOARDS_SHORTCUT` = "Leaderboards ^2Right Mouse^7/^2F1^7") -- compares
+// only up to the template's own first '^' marker (or its full length if it has none),
+// so this stays correct even if the embedded bind text itself differs (different
+// default bind, different controller layout wording, etc).
+bool RenderedTextMatchesReferenceKeyPrefix(const char* renderedText, const char* referenceKey)
+{
+    const char* resolved = GetLocalizedString(referenceKey);
+    if (!resolved || !LooksLikeValidPointer(reinterpret_cast<uintptr_t>(resolved))) return false;
+    const char* caret = strchr(resolved, '^');
+    size_t prefixLen = caret ? static_cast<size_t>(caret - resolved) : strlen(resolved);
+    if (prefixLen == 0) return false;
+    return _strnicmp(renderedText, resolved, prefixLen) == 0;
+}
+
 // Restricts the custom hint-overlay replacement (issue #48/#49) to the two real fonts
 // actually used for in-game gameplay HUD hints -- confirmed via hud-font-id live
 // captures 2026-07-31: "Press F to pick up"/"Hold F to use Weapon Armory" both use
@@ -6073,20 +6112,32 @@ void __cdecl Hook_DrawGlyphText(
                         if (tEnd - tStart > 0) memmove(trimmedText, trimmedText + tStart, tEnd - tStart);
                         trimmedText[tEnd - tStart] = '\0';
 
-                        // Live-reported (issue #66 language pass, 2026-08-05): this used
+                        // Live-reported (issue #68 language pass, 2026-08-05): this used
                         // to require the literal English word "Reload" here -- guaranteed
                         // to never match once the game's own UI language translates that
                         // word (e.g. Italian "Ricarica"), silently dropping the icon for
                         // every non-English player on one of the most common gameplay
-                        // hints there is. Replaced with the SAME structural-signal
-                        // technique BUG-006 already used for the Quit/Leaderboards corner
-                        // hints below: this prompt's real p3 (626) is already documented
-                        // (see kInteractHintRowY's own comment) as genuinely different from
+                        // hints there is. Fixed with TWO independent, language-
+                        // independent signals, either sufficient on its own: (1) this
+                        // prompt's real p3 (626) is already documented (see
+                        // kInteractHintRowY's own comment) as genuinely different from
                         // every other hint sharing this font/no-span branch (pickup/buy-
-                        // station's shared 718) -- a real, precedented, language-
-                        // independent discriminator instead of matching translatable text.
+                        // station's shared 718); (2) a live comparison against the
+                        // CURRENT resolved text of either real candidate reference key
+                        // this exact word could be sourced from -- confirmed via
+                        // zone_dump (code_post_gfx.str has TWO distinct real keys that
+                        // both resolve to English "Reload": `MENU_RELOAD_WEAPON` and
+                        // `PLATFORM_RELOAD` -- checking both since it's not confirmed
+                        // which one this specific HUD hint actually uses). Kept as an OR
+                        // (either signal fires it) rather than replacing the
+                        // already-working position check, in case a future game update
+                        // shifts this row's real p3 or the real key turns out to be a
+                        // third, not-yet-found reference.
                         constexpr float kReloadHintP3 = 626.0f;
                         constexpr float kReloadHintP3TolerancePx = 20.0f;
+                        bool looksLikeReloadHint = fabsf(param_3 - kReloadHintP3) < kReloadHintP3TolerancePx ||
+                            RenderedTextMatchesReferenceKey(trimmedText, "MENU_RELOAD_WEAPON") ||
+                            RenderedTextMatchesReferenceKey(trimmedText, "PLATFORM_RELOAD");
                         // BUG-004 follow-up (2026-08-02): used to gate on !WasInteractHintRecentlyActive()
                         // here (a 100ms wall-clock window, since Reload and an interact hint could be
                         // processed in either order within a frame) -- replaced by giving Reload its own
@@ -6094,7 +6145,7 @@ void __cdecl Hook_DrawGlyphText(
                         // (DrawGameplayHintSlotsIfRequested in overlay_hud.cpp), which can check same-frame
                         // state exactly instead of racing a timer. Always requests the Reload slot here;
                         // whether it actually draws is decided once, at the end of the frame.
-                        if (fabsf(param_3 - kReloadHintP3) < kReloadHintP3TolerancePx) {
+                        if (looksLikeReloadHint) {
                             char assetName[32] = {};
                             if (TryGetGlyphAssetNameForKeyName("F", assetName, sizeof(assetName))) {
                                 // "F" is the real default keyboard bind for ReloadUse
@@ -6210,7 +6261,14 @@ void __cdecl Hook_DrawGlyphText(
                     // report's own suggested fix.
                     constexpr float kCornerHintRowTolerancePx = 40.0f;
                     bool looksLikeCornerHintRow = fabsf(param_3 - kStandardCornerHintY) < kCornerHintRowTolerancePx;
-                    if (looksLikeCornerHintRow && strcmp(param_1, "Quit") == 0) {
+                    // Issue #68 (2026-08-05 language pass): replaced the hardcoded
+                    // `strcmp(param_1, "Quit")` with a live comparison against the real
+                    // MENU_QUIT reference key's CURRENT resolved text -- confirmed real
+                    // key via zone_dump (code_post_gfx.str: `REFERENCE MENU_QUIT` /
+                    // `LANG_ENGLISH "Quit"`, an exact match for what this code already
+                    // expected). Case-sensitive, same as before, to keep excluding the
+                    // Special Ops hub's own separate all-caps "QUIT" item.
+                    if (looksLikeCornerHintRow && RenderedTextMatchesReferenceKey(param_1, "MENU_QUIT", /*caseSensitive=*/true)) {
                         char bAsset[32] = {};
                         if (TryGetMenuGlyphAssetNameForKeyName("ESC", bAsset, sizeof(bAsset))) {
                             // Live-reported 2026-08-01: without the same vertical nudge every
@@ -6228,7 +6286,14 @@ void __cdecl Hook_DrawGlyphText(
                             suppressRealDraw = true;
                         }
                     }
-                    if (looksLikeCornerHintRow && _strnicmp(param_1, "Leaderboards", 12) == 0) {
+                    // Issue #68 (2026-08-05 language pass): replaced the hardcoded
+                    // `_strnicmp(param_1, "Leaderboards", 12)` prefix match with a live
+                    // comparison against PLATFORM_LEADERBOARDS_SHORTCUT's own current
+                    // resolved template -- confirmed real key via zone_dump
+                    // (code_post_gfx.str: `LANG_ENGLISH "Leaderboards ^2Right
+                    // Mouse^7/^2F1^7"`, an exact match for the real live-captured
+                    // string this call site was originally built against).
+                    if (looksLikeCornerHintRow && RenderedTextMatchesReferenceKeyPrefix(param_1, "PLATFORM_LEADERBOARDS_SHORTCUT")) {
                         char backAsset[32] = {};
                         // "F1" resolves to PhysicalInput::Back (the real Back/Select/View
                         // button, NOT the B face button used for ESC-forward) in

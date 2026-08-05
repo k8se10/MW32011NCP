@@ -43,6 +43,9 @@
 user-confirmed live — **two exceptions honestly flagged as not working, see
 their own bullets**:
 
+> ⚠ **IMPORTANT - LANGUAGES OTHER THAN ENGLISH DO NOT WORK WITH GLYPHS AT THIS CURRENT TIME** ⚠
+> This is currently being investigated - and will be addressed in an upcoming release
+
 - Controller-glyph icons: real in-game interact hints (pickup/swap, buy-station, mantle, Reload, grenade throwback, Survival ready-up) and menu corner hints (Back/Friends), plus a custom mouse cursor overlay drawn correctly on top of them — confirmed live (issues #48/#50/#52)
 - Highlighted-item A-glyph in menu lists — confirmed live, but only on an explicit, short verified allowlist (main menu, Campaign hub, two popups); every other screen is a deliberate, documented gap, not a bug (issue #51)
 - The crouch/UI bug batch from the first public Survival co-op stream — crouch input occasionally not responding, ready-up prompt UI conflicts, mistargeted menu text, Jump not standing you up first, cursor visibility — all fixed and confirmed live (issues #53/#54/#56/#59/#55/#61)
