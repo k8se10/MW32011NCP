@@ -109,6 +109,111 @@ void GetScratchCopyPath(char* outPath, size_t outSize, int counter)
     sprintf_s(outPath, outSize, "%s\\ui_hot_live_%d.dll", exeDir, counter);
 }
 
+// ---- Built-in source watcher (2026-08-05, live feedback: "hot reload shouldnt
+// rely on any scripts it should work just like hmr") -------------------------------
+//
+// Previously this project's HMR loop was split across two separately-run processes:
+// this exe (polls ui_hot.dll's build OUTPUT and hot-swaps it) plus watch.ps1, a
+// separate PowerShell script the user had to remember to also start, which watched
+// the SOURCE files and ran MSBuild. That's the actual reason "no visual changes even
+// after restart" was reported -- without watch.ps1 (or a manual rebuild) actually
+// running, ui_hot.dll's build output never changes, so TryHotSwap correctly has
+// nothing new to load; TryHotSwap itself was never broken, the trigger for a new
+// build simply didn't exist. Folded that other half in here instead: a background
+// thread scans the same directories watch.ps1 did (proxy_d3d9/src, resource.h,
+// this tool's own ui_hot/) every ~400ms for the newest last-write-time across all
+// files in them, and runs MSBuild itself the moment that time advances -- true,
+// single-process HMR, no second script to remember to start. watch.ps1 is kept
+// only as a manual fallback (e.g. for watching from a terminal without the harness
+// running at all); it is no longer required for normal use.
+FILETIME GetNewestWriteTimeInDir(const char* dirPath)
+{
+    FILETIME newest = {};
+    char pattern[MAX_PATH];
+    sprintf_s(pattern, "%s\\*", dirPath);
+    WIN32_FIND_DATAA find;
+    HANDLE h = FindFirstFileA(pattern, &find);
+    if (h == INVALID_HANDLE_VALUE) return newest;
+    do {
+        if (find.cFileName[0] == '.') continue; // skip "." / ".."
+        if (find.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue; // non-recursive -- proxy_d3d9/src and ui_hot/ are both flat
+        if (CompareFileTime(&find.ftLastWriteTime, &newest) > 0) newest = find.ftLastWriteTime;
+    } while (FindNextFileA(h, &find));
+    FindClose(h);
+    return newest;
+}
+
+FILETIME GetNewestWriteTimeOfFile(const char* filePath)
+{
+    FILETIME t = {};
+    WIN32_FILE_ATTRIBUTE_DATA attr;
+    if (GetFileAttributesExA(filePath, GetFileExInfoStandard, &attr)) t = attr.ftLastWriteTime;
+    return t;
+}
+
+void GetUiHotProjectPath(char* outPath, size_t outSize)
+{
+    char exeDir[MAX_PATH];
+    GetModuleFileNameA(nullptr, exeDir, sizeof(exeDir));
+    char* lastSlash = strrchr(exeDir, '\\');
+    if (lastSlash) *lastSlash = '\0';
+    sprintf_s(outPath, outSize, "%s\\..\\..\\ui_hot\\ui_hot.vcxproj", exeDir);
+}
+
+DWORD WINAPI SourceWatcherThreadProc(LPVOID)
+{
+    char exeDir[MAX_PATH];
+    GetModuleFileNameA(nullptr, exeDir, sizeof(exeDir));
+    char* lastSlash = strrchr(exeDir, '\\');
+    if (lastSlash) *lastSlash = '\0';
+
+    char proxySrcDir[MAX_PATH], resourceHeaderPath[MAX_PATH], uiHotDir[MAX_PATH], projectPath[MAX_PATH];
+    sprintf_s(proxySrcDir, "%s\\..\\..\\..\\..\\proxy_d3d9\\src", exeDir);
+    sprintf_s(resourceHeaderPath, "%s\\..\\..\\..\\..\\proxy_d3d9\\resource.h", exeDir);
+    sprintf_s(uiHotDir, "%s\\..\\..\\ui_hot", exeDir);
+    GetUiHotProjectPath(projectPath, sizeof(projectPath));
+
+    FILETIME lastSeen = {};
+    bool haveBaseline = false;
+
+    while (g_running) {
+        FILETIME newest = GetNewestWriteTimeInDir(proxySrcDir);
+        FILETIME t2 = GetNewestWriteTimeOfFile(resourceHeaderPath);
+        FILETIME t3 = GetNewestWriteTimeInDir(uiHotDir);
+        if (CompareFileTime(&t2, &newest) > 0) newest = t2;
+        if (CompareFileTime(&t3, &newest) > 0) newest = t3;
+
+        if (!haveBaseline) {
+            lastSeen = newest;
+            haveBaseline = true; // don't rebuild on startup just because files already exist
+        } else if (CompareFileTime(&newest, &lastSeen) > 0) {
+            lastSeen = newest;
+            printf("[ui_harness] source change detected -- rebuilding ui_hot.vcxproj...\n");
+
+            char cmdLine[1024];
+            sprintf_s(cmdLine, "\"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe\" "
+                                "\"%s\" /p:Configuration=%s /p:Platform=Win32 /nologo /v:quiet", projectPath, kConfigName);
+
+            STARTUPINFOA si = { sizeof(si) };
+            PROCESS_INFORMATION pi = {};
+            if (CreateProcessA(nullptr, cmdLine, nullptr, nullptr, FALSE, CREATE_NO_WINDOW,
+                                 nullptr, nullptr, &si, &pi)) {
+                WaitForSingleObject(pi.hProcess, INFINITE);
+                DWORD exitCode = 1;
+                GetExitCodeProcess(pi.hProcess, &exitCode);
+                CloseHandle(pi.hProcess);
+                CloseHandle(pi.hThread);
+                if (exitCode == 0) printf("[ui_harness] rebuild OK -- will hot-swap within ~500ms\n");
+                else printf("[ui_harness] rebuild FAILED (exit %lu) -- keeping last good version\n", exitCode);
+            } else {
+                printf("[ui_harness] failed to launch MSBuild -- check the hardcoded path in SourceWatcherThreadProc\n");
+            }
+        }
+        Sleep(400);
+    }
+    return 0;
+}
+
 // Loads `copyPath` and resolves every export this host needs. Returns false (and
 // leaves *out untouched) if the DLL doesn't load or is missing an export -- a stale
 // or partially-written build should never take down the whole harness.
@@ -245,6 +350,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
         MessageBoxA(hwnd, "ui_hot.dll hasn't been built yet.\nBuild tools\\ui_harness\\ui_hot\\ui_hot.vcxproj first.",
             "UI Harness", MB_OK);
     }
+
+    // Single-process HMR (2026-08-05) -- see SourceWatcherThreadProc's own comment.
+    // Runs for the lifetime of the process; reads g_running to know when to stop.
+    CreateThread(nullptr, 0, SourceWatcherThreadProc, nullptr, 0, nullptr);
 
     EdgeTracker upT, downT, leftT, rightT, selectT, backT, tabPrevT, tabNextT;
     DWORD lastPollMs = GetTickCount();
