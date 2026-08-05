@@ -98,7 +98,23 @@ reverse-engineering trail behind each entry.
   See `re_notes/known_issues.md` issue #66 and
   `re_notes/options_menu_full_map.md` for the full research trail.
 
+- **Blurred background on the custom Options screen's right-hand side**, matching
+  the real console reference (which dims/blurs the live paused view behind the
+  panel — this project's PC build previously showed it completely sharp, which
+  clashed visibly with real gameplay HUD text bleeding through). Downsamples the
+  real backbuffer into a small render-target texture, then runs a real compiled
+  9-tap `ps_2_0` pixel shader over it (`re_notes/shaders/options_blur.hlsl`,
+  offline-compiled via `fxc.exe`, embedded as bytecode — no runtime shader
+  compiler linked). Not yet live-tested. See `re_notes/known_issues.md` issue #66.
+
 ### Fixed
+- **Custom Options screen crash on open, fixed same day it shipped.** The
+  first background-blur implementation called `GetSurfaceLevel` through the
+  device's own vtable instead of the target texture's — a genuinely different
+  COM interface at that vtable index, which invoked the wrong real function
+  with the wrong argument count and corrupted the stack. Root-caused and fixed
+  as part of the real-shader rewrite above; not yet live-tested. See
+  `re_notes/known_issues.md` issue #66.
 - **Vertical look sensitivity default corrected, confirmed live.** Real MW3
   console has only one Sensitivity slider (no independent vertical control at
   all) at roughly 55-60% of the horizontal turn rate — this project's own

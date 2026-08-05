@@ -44,6 +44,7 @@
 #include "vanilla_settings_table.h"
 #include "vanilla_settings_sync.h"
 #include "../resource.h"
+#include "options_blur_ps.h" // compiled ps_2_0 bytecode -- see that file's own header for the real HLSL source and how it was compiled
 
 #pragma comment(lib, "windowscodecs.lib")
 #pragma comment(lib, "ole32.lib")
@@ -104,6 +105,16 @@ constexpr int kGetSurfaceLevelVtableIndex = 18;   // IDirect3DTexture9::GetSurfa
 constexpr int kSurfaceLockRectVtableIndex = 13;   // IDirect3DSurface9::LockRect
 constexpr int kSurfaceUnlockRectVtableIndex = 14; // IDirect3DSurface9::UnlockRect
 constexpr int kSurfaceReleaseVtableIndex = 2;     // IUnknown::Release
+// 2026-08-05, issue #66 follow-up (live-reported: "add a background blur to the
+// menus right side ... where the extra stuff shows up") -- confirmed against this
+// file's own already-verified indices above (16/23/42/48/57/58/65/67/83/89/92/93/
+// 107/108 all match the standard IDirect3DDevice9 vtable ordering), not guessed.
+constexpr int kGetRenderTargetVtableIndex = 38;   // IDirect3DDevice9::GetRenderTarget
+constexpr int kStretchRectVtableIndex = 34;       // IDirect3DDevice9::StretchRect
+constexpr int kGetSamplerStateVtableIndex = 68;   // IDirect3DDevice9::GetSamplerState
+constexpr int kSetSamplerStateVtableIndex = 69;   // IDirect3DDevice9::SetSamplerState
+constexpr int kCreatePixelShaderVtableIndex = 106;      // IDirect3DDevice9::CreatePixelShader
+constexpr int kSetPixelShaderConstantFVtableIndex = 109; // IDirect3DDevice9::SetPixelShaderConstantF
 
 // ---- D3D9 public enum/flag values (fixed COM contract, not this game's own layout) -
 constexpr DWORD kD3DFMT_A8R8G8B8 = 21;
@@ -134,6 +145,12 @@ constexpr DWORD kD3DTOP_MODULATE = 4;
 constexpr DWORD kD3DTA_DIFFUSE = 0;
 constexpr DWORD kD3DTA_TEXTURE = 2;
 constexpr DWORD kD3DPT_TRIANGLESTRIP = 5;
+constexpr DWORD kD3DPOOL_DEFAULT = 0;
+constexpr DWORD kD3DUSAGE_RENDERTARGET = 0x00000001;
+constexpr DWORD kD3DTEXF_POINT = 1;
+constexpr DWORD kD3DTEXF_LINEAR = 2;
+constexpr DWORD kD3DSAMP_MAGFILTER = 5;
+constexpr DWORD kD3DSAMP_MINFILTER = 6;
 
 typedef HRESULT(WINAPI* EndScene_t)(void* This);
 typedef HRESULT(WINAPI* CreateTexture_t)(void* This, UINT Width, UINT Height, UINT Levels,
@@ -166,6 +183,13 @@ typedef HRESULT(WINAPI* SetVertexShader_t)(void* This, void* pShader);
 typedef HRESULT(WINAPI* GetVertexShader_t)(void* This, void** ppShader);
 typedef HRESULT(WINAPI* SetPixelShader_t)(void* This, void* pShader);
 typedef HRESULT(WINAPI* GetPixelShader_t)(void* This, void** ppShader);
+typedef HRESULT(WINAPI* GetRenderTarget_t)(void* This, DWORD RenderTargetIndex, void** ppRenderTarget);
+typedef HRESULT(WINAPI* StretchRect_t)(void* This, void* pSourceSurface, const RECT* pSourceRect,
+                                         void* pDestSurface, const RECT* pDestRect, DWORD Filter);
+typedef HRESULT(WINAPI* GetSamplerState_t)(void* This, DWORD Sampler, DWORD Type, DWORD* pValue);
+typedef HRESULT(WINAPI* SetSamplerState_t)(void* This, DWORD Sampler, DWORD Type, DWORD Value);
+typedef HRESULT(WINAPI* CreatePixelShader_t)(void* This, const DWORD* pFunction, void** ppShader);
+typedef HRESULT(WINAPI* SetPixelShaderConstantF_t)(void* This, UINT StartRegister, const float* pConstantData, UINT Vector4fCount);
 
 struct ScreenVertex { float x, y, z, rhw; DWORD color; float u, v; };
 
@@ -1675,6 +1699,198 @@ bool EnsureWhiteTexture(void* device)
     return true;
 }
 
+// ---- Right-side background blur (2026-08-05, issue #66 follow-up: "we should add
+// a background blur to the menus right side specifically where the extra stuff
+// shows up like the controller layout etc") ----------------------------------------
+//
+// The real console reference screenshots dim/blur the live paused game view behind
+// the panel; this project's own PC build was confirmed (live screenshot) to apply
+// NO such blur automatically, unlike the console -- the real game view shows through
+// this project's own draw-over-top architecture completely sharp, which the same
+// live screenshot also showed clashing badly with overlay text (a real gameplay HUD
+// element, "MISSION OBJECTIVES," sat directly behind/through an overlay label).
+//
+// FIRST implementation (2026-08-05) was a shader-free "poor man's blur" -- StretchRect
+// downsample into a small render target, then draw it back upscaled with LINEAR
+// filtering. That shipped build called GetSurfaceLevel through the DEVICE's own
+// vtable, but GetSurfaceLevel is an IDirect3DTexture9 method, not an IDirect3DDevice9
+// one -- device-vtable index 18 is actually GetBackBuffer (4 args), so this was really
+// invoking GetBackBuffer with GetSurfaceLevel's 2-argument signature, a stack-
+// corrupting wrong-function call under __stdcall that crashed the game on every menu
+// open (live-reported: "now opening the menu crashes the game"). Per explicit
+// direction ("just make a shader for it properly no hacks"), REPLACED the same day
+// with a real compiled ps_2_0 pixel shader (re_notes/shaders/options_blur.hlsl, a
+// 9-tap weighted blur, compiled offline via fxc.exe and embedded as bytecode in
+// options_blur_ps.h -- no D3DX/runtime shader compiler linked, matching this
+// project's standing "no extra runtime dependencies" policy). StretchRect is still
+// used for the initial downsample (still the cheapest way to get a small capture
+// texture), but the actual smoothing is now the real shader's job, and the
+// GetSurfaceLevel bug is fixed by fetching it through the TEXTURE's own vtable.
+//
+// MUST be D3DPOOL_DEFAULT (real D3D9 requirement for anything usable as a render
+// target) -- unlike every other texture this file caches (all D3DPOOL_MANAGED, which
+// the runtime keeps a system-memory backup of and silently recovers across a device
+// Reset/recreate), a DEFAULT-pool resource is genuinely INVALIDATED by Reset and
+// must be explicitly released beforehand -- added to ReleaseAllCachedTextures for
+// exactly this reason (see that function's own comment).
+void* g_optBlurTexture = nullptr;
+constexpr int kBlurTextureW = 160, kBlurTextureH = 128; // small on purpose -- the whole point is a strong downsample
+
+bool EnsureBlurTexture(void* device)
+{
+    if (g_optBlurTexture) return true;
+    void** deviceVtbl = *reinterpret_cast<void***>(device);
+    auto createTexture = reinterpret_cast<CreateTexture_t>(deviceVtbl[kCreateTextureVtableIndex]);
+    HRESULT hr = createTexture(device, kBlurTextureW, kBlurTextureH, 1, kD3DUSAGE_RENDERTARGET,
+                                 kD3DFMT_A8R8G8B8, kD3DPOOL_DEFAULT, &g_optBlurTexture, nullptr);
+    if (FAILED(hr) || !g_optBlurTexture) { g_optBlurTexture = nullptr; return false; }
+    return true;
+}
+
+// Real compiled ps_2_0 shader (options_blur_ps.h). Unlike g_optBlurTexture, a shader
+// object is not D3DPOOL-based and is NOT invalidated by Reset() (only textures/
+// surfaces/buffers in D3DPOOL_DEFAULT need explicit release-before-Reset handling in
+// real D3D9) -- deliberately NOT added to ReleaseAllCachedTextures for that reason;
+// created once and lives for the process.
+void* g_optBlurPixelShader = nullptr;
+
+bool EnsureBlurShader(void* device)
+{
+    if (g_optBlurPixelShader) return true;
+    void** deviceVtbl = *reinterpret_cast<void***>(device);
+    auto createPixelShader = reinterpret_cast<CreatePixelShader_t>(deviceVtbl[kCreatePixelShaderVtableIndex]);
+    HRESULT hr = createPixelShader(device, reinterpret_cast<const DWORD*>(g_optionsBlurPixelShaderBytecode), &g_optBlurPixelShader);
+    if (FAILED(hr) || !g_optBlurPixelShader) { g_optBlurPixelShader = nullptr; return false; }
+    return true;
+}
+
+// Downsamples the real backbuffer's (regionX, regionY, regionW, regionH) rect
+// (design-space, same convention as every other position in this file) into the
+// small blur texture, runs the real 9-tap blur shader over it, then draws the result
+// back stretched over the same rect. Must be called BEFORE anything else this frame
+// draws INTO that same screen region (the panel/diagram/labels), so they render sharp
+// on top of the blur, not blurred themselves.
+void DrawBlurredBackgroundRegion(void* device, float regionX, float regionY, float regionW, float regionH,
+                                    float scaleX, float scaleY)
+{
+    if (!EnsureBlurTexture(device) || !EnsureBlurShader(device)) return;
+    void** deviceVtbl = *reinterpret_cast<void***>(device);
+    auto getRenderTarget = reinterpret_cast<GetRenderTarget_t>(deviceVtbl[kGetRenderTargetVtableIndex]);
+    auto stretchRect = reinterpret_cast<StretchRect_t>(deviceVtbl[kStretchRectVtableIndex]);
+    auto getSamplerState = reinterpret_cast<GetSamplerState_t>(deviceVtbl[kGetSamplerStateVtableIndex]);
+    auto setSamplerState = reinterpret_cast<SetSamplerState_t>(deviceVtbl[kSetSamplerStateVtableIndex]);
+    auto setPixelShader = reinterpret_cast<SetPixelShader_t>(deviceVtbl[kSetPixelShaderVtableIndex]);
+    auto getPixelShader = reinterpret_cast<GetPixelShader_t>(deviceVtbl[kGetPixelShaderVtableIndex]);
+    auto setPixelShaderConstantF = reinterpret_cast<SetPixelShaderConstantF_t>(deviceVtbl[kSetPixelShaderConstantFVtableIndex]);
+    auto setTexture = reinterpret_cast<SetTexture_t>(deviceVtbl[kSetTextureVtableIndex]);
+    auto setFVF = reinterpret_cast<SetFVF_t>(deviceVtbl[kSetFVFVtableIndex]);
+    auto setRenderState = reinterpret_cast<SetRenderState_t>(deviceVtbl[kSetRenderStateVtableIndex]);
+    auto getRenderState = reinterpret_cast<GetRenderState_t>(deviceVtbl[kGetRenderStateVtableIndex]);
+    auto drawPrimitiveUP = reinterpret_cast<DrawPrimitiveUP_t>(deviceVtbl[kDrawPrimitiveUPVtableIndex]);
+
+    void* backSurface = nullptr;
+    // GetRenderTarget(0) IS the real backbuffer surface currently being built this
+    // frame -- we're hooked at the very top of EndScene, so at this point it already
+    // holds the complete, sharp, just-rendered game frame (this engine's own 3D
+    // rendering for the frame is long done by the time EndScene is even called);
+    // nothing about our own draw calls has touched it yet.
+    if (FAILED(getRenderTarget(device, 0, &backSurface)) || !backSurface) return;
+
+    // GetSurfaceLevel is an IDirect3DTexture9 method, NOT an IDirect3DDevice9 one --
+    // MUST be fetched through the TEXTURE's own vtable, not deviceVtbl. This is the
+    // exact bug that crashed the game (see this function's own header comment) --
+    // deviceVtbl[kGetSurfaceLevelVtableIndex] was really calling the DEVICE's index-18
+    // method (GetBackBuffer, 4 args) with a 2-arg call, corrupting the stack.
+    void** blurTexVtbl = *reinterpret_cast<void***>(g_optBlurTexture);
+    auto getSurfaceLevel = reinterpret_cast<GetSurfaceLevel_t>(blurTexVtbl[kGetSurfaceLevelVtableIndex]);
+
+    void* blurSurface = nullptr;
+    if (FAILED(getSurfaceLevel(g_optBlurTexture, 0, &blurSurface)) || !blurSurface) {
+        reinterpret_cast<Release_t>((*reinterpret_cast<void***>(backSurface))[kSurfaceReleaseVtableIndex])(backSurface);
+        return;
+    }
+
+    RECT srcRect = {
+        static_cast<LONG>(regionX * scaleX), static_cast<LONG>(regionY * scaleY),
+        static_cast<LONG>((regionX + regionW) * scaleX), static_cast<LONG>((regionY + regionH) * scaleY)
+    };
+    stretchRect(device, backSurface, &srcRect, blurSurface, nullptr, kD3DTEXF_LINEAR);
+
+    // GetRenderTarget/GetSurfaceLevel both AddRef -- release our own references once
+    // the blit is done (the texture itself, and therefore its pixel data, is
+    // unaffected -- this only releases the temporary surface interface pointers).
+    reinterpret_cast<Release_t>((*reinterpret_cast<void***>(backSurface))[kSurfaceReleaseVtableIndex])(backSurface);
+    reinterpret_cast<Release_t>((*reinterpret_cast<void***>(blurSurface))[kSurfaceReleaseVtableIndex])(blurSurface);
+
+    // LINEAR sampler filtering (default is POINT) so the shader's own taps sample
+    // smoothly rather than off blocky texels -- save/restore around this draw so
+    // later draws this same frame (glyph icons, hint text, all via
+    // DrawGenericTexturedQuad) aren't left filtering differently.
+    DWORD oldMagFilter = kD3DTEXF_POINT, oldMinFilter = kD3DTEXF_POINT;
+    getSamplerState(device, 0, kD3DSAMP_MAGFILTER, &oldMagFilter);
+    getSamplerState(device, 0, kD3DSAMP_MINFILTER, &oldMinFilter);
+    setSamplerState(device, 0, kD3DSAMP_MAGFILTER, kD3DTEXF_LINEAR);
+    setSamplerState(device, 0, kD3DSAMP_MINFILTER, kD3DTEXF_LINEAR);
+
+    DWORD oldZEnable = 0, oldLighting = 0, oldAlphaBlend = 0, oldCull = 0;
+    getRenderState(device, kD3DRS_ZENABLE, &oldZEnable);
+    getRenderState(device, kD3DRS_LIGHTING, &oldLighting);
+    getRenderState(device, kD3DRS_ALPHABLENDENABLE, &oldAlphaBlend);
+    getRenderState(device, kD3DRS_CULLMODE, &oldCull);
+
+    void* oldPixelShader = nullptr;
+    getPixelShader(device, &oldPixelShader);
+    setPixelShader(device, g_optBlurPixelShader);
+
+    // texelSize register c0, matches options_blur.hlsl's own `float4 texelSize :
+    // register(c0)` -- .xy is (1/captureWidth, 1/captureHeight), what the shader's
+    // 9 taps offset by.
+    const float texelSize[4] = {
+        1.0f / static_cast<float>(kBlurTextureW), 1.0f / static_cast<float>(kBlurTextureH), 0.0f, 0.0f
+    };
+    setPixelShaderConstantF(device, 0, texelSize, 1);
+
+    // Thin, dedicated draw here rather than reusing DrawGenericTexturedQuad, which
+    // unconditionally forces SetPixelShader(device, nullptr) for its own fixed-
+    // function draw -- this quad specifically needs the real shader left bound.
+    // Fixed-function texture-stage state doesn't apply once a real pixel shader is
+    // set (the shader fully owns color output), so none of that needs touching here.
+    setRenderState(device, kD3DRS_ZENABLE, kD3DZB_FALSE);
+    setRenderState(device, kD3DRS_LIGHTING, FALSE);
+    setRenderState(device, kD3DRS_ALPHABLENDENABLE, FALSE);
+    setRenderState(device, kD3DRS_CULLMODE, kD3DCULL_NONE);
+
+    setTexture(device, 0, g_optBlurTexture);
+    setFVF(device, kFVF);
+
+    float dx = regionX * scaleX;
+    float dy = regionY * scaleY;
+    float dw = regionW * scaleX;
+    float dh = regionH * scaleY;
+    ScreenVertex verts[4] = {
+        { dx - 0.5f,      dy - 0.5f,      0.0f, 1.0f, 0xFFFFFFFFu, 0.0f, 0.0f },
+        { dx + dw - 0.5f, dy - 0.5f,      0.0f, 1.0f, 0xFFFFFFFFu, 1.0f, 0.0f },
+        { dx - 0.5f,      dy + dh - 0.5f, 0.0f, 1.0f, 0xFFFFFFFFu, 0.0f, 1.0f },
+        { dx + dw - 0.5f, dy + dh - 0.5f, 0.0f, 1.0f, 0xFFFFFFFFu, 1.0f, 1.0f },
+    };
+    drawPrimitiveUP(device, kD3DPT_TRIANGLESTRIP, 2, verts, sizeof(ScreenVertex));
+
+    setTexture(device, 0, nullptr);
+    setRenderState(device, kD3DRS_ZENABLE, oldZEnable);
+    setRenderState(device, kD3DRS_LIGHTING, oldLighting);
+    setRenderState(device, kD3DRS_ALPHABLENDENABLE, oldAlphaBlend);
+    setRenderState(device, kD3DRS_CULLMODE, oldCull);
+
+    setPixelShader(device, oldPixelShader);
+    if (oldPixelShader) {
+        void** vtbl = *reinterpret_cast<void***>(oldPixelShader);
+        reinterpret_cast<Release_t>(vtbl[kSurfaceReleaseVtableIndex])(oldPixelShader);
+    }
+
+    setSamplerState(device, 0, kD3DSAMP_MAGFILTER, oldMagFilter);
+    setSamplerState(device, 0, kD3DSAMP_MINFILTER, oldMinFilter);
+}
+
 void FormatOptRowValue(const OptRow& row, char* outBuf, size_t outBufSize)
 {
     switch (row.kind) {
@@ -2637,6 +2853,29 @@ void DrawCustomOptionsMenuIfOpen(void* device)
     constexpr float kPanelX = 0.0f;
     constexpr float kPanelW = 672.0f; // ~35% of 1920 design width, matches the reference
     constexpr float kPanelH = 1080.0f;
+
+    // Right-side background blur (2026-08-05, live-reported: "we should add a
+    // background blur to the menus right side specifically where the extra stuff
+    // shows up like the controller layout etc") -- covers the whole right region
+    // regardless of which sub-view is showing there (real game view + row values in
+    // the main list, the controller diagram in drill-down), matching the real
+    // console reference's own convention. MUST run before anything else this frame
+    // draws into that region, so the panel/diagram/labels below render sharp on top
+    // of it, not blurred themselves.
+    //
+    // First shipped as a shader-free StretchRect-downsample "poor man's blur" and
+    // immediately live-reported to CRASH the game on every menu open. Root cause
+    // (re_notes/known_issues.md issue #66): GetSurfaceLevel was fetched through the
+    // DEVICE's own vtable, but that's an IDirect3DTexture9 method, not an
+    // IDirect3DDevice9 one -- index 18 means something completely different on each
+    // (GetBackBuffer vs GetSurfaceLevel), so this was actually invoking GetBackBuffer
+    // with GetSurfaceLevel's 2-argument signature, a stack-corrupting wrong-function
+    // call under __stdcall. Per explicit direction ("just make a shader for it
+    // properly no hacks"), REPLACED same day with a real compiled ps_2_0 pixel shader
+    // (see DrawBlurredBackgroundRegion's own header comment in this file for the full
+    // fix) -- re-enabled here once that landed and the vtable bug was fixed.
+    DrawBlurredBackgroundRegion(device, kPanelW, 0.0f, 1920.0f - kPanelW, kPanelH, scaleX, scaleY);
+
     DrawGenericTexturedQuad(device, g_optWhiteTexture, kPanelX * scaleX, 0.0f,
         kPanelW * scaleX, kPanelH * scaleY, 0xFF232323u);
 
@@ -3222,6 +3461,11 @@ void ReleaseAllCachedTextures()
         releaseIfSet(slot.suffixTexture);
         slot.suffixRenderedFor[0] = '\0';
     }
+    // g_optBlurTexture (2026-08-05) is D3DPOOL_DEFAULT, unlike every texture above --
+    // MUST be released before a real Reset() (D3D9 requirement), and unlike MANAGED-
+    // pool textures, won't silently survive a device recreation either -- see its own
+    // header comment for why.
+    releaseIfSet(g_optBlurTexture);
 }
 
 HRESULT WINAPI Hook_Reset(void* device, void* pPresentationParameters)
