@@ -7808,6 +7808,23 @@ const char* ResolveMenuGlyphAssetNameForKeyName(const char* rawKeyName)
 
 } // namespace
 
+// Public wrapper (issue #66 follow-up, 2026-08-05, live-reported: "the lack of
+// actual button glyphs is" the problem with the custom Options screen -- its
+// footer/tab bar was drawing text-only prompts like "LB/RB TABS" instead of real
+// controller-glyph icons, unlike every other button hint this project draws).
+// GlyphAssetName itself has internal linkage (defined inside the anonymous
+// namespace above, alongside this file's other TU-local resolver tables) -- this
+// is the one externally-callable form of it, letting overlay_hud.cpp draw real
+// icons for its own raw physical-button prompts (LB/RB/A/B) without needing a
+// keyboard bind-name to resolve through (unlike TryGetMenuGlyphAssetNameForKeyName,
+// whose whole design is keyed off a real keyboard bind string this menu doesn't have
+// one of -- its navigation is raw D-pad/A/B/LB/RB, never forwarded through a real
+// keybind at all).
+extern "C" const char* GetControllerGlyphAssetName(PhysicalInput input, GlyphStyle style)
+{
+    return GlyphAssetName(input, style);
+}
+
 // Real key-name string (already trimmed/validated by the caller) -> a single-byte
 // substitution codepoint for the CURRENTLY configured GlyphStyle, or false if no
 // mapping/asset exists for this (key, style) pair (e.g. the Xbox360 LS/RS gap, or a

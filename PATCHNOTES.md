@@ -71,6 +71,12 @@ reverse-engineering trail behind each entry.
   Backing out with B reveals the still-open real pause menu underneath,
   same as the real Options screen would.
 
+  **Footer button prompts now use real controller-glyph icons, not text.**
+  The bottom legend previously read as plain text ("LB/RB TABS", "A TOGGLE",
+  etc.) — it now draws the actual Xbox 360/Xbox Modern/PlayStation glyph icon
+  (matching the player's real `GlyphStyle` setting) before each label, same
+  as every other button hint this project draws elsewhere in-game.
+
   See `re_notes/known_issues.md` issue #66 and
   `re_notes/options_menu_full_map.md` for the full research trail.
 
