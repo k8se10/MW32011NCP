@@ -70,6 +70,12 @@ extern "C" void __cdecl InjectSyntheticBackHintIfNeeded(); // defined in analog_
 // accumulator in this file -- called from here so it's on the same cadence as
 // everything else that resets at the top of a new frame.
 extern "C" void __cdecl ResetMenuListItemOrdinalForFrame(); // defined in analog_input_hooks.cpp
+// Real controller-glyph icon asset name for a raw PhysicalInput under the
+// CURRENTLY configured GlyphStyle (Xbox360/XboxModern/PlayStation) -- issue #66
+// follow-up (2026-08-05, live-reported: "the lack of actual button glyphs is" the
+// problem with the custom Options screen). Wraps a function with internal linkage
+// (analog_input_hooks.cpp's own GlyphAssetName, TU-local); this is the exported form.
+extern "C" const char* GetControllerGlyphAssetName(PhysicalInput input, GlyphStyle style); // defined in analog_input_hooks.cpp
 
 namespace {
 
@@ -1523,7 +1529,15 @@ TextTexCache g_optRowLabelCache[kUnifiedTabRowCacheSize];
 TextTexCache g_optRowValueCache[kUnifiedTabRowCacheSize];
 TextTexCache g_tabBarCache[8]; // sized above kUnifiedTabCount (3 today) for future tabs
 TextTexCache g_optTitleCache;
-TextTexCache g_optFooterCache;
+// One cache per footer segment label (2026-08-05, real-glyph-icon footer rewrite) --
+// each segment's text is a distinct static string ("TABS"/"ADJUST"/"TOGGLE"/"CLOSE"/
+// "OR CLICK"), so each needs its own EnsureLeftAlignedTextTexture cache slot, same
+// reasoning as g_tabBarCache being an array rather than one shared cache.
+TextTexCache g_optFooterTabsCache;
+TextTexCache g_optFooterAdjustCache;
+TextTexCache g_optFooterToggleCache;
+TextTexCache g_optFooterCloseCache;
+TextTexCache g_optFooterClickCache;
 void* g_optWhiteTexture = nullptr; // 1x1 white texture for solid-fill background panels
 
 bool EnsureWhiteTexture(void* device)
@@ -1928,8 +1942,58 @@ void DrawCustomOptionsMenuIfOpen(void* device)
         g_optMenuOpen = false;
     }
 
-    DrawOptLeftAlignedText(device, g_optFooterCache, "LB/RB TABS    LEFT/RIGHT ADJUST    A TOGGLE    B CLOSE    OR CLICK",
-                             labelX, kPanelY + kPanelH - kFooterH * 0.5f, 20, 0xFFA0A0A0u, scaleX, scaleY);
+    // Footer -- real controller-glyph icons + labels (2026-08-05, live-reported: "the
+    // lack of actual button glyphs is" the problem -- this used to be pure text, e.g.
+    // "LB/RB TABS", never an actual button-prompt icon, unlike every other in-game
+    // hint this project draws (DrawOneGameplayHintSlot/DrawOneMenuHintSlot). This menu's
+    // navigation is raw physical D-pad/A/B/LB/RB (see analog_input_hooks.cpp's
+    // InjectControllerMenuNav), never forwarded through a real keybind, so this draws
+    // icons directly from GetControllerGlyphAssetName(PhysicalInput, glyphStyle) rather
+    // than going through the keyboard-bind-name-keyed TryGetMenuGlyphAssetNameForKeyName
+    // path the rest of this file's hint systems use (there's no keybind name to resolve
+    // here). Universal D-pad icons (dpad_left/dpad_right) are brand-independent, same as
+    // DpadGlyphAssetName's own real assets, and hardcoded here directly rather than via
+    // a cross-TU call since they don't depend on GlyphStyle at all.
+    constexpr float kFooterIconHeight = 24.0f;
+    constexpr int kFooterFontHeightPx = 20;
+    constexpr float kFooterIconGapPx = 8.0f;
+    constexpr float kFooterSegmentGapPx = 28.0f;
+    constexpr DWORD kFooterTextColor = 0xFFA0A0A0u;
+    float footerY = kPanelY + kPanelH - kFooterH * 0.5f;
+    float footerX = labelX;
+
+    auto drawFooterIcon = [&](const char* assetName) {
+        if (!assetName || !assetName[0]) return;
+        void* iconTex = nullptr; int iconW = 0, iconH = 0;
+        if (!GetOrLoadGlyphIconTexture(device, assetName, iconTex, iconW, iconH) || iconH <= 0) return;
+        float drawW = kFooterIconHeight * (static_cast<float>(iconW) / static_cast<float>(iconH));
+        float top = footerY - kFooterIconHeight * 0.5f;
+        DrawGenericTexturedQuad(device, iconTex, footerX * scaleX, top * scaleY,
+                                  drawW * scaleX, kFooterIconHeight * scaleY);
+        footerX += drawW + kFooterIconGapPx;
+    };
+    auto drawFooterLabel = [&](TextTexCache& cache, const char* label) {
+        DrawOptLeftAlignedText(device, cache, label, footerX, footerY, kFooterFontHeightPx,
+                                 kFooterTextColor, scaleX, scaleY);
+        int w = MeasureTextWidthPx(label, g_modConfig.overlayFontItalic, kFooterFontHeightPx);
+        footerX += static_cast<float>(w) + kFooterSegmentGapPx;
+    };
+
+    drawFooterIcon(GetControllerGlyphAssetName(PhysicalInput::LB, g_modConfig.glyphStyle));
+    drawFooterIcon(GetControllerGlyphAssetName(PhysicalInput::RB, g_modConfig.glyphStyle));
+    drawFooterLabel(g_optFooterTabsCache, "TABS");
+
+    drawFooterIcon("dpad_left");
+    drawFooterIcon("dpad_right");
+    drawFooterLabel(g_optFooterAdjustCache, "ADJUST");
+
+    drawFooterIcon(GetControllerGlyphAssetName(PhysicalInput::A, g_modConfig.glyphStyle));
+    drawFooterLabel(g_optFooterToggleCache, "TOGGLE");
+
+    drawFooterIcon(GetControllerGlyphAssetName(PhysicalInput::B, g_modConfig.glyphStyle));
+    drawFooterLabel(g_optFooterCloseCache, "CLOSE");
+
+    drawFooterLabel(g_optFooterClickCache, "OR CLICK");
 }
 
 } // namespace

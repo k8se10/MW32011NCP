@@ -10,6 +10,9 @@
 // harness-local answer -- see each one's own comment.
 #include <windows.h>
 #include <cstdio>
+#include "mod_config.h" // for PhysicalInput/GlyphStyle -- ui_hot.vcxproj already adds
+                          // proxy_d3d9/src to its include path (overlay_hud.cpp/
+                          // mod_config.cpp are compiled from there directly)
 
 namespace {
 HWND g_harnessWindow = nullptr;
@@ -86,4 +89,66 @@ extern "C" void __cdecl ResetMenuListItemOrdinalForFrame() {}
 bool IsControllerActiveInputMethod()
 {
     return false;
+}
+
+// Real definition (analog_input_hooks.cpp) has internal linkage there and is exposed
+// to overlay_hud.cpp via a small extern "C" wrapper of the same name -- this harness
+// mirrors that real switch table directly (2026-08-05, issue #66 follow-up: "the lack
+// of actual button glyphs is" the problem this harness exists to let us iterate on
+// without a full game launch, so this needs a REAL answer, not an empty stub like the
+// other harmless no-ops above). Deliberately duplicated rather than shared across a
+// header, same as this whole file's standing "harness-local answer" pattern -- keep
+// in sync with analog_input_hooks.cpp's own GlyphAssetName if that table ever changes
+// (asset names come from assets/button_glyphs/, already extracted/committed).
+extern "C" const char* GetControllerGlyphAssetName(PhysicalInput input, GlyphStyle style)
+{
+    switch (style) {
+        case GlyphStyle::Xbox360:
+            switch (input) {
+                case PhysicalInput::RT: return "xbox360_rt";
+                case PhysicalInput::LT: return "xbox360_lt";
+                case PhysicalInput::RB: return "xbox360_rb";
+                case PhysicalInput::LB: return "xbox360_lb";
+                case PhysicalInput::X: return "xbox360_x";
+                case PhysicalInput::Y: return "xbox360_y";
+                case PhysicalInput::A: return "xbox360_a";
+                case PhysicalInput::B: return "xbox360_b";
+                case PhysicalInput::Start: return "xbox360_start";
+                case PhysicalInput::Back: return "xbox360_back";
+                default: return "";
+            }
+        case GlyphStyle::XboxModern:
+            switch (input) {
+                case PhysicalInput::RT: return "xboxmodern_rt";
+                case PhysicalInput::LT: return "xboxmodern_lt";
+                case PhysicalInput::RB: return "xboxmodern_rb";
+                case PhysicalInput::LB: return "xboxmodern_lb";
+                case PhysicalInput::X: return "xboxmodern_x";
+                case PhysicalInput::Y: return "xboxmodern_y";
+                case PhysicalInput::A: return "xboxmodern_a";
+                case PhysicalInput::B: return "xboxmodern_b";
+                case PhysicalInput::Start: return "xboxmodern_menu";
+                case PhysicalInput::Back: return "xboxmodern_view";
+                case PhysicalInput::LS: return "xboxmodern_ls";
+                case PhysicalInput::RS: return "xboxmodern_rs";
+                default: return "";
+            }
+        case GlyphStyle::PlayStation:
+            switch (input) {
+                case PhysicalInput::RT: return "ps_r2";
+                case PhysicalInput::LT: return "ps_l2";
+                case PhysicalInput::RB: return "ps_r1";
+                case PhysicalInput::LB: return "ps_l1";
+                case PhysicalInput::X: return "ps_square";
+                case PhysicalInput::Y: return "ps_triangle";
+                case PhysicalInput::A: return "ps_cross";
+                case PhysicalInput::B: return "ps_circle";
+                case PhysicalInput::Start: return "ps_options";
+                case PhysicalInput::Back: return "ps_create";
+                case PhysicalInput::LS: return "ps_l3";
+                case PhysicalInput::RS: return "ps_r3";
+                default: return "";
+            }
+    }
+    return "";
 }
