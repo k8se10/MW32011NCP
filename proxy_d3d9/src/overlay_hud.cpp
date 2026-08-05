@@ -1940,36 +1940,48 @@ struct ControllerDiagramLayout {
     float lbX, lbY, rbX, rbY, ltX, ltY, rtX, rtY;
 };
 
-// Xbox 360 (600x415 source photo) -- face-button fractions from real color-sampled
-// pixel centroids (A derived via diamond symmetry from the other three, which
-// color-sampled cleanly); LS/RS/D-pad/shoulders are visual estimates.
+// 2026-08-05 follow-up (live-reported: "the tags are still way misaligned, you need
+// to compare with ref images as they deffo dont line up properly") -- re-verified
+// every anchor against the real photos directly, not by eye: a small PowerShell/
+// System.Drawing script drew a crosshair+label at each fraction's real pixel
+// position ON A COPY of each PNG, viewed the result, and iterated. This caught a
+// real, severe bug the original visual estimate missed entirely: LB/RB/LT/RT on all
+// three images were floating in blank space well above the controller body, nowhere
+// near the actual shoulder-button bumps (the original estimate treated "near the top
+// corners of the CANVAS" as "near the shoulder buttons," which isn't true once the
+// canvas has real letterboxing/padding around the controller). Face buttons/sticks/
+// D-pad were already accurate on the two Xbox images (confirmed, not just assumed,
+// by this same crosshair check) -- only PS4's sticks/D-pad/face buttons needed
+// re-calibrating too, since Xbox's original visual estimate for those doesn't
+// transfer (different photo, different padding/crop). All values below are the
+// crosshair-CONFIRMED positions, not the original guesses.
+// Xbox 360 (600x415 source photo).
 constexpr ControllerDiagramLayout kDiagLayoutXbox360 = {
     "controller_body_xbox360", 600.0f / 415.0f,
     0.183f, 0.277f,  0.583f, 0.542f,  0.325f, 0.554f,
     0.840f, 0.369f,  0.877f, 0.260f,  0.718f, 0.270f,  0.755f, 0.161f,
-    0.20f, 0.04f,    0.80f, 0.04f,    0.20f, 0.01f,    0.80f, 0.01f,
+    0.30f, 0.05f,    0.68f, 0.05f,    0.30f, 0.015f,   0.68f, 0.015f,
 };
-// Xbox Series/Modern (620x620 source photo) -- same derivation as above; face
-// buttons color-sampled cleanly on all four (no symmetry estimate needed).
+// Xbox Series/Modern (620x620 source photo).
 constexpr ControllerDiagramLayout kDiagLayoutXboxModern = {
     "controller_body_xboxmodern", 1.0f,
     0.242f, 0.355f,  0.629f, 0.532f,  0.315f, 0.532f,
     0.740f, 0.423f,  0.803f, 0.361f,  0.676f, 0.360f,  0.739f, 0.290f,
-    0.20f, 0.14f,    0.80f, 0.14f,    0.20f, 0.09f,    0.80f, 0.09f,
+    0.22f, 0.19f,    0.78f, 0.19f,    0.22f, 0.15f,    0.78f, 0.15f,
 };
 // DualShock 4 / PS4 (447x447 source photo) -- structurally different layout from the
 // Xbox family (both sticks sit in the LOWER half; D-pad and face buttons are upper).
 // Field names stay generic (aX/bX/xX/yX etc, matching PhysicalInput's own naming) but
 // hold each REAL PlayStation button's position at the same diamond direction as its
 // Xbox counterpart (x=Square/west, y=Triangle/north, b=Circle/east, a=Cross/south --
-// Sony's diamond is rotationally identical to Xbox's, just different symbols/colors,
-// confirmed by literal color-sampling). No separate L2/R2 vs L1/R1 could be
-// distinguished in this front-on photo -- LT/RT reuse LB/RB's own position.
+// Sony's diamond is rotationally identical to Xbox's, just different symbols/colors).
+// No separate L2/R2 vs L1/R1 could be distinguished in this front-on photo -- LT/RT
+// reuse LB/RB's own position.
 constexpr ControllerDiagramLayout kDiagLayoutPS4 = {
     "controller_body_ps4", 1.0f,
-    0.219f, 0.620f,  0.600f, 0.620f,  0.219f, 0.320f,
-    0.772f, 0.450f,  0.839f, 0.371f,  0.694f, 0.371f,  0.772f, 0.293f,
-    0.15f, 0.08f,    0.85f, 0.08f,    0.15f, 0.08f,    0.85f, 0.08f,
+    0.28f, 0.55f,    0.66f, 0.55f,    0.17f, 0.33f,
+    0.77f, 0.44f,    0.84f, 0.37f,    0.68f, 0.34f,    0.76f, 0.28f,
+    0.20f, 0.18f,    0.80f, 0.18f,    0.20f, 0.18f,    0.80f, 0.18f,
 };
 
 const ControllerDiagramLayout& GetDiagLayout(GlyphStyle style)
