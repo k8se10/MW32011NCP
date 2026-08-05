@@ -91,7 +91,9 @@ reverse-engineering trail behind each entry.
   uses rather than a hand-authored label table. The diagram now uses a real
   product photo of the player's actual controller type (Xbox 360/Xbox
   Modern/PlayStation, matching `GlyphStyle`) instead of a procedural
-  circle-and-rect schematic. Not yet live-tested.
+  circle-and-rect schematic, and each label draws the real glyph for its
+  own currently-bound button right next to shortened, clearer text, sized
+  and positioned to actually fit on screen. Not yet live-tested.
 
   See `re_notes/known_issues.md` issue #66 and
   `re_notes/options_menu_full_map.md` for the full research trail.

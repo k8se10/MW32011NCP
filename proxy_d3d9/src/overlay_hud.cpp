@@ -1998,22 +1998,70 @@ void DrawDiagLeader(void* device, float anchorX, float anchorY, float midX, floa
                               kThickness * scaleX, (y1 - y0) * scaleY, kLineColor);
 }
 
-void DrawDiagLabel(void* device, int cacheIndex, const char* text, float anchorX, float anchorY,
-                     float midX, float labelY, bool textOnRight, float scaleX, float scaleY)
+// 2026-08-05 follow-up (live-reported: "needs a bit of text fixing so it all fits on
+// screen also on the text you should show the correlating glyph to make it super
+// clear"). Draws up to TWO real controller-glyph icons (icon2 for the bidirectional
+// Strafe/Rotate stick labels, which cover both a left- and a right-glyph; nullptr for
+// every other label, which only needs one) between the leader line's elbow and the
+// text -- showing the actual real button/stick-direction icon next to its label,
+// same "no placeholder, always the real asset" standard as everywhere else in this
+// file. This is also directly reusable groundwork for the future keybind-rebind UI
+// (issue #66's still-pending Movement/Actions tabs) -- "action label + real bound
+// glyph, side by side" is exactly what a rebind row needs to show too.
+void DrawDiagLabel(void* device, int cacheIndex, const char* text, const char* iconAssetName, const char* iconAssetName2,
+                     float anchorX, float anchorY, float midX, float labelY, bool textOnRight, float scaleX, float scaleY)
 {
     if (cacheIndex < 0 || cacheIndex >= 16) return;
     DrawDiagLeader(device, anchorX, anchorY, midX, labelY, scaleX, scaleY);
     constexpr int kLabelFontHeightPx = 20;
     constexpr DWORD kLabelColor = 0xFFE0E0E0u;
+    constexpr float kIconSize = 22.0f;
+    constexpr float kIconGapPx = 4.0f;
+    constexpr float kIconTextGapPx = 8.0f;
+
+    // Icon texture lookup is cached (GetOrLoadGlyphIconTexture), so measuring here and
+    // drawing separately below costs nothing extra after the first frame.
+    auto measureIcon = [&](const char* assetName) -> float {
+        if (!assetName || !assetName[0]) return 0.0f;
+        void* tex = nullptr; int texW = 0, texH = 0;
+        if (!GetOrLoadGlyphIconTexture(device, assetName, tex, texW, texH) || texH <= 0) return 0.0f;
+        return kIconSize * (static_cast<float>(texW) / static_cast<float>(texH));
+    };
+    auto drawIconAt = [&](const char* assetName, float x, float w) {
+        if (w <= 0.0f) return;
+        void* tex = nullptr; int texW = 0, texH = 0;
+        if (!GetOrLoadGlyphIconTexture(device, assetName, tex, texW, texH)) return;
+        DrawGenericTexturedQuad(device, tex, x * scaleX, (labelY - kIconSize * 0.5f) * scaleY, w * scaleX, kIconSize * scaleY);
+    };
+
+    float w1 = measureIcon(iconAssetName), w2 = measureIcon(iconAssetName2);
+    float iconsTotalWidth = w1 + (w2 > 0.0f ? kIconGapPx + w2 : 0.0f);
+    float extra = iconsTotalWidth > 0.0f ? iconsTotalWidth + kIconTextGapPx : 0.0f;
+
     if (textOnRight) {
-        DrawOptLeftAlignedText(device, g_diagLabelCache[cacheIndex], text, midX + 12.0f, labelY, kLabelFontHeightPx, kLabelColor, scaleX, scaleY);
+        float x = midX + 12.0f;
+        drawIconAt(iconAssetName, x, w1);
+        drawIconAt(iconAssetName2, x + w1 + kIconGapPx, w2);
+        DrawOptLeftAlignedText(device, g_diagLabelCache[cacheIndex], text, midX + 12.0f + extra, labelY, kLabelFontHeightPx, kLabelColor, scaleX, scaleY);
     } else {
-        DrawOptRightAlignedText(device, g_diagLabelCache[cacheIndex], text, midX - 12.0f, labelY, kLabelFontHeightPx, kLabelColor, scaleX, scaleY);
+        float rightEdge = midX - 12.0f;
+        float iconsStartX = rightEdge - iconsTotalWidth;
+        drawIconAt(iconAssetName, iconsStartX, w1);
+        drawIconAt(iconAssetName2, iconsStartX + w1 + kIconGapPx, w2);
+        DrawOptRightAlignedText(device, g_diagLabelCache[cacheIndex], text, rightEdge - extra, labelY, kLabelFontHeightPx, kLabelColor, scaleX, scaleY);
     }
 }
 
-constexpr float kDiagBoxX = 900.0f, kDiagBoxY = 260.0f;       // top-left of the reserved diagram area, design space
-constexpr float kDiagBoxMaxW = 900.0f, kDiagBoxMaxH = 560.0f; // available space the real image is fit into, preserving its own aspect ratio
+// Reserved diagram area, design space -- sized/positioned (2026-08-05 follow-up) so
+// the longest label (icon + text) on EITHER side clears the screen edge, not just the
+// image itself: panel ends at x=672, screen ends at x=1920, leaving 1248px split into
+// a left label zone (672-1000=328px), the image box itself (560px), and a right label
+// zone (1920-1560=360px) -- both comfortably fit this diagram's longest real label
+// ("SPRINT/BREATH" plus its icon, ~180px) with room to spare, unlike the original
+// pass's 900px-wide box + 170px offset, which pushed right-side text well past 1920.
+constexpr float kDiagBoxX = 1000.0f, kDiagBoxY = 280.0f;
+constexpr float kDiagBoxMaxW = 560.0f, kDiagBoxMaxH = 480.0f; // available space the real image is fit into, preserving its own aspect ratio
+constexpr float kDiagLabelOffsetPx = 100.0f; // leader-line elbow distance from its anchor, reduced from 170 for the same reason
 
 // Draws the real controller-body photo for the player's current GlyphStyle, fit
 // (letterboxed, not stretched) into the reserved diagram box. Returns the actual
@@ -2049,13 +2097,27 @@ void DrawOneStickLabels(void* device, float stickX, float stickY, bool isRightSi
 {
     bool verticalIsMove = (moveYFromRight == isRightSide);
     bool horizontalIsMove = (moveXFromRight == isRightSide);
+    const char* stickPrefix = isRightSide ? "stick_rs_" : "stick_ls_"; // universal, brand-independent directional stick glyphs (assets/button_glyphs/, already used elsewhere in this project)
+    char upAsset[24], downAsset[24], leftAsset[24], rightAsset[24];
+    sprintf_s(upAsset, "%sup", stickPrefix);
+    sprintf_s(downAsset, "%sdown", stickPrefix);
+    sprintf_s(leftAsset, "%sleft", stickPrefix);
+    sprintf_s(rightAsset, "%sright", stickPrefix);
+
     const char* topLabel = verticalIsMove ? "MOVE FORWARD" : "LOOK UP";
     const char* bottomLabel = verticalIsMove ? "MOVE BACK" : "LOOK DOWN";
-    const char* midLabel = horizontalIsMove ? "STRAFE LEFT/RIGHT" : "ROTATE LEFT/RIGHT";
-    float midX = isRightSide ? (stickX + 170.0f) : (stickX - 170.0f);
-    DrawDiagLabel(device, cacheIdx++, topLabel,    stickX, stickY - 50.0f, midX, stickY - 90.0f, isRightSide, scaleX, scaleY);
-    DrawDiagLabel(device, cacheIdx++, midLabel,    stickX, stickY,         midX, stickY,         isRightSide, scaleX, scaleY);
-    DrawDiagLabel(device, cacheIdx++, bottomLabel, stickX, stickY + 50.0f, midX, stickY + 90.0f, isRightSide, scaleX, scaleY);
+    // Shortened from "STRAFE LEFT/RIGHT"/"ROTATE LEFT/RIGHT" (2026-08-05, "needs a
+    // bit of text fixing so it all fits on screen") -- the left+right glyph pair
+    // drawn alongside already conveys the bidirectional part, so the text itself no
+    // longer needs to spell it out.
+    const char* midLabel = horizontalIsMove ? "STRAFE" : "ROTATE";
+    float midX = isRightSide ? (stickX + kDiagLabelOffsetPx) : (stickX - kDiagLabelOffsetPx);
+    DrawDiagLabel(device, cacheIdx++, topLabel, upAsset, nullptr,
+                    stickX, stickY - 50.0f, midX, stickY - 90.0f, isRightSide, scaleX, scaleY);
+    DrawDiagLabel(device, cacheIdx++, midLabel, leftAsset, rightAsset,
+                    stickX, stickY, midX, stickY, isRightSide, scaleX, scaleY);
+    DrawDiagLabel(device, cacheIdx++, bottomLabel, downAsset, nullptr,
+                    stickX, stickY + 50.0f, midX, stickY + 90.0f, isRightSide, scaleX, scaleY);
 }
 
 void DrawStickLayoutDiagram(void* device, float scaleX, float scaleY, StickLayout previewLayout)
@@ -2096,18 +2158,22 @@ DiagAnchor GetDiagAnchorForInput(const ControllerDiagramLayout& layout, float im
     }
 }
 
+// Labels shortened 2026-08-05 ("needs a bit of text fixing so it all fits on
+// screen") now that each one draws alongside its own real button glyph -- the icon
+// carries the "which button" information the longer phrasing used to have to spell
+// out, so text only needs to name the action.
 struct ButtonMapLabelEntry { PhysicalInput ButtonMap::* field; const char* label; };
 constexpr ButtonMapLabelEntry kButtonMapLabels[] = {
-    { &ButtonMap::fire,         "FIRE WEAPON" },
+    { &ButtonMap::fire,         "FIRE" },
     { &ButtonMap::ads,          "AIM DOWN SIGHT" },
     { &ButtonMap::lethal,       "THROW FRAG" },
     { &ButtonMap::tactical,     "THROW TACTICAL" },
-    { &ButtonMap::reloadUse,    "USE / RELOAD" },
+    { &ButtonMap::reloadUse,    "USE/RELOAD" },
     { &ButtonMap::weaponSwitch, "SWITCH WEAPON" },
     { &ButtonMap::jump,         "JUMP" },
-    { &ButtonMap::crouchProne,  "CROUCH / PRONE" },
-    { &ButtonMap::sprint,       "SPRINT / HOLD BREATH" },
-    { &ButtonMap::melee,        "MELEE / ZOOM" },
+    { &ButtonMap::crouchProne,  "CROUCH/PRONE" },
+    { &ButtonMap::sprint,       "SPRINT/BREATH" },
+    { &ButtonMap::melee,        "MELEE/ZOOM" },
 };
 
 void DrawButtonLayoutDiagram(void* device, float scaleX, float scaleY, ButtonLayout previewLayout)
@@ -2119,14 +2185,22 @@ void DrawButtonLayoutDiagram(void* device, float scaleX, float scaleY, ButtonLay
     ButtonMap bm = ResolveButtonMap(previewLayout, g_modConfig.flipTriggers);
     int cacheIdx = 0;
     for (const auto& entry : kButtonMapLabels) {
-        DiagAnchor anchor = GetDiagAnchorForInput(layout, imgX, imgY, imgW, imgH, bm.*entry.field);
-        float midX = anchor.onRight ? (anchor.x + 170.0f) : (anchor.x - 170.0f);
-        DrawDiagLabel(device, cacheIdx++, entry.label, anchor.x, anchor.y, midX, anchor.y, anchor.onRight, scaleX, scaleY);
+        PhysicalInput input = bm.*entry.field;
+        DiagAnchor anchor = GetDiagAnchorForInput(layout, imgX, imgY, imgW, imgH, input);
+        float midX = anchor.onRight ? (anchor.x + kDiagLabelOffsetPx) : (anchor.x - kDiagLabelOffsetPx);
+        // Real glyph for the button this action is CURRENTLY bound to under the
+        // previewed layout -- not the anchor's own fixed physical slot, so the icon
+        // always matches what's actually drawn at that position for this preset.
+        const char* iconAsset = GetControllerGlyphAssetName(input, g_modConfig.glyphStyle);
+        DrawDiagLabel(device, cacheIdx++, entry.label, iconAsset, nullptr,
+                        anchor.x, anchor.y, midX, anchor.y, anchor.onRight, scaleX, scaleY);
     }
     // D-pad isn't part of ButtonMap (its equipment/killstreak quick-select function
-    // doesn't change between button layouts), so this one label is static.
+    // doesn't change between button layouts) and has no single representative glyph
+    // (it's 4 separate directional binds), so this one label has no icon.
     float dpadX = imgX + layout.dpadX * imgW, dpadY = imgY + layout.dpadY * imgH;
-    DrawDiagLabel(device, cacheIdx++, "EQUIPMENT / KILLSTREAKS", dpadX, dpadY, dpadX - 170.0f, dpadY, false, scaleX, scaleY);
+    DrawDiagLabel(device, cacheIdx++, "KILLSTREAKS", nullptr, nullptr,
+                    dpadX, dpadY, dpadX - kDiagLabelOffsetPx, dpadY, false, scaleX, scaleY);
 }
 
 // Called from Hook_EndScene every frame. Draws the full custom menu when open --
