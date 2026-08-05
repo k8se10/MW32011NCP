@@ -117,3 +117,19 @@ void KeynumToDisplayName(int keynum, char* outBuf, int outBufSize);
 // passes localClientNum=0 -- correct for SP, this project's only current scope (see
 // CLAUDE.md's "SP and MP are separate efforts").
 void QueueConsoleCommand(const char* command);
+
+// ---- Localized-string lookup ----------------------------------------------------
+//
+// SEH_GetString-equivalent (issue #68, 2026-08-05 language pass) -- resolves a real
+// internal reference key (e.g. "MENU_QUIT", "MENU_RELOAD_WEAPON",
+// "PLATFORM_LEADERBOARDS_SHORTCUT" -- confirmed real keys, see
+// re_notes/known_issues.md issue #68 for how each was found via the zone_dump
+// localizedstrings extraction) to whatever text the CURRENTLY ACTIVE game language
+// renders for it. This is the actual fix for glyph/hint detection breaking under
+// non-English languages: compare rendered hint text against THIS function's live
+// output instead of a hardcoded English literal, and the comparison is correct for
+// every language the game supports, automatically, with no per-language table
+// needed. Confirmed via raw disassembly of FUN_00532230 -- plain __cdecl, single
+// string arg, always returns a valid non-null pointer (falls back to echoing the
+// raw key back if the key isn't found in the string table, never null).
+const char* GetLocalizedString(const char* referenceKey);
