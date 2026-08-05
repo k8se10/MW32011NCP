@@ -2008,8 +2008,21 @@ void DrawDiagLeader(void* device, float anchorX, float anchorY, float midX, floa
 // file. This is also directly reusable groundwork for the future keybind-rebind UI
 // (issue #66's still-pending Movement/Actions tabs) -- "action label + real bound
 // glyph, side by side" is exactly what a rebind row needs to show too.
+// minIconAreaWidth (2026-08-05, live-reported: "stick tags have misaligned") lets a
+// GROUP of calls (the Stick Layout diagram's 3 rows per stick, which mix 1-icon
+// Move/Look rows with a 2-icon Strafe/Rotate row) share the same text column instead
+// of each row computing its own icon width independently -- without this, the row
+// with 2 icons pushed its own text noticeably further from the leader line than the
+// two 1-icon rows, so the three rows' text didn't line up. Icons still draw at their
+// own real width, hugging the text (right-aligned within the reserved area on the
+// text-on-right side, left-aligned on the text-on-left side) -- only the TEXT
+// column position is forced consistent across the group. Defaults to 0 (pure
+// auto-width, each call independent) for every other caller, which never reported
+// this problem (the Button Layout diagram's rows are never grouped as directly
+// comparable to each other the way one stick's 3 rows are).
 void DrawDiagLabel(void* device, int cacheIndex, const char* text, const char* iconAssetName, const char* iconAssetName2,
-                     float anchorX, float anchorY, float midX, float labelY, bool textOnRight, float scaleX, float scaleY)
+                     float anchorX, float anchorY, float midX, float labelY, bool textOnRight, float scaleX, float scaleY,
+                     float minIconAreaWidth = 0.0f)
 {
     if (cacheIndex < 0 || cacheIndex >= 16) return;
     DrawDiagLeader(device, anchorX, anchorY, midX, labelY, scaleX, scaleY);
@@ -2037,20 +2050,22 @@ void DrawDiagLabel(void* device, int cacheIndex, const char* text, const char* i
     };
 
     float w1 = measureIcon(iconAssetName), w2 = measureIcon(iconAssetName2);
-    float iconsTotalWidth = w1 + (w2 > 0.0f ? kIconGapPx + w2 : 0.0f);
-    float extra = iconsTotalWidth > 0.0f ? iconsTotalWidth + kIconTextGapPx : 0.0f;
+    float iconsActualWidth = w1 + (w2 > 0.0f ? kIconGapPx + w2 : 0.0f);
+    float iconAreaWidth = iconsActualWidth > minIconAreaWidth ? iconsActualWidth : minIconAreaWidth;
+    float extra = iconAreaWidth > 0.0f ? iconAreaWidth + kIconTextGapPx : 0.0f;
 
     if (textOnRight) {
-        float x = midX + 12.0f;
-        drawIconAt(iconAssetName, x, w1);
-        drawIconAt(iconAssetName2, x + w1 + kIconGapPx, w2);
-        DrawOptLeftAlignedText(device, g_diagLabelCache[cacheIndex], text, midX + 12.0f + extra, labelY, kLabelFontHeightPx, kLabelColor, scaleX, scaleY);
-    } else {
-        float rightEdge = midX - 12.0f;
-        float iconsStartX = rightEdge - iconsTotalWidth;
+        float textX = midX + 12.0f + extra;
+        float iconsStartX = textX - kIconTextGapPx - iconsActualWidth; // hug the text
         drawIconAt(iconAssetName, iconsStartX, w1);
         drawIconAt(iconAssetName2, iconsStartX + w1 + kIconGapPx, w2);
-        DrawOptRightAlignedText(device, g_diagLabelCache[cacheIndex], text, rightEdge - extra, labelY, kLabelFontHeightPx, kLabelColor, scaleX, scaleY);
+        DrawOptLeftAlignedText(device, g_diagLabelCache[cacheIndex], text, textX, labelY, kLabelFontHeightPx, kLabelColor, scaleX, scaleY);
+    } else {
+        float textRight = midX - 12.0f - extra;
+        float iconsStartX = textRight + kIconTextGapPx; // hug the text
+        drawIconAt(iconAssetName, iconsStartX, w1);
+        drawIconAt(iconAssetName2, iconsStartX + w1 + kIconGapPx, w2);
+        DrawOptRightAlignedText(device, g_diagLabelCache[cacheIndex], text, textRight, labelY, kLabelFontHeightPx, kLabelColor, scaleX, scaleY);
     }
 }
 
@@ -2118,12 +2133,20 @@ void DrawOneStickLabels(void* device, float stickX, float stickY, bool isRightSi
     // out") -- 50/90 was tuned for the smaller 20px label font, too tight once that
     // grew to 26px.
     constexpr float kStickLabelAnchorSpread = 70.0f, kStickLabelTextSpread = 130.0f;
+    // Shared across all 3 rows (2026-08-05, live-reported: "stick tags have
+    // misaligned") so the 2-icon Strafe/Rotate row's text lines up with the two
+    // 1-icon Move/Look rows' text instead of sitting further out -- must match
+    // DrawDiagLabel's own kIconSize(28)/kIconGapPx(5) constants (2*28+5=61).
+    constexpr float kStickLabelIconAreaWidth = 61.0f;
     DrawDiagLabel(device, cacheIdx++, topLabel, upAsset, nullptr,
-                    stickX, stickY - kStickLabelAnchorSpread, midX, stickY - kStickLabelTextSpread, isRightSide, scaleX, scaleY);
+                    stickX, stickY - kStickLabelAnchorSpread, midX, stickY - kStickLabelTextSpread, isRightSide, scaleX, scaleY,
+                    kStickLabelIconAreaWidth);
     DrawDiagLabel(device, cacheIdx++, midLabel, leftAsset, rightAsset,
-                    stickX, stickY, midX, stickY, isRightSide, scaleX, scaleY);
+                    stickX, stickY, midX, stickY, isRightSide, scaleX, scaleY,
+                    kStickLabelIconAreaWidth);
     DrawDiagLabel(device, cacheIdx++, bottomLabel, downAsset, nullptr,
-                    stickX, stickY + kStickLabelAnchorSpread, midX, stickY + kStickLabelTextSpread, isRightSide, scaleX, scaleY);
+                    stickX, stickY + kStickLabelAnchorSpread, midX, stickY + kStickLabelTextSpread, isRightSide, scaleX, scaleY,
+                    kStickLabelIconAreaWidth);
 }
 
 void DrawStickLayoutDiagram(void* device, float scaleX, float scaleY, StickLayout previewLayout)
@@ -2182,6 +2205,45 @@ constexpr ButtonMapLabelEntry kButtonMapLabels[] = {
     { &ButtonMap::melee,        "MELEE/ZOOM" },
 };
 
+struct DiagLabelEntry { float anchorX, anchorY; bool onRight; const char* text; const char* icon; };
+
+// Stacks one side's labels (left or right) at an even fixed vertical step, centered
+// on that side's own real average button height, rather than drawing each one
+// directly at its button's own real Y position -- fixed 2026-08-05, live-reported:
+// "theyre all overlapping a lot." Root cause: the real face-button cluster is only
+// ~20-40px tall in these reference photos once scaled into the diagram box, far less
+// than a label's own ~64px text-texture height, so several buttons' labels (and
+// under Default's ButtonLayout, up to 7 of the 11 total labels land on the right
+// side alone) were landing almost exactly on top of each other. The LEADER LINE still
+// starts from each entry's real, unmodified anchor position (so it correctly points
+// at the real button on the image); only the LABEL TEXT's own position is spread out.
+void DrawStackedDiagLabels(void* device, DiagLabelEntry* entries, int* indices, int n, int& cacheIdx, float scaleX, float scaleY)
+{
+    if (n <= 0) return;
+    // Small N (at most 11 total, so at most 11 per side) -- plain insertion sort by
+    // anchorY is more than fast enough and avoids a <algorithm> dependency.
+    for (int i = 1; i < n; ++i) {
+        int key = indices[i];
+        float keyY = entries[key].anchorY;
+        int j = i - 1;
+        while (j >= 0 && entries[indices[j]].anchorY > keyY) {
+            indices[j + 1] = indices[j];
+            --j;
+        }
+        indices[j + 1] = key;
+    }
+    constexpr float kLabelStepY = 80.0f; // clears the ~64px text-texture height with margin
+    float sumY = 0.0f;
+    for (int i = 0; i < n; ++i) sumY += entries[indices[i]].anchorY;
+    float startY = (sumY / static_cast<float>(n)) - (static_cast<float>(n - 1) * 0.5f * kLabelStepY);
+    for (int i = 0; i < n; ++i) {
+        const DiagLabelEntry& e = entries[indices[i]];
+        float labelY = startY + static_cast<float>(i) * kLabelStepY;
+        float midX = e.onRight ? (e.anchorX + kDiagLabelOffsetPx) : (e.anchorX - kDiagLabelOffsetPx);
+        DrawDiagLabel(device, cacheIdx++, e.text, e.icon, nullptr, e.anchorX, e.anchorY, midX, labelY, e.onRight, scaleX, scaleY);
+    }
+}
+
 void DrawButtonLayoutDiagram(void* device, float scaleX, float scaleY, ButtonLayout previewLayout)
 {
     const ControllerDiagramLayout& layout = GetDiagLayout(g_modConfig.glyphStyle);
@@ -2189,24 +2251,33 @@ void DrawButtonLayoutDiagram(void* device, float scaleX, float scaleY, ButtonLay
     if (!DrawControllerBodyImage(device, scaleX, scaleY, layout, imgX, imgY, imgW, imgH)) return;
 
     ButtonMap bm = ResolveButtonMap(previewLayout, g_modConfig.flipTriggers);
-    int cacheIdx = 0;
+    constexpr int kMaxLabels = 11; // 10 ButtonMap fields + 1 static D-pad label
+    DiagLabelEntry entries[kMaxLabels];
+    int count = 0;
     for (const auto& entry : kButtonMapLabels) {
         PhysicalInput input = bm.*entry.field;
         DiagAnchor anchor = GetDiagAnchorForInput(layout, imgX, imgY, imgW, imgH, input);
-        float midX = anchor.onRight ? (anchor.x + kDiagLabelOffsetPx) : (anchor.x - kDiagLabelOffsetPx);
         // Real glyph for the button this action is CURRENTLY bound to under the
         // previewed layout -- not the anchor's own fixed physical slot, so the icon
         // always matches what's actually drawn at that position for this preset.
         const char* iconAsset = GetControllerGlyphAssetName(input, g_modConfig.glyphStyle);
-        DrawDiagLabel(device, cacheIdx++, entry.label, iconAsset, nullptr,
-                        anchor.x, anchor.y, midX, anchor.y, anchor.onRight, scaleX, scaleY);
+        entries[count++] = { anchor.x, anchor.y, anchor.onRight, entry.label, iconAsset };
     }
     // D-pad isn't part of ButtonMap (its equipment/killstreak quick-select function
     // doesn't change between button layouts) and has no single representative glyph
     // (it's 4 separate directional binds), so this one label has no icon.
     float dpadX = imgX + layout.dpadX * imgW, dpadY = imgY + layout.dpadY * imgH;
-    DrawDiagLabel(device, cacheIdx++, "KILLSTREAKS", nullptr, nullptr,
-                    dpadX, dpadY, dpadX - kDiagLabelOffsetPx, dpadY, false, scaleX, scaleY);
+    entries[count++] = { dpadX, dpadY, false, "KILLSTREAKS", nullptr };
+
+    int leftIdx[kMaxLabels], rightIdx[kMaxLabels];
+    int leftN = 0, rightN = 0;
+    for (int i = 0; i < count; ++i) {
+        if (entries[i].onRight) rightIdx[rightN++] = i;
+        else leftIdx[leftN++] = i;
+    }
+    int cacheIdx = 0;
+    DrawStackedDiagLabels(device, entries, leftIdx, leftN, cacheIdx, scaleX, scaleY);
+    DrawStackedDiagLabels(device, entries, rightIdx, rightN, cacheIdx, scaleX, scaleY);
 }
 
 // Called from Hook_EndScene every frame. Draws the full custom menu when open --
