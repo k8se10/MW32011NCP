@@ -108,6 +108,18 @@ reverse-engineering trail behind each entry.
   compiler linked). Not yet live-tested. See `re_notes/known_issues.md` issue #66.
 
 ### Fixed
+- **Controller-glyph icons never appearing for non-English game languages, partially fixed.**
+  Community-reported (Nexus, v0.3.0): an Italian player never saw any controller
+  icons, in menus or gameplay. Root cause: several glyph-detection sites matched
+  the game's own on-screen, LOCALIZED text against a hardcoded English word
+  instead of a language-independent signal — e.g. the Reload reminder was only
+  recognized if its text was literally "Reload". Fixed for the Reload hint by
+  matching its already-known, distinct screen position instead of its text —
+  works regardless of UI language. Two related menu corner-hints (Quit,
+  Leaderboards) are suspected to have the same class of bug but are not yet
+  fixed — pinning them down safely needs a live capture from a non-English
+  client, not a guess at their translated text. See `re_notes/known_issues.md`
+  issue #68.
 - **Custom Options screen crash on open, fixed same day it shipped.** The
   first background-blur implementation called `GetSurfaceLevel` through the
   device's own vtable instead of the target texture's — a genuinely different
