@@ -9,7 +9,7 @@ reverse-engineering trail behind each entry.
 ## Unreleased
 
 ### Added
-- **Custom in-game options overlay — LIVE-CONFIRMED WORKING, invoked from the real pause menu's own "Options" button.** New
+- **Custom in-game options overlay, invoked from the real pause menu's own "Options" button.** New
   fully-drawn settings screen, invoked by drawing an extra "MW32011NCP
   Options" row below the real native `OPTIONS_LIST` menu's own last item via
   the existing overlay layer (the real menu's own item count/content is never
@@ -76,6 +76,19 @@ reverse-engineering trail behind each entry.
   etc.) — it now draws the actual Xbox 360/Xbox Modern/PlayStation glyph icon
   (matching the player's real `GlyphStyle` setting) before each label, same
   as every other button hint this project draws elsewhere in-game.
+
+  **Full visual restyle to match the real console screen, plus new Stick/Button
+  Layout drill-down screens.** Rebuilt against real console reference
+  screenshots: the panel is now a solid, edge-to-edge left-hand slab (not a
+  floating bordered box over a full-screen dim) with the live paused game
+  visible past its right edge, right-aligned labels with values sitting over
+  that game view, a real gradient highlight bar, an inline controller-glyph
+  icon on the focused row, a per-row description line, and a small corner
+  "Back" hint replacing the old full-width footer legend. Selecting Stick
+  Layout or Button Layout now opens a real sub-screen — its own option list
+  plus a schematic controller diagram with labeled leader lines that update
+  live per preset, reading the same real routing/button-map data the game
+  itself uses rather than a hand-authored label table. Not yet live-tested.
 
   See `re_notes/known_issues.md` issue #66 and
   `re_notes/options_menu_full_map.md` for the full research trail.

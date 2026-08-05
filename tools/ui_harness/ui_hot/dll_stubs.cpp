@@ -91,6 +91,35 @@ bool IsControllerActiveInputMethod()
     return false;
 }
 
+// Real definition (analog_input_hooks.cpp) wraps that file's own internal-linkage
+// RouteStickAxes, which this harness doesn't compile at all -- mirrors the SAME real
+// per-preset routing table directly (2026-08-05, Stick Layout drill-down diagram),
+// same "duplicated, not shared, harness-local answer" pattern as
+// GetControllerGlyphAssetName above. Keep in sync with analog_input_hooks.cpp's own
+// RouteStickAxes if that routing table ever changes.
+extern "C" void GetStickLayoutAxisSources(StickLayout layout, bool& moveXFromRight, bool& moveYFromRight,
+                                            bool& lookXFromRight, bool& lookYFromRight)
+{
+    switch (layout) {
+        case StickLayout::Southpaw:
+            moveXFromRight = true;  moveYFromRight = true;
+            lookXFromRight = false; lookYFromRight = false;
+            break;
+        case StickLayout::Legacy:
+            moveXFromRight = true;  moveYFromRight = false;
+            lookXFromRight = false; lookYFromRight = true;
+            break;
+        case StickLayout::LegacySouthpaw:
+            moveXFromRight = false; moveYFromRight = true;
+            lookXFromRight = true;  lookYFromRight = false;
+            break;
+        default: // Default
+            moveXFromRight = false; moveYFromRight = false;
+            lookXFromRight = true;  lookYFromRight = true;
+            break;
+    }
+}
+
 // Real definition (analog_input_hooks.cpp) has internal linkage there and is exposed
 // to overlay_hud.cpp via a small extern "C" wrapper of the same name -- this harness
 // mirrors that real switch table directly (2026-08-05, issue #66 follow-up: "the lack
