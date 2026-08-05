@@ -1962,12 +1962,17 @@ struct ControllerDiagramLayout {
 // re-calibrating too, since Xbox's original visual estimate for those doesn't
 // transfer (different photo, different padding/crop). All values below are the
 // crosshair-CONFIRMED positions, not the original guesses.
-// Xbox 360 (600x415 source photo).
+// Xbox 360 (600x415 source photo). LB/RB/LT/RT re-calibrated 2026-08-05 via the new
+// harness drag-and-export editor (tools/ui_harness/exported_diagram_layout.txt) --
+// the first anchors in this feature's whole history actually placed by looking at
+// the real rendered image and dragging, not reasoned about from a screenshot/script
+// after the fact. LS/RS/D-pad/A/B/X/Y also nudged slightly the same session (the
+// user dragged all 11, not just the ones previously flagged as wrong).
 constexpr ControllerDiagramLayout kDiagLayoutXbox360 = {
     "controller_body_xbox360", 600.0f / 415.0f,
-    0.183f, 0.277f,  0.583f, 0.542f,  0.325f, 0.554f,
-    0.840f, 0.369f,  0.877f, 0.260f,  0.718f, 0.270f,  0.755f, 0.161f,
-    0.30f, 0.05f,    0.68f, 0.05f,    0.30f, 0.015f,   0.68f, 0.015f,
+    0.202f, 0.272f,  0.651f, 0.529f,  0.349f, 0.529f,
+    0.796f, 0.376f,  0.876f, 0.267f,  0.714f, 0.270f,  0.802f, 0.154f,
+    0.151f, 0.047f,  0.865f, 0.059f,  0.222f, 0.000f,  0.747f, 0.000f,
 };
 // Xbox Series/Modern (620x620 source photo).
 constexpr ControllerDiagramLayout kDiagLayoutXboxModern = {
