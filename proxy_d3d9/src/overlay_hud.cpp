@@ -1971,7 +1971,7 @@ struct ControllerDiagramLayout {
 constexpr ControllerDiagramLayout kDiagLayoutXbox360 = {
     "controller_body_xbox360", 600.0f / 415.0f,
     0.202f, 0.272f,  0.651f, 0.529f,  0.349f, 0.529f,
-    0.796f, 0.376f,  0.876f, 0.267f,  0.714f, 0.270f,  0.802f, 0.154f,
+    0.796f, 0.376f,  0.876f, 0.241f,  0.718f, 0.284f,  0.802f, 0.154f,
     0.151f, 0.047f,  0.865f, 0.059f,  0.222f, 0.000f,  0.747f, 0.000f,
 };
 // Xbox Series/Modern (620x620 source photo).
@@ -2156,7 +2156,31 @@ LabelOverride g_stickLabelOverride[3][6] = {
     {}, // XboxModern -- no drag data yet
     {}, // PS4 -- no drag data yet
 };
-LabelOverride g_buttonLabelOverride[3][11];
+
+// Xbox 360 Button Layout page label positions, from the second harness drag session
+// (2026-08-05) -- only the 6 slots actually dragged are listed here; the rest stay
+// inactive (default-constructed, i.e. {0,0,false}) so they keep using the computed
+// per-side stacking algorithm (DrawStackedDiagLabels) until dragged too. Same
+// design-space-ABSOLUTE caveat as kStickLabelDefaultsXbox360 above.
+constexpr LabelOverride kButtonLabelDefaultsXbox360[11] = {
+    {}, {}, {}, {}, // 0=FIRE, 1=AIM DOWN SIGHT, 2=THROW FRAG, 3=THROW TACTICAL -- not dragged yet
+    { 1580.0f, 464.2f, true }, // 4: USE/RELOAD
+    { 1619.0f, 331.8f, true }, // 5: SWITCH WEAPON
+    { 1543.0f, 518.1f, true }, // 6: JUMP
+    { 1579.0f, 416.3f, true }, // 7: CROUCH/PRONE
+    {},                        // 8: SPRINT/BREATH -- not dragged yet
+    { 1471.0f, 572.1f, true }, // 9: MELEE/ZOOM
+    { 1105.0f, 567.0f, true }, // 10: KILLSTREAKS (D-pad)
+};
+
+LabelOverride g_buttonLabelOverride[3][11] = {
+    { kButtonLabelDefaultsXbox360[0], kButtonLabelDefaultsXbox360[1], kButtonLabelDefaultsXbox360[2],
+      kButtonLabelDefaultsXbox360[3], kButtonLabelDefaultsXbox360[4], kButtonLabelDefaultsXbox360[5],
+      kButtonLabelDefaultsXbox360[6], kButtonLabelDefaultsXbox360[7], kButtonLabelDefaultsXbox360[8],
+      kButtonLabelDefaultsXbox360[9], kButtonLabelDefaultsXbox360[10] },
+    {}, // XboxModern -- no drag data yet
+    {}, // PS4 -- no drag data yet
+};
 
 // A label's CURRENT drawn position (post-override) plus a pointer back to its own
 // override slot, so dragging can activate/update it directly. Built fresh each
