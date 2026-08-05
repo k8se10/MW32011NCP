@@ -108,21 +108,28 @@ reverse-engineering trail behind each entry.
   compiler linked). Not yet live-tested. See `re_notes/known_issues.md` issue #66.
 
 ### Fixed
-- **Controller-glyph icons never appearing for non-English game languages.**
-  Community-reported (Nexus, v0.3.0): an Italian player never saw any controller
-  icons, in menus or gameplay. Root cause: several glyph-detection sites matched
-  the game's own on-screen, LOCALIZED text against a hardcoded English word
-  instead of a language-independent signal — e.g. the Reload reminder was only
-  recognized if its text was literally "Reload", and the Quit/Leaderboards
-  corner-hints the same way. Properly fixed, not worked around: found and wired
-  in the game's own real localized-string resolver (`GetLocalizedString`,
-  confirmed via disassembly), so detection now compares against whatever text
-  the CURRENTLY ACTIVE game language actually renders — correct automatically
-  for every supported language, no per-language guessing. Separately confirmed
-  via decompile that keyboard/mouse key names (Space, Enter, F-keys, etc.) are
-  never translated by this engine at all, closing that remaining risk. Full
-  translation of this mod's OWN added text (Options screen labels, etc.) is a
-  distinct, much larger effort tracked separately. See `re_notes/known_issues.md`
+- **Controller-glyph icons never appearing for non-English game languages —
+  fixed and confirmed live.** Community-reported (Nexus, v0.3.0): an Italian
+  player never saw any controller icons, in menus or gameplay. Root cause:
+  several glyph-detection sites matched the game's own on-screen, LOCALIZED
+  text against a hardcoded English word instead of a language-independent
+  signal — e.g. the Reload reminder was only recognized if its text was
+  literally "Reload", and the Quit/Leaderboards corner-hints the same way.
+  Properly fixed, not worked around: found and wired in the game's own real
+  localized-string resolver (`GetLocalizedString`, confirmed via
+  disassembly), so detection now compares against whatever text the
+  CURRENTLY ACTIVE game language actually renders — correct automatically
+  for every supported language, no per-language guessing. Separately
+  confirmed via decompile that keyboard/mouse key names (Space, Enter,
+  F-keys, etc.) are never translated by this engine at all, closing that
+  remaining risk. **Confirmed live** after switching the game's language
+  locally to retest. **Known, deprioritized gap found during that retest**:
+  some menu glyph icons can land in a slightly wrong POSITION under other
+  languages (this project's own manual per-screen position tables were
+  calibrated against English text length) — icon SELECTION is correct,
+  only fine positioning on a few screens isn't yet. Full translation of
+  this mod's OWN added text (Options screen labels, etc.) is a distinct,
+  much larger effort tracked separately. See `re_notes/known_issues.md`
   issues #68 and #69.
 - **Custom Options screen crash on open, fixed same day it shipped.** The
   first background-blur implementation called `GetSurfaceLevel` through the
