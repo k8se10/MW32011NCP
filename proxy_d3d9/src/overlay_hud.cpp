@@ -2013,11 +2013,13 @@ void DrawDiagLabel(void* device, int cacheIndex, const char* text, const char* i
 {
     if (cacheIndex < 0 || cacheIndex >= 16) return;
     DrawDiagLeader(device, anchorX, anchorY, midX, labelY, scaleX, scaleY);
-    constexpr int kLabelFontHeightPx = 20;
+    // Bumped 2026-08-05 (live feedback: "text should be larger and more vertically
+    // spaced out") -- 20px/22px read too small/cramped once actually laid out.
+    constexpr int kLabelFontHeightPx = 26;
     constexpr DWORD kLabelColor = 0xFFE0E0E0u;
-    constexpr float kIconSize = 22.0f;
-    constexpr float kIconGapPx = 4.0f;
-    constexpr float kIconTextGapPx = 8.0f;
+    constexpr float kIconSize = 28.0f;
+    constexpr float kIconGapPx = 5.0f;
+    constexpr float kIconTextGapPx = 10.0f;
 
     // Icon texture lookup is cached (GetOrLoadGlyphIconTexture), so measuring here and
     // drawing separately below costs nothing extra after the first frame.
@@ -2055,12 +2057,12 @@ void DrawDiagLabel(void* device, int cacheIndex, const char* text, const char* i
 // Reserved diagram area, design space -- sized/positioned (2026-08-05 follow-up) so
 // the longest label (icon + text) on EITHER side clears the screen edge, not just the
 // image itself: panel ends at x=672, screen ends at x=1920, leaving 1248px split into
-// a left label zone (672-1000=328px), the image box itself (560px), and a right label
-// zone (1920-1560=360px) -- both comfortably fit this diagram's longest real label
-// ("SPRINT/BREATH" plus its icon, ~180px) with room to spare, unlike the original
-// pass's 900px-wide box + 170px offset, which pushed right-side text well past 1920.
-constexpr float kDiagBoxX = 1000.0f, kDiagBoxY = 280.0f;
-constexpr float kDiagBoxMaxW = 560.0f, kDiagBoxMaxH = 480.0f; // available space the real image is fit into, preserving its own aspect ratio
+// a left label zone (672-1030=358px), the image box itself (510px), and a right label
+// zone (1920-1540=380px). Widened again the same day after the label font itself grew
+// (20px->26px, "text should be larger") -- the box shrank slightly (560->510) to give
+// both zones more room back under the bigger font.
+constexpr float kDiagBoxX = 1030.0f, kDiagBoxY = 280.0f;
+constexpr float kDiagBoxMaxW = 510.0f, kDiagBoxMaxH = 480.0f; // available space the real image is fit into, preserving its own aspect ratio
 constexpr float kDiagLabelOffsetPx = 100.0f; // leader-line elbow distance from its anchor, reduced from 170 for the same reason
 
 // Draws the real controller-body photo for the player's current GlyphStyle, fit
@@ -2112,12 +2114,16 @@ void DrawOneStickLabels(void* device, float stickX, float stickY, bool isRightSi
     // longer needs to spell it out.
     const char* midLabel = horizontalIsMove ? "STRAFE" : "ROTATE";
     float midX = isRightSide ? (stickX + kDiagLabelOffsetPx) : (stickX - kDiagLabelOffsetPx);
+    // Vertical spacing widened 2026-08-05 (live feedback: "more vertically spaced
+    // out") -- 50/90 was tuned for the smaller 20px label font, too tight once that
+    // grew to 26px.
+    constexpr float kStickLabelAnchorSpread = 70.0f, kStickLabelTextSpread = 130.0f;
     DrawDiagLabel(device, cacheIdx++, topLabel, upAsset, nullptr,
-                    stickX, stickY - 50.0f, midX, stickY - 90.0f, isRightSide, scaleX, scaleY);
+                    stickX, stickY - kStickLabelAnchorSpread, midX, stickY - kStickLabelTextSpread, isRightSide, scaleX, scaleY);
     DrawDiagLabel(device, cacheIdx++, midLabel, leftAsset, rightAsset,
                     stickX, stickY, midX, stickY, isRightSide, scaleX, scaleY);
     DrawDiagLabel(device, cacheIdx++, bottomLabel, downAsset, nullptr,
-                    stickX, stickY + 50.0f, midX, stickY + 90.0f, isRightSide, scaleX, scaleY);
+                    stickX, stickY + kStickLabelAnchorSpread, midX, stickY + kStickLabelTextSpread, isRightSide, scaleX, scaleY);
 }
 
 void DrawStickLayoutDiagram(void* device, float scaleX, float scaleY, StickLayout previewLayout)
