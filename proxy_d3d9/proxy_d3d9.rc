@@ -66,6 +66,15 @@ xboxmodern_view RCDATA "..\\assets\\button_glyphs\\xboxmodern_view.png"
 xboxmodern_x RCDATA "..\\assets\\button_glyphs\\xboxmodern_x.png"
 xboxmodern_y RCDATA "..\\assets\\button_glyphs\\xboxmodern_y.png"
 
+// Real controller-body reference photos (issue #66 restyle, 2026-08-05) -- user-
+// supplied, background-removed/alpha-corrected product photos of each supported
+// GlyphStyle's real controller, used as the Stick/Button Layout drill-down screen's
+// diagram background instead of the earlier procedurally-drawn circle/rect schematic.
+// Same RCDATA/bareword-name embedding convention as the button glyphs above.
+controller_body_xbox360 RCDATA "..\\assets\\controller_diagrams\\xbox360_controller_base.png"
+controller_body_xboxmodern RCDATA "..\\assets\\controller_diagrams\\xboxmodern_controller_base.png"
+controller_body_ps4 RCDATA "..\\assets\\controller_diagrams\\ps4_controller_base.png"
+
 // Custom mouse cursor (2026-08-01) -- replaces the native software cursor so it
 // draws correctly on top of this project's own glyph overlays (this project's
 // redraw happens at end-of-frame, after the native cursor's own draw call, so the
