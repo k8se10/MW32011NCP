@@ -21,9 +21,13 @@ mw3ncp_config.ini
 # dev sessions) -- personal working notes, not a project doc, never meant to be committed.
 notes.txt
 
-# Build outputs for dev-only test tools (not shipped, not part of the mod).
-# Double-star so this also covers nested sub-projects (e.g. tools/ui_harness/ui_hot/bin/),
-# not just one level deep.
+# Build OUTPUTS ONLY for dev-only tools under tools/ -- these tools are not shipped
+# with the mod itself, but their SOURCE is real, tracked, committed code (ui_harness
+# in particular is a genuine standalone app with real ongoing development value, not
+# a disposable script -- only its compiled .exe/.dll/.obj are excluded here, same
+# "source tracked, build output ignored" policy this repo already applies to
+# proxy_d3d9 itself). Double-star so this also covers nested sub-projects (e.g.
+# tools/ui_harness/ui_hot/bin/), not just one level deep.
 tools/**/bin/
 tools/**/obj/
 vcontroller_sim.exe
