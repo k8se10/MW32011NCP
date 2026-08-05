@@ -1668,59 +1668,6 @@ bool EnsureWhiteTexture(void* device)
     return true;
 }
 
-// Soft-edged white circle (tinted via diffuse color at draw time, same convention as
-// the white texture above) -- issue #66 restyle (2026-08-05), for the Stick/Button
-// Layout drill-down screen's schematic controller diagram (sticks/face buttons/D-pad
-// drawn as tinted circles, since this project has no real controller-body art asset
-// to draw from -- see that screen's own header comment for why this is a simplified
-// schematic rather than a literal recreation of the reference screenshot's photoreal
-// controller render). Generated once into a small fixed-size texture and cached,
-// same pattern as every other texture in this file.
-void* g_optCircleTexture = nullptr;
-constexpr int kCircleTextureSize = 64;
-
-bool EnsureCircleTexture(void* device)
-{
-    if (g_optCircleTexture) return true;
-    void** deviceVtbl = *reinterpret_cast<void***>(device);
-    auto createTexture = reinterpret_cast<CreateTexture_t>(deviceVtbl[kCreateTextureVtableIndex]);
-    HRESULT hr = createTexture(device, kCircleTextureSize, kCircleTextureSize, 1, 0, kD3DFMT_A8R8G8B8,
-                                 kD3DPOOL_MANAGED, &g_optCircleTexture, nullptr);
-    if (FAILED(hr) || !g_optCircleTexture) { g_optCircleTexture = nullptr; return false; }
-
-    void** texVtbl = *reinterpret_cast<void***>(g_optCircleTexture);
-    auto getSurfaceLevel = reinterpret_cast<GetSurfaceLevel_t>(texVtbl[kGetSurfaceLevelVtableIndex]);
-    void* surface = nullptr;
-    if (FAILED(getSurfaceLevel(g_optCircleTexture, 0, &surface)) || !surface) return false;
-    void** surfaceVtbl = *reinterpret_cast<void***>(surface);
-    auto lockRect = reinterpret_cast<SurfaceLockRect_t>(surfaceVtbl[kSurfaceLockRectVtableIndex]);
-    auto unlockRect = reinterpret_cast<SurfaceUnlockRect_t>(surfaceVtbl[kSurfaceUnlockRectVtableIndex]);
-    auto releaseSurface = reinterpret_cast<Release_t>(surfaceVtbl[kSurfaceReleaseVtableIndex]);
-    LockedRect locked = {};
-    if (SUCCEEDED(lockRect(surface, &locked, nullptr, 0)) && locked.pBits) {
-        const float center = (kCircleTextureSize - 1) * 0.5f;
-        const float radius = kCircleTextureSize * 0.5f;
-        for (int py = 0; py < kCircleTextureSize; ++py) {
-            DWORD* rowPixels = reinterpret_cast<DWORD*>(static_cast<BYTE*>(locked.pBits) + py * locked.Pitch);
-            for (int px = 0; px < kCircleTextureSize; ++px) {
-                float dx = static_cast<float>(px) - center;
-                float dy = static_cast<float>(py) - center;
-                float dist = sqrtf(dx * dx + dy * dy);
-                // 1.5px antialiased edge -- avoids a jagged circle outline once scaled
-                // up on screen.
-                float alpha = 1.0f - (dist - (radius - 1.5f)) / 1.5f;
-                if (alpha > 1.0f) alpha = 1.0f;
-                if (alpha < 0.0f) alpha = 0.0f;
-                DWORD a = static_cast<DWORD>(alpha * 255.0f);
-                rowPixels[px] = (a << 24) | 0x00FFFFFFu;
-            }
-        }
-        unlockRect(surface);
-    }
-    releaseSurface(surface);
-    return true;
-}
-
 void FormatOptRowValue(const OptRow& row, char* outBuf, size_t outBufSize)
 {
     switch (row.kind) {
@@ -1962,35 +1909,76 @@ void DrawOptRightAlignedText(void* device, TextTexCache& cache, const char* text
 // Real console reference screenshots (project owner-supplied) show Stick Layout and
 // Button Layout as their own sub-screens: a vertical option list on the left, and a
 // live controller render on the right with labeled leader lines that update per the
-// highlighted preset. This is a SIMPLIFIED SCHEMATIC of that, not a literal
-// recreation -- this project has no real controller-body art asset (assets/
-// button_glyphs/ is individual button icons only), so the body/sticks/buttons are
-// drawn as tinted circles/rects (EnsureCircleTexture) in roughly real proportions,
-// and leader lines are axis-aligned elbow connectors rather than the reference's
-// diagonal lines (this renderer has no rotated-quad support). The DATA behind the
-// labels is real, not approximated: GetStickLayoutAxisSources wraps this project's
-// own live RouteStickAxes routing, and ResolveButtonMap is the same real function
-// InjectControllerButtons itself resolves against -- both read directly rather than
-// hand-duplicated, so this can never drift out of sync with actual gameplay behavior.
-constexpr float kDiagOriginX = 1180.0f, kDiagOriginY = 560.0f;
-constexpr float kDiagLSX = kDiagOriginX - 40.0f,  kDiagLSY = kDiagOriginY - 60.0f;
-constexpr float kDiagDpadX = kDiagOriginX - 40.0f, kDiagDpadY = kDiagOriginY + 160.0f;
-constexpr float kDiagRSX = kDiagOriginX + 340.0f, kDiagRSY = kDiagOriginY + 140.0f;
-constexpr float kDiagYX = kDiagOriginX + 300.0f, kDiagYY = kDiagOriginY - 140.0f;
-constexpr float kDiagXX = kDiagOriginX + 220.0f, kDiagXY = kDiagOriginY - 60.0f;
-constexpr float kDiagBX = kDiagOriginX + 380.0f, kDiagBY = kDiagOriginY - 60.0f;
-constexpr float kDiagAX = kDiagOriginX + 300.0f, kDiagAY = kDiagOriginY + 20.0f;
-constexpr float kDiagLBX = kDiagOriginX - 40.0f, kDiagLBY = kDiagOriginY - 220.0f;
-constexpr float kDiagLTX = kDiagLBX, kDiagLTY = kDiagLBY - 50.0f;
-constexpr float kDiagRBX = kDiagOriginX + 300.0f, kDiagRBY = kDiagOriginY - 220.0f;
-constexpr float kDiagRTX = kDiagRBX, kDiagRTY = kDiagRBY - 50.0f;
-constexpr float kDiagStickRadius = 60.0f, kDiagFaceRadius = 30.0f, kDiagDpadRadius = 46.0f;
+// highlighted preset. **2026-08-05, upgraded from a procedural circle/rect schematic
+// to real controller-body reference photos** (project owner supplied one real,
+// alpha-corrected product photo per supported GlyphStyle: Xbox 360, Xbox Modern,
+// PlayStation -- `assets/controller_diagrams/`, embedded the same RCDATA way as the
+// button glyphs). Leader lines are still pure axis-aligned elbow connectors (this
+// renderer has no rotated-quad support), a deliberate simplification of the
+// reference's diagonal lines. The label DATA is real, not approximated:
+// GetStickLayoutAxisSources wraps this project's own live RouteStickAxes routing,
+// and ResolveButtonMap is the same real function InjectControllerButtons itself
+// resolves against -- both read directly rather than hand-duplicated, so this can
+// never drift out of sync with actual gameplay behavior.
+//
+// Anchor positions are per-image FRACTIONS (0..1) of that image's own width/height,
+// not absolute screen coordinates -- necessary since the three real photos have
+// different aspect ratios and button layouts (PS4's DualShock puts both sticks in
+// the lower half with D-pad/face-buttons above, unlike the Xbox family's
+// upper-left-stick layout). Face-button fractions were derived by literally
+// colorsampling each image for its real button colors (Xbox 360/Modern's solid-fill
+// Y/X/B/A) or estimated visually where color-sampling wasn't reliable (PS4's thin
+// line-art icons, and every controller's sticks/D-pad/shoulders, which are all the
+// same dark tone as the body) -- flagged here as a first-pass estimate needing
+// live/screenshot calibration, same standing convention as every other on-screen
+// position in this feature's history.
+struct ControllerDiagramLayout {
+    const char* imageAssetName;
+    float aspect; // image width / height -- used to size the drawn quad without distortion
+    float lsX, lsY, rsX, rsY, dpadX, dpadY;
+    float aX, aY, bX, bY, xX, xY, yX, yY;
+    float lbX, lbY, rbX, rbY, ltX, ltY, rtX, rtY;
+};
 
-void DrawDiagCircle(void* device, float cx, float cy, float radius, DWORD color, float scaleX, float scaleY)
+// Xbox 360 (600x415 source photo) -- face-button fractions from real color-sampled
+// pixel centroids (A derived via diamond symmetry from the other three, which
+// color-sampled cleanly); LS/RS/D-pad/shoulders are visual estimates.
+constexpr ControllerDiagramLayout kDiagLayoutXbox360 = {
+    "controller_body_xbox360", 600.0f / 415.0f,
+    0.183f, 0.277f,  0.583f, 0.542f,  0.325f, 0.554f,
+    0.840f, 0.369f,  0.877f, 0.260f,  0.718f, 0.270f,  0.755f, 0.161f,
+    0.20f, 0.04f,    0.80f, 0.04f,    0.20f, 0.01f,    0.80f, 0.01f,
+};
+// Xbox Series/Modern (620x620 source photo) -- same derivation as above; face
+// buttons color-sampled cleanly on all four (no symmetry estimate needed).
+constexpr ControllerDiagramLayout kDiagLayoutXboxModern = {
+    "controller_body_xboxmodern", 1.0f,
+    0.242f, 0.355f,  0.629f, 0.532f,  0.315f, 0.532f,
+    0.740f, 0.423f,  0.803f, 0.361f,  0.676f, 0.360f,  0.739f, 0.290f,
+    0.20f, 0.14f,    0.80f, 0.14f,    0.20f, 0.09f,    0.80f, 0.09f,
+};
+// DualShock 4 / PS4 (447x447 source photo) -- structurally different layout from the
+// Xbox family (both sticks sit in the LOWER half; D-pad and face buttons are upper).
+// Field names stay generic (aX/bX/xX/yX etc, matching PhysicalInput's own naming) but
+// hold each REAL PlayStation button's position at the same diamond direction as its
+// Xbox counterpart (x=Square/west, y=Triangle/north, b=Circle/east, a=Cross/south --
+// Sony's diamond is rotationally identical to Xbox's, just different symbols/colors,
+// confirmed by literal color-sampling). No separate L2/R2 vs L1/R1 could be
+// distinguished in this front-on photo -- LT/RT reuse LB/RB's own position.
+constexpr ControllerDiagramLayout kDiagLayoutPS4 = {
+    "controller_body_ps4", 1.0f,
+    0.219f, 0.620f,  0.600f, 0.620f,  0.219f, 0.320f,
+    0.772f, 0.450f,  0.839f, 0.371f,  0.694f, 0.371f,  0.772f, 0.293f,
+    0.15f, 0.08f,    0.85f, 0.08f,    0.15f, 0.08f,    0.85f, 0.08f,
+};
+
+const ControllerDiagramLayout& GetDiagLayout(GlyphStyle style)
 {
-    if (!EnsureCircleTexture(device)) return;
-    DrawGenericTexturedQuad(device, g_optCircleTexture, (cx - radius) * scaleX, (cy - radius) * scaleY,
-                              radius * 2.0f * scaleX, radius * 2.0f * scaleY, color);
+    switch (style) {
+        case GlyphStyle::XboxModern:  return kDiagLayoutXboxModern;
+        case GlyphStyle::PlayStation: return kDiagLayoutPS4;
+        default:                      return kDiagLayoutXbox360;
+    }
 }
 
 // Pure axis-aligned elbow leader line (horizontal segment at anchorY out to midX,
@@ -2024,22 +2012,26 @@ void DrawDiagLabel(void* device, int cacheIndex, const char* text, float anchorX
     }
 }
 
-// Draws the dim, non-highlighted parts of the schematic (everything the CURRENT
-// diagram type doesn't itself label) so the shape reads as "a controller" rather
-// than a couple of disconnected circles -- shared by both diagram types.
-void DrawDiagBody(void* device, float scaleX, float scaleY)
+constexpr float kDiagBoxX = 900.0f, kDiagBoxY = 260.0f;       // top-left of the reserved diagram area, design space
+constexpr float kDiagBoxMaxW = 900.0f, kDiagBoxMaxH = 560.0f; // available space the real image is fit into, preserving its own aspect ratio
+
+// Draws the real controller-body photo for the player's current GlyphStyle, fit
+// (letterboxed, not stretched) into the reserved diagram box. Returns the actual
+// on-screen rect it was drawn into so the caller can convert the layout's own
+// per-image fractional anchors into real screen coordinates.
+bool DrawControllerBodyImage(void* device, float scaleX, float scaleY, const ControllerDiagramLayout& layout,
+                               float& outX, float& outY, float& outW, float& outH)
 {
-    DrawDiagCircle(device, kDiagYX, kDiagYY, kDiagFaceRadius, 0xFF806000u, scaleX, scaleY);
-    DrawDiagCircle(device, kDiagXX, kDiagXY, kDiagFaceRadius, 0xFF1F4E99u, scaleX, scaleY);
-    DrawDiagCircle(device, kDiagBX, kDiagBY, kDiagFaceRadius, 0xFF992222u, scaleX, scaleY);
-    DrawDiagCircle(device, kDiagAX, kDiagAY, kDiagFaceRadius, 0xFF227722u, scaleX, scaleY);
-    DrawDiagCircle(device, kDiagDpadX, kDiagDpadY, kDiagDpadRadius, 0xFF303030u, scaleX, scaleY);
-    DrawGenericTexturedQuad(device, g_optWhiteTexture, (kDiagLBX - 40.0f) * scaleX, (kDiagLBY - 14.0f) * scaleY, 80.0f * scaleX, 28.0f * scaleY, 0xFF303030u);
-    DrawGenericTexturedQuad(device, g_optWhiteTexture, (kDiagRBX - 40.0f) * scaleX, (kDiagRBY - 14.0f) * scaleY, 80.0f * scaleX, 28.0f * scaleY, 0xFF303030u);
-    DrawGenericTexturedQuad(device, g_optWhiteTexture, (kDiagLTX - 40.0f) * scaleX, (kDiagLTY - 14.0f) * scaleY, 80.0f * scaleX, 28.0f * scaleY, 0xFF404040u);
-    DrawGenericTexturedQuad(device, g_optWhiteTexture, (kDiagRTX - 40.0f) * scaleX, (kDiagRTY - 14.0f) * scaleY, 80.0f * scaleX, 28.0f * scaleY, 0xFF404040u);
-    DrawDiagCircle(device, kDiagLSX, kDiagLSY, kDiagStickRadius, 0xFF454545u, scaleX, scaleY);
-    DrawDiagCircle(device, kDiagRSX, kDiagRSY, kDiagStickRadius, 0xFF454545u, scaleX, scaleY);
+    void* tex = nullptr; int texW = 0, texH = 0;
+    if (!GetOrLoadGlyphIconTexture(device, layout.imageAssetName, tex, texW, texH) || texH <= 0) return false;
+    float w = kDiagBoxMaxW, h = kDiagBoxMaxW / layout.aspect;
+    if (h > kDiagBoxMaxH) { h = kDiagBoxMaxH; w = kDiagBoxMaxH * layout.aspect; }
+    outX = kDiagBoxX + (kDiagBoxMaxW - w) * 0.5f;
+    outY = kDiagBoxY + (kDiagBoxMaxH - h) * 0.5f;
+    outW = w;
+    outH = h;
+    DrawGenericTexturedQuad(device, tex, outX * scaleX, outY * scaleY, w * scaleX, h * scaleY);
+    return true;
 }
 
 // Both sticks always carry exactly 3 label lines each, for every StickLayout preset
@@ -2047,6 +2039,11 @@ void DrawDiagBody(void* device, float scaleX, float scaleY)
 // sticks, and so are moveX/lookX, so each stick gets exactly one 2-line vertical
 // group -- Forward/Back or Look Up/Down -- plus one 1-line horizontal group --
 // Strafe or Rotate). This function draws whichever combination applies to ONE stick.
+// isRightSide does double duty -- both "is this the physical RIGHT stick" (semantic,
+// for the routing lookup) and "should the label extend rightward on screen"
+// (visual) -- true for every one of this project's 3 real reference photos (RS
+// always sits right-of-center, LS always left-of-center in all of them), so this is
+// safe in practice, not just a coincidence of the original procedural layout.
 void DrawOneStickLabels(void* device, float stickX, float stickY, bool isRightSide,
                           bool moveYFromRight, bool moveXFromRight, int& cacheIdx, float scaleX, float scaleY)
 {
@@ -2063,30 +2060,39 @@ void DrawOneStickLabels(void* device, float stickX, float stickY, bool isRightSi
 
 void DrawStickLayoutDiagram(void* device, float scaleX, float scaleY, StickLayout previewLayout)
 {
-    DrawDiagBody(device, scaleX, scaleY);
+    const ControllerDiagramLayout& layout = GetDiagLayout(g_modConfig.glyphStyle);
+    float imgX = 0.0f, imgY = 0.0f, imgW = 0.0f, imgH = 0.0f;
+    if (!DrawControllerBodyImage(device, scaleX, scaleY, layout, imgX, imgY, imgW, imgH)) return;
+
+    float lsX = imgX + layout.lsX * imgW, lsY = imgY + layout.lsY * imgH;
+    float rsX = imgX + layout.rsX * imgW, rsY = imgY + layout.rsY * imgH;
+
     bool moveXFromRight = false, moveYFromRight = false, lookXFromRight = false, lookYFromRight = false;
     GetStickLayoutAxisSources(previewLayout, moveXFromRight, moveYFromRight, lookXFromRight, lookYFromRight);
     int cacheIdx = 0;
-    DrawOneStickLabels(device, kDiagLSX, kDiagLSY, false, moveYFromRight, moveXFromRight, cacheIdx, scaleX, scaleY);
-    DrawOneStickLabels(device, kDiagRSX, kDiagRSY, true,  moveYFromRight, moveXFromRight, cacheIdx, scaleX, scaleY);
+    DrawOneStickLabels(device, lsX, lsY, false, moveYFromRight, moveXFromRight, cacheIdx, scaleX, scaleY);
+    DrawOneStickLabels(device, rsX, rsY, true,  moveYFromRight, moveXFromRight, cacheIdx, scaleX, scaleY);
 }
 
 struct DiagAnchor { float x, y; bool onRight; };
 
-DiagAnchor GetDiagAnchorForInput(PhysicalInput input)
+// onRight reflects each REAL button's actual on-screen half in every one of this
+// project's 3 reference photos (all four face buttons and RS sit right-of-center;
+// LS/D-pad/LB/LT sit left-of-center) -- not an arbitrary per-button choice.
+DiagAnchor GetDiagAnchorForInput(const ControllerDiagramLayout& layout, float imgX, float imgY, float imgW, float imgH, PhysicalInput input)
 {
     switch (input) {
-        case PhysicalInput::RT: return { kDiagRTX, kDiagRTY, true };
-        case PhysicalInput::LT: return { kDiagLTX, kDiagLTY, false };
-        case PhysicalInput::RB: return { kDiagRBX, kDiagRBY, true };
-        case PhysicalInput::LB: return { kDiagLBX, kDiagLBY, false };
-        case PhysicalInput::X:  return { kDiagXX, kDiagXY, false };
-        case PhysicalInput::Y:  return { kDiagYX, kDiagYY, true };
-        case PhysicalInput::A:  return { kDiagAX, kDiagAY, true };
-        case PhysicalInput::B:  return { kDiagBX, kDiagBY, true };
-        case PhysicalInput::LS: return { kDiagLSX, kDiagLSY, false };
-        case PhysicalInput::RS: return { kDiagRSX, kDiagRSY, true };
-        default: return { kDiagOriginX, kDiagOriginY, true };
+        case PhysicalInput::RT: return { imgX + layout.rtX * imgW, imgY + layout.rtY * imgH, true };
+        case PhysicalInput::LT: return { imgX + layout.ltX * imgW, imgY + layout.ltY * imgH, false };
+        case PhysicalInput::RB: return { imgX + layout.rbX * imgW, imgY + layout.rbY * imgH, true };
+        case PhysicalInput::LB: return { imgX + layout.lbX * imgW, imgY + layout.lbY * imgH, false };
+        case PhysicalInput::X:  return { imgX + layout.xX * imgW,  imgY + layout.xY * imgH,  true };
+        case PhysicalInput::Y:  return { imgX + layout.yX * imgW,  imgY + layout.yY * imgH,  true };
+        case PhysicalInput::A:  return { imgX + layout.aX * imgW,  imgY + layout.aY * imgH,  true };
+        case PhysicalInput::B:  return { imgX + layout.bX * imgW,  imgY + layout.bY * imgH,  true };
+        case PhysicalInput::LS: return { imgX + layout.lsX * imgW, imgY + layout.lsY * imgH, false };
+        case PhysicalInput::RS: return { imgX + layout.rsX * imgW, imgY + layout.rsY * imgH, true };
+        default: return { imgX + imgW * 0.5f, imgY + imgH * 0.5f, true };
     }
 }
 
@@ -2106,17 +2112,21 @@ constexpr ButtonMapLabelEntry kButtonMapLabels[] = {
 
 void DrawButtonLayoutDiagram(void* device, float scaleX, float scaleY, ButtonLayout previewLayout)
 {
-    DrawDiagBody(device, scaleX, scaleY);
+    const ControllerDiagramLayout& layout = GetDiagLayout(g_modConfig.glyphStyle);
+    float imgX = 0.0f, imgY = 0.0f, imgW = 0.0f, imgH = 0.0f;
+    if (!DrawControllerBodyImage(device, scaleX, scaleY, layout, imgX, imgY, imgW, imgH)) return;
+
     ButtonMap bm = ResolveButtonMap(previewLayout, g_modConfig.flipTriggers);
     int cacheIdx = 0;
     for (const auto& entry : kButtonMapLabels) {
-        DiagAnchor anchor = GetDiagAnchorForInput(bm.*entry.field);
+        DiagAnchor anchor = GetDiagAnchorForInput(layout, imgX, imgY, imgW, imgH, bm.*entry.field);
         float midX = anchor.onRight ? (anchor.x + 170.0f) : (anchor.x - 170.0f);
         DrawDiagLabel(device, cacheIdx++, entry.label, anchor.x, anchor.y, midX, anchor.y, anchor.onRight, scaleX, scaleY);
     }
     // D-pad isn't part of ButtonMap (its equipment/killstreak quick-select function
     // doesn't change between button layouts), so this one label is static.
-    DrawDiagLabel(device, cacheIdx++, "EQUIPMENT / KILLSTREAKS", kDiagDpadX, kDiagDpadY, kDiagDpadX - 170.0f, kDiagDpadY, false, scaleX, scaleY);
+    float dpadX = imgX + layout.dpadX * imgW, dpadY = imgY + layout.dpadY * imgH;
+    DrawDiagLabel(device, cacheIdx++, "EQUIPMENT / KILLSTREAKS", dpadX, dpadY, dpadX - 170.0f, dpadY, false, scaleX, scaleY);
 }
 
 // Called from Hook_EndScene every frame. Draws the full custom menu when open --

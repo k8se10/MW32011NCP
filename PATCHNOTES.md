@@ -86,9 +86,12 @@ reverse-engineering trail behind each entry.
   icon on the focused row, a per-row description line, and a small corner
   "Back" hint replacing the old full-width footer legend. Selecting Stick
   Layout or Button Layout now opens a real sub-screen — its own option list
-  plus a schematic controller diagram with labeled leader lines that update
-  live per preset, reading the same real routing/button-map data the game
-  itself uses rather than a hand-authored label table. Not yet live-tested.
+  plus a controller diagram with labeled leader lines that update live per
+  preset, reading the same real routing/button-map data the game itself
+  uses rather than a hand-authored label table. The diagram now uses a real
+  product photo of the player's actual controller type (Xbox 360/Xbox
+  Modern/PlayStation, matching `GlyphStyle`) instead of a procedural
+  circle-and-rect schematic. Not yet live-tested.
 
   See `re_notes/known_issues.md` issue #66 and
   `re_notes/options_menu_full_map.md` for the full research trail.
