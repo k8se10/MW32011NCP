@@ -2132,7 +2132,30 @@ void DrawAndEditDiagramAnchors(void* device, ControllerDiagramLayout& layout, fl
 // button labels) -- unchanged fallback behavior, same "mutable live copy, shipped
 // defaults untouched until an explicit export" model as the sprite anchors.
 struct LabelOverride { float x = 0.0f, y = 0.0f; bool active = false; };
-LabelOverride g_stickLabelOverride[3][6];
+
+// Xbox 360 Stick Layout page label positions, baked in from the first real harness
+// drag session (2026-08-05) -- design-space ABSOLUTE (x,y), tied to the diagram
+// box's current fixed position/size (kDiagBoxX/Y/kDiagBoxMaxW/H, declared further
+// below in this same file) --
+// unlike the sprite anchors (stored as fractions of the image rect, so they're
+// independent of where the box sits on screen), these will need recalibrating via
+// the same harness editor if the box's own position/size ever changes. Xbox Modern
+// and PS4 have no drag data yet -- both stay all-inactive (computed default).
+constexpr LabelOverride kStickLabelDefaultsXbox360[6] = {
+    { 1019.0f, 364.4f, true }, // LS top (Move Forward/Look Up)
+    { 966.0f,  438.7f, true }, // LS mid (Strafe/Rotate)
+    { 1020.0f, 503.9f, true }, // LS bottom (Move Back/Look Down)
+    { 1556.0f, 448.9f, true }, // RS top (Move Forward/Look Up)
+    { 1589.0f, 529.3f, true }, // RS mid (Strafe/Rotate)
+    { 1557.0f, 602.6f, true }, // RS bottom (Move Back/Look Down)
+};
+
+LabelOverride g_stickLabelOverride[3][6] = {
+    { kStickLabelDefaultsXbox360[0], kStickLabelDefaultsXbox360[1], kStickLabelDefaultsXbox360[2],
+      kStickLabelDefaultsXbox360[3], kStickLabelDefaultsXbox360[4], kStickLabelDefaultsXbox360[5] },
+    {}, // XboxModern -- no drag data yet
+    {}, // PS4 -- no drag data yet
+};
 LabelOverride g_buttonLabelOverride[3][11];
 
 // A label's CURRENT drawn position (post-override) plus a pointer back to its own
