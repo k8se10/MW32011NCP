@@ -2621,11 +2621,33 @@ extern "C" void __cdecl InjectControllerMenuNav()
     // Options (real action: `open pc_options_video_ingame; close pausedmenu`). We
     // intercept exactly that button+press combination, one level higher than the
     // old design -- the real Options screen is never entered at all in this flow.
+    // pausedmenu.menu is the ONE real asset both Campaign's and Survival's in-game
+    // pause use (confirmed -- no separate per-mode pause menu exists), so this
+    // single check already covers "any in-game pause."
+    //
+    // EXTENDED 2026-08-05 (live-reported: "options should work from any in game
+    // options prompt") -- traced every real `open pc_options_video[_ingame]` call
+    // site across the extracted .menu dump, not just the one already known. Two more
+    // real entry points exist, both on the MAIN MENU (not in-game, but still a real
+    // "Options" prompt a player can reach): `main_campaign.menu`'s own Options button
+    // (group "CAMPAIGN_BUTTON_LIST", index 3, confirmed via its
+    // `ui_buttonNavGroupCurrent 3`/`open pc_options_video;` action block) and
+    // `main_specops.menu`'s own Options button (group "SPECOPS_BUTTON_LIST", index 5,
+    // same confirmation method) -- Special Ops is this game's real internal name for
+    // the Campaign/Survival hub screen. No multiplayer main-menu asset exists in this
+    // extracted dump at all (likely lives in a different, un-extracted fastfile) --
+    // not checked either way, and out of scope regardless per CLAUDE.md's SP/Survival
+    // focus. Every OTHER `open pc_options_video` call site found in the dump is purely internal
+    // tab-switching within the options screen itself (Video<->Audio<->Controls etc.),
+    // not a new external entry point, so intentionally not added here.
     char focusedGroup[128] = {};
     int focusedIndex = -1, siblingCount = -1;
     bool haveFocus = TryGetRealFocusedGroupAndIndex(focusedGroup, sizeof(focusedGroup), focusedIndex, siblingCount);
     bool onPauseMenuOptionsButton = haveFocus && _stricmp(focusedGroup, "PAUSE_LIST") == 0 && focusedIndex == 1;
-    bool openOptionsRequestedEdge = onPauseMenuOptionsButton && selectEdge && g_modConfig.useCustomOptionsScreen;
+    bool onCampaignMenuOptionsButton = haveFocus && _stricmp(focusedGroup, "CAMPAIGN_BUTTON_LIST") == 0 && focusedIndex == 3;
+    bool onSpecOpsMenuOptionsButton = haveFocus && _stricmp(focusedGroup, "SPECOPS_BUTTON_LIST") == 0 && focusedIndex == 5;
+    bool onAnyRealOptionsButton = onPauseMenuOptionsButton || onCampaignMenuOptionsButton || onSpecOpsMenuOptionsButton;
+    bool openOptionsRequestedEdge = onAnyRealOptionsButton && selectEdge && g_modConfig.useCustomOptionsScreen;
 
     if (CustomOptionsMenu_TickInput(openOptionsRequestedEdge,
                                       upEdge, downEdge, leftEdge, rightEdge, selectEdge, backEdge,
