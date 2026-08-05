@@ -2107,6 +2107,91 @@ void DrawAndEditDiagramAnchors(void* device, ControllerDiagramLayout& layout, fl
     }
 }
 
+// ---- Per-label position editing (2026-08-05 follow-up: "now give me the ability to
+// move the sprites and text on both the stick layout and button layout pages
+// individually") ---------------------------------------------------------------
+//
+// The sprite-anchor editor above moves where each button/stick sits on the real
+// controller PHOTO -- shared by both pages, since they draw the same image. This is
+// a SEPARATE, independent override on top of that: where each label's own TEXT+icon
+// block is drawn, per page, per style. Slots are keyed by the ACTION/role itself
+// (e.g. "the label attached to LS's vertical-axis row," or "the FIRE action's own
+// label"), not by on-screen stacking order -- both pages' stacking/side assignment
+// can change per previewed preset (which physical stick handles Look, which side an
+// action lands on under Lefty, etc.), but which STICK or which ACTION a given slot
+// represents never does, so overrides stay attached to the right thing regardless
+// of what preset is currently being previewed.
+//
+// Stick page: 6 slots, index = (isRightSide ? 3 : 0) + row (0=top, 1=mid, 2=bottom) --
+// matches DrawOneStickLabels' own cacheIdx allocation order.
+// Button page: 11 slots, index = kButtonMapLabels' own array index (0..9), or 10 for
+// the single static D-pad/"KILLSTREAKS" label.
+//
+// Inactive (the default -- nothing dragged yet) means "use the existing computed
+// position" (the anchor-relative offset for stick labels, the stacking algorithm for
+// button labels) -- unchanged fallback behavior, same "mutable live copy, shipped
+// defaults untouched until an explicit export" model as the sprite anchors.
+struct LabelOverride { float x = 0.0f, y = 0.0f; bool active = false; };
+LabelOverride g_stickLabelOverride[3][6];
+LabelOverride g_buttonLabelOverride[3][11];
+
+// A label's CURRENT drawn position (post-override) plus a pointer back to its own
+// override slot, so dragging can activate/update it directly. Built fresh each
+// frame by whichever page is currently open -- cheap, small, no need to persist.
+struct LabelHandleRef { float x, y; LabelOverride* override; };
+
+int g_diagramDraggingLabelIndex = -1;
+
+// Same drag-a-small-handle interaction as DrawAndEditDiagramAnchors, operating on
+// label positions instead of sprite anchors -- a separate, independent drag target
+// (its own index, not unified with the anchor editor's) since the two live in
+// visually distinct screen regions in practice; a click can't meaningfully hit both
+// at once. Called once per page, after that page's labels have already been drawn
+// (so these handles render on top, at each label's real current position).
+void DrawAndEditLabelHandles(void* device, LabelHandleRef* handles, int count, float scaleX, float scaleY)
+{
+    if (!EnsureWhiteTexture(device)) return;
+
+    static bool s_lastLeftMouseHeld = false;
+    bool leftMouseHeld = IsLeftMouseButtonHeld();
+    bool leftClickEdge = leftMouseHeld && !s_lastLeftMouseHeld;
+    s_lastLeftMouseHeld = leftMouseHeld;
+    int mouseX = 0, mouseY = 0;
+    bool haveMouse = GetLastMouseMoveClientPos(mouseX, mouseY);
+
+    constexpr float kHandleRadius = 10.0f;
+    constexpr float kHandleHitRadius = 16.0f;
+
+    if (!leftMouseHeld) g_diagramDraggingLabelIndex = -1;
+
+    if (haveMouse && leftClickEdge && g_diagramDraggingLabelIndex < 0) {
+        for (int i = 0; i < count; ++i) {
+            float hx = handles[i].x * scaleX, hy = handles[i].y * scaleY;
+            float dx = static_cast<float>(mouseX) - hx, dy = static_cast<float>(mouseY) - hy;
+            if (dx * dx + dy * dy <= kHandleHitRadius * kHandleHitRadius * scaleX * scaleY) {
+                g_diagramDraggingLabelIndex = i;
+                break;
+            }
+        }
+    }
+
+    if (g_diagramDraggingLabelIndex >= 0 && haveMouse && g_diagramDraggingLabelIndex < count) {
+        LabelHandleRef& h = handles[g_diagramDraggingLabelIndex];
+        h.override->active = true;
+        h.override->x = static_cast<float>(mouseX) / scaleX;
+        h.override->y = static_cast<float>(mouseY) / scaleY;
+        h.x = h.override->x;
+        h.y = h.override->y;
+    }
+
+    for (int i = 0; i < count; ++i) {
+        bool isDragging = (i == g_diagramDraggingLabelIndex);
+        DWORD color = isDragging ? 0xFF00FFFFu : 0xFFFF00FFu;
+        DrawGenericTexturedQuad(device, g_optWhiteTexture, (handles[i].x - kHandleRadius) * scaleX, (handles[i].y - kHandleRadius) * scaleY,
+                                  kHandleRadius * 2.0f * scaleX, kHandleRadius * 2.0f * scaleY, 0x90000000u | (color & 0x00FFFFFFu));
+    }
+}
+
 // Pure axis-aligned elbow leader line (horizontal segment at anchorY out to midX,
 // then vertical segment from anchorY to labelY) -- this renderer has no rotated-quad
 // support, so this is a deliberate simplification of the reference's diagonal lines.
@@ -2235,8 +2320,13 @@ bool DrawControllerBodyImage(void* device, float scaleX, float scaleY, const Con
 // (visual) -- true for every one of this project's 3 real reference photos (RS
 // always sits right-of-center, LS always left-of-center in all of them), so this is
 // safe in practice, not just a coincidence of the original procedural layout.
+// styleIdx/slotBase (2026-08-05, per-label position editor): slotBase is 0 for LS,
+// 3 for RS -- indexes into g_stickLabelOverride[styleIdx][slotBase+0/1/2]. outHandles/
+// outHandleCount is null/ignored unless edit mode is active (see DrawStickLayoutDiagram).
 void DrawOneStickLabels(void* device, float stickX, float stickY, bool isRightSide,
-                          bool moveYFromRight, bool moveXFromRight, int& cacheIdx, float scaleX, float scaleY)
+                          bool moveYFromRight, bool moveXFromRight, int& cacheIdx,
+                          int styleIdx, int slotBase, LabelHandleRef* outHandles, int& outHandleCount,
+                          float scaleX, float scaleY)
 {
     bool verticalIsMove = (moveYFromRight == isRightSide);
     bool horizontalIsMove = (moveXFromRight == isRightSide);
@@ -2254,7 +2344,7 @@ void DrawOneStickLabels(void* device, float stickX, float stickY, bool isRightSi
     // drawn alongside already conveys the bidirectional part, so the text itself no
     // longer needs to spell it out.
     const char* midLabel = horizontalIsMove ? "STRAFE" : "ROTATE";
-    float midX = isRightSide ? (stickX + kDiagLabelOffsetPx) : (stickX - kDiagLabelOffsetPx);
+    float defaultMidX = isRightSide ? (stickX + kDiagLabelOffsetPx) : (stickX - kDiagLabelOffsetPx);
     // Vertical spacing widened 2026-08-05 (live feedback: "more vertically spaced
     // out") -- 50/90 was tuned for the smaller 20px label font, too tight once that
     // grew to 26px.
@@ -2264,15 +2354,21 @@ void DrawOneStickLabels(void* device, float stickX, float stickY, bool isRightSi
     // 1-icon Move/Look rows' text instead of sitting further out -- must match
     // DrawDiagLabel's own kIconSize(28)/kIconGapPx(5) constants (2*28+5=61).
     constexpr float kStickLabelIconAreaWidth = 61.0f;
-    DrawDiagLabel(device, cacheIdx++, topLabel, upAsset, nullptr,
-                    stickX, stickY - kStickLabelAnchorSpread, midX, stickY - kStickLabelTextSpread, isRightSide, scaleX, scaleY,
-                    kStickLabelIconAreaWidth);
-    DrawDiagLabel(device, cacheIdx++, midLabel, leftAsset, rightAsset,
-                    stickX, stickY, midX, stickY, isRightSide, scaleX, scaleY,
-                    kStickLabelIconAreaWidth);
-    DrawDiagLabel(device, cacheIdx++, bottomLabel, downAsset, nullptr,
-                    stickX, stickY + kStickLabelAnchorSpread, midX, stickY + kStickLabelTextSpread, isRightSide, scaleX, scaleY,
-                    kStickLabelIconAreaWidth);
+
+    // Per-label position override (2026-08-05) -- inactive means "use the computed
+    // default position above," same fallback model as the sprite anchors.
+    auto emitRow = [&](int rowOffset, const char* text, const char* icon1, const char* icon2,
+                         float anchorY, float defaultLabelY) {
+        LabelOverride& ov = g_stickLabelOverride[styleIdx][slotBase + rowOffset];
+        float midX = ov.active ? ov.x : defaultMidX;
+        float labelY = ov.active ? ov.y : defaultLabelY;
+        DrawDiagLabel(device, cacheIdx++, text, icon1, icon2, stickX, anchorY, midX, labelY, isRightSide, scaleX, scaleY,
+                        kStickLabelIconAreaWidth);
+        if (outHandles) outHandles[outHandleCount++] = { midX, labelY, &ov };
+    };
+    emitRow(0, topLabel, upAsset, nullptr, stickY - kStickLabelAnchorSpread, stickY - kStickLabelTextSpread);
+    emitRow(1, midLabel, leftAsset, rightAsset, stickY, stickY);
+    emitRow(2, bottomLabel, downAsset, nullptr, stickY + kStickLabelAnchorSpread, stickY + kStickLabelTextSpread);
 }
 
 void DrawStickLayoutDiagram(void* device, float scaleX, float scaleY, StickLayout previewLayout)
@@ -2287,10 +2383,15 @@ void DrawStickLayoutDiagram(void* device, float scaleX, float scaleY, StickLayou
     bool moveXFromRight = false, moveYFromRight = false, lookXFromRight = false, lookYFromRight = false;
     GetStickLayoutAxisSources(previewLayout, moveXFromRight, moveYFromRight, lookXFromRight, lookYFromRight);
     int cacheIdx = 0;
-    DrawOneStickLabels(device, lsX, lsY, false, moveYFromRight, moveXFromRight, cacheIdx, scaleX, scaleY);
-    DrawOneStickLabels(device, rsX, rsY, true,  moveYFromRight, moveXFromRight, cacheIdx, scaleX, scaleY);
+    int styleIdx = DiagLayoutIndexForStyle(g_modConfig.glyphStyle);
+    LabelHandleRef labelHandles[6];
+    int labelHandleCount = 0;
+    LabelHandleRef* outHandles = g_diagramEditModeActive ? labelHandles : nullptr;
+    DrawOneStickLabels(device, lsX, lsY, false, moveYFromRight, moveXFromRight, cacheIdx, styleIdx, 0, outHandles, labelHandleCount, scaleX, scaleY);
+    DrawOneStickLabels(device, rsX, rsY, true,  moveYFromRight, moveXFromRight, cacheIdx, styleIdx, 3, outHandles, labelHandleCount, scaleX, scaleY);
 
     if (g_diagramEditModeActive) {
+        DrawAndEditLabelHandles(device, labelHandles, labelHandleCount, scaleX, scaleY);
         DrawAndEditDiagramAnchors(device, layout, imgX, imgY, imgW, imgH, scaleX, scaleY);
     }
 }
@@ -2335,7 +2436,12 @@ constexpr ButtonMapLabelEntry kButtonMapLabels[] = {
     { &ButtonMap::melee,        "MELEE/ZOOM" },
 };
 
-struct DiagLabelEntry { float anchorX, anchorY; bool onRight; const char* text; const char* icon; };
+// overrideSlot (2026-08-05, per-label position editor): index into
+// g_buttonLabelOverride[styleIdx][overrideSlot] -- the ACTION's own stable identity
+// (kButtonMapLabels array index, or 10 for the static D-pad label), not the
+// stacked on-screen position, which side of the panel an action lands on varies by
+// previewed ButtonLayout preset.
+struct DiagLabelEntry { float anchorX, anchorY; bool onRight; const char* text; const char* icon; int overrideSlot; };
 
 // Stacks one side's labels (left or right) at an even fixed vertical step, centered
 // on that side's own real average button height, rather than drawing each one
@@ -2347,7 +2453,8 @@ struct DiagLabelEntry { float anchorX, anchorY; bool onRight; const char* text; 
 // side alone) were landing almost exactly on top of each other. The LEADER LINE still
 // starts from each entry's real, unmodified anchor position (so it correctly points
 // at the real button on the image); only the LABEL TEXT's own position is spread out.
-void DrawStackedDiagLabels(void* device, DiagLabelEntry* entries, int* indices, int n, int& cacheIdx, float scaleX, float scaleY)
+void DrawStackedDiagLabels(void* device, DiagLabelEntry* entries, int* indices, int n, int& cacheIdx,
+                             int styleIdx, LabelHandleRef* outHandles, int& outHandleCount, float scaleX, float scaleY)
 {
     if (n <= 0) return;
     // Small N (at most 11 total, so at most 11 per side) -- plain insertion sort by
@@ -2368,9 +2475,16 @@ void DrawStackedDiagLabels(void* device, DiagLabelEntry* entries, int* indices, 
     float startY = (sumY / static_cast<float>(n)) - (static_cast<float>(n - 1) * 0.5f * kLabelStepY);
     for (int i = 0; i < n; ++i) {
         const DiagLabelEntry& e = entries[indices[i]];
-        float labelY = startY + static_cast<float>(i) * kLabelStepY;
-        float midX = e.onRight ? (e.anchorX + kDiagLabelOffsetPx) : (e.anchorX - kDiagLabelOffsetPx);
+        float defaultLabelY = startY + static_cast<float>(i) * kLabelStepY;
+        float defaultMidX = e.onRight ? (e.anchorX + kDiagLabelOffsetPx) : (e.anchorX - kDiagLabelOffsetPx);
+        // Per-label position override (2026-08-05) -- keyed by the ACTION's own
+        // stable slot, not this loop's own stacking index (see DiagLabelEntry's
+        // comment on why).
+        LabelOverride& ov = g_buttonLabelOverride[styleIdx][e.overrideSlot];
+        float midX = ov.active ? ov.x : defaultMidX;
+        float labelY = ov.active ? ov.y : defaultLabelY;
         DrawDiagLabel(device, cacheIdx++, e.text, e.icon, nullptr, e.anchorX, e.anchorY, midX, labelY, e.onRight, scaleX, scaleY);
+        if (outHandles) outHandles[outHandleCount++] = { midX, labelY, &ov };
     }
 }
 
@@ -2391,13 +2505,15 @@ void DrawButtonLayoutDiagram(void* device, float scaleX, float scaleY, ButtonLay
         // previewed layout -- not the anchor's own fixed physical slot, so the icon
         // always matches what's actually drawn at that position for this preset.
         const char* iconAsset = GetControllerGlyphAssetName(input, g_modConfig.glyphStyle);
-        entries[count++] = { anchor.x, anchor.y, anchor.onRight, entry.label, iconAsset };
+        entries[count] = { anchor.x, anchor.y, anchor.onRight, entry.label, iconAsset, count };
+        ++count;
     }
     // D-pad isn't part of ButtonMap (its equipment/killstreak quick-select function
     // doesn't change between button layouts) and has no single representative glyph
     // (it's 4 separate directional binds), so this one label has no icon.
     float dpadX = imgX + layout.dpadX * imgW, dpadY = imgY + layout.dpadY * imgH;
-    entries[count++] = { dpadX, dpadY, false, "KILLSTREAKS", nullptr };
+    entries[count] = { dpadX, dpadY, false, "KILLSTREAKS", nullptr, count };
+    ++count;
 
     int leftIdx[kMaxLabels], rightIdx[kMaxLabels];
     int leftN = 0, rightN = 0;
@@ -2406,10 +2522,15 @@ void DrawButtonLayoutDiagram(void* device, float scaleX, float scaleY, ButtonLay
         else leftIdx[leftN++] = i;
     }
     int cacheIdx = 0;
-    DrawStackedDiagLabels(device, entries, leftIdx, leftN, cacheIdx, scaleX, scaleY);
-    DrawStackedDiagLabels(device, entries, rightIdx, rightN, cacheIdx, scaleX, scaleY);
+    int styleIdx = DiagLayoutIndexForStyle(g_modConfig.glyphStyle);
+    LabelHandleRef labelHandles[kMaxLabels];
+    int labelHandleCount = 0;
+    LabelHandleRef* outHandles = g_diagramEditModeActive ? labelHandles : nullptr;
+    DrawStackedDiagLabels(device, entries, leftIdx, leftN, cacheIdx, styleIdx, outHandles, labelHandleCount, scaleX, scaleY);
+    DrawStackedDiagLabels(device, entries, rightIdx, rightN, cacheIdx, styleIdx, outHandles, labelHandleCount, scaleX, scaleY);
 
     if (g_diagramEditModeActive) {
+        DrawAndEditLabelHandles(device, labelHandles, labelHandleCount, scaleX, scaleY);
         DrawAndEditDiagramAnchors(device, layout, imgX, imgY, imgW, imgH, scaleX, scaleY);
     }
 }
@@ -2680,6 +2801,7 @@ void DiagramEditor_ToggleEditMode()
 {
     g_diagramEditModeActive = !g_diagramEditModeActive;
     g_diagramDraggingIndex = -1;
+    g_diagramDraggingLabelIndex = -1;
 }
 
 bool DiagramEditor_IsEditModeActive()
@@ -2715,6 +2837,39 @@ void DiagramEditor_ExportCurrentLayout()
         if (i + 1 < count) fprintf(f, "%.3ff, %.3ff,", *refs[i + 1].x, *refs[i + 1].y);
         fprintf(f, "\n");
     }
+
+    // Per-label position overrides (2026-08-05, "move the sprites and text ...
+    // individually") -- only slots the user actually dragged are listed; everything
+    // else is still using its computed default position. Design-space (x,y) pairs,
+    // ready to hardcode as a real default once confirmed -- see this project's own
+    // standing pattern of only baking real drag data into a permanent constexpr
+    // table once it exists (re_notes/known_issues.md issue #66).
+    int styleIdx = DiagLayoutIndexForStyle(g_modConfig.glyphStyle);
+    static const char* kStickSlotNames[6] = {
+        "LS top (Move Forward/Look Up)", "LS mid (Strafe/Rotate)", "LS bottom (Move Back/Look Down)",
+        "RS top (Move Forward/Look Up)", "RS mid (Strafe/Rotate)", "RS bottom (Move Back/Look Down)",
+    };
+    fprintf(f, "\n// Stick Layout page label position overrides (GlyphStyle=%s):\n", styleName);
+    bool anyStick = false;
+    for (int i = 0; i < 6; ++i) {
+        const LabelOverride& ov = g_stickLabelOverride[styleIdx][i];
+        if (!ov.active) continue;
+        anyStick = true;
+        fprintf(f, "//   slot %d (%s): x=%.1f, y=%.1f\n", i, kStickSlotNames[i], ov.x, ov.y);
+    }
+    if (!anyStick) fprintf(f, "//   (none dragged -- all still using computed default positions)\n");
+
+    fprintf(f, "\n// Button Layout page label position overrides (GlyphStyle=%s):\n", styleName);
+    bool anyButton = false;
+    for (int i = 0; i < 11; ++i) {
+        const LabelOverride& ov = g_buttonLabelOverride[styleIdx][i];
+        if (!ov.active) continue;
+        anyButton = true;
+        const char* slotName = (i < 10) ? kButtonMapLabels[i].label : "KILLSTREAKS (D-pad)";
+        fprintf(f, "//   slot %d (%s): x=%.1f, y=%.1f\n", i, slotName, ov.x, ov.y);
+    }
+    if (!anyButton) fprintf(f, "//   (none dragged -- all still using computed default positions)\n");
+
     fclose(f);
 
     char msg[128];
