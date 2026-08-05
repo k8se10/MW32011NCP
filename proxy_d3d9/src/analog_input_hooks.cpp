@@ -6056,15 +6056,13 @@ void __cdecl Hook_DrawGlyphText(
                         }
                     } else {
                         // Live-reported 2026-07-31: the real reload reminder has no
-                        // "^N...^7" button-name span at all -- it's just the bare word
-                        // "Reload", flashed/pulsed on its own, a completely different
-                        // native UI pattern from every other hint here. Matched by
-                        // literal text instead (trimmed, case-insensitive) since
-                        // there's no embedded key reference to key off. User wants it
-                        // read as "Press X To Reload" (console's own phrasing) -- "Press "
-                        // and " To " are this project's own added template text (the
-                        // real string has neither), the actual "Reload" word is still
-                        // read live from param_1, not hardcoded.
+                        // "^N...^7" button-name span at all -- it's just a bare flashed/
+                        // pulsed word, a completely different native UI pattern from every
+                        // other hint here. User wants it read as "Press X To <word>"
+                        // (console's own phrasing) -- "Press " and " To " are this
+                        // project's own added template text (the real string has
+                        // neither), the actual word is always read live from param_1,
+                        // never hardcoded.
                         char trimmedText[32] = {};
                         size_t tlen = textLen < sizeof(trimmedText) - 1 ? textLen : sizeof(trimmedText) - 1;
                         memcpy(trimmedText, param_1, tlen);
@@ -6075,6 +6073,20 @@ void __cdecl Hook_DrawGlyphText(
                         if (tEnd - tStart > 0) memmove(trimmedText, trimmedText + tStart, tEnd - tStart);
                         trimmedText[tEnd - tStart] = '\0';
 
+                        // Live-reported (issue #66 language pass, 2026-08-05): this used
+                        // to require the literal English word "Reload" here -- guaranteed
+                        // to never match once the game's own UI language translates that
+                        // word (e.g. Italian "Ricarica"), silently dropping the icon for
+                        // every non-English player on one of the most common gameplay
+                        // hints there is. Replaced with the SAME structural-signal
+                        // technique BUG-006 already used for the Quit/Leaderboards corner
+                        // hints below: this prompt's real p3 (626) is already documented
+                        // (see kInteractHintRowY's own comment) as genuinely different from
+                        // every other hint sharing this font/no-span branch (pickup/buy-
+                        // station's shared 718) -- a real, precedented, language-
+                        // independent discriminator instead of matching translatable text.
+                        constexpr float kReloadHintP3 = 626.0f;
+                        constexpr float kReloadHintP3TolerancePx = 20.0f;
                         // BUG-004 follow-up (2026-08-02): used to gate on !WasInteractHintRecentlyActive()
                         // here (a 100ms wall-clock window, since Reload and an interact hint could be
                         // processed in either order within a frame) -- replaced by giving Reload its own
@@ -6082,7 +6094,7 @@ void __cdecl Hook_DrawGlyphText(
                         // (DrawGameplayHintSlotsIfRequested in overlay_hud.cpp), which can check same-frame
                         // state exactly instead of racing a timer. Always requests the Reload slot here;
                         // whether it actually draws is decided once, at the end of the frame.
-                        if (_stricmp(trimmedText, "Reload") == 0) {
+                        if (fabsf(param_3 - kReloadHintP3) < kReloadHintP3TolerancePx) {
                             char assetName[32] = {};
                             if (TryGetGlyphAssetNameForKeyName("F", assetName, sizeof(assetName))) {
                                 // "F" is the real default keyboard bind for ReloadUse
