@@ -5412,6 +5412,8 @@ bool TryGetMenuGlyphAssetNameForKeyName(const char* keyName, char* outAssetName,
 // entirely -- see RenderedTextMatchesSubstitutionTemplate's own comment for why the
 // key-name lookup can't be trusted for this hint under other languages.
 bool TryGetMantleGlyphAssetName(char* outAssetName, size_t outSize);
+// Same technique, for the grenade-throwback hint's known LogicalAction::Lethal mapping.
+bool TryGetThrowbackGlyphAssetName(char* outAssetName, size_t outSize);
 
 // Reuses the same obscure LB+RB-held-2s convention as the zoneload-test above (that
 // test is disabled/not wired into the live tick, so no collision) -- deliberately
@@ -6020,10 +6022,19 @@ void __cdecl Hook_DrawGlyphText(
                         // the icon straight from the known LogicalAction::Jump mapping
                         // (TryGetMantleGlyphAssetName) rather than the translated-text lookup.
                         bool isMantleHint = RenderedTextMatchesSubstitutionTemplate(param_1, "PLATFORM_MANTLE");
+                        // Same class of bug, same day, user-reported ("just one issue i saw
+                        // was the nades in other languages"): ResolveGlyphAssetNameForKeyName's
+                        // own `_stricmp(keyName, "G or Middle Mouse") == 0` special case (the
+                        // grenade-throwback hint, PLATFORM_THROWBACKGRENADE = "^3&&1 ^7throw
+                        // back") compares the SUBSTITUTED combo-bind text, which contains the
+                        // English word "or" -- exactly the same translation risk "SPACE" had,
+                        // never actually confirmed broken live but fixed proactively using the
+                        // identical proven technique rather than waiting for another screenshot.
+                        bool isThrowbackHint = RenderedTextMatchesSubstitutionTemplate(param_1, "PLATFORM_THROWBACKGRENADE");
 
                         char assetName[32] = {};
-                        bool haveAssetName = isMantleHint
-                            ? TryGetMantleGlyphAssetName(assetName, sizeof(assetName))
+                        bool haveAssetName = isMantleHint ? TryGetMantleGlyphAssetName(assetName, sizeof(assetName))
+                            : isThrowbackHint ? TryGetThrowbackGlyphAssetName(assetName, sizeof(assetName))
                             : TryGetGlyphAssetNameForKeyName(highlighted, assetName, sizeof(assetName));
                         if (haveAssetName) {
                             char prefixText[128] = {};
@@ -7993,6 +8004,20 @@ const char* ResolveMenuGlyphAssetNameForKeyName(const char* rawKeyName)
 bool TryGetMantleGlyphAssetName(char* outAssetName, size_t outSize)
 {
     const char* assetName = GlyphAssetName(PhysicalInputForAction(LogicalAction::Jump), g_modConfig.glyphStyle);
+    if (!assetName || assetName[0] == '\0') return false;
+    strncpy_s(outAssetName, outSize, assetName, _TRUNCATE);
+    return true;
+}
+
+// Same technique as TryGetMantleGlyphAssetName above, for the grenade-throwback hint
+// (PLATFORM_THROWBACKGRENADE) -- its own real substituted key text is a combo string,
+// "G or Middle Mouse" (confirmed live via proxy_d3d9.log), whose English word "or" is
+// exactly the same translation risk "SPACE" turned out to have. Resolves straight from
+// LogicalAction::Lethal (the same action the ORIGINAL "G or Middle Mouse" special case
+// in ResolveGlyphAssetNameForKeyName already used) instead of matching that combo text.
+bool TryGetThrowbackGlyphAssetName(char* outAssetName, size_t outSize)
+{
+    const char* assetName = GlyphAssetName(PhysicalInputForAction(LogicalAction::Lethal), g_modConfig.glyphStyle);
     if (!assetName || assetName[0] == '\0') return false;
     strncpy_s(outAssetName, outSize, assetName, _TRUNCATE);
     return true;
