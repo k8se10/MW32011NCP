@@ -34,8 +34,13 @@
 
   <PropertyGroup>
     <TargetName>d3d9</TargetName>
-    <!-- Deploy straight into the game install root, next to iw5sp.exe/iw5mp.exe. -->
-    <OutDir>..\..\</OutDir>
+    <!-- Deploy straight into the game install root, next to iw5sp.exe/iw5mp.exe.
+         Absolute path (2026-08-05): the project no longer lives inside the game
+         folder (moved out per re_notes/known_issues.md's "any file change in there
+         risks the whole project" concern), so there is no relative path between
+         this .vcxproj and the game install to rely on anymore. If the game is ever
+         reinstalled to a different drive/path, this needs updating too. -->
+    <OutDir>D:\SteamLibrary\steamapps\common\Call of Duty Modern Warfare 3\</OutDir>
     <IntDir>obj\$(Configuration)\</IntDir>
   </PropertyGroup>
 
