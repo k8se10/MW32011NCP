@@ -1,8 +1,12 @@
-# watch.ps1 -- completes the HMR loop: watches every source file ui_hot.dll is built
-# from (proxy_d3d9/src's UI-relevant files + this tool's own ui_hot/ files) and
-# rebuilds ui_hot.vcxproj automatically on save. The running mw3ncp_ui_harness.exe
-# (main.cpp) does the other half on its own -- polling ui_hot.dll's build output
-# every 500ms and hot-swapping it in, no relaunch, no restart needed here either.
+# watch.ps1 -- OPTIONAL fallback only, as of 2026-08-05. mw3ncp_ui_harness.exe
+# (main.cpp's SourceWatcherThreadProc) now does this itself -- watches the same
+# source files and rebuilds ui_hot.vcxproj automatically in a background thread the
+# whole time it's running, single-process, no second script required (previously
+# this script WAS the only thing that triggered a rebuild at all; the harness only
+# ever watched the build OUTPUT, so without this running nothing ever changed for it
+# to pick up -- live-reported 2026-08-05 as "no visual changes even after restart"
+# and "hot reload shouldnt rely on any scripts it should work just like hmr").
+# Kept only for watching from a terminal with no harness instance running at all.
 #
 # Usage: run this in its own terminal, alongside a separately-launched
 # bin\Debug\mw3ncp_ui_harness.exe. Leave both running; just edit and save.
