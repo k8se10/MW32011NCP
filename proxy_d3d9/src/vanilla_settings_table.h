@@ -50,15 +50,23 @@ struct VanillaSettingDef {
                               // restart concept exists for them).
     float floatMin, floatMax, floatStep; // DvarFloat only, from the real .menu's own
                                            // slider range/step; zero for other kinds.
+    const char* description = ""; // real-console-style one-line footer description
+                                    // (2026-08-05 restyle). Default member initializer
+                                    // means existing positional entries below don't all
+                                    // need updating -- only populated for rows this
+                                    // project's UI actually surfaces today (phase 1:
+                                    // DvarFloat/DvarBool on Look/Voice); left empty for
+                                    // the rest rather than guessed, same "no placeholder
+                                    // settings" standard as everything else in this file.
 };
 
 // ---- Look (pc_options_look_ingame.menu) -------------------------------------------
 // 4 real dvars + 4 real keybinds.
 inline constexpr VanillaSettingDef kVanillaSettings[] = {
-    { "Look_Sensitivity",     "SENSITIVITY",        VanillaSettingTab::Look, VanillaSettingKind::DvarFloat,  "sensitivity",   false, 1.0f, 30.0f, 5.0f },
-    { "Look_InvertMouse",     "INVERT MOUSE",       VanillaSettingTab::Look, VanillaSettingKind::DvarBool,   "ui_mousePitch", false, 0,0,0 },
-    { "Look_SmoothMouse",     "SMOOTH MOUSE",       VanillaSettingTab::Look, VanillaSettingKind::DvarBool,   "m_filter",      false, 0,0,0 },
-    { "Look_FreeLook",        "FREE LOOK",          VanillaSettingTab::Look, VanillaSettingKind::DvarBool,   "cl_freelook",   false, 0,0,0 },
+    { "Look_Sensitivity",     "SENSITIVITY",        VanillaSettingTab::Look, VanillaSettingKind::DvarFloat,  "sensitivity",   false, 1.0f, 30.0f, 5.0f, "Adjust your mouse look sensitivity." },
+    { "Look_InvertMouse",     "INVERT MOUSE",       VanillaSettingTab::Look, VanillaSettingKind::DvarBool,   "ui_mousePitch", false, 0,0,0, "Invert the vertical mouse look axis." },
+    { "Look_SmoothMouse",     "SMOOTH MOUSE",       VanillaSettingTab::Look, VanillaSettingKind::DvarBool,   "m_filter",      false, 0,0,0, "Smooth out mouse look movement." },
+    { "Look_FreeLook",        "FREE LOOK",          VanillaSettingTab::Look, VanillaSettingKind::DvarBool,   "cl_freelook",   false, 0,0,0, "Enable free look without holding a key." },
     { "Look_LookUp",          "LOOK UP",            VanillaSettingTab::Look, VanillaSettingKind::Keybind,    "+lookup",       false, 0,0,0 },
     { "Look_LookDown",        "LOOK DOWN",          VanillaSettingTab::Look, VanillaSettingKind::Keybind,    "+lookdown",     false, 0,0,0 },
     { "Look_HoldMouseLook",   "HOLD MOUSE LOOK",    VanillaSettingTab::Look, VanillaSettingKind::Keybind,    "+mlook",        false, 0,0,0 },
@@ -74,8 +82,8 @@ inline constexpr VanillaSettingDef kVanillaSettings[] = {
     { "Audio_OutputConfig",   "OUTPUT CONFIG",      VanillaSettingTab::Audio, VanillaSettingKind::DvarString, "ui_outputConfig",          true, 0,0,0 },
 
     // ---- Voice (pc_options_voice_ingame.menu)
-    { "Voice_MicSensitivity", "MIC SENSITIVITY",    VanillaSettingTab::Voice, VanillaSettingKind::DvarFloat,  "winvoice_mic_reclevel", false, 0.0f, 65535.0f, 655.0f },
-    { "Voice_Enable",         "VOICE ENABLE",       VanillaSettingTab::Voice, VanillaSettingKind::DvarBool,   "cl_voice",              false, 0,0,0 },
+    { "Voice_MicSensitivity", "MIC SENSITIVITY",    VanillaSettingTab::Voice, VanillaSettingKind::DvarFloat,  "winvoice_mic_reclevel", false, 0.0f, 65535.0f, 655.0f, "Adjust your microphone's recording sensitivity." },
+    { "Voice_Enable",         "VOICE ENABLE",       VanillaSettingTab::Voice, VanillaSettingKind::DvarBool,   "cl_voice",              false, 0,0,0, "Enable or disable voice chat." },
     { "Voice_PushToTalk",     "PUSH TO TALK",       VanillaSettingTab::Voice, VanillaSettingKind::Keybind,    "+talk",                 false, 0,0,0 },
     // The 3rd real Voice row (options_menu_full_map.md sec 2: an inverted
     // dvarFloatList Yes/No toggle, real dvar name not yet confirmed against the raw

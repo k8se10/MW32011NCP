@@ -558,6 +558,25 @@ extern "C" bool IsMenuActive_Exported()
     return IsMenuActive();
 }
 
+// Same "internal linkage, invisible to overlay_hud.cpp" situation as IsMenuActive_Exported
+// above, this time for RouteStickAxes -- issue #66 restyle (2026-08-05), needed by the
+// Stick Layout drill-down screen's controller diagram to know which PHYSICAL stick each
+// move/look axis currently comes from, per StickLayout preset. Rather than hand-duplicate
+// RouteStickAxes' own swap table (a real, live-tested source of truth this project
+// already has no reason to risk drifting out of sync with), this feeds it distinct
+// sentinel values for left/right stick axes and checks which sentinel lands in each
+// output -- reads the real routing directly instead of re-deriving it.
+extern "C" void GetStickLayoutAxisSources(StickLayout layout, bool& moveXFromRight, bool& moveYFromRight,
+                                            bool& lookXFromRight, bool& lookYFromRight)
+{
+    float moveX = 0.0f, moveY = 0.0f, lookX = 0.0f, lookY = 0.0f;
+    RouteStickAxes(1.0f, 2.0f, 3.0f, 4.0f, layout, moveX, moveY, lookX, lookY); // 1=leftX,2=leftY,3=rightX,4=rightY
+    moveXFromRight = (moveX == 3.0f);
+    moveYFromRight = (moveY == 4.0f);
+    lookXFromRight = (lookX == 3.0f);
+    lookYFromRight = (lookY == 4.0f);
+}
+
 // ---- Movement: move-stick -> usercmd_t.forwardmove(+0x1c) / .rightmove(+0x1d) ----
 //
 // "Move-stick" rather than a hardcoded "left stick" since task #15's Stick Layout

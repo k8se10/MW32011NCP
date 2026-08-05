@@ -76,6 +76,12 @@ extern "C" void __cdecl ResetMenuListItemOrdinalForFrame(); // defined in analog
 // problem with the custom Options screen). Wraps a function with internal linkage
 // (analog_input_hooks.cpp's own GlyphAssetName, TU-local); this is the exported form.
 extern "C" const char* GetControllerGlyphAssetName(PhysicalInput input, GlyphStyle style); // defined in analog_input_hooks.cpp
+// Real per-preset stick-axis routing source (Left/Right physical stick), for the
+// Stick Layout drill-down screen's controller diagram (2026-08-05 restyle) -- wraps
+// RouteStickAxes, which has internal linkage (analog_input_hooks.cpp's own anonymous
+// namespace).
+extern "C" void GetStickLayoutAxisSources(StickLayout layout, bool& moveXFromRight, bool& moveYFromRight,
+                                            bool& lookXFromRight, bool& lookYFromRight); // defined in analog_input_hooks.cpp
 
 namespace {
 
@@ -1062,6 +1068,89 @@ void DrawGenericTexturedQuad(void* device, void* texture, float x, float y, floa
     }
 }
 
+// Near-duplicate of DrawGenericTexturedQuad above, with independent LEFT/RIGHT vertex
+// colors instead of one uniform color -- issue #66 restyle (2026-08-05), for the real
+// console's own horizontal gradient highlight bar behind the focused row (bright near
+// the panel's left edge, fading out toward the right). Deliberately a separate
+// function rather than a refactor of the proven, heavily-used DrawGenericTexturedQuad
+// (same "don't risk a shared refactor" reasoning as this file's other near-duplicate
+// draw functions, e.g. DrawOneGameplayHintSlot/DrawOneMenuHintSlot's own comment).
+void DrawGradientQuad(void* device, void* texture, float x, float y, float w, float h,
+                        DWORD colorLeft, DWORD colorRight)
+{
+    void** deviceVtbl = *reinterpret_cast<void***>(device);
+    auto setTexture = reinterpret_cast<SetTexture_t>(deviceVtbl[kSetTextureVtableIndex]);
+    auto setFVF = reinterpret_cast<SetFVF_t>(deviceVtbl[kSetFVFVtableIndex]);
+    auto setRenderState = reinterpret_cast<SetRenderState_t>(deviceVtbl[kSetRenderStateVtableIndex]);
+    auto getRenderState = reinterpret_cast<GetRenderState_t>(deviceVtbl[kGetRenderStateVtableIndex]);
+    auto setTss = reinterpret_cast<SetTextureStageState_t>(deviceVtbl[kSetTextureStageStateVtableIndex]);
+    auto drawPrimitiveUP = reinterpret_cast<DrawPrimitiveUP_t>(deviceVtbl[kDrawPrimitiveUPVtableIndex]);
+    auto setVertexShader = reinterpret_cast<SetVertexShader_t>(deviceVtbl[kSetVertexShaderVtableIndex]);
+    auto getVertexShader = reinterpret_cast<GetVertexShader_t>(deviceVtbl[kGetVertexShaderVtableIndex]);
+    auto setPixelShader = reinterpret_cast<SetPixelShader_t>(deviceVtbl[kSetPixelShaderVtableIndex]);
+    auto getPixelShader = reinterpret_cast<GetPixelShader_t>(deviceVtbl[kGetPixelShaderVtableIndex]);
+
+    DWORD oldZEnable = 0, oldLighting = 0, oldAlphaBlend = 0, oldSrcBlend = 0, oldDestBlend = 0, oldCull = 0;
+    getRenderState(device, kD3DRS_ZENABLE, &oldZEnable);
+    getRenderState(device, kD3DRS_LIGHTING, &oldLighting);
+    getRenderState(device, kD3DRS_ALPHABLENDENABLE, &oldAlphaBlend);
+    getRenderState(device, kD3DRS_SRCBLEND, &oldSrcBlend);
+    getRenderState(device, kD3DRS_DESTBLEND, &oldDestBlend);
+    getRenderState(device, kD3DRS_CULLMODE, &oldCull);
+
+    void* oldVertexShader = nullptr;
+    void* oldPixelShader = nullptr;
+    getVertexShader(device, &oldVertexShader);
+    getPixelShader(device, &oldPixelShader);
+    setVertexShader(device, nullptr);
+    setPixelShader(device, nullptr);
+
+    setRenderState(device, kD3DRS_ZENABLE, kD3DZB_FALSE);
+    setRenderState(device, kD3DRS_LIGHTING, FALSE);
+    setRenderState(device, kD3DRS_ALPHABLENDENABLE, TRUE);
+    setRenderState(device, kD3DRS_SRCBLEND, kD3DBLEND_SRCALPHA);
+    setRenderState(device, kD3DRS_DESTBLEND, kD3DBLEND_INVSRCALPHA);
+    setRenderState(device, kD3DRS_CULLMODE, kD3DCULL_NONE);
+
+    setTss(device, 0, kD3DTSS_COLOROP, kD3DTOP_MODULATE);
+    setTss(device, 0, kD3DTSS_COLORARG1, kD3DTA_TEXTURE);
+    setTss(device, 0, kD3DTSS_COLORARG2, kD3DTA_DIFFUSE);
+    setTss(device, 0, kD3DTSS_ALPHAOP, kD3DTOP_MODULATE);
+    setTss(device, 0, kD3DTSS_ALPHAARG1, kD3DTA_TEXTURE);
+    setTss(device, 0, kD3DTSS_ALPHAARG2, kD3DTA_DIFFUSE);
+    setTss(device, 1, kD3DTSS_COLOROP, kD3DTOP_DISABLE);
+
+    setTexture(device, 0, texture);
+    setFVF(device, kFVF);
+
+    ScreenVertex verts[4] = {
+        { x - 0.5f,     y - 0.5f,     0.0f, 1.0f, colorLeft,  0.0f, 0.0f },
+        { x + w - 0.5f, y - 0.5f,     0.0f, 1.0f, colorRight, 1.0f, 0.0f },
+        { x - 0.5f,     y + h - 0.5f, 0.0f, 1.0f, colorLeft,  0.0f, 1.0f },
+        { x + w - 0.5f, y + h - 0.5f, 0.0f, 1.0f, colorRight, 1.0f, 1.0f },
+    };
+    drawPrimitiveUP(device, kD3DPT_TRIANGLESTRIP, 2, verts, sizeof(ScreenVertex));
+
+    setTexture(device, 0, nullptr);
+    setRenderState(device, kD3DRS_ZENABLE, oldZEnable);
+    setRenderState(device, kD3DRS_LIGHTING, oldLighting);
+    setRenderState(device, kD3DRS_ALPHABLENDENABLE, oldAlphaBlend);
+    setRenderState(device, kD3DRS_SRCBLEND, oldSrcBlend);
+    setRenderState(device, kD3DRS_DESTBLEND, oldDestBlend);
+    setRenderState(device, kD3DRS_CULLMODE, oldCull);
+
+    setVertexShader(device, oldVertexShader);
+    setPixelShader(device, oldPixelShader);
+    if (oldVertexShader) {
+        void** vtbl = *reinterpret_cast<void***>(oldVertexShader);
+        reinterpret_cast<Release_t>(vtbl[kSurfaceReleaseVtableIndex])(oldVertexShader);
+    }
+    if (oldPixelShader) {
+        void** vtbl = *reinterpret_cast<void***>(oldPixelShader);
+        reinterpret_cast<Release_t>(vtbl[kSurfaceReleaseVtableIndex])(oldPixelShader);
+    }
+}
+
 // Consumes the pending icon request (if any was made since the last EndScene) and
 // draws it -- clears the "requested this frame" flag unconditionally afterward so a
 // hint that stops resolving stops showing its icon within one frame, with no separate
@@ -1497,15 +1586,18 @@ struct OptRow {
     float floatMin;
     float floatMax;
     bool* boolPtr;      // BoolToggle only
+    const char* description = ""; // real-console-style one-line footer description
+                                    // (2026-08-05 restyle), shown for whichever row
+                                    // is currently focused
 };
 
 OptRow g_optRows[] = {
-    { "SENSITIVITY HORIZONTAL", OptRowKind::FloatValue, &g_modConfig.lookDegreesPerSecondHorizontal, 10.0f, 50.0f, 500.0f, nullptr },
-    { "SENSITIVITY VERTICAL",   OptRowKind::FloatValue, &g_modConfig.lookDegreesPerSecondVertical,   10.0f, 50.0f, 500.0f, nullptr },
-    { "INVERT LOOK",            OptRowKind::BoolToggle,  nullptr, 0.0f, 0.0f, 0.0f, &g_modConfig.invertLook },
-    { "VIBRATION",              OptRowKind::BoolToggle,  nullptr, 0.0f, 0.0f, 0.0f, &g_modConfig.vibrationEnabled },
-    { "STICK LAYOUT",           OptRowKind::StickLayoutEnum,  nullptr, 0.0f, 0.0f, 0.0f, nullptr },
-    { "BUTTON LAYOUT",          OptRowKind::ButtonLayoutEnum, nullptr, 0.0f, 0.0f, 0.0f, nullptr },
+    { "SENSITIVITY HORIZONTAL", OptRowKind::FloatValue, &g_modConfig.lookDegreesPerSecondHorizontal, 10.0f, 50.0f, 500.0f, nullptr, "Adjust your horizontal look sensitivity." },
+    { "SENSITIVITY VERTICAL",   OptRowKind::FloatValue, &g_modConfig.lookDegreesPerSecondVertical,   10.0f, 50.0f, 500.0f, nullptr, "Adjust your vertical look sensitivity." },
+    { "INVERT LOOK",            OptRowKind::BoolToggle,  nullptr, 0.0f, 0.0f, 0.0f, &g_modConfig.invertLook, "Invert the vertical look axis." },
+    { "VIBRATION",              OptRowKind::BoolToggle,  nullptr, 0.0f, 0.0f, 0.0f, &g_modConfig.vibrationEnabled, "Enable or disable controller vibration." },
+    { "STICK LAYOUT",           OptRowKind::StickLayoutEnum,  nullptr, 0.0f, 0.0f, 0.0f, nullptr, "Choose your stick layout." },
+    { "BUTTON LAYOUT",          OptRowKind::ButtonLayoutEnum, nullptr, 0.0f, 0.0f, 0.0f, nullptr, "Choose your button layout." },
 };
 constexpr int kOptRowCount = sizeof(g_optRows) / sizeof(g_optRows[0]);
 
@@ -1516,6 +1608,14 @@ constexpr int kOptRowCount = sizeof(g_optRows) / sizeof(g_optRows[0]);
 // button rather than a row appended to a real list.
 bool g_optMenuOpen = false;
 int g_optSelectedRow = 0;
+// Stick/Button Layout drill-down (2026-08-05 restyle) -- selecting either row on the
+// Controller tab opens a real sub-screen (own option list + controller diagram)
+// instead of cycling the enum inline via Left/Right, matching the real console's own
+// Stick Layout/Button Layout sub-screens. g_optSelectedRow (which row on the main
+// list) stays unchanged/untouched while drilldown is open, since it's what tells the
+// draw code which of the two rows (and therefore which enum/diagram) is active.
+bool g_optDrilldownOpen = false;
+int g_optDrilldownSelectedRow = 0;
 
 struct TextTexCache { void* texture = nullptr; char renderedFor[128] = {}; int lastFontHeightPx = 0; };
 // Sized to kUnifiedTabRowCacheSize (16, matching g_tabVanillaIndices' own capacity),
@@ -1529,15 +1629,18 @@ TextTexCache g_optRowLabelCache[kUnifiedTabRowCacheSize];
 TextTexCache g_optRowValueCache[kUnifiedTabRowCacheSize];
 TextTexCache g_tabBarCache[8]; // sized above kUnifiedTabCount (3 today) for future tabs
 TextTexCache g_optTitleCache;
-// One cache per footer segment label (2026-08-05, real-glyph-icon footer rewrite) --
-// each segment's text is a distinct static string ("TABS"/"ADJUST"/"TOGGLE"/"CLOSE"/
-// "OR CLICK"), so each needs its own EnsureLeftAlignedTextTexture cache slot, same
-// reasoning as g_tabBarCache being an array rather than one shared cache.
-TextTexCache g_optFooterTabsCache;
-TextTexCache g_optFooterAdjustCache;
-TextTexCache g_optFooterToggleCache;
-TextTexCache g_optFooterCloseCache;
-TextTexCache g_optFooterClickCache;
+// Real-console-style per-row description line, bottom of the panel (2026-08-05
+// restyle, replaces the old full-width footer legend).
+TextTexCache g_optDescCache;
+// Bottom-right corner "Back" hint (2026-08-05 restyle) -- replaces the old
+// full-width footer bar (LB/RB TABS / LEFT-RIGHT ADJUST / A TOGGLE / B CLOSE / OR
+// CLICK); the real console screen shows only this, nothing else.
+TextTexCache g_optCornerBackCache;
+// Shared label-texture pool for the Stick/Button Layout drill-down diagram
+// (2026-08-05) -- sized to the larger of the two diagrams' label counts (Button
+// Layout: 10 ButtonMap-driven labels + 1 static D-pad label = 11), same "shared
+// across whichever one is currently drawn" reasoning as g_optRowLabelCache.
+TextTexCache g_diagLabelCache[16];
 void* g_optWhiteTexture = nullptr; // 1x1 white texture for solid-fill background panels
 
 bool EnsureWhiteTexture(void* device)
@@ -1559,6 +1662,59 @@ bool EnsureWhiteTexture(void* device)
     LockedRect locked = {};
     if (SUCCEEDED(lockRect(surface, &locked, nullptr, 0)) && locked.pBits) {
         *reinterpret_cast<DWORD*>(locked.pBits) = 0xFFFFFFFFu;
+        unlockRect(surface);
+    }
+    releaseSurface(surface);
+    return true;
+}
+
+// Soft-edged white circle (tinted via diffuse color at draw time, same convention as
+// the white texture above) -- issue #66 restyle (2026-08-05), for the Stick/Button
+// Layout drill-down screen's schematic controller diagram (sticks/face buttons/D-pad
+// drawn as tinted circles, since this project has no real controller-body art asset
+// to draw from -- see that screen's own header comment for why this is a simplified
+// schematic rather than a literal recreation of the reference screenshot's photoreal
+// controller render). Generated once into a small fixed-size texture and cached,
+// same pattern as every other texture in this file.
+void* g_optCircleTexture = nullptr;
+constexpr int kCircleTextureSize = 64;
+
+bool EnsureCircleTexture(void* device)
+{
+    if (g_optCircleTexture) return true;
+    void** deviceVtbl = *reinterpret_cast<void***>(device);
+    auto createTexture = reinterpret_cast<CreateTexture_t>(deviceVtbl[kCreateTextureVtableIndex]);
+    HRESULT hr = createTexture(device, kCircleTextureSize, kCircleTextureSize, 1, 0, kD3DFMT_A8R8G8B8,
+                                 kD3DPOOL_MANAGED, &g_optCircleTexture, nullptr);
+    if (FAILED(hr) || !g_optCircleTexture) { g_optCircleTexture = nullptr; return false; }
+
+    void** texVtbl = *reinterpret_cast<void***>(g_optCircleTexture);
+    auto getSurfaceLevel = reinterpret_cast<GetSurfaceLevel_t>(texVtbl[kGetSurfaceLevelVtableIndex]);
+    void* surface = nullptr;
+    if (FAILED(getSurfaceLevel(g_optCircleTexture, 0, &surface)) || !surface) return false;
+    void** surfaceVtbl = *reinterpret_cast<void***>(surface);
+    auto lockRect = reinterpret_cast<SurfaceLockRect_t>(surfaceVtbl[kSurfaceLockRectVtableIndex]);
+    auto unlockRect = reinterpret_cast<SurfaceUnlockRect_t>(surfaceVtbl[kSurfaceUnlockRectVtableIndex]);
+    auto releaseSurface = reinterpret_cast<Release_t>(surfaceVtbl[kSurfaceReleaseVtableIndex]);
+    LockedRect locked = {};
+    if (SUCCEEDED(lockRect(surface, &locked, nullptr, 0)) && locked.pBits) {
+        const float center = (kCircleTextureSize - 1) * 0.5f;
+        const float radius = kCircleTextureSize * 0.5f;
+        for (int py = 0; py < kCircleTextureSize; ++py) {
+            DWORD* rowPixels = reinterpret_cast<DWORD*>(static_cast<BYTE*>(locked.pBits) + py * locked.Pitch);
+            for (int px = 0; px < kCircleTextureSize; ++px) {
+                float dx = static_cast<float>(px) - center;
+                float dy = static_cast<float>(py) - center;
+                float dist = sqrtf(dx * dx + dy * dy);
+                // 1.5px antialiased edge -- avoids a jagged circle outline once scaled
+                // up on screen.
+                float alpha = 1.0f - (dist - (radius - 1.5f)) / 1.5f;
+                if (alpha > 1.0f) alpha = 1.0f;
+                if (alpha < 0.0f) alpha = 0.0f;
+                DWORD a = static_cast<DWORD>(alpha * 255.0f);
+                rowPixels[px] = (a << 24) | 0x00FFFFFFu;
+            }
+        }
         unlockRect(surface);
     }
     releaseSurface(surface);
@@ -1708,6 +1864,29 @@ bool CurrentTabRowIsBoolToggle(int row)
     return kVanillaSettings[g_tabVanillaIndices[row]].kind == VanillaSettingKind::DvarBool;
 }
 
+// Real-console-style one-line description for the currently focused row (2026-08-05
+// restyle) -- drawn near the bottom of the settings panel, matching the real screen's
+// own "Adjust your stick layout." convention. May be empty for rows this project
+// hasn't written one for yet (VanillaSettingDef's own default-member-initializer
+// leaves most non-phase-1 rows empty rather than guessed) -- caller skips drawing
+// the line entirely when empty.
+const char* CurrentTabRowDescription(int row)
+{
+    UnifiedTab tab = kTabOrder[g_currentTabIndex];
+    if (tab == UnifiedTab::Controller) return g_optRows[row].description;
+    return kVanillaSettings[g_tabVanillaIndices[row]].description;
+}
+
+bool CurrentTabRowIsStickLayout(int row)
+{
+    return kTabOrder[g_currentTabIndex] == UnifiedTab::Controller && g_optRows[row].kind == OptRowKind::StickLayoutEnum;
+}
+
+bool CurrentTabRowIsButtonLayout(int row)
+{
+    return kTabOrder[g_currentTabIndex] == UnifiedTab::Controller && g_optRows[row].kind == OptRowKind::ButtonLayoutEnum;
+}
+
 // direction: -1 (Left) or +1 (Right). Bool rows toggle regardless of direction.
 void AdjustCurrentTabRow(int row, int direction)
 {
@@ -1778,6 +1957,168 @@ void DrawOptRightAlignedText(void* device, TextTexCache& cache, const char* text
     DrawOptLeftAlignedText(device, cache, text, leftX, yCenter, fontHeightPx, color, scaleX, scaleY);
 }
 
+// ---- Stick/Button Layout drill-down controller diagram (2026-08-05 restyle) -------
+//
+// Real console reference screenshots (project owner-supplied) show Stick Layout and
+// Button Layout as their own sub-screens: a vertical option list on the left, and a
+// live controller render on the right with labeled leader lines that update per the
+// highlighted preset. This is a SIMPLIFIED SCHEMATIC of that, not a literal
+// recreation -- this project has no real controller-body art asset (assets/
+// button_glyphs/ is individual button icons only), so the body/sticks/buttons are
+// drawn as tinted circles/rects (EnsureCircleTexture) in roughly real proportions,
+// and leader lines are axis-aligned elbow connectors rather than the reference's
+// diagonal lines (this renderer has no rotated-quad support). The DATA behind the
+// labels is real, not approximated: GetStickLayoutAxisSources wraps this project's
+// own live RouteStickAxes routing, and ResolveButtonMap is the same real function
+// InjectControllerButtons itself resolves against -- both read directly rather than
+// hand-duplicated, so this can never drift out of sync with actual gameplay behavior.
+constexpr float kDiagOriginX = 1180.0f, kDiagOriginY = 560.0f;
+constexpr float kDiagLSX = kDiagOriginX - 40.0f,  kDiagLSY = kDiagOriginY - 60.0f;
+constexpr float kDiagDpadX = kDiagOriginX - 40.0f, kDiagDpadY = kDiagOriginY + 160.0f;
+constexpr float kDiagRSX = kDiagOriginX + 340.0f, kDiagRSY = kDiagOriginY + 140.0f;
+constexpr float kDiagYX = kDiagOriginX + 300.0f, kDiagYY = kDiagOriginY - 140.0f;
+constexpr float kDiagXX = kDiagOriginX + 220.0f, kDiagXY = kDiagOriginY - 60.0f;
+constexpr float kDiagBX = kDiagOriginX + 380.0f, kDiagBY = kDiagOriginY - 60.0f;
+constexpr float kDiagAX = kDiagOriginX + 300.0f, kDiagAY = kDiagOriginY + 20.0f;
+constexpr float kDiagLBX = kDiagOriginX - 40.0f, kDiagLBY = kDiagOriginY - 220.0f;
+constexpr float kDiagLTX = kDiagLBX, kDiagLTY = kDiagLBY - 50.0f;
+constexpr float kDiagRBX = kDiagOriginX + 300.0f, kDiagRBY = kDiagOriginY - 220.0f;
+constexpr float kDiagRTX = kDiagRBX, kDiagRTY = kDiagRBY - 50.0f;
+constexpr float kDiagStickRadius = 60.0f, kDiagFaceRadius = 30.0f, kDiagDpadRadius = 46.0f;
+
+void DrawDiagCircle(void* device, float cx, float cy, float radius, DWORD color, float scaleX, float scaleY)
+{
+    if (!EnsureCircleTexture(device)) return;
+    DrawGenericTexturedQuad(device, g_optCircleTexture, (cx - radius) * scaleX, (cy - radius) * scaleY,
+                              radius * 2.0f * scaleX, radius * 2.0f * scaleY, color);
+}
+
+// Pure axis-aligned elbow leader line (horizontal segment at anchorY out to midX,
+// then vertical segment from anchorY to labelY) -- this renderer has no rotated-quad
+// support, so this is a deliberate simplification of the reference's diagonal lines.
+void DrawDiagLeader(void* device, float anchorX, float anchorY, float midX, float labelY, float scaleX, float scaleY)
+{
+    constexpr float kThickness = 2.0f;
+    constexpr DWORD kLineColor = 0x60FFFFFFu;
+    float x0 = anchorX < midX ? anchorX : midX;
+    float x1 = anchorX < midX ? midX : anchorX;
+    DrawGenericTexturedQuad(device, g_optWhiteTexture, x0 * scaleX, (anchorY - kThickness * 0.5f) * scaleY,
+                              (x1 - x0) * scaleX, kThickness * scaleY, kLineColor);
+    float y0 = anchorY < labelY ? anchorY : labelY;
+    float y1 = anchorY < labelY ? labelY : anchorY;
+    DrawGenericTexturedQuad(device, g_optWhiteTexture, (midX - kThickness * 0.5f) * scaleX, y0 * scaleY,
+                              kThickness * scaleX, (y1 - y0) * scaleY, kLineColor);
+}
+
+void DrawDiagLabel(void* device, int cacheIndex, const char* text, float anchorX, float anchorY,
+                     float midX, float labelY, bool textOnRight, float scaleX, float scaleY)
+{
+    if (cacheIndex < 0 || cacheIndex >= 16) return;
+    DrawDiagLeader(device, anchorX, anchorY, midX, labelY, scaleX, scaleY);
+    constexpr int kLabelFontHeightPx = 20;
+    constexpr DWORD kLabelColor = 0xFFE0E0E0u;
+    if (textOnRight) {
+        DrawOptLeftAlignedText(device, g_diagLabelCache[cacheIndex], text, midX + 12.0f, labelY, kLabelFontHeightPx, kLabelColor, scaleX, scaleY);
+    } else {
+        DrawOptRightAlignedText(device, g_diagLabelCache[cacheIndex], text, midX - 12.0f, labelY, kLabelFontHeightPx, kLabelColor, scaleX, scaleY);
+    }
+}
+
+// Draws the dim, non-highlighted parts of the schematic (everything the CURRENT
+// diagram type doesn't itself label) so the shape reads as "a controller" rather
+// than a couple of disconnected circles -- shared by both diagram types.
+void DrawDiagBody(void* device, float scaleX, float scaleY)
+{
+    DrawDiagCircle(device, kDiagYX, kDiagYY, kDiagFaceRadius, 0xFF806000u, scaleX, scaleY);
+    DrawDiagCircle(device, kDiagXX, kDiagXY, kDiagFaceRadius, 0xFF1F4E99u, scaleX, scaleY);
+    DrawDiagCircle(device, kDiagBX, kDiagBY, kDiagFaceRadius, 0xFF992222u, scaleX, scaleY);
+    DrawDiagCircle(device, kDiagAX, kDiagAY, kDiagFaceRadius, 0xFF227722u, scaleX, scaleY);
+    DrawDiagCircle(device, kDiagDpadX, kDiagDpadY, kDiagDpadRadius, 0xFF303030u, scaleX, scaleY);
+    DrawGenericTexturedQuad(device, g_optWhiteTexture, (kDiagLBX - 40.0f) * scaleX, (kDiagLBY - 14.0f) * scaleY, 80.0f * scaleX, 28.0f * scaleY, 0xFF303030u);
+    DrawGenericTexturedQuad(device, g_optWhiteTexture, (kDiagRBX - 40.0f) * scaleX, (kDiagRBY - 14.0f) * scaleY, 80.0f * scaleX, 28.0f * scaleY, 0xFF303030u);
+    DrawGenericTexturedQuad(device, g_optWhiteTexture, (kDiagLTX - 40.0f) * scaleX, (kDiagLTY - 14.0f) * scaleY, 80.0f * scaleX, 28.0f * scaleY, 0xFF404040u);
+    DrawGenericTexturedQuad(device, g_optWhiteTexture, (kDiagRTX - 40.0f) * scaleX, (kDiagRTY - 14.0f) * scaleY, 80.0f * scaleX, 28.0f * scaleY, 0xFF404040u);
+    DrawDiagCircle(device, kDiagLSX, kDiagLSY, kDiagStickRadius, 0xFF454545u, scaleX, scaleY);
+    DrawDiagCircle(device, kDiagRSX, kDiagRSY, kDiagStickRadius, 0xFF454545u, scaleX, scaleY);
+}
+
+// Both sticks always carry exactly 3 label lines each, for every StickLayout preset
+// (a real, provable property of the routing: moveY/lookY are always on opposite
+// sticks, and so are moveX/lookX, so each stick gets exactly one 2-line vertical
+// group -- Forward/Back or Look Up/Down -- plus one 1-line horizontal group --
+// Strafe or Rotate). This function draws whichever combination applies to ONE stick.
+void DrawOneStickLabels(void* device, float stickX, float stickY, bool isRightSide,
+                          bool moveYFromRight, bool moveXFromRight, int& cacheIdx, float scaleX, float scaleY)
+{
+    bool verticalIsMove = (moveYFromRight == isRightSide);
+    bool horizontalIsMove = (moveXFromRight == isRightSide);
+    const char* topLabel = verticalIsMove ? "MOVE FORWARD" : "LOOK UP";
+    const char* bottomLabel = verticalIsMove ? "MOVE BACK" : "LOOK DOWN";
+    const char* midLabel = horizontalIsMove ? "STRAFE LEFT/RIGHT" : "ROTATE LEFT/RIGHT";
+    float midX = isRightSide ? (stickX + 170.0f) : (stickX - 170.0f);
+    DrawDiagLabel(device, cacheIdx++, topLabel,    stickX, stickY - 50.0f, midX, stickY - 90.0f, isRightSide, scaleX, scaleY);
+    DrawDiagLabel(device, cacheIdx++, midLabel,    stickX, stickY,         midX, stickY,         isRightSide, scaleX, scaleY);
+    DrawDiagLabel(device, cacheIdx++, bottomLabel, stickX, stickY + 50.0f, midX, stickY + 90.0f, isRightSide, scaleX, scaleY);
+}
+
+void DrawStickLayoutDiagram(void* device, float scaleX, float scaleY, StickLayout previewLayout)
+{
+    DrawDiagBody(device, scaleX, scaleY);
+    bool moveXFromRight = false, moveYFromRight = false, lookXFromRight = false, lookYFromRight = false;
+    GetStickLayoutAxisSources(previewLayout, moveXFromRight, moveYFromRight, lookXFromRight, lookYFromRight);
+    int cacheIdx = 0;
+    DrawOneStickLabels(device, kDiagLSX, kDiagLSY, false, moveYFromRight, moveXFromRight, cacheIdx, scaleX, scaleY);
+    DrawOneStickLabels(device, kDiagRSX, kDiagRSY, true,  moveYFromRight, moveXFromRight, cacheIdx, scaleX, scaleY);
+}
+
+struct DiagAnchor { float x, y; bool onRight; };
+
+DiagAnchor GetDiagAnchorForInput(PhysicalInput input)
+{
+    switch (input) {
+        case PhysicalInput::RT: return { kDiagRTX, kDiagRTY, true };
+        case PhysicalInput::LT: return { kDiagLTX, kDiagLTY, false };
+        case PhysicalInput::RB: return { kDiagRBX, kDiagRBY, true };
+        case PhysicalInput::LB: return { kDiagLBX, kDiagLBY, false };
+        case PhysicalInput::X:  return { kDiagXX, kDiagXY, false };
+        case PhysicalInput::Y:  return { kDiagYX, kDiagYY, true };
+        case PhysicalInput::A:  return { kDiagAX, kDiagAY, true };
+        case PhysicalInput::B:  return { kDiagBX, kDiagBY, true };
+        case PhysicalInput::LS: return { kDiagLSX, kDiagLSY, false };
+        case PhysicalInput::RS: return { kDiagRSX, kDiagRSY, true };
+        default: return { kDiagOriginX, kDiagOriginY, true };
+    }
+}
+
+struct ButtonMapLabelEntry { PhysicalInput ButtonMap::* field; const char* label; };
+constexpr ButtonMapLabelEntry kButtonMapLabels[] = {
+    { &ButtonMap::fire,         "FIRE WEAPON" },
+    { &ButtonMap::ads,          "AIM DOWN SIGHT" },
+    { &ButtonMap::lethal,       "THROW FRAG" },
+    { &ButtonMap::tactical,     "THROW TACTICAL" },
+    { &ButtonMap::reloadUse,    "USE / RELOAD" },
+    { &ButtonMap::weaponSwitch, "SWITCH WEAPON" },
+    { &ButtonMap::jump,         "JUMP" },
+    { &ButtonMap::crouchProne,  "CROUCH / PRONE" },
+    { &ButtonMap::sprint,       "SPRINT / HOLD BREATH" },
+    { &ButtonMap::melee,        "MELEE / ZOOM" },
+};
+
+void DrawButtonLayoutDiagram(void* device, float scaleX, float scaleY, ButtonLayout previewLayout)
+{
+    DrawDiagBody(device, scaleX, scaleY);
+    ButtonMap bm = ResolveButtonMap(previewLayout, g_modConfig.flipTriggers);
+    int cacheIdx = 0;
+    for (const auto& entry : kButtonMapLabels) {
+        DiagAnchor anchor = GetDiagAnchorForInput(bm.*entry.field);
+        float midX = anchor.onRight ? (anchor.x + 170.0f) : (anchor.x - 170.0f);
+        DrawDiagLabel(device, cacheIdx++, entry.label, anchor.x, anchor.y, midX, anchor.y, anchor.onRight, scaleX, scaleY);
+    }
+    // D-pad isn't part of ButtonMap (its equipment/killstreak quick-select function
+    // doesn't change between button layouts), so this one label is static.
+    DrawDiagLabel(device, cacheIdx++, "EQUIPMENT / KILLSTREAKS", kDiagDpadX, kDiagDpadY, kDiagDpadX - 170.0f, kDiagDpadY, false, scaleX, scaleY);
+}
+
 // Called from Hook_EndScene every frame. Draws the full custom menu when open --
 // nothing to draw otherwise, invocation is now the real pause menu's own "Options"
 // button (see overlay_hud.h's header comment), not an appended row that needed
@@ -1804,196 +2145,227 @@ void DrawCustomOptionsMenuIfOpen(void* device)
     s_lastLeftMouseHeld = leftMouseHeld;
     int mouseX = 0, mouseY = 0;
     bool haveMouse = GetLastMouseMoveClientPos(mouseX, mouseY);
-    // GetLastMouseMoveClientPos reports real window-client pixels; our own quads are
-    // drawn in the device's real backbuffer pixel space (see GetResolutionScale's own
-    // header comment on why those can legitimately differ) -- scaleX/scaleY converts
-    // between the two the same direction our OWN draw positions already do, so a rect
-    // built the same way (designX * scaleX) lines up with this mouse position
-    // directly with no separate conversion needed.
     auto PointInRect = [&](float rectX, float rectY, float rectW, float rectH) {
         return haveMouse && mouseX >= rectX && mouseX < rectX + rectW
                           && mouseY >= rectY && mouseY < rectY + rectH;
     };
 
     constexpr DWORD kWhiteColor = 0xFFFFFFFFu;
-    constexpr DWORD kGreenHighlight = 0xFF6FCF6Fu; // same family as this project's other
-                                                     // green selection accents (A-glyph,
-                                                     // menu highlight text)
+    constexpr DWORD kDimTextColor = 0xFFC8C8C8u;
+    constexpr DWORD kDescColor = 0xFFA0A0A0u;
 
-    // Full custom menu -- FULLSCREEN, draw-over-the-top (2026-08-04, direction change
-    // same day: a render-suppression approach was live-tested and found to prevent
-    // the game from launching at all -- reverted; see re_notes/known_issues.md issue
-    // #66 -- in favor of this original, lower-risk alternative: draw fully over the
-    // real screen and claim all input while open, which this menu already did since
-    // round 1). Background is now a full-screen dim layer, matching the REAL
-    // technique this engine's own popups use (all_restart_popmenu.menu: a plain
-    // white material tinted to forecolor 0 0 0 0.8 covering the whole screen) rather
-    // than an arbitrary flat color -- there is no dedicated background IMAGE asset
-    // for this class of screen to extract (checked: real Options/pause menus dim the
-    // live paused game view, they don't use static art), so matching the real DIM
-    // technique is the actual native behavior, not an approximation of it.
-    //
-    // Layout: a bordered content panel sits inset within that full-screen dim, with
-    // a tab bar (LB/RB, see UnifiedTab above) between the title and the row list.
-    DrawGenericTexturedQuad(device, g_optWhiteTexture, 0.0f, 0.0f,
-        1920.0f * scaleX, 1080.0f * scaleY, 0xCC000000u); // full-screen dim, real 0.8-alpha-black convention
+    // Panel restyle (2026-08-05, real-console reference screenshots supplied by the
+    // project owner). The real screen is NOT a full-screen dim with a floating
+    // bordered panel (rounds 1-4's own design) -- it's a solid, edge-to-edge dark
+    // panel covering roughly the left third of the screen, with the live (blurred by
+    // whatever real pause postprocess the engine already applies, if any) paused game
+    // visible directly past its right edge, no border decoration at all. This project
+    // never suppresses the real screen underneath (draw-over-top architecture, see
+    // this file's own history on why a suppression hook was tried and reverted), so
+    // that view is already there for free -- no full-screen dim quad needed anymore.
+    constexpr float kPanelX = 0.0f;
+    constexpr float kPanelW = 672.0f; // ~35% of 1920 design width, matches the reference
+    constexpr float kPanelH = 1080.0f;
+    DrawGenericTexturedQuad(device, g_optWhiteTexture, kPanelX * scaleX, 0.0f,
+        kPanelW * scaleX, kPanelH * scaleY, 0xFF232323u);
 
-    constexpr float kScreenMargin = 60.0f;
-    constexpr float kPanelX = kScreenMargin;
-    constexpr float kPanelY = kScreenMargin;
-    constexpr float kPanelW = 1920.0f - kScreenMargin * 2.0f;
-    constexpr float kPanelH = 1080.0f - kScreenMargin * 2.0f;
-    constexpr float kHeaderH = 165.0f;  // title + tab bar + divider
-    constexpr float kFooterH = 70.0f;   // button-legend line
-    constexpr int kListFontHeightPx = 32;
-    constexpr float kListRowSpacingPx = 62.0f;
-    constexpr int kTitleFontHeightPx = 48;
-    constexpr int kTabFontHeightPx = 26;
+    constexpr int kTitleFontHeightPx = 44;
+    constexpr int kTabFontHeightPx = 24;
+    constexpr int kListFontHeightPx = 28;
+    constexpr int kDescFontHeightPx = 20;
+    constexpr float kListRowSpacingPx = 56.0f;
+    constexpr float kIconReserveWidthPx = 44.0f; // room for the inline A-glyph after a focused row's label
 
-    constexpr float kBorderPad = 3.0f;
-    DrawGenericTexturedQuad(device, g_optWhiteTexture, (kPanelX - kBorderPad) * scaleX, (kPanelY - kBorderPad) * scaleY,
-        (kPanelW + kBorderPad * 2) * scaleX, (kPanelH + kBorderPad * 2) * scaleY, 0x80FFFFFFu); // border
-    DrawGenericTexturedQuad(device, g_optWhiteTexture, kPanelX * scaleX, kPanelY * scaleY,
-        kPanelW * scaleX, kPanelH * scaleY, 0xF0101014u); // dark, near-opaque fill
+    float titleY = 76.0f;
+    float labelRightX = kPanelW - 32.0f - kIconReserveWidthPx;
+    float valueX = kPanelW + 64.0f; // past the panel edge, over the live game view
+    float tabY = 138.0f;
+    float listTopY = 198.0f;
+    float descY = kPanelH - 70.0f;
 
-    DrawOptLeftAlignedText(device, g_optTitleCache, "MW32011NCP OPTIONS",
-                             kPanelX + 40.0f, kPanelY + 50.0f, kTitleFontHeightPx, kWhiteColor, scaleX, scaleY);
-
-    float labelX = kPanelX + 60.0f;
-    float valueRightX = kPanelX + 760.0f;       // right-align values within the left content column
-    float dividerX = kPanelX + 840.0f;           // marks off the reserved right-hand area
-
-    // Tab bar -- left-aligned row of tab names, current tab highlighted green, laid
-    // out left-to-right by each label's own measured width (same technique the
-    // corner-hint system elsewhere in this file already uses for sequential text).
-    float tabX = labelX;
-    constexpr float kTabGapPx = 50.0f;
-    constexpr float kTabHitPadY = 14.0f; // vertical hit-test padding above/below the glyph baseline
-    for (int t = 0; t < kUnifiedTabCount; ++t) {
-        int tabWidth = MeasureTextWidthPx(UnifiedTabDisplayName(kTabOrder[t]), g_modConfig.overlayFontItalic, kTabFontHeightPx);
-
-        bool hovered = PointInRect(tabX * scaleX, (kPanelY + 100.0f - kTabHitPadY) * scaleY,
-                                     static_cast<float>(tabWidth) * scaleX, (static_cast<float>(kTabFontHeightPx) + kTabHitPadY * 2.0f) * scaleY);
-        if (hovered && leftClickEdge && t != g_currentTabIndex) {
-            g_currentTabIndex = t;
-            RebuildTabRowCache();
-            g_optSelectedRow = 0;
-        }
-
-        bool isCurrentTab = (t == g_currentTabIndex);
-        DWORD tabColor = isCurrentTab ? kGreenHighlight : (hovered ? 0xFFC0C0C0u : 0xFF808080u);
-        DrawOptLeftAlignedText(device, g_tabBarCache[t], UnifiedTabDisplayName(kTabOrder[t]), tabX, kPanelY + 100.0f,
-                                 kTabFontHeightPx, tabColor, scaleX, scaleY);
-        tabX += static_cast<float>(tabWidth) + kTabGapPx;
+    const char* titleText = "OPTIONS";
+    if (g_optDrilldownOpen) {
+        titleText = CurrentTabRowIsStickLayout(g_optSelectedRow) ? "STICK LAYOUT" : "BUTTON LAYOUT";
     }
+    DrawOptLeftAlignedText(device, g_optTitleCache, titleText, 56.0f, titleY, kTitleFontHeightPx, kWhiteColor, scaleX, scaleY);
 
-    DrawGenericTexturedQuad(device, g_optWhiteTexture, (kPanelX + 40.0f) * scaleX, (kPanelY + kHeaderH - 16.0f) * scaleY,
-        (kPanelW - 80.0f) * scaleX, 2.0f * scaleY, 0x50FFFFFFu); // divider under the tab bar
-    DrawGenericTexturedQuad(device, g_optWhiteTexture, dividerX * scaleX, (kPanelY + kHeaderH) * scaleY,
-        2.0f * scaleX, (kPanelH - kHeaderH - kFooterH) * scaleY, 0x30FFFFFFu); // vertical divider, reserved right column
+    if (g_optDrilldownOpen) {
+        bool isStick = CurrentTabRowIsStickLayout(g_optSelectedRow);
+        static const char* kStickNames[4] = { "DEFAULT", "SOUTHPAW", "LEGACY", "LEGACY SOUTHPAW" };
+        static const char* kButtonNames[4] = { "DEFAULT", "TACTICAL", "LEFTY", "TACTICAL LEFTY" };
+        const char** names = isStick ? kStickNames : kButtonNames;
+        constexpr int kOptionCount = 4;
 
-    int rowCount = CurrentTabRowCount();
-    float availableH = kPanelH - kHeaderH - kFooterH;
-    float rowsH = kListRowSpacingPx * static_cast<float>(rowCount);
-    float rowY = kPanelY + kHeaderH + (availableH - rowsH) * 0.5f + kListRowSpacingPx * 0.5f;
-    float rowRectX = kPanelX + 24.0f;
-    float rowRectW = dividerX - 40.0f - kPanelX;
-    for (int i = 0; i < rowCount; ++i) {
-        float rowRectY = rowY - kListRowSpacingPx * 0.5f;
-
-        // Hover moves selection (matches the real native menu's own onFocus-on-hover
-        // convention, confirmed in pausedmenu.menu/all_restart_popmenu.menu) -- click
-        // acts: toggles a bool row outright; a float row is split into a left half
-        // (decrement) and right half (increment), same step as Left/Right already use.
-        bool hovered = PointInRect(rowRectX * scaleX, rowRectY * scaleY, rowRectW * scaleX, kListRowSpacingPx * scaleY);
-        if (hovered) {
-            g_optSelectedRow = i;
-            if (leftClickEdge) {
-                if (CurrentTabRowIsBoolToggle(i)) {
-                    AdjustCurrentTabRow(i, +1);
-                } else {
-                    float midX = (rowRectX + rowRectW * 0.5f) * scaleX;
-                    AdjustCurrentTabRow(i, mouseX < midX ? -1 : +1);
+        float rowY = listTopY + kListRowSpacingPx * 0.5f;
+        for (int i = 0; i < kOptionCount; ++i) {
+            float rowRectY = rowY - kListRowSpacingPx * 0.5f;
+            bool hovered = PointInRect(kPanelX * scaleX, rowRectY * scaleY, kPanelW * scaleX, kListRowSpacingPx * scaleY);
+            if (hovered) {
+                g_optDrilldownSelectedRow = i;
+                if (leftClickEdge) {
+                    if (isStick) g_modConfig.stickLayout = static_cast<StickLayout>(i);
+                    else g_modConfig.buttonLayout = static_cast<ButtonLayout>(i);
+                    g_buttonMap = ResolveButtonMap(g_modConfig.buttonLayout, g_modConfig.flipTriggers);
+                    SaveModConfig();
                 }
             }
+            bool selected = (i == g_optDrilldownSelectedRow);
+            DWORD rowColor = selected ? kWhiteColor : kDimTextColor;
+            if (selected) {
+                DrawGradientQuad(device, g_optWhiteTexture, kPanelX * scaleX, rowRectY * scaleY,
+                                   kPanelW * scaleX, kListRowSpacingPx * scaleY, 0x50FFFFFFu, 0x00FFFFFFu);
+            }
+            DrawOptRightAlignedText(device, g_optRowLabelCache[i], names[i], labelRightX, rowY, kListFontHeightPx, rowColor, scaleX, scaleY);
+            if (selected) {
+                const char* aAsset = GetControllerGlyphAssetName(PhysicalInput::A, g_modConfig.glyphStyle);
+                if (aAsset && aAsset[0]) {
+                    void* iconTex = nullptr; int iconW = 0, iconH = 0;
+                    if (GetOrLoadGlyphIconTexture(device, aAsset, iconTex, iconW, iconH) && iconH > 0) {
+                        float iconHpx = static_cast<float>(kListFontHeightPx);
+                        float iconWpx = iconHpx * (static_cast<float>(iconW) / static_cast<float>(iconH));
+                        DrawGenericTexturedQuad(device, iconTex, (labelRightX + 10.0f) * scaleX, (rowY - iconHpx * 0.5f) * scaleY,
+                                                  iconWpx * scaleX, iconHpx * scaleY);
+                    }
+                }
+            }
+            rowY += kListRowSpacingPx;
         }
 
-        bool selected = (i == g_optSelectedRow);
-        DWORD rowColor = selected ? kGreenHighlight : kWhiteColor;
-        if (selected) {
-            DrawGenericTexturedQuad(device, g_optWhiteTexture, rowRectX * scaleX, rowRectY * scaleY,
-                                      rowRectW * scaleX, kListRowSpacingPx * scaleY, 0x3AFFFFFFu); // highlight bar behind the row
+        if (isStick) {
+            DrawStickLayoutDiagram(device, scaleX, scaleY, static_cast<StickLayout>(g_optDrilldownSelectedRow));
+        } else {
+            DrawButtonLayoutDiagram(device, scaleX, scaleY, static_cast<ButtonLayout>(g_optDrilldownSelectedRow));
         }
-        DrawOptLeftAlignedText(device, g_optRowLabelCache[i], CurrentTabRowLabel(i),
-                                 labelX, rowY, kListFontHeightPx, rowColor, scaleX, scaleY);
-        char valueBuf[64];
-        CurrentTabRowValueString(i, valueBuf, sizeof(valueBuf));
-        DrawOptRightAlignedText(device, g_optRowValueCache[i], valueBuf,
-                                 valueRightX, rowY, kListFontHeightPx, rowColor, scaleX, scaleY);
-        rowY += kListRowSpacingPx;
+    } else {
+        // Tab bar
+        float tabX = 56.0f;
+        constexpr float kTabGapPx = 44.0f;
+        constexpr float kTabHitPadY = 12.0f;
+        for (int t = 0; t < kUnifiedTabCount; ++t) {
+            int tabWidth = MeasureTextWidthPx(UnifiedTabDisplayName(kTabOrder[t]), g_modConfig.overlayFontItalic, kTabFontHeightPx);
+            bool hovered = PointInRect(tabX * scaleX, (tabY - kTabHitPadY) * scaleY,
+                                         static_cast<float>(tabWidth) * scaleX, (static_cast<float>(kTabFontHeightPx) + kTabHitPadY * 2.0f) * scaleY);
+            if (hovered && leftClickEdge && t != g_currentTabIndex) {
+                g_currentTabIndex = t;
+                RebuildTabRowCache();
+                g_optSelectedRow = 0;
+            }
+            bool isCurrentTab = (t == g_currentTabIndex);
+            DWORD tabColor = isCurrentTab ? kWhiteColor : (hovered ? 0xFFC0C0C0u : 0xFF808080u);
+            DrawOptLeftAlignedText(device, g_tabBarCache[t], UnifiedTabDisplayName(kTabOrder[t]), tabX, tabY,
+                                     kTabFontHeightPx, tabColor, scaleX, scaleY);
+            tabX += static_cast<float>(tabWidth) + kTabGapPx;
+        }
+        DrawGenericTexturedQuad(device, g_optWhiteTexture, 56.0f * scaleX, (listTopY - 24.0f) * scaleY,
+            (kPanelW - 112.0f) * scaleX, 2.0f * scaleY, 0x40FFFFFFu);
+
+        int rowCount = CurrentTabRowCount();
+        float rowY = listTopY + kListRowSpacingPx * 0.5f;
+        for (int i = 0; i < rowCount; ++i) {
+            float rowRectY = rowY - kListRowSpacingPx * 0.5f;
+
+            // Hover moves selection (matches the real native menu's own onFocus-on-hover
+            // convention, confirmed in pausedmenu.menu/all_restart_popmenu.menu) -- click
+            // acts: opens the drill-down for Stick/Button Layout; toggles a bool row
+            // outright; a float row is split into a left half (decrement) and right
+            // half (increment), same step as Left/Right already use.
+            bool hovered = PointInRect(kPanelX * scaleX, rowRectY * scaleY, kPanelW * scaleX, kListRowSpacingPx * scaleY);
+            if (hovered) {
+                g_optSelectedRow = i;
+                if (leftClickEdge) {
+                    if (CurrentTabRowIsStickLayout(i) || CurrentTabRowIsButtonLayout(i)) {
+                        g_optDrilldownOpen = true;
+                        g_optDrilldownSelectedRow = CurrentTabRowIsStickLayout(i)
+                            ? static_cast<int>(g_modConfig.stickLayout) : static_cast<int>(g_modConfig.buttonLayout);
+                    } else if (CurrentTabRowIsBoolToggle(i)) {
+                        AdjustCurrentTabRow(i, +1);
+                    } else {
+                        float midX = (kPanelW * 0.5f) * scaleX;
+                        AdjustCurrentTabRow(i, mouseX < midX ? -1 : +1);
+                    }
+                }
+            }
+
+            bool selected = (i == g_optSelectedRow);
+            DWORD rowColor = selected ? kWhiteColor : kDimTextColor;
+            if (selected) {
+                // Real console's own gradient highlight bar -- bright near the panel's
+                // left edge, fading toward the right (reference screenshot: the
+                // highlighted row's own text reads relatively muted against the
+                // brighter part of this same gradient, purely a contrast effect of the
+                // bar itself, not a different text color).
+                DrawGradientQuad(device, g_optWhiteTexture, kPanelX * scaleX, rowRectY * scaleY,
+                                   kPanelW * scaleX, kListRowSpacingPx * scaleY, 0x50FFFFFFu, 0x00FFFFFFu);
+            }
+            DrawOptRightAlignedText(device, g_optRowLabelCache[i], CurrentTabRowLabel(i),
+                                      labelRightX, rowY, kListFontHeightPx, rowColor, scaleX, scaleY);
+            if (selected) {
+                // Inline "press A" glyph -- real console convention: only the
+                // currently focused row shows it, always the A button regardless of
+                // what that row actually does (toggle a bool, adjust a value, or
+                // drill into a Stick/Button Layout sub-screen).
+                const char* aAsset = GetControllerGlyphAssetName(PhysicalInput::A, g_modConfig.glyphStyle);
+                if (aAsset && aAsset[0]) {
+                    void* iconTex = nullptr; int iconW = 0, iconH = 0;
+                    if (GetOrLoadGlyphIconTexture(device, aAsset, iconTex, iconW, iconH) && iconH > 0) {
+                        float iconHpx = static_cast<float>(kListFontHeightPx);
+                        float iconWpx = iconHpx * (static_cast<float>(iconW) / static_cast<float>(iconH));
+                        DrawGenericTexturedQuad(device, iconTex, (labelRightX + 10.0f) * scaleX, (rowY - iconHpx * 0.5f) * scaleY,
+                                                  iconWpx * scaleX, iconHpx * scaleY);
+                    }
+                }
+            }
+            char valueBuf[64];
+            CurrentTabRowValueString(i, valueBuf, sizeof(valueBuf));
+            DrawOptLeftAlignedText(device, g_optRowValueCache[i], valueBuf,
+                                     valueX, rowY, kListFontHeightPx, rowColor, scaleX, scaleY);
+            rowY += kListRowSpacingPx;
+        }
+
+        const char* desc = CurrentTabRowDescription(g_optSelectedRow);
+        if (desc && desc[0]) {
+            DrawOptLeftAlignedText(device, g_optDescCache, desc, 56.0f, descY, kDescFontHeightPx, kDescColor, scaleX, scaleY);
+        }
+    }
+
+    // Corner "Back" hint (bottom-right of the WHOLE SCREEN, not the panel) -- matches
+    // the real console screen exactly: it shows ONLY this, nothing else (the inline
+    // A-glyph above already replaces a separate "A action" legend entry, and this
+    // screen has no mouse-hint concept on console either). Replaces rounds 1-5's own
+    // full-width footer bar -- authentic to the reference at the cost of no longer
+    // advertising LB/RB tab-switching or mouse-click support via an on-screen legend
+    // (both still work, just not called out visually, same as the console itself
+    // doesn't call out its own navigation).
+    {
+        const char* bAsset = GetControllerGlyphAssetName(PhysicalInput::B, g_modConfig.glyphStyle);
+        constexpr int kCornerFontHeightPx = 24;
+        constexpr float kCornerIconHeight = 26.0f;
+        constexpr float kCornerMarginX = 60.0f, kCornerMarginY = 60.0f, kCornerGapPx = 10.0f;
+        const char* backText = "Back";
+        int textW = MeasureTextWidthPx(backText, g_modConfig.overlayFontItalic, kCornerFontHeightPx);
+        float iconW = kCornerIconHeight;
+        void* iconTex = nullptr; int iconTexW = 0, iconTexH = 0;
+        bool haveIcon = bAsset && bAsset[0] && GetOrLoadGlyphIconTexture(device, bAsset, iconTex, iconTexW, iconTexH) && iconTexH > 0;
+        if (haveIcon) iconW = kCornerIconHeight * (static_cast<float>(iconTexW) / static_cast<float>(iconTexH));
+        float totalW = static_cast<float>(textW) + kCornerGapPx + iconW;
+        float startX = 1920.0f - kCornerMarginX - totalW;
+        float cornerY = 1080.0f - kCornerMarginY;
+        DrawOptLeftAlignedText(device, g_optCornerBackCache, backText, startX, cornerY, kCornerFontHeightPx, kWhiteColor, scaleX, scaleY);
+        if (haveIcon) {
+            DrawGenericTexturedQuad(device, iconTex, (startX + textW + kCornerGapPx) * scaleX, (cornerY - kCornerIconHeight * 0.5f) * scaleY,
+                                      iconW * scaleX, kCornerIconHeight * scaleY);
+        }
     }
 
     // Click anywhere outside the panel closes the menu (common modal-dialog
     // convention, and the only way a mouse-only player could otherwise close this
-    // screen at all -- B/Backspace is the controller/keyboard equivalent).
-    bool insidePanel = PointInRect((kPanelX - kBorderPad) * scaleX, (kPanelY - kBorderPad) * scaleY,
-                                     (kPanelW + kBorderPad * 2.0f) * scaleX, (kPanelH + kBorderPad * 2.0f) * scaleY);
-    if (leftClickEdge && !insidePanel) {
+    // screen at all -- B/Backspace is the controller/keyboard equivalent). Doesn't
+    // apply while the drill-down is open -- clicking the game view there would be a
+    // confusing double-purpose click (already used to preview/commit a list option).
+    bool insidePanel = PointInRect(0.0f, 0.0f, kPanelW * scaleX, kPanelH * scaleY);
+    if (leftClickEdge && !insidePanel && !g_optDrilldownOpen) {
         g_optMenuOpen = false;
     }
-
-    // Footer -- real controller-glyph icons + labels (2026-08-05, live-reported: "the
-    // lack of actual button glyphs is" the problem -- this used to be pure text, e.g.
-    // "LB/RB TABS", never an actual button-prompt icon, unlike every other in-game
-    // hint this project draws (DrawOneGameplayHintSlot/DrawOneMenuHintSlot). This menu's
-    // navigation is raw physical D-pad/A/B/LB/RB (see analog_input_hooks.cpp's
-    // InjectControllerMenuNav), never forwarded through a real keybind, so this draws
-    // icons directly from GetControllerGlyphAssetName(PhysicalInput, glyphStyle) rather
-    // than going through the keyboard-bind-name-keyed TryGetMenuGlyphAssetNameForKeyName
-    // path the rest of this file's hint systems use (there's no keybind name to resolve
-    // here). Universal D-pad icons (dpad_left/dpad_right) are brand-independent, same as
-    // DpadGlyphAssetName's own real assets, and hardcoded here directly rather than via
-    // a cross-TU call since they don't depend on GlyphStyle at all.
-    constexpr float kFooterIconHeight = 24.0f;
-    constexpr int kFooterFontHeightPx = 20;
-    constexpr float kFooterIconGapPx = 8.0f;
-    constexpr float kFooterSegmentGapPx = 28.0f;
-    constexpr DWORD kFooterTextColor = 0xFFA0A0A0u;
-    float footerY = kPanelY + kPanelH - kFooterH * 0.5f;
-    float footerX = labelX;
-
-    auto drawFooterIcon = [&](const char* assetName) {
-        if (!assetName || !assetName[0]) return;
-        void* iconTex = nullptr; int iconW = 0, iconH = 0;
-        if (!GetOrLoadGlyphIconTexture(device, assetName, iconTex, iconW, iconH) || iconH <= 0) return;
-        float drawW = kFooterIconHeight * (static_cast<float>(iconW) / static_cast<float>(iconH));
-        float top = footerY - kFooterIconHeight * 0.5f;
-        DrawGenericTexturedQuad(device, iconTex, footerX * scaleX, top * scaleY,
-                                  drawW * scaleX, kFooterIconHeight * scaleY);
-        footerX += drawW + kFooterIconGapPx;
-    };
-    auto drawFooterLabel = [&](TextTexCache& cache, const char* label) {
-        DrawOptLeftAlignedText(device, cache, label, footerX, footerY, kFooterFontHeightPx,
-                                 kFooterTextColor, scaleX, scaleY);
-        int w = MeasureTextWidthPx(label, g_modConfig.overlayFontItalic, kFooterFontHeightPx);
-        footerX += static_cast<float>(w) + kFooterSegmentGapPx;
-    };
-
-    drawFooterIcon(GetControllerGlyphAssetName(PhysicalInput::LB, g_modConfig.glyphStyle));
-    drawFooterIcon(GetControllerGlyphAssetName(PhysicalInput::RB, g_modConfig.glyphStyle));
-    drawFooterLabel(g_optFooterTabsCache, "TABS");
-
-    drawFooterIcon("dpad_left");
-    drawFooterIcon("dpad_right");
-    drawFooterLabel(g_optFooterAdjustCache, "ADJUST");
-
-    drawFooterIcon(GetControllerGlyphAssetName(PhysicalInput::A, g_modConfig.glyphStyle));
-    drawFooterLabel(g_optFooterToggleCache, "TOGGLE");
-
-    drawFooterIcon(GetControllerGlyphAssetName(PhysicalInput::B, g_modConfig.glyphStyle));
-    drawFooterLabel(g_optFooterCloseCache, "CLOSE");
-
-    drawFooterLabel(g_optFooterClickCache, "OR CLICK");
 }
 
 } // namespace
@@ -2004,6 +2376,32 @@ bool CustomOptionsMenu_TickInput(bool openRequestedEdge,
                                    bool upEdge, bool downEdge, bool leftEdge, bool rightEdge,
                                    bool selectEdge, bool backEdge, bool tabPrevEdge, bool tabNextEdge)
 {
+    if (g_optMenuOpen && g_optDrilldownOpen) {
+        // Stick/Button Layout drill-down (2026-08-05 restyle). Up/Down moves the
+        // highlighted option AND commits it immediately -- same "no separate
+        // confirm/apply step" convention this project already uses for these exact
+        // two rows in the main list (Left/Right always applied instantly there too).
+        // Back/Select both close back to the main list; committing again there is a
+        // harmless no-op for controller nav (already committed by the Up/Down that
+        // got here) and is what actually applies a mouse-hover-only preview that
+        // never got clicked.
+        bool isStick = CurrentTabRowIsStickLayout(g_optSelectedRow);
+        auto commit = [&]() {
+            if (isStick) g_modConfig.stickLayout = static_cast<StickLayout>(g_optDrilldownSelectedRow);
+            else g_modConfig.buttonLayout = static_cast<ButtonLayout>(g_optDrilldownSelectedRow);
+            g_buttonMap = ResolveButtonMap(g_modConfig.buttonLayout, g_modConfig.flipTriggers);
+            SaveModConfig();
+        };
+        if (backEdge || selectEdge) {
+            commit();
+            g_optDrilldownOpen = false;
+            return true;
+        }
+        if (upEdge) { g_optDrilldownSelectedRow = (g_optDrilldownSelectedRow - 1 + 4) % 4; commit(); }
+        if (downEdge) { g_optDrilldownSelectedRow = (g_optDrilldownSelectedRow + 1) % 4; commit(); }
+        return true;
+    }
+
     if (g_optMenuOpen) {
         if (backEdge) {
             g_optMenuOpen = false;
@@ -2020,8 +2418,14 @@ bool CustomOptionsMenu_TickInput(bool openRequestedEdge,
             if (downEdge) g_optSelectedRow = (g_optSelectedRow + 1) % rowCount;
             if (leftEdge) AdjustCurrentTabRow(g_optSelectedRow, -1);
             if (rightEdge) AdjustCurrentTabRow(g_optSelectedRow, +1);
-            if (selectEdge && CurrentTabRowIsBoolToggle(g_optSelectedRow)) {
-                AdjustCurrentTabRow(g_optSelectedRow, +1); // A also toggles a bool row, same as Left/Right
+            if (selectEdge) {
+                if (CurrentTabRowIsStickLayout(g_optSelectedRow) || CurrentTabRowIsButtonLayout(g_optSelectedRow)) {
+                    g_optDrilldownOpen = true;
+                    g_optDrilldownSelectedRow = CurrentTabRowIsStickLayout(g_optSelectedRow)
+                        ? static_cast<int>(g_modConfig.stickLayout) : static_cast<int>(g_modConfig.buttonLayout);
+                } else if (CurrentTabRowIsBoolToggle(g_optSelectedRow)) {
+                    AdjustCurrentTabRow(g_optSelectedRow, +1); // A also toggles a bool row, same as Left/Right
+                }
             }
         }
         return true; // claim everything while our own menu is open -- the real
@@ -2035,6 +2439,7 @@ bool CustomOptionsMenu_TickInput(bool openRequestedEdge,
     // not-yet-verified changes.
     if (openRequestedEdge) {
         g_optMenuOpen = true;
+        g_optDrilldownOpen = false;
         g_optSelectedRow = 0;
         g_currentTabIndex = 0; // always opens on the Controller tab
         RebuildTabRowCache();
@@ -2048,6 +2453,7 @@ bool CustomOptionsMenu_TickInput(bool openRequestedEdge,
 void CustomOptionsMenu_ResetOnMenuClose()
 {
     g_optMenuOpen = false;
+    g_optDrilldownOpen = false;
     g_optSelectedRow = 0;
     g_currentTabIndex = 0;
 }
