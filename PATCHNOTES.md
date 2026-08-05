@@ -131,7 +131,12 @@ reverse-engineering trail behind each entry.
   match that never needs to know what the translated key name says. The
   grenade-throwback hint had the identical risk (its own combo bind text
   contains the English word "or") and was proactively fixed the same way,
-  before it was even confirmed broken live. **Known,
+  before it was even confirmed broken live. A full audit then found and
+  fixed one more real case (turret placement) and hardened three menu
+  shortcuts (Friends/Game Summary/Back) that weren't confirmed broken but
+  are now strictly more robust regardless, using a newly generalized
+  version of the same technique that any future hint of this kind can
+  reuse with one new constant instead of a fresh investigation. **Known,
   deprioritized gap, not fixed**: some menu glyph icons can land in a
   slightly wrong POSITION under other languages (this project's own manual
   per-screen position tables were calibrated against English text length) —

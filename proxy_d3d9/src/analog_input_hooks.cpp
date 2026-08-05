@@ -5334,31 +5334,42 @@ bool RenderedTextMatchesReferenceKeyPrefix(const char* renderedText, const char*
     return _strnicmp(renderedText, resolved, prefixLen) == 0;
 }
 
-// Structural match for "&&1"-substitution templates (issue #68 follow-up, 2026-08-05
-// live retest) -- e.g. PLATFORM_MANTLE = "Press^3 &&1 ^7to  ", where the real engine
-// splices a bind's own display text in for "&&1" before drawing. A live Italian
-// screenshot proved word-based key names ARE translated for this splice ("Premi
-// Spazio per" instead of "Press SPACE to"), so matching the SUBSTITUTED key text
-// itself (as isMantleHint's old `_stricmp(highlighted, "SPACE")` did) breaks under
-// any language that translates that word. This instead compares the parts of the
-// template OUTSIDE the substitution point -- which never change regardless of what
-// gets spliced in for "&&1" -- against the real rendered text's own matching prefix/
-// suffix, position-based (not marker-based), so it's correct for any substituted
-// key length in any language: `renderedText` must start with the template's own text
-// before "&&1" and end with its text after "&&1", verbatim.
-bool RenderedTextMatchesSubstitutionTemplate(const char* renderedText, const char* referenceKey)
+// Structural match for a template with an embedded, real substitution marker (issue
+// #68 follow-up, 2026-08-05 live retest, generalized 2026-08-06 for the audit --
+// "look for any other similar cases... a more universal robust pipeline"). Two real
+// marker styles confirmed to exist in this engine's own localized strings, both
+// eventually resolved through the same bind-resolver (re_notes/ui_assets.md):
+// `"&&1"` (e.g. PLATFORM_MANTLE = "Press^3 &&1 ^7to  ") and `"[{+command}]"` (e.g.
+// SENTRY_PLACE = "Press ^3[{+attack}]^7 to place the turret."). Either way the real
+// engine splices a bind's own display text in for the marker before drawing, and a
+// live Italian screenshot already proved word-based key names ARE translated for
+// this splice ("Premi Spazio per" instead of "Press SPACE to") -- so matching the
+// SUBSTITUTED key text itself breaks under any language that translates that word.
+// This instead compares the parts of the template OUTSIDE the marker -- which never
+// change regardless of what gets spliced in -- against the real rendered text's own
+// matching prefix/suffix, position-based (not content-based), so it's correct for
+// any substituted key length in any language: `renderedText` must start with the
+// template's own text before the marker and end with its text after it, verbatim.
+bool RenderedTextMatchesSubstitutionTemplateWithMarker(const char* renderedText, const char* referenceKey, const char* marker)
 {
     const char* tmpl = GetLocalizedString(referenceKey);
     if (!tmpl || !LooksLikeValidPointer(reinterpret_cast<uintptr_t>(tmpl))) return false;
-    const char* marker = strstr(tmpl, "&&1");
-    if (!marker) return false;
-    size_t prefixLen = static_cast<size_t>(marker - tmpl);
-    size_t suffixLen = strlen(marker + 3); // skip "&&1" itself
+    const char* markerPos = strstr(tmpl, marker);
+    if (!markerPos) return false;
+    size_t markerLen = strlen(marker);
+    size_t prefixLen = static_cast<size_t>(markerPos - tmpl);
+    size_t suffixLen = strlen(markerPos + markerLen);
     size_t renderedLen = strlen(renderedText);
     if (renderedLen < prefixLen + suffixLen) return false;
     if (strncmp(renderedText, tmpl, prefixLen) != 0) return false;
-    if (suffixLen > 0 && strcmp(renderedText + (renderedLen - suffixLen), marker + 3) != 0) return false;
+    if (suffixLen > 0 && strcmp(renderedText + (renderedLen - suffixLen), markerPos + markerLen) != 0) return false;
     return true;
+}
+
+// Thin wrapper for the "&&1" marker style, the one every existing caller uses.
+bool RenderedTextMatchesSubstitutionTemplate(const char* renderedText, const char* referenceKey)
+{
+    return RenderedTextMatchesSubstitutionTemplateWithMarker(renderedText, referenceKey, "&&1");
 }
 
 // Restricts the custom hint-overlay replacement (issue #48/#49) to the two real fonts
@@ -5414,6 +5425,8 @@ bool TryGetMenuGlyphAssetNameForKeyName(const char* keyName, char* outAssetName,
 bool TryGetMantleGlyphAssetName(char* outAssetName, size_t outSize);
 // Same technique, for the grenade-throwback hint's known LogicalAction::Lethal mapping.
 bool TryGetThrowbackGlyphAssetName(char* outAssetName, size_t outSize);
+// Same technique, for the turret-placement hint's known LogicalAction::Fire mapping.
+bool TryGetSentryPlaceGlyphAssetName(char* outAssetName, size_t outSize);
 
 // Reuses the same obscure LB+RB-held-2s convention as the zoneload-test above (that
 // test is disabled/not wired into the live tick, so no collision) -- deliberately
@@ -6031,10 +6044,19 @@ void __cdecl Hook_DrawGlyphText(
                         // never actually confirmed broken live but fixed proactively using the
                         // identical proven technique rather than waiting for another screenshot.
                         bool isThrowbackHint = RenderedTextMatchesSubstitutionTemplate(param_1, "PLATFORM_THROWBACKGRENADE");
+                        // Same audit, same class of bug, different marker style: SENTRY_PLACE
+                        // ("Press ^3[{+attack}]^7 to place the turret.") uses the `[{+command}]`
+                        // bracket-token substitution instead of "&&1", but resolves through the
+                        // same real bind-resolver either way (re_notes/ui_assets.md), and its
+                        // own real captured English text ("Left Mouse") contains the same kind
+                        // of translatable word "Mouse" that ResolveGlyphAssetNameForKeyName's
+                        // `_stricmp(keyName, "Left Mouse")` special case still matches literally.
+                        bool isSentryPlaceHint = RenderedTextMatchesSubstitutionTemplateWithMarker(param_1, "SENTRY_PLACE", "[{+attack}]");
 
                         char assetName[32] = {};
                         bool haveAssetName = isMantleHint ? TryGetMantleGlyphAssetName(assetName, sizeof(assetName))
                             : isThrowbackHint ? TryGetThrowbackGlyphAssetName(assetName, sizeof(assetName))
+                            : isSentryPlaceHint ? TryGetSentryPlaceGlyphAssetName(assetName, sizeof(assetName))
                             : TryGetGlyphAssetNameForKeyName(highlighted, assetName, sizeof(assetName));
                         if (haveAssetName) {
                             char prefixText[128] = {};
@@ -6371,8 +6393,37 @@ void __cdecl Hook_DrawGlyphText(
                         memcpy(highlighted, param_1 + span.contentStart, copyLen);
                         highlighted[copyLen] = '\0';
 
+                        // Issue #68 follow-up (2026-08-06 audit, "look for any other similar
+                        // cases"): PLATFORM_FRIENDS_SHORTCUT/GAMESUMMARY_SHORTCUT/BACK_SHORTCUT
+                        // are real, fixed reference-key strings ("Friends ^2F^7" etc, confirmed
+                        // via zone_dump) with the accelerator letter baked directly into the
+                        // template -- NOT run through the "&&1"/bind-resolver substitution that
+                        // proved translatable for SPACE/G-or-Middle-Mouse/Left-Mouse, so there's
+                        // no direct proof these letters themselves ever get translated. Matching
+                        // the FULL real template via RenderedTextMatchesReferenceKey instead of
+                        // extracting/comparing just the highlighted letter is still strictly more
+                        // robust either way (correct whether or not the letter ever changes per
+                        // language) and costs nothing -- still resolves through the same
+                        // known-safe TryGetMenuGlyphAssetNameForKeyName call, just gated on the
+                        // real string instead of the extracted substring.
+                        // Hoisted into a named bool (not just inlined into the if-chain below)
+                        // since InjectSyntheticBackHintIfNeeded's own Special-Ops/Friends-list
+                        // suppression logic further down needs to know "is this the Friends
+                        // hint specifically" too -- reused there instead of re-deriving it from
+                        // `highlighted == "F"` a second time (same fix, one source of truth).
+                        bool isFriendsShortcut = RenderedTextMatchesReferenceKey(param_1, "PLATFORM_FRIENDS_SHORTCUT");
                         char assetName[32] = {};
-                        if (TryGetMenuGlyphAssetNameForKeyName(highlighted, assetName, sizeof(assetName))) {
+                        bool haveMenuAssetName;
+                        if (isFriendsShortcut) {
+                            haveMenuAssetName = TryGetMenuGlyphAssetNameForKeyName("F", assetName, sizeof(assetName));
+                        } else if (RenderedTextMatchesReferenceKey(param_1, "PLATFORM_GAMESUMMARY_SHORTCUT")) {
+                            haveMenuAssetName = TryGetMenuGlyphAssetNameForKeyName("G", assetName, sizeof(assetName));
+                        } else if (RenderedTextMatchesReferenceKey(param_1, "PLATFORM_BACK_SHORTCUT")) {
+                            haveMenuAssetName = TryGetMenuGlyphAssetNameForKeyName("ESC", assetName, sizeof(assetName));
+                        } else {
+                            haveMenuAssetName = TryGetMenuGlyphAssetNameForKeyName(highlighted, assetName, sizeof(assetName));
+                        }
+                        if (haveMenuAssetName) {
                             char prefixText[128] = {};
                             size_t prefixLen = span.markerStart < sizeof(prefixText) - 1 ? span.markerStart : sizeof(prefixText) - 1;
                             memcpy(prefixText, param_1, prefixLen);
@@ -6430,9 +6481,11 @@ void __cdecl Hook_DrawGlyphText(
                             // doesn't know it's now obscured by that modal either, same root
                             // cause as the Special Ops case above (see IsFriendsListOpen()'s own
                             // comment).
-                            bool isFriendsHint = _stricmp(highlighted, "F") == 0;
+                            // isFriendsShortcut computed above (issue #68 audit, 2026-08-06) --
+                            // was `_stricmp(highlighted, "F") == 0` here, replaced with the same
+                            // real reference-key match already used to pick this hint's icon.
                             suppressRealDraw = true;
-                            if (!(isFriendsHint && (IsInsideSpecOpsNestedModal() || IsFriendsListOpen()))) {
+                            if (!(isFriendsShortcut && (IsInsideSpecOpsNestedModal() || IsFriendsListOpen()))) {
                                 constexpr float kMenuHintVerticalNudge = -18.0f;
                                 RequestMenuHintOverlay(param_2, param_3 + kMenuHintVerticalNudge, prefixText, suffixText,
                                     assetName);
@@ -8018,6 +8071,17 @@ bool TryGetMantleGlyphAssetName(char* outAssetName, size_t outSize)
 bool TryGetThrowbackGlyphAssetName(char* outAssetName, size_t outSize)
 {
     const char* assetName = GlyphAssetName(PhysicalInputForAction(LogicalAction::Lethal), g_modConfig.glyphStyle);
+    if (!assetName || assetName[0] == '\0') return false;
+    strncpy_s(outAssetName, outSize, assetName, _TRUNCATE);
+    return true;
+}
+
+// Same technique, for the turret-placement hint (SENTRY_PLACE), resolved straight from
+// LogicalAction::Fire (the same action the original "Left Mouse" special case in
+// ResolveGlyphAssetNameForKeyName already used, since +attack is Fire's own bind).
+bool TryGetSentryPlaceGlyphAssetName(char* outAssetName, size_t outSize)
+{
+    const char* assetName = GlyphAssetName(PhysicalInputForAction(LogicalAction::Fire), g_modConfig.glyphStyle);
     if (!assetName || assetName[0] == '\0') return false;
     strncpy_s(outAssetName, outSize, assetName, _TRUNCATE);
     return true;
