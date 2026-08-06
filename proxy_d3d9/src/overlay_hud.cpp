@@ -4044,6 +4044,26 @@ void ReleaseAllCachedTextures()
     // pool textures, won't silently survive a device recreation either -- see its own
     // header comment for why.
     releaseIfSet(g_optBlurTexture);
+    // CRASH FIX (2026-08-06, live-reported: "after restarting the device for a
+    // settings change, if you reopen the pause menu it crashes mw3 entirely").
+    // g_optBlurPixelShader was deliberately NOT released here when it was added --
+    // the reasoning ("a shader object is not D3DPOOL-based and is not invalidated by
+    // Reset()") is correct for a real IDirect3DDevice9::Reset() on the SAME device,
+    // but this function is ALSO called from OnDeviceRecreated() (Hook_CreateDevice's
+    // own "no Reset() call seen, the whole device got destroyed and recreated from
+    // scratch" path -- exactly what a real `vid_restart` after a staged Advanced
+    // Video setting fires, see CommitStagedSettings). A shader object belongs to the
+    // device that created it; once THAT device is destroyed, the shader handle is a
+    // dangling reference to freed memory, not merely "different" -- EnsureBlurShader
+    // saw the stale non-null pointer, assumed it was still valid, and skipped
+    // recreating it for the new device, so the very next DrawBlurredBackgroundRegion
+    // call (opening the pause menu) called SetPixelShader on the NEW device with a
+    // shader handle from the OLD, already-destroyed one. Released unconditionally
+    // here (cheap to recreate -- a 34-instruction shader, EnsureBlurShader already
+    // recreates it lazily on next use) rather than trying to distinguish the two
+    // real-Reset-vs-full-recreate cases, since correctness matters far more than
+    // avoiding one redundant CreatePixelShader call on an ordinary Reset.
+    releaseIfSet(g_optBlurPixelShader);
 }
 
 HRESULT WINAPI Hook_Reset(void* device, void* pPresentationParameters)
