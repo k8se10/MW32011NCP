@@ -22,12 +22,16 @@ reverse-engineering trail behind each entry.
   not just displayed. A brand-new "CUSTOM BINDS" tab lets you assign any
   controller button to any action individually, for layouts the 4 built-in
   presets don't cover. Backing out with an unconfirmed Video/Audio/Advanced
-  Video change now shows a real "Apply Settings?" prompt instead of silently
-  committing or discarding it. The Button Layout row also gained a 5th "CUSTOM"
-  option that previews and selects the new custom bindings. Real toggle-switch
-  and slider-bar graphics replace bare "0"/"1"/raw-number text, and the tab bar
-  now scrolls to stay within the panel's own left edge instead of overflowing
-  past it now that there are 9 tabs. Not yet live-tested — see
+  Video change now shows a real "Apply Settings?" prompt — rebuilt against the
+  actual real menu file to match the console version exactly: a real navigable
+  Yes/No list (not a bare A/B button prompt), defaulting focus to "No" just
+  like the original. The Button Layout row also gained a 5th "CUSTOM" option
+  that previews and selects the new custom bindings. Real toggle-switch and
+  slider-bar graphics replace bare "0"/"1"/raw-number text, Anti-Aliasing/
+  Ambient Occlusion/texture-quality rows show their real label ("2X," "Extra,"
+  etc.) instead of a raw stored number, and the tab bar now scrolls to stay
+  within the panel's own left edge instead of overflowing past it now that
+  there are 9 tabs. Not yet live-tested — see
   `re_notes/known_issues.md` issue #66.
 - **Custom in-game options overlay, invoked from the real pause menu's own "Options" button.** New
   fully-drawn settings screen, invoked by drawing an extra "MW32011NCP
