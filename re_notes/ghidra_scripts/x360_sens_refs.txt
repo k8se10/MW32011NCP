@@ -1,0 +1,59 @@
+STRING @ 8200c564 = "m_vehMouseSteerSensitivity"
+  from 821257e4 type=PARAM IN FUNCTION Function_82125428@82125428
+  (1 references)
+
+STRING @ 8200c580 = "Vehicle mouse steering sensitivity"
+  from 821257dc type=PARAM IN FUNCTION Function_82125428@82125428
+  (1 references)
+
+STRING @ 8200c720 = "sensitivity"
+  from 82125624 type=PARAM IN FUNCTION Function_82125428@82125428
+  (1 references)
+
+STRING @ 8200c72c = "Mouse sensitivity"
+  from 8212561c type=PARAM IN FUNCTION Function_82125428@82125428
+  (1 references)
+
+STRING @ 8200c830 = "cl_yawspeed"
+  from 82125548 type=PARAM IN FUNCTION Function_82125428@82125428
+  (1 references)
+
+STRING @ 8200d348 = "viewSensitivity"
+  (0 references)
+
+STRING @ 8200deac = "profileMenuOption_sensitivity"
+  from 8212fdb4 type=PARAM IN FUNCTION Function_8212FC80@8212fc80
+  (1 references)
+
+STRING @ 8200e0a8 = "profile_setViewSensitivity"
+  from 82130434 type=PARAM IN FUNCTION Function_82130370@82130370
+  (1 references)
+
+STRING @ 8200e1f8 = "exec viewSensitivity_med"
+  (0 references)
+
+STRING @ 8200e214 = "exec viewSensitivity_low"
+  (0 references)
+
+STRING @ 8200e230 = "exec viewSensitivity_high"
+  (0 references)
+
+STRING @ 8201c1ac = "turnrate"
+  from 8224db50 type=PARAM IN DATA
+  (1 references)
+
+STRING @ 8202bc48 = "bg_shock_lookControl_mousesensitivityscale"
+  from 82340d44 type=PARAM IN FUNCTION Function_8233FE38@8233fe38
+  from 82508a88 type=DATA IN DATA
+  (2 references)
+
+STRING @ 8202bc74 = "bg_shock_lookControl_maxyawspeed"
+  from 82340d1c type=PARAM IN FUNCTION Function_8233FE38@8233fe38
+  from 82508a84 type=DATA IN DATA
+  (2 references)
+
+STRING @ 8202d5b4 = "Sensitivity scale to apply to a shellshocked player"
+  from 82340d3c type=PARAM IN FUNCTION Function_8233FE38@8233fe38
+  (1 references)
+
+Total matching strings: 15
