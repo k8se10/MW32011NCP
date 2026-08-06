@@ -1,0 +1,183 @@
+================================================================
+Function: Function_8212FC80 @ 8212fc80
+Signature: undefined Function_8212FC80(void)
+----------------------------------------------------------------
+
+void Function_8212FC80(void)
+
+{
+  double dVar1;
+  double dVar2;
+  double dVar3;
+  
+  dVar3 = (double)DAT_82002290;
+  DAT_8276951c = Function_822FFDF8(dVar3,(double)DAT_82000af8,(double)DAT_820012e4,
+                                   0xffffffff8200df4c);
+  dVar2 = (double)DAT_820025b0;
+  DAT_82768598 = Function_822FFDF8(dVar2,(double)DAT_8200df48,(double)DAT_8200250c,
+                                   0xffffffff8200df28);
+  DAT_8276220c = Function_822FFDF8((double)DAT_82000e28,dVar2,0xffffffff8200df0c);
+  dVar1 = (double)DAT_820022ec;
+  DAT_8276cbc0 = Function_822FFDF8(dVar1,dVar2,dVar3,0xffffffff8200deec);
+  DAT_82762208 = Function_822FFDF8(dVar1,dVar2,dVar3,0xffffffff8200decc);
+  DAT_8276859c = Function_822FFDF8((double)DAT_82002124,dVar3,(double)DAT_82000de0,
+                                   0xffffffff8200deac);
+  DAT_82769508 = Function_822FFDB8(0xffffffff8200de14,0,0,2,0,0xffffffff8200de40);
+  return;
+}
+
+
+
+================================================================
+Function: Function_82130370 @ 82130370
+Signature: undefined Function_82130370(void)
+----------------------------------------------------------------
+
+void Function_82130370(void)
+
+{
+  Function_8228D538(0xffffffff8200e140,0xffffffff8212f9b0,0xffffffff8276cc90);
+  Function_8228D538(0xffffffff8200e128,0xffffffff8212fa68,0xffffffff8276cc84);
+  Function_8228D538(0xffffffff8200e110,0xffffffff8212fa98,0xffffffff8276cc78);
+  Function_8228D538(0xffffffff8200e0f8,0xffffffff8212fe20,0xffffffff8276cc6c);
+  Function_8228D538(0xffffffff8200e0e0,0xffffffff8212ff38,0xffffffff8276cc60);
+  Function_8228D538(0xffffffff8200e0c4,0xffffffff8212fad8,0xffffffff8276cc54);
+  Function_8228D538(0xffffffff8200e0a8,0xffffffff8212fb80,0xffffffff8276cc48);
+  Function_8228D538(0xffffffff8200e08c,0xffffffff821300a0,0xffffffff8276cc3c);
+  Function_8228D538(0xffffffff8200e074,0xffffffff821300a8,0xffffffff8276cc30);
+  Function_8228D538(0xffffffff8200e05c,0xffffffff821300b0,0xffffffff8276cc24);
+  Function_8228D538(0xffffffff8200e040,0xffffffff821300f0,0xffffffff8276cc18);
+  Function_8228D538(0xffffffff8200e01c,0xffffffff82130170,0xffffffff8276cc0c);
+  Function_8228D538(0xffffffff8200e008,0xffffffff821301b0,0xffffffff8276cc00);
+  Function_8228D538(0xffffffff8200dfe0,0xffffffff82130268,0xffffffff8276cbf4);
+  Function_8228D538(0xffffffff8200dfc8,0xffffffff82130130,0xffffffff8276cbe8);
+  Function_8228D538(0xffffffff8200dfa8,0xffffffff82130320,0xffffffff8276cbdc);
+  Function_8228D538(0xffffffff8200df88,0xffffffff82130328,0xffffffff8276cbd0);
+  Function_8228D538(0xffffffff8200df64,0xffffffff82130330,0xffffffff8276cbc4);
+  return;
+}
+
+
+
+================================================================
+Function: Function_82125428 @ 82125428
+Signature: undefined Function_82125428(void)
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void Function_82125428(void)
+
+{
+  undefined8 uVar1;
+  double dVar2;
+  double dVar3;
+  double dVar4;
+  double dVar5;
+  double dVar6;
+  double dVar7;
+  
+  FUN_824bede0();
+  Function_822A4CE8();
+  thunk_FUN_82459780();
+  Function_824C0610();
+  Function_82119EC0();
+  Function_8211CBD8();
+  DAT_826b1894 = 0;
+  Function_82120040();
+  DAT_82743908 = Function_822FFD70(0xffffffff8200c948,1,0x80,0xffffffff8200c958);
+  DAT_8275bb00 = Function_822FFD70(0xffffffff8200c938,0,0x80,0xffffffff8200c910);
+  DAT_82743c50 = Function_822FFD70(0xffffffff8200c8e4,0,0,0xffffffff8200c8f0);
+  DAT_8275bb10 = Function_822FFDB8(0xffffffff8200c8d8,0,0xfffffffffffffffe,4,0,0xffffffff8200c8b0);
+  DAT_826b1750 = Function_822FFD70(0xffffffff8200c870,0,0,0xffffffff8200c888);
+  dVar5 = (double)DAT_820010a0;
+  dVar7 = (double)DAT_82001180;
+  dVar3 = (double)DAT_8200a364;
+  DAT_826a23f4 = Function_822FFDF8(dVar3,dVar5,dVar7,0xffffffff8200c830);
+  DAT_826a28b8 = Function_822FFDF8(dVar3,dVar5,dVar7,0xffffffff8200c7f8);
+  dVar6 = (double)DAT_820025b0;
+  DAT_826a28bc = Function_822FFDF8((double)DAT_82001124,dVar6,dVar7,0xffffffff8200c7ac);
+  dVar5 = (double)_DAT_82000b78;
+  DAT_826a2404 = Function_822FFDF8((double)DAT_82000d74,dVar5,dVar7,0xffffffff8200c790);
+  dVar3 = (double)DAT_820024cc;
+  DAT_826b175c = Function_822FFDF8((double)DAT_82001254,dVar5,dVar3,0xffffffff8200c720);
+  DAT_82743914 = Function_822FFDF8(dVar6,dVar6,dVar3,0xffffffff8200c710);
+  DAT_8275bb0c = Function_822FFD70(0xffffffff8200c6d4,1,0,0xffffffff8200c6e0);
+  DAT_826b176c = Function_822FFD70(0xffffffff8200c688,0,0,0xffffffff8200c69c);
+  DAT_8274391c = Function_822FFD70(0xffffffff8200c678,1,0,0xffffffff8200c65c);
+  dVar4 = (double)DAT_82002290;
+  dVar2 = (double)DAT_82000b00;
+  dVar3 = (double)_DAT_8200c658;
+  DAT_826b1764 = Function_822FFDF8(dVar3,dVar2,dVar4,0xffffffff8200c650);
+  DAT_826b1760 = Function_822FFDF8(dVar3,dVar2,dVar4,0xffffffff8200c62c);
+  dVar3 = (double)DAT_82000e14;
+  DAT_8274390c = Function_822FFDF8(dVar3,dVar2,dVar4,0xffffffff8200c620);
+  DAT_82743c54 = Function_822FFDF8(dVar3,dVar2,dVar4,0xffffffff8200c5d0);
+  DAT_82743c58 = Function_822FFD70(0xffffffff8200c5a4,0,0,0xffffffff8200c5b0);
+  DAT_826acaa0 = Function_822FFDF8((double)DAT_82002124,dVar5,dVar7,0xffffffff8200c564);
+  DAT_8253531c = Function_822FFD70(0xffffffff8200c534,1,0x40,0xffffffff8200c548);
+  DAT_83137c2c = Function_822FFD70(0xffffffff8200c504,0,2,0xffffffff8200c510);
+  DAT_8310c9dc = Function_822FFDB8(0xffffffff8200c494,0,0,0x7fffffff,0,0xffffffff8200c4b8);
+  DAT_82f4e148 = Function_822FFD70(0xffffffff8200c408,0,0,0xffffffff8200c428);
+  uVar1 = Function_822BE6C0(0xffffffff8200c3f8);
+  DAT_826b1758 = Function_822FFFC8(0xffffffff8200c3f0,uVar1,0,0xffffffff8200c3dc);
+  DAT_836fe638 = Function_822FFFC8(0xffffffff8200c3c0,0xffffffff8205c9e0,0,0xffffffff8200c3c8);
+  DAT_82743918 = Function_822FFDB8(0xffffffff8200c384,1000,1,1000,0,0xffffffff8200c394);
+  DAT_826a6668 = Function_822FFD70(0xffffffff8200c378,0,0,0xffffffff8200c348);
+  DAT_82743910 = Function_822FFDB8(0xffffffff8200c31c,0,0,5,0,0xffffffff8200c32c);
+  DAT_826b1754 = Function_822FFDB8(0xffffffff8200c304,4000,0,10000,0,0xffffffff8200c2cc);
+  DAT_826a6660 = Function_822FFD70(0xffffffff8200c28c,0,0,0xffffffff8200c2a8);
+  DAT_826b1768 = Function_822FFD70(0xffffffff8200c248,0,0,0xffffffff8200c268);
+  DAT_8275bb04 = Function_822FFD70(0xffffffff8200c238,0,0,0xffffffff8200c204);
+  DAT_82743c5c = Function_822FFDB8(0xffffffff8200c1d4,0,0,99,0,0xffffffff8200c1e8);
+  DAT_826a666c = Function_822FFDB8(0xffffffff8200c1bc,0,0,99,0,0xffffffff8200c19c);
+  Function_822FFD70(0xffffffff82003f84,1,0,0xffffffff8200c190);
+  Function_822BFA58();
+  Function_8228D538(0xffffffff8200bef8,0xffffffff82122d80,0xffffffff8275bccc);
+  Function_8228D538(0xffffffff82007b44,0xffffffff8228cca8,0xffffffff8275bcc0);
+  FUN_8228ccb0(0xffffffff82007b44,0xffffffff82125120,0xffffffff8275bcb4);
+  Function_8228D538(0xffffffff8200c178,0xffffffff8228cca8,0xffffffff8275bca8);
+  FUN_8228ccb0(0xffffffff8200c178,0xffffffff82125140,0xffffffff8275bc9c);
+  Function_8228D538(0xffffffff8200bed8,0xffffffff82119858,0xffffffff8275bc90);
+  Function_8228D538(0xffffffff8200becc,0xffffffff821197f0,0xffffffff8275bc84);
+  Function_8228D538(0xffffffff8200beb0,0xffffffff821233c0,0xffffffff8275bc78);
+  Function_8228D538(0xffffffff8200be9c,0xffffffff821233c8,0xffffffff8275bc6c);
+  Function_8228D538(0xffffffff8200c168,0xffffffff82123938,0xffffffff8275bc60);
+  Function_8228D538(0xffffffff8200be8c,0xffffffff82123430,0xffffffff8275bc54);
+  Function_8228D538(0xffffffff8200be7c,0xffffffff82123528,0xffffffff8275bc48);
+  Function_8228D538(0xffffffff8200be6c,0xffffffff821235a0,0xffffffff8275bc3c);
+  DAT_826acaa4 = Function_822FFDF8(dVar6,dVar6,dVar4,0xffffffff8200c138);
+  FUN_82126100();
+  Function_82126090();
+  Function_821245D8();
+  Function_82137978();
+  Function_8228D538(0xffffffff8200c120,0xffffffff821246e8,0xffffffff8275bc30);
+  Function_8228D538(0xffffffff8200c110,0xffffffff82123978,0xffffffff8275bc24);
+  Function_8228D538(0xffffffff8200c100,0xffffffff82123dc0,0xffffffff8275bc18);
+  Function_8228D538(0xffffffff8200c0f0,0xffffffff82123e00,0xffffffff8275bc0c);
+  Function_8228D538(0xffffffff8200c0d8,0xffffffff821253d8,0xffffffff8275bc00);
+  Function_8228D538(0xffffffff8200c0b4,0xffffffff82125388,0xffffffff8275bbf4);
+  Function_8228D538(0xffffffff8200c0ac,0xffffffff82123cf0,0xffffffff8275bbe8);
+  Function_8228D538(0xffffffff8200c08c,0xffffffff821240e0,0xffffffff8275bbdc);
+  Function_8228D538(0xffffffff8200c078,0xffffffff82124130,0xffffffff8275bbd0);
+  Function_8228D538(0xffffffff8200c064,0xffffffff823696b8,0xffffffff8275bbc4);
+  Function_8228D538(0xffffffff8200c058,0xffffffff82124180,0xffffffff8275bbb8);
+  Function_8228D538(0xffffffff8200c040,0xffffffff82124278,0xffffffff8275bbac);
+  Function_8228D538(0xffffffff8200c028,0xffffffff82124288,0xffffffff8275bba0);
+  Function_8228D538(0xffffffff8200c010,0xffffffff82124198,0xffffffff8275bb94);
+  Function_8228D538(0xffffffff8200c000,0xffffffff822dc630,0xffffffff8275bb88);
+  Function_8228D538(0xffffffff8200bfe8,0xffffffff821246e0,0xffffffff8275bb7c);
+  Function_8239EF78();
+  Function_82398AA0();
+  Function_8228D538(0xffffffff8200bfd4,0xffffffff8239b348,0xffffffff8275bb70);
+  Function_823A0330();
+  Function_82130370();
+  Function_8212FC80();
+  FUN_82126c20();
+  DAT_827438ea = 1;
+  FUN_824bee2c();
+  return;
+}
+
+
+
