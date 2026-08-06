@@ -30,9 +30,15 @@ reverse-engineering trail behind each entry.
   slider-bar graphics replace bare "0"/"1"/raw-number text, Anti-Aliasing/
   Ambient Occlusion/texture-quality rows show their real label ("2X," "Extra,"
   etc.) instead of a raw stored number, and the tab bar now scrolls to stay
-  within the panel's own left edge instead of overflowing past it now that
-  there are 9 tabs. Not yet live-tested — see
-  `re_notes/known_issues.md` issue #66.
+  within the panel's own left edge instead of overflowing past it. Not yet
+  live-tested — see `re_notes/known_issues.md` issue #66.
+- **Options row list now scrolls, and Custom Binds moved into a Controller
+  subsection.** Tabs with more rows than fit on screen (e.g. Movement's 16)
+  now scroll to keep the selected row visible, with small "more above/below"
+  hints, instead of overflowing past the description line. "CUSTOM BINDS" is
+  no longer its own top-level tab — it's now a drill-down reached from a row
+  on the Controller tab, same convention as the existing Stick/Button Layout
+  drill-downs. Not yet live-tested — see `re_notes/known_issues.md` issue #66.
 - **Custom in-game options overlay, invoked from the real pause menu's own "Options" button.** New
   fully-drawn settings screen, invoked by drawing an extra "MW32011NCP
   Options" row below the real native `OPTIONS_LIST` menu's own last item via
