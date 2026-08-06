@@ -8960,9 +8960,9 @@ Ran the full 512MB scan requiring simultaneous exact matches of `250, 250, 201` 
 
 ---
 
-## 64. Single AV vendor flags the v0.3.0 release DLL — assessed as a false positive (2026-08-03)
+## 64. Single AV vendor flags the release DLL — assessed as a false positive, recurring pattern (2026-08-03, updated 2026-08-06)
 
-**Status:** Resolved (assessed, not a real detection). No action taken against the binary.
+**Status:** Resolved/ongoing pattern (assessed, not a real detection, expected to recur on future releases too). No action taken against the binary.
 
 **Report:** a VirusTotal scan of the published `MW32011NCP-v0.3.0.zip`/`d3d9.dll` showed 1/67 vendors flagging it — `VBA32`, label `BScope.Trojan.DBadur` (family `dbadur`). Every other vendor, including every major engine (Microsoft, Kaspersky, ESET, Malwarebytes, CrowdStrike, BitDefender, Sophos, TrendMicro, Avast, McAfee, Google), returned clean/undetected.
 
@@ -8975,6 +8975,8 @@ Ran the full 512MB scan requiring simultaneous exact matches of `250, 250, 201` 
 **Deliberately not "fixed" in the binary.** Altering the DLL specifically to dodge one heuristic vendor's detection would look far more like active evasion than the openly-documented input-hooking this project already does — inconsistent with this project's own standing transparency policy on security/anti-cheat questions (see issue #33). The correct response is disclosure, not obfuscation.
 
 **Action taken:** documented here and given a short, honest mention in the README/Nexus page so a user who runs their own scan and sees this isn't left to wonder or assume the worst — matching this project's existing practice of being upfront about VAC/anti-cheat risk rather than staying silent on uncomfortable findings.
+
+**Same pattern recurred for v0.3.1 (2026-08-06), different vendor.** User-reported scan result on the published `MW32011NCP-v0.3.1.zip`/`d3d9.dll`: `MaxSecure`, label `Trojan.Malware.300983.susgen` (generic suspicious-generic heuristic label, same shape as VBA32's `dbadur` above), 1/67 vendors. Same assessment applies without modification: a single low-prevalence heuristic engine flagging this project's own openly-documented MinHook-detour/byte-pattern-scanning behavior, not a named-family match, not a real finding. `susgen` itself is a generic suspicious-generic heuristic bucket, the same category of signal as `dbadur` was. No binary change made, same reasoning as above (altering the DLL to dodge one heuristic vendor would look more like evasion than the transparency this project already practices). README/Nexus antivirus note updated to mention both vendors/releases rather than being resolved in place, so the pattern (recurring single-vendor heuristic flags across releases, never a majority or a named-family hit) stays visible across versions.
 
 ---
 
