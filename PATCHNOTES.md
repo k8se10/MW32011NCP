@@ -132,6 +132,13 @@ reverse-engineering trail behind each entry.
   compiler linked). Not yet live-tested. See `re_notes/known_issues.md` issue #66.
 
 ### Fixed
+- **Custom Options screen could crash the whole game after applying a staged
+  Advanced Video setting.** Reopening the pause menu after confirming "Apply
+  Settings?" (which fires a real `vid_restart`, fully recreating the D3D9
+  device) crashed the game — the cached background-blur pixel shader wasn't
+  released across that recreation, so the next frame tried to bind a shader
+  handle belonging to a device that no longer existed. Not yet live-tested —
+  see `re_notes/known_issues.md` issue #66.
 - **Controller-glyph icons never appearing for non-English game languages —
   fixed and confirmed live.** Community-reported (Nexus, v0.3.0): an Italian
   player never saw any controller icons, in menus or gameplay. Root cause:
