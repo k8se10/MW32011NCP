@@ -17,7 +17,15 @@
 // console control scheme (user-supplied) rather than RE'd from this binary.
 // CONFIRMED CORRECT against real hardware, 2026-07-19 -- including TacticalLefty,
 // previously the one open accuracy question in this table.
-enum class ButtonLayout { Default, Tactical, Lefty, TacticalLefty };
+// Custom (2026-08-06, issue #66 full-scope expansion, explicit direction: "add a
+// controller bindings section for people who wish to use custom controller/stick
+// layouts we dont yet offer") -- set automatically the moment a player edits any row
+// on the new Binds tab; g_buttonMap then comes from g_modConfig.customButtonMap
+// directly instead of ResolveButtonMap's preset switch. Picking one of the 4 real
+// presets from the Controller tab's own Button Layout drilldown abandons Custom back
+// to that preset (the customButtonMap itself is preserved on disk either way, so
+// switching back to Custom later restores it).
+enum class ButtonLayout { Default, Tactical, Lefty, TacticalLefty, Custom };
 enum class StickLayout { Default, Southpaw, Legacy, LegacySouthpaw };
 
 // Controller-glyph icon style (task #6, 2026-07-21) -- independent of ButtonLayout:
@@ -198,6 +206,12 @@ struct ModConfig
 
     // [Bindings] -- OG console layout presets, see the enum comments above.
     ButtonLayout buttonLayout = ButtonLayout::Default;
+    // [CustomBinds] -- per-action override for ButtonLayout::Custom (2026-08-06, issue
+    // #66's Binds tab). Struct defaults match ButtonLayout::Default's own resolved
+    // map, same as ResolveButtonMap's own "defaults already correct" convention, so a
+    // player who's never touched the Binds tab has a sane starting point the moment
+    // they first change one row instead of an unrelated/stale layout.
+    ButtonMap customButtonMap;
     StickLayout stickLayout = StickLayout::Default;
     bool flipTriggers = false; // independent toggle: swaps RT<->RB and LT<->LB
     GlyphStyle glyphStyle = GlyphStyle::Xbox360; // task #6 -- see enum comment above;
