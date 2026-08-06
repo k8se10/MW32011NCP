@@ -58,7 +58,37 @@ struct VanillaSettingDef {
                                     // DvarFloat/DvarBool on Look/Voice); left empty for
                                     // the rest rather than guessed, same "no placeholder
                                     // settings" standard as everything else in this file.
+
+    // Full-scope expansion (2026-08-06, issue #66: "EVERY SINGLE OPTION FROM NATIVE
+    // AND OUR MOD"). Several real Advanced Video/Audio settings are DvarFloat/
+    // DvarString dvars whose real value set is a small, fixed, non-linear list
+    // (confirmed straight from the real .menu file's own `dvarFloatList`/`dvarStrList`
+    // block, e.g. Anti-Aliasing's real values are 1/2/4, not a linear 1/2/3/4 step) --
+    // a plain floatMin/Max/Step range would produce INVALID intermediate values for
+    // these. When set, AdjustCurrentTabRow (overlay_hud.cpp) cycles through this list
+    // instead of the linear step -- get/set mechanics are otherwise identical DvarFloat/
+    // DvarString, so this doesn't need its own VanillaSettingKind. Left null/0 (the
+    // default) for every setting with either a simple linear range (floatMin/Max/Step
+    // instead) or a real value set that's runtime/display-dependent and NOT statically
+    // enumerable (Resolution/DisplayRefresh use a real `dvarEnumList` queried from the
+    // actual display's capabilities at menu-open time -- deliberately left read-only
+    // rather than guessed).
+    const float* floatEnumValues = nullptr;
+    int floatEnumCount = 0;
+    const char* const* stringEnumValues = nullptr;
+    int stringEnumCount = 0;
 };
+
+// Real discrete value lists (2026-08-06), confirmed directly from each dvar's own
+// `dvarFloatList`/`dvarStrList` block in the real .menu file (zone_dump/ui/
+// pc_options_*_ingame.menu) -- exact real values, not display labels or guesses.
+inline constexpr float kEnumValuesAntiAliasing[] = { 1.0f, 2.0f, 4.0f };           // Off/2X/4X
+inline constexpr float kEnumValuesSSAO[] = { 0.0f, 1.0f, 2.0f };                    // Off/Low/High
+inline constexpr float kEnumValuesTexQualityTier[] = { 3.0f, 2.0f, 1.0f, 0.0f };    // Low/Normal/High/Extra
+inline constexpr const char* kEnumValuesOutputConfig[] = {
+    "Windows default", "Mono", "Stereo", "4 speakers", "5.1 speakers",
+};
+inline constexpr const char* kEnumValuesAspectRatio[] = { "auto", "standard", "wide 16:10", "wide 16:9" };
 
 // ---- Look (pc_options_look_ingame.menu) -------------------------------------------
 // 4 real dvars + 4 real keybinds.
@@ -74,12 +104,15 @@ inline constexpr VanillaSettingDef kVanillaSettings[] = {
 
     // ---- Video (pc_options_video_ingame.menu) -- Resolution/Brightness are staged;
     // Color Blind Assist is profile data, excluded here (write-only via exec, see header).
+    // Resolution uses a real `dvarEnumList "r_mode"` -- populated at runtime from the
+    // actual display's supported modes, not a static list this file can enumerate.
+    // Left DvarString/read-only rather than guessed -- see VanillaSettingDef's comment.
     { "Video_Resolution",     "RESOLUTION",         VanillaSettingTab::Video, VanillaSettingKind::DvarString, "ui_r_mode",              true,  0,0,0 },
     { "Video_Brightness",     "BRIGHTNESS",         VanillaSettingTab::Video, VanillaSettingKind::DvarFloat,  "profileMenuOption_Gamma", true, 0.5f, 1.5f, 0.01f },
 
     // ---- Audio (pc_options_audio_ingame.menu) -- Subtitles is profile data, excluded.
     { "Audio_Volume",         "VOLUME",             VanillaSettingTab::Audio, VanillaSettingKind::DvarFloat,  "profileMenuOption_volume", true, 0.0f, 0.8f, 0.008f },
-    { "Audio_OutputConfig",   "OUTPUT CONFIG",      VanillaSettingTab::Audio, VanillaSettingKind::DvarString, "ui_outputConfig",          true, 0,0,0 },
+    { "Audio_OutputConfig",   "OUTPUT CONFIG",      VanillaSettingTab::Audio, VanillaSettingKind::DvarString, "ui_outputConfig",          true, 0,0,0, "", nullptr, 0, kEnumValuesOutputConfig, 5 },
 
     // ---- Voice (pc_options_voice_ingame.menu)
     { "Voice_MicSensitivity", "MIC SENSITIVITY",    VanillaSettingTab::Voice, VanillaSettingKind::DvarFloat,  "winvoice_mic_reclevel", false, 0.0f, 65535.0f, 655.0f, "Adjust your microphone's recording sensitivity." },
@@ -93,20 +126,29 @@ inline constexpr VanillaSettingDef kVanillaSettings[] = {
 
     // ---- Advanced Video (pc_options_advanced_video_ingame.menu) -- ALL staged
     // (restart-required), confirmed via the real onESC/all_restart_popmenu gate.
-    { "AdvVideo_AspectRatio",   "ASPECT RATIO",       VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarString, "ui_r_aspectratio",   true, 0,0,0 },
-    { "AdvVideo_AntiAliasing",  "ANTI-ALIASING",      VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarString, "ui_r_aasamples",     true, 0,0,0 },
+    { "AdvVideo_AspectRatio",   "ASPECT RATIO",       VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarString, "ui_r_aspectratio",   true, 0,0,0, "", nullptr, 0, kEnumValuesAspectRatio, 4 },
+    // Real dvarFloatList (1/2/4), NOT a string dvar despite the earlier approximate
+    // pass marking it DvarString -- corrected 2026-08-06 against the real .menu file.
+    { "AdvVideo_AntiAliasing",  "ANTI-ALIASING",      VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarFloat,  "ui_r_aasamples",     true, 0,0,0, "", kEnumValuesAntiAliasing, 3 },
+    // Resolution/DisplayRefresh both use a real `dvarEnumList` -- a list POPULATED AT
+    // RUNTIME from the actual display's supported modes, not a static value set this
+    // file can safely enumerate. Left DvarString/read-only (no floatEnumValues/
+    // stringEnumValues) rather than guessed -- see VanillaSettingDef's own comment.
     { "AdvVideo_DisplayRefresh","DISPLAY REFRESH",    VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarString, "ui_r_displayRefresh",true, 0,0,0 },
     { "AdvVideo_VSync",         "VSYNC",              VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarBool,   "ui_r_vsync",         true, 0,0,0 },
     { "AdvVideo_ShadowMaps",    "SHADOW MAPS",        VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarBool,   "sm_enable",          true, 0,0,0 },
     { "AdvVideo_Specular",      "SPECULAR",           VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarBool,   "r_specular",         true, 0,0,0 },
     { "AdvVideo_DepthOfField",  "DEPTH OF FIELD",     VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarBool,   "r_dof_enable",       true, 0,0,0 },
-    { "AdvVideo_SSAO",          "AMBIENT OCCLUSION",  VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarString, "ui_r_ssao",          true, 0,0,0 },
+    // Real dvarFloatList (0/1/2), NOT a string dvar -- corrected 2026-08-06.
+    { "AdvVideo_SSAO",          "AMBIENT OCCLUSION",  VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarFloat,  "ui_r_ssao",          true, 0,0,0, "", kEnumValuesSSAO, 3 },
     { "AdvVideo_ZFeather",      "SOFT EDGES",         VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarBool,   "r_zfeather",         true, 0,0,0 },
     { "AdvVideo_BulletMarks",   "BULLET IMPACTS",     VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarBool,   "fx_marks",           true, 0,0,0 },
     { "AdvVideo_TexQualityAuto","AUTO TEXTURE QUALITY", VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarBool, "ui_r_picmip_manual", true, 0,0,0 },
-    { "AdvVideo_TexQuality",    "TEXTURE QUALITY",    VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarString, "ui_r_picmip",        true, 0,0,0 },
-    { "AdvVideo_TexQualityBump","BUMP MAP QUALITY",   VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarString, "ui_r_picmip_bump",   true, 0,0,0 },
-    { "AdvVideo_TexQualitySpec","SPECULAR MAP QUALITY", VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarString, "ui_r_picmip_spec", true, 0,0,0 },
+    // Real dvarFloatList (Low=3/Normal=2/High=1/Extra=0 -- value DECREASES as quality
+    // increases), NOT string dvars -- corrected 2026-08-06 against the real .menu file.
+    { "AdvVideo_TexQuality",    "TEXTURE QUALITY",    VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarFloat,  "ui_r_picmip",        true, 0,0,0, "", kEnumValuesTexQualityTier, 4 },
+    { "AdvVideo_TexQualityBump","BUMP MAP QUALITY",   VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarFloat,  "ui_r_picmip_bump",   true, 0,0,0, "", kEnumValuesTexQualityTier, 4 },
+    { "AdvVideo_TexQualitySpec","SPECULAR MAP QUALITY", VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarFloat, "ui_r_picmip_spec", true, 0,0,0, "", kEnumValuesTexQualityTier, 4 },
 
     // ---- Movement (pc_options_movement_ingame.menu) -- 16 real keybinds, complete
     // list confirmed directly from the raw .menu (not approximated).

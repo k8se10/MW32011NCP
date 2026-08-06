@@ -10,6 +10,7 @@
 // harness-local answer -- see each one's own comment.
 #include <windows.h>
 #include <cstdio>
+#include <cstring>
 #include "mod_config.h" // for PhysicalInput/GlyphStyle -- ui_hot.vcxproj already adds
                           // proxy_d3d9/src to its include path (overlay_hud.cpp/
                           // mod_config.cpp are compiled from there directly)
@@ -67,6 +68,84 @@ extern "C" bool GetLastMouseMoveClientPos(int& outX, int& outY)
 extern "C" bool IsLeftMouseButtonHeld()
 {
     return (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+}
+
+// Real definitions (d3d9_hook.cpp) hook into the real game's own WndProc subclass to
+// capture the next real key/mouse-button press for keybind rebinding (issue #66 task
+// #29, 2026-08-06). This harness has no such subclass (it owns its window outright,
+// no real game WndProc to hook), so it polls GetAsyncKeyState directly instead --
+// same "give a real, working harness-local answer instead of a no-op stub" pattern
+// already used for IsLeftMouseButtonHeld above, not a fake/inert stand-in. Covers the
+// same VK set as d3d9_hook.cpp's own VkCodeToKeyName (duplicated, not shared, same
+// convention as GetControllerGlyphAssetName above -- keep in sync if that set grows).
+namespace {
+bool g_harnessCaptureActive = false;
+constexpr int kHarnessCaptureVks[] = {
+    '0','1','2','3','4','5','6','7','8','9',
+    'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z',
+    VK_F1, VK_F2, VK_F3, VK_F4, VK_F5, VK_F6, VK_F7, VK_F8, VK_F9, VK_F10, VK_F11, VK_F12,
+    VK_SPACE, VK_TAB, VK_RETURN, VK_ESCAPE, VK_BACK, VK_DELETE, VK_INSERT,
+    VK_HOME, VK_END, VK_PRIOR, VK_NEXT, VK_CAPITAL, VK_CONTROL, VK_SHIFT, VK_MENU,
+    VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT, VK_OEM_3, VK_LBUTTON, VK_RBUTTON, VK_MBUTTON,
+};
+const char* HarnessVkToKeyName(int vk)
+{
+    if (vk >= '0' && vk <= '9') { static char s[2] = {}; s[0] = static_cast<char>(vk); return s; }
+    if (vk >= 'A' && vk <= 'Z') { static char s[2] = {}; s[0] = static_cast<char>(vk); return s; }
+    if (vk >= VK_F1 && vk <= VK_F12) { static char s[4]; sprintf_s(s, "F%d", vk - VK_F1 + 1); return s; }
+    switch (vk) {
+        case VK_SPACE: return "SPACE";
+        case VK_TAB: return "TAB";
+        case VK_RETURN: return "ENTER";
+        case VK_ESCAPE: return "ESCAPE";
+        case VK_BACK: return "BACKSPACE";
+        case VK_DELETE: return "DEL";
+        case VK_INSERT: return "INS";
+        case VK_HOME: return "HOME";
+        case VK_END: return "END";
+        case VK_PRIOR: return "PGUP";
+        case VK_NEXT: return "PGDN";
+        case VK_CAPITAL: return "CAPSLOCK";
+        case VK_CONTROL: return "CTRL";
+        case VK_SHIFT: return "SHIFT";
+        case VK_MENU: return "ALT";
+        case VK_UP: return "UPARROW";
+        case VK_DOWN: return "DOWNARROW";
+        case VK_LEFT: return "LEFTARROW";
+        case VK_RIGHT: return "RIGHTARROW";
+        case VK_OEM_3: return "~";
+        case VK_LBUTTON: return "MOUSE1";
+        case VK_RBUTTON: return "MOUSE2";
+        case VK_MBUTTON: return "MOUSE3";
+        default: return nullptr;
+    }
+}
+} // namespace
+
+extern "C" void StartKeybindCapture()
+{
+    g_harnessCaptureActive = true;
+}
+
+extern "C" void CancelKeybindCapture()
+{
+    g_harnessCaptureActive = false;
+}
+
+extern "C" bool PollCapturedKeyName(char* outBuf, int outBufSize)
+{
+    if (!g_harnessCaptureActive) return false;
+    for (int vk : kHarnessCaptureVks) {
+        if (GetAsyncKeyState(vk) & 0x8000) {
+            const char* name = HarnessVkToKeyName(vk);
+            if (name) {
+                strncpy_s(outBuf, outBufSize, name, _TRUNCATE);
+                g_harnessCaptureActive = false;
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 // Real definition (analog_input_hooks.cpp) reads a real per-player menu-active gate

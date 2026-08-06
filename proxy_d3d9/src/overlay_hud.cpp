@@ -43,6 +43,8 @@
 #include "controller_input.h"
 #include "vanilla_settings_table.h"
 #include "vanilla_settings_sync.h"
+#include "real_settings.h"
+#include "staged_settings.h"
 #include "../resource.h"
 #include "options_blur_ps.h" // compiled ps_2_0 bytecode -- see that file's own header for the real HLSL source and how it was compiled
 
@@ -54,6 +56,11 @@ extern void LogFromController(const char* msg);
 extern "C" HWND GetGameWindow(); // defined in d3d9_hook.cpp
 extern "C" bool GetLastMouseMoveClientPos(int& outX, int& outY); // defined in d3d9_hook.cpp
 extern "C" bool IsLeftMouseButtonHeld(); // defined in d3d9_hook.cpp
+// Full-scope Options expansion (2026-08-06, issue #66) -- real keybind rebind
+// capture, see d3d9_hook.cpp's own header comment on this block for the full design.
+extern "C" void StartKeybindCapture(); // defined in d3d9_hook.cpp
+extern "C" void CancelKeybindCapture(); // defined in d3d9_hook.cpp
+extern "C" bool PollCapturedKeyName(char* outBuf, int outBufSize); // defined in d3d9_hook.cpp
 extern "C" bool IsMenuActive_Exported(); // defined in analog_input_hooks.cpp -- BUG-001 follow-up
 // Live-reported 2026-08-01: calling this from the WndProc/SetTimer tick (~60Hz,
 // asynchronous relative to rendering) caused a visible flicker -- the menu-hint slot
@@ -1602,6 +1609,11 @@ void DrawDebugMarkerIfRequested(void* device)
 
 enum class OptRowKind { FloatValue, BoolToggle, StickLayoutEnum, ButtonLayoutEnum };
 
+// 5 selectable Button Layout entries now (2026-08-06, issue #66): the 4 real presets
+// plus Custom (matches ButtonLayout's own enum, which has Custom as its 5th value).
+// Stick Layout stays at its own real 4 -- no custom stick-axis routing exists yet.
+constexpr int kButtonLayoutOptionCount = 5;
+
 struct OptRow {
     const char* label;
     OptRowKind kind;
@@ -1641,6 +1653,22 @@ int g_optSelectedRow = 0;
 bool g_optDrilldownOpen = false;
 int g_optDrilldownSelectedRow = 0;
 
+// Full-scope Options expansion (2026-08-06, issue #66) -- real keybind rebind
+// capture state. Selecting a Keybind-kind row arms StartKeybindCapture() (d3d9_hook.cpp)
+// and sets this true; every tick while true, CustomOptionsMenu_TickInput polls for a
+// completed capture instead of its normal Up/Down/Left/Right/Select handling.
+// g_optRebindCaptureVanillaIndex remembers WHICH kVanillaSettings row is being
+// rebound (captured once at the moment capture starts, since g_optSelectedRow could
+// theoretically change if this ever became reachable from more than one place).
+bool g_optRebindCaptureActive = false;
+int g_optRebindCaptureVanillaIndex = -1;
+
+// Full-scope Options expansion (2026-08-06, issue #66 task #31) -- true while the
+// real "Apply Settings?" Yes/No prompt is showing (backed out of the menu with at
+// least one pending staged Video/Audio/Advanced Video change). See
+// CustomOptionsMenu_TickInput's own big comment on this block for the full flow.
+bool g_optApplyConfirmActive = false;
+
 struct TextTexCache { void* texture = nullptr; char renderedFor[128] = {}; int lastFontHeightPx = 0; };
 // Sized to kUnifiedTabRowCacheSize (16, matching g_tabVanillaIndices' own capacity),
 // not kOptRowCount -- shared across every tab (Controller's 6 rows and, once a tab
@@ -1651,7 +1679,10 @@ struct TextTexCache { void* texture = nullptr; char renderedFor[128] = {}; int l
 constexpr int kUnifiedTabRowCacheSize = 16;
 TextTexCache g_optRowLabelCache[kUnifiedTabRowCacheSize];
 TextTexCache g_optRowValueCache[kUnifiedTabRowCacheSize];
-TextTexCache g_tabBarCache[8]; // sized above kUnifiedTabCount (3 today) for future tabs
+// Full-scope expansion (2026-08-06, issue #66) bumped kUnifiedTabCount 3->9 (all 7
+// real vanilla tabs plus this mod's own Controller/Binds tabs) -- this MUST stay >=
+// kUnifiedTabCount or DrawCustomOptionsMenuIfOpen's tab-bar loop overflows it.
+TextTexCache g_tabBarCache[12]; // sized above kUnifiedTabCount (9 today) for future tabs
 TextTexCache g_optTitleCache;
 // Real-console-style per-row description line, bottom of the panel (2026-08-05
 // restyle, replaces the old full-width footer legend).
@@ -1660,6 +1691,12 @@ TextTexCache g_optDescCache;
 // full-width footer bar (LB/RB TABS / LEFT-RIGHT ADJUST / A TOGGLE / B CLOSE / OR
 // CLICK); the real console screen shows only this, nothing else.
 TextTexCache g_optCornerBackCache;
+// Full-scope Options expansion (2026-08-06, issue #66 tasks #29/#31) -- rebind-
+// capture/apply-confirm overlay text caches.
+TextTexCache g_optRebindPromptTitleCache;
+TextTexCache g_optRebindPromptSubtitleCache;
+TextTexCache g_optApplyPromptTitleCache;
+TextTexCache g_optApplyPromptSubtitleCache;
 // Shared label-texture pool for the Stick/Button Layout drill-down diagram
 // (2026-08-05) -- sized to the larger of the two diagrams' label counts (Button
 // Layout: 10 ButtonMap-driven labels + 1 static D-pad label = 11), same "shared
@@ -1906,7 +1943,7 @@ void FormatOptRowValue(const OptRow& row, char* outBuf, size_t outBufSize)
             break;
         }
         case OptRowKind::ButtonLayoutEnum: {
-            static const char* kNames[] = { "DEFAULT", "TACTICAL", "LEFTY", "TACTICAL LEFTY" };
+            static const char* kNames[] = { "DEFAULT", "TACTICAL", "LEFTY", "TACTICAL LEFTY", "CUSTOM" };
             strcpy_s(outBuf, outBufSize, kNames[static_cast<int>(g_modConfig.buttonLayout)]);
             break;
         }
@@ -1935,7 +1972,11 @@ void AdjustOptRow(int rowIndex, int direction)
             break;
         }
         case OptRowKind::ButtonLayoutEnum: {
-            int v = (static_cast<int>(g_modConfig.buttonLayout) + direction + 4) % 4;
+            // 5 entries now (2026-08-06, issue #66): the 4 real presets plus Custom
+            // (whatever's currently in g_modConfig.customButtonMap, edited on the new
+            // Binds tab) -- ResolveButtonMap already returns customButtonMap directly
+            // for ButtonLayout::Custom, no special-casing needed here beyond the %5.
+            int v = (static_cast<int>(g_modConfig.buttonLayout) + direction + kButtonLayoutOptionCount) % kButtonLayoutOptionCount;
             g_modConfig.buttonLayout = static_cast<ButtonLayout>(v);
             g_buttonMap = ResolveButtonMap(g_modConfig.buttonLayout, g_modConfig.flipTriggers);
             break;
@@ -1967,71 +2008,327 @@ void AdjustOptRow(int rowIndex, int direction)
 // "Off/2x/4x" for anti-aliasing, only the raw dvar name/type -- adjusting a
 // DvarString row via Left/Right with no real choice list to step through would be
 // guessing, not a real control).
-enum class UnifiedTab { Controller, Look, Voice };
-constexpr UnifiedTab kTabOrder[] = { UnifiedTab::Controller, UnifiedTab::Look, UnifiedTab::Voice };
+// Full-scope expansion (2026-08-06, issue #66, explicit direction: "getting our
+// options menu to have EVERY SINGLE OPTION FROM NATIVE AND OUR MOD"). Order matches
+// the real console reference screen's own tab order where this project has data for
+// it (Look/Video/Audio/Voice/AdvancedVideo), with Movement/Actions (keybind-only
+// tabs) after, Controller (this mod's own settings) first since it's the tab players
+// actually came here for, and Binds (this mod's own custom controller-binding editor,
+// task #32 -- not a real vanilla tab, doesn't exist on console) last.
+enum class UnifiedTab { Controller, Look, Video, Audio, Voice, AdvancedVideo, Movement, Actions, Binds };
+constexpr UnifiedTab kTabOrder[] = {
+    UnifiedTab::Controller, UnifiedTab::Look, UnifiedTab::Video, UnifiedTab::Audio,
+    UnifiedTab::Voice, UnifiedTab::AdvancedVideo, UnifiedTab::Movement, UnifiedTab::Actions,
+    UnifiedTab::Binds,
+};
 constexpr int kUnifiedTabCount = sizeof(kTabOrder) / sizeof(kTabOrder[0]);
 
 const char* UnifiedTabDisplayName(UnifiedTab tab)
 {
     switch (tab) {
-        case UnifiedTab::Controller: return "CONTROLLER";
-        case UnifiedTab::Look:       return "LOOK";
-        case UnifiedTab::Voice:      return "VOICE";
+        case UnifiedTab::Controller:    return "CONTROLLER";
+        case UnifiedTab::Look:          return "LOOK";
+        case UnifiedTab::Video:         return "VIDEO";
+        case UnifiedTab::Audio:         return "AUDIO";
+        case UnifiedTab::Voice:         return "VOICE";
+        case UnifiedTab::AdvancedVideo: return "ADVANCED VIDEO";
+        case UnifiedTab::Movement:      return "MOVEMENT";
+        case UnifiedTab::Actions:       return "ACTIONS";
+        case UnifiedTab::Binds:         return "CUSTOM BINDS";
     }
     return "?";
+}
+
+// Maps a UnifiedTab to its real VanillaSettingTab counterpart -- every UnifiedTab
+// except Controller (this mod's own rows) and Binds (this mod's own custom-binding
+// editor, task #32) has a 1:1 real vanilla tab behind it.
+VanillaSettingTab UnifiedTabToVanillaTab(UnifiedTab tab)
+{
+    switch (tab) {
+        case UnifiedTab::Look:          return VanillaSettingTab::Look;
+        case UnifiedTab::Video:         return VanillaSettingTab::Video;
+        case UnifiedTab::Audio:         return VanillaSettingTab::Audio;
+        case UnifiedTab::Voice:         return VanillaSettingTab::Voice;
+        case UnifiedTab::AdvancedVideo: return VanillaSettingTab::AdvancedVideo;
+        case UnifiedTab::Movement:      return VanillaSettingTab::Movement;
+        case UnifiedTab::Actions:       return VanillaSettingTab::Actions;
+        default:                        return VanillaSettingTab::Look; // never used (Controller/Binds short-circuit before this)
+    }
 }
 
 int g_currentTabIndex = 0; // index into kTabOrder; Controller (0) is always the
                              // opening tab, see CustomOptionsMenu_TickInput's
                              // selectEdge-into-g_optMenuOpen branch
 
-// Cached kVanillaSettings indices belonging to the CURRENT tab (Controller doesn't
-// use this -- it reads g_optRows directly). Rebuilt only when the tab changes, not
-// every frame/tick. Sized generously above phase 1's actual max (Look: 4 editable
-// rows) for room to grow as later phases add more tabs/rows.
-int g_tabVanillaIndices[16];
+// Cached kVanillaSettings indices belonging to the CURRENT tab (Controller/Binds
+// don't use this -- Controller reads g_optRows directly, Binds has its own separate
+// data model, see task #32). Rebuilt only when the tab changes, not every frame/tick.
+// Sized above Movement's real 16-row count (the largest single real tab) with margin.
+int g_tabVanillaIndices[20];
 int g_tabVanillaRowCount = 0;
 
 void RebuildTabRowCache()
 {
     g_tabVanillaRowCount = 0;
     UnifiedTab tab = kTabOrder[g_currentTabIndex];
-    if (tab == UnifiedTab::Controller) return;
-    VanillaSettingTab wantTab = (tab == UnifiedTab::Look) ? VanillaSettingTab::Look : VanillaSettingTab::Voice;
+    if (tab == UnifiedTab::Controller || tab == UnifiedTab::Binds) return;
+    VanillaSettingTab wantTab = UnifiedTabToVanillaTab(tab);
     for (int i = 0; i < kVanillaSettingCount; ++i) {
         const VanillaSettingDef& def = kVanillaSettings[i];
         if (def.tab != wantTab) continue;
-        // Phase 1: only fully-editable kinds -- see the big comment above this section.
-        if (def.kind != VanillaSettingKind::DvarFloat && def.kind != VanillaSettingKind::DvarBool) continue;
-        if (g_tabVanillaRowCount < 16) g_tabVanillaIndices[g_tabVanillaRowCount++] = i;
+        // Full-scope expansion (2026-08-06, issue #66): every real kind is now
+        // editable -- DvarFloat/DvarBool (phase 1, unchanged), DvarString (real
+        // value-cycling, AdjustCurrentTabRow), and Keybind (real rebind capture,
+        // CustomOptionsMenu_TickInput's own capture-mode branch).
+        if (g_tabVanillaRowCount < 20) g_tabVanillaIndices[g_tabVanillaRowCount++] = i;
     }
+}
+
+// ---- Custom controller bindings ("Binds" tab, 2026-08-06, issue #66 full-scope
+// expansion, explicit direction: "add a controller bindings section for people who
+// wish to use custom controller/stick layouts we dont yet offer") --------------------
+//
+// One row per real ButtonMap field, referenced via pointer-to-member so this doesn't
+// need 12 hand-written get/set functions. Editing any row switches
+// g_modConfig.buttonLayout to Custom (see that enum's own comment) and persists the
+// exact assignment to g_modConfig.customButtonMap / mw3ncp_config.ini's [CustomBinds].
+struct BindsRowDef { const char* label; PhysicalInput ButtonMap::*field; const char* description; };
+constexpr BindsRowDef kBindsRows[] = {
+    { "FIRE",           &ButtonMap::fire,         "Assign the button for firing your weapon." },
+    { "AIM DOWN SIGHT",  &ButtonMap::ads,          "Assign the button for aiming down sights." },
+    { "LETHAL GRENADE",  &ButtonMap::lethal,       "Assign the button for throwing a lethal grenade." },
+    { "TACTICAL GRENADE",&ButtonMap::tactical,     "Assign the button for throwing a tactical grenade." },
+    { "RELOAD / USE",    &ButtonMap::reloadUse,    "Assign the button for reloading or interacting." },
+    { "WEAPON SWITCH",   &ButtonMap::weaponSwitch, "Assign the button for switching weapons." },
+    { "JUMP / MANTLE",   &ButtonMap::jump,         "Assign the button for jumping or mantling." },
+    { "CROUCH / PRONE",  &ButtonMap::crouchProne,  "Assign the button for crouching or going prone." },
+    { "SPRINT",          &ButtonMap::sprint,       "Assign the button for sprinting." },
+    { "MELEE",           &ButtonMap::melee,        "Assign the button for a melee attack." },
+    { "PAUSE",           &ButtonMap::pause,        "Assign the button for opening the pause menu." },
+    { "SCOREBOARD",      &ButtonMap::scoreboard,   "Assign the button for the scoreboard." },
+};
+constexpr int kBindsRowCount = sizeof(kBindsRows) / sizeof(kBindsRows[0]);
+
+const char* PhysicalInputShortName(PhysicalInput input)
+{
+    switch (input) {
+        case PhysicalInput::RT: return "RT";
+        case PhysicalInput::LT: return "LT";
+        case PhysicalInput::RB: return "RB";
+        case PhysicalInput::LB: return "LB";
+        case PhysicalInput::X:  return "X";
+        case PhysicalInput::Y:  return "Y";
+        case PhysicalInput::A:  return "A";
+        case PhysicalInput::B:  return "B";
+        case PhysicalInput::LS: return "LS (CLICK)";
+        case PhysicalInput::RS: return "RS (CLICK)";
+        case PhysicalInput::Start: return "START";
+        case PhysicalInput::Back:  return "BACK";
+    }
+    return "?";
+}
+
+// Every assignable physical input, in a stable cycling order (not the enum's own
+// declaration order, which groups triggers/bumpers first) -- face buttons first since
+// those are the most commonly reassigned in practice, then shoulders/triggers, then
+// stick clicks, then Start/Back.
+constexpr PhysicalInput kAllPhysicalInputs[] = {
+    PhysicalInput::A, PhysicalInput::B, PhysicalInput::X, PhysicalInput::Y,
+    PhysicalInput::LB, PhysicalInput::RB, PhysicalInput::LT, PhysicalInput::RT,
+    PhysicalInput::LS, PhysicalInput::RS, PhysicalInput::Start, PhysicalInput::Back,
+};
+constexpr int kAllPhysicalInputCount = sizeof(kAllPhysicalInputs) / sizeof(kAllPhysicalInputs[0]);
+
+void CurrentBindsRowValueString(int row, char* outBuf, size_t outBufSize)
+{
+    if (!outBuf || outBufSize == 0) return;
+    outBuf[0] = '\0';
+    if (row < 0 || row >= kBindsRowCount) return;
+    strncpy_s(outBuf, outBufSize, PhysicalInputShortName(g_buttonMap.*(kBindsRows[row].field)), _TRUNCATE);
+}
+
+void AdjustBindsRow(int row, int direction)
+{
+    if (row < 0 || row >= kBindsRowCount) return;
+    PhysicalInput current = g_buttonMap.*(kBindsRows[row].field);
+    int idx = 0;
+    for (int i = 0; i < kAllPhysicalInputCount; ++i) {
+        if (kAllPhysicalInputs[i] == current) { idx = i; break; }
+    }
+    idx = (idx + direction + kAllPhysicalInputCount) % kAllPhysicalInputCount;
+    g_modConfig.buttonLayout = ButtonLayout::Custom;
+    g_modConfig.customButtonMap.*(kBindsRows[row].field) = kAllPhysicalInputs[idx];
+    g_buttonMap = g_modConfig.customButtonMap;
+    SaveModConfig();
 }
 
 int CurrentTabRowCount()
 {
     UnifiedTab tab = kTabOrder[g_currentTabIndex];
-    return (tab == UnifiedTab::Controller) ? kOptRowCount : g_tabVanillaRowCount;
+    if (tab == UnifiedTab::Controller) return kOptRowCount;
+    if (tab == UnifiedTab::Binds) return kBindsRowCount;
+    return g_tabVanillaRowCount;
 }
 
 const char* CurrentTabRowLabel(int row)
 {
     UnifiedTab tab = kTabOrder[g_currentTabIndex];
     if (tab == UnifiedTab::Controller) return g_optRows[row].label;
+    if (tab == UnifiedTab::Binds) return (row >= 0 && row < kBindsRowCount) ? kBindsRows[row].label : "";
     return kVanillaSettings[g_tabVanillaIndices[row]].displayLabel;
+}
+
+// Full-scope expansion (2026-08-06, issue #66) -- real bound-key display for a
+// Keybind-kind row, e.g. "W" or "LEFT SHIFT / CAPS LOCK" (this engine reports real
+// OR-bound key pairs, matching its own UI's own convention), or "UNBOUND" if neither
+// slot is set. KeynumToDisplayName needs a >=0x80 byte buffer per real_settings.h.
+// ---- Custom controller bindings ("Binds" tab, 2026-08-06, issue #66 full-scope
+// expansion, explicit direction: "add a controller bindings section for people who
+void FormatKeybindDisplayString(const char* command, char* outBuf, size_t outBufSize)
+{
+    if (!outBuf || outBufSize == 0) return;
+    outBuf[0] = '\0';
+    int keynums[2] = { -1, -1 };
+    GetKeybind(command, 0, keynums);
+    if (keynums[0] < 0 && keynums[1] < 0) {
+        strncpy_s(outBuf, outBufSize, "UNBOUND", _TRUNCATE);
+        return;
+    }
+    char name1[128] = {}, name2[128] = {};
+    if (keynums[0] >= 0) KeynumToDisplayName(keynums[0], name1, sizeof(name1));
+    if (keynums[1] >= 0) KeynumToDisplayName(keynums[1], name2, sizeof(name2));
+    if (keynums[0] >= 0 && keynums[1] >= 0) {
+        _snprintf_s(outBuf, outBufSize, _TRUNCATE, "%s / %s", name1, name2);
+    } else {
+        strncpy_s(outBuf, outBufSize, keynums[0] >= 0 ? name1 : name2, _TRUNCATE);
+    }
 }
 
 void CurrentTabRowValueString(int row, char* outBuf, size_t outBufSize)
 {
     UnifiedTab tab = kTabOrder[g_currentTabIndex];
     if (tab == UnifiedTab::Controller) { FormatOptRowValue(g_optRows[row], outBuf, outBufSize); return; }
-    GetVanillaSettingValueString(kVanillaSettings[g_tabVanillaIndices[row]], outBuf, outBufSize);
+    if (tab == UnifiedTab::Binds) { CurrentBindsRowValueString(row, outBuf, outBufSize); return; }
+    int idx = g_tabVanillaIndices[row];
+    const VanillaSettingDef& def = kVanillaSettings[idx];
+    // Full-scope expansion (2026-08-06): Keybind rows show the real bound key, not a
+    // raw dvar/staged value string. Every other kind now goes through
+    // GetStagedOrLiveValueString (not the plain GetVanillaSettingValueString this
+    // used to call directly) so a staged-but-not-yet-applied change stays visible
+    // instead of silently reverting to the live value every frame -- see task #31.
+    if (def.kind == VanillaSettingKind::Keybind) { FormatKeybindDisplayString(def.realName, outBuf, outBufSize); return; }
+    GetStagedOrLiveValueString(idx, outBuf, outBufSize);
+    // Live-reported (2026-08-06): "i dont like how its all raw numbers" -- a bare
+    // "0"/"1" for a bool row reads as raw data, not a real setting, unlike the
+    // Controller tab's own rows (FormatOptRowValue already says ENABLED/DISABLED).
+    // Matches that same convention here instead of leaving vanilla bools as digits.
+    if (def.kind == VanillaSettingKind::DvarBool) {
+        bool on = atoi(outBuf) != 0;
+        strncpy_s(outBuf, outBufSize, on ? "ENABLED" : "DISABLED", _TRUNCATE);
+    }
 }
 
 bool CurrentTabRowIsBoolToggle(int row)
 {
     UnifiedTab tab = kTabOrder[g_currentTabIndex];
     if (tab == UnifiedTab::Controller) return g_optRows[row].kind == OptRowKind::BoolToggle;
+    if (tab == UnifiedTab::Binds) return false;
     return kVanillaSettings[g_tabVanillaIndices[row]].kind == VanillaSettingKind::DvarBool;
+}
+
+// Live-reported (2026-08-06): "i dont like how its all raw numbers, it should be
+// sliders, toggles or just generally polished looking settings." Returns true (with a
+// 0..1 fill fraction) for any row a real slider bar makes sense for -- a plain linear
+// DvarFloat/FloatValue range, OR a real discrete enum list (float or string), whose
+// fraction is the value's INDEX within that list, not its raw numeric value (Anti-
+// Aliasing's real values are 1/2/4, so "value 2 of 3 real steps" is the correct
+// fraction, not (2-1)/(4-1)). Keybind/plain-DvarString/Bool rows return false -- bools
+// get their own toggle-pill visual (CurrentTabRowIsBoolToggle already identifies
+// them), and a row with no known range/list at all (Resolution/Display Refresh) has
+// nothing meaningful to fill a bar with.
+bool TryComputeCurrentTabRowFraction(int row, float& outFraction)
+{
+    UnifiedTab tab = kTabOrder[g_currentTabIndex];
+    if (tab == UnifiedTab::Controller) {
+        const OptRow& r = g_optRows[row];
+        if (r.kind != OptRowKind::FloatValue) return false;
+        if (r.floatMax <= r.floatMin) return false;
+        outFraction = (*r.floatPtr - r.floatMin) / (r.floatMax - r.floatMin);
+        outFraction = outFraction < 0.0f ? 0.0f : (outFraction > 1.0f ? 1.0f : outFraction);
+        return true;
+    }
+    if (tab == UnifiedTab::Binds) return false;
+
+    const VanillaSettingDef& def = kVanillaSettings[g_tabVanillaIndices[row]];
+    char buf[64];
+    GetStagedOrLiveValueString(g_tabVanillaIndices[row], buf, sizeof(buf));
+    if (def.kind == VanillaSettingKind::DvarFloat && def.floatEnumCount > 0) {
+        float current = static_cast<float>(atof(buf));
+        int closest = 0;
+        float bestDiff = fabsf(def.floatEnumValues[0] - current);
+        for (int i = 1; i < def.floatEnumCount; ++i) {
+            float diff = fabsf(def.floatEnumValues[i] - current);
+            if (diff < bestDiff) { bestDiff = diff; closest = i; }
+        }
+        outFraction = def.floatEnumCount > 1 ? static_cast<float>(closest) / static_cast<float>(def.floatEnumCount - 1) : 0.0f;
+        return true;
+    }
+    if (def.kind == VanillaSettingKind::DvarFloat) {
+        if (def.floatMax <= def.floatMin) return false;
+        float current = static_cast<float>(atof(buf));
+        outFraction = (current - def.floatMin) / (def.floatMax - def.floatMin);
+        outFraction = outFraction < 0.0f ? 0.0f : (outFraction > 1.0f ? 1.0f : outFraction);
+        return true;
+    }
+    if (def.kind == VanillaSettingKind::DvarString && def.stringEnumCount > 0) {
+        int closest = 0;
+        for (int i = 0; i < def.stringEnumCount; ++i) {
+            if (_stricmp(def.stringEnumValues[i], buf) == 0) { closest = i; break; }
+        }
+        outFraction = def.stringEnumCount > 1 ? static_cast<float>(closest) / static_cast<float>(def.stringEnumCount - 1) : 0.0f;
+        return true;
+    }
+    return false; // Keybind, plain DvarString with no known list, or DvarBool (its own toggle pill instead)
+}
+
+// Small horizontal slider/progress bar (2026-08-06, same live feedback as
+// TryComputeCurrentTabRowFraction above) -- a dim background track plus a bright
+// filled portion proportional to `fraction` (0..1), vertically centered on `centerY`.
+// Reuses g_optWhiteTexture, same as every other flat-color quad in this file.
+void DrawValueSliderBar(void* device, float x, float centerY, float width, float fraction, float scaleX, float scaleY)
+{
+    constexpr float kBarHeight = 8.0f;
+    float y = centerY - kBarHeight * 0.5f;
+    DrawGenericTexturedQuad(device, g_optWhiteTexture, x * scaleX, y * scaleY, width * scaleX, kBarHeight * scaleY, 0x30FFFFFFu);
+    float fillW = width * (fraction < 0.0f ? 0.0f : (fraction > 1.0f ? 1.0f : fraction));
+    if (fillW > 1.0f) {
+        DrawGenericTexturedQuad(device, g_optWhiteTexture, x * scaleX, y * scaleY, fillW * scaleX, kBarHeight * scaleY, 0xFFFFFFFFu);
+    }
+}
+
+// Small toggle-switch pill (2026-08-06, same live feedback) -- a rounded-look bar
+// (drawn as a plain rect, no actual rounding primitive in this file) with a bright
+// knob positioned left (off) or right (on), instead of relying on ENABLED/DISABLED
+// text alone to communicate state at a glance.
+void DrawToggleSwitch(void* device, float x, float centerY, bool on, float scaleX, float scaleY)
+{
+    constexpr float kTrackW = 52.0f, kTrackH = 22.0f, kKnobSize = 18.0f, kKnobPad = 2.0f;
+    float y = centerY - kTrackH * 0.5f;
+    DrawGenericTexturedQuad(device, g_optWhiteTexture, x * scaleX, y * scaleY, kTrackW * scaleX, kTrackH * scaleY,
+                               on ? 0x8000FF80u : 0x40FFFFFFu);
+    float knobX = on ? (x + kTrackW - kKnobSize - kKnobPad) : (x + kKnobPad);
+    DrawGenericTexturedQuad(device, g_optWhiteTexture, knobX * scaleX, (centerY - kKnobSize * 0.5f) * scaleY,
+                               kKnobSize * scaleX, kKnobSize * scaleY, 0xFFFFFFFFu);
+}
+
+// Full-scope expansion (2026-08-06): true for a real Keybind-kind row on a vanilla
+// tab -- CustomOptionsMenu_TickInput uses this to route Select into rebind-capture
+// mode (task #29) instead of the normal Left/Right/A handling.
+bool CurrentTabRowIsKeybind(int row)
+{
+    UnifiedTab tab = kTabOrder[g_currentTabIndex];
+    if (tab == UnifiedTab::Controller || tab == UnifiedTab::Binds) return false;
+    return kVanillaSettings[g_tabVanillaIndices[row]].kind == VanillaSettingKind::Keybind;
 }
 
 // Real-console-style one-line description for the currently focused row (2026-08-05
@@ -2044,6 +2341,7 @@ const char* CurrentTabRowDescription(int row)
 {
     UnifiedTab tab = kTabOrder[g_currentTabIndex];
     if (tab == UnifiedTab::Controller) return g_optRows[row].description;
+    if (tab == UnifiedTab::Binds) return (row >= 0 && row < kBindsRowCount) ? kBindsRows[row].description : "";
     return kVanillaSettings[g_tabVanillaIndices[row]].description;
 }
 
@@ -2057,28 +2355,73 @@ bool CurrentTabRowIsButtonLayout(int row)
     return kTabOrder[g_currentTabIndex] == UnifiedTab::Controller && g_optRows[row].kind == OptRowKind::ButtonLayoutEnum;
 }
 
+// Writes a new value for a vanilla setting, respecting VanillaSettingDef::staged --
+// staged settings (Video/Audio/AdvancedVideo restart-required dvars) hold the value
+// PENDING via SetStagedSettingPending instead of touching the real dvar immediately;
+// task #31's own "Apply Settings?" flow commits or discards it later. Non-staged
+// settings still write straight through, unchanged from before.
+void WriteVanillaSettingValue(int settingIndex, const VanillaSettingDef& def, const char* value)
+{
+    if (def.staged) SetStagedSettingPending(settingIndex, value);
+    else SetVanillaSettingFromString(def, value);
+}
+
 // direction: -1 (Left) or +1 (Right). Bool rows toggle regardless of direction.
 void AdjustCurrentTabRow(int row, int direction)
 {
     UnifiedTab tab = kTabOrder[g_currentTabIndex];
     if (tab == UnifiedTab::Controller) { AdjustOptRow(row, direction); return; }
+    if (tab == UnifiedTab::Binds) { AdjustBindsRow(row, direction); return; }
 
-    const VanillaSettingDef& def = kVanillaSettings[g_tabVanillaIndices[row]];
+    int idx = g_tabVanillaIndices[row];
+    const VanillaSettingDef& def = kVanillaSettings[idx];
     char buf[64];
-    GetVanillaSettingValueString(def, buf, sizeof(buf));
-    if (def.kind == VanillaSettingKind::DvarFloat) {
+    GetStagedOrLiveValueString(idx, buf, sizeof(buf));
+
+    if (def.kind == VanillaSettingKind::DvarFloat && def.floatEnumCount > 0) {
+        // Full-scope expansion (2026-08-06): real discrete, non-linear value list
+        // (e.g. Anti-Aliasing's real values are 1/2/4) -- cycle through it instead of
+        // a linear step, which would produce invalid intermediate values. Finds the
+        // CLOSEST listed value to the current one (robust even if the current value
+        // is somehow off-list) rather than requiring an exact match.
+        float current = static_cast<float>(atof(buf));
+        int closest = 0;
+        float bestDiff = fabsf(def.floatEnumValues[0] - current);
+        for (int i = 1; i < def.floatEnumCount; ++i) {
+            float diff = fabsf(def.floatEnumValues[i] - current);
+            if (diff < bestDiff) { bestDiff = diff; closest = i; }
+        }
+        int next = (closest + direction + def.floatEnumCount) % def.floatEnumCount;
+        char newBuf[64];
+        sprintf_s(newBuf, "%g", def.floatEnumValues[next]);
+        WriteVanillaSettingValue(idx, def, newBuf);
+    } else if (def.kind == VanillaSettingKind::DvarFloat) {
         float v = static_cast<float>(atof(buf)) + static_cast<float>(direction) * def.floatStep;
         if (v < def.floatMin) v = def.floatMin;
         if (v > def.floatMax) v = def.floatMax;
         char newBuf[64];
         sprintf_s(newBuf, "%g", v);
-        SetVanillaSettingFromString(def, newBuf);
+        WriteVanillaSettingValue(idx, def, newBuf);
     } else if (def.kind == VanillaSettingKind::DvarBool) {
         bool current = atoi(buf) != 0;
-        SetVanillaSettingFromString(def, current ? "0" : "1");
+        WriteVanillaSettingValue(idx, def, current ? "0" : "1");
+    } else if (def.kind == VanillaSettingKind::DvarString && def.stringEnumCount > 0) {
+        // Real, confirmed value list (e.g. Output Config's real values are "Windows
+        // default"/"Mono"/"Stereo"/"4 speakers"/"5.1 speakers", not the localized
+        // display labels) -- cycle through it the same way as the float-enum case.
+        int closest = 0;
+        for (int i = 0; i < def.stringEnumCount; ++i) {
+            if (_stricmp(def.stringEnumValues[i], buf) == 0) { closest = i; break; }
+        }
+        int next = (closest + direction + def.stringEnumCount) % def.stringEnumCount;
+        WriteVanillaSettingValue(idx, def, def.stringEnumValues[next]);
     }
-    // DvarString/Keybind rows are never reachable here -- RebuildTabRowCache already
-    // filters them out of g_tabVanillaIndices for phase 1.
+    // Plain DvarString rows with no confirmed value list (Resolution/DisplayRefresh --
+    // both use a real dvarEnumList populated at runtime from the display's own
+    // supported modes, not a static set this file can safely enumerate) are
+    // deliberately left read-only here -- see VanillaSettingDef's own comment.
+    // Keybind rows don't respond to Left/Right at all -- rebinding is Select-driven
+    // capture mode (task #29, CustomOptionsMenu_TickInput), not a cyclable value.
 }
 
 // FIXED 2026-08-04 (round 2 live feedback: "way too horizontally squished"): this
@@ -2902,9 +3245,12 @@ void DrawCustomOptionsMenuIfOpen(void* device)
     if (g_optDrilldownOpen) {
         bool isStick = CurrentTabRowIsStickLayout(g_optSelectedRow);
         static const char* kStickNames[4] = { "DEFAULT", "SOUTHPAW", "LEGACY", "LEGACY SOUTHPAW" };
-        static const char* kButtonNames[4] = { "DEFAULT", "TACTICAL", "LEFTY", "TACTICAL LEFTY" };
+        // 5th "CUSTOM" entry (2026-08-06, issue #66): whatever's currently in
+        // g_modConfig.customButtonMap, edited on the new Binds tab -- Stick Layout has
+        // no custom-axis-routing concept yet, so it stays at its own real 4.
+        static const char* kButtonNames[kButtonLayoutOptionCount] = { "DEFAULT", "TACTICAL", "LEFTY", "TACTICAL LEFTY", "CUSTOM" };
         const char** names = isStick ? kStickNames : kButtonNames;
-        constexpr int kOptionCount = 4;
+        int kOptionCount = isStick ? 4 : kButtonLayoutOptionCount;
 
         float rowY = listTopY + kListRowSpacingPx * 0.5f;
         for (int i = 0; i < kOptionCount; ++i) {
@@ -2947,12 +3293,37 @@ void DrawCustomOptionsMenuIfOpen(void* device)
             DrawButtonLayoutDiagram(device, scaleX, scaleY, static_cast<ButtonLayout>(g_optDrilldownSelectedRow));
         }
     } else {
-        // Tab bar
-        float tabX = 56.0f;
+        // Tab bar -- scrolls with LB/RB instead of overflowing past the panel's own
+        // left-column edge (live-reported 2026-08-06: "the tabs need to only go as far
+        // as the edge of that left side border" -- with 9 tabs now, drawing them all in
+        // one unbroken row like before this pass would run well past kPanelW into the
+        // blurred right-side region). Recomputed fresh every frame from
+        // g_currentTabIndex rather than tracked as separate persistent scroll state --
+        // simpler, and correct regardless of whether the tab changed via LB/RB
+        // (TickInput) or a mouse click (right below, same as before).
         constexpr float kTabGapPx = 44.0f;
         constexpr float kTabHitPadY = 12.0f;
-        for (int t = 0; t < kUnifiedTabCount; ++t) {
+        constexpr float kTabAreaLeftX = 56.0f;
+        float tabAreaMaxWidth = kPanelW - kTabAreaLeftX - 40.0f; // matches the divider line's own right margin below
+        int firstVisibleTab = 0;
+        for (int start = 0; start <= g_currentTabIndex; ++start) {
+            float w = 0.0f;
+            int lastFit = start - 1;
+            for (int t = start; t < kUnifiedTabCount; ++t) {
+                int tw = MeasureTextWidthPx(UnifiedTabDisplayName(kTabOrder[t]), g_modConfig.overlayFontItalic, kTabFontHeightPx);
+                float add = (t == start) ? static_cast<float>(tw) : (kTabGapPx + static_cast<float>(tw));
+                if (w + add > tabAreaMaxWidth) break;
+                w += add;
+                lastFit = t;
+            }
+            firstVisibleTab = start;
+            if (lastFit >= g_currentTabIndex) break;
+        }
+
+        float tabX = kTabAreaLeftX;
+        for (int t = firstVisibleTab; t < kUnifiedTabCount; ++t) {
             int tabWidth = MeasureTextWidthPx(UnifiedTabDisplayName(kTabOrder[t]), g_modConfig.overlayFontItalic, kTabFontHeightPx);
+            if (t > firstVisibleTab && (tabX - kTabAreaLeftX) + static_cast<float>(tabWidth) > tabAreaMaxWidth) break;
             bool hovered = PointInRect(tabX * scaleX, (tabY - kTabHitPadY) * scaleY,
                                          static_cast<float>(tabWidth) * scaleX, (static_cast<float>(kTabFontHeightPx) + kTabHitPadY * 2.0f) * scaleY);
             if (hovered && leftClickEdge && t != g_currentTabIndex) {
@@ -3029,6 +3400,23 @@ void DrawCustomOptionsMenuIfOpen(void* device)
             CurrentTabRowValueString(i, valueBuf, sizeof(valueBuf));
             DrawOptLeftAlignedText(device, g_optRowValueCache[i], valueBuf,
                                      valueX, rowY, kListFontHeightPx, rowColor, scaleX, scaleY);
+            // Live-reported (2026-08-06): "it should be sliders, toggles or just
+            // generally polished looking settings" -- a real toggle switch for bool
+            // rows, a real fill-proportional slider bar for anything with a known
+            // range/enum list, drawn just past the value text on the same row.
+            int valueTextW = MeasureTextWidthPx(valueBuf, g_modConfig.overlayFontItalic, kListFontHeightPx);
+            constexpr float kWidgetGapPx = 24.0f;
+            float widgetX = valueX + static_cast<float>(valueTextW) + kWidgetGapPx;
+            if (CurrentTabRowIsBoolToggle(i)) {
+                bool on = (_stricmp(valueBuf, "ENABLED") == 0);
+                DrawToggleSwitch(device, widgetX, rowY, on, scaleX, scaleY);
+            } else {
+                float frac = 0.0f;
+                if (TryComputeCurrentTabRowFraction(i, frac)) {
+                    constexpr float kSliderWidthPx = 180.0f;
+                    DrawValueSliderBar(device, widgetX, rowY, kSliderWidthPx, frac, scaleX, scaleY);
+                }
+            }
             rowY += kListRowSpacingPx;
         }
 
@@ -3065,6 +3453,42 @@ void DrawCustomOptionsMenuIfOpen(void* device)
             DrawGenericTexturedQuad(device, iconTex, (startX + textW + kCornerGapPx) * scaleX, (cornerY - kCornerIconHeight * 0.5f) * scaleY,
                                       iconW * scaleX, kCornerIconHeight * scaleY);
         }
+    }
+
+    // Full-scope Options expansion (2026-08-06, issue #66 tasks #29/#31) -- rebind-
+    // capture and apply-confirm overlays, drawn last so they sit on top of the whole
+    // panel/row list/corner hint above. Deliberately simple, centered boxes for this
+    // first pass rather than a pixel-matched real-console popup -- real position/
+    // sizing was never going to be right on the first guess for any element in this
+    // whole screen's history (see the panel/diagram/label rounds above), so this
+    // follows the same "ship something functional, refine from real feedback" pattern
+    // rather than spending more guesses up front.
+    if (g_optRebindCaptureActive) {
+        constexpr float kBoxW = 700.0f, kBoxH = 140.0f;
+        float boxX = (1920.0f - kBoxW) * 0.5f, boxY = (1080.0f - kBoxH) * 0.5f;
+        DrawGenericTexturedQuad(device, g_optWhiteTexture, boxX * scaleX, boxY * scaleY,
+                                   kBoxW * scaleX, kBoxH * scaleY, 0xF0101010u);
+        const char* title = "PRESS ANY KEY OR BUTTON TO REBIND";
+        int titleW = MeasureTextWidthPx(title, g_modConfig.overlayFontItalic, 30);
+        DrawOptLeftAlignedText(device, g_optRebindPromptTitleCache, title,
+                                 960.0f - static_cast<float>(titleW) * 0.5f, boxY + 55.0f, 30, kWhiteColor, scaleX, scaleY);
+        const char* subtitle = "(CONTROLLER BACK TO CANCEL)";
+        int subtitleW = MeasureTextWidthPx(subtitle, g_modConfig.overlayFontItalic, 22);
+        DrawOptLeftAlignedText(device, g_optRebindPromptSubtitleCache, subtitle,
+                                 960.0f - static_cast<float>(subtitleW) * 0.5f, boxY + 95.0f, 22, kDimTextColor, scaleX, scaleY);
+    } else if (g_optApplyConfirmActive) {
+        constexpr float kBoxW = 700.0f, kBoxH = 160.0f;
+        float boxX = (1920.0f - kBoxW) * 0.5f, boxY = (1080.0f - kBoxH) * 0.5f;
+        DrawGenericTexturedQuad(device, g_optWhiteTexture, boxX * scaleX, boxY * scaleY,
+                                   kBoxW * scaleX, kBoxH * scaleY, 0xF0101010u);
+        const char* title = "APPLY SETTINGS?";
+        int titleW = MeasureTextWidthPx(title, g_modConfig.overlayFontItalic, 32);
+        DrawOptLeftAlignedText(device, g_optApplyPromptTitleCache, title,
+                                 960.0f - static_cast<float>(titleW) * 0.5f, boxY + 55.0f, 32, kWhiteColor, scaleX, scaleY);
+        const char* subtitle = "A: YES, APPLY AND RESTART      B: NO, DISCARD";
+        int subtitleW = MeasureTextWidthPx(subtitle, g_modConfig.overlayFontItalic, 22);
+        DrawOptLeftAlignedText(device, g_optApplyPromptSubtitleCache, subtitle,
+                                 960.0f - static_cast<float>(subtitleW) * 0.5f, boxY + 105.0f, 22, kDimTextColor, scaleX, scaleY);
     }
 
     // Click anywhere outside the panel closes the menu (common modal-dialog
@@ -3175,6 +3599,66 @@ bool CustomOptionsMenu_TickInput(bool openRequestedEdge,
                                    bool upEdge, bool downEdge, bool leftEdge, bool rightEdge,
                                    bool selectEdge, bool backEdge, bool tabPrevEdge, bool tabNextEdge)
 {
+    // Full-scope Options expansion (2026-08-06, issue #66) -- real keybind rebind
+    // capture. Checked before everything else: while armed, this claims the tick
+    // every frame regardless of what else is open, polling for a completed capture
+    // (a real Win32 key/mouse message, captured by d3d9_hook.cpp's WndProc subclass,
+    // NOT any of this function's own controller-edge parameters). backEdge (the
+    // controller's own Back/B) cancels capture without rebinding anything -- the
+    // natural "I changed my mind" path, since a real keyboard/mouse press is what
+    // completes it, not any of these edges.
+    if (g_optMenuOpen && g_optRebindCaptureActive) {
+        if (backEdge) {
+            CancelKeybindCapture();
+            g_optRebindCaptureActive = false;
+            return true;
+        }
+        char capturedName[32] = {};
+        if (PollCapturedKeyName(capturedName, sizeof(capturedName))) {
+            if (g_optRebindCaptureVanillaIndex >= 0 && g_optRebindCaptureVanillaIndex < kVanillaSettingCount) {
+                const VanillaSettingDef& def = kVanillaSettings[g_optRebindCaptureVanillaIndex];
+                int keynum = KeyNameToKeynum(capturedName);
+                // Real "bind" console-command semantics (re_notes/known_issues.md's own
+                // GetKeybind/SetKeybind research): binding a key already bound to a
+                // DIFFERENT command implicitly steals it from that command -- this
+                // project doesn't need to (and shouldn't) hunt down and clear whatever
+                // else that key used to do; the real engine's own SetKeybind already
+                // handles the single-slot overwrite semantics correctly.
+                if (keynum >= 0) SetKeybind(def.realName, 0, keynum);
+            }
+            g_optRebindCaptureActive = false;
+        }
+        return true; // claim the tick either way -- nothing else should react while armed
+    }
+
+    // Full-scope Options expansion (2026-08-06, issue #66's own "add a proper apply
+    // flow" follow-up, task #31) -- real "Apply Settings?" confirmation, same real
+    // precedent as all_restart_popmenu.menu (staged_settings.h's own header comment).
+    // Shown instead of immediately closing when backing out of the menu with at least
+    // one uncommitted staged (Video/Audio/Advanced Video) change pending. A also
+    // commits (matches Select's usual "confirm" role elsewhere in this menu); B
+    // discards -- deliberately the OPPOSITE of the outer menu's own backEdge-closes
+    // convention, since this prompt's whole point is that B/Back needs a real choice
+    // here, not an implicit "discard and keep backing out" -- this project uses
+    // exactly one explicit background dim state, not the real console's own separate
+    // popup-menu asset, but the logic guarantee (no pending change is EVER silently
+    // committed OR silently lost) matches the real flow bit for bit.
+    if (g_optMenuOpen && g_optApplyConfirmActive) {
+        if (selectEdge) {
+            CommitStagedSettings();
+            g_optApplyConfirmActive = false;
+            g_optMenuOpen = false;
+            return true;
+        }
+        if (backEdge) {
+            DiscardStagedChanges();
+            g_optApplyConfirmActive = false;
+            g_optMenuOpen = false;
+            return true;
+        }
+        return true; // claim the tick -- Up/Down/Left/Right do nothing while this prompt is up
+    }
+
     if (g_optMenuOpen && g_optDrilldownOpen) {
         // Stick/Button Layout drill-down (2026-08-05 restyle). Up/Down moves the
         // highlighted option AND commits it immediately -- same "no separate
@@ -3196,14 +3680,25 @@ bool CustomOptionsMenu_TickInput(bool openRequestedEdge,
             g_optDrilldownOpen = false;
             return true;
         }
-        if (upEdge) { g_optDrilldownSelectedRow = (g_optDrilldownSelectedRow - 1 + 4) % 4; commit(); }
-        if (downEdge) { g_optDrilldownSelectedRow = (g_optDrilldownSelectedRow + 1) % 4; commit(); }
+        // 5 entries for Button Layout (4 real presets + Custom), 4 for Stick Layout --
+        // see kButtonLayoutOptionCount's own comment.
+        int optionCount = isStick ? 4 : kButtonLayoutOptionCount;
+        if (upEdge) { g_optDrilldownSelectedRow = (g_optDrilldownSelectedRow - 1 + optionCount) % optionCount; commit(); }
+        if (downEdge) { g_optDrilldownSelectedRow = (g_optDrilldownSelectedRow + 1) % optionCount; commit(); }
         return true;
     }
 
     if (g_optMenuOpen) {
         if (backEdge) {
-            g_optMenuOpen = false;
+            // Full-scope Options expansion (2026-08-06, task #31): don't close
+            // straight through if a staged (Video/Audio/Advanced Video) change is
+            // still pending -- show the real "Apply Settings?" prompt instead, same
+            // as the real menu's own all_restart_popmenu flow.
+            if (HasPendingStagedChanges()) {
+                g_optApplyConfirmActive = true;
+            } else {
+                g_optMenuOpen = false;
+            }
             return true;
         }
         if (tabPrevEdge || tabNextEdge) {
@@ -3224,6 +3719,14 @@ bool CustomOptionsMenu_TickInput(bool openRequestedEdge,
                         ? static_cast<int>(g_modConfig.stickLayout) : static_cast<int>(g_modConfig.buttonLayout);
                 } else if (CurrentTabRowIsBoolToggle(g_optSelectedRow)) {
                     AdjustCurrentTabRow(g_optSelectedRow, +1); // A also toggles a bool row, same as Left/Right
+                } else if (CurrentTabRowIsKeybind(g_optSelectedRow)) {
+                    // Full-scope Options expansion (2026-08-06, task #29): arm real
+                    // rebind capture instead of any Left/Right-style adjustment --
+                    // see this function's own top-of-function handling for the rest
+                    // of this flow.
+                    g_optRebindCaptureVanillaIndex = g_tabVanillaIndices[g_optSelectedRow];
+                    StartKeybindCapture();
+                    g_optRebindCaptureActive = true;
                 }
             }
         }
@@ -3255,6 +3758,13 @@ void CustomOptionsMenu_ResetOnMenuClose()
     g_optDrilldownOpen = false;
     g_optSelectedRow = 0;
     g_currentTabIndex = 0;
+    // Full-scope Options expansion (2026-08-06): if the real pause menu itself closes
+    // out from under an active rebind-capture/apply-confirm state (e.g. Start toggled
+    // the pause menu closed some other way), don't leave either armed -- a stray
+    // real keypress after this point must never silently rebind something, and any
+    // still-pending staged change is simply discarded rather than lost in limbo.
+    if (g_optRebindCaptureActive) { CancelKeybindCapture(); g_optRebindCaptureActive = false; }
+    if (g_optApplyConfirmActive) { DiscardStagedChanges(); g_optApplyConfirmActive = false; }
 }
 
 bool CustomOptionsMenu_IsOpen()

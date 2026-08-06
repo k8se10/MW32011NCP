@@ -108,8 +108,119 @@ constexpr int kMouseMoveDeadzonePx = 4;
 // rather than adding a second, separate input-capture mechanism.
 bool g_leftMouseButtonHeld = false;
 
+// Full-scope Options expansion (2026-08-06, issue #66, explicit direction: "Build
+// full rebind capture now"). Rebinding a real keyboard/mouse bind from a
+// controller-driven menu needs the ACTUAL Win32 key/mouse-button message -- the
+// controller-edge booleans CustomOptionsMenu_TickInput already receives (D-pad/A/B)
+// have no way to represent "the player just pressed W." This hooks into the exact
+// same real WndProc subclass WM_MOUSEMOVE/WM_LBUTTONDOWN already use above, rather
+// than adding a second, separate input-capture mechanism.
+//
+// StartKeybindCapture() arms it; the very next real key/mouse-button press this
+// WndProc sees gets translated to this engine's own real key-name string (the exact
+// format kKeyActionTable/KeyNameToKeynum already use -- "A".."Z", "0".."9", "SPACE",
+// "CTRL", "MOUSE1", etc.) and stashed for PollCapturedKeynum to consume once. The
+// message that completed the capture is deliberately NOT forwarded to the real
+// WndProc (CallWindowProcA is skipped for it) so e.g. capturing "W" doesn't also
+// move the player or capturing "ESCAPE" doesn't also toggle a real menu underneath.
+bool g_keybindCaptureActive = false;
+char g_capturedKeyName[32] = {};
+bool g_haveCapturedKeyName = false;
+
+// VK_* -> this engine's own real key-name string. Deliberately NOT exhaustive --
+// covers the keys a player would realistically rebind to (letters, digits, common
+// modifiers/navigation, function keys, the 3 real mouse buttons) rather than every
+// possible VK code. An unmapped key press is silently ignored (capture stays armed)
+// rather than guessing a name that might not exist in the real key-action table --
+// expand this table if a real gap is reported, same as this project's other
+// incrementally-grown key tables.
+const char* VkCodeToKeyName(WPARAM vk)
+{
+    if (vk >= 'A' && vk <= 'Z') {
+        static char single[2];
+        single[0] = static_cast<char>(vk);
+        single[1] = '\0';
+        return single;
+    }
+    if (vk >= '0' && vk <= '9') {
+        static char single[2];
+        single[0] = static_cast<char>(vk);
+        single[1] = '\0';
+        return single;
+    }
+    if (vk >= VK_F1 && vk <= VK_F12) {
+        static char fkey[4];
+        sprintf_s(fkey, "F%d", static_cast<int>(vk - VK_F1 + 1));
+        return fkey;
+    }
+    switch (vk) {
+        case VK_SPACE:   return "SPACE";
+        case VK_TAB:     return "TAB";
+        case VK_RETURN:  return "ENTER";
+        case VK_ESCAPE:  return "ESCAPE";
+        case VK_BACK:    return "BACKSPACE";
+        case VK_DELETE:  return "DEL";
+        case VK_INSERT:  return "INS";
+        case VK_HOME:    return "HOME";
+        case VK_END:     return "END";
+        case VK_PRIOR:   return "PGUP";
+        case VK_NEXT:    return "PGDN";
+        case VK_CAPITAL: return "CAPSLOCK";
+        case VK_CONTROL: return "CTRL";
+        case VK_SHIFT:   return "SHIFT";
+        case VK_MENU:    return "ALT";
+        case VK_UP:      return "UPARROW";
+        case VK_DOWN:    return "DOWNARROW";
+        case VK_LEFT:    return "LEFTARROW";
+        case VK_RIGHT:   return "RIGHTARROW";
+        case VK_OEM_3:   return "~"; // tilde/console key
+        default:         return nullptr;
+    }
+}
+
+extern "C" void StartKeybindCapture()
+{
+    g_keybindCaptureActive = true;
+    g_haveCapturedKeyName = false;
+    g_capturedKeyName[0] = '\0';
+}
+
+extern "C" void CancelKeybindCapture()
+{
+    g_keybindCaptureActive = false;
+}
+
+// Returns true exactly once per completed capture (consumes the result) -- called
+// every tick from CustomOptionsMenu_TickInput while capture mode is active.
+extern "C" bool PollCapturedKeyName(char* outBuf, int outBufSize)
+{
+    if (!g_haveCapturedKeyName) return false;
+    strncpy_s(outBuf, outBufSize, g_capturedKeyName, _TRUNCATE);
+    g_haveCapturedKeyName = false;
+    return true;
+}
+
 LRESULT CALLBACK HookWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+    if (g_keybindCaptureActive) {
+        const char* keyName = nullptr;
+        if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) {
+            keyName = VkCodeToKeyName(wParam);
+        } else if (msg == WM_LBUTTONDOWN) {
+            keyName = "MOUSE1";
+        } else if (msg == WM_RBUTTONDOWN) {
+            keyName = "MOUSE2";
+        } else if (msg == WM_MBUTTONDOWN) {
+            keyName = "MOUSE3";
+        }
+        if (keyName) {
+            strncpy_s(g_capturedKeyName, keyName, _TRUNCATE);
+            g_haveCapturedKeyName = true;
+            g_keybindCaptureActive = false;
+            return 0; // swallow this one message -- see this block's own header comment
+        }
+    }
+
     if (msg == WM_MOUSEMOVE) {
         int newX = static_cast<short>(LOWORD(lParam));
         int newY = static_cast<short>(HIWORD(lParam));

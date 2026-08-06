@@ -159,6 +159,7 @@ const char* ButtonLayoutName(ButtonLayout v)
         case ButtonLayout::Tactical: return "Tactical";
         case ButtonLayout::Lefty: return "Lefty";
         case ButtonLayout::TacticalLefty: return "TacticalLefty";
+        case ButtonLayout::Custom: return "Custom";
         default: return "Default";
     }
 }
@@ -169,7 +170,71 @@ ButtonLayout ParseButtonLayout(const char* s, ButtonLayout fallback)
     if (_stricmp(s, "Tactical") == 0) return ButtonLayout::Tactical;
     if (_stricmp(s, "Lefty") == 0) return ButtonLayout::Lefty;
     if (_stricmp(s, "TacticalLefty") == 0) return ButtonLayout::TacticalLefty;
+    if (_stricmp(s, "Custom") == 0) return ButtonLayout::Custom;
     return fallback;
+}
+
+// PhysicalInput <-> short name (2026-08-06, issue #66's Binds tab) -- used for both
+// this ini section's own [CustomBinds] keys and the Binds tab's row-value display
+// (overlay_hud.cpp's own PhysicalInputShortName is a separate, UI-facing copy of the
+// same names -- kept apart same as this project's other cross-module name tables,
+// not shared, since one is a stable on-disk format and the other is free to reflow
+// for display).
+const char* PhysicalInputName(PhysicalInput v)
+{
+    switch (v) {
+        case PhysicalInput::RT: return "RT";
+        case PhysicalInput::LT: return "LT";
+        case PhysicalInput::RB: return "RB";
+        case PhysicalInput::LB: return "LB";
+        case PhysicalInput::X:  return "X";
+        case PhysicalInput::Y:  return "Y";
+        case PhysicalInput::A:  return "A";
+        case PhysicalInput::B:  return "B";
+        case PhysicalInput::LS: return "LS";
+        case PhysicalInput::RS: return "RS";
+        case PhysicalInput::Start: return "Start";
+        case PhysicalInput::Back:  return "Back";
+    }
+    return "A";
+}
+
+PhysicalInput ParsePhysicalInput(const char* s, PhysicalInput fallback)
+{
+    if (_stricmp(s, "RT") == 0) return PhysicalInput::RT;
+    if (_stricmp(s, "LT") == 0) return PhysicalInput::LT;
+    if (_stricmp(s, "RB") == 0) return PhysicalInput::RB;
+    if (_stricmp(s, "LB") == 0) return PhysicalInput::LB;
+    if (_stricmp(s, "X") == 0) return PhysicalInput::X;
+    if (_stricmp(s, "Y") == 0) return PhysicalInput::Y;
+    if (_stricmp(s, "A") == 0) return PhysicalInput::A;
+    if (_stricmp(s, "B") == 0) return PhysicalInput::B;
+    if (_stricmp(s, "LS") == 0) return PhysicalInput::LS;
+    if (_stricmp(s, "RS") == 0) return PhysicalInput::RS;
+    if (_stricmp(s, "Start") == 0) return PhysicalInput::Start;
+    if (_stricmp(s, "Back") == 0) return PhysicalInput::Back;
+    return fallback;
+}
+
+void ReadCustomButtonMap(const char* path, ButtonMap& outValue)
+{
+    char buf[32];
+#define READ_CUSTOM_BIND(field) \
+    GetPrivateProfileStringA("CustomBinds", #field, PhysicalInputName(outValue.field), buf, sizeof(buf), path); \
+    outValue.field = ParsePhysicalInput(buf, outValue.field);
+    READ_CUSTOM_BIND(fire)
+    READ_CUSTOM_BIND(ads)
+    READ_CUSTOM_BIND(lethal)
+    READ_CUSTOM_BIND(tactical)
+    READ_CUSTOM_BIND(reloadUse)
+    READ_CUSTOM_BIND(weaponSwitch)
+    READ_CUSTOM_BIND(jump)
+    READ_CUSTOM_BIND(crouchProne)
+    READ_CUSTOM_BIND(sprint)
+    READ_CUSTOM_BIND(melee)
+    READ_CUSTOM_BIND(pause)
+    READ_CUSTOM_BIND(scoreboard)
+#undef READ_CUSTOM_BIND
 }
 
 const char* StickLayoutName(StickLayout v)
@@ -357,6 +422,25 @@ void WriteDefaultConfig(const char* path)
         "; re_notes/known_issues.md issue #48). One of: Xbox360, XboxModern, PlayStation\n"
         "GlyphStyle=%s\n"
         "\n"
+        "[CustomBinds]\n"
+        "; Per-action override used when ButtonLayout=Custom above (issue #66's Binds\n"
+        "; tab, in-game Options -> CUSTOM BINDS) -- lets you assign any physical\n"
+        "; button to any action instead of picking from the 4 fixed presets. Ignored\n"
+        "; entirely unless ButtonLayout=Custom. Values: RT, LT, RB, LB, X, Y, A, B,\n"
+        "; LS, RS, Start, Back.\n"
+        "Fire=%s\n"
+        "Ads=%s\n"
+        "Lethal=%s\n"
+        "Tactical=%s\n"
+        "ReloadUse=%s\n"
+        "WeaponSwitch=%s\n"
+        "Jump=%s\n"
+        "CrouchProne=%s\n"
+        "Sprint=%s\n"
+        "Melee=%s\n"
+        "Pause=%s\n"
+        "Scoreboard=%s\n"
+        "\n"
         "[Options]\n"
         "; Issue #66: replaces the ENTIRE real Options screen with a fully custom-drawn\n"
         "; one covering every real vanilla setting (Look/Video/Audio/Voice/Advanced\n"
@@ -480,6 +564,18 @@ void WriteDefaultConfig(const char* path)
         StickLayoutName(g_modConfig.stickLayout),
         g_modConfig.flipTriggers ? 1 : 0,
         GlyphStyleName(g_modConfig.glyphStyle),
+        PhysicalInputName(g_modConfig.customButtonMap.fire),
+        PhysicalInputName(g_modConfig.customButtonMap.ads),
+        PhysicalInputName(g_modConfig.customButtonMap.lethal),
+        PhysicalInputName(g_modConfig.customButtonMap.tactical),
+        PhysicalInputName(g_modConfig.customButtonMap.reloadUse),
+        PhysicalInputName(g_modConfig.customButtonMap.weaponSwitch),
+        PhysicalInputName(g_modConfig.customButtonMap.jump),
+        PhysicalInputName(g_modConfig.customButtonMap.crouchProne),
+        PhysicalInputName(g_modConfig.customButtonMap.sprint),
+        PhysicalInputName(g_modConfig.customButtonMap.melee),
+        PhysicalInputName(g_modConfig.customButtonMap.pause),
+        PhysicalInputName(g_modConfig.customButtonMap.scoreboard),
         g_modConfig.useCustomOptionsScreen ? 1 : 0,
         g_modConfig.vibrationEnabled ? 1 : 0,
         g_modConfig.vibrationFireIntensity,
@@ -513,10 +609,18 @@ void WriteDefaultConfig(const char* path)
 // table, not re-derived here.
 ButtonMap ResolveButtonMap(ButtonLayout layout, bool flipTriggers)
 {
+    // Custom (2026-08-06, issue #66's Binds tab): the player's own exact per-action
+    // assignment, already fully resolved -- returned as-is, deliberately bypassing
+    // flipTriggers below (flipping a layout the player explicitly hand-configured
+    // would silently undo their own choice, unlike the 4 real presets where flip is
+    // a documented modifier on top of a known-fixed starting layout).
+    if (layout == ButtonLayout::Custom) return g_modConfig.customButtonMap;
+
     ButtonMap m; // struct defaults already match ButtonLayout::Default
 
     switch (layout) {
         case ButtonLayout::Default:
+        case ButtonLayout::Custom: // unreachable (handled above) -- listed to silence -Wswitch
             break; // defaults are already correct
         case ButtonLayout::Tactical:
             m.crouchProne = PhysicalInput::RS;
@@ -667,6 +771,7 @@ void LoadModConfig()
     // (and its divide-by-zero guard that used to live here) dead code -- the engine's
     // own native timer now applies automatically. See mod_config.h's [Sprint] comment.
     ReadButtonLayout(path, g_modConfig.buttonLayout);
+    ReadCustomButtonMap(path, g_modConfig.customButtonMap);
     ReadStickLayout(path, g_modConfig.stickLayout);
     ReadBool(path, "Bindings", "FlipTriggers", g_modConfig.flipTriggers);
     ReadGlyphStyle(path, g_modConfig.glyphStyle);
