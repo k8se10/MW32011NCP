@@ -1607,7 +1607,7 @@ void DrawDebugMarkerIfRequested(void* device)
 // this project's own "no placeholder settings" standard (CLAUDE.md 5). Left out
 // entirely rather than faked.
 
-enum class OptRowKind { FloatValue, BoolToggle, StickLayoutEnum, ButtonLayoutEnum };
+enum class OptRowKind { FloatValue, BoolToggle, StickLayoutEnum, ButtonLayoutEnum, CustomBindsEntry };
 
 // 5 selectable Button Layout entries now (2026-08-06, issue #66): the 4 real presets
 // plus Custom (matches ButtonLayout's own enum, which has Custom as its 5th value).
@@ -1634,6 +1634,12 @@ OptRow g_optRows[] = {
     { "VIBRATION",              OptRowKind::BoolToggle,  nullptr, 0.0f, 0.0f, 0.0f, &g_modConfig.vibrationEnabled, "Enable or disable controller vibration." },
     { "STICK LAYOUT",           OptRowKind::StickLayoutEnum,  nullptr, 0.0f, 0.0f, 0.0f, nullptr, "Choose your stick layout." },
     { "BUTTON LAYOUT",          OptRowKind::ButtonLayoutEnum, nullptr, 0.0f, 0.0f, 0.0f, nullptr, "Choose your button layout." },
+    // 2026-08-06: moved here from its own standalone top-level tab ("and furthermore
+    // ... the custom binds section should be a subsection of the controller section
+    // for cleanliness") -- a drill-down launcher row, same UI convention as Stick/
+    // Button Layout just above, but opens the full 12-row Binds editor instead of a
+    // compact 4/5-option list.
+    { "CUSTOM BINDS",           OptRowKind::CustomBindsEntry, nullptr, 0.0f, 0.0f, 0.0f, nullptr, "Assign custom keyboard, mouse, or controller bindings." },
 };
 constexpr int kOptRowCount = sizeof(g_optRows) / sizeof(g_optRows[0]);
 
@@ -1652,6 +1658,16 @@ int g_optSelectedRow = 0;
 // draw code which of the two rows (and therefore which enum/diagram) is active.
 bool g_optDrilldownOpen = false;
 int g_optDrilldownSelectedRow = 0;
+
+// Custom Binds drill-down (2026-08-06: moved off its own standalone top-level tab
+// into a subsection of Controller, "for cleanliness") -- same "own sub-screen"
+// pattern as g_optDrilldownOpen above, but launched from a single CustomBindsEntry
+// row instead of an enum-cycling row, and shows the full 12-row Binds list rather
+// than a compact 4/5-option list + diagram. g_optBindsDrilldownReturnRow remembers
+// which Controller row to reselect on Back, since g_optSelectedRow itself is reused
+// as the Binds list's own selection index while this is open.
+bool g_optBindsDrilldownOpen = false;
+int g_optBindsDrilldownReturnRow = 0;
 
 // Full-scope Options expansion (2026-08-06, issue #66) -- real keybind rebind
 // capture state. Selecting a Keybind-kind row arms StartKeybindCapture() (d3d9_hook.cpp)
@@ -1698,6 +1714,11 @@ TextTexCache g_optTitleCache;
 // Real-console-style per-row description line, bottom of the panel (2026-08-05
 // restyle, replaces the old full-width footer legend).
 TextTexCache g_optDescCache;
+// Row-list scroll hints (2026-08-06: tabs with more rows than fit on-screen,
+// e.g. Movement's 16, now scroll -- these two small labels are the only visual
+// cue that there's more above/below the currently visible window).
+TextTexCache g_optScrollUpHintCache;
+TextTexCache g_optScrollDownHintCache;
 // Bottom-right corner "Back" hint (2026-08-05 restyle) -- replaces the old
 // full-width footer bar (LB/RB TABS / LEFT-RIGHT ADJUST / A TOGGLE / B CLOSE / OR
 // CLICK); the real console screen shows only this, nothing else.
@@ -1959,6 +1980,9 @@ void FormatOptRowValue(const OptRow& row, char* outBuf, size_t outBufSize)
             strcpy_s(outBuf, outBufSize, kNames[static_cast<int>(g_modConfig.buttonLayout)]);
             break;
         }
+        case OptRowKind::CustomBindsEntry:
+            strcpy_s(outBuf, outBufSize, "EDIT >");
+            break;
     }
 }
 
@@ -1985,14 +2009,17 @@ void AdjustOptRow(int rowIndex, int direction)
         }
         case OptRowKind::ButtonLayoutEnum: {
             // 5 entries now (2026-08-06, issue #66): the 4 real presets plus Custom
-            // (whatever's currently in g_modConfig.customButtonMap, edited on the new
-            // Binds tab) -- ResolveButtonMap already returns customButtonMap directly
-            // for ButtonLayout::Custom, no special-casing needed here beyond the %5.
+            // (whatever's currently in g_modConfig.customButtonMap, edited via the
+            // Controller tab's own Custom Binds drill-down) -- ResolveButtonMap
+            // already returns customButtonMap directly for ButtonLayout::Custom, no
+            // special-casing needed here beyond the %5.
             int v = (static_cast<int>(g_modConfig.buttonLayout) + direction + kButtonLayoutOptionCount) % kButtonLayoutOptionCount;
             g_modConfig.buttonLayout = static_cast<ButtonLayout>(v);
             g_buttonMap = ResolveButtonMap(g_modConfig.buttonLayout, g_modConfig.flipTriggers);
             break;
         }
+        case OptRowKind::CustomBindsEntry:
+            break; // Left/Right do nothing -- Select/click opens the drill-down instead
     }
     SaveModConfig();
 }
@@ -2025,13 +2052,17 @@ void AdjustOptRow(int rowIndex, int direction)
 // the real console reference screen's own tab order where this project has data for
 // it (Look/Video/Audio/Voice/AdvancedVideo), with Movement/Actions (keybind-only
 // tabs) after, Controller (this mod's own settings) first since it's the tab players
-// actually came here for, and Binds (this mod's own custom controller-binding editor,
-// task #32 -- not a real vanilla tab, doesn't exist on console) last.
+// actually came here for. Binds (this mod's own custom controller-binding editor,
+// task #32) is deliberately NOT in kTabOrder -- 2026-08-06: "the custom binds section
+// should be a subsection of the controller section for cleanliness" moved it from a
+// standalone top-level tab to a drill-down launched from a row on Controller (see
+// OptRowKind::CustomBindsEntry / g_optBindsDrilldownOpen); the enum value itself is
+// kept only as EffectiveTab()'s return value while that drill-down is open, so every
+// existing CurrentTabRow*/AdjustCurrentTabRow dispatch below still works unchanged.
 enum class UnifiedTab { Controller, Look, Video, Audio, Voice, AdvancedVideo, Movement, Actions, Binds };
 constexpr UnifiedTab kTabOrder[] = {
     UnifiedTab::Controller, UnifiedTab::Look, UnifiedTab::Video, UnifiedTab::Audio,
     UnifiedTab::Voice, UnifiedTab::AdvancedVideo, UnifiedTab::Movement, UnifiedTab::Actions,
-    UnifiedTab::Binds,
 };
 constexpr int kUnifiedTabCount = sizeof(kTabOrder) / sizeof(kTabOrder[0]);
 
@@ -2072,10 +2103,20 @@ int g_currentTabIndex = 0; // index into kTabOrder; Controller (0) is always the
                              // opening tab, see CustomOptionsMenu_TickInput's
                              // selectEdge-into-g_optMenuOpen branch
 
-// Cached kVanillaSettings indices belonging to the CURRENT tab (Controller/Binds
-// don't use this -- Controller reads g_optRows directly, Binds has its own separate
-// data model, see task #32). Rebuilt only when the tab changes, not every frame/tick.
-// Sized above Movement's real 16-row count (the largest single real tab) with margin.
+// The tab every CurrentTabRow*/AdjustCurrentTabRow function below actually operates
+// on -- kTabOrder[g_currentTabIndex] normally, or UnifiedTab::Binds while the Custom
+// Binds drill-down (g_optBindsDrilldownOpen) is open, since Binds isn't in kTabOrder
+// (see that array's own comment) but still needs to reuse every one of those
+// dispatch functions unchanged.
+UnifiedTab EffectiveTab()
+{
+    return g_optBindsDrilldownOpen ? UnifiedTab::Binds : kTabOrder[g_currentTabIndex];
+}
+
+// Cached kVanillaSettings indices belonging to the CURRENT tab (Controller doesn't
+// use this -- it reads g_optRows directly; Binds has its own separate data model,
+// see task #32). Rebuilt only when the tab changes, not every frame/tick. Sized
+// above Movement's real 16-row count (the largest single real tab) with margin.
 int g_tabVanillaIndices[20];
 int g_tabVanillaRowCount = 0;
 
@@ -2083,7 +2124,7 @@ void RebuildTabRowCache()
 {
     g_tabVanillaRowCount = 0;
     UnifiedTab tab = kTabOrder[g_currentTabIndex];
-    if (tab == UnifiedTab::Controller || tab == UnifiedTab::Binds) return;
+    if (tab == UnifiedTab::Controller) return;
     VanillaSettingTab wantTab = UnifiedTabToVanillaTab(tab);
     for (int i = 0; i < kVanillaSettingCount; ++i) {
         const VanillaSettingDef& def = kVanillaSettings[i];
@@ -2176,7 +2217,7 @@ void AdjustBindsRow(int row, int direction)
 
 int CurrentTabRowCount()
 {
-    UnifiedTab tab = kTabOrder[g_currentTabIndex];
+    UnifiedTab tab = EffectiveTab();
     if (tab == UnifiedTab::Controller) return kOptRowCount;
     if (tab == UnifiedTab::Binds) return kBindsRowCount;
     return g_tabVanillaRowCount;
@@ -2184,7 +2225,7 @@ int CurrentTabRowCount()
 
 const char* CurrentTabRowLabel(int row)
 {
-    UnifiedTab tab = kTabOrder[g_currentTabIndex];
+    UnifiedTab tab = EffectiveTab();
     if (tab == UnifiedTab::Controller) return g_optRows[row].label;
     if (tab == UnifiedTab::Binds) return (row >= 0 && row < kBindsRowCount) ? kBindsRows[row].label : "";
     return kVanillaSettings[g_tabVanillaIndices[row]].displayLabel;
@@ -2218,7 +2259,7 @@ void FormatKeybindDisplayString(const char* command, char* outBuf, size_t outBuf
 
 void CurrentTabRowValueString(int row, char* outBuf, size_t outBufSize)
 {
-    UnifiedTab tab = kTabOrder[g_currentTabIndex];
+    UnifiedTab tab = EffectiveTab();
     if (tab == UnifiedTab::Controller) { FormatOptRowValue(g_optRows[row], outBuf, outBufSize); return; }
     if (tab == UnifiedTab::Binds) { CurrentBindsRowValueString(row, outBuf, outBufSize); return; }
     int idx = g_tabVanillaIndices[row];
@@ -2255,7 +2296,7 @@ void CurrentTabRowValueString(int row, char* outBuf, size_t outBufSize)
 
 bool CurrentTabRowIsBoolToggle(int row)
 {
-    UnifiedTab tab = kTabOrder[g_currentTabIndex];
+    UnifiedTab tab = EffectiveTab();
     if (tab == UnifiedTab::Controller) return g_optRows[row].kind == OptRowKind::BoolToggle;
     if (tab == UnifiedTab::Binds) return false;
     return kVanillaSettings[g_tabVanillaIndices[row]].kind == VanillaSettingKind::DvarBool;
@@ -2273,7 +2314,7 @@ bool CurrentTabRowIsBoolToggle(int row)
 // nothing meaningful to fill a bar with.
 bool TryComputeCurrentTabRowFraction(int row, float& outFraction)
 {
-    UnifiedTab tab = kTabOrder[g_currentTabIndex];
+    UnifiedTab tab = EffectiveTab();
     if (tab == UnifiedTab::Controller) {
         const OptRow& r = g_optRows[row];
         if (r.kind != OptRowKind::FloatValue) return false;
@@ -2351,7 +2392,7 @@ void DrawToggleSwitch(void* device, float x, float centerY, bool on, float scale
 // mode (task #29) instead of the normal Left/Right/A handling.
 bool CurrentTabRowIsKeybind(int row)
 {
-    UnifiedTab tab = kTabOrder[g_currentTabIndex];
+    UnifiedTab tab = EffectiveTab();
     if (tab == UnifiedTab::Controller || tab == UnifiedTab::Binds) return false;
     return kVanillaSettings[g_tabVanillaIndices[row]].kind == VanillaSettingKind::Keybind;
 }
@@ -2364,7 +2405,7 @@ bool CurrentTabRowIsKeybind(int row)
 // the line entirely when empty.
 const char* CurrentTabRowDescription(int row)
 {
-    UnifiedTab tab = kTabOrder[g_currentTabIndex];
+    UnifiedTab tab = EffectiveTab();
     if (tab == UnifiedTab::Controller) return g_optRows[row].description;
     if (tab == UnifiedTab::Binds) return (row >= 0 && row < kBindsRowCount) ? kBindsRows[row].description : "";
     return kVanillaSettings[g_tabVanillaIndices[row]].description;
@@ -2372,12 +2413,22 @@ const char* CurrentTabRowDescription(int row)
 
 bool CurrentTabRowIsStickLayout(int row)
 {
-    return kTabOrder[g_currentTabIndex] == UnifiedTab::Controller && g_optRows[row].kind == OptRowKind::StickLayoutEnum;
+    // Must use EffectiveTab(), not kTabOrder[g_currentTabIndex] directly: while the
+    // Custom Binds drill-down is open, g_currentTabIndex still points at Controller
+    // (only g_optBindsDrilldownOpen changed), but `row` is now a Binds-list index
+    // (0..kBindsRowCount-1) -- indexing g_optRows (only kOptRowCount==7 entries) with
+    // that would read out of bounds. EffectiveTab() correctly returns Binds here.
+    return EffectiveTab() == UnifiedTab::Controller && g_optRows[row].kind == OptRowKind::StickLayoutEnum;
 }
 
 bool CurrentTabRowIsButtonLayout(int row)
 {
-    return kTabOrder[g_currentTabIndex] == UnifiedTab::Controller && g_optRows[row].kind == OptRowKind::ButtonLayoutEnum;
+    return EffectiveTab() == UnifiedTab::Controller && g_optRows[row].kind == OptRowKind::ButtonLayoutEnum;
+}
+
+bool CurrentTabRowIsCustomBindsEntry(int row)
+{
+    return EffectiveTab() == UnifiedTab::Controller && g_optRows[row].kind == OptRowKind::CustomBindsEntry;
 }
 
 // Writes a new value for a vanilla setting, respecting VanillaSettingDef::staged --
@@ -2394,7 +2445,7 @@ void WriteVanillaSettingValue(int settingIndex, const VanillaSettingDef& def, co
 // direction: -1 (Left) or +1 (Right). Bool rows toggle regardless of direction.
 void AdjustCurrentTabRow(int row, int direction)
 {
-    UnifiedTab tab = kTabOrder[g_currentTabIndex];
+    UnifiedTab tab = EffectiveTab();
     if (tab == UnifiedTab::Controller) { AdjustOptRow(row, direction); return; }
     if (tab == UnifiedTab::Binds) { AdjustBindsRow(row, direction); return; }
 
@@ -3264,6 +3315,8 @@ void DrawCustomOptionsMenuIfOpen(void* device)
     const char* titleText = "OPTIONS";
     if (g_optDrilldownOpen) {
         titleText = CurrentTabRowIsStickLayout(g_optSelectedRow) ? "STICK LAYOUT" : "BUTTON LAYOUT";
+    } else if (g_optBindsDrilldownOpen) {
+        titleText = "CUSTOM BINDS";
     }
     DrawOptLeftAlignedText(device, g_optTitleCache, titleText, 56.0f, titleY, kTitleFontHeightPx, kWhiteColor, scaleX, scaleY);
 
@@ -3318,56 +3371,84 @@ void DrawCustomOptionsMenuIfOpen(void* device)
             DrawButtonLayoutDiagram(device, scaleX, scaleY, static_cast<ButtonLayout>(g_optDrilldownSelectedRow));
         }
     } else {
-        // Tab bar -- scrolls with LB/RB instead of overflowing past the panel's own
-        // left-column edge (live-reported 2026-08-06: "the tabs need to only go as far
-        // as the edge of that left side border" -- with 9 tabs now, drawing them all in
-        // one unbroken row like before this pass would run well past kPanelW into the
-        // blurred right-side region). Recomputed fresh every frame from
-        // g_currentTabIndex rather than tracked as separate persistent scroll state --
-        // simpler, and correct regardless of whether the tab changed via LB/RB
-        // (TickInput) or a mouse click (right below, same as before).
-        constexpr float kTabGapPx = 44.0f;
-        constexpr float kTabHitPadY = 12.0f;
-        constexpr float kTabAreaLeftX = 56.0f;
-        float tabAreaMaxWidth = kPanelW - kTabAreaLeftX - 40.0f; // matches the divider line's own right margin below
-        int firstVisibleTab = 0;
-        for (int start = 0; start <= g_currentTabIndex; ++start) {
-            float w = 0.0f;
-            int lastFit = start - 1;
-            for (int t = start; t < kUnifiedTabCount; ++t) {
-                int tw = MeasureTextWidthPx(UnifiedTabDisplayName(kTabOrder[t]), g_modConfig.overlayFontItalic, kTabFontHeightPx);
-                float add = (t == start) ? static_cast<float>(tw) : (kTabGapPx + static_cast<float>(tw));
-                if (w + add > tabAreaMaxWidth) break;
-                w += add;
-                lastFit = t;
+        // Tab bar -- hidden while the Custom Binds drill-down is open (2026-08-06:
+        // same "no tab bar" convention as the Stick/Button Layout drill-down above,
+        // since Binds isn't a real selectable tab anymore, see kTabOrder's own
+        // comment). Otherwise scrolls with LB/RB instead of overflowing past the
+        // panel's own left-column edge (live-reported 2026-08-06: "the tabs need to
+        // only go as far as the edge of that left side border" -- drawing all of them
+        // in one unbroken row would run well past kPanelW into the blurred right-side
+        // region). Recomputed fresh every frame from g_currentTabIndex rather than
+        // tracked as separate persistent scroll state -- simpler, and correct
+        // regardless of whether the tab changed via LB/RB (TickInput) or a mouse
+        // click (right below, same as before).
+        if (!g_optBindsDrilldownOpen) {
+            constexpr float kTabGapPx = 44.0f;
+            constexpr float kTabHitPadY = 12.0f;
+            constexpr float kTabAreaLeftX = 56.0f;
+            float tabAreaMaxWidth = kPanelW - kTabAreaLeftX - 40.0f; // matches the divider line's own right margin below
+            int firstVisibleTab = 0;
+            for (int start = 0; start <= g_currentTabIndex; ++start) {
+                float w = 0.0f;
+                int lastFit = start - 1;
+                for (int t = start; t < kUnifiedTabCount; ++t) {
+                    int tw = MeasureTextWidthPx(UnifiedTabDisplayName(kTabOrder[t]), g_modConfig.overlayFontItalic, kTabFontHeightPx);
+                    float add = (t == start) ? static_cast<float>(tw) : (kTabGapPx + static_cast<float>(tw));
+                    if (w + add > tabAreaMaxWidth) break;
+                    w += add;
+                    lastFit = t;
+                }
+                firstVisibleTab = start;
+                if (lastFit >= g_currentTabIndex) break;
             }
-            firstVisibleTab = start;
-            if (lastFit >= g_currentTabIndex) break;
-        }
 
-        float tabX = kTabAreaLeftX;
-        for (int t = firstVisibleTab; t < kUnifiedTabCount; ++t) {
-            int tabWidth = MeasureTextWidthPx(UnifiedTabDisplayName(kTabOrder[t]), g_modConfig.overlayFontItalic, kTabFontHeightPx);
-            if (t > firstVisibleTab && (tabX - kTabAreaLeftX) + static_cast<float>(tabWidth) > tabAreaMaxWidth) break;
-            bool hovered = PointInRect(tabX * scaleX, (tabY - kTabHitPadY) * scaleY,
-                                         static_cast<float>(tabWidth) * scaleX, (static_cast<float>(kTabFontHeightPx) + kTabHitPadY * 2.0f) * scaleY);
-            if (hovered && leftClickEdge && t != g_currentTabIndex) {
-                g_currentTabIndex = t;
-                RebuildTabRowCache();
-                g_optSelectedRow = 0;
+            float tabX = kTabAreaLeftX;
+            for (int t = firstVisibleTab; t < kUnifiedTabCount; ++t) {
+                int tabWidth = MeasureTextWidthPx(UnifiedTabDisplayName(kTabOrder[t]), g_modConfig.overlayFontItalic, kTabFontHeightPx);
+                if (t > firstVisibleTab && (tabX - kTabAreaLeftX) + static_cast<float>(tabWidth) > tabAreaMaxWidth) break;
+                bool hovered = PointInRect(tabX * scaleX, (tabY - kTabHitPadY) * scaleY,
+                                             static_cast<float>(tabWidth) * scaleX, (static_cast<float>(kTabFontHeightPx) + kTabHitPadY * 2.0f) * scaleY);
+                if (hovered && leftClickEdge && t != g_currentTabIndex) {
+                    g_currentTabIndex = t;
+                    RebuildTabRowCache();
+                    g_optSelectedRow = 0;
+                }
+                bool isCurrentTab = (t == g_currentTabIndex);
+                DWORD tabColor = isCurrentTab ? kWhiteColor : (hovered ? 0xFFC0C0C0u : 0xFF808080u);
+                DrawOptLeftAlignedText(device, g_tabBarCache[t], UnifiedTabDisplayName(kTabOrder[t]), tabX, tabY,
+                                         kTabFontHeightPx, tabColor, scaleX, scaleY);
+                tabX += static_cast<float>(tabWidth) + kTabGapPx;
             }
-            bool isCurrentTab = (t == g_currentTabIndex);
-            DWORD tabColor = isCurrentTab ? kWhiteColor : (hovered ? 0xFFC0C0C0u : 0xFF808080u);
-            DrawOptLeftAlignedText(device, g_tabBarCache[t], UnifiedTabDisplayName(kTabOrder[t]), tabX, tabY,
-                                     kTabFontHeightPx, tabColor, scaleX, scaleY);
-            tabX += static_cast<float>(tabWidth) + kTabGapPx;
+            DrawGenericTexturedQuad(device, g_optWhiteTexture, 56.0f * scaleX, (listTopY - 24.0f) * scaleY,
+                (kPanelW - 112.0f) * scaleX, 2.0f * scaleY, 0x40FFFFFFu);
         }
-        DrawGenericTexturedQuad(device, g_optWhiteTexture, 56.0f * scaleX, (listTopY - 24.0f) * scaleY,
-            (kPanelW - 112.0f) * scaleX, 2.0f * scaleY, 0x40FFFFFFu);
 
         int rowCount = CurrentTabRowCount();
+        // Scrollable row window (live-reported 2026-08-06: some tabs, e.g. Movement's
+        // 16 rows, have more rows than fit between listTopY and descY) -- recomputed
+        // fresh every frame from g_optSelectedRow, same "derive, don't track" approach
+        // as the tab bar's own LB/RB scroll above. maxVisibleRows is how many whole
+        // rows fit in the space actually available above the description line.
+        int maxVisibleRows = static_cast<int>((descY - 24.0f - listTopY) / kListRowSpacingPx);
+        if (maxVisibleRows < 1) maxVisibleRows = 1;
+        int firstVisibleRow = 0;
+        if (rowCount > maxVisibleRows) {
+            firstVisibleRow = g_optSelectedRow - (maxVisibleRows - 1);
+            if (firstVisibleRow < 0) firstVisibleRow = 0;
+            int maxFirst = rowCount - maxVisibleRows;
+            if (firstVisibleRow > maxFirst) firstVisibleRow = maxFirst;
+        }
+        int lastVisibleRowExclusive = firstVisibleRow + ((rowCount > maxVisibleRows) ? maxVisibleRows : rowCount);
+        if (firstVisibleRow > 0) {
+            DrawOptLeftAlignedText(device, g_optScrollUpHintCache, "^ MORE",
+                                     labelRightX - 120.0f, listTopY - 14.0f, 18, kDimTextColor, scaleX, scaleY);
+        }
+        if (lastVisibleRowExclusive < rowCount) {
+            DrawOptLeftAlignedText(device, g_optScrollDownHintCache, "MORE v",
+                                     labelRightX - 120.0f, descY - 26.0f, 18, kDimTextColor, scaleX, scaleY);
+        }
         float rowY = listTopY + kListRowSpacingPx * 0.5f;
-        for (int i = 0; i < rowCount; ++i) {
+        for (int i = firstVisibleRow; i < lastVisibleRowExclusive; ++i) {
             float rowRectY = rowY - kListRowSpacingPx * 0.5f;
 
             // Hover moves selection (matches the real native menu's own onFocus-on-hover
@@ -3383,6 +3464,10 @@ void DrawCustomOptionsMenuIfOpen(void* device)
                         g_optDrilldownOpen = true;
                         g_optDrilldownSelectedRow = CurrentTabRowIsStickLayout(i)
                             ? static_cast<int>(g_modConfig.stickLayout) : static_cast<int>(g_modConfig.buttonLayout);
+                    } else if (CurrentTabRowIsCustomBindsEntry(i)) {
+                        g_optBindsDrilldownReturnRow = i;
+                        g_optBindsDrilldownOpen = true;
+                        g_optSelectedRow = 0;
                     } else if (CurrentTabRowIsBoolToggle(i)) {
                         AdjustCurrentTabRow(i, +1);
                     } else {
@@ -3726,6 +3811,29 @@ bool CustomOptionsMenu_TickInput(bool openRequestedEdge,
         return true; // claim the tick -- Left/Right do nothing while this prompt is up
     }
 
+    if (g_optMenuOpen && g_optBindsDrilldownOpen) {
+        // Custom Binds drill-down (2026-08-06, moved off its own top-level tab into a
+        // Controller subsection). Reuses the exact same row-list navigation as the
+        // main list below (Up/Down/Left/Right/Select on g_optSelectedRow, now aimed at
+        // the Binds row set via EffectiveTab()) rather than duplicating it -- only
+        // Back and LB/RB (tab switching makes no sense while inside this sub-screen)
+        // need their own handling here.
+        if (backEdge) {
+            g_optBindsDrilldownOpen = false;
+            g_optSelectedRow = g_optBindsDrilldownReturnRow;
+            return true;
+        }
+        int rowCount = CurrentTabRowCount(); // kBindsRowCount, via EffectiveTab()
+        if (rowCount > 0) {
+            if (upEdge) g_optSelectedRow = (g_optSelectedRow - 1 + rowCount) % rowCount;
+            if (downEdge) g_optSelectedRow = (g_optSelectedRow + 1) % rowCount;
+            if (leftEdge) AdjustCurrentTabRow(g_optSelectedRow, -1);
+            if (rightEdge) AdjustCurrentTabRow(g_optSelectedRow, +1);
+            if (selectEdge) AdjustCurrentTabRow(g_optSelectedRow, +1); // A also cycles, same convention as everywhere else
+        }
+        return true;
+    }
+
     if (g_optMenuOpen && g_optDrilldownOpen) {
         // Stick/Button Layout drill-down (2026-08-05 restyle). Up/Down moves the
         // highlighted option AND commits it immediately -- same "no separate
@@ -3785,6 +3893,10 @@ bool CustomOptionsMenu_TickInput(bool openRequestedEdge,
                     g_optDrilldownOpen = true;
                     g_optDrilldownSelectedRow = CurrentTabRowIsStickLayout(g_optSelectedRow)
                         ? static_cast<int>(g_modConfig.stickLayout) : static_cast<int>(g_modConfig.buttonLayout);
+                } else if (CurrentTabRowIsCustomBindsEntry(g_optSelectedRow)) {
+                    g_optBindsDrilldownReturnRow = g_optSelectedRow;
+                    g_optBindsDrilldownOpen = true;
+                    g_optSelectedRow = 0;
                 } else if (CurrentTabRowIsBoolToggle(g_optSelectedRow)) {
                     AdjustCurrentTabRow(g_optSelectedRow, +1); // A also toggles a bool row, same as Left/Right
                 } else if (CurrentTabRowIsKeybind(g_optSelectedRow)) {
@@ -3810,6 +3922,7 @@ bool CustomOptionsMenu_TickInput(bool openRequestedEdge,
     if (openRequestedEdge) {
         g_optMenuOpen = true;
         g_optDrilldownOpen = false;
+        g_optBindsDrilldownOpen = false;
         g_optSelectedRow = 0;
         g_currentTabIndex = 0; // always opens on the Controller tab
         RebuildTabRowCache();
@@ -3824,6 +3937,7 @@ void CustomOptionsMenu_ResetOnMenuClose()
 {
     g_optMenuOpen = false;
     g_optDrilldownOpen = false;
+    g_optBindsDrilldownOpen = false;
     g_optSelectedRow = 0;
     g_currentTabIndex = 0;
     // Full-scope Options expansion (2026-08-06): if the real pause menu itself closes
