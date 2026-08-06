@@ -34,15 +34,18 @@
 > built, downloadable release packages are hidden. **v0.2.2 is the oldest
 > version this project still distributes or supports.**
 
-> **A note on antivirus scans:** a VirusTotal scan of v0.3.0 shows 1 out of 67
-> vendors (VBA32, a heuristic-heavy engine) flagging the DLL with a generic
-> `dbadur` label; every major vendor (Microsoft, Kaspersky, ESET, Malwarebytes,
-> CrowdStrike, BitDefender, and more) shows clean. This is consistent with a
-> heuristic false positive on the DLL's real, intentional behavior — hooking
-> functions inside the game process via MinHook and runtime byte-pattern
-> scanning — the same general shape plenty of legitimate tools (ReShade,
-> RivaTuner Statistics Server) trigger on some scanners. Full source is in this
-> repository if you want to verify for yourself. See `known_issues.md` #64.
+> **A note on antivirus scans:** a small number of scanners have flagged
+> released DLLs with generic heuristic labels — v0.3.0 got 1/67 on VirusTotal
+> (VBA32, `dbadur`); v0.3.1 got a report of MaxSecure flagging it as
+> `Trojan.Malware.300983.susgen`. Every major vendor (Microsoft, Kaspersky,
+> ESET, Malwarebytes, CrowdStrike, BitDefender, and more) has shown clean on
+> every release so far. Both labels are generic "suspicious-generic" heuristic
+> buckets, not a named-family match — consistent with a heuristic false
+> positive on the DLL's real, intentional behavior (hooking functions inside
+> the game process via MinHook and runtime byte-pattern scanning), the same
+> general shape plenty of legitimate tools (ReShade, RivaTuner Statistics
+> Server) trigger on some scanners. Full source is in this repository if you
+> want to verify for yourself. See `known_issues.md` #64.
 
 **Status: ALPHA — v0.3.1 (2026-08-06).** Changes below since v0.3.0, most
 user-confirmed live:
