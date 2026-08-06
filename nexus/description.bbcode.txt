@@ -13,9 +13,9 @@ It hooks directly into a live game process. Expect bugs, rough edges, unfinished
 
 [hr]
 
-[size=4][b]Status: ALPHA — v0.3.0 (2026-08-03) — the most significant release to date[/b][/size]
+[size=4][b]Status: ALPHA — v0.3.1 (2026-08-06) — non-English glyph fix + Options screen preview[/b][/size]
 
-By code volume this is the biggest release yet: 8,057 lines changed overall, 5,725 of them source code — more than double the prior record. Not feature-complete, not fully tested end-to-end. Multiplayer ([font=Courier New]iw5mp.exe[/font]) hasn't been started at all. Read [b]What Works / Partial / Not Working[/b] below before assuming any specific feature works — this project is deliberately honest about what's confirmed vs. not, not a marketing pitch, including two things below that were attempted this release and are being reported as NOT working rather than glossed over.
+[color=#F39C12]Stabilization release — same treatment as v0.2.2: no further release planned for up to ~2 weeks after this one unless a critical issue turns up.[/color] Headline fix: controller-glyph icons were silently broken for every non-English game language — root-caused and fixed against the game's own real localization resolver, confirmed live. Also new, shipped as an explicitly labeled preview/WIP feature (off by default, [font=Courier New]mw3ncp_config.ini[/font]-only): a from-scratch replacement Options screen covering every real vanilla setting plus real keybind rebind capture. Not feature-complete, not fully tested end-to-end. Multiplayer ([font=Courier New]iw5mp.exe[/font]) hasn't been started at all. Read [b]What Works / Partial / Not Working[/b] below before assuming any specific feature works — this project is deliberately honest about what's confirmed vs. not, not a marketing pitch.
 
 [hr]
 
@@ -52,6 +52,7 @@ Every other "controller support" option for this game works by faking keyboard/m
 [*][b]New in v0.3.0, confirmed live:[/b] real controller-glyph icons — in-game interact hints (pickup/swap, buy-station, mantle, Reload, grenade throwback, Survival ready-up) and menu corner hints (Back/Friends). Also new: a custom mouse cursor overlay so the cursor draws correctly on top of these icons instead of underneath them
 [*][b]New in v0.3.0:[/b] real controller vibration on weapon fire and taking damage — went through four tuning rounds and is now maxed out in software; physically confirmed working
 [*][b]New in v0.3.0:[/b] crouch input occasionally not responding, Survival ready-up UI conflicts, mistargeted menu text, Jump not standing you up first, and cursor visibility issues — a full bug batch from the first public Survival co-op stream, all fixed and confirmed live
+[*][b]New in v0.3.1, confirmed live:[/b] controller-glyph icons now show correctly in every game language — root cause was several detection sites matching the game's own on-screen LOCALIZED text against a hardcoded English word; fixed by wiring in the game's own real localized-string resolver instead
 [/list]
 
 [size=4][b]🟡 Partial — works, with a specific known gap[/b][/size]
@@ -60,9 +61,15 @@ Every other "controller support" option for this game works by faking keyboard/m
 [*]Predator Missile's post-fire guidance — launch works, steering the flying missile doesn't yet
 [*]Back button (scoreboard/objectives) — implemented and builds clean, not yet separately confirmed live
 [*]A few Campaign killstreak/vehicle set-pieces (DPV aiming, a mounted turret sequence, one mortar sequence) — aim or fire input has a specific, documented gap; most of Campaign plays fine
-[*]Real in-game controller options menu — a working injection mechanism is proven live for simple content; real menu content (backgrounds, sliders) hit a genuine engine limit and isn't shippable yet
 [*]Highlighted-item glyph in menu list navigation — shown only on a handful of individually-verified screens (main menu, Campaign hub, a couple of popups) rather than everywhere yet, as a deliberate release-safety choice after an audit found several "done" screens were never actually re-confirmed
 [*]Vibration doesn't register hits absorbed by Survival's purchasable Body Armor — a separate value from real health this project hasn't located in memory yet
+[*]A few menu glyph icons can land in a slightly wrong POSITION under non-English languages — icon selection is correct everywhere now (fixed in v0.3.1), only fine positioning on a handful of screens isn't yet
+[/list]
+
+[size=4][b]🧪 Preview / WIP — real, working code, but not yet played[/b][/size]
+
+[list]
+[*][b]New in v0.3.1:[/b] a from-scratch replacement Options screen covering every real vanilla setting (Look/Video/Audio/Voice/Advanced Video/Movement/Actions) plus real keybind rebind capture and a custom controller-bindings drill-down. The original plan (inject content into the real menu system) hit a genuine engine limit and was abandoned in favor of a fully custom-drawn screen instead. Compiles clean and follows every pattern already live-confirmed elsewhere in this project — but genuinely has not been played. [b]Off by default, no in-game toggle[/b] — enable at your own risk via [font=Courier New][Options] UseCustomOptionsScreen=1[/font] in [font=Courier New]mw3ncp_config.ini[/font]. See the GitHub repo's [font=Courier New]re_notes/known_issues.md[/font] issue #66 for the full, itemized status before trying it.
 [/list]
 
 [size=4][b]⬜ Not Working / Not Implemented At All[/b][/size]
