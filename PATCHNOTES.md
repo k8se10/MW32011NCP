@@ -6,10 +6,23 @@ reverse-engineering trail behind each entry.
 
 ---
 
-## Unreleased
+## v0.3.1 — Alpha (2026-08-06) — Multi-language glyph fix + Options screen preview
+
+**Headline fix**: controller-glyph icons were silently broken for every non-English
+game language — root-caused and fixed properly (see Fixed below), not worked
+around. **Also included**: a from-scratch custom Options screen replacement,
+shipped as an explicitly **preview/WIP feature — off by default, ini-only, no
+in-game way to enable it**. It's real, working code (compiles clean, logically
+sound, follows every proven pattern already live elsewhere in this project) but
+has not been played yet — see `re_notes/known_issues.md` issue #66 for the full,
+honest status before enabling `[Options] UseCustomOptionsScreen=1` in
+`mw3ncp_config.ini`.
+
+**Intended as a stabilization release, same as v0.2.2** — no further release
+planned for up to ~2 weeks after this one barring a critical issue.
 
 ### Added
-- **Custom Options screen now covers every real vanilla tab, plus real keybind
+- **PREVIEW/WIP, off by default: custom Options screen now covers every real vanilla tab, plus real keybind
   rebinding, a new custom controller-bindings tab, and a real apply/restart flow.**
   All 7 real vanilla tabs (Look, Video, Audio, Voice, Advanced Video, Movement,
   Actions) are live now, not just Controller/Look/Voice — every setting kind
@@ -32,14 +45,14 @@ reverse-engineering trail behind each entry.
   etc.) instead of a raw stored number, and the tab bar now scrolls to stay
   within the panel's own left edge instead of overflowing past it. Not yet
   live-tested — see `re_notes/known_issues.md` issue #66.
-- **Options row list now scrolls, and Custom Binds moved into a Controller
+- **PREVIEW/WIP: Options row list now scrolls, and Custom Binds moved into a Controller
   subsection.** Tabs with more rows than fit on screen (e.g. Movement's 16)
   now scroll to keep the selected row visible, with small "more above/below"
   hints, instead of overflowing past the description line. "CUSTOM BINDS" is
   no longer its own top-level tab — it's now a drill-down reached from a row
   on the Controller tab, same convention as the existing Stick/Button Layout
   drill-downs. Not yet live-tested — see `re_notes/known_issues.md` issue #66.
-- **Custom in-game options overlay, invoked from the real pause menu's own "Options" button.** New
+- **PREVIEW/WIP: custom in-game options overlay, invoked from the real pause menu's own "Options" button.** New
   fully-drawn settings screen, invoked by drawing an extra "MW32011NCP
   Options" row below the real native `OPTIONS_LIST` menu's own last item via
   the existing overlay layer (the real menu's own item count/content is never
@@ -128,7 +141,7 @@ reverse-engineering trail behind each entry.
   See `re_notes/known_issues.md` issue #66 and
   `re_notes/options_menu_full_map.md` for the full research trail.
 
-- **Blurred background on the custom Options screen's right-hand side**, matching
+- **PREVIEW/WIP: blurred background on the custom Options screen's right-hand side**, matching
   the real console reference (which dims/blurs the live paused view behind the
   panel — this project's PC build previously showed it completely sharp, which
   clashed visibly with real gameplay HUD text bleeding through). Downsamples the
@@ -138,7 +151,7 @@ reverse-engineering trail behind each entry.
   compiler linked). Not yet live-tested. See `re_notes/known_issues.md` issue #66.
 
 ### Fixed
-- **Custom Options screen could crash the whole game after applying a staged
+- **PREVIEW/WIP feature fix: custom Options screen could crash the whole game after applying a staged
   Advanced Video setting.** Reopening the pause menu after confirming "Apply
   Settings?" (which fires a real `vid_restart`, fully recreating the D3D9
   device) crashed the game — the cached background-blur pixel shader wasn't
@@ -181,7 +194,7 @@ reverse-engineering trail behind each entry.
   yet. Full translation of this mod's OWN added text (Options screen
   labels, etc.) is a distinct, much larger effort tracked separately. See
   `re_notes/known_issues.md` issues #68 and #69.
-- **Custom Options screen crash on open, fixed same day it shipped.** The
+- **PREVIEW/WIP feature fix: custom Options screen crash on open, fixed same day it shipped.** The
   first background-blur implementation called `GetSurfaceLevel` through the
   device's own vtable instead of the target texture's — a genuinely different
   COM interface at that vtable index, which invoked the wrong real function

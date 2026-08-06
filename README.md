@@ -1,17 +1,22 @@
 # MW3 Native Controller Support (Campaign & Survival)
 
-> **▶️ v0.3.0 (2026-08-03) — the most significant release to date** (8,057
-> lines changed, 5,725 of them source code — more than double the prior
-> record). Ships controller-glyph icons (in-game hints + menu corner hints +
-> a custom cursor overlay), real controller vibration, and the crouch/UI bug
-> batch from the first public Survival co-op stream — see `PATCHNOTES.md` for
-> the full list. **Two things in this release are honestly
-> flagged as NOT working, not just "unpolished":** auto-mantle while sprinting
-> (implemented, live-tested twice, still doesn't reliably fire — shipped
-> disabled by default) and vibration for damage absorbed by Survival's
-> purchasable Body Armor (a separate value from real health this project
-> hasn't located in memory yet). See Known Limitations below for both.
-> **v0.3.0 is the current alpha build.**
+> **▶️ v0.3.1 (2026-08-06) — non-English glyph fix, plus a preview feature.**
+> **Headline fix**: controller-glyph icons were silently broken for every
+> non-English game language (community-reported on Nexus) — root-caused and
+> fixed properly against the game's own real localization resolver, confirmed
+> live by switching languages and retesting, not worked around. See Known
+> Limitations for the one remaining, much narrower gap (icon POSITION, not
+> selection, on a few screens). **Also new, as an explicitly-labeled
+> preview/WIP feature**: a from-scratch replacement Options screen covering
+> every real vanilla setting plus real controller-bind rebinding — it's real,
+> working code, but **off by default and only reachable via a
+> `mw3ncp_config.ini` edit, with no in-game way to turn it on** — it hasn't
+> been played yet. See `PATCHNOTES.md` for the full list and
+> `re_notes/known_issues.md` issue #66 for the honest, itemized status before
+> trying it. **v0.3.1 is the current alpha build, and is intended as a
+> stabilization release** — same treatment as v0.2.2: no further release
+> planned for up to ~2 weeks after this one unless a critical issue turns up
+> in the meantime.
 
 > **⚠️ SECURITY NOTICE — versions before v0.2.2 are no longer distributed.**
 > Versions v0.2.1 and earlier shipped with an aim-assist feature's code compiled
@@ -39,19 +44,27 @@
 > RivaTuner Statistics Server) trigger on some scanners. Full source is in this
 > repository if you want to verify for yourself. See `known_issues.md` #64.
 
-**Status: ALPHA — v0.3.0 (2026-08-03).** Changes below since v0.2.5, most
-user-confirmed live — **two exceptions honestly flagged as not working, see
-their own bullets**:
+**Status: ALPHA — v0.3.1 (2026-08-06).** Changes below since v0.3.0, most
+user-confirmed live:
 
-> ⚠ **IMPORTANT - LANGUAGES OTHER THAN ENGLISH DO NOT WORK WITH GLYPHS AT THIS CURRENT TIME** ⚠
-> This is currently being investigated - and will be addressed in an upcoming release
+> ⚠ **Known gap: a few menu glyph icons can land in a slightly wrong POSITION
+> under non-English languages** ⚠
+> Icon SELECTION is now correct in every language (fixed in v0.3.1, see below)
+> — only fine on-screen positioning on a handful of screens (calibrated
+> against English text length) isn't yet. Not the same issue as v0.3.0's:
+> non-English glyphs no longer fail to appear at all.
 
-- Controller-glyph icons: real in-game interact hints (pickup/swap, buy-station, mantle, Reload, grenade throwback, Survival ready-up) and menu corner hints (Back/Friends), plus a custom mouse cursor overlay drawn correctly on top of them — confirmed live (issues #48/#50/#52)
-- Highlighted-item A-glyph in menu lists — confirmed live, but only on an explicit, short verified allowlist (main menu, Campaign hub, two popups); every other screen is a deliberate, documented gap, not a bug (issue #51)
-- The crouch/UI bug batch from the first public Survival co-op stream — crouch input occasionally not responding, ready-up prompt UI conflicts, mistargeted menu text, Jump not standing you up first, cursor visibility — all fixed and confirmed live (issues #53/#54/#56/#59/#55/#61)
-- Controller vibration on weapon fire and taking damage — real, physically confirmed, but went through four tuning rounds and is now maxed out in software (`FireIntensity=1.0`); if still weak on your controller, further gains would need different hardware, not a config change (issue #24/#63)
-- **NOT WORKING, shipped disabled: auto-mantle while sprinting.** Implemented and live-tested twice, still doesn't reliably fire near a real ledge — `AutoMantleEnabled=0` by default, don't rely on it (issue #62)
-- **Known gap: vibration doesn't register hits absorbed by Survival's Body Armor** — a separate value from real health this project hasn't located in memory yet (issue #63)
+- **Controller-glyph icons now show correctly in every game language — fixed in v0.3.1, confirmed live.** Root cause: several detection sites matched the game's own on-screen LOCALIZED text against a hardcoded English word; fixed by wiring in the game's own real localized-string resolver instead, so detection is correct automatically for whatever language is active (issues #68/#69)
+- **PREVIEW/WIP, off by default: a from-scratch replacement Options screen** covering every real vanilla setting (Look/Video/Audio/Voice/Advanced Video/Movement/Actions) plus real controller-bind rebinding — enable via `[Options] UseCustomOptionsScreen=1` in `mw3ncp_config.ini` only, no in-game toggle exists. Compiles clean and follows proven patterns already live elsewhere in this project, but has not been played yet — see `re_notes/known_issues.md` issue #66 before enabling it
+
+Everything else carries over unchanged from v0.3.0 — **still honestly flagged as NOT
+working, not just "unpolished"**: auto-mantle while sprinting (shipped disabled by
+default, `AutoMantleEnabled=0`) and vibration for damage absorbed by Survival's
+purchasable Body Armor (a separate value from real health this project hasn't
+located in memory yet). See Known Limitations below for both, and `PATCHNOTES.md`'s
+v0.3.0 entry for everything that shipped in that release (controller-glyph icons,
+real controller vibration, the crouch/UI bug batch from the first public Survival
+co-op stream).
 
 No other player-facing behavior changed from v0.2.2, itself a risk-mitigation release: aim assist
 (rotational friction + magnetism, reading live entity/target memory) was **permanently removed**,
@@ -118,7 +131,7 @@ live-tested by the developer during actual play, not just built-and-assumed.
 | Mortar (Goalpost) | Aim works, fire input not wired |
 | Mounted M2 turret (Goalpost) | Works, but feels too hard — cause not yet diagnosed |
 | SMAW lock-on vs. aircraft (Goalpost) | Unconfirmed whether this is even a real bug |
-| Real in-game controller options menu | Static test injection proven live; real content (sliders, backgrounds) blocked on a GPU-resource-loading limit, not yet shippable |
+| Real in-game controller options menu | **Superseded, v0.3.1**: a full replacement screen exists (every real vanilla setting, real rebind capture) but ships as a preview/WIP feature — off by default, `mw3ncp_config.ini`-only, not yet played. See Feature list and `known_issues.md` #66 |
 | Highlighted-item A-glyph (menu list navigation) | **Corrected 2026-08-03** — an earlier "shipped and confirmed live in full" claim was wrong; this session's own audit found several screens either had never been re-confirmed or were confirmed actively broken (one screen with a calibrated position table entry turned out to not work at all). **Shown only on an explicit, live-verified allowlist as a release-safety policy** — currently the main menu, the Campaign hub, and the Leave Lobby/Choose Content Pack popups; every other menu screen shows no glyph at all (rather than a possibly-wrong one) until individually re-verified. See `re_notes/known_issues.md` issue #51's own coverage table for the full per-screen breakdown |
 | Vibration/rumble | **Reimplemented 2026-08-03** after being fully disabled — fire rumble via a re-verified-safe hook, damage rumble via a per-frame health poll instead of a hook (the previously-recommended damage-hook target turned out unsafe on closer inspection). Went through four live-reported strength rounds; `FireIntensity` is now maxed at its software ceiling (`1.0`) — if still weak on your controller, that's very likely the controller's own hardware, not a remaining config fix. **Known gap: doesn't register hits absorbed by Survival's Body Armor** (a separate value from real health, not yet located in memory). See `re_notes/known_issues.md` issues #24/#63 |
 
@@ -159,7 +172,7 @@ fully live-confirmed working with no known gap (that's the ✅ table above).
 | Mortar fire (Goalpost) | Aim works, fire not wired; confirmed NOT fixed by the Fire-kbutton rewrite; mortar's own fire-control script not yet located | `known_issues.md` #30, PATCHNOTES v0.2.0 |
 | Mounted M2 turret difficulty (Goalpost) | Works, feels too hard; regen-buff hypothesis refuted; likely the same missing-aim-channel cause as DPV | `known_issues.md` #30 |
 | SMAW lock-on vs. aircraft | Unconfirmed whether even a real bug | README (Partial table above) |
-| Real in-game controller options menu (task #23) | Static injection proven live; real content blocked on GPU-resource-load timing. This session's read-only boot-thunk diagnostic confirmed live-safe, but its address-recovery theory was refuted at that call site — needs a different approach before the real splice can be written | `known_issues.md` #23 |
+| Real in-game controller options menu (task #23/#66) | **Superseded, v0.3.1**: the original plan (inject content into the real menu system) hit a real GPU-resource-loading limit and was abandoned; built instead as a fully custom-drawn replacement screen (own rendering, own input handling) that draws over the real Options screen. Covers every real vanilla tab plus rebind capture — shipped as a preview/WIP feature, off by default, not yet played. Remaining gaps: a missing window-mode setting, resolution-scaling unverified, some diagram positional calibration incomplete | `known_issues.md` #66 |
 | Highlighted-item A-glyph, remaining screens | Reimplemented as an explicit verified-only allowlist (2026-08-03) after several supposedly-working screens turned out broken; most screens remain to be individually re-verified and added back | README (Partial table above), `known_issues.md` #51 |
 | Per-animation-step reload vibration | Deliberately deferred final-scope item; real per-weapon timing data already found, needs a genuine reload-detection trigger | README (Not-working table above), `known_issues.md` #63 |
 
@@ -200,7 +213,7 @@ reverse (broad coverage, but shaky):
 | | Score | Answers |
 |---|---|---|
 | **Raw functionality** | **~76/100** | Of what's actually implemented and tested, how well does it work? See the methodology note below the matrix. |
-| **Feature completeness (SP/Survival scope)** | **~90/100** | Of the full planned SP/Survival roadmap, how much exists at all? From the matrix below. |
+| **Feature completeness (SP/Survival scope)** | **~92/100** | Of the full planned SP/Survival roadmap, how much exists at all? From the matrix below. |
 
 **Multiplayer is excluded from both numbers** — it's a separate, equally-large phase
 that hasn't started at all; folding a from-scratch second-binary effort into one
@@ -228,11 +241,12 @@ kind of durable record git/`PATCHNOTES.md` provides.
 | Back/scoreboard | 1 | 2 | Implementation done (builds clean); live-tested, confirmed no visible effect — real cause undiagnosed, parked as a UI gap |
 | Button-glyph UI prompts | 5 | 6 | **Corrected 2026-08-03** — the highlighted-item A-glyph sub-item is demoted from done to partial: an audit this session found several screens claimed working were never actually re-confirmed, and one (with its own calibrated position table entry) was confirmed outright broken. Now gated behind an explicit, live-verified allowlist (main menu, Campaign hub, two popups) rather than assumed complete; in-game interact hints, menu corner hints, and the custom cursor overlay remain genuinely done. See `known_issues.md` #48/#50/#51/#52 |
 | Killstreak support | 4 | 4 | All 4 real Survival killstreaks now have a confirmed real mechanism: Predator Missile launch (fixed via a from-bytecode-to-native-delivery trace) and camera/view both confirmed working; Precision Airstrike confirmed working (a smoke-grenade-throw mechanic, not a menu system); AI squadmate call-in confirmed working. Predator Missile's post-fire guidance AIM is a separate, still-open bug (not a killstreak-activation problem) — tracked under the mounted-aim-channel work below |
-| Real in-game options menu | 2 | 4 | Static injection mechanism done; the next blocker (real menu content needs the engine's own controlled load context) now has a full, pressure-tested two-part implementation plan (boot-time zone splice + a single `OpenMenuByName` string-substitution hook) — not yet coded |
+| Real in-game options menu | 3.5 | 4 | **Updated v0.3.1** — the original injection plan was abandoned for a fully custom-drawn replacement screen, now covering every real vanilla tab plus real rebind capture and a custom-bindings drill-down; not full credit since it ships as an unplayed preview feature (off by default) with a few known gaps (window mode setting, resolution scaling) still open — see `known_issues.md` #66 |
 | Vibration/rumble | 1.5 | 2 | **Updated 2026-08-03** — reimplemented after the original startup-crash disable: fire rumble via a re-verified-safe hook, damage rumble via a per-frame health poll (the originally-recommended damage-hook target turned out unsafe on closer inspection, so it's deliberately not hooked). Physically confirmed working, went through four strength-tuning rounds and is now maxed out in software. **Known gap: doesn't register hits absorbed by Survival's Body Armor** (not counted against this row — a genuinely separate, unlocated field). Per-animation-step reload vibration is a real, deliberately-deferred final-scope item (also not counted) — see `known_issues.md` #24/#63 |
 | Auto-mantle (sprint) | 0 | 1 | **NOT WORKING, 2026-08-03** — implemented and live-tested twice (a jump-spam regression fixed, then a total-failure regression addressed), still not confirmed actually firing near a real ledge. Shipped OFF by default; scored 0 rather than partial credit since it has never been observed working — see `known_issues.md` #62 |
 | Extreme Conditioning override | 1 | 1 | **Resolved for free, 2026-07-19** — Sprint's real-kbutton migration means the native perk system now applies its own duration override automatically, same as it does for keyboard players; no separate detection/override code was ever needed once the kbutton was found |
-| **Total** | **43.5** | **49** | **43.5/49 ≈ 89/100** (2026-08-03: Auto-mantle corrected from 0.5→0 done — implemented but never confirmed working, so no partial credit; Vibration stays at 1.5 (confirmed working, tuning maxed out, armor gap tracked separately); every other row is still as of 2026-07-19/08-01 and not independently re-verified in this pass) |
+| **Total** | **45** | **49** | **45/49 ≈ 92/100** (2026-08-06: Real in-game options menu bumped 2→3.5 — the custom replacement screen now covers every real vanilla tab plus rebind capture, shipped as an unplayed preview feature rather than partial groundwork; every other row unchanged from the 2026-08-03 pass, see that note below) |
+| | | | *(2026-08-03: Auto-mantle corrected from 0.5→0 done — implemented but never confirmed working, so no partial credit; Vibration stays at 1.5 (confirmed working, tuning maxed out, armor gap tracked separately); every other row was still as of 2026-07-19/08-01 and not independently re-verified in that pass)* |
 
 ### Raw functionality methodology
 
@@ -278,7 +292,7 @@ is still open, not how rough what already works is.
 | Stage | Version range | What it means here |
 |---|---|---|
 | **Pre-alpha** | `0.1.0` – `0.1.5` | Core systems land one at a time — movement/look/combat, stance/sprint, pause menu, and menu navigation done; aim assist, vibration, killstreaks, and the controller options menu still being built out. |
-| **Alpha** *(current, v0.3.0)* | `0.1.5` – `0.4.0` | The remaining major systems get built and land. **v0.2.0**: Sprint fully native (no custom timer, Extreme Conditioning resolved for free), 3 of 4 Survival killstreaks confirmed working, menu/UI navigation extended to the main menu/title screen and slider values. **v0.2.1**: console-accurate look acceleration ramp, and Hold Breath (L3 while ADS'd) fully working as genuinely native input after an extensive debugging pass. **v0.2.2**: risk-mitigation release — aim assist permanently removed (not just disabled) following VAC research; see the security notice at the top of this file. **v0.2.5**: crouch/stance reliability hotfix and the on-screen notification system. **v0.3.0**: controller-glyph icons (in-game hints, menu corner hints, custom cursor overlay), the highlighted-item A-glyph (shown on a verified-only allowlist after an audit found overstated claims), real controller vibration (physically confirmed, strength maxed out in software), and the crouch/UI bug batch from the first public Survival co-op stream. **Two things attempted but NOT working in v0.3.0, shipped honestly flagged rather than silently absent**: auto-mantle while sprinting (implemented, live-tested twice, still doesn't fire reliably — shipped disabled) and vibration for Survival Body Armor hits (a separate, unlocated value). **Still ahead in this stage**: a real in-game options screen, re-verifying the remaining A-glyph screens, actually fixing auto-mantle and armor vibration, per-animation-step reload vibration, Predator Missile's guidance aim, and remaining Campaign/Special Ops compatibility gaps. Multiplayer groundwork may start here, pending the anti-cheat question being resolved first. |
+| **Alpha** *(current, v0.3.1)* | `0.1.5` – `0.4.0` | The remaining major systems get built and land. **v0.2.0**: Sprint fully native (no custom timer, Extreme Conditioning resolved for free), 3 of 4 Survival killstreaks confirmed working, menu/UI navigation extended to the main menu/title screen and slider values. **v0.2.1**: console-accurate look acceleration ramp, and Hold Breath (L3 while ADS'd) fully working as genuinely native input after an extensive debugging pass. **v0.2.2**: risk-mitigation release — aim assist permanently removed (not just disabled) following VAC research; see the security notice at the top of this file. Also this project's first LTS-style stabilization release — no follow-up for about a week and a half. **v0.2.5**: crouch/stance reliability hotfix and the on-screen notification system. **v0.3.0**: controller-glyph icons (in-game hints, menu corner hints, custom cursor overlay), the highlighted-item A-glyph (shown on a verified-only allowlist after an audit found overstated claims), real controller vibration (physically confirmed, strength maxed out in software), and the crouch/UI bug batch from the first public Survival co-op stream. **Two things attempted but NOT working in v0.3.0, shipped honestly flagged rather than silently absent**: auto-mantle while sprinting (implemented, live-tested twice, still doesn't fire reliably — shipped disabled) and vibration for Survival Body Armor hits (a separate, unlocated value). **v0.3.1**: fixed controller-glyph icons never appearing for non-English game languages (root-caused against the game's own real localization resolver, confirmed live); also ships a from-scratch replacement Options screen covering every real vanilla setting plus real rebind capture, as an explicitly labeled preview/WIP feature — off by default, `mw3ncp_config.ini`-only, not yet played. **Intended as a second LTS-style stabilization release, same treatment as v0.2.2** — no further release planned for up to ~2 weeks barring a critical issue. **Still ahead in this stage**: playtesting the preview Options screen (and closing its known gaps — window mode setting, resolution scaling), re-verifying the remaining A-glyph screens, actually fixing auto-mantle and armor vibration, per-animation-step reload vibration, Predator Missile's guidance aim, and remaining Campaign/Special Ops compatibility gaps. Multiplayer groundwork may start here, pending the anti-cheat question being resolved first. |
 | **Beta** | `0.4.0` – `1.0.0` | Should be practically feature-complete — remaining work is closing gaps, fixing what live testing surfaces, and extending reach (other MW3 clients, Multiplayer if the anti-cheat question resolves favorably) rather than building brand-new core systems from scratch. |
 | **1.0 (final)** | `1.0.0`+ | Feature-complete against this project's full scope, stable, and treated as a real release rather than an actively-shifting work in progress. |
 
@@ -437,8 +451,11 @@ All of the tunable values above — plus button/stick layout — live in
 **`mw3ncp_config.ini`**, written next to the DLL the first time the project runs (with
 every option pre-filled with its default value and a comment explaining it, so the
 file is self-documenting from the moment it appears — nothing to configure by hand
-to get started). There's no in-game options screen yet — this file is the interim
-way to tune the project until native controller UI navigation exists.
+to get started). This file remains the primary way to tune the project — a
+from-scratch in-game Options screen exists as of v0.3.1 but ships as an unplayed
+preview/WIP feature (`[Options] UseCustomOptionsScreen`, off by default, no
+in-game toggle), not the recommended way to configure things yet. See the
+Feature list below and `re_notes/known_issues.md` issue #66.
 
 **Config changes now hot-reload while the game is running (added same day as the
 notification below, not yet live-confirmed).** Save the ini and the mod picks up the
@@ -826,15 +843,23 @@ See `re_notes/known_issues.md` for the full, actively-tracked list.
   project's own VAC research found the closest real precedent for a proxy-DLL that
   manipulates gameplay state beyond input remapping (ENB) has actual documented ban
   history. See `re_notes/known_issues.md` issues #15/#16 and #33.
-- **A real, native controller-options menu (task #23) is in active development, not
-  yet shippable.** A working mechanism to inject custom menu content into the game's
-  own real menu system was built and confirmed live for simple content, but real
-  menu content (backgrounds, sliders, etc.) hit a genuine architectural limit —
-  loading a material live triggers unsafe GPU-resource creation outside the engine's
-  controlled loading context. A structurally-sound fix (loading through the engine's
-  own real level-load transition instead) is believed viable but not yet
-  implemented. No player-facing effect from this work exists in this build. See
-  `re_notes/known_issues.md` issue #23.
+- **The custom in-game Options screen (task #23/#66) ships as a preview/WIP
+  feature, off by default, not yet played.** The original plan — inject custom
+  content into the game's own real menu system — hit a genuine architectural
+  limit (loading real menu content live triggers unsafe GPU-resource creation
+  outside the engine's controlled loading context) and was abandoned. Built
+  instead as a fully custom-drawn replacement screen that draws entirely over
+  the real Options screen and claims its own input — covers every real
+  vanilla tab (Look/Video/Audio/Voice/Advanced Video/Movement/Actions) plus
+  real keybind rebind capture and a custom controller-bindings drill-down.
+  Compiles clean and follows every rendering/input pattern already
+  live-confirmed elsewhere in this project, but genuinely has not been played
+  — enable at your own risk via `[Options] UseCustomOptionsScreen=1` in
+  `mw3ncp_config.ini` (no in-game toggle exists on purpose). Known open gaps:
+  a real "window mode" (fullscreen/windowed/borderless) setting is still
+  missing from the catalog, and correct scaling at non-1920x1080 resolutions
+  is unverified. See `re_notes/known_issues.md` issue #66 for the full,
+  itemized status.
 - Multiplayer (`iw5mp.exe`) support has not been started. It's a separately-built binary
   from `iw5sp.exe` — none of the offsets/addresses found so far carry over, and it needs
   its own full signature-scanning pass. There's also an open, unresolved question about
