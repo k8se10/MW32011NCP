@@ -1,4 +1,5 @@
 # Build outputs (proxy DLL is deployed straight into the game root, not committed)
+AGENTS.md
 proxy_d3d9/obj/
 proxy_d3d9/Debug/
 proxy_d3d9/Release/

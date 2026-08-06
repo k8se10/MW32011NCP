@@ -1,0 +1,9 @@
+STRING @ 8200ae94 = "+stance"
+  from 82500f4c type=DATA IN DATA
+  (1 references)
+
+STRING @ 82022888 = "coopready"
+  from 82504a30 type=DATA IN DATA
+  (1 references)
+
+Total matching strings: 2
