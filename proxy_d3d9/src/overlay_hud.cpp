@@ -1663,11 +1663,22 @@ int g_optDrilldownSelectedRow = 0;
 bool g_optRebindCaptureActive = false;
 int g_optRebindCaptureVanillaIndex = -1;
 
-// Full-scope Options expansion (2026-08-06, issue #66 task #31) -- true while the
-// real "Apply Settings?" Yes/No prompt is showing (backed out of the menu with at
+// Full-scope Options expansion (2026-08-06, issue #66 task #31, redone 2026-08-06
+// live-reported: "we need a proper popup apply settings yes/no like the og") -- true
+// while the real "Apply Settings?" prompt is showing (backed out of the menu with at
 // least one pending staged Video/Audio/Advanced Video change). See
 // CustomOptionsMenu_TickInput's own big comment on this block for the full flow.
+//
+// Confirmed real structure straight from the real menu file itself
+// (zone_dump/ui/all_restart_popmenu.menu): NOT a bare "A=Yes/B=No" button mapping --
+// it's a real 2-item NAVIGABLE list, matching every other list in this project's own
+// Options screen (Up/Down moves focus, A confirms whichever is highlighted). Item 0
+// is "@MENU_YES" ("Yes"), item 1 is "@MENU_NO" ("No") -- and the real menu's own
+// onOpen sets initial focus to item 1 (No), a genuine safety-conscious default
+// (applying/restarting requires an explicit extra Up + confirm, not a single
+// accidental button press) that this project's own version replicates exactly.
 bool g_optApplyConfirmActive = false;
+int g_optApplyConfirmSelectedRow = 1; // 0 = Yes, 1 = No -- matches the real menu's own default focus
 
 struct TextTexCache { void* texture = nullptr; char renderedFor[128] = {}; int lastFontHeightPx = 0; };
 // Sized to kUnifiedTabRowCacheSize (16, matching g_tabVanillaIndices' own capacity),
@@ -1696,7 +1707,8 @@ TextTexCache g_optCornerBackCache;
 TextTexCache g_optRebindPromptTitleCache;
 TextTexCache g_optRebindPromptSubtitleCache;
 TextTexCache g_optApplyPromptTitleCache;
-TextTexCache g_optApplyPromptSubtitleCache;
+TextTexCache g_optApplyYesCache;
+TextTexCache g_optApplyNoCache;
 // Shared label-texture pool for the Stick/Button Layout drill-down diagram
 // (2026-08-05) -- sized to the larger of the two diagrams' label counts (Button
 // Layout: 10 ButtonMap-driven labels + 1 static D-pad label = 11), same "shared
@@ -2225,6 +2237,19 @@ void CurrentTabRowValueString(int row, char* outBuf, size_t outBufSize)
     if (def.kind == VanillaSettingKind::DvarBool) {
         bool on = atoi(outBuf) != 0;
         strncpy_s(outBuf, outBufSize, on ? "ENABLED" : "DISABLED", _TRUNCATE);
+    }
+    // Live-reported (2026-08-06): "stuff like AA and texture quality just say numbers
+    // thats not user friendly" -- show the real display label (e.g. "2X"/"EXTRA")
+    // instead of the raw float value whenever one's been written for this row.
+    if (def.kind == VanillaSettingKind::DvarFloat && def.floatEnumCount > 0 && def.floatEnumLabels) {
+        float current = static_cast<float>(atof(outBuf));
+        int closest = 0;
+        float bestDiff = fabsf(def.floatEnumValues[0] - current);
+        for (int i = 1; i < def.floatEnumCount; ++i) {
+            float diff = fabsf(def.floatEnumValues[i] - current);
+            if (diff < bestDiff) { bestDiff = diff; closest = i; }
+        }
+        strncpy_s(outBuf, outBufSize, def.floatEnumLabels[closest], _TRUNCATE);
     }
 }
 
@@ -3477,18 +3502,55 @@ void DrawCustomOptionsMenuIfOpen(void* device)
         DrawOptLeftAlignedText(device, g_optRebindPromptSubtitleCache, subtitle,
                                  960.0f - static_cast<float>(subtitleW) * 0.5f, boxY + 95.0f, 22, kDimTextColor, scaleX, scaleY);
     } else if (g_optApplyConfirmActive) {
-        constexpr float kBoxW = 700.0f, kBoxH = 160.0f;
+        // Real "Apply Settings?" popup (2026-08-06, live-reported: "we need a proper
+        // popup apply settings yes/no like the og") -- redrawn as a real 2-item
+        // navigable list (Yes/No), matching the exact structure confirmed straight
+        // from the real menu file (zone_dump/ui/all_restart_popmenu.menu): title
+        // "@MENU_APPLY_SETTINGS" ("Apply Settings?"), item 0 "@MENU_YES" ("Yes"),
+        // item 1 "@MENU_NO" ("No"), defaulting focus to No -- see
+        // g_optApplyConfirmSelectedRow's own comment. Styled with the same gradient-
+        // highlight-bar + inline A-glyph convention as every other list in this
+        // screen, not a bespoke one-off look.
+        constexpr float kBoxW = 420.0f, kBoxH = 190.0f;
+        constexpr float kRowH = 48.0f;
         float boxX = (1920.0f - kBoxW) * 0.5f, boxY = (1080.0f - kBoxH) * 0.5f;
         DrawGenericTexturedQuad(device, g_optWhiteTexture, boxX * scaleX, boxY * scaleY,
-                                   kBoxW * scaleX, kBoxH * scaleY, 0xF0101010u);
+                                   kBoxW * scaleX, kBoxH * scaleY, 0xF0181818u);
+        DrawGenericTexturedQuad(device, g_optWhiteTexture, boxX * scaleX, boxY * scaleY,
+                                   kBoxW * scaleX, 2.0f * scaleY, 0x40FFFFFFu); // top border accent, matches the main panel's own divider line
+
         const char* title = "APPLY SETTINGS?";
-        int titleW = MeasureTextWidthPx(title, g_modConfig.overlayFontItalic, 32);
+        int titleW = MeasureTextWidthPx(title, g_modConfig.overlayFontItalic, 30);
         DrawOptLeftAlignedText(device, g_optApplyPromptTitleCache, title,
-                                 960.0f - static_cast<float>(titleW) * 0.5f, boxY + 55.0f, 32, kWhiteColor, scaleX, scaleY);
-        const char* subtitle = "A: YES, APPLY AND RESTART      B: NO, DISCARD";
-        int subtitleW = MeasureTextWidthPx(subtitle, g_modConfig.overlayFontItalic, 22);
-        DrawOptLeftAlignedText(device, g_optApplyPromptSubtitleCache, subtitle,
-                                 960.0f - static_cast<float>(subtitleW) * 0.5f, boxY + 105.0f, 22, kDimTextColor, scaleX, scaleY);
+                                 960.0f - static_cast<float>(titleW) * 0.5f, boxY + 44.0f, 30, kWhiteColor, scaleX, scaleY);
+
+        static const char* kApplyRowLabels[2] = { "YES, APPLY AND RESTART", "NO, DISCARD" };
+        static TextTexCache* kApplyRowCaches[2] = { &g_optApplyYesCache, &g_optApplyNoCache };
+        float rowsTopY = boxY + 96.0f;
+        for (int r = 0; r < 2; ++r) {
+            float rowCenterY = rowsTopY + static_cast<float>(r) * kRowH;
+            bool selected = (r == g_optApplyConfirmSelectedRow);
+            int labelW = MeasureTextWidthPx(kApplyRowLabels[r], g_modConfig.overlayFontItalic, 24);
+            if (selected) {
+                DrawGradientQuad(device, g_optWhiteTexture, boxX * scaleX, (rowCenterY - kRowH * 0.5f) * scaleY,
+                                   kBoxW * scaleX, kRowH * scaleY, 0x50FFFFFFu, 0x00FFFFFFu);
+            }
+            float textX = 960.0f - static_cast<float>(labelW) * 0.5f;
+            DrawOptLeftAlignedText(device, *kApplyRowCaches[r], kApplyRowLabels[r], textX, rowCenterY, 24,
+                                     selected ? kWhiteColor : kDimTextColor, scaleX, scaleY);
+            if (selected) {
+                const char* aAsset = GetControllerGlyphAssetName(PhysicalInput::A, g_modConfig.glyphStyle);
+                if (aAsset && aAsset[0]) {
+                    void* iconTex = nullptr; int iconW = 0, iconH = 0;
+                    if (GetOrLoadGlyphIconTexture(device, aAsset, iconTex, iconW, iconH) && iconH > 0) {
+                        float iconHpx = 24.0f;
+                        float iconWpx = iconHpx * (static_cast<float>(iconW) / static_cast<float>(iconH));
+                        DrawGenericTexturedQuad(device, iconTex, (textX - iconWpx - 12.0f) * scaleX, (rowCenterY - iconHpx * 0.5f) * scaleY,
+                                                  iconWpx * scaleX, iconHpx * scaleY);
+                    }
+                }
+            }
+        }
     }
 
     // Click anywhere outside the panel closes the menu (common modal-dialog
@@ -3633,19 +3695,24 @@ bool CustomOptionsMenu_TickInput(bool openRequestedEdge,
 
     // Full-scope Options expansion (2026-08-06, issue #66's own "add a proper apply
     // flow" follow-up, task #31) -- real "Apply Settings?" confirmation, same real
-    // precedent as all_restart_popmenu.menu (staged_settings.h's own header comment).
-    // Shown instead of immediately closing when backing out of the menu with at least
-    // one uncommitted staged (Video/Audio/Advanced Video) change pending. A also
-    // commits (matches Select's usual "confirm" role elsewhere in this menu); B
-    // discards -- deliberately the OPPOSITE of the outer menu's own backEdge-closes
-    // convention, since this prompt's whole point is that B/Back needs a real choice
-    // here, not an implicit "discard and keep backing out" -- this project uses
-    // exactly one explicit background dim state, not the real console's own separate
-    // popup-menu asset, but the logic guarantee (no pending change is EVER silently
-    // committed OR silently lost) matches the real flow bit for bit.
+    // precedent as all_restart_popmenu.menu (confirmed straight from the real menu
+    // file itself, zone_dump/ui/all_restart_popmenu.menu -- see
+    // g_optApplyConfirmSelectedRow's own comment for the exact real structure this
+    // replicates). Shown instead of immediately closing when backing out of the menu
+    // with at least one uncommitted staged (Video/Audio/Advanced Video) change
+    // pending. Up/Down moves between Yes (0) and No (1), A confirms whichever is
+    // highlighted -- a real navigable 2-item list, same interaction convention as
+    // every other list in this screen, not a bare "A=Yes/B=No" shortcut. B still
+    // closes the prompt without applying (same effect as confirming No, and always
+    // safe here regardless of which choice was actually highlighted, since nothing
+    // real is ever written until a commit is explicitly confirmed).
     if (g_optMenuOpen && g_optApplyConfirmActive) {
+        if (upEdge || downEdge) {
+            g_optApplyConfirmSelectedRow = 1 - g_optApplyConfirmSelectedRow; // only 2 rows -- toggle
+        }
         if (selectEdge) {
-            CommitStagedSettings();
+            if (g_optApplyConfirmSelectedRow == 0) CommitStagedSettings();
+            else DiscardStagedChanges();
             g_optApplyConfirmActive = false;
             g_optMenuOpen = false;
             return true;
@@ -3656,7 +3723,7 @@ bool CustomOptionsMenu_TickInput(bool openRequestedEdge,
             g_optMenuOpen = false;
             return true;
         }
-        return true; // claim the tick -- Up/Down/Left/Right do nothing while this prompt is up
+        return true; // claim the tick -- Left/Right do nothing while this prompt is up
     }
 
     if (g_optMenuOpen && g_optDrilldownOpen) {
@@ -3696,6 +3763,7 @@ bool CustomOptionsMenu_TickInput(bool openRequestedEdge,
             // as the real menu's own all_restart_popmenu flow.
             if (HasPendingStagedChanges()) {
                 g_optApplyConfirmActive = true;
+                g_optApplyConfirmSelectedRow = 1; // real menu's own default focus -- "No"
             } else {
                 g_optMenuOpen = false;
             }

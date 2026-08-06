@@ -77,6 +77,16 @@ struct VanillaSettingDef {
     int floatEnumCount = 0;
     const char* const* stringEnumValues = nullptr;
     int stringEnumCount = 0;
+    // Live-reported (2026-08-06): "stuff like AA and texture quality just say numbers
+    // thats not user friendly" -- a float-enum row used to display GetStagedOrLiveValueString's
+    // raw numeric value ("1"/"2"/"4" for Anti-Aliasing). Parallel array to
+    // floatEnumValues (same index, same count) giving the real display label instead
+    // (the exact real `dvarFloatList` label text, e.g. "@MENU_2X" -> "2X") --
+    // CurrentTabRowValueString (overlay_hud.cpp) uses this instead of the raw number
+    // whenever it's set. Null for any float-enum row that predates this (none do
+    // today) or where no label was written -- falls back to the raw number rather
+    // than crashing.
+    const char* const* floatEnumLabels = nullptr;
 };
 
 // Real discrete value lists (2026-08-06), confirmed directly from each dvar's own
@@ -85,6 +95,13 @@ struct VanillaSettingDef {
 inline constexpr float kEnumValuesAntiAliasing[] = { 1.0f, 2.0f, 4.0f };           // Off/2X/4X
 inline constexpr float kEnumValuesSSAO[] = { 0.0f, 1.0f, 2.0f };                    // Off/Low/High
 inline constexpr float kEnumValuesTexQualityTier[] = { 3.0f, 2.0f, 1.0f, 0.0f };    // Low/Normal/High/Extra
+// Display labels for the float-enum lists above (2026-08-06, live-reported: "stuff
+// like AA and texture quality just say numbers thats not user friendly") -- exact
+// real `dvarFloatList` label text ("@MENU_2X" -> "2X" etc, confirmed same .menu
+// blocks as the values themselves), same index/order as their matching values array.
+inline constexpr const char* kEnumLabelsAntiAliasing[] = { "OFF", "2X", "4X" };
+inline constexpr const char* kEnumLabelsSSAO[] = { "OFF", "LOW", "HIGH" };
+inline constexpr const char* kEnumLabelsTexQualityTier[] = { "LOW", "NORMAL", "HIGH", "EXTRA" };
 inline constexpr const char* kEnumValuesOutputConfig[] = {
     "Windows default", "Mono", "Stereo", "4 speakers", "5.1 speakers",
 };
@@ -129,7 +146,7 @@ inline constexpr VanillaSettingDef kVanillaSettings[] = {
     { "AdvVideo_AspectRatio",   "ASPECT RATIO",       VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarString, "ui_r_aspectratio",   true, 0,0,0, "", nullptr, 0, kEnumValuesAspectRatio, 4 },
     // Real dvarFloatList (1/2/4), NOT a string dvar despite the earlier approximate
     // pass marking it DvarString -- corrected 2026-08-06 against the real .menu file.
-    { "AdvVideo_AntiAliasing",  "ANTI-ALIASING",      VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarFloat,  "ui_r_aasamples",     true, 0,0,0, "", kEnumValuesAntiAliasing, 3 },
+    { "AdvVideo_AntiAliasing",  "ANTI-ALIASING",      VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarFloat,  "ui_r_aasamples",     true, 0,0,0, "", kEnumValuesAntiAliasing, 3, nullptr, 0, kEnumLabelsAntiAliasing },
     // Resolution/DisplayRefresh both use a real `dvarEnumList` -- a list POPULATED AT
     // RUNTIME from the actual display's supported modes, not a static value set this
     // file can safely enumerate. Left DvarString/read-only (no floatEnumValues/
@@ -140,15 +157,15 @@ inline constexpr VanillaSettingDef kVanillaSettings[] = {
     { "AdvVideo_Specular",      "SPECULAR",           VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarBool,   "r_specular",         true, 0,0,0 },
     { "AdvVideo_DepthOfField",  "DEPTH OF FIELD",     VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarBool,   "r_dof_enable",       true, 0,0,0 },
     // Real dvarFloatList (0/1/2), NOT a string dvar -- corrected 2026-08-06.
-    { "AdvVideo_SSAO",          "AMBIENT OCCLUSION",  VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarFloat,  "ui_r_ssao",          true, 0,0,0, "", kEnumValuesSSAO, 3 },
+    { "AdvVideo_SSAO",          "AMBIENT OCCLUSION",  VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarFloat,  "ui_r_ssao",          true, 0,0,0, "", kEnumValuesSSAO, 3, nullptr, 0, kEnumLabelsSSAO },
     { "AdvVideo_ZFeather",      "SOFT EDGES",         VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarBool,   "r_zfeather",         true, 0,0,0 },
     { "AdvVideo_BulletMarks",   "BULLET IMPACTS",     VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarBool,   "fx_marks",           true, 0,0,0 },
     { "AdvVideo_TexQualityAuto","AUTO TEXTURE QUALITY", VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarBool, "ui_r_picmip_manual", true, 0,0,0 },
     // Real dvarFloatList (Low=3/Normal=2/High=1/Extra=0 -- value DECREASES as quality
     // increases), NOT string dvars -- corrected 2026-08-06 against the real .menu file.
-    { "AdvVideo_TexQuality",    "TEXTURE QUALITY",    VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarFloat,  "ui_r_picmip",        true, 0,0,0, "", kEnumValuesTexQualityTier, 4 },
-    { "AdvVideo_TexQualityBump","BUMP MAP QUALITY",   VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarFloat,  "ui_r_picmip_bump",   true, 0,0,0, "", kEnumValuesTexQualityTier, 4 },
-    { "AdvVideo_TexQualitySpec","SPECULAR MAP QUALITY", VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarFloat, "ui_r_picmip_spec", true, 0,0,0, "", kEnumValuesTexQualityTier, 4 },
+    { "AdvVideo_TexQuality",    "TEXTURE QUALITY",    VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarFloat,  "ui_r_picmip",        true, 0,0,0, "", kEnumValuesTexQualityTier, 4, nullptr, 0, kEnumLabelsTexQualityTier },
+    { "AdvVideo_TexQualityBump","BUMP MAP QUALITY",   VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarFloat,  "ui_r_picmip_bump",   true, 0,0,0, "", kEnumValuesTexQualityTier, 4, nullptr, 0, kEnumLabelsTexQualityTier },
+    { "AdvVideo_TexQualitySpec","SPECULAR MAP QUALITY", VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarFloat, "ui_r_picmip_spec", true, 0,0,0, "", kEnumValuesTexQualityTier, 4, nullptr, 0, kEnumLabelsTexQualityTier },
 
     // ---- Movement (pc_options_movement_ingame.menu) -- 16 real keybinds, complete
     // list confirmed directly from the raw .menu (not approximated).
