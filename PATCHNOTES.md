@@ -45,11 +45,17 @@ reverse-engineering trail behind each entry.
   real D3D9 device's own viewport size — two different answers to "what's
   the current resolution" that only ever agreed by coincidence.** Fixed by
   routing the conversion through the same real device the draw call uses,
-  so both sides always agree, at any resolution or window mode. Also
-  hardcoded the one genuinely fixed reference position (the synthetic Back
-  hint) as a true resolution-independent value instead of a raw captured
-  pixel that only happened to work at its original test resolution. See
-  `re_notes/known_issues.md` issue #70.
+  so both sides always agree, at any resolution or window mode. **Fifth
+  bug, confirmed live immediately after ("now back and leaderboard are
+  broken"): an attempt to also "fix" the one fixed reference position (the
+  synthetic Back hint) by re-deriving it against an assumed capture
+  resolution was itself wrong** — this project's own logs showed the real
+  capture-time viewport was 1920x1080 (this project's design-space
+  reference) the whole time, not the monitor resolution the original
+  comment named, so that value needed no conversion at all and re-deriving
+  it just moved it (and, since Quit/Leaderboards' row-detection reads the
+  same constant, broke their detection too). Reverted to the original raw
+  value. See `re_notes/known_issues.md` issue #70.
 - **Custom mouse cursor position reported "way off / unusable" at non-16:9
   resolutions — not yet fixed.** The existing window-to-viewport ratio math
   looks architecturally sound on inspection, so rather than guess a third
