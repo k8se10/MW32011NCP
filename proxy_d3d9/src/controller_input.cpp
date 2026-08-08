@@ -4,6 +4,9 @@
 #include <xinput.h>   // struct definitions only -- resolved dynamically below, never linked
 #include <cmath>
 #include <cstdio>
+#include <cstdlib> // std::abs(int) -- XInputStateHasActivity's stick-magnitude check
+#include "overlay_hud.h" // ShowOverlayMessage -- connect/disconnect notifications, see
+                          // NotifyControllerConnectionChange's own header comment below
 
 extern void LogFromController(const char* msg); // defined in dllmain.cpp
 
@@ -91,6 +94,133 @@ void ShapeStick(SHORT rawX, SHORT rawY, float deadzone, float& outX, float& outY
 LARGE_INTEGER g_qpcFrequency{};
 bool g_qpcInit = false;
 
+int g_activeXInputSlot = 0;
+
+// User-requested (2026-08-08, alongside the multi-slot scan below): surface
+// controller connect/disconnect through this project's existing on-screen toast
+// (issue #47's `ShowOverlayMessage`, same mechanism as the startup/config-reload
+// messages) instead of silently changing behavior with no visible feedback --
+// unplugging/replugging a controller mid-session (or a low battery cutting a
+// wireless pad) should be an obvious, safe, non-crashing event, not a silent
+// "why did my glyphs disappear" mystery. `g_connectionStateKnown` gates the
+// very first check specifically so a fresh launch with no controller connected
+// yet doesn't show a confusing "Disconnected" toast before one was ever known
+// to be connected -- only a genuine CHANGE fires a message, in either direction.
+bool g_connectionStateKnown = false;
+bool g_controllerCurrentlyConnected = false;
+
+void NotifyControllerConnectionChange(bool nowConnected)
+{
+    if (g_connectionStateKnown && nowConnected == g_controllerCurrentlyConnected) return;
+    bool wasKnown = g_connectionStateKnown;
+    g_connectionStateKnown = true;
+    g_controllerCurrentlyConnected = nowConnected;
+    if (!wasKnown && !nowConnected) return; // first-ever check, nothing was ever connected -- no toast
+    ShowOverlayMessage(nowConnected ? "Controller Connected" : "Controller Disconnected", 3000);
+    LogFromController(nowConnected ? "[xinput] controller connected" : "[xinput] controller disconnected");
+}
+
+// A little above XInput's own documented thumbstick deadzone constants (already
+// used for real input shaping above) -- deliberately coarser, since this is only
+// asking "is a HUMAN actually touching this pad right now," not shaping a real
+// movement value, so idle analog drift/noise shouldn't ever count as activity.
+constexpr SHORT kSlotActivityStickThreshold = 6000;
+constexpr BYTE kSlotActivityTriggerThreshold = 10;
+
+bool XInputStateHasActivity(const XINPUT_STATE& state)
+{
+    const XINPUT_GAMEPAD& g = state.Gamepad;
+    if (g.wButtons != 0) return true;
+    if (g.bLeftTrigger > kSlotActivityTriggerThreshold || g.bRightTrigger > kSlotActivityTriggerThreshold) return true;
+    if (std::abs(static_cast<int>(g.sThumbLX)) > kSlotActivityStickThreshold || std::abs(static_cast<int>(g.sThumbLY)) > kSlotActivityStickThreshold) return true;
+    if (std::abs(static_cast<int>(g.sThumbRX)) > kSlotActivityStickThreshold || std::abs(static_cast<int>(g.sThumbRY)) > kSlotActivityStickThreshold) return true;
+    return false;
+}
+
+void LogActiveSlotChange(int fromSlot, int toSlot)
+{
+    char buf[96];
+    sprintf_s(buf, "[xinput] active controller slot changed %d -> %d", fromSlot, toSlot);
+    LogFromController(buf);
+}
+
+// Scans all 4 real XInput user indices for a connected controller instead of
+// assuming slot 0. Live-reported 2026-08-08 (Nexus, v0.3.1): several players see
+// no controller-glyph icons at all -- even on English, with default settings --
+// and it's NOT reproducible on the developer's own machine, pointing at a real
+// per-environment cause rather than a universal regression. Every read in this
+// file (movement, buttons, vibration, "is a controller even connected") was
+// hardcoded to XInput user index 0 -- a controller that Windows/Steam assigns
+// to a different slot (a second pad plugged in, a tool like x360ce occupying
+// slot 0 with its own virtual device while the real physical pad lands
+// elsewhere, Steam Input's own passthrough renumbering, etc.) would make every
+// one of those calls report ERROR_DEVICE_NOT_CONNECTED forever, identical to
+// "no controller at all," even with a real, working controller connected.
+//
+// User-requested follow-up: also handle MULTIPLE legitimate controllers
+// connected at once correctly, not just "find any one pad" -- if the current
+// slot is connected but sitting idle while a DIFFERENT connected slot is
+// actively showing real button/stick/trigger input, that's a strong signal a
+// human is holding THAT one, not the idle one, so this follows the activity
+// rather than latching onto whichever slot merely happened to be found first.
+// Only falls back to "just pick a connected slot" when nothing anywhere is
+// currently showing activity (e.g. right at launch, before the player has
+// touched anything yet). Sticks with the current slot when it's still both
+// connected AND the only one showing activity (or nothing is), so this never
+// flip-flops between two idle-but-connected pads on its own.
+int ResolveActiveXInputSlot()
+{
+    if (!g_XInputGetState) return g_activeXInputSlot;
+
+    XINPUT_STATE currentState{};
+    bool currentConnected = g_XInputGetState(static_cast<DWORD>(g_activeXInputSlot), &currentState) == ERROR_SUCCESS;
+    if (currentConnected && XInputStateHasActivity(currentState)) {
+        NotifyControllerConnectionChange(true);
+        return g_activeXInputSlot; // actively in use -- no reason to look anywhere else
+    }
+
+    int firstConnectedOther = -1;
+    for (int slot = 0; slot < 4; ++slot) {
+        if (slot == g_activeXInputSlot) continue;
+        XINPUT_STATE state{};
+        if (g_XInputGetState(static_cast<DWORD>(slot), &state) != ERROR_SUCCESS) continue;
+        if (firstConnectedOther < 0) firstConnectedOther = slot;
+        if (XInputStateHasActivity(state)) {
+            // Someone's actively using THIS slot right now -- switch to it even
+            // though the current slot might also still be genuinely connected
+            // (the real "multiple legitimate controllers" case).
+            LogActiveSlotChange(g_activeXInputSlot, slot);
+            g_activeXInputSlot = slot;
+            NotifyControllerConnectionChange(true);
+            return slot;
+        }
+    }
+
+    if (currentConnected) {
+        // Still connected, just idle right now, and nothing else showed live
+        // activity either -- keep it rather than flip-flopping onto some other
+        // merely-connected pad.
+        NotifyControllerConnectionChange(true);
+        return g_activeXInputSlot;
+    }
+    if (firstConnectedOther >= 0) {
+        // Current slot genuinely disconnected; nothing anywhere showed live
+        // activity yet, but at least one other slot IS connected -- fall back to
+        // it (matches this project's original "assume a controller exists"
+        // behavior, just now actually finding whichever slot has one).
+        LogActiveSlotChange(g_activeXInputSlot, firstConnectedOther);
+        g_activeXInputSlot = firstConnectedOther;
+        NotifyControllerConnectionChange(true);
+        return g_activeXInputSlot;
+    }
+
+    // Nothing connected on any of the 4 slots -- a real disconnect (or nothing
+    // was ever plugged in yet, filtered out inside NotifyControllerConnectionChange
+    // itself).
+    NotifyControllerConnectionChange(false);
+    return g_activeXInputSlot;
+}
+
 } // namespace
 
 // BUG-001 follow-up (2026-08-02): centralized here rather than at each of this
@@ -130,7 +260,7 @@ bool Controller_GetLeftStick(float& x, float& y)
     if (!g_XInputGetState) return false;
 
     XINPUT_STATE state{};
-    if (g_XInputGetState(0, &state) != ERROR_SUCCESS) return false;
+    if (g_XInputGetState(static_cast<DWORD>(ResolveActiveXInputSlot()), &state) != ERROR_SUCCESS) return false;
 
     ShapeStick(state.Gamepad.sThumbLX, state.Gamepad.sThumbLY, kLeftDeadzone, x, y);
     if (x != 0.0f || y != 0.0f) MarkControllerActivity();
@@ -144,7 +274,7 @@ bool Controller_GetRightStick(float& x, float& y)
     if (!g_XInputGetState) return false;
 
     XINPUT_STATE state{};
-    if (g_XInputGetState(0, &state) != ERROR_SUCCESS) return false;
+    if (g_XInputGetState(static_cast<DWORD>(ResolveActiveXInputSlot()), &state) != ERROR_SUCCESS) return false;
 
     ShapeStick(state.Gamepad.sThumbRX, state.Gamepad.sThumbRY, kRightDeadzone, x, y);
     if (x != 0.0f || y != 0.0f) MarkControllerActivity();
@@ -158,7 +288,7 @@ bool Controller_GetRawButtonsAndTriggers(unsigned short& buttons, unsigned char&
     if (!g_XInputGetState) return false;
 
     XINPUT_STATE state{};
-    if (g_XInputGetState(0, &state) != ERROR_SUCCESS) return false;
+    if (g_XInputGetState(static_cast<DWORD>(ResolveActiveXInputSlot()), &state) != ERROR_SUCCESS) return false;
 
     buttons = state.Gamepad.wButtons;
     leftTrigger = state.Gamepad.bLeftTrigger;
@@ -172,7 +302,7 @@ bool Controller_IsConnected()
     EnsureLoaded();
     if (!g_XInputGetState) return false;
     XINPUT_STATE state{};
-    return g_XInputGetState(0, &state) == ERROR_SUCCESS;
+    return g_XInputGetState(static_cast<DWORD>(ResolveActiveXInputSlot()), &state) == ERROR_SUCCESS;
 }
 
 void Controller_SetVibration(float leftMotor, float rightMotor)
@@ -188,7 +318,7 @@ void Controller_SetVibration(float leftMotor, float rightMotor)
     XINPUT_VIBRATION vib{};
     vib.wLeftMotorSpeed = static_cast<WORD>(leftMotor * 65535.0f);
     vib.wRightMotorSpeed = static_cast<WORD>(rightMotor * 65535.0f);
-    g_XInputSetState(0, &vib);
+    g_XInputSetState(static_cast<DWORD>(ResolveActiveXInputSlot()), &vib);
 }
 
 float Controller_DeltaTimeSeconds()

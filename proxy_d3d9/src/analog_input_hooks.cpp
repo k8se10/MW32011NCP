@@ -295,7 +295,13 @@ int GetRawTopOfStackItemCount()
 // config flag alone.
 bool ShouldDrawGlyphOverlay()
 {
-    return g_modConfig.glyphIconOverlayEnabled && IsControllerActiveInputMethod();
+    // Live-reported 2026-08-08 (Nexus, v0.3.1): several players see no glyphs at all,
+    // even on English -- not reproducible on the developer's own machine, so this is a
+    // real diagnostic escape hatch, not a permanent behavior change. See
+    // g_modConfig.forceGlyphOverlay's own header comment (mod_config.h) for the full
+    // reasoning and what a live test with this on is expected to reveal either way.
+    return g_modConfig.glyphIconOverlayEnabled &&
+        (g_modConfig.forceGlyphOverlay || IsControllerActiveInputMethod());
 }
 
 // ---- BUG-003 follow-up (2026-08-02): B-press/crouch-drop diagnostics --------------
