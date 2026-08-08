@@ -10,9 +10,9 @@ reverse-engineering trail behind each entry.
 
 ## v0.3.1.h1 — Hotfix (2026-08-09) — Mouse-lag regression, non-16:9 scaling/glyph-visibility, Options-screen crash
 
-**Feature-free hotfix** — see [[project_hotfix_versioning_convention]]/`re_notes/known_issues.md` for
-the convention: releases that contain only fixes, no new scope, use a `.hN`
-suffix on the release they're patching rather than a new minor version.
+**Feature-free hotfix** — releases that contain only fixes, no new scope, use
+a `.hN` suffix on the release they're patching rather than a new minor
+version number.
 
 **Headline fixes**: a critical mouse-movement-correlated FPS drop (confirmed
 live, fully fixed) and controller-glyph icons never appearing at all on any
