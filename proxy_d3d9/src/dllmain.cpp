@@ -32,6 +32,40 @@ namespace {
 HMODULE g_realD3D9 = nullptr;
 
 FILE* g_log = nullptr;
+DWORD g_lastLogFlushTickMs = 0;
+
+// Live-reported 2026-08-08 (performance pass targeting worst-case circa-2008
+// hardware): the original Log() called fflush() on EVERY single call, unconditionally
+// -- a real, synchronous disk write forced on every one of this project's ~180 log
+// call sites, several of which (issue #67 -- proxy_d3d9.log had grown to 22GB) fire
+// unconditionally on every frame or every menu item. On slow storage (spinning HDDs,
+// the realistic worst case for a 2011 game's minimum-spec audience) a forced flush
+// can cost single-digit milliseconds EACH -- multiplied across dozens of log lines a
+// frame, this alone could visibly tank frame time independent of anything else this
+// project does. Fixed by flushing at most once every kLogFlushIntervalMs instead of
+// every call -- stdio's own internal buffering absorbs everything in between.
+//
+// "We still need conclusive logs" (explicit direction) -- a periodic-only flush risks
+// losing the last <1s of buffered lines if the process is killed HARD (not a clean
+// exit) before the next scheduled flush, which would be a real regression for a log
+// whose whole purpose is diagnosing crashes. Solved with a real, additive
+// AddVectoredExceptionHandler (confirmed safe: this engine already registers its own,
+// see re_notes/known_issues.md's iw5sp research citing FUN_006c0ec0 -- vectored
+// handlers are designed to coexist, unlike SetUnhandledExceptionFilter's single
+// global slot, which this project deliberately does NOT use to avoid any risk of
+// displacing the game's own crash reporter) that flushes the log and always returns
+// EXCEPTION_CONTINUE_SEARCH -- never actually handles/suppresses anything, purely
+// observes and flushes before the exception continues exactly as it would have
+// without this handler installed at all. This means a genuine crash still has a
+// fully flushed log up to the last line written, while ordinary per-frame diagnostic
+// spam no longer pays a disk-flush cost on every single call.
+constexpr DWORD kLogFlushIntervalMs = 1000;
+
+LONG WINAPI FlushLogOnCrash(EXCEPTION_POINTERS* /*exceptionInfo*/)
+{
+    if (g_log) fflush(g_log);
+    return EXCEPTION_CONTINUE_SEARCH; // never handle -- observe-and-flush only
+}
 
 void LogInit()
 {
@@ -47,7 +81,12 @@ void LogInit()
     g_log = _fsopen(path, "a", _SH_DENYWR);
     if (g_log) {
         fprintf(g_log, "---- proxy_d3d9 attach ----\n");
-        fflush(g_log);
+        fflush(g_log); // always flush this one line -- marks a real session boundary
+                         // even if the process crashes before the periodic flush below
+                         // ever fires once.
+        g_lastLogFlushTickMs = GetTickCount();
+        AddVectoredExceptionHandler(1, FlushLogOnCrash); // call FIRST (1), see this
+            // block's own comment above for why this is safe alongside the game's own
     }
 }
 
@@ -55,7 +94,11 @@ void Log(const char* msg)
 {
     if (g_log) {
         fprintf(g_log, "%s\n", msg);
-        fflush(g_log);
+        DWORD now = GetTickCount();
+        if (now - g_lastLogFlushTickMs >= kLogFlushIntervalMs) {
+            fflush(g_log);
+            g_lastLogFlushTickMs = now;
+        }
     }
 }
 
