@@ -6165,13 +6165,38 @@ void __cdecl Hook_DrawGlyphText(
                             // " Model 1887" (a real, STATIC 2D HUD element, confirmed by the
                             // user; the earlier "world-space floating label" theory was wrong)
                             // has its real text ink centered at screen y ~= 698 while sharing
-                            // this hint's own p3 (718). 718 * param_6 (0.964) = 692.2, a close
-                            // match (~1% off, within measurement/glyph-metric noise) -- Y needs
-                            // the same scale factor param_5/param_6 already apply to glyph
-                            // advances. X needed NO correction (measured text-left-edge matched
-                            // raw param_2 within a few px of normal font left-bearing). This is
-                            // the CENTER of the line, not its top -- see
+                            // this hint's own p3 (718). X needed NO correction (measured
+                            // text-left-edge matched raw param_2 within a few px of normal font
+                            // left-bearing). This is the CENTER of the line, not its top -- see
                             // DrawCustomHintIfRequested's own use of this value.
+                            //
+                            // 2026-08-08 fix (issue #70, round 7): the original Y formula here
+                            // multiplied param_3 by param_6 (718 * 0.964 = 692.2, a ~1% match
+                            // against the measured target -- "Y needs the same scale factor
+                            // param_5/param_6 already apply to glyph advances"). Live-reported
+                            // "still far too vertically high on low res" even after the round-6
+                            // proportional-nudge fix -- checked directly against a fresh
+                            // proxy_d3d9.log rather than guessing again, comparing the SAME hint
+                            // text at two resolutions:
+                            //   pickup "Press F to pick up": p3=718 at 1920x1080 (718/1080=0.665
+                            //     of real screen height) vs p3=319 at 640x480 (319/480=0.665) --
+                            //     matches almost exactly.
+                            //   mantle "Press Space to  ": p3=844 at 1920x1080 (844/1080=0.782)
+                            //     vs p3=375 at 640x480 (375/480=0.781) -- matches almost exactly.
+                            // Raw param_3 alone is already consistently proportional to the real
+                            // screen height across resolutions AND font tiers (this project's own
+                            // established real-position convention everywhere else in this file).
+                            // param_6, however, varies by FONT TIER independent of that
+                            // proportion (0.964 for fonts/extraBigFont at 16:9 vs 0.545 for
+                            // fonts/normalFont at 640x480, per issue #73's own font findings) --
+                            // multiplying by it was only ever a ~1%-close coincidence at the ONE
+                            // resolution/font it was calibrated against, and badly distorts the
+                            // row at any other font tier (692/1080=0.641 vs (718*0.545... using
+                            // the WRONG param_6 for that font)/480 dropping to ~0.43 -- nearly
+                            // half as far down the screen as intended, exactly the reported
+                            // "too vertically high"). Dropped the `* param_6` multiply entirely;
+                            // param_3 alone is the real pixel Y, consistent with how every other
+                            // real-position value in this project is already treated.
                             // Live-reported 2026-07-31: weapon pickup needs to sit very
                             // slightly lower than the pure measured-center formula above gives
                             // -- small empirical nudge, not a new transform.
@@ -6204,7 +6229,7 @@ void __cdecl Hook_DrawGlyphText(
                                 strcpy_s(prefixText, sizeof(prefixText), "Hold ");
                             }
                             float startX = param_2;
-                            float startY = param_3 * param_6;
+                            float startY = param_3;
 
                             // Live-reported 2026-08-08 (640x480/800x600): "gameplay hints other
                             // than reload are broken." Same root cause as the menu corner hints
