@@ -9516,7 +9516,19 @@ Rebuilt `proxy_d3d9.dll` a fifth time -- compiles clean, 0 errors (no `ui_hot.dl
 
 The real engine genuinely switches to a different (smaller) font asset for this HUD text at non-16:9 resolutions. When the font isn't allowlisted, `IsGameplayHintFont()` returns false and this project's whole replacement block is skipped -- the native PC-keybind text ("G or Middle Mouse") draws instead of the controller icon, which from a controller player's perspective looks exactly like "no prompt at all." Reload was unaffected because its own font (`fonts/hudBigFont`) is already allowlisted and, per the same log evidence, doesn't change at 4:3.
 
-**Fixed**: added `fonts/bigFont` to `IsGameplayHintFont()`'s allowlist. Rebuilt `proxy_d3d9.dll` -- compiles clean, 0 errors. **Not yet live-tested** -- next step is confirming pickup weapon and grenade throwback both show the controller icon at 4:3.
+**Fixed, round 1**: added `fonts/bigFont` to `IsGameplayHintFont()`'s allowlist. Rebuilt `proxy_d3d9.dll` -- compiles clean, 0 errors.
+
+**Round 2, live-reported immediately: "still the same at 480p no visual changes"** -- round 1's fix was incomplete, not wrong: the real engine steps through MORE than two font tiers as resolution shrinks. Checked the user's freshly-captured `proxy_d3d9.log` from a 640x480 (480p) session and found the SAME grenade-throwback hint now uses a THIRD distinct font: `fonts/normalFont` (neither `fonts/extraBigFont` nor `fonts/bigFont`). So far, confirmed via direct log evidence:
+
+| Resolution | Font used for this same hint |
+|---|---|
+| 1920x1080 (16:9) | `fonts/extraBigFont` |
+| 800x600 (4:3) | `fonts/bigFont` |
+| 640x480 (4:3) | `fonts/normalFont` |
+
+**Fixed, round 2**: added `fonts/normalFont` to the allowlist too. `fonts/normalFont` is used very broadly elsewhere (menus, general HUD text -- confirmed via log frequency), unlike the other two, but the existing `!IsMenuActive()` gate around this whole block plus the specific reference-key/template structural matching every hint still has to pass (`RenderedTextMatchesSubstitutionTemplate` against an exact known string, or `TryGetGlyphAssetNameForKeyName` resolving an exact known key name) makes a false-positive match on unrelated gameplay text using this same common font very unlikely. Rebuilt `proxy_d3d9.dll` -- compiles clean, 0 errors.
+
+**Known risk, flagged rather than chased further**: this looks like a per-resolution font-tier system, not a fixed two-way split -- other untested resolutions (1024x768, 1280x1024, etc.) could plausibly use yet another font name not yet in this allowlist. If a similar "prompt missing" report comes in at a resolution not listed above, the fix is the same: diff the font name for a known hint (e.g. the grenade throwback text) between a working and broken resolution via `proxy_d3d9.log`, and add whatever's missing.
 
 ---
 
