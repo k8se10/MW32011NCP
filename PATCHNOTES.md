@@ -21,16 +21,30 @@ reverse-engineering trail behind each entry.
   its own schedule fully decoupled from the message pump — confirmed live:
   "the mouse lag GONE." See `re_notes/known_issues.md` issue #71.
 - **Corner hints and gameplay hints (pickup/reload/mantle/etc.) distorted and
-  mispositioned at non-16:9 resolutions — real root cause found and fixed
-  after a first attempt made things worse.** A first fix (a temporary device
-  viewport swap) was live-tested and confirmed worse, fully reverted. The
-  real bug, found via dedicated research into exact D3D9 behavior plus live
-  feedback at 640x480: position was never actually broken (it's already a
-  correct proportional placement); the bug was using that same per-axis
-  scale for element SIZE too, stretching every fixed-aspect glyph icon
-  non-uniformly on any non-16:9 screen — reading as "malformed," not just
-  "in the wrong spot." Fixed by using one uniform scale for size while
-  leaving position untouched. Changes zero device state this time. See
+  mispositioned at non-16:9 resolutions — two distinct real bugs found and
+  fixed, after a first attempt made things worse.** A first fix (a temporary
+  device viewport swap) was live-tested and confirmed worse, fully reverted.
+  Bug 1 (size): a fixed-aspect glyph icon was stretched non-uniformly on any
+  non-16:9 screen because element SIZE used the same non-uniform per-axis
+  scale as position — fixed with one uniform scale for size, leaving
+  position math untouched. Bug 2 (position, found after further live
+  testing at 4:3): several hints — Quit, Leaderboards, Friends/Back-
+  shortcut, and every gameplay hint except Reload — build their position
+  from the real native hint's own already-correctly-placed screen
+  coordinates, but that value then gets scaled a SECOND time by this
+  project's own drawing code, landing them "way up to the left" on anything
+  non-16:9. Fixed by converting the real value back to a design-space
+  equivalent before it re-enters the same pipeline. A third, related bug in
+  the same family: the check that decides whether a hint row *is* a Quit/
+  Leaderboards corner hint at all compared the real screen coordinate
+  directly against a design-space constant, so on non-16:9 it could silently
+  misclassify the row — fixed by converting before comparing. Neither fix
+  changes any device state. See `re_notes/known_issues.md` issue #70.
+- **Custom mouse cursor position reported "way off / unusable" at non-16:9
+  resolutions — not yet fixed.** The existing window-to-viewport ratio math
+  looks architecturally sound on inspection, so rather than guess a third
+  time this session, diagnostic-only logging (`[cursor-pos-diag]`) was added
+  to capture real values on the next repro before attempting a real fix. See
   `re_notes/known_issues.md` issue #70.
 - **Some players saw no controller-glyph icons at all, even on English with
   default settings — real bug found, likely root cause.** Every real XInput

@@ -4085,18 +4085,45 @@ void DrawCustomCursorIfNeeded(void* device)
         // 1920x1080 -- it does nothing for THIS specific window-vs-viewport gap).
         // The correct fix: measure the real window client rect directly and scale
         // by (viewport size / window client size), not by any 1920x1080 assumption.
+        int rawMouseX = mouseX, rawMouseY = mouseY;
         HWND hwnd = GetGameWindow();
         RECT clientRect{};
+        bool gotRatio = false;
+        int windowW = 0, windowH = 0, viewportW = 0, viewportH = 0;
         if (hwnd && GetClientRect(hwnd, &clientRect) &&
             (clientRect.right - clientRect.left) > 0 && (clientRect.bottom - clientRect.top) > 0) {
-            int windowW = clientRect.right - clientRect.left;
-            int windowH = clientRect.bottom - clientRect.top;
-            int viewportW = 0, viewportH = 0;
+            windowW = clientRect.right - clientRect.left;
+            windowH = clientRect.bottom - clientRect.top;
             GetRealScreenSize(device, viewportW, viewportH);
             mouseX = static_cast<int>(mouseX * (static_cast<float>(viewportW) / static_cast<float>(windowW)));
             mouseY = static_cast<int>(mouseY * (static_cast<float>(viewportH) / static_cast<float>(windowH)));
+            gotRatio = true;
         }
         POINT pt{ mouseX, mouseY };
+
+        // Live-reported 2026-08-08: "our mouse doesn't scale correctly either...way
+        // off, unusable" at non-16:9. This code path's own math (a plain window-
+        // client-to-viewport ratio) doesn't obviously depend on any 1920x1080/aspect
+        // assumption at all, so a blind fix risks repeating this same session's
+        // earlier wrong turns (the viewport-swap attempt, confidently asserted then
+        // confirmed worse live). Logging every real input to this calculation
+        // instead, deduped by value so it only fires on real change -- the next
+        // repro's proxy_d3d9.log will show directly which of these numbers is
+        // actually wrong (raw WM_MOUSEMOVE pos vs. window rect vs. viewport size vs.
+        // the final scaled result) rather than guessing further.
+        {
+            static int s_lastLoggedRawX = -999999, s_lastLoggedRawY = -999999;
+            static int s_lastLoggedFinalX = -999999, s_lastLoggedFinalY = -999999;
+            if (rawMouseX != s_lastLoggedRawX || rawMouseY != s_lastLoggedRawY ||
+                pt.x != s_lastLoggedFinalX || pt.y != s_lastLoggedFinalY) {
+                s_lastLoggedRawX = rawMouseX; s_lastLoggedRawY = rawMouseY;
+                s_lastLoggedFinalX = pt.x; s_lastLoggedFinalY = pt.y;
+                char buf[224];
+                sprintf_s(buf, "[cursor-pos-diag] raw=(%d,%d) window=%dx%d viewport=%dx%d gotRatio=%d -> final=(%d,%d)",
+                           rawMouseX, rawMouseY, windowW, windowH, viewportW, viewportH, gotRatio ? 1 : 0, pt.x, pt.y);
+                LogFromController(buf);
+            }
+        }
 
         void* texture = nullptr;
         int texW = 0, texH = 0;
