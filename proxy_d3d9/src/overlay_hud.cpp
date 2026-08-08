@@ -102,6 +102,7 @@ constexpr int kSetFVFVtableIndex = 89;            // IDirect3DDevice9::SetFVF
 constexpr int kSetRenderStateVtableIndex = 57;    // IDirect3DDevice9::SetRenderState
 constexpr int kGetRenderStateVtableIndex = 58;    // IDirect3DDevice9::GetRenderState
 constexpr int kSetTextureStageStateVtableIndex = 67; // IDirect3DDevice9::SetTextureStageState
+constexpr int kSetViewportVtableIndex = 47;       // IDirect3DDevice9::SetViewport
 constexpr int kGetViewportVtableIndex = 48;       // IDirect3DDevice9::GetViewport
 constexpr int kDrawPrimitiveUPVtableIndex = 83;   // IDirect3DDevice9::DrawPrimitiveUP
 constexpr int kSetVertexShaderVtableIndex = 92;   // IDirect3DDevice9::SetVertexShader
@@ -175,6 +176,11 @@ typedef HRESULT(WINAPI* GetSurfaceLevel_t)(void* This, UINT Level, void** ppSurf
 // see.
 struct D3DViewport9 { DWORD X, Y, Width, Height; float MinZ, MaxZ; };
 typedef HRESULT(WINAPI* GetViewport_t)(void* This, D3DViewport9* pViewport);
+// 2026-08-08: used to temporarily re-point the device's viewport at a centered,
+// uniformly-scaled "safe area" sub-rect for this project's OWN draw pass only (see
+// ApplyAspectSafeViewport's own header comment) -- restored to whatever the game's
+// own viewport was immediately after, never left changed across frames.
+typedef HRESULT(WINAPI* SetViewport_t)(void* This, const D3DViewport9* pViewport);
 struct LockedRect { INT Pitch; void* pBits; }; // matches real D3DLOCKED_RECT layout exactly
 typedef HRESULT(WINAPI* SurfaceLockRect_t)(void* This, LockedRect* pLockedRect, const RECT* pRect, DWORD Flags);
 typedef HRESULT(WINAPI* SurfaceUnlockRect_t)(void* This);
@@ -4191,6 +4197,106 @@ HRESULT WINAPI Hook_Reset(void* device, void* pPresentationParameters)
     return hr;
 }
 
+// ---- Aspect/resolution-safe overlay viewport (2026-08-08) -------------------------
+//
+// Live-reported: "major scaling issues at small resolutions" -- the corner Friends/
+// Back/Exit hints landed in the WRONG POSITION ENTIRELY at 800x600 (4:3, not this
+// project's usual 16:9 reference aspect). Root cause: GetResolutionScale computes
+// scaleX/scaleY INDEPENDENTLY (realWidth/1920, realHeight/1080) -- identical at any
+// 16:9 resolution (every resolution this project had ever been live-confirmed at),
+// but at a non-16:9 aspect the two diverge (e.g. 800x600: scaleX=0.417, scaleY=0.556),
+// which non-uniformly STRETCHES this project's entire 1920x1080 design-space canvas
+// to fill the real screen instead of preserving its own aspect ratio -- exactly the
+// kind of distortion that also shifts every hardcoded design-space position (like the
+// corner hints' own kStandardCornerHintX/Y) off from where it visually should be.
+//
+// Explicit direction: "scaling must be aspect and res safe for all screens." Fixed at
+// the ROOT rather than patching each affected constant individually: this project's
+// whole draw pass now runs inside a temporary, uniformly-scaled, screen-centered
+// "safe area" viewport -- sized to exactly 1920*scale x 1080*scale where
+// scale=min(realWidth/1920, realHeight/1080), the same "fit without distortion, letter/
+// pillarbox the rest" convention already used elsewhere in this project for the
+// Controller-tab diagram photos (DrawControllerBodyImage). At any 16:9 resolution this
+// safe area is EXACTLY the full real viewport (scaleX==scaleY already, zero letterbox)
+// -- byte-for-byte the same behavior as before this fix, so every already-live-
+// confirmed 16:9 test (1080p, 1440p, etc.) is provably unaffected. At any other aspect
+// ratio, it's centered and undistorted instead of stretched into the wrong place.
+//
+// Deliberately implemented via a REAL SetViewport call, not by threading a manual
+// offset through every draw call site: D3D9 applies the CURRENT viewport's X/Y origin
+// to pretransformed (D3DFVF_XYZRHW) vertices automatically (same mechanism this
+// project's own GetViewport-based GetRealScreenSize already relies on as its ground
+// truth) -- so temporarily pointing the device at this safe-area sub-rect means EVERY
+// existing DrawGenericTexturedQuad/DrawGradientQuad/etc. call already gets the correct
+// final screen position for free, with no changes needed at any of this project's
+// ~50 existing draw call sites. GetResolutionScale/GetRealScreenSize also need no
+// changes: called from inside the safe-area viewport, GetViewport naturally reports
+// that sub-rect's own Width/Height, which by construction always satisfies
+// Width/1920==Height/1080==scale -- producing an already-uniform scaleX/scaleY without
+// this function touching either of them directly.
+bool g_aspectSafeViewportApplied = false;
+D3DViewport9 g_aspectSafeOriginalViewport{};
+
+void ApplyAspectSafeViewportForOverlayDraw(void* device)
+{
+    g_aspectSafeViewportApplied = false;
+    if (!device) return;
+
+    void** deviceVtbl = *reinterpret_cast<void***>(device);
+    auto getViewport = reinterpret_cast<GetViewport_t>(deviceVtbl[kGetViewportVtableIndex]);
+    D3DViewport9 original{};
+    if (FAILED(getViewport(device, &original)) || original.Width == 0 || original.Height == 0) return;
+
+    float scaleFromWidth = static_cast<float>(original.Width) / 1920.0f;
+    float scaleFromHeight = static_cast<float>(original.Height) / 1080.0f;
+    float scale = scaleFromWidth < scaleFromHeight ? scaleFromWidth : scaleFromHeight;
+    float safeWidth = 1920.0f * scale;
+    float safeHeight = 1080.0f * scale;
+
+    // Already exactly full-viewport at any 16:9 resolution -- skip SetViewport/restore
+    // entirely in that (overwhelmingly common) case, both to avoid pointless per-frame
+    // device-state churn and so a SetViewport failure can never regress the one case
+    // already live-proven correct across this whole project's history.
+    if (fabsf(safeWidth - static_cast<float>(original.Width)) < 0.5f &&
+        fabsf(safeHeight - static_cast<float>(original.Height)) < 0.5f) {
+        return;
+    }
+
+    D3DViewport9 safeArea{};
+    safeArea.X = original.X + static_cast<DWORD>((static_cast<float>(original.Width) - safeWidth) * 0.5f + 0.5f);
+    safeArea.Y = original.Y + static_cast<DWORD>((static_cast<float>(original.Height) - safeHeight) * 0.5f + 0.5f);
+    safeArea.Width = static_cast<DWORD>(safeWidth + 0.5f);
+    safeArea.Height = static_cast<DWORD>(safeHeight + 0.5f);
+    safeArea.MinZ = original.MinZ;
+    safeArea.MaxZ = original.MaxZ;
+    if (safeArea.Width == 0 || safeArea.Height == 0) return;
+
+    auto setViewport = reinterpret_cast<SetViewport_t>(deviceVtbl[kSetViewportVtableIndex]);
+    if (SUCCEEDED(setViewport(device, &safeArea))) {
+        g_aspectSafeOriginalViewport = original;
+        g_aspectSafeViewportApplied = true;
+
+        static DWORD s_lastLoggedW = 0xFFFFFFFFu, s_lastLoggedH = 0xFFFFFFFFu;
+        if (safeArea.Width != s_lastLoggedW || safeArea.Height != s_lastLoggedH) {
+            s_lastLoggedW = safeArea.Width;
+            s_lastLoggedH = safeArea.Height;
+            char buf[192];
+            sprintf_s(buf, "[overlay-hud][aspect-safe] non-16:9 real viewport %lux%lu -> centered safe area %lux%lu at (%lu,%lu)",
+                       original.Width, original.Height, safeArea.Width, safeArea.Height, safeArea.X, safeArea.Y);
+            LogFromController(buf);
+        }
+    }
+}
+
+void RestoreRealViewportAfterOverlayDraw(void* device)
+{
+    if (!g_aspectSafeViewportApplied || !device) return;
+    g_aspectSafeViewportApplied = false;
+    void** deviceVtbl = *reinterpret_cast<void***>(device);
+    auto setViewport = reinterpret_cast<SetViewport_t>(deviceVtbl[kSetViewportVtableIndex]);
+    setViewport(device, &g_aspectSafeOriginalViewport);
+}
+
 HRESULT WINAPI Hook_EndScene(void* device)
 {
     ++g_endSceneFireCount;
@@ -4208,6 +4314,13 @@ HRESULT WINAPI Hook_EndScene(void* device)
     // menu is meant to be a BACKGROUND those layer on top of, not the topmost thing.
     // The cursor already drew last before this fix and still does; it just wasn't
     // the only thing affected.
+    //
+    // Aspect/resolution-safe viewport (2026-08-08, see ApplyAspectSafeViewportForOverlayDraw's
+    // own header comment) wraps this WHOLE draw pass -- every one of these Draw*
+    // calls (and everything they call in turn, e.g. GetResolutionScale) runs against
+    // whatever viewport is CURRENTLY set on the device, so this must be applied
+    // before the first one and restored after the last one, with no exceptions.
+    ApplyAspectSafeViewportForOverlayDraw(device);
     DrawCustomOptionsMenuIfOpen(device);
     DrawOverlayMessage(device);
     DrawGlyphIconIfRequested(device);
@@ -4225,6 +4338,7 @@ HRESULT WINAPI Hook_EndScene(void* device)
     // Always last -- see DrawCustomCursorIfNeeded's own comment for why the cursor
     // specifically needs to be the final thing drawn each frame.
     DrawCustomCursorIfNeeded(device);
+    RestoreRealViewportAfterOverlayDraw(device);
     return g_origEndScene(device);
 }
 
@@ -4235,6 +4349,8 @@ void GetRealScreenSize(void* deviceIn, int& outWidth, int& outHeight)
     outWidth = 1920;
     outHeight = 1080;
     bool gotViewport = false;
+    DWORD vpX = 0, vpY = 0; // logged below, not yet applied as a draw offset anywhere -- see this
+                             // function's own diagnostic-log comment for why.
     if (deviceIn) {
         void** deviceVtbl = *reinterpret_cast<void***>(deviceIn);
         auto getViewport = reinterpret_cast<GetViewport_t>(deviceVtbl[kGetViewportVtableIndex]);
@@ -4242,6 +4358,8 @@ void GetRealScreenSize(void* deviceIn, int& outWidth, int& outHeight)
         if (SUCCEEDED(getViewport(deviceIn, &vp)) && vp.Width > 0 && vp.Height > 0) {
             outWidth = static_cast<int>(vp.Width);
             outHeight = static_cast<int>(vp.Height);
+            vpX = vp.X;
+            vpY = vp.Y;
             gotViewport = true;
         }
     }
@@ -4259,13 +4377,39 @@ void GetRealScreenSize(void* deviceIn, int& outWidth, int& outHeight)
     // reading (not every frame) so a live repro's proxy_d3d9.log shows whether the real
     // viewport (ground truth for our own quads' coordinate space) ever actually
     // disagreed with the window's client rect, confirming or ruling out that theory.
+    //
+    // Live-reported 2026-08-08: "major scaling issues at small resolutions" -- corner
+    // hints landed in the WRONG POSITION ENTIRELY at 800x600 (4:3, not this project's
+    // usual 16:9 reference aspect). Working hypothesis, NOT YET CONFIRMED: this
+    // engine has a real `ui_r_aspectratio` dvar (vanilla_settings_table.h), so it
+    // may render its own UI at non-16:9 output resolutions via a letterboxed/
+    // pillarboxed viewport (a real D3D9 SetViewport with a non-zero X/Y origin and a
+    // sub-backbuffer Width/Height) rather than stretching -- if so, our own quads
+    // (D3DFVF_XYZRHW, drawn assuming the backbuffer's origin is always (0,0), see
+    // this struct's own header comment) would land offset by however much that
+    // viewport's real X/Y differs from zero, since neither is ever read or applied
+    // anywhere in this file. vpX/vpY are now included in this log line specifically
+    // so a live repro at a non-16:9 resolution (800x600 confirmed reproducing the
+    // bug; also worth checking an ultra-wide 21:9+ res, the opposite letterbox
+    // direction) will show directly whether this hook's OWN GetViewport call ever
+    // actually sees a non-zero X/Y -- if it does, that confirms the theory and the
+    // fix is to add that offset to every quad's draw position; if it stays (0,0)
+    // even when the bug reproduces, this theory is wrong and something else (the
+    // real UI ortho/safe-area transform, unrelated to this hook's own viewport read)
+    // is the actual cause. Deliberately NOT guessing a fix from this alone -- see
+    // `re_notes/known_issues.md`'s own "never guess positioning without live data"
+    // precedent (already burned several rounds on the manual-position glyph tables).
     static int s_lastLoggedWidth = -1, s_lastLoggedHeight = -1;
-    if (outWidth != s_lastLoggedWidth || outHeight != s_lastLoggedHeight) {
+    static DWORD s_lastLoggedVpX = 0xFFFFFFFFu, s_lastLoggedVpY = 0xFFFFFFFFu;
+    if (outWidth != s_lastLoggedWidth || outHeight != s_lastLoggedHeight ||
+        vpX != s_lastLoggedVpX || vpY != s_lastLoggedVpY) {
         s_lastLoggedWidth = outWidth;
         s_lastLoggedHeight = outHeight;
-        char buf[160];
-        sprintf_s(buf, "[overlay-hud][res-scale] real screen size=%dx%d (source=%s)",
-                   outWidth, outHeight, gotViewport ? "GetViewport" : "GetClientRect-fallback");
+        s_lastLoggedVpX = vpX;
+        s_lastLoggedVpY = vpY;
+        char buf[192];
+        sprintf_s(buf, "[overlay-hud][res-scale] real screen size=%dx%d vp.X=%lu vp.Y=%lu (source=%s)",
+                   outWidth, outHeight, vpX, vpY, gotViewport ? "GetViewport" : "GetClientRect-fallback");
         LogFromController(buf);
     }
 }

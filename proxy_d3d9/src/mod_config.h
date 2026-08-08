@@ -370,6 +370,23 @@ struct ModConfig
         // back proxy_d3d9.log so the real offset can be picked out of the candidates.
         // Capped at 100 total log lines per session so a noisy candidate can't flood the
         // log across a long play session.
+    bool forceGlyphOverlay = false; // 2026-08-08: community-reported (Nexus, v0.3.1) --
+        // several players see NO controller-glyph icons at all, even on English with
+        // default settings, and it's NOT reproducible on the developer's own machine --
+        // meaning this is a per-environment issue (a real candidate: Controller_GetLeftStick/
+        // etc. hardcode XInput user index 0, never scanning other slots, so a controller
+        // sitting in slot 1+ -- e.g. Steam Input passthrough, multiple pads -- would never
+        // register as "active," and ShouldDrawGlyphOverlay's IsControllerActiveInputMethod()
+        // gate would then always be false), not a universal regression. DEFAULT OFF -- a
+        // one-off diagnostic toggle, not meant to stay on during normal play. When enabled,
+        // ShouldDrawGlyphOverlay (analog_input_hooks.cpp) draws the glyph/hint overlay
+        // regardless of whether a controller is currently detected as the active input
+        // method. If icons then show correctly, that confirms the "controller never
+        // detected as active" theory (points at the XInput-slot issue above); if they still
+        // don't show even forced on, the real cause is elsewhere (glyph-detection/resolver
+        // logic itself, not the active-input gate) and this flag has done its job narrowing
+        // that down. Does not affect glyph SELECTION (GlyphStyle) or the cursor overlay's
+        // own separate visibility gate -- only this one gate.
 
     // [Options] (issue #66, 2026-08-04 full-scope pivot) -- STRICTLY OPT-IN, OFF by
     // default per this project's own established pattern for structurally significant,

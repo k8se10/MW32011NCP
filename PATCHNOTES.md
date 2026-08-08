@@ -6,6 +6,44 @@ reverse-engineering trail behind each entry.
 
 ---
 
+## Unreleased
+
+### Fixed
+- **Corner Friends/Back/Exit hints (and this project's whole overlay) landed in
+  the wrong position entirely at non-16:9 resolutions (e.g. 800x600).** Root
+  cause: the resolution-scale math stretched the overlay's design-space canvas
+  non-uniformly per axis, invisible at any 16:9 resolution (scaleX==scaleY
+  there) but wrong everywhere else. Fixed at the root with a temporary,
+  uniformly-scaled, centered "safe area" viewport wrapping this project's whole
+  draw pass — a no-op at 16:9 (byte-identical to before), letterboxed/centered
+  everywhere else instead of stretched. Not yet live-tested — see
+  `re_notes/known_issues.md` issue #70.
+- **Some players saw no controller-glyph icons at all, even on English with
+  default settings — real bug found, likely root cause.** Every real XInput
+  read in this project was hardcoded to user index 0, never scanning other
+  slots — a controller assigned to a different slot (a second pad, a tool like
+  x360ce occupying slot 0 with its own virtual device, Steam Input
+  renumbering) looked identical to "no controller at all." Now scans all 4
+  slots, preferring whichever is actively showing real input when multiple
+  legitimate controllers are connected at once, instead of just grabbing the
+  first one found. Not reproducible on the developer's own machine, so not
+  yet confirmed as the full fix — see `re_notes/known_issues.md` issue #71.
+
+### Added
+- **Controller connect/disconnect now shows a real on-screen notification.**
+  Unplugging/replugging a pad mid-session (or a wireless pad's battery
+  cutting out) now shows "Controller Connected"/"Controller Disconnected"
+  via this project's existing toast notification, instead of silently
+  changing behavior with no visible feedback. No toast on first launch
+  before a controller was ever known to be connected.
+- **New diagnostic: `[Experimental] ForceGlyphOverlay`** (`mw3ncp_config.ini`,
+  default off). Draws the glyph/hint overlay regardless of whether a
+  controller is currently detected as active — helps narrow down whether a
+  "no glyphs" report is the XInput-slot issue above or something else
+  entirely. See `re_notes/known_issues.md` issue #71.
+
+---
+
 ## v0.3.1 — Alpha (2026-08-06) — Multi-language glyph fix + Options screen preview
 
 **Headline fix**: controller-glyph icons were silently broken for every non-English

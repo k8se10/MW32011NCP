@@ -545,7 +545,16 @@ void WriteDefaultConfig(const char* path)
         "; plausible hit amount, logging candidates (max 3 per offset) as\n"
         "; \"[armor-scan-diag]\". Turn on, take a few hits while armored in\n"
         "; Survival, then check proxy_d3d9.log. 0 = off, 1 = on.\n"
-        "ArmorFieldScanLogging=%d\n",
+        "ArmorFieldScanLogging=%d\n"
+        "; 2026-08-08: community-reported (Nexus, v0.3.1) -- some players see NO\n"
+        "; controller-glyph icons at all, even on English with default settings, and it's\n"
+        "; not reproducible on the developer's own machine -- likely a per-environment\n"
+        "; issue (e.g. the controller sitting in a non-zero XInput slot, which this\n"
+        "; project's XInput reads don't currently scan for). DEFAULT OFF -- a one-off\n"
+        "; diagnostic toggle. When on, the glyph/hint overlay draws regardless of whether\n"
+        "; a controller is currently detected as the active input method -- if icons then\n"
+        "; show correctly, report that back, it narrows this down a lot. 0 = off, 1 = on.\n"
+        "ForceGlyphOverlay=%d\n",
         kCurrentConfigVersion,
         g_modConfig.lookDegreesPerSecondHorizontal,
         g_modConfig.lookDegreesPerSecondVertical,
@@ -591,7 +600,8 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.hudFontIdLogging ? 1 : 0,
         g_modConfig.hudGlyphPositionLogging ? 1 : 0,
         g_modConfig.glyphIconOverlayEnabled ? 1 : 0,
-        g_modConfig.armorFieldScanLogging ? 1 : 0);
+        g_modConfig.armorFieldScanLogging ? 1 : 0,
+        g_modConfig.forceGlyphOverlay ? 1 : 0);
 
     fclose(f);
 }
@@ -794,6 +804,7 @@ void LoadModConfig()
     ReadBool(path, "Experimental", "HudGlyphPositionLogging", g_modConfig.hudGlyphPositionLogging);
     ReadBool(path, "Experimental", "GlyphIconOverlay", g_modConfig.glyphIconOverlayEnabled);
     ReadBool(path, "Experimental", "ArmorFieldScanLogging", g_modConfig.armorFieldScanLogging);
+    ReadBool(path, "Experimental", "ForceGlyphOverlay", g_modConfig.forceGlyphOverlay);
 
     g_buttonMap = ResolveButtonMap(g_modConfig.buttonLayout, g_modConfig.flipTriggers);
 
@@ -809,7 +820,7 @@ void LoadModConfig()
         "overlayFontItalic=%d overlayTestCycleAllVariants=%d "
         "fireNotifyQueueKick=%d bindResolverHookLogging=%d bindResolverGlyphSubstitution=%d "
         "hudFontIdLogging=%d hudGlyphPositionLogging=%d glyphIconOverlayEnabled=%d "
-        "armorFieldScanLogging=%d",
+        "armorFieldScanLogging=%d forceGlyphOverlay=%d",
         g_modConfig.lookDegreesPerSecondHorizontal, g_modConfig.lookDegreesPerSecondVertical,
         g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
@@ -831,7 +842,8 @@ void LoadModConfig()
         g_modConfig.hudFontIdLogging ? 1 : 0,
         g_modConfig.hudGlyphPositionLogging ? 1 : 0,
         g_modConfig.glyphIconOverlayEnabled ? 1 : 0,
-        g_modConfig.armorFieldScanLogging ? 1 : 0);
+        g_modConfig.armorFieldScanLogging ? 1 : 0,
+        g_modConfig.forceGlyphOverlay ? 1 : 0);
     LogFromController(buf);
 
     // Rewrite the file once, now that g_modConfig holds every existing setting PLUS
