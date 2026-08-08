@@ -1,22 +1,19 @@
 # MW3 Native Controller Support (Campaign & Survival)
 
-> **▶️ v0.3.1 (2026-08-06) — non-English glyph fix, plus a preview feature.**
-> **Headline fix**: controller-glyph icons were silently broken for every
-> non-English game language (community-reported on Nexus) — root-caused and
-> fixed properly against the game's own real localization resolver, confirmed
-> live by switching languages and retesting, not worked around. See Known
-> Limitations for the one remaining, much narrower gap (icon POSITION, not
-> selection, on a few screens). **Also new, as an explicitly-labeled
-> preview/WIP feature**: a from-scratch replacement Options screen covering
-> every real vanilla setting plus real controller-bind rebinding — it's real,
-> working code, but **off by default and only reachable via a
-> `mw3ncp_config.ini` edit, with no in-game way to turn it on** — it hasn't
-> been played yet. See `PATCHNOTES.md` for the full list and
-> `re_notes/known_issues.md` issue #66 for the honest, itemized status before
-> trying it. **v0.3.1 is the current alpha build, and is intended as a
-> stabilization release** — same treatment as v0.2.2: no further release
-> planned for up to ~2 weeks after this one unless a critical issue turns up
-> in the meantime.
+> **▶️ v0.3.1.h1 (2026-08-09) — hotfix: mouse-lag regression, non-16:9
+> scaling/glyph visibility, Options-screen crash risk.** A feature-free
+> hotfix on top of v0.3.1 (see `PATCHNOTES.md` for the `.hN` versioning
+> convention). **Headline fixes**: a critical mouse-movement-correlated FPS
+> drop, confirmed live and fully fixed; and controller-glyph icons never
+> appearing at all on non-16:9 resolutions, root-caused to two separate bug
+> classes (a font-detection gap and a position-formula bug) via direct log
+> evidence, not guessed. Also fixes a real crash risk in the still-preview/WIP
+> Options screen and an unbounded log-growth issue on long sessions. **Honesty
+> note**: the mouse-lag fix is confirmed live; the non-16:9 scaling/glyph
+> fixes went through several live-tested-wrong rounds before landing on the
+> current state (see `re_notes/known_issues.md` issue #70) and the final
+> state hasn't yet had an explicit "fully correct everywhere" confirmation.
+> See `PATCHNOTES.md` for the full list.
 
 > **⚠️ SECURITY NOTICE — versions before v0.2.2 are no longer distributed.**
 > Versions v0.2.1 and earlier shipped with an aim-assist feature's code compiled
@@ -47,8 +44,8 @@
 > Server) trigger on some scanners. Full source is in this repository if you
 > want to verify for yourself. See `known_issues.md` #64.
 
-**Status: ALPHA — v0.3.1 (2026-08-06).** Changes below since v0.3.0, most
-user-confirmed live:
+**Status: ALPHA — v0.3.1.h1 (2026-08-09), a feature-free hotfix on v0.3.1.**
+Changes below since v0.3.1, see `PATCHNOTES.md` for the full itemized list:
 
 > ⚠ **Known gap: a few menu glyph icons can land in a slightly wrong POSITION
 > under non-English languages** ⚠
@@ -295,7 +292,7 @@ is still open, not how rough what already works is.
 | Stage | Version range | What it means here |
 |---|---|---|
 | **Pre-alpha** | `0.1.0` – `0.1.5` | Core systems land one at a time — movement/look/combat, stance/sprint, pause menu, and menu navigation done; aim assist, vibration, killstreaks, and the controller options menu still being built out. |
-| **Alpha** *(current, v0.3.1)* | `0.1.5` – `0.4.0` | The remaining major systems get built and land. **v0.2.0**: Sprint fully native (no custom timer, Extreme Conditioning resolved for free), 3 of 4 Survival killstreaks confirmed working, menu/UI navigation extended to the main menu/title screen and slider values. **v0.2.1**: console-accurate look acceleration ramp, and Hold Breath (L3 while ADS'd) fully working as genuinely native input after an extensive debugging pass. **v0.2.2**: risk-mitigation release — aim assist permanently removed (not just disabled) following VAC research; see the security notice at the top of this file. Also this project's first LTS-style stabilization release — no follow-up for about a week and a half. **v0.2.5**: crouch/stance reliability hotfix and the on-screen notification system. **v0.3.0**: controller-glyph icons (in-game hints, menu corner hints, custom cursor overlay), the highlighted-item A-glyph (shown on a verified-only allowlist after an audit found overstated claims), real controller vibration (physically confirmed, strength maxed out in software), and the crouch/UI bug batch from the first public Survival co-op stream. **Two things attempted but NOT working in v0.3.0, shipped honestly flagged rather than silently absent**: auto-mantle while sprinting (implemented, live-tested twice, still doesn't fire reliably — shipped disabled) and vibration for Survival Body Armor hits (a separate, unlocated value). **v0.3.1**: fixed controller-glyph icons never appearing for non-English game languages (root-caused against the game's own real localization resolver, confirmed live); also ships a from-scratch replacement Options screen covering every real vanilla setting plus real rebind capture, as an explicitly labeled preview/WIP feature — off by default, `mw3ncp_config.ini`-only, not yet played. **Intended as a second LTS-style stabilization release, same treatment as v0.2.2** — no further release planned for up to ~2 weeks barring a critical issue. **Still ahead in this stage**: playtesting the preview Options screen (and closing its known gaps — window mode setting, resolution scaling), re-verifying the remaining A-glyph screens, actually fixing auto-mantle and armor vibration, per-animation-step reload vibration, Predator Missile's guidance aim, and remaining Campaign/Special Ops compatibility gaps. Multiplayer groundwork may start here, pending the anti-cheat question being resolved first. |
+| **Alpha** *(current, v0.3.1.h1)* | `0.1.5` – `0.4.0` | The remaining major systems get built and land. **v0.2.0**: Sprint fully native (no custom timer, Extreme Conditioning resolved for free), 3 of 4 Survival killstreaks confirmed working, menu/UI navigation extended to the main menu/title screen and slider values. **v0.2.1**: console-accurate look acceleration ramp, and Hold Breath (L3 while ADS'd) fully working as genuinely native input after an extensive debugging pass. **v0.2.2**: risk-mitigation release — aim assist permanently removed (not just disabled) following VAC research; see the security notice at the top of this file. Also this project's first LTS-style stabilization release — no follow-up for about a week and a half. **v0.2.5**: crouch/stance reliability hotfix and the on-screen notification system. **v0.3.0**: controller-glyph icons (in-game hints, menu corner hints, custom cursor overlay), the highlighted-item A-glyph (shown on a verified-only allowlist after an audit found overstated claims), real controller vibration (physically confirmed, strength maxed out in software), and the crouch/UI bug batch from the first public Survival co-op stream. **Two things attempted but NOT working in v0.3.0, shipped honestly flagged rather than silently absent**: auto-mantle while sprinting (implemented, live-tested twice, still doesn't fire reliably — shipped disabled) and vibration for Survival Body Armor hits (a separate, unlocated value). **v0.3.1**: fixed controller-glyph icons never appearing for non-English game languages (root-caused against the game's own real localization resolver, confirmed live); also ships a from-scratch replacement Options screen covering every real vanilla setting plus real rebind capture, as an explicitly labeled preview/WIP feature — off by default, `mw3ncp_config.ini`-only, not yet played. **Intended as a second LTS-style stabilization release, same treatment as v0.2.2** — no further release planned for up to ~2 weeks barring a critical issue. **v0.3.1.h1**: feature-free hotfix — a critical mouse-lag regression (confirmed live), non-16:9 glyph-visibility and scaling fixes (two separate confirmed bug classes), and a real Options-screen crash-risk fix; see `PATCHNOTES.md` for the full itemized list. **Still ahead in this stage**: playtesting the preview Options screen (and closing its known gaps — window mode setting, resolution scaling), re-verifying the remaining A-glyph screens, actually fixing auto-mantle and armor vibration, per-animation-step reload vibration, Predator Missile's guidance aim, and remaining Campaign/Special Ops compatibility gaps. Multiplayer groundwork may start here, pending the anti-cheat question being resolved first. |
 | **Beta** | `0.4.0` – `1.0.0` | Should be practically feature-complete — remaining work is closing gaps, fixing what live testing surfaces, and extending reach (other MW3 clients, Multiplayer if the anti-cheat question resolves favorably) rather than building brand-new core systems from scratch. |
 | **1.0 (final)** | `1.0.0`+ | Feature-complete against this project's full scope, stable, and treated as a real release rather than an actively-shifting work in progress. |
 

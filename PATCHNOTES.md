@@ -8,6 +8,29 @@ reverse-engineering trail behind each entry.
 
 ## Unreleased
 
+## v0.3.1.h1 — Hotfix (2026-08-09) — Mouse-lag regression, non-16:9 scaling/glyph-visibility, Options-screen crash
+
+**Feature-free hotfix** — see [[project_hotfix_versioning_convention]]/`re_notes/known_issues.md` for
+the convention: releases that contain only fixes, no new scope, use a `.hN`
+suffix on the release they're patching rather than a new minor version.
+
+**Headline fixes**: a critical mouse-movement-correlated FPS drop (confirmed
+live, fully fixed) and controller-glyph icons never appearing at all on any
+non-16:9 resolution (confirmed root cause via direct log evidence across two
+separate bug classes — a font-detection gap and a position-formula bug — not
+guessed). Also included: a real crash-risk fix in the still-preview/WIP
+Options screen, and a log-volume fix for long sessions.
+
+**Honesty note, consistent with this project's standard**: the mouse-lag fix
+is confirmed live. The non-16:9 scaling/glyph fixes went through several
+live-tested-wrong rounds before landing on the current state (see
+`re_notes/known_issues.md` issue #70 for the full round-by-round history) —
+the final state has not yet had an explicit "this is now fully correct"
+confirmation across every resolution and hint type. The Options-screen crash
+fix and log-slimming change have no user-visible symptom to confirm against
+and are shipped on code-review confidence alone, same as v0.3.1's own
+equivalent fixes.
+
 ### Fixed
 - **CRITICAL, CONFIRMED LIVE: severe mouse-movement-correlated FPS drop ("drops
   to 4fps"), introduced earlier the same day by the XInput multi-slot fix
