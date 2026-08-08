@@ -9505,6 +9505,21 @@ Rebuilt `proxy_d3d9.dll` a fifth time -- compiles clean, 0 errors (no `ui_hot.dl
 
 ---
 
+## 73. Pickup weapon / throw grenade controller prompts don't show at 4:3 resolutions (Reload unaffected) -- 2026-08-08
+
+**Status:** Fixed, rebuilt, **not yet live-tested**. Live-reported: "at 4:3 resolutions glyph interact prompts don't show tho reload does, i checked the pickup weapon and the throw grenade prompt at both 4:3 and 16:9 and 4:3 was not showing." A different root cause from issue #70 (that's a scale/position math bug; this is a font-allowlist gap) -- found via direct `proxy_d3d9.log` evidence, not guessed, after two wrong guesses already this session made a log-first approach the only acceptable one.
+
+**Root cause**: `IsGameplayHintFont()` gates this project's entire gameplay-hint replacement (both the pickup/grenade/mantle/etc. path and the Reload path) behind a fixed allowlist of real font names: `fonts/extraBigFont`, `fonts/hudSmallFont`, `fonts/hudBigFont`. Directly comparing the SAME native grenade-throwback hint text (`"^3G or Middle Mouse ^7throw back"`) logged at two different resolutions in this user's own log:
+
+- 16:9 (1920x1080): `fonts/extraBigFont` -- allowlisted, replacement fires correctly.
+- 4:3 (800x600): `fonts/bigFont` -- NOT allowlisted.
+
+The real engine genuinely switches to a different (smaller) font asset for this HUD text at non-16:9 resolutions. When the font isn't allowlisted, `IsGameplayHintFont()` returns false and this project's whole replacement block is skipped -- the native PC-keybind text ("G or Middle Mouse") draws instead of the controller icon, which from a controller player's perspective looks exactly like "no prompt at all." Reload was unaffected because its own font (`fonts/hudBigFont`) is already allowlisted and, per the same log evidence, doesn't change at 4:3.
+
+**Fixed**: added `fonts/bigFont` to `IsGameplayHintFont()`'s allowlist. Rebuilt `proxy_d3d9.dll` -- compiles clean, 0 errors. **Not yet live-tested** -- next step is confirming pickup weapon and grenade throwback both show the controller icon at 4:3.
+
+---
+
 ## 72. Real resource-lifecycle crash bug: `g_optWhiteTexture` and every Options-screen text cache never released — 2026-08-08
 
 **Status:** Fixed, rebuilt, **not yet live-tested**. Found via a general D3D9 rendering-code health audit (one of 4 parallel research forks launched the same day for issue #70), not from a user report -- same bug CLASS as the already-fixed `g_optBlurPixelShader` crash (2026-08-06), just never back-filled into `ReleaseAllCachedTextures()` as new caches were added during the Options-screen expansion.
