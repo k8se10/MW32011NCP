@@ -9492,6 +9492,17 @@ The user's own proposed fix direction ("go off the original hardcoded location v
 
 Rebuilt `proxy_d3d9.dll` (Release/Win32) and `ui_hot.dll` (Debug/Win32) a fourth time -- both compile clean, 0 errors. **Not yet live-tested.**
 
+**Round 5, live-reported immediately: "now back and leaderboard are broken"** -- round 4's OWN "hardcode the constant" fix (the `kStandardCornerHintX`/`Y` conversion) was itself wrong, found via direct `proxy_d3d9.log` evidence rather than another guess. Two `[overlay-hud][res-scale]` lines from the same moment in this user's own log:
+
+```
+real screen size=2560x1440 (source=GetClientRect-fallback)
+real screen size=1920x1080 (source=GetViewport)
+```
+
+This user's window/monitor is 2560x1440, but the REAL D3D9 device viewport -- the actual ground truth `GetResolutionScale(device, ...)` uses everywhere, including back on 2026-08-01 when `kStandardCornerHintX`/`Y` were first captured -- has always been 1920x1080. The original comment's "captured at 2560x1440" described the monitor, not the viewport. Since the real capture-time viewport (1920x1080) IS this project's design-space reference resolution, the raw captured value (`1634`, `995`) was numerically identical to its own design-space equivalent already (real/design are the same thing exactly at the reference resolution) -- round 4's division by an assumed `2560/1920` capture scale shrank a constant that didn't need shrinking, moving the Back hint AND (since Quit/Leaderboards' `looksLikeCornerHintRow` reads this same constant as its row-detection threshold) breaking Quit/Leaderboards detection too. **Fixed by reverting `kStandardCornerHintX`/`Y` to the raw `1634`/`995` values** -- the round-4 `GetLastKnownRenderDevice()` fix (the actual "broke 16:9" root cause) is unaffected and stays, and this same log evidence directly confirms that fix was necessary: a `GetClientRect`-vs-`GetViewport` mismatch of exactly this magnitude (2560x1440 vs 1920x1080) is precisely what round 3's mismatched conversion was vulnerable to.
+
+Rebuilt `proxy_d3d9.dll` a fifth time -- compiles clean, 0 errors (no `ui_hot.dll` rebuild needed; that harness doesn't compile `analog_input_hooks.cpp`). **Not yet live-tested.**
+
 ---
 
 ## 72. Real resource-lifecycle crash bug: `g_optWhiteTexture` and every Options-screen text cache never released — 2026-08-08
