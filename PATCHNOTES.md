@@ -20,14 +20,18 @@ reverse-engineering trail behind each entry.
   moving all real XInput calls onto a dedicated background thread, polling on
   its own schedule fully decoupled from the message pump — confirmed live:
   "the mouse lag GONE." See `re_notes/known_issues.md` issue #71.
-- **Corner Friends/Back/Exit hints (and this project's whole overlay) landed in
-  the wrong position entirely at non-16:9 resolutions (e.g. 800x600) —
-  attempted fix confirmed WORSE, left in place pending further work, NOT
-  fixed.** The scaling math itself is confirmed broken at non-16:9 aspect
-  ratios; a same-day attempt to fix it via a temporary device viewport swap
-  was live-tested and made things worse, not better. Root cause and a safer
-  fix are still being investigated — see `re_notes/known_issues.md` issue
-  #70 for current status before assuming this is fixed.
+- **Corner hints and gameplay hints (pickup/reload/mantle/etc.) distorted and
+  mispositioned at non-16:9 resolutions — real root cause found and fixed
+  after a first attempt made things worse.** A first fix (a temporary device
+  viewport swap) was live-tested and confirmed worse, fully reverted. The
+  real bug, found via dedicated research into exact D3D9 behavior plus live
+  feedback at 640x480: position was never actually broken (it's already a
+  correct proportional placement); the bug was using that same per-axis
+  scale for element SIZE too, stretching every fixed-aspect glyph icon
+  non-uniformly on any non-16:9 screen — reading as "malformed," not just
+  "in the wrong spot." Fixed by using one uniform scale for size while
+  leaving position untouched. Changes zero device state this time. See
+  `re_notes/known_issues.md` issue #70.
 - **Some players saw no controller-glyph icons at all, even on English with
   default settings — real bug found, likely root cause.** Every real XInput
   read in this project was hardcoded to user index 0, never scanning other
@@ -52,7 +56,6 @@ reverse-engineering trail behind each entry.
   "no glyphs" report is the XInput-slot issue above or something else
   entirely. See `re_notes/known_issues.md` issue #71.
 
-### Fixed
 - **`proxy_d3d9.log` could grow unbounded (one real session hit ~22GB).**
   Performance/log-slimming pass targeting worst-case circa-2008 hardware
   found two real causes: the logger flushed to disk on every single call
@@ -65,6 +68,15 @@ reverse-engineering trail behind each entry.
   was deleted outright, and the other was moved behind a new
   `[Experimental] ListItemPositionLogging` flag (default off). See
   `re_notes/known_issues.md` issue #67.
+- **PREVIEW/WIP feature fix: real crash risk in the custom Options screen —
+  the general-purpose white fill texture and every one of its 14 text
+  caches were never released across a device recreation.** Found via a
+  general rendering-code health audit, same bug class as the already-fixed
+  blur-shader crash: after a real `vid_restart` (e.g. from confirming a
+  staged Advanced Video setting), nearly everything the Options screen
+  draws — background, row highlights, sliders, toggles, all text — would
+  bind a texture handle belonging to a destroyed device on the very next
+  frame it's open. See `re_notes/known_issues.md` issue #72.
 
 ---
 

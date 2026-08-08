@@ -102,7 +102,6 @@ constexpr int kSetFVFVtableIndex = 89;            // IDirect3DDevice9::SetFVF
 constexpr int kSetRenderStateVtableIndex = 57;    // IDirect3DDevice9::SetRenderState
 constexpr int kGetRenderStateVtableIndex = 58;    // IDirect3DDevice9::GetRenderState
 constexpr int kSetTextureStageStateVtableIndex = 67; // IDirect3DDevice9::SetTextureStageState
-constexpr int kSetViewportVtableIndex = 47;       // IDirect3DDevice9::SetViewport
 constexpr int kGetViewportVtableIndex = 48;       // IDirect3DDevice9::GetViewport
 constexpr int kDrawPrimitiveUPVtableIndex = 83;   // IDirect3DDevice9::DrawPrimitiveUP
 constexpr int kSetVertexShaderVtableIndex = 92;   // IDirect3DDevice9::SetVertexShader
@@ -176,11 +175,6 @@ typedef HRESULT(WINAPI* GetSurfaceLevel_t)(void* This, UINT Level, void** ppSurf
 // see.
 struct D3DViewport9 { DWORD X, Y, Width, Height; float MinZ, MaxZ; };
 typedef HRESULT(WINAPI* GetViewport_t)(void* This, D3DViewport9* pViewport);
-// 2026-08-08: used to temporarily re-point the device's viewport at a centered,
-// uniformly-scaled "safe area" sub-rect for this project's OWN draw pass only (see
-// ApplyAspectSafeViewport's own header comment) -- restored to whatever the game's
-// own viewport was immediately after, never left changed across frames.
-typedef HRESULT(WINAPI* SetViewport_t)(void* This, const D3DViewport9* pViewport);
 struct LockedRect { INT Pitch; void* pBits; }; // matches real D3DLOCKED_RECT layout exactly
 typedef HRESULT(WINAPI* SurfaceLockRect_t)(void* This, LockedRect* pLockedRect, const RECT* pRect, DWORD Flags);
 typedef HRESULT(WINAPI* SurfaceUnlockRect_t)(void* This);
@@ -1224,9 +1218,22 @@ void DrawOneGameplayHintSlot(void* device, GameplayHintSlot& slot, float scaleX,
     // real backbuffer isn't guaranteed to match the window's client area) to the
     // device's actual GetViewport (ground truth for the pixel space our own quads draw
     // into) -- see its own comment in overlay_hud.h for why that switch mattered.
+    // Live-reported 2026-08-08 (640x480/800x600): "gameplay hints other than Reload
+    // broken... majorly malformed." Root cause: POSITION (x*scaleX, y*scaleY) was
+    // already correct -- per-axis scaling against each axis's own real edge is a
+    // pure proportional position, exactly matching this function's own "proportional
+    // to the edges" philosophy above. The bug was using that SAME per-axis pair for
+    // SIZE (w*scaleX, h*scaleY) -- a fixed-aspect glyph icon PNG gets visibly
+    // stretched/squished whenever scaleX != scaleY (any non-16:9 resolution), which
+    // reads as "malformed," not just "in the wrong spot." Reload (the one hint using
+    // centerOnScreen=true, a width-ratio rather than a fixed design-space X) stayed
+    // positioned correctly even with the same icon distortion -- consistent with
+    // this being a SIZE bug. Fixed: size now uses ONE uniform value for both w and h
+    // (see GetUniformSizeScale's own header comment), position unchanged.
+    float uniformScale = scaleX < scaleY ? scaleX : scaleY;
     auto drawScaledQuad = [&](void* texture, float x, float y, float w, float h, DWORD color,
                                float u0 = 0.0f, float v0 = 0.0f, float u1 = 1.0f, float v1 = 1.0f) {
-        DrawGenericTexturedQuad(device, texture, x * scaleX, y * scaleY, w * scaleX, h * scaleY, color, u0, v0, u1, v1);
+        DrawGenericTexturedQuad(device, texture, x * scaleX, y * scaleY, w * uniformScale, h * uniformScale, color, u0, v0, u1, v1);
     };
 
     if (!EnsureLeftAlignedTextTexture(device, slot.prefixTexture, slot.prefixRenderedFor,
@@ -1432,9 +1439,15 @@ void DrawGameplayHintSlotsIfRequested(void* device)
 // this omits both of those branches entirely -- always left-anchored at (x, y).
 void DrawOneMenuHintSlot(void* device, MenuHintSlot& slot, float scaleX, float scaleY)
 {
+    // See DrawOneGameplayHintSlot's own comment (same fix, same file, added the same
+    // day) -- live-reported "all corner hints majorly malformed" at 640x480/800x600
+    // was a SIZE bug (a fixed-aspect glyph icon stretched by independent per-axis
+    // scaleX/scaleY), not a position bug; position (x*scaleX, y*scaleY) was already
+    // a correct proportional placement and is unchanged here.
+    float uniformScale = scaleX < scaleY ? scaleX : scaleY;
     auto drawScaledQuad = [&](void* texture, float x, float y, float w, float h, DWORD color,
                                float u0 = 0.0f, float v0 = 0.0f, float u1 = 1.0f, float v1 = 1.0f) {
-        DrawGenericTexturedQuad(device, texture, x * scaleX, y * scaleY, w * scaleX, h * scaleY, color, u0, v0, u1, v1);
+        DrawGenericTexturedQuad(device, texture, x * scaleX, y * scaleY, w * uniformScale, h * uniformScale, color, u0, v0, u1, v1);
     };
 
     if (!EnsureLeftAlignedTextTexture(device, slot.prefixTexture, slot.prefixRenderedFor,
@@ -4138,6 +4151,44 @@ void ReleaseAllCachedTextures()
         reinterpret_cast<Release_t>(vtbl[kSurfaceReleaseVtableIndex])(tex);
         tex = nullptr;
     };
+    // CRASH FIX (2026-08-08, found via a general rendering-code health audit, same bug
+    // class as the already-fixed g_optBlurPixelShader crash above): g_optWhiteTexture
+    // (the general-purpose 1x1 white fill texture nearly every solid-fill quad in the
+    // ENTIRE custom Options screen draws with -- background panel, row highlights,
+    // sliders, toggle switches, drag handles, leader lines, drilldown boxes) and EVERY
+    // TextTexCache instance added during the Options-screen expansion were never once
+    // added here. EnsureWhiteTexture/EnsureLeftAlignedTextTexture's own cache-hit fast
+    // paths (`if (texture) return true;`) trust a non-null handle forever, with zero
+    // device-recreation invalidation -- after a full device recreation (the same
+    // `vid_restart` scenario the blur-shader crash above was caused by), every one of
+    // these would bind a texture handle belonging to a destroyed device on the very
+    // next frame the Options screen (or anything using these shared caches) draws.
+    // Likely a BIGGER real-world crash risk than the blur-shader one, since these are
+    // used far more widely (nearly everything the Options screen draws, not just its
+    // background blur). releaseIfSetTextCache also clears renderedFor so the next draw
+    // call sees this as "never rendered" and recreates from scratch, same convention
+    // every other TextTexCache-consuming draw function already relies on.
+    auto releaseIfSetTextCache = [&](TextTexCache& cache) {
+        releaseIfSet(cache.texture);
+        cache.renderedFor[0] = '\0';
+        cache.lastFontHeightPx = 0;
+    };
+    releaseIfSet(g_optWhiteTexture);
+    for (auto& c : g_optRowLabelCache) releaseIfSetTextCache(c);
+    for (auto& c : g_optRowValueCache) releaseIfSetTextCache(c);
+    for (auto& c : g_tabBarCache) releaseIfSetTextCache(c);
+    releaseIfSetTextCache(g_optTitleCache);
+    releaseIfSetTextCache(g_optDescCache);
+    releaseIfSetTextCache(g_optScrollUpHintCache);
+    releaseIfSetTextCache(g_optScrollDownHintCache);
+    releaseIfSetTextCache(g_optCornerBackCache);
+    releaseIfSetTextCache(g_optRebindPromptTitleCache);
+    releaseIfSetTextCache(g_optRebindPromptSubtitleCache);
+    releaseIfSetTextCache(g_optApplyPromptTitleCache);
+    releaseIfSetTextCache(g_optApplyYesCache);
+    releaseIfSetTextCache(g_optApplyNoCache);
+    for (auto& c : g_diagLabelCache) releaseIfSetTextCache(c);
+    for (auto& c : g_diagEditHandleLabelCache) releaseIfSetTextCache(c);
     releaseIfSet(g_textTexture);
     g_textureRenderedFor[0] = '\0';
     for (auto& slot : g_gameplayHintSlots) {
@@ -4197,106 +4248,6 @@ HRESULT WINAPI Hook_Reset(void* device, void* pPresentationParameters)
     return hr;
 }
 
-// ---- Aspect/resolution-safe overlay viewport (2026-08-08) -------------------------
-//
-// Live-reported: "major scaling issues at small resolutions" -- the corner Friends/
-// Back/Exit hints landed in the WRONG POSITION ENTIRELY at 800x600 (4:3, not this
-// project's usual 16:9 reference aspect). Root cause: GetResolutionScale computes
-// scaleX/scaleY INDEPENDENTLY (realWidth/1920, realHeight/1080) -- identical at any
-// 16:9 resolution (every resolution this project had ever been live-confirmed at),
-// but at a non-16:9 aspect the two diverge (e.g. 800x600: scaleX=0.417, scaleY=0.556),
-// which non-uniformly STRETCHES this project's entire 1920x1080 design-space canvas
-// to fill the real screen instead of preserving its own aspect ratio -- exactly the
-// kind of distortion that also shifts every hardcoded design-space position (like the
-// corner hints' own kStandardCornerHintX/Y) off from where it visually should be.
-//
-// Explicit direction: "scaling must be aspect and res safe for all screens." Fixed at
-// the ROOT rather than patching each affected constant individually: this project's
-// whole draw pass now runs inside a temporary, uniformly-scaled, screen-centered
-// "safe area" viewport -- sized to exactly 1920*scale x 1080*scale where
-// scale=min(realWidth/1920, realHeight/1080), the same "fit without distortion, letter/
-// pillarbox the rest" convention already used elsewhere in this project for the
-// Controller-tab diagram photos (DrawControllerBodyImage). At any 16:9 resolution this
-// safe area is EXACTLY the full real viewport (scaleX==scaleY already, zero letterbox)
-// -- byte-for-byte the same behavior as before this fix, so every already-live-
-// confirmed 16:9 test (1080p, 1440p, etc.) is provably unaffected. At any other aspect
-// ratio, it's centered and undistorted instead of stretched into the wrong place.
-//
-// Deliberately implemented via a REAL SetViewport call, not by threading a manual
-// offset through every draw call site: D3D9 applies the CURRENT viewport's X/Y origin
-// to pretransformed (D3DFVF_XYZRHW) vertices automatically (same mechanism this
-// project's own GetViewport-based GetRealScreenSize already relies on as its ground
-// truth) -- so temporarily pointing the device at this safe-area sub-rect means EVERY
-// existing DrawGenericTexturedQuad/DrawGradientQuad/etc. call already gets the correct
-// final screen position for free, with no changes needed at any of this project's
-// ~50 existing draw call sites. GetResolutionScale/GetRealScreenSize also need no
-// changes: called from inside the safe-area viewport, GetViewport naturally reports
-// that sub-rect's own Width/Height, which by construction always satisfies
-// Width/1920==Height/1080==scale -- producing an already-uniform scaleX/scaleY without
-// this function touching either of them directly.
-bool g_aspectSafeViewportApplied = false;
-D3DViewport9 g_aspectSafeOriginalViewport{};
-
-void ApplyAspectSafeViewportForOverlayDraw(void* device)
-{
-    g_aspectSafeViewportApplied = false;
-    if (!device) return;
-
-    void** deviceVtbl = *reinterpret_cast<void***>(device);
-    auto getViewport = reinterpret_cast<GetViewport_t>(deviceVtbl[kGetViewportVtableIndex]);
-    D3DViewport9 original{};
-    if (FAILED(getViewport(device, &original)) || original.Width == 0 || original.Height == 0) return;
-
-    float scaleFromWidth = static_cast<float>(original.Width) / 1920.0f;
-    float scaleFromHeight = static_cast<float>(original.Height) / 1080.0f;
-    float scale = scaleFromWidth < scaleFromHeight ? scaleFromWidth : scaleFromHeight;
-    float safeWidth = 1920.0f * scale;
-    float safeHeight = 1080.0f * scale;
-
-    // Already exactly full-viewport at any 16:9 resolution -- skip SetViewport/restore
-    // entirely in that (overwhelmingly common) case, both to avoid pointless per-frame
-    // device-state churn and so a SetViewport failure can never regress the one case
-    // already live-proven correct across this whole project's history.
-    if (fabsf(safeWidth - static_cast<float>(original.Width)) < 0.5f &&
-        fabsf(safeHeight - static_cast<float>(original.Height)) < 0.5f) {
-        return;
-    }
-
-    D3DViewport9 safeArea{};
-    safeArea.X = original.X + static_cast<DWORD>((static_cast<float>(original.Width) - safeWidth) * 0.5f + 0.5f);
-    safeArea.Y = original.Y + static_cast<DWORD>((static_cast<float>(original.Height) - safeHeight) * 0.5f + 0.5f);
-    safeArea.Width = static_cast<DWORD>(safeWidth + 0.5f);
-    safeArea.Height = static_cast<DWORD>(safeHeight + 0.5f);
-    safeArea.MinZ = original.MinZ;
-    safeArea.MaxZ = original.MaxZ;
-    if (safeArea.Width == 0 || safeArea.Height == 0) return;
-
-    auto setViewport = reinterpret_cast<SetViewport_t>(deviceVtbl[kSetViewportVtableIndex]);
-    if (SUCCEEDED(setViewport(device, &safeArea))) {
-        g_aspectSafeOriginalViewport = original;
-        g_aspectSafeViewportApplied = true;
-
-        static DWORD s_lastLoggedW = 0xFFFFFFFFu, s_lastLoggedH = 0xFFFFFFFFu;
-        if (safeArea.Width != s_lastLoggedW || safeArea.Height != s_lastLoggedH) {
-            s_lastLoggedW = safeArea.Width;
-            s_lastLoggedH = safeArea.Height;
-            char buf[192];
-            sprintf_s(buf, "[overlay-hud][aspect-safe] non-16:9 real viewport %lux%lu -> centered safe area %lux%lu at (%lu,%lu)",
-                       original.Width, original.Height, safeArea.Width, safeArea.Height, safeArea.X, safeArea.Y);
-            LogFromController(buf);
-        }
-    }
-}
-
-void RestoreRealViewportAfterOverlayDraw(void* device)
-{
-    if (!g_aspectSafeViewportApplied || !device) return;
-    g_aspectSafeViewportApplied = false;
-    void** deviceVtbl = *reinterpret_cast<void***>(device);
-    auto setViewport = reinterpret_cast<SetViewport_t>(deviceVtbl[kSetViewportVtableIndex]);
-    setViewport(device, &g_aspectSafeOriginalViewport);
-}
-
 HRESULT WINAPI Hook_EndScene(void* device)
 {
     ++g_endSceneFireCount;
@@ -4314,13 +4265,6 @@ HRESULT WINAPI Hook_EndScene(void* device)
     // menu is meant to be a BACKGROUND those layer on top of, not the topmost thing.
     // The cursor already drew last before this fix and still does; it just wasn't
     // the only thing affected.
-    //
-    // Aspect/resolution-safe viewport (2026-08-08, see ApplyAspectSafeViewportForOverlayDraw's
-    // own header comment) wraps this WHOLE draw pass -- every one of these Draw*
-    // calls (and everything they call in turn, e.g. GetResolutionScale) runs against
-    // whatever viewport is CURRENTLY set on the device, so this must be applied
-    // before the first one and restored after the last one, with no exceptions.
-    ApplyAspectSafeViewportForOverlayDraw(device);
     DrawCustomOptionsMenuIfOpen(device);
     DrawOverlayMessage(device);
     DrawGlyphIconIfRequested(device);
@@ -4338,7 +4282,6 @@ HRESULT WINAPI Hook_EndScene(void* device)
     // Always last -- see DrawCustomCursorIfNeeded's own comment for why the cursor
     // specifically needs to be the final thing drawn each frame.
     DrawCustomCursorIfNeeded(device);
-    RestoreRealViewportAfterOverlayDraw(device);
     return g_origEndScene(device);
 }
 
@@ -4426,6 +4369,23 @@ void GetResolutionScale(void* deviceIn, float& outScaleX, float& outScaleY)
     // The manual-position glyphs' real problem is still open -- see issue #51.
     outScaleX = static_cast<float>(width) / 1920.0f;
     outScaleY = static_cast<float>(height) / 1080.0f;
+}
+
+// See this function's own header comment (overlay_hud.h) for the full root-cause
+// story. Returns the SMALLER of the two per-axis scale factors -- guarantees a
+// SIZE multiplied by this never overflows either real screen dimension, and
+// (critically) uses the SAME single value for both width and height of a given
+// element, so a fixed-aspect asset (a glyph icon PNG, an icon-to-text gap
+// relative to that icon) never gets stretched/squished out of its real
+// proportions the way independently scaling width by scaleX and height by
+// scaleY does. Identical to scaleX==scaleY at any 16:9 resolution (every
+// resolution this project had ever been live-tested at before this fix), so
+// every already-confirmed-correct 16:9 size is provably unaffected.
+float GetUniformSizeScale(void* deviceIn)
+{
+    float scaleX = 1.0f, scaleY = 1.0f;
+    GetResolutionScale(deviceIn, scaleX, scaleY);
+    return scaleX < scaleY ? scaleX : scaleY;
 }
 
 void OnDeviceRecreated()
