@@ -22,10 +22,10 @@ reverse-engineering trail behind each entry.
   "the mouse lag GONE." See `re_notes/known_issues.md` issue #71.
 - **Corner Friends/Back/Exit hints (and this project's whole overlay) landed in
   the wrong position entirely at non-16:9 resolutions (e.g. 800x600) —
-  attempted fix made this WORSE, reverted, still open.** The scaling math
-  itself is confirmed broken at non-16:9 aspect ratios; a same-day attempt to
-  fix it via a temporary device viewport swap was live-tested and made
-  things worse, not better, and has been reverted. Root cause and a safer
+  attempted fix confirmed WORSE, left in place pending further work, NOT
+  fixed.** The scaling math itself is confirmed broken at non-16:9 aspect
+  ratios; a same-day attempt to fix it via a temporary device viewport swap
+  was live-tested and made things worse, not better. Root cause and a safer
   fix are still being investigated — see `re_notes/known_issues.md` issue
   #70 for current status before assuming this is fixed.
 - **Some players saw no controller-glyph icons at all, even on English with
@@ -51,6 +51,20 @@ reverse-engineering trail behind each entry.
   controller is currently detected as active — helps narrow down whether a
   "no glyphs" report is the XInput-slot issue above or something else
   entirely. See `re_notes/known_issues.md` issue #71.
+
+### Fixed
+- **`proxy_d3d9.log` could grow unbounded (one real session hit ~22GB).**
+  Performance/log-slimming pass targeting worst-case circa-2008 hardware
+  found two real causes: the logger flushed to disk on every single call
+  (a real synchronous-write cost, worse on slow storage), and two leftover
+  research-diagnostic log lines fired unconditionally every frame/every
+  menu item with no gating. Logging now flushes at most once a second
+  (with a crash-safe flush-on-exception handler so a hard crash still
+  leaves a fully flushed log — "we still need conclusive logs"), one dead
+  diagnostic (its hypothesis was refuted in the same session it was added)
+  was deleted outright, and the other was moved behind a new
+  `[Experimental] ListItemPositionLogging` flag (default off). See
+  `re_notes/known_issues.md` issue #67.
 
 ---
 
