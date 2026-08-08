@@ -36,6 +36,19 @@ void InstallEndSceneHook(void* realDevice);
 // centered against it -- see DrawOneGameplayHintSlot's own cursorX/Y math.
 void GetResolutionScale(void* deviceIn, float& outScaleX, float& outScaleY);
 
+// 2026-08-08 (issue #70, round 4): the SAME real D3D9 device Hook_EndScene's own draw
+// calls use this frame, refreshed once per frame. Hook-context code with no device of
+// its own (analog_input_hooks.cpp) MUST use this instead of passing nullptr to
+// GetResolutionScale/GetRealScreenSize above -- nullptr falls back to the real
+// window's GetClientRect, which is a DIFFERENT resolution source than the device
+// viewport this file's draw calls use, and the two can disagree (window chrome, DPI
+// virtualization, a render resolution independent of window size). Any code that
+// converts a real position to design-space and expects the later draw call to
+// perfectly re-scale it back must use this same device, or the round-trip only
+// cancels out by coincidence -- confirmed live: using the mismatched nullptr
+// fallback "broke 16:9" even though the math was correct in isolation.
+void* GetLastKnownRenderDevice();
+
 // Real current backbuffer/viewport width and height in pixels (same ground-truth
 // source as GetResolutionScale above) -- for positioning hints as fractions of the
 // real screen edges/center, independent of any 1920x1080 reference.
