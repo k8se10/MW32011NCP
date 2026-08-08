@@ -41,6 +41,37 @@ void GetResolutionScale(void* deviceIn, float& outScaleX, float& outScaleY);
 // real screen edges/center, independent of any 1920x1080 reference.
 void GetRealScreenSize(void* deviceIn, int& outWidth, int& outHeight);
 
+// 2026-08-08: real fix for "corner hints land in the wrong position entirely at
+// non-16:9 resolutions" (confirmed at 800x600) and "gameplay hints other than
+// Reload broken, corner hints majorly malformed" (confirmed at 640x480).
+//
+// Root cause, once properly separated: POSITION (`x * scaleX`, `y * scaleY`)
+// was ALREADY correct -- per-axis scaling is mathematically identical to
+// `(designX / 1920) * realWidth`, i.e. a pure proportional/ratio position
+// against each axis's own real edge, exactly matching this project's own
+// long-standing "proportional to the edges + centre of the screen" position
+// philosophy (see GetResolutionScale's own older comment). The REAL bug is
+// that the SAME per-axis scaleX/scaleY was ALSO being used for SIZE (icon
+// width/height, gaps) at most call sites -- e.g. `w * scaleX, h * scaleY` for
+// a fixed-aspect glyph icon PNG -- which stretches/squishes that icon's real
+// aspect ratio non-uniformly whenever scaleX != scaleY (any non-16:9
+// resolution), reading as "malformed," not just "in the wrong spot." Reload
+// (the one hint using `centerOnScreen=true`, computed as a width-ratio rather
+// than a fixed design-space X) happened to stay positioned correctly even
+// though its own icon was equally distorted -- consistent with this being a
+// SIZE-distortion bug, not a POSITION bug.
+//
+// A first attempt (temporary IDirect3DDevice9::SetViewport call, changing
+// device state) was live-tested and confirmed WORSE -- root-caused
+// afterward: D3D9 doesn't reposition already-pretransformed (D3DFVF_XYZRHW)
+// vertices via a viewport's X/Y at all, but a smaller viewport's Width/Height
+// still clips rasterization to that smaller rect regardless of vertex type --
+// so it left everything in the same place AND additionally clipped content
+// near the shrunk edges. Reverted outright, replaced with this: change ZERO
+// device state, keep per-axis scaleX/scaleY exactly as-is for POSITION
+// (already correct), and use ONE additional uniform value for SIZE only.
+float GetUniformSizeScale(void* deviceIn);
+
 // Live-reported 2026-07-31: the IDirect3DDevice9::Reset hook added to fix "changing
 // display mode crashes the whole game" did NOT fix it -- confirmed via proxy_d3d9.log:
 // Hook_Reset's own "Reset() called" line never appears anywhere after a display-mode
