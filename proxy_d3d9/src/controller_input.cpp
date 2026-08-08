@@ -6,9 +6,18 @@
 #include <cstdio>
 #include <cstdlib> // std::abs(int) -- XInputStateHasActivity's stick-magnitude check
 #include "overlay_hud.h" // ShowOverlayMessage -- connect/disconnect notifications, see
-                          // NotifyControllerConnectionChange's own header comment below
+                          // PumpPendingControllerNotification's own header comment below
 
 extern void LogFromController(const char* msg); // defined in dllmain.cpp
+
+// BUG-001 follow-up (2026-08-02): centralized here rather than at each of this
+// project's ~17 call sites for these two getters -- see IsControllerActiveInputMethod's
+// own comment further below for the full rationale. Declared up here (not just before
+// first use, further down) because the background poll thread proc (inside the
+// anonymous namespace immediately below) also needs to call MarkControllerActivity.
+extern void MarkControllerActivity(); // defined in analog_input_hooks.cpp
+extern "C" DWORD GetLastControllerActivityTickMs(); // defined in analog_input_hooks.cpp
+extern "C" DWORD GetLastMouseMoveTickMs(); // defined in d3d9_hook.cpp
 
 namespace {
 
@@ -94,18 +103,60 @@ void ShapeStick(SHORT rawX, SHORT rawY, float deadzone, float& outX, float& outY
 LARGE_INTEGER g_qpcFrequency{};
 bool g_qpcInit = false;
 
-int g_activeXInputSlot = 0;
+// ---- Background XInput polling thread (2026-08-08) --------------------------------
+//
+// Live-reported CRITICAL regression, same day as the multi-slot scan below was added:
+// "big mouse regression, when moving the mouse it drops to 4fps big lag." Root cause,
+// confirmed by the user's own profiling (one thread pegged near 100% while total CPU
+// sat at 14% -- a classic single-thread-bound symptom, not a GPU/overall-CPU one):
+// this project's WndProc hook calls InjectMenuInputTick() on EVERY window message, not
+// once per frame -- WM_MOUSEMOVE alone can fire dozens of times per rendered frame
+// while dragging the mouse, and InjectMenuInputTick() polls the real gamepad state
+// (multiple separate functions) every single time it runs. XInputGetState for a
+// DISCONNECTED slot is a well-documented real-world latency gotcha (Windows can't
+// aggressively cache "not connected" without breaking hot-plug detection, so it can
+// walk into the HID/USB stack on every call) -- this project's original code already
+// paid that cost once per poll; scanning all 4 slots on every one of those polls
+// (added the same day for the "controller assigned to a non-zero XInput slot, e.g.
+// x360ce occupying slot 0" fix below) multiplied it by up to 4x, and the mouse-move
+// message flood is exactly what maximizes how many times that multiplied cost fires
+// per second.
+//
+// Fixed by moving ALL real XInputGetState/XInputSetState calls onto a single
+// dedicated background thread that polls on its own fixed schedule, completely
+// decoupled from the game's message pump or frame rate -- no matter how many
+// WM_MOUSEMOVE messages fire, or how slow any individual XInput call is, it can
+// never again block the main thread's message processing or frame delivery. The
+// public Controller_* functions below now just read the latest snapshot this
+// thread already computed, guarded by a small critical section (the snapshot is a
+// handful of small POD fields updated ~120 times/second -- a full lock per read/
+// write is simple, correct, and negligible overhead compared to the XInput calls
+// themselves).
+struct CachedControllerState {
+    float leftX = 0.0f, leftY = 0.0f;
+    float rightX = 0.0f, rightY = 0.0f;
+    unsigned short buttons = 0;
+    unsigned char leftTrigger = 0, rightTrigger = 0;
+    bool connected = false;
+    int activeSlot = 0;
+};
 
-// User-requested (2026-08-08, alongside the multi-slot scan below): surface
-// controller connect/disconnect through this project's existing on-screen toast
-// (issue #47's `ShowOverlayMessage`, same mechanism as the startup/config-reload
-// messages) instead of silently changing behavior with no visible feedback --
-// unplugging/replugging a controller mid-session (or a low battery cutting a
-// wireless pad) should be an obvious, safe, non-crashing event, not a silent
-// "why did my glyphs disappear" mystery. `g_connectionStateKnown` gates the
-// very first check specifically so a fresh launch with no controller connected
-// yet doesn't show a confusing "Disconnected" toast before one was ever known
-// to be connected -- only a genuine CHANGE fires a message, in either direction.
+CRITICAL_SECTION g_stateLock;
+bool g_stateLockInit = false;
+CachedControllerState g_cachedState;
+HANDLE g_pollThreadHandle = nullptr;
+
+// Cross-thread handoff for the connect/disconnect toast (2026-08-08, user-requested):
+// deliberately NOT calling ShowOverlayMessage directly from the poll thread --
+// overlay_hud.cpp's own toast state (g_overlayText/g_overlayActive/etc.) is plain,
+// unsynchronized globals written and read every frame from the MAIN thread inside
+// Hook_EndScene, so touching them from a second thread would be a real (if narrow)
+// data race. InterlockedExchange on a single sentinel int is enough to hand the
+// "a transition happened" fact safely across threads; PumpPendingControllerNotification
+// (called from the main thread, see IsControllerActiveInputMethod below) is the only
+// thing that ever actually calls ShowOverlayMessage.
+volatile LONG g_pendingConnectionToast = -1; // -1 = none pending, 0 = show "disconnected", 1 = show "connected"
+
 bool g_connectionStateKnown = false;
 bool g_controllerCurrentlyConnected = false;
 
@@ -116,7 +167,7 @@ void NotifyControllerConnectionChange(bool nowConnected)
     g_connectionStateKnown = true;
     g_controllerCurrentlyConnected = nowConnected;
     if (!wasKnown && !nowConnected) return; // first-ever check, nothing was ever connected -- no toast
-    ShowOverlayMessage(nowConnected ? "Controller Connected" : "Controller Disconnected", 3000);
+    InterlockedExchange(&g_pendingConnectionToast, nowConnected ? 1 : 0);
     LogFromController(nowConnected ? "[xinput] controller connected" : "[xinput] controller disconnected");
 }
 
@@ -144,33 +195,46 @@ void LogActiveSlotChange(int fromSlot, int toSlot)
     LogFromController(buf);
 }
 
-// Scans all 4 real XInput user indices for a connected controller instead of
-// assuming slot 0. Live-reported 2026-08-08 (Nexus, v0.3.1): several players see
-// no controller-glyph icons at all -- even on English, with default settings --
-// and it's NOT reproducible on the developer's own machine, pointing at a real
-// per-environment cause rather than a universal regression. Every read in this
-// file (movement, buttons, vibration, "is a controller even connected") was
-// hardcoded to XInput user index 0 -- a controller that Windows/Steam assigns
-// to a different slot (a second pad plugged in, a tool like x360ce occupying
-// slot 0 with its own virtual device while the real physical pad lands
-// elsewhere, Steam Input's own passthrough renumbering, etc.) would make every
-// one of those calls report ERROR_DEVICE_NOT_CONNECTED forever, identical to
-// "no controller at all," even with a real, working controller connected.
+// Runs entirely on the background poll thread -- scans all 4 real XInput user
+// indices for a connected controller instead of assuming slot 0. Live-reported
+// 2026-08-08 (Nexus, v0.3.1): several players see no controller-glyph icons at all
+// -- even on English, with default settings -- and it's NOT reproducible on the
+// developer's own machine, pointing at a real per-environment cause rather than a
+// universal regression. Every real XInput read in this project was hardcoded to
+// user index 0 -- a controller that Windows/Steam assigns to a different slot (a
+// second pad plugged in, a tool like x360ce occupying slot 0 with its own virtual
+// device while the real physical pad lands elsewhere, Steam Input's own
+// passthrough renumbering, etc.) would make every one of those calls report
+// ERROR_DEVICE_NOT_CONNECTED forever, identical to "no controller at all."
 //
-// User-requested follow-up: also handle MULTIPLE legitimate controllers
-// connected at once correctly, not just "find any one pad" -- if the current
-// slot is connected but sitting idle while a DIFFERENT connected slot is
-// actively showing real button/stick/trigger input, that's a strong signal a
-// human is holding THAT one, not the idle one, so this follows the activity
-// rather than latching onto whichever slot merely happened to be found first.
-// Only falls back to "just pick a connected slot" when nothing anywhere is
-// currently showing activity (e.g. right at launch, before the player has
-// touched anything yet). Sticks with the current slot when it's still both
-// connected AND the only one showing activity (or nothing is), so this never
-// flip-flops between two idle-but-connected pads on its own.
-int ResolveActiveXInputSlot()
+// Also handles MULTIPLE legitimate controllers connected at once correctly, not
+// just "find any one pad": if the current slot is connected but sitting idle
+// while a DIFFERENT connected slot is actively showing real button/stick/trigger
+// input, that's a strong signal a human is holding THAT one, so this follows the
+// activity rather than latching onto whichever slot merely happened to be found
+// first. Only the (relatively expensive, up to 4 XInputGetState calls) full
+// rescan is throttled -- see kSlotRescanIntervalMs below -- since it no longer
+// needs to be frame/message-rate responsive now that it's off the main thread
+// entirely; this throttle exists purely to be a considerate, low-frequency
+// caller of the XInput driver, not to protect frame rate (that's now structurally
+// impossible for this code to affect).
+constexpr DWORD kSlotRescanIntervalMs = 250;
+int g_activeXInputSlot = 0;
+DWORD g_lastSlotRescanTickMs = 0;
+
+int ResolveActiveXInputSlotOnPollThread()
 {
     if (!g_XInputGetState) return g_activeXInputSlot;
+
+    DWORD now = GetTickCount();
+    bool dueForRescan = (now - g_lastSlotRescanTickMs) >= kSlotRescanIntervalMs;
+    if (!dueForRescan) {
+        XINPUT_STATE state{};
+        bool connected = g_XInputGetState(static_cast<DWORD>(g_activeXInputSlot), &state) == ERROR_SUCCESS;
+        NotifyControllerConnectionChange(connected);
+        return g_activeXInputSlot;
+    }
+    g_lastSlotRescanTickMs = now;
 
     XINPUT_STATE currentState{};
     bool currentConnected = g_XInputGetState(static_cast<DWORD>(g_activeXInputSlot), &currentState) == ERROR_SUCCESS;
@@ -186,9 +250,6 @@ int ResolveActiveXInputSlot()
         if (g_XInputGetState(static_cast<DWORD>(slot), &state) != ERROR_SUCCESS) continue;
         if (firstConnectedOther < 0) firstConnectedOther = slot;
         if (XInputStateHasActivity(state)) {
-            // Someone's actively using THIS slot right now -- switch to it even
-            // though the current slot might also still be genuinely connected
-            // (the real "multiple legitimate controllers" case).
             LogActiveSlotChange(g_activeXInputSlot, slot);
             g_activeXInputSlot = slot;
             NotifyControllerConnectionChange(true);
@@ -197,46 +258,108 @@ int ResolveActiveXInputSlot()
     }
 
     if (currentConnected) {
-        // Still connected, just idle right now, and nothing else showed live
-        // activity either -- keep it rather than flip-flopping onto some other
-        // merely-connected pad.
         NotifyControllerConnectionChange(true);
         return g_activeXInputSlot;
     }
     if (firstConnectedOther >= 0) {
-        // Current slot genuinely disconnected; nothing anywhere showed live
-        // activity yet, but at least one other slot IS connected -- fall back to
-        // it (matches this project's original "assume a controller exists"
-        // behavior, just now actually finding whichever slot has one).
         LogActiveSlotChange(g_activeXInputSlot, firstConnectedOther);
         g_activeXInputSlot = firstConnectedOther;
         NotifyControllerConnectionChange(true);
         return g_activeXInputSlot;
     }
 
-    // Nothing connected on any of the 4 slots -- a real disconnect (or nothing
-    // was ever plugged in yet, filtered out inside NotifyControllerConnectionChange
-    // itself).
     NotifyControllerConnectionChange(false);
     return g_activeXInputSlot;
 }
 
+// ~250Hz -- snappy enough for real movement/look input, decoupled entirely from the
+// game's own frame rate or message pump, so this thread's own pace is now the only
+// thing that determines how often XInput gets polled, not how many WM_MOUSEMOVE
+// messages happen to fire.
+constexpr DWORD kPollIntervalMs = 4;
+
+DWORD WINAPI XInputPollThreadProc(LPVOID)
+{
+    for (;;) {
+        EnsureLoaded();
+        if (g_XInputGetState) {
+            int slot = ResolveActiveXInputSlotOnPollThread();
+            XINPUT_STATE state{};
+            bool connected = g_XInputGetState(static_cast<DWORD>(slot), &state) == ERROR_SUCCESS;
+
+            float lx = 0.0f, ly = 0.0f, rx = 0.0f, ry = 0.0f;
+            if (connected) {
+                ShapeStick(state.Gamepad.sThumbLX, state.Gamepad.sThumbLY, kLeftDeadzone, lx, ly);
+                ShapeStick(state.Gamepad.sThumbRX, state.Gamepad.sThumbRY, kRightDeadzone, rx, ry);
+            }
+
+            EnterCriticalSection(&g_stateLock);
+            g_cachedState.leftX = lx;
+            g_cachedState.leftY = ly;
+            g_cachedState.rightX = rx;
+            g_cachedState.rightY = ry;
+            g_cachedState.buttons = connected ? state.Gamepad.wButtons : 0;
+            g_cachedState.leftTrigger = connected ? state.Gamepad.bLeftTrigger : 0;
+            g_cachedState.rightTrigger = connected ? state.Gamepad.bRightTrigger : 0;
+            g_cachedState.connected = connected;
+            g_cachedState.activeSlot = slot;
+            LeaveCriticalSection(&g_stateLock);
+
+            // Marked here, at the moment real input is actually observed, rather than
+            // making every Controller_Get* consumer below re-derive the same "was
+            // there real input" check on the cached snapshot -- one place, same
+            // "every reader of real input must mark activity" principle the
+            // pre-existing centralized getters comment (further below) already
+            // established for a different pair of functions.
+            if (connected && (lx != 0.0f || ly != 0.0f || rx != 0.0f || ry != 0.0f ||
+                               state.Gamepad.wButtons != 0 ||
+                               state.Gamepad.bLeftTrigger != 0 || state.Gamepad.bRightTrigger != 0)) {
+                MarkControllerActivity();
+            }
+        }
+        Sleep(kPollIntervalMs);
+    }
+    return 0; // unreachable -- this thread lives for the whole process, matching this
+              // project's existing "install once, never uninstall" hook lifetime pattern
+}
+
+void EnsurePollThreadStarted()
+{
+    static bool started = false;
+    if (started) return;
+    started = true;
+    InitializeCriticalSection(&g_stateLock);
+    g_stateLockInit = true;
+    g_pollThreadHandle = CreateThread(nullptr, 0, XInputPollThreadProc, nullptr, 0, nullptr);
+    if (!g_pollThreadHandle) {
+        LogFromController("[xinput] CreateThread FAILED for the background poll thread -- no controller input this session");
+    }
+}
+
 } // namespace
 
-// BUG-001 follow-up (2026-08-02): centralized here rather than at each of this
-// project's ~17 call sites for these two getters. Live-reported regression from the
-// first attempt: the cursor stayed visible even during controller-driven MENU
-// navigation ("until gameplay") because MarkControllerActivity() had only been added
-// to the gameplay-tick functions (InjectControllerMovement/Buttons), which halt
-// during menus/pause -- menu-nav functions run via the always-on WndProc/timer tick
-// and read these SAME getters, so marking activity HERE instead covers every caller,
-// present and future, without relying on remembering to add the call at each one
-// individually (the exact class of mistake CLAUDE.md's own Hold-Breath/Fire
-// bind-index lesson warns about for "must be distinct" constants -- same principle
-// applies to "every reader of real input must mark activity").
-extern void MarkControllerActivity(); // defined in analog_input_hooks.cpp
-extern "C" DWORD GetLastControllerActivityTickMs(); // defined in analog_input_hooks.cpp
-extern "C" DWORD GetLastMouseMoveTickMs(); // defined in d3d9_hook.cpp
+// BUG-001 follow-up (2026-08-02): the original rationale for centralizing
+// MarkControllerActivity/GetLastControllerActivityTickMs/GetLastMouseMoveTickMs here
+// rather than at each of this project's ~17 call sites -- live-reported regression
+// from the first attempt: the cursor stayed visible even during controller-driven
+// MENU navigation ("until gameplay") because MarkControllerActivity() had only been
+// added to the gameplay-tick functions (InjectControllerMovement/Buttons), which
+// halt during menus/pause -- menu-nav functions run via the always-on WndProc/timer
+// tick and read these SAME getters, so marking activity here instead covers every
+// caller, present and future (declared near the top of this file now, not here --
+// the background poll thread above needs the same declarations before its own
+// first use).
+
+// Runs on the MAIN thread only (called from IsControllerActiveInputMethod below,
+// itself called every frame/tick from the main thread already) -- the one and only
+// place ShowOverlayMessage is ever called for a connect/disconnect toast, see
+// g_pendingConnectionToast's own header comment for why this hop exists.
+void PumpPendingControllerNotification()
+{
+    LONG pending = InterlockedExchange(&g_pendingConnectionToast, -1);
+    if (pending == 1) ShowOverlayMessage("Controller Connected", 3000);
+    else if (pending == 0) ShowOverlayMessage("Controller Disconnected", 3000);
+}
 
 // See controller_input.h's own comment on IsControllerActiveInputMethod for the
 // rationale (shared by the cursor overlay and the glyph-hint overlays). Same
@@ -247,6 +370,7 @@ extern "C" DWORD GetLastMouseMoveTickMs(); // defined in d3d9_hook.cpp
 // recent wins.
 bool IsControllerActiveInputMethod()
 {
+    PumpPendingControllerNotification();
     constexpr DWORD kRecentControllerActivityMs = 300;
     DWORD lastController = GetLastControllerActivityTickMs();
     if (GetTickCount() - lastController < kRecentControllerActivityMs) return true;
@@ -255,58 +379,50 @@ bool IsControllerActiveInputMethod()
 
 bool Controller_GetLeftStick(float& x, float& y)
 {
-    x = 0.0f; y = 0.0f;
-    EnsureLoaded();
-    if (!g_XInputGetState) return false;
-
-    XINPUT_STATE state{};
-    if (g_XInputGetState(static_cast<DWORD>(ResolveActiveXInputSlot()), &state) != ERROR_SUCCESS) return false;
-
-    ShapeStick(state.Gamepad.sThumbLX, state.Gamepad.sThumbLY, kLeftDeadzone, x, y);
-    if (x != 0.0f || y != 0.0f) MarkControllerActivity();
-    return true;
+    EnsurePollThreadStarted();
+    EnterCriticalSection(&g_stateLock);
+    x = g_cachedState.leftX;
+    y = g_cachedState.leftY;
+    bool connected = g_cachedState.connected;
+    LeaveCriticalSection(&g_stateLock);
+    return connected;
 }
 
 bool Controller_GetRightStick(float& x, float& y)
 {
-    x = 0.0f; y = 0.0f;
-    EnsureLoaded();
-    if (!g_XInputGetState) return false;
-
-    XINPUT_STATE state{};
-    if (g_XInputGetState(static_cast<DWORD>(ResolveActiveXInputSlot()), &state) != ERROR_SUCCESS) return false;
-
-    ShapeStick(state.Gamepad.sThumbRX, state.Gamepad.sThumbRY, kRightDeadzone, x, y);
-    if (x != 0.0f || y != 0.0f) MarkControllerActivity();
-    return true;
+    EnsurePollThreadStarted();
+    EnterCriticalSection(&g_stateLock);
+    x = g_cachedState.rightX;
+    y = g_cachedState.rightY;
+    bool connected = g_cachedState.connected;
+    LeaveCriticalSection(&g_stateLock);
+    return connected;
 }
 
 bool Controller_GetRawButtonsAndTriggers(unsigned short& buttons, unsigned char& leftTrigger, unsigned char& rightTrigger)
 {
-    buttons = 0; leftTrigger = 0; rightTrigger = 0;
-    EnsureLoaded();
-    if (!g_XInputGetState) return false;
-
-    XINPUT_STATE state{};
-    if (g_XInputGetState(static_cast<DWORD>(ResolveActiveXInputSlot()), &state) != ERROR_SUCCESS) return false;
-
-    buttons = state.Gamepad.wButtons;
-    leftTrigger = state.Gamepad.bLeftTrigger;
-    rightTrigger = state.Gamepad.bRightTrigger;
-    if (buttons != 0 || leftTrigger != 0 || rightTrigger != 0) MarkControllerActivity();
-    return true;
+    EnsurePollThreadStarted();
+    EnterCriticalSection(&g_stateLock);
+    buttons = g_cachedState.buttons;
+    leftTrigger = g_cachedState.leftTrigger;
+    rightTrigger = g_cachedState.rightTrigger;
+    bool connected = g_cachedState.connected;
+    LeaveCriticalSection(&g_stateLock);
+    return connected;
 }
 
 bool Controller_IsConnected()
 {
-    EnsureLoaded();
-    if (!g_XInputGetState) return false;
-    XINPUT_STATE state{};
-    return g_XInputGetState(static_cast<DWORD>(ResolveActiveXInputSlot()), &state) == ERROR_SUCCESS;
+    EnsurePollThreadStarted();
+    EnterCriticalSection(&g_stateLock);
+    bool connected = g_cachedState.connected;
+    LeaveCriticalSection(&g_stateLock);
+    return connected;
 }
 
 void Controller_SetVibration(float leftMotor, float rightMotor)
 {
+    EnsurePollThreadStarted();
     EnsureLoaded();
     if (!g_XInputSetState) return;
 
@@ -315,10 +431,20 @@ void Controller_SetVibration(float leftMotor, float rightMotor)
     if (rightMotor < 0.0f) rightMotor = 0.0f;
     if (rightMotor > 1.0f) rightMotor = 1.0f;
 
+    EnterCriticalSection(&g_stateLock);
+    int slot = g_cachedState.activeSlot;
+    LeaveCriticalSection(&g_stateLock);
+
     XINPUT_VIBRATION vib{};
     vib.wLeftMotorSpeed = static_cast<WORD>(leftMotor * 65535.0f);
     vib.wRightMotorSpeed = static_cast<WORD>(rightMotor * 65535.0f);
-    g_XInputSetState(static_cast<DWORD>(ResolveActiveXInputSlot()), &vib);
+    // Deliberately still called directly on the CALLING thread (not routed through
+    // the poll thread) -- SetState is a write, called far less often than the
+    // movement/button polling above (only on real fire/damage events), and this
+    // project's own existing comment already establishes XInputSetState itself is
+    // cheap/idempotent, unlike GetState on an empty slot -- the actual regression
+    // this whole rewrite fixes was never about SetState.
+    g_XInputSetState(static_cast<DWORD>(slot), &vib);
 }
 
 float Controller_DeltaTimeSeconds()
