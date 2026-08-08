@@ -9,15 +9,25 @@ reverse-engineering trail behind each entry.
 ## Unreleased
 
 ### Fixed
+- **CRITICAL, CONFIRMED LIVE: severe mouse-movement-correlated FPS drop ("drops
+  to 4fps"), introduced earlier the same day by the XInput multi-slot fix
+  below.** Root cause: this project's `WndProc` hook polls the gamepad on
+  EVERY window message, not once per frame — `WM_MOUSEMOVE` alone can fire
+  dozens of times per rendered frame while dragging the mouse, and the
+  multi-slot scan below made each of those polls up to 4x more expensive.
+  `XInputGetState` on a disconnected slot has real, well-documented latency —
+  the mouse-move message flood maximized how often that cost fired. Fixed by
+  moving all real XInput calls onto a dedicated background thread, polling on
+  its own schedule fully decoupled from the message pump — confirmed live:
+  "the mouse lag GONE." See `re_notes/known_issues.md` issue #71.
 - **Corner Friends/Back/Exit hints (and this project's whole overlay) landed in
-  the wrong position entirely at non-16:9 resolutions (e.g. 800x600).** Root
-  cause: the resolution-scale math stretched the overlay's design-space canvas
-  non-uniformly per axis, invisible at any 16:9 resolution (scaleX==scaleY
-  there) but wrong everywhere else. Fixed at the root with a temporary,
-  uniformly-scaled, centered "safe area" viewport wrapping this project's whole
-  draw pass — a no-op at 16:9 (byte-identical to before), letterboxed/centered
-  everywhere else instead of stretched. Not yet live-tested — see
-  `re_notes/known_issues.md` issue #70.
+  the wrong position entirely at non-16:9 resolutions (e.g. 800x600) —
+  attempted fix made this WORSE, reverted, still open.** The scaling math
+  itself is confirmed broken at non-16:9 aspect ratios; a same-day attempt to
+  fix it via a temporary device viewport swap was live-tested and made
+  things worse, not better, and has been reverted. Root cause and a safer
+  fix are still being investigated — see `re_notes/known_issues.md` issue
+  #70 for current status before assuming this is fixed.
 - **Some players saw no controller-glyph icons at all, even on English with
   default settings — real bug found, likely root cause.** Every real XInput
   read in this project was hardcoded to user index 0, never scanning other
