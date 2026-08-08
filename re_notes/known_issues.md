@@ -9503,6 +9503,12 @@ This user's window/monitor is 2560x1440, but the REAL D3D9 device viewport -- th
 
 Rebuilt `proxy_d3d9.dll` a fifth time -- compiles clean, 0 errors (no `ui_hot.dll` rebuild needed; that harness doesn't compile `analog_input_hooks.cpp`). **Not yet live-tested.**
 
+**Round 6 (2026-08-08, same day), live-reported right after issue #73's fix made these hints visible at low resolutions for the first time: "position drifts on pickup/throwback/mantle prompts" at low resolutions.** A previously-invisible bug, not a new regression -- these hints simply never rendered at low res before #73's font-allowlist fix, so this nudge issue had no chance to be observed until now.
+
+Root cause: `kHintVerticalNudge` (6px, applied to every non-ready-up hint) and `kMantleHintXNudge` (82px, mantle only) were added to `startX`/`startY` BEFORE the real-to-design-space conversion, i.e. as a FIXED number of REAL pixels at any resolution (the conversion's divide-then-multiply cancels exactly around a value added before it, per that function's own header comment). Both nudges exist to align this project's replacement hint against another real, proportionally-scaled screen element (the mantle arrow sprite for the X nudge; the interact row's own measured text baseline for the Y nudge) -- a FIXED real-pixel offset is a small fraction of a 1920px-wide screen but a much larger fraction of a 640px-wide one, so the offset increasingly overshoots the target it's meant to align with as resolution drops. Exactly "drift."
+
+**Fixed**: moved both nudges to AFTER `ConvertRealScreenPosToDesignSpace`, applied in DESIGN-SPACE units instead of real pixels. `DrawOneGameplayHintSlot`'s existing final multiply now scales the nudge by the same factor as everything else -- unchanged at 1920x1080 (scale=1.0, where both constants were originally eyeballed against a live screenshot) and proportionally smaller at any lower resolution, matching the real elements they're aligned against. Rebuilt `proxy_d3d9.dll` -- compiles clean, 0 errors. **Not yet live-tested.**
+
 ---
 
 ## 73. Pickup weapon / throw grenade controller prompts don't show at 4:3 resolutions (Reload unaffected) -- 2026-08-08
