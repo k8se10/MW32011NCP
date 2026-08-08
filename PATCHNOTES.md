@@ -56,6 +56,17 @@ reverse-engineering trail behind each entry.
   it just moved it (and, since Quit/Leaderboards' row-detection reads the
   same constant, broke their detection too). Reverted to the original raw
   value. See `re_notes/known_issues.md` issue #70.
+- **Pickup weapon and throw grenade controller prompts didn't show at all at
+  4:3 resolutions, while Reload kept working — confirmed root cause via
+  this project's own log, not guessed.** The real engine draws the same
+  native hint text with a different, smaller font at non-16:9 resolutions
+  (`fonts/bigFont` instead of `fonts/extraBigFont`) — a font name this
+  project's allowlist for "should this hint get a controller icon" didn't
+  include, so the whole replacement was silently skipped and the native
+  PC-keybind text showed instead, reading as "no prompt" to a controller
+  player. Reload was unaffected because its own font doesn't change at 4:3
+  and was already allowlisted. Fixed by adding the missing font name. See
+  `re_notes/known_issues.md` issue #73.
 - **Custom mouse cursor position reported "way off / unusable" at non-16:9
   resolutions — not yet fixed.** The existing window-to-viewport ratio math
   looks architecturally sound on inspection, so rather than guess a third

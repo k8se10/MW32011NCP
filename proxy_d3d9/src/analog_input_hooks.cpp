@@ -5392,12 +5392,26 @@ bool RenderedTextMatchesSubstitutionTemplate(const char* renderedText, const cha
 // Hook_DrawGlyphText) uses this font too. Safe to include here even though main-menu
 // titles also use it, since those never match either detection path (no span, and
 // never literally say "Reload").
+//
+// bigFont added 2026-08-08 (issue #70 family): live-reported "pickup weapon and
+// throw grenade prompts don't show at 4:3, reload does" -- confirmed directly via
+// proxy_d3d9.log, not guessed. The exact same native "^3G or Middle Mouse ^7throw
+// back" hint uses fonts/extraBigFont at 16:9 but switches to fonts/bigFont at
+// 800x600/640x480 -- the real engine picks a different (presumably smaller) font
+// asset for this HUD text at non-16:9 resolutions. fonts/bigFont wasn't in this
+// allowlist, so IsGameplayHintFont rejected it at those resolutions, skipping the
+// whole replacement block and leaving the native PC-keybind text ("G or Middle
+// Mouse") on screen instead of the controller icon -- exactly the reported symptom
+// (a controller player sees no controller-appropriate prompt at all). Reload was
+// unaffected because it uses fonts/hudBigFont at both resolutions, already
+// allowlisted above.
 bool IsGameplayHintFont(const DiagFont* font)
 {
     if (!font || !LooksLikeValidPointer(reinterpret_cast<uintptr_t>(font->fontName))) return false;
     return _stricmp(font->fontName, "fonts/extraBigFont") == 0 ||
            _stricmp(font->fontName, "fonts/hudSmallFont") == 0 ||
-           _stricmp(font->fontName, "fonts/hudBigFont") == 0;
+           _stricmp(font->fontName, "fonts/hudBigFont") == 0 ||
+           _stricmp(font->fontName, "fonts/bigFont") == 0;
 }
 
 // Menu-hint counterpart to IsGameplayHintFont above (issue #48, menu-glyph pass,
