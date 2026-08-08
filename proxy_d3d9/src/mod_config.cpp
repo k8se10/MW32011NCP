@@ -531,6 +531,16 @@ void WriteDefaultConfig(const char* path)
         "; prompt, check proxy_d3d9.log for \"[hud-glyph-pos]\" lines, then turn back off.\n"
         "; Always forwards unmodified regardless of this toggle. 0 = off, 1 = on.\n"
         "HudGlyphPositionLogging=%d\n"
+        "; Issue #67 log-slimming pass (2026-08-08): [list-item-diag], the ordinal-\n"
+        "; based menu-item-position fallback's own diagnostic -- used to log\n"
+        "; unconditionally on EVERY menu list item drawn, a real contributor to\n"
+        "; proxy_d3d9.log growing to ~22GB in one session. Still occasionally useful\n"
+        "; for calibrating a new menu screen without a manual position table entry\n"
+        "; yet (issue #51), just not worth paying for on every frame of every session.\n"
+        "; DEFAULT OFF -- turn on, reproduce the specific screen needing calibration,\n"
+        "; check proxy_d3d9.log for \"[list-item-diag]\" lines, then turn back off.\n"
+        "; Always forwards unmodified regardless of this toggle. 0 = off, 1 = on.\n"
+        "ListItemPositionLogging=%d\n"
         "; Issue #48: draws a real controller-glyph icon on top of the button-name\n"
         "; portion of a real hint string (e.g. the F in \"Press F to pick up\"). DEFAULT\n"
         "; OFF -- first live-test round for this actual drawing step. 0 = off, 1 = on.\n"
@@ -599,6 +609,7 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.bindResolverGlyphSubstitution ? 1 : 0,
         g_modConfig.hudFontIdLogging ? 1 : 0,
         g_modConfig.hudGlyphPositionLogging ? 1 : 0,
+        g_modConfig.listItemPositionLogging ? 1 : 0,
         g_modConfig.glyphIconOverlayEnabled ? 1 : 0,
         g_modConfig.armorFieldScanLogging ? 1 : 0,
         g_modConfig.forceGlyphOverlay ? 1 : 0);
@@ -803,6 +814,7 @@ void LoadModConfig()
     ReadBool(path, "Experimental", "HudFontIdLogging", g_modConfig.hudFontIdLogging);
     ReadBool(path, "Experimental", "HudGlyphPositionLogging", g_modConfig.hudGlyphPositionLogging);
     ReadBool(path, "Experimental", "GlyphIconOverlay", g_modConfig.glyphIconOverlayEnabled);
+    ReadBool(path, "Experimental", "ListItemPositionLogging", g_modConfig.listItemPositionLogging);
     ReadBool(path, "Experimental", "ArmorFieldScanLogging", g_modConfig.armorFieldScanLogging);
     ReadBool(path, "Experimental", "ForceGlyphOverlay", g_modConfig.forceGlyphOverlay);
 
@@ -819,8 +831,8 @@ void LoadModConfig()
         "vibrationDamagePerPoint=%g vibrationDamageMaxIntensity=%g vibrationDamageDurationMs=%lu "
         "overlayFontItalic=%d overlayTestCycleAllVariants=%d "
         "fireNotifyQueueKick=%d bindResolverHookLogging=%d bindResolverGlyphSubstitution=%d "
-        "hudFontIdLogging=%d hudGlyphPositionLogging=%d glyphIconOverlayEnabled=%d "
-        "armorFieldScanLogging=%d forceGlyphOverlay=%d",
+        "hudFontIdLogging=%d hudGlyphPositionLogging=%d listItemPositionLogging=%d "
+        "glyphIconOverlayEnabled=%d armorFieldScanLogging=%d forceGlyphOverlay=%d",
         g_modConfig.lookDegreesPerSecondHorizontal, g_modConfig.lookDegreesPerSecondVertical,
         g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
@@ -841,6 +853,7 @@ void LoadModConfig()
         g_modConfig.bindResolverGlyphSubstitution ? 1 : 0,
         g_modConfig.hudFontIdLogging ? 1 : 0,
         g_modConfig.hudGlyphPositionLogging ? 1 : 0,
+        g_modConfig.listItemPositionLogging ? 1 : 0,
         g_modConfig.glyphIconOverlayEnabled ? 1 : 0,
         g_modConfig.armorFieldScanLogging ? 1 : 0,
         g_modConfig.forceGlyphOverlay ? 1 : 0);

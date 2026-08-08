@@ -5643,32 +5643,19 @@ extern "C" void __cdecl InjectSyntheticBackHintIfNeeded()
 // overlay_hud.cpp's Hook_EndScene, once per real rendered frame.
 extern "C" void __cdecl ResetMenuListItemOrdinalForFrame()
 {
-    // BUG-051 nested-modal position bug -- testing the "the active/topmost menu's own
-    // real items are always the LAST N ordinals of the frame" hypothesis live (2026-08-02).
-    // Four dedicated Ghidra passes confirmed the real menu-stack/itemDef-array structures
-    // (see re_notes/known_issues.md) but could not find a direct itemDef->screen-position
-    // bridge -- this logs the data needed to verify or refute the hypothesis from a real
-    // repro instead. Only logs while a popup is actually stacked on something (depth > 1,
-    // the exact scenario that breaks today) and at least one item was counted, so normal
-    // single-layer play never spams this every rendered frame.
-    if (GetMenuStackDepth() > 1 && g_menuListItemOrdinalThisFrame > 0) {
-        void* fnMenu = GetTopmostActiveMenu();
-        void* rawMenu = GetRawTopOfStackMenu();
-        int activeItemCount = GetActiveMenuItemCount();
-        int rawTopItemCount = GetRawTopOfStackItemCount();
-        int selIndex = -1, selMaxIndexSeen = -1;
-        bool haveSelection = TryGetCurrentSelectionGroupAndIndex(selIndex, selMaxIndexSeen);
-        char buf[280];
-        sprintf_s(buf, "[ordinal-hypothesis-diag] frameTotalOrdinals=%d activeMenuItemCount=%d "
-                        "rawTopItemCount=%d fnMenu=%p rawMenu=%p sameObject=%d "
-                        "depth=%d selGroup=\"%s\" selIndex=%d predictedOrdinal=%d",
-                  g_menuListItemOrdinalThisFrame, activeItemCount, rawTopItemCount,
-                  fnMenu, rawMenu, (fnMenu == rawMenu) ? 1 : 0, GetMenuStackDepth(),
-                  haveSelection ? g_currentSelGroupName : "?", haveSelection ? selIndex : -1,
-                  (activeItemCount > 0 && haveSelection) ?
-                      (g_menuListItemOrdinalThisFrame - activeItemCount + selIndex) : -1);
-        LogFromController(buf);
-    }
+    // REMOVED 2026-08-08 (log-slimming pass, issue #67 -- proxy_d3d9.log had grown to
+    // 22GB): this used to log `[ordinal-hypothesis-diag]` unconditionally every frame
+    // while any popup was stacked (depth > 1), testing the BUG-051 "active menu's
+    // real items are always the LAST N ordinals" hypothesis (2026-08-02). That
+    // hypothesis was definitively REFUTED the same day it was added (real captures
+    // showed activeMenuItemCount as high as 81 against frameTotalOrdinals as low as
+    // 6 -- menu+0xa8 counts EVERY itemDef, not just selectable rows, a fundamental
+    // population mismatch no amount of more data could fix) and issue #51 was
+    // resolved via a completely different approach (kManualGlyphPositions, a
+    // per-group calibrated table, see the block below). This diagnostic has logged
+    // dead-end data for every nested-popup frame of every session since -- deleted
+    // outright, not just gated, since re-enabling it could never produce anything
+    // useful again.
 
     // Manual per-group A-glyph position (2026-08-02, issue #51) -- fires once per
     // frame, completely decoupled from the ordinal/draw-call matching above, for any
@@ -6667,18 +6654,28 @@ void __cdecl Hook_DrawGlyphText(
                         bool trustworthyMatch = focusMatchesThisList && selIndex == ordinal &&
                             !HasManualGlyphPositionForGroup(g_currentSelGroupName, GetMenuStackDepth());
 
-                        char buf[300];
-                        sprintf_s(buf, "[list-item-diag] ordinal=%d text=\"%.60s\" p2=%.1f p3=%.1f "
-                                        "focusIndex=%d itemCount=%d selGroup=\"%s\" selIndex=%d realGroup=\"%s\" "
-                                        "realIndex=%d menuDepth=%d trustworthy=%d",
-                                   ordinal, param_1, param_2, param_3,
-                                   haveFocus ? focusIndex : -1, haveFocus ? itemCount : -1,
-                                   haveSelection ? g_currentSelGroupName : "?",
-                                   haveSelection ? selIndex : -1,
-                                   haveRealFocus ? realFocusGroup : "?",
-                                   haveRealFocus ? realFocusIndex : -1,
-                                   GetMenuStackDepth(), trustworthyMatch ? 1 : 0);
-                        LogFromController(buf);
+                        // Log-slimming pass (2026-08-08, issue #67): this used to fire
+                        // unconditionally on every one of these calls (once per menu
+                        // list item drawn, on ANY active menu screen) -- a real,
+                        // confirmed contributor to proxy_d3d9.log's ~22GB growth.
+                        // trustworthyMatch itself (used below regardless of this flag)
+                        // is real production logic, not diagnostic-only -- only the
+                        // logging of it is gated. See g_modConfig.listItemPositionLogging's
+                        // own comment (mod_config.h) for when this is actually useful.
+                        if (g_modConfig.listItemPositionLogging) {
+                            char buf[300];
+                            sprintf_s(buf, "[list-item-diag] ordinal=%d text=\"%.60s\" p2=%.1f p3=%.1f "
+                                            "focusIndex=%d itemCount=%d selGroup=\"%s\" selIndex=%d realGroup=\"%s\" "
+                                            "realIndex=%d menuDepth=%d trustworthy=%d",
+                                       ordinal, param_1, param_2, param_3,
+                                       haveFocus ? focusIndex : -1, haveFocus ? itemCount : -1,
+                                       haveSelection ? g_currentSelGroupName : "?",
+                                       haveSelection ? selIndex : -1,
+                                       haveRealFocus ? realFocusGroup : "?",
+                                       haveRealFocus ? realFocusIndex : -1,
+                                       GetMenuStackDepth(), trustworthyMatch ? 1 : 0);
+                            LogFromController(buf);
+                        }
 
                         // ShouldDrawGlyphOverlay() checked here specifically (not on the
                         // outer block, see the comment above it) so the diagnostic log
