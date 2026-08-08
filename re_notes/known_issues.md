@@ -9547,6 +9547,8 @@ The real engine genuinely switches to a different (smaller) font asset for this 
 
 **Known risk, flagged rather than chased further**: this looks like a per-resolution font-tier system, not a fixed two-way split -- other untested resolutions (1024x768, 1280x1024, etc.) could plausibly use yet another font name not yet in this allowlist. If a similar "prompt missing" report comes in at a resolution not listed above, the fix is the same: diff the font name for a known hint (e.g. the grenade throwback text) between a working and broken resolution via `proxy_d3d9.log`, and add whatever's missing.
 
+**Scope check, confirmed via log (not "any sub-1080p resolution," specifically non-16:9 aspect)**: 1280x720 -- a common, popular sub-1080p resolution, but still 16:9 -- was checked directly and uses `fonts/extraBigFont`, the SAME already-allowlisted font as 1920x1080. The font-tier switch tracks ASPECT RATIO / virtual canvas selection, not raw pixel count -- consistent with this project's own earlier research into the real engine having discrete virtual canvases per aspect ratio. Every 16:9 resolution (1080p, 720p, and presumably 1440p/4K) shares the same canvas and font; only non-16:9 aspect ratios (800x600, 640x480 confirmed so far) switch canvases and hit this allowlist gap.
+
 ---
 
 ## 72. Real resource-lifecycle crash bug: `g_optWhiteTexture` and every Options-screen text cache never released — 2026-08-08
