@@ -5590,16 +5590,30 @@ GameplayHintSlotId g_awaitingHintContinuationSlot = GameplayHintSlotId::Interact
 // reference). See BUG-004 in re_notes/known_issues.md.
 
 // Live-captured 2026-08-01 (proxy_d3d9.log): the real "Back ^2ESC^7" hint's own
-// native position, at 2560x1440 -- this is the "standard place" the user asked for
-// the synthetic Back hint below to reuse, so it lines up exactly with wherever a
-// REAL corner hint would have appeared instead. Deliberately reused verbatim
-// (same raw numeric treatment as the live param_2/param_3 passthrough elsewhere in
-// this function) rather than re-derived as a resolution-independent fraction --
-// guarantees pixel-consistency with the already-accepted-correct real hints; only
-// confirmed live at 2560x1440 so far, may need adjustment if ever tested at another
-// resolution.
-constexpr float kStandardCornerHintX = 1634.0f;
-constexpr float kStandardCornerHintY = 995.0f;
+// native REAL screen-space position, at 2560x1440 -- the "standard place" the user
+// asked for the synthetic Back hint below to reuse, so it lines up exactly with
+// wherever a REAL corner hint would have appeared instead.
+//
+// 2026-08-08 fix (issue #70, round 4, user's own suggested approach: "go off the
+// original hardcoded location values and manually work out and scale them from
+// that... the math is already done and hardcoded"): the ORIGINAL version of this
+// constant was deliberately left as that raw captured real pixel value and passed
+// straight into RequestMenuHintOverlay, whose contract expects a DESIGN-SPACE
+// (1920-reference) input it will multiply by the CURRENT real scale exactly once.
+// That only reproduces the captured position correctly AT the exact capture
+// resolution (2560x1440, where scale happens to cancel) -- at any other resolution
+// it re-scales an already-real number a second time. Converted here, ONCE, offline,
+// to a true design-space equivalent by dividing out the KNOWN capture-time scale
+// (2560x1440 vs the 1920x1080 reference, exactly 4/3 on both axes since both are
+// 16:9) -- the existing single-multiply pipeline then reproduces the exact captured
+// real pixel position at 2560x1440, and the correct proportional equivalent at any
+// other resolution, with no runtime resolution detection needed for this constant
+// at all.
+constexpr float kCapturedCornerHintRealX_at2560x1440 = 1634.0f;
+constexpr float kCapturedCornerHintRealY_at2560x1440 = 995.0f;
+constexpr float kCornerHintCaptureScale = 2560.0f / 1920.0f; // == 1440/1080, both 16:9
+constexpr float kStandardCornerHintX = kCapturedCornerHintRealX_at2560x1440 / kCornerHintCaptureScale;
+constexpr float kStandardCornerHintY = kCapturedCornerHintRealY_at2560x1440 / kCornerHintCaptureScale;
 
 // Live-reported 2026-08-08 (640x480/800x600): "the a glyphs on main menu work
 // correctly. the back glyph we inject on the spec ops select mode screen... works
@@ -5628,9 +5642,18 @@ constexpr float kStandardCornerHintY = 995.0f;
 void ConvertRealScreenPosToDesignSpace(float realX, float realY, float& outDesignX, float& outDesignY)
 {
     float scaleX = 1.0f, scaleY = 1.0f;
-    GetResolutionScale(nullptr, scaleX, scaleY); // no live device handle in this hook's
-        // own context -- GetResolutionScale/GetRealScreenSize already tolerate a null
-        // device, falling back to the real game window's own GetClientRect.
+    // 2026-08-08 fix (live-reported "you broke 16:9" after this function first
+    // shipped): this used to pass a null device, which falls back to the real game
+    // window's own GetClientRect -- a DIFFERENT resolution source than the real D3D9
+    // viewport the eventual draw call (DrawOneMenuHintSlot, via Hook_EndScene's own
+    // GetResolutionScale(device, ...)) re-multiplies by. The divide here and the
+    // multiply there only cancel out to reproduce the real position exactly when both
+    // use the SAME scale -- GetClientRect and the viewport can disagree (window
+    // chrome, DPI virtualization on this non-DPI-aware 2011 game, a render
+    // resolution set independently of window size), which silently broke this even
+    // at "16:9" whenever the two sources disagreed. Fixed by using the actual device
+    // Hook_EndScene already captured this frame, so both sides always agree.
+    GetResolutionScale(GetLastKnownRenderDevice(), scaleX, scaleY);
     outDesignX = (scaleX > 0.0001f) ? (realX / scaleX) : realX;
     outDesignY = (scaleY > 0.0001f) ? (realY / scaleY) : realY;
 }
@@ -6379,7 +6402,9 @@ void __cdecl Hook_DrawGlyphText(
                     // that item's real text into a corner-hint-style render instead. Both Quit and
                     // Leaderboards' own legend-bar text are already confirmed (via live capture,
                     // see the comments below) to sit at the SAME real corner-hint row as Back/
-                    // Friends (p3 ~= 995, kStandardCornerHintY) -- a genuine navigable list item
+                    // Friends (p3 ~= 995 real pixels at the 2560x1440 capture resolution --
+                    // kCapturedCornerHintRealY_at2560x1440, design-space equivalent
+                    // kStandardCornerHintY) -- a genuine navigable list item
                     // with the same text sits at a completely different row (wherever that list is
                     // laid out), so a tolerance check against that known row is a real, precedented
                     // discriminator (same technique RequestMenuHintOverlay already uses to collapse
@@ -6389,13 +6414,15 @@ void __cdecl Hook_DrawGlyphText(
                     // correctly" -- same real-screen-space-vs-design-space bug as
                     // everywhere else in this issue (see ConvertRealScreenPosToDesignSpace's
                     // own header comment). `param_3` is a REAL, current-resolution screen
-                    // pixel; `kStandardCornerHintY` (995) is a fixed DESIGN-SPACE reference.
-                    // Comparing them directly only ever worked at 16:9 (where scale~=1.0
-                    // makes the two numerically close) -- at any other aspect ratio param_3
-                    // is nowhere near 995, so this tolerance check silently failed and Quit/
-                    // Leaderboards detection never matched at all. Converts param_3 to its
-                    // design-space equivalent FIRST so both sides of the comparison are in
-                    // the same units, at any resolution.
+                    // pixel; `kStandardCornerHintY` is now a true DESIGN-SPACE reference
+                    // (see its own declaration comment above -- converted once from the raw
+                    // 2560x1440 capture). Converts param_3 to its design-space equivalent
+                    // FIRST so both sides of the comparison are in the same units, at any
+                    // resolution -- correctly, now that ConvertRealScreenPosToDesignSpace
+                    // uses the same real device the eventual draw call scales by (round 4
+                    // fix, live-reported "you broke 16:9" against the round-3 version of
+                    // this conversion, which used a mismatched no-device GetClientRect
+                    // fallback instead).
                     constexpr float kCornerHintRowTolerancePx = 40.0f;
                     float unusedDesignX = 0.0f, designParam3 = 0.0f;
                     ConvertRealScreenPosToDesignSpace(0.0f, param_3, unusedDesignX, designParam3);
