@@ -6204,24 +6204,7 @@ void __cdecl Hook_DrawGlyphText(
                                 strcpy_s(prefixText, sizeof(prefixText), "Hold ");
                             }
                             float startX = param_2;
-                            float startY = param_3 * param_6 + (isReadyUpHint ? 0.0f : kHintVerticalNudge);
-
-                            // Live-reported 2026-07-31: the mantle/jump prompt ("Press A to")
-                            // sits far to the left of the real, separately-drawn mantle arrow
-                            // sprite (~107px measured against a live screenshot) -- that sprite
-                            // isn't text at all (a distinct native icon draw this project
-                            // doesn't hook), so there's no live position to read for it; nudged
-                            // empirically instead, scoped tightly to the Jump/mantle hint only
-                            // (detected via the resolved key name) so pickup/swap/buy-station
-                            // are untouched. Every OTHER hint (pickup, swap, buy-station --
-                            // live-reported 2026-07-31 to all read better centered) uses
-                            // RequestCustomHintOverlay's own screen-centering instead, so mantle
-                            // and ready-up are the two cases that keep an explicit left-anchor
-                            // position.
-                            if (isMantleHint) {
-                                constexpr float kMantleHintXNudge = 82.0f;
-                                startX += kMantleHintXNudge;
-                            }
+                            float startY = param_3 * param_6;
 
                             // Live-reported 2026-08-08 (640x480/800x600): "gameplay hints other
                             // than reload are broken." Same root cause as the menu corner hints
@@ -6231,16 +6214,41 @@ void __cdecl Hook_DrawGlyphText(
                             // consumer (DrawOneGameplayHintSlot) multiplies whatever x/y it
                             // receives by scaleX/scaleY exactly once, expecting DESIGN-SPACE
                             // input -- invisible at 16:9 (scaleX/scaleY~=1.0), badly wrong
-                            // otherwise. Converted AFTER the mantle nudge above (not before):
-                            // kMantleHintXNudge/kHintVerticalNudge were both only ever eyeballed
-                            // at 1920x1080 (scale=1.0 there, so "real pixel nudge" and "design-
-                            // space nudge" were indistinguishable) -- converting the already-
-                            // nudged total reconstructs the exact same real final pixel position
-                            // once DrawOneGameplayHintSlot re-applies the scale, at any resolution.
-                            // Reload (the one hint NOT affected, per the same live report) never
-                            // goes through this code path at all -- it uses its own fixed
-                            // kInteractHintRowY constant further below, not a live param_3 read.
+                            // otherwise. Reload (the one hint NOT affected, per the same live
+                            // report) never goes through this code path at all -- it uses its own
+                            // fixed kInteractHintRowY constant further below, not a live param_3
+                            // read.
                             ConvertRealScreenPosToDesignSpace(startX, startY, startX, startY);
+
+                            // 2026-08-08 fix (issue #70 family, live-reported "position drifts on
+                            // pickup/throwback/mantle prompts" at low resolutions, right after
+                            // fixing #73's font gap made these hints visible at low res for the
+                            // first time): these two empirical nudges used to be added to
+                            // startX/startY BEFORE the conversion above, i.e. as a FIXED number of
+                            // REAL pixels at ANY resolution (the conversion's divide-then-multiply
+                            // cancels exactly, per that function's own header comment). A fixed
+                            // real-pixel offset is a shrinking fraction of a 1920px-wide screen but
+                            // a GROWING fraction of a 640px-wide one -- both nudges exist to align
+                            // against another real, proportionally-scaled screen element (the
+                            // mantle arrow sprite; the interact row's own measured text baseline),
+                            // so a nudge that doesn't shrink with the screen overshoots more and
+                            // more as resolution drops -- exactly "drift." Moved to AFTER the
+                            // conversion, in DESIGN-SPACE units, so `DrawOneGameplayHintSlot`'s
+                            // final multiply scales the nudge by the SAME factor as everything
+                            // else -- unchanged at 1920x1080 (scale=1.0, where both constants were
+                            // originally eyeballed) and proportionally smaller at any lower
+                            // resolution, matching the target elements they're aligned against.
+                            if (!isReadyUpHint) startY += kHintVerticalNudge;
+                            if (isMantleHint) {
+                                // Live-reported 2026-07-31: the mantle/jump prompt sits far to the
+                                // left of the real, separately-drawn mantle arrow sprite (~107px
+                                // measured against a live screenshot at 1920x1080) -- that sprite
+                                // isn't text at all (a distinct native icon draw this project
+                                // doesn't hook), so there's no live position to read for it;
+                                // nudged empirically instead, scoped to the Jump/mantle hint only.
+                                constexpr float kMantleHintXNudge = 82.0f;
+                                startX += kMantleHintXNudge;
+                            }
 
                             bool centerOnScreen = !isMantleHint && !isReadyUpHint;
                             // BUG-004 follow-up: ready-up gets its own named slot (GameplayHintSlotId::

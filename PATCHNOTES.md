@@ -55,7 +55,16 @@ reverse-engineering trail behind each entry.
   comment named, so that value needed no conversion at all and re-deriving
   it just moved it (and, since Quit/Leaderboards' row-detection reads the
   same constant, broke their detection too). Reverted to the original raw
-  value. See `re_notes/known_issues.md` issue #70.
+  value. **Sixth bug, live-reported right after #73's font fix made these
+  hints visible at low resolutions for the first time ("position drifts on
+  pickup/throwback/mantle prompts"): two small empirical position nudges
+  (6px vertical, 82px horizontal for mantle only) were added as a FIXED
+  number of real pixels, not a proportional amount** — a small fraction of
+  a 1920px-wide screen but a much bigger one at 640px wide, so the nudge
+  increasingly overshot the real element it's meant to align against as
+  resolution dropped. Fixed by applying both nudges in design-space units
+  instead, so they scale down proportionally with resolution like
+  everything else. See `re_notes/known_issues.md` issue #70.
 - **Pickup weapon and throw grenade controller prompts didn't show at all at
   4:3 resolutions, while Reload kept working — confirmed root cause via
   this project's own log, not guessed.** The real engine draws the same
