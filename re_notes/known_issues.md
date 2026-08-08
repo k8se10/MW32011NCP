@@ -9507,7 +9507,18 @@ Rebuilt `proxy_d3d9.dll` a fifth time -- compiles clean, 0 errors (no `ui_hot.dl
 
 Root cause: `kHintVerticalNudge` (6px, applied to every non-ready-up hint) and `kMantleHintXNudge` (82px, mantle only) were added to `startX`/`startY` BEFORE the real-to-design-space conversion, i.e. as a FIXED number of REAL pixels at any resolution (the conversion's divide-then-multiply cancels exactly around a value added before it, per that function's own header comment). Both nudges exist to align this project's replacement hint against another real, proportionally-scaled screen element (the mantle arrow sprite for the X nudge; the interact row's own measured text baseline for the Y nudge) -- a FIXED real-pixel offset is a small fraction of a 1920px-wide screen but a much larger fraction of a 640px-wide one, so the offset increasingly overshoots the target it's meant to align with as resolution drops. Exactly "drift."
 
-**Fixed**: moved both nudges to AFTER `ConvertRealScreenPosToDesignSpace`, applied in DESIGN-SPACE units instead of real pixels. `DrawOneGameplayHintSlot`'s existing final multiply now scales the nudge by the same factor as everything else -- unchanged at 1920x1080 (scale=1.0, where both constants were originally eyeballed against a live screenshot) and proportionally smaller at any lower resolution, matching the real elements they're aligned against. Rebuilt `proxy_d3d9.dll` -- compiles clean, 0 errors. **Not yet live-tested.**
+**Fixed**: moved both nudges to AFTER `ConvertRealScreenPosToDesignSpace`, applied in DESIGN-SPACE units instead of real pixels. `DrawOneGameplayHintSlot`'s existing final multiply now scales the nudge by the same factor as everything else -- unchanged at 1920x1080 (scale=1.0, where both constants were originally eyeballed against a live screenshot) and proportionally smaller at any lower resolution, matching the real elements they're aligned against. Rebuilt `proxy_d3d9.dll` -- compiles clean, 0 errors.
+
+**Round 7, live-reported immediately: "still far too vertically high on low res."** Round 6's nudge fix was correct but not the main cause -- checked a fresh `proxy_d3d9.log` (not another guess) comparing the SAME native hint text at two resolutions:
+
+| Hint | p3 @ 1920x1080 | p3/1080 | p3 @ 640x480 | p3/480 |
+|---|---|---|---|---|
+| "Press F to pick up" | 718 | 0.665 | 319 | 0.665 |
+| "Press Space to  " (mantle) | 844 | 0.782 | 375 | 0.781 |
+
+Raw `param_3` alone is already almost perfectly proportional to the real screen height across both resolutions and both hints -- consistent with how every other real-position value in this project is treated. The Y formula, however, was `param_3 * param_6` (calibrated back on 2026-07-31: "718 * param_6 (0.964) = 692.2, a close match"). `param_6` turns out to vary by FONT TIER, independent of screen proportion -- 0.964 for `fonts/extraBigFont` at 16:9 vs 0.545 for `fonts/normalFont` at 640x480 (issue #73's own font findings). Multiplying by it was only ever a ~1%-close coincidence at the single resolution/font pairing it was calibrated against; at any other font tier it drags the row dramatically further up the screen (pickup's proportion collapses from ~0.64 to ~0.43 -- nearly half as far down as intended), exactly the reported symptom.
+
+**Fixed**: dropped the `* param_6` multiply entirely -- `startY` is now `param_3` directly. Rebuilt `proxy_d3d9.dll` -- compiles clean, 0 errors. **Not yet live-tested.**
 
 ---
 
