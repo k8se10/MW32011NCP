@@ -59,14 +59,17 @@ reverse-engineering trail behind each entry.
 - **Pickup weapon and throw grenade controller prompts didn't show at all at
   4:3 resolutions, while Reload kept working — confirmed root cause via
   this project's own log, not guessed.** The real engine draws the same
-  native hint text with a different, smaller font at non-16:9 resolutions
-  (`fonts/bigFont` instead of `fonts/extraBigFont`) — a font name this
-  project's allowlist for "should this hint get a controller icon" didn't
-  include, so the whole replacement was silently skipped and the native
-  PC-keybind text showed instead, reading as "no prompt" to a controller
-  player. Reload was unaffected because its own font doesn't change at 4:3
-  and was already allowlisted. Fixed by adding the missing font name. See
-  `re_notes/known_issues.md` issue #73.
+  native hint text with a different, smaller font depending on resolution —
+  confirmed via log to be `fonts/bigFont` at 800x600 and `fonts/normalFont`
+  at 640x480, versus `fonts/extraBigFont` at 16:9 — none of which except
+  the 16:9 one were in this project's allowlist for "should this hint get a
+  controller icon." With the font unrecognized, the whole replacement was
+  silently skipped and the native PC-keybind text showed instead, reading
+  as "no prompt" to a controller player. Reload was unaffected because its
+  own font doesn't change with resolution and was already allowlisted.
+  Fixed by adding both missing font names — this looks like a per-resolution
+  font-tier system, so an as-yet-untested resolution could still need a
+  further addition if reported. See `re_notes/known_issues.md` issue #73.
 - **Custom mouse cursor position reported "way off / unusable" at non-16:9
   resolutions — not yet fixed.** The existing window-to-viewport ratio math
   looks architecturally sound on inspection, so rather than guess a third

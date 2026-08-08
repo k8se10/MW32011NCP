@@ -5405,13 +5405,25 @@ bool RenderedTextMatchesSubstitutionTemplate(const char* renderedText, const cha
 // (a controller player sees no controller-appropriate prompt at all). Reload was
 // unaffected because it uses fonts/hudBigFont at both resolutions, already
 // allowlisted above.
+// normalFont added 2026-08-08 (same issue, live-reported "still the same at 480p
+// no visual changes" right after the bigFont fix above): the real engine steps
+// through MULTIPLE font tiers as resolution shrinks, not just one -- the SAME
+// grenade-throwback hint confirmed via proxy_d3d9.log uses fonts/extraBigFont at
+// 16:9, fonts/bigFont at 800x600, and fonts/normalFont at 640x480. fonts/normalFont
+// is a very commonly-used font elsewhere (menus, general HUD text), but the
+// existing !IsMenuActive() gate around this whole block plus the specific
+// reference-key/template structural matching each hint still has to pass
+// (RenderedTextMatchesSubstitutionTemplate against an exact known string, or
+// TryGetGlyphAssetNameForKeyName resolving an exact known key name) keeps false
+// positives on unrelated gameplay text using this same common font very unlikely.
 bool IsGameplayHintFont(const DiagFont* font)
 {
     if (!font || !LooksLikeValidPointer(reinterpret_cast<uintptr_t>(font->fontName))) return false;
     return _stricmp(font->fontName, "fonts/extraBigFont") == 0 ||
            _stricmp(font->fontName, "fonts/hudSmallFont") == 0 ||
            _stricmp(font->fontName, "fonts/hudBigFont") == 0 ||
-           _stricmp(font->fontName, "fonts/bigFont") == 0;
+           _stricmp(font->fontName, "fonts/bigFont") == 0 ||
+           _stricmp(font->fontName, "fonts/normalFont") == 0;
 }
 
 // Menu-hint counterpart to IsGameplayHintFont above (issue #48, menu-glyph pass,
