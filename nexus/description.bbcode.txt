@@ -13,9 +13,9 @@ It hooks directly into a live game process. Expect bugs, rough edges, unfinished
 
 [hr]
 
-[size=4][b]Status: ALPHA — v0.3.1 (2026-08-06) — non-English glyph fix + Options screen preview[/b][/size]
+[size=4][b]Status: ALPHA — v0.3.1.h1 (2026-08-09) — feature-free hotfix on v0.3.1[/b][/size]
 
-[color=#F39C12]Stabilization release — same treatment as v0.2.2: no further release planned for up to ~2 weeks after this one unless a critical issue turns up.[/color] Headline fix: controller-glyph icons were silently broken for every non-English game language — root-caused and fixed against the game's own real localization resolver, confirmed live. Also new, shipped as an explicitly labeled preview/WIP feature (off by default, [font=Courier New]mw3ncp_config.ini[/font]-only): a from-scratch replacement Options screen covering every real vanilla setting plus real keybind rebind capture. Not feature-complete, not fully tested end-to-end. Multiplayer ([font=Courier New]iw5mp.exe[/font]) hasn't been started at all. Read [b]What Works / Partial / Not Working[/b] below before assuming any specific feature works — this project is deliberately honest about what's confirmed vs. not, not a marketing pitch.
+[color=#F39C12]Hotfix, no new features — see the Changelog tab for the full itemized list.[/color] Headline fixes: a critical mouse-movement-correlated FPS drop (confirmed live, fully fixed), and controller-glyph icons never appearing at all on non-16:9 resolutions (root-caused to two separate bug classes via direct log evidence, not guessed). Also fixes a real crash risk in the still-preview/WIP Options screen and an unbounded log-growth issue on long sessions. Not feature-complete, not fully tested end-to-end. Multiplayer ([font=Courier New]iw5mp.exe[/font]) hasn't been started at all. Read [b]What Works / Partial / Not Working[/b] below before assuming any specific feature works — this project is deliberately honest about what's confirmed vs. not, not a marketing pitch.
 
 [hr]
 
