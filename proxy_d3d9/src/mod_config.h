@@ -343,6 +343,22 @@ struct ModConfig
         // "[hud-glyph-pos]" lines and turn back off. Always forwards to the real
         // trampoline completely unmodified regardless of this toggle; only controls
         // whether it logs.
+    bool listItemPositionLogging = false; // issue #67 log-slimming pass (2026-08-08):
+        // `[list-item-diag]` used to fire unconditionally on EVERY menu text-draw call
+        // (i.e. once per visible list item, on ANY active menu screen) with no gating
+        // and no dedup at all -- a real, confirmed contributor to proxy_d3d9.log
+        // growing to ~22GB in one session (see re_notes/known_issues.md issue #67).
+        // The specific hypothesis it was originally added to test (ordinal-vs-
+        // selIndex matching, issue #51) was CLOSED 2026-08-02 via a different fix
+        // (kManualGlyphPositions, a per-group calibrated table) -- but the ordinal-
+        // based fallback this log sits in is still live for any menu group WITHOUT a
+        // manual table entry yet, so the data is still occasionally useful for
+        // calibrating a NEW screen, just not worth paying unconditionally on every
+        // frame of every session. DEFAULT OFF -- turn on, reproduce the specific menu
+        // screen needing calibration, check proxy_d3d9.log for "[list-item-diag]"
+        // lines, then turn back off. Always forwards to the real trampoline
+        // completely unmodified regardless of this toggle; only controls whether it
+        // logs.
     bool glyphIconOverlayEnabled = false; // issue #48 (2026-07-31): the actual behavior-
         // changing step -- draws a real controller-glyph icon (assets/button_glyphs/,
         // embedded in this DLL) as an overlay quad directly on top of the button-name
