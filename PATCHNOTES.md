@@ -64,7 +64,16 @@ reverse-engineering trail behind each entry.
   increasingly overshot the real element it's meant to align against as
   resolution dropped. Fixed by applying both nudges in design-space units
   instead, so they scale down proportionally with resolution like
-  everything else. See `re_notes/known_issues.md` issue #70.
+  everything else. **Seventh bug, confirmed via log immediately after
+  ("still far too vertically high on low res"): the vertical position
+  formula multiplied a real screen coordinate by a native per-draw-call
+  scale value that turns out to vary by FONT TIER, not by screen
+  proportion** — comparing the same native hint text at two resolutions,
+  the real coordinate alone tracked the screen height almost perfectly
+  (~0.665 and ~0.782 of height at both 1920x1080 and 640x480), but
+  multiplying it by that scale value dragged the low-res result far
+  further up the screen than intended. Fixed by using the real coordinate
+  directly, without that multiply. See `re_notes/known_issues.md` issue #70.
 - **Pickup weapon and throw grenade controller prompts didn't show at all at
   4:3 resolutions, while Reload kept working — confirmed root cause via
   this project's own log, not guessed.** The real engine draws the same
