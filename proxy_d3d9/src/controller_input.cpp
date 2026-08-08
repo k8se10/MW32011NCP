@@ -218,7 +218,7 @@ void LogActiveSlotChange(int fromSlot, int toSlot)
 // entirely; this throttle exists purely to be a considerate, low-frequency
 // caller of the XInput driver, not to protect frame rate (that's now structurally
 // impossible for this code to affect).
-constexpr DWORD kSlotRescanIntervalMs = 250;
+constexpr DWORD kSlotRescanIntervalMs = 500;
 int g_activeXInputSlot = 0;
 DWORD g_lastSlotRescanTickMs = 0;
 
