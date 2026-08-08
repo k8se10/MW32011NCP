@@ -5601,6 +5601,40 @@ GameplayHintSlotId g_awaitingHintContinuationSlot = GameplayHintSlotId::Interact
 constexpr float kStandardCornerHintX = 1634.0f;
 constexpr float kStandardCornerHintY = 995.0f;
 
+// Live-reported 2026-08-08 (640x480/800x600): "the a glyphs on main menu work
+// correctly. the back glyph we inject on the spec ops select mode screen... works
+// fine, but every other corner glyph in the mod is completely out of position like
+// way up to the left." Root cause: `RequestMenuHintOverlay`'s whole contract expects
+// DESIGN-SPACE (1920-wide-reference) input -- `DrawOneMenuHintSlot`
+// (overlay_hud.cpp) multiplies whatever x/y it receives by `scaleX`/`scaleY` exactly
+// once. `kStandardCornerHintX`/`Y` above (used by the synthetic Back hint, which is
+// confirmed working) are a fixed reference number consistently divided by 1920 every
+// time -- a stable, resolution-independent FRACTION regardless of what resolution
+// they were originally eyeballed against. `param_2`/`param_3` (used by every OTHER
+// corner hint below -- Quit, Leaderboards, Friends/Game Summary/Back-shortcut) are
+// NOT a fixed reference -- they're the real engine's own LIVE, PER-FRAME reported
+// screen-space x/y for that exact hint at the CURRENT real resolution (confirmed via
+// this project's own prior live-capture research: "param_2/param_3 = real
+// screen-space x/y", repeated/consistent across many draws of the same string).
+// Passing an ALREADY-real, already-correctly-positioned value through the SAME
+// single-multiply pipeline double-scales it -- invisible at 16:9 (scaleX/scaleY are
+// always ~1.0 there, so multiplying by ~1.0 twice is still ~a no-op) but severely
+// wrong at any other aspect ratio (640x480: scaleX=0.333, so a real x of ~545 near
+// the right edge becomes ~182, landing well toward the top-left instead of staying
+// in the real corner -- exactly the reported symptom). Converts back to the
+// design-space-equivalent value here (dividing by the SAME scale
+// `DrawOneMenuHintSlot` will re-apply) so the overall pipeline still only ever
+// scales real input once, regardless of which of the two position sources fed it.
+void ConvertRealScreenPosToDesignSpace(float realX, float realY, float& outDesignX, float& outDesignY)
+{
+    float scaleX = 1.0f, scaleY = 1.0f;
+    GetResolutionScale(nullptr, scaleX, scaleY); // no live device handle in this hook's
+        // own context -- GetResolutionScale/GetRealScreenSize already tolerate a null
+        // device, falling back to the real game window's own GetClientRect.
+    outDesignX = (scaleX > 0.0001f) ? (realX / scaleX) : realX;
+    outDesignY = (scaleY > 0.0001f) ? (realY / scaleY) : realY;
+}
+
 // Live-reported 2026-08-01: "the modal has no back[,] we need to add one in the
 // standard place" -- unlike Back/Friends (real native "^N...^7" hints this project
 // can intercept and replace), some modals (e.g. "Choose Game Mode" over Special
@@ -6144,6 +6178,25 @@ void __cdecl Hook_DrawGlyphText(
                                 startX += kMantleHintXNudge;
                             }
 
+                            // Live-reported 2026-08-08 (640x480/800x600): "gameplay hints other
+                            // than reload are broken." Same root cause as the menu corner hints
+                            // (see ConvertRealScreenPosToDesignSpace's own header comment) --
+                            // startX/startY above are built from param_2/param_3, REAL
+                            // current-resolution screen pixels, but RequestCustomHintOverlay's
+                            // consumer (DrawOneGameplayHintSlot) multiplies whatever x/y it
+                            // receives by scaleX/scaleY exactly once, expecting DESIGN-SPACE
+                            // input -- invisible at 16:9 (scaleX/scaleY~=1.0), badly wrong
+                            // otherwise. Converted AFTER the mantle nudge above (not before):
+                            // kMantleHintXNudge/kHintVerticalNudge were both only ever eyeballed
+                            // at 1920x1080 (scale=1.0 there, so "real pixel nudge" and "design-
+                            // space nudge" were indistinguishable) -- converting the already-
+                            // nudged total reconstructs the exact same real final pixel position
+                            // once DrawOneGameplayHintSlot re-applies the scale, at any resolution.
+                            // Reload (the one hint NOT affected, per the same live report) never
+                            // goes through this code path at all -- it uses its own fixed
+                            // kInteractHintRowY constant further below, not a live param_3 read.
+                            ConvertRealScreenPosToDesignSpace(startX, startY, startX, startY);
+
                             bool centerOnScreen = !isMantleHint && !isReadyUpHint;
                             // BUG-004 follow-up: ready-up gets its own named slot (GameplayHintSlotId::
                             // ReadyUp) instead of sharing the generic Interact slot every other hint here
@@ -6332,8 +6385,21 @@ void __cdecl Hook_DrawGlyphText(
                     // discriminator (same technique RequestMenuHintOverlay already uses to collapse
                     // same-position hints) rather than relying on text content alone, per the
                     // report's own suggested fix.
+                    // Live-reported 2026-08-08: "main menu quit button doesn't scale
+                    // correctly" -- same real-screen-space-vs-design-space bug as
+                    // everywhere else in this issue (see ConvertRealScreenPosToDesignSpace's
+                    // own header comment). `param_3` is a REAL, current-resolution screen
+                    // pixel; `kStandardCornerHintY` (995) is a fixed DESIGN-SPACE reference.
+                    // Comparing them directly only ever worked at 16:9 (where scale~=1.0
+                    // makes the two numerically close) -- at any other aspect ratio param_3
+                    // is nowhere near 995, so this tolerance check silently failed and Quit/
+                    // Leaderboards detection never matched at all. Converts param_3 to its
+                    // design-space equivalent FIRST so both sides of the comparison are in
+                    // the same units, at any resolution.
                     constexpr float kCornerHintRowTolerancePx = 40.0f;
-                    bool looksLikeCornerHintRow = fabsf(param_3 - kStandardCornerHintY) < kCornerHintRowTolerancePx;
+                    float unusedDesignX = 0.0f, designParam3 = 0.0f;
+                    ConvertRealScreenPosToDesignSpace(0.0f, param_3, unusedDesignX, designParam3);
+                    bool looksLikeCornerHintRow = fabsf(designParam3 - kStandardCornerHintY) < kCornerHintRowTolerancePx;
                     // Issue #68 (2026-08-05 language pass): replaced the hardcoded
                     // `strcmp(param_1, "Quit")` with a live comparison against the real
                     // MENU_QUIT reference key's CURRENT resolved text -- confirmed real
@@ -6355,7 +6421,9 @@ void __cdecl Hook_DrawGlyphText(
                             // corner hint's prefix text) tightens the icon gap by exactly one
                             // space-glyph's width, a small, precise nudge rather than adding a
                             // new bespoke X-offset constant.
-                            RequestMenuHintOverlay(param_2, param_3 + kMenuHintVerticalNudge, "Quit", "", bAsset);
+                            float designX = 0.0f, designY = 0.0f;
+                            ConvertRealScreenPosToDesignSpace(param_2, param_3 + kMenuHintVerticalNudge, designX, designY);
+                            RequestMenuHintOverlay(designX, designY, "Quit", "", bAsset);
                             suppressRealDraw = true;
                         }
                     }
@@ -6373,8 +6441,9 @@ void __cdecl Hook_DrawGlyphText(
                         // ResolveMenuGlyphAssetNameForKeyName -- per explicit user
                         // correction, these are two distinct physical inputs.
                         if (TryGetMenuGlyphAssetNameForKeyName("F1", backAsset, sizeof(backAsset))) {
-                            RequestMenuHintOverlay(param_2, param_3 + kMenuHintVerticalNudge,
-                                "Leaderboards ", "", backAsset);
+                            float designX = 0.0f, designY = 0.0f;
+                            ConvertRealScreenPosToDesignSpace(param_2, param_3 + kMenuHintVerticalNudge, designX, designY);
+                            RequestMenuHintOverlay(designX, designY, "Leaderboards ", "", backAsset);
                             suppressRealDraw = true;
                         }
                     }
@@ -6480,7 +6549,9 @@ void __cdecl Hook_DrawGlyphText(
                             suppressRealDraw = true;
                             if (!(isFriendsShortcut && (IsInsideSpecOpsNestedModal() || IsFriendsListOpen()))) {
                                 constexpr float kMenuHintVerticalNudge = -18.0f;
-                                RequestMenuHintOverlay(param_2, param_3 + kMenuHintVerticalNudge, prefixText, suffixText,
+                                float designX = 0.0f, designY = 0.0f;
+                                ConvertRealScreenPosToDesignSpace(param_2, param_3 + kMenuHintVerticalNudge, designX, designY);
+                                RequestMenuHintOverlay(designX, designY, prefixText, suffixText,
                                     assetName);
                             }
                         }
@@ -6712,7 +6783,9 @@ void __cdecl Hook_DrawGlyphText(
                                 // the one call site that skipped it.
                                 constexpr float kMenuHintVerticalNudge = -18.0f;
                                 float iconX = param_2 + static_cast<float>(rawWidth) * param_5 + kIconGapAfterText;
-                                RequestMenuHintOverlay(iconX, param_3 + kMenuHintVerticalNudge, "", "", aAsset);
+                                float designX = 0.0f, designY = 0.0f;
+                                ConvertRealScreenPosToDesignSpace(iconX, param_3 + kMenuHintVerticalNudge, designX, designY);
+                                RequestMenuHintOverlay(designX, designY, "", "", aAsset);
                             }
                         }
                         ++g_menuListItemOrdinalThisFrame;
