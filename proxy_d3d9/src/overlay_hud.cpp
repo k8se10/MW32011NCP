@@ -206,6 +206,12 @@ constexpr int kTextureHeight = 64;
 EndScene_t g_origEndScene = nullptr;
 DWORD g_endSceneFireCount = 0;
 
+// 2026-08-08 (issue #70, round 4): the real D3D9 device, refreshed every frame at
+// the top of Hook_EndScene -- see GetLastKnownRenderDevice()'s own comment
+// (overlay_hud.h) for why hook-context code outside this file needs this instead of
+// falling back to a no-device GetClientRect guess.
+void* g_lastKnownRenderDevice = nullptr;
+
 char g_overlayText[160] = {};
 DWORD g_overlayStartMs = 0;
 DWORD g_overlayDurationMs = 0;
@@ -4277,6 +4283,15 @@ HRESULT WINAPI Hook_Reset(void* device, void* pPresentationParameters)
 
 HRESULT WINAPI Hook_EndScene(void* device)
 {
+    // 2026-08-08 fix (issue #70, round 4): the ONLY real D3D9 device pointer this
+    // project ever sees, refreshed every frame -- exposed via GetLastKnownRenderDevice()
+    // so hook-context code with no device of its own (analog_input_hooks.cpp) can call
+    // GetResolutionScale/GetRealScreenSize with the SAME ground truth this file's own
+    // draw calls use below, instead of a no-device GetClientRect fallback that can
+    // disagree with the real viewport (root cause of "broke 16:9" after round 3: the
+    // hook's conversion and this file's draw-time re-scale used two different
+    // resolution sources, so they only cancelled out by coincidence).
+    g_lastKnownRenderDevice = device;
     ++g_endSceneFireCount;
     if (g_endSceneFireCount == 1) {
         LogFromController("[overlay-hud] EndScene hook fired for the first time -- confirmed alive");
@@ -4382,6 +4397,11 @@ void GetRealScreenSize(void* deviceIn, int& outWidth, int& outHeight)
                    outWidth, outHeight, vpX, vpY, gotViewport ? "GetViewport" : "GetClientRect-fallback");
         LogFromController(buf);
     }
+}
+
+void* GetLastKnownRenderDevice()
+{
+    return g_lastKnownRenderDevice;
 }
 
 void GetResolutionScale(void* deviceIn, float& outScaleX, float& outScaleY)

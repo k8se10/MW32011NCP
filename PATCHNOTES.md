@@ -39,7 +39,17 @@ reverse-engineering trail behind each entry.
   Leaderboards corner hint at all compared the real screen coordinate
   directly against a design-space constant, so on non-16:9 it could silently
   misclassify the row — fixed by converting before comparing. Neither fix
-  changes any device state. See `re_notes/known_issues.md` issue #70.
+  changes any device state. **Fourth bug, confirmed live ("but now you broke
+  16:9"): the conversion above computed its scale from the game window's
+  client-rect size, but the code that later re-scales the result uses the
+  real D3D9 device's own viewport size — two different answers to "what's
+  the current resolution" that only ever agreed by coincidence.** Fixed by
+  routing the conversion through the same real device the draw call uses,
+  so both sides always agree, at any resolution or window mode. Also
+  hardcoded the one genuinely fixed reference position (the synthetic Back
+  hint) as a true resolution-independent value instead of a raw captured
+  pixel that only happened to work at its original test resolution. See
+  `re_notes/known_issues.md` issue #70.
 - **Custom mouse cursor position reported "way off / unusable" at non-16:9
   resolutions — not yet fixed.** The existing window-to-viewport ratio math
   looks architecturally sound on inspection, so rather than guess a third
