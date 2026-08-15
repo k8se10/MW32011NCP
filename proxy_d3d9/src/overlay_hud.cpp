@@ -4295,6 +4295,30 @@ HRESULT WINAPI Hook_EndScene(void* device)
     ++g_endSceneFireCount;
     if (g_endSceneFireCount == 1) {
         LogFromController("[overlay-hud] EndScene hook fired for the first time -- confirmed alive");
+
+        // Diagnostic (2026-08-11, "major audit" pass -- see re_notes/known_issues.md
+        // issue #74): a GPT-relayed theory (via the user) claimed Steam Overlay can
+        // shift the game exe's own module base on some machines, which would make
+        // this project's ~13 hardcoded absolute hook-target VAs (every real hook in
+        // this codebase, per CODE_STANDARDS.md's own documented gap -- none of them
+        // are base+RVA or runtime-pattern-scanned except the one rumble.cpp hook)
+        // resolve to the WRONG code on that machine. Logged once, here, rather than
+        // guessed: by the time EndScene has fired at least once, Steam/Steam Overlay
+        // (if present) has definitely finished injecting, so this is the correct
+        // point to check, not DllMain (too early to guarantee overlay injection has
+        // happened yet). If a future affected user's log shows a base other than
+        // 0x00400000, that's real evidence for the theory; if it's always
+        // 0x00400000 regardless of who reports "no glyphs," that's real evidence
+        // against it -- either way, better than reasoning about it blind.
+        HMODULE gameModule = GetModuleHandleA(nullptr);
+        char envBuf[256];
+        sprintf_s(envBuf, "[overlay-hud][env-diag] game module base=%p (expected 0x00400000) "
+                            "GameOverlayRenderer.dll=%s GameOverlayRenderer64.dll=%s steam_api.dll=%s",
+            static_cast<void*>(gameModule),
+            GetModuleHandleA("GameOverlayRenderer.dll") ? "loaded" : "not loaded",
+            GetModuleHandleA("GameOverlayRenderer64.dll") ? "loaded" : "not loaded",
+            GetModuleHandleA("steam_api.dll") ? "loaded" : "not loaded");
+        LogFromController(envBuf);
     }
     // Custom Options menu drawn FIRST (2026-08-05 fix, live-reported: "all our in
     // game sprites like glyphs and cursor dont show up in the custom ui"). This used

@@ -9588,3 +9588,163 @@ Explicitly considered and rejected: moving to multithreading as a first resort f
 **Still open**: whether the original XInput multi-slot fix (independent of the mouse-lag regression it also caused) actually resolves the underlying "no glyphs at all" reports remains unconfirmed -- needs feedback from a previously-affected reporter, ideally one using x360ce or multiple pads specifically, or `ForceGlyphOverlay=1` test results from a still-affected user if it doesn't.
 
 **Second, independent, now-CONFIRMED candidate cause found the same day: issue #73's font-tier allowlist gap.** Neither `Saithedarkness` nor `ViperManfred`'s reports mention their playing resolution -- if either was running anything other than a native 16:9 resolution (a common scenario: a 4:3/5:4 monitor, a non-native windowed size, or an in-game HUD/aspect setting that changes the effective rendering canvas), `IsGameplayHintFont()`'s allowlist gap (confirmed this session to affect at least two other font tiers, `fonts/bigFont` and `fonts/normalFont`, beyond the originally-allowlisted `fonts/extraBigFont`/`fonts/hudSmallFont`/`fonts/hudBigFont`) would silently skip the WHOLE glyph-icon replacement for gameplay hints, independent of whatever XInput slot their controller was on -- indistinguishable from "no glyphs at all" to the affected player. This is now a confirmed, reproducible mechanism (not a guess), and unlike the XInput fix, doesn't depend on the reporter's specific hardware/software setup (x360ce, multiple pads) -- only their resolution. Both causes are real and non-exclusive; either alone (or both together) could explain a given report. See issue #73 for the full fix history (`fonts/bigFont` added, then `fonts/normalFont`, with a known residual risk that yet-untested resolutions could reveal further missing font names).
+
+---
+
+## 74. "No glyphs" reports persist post-v0.3.1.h1 -- both previously-fixed causes ruled out for at least 2 of 3 reporters, major audit opened (2026-08-11)
+
+**Status**: Investigating. Diagnostic logging added, not yet a fix -- this project's own standard is to verify via logs before changing behavior, and every prior round on this exact bug family (#70/#71/#73) burned real time on guessed fixes that turned out wrong or incomplete. Not repeating that here.
+
+**Why this is a new entry and not just "#71/#73 still open"**: the real Nexus comment thread (v0.3.1.h1, posted 2026-08-09/10) contains enough detail to definitively rule out BOTH of this project's previously-shipped fixes for at least two of the three current reporters -- this is new information, not the same open question.
+
+- **ViperManfred, 2026-08-09 11:09AM, verbatim**: "I'm running at 1440p, downloaded last update and forced glyphs on via config file, still doesn't work for me. Also tested on ENG, but same result." 1440p is 16:9 -- the SAME font tier (`fonts/extraBigFont`) already confirmed working at 1080p/720p (issue #73's own scope check). `ForceGlyphOverlay=1` bypasses `ShouldDrawGlyphOverlay()`'s `IsControllerActiveInputMethod()` check entirely (issue #71). **Both fixed causes are eliminated for this reporter specifically** -- something else is blocking glyphs on this machine.
+- **Biactyk, 2026-08-09 6:55AM, verbatim**: "Glyphs DON'T show for me in 1920x1080, 1280x720, or 1280x800 ... under Windows 11 or Arch Linux (SteamOS) ... I'm unable to go prone [via controller] ... Controller Input is not passed through unless Steam Input is off it seems." 1920x1080 is this project's OWN primary dev/test resolution -- failing there rules out every resolution/font-tier theory outright for this reporter. Critically, this report is **not glyph-specific**: a real gameplay function (prone) also silently fails to fire via controller, and the reporter directly implicates **Steam Input** (not Steam Overlay) as the differentiator, using a DualSense controller. This is a broader controller-detection/passthrough problem, not a rendering bug, for this reporter.
+- **Saithedarkness**: 4K/2160p (16:9, correct font tier) -- reply doesn't yet confirm h1 was retested with `ForceGlyphOverlay`; less conclusive than the two above, but consistent with them, not contradicting.
+- **Separately, same thread**: Saithedarkness also reports a real, unrelated, controller-only gameplay bug -- see issue #75.
+
+**GPT-relayed theories (via the user, two separate external conversations pasted verbatim) evaluated against the actual codebase, not accepted at face value:**
+
+1. **"The overlay renderer isn't self-contained -- it should save/restore ALL D3D state around `Hook_EndScene`'s draws."** Checked `overlay_hud.cpp`: `DrawTexturedQuad`/`DrawGenericTexturedQuad`/`DrawGradientQuad` (the shared primitives every draw call in this file goes through, including the glyph icon path) already save/restore `D3DRS_ZENABLE`/`LIGHTING`/`ALPHABLENDENABLE`/`SRCBLEND`/`DESTBLEND`/`CULLMODE`, and explicitly null+restore the vertex/pixel shader (a real fix from a 2026-07-31 live bug -- a leftover shader from the intro bumper corrupted the quad). This is considerably more defensive than GPT's "halfway there" framing assumed. The one real, known gap -- texture stage states (`COLOROP`/`ALPHAOP` etc.) set unconditionally, never saved/restored -- was already found and documented in issue #72's own "Also found, lower priority" note, and deliberately deferred as low-risk. **Not a strong lead**: doesn't explain glyphs failing at 1080p/1440p on the project's own reference aspect ratio, and the actual gap was already known.
+2. **"Steam Overlay has proven to shift iw5sp's memory addresses on some machines, which could resolve `Hook_DrawGlyphText`'s hook target to the wrong function."** `CODE_STANDARDS.md` documents, self-critically, that literally every real engine hook in this codebase (not just the glyph one) is a hardcoded absolute VA assumed against the non-ASLR `0x00400000` load base -- `kDrawGlyphTextAddr = 0x00690c80` plus ~12 others in `analog_input_hooks.cpp` (menu-focus-track, cursor-suppress, open-menu-track, level-load-zone-hook, etc.). **If the module base actually shifted on an affected machine, ALL of these would break together**, not selectively just the glyph hook -- directly contradicted by Biactyk's own report that "every other part of the mod works" (input, menu nav, etc. all confirmed functioning; only glyphs + prone specifically fail). This is a real logical rebuttal, not yet a live-tested one. **Diagnostic added** (see below) to settle it with real data instead of leaving it as reasoning.
+
+**What the real data actually points at, that neither GPT theory raised**: Biactyk's own words -- "Controller Input is not passed through unless Steam Input is off" -- plus prone (a real `RequestStanceToggle`-class gameplay call, not a render call) also failing. This project's controller detection is 100% XInput-based (`controller_input.cpp`) with no DirectInput/raw-input fallback; a DualSense reaches XInput only via Steam Input's virtual-controller emulation. Also newly worth checking: `IsMenuActive()` (`analog_input_hooks.cpp:92`, a raw read of `*(uint32_t*)0x00B36210 & 0x10`, not a hook) gates the ENTIRE gameplay-hint block (`!IsMenuActive()` at the `Hook_DrawGlyphText` call site) and is NOT bypassed by `ForceGlyphOverlay` -- if this raw memory read is ever wrong on an affected machine (stuck true), gameplay hints would never draw regardless of controller detection, independent of both GPT theories. Neither of these is confirmed yet -- both are real, testable hypotheses grounded in this project's own code and the reporters' own words, not speculation imported from outside.
+
+**Diagnostics added this session (log-only, zero behavior change, compiles clean 0 warnings/0 errors, Release|Win32)**:
+- `Hook_DrawGlyphText` (`analog_input_hooks.cpp`): first-fire confirmation log (mirrors `Hook_EndScene`'s existing pattern -- proves the hook is even reached at all), plus a deduped `[hud-font-id][gate]` log capturing font name, `ShouldDrawGlyphOverlay()`, `IsMenuActive()`, `IsGameplayHintFont()`, and `forceGlyphOverlay` config state every time any of them change. This single log line will show conclusively, from an affected user's next `proxy_d3d9.log`, exactly which gate (if any) is blocking them -- rather than continuing to reason about it blind.
+- `Hook_EndScene` (`overlay_hud.cpp`), first-fire block: `[overlay-hud][env-diag]` -- logs the game exe's real module base (compared against the expected `0x00400000`) and whether `GameOverlayRenderer(64).dll`/`steam_api.dll` are loaded. Directly tests GPT theory #2 above with real data at near-zero cost.
+
+**Next step**: this needs a fresh `proxy_d3d9.log` from a still-affected reporter (ViperManfred or Biactyk, both already confirmed reproducing on h1) running a build with these two diagnostics -- not another round of guessed fixes. Also worth directly asking Biactyk whether disabling Steam Input (which they said restores controller passthrough) also restores glyphs, as a cheap first data point independent of a new build.
+
+**ROOT CAUSE FOUND, 2026-08-15 -- much simpler than any theory investigated above.** Reproduced directly: the project owner did a genuine fresh install on a second ("streaming") PC and hit the exact same "no glyphs, mod doesn't know it" symptom immediately. The very first `[config] loaded mw3ncp_config.ini` line in that machine's `proxy_d3d9.log`, before any user editing, reads `glyphIconOverlayEnabled=0`. `ShouldDrawGlyphOverlay()` (`analog_input_hooks.cpp:296`) is `g_modConfig.glyphIconOverlayEnabled && (g_modConfig.forceGlyphOverlay || IsControllerActiveInputMethod())` -- with the first term false, the AND short-circuits and NOTHING downstream of it matters. Confirmed against `git show HEAD:proxy_d3d9/src/mod_config.h`: `glyphIconOverlayEnabled = false` has been the committed default since it was introduced in issue #48 (2026-07-31) as an internal "first live-test round" flag, and was **never flipped on for release** -- still `false` in v0.3.0, v0.3.1, AND v0.3.1.h1. There is no shipped default `.ini` and no in-game UI checkbox for this key at all (it's a bare `[Experimental] GlyphIconOverlay` ini value nobody outside this codebase would know exists) -- meanwhile README explicitly states in three separate places that controller-glyph icons are "Shipped and confirmed live (2026-08-01)."
+
+This single default explains every report in this issue and in #71 on its own, no other mechanism required:
+- **ViperManfred's "forced glyphs on via config file, still doesn't work"** (line above): they almost certainly only set `ForceGlyphOverlay=1` (the one escape hatch this project has ever told users about, in issue #71's own patch notes) -- which bypasses `IsControllerActiveInputMethod()` but does nothing for `glyphIconOverlayEnabled`, a completely separate, never-publicized key that still defaulted false underneath it. This is exactly reproduced in the fresh-install log: `forceGlyphOverlay` gets flipped 0->1 across relaunches while `glyphIconOverlayEnabled` sits at 0 the entire time, across all 5 sessions.
+- **Biactyk's Steam-Input/DualSense/prone-fails report is very likely a real, separate, second bug** (XInput never sees a DualSense without Steam Input's virtual-controller passthrough -- see issue #76's native DualSense work, started for exactly this reason) -- but even for Biactyk, glyphs specifically could never have drawn regardless, since the master flag was off underneath everything else.
+- The GPT-relayed D3D-state-isolation and Steam-Overlay-memory-shift theories were both real, honest attempts at an explanation given the evidence at the time, but neither was needed -- the config dump alone settles it.
+
+**Fix applied**: `mod_config.h` default flipped `glyphIconOverlayEnabled = false` -> `true`, matching what the docs already claimed was shipped. The `[hud-font-id][gate]`/`[overlay-hud][env-diag]` diagnostics added earlier this investigation stay in (harmless, log-only) in case a genuinely new blocker surfaces once glyphs are actually reachable for the first time on affected machines.
+
+**CONFIRMED LIVE, 2026-08-15**: relaunched on the streaming PC that reproduced the bug -- glyphs now draw correctly. Direct confirmation, not assumed.
+
+**Follow-up, 2026-08-16 -- the flag itself was removed, not just re-defaulted.** Just flipping the in-code default to `true` was not actually sufficient for every affected player: `SaveModConfig`/`WriteDefaultConfig` had already written a literal `GlyphIconOverlay=0` to disk on every prior run for anyone who'd ever launched an earlier build, and `LoadModConfig`'s `ReadBool` would load that stale on-disk `false` and override the new in-memory default right back to broken -- so upgraders specifically (as opposed to fresh installs, which is all that was actually tested above) would have stayed stuck with no glyphs and no obvious reason why. Fixed properly by removing `glyphIconOverlayEnabled` from the config struct and its ini key entirely (`mod_config.h`/`.cpp`), so a stale on-disk value from before this fix can no longer be read at all. `ShouldDrawGlyphOverlay()` (`analog_input_hooks.cpp:296`) is now just `g_modConfig.forceGlyphOverlay || IsControllerActiveInputMethod()`. `kCurrentConfigVersion` bumped 13->14 so every existing user's ini gets rewritten on next launch and the stale key physically disappears from their file, not just goes unread. The one other real usage of the old flag (`LogMenuFocusDiagnosticIfChanged`'s read-only diagnostic gate) was moved onto the still-existing `hudGlyphPositionLogging` toggle instead of being left unconditionally on. Rebuilt clean, 0 warnings/0 errors.
+
+**Status: fully fixed, root cause confirmed live, config-migration hazard also closed the same way this project always closes them (version bump + full ini rewrite, see mod_config.cpp's own versioning policy).** Packaged as a local `v0.3.2` test build for the project owner's second PC; not yet pushed to GitHub/Nexus.
+
+### POSTMORTEM, 2026-08-16: how NOT to find a bug — 16 days for something this dumb
+
+The real root cause was a single hardcoded `false` this project itself wrote, on a
+flag this project itself owns and could have grepped for at any point. It took from
+**2026-07-31** (`glyphIconOverlayEnabled` introduced, defaulted off) to **2026-08-15**
+(root cause actually found) — sixteen days, three shipped releases (v0.3.0, v0.3.1,
+v0.3.1.h1), two full investigation rounds (issue #71, issue #74), two external
+GPT-relayed architectural theories evaluated, and two new diagnostic log call sites
+added — to notice a value that had been printed in plain text on the FIRST line of
+every single `proxy_d3d9.log` this entire time. Recording exactly how this happened,
+per this project's own standard of documenting dead ends as thoroughly as successes:
+
+1. **Real fixes along the way created false confidence that the mystery was solved.**
+   Issue #71 found and fixed two genuinely real bugs — the hardcoded XInput slot 0
+   (a controller in slot 1+ never registering at all) and issue #73's font-tier
+   allowlist gaps (non-16:9 resolutions silently skipping the whole glyph path). Both
+   were real, both shipped, both were confirmed against actual evidence. But finding
+   real bugs along the way is not the same as finding *the* bug, and each fix quietly
+   raised confidence that "the remaining reports must be something else, more exotic"
+   instead of re-opening the question of whether the ORIGINAL, simplest gate
+   (`glyphIconOverlayEnabled`) was ever actually verified to be on for anyone, ever.
+   It never was — nobody had checked, because two fixes had already "used up" the
+   investigation's appetite for a mundane explanation.
+2. **Escalated to exotic, externally-sourced theories before exhausting the project's
+   own trivially-checkable state.** Issue #74 evaluated two GPT-relayed theories —
+   Steam Overlay shifting the process's memory addresses, D3D state leakage around
+   `Hook_EndScene` — both real, honest attempts, both requiring genuine RE reasoning
+   to evaluate and rule out. Neither was needed. The actual answer required zero RE:
+   just reading one already-existing log line further to the right than it had been
+   read before. Reaching for a theory this project would have to import from outside
+   its own codebase, before exhaustively checking every flag this project's own config
+   loader already dumps to disk on every single launch, was the wrong order of
+   operations.
+3. **The evidence was in every log capture from the start, and was never the specific
+   thing being grepped for.** Every `proxy_d3d9.log` collected across both
+   investigation rounds — from Saithedarkness, ViperManfred, Biactyk, and every one
+   of the developer's own test sessions — begins with a `[config] loaded
+   mw3ncp_config.ini: ...` line that has always included `glyphIconOverlayEnabled=%d`
+   since v6 of the config schema (issue #48). Every log was read closely for
+   `[hud-font-id]`, font names, resolution-implied font tiers, `ForceGlyphOverlay`
+   state — every field EXCEPT the one that actually mattered, because nobody was
+   looking for "is our own master switch off," they were looking for whatever their
+   current leading theory predicted. Confirmation bias in what to grep for, not a
+   missing diagnostic — the diagnostic already existed.
+4. **A reporter's own words were trusted for a claim the code doesn't actually
+   support, without checking the code.** ViperManfred said "forced glyphs on via
+   config file, still doesn't work" — read as ruling out ANY config-flag explanation.
+   It doesn't: `ForceGlyphOverlay` and `GlyphIconOverlayEnabled` are two entirely
+   separate, independently-AND-gated keys, and only the first was ever publicized as
+   something a user could set (issue #71's own patch notes). A report phrased as "I
+   already tried the config fix" should have been checked against what the config fix
+   actually *is* in the code, not taken as evidence the whole config-layer category of
+   explanation was closed.
+5. **The bug was older than the investigation's search window.** Both #71 and #74
+   framed themselves around "what changed recently, post-v0.3.1" — reasonable, since
+   that's when reports started arriving. But `glyphIconOverlayEnabled` was introduced
+   issue #48, over a week before v0.3.0 even shipped — outside the window either
+   investigation was actually searching. A silent, permanent, from-day-one default is
+   invisible to any diff-shaped or changelog-shaped search; it only surfaces from a
+   full, unfiltered read of current state, not "what's new since the last known-good
+   version."
+6. **What actually broke the deadlock**: not more remote reasoning about reporters'
+   partial descriptions, but the project owner doing a genuine fresh install on a
+   second machine and reading their OWN new log start-to-finish, rather than grepping
+   it for a specific prior hypothesis. Direct, first-party reproduction surfaced in
+   minutes what sixteen days of remote diagnosis from reporter reports had not.
+
+**Standing lesson, generalized beyond this one bug** (also added to `CODE_STANDARDS.md`):
+when a shipped feature silently doesn't work, dump and personally read *every* gating
+flag this project's own config loader already logs before reasoning about anything
+external (hardware, OS, other software, memory layout). If a real fix along the way
+still leaves reports coming in, that is a prompt to re-verify the SIMPLEST original
+gate first, not a license to escalate to a more exotic theory.
+
+---
+
+## 75. "Dust to Dust" elevator mantle -- controller falls through instead of grabbing ledge, keyboard/mouse unaffected (2026-08-10, reported, not yet investigated)
+
+**Status**: Open, not yet investigated. Separate, unrelated bug surfaced in the same Nexus thread as issue #74 -- logged here rather than conflated with the glyph-visibility investigation above.
+
+**Report, Saithedarkness, verbatim**: "Sorry just ran into another bug. The last mission 'Dust to Dust' when jumping from one elevator to the next the playable character doesn't grab hold of the ledge and just falls right through. then is only when using the controller and not the keyboard & mouse."
+
+Controller-only, mission-specific (or at least this-scenario-specific) mantle/ledge-grab failure. This project's auto-mantle system has prior history of exactly this class of bug -- issue #62 ("Auto-mantle while sprinting -- Open / Not Working") was shipped disabled for v0.3.0 after two rounds neither confirmed working. Worth checking whether this elevator-to-elevator jump is a variant of that same underlying auto-mantle gap, or a genuinely new interact-detection failure specific to this level's geometry/scripted sequence, before assuming either.
+
+---
+
+## 76. Native DualSense support (raw HID, bypassing Steam Input) + first-pass gyro-aim -- PREVIEW/WIP, implemented, not live-tested (2026-08-11)
+
+**Status**: Implemented, compiles clean (0 warnings/0 errors, Release|Win32), **not live-tested against real DualSense hardware** -- no DualSense is available to the developer. PREVIEW/WIP per this project's own labeling convention (`feedback_preview_wip_labeling`); `[Gyro] Enabled` defaults to `0` specifically because this is genuinely untested, unlike this project's other tunables which at least got one live pass before shipping.
+
+**CRITICAL, FOUND AND FIXED SAME DAY: this backend's first build broke the game boot entirely, even for players with no DualSense at all.** Live-reported within hours of the first build: "mw3 fails to boot." Root-caused via direct `proxy_d3d9.log` evidence, not guessed -- the log showed a completely clean boot sequence (config load, every hook install, `Direct3DCreate9 called`, the `CreateDevice` hook installed) right up through a SECOND `Direct3DCreate9 called` line, then nothing further at all -- no crash message, no exception, the vectored crash-flush handler never fired, just silence. That signature (clean up to a specific point, then a silent stop, no exception) is a **hang, not a crash** -- classically a **Windows loader-lock deadlock**.
+
+Root cause: `DualSense_EnsureOpen()`'s `SetupDiGetClassDevsW`/`CreateFileW` device enumeration can internally trigger its own DLL loading (device class-installer DLLs), and this project's background controller-poll thread starts firing (~every 4ms) almost immediately after the mod loads -- meaning it could call into SetupAPI concurrently with the game's own `Direct3DCreate9`/device-creation sequence doing its own DLL loading on the main thread. Two threads each needing the OS loader lock for their own DLL loading at the same time is a textbook deadlock: neither can proceed, and neither raises an exception -- the process just stops responding. Nothing in this codebase had ever called SetupAPI from a background thread before this session; this is a genuinely new failure class this feature introduced, not a latent pre-existing bug.
+
+**Fixed**: `controller_input.cpp`'s poll loop now refuses to even attempt `DualSense_EnsureOpen()` until `GetLastKnownRenderDevice()` (already exposed by `overlay_hud.cpp`/`.h`, set from `Hook_EndScene` on the main thread once real rendering is alive) proves the game's own D3D device already exists -- i.e. boot has already gotten past the exact window that hung, so DualSense enumeration can never again race the initial device-creation sequence. This is a real fix (removes the actual race), not a delay/retry band-aid.
+
+**Honesty note, consistent with this project's standard**: this fix is diagnosed from log evidence and sound reasoning about a well-documented Windows failure mode, not confirmed by a second successful boot yet at the time of writing -- needs the user to confirm the game boots again before this is considered closed. If it boots but a DualSense still doesn't work, that's a separate, lower-severity issue to chase next; if it still fails to boot, the loader-lock theory was wrong and this needs a fresh log from the new failure.
+
+**Also noticed, unrelated to the hang, worth a separate look**: the live `proxy_d3d9.log` inspected while diagnosing this was **1.2GB**, despite issue #67 ("`proxy_d3d9.log` has grown to 22GB") having supposedly been fixed via flush-interval throttling. The config that produced it has `hudFontIdLogging=1`/`hudGlyphPositionLogging=1` both enabled, which are heavy, per-distinct-event diagnostic logs from earlier investigations, not one-shot. Worth revisiting whether issue #67's fix actually addressed volume (how OFTEN lines get written) as opposed to just flush frequency (how often the buffer gets forced to disk) -- those are different problems, and a multi-GB log is still a real operational cost (slow to open/inspect, meaningful disk usage) even if it isn't the direct cause of this session's hang.
+
+**Why this exists**: direct follow-up to issue #74. Biactyk's report ("Controller Input is not passed through unless Steam Input is off") plus the explicit user direction this session -- "we will add gyro support via our mod - deliberately avoid supporting steaminput as its bound to cause issues - but we also need to support more controllers" -- reframed the goal from "make Steam Input's translation work better" to "stop depending on Steam Input for this device family at all." This project's entire controller layer (`controller_input.cpp`) was XInput-only before this; a DualSense has no native XInput driver on Windows at all (Sony never licensed XInput compatibility), so it was previously only ever visible through a third-party translator (Steam Input, DS4Windows, DSX) -- exactly the layer now confirmed unreliable for this project.
+
+**What was built**:
+- `proxy_d3d9/src/dualsense_input.cpp/.h` -- a new raw-HID backend. Enumerates HID device interfaces (`SetupDiGetClassDevs`/`SetupDiEnumDeviceInterfaces`, same pattern as any Windows HID consumer) looking for Sony's real DualSense VID/PID (`0x054C`/`0x0CE6`), opens it directly via `CreateFileW`, and polls its real 64-byte USB input report with a blocking `ReadFile` -- no XInput, no DirectInput, no Steam Input anywhere in this path.
+- **Byte offsets sourced from a real, working, MIT-licensed reference implementation** (github.com/Ohjurot/DualSense-Windows, `DS5_Input.cpp`/`IO.cpp`/`DS5State.h`, fetched and cross-checked 2026-08-11), not guessed -- several lower-quality community sources (a Fandom wiki, a general web-search summary, a partial RE doc) gave vague or inconsistent answers specifically for the gyro/accelerometer offsets ("somewhere in bytes 12-63"), so a real shipping implementation's own parser was pulled directly via `gh api` instead of trusting the ambiguous ones. Confirmed: left/right stick X/Y = bytes 1-4, L2/R2 analog = bytes 5-6, D-pad+face buttons = byte 8, shoulder/menu buttons = byte 9, accelerometer (3x int16 LE) = bytes 16-21, gyroscope (3x int16 LE) = bytes 22-27 (all offsets INCLUDE the leading report-ID byte, since Windows' `ReadFile` on a HID device always returns it as byte 0 -- the reference implementation's own offsets are 1 lower because it operates on a buffer with that byte already stripped).
+- Wired into the existing background poll thread (`controller_input.cpp`'s `XInputPollThreadProc`) as a fallback: tried only when XInput reports nothing connected that tick, so an Xbox pad (or any already-working translator) keeps taking priority exactly as before -- strictly additive, can't regress anyone XInput already worked for. Buttons are translated to the exact same `XINPUT_GAMEPAD_*` bit values real XInput uses, so every existing consumer in this codebase (button mapping, glyph detection, everything) needs zero changes to support DualSense.
+- `Controller_GetGyroRate()` (new) exposes raw gyro X/Y/Z, only ever non-zero when the DualSense backend is the active source. Wired into `InjectControllerLookAngles()` (`analog_input_hooks.cpp`) as an additive look delta on top of the existing stick-driven one, gated by the new `[Gyro]` config section.
+- `mod_config.h`/`.cpp`: new `[Gyro]` section -- `Enabled` (default off), `Sensitivity`, `InvertPitch`/`InvertYaw`.
+- `.vcxproj`: added `dualsense_input.cpp/.h`, linked `hid.lib`/`setupapi.lib` (new dependencies -- nothing in this project needed the SetupAPI/HID layer before).
+
+**Explicitly NOT claimed as correct, needs a live tester with real hardware to confirm/correct**:
+- **Gyro units are raw and uncalibrated**, scaled only by a plain `Sensitivity` multiplier -- not a claimed degrees/second conversion. Even the reference implementation this was built against never solved real calibration either (its own comment: "Currently only raw values will be displayed! Probably needs calibration"), and public sources disagreed on the exact LSB-to-deg/s scale factor, so this project isn't overclaiming precision it can't back up.
+- **Gyro axis-to-yaw/pitch mapping (Z=yaw, X=pitch) is a best-effort guess**, not verified against real hardware. `InvertPitch`/`InvertYaw` config toggles exist specifically so a live tester can correct this without a rebuild if it's wrong.
+- **Bluetooth-connected DualSense is not handled** -- USB only this pass. BT uses a different report ID (0x31), a 78-byte report with every offset shifted, and output reports need a CRC32 checksum this project doesn't compute. Documented as the concrete next step in `dualsense_input.cpp`'s own bottom comment if a live tester specifically needs it.
+- **DualSense rumble/lightbar output is not implemented** -- `Controller_SetVibration` explicitly no-ops when the DualSense backend is active rather than sending anything wrong.
+- Face-button mapping (Cross/Circle/Square/Triangle -> A/B/X/Y) follows the same corner-position convention Steam Input's own default Xbox emulation uses, but hasn't been confirmed against this project's own button-mapping/glyph code with a real DualSense.
+
+**Next step**: needs a tester with a real DualSense (Biactyk, given he already reported the exact motivating symptom, is the obvious first ask) to confirm sticks/buttons/triggers work via the raw HID path with Steam Input fully OFF, then separately confirm whether gyro moves the camera in the expected direction with `[Gyro] Enabled=1` -- and report back which `Invert*` toggles (if any) are needed.

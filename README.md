@@ -1,19 +1,40 @@
 # MW3 Native Controller Support (Campaign & Survival)
 
-> **▶️ v0.3.1.h1 (2026-08-09) — hotfix: mouse-lag regression, non-16:9
-> scaling/glyph visibility, Options-screen crash risk.** A feature-free
-> hotfix on top of v0.3.1 (see `PATCHNOTES.md` for the `.hN` versioning
-> convention). **Headline fixes**: a critical mouse-movement-correlated FPS
-> drop, confirmed live and fully fixed; and controller-glyph icons never
-> appearing at all on non-16:9 resolutions, root-caused to two separate bug
-> classes (a font-detection gap and a position-formula bug) via direct log
-> evidence, not guessed. Also fixes a real crash risk in the still-preview/WIP
-> Options screen and an unbounded log-growth issue on long sessions. **Honesty
-> note**: the mouse-lag fix is confirmed live; the non-16:9 scaling/glyph
-> fixes went through several live-tested-wrong rounds before landing on the
-> current state (see `re_notes/known_issues.md` issue #70) and the final
-> state hasn't yet had an explicit "fully correct everywhere" confirmation.
-> See `PATCHNOTES.md` for the full list.
+> **▶️ v0.3.2 (2026-08-16) — controller-glyph icons actually work now.**
+> Every "no glyphs" report this project has ever received, going all the way
+> back to v0.3.0, traced to one cause: `glyphIconOverlayEnabled`, this
+> project's own master on/off switch for the whole glyph overlay, was
+> hardcoded `false` and never flipped on for release — not a hardware quirk,
+> not Steam Overlay, not a memory-address theory, this project shipped its own
+> headline feature permanently disabled by mistake, three releases in a row.
+> **Worth being blunt about**: finding that took 16 days and two full
+> investigation rounds (issues #71 and #74), including two real-but-partial
+> fixes along the way and two externally-sourced architectural theories that
+> both turned out to be unnecessary, because nobody re-checked this project's
+> own simplest config flag against a log line that had been printing the
+> answer from the start. Confirmed live via direct reproduction, not assumed
+> — see `re_notes/known_issues.md` issue #74 for the full incident writeup and
+> postmortem, and `CODE_STANDARDS.md`'s new "Debugging Methodology" section
+> for the standing rules adopted as a result. The flag itself was removed
+> from the config schema entirely (not just re-defaulted), closing a
+> config-migration hazard that would have kept upgrading players stuck.
+>
+> **Also new this release: a first, PREVIEW/WIP pass at native DualSense (PS5
+> controller) support and gyro-aim**, off by default and **not yet
+> live-tested against real hardware**. This project's controller layer was
+> XInput-only until now — a DualSense has no native XInput driver on Windows,
+> so it was only ever visible through a third-party translator (Steam Input,
+> DS4Windows), and real community feedback found that passthrough unreliable
+> for this mod specifically (issue #74). A raw-HID DualSense backend
+> (`proxy_d3d9/src/dualsense_input.cpp`) now reads the controller directly,
+> bypassing Steam Input entirely; gyro-aim (`[Gyro] Enabled=1` in
+> `mw3ncp_config.ini`, OFF by default) rides the same connection. Implemented
+> against a real, working reference implementation's confirmed byte offsets
+> (see issue #76), not this project's own hardware, since none is available
+> to the developer. USB only for now; Bluetooth DualSense isn't handled yet.
+>
+> See `PATCHNOTES.md` for the full v0.3.2 changelog, including v0.3.1.h1's
+> prior mouse-lag/scaling/crash fixes.
 
 > **⚠️ SECURITY NOTICE — versions before v0.2.2 are no longer distributed.**
 > Versions v0.2.1 and earlier shipped with an aim-assist feature's code compiled
@@ -44,8 +65,9 @@
 > Server) trigger on some scanners. Full source is in this repository if you
 > want to verify for yourself. See `known_issues.md` #64.
 
-**Status: ALPHA — v0.3.1.h1 (2026-08-09), a feature-free hotfix on v0.3.1.**
-Changes below since v0.3.1, see `PATCHNOTES.md` for the full itemized list:
+**Status: ALPHA — v0.3.2 (2026-08-16), controller-glyph root-cause fix + native
+DualSense/gyro preview.** Changes below since v0.3.1, see `PATCHNOTES.md` for
+the full itemized list:
 
 > ⚠ **Known gap: a few menu glyph icons can land in a slightly wrong POSITION
 > under non-English languages** ⚠
@@ -118,7 +140,7 @@ live-tested by the developer during actual play, not just built-and-assumed.
 | Button/stick layout presets, **including `TacticalLefty`** | **`TacticalLefty` confirmed correct against real hardware, 2026-07-19** — previously this preset's own remap was the one open accuracy question in this system |
 | **Hold Breath (L3 while ADS'd on a sniper)** | **Real kbutton (2026-07-20)**, genuinely native, no key-synthesis needed — steadies aim while held, accuracy drops once breath runs out. A critical regression (couldn't fire while breath was held, issue #46) was fixed and user-confirmed live 2026-07-31 |
 | Look acceleration ramp | Console-accurate turn-rate ramp (33ms = one 30fps engine frame), on by default |
-| Button-glyph controller icons (in-game interact hints, menu corner hints, custom cursor) | Shipped and confirmed live (2026-08-01) — in-game interact hints (pickup/swap, buy-station, mantle, Reload, grenade throwback, Survival ready-up), menu UI corner hints (Back/Friends), and a custom mouse cursor overlay replacing the native software cursor. See `known_issues.md` #48/#50/#52 |
+| Button-glyph controller icons (in-game interact hints, menu corner hints, custom cursor) | Shipped and confirmed live on the developer's own machine (2026-08-01) — in-game interact hints (pickup/swap, buy-station, mantle, Reload, grenade throwback, Survival ready-up), menu UI corner hints (Back/Friends), and a custom mouse cursor overlay replacing the native software cursor. See `known_issues.md` #48/#50/#52. **Corrected, v0.3.2 (2026-08-16)**: despite that dev-machine confirmation, this project's own master enable flag shipped hardcoded off in every release from v0.3.0 through v0.3.1.h1, so glyphs never actually drew for anyone else on a fresh install — root-caused and fixed, confirmed live via direct reproduction, see `known_issues.md` issue #74's full postmortem |
 
 ### 🟡 Partial (works, but with a specific, known gap)
 
@@ -579,7 +601,7 @@ state directly, as described above:
 | D-pad + A menu navigation | Item navigation (main menu, pause menu, options screens' two-pane category/settings drill-in-drill-out) | ✅ Confirmed live (task #22), including the title screen itself |
 | D-pad + A, buy-station/armory (Survival) | Item navigation on the armory's `itemDef` list | ✅ Confirmed live (2026-07-18) |
 | Slider-type settings (e.g. sensitivity) | Adjusting the actual VALUE of a slider, not just navigating to it | ✅ Confirmed live (2026-07-18) — Left/Right adjusts the value directly, via the same generic menu-forwarding mechanism as everything else in this section |
-| Button-glyph UI prompts | Real controller-glyph icons in in-game interact hints and menu UI corner hints; custom mouse cursor overlay | ✅ Shipped and confirmed live (2026-08-01) via a custom-hint-redraw overlay — see `re_notes/known_issues.md` issues #48/#50/#52 |
+| Button-glyph UI prompts | Real controller-glyph icons in in-game interact hints and menu UI corner hints; custom mouse cursor overlay | ✅ Shipped and confirmed live on the dev machine (2026-08-01) via a custom-hint-redraw overlay — see `re_notes/known_issues.md` issues #48/#50/#52. **v0.3.2 (2026-08-16)**: fixed a project-side master-flag bug that had kept glyphs from drawing for everyone else since v0.3.0 — see issue #74 |
 | Highlighted-item A-glyph (menu list navigation) | Real controller-glyph icon on whichever menu-list item is currently focused | 🟡 **Corrected 2026-08-03** — shown only on a live-verified allowlist (main menu, Campaign hub, two popups); every other screen intentionally shows nothing rather than a possibly-wrong glyph, pending individual re-verification (see `re_notes/known_issues.md` issue #51) |
 | Vibration/rumble | Controller rumble on weapon fire/taking damage | 🟡 **Reimplemented 2026-08-03** — fire rumble via a re-verified hook, damage rumble via a per-frame health poll (not a hook, after the recommended hook target turned out unsafe); a separate DLL-loading bug that silently no-op'd all vibration was also fixed. Physically confirmed working, strength maxed out in software after four tuning rounds. Known gap: doesn't register Survival Body Armor hits (see `re_notes/known_issues.md` issues #24/#63) |
 | Auto-mantle (sprint) | Automatically mantle over obstacles while sprinting + pushing the stick fully forward | ⬜ **NOT WORKING, 2026-08-03** — implemented and live-tested twice (a jump-spam regression fixed, then a total-failure regression addressed), still not confirmed actually firing near a real ledge. Shipped OFF by default; don't rely on it (see `re_notes/known_issues.md` issue #62) |

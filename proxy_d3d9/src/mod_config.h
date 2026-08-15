@@ -161,6 +161,30 @@ struct ModConfig
                                                   // 33 = one 30fps frame, confirmed live as the right
                                                   // feel. 0 = off (instant-response behavior).
 
+    // [Gyro] (2026-08-11, issue #76) -- PREVIEW/WIP, per this project's own
+    // shipped-but-unplayed labeling convention: real native gyro-aim, sourced
+    // directly from a raw-HID DualSense (dualsense_input.h), deliberately NOT
+    // routed through Steam Input's own gyro-to-mouse remapping -- the explicit
+    // reason this exists at all is that Steam Input's device passthrough was found
+    // unreliable for this project (issue #74), and a player who wants gyro
+    // shouldn't be forced to choose between that and this mod ever seeing their
+    // controller. DEFAULT OFF: unlike this project's other tunables (look
+    // sensitivity, ADS slowdown, etc.), this hasn't been live-tested even once --
+    // no DualSense is available to the developer. Additive on top of the existing
+    // right-stick look delta, not a replacement for it (matches how gyro-as-
+    // fine-aim commonly works elsewhere, e.g. Splatoon/Steam Input's own default).
+    bool gyroEnabled = false;
+    float gyroSensitivity = 1.0f; // multiplies the raw, uncalibrated gyro units
+                                    // (see dualsense_input.h) before adding to look
+                                    // delta -- NOT a claimed degrees/second value,
+                                    // purely an empirical starting point to be
+                                    // live-tuned, same convention this project
+                                    // already used for kCurveExponent/vibration
+                                    // intensity before those were dialed in via
+                                    // real playtesting.
+    bool gyroInvertPitch = false; // axis-sign guess, unverified -- see dualsense_input.h
+    bool gyroInvertYaw = false;   // axis-sign guess, unverified -- see dualsense_input.h
+
     // [Stance]
     unsigned long proneHoldThresholdMs = 400; // B: hold vs. tap threshold
 
@@ -359,17 +383,21 @@ struct ModConfig
         // lines, then turn back off. Always forwards to the real trampoline
         // completely unmodified regardless of this toggle; only controls whether it
         // logs.
-    bool glyphIconOverlayEnabled = false; // issue #48 (2026-07-31): the actual behavior-
-        // changing step -- draws a real controller-glyph icon (assets/button_glyphs/,
-        // embedded in this DLL) as an overlay quad directly on top of the button-name
-        // portion of a real hint string (e.g. the "F" in "Press F to pick up"),
-        // positioned via Hook_DrawGlyphText's own draw-call params plus the font's real
-        // glyph-advance metrics. DEFAULT OFF -- first live-test round for the actual
-        // drawing step (position/scale param meanings and the color-highlight-span
-        // detection are already confirmed via hudGlyphPositionLogging above; this is the
-        // next, less-proven step). Never mutates the real hint text or draw call itself
-        // -- only ever draws an additional quad after it, same layering as the startup/
-        // config-reload toast notification.
+    // glyphIconOverlayEnabled REMOVED 2026-08-16 (issue #74 root-cause fix follow-up).
+    // This was the master on/off switch for the whole controller-glyph overlay --
+    // introduced issue #48 (2026-07-31) defaulted OFF as an internal "first live-test
+    // round" flag, never flipped on for release, and directly caused every "no glyphs"
+    // community report across v0.3.0/v0.3.1/v0.3.1.h1 (see known_issues.md issue #74).
+    // Flipping the in-code default to `true` (2026-08-15) is NOT enough on its own:
+    // ReadBool() below would still load `GlyphIconOverlay=0` from any EXISTING user's
+    // already-written mw3ncp_config.ini (this key gets written out by SaveModConfig on
+    // every run, so every past install already has an explicit `false` on disk) and
+    // silently override the new default right back to broken -- upgraders would stay
+    // stuck with no glyphs forever with no obvious reason why. Removed the flag and its
+    // ini key entirely rather than just changing the default, so a stale on-disk `false`
+    // from before this fix physically cannot block the overlay anymore. The overlay is
+    // now gated only by ShouldDrawGlyphOverlay()'s remaining real condition
+    // (forceGlyphOverlay || IsControllerActiveInputMethod()).
     bool armorFieldScanLogging = false; // issue #63 follow-up (2026-08-03): user-reported
         // the damage-rumble health poll (rumble.cpp's PollDamageRumble) never fires while
         // Survival's purchasable Body Armor is absorbing hits, since armor is a separate

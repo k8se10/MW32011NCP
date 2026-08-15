@@ -6,7 +6,84 @@ reverse-engineering trail behind each entry.
 
 ---
 
-## Unreleased
+## v0.3.2 — Alpha (2026-08-16) — Controller-glyph icons actually work now; native DualSense/gyro preview
+
+**Headline fix, and worth being blunt about**: every "no controller glyphs" report
+this project has ever received, going all the way back to v0.3.0, traced to one
+cause — `glyphIconOverlayEnabled`, this project's own master on/off switch for the
+whole glyph overlay, was hardcoded `false` and never flipped on for release. Not a
+hardware quirk, not Steam Overlay, not a memory-address theory — this project shipped
+its own headline feature permanently disabled by mistake, three releases in a row.
+Finding that took **16 days and two separate investigation rounds** (issues #71 and
+#74), including two real-but-partial fixes along the way (an XInput controller-slot
+bug, a font-detection gap) and two externally-sourced architectural theories that both
+turned out to be unnecessary — because nobody re-checked this project's own simplest
+config flag against a log line that had been printing the answer from the start. See
+`re_notes/known_issues.md` issue #74 for the full incident writeup and postmortem, and
+`CODE_STANDARDS.md`'s new "Debugging Methodology" section for the standing rules
+adopted as a result. If controller glyphs never worked for you on any prior release,
+this is why, and this release fixes it — confirmed live via direct reproduction, not
+assumed.
+
+**Also new this release**: a first, PREVIEW/WIP pass at native DualSense (PS5
+controller) support and gyro-aim, off by default and not yet live-tested against real
+hardware.
+
+### Added
+- **PREVIEW/WIP, off by default: native DualSense (PS5 controller) support via a new
+  raw-HID backend, bypassing Steam Input entirely, plus a first pass at native
+  gyro-aim.** This project's controller layer was XInput-only before this — a
+  DualSense has no native XInput driver on Windows at all, so it was only ever
+  visible through a third-party translator (Steam Input, DS4Windows), and real
+  feedback (see issue #74 below) found that translation unreliable specifically for
+  this mod. Now opens the DualSense directly over raw HID and reads its real input
+  report itself — sticks/buttons/triggers work exactly like an XInput pad to every
+  other part of this project, no other code needed to change. Gyro-aim rides on the
+  same connection (`[Gyro] Enabled=1` in `mw3ncp_config.ini`), additive on top of
+  right-stick look. **Not yet live-tested against real hardware** — implemented
+  against a real reference implementation's confirmed byte offsets, not this
+  project's own hardware, since none is available to the developer; gyro units are
+  raw/uncalibrated and the axis mapping is a best-effort guess with invert toggles
+  to correct it if wrong. USB only — Bluetooth DualSense isn't handled yet.
+  **CRITICAL, found and fixed same day: the first build of this backend broke game
+  boot entirely (a Windows loader-lock deadlock between this project's background
+  controller-poll thread and the game's own Direct3DCreate9 DLL loading), live-
+  reported within hours and root-caused via direct log evidence — fixed by refusing
+  to attempt DualSense device enumeration until the game's own D3D device is
+  confirmed to already exist.** See `re_notes/known_issues.md` issue #76 for the
+  full writeup and what's still unverified.
+
+### Fixed
+- **Root cause found and CONFIRMED LIVE for the "no glyphs at all, mod doesn't
+  know it" reports: the controller-glyph overlay's own master enable flag
+  defaulted OFF in every release since v0.3.0, and was never exposed in any
+  shipped `.ini` or in-game UI.** `glyphIconOverlayEnabled` was left off as an
+  internal "first live-test round" flag from the day it was written
+  (2026-07-31) and never flipped on for release — `ShouldDrawGlyphOverlay()`
+  required it to be true before anything else (including `ForceGlyphOverlay`,
+  the one escape hatch this project has ever told users about) even got a
+  chance to matter, so glyphs could never draw on a genuinely fresh install
+  regardless of resolution, language, controller slot, or Steam Input state.
+  Reproduced directly on a second, fresh-install PC, confirmed straight from
+  that machine's `proxy_d3d9.log` config dump, and confirmed fixed on a
+  relaunch of the rebuilt DLL. See `re_notes/known_issues.md` issue #74 for
+  the full writeup, including why the external memory-shifting/D3D-state
+  theories investigated first weren't the real cause.
+- **The flag itself is now removed entirely, not just re-defaulted, to close a
+  config-migration hazard the first fix would have missed for existing
+  players.** Every prior install had already written a literal
+  `GlyphIconOverlay=0` to its own `mw3ncp_config.ini` — just changing the
+  in-code default would have kept getting silently overridden back to broken
+  for anyone upgrading rather than installing fresh, with no obvious reason
+  why. `glyphIconOverlayEnabled` and its `[Experimental] GlyphIconOverlay` ini
+  key are gone from the config schema; the overlay is now controlled solely by
+  `ForceGlyphOverlay`/active-input-method detection. The config schema version
+  was bumped so every existing player's ini gets rewritten on next launch and
+  the stale key is physically removed from their file, not just ignored.
+  **See `re_notes/known_issues.md` issue #74's postmortem** for how this
+  specific bug — a config flag this project itself hardcoded off — took 16
+  days and two investigation rounds to actually find, and the standing
+  debugging-methodology rules added to `CODE_STANDARDS.md` as a result.
 
 ## v0.3.1.h1 — Hotfix (2026-08-09) — Mouse-lag regression, non-16:9 scaling/glyph-visibility, Options-screen crash
 

@@ -109,7 +109,16 @@ void ReadBool(const char* path, const char* section, const char* key, bool& outV
 // reported "way too slow" -- corrected to 145 (~58%, "closer to about 55-60%").
 // v12->v13 (2026-08-04, issue #66 full-scope pivot): new [Options] section
 // (UseCustomOptionsScreen) added -- the full custom-options-replacement toggle.
-constexpr unsigned long kCurrentConfigVersion = 13;
+// v13->v14 (2026-08-16, issue #74 root-cause fix follow-up): [Experimental]
+// GlyphIconOverlay REMOVED entirely -- it was the master on/off switch for the whole
+// controller-glyph overlay, shipped defaulted OFF since issue #48 and never flipped on
+// for release, which was the real cause of every "no glyphs" community report. Simply
+// changing the in-code default to true isn't enough on its own: every existing user's
+// already-written ini has an explicit `GlyphIconOverlay=0` on disk (SaveModConfig wrote
+// it out on every prior run), which would keep overriding the new default right back to
+// broken. The bump here forces WriteDefaultConfig() to rewrite every upgrader's ini and
+// drop the stale key, so it physically cannot block the overlay anymore.
+constexpr unsigned long kCurrentConfigVersion = 14;
 
 // Reads a legacy key's raw value, returning true only if the key genuinely existed
 // (unlike ReadFloat, which can't distinguish "absent" from "present but unparsable" --
@@ -541,10 +550,6 @@ void WriteDefaultConfig(const char* path)
         "; check proxy_d3d9.log for \"[list-item-diag]\" lines, then turn back off.\n"
         "; Always forwards unmodified regardless of this toggle. 0 = off, 1 = on.\n"
         "ListItemPositionLogging=%d\n"
-        "; Issue #48: draws a real controller-glyph icon on top of the button-name\n"
-        "; portion of a real hint string (e.g. the F in \"Press F to pick up\"). DEFAULT\n"
-        "; OFF -- first live-test round for this actual drawing step. 0 = off, 1 = on.\n"
-        "GlyphIconOverlay=%d\n"
         "; Issue #63 follow-up: Survival's purchasable Body Armor absorbs hits\n"
         "; separately from real health, so the damage-rumble health poll never\n"
         "; fires while armored -- the real armor field's memory location isn't\n"
@@ -610,7 +615,6 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.hudFontIdLogging ? 1 : 0,
         g_modConfig.hudGlyphPositionLogging ? 1 : 0,
         g_modConfig.listItemPositionLogging ? 1 : 0,
-        g_modConfig.glyphIconOverlayEnabled ? 1 : 0,
         g_modConfig.armorFieldScanLogging ? 1 : 0,
         g_modConfig.forceGlyphOverlay ? 1 : 0);
 
@@ -813,10 +817,14 @@ void LoadModConfig()
     ReadBool(path, "Experimental", "BindResolverGlyphSubstitution", g_modConfig.bindResolverGlyphSubstitution);
     ReadBool(path, "Experimental", "HudFontIdLogging", g_modConfig.hudFontIdLogging);
     ReadBool(path, "Experimental", "HudGlyphPositionLogging", g_modConfig.hudGlyphPositionLogging);
-    ReadBool(path, "Experimental", "GlyphIconOverlay", g_modConfig.glyphIconOverlayEnabled);
     ReadBool(path, "Experimental", "ListItemPositionLogging", g_modConfig.listItemPositionLogging);
     ReadBool(path, "Experimental", "ArmorFieldScanLogging", g_modConfig.armorFieldScanLogging);
     ReadBool(path, "Experimental", "ForceGlyphOverlay", g_modConfig.forceGlyphOverlay);
+    ReadBool(path, "Gyro", "Enabled", g_modConfig.gyroEnabled);
+    ReadFloat(path, "Gyro", "Sensitivity", g_modConfig.gyroSensitivity);
+    if (g_modConfig.gyroSensitivity < 0.0f) g_modConfig.gyroSensitivity = 0.0f;
+    ReadBool(path, "Gyro", "InvertPitch", g_modConfig.gyroInvertPitch);
+    ReadBool(path, "Gyro", "InvertYaw", g_modConfig.gyroInvertYaw);
 
     g_buttonMap = ResolveButtonMap(g_modConfig.buttonLayout, g_modConfig.flipTriggers);
 
@@ -832,7 +840,7 @@ void LoadModConfig()
         "overlayFontItalic=%d overlayTestCycleAllVariants=%d "
         "fireNotifyQueueKick=%d bindResolverHookLogging=%d bindResolverGlyphSubstitution=%d "
         "hudFontIdLogging=%d hudGlyphPositionLogging=%d listItemPositionLogging=%d "
-        "glyphIconOverlayEnabled=%d armorFieldScanLogging=%d forceGlyphOverlay=%d",
+        "armorFieldScanLogging=%d forceGlyphOverlay=%d",
         g_modConfig.lookDegreesPerSecondHorizontal, g_modConfig.lookDegreesPerSecondVertical,
         g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
@@ -854,7 +862,6 @@ void LoadModConfig()
         g_modConfig.hudFontIdLogging ? 1 : 0,
         g_modConfig.hudGlyphPositionLogging ? 1 : 0,
         g_modConfig.listItemPositionLogging ? 1 : 0,
-        g_modConfig.glyphIconOverlayEnabled ? 1 : 0,
         g_modConfig.armorFieldScanLogging ? 1 : 0,
         g_modConfig.forceGlyphOverlay ? 1 : 0);
     LogFromController(buf);
