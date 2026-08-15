@@ -7,6 +7,9 @@
 #include <cstdlib> // std::abs(int) -- XInputStateHasActivity's stick-magnitude check
 #include "overlay_hud.h" // ShowOverlayMessage -- connect/disconnect notifications, see
                           // PumpPendingControllerNotification's own header comment below
+#include "dualsense_input.h" // 2026-08-11 -- raw-HID DualSense fallback, see its own
+                              // header comment for why XInput/Steam Input alone
+                              // aren't enough (issue #74/#76)
 
 extern void LogFromController(const char* msg); // defined in dllmain.cpp
 
@@ -139,6 +142,17 @@ struct CachedControllerState {
     unsigned char leftTrigger = 0, rightTrigger = 0;
     bool connected = false;
     int activeSlot = 0;
+
+    // 2026-08-11 (issue #76): set when this frame's state came from the raw-HID
+    // DualSense backend instead of XInput -- Controller_SetVibration guards on this
+    // (DualSense rumble needs its own HID output report, not implemented this pass,
+    // see dualsense_input.cpp's bottom comment) and gyro is only ever populated
+    // alongside this being true (XInput has no gyro at all).
+    bool sourceIsDualSense = false;
+    float gyroX = 0.0f, gyroY = 0.0f, gyroZ = 0.0f; // raw sensor units, see
+                                                      // dualsense_input.h's header
+                                                      // comment on why these aren't
+                                                      // claimed to be calibrated deg/s
 };
 
 CRITICAL_SECTION g_stateLock;
@@ -282,41 +296,112 @@ DWORD WINAPI XInputPollThreadProc(LPVOID)
 {
     for (;;) {
         EnsureLoaded();
+        bool handledByXInput = false;
         if (g_XInputGetState) {
             int slot = ResolveActiveXInputSlotOnPollThread();
             XINPUT_STATE state{};
             bool connected = g_XInputGetState(static_cast<DWORD>(slot), &state) == ERROR_SUCCESS;
 
-            float lx = 0.0f, ly = 0.0f, rx = 0.0f, ry = 0.0f;
             if (connected) {
+                handledByXInput = true;
+                float lx = 0.0f, ly = 0.0f, rx = 0.0f, ry = 0.0f;
                 ShapeStick(state.Gamepad.sThumbLX, state.Gamepad.sThumbLY, kLeftDeadzone, lx, ly);
                 ShapeStick(state.Gamepad.sThumbRX, state.Gamepad.sThumbRY, kRightDeadzone, rx, ry);
-            }
 
-            EnterCriticalSection(&g_stateLock);
-            g_cachedState.leftX = lx;
-            g_cachedState.leftY = ly;
-            g_cachedState.rightX = rx;
-            g_cachedState.rightY = ry;
-            g_cachedState.buttons = connected ? state.Gamepad.wButtons : 0;
-            g_cachedState.leftTrigger = connected ? state.Gamepad.bLeftTrigger : 0;
-            g_cachedState.rightTrigger = connected ? state.Gamepad.bRightTrigger : 0;
-            g_cachedState.connected = connected;
-            g_cachedState.activeSlot = slot;
-            LeaveCriticalSection(&g_stateLock);
+                EnterCriticalSection(&g_stateLock);
+                g_cachedState.leftX = lx;
+                g_cachedState.leftY = ly;
+                g_cachedState.rightX = rx;
+                g_cachedState.rightY = ry;
+                g_cachedState.buttons = state.Gamepad.wButtons;
+                g_cachedState.leftTrigger = state.Gamepad.bLeftTrigger;
+                g_cachedState.rightTrigger = state.Gamepad.bRightTrigger;
+                g_cachedState.connected = true;
+                g_cachedState.activeSlot = slot;
+                g_cachedState.sourceIsDualSense = false;
+                g_cachedState.gyroX = g_cachedState.gyroY = g_cachedState.gyroZ = 0.0f;
+                LeaveCriticalSection(&g_stateLock);
 
-            // Marked here, at the moment real input is actually observed, rather than
-            // making every Controller_Get* consumer below re-derive the same "was
-            // there real input" check on the cached snapshot -- one place, same
-            // "every reader of real input must mark activity" principle the
-            // pre-existing centralized getters comment (further below) already
-            // established for a different pair of functions.
-            if (connected && (lx != 0.0f || ly != 0.0f || rx != 0.0f || ry != 0.0f ||
-                               state.Gamepad.wButtons != 0 ||
-                               state.Gamepad.bLeftTrigger != 0 || state.Gamepad.bRightTrigger != 0)) {
-                MarkControllerActivity();
+                // Marked here, at the moment real input is actually observed, rather
+                // than making every Controller_Get* consumer below re-derive the same
+                // "was there real input" check on the cached snapshot -- one place,
+                // same "every reader of real input must mark activity" principle the
+                // pre-existing centralized getters comment (further below) already
+                // established for a different pair of functions.
+                if (lx != 0.0f || ly != 0.0f || rx != 0.0f || ry != 0.0f ||
+                    state.Gamepad.wButtons != 0 ||
+                    state.Gamepad.bLeftTrigger != 0 || state.Gamepad.bRightTrigger != 0) {
+                    MarkControllerActivity();
+                }
             }
         }
+
+        // 2026-08-11 (issue #76): only reached when XInput found nothing connected
+        // this tick -- covers a DualSense with no XInput translator running at all
+        // (the actual reported gap: issue #74's Biactyk needs Steam Input OFF for
+        // this mod to see input, but ON for gyro, so relying on Steam Input's own
+        // XInput emulation was never going to satisfy both). Deliberately checked
+        // AFTER XInput, never instead of it -- an Xbox pad (or an already-working
+        // translator) keeps taking priority exactly as before, so this is strictly
+        // additive and can't regress anyone XInput already worked for.
+        // CRITICAL FIX (2026-08-11, live-reported same day: "mw3 fails to boot"):
+        // DualSense_EnsureOpen()'s SetupDiGetClassDevsW/CreateFileW enumeration can
+        // internally trigger its own DLL loading (device class-installer DLLs), and
+        // this poll thread starts firing almost immediately after the mod loads --
+        // racing directly against the game's own Direct3DCreate9/device-creation DLL
+        // loading on the main thread. Two threads each loading DLLs at the same time
+        // is a classic Windows loader-lock deadlock (confirmed via proxy_d3d9.log:
+        // the boot sequence logged cleanly through the second "Direct3DCreate9
+        // called" line, then nothing further -- no crash, a silent hang, exactly the
+        // loader-lock signature). Fixed by refusing to even ATTEMPT DualSense
+        // enumeration until GetLastKnownRenderDevice() proves the game's own D3D
+        // device already exists -- i.e. boot has already gotten past the exact
+        // window that hung, so this can never again race the initial device-creation
+        // sequence. GetLastKnownRenderDevice() is set from Hook_EndScene on the main
+        // thread every frame once rendering is alive (overlay_hud.cpp).
+        if (!handledByXInput && GetLastKnownRenderDevice() != nullptr) {
+            DualSenseRawState dsState;
+            if (DualSense_EnsureOpen() && DualSense_Poll(dsState)) {
+                float lx = 0.0f, ly = 0.0f, rx = 0.0f, ry = 0.0f;
+                // DualSense sticks are already-centered signed 8-bit range (see
+                // DualSenseRawState's own comment); scaled up to a SHORT range so the
+                // SAME ShapeStick() deadzone/curve math XInput uses applies unchanged.
+                ShapeStick(static_cast<SHORT>(dsState.leftStickX * 256), static_cast<SHORT>(dsState.leftStickY * 256), kLeftDeadzone, lx, ly);
+                ShapeStick(static_cast<SHORT>(dsState.rightStickX * 256), static_cast<SHORT>(dsState.rightStickY * 256), kRightDeadzone, rx, ry);
+                unsigned short buttons = DualSense_ToXInputButtons(dsState);
+
+                EnterCriticalSection(&g_stateLock);
+                g_cachedState.leftX = lx;
+                g_cachedState.leftY = ly;
+                g_cachedState.rightX = rx;
+                g_cachedState.rightY = ry;
+                g_cachedState.buttons = buttons;
+                g_cachedState.leftTrigger = dsState.leftTrigger;
+                g_cachedState.rightTrigger = dsState.rightTrigger;
+                g_cachedState.connected = true;
+                g_cachedState.activeSlot = -1; // not an XInput slot -- see this
+                                                 // struct's sourceIsDualSense comment
+                g_cachedState.sourceIsDualSense = true;
+                g_cachedState.gyroX = static_cast<float>(dsState.gyroX);
+                g_cachedState.gyroY = static_cast<float>(dsState.gyroY);
+                g_cachedState.gyroZ = static_cast<float>(dsState.gyroZ);
+                LeaveCriticalSection(&g_stateLock);
+
+                if (lx != 0.0f || ly != 0.0f || rx != 0.0f || ry != 0.0f || buttons != 0 ||
+                    dsState.leftTrigger != 0 || dsState.rightTrigger != 0) {
+                    MarkControllerActivity();
+                }
+                NotifyControllerConnectionChange(true);
+            } else {
+                EnterCriticalSection(&g_stateLock);
+                g_cachedState.connected = false;
+                g_cachedState.sourceIsDualSense = false;
+                g_cachedState.gyroX = g_cachedState.gyroY = g_cachedState.gyroZ = 0.0f;
+                LeaveCriticalSection(&g_stateLock);
+                NotifyControllerConnectionChange(false);
+            }
+        }
+
         Sleep(kPollIntervalMs);
     }
     return 0; // unreachable -- this thread lives for the whole process, matching this
@@ -420,20 +505,43 @@ bool Controller_IsConnected()
     return connected;
 }
 
+// 2026-08-11 (issue #76): raw, uncalibrated gyro sensor units -- see
+// dualsense_input.h's own header comment for why this doesn't claim a deg/s
+// conversion. Returns false (zeroed outputs) whenever the active controller isn't
+// the raw-HID DualSense backend, e.g. any XInput pad (including Steam Input's own
+// virtual ones) -- none of those expose gyro data to this project at all.
+bool Controller_GetGyroRate(float& x, float& y, float& z)
+{
+    EnsurePollThreadStarted();
+    EnterCriticalSection(&g_stateLock);
+    bool hasGyro = g_cachedState.connected && g_cachedState.sourceIsDualSense;
+    x = hasGyro ? g_cachedState.gyroX : 0.0f;
+    y = hasGyro ? g_cachedState.gyroY : 0.0f;
+    z = hasGyro ? g_cachedState.gyroZ : 0.0f;
+    LeaveCriticalSection(&g_stateLock);
+    return hasGyro;
+}
+
 void Controller_SetVibration(float leftMotor, float rightMotor)
 {
     EnsurePollThreadStarted();
     EnsureLoaded();
     if (!g_XInputSetState) return;
 
+    EnterCriticalSection(&g_stateLock);
+    int slot = g_cachedState.activeSlot;
+    // 2026-08-11 (issue #76): the raw-HID DualSense backend has no output-report
+    // implementation yet (see dualsense_input.cpp's bottom comment) -- calling
+    // XInputSetState with slot==-1 (this backend's "not an XInput slot" sentinel)
+    // would be meaningless at best. Skip rather than send garbage.
+    bool isDualSense = g_cachedState.sourceIsDualSense;
+    LeaveCriticalSection(&g_stateLock);
+    if (isDualSense) return;
+
     if (leftMotor < 0.0f) leftMotor = 0.0f;
     if (leftMotor > 1.0f) leftMotor = 1.0f;
     if (rightMotor < 0.0f) rightMotor = 0.0f;
     if (rightMotor > 1.0f) rightMotor = 1.0f;
-
-    EnterCriticalSection(&g_stateLock);
-    int slot = g_cachedState.activeSlot;
-    LeaveCriticalSection(&g_stateLock);
 
     XINPUT_VIBRATION vib{};
     vib.wLeftMotorSpeed = static_cast<WORD>(leftMotor * 65535.0f);

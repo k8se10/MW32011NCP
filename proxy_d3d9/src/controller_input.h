@@ -47,6 +47,14 @@ bool Controller_IsConnected();
 // each other about which input method is "active" right now.
 bool IsControllerActiveInputMethod();
 
+// Raw, uncalibrated gyroscope sensor units (2026-08-11, issue #76) -- only ever
+// non-zero/true when the currently active controller is this project's raw-HID
+// DualSense backend (dualsense_input.h); any XInput-sourced pad (including one
+// reached via a translator like Steam Input) has no gyro data to give, and this
+// returns false with zeroed outputs in that case. Deliberately NOT claimed to be
+// calibrated degrees/second -- see dualsense_input.h's own header comment for why.
+bool Controller_GetGyroRate(float& x, float& y, float& z);
+
 // Sets the controller's two rumble motors directly (task #17). leftMotor/rightMotor
 // are normalized [0, 1] -- clamped internally, so an out-of-range caller can't send a
 // bogus value to XInputSetState. Same controller slot (index 0) as every other XInput

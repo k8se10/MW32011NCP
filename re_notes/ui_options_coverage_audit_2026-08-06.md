@@ -81,12 +81,26 @@ from the UI either.
 | Options | `UseCustomOptionsScreen` |
 | Vibration | `FireIntensity`, `FireDurationMs`, `DamagePerPoint`, `DamageMaxIntensity`, `DamageDurationMs` |
 | Overlay | `FontItalic`, `TestCycleAllVariants` |
-| Experimental | `FireNotifyQueueKick`, `BindResolverHookLogging`, `BindResolverGlyphSubstitution`, `HudFontIdLogging`, `HudGlyphPositionLogging`, `GlyphIconOverlay`, `ArmorFieldScanLogging` |
+| Experimental | `FireNotifyQueueKick`, `BindResolverHookLogging`, `BindResolverGlyphSubstitution`, `HudFontIdLogging`, `HudGlyphPositionLogging`, ~~`GlyphIconOverlay`~~ (removed, see note below), `ArmorFieldScanLogging` |
 
 That leaves **39 of 45** non-meta persisted fields inaccessible in the current
-UI. Some are deliberately diagnostic/experimental controls, but they are still
-part of the requested "every config item" scope and need an explicit developer
-or advanced-settings surface if that scope is retained.
+UI (counts as originally audited 2026-08-06; see stale-field note below). Some
+are deliberately diagnostic/experimental controls, but they are still part of
+the requested "every config item" scope and need an explicit developer or
+advanced-settings surface if that scope is retained.
+
+> **Stale field note, added 2026-08-16**: `[Experimental] GlyphIconOverlay`
+> (`glyphIconOverlayEnabled` in `mod_config.h`) was removed from the config
+> schema entirely on 2026-08-16 — it is no longer a persisted field at all, not
+> just re-defaulted. It was the master on/off switch for the controller-glyph
+> overlay, shipped hardcoded `false` since issue #48 and never flipped on for
+> release; this was the real root cause of the long-running "no glyphs"
+> community reports (`known_issues.md` issue #74). Its removal means this
+> audit's **45** total mod INI fields and **39 of 45** inaccessible count are
+> both one lower as of that date (44 and 38 respectively) — left as originally
+> written above since this document is a dated point-in-time snapshot, not
+> living state; treat the 2026-08-06 counts as historical and this note as the
+> correction.
 
 ## In-progress implementation: Custom Binds drill-down is not yet reachable
 
