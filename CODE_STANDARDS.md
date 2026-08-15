@@ -90,6 +90,41 @@ reference record, not a polished highlight reel — treat it that way:
 - Undocumented work is not done, by the same standard as untested work — see
   **Production Readiness Criteria** above.
 
+## Debugging Methodology
+
+Added 2026-08-16 after issue #74's own postmortem (`known_issues.md`) — a "no
+glyphs" report took **sixteen days and two investigation rounds**, including two
+externally-sourced architectural theories, to trace back to a config flag this
+project itself had hardcoded off from day one and was already printing on the
+first line of every `proxy_d3d9.log` capture the whole time. Standing rules from
+that failure:
+
+- **Before investigating anything external (hardware, OS, other software, memory
+  layout, third-party overlays), dump and personally read every gating flag this
+  project's own config loader already logs.** If a `[config] loaded ...`-style
+  line exists, read the WHOLE line, not just the field your current hypothesis
+  predicts. Confirmation bias in what you grep for is as dangerous as a missing
+  diagnostic — don't assume a diagnostic doesn't exist just because the specific
+  tag you're used to searching for isn't matching.
+- **A real fix found along the way is not evidence the remaining reports are
+  something more exotic.** It's easy to let "we already found and fixed a real
+  bug here" quietly close off re-checking the simplest original explanation for
+  everyone still affected. Re-verify the mundane gate again after every fix,
+  before escalating the theory.
+- **Don't scope the search window to "what changed recently."** A silent,
+  permanent, wrong-since-introduction default is invisible to any diff-shaped or
+  changelog-shaped search — it only surfaces from a full, unfiltered read of
+  CURRENT state, independent of when it was introduced.
+- **A reporter saying "I already tried the config fix" is a claim about their
+  actions, not a verified fact about the code.** Check what the fix they're
+  describing actually does in the source before treating it as having ruled
+  anything out — don't let a plausible-sounding user report substitute for
+  reading the gating logic itself.
+- **Direct, first-party reproduction beats remote diagnosis from partial reports.**
+  When remote diagnosis stalls, install fresh yourself and read your own log
+  start-to-finish rather than re-grepping reporters' partial logs for the same
+  prior hypotheses again.
+
 ## Native project code (C/C++)
 
 - **Aspirational goal, not current practice (corrected 2026-08-01 — this

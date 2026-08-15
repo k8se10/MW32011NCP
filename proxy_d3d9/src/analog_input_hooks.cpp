@@ -290,9 +290,13 @@ int GetRawTopOfStackItemCount()
 // decision (controller_input.h's IsControllerActiveInputMethod) the custom cursor
 // overlay's own visibility already depends on, so the two can never disagree. Every
 // real DRAW gate in this file that previously checked g_modConfig.glyphIconOverlayEnabled
-// directly now calls this instead; the one exception (LogMenuFocusDiagnosticIfChanged)
-// is a read-only diagnostic that never draws anything, so it stays on the plain
-// config flag alone.
+// directly now calls this instead.
+//
+// glyphIconOverlayEnabled REMOVED 2026-08-16 (issue #74 root-cause fix, mod_config.h):
+// it was the master on/off switch for the whole overlay, shipped defaulted OFF since
+// issue #48 and never flipped on for release -- the real cause of every "no glyphs"
+// community report. Removed entirely rather than just flipping its default, so a stale
+// `false` already written to an existing user's on-disk ini can't keep blocking this.
 bool ShouldDrawGlyphOverlay()
 {
     // Live-reported 2026-08-08 (Nexus, v0.3.1): several players see no glyphs at all,
@@ -300,8 +304,7 @@ bool ShouldDrawGlyphOverlay()
     // real diagnostic escape hatch, not a permanent behavior change. See
     // g_modConfig.forceGlyphOverlay's own header comment (mod_config.h) for the full
     // reasoning and what a live test with this on is expected to reveal either way.
-    return g_modConfig.glyphIconOverlayEnabled &&
-        (g_modConfig.forceGlyphOverlay || IsControllerActiveInputMethod());
+    return g_modConfig.forceGlyphOverlay || IsControllerActiveInputMethod();
 }
 
 // ---- BUG-003 follow-up (2026-08-02): B-press/crouch-drop diagnostics --------------
@@ -2165,6 +2168,31 @@ extern "C" void __cdecl InjectControllerLookAngles()
     } else {
         g_lookAccelStartMs = 0; // stick back at neutral -- next push starts the ramp fresh
     }
+
+    // 2026-08-11 (issue #76): additive gyro-aim, PREVIEW/WIP -- see mod_config.h's
+    // [Gyro] comment for the full rationale (built to avoid depending on Steam
+    // Input for gyro, per explicit user direction) and why this is off by default
+    // (never live-tested -- no DualSense available to the developer). Applied
+    // regardless of the stick-look block above being active -- a gyro nudge should
+    // register even while the right stick sits at neutral, that's the entire point
+    // of gyro-assisted aim, unlike the stick path which intentionally does nothing
+    // at rest.
+    if (g_modConfig.gyroEnabled) {
+        float gyroX = 0.0f, gyroY = 0.0f, gyroZ = 0.0f;
+        if (Controller_GetGyroRate(gyroX, gyroY, gyroZ)) {
+            // Axis-to-yaw/pitch mapping (Z=yaw, X=pitch) is a best-effort guess, not
+            // verified against real hardware -- InvertYaw/InvertPitch exist
+            // specifically so a live tester can correct this without a rebuild if
+            // it's backwards or mapped to the wrong axis entirely.
+            float yawDelta = gyroZ * g_modConfig.gyroSensitivity * dt;
+            float pitchDelta = gyroX * g_modConfig.gyroSensitivity * dt;
+            if (g_modConfig.gyroInvertYaw) yawDelta = -yawDelta;
+            if (g_modConfig.gyroInvertPitch) pitchDelta = -pitchDelta;
+            if (g_modConfig.invertLook) pitchDelta = -pitchDelta; // OG console "Invert Look" applies uniformly
+            *kYawAccum -= yawDelta;
+            *kPitchAccum -= pitchDelta;
+        }
+    }
 }
 
 // ---- Investigation record: Cbuf_AddText / Cmd_ExecuteString exist, but aren't the
@@ -3216,9 +3244,11 @@ void __cdecl Hook_004dfd30(int* param_1, int* param_2, unsigned param_3, int par
 // cached list struct's real focus-index/item-count fields and logs them, deduped by
 // value so it doesn't spam every frame -- confirms live whether this struct pointer
 // and field-offset theory are actually correct before anything draws a glyph off of
-// them. Gated on g_modConfig.glyphIconOverlayEnabled (same toggle as the rest of the
-// custom-hint-overlay work) rather than its own separate config key, since this is
-// investigation scaffolding for that same feature, not a standalone toggle.
+// them. Was gated on g_modConfig.glyphIconOverlayEnabled (same toggle as the rest of
+// the custom-hint-overlay work); that flag was REMOVED 2026-08-16 (issue #74 root-cause
+// fix -- see mod_config.h), so this now reuses hudGlyphPositionLogging instead (same
+// "investigation scaffolding, default off" intent) rather than logging unconditionally
+// forever with no toggle at all.
 // Extracted 2026-08-01 from LogMenuFocusDiagnosticIfChanged's own inline reads
 // (below) so the highlighted-item A-glyph feature can reuse the exact same,
 // already-confirmed-live struct-field theory rather than duplicating it.
@@ -3240,7 +3270,7 @@ bool TryGetCurrentMenuFocusIndex(int& outIndex, int& outItemCount)
 
 void LogMenuFocusDiagnosticIfChanged()
 {
-    if (!g_modConfig.glyphIconOverlayEnabled) return;
+    if (!g_modConfig.hudGlyphPositionLogging) return;
     static void* s_lastLoggedStruct = nullptr;
     static int s_lastLoggedFocus = INT_MIN;
     int focusIndex = 0, itemCount = 0;
@@ -5871,6 +5901,45 @@ void __cdecl Hook_DrawGlyphText(
     unsigned param_16, unsigned param_17, unsigned param_18, unsigned param_19,
     unsigned param_20, unsigned param_21)
 {
+    // Diagnostic (2026-08-11, "major audit" pass -- see re_notes/known_issues.md issue
+    // #74): confirms this hook actually fires at all, and captures the exact gate
+    // values that decide whether a gameplay hint gets replaced. Added after a live
+    // Nexus report (ViperManfred, v0.3.1.h1) tested with ForceGlyphOverlay=1 at 1440p
+    // (16:9 -- the already-allowlisted font tier) and still saw zero glyphs, which
+    // rules out both previously-fixed causes (XInput slot, font-tier allowlist gap)
+    // for that report specifically and leaves "does this hook fire, and which gate
+    // blocks it" as the single most valuable unknown. Deliberately NOT a guessed fix --
+    // this project's own standard is to verify via logs before changing behavior.
+    static LONG s_drawGlyphTextFireCount = 0;
+    if (InterlockedIncrement(&s_drawGlyphTextFireCount) == 1) {
+        LogFromController("[hud-font-id] Hook_DrawGlyphText fired for the first time -- confirmed alive");
+    }
+    {
+        static char s_lastLoggedGateKey[160] = {};
+        char fontNameForLog[64] = "<unreadable-or-null>";
+        if (fontArg && LooksLikeValidPointer(reinterpret_cast<uintptr_t>(fontArg))) {
+            const DiagFont* fontForLog = reinterpret_cast<const DiagFont*>(fontArg);
+            if (LooksLikeValidPointer(reinterpret_cast<uintptr_t>(fontForLog->fontName))) {
+                strncpy_s(fontNameForLog, fontForLog->fontName, _TRUNCATE);
+            }
+        }
+        bool wouldDraw = ShouldDrawGlyphOverlay();
+        bool menuActive = IsMenuActive();
+        bool fontAllowed = (fontArg && LooksLikeValidPointer(reinterpret_cast<uintptr_t>(fontArg)))
+            ? IsGameplayHintFont(reinterpret_cast<const DiagFont*>(fontArg)) : false;
+        char gateKey[160];
+        sprintf_s(gateKey, "%s|%d|%d|%d", fontNameForLog, wouldDraw ? 1 : 0, menuActive ? 1 : 0, fontAllowed ? 1 : 0);
+        if (strncmp(s_lastLoggedGateKey, gateKey, sizeof(s_lastLoggedGateKey) - 1) != 0) {
+            strncpy_s(s_lastLoggedGateKey, gateKey, _TRUNCATE);
+            char gateBuf[256];
+            sprintf_s(gateBuf, "[hud-font-id][gate] font=%s ShouldDrawGlyphOverlay=%d IsMenuActive=%d "
+                                 "IsGameplayHintFont=%d forceGlyphOverlay=%d",
+                fontNameForLog, wouldDraw ? 1 : 0, menuActive ? 1 : 0, fontAllowed ? 1 : 0,
+                g_modConfig.forceGlyphOverlay ? 1 : 0);
+            LogFromController(gateBuf);
+        }
+    }
+
     // TEMP diagnostic (2026-08-03, issue #51 follow-up): LEADERBOARDS_BUTTON_LIST
     // real-position/real-index calibration, per the confirmed manual-per-screen
     // method. Measures each item's real text-end position (SumDirectIndexedGlyphWidthsBefore)
@@ -6047,7 +6116,7 @@ void __cdecl Hook_DrawGlyphText(
     }
 
     // Issue #48/#49 (2026-07-31 pivot): replace the WHOLE in-game hint with this
-    // project's own text+icon render, gated by glyphIconOverlayEnabled. Superseded
+    // project's own text+icon render, gated by ShouldDrawGlyphOverlay(). Superseded
     // the earlier "overlay an icon on top of the game's own text" plan -- lining up a
     // real icon against the game's own pixel-exact font rendering proved fiddly
     // (confirmed live: two rounds of position math still landed visibly off) and

@@ -13,9 +13,9 @@ It hooks directly into a live game process. Expect bugs, rough edges, unfinished
 
 [hr]
 
-[size=4][b]Status: ALPHA — v0.3.1.h1 (2026-08-09) — feature-free hotfix on v0.3.1[/b][/size]
+[size=4][b]Status: ALPHA — v0.3.2 (2026-08-16) — controller-glyph icons actually work now[/b][/size]
 
-[color=#F39C12]Hotfix, no new features — see the Changelog tab for the full itemized list.[/color] Headline fixes: a critical mouse-movement-correlated FPS drop (confirmed live, fully fixed), and controller-glyph icons never appearing at all on non-16:9 resolutions (root-caused to two separate bug classes via direct log evidence, not guessed). Also fixes a real crash risk in the still-preview/WIP Options screen and an unbounded log-growth issue on long sessions. Not feature-complete, not fully tested end-to-end. Multiplayer ([font=Courier New]iw5mp.exe[/font]) hasn't been started at all. Read [b]What Works / Partial / Not Working[/b] below before assuming any specific feature works — this project is deliberately honest about what's confirmed vs. not, not a marketing pitch.
+[color=#E74C3C][b]Headline fix, and worth being blunt about:[/b][/color] every "no controller glyphs" report this mod has ever received, going all the way back to v0.3.0, traced to one cause — this project's own master on/off switch for the whole glyph overlay was hardcoded off and never flipped on for release. Not a hardware quirk, not Steam Overlay, not a memory-address theory — this mod shipped its own headline feature permanently disabled by mistake, three releases in a row, and it took 16 days and two full investigation rounds to catch. Full incident writeup and postmortem on GitHub ([font=Courier New]re_notes/known_issues.md[/font] issue #74). Also new, [b]PREVIEW/WIP, off by default[/b]: a first pass at native DualSense (PS5 controller) support via raw HID, bypassing Steam Input entirely, plus native gyro-aim — not yet live-tested against real hardware. Not feature-complete, not fully tested end-to-end. Multiplayer ([font=Courier New]iw5mp.exe[/font]) hasn't been started at all. Read [b]What Works / Partial / Not Working[/b] below before assuming any specific feature works — this project is deliberately honest about what's confirmed vs. not, not a marketing pitch.
 
 [hr]
 
@@ -53,6 +53,7 @@ Every other "controller support" option for this game works by faking keyboard/m
 [*][b]New in v0.3.0:[/b] real controller vibration on weapon fire and taking damage — went through four tuning rounds and is now maxed out in software; physically confirmed working
 [*][b]New in v0.3.0:[/b] crouch input occasionally not responding, Survival ready-up UI conflicts, mistargeted menu text, Jump not standing you up first, and cursor visibility issues — a full bug batch from the first public Survival co-op stream, all fixed and confirmed live
 [*][b]New in v0.3.1, confirmed live:[/b] controller-glyph icons now show correctly in every game language — root cause was several detection sites matching the game's own on-screen LOCALIZED text against a hardcoded English word; fixed by wiring in the game's own real localized-string resolver instead
+[*][b]New in v0.3.2, confirmed live:[/b] controller-glyph icons ACTUALLY draw now, for everyone — the v0.3.0-era claims above were true only on the developer's own machine. This project's own master enable flag for the whole glyph overlay was hardcoded off in every shipped release, undocumented, and never exposed in any ini or in-game toggle — root-caused via direct reproduction and fixed; see the Changelog tab and GitHub [font=Courier New]known_issues.md[/font] issue #74 for the full story
 [/list]
 
 [size=4][b]🟡 Partial — works, with a specific known gap[/b][/size]
@@ -70,6 +71,7 @@ Every other "controller support" option for this game works by faking keyboard/m
 
 [list]
 [*][b]New in v0.3.1:[/b] a from-scratch replacement Options screen covering every real vanilla setting (Look/Video/Audio/Voice/Advanced Video/Movement/Actions) plus real keybind rebind capture and a custom controller-bindings drill-down. The original plan (inject content into the real menu system) hit a genuine engine limit and was abandoned in favor of a fully custom-drawn screen instead. Compiles clean and follows every pattern already live-confirmed elsewhere in this project — but genuinely has not been played. [b]Off by default, no in-game toggle[/b] — enable at your own risk via [font=Courier New][Options] UseCustomOptionsScreen=1[/font] in [font=Courier New]mw3ncp_config.ini[/font]. See the GitHub repo's [font=Courier New]re_notes/known_issues.md[/font] issue #66 for the full, itemized status before trying it.
+[*][b]New in v0.3.2:[/b] native DualSense (PS5 controller) support via a raw-HID backend, bypassing Steam Input entirely, plus a first pass at native gyro-aim riding the same connection. Sticks/buttons/triggers work exactly like an XInput pad to the rest of this project; implemented against a real, working reference implementation's confirmed byte offsets, not the developer's own hardware (none is available). [b]Not yet live-tested against real hardware[/b] — gyro units are raw/uncalibrated, axis mapping is a best-effort guess with invert toggles to correct it if wrong, USB only (no Bluetooth yet). Off by default — enable via [font=Courier New][Gyro] Enabled=1[/font] in [font=Courier New]mw3ncp_config.ini[/font]. See [font=Courier New]known_issues.md[/font] issue #76.
 [/list]
 
 [size=4][b]⬜ Not Working / Not Implemented At All[/b][/size]

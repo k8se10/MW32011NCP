@@ -57,6 +57,10 @@
       <SubSystem>Windows</SubSystem>
       <ModuleDefinitionFile>def\proxy_d3d9.def</ModuleDefinitionFile>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <!-- hid.lib/setupapi.lib: 2026-08-11, issue #76. dualsense_input.cpp's raw-HID
+           DualSense backend needs SetupDiGetClassDevs/HidD_GetAttributes/
+           HidD_GetPreparsedData/HidP_GetCaps; nothing in this project needed these before. -->
+      <AdditionalDependencies>hid.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
 
@@ -86,6 +90,7 @@
     <ClCompile Include="src\dllmain.cpp" />
     <ClCompile Include="src\analog_input_hooks.cpp" />
     <ClCompile Include="src\controller_input.cpp" />
+    <ClCompile Include="src\dualsense_input.cpp" />
     <ClCompile Include="src\d3d9_hook.cpp" />
     <ClCompile Include="src\mod_config.cpp" />
     <ClCompile Include="src\rumble.cpp" />
@@ -115,6 +120,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\controller_input.h" />
+    <ClInclude Include="src\dualsense_input.h" />
     <ClInclude Include="src\mod_config.h" />
     <ClInclude Include="src\rumble.h" />
     <ClInclude Include="src\overlay_hud.h" />
