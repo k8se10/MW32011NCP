@@ -19,16 +19,43 @@
 //
 // PREVIEW/WIP (per this project's own labeling convention, feedback_preview_wip_labeling):
 // implemented against a real, working, MIT-licensed reference implementation
-// (github.com/Ohjurot/DualSense-Windows, DS5_Input.cpp/IO.cpp) for the exact byte
-// offsets and VID/PID, cross-checked against community RE docs -- NOT against this
-// project's own hardware, since no DualSense is available to the developer. Gyro/accel
-// are raw, uncalibrated sensor units (the reference implementation itself never solved
-// real calibration either -- its own comment says exactly that), scaled by a plain
-// tunable Sensitivity multiplier rather than a claimed deg/s conversion this project
+// (github.com/Ohjurot/DualSense-Windows, DS5_Input.cpp/DS5_Output.cpp/IO.cpp/
+// DS_CRC32.cpp) for the exact byte offsets, VID/PID, and (2026-08-16) output-
+// report/CRC framing, cross-checked against community RE docs -- against a live
+// Bluetooth DualSense the user confirmed they have available to test THIS pass,
+// but not independently confirmed working by this project yet (input parsing and
+// rumble output were both written against the reference's documented byte
+// layout, not against a live capture). Gyro/accel are raw, uncalibrated sensor
+// units (the reference implementation itself never solved real calibration
+// either -- its own comment says exactly that), scaled by a plain tunable
+// Sensitivity multiplier rather than a claimed deg/s conversion this project
 // can't verify. Axis sign/orientation for pitch/yaw is a best-effort guess (config
 // toggles exist to flip it without a rebuild) -- needs a live tester with real
 // hardware before any of this is called done, per this project's own
 // Production Readiness Criteria (CODE_STANDARDS.md).
+//
+// Bluetooth (2026-08-16): both connection types are handled at the framing level. A
+// BT-connected DualSense reports a 78-byte input report (vs. USB's 64) and needs its
+// OWN output-report framing entirely for writes (report ID 0x31 + a sub-type byte,
+// then the same payload shape USB uses but at buffer offset 2 instead of 1, plus a
+// CRC32 checksum over the report). See dualsense_input.cpp for the concrete byte-level
+// detail.
+//
+// **BLUETOOTH STICK INPUT IS CURRENTLY BROKEN -- re_notes/known_issues.md issue #77.**
+// Live-tested same day against real BT hardware: sticks are garbled/unusable. Three
+// real, independently-evidenced bugs were found and fixed this pass (Y-axis
+// inversion; an XInput-vs-DualSense poll-priority fight, root-caused via proxy_d3d9.log
+// showing a flapping XInput connection state -- almost certainly Steam Input
+// contending for the same physical device -- while the raw HID read itself logged zero
+// failures; and missing BT input-report CRC32 validation, added using the verified
+// formula from Sony's own mainline Linux kernel driver rather than the unverifiable
+// community-table version this pass started with). The live symptom was reported
+// UNCHANGED after all three. Zero CRC mismatches have been logged since the check was
+// added, which rules OUT transport-level corruption specifically, but does NOT prove
+// the byte offsets/payload interpretation are right for this specific pairing -- see
+// issue #77 for the full account and the recommended next step (a raw-byte hex-dump
+// diagnostic, not yet implemented) before attempting a fourth fix blind. USB is
+// unaffected by any of this.
 
 #include <cstdint>
 
@@ -73,6 +100,15 @@ struct DualSenseRawState
 // EnsureLoaded).
 bool DualSense_EnsureOpen();
 
+// Cheap, no-side-effect query: is a DualSense handle currently held open (from a
+// PRIOR successful DualSense_EnsureOpen(), not attempting a new one)? Used by
+// controller_input.cpp's poll loop to give an already-open DualSense priority
+// over a same-tick XInput scan -- see that call site's own comment for why
+// (2026-08-16 live report: a flickering/contended XInput device, most likely
+// Steam Input's own virtual pad for this SAME physical controller, was winning
+// roughly every other poll tick and stomping perfectly good DualSense reads).
+bool DualSense_IsOpen();
+
 // Blocking read of exactly one input report from the currently-open device (matches
 // this project's existing background-poll-thread design -- see
 // controller_input.cpp's XInputPollThreadProc, which this backend is polled from
@@ -96,3 +132,15 @@ unsigned short DualSense_ToXInputButtons(const DualSenseRawState& state);
 // injection) need to know specifically whether real gyro data is available, not just
 // whether *a* controller is connected.
 bool DualSense_HasGyro();
+
+// Writes a rumble-only output report to the currently-open DualSense, USB or
+// Bluetooth (2026-08-16 -- see this file's own .cpp for the framing/CRC detail
+// added this pass; both transports now supported, closing the gap the original
+// 2026-08-11 pass explicitly deferred). 0-255 raw motor speed, matching the
+// real report's own byte range -- Controller_SetVibration does the float->byte
+// scaling before calling this, same convention already established for
+// XInput's wLeftMotorSpeed/wRightMotorSpeed. No-op (returns false) if no
+// DualSense is currently open; never throws/crashes on a write failure, closes
+// the handle instead so the next DualSense_EnsureOpen() retries fresh, same
+// degrade-gracefully convention as DualSense_Poll.
+bool DualSense_SetVibration(uint8_t leftMotor, uint8_t rightMotor);

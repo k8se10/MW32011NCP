@@ -328,6 +328,42 @@ void PollArmorFieldScanDiag()
     g_armorScanPrimed = true;
 }
 
+// Shared by Rumble_Tick (gameplay tick) and Rumble_TickExpiryWatchdog (menu
+// tick -- see rumble.h's own comment on why this needed splitting out). Enforces
+// the CURRENT event's own already-scheduled expiry (g_rumbleDecayStartMs +
+// g_rumbleDecayDurationMs) and pushes the resulting motor state -- never reads
+// or resets anything event-specific itself, so calling it from two different
+// ticks is safe/idempotent the same way this project's other dual-tick calls
+// (InjectControllerPauseMenu, InjectControllerMenuBack) already are.
+void UpdateRumbleOutput()
+{
+    if (!g_modConfig.vibrationEnabled || g_rumblePeakIntensity <= 0.0f) return;
+
+    DWORD elapsed = GetTickCount() - g_rumbleDecayStartMs;
+    if (elapsed >= g_rumbleDecayDurationMs) {
+        g_rumblePeakIntensity = 0.0f;
+        Controller_SetVibration(0.0f, 0.0f);
+        return;
+    }
+
+    // Sustain-then-release envelope (see kRumbleSustainFraction's own comment) --
+    // hold the full commanded peak for the first portion of the pulse, only decay
+    // the tail, instead of ramping down for the pulse's entire duration.
+    DWORD sustainMs = static_cast<DWORD>(static_cast<float>(g_rumbleDecayDurationMs) * kRumbleSustainFraction);
+    float current;
+    if (elapsed < sustainMs) {
+        current = g_rumblePeakIntensity;
+    } else {
+        DWORD decayElapsed = elapsed - sustainMs;
+        DWORD decayDurationMs = g_rumbleDecayDurationMs - sustainMs;
+        float remaining = decayDurationMs > 0
+            ? 1.0f - (static_cast<float>(decayElapsed) / static_cast<float>(decayDurationMs))
+            : 0.0f;
+        current = g_rumblePeakIntensity * remaining;
+    }
+    Controller_SetVibration(current, current);
+}
+
 } // namespace
 
 void Rumble_Install()
@@ -362,30 +398,13 @@ void Rumble_Tick()
 {
     PollDamageRumble();
     PollArmorFieldScanDiag(); // OFF by default -- see its own comment (issue #63 follow-up)
+    UpdateRumbleOutput();
+}
 
-    if (!g_modConfig.vibrationEnabled || g_rumblePeakIntensity <= 0.0f) return;
-
-    DWORD elapsed = GetTickCount() - g_rumbleDecayStartMs;
-    if (elapsed >= g_rumbleDecayDurationMs) {
-        g_rumblePeakIntensity = 0.0f;
-        Controller_SetVibration(0.0f, 0.0f);
-        return;
-    }
-
-    // Sustain-then-release envelope (see kRumbleSustainFraction's own comment) --
-    // hold the full commanded peak for the first portion of the pulse, only decay
-    // the tail, instead of ramping down for the pulse's entire duration.
-    DWORD sustainMs = static_cast<DWORD>(static_cast<float>(g_rumbleDecayDurationMs) * kRumbleSustainFraction);
-    float current;
-    if (elapsed < sustainMs) {
-        current = g_rumblePeakIntensity;
-    } else {
-        DWORD decayElapsed = elapsed - sustainMs;
-        DWORD decayDurationMs = g_rumbleDecayDurationMs - sustainMs;
-        float remaining = decayDurationMs > 0
-            ? 1.0f - (static_cast<float>(decayElapsed) / static_cast<float>(decayDurationMs))
-            : 0.0f;
-        current = g_rumblePeakIntensity * remaining;
-    }
-    Controller_SetVibration(current, current);
+// See rumble.h's own comment. Deliberately just UpdateRumbleOutput() -- no
+// polling here, since this runs on the menu tick where the gameplay entity
+// reads PollDamageRumble/PollArmorFieldScanDiag rely on aren't meaningful.
+void Rumble_TickExpiryWatchdog()
+{
+    UpdateRumbleOutput();
 }

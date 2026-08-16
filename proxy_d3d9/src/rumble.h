@@ -48,6 +48,23 @@ void Rumble_Install();
 // Call once per real gameplay frame (from the same tick InjectAllControllerInput
 // already runs on) to: poll for real damage taken this frame, decay any active
 // rumble toward zero, and push the current motor state to the controller.
-// Menu-tick-only periods (paused, in a menu) don't need this -- rumble is a
-// gameplay-feedback feature, not a UI one.
 void Rumble_Tick();
+
+// Live report (2026-08-16): "vibration can tend to get stuck on". Root cause:
+// InjectAllControllerInput (and therefore Rumble_Tick above) lives on the
+// gameplay-simulation tick, which a genuine pause halts entirely (the SAME
+// documented dead-tick problem InjectMenuInputTick's own big comment in
+// analog_input_hooks.cpp already solved for pause-menu input). A rumble event
+// triggered right before a pause -- or a hit taken the instant before a death/
+// loading transition freezes simulation -- never gets its own already-scheduled
+// per-event expiry (g_rumbleDecayStartMs + g_rumbleDecayDurationMs, set fresh by
+// TriggerRumble on EVERY event) checked again until gameplay resumes, so the
+// physical motor keeps buzzing for the entire paused/loading duration instead of
+// cutting off on that event's own real timeout.
+//
+// Call this from InjectMenuInputTick's always-running WndProc+SetTimer tick (the
+// one tick confirmed to keep firing during a real pause) as a watchdog: it only
+// enforces whichever event-specific deadline TriggerRumble already scheduled --
+// it does NOT poll for new damage/fire events (that stays gameplay-tick-only,
+// same as before) and is a no-op whenever no rumble is currently active.
+void Rumble_TickExpiryWatchdog();
