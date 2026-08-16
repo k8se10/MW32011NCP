@@ -53,6 +53,7 @@
 
 extern void LogFromController(const char* msg);
 extern "C" void __cdecl InjectMenuInputTick(); // defined in analog_input_hooks.cpp
+extern "C" bool IsGlyphPositionEditModeActive(); // defined in analog_input_hooks.cpp
 
 namespace {
 
@@ -107,6 +108,66 @@ constexpr int kMouseMoveDeadzonePx = 4;
 // own WndProc subclass just also watches them, exactly like WM_MOUSEMOVE above,
 // rather than adding a second, separate input-capture mechanism.
 bool g_leftMouseButtonHeld = false;
+
+// Glyph position editor mouse isolation, part 2 (2026-08-16, live-reported "the in
+// game highlight still happens even in edit mode" after WndProc message-swallowing
+// alone wasn't enough). Confirmed via re_notes/iw5sp.md this engine has NO DirectInput
+// import at all -- so the real menu's own mouse hover/hit-testing isn't reading a
+// message-queue value at all, it's polling the plain Win32 GetCursorPos() directly
+// every frame, which happens completely independently of whatever WM_MOUSEMOVE
+// messages this project's WndProc subclass does or doesn't forward. Process-wide
+// MinHook detour on user32.dll's real GetCursorPos (confirmed no other code in this
+// project calls it anymore -- the custom-cursor overlay switched to the WM_MOUSEMOVE-
+// based GetLastMouseMoveClientPos above specifically to avoid a DPI-mismatch bug
+// GetCursorPos had, see that migration's own comment) freezes what the REAL GAME sees
+// at whatever the cursor's last real position was the moment editing turned on, while
+// this project's OWN drag logic (GetLastMouseMoveClientPos, entirely separate) keeps
+// reading live values throughout -- so the real menu's hover/selection can't drift
+// with the mouse anymore while editing, without needing to know any internal engine
+// memory layout.
+typedef BOOL(WINAPI* GetCursorPos_t)(LPPOINT);
+GetCursorPos_t g_origGetCursorPos = nullptr;
+POINT g_lastRealCursorPos = {};
+bool g_haveLastRealCursorPos = false;
+bool g_getCursorPosHookInstalled = false;
+
+BOOL WINAPI Hook_GetCursorPos(LPPOINT lpPoint)
+{
+    if (IsGlyphPositionEditModeActive() && g_haveLastRealCursorPos) {
+        if (lpPoint) *lpPoint = g_lastRealCursorPos;
+        return TRUE;
+    }
+    if (!g_origGetCursorPos) return FALSE;
+    BOOL ok = g_origGetCursorPos(lpPoint);
+    if (ok && lpPoint && !IsGlyphPositionEditModeActive()) {
+        g_lastRealCursorPos = *lpPoint;
+        g_haveLastRealCursorPos = true;
+    }
+    return ok;
+}
+
+void InstallGetCursorPosHook()
+{
+    if (g_getCursorPosHookInstalled) return;
+    g_getCursorPosHookInstalled = true;
+    MH_Initialize(); // idempotent -- harmless if analog_input_hooks.cpp already called this
+    HMODULE user32 = GetModuleHandleA("user32.dll");
+    void* realGetCursorPos = user32 ? reinterpret_cast<void*>(GetProcAddress(user32, "GetCursorPos")) : nullptr;
+    if (!realGetCursorPos) {
+        LogFromController("[glyph-editor] GetCursorPos hook: GetProcAddress(user32.dll, \"GetCursorPos\") failed");
+        return;
+    }
+    MH_STATUS s = MH_CreateHook(realGetCursorPos, reinterpret_cast<void*>(&Hook_GetCursorPos),
+        reinterpret_cast<void**>(&g_origGetCursorPos));
+    char buf[128];
+    sprintf_s(buf, "[glyph-editor] MH_CreateHook(GetCursorPos @ %p) = %d", realGetCursorPos, static_cast<int>(s));
+    LogFromController(buf);
+    if (s == MH_OK) {
+        MH_STATUS e = MH_EnableHook(realGetCursorPos);
+        sprintf_s(buf, "[glyph-editor] MH_EnableHook(GetCursorPos) = %d", static_cast<int>(e));
+        LogFromController(buf);
+    }
+}
 
 // Full-scope Options expansion (2026-08-06, issue #66, explicit direction: "Build
 // full rebind capture now"). Rebinding a real keyboard/mouse bind from a
@@ -245,6 +306,27 @@ LRESULT CALLBACK HookWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         g_leftMouseButtonHeld = false;
     }
     InjectMenuInputTick();
+
+    // Glyph position editor (2026-08-16, issue #51 follow-up): live-reported "it
+    // skips through the menu" -- a click meant to grab/drag a calibration handle was
+    // ALSO reaching the real menu's own native mouse-click support (this engine
+    // responds to real mouse messages directly, not just controller D-pad/A -- see
+    // this project's own earlier real-mouse-click work), so calibrating one item
+    // could accidentally activate/select/hover whatever real menu element happened
+    // to be under the cursor. Follow-up, same day: user direction was "the mouse
+    // shouldn't interact with anything but our UI layer" while the editor is active --
+    // broadened from left-click-only to the ENTIRE standard mouse message range
+    // (WM_MOUSEFIRST..WM_MOUSELAST: move, all three buttons down/up/double-click,
+    // and both wheel messages), so hover-highlight and every other real mouse-driven
+    // menu behavior is fully isolated too, not just clicks. g_lastMouseMoveClientX/Y
+    // and g_leftMouseButtonHeld above are already updated by this point, so this
+    // project's OWN UI layer (the drag handles, the custom cursor, hit-testing) is
+    // completely unaffected -- only the real game's own WndProc stops seeing mouse
+    // input while the editor is actively toggled on (F2).
+    if (msg >= WM_MOUSEFIRST && msg <= WM_MOUSELAST && IsGlyphPositionEditModeActive()) {
+        return 0;
+    }
+
     return CallWindowProcA(g_origWndProc, hwnd, msg, wParam, lParam);
 }
 
@@ -463,6 +545,7 @@ extern "C" DWORD GetLastMouseMoveTickMs()
 extern "C" void HookD3D9CreateDevice(void* realD3D9)
 {
     if (!realD3D9) return;
+    InstallGetCursorPosHook();
     void** d3d9Vtable = *reinterpret_cast<void***>(realD3D9);
     void* realCreateDevice = d3d9Vtable[kCreateDeviceVtableIndex];
 

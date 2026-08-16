@@ -259,6 +259,21 @@ constexpr DWORD kDebugMarkerColors[kMaxDebugMarkerSlots] = {
     0xFF00FFFF, // slot 3: cyan
 };
 
+// In-game glyph position editor drag-handle boxes (2026-08-16, issue #51 follow-up,
+// user direction: "add the bounding boxes like in our harness") -- see
+// RequestGlyphEditHandleBox's own comment (overlay_hud.h). Separate pool from the
+// debug markers above: these carry a per-request radius/color/label instead of a
+// fixed size/palette. Position/radius/color/label/request-flag storage lives here;
+// the TextTexCache array these labels also need is declared further below, right
+// next to TextTexCache's own definition (not yet visible at this point in the file).
+constexpr int kMaxGlyphEditHandleSlots = 4;
+float g_glyphEditHandleX[kMaxGlyphEditHandleSlots] = {};
+float g_glyphEditHandleY[kMaxGlyphEditHandleSlots] = {};
+float g_glyphEditHandleRadius[kMaxGlyphEditHandleSlots] = {};
+DWORD g_glyphEditHandleColor[kMaxGlyphEditHandleSlots] = {};
+char g_glyphEditHandleLabel[kMaxGlyphEditHandleSlots][48] = {};
+bool g_glyphEditHandleRequestedThisFrame[kMaxGlyphEditHandleSlots] = {};
+
 // ---- Custom in-game hint overlay (2026-07-31 pivot, issue #48/#49) ----------------
 //
 // Replaces trying to overlay a glyph icon on top of the game's OWN pixel-exact text
@@ -1767,6 +1782,11 @@ TextTexCache g_diagLabelCache[16];
 // ping-pong between two different strings and re-render every single frame instead
 // of caching, while edit mode is active.
 TextTexCache g_diagEditHandleLabelCache[16];
+// Label cache for the in-game glyph editor's own drag-handle boxes (2026-08-16) --
+// storage/count declared earlier (kMaxGlyphEditHandleSlots, TextTexCache not yet
+// visible there); separate pool from g_diagEditHandleLabelCache for the same reason
+// that one is separate from g_diagLabelCache -- different strings, different owner.
+TextTexCache g_glyphEditHandleLabelCache[kMaxGlyphEditHandleSlots];
 void* g_optWhiteTexture = nullptr; // 1x1 white texture for solid-fill background panels
 
 bool EnsureWhiteTexture(void* device)
@@ -2764,6 +2784,37 @@ void DrawAndEditDiagramAnchors(void* device, ControllerDiagramLayout& layout, fl
         DrawGenericTexturedQuad(device, g_optWhiteTexture, (hx - kHandleRadius) * scaleX, (hy - kHandleRadius) * scaleY,
                                   kHandleRadius * 2.0f * scaleX, kHandleRadius * 2.0f * scaleY, 0x90000000u | (color & 0x00FFFFFFu));
         DrawOptLeftAlignedText(device, g_diagEditHandleLabelCache[i], refs[i].label, hx + kHandleRadius + 4.0f, hy, 18, color, scaleX, scaleY);
+    }
+}
+
+// In-game glyph position editor drag-handle boxes (2026-08-16, issue #51 follow-up,
+// user direction: "add the bounding boxes like in our harness") -- see
+// RequestGlyphEditHandleBox's own comment (overlay_hud.h) and this project's own
+// DrawAndEditDiagramAnchors immediately above, whose exact visual (translucent
+// colored quad + label) this mirrors. Positions are DESIGN SPACE (unlike the debug
+// markers earlier in this file, which are real screen pixels) -- converted here via
+// GetResolutionScale, the same contract DrawOneMenuHintSlot/DrawMenuHintsIfRequested
+// already use, since every position analog_input_hooks.cpp's glyph-editor code works
+// in is already design-space.
+void DrawGlyphEditHandlesIfRequested(void* device)
+{
+    bool anyRequested = false;
+    for (int i = 0; i < kMaxGlyphEditHandleSlots; ++i) if (g_glyphEditHandleRequestedThisFrame[i]) anyRequested = true;
+    if (!anyRequested) return;
+    if (!EnsureWhiteTexture(device)) return;
+    float scaleX = 1.0f, scaleY = 1.0f;
+    GetResolutionScale(device, scaleX, scaleY);
+    for (int i = 0; i < kMaxGlyphEditHandleSlots; ++i) {
+        if (!g_glyphEditHandleRequestedThisFrame[i]) continue;
+        g_glyphEditHandleRequestedThisFrame[i] = false;
+        float x = g_glyphEditHandleX[i], y = g_glyphEditHandleY[i], r = g_glyphEditHandleRadius[i];
+        DWORD color = g_glyphEditHandleColor[i];
+        DrawGenericTexturedQuad(device, g_optWhiteTexture, (x - r) * scaleX, (y - r) * scaleY,
+                                  r * 2.0f * scaleX, r * 2.0f * scaleY, color);
+        if (g_glyphEditHandleLabel[i][0]) {
+            DrawOptLeftAlignedText(device, g_glyphEditHandleLabelCache[i], g_glyphEditHandleLabel[i],
+                                     x + r + 4.0f, y, 18, color, scaleX, scaleY);
+        }
     }
 }
 
@@ -3767,6 +3818,28 @@ void DiagramEditor_ExportCurrentLayout()
     LogFromController(msg);
 }
 
+// Declared here (outside the anonymous namespace above, same reasoning as the
+// DiagramEditor_* trio just above) purely so analog_input_hooks.cpp (a different
+// translation unit) can call it -- g_glyphEditHandle* storage and
+// DrawGlyphEditHandlesIfRequested itself stay anonymous-namespace-internal, still
+// visible to this function from here since it's the same translation unit.
+void RequestGlyphEditHandleBox(float x, float y, float radius, DWORD color, const char* label)
+{
+    for (int i = 0; i < kMaxGlyphEditHandleSlots; ++i) {
+        if (g_glyphEditHandleRequestedThisFrame[i]) continue;
+        g_glyphEditHandleX[i] = x;
+        g_glyphEditHandleY[i] = y;
+        g_glyphEditHandleRadius[i] = radius;
+        g_glyphEditHandleColor[i] = color;
+        strncpy_s(g_glyphEditHandleLabel[i], label, _TRUNCATE);
+        g_glyphEditHandleRequestedThisFrame[i] = true;
+        return;
+    }
+    // all slots full this frame (shouldn't happen -- only 2 handles ever requested at
+    // once) -- silently dropped, same "safe degradation" convention as
+    // RequestMenuHintOverlay's own kMaxMenuHintSlots overflow.
+}
+
 bool CustomOptionsMenu_TickInput(bool openRequestedEdge,
                                    bool upEdge, bool downEdge, bool leftEdge, bool rightEdge,
                                    bool selectEdge, bool backEdge, bool tabPrevEdge, bool tabNextEdge)
@@ -4222,6 +4295,7 @@ void ReleaseAllCachedTextures()
     releaseIfSetTextCache(g_optApplyNoCache);
     for (auto& c : g_diagLabelCache) releaseIfSetTextCache(c);
     for (auto& c : g_diagEditHandleLabelCache) releaseIfSetTextCache(c);
+    for (auto& c : g_glyphEditHandleLabelCache) releaseIfSetTextCache(c);
     releaseIfSet(g_textTexture);
     g_textureRenderedFor[0] = '\0';
     for (auto& slot : g_gameplayHintSlots) {
@@ -4345,6 +4419,7 @@ HRESULT WINAPI Hook_EndScene(void* device)
     ResetMenuListItemOrdinalForFrame();
     DrawMenuHintsIfRequested(device);
     DrawDebugMarkerIfRequested(device);
+    DrawGlyphEditHandlesIfRequested(device);
     // Always last -- see DrawCustomCursorIfNeeded's own comment for why the cursor
     // specifically needs to be the final thing drawn each frame.
     DrawCustomCursorIfNeeded(device);
@@ -4440,6 +4515,45 @@ void GetResolutionScale(void* deviceIn, float& outScaleX, float& outScaleY)
     // The manual-position glyphs' real problem is still open -- see issue #51.
     outScaleX = static_cast<float>(width) / 1920.0f;
     outScaleY = static_cast<float>(height) / 1080.0f;
+}
+
+// Live-reported 2026-08-16 (glyph position editor, issue #51 follow-up): "we still
+// cant drag the icon" -- clicks were landing at exactly the raw WM_MOUSEMOVE value
+// with zero conversion applied (confirmed via a click-diagnostic log:
+// mouseDesign always == mouseRaw, even at a 2560x1440 window / 1920x1080 viewport
+// where a real conversion should have visibly differed). Root cause: the glyph
+// editor was (wrongly) using ConvertRealScreenPosToDesignSpace (analog_input_hooks.cpp),
+// which divides by GetResolutionScale -- i.e. viewport-size-vs-1920 -- built for a
+// DIFFERENT input space entirely (a native draw call's own param_2/param_3, already
+// in VIEWPORT/backbuffer pixels, per that function's own header comment). A raw
+// WM_MOUSEMOVE position is NOT in that space -- it's real WINDOW CLIENT pixels
+// (2560x1440 here), a third, separate coordinate system this engine's own
+// stretch-blit-to-fill-the-window rendering technique introduces (see
+// DrawCustomCursorIfNeeded's own 2026-08-01 comment thread, which already solved
+// exactly this problem for the custom cursor overlay via a proven, live-tested
+// two-step window-to-viewport-to-design conversion). Dividing by GetResolutionScale
+// alone (1.0 whenever the viewport already equals 1920x1080, exactly this repro)
+// silently no-ops when window and viewport sizes differ -- which is why the click
+// diagnostic showed mouseDesign identically equal to mouseRaw. Algebraically,
+// DrawCustomCursorIfNeeded's two-step ratio (window->viewport, then viewport->design
+// via GetResolutionScale) reduces to a single multiply against the real window size
+// alone -- the viewport size cancels out entirely -- so this is that same proven
+// math, just in its simplified single-step form, exposed for analog_input_hooks.cpp
+// (a different translation unit) to use for mouse-driven UI hit-testing.
+void ConvertMouseClientPosToDesignSpace(int mouseClientX, int mouseClientY, float& outDesignX, float& outDesignY)
+{
+    HWND hwnd = GetGameWindow();
+    RECT clientRect{};
+    if (hwnd && GetClientRect(hwnd, &clientRect) &&
+        (clientRect.right - clientRect.left) > 0 && (clientRect.bottom - clientRect.top) > 0) {
+        float windowW = static_cast<float>(clientRect.right - clientRect.left);
+        float windowH = static_cast<float>(clientRect.bottom - clientRect.top);
+        outDesignX = static_cast<float>(mouseClientX) * (1920.0f / windowW);
+        outDesignY = static_cast<float>(mouseClientY) * (1080.0f / windowH);
+        return;
+    }
+    outDesignX = static_cast<float>(mouseClientX);
+    outDesignY = static_cast<float>(mouseClientY);
 }
 
 // See this function's own header comment (overlay_hud.h) for the full root-cause

@@ -431,6 +431,25 @@ struct ModConfig
         // logic itself, not the active-input gate) and this flag has done its job narrowing
         // that down. Does not affect glyph SELECTION (GlyphStyle) or the cursor overlay's
         // own separate visibility gate -- only this one gate.
+    bool glyphPositionEditMode = false; // 2026-08-16, issue #51 follow-up ("finish our menu
+        // glyphs properly ... use that click and drag thing we did to make it accurate per
+        // screen"). kManualGlyphPositions was originally calibrated via expensive
+        // MiniDumpWriteDump snapshots + raw memory scans -- slow enough that several real
+        // screens were left uncovered (see that table's own "Deliberately NOT covered this
+        // pass" list: LEVELS_BUTTON_LIST depth=4, OPTIONS_LIST indices 3+, keybind screens,
+        // PAUSE_LIST). This reuses the same click-and-drag UX already proven live for the
+        // harness-only controller-diagram editor (DiagramEditor_ToggleEditMode, issue #66),
+        // but wired into the REAL game instead of the disconnected harness, gated behind this
+        // flag for the same reason that one was harness-only: an accidental drag mid-game
+        // could otherwise silently corrupt a real, already-correct calibrated position.
+        // DEFAULT OFF, DELIBERATELY -- only ever turn on for an active calibration session.
+        // When on, this is the MASTER gate only -- F2 (same key/two-step convention as the
+        // harness diagram editor) is a second, live, in-session toggle on top of it: while
+        // active, the currently-focused real menu-list item's glyph position becomes
+        // draggable with the mouse (per (group, depth, index), seeded from the existing
+        // manual table entry if one exists); F3 exports every touched group this session to
+        // exported_glyph_positions.txt, next to the DLL, as ready-to-paste
+        // kManualGlyphPositions entries. See analog_input_hooks.cpp's EditGlyphPositionsForFrame.
 
     // [Options] (issue #66, 2026-08-04 full-scope pivot) -- STRICTLY OPT-IN, OFF by
     // default per this project's own established pattern for structurally significant,

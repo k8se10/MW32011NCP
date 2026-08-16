@@ -297,7 +297,37 @@ DWORD WINAPI XInputPollThreadProc(LPVOID)
     for (;;) {
         EnsureLoaded();
         bool handledByXInput = false;
-        if (g_XInputGetState) {
+
+        // Live-reported 2026-08-16 (real BT hardware): "genuinely cant move
+        // forward or look up" + visibly alternating inverted/non-inverted look --
+        // NOT a bug in DualSense_Poll's own axis math (proxy_d3d9.log showed the
+        // raw HID read succeeding cleanly with zero ReadFile failures the whole
+        // session), but a per-tick FIGHT: the XInput scan below was unconditionally
+        // tried first every single tick, and something XInput-visible (almost
+        // certainly Steam Input's own virtual pad for this SAME physical
+        // controller, contending with this project's own raw HID handle now that
+        // it can actually open a BT DualSense) was flickering connected/
+        // disconnected -- confirmed directly in the log via rapid, repeated
+        // "[xinput] controller connected"/"disconnected" pairs, matching issue
+        // #74's already-established "Steam Input and this project's own device
+        // access don't coexist cleanly" precedent, just newly surfacing here via
+        // BT raw-HID contention instead of the original "sees nothing" symptom.
+        // Every tick that flickering device won, its own (possibly stale/ghost/
+        // zeroed) state silently overwrote a perfectly good DualSense read from
+        // the tick before -- exactly "inverting then not inverting" (alternating
+        // between two DIFFERENT sources with different conventions/data, not one
+        // source being wrong) and "can't move" (half of all ticks discarded).
+        // Fix: once a DualSense is already open, give it STICKY priority over a
+        // same-tick XInput scan entirely, rather than re-deciding from scratch
+        // every single tick -- closes the fight regardless of why the XInput
+        // side is flickering (this project can't control Steam Input's own
+        // internals). Falls back to the XInput scan exactly as before whenever
+        // no DualSense is open (real Xbox pad, or DualSense unplugged/failed --
+        // DualSense_Poll's own unplug handling closes the handle, so
+        // DualSense_IsOpen() naturally goes false again next tick).
+        bool preferDualSense = DualSense_IsOpen();
+
+        if (!preferDualSense && g_XInputGetState) {
             int slot = ResolveActiveXInputSlotOnPollThread();
             XINPUT_STATE state{};
             bool connected = g_XInputGetState(static_cast<DWORD>(slot), &state) == ERROR_SUCCESS;
@@ -526,22 +556,30 @@ void Controller_SetVibration(float leftMotor, float rightMotor)
 {
     EnsurePollThreadStarted();
     EnsureLoaded();
-    if (!g_XInputSetState) return;
 
     EnterCriticalSection(&g_stateLock);
     int slot = g_cachedState.activeSlot;
-    // 2026-08-11 (issue #76): the raw-HID DualSense backend has no output-report
-    // implementation yet (see dualsense_input.cpp's bottom comment) -- calling
-    // XInputSetState with slot==-1 (this backend's "not an XInput slot" sentinel)
-    // would be meaningless at best. Skip rather than send garbage.
     bool isDualSense = g_cachedState.sourceIsDualSense;
     LeaveCriticalSection(&g_stateLock);
-    if (isDualSense) return;
 
     if (leftMotor < 0.0f) leftMotor = 0.0f;
     if (leftMotor > 1.0f) leftMotor = 1.0f;
     if (rightMotor < 0.0f) rightMotor = 0.0f;
     if (rightMotor > 1.0f) rightMotor = 1.0f;
+
+    // 2026-08-16 (issue #76 follow-up): the raw-HID DualSense backend now has a
+    // real output-report implementation (dualsense_input.cpp's DualSense_SetVibration,
+    // USB and Bluetooth both) -- slot==-1 (this backend's "not an XInput slot"
+    // sentinel) would be meaningless to XInputSetState, so branch here instead of
+    // falling through to it. Checked BEFORE the g_XInputSetState guard below
+    // (moved up from its original position, which used to sit before this branch
+    // existed) -- a DualSense needs no XInput DLL at all, so a machine where
+    // XInput itself failed to load must not silently swallow DualSense rumble too.
+    if (isDualSense) {
+        DualSense_SetVibration(static_cast<uint8_t>(leftMotor * 255.0f), static_cast<uint8_t>(rightMotor * 255.0f));
+        return;
+    }
+    if (!g_XInputSetState) return;
 
     XINPUT_VIBRATION vib{};
     vib.wLeftMotorSpeed = static_cast<WORD>(leftMotor * 65535.0f);

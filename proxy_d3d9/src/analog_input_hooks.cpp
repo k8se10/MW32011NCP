@@ -33,6 +33,12 @@
 // proxy_d3d9.log file without duplicating the log-file setup.
 extern void LogFromController(const char* msg);
 
+// Defined in d3d9_hook.cpp -- same mouse primitives overlay_hud.cpp's own harness-only
+// diagram editor already uses (see EditGlyphPositionsForFrame below, its in-game
+// counterpart).
+extern "C" bool GetLastMouseMoveClientPos(int& outX, int& outY);
+extern "C" bool IsLeftMouseButtonHeld();
+
 // Defined in mod_config.cpp (2026-07-31, config hot-reload QoL feature) -- stats
 // mw3ncp_config.ini's last-write-time (internally rate-limited) and re-runs
 // LoadModConfig() if it changed since the last check, showing an on-screen
@@ -246,6 +252,72 @@ bool TryGetRealFocusedGroupAndIndex(char* outGroupName, size_t outGroupNameSize,
         return false;
     }
     return false;
+}
+
+// Debounced wrapper around TryGetRealFocusedGroupAndIndex (2026-08-16, live-reported
+// "it goes to the set position but after x amount of time [it] moves" -- confirmed
+// happening on the REAL, SHIPPED glyph overlay during ordinary play, not the in-game
+// editor). Root cause: the raw itemDef-array read above can briefly report a stale
+// or not-yet-settled (group, index) for a few frames during a menu transition --
+// already documented elsewhere in this codebase (haveFocus/siblingCount observed
+// flickering frame-to-frame even while sitting completely still, e.g. the
+// [manual-glyph-diag] log alternating haveFocus=1 and haveFocus=0 for the exact same
+// screen). Every caller that positions something against "the currently focused
+// item" (the shipped manual-table draw below, and the in-game glyph editor) was
+// calling the raw version directly, so a transient misread could visibly snap
+// whatever's drawn onto a DIFFERENT already-calibrated item's position for a moment
+// before settling back -- looking exactly like an already-correct, already-exported
+// position "moving" on its own even though nothing changed. Requires the SAME
+// (group, depth, index) to be reported for several consecutive frames before it's
+// treated as the real target; a single frame of lost focus is treated the same way
+// (ignored, not cleared) since that's exactly the kind of flicker this exists to
+// filter out. State is a single shared instance (not per-caller) since only one
+// screen/item can be genuinely focused at a time -- callers that ask on the same
+// frame this returns for see the same stable answer.
+bool TryGetStableFocusedGroupAndIndex(char* outGroupName, size_t outGroupNameSize,
+                                        int& outDepth, int& outIndex, int& outSiblingCount)
+{
+    static char s_stableGroup[64] = "";
+    static int s_stableDepth = -999, s_stableIndex = -999, s_stableSiblingCount = -1;
+    static char s_pendingGroup[64] = "";
+    static int s_pendingDepth = -999, s_pendingIndex = -999, s_pendingSiblingCount = -1;
+    static int s_pendingStableFrames = 0;
+    static int s_pendingLostFrames = 0;
+    constexpr int kFocusStableFrameThreshold = 4;
+
+    char rawGroup[64] = {};
+    int rawIndex = -1, rawSiblingCount = -1;
+    bool haveRaw = TryGetRealFocusedGroupAndIndex(rawGroup, sizeof(rawGroup), rawIndex, rawSiblingCount);
+    if (haveRaw) {
+        s_pendingLostFrames = 0;
+        int curDepth = GetMenuStackDepth();
+        if (_stricmp(rawGroup, s_pendingGroup) == 0 && rawIndex == s_pendingIndex && curDepth == s_pendingDepth) {
+            if (s_pendingStableFrames < kFocusStableFrameThreshold) ++s_pendingStableFrames;
+        } else {
+            strncpy_s(s_pendingGroup, rawGroup, _TRUNCATE);
+            s_pendingDepth = curDepth;
+            s_pendingIndex = rawIndex;
+            s_pendingSiblingCount = rawSiblingCount;
+            s_pendingStableFrames = 1;
+        }
+        if (s_pendingStableFrames >= kFocusStableFrameThreshold) {
+            strncpy_s(s_stableGroup, s_pendingGroup, _TRUNCATE);
+            s_stableDepth = s_pendingDepth;
+            s_stableIndex = s_pendingIndex;
+            s_stableSiblingCount = s_pendingSiblingCount;
+        }
+    } else if (++s_pendingLostFrames >= kFocusStableFrameThreshold) {
+        s_pendingStableFrames = 0;
+        s_stableIndex = -999;
+        s_stableGroup[0] = '\0';
+    }
+
+    if (s_stableIndex < 0 || s_stableGroup[0] == '\0') return false;
+    strncpy_s(outGroupName, outGroupNameSize, s_stableGroup, _TRUNCATE);
+    outDepth = s_stableDepth;
+    outIndex = s_stableIndex;
+    outSiblingCount = s_stableSiblingCount;
+    return true;
 }
 
 // BUG-051 diagnostic (2026-08-02) -- user question: is FUN_00547980 itself returning
@@ -1228,11 +1300,20 @@ extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
     // by gating on the game's own REAL "is there actually a mantleable ledge right
     // now" signal instead of inferring it from stance+stick alone: this project
     // already detects the real native "Press A to..." mantle hint text draw
-    // elsewhere in this file (isMantleHint, matched on its real resolved key name
-    // "SPACE") to render it -- IsMantleHintCurrentlyShowing() exposes that exact
-    // same detection (accumulated during rendering, committed once per frame; see
-    // its own comment for the one-frame-lag this introduces, imperceptible at
-    // 60fps) read-only here. Auto-mantle now only fires when the engine itself has
+    // elsewhere in this file (isMantleHint) to render it -- IsMantleHintCurrentlyShowing()
+    // exposes that exact same detection (accumulated during rendering, committed
+    // once per frame; see its own comment for the one-frame-lag this introduces,
+    // imperceptible at 60fps) read-only here. isMantleHint's own detection was
+    // upgraded 2026-08-05 (issue #68) from a literal "SPACE" text match (broken
+    // under non-English languages) to a language-independent structural template
+    // match against PLATFORM_MANTLE. FIXED 2026-08-16 (issue #62 follow-up, never
+    // diagnosed before now): g_mantleHintDrawnThisFrame -- the flag
+    // IsMantleHintCurrentlyShowing() actually reads -- used to only get set INSIDE
+    // the block that also required this project's own icon lookup
+    // (TryGetMantleGlyphAssetName) to succeed, silently coupling auto-mantle's
+    // entire detection to "did our own icon resolve" rather than "is the real
+    // native hint actually showing." Moved to fire unconditionally on isMantleHint
+    // alone, right where that's computed. Auto-mantle now only fires when the engine itself has
     // ALREADY decided a ledge is mantleable, sprinting+stick-cone is additionally
     // required, and the real "any" mantle attempt still only reduces to Jump's own
     // existing behavior at that specific moment (never idle-frame jump-spam again).
@@ -3927,7 +4008,52 @@ struct ManualGlyphEntry {
     // shipped regression caught live the same day this field was added. Only ever
     // enable per-entry, never make this the default behavior.
     bool bottomAnchorPopup = false;
+    // requiredTextSubstring (2026-08-16, issue #51 follow-up, user direction: "go off
+    // the popup's internal text as another differentiator") -- opt-in disambiguator
+    // for groups reused by multiple real popups sharing the same (groupName,
+    // requiredDepth) with no other distinguishing signal (e.g.
+    // SWF_COMMON_DESC_RESIZE_POPUP_NAME's "New Game overwrite"/Quit vs. "Restart
+    // Mission" confirms, both depth=1). nullptr = no requirement, matches
+    // unconditionally (the fallback/default entry for a group). When set, this entry
+    // only matches while g_lastPopupBodyText (captured live in Hook_DrawGlyphText
+    // from whatever real text is currently drawn at this popup family's own shared
+    // X=686 convention) contains this substring, case-insensitive. Entries WITH a
+    // requirement must be listed before the unconditional fallback for the same
+    // (groupName, requiredDepth) -- see TryGetManualGlyphPosition's own matching
+    // order.
+    const char* requiredTextSubstring = nullptr;
 };
+
+// Case-insensitive substring search (2026-08-16) -- no Shlwapi dependency (StrStrIA)
+// needed for this one small use. Plain, unoptimized O(n*m) scan; both strings here
+// are always short (a captured HUD text line, a small literal disambiguator), so
+// this is called at most a handful of times per frame, never a hot path.
+bool ContainsSubstringCaseInsensitive(const char* haystack, const char* needle)
+{
+    if (!haystack || !needle || !needle[0]) return false;
+    size_t haystackLen = strlen(haystack), needleLen = strlen(needle);
+    if (needleLen > haystackLen) return false;
+    for (size_t i = 0; i + needleLen <= haystackLen; ++i) {
+        if (_strnicmp(haystack + i, needle, needleLen) == 0) return true;
+    }
+    return false;
+}
+
+// Live capture of whatever real text is CURRENTLY drawn at this popup family's own
+// shared, established X=686 left-aligned convention (SWF_COMMON_DESC_RESIZE_POPUP_NAME/
+// SWF_COMMON_POPUP_NAME/popmenu_difficulty/popup_friend_list_actions all confirmed
+// fixed-left at this exact X regardless of label length -- see kManualGlyphPositions'
+// own "KEY FINDING" comment below) -- used as an optional text-based disambiguator
+// (requiredTextSubstring above) for groups whose (groupName, requiredDepth) alone
+// isn't enough to tell two real popups apart. Filtered to text longer than 10
+// characters so short Yes/No-style button labels (drawn at this SAME X) never
+// overwrite a genuine description line -- popup descriptions in this game are
+// consistently full sentences/phrases, buttons are consistently 2-4 letters.
+// Updated directly from Hook_DrawGlyphText, no per-frame reset needed: a popup's own
+// description text is drawn fresh every frame it's open with identical content, so
+// this naturally stays current without needing the accumulate-then-commit dance
+// other per-frame signals in this file use.
+char g_lastPopupBodyText[256] = {};
 
 constexpr float kManualGlyphVerticalNudge = -18.0f; // matches kMenuHintVerticalNudge elsewhere
 
@@ -3944,13 +4070,16 @@ constexpr float kManualGlyphVerticalNudge = -18.0f; // matches kMenuHintVertical
 // architecture, not a stopgap. Coordinates below are real, read directly from
 // the live print-command records, not estimated.
 //
-// Known partial gap: SWF_COMMON_DESC_RESIZE_POPUP_NAME is not fully uniform --
-// the quit-confirm and video-restore-confirm variants both land at Yes=603/
-// No=653 (used below), but the "New Game overwrite" variant (reached via
-// CAMPAIGN_BUTTON_LIST's New Game item) shifts to Yes=628/No=678 because two
-// extra lines of description text push the buttons down -- same shared group
-// name, genuinely different position. Left uncorrected for that one specific
-// variant rather than blocking on a way to disambiguate it from the other two.
+// Known partial gap, RESOLVED 2026-08-16 via the in-game click-and-drag editor:
+// SWF_COMMON_DESC_RESIZE_POPUP_NAME is not fully uniform -- the quit-confirm and
+// video-restore-confirm variants both land at Yes=603/No=653 (used below), but the
+// "New Game overwrite" variant (reached via CAMPAIGN_BUTTON_LIST's New Game item)
+// shifts to Yes=~627/No=678 because two extra lines of description text push the
+// buttons down AND widen the box (so the icon's own X shifts significantly too,
+// not just Y -- not anticipated when this gap was first flagged). The
+// disambiguating signal this comment originally said couldn't be found turned out
+// to be requiredDepth: this variant is reliably depth=1, distinct from the other
+// two (kept at -1, i.e. any depth). See the dedicated depth=1 entry below.
 //
 // KEY FINDING (2026-08-02, verified across 5 independent lists by computing each
 // real captured item's own text-end position -- start X + charCount*~13.3px --
@@ -3984,11 +4113,14 @@ constexpr float kManualGlyphVerticalNudge = -18.0f; // matches kMenuHintVertical
 //    identical text at slightly different positions (a drop-shadow/outline
 //    rendering artifact, not separate items) mixed with genuinely new content,
 //    not clean enough to calibrate confidently.
-//  - OPTIONS_LIST indices 3+ (Look/Movement/Actions/Advanced Video/Voice tabs)
-//    -- a resize-popup capture with OPTIONS_LIST_6 focused showed no visible
-//    7th row at the naive 45px-spacing prediction, meaning tabs beyond index 2
-//    are NOT evenly spaced the same way; guessing here would be confidently
-//    wrong rather than just imprecise.
+//  - OPTIONS_LIST indices 3+ (Look/Movement/Actions/Advanced Video/Voice tabs) --
+//    RESOLVED 2026-08-16 via the in-game click-and-drag editor (issue #51
+//    follow-up); real dragged values for all 7 real tabs now live in the table
+//    below (kept at depth=-1, see that entry's own comment). The naive
+//    45px-spacing prediction this bullet originally warned against WAS in fact
+//    slightly off in practice (real Y values drift a few px off a flat grid past
+//    index 2) -- real dragged data sidesteps that guess entirely rather than
+//    needing it corrected.
 //  - Keybind editing screens (Movement/Actions/Look sub-lists -- real item
 //    names like "forward"/"attack" as the focused name, e.g. dump13/14/15) --
 //    these don't populate a valid ui_swf_selection group/index pair at all
@@ -3997,13 +4129,68 @@ constexpr float kManualGlyphVerticalNudge = -18.0f; // matches kMenuHintVertical
 //    separate, deeper architectural gap (would need matching directly on
 //    g_focusedItemName's own real per-item name, bypassing the group/index
 //    scheme entirely), not a missing table entry.
-//  - PAUSE_LIST -- the only capture taken was contaminated by an end-game
-//    credits scroll running in the background at the same time, producing an
-//    unreliable merged text read ("Resume Credits"); needs a clean re-capture.
-//  - The "New Game overwrite" variant of SWF_COMMON_DESC_RESIZE_POPUP_NAME
-//    (shifts to Yes=628/No=678 due to extra description text, no
-//    disambiguating signal found from the same shared group name).
+//  - "cardIcon1"-"cardIcon5"/"cardTitle1"-"cardTitle4" at depth=3 (discovered
+//    2026-08-16, the Callsign/emblem-card selection screen, a PC-side
+//    addition/rework with no real console reference to calibrate a fixed
+//    per-index position against). A flat per-index table isn't even the right
+//    model here per explicit user direction: emblems want the icon anchored to
+//    the SELECTED item's own real box (bottom-right corner), and the callsign
+//    name list wants it just to the right of the box -- i.e. relative to each
+//    item's real on-screen rect, not an absolute per-index position. This
+//    project doesn't have a way to read a real itemDef's box/rect (x/y/w/h) yet,
+//    only name+flags (see TryGetRealFocusedGroupAndIndex) -- would need fresh
+//    static RE on this specific screen before that's possible. Explicitly
+//    disabled for now (IsGlyphDisabledGroup, matched by "cardIcon"/"cardTitle"
+//    prefix) rather than left to silently draw nothing by omission, so a future
+//    kManualGlyphPositions/kVerifiedGlyphGroups addition can't accidentally
+//    re-enable a flat-table position that would be structurally wrong for this
+//    screen.
+//  - Survival's DLC map select screen (live-reported 2026-08-16, "it doesnt
+//    detect the selected entry") -- unlike the keybind-editing gap above, this
+//    isn't just missing a table entry: TryGetRealFocusedGroupAndIndex returns no
+//    group/index at all here, AND both older fallback signals the editor now
+//    reports when that happens (g_currentSelGroupName/g_currentSelIndex,
+//    g_focusedItemName) come back empty too -- confirmed live, not just assumed.
+//    A genuine architectural gap, same category as the keybind screens: this
+//    screen's real items don't populate any of the three selection-tracking
+//    mechanisms this project currently knows how to read at all. Would need
+//    fresh static RE on this specific screen (a different focus/selection
+//    primitive entirely) before any glyph work here is possible.
+//
+// 2026-08-16, in-game click-and-drag editor pass (issue #51 follow-up): every
+// screen reachable from the main menu without actually being in a mission/match
+// was gone through and either recalibrated (see individual entries below tagged
+// "2026-08-16") or confirmed already correct as-is (kVerifiedGlyphGroups gained a
+// documentation entry either way). Genuinely IN-GAME-ONLY screens -- PAUSE_LIST,
+// WEAPON_POPUP (Survival's buy station), RESUME_POPUP -- were NOT part of this
+// pass (can't be reached without an active mission/Survival run) and still need a
+// dedicated in-mission calibration session with the same editor; their existing
+// table entries below predate this tool and haven't been re-verified against it.
 constexpr ManualGlyphEntry kManualGlyphPositions[] = {
+    // Restart Mission confirm, specifically (2026-08-16, user direction: "go off the
+    // popups internal text as another differentiator") -- shares (groupName=
+    // SWF_COMMON_DESC_RESIZE_POPUP_NAME, requiredDepth=1) with the New Game
+    // overwrite/Quit entry below, but its real description text is genuinely
+    // different and meaningfully longer (CGAME_RESTART_WARNING, confirmed via
+    // zone_dump: "If you restart now, you will lose\nany progress that you have
+    // made\nin this mission\n\nContinue restart?" -- 3+ lines vs. Quit's one-line
+    // "Are you sure you want to quit?"), which is exactly why its buttons land
+    // ~25px lower. requiredTextSubstring="restart" -- matched case-insensitively
+    // against g_lastPopupBodyText, live-captured from whatever real text is
+    // currently drawn at this popup family's own shared X=686 convention (see that
+    // global's own comment). MUST be listed before the unconditional fallback below
+    // -- TryGetManualGlyphPosition returns the FIRST match, and the fallback (no
+    // text requirement) would otherwise always win first.
+    { "SWF_COMMON_DESC_RESIZE_POPUP_NAME", 1, 0.0f, 2, {1199.2f, 1205.2f}, {652.5f, 701.2f}, false, "restart" },
+    // "New Game overwrite" / Quit-at-depth-1 fallback (2026-08-16 via the in-game
+    // click-and-drag editor) -- reached via CAMPAIGN_BUTTON_LIST's New Game item and
+    // an in-mission Quit confirm; extra description text pushes the buttons down AND
+    // widens the box relative to the quit-confirm/video-restore-confirm variants
+    // below. No requiredTextSubstring -- matches whenever the entry above (Restart
+    // Mission specifically) doesn't. Values averaged from two independent captures
+    // (New Game overwrite: 1202.2/1206.8, 627.0/678.0; Quit: 1193.2/1199.2,
+    // 627.0/675.0 -- close enough to be the same real screen).
+    { "SWF_COMMON_DESC_RESIZE_POPUP_NAME", 1, 0.0f, 2, {1197.7f, 1203.0f}, {627.0f, 676.5f} },
     { "SWF_COMMON_DESC_RESIZE_POPUP_NAME", -1, 55.0f, 2, {686.0f, 686.0f}, {603.0f, 653.0f} },
     // Covers "Choose Content Pack" (DLC/on-disk-content picker) and "Leave Lobby?"
     // (Yes/No) -- confirmed live to share this exact container/position despite
@@ -4051,11 +4238,21 @@ constexpr ManualGlyphEntry kManualGlyphPositions[] = {
     { "CAMPAIGN_BUTTON_LIST", -1, 20.0f, 7,
       {605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f},
       {198.0f, 243.0f, 288.0f, 333.0f, 378.0f, 423.0f, 468.0f} },
-    // Options tab selector (Video/Audio/Controls) -- right-aligned shared
-    // column; only the first 3 of ~7 real tabs captured this pass (see the
-    // "deliberately not covered" note above for why higher indices aren't
-    // extrapolated).
-    { "OPTIONS_LIST", -1, 20.0f, 3, {605.0f, 605.0f, 605.0f}, {198.0f, 243.0f, 288.0f} },
+    // Options tab selector (Video/Audio/Controls/Look/Movement/Actions/Advanced
+    // Video/Voice) -- right-aligned shared column. UPGRADED 2026-08-16 via the new
+    // in-game click-and-drag editor: the old entry only covered the first 3 of ~7
+    // real tabs (a known gap, see the "Deliberately NOT covered" note above, now
+    // stale for this group) -- real dragged values for all 7 real tabs. Kept at
+    // depth=-1 (was captured live at depth=2, but this list shares the exact same
+    // ~625/45px-grid template as every other -1-gated list in this table --
+    // CAMPAIGN_BUTTON_LIST/SPECOPS_BUTTON_LIST/SWF_BUTTON_LIST -- and the real
+    // Options tab list is reachable at more than one navigation depth depending on
+    // entry point (main menu vs. pause menu), same reasoning CAMPAIGN_BUTTON_LIST's
+    // own comment already used to relax IT to -1). Revert to a depth-specific entry
+    // if this is ever live-reported wrong from a different entry point.
+    { "OPTIONS_LIST", -1, 0.0f, 7,
+      {625.0f, 631.5f, 635.2f, 635.2f, 634.5f, 633.0f, 633.0f},
+      {198.0f, 245.2f, 289.5f, 333.0f, 378.0f, 423.8f, 468.8f} },
     // SP main menu (SPECIAL OPS / CAMPAIGN / MULTIPLAYER) -- a horizontal row,
     // left-aligned per item (not right-aligned like the vertical lists above).
     // offsetX sized to clear "MULTIPLAYER", the longest of the three.
@@ -4104,7 +4301,13 @@ constexpr ManualGlyphEntry kManualGlyphPositions[] = {
     // type entries...including spec ops, the glyphs are a bit too tight to the
     // text") -- extended to every vertical hub/list entry in this table too, not
     // just this row; see each entry's own iconOffsetX (15->20) below.
-    { "game_select_button", 1, 260.0f, 4, {0.0f, 349.0f, 803.0f, 1327.0f}, {0.0f, 458.0f, 458.0f, 458.0f} },
+    // RECALIBRATED 2026-08-16 via the new in-game click-and-drag editor (issue #51
+    // follow-up) -- superseded the old screenshot-estimated offset/positions above
+    // with real dragged values (offsetX folded into each item's own X directly,
+    // same convention the editor's own export always uses). Index 0 still an
+    // unused placeholder (see the off-by-one comment above -- itemDef "_0" never
+    // receives real focus).
+    { "game_select_button", 1, 0.0f, 4, {0.0f, 630.8f, 1110.8f, 1618.5f}, {0.0f, 457.5f, 457.5f, 456.8f} },
     // Campaign act mission list (e.g. Act I: Hunter Killer/Persona Non
     // Grata/Turbulence/Back on the Grid/Mind the Gap) -- right-aligned shared
     // column. Mission NAMES differ per act, but this Y-grid (five 45px-spaced
@@ -4202,9 +4405,41 @@ constexpr ManualGlyphEntry kManualGlyphPositions[] = {
     // position only, which naturally varies with length for ANY right-aligned
     // text, and was mistaken for centering. Simplified to the same
     // itemX=605/offsetX=20 model as every other list; no per-item real X needed.
-    { "SO_LEVELS_BUTTON_LIST", 4, 20.0f, 16,
-      {605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f},
-      {198.0f, 243.0f, 288.0f, 333.0f, 378.0f, 423.0f, 468.0f, 513.0f, 558.0f, 603.0f, 648.0f, 693.0f, 738.0f, 783.0f, 828.0f, 873.0f} },
+    // MERGED 2026-08-16 (live-reported "its still happening specifically on the map
+    // select screens" -- the icon periodically jumping to a different real position
+    // on its own, unrelated to any focus-signal debounce). Root cause, confirmed via
+    // proxy_d3d9.log: GetMenuStackDepth() itself genuinely, repeatedly flip-flops
+    // between 2, 3, AND 4 for this EXACT same on-screen map list (same realGroup,
+    // same realIndex, same siblingCount=32, only depth differs -- observed cycling
+    // every several seconds over a long session, not a one-off startup transient),
+    // almost certainly because some OTHER UI element (a live map-preview/description
+    // panel) intermittently pushes/pops itself on the real menu stack in the
+    // background without the player navigating anywhere. All three depths were
+    // originally SEPARATE entries with slightly different dragged values (each a
+    // real capture of what turned out to be the SAME real screen, just calibrated
+    // while depth happened to read differently each time) -- since depth itself
+    // can't be trusted to stay put here, all three now carry the IDENTICAL, most
+    // complete depth=2 capture (has real data for every index including 14/15) so
+    // the resolved position can no longer visibly differ depending on which of the
+    // three the flicker lands on.
+    { "SO_LEVELS_BUTTON_LIST", 4, 0.0f, 16,
+      {636.0f, 635.2f, 635.2f, 637.5f, 632.2f, 631.5f, 634.5f, 628.5f, 636.0f, 628.5f, 630.8f, 630.0f, 631.5f, 627.8f, 632.2f, 629.2f},
+      {198.8f, 243.8f, 288.8f, 333.8f, 378.8f, 425.2f, 468.8f, 513.8f, 558.0f, 603.8f, 647.2f, 693.8f, 738.8f, 783.0f, 828.0f, 873.8f} },
+    { "SO_LEVELS_BUTTON_LIST", 2, 0.0f, 16,
+      {636.0f, 635.2f, 635.2f, 637.5f, 632.2f, 631.5f, 634.5f, 628.5f, 636.0f, 628.5f, 630.8f, 630.0f, 631.5f, 627.8f, 632.2f, 629.2f},
+      {198.8f, 243.8f, 288.8f, 333.8f, 378.8f, 425.2f, 468.8f, 513.8f, 558.0f, 603.8f, 647.2f, 693.8f, 738.8f, 783.0f, 828.0f, 873.8f} },
+    // CORRECTED 2026-08-16, same investigation as the depth=2/4 merge above: this
+    // was originally believed to be a genuinely different real layout at depth=3
+    // (a 14-item, Y=243-based grid, one row lower than depth=2/4's Y=198.8 grid) --
+    // proxy_d3d9.log instead showed depth=3 participating in the EXACT SAME
+    // flip-flop as 2/4 for the identical on-screen item (same realGroup/realIndex/
+    // siblingCount, only depth differing) -- i.e. this was ALSO just a misreported
+    // instance of the SAME real screen, not a real third layout. Merged to the same
+    // identical depth=2/4 dataset so the resolved position can't visibly differ
+    // regardless of which of the three depth values the flicker lands on.
+    { "SO_LEVELS_BUTTON_LIST", 3, 0.0f, 16,
+      {636.0f, 635.2f, 635.2f, 637.5f, 632.2f, 631.5f, 634.5f, 628.5f, 636.0f, 628.5f, 630.8f, 630.0f, 631.5f, 627.8f, 632.2f, 629.2f},
+      {198.8f, 243.8f, 288.8f, 333.8f, 378.8f, 425.2f, 468.8f, 513.8f, 558.0f, 603.8f, 647.2f, 693.8f, 738.8f, 783.0f, 828.0f, 873.8f} },
     // Special Ops mission list reached from the MP-hosted lobby path (Village/
     // Interchange/Underground/Dome/Mission/Seatown/Carbon/Bootleg/Hardhat/
     // Fallen/Outpost/Lockdown/Arkaden/Downturn/Bakaara) -- right-aligned
@@ -4258,7 +4493,23 @@ struct VerifiedGlyphGroup { const char* groupName; int depth; };
 constexpr VerifiedGlyphGroup kVerifiedGlyphGroups[] = {
     { "SWF_COMMON_POPUP_NAME", -1 },  // "Leave Lobby?" and "Choose Content Pack", both confirmed live 2026-08-03
     { "CAMPAIGN_BUTTON_LIST", -1 },   // Campaign hub, confirmed live 2026-08-03
-    { "game_select_button", 1 },      // Main menu (Special Ops/Campaign/Multiplayer), confirmed live 2026-08-03
+    { "game_select_button", 1 },      // Main menu (Special Ops/Campaign/Multiplayer), confirmed live 2026-08-03,
+                                       // recalibrated 2026-08-16 via the in-game click-and-drag editor
+    // Everything below confirmed live 2026-08-16, via the new in-game click-and-drag
+    // editor (issue #51 follow-up) -- real drag-and-visually-confirmed positions, not
+    // an estimate. This gate no longer actually SUPPRESSES the draw for unlisted
+    // groups (see havePos's own comment above, removed same day) -- these entries are
+    // kept as a documentation record of what's actually been confirmed, not a
+    // functional requirement anymore.
+    { "SPECOPS_BUTTON_LIST", -1 },    // confirmed at depth=1 (8 items) and depth=2 (9 items)
+    { "SWF_BUTTON_LIST", -1 },        // confirmed at depth=1
+    { "OPTIONS_LIST", -1 },
+    { "SO_LEVELS_BUTTON_LIST", 2 },   // depth=2/3/4 all carry the identical, full 16-item
+    { "SO_LEVELS_BUTTON_LIST", 3 },   // dataset -- see that entry's own "MERGED 2026-08-16" comment
+    { "SO_LEVELS_BUTTON_LIST", 4 },
+    { "SWF_COMMON_DESC_RESIZE_POPUP_NAME", 1 },  // "New Game overwrite" variant, previously an
+                                                   // unresolved gap -- depth=1 turned out to be
+                                                   // the disambiguating signal
 };
 
 bool IsVerifiedGlyphGroup(const char* groupName, int depth)
@@ -4284,17 +4535,57 @@ bool IsVerifiedGlyphGroup(const char* groupName, int depth)
 // is shifted up by (entry.count - siblingCount) before indexing the table.
 // Pass siblingCount <= 0 to skip this entirely (matches old behavior) for
 // callers that don't have it available.
+// Live direction (2026-08-16): "make all a glyphs that are horizontally close
+// to each other (within 15px) be in line horizontally for consistency use the
+// most right glyph in that specific vertical row". Per-item itemX values in a
+// single entry's own vertical list naturally jitter by a few px (drag
+// imprecision when calibrating, or genuine per-item text-width variance at
+// capture time) even though the icons should read as one aligned column.
+// Applied at lookup time (rather than hand-flattening every table entry) so it
+// self-applies to every existing AND future captured entry uniformly. Deliberately
+// scoped to ONE entry's own itemX[] (single-linkage clustering by threshold,
+// count is always small) -- horizontally-separated items in the same entry
+// (e.g. game_select_button's 3 far-apart tiles) fall outside the threshold and
+// are left alone, matching the "vertical row" framing.
+constexpr float kHorizontalAlignClusterPx = 15.0f;
+float SnapToHorizontalClusterMaxX(const float* itemX, int count, int index)
+{
+    if (count <= 1 || index < 0 || index >= count) return itemX[index];
+    int order[kManualGlyphMaxItems];
+    for (int i = 0; i < count; ++i) order[i] = i;
+    for (int i = 1; i < count; ++i) { // insertion sort by value, ascending
+        int key = order[i];
+        float keyVal = itemX[key];
+        int j = i - 1;
+        while (j >= 0 && itemX[order[j]] > keyVal) { order[j + 1] = order[j]; --j; }
+        order[j + 1] = key;
+    }
+    int clusterStart = 0;
+    for (int i = 1; i <= count; ++i) {
+        bool boundary = (i == count) || (itemX[order[i]] - itemX[order[i - 1]] > kHorizontalAlignClusterPx);
+        if (!boundary) continue;
+        float clusterMaxVal = itemX[order[i - 1]]; // sorted ascending -> last in range is the max
+        for (int k = clusterStart; k < i; ++k) {
+            if (order[k] == index) return clusterMaxVal;
+        }
+        clusterStart = i;
+    }
+    return itemX[index]; // unreachable
+}
+
 bool TryGetManualGlyphPosition(const char* groupName, int depth, int index, int siblingCount, float& outX, float& outY)
 {
     for (const auto& entry : kManualGlyphPositions) {
         if (_stricmp(groupName, entry.groupName) != 0) continue;
         if (entry.requiredDepth != -1 && entry.requiredDepth != depth) continue;
+        if (entry.requiredTextSubstring &&
+            !ContainsSubstringCaseInsensitive(g_lastPopupBodyText, entry.requiredTextSubstring)) continue;
         int effectiveIndex = index;
         if (entry.bottomAnchorPopup && siblingCount > 0 && siblingCount < entry.count) {
             effectiveIndex = index + (entry.count - siblingCount);
         }
         if (effectiveIndex < 0 || effectiveIndex >= entry.count) continue;
-        outX = entry.itemX[effectiveIndex] + entry.iconOffsetX;
+        outX = SnapToHorizontalClusterMaxX(entry.itemX, entry.count, effectiveIndex) + entry.iconOffsetX;
         outY = entry.itemY[effectiveIndex] + kManualGlyphVerticalNudge;
         return true;
     }
@@ -4309,6 +4600,28 @@ bool HasManualGlyphPositionForGroup(const char* groupName, int depth)
         return true;
     }
     return false;
+}
+
+// Explicit denylist (2026-08-16, live direction: "for now just disable those
+// screens['] glyphs") -- the Callsign/emblem card-select screen ("cardIcon1"-
+// "cardIcon5"/"cardTitle1"-"cardTitle4", discovered via the in-game editor,
+// kManualGlyphPositions' own "Deliberately NOT covered" comment). No console
+// reference exists for this screen to calibrate a fixed per-index position
+// against (PC-side addition/rework, per user context) -- the real fix needs the
+// icon positioned relative to each selected item's own real box (bottom-right
+// corner for emblems, just right of the box for the callsign name list), which
+// this project doesn't have a way to read yet (no known itemDef rect/size
+// offset, only name+flags). None of these groups currently have a
+// kManualGlyphPositions entry or a kVerifiedGlyphGroups listing, so nothing
+// should draw for them already -- this is an explicit, self-documenting belt-
+// and-suspenders check (matching this project's own "explicit allowlist, not
+// implicit-by-omission" convention) rather than relying on that being true only
+// by coincidence, since the manual-table draw path no longer checks
+// kVerifiedGlyphGroups at all (removed same day, see havePos's own comment).
+bool IsGlyphDisabledGroup(const char* groupName)
+{
+    if (!groupName || groupName[0] == '\0') return false;
+    return _strnicmp(groupName, "cardIcon", 8) == 0 || _strnicmp(groupName, "cardTitle", 9) == 0;
 }
 
 // ---- Special Ops nested-modal detection v3, allowlist-based (2026-08-01) ---------
@@ -5710,6 +6023,299 @@ void ConvertRealScreenPosToDesignSpace(float realX, float realY, float& outDesig
     outDesignY = (scaleY > 0.0001f) ? (realY / scaleY) : realY;
 }
 
+// ---- In-game menu-glyph position editor (2026-08-16, issue #51 follow-up) --------
+//
+// User-requested: "we can finally finish our menu glyphs properly ... use that click
+// and drag thing we did to make it accurate per screen" -- reusing the same drag-a-
+// handle UX already proven live for the harness-only controller-diagram editor
+// (DiagramEditor_ToggleEditMode, overlay_hud.cpp/.h, issue #66), but wired into the
+// REAL game this time (explicit follow-up: "that's one of the most useful tools even
+// for in engine work as i can give you exact guaranteed feedback") instead of a
+// disconnected offline harness -- so the screens kManualGlyphPositions' own
+// "Deliberately NOT covered this pass" list left uncalibrated can finally be fixed by
+// actually navigating to them and dragging the real icon into place live, replacing
+// the old MiniDumpWriteDump-based process entirely.
+//
+// Gated behind g_modConfig.glyphPositionEditMode (default OFF, see mod_config.h) --
+// same rationale as the harness tool being harness-only: an accidental drag mid-game
+// must never be able to silently corrupt a real, already-correct calibrated position
+// for a normal player. Deliberately bypasses kVerifiedGlyphGroups' allowlist and does
+// NOT require an existing kManualGlyphPositions entry -- the whole point is calibrating
+// groups that aren't on either yet.
+//
+// Coordinate space: exactly mirrors kManualGlyphPositions' own convention -- itemX/Y
+// stored here are the RAW pre-offset/pre-nudge table values (iconOffsetX=0 for every
+// edit-tool-authored entry; any desired offset ends up folded directly into each
+// index's own X, an equally valid representation). visX/visY (what's actually drawn
+// and what the mouse is compared against) always re-derive from raw the same way
+// TryGetManualGlyphPosition does at runtime, so what's dragged on screen is exactly
+// what will render once pasted back into the real table.
+namespace {
+constexpr int kGlyphEditMaxGroups = 24;
+struct GlyphEditGroup {
+    bool used = false;
+    char groupName[64] = {};
+    int requiredDepth = -1;
+    int count = 0; // highest real index + 1 touched this session
+    float itemX[kManualGlyphMaxItems] = {};
+    float itemY[kManualGlyphMaxItems] = {};
+    bool captured[kManualGlyphMaxItems] = {}; // true once seeded/dragged this session
+    // Text-readout handle position (2026-08-16 follow-up, "text should be draggable
+    // too") -- independent of the icon handle above, own drag target, own default
+    // (offset above the icon so the two don't start on top of each other). Purely a
+    // calibration-session visibility aid (lets the readout be moved clear of other
+    // list items/icons); NOT part of kManualGlyphPositions and never exported --
+    // that table has no separate text-position field, and the real native list text
+    // this project draws icons next to is never touched or repositioned by this tool.
+    float textX[kManualGlyphMaxItems] = {};
+    float textY[kManualGlyphMaxItems] = {};
+    bool textCaptured[kManualGlyphMaxItems] = {};
+};
+GlyphEditGroup g_glyphEditGroups[kGlyphEditMaxGroups];
+int g_glyphEditDraggingGroup = -1;
+int g_glyphEditDraggingIndex = -1;
+bool g_glyphEditDraggingIsText = false; // which of the two handles at [group][index] is held
+// Live in-game toggle, F2 -- same key/two-step convention as the harness diagram
+// editor (F2 toggle / F3 export). g_modConfig.glyphPositionEditMode is still the
+// master gate (F2 is only polled at all while it's on); this is a second, session-
+// only on/off on top of it, so the coordinate overlay/drag handles can be toggled
+// off to actually navigate a menu normally without the editor's own text cluttering
+// every focused item, then back on to resume calibrating.
+bool g_glyphEditModeActive = false;
+
+GlyphEditGroup* FindOrCreateGlyphEditGroup(const char* groupName, int depth)
+{
+    for (auto& g : g_glyphEditGroups) {
+        if (g.used && g.requiredDepth == depth && _stricmp(g.groupName, groupName) == 0) return &g;
+    }
+    for (auto& g : g_glyphEditGroups) {
+        if (!g.used) {
+            g.used = true;
+            strncpy_s(g.groupName, groupName, _TRUNCATE);
+            g.requiredDepth = depth;
+            g.count = 0;
+            for (int i = 0; i < kManualGlyphMaxItems; ++i) { g.captured[i] = false; g.textCaptured[i] = false; }
+            return &g;
+        }
+    }
+    return nullptr; // table full -- extremely unlikely (24 groups), silently ignored
+}
+} // namespace
+
+// Exposed so d3d9_hook.cpp's WndProc subclass can swallow real mouse-click messages
+// while the editor is active (2026-08-16, live-reported "it skips through the menu"
+// -- a click meant to drag a calibration handle was also reaching the real menu's
+// own native mouse-click support). See HookWndProc's own comment for the full
+// reasoning.
+extern "C" bool IsGlyphPositionEditModeActive()
+{
+    return g_glyphEditModeActive;
+}
+
+// Writes every group touched this session to exported_glyph_positions.txt, next to
+// the DLL, as ready-to-paste kManualGlyphPositions entries. Mirrors
+// DiagramEditor_ExportCurrentLayout's own file-writing pattern (overlay_hud.cpp) --
+// same "read the file, paste the new entries in" workflow, not manual transcription.
+// Indices touched non-contiguously (e.g. index 2 dragged but index 0/1 never focused
+// this session) export as 0.0f -- left visible in the raw output rather than silently
+// guessed, since a real gap should be revisited, not papered over.
+void ExportGlyphEditPositions()
+{
+    char exeDir[MAX_PATH] = {};
+    GetModuleFileNameA(nullptr, exeDir, sizeof(exeDir));
+    char* lastSlash = strrchr(exeDir, '\\');
+    if (lastSlash) *lastSlash = '\0';
+    char outPath[MAX_PATH];
+    sprintf_s(outPath, "%s\\exported_glyph_positions.txt", exeDir);
+
+    FILE* f = nullptr;
+    if (fopen_s(&f, outPath, "w") != 0 || !f) {
+        LogFromController("[glyph-editor] failed to open exported_glyph_positions.txt for writing");
+        return;
+    }
+    fprintf(f, "// Exported from the in-game glyph position editor (F3) -- paste each entry\n"
+               "// below into kManualGlyphPositions (analog_input_hooks.cpp), then add the\n"
+               "// group to kVerifiedGlyphGroups once confirmed live.\n"
+               "// Any index left at 0.0f, 0.0f was never focused/dragged this session --\n"
+               "// revisit it rather than shipping as-is.\n\n");
+    int exported = 0;
+    for (auto& g : g_glyphEditGroups) {
+        if (!g.used) continue;
+        fprintf(f, "{ \"%s\", %d, 0.0f, %d, {", g.groupName, g.requiredDepth, g.count);
+        for (int i = 0; i < g.count; ++i) fprintf(f, "%s%.1ff", i == 0 ? "" : ", ", g.itemX[i]);
+        fprintf(f, "}, {");
+        for (int i = 0; i < g.count; ++i) fprintf(f, "%s%.1ff", i == 0 ? "" : ", ", g.itemY[i]);
+        fprintf(f, "} },\n");
+        ++exported;
+    }
+    if (exported == 0) fprintf(f, "// (nothing dragged yet this session)\n");
+    fclose(f);
+
+    // Live-reported 2026-08-16, "export crashed it": this buffer was 64 bytes, but
+    // the formatted string ("[glyph-editor] exported %d group(s) to
+    // exported_glyph_positions.txt") needs ~68 -- sprintf_s correctly detected the
+    // overflow and invoked the CRT's invalid-parameter handler, which by default
+    // terminates the process outright rather than corrupting memory. The export file
+    // itself (above, plain fprintf/fclose, no fixed-size buffer involved) had already
+    // written and closed successfully by this point -- only this trailing success-log
+    // line crashed, which is why the exported file was complete and correct even
+    // though the game died immediately after.
+    char msg[128];
+    sprintf_s(msg, "[glyph-editor] exported %d group(s) to exported_glyph_positions.txt", exported);
+    LogFromController(msg);
+}
+
+// Called once per real rendered frame (from ResetMenuListItemOrdinalForFrame below),
+// only while g_modConfig.glyphPositionEditMode is on, for whichever real menu item is
+// CURRENTLY focused. Draws (and lets the mouse drag) that item's own glyph icon AND,
+// independently, the coordinate-readout text next to it (2026-08-16 follow-up: "also
+// text should be draggable too") -- two separate handles at one (group, index) slot,
+// same "sprite anchor vs. label text, independently draggable" split the harness
+// diagram editor already established (DrawAndEditDiagramAnchors vs.
+// DrawAndEditLabelHandles, overlay_hud.cpp) -- only the icon handle's position is
+// meaningful to export, though; the text handle only exists so the readout can be
+// dragged clear of other on-screen list items/icons while calibrating.
+void EditGlyphPositionsForFrame(const char* groupName, int depth, int index, int siblingCount)
+{
+    if (!groupName || groupName[0] == '\0' || index < 0 || index >= kManualGlyphMaxItems) return;
+
+    GlyphEditGroup* group = FindOrCreateGlyphEditGroup(groupName, depth);
+    if (!group) return;
+    if (index + 1 > group->count) group->count = index + 1;
+
+    if (!group->captured[index]) {
+        float seedVisX = 0.0f, seedVisY = 0.0f;
+        if (TryGetManualGlyphPosition(groupName, depth, index, siblingCount, seedVisX, seedVisY)) {
+            group->itemX[index] = seedVisX;
+            group->itemY[index] = seedVisY - kManualGlyphVerticalNudge;
+        } else {
+            // No existing calibration -- start at an obviously-placeholder screen-
+            // center-ish spot rather than (0,0) off in the corner, so it's immediately
+            // findable to drag into place.
+            group->itemX[index] = 960.0f;
+            group->itemY[index] = 400.0f - kManualGlyphVerticalNudge;
+        }
+        group->captured[index] = true;
+    }
+
+    float& rawX = group->itemX[index];
+    float& rawY = group->itemY[index];
+    float visX = rawX, visY = rawY + kManualGlyphVerticalNudge;
+
+    if (!group->textCaptured[index]) {
+        // Default: above the icon, far enough (>20px) that RequestMenuHintOverlay's
+        // own same-position-merge dedup (overlay_hud.cpp, kSamePositionToleragePx)
+        // doesn't fold the two separate calls below into one slot on the first frame.
+        group->textX[index] = visX;
+        group->textY[index] = visY - 40.0f;
+        group->textCaptured[index] = true;
+    }
+    float& textX = group->textX[index];
+    float& textY = group->textY[index];
+
+    static bool s_lastLeftMouseHeld = false;
+    bool leftMouseHeld = IsLeftMouseButtonHeld();
+    bool leftClickEdge = leftMouseHeld && !s_lastLeftMouseHeld;
+    s_lastLeftMouseHeld = leftMouseHeld;
+    int mouseX = 0, mouseY = 0;
+    bool haveMouse = GetLastMouseMoveClientPos(mouseX, mouseY);
+    float mouseDesignX = 0.0f, mouseDesignY = 0.0f;
+    if (haveMouse) {
+        // NOT ConvertRealScreenPosToDesignSpace (this file's own function, built for a
+        // native draw call's already-viewport-space param_2/param_3) -- a raw
+        // WM_MOUSEMOVE position is real WINDOW CLIENT pixels, a different coordinate
+        // system whenever this engine's backbuffer/viewport doesn't match the real
+        // window size. See ConvertMouseClientPosToDesignSpace's own comment
+        // (overlay_hud.h/.cpp) for the full story -- live-reported 2026-08-16 as "we
+        // still cant drag the icon," root-caused via a click-diagnostic log showing
+        // the old conversion was silently a no-op here.
+        ConvertMouseClientPosToDesignSpace(mouseX, mouseY, mouseDesignX, mouseDesignY);
+    }
+
+    if (!leftMouseHeld) { g_glyphEditDraggingGroup = -1; g_glyphEditDraggingIndex = -1; }
+
+    int groupSlot = static_cast<int>(group - g_glyphEditGroups);
+    bool isDraggingIcon = (g_glyphEditDraggingGroup == groupSlot && g_glyphEditDraggingIndex == index &&
+                            !g_glyphEditDraggingIsText);
+    bool isDraggingText = (g_glyphEditDraggingGroup == groupSlot && g_glyphEditDraggingIndex == index &&
+                            g_glyphEditDraggingIsText);
+
+    constexpr float kHandleHitRadiusDesign = 32.0f; // design-space units -- resolution-independent,
+                                                       // same reasoning as ConvertRealScreenPosToDesignSpace above
+
+    if (haveMouse && leftClickEdge && g_glyphEditDraggingIndex < 0) {
+        float iconDx = mouseDesignX - visX, iconDy = mouseDesignY - visY;
+        float textDx = mouseDesignX - textX, textDy = mouseDesignY - textY;
+        bool hitIcon = iconDx * iconDx + iconDy * iconDy <= kHandleHitRadiusDesign * kHandleHitRadiusDesign;
+        bool hitText = textDx * textDx + textDy * textDy <= kHandleHitRadiusDesign * kHandleHitRadiusDesign;
+        // Icon takes priority when both handles happen to overlap the click (it's the
+        // one that actually matters for export) -- text is the fallback hit.
+        if (hitIcon) {
+            g_glyphEditDraggingGroup = groupSlot; g_glyphEditDraggingIndex = index; g_glyphEditDraggingIsText = false;
+            isDraggingIcon = true;
+        } else if (hitText) {
+            g_glyphEditDraggingGroup = groupSlot; g_glyphEditDraggingIndex = index; g_glyphEditDraggingIsText = true;
+            isDraggingText = true;
+        }
+        // Debugging follow-up (2026-08-16, "click and drag doesn't seem to do
+        // anything visually") -- every real click-edge while the editor is active is
+        // rare enough on its own to log unconditionally, no dedup needed; shows
+        // exactly what the click was compared against so a miss vs. a dead click can
+        // be told apart from the log alone.
+        char clickBuf[220];
+        sprintf_s(clickBuf, "[glyph-editor-click] mouseRaw(%d,%d) mouseDesign(%.0f,%.0f) "
+                             "iconVis(%.0f,%.0f) textVis(%.0f,%.0f) hitIcon=%d hitText=%d",
+                   mouseX, mouseY, mouseDesignX, mouseDesignY, visX, visY, textX, textY,
+                   hitIcon ? 1 : 0, hitText ? 1 : 0);
+        LogFromController(clickBuf);
+    }
+
+    if (isDraggingIcon && haveMouse) {
+        rawX = mouseDesignX;
+        rawY = mouseDesignY - kManualGlyphVerticalNudge;
+        visX = rawX;
+        visY = rawY + kManualGlyphVerticalNudge;
+    }
+    if (isDraggingText && haveMouse) {
+        textX = mouseDesignX;
+        textY = mouseDesignY;
+    }
+
+    // Real, exact visual feedback (per explicit user request): draws the ACTUAL glyph
+    // icon this position would ship with, at its exact spot, through the same
+    // RequestMenuHintOverlay path the real overlay uses at runtime -- plus, as a
+    // SEPARATE call at the independently-draggable text handle's position, the live
+    // raw icon coordinate as its own on-screen text, so what's on screen doubles as
+    // the number to transcribe (or just read straight from the F3 export).
+    char aAsset[32] = {};
+    bool haveAsset = TryGetMenuGlyphAssetNameForKeyName("ENTER", aAsset, sizeof(aAsset));
+    if (haveAsset) {
+        RequestMenuHintOverlay(visX, visY, "", "", aAsset);
+    }
+    char coordText[64];
+    sprintf_s(coordText, "[d%d i%d/%d] %.0f,%.0f%s%s ", depth, index, siblingCount, rawX, rawY,
+               isDraggingIcon ? " DRAG" : "", isDraggingText ? " TXT-DRAG" : "");
+    RequestMenuHintOverlay(textX, textY, coordText, "", "");
+
+    // Bounding-box drag handles (2026-08-16, user direction: "add the bounding boxes
+    // like in our harness") -- same translucent-quad-plus-label visual as the harness
+    // diagram editor's own anchors (DrawAndEditDiagramAnchors, overlay_hud.cpp), drawn
+    // at the SAME radius the hit-test above actually uses, so what's visibly boxed IS
+    // the real clickable area, not just a decoration that could silently drift out of
+    // sync with it. Green while actively held, orange otherwise -- identical color
+    // convention to the harness anchors.
+    RequestGlyphEditHandleBox(visX, visY, kHandleHitRadiusDesign,
+        isDraggingIcon ? 0x9000FF00u : 0x90FFA000u, "ICON");
+    RequestGlyphEditHandleBox(textX, textY, kHandleHitRadiusDesign,
+        isDraggingText ? 0x9000FF00u : 0x9000AAFFu, "TEXT");
+
+    static bool s_lastF3Held = false;
+    bool f3Held = (GetAsyncKeyState(VK_F3) & 0x8000) != 0;
+    bool f3Edge = f3Held && !s_lastF3Held;
+    s_lastF3Held = f3Held;
+    if (f3Edge) ExportGlyphEditPositions();
+}
+
 // Live-reported 2026-08-01: "the modal has no back[,] we need to add one in the
 // standard place" -- unlike Back/Friends (real native "^N...^7" hints this project
 // can intercept and replace), some modals (e.g. "Choose Game Mode" over Special
@@ -5790,8 +6396,11 @@ extern "C" void __cdecl ResetMenuListItemOrdinalForFrame()
         static char s_lastAutoDiagKey[200] = "";
         bool overlayOn = ShouldDrawGlyphOverlay();
         char realGroup[64] = {};
-        int realIndex = -1, siblingCount = -1;
-        bool haveFocus = overlayOn && TryGetRealFocusedGroupAndIndex(realGroup, sizeof(realGroup), realIndex, siblingCount);
+        int realIndex = -1, siblingCount = -1, unusedDepth = -1;
+        // Debounced -- see TryGetStableFocusedGroupAndIndex's own comment (same
+        // flicker fix applied to the manual path below).
+        bool haveFocus = overlayOn &&
+            TryGetStableFocusedGroupAndIndex(realGroup, sizeof(realGroup), unusedDepth, realIndex, siblingCount);
         float autoX = 0.0f, autoY = 0.0f;
         bool havePos = haveFocus && TryGetAutomaticGlyphPosition(realIndex, autoX, autoY);
         char dkey[220];
@@ -5806,7 +6415,14 @@ extern "C" void __cdecl ResetMenuListItemOrdinalForFrame()
                       realGroup, realIndex, siblingCount, g_autoGlyphCandidateCount, autoX, autoY);
             LogFromController(dbuf);
         }
-        if (havePos) {
+        // Suppressed while the in-game glyph editor is actively toggled on
+        // (2026-08-16, live-reported "the old one draws back and it duplicates to
+        // two") -- EditGlyphPositionsForFrame below already draws (a possibly
+        // dragged-away-from-here) icon for this exact same currently-focused item;
+        // leaving this shipped draw active too meant the ORIGINAL, un-dragged
+        // position kept redrawing every frame alongside the one actually being
+        // dragged, once they were far enough apart to stop sharing a slot.
+        if (havePos && !g_glyphEditModeActive && !IsGlyphDisabledGroup(realGroup)) {
             char aAsset[32] = {};
             if (TryGetMenuGlyphAssetNameForKeyName("ENTER", aAsset, sizeof(aAsset))) {
                 RequestMenuHintOverlay(autoX, autoY, "", "", aAsset);
@@ -5829,11 +6445,20 @@ extern "C" void __cdecl ResetMenuListItemOrdinalForFrame()
         char realGroup[64] = {};
         int manualSelIndex = -1;
         int siblingCount = -1;
-        bool haveFocus = overlayOn && TryGetRealFocusedGroupAndIndex(realGroup, sizeof(realGroup), manualSelIndex, siblingCount);
+        int manualDepth = -1;
+        // Debounced (2026-08-16, live-reported "it goes to the set position but
+        // after x amount of time [it] moves" during ordinary play, not editing) --
+        // see TryGetStableFocusedGroupAndIndex's own comment. The raw per-frame
+        // itemDef read this used to call directly can briefly flicker onto a stale
+        // (group, index) for a few frames during a menu transition, which visibly
+        // snapped the real, shipped icon onto a DIFFERENT already-calibrated item's
+        // position for a moment before settling back.
+        bool haveFocus = overlayOn &&
+            TryGetStableFocusedGroupAndIndex(realGroup, sizeof(realGroup), manualDepth, manualSelIndex, siblingCount);
         float manualX = 0.0f, manualY = 0.0f;
         bool havePos = haveFocus &&
-            TryGetManualGlyphPosition(realGroup, GetMenuStackDepth(), manualSelIndex, siblingCount, manualX, manualY);
-        bool isVerified = havePos && IsVerifiedGlyphGroup(realGroup, GetMenuStackDepth());
+            TryGetManualGlyphPosition(realGroup, manualDepth, manualSelIndex, siblingCount, manualX, manualY);
+        bool isVerified = havePos && IsVerifiedGlyphGroup(realGroup, manualDepth);
         char dkey[220];
         sprintf_s(dkey, "%d|%d|%d|%d|%s|%d|%d", overlayOn ? 1 : 0, haveFocus ? 1 : 0,
                   havePos ? 1 : 0, isVerified ? 1 : 0, realGroup, manualSelIndex, siblingCount);
@@ -5843,13 +6468,29 @@ extern "C" void __cdecl ResetMenuListItemOrdinalForFrame()
             sprintf_s(dbuf, "[manual-glyph-diag] overlayOn=%d haveFocus=%d havePos=%d verified=%d "
                             "realGroup=\"%s\" realIndex=%d siblingCount=%d depth=%d x=%.1f y=%.1f",
                       overlayOn ? 1 : 0, haveFocus ? 1 : 0, havePos ? 1 : 0, isVerified ? 1 : 0,
-                      realGroup, manualSelIndex, siblingCount, GetMenuStackDepth(), manualX, manualY);
+                      realGroup, manualSelIndex, siblingCount, manualDepth, manualX, manualY);
             LogFromController(dbuf);
         }
-        // v0.3.0 release standard (2026-08-03): only draw on groups explicitly
-        // verified live -- see kVerifiedGlyphGroups' own comment. havePos alone
-        // (a table entry exists and matched) is deliberately NOT sufficient.
-        if (havePos && isVerified) {
+        // v0.3.0 release standard (2026-08-03) was: only draw on groups explicitly
+        // verified live (kVerifiedGlyphGroups), since havePos alone (a table entry
+        // exists and matched) wasn't itself proof the entry was actually correct.
+        // REMOVED 2026-08-16 (issue #51 follow-up, live click-and-drag calibration
+        // pass): that gate now only gets in the way -- the whole point of the new
+        // in-game editor (EditGlyphPositionsForFrame) is seeing the REAL draw
+        // update live as each screen gets dragged into place, which requires it to
+        // actually draw, not sit silently gated behind a separate allowlist that
+        // has to be hand-maintained after the fact. isVerified is still computed
+        // and logged above for now (useful diagnostic signal), just no longer
+        // gates the draw itself.
+        //
+        // ALSO suppressed while the in-game glyph editor is actively toggled on
+        // (2026-08-16, live-reported "the old one draws back and it duplicates to
+        // two") -- EditGlyphPositionsForFrame below already draws a (possibly
+        // dragged-away-from-here) icon for this exact same currently-focused item;
+        // leaving this shipped draw active too meant the ORIGINAL, un-dragged
+        // position kept redrawing every frame alongside the one actually being
+        // dragged, once they were far enough apart to stop sharing a slot.
+        if (havePos && !g_glyphEditModeActive && !IsGlyphDisabledGroup(realGroup)) {
             char aAsset[32] = {};
             if (TryGetMenuGlyphAssetNameForKeyName("ENTER", aAsset, sizeof(aAsset))) {
                 RequestMenuHintOverlay(manualX, manualY, "", "", aAsset);
@@ -5860,6 +6501,86 @@ extern "C" void __cdecl ResetMenuListItemOrdinalForFrame()
                     LogFromController("[manual-glyph-diag] TryGetMenuGlyphAssetNameForKeyName(\"ENTER\") FAILED");
                 }
             }
+        }
+    }
+
+    // In-game glyph position editor (2026-08-16, issue #51 follow-up) -- deliberately
+    // OUTSIDE the automatic-vs-manual branch above and NOT gated on ShouldDrawGlyphOverlay
+    // (that gate requires a controller to be the active input method; calibrating with a
+    // mouse must work regardless of what input method the overlay itself currently
+    // considers "active"). g_modConfig.glyphPositionEditMode is the master gate; F2 (only
+    // polled while that's on) is a second, live, in-session toggle -- same key/two-step
+    // convention as the harness diagram editor's own F2 toggle / F3 export.
+    if (g_modConfig.glyphPositionEditMode) {
+        static bool s_lastF2Held = false;
+        bool f2Held = (GetAsyncKeyState(VK_F2) & 0x8000) != 0;
+        bool f2Edge = f2Held && !s_lastF2Held;
+        s_lastF2Held = f2Held;
+        if (f2Edge) {
+            g_glyphEditModeActive = !g_glyphEditModeActive;
+            g_glyphEditDraggingGroup = -1;
+            g_glyphEditDraggingIndex = -1;
+            char msg[48];
+            sprintf_s(msg, "[glyph-editor] edit mode %s", g_glyphEditModeActive ? "ON" : "off");
+            LogFromController(msg);
+        }
+        // Debounced (2026-08-16, live-reported "it goes to the set position but after
+        // x amount of time [it] moves") -- see TryGetStableFocusedGroupAndIndex's own
+        // comment. Shares its single debounce state with the shipped manual-table
+        // draw above, since only one screen/item can genuinely be focused at a time.
+        char s_stableGroup[64] = {};
+        int s_stableDepth = -1, s_stableIndex = -1, s_stableSiblingCount = -1;
+        bool haveStableFocus = TryGetStableFocusedGroupAndIndex(s_stableGroup, sizeof(s_stableGroup),
+                                                                   s_stableDepth, s_stableIndex, s_stableSiblingCount);
+
+        // Always-visible status readout (2026-08-16 debugging follow-up: "click and
+        // drag doesn't seem to do anything visually") -- fixed top-left corner, drawn
+        // every frame this config flag is on regardless of F2/focus state, since F2
+        // itself previously had zero on-screen confirmation (only a log line) --
+        // impossible to tell at a glance whether the toggle registered or whether a
+        // real item is even focused this frame without this. Shows the DEBOUNCED
+        // (stable) target, matching what's actually being edited below, not the raw
+        // per-frame read. Uses a fixed fraction-of-screen-independent design-space
+        // corner (40,40), same convention every other on-screen text in this project
+        // already uses.
+        char statusText[220];
+        if (!g_glyphEditModeActive) {
+            sprintf_s(statusText, "[GLYPH EDITOR OFF] press F2 to activate ");
+        } else if (haveStableFocus) {
+            sprintf_s(statusText, "[GLYPH EDITOR ON] F3=export | focus=%s d%d i%d/%d ",
+                       s_stableGroup, s_stableDepth, s_stableIndex, s_stableSiblingCount);
+        } else {
+            // Live-reported 2026-08-16 ("the dlc map select on survival etc" -- "it
+            // doesnt detect the selected entry"): TryGetRealFocusedGroupAndIndex (the
+            // direct itemDef-array read this whole editor/overlay depends on)
+            // requires each real item's own name to end in "_<digits>" with two
+            // specific flag bits set -- some screens genuinely don't populate that
+            // shape at all (already a known architectural gap for keybind-editing
+            // screens, see kManualGlyphPositions' own "Deliberately NOT covered"
+            // comment). Rather than show nothing useful, fall back to the OLDER,
+            // separate selection-tracking signals (g_currentSelGroupName/Index from
+            // the compiled .menu script's own SetSelection calls, g_focusedItemName
+            // from the real getfocuseditemname() hook) so there's SOMETHING to read
+            // off screen/log for this specific screen instead of a dead end.
+            sprintf_s(statusText, "[GLYPH EDITOR ON] F3=export | no real item focused | "
+                                    "fallback: sel=%s/%d focused=\"%s\" d%d ",
+                       g_currentSelGroupName, g_currentSelIndex, g_focusedItemName, GetMenuStackDepth());
+            static char s_lastNoFocusDiagKey[220] = "";
+            char noFocusKey[220];
+            sprintf_s(noFocusKey, "%s|%d|%s|%d", g_currentSelGroupName, g_currentSelIndex,
+                       g_focusedItemName, GetMenuStackDepth());
+            if (strcmp(noFocusKey, s_lastNoFocusDiagKey) != 0) {
+                strncpy_s(s_lastNoFocusDiagKey, noFocusKey, _TRUNCATE);
+                char dbuf[256];
+                sprintf_s(dbuf, "[glyph-editor-nofocus] sel=\"%s\"/%d focused=\"%s\" depth=%d",
+                           g_currentSelGroupName, g_currentSelIndex, g_focusedItemName, GetMenuStackDepth());
+                LogFromController(dbuf);
+            }
+        }
+        RequestMenuHintOverlay(40.0f, 40.0f, statusText, "", "");
+
+        if (g_glyphEditModeActive && haveStableFocus) {
+            EditGlyphPositionsForFrame(s_stableGroup, s_stableDepth, s_stableIndex, s_stableSiblingCount);
         }
     }
 
@@ -5901,6 +6622,14 @@ void __cdecl Hook_DrawGlyphText(
     unsigned param_16, unsigned param_17, unsigned param_18, unsigned param_19,
     unsigned param_20, unsigned param_21)
 {
+    // Popup-body text capture (2026-08-16) -- see g_lastPopupBodyText's own comment.
+    // Deliberately the very first thing this hook does: cheap (one float compare, one
+    // strlen, maybe one strncpy_s), and every other gate/branch below it is
+    // irrelevant to whether this specific text is worth remembering.
+    if (fabsf(param_2 - 686.0f) < 3.0f && param_1 && strlen(param_1) > 10) {
+        strncpy_s(g_lastPopupBodyText, param_1, _TRUNCATE);
+    }
+
     // Diagnostic (2026-08-11, "major audit" pass -- see re_notes/known_issues.md issue
     // #74): confirms this hook actually fires at all, and captures the exact gate
     // values that decide whether a gameplay hint gets replaced. Added after a live
@@ -6176,6 +6905,21 @@ void __cdecl Hook_DrawGlyphText(
                         // the icon straight from the known LogicalAction::Jump mapping
                         // (TryGetMantleGlyphAssetName) rather than the translated-text lookup.
                         bool isMantleHint = RenderedTextMatchesSubstitutionTemplate(param_1, "PLATFORM_MANTLE");
+                        // Auto-mantle gate (issue #62), moved here 2026-08-16: this used to be
+                        // set further down, INSIDE the `if (haveAssetName)` block below -- which
+                        // meant g_mantleHintDrawnThisFrame only ever became true if
+                        // TryGetMantleGlyphAssetName() ALSO succeeded (icon asset loaded/
+                        // resolved). Auto-mantle's whole detection was therefore silently tied
+                        // to "did THIS PROJECT's own icon resolve," not "is the real native
+                        // mantle hint actually showing" -- the real signal (isMantleHint, the
+                        // structural PLATFORM_MANTLE template match above) could be perfectly
+                        // true while auto-mantle still never fired, if the icon lookup failed
+                        // for any unrelated reason (a real, plausible explanation for issue #62's
+                        // "doesn't fire even at a mantle point" report, never diagnosed before
+                        // now). Set unconditionally on isMantleHint alone -- the actual visible
+                        // icon draw further down still separately depends on haveAssetName and is
+                        // unaffected by this change either way.
+                        if (isMantleHint) g_mantleHintDrawnThisFrame = true;
                         // Same class of bug, same day, user-reported ("just one issue i saw
                         // was the nades in other languages"): ResolveGlyphAssetNameForKeyName's
                         // own `_stricmp(keyName, "G or Middle Mouse") == 0` special case (the
@@ -6269,19 +7013,35 @@ void __cdecl Hook_DrawGlyphText(
                             // Live-reported 2026-07-31: weapon pickup needs to sit very
                             // slightly lower than the pure measured-center formula above gives
                             // -- small empirical nudge, not a new transform.
-                            constexpr float kHintVerticalNudge = 6.0f;
+                            // ROOT CAUSE CONFIRMED 2026-08-16 via two real before/after
+                            // screenshots (2026-07-31 "correct" vs. 2026-08-16 "current", same
+                            // Model 1887 pickup prompt): issue #70 round 7 (2026-08-08) dropped
+                            // this whole general path's `* param_6` multiply, moving from
+                            // `param_3 * param_6` to raw `param_3` -- proven MORE consistent
+                            // proportionally across resolutions, but at 16:9 specifically this
+                            // was a real, uncompensated increase (718 * 0.964 = 692.2 -> 718, a
+                            // ~26-unit drop down the screen) that round 7 itself never got
+                            // live-confirmed against ("Not yet live-tested," per that round's own
+                            // log entry) -- it silently regressed every hint on this shared path
+                            // at the single most common resolution this project is actually
+                            // played at. First attempt at fixing this (a blind -5 guess) was
+                            // rejected -- this value is instead now anchored to the real,
+                            // measured before/after gap the user directly reported (~10px too
+                            // low): reduced from 6 to -4 (a 10-unit upward shift). Mantle is
+                            // fully excluded from this constant now (see the line below), so
+                            // this can never again entangle with mantle's own already-tuned
+                            // position the way the earlier attempt did.
+                            // ROUND 2, live-retested same day: "better but not perfect... same
+                            // issue too low down, just budge them by another 10px" -- another
+                            // 10-unit upward shift, -4 -> -14.
+                            // ROUND 3, same day: "maybe bump just 4px more and its better" --
+                            // -14 -> -18.
+                            constexpr float kHintVerticalNudge = -18.0f;
                             // isMantleHint computed above (structural template match, issue #68).
-                            // Auto-mantle gate (2026-08-03, issue #62 follow-up): this
-                            // IS the real, native "is a mantleable ledge actually here right
-                            // now" signal -- the same one this project already detects to
-                            // draw this exact hint. User-reported the naive sprint+stick-cone
-                            // gate alone was wrong: +gostand is literally the same usercmd bit
-                            // as Jump, so forcing it with no real ledge present just makes the
-                            // player jump repeatedly instead of being a safe no-op. Accumulates
-                            // into a per-frame flag (see g_mantleHintDrawnThisFrame's own
-                            // comment) rather than being read directly here, since this draw
-                            // call and InjectControllerButtons run on different hook points.
-                            if (isMantleHint) g_mantleHintDrawnThisFrame = true;
+                            // g_mantleHintDrawnThisFrame (auto-mantle's real ledge-availability
+                            // gate, issue #62) is now set unconditionally on isMantleHint alone,
+                            // right where it's computed above -- see that assignment's own
+                            // comment for why this moved out of this asset-resolution-gated block.
                             // Survival's ready-up hint (F5) sits at a genuinely different native
                             // row (p3=329 vs. pickup/buy-station's shared 718) -- user wants its
                             // position kept "similar to original" rather than pulled into the
@@ -6332,7 +7092,15 @@ void __cdecl Hook_DrawGlyphText(
                             // else -- unchanged at 1920x1080 (scale=1.0, where both constants were
                             // originally eyeballed) and proportionally smaller at any lower
                             // resolution, matching the target elements they're aligned against.
-                            if (!isReadyUpHint) startY += kHintVerticalNudge;
+                            // Live direction 2026-08-16: mantle used to ALSO pass through this
+                            // shared nudge, THEN get its own kMantleHintYNudge added on top --
+                            // meaning any future tuning of this shared value (for pickup/
+                            // throwback/etc.) would silently drag mantle's position along with
+                            // it too, requiring a manual compensating edit every time (exactly
+                            // what happened a few edits ago). Mantle now fully excluded here --
+                            // its own nudge below is a single, standalone, independent value,
+                            // not additive on top of this one.
+                            if (!isReadyUpHint && !isMantleHint) startY += kHintVerticalNudge;
                             if (isMantleHint) {
                                 // Live-reported 2026-07-31: the mantle/jump prompt sits far to the
                                 // left of the real, separately-drawn mantle arrow sprite (~107px
@@ -6342,6 +7110,42 @@ void __cdecl Hook_DrawGlyphText(
                                 // nudged empirically instead, scoped to the Jump/mantle hint only.
                                 constexpr float kMantleHintXNudge = 82.0f;
                                 startX += kMantleHintXNudge;
+                                // Live-reported 2026-08-16 (first real screenshot of this hint,
+                                // now that auto-mantle round 3 made it trivially reproducible --
+                                // see this project's own issue #62 for why this hint was rarely
+                                // actually seen up close before): "our text for the mantle is no
+                                // longer centered vertically properly on the sprite" -- a red/
+                                // green annotated screenshot showed the current row (this
+                                // project's own text+A-icon) sitting noticeably BELOW the real
+                                // mantle arrow sprite's own vertical center. Measured against that
+                                // screenshot using the A-icon's own known real diameter
+                                // (kHintIconSize, overlay_hud.cpp) as an in-image ruler (scale-
+                                // invariant regardless of the screenshot's own crop/zoom) -- the
+                                // gap was consistently close to one full icon-height. Nudged up by
+                                // approximately that amount; a first-pass screenshot-based
+                                // estimate like every other nudge in this block, may need a small
+                                // follow-up correction once re-confirmed live.
+                                // ROUND 2, live-retested same day: "now its too high it needs to go
+                                // down like 5-10 px" -- reduced -44 -> -36 (~8 units back down, mid
+                                // of the reported 5-10px range). Still a design-space unit, so this
+                                // stays proportionally correct at any resolution the same way the
+                                // original estimate was (see the header comment on this whole nudge
+                                // block for why these are applied post-conversion specifically so
+                                // they scale, not a hardcoded real-pixel offset).
+                                // ROUND 3, live direction 2026-08-16: this used to be ADDITIVE on
+                                // top of the shared kHintVerticalNudge above (net effect at the
+                                // time: +6 shared, -36 here, -30 total) -- meaning any future
+                                // tuning of that shared constant for OTHER hints (pickup/
+                                // throwback/etc.) would silently move mantle too, forcing a manual
+                                // compensating edit here every single time, exactly what happened a
+                                // few edits ago. Mantle is now fully excluded from the shared nudge
+                                // (see that line's own comment) and this is the ONLY value driving
+                                // its vertical position -- folded to the same already-confirmed-
+                                // correct net total (-30) so the actual on-screen position is
+                                // completely unchanged by this refactor, just no longer entangled
+                                // with a value meant for unrelated hints.
+                                constexpr float kMantleHintYNudge = -30.0f;
+                                startY += kMantleHintYNudge;
                             }
 
                             bool centerOnScreen = !isMantleHint && !isReadyUpHint;
@@ -6435,9 +7239,24 @@ void __cdecl Hook_DrawGlyphText(
                                 // same row as the other interact hints. User wants it
                                 // in that same row, so anchored directly to the same
                                 // known-good target pickup/buy-station's own formula
-                                // resolves to (718 * 0.964 + 6 ~= 698), rather than
-                                // deriving a position from this prompt's unrelated p3.
-                                constexpr float kInteractHintRowY = 698.0f;
+                                // resolves to, rather than deriving a position from
+                                // this prompt's unrelated p3.
+                                //
+                                // CORRECTED 2026-08-16 (live-reported "every hint is
+                                // slightly shifted maybe this was from our 4:3 fix
+                                // earlier" -- correct diagnosis, confirmed via real
+                                // before/after screenshots of this exact pickup prompt).
+                                // The original 698 value baked in the OLD pickup/
+                                // buy-station formula (718 * param_6(0.964) +
+                                // kHintVerticalNudge(6) ~= 698) -- issue #70 round 7
+                                // (2026-08-08) later dropped the `* param_6` multiply
+                                // entirely for the general path, which (never live-
+                                // confirmed at the time) turned out to be a real ~26-unit
+                                // regression at 16:9. kHintVerticalNudge itself was then
+                                // corrected to -4.0f, then -14.0f after a same-day round 2
+                                // (see that constant's own comment). Kept in sync here:
+                                // 718 + kHintVerticalNudge(-14) = 704.
+                                constexpr float kInteractHintRowY = 700.0f; // 718 + kHintVerticalNudge(-18)
                                 float startY = kInteractHintRowY;
                                 RequestCustomHintOverlay(startX, startY, "Press ", suffixText, assetName,
                                     /*centerOnScreen=*/true, /*flashIcon=*/true, GameplayHintSlotId::Reload);
@@ -6918,7 +7737,8 @@ void __cdecl Hook_DrawGlyphText(
                         // visible output -- kept as an explicit, self-documenting check rather
                         // than relying on that being true only by coincidence.
                         if (trustworthyMatch && ShouldDrawGlyphOverlay() &&
-                            IsVerifiedGlyphGroup(g_currentSelGroupName, GetMenuStackDepth())) {
+                            IsVerifiedGlyphGroup(g_currentSelGroupName, GetMenuStackDepth()) &&
+                            !IsGlyphDisabledGroup(g_currentSelGroupName)) {
                             // Per explicit user direction: don't touch the native text at
                             // all (no suppress, no redraw) -- just add the A/select glyph
                             // icon AFTER it, at its real measured width. Uses
@@ -7656,8 +8476,56 @@ extern "C" void __cdecl InjectAllControllerInput(unsigned char* cmd)
 {
     int32_t inLevelVal = *reinterpret_cast<volatile int32_t*>(kInLevelFlagAddr);
     bool nowInLevel = inLevelVal > 0;
-    if (nowInLevel && !g_wasInLevel) {
+    // Diagnostic (2026-08-16, issue #1 follow-up, live-reported "the mod starts
+    // breaking again" after a level RESTART specifically -- as opposed to a fresh
+    // level load from the main menu). Hypothesis: issue #1's 3-second gate-clearing
+    // window only re-arms on a RISING EDGE of this in-level flag
+    // (nowInLevel && !g_wasInLevel, right below) -- if a "Restart Mission" resets
+    // the current level in place without this flag ever actually dropping to <=0 in
+    // between (unlike a fresh load, which presumably does), the window would never
+    // re-arm on restart, and whatever gate-desync issue #1 originally fixed could
+    // resurface exactly as described. NOT yet confirmed live -- logs the raw value
+    // and the edge/window state on every real change so the next in-game "Restart
+    // Mission" repro shows directly whether the flag actually dips to 0 or stays
+    // positive throughout, rather than guessing at a fix from reasoning alone.
+    {
+        static int32_t s_lastLoggedInLevelVal = -999999;
+        static bool s_lastLoggedNowInLevel = false;
+        if (inLevelVal != s_lastLoggedInLevelVal || nowInLevel != s_lastLoggedNowInLevel) {
+            s_lastLoggedInLevelVal = inLevelVal;
+            s_lastLoggedNowInLevel = nowInLevel;
+            char buf[160];
+            sprintf_s(buf, "[inlevel-flag-diag] inLevelVal=%d nowInLevel=%d wasInLevel=%d risingEdge=%d",
+                       inLevelVal, nowInLevel ? 1 : 0, g_wasInLevel ? 1 : 0,
+                       (nowInLevel && !g_wasInLevel) ? 1 : 0);
+            LogFromController(buf);
+        }
+    }
+    // CONFIRMED live 2026-08-16 (see [inlevel-flag-diag] above): a "Restart Mission"
+    // never drops this flag to <=0 -- it stays positive the entire time (normal
+    // fluctuation observed in a small ~14-19 range) EXCEPT for one distinctive spike
+    // (200, >10x the normal range) at the exact moment of restart, before immediately
+    // returning to the normal range. The rising-edge re-arm below therefore never
+    // fires on restart, matching the live-reported "the mod starts breaking again"
+    // symptom exactly -- issue #1's whole 3-second gate-clearing window only ever
+    // gets ONE chance to run, at the very first real level load of the session.
+    // Second re-arm trigger: a sudden large jump in the raw value from one tick to
+    // the next (normal noise is single digits; the observed restart spike was
+    // ~180 above baseline) -- doesn't depend on knowing the exact sentinel value
+    // (200 may not be universal across every restart/level), just that it's a very
+    // large, anomalous jump no ordinary in-level fluctuation produces.
+    constexpr int32_t kInLevelValSpikeThreshold = 50;
+    static int32_t s_prevInLevelValForSpike = inLevelVal;
+    bool inLevelValSpiked = nowInLevel && (inLevelVal - s_prevInLevelValForSpike) > kInLevelValSpikeThreshold;
+    s_prevInLevelValForSpike = inLevelVal;
+
+    if ((nowInLevel && !g_wasInLevel) || inLevelValSpiked) {
         g_levelEnterTick = GetTickCount();
+        if (inLevelValSpiked && g_wasInLevel) {
+            char buf[96];
+            sprintf_s(buf, "[inlevel-flag-diag] restart spike detected (val=%d) -- gate window re-armed", inLevelVal);
+            LogFromController(buf);
+        }
     }
     g_wasInLevel = nowInLevel;
 
@@ -7733,6 +8601,19 @@ extern "C" void __cdecl InjectMenuInputTick()
     // B's ESC-forward, for the same reason: the gameplay-simulation tick this would
     // otherwise share with InjectControllerDpad halts entirely during a genuine pause.
     InjectControllerMenuNav();
+    // Vibration "gets stuck on" fix (2026-08-16): a rumble event's own expiry
+    // (its real, per-event duration -- a gunshot's short pulse vs. e.g. a longer
+    // scripted campaign event, each keeping whatever duration TriggerRumble was
+    // called with) only gets enforced by whichever tick actually runs UpdateRumbleOutput.
+    // The gameplay tick (Rumble_Tick, InjectAllControllerInput) stops firing
+    // entirely during a genuine pause -- same dead-tick problem this function
+    // exists to solve for pause-menu input, see the big comment above -- so an
+    // event triggered right before a pause would otherwise buzz for the whole
+    // paused duration instead of cutting off on its own schedule. This tick
+    // keeps running through pause (WndProc subclass + SetTimer), so calling the
+    // SAME per-event expiry check from here too closes that gap without touching
+    // any event's own configured duration.
+    Rumble_TickExpiryWatchdog();
     // Synthetic "Back" hint for modals with no native corner hint of their own
     // (2026-08-01) -- see its own big comment. NOT called from here (live-reported:
     // this 60Hz timer tick isn't synchronized with the render frame that consumes
