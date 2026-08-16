@@ -6,6 +6,200 @@ reverse-engineering trail behind each entry.
 
 ---
 
+## Unreleased
+
+### Added
+- **DualSense: Bluetooth support + rumble output (issue #76 follow-up).** Neither
+  existed before this pass. Bluetooth adds real input parsing (78-byte reports vs.
+  USB's 64, correct payload offsets, the extended-report handshake needed to get the
+  controller sending full reports at all) alongside USB, auto-detected by report
+  length. Rumble output is new for BOTH USB and Bluetooth -- previously
+  `Controller_SetVibration` silently no-op'd for any DualSense. Bluetooth output uses
+  its own required CRC32-checksummed report framing; the checksum math was ported
+  from Sony's own mainline Linux kernel driver (`hid-playstation.c`) rather than an
+  unverifiable community lookup table. **Bluetooth stick input does not currently
+  work correctly on real hardware -- see Known Issues below and
+  `re_notes/known_issues.md` issue #77.** USB is unaffected.
+- **Dev tool: in-game click-and-drag menu-glyph position editor** (issue #51
+  follow-up). `kManualGlyphPositions` (the per-screen A-glyph position table) was
+  originally calibrated via expensive `MiniDumpWriteDump` snapshots + raw memory
+  scans, slow enough that several real screens were left uncovered (deeper
+  `LEVELS_BUTTON_LIST` sub-lists, `OPTIONS_LIST` tabs past index 2, keybind-editing
+  screens, `PAUSE_LIST`). Reuses the same click-and-drag handle UX already proven
+  live for the harness-only controller-diagram editor (issue #66), but wired into
+  the real game this time: with `[Experimental] GlyphPositionEditMode=1` set,
+  press F2 in-game (same key/two-step convention as the harness tool) to activate
+  live dragging — the currently-focused real menu item's glyph icon becomes
+  draggable with the mouse, and the live coordinate readout next to it is an
+  independently-draggable second handle (so it can be moved clear of other
+  icons/text while calibrating); F3 exports every icon position touched that
+  session to `exported_glyph_positions.txt`, ready to paste into
+  `kManualGlyphPositions`. The verified-groups allowlist gate no longer blocks
+  the draw for any group with a manual table entry, so results are visible
+  immediately on every screen without a separate allowlist edit. Both the icon and
+  its live coordinate readout are independently draggable, visible harness-style
+  translucent bounding boxes (matching the real hit-test radius exactly). While
+  the editor is active, the mouse is fully isolated from the real game: every
+  mouse message (move/clicks/wheel) is swallowed before reaching the real menu's
+  WndProc, AND a process-wide GetCursorPos hook freezes what the real menu's own
+  per-frame polling sees (this engine has no DirectInput at all, so its hover/
+  hit-testing reads raw cursor position directly, independent of the message
+  queue) -- so the mouse only ever interacts with this project's own drag
+  handles, never the game underneath them. Fixed a real coordinate-space bug where
+  dragging silently did nothing: mouse position was being converted with the wrong
+  function (one built for native draw-call positions, already in viewport pixels,
+  not raw window-client mouse pixels), which happened to no-op whenever the
+  viewport already matched the 1920x1080 design reference -- clicks landed exactly
+  at the raw mouse position with zero conversion, missing the drag handles
+  entirely at any window size other than a coincidental 1:1 match. Fixed a
+  duplicate-icon bug: the shipped, un-dragged icon draw kept redrawing every
+  frame right alongside the editor's own dragged one once they were far enough
+  apart to no longer merge into a single draw slot -- the shipped draw for the
+  currently-focused item is now suppressed for as long as the editor is actively
+  toggled on, so only the (possibly repositioned) one shows. When no real item can
+  be detected at all (some screens, e.g. keybind-editing lists, genuinely don't
+  populate the itemDef shape this whole system depends on), the status readout now
+  falls back to showing the older, separate selection-tracking signals
+  (`g_currentSelGroupName`/`g_focusedItemName`) instead of just going blank, so
+  there's something to read/log for screens the primary detection can't see at
+  all. Fixed a real crash on F3 export: the success-log message buffer was
+  undersized for its own formatted string, so `sprintf_s` correctly detected the
+  overflow and terminated the
+  process outright (by design, not a memory-corruption bug) -- the exported file
+  itself always wrote and closed successfully beforehand, only the trailing log
+  line crashed. dev-only — not a player-facing feature, and never active unless
+  both explicitly enabled in config AND toggled on in-game with F2.
+- **`kManualGlyphPositions` (issue #51) updated with real dragged data from a live
+  in-game click-and-drag calibration session covering every menu screen reachable
+  from the main menu** (not requiring an active mission/match), using the editor
+  above: `game_select_button` (main menu) recalibrated with real positions;
+  `OPTIONS_LIST` extended from 3 to all 7 real tabs (previously a known gap); two
+  entirely new screens added for `SO_LEVELS_BUTTON_LIST` at depth=2 (16 items) and
+  depth=3 (14 of 16 items -- 2 still uncalibrated); `SPECOPS_BUTTON_LIST` and
+  `SWF_BUTTON_LIST` confirmed correct as-is at additional depths (no table change
+  needed). `OPTIONS_LIST` kept at depth=-1 (reachable from more than one navigation
+  depth depending on entry point) rather than narrowed to the one depth it happened
+  to be captured at -- `SO_LEVELS_BUTTON_LIST`'s two new depth-specific entries stay
+  depth-gated on purpose, since they're genuinely different real screens sharing one
+  group name, not the same screen reached differently. Genuinely in-game-only
+  screens (`PAUSE_LIST`, Survival's `WEAPON_POPUP`, `RESUME_POPUP`) were NOT part of
+  this pass -- their existing entries predate this tool and still need a dedicated
+  in-mission calibration session to re-verify. Menu-screen calibration is otherwise
+  considered largely complete as of this pass. Two confirmed gaps remain, documented
+  in `kManualGlyphPositions`' own comment: a Callsign/emblem-card selection screen
+  ("cardIcon"/"cardTitle" groups, visited but never dragged) and Survival's DLC map
+  select screen, which is a genuine architectural gap -- none of this project's three
+  selection-tracking mechanisms detect a focused item there at all, confirmed live,
+  not just unconfirmed. The Callsign/emblem-card selection screen ("cardIcon"/
+  "cardTitle" groups) is explicitly disabled for now rather than left to silently
+  draw nothing by omission: it needs the icon positioned relative to each selected
+  item's own real on-screen box (bottom-right corner for emblems, right of the box
+  for the callsign name list), which this project can't do yet -- no known way to
+  read a real itemDef's box/rect, only its name and flags. **Also resolved a longstanding, explicitly-flagged gap**: the
+  "New Game overwrite" confirmation popup (`SWF_COMMON_DESC_RESIZE_POPUP_NAME`) has
+  always used a meaningfully different position than the quit-confirm/video-restore
+  variants sharing the same group name, but no way to tell them apart was ever found
+  -- turns out `requiredDepth=1` is the disambiguating signal, now calibrated with
+  real dragged data instead of being left uncorrected.
+
+### Fixed
+- **Controller-glyph icons could visibly snap onto a different item's position for
+  a moment during completely ordinary play, not just while calibrating** (issue
+  #51 follow-up, found while building the editor above). Root cause: the real
+  focus read every part of this system relies on (a direct itemDef-array memory
+  read) can briefly flicker between the correct index and a stale one for a few
+  frames during a menu transition -- already visible elsewhere in this project's
+  own diagnostics (`haveFocus`/`siblingCount` alternating frame-to-frame even
+  while sitting completely still). The shipped overlay was reading that signal
+  raw, every frame, so a transient misread could make an already-correctly-
+  positioned icon jump onto a completely different item's calibrated position for
+  an instant before snapping back. Fixed with a shared debounce
+  (`TryGetStableFocusedGroupAndIndex`) requiring several consecutive frames of
+  agreement before either the real overlay or the editor treats a new item as the
+  actual focus target.
+- **The Special Ops map-select screen specifically kept jumping between two real
+  positions even with the debounce above** -- a different, deeper bug: this
+  exact screen's real menu-stack depth (`GetMenuStackDepth()`) genuinely,
+  repeatedly flip-flops between 2, 3, and 4 for the identical on-screen list
+  (same real group/index/sibling count, only depth differs), likely because some
+  other UI element -- a live map-preview/description panel -- intermittently
+  pushes/pops itself on the real menu stack in the background without the player
+  navigating anywhere. `kManualGlyphPositions` had three separate, slightly
+  different `SO_LEVELS_BUTTON_LIST` entries (depths 2/3/4) from being calibrated
+  independently while depth happened to read differently each time -- merged all
+  three to carry identical values, so the resolved position can no longer visibly
+  differ no matter which of the three depths the flicker lands on.
+- **Auto-mantle (issue #62) confirmed working for the first time since it was
+  requested back on 2026-08-03** — `[Movement] AutoMantleEnabled` (still off by
+  default, opt-in by design) previously shipped as a documented non-functional
+  feature after two earlier fix rounds could never be live-confirmed. Root cause,
+  found this pass: the flag this feature's whole gate reads
+  (`g_mantleHintDrawnThisFrame`) was only ever being set from inside a block that
+  ALSO required this project's own icon lookup to succeed — silently coupling
+  "is a real mantleable ledge here" to "did our own icon resolve," an unrelated
+  concern. Decoupled; auto-mantle now fires purely off the real native mantle-hint
+  detection, independent of icon-resolution success. Direct confirmation after the
+  fix: **"it works now."**
+- **The mantle prompt's text/icon row was sitting noticeably below the real mantle
+  arrow sprite it's meant to align with** — measured against a screenshot and
+  nudged up (in design-space units, so it stays correct at any resolution, not a
+  hardcoded real-pixel offset); one follow-up correction after an initial
+  overshoot.
+- **Pickup/throwback/buy-station and similar gameplay hints were sitting
+  noticeably too low, confirmed via two real before/after screenshots of the
+  same pickup prompt.** Root cause: issue #70's "round 7" fix (2026-08-08) traded
+  a real ~26-unit downward shift at 16:9 (the resolution this project is
+  actually played at) for better proportional consistency across other
+  resolutions, and was never live-confirmed against a real screenshot before
+  shipping. Corrected using the user's own directly-measured gap (~10px) rather
+  than re-deriving from the old formula's own imperfect math. Mantle's own
+  vertical position is now driven by a single, fully independent constant
+  instead of a shared value plus a mantle-specific offset on top of it, so
+  tuning this shared value for pickup/throwback can never again silently drag
+  mantle's own position along with it (an intermediate attempt at this fix hit
+  exactly that problem before being corrected). Needed a second, same-day
+  10px correction on top of the first (still too low after round 1) before
+  matching the reference screenshot. The grenade-throwback hint's icon is also
+  reported visibly squished (aspect-ratio distorted) — separate bug, not yet
+  investigated, needs its own screenshot.
+- **The Reload prompt had silently drifted out of sync with the pickup/buy-station
+  hint row it's meant to match**, since 2026-08-08 (issue #70's "round 7" position
+  fix corrected the general hint-row formula but never updated Reload's own
+  separately-hardcoded row constant to match) — found while investigating the
+  mantle report above. Recalculated to match the current formula.
+- **Menu-glyph icons in a vertical list could visibly jitter a few pixels left/right
+  between adjacent items** instead of reading as one aligned column, from ordinary
+  per-item capture noise in `kManualGlyphPositions`. Any items whose X position falls
+  within 15px of each other in the same table entry now snap to the rightmost of that
+  group at lookup time (a runtime normalization, so it self-applies to every existing
+  and future captured entry rather than needing every table hand-flattened).
+  Deliberately scoped to one entry's own item list, so genuinely separated items
+  (e.g. the main menu's 3 far-apart tiles, or a popup's fixed-X Yes/No pair) are
+  untouched.
+- **Controller vibration could get stuck on indefinitely if triggered right before a
+  pause, loading screen, or menu.** Root cause: the decay/expiry check that turns
+  rumble off after its own scheduled duration only ran on the gameplay-simulation
+  tick, which a genuine pause halts entirely (the same class of dead-tick problem
+  already solved for pause-menu input) — so the physical motor kept buzzing for the
+  whole paused duration instead of cutting off on schedule. Fixed by also running the
+  same per-event expiry check from the always-on menu tick; each event still keeps
+  its own real duration (a gunshot's short pulse vs. a longer scripted event), just
+  now reliably enforced regardless of pause state.
+
+### Investigated, not yet resolved
+- **Bluetooth DualSense: stick input is garbled/unusable on real hardware**
+  (`re_notes/known_issues.md` issue #77). Three real, evidence-backed bugs were found
+  and fixed this pass (Y-axis inversion; an XInput-vs-DualSense poll-priority fight,
+  most likely Steam Input contending for the same physical device; missing Bluetooth
+  input-report CRC32 validation) — the live symptom was reported unchanged after all
+  three. Zero CRC failures have been logged since the check was added, ruling out
+  transport-level corruption specifically, but not the byte-offset/payload
+  interpretation for this specific pairing. See issue #77 for the full account and
+  the recommended next step (a raw-byte diagnostic, not yet implemented). USB is
+  unaffected.
+
+---
+
 ## v0.3.2 — Alpha (2026-08-16) — Controller-glyph icons actually work now; native DualSense/gyro preview
 
 **Headline fix, and worth being blunt about**: every "no controller glyphs" report

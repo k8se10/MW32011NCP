@@ -85,6 +85,18 @@ void GetRealScreenSize(void* deviceIn, int& outWidth, int& outHeight);
 // (already correct), and use ONE additional uniform value for SIZE only.
 float GetUniformSizeScale(void* deviceIn);
 
+// Converts a raw WM_MOUSEMOVE client position (real WINDOW CLIENT pixels, e.g.
+// GetLastMouseMoveClientPos's own output -- d3d9_hook.cpp) into this project's
+// design-space (1920-wide reference) convention. NOT the same conversion as
+// analog_input_hooks.cpp's ConvertRealScreenPosToDesignSpace, which is for a
+// DIFFERENT input space (a native draw call's own already-viewport-space
+// param_2/param_3) -- window client pixels and viewport/backbuffer pixels can
+// differ (this engine stretch-blits a possibly-smaller backbuffer to fill the
+// real window), confirmed live 2026-08-16 when using the wrong one of the two
+// silently no-op'd whenever the viewport already equals 1920x1080. See this
+// function's own definition (overlay_hud.cpp) for the full derivation.
+void ConvertMouseClientPosToDesignSpace(int mouseClientX, int mouseClientY, float& outDesignX, float& outDesignY);
+
 // Live-reported 2026-07-31: the IDirect3DDevice9::Reset hook added to fix "changing
 // display mode crashes the whole game" did NOT fix it -- confirmed via proxy_d3d9.log:
 // Hook_Reset's own "Reset() called" line never appears anywhere after a display-mode
@@ -257,6 +269,19 @@ void RequestMenuHintOverlay(float x, float y, const char* prefixText, const char
 // Remove once the real coordinate-space convention is confirmed and this no longer
 // needs visual verification.
 void RequestDebugPositionMarker(int slot, float x, float y);
+
+// In-game glyph position editor drag-handle box (2026-08-16, issue #51 follow-up,
+// user direction: "add the bounding boxes like in our harness"). Draws a translucent
+// colored quad of the given radius, centered at (x, y) in DESIGN SPACE, plus an
+// optional short label -- mirrors DrawAndEditDiagramAnchors' own handle visual
+// exactly (the harness-only controller-diagram editor, issue #66), so
+// analog_input_hooks.cpp's in-game glyph editor has the same clearly-visible,
+// clearly-grabbable drag targets, not just a bare icon/text with no visible
+// boundary. radius should match the caller's own hit-test radius so the box drawn
+// IS the real, exact clickable area, not just a decoration. Re-requested every
+// frame to keep showing, same "current request" convention as every other
+// RequestXxxOverlay above; up to kMaxGlyphEditHandleSlots per frame, extras dropped.
+void RequestGlyphEditHandleBox(float x, float y, float radius, unsigned long color, const char* label);
 
 // ---- Custom in-game options overlay (2026-08-04) ----------------------------------
 //

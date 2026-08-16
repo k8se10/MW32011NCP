@@ -118,7 +118,9 @@ void ReadBool(const char* path, const char* section, const char* key, bool& outV
 // it out on every prior run), which would keep overriding the new default right back to
 // broken. The bump here forces WriteDefaultConfig() to rewrite every upgrader's ini and
 // drop the stale key, so it physically cannot block the overlay anymore.
-constexpr unsigned long kCurrentConfigVersion = 14;
+// v14->v15 (2026-08-16, issue #51 follow-up): new [Experimental] GlyphPositionEditMode
+// key added -- the in-game click-and-drag menu-glyph calibration tool's master gate.
+constexpr unsigned long kCurrentConfigVersion = 15;
 
 // Reads a legacy key's raw value, returning true only if the key genuinely existed
 // (unlike ReadFloat, which can't distinguish "absent" from "present but unparsable" --
@@ -569,7 +571,15 @@ void WriteDefaultConfig(const char* path)
         "; diagnostic toggle. When on, the glyph/hint overlay draws regardless of whether\n"
         "; a controller is currently detected as the active input method -- if icons then\n"
         "; show correctly, report that back, it narrows this down a lot. 0 = off, 1 = on.\n"
-        "ForceGlyphOverlay=%d\n",
+        "ForceGlyphOverlay=%d\n"
+        "; 2026-08-16, issue #51 follow-up -- the in-game click-and-drag menu-glyph\n"
+        "; calibration tool. DEFAULT OFF, only ever turn on for an active calibration\n"
+        "; session. This is the master gate only -- once on, press F2 in-game to actually\n"
+        "; activate live dragging: the currently-focused real menu-list item's glyph\n"
+        "; position becomes draggable with the mouse, seeded from the existing calibrated\n"
+        "; position if one exists. Press F3 to export every group touched this session to\n"
+        "; exported_glyph_positions.txt, next to this DLL. 0 = off, 1 = on.\n"
+        "GlyphPositionEditMode=%d\n",
         kCurrentConfigVersion,
         g_modConfig.lookDegreesPerSecondHorizontal,
         g_modConfig.lookDegreesPerSecondVertical,
@@ -616,7 +626,8 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.hudGlyphPositionLogging ? 1 : 0,
         g_modConfig.listItemPositionLogging ? 1 : 0,
         g_modConfig.armorFieldScanLogging ? 1 : 0,
-        g_modConfig.forceGlyphOverlay ? 1 : 0);
+        g_modConfig.forceGlyphOverlay ? 1 : 0,
+        g_modConfig.glyphPositionEditMode ? 1 : 0);
 
     fclose(f);
 }
@@ -820,6 +831,7 @@ void LoadModConfig()
     ReadBool(path, "Experimental", "ListItemPositionLogging", g_modConfig.listItemPositionLogging);
     ReadBool(path, "Experimental", "ArmorFieldScanLogging", g_modConfig.armorFieldScanLogging);
     ReadBool(path, "Experimental", "ForceGlyphOverlay", g_modConfig.forceGlyphOverlay);
+    ReadBool(path, "Experimental", "GlyphPositionEditMode", g_modConfig.glyphPositionEditMode);
     ReadBool(path, "Gyro", "Enabled", g_modConfig.gyroEnabled);
     ReadFloat(path, "Gyro", "Sensitivity", g_modConfig.gyroSensitivity);
     if (g_modConfig.gyroSensitivity < 0.0f) g_modConfig.gyroSensitivity = 0.0f;
@@ -840,7 +852,7 @@ void LoadModConfig()
         "overlayFontItalic=%d overlayTestCycleAllVariants=%d "
         "fireNotifyQueueKick=%d bindResolverHookLogging=%d bindResolverGlyphSubstitution=%d "
         "hudFontIdLogging=%d hudGlyphPositionLogging=%d listItemPositionLogging=%d "
-        "armorFieldScanLogging=%d forceGlyphOverlay=%d",
+        "armorFieldScanLogging=%d forceGlyphOverlay=%d glyphPositionEditMode=%d",
         g_modConfig.lookDegreesPerSecondHorizontal, g_modConfig.lookDegreesPerSecondVertical,
         g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
@@ -863,7 +875,8 @@ void LoadModConfig()
         g_modConfig.hudGlyphPositionLogging ? 1 : 0,
         g_modConfig.listItemPositionLogging ? 1 : 0,
         g_modConfig.armorFieldScanLogging ? 1 : 0,
-        g_modConfig.forceGlyphOverlay ? 1 : 0);
+        g_modConfig.forceGlyphOverlay ? 1 : 0,
+        g_modConfig.glyphPositionEditMode ? 1 : 0);
     LogFromController(buf);
 
     // Rewrite the file once, now that g_modConfig holds every existing setting PLUS
