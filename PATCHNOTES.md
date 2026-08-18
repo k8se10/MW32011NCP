@@ -8,6 +8,23 @@ reverse-engineering trail behind each entry.
 
 ## Unreleased
 
+---
+
+## v0.3.3 — Alpha (2026-08-18) — Extended-session stutter fixed; vibration and co-op rumble fixes; DualSense Bluetooth preview (broken)
+
+**Summary:** The headline fix: real, extended-session performance stuttering — three
+separate, evidence-backed causes found and fixed (a log file that was never trimmed
+between launches, a controller-poll thread that never stopped rescanning every
+device every tick, and a diagnostic log whose dedup logic didn't actually dedup) —
+user-confirmed "much better" afterward, though one residual dip (looking toward
+enemies) is parked, not resolved, pending real GPU-side profiling. Also fixes
+vibration getting stuck on indefinitely across a pause/menu, and a real co-op bug
+where damage-rumble could trigger off a teammate's hits instead of your own. Ships
+a first, PREVIEW/WIP pass at DualSense Bluetooth support — **stick input does not
+work correctly over Bluetooth, confirmed live; USB has not been independently
+confirmed working either.** See below for the full itemized list, including menu
+glyph calibration work and new dev-only diagnostic tooling.
+
 ### What's New
 1. **PREVIEW/WIP, KNOWN BROKEN over Bluetooth: DualSense rumble output + input-parsing
   groundwork (issue #76 follow-up).** Neither existed before this pass. Rumble output
@@ -272,7 +289,8 @@ reverse-engineering trail behind each entry.
   transport-level corruption specifically, but not the byte-offset/payload
   interpretation for this specific pairing. See issue #77 for the full account and
   the recommended next step (a raw-byte diagnostic, not yet implemented). USB is
-  unaffected.
+  unaffected by these Bluetooth-specific bugs, but has not been independently
+  confirmed working either -- see issue #76.
 2. **Survival's dog/hyena melee-struggle pin-down prompts, investigated** (`re_notes/known_issues.md`
   issue #78). Found and decoded the real assets: `hud_dog_melee`/`hud_hyena_melee`
   (genuinely Survival-relevant, referenced in `common_survival.zone`) turn out to be
