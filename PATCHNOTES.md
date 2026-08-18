@@ -9,17 +9,19 @@ reverse-engineering trail behind each entry.
 ## Unreleased
 
 ### What's New
-1. **DualSense: Bluetooth support + rumble output (issue #76 follow-up).** Neither
-  existed before this pass. Bluetooth adds real input parsing (78-byte reports vs.
-  USB's 64, correct payload offsets, the extended-report handshake needed to get the
-  controller sending full reports at all) alongside USB, auto-detected by report
-  length. Rumble output is new for BOTH USB and Bluetooth -- previously
-  `Controller_SetVibration` silently no-op'd for any DualSense. Bluetooth output uses
-  its own required CRC32-checksummed report framing; the checksum math was ported
-  from Sony's own mainline Linux kernel driver (`hid-playstation.c`) rather than an
-  unverifiable community lookup table. **Bluetooth stick input does not currently
-  work correctly on real hardware -- see Known Issues below and
-  `re_notes/known_issues.md` issue #77.** USB is unaffected.
+1. **PREVIEW/WIP, KNOWN BROKEN over Bluetooth: DualSense rumble output + input-parsing
+  groundwork (issue #76 follow-up).** Neither existed before this pass. Rumble output
+  is new for BOTH USB and Bluetooth -- previously `Controller_SetVibration` silently
+  no-op'd for any DualSense; Bluetooth's own output framing (CRC32-checksummed,
+  ported from Sony's own mainline Linux kernel driver rather than an unverifiable
+  community table) is real, implemented code. **Bluetooth STICK INPUT does not
+  currently work correctly on real hardware, confirmed live -- do not rely on it for
+  gameplay over Bluetooth.** **USB has NOT been independently confirmed working
+  either** -- untouched by this session's Bluetooth-specific bugs/fixes, but per
+  `re_notes/known_issues.md` issue #76's own status line, the whole DualSense backend
+  (USB included) remains "implemented, not live-tested against real hardware" --
+  no live tester has confirmed USB input/rumble actually work yet. See "Investigated,
+  Not Yet Resolved" below for the full Bluetooth account.
 2. **`kManualGlyphPositions` (issue #51) updated with real dragged data from a live
   in-game click-and-drag calibration session covering every menu screen reachable
   from the main menu** (not requiring an active mission/match), using the editor
@@ -166,6 +168,13 @@ reverse-engineering trail behind each entry.
     real 64-entry seen-set; this diagnostic defaults OFF regardless. A custom
     per-frame benchmark tool (`FrametimeBenchmarkLogging`, `[Experimental]`) was
     also built this pass to catch cases like these directly instead of guessing.
+    **User-confirmed after these three fixes: "much better."** **One residual
+    symptom is explicitly PARKED, not resolved**: a felt dip specifically when
+    looking toward enemies (real capture shows no correlation with any of this
+    project's own code -- leading theory is genuine GPU-bound rendering cost,
+    not CPU-side, which this project's own tooling can't cleanly measure). See
+    `re_notes/known_issues.md` issue #79 for the full account and recommended
+    next step.
 10. **Survival co-op: damage-taken rumble could trigger off a TEAMMATE's hits, not
   your own.** Root cause, self-documented as a known risk when originally written
   but not confirmed until now: the health-polling code that drives damage-rumble
@@ -229,6 +238,29 @@ reverse-engineering trail behind each entry.
   itself always wrote and closed successfully beforehand, only the trailing log
   line crashed. dev-only — not a player-facing feature, and never active unless
   both explicitly enabled in config AND toggled on in-game with F2.
+2. **New dev tool, `tools/ui_harness`: a real `.menu` file parser/expression-evaluator/
+  renderer.** Built to debug controller-glyph positions on Survival's between-round
+  buy screens without racing the round timer live in-game. Parses and evaluates all
+  319 real `.menu` files in the extracted zone dump (tokenizer, block parser, a real
+  expression AST evaluator against a fake/editable game-state, `tablelookup()`/CSV
+  wiring, real material/DDS texture rendering), using a coordinate transform that was
+  reverse-engineered from the real binary AND confirmed against a live capture (not
+  assumed) -- see `re_notes/iw5sp.md`. Dev-only, never shipped or run inside the real
+  game; the harness is a separate standalone executable. Visual fidelity is
+  incomplete -- most itemDef background materials in the static asset extraction
+  don't resolve, so most of the UI still renders as debug outlines rather than real
+  textures; this is a data-completeness gap in the extraction, not a bug in the
+  renderer itself.
+3. **Two new `[Experimental]` config flags, both OFF by default, both real diagnostic
+  capability added to the shipped DLL this pass**: `CaptureRuntimeMenuAssets` hooks
+  the real, already-confirmed-safe `FindOrLoadAsset`/`CreateTexture` calls to dump
+  real material textures to disk (name-tagged) while playing, feeding the harness
+  tool above with real assets instead of the incomplete static extraction --
+  **implemented, NOT yet confirmed to actually produce correctly-named files against
+  a real play session.** `FrametimeBenchmarkLogging` writes a real per-frame CSV
+  (frame-to-frame time plus a cost breakdown of this project's own hooks) -- this is
+  the tool that actually found causes 1-2 of the stutter fix above, so it's
+  live-confirmed working, not speculative.
 
 ### Investigated, Not Yet Resolved
 1. **Bluetooth DualSense: stick input is garbled/unusable on real hardware**
