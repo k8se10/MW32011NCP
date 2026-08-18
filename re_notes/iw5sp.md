@@ -2902,3 +2902,633 @@ a future MP implementation pass would need to independently re-derive every
 address (per CLAUDE.md's own mandate) but wouldn't need a different technique.
 Per CLAUDE.md's still-unresolved anti-cheat question, no implementation work
 should proceed from this without that discussion happening first.
+
+## `.menu` itemDef/menuDef rect-to-screen transform (2026-08-16)
+
+Real RE (not assumption) for the `tools/ui_harness` `.menu`-rendering project --
+motivated by needing pixel-accurate rendering of Survival's `scriptmenus/
+survival_armory_*.menu`/`waves.menu` screens outside the game. This binary
+(`iw5sp.exe`) is the right target: `survival_armories.csv` and the whole
+`scriptmenus/survival_armory_*` set live under the extracted zone's `ui/sp/` and
+`ui/scriptmenus/` trees respectively, and this file's own title has always said
+"Campaign + Survival" -- Survival is SP-family, not `iw5mp.exe`. (Not
+exhaustively cross-checked against `iw5mp.exe` importing the same menus --
+moderate, not full, confidence on this specific point.)
+
+Method: reused the existing Ghidra project (cloned to
+`D:\Tools\ghidra_projects_menurect2\MW3.gpr` to avoid lock contention with a
+parallel RE pass using the original `ghidra_projects_optionsmenu` copy),
+headless via `analyzeHeadless.bat ... -process iw5sp.exe -readOnly -noanalysis`
+running this repo's own `re_notes/ghidra_scripts/{FindCallers,DecompileFuncs,
+DumpDisasm,FindGlobalRefs}.java`. Traced call-graph outward from an
+already-known "virtual-to-real coordinate scale" leaf function
+(`FUN_0042fff0(ctx, v) = v * _DAT_00841ac0 / *(int*)(ctx+4)`, found in a prior
+pass) rather than grepping decompile dumps for literal `640`/`480`.
+
+- **`FUN_004af560` (thunk `thunk_FUN_004af560`) is the real itemDef/menuDef
+  rect-to-screen transform -- CONFIRMED via raw disassembly matching the
+  decompile byte-for-byte** (every `param_1[N]` float-array index in the
+  decompile corresponds exactly to the `FLD float ptr [EAX+4*N]` disassembly
+  offset, checked instruction-by-instruction). Signature: `void
+  FUN_004af560(float* ctx, float* x, float* y, float* w, float* h, uint
+  horzMode, uint vertMode)` -- `x`/`y`/`w`/`h` are IN/OUT (rewritten in place).
+  Called (e.g. from `FUN_004fc5f0`, one of several item-draw-adjacent callers)
+  as `thunk_FUN_004af560(materialOrCtx, &x, &y, &w, &h, alignA, alignB)` --
+  parameter order and count match the real `.menu` text format's `rect x y w h
+  A B` exactly, strongly suggesting A/B (the file's trailing two rect numbers)
+  map straight onto `horzMode`/`vertMode` here.
+- **The align-mode field is an 11-value enum (cases `default`/0 through 10),
+  NOT a small 0-2 left/center/right enum** -- confirmed by the raw jump table
+  (`JMP dword ptr [ECX*0x4 + 0x4af768]` for horizontal, a second jump table at
+  `0x4af794` for vertical, both bounds-checked `CMP ECX,0xa / JA <default>`
+  before the jump). This directly resolves the earlier open question:
+  `stance.menu`'s menuDef-level `rect ... 10 10` is a VALID enum value (case
+  10 exists on both axes), not an out-of-range oddity -- the "doesn't fit a
+  0-2 enum" observation was correct, the enum is just bigger than assumed.
+- **Two qualitatively different families of mode**, confirmed via both
+  decompile and disasm:
+  - Modes 0(default)/1/2/3/7/8/9/10: position (`x` or `y`) is scaled by the
+    PRIMARY axis scale (`ctx[0]` for x, `ctx[1]` for y) then an ADDITIVE
+    margin/offset is pulled from a per-mode float slot in the same `ctx`
+    struct (offsets `0x8`/`0x9` for mode 2, `0xe`/`0xf` for mode 1, `0x10`/
+    `0x11` for mode 3, `0x16`/`0x17` for mode 8, `0x18`/`0x19` for mode 10,
+    `0x1a` for horizontal default, combinations of the above for modes 7/9).
+    Reads as a per-edge/corner anchor-with-margin system (anchor to a screen
+    edge or corner, offset inward by a stored margin), not simple centering.
+  - Modes 4 and 6: BOTH position and size are rescaled together by an
+    ALTERNATE scale factor (`ctx[2]` for mode 4, `ctx[4]` for mode 6) instead
+    of the primary `ctx[0]`/`ctx[1]` -- reads as a "stretch/fill" or
+    percentage-relative mode, structurally distinct from the anchor-with-
+    margin modes.
+  - Width (`w`) is always scaled by the X-axis scale actually used for that
+    call (`ctx[0]` normally, `ctx[2]`/`ctx[4]` under modes 4/6); height (`h`)
+    likewise always follows the Y-axis scale (`ctx[1]` normally). Confirms X
+    and Y are scaled independently (two separate scale factors), which is a
+    prerequisite for either uniform stretch or letterboxing -- doesn't by
+    itself prove which.
+- **NOT resolved this pass: the actual numeric values of `ctx[0]`/`ctx[1]`
+  (the primary X/Y scale factors), and therefore whether MW3's real widescreen
+  UI stretches non-uniformly or preserves aspect via letterboxing.** The
+  `_DAT_00841ac0` constant used by the separate `FUN_0042fff0` leaf function is
+  runtime-initialized (reads as `0.0` in the static binary image, confirmed via
+  `DumpFloatsAt.java`) and its write/init site was not found -- `FindGlobalRefs`
+  turned up only 4 total cross-references to it (`FUN_0057c950`,
+  `FUN_00406990`, `FUN_00525000`, `FUN_0042fff0` itself), none of which is a
+  write; the actual init likely happens through a store this reference search
+  didn't attribute (e.g. part of a bulk struct copy). Separately, `ctx` itself
+  (the struct `FUN_004af560`'s `param_1` points to) is passed down as an
+
+### Independent cross-check: no runtime `.menu` keyword-string parser exists for `rect` (2026-08-16)
+
+A third, independent RE pass (parse-time/text angle, working backward from the
+`.menu` TEXT format's literal keywords rather than forward from the draw path
+above -- deliberately a different method for cross-verification) set out to find
+where `iw5sp.exe` parses the literal token `"rect"` while loading a `.menu` file,
+to determine the trailing-2-rect-field semantics from the parser side. That
+specific question is now moot given the jump-table finding directly above (the
+align mode is a compiled-in numeric enum, not a string), but the negative result
+along the way is itself a real, corroborating finding, not a dead end to bury:
+
+- **`RawStringScan.java` (exact null-terminated byte match, not dependent on
+  Ghidra's own string auto-analysis) found ZERO occurrences of `"rect"`,
+  `"RECT"`, `"rectX"`, or `"horzAlign"` anywhere in `iw5sp.exe`'s initialized
+  memory.** Confirmed exhaustive for these exact tokens (whole binary, all
+  memory blocks) -- not a "didn't look hard enough" negative. This
+  **independently corroborates** the jump-table finding above: if
+  `horzMode`/`vertMode` were resolved by comparing a parsed keyword string, some
+  literal keyword text would have to exist in the binary; it doesn't, because
+  the compiled `.menu` asset format stores the align mode as a plain integer
+  (0-10) baked in by the offline linker, with no runtime string dispatch
+  involved at all. Two independent methods (forward call-graph trace of the
+  draw path; backward string search from the parse side) now agree.
+- **Side-finding, real but tangential**: `iw5sp.exe` DOES contain a genuine,
+  live text-tokenizer-driven itemDef field parser -- just not for `rect`. Found
+  via raw disassembly (not decompile alone): `FUN_0061a5a0` reads a token
+  (`FUN_0052a790`, which special-cases a leading `@` exactly like the classic
+  CoD `"@STRING_TABLE_KEY"` localization convention -- a strong, distinctive
+  fingerprint that this genuinely is `.menu`/UI-string tokenizing code, not
+  something unrelated) and compares it via a real `stricmp`-shaped wrapper
+  (`FUN_00463bb0` -> `FUN_004a6100(a, b, 0x7fffffff)`) against the literal
+  strings `"backcolor"`, `"forecolor"`, and `"bordercolor"` in sequence, then
+  reads exactly 4 float tokens (`FUN_004b2760`, a `Com_Parse`+`atof` wrapper
+  that also handles a signed-prefix token) into consecutive floats at a
+  keyword-specific base offset. **Confirmed itemDef struct field offsets** (raw
+  disassembly, `*(undefined4*)(base + N*4)` writes, N=0..3 per field): `forecolor`
+  @ itemDef+0x50, `backcolor` @ itemDef+0x60, `bordercolor` @ itemDef+0x70 --
+  each a contiguous 4-float (r,g,b,a) block, cleanly spaced 0x10 apart. This
+  function has **zero statically-found callers** (`FindCallers.java` returned
+  none) -- consistent with being reached through an indirect function-pointer
+  table (the actual itemDef-field dispatch table itself wasn't located this
+  pass, so this is inferred from the calling-convention shape, not directly
+  observed). Plausible interpretation, **not confirmed**: this serves a
+  GSC-scriptable "set this itemDef's color by name at runtime" API distinct
+  from `.menu`-load-time parsing (which per the jump-table finding is fully
+  static/numeric for `rect`) -- colors may need runtime name-based dispatch
+  because gameplay scripts can retint UI elements live, while `rect` never
+  needs that. Not verified against an actual GSC call site; flagged as
+  inference, not fact.
+- **Practical implication for the `tools/ui_harness` `.menu` renderer**: don't
+  spend implementation effort on a string-keyword path for `rect`/align-mode --
+  the real engine doesn't have one. The parser only needs it for whatever
+  fields genuinely use runtime `exp`-style dynamic dispatch (colors, per this
+  finding, and whatever else future RE turns up), not for static `rect x y w h
+  A B` values, which should go straight to the numeric jump-table logic
+  documented above.
+  ordinary parameter through the whole call chain checked so far, not read from
+  a fixed global at this level -- its true origin (a single UI-wide scale
+  singleton vs. something per-font/per-material) is still open. **Recommended
+  next step, not yet done: a live memory dump of this `ctx` struct while the
+  real game is running at a real resolution** (read `ctx[0..~0x1b]` as floats
+  once the itemDef draw path is confirmed live) -- far more conclusive than
+  further static archaeology for a runtime-computed value, and consistent with
+  this project's own precedent of preferring live-captured data over inferring
+  static-only unknowns (`[[feedback_hardcode_from_single_known_good_reference]]`-
+  style: don't guess when the real number is one live capture away).
+- Confidence summary: the transform FUNCTION and its align-enum shape are
+  **confirmed via raw disassembly** (highest confidence this project uses).
+  The exact 6-field `.menu` rect -> `(ctx, x, y, w, h, horzMode, vertMode)`
+  parameter correspondence is **decompile/call-site-shape-inferred, not
+  independently confirmed** (no test was run feeding a known `.menu` rect
+  through and observing the resulting screen quad). The scale-factor numeric
+  values and aspect-ratio handling are **unresolved, explicitly flagged, not
+  guessed** -- see "Recommended next step" above (a live `ctx[0..~0x1b]` dump
+  once the itemDef draw path is confirmed live is the concrete unblock).
+
+### Fourth, independent cross-check (2026-08-16, separate RE pass): same dead ends, no new leads found
+
+A fourth pass, working forward from `FUN_0042fff0` (the `_DAT_00841ac0`-based
+leaf scale function) exactly as the first pass above describes, independently
+traced its same four call sites (`FUN_0057c950`, `FUN_00406990`, `FUN_00525000`,
+`FUN_0042fff0` itself) via `DecompileFuncs`/`DumpDisasm`/`DescribeRefs`/a new
+`DumpDoublesAt.java` script (`_DAT_00841ac0` is an 8-byte x87 `double`, not a
+4-byte `float` -- confirmed via raw disassembly of `FUN_0042fff0`,
+`FMUL double ptr [0x00841ac0]` -- its real value is a compile-time-constant
+`48.0`, not runtime-populated as first assumed). **Independently reached the
+same conclusion as the first pass above: this whole `FUN_0042fff0` family is a
+text/font-glyph-metrics scale helper (its callers all bottom out in string-width
+measurement and glyph-draw calls), NOT the itemDef rect transform** -- a
+different subsystem that happens to share the "scale by a stored constant,
+divide by a struct field" shape. No new information beyond what the first pass
+already found and correctly identified as a dead end; recorded here only as
+independent corroboration that this specific lead is exhausted, not a fifth
+pass' worth of new leads. `FUN_004af560`/`thunk_FUN_004af560` (documented
+above) remains the real, confirmed answer.
+
+### Live capture closes the last open question: scale factor + margins (2026-08-16)
+
+The one thing static RE couldn't settle (`ctx[0]`/`ctx[1]`'s real numeric values,
+and whether MW3 stretches non-uniformly to widescreen or letterboxes) is now
+**directly measured, not inferred** -- a temporary MinHook detour on
+`FUN_004af560` itself (installed in `proxy_d3d9/src/analog_input_hooks.cpp`,
+`Hook_004af560`/`InstallAnalogInputHooks`, read-only, logs both the IN and OUT
+`x/y/w/h` plus `ctx[0..7]`, forwards every call unmodified, removed after this
+capture) logged the first 20 real calls while opening an in-game menu, real
+display resolution 2560x1440 (confirmed via the existing `[res-diag]` log line).
+
+**Confirmed live data** (`proxy_d3d9.log`, tag `[menu-rect-diag]`):
+```
+ctx[0..7] = 2.2500, 2.2500, 3.0000, 2.2500, 0.4444, 0.4444, 0.0000, 0.0000  (constant across every call)
+horzMode=2 vertMode=1: in(x=0    y=0   w=0   h=72)             out(x=960  y=81   w=0    h=162)
+horzMode=2 vertMode=3: in(x=-260 y=-30 w=520 h=60)              out(x=375  y=931.5 w=1170 h=135)
+horzMode=3 vertMode=3: in(x=0    y=0   w=0   h=20)              out(x=1776 y=999  w=0    h=45)
+```
+
+**Derived formula, verified exactly against all three examples above** (no
+rounding slop -- every output matches to the logged 3 decimal places):
+`out = in * scale + margin[mode]`, where `scale = ctx[0] = ctx[1] = 2.25` for
+BOTH axes (modes 0/1/2/3/7/8/9/10; mode4/mode6's alternate `ctx[2]`/`ctx[4]`
+weren't exercised by this capture, still unconfirmed live). `w`/`h` scale the
+same way as `x`/`y` on their respective axis (`w_out = w_in * scale`, no
+separate margin, confirmed: `520*2.25=1170`, `60*2.25=135`, `72*2.25=162`,
+`20*2.25=45`, all exact).
+
+**The scale factor is fixed at `2.25 = 1080/480`, independent of the true
+2560x1440 backbuffer** (which would be `1440/480=3.0` if scaled to the REAL
+resolution directly -- it isn't). This means the itemDef/menuDef rect math
+always targets a **fixed 1920x1080 logical canvas regardless of actual display
+resolution** -- the 640x480 virtual space scales uniformly by 2.25 to
+1440x1080 (4:3 content), and the real backbuffer's higher resolution is
+handled by a separate, later uniform upscale outside this function entirely
+(consistent with a "render UI at 1080p reference, GPU-upscale for higher
+native res" convention, not evidence of per-resolution itemDef recalculation).
+
+**Per-mode margins, empirically captured, expressed in that same fixed
+1920x1080 logical space** (so these are resolution-independent constants, not
+values needing per-display recalibration):
+- `horzMode=2` margin = 960 = exactly half of the 1920 logical width -- reads
+  as a CENTER anchor against the full 16:9 logical canvas (not the 1440-wide
+  4:3 content region within it).
+- `vertMode=1` margin = 81 -- reads as a fixed top-edge padding.
+- `vertMode=3` margin = 999 = `1080 - 81` -- same 81px padding, applied from
+  the BOTTOM edge instead (999 + content height positions flush against the
+  same margin mode1 uses from the top) -- strongly suggests modes 1/3 are a
+  symmetric top/bottom edge-anchor pair sharing one padding constant.
+- `horzMode=3` margin = 1776 = `1920 - 144` -- a right-edge anchor with a
+  144px padding (different from vertical's 81px -- asymmetric horizontal vs.
+  vertical padding, unsurprising for HUD-corner-style anchoring).
+
+**Confidence**: HIGH for the formula shape and the specific mode
+1/2/3 margins (directly measured, exact arithmetic match, not inferred) --
+LOWER for generalizing "margin values are resolution-independent logical-space
+constants" to modes/situations not exercised by this one capture (0, 7, 8, 9,
+10, and the mode4/mode6 stretch-fill family remain unconfirmed live; the
+"always 1920x1080 logical, then GPU-upscaled" model is the simplest
+explanation fitting the data but wasn't independently verified against a
+second real resolution).
+
+**Bottom line for `tools/ui_harness`'s `.menu` renderer**: target a fixed
+1920x1080 logical canvas (matching the real engine), apply `virtual * 2.25 +
+margin[mode]` for the confirmed modes, and letterbox/scale that logical
+canvas to whatever real window size the harness itself uses -- exactly
+mirroring what the real engine does, so results transfer to real gameplay
+regardless of the player's actual display resolution. Modes beyond
+0/1/2/3/7/8/9/10's basic anchor-margin shape and the mode4/mode6 stretch
+family should be treated as best-effort/unverified until a similar live
+capture exercises them specifically.
+
+## MW3-vs-BO1/BO2 visual quality: the real D3D9 render viewport is capped below native display resolution (2026-08-16)
+
+Continuation of the long-term "why does MW3 look worse than BO1/BO2" investigation.
+This pass connects a fact this project's own history had ALREADY live-captured
+multiple times (issue #70, round 5, `known_issues.md` ~line 9504) to the render-
+resolution-cap hypothesis directly -- it hadn't previously been read as an answer to
+that question, just as a UI-positioning bug's root cause. Re-examined here
+specifically for that connection; no new binary RE was needed to establish the core
+fact (it's real, repeated, live-captured data from this project's own multi-round
+history), but the "is this a hard engine cap or just a config value" distinction
+below required checking this project's own prior `r_mode` RE.
+
+**The fact, already live-confirmed, repeatedly, across this project's own history**
+(same user, same 2560x1440 real monitor, multiple separate sessions/days):
+```
+real screen size=2560x1440 (source=GetClientRect-fallback)
+real screen size=1920x1080 (source=GetViewport)
+```
+`IDirect3DDevice9::GetViewport` -- the actual ground-truth region the GPU rasterizes
+into, confirmed via `overlay_hud.cpp`'s own `kGetViewportVtableIndex=48` plumbing --
+has **consistently, every time it's been checked in this project's history, read
+1920x1080**, even though the real window/backbuffer (`GetClientRect`, and this
+session's own `[res-diag]` `D3DPRESENT_PARAMETERS` capture) is 2560x1440. This
+directly confirms the pattern the user asked about: **the actual rendering surface
+MW3 draws into (3D scene AND the 2D UI system documented above -- the `.menu`
+transform's own `2.25 = 1080/480` scale factor is simply a consequence of the
+viewport always being 1920x1080, not a separate UI-only convention) is smaller than
+the real display/backbuffer**, and whatever fills the remaining backbuffer area at
+present time is doing so via upscale, not native-resolution rendering.
+
+**What this does NOT confirm -- an important distinction, checked before
+concluding**: this is not evidence of a hard-coded, unavoidable 1920x1080 ceiling
+baked into the engine. `proxy_d3d9/src/vanilla_settings_table.h`'s own prior RE
+(line ~124, `Video_Resolution`/`ui_r_mode`) already established the real Resolution
+dropdown uses "a real `dvarEnumList \"r_mode\"` -- populated at runtime from the
+actual display's supported modes, not a static list" -- meaning the dropdown itself
+should genuinely offer this monitor's real native 2560x1440 as a selectable option,
+not silently cap out at 1080p. The far more likely explanation, consistent with
+every piece of evidence gathered (both here and across issue #70's own history,
+where this same 1920x1080 viewport reading was simply treated as "the current
+resolution" with no surprise expressed): **`r_mode` is simply CONFIGURED to
+1920x1080** for this install/profile -- a normal, user-changeable dvar value, most
+likely either MW3's own factory-default resolution (a 2011 game predating >1080p
+consumer displays being common, 1080p as a shipped default is unsurprising) or a
+value nobody has since changed to match a newer, higher-resolution monitor -- NOT
+an engine-enforced maximum.
+
+**Practical implication, actionable rather than a limitation**: if `r_mode` is
+genuinely capped/stuck at 1920x1080 regardless of attempting to change it in the
+real Options menu, THAT would be a real, confirmable engine bug worth further RE
+(next step: live-test actually changing Resolution to 2560x1440 in-game and
+re-checking `GetViewport`'s reading afterward -- not yet done this pass). But if,
+as the existing `r_mode` RE suggests, the dropdown genuinely offers and accepts the
+native resolution, then the "MW3 looks soft/worse than BO2" complaint -- at least
+the render-resolution component of it -- is most directly explained by **this
+specific install/profile simply not having Resolution set to native**, not by an
+unavoidable engine limitation. This is a materially different, more actionable
+conclusion than "the engine caps rendering at 1080p" would be, and should be
+reported to the user as such rather than overclaiming a hard cap this pass didn't
+actually prove.
+
+**Confidence**: HIGH on the raw fact (GetViewport=1920x1080 vs.
+GetClientRect/backbuffer=2560x1440, repeatedly observed, real live data, not
+inferred). MODERATE on the "just an unset config value, not a hard cap"
+interpretation -- well-supported by the existing `r_mode` dynamic-enumeration RE,
+but not independently re-confirmed this pass by actually testing a live resolution
+change and re-reading the viewport afterward.
+
+## Follow-up pass, same day: both remaining sub-questions resolved via fresh disassembly
+
+Continuation immediately after the section above. Real Ghidra headless RE (cloned
+project `D:\Tools\ghidra_projects_rescap\MW3.gpr` to avoid contending with other
+concurrent passes, `FindStringRefs`/`DecompileFuncs` against `iw5sp.exe`), not
+inference from existing docs alone. Both open items from the section above are now
+settled, with real disassembly-derived evidence, not assumption.
+
+### Texture/material picmip ceiling: REFUTED -- "Extra" is genuinely uncapped
+
+`FindStringRefs` on `"r_picmip"`/`"picmip"` led straight to the real dvar
+registration site, `FUN_0043a1e0` (the engine's bulk `r_*` dvar-registration
+function -- also registers `r_gamma`, `r_texFilterAnisoMax`, etc. in the same
+block, confirmed via the surrounding decompile). `FUN_0048cd40` is confirmed (by
+its own call shape matching `r_ignore`'s well-known
+`(name, default, min, max, flags, description)` signature) as the integer-dvar
+registrar (`Dvar_RegisterInt`-equivalent). The real call:
+
+```c
+DAT_021cd38c = FUN_0048cd40("r_picmip", 0, 0, 3, 1,
+    "Picmip level of color maps.  If r_picmip_manual is 0, this is read-only.");
+```
+
+`r_picmip`: default=**0**, min=**0**, max=**3**. Picmip semantics (standard idTech
+convention, and consistent with this project's own already-confirmed Low/Normal/
+High/Extra 4-tier UI mapping) are "skip N mip levels from the full-resolution
+source" -- **0 means skip zero levels, i.e. the FULL source-resolution texture is
+used**, and 0 is both the registered default AND a legally selectable value (not
+clamped above 0). `r_picmip_bump`/`r_picmip_spec` register identically (0/0/3).
+
+**Conclusion, HIGH confidence (direct dvar-bounds evidence, not inferred)**: there
+is NO hard-coded texture-resolution ceiling below the source asset's true
+resolution at the best ("Extra", picmip=0) setting. If MW3's textures look worse
+than BO1/BO2's, the CAUSE is not a hidden mip-skip floor the UI's "Extra" setting
+fails to reach -- it would have to be the source ART ASSETS themselves being lower
+native resolution (a content/budget difference between the games, not an engine
+limitation this mod could ever work around) or a genuinely separate rendering
+factor (see the resolution finding below).
+
+### Render-resolution "cap": REFUTED as a hard engine limit -- it's a real per-profile config value, confirmed via the actual EnumAdapterModes call
+
+`FindStringRefs` on `"r_mode"` led to `FUN_006798e0`, decompiled in full. This is
+the real resolution-list-building function, and it is **genuinely built from a
+live enumeration of the real display adapter's supported modes**, not a static or
+capped list:
+
+```c
+uVar3 = (**(code **)(*DAT_021cd924 + 0x18))(DAT_021cd924, param_1, 0x16);   // vtable+0x18 = IDirect3D9::GetAdapterModeCount
+...
+iVar4 = (**(code **)(*DAT_021cd924 + 0x1c))(DAT_021cd924, param_1, 0x16, uVar13, ...); // vtable+0x1c = IDirect3D9::EnumAdapterModes
+```
+
+Vtable offsets `0x18`/`0x1c` (indices 24/28) are the standard, well-known
+`IDirect3D9::GetAdapterModeCount`/`EnumAdapterModes` slots -- confirmed by shape
+(loop bounded by the count result, called with a format parameter `0x16`
+= `D3DFMT_X8R8G8B8`, the standard opaque 32-bit format code) rather than assumed
+from position alone. Every enumerated mode `>= 640x480` (`0x280`/`0x1e0`) is kept,
+deduplicated, sorted, and stringified into the `r_mode` enum dvar's value list --
+**meaning this monitor's real native 2560x1440 genuinely IS one of the enumerable,
+selectable entries**, not excluded by any list-building logic.
+
+The DEFAULT/current index (`iVar5`) is chosen by: `DAT_021cd930` (a bool set from
+`FUN_00678fa0()`, not decompiled this pass but shaped like "does a saved
+preference exist") gating a search for a mode matching stored
+`DAT_021cd934`/`DAT_021cd938` width/height -- i.e. **the selected resolution
+comes from a saved per-profile config value** if one exists, falling back to
+index 0 of the sorted list (sort order/tie-break not independently confirmed this
+pass -- `FUN_006798c0`'s comparator wasn't decompiled) if none does.
+
+**Conclusion, HIGH confidence on the mechanism (real vtable-call evidence, not
+inferred from the earlier `r_mode`-is-enum doc note alone), MODERATE on the exact
+default-selection edge case**: the previously-documented `GetViewport=1920x1080`
+vs. real `2560x1440` display finding (section above) is **NOT evidence of an
+engine-enforced rendering ceiling** -- it's this specific install/profile's SAVED
+`r_mode` config value, which the real enumeration code would happily replace with
+native 2560x1440 if selected in the Options menu (or by editing the saved config
+directly). This fully refutes the "hard render-resolution cap" hypothesis with
+real evidence. **Recommended live-test, not yet done**: change Resolution to
+native in-game and re-check `GetViewport`'s reading afterward -- expected to now
+read 2560x1440, which would be the final confirming data point.
+
+### Render-scale percentage: no evidence found
+
+No dvar resembling a separate "render at N% of the selected resolution" scale
+factor was found in the `r_*` bulk-registration dump (`FUN_0043a1e0`, ~130 dvars
+read across this and the prior pass) or in this project's own existing
+`vanilla_settings_table.h`/`options_menu_full_map.md`. One tangentially related
+dvar was noticed: `r_subwindow` (`"subwindow to draw: left, right, top, bottom"`,
+default `0, 1.0, 0, 1.0` -- i.e. the full screen by default) -- reads as a
+debug/splitscreen sub-rectangle crop tool, not a resolution-scale feature, and
+wasn't investigated further as it doesn't match what was asked. Confidence:
+MODERATE that no such dvar exists (a real, if incomplete, search was done -- the
+full `r_*` registration function was read, not just grepped for one guessed
+name -- but the full function's ~130 lines weren't exhaustively cross-checked
+against every possible resolution-adjacent name).
+
+### Bottom line for the MW3-vs-BO1/BO2 investigation
+
+Both of the user's original specific hypotheses (a hidden texture-resolution
+ceiling below "Extra" quality; an internal render-resolution cap the Options menu
+can't override) are now **refuted by direct disassembly evidence**, not just
+argued against. The earlier `GetViewport=1920x1080` finding, which looked like
+strong supporting evidence for a render cap before this follow-up pass, is now
+understood to be a normal, changeable per-profile setting instead. If MW3
+genuinely looks worse than BO1/BO2 at matched settings, the remaining plausible
+explanations (per the external-research pass from earlier this session, not
+re-verified by binary RE this pass) are content/art-asset differences and
+engine-version-level renderer feature differences (DX9-only vs. BO2's DX11 path),
+not a resolution or texture-quality ceiling this mod could fix or work around.
+
+## `tools/ui_harness` `.menu` renderer, Phase 3: Survival armory rows are NOT a feeder/listbox (2026-08-17)
+
+Real finding from reading the actual file text, not RE of the binary -- corrects an
+assumption stated earlier this session (in the Phase 2 handoff to the user: "the
+actual weapon rows come from an ownerdraw/feeder listbox"). That assumption was
+WRONG for the file that actually matters here.
+
+**`scriptmenus/survival_armory_weapon.menu` (and its siblings --
+`survival_armory_equipment*.menu`, `survival_armory_airsupport*.menu`,
+`survival_armory_weapon_<class>.menu`) use zero `feeder`/`ownerdraw` fields.**
+Confirmed by direct grep: neither keyword appears anywhere in
+`survival_armory_weapon.menu`. What actually produces the appearance of a weapon
+list is a hand-unrolled sequence of 8 static itemDefs (`WEAPON_POPUP_3` through
+`WEAPON_POPUP_10`), each one hardcoding a DIFFERENT literal row index into its own
+`tablelookup("sp/survival_armories.csv", 0, N, ...)` calls (`WEAPON_POPUP_3` uses
+row 0, `WEAPON_POPUP_4` uses row 1, confirmed sequential up through row 7 for
+`WEAPON_POPUP_10`), with each item's own `exp rect y` computing a distinct vertical
+offset via pure arithmetic (`(0 + (N * (20 + 2)) + ...)`, N = 0..7) -- no CSV lookup
+needed for POSITION at all, only for the text/material/visible CONTENT once a row
+is displayed.
+
+**Practical consequence, verified live in the running harness**: once Phase 3's real
+`tablelookup()`/CSV wiring (this same pass) was in place, these 8 items
+automatically rendered at 8 distinct Y positions with real per-row weapon data
+(`exp text` on the ammo-refill row resolved to the real `@SO_SURVIVAL_AMMO_REFILL`
+locstring key pulled straight from the CSV) -- with ZERO additional "feeder mock"
+machinery needed. The general `exp`/`visible` evaluation pipeline already built in
+Phase 2 was sufficient on its own.
+
+**Real `feeder`/`getFeederData()` usage DOES exist in the wider 319-file corpus** (21
+files, confirmed via `grep -rli feeder`) -- but every one found is a leaderboard,
+friends-list, Elite-clan, or Facebook-integration screen
+(`ui/menu_so_leaderboard_hd.menu`, `ui/popmenu_specops_survival.menu`'s own
+leaderboard panel, `page_friends.menu`, `page_facebook.menu`, `page_elite_clan.menu`,
+etc.) -- online/social data with no real offline-derivable source to back a
+good-faith CSV-backed mock the way `survival_armories.csv` backs the weapon armory.
+Deliberately NOT built: a synthetic/arbitrary feeder-row mock for these would violate
+this project's own "don't fake data with no real source" standard for no real
+benefit, since none of them are the actual Survival-glyph-debugging use case this
+whole `.menu`-rendering effort exists for. These files still parse and render
+correctly (319/319, confirmed) -- a feeder-bearing listbox item just renders as its
+own single static/exp-driven rect (the correct graceful-degradation behavior, not a
+special case that needed adding -- Phase 1/2 never modeled row repetition in the
+first place).
+
+## `tools/ui_harness` `.menu` renderer, Phase 3 continuation: real material/DDS backgrounds (2026-08-17)
+
+Priority redirect mid-Phase-3, from direct user feedback after seeing Phase 1/2's
+flat-color/outline-only rendering: "this isnt rendering like it does in game, thats
+kinda the WHOLE POINT" -- matches the user's own earlier stated long-term goal
+("if we can render .menu in our renderer that means we can literally replace the
+native screen with our own extended version"). Real texture rendering, not just
+correct positions/logic, treated as equal priority to the tablelookup/CSV work above.
+
+**Real asset chain, confirmed by direct inspection**: itemDef `background
+"materialName"` (or its dynamic `exp material <expr>;` equivalent) names a file under
+`zone_dump\ui\materials\<name>.json` (310 files) -- that JSON's `textures[0].image`
+field names a file under `zone_dump\ui\images\<image>.dds` (301 files). E.g.
+`materials/background_image.json` -> `textures[0].image = "background_image"` ->
+`images/background_image.dds`.
+
+**DDS pixel formats found in this asset set** (confirmed via direct hex-dump
+inspection of real files' `DDS_HEADER`/`DDS_PIXELFORMAT` bytes, not assumed): both
+uncompressed `DDPF_RGB` (24bpp -> `D3DFMT_R8G8B8`, 32bpp with/without an alpha mask ->
+`D3DFMT_X8R8G8B8`/`D3DFMT_A8R8G8B8`, only the STANDARD channel-mask layout recognized)
+and `DDPF_FOURCC` DXT1/DXT3/DXT5 (D3D9 supports these natively via `CreateTexture` --
+no decompression needed, and the file's own raw 4-byte FourCC value IS the real
+`D3DFMT_DXT1/3/5` numeric constant, so no string-to-enum mapping needed either).
+
+**Implementation**: `tools/ui_harness/ui_hot/menu_texture.h/cpp` (new) parses the
+material JSON (a narrow, fixed-schema string scan, not a general JSON parser) and the
+DDS header/pixel data, then hands already-formatted row data to a new
+`overlay_hud.cpp` forwarder, `MenuGfx_CreateTextureFromRawFormat` (generalizes the
+existing `LoadGlyphIconTexture`'s `CreateTexture`/`GetSurfaceLevel`/`LockRect` upload
+pattern -- previously hardcoded to A8R8G8B8 PNG data -- to an arbitrary D3D9 format and
+row layout) -- keeps all raw D3D9 vtable interop inside `overlay_hud.cpp`, matching
+this project's own established boundary between the shared/shipped file and the
+STL-permitted harness-only files. `menu_render.cpp`'s `DrawItem` now tries a real
+texture first, falling back to the original flat-color/outline path only when the
+material name is empty or fails to resolve (missing JSON, missing DDS, or an
+unsupported pixel layout -- logged once, never a crash).
+
+**Live-verified working**: `icon_lock` (a real DXT5-compressed asset) resolved and
+rendered as an actual padlock icon texture on `survival_armory_weapon.menu`'s locked
+weapon rows, confirmed via a real screenshot of the running harness -- proves the full
+chain (JSON lookup -> DDS parse -> native DXT5 upload -> textured quad draw) works
+end to end, not just compiles.
+
+**Honest coverage gap, not a code bug**: most background material NAMES a given
+`.menu` file references don't resolve, because the specific material JSON genuinely
+isn't present in this extracted zone dump (confirmed: of `survival_armory_weapon.menu`'s
+own referenced materials, only `icon_lock` exists among the 310 available; `white`,
+`navbar_selection_bar`, `navbar_selection_bar_shadow` do not -- `"white"` is almost
+certainly a procedural/built-in flat-color material the real engine generates rather
+than ships as a JSON asset, not something a more complete extraction would fix).
+Coverage will vary per file depending on which specific materials that file happens to
+reference and whether OpenAssetTools' extraction captured them -- this is a
+data-completeness ceiling, not something the loader code can improve by trying harder.
+
+**Font fidelity (lower priority, per explicit instruction not to sink time if nothing
+turns up quickly)**: real bitmap-font ATLAS textures do exist
+(`zone_dump\images\{devfonts_pc,gamefonts_pc}.dds`) alongside per-font JSON metrics
+files (`zone_dump\fonts\{bigFont,smallDevFont,hudBigFont,...}.json`) -- a genuinely
+promising lead for a FUTURE pass (unlike a dead end), but wiring it up requires
+decoding the JSON's real per-glyph UV-mapping schema and building a bitmap-font text
+path distinct from the harness's current GDI-based `MenuGfx_DrawLeftText` -- a
+real feature in its own right, correctly out of scope for this pass. Not attempted;
+text still renders via the existing Barlow-Condensed-based GDI path.
+
+## Runtime material/texture capture -- name-association RE + implementation (2026-08-17)
+
+Motivated directly by the finding above: the static zone_dump extraction is real but
+incomplete (310/301 files), and some real material names (`"white"` etc.) are almost
+certainly procedural and can never be extracted statically no matter how thorough a
+re-extraction is. User's own words: "SO EXTRACT THE ASSETS AT RUNTIME FIRST." This
+section documents the RE trail for finding a safe name-association point, and the
+resulting `proxy_d3d9/src/asset_capture.cpp` implementation.
+
+**Traced the real per-material texture-load path, found a dead end, pivoted to a
+safer correlation approach instead of forcing it:**
+- `FUN_004b6b70`'s case 5 (material, per its own already-documented per-asset-type
+  switch) calls `FUN_0044bb00` -> `FUN_00467de0` (material's real load body,
+  already-documented above): if `material+0x58` (the material's texture-slot array
+  pointer) is non-null, calls `FUN_0047a2f0(*(byte*)(material+0x4e))` -- confirmed via
+  fresh decompile this pass that `FUN_0047a2f0` takes an element COUNT (not a name)
+  and iterates 12-byte entries from a separate array-base global, calling
+  `FUN_005511c0(entryValue, 0)` then `FUN_005511c0(entryValue, 1)` per entry (a
+  try-then-force pattern). **This directly contradicts an EARLIER pass's note
+  (this same file, "Black-screen flash... root cause fully resolved: materials"
+  section) which characterized `FUN_0047a2f0` itself as "creates a real
+  IDirect3DTexture9" -- that description doesn't match this pass's fresh decompile;
+  the earlier note was evidently describing the material-load CASCADE in general
+  terms, not this specific function's own literal behavior.** Corrected here, not
+  silently left contradictory.
+- `FUN_005511c0` is a thin wrapper for `FUN_00585ae0`, decompiled fully this pass:
+  a hash-bucket lookup (`unaff_ESI` -- the decompiler couldn't attribute this to a
+  normal parameter, meaning it's passed via an implicit register, the SAME class of
+  calling-convention hazard this project's own `Hook_0057de60`/`Hook_0061f6f0`
+  needed a "naked hook" for) against a fixed-size resident-asset table, checking/
+  setting a residency bit. **Does not obviously create a texture itself** -- reads as
+  a lower-level "is this image resident, mark it wanted if not" check, several levels
+  removed from an actual `CreateTexture` call, if one even happens synchronously from
+  here at all (could be an async streaming-request table instead).
+- **Decision: did not chase this further.** `unaff_ESI` implicit-register passing
+  makes a direct hook here genuinely risky (same class of hazard already documented
+  elsewhere in this file), for uncertain benefit given the trail no longer clearly
+  leads to a name-bearing `CreateTexture` call. Pivoted to the pragmatic fallback
+  the task brief itself authorized instead (see below) -- correlate by call stack,
+  using an already-fully-confirmed-safe, plain `__cdecl` hook point, rather than
+  force a naked hook onto a function whose real behavior isn't fully understood.
+
+**Implementation (safe correlation, not a perfect single hook point)**:
+`FUN_004ff000` (`FindOrLoadAsset`, `__cdecl(int assetType, const char* name, int
+flag)` -- already fully confirmed elsewhere in this file, no new risk) is hooked in
+`analog_input_hooks.cpp` (`Hook_FindOrLoadAsset`); while `assetType==5` (material) is
+on the stack, the real `name` argument is pushed onto a small fixed-depth stack in
+the new `proxy_d3d9/src/asset_capture.cpp`. Separately, `IDirect3DDevice9::
+CreateTexture` (vtable index 23 -- the SAME index `overlay_hud.cpp` already uses to
+CALL CreateTexture for its own glyph-icon textures, but that file never hooks it; no
+conflict) is hooked for the first time in this project, installed alongside the
+existing EndScene/Reset device-vtable hooks in `overlay_hud.cpp`'s
+`InstallEndSceneHook`. Any texture created while a material name is on the capture
+stack gets its real pixel data (`IDirect3DTexture9::LockRect`, vtable index 19) written
+to `<gameDir>\runtime_asset_capture\materials\<materialName>.dds`, name-keyed
+directly off the material name (skipping the JSON->image-name indirection the static
+zone_dump path needs, since the capture already knows which material this texture
+belongs to). Never associates a texture with a name it isn't confident about (no
+capture happens outside a confirmed `assetType==5` FindOrLoadAsset call) -- a wrong
+name tag would be worse than none, per this project's own standing "don't guess"
+rule (`feedback_trust_native_re_over_dumps` in the assistant's own memory).
+
+Entirely gated behind a new `[Experimental] CaptureRuntimeMenuAssets` config flag
+(`mod_config.h`/`.cpp`, `ConfigVersion` bumped 15->16), default OFF -- both the
+`CreateTexture` hook installation AND the `FindOrLoadAsset` hook installation are
+skipped entirely when the flag is off (not just internally no-op'd), since
+`FindOrLoadAsset` is a genuinely hot, 59-caller function and this is a dev-only
+diagnostic capability that should cost normal players nothing.
+
+`tools/ui_harness/ui_hot/menu_texture.cpp`'s `MenuTexture_LoadMaterialBackground`
+now checks two runtime-capture candidate paths (next to the harness exe, and the
+known real game-install path on this dev machine) BEFORE falling back to the static
+zone_dump materials/images chain -- purely additive, the static path is untouched
+for anyone who hasn't done a capture session.
+
+**Build verification**: all 4 affected targets build clean (0 errors) --
+`proxy_d3d9.vcxproj` Release (the shipped mod DLL, confirmed deployed to the real
+game folder), `ui_hot.vcxproj` Debug+Release, `ui_harness.vcxproj` Debug. Hit and
+fixed one real link error along the way: `ui_hot.dll` compiles `overlay_hud.cpp`
+directly (shared with the shipped mod) but doesn't compile `asset_capture.cpp` --
+same class of gap an earlier pass this session already hit and fixed for a different
+symbol set; added a matching inert stub to `dll_stubs.cpp` (this harness is the
+CONSUMER of captured files, never the producer -- correctly a no-op there).
+
+**NOT live-tested against the real game** (explicitly flagged, not claimed working
+end-to-end) -- this fork could not drive an actual `iw5sp.exe` session to confirm the
+hooks install cleanly and produce a correctly-named real `.dds` file in practice.
+What IS verified: every build compiles clean, the existing `mw3ncp_config.ini` on
+this machine is at `ConfigVersion=15`, confirming the migration path will correctly
+trigger on next launch and write out the new key at its documented default (off).
+**Next step for the user**: set `CaptureRuntimeMenuAssets=1` under `[Experimental]`
+in `mw3ncp_config.ini` (or let the game generate a fresh one and edit it), launch the
+game, visit the main menu (exercises some real materials without needing a live
+match), check `proxy_d3d9.log` for `[asset-capture]` lines and
+`<gameDir>\runtime_asset_capture\materials\` for real `.dds` files, then turn the
+flag back off. If a `[hooks] MH_CreateHook(004ff000 asset-capture)` or `[asset-
+capture] MH_CreateHook(CreateTexture @ ...)` line logs a non-zero (non-`MH_OK`)
+status, or zero files appear despite visiting several menus, that's the concrete
+signal this needs a follow-up pass, not a live-session guess.

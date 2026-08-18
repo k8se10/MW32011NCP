@@ -451,6 +451,47 @@ struct ModConfig
         // exported_glyph_positions.txt, next to the DLL, as ready-to-paste
         // kManualGlyphPositions entries. See analog_input_hooks.cpp's EditGlyphPositionsForFrame.
 
+    bool captureRuntimeMenuAssets = false; // 2026-08-17, tools/ui_harness .menu-renderer
+        // project follow-up: the static OpenAssetTools extraction under
+        // D:\Tools\OpenAssetTools\zone_dump\ui\materials\/images\ only has 310/301 files --
+        // real, but incomplete, and some real material names (e.g. "white") are almost
+        // certainly procedurally generated at runtime and will never exist as an
+        // extractable file no matter how thorough a re-extraction is. This dumps every
+        // material texture the REAL game actually creates while playing to
+        // <gameDir>\runtime_asset_capture\materials\<materialName>.dds, name-keyed off
+        // the real material name (read from FindOrLoadAsset's own `name` argument at
+        // FUN_004ff000, assetType==5==material -- an already-confirmed, plain __cdecl,
+        // disassembly-verified signature from an earlier RE pass, see re_notes/iw5sp.md's
+        // "FindOrLoadAsset" entry -- no new naked-hook/implicit-register risk introduced),
+        // correlated forward to whichever CreateTexture call happens while that material's
+        // load is still on the stack. DEFAULT OFF: this is a dev-only diagnostic capture
+        // mode, not something that should run for normal play -- unbounded per-texture disk
+        // writes every session is exactly the class of mistake issue #67's 22GB log file
+        // already taught this project to avoid by default. Turn on, play a session touching
+        // the menus/screens you want captured (main menu at minimum exercises some real
+        // materials), turn back off -- captured files persist across sessions (never
+        // auto-cleared) so the ui_harness's own .menu renderer can pick them up next time
+        // it runs. See dllmain.cpp's InstallAssetCaptureHooks / analog_input_hooks.cpp's
+        // FindOrLoadAsset hook for the implementation.
+
+    bool frametimeBenchmarkLogging = false; // 2026-08-17: live-reported "still jittery,
+        // 239 fps on the counter but feels like 40" AFTER the log-truncate fix and the
+        // asset-capture async-write fix -- both real, evidence-backed fixes that didn't
+        // fully resolve it, and MSI Afterburner/RTSS's own frametime graph shows nothing
+        // abnormal, which argues against a generic render-thread stall RTSS would
+        // normally catch. Built to answer this with real per-frame data instead of
+        // another guess: writes frametime_benchmark.csv (next to the DLL) with one row
+        // per frame -- frame index, real frame-to-frame time in ms (QueryPerformanceCounter,
+        // measured in Hook_EndScene, same per-frame cadence RTSS itself uses), plus how
+        // much of that frame's time (if any) went into this project's own two current
+        // suspects: Controller_SetVibration's synchronous XInputSetState/DualSense HID
+        // write, and the asset-capture CreateTexture/FindOrLoadAsset hooks. DEFAULT OFF --
+        // a per-frame CSV write has its own real disk-I/O cost, exactly the class of
+        // mistake this project already learned to gate behind an explicit toggle (issue
+        // #67's lineage) rather than ever leave on by default. Turn on, play until the
+        // stutter is felt, turn back off, share frametime_benchmark.csv. See
+        // frame_benchmark.h/.cpp for the implementation.
+
     // [Options] (issue #66, 2026-08-04 full-scope pivot) -- STRICTLY OPT-IN, OFF by
     // default per this project's own established pattern for structurally significant,
     // not-yet-verified behavior changes (autoMantleEnabled, glyphIconOverlayEnabled,

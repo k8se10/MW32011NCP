@@ -10,6 +10,8 @@
 #include "dualsense_input.h" // 2026-08-11 -- raw-HID DualSense fallback, see its own
                               // header comment for why XInput/Steam Input alone
                               // aren't enough (issue #74/#76)
+#include "frame_benchmark.h" // 2026-08-17 -- stutter investigation, times
+                              // Controller_SetVibration's own XInput/HID call
 
 extern void LogFromController(const char* msg); // defined in dllmain.cpp
 
@@ -292,144 +294,186 @@ int ResolveActiveXInputSlotOnPollThread()
 // messages happen to fire.
 constexpr DWORD kPollIntervalMs = 4;
 
+// ---- Locked input source (2026-08-18) ----------------------------------------
+//
+// Live-reported same-day stutter investigation: "again it could be the 4
+// controller polling plus now dualsense aswell, i think we should only poll
+// when needed... make it so restart is needed for controller device change,
+// same slot is fine but if you change controller slot restart needed." Real,
+// legitimate overhead regardless of whether it turns out to be THE stutter
+// cause: every tick used to (a) check DualSense_IsOpen() for sticky priority,
+// (b) potentially resolve/rescan across up to 4 real XInput slots (throttled to
+// once/500ms, but still a real repeating cost), AND (c) potentially attempt
+// DualSense_EnsureOpen()'s own SetupDiGetClassDevsW/CreateFileW device
+// enumeration every single tick whenever XInput wasn't currently handling
+// input -- all of that on top of whichever ONE source is actually in the
+// player's hands. Fixed by determining the active source ONCE (first ticks
+// after boot, same detection logic as before) and then LOCKING onto it for the
+// rest of the process lifetime -- steady-state cost drops to exactly one real
+// read call per tick (XInputGetState OR DualSense_Poll, never both, never a
+// scan). Matches the user's own explicit tradeoff: the SAME slot/device
+// reconnecting (unplug/replug) keeps working with no restart needed (the
+// locked source keeps being retried), but switching to a DIFFERENT XInput slot
+// or switching between XInput and DualSense entirely requires a relaunch to be
+// picked up -- this project's existing multi-slot/activity-based re-election
+// system (ResolveActiveXInputSlotOnPollThread) is still used for the ONE-TIME
+// initial detection below, just never called again once a source locks in.
+enum class LockedInputSource { Undetermined, XInput, DualSense };
+LockedInputSource g_lockedSource = LockedInputSource::Undetermined;
+int g_lockedXInputSlot = 0;
+
+void ApplyXInputStateToCache(int slot, const XINPUT_STATE& state)
+{
+    float lx = 0.0f, ly = 0.0f, rx = 0.0f, ry = 0.0f;
+    ShapeStick(state.Gamepad.sThumbLX, state.Gamepad.sThumbLY, kLeftDeadzone, lx, ly);
+    ShapeStick(state.Gamepad.sThumbRX, state.Gamepad.sThumbRY, kRightDeadzone, rx, ry);
+
+    EnterCriticalSection(&g_stateLock);
+    g_cachedState.leftX = lx;
+    g_cachedState.leftY = ly;
+    g_cachedState.rightX = rx;
+    g_cachedState.rightY = ry;
+    g_cachedState.buttons = state.Gamepad.wButtons;
+    g_cachedState.leftTrigger = state.Gamepad.bLeftTrigger;
+    g_cachedState.rightTrigger = state.Gamepad.bRightTrigger;
+    g_cachedState.connected = true;
+    g_cachedState.activeSlot = slot;
+    g_cachedState.sourceIsDualSense = false;
+    g_cachedState.gyroX = g_cachedState.gyroY = g_cachedState.gyroZ = 0.0f;
+    LeaveCriticalSection(&g_stateLock);
+
+    // Marked here, at the moment real input is actually observed, rather than
+    // making every Controller_Get* consumer below re-derive the same "was
+    // there real input" check on the cached snapshot -- one place, same "every
+    // reader of real input must mark activity" principle the pre-existing
+    // centralized getters comment (further below) already established for a
+    // different pair of functions.
+    if (lx != 0.0f || ly != 0.0f || rx != 0.0f || ry != 0.0f ||
+        state.Gamepad.wButtons != 0 ||
+        state.Gamepad.bLeftTrigger != 0 || state.Gamepad.bRightTrigger != 0) {
+        MarkControllerActivity();
+    }
+}
+
+bool ApplyDualSenseStateToCache(const DualSenseRawState& dsState)
+{
+    float lx = 0.0f, ly = 0.0f, rx = 0.0f, ry = 0.0f;
+    // DualSense sticks are already-centered signed 8-bit range (see
+    // DualSenseRawState's own comment); scaled up to a SHORT range so the SAME
+    // ShapeStick() deadzone/curve math XInput uses applies unchanged.
+    ShapeStick(static_cast<SHORT>(dsState.leftStickX * 256), static_cast<SHORT>(dsState.leftStickY * 256), kLeftDeadzone, lx, ly);
+    ShapeStick(static_cast<SHORT>(dsState.rightStickX * 256), static_cast<SHORT>(dsState.rightStickY * 256), kRightDeadzone, rx, ry);
+    unsigned short buttons = DualSense_ToXInputButtons(dsState);
+
+    EnterCriticalSection(&g_stateLock);
+    g_cachedState.leftX = lx;
+    g_cachedState.leftY = ly;
+    g_cachedState.rightX = rx;
+    g_cachedState.rightY = ry;
+    g_cachedState.buttons = buttons;
+    g_cachedState.leftTrigger = dsState.leftTrigger;
+    g_cachedState.rightTrigger = dsState.rightTrigger;
+    g_cachedState.connected = true;
+    g_cachedState.activeSlot = -1; // not an XInput slot -- see this struct's
+                                     // sourceIsDualSense comment
+    g_cachedState.sourceIsDualSense = true;
+    g_cachedState.gyroX = static_cast<float>(dsState.gyroX);
+    g_cachedState.gyroY = static_cast<float>(dsState.gyroY);
+    g_cachedState.gyroZ = static_cast<float>(dsState.gyroZ);
+    LeaveCriticalSection(&g_stateLock);
+
+    bool hadActivity = lx != 0.0f || ly != 0.0f || rx != 0.0f || ry != 0.0f || buttons != 0 ||
+                        dsState.leftTrigger != 0 || dsState.rightTrigger != 0;
+    if (hadActivity) MarkControllerActivity();
+    return hadActivity;
+}
+
 DWORD WINAPI XInputPollThreadProc(LPVOID)
 {
     for (;;) {
         EnsureLoaded();
-        bool handledByXInput = false;
 
-        // Live-reported 2026-08-16 (real BT hardware): "genuinely cant move
-        // forward or look up" + visibly alternating inverted/non-inverted look --
-        // NOT a bug in DualSense_Poll's own axis math (proxy_d3d9.log showed the
-        // raw HID read succeeding cleanly with zero ReadFile failures the whole
-        // session), but a per-tick FIGHT: the XInput scan below was unconditionally
-        // tried first every single tick, and something XInput-visible (almost
-        // certainly Steam Input's own virtual pad for this SAME physical
-        // controller, contending with this project's own raw HID handle now that
-        // it can actually open a BT DualSense) was flickering connected/
-        // disconnected -- confirmed directly in the log via rapid, repeated
-        // "[xinput] controller connected"/"disconnected" pairs, matching issue
-        // #74's already-established "Steam Input and this project's own device
-        // access don't coexist cleanly" precedent, just newly surfacing here via
-        // BT raw-HID contention instead of the original "sees nothing" symptom.
-        // Every tick that flickering device won, its own (possibly stale/ghost/
-        // zeroed) state silently overwrote a perfectly good DualSense read from
-        // the tick before -- exactly "inverting then not inverting" (alternating
-        // between two DIFFERENT sources with different conventions/data, not one
-        // source being wrong) and "can't move" (half of all ticks discarded).
-        // Fix: once a DualSense is already open, give it STICKY priority over a
-        // same-tick XInput scan entirely, rather than re-deciding from scratch
-        // every single tick -- closes the fight regardless of why the XInput
-        // side is flickering (this project can't control Steam Input's own
-        // internals). Falls back to the XInput scan exactly as before whenever
-        // no DualSense is open (real Xbox pad, or DualSense unplugged/failed --
-        // DualSense_Poll's own unplug handling closes the handle, so
-        // DualSense_IsOpen() naturally goes false again next tick).
-        bool preferDualSense = DualSense_IsOpen();
+        if (g_lockedSource == LockedInputSource::Undetermined) {
+            // ---- One-time detection phase -- same priority/logic as this
+            // project always used (DualSense sticky-if-open, else XInput's own
+            // multi-slot/activity-based resolution, else nothing yet) -- just
+            // now only runs until SOMETHING is found once, then locks and is
+            // never reached again for the rest of the process. Loader-lock
+            // safety (GetLastKnownRenderDevice() gate before ANY DualSense
+            // enumeration attempt) and the DualSense-vs-XInput poll-priority
+            // fight fix (sticky DualSense) both still apply here exactly as
+            // before -- this phase's own logic is otherwise unchanged, only
+            // its LIFETIME shrank from "every tick forever" to "until locked".
+            bool preferDualSense = DualSense_IsOpen();
+            bool handledByXInput = false;
 
-        if (!preferDualSense && g_XInputGetState) {
-            int slot = ResolveActiveXInputSlotOnPollThread();
-            XINPUT_STATE state{};
-            bool connected = g_XInputGetState(static_cast<DWORD>(slot), &state) == ERROR_SUCCESS;
-
-            if (connected) {
-                handledByXInput = true;
-                float lx = 0.0f, ly = 0.0f, rx = 0.0f, ry = 0.0f;
-                ShapeStick(state.Gamepad.sThumbLX, state.Gamepad.sThumbLY, kLeftDeadzone, lx, ly);
-                ShapeStick(state.Gamepad.sThumbRX, state.Gamepad.sThumbRY, kRightDeadzone, rx, ry);
-
-                EnterCriticalSection(&g_stateLock);
-                g_cachedState.leftX = lx;
-                g_cachedState.leftY = ly;
-                g_cachedState.rightX = rx;
-                g_cachedState.rightY = ry;
-                g_cachedState.buttons = state.Gamepad.wButtons;
-                g_cachedState.leftTrigger = state.Gamepad.bLeftTrigger;
-                g_cachedState.rightTrigger = state.Gamepad.bRightTrigger;
-                g_cachedState.connected = true;
-                g_cachedState.activeSlot = slot;
-                g_cachedState.sourceIsDualSense = false;
-                g_cachedState.gyroX = g_cachedState.gyroY = g_cachedState.gyroZ = 0.0f;
-                LeaveCriticalSection(&g_stateLock);
-
-                // Marked here, at the moment real input is actually observed, rather
-                // than making every Controller_Get* consumer below re-derive the same
-                // "was there real input" check on the cached snapshot -- one place,
-                // same "every reader of real input must mark activity" principle the
-                // pre-existing centralized getters comment (further below) already
-                // established for a different pair of functions.
-                if (lx != 0.0f || ly != 0.0f || rx != 0.0f || ry != 0.0f ||
-                    state.Gamepad.wButtons != 0 ||
-                    state.Gamepad.bLeftTrigger != 0 || state.Gamepad.bRightTrigger != 0) {
-                    MarkControllerActivity();
+            if (!preferDualSense && g_XInputGetState) {
+                int slot = ResolveActiveXInputSlotOnPollThread();
+                XINPUT_STATE state{};
+                if (g_XInputGetState(static_cast<DWORD>(slot), &state) == ERROR_SUCCESS) {
+                    handledByXInput = true;
+                    ApplyXInputStateToCache(slot, state);
+                    g_lockedSource = LockedInputSource::XInput;
+                    g_lockedXInputSlot = slot;
+                    char buf[96];
+                    sprintf_s(buf, "[xinput] locked onto XInput slot %d for this session -- a slot change now needs a restart", slot);
+                    LogFromController(buf);
                 }
             }
-        }
 
-        // 2026-08-11 (issue #76): only reached when XInput found nothing connected
-        // this tick -- covers a DualSense with no XInput translator running at all
-        // (the actual reported gap: issue #74's Biactyk needs Steam Input OFF for
-        // this mod to see input, but ON for gyro, so relying on Steam Input's own
-        // XInput emulation was never going to satisfy both). Deliberately checked
-        // AFTER XInput, never instead of it -- an Xbox pad (or an already-working
-        // translator) keeps taking priority exactly as before, so this is strictly
-        // additive and can't regress anyone XInput already worked for.
-        // CRITICAL FIX (2026-08-11, live-reported same day: "mw3 fails to boot"):
-        // DualSense_EnsureOpen()'s SetupDiGetClassDevsW/CreateFileW enumeration can
-        // internally trigger its own DLL loading (device class-installer DLLs), and
-        // this poll thread starts firing almost immediately after the mod loads --
-        // racing directly against the game's own Direct3DCreate9/device-creation DLL
-        // loading on the main thread. Two threads each loading DLLs at the same time
-        // is a classic Windows loader-lock deadlock (confirmed via proxy_d3d9.log:
-        // the boot sequence logged cleanly through the second "Direct3DCreate9
-        // called" line, then nothing further -- no crash, a silent hang, exactly the
-        // loader-lock signature). Fixed by refusing to even ATTEMPT DualSense
-        // enumeration until GetLastKnownRenderDevice() proves the game's own D3D
-        // device already exists -- i.e. boot has already gotten past the exact
-        // window that hung, so this can never again race the initial device-creation
-        // sequence. GetLastKnownRenderDevice() is set from Hook_EndScene on the main
-        // thread every frame once rendering is alive (overlay_hud.cpp).
-        if (!handledByXInput && GetLastKnownRenderDevice() != nullptr) {
-            DualSenseRawState dsState;
-            if (DualSense_EnsureOpen() && DualSense_Poll(dsState)) {
-                float lx = 0.0f, ly = 0.0f, rx = 0.0f, ry = 0.0f;
-                // DualSense sticks are already-centered signed 8-bit range (see
-                // DualSenseRawState's own comment); scaled up to a SHORT range so the
-                // SAME ShapeStick() deadzone/curve math XInput uses applies unchanged.
-                ShapeStick(static_cast<SHORT>(dsState.leftStickX * 256), static_cast<SHORT>(dsState.leftStickY * 256), kLeftDeadzone, lx, ly);
-                ShapeStick(static_cast<SHORT>(dsState.rightStickX * 256), static_cast<SHORT>(dsState.rightStickY * 256), kRightDeadzone, rx, ry);
-                unsigned short buttons = DualSense_ToXInputButtons(dsState);
-
-                EnterCriticalSection(&g_stateLock);
-                g_cachedState.leftX = lx;
-                g_cachedState.leftY = ly;
-                g_cachedState.rightX = rx;
-                g_cachedState.rightY = ry;
-                g_cachedState.buttons = buttons;
-                g_cachedState.leftTrigger = dsState.leftTrigger;
-                g_cachedState.rightTrigger = dsState.rightTrigger;
-                g_cachedState.connected = true;
-                g_cachedState.activeSlot = -1; // not an XInput slot -- see this
-                                                 // struct's sourceIsDualSense comment
-                g_cachedState.sourceIsDualSense = true;
-                g_cachedState.gyroX = static_cast<float>(dsState.gyroX);
-                g_cachedState.gyroY = static_cast<float>(dsState.gyroY);
-                g_cachedState.gyroZ = static_cast<float>(dsState.gyroZ);
-                LeaveCriticalSection(&g_stateLock);
-
-                if (lx != 0.0f || ly != 0.0f || rx != 0.0f || ry != 0.0f || buttons != 0 ||
-                    dsState.leftTrigger != 0 || dsState.rightTrigger != 0) {
-                    MarkControllerActivity();
+            if (!handledByXInput && GetLastKnownRenderDevice() != nullptr) {
+                DualSenseRawState dsState;
+                if (DualSense_EnsureOpen() && DualSense_Poll(dsState)) {
+                    ApplyDualSenseStateToCache(dsState);
+                    NotifyControllerConnectionChange(true);
+                    g_lockedSource = LockedInputSource::DualSense;
+                    LogFromController("[dualsense] locked onto DualSense for this session -- switching back to XInput now needs a restart");
+                } else {
+                    EnterCriticalSection(&g_stateLock);
+                    g_cachedState.connected = false;
+                    g_cachedState.sourceIsDualSense = false;
+                    g_cachedState.gyroX = g_cachedState.gyroY = g_cachedState.gyroZ = 0.0f;
+                    LeaveCriticalSection(&g_stateLock);
+                    NotifyControllerConnectionChange(false);
                 }
-                NotifyControllerConnectionChange(true);
+            }
+        } else if (g_lockedSource == LockedInputSource::XInput) {
+            // Steady state: exactly one real call per tick, the locked slot
+            // only -- no other slot is ever read again this session.
+            XINPUT_STATE state{};
+            bool connected = g_XInputGetState &&
+                g_XInputGetState(static_cast<DWORD>(g_lockedXInputSlot), &state) == ERROR_SUCCESS;
+            if (connected) {
+                ApplyXInputStateToCache(g_lockedXInputSlot, state);
+            } else {
+                // Same slot unplugged -- report disconnected but keep polling
+                // THIS slot every tick (no fallback, no rescan) so a replug
+                // into the SAME slot resumes working with no restart, matching
+                // "same slot is fine" from the user's own request.
+                EnterCriticalSection(&g_stateLock);
+                g_cachedState.connected = false;
+                LeaveCriticalSection(&g_stateLock);
+            }
+            NotifyControllerConnectionChange(connected);
+        } else { // LockedInputSource::DualSense
+            // Steady state: keep retrying DualSense_EnsureOpen()/Poll() every
+            // tick (needed so an unplug/replug of the SAME device recovers
+            // with no restart), but NEVER fall back to trying XInput -- a
+            // switch to a different device family needs a restart, matching
+            // "if you change controller slot restart needed."
+            DualSenseRawState dsState;
+            bool connected = GetLastKnownRenderDevice() != nullptr &&
+                              DualSense_EnsureOpen() && DualSense_Poll(dsState);
+            if (connected) {
+                ApplyDualSenseStateToCache(dsState);
             } else {
                 EnterCriticalSection(&g_stateLock);
                 g_cachedState.connected = false;
                 g_cachedState.sourceIsDualSense = false;
                 g_cachedState.gyroX = g_cachedState.gyroY = g_cachedState.gyroZ = 0.0f;
                 LeaveCriticalSection(&g_stateLock);
-                NotifyControllerConnectionChange(false);
             }
+            NotifyControllerConnectionChange(connected);
         }
 
         Sleep(kPollIntervalMs);
@@ -575,8 +619,19 @@ void Controller_SetVibration(float leftMotor, float rightMotor)
     // (moved up from its original position, which used to sit before this branch
     // existed) -- a DualSense needs no XInput DLL at all, so a machine where
     // XInput itself failed to load must not silently swallow DualSense rumble too.
+    // 2026-08-17 stutter investigation (frame_benchmark.h) -- times this call
+    // regardless of which branch below actually fires, so a real synchronous-write
+    // cost here (this project's own earlier documented suspicion, before the
+    // log/asset-capture fixes were tried first) shows up in frametime_benchmark.csv
+    // if it's ever actually the cause, instead of staying a guess either way.
+    LARGE_INTEGER benchFreq{}, benchStart{}, benchEnd{};
+    QueryPerformanceFrequency(&benchFreq);
+    QueryPerformanceCounter(&benchStart);
+
     if (isDualSense) {
         DualSense_SetVibration(static_cast<uint8_t>(leftMotor * 255.0f), static_cast<uint8_t>(rightMotor * 255.0f));
+        QueryPerformanceCounter(&benchEnd);
+        FrameBenchmark_AddRumbleMs((static_cast<double>(benchEnd.QuadPart - benchStart.QuadPart) * 1000.0) / static_cast<double>(benchFreq.QuadPart));
         return;
     }
     if (!g_XInputSetState) return;
@@ -591,6 +646,8 @@ void Controller_SetVibration(float leftMotor, float rightMotor)
     // cheap/idempotent, unlike GetState on an empty slot -- the actual regression
     // this whole rewrite fixes was never about SetState.
     g_XInputSetState(static_cast<DWORD>(slot), &vib);
+    QueryPerformanceCounter(&benchEnd);
+    FrameBenchmark_AddRumbleMs((static_cast<double>(benchEnd.QuadPart - benchStart.QuadPart) * 1000.0) / static_cast<double>(benchFreq.QuadPart));
 }
 
 float Controller_DeltaTimeSeconds()

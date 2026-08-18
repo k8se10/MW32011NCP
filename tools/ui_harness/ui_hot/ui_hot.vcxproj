@@ -82,6 +82,11 @@
     <ClCompile Include="exports.cpp" />
     <ClCompile Include="dll_stubs.cpp" />
     <ClCompile Include="real_settings_mock.cpp" />
+    <ClCompile Include="menu_parser.cpp" />
+    <ClCompile Include="menu_render.cpp" />
+    <ClCompile Include="menu_expr.cpp" />
+    <ClCompile Include="menu_csv.cpp" />
+    <ClCompile Include="menu_texture.cpp" />
 
     <!-- The REAL UI/settings code, compiled by path from proxy_d3d9, NOT copies:
          this is the part that actually gets hot-swapped on every rebuild.
@@ -109,6 +114,11 @@
     <ClInclude Include="..\..\..\proxy_d3d9\src\vanilla_settings_sync.h" />
     <ClInclude Include="..\..\..\proxy_d3d9\src\staged_settings.h" />
     <ClInclude Include="..\..\..\proxy_d3d9\resource.h" />
+    <ClInclude Include="menu_parser.h" />
+    <ClInclude Include="menu_render.h" />
+    <ClInclude Include="menu_expr.h" />
+    <ClInclude Include="menu_csv.h" />
+    <ClInclude Include="menu_texture.h" />
   </ItemGroup>
 
   <ItemGroup>

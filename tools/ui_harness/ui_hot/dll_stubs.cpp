@@ -70,6 +70,16 @@ extern "C" bool IsLeftMouseButtonHeld()
     return (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
 }
 
+// Real definition (asset_capture.cpp, proxy_d3d9/src -- 2026-08-17, runtime material/
+// texture capture for THIS harness's own .menu renderer) hooks the real game's
+// CreateTexture to dump material textures to disk. Genuinely inert here on purpose:
+// this harness is the CONSUMER of those captured files (see menu_texture.cpp's own
+// runtime-capture-folder check), never the producer -- there's no real game device
+// creating real material textures inside this standalone harness process to capture
+// from, so InstallEndSceneHook calling this is correctly a no-op, not a missing
+// feature.
+void AssetCapture_InstallHookIfEnabled(void*) {}
+
 // Real definitions (d3d9_hook.cpp) hook into the real game's own WndProc subclass to
 // capture the next real key/mouse-button press for keybind rebinding (issue #66 task
 // #29, 2026-08-06). This harness has no such subclass (it owns its window outright,

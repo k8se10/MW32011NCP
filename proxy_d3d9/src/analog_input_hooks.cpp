@@ -28,6 +28,8 @@
 #include "rumble.h"
 #include "options_render_suppress.h"
 #include "real_settings.h"
+#include "asset_capture.h"
+#include "frame_benchmark.h"
 
 // Forwarder defined in dllmain.cpp -- lets this translation unit log to the same
 // proxy_d3d9.log file without duplicating the log-file setup.
@@ -4988,6 +4990,59 @@ void LogMenuRegistry(const char* tag)
 using FindOrLoadAssetFn = void*(__cdecl*)(int assetType, const char* name, int flag);
 FindOrLoadAssetFn const FindOrLoadAsset = reinterpret_cast<FindOrLoadAssetFn>(0x004ff000);
 constexpr int kAssetTypeMenu = 0x1a;
+constexpr int kAssetTypeMaterial = 5; // matches FUN_004b6b70's own per-asset-type
+    // switch case ordering, already confirmed against OpenAssetTools' IW5_Assets.h
+    // union ordering elsewhere in this file's own history (see the big comment
+    // above this block).
+
+// 2026-08-17 (tools/ui_harness .menu-renderer project, runtime asset capture) --
+// hooks this SAME, already-confirmed-safe, plain __cdecl FindOrLoadAsset (no new
+// naked-hook/implicit-register risk) purely to observe which material name is
+// currently being loaded, so asset_capture.cpp's CreateTexture hook can correlate
+// any texture created while a material load is on the stack back to its real
+// name. Read-only in every sense that matters to the real engine: the original
+// call always runs with its real arguments/return value completely unmodified,
+// this only pushes/pops a name onto asset_capture.cpp's own tracking stack around
+// it. No-op (AssetCapture_Push/PopMaterialName themselves check the config flag)
+// when captureRuntimeMenuAssets is off, so this hook installs unconditionally but
+// costs nothing extra when the feature isn't in use.
+void* g_origFindOrLoadAsset = nullptr;
+
+void* __cdecl Hook_FindOrLoadAsset(int assetType, const char* name, int flag)
+{
+    // 2026-08-17 stutter investigation (frame_benchmark.h) -- this hook installs
+    // UNCONDITIONALLY (see this block's own header comment: "genuinely hot,
+    // widely-shared function"), regardless of whether captureRuntimeMenuAssets is
+    // on, so its own overhead is a real candidate for the "still jittery" report
+    // even independent of asset_capture.cpp's CreateTexture hook. Times its own
+    // added work (everything except the real call itself, same "don't blame the
+    // engine's own cost on us" principle as asset_capture.cpp's CreateTexture
+    // timing) and folds it into the SAME assetCaptureMs bucket -- both hooks are
+    // part of one feature's total cost for this diagnostic's purposes.
+    LARGE_INTEGER benchFreq{}, benchStart{}, benchEnd{};
+    QueryPerformanceFrequency(&benchFreq);
+    QueryPerformanceCounter(&benchStart);
+
+    bool eligible = (assetType == kAssetTypeMaterial) && name && LooksLikeValidPointer(reinterpret_cast<uintptr_t>(name));
+    // Only pop if the push actually succeeded (it can decline at its own depth
+    // cap) -- see AssetCapture_PushMaterialName's own header comment for why an
+    // unconditional pop here would desync the stack for other, still-legitimately-
+    // active nested calls.
+    bool pushed = eligible && AssetCapture_PushMaterialName(name);
+
+    QueryPerformanceCounter(&benchEnd);
+    double ourOwnMs = (static_cast<double>(benchEnd.QuadPart - benchStart.QuadPart) * 1000.0) / static_cast<double>(benchFreq.QuadPart);
+
+    void* result = reinterpret_cast<FindOrLoadAssetFn>(g_origFindOrLoadAsset)(assetType, name, flag);
+
+    QueryPerformanceCounter(&benchStart); // reuse as a second start marker
+    if (pushed) AssetCapture_PopMaterialName();
+    QueryPerformanceCounter(&benchEnd);
+    ourOwnMs += (static_cast<double>(benchEnd.QuadPart - benchStart.QuadPart) * 1000.0) / static_cast<double>(benchFreq.QuadPart);
+
+    FrameBenchmark_AddAssetCaptureMs(ourOwnMs);
+    return result;
+}
 
 void RegisterMenu(void* menuDefPtr)
 {
@@ -5930,7 +5985,45 @@ char g_lastLoggedHudFontName[64] = {};
 // diagnostic below -- dedup'd by DRAWN TEXT changing, not by font changing, since
 // the goal here is "what are the real x/y/scale/color params for THIS specific
 // interact-hint string", not "when does the font change".
-char g_lastLoggedGlyphPosText[128] = {};
+//
+// FIXED (2026-08-18, live-reported stutter during combat): the original design
+// compared only against the SINGLE most-recently-logged string, which does NOT
+// give "once per distinct string" in practice -- a real HUD screen cycles through
+// MANY different text elements per frame (title, timer, multiple button labels),
+// so each one differs from whatever the immediately-previous draw call logged and
+// re-logs essentially every frame. Live evidence: a single combat session produced
+// 423,063 of this diagnostic's own lines (91% of the entire log file), confirmed
+// via direct correlation with the exact symptom reported ("stutter when we get
+// shot or are approaching enemies" -- combat is precisely when HUD text churns
+// fastest: hit markers, kill feed, ammo count). Replaced with a real seen-SET
+// (fixed-size, non-STL, same "stop tracking new entries once full rather than
+// overflow" degrade-gracefully pattern already established in asset_capture.cpp's
+// AlreadyCaptured/MarkCaptured) so each genuinely distinct string logs exactly
+// once per session, not once per differs-from-the-single-prior-call. A
+// continuously-changing string (e.g. a live countdown timer) will still produce
+// new entries every tick since each one IS genuinely distinct content -- the seen-
+// table's own fixed capacity caps the damage from that case too, once full.
+constexpr int kMaxLoggedGlyphPosTexts = 64;
+char g_loggedGlyphPosTexts[kMaxLoggedGlyphPosTexts][128];
+int g_loggedGlyphPosTextCount = 0;
+
+bool AlreadyLoggedGlyphPosText(const char* text)
+{
+    for (int i = 0; i < g_loggedGlyphPosTextCount; ++i) {
+        if (strncmp(g_loggedGlyphPosTexts[i], text, sizeof(g_loggedGlyphPosTexts[i]) - 1) == 0) return true;
+    }
+    return false;
+}
+
+void MarkGlyphPosTextLogged(const char* text)
+{
+    if (g_loggedGlyphPosTextCount >= kMaxLoggedGlyphPosTexts) return; // degrade
+        // gracefully -- stop tracking NEW distinct strings once the fixed table
+        // fills rather than overflow; caps a runaway continuously-changing string
+        // (e.g. a live timer) at kMaxLoggedGlyphPosTexts lines instead of unbounded.
+    strncpy_s(g_loggedGlyphPosTexts[g_loggedGlyphPosTextCount], text, _TRUNCATE);
+    ++g_loggedGlyphPosTextCount;
+}
 
 // Issue #48/#49 (2026-07-31 follow-up): "read the weapon name live, no hardcoding"
 // -- the weapon name that follows a pickup/swap hint (e.g. " Model 1887") draws as
@@ -6779,8 +6872,8 @@ void __cdecl Hook_DrawGlyphText(
     if (g_modConfig.hudGlyphPositionLogging) {
         __try {
             if (LooksLikeValidPointer(reinterpret_cast<uintptr_t>(param_1)) &&
-                strncmp(param_1, g_lastLoggedGlyphPosText, sizeof(g_lastLoggedGlyphPosText) - 1) != 0) {
-                strncpy_s(g_lastLoggedGlyphPosText, param_1, sizeof(g_lastLoggedGlyphPosText) - 1);
+                !AlreadyLoggedGlyphPosText(param_1)) {
+                MarkGlyphPosTextLogged(param_1);
                 char logBuf[512];
                 sprintf_s(logBuf,
                     "[hud-glyph-pos] text=\"%.63s\" p2=%.3f p3=%.3f p5=%.3f p6=%.3f p7=%.3f "
@@ -9662,6 +9755,26 @@ void InstallAnalogInputHooks()
         MH_STATUS e9 = MH_EnableHook(reinterpret_cast<LPVOID>(0x0053cbc0));
         sprintf_s(buf, "[hooks] MH_EnableHook(0053cbc0 level-load-zone-hook) = %d", static_cast<int>(e9));
         LogFromController(buf);
+    }
+
+    // 2026-08-17: only installed when captureRuntimeMenuAssets is actually on --
+    // unlike the read-only diagnostics elsewhere in this file (which forward
+    // unmodified regardless of their own toggle and so cost nothing meaningful to
+    // leave hooked), FindOrLoadAsset is a genuinely hot, widely-shared function
+    // (59 distinct callers across the whole binary per re_notes/iw5sp.md) -- no
+    // reason to add even a trivial extra call-through for every normal player when
+    // this dev-only capture feature is off, so the hook itself isn't installed at
+    // all in that case, not just internally gated.
+    if (g_modConfig.captureRuntimeMenuAssets) {
+        MH_STATUS sCap = MH_CreateHook(reinterpret_cast<LPVOID>(0x004ff000), &Hook_FindOrLoadAsset,
+                                        reinterpret_cast<LPVOID*>(&g_origFindOrLoadAsset));
+        sprintf_s(buf, "[hooks] MH_CreateHook(004ff000 asset-capture) = %d", static_cast<int>(sCap));
+        LogFromController(buf);
+        if (sCap == MH_OK) {
+            MH_STATUS eCap = MH_EnableHook(reinterpret_cast<LPVOID>(0x004ff000));
+            sprintf_s(buf, "[hooks] MH_EnableHook(004ff000 asset-capture) = %d", static_cast<int>(eCap));
+            LogFromController(buf);
+        }
     }
 
     // task #6/#34 follow-up (2026-07-21) -- live HUD-text font identification, see the
