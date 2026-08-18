@@ -366,3 +366,68 @@ bool DiagramEditor_IsEditModeActive();
 // overlay_hud.cpp -- so a calibration session ends with "read the file, paste the
 // new defaults in," not manual coordinate transcription.
 void DiagramEditor_ExportCurrentLayout();
+
+// ---- MenuGfx_* (2026-08-16, tools/ui_harness .menu renderer, Phase 1) -------------
+//
+// Thin, STL-free forwarders onto this file's already-proven D3D9 draw primitives
+// (EnsureWhiteTexture/DrawGenericTexturedQuad/EnsureLeftAlignedTextTexture/
+// MeasureTextWidthPx), all previously internal to overlay_hud.cpp's own anonymous
+// namespace. Exist so tools/ui_harness/ui_hot/menu_render.cpp (a NEW, STL-permitted
+// file, since it never ships in the real proxy_d3d9.dll -- see its own header
+// comment) can draw parsed real .menu content using the EXACT same drawing code the
+// shipped game/harness already uses, without duplicating D3D9 vtable boilerplate.
+// These forwarders themselves stay STL-free/exception-free like the rest of this
+// file, since overlay_hud.cpp is still compiled into the real shipped mod too.
+
+// Solid-color screen-space quad (x, y, w, h already in whatever pixel space the
+// caller wants -- no additional scaling applied here).
+void MenuGfx_DrawColorQuad(void* device, float x, float y, float w, float h, unsigned long argbColor);
+
+// Textured screen-space quad, full [0,1] UV range, tinted by argbColor. No-op if
+// texture is null.
+void MenuGfx_DrawTexturedQuad(void* device, void* texture, float x, float y, float w, float h, unsigned long argbColor);
+
+// ---- MenuGfx_CreateTextureFromRawFormat (2026-08-17, Phase 3 -- real .menu material
+// backgrounds) ---------------------------------------------------------------------
+// Creates a D3D9 texture in an EXPLICIT format and uploads already-formatted row data,
+// generalizing this file's own existing LoadGlyphIconTexture upload pattern (which is
+// hardcoded to A8R8G8B8 decoded PNG pixels) so tools/ui_harness's new DDS loader
+// (menu_texture.cpp, a NEW STL-permitted file under ui_hot/) can hand this file
+// already-parsed real texture data -- itemDef `background` materials point at real DDS
+// assets, some uncompressed (D3DFMT_X8R8G8B8/A8R8G8B8) and some D3D9-natively-supported
+// block-compressed formats (DXT1/DXT3/DXT5, via their real FourCC values) -- rather
+// than needing menu_texture.cpp to touch a D3D9 vtable directly (keeping ALL raw D3D9
+// interop inside this file, matching this project's own established boundary).
+//
+// `d3dFormat` is a raw D3DFORMAT enum/FourCC value (the caller is expected to know
+// which one it wants -- this function doesn't validate it beyond passing it straight to
+// CreateTexture). `rowData`/`rowBytes`/`rowCount` describe the SOURCE layout the caller
+// already computed: for the two uncompressed formats, rowBytes = width*4, rowCount =
+// height; for DXT1/3/5 (4x4 pixel blocks), rowBytes = ceil(width/4)*blockSize (8 for
+// DXT1, 16 for DXT3/DXT5), rowCount = ceil(height/4) -- this function just copies
+// min(rowBytes, the driver's own LockRect Pitch) bytes per row, `rowCount` times, it
+// does not need to know or care whether the format is compressed.
+//
+// Returns nullptr on any failure (null device, CreateTexture/GetSurfaceLevel/LockRect
+// failure) -- never crashes; callers fall back to flat-color/outline rendering, same
+// degrade-gracefully standard as LoadGlyphIconTexture.
+void* MenuGfx_CreateTextureFromRawFormat(void* device, int width, int height, unsigned long d3dFormat,
+                                          const unsigned char* rowData, int rowBytes, int rowCount);
+
+// Renders (if `text` changed since the last call) into a persistent, caller-owned
+// texture, then draws it left-aligned at (x, yCenter) -- yCenter is the VERTICAL
+// CENTER of the drawn line, matching DrawOptLeftAlignedText's own convention.
+// ioTexture/renderedForBuf/ioLastFontHeightPx must be a stable per-label triplet the
+// caller keeps alive across frames (one per distinct on-screen text field), not
+// transient locals -- same cache-key contract EnsureLeftAlignedTextTexture itself
+// already has. scaleX/scaleY let the caller pre-scale from a logical canvas (e.g.
+// this project's confirmed real-engine 1920x1080 rect-transform canvas) to whatever
+// real window size is actually being drawn into.
+void MenuGfx_DrawLeftText(void* device, void*& ioTexture, char* renderedForBuf, size_t renderedForBufSize,
+                            int& ioLastFontHeightPx, const char* text, float x, float yCenter,
+                            int fontHeightPx, unsigned long argbColor, float scaleX, float scaleY);
+
+// Real measured pixel width of `text` at fontHeightPx, using this project's own
+// embedded font -- for callers that need to know a label's width before deciding
+// how/where to draw it (e.g. right-aligning, or centering within an itemDef's rect).
+int MenuGfx_MeasureTextWidthPx(const char* text, int fontHeightPx);

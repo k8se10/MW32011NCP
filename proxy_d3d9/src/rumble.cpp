@@ -198,14 +198,51 @@ void __cdecl Hook_FireEffects(int entity, unsigned int unusedParam2)
 // never calls into or hooks any game code for the damage side at all -- pure
 // read-only memory polling.
 constexpr uintptr_t kEntityArrayBase = 0x01197AD8; // per-player entity array, 0x270 stride (re_notes/iw5sp.md)
+constexpr uintptr_t kEntityStride = 0x270;
 constexpr uintptr_t kLocalPlayerEntity = kEntityArrayBase; // SP is always player index 0 (re_notes/iw5sp.md)
+constexpr uintptr_t kSecondPlayerEntitySlot = kEntityArrayBase + kEntityStride; // index 1 --
+    // 2-player Survival's co-op partner, if present. See kLocalPlayerEntity's own
+    // comment and IsRealPlayerEntity's "HONEST CAVEAT" above -- neither is actually
+    // scoped to "the specific human at THIS keyboard," just "index 0" / "any real
+    // client." That gap was flagged as a known, unconfirmed risk when this was
+    // written; live-reported 2026-08-18 as a real, reproducible bug: "in coop it
+    // triggers when the other tm8 is shot" -- damage-rumble reads index 0's health
+    // unconditionally, so a client player (not the host, i.e. not index 0) gets
+    // rumble driven by their TEAMMATE's health instead of their own.
 constexpr int kHealthFieldOffset = 0x150;
 
 int g_lastKnownHealth = -1; // -1 = not yet established a baseline this "session" (see reset points below)
 
+// MITIGATION, not a fix (2026-08-18) -- finding the real "which array index is
+// THIS client" mechanism needs genuine RE (a local-clientnum global or equivalent,
+// not yet located -- see re_notes/iw5sp.md's own "PARKED, not abandoned" entity-
+// array cross-link research for the closest existing lead) which wasn't done this
+// pass, per this project's own standing rule: never hardcode/guess a value that
+// hasn't actually been confirmed. Guessing "always use index 1 instead of 0" would
+// just move the exact same bug onto whichever player IS at index 0 instead of
+// fixing it. Until the real mechanism is found, detect when a second real player
+// entity exists (2-player co-op) and disable damage-rumble entirely in that case --
+// wrongly rumbling for a teammate's hits is worse than not rumbling at all, and
+// fire-rumble (TriggerFireRumble, hooked directly off THIS client's own weapon-fire
+// call rather than reading a hardcoded array slot) is unaffected by any of this,
+// so co-op players still get rumble on their own shots, just not on damage taken.
+bool SecondRealPlayerEntityPresent()
+{
+    return IsRealPlayerEntity(static_cast<int>(kSecondPlayerEntitySlot));
+}
+
 void PollDamageRumble()
 {
     if (!g_modConfig.vibrationEnabled) return;
+
+    if (SecondRealPlayerEntityPresent()) {
+        // 2-player co-op detected -- see this file's own MITIGATION comment above.
+        // Reset the baseline (same as "no real local player right now" below) so
+        // health polling starts clean again if this becomes solo later (partner
+        // disconnects) rather than measuring a delta against stale co-op-era data.
+        g_lastKnownHealth = -1;
+        return;
+    }
 
     if (!IsRealPlayerEntity(static_cast<int>(kLocalPlayerEntity))) {
         // No real local player right now (main menu, loading, between lives) --
@@ -290,6 +327,17 @@ void PollArmorFieldScanDiag()
 {
     if (!g_modConfig.armorFieldScanLogging) return;
     if (g_armorScanLogLinesEmitted >= kArmorScanMaxLogLines) return;
+
+    if (SecondRealPlayerEntityPresent()) {
+        // Same co-op ambiguity as PollDamageRumble's own MITIGATION comment above --
+        // this diagnostic exists to locate the real armor field by watching for a
+        // stable-then-drops pattern, and candidate data from the WRONG player's
+        // entity would actively mislead that search, not just be a no-op like
+        // damage-rumble's own case. Skip entirely rather than log misleading
+        // candidates.
+        g_armorScanPrimed = false;
+        return;
+    }
 
     if (!IsRealPlayerEntity(static_cast<int>(kLocalPlayerEntity))) {
         g_armorScanPrimed = false; // no real player right now -- history is stale once one exists again

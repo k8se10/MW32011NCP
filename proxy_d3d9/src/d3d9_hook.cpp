@@ -460,6 +460,30 @@ HRESULT WINAPI Hook_CreateDevice(void* This, UINT Adapter, DWORD DeviceType,
         DeviceType, hFocusWindow, hr);
     LogFromController(logBuf);
 
+    // Research diagnostic (2026-08-16, long-term "why does MW3 look worse than
+    // BO1/BO2" investigation -- re_notes/known_issues.md, texture/resolution-cap
+    // angle): does the engine ever request a real D3D backbuffer smaller than the
+    // real window it's shown in (and get stretched to fill it)? BackBufferWidth/
+    // BackBufferHeight are the first two DWORDs of D3DPRESENT_PARAMETERS -- this
+    // project already confirmed a live instance of exactly this kind of mismatch
+    // in an unrelated context (overlay_hud.cpp's viewport-vs-window-size glyph-
+    // editor debugging), but never logged it at the actual moment the engine
+    // REQUESTS the backbuffer. Deliberately just two DWORD reads + one GetClientRect
+    // -- no dvar reads here (Dvar_FindVar-based real_settings.h getters are
+    // documented NOT yet live-tested end-to-end, and this exact function is where
+    // issue #76's loader-lock hang was already found once from an unrelated overly-
+    // early engine call -- not repeating that risk class for a research-only log line).
+    if (pPresentationParameters) {
+        DWORD backBufferWidth = *reinterpret_cast<DWORD*>(pPresentationParameters);
+        DWORD backBufferHeight = *(reinterpret_cast<DWORD*>(pPresentationParameters) + 1);
+        RECT clientRect{};
+        GetClientRect(hFocusWindow, &clientRect);
+        char resLogBuf[160];
+        sprintf_s(resLogBuf, "[d3d9-hook] [res-diag] backbuffer=%lux%lu windowClient=%ldx%ld",
+            backBufferWidth, backBufferHeight, clientRect.right - clientRect.left, clientRect.bottom - clientRect.top);
+        LogFromController(resLogBuf);
+    }
+
     if (SUCCEEDED(hr) && DeviceType == kD3DDEVTYPE_HAL) {
         InstallWndProcHook(hFocusWindow);
         if (ppReturnedDeviceInterface && *ppReturnedDeviceInterface) {

@@ -71,6 +71,11 @@ using Hot_ResetOnMenuCloseFn = void(__cdecl*)();
 using Hot_DrawFrameFn = void(__cdecl*)(void*);
 using Hot_ToggleDiagramEditModeFn = void(__cdecl*)();
 using Hot_ExportDiagramLayoutFn = void(__cdecl*)();
+using Hot_LoadMenuFileFn = bool(__cdecl*)(const char*);
+using Hot_IsMenuLoadedFn = bool(__cdecl*)();
+using Hot_DrawMenuFrameFn = void(__cdecl*)(void*);
+// Phase 2 (2026-08-17) -- fake MenuGameState hotkeys, see exports.cpp's own comment.
+using Hot_VoidFn = void(__cdecl*)();
 
 struct HotModule {
     HMODULE dll = nullptr;
@@ -88,6 +93,20 @@ struct HotModule {
     // these two exports still loads and runs normally, just without edit mode.
     Hot_ToggleDiagramEditModeFn ToggleDiagramEditMode = nullptr;
     Hot_ExportDiagramLayoutFn ExportDiagramLayout = nullptr;
+    // Real .menu renderer (2026-08-16/17, Phase 1) -- same "optional, not part of
+    // Valid()'s required-export check" convention as the diagram editor above, so
+    // an older ui_hot.dll build still loads fine, just without this feature.
+    Hot_LoadMenuFileFn LoadMenuFile = nullptr;
+    Hot_IsMenuLoadedFn IsMenuLoaded = nullptr;
+    Hot_DrawMenuFrameFn DrawMenuFrame = nullptr;
+    // Phase 2 -- same "optional" convention as the diagram editor/menu-loader above.
+    Hot_VoidFn MenuGameState_ToggleTeam = nullptr;
+    Hot_VoidFn MenuGameState_ToggleMatchRules = nullptr;
+    Hot_VoidFn MenuGameState_AdvanceClock = nullptr;
+    Hot_VoidFn MenuGameState_ToggleUnlockedPreset = nullptr;
+    Hot_VoidFn MenuGameState_RefreshDebugReport = nullptr;
+    Hot_VoidFn MenuGameState_NextItemIndex = nullptr; // Phase 3
+    Hot_VoidFn MenuGameState_PrevItemIndex = nullptr;
 
     bool Valid() const { return dll && TickInput && DrawFrame; }
 };
@@ -242,6 +261,16 @@ bool TryBindModule(const char* copyPath, HotModule& out)
     m.DrawFrame = reinterpret_cast<Hot_DrawFrameFn>(GetProcAddress(dll, "Hot_DrawFrame"));
     m.ToggleDiagramEditMode = reinterpret_cast<Hot_ToggleDiagramEditModeFn>(GetProcAddress(dll, "Hot_ToggleDiagramEditMode"));
     m.ExportDiagramLayout = reinterpret_cast<Hot_ExportDiagramLayoutFn>(GetProcAddress(dll, "Hot_ExportDiagramLayout"));
+    m.LoadMenuFile = reinterpret_cast<Hot_LoadMenuFileFn>(GetProcAddress(dll, "Hot_LoadMenuFile"));
+    m.IsMenuLoaded = reinterpret_cast<Hot_IsMenuLoadedFn>(GetProcAddress(dll, "Hot_IsMenuLoaded"));
+    m.DrawMenuFrame = reinterpret_cast<Hot_DrawMenuFrameFn>(GetProcAddress(dll, "Hot_DrawMenuFrame"));
+    m.MenuGameState_ToggleTeam = reinterpret_cast<Hot_VoidFn>(GetProcAddress(dll, "Hot_MenuGameState_ToggleTeam"));
+    m.MenuGameState_ToggleMatchRules = reinterpret_cast<Hot_VoidFn>(GetProcAddress(dll, "Hot_MenuGameState_ToggleMatchRules"));
+    m.MenuGameState_AdvanceClock = reinterpret_cast<Hot_VoidFn>(GetProcAddress(dll, "Hot_MenuGameState_AdvanceClock"));
+    m.MenuGameState_ToggleUnlockedPreset = reinterpret_cast<Hot_VoidFn>(GetProcAddress(dll, "Hot_MenuGameState_ToggleUnlockedPreset"));
+    m.MenuGameState_RefreshDebugReport = reinterpret_cast<Hot_VoidFn>(GetProcAddress(dll, "Hot_MenuGameState_RefreshDebugReport"));
+    m.MenuGameState_NextItemIndex = reinterpret_cast<Hot_VoidFn>(GetProcAddress(dll, "Hot_MenuGameState_NextItemIndex"));
+    m.MenuGameState_PrevItemIndex = reinterpret_cast<Hot_VoidFn>(GetProcAddress(dll, "Hot_MenuGameState_PrevItemIndex"));
 
     if (!m.Valid()) {
         FreeLibrary(dll);
@@ -360,6 +389,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
             "UI Harness", MB_OK);
     }
 
+    // Real .menu renderer (2026-08-16/17, Phase 1) -- load a real screen by default
+    // on startup so the tool is immediately useful without requiring a keypress
+    // first; press 1-4 (see the main loop below) to switch to a different one.
+    if (haveModule && current.LoadMenuFile) {
+        bool ok = current.LoadMenuFile("D:\\Tools\\OpenAssetTools\\zone_dump\\ui\\scriptmenus\\survival_armory_weapon.menu");
+        printf("[ui_harness] startup .menu load: %s\n", ok ? "OK" : "FAILED");
+    }
+
     // Single-process HMR (2026-08-05) -- see SourceWatcherThreadProc's own comment.
     // Runs for the lifetime of the process; reads g_running to know when to stop.
     CreateThread(nullptr, 0, SourceWatcherThreadProc, nullptr, 0, nullptr);
@@ -368,6 +405,30 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
     EdgeTracker editToggleT, exportT; // F2/F3 -- harness-only diagram anchor editor
     DWORD lastPollMs = GetTickCount();
     constexpr DWORD kPollIntervalMs = 500;
+
+    // Real .menu renderer (2026-08-16/17, Phase 1) -- number keys 1-4 load one of a
+    // small hardcoded set of real .menu files (the ones this whole feature was built
+    // for: Survival's between-round armory screens, plus one plain static screen and
+    // one already-deeply-RE'd screen for cross-checking) into the harness for
+    // inspection. Not a real file picker -- fine for Phase 1's own smoke-test scope,
+    // see menu_render.h's own header comment. Extend this list as more screens need
+    // checking; no code changes needed elsewhere to add a 5th/6th/etc. entry beyond
+    // also adding its own EdgeTracker + key check below.
+    const char* kMenuFileChoices[4] = {
+        "D:\\Tools\\OpenAssetTools\\zone_dump\\ui\\scriptmenus\\survival_armory_weapon.menu",
+        "D:\\Tools\\OpenAssetTools\\zone_dump\\ui\\waves.menu",
+        "D:\\Tools\\OpenAssetTools\\zone_dump\\ui\\stance.menu",
+        "D:\\Tools\\OpenAssetTools\\zone_dump\\ui\\pc_options_video_ingame.menu",
+    };
+    EdgeTracker menuKey1T, menuKey2T, menuKey3T, menuKey4T;
+
+    // Phase 2 (2026-08-17) -- fake MenuGameState hotkeys, so real `visible`/`exp`
+    // conditional logic in a loaded .menu (team-locked items, unlock-gated
+    // attachments, etc.) can actually be exercised and visually verified instead of
+    // always evaluating against one fixed default state. T/M/C/U/R chosen to avoid
+    // every already-bound key above (arrows/Enter/Backspace/Q/E/F2/F3/1-4/Escape).
+    EdgeTracker toggleTeamT, toggleMatchRulesT, advanceClockT, toggleUnlockedT, refreshReportT;
+    EdgeTracker nextItemIndexT, prevItemIndexT; // Phase 3 -- '[' / ']', selected_item_index nav
 
     MSG msg = {};
     while (g_running) {
@@ -418,6 +479,48 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
         if (haveModule && editToggleEdge && current.ToggleDiagramEditMode) current.ToggleDiagramEditMode();
         if (haveModule && exportEdge && current.ExportDiagramLayout) current.ExportDiagramLayout();
 
+        bool menuKey1Edge = menuKey1T.Tick((GetAsyncKeyState('1') & 0x8000) != 0);
+        bool menuKey2Edge = menuKey2T.Tick((GetAsyncKeyState('2') & 0x8000) != 0);
+        bool menuKey3Edge = menuKey3T.Tick((GetAsyncKeyState('3') & 0x8000) != 0);
+        bool menuKey4Edge = menuKey4T.Tick((GetAsyncKeyState('4') & 0x8000) != 0);
+        if (haveModule && current.LoadMenuFile) {
+            int chosenIdx = -1;
+            if (menuKey1Edge) chosenIdx = 0;
+            else if (menuKey2Edge) chosenIdx = 1;
+            else if (menuKey3Edge) chosenIdx = 2;
+            else if (menuKey4Edge) chosenIdx = 3;
+            if (chosenIdx >= 0) {
+                bool ok = current.LoadMenuFile(kMenuFileChoices[chosenIdx]);
+                char titleBuf[512];
+                sprintf_s(titleBuf, "MW32011NCP UI Harness -- .menu %s: %s",
+                    ok ? "loaded" : "FAILED to parse", kMenuFileChoices[chosenIdx]);
+                SetWindowTextA(hwnd, titleBuf);
+            }
+        }
+
+        // Phase 2 fake-GameState hotkeys -- each Hot_MenuGameState_* export already
+        // re-writes menu_parse_debug.txt itself (see exports.cpp), so the evaluated
+        // effect is checkable from text output immediately; R additionally forces a
+        // refresh with no state change, useful right after a hot-reload.
+        bool toggleTeamEdge = toggleTeamT.Tick((GetAsyncKeyState('T') & 0x8000) != 0);
+        bool toggleMatchRulesEdge = toggleMatchRulesT.Tick((GetAsyncKeyState('M') & 0x8000) != 0);
+        bool advanceClockEdge = advanceClockT.Tick((GetAsyncKeyState('C') & 0x8000) != 0);
+        bool toggleUnlockedEdge = toggleUnlockedT.Tick((GetAsyncKeyState('U') & 0x8000) != 0);
+        bool refreshReportEdge = refreshReportT.Tick((GetAsyncKeyState('R') & 0x8000) != 0);
+        // Phase 3 -- '[' / ']' (VK_OEM_4/6): selected_item_index nav, see
+        // Hot_MenuGameState_NextItemIndex's own comment for what this actually affects.
+        bool nextItemIndexEdge = nextItemIndexT.Tick((GetAsyncKeyState(VK_OEM_6) & 0x8000) != 0);
+        bool prevItemIndexEdge = prevItemIndexT.Tick((GetAsyncKeyState(VK_OEM_4) & 0x8000) != 0);
+        if (haveModule) {
+            if (toggleTeamEdge && current.MenuGameState_ToggleTeam) current.MenuGameState_ToggleTeam();
+            if (toggleMatchRulesEdge && current.MenuGameState_ToggleMatchRules) current.MenuGameState_ToggleMatchRules();
+            if (advanceClockEdge && current.MenuGameState_AdvanceClock) current.MenuGameState_AdvanceClock();
+            if (toggleUnlockedEdge && current.MenuGameState_ToggleUnlockedPreset) current.MenuGameState_ToggleUnlockedPreset();
+            if (refreshReportEdge && current.MenuGameState_RefreshDebugReport) current.MenuGameState_RefreshDebugReport();
+            if (nextItemIndexEdge && current.MenuGameState_NextItemIndex) current.MenuGameState_NextItemIndex();
+            if (prevItemIndexEdge && current.MenuGameState_PrevItemIndex) current.MenuGameState_PrevItemIndex();
+        }
+
         device->Clear(0, nullptr, D3DCLEAR_TARGET, D3DCOLOR_XRGB(20, 25, 35), 1.0f, 0);
         device->BeginScene();
 
@@ -426,6 +529,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
             current.TickInput(openRequestedEdge, upEdge, downEdge, leftEdge, rightEdge,
                                 selectEdge, backEdge, tabPrevEdge, tabNextEdge);
             current.DrawFrame(device);
+            if (current.DrawMenuFrame) current.DrawMenuFrame(device);
         }
 
         device->EndScene();

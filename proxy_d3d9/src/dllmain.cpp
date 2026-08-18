@@ -74,11 +74,24 @@ void LogInit()
     char* lastSlash = strrchr(path, '\\');
     if (lastSlash) *(lastSlash + 1) = '\0';
     strcat_s(path, "proxy_d3d9.log");
+    // Live-confirmed 2026-08-16 (real user's proxy_d3d9.log): "a" (append) mode meant
+    // this file was NEVER trimmed -- it had grown to 2.6GB / 22.5M lines across every
+    // launch since install, not just one session. Directly implicated in a real,
+    // reported "random hitching in extended play sessions" bug: appending to an
+    // already-multi-GB, likely-fragmented file is a much worse fit for "random,
+    // gets-worse-over-time" stalls than anything session-local, and explains why the
+    // report came in against an OLDER version too (this has been true since logging
+    // was added, not introduced by a recent change). Switched to "w" (truncate) so
+    // every launch starts from a clean, small file -- this project's log has always
+    // been a live/current-session diagnostic tool (grep'd for recent tags during this
+    // exact investigation), never a historical record anyone reads back across
+    // sessions, so there's no loss from not keeping old sessions around.
+    //
     // _fsopen with _SH_DENYWR (not fopen_s, which opens exclusively on Windows) so the
     // log can still be read live while the game is running -- needed for diagnosing
     // bugs where the game gets stuck in a bad state and can't be closed normally to
     // release the file.
-    g_log = _fsopen(path, "a", _SH_DENYWR);
+    g_log = _fsopen(path, "w", _SH_DENYWR);
     if (g_log) {
         fprintf(g_log, "---- proxy_d3d9 attach ----\n");
         fflush(g_log); // always flush this one line -- marks a real session boundary

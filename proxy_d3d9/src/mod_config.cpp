@@ -120,7 +120,13 @@ void ReadBool(const char* path, const char* section, const char* key, bool& outV
 // drop the stale key, so it physically cannot block the overlay anymore.
 // v14->v15 (2026-08-16, issue #51 follow-up): new [Experimental] GlyphPositionEditMode
 // key added -- the in-game click-and-drag menu-glyph calibration tool's master gate.
-constexpr unsigned long kCurrentConfigVersion = 15;
+// v15->v16 (2026-08-17, tools/ui_harness .menu-renderer project): new [Experimental]
+// CaptureRuntimeMenuAssets key added -- dumps real material textures to disk while
+// playing, for the harness's .menu renderer to use in place of the incomplete static
+// zone_dump extraction. See mod_config.h's own field comment for the full rationale.
+// v16->v17 (2026-08-17, same-day stutter investigation): new [Experimental]
+// FrametimeBenchmarkLogging key added -- real per-frame CSV timing diagnostic.
+constexpr unsigned long kCurrentConfigVersion = 17;
 
 // Reads a legacy key's raw value, returning true only if the key genuinely existed
 // (unlike ReadFloat, which can't distinguish "absent" from "present but unparsable" --
@@ -579,7 +585,21 @@ void WriteDefaultConfig(const char* path)
         "; position becomes draggable with the mouse, seeded from the existing calibrated\n"
         "; position if one exists. Press F3 to export every group touched this session to\n"
         "; exported_glyph_positions.txt, next to this DLL. 0 = off, 1 = on.\n"
-        "GlyphPositionEditMode=%d\n",
+        "GlyphPositionEditMode=%d\n"
+        "; 2026-08-17, tools/ui_harness .menu-renderer project -- dumps real material\n"
+        "; textures the game actually creates while playing to\n"
+        "; <gameDir>\\runtime_asset_capture\\materials\\<materialName>.dds, for the harness's\n"
+        "; own .menu renderer to use instead of the incomplete static zone_dump extraction.\n"
+        "; DEFAULT OFF -- dev-only diagnostic, not for normal play. Turn on, play a session\n"
+        "; touching the menus you want captured, turn back off. 0 = off, 1 = on.\n"
+        "CaptureRuntimeMenuAssets=%d\n"
+        "; 2026-08-17: live-reported stutter investigation -- writes\n"
+        "; frametime_benchmark.csv (next to this DLL) with real per-frame timing, one row\n"
+        "; per frame, including a breakdown of this project's own hook durations, so a\n"
+        "; felt stutter can be checked against real data instead of guessed. DEFAULT OFF --\n"
+        "; per-frame disk I/O has its own real cost. Turn on, play until the stutter is\n"
+        "; felt, turn back off, share frametime_benchmark.csv. 0 = off, 1 = on.\n"
+        "FrametimeBenchmarkLogging=%d\n",
         kCurrentConfigVersion,
         g_modConfig.lookDegreesPerSecondHorizontal,
         g_modConfig.lookDegreesPerSecondVertical,
@@ -627,7 +647,9 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.listItemPositionLogging ? 1 : 0,
         g_modConfig.armorFieldScanLogging ? 1 : 0,
         g_modConfig.forceGlyphOverlay ? 1 : 0,
-        g_modConfig.glyphPositionEditMode ? 1 : 0);
+        g_modConfig.glyphPositionEditMode ? 1 : 0,
+        g_modConfig.captureRuntimeMenuAssets ? 1 : 0,
+        g_modConfig.frametimeBenchmarkLogging ? 1 : 0);
 
     fclose(f);
 }
@@ -832,6 +854,8 @@ void LoadModConfig()
     ReadBool(path, "Experimental", "ArmorFieldScanLogging", g_modConfig.armorFieldScanLogging);
     ReadBool(path, "Experimental", "ForceGlyphOverlay", g_modConfig.forceGlyphOverlay);
     ReadBool(path, "Experimental", "GlyphPositionEditMode", g_modConfig.glyphPositionEditMode);
+    ReadBool(path, "Experimental", "CaptureRuntimeMenuAssets", g_modConfig.captureRuntimeMenuAssets);
+    ReadBool(path, "Experimental", "FrametimeBenchmarkLogging", g_modConfig.frametimeBenchmarkLogging);
     ReadBool(path, "Gyro", "Enabled", g_modConfig.gyroEnabled);
     ReadFloat(path, "Gyro", "Sensitivity", g_modConfig.gyroSensitivity);
     if (g_modConfig.gyroSensitivity < 0.0f) g_modConfig.gyroSensitivity = 0.0f;
@@ -852,7 +876,8 @@ void LoadModConfig()
         "overlayFontItalic=%d overlayTestCycleAllVariants=%d "
         "fireNotifyQueueKick=%d bindResolverHookLogging=%d bindResolverGlyphSubstitution=%d "
         "hudFontIdLogging=%d hudGlyphPositionLogging=%d listItemPositionLogging=%d "
-        "armorFieldScanLogging=%d forceGlyphOverlay=%d glyphPositionEditMode=%d",
+        "armorFieldScanLogging=%d forceGlyphOverlay=%d glyphPositionEditMode=%d "
+        "captureRuntimeMenuAssets=%d frametimeBenchmarkLogging=%d",
         g_modConfig.lookDegreesPerSecondHorizontal, g_modConfig.lookDegreesPerSecondVertical,
         g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
@@ -876,7 +901,9 @@ void LoadModConfig()
         g_modConfig.listItemPositionLogging ? 1 : 0,
         g_modConfig.armorFieldScanLogging ? 1 : 0,
         g_modConfig.forceGlyphOverlay ? 1 : 0,
-        g_modConfig.glyphPositionEditMode ? 1 : 0);
+        g_modConfig.glyphPositionEditMode ? 1 : 0,
+        g_modConfig.captureRuntimeMenuAssets ? 1 : 0,
+        g_modConfig.frametimeBenchmarkLogging ? 1 : 0);
     LogFromController(buf);
 
     // Rewrite the file once, now that g_modConfig holds every existing setting PLUS
