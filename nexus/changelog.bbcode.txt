@@ -1,4 +1,16 @@
-[color=#E74C3C][b]⚠ 2026-07-31: versions before v0.2.2 have been removed from this page[/b][/color] as a further VAC-risk mitigation step, on top of v0.2.2's own permanent removal of the aim-assist code those builds shipped with. Nothing was deleted — full source history for every version remains on GitHub — only the downloadable files are no longer offered here. v0.2.2 is now the oldest version this project distributes or supports.
+[color=#E74C3C][b]⚠ 2026-08-18: only v0.2.2 and v0.3.2+ remain on this page[/b][/color] — versions before v0.2.2 were removed 2026-07-31 as a VAC-risk mitigation step (v0.2.2 permanently removed the aim-assist code those builds shipped with). As of v0.3.3, everything between v0.2.2 and the current release (v0.2.5 through v0.3.1.h1 — rapid, in-progress alpha churn, not a stable point worth keeping downloadable) has also been removed. Nothing was deleted — full source history for every version remains on GitHub — only the downloadable files are no longer offered here.
+
+[hr]
+
+[b][size=4]v0.3.3 — Alpha (2026-08-18) — Real, extended-session performance stuttering fixed[/size][/b]
+
+[color=#E74C3C][b]Headline fix:[/b][/color] real, extended-session performance stuttering — three separate, evidence-backed causes found and fixed. [font=Courier New]proxy_d3d9.log[/font] was opened in append mode and never trimmed between launches (grew past 2GB across every session since install). The background controller-poll thread never stopped rescanning every XInput slot plus DualSense on every ~4ms tick, even once the active device was known — now locks onto the active device once at boot. A diagnostic log's dedup logic didn't actually deduplicate, producing hundreds of thousands of lines in a single combat session. A/B tested directly against v0.2.2 to confirm the regression was real, not imagined — user-confirmed "much better" afterward. One residual dip (looking toward enemies) remains open, most likely genuine GPU-side rendering cost — see [font=Courier New]re_notes/known_issues.md[/font] issue #79.
+
+[b]Also fixed:[/b] vibration could get stuck on indefinitely across a pause or menu. A real co-op bug where damage-taken rumble could trigger off a teammate's hits instead of your own — mitigated (disables itself when a second real player is detected) pending further research into the real "which player is me" mechanism.
+
+[color=#E74C3C][b]Ships a first, PREVIEW/WIP pass at DualSense Bluetooth support — stick input does not work correctly over Bluetooth, confirmed live against real hardware; do not rely on it for gameplay.[/b][/color] USB DualSense support (added v0.3.2) still hasn't been independently confirmed working either — see issue #76.
+
+Full detail on GitHub: see this mod's Source page and [font=Courier New]PATCHNOTES.md[/font].
 
 [hr]
 
