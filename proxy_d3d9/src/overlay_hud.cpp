@@ -42,6 +42,8 @@
 #include "overlay_hud.h"
 #include "controller_input.h"
 #include "vanilla_settings_table.h"
+#include "asset_capture.h"
+#include "frame_benchmark.h"
 #include "vanilla_settings_sync.h"
 #include "real_settings.h"
 #include "staged_settings.h"
@@ -4059,6 +4061,102 @@ void RunCustomOptionsMenuHarnessFrame(void* device)
     DrawCustomOptionsMenuIfOpen(device);
 }
 
+// ---- MenuGfx_* (2026-08-16, tools/ui_harness .menu renderer, Phase 1) -------------
+//
+// Thin, STL-free forwarders exposing this file's own already-proven D3D9 draw
+// primitives to menu_render.cpp (tools/ui_harness/ui_hot/) -- same "reuse the exact
+// code that ships" principle as RunCustomOptionsMenuHarnessFrame above. No new
+// drawing logic lives here, just plumbing: EnsureWhiteTexture/DrawGenericTexturedQuad/
+// EnsureLeftAlignedTextTexture/MeasureTextWidthPx (all internal, anonymous-namespace)
+// were never callable from outside this translation unit before this.
+void MenuGfx_DrawColorQuad(void* device, float x, float y, float w, float h, unsigned long argbColor)
+{
+    if (!EnsureWhiteTexture(device)) return;
+    DrawGenericTexturedQuad(device, g_optWhiteTexture, x, y, w, h, static_cast<DWORD>(argbColor));
+}
+
+void MenuGfx_DrawTexturedQuad(void* device, void* texture, float x, float y, float w, float h, unsigned long argbColor)
+{
+    if (!texture) return;
+    DrawGenericTexturedQuad(device, texture, x, y, w, h, static_cast<DWORD>(argbColor));
+}
+
+// Phase 3 (2026-08-17) -- see overlay_hud.h's own comment for the full contract.
+// Generalizes LoadGlyphIconTexture's CreateTexture/GetSurfaceLevel/LockRect upload
+// pattern (above, hardcoded to A8R8G8B8 decoded PNG data) to an arbitrary D3D9 format
+// and arbitrary row layout, so it also covers the compressed formats real .menu
+// material DDS assets actually use.
+void* MenuGfx_CreateTextureFromRawFormat(void* device, int width, int height, unsigned long d3dFormat,
+                                          const unsigned char* rowData, int rowBytes, int rowCount)
+{
+    if (!device || width <= 0 || height <= 0 || !rowData || rowBytes <= 0 || rowCount <= 0) return nullptr;
+
+    void** deviceVtbl = *reinterpret_cast<void***>(device);
+    auto createTexture = reinterpret_cast<CreateTexture_t>(deviceVtbl[kCreateTextureVtableIndex]);
+    void* texture = nullptr;
+    HRESULT hr = createTexture(device, static_cast<UINT>(width), static_cast<UINT>(height), 1, 0,
+                                 static_cast<DWORD>(d3dFormat), kD3DPOOL_MANAGED, &texture, nullptr);
+    if (FAILED(hr) || !texture) return nullptr;
+
+    void** texVtbl = *reinterpret_cast<void***>(texture);
+    auto getSurfaceLevel = reinterpret_cast<GetSurfaceLevel_t>(texVtbl[kGetSurfaceLevelVtableIndex]);
+    void* surface = nullptr;
+    bool uploaded = false;
+    if (SUCCEEDED(getSurfaceLevel(texture, 0, &surface)) && surface) {
+        void** surfaceVtbl = *reinterpret_cast<void***>(surface);
+        auto lockRect = reinterpret_cast<SurfaceLockRect_t>(surfaceVtbl[kSurfaceLockRectVtableIndex]);
+        auto unlockRect = reinterpret_cast<SurfaceUnlockRect_t>(surfaceVtbl[kSurfaceUnlockRectVtableIndex]);
+        auto releaseSurface = reinterpret_cast<Release_t>(surfaceVtbl[kSurfaceReleaseVtableIndex]);
+        LockedRect locked = {};
+        if (SUCCEEDED(lockRect(surface, &locked, nullptr, 0)) && locked.pBits) {
+            int copyBytesPerRow = rowBytes < locked.Pitch ? rowBytes : locked.Pitch;
+            for (int row = 0; row < rowCount; ++row) {
+                memcpy(static_cast<BYTE*>(locked.pBits) + static_cast<size_t>(row) * locked.Pitch,
+                       rowData + static_cast<size_t>(row) * rowBytes,
+                       static_cast<size_t>(copyBytesPerRow));
+            }
+            unlockRect(surface);
+            uploaded = true;
+        }
+        releaseSurface(surface);
+    }
+
+    if (!uploaded) {
+        void** vtbl = *reinterpret_cast<void***>(texture);
+        reinterpret_cast<Release_t>(vtbl[kSurfaceReleaseVtableIndex])(texture);
+        return nullptr;
+    }
+    return texture;
+}
+
+// Mirrors DrawOptLeftAlignedText's own cache-then-draw shape exactly (see that
+// function's own comment for the UV-cropping rationale) -- ioTexture/renderedForBuf/
+// ioLastFontHeightPx are caller-owned persistent state (one triplet per distinct
+// on-screen text label the caller wants to draw+cache), NOT a shared global -- the
+// caller (menu_render.cpp) keeps one of these per parsed itemDef's text field.
+void MenuGfx_DrawLeftText(void* device, void*& ioTexture, char* renderedForBuf, size_t renderedForBufSize,
+                            int& ioLastFontHeightPx, const char* text, float x, float yCenter,
+                            int fontHeightPx, unsigned long argbColor, float scaleX, float scaleY)
+{
+    if (!EnsureLeftAlignedTextTexture(device, ioTexture, renderedForBuf, renderedForBufSize,
+                                        text, ioLastFontHeightPx, fontHeightPx)) return;
+    int measuredWidth = MeasureTextWidthPx(text, g_modConfig.overlayFontItalic, fontHeightPx);
+    if (measuredWidth <= 0) return;
+    constexpr int kTextRenderLeftMarginPx = 8; // matches RenderMaskLuminance's own hardcoded left inset
+    int drawWidthPx = measuredWidth + 12;
+    float u0 = static_cast<float>(kTextRenderLeftMarginPx) / static_cast<float>(kTextureWidth);
+    float u1 = static_cast<float>(kTextRenderLeftMarginPx + drawWidthPx) / static_cast<float>(kTextureWidth);
+    float top = yCenter - static_cast<float>(kTextureHeight) * 0.5f;
+    DrawGenericTexturedQuad(device, ioTexture, x * scaleX, top * scaleY,
+                              static_cast<float>(drawWidthPx) * scaleX, static_cast<float>(kTextureHeight) * scaleY,
+                              static_cast<DWORD>(argbColor), u0, 0.0f, u1, 1.0f);
+}
+
+int MenuGfx_MeasureTextWidthPx(const char* text, int fontHeightPx)
+{
+    return MeasureTextWidthPx(text, g_modConfig.overlayFontItalic, fontHeightPx);
+}
+
 namespace {
 
 void DrawCustomCursorIfNeeded(void* device)
@@ -4405,10 +4503,35 @@ HRESULT WINAPI Hook_EndScene(void* device)
     // menu is meant to be a BACKGROUND those layer on top of, not the topmost thing.
     // The cursor already drew last before this fix and still does; it just wasn't
     // the only thing affected.
+    // 2026-08-17 stutter investigation -- see frame_benchmark.h's own header comment.
+    // QueryPerformanceCounter is cheap enough (a handful of nanoseconds) to call
+    // unconditionally here without its own config-flag guard; FrameBenchmark_LogFrame
+    // itself is the one that's a no-op when FrametimeBenchmarkLogging is off, so this
+    // costs nothing extra in the normal (flag off) case beyond a few QPC calls.
+    LARGE_INTEGER benchFreq{}, tOptionsStart{}, tOptionsEnd{}, tOverlayStart{}, tOverlayEnd{},
+        tGlyphStart{}, tGlyphEnd{}, tHintStart{}, tHintEnd{};
+    QueryPerformanceFrequency(&benchFreq);
+    auto BenchMs = [&benchFreq](LARGE_INTEGER start, LARGE_INTEGER end) -> double {
+        return (static_cast<double>(end.QuadPart - start.QuadPart) * 1000.0) /
+               static_cast<double>(benchFreq.QuadPart);
+    };
+
+    QueryPerformanceCounter(&tOptionsStart);
     DrawCustomOptionsMenuIfOpen(device);
+    QueryPerformanceCounter(&tOptionsEnd);
+
+    QueryPerformanceCounter(&tOverlayStart);
     DrawOverlayMessage(device);
+    QueryPerformanceCounter(&tOverlayEnd);
+
+    QueryPerformanceCounter(&tGlyphStart);
     DrawGlyphIconIfRequested(device);
+    QueryPerformanceCounter(&tGlyphEnd);
+
+    QueryPerformanceCounter(&tHintStart);
     DrawGameplayHintSlotsIfRequested(device);
+    QueryPerformanceCounter(&tHintEnd);
+
     InjectSyntheticBackHintIfNeeded();
     // ResetMenuListItemOrdinalForFrame() must run BEFORE DrawMenuHintsIfRequested()
     // (2026-08-03 fix): its own manual-position A-glyph block (issue #51) calls
@@ -4423,6 +4546,10 @@ HRESULT WINAPI Hook_EndScene(void* device)
     // Always last -- see DrawCustomCursorIfNeeded's own comment for why the cursor
     // specifically needs to be the final thing drawn each frame.
     DrawCustomCursorIfNeeded(device);
+
+    FrameBenchmark_LogFrame(BenchMs(tOptionsStart, tOptionsEnd), BenchMs(tOverlayStart, tOverlayEnd),
+        BenchMs(tGlyphStart, tGlyphEnd), BenchMs(tHintStart, tHintEnd));
+
     return g_origEndScene(device);
 }
 
@@ -4610,6 +4737,11 @@ void InstallEndSceneHook(void* realDevice)
             LogFromController(buf);
         }
     }
+
+    // 2026-08-17: runtime material/texture capture for tools/ui_harness's .menu
+    // renderer -- see asset_capture.h's own header comment. No-op internally when
+    // g_modConfig.captureRuntimeMenuAssets is off.
+    AssetCapture_InstallHookIfEnabled(realDevice);
 }
 
 namespace {

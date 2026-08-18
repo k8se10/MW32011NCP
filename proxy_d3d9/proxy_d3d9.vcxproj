@@ -99,6 +99,8 @@
     <ClCompile Include="src\vanilla_settings_sync.cpp" />
     <ClCompile Include="src\staged_settings.cpp" />
     <ClCompile Include="src\options_render_suppress.cpp" />
+    <ClCompile Include="src\asset_capture.cpp" />
+    <ClCompile Include="src\frame_benchmark.cpp" />
     <!-- MinHook (BSD-style license, see third_party\minhook\LICENSE.txt;
          attribution required if this mod is ever shipped, see CLAUDE.md paragraph 6). -->
     <ClCompile Include="third_party\minhook\src\buffer.c" />
@@ -123,6 +125,8 @@
     <ClInclude Include="src\dualsense_input.h" />
     <ClInclude Include="src\mod_config.h" />
     <ClInclude Include="src\rumble.h" />
+    <ClInclude Include="src\asset_capture.h" />
+    <ClInclude Include="src\frame_benchmark.h" />
     <ClInclude Include="src\overlay_hud.h" />
     <ClInclude Include="src\real_settings.h" />
     <ClInclude Include="src\vanilla_settings_table.h" />
