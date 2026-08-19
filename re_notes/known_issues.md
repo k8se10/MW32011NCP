@@ -5233,6 +5233,78 @@ unranked dedicated-server pool. **No change to this project's own risk posture o
 work is still unstarted, VAC is still confirmed active regardless of matchmaking health, and this finding is
 informational (corrects a loosely-sourced citation, adds real mechanism detail) rather than decision-changing.
 
+### Fifth pass, 3 more forks — mod-menu/AlterWare precedent, VAC detection mechanics, ban case studies (2026-08-19)
+
+Continuation of the same VAC-risk research, specifically to sharpen the "closest technical comparison" precedent
+question raised by the fourth pass's own cross-surface risk table, and to directly chase down the ENB/`opengl32.dll`
+citation from the second pass's "decisive finding" above, which had never actually been traced to its root source.
+Three parallel forks; findings below.
+
+**The GoldSrc `opengl32.dll` precedent the second pass's "decisive finding" (above) was built on does not hold up
+as cited.** Traced to its actual mechanism: Half-Life 1/GoldSrc has a real, NAMED, filename-specific
+countermeasure — the engine deletes any file literally named `opengl32.dll` on startup, because that exact
+filename was a known historical vector for GoldSrc-era fake-OpenGL-proxy wallhack cheats. Documented ban reports
+tie the trigger to defeating that specific deletion (file-permission tricks to make it non-deletable), not to "a
+proxy DLL of sufficient depth" as a general category. This doesn't technically connect to ENB's own D3D9/
+later-engine shader-injection technique at all — different engines, different eras, no shared detection mechanism
+found. **Separately: no verified ENB ban case exists.** Searched directly — one unverifiable first-person claim
+(disputed in its own thread), one theoretical forum argument whose author admitted "no hard sources," and a direct
+"has anyone actually been banned for ENB/SweetFX/GeDoSaTo?" thread that came back with zero confirmed cases
+despite over a decade of heavy public use. **This meaningfully walks back the second pass's "decisive finding"
+above** — the evidence that reframed this project's own risk picture from "probably fine" to "genuine, non-trivial
+concern" (ENB's supposed documented ban history) turns out to be a citation that doesn't survive scrutiny. Doesn't
+flip the conclusion back to "definitely fine" — just removes a specific piece of evidence that was carrying real
+weight in the wrong direction.
+
+**MW3/IW5-era mod ecosystem splits cleanly into two categories with very different track records.** AlterWare's
+IW5-Mod and Plutonium's own supported-modding pathway are BOTH file/fastfile/GSC-based — loaded through the
+game's own native `fs_game` mod-loading mechanism, no DLL injection, no process-memory hooking at all — and have
+correspondingly clean records specifically because they stay inside a sanctioned content-loading surface.
+DLL-injection-based MW3 mod menus (KevinTrainer, an "IW5M Mod Menu... Converted to DLL" release) are the closest
+technical comparison to this project's own approach — external `CreateRemoteThread`-style injection into a live
+process, the exact signature VAC's documented missing-PEB-entry/thread-entrypoint heuristic targets — but **zero
+ban-rate data exists for this category either way**: no technical postmortem, no confirmed ban statistic, only
+unverified "undetected since 2016"-style marketing claims. One important caveat found: Plutonium's OWN anti-cheat
+(not VAC, a separate system) is confirmed "always active even in solo play/private match." **Do not extrapolate
+retail's "VAC does nothing offline" finding onto Plutonium** — a different, stricter system on a different binary.
+
+**Technical-mechanics pass sharpens WHY this project's specific technique sits outside VAC's documented detection
+surface, rather than just citing analogous-tool precedent.** Anti-cheat systems (VAC included, per its own
+already-documented mechanism) target HOW code came to be running in the process — the injection/loading artifact
+itself — not what data it subsequently reads. Manual-mapping (a custom PE loader that bypasses `LoadLibrary`
+entirely, leaving no PEB module-list entry) exists specifically to evade module-enumeration detectors; this
+project's proxy DLL, loaded via the game's own normal DLL search order, is the structural opposite in every
+dimension that heuristic checks for — genuine PEB entry, genuine file-backed mapping, genuine PE header, threads
+with real entrypoints inside its own module. That's a stronger claim than "similar to other clean tools" — it's
+"doesn't exhibit the artifact class that detector was built to find, by construction." One place the research
+stayed genuinely mixed rather than resolving cleanly: whether VAC's *external*-cheat defense (a documented
+handle-scanning mechanism against processes holding handles to a protected game) treats read-only memory access
+differently from write access. It doesn't — the handle's existence is described as the trigger, independent of
+what's done through it — but this is specific to EXTERNAL tools (Cheat Engine, a live debugger attaching to a
+separate process) and doesn't speak to this project's own in-process technique at all, since this project's code
+never opens a handle to itself.
+
+**One new, narrow caution, correctly scoped as title-specific rather than applied to MW3.** A Black Ops 2
+community report describes a VAC/TAC ban triggered by Cheat Engine use in a fully offline, local Zombies match —
+on its face a contradiction of the "VAC does nothing offline" finding this file already relies on. Confirmed as
+NOT transferable: Treyarch's BO2/3 titles run their own dedicated, always-on anti-cheat (TAC) layered on top of
+VAC, explicitly covering the entire game including offline solo modes — a deliberate design choice MW3(2011)'s
+own binaries and Steam FAQ do not exhibit (confirmed connection-gated `bdAntiCheat`, no self-hash found in either
+binary, per this issue's earlier passes). Filed here as a documented divergence, not a revision to MW3's own risk
+picture.
+
+**Net effect on this file's own bottom line**: reinforces, doesn't overturn, the existing "SP/Survival co-op
+near-zero, retail MP the one real exposure surface" conclusion — and specifically repairs a piece of the risk
+picture (the ENB precedent) that was previously weighing the MP-risk estimate in a more pessimistic direction than
+the evidence actually supports. Does not resolve the real gap this pass surfaced: no ban-rate data exists for the
+one mod category that's genuinely comparable to this project's own approach (DLL-injection into a live MW3
+process). **Also worth recording as project history, not a technical finding**: this exact research thread was
+the one interrupted mid-synthesis by two consecutive Sonnet 5 cyber-safeguard flags on 2026-08-19 (see
+`CLAUDE.md`'s own "MP feasibility research TABLED pending CVP review" entry) — the three forks' raw output
+survived only because each wrote to a separate scratch file before the flag hit, per this pass's own instruction
+to avoid file-collision on this document; the synthesis/merge into this file happened in a later, separate
+session after the interruption.
+
 ---
 
 ## 34. Glyph-patch mechanism test (`InjectFontGlyphPatchTest`, LB+RB+A) still not visually provable — wrong font targeted, corrected; no safe way found yet to actually see it (2026-07-21)
