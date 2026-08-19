@@ -9,10 +9,14 @@ we can") to the locked "SP + Survival first, then MP" ordering — Ghidra/disass
 work only, no live process, no debugger attach, no network connection, no
 implementation. See Session 3 below for a major correction to Session 2's dispatch-
 function hypothesis: **the prior candidate (`FUN_005a3960`) is now confirmed via full
-decompile + caller trace to be UI/menu display code, not the gameplay dispatcher** —
-the real MP input dispatcher remains genuinely unfound. Consistent with this project's
-own locked scope decision (SP + Survival first, then port to MP) — this is still a
-research-only detour, not a violation of it, and MP implementation genuinely has not begun.  
+decompile + caller trace to be UI/menu display code, not the gameplay dispatcher.**
+**Session 4 (same day) found MP's real key-event handler (`FUN_0048d120`) and its full
+ESCAPE/pause-menu call chain, structurally confirmed** — but the general per-button
+*gameplay* dispatcher (SP's `FUN_00438710` analog, for ADS/Sprint/Reload/etc.) is still
+genuinely unfound; evidence now points to it not existing in this key-event chain at all
+(see Session 4's closing analysis). Consistent with this project's own locked scope
+decision (SP + Survival first, then port to MP) — this is still a research-only detour,
+not a violation of it, and MP implementation genuinely has not begun.  
 **Scope:** Controller input architecture, signature-scanning targets, hook points
 
 ---
@@ -275,23 +279,153 @@ hook on top of what would have been the wrong function.
 
 ---
 
-## Next Session Checklist (revised 2026-08-19 after Session 3's correction)
+## Session 4 Analysis (2026-08-19, same day) — Real Key-Event Handler & Menu Chain Found; General Dispatcher Still Missing
+
+**Method:** Static-only, same constraints as Session 3 — Ghidra headless
+(`analyzeHeadless.bat ... -process iw5mp.exe -readOnly -noanalysis`) against the
+existing `D:\Tools\ghidra_projects_mp\iw5mp.gpr` project, running `FindConstantRefs.java`,
+`DecompileFuncs.java`, and `FindCallers.java`. No live game process, no debugger, no
+network connection at any point.
+
+### Technique note: the SP string-anchor method didn't transfer, byte-level constant scan did
+
+Tried repeating SP's exact discovery method first — `FindExactStrings.java` for
+`"CL_KeyEvent_Add"`/`"CL_KeyEvent_Sub"`/`"CL_KeyEvent_Mul"` (the cvar-name strings that
+led to SP's `FUN_00541020`) — **zero matches in `iw5mp.exe`**. These appear to be
+SP/Campaign-specific debug cvars not compiled into the retail MP build, not a naming
+convention that transfers. Fell back to `FindConstantRefs.java` scanning every
+instruction operand in the whole binary for the literal scalar `0x1b` (ESCAPE) — a
+blunter but binary-agnostic technique. This produced 22 `CMP reg, 0x1b`-style hits;
+narrowed by address-locality to the two closest to the already-confirmed movement/look
+cluster (`0x00489xxx`-`0x0048cxxx`): `FUN_0048d070` and `FUN_0048d120`, both immediately
+adjacent. This locality heuristic (same-source-file functions cluster in the compiled
+binary) is the same one already validated for the confirmed movement/look/orchestrator
+functions — worth keeping as a general MP-RE technique going forward, not just for this
+one lookup.
+
+### `FUN_0048d120` confirmed as MP's real key-event handler (SP's `FUN_00541020` analog)
+
+**`FUN_0048d120(int param_1, int param_2, int param_3)`** — `param_1` = playerIndex,
+`param_2` = raw keycode, `param_3` = isDown. Structural confirmation, not a heuristic
+guess: ESCAPE (`0x1b`) is checked and special-cased at three separate points (lines
+102-104, 148, 233-235 of the decompile) against a game-state value read from
+`DAT_010625f4`, exactly mirroring SP's `FUN_00541020` pattern of hardcoding ESCAPE
+against a state/gate check rather than routing it through any generic string-name
+dispatcher. Also hardcodes the console/tilde key (`0x60`/`0x7e`) the same way SP does.
+Non-special keys fall through to a generic path (line 194) that calls
+`FUN_006ada70(param_1, param_2, param_3)` — see below, this is NOT the general gameplay
+dispatcher despite being the natural next hop.
+
+**Full ESCAPE/pause-menu call chain mapped, each function decompiled and structurally
+confirmed (not guessed):**
+
+| Role | SP equivalent | MP function | Confirmed behavior |
+|---|---|---|---|
+| Key-event handler (ESCAPE hardcoded here) | `FUN_00541020` | `FUN_0048d120` | 3-arg (playerIndex, keycode, isDown); ESCAPE + `~` special-cased against `DAT_010625f4` game-state |
+| Open pause menu | `FUN_004d6620` | `FUN_0048f050` | Reads `DAT_010625f4`; if `==1` calls a cleanup (`FUN_004860e0`), else zeroes a per-player state row; dispatches into `FUN_0058ef50` with mode 0 or 1 |
+| Menu-mode/state dispatcher | `FUN_004396d0` (mode 0=resume, mode 2=open) | `FUN_0058ef50(param_1, param_2, mode)` | Real `switch(mode)`, 11 real cases decompiled — see below |
+| Forward key to active menu / unpause | `FUN_004d9850` | `FUN_00592820` | Checks gate bit `0x10` via `FUN_0048c700(...,0x10)`; if menu active, forwards through `FUN_005ac2c0`; else clears the gate bit, sets `cl_paused 0`, and calls `FUN_0048d5f0` (unpause path) |
+
+**`FUN_0058ef50`'s mode switch, fully decompiled — the real MP menu-state map:**
+mode 0 = resume/unpause (clears gate bit `0x10`, `cl_paused 0`), mode 1 = open main
+pause menu (with `com_errorMessage`-driven error-popup branching), mode 2 = disconnect/
+demo-playback handling, mode 3 = `pregame_loaderror_mp` popup, mode 6 = scoreboard, mode
+7/8/9 = legacy Xbox Live lobby/private-lobby menu screens (`menu_xboxlive`,
+`menu_xboxlive_lobby`, `menu_xboxlive_privatelobby` — real leftover console-menu string
+names, still present and reachable in this PC build), mode 10 = `ingame_migration`
+(host-migration UI), mode `0xb` = `popup_vault` (create-a-class/loadout screen). This is
+a genuinely useful map for any future menu-navigation work (item 4 in this project's own
+architecture doc), independent of the controller-input-dispatch question this session
+was actually chasing.
+
+### `FUN_006ada70` is NOT the general gameplay dispatcher — it's Killcam/Theater-mode only
+
+The natural next hop from `FUN_0048d120`'s generic (non-ESCAPE) key path. Full decompile
+shows a real `switch(param_2)` over specific keycodes (`0x20` space, `0x72` 'r', `0x9a`-
+`0xab` zoom/playback-speed float adjustments, `200`/`0xc9` numeric-row keys) — **but the
+entire switch is gated on `DAT_010625f4 == 0xb`**, the same state value `FUN_0058ef50`
+uses for the Vault/create-a-class popup case, but used here as a *precondition* rather
+than a *target* — meaning this dispatcher only does anything when the game is in a
+specific non-gameplay state. The case semantics (play/pause, rewind/fast-forward zoom
+level adjustment via float accumulation, `FUN_006aaaa0` state-machine calls) read as
+**Killcam/Theater/replay-mode controls**, not live multiplayer gameplay input. Confirmed
+functionally inert for regular gameplay: outside state `0xb` every case falls through
+and the function returns without effect.
+
+### Bind-name lookup pathway fully mapped — confirmed UI-only, and a second, separate table found
+
+`FindCallers.java` on `FUN_0048c1c0` found exactly 3 callers, all decompiled:
+
+- **`FUN_0048c220(int param_1)`** (the Session 3 checklist item) — `__fastcall`, calls
+  `FUN_0048c1c0()` to resolve a bind-name to an internal ID, then linearly scans a
+  **256-entry, 3-dword-stride** table at `&DAT_00b3c768 + param_1*0x34b` for up to 2
+  matching raw keycodes. **This is a second, distinct table from the 91-entry
+  `PTR_DAT_008aa3b8` name table** — it's the direct structural analog of SP's
+  `DAT_00a98e4c` (256 entries, 3-dword stride, per-player row) used for
+  `Key_KeynumToBindString`-style "what key is this bound to" queries. MP's per-player
+  row stride (`0x34b`) is one dword off SP's (`0x34a`) — consistent with the two being
+  independently-compiled analogs of the same underlying structure, not shared addresses.
+- **`FUN_005a3e10`** — a bind-*rebinding* state machine (`DAT_05989878`/`DAT_05989880`
+  toggle flags gate a "waiting for a key to assign" mode), calls `FUN_0048c1c0` to
+  resolve the target bind's ID before writing a new key assignment via `FUN_0048c180`.
+  Confirms this whole pathway is the Controls-menu's interactive rebind flow, not
+  anything gameplay-time.
+- **`FUN_005ac2c0`** — the real find here: this is called directly from `FUN_00592820`
+  (the "forward key to active menu" function above) whenever a menu is open, and its
+  full decompile is a genuine **menu-navigation key router** — real cases for Enter/
+  select (`0xd`/`0xbf`/`0xca`), ESCAPE-within-menu, D-pad-like navigation-adjacent
+  keycodes (`0x9a`/`0x9c`/`0xb7`/`0xce` and `0xcd`/`0xce` pairs), tab/switch (`200`/
+  `0xc9`), and developer-only console/screenshot toggles (`0xb1`/`0xb2`, gated on the
+  `"developer"` dvar). **This is the real menu/UI navigation dispatcher this project's
+  own architecture doc (item 4, "still not implemented beyond Start's open/close") has
+  been looking for** — a concrete, structurally-confirmed target for that future work,
+  found as a byproduct of this session's actual goal rather than the goal itself.
+
+### Where this leaves the actual gameplay-dispatcher hunt
+
+**Genuinely still unfound, and the evidence now suggests a different conclusion than
+"it exists somewhere in this chain and hasn't been found yet."** Every function reached
+from `FUN_0048d120`'s key-event path is either ESCAPE/pause-menu-specific
+(`FUN_0058ef50`, `FUN_0048f050`, `FUN_00592820`), menu-navigation-specific
+(`FUN_005ac2c0`), Controls-menu-display/rebind-specific (`FUN_0048c1c0`/`FUN_0048c220`/
+`FUN_0048c620`/`FUN_005a3ac0`/`FUN_005a3960`), or Killcam/Theater-specific
+(`FUN_006ada70`). None of them fire during ordinary live gameplay with a menu closed.
+**The likeliest explanation, consistent with how SP's own ADS/Sprint/Reload were found
+to work** (real `kbutton_t` `KeyDown`/`KeyUp` calls triggered by bind *execution*
+— i.e. the Cbuf/Cmd string-command pathway running `"+ads"`/`"-ads"` etc. — not by
+this discrete per-keycode special-case chain at all): MP's regular gameplay buttons
+almost certainly bypass this entire key-event chain the same way, going through
+`kbutton_t` state directly via bind-command execution. **Next static step, not yet
+attempted**: locate MP's own `kbutton_t` array and `KeyDown`/`KeyUp`-style helper
+functions directly (by analogy to how SP's ADS/Reload kbuttons were originally found —
+memdiff/live-write-testing isn't available under the static-only constraint, so this
+needs a structural approach: cross-reference the confirmed bind-name table entries
+against candidate `kbutton_t`-sized/shaped global structures, or search for functions
+with the same two-call-site KeyDown-then-KeyUp shape SP's confirmed kbuttons have),
+rather than continuing to chase the key-event special-case chain further — that chain
+has now been explored close to exhaustively and doesn't lead there.
+
+---
+
+## Next Session Checklist (revised 2026-08-19 after Session 4)
 
 - [x] Run Ghidra decompile script without truncation
 - [x] Document `FUN_005a3960` and `FUN_0048c1c0` full decompiles
-- [x] ~~Extract byte patterns for both functions~~ — N/A for `FUN_005a3960` (confirmed UI code, not a hook target); `FUN_0048c1c0`'s role still unconfirmed, revisit once its own callers are traced
+- [x] ~~Extract byte patterns for both functions~~ — N/A for `FUN_005a3960` (confirmed UI code, not a hook target); `FUN_0048c1c0` also confirmed UI/rebind-only, not a gameplay hook target
 - [x] ~~Verify offset shift predictability vs. SP~~ — N/A, no SP analog for a Controls-menu display helper
-- [ ] Answer outstanding questions via decompile analysis — **restarted**, see below
+- [x] Answer outstanding questions via decompile analysis — the dispatcher question specifically restarts from a different angle, see below
 - [x] Update this file with findings
-- [ ] Create pattern-scanning test candidates — blocked on finding the real dispatcher first
+- [ ] Create pattern-scanning test candidates — still blocked on finding the real gameplay dispatcher/kbutton mechanism first
 - [ ] Plan hook-point validation via live debugging — out of scope until this project's ordering/CVP gating is resolved (see CLAUDE.md's locked scope decisions)
+- [x] Trace `FUN_0048c1c0`'s own callers — done, all 3 confirmed UI/menu-nav/rebind, not gameplay dispatch
+- [x] Decompile `FUN_0048c220` — done, confirmed `Key_KeynumToBindString`-style helper over a second, 256-entry raw-keycode table
+- [x] Find MP's real per-frame key-event handler (SP's analog: `FUN_00541020`) — **found: `FUN_0048d120`**, full ESCAPE/pause-menu chain mapped
 
-**New checklist, static-only:**
-- [ ] Trace `FUN_0048c1c0`'s own callers (`FindCallers.java` on `0048c1c0`) — is it part of the real dispatcher, the same UI pathway as `FUN_005a3960`, or both?
-- [ ] Decompile `FUN_0048c220` (the inner primitive `FUN_0048c620` calls) — likely the real raw-keynum-for-bind-name resolver, may lead toward the actual dispatcher
-- [ ] Find MP's real per-frame key-event handler (SP's analog: `FUN_00541020`) by searching for where ESCAPE (`0x1b`) is hardcoded, same technique that found SP's handler — this is the most promising path to the real dispatcher, since SP's dispatcher was found by following that handler's call chain, not by reference-density guessing
-- [ ] Resolve the unnamed global `DAT_007ef050` string (one of the four alias-cluster trigger names in `FUN_005a3960`)
-- [ ] Re-derive the bind-name table's exact base address and stride (4-byte vs 8-byte) now that the entry-count bound (91) is known but doesn't cleanly fit the previously-eyeballed 300-byte range
+**New checklist, static-only, Session 5:**
+- [ ] **Highest priority**: locate MP's `kbutton_t` array and `KeyDown`/`KeyUp` helper functions directly — the likeliest real home of gameplay button dispatch (ADS/Sprint/Reload/Fire/etc.), structurally separate from the key-event chain this session fully explored
+- [ ] Resolve the unnamed global `DAT_007ef050` string (one of the four alias-cluster trigger names in `FUN_005a3960`, still unresolved from Session 3)
+- [ ] Re-derive the bind-name table's exact base address and stride now that TWO separate tables are confirmed to exist (91-entry name table at `PTR_DAT_008aa3b8`; 256-entry raw-keycode table at `&DAT_00b3c768+param*0x34b`, stride 3) — don't conflate them in future notes
+- [ ] `FUN_005ac2c0` (the confirmed menu-navigation key router) is a strong, ready-to-use future target for this project's still-unimplemented full menu/UI navigation work (architecture doc item 4) — worth flagging there, not just here
 
 ---
 
@@ -311,15 +445,22 @@ hook on top of what would have been the wrong function.
 
 ## Signature-Scanning Readiness
 
-**Status:** ~25% ready (revised down 2026-08-19 — Session 2's "70%" counted an
-unconfirmed dispatch candidate as found; it wasn't)
-- Bind-name table location confirmed ✅ (base address needs re-verification, see checklist — off by at least 4 bytes from what was recorded)
-- Movement/look/orchestrator functions matched to SP equivalents ✅ (Session 1, unaffected by this correction)
-- Dispatch function candidate identified ❌ — **refuted this session; real dispatcher unfound**
-- Lookup function (`FUN_0048c1c0`) — decompiled, but its role in real input handling still unconfirmed
-- Decompiles for `FUN_005a3960`/`FUN_0048c1c0`/`FUN_0048c620`/`FUN_005c2a80` ✅ complete, no truncation
-- Byte patterns extracted: none — nothing confirmed as a real hook target yet
-- Live validation: not started, and out of scope until static analysis actually locates the dispatcher
+**Status:** ~35% ready (revised 2026-08-19, Session 4 — up from Session 3's 25%: a real,
+structurally-confirmed function, `FUN_0048d120`, is now a genuine hook-target candidate
+for menu/pause-state key handling, and a full menu-navigation dispatcher was located as
+a byproduct; still capped well below 70% because the actual *gameplay*-button dispatch
+mechanism — the highest-value target for this project's controller work — remains
+unfound, and no byte-pattern signatures have been extracted for anything yet)
+- Bind-name table location confirmed ✅ (base address still needs re-verification per checklist)
+- Movement/look/orchestrator functions matched to SP equivalents ✅ (Session 1, unaffected by later corrections)
+- Key-event handler (`FUN_0048d120`) ✅ — structurally confirmed (ESCAPE hardcoded against game-state, matching SP's `FUN_00541020` pattern), a real hook-target candidate for future pause/menu-state input work
+- Full ESCAPE/pause-menu call chain (`FUN_0048f050`, `FUN_0058ef50`, `FUN_00592820`) ✅ decompiled and mapped, 11 real menu-mode cases documented
+- Menu-navigation key router (`FUN_005ac2c0`) ✅ found and decompiled — a strong future target for this project's still-unimplemented full menu/UI navigation work (architecture doc item 4), found as a byproduct of this session
+- Killcam/Theater-mode dispatcher (`FUN_006ada70`) ✅ identified and ruled out as the gameplay dispatcher
+- Bind-name-to-key lookup pathway (`FUN_0048c1c0`/`FUN_0048c220`/`FUN_0048c620`/`FUN_005a3e10`) ✅ fully traced — confirmed Controls-menu display/rebind UI only, not gameplay dispatch; a second, distinct 256-entry raw-keycode table found in the process (SP `DAT_00a98e4c` analog)
+- **General gameplay-button dispatcher (ADS/Sprint/Reload/Fire/etc., SP's `FUN_00438710` analog): still unfound** — this session's evidence now points toward it not existing in the key-event chain at all (see Session 4's closing analysis); next step is a direct `kbutton_t`-structure search, not further key-event-chain tracing
+- Byte patterns extracted: none — nothing in the key-event chain is itself a gameplay hook target, so signature extraction stays deferred until the real kbutton mechanism is found
+- Live validation: not started, and out of scope until this project's ordering/CVP gating is resolved
 
-**Ready to proceed with:** Tracing `FUN_0048c1c0`'s callers, decompiling `FUN_0048c220`, and searching for MP's real per-frame key-event handler (see "New checklist, static-only" above) — all still static/offline work.  
-**Blocked on:** Nothing tooling-wise (the truncation issue from Session 2 is resolved — writing decompiles directly to a file via `DecompileFuncs.java` never truncates); blocked only on the actual RE work of finding the real dispatcher.
+**Ready to proceed with:** Session 5's checklist above — primarily, locating MP's `kbutton_t` array/KeyDown-KeyUp helpers directly, since the key-event chain this session explored has been ruled out as the gameplay-dispatch mechanism. All still static/offline work.  
+**Blocked on:** Nothing tooling-wise — blocked only on the actual RE work of finding the real gameplay-input mechanism, which this session's findings suggest lives in a structurally different part of the binary than where Sessions 2-4 were looking.
