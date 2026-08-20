@@ -5362,32 +5362,30 @@ citation for the 42680 half specifically, where before it was inferred/assumed r
 extensively throughout `iw5sp.exe` development per this project's entire documented history) were never
 previously assessed as their own risk category.** General VAC behavior (well-documented, not internal
 mechanics): VAC only actively scans a process while it's connected to a VAC-secured multiplayer session — it
-does not scan or ban for offline/non-VAC-app play. Combined with the finding directly above — the Campaign/
-Survival app (42680) has never listed VAC as a feature at all, as a SEPARATE Steam application from the MP app
-that does — this gives two independent, stacking reasons the SP-side live-debugging work already done in this
-project carried effectively zero VAC risk: (1) the app itself isn't VAC-covered, and (2) even setting that
-aside, VAC doesn't scan disconnected/offline play in general. **This retroactively validates every x32dbg/
-memdiff session this project has ever run against `iw5sp.exe`**, and also means the "SP+Survival first, then
-MP" ordering decision (locked 2026-07-13, before VAC was even on this project's radar) turned out to also be
-the maximally-safe ordering from a ban-risk standpoint, not just a scope/ergonomics choice — worth noting as a
-retroactive confirmation, not a reason the ordering was chosen at the time. **This does NOT extend to any future
-live debugging against `iw5mp.exe`** — that binary lives under the VAC-listed app, and this file's existing
-"real and non-zero" MP risk conclusion stands unchanged; this pass only closes the SP-side question, which had
-genuinely never been asked before.
+does not scan or ban for offline/non-VAC-app play. This is well-worn forum consensus, not an authoritative Valve
+statement, and the 42680 store page not listing VAC is an absent marketing badge, not proof of absent monitoring
+— neither is strong-enough sourcing to declare the question closed. With that caveat, both point the same
+direction and are at least CONSISTENT WITH the SP-side live-debugging work already done in this project
+(x32dbg/memdiff against `iw5sp.exe`) carrying low risk. Worth flagging that this specific question — treating
+the project's own RE process, not just the shipped mod, as a risk category — genuinely hadn't been asked in
+passes one through five; **the underlying fact it confirms (SP and MP are separate risk surfaces) was already
+assumed throughout this file and isn't itself news** — this pass's real contribution is narrower: independently
+confirming Campaign/Survival is a literally separate Steam app ID (42680) from MP (42690), and getting a live,
+direct citation for 42680's feature list instead of an inferred one. **Does NOT extend to any future live
+debugging against `iw5mp.exe`** — that binary lives under the VAC-listed app, and this file's existing "real and
+non-zero" MP risk conclusion stands unchanged.
 
-**Precedent-tool comparison refreshed, one useful new axis found: macro/KBM-emulation capability appears to be
-what draws anti-cheat scrutiny among controller-remapping tools specifically, not raw analog remapping itself.**
-DS4Windows (virtual-controller remapping via ViGEmBus) is widely whitelisted by anti-cheat vendors and treated
-as an accessibility/compatibility tool — no documented competitive-title bans found. reWASD carries a
-meaningfully different reputation specifically because of its macro/turbo/keyboard-and-mouse-on-controller
-features, which several competitive titles' anti-cheat flags or discourages. **This project's own technique —
-real analog `forwardmove`/`rightmove`/mouse-delta values written into the game's own real usercmd/kbutton
-fields, no macros, no KBM emulation, no input synthesis beyond the two narrowly-scoped exceptions already
-tracked elsewhere in this file (issues #5/#14's Y-hold/D-pad-left `PostMessageA` synthesis)** — sits
-structurally on the DS4Windows side of that line, not the reWASD side. Doesn't change this file's risk
-conclusion for MP (the injection method, not the input content, is still VAC's documented focus per the Fifth
-pass's mechanics analysis above) but is a positive, citable data point for the "what kind of tool is this"
-framing question specifically.
+**Correction, same pass: the DS4Windows comparison originally drafted here was a bad analogy and has been
+removed rather than left standing.** DS4Windows never touches the target game's process at all — it's a
+kernel-level virtual-controller driver (ViGEmBus) that feeds translated input through standard XInput from
+OUTSIDE the game entirely; it's whitelisted because there's nothing inside the game's process for a scanner to
+find. This project's proxy `d3d9.dll` does the opposite: injects into the process, uses MinHook to install
+inline hooks on real engine functions, and writes directly into live game structures — architecturally the
+ReShade/DLL-injection-mod-menu category, not the DS4Windows category. The Fifth pass already correctly
+identified that category as the closest analog with **zero ban-rate data either way** — that unresolved
+conclusion stands; framing DS4Windows as reassuring precedent buried it under an axis (macro/KBM-emulation
+capability) that's real for comparing DS4Windows-vs-reWASD specifically, but isn't the axis that actually
+separates DS4Windows from this project's own technique, and shouldn't have been presented as if it were.
 
 **Not re-litigated this pass** (already settled by priors, still holds): the ENB citation correction (Fifth
 pass), the ReShade "no proven bans, risk unproven either way" characterization (Second/Fifth pass), the
