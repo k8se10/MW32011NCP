@@ -5387,6 +5387,38 @@ conclusion stands; framing DS4Windows as reassuring precedent buried it under an
 capability) that's real for comparing DS4Windows-vs-reWASD specifically, but isn't the axis that actually
 separates DS4Windows from this project's own technique, and shouldn't have been presented as if it were.
 
+**Direct follow-up question this pass, and it does NOT resolve favorably: is VAC risk on `iw5mp.exe` scoped to
+public/matchmade sessions specifically, such that private/friends-only lobbies could be carved out as a lower-risk
+category?** No — the evidence found points the other way. Community-sourced guidance specifically naming **MW2 &
+MW3** states VAC is enabled "on all multiplayer servers, public and private" (aggregated Steam Community/forum
+citation, not a hyperlinked first-party Valve statement — flagged at that confidence level, not higher). This is
+architecturally consistent with VAC's own general design, independently corroborated via a same-mechanism CS:GO
+thread: a server/session is either launched in secure mode or insecure mode (`-insecure`, a launch-side flag),
+and a lobby's public-vs-private VISIBILITY setting is unrelated to that flag — "private" controls who can join,
+not whether VAC is active. **No precedent was found, for any Steam-era CoD title, of private or bot-only lobbies
+being VAC-exempt** — if anything, a BO2 mod-menu-in-private-lobby-with-one-bot ban report points the same
+direction (caveat: BO2 runs its own separate always-on TAC layer on top of VAC per the Fifth pass's finding, so
+that specific case doesn't transfer cleanly to MW3, but the "private ≠ safe" shape of the outcome is the same).
+**Net effect: this file's MP risk boundary stays where it already was — any live multiplayer session at all, not
+"public matchmaking" as a narrower subset — the one genuinely VAC-inactive zone remains no session at all (sitting
+at the MP main menu, or anything under the Campaign/Survival app).**
+
+**User-reported first-hand precedent, logged as a real data point, not as proof of safety:** the user has
+personally done both live and static RE against Call of Duty: Ghosts' multiplayer executable, via live memory
+dumping specifically (an external tool reading the live process' memory — not this project's own in-process
+proxy-DLL technique), conducted in non-public games, with no VAC ban resulting as far as reported. This is a
+genuine, relevant test case: external memory-dumping is close to the exact artifact class the Fifth pass's own
+handle-scanning theory describes as VAC's documented external-cheat trigger (a process holding a handle to the
+protected game, independent of read vs. write) — and per the finding directly above, "non-public" shouldn't have
+provided cover if that mechanism fired. The most consistent reading, stacked with this file's existing "likely
+running a stale/un-updated signature set for a title this old" theory (First correction pass) and VAC's own
+documented multi-day-to-week detection-then-ban delay (meaning a clean outcome so far doesn't rule out a
+still-pending flag): either Ghosts'/VAC's signature set didn't happen to catch this specific tool/technique, or
+enforcement on a title this old is inconsistent — **not** that private lobbies are exempt, and **not** proof this
+project's own (structurally different, in-process-injection) technique would fare the same way if tested live
+against `iw5mp.exe`. Filed here as real anecdotal evidence worth having on record, explicitly not upgraded to a
+conclusion.
+
 **Not re-litigated this pass** (already settled by priors, still holds): the ENB citation correction (Fifth
 pass), the ReShade "no proven bans, risk unproven either way" characterization (Second/Fifth pass), the
 GoldSrc/`opengl32.dll` non-transfer finding (Fifth pass), the P2P/host-migration effectiveness caveat (First
