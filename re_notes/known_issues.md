@@ -2,10 +2,16 @@
 
 Tracked as tasks in the working session; this file is the standalone reference so they
 don't stay buried in `iw5sp.md`'s investigation log. Update status here as each is
-resolved. Last updated 2026-08-18 (issue #79 added: extended-session stutter, three
-real causes found and fixed -- log append-mode, controller-poll rescanning, a broken
-diagnostic-log dedup -- one residual enemy-look GPU-cost theory parked, not
-resolved). *(Prior correction, 2026-08-17 — issue #78 added: dog/hyena melee-struggle
+resolved. Last updated 2026-08-20 (status/Index audit, same repeat-offender pattern as
+every correction below: the Index section had drifted to stop at #67 despite issues
+#68-79 already existing as full standalone entries below it -- all 12 backfilled into
+the Index. Also found and corrected one real stale status: #67's Index line still said
+"Open, not yet root-caused" months after its own section had a "FIXED" title tag, and
+that title tag ITSELF was over-optimistic -- the real fix for the 22GB log-growth
+problem shipped later, under #79, not the 2026-08-08 pass #67 originally credited. See
+#67's own entry for the full correction. No other issue in this file was found to have
+a similarly stale status on this pass -- the rest checked out against PATCHNOTES.md and
+each other). *(Prior correction, 2026-08-17 — issue #78 added: dog/hyena melee-struggle
 HUD prompts in Survival have no controller-glyph coverage, real assets found, no
 safe hookable code path found that pass)*. *(Prior
 correction, 2026-08-03 — this line had drifted that far behind despite issues #64-#76
@@ -46,8 +52,8 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#15](#15-aim-assist-entity-classification--permanently-removed-2026-07-20-superseding-the-parked-status-below) — Aim assist entity classification — **Resolved** (feature permanently removed)
 - *(#16–#21 don't exist in this file)*
 - [#22](#22-real-controller-menu-navigation-d-pad--a--resolved-confirmed-live-2026-07-17) — Real controller menu navigation (D-pad + A) — **Resolved**
-- [#23](#23-real-controller-options-menu--native-zonemenu-injection-blocked-on-a-real-architectural-limit-2026-07-17) — Real controller options menu — **Investigating** (implementation-ready plan, real menu name corrected to `pc_options_controls`)
-- [#24](#24-vibrationrumble--confirmed-live-hooks-break-game-startup-entirely-disabled-2026-07-18) — Vibration/rumble — **Open** (disabled, crashes on startup if enabled)
+- [#23](#23-real-controller-options-menu--native-zonemenu-injection-blocked-on-a-real-architectural-limit-2026-07-17) — Real controller options menu — **Resolved** (by supersession, 2026-08-20 correction — the native zone-injection plan here was superseded by #66's custom-drawn Options screen, confirmed live and shipped since v0.3.0)
+- [#24](#24-vibrationrumble--reimplemented-2026-08-03-fire-via-a-re-verified-hook-damage-via-a-per-frame-poll-instead-of-a-hook) — Vibration/rumble — **Resolved, confirmed live** (2026-08-20 correction: fixed and confirmed live 2026-08-03 per issue #63's own citation; strength tuning/armor/reload-rumble follow-ups tracked separately under #63)
 - [#25](#25-mw3-client-compatibility--plutoniumalterwaredeckops-survey-2026-07-17) — MW3 client compatibility survey — **Deferred**
 - [#26](#26-full-breadth-engine-research-pass--killstreaks-weapons-perks-hudui-aivehicles-physicshealth-mp-2026-07-17-later-session) — Full-breadth engine research pass — **Resolved** (research complete)
 - [#27](#27-campaign-controller-playtest-live-findings-2026-07-17-later-session--in-progress) — Campaign controller playtest, live findings (multi-bug) — **Open** (mixed — see the entry's own per-bug summary)
@@ -90,7 +96,19 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#64](#64-single-av-vendor-flags-the-v030-release-dll--assessed-as-a-false-positive-2026-08-03) — Single AV vendor (VBA32) flags the v0.3.0 release DLL — **Resolved** (assessed as a generic heuristic false positive; every major vendor clean)
 - [#65](#65-xbox-360-console-ground-truth-sensitivity-setting-memory-location-2026-08-03) — Xbox 360 console ground-truth: Sensitivity setting memory location — **Investigating** (one strong single-pair candidate found via Xenia memory diff, not yet cross-validated against a second independent change; no real degrees-per-second citation found for the console's own slider scale)
 - [#66](#66-custom-in-game-options-overlay-first-implementation-2026-08-04) — Custom in-game options overlay — full Options-flow replacement, invoked directly from the real pause menu's own "Options" button (`PAUSE_LIST_1`); restyled 2026-08-05 to match real console reference screenshots (edge-to-edge panel, gradient highlight, inline glyph, corner Back hint) plus new Stick/Button Layout drill-down screens with controller diagrams — **NOT yet live-tested since the restyle**; Video/Audio/AdvancedVideo/Movement/Actions tabs still pending
-- [#67](#67-proxy_d3d9log-has-grown-to-22gb--found-incidentally-while-diagnosing-issue-66-not-yet-fixed) — `proxy_d3d9.log` has grown to ~22GB from unconditional per-frame diagnostic logging left on since earlier research passes — **Open**, not yet root-caused to a specific call site or fixed
+- [#67](#67-proxy_d3d9log-has-grown-to-22gb--found-incidentally-while-diagnosing-issue-66-not-yet-fixed) — `proxy_d3d9.log` has grown to ~22GB — **Resolved, confirmed live** (2026-08-20 correction: the 2026-08-08 fix below only throttled flush frequency, not volume; the real fix shipped and was confirmed live under #79)
+- [#68](#68-controller-glyph-icons-never-showing-on-a-non-english-game-language-2026-08-05) — Controller-glyph icons never showing on a non-English game language — **Resolved, confirmed live** (menu-position sub-issue remains open, tracked under #69)
+- [#69](#69-full-mod-localization-multi-language-support-2026-08-05-roadmap-level-tracking-issue) — Full mod localization / multi-language support — **Roadmap Idea / Open**
+- [#70](#70-corner-hints--gameplay-hints-malformedmispositioned-at-non-169-resolutions--2026-08-08) — Corner hints + gameplay hints malformed/mispositioned at non-16:9 resolutions — **Fixed (9 rounds), not yet live-tested**
+- [#71](#71-some-players-see-no-controller-glyph-icons-at-all-even-on-english-with-default-settings--2026-08-08-investigating) — Some players see no controller-glyph icons at all — **Investigating** (one real bug fixed and confirmed live — a critical mouse-lag regression it introduced; original "no glyphs" root cause still open, see #74)
+- [#72](#72-real-resource-lifecycle-crash-bug-g_optwhitetexture-and-every-options-screen-text-cache-never-released--2026-08-08) — Resource-lifecycle crash bug: Options-screen textures never released on device recreation — **Fixed, not yet live-tested**
+- [#73](#73-pickup-weapon--throw-grenade-controller-prompts-dont-show-at-43-resolutions-reload-unaffected--2026-08-08) — Pickup weapon / throw grenade prompts don't show at 4:3 resolutions — **Fixed, not yet live-tested**
+- [#74](#74-no-glyphs-reports-persist-post-v031h1--both-previously-fixed-causes-ruled-out-for-at-least-2-of-3-reporters-major-audit-opened-2026-08-11) — "No glyphs" reports persist post-v0.3.1.h1 — **Investigating** (both prior fixes ruled out for 2 of 3 reporters; diagnostics shipped, no fix yet)
+- [#75](#75-dust-to-dust-elevator-mantle--controller-falls-through-instead-of-grabbing-ledge-keyboardmouse-unaffected-2026-08-10-reported-not-yet-investigated) — "Dust to Dust" elevator mantle: controller falls through instead of grabbing ledge — **Open**, not yet investigated
+- [#76](#76-native-dualsense-support-raw-hid-bypassing-steam-input--first-pass-gyro-aim--previewwip-implemented-not-live-tested-2026-08-11) — Native DualSense support (raw HID) + first-pass gyro-aim — **PREVIEW/WIP**, implemented, not live-tested (a critical boot-hang regression it introduced was found and fixed same day)
+- [#77](#77-bluetooth-dualsense-stick-input-garbledunusable--three-real-fixes-shipped-symptom-unchanged-root-cause-not-found-2026-08-16) — Bluetooth DualSense: stick input garbled/unusable — **Open**, root cause not found (USB unaffected)
+- [#78](#78-doghyena-melee-struggle-hud-prompts-survival-have-no-controller-glyph-coverage-2026-08-17-reported-real-assets-confirmed-no-safe-code-hook-found-this-pass) — Dog/hyena melee-struggle HUD prompts (Survival) have no controller-glyph coverage — **Investigated, NOT implemented** (no safe live-verifiable hook found this pass)
+- [#79](#79-extended-session-stutter--three-real-evidence-backed-causes-found-and-fixed-one-residual-enemy-look-gpu-cost-parked-not-resolved-2026-08-1718) — Extended-session stutter — **Mostly fixed, confirmed live "miles better"** (one residual enemy-look GPU-cost dip PARKED, not resolved)
 
 ---
 
@@ -1844,7 +1862,7 @@ considered done end-to-end.
 
 ## 23. Real controller options menu — native zone/menu injection, blocked on a real architectural limit (2026-07-17)
 
-**Status:** Investigating. Task #23. Full technical trail in `iw5sp.md`'s "Real
+**Status:** Resolved (by supersession, 2026-08-20 correction, status/Index sync audit). Task #23. Full technical trail in `iw5sp.md`'s "Real
 controller options menu" section — this is a summary. **The blocker below is now
 resolved to an implementation-ready plan — see the "REFINED, implementation-ready
 (2026-07-20...)" entry near the end of the "## 22..." boot-splice discussion further
@@ -1852,6 +1870,8 @@ up this file (search for `FUN_00679680`) for the concrete, corrected injection �
 and its own follow-up "Diagnostic IMPLEMENTED 2026-07-20" entry right below it for
 the read-only `Hook_FUN_00679680` diagnostic now built and awaiting a live-test
 before the actual splice is attempted.**
+
+**Correction, 2026-08-20**: this native-zone/menu-injection plan was never actually attempted past the diagnostic stage — it was overtaken by a different, safer approach. Issue #66's own opening line states this directly, already on record in this same file: "build this project's own in-game settings UI, since native menu content injection is confirmed unsafe for real content (issue #23)." Issue #66's resulting custom-drawn Options screen was live-tested and confirmed working ("it works," 2026-08-04) and has shipped since v0.3.0. This issue's own goal (a real controller options menu) is therefore resolved, just via a different mechanism than the one this entry investigated — treat #66 as the actual resolution, this entry as superseded research history, same convention as #34/#38/#39 elsewhere in this file.
 approach and zone-queue entry format.**
 
 **Goal:** a real controller-options screen integrated into normal in-game Options
@@ -1985,7 +2005,9 @@ replacement installer fallback.
 
 ## 24. Vibration/rumble — REIMPLEMENTED (2026-08-03): fire via a re-verified hook, damage via a per-frame poll instead of a hook
 
-**Status:** Reimplemented, built and deployed, **pending live playtest** (a fork built this on the coordinator's own machine without a controller in hand — this specific line always needs a real live confirmation before being called done). Full round-by-round history below, oldest first, real verdict at the end.
+**Status:** Resolved, confirmed live (2026-08-20 correction, status/Index sync audit). Full round-by-round history below, oldest first, real verdict at the end.
+
+**Correction, 2026-08-20**: this entry's own last-written status ("pending live playtest") and the Index's line for it (an even older "Open, disabled, crashes on startup if enabled") were both stale — the Index in particular still pointed at this issue's original pre-reimplementation title. Issue #63's own opening line, already on record in this same file, directly confirms live testing happened: "Live-reported after issue #24's DLL fix made vibration physically real for the first time: 'vibration needs strength settings it works but extremely weak.'" I.e. this issue's core deliverable (real hardware vibration on fire/damage, via the DLL-loading fix at the end of this entry's own trail) was confirmed working live on 2026-08-03, just under-tuned — strength/envelope tuning, Survival armor support, and per-animation-step reload rumble are real, separate, still-partially-open follow-ups already tracked under issue #63, not reasons to leave this entry itself as "pending."
 
 **CORRECTED VERDICT (2026-08-03, same day as the "both targets safe" call below — that call was WRONG for one of the two targets, caught by actually counting real per-call-site argument pushes instead of trusting the decompiler's signature guess):**
 - **`FUN_0045e320` (fire) — confirmed genuinely safe**, and now more rigorously than the entry below claims. A fresh Ghidra headless pass (`DumpCallSitePushCounts.java`, dumps the raw disassembly immediately preceding every real call to a target function) found its ONE real call site (`FUN_005b68c0 @ 0x005b6991`) pushes exactly 2 real arguments immediately before the `CALL` — matching its own decompiled 2-parameter signature exactly. Hooked directly.
@@ -9369,7 +9391,9 @@ Rebuilt `proxy_d3d9.dll` and `ui_hot.dll` after this round -- both compile clean
 
 ## 67. `proxy_d3d9.log` has grown to 22GB — FIXED 2026-08-08
 
-**Status:** Fixed, rebuilt, not yet live-tested (log volume over a real long session can't be confirmed without one). Originally found incidentally while diagnosing issue #66's pause-menu-open report on 2026-08-05.
+**Status:** Resolved, confirmed live (2026-08-20 correction, status/Index sync audit). Originally found incidentally while diagnosing issue #66's pause-menu-open report on 2026-08-05.
+
+**Correction, 2026-08-20**: this entry's original 2026-08-08 fix (below) was NOT actually the fix that resolved this issue, despite the "FIXED" title-line tag — it reduced flush FREQUENCY (once/second instead of every call), not log VOLUME (how often lines get written), and issue #76 (2026-08-11) directly found the log still sitting at 1.2GB days later, an open question this entry itself never got updated to reflect. The real root cause — `proxy_d3d9.log` opened in append (`"a"`) mode and never trimmed between launches, letting a real install's log grow to 2.6GB / 22.5 million lines across every session since install — was found and fixed separately under issue #79 (switched to truncate/`"w"` mode, fresh log every launch), confirmed live and user-reported "miles better" as part of that issue's own A/B-tested extended-session-stutter fix (2026-08-17/18, shipped v0.3.3). Treat issue #79 as this issue's real resolution; the 2026-08-08 pass below is kept for the record (its flush-throttling/crash-safety work is real and still shipped, just wasn't the actual fix for the headline "22GB" volume problem).
 
 **Finding**: `proxy_d3d9.log` in the game install root was **22,476,092,598 bytes (~22GB)** as of 2026-08-05. Its content was dominated by extremely high-volume, per-frame/per-menu-item diagnostic log lines this project added during earlier live-menu-structure research passes.
 
