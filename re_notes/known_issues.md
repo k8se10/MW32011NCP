@@ -2,16 +2,19 @@
 
 Tracked as tasks in the working session; this file is the standalone reference so they
 don't stay buried in `iw5sp.md`'s investigation log. Update status here as each is
-resolved. Last updated 2026-08-20 (status/Index audit, same repeat-offender pattern as
-every correction below: the Index section had drifted to stop at #67 despite issues
-#68-79 already existing as full standalone entries below it -- all 12 backfilled into
-the Index. Also found and corrected one real stale status: #67's Index line still said
-"Open, not yet root-caused" months after its own section had a "FIXED" title tag, and
-that title tag ITSELF was over-optimistic -- the real fix for the 22GB log-growth
-problem shipped later, under #79, not the 2026-08-08 pass #67 originally credited. See
-#67's own entry for the full correction. No other issue in this file was found to have
-a similarly stale status on this pass -- the rest checked out against PATCHNOTES.md and
-each other). *(Prior correction, 2026-08-17 — issue #78 added: dog/hyena melee-struggle
+resolved. Last updated 2026-08-20 (two passes same day: (1) a status/Index audit, same
+repeat-offender pattern as every correction below: the Index section had drifted to stop
+at #67 despite issues #68-79 already existing as full standalone entries below it -- all
+12 backfilled into the Index. Also found and corrected one real stale status: #67's Index
+line still said "Open, not yet root-caused" months after its own section had a "FIXED"
+title tag, and that title tag ITSELF was over-optimistic -- the real fix for the 22GB
+log-growth problem shipped later, under #79, not the 2026-08-08 pass #67 originally
+credited. See #67's own entry for the full correction. No other issue in this file was
+found to have a similarly stale status on this pass -- the rest checked out against
+PATCHNOTES.md and each other. (2) issue #33's own VAC research got a sixth pass same
+day -- see that issue's own "Sixth pass" section for the two-Steam-apps finding and a
+first-ever look at this project's own RE methods, not just the shipped mod, as a risk
+surface). *(Prior correction, 2026-08-17 — issue #78 added: dog/hyena melee-struggle
 HUD prompts in Survival have no controller-glyph coverage, real assets found, no
 safe hookable code path found that pass)*. *(Prior
 correction, 2026-08-03 — this line had drifted that far behind despite issues #64-#76
@@ -5326,6 +5329,75 @@ the one interrupted mid-synthesis by two consecutive Sonnet 5 cyber-safeguard fl
 survived only because each wrote to a separate scratch file before the flag hit, per this pass's own instruction
 to avoid file-collision on this document; the synthesis/merge into this file happened in a later, separate
 session after the interruption.
+
+### Sixth pass — the Campaign/Survival app is a SEPARATE Steam app from Multiplayer, live-reconfirmed with no
+VAC listed on it; plus a first real look at THIS PROJECT'S OWN RE METHODS as a risk surface (2026-08-20)
+
+User request this pass, explicitly: research MP viability/VAC risk further, AND separately assess whether this
+project's own reverse-engineering methods themselves (live debugger attach, memory scanning/poking) carry ban
+risk — a question none of the first five passes asked directly, since they were all framed around the finished
+mod's runtime behavior, not the RE process used to build it. Framed per this file's own standing lesson (see
+CLAUDE.md's locked-scope note on the 2026-08-19 interruption): citable precedent — Steam listings, public
+community ban reports, comparable tools' track records — not VAC internal detection-mechanics research.
+
+**New structural fact, not previously stated this explicitly anywhere in this project's docs: MW3 (2011) ships
+as TWO SEPARATE Steam app IDs, not one app with a campaign/MP mode switch.** App `42680` ("Call of Duty: Modern
+Warfare 3 (2011)") is the base game — Campaign + Co-op/Survival. App `42690` ("...— Multiplayer") is a wholly
+separate Steam application. This matches this project's own long-standing `iw5sp.exe`/`iw5mp.exe` binary split,
+but at the Steam-app level too, not just the executable level.
+
+**Live-refetched today, not blocked by delisting (unlike the MP app): app 42680's real, current store page lists
+its features as `Single-player`, `Co-op`, `Steam Achievements`, `Steam Cloud`, `Family Sharing` — no VAC
+anywhere.** This is a direct, current, first-party citation (not a forum quote, not an archived snapshot) that
+the Campaign/Survival app specifically has never carried a VAC listing. App 42690 (MP) itself still can't be
+live-refetched (confirmed still delisted, same as prior passes found), and SteamDB blocks automated fetches
+(403), so the existing "VAC enabled" citation for 42690 stays sourced the same way prior passes established it —
+but this pass found two MORE independent 2026-era Steam Community threads (not the same thread the second pass
+originally cited) that separately describe the Steam purchase-time "Valve anti cheat enabled" label for
+42690 specifically, which is corroboration, not a new primary source. Net effect: strengthens confidence in the
+existing 42690-has-VAC / 42680-does-not split rather than changing it — but this is now a first-party live
+citation for the 42680 half specifically, where before it was inferred/assumed rather than directly quoted.
+
+**This project's own RE methods (x32dbg live-attach, `memdiff.exe` live memory read/write/poke — both used
+extensively throughout `iw5sp.exe` development per this project's entire documented history) were never
+previously assessed as their own risk category.** General VAC behavior (well-documented, not internal
+mechanics): VAC only actively scans a process while it's connected to a VAC-secured multiplayer session — it
+does not scan or ban for offline/non-VAC-app play. Combined with the finding directly above — the Campaign/
+Survival app (42680) has never listed VAC as a feature at all, as a SEPARATE Steam application from the MP app
+that does — this gives two independent, stacking reasons the SP-side live-debugging work already done in this
+project carried effectively zero VAC risk: (1) the app itself isn't VAC-covered, and (2) even setting that
+aside, VAC doesn't scan disconnected/offline play in general. **This retroactively validates every x32dbg/
+memdiff session this project has ever run against `iw5sp.exe`**, and also means the "SP+Survival first, then
+MP" ordering decision (locked 2026-07-13, before VAC was even on this project's radar) turned out to also be
+the maximally-safe ordering from a ban-risk standpoint, not just a scope/ergonomics choice — worth noting as a
+retroactive confirmation, not a reason the ordering was chosen at the time. **This does NOT extend to any future
+live debugging against `iw5mp.exe`** — that binary lives under the VAC-listed app, and this file's existing
+"real and non-zero" MP risk conclusion stands unchanged; this pass only closes the SP-side question, which had
+genuinely never been asked before.
+
+**Precedent-tool comparison refreshed, one useful new axis found: macro/KBM-emulation capability appears to be
+what draws anti-cheat scrutiny among controller-remapping tools specifically, not raw analog remapping itself.**
+DS4Windows (virtual-controller remapping via ViGEmBus) is widely whitelisted by anti-cheat vendors and treated
+as an accessibility/compatibility tool — no documented competitive-title bans found. reWASD carries a
+meaningfully different reputation specifically because of its macro/turbo/keyboard-and-mouse-on-controller
+features, which several competitive titles' anti-cheat flags or discourages. **This project's own technique —
+real analog `forwardmove`/`rightmove`/mouse-delta values written into the game's own real usercmd/kbutton
+fields, no macros, no KBM emulation, no input synthesis beyond the two narrowly-scoped exceptions already
+tracked elsewhere in this file (issues #5/#14's Y-hold/D-pad-left `PostMessageA` synthesis)** — sits
+structurally on the DS4Windows side of that line, not the reWASD side. Doesn't change this file's risk
+conclusion for MP (the injection method, not the input content, is still VAC's documented focus per the Fifth
+pass's mechanics analysis above) but is a positive, citable data point for the "what kind of tool is this"
+framing question specifically.
+
+**Not re-litigated this pass** (already settled by priors, still holds): the ENB citation correction (Fifth
+pass), the ReShade "no proven bans, risk unproven either way" characterization (Second/Fifth pass), the
+GoldSrc/`opengl32.dll` non-transfer finding (Fifth pass), the P2P/host-migration effectiveness caveat (First
+correction pass). **Left genuinely open, same as before**: no ban-rate data for the one closely-comparable mod
+category (DLL-injection MW3 mod menus). **New open question this pass surfaces but doesn't resolve**: whether
+Campaign/Survival's Steam Achievements/Steam Cloud features imply any background network call to Steam during
+offline SP/Survival play that could matter for a DIFFERENT reason than VAC (e.g. a general ToS reverse-engineering
+clause, not a ban-mechanism question) — noted as an open question, not investigated this pass, and not a VAC-risk
+question so kept out of this issue's main scope.
 
 ---
 
