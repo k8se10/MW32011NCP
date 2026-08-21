@@ -5429,6 +5429,50 @@ offline SP/Survival play that could matter for a DIFFERENT reason than VAC (e.g.
 clause, not a ban-mechanism question) — noted as an open question, not investigated this pass, and not a VAC-risk
 question so kept out of this issue's main scope.
 
+### Seventh pass — CVP denied for both projects; user-commissioned external research on "does live dumping
+guarantee a VAC ban"; MP scope decision made off the back of it (2026-08-21)
+
+**CVP status, resolved this pass:** `MW32011NCP`'s own CVP application (submitted 2026-08-19, see CLAUDE.md's
+locked-scope section) has been **declined, reason not given** — same outcome as `MW32011NSP`'s earlier
+application. Both projects' CVP paths are now closed; no resubmission planned. This does not, by itself, change
+any VAC-risk finding in this issue — it only closes off the "resume research under an approved CVP org" branch
+the prior passes were waiting on.
+
+**External research commissioned by the user directly** (not a Claude Code research pass): a ChatGPT conversation
+dated 2026-08-21 10:20-10:21 UTC, archived at `C:\Users\kyesa\Documents\ChatGPT Archive\2026-08-21 11-20 - VAC
+Ban Guarantee Analysis.md`, asked directly: "is live dumping a vac protected game a guaranteed vac ban." Its
+findings, read directly from the archive rather than summarized secondhand:
+- **No Valve documentation, reproducible research, or credible cross-game case establishes "process-memory
+  dumping, by itself, automatically triggers a VAC ban."** Valve's public position is that a ban follows detected
+  cheat software while connected to a VAC-secured server, and Valve explicitly withholds which detection fired.
+- **VAC detection, VAC failure/disconnect (a "VAC error," e.g. from Cheat Engine/Process Hacker/DLL injectors),
+  and an actual VAC ban are three distinct outcomes, not synonyms** — publicly reconstructed VAC code shows it
+  can enumerate processes/handles and observe third-party software interacting with the game process, but that's
+  evidence for "process interaction is observable," not for "observation alone bans."
+- **This does NOT establish MP is safe.** The same research explicitly concludes the opposite framing is the
+  correct one: *"the absence of a guaranteed-ban rule does not make it a safe operation,"* and recommends
+  developing/debugging against a LAN/offline path rather than live-testing against VAC-secured multiplayer where
+  that can be avoided.
+- Scope note: this research is about *external live memory dumping/reading* specifically (the CS:GO
+  Cheat-Engine/ReClass thesis case it cites as counter-evidence is exactly that). It doesn't map 1:1 onto this
+  project's own technique (in-process proxy-DLL, engine-function hooks + XInput, never reading gameplay-entity
+  memory) — related evidence, not a direct precedent for this project's specific mechanism.
+
+**Decision made off the back of this (user, 2026-08-21):** given the CVP denial closing that path, and this
+research narrowing "guaranteed ban" from settled fact to unproven claim (while still not clearing MP as safe),
+the user has decided `iw5mp.exe` MP support may proceed using this project's **already-settled input-remapping
+methodology only** (no new memory-reading capability, no aim-assist revival) — **shipped explicit opt-in only**,
+matching the shape of every other unresolved-risk decision in this project's history (default off, informed
+consent, never silently enabled). See CLAUDE.md's locked-scope section (2026-08-21 entries) for the authoritative
+statement of this decision and its boundaries.
+
+**Separately flagged this pass:** a same-day session running on Claude Haiku 4.5 produced
+`re_notes/session_2026-08-21_haiku_mp_readiness.md`, which cites this same ChatGPT archive accurately but also
+asserts an unrelated, fabricated claim — "1 month of retail MP testing, zero VAC bans reported" — with no
+supporting evidence anywhere in this project (no MP proxy-DLL code has ever existed in this repo's history; MP
+work has been static-RE-only per `re_notes/iw5mp.md`). That file's CVP-denial claim was independently confirmed
+true by the user directly (see above); its testing-history claim was not, and should not be treated as fact.
+
 ---
 
 ## 34. Glyph-patch mechanism test (`InjectFontGlyphPatchTest`, LB+RB+A) still not visually provable — wrong font targeted, corrected; no safe way found yet to actually see it (2026-07-21)
