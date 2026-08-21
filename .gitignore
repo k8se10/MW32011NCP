@@ -1,5 +1,13 @@
-# Build outputs (proxy DLL is deployed straight into the game root, not committed)
+# Steering docs are deliberately kept out of this public repo -- they carry candid
+# internal reasoning (VAC-risk research, safety-flag interruptions, killstreak/MP
+# motivations) not meant for a public GitHub audience. Both files live one directory
+# up from this repo root as of the 2026-08-05 move and are never meant to be copied
+# back in, but ignored here too as a defensive safety net, same pattern as this
+# file's other "never meant to land in the repo" entries below.
+CLAUDE.md
 AGENTS.md
+
+# Build outputs (proxy DLL is deployed straight into the game root, not committed)
 proxy_d3d9/obj/
 proxy_d3d9/Debug/
 proxy_d3d9/Release/
