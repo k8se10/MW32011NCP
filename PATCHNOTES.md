@@ -8,6 +8,17 @@ reverse-engineering trail behind each entry.
 
 ## Unreleased
 
+### Fixed
+1. **Glyph icon jaggedness (controller-glyph hint overlays/menu corner hints/cursor).**
+  `LoadGlyphIconTexture` created glyph textures with no mip chain at all (`Levels=1`,
+  `Usage=0`), and `DrawGenericTexturedQuad` (the function that actually draws every
+  glyph icon) never touched sampler filtering, so scaled-down draws inherited D3D9's
+  real default (POINT/nearest for MAG+MIN, NONE for MIP) -- aliased hard on the
+  icons' letterforms and circular edges. Fixed via `Levels=0` + `D3DUSAGE_AUTOGENMIPMAP`
+  on texture creation (driver auto-regenerates the mip chain, no extra vtable call) and
+  save/set/restore of LINEAR filtering (MAG/MIN/MIP) around the draw, mirroring this
+  file's own existing blur-code convention. **Confirmed live 2026-08-24.**
+
 ---
 
 ## v0.3.3 — Alpha (2026-08-18) — Extended-session stutter fixed; vibration and co-op rumble fixes; DualSense Bluetooth preview (broken)
