@@ -4802,6 +4802,20 @@ void InstallEndSceneHook(void* realDevice)
     // all rather than staying lazy.
     PrewarmGlyphIconTextures(realDevice);
 
+    // Same "pay it up front, not during play" precedent extended to every other
+    // lazily-created UI resource in this file, 2026-08-24. EnsureWhiteTexture is a
+    // trivial 1x1 fill, but EnsureBlurShader is a REAL CreatePixelShader call from
+    // precompiled ps_2_0 bytecode (options_blur_ps.h) -- literally the shader-
+    // compilation-stutter pattern this whole prewarm approach is modeled on, and it
+    // was previously left to fire the first time the custom Options screen's blurred
+    // background region was ever drawn, mid-gameplay. EnsureDebugMarkerTexture is
+    // TEMPORARY debug scaffolding (see its own comment) and negligible either way,
+    // included for completeness since it costs nothing extra to warm here too.
+    EnsureWhiteTexture(realDevice);
+    EnsureBlurTexture(realDevice);
+    EnsureBlurShader(realDevice);
+    EnsureDebugMarkerTexture(realDevice);
+
     if (g_origEndScene) return; // hooks already installed -- one device for this game's lifetime
     void** deviceVtbl = *reinterpret_cast<void***>(realDevice);
     void* realEndScene = deviceVtbl[kEndSceneVtableIndex];
