@@ -131,7 +131,13 @@ void ReadBool(const char* path, const char* section, const char* key, bool& outV
 // no longer bundled at all, see resource.h), and the family name is now player-
 // overridable to any system-installed font, not just a fixed choice between two
 // bundled ones.
-constexpr unsigned long kCurrentConfigVersion = 18;
+// v18->v19 (2026-08-24, same day, two-font follow-up): new [Overlay]
+// FontFamilyCondensed key added -- Isotherm Sans is now bundled as TWO selectable
+// variants (UI, the general default; Condensed, used only by specific hint call
+// sites), each independently player-overridable. FontFamily's own default flipped
+// from "Isotherm Sans" to "Isotherm Sans UI" in the same pass -- see resource.h and
+// mod_config.h's own field comments for the full history.
+constexpr unsigned long kCurrentConfigVersion = 19;
 
 // Reads a legacy key's raw value, returning true only if the key genuinely existed
 // (unlike ReadFloat, which can't distinguish "absent" from "present but unparsable" --
@@ -507,17 +513,25 @@ void WriteDefaultConfig(const char* path)
         "DamageDurationMs=%lu\n"
         "\n"
         "[Overlay]\n"
-        "; Font used for on-screen notification text, HUD hints, and the custom Options\n"
-        "; screen. Default \"Isotherm Sans\" is bundled directly in this DLL (2026-07-31\n"
-        "; follow-up, swapped from Barlow Condensed SemiBold 2026-08-24) -- no system\n"
-        "; font install required. Set this to any OTHER font's real name to use a\n"
-        "; system-installed font instead -- if the name doesn't resolve, GDI silently\n"
-        "; falls back to a default system font, same as a missing font always has.\n"
+        "; Font used for MOST on-screen text -- notification toasts, most HUD hints, and\n"
+        "; the custom Options screen. Default \"Isotherm Sans UI\" is bundled directly in\n"
+        "; this DLL (2026-07-31 follow-up, swapped from Barlow Condensed SemiBold, then\n"
+        "; split into two selectable variants, both 2026-08-24) -- no system font install\n"
+        "; required. Set this to any OTHER font's real name to use a system-installed\n"
+        "; font instead -- if the name doesn't resolve, GDI silently falls back to a\n"
+        "; default system font, same as a missing font always has.\n"
         "FontFamily=%s\n"
+        "; Font used ONLY by the specific hint call sites that explicitly request the\n"
+        "; Condensed role (throwback prompt, sentry gun placement) -- everything else\n"
+        "; uses FontFamily above regardless of this key. Empty (the default) means use\n"
+        "; the bundled \"Isotherm Sans\" (Condensed style). Same system-font override\n"
+        "; mechanism as FontFamily, independent of it -- set both to get a fully custom\n"
+        "; look, or just this one to keep the default look everywhere else.\n"
+        "FontFamilyCondensed=%s\n"
         "; 1 = italic, 0 = upright (default 0 -- italic was a Barlow Condensed-era\n"
-        "; styling choice, not a property of the bundled font itself; Isotherm Sans\n"
-        "; defaults to its upright \"UI\" style). Uses the selected font's real Italic\n"
-        "; style if it has one, GDI's own synthesized oblique otherwise.\n"
+        "; styling choice, not a property of the bundled fonts; both Isotherm Sans\n"
+        "; variants default to upright). Uses the active variant's real Italic style if\n"
+        "; it has one, GDI's own synthesized oblique otherwise.\n"
         "FontItalic=%d\n"
         "; STRICTLY A TESTING TOGGLE, default off. When on, continuously cycles\n"
         "; through every known message/animation-style variant every few seconds\n"
@@ -651,6 +665,7 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.vibrationDamageMaxIntensity,
         g_modConfig.vibrationDamageDurationMs,
         g_modConfig.overlayFontFamily,
+        g_modConfig.overlayFontFamilyCondensed,
         g_modConfig.overlayFontItalic ? 1 : 0,
         g_modConfig.overlayTestCycleAllVariants ? 1 : 0,
         g_modConfig.fireNotifyQueueKick ? 1 : 0,
@@ -866,6 +881,12 @@ void LoadModConfig()
             buf, sizeof(buf), path);
         strncpy_s(g_modConfig.overlayFontFamily, buf, _TRUNCATE);
     }
+    {
+        char buf[sizeof(g_modConfig.overlayFontFamilyCondensed)];
+        GetPrivateProfileStringA("Overlay", "FontFamilyCondensed", g_modConfig.overlayFontFamilyCondensed,
+            buf, sizeof(buf), path);
+        strncpy_s(g_modConfig.overlayFontFamilyCondensed, buf, _TRUNCATE);
+    }
     ReadBool(path, "Overlay", "FontItalic", g_modConfig.overlayFontItalic);
     ReadBool(path, "Overlay", "TestCycleAllVariants", g_modConfig.overlayTestCycleAllVariants);
     ReadBool(path, "Experimental", "FireNotifyQueueKick", g_modConfig.fireNotifyQueueKick);
@@ -896,7 +917,7 @@ void LoadModConfig()
         "useCustomOptionsScreen=%d "
         "vibrationEnabled=%d vibrationFireIntensity=%g vibrationFireDurationMs=%lu "
         "vibrationDamagePerPoint=%g vibrationDamageMaxIntensity=%g vibrationDamageDurationMs=%lu "
-        "overlayFontFamily=%s overlayFontItalic=%d overlayTestCycleAllVariants=%d "
+        "overlayFontFamily=%s overlayFontFamilyCondensed=%s overlayFontItalic=%d overlayTestCycleAllVariants=%d "
         "fireNotifyQueueKick=%d bindResolverHookLogging=%d bindResolverGlyphSubstitution=%d "
         "hudFontIdLogging=%d hudGlyphPositionLogging=%d listItemPositionLogging=%d "
         "armorFieldScanLogging=%d forceGlyphOverlay=%d glyphPositionEditMode=%d "
@@ -915,6 +936,7 @@ void LoadModConfig()
         g_modConfig.vibrationFireDurationMs, g_modConfig.vibrationDamagePerPoint,
         g_modConfig.vibrationDamageMaxIntensity, g_modConfig.vibrationDamageDurationMs,
         g_modConfig.overlayFontFamily,
+        g_modConfig.overlayFontFamilyCondensed,
         g_modConfig.overlayFontItalic ? 1 : 0,
         g_modConfig.overlayTestCycleAllVariants ? 1 : 0,
         g_modConfig.fireNotifyQueueKick ? 1 : 0,

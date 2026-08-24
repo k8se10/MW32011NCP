@@ -7,18 +7,21 @@
 // Barlow Condensed SemiBold), paired with its Italic style -- same regular+italic
 // pairing this project has always bundled, just a different family.
 //
-// Uses the "Condensed" style, not "UI" -- switched same day, live-reported: "this
-// font is wider than barlow condensed italic was." Measured directly (a standalone
-// GDI harness, both fonts loaded via AddFontResourceExA, GetTextExtentPoint32A on
-// real hint strings at the actual sizes this project uses): "UI" rendered 45-76%
-// WIDER than Barlow Condensed SemiBold Italic at the same pixel height (UI isn't a
-// condensed style at all, just Regular's outlines with tighter line-SPACING, not
-// narrower glyphs) -- "Condensed" (Regular weight, ~82% horizontal width per that
-// project's own README) measured only ~11-17% wider, a residual gap the existing
-// dynamic MeasureTextWidthPx-based layout already absorbs. See resource.h for the
-// licensing note and README.md for attribution.
-IDR_FONT_ISOTHERMSANS        RCDATA "..\\assets\\fonts\\IsothermSans-Condensed.ttf"
-IDR_FONT_ISOTHERMSANS_ITALIC RCDATA "..\\assets\\fonts\\IsothermSans-Italic.ttf"
+// BOTH the "Condensed" and "UI" styles are bundled, 2026-08-24 -- see resource.h's
+// own comment for the full history (measured widths, the name-table rename needed
+// to make them independently selectable, and why "UI" alone wasn't the right
+// blanket default: "condensed only works for the throwback prompt and turrets etc,
+// the normal ui text looks better for stuff like buy stations, pickups and
+// interacts"). "Isotherm Sans UI" is the general default; "Isotherm Sans"
+// (Condensed) is requested explicitly only by the hint call sites that want it.
+// IsothermSans-UI.ttf/-UI-Italic.ttf are this project's own renamed copies of the
+// upstream repo's UI/Italic files (name table only, glyphs untouched) -- the
+// unrenamed originals would collide with Condensed under the same family name. See
+// resource.h for the licensing note and README.md for attribution.
+IDR_FONT_ISOTHERMSANS           RCDATA "..\\assets\\fonts\\IsothermSans-Condensed.ttf"
+IDR_FONT_ISOTHERMSANS_ITALIC    RCDATA "..\\assets\\fonts\\IsothermSans-Italic.ttf"
+IDR_FONT_ISOTHERMSANS_UI        RCDATA "..\\assets\\fonts\\IsothermSans-UI.ttf"
+IDR_FONT_ISOTHERMSANS_UI_ITALIC RCDATA "..\\assets\\fonts\\IsothermSans-UI-Italic.ttf"
 
 // Controller-glyph icons (issue #48, 2026-07-31) -- the real, already-extracted PNGs
 // from assets/button_glyphs/, embedded directly rather than loaded from loose files
