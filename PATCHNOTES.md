@@ -9,7 +9,16 @@ reverse-engineering trail behind each entry.
 ## Unreleased
 
 ### What's New
-1. **Default UI font switched to Isotherm Sans; any system-installed font can now be
+1. **Overlay text now renders semibold with a clearer/thicker outline.**
+  `CreateFontA`'s weight argument was `FW_DONTCARE` (the bundled font only ever
+  registered one weight, so it had no effect); switched to `FW_SEMIBOLD`, relying on
+  GDI's own synthetic emboldening rather than sourcing a second embedded font weight.
+  The outline mask (`RenderTextToArgbBuffer`'s `kOutlineOffsets`) widened from a 1px
+  ring (a 3x3 grid of +/-1px offsets) to a 2px ring (5x5, +/-2px) -- the old 1px
+  outline read as too thin/soft against busy backgrounds, especially at smaller HUD
+  hint sizes. Both `CreateFontA` call sites (measurement and render) updated together
+  since a mismatch would make measured and rendered text widths diverge.
+2. **Default UI font switched to Isotherm Sans; any system-installed font can now be
   picked via config.** Every on-screen text draw (notification text, HUD hints, the
   custom Options screen) previously used a fixed, bundled Barlow Condensed SemiBold
   with no way to change it. Barlow is no longer bundled at all -- replaced by
@@ -29,7 +38,7 @@ reverse-engineering trail behind each entry.
   the compiled default) doesn't retroactively pick up the new `0` default, per the
   usual "explicit value always wins" policy -- had to be hand-edited once for an
   in-progress config; a fresh install is unaffected.
-2. **Mod-wide UI text now uses consistent Title Case.** Every player-facing string this
+3. **Mod-wide UI text now uses consistent Title Case.** Every player-facing string this
   project itself draws (custom Options screen row/tab labels, the Custom Binds table,
   the Stick/Button Layout drill-down, the diagram labels, the Apply Settings/Rebind
   popups) was previously a mix of ALL CAPS (most of the custom Options screen) and
