@@ -283,15 +283,37 @@ struct ModConfig
     unsigned long vibrationDamageDurationMs = 280; // how long a damage pulse takes to decay
 
     // [Overlay] (task #47/#48, 2026-07-31) -- the top-right on-screen notification
-    // text (overlay_hud.cpp). Uses Barlow Condensed SemiBold, bundled directly in
-    // this DLL as a private, in-process-only font (proxy_d3d9.rc/resource.h,
-    // AddFontMemResourceEx in overlay_hud.cpp's LoadOverlayFonts) since the
-    // 2026-07-31 follow-up -- no longer depends on the font being installed
-    // system-wide (previously requested by face name only, silently falling back
-    // to a default font if missing; see re_notes/known_issues.md issue #47).
-    bool overlayFontItalic = true; // selects the bundled font's real Italic style
-                                     // (both Regular and Italic .ttf weights are
-                                     // embedded, not a GDI-faked oblique slant).
+    // text, plus every other overlay/HUD/custom-Options-screen text draw that routes
+    // through overlay_hud.cpp's shared GDI text helpers. Default font is now
+    // Isotherm Sans (switched 2026-08-24, see re_notes for the swap rationale),
+    // bundled directly in this DLL as a private, in-process-only font
+    // (proxy_d3d9.rc/resource.h, AddFontMemResourceEx in overlay_hud.cpp's
+    // LoadOverlayFonts) since the 2026-07-31 follow-up -- no longer depends on the
+    // font being installed system-wide (previously requested by face name only,
+    // silently falling back to a default font if missing; see
+    // re_notes/known_issues.md issue #47).
+    //
+    // FontFamily (2026-08-24) -- overrides which font family CreateFontA actually
+    // requests. Defaults to "Isotherm Sans" (the bundled font, always registered by
+    // LoadOverlayFonts regardless of this setting, so the default never depends on
+    // anything outside this DLL). Any OTHER value is looked up as a real,
+    // system-installed font by name -- deliberately unrestricted, same "ask GDI for
+    // this face name" mechanism the bundled font itself uses, just pointed at
+    // whatever the player already has installed instead of our own embedded
+    // resource. GDI's own graceful degradation applies if the name doesn't resolve
+    // to anything installed (silently substitutes a default system font, same as
+    // it always has for a missing face) -- no separate validation needed here.
+    char overlayFontFamily[64] = "Isotherm Sans";
+    bool overlayFontItalic = true; // selects the font's real Italic style where the
+                                     // font provides one (both Regular and Italic
+                                     // .ttf weights are embedded for the bundled
+                                     // default, not a GDI-faked oblique slant) --
+                                     // for an arbitrary system font picked via
+                                     // FontFamily above, this is still passed
+                                     // through to CreateFontA's own nItalic
+                                     // parameter, so it uses that font's real
+                                     // italic if it has one or GDI's own synthesized
+                                     // oblique if it doesn't.
     bool overlayTestCycleAllVariants = false; // STRICTLY A TESTING TOGGLE, default off.
                                      // When on, continuously cycles through every
                                      // known message/animation-style variant (Plain,

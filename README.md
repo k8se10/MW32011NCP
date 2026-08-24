@@ -929,9 +929,9 @@ This project vendors and links the following third-party library:
 
 Full license text for both is reproduced verbatim in `proxy_d3d9/third_party/minhook/LICENSE.txt`.
 
-This project also embeds the following font, bundled directly in the proxy DLL (`proxy_d3d9/proxy_d3d9.rc`) as a private, in-process-only font so it never depends on being installed on the user's system:
+This project also embeds the following font, bundled directly in the proxy DLL (`proxy_d3d9/proxy_d3d9.rc`) as a private, in-process-only font so it never depends on being installed on the user's system. It's the default face for every on-screen text draw (notification text, HUD hints, the custom Options screen) — see the Config section below for how to point this at a different, system-installed font instead:
 
-- **[Barlow Condensed](https://github.com/jpt/barlow)** SemiBold (Regular and Italic) — Copyright 2017 The Barlow Project Authors. SIL Open Font License, Version 1.1 (see `assets/fonts/BarlowCondensed-OFL.txt`). Used for the top-right on-screen notification text.
+- **[Isotherm Sans](https://github.com/k8se10/isotherm-sans)** (UI and Italic styles) — a modernized derivative of [Manrope](https://github.com/sharanda/manrope) (Copyright 2018 The Manrope Project Authors). SIL Open Font License, Version 1.1 (see `assets/fonts/IsothermSans-OFL.txt`). Switched to as the bundled default 2026-08-24, replacing the previously-bundled Barlow Condensed SemiBold (Copyright 2017 The Barlow Project Authors, also OFL 1.1) — Barlow is no longer bundled with this project.
 
 ## License
 
