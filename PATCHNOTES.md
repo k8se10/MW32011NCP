@@ -57,12 +57,15 @@ reverse-engineering trail behind each entry.
   file and GDI can't otherwise tell two same-family Regular-style faces apart.
 3. **In-game glyph position editor (F2/F3) now also works on real gameplay hints,
   not just menu items.** The existing menu-item-focus-based editor has no equivalent
-  concept for gameplay hints (no "focused list item"), so this is a parallel,
-  simpler drag target keyed by (hint slot, font role) instead of (menu group, item
-  index) -- one draggable handle per active gameplay hint moves its icon+text
-  together as a single nudge (matches the same call-site granularity the font-role
-  split above already uses). F3 exports nudges to the same
-  `exported_glyph_positions.txt`, in a separate section.
+  concept for gameplay hints (no "focused list item"), so this is a parallel drag
+  target keyed by (hint slot, font role) instead of (menu group, item index) --
+  mirrors the menu editor's own icon/text split exactly, TWO independently-draggable
+  handles per active gameplay hint (dragging TEXT moves prefix+icon+suffix+topLine
+  together as the row anchor; dragging ICON applies an additional, independent
+  offset for fine-tuning just the icon relative to that row). Works only on whatever
+  hint is REALLY showing that frame -- no synthesized placeholder, same "edit the
+  real thing" principle as the menu editor. F3 exports both handles' nudges to the
+  same `exported_glyph_positions.txt`, in a separate section.
 4. **Mod-wide UI text now uses consistent Title Case.** Every player-facing string this
   project itself draws (custom Options screen row/tab labels, the Custom Binds table,
   the Stick/Button Layout drill-down, the diagram labels, the Apply Settings/Rebind
@@ -107,6 +110,19 @@ reverse-engineering trail behind each entry.
   I/O** by design, exactly the class of bug this project's own v0.3.3 stutter fix
   already found once (issue #67, log-flush-per-call). All four are dev-only and
   DEFAULT OFF per their own INI comments; flipped back to 0.
+3. **Config hot-reload wasn't visually applying FontFamily/FontFamilyCondensed/
+  FontItalic changes to text whose exact string+height hadn't otherwise changed.**
+  Live-reported as "its just the word hold not the full text" -- Survival's ready-up
+  hint always says "Hold ", so its cached prefix texture never naturally
+  re-rendered on its own; the REST of that same hint's text changes every frame
+  (a live countdown), so it correctly picked up a reloaded font while "Hold " stayed
+  stuck on whatever was active the first time it was ever shown. None of this
+  project's text-texture caches previously accounted for a live config change, only
+  a text/height change. Fixed by releasing every cached TEXT texture (deliberately
+  NOT icons/white/blur/debug-marker -- none of those are affected by a font change,
+  and the blur shader specifically is eagerly prewarmed at device-creation time; see
+  Fixed item 2 above) whenever `CheckConfigHotReload` actually reloads
+  (`InvalidateTextTextureCachesOnConfigChange`, mod_config.cpp).
 
 ---
 
