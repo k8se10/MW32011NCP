@@ -931,7 +931,7 @@ Full license text for both is reproduced verbatim in `proxy_d3d9/third_party/min
 
 This project also embeds the following font, bundled directly in the proxy DLL (`proxy_d3d9/proxy_d3d9.rc`) as a private, in-process-only font so it never depends on being installed on the user's system. It's the default face for every on-screen text draw (notification text, HUD hints, the custom Options screen) — see the Config section below for how to point this at a different, system-installed font instead:
 
-- **[Isotherm Sans](https://github.com/k8se10/isotherm-sans)** (UI and Italic styles) — a modernized derivative of [Manrope](https://github.com/sharanda/manrope) (Copyright 2018 The Manrope Project Authors). SIL Open Font License, Version 1.1 (see `assets/fonts/IsothermSans-OFL.txt`). Switched to as the bundled default 2026-08-24, replacing the previously-bundled Barlow Condensed SemiBold (Copyright 2017 The Barlow Project Authors, also OFL 1.1) — Barlow is no longer bundled with this project.
+- **[Isotherm Sans](https://github.com/k8se10/isotherm-sans)** (Condensed and Italic styles) — a modernized derivative of [Manrope](https://github.com/sharanda/manrope) (Copyright 2018 The Manrope Project Authors). SIL Open Font License, Version 1.1 (see `assets/fonts/IsothermSans-OFL.txt`). Switched to as the bundled default 2026-08-24, replacing the previously-bundled Barlow Condensed SemiBold (Copyright 2017 The Barlow Project Authors, also OFL 1.1) — Barlow is no longer bundled with this project. Uses the Condensed style specifically (not the initially-tried "UI" style, which measured 45-76% wider than Barlow Condensed at matching sizes — Condensed measures only ~11-17% wider).
 
 ## License
 
