@@ -18,6 +18,12 @@ reverse-engineering trail behind each entry.
   `[Overlay] FontFamily` config key (default `Isotherm Sans`) can be set to any real,
   system-installed font's name instead -- if the name doesn't resolve, GDI falls back
   to a default system font, same graceful degradation a missing font has always had.
+  `FontItalic`'s own default also flipped true->false in the same pass -- italic was
+  a Barlow Condensed-era styling choice, not a property of the new font, which now
+  defaults to its upright "UI" style (tighter line-spacing metrics tuned for dense
+  interface text). Existing configs that already have an explicit `FontItalic` value
+  keep it, per this project's usual "explicit value always wins" migration policy --
+  only a fresh install (or a config that never touched this key) gets the new default.
   **NOT YET VERIFIED LIVE** -- builds clean, but hasn't been checked in-game yet.
 
 ### Fixed
