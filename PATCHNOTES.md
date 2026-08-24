@@ -59,7 +59,13 @@ reverse-engineering trail behind each entry.
   every embedded icon/cursor/controller-diagram texture at device-creation time
   instead (`PrewarmGlyphIconTextures`, `overlay_hud.cpp`) -- same fix shape as shader
   precompilation avoiding shader-compile stutter in modern engines: pay the cost once,
-  up front, never during play. Second, and the larger of the two: four dev-only
+  up front, never during play. Extended the same session to every other lazily-created
+  UI resource in the file: the custom Options screen's blurred-background pixel shader
+  (`EnsureBlurShader`, a real `CreatePixelShader` from precompiled bytecode -- the
+  literal shader-compilation-stutter pattern this fix is modeled on, previously fired
+  the first time that screen's blur region was ever drawn) plus its render target and
+  the shared white/debug-marker textures, all now warmed at the same device-creation
+  call site. Second, and the larger of the two: four dev-only
   diagnostic toggles (`ForceGlyphOverlay`, `GlyphPositionEditMode`,
   `CaptureRuntimeMenuAssets`, `FrametimeBenchmarkLogging`) had been left ON in the live
   config from earlier calibration/investigation work -- two of them
