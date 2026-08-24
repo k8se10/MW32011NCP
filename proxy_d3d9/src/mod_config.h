@@ -304,14 +304,20 @@ struct ModConfig
     // to anything installed (silently substitutes a default system font, same as
     // it always has for a missing face) -- no separate validation needed here.
     char overlayFontFamily[64] = "Isotherm Sans";
-    bool overlayFontItalic = true; // selects the font's real Italic style where the
-                                     // font provides one (both Regular and Italic
-                                     // .ttf weights are embedded for the bundled
-                                     // default, not a GDI-faked oblique slant) --
-                                     // for an arbitrary system font picked via
-                                     // FontFamily above, this is still passed
-                                     // through to CreateFontA's own nItalic
-                                     // parameter, so it uses that font's real
+    bool overlayFontItalic = false; // default changed true->false 2026-08-24: italic
+                                     // was a Barlow Condensed-era styling choice, not
+                                     // a property of the bundled font itself -- the
+                                     // Isotherm Sans switch uses its upright "UI"
+                                     // style (tighter line-spacing metrics tuned for
+                                     // dense interface text) by default. Still
+                                     // player-toggleable: selects the font's real
+                                     // Italic style where the font provides one
+                                     // (both Regular/UI and Italic .ttf weights are
+                                     // embedded for the bundled default, not a
+                                     // GDI-faked oblique slant) -- for an arbitrary
+                                     // system font picked via FontFamily above, this
+                                     // is still passed through to CreateFontA's own
+                                     // nItalic parameter, so it uses that font's real
                                      // italic if it has one or GDI's own synthesized
                                      // oblique if it doesn't.
     bool overlayTestCycleAllVariants = false; // STRICTLY A TESTING TOGGLE, default off.
