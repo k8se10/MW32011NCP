@@ -156,10 +156,16 @@ constexpr DWORD kD3DTA_TEXTURE = 2;
 constexpr DWORD kD3DPT_TRIANGLESTRIP = 5;
 constexpr DWORD kD3DPOOL_DEFAULT = 0;
 constexpr DWORD kD3DUSAGE_RENDERTARGET = 0x00000001;
+// 2026-08-24: added for the glyph-icon jaggedness fix below (LoadGlyphIconTexture /
+// DrawGenericTexturedQuad) -- both are standard, stable D3D9 SDK constants (D3DUSAGE_AUTOGENMIPMAP
+// and the D3DSAMPLERSTATETYPE enum's MIPFILTER slot), not guessed vtable offsets, so safe to
+// hardcode the same way kD3DUSAGE_RENDERTARGET/kD3DSAMP_MAGFILTER above already are.
+constexpr DWORD kD3DUSAGE_AUTOGENMIPMAP = 0x00000400;
 constexpr DWORD kD3DTEXF_POINT = 1;
 constexpr DWORD kD3DTEXF_LINEAR = 2;
 constexpr DWORD kD3DSAMP_MAGFILTER = 5;
 constexpr DWORD kD3DSAMP_MINFILTER = 6;
+constexpr DWORD kD3DSAMP_MIPFILTER = 7;
 
 typedef HRESULT(WINAPI* EndScene_t)(void* This);
 typedef HRESULT(WINAPI* CreateTexture_t)(void* This, UINT Width, UINT Height, UINT Levels,
@@ -967,7 +973,18 @@ bool LoadGlyphIconTexture(void* device, const char* assetName, void*& outTexture
     void** deviceVtbl = *reinterpret_cast<void***>(device);
     auto createTexture = reinterpret_cast<CreateTexture_t>(deviceVtbl[kCreateTextureVtableIndex]);
     void* texture = nullptr;
-    HRESULT hr = createTexture(device, w, h, 1, 0, kD3DFMT_A8R8G8B8, kD3DPOOL_MANAGED, &texture, nullptr);
+    // Jaggedness fix, 2026-08-24: Levels=1/Usage=0 (previous values) created a texture with no mip
+    // chain at all -- fine at native size, but every glyph icon in this file is drawn scaled down
+    // from its source PNG (see DrawOneGameplayHintSlot's own kHintIconSize comment above), and
+    // minifying a single-level texture aliases badly on fine detail like these icons' letterforms
+    // and circular edges. Levels=0 + D3DUSAGE_AUTOGENMIPMAP asks the driver to allocate a full mip
+    // chain and regenerate it automatically whenever the base level (uploaded below via LockRect)
+    // changes -- no extra vtable call needed, unlike a manual GenerateMipSubLevels() would require.
+    // D3DUSAGE_AUTOGENMIPMAP is supported for D3DPOOL_MANAGED (only D3DPOOL_SYSTEMMEM is excluded),
+    // so the pool argument doesn't need to change. See DrawGenericTexturedQuad's own sampler-filter
+    // fix below -- creating the mip chain alone isn't sufficient; the sampler has to be told to use
+    // it (D3DSAMP_MIPFILTER), which nothing in this file was doing before this same pass.
+    HRESULT hr = createTexture(device, w, h, 0, kD3DUSAGE_AUTOGENMIPMAP, kD3DFMT_A8R8G8B8, kD3DPOOL_MANAGED, &texture, nullptr);
     if (FAILED(hr) || !texture) {
         char buf[128];
         sprintf_s(buf, "[overlay-glyph-icon] CreateTexture failed for \"%.31s\": hr=0x%08lX", assetName, hr);
@@ -1060,6 +1077,8 @@ void DrawGenericTexturedQuad(void* device, void* texture, float x, float y, floa
     auto getVertexShader = reinterpret_cast<GetVertexShader_t>(deviceVtbl[kGetVertexShaderVtableIndex]);
     auto setPixelShader = reinterpret_cast<SetPixelShader_t>(deviceVtbl[kSetPixelShaderVtableIndex]);
     auto getPixelShader = reinterpret_cast<GetPixelShader_t>(deviceVtbl[kGetPixelShaderVtableIndex]);
+    auto getSamplerState = reinterpret_cast<GetSamplerState_t>(deviceVtbl[kGetSamplerStateVtableIndex]);
+    auto setSamplerState = reinterpret_cast<SetSamplerState_t>(deviceVtbl[kSetSamplerStateVtableIndex]);
 
     DWORD oldZEnable = 0, oldLighting = 0, oldAlphaBlend = 0, oldSrcBlend = 0, oldDestBlend = 0, oldCull = 0;
     getRenderState(device, kD3DRS_ZENABLE, &oldZEnable);
@@ -1068,6 +1087,23 @@ void DrawGenericTexturedQuad(void* device, void* texture, float x, float y, floa
     getRenderState(device, kD3DRS_SRCBLEND, &oldSrcBlend);
     getRenderState(device, kD3DRS_DESTBLEND, &oldDestBlend);
     getRenderState(device, kD3DRS_CULLMODE, &oldCull);
+
+    // Jaggedness fix, 2026-08-24: this function never touched sampler filtering at all, so every
+    // draw through it (glyph icons, hint text, everything else routed here) inherited whatever
+    // state happened to be left over from elsewhere -- D3D9's real default is POINT (blocky
+    // nearest-neighbor) for MAG/MIN and NONE for MIP, a much bigger jaggedness cause than the
+    // missing mip chain fixed in LoadGlyphIconTexture above; scaling a texture down under POINT
+    // sampling aliases hard on fine detail. Save/restore around the draw, same convention this
+    // file's own blur code (further down) already uses for the identical reason ("later draws this
+    // same frame... aren't left filtering differently") -- LINEAR is safe and always preferable to
+    // POINT for this file's actual use (2D UI overlay quads, never intentionally pixel-art style).
+    DWORD oldMagFilter = kD3DTEXF_POINT, oldMinFilter = kD3DTEXF_POINT, oldMipFilter = 0;
+    getSamplerState(device, 0, kD3DSAMP_MAGFILTER, &oldMagFilter);
+    getSamplerState(device, 0, kD3DSAMP_MINFILTER, &oldMinFilter);
+    getSamplerState(device, 0, kD3DSAMP_MIPFILTER, &oldMipFilter);
+    setSamplerState(device, 0, kD3DSAMP_MAGFILTER, kD3DTEXF_LINEAR);
+    setSamplerState(device, 0, kD3DSAMP_MINFILTER, kD3DTEXF_LINEAR);
+    setSamplerState(device, 0, kD3DSAMP_MIPFILTER, kD3DTEXF_LINEAR);
 
     void* oldVertexShader = nullptr;
     void* oldPixelShader = nullptr;
@@ -1109,6 +1145,9 @@ void DrawGenericTexturedQuad(void* device, void* texture, float x, float y, floa
     setRenderState(device, kD3DRS_SRCBLEND, oldSrcBlend);
     setRenderState(device, kD3DRS_DESTBLEND, oldDestBlend);
     setRenderState(device, kD3DRS_CULLMODE, oldCull);
+    setSamplerState(device, 0, kD3DSAMP_MAGFILTER, oldMagFilter);
+    setSamplerState(device, 0, kD3DSAMP_MINFILTER, oldMinFilter);
+    setSamplerState(device, 0, kD3DSAMP_MIPFILTER, oldMipFilter);
 
     setVertexShader(device, oldVertexShader);
     setPixelShader(device, oldPixelShader);
