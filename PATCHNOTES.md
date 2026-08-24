@@ -66,7 +66,20 @@ reverse-engineering trail behind each entry.
   hint is REALLY showing that frame -- no synthesized placeholder, same "edit the
   real thing" principle as the menu editor. F3 exports both handles' nudges to the
   same `exported_glyph_positions.txt`, in a separate section.
-4. **Mod-wide UI text now uses consistent Title Case.** Every player-facing string this
+4. **Gameplay-hint calibration no longer fights the real game's own mouse-look.**
+  Live-reported: dragging a handle during an actual gameplay session also spun the
+  camera, since the existing mouse-isolation (WM_MOUSEMOVE swallowed in the WndProc
+  subclass) was built for the MENU case, where hover/hit-testing polls
+  `GetCursorPos()`/window messages -- gameplay look isn't driven by either. The real
+  look pipeline (`FUN_0057d680`, documented in `re_notes/iw5sp.md`) reads its own
+  internal accumulator via a non-cdecl, register-based calling convention -- too
+  risky to hook directly. Instead hooks `SetCapture`/`ClipCursor` (both plain user32
+  exports, same low-risk technique already proven for `GetCursorPos`) and swallows
+  the real game's calls to either while the editor is active, since this engine has
+  no DirectInput import (confirmed) so its mouse-look accumulator has to be fed by
+  one of those two OS-level mechanisms -- hooking both sidesteps needing to know
+  which for certain.
+5. **Mod-wide UI text now uses consistent Title Case.** Every player-facing string this
   project itself draws (custom Options screen row/tab labels, the Custom Binds table,
   the Stick/Button Layout drill-down, the diagram labels, the Apply Settings/Rebind
   popups) was previously a mix of ALL CAPS (most of the custom Options screen) and
