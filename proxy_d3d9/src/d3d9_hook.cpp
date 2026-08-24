@@ -169,6 +169,95 @@ void InstallGetCursorPosHook()
     }
 }
 
+// Glyph position editor mouse isolation, part 3 (2026-08-24, live-reported: gameplay
+// hint calibration still fought the real game's own mouse-look while dragging --
+// unlike the menu case (part 2 above), an actual GAMEPLAY session's look input isn't
+// driven by WM_MOUSEMOVE/GetCursorPos at all: re_notes/iw5sp.md documents the real
+// look pipeline (FUN_0057d680) reading from its own internal double-buffered
+// accumulator via a non-cdecl, register-based calling convention -- too risky to hook
+// directly (per that same doc's own "hooking this needs care about calling
+// convention" warning, and this project's own "no guessing" standard for anything
+// touching core engine internals). Whatever actually FEEDS that accumulator each
+// frame is still an OS-level mouse capture, though (this engine has no DirectInput
+// import at all -- confirmed, see CLAUDE.md's own original findings -- so it's either
+// SetCapture-based tracking or a ClipCursor-confined delta read, both plain user32
+// exports). Rather than guess which and hook the wrong one, this hooks BOTH, same
+// low-risk technique as Hook_GetCursorPos immediately above (plain WINAPI signature,
+// no calling-convention risk at all) -- while the editor is active, the real game's
+// own SetCapture/ClipCursor requests are swallowed entirely (never forwarded), so
+// whichever one the engine actually relies on for its mouse-look accumulator loses
+// its OS-level capture/confinement and the accumulator stops updating from real
+// mouse movement, while this project's OWN drag logic (GetLastMouseMoveClientPos,
+// entirely separate, unaffected by either) keeps working throughout.
+typedef HWND(WINAPI* SetCapture_t)(HWND);
+SetCapture_t g_origSetCapture = nullptr;
+typedef BOOL(WINAPI* ClipCursor_t)(const RECT*);
+ClipCursor_t g_origClipCursor = nullptr;
+bool g_mouseCaptureHooksInstalled = false;
+
+HWND WINAPI Hook_SetCapture(HWND hWnd)
+{
+    if (IsGlyphPositionEditModeActive()) {
+        return nullptr; // never grant the real game mouse capture while editing
+    }
+    if (!g_origSetCapture) return nullptr;
+    return g_origSetCapture(hWnd);
+}
+
+BOOL WINAPI Hook_ClipCursor(const RECT* lpRect)
+{
+    if (IsGlyphPositionEditModeActive()) {
+        // Force the cursor free regardless of what the real game asked to clip to --
+        // if it's already confined from before editing started, this releases it;
+        // if it wasn't, this is a harmless no-op. Doesn't call g_origClipCursor at
+        // all, so the real game's own requested rect is dropped entirely, not just
+        // overridden this once (it would otherwise just re-clip next frame).
+        if (g_origClipCursor) g_origClipCursor(nullptr);
+        return TRUE;
+    }
+    if (!g_origClipCursor) return FALSE;
+    return g_origClipCursor(lpRect);
+}
+
+void InstallMouseCaptureSuppressionHooks()
+{
+    if (g_mouseCaptureHooksInstalled) return;
+    g_mouseCaptureHooksInstalled = true;
+    MH_Initialize(); // idempotent
+    HMODULE user32 = GetModuleHandleA("user32.dll");
+    char buf[144];
+
+    void* realSetCapture = user32 ? reinterpret_cast<void*>(GetProcAddress(user32, "SetCapture")) : nullptr;
+    if (!realSetCapture) {
+        LogFromController("[glyph-editor] SetCapture hook: GetProcAddress(user32.dll, \"SetCapture\") failed");
+    } else {
+        MH_STATUS s = MH_CreateHook(realSetCapture, reinterpret_cast<void*>(&Hook_SetCapture),
+            reinterpret_cast<void**>(&g_origSetCapture));
+        sprintf_s(buf, "[glyph-editor] MH_CreateHook(SetCapture @ %p) = %d", realSetCapture, static_cast<int>(s));
+        LogFromController(buf);
+        if (s == MH_OK) {
+            MH_STATUS e = MH_EnableHook(realSetCapture);
+            sprintf_s(buf, "[glyph-editor] MH_EnableHook(SetCapture) = %d", static_cast<int>(e));
+            LogFromController(buf);
+        }
+    }
+
+    void* realClipCursor = user32 ? reinterpret_cast<void*>(GetProcAddress(user32, "ClipCursor")) : nullptr;
+    if (!realClipCursor) {
+        LogFromController("[glyph-editor] ClipCursor hook: GetProcAddress(user32.dll, \"ClipCursor\") failed");
+    } else {
+        MH_STATUS s = MH_CreateHook(realClipCursor, reinterpret_cast<void*>(&Hook_ClipCursor),
+            reinterpret_cast<void**>(&g_origClipCursor));
+        sprintf_s(buf, "[glyph-editor] MH_CreateHook(ClipCursor @ %p) = %d", realClipCursor, static_cast<int>(s));
+        LogFromController(buf);
+        if (s == MH_OK) {
+            MH_STATUS e = MH_EnableHook(realClipCursor);
+            sprintf_s(buf, "[glyph-editor] MH_EnableHook(ClipCursor) = %d", static_cast<int>(e));
+            LogFromController(buf);
+        }
+    }
+}
+
 // Full-scope Options expansion (2026-08-06, issue #66, explicit direction: "Build
 // full rebind capture now"). Rebinding a real keyboard/mouse bind from a
 // controller-driven menu needs the ACTUAL Win32 key/mouse-button message -- the
@@ -570,6 +659,7 @@ extern "C" void HookD3D9CreateDevice(void* realD3D9)
 {
     if (!realD3D9) return;
     InstallGetCursorPosHook();
+    InstallMouseCaptureSuppressionHooks();
     void** d3d9Vtable = *reinterpret_cast<void***>(realD3D9);
     void* realCreateDevice = d3d9Vtable[kCreateDeviceVtableIndex];
 
