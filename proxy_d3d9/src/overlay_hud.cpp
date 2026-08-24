@@ -1065,6 +1065,44 @@ bool GetOrLoadGlyphIconTexture(void* device, const char* assetName, void*& outTe
     return true;
 }
 
+namespace {
+BOOL CALLBACK EnumGlyphIconResourceProc(HMODULE /*hModule*/, LPCSTR /*lpType*/, LPSTR lpName, LONG_PTR lParam)
+{
+    // Numeric-ID RCDATA entries are the two embedded fonts (resource.h's
+    // IDR_FONT_ISOTHERMSANS/_ITALIC) -- every real icon/diagram/cursor asset is
+    // registered under a bareword STRING name instead (see proxy_d3d9.rc's own
+    // comment on why), so this is a reliable, self-maintaining way to tell them
+    // apart without a second hardcoded asset-name list to keep in sync with the .rc.
+    if (IS_INTRESOURCE(lpName)) return TRUE;
+    void* device = reinterpret_cast<void*>(lParam);
+    void* texture = nullptr;
+    int w = 0, h = 0;
+    GetOrLoadGlyphIconTexture(device, lpName, texture, w, h); // populates g_glyphIconCache; failures are logged and cached there too
+    return TRUE;
+}
+} // namespace
+
+// Loads every embedded controller-glyph/cursor/controller-diagram RCDATA asset into
+// g_glyphIconCache right away, instead of leaving each one to lazily load itself the
+// first time it happens to be requested during actual gameplay.
+//
+// Added 2026-08-24, live-reported stutter regression: the mip-chain/AUTOGENMIPMAP
+// jaggedness fix above (LoadGlyphIconTexture) makes each icon's FIRST CreateTexture
+// noticeably more expensive -- the driver now has to generate a full mip chain, not
+// just upload one level -- so leaving that cost to trigger lazily (e.g. the moment a
+// specific interact prompt happens to appear for the first time mid-match) reads as a
+// real, felt in-game stutter. Same fix shape as shader precompilation in modern
+// engines avoiding shader-compilation stutter: pay the one-time cost up front, at
+// device-creation time (see InstallEndSceneHook's call site), not on first real use.
+void PrewarmGlyphIconTextures(void* device)
+{
+    if (!g_selfModule || !device) return;
+    EnumResourceNamesA(g_selfModule, RT_RCDATA, EnumGlyphIconResourceProc, reinterpret_cast<LONG_PTR>(device));
+    char buf[96];
+    sprintf_s(buf, "[overlay-glyph-icon] prewarm complete: %d icon texture(s) cached", g_glyphIconCacheCount);
+    LogFromController(buf);
+}
+
 // Draws an arbitrary texture as a plain, white-modulated, alpha-blended screen-space
 // quad at (x, y, w, h) -- the same safe render-state save/restore and shader-null/
 // restore pattern DrawTexturedQuad above uses (see that function's own comment for
@@ -1716,18 +1754,18 @@ struct OptRow {
 };
 
 OptRow g_optRows[] = {
-    { "SENSITIVITY HORIZONTAL", OptRowKind::FloatValue, &g_modConfig.lookDegreesPerSecondHorizontal, 10.0f, 50.0f, 500.0f, nullptr, "Adjust your horizontal look sensitivity." },
-    { "SENSITIVITY VERTICAL",   OptRowKind::FloatValue, &g_modConfig.lookDegreesPerSecondVertical,   10.0f, 50.0f, 500.0f, nullptr, "Adjust your vertical look sensitivity." },
-    { "INVERT LOOK",            OptRowKind::BoolToggle,  nullptr, 0.0f, 0.0f, 0.0f, &g_modConfig.invertLook, "Invert the vertical look axis." },
-    { "VIBRATION",              OptRowKind::BoolToggle,  nullptr, 0.0f, 0.0f, 0.0f, &g_modConfig.vibrationEnabled, "Enable or disable controller vibration." },
-    { "STICK LAYOUT",           OptRowKind::StickLayoutEnum,  nullptr, 0.0f, 0.0f, 0.0f, nullptr, "Choose your stick layout." },
-    { "BUTTON LAYOUT",          OptRowKind::ButtonLayoutEnum, nullptr, 0.0f, 0.0f, 0.0f, nullptr, "Choose your button layout." },
+    { "Sensitivity Horizontal", OptRowKind::FloatValue, &g_modConfig.lookDegreesPerSecondHorizontal, 10.0f, 50.0f, 500.0f, nullptr, "Adjust your horizontal look sensitivity." },
+    { "Sensitivity Vertical",   OptRowKind::FloatValue, &g_modConfig.lookDegreesPerSecondVertical,   10.0f, 50.0f, 500.0f, nullptr, "Adjust your vertical look sensitivity." },
+    { "Invert Look",            OptRowKind::BoolToggle,  nullptr, 0.0f, 0.0f, 0.0f, &g_modConfig.invertLook, "Invert the vertical look axis." },
+    { "Vibration",              OptRowKind::BoolToggle,  nullptr, 0.0f, 0.0f, 0.0f, &g_modConfig.vibrationEnabled, "Enable or disable controller vibration." },
+    { "Stick Layout",           OptRowKind::StickLayoutEnum,  nullptr, 0.0f, 0.0f, 0.0f, nullptr, "Choose your stick layout." },
+    { "Button Layout",          OptRowKind::ButtonLayoutEnum, nullptr, 0.0f, 0.0f, 0.0f, nullptr, "Choose your button layout." },
     // 2026-08-06: moved here from its own standalone top-level tab ("and furthermore
     // ... the custom binds section should be a subsection of the controller section
     // for cleanliness") -- a drill-down launcher row, same UI convention as Stick/
     // Button Layout just above, but opens the full 12-row Binds editor instead of a
     // compact 4/5-option list.
-    { "CUSTOM BINDS",           OptRowKind::CustomBindsEntry, nullptr, 0.0f, 0.0f, 0.0f, nullptr, "Assign custom keyboard, mouse, or controller bindings." },
+    { "Custom Binds",           OptRowKind::CustomBindsEntry, nullptr, 0.0f, 0.0f, 0.0f, nullptr, "Assign custom keyboard, mouse, or controller bindings." },
 };
 constexpr int kOptRowCount = sizeof(g_optRows) / sizeof(g_optRows[0]);
 
@@ -2061,20 +2099,20 @@ void FormatOptRowValue(const OptRow& row, char* outBuf, size_t outBufSize)
             sprintf_s(outBuf, outBufSize, "%.0f", *row.floatPtr);
             break;
         case OptRowKind::BoolToggle:
-            strcpy_s(outBuf, outBufSize, *row.boolPtr ? "ENABLED" : "DISABLED");
+            strcpy_s(outBuf, outBufSize, *row.boolPtr ? "Enabled" : "Disabled");
             break;
         case OptRowKind::StickLayoutEnum: {
-            static const char* kNames[] = { "DEFAULT", "SOUTHPAW", "LEGACY", "LEGACY SOUTHPAW" };
+            static const char* kNames[] = { "Default", "Southpaw", "Legacy", "Legacy Southpaw" };
             strcpy_s(outBuf, outBufSize, kNames[static_cast<int>(g_modConfig.stickLayout)]);
             break;
         }
         case OptRowKind::ButtonLayoutEnum: {
-            static const char* kNames[] = { "DEFAULT", "TACTICAL", "LEFTY", "TACTICAL LEFTY", "CUSTOM" };
+            static const char* kNames[] = { "Default", "Tactical", "Lefty", "Tactical Lefty", "Custom" };
             strcpy_s(outBuf, outBufSize, kNames[static_cast<int>(g_modConfig.buttonLayout)]);
             break;
         }
         case OptRowKind::CustomBindsEntry:
-            strcpy_s(outBuf, outBufSize, "EDIT >");
+            strcpy_s(outBuf, outBufSize, "Edit >");
             break;
     }
 }
@@ -2162,15 +2200,15 @@ constexpr int kUnifiedTabCount = sizeof(kTabOrder) / sizeof(kTabOrder[0]);
 const char* UnifiedTabDisplayName(UnifiedTab tab)
 {
     switch (tab) {
-        case UnifiedTab::Controller:    return "CONTROLLER";
-        case UnifiedTab::Look:          return "LOOK";
-        case UnifiedTab::Video:         return "VIDEO";
-        case UnifiedTab::Audio:         return "AUDIO";
-        case UnifiedTab::Voice:         return "VOICE";
-        case UnifiedTab::AdvancedVideo: return "ADVANCED VIDEO";
-        case UnifiedTab::Movement:      return "MOVEMENT";
-        case UnifiedTab::Actions:       return "ACTIONS";
-        case UnifiedTab::Binds:         return "CUSTOM BINDS";
+        case UnifiedTab::Controller:    return "Controller";
+        case UnifiedTab::Look:          return "Look";
+        case UnifiedTab::Video:         return "Video";
+        case UnifiedTab::Audio:         return "Audio";
+        case UnifiedTab::Voice:         return "Voice";
+        case UnifiedTab::AdvancedVideo: return "Advanced Video";
+        case UnifiedTab::Movement:      return "Movement";
+        case UnifiedTab::Actions:       return "Actions";
+        case UnifiedTab::Binds:         return "Custom Binds";
     }
     return "?";
 }
@@ -2240,18 +2278,18 @@ void RebuildTabRowCache()
 // exact assignment to g_modConfig.customButtonMap / mw3ncp_config.ini's [CustomBinds].
 struct BindsRowDef { const char* label; PhysicalInput ButtonMap::*field; const char* description; };
 constexpr BindsRowDef kBindsRows[] = {
-    { "FIRE",           &ButtonMap::fire,         "Assign the button for firing your weapon." },
-    { "AIM DOWN SIGHT",  &ButtonMap::ads,          "Assign the button for aiming down sights." },
-    { "LETHAL GRENADE",  &ButtonMap::lethal,       "Assign the button for throwing a lethal grenade." },
-    { "TACTICAL GRENADE",&ButtonMap::tactical,     "Assign the button for throwing a tactical grenade." },
-    { "RELOAD / USE",    &ButtonMap::reloadUse,    "Assign the button for reloading or interacting." },
-    { "WEAPON SWITCH",   &ButtonMap::weaponSwitch, "Assign the button for switching weapons." },
-    { "JUMP / MANTLE",   &ButtonMap::jump,         "Assign the button for jumping or mantling." },
-    { "CROUCH / PRONE",  &ButtonMap::crouchProne,  "Assign the button for crouching or going prone." },
-    { "SPRINT",          &ButtonMap::sprint,       "Assign the button for sprinting." },
-    { "MELEE",           &ButtonMap::melee,        "Assign the button for a melee attack." },
-    { "PAUSE",           &ButtonMap::pause,        "Assign the button for opening the pause menu." },
-    { "SCOREBOARD",      &ButtonMap::scoreboard,   "Assign the button for the scoreboard." },
+    { "Fire",           &ButtonMap::fire,         "Assign the button for firing your weapon." },
+    { "Aim Down Sight",  &ButtonMap::ads,          "Assign the button for aiming down sights." },
+    { "Lethal Grenade",  &ButtonMap::lethal,       "Assign the button for throwing a lethal grenade." },
+    { "Tactical Grenade",&ButtonMap::tactical,     "Assign the button for throwing a tactical grenade." },
+    { "Reload / Use",    &ButtonMap::reloadUse,    "Assign the button for reloading or interacting." },
+    { "Weapon Switch",   &ButtonMap::weaponSwitch, "Assign the button for switching weapons." },
+    { "Jump / Mantle",   &ButtonMap::jump,         "Assign the button for jumping or mantling." },
+    { "Crouch / Prone",  &ButtonMap::crouchProne,  "Assign the button for crouching or going prone." },
+    { "Sprint",          &ButtonMap::sprint,       "Assign the button for sprinting." },
+    { "Melee",           &ButtonMap::melee,        "Assign the button for a melee attack." },
+    { "Pause",           &ButtonMap::pause,        "Assign the button for opening the pause menu." },
+    { "Scoreboard",      &ButtonMap::scoreboard,   "Assign the button for the scoreboard." },
 };
 constexpr int kBindsRowCount = sizeof(kBindsRows) / sizeof(kBindsRows[0]);
 
@@ -2266,10 +2304,10 @@ const char* PhysicalInputShortName(PhysicalInput input)
         case PhysicalInput::Y:  return "Y";
         case PhysicalInput::A:  return "A";
         case PhysicalInput::B:  return "B";
-        case PhysicalInput::LS: return "LS (CLICK)";
-        case PhysicalInput::RS: return "RS (CLICK)";
-        case PhysicalInput::Start: return "START";
-        case PhysicalInput::Back:  return "BACK";
+        case PhysicalInput::LS: return "LS (Click)";
+        case PhysicalInput::RS: return "RS (Click)";
+        case PhysicalInput::Start: return "Start";
+        case PhysicalInput::Back:  return "Back";
     }
     return "?";
 }
@@ -2326,7 +2364,7 @@ const char* CurrentTabRowLabel(int row)
 
 // Full-scope expansion (2026-08-06, issue #66) -- real bound-key display for a
 // Keybind-kind row, e.g. "W" or "LEFT SHIFT / CAPS LOCK" (this engine reports real
-// OR-bound key pairs, matching its own UI's own convention), or "UNBOUND" if neither
+// OR-bound key pairs, matching its own UI's own convention), or "Unbound" if neither
 // slot is set. KeynumToDisplayName needs a >=0x80 byte buffer per real_settings.h.
 // ---- Custom controller bindings ("Binds" tab, 2026-08-06, issue #66 full-scope
 // expansion, explicit direction: "add a controller bindings section for people who
@@ -2337,7 +2375,7 @@ void FormatKeybindDisplayString(const char* command, char* outBuf, size_t outBuf
     int keynums[2] = { -1, -1 };
     GetKeybind(command, 0, keynums);
     if (keynums[0] < 0 && keynums[1] < 0) {
-        strncpy_s(outBuf, outBufSize, "UNBOUND", _TRUNCATE);
+        strncpy_s(outBuf, outBufSize, "Unbound", _TRUNCATE);
         return;
     }
     char name1[128] = {}, name2[128] = {};
@@ -2366,14 +2404,14 @@ void CurrentTabRowValueString(int row, char* outBuf, size_t outBufSize)
     GetStagedOrLiveValueString(idx, outBuf, outBufSize);
     // Live-reported (2026-08-06): "i dont like how its all raw numbers" -- a bare
     // "0"/"1" for a bool row reads as raw data, not a real setting, unlike the
-    // Controller tab's own rows (FormatOptRowValue already says ENABLED/DISABLED).
+    // Controller tab's own rows (FormatOptRowValue already says Enabled/Disabled).
     // Matches that same convention here instead of leaving vanilla bools as digits.
     if (def.kind == VanillaSettingKind::DvarBool) {
         bool on = atoi(outBuf) != 0;
-        strncpy_s(outBuf, outBufSize, on ? "ENABLED" : "DISABLED", _TRUNCATE);
+        strncpy_s(outBuf, outBufSize, on ? "Enabled" : "Disabled", _TRUNCATE);
     }
     // Live-reported (2026-08-06): "stuff like AA and texture quality just say numbers
-    // thats not user friendly" -- show the real display label (e.g. "2X"/"EXTRA")
+    // thats not user friendly" -- show the real display label (e.g. "2X"/"Extra")
     // instead of the raw float value whenever one's been written for this row.
     if (def.kind == VanillaSettingKind::DvarFloat && def.floatEnumCount > 0 && def.floatEnumLabels) {
         float current = static_cast<float>(atof(outBuf));
@@ -3143,13 +3181,13 @@ void DrawOneStickLabels(void* device, float stickX, float stickY, bool isRightSi
     sprintf_s(leftAsset, "%sleft", stickPrefix);
     sprintf_s(rightAsset, "%sright", stickPrefix);
 
-    const char* topLabel = verticalIsMove ? "MOVE FORWARD" : "LOOK UP";
-    const char* bottomLabel = verticalIsMove ? "MOVE BACK" : "LOOK DOWN";
-    // Shortened from "STRAFE LEFT/RIGHT"/"ROTATE LEFT/RIGHT" (2026-08-05, "needs a
+    const char* topLabel = verticalIsMove ? "Move Forward" : "Look Up";
+    const char* bottomLabel = verticalIsMove ? "Move Back" : "Look Down";
+    // Shortened from "Strafe Left/Right"/"Rotate Left/Right" (2026-08-05, "needs a
     // bit of text fixing so it all fits on screen") -- the left+right glyph pair
     // drawn alongside already conveys the bidirectional part, so the text itself no
     // longer needs to spell it out.
-    const char* midLabel = horizontalIsMove ? "STRAFE" : "ROTATE";
+    const char* midLabel = horizontalIsMove ? "Strafe" : "Rotate";
     float defaultMidX = isRightSide ? (stickX + kDiagLabelOffsetPx) : (stickX - kDiagLabelOffsetPx);
     // Vertical spacing widened 2026-08-05 (live feedback: "more vertically spaced
     // out") -- 50/90 was tuned for the smaller 20px label font, too tight once that
@@ -3238,16 +3276,16 @@ DiagAnchor GetDiagAnchorForInput(const ControllerDiagramLayout& layout, float im
 // out, so text only needs to name the action.
 struct ButtonMapLabelEntry { PhysicalInput ButtonMap::* field; const char* label; };
 constexpr ButtonMapLabelEntry kButtonMapLabels[] = {
-    { &ButtonMap::fire,         "FIRE" },
-    { &ButtonMap::ads,          "AIM DOWN SIGHT" },
-    { &ButtonMap::lethal,       "THROW FRAG" },
-    { &ButtonMap::tactical,     "THROW TACTICAL" },
-    { &ButtonMap::reloadUse,    "USE/RELOAD" },
-    { &ButtonMap::weaponSwitch, "SWITCH WEAPON" },
-    { &ButtonMap::jump,         "JUMP" },
-    { &ButtonMap::crouchProne,  "CROUCH/PRONE" },
-    { &ButtonMap::sprint,       "SPRINT/BREATH" },
-    { &ButtonMap::melee,        "MELEE/ZOOM" },
+    { &ButtonMap::fire,         "Fire" },
+    { &ButtonMap::ads,          "Aim Down Sight" },
+    { &ButtonMap::lethal,       "Throw Frag" },
+    { &ButtonMap::tactical,     "Throw Tactical" },
+    { &ButtonMap::reloadUse,    "Use/Reload" },
+    { &ButtonMap::weaponSwitch, "Switch Weapon" },
+    { &ButtonMap::jump,         "Jump" },
+    { &ButtonMap::crouchProne,  "Crouch/Prone" },
+    { &ButtonMap::sprint,       "Sprint/Breath" },
+    { &ButtonMap::melee,        "Melee/Zoom" },
 };
 
 // overrideSlot (2026-08-05, per-label position editor): index into
@@ -3326,7 +3364,7 @@ void DrawButtonLayoutDiagram(void* device, float scaleX, float scaleY, ButtonLay
     // doesn't change between button layouts) and has no single representative glyph
     // (it's 4 separate directional binds), so this one label has no icon.
     float dpadX = imgX + layout.dpadX * imgW, dpadY = imgY + layout.dpadY * imgH;
-    entries[count] = { dpadX, dpadY, false, "KILLSTREAKS", nullptr, count };
+    entries[count] = { dpadX, dpadY, false, "Killstreaks", nullptr, count };
     ++count;
 
     int leftIdx[kMaxLabels], rightIdx[kMaxLabels];
@@ -3436,21 +3474,21 @@ void DrawCustomOptionsMenuIfOpen(void* device)
     float listTopY = 198.0f;
     float descY = kPanelH - 70.0f;
 
-    const char* titleText = "OPTIONS";
+    const char* titleText = "Options";
     if (g_optDrilldownOpen) {
-        titleText = CurrentTabRowIsStickLayout(g_optSelectedRow) ? "STICK LAYOUT" : "BUTTON LAYOUT";
+        titleText = CurrentTabRowIsStickLayout(g_optSelectedRow) ? "Stick Layout" : "Button Layout";
     } else if (g_optBindsDrilldownOpen) {
-        titleText = "CUSTOM BINDS";
+        titleText = "Custom Binds";
     }
     DrawOptLeftAlignedText(device, g_optTitleCache, titleText, 56.0f, titleY, kTitleFontHeightPx, kWhiteColor, scaleX, scaleY);
 
     if (g_optDrilldownOpen) {
         bool isStick = CurrentTabRowIsStickLayout(g_optSelectedRow);
-        static const char* kStickNames[4] = { "DEFAULT", "SOUTHPAW", "LEGACY", "LEGACY SOUTHPAW" };
-        // 5th "CUSTOM" entry (2026-08-06, issue #66): whatever's currently in
+        static const char* kStickNames[4] = { "Default", "Southpaw", "Legacy", "Legacy Southpaw" };
+        // 5th "Custom" entry (2026-08-06, issue #66): whatever's currently in
         // g_modConfig.customButtonMap, edited on the new Binds tab -- Stick Layout has
         // no custom-axis-routing concept yet, so it stays at its own real 4.
-        static const char* kButtonNames[kButtonLayoutOptionCount] = { "DEFAULT", "TACTICAL", "LEFTY", "TACTICAL LEFTY", "CUSTOM" };
+        static const char* kButtonNames[kButtonLayoutOptionCount] = { "Default", "Tactical", "Lefty", "Tactical Lefty", "Custom" };
         const char** names = isStick ? kStickNames : kButtonNames;
         int kOptionCount = isStick ? 4 : kButtonLayoutOptionCount;
 
@@ -3642,7 +3680,7 @@ void DrawCustomOptionsMenuIfOpen(void* device)
             constexpr float kWidgetGapPx = 24.0f;
             float widgetX = valueX + static_cast<float>(valueTextW) + kWidgetGapPx;
             if (CurrentTabRowIsBoolToggle(i)) {
-                bool on = (_stricmp(valueBuf, "ENABLED") == 0);
+                bool on = (_stricmp(valueBuf, "Enabled") == 0);
                 DrawToggleSwitch(device, widgetX, rowY, on, scaleX, scaleY);
             } else {
                 float frac = 0.0f;
@@ -3702,11 +3740,11 @@ void DrawCustomOptionsMenuIfOpen(void* device)
         float boxX = (1920.0f - kBoxW) * 0.5f, boxY = (1080.0f - kBoxH) * 0.5f;
         DrawGenericTexturedQuad(device, g_optWhiteTexture, boxX * scaleX, boxY * scaleY,
                                    kBoxW * scaleX, kBoxH * scaleY, 0xF0101010u);
-        const char* title = "PRESS ANY KEY OR BUTTON TO REBIND";
+        const char* title = "Press Any Key Or Button To Rebind";
         int titleW = MeasureTextWidthPx(title, g_modConfig.overlayFontItalic, 30);
         DrawOptLeftAlignedText(device, g_optRebindPromptTitleCache, title,
                                  960.0f - static_cast<float>(titleW) * 0.5f, boxY + 55.0f, 30, kWhiteColor, scaleX, scaleY);
-        const char* subtitle = "(CONTROLLER BACK TO CANCEL)";
+        const char* subtitle = "(Controller Back To Cancel)";
         int subtitleW = MeasureTextWidthPx(subtitle, g_modConfig.overlayFontItalic, 22);
         DrawOptLeftAlignedText(device, g_optRebindPromptSubtitleCache, subtitle,
                                  960.0f - static_cast<float>(subtitleW) * 0.5f, boxY + 95.0f, 22, kDimTextColor, scaleX, scaleY);
@@ -3728,12 +3766,12 @@ void DrawCustomOptionsMenuIfOpen(void* device)
         DrawGenericTexturedQuad(device, g_optWhiteTexture, boxX * scaleX, boxY * scaleY,
                                    kBoxW * scaleX, 2.0f * scaleY, 0x40FFFFFFu); // top border accent, matches the main panel's own divider line
 
-        const char* title = "APPLY SETTINGS?";
+        const char* title = "Apply Settings?";
         int titleW = MeasureTextWidthPx(title, g_modConfig.overlayFontItalic, 30);
         DrawOptLeftAlignedText(device, g_optApplyPromptTitleCache, title,
                                  960.0f - static_cast<float>(titleW) * 0.5f, boxY + 44.0f, 30, kWhiteColor, scaleX, scaleY);
 
-        static const char* kApplyRowLabels[2] = { "YES, APPLY AND RESTART", "NO, DISCARD" };
+        static const char* kApplyRowLabels[2] = { "Yes, Apply And Restart", "No, Discard" };
         static TextTexCache* kApplyRowCaches[2] = { &g_optApplyYesCache, &g_optApplyNoCache };
         float rowsTopY = boxY + 96.0f;
         for (int r = 0; r < 2; ++r) {
@@ -4754,7 +4792,17 @@ void OnDeviceRecreated()
 
 void InstallEndSceneHook(void* realDevice)
 {
-    if (!realDevice || g_origEndScene) return; // already installed -- one device for this game's lifetime
+    if (!realDevice) return;
+    // Runs on EVERY call, not just the first -- unlike the hook installation below
+    // (guarded by g_origEndScene, since MinHook only needs to patch EndScene/Reset
+    // once ever), the icon texture cache genuinely needs repopulating after a device
+    // recreation too (OnDeviceRecreated already cleared it via
+    // ReleaseAllCachedTextures by the time d3d9_hook.cpp calls this). See
+    // PrewarmGlyphIconTextures's own comment for why this needs to happen here at
+    // all rather than staying lazy.
+    PrewarmGlyphIconTextures(realDevice);
+
+    if (g_origEndScene) return; // hooks already installed -- one device for this game's lifetime
     void** deviceVtbl = *reinterpret_cast<void***>(realDevice);
     void* realEndScene = deviceVtbl[kEndSceneVtableIndex];
 

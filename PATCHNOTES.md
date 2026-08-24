@@ -24,7 +24,21 @@ reverse-engineering trail behind each entry.
   interface text). Existing configs that already have an explicit `FontItalic` value
   keep it, per this project's usual "explicit value always wins" migration policy --
   only a fresh install (or a config that never touched this key) gets the new default.
-  **NOT YET VERIFIED LIVE** -- builds clean, but hasn't been checked in-game yet.
+  **Confirmed live 2026-08-24** -- one follow-up needed: an already-migrated config's
+  explicit `FontItalic=1` (written before the default flip, back when Barlow was still
+  the compiled default) doesn't retroactively pick up the new `0` default, per the
+  usual "explicit value always wins" policy -- had to be hand-edited once for an
+  in-progress config; a fresh install is unaffected.
+2. **Mod-wide UI text now uses consistent Title Case.** Every player-facing string this
+  project itself draws (custom Options screen row/tab labels, the Custom Binds table,
+  the Stick/Button Layout drill-down, the diagram labels, the Apply Settings/Rebind
+  popups) was previously a mix of ALL CAPS (most of the custom Options screen) and
+  Title Case (notification toasts, hint text) with no consistent rule -- fixed by
+  converting every ALL-CAPS UI string across `overlay_hud.cpp` and
+  `vanilla_settings_table.h` to Title Case. Real controller-button abbreviations (A/B/
+  X/Y/LB/RB/LT/RT) and internal engine-matching identifiers (real bind/dvar/menu-group
+  names this project reads or writes) were deliberately left untouched -- only text
+  this project itself renders to the player changed.
 
 ### Fixed
 1. **Glyph icon jaggedness (controller-glyph hint overlays/menu corner hints/cursor).**
@@ -36,6 +50,23 @@ reverse-engineering trail behind each entry.
   on texture creation (driver auto-regenerates the mip chain, no extra vtable call) and
   save/set/restore of LINEAR filtering (MAG/MIN/MIP) around the draw, mirroring this
   file's own existing blur-code convention. **Confirmed live 2026-08-24.**
+2. **Real frametime stutter reappeared right after the glyph fix above -- two
+  independent causes, both fixed 2026-08-24.** First: the mip-chain fix's own
+  `CreateTexture` is genuinely more expensive per icon (driver has to generate a full
+  mip chain, not just upload one level), and every icon was still loading lazily on
+  first display during actual gameplay -- so the first time a given interact prompt
+  happened to appear mid-match, that cost landed as a felt hitch. Fixed by prewarming
+  every embedded icon/cursor/controller-diagram texture at device-creation time
+  instead (`PrewarmGlyphIconTextures`, `overlay_hud.cpp`) -- same fix shape as shader
+  precompilation avoiding shader-compile stutter in modern engines: pay the cost once,
+  up front, never during play. Second, and the larger of the two: four dev-only
+  diagnostic toggles (`ForceGlyphOverlay`, `GlyphPositionEditMode`,
+  `CaptureRuntimeMenuAssets`, `FrametimeBenchmarkLogging`) had been left ON in the live
+  config from earlier calibration/investigation work -- two of them
+  (`CaptureRuntimeMenuAssets`, `FrametimeBenchmarkLogging`) do real **per-frame disk
+  I/O** by design, exactly the class of bug this project's own v0.3.3 stutter fix
+  already found once (issue #67, log-flush-per-call). All four are dev-only and
+  DEFAULT OFF per their own INI comments; flipped back to 0.
 
 ---
 
