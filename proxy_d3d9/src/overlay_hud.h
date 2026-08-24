@@ -116,7 +116,7 @@ void ConvertMouseClientPosToDesignSpace(int mouseClientX, int mouseClientY, floa
 // use, exactly like a genuine lost-device recovery.
 void OnDeviceRecreated();
 
-// Loads Isotherm Sans (UI + Italic styles, swapped from Barlow Condensed SemiBold
+// Loads Isotherm Sans (Condensed + Italic styles, swapped from Barlow Condensed SemiBold
 // 2026-08-24) as a PRIVATE, in-process-only font via AddFontMemResourceEx, from the
 // .ttf data embedded directly in this DLL (proxy_d3d9.rc/resource.h) -- so overlay
 // text no longer depends on the real font being installed system-wide (previously

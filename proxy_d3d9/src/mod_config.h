@@ -307,9 +307,8 @@ struct ModConfig
     bool overlayFontItalic = false; // default changed true->false 2026-08-24: italic
                                      // was a Barlow Condensed-era styling choice, not
                                      // a property of the bundled font itself -- the
-                                     // Isotherm Sans switch uses its upright "UI"
-                                     // style (tighter line-spacing metrics tuned for
-                                     // dense interface text) by default. Still
+                                     // Isotherm Sans switch uses its upright
+                                     // "Condensed" style by default. Still
                                      // player-toggleable: selects the font's real
                                      // Italic style where the font provides one
                                      // (both Regular/UI and Italic .ttf weights are

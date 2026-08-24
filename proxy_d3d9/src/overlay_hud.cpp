@@ -400,8 +400,8 @@ int MeasureTextWidthPx(const char* text, bool italic, int fontHeightPx)
     // system-installed font name instead. Must match RenderMaskLuminance's own
     // CreateFontA call below exactly, or measured width and rendered width diverge.
     // FW_SEMIBOLD (2026-08-24, live-reported: "we need to make the text semibold") --
-    // the bundled font only registers a single weight (its "UI" style, wght 360), so
-    // this relies on GDI's own synthetic emboldening (the same mechanism already
+    // the bundled font only registers a single weight (its "Condensed" style, still
+    // wght 360 Regular under the hood), so this relies on GDI's own synthetic emboldening (the same mechanism already
     // documented for FW_DONTCARE/nItalic's synthesized-oblique fallback above) rather
     // than a second embedded semibold weight -- simpler than sourcing/bundling a new
     // font file, and applies equally to a player's own FontFamily override.
@@ -455,18 +455,19 @@ bool RenderMaskLuminance(const char* text, const POINT* offsets, int offsetCount
 
     // Bundled, self-contained font (2026-07-31 follow-up; swapped to Isotherm Sans
     // 2026-08-24) -- LoadOverlayFonts (DllMain) already registered the real Isotherm
-    // Sans UI/Italic .ttf files embedded in this DLL as a PRIVATE, in-process-only
+    // Sans Condensed/Italic .ttf files embedded in this DLL as a PRIVATE, in-process-only
     // font via AddFontMemResourceEx, so the default doesn't depend on the font being
     // installed system-wide. Family name requested here is g_modConfig.overlayFontFamily
     // (default "Isotherm Sans", the bundled font's real family name -- confirmed
     // directly against the actual font files, GDI+ PrivateFontCollection
-    // enumeration; both the UI and Italic .ttf register under this same family,
-    // distinguished by nItalic below, same mechanism as the Barlow pairing this
-    // replaced). A player can override this to any real system-installed font name
-    // instead (see mod_config.h's own field comment). FW_SEMIBOLD (2026-08-24,
+    // enumeration; both the Condensed and Italic .ttf register under this same
+    // family, distinguished by nItalic below, same mechanism as the Barlow pairing
+    // this replaced). A player can override this to any real system-installed font
+    // name instead (see mod_config.h's own field comment). FW_SEMIBOLD (2026-08-24,
     // live-reported: "we need to make the text semibold") -- the bundled font only
-    // registers a single weight (its "UI" style, wght 360), so this relies on GDI's
-    // own synthetic emboldening rather than a second embedded semibold weight file;
+    // registers a single weight (its "Condensed" style, still wght 360 Regular under
+    // the hood), so this relies on GDI's own synthetic emboldening rather than a
+    // second embedded semibold weight file;
     // must match MeasureTextWidthPx's own CreateFontA call above exactly. If
     // LoadOverlayFonts ever failed (logged at startup), or the configured name
     // doesn't resolve to anything installed, GDI falls back to a default system font
@@ -502,11 +503,12 @@ bool RenderMaskLuminance(const char* text, const POINT* offsets, int offsetCount
 // passes. The naive single-pass "alpha = luminance" trick this project used before
 // only works for plain white-on-transparent text -- a black outline pixel would have
 // luminance 0, indistinguishable from "background", making it invisible. Instead:
-// render an OUTLINE mask (text drawn across a 5x5 grid of +/-2px offsets, covering
-// the true glyph shape plus a 2px ring around it -- widened from a 3x3/+/-1px grid
-// 2026-08-24, live-reported "we need...a clearer outline": a 1px ring read as too
-// thin/soft against busy backgrounds, especially at the smaller HUD hint font sizes)
-// and a separate FILL mask (text drawn once, centered, no offset). Final alpha =
+// render an OUTLINE mask (text drawn across a 7x7 grid of +/-3px offsets, covering
+// the true glyph shape plus a 3px ring around it -- widened twice 2026-08-24,
+// live-reported "we need...a clearer outline" then "the outline is slightly too
+// thin" after the first widen to 2px: a 1px ring read as too thin/soft against busy
+// backgrounds, especially at the smaller HUD hint font sizes, and 2px still wasn't
+// quite enough) and a separate FILL mask (text drawn once, centered, no offset). Final alpha =
 // outline mask (the union of fill + outline, so both are visible); final color =
 // white scaled by the FILL mask's own value (0 in outline-only regions = solid
 // black, ramping to full white deep inside the glyph) -- this naturally anti-aliases
@@ -519,14 +521,16 @@ bool RenderTextToArgbBuffer(const char* text, DWORD* outPixels, UINT alignFlag =
 
     const bool italic = g_modConfig.overlayFontItalic;
 
-    const POINT kOutlineOffsets[25] = {
-        { -2, -2 }, { -1, -2 }, { 0, -2 }, { 1, -2 }, { 2, -2 },
-        { -2, -1 }, { -1, -1 }, { 0, -1 }, { 1, -1 }, { 2, -1 },
-        { -2, 0 },  { -1, 0 },  { 0, 0 },  { 1, 0 },  { 2, 0 },
-        { -2, 1 },  { -1, 1 },  { 0, 1 },  { 1, 1 },  { 2, 1 },
-        { -2, 2 },  { -1, 2 },  { 0, 2 },  { 1, 2 },  { 2, 2 },
+    const POINT kOutlineOffsets[49] = {
+        { -3, -3 }, { -2, -3 }, { -1, -3 }, { 0, -3 }, { 1, -3 }, { 2, -3 }, { 3, -3 },
+        { -3, -2 }, { -2, -2 }, { -1, -2 }, { 0, -2 }, { 1, -2 }, { 2, -2 }, { 3, -2 },
+        { -3, -1 }, { -2, -1 }, { -1, -1 }, { 0, -1 }, { 1, -1 }, { 2, -1 }, { 3, -1 },
+        { -3, 0 },  { -2, 0 },  { -1, 0 },  { 0, 0 },  { 1, 0 },  { 2, 0 },  { 3, 0 },
+        { -3, 1 },  { -2, 1 },  { -1, 1 },  { 0, 1 },  { 1, 1 },  { 2, 1 },  { 3, 1 },
+        { -3, 2 },  { -2, 2 },  { -1, 2 },  { 0, 2 },  { 1, 2 },  { 2, 2 },  { 3, 2 },
+        { -3, 3 },  { -2, 3 },  { -1, 3 },  { 0, 3 },  { 1, 3 },  { 2, 3 },  { 3, 3 },
     };
-    if (!RenderMaskLuminance(text, kOutlineOffsets, 25, italic, outlineMask, alignFlag, fontHeightPx)) return false;
+    if (!RenderMaskLuminance(text, kOutlineOffsets, 49, italic, outlineMask, alignFlag, fontHeightPx)) return false;
 
     const POINT kFillOffset[1] = { { 0, 0 } };
     if (!RenderMaskLuminance(text, kFillOffset, 1, italic, fillMask, alignFlag, fontHeightPx)) return false;
