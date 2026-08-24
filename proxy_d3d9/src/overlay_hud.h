@@ -116,11 +116,14 @@ void ConvertMouseClientPosToDesignSpace(int mouseClientX, int mouseClientY, floa
 // use, exactly like a genuine lost-device recovery.
 void OnDeviceRecreated();
 
-// Loads Barlow Condensed SemiBold (regular + italic) as a PRIVATE, in-process-only
-// font via AddFontMemResourceEx, from the .ttf data embedded directly in this DLL
-// (proxy_d3d9.rc/resource.h) -- so overlay text no longer depends on the real font
-// being installed system-wide (previously requested from GDI by face name only,
-// which silently substitutes a default font if missing). Call once from DllMain's
+// Loads Isotherm Sans (UI + Italic styles, swapped from Barlow Condensed SemiBold
+// 2026-08-24) as a PRIVATE, in-process-only font via AddFontMemResourceEx, from the
+// .ttf data embedded directly in this DLL (proxy_d3d9.rc/resource.h) -- so overlay
+// text no longer depends on the real font being installed system-wide (previously
+// requested from GDI by face name only, which silently substitutes a default font
+// if missing). This is always the bundled default; mod_config.h's overlayFontFamily
+// lets a player point CreateFontA at a different, system-installed font by name
+// instead, entirely independent of this loader. Call once from DllMain's
 // DLL_PROCESS_ATTACH, before any overlay text is ever drawn. Returns false (and logs
 // why) if either resource/AddFontMemResourceEx call fails -- CreateFontA's own
 // system-font fallback still applies in that case, same graceful-degradation

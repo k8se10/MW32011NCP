@@ -395,9 +395,13 @@ constexpr int kHintTextWidthMarginPx = 20;
 int MeasureTextWidthPx(const char* text, bool italic, int fontHeightPx)
 {
     HDC screenDC = GetDC(nullptr);
+    // g_modConfig.overlayFontFamily (2026-08-24) -- defaults to "Isotherm Sans" (the
+    // bundled font, see LoadOverlayFonts), but a player can point this at any real
+    // system-installed font name instead. Must match RenderMaskLuminance's own
+    // CreateFontA call below exactly, or measured width and rendered width diverge.
     HFONT font = CreateFontA(fontHeightPx, 0, 0, 0, FW_DONTCARE, italic ? TRUE : FALSE, FALSE, FALSE,
                               ANSI_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-                              ANTIALIASED_QUALITY, DEFAULT_PITCH, "Barlow Condensed SemiBold");
+                              ANTIALIASED_QUALITY, DEFAULT_PITCH, g_modConfig.overlayFontFamily);
     HFONT oldFont = static_cast<HFONT>(SelectObject(screenDC, font));
     SIZE sz = {};
     GetTextExtentPoint32A(screenDC, text, static_cast<int>(strlen(text)), &sz);
@@ -443,21 +447,24 @@ bool RenderMaskLuminance(const char* text, const POINT* offsets, int offsetCount
     RECT full = { 0, 0, kTextureWidth, kTextureHeight };
     FillRect(memDC, &full, static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH)));
 
-    // Bundled, self-contained font (2026-07-31 follow-up) -- LoadOverlayFonts (DllMain)
-    // already registered the real Barlow Condensed SemiBold .ttf/.ttf-italic embedded
-    // in this DLL as a PRIVATE, in-process-only font via AddFontMemResourceEx, so this
-    // no longer depends on the font being installed system-wide. Family name is
-    // "Barlow Condensed SemiBold", NOT "Barlow Condensed" -- confirmed directly against
-    // the actual downloaded font files (GDI+ PrivateFontCollection enumeration): Google
-    // Fonts ships each static weight as its own family for legacy GDI/GDI+ compatibility
-    // (only Regular/Italic exist within it, which is exactly what nItalic selects
-    // between). FW_DONTCARE since the weight is already baked into which family this
-    // is, not requested at lookup time. If LoadOverlayFonts ever failed (logged at
-    // startup), GDI falls back to a default system font here exactly as before this
-    // change -- same graceful degradation, just no longer the expected path.
+    // Bundled, self-contained font (2026-07-31 follow-up; swapped to Isotherm Sans
+    // 2026-08-24) -- LoadOverlayFonts (DllMain) already registered the real Isotherm
+    // Sans UI/Italic .ttf files embedded in this DLL as a PRIVATE, in-process-only
+    // font via AddFontMemResourceEx, so the default doesn't depend on the font being
+    // installed system-wide. Family name requested here is g_modConfig.overlayFontFamily
+    // (default "Isotherm Sans", the bundled font's real family name -- confirmed
+    // directly against the actual font files, GDI+ PrivateFontCollection
+    // enumeration; both the UI and Italic .ttf register under this same family,
+    // distinguished by nItalic below, same mechanism as the Barlow pairing this
+    // replaced). A player can override this to any real system-installed font name
+    // instead (see mod_config.h's own field comment). FW_DONTCARE since the bundled
+    // font's weight is baked into which family/file this is, not requested at lookup
+    // time. If LoadOverlayFonts ever failed (logged at startup), or the configured
+    // name doesn't resolve to anything installed, GDI falls back to a default system
+    // font here exactly as before this change -- same graceful degradation.
     HFONT font = CreateFontA(fontHeightPx, 0, 0, 0, FW_DONTCARE, italic ? TRUE : FALSE, FALSE, FALSE,
                               ANSI_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-                              ANTIALIASED_QUALITY, DEFAULT_PITCH, "Barlow Condensed SemiBold");
+                              ANTIALIASED_QUALITY, DEFAULT_PITCH, g_modConfig.overlayFontFamily);
     HFONT oldFont = static_cast<HFONT>(SelectObject(memDC, font));
     SetBkMode(memDC, TRANSPARENT);
     SetTextColor(memDC, RGB(255, 255, 255));
@@ -4832,10 +4839,16 @@ bool LoadOverlayFonts(void* selfModuleHandle)
 {
     HMODULE selfModule = static_cast<HMODULE>(selfModuleHandle);
     g_selfModule = selfModule; // also needed by the glyph-icon loader (issue #48)
-    bool okRegular = LoadOneFontResource(selfModule, IDR_FONT_BARLOWCONDENSED_SEMIBOLD,
-        g_fontResourceRegular, "Barlow Condensed SemiBold");
-    bool okItalic = LoadOneFontResource(selfModule, IDR_FONT_BARLOWCONDENSED_SEMIBOLD_ITALIC,
-        g_fontResourceItalic, "Barlow Condensed SemiBold Italic");
+    // 2026-08-24: Isotherm Sans replaces Barlow Condensed SemiBold as the bundled
+    // default -- always registered here regardless of g_modConfig.overlayFontFamily,
+    // so the compiled-in default keeps working even if the config ever specifies a
+    // system font that isn't actually installed (GDI falls back to whatever's
+    // currently registered under the requested name, which for "Isotherm Sans"
+    // itself is always this private registration).
+    bool okRegular = LoadOneFontResource(selfModule, IDR_FONT_ISOTHERMSANS,
+        g_fontResourceRegular, "Isotherm Sans");
+    bool okItalic = LoadOneFontResource(selfModule, IDR_FONT_ISOTHERMSANS_ITALIC,
+        g_fontResourceItalic, "Isotherm Sans Italic");
     return okRegular && okItalic;
 }
 

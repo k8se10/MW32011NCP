@@ -126,7 +126,12 @@ void ReadBool(const char* path, const char* section, const char* key, bool& outV
 // zone_dump extraction. See mod_config.h's own field comment for the full rationale.
 // v16->v17 (2026-08-17, same-day stutter investigation): new [Experimental]
 // FrametimeBenchmarkLogging key added -- real per-frame CSV timing diagnostic.
-constexpr unsigned long kCurrentConfigVersion = 17;
+// v17->v18 (2026-08-24, font swap): new [Overlay] FontFamily key added -- default
+// bundled font switched from Barlow Condensed SemiBold to Isotherm Sans (Barlow is
+// no longer bundled at all, see resource.h), and the family name is now player-
+// overridable to any system-installed font, not just a fixed choice between two
+// bundled ones.
+constexpr unsigned long kCurrentConfigVersion = 18;
 
 // Reads a legacy key's raw value, returning true only if the key genuinely existed
 // (unlike ReadFloat, which can't distinguish "absent" from "present but unparsable" --
@@ -502,9 +507,15 @@ void WriteDefaultConfig(const char* path)
         "DamageDurationMs=%lu\n"
         "\n"
         "[Overlay]\n"
-        "; Top-right on-screen notification text (startup message, config hot-reload).\n"
-        "; Uses Barlow Condensed SemiBold, bundled directly in this DLL (2026-07-31\n"
-        "; follow-up) -- no system font install required. 1 = italic, 0 = upright.\n"
+        "; Font used for on-screen notification text, HUD hints, and the custom Options\n"
+        "; screen. Default \"Isotherm Sans\" is bundled directly in this DLL (2026-07-31\n"
+        "; follow-up, swapped from Barlow Condensed SemiBold 2026-08-24) -- no system\n"
+        "; font install required. Set this to any OTHER font's real name to use a\n"
+        "; system-installed font instead -- if the name doesn't resolve, GDI silently\n"
+        "; falls back to a default system font, same as a missing font always has.\n"
+        "FontFamily=%s\n"
+        "; 1 = italic, 0 = upright. Uses the selected font's real Italic style if it has\n"
+        "; one, GDI's own synthesized oblique otherwise.\n"
         "FontItalic=%d\n"
         "; STRICTLY A TESTING TOGGLE, default off. When on, continuously cycles\n"
         "; through every known message/animation-style variant every few seconds\n"
@@ -637,6 +648,7 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.vibrationDamagePerPoint,
         g_modConfig.vibrationDamageMaxIntensity,
         g_modConfig.vibrationDamageDurationMs,
+        g_modConfig.overlayFontFamily,
         g_modConfig.overlayFontItalic ? 1 : 0,
         g_modConfig.overlayTestCycleAllVariants ? 1 : 0,
         g_modConfig.fireNotifyQueueKick ? 1 : 0,
@@ -843,6 +855,15 @@ void LoadModConfig()
     ReadFloat(path, "Vibration", "DamageMaxIntensity", g_modConfig.vibrationDamageMaxIntensity);
     if (g_modConfig.vibrationDamageMaxIntensity < 0.0f) g_modConfig.vibrationDamageMaxIntensity = 0.0f;
     ReadUlong(path, "Vibration", "DamageDurationMs", g_modConfig.vibrationDamageDurationMs);
+    {
+        // Not read via GetPrivateProfileStringA directly into g_modConfig.overlayFontFamily
+        // (as both lpDefault and lpReturnedString) -- overlapping in/out buffers on this API
+        // are an unnecessary risk to take for no real benefit; a local temp buffer avoids it.
+        char buf[sizeof(g_modConfig.overlayFontFamily)];
+        GetPrivateProfileStringA("Overlay", "FontFamily", g_modConfig.overlayFontFamily,
+            buf, sizeof(buf), path);
+        strncpy_s(g_modConfig.overlayFontFamily, buf, _TRUNCATE);
+    }
     ReadBool(path, "Overlay", "FontItalic", g_modConfig.overlayFontItalic);
     ReadBool(path, "Overlay", "TestCycleAllVariants", g_modConfig.overlayTestCycleAllVariants);
     ReadBool(path, "Experimental", "FireNotifyQueueKick", g_modConfig.fireNotifyQueueKick);
@@ -864,7 +885,7 @@ void LoadModConfig()
 
     g_buttonMap = ResolveButtonMap(g_modConfig.buttonLayout, g_modConfig.flipTriggers);
 
-    char buf[950];
+    char buf[1024];
     sprintf_s(buf,
         "[config] loaded mw3ncp_config.ini: sensitivityH=%g sensitivityV=%g adsSlowdownStrength=%g "
         "adsSlowdownBaseline=%g adsCloseRangeSlowdownStrength=%g invertLook=%d lookAccelRampMs=%lu proneHoldMs=%lu interactHoldMs=%lu "
@@ -873,7 +894,7 @@ void LoadModConfig()
         "useCustomOptionsScreen=%d "
         "vibrationEnabled=%d vibrationFireIntensity=%g vibrationFireDurationMs=%lu "
         "vibrationDamagePerPoint=%g vibrationDamageMaxIntensity=%g vibrationDamageDurationMs=%lu "
-        "overlayFontItalic=%d overlayTestCycleAllVariants=%d "
+        "overlayFontFamily=%s overlayFontItalic=%d overlayTestCycleAllVariants=%d "
         "fireNotifyQueueKick=%d bindResolverHookLogging=%d bindResolverGlyphSubstitution=%d "
         "hudFontIdLogging=%d hudGlyphPositionLogging=%d listItemPositionLogging=%d "
         "armorFieldScanLogging=%d forceGlyphOverlay=%d glyphPositionEditMode=%d "
@@ -891,6 +912,7 @@ void LoadModConfig()
         g_modConfig.vibrationEnabled ? 1 : 0, g_modConfig.vibrationFireIntensity,
         g_modConfig.vibrationFireDurationMs, g_modConfig.vibrationDamagePerPoint,
         g_modConfig.vibrationDamageMaxIntensity, g_modConfig.vibrationDamageDurationMs,
+        g_modConfig.overlayFontFamily,
         g_modConfig.overlayFontItalic ? 1 : 0,
         g_modConfig.overlayTestCycleAllVariants ? 1 : 0,
         g_modConfig.fireNotifyQueueKick ? 1 : 0,

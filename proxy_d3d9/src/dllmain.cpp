@@ -280,9 +280,10 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID)
         DisableThreadLibraryCalls(hModule);
         LogInit();
         LoadModConfig(); // task #14 -- must run before InstallAnalogInputHooks reads g_modConfig
-        LoadOverlayFonts(hModule); // 2026-07-31 follow-up -- self-contained Barlow
-            // Condensed, embedded in this DLL rather than depending on a system
-            // install; logs its own success/failure, never fatal to DLL init either way
+        LoadOverlayFonts(hModule); // 2026-07-31 follow-up -- self-contained Isotherm
+            // Sans (swapped from Barlow Condensed 2026-08-24), embedded in this DLL
+            // rather than depending on a system install; logs its own success/failure,
+            // never fatal to DLL init either way
         if (!LoadRealD3D9()) return FALSE;
         if (!ResolveRealExports()) return FALSE;
         Log("proxy_d3d9 init OK — analog movement/look hooks installing.");
