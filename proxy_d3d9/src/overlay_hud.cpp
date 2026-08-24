@@ -58,6 +58,7 @@ extern void LogFromController(const char* msg);
 extern "C" HWND GetGameWindow(); // defined in d3d9_hook.cpp
 extern "C" bool GetLastMouseMoveClientPos(int& outX, int& outY); // defined in d3d9_hook.cpp
 extern "C" bool IsLeftMouseButtonHeld(); // defined in d3d9_hook.cpp
+extern "C" bool IsGlyphPositionEditModeActive(); // defined in analog_input_hooks.cpp -- F2 live toggle
 // Full-scope Options expansion (2026-08-06, issue #66) -- real keybind rebind
 // capture, see d3d9_hook.cpp's own header comment on this block for the full design.
 extern "C" void StartKeybindCapture(); // defined in d3d9_hook.cpp
@@ -1343,13 +1344,86 @@ void DrawGlyphIconIfRequested(void* device)
     DrawGenericTexturedQuad(device, texture, g_pendingIconX, g_pendingIconY, g_pendingIconW, g_pendingIconH);
 }
 
+// Gameplay hint position editor (2026-08-24 rewrite, live-reported: "we should use
+// the glyph editor but make it detect gameplay so we can use it on the text and
+// glyphs there too" -- then, after a first single-nudge attempt, "no placeholder,
+// you need to do it like we did the menu glyphs and text, also this better support
+// text moving too") -- mirrors DrawAndEditDiagramAnchors/the menu glyph editor's own
+// icon+text split exactly: TWO independently-draggable handles per hint, not one
+// combined nudge. Deliberately works ONLY on whatever hint is REALLY showing this
+// frame (this whole struct/function is only ever consulted from inside
+// DrawOneGameplayHintSlot, itself only called for a slot with requestedThisFrame
+// true) -- no synthesized placeholder, same "edit the real thing" principle the menu
+// editor already follows for real menu items. Keyed by (slotId, fontRole) since a
+// slot's own visual position legitimately differs between font roles (e.g.
+// Interact's Condensed-role throwback/turret text vs its Default-role buy/pickup
+// text are different widths and may want different placement).
+namespace {
+struct GameplayHintEditNudge {
+    bool used = false;
+    GameplayHintSlotId slotId = GameplayHintSlotId::Interact;
+    FontRole fontRole = FontRole::Default;
+    float textNudgeX = 0.0f, textNudgeY = 0.0f; // moves prefix+icon+suffix+topLine together (the row anchor)
+    float iconNudgeX = 0.0f, iconNudgeY = 0.0f; // ADDITIONAL, independent fine-adjustment for the icon only
+};
+constexpr int kGameplayHintEditNudgeMax = 8; // 3 slots x 2 roles = 6 real combos, some headroom
+GameplayHintEditNudge g_gameplayHintEditNudges[kGameplayHintEditNudgeMax];
+int g_gameplayHintEditDraggingSlot = -1; // index into g_gameplayHintEditNudges, -1 = not dragging
+bool g_gameplayHintEditDraggingIsIcon = false; // which of the two handles is held
+
+GameplayHintEditNudge* FindOrCreateGameplayHintEditNudge(GameplayHintSlotId slotId, FontRole fontRole)
+{
+    for (auto& n : g_gameplayHintEditNudges) {
+        if (n.used && n.slotId == slotId && n.fontRole == fontRole) return &n;
+    }
+    for (auto& n : g_gameplayHintEditNudges) {
+        if (!n.used) { n.used = true; n.slotId = slotId; n.fontRole = fontRole; return &n; }
+    }
+    return nullptr; // table full -- can't actually happen (6 real combos, 8 slots)
+}
+} // namespace
+
+} // namespace -- closes the FILE-WIDE anonymous namespace opened near the top of
+                  // this file (line 97) too, not just the small one just above --
+                  // AppendGameplayHintEditExport needs real external linkage
+                  // (analog_input_hooks.cpp calls it), which a function defined
+                  // inside ANY anonymous namespace, nested or not, can never have.
+                  // Reopened again right after this function ends, below.
+
+// Called from overlay_hud.cpp's own ExportGlyphEditPositions counterpart in
+// analog_input_hooks.cpp (AppendGameplayHintEditExport, cross-file) -- writes every
+// touched (slotId, fontRole) nudge pair to the SAME already-open export file/handle.
+void AppendGameplayHintEditExport(FILE* f)
+{
+    fprintf(f, "\n// ---- Gameplay hint icon/text nudges (F2/F3, same session) ----\n"
+               "// (GameplayHintSlotId, FontRole) -> textNudge(X,Y), iconNudge(X,Y) -- fold\n"
+               "// directly into that hint's RequestCustomHintOverlay call site (text) and its\n"
+               "// own icon draw offset in DrawOneGameplayHintSlot (icon).\n");
+    int exported = 0;
+    for (auto& n : g_gameplayHintEditNudges) {
+        if (!n.used) continue;
+        if (n.textNudgeX == 0.0f && n.textNudgeY == 0.0f && n.iconNudgeX == 0.0f && n.iconNudgeY == 0.0f) continue;
+        const char* slotName = n.slotId == GameplayHintSlotId::Interact ? "Interact"
+                              : n.slotId == GameplayHintSlotId::ReadyUp ? "ReadyUp" : "Reload";
+        const char* roleName = n.fontRole == FontRole::Condensed ? "Condensed" : "Default";
+        fprintf(f, "// %s + %s: textNudge=(%.1ff, %.1ff) iconNudge=(%.1ff, %.1ff)\n",
+            slotName, roleName, n.textNudgeX, n.textNudgeY, n.iconNudgeX, n.iconNudgeY);
+        ++exported;
+    }
+    if (exported == 0) fprintf(f, "// (nothing dragged yet this session)\n");
+}
+
+namespace { // reopens the same file-wide anonymous namespace closed just above --
+            // everything from here back to its real close (this file's own line
+            // 4020, unchanged by this edit) stays internal-linkage exactly as before.
+
 // Draws prefix-text + real controller-glyph icon + suffix-text sequentially at
 // (slot.x, slot.y), all self-rendered (see the big comment above GameplayHintSlot) --
 // consumed once per frame like the plain icon overlay above, must be re-requested
 // every frame to keep showing. Deliberately a near-duplicate of DrawOneMenuHintSlot's
 // layout math further down, same reasoning as that function's own comment: this path
 // is proven/live-tested and a shared refactor isn't worth the risk right now.
-void DrawOneGameplayHintSlot(void* device, GameplayHintSlot& slot, float scaleX, float scaleY)
+void DrawOneGameplayHintSlot(void* device, GameplayHintSlot& slot, GameplayHintSlotId slotId, float scaleX, float scaleY)
 {
     // Live-reported 2026-07-31 (second round, 1440p): still wrong even after the first
     // scale-factor pass. Per explicit direction: "let's not make res a factor except
@@ -1462,6 +1536,62 @@ void DrawOneGameplayHintSlot(void* device, GameplayHintSlot& slot, float scaleX,
         float screenWidthDesign = static_cast<float>(screenWidthPx) / scaleX;
         cursorX = (screenWidthDesign - totalContentWidth) * 0.5f;
     }
+    // Gameplay hint position editor (2026-08-24) -- see AppendGameplayHintEditExport's
+    // own big comment above for the full design. baseCursorX/baseIconVerticalCenter
+    // are the UN-NUDGED positions computed above (real native/centered layout);
+    // editNudge holds this (slotId, fontRole)'s persistent drag offset. Hit-test/drag
+    // for the TEXT handle happens here, against wherever it's CURRENTLY sitting
+    // (base + the nudge from any earlier frame/drag) -- same "drag from where it
+    // visually is" convention the menu editor and diagram editor both already use.
+    // The ICON handle's own hit-test/drag happens later, right where the icon
+    // actually draws, since ITS current position also depends on the (separate)
+    // iconNudge applied there.
+    float baseCursorX = cursorX;
+    float baseIconVerticalCenter = iconVerticalCenter;
+    GameplayHintEditNudge* editNudge = FindOrCreateGameplayHintEditNudge(slotId, slot.fontRole);
+    bool editorActive = g_modConfig.glyphPositionEditMode && IsGlyphPositionEditModeActive();
+    if (editNudge && editorActive) {
+        static bool s_lastMouseHeld = false;
+        bool mouseHeld = IsLeftMouseButtonHeld();
+        bool clickEdge = mouseHeld && !s_lastMouseHeld;
+        s_lastMouseHeld = mouseHeld;
+        if (!mouseHeld) g_gameplayHintEditDraggingSlot = -1;
+
+        int mouseX = 0, mouseY = 0;
+        bool haveMouse = GetLastMouseMoveClientPos(mouseX, mouseY);
+        float mouseDesignX = 0.0f, mouseDesignY = 0.0f;
+        if (haveMouse) ConvertMouseClientPosToDesignSpace(mouseX, mouseY, mouseDesignX, mouseDesignY);
+
+        int nudgeSlot = static_cast<int>(editNudge - g_gameplayHintEditNudges);
+        constexpr float kHandleHitRadiusDesign = 32.0f; // matches the menu editor's own hit radius
+        float textHandleX = baseCursorX + editNudge->textNudgeX;
+        float textHandleY = baseIconVerticalCenter + editNudge->textNudgeY;
+
+        if (haveMouse && clickEdge && g_gameplayHintEditDraggingSlot < 0) {
+            float dx = mouseDesignX - textHandleX, dy = mouseDesignY - textHandleY;
+            if (dx * dx + dy * dy <= kHandleHitRadiusDesign * kHandleHitRadiusDesign) {
+                g_gameplayHintEditDraggingSlot = nudgeSlot;
+                g_gameplayHintEditDraggingIsIcon = false;
+            }
+        }
+        bool draggingText = (g_gameplayHintEditDraggingSlot == nudgeSlot && !g_gameplayHintEditDraggingIsIcon);
+        if (draggingText && haveMouse) {
+            editNudge->textNudgeX = mouseDesignX - baseCursorX;
+            editNudge->textNudgeY = mouseDesignY - baseIconVerticalCenter;
+            textHandleX = mouseDesignX;
+            textHandleY = mouseDesignY;
+        }
+        const char* slotLabel = slotId == GameplayHintSlotId::Interact ? "TEXT (Interact)"
+                               : slotId == GameplayHintSlotId::ReadyUp ? "TEXT (ReadyUp)" : "TEXT (Reload)";
+        RequestGlyphEditHandleBox(textHandleX, textHandleY, kHandleHitRadiusDesign,
+            draggingText ? 0x9000FF00u : 0x9000AAFFu, slotLabel);
+    }
+    float textNudgeX = editNudge ? editNudge->textNudgeX : 0.0f;
+    float textNudgeY = editNudge ? editNudge->textNudgeY : 0.0f;
+    cursorX += textNudgeX;
+    textQuadTop += textNudgeY;
+    iconVerticalCenter += textNudgeY;
+
     float lineStartX = cursorX; // captured before prefix/icon/suffix advance it -- see the optional top line below
 
     // Live-reported 2026-07-31: still mis-positioned at 1440p even with scaleX/scaleY
@@ -1505,9 +1635,57 @@ void DrawOneGameplayHintSlot(void* device, GameplayHintSlot& slot, float scaleX,
             BYTE alpha = static_cast<BYTE>(kPulseMinAlpha + wave * (255 - kPulseMinAlpha));
             iconColor = (static_cast<DWORD>(alpha) << 24) | 0x00FFFFFF;
         }
-        drawScaledQuad(iconTexture, cursorX, iconVerticalCenter - iconDrawHeight * 0.5f,
+        // ICON handle -- independent of the TEXT handle above, own hit-test/drag,
+        // ADDITIONAL offset on top of the icon's own normal (text-flow-derived) base
+        // position. Base position here already includes cursorX's own textNudge (via
+        // the addition above), so iconNudge is purely the icon's own fine adjustment
+        // relative to wherever the text row currently sits -- moving TEXT carries the
+        // icon along with it (same row), moving ICON only moves the icon.
+        float iconNudgeX = editNudge ? editNudge->iconNudgeX : 0.0f;
+        float iconNudgeY = editNudge ? editNudge->iconNudgeY : 0.0f;
+        float iconBaseX = cursorX;
+        float iconBaseY = iconVerticalCenter;
+        if (editNudge && editorActive) {
+            static bool s_lastMouseHeldIcon = false;
+            bool mouseHeld = IsLeftMouseButtonHeld();
+            bool clickEdge = mouseHeld && !s_lastMouseHeldIcon;
+            s_lastMouseHeldIcon = mouseHeld;
+            if (!mouseHeld) g_gameplayHintEditDraggingSlot = -1;
+
+            int mouseX = 0, mouseY = 0;
+            bool haveMouse = GetLastMouseMoveClientPos(mouseX, mouseY);
+            float mouseDesignX = 0.0f, mouseDesignY = 0.0f;
+            if (haveMouse) ConvertMouseClientPosToDesignSpace(mouseX, mouseY, mouseDesignX, mouseDesignY);
+
+            int nudgeSlot = static_cast<int>(editNudge - g_gameplayHintEditNudges);
+            constexpr float kHandleHitRadiusDesign = 32.0f;
+            float iconHandleX = iconBaseX + iconNudgeX + iconDrawWidth * 0.5f;
+            float iconHandleY = iconBaseY + iconNudgeY;
+
+            if (haveMouse && clickEdge && g_gameplayHintEditDraggingSlot < 0) {
+                float dx = mouseDesignX - iconHandleX, dy = mouseDesignY - iconHandleY;
+                if (dx * dx + dy * dy <= kHandleHitRadiusDesign * kHandleHitRadiusDesign) {
+                    g_gameplayHintEditDraggingSlot = nudgeSlot;
+                    g_gameplayHintEditDraggingIsIcon = true;
+                }
+            }
+            bool draggingIcon = (g_gameplayHintEditDraggingSlot == nudgeSlot && g_gameplayHintEditDraggingIsIcon);
+            if (draggingIcon && haveMouse) {
+                iconNudgeX = mouseDesignX - iconDrawWidth * 0.5f - iconBaseX;
+                iconNudgeY = mouseDesignY - iconBaseY;
+                editNudge->iconNudgeX = iconNudgeX;
+                editNudge->iconNudgeY = iconNudgeY;
+                iconHandleX = mouseDesignX;
+                iconHandleY = mouseDesignY;
+            }
+            const char* slotLabel = slotId == GameplayHintSlotId::Interact ? "ICON (Interact)"
+                                   : slotId == GameplayHintSlotId::ReadyUp ? "ICON (ReadyUp)" : "ICON (Reload)";
+            RequestGlyphEditHandleBox(iconHandleX, iconHandleY, kHandleHitRadiusDesign,
+                draggingIcon ? 0x9000FF00u : 0x90FFA000u, slotLabel);
+        }
+        drawScaledQuad(iconTexture, iconBaseX + iconNudgeX, iconBaseY + iconNudgeY - iconDrawHeight * 0.5f,
             iconDrawWidth, iconDrawHeight, iconColor);
-        cursorX += iconDrawWidth + kIconGap;
+        cursorX += iconDrawWidth + kIconGap; // unaffected by iconNudge -- suffix flow stays stable regardless
     }
 
     if (suffixDrawWidth > 0) {
@@ -1571,7 +1749,7 @@ void DrawGameplayHintSlotsIfRequested(void* device)
         if (static_cast<GameplayHintSlotId>(i) == GameplayHintSlotId::Reload && readyUpOrInteractShowing) {
             continue; // the one named suppression rule -- see this function's own comment
         }
-        DrawOneGameplayHintSlot(device, slot, scaleX, scaleY);
+        DrawOneGameplayHintSlot(device, slot, static_cast<GameplayHintSlotId>(i), scaleX, scaleY);
     }
 }
 
@@ -4564,6 +4742,71 @@ void ReleaseAllCachedTextures()
     // avoiding one redundant CreatePixelShader call on an ordinary Reset.
     releaseIfSet(g_optBlurPixelShader);
 }
+
+} // namespace -- closes the file-wide anonymous namespace (see the matching close's
+                  // own comment further up this file for why) -- InvalidateText...
+                  // needs real external linkage (mod_config.cpp calls it). Reopened
+                  // right after this function ends, below.
+
+// See overlay_hud.h's own comment for the bug this fixes. Deliberately narrower than
+// ReleaseAllCachedTextures(false) above -- only releases actual TEXT caches, not
+// g_optWhiteTexture/g_optBlurTexture/g_optBlurPixelShader/g_debugMarkerTexture
+// (none of those are text, none are affected by a font-family/italic config change,
+// and the blur shader specifically is now eagerly prewarmed at device-creation time
+// -- see PrewarmGlyphIconTextures's own comment -- releasing it here would silently
+// undo that prewarm until the next device-creation event, reintroducing the exact
+// shader-compile-stutter class that prewarm exists to prevent, the next time the
+// Options screen's blur happened to be needed after an unrelated font-only reload).
+void InvalidateTextTextureCachesOnConfigChange()
+{
+    auto releaseIfSet = [](void*& tex) {
+        if (!tex) return;
+        void** vtbl = *reinterpret_cast<void***>(tex);
+        reinterpret_cast<Release_t>(vtbl[kSurfaceReleaseVtableIndex])(tex);
+        tex = nullptr;
+    };
+    auto releaseIfSetTextCache = [&](TextTexCache& cache) {
+        releaseIfSet(cache.texture);
+        cache.renderedFor[0] = '\0';
+        cache.lastFontHeightPx = 0;
+    };
+    for (auto& c : g_optRowLabelCache) releaseIfSetTextCache(c);
+    for (auto& c : g_optRowValueCache) releaseIfSetTextCache(c);
+    for (auto& c : g_tabBarCache) releaseIfSetTextCache(c);
+    releaseIfSetTextCache(g_optTitleCache);
+    releaseIfSetTextCache(g_optDescCache);
+    releaseIfSetTextCache(g_optScrollUpHintCache);
+    releaseIfSetTextCache(g_optScrollDownHintCache);
+    releaseIfSetTextCache(g_optCornerBackCache);
+    releaseIfSetTextCache(g_optRebindPromptTitleCache);
+    releaseIfSetTextCache(g_optRebindPromptSubtitleCache);
+    releaseIfSetTextCache(g_optApplyPromptTitleCache);
+    releaseIfSetTextCache(g_optApplyYesCache);
+    releaseIfSetTextCache(g_optApplyNoCache);
+    for (auto& c : g_diagLabelCache) releaseIfSetTextCache(c);
+    for (auto& c : g_diagEditHandleLabelCache) releaseIfSetTextCache(c);
+    for (auto& c : g_glyphEditHandleLabelCache) releaseIfSetTextCache(c);
+    releaseIfSet(g_textTexture);
+    g_textureRenderedFor[0] = '\0';
+    for (auto& slot : g_gameplayHintSlots) {
+        releaseIfSet(slot.prefixTexture);
+        slot.prefixRenderedFor[0] = '\0';
+        releaseIfSet(slot.suffixTexture);
+        slot.suffixRenderedFor[0] = '\0';
+        releaseIfSet(slot.topLineTexture);
+        slot.topLineRenderedFor[0] = '\0';
+    }
+    for (auto& slot : g_menuHintSlots) {
+        releaseIfSet(slot.prefixTexture);
+        slot.prefixRenderedFor[0] = '\0';
+        releaseIfSet(slot.suffixTexture);
+        slot.suffixRenderedFor[0] = '\0';
+    }
+    LogFromController("[overlay-hud] config hot-reload -- invalidated all cached text textures");
+}
+
+namespace { // reopens -- everything from here back to this file's own real close
+            // stays internal-linkage exactly as before this edit.
 
 HRESULT WINAPI Hook_Reset(void* device, void* pPresentationParameters)
 {
