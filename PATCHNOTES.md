@@ -79,7 +79,15 @@ reverse-engineering trail behind each entry.
   no DirectInput import (confirmed) so its mouse-look accumulator has to be fed by
   one of those two OS-level mechanisms -- hooking both sidesteps needing to know
   which for certain.
-5. **Mod-wide UI text now uses consistent Title Case.** Every player-facing string this
+5. **The glyph overlay now force-draws whenever the F2 gameplay-hint editor is
+  active**, regardless of whether a controller is the current active input method.
+  Direct request: "force glyph should be force enabled when any glyph editor is on."
+  Calibrating with a mouse means no controller is active, so `ShouldDrawGlyphOverlay`
+  wouldn't have drawn anything at all while editing -- same root failure shape as
+  issue #74 (a gate silently keeping glyphs from showing). This is a runtime check
+  against `IsGlyphPositionEditModeActive()`, not a config default -- nothing to set
+  in `mw3ncp_config.ini`, it just works whenever F2 is actually toggled on.
+6. **Mod-wide UI text now uses consistent Title Case.** Every player-facing string this
   project itself draws (custom Options screen row/tab labels, the Custom Binds table,
   the Stick/Button Layout drill-down, the diagram labels, the Apply Settings/Rebind
   popups) was previously a mix of ALL CAPS (most of the custom Options screen) and
