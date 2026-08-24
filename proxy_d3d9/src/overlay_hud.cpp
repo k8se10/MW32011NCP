@@ -312,6 +312,7 @@ struct GameplayHintSlot {
     bool centerOnScreen = false;
     bool flashIcon = false;
     bool requestedThisFrame = false;
+    FontRole fontRole = FontRole::Default; // 2026-08-24 -- see RequestCustomHintOverlay's own comment
     void* prefixTexture = nullptr;
     void* suffixTexture = nullptr;
     char prefixRenderedFor[128] = {};
@@ -388,26 +389,44 @@ constexpr float kHintIconSize = 42.0f; // sized to match kHintFontHeightPx, not 
 // canvas showing costs nothing, a clipped glyph is very visible.
 constexpr int kHintTextWidthMarginPx = 20;
 
+// FontRole is declared in overlay_hud.h (needed by analog_input_hooks.cpp's hint
+// call sites too, not just this file) -- see its own comment there for the history.
+
+// Resolves a FontRole to the actual family name CreateFontA should request. Each
+// role has its own independently player-overridable config field (mod_config.h's
+// overlayFontFamily / overlayFontFamilyCondensed) -- "remember we support custom
+// fonts now too so we need to make it so there is a custom default font and a
+// custom condensed font etc" -- an empty override falls back to that role's own
+// bundled Isotherm Sans variant, never to the OTHER role's font/override.
+const char* ResolveFontFamily(FontRole role)
+{
+    if (role == FontRole::Condensed) {
+        return g_modConfig.overlayFontFamilyCondensed[0] ? g_modConfig.overlayFontFamilyCondensed : "Isotherm Sans";
+    }
+    return g_modConfig.overlayFontFamily;
+}
+
 // Measures how wide `text` actually renders at the given font size -- needed so the
 // prefix/icon/suffix pieces can be placed sequentially with no gap or overlap, since
 // each is rendered into a fixed-size (kTextureWidth x kTextureHeight) canvas that's
 // almost always wider than the actual text.
-int MeasureTextWidthPx(const char* text, bool italic, int fontHeightPx)
+int MeasureTextWidthPx(const char* text, bool italic, int fontHeightPx, FontRole fontRole = FontRole::Default)
 {
     HDC screenDC = GetDC(nullptr);
-    // g_modConfig.overlayFontFamily (2026-08-24) -- defaults to "Isotherm Sans" (the
-    // bundled font, see LoadOverlayFonts), but a player can point this at any real
-    // system-installed font name instead. Must match RenderMaskLuminance's own
-    // CreateFontA call below exactly, or measured width and rendered width diverge.
-    // FW_SEMIBOLD (2026-08-24, live-reported: "we need to make the text semibold") --
-    // the bundled font only registers a single weight (its "Condensed" style, still
-    // wght 360 Regular under the hood), so this relies on GDI's own synthetic emboldening (the same mechanism already
-    // documented for FW_DONTCARE/nItalic's synthesized-oblique fallback above) rather
-    // than a second embedded semibold weight -- simpler than sourcing/bundling a new
-    // font file, and applies equally to a player's own FontFamily override.
+    // ResolveFontFamily (2026-08-24) -- resolves fontRole to that role's own
+    // independently player-overridable config field (default "Isotherm Sans UI"
+    // for FontRole::Default, "Isotherm Sans" Condensed for FontRole::Condensed).
+    // Must match RenderMaskLuminance's own CreateFontA call exactly, or measured
+    // width and rendered width diverge. FW_SEMIBOLD (2026-08-24, live-reported: "we
+    // need to make the text semibold") -- both bundled variants only register a
+    // single weight each, so this relies on GDI's own synthetic emboldening (the
+    // same mechanism already documented for FW_DONTCARE/nItalic's
+    // synthesized-oblique fallback) rather than a second embedded semibold weight
+    // per variant -- simpler than sourcing/bundling new font files, and applies
+    // equally to a player's own FontFamily/FontFamilyCondensed override.
     HFONT font = CreateFontA(fontHeightPx, 0, 0, 0, FW_SEMIBOLD, italic ? TRUE : FALSE, FALSE, FALSE,
                               ANSI_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-                              ANTIALIASED_QUALITY, DEFAULT_PITCH, g_modConfig.overlayFontFamily);
+                              ANTIALIASED_QUALITY, DEFAULT_PITCH, ResolveFontFamily(fontRole));
     HFONT oldFont = static_cast<HFONT>(SelectObject(screenDC, font));
     SIZE sz = {};
     GetTextExtentPoint32A(screenDC, text, static_cast<int>(strlen(text)), &sz);
@@ -427,7 +446,7 @@ int MeasureTextWidthPx(const char* text, bool italic, int fontHeightPx)
 // function's own comment for how the two masks combine into a real black-outlined,
 // white-filled result.
 bool RenderMaskLuminance(const char* text, const POINT* offsets, int offsetCount, bool italic, BYTE* outLuminance,
-                          UINT alignFlag = DT_RIGHT, int fontHeightPx = 20)
+                          UINT alignFlag = DT_RIGHT, int fontHeightPx = 20, FontRole fontRole = FontRole::Default)
 {
     BITMAPINFO bmi = {};
     bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
@@ -453,28 +472,25 @@ bool RenderMaskLuminance(const char* text, const POINT* offsets, int offsetCount
     RECT full = { 0, 0, kTextureWidth, kTextureHeight };
     FillRect(memDC, &full, static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH)));
 
-    // Bundled, self-contained font (2026-07-31 follow-up; swapped to Isotherm Sans
-    // 2026-08-24) -- LoadOverlayFonts (DllMain) already registered the real Isotherm
-    // Sans Condensed/Italic .ttf files embedded in this DLL as a PRIVATE, in-process-only
-    // font via AddFontMemResourceEx, so the default doesn't depend on the font being
-    // installed system-wide. Family name requested here is g_modConfig.overlayFontFamily
-    // (default "Isotherm Sans", the bundled font's real family name -- confirmed
-    // directly against the actual font files, GDI+ PrivateFontCollection
-    // enumeration; both the Condensed and Italic .ttf register under this same
-    // family, distinguished by nItalic below, same mechanism as the Barlow pairing
-    // this replaced). A player can override this to any real system-installed font
-    // name instead (see mod_config.h's own field comment). FW_SEMIBOLD (2026-08-24,
-    // live-reported: "we need to make the text semibold") -- the bundled font only
-    // registers a single weight (its "Condensed" style, still wght 360 Regular under
-    // the hood), so this relies on GDI's own synthetic emboldening rather than a
-    // second embedded semibold weight file;
-    // must match MeasureTextWidthPx's own CreateFontA call above exactly. If
-    // LoadOverlayFonts ever failed (logged at startup), or the configured name
-    // doesn't resolve to anything installed, GDI falls back to a default system font
-    // here exactly as before this change -- same graceful degradation.
+    // Bundled, self-contained fonts (2026-07-31 follow-up; swapped to Isotherm Sans
+    // 2026-08-24, then split into two selectable variants the same day -- see
+    // resource.h's own comment for the full history) -- LoadOverlayFonts (DllMain)
+    // already registered both variants' .ttf files embedded in this DLL as PRIVATE,
+    // in-process-only fonts via AddFontMemResourceEx, so neither depends on being
+    // installed system-wide. Family name requested here is ResolveFontFamily(fontRole)
+    // -- fontRole picks which of the two independently player-overridable config
+    // fields applies (FontFamily / FontFamilyCondensed, mod_config.h), each falling
+    // back to its own bundled variant if unset. Must match MeasureTextWidthPx's own
+    // CreateFontA call exactly, or measured/rendered width diverge. FW_SEMIBOLD
+    // (2026-08-24, live-reported: "we need to make the text semibold") -- each
+    // bundled variant only registers a single weight, so this relies on GDI's own
+    // synthetic emboldening rather than a second embedded semibold weight file per
+    // variant. If LoadOverlayFonts ever failed (logged at startup), or the resolved
+    // name doesn't resolve to anything installed, GDI falls back to a default
+    // system font here exactly as before this change -- same graceful degradation.
     HFONT font = CreateFontA(fontHeightPx, 0, 0, 0, FW_SEMIBOLD, italic ? TRUE : FALSE, FALSE, FALSE,
                               ANSI_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-                              ANTIALIASED_QUALITY, DEFAULT_PITCH, g_modConfig.overlayFontFamily);
+                              ANTIALIASED_QUALITY, DEFAULT_PITCH, ResolveFontFamily(fontRole));
     HFONT oldFont = static_cast<HFONT>(SelectObject(memDC, font));
     SetBkMode(memDC, TRANSPARENT);
     SetTextColor(memDC, RGB(255, 255, 255));
@@ -514,7 +530,8 @@ bool RenderMaskLuminance(const char* text, const POINT* offsets, int offsetCount
 // black, ramping to full white deep inside the glyph) -- this naturally anti-aliases
 // the black-to-white transition at the fill's real edge using the fill mask's own
 // coverage value, with no extra blending step needed.
-bool RenderTextToArgbBuffer(const char* text, DWORD* outPixels, UINT alignFlag = DT_RIGHT, int fontHeightPx = 20)
+bool RenderTextToArgbBuffer(const char* text, DWORD* outPixels, UINT alignFlag = DT_RIGHT, int fontHeightPx = 20,
+                              FontRole fontRole = FontRole::Default)
 {
     static BYTE outlineMask[kTextureWidth * kTextureHeight];
     static BYTE fillMask[kTextureWidth * kTextureHeight];
@@ -530,10 +547,10 @@ bool RenderTextToArgbBuffer(const char* text, DWORD* outPixels, UINT alignFlag =
         { -3, 2 },  { -2, 2 },  { -1, 2 },  { 0, 2 },  { 1, 2 },  { 2, 2 },  { 3, 2 },
         { -3, 3 },  { -2, 3 },  { -1, 3 },  { 0, 3 },  { 1, 3 },  { 2, 3 },  { 3, 3 },
     };
-    if (!RenderMaskLuminance(text, kOutlineOffsets, 49, italic, outlineMask, alignFlag, fontHeightPx)) return false;
+    if (!RenderMaskLuminance(text, kOutlineOffsets, 49, italic, outlineMask, alignFlag, fontHeightPx, fontRole)) return false;
 
     const POINT kFillOffset[1] = { { 0, 0 } };
-    if (!RenderMaskLuminance(text, kFillOffset, 1, italic, fillMask, alignFlag, fontHeightPx)) return false;
+    if (!RenderMaskLuminance(text, kFillOffset, 1, italic, fillMask, alignFlag, fontHeightPx, fontRole)) return false;
 
     for (int i = 0; i < kTextureWidth * kTextureHeight; ++i) {
         DWORD alpha = outlineMask[i];
@@ -615,13 +632,18 @@ void EnsureTextTexture(void* device)
 // still creates/keeps the texture) so a hint with no prefix or no suffix text doesn't
 // need special-casing by the caller.
 bool EnsureLeftAlignedTextTexture(void* device, void*& texture, char* renderedForBuf, size_t renderedForBufSize,
-                                   const char* text, int& lastFontHeightPx, int fontHeightPx)
+                                   const char* text, int& lastFontHeightPx, int fontHeightPx,
+                                   FontRole fontRole = FontRole::Default)
 {
     // Live-reported 2026-07-31: resolution scaling means fontHeightPx can change
     // between calls with the SAME text (e.g. the user resizes the window) -- the
     // cache must invalidate on a scale change too, not just a text change, or a
     // stale texture rendered at the old resolution's font size would stick around.
-    if (texture && lastFontHeightPx == fontHeightPx && strncmp(renderedForBuf, text, renderedForBufSize - 1) == 0) return true;
+    // fontRole folded into the same cache key (2026-08-24, *2 +0/1) rather than a
+    // new struct field per cache slot -- so a slot switching roles with coincidentally
+    // identical text still re-renders instead of showing the wrong role's texture.
+    int cacheKey = fontHeightPx * 2 + (fontRole == FontRole::Condensed ? 1 : 0);
+    if (texture && lastFontHeightPx == cacheKey && strncmp(renderedForBuf, text, renderedForBufSize - 1) == 0) return true;
 
     if (!texture) {
         void** deviceVtbl = *reinterpret_cast<void***>(device);
@@ -648,13 +670,13 @@ bool EnsureLeftAlignedTextTexture(void* device, void*& texture, char* renderedFo
     LockedRect locked = {};
     if (SUCCEEDED(lockRect(surface, &locked, nullptr, 0)) && locked.pBits) {
         static DWORD pixels[kTextureWidth * kTextureHeight];
-        if (RenderTextToArgbBuffer(text, pixels, DT_LEFT, fontHeightPx)) {
+        if (RenderTextToArgbBuffer(text, pixels, DT_LEFT, fontHeightPx, fontRole)) {
             for (int y = 0; y < kTextureHeight; ++y) {
                 memcpy(static_cast<BYTE*>(locked.pBits) + y * locked.Pitch,
                        pixels + y * kTextureWidth, kTextureWidth * sizeof(DWORD));
             }
             strncpy_s(renderedForBuf, renderedForBufSize, text, _TRUNCATE);
-            lastFontHeightPx = fontHeightPx;
+            lastFontHeightPx = cacheKey;
             ok = true;
         }
         unlockRect(surface);
@@ -1362,13 +1384,13 @@ void DrawOneGameplayHintSlot(void* device, GameplayHintSlot& slot, float scaleX,
 
     if (!EnsureLeftAlignedTextTexture(device, slot.prefixTexture, slot.prefixRenderedFor,
                                        sizeof(slot.prefixRenderedFor), slot.prefixText,
-                                       slot.prefixLastFontHeight, kHintFontHeightPx)) return;
-    slot.prefixMeasuredWidth = MeasureTextWidthPx(slot.prefixText, g_modConfig.overlayFontItalic, kHintFontHeightPx);
+                                       slot.prefixLastFontHeight, kHintFontHeightPx, slot.fontRole)) return;
+    slot.prefixMeasuredWidth = MeasureTextWidthPx(slot.prefixText, g_modConfig.overlayFontItalic, kHintFontHeightPx, slot.fontRole);
 
     if (!EnsureLeftAlignedTextTexture(device, slot.suffixTexture, slot.suffixRenderedFor,
                                        sizeof(slot.suffixRenderedFor), slot.suffixText,
-                                       slot.suffixLastFontHeight, kHintFontHeightPx)) return;
-    slot.suffixMeasuredWidth = MeasureTextWidthPx(slot.suffixText, g_modConfig.overlayFontItalic, kHintFontHeightPx);
+                                       slot.suffixLastFontHeight, kHintFontHeightPx, slot.fontRole)) return;
+    slot.suffixMeasuredWidth = MeasureTextWidthPx(slot.suffixText, g_modConfig.overlayFontItalic, kHintFontHeightPx, slot.fontRole);
 
     void* iconTexture = nullptr;
     int iconTexW = 0, iconTexH = 0;
@@ -1504,8 +1526,8 @@ void DrawOneGameplayHintSlot(void* device, GameplayHintSlot& slot, float scaleX,
     if (slot.topLineText[0] != '\0' &&
         EnsureLeftAlignedTextTexture(device, slot.topLineTexture, slot.topLineRenderedFor,
                                        sizeof(slot.topLineRenderedFor), slot.topLineText,
-                                       slot.topLineLastFontHeight, kHintFontHeightPx)) {
-        slot.topLineMeasuredWidth = MeasureTextWidthPx(slot.topLineText, g_modConfig.overlayFontItalic, kHintFontHeightPx);
+                                       slot.topLineLastFontHeight, kHintFontHeightPx, slot.fontRole)) {
+        slot.topLineMeasuredWidth = MeasureTextWidthPx(slot.topLineText, g_modConfig.overlayFontItalic, kHintFontHeightPx, slot.fontRole);
         int topLineDrawWidth = slot.topLineMeasuredWidth > 0 ? slot.topLineMeasuredWidth + kHintTextWidthMarginPx : 0;
         if (topLineDrawWidth > 0) {
             float topU0 = static_cast<float>(kHintTextRenderLeftMarginPx) / static_cast<float>(kTextureWidth);
@@ -4875,6 +4897,10 @@ namespace {
 // (either LoadOverlayFonts was never called, or it failed and was logged).
 HANDLE g_fontResourceRegular = nullptr;
 HANDLE g_fontResourceItalic = nullptr;
+// The second bundled variant (2026-08-24) -- "Isotherm Sans UI", the general
+// default; see resource.h's own comment for why two variants exist.
+HANDLE g_fontResourceUiRegular = nullptr;
+HANDLE g_fontResourceUiItalic = nullptr;
 
 bool LoadOneFontResource(HMODULE selfModule, int resourceId, HANDLE& outHandle, const char* label)
 {
@@ -4928,7 +4954,16 @@ bool LoadOverlayFonts(void* selfModuleHandle)
         g_fontResourceRegular, "Isotherm Sans");
     bool okItalic = LoadOneFontResource(selfModule, IDR_FONT_ISOTHERMSANS_ITALIC,
         g_fontResourceItalic, "Isotherm Sans Italic");
-    return okRegular && okItalic;
+    // Second bundled variant (2026-08-24) -- "Isotherm Sans UI", the general default
+    // (see resource.h's own comment). Loaded unconditionally alongside the Condensed
+    // pair above, same reasoning: the compiled-in default must keep working
+    // regardless of anything g_modConfig.overlayFontFamily or a per-hint override
+    // ever requests.
+    bool okUiRegular = LoadOneFontResource(selfModule, IDR_FONT_ISOTHERMSANS_UI,
+        g_fontResourceUiRegular, "Isotherm Sans UI");
+    bool okUiItalic = LoadOneFontResource(selfModule, IDR_FONT_ISOTHERMSANS_UI_ITALIC,
+        g_fontResourceUiItalic, "Isotherm Sans UI Italic");
+    return okRegular && okItalic && okUiRegular && okUiItalic;
 }
 
 void UnloadOverlayFonts()
@@ -4940,6 +4975,14 @@ void UnloadOverlayFonts()
     if (g_fontResourceItalic) {
         RemoveFontMemResourceEx(g_fontResourceItalic);
         g_fontResourceItalic = nullptr;
+    }
+    if (g_fontResourceUiRegular) {
+        RemoveFontMemResourceEx(g_fontResourceUiRegular);
+        g_fontResourceUiRegular = nullptr;
+    }
+    if (g_fontResourceUiItalic) {
+        RemoveFontMemResourceEx(g_fontResourceUiItalic);
+        g_fontResourceUiItalic = nullptr;
     }
 }
 
@@ -4964,7 +5007,7 @@ void RequestGlyphIconOverlay(float x, float y, float w, float h, const char* ass
 
 void RequestCustomHintOverlay(float x, float y, const char* prefixText, const char* suffixText,
                                const char* assetName, bool centerOnScreen, bool flashIcon,
-                               GameplayHintSlotId slotId, const char* topLineText)
+                               GameplayHintSlotId slotId, const char* topLineText, FontRole fontRole)
 {
     GameplayHintSlot& slot = g_gameplayHintSlots[static_cast<int>(slotId)];
     strncpy_s(slot.prefixText, prefixText, _TRUNCATE);
@@ -4975,6 +5018,7 @@ void RequestCustomHintOverlay(float x, float y, const char* prefixText, const ch
     slot.centerOnScreen = centerOnScreen;
     slot.flashIcon = flashIcon;
     strncpy_s(slot.topLineText, topLineText, _TRUNCATE);
+    slot.fontRole = fontRole;
     slot.requestedThisFrame = true;
 }
 

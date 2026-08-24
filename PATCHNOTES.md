@@ -18,33 +18,52 @@ reverse-engineering trail behind each entry.
   outline read as too thin/soft against busy backgrounds, especially at smaller HUD
   hint sizes. Both `CreateFontA` call sites (measurement and render) updated together
   since a mismatch would make measured and rendered text widths diverge.
-2. **Default UI font switched to Isotherm Sans; any system-installed font can now be
-  picked via config.** Every on-screen text draw (notification text, HUD hints, the
-  custom Options screen) previously used a fixed, bundled Barlow Condensed SemiBold
-  with no way to change it. Barlow is no longer bundled at all -- replaced by
-  [Isotherm Sans](https://github.com/k8se10/isotherm-sans) (Condensed + Italic
-  styles, bundled the same private in-process way), a modernized derivative of
-  Manrope. New `[Overlay] FontFamily` config key (default `Isotherm Sans`) can be set
-  to any real, system-installed font's name instead -- if the name doesn't resolve,
-  GDI falls back to a default system font, same graceful degradation a missing font
-  has always had. `FontItalic`'s own default also flipped true->false in the same
-  pass -- italic was a Barlow Condensed-era styling choice, not a property of the new
-  font, which now defaults to its upright "Condensed" style. Existing configs that
-  already have an explicit `FontItalic` value keep it, per this project's usual
-  "explicit value always wins" migration policy -- only a fresh install (or a config
-  that never touched this key) gets the new default. **Confirmed live 2026-08-24** --
-  two follow-ups needed: an already-migrated config's explicit `FontItalic=1`
-  (written before the default flip) doesn't retroactively pick up the new `0`
-  default, per that same policy -- had to be hand-edited once for an in-progress
-  config; and the FIRST bundled style tried, "UI," measured (real GDI harness,
-  `GetTextExtentPoint32A`, both fonts loaded via `AddFontResourceExA`) 45-76% WIDER
-  than Barlow Condensed SemiBold Italic at matching pixel heights -- "UI" isn't a
+2. **Default UI font switched to Isotherm Sans, bundled as TWO independently
+  player-overridable variants; any system-installed font can be picked for either.**
+  Every on-screen text draw previously used a fixed, bundled Barlow Condensed
+  SemiBold with no way to change it. Barlow is no longer bundled at all -- replaced
+  by [Isotherm Sans](https://github.com/k8se10/isotherm-sans) (bundled the same
+  private in-process way), a modernized derivative of Manrope. New `[Overlay]
+  FontFamily` config key (default `Isotherm Sans UI`) covers most text (notification
+  toasts, most HUD hints, the custom Options screen); a second new
+  `FontFamilyCondensed` key (default empty -> bundled `Isotherm Sans` Condensed
+  style) is used only by the specific hint call sites that explicitly want it
+  (throwback prompt, sentry gun placement) -- live-reported the single-variant swap
+  didn't fit every context: "condensed only works for the throwback prompt and
+  turrets etc, the normal ui text looks better for stuff like buy stations, pickups
+  and interacts." Either key can be set to any real, system-installed font's name
+  instead -- if the name doesn't resolve, GDI falls back to a default system font,
+  same graceful degradation a missing font has always had. `FontItalic`'s own
+  default also flipped true->false in the same pass -- italic was a Barlow
+  Condensed-era styling choice, not a property of either new variant, both of which
+  default to upright. Existing configs that already have an explicit `FontItalic`
+  value keep it, per this project's usual "explicit value always wins" migration
+  policy -- only a fresh install (or a config that never touched this key) gets the
+  new default. **Confirmed live 2026-08-24** -- real follow-ups along the way: an
+  already-migrated config's explicit `FontItalic=1` (written before the default
+  flip) doesn't retroactively pick up the new `0` default, per that same policy --
+  had to be hand-edited once for an in-progress config; the FIRST bundled style
+  tried for the general default, "UI," measured (real GDI harness,
+  `GetTextExtentPoint32A`, fonts loaded via `AddFontResourceExA`) 45-76% WIDER than
+  Barlow Condensed SemiBold Italic at matching pixel heights -- "UI" isn't a
   condensed style at all, just Regular's outlines with tighter line-spacing, not
-  narrower glyphs. Switched to the actual "Condensed" style (~82% horizontal width
-  per that project's own README), which measured only ~11-17% wider, a residual the
-  existing dynamic `MeasureTextWidthPx`-based layout already absorbs without needing
-  per-offset nudges.
-3. **Mod-wide UI text now uses consistent Title Case.** Every player-facing string this
+  narrower glyphs -- so the general default moved to a Condensed style that measured
+  only ~11-17% wider; and once live feedback showed Condensed actually reads WORSE
+  than the wider UI style for most everyday hints (buy stations/pickups/interacts),
+  the two roles were split so each hint call site gets whichever style actually
+  suits it, rather than picking one winner for everything. The bundled "UI" font
+  files needed their internal name table renamed (fonttools, family "Isotherm Sans
+  UI") since the unrenamed upstream file shares "Isotherm Sans" with the Condensed
+  file and GDI can't otherwise tell two same-family Regular-style faces apart.
+3. **In-game glyph position editor (F2/F3) now also works on real gameplay hints,
+  not just menu items.** The existing menu-item-focus-based editor has no equivalent
+  concept for gameplay hints (no "focused list item"), so this is a parallel,
+  simpler drag target keyed by (hint slot, font role) instead of (menu group, item
+  index) -- one draggable handle per active gameplay hint moves its icon+text
+  together as a single nudge (matches the same call-site granularity the font-role
+  split above already uses). F3 exports nudges to the same
+  `exported_glyph_positions.txt`, in a separate section.
+4. **Mod-wide UI text now uses consistent Title Case.** Every player-facing string this
   project itself draws (custom Options screen row/tab labels, the Custom Binds table,
   the Stick/Button Layout drill-down, the diagram labels, the Apply Settings/Rebind
   popups) was previously a mix of ALL CAPS (most of the custom Options screen) and

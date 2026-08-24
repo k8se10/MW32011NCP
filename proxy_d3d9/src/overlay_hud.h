@@ -222,6 +222,17 @@ void RequestGlyphIconOverlay(float x, float y, float w, float h, const char* ass
 enum class GameplayHintSlotId { Interact = 0, ReadyUp = 1, Reload = 2 };
 constexpr int kGameplayHintSlotCount = 3;
 
+// Which bundled Isotherm Sans variant a hint's text should use (2026-08-24,
+// live-reported: "condensed only works for the throwback prompt and turrets etc,
+// the normal ui text looks better for stuff like buy stations, pickups and
+// interacts" -- then "normal ui everywhere except when i state condensed"). Default
+// is the general case; callers that want Condensed (currently: throwback, sentry
+// gun placement, see analog_input_hooks.cpp) pass FontRole::Condensed explicitly.
+// Each role resolves through its own independently player-overridable config field
+// (mod_config.h's overlayFontFamily / overlayFontFamilyCondensed) before falling
+// back to its own bundled variant -- see overlay_hud.cpp's ResolveFontFamily.
+enum class FontRole { Default, Condensed };
+
 // topLineText (2026-08-02): some real native hints turn out to be a SINGLE draw call
 // combining two logically separate lines with an embedded '\n' -- confirmed via a live
 // log capture of Survival's ready-up prompt when a teammate has already readied up:
@@ -235,10 +246,14 @@ constexpr int kGameplayHintSlotCount = 3;
 // embedded newline instead of losing or garbling either half -- kept generic (not
 // ready-up-specific) in case another hint turns out to have the same combined-string
 // shape.
+// fontRole (2026-08-24) -- which bundled Isotherm Sans variant this hint's prefix/
+// suffix/topLine text should use, see FontRole's own comment above. Default is the
+// general case; pass FontRole::Condensed for hints that specifically want it
+// (throwback, sentry gun placement).
 void RequestCustomHintOverlay(float x, float y, const char* prefixText, const char* suffixText,
                                const char* assetName, bool centerOnScreen, bool flashIcon = false,
                                GameplayHintSlotId slotId = GameplayHintSlotId::Interact,
-                               const char* topLineText = "");
+                               const char* topLineText = "", FontRole fontRole = FontRole::Default);
 
 // Appends extraText to the CURRENTLY pending hint's suffix in the given slot (e.g. a
 // weapon name that draws as its own separate, unhighlighted continuation right after
