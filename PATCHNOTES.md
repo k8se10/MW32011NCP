@@ -22,22 +22,28 @@ reverse-engineering trail behind each entry.
   picked via config.** Every on-screen text draw (notification text, HUD hints, the
   custom Options screen) previously used a fixed, bundled Barlow Condensed SemiBold
   with no way to change it. Barlow is no longer bundled at all -- replaced by
-  [Isotherm Sans](https://github.com/k8se10/isotherm-sans) (UI + Italic styles,
-  bundled the same private in-process way), a modernized derivative of Manrope. New
-  `[Overlay] FontFamily` config key (default `Isotherm Sans`) can be set to any real,
-  system-installed font's name instead -- if the name doesn't resolve, GDI falls back
-  to a default system font, same graceful degradation a missing font has always had.
-  `FontItalic`'s own default also flipped true->false in the same pass -- italic was
-  a Barlow Condensed-era styling choice, not a property of the new font, which now
-  defaults to its upright "UI" style (tighter line-spacing metrics tuned for dense
-  interface text). Existing configs that already have an explicit `FontItalic` value
-  keep it, per this project's usual "explicit value always wins" migration policy --
-  only a fresh install (or a config that never touched this key) gets the new default.
-  **Confirmed live 2026-08-24** -- one follow-up needed: an already-migrated config's
-  explicit `FontItalic=1` (written before the default flip, back when Barlow was still
-  the compiled default) doesn't retroactively pick up the new `0` default, per the
-  usual "explicit value always wins" policy -- had to be hand-edited once for an
-  in-progress config; a fresh install is unaffected.
+  [Isotherm Sans](https://github.com/k8se10/isotherm-sans) (Condensed + Italic
+  styles, bundled the same private in-process way), a modernized derivative of
+  Manrope. New `[Overlay] FontFamily` config key (default `Isotherm Sans`) can be set
+  to any real, system-installed font's name instead -- if the name doesn't resolve,
+  GDI falls back to a default system font, same graceful degradation a missing font
+  has always had. `FontItalic`'s own default also flipped true->false in the same
+  pass -- italic was a Barlow Condensed-era styling choice, not a property of the new
+  font, which now defaults to its upright "Condensed" style. Existing configs that
+  already have an explicit `FontItalic` value keep it, per this project's usual
+  "explicit value always wins" migration policy -- only a fresh install (or a config
+  that never touched this key) gets the new default. **Confirmed live 2026-08-24** --
+  two follow-ups needed: an already-migrated config's explicit `FontItalic=1`
+  (written before the default flip) doesn't retroactively pick up the new `0`
+  default, per that same policy -- had to be hand-edited once for an in-progress
+  config; and the FIRST bundled style tried, "UI," measured (real GDI harness,
+  `GetTextExtentPoint32A`, both fonts loaded via `AddFontResourceExA`) 45-76% WIDER
+  than Barlow Condensed SemiBold Italic at matching pixel heights -- "UI" isn't a
+  condensed style at all, just Regular's outlines with tighter line-spacing, not
+  narrower glyphs. Switched to the actual "Condensed" style (~82% horizontal width
+  per that project's own README), which measured only ~11-17% wider, a residual the
+  existing dynamic `MeasureTextWidthPx`-based layout already absorbs without needing
+  per-offset nudges.
 3. **Mod-wide UI text now uses consistent Title Case.** Every player-facing string this
   project itself draws (custom Options screen row/tab labels, the Custom Binds table,
   the Stick/Button Layout drill-down, the diagram labels, the Apply Settings/Rebind
