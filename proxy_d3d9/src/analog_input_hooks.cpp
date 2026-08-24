@@ -40,6 +40,9 @@ extern void LogFromController(const char* msg);
 // counterpart).
 extern "C" bool GetLastMouseMoveClientPos(int& outX, int& outY);
 extern "C" bool IsLeftMouseButtonHeld();
+// Forward-declared here (real definition much further down this same file) --
+// ShouldDrawGlyphOverlay needs it before its own definition point.
+extern "C" bool IsGlyphPositionEditModeActive();
 
 // Defined in mod_config.cpp (2026-07-31, config hot-reload QoL feature) -- stats
 // mw3ncp_config.ini's last-write-time (internally rate-limited) and re-runs
@@ -378,7 +381,15 @@ bool ShouldDrawGlyphOverlay()
     // real diagnostic escape hatch, not a permanent behavior change. See
     // g_modConfig.forceGlyphOverlay's own header comment (mod_config.h) for the full
     // reasoning and what a live test with this on is expected to reveal either way.
-    return g_modConfig.forceGlyphOverlay || IsControllerActiveInputMethod();
+    //
+    // IsGlyphPositionEditModeActive() (2026-08-24, direct request: "force glyph should
+    // be force enabled when any glyph editor is on") -- calibrating gameplay hints
+    // with a mouse means no controller is active, so without this the overlay
+    // wouldn't draw at all while F2 editing is on, same root failure shape as issue
+    // #74 above (a gate silently keeping glyphs from showing). Scoped to the F2
+    // ACTIVE state specifically, not just glyphPositionEditMode's own master config
+    // gate (which can be on without F2 ever having been pressed this session).
+    return g_modConfig.forceGlyphOverlay || IsControllerActiveInputMethod() || IsGlyphPositionEditModeActive();
 }
 
 // ---- BUG-003 follow-up (2026-08-02): B-press/crouch-drop diagnostics --------------
