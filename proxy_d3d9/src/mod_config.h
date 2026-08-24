@@ -294,7 +294,9 @@ struct ModConfig
     // re_notes/known_issues.md issue #47).
     //
     // FontFamily (2026-08-24) -- overrides which font family CreateFontA actually
-    // requests. Defaults to "Isotherm Sans" (the bundled font, always registered by
+    // requests for the GENERAL default (everything except the few hint call sites
+    // that explicitly ask for the Condensed role -- see FontFamilyCondensed below).
+    // Defaults to "Isotherm Sans UI" (the bundled default, always registered by
     // LoadOverlayFonts regardless of this setting, so the default never depends on
     // anything outside this DLL). Any OTHER value is looked up as a real,
     // system-installed font by name -- deliberately unrestricted, same "ask GDI for
@@ -303,18 +305,25 @@ struct ModConfig
     // resource. GDI's own graceful degradation applies if the name doesn't resolve
     // to anything installed (silently substitutes a default system font, same as
     // it always has for a missing face) -- no separate validation needed here.
-    char overlayFontFamily[64] = "Isotherm Sans";
+    char overlayFontFamily[64] = "Isotherm Sans UI";
+    // FontFamilyCondensed (2026-08-24) -- the same kind of override as FontFamily
+    // above, but for the CONDENSED role specifically (throwback prompt, sentry gun
+    // placement -- see analog_input_hooks.cpp's own hint call sites). Empty string
+    // (the default) means "use the bundled Isotherm Sans Condensed" -- a player
+    // wanting a custom look for BOTH roles sets this independently from FontFamily,
+    // e.g. a real condensed system font here alongside a different default above.
+    // Same unrestricted system-font lookup and graceful degradation as FontFamily.
+    char overlayFontFamilyCondensed[64] = "";
     bool overlayFontItalic = false; // default changed true->false 2026-08-24: italic
                                      // was a Barlow Condensed-era styling choice, not
-                                     // a property of the bundled font itself -- the
-                                     // Isotherm Sans switch uses its upright
-                                     // "Condensed" style by default. Still
-                                     // player-toggleable: selects the font's real
-                                     // Italic style where the font provides one
-                                     // (both Regular/UI and Italic .ttf weights are
-                                     // embedded for the bundled default, not a
-                                     // GDI-faked oblique slant) -- for an arbitrary
-                                     // system font picked via FontFamily above, this
+                                     // a property of the bundled font itself -- both
+                                     // bundled Isotherm Sans variants (UI, Condensed)
+                                     // default to upright. Still player-toggleable:
+                                     // selects the active variant's real Italic
+                                     // style (both variants' Regular and Italic .ttf
+                                     // weights are embedded, not a GDI-faked oblique
+                                     // slant) -- for an arbitrary system font picked
+                                     // via FontFamily/FontFamilyCondensed above, this
                                      // is still passed through to CreateFontA's own
                                      // nItalic parameter, so it uses that font's real
                                      // italic if it has one or GDI's own synthesized
