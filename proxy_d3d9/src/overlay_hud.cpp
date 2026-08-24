@@ -399,7 +399,13 @@ int MeasureTextWidthPx(const char* text, bool italic, int fontHeightPx)
     // bundled font, see LoadOverlayFonts), but a player can point this at any real
     // system-installed font name instead. Must match RenderMaskLuminance's own
     // CreateFontA call below exactly, or measured width and rendered width diverge.
-    HFONT font = CreateFontA(fontHeightPx, 0, 0, 0, FW_DONTCARE, italic ? TRUE : FALSE, FALSE, FALSE,
+    // FW_SEMIBOLD (2026-08-24, live-reported: "we need to make the text semibold") --
+    // the bundled font only registers a single weight (its "UI" style, wght 360), so
+    // this relies on GDI's own synthetic emboldening (the same mechanism already
+    // documented for FW_DONTCARE/nItalic's synthesized-oblique fallback above) rather
+    // than a second embedded semibold weight -- simpler than sourcing/bundling a new
+    // font file, and applies equally to a player's own FontFamily override.
+    HFONT font = CreateFontA(fontHeightPx, 0, 0, 0, FW_SEMIBOLD, italic ? TRUE : FALSE, FALSE, FALSE,
                               ANSI_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
                               ANTIALIASED_QUALITY, DEFAULT_PITCH, g_modConfig.overlayFontFamily);
     HFONT oldFont = static_cast<HFONT>(SelectObject(screenDC, font));
@@ -457,12 +463,15 @@ bool RenderMaskLuminance(const char* text, const POINT* offsets, int offsetCount
     // enumeration; both the UI and Italic .ttf register under this same family,
     // distinguished by nItalic below, same mechanism as the Barlow pairing this
     // replaced). A player can override this to any real system-installed font name
-    // instead (see mod_config.h's own field comment). FW_DONTCARE since the bundled
-    // font's weight is baked into which family/file this is, not requested at lookup
-    // time. If LoadOverlayFonts ever failed (logged at startup), or the configured
-    // name doesn't resolve to anything installed, GDI falls back to a default system
-    // font here exactly as before this change -- same graceful degradation.
-    HFONT font = CreateFontA(fontHeightPx, 0, 0, 0, FW_DONTCARE, italic ? TRUE : FALSE, FALSE, FALSE,
+    // instead (see mod_config.h's own field comment). FW_SEMIBOLD (2026-08-24,
+    // live-reported: "we need to make the text semibold") -- the bundled font only
+    // registers a single weight (its "UI" style, wght 360), so this relies on GDI's
+    // own synthetic emboldening rather than a second embedded semibold weight file;
+    // must match MeasureTextWidthPx's own CreateFontA call above exactly. If
+    // LoadOverlayFonts ever failed (logged at startup), or the configured name
+    // doesn't resolve to anything installed, GDI falls back to a default system font
+    // here exactly as before this change -- same graceful degradation.
+    HFONT font = CreateFontA(fontHeightPx, 0, 0, 0, FW_SEMIBOLD, italic ? TRUE : FALSE, FALSE, FALSE,
                               ANSI_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
                               ANTIALIASED_QUALITY, DEFAULT_PITCH, g_modConfig.overlayFontFamily);
     HFONT oldFont = static_cast<HFONT>(SelectObject(memDC, font));
@@ -493,14 +502,16 @@ bool RenderMaskLuminance(const char* text, const POINT* offsets, int offsetCount
 // passes. The naive single-pass "alpha = luminance" trick this project used before
 // only works for plain white-on-transparent text -- a black outline pixel would have
 // luminance 0, indistinguishable from "background", making it invisible. Instead:
-// render an OUTLINE mask (text drawn 9 times across a 3x3 grid of +/-1px offsets,
-// covering the true glyph shape plus a 1px ring around it) and a separate FILL mask
-// (text drawn once, centered, no offset). Final alpha = outline mask (the union of
-// fill + outline, so both are visible); final color = white scaled by the FILL
-// mask's own value (0 in outline-only regions = solid black, ramping to full white
-// deep inside the glyph) -- this naturally anti-aliases the black-to-white
-// transition at the fill's real edge using the fill mask's own coverage value,
-// with no extra blending step needed.
+// render an OUTLINE mask (text drawn across a 5x5 grid of +/-2px offsets, covering
+// the true glyph shape plus a 2px ring around it -- widened from a 3x3/+/-1px grid
+// 2026-08-24, live-reported "we need...a clearer outline": a 1px ring read as too
+// thin/soft against busy backgrounds, especially at the smaller HUD hint font sizes)
+// and a separate FILL mask (text drawn once, centered, no offset). Final alpha =
+// outline mask (the union of fill + outline, so both are visible); final color =
+// white scaled by the FILL mask's own value (0 in outline-only regions = solid
+// black, ramping to full white deep inside the glyph) -- this naturally anti-aliases
+// the black-to-white transition at the fill's real edge using the fill mask's own
+// coverage value, with no extra blending step needed.
 bool RenderTextToArgbBuffer(const char* text, DWORD* outPixels, UINT alignFlag = DT_RIGHT, int fontHeightPx = 20)
 {
     static BYTE outlineMask[kTextureWidth * kTextureHeight];
@@ -508,12 +519,14 @@ bool RenderTextToArgbBuffer(const char* text, DWORD* outPixels, UINT alignFlag =
 
     const bool italic = g_modConfig.overlayFontItalic;
 
-    const POINT kOutlineOffsets[9] = {
-        { -1, -1 }, { 0, -1 }, { 1, -1 },
-        { -1, 0 },  { 0, 0 },  { 1, 0 },
-        { -1, 1 },  { 0, 1 },  { 1, 1 },
+    const POINT kOutlineOffsets[25] = {
+        { -2, -2 }, { -1, -2 }, { 0, -2 }, { 1, -2 }, { 2, -2 },
+        { -2, -1 }, { -1, -1 }, { 0, -1 }, { 1, -1 }, { 2, -1 },
+        { -2, 0 },  { -1, 0 },  { 0, 0 },  { 1, 0 },  { 2, 0 },
+        { -2, 1 },  { -1, 1 },  { 0, 1 },  { 1, 1 },  { 2, 1 },
+        { -2, 2 },  { -1, 2 },  { 0, 2 },  { 1, 2 },  { 2, 2 },
     };
-    if (!RenderMaskLuminance(text, kOutlineOffsets, 9, italic, outlineMask, alignFlag, fontHeightPx)) return false;
+    if (!RenderMaskLuminance(text, kOutlineOffsets, 25, italic, outlineMask, alignFlag, fontHeightPx)) return false;
 
     const POINT kFillOffset[1] = { { 0, 0 } };
     if (!RenderMaskLuminance(text, kFillOffset, 1, italic, fillMask, alignFlag, fontHeightPx)) return false;
