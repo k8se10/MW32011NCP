@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdio> // FILE*, for AppendGameplayHintEditExport's cross-file export handle
+
 // overlay_hud — small top-right on-screen text notifications (2026-07-31, user-
 // requested QoL: a "MW32011NCP Started" message on launch, and a matching one for
 // config hot-reload). Drawn via raw GDI directly onto the D3D9 backbuffer inside an
@@ -115,6 +117,22 @@ void ConvertMouseClientPosToDesignSpace(int mouseClientX, int mouseClientY, floa
 // path Hook_Reset already used) so they lazily recreate against the new device on next
 // use, exactly like a genuine lost-device recovery.
 void OnDeviceRecreated();
+
+// Live-reported 2026-08-24: a config hot-reload changing FontFamily/FontFamilyCondensed/
+// FontItalic wasn't visually applying to text whose exact string+height hadn't
+// otherwise changed since it was first cached (e.g. Survival's ready-up hint always
+// says "Hold ", so its prefix texture, once rendered, never naturally invalidated --
+// "its just the word hold not the full text" was the live symptom: the rest of that
+// same hint's text DOES change frame to frame with a live countdown, so IT
+// re-rendered under the new font while "Hold " stayed stuck on whatever font was
+// active the first time it was ever shown). None of this project's text-texture
+// caches previously accounted for a live config change, only a text/height change.
+// Call this from mod_config.cpp's CheckConfigHotReload whenever a reload actually
+// applies -- releases every cached TEXT texture (ReleaseAllCachedTextures(false),
+// icons excluded on purpose: they're expensive to reload under
+// D3DUSAGE_AUTOGENMIPMAP, and a font/italic change never affects icon art) so
+// everything re-renders under whatever the new config says next frame.
+void InvalidateTextTextureCachesOnConfigChange();
 
 // Loads Isotherm Sans (Condensed + Italic styles, swapped from Barlow Condensed SemiBold
 // 2026-08-24) as a PRIVATE, in-process-only font via AddFontMemResourceEx, from the
@@ -300,6 +318,13 @@ void RequestDebugPositionMarker(int slot, float x, float y);
 // frame to keep showing, same "current request" convention as every other
 // RequestXxxOverlay above; up to kMaxGlyphEditHandleSlots per frame, extras dropped.
 void RequestGlyphEditHandleBox(float x, float y, float radius, unsigned long color, const char* label);
+
+// Writes every touched gameplay-hint icon/text nudge to the given, already-open
+// export file handle -- called from analog_input_hooks.cpp's ExportGlyphEditPositions
+// (F3) right before it closes the file, so both the menu-item table AND the
+// gameplay-hint nudges land in one exported_glyph_positions.txt. See
+// DrawOneGameplayHintSlot's own comment (overlay_hud.cpp) for the full editor design.
+void AppendGameplayHintEditExport(FILE* f);
 
 // ---- Custom in-game options overlay (2026-08-04) ----------------------------------
 //

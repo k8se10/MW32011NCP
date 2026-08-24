@@ -1010,6 +1010,12 @@ extern "C" void CheckConfigHotReload()
 
     LogFromController("[config] mw3ncp_config.ini changed on disk -- hot-reloading");
     LoadModConfig();
+    // Live-reported 2026-08-24, "its just the word hold not the full text" -- see
+    // InvalidateTextTextureCachesOnConfigChange's own comment (overlay_hud.h) for the
+    // full bug: without this, any text whose exact string+height hadn't otherwise
+    // changed since it was first rendered stayed stuck on whatever FontFamily/
+    // FontFamilyCondensed/FontItalic was active THEN, not the newly-reloaded config.
+    InvalidateTextTextureCachesOnConfigChange();
     ShowOverlayMessage("MW32011NCP Config Reloaded", 15000);
 
     // Re-read the write-time AFTER LoadModConfig() rather than trusting the

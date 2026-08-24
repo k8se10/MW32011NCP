@@ -6194,85 +6194,7 @@ GlyphEditGroup* FindOrCreateGlyphEditGroup(const char* groupName, int depth)
     return nullptr; // table full -- extremely unlikely (24 groups), silently ignored
 }
 
-// Gameplay hint extension (2026-08-24, live-reported: "we should use the glyph
-// editor but make it detect gameplay so we can use it on the text and glyphs there
-// too etc") -- everything above this point is menu-item-focus-based (real itemDef
-// array reads, no equivalent concept in gameplay). Gameplay hints have no "focused
-// list item" at all -- they're just RequestCustomHintOverlay(startX, startY, ...)
-// calls per slot -- so this is a separate, parallel drag target keyed by
-// (GameplayHintSlotId, FontRole) instead of (groupName, depth, index). One nudge
-// per key moves icon AND text together (per explicit direction: "its not icon to
-// text, its icon and text need moving") since gameplay hints have no independent
-// icon-vs-text handle the way a menu list item's icon-next-to-native-text does.
-// Reuses the SAME F2 edit-mode toggle/g_glyphEditModeActive as the menu editor above
-// -- one on/off switch, works on whichever kind of hint happens to be on screen.
-struct GameplayHintNudge {
-    bool used = false;
-    GameplayHintSlotId slotId = GameplayHintSlotId::Interact;
-    FontRole fontRole = FontRole::Default;
-    float nudgeX = 0.0f, nudgeY = 0.0f;
-};
-constexpr int kGameplayHintNudgeMax = 8; // 3 slots x 2 roles = 6 possible combos, some headroom
-GameplayHintNudge g_gameplayHintNudges[kGameplayHintNudgeMax];
-int g_gameplayHintDraggingSlot = -1; // index into g_gameplayHintNudges, -1 = not dragging
-
-GameplayHintNudge* FindOrCreateGameplayHintNudge(GameplayHintSlotId slotId, FontRole fontRole)
-{
-    for (auto& n : g_gameplayHintNudges) {
-        if (n.used && n.slotId == slotId && n.fontRole == fontRole) return &n;
-    }
-    for (auto& n : g_gameplayHintNudges) {
-        if (!n.used) { n.used = true; n.slotId = slotId; n.fontRole = fontRole; n.nudgeX = 0.0f; n.nudgeY = 0.0f; return &n; }
-    }
-    return nullptr; // table full -- can't actually happen (6 real combos, 8 slots)
-}
 } // namespace
-
-// Applies this (slotId, fontRole)'s current nudge to x/y, and -- while the editor is
-// active (F2) -- lets the mouse drag that SAME on-screen position directly (hit-test
-// against the already-nudged spot, same kHandleHitRadiusDesign convention as the
-// menu editor above). Call once per frame right before RequestCustomHintOverlay, for
-// every real gameplay hint call site. Safe to call even when glyphPositionEditMode
-// is off -- the nudge itself always applies (it's the whole point of exporting one),
-// only the drag/hit-test is gated.
-void EditGameplayHintPositionForFrame(GameplayHintSlotId slotId, FontRole fontRole, float& x, float& y)
-{
-    GameplayHintNudge* nudge = FindOrCreateGameplayHintNudge(slotId, fontRole);
-    if (!nudge) return;
-    x += nudge->nudgeX;
-    y += nudge->nudgeY;
-
-    if (!g_modConfig.glyphPositionEditMode || !g_glyphEditModeActive) return;
-
-    static bool s_lastMouseHeld = false;
-    bool mouseHeld = IsLeftMouseButtonHeld();
-    bool clickEdge = mouseHeld && !s_lastMouseHeld;
-    s_lastMouseHeld = mouseHeld;
-    if (!mouseHeld) g_gameplayHintDraggingSlot = -1;
-
-    int nudgeSlot = static_cast<int>(nudge - g_gameplayHintNudges);
-    int mouseX = 0, mouseY = 0;
-    bool haveMouse = GetLastMouseMoveClientPos(mouseX, mouseY);
-    float mouseDesignX = 0.0f, mouseDesignY = 0.0f;
-    if (haveMouse) ConvertMouseClientPosToDesignSpace(mouseX, mouseY, mouseDesignX, mouseDesignY);
-
-    constexpr float kHandleHitRadiusDesign = 32.0f; // matches the menu editor's own hit radius
-    if (haveMouse && clickEdge && g_gameplayHintDraggingSlot < 0) {
-        float dx = mouseDesignX - x, dy = mouseDesignY - y;
-        if (dx * dx + dy * dy <= kHandleHitRadiusDesign * kHandleHitRadiusDesign) {
-            g_gameplayHintDraggingSlot = nudgeSlot;
-        }
-    }
-    if (g_gameplayHintDraggingSlot == nudgeSlot && haveMouse) {
-        // Recompute nudge from the drag target directly (x/y already include the OLD
-        // nudge at this point, so subtract it back out first to get the un-nudged base).
-        float baseX = x - nudge->nudgeX, baseY = y - nudge->nudgeY;
-        nudge->nudgeX = mouseDesignX - baseX;
-        nudge->nudgeY = mouseDesignY - baseY;
-        x = mouseDesignX;
-        y = mouseDesignY;
-    }
-}
 
 // Exposed so d3d9_hook.cpp's WndProc subclass can swallow real mouse-click messages
 // while the editor is active (2026-08-16, live-reported "it skips through the menu"
@@ -6322,25 +6244,11 @@ void ExportGlyphEditPositions()
     }
     if (exported == 0) fprintf(f, "// (nothing dragged yet this session)\n");
 
-    // Gameplay hint nudges (2026-08-24 follow-up) -- same file, own section. Each
-    // line is a ready-to-fold-in (slotId, fontRole) -> (nudgeX, nudgeY) pair; there's
-    // no existing source table these paste directly into (unlike the menu group
-    // entries above) since gameplay hints compute their base position live rather
-    // than reading a static table -- fold the values into whatever's driving each
-    // hint's startX/startY at its RequestCustomHintOverlay call site instead.
-    fprintf(f, "\n// ---- Gameplay hint nudges (F2/F3, same session) ----\n"
-               "// (GameplayHintSlotId, FontRole) -> nudgeX, nudgeY -- add directly to that\n"
-               "// hint's startX/startY at its RequestCustomHintOverlay call site.\n");
-    int gameplayExported = 0;
-    for (auto& n : g_gameplayHintNudges) {
-        if (!n.used || (n.nudgeX == 0.0f && n.nudgeY == 0.0f)) continue;
-        const char* slotName = n.slotId == GameplayHintSlotId::Interact ? "Interact"
-                              : n.slotId == GameplayHintSlotId::ReadyUp ? "ReadyUp" : "Reload";
-        const char* roleName = n.fontRole == FontRole::Condensed ? "Condensed" : "Default";
-        fprintf(f, "// %s + %s: nudgeX=%.1ff nudgeY=%.1ff\n", slotName, roleName, n.nudgeX, n.nudgeY);
-        ++gameplayExported;
-    }
-    if (gameplayExported == 0) fprintf(f, "// (nothing dragged yet this session)\n");
+    // Gameplay hint icon/text handles (2026-08-24 follow-up) -- owned by
+    // overlay_hud.cpp now (DrawOneGameplayHintSlot has direct access to both the
+    // real text position AND the real computed icon position, unlike this file --
+    // see that function's own comment), same file/handle, appended here.
+    AppendGameplayHintEditExport(f);
     fclose(f);
 
     // Live-reported 2026-08-16, "export crashed it": this buffer was 64 bytes, but
@@ -6352,9 +6260,8 @@ void ExportGlyphEditPositions()
     // written and closed successfully by this point -- only this trailing success-log
     // line crashed, which is why the exported file was complete and correct even
     // though the game died immediately after.
-    char msg[160];
-    sprintf_s(msg, "[glyph-editor] exported %d group(s) + %d gameplay hint nudge(s) to exported_glyph_positions.txt",
-        exported, gameplayExported);
+    char msg[128];
+    sprintf_s(msg, "[glyph-editor] exported %d group(s) to exported_glyph_positions.txt", exported);
     LogFromController(msg);
 }
 
@@ -7352,7 +7259,6 @@ void __cdecl Hook_DrawGlyphText(
                             // for stuff like buy stations, pickups and interacts" -- everything else
                             // (mantle, ready-up, plain interact) stays on the default UI role.
                             FontRole fontRole = (isThrowbackHint || isSentryPlaceHint) ? FontRole::Condensed : FontRole::Default;
-                            EditGameplayHintPositionForFrame(slotId, fontRole, startX, startY);
                             RequestCustomHintOverlay(startX, startY, prefixText, suffixText, assetName, centerOnScreen,
                                                        /*flashIcon=*/false, slotId, topLineText, fontRole);
                             suppressRealDraw = true;
@@ -7457,7 +7363,6 @@ void __cdecl Hook_DrawGlyphText(
                                 // 718 + kHintVerticalNudge(-14) = 704.
                                 constexpr float kInteractHintRowY = 700.0f; // 718 + kHintVerticalNudge(-18)
                                 float startY = kInteractHintRowY;
-                                EditGameplayHintPositionForFrame(GameplayHintSlotId::Reload, FontRole::Default, startX, startY);
                                 RequestCustomHintOverlay(startX, startY, "Press ", suffixText, assetName,
                                     /*centerOnScreen=*/true, /*flashIcon=*/true, GameplayHintSlotId::Reload);
                                 suppressRealDraw = true;
