@@ -99,9 +99,9 @@ inline constexpr float kEnumValuesTexQualityTier[] = { 3.0f, 2.0f, 1.0f, 0.0f };
 // like AA and texture quality just say numbers thats not user friendly") -- exact
 // real `dvarFloatList` label text ("@MENU_2X" -> "2X" etc, confirmed same .menu
 // blocks as the values themselves), same index/order as their matching values array.
-inline constexpr const char* kEnumLabelsAntiAliasing[] = { "OFF", "2X", "4X" };
-inline constexpr const char* kEnumLabelsSSAO[] = { "OFF", "LOW", "HIGH" };
-inline constexpr const char* kEnumLabelsTexQualityTier[] = { "LOW", "NORMAL", "HIGH", "EXTRA" };
+inline constexpr const char* kEnumLabelsAntiAliasing[] = { "Off", "2X", "4X" };
+inline constexpr const char* kEnumLabelsSSAO[] = { "Off", "Low", "High" };
+inline constexpr const char* kEnumLabelsTexQualityTier[] = { "Low", "Normal", "High", "Extra" };
 inline constexpr const char* kEnumValuesOutputConfig[] = {
     "Windows default", "Mono", "Stereo", "4 speakers", "5.1 speakers",
 };
@@ -110,31 +110,31 @@ inline constexpr const char* kEnumValuesAspectRatio[] = { "auto", "standard", "w
 // ---- Look (pc_options_look_ingame.menu) -------------------------------------------
 // 4 real dvars + 4 real keybinds.
 inline constexpr VanillaSettingDef kVanillaSettings[] = {
-    { "Look_Sensitivity",     "SENSITIVITY",        VanillaSettingTab::Look, VanillaSettingKind::DvarFloat,  "sensitivity",   false, 1.0f, 30.0f, 5.0f, "Adjust your mouse look sensitivity." },
-    { "Look_InvertMouse",     "INVERT MOUSE",       VanillaSettingTab::Look, VanillaSettingKind::DvarBool,   "ui_mousePitch", false, 0,0,0, "Invert the vertical mouse look axis." },
-    { "Look_SmoothMouse",     "SMOOTH MOUSE",       VanillaSettingTab::Look, VanillaSettingKind::DvarBool,   "m_filter",      false, 0,0,0, "Smooth out mouse look movement." },
-    { "Look_FreeLook",        "FREE LOOK",          VanillaSettingTab::Look, VanillaSettingKind::DvarBool,   "cl_freelook",   false, 0,0,0, "Enable free look without holding a key." },
-    { "Look_LookUp",          "LOOK UP",            VanillaSettingTab::Look, VanillaSettingKind::Keybind,    "+lookup",       false, 0,0,0 },
-    { "Look_LookDown",        "LOOK DOWN",          VanillaSettingTab::Look, VanillaSettingKind::Keybind,    "+lookdown",     false, 0,0,0 },
-    { "Look_HoldMouseLook",   "HOLD MOUSE LOOK",    VanillaSettingTab::Look, VanillaSettingKind::Keybind,    "+mlook",        false, 0,0,0 },
-    { "Look_CenterView",      "CENTER VIEW",        VanillaSettingTab::Look, VanillaSettingKind::Keybind,    "centerview",    false, 0,0,0 },
+    { "Look_Sensitivity",     "Sensitivity",        VanillaSettingTab::Look, VanillaSettingKind::DvarFloat,  "sensitivity",   false, 1.0f, 30.0f, 5.0f, "Adjust your mouse look sensitivity." },
+    { "Look_InvertMouse",     "Invert Mouse",       VanillaSettingTab::Look, VanillaSettingKind::DvarBool,   "ui_mousePitch", false, 0,0,0, "Invert the vertical mouse look axis." },
+    { "Look_SmoothMouse",     "Smooth Mouse",       VanillaSettingTab::Look, VanillaSettingKind::DvarBool,   "m_filter",      false, 0,0,0, "Smooth out mouse look movement." },
+    { "Look_FreeLook",        "Free Look",          VanillaSettingTab::Look, VanillaSettingKind::DvarBool,   "cl_freelook",   false, 0,0,0, "Enable free look without holding a key." },
+    { "Look_LookUp",          "Look Up",            VanillaSettingTab::Look, VanillaSettingKind::Keybind,    "+lookup",       false, 0,0,0 },
+    { "Look_LookDown",        "Look Down",          VanillaSettingTab::Look, VanillaSettingKind::Keybind,    "+lookdown",     false, 0,0,0 },
+    { "Look_HoldMouseLook",   "Hold Mouse Look",    VanillaSettingTab::Look, VanillaSettingKind::Keybind,    "+mlook",        false, 0,0,0 },
+    { "Look_CenterView",      "Center View",        VanillaSettingTab::Look, VanillaSettingKind::Keybind,    "centerview",    false, 0,0,0 },
 
     // ---- Video (pc_options_video_ingame.menu) -- Resolution/Brightness are staged;
     // Color Blind Assist is profile data, excluded here (write-only via exec, see header).
     // Resolution uses a real `dvarEnumList "r_mode"` -- populated at runtime from the
     // actual display's supported modes, not a static list this file can enumerate.
     // Left DvarString/read-only rather than guessed -- see VanillaSettingDef's comment.
-    { "Video_Resolution",     "RESOLUTION",         VanillaSettingTab::Video, VanillaSettingKind::DvarString, "ui_r_mode",              true,  0,0,0 },
-    { "Video_Brightness",     "BRIGHTNESS",         VanillaSettingTab::Video, VanillaSettingKind::DvarFloat,  "profileMenuOption_Gamma", true, 0.5f, 1.5f, 0.01f },
+    { "Video_Resolution",     "Resolution",         VanillaSettingTab::Video, VanillaSettingKind::DvarString, "ui_r_mode",              true,  0,0,0 },
+    { "Video_Brightness",     "Brightness",         VanillaSettingTab::Video, VanillaSettingKind::DvarFloat,  "profileMenuOption_Gamma", true, 0.5f, 1.5f, 0.01f },
 
     // ---- Audio (pc_options_audio_ingame.menu) -- Subtitles is profile data, excluded.
-    { "Audio_Volume",         "VOLUME",             VanillaSettingTab::Audio, VanillaSettingKind::DvarFloat,  "profileMenuOption_volume", true, 0.0f, 0.8f, 0.008f },
-    { "Audio_OutputConfig",   "OUTPUT CONFIG",      VanillaSettingTab::Audio, VanillaSettingKind::DvarString, "ui_outputConfig",          true, 0,0,0, "", nullptr, 0, kEnumValuesOutputConfig, 5 },
+    { "Audio_Volume",         "Volume",             VanillaSettingTab::Audio, VanillaSettingKind::DvarFloat,  "profileMenuOption_volume", true, 0.0f, 0.8f, 0.008f },
+    { "Audio_OutputConfig",   "Output Config",      VanillaSettingTab::Audio, VanillaSettingKind::DvarString, "ui_outputConfig",          true, 0,0,0, "", nullptr, 0, kEnumValuesOutputConfig, 5 },
 
     // ---- Voice (pc_options_voice_ingame.menu)
-    { "Voice_MicSensitivity", "MIC SENSITIVITY",    VanillaSettingTab::Voice, VanillaSettingKind::DvarFloat,  "winvoice_mic_reclevel", false, 0.0f, 65535.0f, 655.0f, "Adjust your microphone's recording sensitivity." },
-    { "Voice_Enable",         "VOICE ENABLE",       VanillaSettingTab::Voice, VanillaSettingKind::DvarBool,   "cl_voice",              false, 0,0,0, "Enable or disable voice chat." },
-    { "Voice_PushToTalk",     "PUSH TO TALK",       VanillaSettingTab::Voice, VanillaSettingKind::Keybind,    "+talk",                 false, 0,0,0 },
+    { "Voice_MicSensitivity", "Mic Sensitivity",    VanillaSettingTab::Voice, VanillaSettingKind::DvarFloat,  "winvoice_mic_reclevel", false, 0.0f, 65535.0f, 655.0f, "Adjust your microphone's recording sensitivity." },
+    { "Voice_Enable",         "Voice Enable",       VanillaSettingTab::Voice, VanillaSettingKind::DvarBool,   "cl_voice",              false, 0,0,0, "Enable or disable voice chat." },
+    { "Voice_PushToTalk",     "Push To Talk",       VanillaSettingTab::Voice, VanillaSettingKind::Keybind,    "+talk",                 false, 0,0,0 },
     // The 3rd real Voice row (options_menu_full_map.md sec 2: an inverted
     // dvarFloatList Yes/No toggle, real dvar name not yet confirmed against the raw
     // .menu -- label/dvar pairing was approximate in that pass) is deliberately
@@ -143,65 +143,65 @@ inline constexpr VanillaSettingDef kVanillaSettings[] = {
 
     // ---- Advanced Video (pc_options_advanced_video_ingame.menu) -- ALL staged
     // (restart-required), confirmed via the real onESC/all_restart_popmenu gate.
-    { "AdvVideo_AspectRatio",   "ASPECT RATIO",       VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarString, "ui_r_aspectratio",   true, 0,0,0, "", nullptr, 0, kEnumValuesAspectRatio, 4 },
+    { "AdvVideo_AspectRatio",   "Aspect Ratio",       VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarString, "ui_r_aspectratio",   true, 0,0,0, "", nullptr, 0, kEnumValuesAspectRatio, 4 },
     // Real dvarFloatList (1/2/4), NOT a string dvar despite the earlier approximate
     // pass marking it DvarString -- corrected 2026-08-06 against the real .menu file.
-    { "AdvVideo_AntiAliasing",  "ANTI-ALIASING",      VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarFloat,  "ui_r_aasamples",     true, 0,0,0, "", kEnumValuesAntiAliasing, 3, nullptr, 0, kEnumLabelsAntiAliasing },
+    { "AdvVideo_AntiAliasing",  "Anti-Aliasing",      VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarFloat,  "ui_r_aasamples",     true, 0,0,0, "", kEnumValuesAntiAliasing, 3, nullptr, 0, kEnumLabelsAntiAliasing },
     // Resolution/DisplayRefresh both use a real `dvarEnumList` -- a list POPULATED AT
     // RUNTIME from the actual display's supported modes, not a static value set this
     // file can safely enumerate. Left DvarString/read-only (no floatEnumValues/
     // stringEnumValues) rather than guessed -- see VanillaSettingDef's own comment.
-    { "AdvVideo_DisplayRefresh","DISPLAY REFRESH",    VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarString, "ui_r_displayRefresh",true, 0,0,0 },
-    { "AdvVideo_VSync",         "VSYNC",              VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarBool,   "ui_r_vsync",         true, 0,0,0 },
-    { "AdvVideo_ShadowMaps",    "SHADOW MAPS",        VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarBool,   "sm_enable",          true, 0,0,0 },
-    { "AdvVideo_Specular",      "SPECULAR",           VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarBool,   "r_specular",         true, 0,0,0 },
-    { "AdvVideo_DepthOfField",  "DEPTH OF FIELD",     VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarBool,   "r_dof_enable",       true, 0,0,0 },
+    { "AdvVideo_DisplayRefresh","Display Refresh",    VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarString, "ui_r_displayRefresh",true, 0,0,0 },
+    { "AdvVideo_VSync",         "VSync",              VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarBool,   "ui_r_vsync",         true, 0,0,0 },
+    { "AdvVideo_ShadowMaps",    "Shadow Maps",        VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarBool,   "sm_enable",          true, 0,0,0 },
+    { "AdvVideo_Specular",      "Specular",           VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarBool,   "r_specular",         true, 0,0,0 },
+    { "AdvVideo_DepthOfField",  "Depth Of Field",     VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarBool,   "r_dof_enable",       true, 0,0,0 },
     // Real dvarFloatList (0/1/2), NOT a string dvar -- corrected 2026-08-06.
-    { "AdvVideo_SSAO",          "AMBIENT OCCLUSION",  VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarFloat,  "ui_r_ssao",          true, 0,0,0, "", kEnumValuesSSAO, 3, nullptr, 0, kEnumLabelsSSAO },
-    { "AdvVideo_ZFeather",      "SOFT EDGES",         VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarBool,   "r_zfeather",         true, 0,0,0 },
-    { "AdvVideo_BulletMarks",   "BULLET IMPACTS",     VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarBool,   "fx_marks",           true, 0,0,0 },
-    { "AdvVideo_TexQualityAuto","AUTO TEXTURE QUALITY", VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarBool, "ui_r_picmip_manual", true, 0,0,0 },
+    { "AdvVideo_SSAO",          "Ambient Occlusion",  VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarFloat,  "ui_r_ssao",          true, 0,0,0, "", kEnumValuesSSAO, 3, nullptr, 0, kEnumLabelsSSAO },
+    { "AdvVideo_ZFeather",      "Soft Edges",         VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarBool,   "r_zfeather",         true, 0,0,0 },
+    { "AdvVideo_BulletMarks",   "Bullet Impacts",     VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarBool,   "fx_marks",           true, 0,0,0 },
+    { "AdvVideo_TexQualityAuto","Auto Texture Quality", VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarBool, "ui_r_picmip_manual", true, 0,0,0 },
     // Real dvarFloatList (Low=3/Normal=2/High=1/Extra=0 -- value DECREASES as quality
     // increases), NOT string dvars -- corrected 2026-08-06 against the real .menu file.
-    { "AdvVideo_TexQuality",    "TEXTURE QUALITY",    VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarFloat,  "ui_r_picmip",        true, 0,0,0, "", kEnumValuesTexQualityTier, 4, nullptr, 0, kEnumLabelsTexQualityTier },
-    { "AdvVideo_TexQualityBump","BUMP MAP QUALITY",   VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarFloat,  "ui_r_picmip_bump",   true, 0,0,0, "", kEnumValuesTexQualityTier, 4, nullptr, 0, kEnumLabelsTexQualityTier },
-    { "AdvVideo_TexQualitySpec","SPECULAR MAP QUALITY", VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarFloat, "ui_r_picmip_spec", true, 0,0,0, "", kEnumValuesTexQualityTier, 4, nullptr, 0, kEnumLabelsTexQualityTier },
+    { "AdvVideo_TexQuality",    "Texture Quality",    VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarFloat,  "ui_r_picmip",        true, 0,0,0, "", kEnumValuesTexQualityTier, 4, nullptr, 0, kEnumLabelsTexQualityTier },
+    { "AdvVideo_TexQualityBump","Bump Map Quality",   VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarFloat,  "ui_r_picmip_bump",   true, 0,0,0, "", kEnumValuesTexQualityTier, 4, nullptr, 0, kEnumLabelsTexQualityTier },
+    { "AdvVideo_TexQualitySpec","Specular Map Quality", VanillaSettingTab::AdvancedVideo, VanillaSettingKind::DvarFloat, "ui_r_picmip_spec", true, 0,0,0, "", kEnumValuesTexQualityTier, 4, nullptr, 0, kEnumLabelsTexQualityTier },
 
     // ---- Movement (pc_options_movement_ingame.menu) -- 16 real keybinds, complete
     // list confirmed directly from the raw .menu (not approximated).
-    { "Movement_Forward",      "MOVE FORWARD",   VanillaSettingTab::Movement, VanillaSettingKind::Keybind, "+forward",       false, 0,0,0 },
-    { "Movement_Back",         "MOVE BACK",      VanillaSettingTab::Movement, VanillaSettingKind::Keybind, "+back",          false, 0,0,0 },
-    { "Movement_MoveLeft",     "MOVE LEFT",      VanillaSettingTab::Movement, VanillaSettingKind::Keybind, "+moveleft",      false, 0,0,0 },
-    { "Movement_MoveRight",    "MOVE RIGHT",     VanillaSettingTab::Movement, VanillaSettingKind::Keybind, "+moveright",     false, 0,0,0 },
-    { "Movement_GoStand",      "STAND/MANTLE",   VanillaSettingTab::Movement, VanillaSettingKind::Keybind, "+gostand",       false, 0,0,0 },
-    { "Movement_ToggleCrouch", "TOGGLE CROUCH",  VanillaSettingTab::Movement, VanillaSettingKind::Keybind, "togglecrouch",   false, 0,0,0 },
-    { "Movement_ToggleProne",  "TOGGLE PRONE",   VanillaSettingTab::Movement, VanillaSettingKind::Keybind, "toggleprone",    false, 0,0,0 },
-    { "Movement_HoldSprint",   "HOLD SPRINT",    VanillaSettingTab::Movement, VanillaSettingKind::Keybind, "+breath_sprint", false, 0,0,0 },
-    { "Movement_MoveDown",     "MOVE DOWN",      VanillaSettingTab::Movement, VanillaSettingKind::Keybind, "+movedown",      false, 0,0,0 },
-    { "Movement_Prone",        "GO PRONE",       VanillaSettingTab::Movement, VanillaSettingKind::Keybind, "+prone",         false, 0,0,0 },
-    { "Movement_Stance",       "CHANGE STANCE",  VanillaSettingTab::Movement, VanillaSettingKind::Keybind, "+stance",        false, 0,0,0 },
-    { "Movement_Sprint",       "SPRINT",         VanillaSettingTab::Movement, VanillaSettingKind::Keybind, "+sprint",        false, 0,0,0 },
-    { "Movement_HoldBreath",   "HOLD BREATH",    VanillaSettingTab::Movement, VanillaSettingKind::Keybind, "+holdbreath",    false, 0,0,0 },
-    { "Movement_Left",         "LEAN LEFT",      VanillaSettingTab::Movement, VanillaSettingKind::Keybind, "+left",          false, 0,0,0 },
-    { "Movement_Right",        "LEAN RIGHT",     VanillaSettingTab::Movement, VanillaSettingKind::Keybind, "+right",         false, 0,0,0 },
-    { "Movement_Strafe",       "STRAFE MODE",    VanillaSettingTab::Movement, VanillaSettingKind::Keybind, "+strafe",        false, 0,0,0 },
+    { "Movement_Forward",      "Move Forward",   VanillaSettingTab::Movement, VanillaSettingKind::Keybind, "+forward",       false, 0,0,0 },
+    { "Movement_Back",         "Move Back",      VanillaSettingTab::Movement, VanillaSettingKind::Keybind, "+back",          false, 0,0,0 },
+    { "Movement_MoveLeft",     "Move Left",      VanillaSettingTab::Movement, VanillaSettingKind::Keybind, "+moveleft",      false, 0,0,0 },
+    { "Movement_MoveRight",    "Move Right",     VanillaSettingTab::Movement, VanillaSettingKind::Keybind, "+moveright",     false, 0,0,0 },
+    { "Movement_GoStand",      "Stand/Mantle",   VanillaSettingTab::Movement, VanillaSettingKind::Keybind, "+gostand",       false, 0,0,0 },
+    { "Movement_ToggleCrouch", "Toggle Crouch",  VanillaSettingTab::Movement, VanillaSettingKind::Keybind, "togglecrouch",   false, 0,0,0 },
+    { "Movement_ToggleProne",  "Toggle Prone",   VanillaSettingTab::Movement, VanillaSettingKind::Keybind, "toggleprone",    false, 0,0,0 },
+    { "Movement_HoldSprint",   "Hold Sprint",    VanillaSettingTab::Movement, VanillaSettingKind::Keybind, "+breath_sprint", false, 0,0,0 },
+    { "Movement_MoveDown",     "Move Down",      VanillaSettingTab::Movement, VanillaSettingKind::Keybind, "+movedown",      false, 0,0,0 },
+    { "Movement_Prone",        "Go Prone",       VanillaSettingTab::Movement, VanillaSettingKind::Keybind, "+prone",         false, 0,0,0 },
+    { "Movement_Stance",       "Change Stance",  VanillaSettingTab::Movement, VanillaSettingKind::Keybind, "+stance",        false, 0,0,0 },
+    { "Movement_Sprint",       "Sprint",         VanillaSettingTab::Movement, VanillaSettingKind::Keybind, "+sprint",        false, 0,0,0 },
+    { "Movement_HoldBreath",   "Hold Breath",    VanillaSettingTab::Movement, VanillaSettingKind::Keybind, "+holdbreath",    false, 0,0,0 },
+    { "Movement_Left",         "Lean Left",      VanillaSettingTab::Movement, VanillaSettingKind::Keybind, "+left",          false, 0,0,0 },
+    { "Movement_Right",        "Lean Right",     VanillaSettingTab::Movement, VanillaSettingKind::Keybind, "+right",         false, 0,0,0 },
+    { "Movement_Strafe",       "Strafe Mode",    VanillaSettingTab::Movement, VanillaSettingKind::Keybind, "+strafe",        false, 0,0,0 },
 
     // ---- Actions (pc_options_actions_ingame.menu) -- 14 real keybinds, complete
     // list confirmed directly from the raw .menu (not approximated).
-    { "Actions_Attack",        "ATTACK",          VanillaSettingTab::Actions, VanillaSettingKind::Keybind, "+attack",           false, 0,0,0 },
-    { "Actions_ADSThrow",      "ADS/COOK TOGGLE", VanillaSettingTab::Actions, VanillaSettingKind::Keybind, "+toggleads_throw",  false, 0,0,0 },
-    { "Actions_SpeedThrow",    "QUICK THROW",     VanillaSettingTab::Actions, VanillaSettingKind::Keybind, "+speed_throw",      false, 0,0,0 },
-    { "Actions_Reload",        "RELOAD",          VanillaSettingTab::Actions, VanillaSettingKind::Keybind, "+reload",           false, 0,0,0 },
-    { "Actions_WeaponNext",    "NEXT WEAPON",     VanillaSettingTab::Actions, VanillaSettingKind::Keybind, "weapnext",          false, 0,0,0 },
-    { "Actions_MeleeZoom",     "MELEE/ZOOM",      VanillaSettingTab::Actions, VanillaSettingKind::Keybind, "+melee_zoom",       false, 0,0,0 },
-    { "Actions_Activate",      "USE/INTERACT",    VanillaSettingTab::Actions, VanillaSettingKind::Keybind, "+activate",         false, 0,0,0 },
-    { "Actions_Frag",          "THROW FRAG",      VanillaSettingTab::Actions, VanillaSettingKind::Keybind, "+frag",             false, 0,0,0 },
-    { "Actions_Smoke",         "THROW SMOKE",     VanillaSettingTab::Actions, VanillaSettingKind::Keybind, "+smoke",            false, 0,0,0 },
-    { "Actions_ActionSlot1",   "ACTION SLOT 1",   VanillaSettingTab::Actions, VanillaSettingKind::Keybind, "+actionslot 1",     false, 0,0,0 },
-    { "Actions_ActionSlot2",   "ACTION SLOT 2",   VanillaSettingTab::Actions, VanillaSettingKind::Keybind, "+actionslot 2",     false, 0,0,0 },
-    { "Actions_ActionSlot3",   "ACTION SLOT 3",   VanillaSettingTab::Actions, VanillaSettingKind::Keybind, "+actionslot 3",     false, 0,0,0 },
-    { "Actions_ActionSlot4",   "ACTION SLOT 4",   VanillaSettingTab::Actions, VanillaSettingKind::Keybind, "+actionslot 4",     false, 0,0,0 },
-    { "Actions_Scores",        "SCOREBOARD",      VanillaSettingTab::Actions, VanillaSettingKind::Keybind, "+scores",           false, 0,0,0 },
+    { "Actions_Attack",        "Attack",          VanillaSettingTab::Actions, VanillaSettingKind::Keybind, "+attack",           false, 0,0,0 },
+    { "Actions_ADSThrow",      "ADS/Cook Toggle", VanillaSettingTab::Actions, VanillaSettingKind::Keybind, "+toggleads_throw",  false, 0,0,0 },
+    { "Actions_SpeedThrow",    "Quick Throw",     VanillaSettingTab::Actions, VanillaSettingKind::Keybind, "+speed_throw",      false, 0,0,0 },
+    { "Actions_Reload",        "Reload",          VanillaSettingTab::Actions, VanillaSettingKind::Keybind, "+reload",           false, 0,0,0 },
+    { "Actions_WeaponNext",    "Next Weapon",     VanillaSettingTab::Actions, VanillaSettingKind::Keybind, "weapnext",          false, 0,0,0 },
+    { "Actions_MeleeZoom",     "Melee/Zoom",      VanillaSettingTab::Actions, VanillaSettingKind::Keybind, "+melee_zoom",       false, 0,0,0 },
+    { "Actions_Activate",      "Use/Interact",    VanillaSettingTab::Actions, VanillaSettingKind::Keybind, "+activate",         false, 0,0,0 },
+    { "Actions_Frag",          "Throw Frag",      VanillaSettingTab::Actions, VanillaSettingKind::Keybind, "+frag",             false, 0,0,0 },
+    { "Actions_Smoke",         "Throw Smoke",     VanillaSettingTab::Actions, VanillaSettingKind::Keybind, "+smoke",            false, 0,0,0 },
+    { "Actions_ActionSlot1",   "Action Slot 1",   VanillaSettingTab::Actions, VanillaSettingKind::Keybind, "+actionslot 1",     false, 0,0,0 },
+    { "Actions_ActionSlot2",   "Action Slot 2",   VanillaSettingTab::Actions, VanillaSettingKind::Keybind, "+actionslot 2",     false, 0,0,0 },
+    { "Actions_ActionSlot3",   "Action Slot 3",   VanillaSettingTab::Actions, VanillaSettingKind::Keybind, "+actionslot 3",     false, 0,0,0 },
+    { "Actions_ActionSlot4",   "Action Slot 4",   VanillaSettingTab::Actions, VanillaSettingKind::Keybind, "+actionslot 4",     false, 0,0,0 },
+    { "Actions_Scores",        "Scoreboard",      VanillaSettingTab::Actions, VanillaSettingKind::Keybind, "+scores",           false, 0,0,0 },
 };
 
 inline constexpr int kVanillaSettingCount = sizeof(kVanillaSettings) / sizeof(kVanillaSettings[0]);
