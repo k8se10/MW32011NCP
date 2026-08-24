@@ -8,6 +8,18 @@ reverse-engineering trail behind each entry.
 
 ## Unreleased
 
+### What's New
+1. **Default UI font switched to Isotherm Sans; any system-installed font can now be
+  picked via config.** Every on-screen text draw (notification text, HUD hints, the
+  custom Options screen) previously used a fixed, bundled Barlow Condensed SemiBold
+  with no way to change it. Barlow is no longer bundled at all -- replaced by
+  [Isotherm Sans](https://github.com/k8se10/isotherm-sans) (UI + Italic styles,
+  bundled the same private in-process way), a modernized derivative of Manrope. New
+  `[Overlay] FontFamily` config key (default `Isotherm Sans`) can be set to any real,
+  system-installed font's name instead -- if the name doesn't resolve, GDI falls back
+  to a default system font, same graceful degradation a missing font has always had.
+  **NOT YET VERIFIED LIVE** -- builds clean, but hasn't been checked in-game yet.
+
 ### Fixed
 1. **Glyph icon jaggedness (controller-glyph hint overlays/menu corner hints/cursor).**
   `LoadGlyphIconTexture` created glyph textures with no mip chain at all (`Levels=1`,

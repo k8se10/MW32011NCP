@@ -3,10 +3,14 @@
 // Embedded as raw RCDATA (not a Windows FONT resource, which triggers a system-wide
 // AddFontResource-style install) -- loaded at runtime via AddFontMemResourceEx
 // (overlay_hud.cpp) as a private, in-process-only font, never touching the user's
-// system font list. Files are the actual, unmodified Google Fonts static instances;
-// see resource.h for the licensing note and README.md for attribution.
-IDR_FONT_BARLOWCONDENSED_SEMIBOLD        RCDATA "..\\assets\\fonts\\BarlowCondensed-SemiBold.ttf"
-IDR_FONT_BARLOWCONDENSED_SEMIBOLD_ITALIC RCDATA "..\\assets\\fonts\\BarlowCondensed-SemiBoldItalic.ttf"
+// system font list. Isotherm Sans (2026-08-24, replacing the previously-bundled
+// Barlow Condensed SemiBold): the "UI" style specifically (tighter line-spacing
+// metrics tuned for dense interface text, per that project's own README) paired
+// with its Italic style -- same regular+italic pairing this project has always
+// bundled, just a different family. See resource.h for the licensing note and
+// README.md for attribution.
+IDR_FONT_ISOTHERMSANS        RCDATA "..\\assets\\fonts\\IsothermSans-UI.ttf"
+IDR_FONT_ISOTHERMSANS_ITALIC RCDATA "..\\assets\\fonts\\IsothermSans-Italic.ttf"
 
 // Controller-glyph icons (issue #48, 2026-07-31) -- the real, already-extracted PNGs
 // from assets/button_glyphs/, embedded directly rather than loaded from loose files
