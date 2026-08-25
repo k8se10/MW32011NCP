@@ -33,7 +33,6 @@ namespace {
 HMODULE g_realD3D9 = nullptr;
 
 FILE* g_log = nullptr;
-DWORD g_lastLogFlushTickMs = 0;
 
 // Live-reported 2026-08-08 (performance pass targeting worst-case circa-2008
 // hardware): the original Log() called fflush() on EVERY single call, unconditionally
@@ -68,6 +67,35 @@ LONG WINAPI FlushLogOnCrash(EXCEPTION_POINTERS* /*exceptionInfo*/)
     return EXCEPTION_CONTINUE_SEARCH; // never handle -- observe-and-flush only
 }
 
+// MOVED OFF THE CALLING THREAD (2026-08-25, live-reported: recurring hitching
+// continued after the poll-thread/vibration/config-hot-reload fixes, then directly:
+// "i/o is a huge candidate"). The periodic-throttle design above (only flush once
+// every kLogFlushIntervalMs, not every call) was already a real fix for the "22GB
+// log" issue -- but the ACTUAL fflush() still ran synchronously on whichever
+// thread's Log() call happened to cross the interval, which for the vast majority
+// of this project's ~180 call sites is the game's own main thread. Exactly the same
+// bug class as CheckConfigHotReload's GetFileAttributesExA (known_issues.md issue
+// #87, cause 3): a disk write that's normally cheap but a well-documented stutter
+// source when antivirus real-time protection intercepts it, invisible to
+// frametime_benchmark.csv (no instrumentation column for it) and to Afterburner (a
+// sub-frame main-thread stall doesn't reliably show as a Present-to-Present gap).
+// Fixed by giving the flush its own dedicated thread: `fprintf` itself stays on the
+// calling thread (cheap, buffered, no disk I/O per call -- MSVC's CRT already
+// internally locks a FILE* per operation, so concurrent fprintf/fflush from
+// different threads on the same stream is safe without an explicit lock here), but
+// the periodic fflush() that used to piggyback on whichever call crossed the
+// threshold now happens on this background thread instead, completely decoupled
+// from every real log call site.
+DWORD WINAPI LogFlushThreadProc(LPVOID)
+{
+    for (;;) {
+        Sleep(kLogFlushIntervalMs);
+        if (g_log) fflush(g_log);
+    }
+    return 0; // unreachable -- lives for the whole process, matching this project's
+              // existing "install once, never uninstall" background-thread pattern
+}
+
 void LogInit()
 {
     char path[MAX_PATH];
@@ -97,23 +125,26 @@ void LogInit()
         fprintf(g_log, "---- proxy_d3d9 attach ----\n");
         fflush(g_log); // always flush this one line -- marks a real session boundary
                          // even if the process crashes before the periodic flush below
-                         // ever fires once.
-        g_lastLogFlushTickMs = GetTickCount();
+                         // ever fires once. This one, one-time flush stays inline
+                         // (LogInit runs once, at DLL attach, not on a hot path).
         AddVectoredExceptionHandler(1, FlushLogOnCrash); // call FIRST (1), see this
             // block's own comment above for why this is safe alongside the game's own
+        if (!CreateThread(nullptr, 0, LogFlushThreadProc, nullptr, 0, nullptr)) {
+            // Can't log this failure through the very mechanism that just failed to
+            // get a flush thread -- fall back silently; the log still works (every
+            // fprintf still lands in stdio's own buffer), it just never flushes to
+            // disk except on a crash (FlushLogOnCrash) until the process exits and the
+            // CRT flushes on its own, matching this project's other "log the failure
+            // and move on" background-thread-start failure handling (e.g.
+            // controller_input.cpp's EnsurePollThreadStarted).
+        }
     }
 }
 
 void Log(const char* msg)
 {
-    if (g_log) {
-        fprintf(g_log, "%s\n", msg);
-        DWORD now = GetTickCount();
-        if (now - g_lastLogFlushTickMs >= kLogFlushIntervalMs) {
-            fflush(g_log);
-            g_lastLogFlushTickMs = now;
-        }
-    }
+    if (g_log) fprintf(g_log, "%s\n", msg); // buffered, cheap -- see LogFlushThreadProc
+                                              // for the actual (now off-thread) flush
 }
 
 // Loads the real system d3d9.dll by an explicit, unambiguous path so we never

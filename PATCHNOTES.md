@@ -64,8 +64,22 @@ along the way rather than assumed. See the itemized entries below and
   polling (already fixed in v0.3.3), Steam Input (user confirmed already disabled),
   and this project's own overlay/glyph draw cost (a real `frametime_benchmark.csv`
   capture showed it negligible throughout, directly contradicting that theory).
-  Builds clean (0 warnings/errors), deployed. Not yet live-confirmed. See
-  `known_issues.md` issue #87 for the full investigation trail.
+  Builds clean (0 warnings/errors), deployed.
+4. **`Log()`'s periodic `fflush()` also ran on whichever calling thread crossed the
+  1-second flush interval -- found via direct user framing: "i/o is a huge
+  candidate."** Live-retested after items 1-3: "its a bit better but there is still
+  hitching" -- also newly confirmed the PS5/DualSense controller stutters too, not
+  just XInput, which fits a main-thread-wide I/O stall better than any
+  controller-backend-specific cause. `Log()` already had a real 2026-08-08 fix
+  throttling flushes to once per second instead of every call, but that only gated
+  WHEN the flush happens, not WHICH THREAD does it -- the actual `fflush()` still ran
+  synchronously on whatever thread's log call crossed the threshold, almost always
+  the main thread given ~180 call sites. Same bug class as item 3. Fixed the same
+  way: `Log()` now only calls `fprintf()` (buffered, cheap); a new dedicated
+  `LogFlushThreadProc` background thread does the actual `fflush()` on its own
+  1-second loop, decoupled from every real log call site. Builds clean (0
+  warnings/errors), deployed. Not yet live-confirmed. See `known_issues.md` issue
+  #87 for the full investigation trail.
 
 ## v0.3.4 — Alpha (2026-08-25) — DualSense input-parity fix, gameplay-hint glyph editor, new plugin API
 
