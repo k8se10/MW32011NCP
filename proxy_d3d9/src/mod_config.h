@@ -241,7 +241,39 @@ struct ModConfig
     GlyphStyle glyphStyle = GlyphStyle::Xbox360; // task #6 -- see enum comment above;
                                                    // purely cosmetic until the
                                                    // substitution feature below is
-                                                   // both implemented AND enabled
+                                                   // both implemented AND enabled.
+                                                   // Also serves as the AUTO-detect
+                                                   // fallback (see glyphStyleAuto right
+                                                   // below) when no recognized
+                                                   // controller is currently connected,
+                                                   // and as the manually-chosen value
+                                                   // whenever glyphStyleAuto is off.
+    // Auto-detect (2026-08-25, user-requested: "a default option for glyphs which
+    // detects controller type ps/xbox/xbmodern and sets accordingly"). Default TRUE
+    // for a fresh install; an EXISTING config that already has an explicit GlyphStyle
+    // value written gets glyphStyleAuto defaulted to FALSE on migration instead (see
+    // ReadGlyphStyle/mod_config.cpp) -- same "explicit value always wins" policy this
+    // project already applies to FontItalic's own default flip, so a player who
+    // deliberately picked PlayStation glyphs (say, for a DualSense they're not
+    // currently testing with) doesn't get silently overridden the next time this
+    // config loads. When true, Controller_DetectGlyphStyle() (dualsense_input.cpp)
+    // runs ONCE, at the exact moment controller_input.cpp's poll thread locks onto a
+    // real input SOURCE for the session (XInput or DualSense) -- not on a recurring
+    // timer. This project's own input-locking design already requires a restart to
+    // switch device families (XInputPollThreadProc's own comments), so continuously
+    // re-detecting glyph style independently of that lock would be inconsistent with
+    // it, and could report the wrong brand's glyphs while still actually reading a
+    // translator layer (e.g. Steam Input presenting a DualSense as a virtual XInput
+    // pad) -- exactly the confusion the native DualSense backend exists to avoid. The
+    // result is written directly into glyphStyle above, so every one of this
+    // project's ~20 existing g_modConfig.glyphStyle read sites picks up the detected
+    // value with zero changes needed at any of them. DualSense is checked first (this
+    // project's own already-open HID connection state, the strongest signal
+    // available); Xbox 360 vs. Modern is a best-effort VID/PID table (not
+    // independently verified against real hardware across every generation -- see
+    // that table's own comment); a controller matching neither (third-party/non-
+    // standard pad) leaves glyphStyle at whatever it already was.
+    bool glyphStyleAuto = true;
 
     // Aim assist (task #16) permanently removed 2026-07-20 -- see
     // re_notes/known_issues.md issue #15/#16 for why: reading live entity/target data

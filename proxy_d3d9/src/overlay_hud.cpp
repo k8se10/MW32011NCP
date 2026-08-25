@@ -1051,6 +1051,30 @@ bool LoadGlyphIconTexture(void* device, const char* assetName, void*& outTexture
         return false;
     }
 
+    // Premultiply alpha into RGB, 2026-08-25 (live-reported: "any very faint 1-2px
+    // white ring from cutting removed entirely") -- see DrawGenericTexturedQuad's own
+    // premultipliedAlpha comment for the full root cause. Every icon this project loads
+    // goes through this one function, so premultiplying here covers all of them
+    // uniformly (glyph icons, the custom cursor, controller diagram images) with no
+    // per-asset special-casing. Pixels are BGRA (DecodePngFromMemory's own comment) --
+    // channel order doesn't matter here since RGB is scaled uniformly regardless of
+    // which byte is which; only the alpha byte (bits 24-31) needs to stay unscaled.
+    // Safe on fully-opaque pixels (alpha=255 -> scale factor 1.0, no change) and a
+    // no-op on fully-transparent ones (RGB already becomes 0, which is the actual
+    // point -- nothing left for blending or mip averaging to bleed in).
+    for (UINT i = 0; i < w * h; ++i) {
+        DWORD px = pixels[i];
+        BYTE a = static_cast<BYTE>((px >> 24) & 0xFF);
+        BYTE b = static_cast<BYTE>((px >> 16) & 0xFF);
+        BYTE g = static_cast<BYTE>((px >> 8) & 0xFF);
+        BYTE r = static_cast<BYTE>(px & 0xFF);
+        b = static_cast<BYTE>((static_cast<UINT>(b) * a + 127) / 255);
+        g = static_cast<BYTE>((static_cast<UINT>(g) * a + 127) / 255);
+        r = static_cast<BYTE>((static_cast<UINT>(r) * a + 127) / 255);
+        pixels[i] = (static_cast<DWORD>(a) << 24) | (static_cast<DWORD>(b) << 16) |
+                    (static_cast<DWORD>(g) << 8) | static_cast<DWORD>(r);
+    }
+
     void** deviceVtbl = *reinterpret_cast<void***>(device);
     auto createTexture = reinterpret_cast<CreateTexture_t>(deviceVtbl[kCreateTextureVtableIndex]);
     void* texture = nullptr;
@@ -1182,8 +1206,32 @@ void PrewarmGlyphIconTextures(void* device)
 // restore pattern DrawTexturedQuad above uses (see that function's own comment for
 // why the shader handling is necessary), generalized to take a texture and rect
 // instead of always drawing the fixed toast texture at its fixed top-right position.
+// premultipliedAlpha (2026-08-25, live-reported: "any very faint 1-2px white ring from
+// cutting removed entirely" -- the controller-glyph icon PNGs' own cutout edges weren't
+// cropped tight enough, leaving a thin ring of semi-transparent boundary pixels that
+// still carry the original (light/white) background color underneath -- confirmed by
+// the user: "its clearly from when it was cut out they were cut well but im guessing
+// not tight enough to avoid clippage." Standard non-premultiplied SRCALPHA/INVSRCALPHA
+// blending draws those pixels' stored RGB weighted by their (low but nonzero) alpha
+// regardless of what that RGB actually is -- a semi-transparent edge texel storing
+// near-white RGB (leftover cutout background) blends in a visible pale fringe no
+// cropping tightness fix alone can fully avoid, and D3D9's automatic mipmap generation
+// (AUTOGENMIPMAP, added 2026-08-24 for icon jaggedness) makes it worse by box-averaging
+// that same near-white RGB into every mip level regardless of alpha weight, visible
+// whenever an icon is drawn scaled down. Fixed by premultiplying icon pixel data by its
+// own alpha at load time (LoadGlyphIconTexture) -- a texel's stored RGB becomes 0 as its
+// alpha approaches 0, so neither blending nor mip averaging can bleed background color in
+// any more -- paired with this flag, which switches SRCBLEND from SRCALPHA to ONE (the
+// correct compositing equation for already-premultiplied source data; DESTBLEND stays
+// INVSRCALPHA either way). Defaults false -- every other draw through this shared
+// function (solid white quads, the text-outline compositing in RenderTextToArgbBuffer,
+// real .menu-asset DDS textures via MenuGfx_DrawTexturedQuad) stores genuinely straight
+// alpha and would render wrong (over-darkened) if premultiplied blending were forced on
+// them -- only call sites drawing a texture loaded through LoadGlyphIconTexture should
+// ever pass true.
 void DrawGenericTexturedQuad(void* device, void* texture, float x, float y, float w, float h, DWORD color = 0xFFFFFFFF,
-                              float u0 = 0.0f, float v0 = 0.0f, float u1 = 1.0f, float v1 = 1.0f)
+                              float u0 = 0.0f, float v0 = 0.0f, float u1 = 1.0f, float v1 = 1.0f,
+                              bool premultipliedAlpha = false)
 {
     void** deviceVtbl = *reinterpret_cast<void***>(device);
     auto setTexture = reinterpret_cast<SetTexture_t>(deviceVtbl[kSetTextureVtableIndex]);
@@ -1234,7 +1282,7 @@ void DrawGenericTexturedQuad(void* device, void* texture, float x, float y, floa
     setRenderState(device, kD3DRS_ZENABLE, kD3DZB_FALSE);
     setRenderState(device, kD3DRS_LIGHTING, FALSE);
     setRenderState(device, kD3DRS_ALPHABLENDENABLE, TRUE);
-    setRenderState(device, kD3DRS_SRCBLEND, kD3DBLEND_SRCALPHA);
+    setRenderState(device, kD3DRS_SRCBLEND, premultipliedAlpha ? kD3DBLEND_ONE : kD3DBLEND_SRCALPHA);
     setRenderState(device, kD3DRS_DESTBLEND, kD3DBLEND_INVSRCALPHA);
     setRenderState(device, kD3DRS_CULLMODE, kD3DCULL_NONE);
 
@@ -1375,7 +1423,8 @@ void DrawGlyphIconIfRequested(void* device)
     void* texture = nullptr;
     int texW = 0, texH = 0;
     if (!GetOrLoadGlyphIconTexture(device, g_pendingIconAssetName, texture, texW, texH)) return;
-    DrawGenericTexturedQuad(device, texture, g_pendingIconX, g_pendingIconY, g_pendingIconW, g_pendingIconH);
+    DrawGenericTexturedQuad(device, texture, g_pendingIconX, g_pendingIconY, g_pendingIconW, g_pendingIconH,
+                              0xFFFFFFFF, 0.0f, 0.0f, 1.0f, 1.0f, /*premultipliedAlpha=*/true);
 }
 
 // Gameplay hint position editor (2026-08-24 rewrite, live-reported: "we should use
@@ -1400,7 +1449,17 @@ struct GameplayHintEditNudge {
     float textNudgeX = 0.0f, textNudgeY = 0.0f; // moves prefix+icon+suffix+topLine together (the row anchor)
     float iconNudgeX = 0.0f, iconNudgeY = 0.0f; // ADDITIONAL, independent fine-adjustment for the icon only
 };
-constexpr int kGameplayHintEditNudgeMax = 8; // 3 slots x 2 roles = 6 real combos, some headroom
+// 2026-08-25 (live-reported bug: "the mantle drag doesnt work"): was 8, sized for the
+// pre-Mantle "3 slots x 2 roles = 6 real combos, some headroom" world. Mantle got its
+// own GameplayHintSlotId the same day (see this file's own Mantle-slot-separation
+// history), making it 4 slots x 2 roles = 8 real combos -- exactly at capacity, zero
+// headroom. FindOrCreateGameplayHintEditNudge returns nullptr once the table is full;
+// if Interact/ReadyUp/Reload happened to claim all 8 combos first in a given session
+// (e.g. Interact used with both FontRoles), Mantle's own request silently got nullptr
+// back, and the drag-handle code below skips entirely on a null editNudge -- no crash,
+// just a Mantle handle that never appears/responds. Bumped to 16 -- real headroom this
+// time, not a repeat of the same "sized exactly to the current combo count" mistake.
+constexpr int kGameplayHintEditNudgeMax = 16;
 GameplayHintEditNudge g_gameplayHintEditNudges[kGameplayHintEditNudgeMax];
 int g_gameplayHintEditDraggingSlot = -1; // index into g_gameplayHintEditNudges, -1 = not dragging
 bool g_gameplayHintEditDraggingIsIcon = false; // which of the two handles is held
@@ -1431,7 +1490,7 @@ GameplayHintEditNudge* FindOrCreateGameplayHintEditNudge(GameplayHintSlotId slot
             return &n;
         }
     }
-    return nullptr; // table full -- can't actually happen (6 real combos, 8 slots)
+    return nullptr; // table full -- shouldn't happen at 8 real combos / 16 slots
 }
 } // namespace
 
@@ -1505,8 +1564,9 @@ void DrawOneGameplayHintSlot(void* device, GameplayHintSlot& slot, GameplayHintS
     // (see GetUniformSizeScale's own header comment), position unchanged.
     float uniformScale = scaleX < scaleY ? scaleX : scaleY;
     auto drawScaledQuad = [&](void* texture, float x, float y, float w, float h, DWORD color,
-                               float u0 = 0.0f, float v0 = 0.0f, float u1 = 1.0f, float v1 = 1.0f) {
-        DrawGenericTexturedQuad(device, texture, x * scaleX, y * scaleY, w * uniformScale, h * uniformScale, color, u0, v0, u1, v1);
+                               float u0 = 0.0f, float v0 = 0.0f, float u1 = 1.0f, float v1 = 1.0f,
+                               bool premultipliedAlpha = false) {
+        DrawGenericTexturedQuad(device, texture, x * scaleX, y * scaleY, w * uniformScale, h * uniformScale, color, u0, v0, u1, v1, premultipliedAlpha);
     };
 
     if (!EnsureLeftAlignedTextTexture(device, slot.prefixTexture, slot.prefixRenderedFor,
@@ -1739,7 +1799,7 @@ void DrawOneGameplayHintSlot(void* device, GameplayHintSlot& slot, GameplayHintS
                 draggingIcon ? 0x9000FF00u : 0x90FFA000u, slotLabel);
         }
         drawScaledQuad(iconTexture, iconBaseX + iconNudgeX, iconBaseY + iconNudgeY - iconDrawHeight * 0.5f,
-            iconDrawWidth, iconDrawHeight, iconColor);
+            iconDrawWidth, iconDrawHeight, iconColor, 0.0f, 0.0f, 1.0f, 1.0f, /*premultipliedAlpha=*/true);
         cursorX += iconDrawWidth + kIconGap; // unaffected by iconNudge -- suffix flow stays stable regardless
     }
 
@@ -1867,8 +1927,9 @@ void DrawOneMenuHintSlot(void* device, MenuHintSlot& slot, float scaleX, float s
     // a correct proportional placement and is unchanged here.
     float uniformScale = scaleX < scaleY ? scaleX : scaleY;
     auto drawScaledQuad = [&](void* texture, float x, float y, float w, float h, DWORD color,
-                               float u0 = 0.0f, float v0 = 0.0f, float u1 = 1.0f, float v1 = 1.0f) {
-        DrawGenericTexturedQuad(device, texture, x * scaleX, y * scaleY, w * uniformScale, h * uniformScale, color, u0, v0, u1, v1);
+                               float u0 = 0.0f, float v0 = 0.0f, float u1 = 1.0f, float v1 = 1.0f,
+                               bool premultipliedAlpha = false) {
+        DrawGenericTexturedQuad(device, texture, x * scaleX, y * scaleY, w * uniformScale, h * uniformScale, color, u0, v0, u1, v1, premultipliedAlpha);
     };
 
     if (!EnsureLeftAlignedTextTexture(device, slot.prefixTexture, slot.prefixRenderedFor,
@@ -1914,7 +1975,7 @@ void DrawOneMenuHintSlot(void* device, MenuHintSlot& slot, float scaleX, float s
         // tinting it (e.g. green/red for a status readout) would look wrong.
         // slot.color only ever affects the prefix/suffix TEXT quads.
         drawScaledQuad(iconTexture, cursorX, iconVerticalCenter - iconDrawHeight * 0.5f,
-            iconDrawWidth, iconDrawHeight, 0xFFFFFFFF);
+            iconDrawWidth, iconDrawHeight, 0xFFFFFFFF, 0.0f, 0.0f, 1.0f, 1.0f, /*premultipliedAlpha=*/true);
         cursorX += iconDrawWidth + kIconGap;
     }
 
@@ -3419,7 +3480,8 @@ void DrawDiagLabel(void* device, int cacheIndex, const char* text, const char* i
         if (w <= 0.0f) return;
         void* tex = nullptr; int texW = 0, texH = 0;
         if (!GetOrLoadGlyphIconTexture(device, assetName, tex, texW, texH)) return;
-        DrawGenericTexturedQuad(device, tex, x * scaleX, (labelY - kIconSize * 0.5f) * scaleY, w * scaleX, kIconSize * scaleY);
+        DrawGenericTexturedQuad(device, tex, x * scaleX, (labelY - kIconSize * 0.5f) * scaleY, w * scaleX, kIconSize * scaleY,
+                                  0xFFFFFFFF, 0.0f, 0.0f, 1.0f, 1.0f, /*premultipliedAlpha=*/true);
     };
 
     float w1 = measureIcon(iconAssetName), w2 = measureIcon(iconAssetName2);
@@ -3468,7 +3530,8 @@ bool DrawControllerBodyImage(void* device, float scaleX, float scaleY, const Con
     outY = kDiagBoxY + (kDiagBoxMaxH - h) * 0.5f;
     outW = w;
     outH = h;
-    DrawGenericTexturedQuad(device, tex, outX * scaleX, outY * scaleY, w * scaleX, h * scaleY);
+    DrawGenericTexturedQuad(device, tex, outX * scaleX, outY * scaleY, w * scaleX, h * scaleY,
+                              0xFFFFFFFF, 0.0f, 0.0f, 1.0f, 1.0f, /*premultipliedAlpha=*/true);
     return true;
 }
 
@@ -3838,7 +3901,8 @@ void DrawCustomOptionsMenuIfOpen(void* device)
                         float iconHpx = static_cast<float>(kListFontHeightPx);
                         float iconWpx = iconHpx * (static_cast<float>(iconW) / static_cast<float>(iconH));
                         DrawGenericTexturedQuad(device, iconTex, (labelRightX + 10.0f) * scaleX, (rowY - iconHpx * 0.5f) * scaleY,
-                                                  iconWpx * scaleX, iconHpx * scaleY);
+                                                  iconWpx * scaleX, iconHpx * scaleY,
+                                                  0xFFFFFFFF, 0.0f, 0.0f, 1.0f, 1.0f, /*premultipliedAlpha=*/true);
                     }
                 }
             }
@@ -3982,7 +4046,8 @@ void DrawCustomOptionsMenuIfOpen(void* device)
                         float iconHpx = static_cast<float>(kListFontHeightPx);
                         float iconWpx = iconHpx * (static_cast<float>(iconW) / static_cast<float>(iconH));
                         DrawGenericTexturedQuad(device, iconTex, (labelRightX + 10.0f) * scaleX, (rowY - iconHpx * 0.5f) * scaleY,
-                                                  iconWpx * scaleX, iconHpx * scaleY);
+                                                  iconWpx * scaleX, iconHpx * scaleY,
+                                                  0xFFFFFFFF, 0.0f, 0.0f, 1.0f, 1.0f, /*premultipliedAlpha=*/true);
                     }
                 }
             }
@@ -4041,7 +4106,8 @@ void DrawCustomOptionsMenuIfOpen(void* device)
         DrawOptLeftAlignedText(device, g_optCornerBackCache, backText, startX, cornerY, kCornerFontHeightPx, kWhiteColor, scaleX, scaleY);
         if (haveIcon) {
             DrawGenericTexturedQuad(device, iconTex, (startX + textW + kCornerGapPx) * scaleX, (cornerY - kCornerIconHeight * 0.5f) * scaleY,
-                                      iconW * scaleX, kCornerIconHeight * scaleY);
+                                      iconW * scaleX, kCornerIconHeight * scaleY,
+                                      0xFFFFFFFF, 0.0f, 0.0f, 1.0f, 1.0f, /*premultipliedAlpha=*/true);
         }
     }
 
@@ -4111,7 +4177,8 @@ void DrawCustomOptionsMenuIfOpen(void* device)
                         float iconHpx = 24.0f;
                         float iconWpx = iconHpx * (static_cast<float>(iconW) / static_cast<float>(iconH));
                         DrawGenericTexturedQuad(device, iconTex, (textX - iconWpx - 12.0f) * scaleX, (rowCenterY - iconHpx * 0.5f) * scaleY,
-                                                  iconWpx * scaleX, iconHpx * scaleY);
+                                                  iconWpx * scaleX, iconHpx * scaleY,
+                                                  0xFFFFFFFF, 0.0f, 0.0f, 1.0f, 1.0f, /*premultipliedAlpha=*/true);
                     }
                 }
             }
@@ -4731,7 +4798,8 @@ void DrawCustomCursorIfNeeded(void* device)
         // top-left corner (confirmed during cropping -- the tip is right at the
         // image edge with only a few pixels of margin), so the real cursor position
         // maps directly to the quad's top-left with no centering offset needed.
-        DrawGenericTexturedQuad(device, texture, static_cast<float>(pt.x), static_cast<float>(pt.y), drawW, drawH);
+        DrawGenericTexturedQuad(device, texture, static_cast<float>(pt.x), static_cast<float>(pt.y), drawW, drawH,
+                                  0xFFFFFFFF, 0.0f, 0.0f, 1.0f, 1.0f, /*premultipliedAlpha=*/true);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         // Never let a bad read of these fixed addresses (e.g. too early in boot,
         // before the real UI system has initialized them) crash the game.

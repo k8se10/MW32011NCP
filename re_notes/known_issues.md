@@ -113,6 +113,9 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#78](#78-doghyena-melee-struggle-hud-prompts-survival-have-no-controller-glyph-coverage-2026-08-17-reported-real-assets-confirmed-no-safe-code-hook-found-this-pass) — Dog/hyena melee-struggle HUD prompts (Survival) have no controller-glyph coverage — **Investigated, NOT implemented** (no safe live-verifiable hook found this pass)
 - [#79](#79-extended-session-stutter----three-real-evidence-backed-causes-found-and-fixed-one-residual-enemy-look-gpu-cost-parked-not-resolved-2026-08-1718) — Extended-session stutter — **Mostly fixed, confirmed live "miles better"** (one residual enemy-look GPU-cost dip PARKED, not resolved)
 - [#80](#80-full-save-states-emulator-style--paused-key-feature-2026-08-25) — Full save states (emulator-style) — **Paused by user request, key feature** (raw dump/restore ruled out -- heap ASLR; native `save`/`loadgame` commands found but not live-callable; semantic struct mapping is the real path when resumed)
+- [#81](#81-mantles-drag-handle-in-the-in-game-glyph-position-editor-silently-never-worked----resolved-2026-08-25) — Mantle's drag handle in the glyph position editor silently never worked — **Resolved**, allocation-pool sized exactly at capacity with zero headroom
+- [#82](#82-controller-glyph-icons-had-a-faint-white-cutout-fringe-ring----resolved-2026-08-25) — Controller-glyph icons had a faint white cutout-fringe ring — **Resolved**, non-premultiplied alpha at cutout edges, fixed via premultiply + matching blend equation
+- [#83](#83-glyph-style-auto-detect-xbox-360-xbox-modern-playstation----previewwip-not-live-tested-2026-08-25) — Glyph-style auto-detect (Xbox 360/Modern/PlayStation) — **PREVIEW/WIP, not live-tested** — DualSense detection reuses proven HID state; Xbox 360-vs-Modern VID/PID table is best-effort, unverified
 
 ---
 
@@ -10134,3 +10137,52 @@ Two real command-shaped tokens exist in the strings (`save`, `loadgame`), and `C
 **Consequence for the plan:** cross-relaunch save states need real semantic struct mapping (know what's a pointer, follow it, serialize to a relocatable format, rebuild it against the new launch's own heap layout on load) for anything heap-resident -- there is no shortcut via raw memory dumping. The exe's own static/global data doesn't have this problem and could still be dumped/restored directly as part of a hybrid approach. Item 4 above (real RE work to map entity/world/script-VM structures) is now confirmed as unavoidable, not just the thorough-but-optional path.
 
 **Next step:** item 2 (check for any native save/checkpoint mechanism) is the cheapest next move and hasn't been done yet -- worth doing before starting the heavier entity/AI/GSC-VM structure-mapping RE work in item 4.
+
+---
+
+## 81. Mantle's drag handle in the in-game glyph position editor silently never worked -- RESOLVED (2026-08-25)
+
+**Status:** Resolved, root cause found and fixed same day; not yet visually re-confirmed live.
+
+**Symptom:** live-reported, "the mantle drag doesnt work" -- the Mantle hint's own TEXT/ICON drag handles in the F2/F3 glyph position editor never appeared or responded to drag input, while Interact/ReadyUp/Reload's handles all worked fine.
+
+**Root cause:** `kGameplayHintEditNudgeMax` (`overlay_hud.cpp`), the fixed-size pool `FindOrCreateGameplayHintEditNudge` allocates a persistent `(GameplayHintSlotId, FontRole)` combo slot from, was `8` -- sized for the pre-Mantle world documented in its own comment: "3 slots x 2 roles = 6 real combos, some headroom." Mantle getting its own `GameplayHintSlotId` (2026-08-25, same session, see PATCHNOTES item 9) made it 4 slots x 2 roles = 8 real combos -- exactly at capacity, zero headroom left. If Interact/ReadyUp/Reload happened to each claim a slot for both `FontRole::Default` and `FontRole::Condensed` before Mantle's own request ever arrived in a given session, the pool was already full and `FindOrCreateGameplayHintEditNudge` returned `nullptr` for Mantle -- the drag-handle code (`DrawOneGameplayHintSlot`) skips its entire hit-test/drag block on a null `editNudge`, so nothing crashed, the handle just silently never appeared or responded.
+
+**Fix:** bumped `kGameplayHintEditNudgeMax` from 8 to 16 -- real headroom this time, not a repeat of "sized exactly to the current known combo count." Comment updated to explain the failure mode explicitly, so a future 5th gameplay-hint slot doesn't reintroduce the exact same bug a third time.
+
+**Not yet independently re-confirmed live** -- same standard this project applies to every visual/interactive fix.
+
+---
+
+## 82. Controller-glyph icons had a faint white cutout-fringe ring -- RESOLVED (2026-08-25)
+
+**Status:** Resolved, root cause found and fixed same day; not yet visually re-confirmed live.
+
+**Symptom:** live-reported: "for all glyphs we have to have any very faint 1-2px white ring from cutting removed entirely." Confirmed root cause via direct follow-up: "its clearly from when it was cut out they were cut well but im guessing not tight enough to avoid clippage."
+
+**Root cause:** the source PNGs' own cutout boundaries left a thin ring of semi-transparent edge pixels that still carry the original (light/white) background color underneath, not fully cropped away. This project's icon draw path (`DrawGenericTexturedQuad`, `overlay_hud.cpp`) used standard non-premultiplied `SRCALPHA`/`INVSRCALPHA` blending, which draws a pixel's stored RGB weighted by its own alpha regardless of what that RGB actually is -- a semi-transparent edge texel storing near-white leftover RGB blends in a visible pale fringe no amount of cropping tightness alone fully avoids. D3D9's automatic mipmap generation (`D3DUSAGE_AUTOGENMIPMAP`, added 2026-08-24 for icon jaggedness, see issue #71/#74's own history) made this WORSE by box-averaging that same near-white RGB into every mip level with no regard for alpha weight, visible whenever an icon is drawn scaled down (every icon in this project's overlay is).
+
+**Fix:** two parts, both required together:
+1. `LoadGlyphIconTexture` (`overlay_hud.cpp`) now premultiplies every icon's RGB by its own alpha at load time, right after WIC decode -- a texel's stored RGB approaches 0 as its alpha approaches 0, so neither ordinary blending nor mip-level averaging has any non-zero background color left to bleed in. Applies uniformly to every asset this project loads through this one shared function (glyph icons, the custom cursor, controller diagram images) -- no per-asset special-casing needed.
+2. `DrawGenericTexturedQuad` gained a new `premultipliedAlpha` parameter (default `false`, so every other existing caller -- solid white quads, the text-outline compositing system, real `.menu`-asset DDS textures via `MenuGfx_DrawTexturedQuad` -- is completely unaffected): when `true`, `SRCBLEND` switches from `SRCALPHA` to `ONE`, the correct compositing equation for already-premultiplied source data. Every one of this project's ~10 icon-cache draw call sites (direct `GetOrLoadGlyphIconTexture` consumers) was updated to pass `true`.
+
+**Not yet independently re-confirmed live** -- same standard as issue #81 above.
+
+---
+
+## 83. Glyph-style auto-detect (Xbox 360, Xbox Modern, PlayStation) -- PREVIEW/WIP, not live-tested (2026-08-25)
+
+**Status:** Implemented, builds clean, NOT yet live-tested against real hardware of any kind (Xbox 360, Xbox One/Series, or DualSense). Treat as PREVIEW/WIP per this project's own labeling convention until confirmed.
+
+**The ask:** user-requested, "that thing i mentioned about making there be a default option for glyphs which detects controller type ps/xbox/xbmodern and sets accordingly" -- `GlyphStyle` (task #6, `mod_config.h`) has existed since 2026-07-21 but always required a manual, hand-edited-INI choice; XInput itself genuinely cannot distinguish an Xbox-branded pad from a third-party one, or a 360 controller from a Series controller, at the API level (this project's own long-standing documented limitation, see `GlyphStyle`'s own enum comment) -- so auto-detection needed a signal outside XInput entirely.
+
+**What actually enables this now, that didn't exist when `GlyphStyle` was first added:** this project's own native DualSense HID backend (issue #76), which already opens a raw HID handle independent of XInput and exposes `DualSense_IsOpen()` as a cheap, already-proven "is a real DualSense currently connected" signal -- zero new HID work needed for the PlayStation case. For Xbox, a new best-effort read-only HID enumeration (`TryDetectXboxGlyphStyle`, `dualsense_input.cpp`, same `SetupDiGetClassDevsW`/`HidD_GetAttributes` pattern `TryOpenDualSense` already uses, but read-only -- `GENERIC_READ` only, never opens for exclusive read-write, so it can't contend with `controller_input.cpp`'s own XInput polling for the same physical device) scans for Microsoft's vendor ID (`0x045E`) and classifies the product ID against a small table (Xbox 360 wired/wireless PIDs -> `Xbox360`; Xbox One/Elite/S/Series PIDs -> `XboxModern`; any other `0x045E` PID -> `XboxModern` by default, since a newer/less common pad is more likely to be missing from the table than an old one).
+
+**This table is public knowledge (used by, among others, SDL2's game controller DB and the Linux kernel's `xpad` driver), NOT independently verified against real hardware by this project across every generation.** Flagged explicitly, same honesty standard as the DualSense backend's own byte-offset table -- don't cite this PID list as confirmed-correct without a live test across at least one real controller of each classified generation.
+
+**Design decisions:**
+- New `[Bindings] GlyphStyleAuto` config key, default `true` for a fresh install. `ConfigVersion` bumped 19->20 (`mod_config.cpp`).
+- **Detection runs ONCE per session**, not on a recurring timer -- deliberately, to match this project's own existing "restart to switch controller device families" design (`controller_input.cpp`'s `XInputPollThreadProc`, locks onto XInput or DualSense for the life of the process). Continuously re-polling for glyph style independently of that lock would be inconsistent with it, and could misreport PlayStation glyphs while the actual locked input source is still an XInput translator layer (e.g. Steam Input presenting a DualSense as a virtual XInput pad) -- exactly the class of confusion the native DualSense backend was built to route around in the first place (issue #74/#76). The detection call sits directly at both of `XInputPollThreadProc`'s own `g_lockedSource = ...` assignment points.
+- **Migration for existing configs:** since `GlyphStyleAuto` is a brand-new key, a plain "absent key defaults to compiled default" migration would risk silently overriding a player who'd hand-edited `GlyphStyle` to `XboxModern`/`PlayStation` before this feature existed (the only way to set it away from `Xbox360` before now, since no in-game selector control exists). `LoadModConfig` (`mod_config.cpp`) checks the ALREADY-loaded `GlyphStyle` value as a stand-in signal: if the `GlyphStyleAuto` key is absent AND `GlyphStyle` isn't sitting at its historical `Xbox360` default, `GlyphStyleAuto` defaults to `false` instead of `true` -- same "explicit value always wins" policy this project already applies to `FontItalic`'s own default flip (2026-08-24).
+
+**Not yet done:** no in-game UI control to toggle `GlyphStyleAuto` or manually override it exists yet (INI-only, same as `GlyphStyle` itself always has been) -- would need the eventual custom Options screen work (deprioritized until v0.3.6, post-LTS, per the project's own LTS plan). No live test performed this session against any real controller of any generation -- purely a build-clean, logically-reviewed implementation.
