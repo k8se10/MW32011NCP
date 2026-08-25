@@ -131,6 +131,19 @@ along the way rather than assumed. See the itemized entries below and
   or is a hardcoded internal cap -- needs a test with that setting explicitly at
   1440p to tell the two apart. See `known_issues.md` issue #88.
 
+### Investigated, Not Yet Resolved
+1. **Survival scoreboard's real stat data source (Combat Performance, Wave Bonus,
+  Accuracy, Headshots, Damage Taken) -- inconclusive this pass, needs GSC
+  decompile.** RE prerequisite for a planned live Survival scoreboard feature. A
+  real Ghidra string/xref search found these values are not raw exe strings or an
+  obvious dvar -- a promising-looking lead (real GSC field-name tokens in the
+  binary) turned out to be a false positive, tracing back to the game's own shared
+  GSC string-intern table (hundreds of unrelated fields), not this screen's
+  specific data source. Real next step is actual GSC bytecode decompilation
+  (`xensik/gsc-tool`, already set up in this project), not attempted this pass --
+  the scoreboard's UI cannot start with real data until this clears. See
+  `known_issues.md` issue #89.
+
 ## v0.3.4 — Alpha (2026-08-25) — DualSense input-parity fix, gameplay-hint glyph editor, new plugin API
 
 **Summary:** DualSense's Bluetooth stick-garbling bug is fixed — a real
