@@ -6238,6 +6238,7 @@ extern "C" bool IsGlyphPositionEditModeActive()
     return g_glyphEditModeActive;
 }
 
+} // namespace
 // Writes every group touched this session to exported_glyph_positions.txt, next to
 // the DLL, as ready-to-paste kManualGlyphPositions entries. Mirrors
 // DiagramEditor_ExportCurrentLayout's own file-writing pattern (overlay_hud.cpp) --
@@ -6245,6 +6246,19 @@ extern "C" bool IsGlyphPositionEditModeActive()
 // Indices touched non-contiguously (e.g. index 2 dragged but index 0/1 never focused
 // this session) export as 0.0f -- left visible in the raw output rather than silently
 // guessed, since a real gap should be revisited, not papered over.
+//
+// Needs EXTERNAL linkage -- an OUTER anonymous namespace opened at line ~6004
+// (separate from the inner one closed at line 6229 just above) was still open
+// at this point, giving this function internal linkage despite looking
+// "already outside a namespace" from a quick read. `IsGlyphPositionEditModeActive`
+// right above this comment is unaffected by the SAME outer namespace only
+// because it's declared `extern "C"` -- under MSVC, C-language-linkage
+// functions bypass the anonymous-namespace internal-linkage restriction, a
+// real, easy-to-miss exception plain C++ functions don't get. First confirmed
+// by a real LNK2019 (2026-08-25) when this function needed calling from
+// overlay_hud.cpp for the gameplay-hint F3 export fix -- same class of bug as
+// AppendGameplayHintEditExport/InvalidateTextTextureCachesOnConfigChange
+// (2026-08-24), fixed the same surgical close/reopen way.
 void ExportGlyphEditPositions()
 {
     char exeDir[MAX_PATH] = {};
@@ -6296,6 +6310,7 @@ void ExportGlyphEditPositions()
     sprintf_s(msg, "[glyph-editor] exported %d group(s) to exported_glyph_positions.txt", exported);
     LogFromController(msg);
 }
+namespace {
 
 // Called once per real rendered frame (from ResetMenuListItemOrdinalForFrame below),
 // only while g_modConfig.glyphPositionEditMode is on, for whichever real menu item is
