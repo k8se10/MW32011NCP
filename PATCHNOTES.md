@@ -152,11 +152,17 @@ along the way rather than assumed. See the itemized entries below and
   existing F2 debug-freeze feature's comments may misdescribe its real underlying
   dvar as bare `timescale`, which has ZERO real cross-references anywhere in the
   binary -- the real dvar is very likely `com_timescale`, worth a follow-up
-  correction pass even though the shipped feature itself works correctly. Real
-  next step -- decompiling what actually READS `com_maxfps`'s registered value, to
-  determine whether raising it changes real simulation cadence or just
-  frame-submission rate -- was not reached this pass (no Ghidra project existed
-  yet for this binary). No patch attempted or planned until that's resolved. See
+  correction pass even though the shipped feature itself works correctly.
+  **Correction, same day, direct user framing: "com maxfps is just the console
+  option to limit frames from all cods, thats not internal engine sim rate."**
+  Correct -- `com_maxfps` is the standard client render-rate limiter every CoD
+  title has, structurally unrelated to simulation cadence; this project's own
+  already-captured uncapped-~200fps `frametime_benchmark.csv` data already proves
+  the two are decoupled in this binary (render ran freely while the sim-tied cost
+  pattern stayed locked to 30Hz underneath). Ruled out as a candidate. `fixedtime`
+  (a genuine idTech/Quake3-family fixed-simulation-timestep term, historically used
+  for demo recording/frame-perfect debugging) is the real remaining lead, not yet
+  decompiled. No patch attempted or planned until that's resolved. See
   `known_issues.md` issue #90.
 
 ## v0.3.4 — Alpha (2026-08-25) — DualSense input-parity fix, gameplay-hint glyph editor, new plugin API
