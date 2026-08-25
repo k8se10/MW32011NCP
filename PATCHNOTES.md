@@ -101,15 +101,22 @@ reverse-engineering trail behind each entry.
   cursor, turning it into a genuine debug tool usable mid-gameplay, not just in
   menus.** Direct request: "we need our mouse cursor available in gameplay when we
   press f2, it would be nice if it froze gameplay tick too... an amazing debug
-  feature to fix all menus easily." Toggling the editor ON now calls the exact same
-  real pause path Start's own pause-menu press already uses live (`OpenPauseMenu`/
-  `FUN_004d6620`), but only when no menu is already active and the game isn't
-  already paused -- a tracked flag (`g_glyphEditorTriggeredPause`) records whether
-  the editor itself caused the pause, so toggling back OFF only resumes
-  (`SetMenuState` mode 0 / `FUN_004396d0`) when that flag is set, never force-
-  unpausing a pause a real player caused independently (e.g. their own ESC/Start
-  press while the editor happened to still be on). The custom mouse cursor
-  (`DrawCustomCursorIfNeeded`) now force-shows whenever
+  feature to fix all menus easily." Toggling the editor ON now mirrors the exact
+  real branch the proven Start-button handler (`InjectControllerPause`) already
+  uses live: auto-close any already-open menu first (same `ForwardKeyToMenu` ESC
+  pair Start uses), then call `OpenPauseMenu`/`FUN_004d6620` for the rare state
+  1/2 case or `SetMenuState(playerIndex, kMenuStatePausedMenu)`/`FUN_004396d0` --
+  the function's own comment documents it as "sets cl_paused, opens the pausedmenu
+  UI" -- for ordinary live gameplay (state 6). **First attempt called
+  `OpenPauseMenu` unconditionally and was live-reported broken ("gameplay tick
+  doesnt freeze")** -- root cause was exactly that OpenPauseMenu alone doesn't set
+  `cl_paused`; only the `SetMenuState` branch does, and normal SP/Survival play
+  always reports state 6, never 1/2, so the wrong branch was firing every time.
+  Toggling back OFF only resumes (`SetMenuState` mode 0) when a tracked flag
+  (`g_glyphEditorTriggeredPause`) confirms the editor itself caused the pause --
+  never force-unpauses a pause a real player caused independently (their own
+  ESC/Start press while the editor happened to still be on). The custom mouse
+  cursor (`DrawCustomCursorIfNeeded`) force-shows whenever
   `IsGlyphPositionEditModeActive()` is true, bypassing every native
   visFlag/uiState/`IsMenuActive` gate it normally respects -- the editor is a debug
   tool, not a normal play state, so it deliberately ignores those heuristics rather
@@ -161,6 +168,19 @@ reverse-engineering trail behind each entry.
   and the blur shader specifically is eagerly prewarmed at device-creation time; see
   Fixed item 2 above) whenever `CheckConfigHotReload` actually reloads
   (`InvalidateTextTextureCachesOnConfigChange`, mod_config.cpp).
+4. **Text outline clipped on the left edge of the FIRST glyph only** (live-reported
+  with a screenshot: "Press" in "Press [X] To Reload" missing its outline down one
+  side of the P, nowhere else). Root cause: `RenderMaskLuminance` draws every
+  outline offset pass at a fixed 8px left inset, but the outline ring itself widened
+  to +/-3px twice on 2026-08-24 (see What's New item 1 in an earlier release) without
+  the inset growing to match -- an outline pixel at offset -3 renders at x=5, while
+  every crop site that later samples the rendered texture (`DrawOptLeftAlignedText`,
+  `DrawOneGameplayHintSlot`, `DrawOneMenuHintSlot`, `MenuGfx_*`) started sampling at
+  exactly x=8 with zero slack, silently cutting that 3px sliver -- invisible on every
+  glyph except the very first, since interior glyphs have a preceding glyph's own
+  fill covering the same span. Fixed by widening the shared inset from a bare `8`
+  (independently redeclared at five separate call sites) to one new shared constant,
+  `kTextRenderMarginPx = 11` (`overlay_hud.cpp`), used everywhere instead.
 
 ---
 

@@ -211,6 +211,16 @@ struct ScreenVertex { float x, y, z, rhw; DWORD color; float u, v; };
 
 constexpr int kTextureWidth = 512;
 constexpr int kTextureHeight = 64;
+// Left inset RenderMaskLuminance draws every text pass at, and every DrawOpt*/
+// DrawOneGameplayHintSlot/DrawOneMenuHintSlot/MenuGfx_* crop site reads back from
+// (see RenderMaskLuminance's own comment). Was a bare, independently-redeclared
+// "8" at each of those call sites -- bumped to 11 (8 + the outline ring's own
+// current +/-3px max offset) 2026-08-25 after a live screenshot showed the
+// outline clipped along the left edge of the first glyph only: an outline pixel
+// at offset -3 renders at x=5, but the old margin of 8 left zero slack, cropping
+// exactly that sliver. One shared constant now, not five independently-editable
+// copies, so a future outline-width change can't silently reintroduce this.
+constexpr int kTextRenderMarginPx = 11;
 
 EndScene_t g_origEndScene = nullptr;
 DWORD g_endSceneFireCount = 0;
@@ -497,8 +507,20 @@ bool RenderMaskLuminance(const char* text, const POINT* offsets, int offsetCount
     SetTextColor(memDC, RGB(255, 255, 255));
 
     for (int i = 0; i < offsetCount; ++i) {
-        RECT textRect = { 8 + offsets[i].x, offsets[i].y,
-                           kTextureWidth - 8 + offsets[i].x, kTextureHeight + offsets[i].y };
+        // Left inset is kTextRenderMarginPx (overlay_hud.h) everywhere, not a bare
+        // "8" -- every DrawOpt*/DrawOneGameplayHintSlot/DrawOneMenuHintSlot crop
+        // site below reads from exactly this same offset, so it must leave enough
+        // slack for the widest outline offset (currently +/-3px) or the outline
+        // ring gets clipped at the crop boundary. FIXED 2026-08-25 (live-reported,
+        // screenshot showing the outline cut off on one side of the FIRST glyph
+        // only): margin was still the old hardcoded 8 even after the outline ring
+        // widened to +/-3px twice on 2026-08-24 -- an outline pixel at offset -3
+        // renders at x=5, but every crop below started sampling at x=8 with no
+        // slack, silently cutting exactly that 3px sliver off the left edge of
+        // whatever glyph happens to be first (nothing to its left to hide the cut,
+        // unlike interior glyphs whose neighbors' own fill covers the same span).
+        RECT textRect = { kTextRenderMarginPx + offsets[i].x, offsets[i].y,
+                           kTextureWidth - kTextRenderMarginPx + offsets[i].x, kTextureHeight + offsets[i].y };
         DrawTextA(memDC, text, -1, &textRect, alignFlag | DT_SINGLELINE | DT_NOCLIP | DT_VCENTER);
     }
 
@@ -1495,7 +1517,7 @@ void DrawOneGameplayHintSlot(void* device, GameplayHintSlot& slot, GameplayHintS
     // (2) kIconGap itself was more generous (8px) than actually needed once (1) is
     // fixed -- reduced to a tighter, still-readable gap.
     constexpr float kIconGap = 3.0f;
-    constexpr int kHintTextRenderLeftMarginPx = 8; // matches RenderMaskLuminance's own hardcoded left inset
+    constexpr int kHintTextRenderLeftMarginPx = kTextRenderMarginPx; // matches RenderMaskLuminance's own left inset
     // Pixel-measured 2026-07-31 (round 6, against the real static " Model 1887" HUD
     // text via direct screenshot pixel scanning): g_pendingHintY is the caller's
     // intended VERTICAL CENTER of the line (matching the same real HUD element's own
@@ -1794,7 +1816,7 @@ void DrawOneMenuHintSlot(void* device, MenuHintSlot& slot, float scaleX, float s
     }
 
     constexpr float kIconGap = 3.0f;
-    constexpr int kHintTextRenderLeftMarginPx = 8;
+    constexpr int kHintTextRenderLeftMarginPx = kTextRenderMarginPx;
     float iconVerticalCenter = slot.y;
     float textQuadTop = slot.y - static_cast<float>(kTextureHeight) * 0.5f;
 
@@ -2866,7 +2888,7 @@ void DrawOptLeftAlignedText(void* device, TextTexCache& cache, const char* text,
                                         text, cache.lastFontHeightPx, fontHeightPx)) return;
     int measuredWidth = MeasureTextWidthPx(text, g_modConfig.overlayFontItalic, fontHeightPx);
     if (measuredWidth <= 0) return;
-    constexpr int kTextRenderLeftMarginPx = 8; // matches RenderMaskLuminance's own hardcoded left inset
+    constexpr int kTextRenderLeftMarginPx = kTextRenderMarginPx; // matches RenderMaskLuminance's own left inset
     int drawWidthPx = measuredWidth + 12; // small trailing margin, same rationale
                                             // as the hint renderer's own kHintTextWidthMarginPx
     float u0 = static_cast<float>(kTextRenderLeftMarginPx) / static_cast<float>(kTextureWidth);
@@ -4443,7 +4465,7 @@ void MenuGfx_DrawLeftText(void* device, void*& ioTexture, char* renderedForBuf, 
                                         text, ioLastFontHeightPx, fontHeightPx)) return;
     int measuredWidth = MeasureTextWidthPx(text, g_modConfig.overlayFontItalic, fontHeightPx);
     if (measuredWidth <= 0) return;
-    constexpr int kTextRenderLeftMarginPx = 8; // matches RenderMaskLuminance's own hardcoded left inset
+    constexpr int kTextRenderLeftMarginPx = kTextRenderMarginPx; // matches RenderMaskLuminance's own left inset
     int drawWidthPx = measuredWidth + 12;
     float u0 = static_cast<float>(kTextRenderLeftMarginPx) / static_cast<float>(kTextureWidth);
     float u1 = static_cast<float>(kTextRenderLeftMarginPx + drawWidthPx) / static_cast<float>(kTextureWidth);
