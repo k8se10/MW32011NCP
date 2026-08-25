@@ -5,6 +5,16 @@
 // entirely, loading XInput dynamically so a missing DLL degrades to "no controller"
 // instead of crashing the mod.
 
+// Wakes the background poll thread to take one fresh hardware sample right now
+// (2026-08-25, live-reported: "cut the polling and just use the first controller
+// that input is detected from and stop polling"). The Controller_Get* functions below
+// only ever read an already-cached sample -- they never touch hardware themselves --
+// so call this once per real tick, BEFORE reading state, from whichever of this
+// project's two real per-tick consumers (the gameplay-tick hook, the WndProc ~60Hz
+// WM_TIMER) is currently driving. Safe to call redundantly (a no-op if a poll is
+// already pending) and safe to call before anything else in this header has run.
+void Controller_RequestPoll();
+
 // Polls once per call; safe to call from multiple hook sites in the same frame (cheap).
 // Returns false (and zeroes the outputs) if no controller is connected.
 bool Controller_GetLeftStick(float& x, float& y);   // both in [-1, 1], deadzone+curve applied
