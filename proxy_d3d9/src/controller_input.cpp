@@ -25,13 +25,14 @@ extern "C" DWORD GetLastControllerActivityTickMs(); // defined in analog_input_h
 extern "C" DWORD GetLastMouseMoveTickMs(); // defined in d3d9_hook.cpp
 
 // Same reasoning as MarkControllerActivity above -- defined further down in this file,
-// with real external linkage, but the poll thread proc (inside the anonymous namespace
-// immediately below) needs to call it every wake cycle, so it must be visible before
-// that point. Declaring it here (before the anonymous namespace opens) instead of
-// inside it is deliberate: a forward declaration textually inside an anonymous
-// namespace gets that namespace's own implicit internal linkage, which would conflict
-// with this function's real (external) definition later in the file.
-void ApplyPendingVibrationOnPollThread();
+// with real external linkage, but the DEDICATED VIBRATION thread proc (inside the
+// anonymous namespace immediately below -- a separate thread from input polling, see
+// g_vibrationThreadHandle's own comment for why) needs to call it every wake cycle, so
+// it must be visible before that point. Declaring it here (before the anonymous
+// namespace opens) instead of inside it is deliberate: a forward declaration textually
+// inside an anonymous namespace gets that namespace's own implicit internal linkage,
+// which would conflict with this function's real (external) definition later in the file.
+void ApplyPendingVibration();
 
 namespace {
 
@@ -208,6 +209,25 @@ struct PendingVibration {
     bool dirty = false;
 };
 PendingVibration g_pendingVibration;
+
+// Own dedicated thread for vibration writes (2026-08-25, direct follow-up request:
+// "we need thread safety and a fallback thread... if a thread is overloaded etc can
+// take the load off"). Vibration writes originally shared the SAME background thread
+// as input polling (both woken by the same g_pollWakeEvent, applied sequentially in
+// one loop iteration) -- correct and already a real improvement over the old
+// main-thread-blocking design, but it meant a slow/stalled input read (a real, if
+// rare, possibility -- driver hiccup, a contended USB/BT transport) would delay
+// applying a queued vibration write behind it, and vice versa, since one thread can
+// only do one thing at a time. Splitting these onto two independent threads means a
+// stall in either one can never block the other -- genuine load separation, not just
+// "off the main thread."
+HANDLE g_vibrationThreadHandle = nullptr;
+HANDLE g_vibrationWakeEvent = nullptr; // auto-reset, same convention as g_pollWakeEvent
+constexpr DWORD kVibrationWakeTimeoutMs = 250; // safety-net only, not a real interval --
+                                                 // vibration has no "Undetermined" phase
+                                                 // of its own needing repeated retries,
+                                                 // so this can be looser than the poll
+                                                 // thread's own 50ms timeout.
 
 // Cross-thread handoff for the connect/disconnect toast (2026-08-08, user-requested):
 // deliberately NOT calling ShowOverlayMessage directly from the poll thread --
@@ -547,12 +567,6 @@ DWORD WINAPI XInputPollThreadProc(LPVOID)
             NotifyControllerConnectionChange(connected);
         }
 
-        // 2026-08-25: applies any pending vibration write queued by Controller_SetVibration
-        // since this thread last woke -- see g_pendingVibration's own comment. Checked every
-        // wake regardless of source-lock state, so a rumble request queued before detection
-        // even finishes still gets applied the moment a source locks in.
-        ApplyPendingVibrationOnPollThread();
-
         // Event-driven wait (2026-08-25) -- replaces the old fixed Sleep(kPollIntervalMs).
         // Real per-tick consumers (InjectAllControllerInput, the gameplay-tick hook, and
         // the WndProc SetTimer's ~60Hz WM_TIMER, which keeps running during pause) call
@@ -583,6 +597,36 @@ void EnsurePollThreadStarted()
     g_pollThreadHandle = CreateThread(nullptr, 0, XInputPollThreadProc, nullptr, 0, nullptr);
     if (!g_pollThreadHandle) {
         LogFromController("[xinput] CreateThread FAILED for the background poll thread -- no controller input this session");
+    }
+}
+
+// Own dedicated thread for vibration writes -- see g_vibrationThreadHandle's own
+// comment (above g_pendingVibration) for why this is separate from the input-polling
+// thread rather than sharing it.
+DWORD WINAPI VibrationThreadProc(LPVOID)
+{
+    for (;;) {
+        WaitForSingleObject(g_vibrationWakeEvent, kVibrationWakeTimeoutMs);
+        ApplyPendingVibration();
+    }
+    return 0; // unreachable -- lives for the whole process, matching this project's
+              // existing "install once, never uninstall" background-thread pattern
+}
+
+void EnsureVibrationThreadStarted()
+{
+    static bool started = false;
+    if (started) return;
+    started = true;
+    // Reuses g_stateLock/g_cachedState (already initialized by EnsurePollThreadStarted,
+    // called first below) -- vibration and input polling share the same cached-state
+    // struct and lock by design (activeSlot/sourceIsDualSense need to be read to know
+    // WHERE to send a vibration write), just not the same THREAD anymore.
+    EnsurePollThreadStarted();
+    g_vibrationWakeEvent = CreateEventA(nullptr, FALSE, FALSE, nullptr);
+    g_vibrationThreadHandle = CreateThread(nullptr, 0, VibrationThreadProc, nullptr, 0, nullptr);
+    if (!g_vibrationThreadHandle) {
+        LogFromController("[xinput] CreateThread FAILED for the dedicated vibration thread -- vibration disabled this session");
     }
 }
 
@@ -730,24 +774,29 @@ void Controller_SetVibration(float leftMotor, float rightMotor)
 
     // 2026-08-25: no longer calls XInputSetState/DualSense_SetVibration itself --
     // see g_pendingVibration's own comment for why. Just stashes the request and
-    // wakes the poll thread, which performs the actual (potentially slow) write off
-    // the game's own gameplay-tick thread. Non-blocking, safe to call every frame.
+    // wakes the DEDICATED vibration thread (its own thread, separate from input
+    // polling, see g_vibrationThreadHandle's own comment), which performs the actual
+    // (potentially slow) write off the game's own gameplay-tick thread. Non-blocking,
+    // safe to call every frame.
     EnterCriticalSection(&g_stateLock);
     g_pendingVibration.leftMotor = leftMotor;
     g_pendingVibration.rightMotor = rightMotor;
     g_pendingVibration.dirty = true;
     LeaveCriticalSection(&g_stateLock);
 
-    Controller_RequestPoll();
+    EnsureVibrationThreadStarted();
+    if (g_vibrationWakeEvent) SetEvent(g_vibrationWakeEvent);
 }
 
 // Performs the actual, potentially-slow vibration write -- called ONLY from the
-// background poll thread (see g_pendingVibration's own comment), never from the
-// game's own gameplay-tick thread. Reads+clears the pending request under the same
-// lock Controller_SetVibration writes it under, then does the real XInputSetState/
-// DualSense_SetVibration call outside the lock (so a slow write never blocks a
-// concurrent Controller_SetVibration call from queuing its own request).
-void ApplyPendingVibrationOnPollThread()
+// dedicated vibration thread (see g_pendingVibration's own comment), never from the
+// game's own gameplay-tick thread and never from the input-polling thread either
+// (kept separate so a stall in one can never block the other). Reads+clears the
+// pending request under the same lock Controller_SetVibration writes it under, then
+// does the real XInputSetState/DualSense_SetVibration call outside the lock (so a
+// slow write never blocks a concurrent Controller_SetVibration call from queuing its
+// own request).
+void ApplyPendingVibration()
 {
     EnterCriticalSection(&g_stateLock);
     bool dirty = g_pendingVibration.dirty;
