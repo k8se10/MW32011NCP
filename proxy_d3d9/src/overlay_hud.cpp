@@ -380,6 +380,7 @@ struct MenuHintSlot {
     int suffixLastFontHeight;
     int prefixMeasuredWidth;
     int suffixMeasuredWidth;
+    DWORD color = 0xFFFFFFFF; // opaque white default -- see RequestMenuHintOverlay's own color param
 };
 MenuHintSlot g_menuHintSlots[kMaxMenuHintSlots] = {};
 int g_menuHintSlotCountThisFrame = 0; // how many of the slots above are live for the CURRENT frame
@@ -1879,11 +1880,15 @@ void DrawOneMenuHintSlot(void* device, MenuHintSlot& slot, float scaleX, float s
         float prefixU1 = static_cast<float>(kHintTextRenderLeftMarginPx + prefixDrawWidth) / static_cast<float>(kTextureWidth);
         drawScaledQuad(slot.prefixTexture, cursorX, textQuadTop,
             static_cast<float>(prefixDrawWidth), static_cast<float>(kTextureHeight),
-            0xFFFFFFFF, prefixU0, 0.0f, prefixU1, 1.0f);
+            slot.color, prefixU0, 0.0f, prefixU1, 1.0f);
         cursorX += static_cast<float>(slot.prefixMeasuredWidth) + kIconGap;
     }
 
     if (haveIcon) {
+        // Icon stays plain white regardless of slot.color -- it's a real
+        // button-glyph/photographic asset, not plain text, so arbitrarily
+        // tinting it (e.g. green/red for a status readout) would look wrong.
+        // slot.color only ever affects the prefix/suffix TEXT quads.
         drawScaledQuad(iconTexture, cursorX, iconVerticalCenter - iconDrawHeight * 0.5f,
             iconDrawWidth, iconDrawHeight, 0xFFFFFFFF);
         cursorX += iconDrawWidth + kIconGap;
@@ -1894,7 +1899,7 @@ void DrawOneMenuHintSlot(void* device, MenuHintSlot& slot, float scaleX, float s
         float suffixU1 = static_cast<float>(kHintTextRenderLeftMarginPx + suffixDrawWidth) / static_cast<float>(kTextureWidth);
         drawScaledQuad(slot.suffixTexture, cursorX, textQuadTop,
             static_cast<float>(suffixDrawWidth), static_cast<float>(kTextureHeight),
-            0xFFFFFFFF, suffixU0, 0.0f, suffixU1, 1.0f);
+            slot.color, suffixU0, 0.0f, suffixU1, 1.0f);
     }
 }
 
@@ -5361,7 +5366,7 @@ void AppendCustomHintSuffix(const char* extraText, GameplayHintSlotId slotId)
 // safe degradation (that hint just doesn't get its icon this frame) rather than a
 // buffer overrun or a crash.
 void RequestMenuHintOverlay(float x, float y, const char* prefixText, const char* suffixText,
-                             const char* assetName)
+                             const char* assetName, DWORD color)
 {
     // Live-reported 2026-08-01: on a modal popup (e.g. "Choose Game Mode" over
     // Special Ops), the UNDERLYING screen's own corner hint ("Friends") kept
@@ -5390,6 +5395,7 @@ void RequestMenuHintOverlay(float x, float y, const char* prefixText, const char
             strncpy_s(existing.assetName, assetName, _TRUNCATE);
             existing.x = x;
             existing.y = y;
+            existing.color = color;
             return;
         }
     }
@@ -5400,6 +5406,7 @@ void RequestMenuHintOverlay(float x, float y, const char* prefixText, const char
     strncpy_s(slot.assetName, assetName, _TRUNCATE);
     slot.x = x;
     slot.y = y;
+    slot.color = color;
 }
 
 void RequestDebugPositionMarker(int slot, float x, float y)
