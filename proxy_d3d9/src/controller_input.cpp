@@ -591,15 +591,33 @@ void EnsurePollThreadStarted()
 // Wakes the background poll thread to take exactly one fresh sample right now
 // (2026-08-25, see g_pollWakeEvent's own comment for the full rationale). Called from
 // the two real per-tick consumers -- InjectAllControllerInput (analog_input_hooks.cpp,
-// the gameplay-tick hook) and the WndProc ~60Hz WM_TIMER (d3d9_hook.cpp) -- right
+// the gameplay-tick hook) and InjectMenuInputTick (the WndProc/SetTimer path) -- right
 // before they read cached state via the Controller_Get* functions below, so a poll
 // only ever happens when something is actually about to consume its result. Safe to
 // call before the poll thread/event exist yet (lazily starts them, same pattern every
 // Controller_Get* function already uses) and safe to call redundantly from both
 // consumers in the same real tick (SetEvent on an already-signaled auto-reset event is
 // a no-op, not a queued second wake).
+//
+// Rate-limited (2026-08-25, self-caught regression risk, live-reported: "what if...
+// threading is whats causing the issue"): InjectMenuInputTick fires on EVERY WndProc
+// message, not just its own ~60Hz WM_TIMER -- this project's own 2026-08-08 history
+// documents WM_MOUSEMOVE alone firing "dozens of times per rendered frame" while
+// dragging the mouse, the EXACT flood pattern that caused the original 4fps regression
+// the whole background-poll-thread architecture exists to prevent. SetEvent is far
+// cheaper than the XInputGetState call that caused THAT regression, but it is still a
+// real kernel transition, and calling it unconditionally from that same flood-prone
+// path would reintroduce a smaller version of the identical bug class. Throttled to
+// once per kMinPollRequestIntervalMs regardless of how many times a caller invokes
+// this in one frame -- keeps the "poll on real demand" architecture while capping the
+// worst case, same margin as InjectMenuInputTick's own ~16ms WM_TIMER cadence.
+namespace { DWORD g_lastPollRequestTickMs = 0; constexpr DWORD kMinPollRequestIntervalMs = 15; }
 void Controller_RequestPoll()
 {
+    DWORD now = GetTickCount();
+    if (now - g_lastPollRequestTickMs < kMinPollRequestIntervalMs) return;
+    g_lastPollRequestTickMs = now;
+
     EnsurePollThreadStarted();
     if (g_pollWakeEvent) SetEvent(g_pollWakeEvent);
 }
