@@ -5106,6 +5106,7 @@ void OnDeviceRecreated()
 void InstallEndSceneHook(void* realDevice)
 {
     if (!realDevice) return;
+
     // Runs on EVERY call, not just the first -- unlike the hook installation below
     // (guarded by g_origEndScene, since MinHook only needs to patch EndScene/Reset
     // once ever), the icon texture cache genuinely needs repopulating after a device
