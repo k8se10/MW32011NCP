@@ -1400,7 +1400,25 @@ GameplayHintEditNudge* FindOrCreateGameplayHintEditNudge(GameplayHintSlotId slot
         if (n.used && n.slotId == slotId && n.fontRole == fontRole) return &n;
     }
     for (auto& n : g_gameplayHintEditNudges) {
-        if (!n.used) { n.used = true; n.slotId = slotId; n.fontRole = fontRole; return &n; }
+        if (!n.used) {
+            n.used = true;
+            n.slotId = slotId;
+            n.fontRole = fontRole;
+            // Real, F3-exported, live-calibrated default (2026-08-25) -- baked in
+            // here so it applies every session without needing the F2 editor
+            // re-run each launch. Confirmed live via the exported value:
+            // "Interact + Default: textNudge=(-0.5f, -3.0f) iconNudge=(0.0f, 0.0f)".
+            // iconNudge intentionally left at its zero default -- the icon's own
+            // base position is derived from cursorX AFTER textNudge is applied
+            // (see DrawOneGameplayHintSlot's own comment), so it automatically
+            // follows the text to the correct final spot with no separate icon
+            // offset needed for this calibration.
+            if (slotId == GameplayHintSlotId::Interact && fontRole == FontRole::Default) {
+                n.textNudgeX = -0.5f;
+                n.textNudgeY = -3.0f;
+            }
+            return &n;
+        }
     }
     return nullptr; // table full -- can't actually happen (6 real combos, 8 slots)
 }
@@ -1742,14 +1760,18 @@ void DrawOneGameplayHintSlot(void* device, GameplayHintSlot& slot, GameplayHintS
 
 // Consumes and draws every gameplay hint slot requested THIS FRAME (2026-08-02,
 // BUG-004), applying the ONE deliberate, named suppression this project actually
-// wants: hide the Reload reminder specifically while ready-up OR a real interact
-// hint (pickup/swap/buy-station/mantle) is also showing this frame, since either
+// wants: hide the Reload reminder specifically while a real interact hint
+// (pickup/swap/buy-station/mantle) is also showing this frame, since that
 // combination is redundant clutter -- this replaces the old single-slot system's
 // "was an interact hint active in the last 100ms" wall-clock heuristic, itself the
 // source of the report's "Reload occasionally fails to display" note, with an exact
 // same-frame check that can't race. Every OTHER combination of slots coexists by
 // default -- this is NOT a "pick one winner" priority scheme, it's independent-by-
 // default with one explicit, named exception, per the user's own direction.
+// CORRECTED 2026-08-25: ReadyUp was originally included in this same suppression
+// too -- live-reported as a regression ("reload prompt never shows" while the
+// ready-up hint is up) and explicitly narrowed to Interact-only; ReadyUp+Reload
+// now coexist, matching the user's own direct correction.
 void DrawGameplayHintSlotsIfRequested(void* device)
 {
     bool anyRequested = false;
@@ -1781,15 +1803,22 @@ void DrawGameplayHintSlotsIfRequested(void* device)
     float scaleX = 1.0f, scaleY = 1.0f;
     GetResolutionScale(device, scaleX, scaleY);
 
-    bool readyUpOrInteractShowing =
-        g_gameplayHintSlots[static_cast<int>(GameplayHintSlotId::ReadyUp)].requestedThisFrame ||
-        g_gameplayHintSlots[static_cast<int>(GameplayHintSlotId::Interact)].requestedThisFrame;
+    // FIXED 2026-08-25, live-reported regression: "when the press y to ready up is
+    // on screen the reload prompt never shows" -- ReadyUp was WRONGLY included in
+    // this suppression alongside Interact. Direct correction: "they should work
+    // cleanly in conjunction with readyup[;] the ones that shouldnt and currently
+    // correctly dont show together is the interact and reload at the same time."
+    // Only Interact+Reload should mutually suppress (redundant clutter, e.g. a
+    // pickup prompt already covers the same "you can act here" idea Reload gives);
+    // ReadyUp+Reload are unrelated concepts (waiting to start the next wave vs.
+    // low ammo) and should coexist freely.
+    bool interactShowing = g_gameplayHintSlots[static_cast<int>(GameplayHintSlotId::Interact)].requestedThisFrame;
 
     for (int i = 0; i < kGameplayHintSlotCount; ++i) {
         GameplayHintSlot& slot = g_gameplayHintSlots[i];
         if (!slot.requestedThisFrame) continue;
         slot.requestedThisFrame = false; // consume regardless of outcome below
-        if (static_cast<GameplayHintSlotId>(i) == GameplayHintSlotId::Reload && readyUpOrInteractShowing) {
+        if (static_cast<GameplayHintSlotId>(i) == GameplayHintSlotId::Reload && interactShowing) {
             continue; // the one named suppression rule -- see this function's own comment
         }
         DrawOneGameplayHintSlot(device, slot, static_cast<GameplayHintSlotId>(i), scaleX, scaleY);
