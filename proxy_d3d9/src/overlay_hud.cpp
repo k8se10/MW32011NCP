@@ -4466,6 +4466,15 @@ void DrawCustomCursorIfNeeded(void* device)
         constexpr uintptr_t kCursorVisibleFlagAddr = 0x01c00474;
         constexpr uintptr_t kCursorUiStateAddr = 0x01c0ad14;
 
+        // Debug-freeze override (2026-08-25, direct request: cursor must be
+        // available in ACTUAL gameplay while the glyph position editor is active,
+        // not just in menus) -- computed up front so every native visFlag/uiState/
+        // IsMenuActive gate below can be bypassed by it. The editor is a debug
+        // tool, not a normal play state, so it deliberately ignores every one of
+        // those normal-play heuristics rather than trying to extend them with
+        // another special case.
+        bool forceCursorForEditor = IsGlyphPositionEditModeActive();
+
         int visFlag = *reinterpret_cast<int*>(kCursorVisibleFlagAddr);
         // Live-reported 2026-08-02: with the input-method gating now working
         // correctly, a keyboard/mouse player sees the cursor persist through
@@ -4490,9 +4499,9 @@ void DrawCustomCursorIfNeeded(void* device)
                 LogFromController(buf);
             }
         }
-        if (visFlag == 0) return;
+        if (!forceCursorForEditor && visFlag == 0) return;
         int uiState = *reinterpret_cast<int*>(kCursorUiStateAddr);
-        if (uiState == 0 || uiState == 6 || uiState == 10) return;
+        if (!forceCursorForEditor && (uiState == 0 || uiState == 6 || uiState == 10)) return;
         // Real fix (2026-08-02): a live capture showed uiState taking on several
         // values during ordinary active gameplay (1, 9 -- held 20+ seconds straight
         // -- and 2) that were never in the exclusion list above, and guessing more
@@ -4500,7 +4509,7 @@ void DrawCustomCursorIfNeeded(void* device)
         // already-proven-reliable "a real menu is open" signal instead (the same one
         // every corner hint/ESC-forward call already trusts) -- ordinary gameplay
         // reliably reads false here regardless of what uiState happens to be.
-        if (!IsMenuActive_Exported()) return;
+        if (!forceCursorForEditor && !IsMenuActive_Exported()) return;
 
         // BUG-004 co-op report (2026-08-02): the native visFlag/uiState combo above
         // can consider the cursor "visible" during co-op-only states (e.g. co-op's own
@@ -4545,7 +4554,7 @@ void DrawCustomCursorIfNeeded(void* device)
         // and neither should this project. Single shared function
         // (controller_input.cpp's IsControllerActiveInputMethod) so the two
         // systems can never disagree about which input method is active.
-        if (IsControllerActiveInputMethod()) return;
+        if (!forceCursorForEditor && IsControllerActiveInputMethod()) return;
 
         int mouseX = 0, mouseY = 0;
         if (!GetLastMouseMoveClientPos(mouseX, mouseY)) return;
