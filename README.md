@@ -19,10 +19,12 @@
 > the real "which player is me" mechanism — see issue #79's own entry).
 >
 > **Ships a first, PREVIEW/WIP pass at DualSense Bluetooth support — stick
-> input does not work correctly over Bluetooth, confirmed live against real
-> hardware; do not rely on it for gameplay.** USB DualSense support (added
-> v0.3.2) has still not been independently confirmed working either — see
-> issue #76.
+> input did not work correctly over Bluetooth in this release** (a real
+> signed-16-bit integer overflow at full-forward stick deflection, confirmed
+> live against real hardware). **Fixed in the next release** — DualSense now
+> has full input-level parity with XInput on both USB and Bluetooth (sticks,
+> buttons, triggers); vibration/gyro/adaptive triggers remain separate,
+> still-PREVIEW/WIP work. See issue #77 for the full account.
 >
 > See `PATCHNOTES.md` for the full v0.3.3 changelog, including v0.3.2's
 > controller-glyph root-cause fix and native DualSense/gyro preview.
@@ -69,7 +71,7 @@ see `PATCHNOTES.md` for the full itemized list:
 - **Real, extended-session performance stuttering fixed** — three separate causes (log file never trimmed between launches, controller-poll thread never stopping its rescans, a diagnostic log's broken dedup) found and fixed via direct evidence, not guessed. User-confirmed "much better." One residual dip (looking toward enemies, likely GPU-side) remains open — see `re_notes/known_issues.md` issue #79.
 - **Vibration could get stuck on indefinitely across a pause or menu** — fixed.
 - **Co-op: damage-rumble could trigger off a teammate's hits, not your own** — mitigated (disables itself when a second real player entity is detected); the real underlying fix needs further research.
-- **PREVIEW/WIP, KNOWN BROKEN over Bluetooth: DualSense Bluetooth support** — stick input doesn't work correctly over Bluetooth, confirmed live. USB DualSense support (v0.3.2) still hasn't been independently confirmed working either.
+- **DualSense Bluetooth support, PREVIEW/WIP in v0.3.3, stick input broken over Bluetooth at the time** — fixed in the next release: a real signed-16-bit integer overflow at full-forward stick deflection was found and fixed, and DualSense now has full input-level parity with XInput on both USB and Bluetooth (sticks, buttons, triggers). Vibration/gyro/adaptive triggers remain separate, still-PREVIEW/WIP work. See `re_notes/known_issues.md` issue #77.
 - Menu-glyph calibration work covering every screen reachable from the main menu, plus a new in-game click-and-drag glyph position editor (dev tool).
 
 > ⚠ **Known gap: a few menu glyph icons can land in a slightly wrong POSITION
