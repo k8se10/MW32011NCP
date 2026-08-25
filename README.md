@@ -938,6 +938,18 @@ detail in `re_notes/known_issues.md` issue #25.
 
 ---
 
+## Plugin API
+
+MW32011NCP can load opt-in plugin DLLs (hook installation, direct process
+memory access, a text/glyph color-override extension point) — off by
+default, and no plugin DLL ships with the main mod's own release. See
+[`PLUGIN_API.md`](PLUGIN_API.md) for the full ABI reference and an explicit
+risk statement before enabling this. A real example, **RGB Text**
+(`tools/example_plugin_rgb_text/`), rainbow-cycles every piece of text and
+glyph this mod renders.
+
+---
+
 ## Credits
 
 This project vendors and links the following third-party library:

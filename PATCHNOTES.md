@@ -17,10 +17,13 @@ gameplay-hint calibrations, Mantle wrongly sharing Interact's position/suppressi
 state, ReadyUp wrongly suppressing Reload, and a Mantle drag-handle allocation-pool
 bug found afterward). Also fixes a real glyph-icon rendering bug (a faint white
 cutout-fringe ring, root-caused to non-premultiplied alpha), recalibrates 12 more
-Survival buy-station screens with real captures, and adds a new glyph-style
-auto-detect (Xbox 360/Xbox One-Series/PlayStation) as groundwork. See the itemized
-sections below for the rest, including font/outline polish and AI-suppression debug
-tooling (F4).
+Survival buy-station screens with real captures, adds a new glyph-style
+auto-detect (Xbox 360/Xbox One-Series/PlayStation), and lays real groundwork for a
+new opt-in plugin API (hook install, memory read/write, a text/glyph color-override
+extension point, shipped with a working RGB Text example plugin). See the itemized
+sections below for the rest, including font/outline polish, AI-suppression debug
+tooling (F4), and a reversed project policy on hardcoded addresses (now the
+deliberate, VAC-safer choice, not a stopgap).
 
 ### What's New
 1. **DualSense now has full input-level parity with XInput** (sticks, buttons,
@@ -412,6 +415,19 @@ tooling (F4).
   visually confirmed live against real Xbox 360/Xbox One/Series/DualSense
   hardware, and the Xbox PID table specifically should be treated as a
   best-effort starting point, not a verified-complete list.
+2. **New plugin API** -- loads third-party (or your own) plugin DLLs from a
+  `plugins` folder, strictly opt-in (`[Plugins] Enabled=0` by default,
+  `ConfigVersion` 20->21). The loading infrastructure ships as part of the
+  main mod; actual plugin DLLs never do. Plugins get hook-installation
+  (reusing this mod's own MinHook instance) and direct process memory
+  read/write -- capability this project's own main mod deliberately never
+  uses on itself, see `PLUGIN_API.md`'s explicit risk statement -- plus a new
+  `SetTextGlyphColorOverride` extension point covering every piece of text
+  and controller-glyph icon this mod renders anywhere. Ships with a real,
+  working example plugin, **RGB Text** (`tools/example_plugin_rgb_text/`),
+  which rainbow-cycles every mod-rendered text/glyph using the exact
+  hue-cycle math the toast-notification system already uses. Not yet
+  confirmed live -- see `known_issues.md` issue #85.
 
 ### Documentation
 1. **New `LTS_POLICY.md`** -- formalizes a policy that was already being
@@ -466,6 +482,9 @@ tooling (F4).
   implementation was already 100% hardcoded addresses found via static
   analysis, so this corrects the STATED policy to match the practice that
   was already right, for the actual reason it's right.
+4. **New `PLUGIN_API.md`** -- the plugin ABI reference, the opt-in config
+  flag, a minimal plugin skeleton, and an explicit risk statement for the new
+  plugin API (see Groundwork above). Cross-linked from `README.md`.
 
 ---
 

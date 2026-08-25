@@ -16,6 +16,7 @@
 #include <share.h>
 #include "mod_config.h"
 #include "overlay_hud.h"
+#include "plugin_loader.h"
 
 void InstallAnalogInputHooks(); // defined in analog_input_hooks.cpp
 extern "C" void HookD3D9CreateDevice(void* realD3D9); // defined in d3d9_hook.cpp
@@ -288,8 +289,12 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID)
         if (!ResolveRealExports()) return FALSE;
         Log("proxy_d3d9 init OK — analog movement/look hooks installing.");
         InstallAnalogInputHooks(); // task #5 -- see analog_input_hooks.cpp
+        LoadPlugins(); // 2026-08-25 -- see plugin_loader.h; no-op unless
+            // g_modConfig.pluginsEnabled, and must run AFTER InstallAnalogInputHooks
+            // so the host's own MinHook instance is already initialized
         break;
     case DLL_PROCESS_DETACH:
+        UnloadPlugins();
         UnloadOverlayFonts(); // release the private font resource before this DLL's
             // own memory (where the embedded font data lives) goes away
         Log("proxy_d3d9 detach");

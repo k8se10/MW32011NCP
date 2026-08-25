@@ -570,6 +570,20 @@ struct ModConfig
     // re_notes/options_menu_full_map.md for the full design/research trail.
     bool useCustomOptionsScreen = false;
 
+    // [Plugins] (2026-08-25) -- STRICTLY OPT-IN, OFF by default, same pattern as
+    // useCustomOptionsScreen/autoMantleEnabled above. When enabled, plugin_loader.cpp
+    // scans a "plugins" subfolder next to this DLL at startup and loads any DLL
+    // exporting MW3NCP_PluginInit (see mw3ncp_plugin_api.h) -- giving it hook-
+    // installation and DIRECT PROCESS MEMORY READ/WRITE access, capability the main
+    // mod deliberately never uses on itself (see re_notes/known_issues.md issue #33
+    // and this project's own permanently-removed aim-assist feature). A plugin is
+    // the user's own code (or someone else's), not vetted or shipped by this project
+    // -- see PLUGIN_API.md for the full design and risk statement. The directory scan
+    // itself never runs unless this is explicitly true; a default install with no
+    // plugins folder and this left at 0 is byte-for-byte unaffected by this feature
+    // existing at all.
+    bool pluginsEnabled = false;
+
     // sprintStaminaBypassForTesting (task #9) REMOVED 2026-07-19: graduated to
     // unconditional the same day it was added -- Sprint's real +sprint kbutton
     // migration was LIVE-CONFIRMED working, and with it confirmed that the real
