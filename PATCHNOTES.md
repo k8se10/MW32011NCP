@@ -396,6 +396,18 @@ tooling (F4).
   hardware, and the Xbox PID table specifically should be treated as a
   best-effort starting point, not a verified-complete list.
 
+### Documentation
+1. **New `LTS_POLICY.md`** -- formalizes a policy that was already being
+  followed in practice (`v0.2.2` as the current LTS since the 2026-08-18
+  archival pass, `v0.3.4`/`v0.3.5` as the next candidate) into a stable, public
+  document: every `0.x` minor line designates exactly one LTS release, promoted
+  only after a clean 4-week real-world window; a new LTS overlaps its
+  predecessor for 4 more weeks before the old one's support ends; and `v0.2.2`
+  is fixed as the oldest release this project will ever designate LTS, since
+  everything before it shipped with the now-permanently-removed aim-assist
+  feature (live entity-memory reads -- see that file for the full reasoning).
+  Cross-linked from `README.md`'s Project Stages section.
+
 ---
 
 ## v0.3.3 — Alpha (2026-08-18) — Extended-session stutter fixed; vibration and co-op rumble fixes; DualSense Bluetooth preview (broken)
