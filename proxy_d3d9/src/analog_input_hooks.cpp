@@ -8861,6 +8861,13 @@ void __cdecl Hook_FUN_0053cbc0(void* param1, int param2)
 
 extern "C" void __cdecl InjectAllControllerInput(unsigned char* cmd)
 {
+    // 2026-08-25: request a fresh poll sample as early as possible this tick -- see
+    // Controller_RequestPoll's own header comment (controller_input.h) for why this
+    // replaced a free-running background poll clock. This is the real gameplay-tick
+    // consumer; the WndProc ~60Hz WM_TIMER (d3d9_hook.cpp) is the other one, covering
+    // the paused/menu state this function's own hook halts during.
+    Controller_RequestPoll();
+
     int32_t inLevelVal = *reinterpret_cast<volatile int32_t*>(kInLevelFlagAddr);
     bool nowInLevel = inLevelVal > 0;
     // Diagnostic (2026-08-16, issue #1 follow-up, live-reported "the mod starts
@@ -8974,6 +8981,11 @@ extern "C" void __cdecl InjectAllControllerInput(unsigned char* cmd)
 // nothing else has a reason to silently take over our own subclassed window procedure.
 extern "C" void __cdecl InjectMenuInputTick()
 {
+    // 2026-08-25: this is the other real per-tick consumer (see Controller_RequestPoll's
+    // own header comment) -- the one that keeps running during pause/menus, when
+    // InjectAllControllerInput's own request (above) has already stopped firing.
+    Controller_RequestPoll();
+
     InjectControllerPauseMenu();
     // BUG FIX (2026-07-16, live report "B doesn't exit pause"): InjectControllerMenuBack
     // was only ever called from InjectAllControllerInput, which the comment block above

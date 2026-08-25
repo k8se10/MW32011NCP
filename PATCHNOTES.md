@@ -8,6 +8,35 @@ reverse-engineering trail behind each entry.
 
 ## Unreleased
 
+**Summary:** Replaced the background controller-poll thread's free-running fixed
+250Hz clock with an event-driven wait — live-reported ongoing lag spikes, worse on
+XInput than DualSense, led to a full audit of the poll architecture (checked against
+x360ce's own real source as a reference: it doesn't background-poll at all, just
+forwards `XInputGetState` synchronously on-demand). See the itemized entry below.
+
+### Fixed
+1. **Controller poll thread free-ran on an independent 250Hz clock regardless of
+  whether anything needed fresh input that tick.** Live-reported: "gotta be that
+  polling bs we should cut the polling and just use the first controller that input
+  is detected from and stop polling." Source LOCKING (never re-scanning other XInput
+  slots/DualSense once one is found) already existed since v0.3.3 and was NOT the
+  cause here -- confirmed via direct code review before changing anything, per this
+  project's own "checking is far cheaper than digging" standard. The real issue was
+  the steady-state poll CADENCE itself: even locked onto one source, the thread called
+  `XInputGetState`/`DualSense_Poll` on its own fixed clock 250 times a second whether
+  or not the game actually needed fresh input that tick. Checked x360ce's real source
+  (`Controller.cpp`) as an external reference before implementing a fix: it has no
+  background poll thread at all -- `GetState()` just forwards straight to the real
+  `XInputGetState` synchronously, called on-demand by whoever asks. Fixed the same
+  way: the poll thread now blocks on an auto-reset event (`WaitForSingleObject`,
+  50ms safety-net timeout only) instead of a fixed `Sleep`, woken by a new
+  `Controller_RequestPoll()` call from the two real per-tick consumers --
+  `InjectAllControllerInput` (the gameplay-tick hook) and `InjectMenuInputTick` (the
+  WndProc/SetTimer path that keeps running during pause/menus) -- right before each
+  reads cached state. A poll now only ever happens when something is actually about
+  to consume its result, not on an arbitrary independent clock. Not yet live-tested;
+  builds clean (0 warnings/errors), deployed.
+
 ## v0.3.4 — Alpha (2026-08-25) — DualSense input-parity fix, gameplay-hint glyph editor, new plugin API
 
 **Summary:** DualSense's Bluetooth stick-garbling bug is fixed — a real
