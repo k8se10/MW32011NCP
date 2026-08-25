@@ -716,12 +716,21 @@ real ForwardKeyToMenu (FUN_004d9850) call, generic keycode forward to whatever m
     FUN_004dfd30 dispatcher rather than assumed (task #22, see known_issues.md)
 ```
 
-Every hook target is found via byte-pattern/signature scanning or live memory-diffing
-at runtime — never a hardcoded address assumed stable across game updates or even
-between two launches of the same build (several of this project's real kbutton/flag
-addresses live in dynamically-allocated per-tick structures, not fixed static memory).
-See `re_notes/iw5sp.md` for the complete reverse-engineering log: every function found,
-every dead end ruled out, and why.
+Every hook target is found via static Ghidra analysis (decompile/disassemble, confirm
+via disassembly, then hardcode the address) — deliberately, not a runtime signature
+scan, per binary since game updates and the SP/MP binary split both shift offsets
+(corrected 2026-08-25: a runtime scanner was previously framed here as the safer/more
+robust approach; it's the opposite — walking process memory at runtime searching for a
+byte pattern is closer to what VAC's own signature-based heuristics watch for than a
+fixed address resolved once offline ever is). Live memory-diffing is a separate,
+offline investigative TECHNIQUE used to find some of those addresses in the first
+place (comparing two heap snapshots to spot a changed byte) — not something this
+project does at runtime in the shipped mod. Several of this project's real kbutton/flag
+fields live inside dynamically-allocated per-tick structures reached via a fixed offset
+from an already-hardcoded base pointer, not fixed static memory directly — that's a
+real, separate detail about the game's own data layout, unrelated to how this project
+chooses to find and hook function addresses. See `re_notes/iw5sp.md` for the complete
+reverse-engineering log: every function found, every dead end ruled out, and why.
 
 ## Controller compatibility by mission/mode
 

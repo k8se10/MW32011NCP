@@ -447,6 +447,25 @@ tooling (F4).
   practice but never actually written down: every bug fix or non-trivial
   finding needs its own `known_issues.md` entry in the same pass, not just a
   `PATCHNOTES.md` line.
+3. **Reversed a standing project policy: hardcoded addresses (found once via
+  static Ghidra analysis, per binary) are now stated as this project's
+  deliberate, permanent choice, not a stopgap on the way to a "better" runtime
+  signature scanner.** Direct correction: "no hardcoded addresses isnt a
+  claim we can make anymore, its safer for vac than pattern scanning which
+  could touch protected regions of memory." Every doc that previously framed
+  a runtime scanner as the aspirational goal (`CODE_STANDARDS.md`,
+  `CONTRIBUTING.md`, `README.md`, the PR template, `re_notes/iw5sp.md`, plus
+  the mirrored `CLAUDE.md`/`AGENTS.md` at the top-level project directory,
+  and the sibling `MW32011NSP`'s own `CODE_STANDARDS.md`) has been corrected
+  to state the real reasoning: a runtime scanner has to walk arbitrary
+  regions of the game's own process memory searching for a byte pattern
+  every time it resolves -- exactly the class of behavior VAC's own
+  signature-based heuristics are built to notice -- while a hardcoded address
+  resolved offline and simply called at a known, fixed location has no such
+  runtime search surface at all. No code changes; this project's actual hook
+  implementation was already 100% hardcoded addresses found via static
+  analysis, so this corrects the STATED policy to match the practice that
+  was already right, for the actual reason it's right.
 
 ---
 
