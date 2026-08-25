@@ -143,27 +143,29 @@ along the way rather than assumed. See the itemized entries below and
   (`xensik/gsc-tool`, already set up in this project), not attempted this pass --
   the scoreboard's UI cannot start with real data until this clears. See
   `known_issues.md` issue #89.
-2. **60fps engine tick: `com_maxfps`/`fixedtime`/`com_timescale` confirmed real,
-  registered dvars -- real consuming logic not yet decompiled.** RE prerequisite
-  for a planned opt-in, SP-only 60fps simulation-tick feature. Genuine binary
-  cross-reference analysis (not string presence alone) confirmed all three are
-  actively registered, clustered within one ~0x150-byte dvar-registration block --
-  not a dead string the way `ai_nosight` was. Also found: this project's own
-  existing F2 debug-freeze feature's comments may misdescribe its real underlying
-  dvar as bare `timescale`, which has ZERO real cross-references anywhere in the
-  binary -- the real dvar is very likely `com_timescale`, worth a follow-up
-  correction pass even though the shipped feature itself works correctly.
-  **Correction, same day, direct user framing: "com maxfps is just the console
-  option to limit frames from all cods, thats not internal engine sim rate."**
-  Correct -- `com_maxfps` is the standard client render-rate limiter every CoD
-  title has, structurally unrelated to simulation cadence; this project's own
-  already-captured uncapped-~200fps `frametime_benchmark.csv` data already proves
-  the two are decoupled in this binary (render ran freely while the sim-tied cost
-  pattern stayed locked to 30Hz underneath). Ruled out as a candidate. `fixedtime`
-  (a genuine idTech/Quake3-family fixed-simulation-timestep term, historically used
-  for demo recording/frame-perfect debugging) is the real remaining lead, not yet
-  decompiled. No patch attempted or planned until that's resolved. See
-  `known_issues.md` issue #90.
+2. **60fps engine tick: `fixedtime`'s real mechanism decompiled and confirmed --
+  a genuine, already-functional native lever for overriding the per-frame
+  simulation time delta.** RE prerequisite for a planned opt-in, SP-only 60fps
+  simulation-tick feature. `com_maxfps` was initially flagged as a candidate but
+  directly ruled out (direct user correction: "com maxfps is just the console
+  option to limit frames from all cods, thats not internal engine sim rate" --
+  correct, it's the standard client render-rate limiter every CoD title has,
+  structurally unrelated to simulation cadence, already proven decoupled in this
+  binary by this project's own uncapped-~200fps `frametime_benchmark.csv` data).
+  A real Ghidra project was stood up for `iw5sp.exe` for the first time (headless
+  import + auto-analysis, ~124s, kept on disk for reuse) and `fixedtime`'s real
+  consuming function fully decompiled: when set to a nonzero value, it directly
+  overrides the effective per-frame simulation time delta, completely bypassing
+  the normal `timescale`/`com_timescale`-multiplier path -- confirming its own
+  registration description ("Use a fixed time rate for each frame") is real and
+  functional, not a dead leftover. (Also corrected a stale earlier claim that
+  bare `timescale` has zero real references -- it's genuinely, separately
+  registered too; the F2 debug-freeze feature's own description doesn't need
+  correcting after all.) Still open: the exact unit `fixedtime` expects, the real
+  call cadence of the functions consuming it, and whether movement/animation/
+  physics code elsewhere separately assumes a fixed 30Hz cadence independent of
+  this value -- the actual go/no-go question for a real patch. No patch attempted
+  or planned until that clears. See `known_issues.md` issue #90.
 
 ## v0.3.4 — Alpha (2026-08-25) — DualSense input-parity fix, gameplay-hint glyph editor, new plugin API
 
