@@ -132,17 +132,27 @@ along the way rather than assumed. See the itemized entries below and
   1440p to tell the two apart. See `known_issues.md` issue #88.
 
 ### Investigated, Not Yet Resolved
-1. **Survival scoreboard's real stat data source (Combat Performance, Wave Bonus,
-  Accuracy, Headshots, Damage Taken) -- inconclusive this pass, needs GSC
-  decompile.** RE prerequisite for a planned live Survival scoreboard feature. A
-  real Ghidra string/xref search found these values are not raw exe strings or an
-  obvious dvar -- a promising-looking lead (real GSC field-name tokens in the
-  binary) turned out to be a false positive, tracing back to the game's own shared
-  GSC string-intern table (hundreds of unrelated fields), not this screen's
-  specific data source. Real next step is actual GSC bytecode decompilation
-  (`xensik/gsc-tool`, already set up in this project), not attempted this pass --
-  the scoreboard's UI cannot start with real data until this clears. See
-  `known_issues.md` issue #89.
+1. **Survival scoreboard's real stat data source CONFIRMED -- and it's a hard
+  blocker for the feature as originally planned.** RE prerequisite for a planned
+  live Survival scoreboard feature. Two earlier passes (a binary string/xref
+  search, then a native entity-field-dispatcher trace) both came back
+  inconclusive-with-real-negative-evidence. Direct follow-up: "do the gsc lookup
+  didnt we already decomp it for inspection" -- correct, and a real miss: the
+  actual decompiled Survival gamemode script (`1571.gsc`, `xensik/gsc-tool`'s own
+  output) was already sitting on disk from an EARLIER session, never checked
+  before dispatching new RE work. Reading it directly settles the question
+  completely: every stat on the between-round summary (kills, headshots, accuracy,
+  credits, downed, revives) reads from `self._id_18D3["<key>"]`, a per-player GSC
+  script-local associative-array field the Survival gamemode script maintains
+  itself -- not a dvar, not a native C struct field, nothing this project's C++
+  code has any established way to read. This is GSC-VM script state, the same
+  class of live-read (if anything more invasive) as the entity-memory reads this
+  project's aim-assist removal already drew a hard line against. **Blocked, not
+  abandoned**: building this feature as scoped needs an explicit go/no-go
+  conversation about reading GSC-VM state specifically, which this investigation
+  does not make on its own -- per this project's own standing policy, that
+  decision is reserved for the user every time. See `known_issues.md` issue #89
+  for the full decompiled evidence.
 2. **60fps engine tick: `fixedtime`'s real mechanism decompiled and confirmed --
   a genuine, already-functional native lever for overriding the per-frame
   simulation time delta.** RE prerequisite for a planned opt-in, SP-only 60fps
