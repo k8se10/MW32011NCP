@@ -468,12 +468,55 @@ const char* ResolveFontFamily(FontRole role)
     return g_modConfig.overlayFontFamily;
 }
 
+// Small fixed-size cache for MeasureTextWidthPx (2026-08-25, live-reported: recurring
+// stutter, "still has stutters but is less frequent, theres gotta be more" after four
+// other real causes were fixed). Found by a systematic audit: this function's own
+// sibling, EnsureLeftAlignedTextTexture (below), has a real cache that only re-renders
+// on genuine text/font change -- this one had NO cache at all, paying a fresh
+// GetDC/CreateFontA/GetTextExtentPoint32A/DeleteObject/ReleaseDC round-trip on EVERY
+// call, and it's called unconditionally every frame from the real per-frame hint-draw
+// hot path (DrawOneGameplayHintSlot/DrawOneMenuHintSlot's prefix/suffix/topline width,
+// hit whenever any gameplay hint or menu corner hint is visible -- i.e. most of normal
+// play) plus the Options screen's own text layout. Not disk I/O like the other four
+// causes fixed this session (no AV-interception angle), and each individual call is
+// normally sub-millisecond, but it's a real, uncapped, per-frame GDI cost with an
+// obvious fix already proven correct by its own sibling function right below it.
+// Small (48-entry) fixed array, linear-scan (call volume per frame is a handful, not
+// thousands -- no need for a hash table), round-robin eviction when full. Cleared by
+// InvalidateTextTextureCachesOnConfigChange (below) alongside every other text cache,
+// since a FontFamily/FontFamilyCondensed/FontItalic change would otherwise leave stale
+// widths measured against the OLD font.
+struct MeasuredTextWidthEntry {
+    char text[128] = {};
+    bool italic = false;
+    int fontHeightPx = 0;
+    FontRole fontRole = FontRole::Default;
+    int widthPx = 0;
+    bool used = false;
+};
+constexpr int kMeasuredTextWidthCacheSize = 48;
+MeasuredTextWidthEntry g_measuredTextWidthCache[kMeasuredTextWidthCacheSize];
+int g_measuredTextWidthCacheNextEvict = 0;
+
+void ClearMeasureTextWidthCache()
+{
+    for (auto& e : g_measuredTextWidthCache) e.used = false;
+    g_measuredTextWidthCacheNextEvict = 0;
+}
+
 // Measures how wide `text` actually renders at the given font size -- needed so the
 // prefix/icon/suffix pieces can be placed sequentially with no gap or overlap, since
 // each is rendered into a fixed-size (kTextureWidth x kTextureHeight) canvas that's
 // almost always wider than the actual text.
 int MeasureTextWidthPx(const char* text, bool italic, int fontHeightPx, FontRole fontRole = FontRole::Default)
 {
+    for (auto& e : g_measuredTextWidthCache) {
+        if (e.used && e.italic == italic && e.fontHeightPx == fontHeightPx && e.fontRole == fontRole &&
+            strncmp(e.text, text, sizeof(e.text) - 1) == 0) {
+            return e.widthPx;
+        }
+    }
+
     HDC screenDC = GetDC(nullptr);
     // ResolveFontFamily (2026-08-24) -- resolves fontRole to that role's own
     // independently player-overridable config field (default "Isotherm Sans UI"
@@ -495,6 +538,16 @@ int MeasureTextWidthPx(const char* text, bool italic, int fontHeightPx, FontRole
     SelectObject(screenDC, oldFont);
     DeleteObject(font);
     ReleaseDC(nullptr, screenDC);
+
+    MeasuredTextWidthEntry& slot = g_measuredTextWidthCache[g_measuredTextWidthCacheNextEvict];
+    g_measuredTextWidthCacheNextEvict = (g_measuredTextWidthCacheNextEvict + 1) % kMeasuredTextWidthCacheSize;
+    strncpy_s(slot.text, text, _TRUNCATE);
+    slot.italic = italic;
+    slot.fontHeightPx = fontHeightPx;
+    slot.fontRole = fontRole;
+    slot.widthPx = sz.cx;
+    slot.used = true;
+
     return sz.cx;
 }
 
@@ -5083,6 +5136,9 @@ void InvalidateTextTextureCachesOnConfigChange()
         releaseIfSet(slot.suffixTexture);
         slot.suffixRenderedFor[0] = '\0';
     }
+    ClearMeasureTextWidthCache(); // 2026-08-25 -- see its own comment; a font change
+                                   // would otherwise leave stale widths cached against
+                                   // the OLD font family/italic/height.
     LogFromController("[overlay-hud] config hot-reload -- invalidated all cached text textures");
 }
 

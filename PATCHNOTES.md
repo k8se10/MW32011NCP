@@ -78,6 +78,23 @@ along the way rather than assumed. See the itemized entries below and
   way: `Log()` now only calls `fprintf()` (buffered, cheap); a new dedicated
   `LogFlushThreadProc` background thread does the actual `fflush()` on its own
   1-second loop, decoupled from every real log call site. Builds clean (0
+  warnings/errors), deployed.
+5. **Self-caught a regression risk in item 1's own fix, then found a fifth real
+  cause, uncached GDI text measurement.** Live question: "what if... threading is
+  whats causing the issue" -- checked directly and found `Controller_RequestPoll`
+  (item 1) was called unconditionally from `InjectMenuInputTick`, which fires on
+  every WndProc message including, per this project's own history, "dozens of times
+  per frame" during mouse movement -- the exact flood pattern that caused the
+  original 4fps regression this whole architecture exists to prevent. Rate-limited
+  to once per 15ms. Live-retested: "still has stutters but is less frequent, theres
+  gotta be more" -- dispatched a systematic audit of every remaining file/GDI/timer
+  call in the codebase, which found `MeasureTextWidthPx` (`overlay_hud.cpp`) had NO
+  cache at all, unlike its own sibling `EnsureLeftAlignedTextTexture` -- paying a
+  full `CreateFontA`/GDI round-trip every frame for as long as any gameplay hint or
+  menu corner hint is visible (most of normal play). A different bug class from
+  items 1-4 (GDI, not disk I/O), smaller per-call cost, but real and uncapped. Fixed
+  with a small 48-entry cache, wired into the existing config-hot-reload cache
+  invalidation so a live font change still applies correctly. Builds clean (0
   warnings/errors), deployed. Not yet live-confirmed. See `known_issues.md` issue
   #87 for the full investigation trail.
 
