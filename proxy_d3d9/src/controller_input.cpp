@@ -418,6 +418,19 @@ DWORD WINAPI XInputPollThreadProc(LPVOID)
                     char buf[96];
                     sprintf_s(buf, "[xinput] locked onto XInput slot %d for this session -- a slot change now needs a restart", slot);
                     LogFromController(buf);
+                    // Glyph-style auto-detect (2026-08-25) -- resolved ONCE here, at the
+                    // same point the input SOURCE itself locks for the session, not on a
+                    // recurring timer. This project's own input-locking design already
+                    // requires a restart to switch device families (see this function's
+                    // own comments above/below) -- polling for a live controller swap
+                    // would be inconsistent with that, and could report PlayStation
+                    // glyphs while still actually reading XInput (e.g. a Steam Input
+                    // virtual pad), the exact translator-layer confusion the native
+                    // DualSense backend exists to avoid. See mod_config.h's own
+                    // GlyphStyleAuto comment.
+                    if (g_modConfig.glyphStyleAuto) {
+                        g_modConfig.glyphStyle = Controller_DetectGlyphStyle(g_modConfig.glyphStyle);
+                    }
                 }
             }
 
@@ -428,6 +441,14 @@ DWORD WINAPI XInputPollThreadProc(LPVOID)
                     NotifyControllerConnectionChange(true);
                     g_lockedSource = LockedInputSource::DualSense;
                     LogFromController("[dualsense] locked onto DualSense for this session -- switching back to XInput now needs a restart");
+                    // Same one-time auto-detect as the XInput branch above -- a DualSense
+                    // just locked in means Controller_DetectGlyphStyle will resolve to
+                    // PlayStation immediately (DualSense_IsOpen() is now true), same
+                    // result either way, but going through the shared function keeps this
+                    // single code path as the only place glyphStyle gets auto-written.
+                    if (g_modConfig.glyphStyleAuto) {
+                        g_modConfig.glyphStyle = Controller_DetectGlyphStyle(g_modConfig.glyphStyle);
+                    }
                 } else {
                     EnterCriticalSection(&g_stateLock);
                     g_cachedState.connected = false;

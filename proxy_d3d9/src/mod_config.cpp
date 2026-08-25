@@ -137,7 +137,14 @@ void ReadBool(const char* path, const char* section, const char* key, bool& outV
 // sites), each independently player-overridable. FontFamily's own default flipped
 // from "Isotherm Sans" to "Isotherm Sans UI" in the same pass -- see resource.h and
 // mod_config.h's own field comments for the full history.
-constexpr unsigned long kCurrentConfigVersion = 19;
+// v19->v20 (2026-08-25, glyph-style auto-detect): new [Bindings] GlyphStyleAuto key
+// added -- detects DualSense/Xbox360/XboxModern and keeps GlyphStyle in sync
+// automatically. Its OWN load logic (LoadModConfig, right after ReadGlyphStyle) is
+// NOT a plain ReadBool -- see that call site's own comment for why a file with an
+// already-non-default GlyphStyle (a pre-existing hand-edit) defaults this to false
+// on migration instead of the usual compiled-default true, so a deliberate manual
+// choice made before this feature existed can't be silently overridden.
+constexpr unsigned long kCurrentConfigVersion = 20;
 
 // Reads a legacy key's raw value, returning true only if the key genuinely existed
 // (unlike ReadFloat, which can't distinguish "absent" from "present but unparsable" --
@@ -445,10 +452,18 @@ void WriteDefaultConfig(const char* path)
         "; Independent toggle: swaps RT<->RB and LT<->LB (0 = off, 1 = on). Combines\n"
         "; with whichever ButtonLayout is active above.\n"
         "FlipTriggers=%d\n"
-        "; Controller-glyph icon style (task #6) -- purely cosmetic today, has no\n"
-        "; visible effect yet (glyph rendering itself is still being built -- see\n"
-        "; re_notes/known_issues.md issue #48). One of: Xbox360, XboxModern, PlayStation\n"
+        "; Controller-glyph icon style (task #6) -- selects which real button-prompt art\n"
+        "; is drawn (Xbox 360, Xbox One/Series, or PlayStation glyphs). Only takes\n"
+        "; effect when GlyphStyleAuto below is 0 -- see that key's own comment.\n"
+        "; One of: Xbox360, XboxModern, PlayStation\n"
         "GlyphStyle=%s\n"
+        "; Auto-detects which controller is actually connected (DualSense -> PlayStation,\n"
+        "; a Microsoft-vendored pad -> Xbox360/XboxModern by a best-effort VID/PID table)\n"
+        "; and sets GlyphStyle above accordingly, once, the moment a controller is first\n"
+        "; detected each session (matches this mod's existing 'restart to switch\n"
+        "; controllers' rule -- it doesn't re-poll on a timer). Set to 0 to pick GlyphStyle\n"
+        "; above manually instead (1 = on, 0 = off).\n"
+        "GlyphStyleAuto=%d\n"
         "\n"
         "[CustomBinds]\n"
         "; Per-action override used when ButtonLayout=Custom above (issue #66's Binds\n"
@@ -645,6 +660,7 @@ void WriteDefaultConfig(const char* path)
         StickLayoutName(g_modConfig.stickLayout),
         g_modConfig.flipTriggers ? 1 : 0,
         GlyphStyleName(g_modConfig.glyphStyle),
+        g_modConfig.glyphStyleAuto ? 1 : 0,
         PhysicalInputName(g_modConfig.customButtonMap.fire),
         PhysicalInputName(g_modConfig.customButtonMap.ads),
         PhysicalInputName(g_modConfig.customButtonMap.lethal),
@@ -862,6 +878,29 @@ void LoadModConfig()
     ReadStickLayout(path, g_modConfig.stickLayout);
     ReadBool(path, "Bindings", "FlipTriggers", g_modConfig.flipTriggers);
     ReadGlyphStyle(path, g_modConfig.glyphStyle);
+    // GlyphStyleAuto (2026-08-25) -- a brand-new key, so a plain ReadBool (default =
+    // whatever g_modConfig.glyphStyleAuto was already compiled to, true) would be
+    // correct for the common case (fresh install, or an upgrader who's never touched
+    // GlyphStyle and is still sitting on its Xbox360 compiled default) but WRONG for
+    // the one real edge case this project's own "explicit value always wins" policy
+    // (see FontItalic's migration precedent above) exists to protect: a player who
+    // hand-edited GlyphStyle in their ini to XboxModern/PlayStation before this
+    // feature existed. There's no separate "was this deliberately set" flag for
+    // GlyphStyle to check (unlike FontItalic's version-gated exact-old-default
+    // check), so the on-disk GlyphStyle value itself is read FIRST (immediately
+    // above) and used as that signal instead: if the key is genuinely absent (a file
+    // that predates this feature) AND the loaded GlyphStyle isn't the historical
+    // Xbox360 default, treat that as a deliberate manual choice and default
+    // glyphStyleAuto to false rather than silently overriding it the next poll tick.
+    {
+        char buf[8];
+        GetPrivateProfileStringA("Bindings", "GlyphStyleAuto", "", buf, sizeof(buf), path);
+        if (buf[0] != '\0') {
+            g_modConfig.glyphStyleAuto = (atoi(buf) != 0);
+        } else if (g_modConfig.glyphStyle != GlyphStyle::Xbox360) {
+            g_modConfig.glyphStyleAuto = false;
+        } // else: key absent, GlyphStyle at its historical default -- keep the compiled true
+    }
     ReadBool(path, "Options", "UseCustomOptionsScreen", g_modConfig.useCustomOptionsScreen);
     ReadBool(path, "Vibration", "Enabled", g_modConfig.vibrationEnabled);
     ReadFloat(path, "Vibration", "FireIntensity", g_modConfig.vibrationFireIntensity);
@@ -913,7 +952,7 @@ void LoadModConfig()
         "[config] loaded mw3ncp_config.ini: sensitivityH=%g sensitivityV=%g adsSlowdownStrength=%g "
         "adsSlowdownBaseline=%g adsCloseRangeSlowdownStrength=%g invertLook=%d lookAccelRampMs=%lu proneHoldMs=%lu interactHoldMs=%lu "
         "readyUpHoldMs=%lu "
-        "buttonLayout=%s stickLayout=%s flipTriggers=%d glyphStyle=%s "
+        "buttonLayout=%s stickLayout=%s flipTriggers=%d glyphStyle=%s glyphStyleAuto=%d "
         "useCustomOptionsScreen=%d "
         "vibrationEnabled=%d vibrationFireIntensity=%g vibrationFireDurationMs=%lu "
         "vibrationDamagePerPoint=%g vibrationDamageMaxIntensity=%g vibrationDamageDurationMs=%lu "
@@ -931,6 +970,7 @@ void LoadModConfig()
         g_modConfig.interactHoldThresholdMs, g_modConfig.readyUpHoldThresholdMs,
         ButtonLayoutName(g_modConfig.buttonLayout), StickLayoutName(g_modConfig.stickLayout),
         g_modConfig.flipTriggers ? 1 : 0, GlyphStyleName(g_modConfig.glyphStyle),
+        g_modConfig.glyphStyleAuto ? 1 : 0,
         g_modConfig.useCustomOptionsScreen ? 1 : 0,
         g_modConfig.vibrationEnabled ? 1 : 0, g_modConfig.vibrationFireIntensity,
         g_modConfig.vibrationFireDurationMs, g_modConfig.vibrationDamagePerPoint,

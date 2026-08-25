@@ -14,8 +14,13 @@ was found and fixed (issue #77). The in-game glyph position editor (F2/F3) was
 extended from menu items to real gameplay hints (Interact/ReadyUp/Reload/Mantle),
 with several real bugs found and fixed along the way (F3 silently never exporting
 gameplay-hint calibrations, Mantle wrongly sharing Interact's position/suppression
-state, ReadyUp wrongly suppressing Reload). See the itemized sections below for the
-rest, including font/outline polish and AI-suppression debug tooling (F4).
+state, ReadyUp wrongly suppressing Reload, and a Mantle drag-handle allocation-pool
+bug found afterward). Also fixes a real glyph-icon rendering bug (a faint white
+cutout-fringe ring, root-caused to non-premultiplied alpha), recalibrates 12 more
+Survival buy-station screens with real captures, and adds a new glyph-style
+auto-detect (Xbox 360/Xbox One-Series/PlayStation) as groundwork. See the itemized
+sections below for the rest, including font/outline polish and AI-suppression debug
+tooling (F4).
 
 ### What's New
 1. **DualSense now has full input-level parity with XInput** (sticks, buttons,
@@ -318,12 +323,78 @@ rest, including font/outline polish and AI-suppression debug tooling (F4).
   `SHOTGUN_POPUP` (the buy station's other weapon-category tabs), `PERKS_POPUP`,
   `AIRSUPPORT_POPUP`, and `SURVIVAL_POPUP` (screen not yet identified by name --
   see `known_issues.md`'s own note, don't assume which real screen this is).
-  Two captures from the same session were deliberately NOT added -- an
-  in-mission `PAUSE_LIST` variant (only 1 of 5 real items was actually dragged)
-  and `WEAPON_UPGRADE_POPUP` (a gap mid-sequence, not just a leading run) --
-  both need a follow-up session that actually focuses every real item first.
-  **None of the 11 added groups have been visually re-confirmed live yet** --
+  An in-mission `PAUSE_LIST` variant from the same session was deliberately NOT
+  added -- only 1 of 5 real items was actually dragged, needs a follow-up
+  session that focuses every real item first. `WEAPON_UPGRADE_POPUP` was
+  initially withheld too (index 7 looked like a gap), then added in a follow-up
+  round the same day once the user clarified index 7 is a real header/divider
+  row between selectable lists, not a missing capture -- see item 11 below.
+  **None of the 12 added groups have been visually re-confirmed live yet** --
   same standard this table already applies to every other manual-position entry.
+11. **`WEAPON_UPGRADE_POPUP` (Survival's weapon-upgrade buy-station screen)
+  added**, same 2026-08-25 F3 session as item 10, in a follow-up round after
+  direct clarification: "index 7 is basically the gap between selectable lists
+  with a separate header[,] makes perfect sense." Same leading-placeholder
+  pattern (indices 0-2) as every other group in item 10, plus this one
+  structural exception at index 7 -- never actually looked up at runtime (a
+  non-focusable header row never reports a focused index), so leaving it at
+  its exported `0,0` is correct, not a gap. Not yet visually re-confirmed live.
+12. **Mantle's drag handle in the in-game glyph position editor silently never
+  worked** (live-reported: "the mantle drag doesnt work"). Root cause:
+  `kGameplayHintEditNudgeMax` (the fixed-size pool `FindOrCreateGameplayHintEditNudge`
+  allocates (slotId, FontRole) combo slots from) was `8`, sized for the
+  pre-Mantle "3 slots x 2 roles = 6 real combos, some headroom" world -- Mantle
+  getting its own `GameplayHintSlotId` (item 9 above) made it 4 slots x 2 roles
+  = 8 real combos, exactly at capacity with zero headroom. If Interact/ReadyUp/
+  Reload happened to claim all 8 combos first in a session, Mantle's own
+  allocation request silently got `nullptr` back, and the drag-handle code
+  skips entirely on a null result -- no crash, just a handle that never
+  appears/responds. Bumped to 16, real headroom this time.
+13. **Controller-glyph icons had a faint 1-2px white ring around their edges**
+  (live-reported: "any very faint 1-2px white ring from cutting removed
+  entirely"; confirmed root cause: "its clearly from when it was cut out they
+  were cut well but im guessing not tight enough to avoid clippage"). The
+  source PNGs' cutout boundaries left a thin ring of semi-transparent edge
+  pixels that still carry the original (light) background color underneath --
+  standard non-premultiplied alpha blending draws that leftover color weighted
+  by the pixel's own (low but nonzero) alpha regardless of what it actually
+  is, and D3D9's automatic mipmap generation (added 2026-08-24 for icon
+  jaggedness) made it worse by box-averaging that same color into every mip
+  level with no regard for alpha weight. Fixed by premultiplying every glyph
+  icon's RGB by its own alpha at load time (`LoadGlyphIconTexture`,
+  `overlay_hud.cpp`) and switching those specific draw calls to the matching
+  blend equation (`DrawGenericTexturedQuad`'s new `premultipliedAlpha`
+  parameter, `SRCBLEND=ONE` instead of `SRCALPHA`) -- covers every icon this
+  project draws (glyphs, the custom cursor, controller diagram images), all of
+  which load through this one shared function. Every other draw through the
+  same function (solid quads, text, real `.menu` DDS assets) is untouched and
+  still uses standard straight-alpha blending. Not yet visually re-confirmed
+  live.
+
+### Groundwork
+1. **New glyph-style auto-detect** (user-requested: "a default option for
+  glyphs which detects controller type ps/xbox/xbmodern and sets
+  accordingly"). New `[Bindings] GlyphStyleAuto` config key (default ON for a
+  fresh install) resolves which controller-glyph art (`Xbox360`/`XboxModern`/
+  `PlayStation`) to draw automatically instead of requiring a manual pick --
+  DualSense is detected via this project's own already-open native HID
+  connection (`DualSense_IsOpen`, the strongest signal available); Xbox 360 vs.
+  Xbox One/Series is a new best-effort VID/PID table (`dualsense_input.cpp`,
+  Microsoft vendor ID `0x045E` -- public data, e.g. used by SDL2's controller
+  DB and the Linux kernel's `xpad` driver, **not independently verified
+  against real hardware across every generation by this project**). Detection
+  runs ONCE per session, at the exact moment `controller_input.cpp`'s poll
+  thread locks onto a real input source (XInput or DualSense) -- not on a
+  recurring timer, matching this project's existing "restart to switch
+  controllers" design rather than fighting it. An existing config with an
+  already-non-default `GlyphStyle` (a pre-existing hand-edit, from before this
+  feature existed) migrates `GlyphStyleAuto` to OFF instead of the usual
+  default, so a deliberate manual choice can't be silently overridden -- same
+  "explicit value always wins" policy this project already applies to
+  `FontItalic`'s own default flip. `ConfigVersion` bumped 19->20. Not yet
+  visually confirmed live against real Xbox 360/Xbox One/Series/DualSense
+  hardware, and the Xbox PID table specifically should be treated as a
+  best-effort starting point, not a verified-complete list.
 
 ---
 
