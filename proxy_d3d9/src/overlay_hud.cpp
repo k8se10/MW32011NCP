@@ -1446,7 +1446,8 @@ void AppendGameplayHintEditExport(FILE* f)
         if (!n.used) continue;
         if (n.textNudgeX == 0.0f && n.textNudgeY == 0.0f && n.iconNudgeX == 0.0f && n.iconNudgeY == 0.0f) continue;
         const char* slotName = n.slotId == GameplayHintSlotId::Interact ? "Interact"
-                              : n.slotId == GameplayHintSlotId::ReadyUp ? "ReadyUp" : "Reload";
+                              : n.slotId == GameplayHintSlotId::ReadyUp ? "ReadyUp"
+                              : n.slotId == GameplayHintSlotId::Reload ? "Reload" : "Mantle";
         const char* roleName = n.fontRole == FontRole::Condensed ? "Condensed" : "Default";
         fprintf(f, "// %s + %s: textNudge=(%.1ff, %.1ff) iconNudge=(%.1ff, %.1ff)\n",
             slotName, roleName, n.textNudgeX, n.textNudgeY, n.iconNudgeX, n.iconNudgeY);
@@ -1624,7 +1625,8 @@ void DrawOneGameplayHintSlot(void* device, GameplayHintSlot& slot, GameplayHintS
             textHandleY = mouseDesignY;
         }
         const char* slotLabel = slotId == GameplayHintSlotId::Interact ? "TEXT (Interact)"
-                               : slotId == GameplayHintSlotId::ReadyUp ? "TEXT (ReadyUp)" : "TEXT (Reload)";
+                               : slotId == GameplayHintSlotId::ReadyUp ? "TEXT (ReadyUp)"
+                               : slotId == GameplayHintSlotId::Reload ? "TEXT (Reload)" : "TEXT (Mantle)";
         RequestGlyphEditHandleBox(textHandleX, textHandleY, kHandleHitRadiusDesign,
             draggingText ? 0x9000FF00u : 0x9000AAFFu, slotLabel);
     }
@@ -1721,7 +1723,8 @@ void DrawOneGameplayHintSlot(void* device, GameplayHintSlot& slot, GameplayHintS
                 iconHandleY = mouseDesignY;
             }
             const char* slotLabel = slotId == GameplayHintSlotId::Interact ? "ICON (Interact)"
-                                   : slotId == GameplayHintSlotId::ReadyUp ? "ICON (ReadyUp)" : "ICON (Reload)";
+                                   : slotId == GameplayHintSlotId::ReadyUp ? "ICON (ReadyUp)"
+                                   : slotId == GameplayHintSlotId::Reload ? "ICON (Reload)" : "ICON (Mantle)";
             RequestGlyphEditHandleBox(iconHandleX, iconHandleY, kHandleHitRadiusDesign,
                 draggingIcon ? 0x9000FF00u : 0x90FFA000u, slotLabel);
         }
@@ -1809,20 +1812,31 @@ void DrawGameplayHintSlotsIfRequested(void* device)
     // this suppression alongside Interact. Direct correction: "they should work
     // cleanly in conjunction with readyup[;] the ones that shouldnt and currently
     // correctly dont show together is the interact and reload at the same time."
-    // Only Interact+Reload should mutually suppress (redundant clutter, e.g. a
-    // pickup prompt already covers the same "you can act here" idea Reload gives);
-    // ReadyUp+Reload are unrelated concepts (waiting to start the next wave vs.
-    // low ammo) and should coexist freely.
+    // Only Interact+Reload/Mantle should mutually suppress (redundant clutter,
+    // e.g. a pickup prompt already covers the same "you can act here" idea
+    // Reload/Mantle give); ReadyUp is an unrelated concept (waiting to start the
+    // next wave) and coexists freely with everything.
+    //
+    // Mantle EXTENDED into this same suppression rule 2026-08-25, same pass that
+    // gave it its own slot (see GameplayHintSlotId's own comment) -- direct
+    // instruction: "mantle is the thing that must not show up dual like reload
+    // when interact prompt [shows]." Before the slot split, mantle sharing
+    // Interact's own slot ACCIDENTALLY already suppressed Reload whenever mantle
+    // showed (since the code couldn't tell them apart) -- this makes that
+    // relationship explicit and correct instead of an accidental side effect,
+    // and additionally makes Mantle itself suppress the same way Reload does
+    // when Interact is showing.
     bool interactShowing = g_gameplayHintSlots[static_cast<int>(GameplayHintSlotId::Interact)].requestedThisFrame;
 
     for (int i = 0; i < kGameplayHintSlotCount; ++i) {
         GameplayHintSlot& slot = g_gameplayHintSlots[i];
         if (!slot.requestedThisFrame) continue;
         slot.requestedThisFrame = false; // consume regardless of outcome below
-        if (static_cast<GameplayHintSlotId>(i) == GameplayHintSlotId::Reload && interactShowing) {
+        GameplayHintSlotId thisSlotId = static_cast<GameplayHintSlotId>(i);
+        if ((thisSlotId == GameplayHintSlotId::Reload || thisSlotId == GameplayHintSlotId::Mantle) && interactShowing) {
             continue; // the one named suppression rule -- see this function's own comment
         }
-        DrawOneGameplayHintSlot(device, slot, static_cast<GameplayHintSlotId>(i), scaleX, scaleY);
+        DrawOneGameplayHintSlot(device, slot, thisSlotId, scaleX, scaleY);
     }
 }
 
