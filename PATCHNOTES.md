@@ -8,6 +8,15 @@ reverse-engineering trail behind each entry.
 
 ## Unreleased
 
+**Summary:** DualSense now has full input-level parity with XInput on both USB and
+Bluetooth — a real signed-16-bit integer overflow at full-forward stick deflection
+was found and fixed (issue #77). The in-game glyph position editor (F2/F3) was
+extended from menu items to real gameplay hints (Interact/ReadyUp/Reload/Mantle),
+with several real bugs found and fixed along the way (F3 silently never exporting
+gameplay-hint calibrations, Mantle wrongly sharing Interact's position/suppression
+state, ReadyUp wrongly suppressing Reload). See the itemized sections below for the
+rest, including font/outline polish and AI-suppression debug tooling (F4).
+
 ### What's New
 1. **DualSense now has full input-level parity with XInput** (sticks, buttons,
   triggers -- both USB and Bluetooth) -- the headline fix this release. Does
