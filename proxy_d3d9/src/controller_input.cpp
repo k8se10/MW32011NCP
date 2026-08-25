@@ -162,6 +162,22 @@ bool g_stateLockInit = false;
 CachedControllerState g_cachedState;
 HANDLE g_pollThreadHandle = nullptr;
 
+// Event-driven polling (2026-08-25, live-reported: "gotta be that polling bs...
+// we should cut the polling and just use the first controller that input is
+// detected from and stop polling"). The free-running fixed-interval poll loop
+// this replaced (kPollIntervalMs, 250Hz) called XInputGetState/DualSense_Poll on
+// its own independent clock regardless of whether anything actually needed fresh
+// input that tick -- real, avoidable overhead, and (per live report) apparently
+// costs noticeably more per call for XInputGetState than for DualSense's raw-HID
+// blocking read, explaining the worse XInput-side lag specifically. Direct
+// follow-up correction: source LOCKING (never re-scanning other slots/devices
+// once one is found, see LockedInputSource below) already existed since
+// 2026-08-18 and was not the cause here -- this is a SEPARATE fix, for the
+// steady-state poll CADENCE itself, not for multi-device scanning (already
+// solved). Auto-reset: only the single most recent wake matters, never a queue
+// of stale ones.
+HANDLE g_pollWakeEvent = nullptr;
+
 // Cross-thread handoff for the connect/disconnect toast (2026-08-08, user-requested):
 // deliberately NOT calling ShowOverlayMessage directly from the poll thread --
 // overlay_hud.cpp's own toast state (g_overlayText/g_overlayActive/etc.) is plain,
@@ -288,11 +304,14 @@ int ResolveActiveXInputSlotOnPollThread()
     return g_activeXInputSlot;
 }
 
-// ~250Hz -- snappy enough for real movement/look input, decoupled entirely from the
-// game's own frame rate or message pump, so this thread's own pace is now the only
-// thing that determines how often XInput gets polled, not how many WM_MOUSEMOVE
-// messages happen to fire.
-constexpr DWORD kPollIntervalMs = 4;
+// Safety-net-only timeout for the event wait below (2026-08-25) -- NOT a polling
+// interval. Real polls are driven entirely by Controller_RequestPoll() wake-ups from
+// the two actual per-tick consumers (the gameplay-tick hook, the WndProc ~60Hz
+// WM_TIMER). This just guarantees the thread still checks in periodically even in the
+// narrow window before either of those has fired even once (e.g. the first few
+// milliseconds after DLL load), so device detection/reconnect handling can't stall
+// waiting on a wake-up that hasn't happened yet.
+constexpr DWORD kPollWakeTimeoutMs = 50;
 
 // ---- Locked input source (2026-08-18) ----------------------------------------
 //
@@ -497,7 +516,16 @@ DWORD WINAPI XInputPollThreadProc(LPVOID)
             NotifyControllerConnectionChange(connected);
         }
 
-        Sleep(kPollIntervalMs);
+        // Event-driven wait (2026-08-25) -- replaces the old fixed Sleep(kPollIntervalMs).
+        // Real per-tick consumers (InjectAllControllerInput, the gameplay-tick hook, and
+        // the WndProc SetTimer's ~60Hz WM_TIMER, which keeps running during pause) call
+        // Controller_RequestPoll() right before they read cached state, waking this thread
+        // to take exactly one fresh sample -- no independent clock, no reads when nothing
+        // is actually asking for one. A short timeout (not INFINITE) is kept as a safety
+        // net so an unplug/replug or a still-Undetermined detection phase keeps making
+        // forward progress even in the unlikely case neither real consumer happens to be
+        // firing yet (e.g. very early during DLL load, before any hook has run once).
+        WaitForSingleObject(g_pollWakeEvent, kPollWakeTimeoutMs);
     }
     return 0; // unreachable -- this thread lives for the whole process, matching this
               // project's existing "install once, never uninstall" hook lifetime pattern
@@ -510,6 +538,11 @@ void EnsurePollThreadStarted()
     started = true;
     InitializeCriticalSection(&g_stateLock);
     g_stateLockInit = true;
+    // Auto-reset (bManualReset=false): each SetEvent wakes the thread for exactly one
+    // poll, then the event clears itself -- a caller that requests a poll while the
+    // thread is already awake and mid-poll doesn't queue up a second one, it just
+    // means the poll already in flight will pick up equally fresh data.
+    g_pollWakeEvent = CreateEventA(nullptr, FALSE, FALSE, nullptr);
     g_pollThreadHandle = CreateThread(nullptr, 0, XInputPollThreadProc, nullptr, 0, nullptr);
     if (!g_pollThreadHandle) {
         LogFromController("[xinput] CreateThread FAILED for the background poll thread -- no controller input this session");
@@ -517,6 +550,22 @@ void EnsurePollThreadStarted()
 }
 
 } // namespace
+
+// Wakes the background poll thread to take exactly one fresh sample right now
+// (2026-08-25, see g_pollWakeEvent's own comment for the full rationale). Called from
+// the two real per-tick consumers -- InjectAllControllerInput (analog_input_hooks.cpp,
+// the gameplay-tick hook) and the WndProc ~60Hz WM_TIMER (d3d9_hook.cpp) -- right
+// before they read cached state via the Controller_Get* functions below, so a poll
+// only ever happens when something is actually about to consume its result. Safe to
+// call before the poll thread/event exist yet (lazily starts them, same pattern every
+// Controller_Get* function already uses) and safe to call redundantly from both
+// consumers in the same real tick (SetEvent on an already-signaled auto-reset event is
+// a no-op, not a queued second wake).
+void Controller_RequestPoll()
+{
+    EnsurePollThreadStarted();
+    if (g_pollWakeEvent) SetEvent(g_pollWakeEvent);
+}
 
 // BUG-001 follow-up (2026-08-02): the original rationale for centralizing
 // MarkControllerActivity/GetLastControllerActivityTickMs/GetLastMouseMoveTickMs here
