@@ -101,26 +101,37 @@ reverse-engineering trail behind each entry.
   cursor, turning it into a genuine debug tool usable mid-gameplay, not just in
   menus.** Direct request: "we need our mouse cursor available in gameplay when we
   press f2, it would be nice if it froze gameplay tick too... an amazing debug
-  feature to fix all menus easily." Toggling the editor ON now mirrors the exact
-  real branch the proven Start-button handler (`InjectControllerPause`) already
-  uses live: auto-close any already-open menu first (same `ForwardKeyToMenu` ESC
-  pair Start uses), then call `OpenPauseMenu`/`FUN_004d6620` for the rare state
-  1/2 case or `SetMenuState(playerIndex, kMenuStatePausedMenu)`/`FUN_004396d0` --
-  the function's own comment documents it as "sets cl_paused, opens the pausedmenu
-  UI" -- for ordinary live gameplay (state 6). **First attempt called
-  `OpenPauseMenu` unconditionally and was live-reported broken ("gameplay tick
-  doesnt freeze")** -- root cause was exactly that OpenPauseMenu alone doesn't set
-  `cl_paused`; only the `SetMenuState` branch does, and normal SP/Survival play
-  always reports state 6, never 1/2, so the wrong branch was firing every time.
-  Toggling back OFF only resumes (`SetMenuState` mode 0) when a tracked flag
-  (`g_glyphEditorTriggeredPause`) confirms the editor itself caused the pause --
-  never force-unpauses a pause a real player caused independently (their own
-  ESC/Start press while the editor happened to still be on). The custom mouse
-  cursor (`DrawCustomCursorIfNeeded`) force-shows whenever
+  feature to fix all menus easily." **Two earlier attempts this same session were
+  both wrong and reverted.** First called `OpenPauseMenu` unconditionally --
+  live-reported broken ("gameplay tick doesnt freeze") because that call alone
+  never sets `cl_paused`. Second switched to the real `cl_paused`/`SetMenuState`
+  path (mirroring Start's own proven pause-menu handler exactly) -- also
+  live-reported broken, and for a more fundamental reason: that path's entire
+  purpose is to open the real native pausedmenu UI, which is precisely what this
+  feature must NOT do, since it steals input/focus and visually replaces the
+  gameplay the editor exists to calibrate against. **Fixed via the real
+  `timescale` dvar instead** (confirmed present in `iw5sp.exe` by a live PE string
+  scan -- both `timescale` and `com_timescale` exist), submitted through the real,
+  already-confirmed `Cbuf_AddText` (`re_notes/iw5sp.md`'s own task #10 writeup,
+  which separately documents `Cmd_ExecuteString` falling through to a genuine
+  cvar-set check for any unrecognized command token -- exactly the path a plain
+  `timescale 0` line takes; no need to also call the real `Cbuf_Execute`, since
+  the engine's own per-frame loop was already confirmed to drain the buffer on
+  its own one frame later). `timescale 0` halts the world's own time advancement
+  (physics/AI/animation) without touching `cl_paused`, the pausedmenu, or
+  menu-active state at all -- gameplay keeps rendering exactly as it looked the
+  instant F2 was pressed. The real pre-freeze value is read live
+  (`GetDvarFloat("timescale")`, not assumed to be `1.0`) and restored verbatim
+  when the editor toggles back off. The custom mouse cursor
+  (`DrawCustomCursorIfNeeded`) force-shows whenever
   `IsGlyphPositionEditModeActive()` is true, bypassing every native
   visFlag/uiState/`IsMenuActive` gate it normally respects -- the editor is a debug
   tool, not a normal play state, so it deliberately ignores those heuristics rather
-  than extending them with another special case.
+  than extending them with another special case. **Pending live confirmation** --
+  `timescale` is confirmed present in the binary and `Cmd_ExecuteString`'s
+  cvar-set fallback is separately documented, but this specific combination
+  (freezing physics/AI/animation via `timescale 0` while the editor is active)
+  hasn't been played live yet.
 
 ### Fixed
 1. **Glyph icon jaggedness (controller-glyph hint overlays/menu corner hints/cursor).**
