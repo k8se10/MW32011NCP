@@ -2211,12 +2211,16 @@ dispatch table found earlier this session has no `open` entry at all, only
   now believed VIABLE (2026-07-17 follow-up research), which resolves this.
 - Find the real compiled representation of `open <menuname>;` (menu-to-menu
   navigation) so a parent menu's item can be redirected to our unique-named copy.
-- **No hardcoded addresses, still unresolved project-wide**: every function
-  address in this section (and every other hook in this codebase) is a literal
-  hardcoded from static Ghidra analysis, not a runtime signature scan --
-  CLAUDE.md's own rule ("every hook target comes from a runtime signature scan")
-  has never actually been implemented anywhere in this project. Systemic, not
-  specific to this feature; worth its own dedicated task eventually.
+- **Hardcoded addresses are the deliberate project-wide policy, not an
+  unresolved gap (REVERSED 2026-08-25)**: every function address in this
+  section (and every other hook in this codebase) is a literal hardcoded
+  address from static Ghidra analysis, not a runtime signature scan --
+  CLAUDE.md's own rule used to read "every hook target comes from a runtime
+  signature scan," implying that was the unmet goal; it now correctly states
+  the opposite, since a runtime scanner would have to walk process memory
+  searching for byte patterns at runtime, closer to what VAC's own
+  heuristics watch for than a fixed, offline-resolved address ever is. Not a
+  gap to eventually close -- do not propose a runtime scanner for this.
 
 ### Level-load-transition alternative -- structurally sound, not yet implemented (2026-07-17)
 

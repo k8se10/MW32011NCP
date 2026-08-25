@@ -204,23 +204,33 @@ code-quality standard as a debugging-methodology one.
 
 ## Native project code (C/C++)
 
-- **Aspirational goal, not current practice (corrected 2026-08-01 — this
-  standard previously claimed as already-true something the codebase has
-  never actually done): every hook target should ideally be found via
-  byte-pattern/signature scanning at runtime, per binary, because game
-  updates and the SP/MP binary split both shift offsets.** The ACTUAL current
-  practice, honestly: every real engine-function hook in this codebase is a
-  literal hardcoded address, found once via static Ghidra analysis and never
-  re-resolved at runtime — see `CONTRIBUTING.md`'s own matching correction
-  for the exact wording this project has settled on. A genuine runtime
-  scanner would be strictly better and remains a real, open, project-wide
-  idea — but until one exists, match the established pattern (static
-  analysis, hardcode, document) rather than hardcoding one new hook while
-  claiming this standard is met.
-- Validate a scanned signature actually resolved (non-null, sane surrounding
-  bytes) before installing a hook on it — fail loudly and refuse to hook
-  rather than jumping to garbage. (Inapplicable today since no runtime
-  scanning exists yet — kept as the standard for whenever it does.)
+- **Hardcoded, statically-resolved addresses are this project's deliberate,
+  permanent policy — REVERSED 2026-08-25 (direct correction: "no hardcoded
+  addresses isnt a claim we can make anymore, its safer for vac than pattern
+  scanning which could touch protected regions of memory").** This standard
+  used to frame a runtime byte-pattern/signature scanner as the aspirational
+  goal, with static-hardcode-per-binary as an honest-but-temporary current
+  state. That framing is wrong and is not coming back: a runtime scanner has
+  to walk arbitrary regions of the game's own process memory searching for a
+  byte sequence every time it resolves — exactly the class of behavior VAC's
+  own signature-based heuristics are built to notice, and a real way to
+  touch a protected/guarded memory region this project never intended to
+  read. A hardcoded address found offline (static Ghidra analysis, no live
+  process attached) and simply called at a known, fixed location has no such
+  runtime search surface at all — narrower, safer, and more predictable.
+  Every real engine-function hook in this codebase is a literal hardcoded
+  address, found once via static analysis and never re-resolved at runtime —
+  see `CONTRIBUTING.md`'s own matching correction for the exact wording.
+  **Do not propose a runtime scanner for engine-function hooks** — it is a
+  rejected idea on VAC-safety grounds, not a deferred project-wide effort
+  waiting to happen; match the established pattern (static analysis,
+  hardcode, document per binary) for any new hook instead.
+- Validate a signature actually resolved (non-null, sane surrounding bytes)
+  before installing a hook on it — fail loudly and refuse to hook rather than
+  jumping to garbage. Applies to the static, offline Ghidra-analysis pass
+  used to find every hardcoded address above, not to a runtime scan (see
+  that bullet for why this project deliberately doesn't do runtime
+  scanning).
 - All hook callbacks must be safe to call from the game's own thread(s) — no
   blocking calls, no heavy work inline; queue/defer anything expensive.
 - **Not currently done (corrected 2026-08-01 — this standard also previously

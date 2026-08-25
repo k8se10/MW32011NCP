@@ -23,13 +23,24 @@ Before opening a PR, please read this file in full.
   own additive timer/state layer on top of them. See `re_notes/iw5sp.md` for
   the full trail of what's been found so far.
 - **Hook targets are found via static Ghidra analysis (decompile/disassemble,
-  confirm via disassembly, then hardcode the address) — not a runtime
-  signature scan.** Read that as the honest current state, not the aspiration:
-  a genuine runtime byte-pattern scanner would be strictly better (game
-  updates and the `iw5sp.exe`/`iw5mp.exe` binary split both mean offsets
-  aren't stable across versions or between the two executables), but every
-  single engine-function hook in this codebase (10 currently active, plus a
-  handful more implemented and kept in the source but disabled — corrected
+  confirm via disassembly, then hardcode the address) — deliberately, not a
+  runtime signature scan.** REVERSED 2026-08-25 (direct correction: "no
+  hardcoded addresses isnt a claim we can make anymore, its safer for vac
+  than pattern scanning which could touch protected regions of memory") —
+  this used to be framed as an honest-current-state-not-the-aspiration
+  situation, implying a runtime byte-pattern scanner would be strictly
+  better if this project ever got around to building one. That framing is
+  wrong and should not come back: a runtime scanner has to walk arbitrary
+  regions of the game's own process memory searching for a byte sequence
+  every time it resolves, which is exactly the class of behavior VAC's own
+  signature-based heuristics are built to notice, and a real way to touch a
+  protected/guarded memory region this project never intended to read. A
+  hardcoded address found offline (static Ghidra analysis, no live process
+  attached) and simply called at a known, fixed location has no such runtime
+  search surface at all — a narrower, safer, more predictable interaction
+  with the game process, and the deliberate reason every single
+  engine-function hook in this codebase (10 currently active, plus a handful
+  more implemented and kept in the source but disabled — corrected
   2026-08-01, the "~50+" this line previously said was never an accurate
   count of hook installations) is a literal address found once via static
   analysis, not a scan performed at runtime. **Exception**: the three D3D9
@@ -37,14 +48,15 @@ Before opening a PR, please read this file in full.
   `IDirect3D9::CreateDevice` in `d3d9_hook.cpp`) resolve their real target
   address live from the actual COM vtable at runtime — not a hardcoded
   literal — since that's the standard, correct way to hook a COM interface
-  method regardless of this project's own engine-function convention. Match
-  the existing pattern for a NEW engine-function hook (find it in Ghidra,
-  verify the calling convention via raw disassembly, hardcode it, document it
-  in `re_notes/iw5sp.md`) rather than introducing a scanner for just your one
-  new hook while everything else stays hardcoded — that would make the
-  codebase MORE inconsistent, not less. If you want to tackle a real runtime
-  scanner as its own project-wide effort, open an issue to discuss it first,
-  since it would touch every existing hook.
+  method regardless of this project's own engine-function convention, and
+  doesn't touch arbitrary memory searching for a pattern the way a scanner
+  would. Match the existing pattern for a NEW engine-function hook (find it
+  in Ghidra, verify the calling convention via raw disassembly, hardcode it,
+  document it in `re_notes/iw5sp.md`). **Do not open a PR introducing a
+  runtime signature scanner for engine-function hooks** — it isn't a
+  deferred goal this project is waiting on, it's a rejected approach on VAC-
+  safety grounds; raise an issue first if you think this reasoning is wrong,
+  rather than building one.
 - **`iw5sp.exe` (Campaign/Survival) and `iw5mp.exe` (Multiplayer) are
   separate efforts.** Don't assume a function or offset found in one binary
   carries over to the other — each needs its own independently-found
