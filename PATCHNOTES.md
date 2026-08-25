@@ -8,11 +8,14 @@ reverse-engineering trail behind each entry.
 
 ## Unreleased
 
-**Summary:** Replaced the background controller-poll thread's free-running fixed
-250Hz clock with an event-driven wait — live-reported ongoing lag spikes, worse on
-XInput than DualSense, led to a full audit of the poll architecture (checked against
-x360ce's own real source as a reference: it doesn't background-poll at all, just
-forwards `XInputGetState` synchronously on-demand). See the itemized entry below.
+**Summary:** Chased a recurring freeze every 2-5 seconds through three real,
+evidence-backed causes — a fixed-rate controller-poll clock, vibration writes
+blocking the gameplay thread, and (the strongest candidate, dated exactly right by
+a fork diffing v0.2.2 against v0.2.5) an uninstrumented main-thread file-stat call
+in config hot-reload that both prior diagnostic tools structurally couldn't catch.
+Steam Input and this mod's own overlay-draw cost were both directly ruled out
+along the way rather than assumed. See the itemized entries below and
+`known_issues.md` issue #87 for the full investigation trail.
 
 ### Fixed
 1. **Controller poll thread free-ran on an independent 250Hz clock regardless of
@@ -34,8 +37,35 @@ forwards `XInputGetState` synchronously on-demand). See the itemized entry below
   `InjectAllControllerInput` (the gameplay-tick hook) and `InjectMenuInputTick` (the
   WndProc/SetTimer path that keeps running during pause/menus) -- right before each
   reads cached state. A poll now only ever happens when something is actually about
-  to consume its result, not on an arbitrary independent clock. Not yet live-tested;
-  builds clean (0 warnings/errors), deployed.
+  to consume its result, not on an arbitrary independent clock.
+2. **Vibration writes called `XInputSetState`/`DualSense_SetVibration` synchronously
+  on the game's own gameplay-tick thread** -- live-reported: "check on vibratw."
+  Contradicted this project's own original design intent for the poll thread ("moving
+  ALL real XInputGetState/XInputSetState calls" off the main thread); SetState had
+  been carved out on an unverified "cheap/idempotent" assumption. Fixed the same way
+  as item 1: `Controller_SetVibration` now just stashes the requested motor values
+  and wakes the poll thread; a new `ApplyPendingVibrationOnPollThread()` performs the
+  actual write on the background thread instead.
+3. **`CheckConfigHotReload` ran an unconditional `GetFileAttributesExA` on the main
+  thread every second, forever, with zero instrumentation anywhere -- the strongest
+  candidate, found by a fork diffing `v0.2.2` against `v0.2.5`** after direct
+  correction: "remember we tested this exact issue before and it wasnt present on
+  the current LTS." Added in v0.2.5's config-hot-reload feature. A cached NTFS stat
+  is normally cheap, but is a well-documented stutter source when antivirus
+  real-time protection intercepts the call -- an irregular stall matching the
+  reported "random" character, and invisible to `frametime_benchmark.csv` (no
+  instrumentation column existed for it) and to Afterburner (a sub-frame main-thread
+  stall doesn't reliably show as a Present-to-Present gap). Split into two halves,
+  same pattern as items 1-2: a new dedicated background thread does the actual file
+  check once a second; the real reload (which touches unsynchronized globals only
+  safe on the main thread) stays on the main thread, just gated on a flag the
+  background thread sets. Not yet independently confirmed as THE cause -- strong
+  circumstantial match, not a direct repro. **Ruled out along the way**: multi-slot
+  polling (already fixed in v0.3.3), Steam Input (user confirmed already disabled),
+  and this project's own overlay/glyph draw cost (a real `frametime_benchmark.csv`
+  capture showed it negligible throughout, directly contradicting that theory).
+  Builds clean (0 warnings/errors), deployed. Not yet live-confirmed. See
+  `known_issues.md` issue #87 for the full investigation trail.
 
 ## v0.3.4 — Alpha (2026-08-25) — DualSense input-parity fix, gameplay-hint glyph editor, new plugin API
 
