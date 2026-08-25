@@ -1030,40 +1030,91 @@ void LoadModConfig()
 // mw3ncp_config.ini was load-once-at-startup-only until now (the default-config
 // header comment above previously said as much -- "no live reload yet" -- updated
 // the same day this feature landed). Polls the file's real last-write-time (not a
-// content hash -- cheap,
-// and a real edit always bumps this) from InjectMenuInputTick (analog_input_hooks.cpp,
-// the always-running WndProc/SetTimer tick, so this works even at the main menu/while
-// paused), rate-limited internally so the actual GetFileAttributesEx stat call only
-// happens once every kHotReloadCheckIntervalMs, not every ~16ms tick.
+// content hash -- cheap, and a real edit always bumps this).
+//
+// MOVED OFF THE MAIN THREAD (2026-08-25, live-reported: recurring freezes every
+// 2-5 seconds, worse on XInput than DualSense; Steam Input already ruled out --
+// confirmed already disabled). This function used to run the ENTIRE check --
+// including the actual `GetFileAttributesExA` syscall -- directly on the main
+// thread, once per second forever, via `InjectMenuInputTick` (the always-running
+// WndProc/SetTimer tick). `GetFileAttributesExA` is normally a cheap cached NTFS
+// stat, but is a well-documented real-world stutter source when antivirus
+// real-time protection intercepts the file-system call -- an IRREGULAR stall (only
+// some calls get intercepted, not all), which matches the reported "random," not
+// perfectly periodic character better than a deterministic engine-side cause would.
+// This was completely invisible to `FrametimeBenchmarkLogging` (no column for it
+// existed) and to Afterburner (a synchronous main-thread stall inside a single
+// frame doesn't reliably show as a Present-to-Present gap), which is exactly why
+// neither tool caught it despite two real investigation passes (this one and the
+// earlier v0.3.3 stutter investigation, issue #79). Split into two halves: the
+// potentially-slow stat call now runs on its own dedicated background thread, once
+// a second, forever; the actual reload (LoadModConfig/InvalidateTextTextureCachesOnConfigChange/
+// ShowOverlayMessage) stays on the main thread, called from CheckConfigHotReload
+// exactly as before -- those touch plain, unsynchronized globals that are only ever
+// safe to read/write from the main thread (see overlay_hud.cpp's own toast-state
+// comment, and controller_input.cpp's near-identical "why not call ShowOverlayMessage
+// from the poll thread" rationale) -- so ONLY the file-stat cost moves, not the
+// state-mutating reload logic itself.
 namespace {
 constexpr DWORD kHotReloadCheckIntervalMs = 1000;
-DWORD g_lastHotReloadCheckMs = 0;
 FILETIME g_lastConfigWriteTime = {};
 bool g_haveLastConfigWriteTime = false;
+CRITICAL_SECTION g_hotReloadLock;
+bool g_hotReloadLockInit = false;
+bool g_configFileChangedPending = false; // set by the background thread, consumed by the main thread
+HANDLE g_hotReloadThreadHandle = nullptr;
+
+DWORD WINAPI ConfigHotReloadThreadProc(LPVOID)
+{
+    char path[MAX_PATH];
+    GetConfigPath(path, sizeof(path));
+
+    for (;;) {
+        WIN32_FILE_ATTRIBUTE_DATA attrData;
+        if (GetFileAttributesExA(path, GetFileExInfoStandard, &attrData)) {
+            EnterCriticalSection(&g_hotReloadLock);
+            if (!g_haveLastConfigWriteTime) {
+                // First check since DLL load -- LoadModConfig() already read this
+                // exact file at startup, so just record its current write-time as
+                // the baseline rather than treating "first observation" as a change.
+                g_lastConfigWriteTime = attrData.ftLastWriteTime;
+                g_haveLastConfigWriteTime = true;
+            } else if (CompareFileTime(&attrData.ftLastWriteTime, &g_lastConfigWriteTime) != 0) {
+                g_configFileChangedPending = true;
+            }
+            LeaveCriticalSection(&g_hotReloadLock);
+        }
+        Sleep(kHotReloadCheckIntervalMs);
+    }
+    return 0; // unreachable -- lives for the whole process, matching this project's
+              // existing "install once, never uninstall" background-thread pattern
+              // (controller_input.cpp's own poll thread)
+}
+
+void EnsureHotReloadThreadStarted()
+{
+    static bool started = false;
+    if (started) return;
+    started = true;
+    InitializeCriticalSection(&g_hotReloadLock);
+    g_hotReloadLockInit = true;
+    g_hotReloadThreadHandle = CreateThread(nullptr, 0, ConfigHotReloadThreadProc, nullptr, 0, nullptr);
+    if (!g_hotReloadThreadHandle) {
+        LogFromController("[config] CreateThread FAILED for the hot-reload watcher thread -- config hot-reload disabled this session");
+    }
+}
 } // namespace
 
 extern "C" void CheckConfigHotReload()
 {
-    DWORD nowMs = GetTickCount();
-    if (nowMs - g_lastHotReloadCheckMs < kHotReloadCheckIntervalMs) return;
-    g_lastHotReloadCheckMs = nowMs;
+    EnsureHotReloadThreadStarted();
+    if (!g_hotReloadLockInit) return; // thread failed to start -- nothing to consume
 
-    char path[MAX_PATH];
-    GetConfigPath(path, sizeof(path));
-
-    WIN32_FILE_ATTRIBUTE_DATA attrData;
-    if (!GetFileAttributesExA(path, GetFileExInfoStandard, &attrData)) return; // file missing/inaccessible -- nothing to reload
-
-    if (!g_haveLastConfigWriteTime) {
-        // First check since DLL load -- LoadModConfig() already read this exact file
-        // at startup, so just record its current write-time as the baseline rather
-        // than treating "first observation" as a change.
-        g_lastConfigWriteTime = attrData.ftLastWriteTime;
-        g_haveLastConfigWriteTime = true;
-        return;
-    }
-
-    if (CompareFileTime(&attrData.ftLastWriteTime, &g_lastConfigWriteTime) == 0) return; // unchanged
+    EnterCriticalSection(&g_hotReloadLock);
+    bool changed = g_configFileChangedPending;
+    g_configFileChangedPending = false;
+    LeaveCriticalSection(&g_hotReloadLock);
+    if (!changed) return;
 
     LogFromController("[config] mw3ncp_config.ini changed on disk -- hot-reloading");
     LoadModConfig();
@@ -1076,12 +1127,18 @@ extern "C" void CheckConfigHotReload()
     ShowOverlayMessage("MW32011NCP Config Reloaded", 15000);
 
     // Re-read the write-time AFTER LoadModConfig() rather than trusting the
-    // pre-reload snapshot above: LoadModConfig() can itself rewrite the file (a
-    // pending schema migration, or just re-persisting current values), which would
-    // otherwise look like ANOTHER external change on the very next check and loop
-    // this reload (and its on-screen message) forever, once every check interval.
+    // pre-reload snapshot: LoadModConfig() can itself rewrite the file (a pending
+    // schema migration, or just re-persisting current values), which would
+    // otherwise look like ANOTHER external change to the background thread's own
+    // next check and loop this reload (and its on-screen message) forever. Updates
+    // the SAME shared baseline the background thread reads, under the same lock.
+    char path[MAX_PATH];
+    GetConfigPath(path, sizeof(path));
+    WIN32_FILE_ATTRIBUTE_DATA attrData;
     if (GetFileAttributesExA(path, GetFileExInfoStandard, &attrData)) {
+        EnterCriticalSection(&g_hotReloadLock);
         g_lastConfigWriteTime = attrData.ftLastWriteTime;
+        LeaveCriticalSection(&g_hotReloadLock);
     }
 }
 

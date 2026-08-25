@@ -24,6 +24,15 @@ extern void MarkControllerActivity(); // defined in analog_input_hooks.cpp
 extern "C" DWORD GetLastControllerActivityTickMs(); // defined in analog_input_hooks.cpp
 extern "C" DWORD GetLastMouseMoveTickMs(); // defined in d3d9_hook.cpp
 
+// Same reasoning as MarkControllerActivity above -- defined further down in this file,
+// with real external linkage, but the poll thread proc (inside the anonymous namespace
+// immediately below) needs to call it every wake cycle, so it must be visible before
+// that point. Declaring it here (before the anonymous namespace opens) instead of
+// inside it is deliberate: a forward declaration textually inside an anonymous
+// namespace gets that namespace's own implicit internal linkage, which would conflict
+// with this function's real (external) definition later in the file.
+void ApplyPendingVibrationOnPollThread();
+
 namespace {
 
 typedef DWORD(WINAPI* XInputGetState_t)(DWORD, XINPUT_STATE*);
@@ -177,6 +186,28 @@ HANDLE g_pollThreadHandle = nullptr;
 // solved). Auto-reset: only the single most recent wake matters, never a queue
 // of stale ones.
 HANDLE g_pollWakeEvent = nullptr;
+
+// Pending vibration write (2026-08-25, live-reported: lag spikes persisted after the
+// GetState-side event-driven fix, "check on vibratw" -- checked, and found a real
+// second candidate). Controller_SetVibration used to call XInputSetState/
+// DualSense_SetVibration DIRECTLY on the CALLING thread -- which, for every real call
+// site in this codebase, is the game's own gameplay-tick thread (Rumble_Tick, called
+// from InjectAllControllerInput). This directly contradicts this file's own original
+// 2026-08-08 design goal ("moving ALL real XInputGetState/XInputSetState calls onto a
+// single dedicated background thread... no matter how slow any individual XInput call
+// is, it can never again block the main thread") -- SetState was carved out of that
+// move on the unverified assumption that it's "cheap/idempotent," never actually
+// confirmed via the FrameBenchmark_AddRumbleMs instrumentation already sitting right
+// next to the call (added 2026-08-17 for exactly this suspicion, never conclusively
+// resolved either way). Fixed the same way GetState already was: Controller_SetVibration
+// now just stashes the requested motor values here and wakes the poll thread -- the
+// actual synchronous XInputSetState/DualSense_SetVibration write happens on the
+// background thread instead, never on the game's own thread again.
+struct PendingVibration {
+    float leftMotor = 0.0f, rightMotor = 0.0f;
+    bool dirty = false;
+};
+PendingVibration g_pendingVibration;
 
 // Cross-thread handoff for the connect/disconnect toast (2026-08-08, user-requested):
 // deliberately NOT calling ShowOverlayMessage directly from the poll thread --
@@ -516,6 +547,12 @@ DWORD WINAPI XInputPollThreadProc(LPVOID)
             NotifyControllerConnectionChange(connected);
         }
 
+        // 2026-08-25: applies any pending vibration write queued by Controller_SetVibration
+        // since this thread last woke -- see g_pendingVibration's own comment. Checked every
+        // wake regardless of source-lock state, so a rumble request queued before detection
+        // even finishes still gets applied the moment a source locks in.
+        ApplyPendingVibrationOnPollThread();
+
         // Event-driven wait (2026-08-25) -- replaces the old fixed Sleep(kPollIntervalMs).
         // Real per-tick consumers (InjectAllControllerInput, the gameplay-tick hook, and
         // the WndProc SetTimer's ~60Hz WM_TIMER, which keeps running during pause) call
@@ -668,54 +705,63 @@ bool Controller_GetGyroRate(float& x, float& y, float& z)
 
 void Controller_SetVibration(float leftMotor, float rightMotor)
 {
-    EnsurePollThreadStarted();
-    EnsureLoaded();
-
-    EnterCriticalSection(&g_stateLock);
-    int slot = g_cachedState.activeSlot;
-    bool isDualSense = g_cachedState.sourceIsDualSense;
-    LeaveCriticalSection(&g_stateLock);
-
     if (leftMotor < 0.0f) leftMotor = 0.0f;
     if (leftMotor > 1.0f) leftMotor = 1.0f;
     if (rightMotor < 0.0f) rightMotor = 0.0f;
     if (rightMotor > 1.0f) rightMotor = 1.0f;
 
-    // 2026-08-16 (issue #76 follow-up): the raw-HID DualSense backend now has a
-    // real output-report implementation (dualsense_input.cpp's DualSense_SetVibration,
-    // USB and Bluetooth both) -- slot==-1 (this backend's "not an XInput slot"
-    // sentinel) would be meaningless to XInputSetState, so branch here instead of
-    // falling through to it. Checked BEFORE the g_XInputSetState guard below
-    // (moved up from its original position, which used to sit before this branch
-    // existed) -- a DualSense needs no XInput DLL at all, so a machine where
-    // XInput itself failed to load must not silently swallow DualSense rumble too.
+    // 2026-08-25: no longer calls XInputSetState/DualSense_SetVibration itself --
+    // see g_pendingVibration's own comment for why. Just stashes the request and
+    // wakes the poll thread, which performs the actual (potentially slow) write off
+    // the game's own gameplay-tick thread. Non-blocking, safe to call every frame.
+    EnterCriticalSection(&g_stateLock);
+    g_pendingVibration.leftMotor = leftMotor;
+    g_pendingVibration.rightMotor = rightMotor;
+    g_pendingVibration.dirty = true;
+    LeaveCriticalSection(&g_stateLock);
+
+    Controller_RequestPoll();
+}
+
+// Performs the actual, potentially-slow vibration write -- called ONLY from the
+// background poll thread (see g_pendingVibration's own comment), never from the
+// game's own gameplay-tick thread. Reads+clears the pending request under the same
+// lock Controller_SetVibration writes it under, then does the real XInputSetState/
+// DualSense_SetVibration call outside the lock (so a slow write never blocks a
+// concurrent Controller_SetVibration call from queuing its own request).
+void ApplyPendingVibrationOnPollThread()
+{
+    EnterCriticalSection(&g_stateLock);
+    bool dirty = g_pendingVibration.dirty;
+    float leftMotor = g_pendingVibration.leftMotor;
+    float rightMotor = g_pendingVibration.rightMotor;
+    int slot = g_cachedState.activeSlot;
+    bool isDualSense = g_cachedState.sourceIsDualSense;
+    g_pendingVibration.dirty = false;
+    LeaveCriticalSection(&g_stateLock);
+    if (!dirty) return;
+
+    EnsureLoaded();
+
     // 2026-08-17 stutter investigation (frame_benchmark.h) -- times this call
-    // regardless of which branch below actually fires, so a real synchronous-write
-    // cost here (this project's own earlier documented suspicion, before the
-    // log/asset-capture fixes were tried first) shows up in frametime_benchmark.csv
-    // if it's ever actually the cause, instead of staying a guess either way.
+    // regardless of which branch below actually fires, so a real slow-write cost
+    // here shows up in frametime_benchmark.csv if it's ever the cause, instead of
+    // staying a guess either way. Now measures the poll thread's own cost, not the
+    // game's gameplay-tick thread's -- a real number here no longer means a real
+    // stutter risk the way it would have before this function moved off that thread.
     LARGE_INTEGER benchFreq{}, benchStart{}, benchEnd{};
     QueryPerformanceFrequency(&benchFreq);
     QueryPerformanceCounter(&benchStart);
 
     if (isDualSense) {
         DualSense_SetVibration(static_cast<uint8_t>(leftMotor * 255.0f), static_cast<uint8_t>(rightMotor * 255.0f));
-        QueryPerformanceCounter(&benchEnd);
-        FrameBenchmark_AddRumbleMs((static_cast<double>(benchEnd.QuadPart - benchStart.QuadPart) * 1000.0) / static_cast<double>(benchFreq.QuadPart));
-        return;
+    } else if (g_XInputSetState) {
+        XINPUT_VIBRATION vib{};
+        vib.wLeftMotorSpeed = static_cast<WORD>(leftMotor * 65535.0f);
+        vib.wRightMotorSpeed = static_cast<WORD>(rightMotor * 65535.0f);
+        g_XInputSetState(static_cast<DWORD>(slot), &vib);
     }
-    if (!g_XInputSetState) return;
 
-    XINPUT_VIBRATION vib{};
-    vib.wLeftMotorSpeed = static_cast<WORD>(leftMotor * 65535.0f);
-    vib.wRightMotorSpeed = static_cast<WORD>(rightMotor * 65535.0f);
-    // Deliberately still called directly on the CALLING thread (not routed through
-    // the poll thread) -- SetState is a write, called far less often than the
-    // movement/button polling above (only on real fire/damage events), and this
-    // project's own existing comment already establishes XInputSetState itself is
-    // cheap/idempotent, unlike GetState on an empty slot -- the actual regression
-    // this whole rewrite fixes was never about SetState.
-    g_XInputSetState(static_cast<DWORD>(slot), &vib);
     QueryPerformanceCounter(&benchEnd);
     FrameBenchmark_AddRumbleMs((static_cast<double>(benchEnd.QuadPart - benchStart.QuadPart) * 1000.0) / static_cast<double>(benchFreq.QuadPart));
 }
