@@ -311,6 +311,13 @@ is still open, not how rough what already works is.
 | **Beta** | `0.4.0` – `1.0.0` | Should be practically feature-complete — remaining work is closing gaps, fixing what live testing surfaces, and extending reach (other MW3 clients, Multiplayer if the anti-cheat question resolves favorably) rather than building brand-new core systems from scratch. |
 | **1.0 (final)** | `1.0.0`+ | Feature-complete against this project's full scope, stable, and treated as a real release rather than an actively-shifting work in progress. |
 
+**Long-term support:** one release per `0.x` minor line is designated LTS after a
+4-week clean real-world window — see [`LTS_POLICY.md`](LTS_POLICY.md) for the full
+policy, promotion process, and current status. `v0.2.2` is the current LTS and the
+oldest release this project will ever designate LTS (the risk-mitigation release
+that permanently removed aim assist — see that file for why the floor is fixed
+there).
+
 ## Feature list
 
 ### Movement & look
