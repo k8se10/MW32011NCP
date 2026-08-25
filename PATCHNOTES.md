@@ -95,8 +95,26 @@ along the way rather than assumed. See the itemized entries below and
   items 1-4 (GDI, not disk I/O), smaller per-call cost, but real and uncapped. Fixed
   with a small 48-entry cache, wired into the existing config-hot-reload cache
   invalidation so a live font change still applies correctly. Builds clean (0
-  warnings/errors), deployed. Not yet live-confirmed. See `known_issues.md` issue
-  #87 for the full investigation trail.
+  warnings/errors), deployed.
+6. **Traced the remaining residual to a resolution correlation (fine at 1080p/4:3,
+  breaks above 1080p), pointing at native GPU-bound engine cost rather than this
+  mod's own code -- and split vibration writes onto their own dedicated thread as a
+  genuine thread-safety hardening pass.** Live-tested: "at 1080p i notice none of
+  that but at 1440p it was a mess.. is it our scaling!!!", then: "yeah ive tested
+  4:3 its fine on that too, just res above 1080P my guess is the engine supports it
+  poorly." Checked this project's own resolution-scaling code before accepting the
+  theory -- no bug found (1440p is exactly 16:9 like 1080p, `scaleX == scaleY` at
+  both), corroborating issue #79's own year-old parked "GPU-bound" theory rather
+  than a mod-side scaling bug. Separately, direct follow-up: "we need thread safety
+  and a fallback thread... if a thread is overloaded etc can take the load off" --
+  a genuine self-audit found every lock added this session already correctly used,
+  but vibration writes (`ApplyPendingVibration`) originally shared the SAME
+  background thread as input polling, meaning a stall in one could delay the
+  other. Given vibration its own dedicated thread so the two can never block each
+  other -- deliberately NOT a duplicate/redundant input poller (this project has
+  already hit the "two things reading the same source fight" bug class once
+  before). Builds clean (0 warnings/errors), deployed. Not yet live-confirmed. See
+  `known_issues.md` issue #87 (and #79) for the full investigation trail.
 
 ## v0.3.4 — Alpha (2026-08-25) — DualSense input-parity fix, gameplay-hint glyph editor, new plugin API
 
