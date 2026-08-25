@@ -6186,6 +6186,11 @@ bool g_glyphEditDraggingIsText = false; // which of the two handles at [group][i
 // off to actually navigate a menu normally without the editor's own text cluttering
 // every focused item, then back on to resume calibrating.
 bool g_glyphEditModeActive = false;
+// Set true only when the F2 toggle itself is what triggered the real pause
+// (debug-freeze, 2026-08-25) -- see the F2 handler below. Guards the matching
+// resume-on-toggle-off so this never force-unpauses a pause the editor didn't
+// cause (e.g. a real player ESC/Start press while the editor was already on).
+bool g_glyphEditorTriggeredPause = false;
 
 GlyphEditGroup* FindOrCreateGlyphEditGroup(const char* groupName, int depth)
 {
@@ -6634,6 +6639,32 @@ extern "C" void __cdecl ResetMenuListItemOrdinalForFrame()
             char msg[48];
             sprintf_s(msg, "[glyph-editor] edit mode %s", g_glyphEditModeActive ? "ON" : "off");
             LogFromController(msg);
+
+            // Debug-freeze (2026-08-25, direct request: "we need our mouse cursor
+            // available in gameplay when we press f2, it would be nice if it froze
+            // gameplay tick too... an amazing debug feature to fix all menus
+            // easily"). Reuses the exact same real pause path Start already uses
+            // live (OpenPauseMenu/FUN_004d6620, SetMenuState mode 0/FUN_004396d0
+            // -- see the big writeup above both), not a fresh/guessed mechanism.
+            // g_glyphEditorTriggeredPause tracks whether WE were the ones who
+            // paused, so turning the editor back off only resumes gameplay if
+            // nothing else (a real player ESC/Start) already did -- never force-
+            // unpause a pause the editor didn't itself cause.
+            if (g_glyphEditModeActive) {
+                if (!IsMenuActive() && GetDvarInt("cl_paused") == 0) {
+                    OpenPauseMenu(kLocalClientIndex);
+                    g_glyphEditorTriggeredPause = true;
+                    LogFromController("[glyph-editor] debug-freeze: paused gameplay for editing");
+                } else {
+                    g_glyphEditorTriggeredPause = false;
+                }
+            } else {
+                if (g_glyphEditorTriggeredPause && GetDvarInt("cl_paused") != 0) {
+                    SetMenuState(kLocalClientIndex, kMenuStateUnpause);
+                    LogFromController("[glyph-editor] debug-freeze: resumed gameplay");
+                }
+                g_glyphEditorTriggeredPause = false;
+            }
         }
         // Debounced (2026-08-16, live-reported "it goes to the set position but after
         // x amount of time [it] moves") -- see TryGetStableFocusedGroupAndIndex's own

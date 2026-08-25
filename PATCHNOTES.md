@@ -97,6 +97,23 @@ reverse-engineering trail behind each entry.
   X/Y/LB/RB/LT/RT) and internal engine-matching identifiers (real bind/dvar/menu-group
   names this project reads or writes) were deliberately left untouched -- only text
   this project itself renders to the player changed.
+7. **F2 (glyph position editor) now also freezes gameplay and shows a real mouse
+  cursor, turning it into a genuine debug tool usable mid-gameplay, not just in
+  menus.** Direct request: "we need our mouse cursor available in gameplay when we
+  press f2, it would be nice if it froze gameplay tick too... an amazing debug
+  feature to fix all menus easily." Toggling the editor ON now calls the exact same
+  real pause path Start's own pause-menu press already uses live (`OpenPauseMenu`/
+  `FUN_004d6620`), but only when no menu is already active and the game isn't
+  already paused -- a tracked flag (`g_glyphEditorTriggeredPause`) records whether
+  the editor itself caused the pause, so toggling back OFF only resumes
+  (`SetMenuState` mode 0 / `FUN_004396d0`) when that flag is set, never force-
+  unpausing a pause a real player caused independently (e.g. their own ESC/Start
+  press while the editor happened to still be on). The custom mouse cursor
+  (`DrawCustomCursorIfNeeded`) now force-shows whenever
+  `IsGlyphPositionEditModeActive()` is true, bypassing every native
+  visFlag/uiState/`IsMenuActive` gate it normally respects -- the editor is a debug
+  tool, not a normal play state, so it deliberately ignores those heuristics rather
+  than extending them with another special case.
 
 ### Fixed
 1. **Glyph icon jaggedness (controller-glyph hint overlays/menu corner hints/cursor).**
