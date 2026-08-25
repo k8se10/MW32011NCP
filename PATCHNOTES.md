@@ -8,9 +8,14 @@ reverse-engineering trail behind each entry.
 
 ## Unreleased
 
-**Summary:** DualSense now has full input-level parity with XInput on both USB and
-Bluetooth — a real signed-16-bit integer overflow at full-forward stick deflection
-was found and fixed (issue #77). The in-game glyph position editor (F2/F3) was
+## v0.3.4 — Alpha (2026-08-25) — DualSense input-parity fix, gameplay-hint glyph editor, new plugin API
+
+**Summary:** DualSense's Bluetooth stick-garbling bug is fixed — a real
+signed-16-bit integer overflow at full-forward stick deflection, confirmed live by
+the reporting tester (issue #77). The fix is in code shared with the USB path, so it
+almost certainly applies there too, but USB DualSense input has still not been
+independently live-confirmed by a separate tester — a pre-existing gap this fix
+doesn't close on its own, see the note below. The in-game glyph position editor (F2/F3) was
 extended from menu items to real gameplay hints (Interact/ReadyUp/Reload/Mantle),
 with several real bugs found and fixed along the way (F3 silently never exporting
 gameplay-hint calibrations, Mantle wrongly sharing Interact's position/suppression
@@ -23,13 +28,21 @@ new opt-in plugin API (hook install, memory read/write, a text/glyph color-overr
 extension point, shipped with a working RGB Text example plugin). See the itemized
 sections below for the rest, including font/outline polish, AI-suppression debug
 tooling (F4), and a reversed project policy on hardcoded addresses (now the
-deliberate, VAC-safer choice, not a stopgap).
+deliberate, VAC-safer choice, not a stopgap). QTE prompts (Campaign scripted
+sequences, Survival's dog/hyena melee-struggle) were investigated in depth but
+deliberately parked, not shipped, after a real bug surfaced on final retest — see
+Investigated, Not Yet Resolved below.
 
 ### What's New
-1. **DualSense now has full input-level parity with XInput** (sticks, buttons,
-  triggers -- both USB and Bluetooth) -- the headline fix this release. Does
-  NOT mean full feature parity yet: vibration/rumble, gyro-aim, and adaptive
-  triggers remain separate, still-PREVIEW/WIP work, not covered by this claim.
+1. **DualSense's Bluetooth stick-garbling bug is fixed, confirmed live by the
+  reporting tester** -- a real signed-16-bit integer overflow at full-forward
+  stick deflection, the headline fix this release. The fix lives in code
+  shared with the USB path (`controller_input.cpp`'s stick scaling), so it
+  almost certainly applies there too -- but **USB DualSense input has still
+  not been independently confirmed working by a separate tester**, a
+  pre-existing gap (`known_issues.md` issue #76) this fix doesn't itself
+  close. Does NOT mean full feature parity either way: vibration/rumble,
+  gyro-aim, and adaptive triggers remain separate, still-PREVIEW/WIP work.
   Root cause and full fix in the Fixed section below (issue #77).
 2. **Overlay text now renders semibold, with the outline ring re-tuned back down to
   1px after overshooting.** `CreateFontA`'s weight argument was `FW_DONTCARE` (the
@@ -414,29 +427,6 @@ deliberate, VAC-safer choice, not a stopgap).
   the Special Ops synthetic-Back path. **Confirmed live** -- direct user
   report: "popup menus seem fixed though i tested buy stations only" (the
   exact reported case; other popup families weren't separately re-tested).
-15. **Dog/hyena melee-struggle prompts (Survival) -- and Campaign QTE/
-  scripted-sequence prompts -- were completely invisible to the glyph
-  pipeline, not just uncalibrated.** Live-reported: "it just comes up with
-  'Melee [F]'." Checked `proxy_d3d9.log`'s unconditional font diagnostic and
-  found `fonts/objectiveFont` -- a font this project already knew about
-  (flagged by name back on 2026-07-21, "a real, substantial candidate,"
-  1360 real uses, then deferred and never revisited) -- was the one font
-  firing this session with zero allowlist coverage in `IsGameplayHintFont`,
-  meaning these prompts' draw calls never even reached the span-detection
-  code, let alone failed to match. Fixed by adding `fonts/objectiveFont` to
-  the allowlist. Direct user confirmation significantly widens this fix's
-  real scope: "yes this is the same font used in scripted sequences and
-  qtes in campaign too" -- likely closes a whole previously-uncovered
-  category of Campaign prompts, not just the one originally-reported
-  Survival encounter (correction: the real key is E, not F). A successful
-  escape shows a green outline on very large text (~200-250px, well past
-  this project's normal 30px hint size) -- a real design detail to account
-  for once this is actually calibrated. Builds clean; **not yet deployed or
-  live-confirmed** -- the game was still running at rebuild time (confirmed
-  via file timestamps: the deployed DLL predates this fix), so today's own
-  "Melee [F]" test ran against the OLD binary. See `known_issues.md` issue
-  #78.
-
 ### Groundwork
 1. **New glyph-style auto-detect** (user-requested: "a default option for
   glyphs which detects controller type ps/xbox/xbmodern and sets
@@ -535,6 +525,30 @@ deliberate, VAC-safer choice, not a stopgap).
 4. **New `PLUGIN_API.md`** -- the plugin ABI reference, the opt-in config
   flag, a minimal plugin skeleton, and an explicit risk statement for the new
   plugin API (see Groundwork above). Cross-linked from `README.md`.
+
+### Investigated, Not Yet Resolved
+1. **QTE prompts (Campaign scripted sequences, Survival's dog/hyena
+  melee-struggle) still render with no controller-glyph coverage --
+  investigated in depth, real progress made, PARKED before shipping rather
+  than land a wrong-size regression.** These prompts (`fonts/objectiveFont`)
+  were completely invisible to this project's glyph pipeline -- not just
+  uncalibrated, never even reached. Found and fixed along the way: the
+  allowlist gap itself; a highlighted-key-name format ("( E )", wrapped in
+  literal parens) no other captured hint uses, fixed structurally in
+  `ResolveGlyphAssetNameForKeyName`; and a real collision where Mantle's own
+  loose prefix-only template match misidentified every QTE prompt as Mantle.
+  A dedicated `GameplayHintSlotId::Qte` (own size via `kQteHintScale`, own
+  pulsing icon) was built and wired up -- but a live retest showed the
+  correct icon resolving at the wrong (Interact-sized) slot regardless, a
+  bug not yet explained despite the font being confirmed correct moments
+  earlier in the same draw call; the plugin API was checked and ruled out as
+  a cause. Per direct decision ("lets park and explicitly disable this
+  glyph for now as a known issue then my plan is to release 0.3.4 and then
+  work on this"), `fonts/objectiveFont` was removed from the allowlist
+  again -- these prompts render fully native/unmodified in this release,
+  same as before this investigation started. Every other piece of this work
+  is intact in the codebase and one line from re-enabling once the routing
+  bug is solved. Full trail in `known_issues.md` issue #78.
 
 ---
 

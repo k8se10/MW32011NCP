@@ -248,8 +248,13 @@ void RequestGlyphIconOverlay(float x, float y, float w, float h, const char* ass
 // clutter" rule couldn't tell mantle apart from a real interact/pickup prompt).
 // Direct user correction: "why they must be read independent, mantle and
 // interact are fundamentally different."
-enum class GameplayHintSlotId { Interact = 0, ReadyUp = 1, Reload = 2, Mantle = 3 };
-constexpr int kGameplayHintSlotCount = 4;
+// Qte (2026-08-25, issue #78): QTE prompts (Campaign scripted sequences, Survival's
+// dog/hyena melee-struggle) render through fonts/objectiveFont, a completely
+// different HUD element from every other gameplay hint here -- own slot so its
+// much-larger size (kQteHintScale) and pulsing icon (see RequestCustomHintOverlay's
+// flashIcon param) never affect/get affected by Interact/ReadyUp/Reload/Mantle.
+enum class GameplayHintSlotId { Interact = 0, ReadyUp = 1, Reload = 2, Mantle = 3, Qte = 4 };
+constexpr int kGameplayHintSlotCount = 5;
 
 // Which bundled Isotherm Sans variant a hint's text should use (2026-08-24,
 // live-reported: "condensed only works for the throwback prompt and turrets etc,

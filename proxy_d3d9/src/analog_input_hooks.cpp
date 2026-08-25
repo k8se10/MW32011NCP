@@ -5942,33 +5942,39 @@ bool IsGameplayHintFont(const DiagFont* font)
            _stricmp(font->fontName, "fonts/hudSmallFont") == 0 ||
            _stricmp(font->fontName, "fonts/hudBigFont") == 0 ||
            _stricmp(font->fontName, "fonts/bigFont") == 0 ||
-           _stricmp(font->fontName, "fonts/normalFont") == 0 ||
-           // fonts/objectiveFont (2026-08-25, issue #78 follow-up) -- real,
-           // substantial font (1360 uses in an earlier 18,500-line sample, per this
-           // file's own hudBigFont-retarget comment, 2026-07-21) that was flagged as
-           // a real candidate back then but never actually added to this allowlist.
-           // Live-reported: the dog/hyena melee-struggle escape prompt renders as
-           // "Melee [F]" (later corrected by the user -- the real key is E, not F) -- confirmed via proxy_d3d9.log that objectiveFont is the
-           // ONLY font firing this session with no known allowlist coverage at all,
-           // meaning that prompt (and anything else objectiveFont renders) has been
-           // completely invisible to this whole glyph-substitution pipeline, not
-           // just failing to match a pattern -- Hook_DrawGlyphText's own gameplay-
-           // hint block never even reached this font's draw calls to look. Added
-           // here so the EXISTING span-detection/logging machinery can see it for
-           // the first time; whether "Melee [F]" (later corrected by the user -- the real key is E, not F) contains a real "^N...^7" span
-           // (in which case the existing generic path may already handle it) or
-           // needs its own bracket-specific detection (like SENTRY_PLACE's
-           // "[{+command}]" precedent) is still unconfirmed -- this change makes
-           // that answerable from the next real capture instead of guessing.
-           // Direct user confirmation, same pass: "yes this is the same font used
-           // in scripted sequences and qtes in campaign too" -- objectiveFont's real
-           // scope is broader than just the Survival dog/hyena prompt, covering
-           // Campaign QTE/scripted-sequence prompts too. This one allowlist addition
-           // is therefore a real candidate to close a whole previously-uncovered
-           // category of hints, not just one specific encounter -- worth a live
-           // check across BOTH contexts (Survival melee-struggle AND a Campaign QTE)
-           // once captured, not just the one that was originally reported.
-           _stricmp(font->fontName, "fonts/objectiveFont") == 0;
+           _stricmp(font->fontName, "fonts/normalFont") == 0;
+           // fonts/objectiveFont (QTE prompts, issue #78) -- PARKED 2026-08-25, NOT
+           // in this allowlist right now, by explicit decision: "lets park and
+           // explicitly disable this glyph for now as a known issue then my plan is
+           // to release 0.3.4 and then work on this." The glyph substitution, sizing
+           // (kQteHintScale, GameplayHintSlotId::Qte), and pulsing icon are all fully
+           // built (IsQteFont, DrawOneGameplayHintSlot's Qte branch) and confirmed to
+           // correctly detect the font and resolve the right icon/asset -- but a real,
+           // still-unexplained bug routes it to the plain Interact slot instead of
+           // Qte at draw time (a live proxy_d3d9.log capture showed the CORRECT
+           // resolved asset at UNSCALED size/position, ruling out both the earlier
+           // Mantle-prefix collision and the plugin API as causes -- see
+           // known_issues.md issue #78 for the full trail and the `[qte-diag]`
+           // diagnostic left in place to resume debugging with). Re-add
+           // "fonts/objectiveFont" here (the ONLY change needed) once that's solved --
+           // do not re-add it "to see if it's fixed now" without also finishing the
+           // routing investigation, since the symptom this parks is a wrong-size
+           // regression, not a missing-glyph one; a naive re-enable ships that
+           // regression again.
+}
+
+// QTE-prompt detection (issue #78, 2026-08-25): objectiveFont is, per the user's own
+// direct confirmation, used ONLY for QTE prompts (Campaign scripted sequences and
+// Survival's dog/hyena melee-struggle -- "the dog melee thing IS A QTE") -- no other
+// gameplay hint in this project renders through it. Font identity alone is therefore
+// a reliable, simple signal for "this is a QTE," unlike Mantle/Throwback/SentryPlace
+// above which need template matching to distinguish from OTHER hints sharing their
+// same font. Drives GameplayHintSlotId::Qte routing (own slot, own much-larger size
+// via kQteHintScale, own pulsing icon) at this font's one call site below.
+bool IsQteFont(const DiagFont* font)
+{
+    if (!font || !LooksLikeValidPointer(reinterpret_cast<uintptr_t>(font->fontName))) return false;
+    return _stricmp(font->fontName, "fonts/objectiveFont") == 0;
 }
 
 // Menu-hint counterpart to IsGameplayHintFont above (issue #48, menu-glyph pass,
@@ -7231,7 +7237,12 @@ void __cdecl Hook_DrawGlyphText(
                         // what the substituted key name says in any language -- and resolves
                         // the icon straight from the known LogicalAction::Jump mapping
                         // (TryGetMantleGlyphAssetName) rather than the translated-text lookup.
-                        bool isMantleHint = RenderedTextMatchesSubstitutionTemplate(param_1, "PLATFORM_MANTLE");
+                        // QTE prompts (issue #78) MUST be identified before any of the
+                        // template-prefix checks below run, not after -- see isQteHint's own
+                        // comment further down for the real collision this caused (moved up
+                        // here, same variable, same logic, just computed earlier).
+                        bool isQteHint = IsQteFont(font);
+                        bool isMantleHint = !isQteHint && RenderedTextMatchesSubstitutionTemplate(param_1, "PLATFORM_MANTLE");
                         // Auto-mantle gate (issue #62), moved here 2026-08-16: this used to be
                         // set further down, INSIDE the `if (haveAssetName)` block below -- which
                         // meant g_mantleHintDrawnThisFrame only ever became true if
@@ -7255,7 +7266,7 @@ void __cdecl Hook_DrawGlyphText(
                         // English word "or" -- exactly the same translation risk "SPACE" had,
                         // never actually confirmed broken live but fixed proactively using the
                         // identical proven technique rather than waiting for another screenshot.
-                        bool isThrowbackHint = RenderedTextMatchesSubstitutionTemplate(param_1, "PLATFORM_THROWBACKGRENADE");
+                        bool isThrowbackHint = !isQteHint && RenderedTextMatchesSubstitutionTemplate(param_1, "PLATFORM_THROWBACKGRENADE");
                         // Same audit, same class of bug, different marker style: SENTRY_PLACE
                         // ("Press ^3[{+attack}]^7 to place the turret.") uses the `[{+command}]`
                         // bracket-token substitution instead of "&&1", but resolves through the
@@ -7263,7 +7274,15 @@ void __cdecl Hook_DrawGlyphText(
                         // own real captured English text ("Left Mouse") contains the same kind
                         // of translatable word "Mouse" that ResolveGlyphAssetNameForKeyName's
                         // `_stricmp(keyName, "Left Mouse")` special case still matches literally.
-                        bool isSentryPlaceHint = RenderedTextMatchesSubstitutionTemplateWithMarker(param_1, "SENTRY_PLACE", "[{+attack}]");
+                        bool isSentryPlaceHint = !isQteHint && RenderedTextMatchesSubstitutionTemplateWithMarker(param_1, "SENTRY_PLACE", "[{+attack}]");
+                        // isQteHint itself (IsQteFont(font)) is now computed earlier, before
+                        // isMantleHint/isThrowbackHint/isSentryPlaceHint -- see that comment for
+                        // why (a real collision: PLATFORM_MANTLE's own template-prefix check
+                        // matched this QTE string too, since `highlighted` already resolves
+                        // correctly here via the "( E )" paren-stripping fix in
+                        // ResolveGlyphAssetNameForKeyName -- no dedicated TryGetQteGlyphAssetName
+                        // is needed, this only ever changes routing (own slot, size, pulsing
+                        // icon), not asset resolution.
 
                         char assetName[32] = {};
                         bool haveAssetName = isMantleHint ? TryGetMantleGlyphAssetName(assetName, sizeof(assetName))
@@ -7488,14 +7507,37 @@ void __cdecl Hook_DrawGlyphText(
                             // GameplayHintSlotId's own comment (overlay_hud.h) for the full account.
                             GameplayHintSlotId slotId = isReadyUpHint ? GameplayHintSlotId::ReadyUp
                                                        : isMantleHint ? GameplayHintSlotId::Mantle
+                                                       : isQteHint ? GameplayHintSlotId::Qte
                                                        : GameplayHintSlotId::Interact;
+                            // TEMP DIAGNOSTIC (issue #78, 2026-08-25): live report says the QTE
+                            // size fix still isn't applying, and the resolved asset/position math
+                            // in a real log capture is only consistent with slotId==Interact, not
+                            // Qte, even though the font gate (IsGameplayHintFont) confirmed
+                            // objectiveFont moments earlier in this SAME call. Logs the actual
+                            // decision this call made so the next retest proves (not guesses)
+                            // whether IsQteFont(font) itself is returning false here and why.
+                            if (g_modConfig.hudGlyphPositionLogging) {
+                                char qteDiagBuf[256];
+                                sprintf_s(qteDiagBuf,
+                                    "[qte-diag] fontName=\"%s\" isQteHint=%d isMantleHint=%d "
+                                    "isReadyUpHint=%d slotId=%d highlighted=\"%s\" assetName=\"%s\"",
+                                    LooksLikeValidPointer(reinterpret_cast<uintptr_t>(font->fontName)) ? font->fontName : "<invalid>",
+                                    isQteHint ? 1 : 0, isMantleHint ? 1 : 0, isReadyUpHint ? 1 : 0,
+                                    static_cast<int>(slotId), highlighted, assetName);
+                                LogFromController(qteDiagBuf);
+                            }
                             // Condensed role, 2026-08-24, live-reported: "condensed only works for
                             // the throwback prompt and turrets etc, the normal ui text looks better
                             // for stuff like buy stations, pickups and interacts" -- everything else
                             // (mantle, ready-up, plain interact) stays on the default UI role.
                             FontRole fontRole = (isThrowbackHint || isSentryPlaceHint) ? FontRole::Condensed : FontRole::Default;
+                            // flashIcon (2026-08-25, live-reported: "the circle on the prompt
+                            // should be opacity fade in out when in qte sequence") -- reuses the
+                            // SAME sine-wave alpha pulse Reload's own icon already uses (see
+                            // DrawOneGameplayHintSlot's flashIcon handling), just gated on
+                            // isQteHint instead of being permanently on/off.
                             RequestCustomHintOverlay(startX, startY, prefixText, suffixText, assetName, centerOnScreen,
-                                                       /*flashIcon=*/false, slotId, topLineText, fontRole);
+                                                       /*flashIcon=*/isQteHint, slotId, topLineText, fontRole);
                             suppressRealDraw = true;
 
                             // See the big comment above g_awaitingHintContinuationFont --
@@ -9379,6 +9421,25 @@ const char* ResolveGlyphAssetNameForKeyName(const char* rawKeyName)
     if (len == 0 || len >= sizeof(trimmed)) return "";
     memcpy(trimmed, rawKeyName + start, len);
     trimmed[len] = '\0';
+
+    // QTE prompts (issue #78, 2026-08-25 live capture: "Press ^3( E )^7" --
+    // Campaign scripted sequences and Survival's dog/hyena melee-struggle share this
+    // same objectiveFont-rendered convention) wrap the highlighted key name in a
+    // literal "( )" pair that neither kKeyActionTable nor any special case above
+    // expects -- strip exactly one layer of surrounding parens (plus the whitespace
+    // they enclose) here, structurally, rather than adding a one-off "( E )" string
+    // match, so any future QTE capture using this same wrapper resolves automatically.
+    if (len >= 2 && trimmed[0] == '(' && trimmed[len - 1] == ')') {
+        size_t innerStart = 1, innerEnd = len - 1;
+        while (innerStart < innerEnd && isspace(static_cast<unsigned char>(trimmed[innerStart]))) ++innerStart;
+        while (innerEnd > innerStart && isspace(static_cast<unsigned char>(trimmed[innerEnd - 1]))) --innerEnd;
+        size_t innerLen = innerEnd - innerStart;
+        if (innerLen > 0) {
+            memmove(trimmed, trimmed + innerStart, innerLen);
+            trimmed[innerLen] = '\0';
+            len = innerLen;
+        }
+    }
 
     const char* keyName = (_stricmp(trimmed, "ESC") == 0) ? "ESCAPE" : trimmed;
 

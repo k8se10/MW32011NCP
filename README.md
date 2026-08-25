@@ -1,33 +1,35 @@
 # MW3 Native Controller Support (Campaign & Survival)
 
-> **▶️ v0.3.3 (2026-08-18) — real, extended-session performance stuttering fixed.**
-> Three separate, evidence-backed causes found and fixed: `proxy_d3d9.log` was
-> opened in append mode and never trimmed between launches (grew past 2GB
-> across every session since install); the background controller-poll thread
-> never stopped rescanning every XInput slot plus DualSense on every ~4ms
-> tick, even once the active device was known; and a diagnostic log's dedup
-> logic didn't actually deduplicate, producing hundreds of thousands of lines
-> in a single combat session. A/B tested directly against v0.2.2 to confirm
-> the regression was real, not imagined — user-confirmed "much better"
-> afterward. One residual dip (looking toward enemies) remains open, most
-> likely genuine GPU-side rendering cost rather than anything this mod
-> controls — see `re_notes/known_issues.md` issue #79.
+> **▶️ v0.3.4 (2026-08-25) — DualSense's Bluetooth stick-garbling bug is
+> fixed.** A real signed-16-bit integer overflow at full-forward stick
+> deflection (the one input that could ever reach that exact extreme) was
+> found and fixed, confirmed live by the reporting Bluetooth tester. The fix
+> lives in code shared with the USB path, so it almost certainly applies
+> there too — but **USB DualSense input still has not been independently
+> confirmed working by a separate tester**, a pre-existing gap this fix
+> doesn't itself close. Vibration/gyro/adaptive triggers remain separate,
+> still-PREVIEW/WIP work. See `re_notes/known_issues.md`
+> issue #77 for the full account.
 >
-> **Also fixed**: vibration could get stuck on indefinitely across a pause or
-> menu; a real co-op bug where damage-taken rumble could trigger off a
-> teammate's hits instead of your own (mitigated pending further research into
-> the real "which player is me" mechanism — see issue #79's own entry).
+> **Also this release**: the in-game glyph position editor (F2/F3) was
+> extended from menu items to real gameplay hints (Interact/ReadyUp/Reload/
+> Mantle), with several real bugs found and fixed along the way; auto-mantle
+> while sprinting is now confirmed working (a real coupling bug found and
+> decoupled — still ships off by default, opt-in by design, see issue #62); a
+> glyph-icon rendering bug (a faint white cutout-fringe ring) was fixed; and
+> this project ships a new opt-in plugin API (hook install, memory read/
+> write, a text/glyph color-override extension point) with a working example
+> plugin.
 >
-> **Ships a first, PREVIEW/WIP pass at DualSense Bluetooth support — stick
-> input did not work correctly over Bluetooth in this release** (a real
-> signed-16-bit integer overflow at full-forward stick deflection, confirmed
-> live against real hardware). **Fixed in the next release** — DualSense now
-> has full input-level parity with XInput on both USB and Bluetooth (sticks,
-> buttons, triggers); vibration/gyro/adaptive triggers remain separate,
-> still-PREVIEW/WIP work. See issue #77 for the full account.
+> **Investigated, not shipped**: controller-glyph coverage for QTE prompts
+> (Campaign scripted sequences, Survival's dog/hyena melee-struggle) was
+> pursued in depth — real progress was made, but a still-unexplained sizing
+> bug surfaced on final retest, and it was deliberately parked rather than
+> ship a regression. These prompts render fully native/unmodified in this
+> release, unchanged from before. See issue #78.
 >
-> See `PATCHNOTES.md` for the full v0.3.3 changelog, including v0.3.2's
-> controller-glyph root-cause fix and native DualSense/gyro preview.
+> See `PATCHNOTES.md` for the full v0.3.4 changelog, including v0.3.3's
+> extended-session stutter fix and v0.3.2's controller-glyph root-cause fix.
 
 > **⚠️ SUPPORTED VERSIONS — only v0.2.2 (GitHub only) and v0.3.2+ are currently
 > distributed.**
@@ -43,7 +45,7 @@
 > **v0.2.2 is kept available as a stable, LTS-style anchor release — GitHub
 > only** (archived on Nexus). Everything between it and the current release
 > (v0.2.5, v0.3.0, v0.3.1, v0.3.1.h1) has been unpublished from GitHub
-> Releases as of v0.3.3 — that stretch was rapid, in-progress alpha churn, not
+> Releases as of v0.3.4 — that stretch was rapid, in-progress alpha churn, not
 > a stable point worth keeping downloadable alongside the current release.
 > **v0.2.2 and v0.3.2 onward are the only versions this project currently
 > distributes or supports.** Nothing has been deleted: the underlying git
@@ -64,15 +66,16 @@
 > Server) trigger on some scanners. Full source is in this repository if you
 > want to verify for yourself. See `known_issues.md` #64.
 
-**Status: ALPHA — v0.3.3 (2026-08-18), extended-session stutter fix + vibration/
-co-op rumble fixes + DualSense Bluetooth preview.** Changes below since v0.3.2,
+**Status: ALPHA — v0.3.4 (2026-08-25), DualSense input-parity fix + gameplay-hint
+glyph editor + new plugin API.** Changes below since v0.3.3,
 see `PATCHNOTES.md` for the full itemized list:
 
-- **Real, extended-session performance stuttering fixed** — three separate causes (log file never trimmed between launches, controller-poll thread never stopping its rescans, a diagnostic log's broken dedup) found and fixed via direct evidence, not guessed. User-confirmed "much better." One residual dip (looking toward enemies, likely GPU-side) remains open — see `re_notes/known_issues.md` issue #79.
-- **Vibration could get stuck on indefinitely across a pause or menu** — fixed.
-- **Co-op: damage-rumble could trigger off a teammate's hits, not your own** — mitigated (disables itself when a second real player entity is detected); the real underlying fix needs further research.
-- **DualSense Bluetooth support, PREVIEW/WIP in v0.3.3, stick input broken over Bluetooth at the time** — fixed in the next release: a real signed-16-bit integer overflow at full-forward stick deflection was found and fixed, and DualSense now has full input-level parity with XInput on both USB and Bluetooth (sticks, buttons, triggers). Vibration/gyro/adaptive triggers remain separate, still-PREVIEW/WIP work. See `re_notes/known_issues.md` issue #77.
-- Menu-glyph calibration work covering every screen reachable from the main menu, plus a new in-game click-and-drag glyph position editor (dev tool).
+- **DualSense's Bluetooth stick-garbling bug is fixed, confirmed live by the reporting tester** — a real signed-16-bit integer overflow at full-forward stick deflection was found and fixed. The fix lives in code shared with the USB path, so it almost certainly applies there too, but USB DualSense input still has not been independently confirmed working by a separate tester (a pre-existing gap, not something this fix closes on its own). Vibration/gyro/adaptive triggers remain separate, still-PREVIEW/WIP work. See `re_notes/known_issues.md` issue #77.
+- **In-game glyph position editor (F2/F3) extended from menu items to real gameplay hints** (Interact/ReadyUp/Reload/Mantle) — several real bugs found and fixed along the way (F3 silently never exporting gameplay-hint calibrations, Mantle wrongly sharing Interact's position/suppression state, ReadyUp wrongly suppressing Reload, a Mantle drag-handle allocation-pool bug).
+- **Auto-mantle while sprinting — confirmed working** (a real coupling bug found and decoupled) — still ships off by default, opt-in by design. See `re_notes/known_issues.md` issue #62.
+- **New opt-in plugin API** — hook installation, direct process memory read/write, a text/glyph color-override extension point, shipped with a working RGB Text example plugin. Off by default; see `PLUGIN_API.md`.
+- **Glyph-icon rendering bug fixed** — a faint white cutout-fringe ring, root-caused to non-premultiplied alpha.
+- **Investigated, not shipped**: controller-glyph coverage for QTE prompts (Campaign scripted sequences, Survival's dog/hyena melee-struggle) — real progress made, but deliberately parked after a still-unexplained sizing bug surfaced on final retest, rather than ship a regression. Renders fully native/unmodified, unchanged from before. See `re_notes/known_issues.md` issue #78.
 
 > ⚠ **Known gap: a few menu glyph icons can land in a slightly wrong POSITION
 > under non-English languages** ⚠
@@ -156,7 +159,7 @@ live-tested by the developer during actual play, not just built-and-assumed.
 | Real in-game controller options menu | **Superseded, v0.3.1**: a full replacement screen exists (every real vanilla setting, real rebind capture) but ships as a preview/WIP feature — off by default, `mw3ncp_config.ini`-only, not yet played. See Feature list and `known_issues.md` #66 |
 | Highlighted-item A-glyph (menu list navigation) | **Shown only on an explicit, live-verified allowlist** (main menu, Campaign hub, and the Leave Lobby/Choose Content Pack popups), a release-safety policy adopted 2026-08-03 after an audit found several previously-assumed-working screens either unconfirmed or actively broken. Every other menu screen shows no glyph at all, rather than a possibly-wrong one, until individually re-verified. See `re_notes/known_issues.md` issue #51's coverage table for the full per-screen breakdown |
 | Vibration/rumble | Fire rumble via a re-verified-safe hook; damage rumble via a per-frame health poll instead of a hook, since the candidate damage-hook target turned out unsafe on closer inspection. `FireIntensity` is maxed at its software ceiling (`1.0`) — if still weak on your controller, that's very likely the controller's own hardware, not a remaining config fix. **Known gaps**: doesn't register hits absorbed by Survival's Body Armor (a separate value from real health, not yet located in memory); in 2-player Survival co-op, damage-rumble disables itself entirely rather than risk triggering off a teammate's hits, pending real research into identifying which player is you (v0.3.3, issue #79). See `re_notes/known_issues.md` issues #24/#63/#79 |
-| **Auto-mantle while sprinting** | **Confirmed working (v0.3.3, issue #62)** after two earlier fix rounds that couldn't be live-confirmed — a real coupling bug (the mantle-fire gate accidentally required an unrelated icon lookup to succeed first) was found and decoupled. **Still ships OFF by default** (`AutoMantleEnabled=0`), opt-in by design, not because it doesn't work |
+| **Auto-mantle while sprinting** | **Confirmed working (v0.3.4, issue #62)** after two earlier fix rounds that couldn't be live-confirmed — a real coupling bug (the mantle-fire gate accidentally required an unrelated icon lookup to succeed first) was found and decoupled. **Still ships OFF by default** (`AutoMantleEnabled=0`), opt-in by design, not because it doesn't work |
 
 ### ⬜ Not working / not implemented at all
 
@@ -307,7 +310,7 @@ is still open, not how rough what already works is.
 | Stage | Version range | What it means here |
 |---|---|---|
 | **Pre-alpha** | `0.1.0` – `0.1.5` | Core systems land one at a time — movement/look/combat, stance/sprint, pause menu, and menu navigation done; aim assist, vibration, killstreaks, and the controller options menu still being built out. |
-| **Alpha** *(current, v0.3.3)* | `0.1.5` – `0.4.0` | The remaining major systems get built and land. **v0.2.0**: Sprint fully native (no custom timer, Extreme Conditioning resolved for free), 3 of 4 Survival killstreaks confirmed working, menu/UI navigation extended to the main menu/title screen and slider values. **v0.2.1**: console-accurate look acceleration ramp, and Hold Breath (L3 while ADS'd) fully working as genuinely native input after an extensive debugging pass. **v0.2.2**: risk-mitigation release — aim assist permanently removed (not just disabled) following VAC research; see the security notice at the top of this file. Also this project's first LTS-style stabilization release — no follow-up for about a week and a half. **v0.2.5**: crouch/stance reliability hotfix and the on-screen notification system. **v0.3.0**: controller-glyph icons (in-game hints, menu corner hints, custom cursor overlay), the highlighted-item A-glyph (shown on a verified-only allowlist, adopted after an audit found several previously-assumed-working screens weren't), real controller vibration (physically confirmed, strength maxed out in software), and the crouch/UI bug batch from the first public Survival co-op stream. **Two things attempted but NOT working in v0.3.0, shipped honestly flagged rather than silently absent**: auto-mantle while sprinting (implemented, live-tested twice, still doesn't fire reliably — shipped disabled) and vibration for Survival Body Armor hits (a separate, unlocated value). **v0.3.1**: fixed controller-glyph icons never appearing for non-English game languages (root-caused against the game's own real localization resolver, confirmed live); also ships a from-scratch replacement Options screen covering every real vanilla setting plus real rebind capture, as an explicitly labeled preview/WIP feature — off by default, `mw3ncp_config.ini`-only, not yet played. **v0.3.1.h1**: feature-free hotfix — a critical mouse-lag regression (confirmed live), non-16:9 glyph-visibility and scaling fixes (two separate confirmed bug classes), and a real Options-screen crash-risk fix. **v0.3.2**: root-caused and fixed the master glyph-enable flag shipping hardcoded off since v0.3.0 (issue #74), and a first PREVIEW/WIP pass at native DualSense (USB) support + gyro-aim. **v0.3.3**: real, extended-session performance stuttering fixed (three evidence-backed causes), vibration stuck-on and co-op damage-rumble fixes, and a first PREVIEW/WIP pass at DualSense Bluetooth support — stick input over Bluetooth confirmed broken at the time. **Since v0.3.3, not yet in a tagged release**: auto-mantle while sprinting is now confirmed working (a real coupling bug found and decoupled, issue #62) though it still ships off by default by design; DualSense now has full input-level parity with XInput on both USB and Bluetooth (a real signed-16-bit integer overflow at full-forward stick deflection, found and fixed, issue #77) — vibration/gyro/adaptive triggers remain separate PREVIEW/WIP work; and the in-game glyph position editor (F2/F3) was extended from menu items to real gameplay hints. **Still ahead in this stage**: playtesting the preview Options screen (and closing its known gaps — window mode setting, resolution scaling), re-verifying the remaining A-glyph screens, fixing Survival Body Armor vibration, per-animation-step reload vibration, Predator Missile's guidance aim, and remaining Campaign/Special Ops compatibility gaps. Multiplayer groundwork may start here, pending the anti-cheat question being resolved first. |
+| **Alpha** *(current, v0.3.4)* | `0.1.5` – `0.4.0` | The remaining major systems get built and land. **v0.2.0**: Sprint fully native (no custom timer, Extreme Conditioning resolved for free), 3 of 4 Survival killstreaks confirmed working, menu/UI navigation extended to the main menu/title screen and slider values. **v0.2.1**: console-accurate look acceleration ramp, and Hold Breath (L3 while ADS'd) fully working as genuinely native input after an extensive debugging pass. **v0.2.2**: risk-mitigation release — aim assist permanently removed (not just disabled) following VAC research; see the security notice at the top of this file. Also this project's first LTS-style stabilization release — no follow-up for about a week and a half. **v0.2.5**: crouch/stance reliability hotfix and the on-screen notification system. **v0.3.0**: controller-glyph icons (in-game hints, menu corner hints, custom cursor overlay), the highlighted-item A-glyph (shown on a verified-only allowlist, adopted after an audit found several previously-assumed-working screens weren't), real controller vibration (physically confirmed, strength maxed out in software), and the crouch/UI bug batch from the first public Survival co-op stream. **Two things attempted but NOT working in v0.3.0, shipped honestly flagged rather than silently absent**: auto-mantle while sprinting (implemented, live-tested twice, still doesn't fire reliably — shipped disabled) and vibration for Survival Body Armor hits (a separate, unlocated value). **v0.3.1**: fixed controller-glyph icons never appearing for non-English game languages (root-caused against the game's own real localization resolver, confirmed live); also ships a from-scratch replacement Options screen covering every real vanilla setting plus real rebind capture, as an explicitly labeled preview/WIP feature — off by default, `mw3ncp_config.ini`-only, not yet played. **v0.3.1.h1**: feature-free hotfix — a critical mouse-lag regression (confirmed live), non-16:9 glyph-visibility and scaling fixes (two separate confirmed bug classes), and a real Options-screen crash-risk fix. **v0.3.2**: root-caused and fixed the master glyph-enable flag shipping hardcoded off since v0.3.0 (issue #74), and a first PREVIEW/WIP pass at native DualSense (USB) support + gyro-aim. **v0.3.3**: real, extended-session performance stuttering fixed (three evidence-backed causes), vibration stuck-on and co-op damage-rumble fixes, and a first PREVIEW/WIP pass at DualSense Bluetooth support — stick input over Bluetooth confirmed broken at the time. **v0.3.4**: DualSense's Bluetooth stick-garbling bug fixed, confirmed live (a real signed-16-bit integer overflow at full-forward stick deflection, issue #77) — the fix lives in code shared with the USB path but USB itself still hasn't been independently confirmed by a separate tester; vibration/gyro/adaptive triggers remain separate PREVIEW/WIP work; auto-mantle while sprinting is now confirmed working (a real coupling bug found and decoupled, issue #62) though it still ships off by default by design; the in-game glyph position editor (F2/F3) was extended from menu items to real gameplay hints, with several real bugs found and fixed along the way; a glyph-icon fringing bug was fixed; and this project ships a new opt-in plugin API (hook install, memory read/write, a text/glyph color-override extension point). **Investigated, not shipped in v0.3.4**: controller-glyph coverage for QTE prompts (Campaign scripted sequences, Survival's dog/hyena melee-struggle) — real progress made, but deliberately parked after a still-unexplained sizing bug surfaced on final retest; renders fully native/unmodified, unchanged from before (issue #78). **Still ahead in this stage**: playtesting the preview Options screen (and closing its known gaps — window mode setting, resolution scaling), re-verifying the remaining A-glyph screens, fixing Survival Body Armor vibration, per-animation-step reload vibration, Predator Missile's guidance aim, QTE controller-glyph coverage, and remaining Campaign/Special Ops compatibility gaps. Multiplayer groundwork may start here, pending the anti-cheat question being resolved first. |
 | **Beta** | `0.4.0` – `1.0.0` | Should be practically feature-complete — remaining work is closing gaps, fixing what live testing surfaces, and extending reach (other MW3 clients, Multiplayer if the anti-cheat question resolves favorably) rather than building brand-new core systems from scratch. |
 | **1.0 (final)** | `1.0.0`+ | Feature-complete against this project's full scope, stable, and treated as a real release rather than an actively-shifting work in progress. |
 
@@ -437,7 +440,7 @@ there).
   `CallKbuttonUp` mechanism as Sprint/ADS/Reload — genuinely native input, no
   key-synthesis needed. See `re_notes/known_issues.md` issue #6/#24 for the full
   trail.
-- **Auto-mantle — confirmed working (v0.3.3), still off by default by design**
+- **Auto-mantle — confirmed working (v0.3.4), still off by default by design**
   (`[Movement] AutoMantleEnabled=0` in `mw3ncp_config.ini`, opt-in). While sprinting
   and pushing the stick fully forward (within a configurable ~45° cone), it
   automatically drives the same real native mantle command Jump already uses,
@@ -450,7 +453,7 @@ there).
   between the render hook and gameplay-tick hook) couldn't be live-confirmed
   working; the actual root cause was a real coupling bug — the mantle-fire gate
   accidentally also required this project's own icon lookup to succeed, an
-  unrelated concern — found and decoupled in v0.3.3. Direct confirmation after the
+  unrelated concern — found and decoupled in v0.3.4. Direct confirmation after the
   fix: "it works now." See `re_notes/known_issues.md` issue #62.
 
 ### Menu & pause
@@ -509,7 +512,7 @@ migration runs — nothing to do on your end, and nothing is lost.
 | `[Stance]` | `ProneHoldThresholdMs` | `400` | B: hold-vs-tap threshold for the stance ladder |
 | `[Interact]` | `HoldThresholdMs` | `300` | X: how long Interact must be held before it fires (a quick tap reloads instead, same as console) |
 | `[Survival]` | `ReadyUpHoldThresholdMs` | `740` | Y: hold-to-ready-up threshold between Survival waves |
-| `[Movement]` | `AutoMantleEnabled` | `0` | **Confirmed working (v0.3.3), still off by default by design — opt in deliberately.** Automatically mantles over obstacles while sprinting and pushing the stick fully forward, gated on the game's own real ledge-availability signal (not just stance+stick — an earlier version without this misfired into constant jumping on flat ground). See `re_notes/known_issues.md` issue #62 |
+| `[Movement]` | `AutoMantleEnabled` | `0` | **Confirmed working (v0.3.4), still off by default by design — opt in deliberately.** Automatically mantles over obstacles while sprinting and pushing the stick fully forward, gated on the game's own real ledge-availability signal (not just stance+stick — an earlier version without this misfired into constant jumping on flat ground). See `re_notes/known_issues.md` issue #62 |
 | `[Movement]` | `AutoMantleForwardConeDegrees` | `45` | Total cone width (not half-angle), centered on straight-forward, the left stick must fall within for auto-mantle to consider firing |
 | `[Movement]` | `AutoMantleMinStickMagnitude` | `0.9` | Left stick deflection `[0,1]` must be at least this close to full for auto-mantle to consider firing |
 | `[Bindings]` | `ButtonLayout` | `Default` | `Default` / `Tactical` / `Lefty` / `TacticalLefty` — see table below |
@@ -605,7 +608,7 @@ state directly, as described above:
 | Button-glyph UI prompts | Real controller-glyph icons in in-game interact hints and menu UI corner hints; custom mouse cursor overlay | ✅ Confirmed live via a custom-hint-redraw overlay — see `re_notes/known_issues.md` issues #48/#50/#52. **v0.3.2**: fixed a project-side master-flag bug that had kept glyphs from drawing for everyone since v0.3.0 — see issue #74 |
 | Highlighted-item A-glyph (menu list navigation) | Real controller-glyph icon on whichever menu-list item is currently focused | 🟡 Shown only on a live-verified allowlist (main menu, Campaign hub, two popups); every other screen intentionally shows nothing rather than a possibly-wrong glyph, pending individual re-verification (see `re_notes/known_issues.md` issue #51) |
 | Vibration/rumble | Controller rumble on weapon fire/taking damage | 🟡 Fire rumble via a re-verified hook, damage rumble via a per-frame health poll (not a hook, since the recommended hook target turned out unsafe). Physically confirmed working, strength maxed out in software. Known gap: doesn't register Survival Body Armor hits (see `re_notes/known_issues.md` issues #24/#63) |
-| Auto-mantle (sprint) | Automatically mantle over obstacles while sprinting + pushing the stick fully forward | 🟡 **Confirmed working (v0.3.3)**, still off by default (`AutoMantleEnabled=0`) — opt in deliberately (see `re_notes/known_issues.md` issue #62) |
+| Auto-mantle (sprint) | Automatically mantle over obstacles while sprinting + pushing the stick fully forward | 🟡 **Confirmed working (v0.3.4)**, still off by default (`AutoMantleEnabled=0`) — opt in deliberately (see `re_notes/known_issues.md` issue #62) |
 
 **B's stance ladder**, matching real Xbox 360 CoD behavior (not a raw hold of either
 bit):
@@ -841,7 +844,7 @@ See `re_notes/known_issues.md` for the full, actively-tracked list.
   data is already on record (`re_notes/iw5sp.md`) to build it from once a
   genuine "reload is actually happening" trigger is found. See
   `re_notes/known_issues.md` issues #24/#63.
-- **Auto-mantle while sprinting — confirmed working (v0.3.3), still shipped
+- **Auto-mantle while sprinting — confirmed working (v0.3.4), still shipped
   disabled by design** (`[Movement] AutoMantleEnabled=0` in `mw3ncp_config.ini`,
   opt-in). Drives the same real native mantle command Jump already uses whenever
   the player is sprinting and pushing the stick fully forward within a
@@ -851,7 +854,7 @@ See `re_notes/known_issues.md` for the full, actively-tracked list.
   the same input. Two earlier fix rounds (that gate, then a render/gameplay-tick
   timing-gap fix) couldn't be live-confirmed working; the real root cause was a
   coupling bug (the mantle-fire gate accidentally also required this project's
-  own icon lookup to succeed) found and decoupled in v0.3.3. See
+  own icon lookup to succeed) found and decoupled in v0.3.4. See
   `re_notes/known_issues.md` issue #62.
 - Survival ready-up (hold Y) uses a synthetic F5 keypress rather than a real engine
   call — the real native trigger was never found despite an extensive search (see
