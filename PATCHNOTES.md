@@ -206,6 +206,21 @@ reverse-engineering trail behind each entry.
   never actually corrupted). Now calls `HidD_SetNumInputBuffers(handle, 3)`
   right after opening, matching DS4Windows' own known-working value. Needs a
   real BT DualSense tester to confirm before this issue can be closed.
+7. **F3 export never fired for gameplay-hint (Interact/ReadyUp/Reload) glyph
+  calibration** (live-reported: "find out why you havent been getting my f3
+  exports"). Root cause: F3 was only ever polled inside
+  `EditGlyphPositionsForFrame`, the MENU-ITEM editor's own per-frame function,
+  which only runs while a real menu item is focused -- never during actual
+  gameplay. The gameplay-hint drag handles (TEXT/ICON, added 2026-08-24) worked
+  fine and looked complete, but nothing polled F3 anywhere reachable while a
+  gameplay hint was actually on screen, so the export half of that feature was
+  silently dead since the day it was built. Fixed by polling F3 once per frame
+  in `DrawGameplayHintSlotsIfRequested` (`overlay_hud.cpp`) instead, whenever
+  any gameplay hint is visible. Uncovered a second, related bug while wiring
+  this: `ExportGlyphEditPositions` (`analog_input_hooks.cpp`) had internal
+  (anonymous-namespace) linkage, the same LNK2019-class bug this project already
+  hit once (`AppendGameplayHintEditExport`/`InvalidateTextTextureCachesOnConfigChange`,
+  2026-08-24) -- fixed the same surgical close/reopen way.
 
 ---
 

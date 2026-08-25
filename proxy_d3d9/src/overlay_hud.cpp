@@ -59,6 +59,7 @@ extern "C" HWND GetGameWindow(); // defined in d3d9_hook.cpp
 extern "C" bool GetLastMouseMoveClientPos(int& outX, int& outY); // defined in d3d9_hook.cpp
 extern "C" bool IsLeftMouseButtonHeld(); // defined in d3d9_hook.cpp
 extern "C" bool IsGlyphPositionEditModeActive(); // defined in analog_input_hooks.cpp -- F2 live toggle
+void ExportGlyphEditPositions(); // defined in analog_input_hooks.cpp -- F3 export (menu-item editor's own trigger; also called from here now for gameplay hints, see DrawGameplayHintSlotsIfRequested)
 // Full-scope Options expansion (2026-08-06, issue #66) -- real keybind rebind
 // capture, see d3d9_hook.cpp's own header comment on this block for the full design.
 extern "C" void StartKeybindCapture(); // defined in d3d9_hook.cpp
@@ -1756,6 +1757,26 @@ void DrawGameplayHintSlotsIfRequested(void* device)
         if (slot.requestedThisFrame) { anyRequested = true; break; }
     }
     if (!anyRequested) return;
+
+    // BUG FOUND 2026-08-25, live-reported: "find out why you havent been getting
+    // my f3 exports." F3 export existed ONLY inside EditGlyphPositionsForFrame
+    // (analog_input_hooks.cpp), the MENU-ITEM editor's own per-frame function --
+    // that function is only ever called while a real menu item is focused, which
+    // never happens during actual gameplay. The gameplay-hint drag handles built
+    // here (DrawOneGameplayHintSlot's TEXT/ICON hit-test) worked fine and LOOKED
+    // complete, but F3 was never polled anywhere reachable while a gameplay hint
+    // was actually on screen -- the export half of the feature was silently dead
+    // for this entire code path since the day it was built. Polled once per
+    // frame here (not inside DrawOneGameplayHintSlot itself, which runs per-slot
+    // and would fire the export 2-3x on one keypress) so it fires whenever ANY
+    // gameplay hint is visible to edit, matching the menu-editor's own "F3 while
+    // something's actually focused/visible" convention.
+    if (g_modConfig.glyphPositionEditMode && IsGlyphPositionEditModeActive()) {
+        static bool s_lastGameplayF3Held = false;
+        bool f3Held = (GetAsyncKeyState(VK_F3) & 0x8000) != 0;
+        if (f3Held && !s_lastGameplayF3Held) ExportGlyphEditPositions();
+        s_lastGameplayF3Held = f3Held;
+    }
 
     float scaleX = 1.0f, scaleY = 1.0f;
     GetResolutionScale(device, scaleX, scaleY);
