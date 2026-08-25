@@ -97,40 +97,38 @@ reverse-engineering trail behind each entry.
   X/Y/LB/RB/LT/RT) and internal engine-matching identifiers (real bind/dvar/menu-group
   names this project reads or writes) were deliberately left untouched -- only text
   this project itself renders to the player changed.
-7. **F2 (glyph position editor) now also shows a real mouse cursor and suppresses
-  AI interruption mid-calibration, turning it into a genuine debug tool usable
+7. **F2 (glyph position editor) now also shows a real mouse cursor and blocks new
+  AI spawns mid-calibration, turning it into a genuine debug tool usable
   mid-gameplay, not just in menus.** Direct request: "we need our mouse cursor
-  available in gameplay when we press f2." **Two earlier attempts at also
-  FREEZING gameplay entirely (this same session) were both wrong and reverted,
-  then the whole freeze approach itself was dropped.** First called
-  `OpenPauseMenu` unconditionally -- live-reported broken ("gameplay tick doesnt
-  freeze") because that call alone never sets `cl_paused`. Second switched to the
-  real `cl_paused`/`SetMenuState` path (mirroring Start's own proven pause-menu
-  handler exactly) -- also live-reported broken, since that path's entire purpose
-  is to open the real native pausedmenu UI, stealing input/focus. Third used the
-  real `timescale` dvar to freeze world time without opening any menu -- this one
-  worked mechanically, but was itself dropped per direct redirect: freezing time
-  outright isn't actually what's wanted, since it also freezes any live rendering
-  feedback for whatever's being calibrated. **Final approach: don't freeze
-  anything -- suppress the actual interruption source instead.** Two real dvars
-  confirmed present in `iw5sp.exe` via a live PE string scan: `ai_nosight`
-  (this engine's own equivalent to the WaW/BO Zombies "AI can't see the player"
-  toggle -- BO1/BO2's own version turned out to be a script-side
-  `threat_ignore()` call, not a plain dvar, so IW5 has a different, native answer
-  to the same idea) and `ai_disableSpawn` (blocks new AI from spawning at all).
-  Both submitted via the same real, already-confirmed `Cbuf_AddText` mechanism
-  used for the (now-reverted) `timescale` attempt, restored to `0` when the
-  editor toggles back off. The custom mouse cursor (`DrawCustomCursorIfNeeded`)
-  force-shows whenever `IsGlyphPositionEditModeActive()` is true, bypassing every
-  native visFlag/uiState/`IsMenuActive` gate it normally respects -- the editor is
-  a debug tool, not a normal play state, so it deliberately ignores those
-  heuristics rather than extending them with another special case. Both `ai_*`
-  dvars only ever get touched while `glyphPositionEditMode` (the debug master
-  switch, off by default) is on and the editor is actively toggled via F2 --
-  never during normal play. **Pending live confirmation** -- both dvars are
-  confirmed present in the binary but their exact runtime behavior (does
-  `ai_nosight` genuinely stop AI from engaging, does `ai_disableSpawn` cover
-  Survival's own wave-spawn system) hasn't been played live yet.
+  available in gameplay when we press f2." **Multiple earlier attempts this same
+  session were tried, rejected, and reverted before landing on the final
+  approach** -- full trail in git history and `re_notes/known_issues.md`. Two
+  tried FREEZING gameplay entirely (`OpenPauseMenu` alone -- didn't set
+  `cl_paused`; `cl_paused`/`SetMenuState` -- opened the real pausedmenu UI,
+  stealing input/focus) and were dropped once a working freeze (`timescale 0`)
+  turned out to freeze rendering feedback too, which isn't actually wanted.
+  Three more tried suppressing AI targeting specifically without freezing
+  anything: `ai_nosight` turned out to be a dead/unregistered string (confirmed
+  via real Ghidra static RE); `ai_playerLOSRange`/`ai_playerNearRange`/
+  `ai_playerFarRange`/`ai_playerADS_LOSRange` are genuinely registered but
+  (per the same static RE pass) govern FRIENDLY-AI cover/accuracy tuning, not
+  enemy detection; `g_ai` (the real master AI-enable dvar, also found via that
+  RE pass) still didn't stop enemies from engaging when live-tested. **Settled
+  on `ai_disableSpawn`** (blocks new AI from spawning; existing AI stays alive
+  and can still engage) -- its known side effect of sometimes tripping an early
+  Survival round transition (round-completion logic appears to check "no more
+  enemies queued to spawn") was explicitly accepted as an adequate tradeoff
+  rather than chased further. Submitted via the real, confirmed `Cbuf_AddText`
+  mechanism, restored to `0` when the editor toggles back off, never touched
+  outside `glyphPositionEditMode` (off by default) + F2 active. The custom mouse
+  cursor (`DrawCustomCursorIfNeeded`) force-shows whenever
+  `IsGlyphPositionEditModeActive()` is true, bypassing every native
+  visFlag/uiState/`IsMenuActive` gate it normally respects. **Confirmed live** --
+  "ai disable spawn does what it says, all ai stays alive and they cant spawn."
+  (Note: this engine's retail build has no `notarget`-style cheat command at
+  all -- confirmed absent via a full binary string scan, same as `god`/`give`/
+  every `con_`-prefixed console string, so that classic id-engine approach
+  wasn't available here.)
 
 ### Fixed
 1. **Glyph icon jaggedness (controller-glyph hint overlays/menu corner hints/cursor).**
@@ -191,6 +189,23 @@ reverse-engineering trail behind each entry.
   fill covering the same span. Fixed by widening the shared inset from a bare `8`
   (independently redeclared at five separate call sites) to one new shared constant,
   `kTextRenderMarginPx = 11` (`overlay_hud.cpp`), used everywhere instead.
+5. **DualSense accel/gyro axes were swapped** (`dualsense_input.cpp`,
+  `kOffsetAccel`/`kOffsetGyro`) -- found via a fresh comparison against
+  ds4windowsapp/DS4Windows' own `DualSenseDevice.cs`, which reads gyro first
+  (base offset) then accel second (base+6), the opposite order this project had.
+  Affects gyro-aim; unrelated to the still-open Bluetooth stick-input bug below.
+  Not yet live-tested against real hardware.
+6. **Possible fix, pending live confirmation, for known_issues.md issue #77**
+  (Bluetooth DualSense stick input garbled/unusable, three prior real fixes
+  insufficient). The same DS4Windows comparison found this project never called
+  `HidD_SetNumInputBuffers` after opening the raw HID device, leaving Windows'
+  default input-buffer queue depth in place -- if this project's poll cadence
+  doesn't keep up with the DualSense's real BT report rate, unread reports queue
+  and get consumed late/stale, a plausible explanation for a "garbled but not
+  corrupted" symptom (CRC validation already confirmed the bytes it does read are
+  never actually corrupted). Now calls `HidD_SetNumInputBuffers(handle, 3)`
+  right after opening, matching DS4Windows' own known-working value. Needs a
+  real BT DualSense tester to confirm before this issue can be closed.
 
 ---
 

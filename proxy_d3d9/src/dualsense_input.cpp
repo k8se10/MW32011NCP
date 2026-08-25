@@ -72,8 +72,15 @@ constexpr int kOffsetRightTrigger = 5;
 constexpr int kOffsetButtonsAndDpad = 7;
 constexpr int kOffsetButtonsA = 8;
 constexpr int kOffsetButtonsB = 9;
-constexpr int kOffsetAccel = 15; // 3x int16 LE: X, Y, Z
-constexpr int kOffsetGyro = 21;  // 3x int16 LE: X, Y, Z
+// FIXED 2026-08-25 (known_issues.md issue #77 follow-up): these two were
+// swapped -- confirmed via a fresh comparison against ds4windowsapp/DS4Windows'
+// own DualSenseDevice.cs, which reads GYRO first (base+0) then ACCEL second
+// (base+6) from the same absolute base offset (17 for BT) this project already
+// uses. This project had them the other way around. Doesn't explain issue #77's
+// own BT stick-garbling symptom (unrelated fields), but is a real, separate bug
+// affecting gyro-aim -- fixed here while it was found.
+constexpr int kOffsetGyro = 15;  // 3x int16 LE: X, Y, Z
+constexpr int kOffsetAccel = 21; // 3x int16 LE: X, Y, Z
 
 int16_t ReadInt16LE(const unsigned char* buf, int offset)
 {
@@ -216,6 +223,24 @@ bool DualSense_EnsureOpen()
 
     g_deviceHandle = TryOpenDualSense(g_isBluetooth);
     if (g_deviceHandle != INVALID_HANDLE_VALUE) {
+        // Input-buffer depth (2026-08-25, known_issues.md issue #77 follow-up:
+        // BT stick input garbled/unusable, root cause not found across three
+        // otherwise-correct fixes). Found via a fresh comparison against
+        // ds4windowsapp/DS4Windows's own DualSenseDevice.cs, which explicitly
+        // calls HidD_SetNumInputBuffers(handle, 3) right after opening, before
+        // starting its read loop -- this project never called it at all, leaving
+        // Windows' own default HID input-buffer queue depth in place. If this
+        // project's poll cadence doesn't keep pace with the DualSense's real BT
+        // report rate, unread reports queue up and get consumed late/stale --
+        // exactly the kind of "garbled but not corrupted" (CRC always passes)
+        // symptom issue #77 describes, and consistent with that issue's own fix
+        // #2 (poll-priority contention) already being in the same read-timing
+        // problem family. Non-fatal on failure (logged only), same "don't block
+        // on a best-effort tuning call" treatment as the feature-report handshake
+        // below. Pending live confirmation from a real BT DualSense tester.
+        if (!HidD_SetNumInputBuffers(g_deviceHandle, 3)) {
+            LogFromController("[dualsense] HidD_SetNumInputBuffers(3) FAILED -- continuing with the OS default buffer depth");
+        }
         // BT-specific handshake (2026-08-16): the reference implementation's own
         // initDeviceContext reads feature report 0x05 once, right after opening,
         // for any Bluetooth-connected DualSense -- confirmed necessary via that
