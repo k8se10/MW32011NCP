@@ -414,6 +414,22 @@ deliberate, VAC-safer choice, not a stopgap).
   the Special Ops synthetic-Back path. **Confirmed live** -- direct user
   report: "popup menus seem fixed though i tested buy stations only" (the
   exact reported case; other popup families weren't separately re-tested).
+15. **Dog/hyena melee-struggle prompts (Survival) -- and Campaign QTE/
+  scripted-sequence prompts -- were completely invisible to the glyph
+  pipeline, not just uncalibrated.** Live-reported: "it just comes up with
+  'Melee [F]'." Checked `proxy_d3d9.log`'s unconditional font diagnostic and
+  found `fonts/objectiveFont` -- a font this project already knew about
+  (flagged by name back on 2026-07-21, "a real, substantial candidate,"
+  1360 real uses, then deferred and never revisited) -- was the one font
+  firing this session with zero allowlist coverage in `IsGameplayHintFont`,
+  meaning these prompts' draw calls never even reached the span-detection
+  code, let alone failed to match. Fixed by adding `fonts/objectiveFont` to
+  the allowlist. Direct user confirmation significantly widens this fix's
+  real scope: "yes this is the same font used in scripted sequences and
+  qtes in campaign too" -- likely closes a whole previously-uncovered
+  category of Campaign prompts, not just the one originally-reported
+  Survival encounter. Builds clean; **not yet deployed or live-confirmed**
+  (game was running at fix time) -- see `known_issues.md` issue #78.
 
 ### Groundwork
 1. **New glyph-style auto-detect** (user-requested: "a default option for

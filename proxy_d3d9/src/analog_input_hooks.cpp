@@ -5942,7 +5942,33 @@ bool IsGameplayHintFont(const DiagFont* font)
            _stricmp(font->fontName, "fonts/hudSmallFont") == 0 ||
            _stricmp(font->fontName, "fonts/hudBigFont") == 0 ||
            _stricmp(font->fontName, "fonts/bigFont") == 0 ||
-           _stricmp(font->fontName, "fonts/normalFont") == 0;
+           _stricmp(font->fontName, "fonts/normalFont") == 0 ||
+           // fonts/objectiveFont (2026-08-25, issue #78 follow-up) -- real,
+           // substantial font (1360 uses in an earlier 18,500-line sample, per this
+           // file's own hudBigFont-retarget comment, 2026-07-21) that was flagged as
+           // a real candidate back then but never actually added to this allowlist.
+           // Live-reported: the dog/hyena melee-struggle escape prompt renders as
+           // "Melee [F]" -- confirmed via proxy_d3d9.log that objectiveFont is the
+           // ONLY font firing this session with no known allowlist coverage at all,
+           // meaning that prompt (and anything else objectiveFont renders) has been
+           // completely invisible to this whole glyph-substitution pipeline, not
+           // just failing to match a pattern -- Hook_DrawGlyphText's own gameplay-
+           // hint block never even reached this font's draw calls to look. Added
+           // here so the EXISTING span-detection/logging machinery can see it for
+           // the first time; whether "Melee [F]" contains a real "^N...^7" span
+           // (in which case the existing generic path may already handle it) or
+           // needs its own bracket-specific detection (like SENTRY_PLACE's
+           // "[{+command}]" precedent) is still unconfirmed -- this change makes
+           // that answerable from the next real capture instead of guessing.
+           // Direct user confirmation, same pass: "yes this is the same font used
+           // in scripted sequences and qtes in campaign too" -- objectiveFont's real
+           // scope is broader than just the Survival dog/hyena prompt, covering
+           // Campaign QTE/scripted-sequence prompts too. This one allowlist addition
+           // is therefore a real candidate to close a whole previously-uncovered
+           // category of hints, not just one specific encounter -- worth a live
+           // check across BOTH contexts (Survival melee-struggle AND a Campaign QTE)
+           // once captured, not just the one that was originally reported.
+           _stricmp(font->fontName, "fonts/objectiveFont") == 0;
 }
 
 // Menu-hint counterpart to IsGameplayHintFont above (issue #48, menu-glyph pass,
