@@ -256,6 +256,22 @@ reverse-engineering trail behind each entry.
   ones that shouldnt and currently correctly dont show together is the
   interact and reload at the same time." Narrowed the suppression to
   Interact-only -- ReadyUp and Reload now coexist freely.
+9. **Mantle's on-screen position was silently coupled to Interact/pickup/
+  buy-station's own F2/F3 editor calibration, and mantle showing silently
+  suppressed Reload** -- both were the same root cause: mantle shared
+  `GameplayHintSlotId::Interact` (same slot every other Interact-role hint
+  uses) rather than having its own slot, the exact same "silently fighting
+  over one shared slot" bug class ReadyUp was already split out of (BUG-004,
+  2026-08-02) -- direct correction: "why they must be read independent,
+  mantle and interact are fundamentally different." Gave Mantle its own
+  `GameplayHintSlotId::Mantle`. Its own separate hardcoded pixel offset
+  (`kMantleHintXNudge`/`kMantleHintYNudge`) is unchanged and still applies
+  first; it's now fully decoupled from Interact/pickup/buy-station's shared
+  text/icon nudge, so calibrating one can never silently move the other.
+  Direct instruction: "mantle is the thing that must not show up dual like
+  reload when interact prompt [shows]" -- Mantle now explicitly participates
+  in the same Interact-suppression rule Reload uses, rather than that
+  relationship existing only by accident of the old shared slot.
 
 ---
 

@@ -238,8 +238,18 @@ void RequestGlyphIconOverlay(float x, float y, float w, float h, const char* ass
 // old, unreliable "was an interact hint active in the last 100ms" heuristic (itself
 // a source of "Reload occasionally fails to display" per the same report) with a
 // same-frame check that can't race.
-enum class GameplayHintSlotId { Interact = 0, ReadyUp = 1, Reload = 2 };
-constexpr int kGameplayHintSlotCount = 3;
+// Mantle split into its own slot 2026-08-25 -- previously shared Interact's slot
+// (same coupling ReadyUp was split out of, BUG-004, 2026-08-02), which had two
+// real, undesired side effects: (1) calibrating Interact/pickup/buy-station's
+// shared text/icon nudge via the F2/F3 editor silently also moved mantle, even
+// though mantle already has its own separate hardcoded pixel offset
+// (kMantleHintXNudge/kMantleHintYNudge) and is a fundamentally different prompt;
+// (2) mantle showing also suppressed Reload (the "Interact+Reload redundant
+// clutter" rule couldn't tell mantle apart from a real interact/pickup prompt).
+// Direct user correction: "why they must be read independent, mantle and
+// interact are fundamentally different."
+enum class GameplayHintSlotId { Interact = 0, ReadyUp = 1, Reload = 2, Mantle = 3 };
+constexpr int kGameplayHintSlotCount = 4;
 
 // Which bundled Isotherm Sans variant a hint's text should use (2026-08-24,
 // live-reported: "condensed only works for the throwback prompt and turrets etc,

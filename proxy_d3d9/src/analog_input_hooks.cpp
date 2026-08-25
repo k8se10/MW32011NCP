@@ -7360,7 +7360,15 @@ void __cdecl Hook_DrawGlyphText(
                             // ReadyUp) instead of sharing the generic Interact slot every other hint here
                             // uses -- see RequestCustomHintOverlay's own comment for why they used to fight
                             // over one slot and silently evict each other.
-                            GameplayHintSlotId slotId = isReadyUpHint ? GameplayHintSlotId::ReadyUp : GameplayHintSlotId::Interact;
+                            // Mantle given the SAME treatment 2026-08-25 -- was sharing Interact's slot
+                            // too, which silently coupled its position to Interact/pickup/buy-station's
+                            // shared F2/F3 editor nudge (a fundamentally different, hardcoded-offset
+                            // prompt getting dragged along for the ride) and silently suppressed Reload
+                            // whenever mantle showed, neither of which was ever an intended rule. See
+                            // GameplayHintSlotId's own comment (overlay_hud.h) for the full account.
+                            GameplayHintSlotId slotId = isReadyUpHint ? GameplayHintSlotId::ReadyUp
+                                                       : isMantleHint ? GameplayHintSlotId::Mantle
+                                                       : GameplayHintSlotId::Interact;
                             // Condensed role, 2026-08-24, live-reported: "condensed only works for
                             // the throwback prompt and turrets etc, the normal ui text looks better
                             // for stuff like buy stations, pickups and interacts" -- everything else
