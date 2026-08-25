@@ -49,6 +49,7 @@
 #include "staged_settings.h"
 #include "../resource.h"
 #include "options_blur_ps.h" // compiled ps_2_0 bytecode -- see that file's own header for the real HLSL source and how it was compiled
+#include "mw3ncp_plugin_api.h" // MW3NCP_ColorOverrideFn -- see this file's own g_pluginTextGlyphColorOverride comment
 
 #pragma comment(lib, "windowscodecs.lib")
 #pragma comment(lib, "ole32.lib")
@@ -94,6 +95,22 @@ extern "C" const char* GetControllerGlyphAssetName(PhysicalInput input, GlyphSty
 // namespace).
 extern "C" void GetStickLayoutAxisSources(StickLayout layout, bool& moveXFromRight, bool& moveYFromRight,
                                             bool& lookXFromRight, bool& lookYFromRight); // defined in analog_input_hooks.cpp
+
+// Plugin text/glyph color override (2026-08-25, see mw3ncp_plugin_api.h and
+// PLUGIN_API.md) -- a plain global at FILE scope (not inside the anonymous
+// namespace below) so DrawGenericTexturedQuad (which IS inside it) can see it via
+// ordinary enclosing-scope lookup, while SetPluginTextGlyphColorOverride below (the
+// plugin-loader-facing setter, needs real external linkage) can still reach it too.
+// nullptr = no override, the default -- every existing text/glyph draw is completely
+// unaffected by this feature existing until a plugin actually registers one.
+MW3NCP_ColorOverrideFn g_pluginTextGlyphColorOverride = nullptr;
+
+// Called by plugin_loader.cpp's own MW3NCP_PluginAPI::SetTextGlyphColorOverride
+// implementation -- see that file for the plugin-facing side of this contract.
+extern "C" void SetPluginTextGlyphColorOverride(MW3NCP_ColorOverrideFn callback)
+{
+    g_pluginTextGlyphColorOverride = callback;
+}
 
 namespace {
 
@@ -1229,10 +1246,20 @@ void PrewarmGlyphIconTextures(void* device)
 // alpha and would render wrong (over-darkened) if premultiplied blending were forced on
 // them -- only call sites drawing a texture loaded through LoadGlyphIconTexture should
 // ever pass true.
+// isTextOrGlyph (2026-08-25, see mw3ncp_plugin_api.h's own SetTextGlyphColorOverride
+// comment): when true AND a plugin has registered a color-override callback, `color`
+// is passed through that callback before drawing -- the "text and glyphs" surface the
+// bundled RGB Text example plugin uses. Default false, and every call site that
+// draws solid UI chrome (white bars/panels), the custom cursor, or a real .menu DDS
+// asset deliberately leaves this false -- this is specifically a cosmetic override
+// for text/glyph draws, not a general rendering hook.
 void DrawGenericTexturedQuad(void* device, void* texture, float x, float y, float w, float h, DWORD color = 0xFFFFFFFF,
                               float u0 = 0.0f, float v0 = 0.0f, float u1 = 1.0f, float v1 = 1.0f,
-                              bool premultipliedAlpha = false)
+                              bool premultipliedAlpha = false, bool isTextOrGlyph = false)
 {
+    if (isTextOrGlyph && g_pluginTextGlyphColorOverride) {
+        color = static_cast<DWORD>(g_pluginTextGlyphColorOverride(static_cast<unsigned long>(color)));
+    }
     void** deviceVtbl = *reinterpret_cast<void***>(device);
     auto setTexture = reinterpret_cast<SetTexture_t>(deviceVtbl[kSetTextureVtableIndex]);
     auto setFVF = reinterpret_cast<SetFVF_t>(deviceVtbl[kSetFVFVtableIndex]);
@@ -1424,7 +1451,7 @@ void DrawGlyphIconIfRequested(void* device)
     int texW = 0, texH = 0;
     if (!GetOrLoadGlyphIconTexture(device, g_pendingIconAssetName, texture, texW, texH)) return;
     DrawGenericTexturedQuad(device, texture, g_pendingIconX, g_pendingIconY, g_pendingIconW, g_pendingIconH,
-                              0xFFFFFFFF, 0.0f, 0.0f, 1.0f, 1.0f, /*premultipliedAlpha=*/true);
+                              0xFFFFFFFF, 0.0f, 0.0f, 1.0f, 1.0f, /*premultipliedAlpha=*/true, /*isTextOrGlyph=*/true);
 }
 
 // Gameplay hint position editor (2026-08-24 rewrite, live-reported: "we should use
@@ -1563,10 +1590,14 @@ void DrawOneGameplayHintSlot(void* device, GameplayHintSlot& slot, GameplayHintS
     // this being a SIZE bug. Fixed: size now uses ONE uniform value for both w and h
     // (see GetUniformSizeScale's own header comment), position unchanged.
     float uniformScale = scaleX < scaleY ? scaleX : scaleY;
+    // isTextOrGlyph defaults true here (not exposed as a caller-choosable param) --
+    // every draw that goes through THIS lambda, in this function, is either hint
+    // text or a hint icon; nothing else is ever drawn through it. See
+    // DrawGenericTexturedQuad's own isTextOrGlyph comment for the full contract.
     auto drawScaledQuad = [&](void* texture, float x, float y, float w, float h, DWORD color,
                                float u0 = 0.0f, float v0 = 0.0f, float u1 = 1.0f, float v1 = 1.0f,
                                bool premultipliedAlpha = false) {
-        DrawGenericTexturedQuad(device, texture, x * scaleX, y * scaleY, w * uniformScale, h * uniformScale, color, u0, v0, u1, v1, premultipliedAlpha);
+        DrawGenericTexturedQuad(device, texture, x * scaleX, y * scaleY, w * uniformScale, h * uniformScale, color, u0, v0, u1, v1, premultipliedAlpha, /*isTextOrGlyph=*/true);
     };
 
     if (!EnsureLeftAlignedTextTexture(device, slot.prefixTexture, slot.prefixRenderedFor,
@@ -1946,10 +1977,14 @@ void DrawOneMenuHintSlot(void* device, MenuHintSlot& slot, float scaleX, float s
     // scaleX/scaleY), not a position bug; position (x*scaleX, y*scaleY) was already
     // a correct proportional placement and is unchanged here.
     float uniformScale = scaleX < scaleY ? scaleX : scaleY;
+    // isTextOrGlyph defaults true here (not exposed as a caller-choosable param) --
+    // every draw that goes through THIS lambda, in this function, is either hint
+    // text or a hint icon; nothing else is ever drawn through it. See
+    // DrawGenericTexturedQuad's own isTextOrGlyph comment for the full contract.
     auto drawScaledQuad = [&](void* texture, float x, float y, float w, float h, DWORD color,
                                float u0 = 0.0f, float v0 = 0.0f, float u1 = 1.0f, float v1 = 1.0f,
                                bool premultipliedAlpha = false) {
-        DrawGenericTexturedQuad(device, texture, x * scaleX, y * scaleY, w * uniformScale, h * uniformScale, color, u0, v0, u1, v1, premultipliedAlpha);
+        DrawGenericTexturedQuad(device, texture, x * scaleX, y * scaleY, w * uniformScale, h * uniformScale, color, u0, v0, u1, v1, premultipliedAlpha, /*isTextOrGlyph=*/true);
     };
 
     if (!EnsureLeftAlignedTextTexture(device, slot.prefixTexture, slot.prefixRenderedFor,
@@ -3056,7 +3091,7 @@ void DrawOptLeftAlignedText(void* device, TextTexCache& cache, const char* text,
     float top = yCenter - static_cast<float>(kTextureHeight) * 0.5f;
     DrawGenericTexturedQuad(device, cache.texture, x * scaleX, top * scaleY,
                               static_cast<float>(drawWidthPx) * scaleX, static_cast<float>(kTextureHeight) * scaleY,
-                              color, u0, 0.0f, u1, 1.0f);
+                              color, u0, 0.0f, u1, 1.0f, /*premultipliedAlpha=*/false, /*isTextOrGlyph=*/true);
 }
 
 // Right-aligns `text` so it ENDS at rightEdgeX -- matching the real native vertical
@@ -3501,7 +3536,7 @@ void DrawDiagLabel(void* device, int cacheIndex, const char* text, const char* i
         void* tex = nullptr; int texW = 0, texH = 0;
         if (!GetOrLoadGlyphIconTexture(device, assetName, tex, texW, texH)) return;
         DrawGenericTexturedQuad(device, tex, x * scaleX, (labelY - kIconSize * 0.5f) * scaleY, w * scaleX, kIconSize * scaleY,
-                                  0xFFFFFFFF, 0.0f, 0.0f, 1.0f, 1.0f, /*premultipliedAlpha=*/true);
+                                  0xFFFFFFFF, 0.0f, 0.0f, 1.0f, 1.0f, /*premultipliedAlpha=*/true, /*isTextOrGlyph=*/true);
     };
 
     float w1 = measureIcon(iconAssetName), w2 = measureIcon(iconAssetName2);
@@ -3922,7 +3957,7 @@ void DrawCustomOptionsMenuIfOpen(void* device)
                         float iconWpx = iconHpx * (static_cast<float>(iconW) / static_cast<float>(iconH));
                         DrawGenericTexturedQuad(device, iconTex, (labelRightX + 10.0f) * scaleX, (rowY - iconHpx * 0.5f) * scaleY,
                                                   iconWpx * scaleX, iconHpx * scaleY,
-                                                  0xFFFFFFFF, 0.0f, 0.0f, 1.0f, 1.0f, /*premultipliedAlpha=*/true);
+                                                  0xFFFFFFFF, 0.0f, 0.0f, 1.0f, 1.0f, /*premultipliedAlpha=*/true, /*isTextOrGlyph=*/true);
                     }
                 }
             }
@@ -4067,7 +4102,7 @@ void DrawCustomOptionsMenuIfOpen(void* device)
                         float iconWpx = iconHpx * (static_cast<float>(iconW) / static_cast<float>(iconH));
                         DrawGenericTexturedQuad(device, iconTex, (labelRightX + 10.0f) * scaleX, (rowY - iconHpx * 0.5f) * scaleY,
                                                   iconWpx * scaleX, iconHpx * scaleY,
-                                                  0xFFFFFFFF, 0.0f, 0.0f, 1.0f, 1.0f, /*premultipliedAlpha=*/true);
+                                                  0xFFFFFFFF, 0.0f, 0.0f, 1.0f, 1.0f, /*premultipliedAlpha=*/true, /*isTextOrGlyph=*/true);
                     }
                 }
             }
@@ -4127,7 +4162,7 @@ void DrawCustomOptionsMenuIfOpen(void* device)
         if (haveIcon) {
             DrawGenericTexturedQuad(device, iconTex, (startX + textW + kCornerGapPx) * scaleX, (cornerY - kCornerIconHeight * 0.5f) * scaleY,
                                       iconW * scaleX, kCornerIconHeight * scaleY,
-                                      0xFFFFFFFF, 0.0f, 0.0f, 1.0f, 1.0f, /*premultipliedAlpha=*/true);
+                                      0xFFFFFFFF, 0.0f, 0.0f, 1.0f, 1.0f, /*premultipliedAlpha=*/true, /*isTextOrGlyph=*/true);
         }
     }
 
@@ -4198,7 +4233,7 @@ void DrawCustomOptionsMenuIfOpen(void* device)
                         float iconWpx = iconHpx * (static_cast<float>(iconW) / static_cast<float>(iconH));
                         DrawGenericTexturedQuad(device, iconTex, (textX - iconWpx - 12.0f) * scaleX, (rowCenterY - iconHpx * 0.5f) * scaleY,
                                                   iconWpx * scaleX, iconHpx * scaleY,
-                                                  0xFFFFFFFF, 0.0f, 0.0f, 1.0f, 1.0f, /*premultipliedAlpha=*/true);
+                                                  0xFFFFFFFF, 0.0f, 0.0f, 1.0f, 1.0f, /*premultipliedAlpha=*/true, /*isTextOrGlyph=*/true);
                     }
                 }
             }
@@ -4638,7 +4673,7 @@ void MenuGfx_DrawLeftText(void* device, void*& ioTexture, char* renderedForBuf, 
     float top = yCenter - static_cast<float>(kTextureHeight) * 0.5f;
     DrawGenericTexturedQuad(device, ioTexture, x * scaleX, top * scaleY,
                               static_cast<float>(drawWidthPx) * scaleX, static_cast<float>(kTextureHeight) * scaleY,
-                              static_cast<DWORD>(argbColor), u0, 0.0f, u1, 1.0f);
+                              static_cast<DWORD>(argbColor), u0, 0.0f, u1, 1.0f, /*premultipliedAlpha=*/false, /*isTextOrGlyph=*/true);
 }
 
 int MenuGfx_MeasureTextWidthPx(const char* text, int fontHeightPx)

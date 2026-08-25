@@ -144,7 +144,10 @@ void ReadBool(const char* path, const char* section, const char* key, bool& outV
 // already-non-default GlyphStyle (a pre-existing hand-edit) defaults this to false
 // on migration instead of the usual compiled-default true, so a deliberate manual
 // choice made before this feature existed can't be silently overridden.
-constexpr unsigned long kCurrentConfigVersion = 20;
+// v20->v21 (2026-08-25, plugin API): new [Plugins] Enabled key added -- STRICTLY
+// opt-in, default off. See PLUGIN_API.md and mod_config.h's own pluginsEnabled
+// field comment for the full design/risk statement.
+constexpr unsigned long kCurrentConfigVersion = 21;
 
 // Reads a legacy key's raw value, returning true only if the key genuinely existed
 // (unlike ReadFloat, which can't distinguish "absent" from "present but unparsable" --
@@ -494,6 +497,17 @@ void WriteDefaultConfig(const char* path)
         "; 0 = off (real native Options screen, unmodified), 1 = on.\n"
         "UseCustomOptionsScreen=%d\n"
         "\n"
+        "[Plugins]\n"
+        "; Loads plugin DLLs from a \"plugins\" subfolder next to this DLL at startup.\n"
+        "; Plugins get hook-installation and DIRECT PROCESS MEMORY READ/WRITE access --\n"
+        "; capability this project's own main mod deliberately never uses on itself (see\n"
+        "; re_notes/known_issues.md issue #33 and the permanently-removed aim-assist\n"
+        "; feature). A plugin is YOUR OWN code, or someone else's -- not vetted, reviewed,\n"
+        "; or shipped by this project. See PLUGIN_API.md for the full design and an\n"
+        "; explicit risk statement before enabling this. STRICTLY OPT-IN. 0 = off (no\n"
+        "; plugins directory scan happens at all), 1 = on.\n"
+        "Enabled=%d\n"
+        "\n"
         "[Vibration]\n"
         "; Real XInputSetState output, driven off real weapon-fire and damage-taken\n"
         "; events (fixed 2026-08-03 -- was silently a no-op before, see\n"
@@ -674,6 +688,7 @@ void WriteDefaultConfig(const char* path)
         PhysicalInputName(g_modConfig.customButtonMap.pause),
         PhysicalInputName(g_modConfig.customButtonMap.scoreboard),
         g_modConfig.useCustomOptionsScreen ? 1 : 0,
+        g_modConfig.pluginsEnabled ? 1 : 0,
         g_modConfig.vibrationEnabled ? 1 : 0,
         g_modConfig.vibrationFireIntensity,
         g_modConfig.vibrationFireDurationMs,
@@ -902,6 +917,7 @@ void LoadModConfig()
         } // else: key absent, GlyphStyle at its historical default -- keep the compiled true
     }
     ReadBool(path, "Options", "UseCustomOptionsScreen", g_modConfig.useCustomOptionsScreen);
+    ReadBool(path, "Plugins", "Enabled", g_modConfig.pluginsEnabled);
     ReadBool(path, "Vibration", "Enabled", g_modConfig.vibrationEnabled);
     ReadFloat(path, "Vibration", "FireIntensity", g_modConfig.vibrationFireIntensity);
     if (g_modConfig.vibrationFireIntensity < 0.0f) g_modConfig.vibrationFireIntensity = 0.0f;
@@ -953,7 +969,7 @@ void LoadModConfig()
         "adsSlowdownBaseline=%g adsCloseRangeSlowdownStrength=%g invertLook=%d lookAccelRampMs=%lu proneHoldMs=%lu interactHoldMs=%lu "
         "readyUpHoldMs=%lu "
         "buttonLayout=%s stickLayout=%s flipTriggers=%d glyphStyle=%s glyphStyleAuto=%d "
-        "useCustomOptionsScreen=%d "
+        "useCustomOptionsScreen=%d pluginsEnabled=%d "
         "vibrationEnabled=%d vibrationFireIntensity=%g vibrationFireDurationMs=%lu "
         "vibrationDamagePerPoint=%g vibrationDamageMaxIntensity=%g vibrationDamageDurationMs=%lu "
         "overlayFontFamily=%s overlayFontFamilyCondensed=%s overlayFontItalic=%d overlayTestCycleAllVariants=%d "
@@ -972,6 +988,7 @@ void LoadModConfig()
         g_modConfig.flipTriggers ? 1 : 0, GlyphStyleName(g_modConfig.glyphStyle),
         g_modConfig.glyphStyleAuto ? 1 : 0,
         g_modConfig.useCustomOptionsScreen ? 1 : 0,
+        g_modConfig.pluginsEnabled ? 1 : 0,
         g_modConfig.vibrationEnabled ? 1 : 0, g_modConfig.vibrationFireIntensity,
         g_modConfig.vibrationFireDurationMs, g_modConfig.vibrationDamagePerPoint,
         g_modConfig.vibrationDamageMaxIntensity, g_modConfig.vibrationDamageDurationMs,
