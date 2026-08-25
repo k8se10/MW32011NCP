@@ -486,6 +486,18 @@ deliberate, VAC-safer choice, not a stopgap).
   flag, a minimal plugin skeleton, and an explicit risk statement for the new
   plugin API (see Groundwork above). Cross-linked from `README.md`.
 
+### Investigated, Not Yet Resolved
+1. **"B Back" corner hint shows twice on Survival buy-station screens, 3
+  layers deep** (live-reported: "another issue that resurfaced"). Leading
+  hypothesis, NOT confirmed: a stale `g_specOpsModalSticky` flag (left over
+  from an earlier, unrelated Special Ops mode-picker visit the same session)
+  firing the synthetic Back hint on top of the buy station's own real one --
+  the same general flag this project's own comment history already
+  documents fighting staleness bugs on multiple times before. A diagnostic
+  log line was added (not a fix) so the next repro either confirms or rules
+  this out with real data. See `known_issues.md` issue #86 for the full
+  trail.
+
 ---
 
 ## v0.3.3 — Alpha (2026-08-18) — Extended-session stutter fixed; vibration and co-op rumble fixes; DualSense Bluetooth preview (broken)
