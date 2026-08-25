@@ -112,7 +112,7 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#77](#77-bluetooth-dualsense-stick-input-garbledunusable--three-real-fixes-shipped-symptom-unchanged-root-cause-not-found-2026-08-16) — Bluetooth DualSense: stick input garbled/unusable — **Open**, root cause not found (USB unaffected)
 - [#78](#78-doghyena-melee-struggle-hud-prompts-survival-have-no-controller-glyph-coverage-2026-08-17-reported-real-assets-confirmed-no-safe-code-hook-found-this-pass) — Dog/hyena melee-struggle HUD prompts (Survival) have no controller-glyph coverage — **Investigated, NOT implemented** (no safe live-verifiable hook found this pass)
 - [#79](#79-extended-session-stutter--three-real-evidence-backed-causes-found-and-fixed-one-residual-enemy-look-gpu-cost-parked-not-resolved-2026-08-1718) — Extended-session stutter — **Mostly fixed, confirmed live "miles better"** (one residual enemy-look GPU-cost dip PARKED, not resolved)
-- [#80](#80-full-save-states-emulator-style--roadmap-idea-key-feature-2026-08-25) — Full save states (emulator-style) — **Roadmap Idea, key feature** (raw dump/restore ruled out -- heap ASLR; native `save`/`loadgame` commands found but not live-callable; semantic struct mapping is the real path)
+- [#80](#80-full-save-states-emulator-style--paused-key-feature-2026-08-25) — Full save states (emulator-style) — **Paused by user request, key feature** (raw dump/restore ruled out -- heap ASLR; native `save`/`loadgame` commands found but not live-callable; semantic struct mapping is the real path when resumed)
 
 ---
 
@@ -10070,9 +10070,9 @@ A custom per-frame benchmark tool was built this pass specifically to catch case
 
 ---
 
-## 80. Full save states (emulator-style) — ROADMAP IDEA, KEY FEATURE (2026-08-25)
+## 80. Full save states (emulator-style) — PAUSED, KEY FEATURE (2026-08-25)
 
-**Status: Roadmap Idea.** Not started, not scoped, no RE work done. Logged here so it isn't lost -- explicitly called out by the user as a KEY mod feature, not a minor/debug-only convenience, so this should get real priority once scoped, not sit indefinitely.
+**Status: Paused, by explicit user request** ("how about we come back to this in future and disable for now"). Not started, no RE work done beyond the investigation below. Logged here so it isn't lost -- still explicitly a KEY mod feature, not a minor/debug-only convenience, just deliberately deprioritized for now rather than actively worked. Do not resume without the user raising it again.
 
 **The ask (direct quotes, 2026-08-25):** "save states are something we lowk want" -- clarified immediately after when an earlier draft of this entry scoped it too narrowly to the F2 glyph-editor debug workflow: **"not for the editor, its a key mod feature. full save states like emulators."** This is emulator-style save-state functionality as a real, standalone, player-facing feature of the mod itself (save the exact current game state at any point during Campaign/Survival, reload it instantly, same category of feature as a Dolphin/RetroArch/PCSX2 save slot) -- not a debug tool, not scoped to calibration work, and not the same ask as the F2 debug-freeze feature it came up alongside.
 

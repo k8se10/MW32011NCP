@@ -6207,11 +6207,6 @@ bool g_glyphEditDraggingIsText = false; // which of the two handles at [group][i
 // off to actually navigate a menu normally without the editor's own text cluttering
 // every focused item, then back on to resume calibrating.
 bool g_glyphEditModeActive = false;
-// Real `timescale` dvar value read (via GetDvarFloat) right before the F2
-// debug-freeze zeroes it -- see the F2 handler below. Restored verbatim when the
-// editor toggles back off, rather than hardcoding a guess of "1.0", in case the
-// player had it set to something else already (e.g. a prior debug session).
-float g_glyphEditorSavedTimescale = 1.0f;
 
 GlyphEditGroup* FindOrCreateGlyphEditGroup(const char* groupName, int depth)
 {
@@ -6661,50 +6656,34 @@ extern "C" void __cdecl ResetMenuListItemOrdinalForFrame()
             sprintf_s(msg, "[glyph-editor] edit mode %s", g_glyphEditModeActive ? "ON" : "off");
             LogFromController(msg);
 
-            // Debug-freeze (2026-08-25, direct request: "we need our mouse cursor
-            // available in gameplay when we press f2, it would be nice if it froze
-            // gameplay tick too... an amazing debug feature to fix all menus
-            // easily"). SECOND ATTEMPT used the real cl_paused/SetMenuState path
-            // (the same one Start's own pause-menu press uses) -- live-reported
-            // broken again, and rightly so: that path's whole POINT is to open the
-            // real pausedmenu UI, which is exactly what this feature must NOT do --
-            // it steals input/focus and visually replaces the gameplay the editor
-            // is trying to calibrate against. cl_paused was simply the wrong
-            // mechanism for this from the start, not a bug to patch further.
-            //
-            // FIX: freeze the actual simulation via the real `timescale` dvar
-            // instead -- confirmed present in iw5sp.exe via a live PE string scan
-            // ("timescale" and "com_timescale" both exist), and this engine's own
-            // Cmd_ExecuteString is separately documented (re_notes/iw5sp.md) as
-            // falling through to a genuine cvar-set check for any token that isn't
-            // one of its 132 registered commands -- exactly the path a plain
-            // "timescale 0" console line takes. Submitted via the real, confirmed
-            // Cbuf_AddText (CbufAddText above) -- no need to also find/call the
-            // real Cbuf_Execute ourselves: prior investigation already confirmed
-            // live that the engine's own per-frame loop drains the buffer on its
-            // own, one frame later. timescale=0 halts the world's own time
-            // advancement (physics/AI/animation) without touching cl_paused,
-            // pausedmenu, or menu-active state at all -- gameplay keeps rendering
-            // exactly as it looked the instant F2 was pressed, cursor and glyph
-            // editor drawn on top, nothing stolen from the real game's own input
-            // focus. g_glyphEditorSavedTimescale captures the real value from
-            // BEFORE freezing (almost always 1.0, but read live rather than
-            // assumed) so turning the editor back off restores the exact original
-            // value rather than a hardcoded guess.
+            // AI-disable-instead-of-freeze (2026-08-25). Two earlier debug-freeze
+            // attempts (cl_paused/SetMenuState -- opened the real pausedmenu UI,
+            // rejected live; timescale 0 -- froze the whole world's time, including
+            // rendering feedback for whatever's being calibrated) are both dropped
+            // per direct redirect: "my plan is to maybe just find the ai spawning
+            // dvars and remove the cl pause on f2 press. we can then disable ai and
+            // do glyphs with no interruption." No time-freeze at all now -- instead,
+            // suppress the actual INTERRUPTION source (AI spotting/engaging/
+            // spawning) via two real dvars confirmed present in iw5sp.exe by a live
+            // PE string scan: `ai_nosight` (this engine's own equivalent to WaW/BO
+            // Zombies' "AI can't see the player" toggle the user was thinking of --
+            // BO1/BO2's own mechanism turned out to be a script-side
+            // threat_ignore() call, not a plain dvar, so this is IW5's own,
+            // different answer to the same idea) and `ai_disableSpawn` (blocks new
+            // AI from spawning at all -- directly matches "find the ai spawning
+            // dvars"). Submitted the same real way `timescale` was (Cbuf_AddText,
+            // relying on Cmd_ExecuteString's own documented cvar-set fallback for
+            // any token not in its 132-entry command list -- re_notes/iw5sp.md).
+            // Pending live confirmation: found via string presence, not yet
+            // confirmed to behave exactly as their names imply.
             if (g_glyphEditModeActive) {
-                g_glyphEditorSavedTimescale = GetDvarFloat("timescale");
-                if (g_glyphEditorSavedTimescale <= 0.0f) g_glyphEditorSavedTimescale = 1.0f;
-                CbufAddText(kLocalClientIndex, "timescale 0\n");
-                char freezeMsg[64];
-                sprintf_s(freezeMsg, "[glyph-editor] debug-freeze: timescale 0 (was %.3f)", g_glyphEditorSavedTimescale);
-                LogFromController(freezeMsg);
+                CbufAddText(kLocalClientIndex, "ai_nosight 1\n");
+                CbufAddText(kLocalClientIndex, "ai_disableSpawn 1\n");
+                LogFromController("[glyph-editor] AI suppressed: ai_nosight 1, ai_disableSpawn 1");
             } else {
-                char restoreCmd[48];
-                sprintf_s(restoreCmd, "timescale %.3f\n", g_glyphEditorSavedTimescale);
-                CbufAddText(kLocalClientIndex, restoreCmd);
-                char restoreMsg[80];
-                sprintf_s(restoreMsg, "[glyph-editor] debug-freeze: restored timescale %.3f", g_glyphEditorSavedTimescale);
-                LogFromController(restoreMsg);
+                CbufAddText(kLocalClientIndex, "ai_nosight 0\n");
+                CbufAddText(kLocalClientIndex, "ai_disableSpawn 0\n");
+                LogFromController("[glyph-editor] AI restored: ai_nosight 0, ai_disableSpawn 0");
             }
         }
         // Debounced (2026-08-16, live-reported "it goes to the set position but after
