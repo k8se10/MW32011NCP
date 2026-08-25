@@ -216,11 +216,14 @@ constexpr int kTextureHeight = 64;
 // DrawOneGameplayHintSlot/DrawOneMenuHintSlot/MenuGfx_* crop site reads back from
 // (see RenderMaskLuminance's own comment). Was a bare, independently-redeclared
 // "8" at each of those call sites -- bumped to 11 (8 + the outline ring's own
-// current +/-3px max offset) 2026-08-25 after a live screenshot showed the
+// then-current +/-3px max offset) 2026-08-25 after a live screenshot showed the
 // outline clipped along the left edge of the first glyph only: an outline pixel
 // at offset -3 renders at x=5, but the old margin of 8 left zero slack, cropping
 // exactly that sliver. One shared constant now, not five independently-editable
 // copies, so a future outline-width change can't silently reintroduce this.
+// Left at 11 even after the outline ring was reverted to +/-1px the same day
+// (RenderTextToArgbBuffer's own comment) -- oversized for a 1px ring, but harmless;
+// still exactly right if the ring ever widens again.
 constexpr int kTextRenderMarginPx = 11;
 
 EndScene_t g_origEndScene = nullptr;
@@ -544,17 +547,28 @@ bool RenderMaskLuminance(const char* text, const POINT* offsets, int offsetCount
 // passes. The naive single-pass "alpha = luminance" trick this project used before
 // only works for plain white-on-transparent text -- a black outline pixel would have
 // luminance 0, indistinguishable from "background", making it invisible. Instead:
-// render an OUTLINE mask (text drawn across a 7x7 grid of +/-3px offsets, covering
-// the true glyph shape plus a 3px ring around it -- widened twice 2026-08-24,
-// live-reported "we need...a clearer outline" then "the outline is slightly too
-// thin" after the first widen to 2px: a 1px ring read as too thin/soft against busy
-// backgrounds, especially at the smaller HUD hint font sizes, and 2px still wasn't
-// quite enough) and a separate FILL mask (text drawn once, centered, no offset). Final alpha =
-// outline mask (the union of fill + outline, so both are visible); final color =
-// white scaled by the FILL mask's own value (0 in outline-only regions = solid
-// black, ramping to full white deep inside the glyph) -- this naturally anti-aliases
-// the black-to-white transition at the fill's real edge using the fill mask's own
-// coverage value, with no extra blending step needed.
+// render an OUTLINE mask (text drawn across a small grid of offsets, covering the
+// true glyph shape plus a ring around it) and a separate FILL mask (text drawn once,
+// centered, no offset). Final alpha = outline mask (the union of fill + outline, so
+// both are visible); final color = white scaled by the FILL mask's own value (0 in
+// outline-only regions = solid black, ramping to full white deep inside the glyph) --
+// this naturally anti-aliases the black-to-white transition at the fill's real edge
+// using the fill mask's own coverage value, with no extra blending step needed.
+//
+// Ring width history: 1px (original) -> widened to 2px, then 3px, both 2026-08-24
+// (live-reported "we need...a clearer outline" then "the outline is slightly too
+// thin" after the first widen -- a 1px ring read as too thin/soft against busy
+// backgrounds at the smaller HUD hint font sizes). REVERTED to 1px 2026-08-25 after
+// a live screenshot showed the 3px ring reading as "sticker-like"/too heavy once
+// combined with FW_SEMIBOLD (added the same day, 2026-08-24) -- the heavier glyph
+// weight now carries most of the visual authority the thicker ring was originally
+// compensating for, so the two widenings and the semibold switch were overshooting
+// together rather than each needing to be as strong as they were in isolation.
+// kTextRenderMarginPx (11, sized for the old 3px max offset) is deliberately left
+// unchanged -- still safely oversized for a 1px ring, no clipping risk either way.
+// PENDING live confirmation (needs an in-game screenshot at 1px, same standard as
+// every other visual-tuning change in this project -- see kTextRenderMarginPx's own
+// "FIXED 2026-08-25" entry for the clipping bug this ring width interacts with).
 bool RenderTextToArgbBuffer(const char* text, DWORD* outPixels, UINT alignFlag = DT_RIGHT, int fontHeightPx = 20,
                               FontRole fontRole = FontRole::Default)
 {
@@ -563,16 +577,12 @@ bool RenderTextToArgbBuffer(const char* text, DWORD* outPixels, UINT alignFlag =
 
     const bool italic = g_modConfig.overlayFontItalic;
 
-    const POINT kOutlineOffsets[49] = {
-        { -3, -3 }, { -2, -3 }, { -1, -3 }, { 0, -3 }, { 1, -3 }, { 2, -3 }, { 3, -3 },
-        { -3, -2 }, { -2, -2 }, { -1, -2 }, { 0, -2 }, { 1, -2 }, { 2, -2 }, { 3, -2 },
-        { -3, -1 }, { -2, -1 }, { -1, -1 }, { 0, -1 }, { 1, -1 }, { 2, -1 }, { 3, -1 },
-        { -3, 0 },  { -2, 0 },  { -1, 0 },  { 0, 0 },  { 1, 0 },  { 2, 0 },  { 3, 0 },
-        { -3, 1 },  { -2, 1 },  { -1, 1 },  { 0, 1 },  { 1, 1 },  { 2, 1 },  { 3, 1 },
-        { -3, 2 },  { -2, 2 },  { -1, 2 },  { 0, 2 },  { 1, 2 },  { 2, 2 },  { 3, 2 },
-        { -3, 3 },  { -2, 3 },  { -1, 3 },  { 0, 3 },  { 1, 3 },  { 2, 3 },  { 3, 3 },
+    const POINT kOutlineOffsets[9] = {
+        { -1, -1 }, { 0, -1 }, { 1, -1 },
+        { -1, 0 },  { 0, 0 },  { 1, 0 },
+        { -1, 1 },  { 0, 1 },  { 1, 1 },
     };
-    if (!RenderMaskLuminance(text, kOutlineOffsets, 49, italic, outlineMask, alignFlag, fontHeightPx, fontRole)) return false;
+    if (!RenderMaskLuminance(text, kOutlineOffsets, 9, italic, outlineMask, alignFlag, fontHeightPx, fontRole)) return false;
 
     const POINT kFillOffset[1] = { { 0, 0 } };
     if (!RenderMaskLuminance(text, kFillOffset, 1, italic, fillMask, alignFlag, fontHeightPx, fontRole)) return false;
