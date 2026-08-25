@@ -3,33 +3,15 @@
 > **▶️ v0.3.4 (2026-08-25) — DualSense's Bluetooth stick-garbling bug is
 > fixed.** A real signed-16-bit integer overflow at full-forward stick
 > deflection (the one input that could ever reach that exact extreme) was
-> found and fixed, confirmed live by the reporting Bluetooth tester. The fix
-> lives in code shared with the USB path, so it almost certainly applies
-> there too — but **USB DualSense input still has not been independently
-> confirmed working by a separate tester**, a pre-existing gap this fix
-> doesn't itself close. Vibration/gyro/adaptive triggers remain separate,
-> still-PREVIEW/WIP work. See `re_notes/known_issues.md`
-> issue #77 for the full account.
+> found and fixed, confirmed live by the reporting Bluetooth tester. **USB
+> DualSense input still has not been independently confirmed working by a
+> separate tester** — a pre-existing gap this fix doesn't itself close. See
+> `re_notes/known_issues.md` issue #77 for the full account.
 >
-> **Also this release**: the in-game glyph position editor (F2/F3) was
-> extended from menu items to real gameplay hints (Interact/ReadyUp/Reload/
-> Mantle), with several real bugs found and fixed along the way; auto-mantle
-> while sprinting is now confirmed working (a real coupling bug found and
-> decoupled — still ships off by default, opt-in by design, see issue #62); a
-> glyph-icon rendering bug (a faint white cutout-fringe ring) was fixed; and
-> this project ships a new opt-in plugin API (hook install, memory read/
-> write, a text/glyph color-override extension point) with a working example
-> plugin.
->
-> **Investigated, not shipped**: controller-glyph coverage for QTE prompts
-> (Campaign scripted sequences, Survival's dog/hyena melee-struggle) was
-> pursued in depth — real progress was made, but a still-unexplained sizing
-> bug surfaced on final retest, and it was deliberately parked rather than
-> ship a regression. These prompts render fully native/unmodified in this
-> release, unchanged from before. See issue #78.
->
-> See `PATCHNOTES.md` for the full v0.3.4 changelog, including v0.3.3's
-> extended-session stutter fix and v0.3.2's controller-glyph root-cause fix.
+> Also this release: the in-game glyph position editor extended to real
+> gameplay hints, auto-mantle while sprinting confirmed working, a new opt-in
+> plugin API, and a glyph-icon fringing fix — see **Status: ALPHA** just below
+> for the full itemized list, and `PATCHNOTES.md` for the complete changelog.
 
 > **⚠️ SUPPORTED VERSIONS — only v0.2.2 (GitHub only) and v0.3.2+ are currently
 > distributed.**
