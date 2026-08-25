@@ -2492,6 +2492,27 @@ using SetMenuStateFn = void(__cdecl*)(int playerIndex, int mode);
 SetMenuStateFn const SetMenuState = reinterpret_cast<SetMenuStateFn>(0x004396d0);
 constexpr int kMenuStateUnpause = 0;
 constexpr int kMenuStatePausedMenu = 2;
+
+// ---- Cbuf_AddText, real console text-buffer append (re_notes/iw5sp.md, task #10) --
+//
+// FUN_00457c90 = Cbuf_AddText(int clientIndex, const char* text), found via the
+// "screenshot" hardcoded-command-string anchor technique -- plain __cdecl, confirmed
+// live (append/drain telemetry: writeOffset advances by the exact string length on
+// append, resets to 0 the FOLLOWING FRAME on its own -- meaning the engine's own
+// per-frame loop drains/executes the buffer automatically, without this project ever
+// needing to find/call the real Cbuf_Execute (FUN_00605f60) itself; its own
+// signature/calling-convention was never independently confirmed, so not reproduced
+// here). Cmd_ExecuteString (the function that actually processes each drained line)
+// is documented as falling through to a real cvar-set check when the token isn't one
+// of the 132 registered commands -- exactly the path a real dvar like `timescale`
+// (confirmed present via a live PE string scan: both "timescale" and "com_timescale"
+// exist in iw5sp.exe) would take. Used by the F2 glyph-editor debug-freeze (below)
+// to set/restore `timescale` the same way a real player typing it at a console would
+// -- not a raw memory poke, and not the SetDvarByName int-only setter above (which
+// is the wrong tool for a float dvar: an int argument's bit pattern only coincides
+// with the equivalent float's bit pattern at exactly 0).
+using CbufAddTextFn = void(__cdecl*)(int clientIndex, const char* text);
+CbufAddTextFn const CbufAddText = reinterpret_cast<CbufAddTextFn>(0x00457c90);
 } // namespace
 
 // ---- B -> real ESC-forward-to-menu, for "exit menu / back one step" (2026-07-16) ----
@@ -6186,11 +6207,11 @@ bool g_glyphEditDraggingIsText = false; // which of the two handles at [group][i
 // off to actually navigate a menu normally without the editor's own text cluttering
 // every focused item, then back on to resume calibrating.
 bool g_glyphEditModeActive = false;
-// Set true only when the F2 toggle itself is what triggered the real pause
-// (debug-freeze, 2026-08-25) -- see the F2 handler below. Guards the matching
-// resume-on-toggle-off so this never force-unpauses a pause the editor didn't
-// cause (e.g. a real player ESC/Start press while the editor was already on).
-bool g_glyphEditorTriggeredPause = false;
+// Real `timescale` dvar value read (via GetDvarFloat) right before the F2
+// debug-freeze zeroes it -- see the F2 handler below. Restored verbatim when the
+// editor toggles back off, rather than hardcoding a guess of "1.0", in case the
+// player had it set to something else already (e.g. a prior debug session).
+float g_glyphEditorSavedTimescale = 1.0f;
 
 GlyphEditGroup* FindOrCreateGlyphEditGroup(const char* groupName, int depth)
 {
@@ -6643,44 +6664,47 @@ extern "C" void __cdecl ResetMenuListItemOrdinalForFrame()
             // Debug-freeze (2026-08-25, direct request: "we need our mouse cursor
             // available in gameplay when we press f2, it would be nice if it froze
             // gameplay tick too... an amazing debug feature to fix all menus
-            // easily"). FIRST ATTEMPT called OpenPauseMenu (FUN_004d6620)
-            // unconditionally -- live-reported "gameplay tick doesnt freeze".
-            // Root cause: OpenPauseMenu alone does NOT set cl_paused; the real,
-            // proven Start-button handler above (InjectControllerPause) only
-            // calls it as a fallback for state 1/2, and calls
-            // SetMenuState(playerIndex, kMenuStatePausedMenu) -- the function
-            // its own comment documents as "sets cl_paused, opens the pausedmenu
-            // UI" -- for the actual live-gameplay state (6), which is what
-            // ordinary SP/Survival play reports. Fixed by mirroring that exact
-            // branch (including the same auto-close-any-open-menu-first step)
-            // instead of guessing at a single call. g_glyphEditorTriggeredPause
-            // tracks whether WE were the ones who paused, so turning the editor
-            // back off only resumes gameplay if nothing else (a real player
-            // ESC/Start) already did -- never force-unpause a pause the editor
-            // didn't itself cause.
+            // easily"). SECOND ATTEMPT used the real cl_paused/SetMenuState path
+            // (the same one Start's own pause-menu press uses) -- live-reported
+            // broken again, and rightly so: that path's whole POINT is to open the
+            // real pausedmenu UI, which is exactly what this feature must NOT do --
+            // it steals input/focus and visually replaces the gameplay the editor
+            // is trying to calibrate against. cl_paused was simply the wrong
+            // mechanism for this from the start, not a bug to patch further.
+            //
+            // FIX: freeze the actual simulation via the real `timescale` dvar
+            // instead -- confirmed present in iw5sp.exe via a live PE string scan
+            // ("timescale" and "com_timescale" both exist), and this engine's own
+            // Cmd_ExecuteString is separately documented (re_notes/iw5sp.md) as
+            // falling through to a genuine cvar-set check for any token that isn't
+            // one of its 132 registered commands -- exactly the path a plain
+            // "timescale 0" console line takes. Submitted via the real, confirmed
+            // Cbuf_AddText (CbufAddText above) -- no need to also find/call the
+            // real Cbuf_Execute ourselves: prior investigation already confirmed
+            // live that the engine's own per-frame loop drains the buffer on its
+            // own, one frame later. timescale=0 halts the world's own time
+            // advancement (physics/AI/animation) without touching cl_paused,
+            // pausedmenu, or menu-active state at all -- gameplay keeps rendering
+            // exactly as it looked the instant F2 was pressed, cursor and glyph
+            // editor drawn on top, nothing stolen from the real game's own input
+            // focus. g_glyphEditorSavedTimescale captures the real value from
+            // BEFORE freezing (almost always 1.0, but read live rather than
+            // assumed) so turning the editor back off restores the exact original
+            // value rather than a hardcoded guess.
             if (g_glyphEditModeActive) {
-                if (GetDvarInt("cl_paused") == 0) {
-                    if (IsMenuActive()) {
-                        ForwardKeyToMenu(kLocalClientIndex, kKeyEscape, 1);
-                        ForwardKeyToMenu(kLocalClientIndex, kKeyEscape, 0);
-                    }
-                    int32_t state = *reinterpret_cast<volatile int32_t*>(kPlayerStateAddr);
-                    if (state == 1 || state == 2) {
-                        OpenPauseMenu(kLocalClientIndex);
-                    } else {
-                        SetMenuState(kLocalClientIndex, kMenuStatePausedMenu);
-                    }
-                    g_glyphEditorTriggeredPause = true;
-                    LogFromController("[glyph-editor] debug-freeze: paused gameplay for editing");
-                } else {
-                    g_glyphEditorTriggeredPause = false;
-                }
+                g_glyphEditorSavedTimescale = GetDvarFloat("timescale");
+                if (g_glyphEditorSavedTimescale <= 0.0f) g_glyphEditorSavedTimescale = 1.0f;
+                CbufAddText(kLocalClientIndex, "timescale 0\n");
+                char freezeMsg[64];
+                sprintf_s(freezeMsg, "[glyph-editor] debug-freeze: timescale 0 (was %.3f)", g_glyphEditorSavedTimescale);
+                LogFromController(freezeMsg);
             } else {
-                if (g_glyphEditorTriggeredPause && GetDvarInt("cl_paused") != 0) {
-                    SetMenuState(kLocalClientIndex, kMenuStateUnpause);
-                    LogFromController("[glyph-editor] debug-freeze: resumed gameplay");
-                }
-                g_glyphEditorTriggeredPause = false;
+                char restoreCmd[48];
+                sprintf_s(restoreCmd, "timescale %.3f\n", g_glyphEditorSavedTimescale);
+                CbufAddText(kLocalClientIndex, restoreCmd);
+                char restoreMsg[80];
+                sprintf_s(restoreMsg, "[glyph-editor] debug-freeze: restored timescale %.3f", g_glyphEditorSavedTimescale);
+                LogFromController(restoreMsg);
             }
         }
         // Debounced (2026-08-16, live-reported "it goes to the set position but after
