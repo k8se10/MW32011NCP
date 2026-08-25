@@ -6656,34 +6656,32 @@ extern "C" void __cdecl ResetMenuListItemOrdinalForFrame()
             sprintf_s(msg, "[glyph-editor] edit mode %s", g_glyphEditModeActive ? "ON" : "off");
             LogFromController(msg);
 
-            // AI-disable-instead-of-freeze (2026-08-25). Two earlier debug-freeze
-            // attempts (cl_paused/SetMenuState -- opened the real pausedmenu UI,
-            // rejected live; timescale 0 -- froze the whole world's time, including
-            // rendering feedback for whatever's being calibrated) are both dropped
-            // per direct redirect: "my plan is to maybe just find the ai spawning
-            // dvars and remove the cl pause on f2 press. we can then disable ai and
-            // do glyphs with no interruption." No time-freeze at all now -- instead,
-            // suppress the actual INTERRUPTION source (AI spotting/engaging/
-            // spawning) via two real dvars confirmed present in iw5sp.exe by a live
-            // PE string scan: `ai_nosight` (this engine's own equivalent to WaW/BO
-            // Zombies' "AI can't see the player" toggle the user was thinking of --
-            // BO1/BO2's own mechanism turned out to be a script-side
-            // threat_ignore() call, not a plain dvar, so this is IW5's own,
-            // different answer to the same idea) and `ai_disableSpawn` (blocks new
-            // AI from spawning at all -- directly matches "find the ai spawning
-            // dvars"). Submitted the same real way `timescale` was (Cbuf_AddText,
-            // relying on Cmd_ExecuteString's own documented cvar-set fallback for
-            // any token not in its 132-entry command list -- re_notes/iw5sp.md).
-            // Pending live confirmation: found via string presence, not yet
-            // confirmed to behave exactly as their names imply.
+            // AI-disable-instead-of-freeze (2026-08-25). Debug-freeze attempts
+            // (cl_paused/SetMenuState -- opened the real pausedmenu UI, rejected
+            // live; timescale 0 -- froze rendering feedback too, dropped) and three
+            // other AI-suppression dvars (`ai_nosight` -- dead/unregistered;
+            // `ai_playerLOSRange`/`ai_playerNearRange`/`ai_playerFarRange`/
+            // `ai_playerADS_LOSRange` -- registered but semantically wrong, real
+            // Ghidra static RE found they govern FRIENDLY-AI cover/accuracy, not
+            // enemy detection; `g_ai` -- the real master AI-enable dvar, found via
+            // the same static RE pass, but live-reported to still not stop enemies
+            // from engaging) were all tried and rejected/failed. Full trail in git
+            // history and re_notes/known_issues.md issue #80's neighbors around
+            // this date.
+            //
+            // SETTLED ON: `ai_disableSpawn` (blocks new AI from spawning). Its
+            // known side effect -- Survival's round-completion check appears to
+            // include "no more enemies queued to spawn," so this can trigger an
+            // early round transition -- was explicitly accepted as an adequate
+            // tradeoff by the user ("the disable spawn one did and was adequate
+            // (ill have to clean up tho)") rather than something to keep chasing a
+            // cleaner fix for.
             if (g_glyphEditModeActive) {
-                CbufAddText(kLocalClientIndex, "ai_nosight 1\n");
                 CbufAddText(kLocalClientIndex, "ai_disableSpawn 1\n");
-                LogFromController("[glyph-editor] AI suppressed: ai_nosight 1, ai_disableSpawn 1");
+                LogFromController("[glyph-editor] AI spawn disabled: ai_disableSpawn 1");
             } else {
-                CbufAddText(kLocalClientIndex, "ai_nosight 0\n");
                 CbufAddText(kLocalClientIndex, "ai_disableSpawn 0\n");
-                LogFromController("[glyph-editor] AI restored: ai_nosight 0, ai_disableSpawn 0");
+                LogFromController("[glyph-editor] AI spawn restored: ai_disableSpawn 0");
             }
         }
         // Debounced (2026-08-16, live-reported "it goes to the set position but after
