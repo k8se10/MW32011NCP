@@ -401,6 +401,17 @@ struct MenuHintSlot {
     int prefixMeasuredWidth;
     int suffixMeasuredWidth;
     DWORD color = 0xFFFFFFFF; // opaque white default -- see RequestMenuHintOverlay's own color param
+    // isBackShortcut (2026-08-25, live-reported: "b back shows twice on the buy
+    // station screens when you go 3 layers deep" -- see RequestMenuHintOverlay's own
+    // comment for the full fix). Marks this slot as holding the ESC/Back-forward
+    // corner hint specifically, so a NEW Back request this frame can find and
+    // overwrite it by ROLE, not just by matching screen position -- position-only
+    // matching (the existing kSamePositionToleragePx dedup) already fixed this exact
+    // class of bug for Friends vs. the standard main-menu corner position, but
+    // doesn't help when a covered screen's own Back hint and a popup's own Back hint
+    // land at genuinely different real pixel positions (e.g. a Survival buy-station
+    // popup using its own UI's corner convention, not the standard menu one).
+    bool isBackShortcut = false;
 };
 MenuHintSlot g_menuHintSlots[kMaxMenuHintSlots] = {};
 int g_menuHintSlotCountThisFrame = 0; // how many of the slots above are live for the CURRENT frame
@@ -5513,7 +5524,7 @@ void AppendCustomHintSuffix(const char* extraText, GameplayHintSlotId slotId)
 // safe degradation (that hint just doesn't get its icon this frame) rather than a
 // buffer overrun or a crash.
 void RequestMenuHintOverlay(float x, float y, const char* prefixText, const char* suffixText,
-                             const char* assetName, DWORD color)
+                             const char* assetName, DWORD color, bool isBackShortcut)
 {
     // Live-reported 2026-08-01: on a modal popup (e.g. "Choose Game Mode" over
     // Special Ops), the UNDERLYING screen's own corner hint ("Friends") kept
@@ -5533,6 +5544,33 @@ void RequestMenuHintOverlay(float x, float y, const char* prefixText, const char
     // paint order (the modal's own hint, drawn after the screen it covers,
     // naturally overwrites the obscured one). Genuinely different positions still
     // coexist as separate slots.
+    //
+    // isBackShortcut ROLE-based collapse (2026-08-25, live-reported: "b back shows
+    // twice on the buy station screens when you go 3 layers deep") -- the position-
+    // tolerance fix above assumes both hints share the SAME standard corner
+    // position, true for the main-menu-style screens it was built against, but NOT
+    // true for every popup family: a Survival buy-station popup's own real corner
+    // hint can land at a genuinely different pixel position than the screen it
+    // covers. Since there's only ever conceptually ONE "current Back/ESC-forward
+    // hint" regardless of which screen it visually belongs to, a Back-shortcut
+    // request collapses into any OTHER slot already marked isBackShortcut this
+    // frame first, independent of position -- same "last call wins == native paint
+    // order" reasoning as the position-based fix, just keyed on semantic role
+    // instead of pixel proximity for this one specific, uniquely-identifiable hint.
+    if (isBackShortcut) {
+        for (int i = 0; i < g_menuHintSlotCountThisFrame; ++i) {
+            MenuHintSlot& existing = g_menuHintSlots[i];
+            if (existing.isBackShortcut) {
+                strncpy_s(existing.prefixText, prefixText, _TRUNCATE);
+                strncpy_s(existing.suffixText, suffixText, _TRUNCATE);
+                strncpy_s(existing.assetName, assetName, _TRUNCATE);
+                existing.x = x;
+                existing.y = y;
+                existing.color = color;
+                return;
+            }
+        }
+    }
     constexpr float kSamePositionToleragePx = 20.0f;
     for (int i = 0; i < g_menuHintSlotCountThisFrame; ++i) {
         MenuHintSlot& existing = g_menuHintSlots[i];
@@ -5543,11 +5581,13 @@ void RequestMenuHintOverlay(float x, float y, const char* prefixText, const char
             existing.x = x;
             existing.y = y;
             existing.color = color;
+            existing.isBackShortcut = isBackShortcut;
             return;
         }
     }
     if (g_menuHintSlotCountThisFrame >= kMaxMenuHintSlots) return;
     MenuHintSlot& slot = g_menuHintSlots[g_menuHintSlotCountThisFrame++];
+    slot.isBackShortcut = isBackShortcut;
     strncpy_s(slot.prefixText, prefixText, _TRUNCATE);
     strncpy_s(slot.suffixText, suffixText, _TRUNCATE);
     strncpy_s(slot.assetName, assetName, _TRUNCATE);

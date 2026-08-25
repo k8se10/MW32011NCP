@@ -390,6 +390,23 @@ deliberate, VAC-safer choice, not a stopgap).
   same function (solid quads, text, real `.menu` DDS assets) is untouched and
   still uses standard straight-alpha blending. Not yet visually re-confirmed
   live.
+14. **"B Back" corner hint showed twice on Survival buy-station screens, 3
+  layers deep** (live-reported: "another issue that resurfaced"). This
+  session's own first-guess theory (a stale Special-Ops-modal sticky flag)
+  was directly corrected by the user before it was ever tested: "the 3rd
+  deep screen is bigger, so the other screen is under but our mod still
+  draws the B, we can fix this easy just suppress the old draw from screen 2
+  when on screen 3 ... for popup modals in specific." Real cause: a covered
+  screen's own real corner-hint draw call keeps firing every frame even
+  while a bigger popup covers it, and the existing position-tolerance dedup
+  (`RequestMenuHintOverlay`, built 2026-08-01 for the same general problem
+  with Friends/Special-Ops modals) only collapses two Back-ish hints when
+  they land within 20px of each other -- not guaranteed for every popup
+  family, including Survival's own buy-station popups. Fixed by adding a
+  second, ROLE-based dedup (`isBackShortcut`, a new field/parameter) that
+  collapses any two Back-hint requests in the same frame regardless of
+  position, wired at both the real `PLATFORM_BACK_SHORTCUT` detection and
+  the Special Ops synthetic-Back path. Not yet visually re-confirmed live.
 
 ### Groundwork
 1. **New glyph-style auto-detect** (user-requested: "a default option for
@@ -485,18 +502,6 @@ deliberate, VAC-safer choice, not a stopgap).
 4. **New `PLUGIN_API.md`** -- the plugin ABI reference, the opt-in config
   flag, a minimal plugin skeleton, and an explicit risk statement for the new
   plugin API (see Groundwork above). Cross-linked from `README.md`.
-
-### Investigated, Not Yet Resolved
-1. **"B Back" corner hint shows twice on Survival buy-station screens, 3
-  layers deep** (live-reported: "another issue that resurfaced"). Leading
-  hypothesis, NOT confirmed: a stale `g_specOpsModalSticky` flag (left over
-  from an earlier, unrelated Special Ops mode-picker visit the same session)
-  firing the synthetic Back hint on top of the buy station's own real one --
-  the same general flag this project's own comment history already
-  documents fighting staleness bugs on multiple times before. A diagnostic
-  log line was added (not a fix) so the next repro either confirms or rules
-  this out with real data. See `known_issues.md` issue #86 for the full
-  trail.
 
 ---
 

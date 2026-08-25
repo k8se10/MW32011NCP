@@ -304,8 +304,15 @@ void AppendCustomHintSuffix(const char* extraText, GameplayHintSlotId slotId = G
 // frame) so multiple menu hints can coexist. Always left-anchored at (x, y) --
 // menu hints never center on screen or pulse (no Reload-style prompt exists in menu
 // UI), unlike the gameplay version above.
+// isBackShortcut (2026-08-25) -- pass true ONLY from the real PLATFORM_BACK_SHORTCUT
+// call site. Makes this request collapse into any OTHER Back-hint slot already
+// requested this frame by ROLE, not just by matching screen position -- fixes a real
+// live-reported duplicate ("b back shows twice" 3 layers deep in a Survival buy
+// station) where a covered screen's own Back hint and a popup's own Back hint land
+// at genuinely different real pixel positions, so the existing position-tolerance
+// dedup alone doesn't catch them. See RequestMenuHintOverlay's own comment.
 void RequestMenuHintOverlay(float x, float y, const char* prefixText, const char* suffixText,
-                             const char* assetName, DWORD color = 0xFFFFFFFF);
+                             const char* assetName, DWORD color = 0xFFFFFFFF, bool isBackShortcut = false);
 
 // TEMPORARY debug aid (2026-07-31, issue #48 position-tuning round) -- draws a small
 // solid-colored 8x8 marker centered exactly at (x, y), no further offset/scale
