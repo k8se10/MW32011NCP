@@ -1664,10 +1664,27 @@ void DrawOneGameplayHintSlot(void* device, GameplayHintSlot& slot, GameplayHintS
     GameplayHintEditNudge* editNudge = FindOrCreateGameplayHintEditNudge(slotId, slot.fontRole);
     bool editorActive = g_modConfig.glyphPositionEditMode && IsGlyphPositionEditModeActive();
     if (editNudge && editorActive) {
-        static bool s_lastMouseHeld = false;
+        // FIXED 2026-08-25 (live-reported: "mantle is still the only thing i cant
+        // drag" -- STILL broken even after the kGameplayHintEditNudgeMax pool-size fix
+        // earlier this same session, and confirmed by the user to actually be RENDERING
+        // ("i see the bounding boxes they just aint clickable"), ruling out the request/
+        // suppression path entirely -- this is a hit-test bug, not a render bug. Root
+        // cause: `static bool s_lastMouseHeld` was scoped to this FUNCTION, not to the
+        // slot -- but DrawOneGameplayHintSlot runs once per REQUESTED slot per frame, so
+        // whenever two hints are visible in the SAME frame (confirmed live in
+        // proxy_d3d9.log: ReadyUp's "Press F5 to ready up" and Mantle's "Press Space to"
+        // both logged in the same tight window), the first slot processed that frame
+        // (Interact=0, ReadyUp=1, Reload=2, Mantle=3 -- Mantle is ALWAYS last) updates
+        // the ONE shared static to the current mouseHeld value, so by the time Mantle's
+        // own check runs later THAT SAME frame, s_lastMouseHeld already equals mouseHeld
+        // -- clickEdge can never compute true for Mantle whenever anything else shares
+        // its frame, which real gameplay does often. Fixed by making this per-slot (a
+        // small fixed array indexed by slotId) instead of one function-wide static.
+        static bool s_lastMouseHeld[kGameplayHintSlotCount] = {};
+        int slotIdx = static_cast<int>(slotId);
         bool mouseHeld = IsLeftMouseButtonHeld();
-        bool clickEdge = mouseHeld && !s_lastMouseHeld;
-        s_lastMouseHeld = mouseHeld;
+        bool clickEdge = mouseHeld && !s_lastMouseHeld[slotIdx];
+        s_lastMouseHeld[slotIdx] = mouseHeld;
         if (!mouseHeld) g_gameplayHintEditDraggingSlot = -1;
 
         int mouseX = 0, mouseY = 0;
@@ -1760,10 +1777,13 @@ void DrawOneGameplayHintSlot(void* device, GameplayHintSlot& slot, GameplayHintS
         float iconBaseX = cursorX;
         float iconBaseY = iconVerticalCenter;
         if (editNudge && editorActive) {
-            static bool s_lastMouseHeldIcon = false;
+            // Same per-slot fix as the TEXT block's own s_lastMouseHeld above -- see that
+            // comment for the full root-cause account.
+            static bool s_lastMouseHeldIcon[kGameplayHintSlotCount] = {};
+            int slotIdxIcon = static_cast<int>(slotId);
             bool mouseHeld = IsLeftMouseButtonHeld();
-            bool clickEdge = mouseHeld && !s_lastMouseHeldIcon;
-            s_lastMouseHeldIcon = mouseHeld;
+            bool clickEdge = mouseHeld && !s_lastMouseHeldIcon[slotIdxIcon];
+            s_lastMouseHeldIcon[slotIdxIcon] = mouseHeld;
             if (!mouseHeld) g_gameplayHintEditDraggingSlot = -1;
 
             int mouseX = 0, mouseY = 0;
