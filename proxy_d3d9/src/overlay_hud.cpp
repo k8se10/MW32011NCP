@@ -1525,6 +1525,15 @@ GameplayHintEditNudge* FindOrCreateGameplayHintEditNudge(GameplayHintSlotId slot
                 n.textNudgeX = -0.5f;
                 n.textNudgeY = -3.0f;
             }
+            // Mantle's own F3-exported calibration (2026-08-25, captured right after
+            // the drag-handle fix -- see known_issues.md issue #81) -- confirmed live
+            // via the exported value: "Mantle + Default: textNudge=(-35.0f, 1.0f)
+            // iconNudge=(0.0f, 0.0f)". Same "iconNudge left at zero" reasoning as
+            // Interact above -- the icon follows textNudge automatically.
+            if (slotId == GameplayHintSlotId::Mantle && fontRole == FontRole::Default) {
+                n.textNudgeX = -35.0f;
+                n.textNudgeY = 1.0f;
+            }
             return &n;
         }
     }

@@ -5,6 +5,16 @@ them hook-installation and direct process-memory read/write access, plus a
 small set of mod-specific extension points (currently: overriding the color
 of every piece of text/glyph this mod renders).
 
+**This is a general MW3 (2011) extension point, not limited to extending
+this mod specifically.** `InstallHook`/`ReadMemory`/`WriteMemory` operate on
+the game process itself -- a plugin can hook or touch any part of
+`iw5sp.exe`/`iw5mp.exe`, not just this mod's own internal state. In practice
+this makes MW32011NCP double as a lightweight loader/platform for MW3
+sub-mods, with this mod's own controller layer as the first (and currently
+only) real consumer of that surface. Worth keeping in mind for anyone
+evaluating this project, or writing a plugin: you're not limited to
+reskinning this mod's own UI.
+
 **Read this whole file before enabling plugin loading.** This is a real
 capability class, not a toy.
 

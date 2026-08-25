@@ -942,11 +942,14 @@ detail in `re_notes/known_issues.md` issue #25.
 
 MW32011NCP can load opt-in plugin DLLs (hook installation, direct process
 memory access, a text/glyph color-override extension point) — off by
-default, and no plugin DLL ships with the main mod's own release. See
-[`PLUGIN_API.md`](PLUGIN_API.md) for the full ABI reference and an explicit
-risk statement before enabling this. A real example, **RGB Text**
-(`tools/example_plugin_rgb_text/`), rainbow-cycles every piece of text and
-glyph this mod renders.
+default, and no plugin DLL ships with the main mod's own release. Since the
+hook/memory surface operates on the game process itself, plugins aren't
+limited to extending this mod's own UI — this doubles as a general
+extension point for MW3 (2011) sub-mods. See [`PLUGIN_API.md`](PLUGIN_API.md)
+for the full ABI reference and an explicit risk statement before enabling
+this. A real example, **RGB Text** (`tools/example_plugin_rgb_text/`),
+rainbow-cycles every piece of text and glyph this mod renders — confirmed
+working live.
 
 ---
 
