@@ -20,7 +20,7 @@ but hasn't been run against the actual game isn't done. See CONTRIBUTING.md.
 
 - [ ] I opened an issue first for anything that wasn't a small, obvious fix (new hook target, `iw5mp.exe` work, new input-emulation exception)
 - [ ] This meets [`CODE_STANDARDS.md`](../CODE_STANDARDS.md) — production-ready, live-verified, no placeholder/half-finished work (applies identically to AI-assisted code)
-- [ ] No hardcoded addresses — every hook target is found via signature scan at runtime
+- [ ] Hook target found via static Ghidra analysis and hardcoded, per binary — not a runtime signature scan (deliberate VAC-safety policy, see `CODE_STANDARDS.md`)
 - [ ] Non-obvious findings (decompile, memdiff, live testing) are documented in `re_notes/iw5sp.md`
 - [ ] Commit messages follow `[type]: [description]`
 - [ ] If a new third-party library is introduced, its license is noted here and credited in `README.md`
