@@ -145,6 +145,72 @@ that failure:
   start-to-finish rather than re-grepping reporters' partial logs for the same
   prior hypotheses again.
 
+## Performance Investigation Discipline
+
+Added 2026-08-25 after issue #87 (`known_issues.md`) — a recurring stutter/freeze
+investigation that found FIVE real, separate root causes (plus one self-inflicted
+regression caught mid-investigation) before landing on a sixth, native/non-fixable
+explanation. Worth its own section rather than folding into Debugging Methodology
+above, since these lessons are specific to hunting performance regressions, not bugs
+generally.
+
+- **Once you find one instance of a bug SHAPE, systematically audit the whole
+  codebase for the same shape — don't assume it's isolated.** Every one of issue
+  #87's first four causes was the exact same pattern: a synchronous Windows
+  syscall (a file stat, a log flush, a GDI font call) running unconditionally on
+  the game's own main thread, invisible to this project's own
+  `FrametimeBenchmarkLogging` because no instrumentation column existed for that
+  specific call. Once that shape was recognized after finding cause 3
+  (`CheckConfigHotReload`'s `GetFileAttributesExA`), a systematic fork audit
+  grepping for the SAME shape across the whole `proxy_d3d9/src/` tree found causes
+  4 and 5 directly — faster and more reliable than waiting for the next live
+  report to point at each one individually.
+- **A clean profile from an instrumented tool proves nothing about code paths the
+  tool never measures — confirm the suspected code is actually instrumented
+  before trusting "it shows nothing."** `frame_benchmark.h` only ever timed
+  rumble, asset-capture, and real `CreateTexture` calls; it had zero coverage for
+  disk I/O (log flush, config-hot-reload stat) or GDI/font work
+  (`MeasureTextWidthPx`). Five real, measurable-cost bugs existed for the entire
+  session while the tool's own numbers stayed near-zero throughout, because none
+  of the five were ever inside what it actually measured.
+- **A fix that touches an ALREADY-DOCUMENTED hot/flood-prone code path must be
+  checked against that path specifically, not just reviewed in isolation.** Issue
+  #87's own event-driven-polling fix (`Controller_RequestPoll`) was itself a real,
+  if smaller, regression: it added a `SetEvent` call, unconditionally, to
+  `InjectMenuInputTick` — a function this project's own 2026-08-08 history already
+  documents as firing "dozens of times per rendered frame" during mouse movement,
+  the exact flood pattern that caused the original 4fps regression the whole
+  background-poll-thread architecture exists to prevent. `SetEvent` is far
+  cheaper than the `XInputGetState` call that caused THAT regression, but "cheaper
+  per call" is not "free when flooded" — caught only because the user directly
+  asked "what if threading is what's causing the issue," prompting a self-audit
+  that should have happened automatically once the new call landed inside a path
+  this project's own history already flags as flood-prone. When adding a call to
+  any function, grep that function's own history/comments for "fires N times per
+  frame"-shaped prior findings before assuming a cheap-looking addition is safe.
+- **When a symptom correlates with screen resolution, use aspect ratio as the
+  discriminator between "our own scaling math is buggy" and "native rendering
+  cost scales with resolution."** This project's own scaling code
+  (`GetResolutionScale`) only ever produces a real BUG (`scaleX != scaleY`,
+  distorting fixed-aspect assets) on a non-16:9 resolution change (e.g. 4:3). A
+  uniform-aspect-ratio change (1080p -> 1440p, both 16:9, `scaleX == scaleY` at
+  both) ruling out that whole bug class while the symptom still gets WORSE at the
+  higher resolution points at genuine GPU/pixel-count-scaled cost instead — real,
+  but not something a proxy-DLL's own math can fix. Confirmed this way for issue
+  #87's own residual (fine at 1080p/4:3, breaks above 1080p) without needing a
+  live GPU capture to rule out the mod-side theory first.
+- **When asked to make threading "safer" or add a "fallback" against an
+  overloaded thread, prefer splitting logically DISTINCT jobs onto separate
+  threads (division of labor) over duplicating the SAME job onto a second thread
+  (redundancy).** A literal redundant fallback poller reading the same hardware
+  source a second time risks reintroducing the exact "two things reading the same
+  source fight each other" bug class this project has already hit more than once
+  (DualSense-vs-XInput poll-priority contention; the Steam Input theory checked
+  and ruled out during this same investigation). Issue #87's own real
+  thread-safety improvement was giving vibration writes their own dedicated
+  thread, separate from input polling — two different jobs that used to share one
+  thread and could stall each other — not a second poller.
+
 ## Investigation & Persistence Discipline
 
 Added 2026-08-25, formalizing two standing rules from `CLAUDE.md`'s own Key
