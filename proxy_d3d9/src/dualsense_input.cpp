@@ -330,11 +330,29 @@ bool DualSense_Poll(DualSenseRawState& outState)
     // file's own header comment already said as much ("one direction inverted for
     // Y") but the code itself never actually applied it until now. X axes correctly
     // need no such correction (confirmed live: left/right wasn't reported inverted).
+    // FIXED 2026-08-25 (known_issues.md issue #77 follow-up): a real integer
+    // overflow, found from live diagnostic data after the "forward is backwards,
+    // backward still goes backwards" / "directly forward nope, diagonals fine"
+    // reports. `raw byte - 128` (or its negation) ranges from -128..127 for the
+    // X axes, but Y's NEGATED version ranges -127..+128 -- asymmetric by one,
+    // since negating -128 produces +128, one past a signed byte's own positive
+    // limit. controller_input.cpp scales this by *256 to fit XInput's SHORT
+    // range (`dsState.leftStickY * 256`) -- at the ordinary extremes this is
+    // safely within range (127*256=32512), but +128*256=32768 overflows a
+    // 16-bit SHORT (max 32767) and silently wraps to -32768, the MOST NEGATIVE
+    // value -- full forward becomes full backward, but only exactly at that one
+    // extreme, explaining why diagonals (Y magnitude always < 128, split with X)
+    // and backward (extreme is -127, never overflows) were both unaffected.
+    // Clamping to the symmetric int8_t range (-127..127) here removes the +128
+    // case entirely, so the *256 scaling downstream can never overflow.
     const unsigned char* p = buf + payloadBase;
+    // Plain manual clamp, not std::min/max -- windows.h's own min/max macros
+    // (NOMINMAX not defined project-wide) would otherwise corrupt those calls.
+    auto clampToInt8Range = [](int v) { return v > 127 ? 127 : (v < -127 ? -127 : v); };
     outState.leftStickX = static_cast<int16_t>(static_cast<int>(p[kOffsetLeftX]) - 128);
-    outState.leftStickY = static_cast<int16_t>(-(static_cast<int>(p[kOffsetLeftY]) - 128));
+    outState.leftStickY = static_cast<int16_t>(clampToInt8Range(-(static_cast<int>(p[kOffsetLeftY]) - 128)));
     outState.rightStickX = static_cast<int16_t>(static_cast<int>(p[kOffsetRightX]) - 128);
-    outState.rightStickY = static_cast<int16_t>(-(static_cast<int>(p[kOffsetRightY]) - 128));
+    outState.rightStickY = static_cast<int16_t>(clampToInt8Range(-(static_cast<int>(p[kOffsetRightY]) - 128)));
     outState.leftTrigger = p[kOffsetLeftTrigger];
     outState.rightTrigger = p[kOffsetRightTrigger];
     outState.buttonsAndDpad = p[kOffsetButtonsAndDpad];
