@@ -9062,7 +9062,9 @@ benefits from the same fix.
 
 **Why deferred rather than guessed at:** this project's other interact-hint work (pickup/mantle/Reload/ready-up, etc.) all required multiple live-capture rounds against real `proxy_d3d9.log` output and screenshots to get the real string shape, position, and highlight-span format right — none of that data exists yet for this specific prompt. Implementing blind risks the same trial-and-error every other hint needed, without the ground truth to get it right the first time.
 
-**Needed before implementing:** a `proxy_d3d9.log` capture (with `glyphIconOverlayEnabled` diagnostics active) from a live session standing at a buy station with a teammate present, showing the real native string/format for this prompt.
+**Needed before implementing:** a `proxy_d3d9.log` capture (with `HudGlyphPositionLogging` diagnostics active -- `[Experimental]`, `mw3ncp_config.ini`; already enabled live as of 2026-08-25, see the dog/hyena capture noted in issue #78) from a live session standing at a buy station with a teammate present, showing the real native string/format for this prompt. **Correction (2026-08-25): the flag this note originally referenced, `glyphIconOverlayEnabled`, no longer exists -- it was removed entirely as part of issue #74's fix, not just renamed.**
+
+**Clarified scope (2026-08-25, direct correction): money-sharing only works while the buy-station MENU is actually open, and controller input for the action itself very likely already works** via the same existing generic D-pad+A menu navigation this project's other buy-station work already covers (per this entry's own "still fully usable via D-pad navigation + A as a workaround" line above) -- F5 is just the keyboard-specific shortcut for the same already-selectable menu item, not a separate control path that needs its own key-synthesis implementation. The real, sole remaining gap is the missing glyph/hint prompt inside that menu, not missing functionality.
 
 ---
 
