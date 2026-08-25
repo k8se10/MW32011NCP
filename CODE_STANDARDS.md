@@ -64,10 +64,30 @@ reference record, not a polished highlight reel — treat it that way:
   memory of this one) depends on this to avoid re-treading the exact same dead
   end blind.
 - **Every user-facing change gets a `PATCHNOTES.md` entry in the same pass as
-  the change itself**, sorted into Added/Fixed/Changed/Investigated-not-
-  resolved/Docs — not a separate cleanup task, not something to batch later.
-  This includes corrections to previously-wrong documentation or config-comment
+  the change itself**, sorted into the current release's own **What's New /
+  Fixed / Documentation / Groundwork / Investigated, Not Yet Resolved**
+  sections (this schema replaced an older, looser Added/Fixed/Changed/Docs
+  convention on 2026-08-18 after duplicate-heading drift became a real, live
+  problem — see `PATCHNOTES.md`'s own structure comment for the exact
+  category definitions and the "exactly one heading of each kind per release"
+  rule). Not a separate cleanup task, not something to batch later. This
+  includes corrections to previously-wrong documentation or config-comment
   text, not just code changes.
+- **Every bug fix, non-trivial finding, or investigation gets its own numbered
+  entry in `re_notes/known_issues.md`, in the same pass as the fix** — not
+  just a `PATCHNOTES.md` line. `PATCHNOTES.md` is the curated summary a player
+  reads; `known_issues.md` is this project's actual source of truth for *why*
+  something is the way it is, and a fix that only exists in the patch notes
+  leaves no trail for the next session (human or AI) to find when the same
+  symptom resurfaces, or when a second, deeper root cause turns up under a
+  fix that looked complete at the time (a real, repeated pattern in this
+  project's own history — see the Mantle drag-handle entry, issue #81, for a
+  worked example of documenting a wrong-but-real first fix honestly alongside
+  the actual one). Each entry opens with a `**Status:**` line from the fixed
+  small vocabulary (Open / Investigating / Partially Resolved / Resolved /
+  Deferred / Roadmap Idea) and gets a top-of-file Index line — see
+  `known_issues.md`'s own Documentation Standards note for the full
+  formatting convention.
 - **Cite concrete evidence, not conclusions.** A finding is "confirmed via
   disassembly at address `0x...`" or "live-tested, see screenshot/log," not
   "should be correct" or "this seems right." Distinguish confirmed-live, from
@@ -125,6 +145,63 @@ that failure:
   start-to-finish rather than re-grepping reporters' partial logs for the same
   prior hypotheses again.
 
+## Investigation & Persistence Discipline
+
+Added 2026-08-25, formalizing two standing rules from `CLAUDE.md`'s own Key
+Principles (`§10`, items 9-10) — repeated here because they're as much a
+code-quality standard as a debugging-methodology one.
+
+- **Fresh perspective breaks real stalemates — but this is NOT "switch
+  approach after any failed attempt."** Keep pushing the current, reasoned
+  angle through ordinary setbacks. Only once a bug has survived an extended
+  run of genuine, well-reasoned attempts at the SAME angle — call it 5-6+ —
+  and investigation is demonstrably going in circles, is that the signal to
+  STOP and ASK the user whether to keep pushing or shift to something
+  genuinely different (a fresh reference implementation to diff against,
+  outside domain knowledge, etc.), not to silently decide that on your own.
+  Hitting the threshold is never itself authorization to pivot
+  autonomously — the user explicitly asking for a different angle is a
+  separate, valid trigger at any point, without needing the threshold at all.
+  The bar is deliberately high (not "one or two setbacks") specifically
+  because AI tooling is optimized for token usage in a way that makes it too
+  easy to bail on a reasoned approach early — a high, explicit numeric bar is
+  what keeps genuine persistence the default rather than shallow thrashing.
+  See `CLAUDE.md` §10 item 9 for the full worked example (issue #77, ~9 real
+  rounds before the actual fix).
+- **An asymmetric symptom points at overflow, not convention.** When a bug
+  affects one specific extreme/direction/value while everything else works
+  correctly (e.g. "diagonals fine, backward fine, only full-forward broken"),
+  that shape is the signature of an integer overflow/wraparound at that exact
+  extreme, not a sign-convention or byte-offset bug (which would normally
+  affect a whole class of inputs symmetrically). Check the arithmetic range
+  and the target type's own limits before re-litigating parsing/sign theories
+  again — issue #77's real fix was exactly this: `+128*256=32768` silently
+  overflowing a 16-bit `SHORT` (max 32767) into `-32768`, affecting only the
+  single input that could ever reach exactly that extreme.
+- **Checking is far cheaper than digging — verify an assumption directly
+  before building on it.** Direct precedent (2026-08-25): a linkage bug was
+  correctly diagnosed, "fixed," then WRONGLY reverted based on a flawed manual
+  re-read of the surrounding code, reintroducing the bug — only a real MSVC
+  build (a real `LNK2019`) caught the mistake. A quick grep for the enclosing
+  namespace, or better, an actual `dumpbin /symbols` check on the built
+  `.obj`, would have caught it in seconds instead of an expensive round-trip
+  through a wrong assumption. When a fact is checkable in the time it takes
+  to grep or build, check it — don't reason about it from memory or a partial
+  re-read and treat that as ground truth. See the linkage-specific version of
+  this lesson under **Native project code (C/C++)** below.
+- **A wrong-but-real first fix is not a failure to hide — document it
+  honestly, alongside the fix that actually worked.** This project's own
+  history has multiple real cases (`known_issues.md` issues #62, #81) where
+  an initial fix addressed a genuine bug that turned out not to be the actual
+  blocker for the reported symptom, and a second, different root cause was
+  the real answer. Keep the first fix's own entry/commit if it was real and
+  worth keeping (don't revert working code just because it didn't solve the
+  reported symptom) — write up BOTH fixes in the same `known_issues.md`
+  entry, in the order they actually happened, including what evidence ruled
+  the first one out as the real blocker. A reader should be able to follow
+  the actual investigation, not just see the final answer with no trace of
+  the (real, useful) wrong turn along the way.
+
 ## Native project code (C/C++)
 
 - **Aspirational goal, not current practice (corrected 2026-08-01 — this
@@ -157,6 +234,63 @@ that failure:
 - Keep XInput polling, hook installation, and gameplay-input translation in
   clearly separate modules — don't let pattern-scan/hook plumbing and
   aim-assist/curve logic tangle together.
+- **When adding a new "must be distinct from every other one" constant
+  (kbutton bind indices, struct-identity offsets, etc.), grep the WHOLE file
+  for existing values first — don't just check the nearby comment's own
+  "distinct from X/Y/Z" list.** Lesson from a real, shipped critical
+  regression (2026-07-31, issue #46): Hold Breath's bind index was set to
+  `17`, silently identical to Fire's own bind index (also `17`) — both
+  constants were genuine and each had its own "distinct from ADS/Reload/
+  Sprint" comment, but neither was defined near the other (different sections
+  of the same file, added on different days) so the collision was never
+  caught until a live playtest found "can't fire while holding breath." A
+  comment can only enumerate what its author remembered was nearby — it
+  can't substitute for an actual whole-file search.
+- **A function defined inside ANY anonymous namespace — nested or not — has
+  internal linkage and cannot be called from another translation unit,
+  UNLESS declared `extern "C"`.** MSVC gives `extern "C"` functions inside an
+  anonymous namespace genuine external (C) linkage as a real, documented
+  exception — plain C++ functions get no such exception. A function sitting
+  right next to a working `extern "C"` one is NOT proof it shares the same
+  linkage; a naive brace-counter (or a manual "does this look like it's
+  inside braces" read) cannot see this distinction reliably. Real, repeated
+  cost: a correct fix (closing/reopening the anonymous namespace around one
+  function) was WRONGLY reverted based on a flawed manual re-read, only
+  caught by a real `LNK2019` from an actual MSVC build. When linkage is in
+  doubt, trust the compiler/linker's own verdict — build and check the real
+  error (or `dumpbin /symbols` on the built `.obj`) — never reason about
+  brace-nesting by eye and treat that as settled.
+- **A `static` local inside a function that's called once PER-ITEM in a loop
+  (once per slot, once per list entry, once per frame-visible hint, etc.) is
+  scoped to the function, not to the item — it silently assumes "this
+  function is called at most once per frame."** If that assumption stops
+  being true (a system that used to draw one thing at a time grows a second
+  simultaneous instance), the shared static starts corrupting state between
+  items with no compile error and no crash. Real case (2026-08-25, issue
+  #81): `DrawOneGameplayHintSlot`'s own `static bool s_lastMouseHeld` (click-
+  edge detection for a drag handle) was shared across all 4 gameplay-hint
+  slots; whenever two hints were visible in the same frame, the earlier-
+  processed slot silently ate the later slot's click-edge detection for that
+  frame, and the LAST slot in the fixed iteration order could never register
+  a click whenever anything else shared its frame. Any per-item edge-
+  detection/debounce state inside a function that can run multiple times per
+  frame needs to be a small array indexed by the item's own identity (slot
+  ID, list index), not a bare function-scoped `static` — the same way this
+  project already keeps `g_gameplayHintEditNudges` per-slot rather than
+  sharing one.
+- **When extending an existing multi-part tool/system to a new context, audit
+  EVERY control it depends on for that context — not just the newly-built
+  interactive part that's easy to eyeball-test.** Lesson from a real bug
+  (2026-08-25): the in-game glyph-position editor was extended from menu
+  items to gameplay hints — the drag handles were built and worked fine, so
+  the feature LOOKED complete, but the F3 export hotkey was only ever polled
+  inside the menu-item editor's own per-frame function, which never runs
+  during actual gameplay — so F3 silently never fired while calibrating a
+  real gameplay prompt. The interactive half worked; the persistence half was
+  dead the whole time, and nothing about watching the drag handles move would
+  ever reveal that. When porting a feature to a new context, trace where
+  EACH of its triggers is polled, not just whether the visible/interactive
+  parts respond.
 
 ## Error Handling & Logging
 
@@ -171,9 +305,20 @@ that failure:
 
 - Never write secrets, tokens, or account details into project source or
   committed config.
-- Treat any data read out of the game's process memory (e.g. for aim-assist
-  work) as untrusted/variable between binary versions — validate before
-  dereferencing.
+- **This project has a hard-line, permanent policy against reading live
+  gameplay-entity memory (corrected 2026-08-25 — this line previously cited
+  "aim-assist work" as a live example; aim assist was permanently REMOVED
+  2026-07-20, not paused, specifically because that class of read is
+  mechanically identical to a soft-aimbot regardless of intent — see
+  `CLAUDE.md`'s own "Aim-assist target" section and `known_issues.md` issue
+  #33).** Not a feature to build carefully; a closed door. If any future work
+  genuinely needs to read game-process memory for a non-gameplay purpose
+  (e.g. save-state serialization, `known_issues.md` issue #80, paused
+  pending its own explicit risk discussion), treat it as untrusted/variable
+  between binary versions and validate before dereferencing — but the
+  decision to read entity/world memory AT ALL is a separate, explicit
+  go/no-go conversation with the user every time, not something this
+  standard pre-authorizes.
 - See `SECURITY.md` for what counts as a reportable security issue and how
   to report one.
 
@@ -182,6 +327,8 @@ that failure:
 - Only make changes that are explicitly requested or clearly required by the
   task at hand — don't bundle unrelated fixes or refactors into the same
   change.
-- No hardcoded addresses, no OS-level input emulation beyond the two
+- No hardcoded addresses, no OS-level input emulation beyond the three
   documented, narrowly-scoped exceptions (`re_notes/known_issues.md` issues
-  #5 and #14) — see `CONTRIBUTING.md` for the full ground rules.
+  #5, #13/#14, and #28 — corrected 2026-08-25, this line previously said
+  "two" and named only #5/#14, missing the Back/`+scores` synthetic-TAB
+  exception added later) — see `CONTRIBUTING.md` for the full ground rules.
