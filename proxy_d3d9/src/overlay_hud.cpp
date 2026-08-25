@@ -423,6 +423,24 @@ int g_menuHintSlotCountThisFrame = 0; // how many of the slots above are live fo
 constexpr int kHintFontHeightPx = 30;
 constexpr float kHintIconSize = 42.0f; // sized to match kHintFontHeightPx, not the old flat 34px
 
+// QTE prompts (issue #78, 2026-08-25 live-reported: "it works but now needs to be a
+// LOT bigger", then, after the first pass still read as unchanged size on a live
+// retest: "this should get its own slot this qte one should be legit about 2-300 px
+// on 1080p") read as a real, deliberate large console-style QTE callout, not a small
+// corner hint -- a totally different visual weight from every other gameplay hint.
+// This is a DESTINATION-quad upscale applied only in DrawOneGameplayHintSlot
+// (slotId == Qte), not a change to the actual rendered font height/kHintFontHeightPx
+// or kTextureHeight (the 64px shared text-render atlas every hint's texture is
+// rasterized into) -- rendering AT this multiplier's font height would clip
+// vertically inside that fixed-size atlas. Upscaling the already-rendered texture at
+// draw time avoids that entirely, at the cost of some softness at this multiplier, an
+// acceptable tradeoff for a large, low-detail callout. kHintFontHeightPx (30px) is the
+// real unscaled glyph height baked into that texture, so the visible on-screen text
+// height is (roughly) kHintFontHeightPx * kQteHintScale -- 8.0x puts that at ~240px,
+// inside the user's own explicitly requested 200-300px range. Tune this one constant
+// to retune QTE prompt size (e.g. 250px target => 250/30 = ~8.3x).
+constexpr float kQteHintScale = 8.0f;
+
 // Extra pixels added on top of the measured text width before cropping a rendered
 // segment's texture (see DrawOneGameplayHintSlot) -- RenderMaskLuminance always
 // draws with an 8px left margin (see its own DrawTextA rect below) that
@@ -1563,7 +1581,8 @@ void AppendGameplayHintEditExport(FILE* f)
         if (n.textNudgeX == 0.0f && n.textNudgeY == 0.0f && n.iconNudgeX == 0.0f && n.iconNudgeY == 0.0f) continue;
         const char* slotName = n.slotId == GameplayHintSlotId::Interact ? "Interact"
                               : n.slotId == GameplayHintSlotId::ReadyUp ? "ReadyUp"
-                              : n.slotId == GameplayHintSlotId::Reload ? "Reload" : "Mantle";
+                              : n.slotId == GameplayHintSlotId::Reload ? "Reload"
+                              : n.slotId == GameplayHintSlotId::Mantle ? "Mantle" : "Qte";
         const char* roleName = n.fontRole == FontRole::Condensed ? "Condensed" : "Default";
         fprintf(f, "// %s + %s: textNudge=(%.1ff, %.1ff) iconNudge=(%.1ff, %.1ff)\n",
             slotName, roleName, n.textNudgeX, n.textNudgeY, n.iconNudgeX, n.iconNudgeY);
@@ -1610,6 +1629,12 @@ void DrawOneGameplayHintSlot(void* device, GameplayHintSlot& slot, GameplayHintS
     // this being a SIZE bug. Fixed: size now uses ONE uniform value for both w and h
     // (see GetUniformSizeScale's own header comment), position unchanged.
     float uniformScale = scaleX < scaleY ? scaleX : scaleY;
+    // QTE prompts (issue #78) draw through this same slot system but at a much larger
+    // DESTINATION size -- see kQteHintScale's own comment (why this scales the drawn
+    // quads, not the rendered font height/atlas). Every design-space size below (icon,
+    // gap, drawn text width/height, layout-advance amounts) is scaled by this factor;
+    // measured/UV widths that index into the actual rendered texture stay unscaled.
+    float hintScale = (slotId == GameplayHintSlotId::Qte) ? kQteHintScale : 1.0f;
     // isTextOrGlyph defaults true here (not exposed as a caller-choosable param) --
     // every draw that goes through THIS lambda, in this function, is either hint
     // text or a hint icon; nothing else is ever drawn through it. See
@@ -1640,10 +1665,10 @@ void DrawOneGameplayHintSlot(void* device, GameplayHintSlot& slot, GameplayHintS
     // which icon); width is derived from the source PNG's own real dimensions
     // (iconTexW/iconTexH, already read by GetOrLoadGlyphIconTexture) so wide icons
     // stay wide instead of being squeezed into a square.
-    float iconDrawWidth = kHintIconSize;
-    float iconDrawHeight = kHintIconSize;
+    float iconDrawWidth = kHintIconSize * hintScale;
+    float iconDrawHeight = kHintIconSize * hintScale;
     if (haveIcon && iconTexH > 0) {
-        iconDrawWidth = kHintIconSize * (static_cast<float>(iconTexW) / static_cast<float>(iconTexH));
+        iconDrawWidth = iconDrawHeight * (static_cast<float>(iconTexW) / static_cast<float>(iconTexH));
     }
 
     // Live-reported 2026-07-31: the space between the icon and the following text
@@ -1658,16 +1683,17 @@ void DrawOneGameplayHintSlot(void* device, GameplayHintSlot& slot, GameplayHintS
     // destination quad, so the visible glyph starts right at the quad's own left edge.
     // (2) kIconGap itself was more generous (8px) than actually needed once (1) is
     // fixed -- reduced to a tighter, still-readable gap.
-    constexpr float kIconGap = 3.0f;
+    float iconGap = 3.0f * hintScale; // was a fixed constexpr kIconGap -- now scales with hintScale
     constexpr int kHintTextRenderLeftMarginPx = kTextRenderMarginPx; // matches RenderMaskLuminance's own left inset
     // Pixel-measured 2026-07-31 (round 6, against the real static " Model 1887" HUD
     // text via direct screenshot pixel scanning): g_pendingHintY is the caller's
     // intended VERTICAL CENTER of the line (matching the same real HUD element's own
     // measured center), not the top of the drawn box -- text quads below derive their
     // top from this center by subtracting half the canvas height, same convention the
-    // icon already used.
+    // icon already used. The drawn quad's own height is kTextureHeight * hintScale (see
+    // the drawScaledQuad calls below), so the half-height subtracted here must match.
     float iconVerticalCenter = slot.y;
-    float textQuadTop = slot.y - static_cast<float>(kTextureHeight) * 0.5f;
+    float textQuadTop = slot.y - static_cast<float>(kTextureHeight) * hintScale * 0.5f;
 
     // Live-tested 2026-07-31: the plain measured width clipped the last character of
     // a segment (e.g. the "s" in "Press") -- RenderMaskLuminance always draws with an
@@ -1689,9 +1715,9 @@ void DrawOneGameplayHintSlot(void* device, GameplayHintSlot& slot, GameplayHintS
         // screen width is real pixels, so it's converted to design-space (divided by
         // scaleX) before centering against it -- otherwise this would silently mix
         // the two spaces and mis-center on any non-1080p resolution.
-        float totalContentWidth = static_cast<float>(slot.prefixMeasuredWidth) + kIconGap
-            + (haveIcon ? iconDrawWidth + kIconGap : 0.0f)
-            + static_cast<float>(slot.suffixMeasuredWidth);
+        float totalContentWidth = static_cast<float>(slot.prefixMeasuredWidth) * hintScale + iconGap
+            + (haveIcon ? iconDrawWidth + iconGap : 0.0f)
+            + static_cast<float>(slot.suffixMeasuredWidth) * hintScale;
         // Uses the SAME real-screen-size source as scaleX/scaleY above (GetViewport,
         // not a separate GetClientRect call) -- two different sources for "real screen
         // width" disagreeing with each other would silently break centering on its own.
@@ -1764,7 +1790,8 @@ void DrawOneGameplayHintSlot(void* device, GameplayHintSlot& slot, GameplayHintS
         }
         const char* slotLabel = slotId == GameplayHintSlotId::Interact ? "TEXT (Interact)"
                                : slotId == GameplayHintSlotId::ReadyUp ? "TEXT (ReadyUp)"
-                               : slotId == GameplayHintSlotId::Reload ? "TEXT (Reload)" : "TEXT (Mantle)";
+                               : slotId == GameplayHintSlotId::Reload ? "TEXT (Reload)"
+                               : slotId == GameplayHintSlotId::Mantle ? "TEXT (Mantle)" : "TEXT (Qte)";
         RequestGlyphEditHandleBox(textHandleX, textHandleY, kHandleHitRadiusDesign,
             draggingText ? 0x9000FF00u : 0x9000AAFFu, slotLabel);
     }
@@ -1799,9 +1826,9 @@ void DrawOneGameplayHintSlot(void* device, GameplayHintSlot& slot, GameplayHintS
         float prefixU0 = static_cast<float>(kHintTextRenderLeftMarginPx) / static_cast<float>(kTextureWidth);
         float prefixU1 = static_cast<float>(kHintTextRenderLeftMarginPx + prefixDrawWidth) / static_cast<float>(kTextureWidth);
         drawScaledQuad(slot.prefixTexture, cursorX, textQuadTop,
-            static_cast<float>(prefixDrawWidth), static_cast<float>(kTextureHeight),
+            static_cast<float>(prefixDrawWidth) * hintScale, static_cast<float>(kTextureHeight) * hintScale,
             0xFFFFFFFF, prefixU0, 0.0f, prefixU1, 1.0f);
-        cursorX += static_cast<float>(slot.prefixMeasuredWidth) + kIconGap;
+        cursorX += static_cast<float>(slot.prefixMeasuredWidth) * hintScale + iconGap;
     }
 
     if (haveIcon) {
@@ -1865,20 +1892,21 @@ void DrawOneGameplayHintSlot(void* device, GameplayHintSlot& slot, GameplayHintS
             }
             const char* slotLabel = slotId == GameplayHintSlotId::Interact ? "ICON (Interact)"
                                    : slotId == GameplayHintSlotId::ReadyUp ? "ICON (ReadyUp)"
-                                   : slotId == GameplayHintSlotId::Reload ? "ICON (Reload)" : "ICON (Mantle)";
+                                   : slotId == GameplayHintSlotId::Reload ? "ICON (Reload)"
+                                   : slotId == GameplayHintSlotId::Mantle ? "ICON (Mantle)" : "ICON (Qte)";
             RequestGlyphEditHandleBox(iconHandleX, iconHandleY, kHandleHitRadiusDesign,
                 draggingIcon ? 0x9000FF00u : 0x90FFA000u, slotLabel);
         }
         drawScaledQuad(iconTexture, iconBaseX + iconNudgeX, iconBaseY + iconNudgeY - iconDrawHeight * 0.5f,
             iconDrawWidth, iconDrawHeight, iconColor, 0.0f, 0.0f, 1.0f, 1.0f, /*premultipliedAlpha=*/true);
-        cursorX += iconDrawWidth + kIconGap; // unaffected by iconNudge -- suffix flow stays stable regardless
+        cursorX += iconDrawWidth + iconGap; // unaffected by iconNudge -- suffix flow stays stable regardless
     }
 
     if (suffixDrawWidth > 0) {
         float suffixU0 = static_cast<float>(kHintTextRenderLeftMarginPx) / static_cast<float>(kTextureWidth);
         float suffixU1 = static_cast<float>(kHintTextRenderLeftMarginPx + suffixDrawWidth) / static_cast<float>(kTextureWidth);
         drawScaledQuad(slot.suffixTexture, cursorX, textQuadTop,
-            static_cast<float>(suffixDrawWidth), static_cast<float>(kTextureHeight),
+            static_cast<float>(suffixDrawWidth) * hintScale, static_cast<float>(kTextureHeight) * hintScale,
             0xFFFFFFFF, suffixU0, 0.0f, suffixU1, 1.0f);
     }
 
@@ -1896,8 +1924,8 @@ void DrawOneGameplayHintSlot(void* device, GameplayHintSlot& slot, GameplayHintS
         if (topLineDrawWidth > 0) {
             float topU0 = static_cast<float>(kHintTextRenderLeftMarginPx) / static_cast<float>(kTextureWidth);
             float topU1 = static_cast<float>(kHintTextRenderLeftMarginPx + topLineDrawWidth) / static_cast<float>(kTextureWidth);
-            drawScaledQuad(slot.topLineTexture, lineStartX, textQuadTop - static_cast<float>(kTextureHeight),
-                static_cast<float>(topLineDrawWidth), static_cast<float>(kTextureHeight),
+            drawScaledQuad(slot.topLineTexture, lineStartX, textQuadTop - static_cast<float>(kTextureHeight) * hintScale,
+                static_cast<float>(topLineDrawWidth) * hintScale, static_cast<float>(kTextureHeight) * hintScale,
                 0xFFFFFFFF, topU0, 0.0f, topU1, 1.0f);
         }
     }
