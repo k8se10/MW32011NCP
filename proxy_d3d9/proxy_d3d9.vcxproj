@@ -101,6 +101,7 @@
     <ClCompile Include="src\options_render_suppress.cpp" />
     <ClCompile Include="src\asset_capture.cpp" />
     <ClCompile Include="src\frame_benchmark.cpp" />
+    <ClCompile Include="src\plugin_loader.cpp" />
     <!-- MinHook (BSD-style license, see third_party\minhook\LICENSE.txt;
          attribution required if this mod is ever shipped, see CLAUDE.md paragraph 6). -->
     <ClCompile Include="third_party\minhook\src\buffer.c" />
@@ -127,6 +128,8 @@
     <ClInclude Include="src\rumble.h" />
     <ClInclude Include="src\asset_capture.h" />
     <ClInclude Include="src\frame_benchmark.h" />
+    <ClInclude Include="src\plugin_loader.h" />
+    <ClInclude Include="src\mw3ncp_plugin_api.h" />
     <ClInclude Include="src\overlay_hud.h" />
     <ClInclude Include="src\real_settings.h" />
     <ClInclude Include="src\vanilla_settings_table.h" />
