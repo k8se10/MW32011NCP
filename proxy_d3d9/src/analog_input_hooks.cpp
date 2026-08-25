@@ -5948,14 +5948,14 @@ bool IsGameplayHintFont(const DiagFont* font)
            // file's own hudBigFont-retarget comment, 2026-07-21) that was flagged as
            // a real candidate back then but never actually added to this allowlist.
            // Live-reported: the dog/hyena melee-struggle escape prompt renders as
-           // "Melee [F]" -- confirmed via proxy_d3d9.log that objectiveFont is the
+           // "Melee [F]" (later corrected by the user -- the real key is E, not F) -- confirmed via proxy_d3d9.log that objectiveFont is the
            // ONLY font firing this session with no known allowlist coverage at all,
            // meaning that prompt (and anything else objectiveFont renders) has been
            // completely invisible to this whole glyph-substitution pipeline, not
            // just failing to match a pattern -- Hook_DrawGlyphText's own gameplay-
            // hint block never even reached this font's draw calls to look. Added
            // here so the EXISTING span-detection/logging machinery can see it for
-           // the first time; whether "Melee [F]" contains a real "^N...^7" span
+           // the first time; whether "Melee [F]" (later corrected by the user -- the real key is E, not F) contains a real "^N...^7" span
            // (in which case the existing generic path may already handle it) or
            // needs its own bracket-specific detection (like SENTRY_PLACE's
            // "[{+command}]" precedent) is still unconfirmed -- this change makes
