@@ -9,7 +9,12 @@ reverse-engineering trail behind each entry.
 ## Unreleased
 
 ### What's New
-1. **Overlay text now renders semibold with a clearer/thicker outline.**
+1. **DualSense now has full input-level parity with XInput** (sticks, buttons,
+  triggers -- both USB and Bluetooth) -- the headline fix this release. Does
+  NOT mean full feature parity yet: vibration/rumble, gyro-aim, and adaptive
+  triggers remain separate, still-PREVIEW/WIP work, not covered by this claim.
+  Root cause and full fix in the Fixed section below (issue #77).
+2. **Overlay text now renders semibold with a clearer/thicker outline.**
   `CreateFontA`'s weight argument was `FW_DONTCARE` (the bundled font only ever
   registered one weight, so it had no effect); switched to `FW_SEMIBOLD`, relying on
   GDI's own synthetic emboldening rather than sourcing a second embedded font weight.
@@ -18,7 +23,7 @@ reverse-engineering trail behind each entry.
   outline read as too thin/soft against busy backgrounds, especially at smaller HUD
   hint sizes. Both `CreateFontA` call sites (measurement and render) updated together
   since a mismatch would make measured and rendered text widths diverge.
-2. **Default UI font switched to Isotherm Sans, bundled as TWO independently
+3. **Default UI font switched to Isotherm Sans, bundled as TWO independently
   player-overridable variants; any system-installed font can be picked for either.**
   Every on-screen text draw previously used a fixed, bundled Barlow Condensed
   SemiBold with no way to change it. Barlow is no longer bundled at all -- replaced
@@ -55,7 +60,7 @@ reverse-engineering trail behind each entry.
   files needed their internal name table renamed (fonttools, family "Isotherm Sans
   UI") since the unrenamed upstream file shares "Isotherm Sans" with the Condensed
   file and GDI can't otherwise tell two same-family Regular-style faces apart.
-3. **In-game glyph position editor (F2/F3) now also works on real gameplay hints,
+4. **In-game glyph position editor (F2/F3) now also works on real gameplay hints,
   not just menu items.** The existing menu-item-focus-based editor has no equivalent
   concept for gameplay hints (no "focused list item"), so this is a parallel drag
   target keyed by (hint slot, font role) instead of (menu group, item index) --
@@ -66,7 +71,7 @@ reverse-engineering trail behind each entry.
   hint is REALLY showing that frame -- no synthesized placeholder, same "edit the
   real thing" principle as the menu editor. F3 exports both handles' nudges to the
   same `exported_glyph_positions.txt`, in a separate section.
-4. **Gameplay-hint calibration no longer fights the real game's own mouse-look.**
+5. **Gameplay-hint calibration no longer fights the real game's own mouse-look.**
   Live-reported: dragging a handle during an actual gameplay session also spun the
   camera, since the existing mouse-isolation (WM_MOUSEMOVE swallowed in the WndProc
   subclass) was built for the MENU case, where hover/hit-testing polls
@@ -79,7 +84,7 @@ reverse-engineering trail behind each entry.
   no DirectInput import (confirmed) so its mouse-look accumulator has to be fed by
   one of those two OS-level mechanisms -- hooking both sidesteps needing to know
   which for certain.
-5. **The glyph overlay now force-draws whenever the F2 gameplay-hint editor is
+6. **The glyph overlay now force-draws whenever the F2 gameplay-hint editor is
   active**, regardless of whether a controller is the current active input method.
   Direct request: "force glyph should be force enabled when any glyph editor is on."
   Calibrating with a mouse means no controller is active, so `ShouldDrawGlyphOverlay`
@@ -87,7 +92,7 @@ reverse-engineering trail behind each entry.
   issue #74 (a gate silently keeping glyphs from showing). This is a runtime check
   against `IsGlyphPositionEditModeActive()`, not a config default -- nothing to set
   in `mw3ncp_config.ini`, it just works whenever F2 is actually toggled on.
-6. **Mod-wide UI text now uses consistent Title Case.** Every player-facing string this
+7. **Mod-wide UI text now uses consistent Title Case.** Every player-facing string this
   project itself draws (custom Options screen row/tab labels, the Custom Binds table,
   the Stick/Button Layout drill-down, the diagram labels, the Apply Settings/Rebind
   popups) was previously a mix of ALL CAPS (most of the custom Options screen) and
@@ -97,7 +102,7 @@ reverse-engineering trail behind each entry.
   X/Y/LB/RB/LT/RT) and internal engine-matching identifiers (real bind/dvar/menu-group
   names this project reads or writes) were deliberately left untouched -- only text
   this project itself renders to the player changed.
-7. **F2 (glyph position editor) now also shows a real mouse cursor and blocks new
+8. **F2 (glyph position editor) now also shows a real mouse cursor and blocks new
   AI spawns mid-calibration, turning it into a genuine debug tool usable
   mid-gameplay, not just in menus.** Direct request: "we need our mouse cursor
   available in gameplay when we press f2." **Multiple earlier attempts this same
@@ -129,21 +134,21 @@ reverse-engineering trail behind each entry.
   all -- confirmed absent via a full binary string scan, same as `god`/`give`/
   every `con_`-prefixed console string, so that classic id-engine approach
   wasn't available here.)
-8. **`ai_disableSpawn` now has its own independent hotkey, F4** (direct request:
+9. **`ai_disableSpawn` now has its own independent hotkey, F4** (direct request:
   "i think its beneficial to move the toggle to a diff f key for the ai disable
   spawn to make it individually togglable"). Previously only toggled as a side
   effect of entering/leaving the F2 glyph editor; now fully decoupled with its
   own state (`g_aiSpawnDisabled`), own edge-detected key, own log lines. Still
   gated behind the same `glyphPositionEditMode` master switch as every other
   debug-only feature in this area (default OFF).
-9. **Interact's live-calibrated text position (F2/F3) is now a permanent
+10. **Interact's live-calibrated text position (F2/F3) is now a permanent
   default**, not something that resets every launch and needs re-dragging.
   Baked into `FindOrCreateGameplayHintEditNudge` as the seeded starting value
   for the (Interact, Default) slot: `textNudge=(-0.5f, -3.0f)`. The icon needs
   no separate offset for this one -- its own base position is derived from
   wherever the text row currently sits, so it automatically follows the text
   nudge to the correct final spot.
-10. **New colored "AI = On / AI = Off" status readout**, shown right below the
+11. **New colored "AI = On / AI = Off" status readout**, shown right below the
   "[GLYPH EDITOR OFF] press F2 to activate" line whenever that debug status
   block is on screen -- green for On, red for Off, reflecting the F4 toggle's
   actual live state (`g_aiSpawnDisabled`). Direct request: "need a visual
@@ -221,17 +226,29 @@ reverse-engineering trail behind each entry.
   (base offset) then accel second (base+6), the opposite order this project had.
   Affects gyro-aim; unrelated to the still-open Bluetooth stick-input bug below.
   Not yet live-tested against real hardware.
-6. **Possible fix, pending live confirmation, for known_issues.md issue #77**
-  (Bluetooth DualSense stick input garbled/unusable, three prior real fixes
-  insufficient). The same DS4Windows comparison found this project never called
-  `HidD_SetNumInputBuffers` after opening the raw HID device, leaving Windows'
-  default input-buffer queue depth in place -- if this project's poll cadence
-  doesn't keep up with the DualSense's real BT report rate, unread reports queue
-  and get consumed late/stale, a plausible explanation for a "garbled but not
-  corrupted" symptom (CRC validation already confirmed the bytes it does read are
-  never actually corrupted). Now calls `HidD_SetNumInputBuffers(handle, 3)`
-  right after opening, matching DS4Windows' own known-working value. Needs a
-  real BT DualSense tester to confirm before this issue can be closed.
+6. **Bluetooth DualSense stick input garbled/unusable -- RESOLVED, known_issues.md
+  issue #77 closed, confirmed live 2026-08-25.** The `HidD_SetNumInputBuffers`
+  fix (input-buffer queue depth, matching DS4Windows) genuinely helped ("isnt as
+  bad now") but wasn't the full story -- live-reported a much more specific,
+  asymmetric symptom afterward: "forward is backwards, while backwards still
+  goes backwards," then narrowed to "forward right or forward left works normal.
+  directly forward nope." **Real root cause: a genuine signed-16-bit integer
+  overflow.** `DualSense_Poll`'s Y-axis negation (`-(rawByte - 128)`) produces an
+  asymmetric range of -127..+128 (negating the byte-centering's own -128 extreme
+  overflows past a signed byte's positive limit by one); `controller_input.cpp`
+  scales this by `*256` to fit XInput's `SHORT` range, safe at every ordinary
+  value (127*256=32512) but `128*256=32768` overflows a 16-bit `SHORT` (max
+  32767) and silently wraps to -32768 -- full forward became full backward, but
+  ONLY at that one extreme, exactly matching why diagonals (Y magnitude always
+  <128, split with X) and full backward (extreme is -127, never overflows) were
+  both unaffected. **The user's own hypothesis (from general knowledge of 32-bit-
+  app overflow patterns, not from watching gameplay symptoms) nailed it before
+  the fix was even confirmed**: "i think its a deadzone overflow basically the
+  logic making it go negative or some bs." Fixed by clamping the computed stick
+  values to the symmetric -127..127 range right at the source, removing the +128 case
+  entirely. Full investigation trail (including a live raw-value diagnostic
+  built to find this rather than guess) in `known_issues.md` issue #77's own
+  "Fifth pass" section.
 7. **F3 export never fired for gameplay-hint (Interact/ReadyUp/Reload) glyph
   calibration** (live-reported: "find out why you havent been getting my f3
   exports"). Root cause: F3 was only ever polled inside
