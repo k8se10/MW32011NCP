@@ -143,6 +143,18 @@ reverse-engineering trail behind each entry.
   no separate offset for this one -- its own base position is derived from
   wherever the text row currently sits, so it automatically follows the text
   nudge to the correct final spot.
+10. **New colored "AI = On / AI = Off" status readout**, shown right below the
+  "[GLYPH EDITOR OFF] press F2 to activate" line whenever that debug status
+  block is on screen -- green for On, red for Off, reflecting the F4 toggle's
+  actual live state (`g_aiSpawnDisabled`). Direct request: "need a visual
+  confirmation that shows below the glyph editor press f2 to activate when we
+  toggle ai. like a AI = On (green) AI= off (RED)." Required adding real color
+  support to `RequestMenuHintOverlay`/`MenuHintSlot`/`DrawOneMenuHintSlot`
+  (previously always hardcoded opaque white) -- a new `color` parameter
+  defaulting to white, so every existing call site is unaffected. Only the
+  prefix/suffix TEXT quads are tinted; an icon (if any) always stays plain
+  white, since arbitrarily recoloring a real button-glyph/photographic asset
+  would look wrong.
 
 ### Fixed
 1. **Glyph icon jaggedness (controller-glyph hint overlays/menu corner hints/cursor).**

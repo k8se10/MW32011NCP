@@ -6774,6 +6774,18 @@ extern "C" void __cdecl ResetMenuListItemOrdinalForFrame()
         }
         RequestMenuHintOverlay(40.0f, 40.0f, statusText, "", "");
 
+        // AI = On/Off status readout (2026-08-25, direct request: "need a visual
+        // confirmation that shows below the glyph editor press f2 to activate
+        // when we toggle ai. like a AI = On (green) AI= off (RED)") -- reflects
+        // g_aiSpawnDisabled (the F4 toggle above), not tied to F2/editor-active
+        // state, since AI suppression is now fully independent of the editor.
+        // Shown any time this status block is on screen (glyphPositionEditMode),
+        // same visibility rule as the line above it.
+        constexpr DWORD kAiOnColor = 0xFF30FF30u;  // green
+        constexpr DWORD kAiOffColor = 0xFFFF3030u; // red
+        RequestMenuHintOverlay(40.0f, 72.0f, g_aiSpawnDisabled ? "AI = Off " : "AI = On ", "", "",
+                                 g_aiSpawnDisabled ? kAiOffColor : kAiOnColor);
+
         if (g_glyphEditModeActive && haveStableFocus) {
             EditGlyphPositionsForFrame(s_stableGroup, s_stableDepth, s_stableIndex, s_stableSiblingCount);
         }

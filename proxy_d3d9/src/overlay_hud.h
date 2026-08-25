@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdio> // FILE*, for AppendGameplayHintEditExport's cross-file export handle
+#include <windows.h> // DWORD, for RequestMenuHintOverlay's own color param
 
 // overlay_hud — small top-right on-screen text notifications (2026-07-31, user-
 // requested QoL: a "MW32011NCP Started" message on launch, and a matching one for
@@ -294,7 +295,7 @@ void AppendCustomHintSuffix(const char* extraText, GameplayHintSlotId slotId = G
 // menu hints never center on screen or pulse (no Reload-style prompt exists in menu
 // UI), unlike the gameplay version above.
 void RequestMenuHintOverlay(float x, float y, const char* prefixText, const char* suffixText,
-                             const char* assetName);
+                             const char* assetName, DWORD color = 0xFFFFFFFF);
 
 // TEMPORARY debug aid (2026-07-31, issue #48 position-tuning round) -- draws a small
 // solid-colored 8x8 marker centered exactly at (x, y), no further offset/scale
