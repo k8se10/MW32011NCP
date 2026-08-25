@@ -270,7 +270,7 @@ tooling (F4).
   entirely. Full investigation trail (including a live raw-value diagnostic
   built to find this rather than guess) in `known_issues.md` issue #77's own
   "Fifth pass" section.
-8. **F3 export never fired for gameplay-hint (Interact/ReadyUp/Reload) glyph
+7. **F3 export never fired for gameplay-hint (Interact/ReadyUp/Reload) glyph
   calibration** (live-reported: "find out why you havent been getting my f3
   exports"). Root cause: F3 was only ever polled inside
   `EditGlyphPositionsForFrame`, the MENU-ITEM editor's own per-frame function,
@@ -285,7 +285,7 @@ tooling (F4).
   (anonymous-namespace) linkage, the same LNK2019-class bug this project already
   hit once (`AppendGameplayHintEditExport`/`InvalidateTextTextureCachesOnConfigChange`,
   2026-08-24) -- fixed the same surgical close/reopen way.
-9. **Reload prompt stopped showing whenever "Press Y to ready up" was also on
+8. **Reload prompt stopped showing whenever "Press Y to ready up" was also on
   screen** (live-reported regression: "when the press y to ready up is on
   screen the reload prompt never shows"). The Reload-vs-Interact mutual-
   suppression rule (`DrawGameplayHintSlotsIfRequested`) had wrongly also
@@ -294,7 +294,7 @@ tooling (F4).
   ones that shouldnt and currently correctly dont show together is the
   interact and reload at the same time." Narrowed the suppression to
   Interact-only -- ReadyUp and Reload now coexist freely.
-10. **Mantle's on-screen position was silently coupled to Interact/pickup/
+9. **Mantle's on-screen position was silently coupled to Interact/pickup/
   buy-station's own F2/F3 editor calibration, and mantle showing silently
   suppressed Reload** -- both were the same root cause: mantle shared
   `GameplayHintSlotId::Interact` (same slot every other Interact-role hint
