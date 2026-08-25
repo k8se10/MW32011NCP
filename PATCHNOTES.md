@@ -340,16 +340,33 @@ tooling (F4).
   non-focusable header row never reports a focused index), so leaving it at
   its exported `0,0` is correct, not a gap. Not yet visually re-confirmed live.
 12. **Mantle's drag handle in the in-game glyph position editor silently never
-  worked** (live-reported: "the mantle drag doesnt work"). Root cause:
+  worked -- two real, separate bugs, one fix each.** Live-reported: "the
+  mantle drag doesnt work." First fix (real, but NOT the actual blocker):
   `kGameplayHintEditNudgeMax` (the fixed-size pool `FindOrCreateGameplayHintEditNudge`
-  allocates (slotId, FontRole) combo slots from) was `8`, sized for the
+  allocates `(slotId, FontRole)` combo slots from) was `8`, sized for the
   pre-Mantle "3 slots x 2 roles = 6 real combos, some headroom" world -- Mantle
   getting its own `GameplayHintSlotId` (item 9 above) made it 4 slots x 2 roles
-  = 8 real combos, exactly at capacity with zero headroom. If Interact/ReadyUp/
-  Reload happened to claim all 8 combos first in a session, Mantle's own
-  allocation request silently got `nullptr` back, and the drag-handle code
-  skips entirely on a null result -- no crash, just a handle that never
-  appears/responds. Bumped to 16, real headroom this time.
+  = 8 real combos, exactly at capacity with zero headroom, which could
+  genuinely make an allocation request silently fail. Bumped to 16. **Live-
+  reported still broken afterward** ("mantle is still the only thing i cant
+  drag"), with a key clarification that ruled the pool theory out entirely:
+  "i see the bounding boxes they just aint clickable" -- the handle WAS
+  rendering, meaning the request/allocation path was never actually the
+  problem this time. **Real root cause**: `DrawOneGameplayHintSlot`'s own
+  `static bool s_lastMouseHeld` (and its icon-handle twin,
+  `s_lastMouseHeldIcon`) were scoped to the FUNCTION, not to the slot -- but
+  this function runs once per requested slot EVERY frame, so whenever two
+  hints share a frame (confirmed live in `proxy_d3d9.log`: ReadyUp's "Press F5
+  to ready up" and Mantle's "Press Space to" both logged in the same tight
+  window), the first slot processed (Interact=0, ReadyUp=1, Reload=2,
+  Mantle=3 -- Mantle is ALWAYS last) updates the one shared static to the
+  current mouse-held value, so Mantle's own check that same frame always saw
+  `s_lastMouseHeld` already equal to `mouseHeld` -- `clickEdge` could never
+  compute `true` for Mantle whenever anything else shared its frame, which
+  real gameplay does often. Every other slot happened to get tested in
+  relative isolation; Mantle, always processed last, never did. Fixed by
+  making both statics per-slot (small fixed arrays indexed by `slotId`)
+  instead of one function-wide value.
 13. **Controller-glyph icons had a faint 1-2px white ring around their edges**
   (live-reported: "any very faint 1-2px white ring from cutting removed
   entirely"; confirmed root cause: "its clearly from when it was cut out they
