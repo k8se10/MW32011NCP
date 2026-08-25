@@ -428,8 +428,14 @@ deliberate, VAC-safer choice, not a stopgap).
   real scope: "yes this is the same font used in scripted sequences and
   qtes in campaign too" -- likely closes a whole previously-uncovered
   category of Campaign prompts, not just the one originally-reported
-  Survival encounter. Builds clean; **not yet deployed or live-confirmed**
-  (game was running at fix time) -- see `known_issues.md` issue #78.
+  Survival encounter (correction: the real key is E, not F). A successful
+  escape shows a green outline on very large text (~200-250px, well past
+  this project's normal 30px hint size) -- a real design detail to account
+  for once this is actually calibrated. Builds clean; **not yet deployed or
+  live-confirmed** -- the game was still running at rebuild time (confirmed
+  via file timestamps: the deployed DLL predates this fix), so today's own
+  "Melee [F]" test ran against the OLD binary. See `known_issues.md` issue
+  #78.
 
 ### Groundwork
 1. **New glyph-style auto-detect** (user-requested: "a default option for
