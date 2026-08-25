@@ -6576,10 +6576,16 @@ void RequestSyntheticBackHint()
     RequestMenuHintOverlay(kStandardCornerHintX, kStandardCornerHintY + kMenuHintVerticalNudge, "Back ", "", assetName);
 }
 
+// TEMPORARY diagnostic state (2026-08-25, live-reported: "b back shows twice on the
+// buy station screens when you go 3 layers deep into it") -- see
+// InjectSyntheticBackHintIfNeeded's own comment for the hypothesis this is checking.
+// Remove both once this is resolved.
+bool g_lastSyntheticBackFired = false;
+
 extern "C" void __cdecl InjectSyntheticBackHintIfNeeded()
 {
-    if (!ShouldDrawGlyphOverlay()) return;
-    if (!IsMenuActive()) return;
+    if (!ShouldDrawGlyphOverlay()) { g_lastSyntheticBackFired = false; return; }
+    if (!IsMenuActive()) { g_lastSyntheticBackFired = false; return; }
     // Live-reported 2026-08-01: simplified per explicit user direction after the
     // focus-struct-based nested-modal detection was confirmed live to not apply to
     // Special Ops' tile-row navigation at all. **Doc-audit correction, same day:**
@@ -6589,7 +6595,26 @@ extern "C" void __cdecl InjectSyntheticBackHintIfNeeded()
     // is explicitly suppressed for the same condition in the menu-hint detection
     // block above, so there's no competing native hint to worry about overriding
     // incorrectly.
-    if (!IsInsideSpecOpsNestedModal()) return;
+    if (!IsInsideSpecOpsNestedModal()) { g_lastSyntheticBackFired = false; return; }
+    // TEMPORARY diagnostic (2026-08-25, live-reported: "b back shows twice on the
+    // buy station screens when you go 3 layers deep into it"). Hypothesis, NOT yet
+    // confirmed: g_specOpsModalSticky (set true by focusing "Chaos"/"Mission"/
+    // "Survival" on the Special Ops mode-picker) only clears when ApplyResolvedSelection
+    // parses a real, non-"SWF_"-prefixed ui_swf_selection group -- if a buy-station
+    // sub-screen 3 layers deep (e.g. a specific weapon-category popup) never routes
+    // through that clear for any reason, a sticky flag left over from an EARLIER,
+    // unrelated Special Ops visit this same session could still read true here, firing
+    // this synthetic "Back" hint ON TOP OF the buy station's own real native corner
+    // hint -- exactly the reported duplicate. Logged once per state CHANGE (goes
+    // false->true), not every frame, so the next repro either confirms or rules this
+    // out with real data instead of shipping a fix blind.
+    if (!g_lastSyntheticBackFired) {
+        char buf[128];
+        sprintf_s(buf, "[synthetic-back-diag] firing -- g_specOpsModalSticky=%d g_focusedItemName=\"%s\"",
+                   g_specOpsModalSticky ? 1 : 0, g_focusedItemName);
+        LogFromController(buf);
+    }
+    g_lastSyntheticBackFired = true;
     RequestSyntheticBackHint();
 }
 
