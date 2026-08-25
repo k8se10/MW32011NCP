@@ -369,7 +369,12 @@ deliberate, VAC-safer choice, not a stopgap).
   real gameplay does often. Every other slot happened to get tested in
   relative isolation; Mantle, always processed last, never did. Fixed by
   making both statics per-slot (small fixed arrays indexed by `slotId`)
-  instead of one function-wide value.
+  instead of one function-wide value. **Confirmed live** -- the fix let the
+  user actually drag and F3-export Mantle's own text-nudge calibration the
+  same session ("i f3 for mantle now thats fixed too"), baked into
+  `FindOrCreateGameplayHintEditNudge` as a permanent default
+  (`textNudge=(-35.0f, 1.0f)`), same convention as Interact's own baked-in
+  calibration.
 13. **Controller-glyph icons had a faint 1-2px white ring around their edges**
   (live-reported: "any very faint 1-2px white ring from cutting removed
   entirely"; confirmed root cause: "its clearly from when it was cut out they
@@ -406,7 +411,9 @@ deliberate, VAC-safer choice, not a stopgap).
   second, ROLE-based dedup (`isBackShortcut`, a new field/parameter) that
   collapses any two Back-hint requests in the same frame regardless of
   position, wired at both the real `PLATFORM_BACK_SHORTCUT` detection and
-  the Special Ops synthetic-Back path. Not yet visually re-confirmed live.
+  the Special Ops synthetic-Back path. **Confirmed live** -- direct user
+  report: "popup menus seem fixed though i tested buy stations only" (the
+  exact reported case; other popup families weren't separately re-tested).
 
 ### Groundwork
 1. **New glyph-style auto-detect** (user-requested: "a default option for
@@ -443,8 +450,12 @@ deliberate, VAC-safer choice, not a stopgap).
   and controller-glyph icon this mod renders anywhere. Ships with a real,
   working example plugin, **RGB Text** (`tools/example_plugin_rgb_text/`),
   which rainbow-cycles every mod-rendered text/glyph using the exact
-  hue-cycle math the toast-notification system already uses. Not yet
-  confirmed live -- see `known_issues.md` issue #85.
+  hue-cycle math the toast-notification system already uses. **Confirmed
+  live** -- "plugin layer works like a charm too." Since the hook/memory
+  surface operates on the game process itself, not just this mod's own
+  state, plugins are effectively general MW3 extensions/sub-mods, not
+  limited to extending this mod specifically -- see `known_issues.md` issue
+  #85 and `PLUGIN_API.md`.
 
 ### Documentation
 1. **New `LTS_POLICY.md`** -- formalizes a policy that was already being
