@@ -129,6 +129,20 @@ reverse-engineering trail behind each entry.
   all -- confirmed absent via a full binary string scan, same as `god`/`give`/
   every `con_`-prefixed console string, so that classic id-engine approach
   wasn't available here.)
+8. **`ai_disableSpawn` now has its own independent hotkey, F4** (direct request:
+  "i think its beneficial to move the toggle to a diff f key for the ai disable
+  spawn to make it individually togglable"). Previously only toggled as a side
+  effect of entering/leaving the F2 glyph editor; now fully decoupled with its
+  own state (`g_aiSpawnDisabled`), own edge-detected key, own log lines. Still
+  gated behind the same `glyphPositionEditMode` master switch as every other
+  debug-only feature in this area (default OFF).
+9. **Interact's live-calibrated text position (F2/F3) is now a permanent
+  default**, not something that resets every launch and needs re-dragging.
+  Baked into `FindOrCreateGameplayHintEditNudge` as the seeded starting value
+  for the (Interact, Default) slot: `textNudge=(-0.5f, -3.0f)`. The icon needs
+  no separate offset for this one -- its own base position is derived from
+  wherever the text row currently sits, so it automatically follows the text
+  nudge to the correct final spot.
 
 ### Fixed
 1. **Glyph icon jaggedness (controller-glyph hint overlays/menu corner hints/cursor).**
@@ -221,6 +235,15 @@ reverse-engineering trail behind each entry.
   (anonymous-namespace) linkage, the same LNK2019-class bug this project already
   hit once (`AppendGameplayHintEditExport`/`InvalidateTextTextureCachesOnConfigChange`,
   2026-08-24) -- fixed the same surgical close/reopen way.
+8. **Reload prompt stopped showing whenever "Press Y to ready up" was also on
+  screen** (live-reported regression: "when the press y to ready up is on
+  screen the reload prompt never shows"). The Reload-vs-Interact mutual-
+  suppression rule (`DrawGameplayHintSlotsIfRequested`) had wrongly also
+  included ReadyUp in its "don't show Reload alongside this" check. Direct
+  correction: "they should work cleanly in conjunction with readyup[;] the
+  ones that shouldnt and currently correctly dont show together is the
+  interact and reload at the same time." Narrowed the suppression to
+  Interact-only -- ReadyUp and Reload now coexist freely.
 
 ---
 

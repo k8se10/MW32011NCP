@@ -6207,6 +6207,9 @@ bool g_glyphEditDraggingIsText = false; // which of the two handles at [group][i
 // off to actually navigate a menu normally without the editor's own text cluttering
 // every focused item, then back on to resume calibrating.
 bool g_glyphEditModeActive = false;
+// F4 toggle, independent of the glyph editor itself (2026-08-25) -- see the F4
+// handler's own big comment for why this was split off g_glyphEditModeActive.
+bool g_aiSpawnDisabled = false;
 
 GlyphEditGroup* FindOrCreateGlyphEditGroup(const char* groupName, int depth)
 {
@@ -6670,33 +6673,50 @@ extern "C" void __cdecl ResetMenuListItemOrdinalForFrame()
             char msg[48];
             sprintf_s(msg, "[glyph-editor] edit mode %s", g_glyphEditModeActive ? "ON" : "off");
             LogFromController(msg);
+        }
 
-            // AI-disable-instead-of-freeze (2026-08-25). Debug-freeze attempts
-            // (cl_paused/SetMenuState -- opened the real pausedmenu UI, rejected
-            // live; timescale 0 -- froze rendering feedback too, dropped) and three
-            // other AI-suppression dvars (`ai_nosight` -- dead/unregistered;
-            // `ai_playerLOSRange`/`ai_playerNearRange`/`ai_playerFarRange`/
-            // `ai_playerADS_LOSRange` -- registered but semantically wrong, real
-            // Ghidra static RE found they govern FRIENDLY-AI cover/accuracy, not
-            // enemy detection; `g_ai` -- the real master AI-enable dvar, found via
-            // the same static RE pass, but live-reported to still not stop enemies
-            // from engaging) were all tried and rejected/failed. Full trail in git
-            // history and re_notes/known_issues.md issue #80's neighbors around
-            // this date.
-            //
-            // SETTLED ON: `ai_disableSpawn` (blocks new AI from spawning). Its
-            // known side effect -- Survival's round-completion check appears to
-            // include "no more enemies queued to spawn," so this can trigger an
-            // early round transition -- was explicitly accepted as an adequate
-            // tradeoff by the user ("the disable spawn one did and was adequate
-            // (ill have to clean up tho)") rather than something to keep chasing a
-            // cleaner fix for.
-            if (g_glyphEditModeActive) {
+        // AI-disable-instead-of-freeze (2026-08-25). Debug-freeze attempts
+        // (cl_paused/SetMenuState -- opened the real pausedmenu UI, rejected
+        // live; timescale 0 -- froze rendering feedback too, dropped) and three
+        // other AI-suppression dvars (`ai_nosight` -- dead/unregistered;
+        // `ai_playerLOSRange`/`ai_playerNearRange`/`ai_playerFarRange`/
+        // `ai_playerADS_LOSRange` -- registered but semantically wrong, real
+        // Ghidra static RE found they govern FRIENDLY-AI cover/accuracy, not
+        // enemy detection; `g_ai` -- the real master AI-enable dvar, found via
+        // the same static RE pass, but live-reported to still not stop enemies
+        // from engaging) were all tried and rejected/failed. Full trail in git
+        // history and re_notes/known_issues.md issue #80's neighbors around
+        // this date.
+        //
+        // SETTLED ON: `ai_disableSpawn` (blocks new AI from spawning). Its
+        // known side effect -- Survival's round-completion check appears to
+        // include "no more enemies queued to spawn," so this can trigger an
+        // early round transition -- was explicitly accepted as an adequate
+        // tradeoff by the user ("the disable spawn one did and was adequate
+        // (ill have to clean up tho)") rather than something to keep chasing a
+        // cleaner fix for.
+        //
+        // MOVED OFF F2 onto its own key, F4 (2026-08-25, direct request: "i
+        // think its beneficial to move the toggle to a diff f key for the ai
+        // disable spawn to make it individually togglable") -- was originally
+        // tied to the glyph editor's own on/off state (g_glyphEditModeActive),
+        // meaning AI spawn could only ever be toggled as a side effect of
+        // entering/leaving the editor. Now fully independent: its own bool
+        // (g_aiSpawnDisabled), own edge-detected key, own log lines. Still
+        // gated behind the same glyphPositionEditMode master switch as every
+        // other debug-only feature in this block (default OFF).
+        static bool s_lastF4Held = false;
+        bool f4Held = (GetAsyncKeyState(VK_F4) & 0x8000) != 0;
+        bool f4Edge = f4Held && !s_lastF4Held;
+        s_lastF4Held = f4Held;
+        if (f4Edge) {
+            g_aiSpawnDisabled = !g_aiSpawnDisabled;
+            if (g_aiSpawnDisabled) {
                 CbufAddText(kLocalClientIndex, "ai_disableSpawn 1\n");
-                LogFromController("[glyph-editor] AI spawn disabled: ai_disableSpawn 1");
+                LogFromController("[ai-spawn-toggle] AI spawn disabled: ai_disableSpawn 1");
             } else {
                 CbufAddText(kLocalClientIndex, "ai_disableSpawn 0\n");
-                LogFromController("[glyph-editor] AI spawn restored: ai_disableSpawn 0");
+                LogFromController("[ai-spawn-toggle] AI spawn restored: ai_disableSpawn 0");
             }
         }
         // Debounced (2026-08-16, live-reported "it goes to the set position but after
