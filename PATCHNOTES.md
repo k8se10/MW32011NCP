@@ -424,6 +424,29 @@ tooling (F4).
   everything before it shipped with the now-permanently-removed aim-assist
   feature (live entity-memory reads -- see that file for the full reasoning).
   Cross-linked from `README.md`'s Project Stages section.
+2. **`CODE_STANDARDS.md` overhaul -- was extremely stale, missing every
+  lesson this project has actually learned recently.** Fixed two flatly
+  wrong claims (still said "two" documented input-emulation exceptions,
+  missing the Back/`+scores` synthetic-TAB exception added later; the
+  Documentation Standards section still described the OLD Added/Fixed/
+  Changed/Docs `PATCHNOTES.md` schema, replaced 2026-08-18) and the stale
+  aim-assist example under Input Validation & Security (rewritten to state
+  the actual current policy -- a permanent, hard-line ban on reading live
+  gameplay-entity memory, not an ongoing feature area needing careful
+  validation). Added two new sections: **Investigation & Persistence
+  Discipline** (formalizes `CLAUDE.md`'s own "fresh perspective breaks real
+  stalemates" and "asymmetric symptom = overflow" key principles, plus two
+  new lessons from this same session -- "checking is cheaper than digging,"
+  and documenting a wrong-but-real first fix honestly alongside the actual
+  one) and four new bullets under **Native project code (C/C++)** (the
+  whole-file constant-collision lesson from issue #46, the anonymous-
+  namespace/`extern "C"` linkage pitfall, a new per-slot-`static` scoping
+  lesson from this session's own Mantle drag-handle fix, and the
+  "audit every control when porting a feature to a new context" lesson from
+  the F3-export bug). Also formalizes a standard that was already de facto
+  practice but never actually written down: every bug fix or non-trivial
+  finding needs its own `known_issues.md` entry in the same pass, not just a
+  `PATCHNOTES.md` line.
 
 ---
 
