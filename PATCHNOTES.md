@@ -116,6 +116,21 @@ along the way rather than assumed. See the itemized entries below and
   before). Builds clean (0 warnings/errors), deployed. Not yet live-confirmed. See
   `known_issues.md` issue #87 (and #79) for the full investigation trail.
 
+### Groundwork
+1. **Internal render resolution confirmed with real numbers: this engine's actual
+  D3D9 viewport is 1920x1080 even inside a 2560x1440 backbuffer/window.** Two
+  separate diagnostics already living in this codebase from unrelated earlier
+  investigations (`d3d9_hook.cpp`'s backbuffer-vs-window log, `overlay_hud.cpp`'s
+  `GetResolutionScale` viewport log) were cross-referenced against each other for
+  the first time -- no new code needed. Reframes, doesn't invalidate, the
+  above-1080p GPU-cost theory (`known_issues.md` issue #87/#79): if the real render
+  workload is fixed at 1080p regardless of window size, the extra cost at higher
+  resolutions more likely comes from the stretch-blit/upscale step or desktop
+  composition, not "more pixels rendered." Open question, not yet answered:
+  whether this tracks the in-game Video resolution SETTING (not just window size)
+  or is a hardcoded internal cap -- needs a test with that setting explicitly at
+  1440p to tell the two apart. See `known_issues.md` issue #88.
+
 ## v0.3.4 — Alpha (2026-08-25) — DualSense input-parity fix, gameplay-hint glyph editor, new plugin API
 
 **Summary:** DualSense's Bluetooth stick-garbling bug is fixed — a real
