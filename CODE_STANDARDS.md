@@ -255,6 +255,24 @@ code-quality standard as a debugging-methodology one.
   to grep or build, check it — don't reason about it from memory or a partial
   re-read and treat that as ground truth. See the linkage-specific version of
   this lesson under **Native project code (C/C++)** below.
+- **Before dispatching new RE work (a Ghidra pass, a fresh string/xref search, a
+  binary decompile), search this project's own `re_notes/` for an existing file
+  by name/topic first — a prior session's real output may already answer the
+  question.** Direct precedent (2026-08-25, `known_issues.md` issue #89): two
+  separate RE passes on "what's Survival's real scoreboard stat data source"
+  both came back inconclusive from scratch — a binary string search, then a
+  native entity-field-dispatcher trace — neither one checked whether this
+  project had already investigated the same question. It had:
+  `re_notes/survival_mode_overview.md` (a session from over a month earlier)
+  already named the real scriptfile and summarized its scoring system, and the
+  actual decompiled GSC source (`xensik/gsc-tool`'s own output) was still sitting
+  on disk, unread, the whole time. A direct user question — "didnt we already
+  decomp it for inspection" — is what actually found it, not a research pass.
+  `re_notes/` is this project's own accumulated RE memory, spanning many past
+  sessions; a topic-relevant filename search (`ls`/`find` by keyword, not just
+  `grep` inside files you already know about) costs seconds and can make an
+  entire fresh investigation unnecessary — do it before spending real Ghidra/
+  decompile time re-deriving something already on disk.
 - **A wrong-but-real first fix is not a failure to hide — document it
   honestly, alongside the fix that actually worked.** This project's own
   history has multiple real cases (`known_issues.md` issues #62, #81) where
