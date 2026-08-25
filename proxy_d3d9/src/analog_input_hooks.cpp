@@ -4485,12 +4485,75 @@ constexpr ManualGlyphEntry kManualGlyphPositions[] = {
     { "SO_LEVELS_BUTTON_LIST", -1, 20.0f, 14,
       {605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f, 605.0f},
       {243.0f, 288.0f, 333.0f, 378.0f, 423.0f, 468.0f, 513.0f, 558.0f, 603.0f, 648.0f, 693.0f, 738.0f, 783.0f, 828.0f} },
+    // 2026-08-25 in-mission F3 capture batch (issue #57/general survival-buy-station
+    // pass): the dedicated in-mission calibration session flagged as still-needed by
+    // the "IN-GAME-ONLY screens... were NOT part of this pass" note above (2026-08-16).
+    // Real click-and-drag editor captures, Survival buy station + air-support/perks
+    // sub-menus. Every entry below shares the SAME structural quirk: indices 0-2 are
+    // always {0,0} -- not unvisited placeholders (unlike PAUSE_LIST/
+    // WEAPON_UPGRADE_POPUP below, deliberately excluded from this batch for exactly
+    // that reason, see their own skip note) -- these three groups populate real data
+    // from index 3 onward with no gaps, matching this codebase's established
+    // "leading unused/non-focusable slots" convention (see game_select_button's own
+    // index-0-placeholder comment above) rather than the exporter's own "never
+    // focused" warning. requiredDepth values are exactly as captured live; each
+    // WEAPON_POPUP entry (depth=1) is placed BEFORE the old depth=-1 estimated entry
+    // immediately below per this table's own "specific before fallback" convention,
+    // since real captured data supersedes the original screenshot estimate. offsetX=0
+    // throughout -- the captured X values are the editor's own final on-screen glyph
+    // position, already final (same convention as OPTIONS_LIST/game_select_button).
+    { "WEAPON_POPUP", 1, 0.0f, 11,
+      {0.0f, 0.0f, 0.0f, 1310.0f, 1303.0f, 1302.0f, 1301.0f, 1301.0f, 1298.0f, 1303.0f, 1291.0f},
+      {0.0f, 0.0f, 0.0f, 454.0f, 502.0f, 553.0f, 602.0f, 653.0f, 701.0f, 749.0f, 800.0f} },
+    { "PISTOL_POPUP", 2, 0.0f, 9,
+      {0.0f, 0.0f, 0.0f, 1306.0f, 1310.0f, 1310.0f, 1307.0f, 1307.0f, 1298.0f},
+      {0.0f, 0.0f, 0.0f, 454.0f, 504.0f, 555.0f, 604.0f, 651.0f, 701.0f} },
+    { "MPISTOL_POPUP", 2, 0.0f, 7,
+      {0.0f, 0.0f, 0.0f, 1308.0f, 1310.0f, 1308.0f, 1306.0f},
+      {0.0f, 0.0f, 0.0f, 454.0f, 504.0f, 553.0f, 603.0f} },
+    { "ASR_POPUP", 2, 0.0f, 13,
+      {0.0f, 0.0f, 0.0f, 1309.0f, 1306.0f, 1301.0f, 1301.0f, 1303.0f, 1304.0f, 1293.0f, 1299.0f, 1296.0f, 1308.0f},
+      {0.0f, 0.0f, 0.0f, 403.0f, 454.0f, 504.0f, 553.0f, 602.0f, 651.0f, 701.0f, 750.0f, 800.0f, 852.0f} },
+    { "SMG_POPUP", 2, 0.0f, 9,
+      {0.0f, 0.0f, 0.0f, 1306.0f, 1298.0f, 1304.0f, 1302.0f, 1295.0f, 1302.0f},
+      {0.0f, 0.0f, 0.0f, 453.0f, 503.0f, 552.0f, 603.0f, 650.0f, 701.0f} },
+    { "LMG_POPUP", 2, 0.0f, 8,
+      {0.0f, 0.0f, 0.0f, 1300.0f, 1298.0f, 1295.0f, 1297.0f, 1298.0f},
+      {0.0f, 0.0f, 0.0f, 454.0f, 502.0f, 551.0f, 601.0f, 652.0f} },
+    { "SNIPER_POPUP", 2, 0.0f, 9,
+      {0.0f, 0.0f, 0.0f, 1308.0f, 1299.0f, 1307.0f, 1309.0f, 1306.0f, 1310.0f},
+      {0.0f, 0.0f, 0.0f, 453.0f, 501.0f, 553.0f, 602.0f, 651.0f, 703.0f} },
+    { "SHOTGUN_POPUP", 2, 0.0f, 9,
+      {0.0f, 0.0f, 0.0f, 1303.0f, 1301.0f, 1296.0f, 1302.0f, 1298.0f, 1294.0f},
+      {0.0f, 0.0f, 0.0f, 453.0f, 503.0f, 553.0f, 600.0f, 652.0f, 702.0f} },
+    { "SURVIVAL_POPUP", 1, 0.0f, 13,
+      {0.0f, 0.0f, 0.0f, 1306.0f, 1305.0f, 1301.0f, 1306.0f, 1301.0f, 1300.0f, 1306.0f, 1297.0f, 1296.0f, 1299.0f},
+      {0.0f, 0.0f, 0.0f, 403.0f, 455.0f, 503.0f, 553.0f, 601.0f, 653.0f, 701.0f, 751.0f, 802.0f, 850.0f} },
+    { "AIRSUPPORT_POPUP", 1, 0.0f, 8,
+      {0.0f, 0.0f, 0.0f, 1309.0f, 1306.0f, 1308.0f, 1304.0f, 1306.0f},
+      {0.0f, 0.0f, 0.0f, 529.0f, 579.0f, 627.0f, 676.0f, 725.0f} },
+    { "PERKS_POPUP", 2, 0.0f, 8,
+      {0.0f, 0.0f, 0.0f, 1304.0f, 1304.0f, 1304.0f, 1303.0f, 1305.0f},
+      {0.0f, 0.0f, 0.0f, 528.0f, 578.0f, 628.0f, 676.0f, 727.0f} },
+    // SKIPPED this same batch, deliberately: PAUSE_LIST (in-mission variant, depth=1,
+    // 5 items -- only index 4 was actually dragged, indices 0-3 are the exporter's own
+    // "never focused/dragged this session" zeros, not the leading-placeholder pattern
+    // the groups above share) and WEAPON_UPGRADE_POPUP (depth=3, 13 items -- indices
+    // 0-3 AND index 7 are unvisited, a genuine gap mid-sequence, not a clean leading
+    // run). Both need a follow-up in-mission session with every real item actually
+    // focused before they're safe to add -- shipping either as-is would draw a wrong
+    // glyph position at 0,0 for a real, reachable item.
+    //
     // REAL GAMEPLAY, not a menu: Survival's in-game weapon-armory buy station
     // (Refill Bullet Ammo/Handguns/Machine Pistols/Assault Rifles/Sub Machine
     // Guns/Light Machine Guns/Sniper Rifles/Shotguns). Left-aligned, FIXED
     // column (X=584 constant regardless of label length -- confirmed
     // different convention from every menu list above), base Y=455, ~49.5px
     // spacing. offsetX sized to clear "Light Machine Guns", the longest label.
+    // SUPERSEDED for depth=1 by the real capture immediately above (2026-08-25) --
+    // kept as the depth=-1 fallback for any other depth this screen might be
+    // reached from, same "estimate as fallback, real capture takes precedence"
+    // pattern as SWF_COMMON_DESC_RESIZE_POPUP_NAME's own Restart/Quit entries.
     { "WEAPON_POPUP", -1, 270.0f, 8,
       {584.0f, 584.0f, 584.0f, 584.0f, 584.0f, 584.0f, 584.0f, 584.0f},
       {455.0f, 504.0f, 554.0f, 603.0f, 653.0f, 702.0f, 752.0f, 801.0f} },
@@ -4544,6 +4607,19 @@ constexpr VerifiedGlyphGroup kVerifiedGlyphGroups[] = {
     { "SWF_COMMON_DESC_RESIZE_POPUP_NAME", 1 },  // "New Game overwrite" variant, previously an
                                                    // unresolved gap -- depth=1 turned out to be
                                                    // the disambiguating signal
+    // 2026-08-25 in-mission F3 capture batch (Survival buy station + air-support/
+    // perks sub-menus) -- see kManualGlyphPositions' own comment on this same batch.
+    { "WEAPON_POPUP", 1 },
+    { "PISTOL_POPUP", 2 },
+    { "MPISTOL_POPUP", 2 },
+    { "ASR_POPUP", 2 },
+    { "SMG_POPUP", 2 },
+    { "LMG_POPUP", 2 },
+    { "SNIPER_POPUP", 2 },
+    { "SHOTGUN_POPUP", 2 },
+    { "SURVIVAL_POPUP", 1 },
+    { "AIRSUPPORT_POPUP", 1 },
+    { "PERKS_POPUP", 2 },
 };
 
 bool IsVerifiedGlyphGroup(const char* groupName, int depth)

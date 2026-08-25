@@ -23,15 +23,22 @@ rest, including font/outline polish and AI-suppression debug tooling (F4).
   NOT mean full feature parity yet: vibration/rumble, gyro-aim, and adaptive
   triggers remain separate, still-PREVIEW/WIP work, not covered by this claim.
   Root cause and full fix in the Fixed section below (issue #77).
-2. **Overlay text now renders semibold with a clearer/thicker outline.**
-  `CreateFontA`'s weight argument was `FW_DONTCARE` (the bundled font only ever
-  registered one weight, so it had no effect); switched to `FW_SEMIBOLD`, relying on
-  GDI's own synthetic emboldening rather than sourcing a second embedded font weight.
-  The outline mask (`RenderTextToArgbBuffer`'s `kOutlineOffsets`) widened from a 1px
-  ring (a 3x3 grid of +/-1px offsets) to a 2px ring (5x5, +/-2px) -- the old 1px
-  outline read as too thin/soft against busy backgrounds, especially at smaller HUD
-  hint sizes. Both `CreateFontA` call sites (measurement and render) updated together
-  since a mismatch would make measured and rendered text widths diverge.
+2. **Overlay text now renders semibold, with the outline ring re-tuned back down to
+  1px after overshooting.** `CreateFontA`'s weight argument was `FW_DONTCARE` (the
+  bundled font only ever registered one weight, so it had no effect); switched to
+  `FW_SEMIBOLD`, relying on GDI's own synthetic emboldening rather than sourcing a
+  second embedded font weight. The outline mask (`RenderTextToArgbBuffer`'s
+  `kOutlineOffsets`) was widened twice the same day -- 1px ring (3x3, +/-1px) to 2px
+  (5x5, +/-2px) to 3px (7x7, +/-3px) -- chasing live feedback that 1px read as too
+  thin/soft against busy backgrounds. Reviewed again live against a fresh screenshot
+  (2026-08-25): with `FW_SEMIBOLD` now also carrying real visual weight, the 3px ring
+  read as "sticker-like"/too heavy -- the two widenings and the semibold switch were
+  each independently reasonable but overshot once stacked together. Reverted to the
+  original 1px ring (3x3); `kTextRenderMarginPx` (see Fixed item 4 below) stays at
+  its current, now-oversized-but-harmless value. Both `CreateFontA` call sites
+  (measurement and render) stay in sync since a mismatch would make measured and
+  rendered text widths diverge. **Not yet independently confirmed live at 1px** --
+  same standard as every other visual-tuning change in this project.
 3. **Default UI font switched to Isotherm Sans, bundled as TWO independently
   player-overridable variants; any system-installed font can be picked for either.**
   Every on-screen text draw previously used a fixed, bundled Barlow Condensed
@@ -298,6 +305,25 @@ rest, including font/outline polish and AI-suppression debug tooling (F4).
   reload when interact prompt [shows]" -- Mantle now explicitly participates
   in the same Interact-suppression rule Reload uses, rather than that
   relationship existing only by accident of the old shared slot.
+10. **Survival's weapon buy-station glyph, long-flagged broken, recalibrated with
+  real captures -- plus 10 more buy-station/sub-menu screens captured for the
+  first time.** `WEAPON_POPUP` had carried a screenshot-estimated table entry
+  since v0.3.0 that the user confirmed live never actually worked
+  (`known_issues.md` issue #51's own "having a table entry is not evidence a
+  screen works" note); this had sat as an accepted, undone gap since 2026-08-03.
+  A real in-game F3 click-and-drag session (2026-08-25) replaced it with an
+  11-item, live-captured `depth=1` entry, added ahead of the old estimate so it
+  wins the match first. The same session also captured `PISTOL_POPUP`,
+  `MPISTOL_POPUP`, `ASR_POPUP`, `SMG_POPUP`, `LMG_POPUP`, `SNIPER_POPUP`,
+  `SHOTGUN_POPUP` (the buy station's other weapon-category tabs), `PERKS_POPUP`,
+  `AIRSUPPORT_POPUP`, and `SURVIVAL_POPUP` (screen not yet identified by name --
+  see `known_issues.md`'s own note, don't assume which real screen this is).
+  Two captures from the same session were deliberately NOT added -- an
+  in-mission `PAUSE_LIST` variant (only 1 of 5 real items was actually dragged)
+  and `WEAPON_UPGRADE_POPUP` (a gap mid-sequence, not just a leading run) --
+  both need a follow-up session that actually focuses every real item first.
+  **None of the 11 added groups have been visually re-confirmed live yet** --
+  same standard this table already applies to every other manual-position entry.
 
 ---
 
