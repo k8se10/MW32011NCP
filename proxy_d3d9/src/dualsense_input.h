@@ -58,6 +58,7 @@
 // unaffected by any of this.
 
 #include <cstdint>
+#include "mod_config.h" // GlyphStyle -- Controller_DetectGlyphStyle's own return/param type
 
 // One controller-frame's worth of parsed DualSense state. Buttons/dpad use the SAME
 // bit values the reference implementation (DS5State.h) defines -- kept as this
@@ -144,3 +145,9 @@ bool DualSense_HasGyro();
 // the handle instead so the next DualSense_EnsureOpen() retries fresh, same
 // degrade-gracefully convention as DualSense_Poll.
 bool DualSense_SetVibration(uint8_t leftMotor, uint8_t rightMotor);
+
+// Glyph-style auto-detect (2026-08-25) -- see mod_config.h's own GlyphStyleAuto
+// comment for the full contract, and dualsense_input.cpp for the implementation.
+// Checks PlayStation (DualSense_IsOpen) first, then a best-effort Xbox VID/PID scan;
+// returns `fallback` unchanged if neither is currently detected.
+GlyphStyle Controller_DetectGlyphStyle(GlyphStyle fallback);

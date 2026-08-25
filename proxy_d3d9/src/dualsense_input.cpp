@@ -210,6 +210,81 @@ HANDLE TryOpenDualSense(bool& outIsBluetooth)
     return result;
 }
 
+// Xbox-pad VID/PID classification (2026-08-25, "detects controller type ps/xbox/
+// xbmodern and sets accordingly" -- glyph-style auto-detect). Microsoft's real,
+// stable USB vendor ID is 0x045E; the product-ID table below is public knowledge
+// (used by, among others, SDL2's game controller DB and the Linux kernel's own xpad
+// driver), NOT independently verified against real hardware by this project across
+// every generation -- same "best-effort until live-confirmed" honesty standard this
+// project already applies to the DualSense backend above. Unrecognized 0x045E PIDs
+// default to XboxModern (a newer/less common pad is more likely to be missing from
+// this table than an old one), not Xbox360 -- an explicit choice, not an oversight.
+constexpr USHORT kMicrosoftVendorId = 0x045E;
+struct XboxPidEntry { USHORT pid; GlyphStyle style; };
+constexpr XboxPidEntry kXboxPidTable[] = {
+    { 0x028E, GlyphStyle::Xbox360 },  // Xbox 360 Controller (wired)
+    { 0x0291, GlyphStyle::Xbox360 },  // Xbox 360 Wireless Controller (via play & charge/receiver)
+    { 0x0719, GlyphStyle::Xbox360 },  // Xbox 360 Wireless Receiver
+    { 0x02D1, GlyphStyle::XboxModern },  // Xbox One Controller (original, 2013)
+    { 0x02DD, GlyphStyle::XboxModern },  // Xbox One Controller (2015 firmware refresh)
+    { 0x02E3, GlyphStyle::XboxModern },  // Xbox One Elite Controller
+    { 0x02EA, GlyphStyle::XboxModern },  // Xbox One S Controller (USB)
+    { 0x02FD, GlyphStyle::XboxModern },  // Xbox One S Controller (Bluetooth)
+    { 0x0B00, GlyphStyle::XboxModern },  // Xbox Elite Series 2 (Bluetooth)
+    { 0x0B05, GlyphStyle::XboxModern },  // Xbox Elite Series 2 (Bluetooth, alt firmware)
+    { 0x0B12, GlyphStyle::XboxModern },  // Xbox Series X|S Controller (USB)
+    { 0x0B13, GlyphStyle::XboxModern },  // Xbox Series X|S Controller (Bluetooth)
+    { 0x0B20, GlyphStyle::XboxModern },  // Xbox Elite Series 2 (USB)
+};
+
+// Same GUID_DEVINTERFACE_HID + SetupDiXxx enumeration TryOpenDualSense above already
+// uses, looking for ANY device carrying Microsoft's vendor ID instead of a single
+// specific VID/PID pair -- read-only (HidD_GetAttributes only), never opens for
+// exclusive/read-write access the way TryOpenDualSense does, so this can't contend
+// with controller_input.cpp's own XInput polling for the same physical device.
+// outFound=false with no style change if nothing Microsoft-vendored is present.
+bool TryDetectXboxGlyphStyle(GlyphStyle& outStyle)
+{
+    HDEVINFO devInfo = SetupDiGetClassDevsW(&GUID_DEVINTERFACE_HID, nullptr, nullptr,
+                                              DIGCF_DEVICEINTERFACE | DIGCF_PRESENT);
+    if (!devInfo || devInfo == INVALID_HANDLE_VALUE) return false;
+
+    bool found = false;
+    SP_DEVICE_INTERFACE_DATA ifData = {};
+    ifData.cbSize = sizeof(ifData);
+    for (DWORD ifIndex = 0; SetupDiEnumDeviceInterfaces(devInfo, nullptr, &GUID_DEVINTERFACE_HID, ifIndex, &ifData); ++ifIndex) {
+        DWORD requiredSize = 0;
+        SetupDiGetDeviceInterfaceDetailW(devInfo, &ifData, nullptr, 0, &requiredSize, nullptr);
+        if (requiredSize == 0 || requiredSize > 1024) continue;
+
+        auto* detail = reinterpret_cast<SP_DEVICE_INTERFACE_DETAIL_DATA_W*>(_malloca(requiredSize));
+        if (!detail) continue;
+        detail->cbSize = sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA_W);
+
+        if (SetupDiGetDeviceInterfaceDetailW(devInfo, &ifData, detail, requiredSize, nullptr, nullptr)) {
+            HANDLE h = CreateFileW(detail->DevicePath, GENERIC_READ,
+                                     FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+            if (h && h != INVALID_HANDLE_VALUE) {
+                HIDD_ATTRIBUTES attrs = {};
+                attrs.Size = sizeof(attrs);
+                if (HidD_GetAttributes(h, &attrs) && attrs.VendorID == kMicrosoftVendorId) {
+                    outStyle = GlyphStyle::XboxModern; // default for this VID if no PID match below
+                    for (const auto& entry : kXboxPidTable) {
+                        if (entry.pid == attrs.ProductID) { outStyle = entry.style; break; }
+                    }
+                    found = true;
+                }
+                CloseHandle(h);
+            }
+        }
+        _freea(detail);
+        if (found) break;
+    }
+
+    SetupDiDestroyDeviceInfoList(devInfo);
+    return found;
+}
+
 } // namespace
 
 bool DualSense_EnsureOpen()
@@ -269,6 +344,24 @@ bool DualSense_EnsureOpen()
 bool DualSense_IsOpen()
 {
     return g_deviceHandle != INVALID_HANDLE_VALUE;
+}
+
+// Glyph-style auto-detect (2026-08-25, user-requested: "a default option for glyphs
+// which detects controller type ps/xbox/xbmodern and sets accordingly"). Checks
+// PlayStation first (DualSense_IsOpen -- reuses this file's own already-proven
+// connection state, zero extra HID work) since it's the strongest, already-verified
+// signal; falls back to the best-effort Xbox VID/PID scan above; falls back to
+// `fallback` (the player's own manually-configured GlyphStyle, or its default) if
+// neither is currently detected -- e.g. a third-party/non-XInput-standard pad, or no
+// controller connected at all. Called exactly once per session, right as
+// controller_input.cpp's poll thread locks onto a real input source -- see
+// mod_config.h's own GlyphStyleAuto comment for why this isn't a recurring poll.
+GlyphStyle Controller_DetectGlyphStyle(GlyphStyle fallback)
+{
+    if (DualSense_IsOpen()) return GlyphStyle::PlayStation;
+    GlyphStyle xboxStyle;
+    if (TryDetectXboxGlyphStyle(xboxStyle)) return xboxStyle;
+    return fallback;
 }
 
 bool DualSense_Poll(DualSenseRawState& outState)
