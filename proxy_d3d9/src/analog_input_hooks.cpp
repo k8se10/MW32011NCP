@@ -6643,16 +6643,33 @@ extern "C" void __cdecl ResetMenuListItemOrdinalForFrame()
             // Debug-freeze (2026-08-25, direct request: "we need our mouse cursor
             // available in gameplay when we press f2, it would be nice if it froze
             // gameplay tick too... an amazing debug feature to fix all menus
-            // easily"). Reuses the exact same real pause path Start already uses
-            // live (OpenPauseMenu/FUN_004d6620, SetMenuState mode 0/FUN_004396d0
-            // -- see the big writeup above both), not a fresh/guessed mechanism.
-            // g_glyphEditorTriggeredPause tracks whether WE were the ones who
-            // paused, so turning the editor back off only resumes gameplay if
-            // nothing else (a real player ESC/Start) already did -- never force-
-            // unpause a pause the editor didn't itself cause.
+            // easily"). FIRST ATTEMPT called OpenPauseMenu (FUN_004d6620)
+            // unconditionally -- live-reported "gameplay tick doesnt freeze".
+            // Root cause: OpenPauseMenu alone does NOT set cl_paused; the real,
+            // proven Start-button handler above (InjectControllerPause) only
+            // calls it as a fallback for state 1/2, and calls
+            // SetMenuState(playerIndex, kMenuStatePausedMenu) -- the function
+            // its own comment documents as "sets cl_paused, opens the pausedmenu
+            // UI" -- for the actual live-gameplay state (6), which is what
+            // ordinary SP/Survival play reports. Fixed by mirroring that exact
+            // branch (including the same auto-close-any-open-menu-first step)
+            // instead of guessing at a single call. g_glyphEditorTriggeredPause
+            // tracks whether WE were the ones who paused, so turning the editor
+            // back off only resumes gameplay if nothing else (a real player
+            // ESC/Start) already did -- never force-unpause a pause the editor
+            // didn't itself cause.
             if (g_glyphEditModeActive) {
-                if (!IsMenuActive() && GetDvarInt("cl_paused") == 0) {
-                    OpenPauseMenu(kLocalClientIndex);
+                if (GetDvarInt("cl_paused") == 0) {
+                    if (IsMenuActive()) {
+                        ForwardKeyToMenu(kLocalClientIndex, kKeyEscape, 1);
+                        ForwardKeyToMenu(kLocalClientIndex, kKeyEscape, 0);
+                    }
+                    int32_t state = *reinterpret_cast<volatile int32_t*>(kPlayerStateAddr);
+                    if (state == 1 || state == 2) {
+                        OpenPauseMenu(kLocalClientIndex);
+                    } else {
+                        SetMenuState(kLocalClientIndex, kMenuStatePausedMenu);
+                    }
                     g_glyphEditorTriggeredPause = true;
                     LogFromController("[glyph-editor] debug-freeze: paused gameplay for editing");
                 } else {
