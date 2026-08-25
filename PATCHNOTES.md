@@ -143,6 +143,21 @@ along the way rather than assumed. See the itemized entries below and
   (`xensik/gsc-tool`, already set up in this project), not attempted this pass --
   the scoreboard's UI cannot start with real data until this clears. See
   `known_issues.md` issue #89.
+2. **60fps engine tick: `com_maxfps`/`fixedtime`/`com_timescale` confirmed real,
+  registered dvars -- real consuming logic not yet decompiled.** RE prerequisite
+  for a planned opt-in, SP-only 60fps simulation-tick feature. Genuine binary
+  cross-reference analysis (not string presence alone) confirmed all three are
+  actively registered, clustered within one ~0x150-byte dvar-registration block --
+  not a dead string the way `ai_nosight` was. Also found: this project's own
+  existing F2 debug-freeze feature's comments may misdescribe its real underlying
+  dvar as bare `timescale`, which has ZERO real cross-references anywhere in the
+  binary -- the real dvar is very likely `com_timescale`, worth a follow-up
+  correction pass even though the shipped feature itself works correctly. Real
+  next step -- decompiling what actually READS `com_maxfps`'s registered value, to
+  determine whether raising it changes real simulation cadence or just
+  frame-submission rate -- was not reached this pass (no Ghidra project existed
+  yet for this binary). No patch attempted or planned until that's resolved. See
+  `known_issues.md` issue #90.
 
 ## v0.3.4 — Alpha (2026-08-25) — DualSense input-parity fix, gameplay-hint glyph editor, new plugin API
 
