@@ -81,3 +81,9 @@ dumps/
 # never a source of truth on its own; the real defaults live in overlay_hud.cpp's
 # own kDiagLayout* constexpr tables once copied over.
 tools/ui_harness/exported_diagram_layout.txt
+
+# Ghidra project for iw5sp.exe (2026-08-25, issue #90) -- a real, regenerable
+# (~124s headless import+analysis) binary database, not source. Kept on disk
+# across sessions so RE work doesn't re-pay the analysis time, but never
+# committed -- too large (166MB+) and not meaningful to diff/review.
+re_notes/ghidra_project/
