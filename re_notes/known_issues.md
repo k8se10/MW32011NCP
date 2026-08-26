@@ -12180,11 +12180,21 @@ exists only inside this one call's own execution window.
 
 Built (0 errors), redeployed.
 
-**Live-tested, same day. Result: the crash stopped, but a real, confirmed
-regression replaced it** -- the gameplay 3D viewport shrank into a small box
-confined to the top-left corner of the screen (screenshot on record), while
-every HUD element kept drawing at its correct full-screen position. Not a
-fix. **Direct user reasoning that correctly reframed the whole theory**:
+**Live-tested, same day. Result: a real, confirmed regression -- NOT
+confirmed either way whether the crash itself would still have happened.**
+The gameplay 3D viewport shrank into a small box confined to the top-left
+corner of the screen (screenshot on record), while every HUD element kept
+drawing at its correct full-screen position, IMMEDIATELY and visibly on
+entering gameplay. **Correction, direct user clarification: "also i didnt
+run long enough to crash(its tiny bruh)"** -- the session was stopped as
+soon as the broken viewport was visible, well short of the playtime needed
+to reproduce the crash even once. This attempt is retracted purely on the
+strength of the visual regression, not because it was confirmed to still
+crash -- whether Fix A's substitution would ALSO have prevented the crash
+is genuinely unknown and untested. Not a fix either way (an unplayable
+shrunk viewport is disqualifying on its own), but don't cite this as
+evidence the crash mechanism itself was ever addressed by this attempt.
+**Direct user reasoning that correctly reframed the whole theory**:
 ratio=1.0 is EXACTLY what happens in vanilla play (`DAT_021d2e00`/`04` always
 equals `DAT_021d2e08`/`0c` with the render-scale feature off) -- so if
 collapsing the ratio to 1.0 does NOT restore a correct full-screen viewport,
