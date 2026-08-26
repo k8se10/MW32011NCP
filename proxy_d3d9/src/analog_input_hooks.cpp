@@ -10721,22 +10721,19 @@ void InstallAnalogInputHooks()
     // exit mechanism (two clean, isolated live tests, zero hits) -- this
     // catches the real termination call directly, whatever it turns out to be.
     // Real kernel32.dll export, resolved at runtime, not a hardcoded address.
-    {
-        HMODULE hKernel32 = GetModuleHandleA("kernel32.dll");
-        LPVOID pExitProcess = hKernel32 ? reinterpret_cast<LPVOID>(GetProcAddress(hKernel32, "ExitProcess")) : nullptr;
-        if (pExitProcess != nullptr) {
-            MH_STATUS sExitProcess = MH_CreateHook(pExitProcess, &Hook_ExitProcess, reinterpret_cast<LPVOID*>(&g_origExitProcess));
-            sprintf_s(buf, "[hooks] MH_CreateHook(ExitProcess exitprocess-diag) = %d", static_cast<int>(sExitProcess));
-            LogFromController(buf);
-            if (sExitProcess == MH_OK) {
-                MH_STATUS eExitProcess = MH_EnableHook(pExitProcess);
-                sprintf_s(buf, "[hooks] MH_EnableHook(ExitProcess exitprocess-diag) = %d", static_cast<int>(eExitProcess));
-                LogFromController(buf);
-            }
-        } else {
-            LogFromController("[hooks] ExitProcess resolution FAILED -- GetModuleHandleA/GetProcAddress returned null");
-        }
-    }
+    //
+    // TEMPORARILY DISABLED, 2026-08-26, same-day follow-up -- com-error-diag
+    // was isolated first (disabled entirely) and the identical crash class
+    // (Exception 0xc0000409, _invoke_watson, confirmed via .pdb symbol
+    // resolution) reproduced anyway, ruling that hook out definitively. This
+    // is the one remaining ACTIVE hook added this session -- disabling it
+    // gets to the cleanest possible baseline (only the passive lpReserved
+    // capture, which can't be the cause since DLL_PROCESS_DETACH has not run
+    // for any of these crashes, remains active from today's additions). If
+    // the crash STILL reproduces with this off too, that's strong evidence
+    // this is a genuinely pre-existing bug unrelated to anything added this
+    // session -- see known_issues.md issue #96.
+    LogFromController("[hooks] exitprocess-diag SKIPPED (isolation test, 2026-08-26 -- see known_issues.md issue #96)");
 
     // Issue #92, 2026-08-26 -- [Video] ForceD3D9On12 vid_restart guard, see the big
     // comment above Hook_CbufAddText's definition for the full incident/mechanism.
