@@ -11230,6 +11230,35 @@ genuinely narrowed the search even while being wrong itself. **Demonware/
 anti-tamper is ruled out** (see the parallel-pass section) -- this is a
 controlled internal engine exit, not an external kill.
 
+**Critical new live evidence (2026-08-26, direct user report, after the
+parallel-pass section below was written): "its not vid_restart related IT
+HAPPENS ONLY IN LIVE GAMEPLAY (Underground map crashes fastest)."** Two real
+constraints this adds, neither satisfied by fork 4's `vid_restart`-guard
+theory: (1) the crash ties to being IN GAMEPLAY specifically, not to menu/
+settings actions that would plausibly issue a `vid_restart` (a video-options
+change, an alt-tab recovery, etc.) -- there is no known live-gameplay action
+that legitimately issues `vid_restart`, so that lead is now DEPRIORITIZED,
+not actively disproved (the log check from fork 4 is still worth running if
+convenient, but is no longer the top priority); (2) **crash SPEED is
+MAP-DEPENDENT** ("Underground crashes fastest") -- a signature neither the
+`vid_restart` guard nor a flat VRAM-exhaustion theory would produce on their
+own (both would be roughly map-agnostic), but which fits BOTH remaining
+leads well: fork 1's exclusion-zone/sub-rect viewport mismatch (if
+`Underground` triggers that rendering path -- mirrors, security-camera/
+turret-cam views, portal-heavy tunnel geometry -- more often or more
+severely than other maps) and fork 2's unclamped shared depth-stencil (if
+`Underground`'s geometry/lighting is simply more VRAM-demanding than other
+maps, hitting a real driver-level rejection sooner). **This promotes forks 1
+and 2 to top priority for next session, ahead of fork 4's log check** -- see
+the re-ordered priority list at the end of the parallel-pass section. Open
+question, not yet checked: does `Underground` have any in-game mirror/
+camera/turret-cam/picture-in-picture rendering element? (Only checkable live
+or via a map-asset GSC scan of `zone/english/mp_underground.ff`/
+`so_survival_mp_underground.ff`, not yet attempted -- these are compressed
+fastfiles, not plain text, so a real extraction step would be needed first.)
+If confirmed, that would directly connect fork 1's exclusion-zone mechanism
+to this specific map rather than leaving it a general theory.
+
 **Retracted theory/fix (kept for the record, DO NOT reapply):** `FUN_00683060`
 does create `SAVED_SCREEN` from `DAT_021d2e08`/`DAT_021d2e0c` while the other
 9 render targets scale from `DAT_021d2e00`/`DAT_021d2e04` (the pair
@@ -11698,26 +11727,38 @@ this dead tracking variable had already been fully removed during the revert
 
 ### Next-session priority order, derived from all 4 forks
 
-None of the 3 leads above is confirmed -- each needs a LIVE test, not more
-static RE, and they are not mutually exclusive (more than one could be a
-real contributing factor):
+**RE-ORDERED (2026-08-26), per the "live gameplay only, map-dependent speed"
+evidence above** -- fork 4's `vid_restart` lead is deprioritized (no known
+live-gameplay action issues `vid_restart`; that lead was built around
+menu/settings-triggered scenarios) in favor of the two leads a
+map-dependent signature actually fits. None of the leads below is confirmed
+-- each needs a LIVE test, not more static RE, and they are not mutually
+exclusive (more than one could be a real contributing factor):
 
-1. **Cheapest and most decisive first**: reproduce the crash on the current
-   (reverted) build, then immediately grep the live `proxy_d3d9.log` for
-   `[d3d9on12-guard] blocked` (fork 4) before it's overwritten by another
-   launch. A hit strongly implicates the `vid_restart`-swallowing guard; a
-   miss rules it out cleanly.
-2. **Second cheapest**: add the one-line `D3DCAPS9.MaxTextureWidth`/
-   `MaxTextureHeight` log fork 2 recommended, reproduce, and compare against
-   the actual requested dimensions at whatever `InternalRenderScalePercent`
-   value crashes. A hit confirms a real device-cap rejection on the
-   unclamped shared depth-stencil (`FUN_00682bc0`); a miss rules that
-   specific mechanism out.
-3. **Needs fresh Ghidra decompile, not live testing**: resolve fork 1's
-   `0x1720` vs `0x1760` discrepancy in `FUN_004e5b30`, then confirm/deny
-   whether `FUN_00508970`'s exclusion-zone condition actually drives that
-   same mode flag -- if confirmed, this explains both the crash's tie to the
-   setting being on at any value AND its intermittency.
+1. **Top priority, map-dependent-signature fits directly**: reproduce on
+   `Underground` specifically (already confirmed fastest-to-crash) with the
+   one-line `D3DCAPS9.MaxTextureWidth`/`MaxTextureHeight` log fork 2
+   recommended added first, and compare against the actual requested
+   dimensions at whatever `InternalRenderScalePercent` value crashes. A hit
+   confirms a real device-cap rejection on the unclamped shared
+   depth-stencil (`FUN_00682bc0`) -- and if `Underground` is simply more
+   geometry/lighting-dense than other maps, that would explain why it
+   crashes fastest. A miss rules this specific mechanism out.
+2. **Equal top priority, also fits the map-dependent signature**: resolve
+   fork 1's `0x1720` vs `0x1760` discrepancy in `FUN_004e5b30` (fresh Ghidra
+   decompile, not live testing), then confirm/deny whether `FUN_00508970`'s
+   exclusion-zone condition actually drives that same mode flag. Also worth
+   checking directly, live or via a map-asset scan: does `Underground` have
+   any in-game mirror/security-camera/turret-cam/picture-in-picture element
+   that would exercise the exclusion-zone rendering path more than other
+   maps? If confirmed, this explains the crash's tie to the setting being on
+   at any value, its intermittency, AND why `Underground` specifically is
+   worst.
+3. **Deprioritized, not disproved**: reproduce, then grep the live
+   `proxy_d3d9.log` for `[d3d9on12-guard] blocked` (fork 4) before it's
+   overwritten by another launch -- still worth a look if convenient, but no
+   longer the leading theory given the crash requires live gameplay, not a
+   settings/menu action.
 4. If a fresh live capture is ever taken, tag `0x34AEA000`/`0x37FD0000`-
    equivalent regions (fork 3) with a live `VirtualQuery` check to identify
    the owning subsystem, rather than guessing from a static snapshot alone.
