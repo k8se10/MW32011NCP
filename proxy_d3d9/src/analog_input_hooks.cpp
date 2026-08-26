@@ -10463,13 +10463,20 @@ namespace {
 using ExitProcessFn = void(WINAPI*)(UINT);
 ExitProcessFn g_origExitProcess = nullptr;
 
+// FIXED 2026-08-26, real live crash found: `buf[160]` was too small for this
+// message's own static text (211 chars including the "%u" placeholder, before
+// the exit code has even been substituted in) -- live-caught with a debugger
+// attached (mcp-windbg, cdb.exe -server live attach): every single
+// "[exitprocess-diag] never fired" result all session was this exact bug,
+// crashing inside sprintf_s (0xc0000409, FAST_FAIL_INVALID_ARG, confirmed via
+// a real stack trace: d3d9!sprintf_s<160> -> Hook_ExitProcess+0x27) before the
+// log line could ever be written -- `ExitProcess` genuinely IS being called
+// every time, this hook just never survived long enough to say so. See
+// known_issues.md issue #96 for the full trail.
 void WINAPI Hook_ExitProcess(UINT uExitCode)
 {
-    char buf[160];
-    sprintf_s(buf, "[exitprocess-diag] *** ExitProcess(%u) called -- this is what actually "
-        "terminates the process (Com_Error is confirmed NOT the mechanism, see "
-        "known_issues.md issue #96) -- whatever called this is the real trigger",
-        uExitCode);
+    char buf[256];
+    sprintf_s(buf, "[exitprocess-diag] *** ExitProcess(%u) called", uExitCode);
     LogFromController(buf);
     g_origExitProcess(uExitCode);
 }
@@ -10696,25 +10703,26 @@ void InstallAnalogInputHooks()
     // Issue #96 GENERAL DIAGNOSTIC, 2026-08-26 -- see the big comment above
     // Hook_FUN_00425540's definition. Observes EVERY real call into the
     // confirmed Com_Error/longjmp exit function, not just the two specific
-    // theories already instrumented -- three live crashes in a row have never
-    // once fired [clcstate-diag], so this directly identifies the real call
-    // site instead of guessing at more targeted theories.
+    // theories already instrumented.
     //
-    // TEMPORARILY DISABLED, 2026-08-26, same-day follow-up -- a first bug in
-    // LogComErrorCall's own unbounded %s was found and fixed (live-confirmed
-    // via Event Log + local .pdb symbol resolution: Exception 0xc0000409,
-    // _invalid_parameter_internal/_invoke_watson), but the IDENTICAL crash
-    // class reproduced again immediately after that fix, at a new offset
-    // consistent with the rebuild (0x2e856, still _invoke_watson) -- meaning
-    // either the fix was incomplete, or this naked hook is disturbing
-    // FUN_00425540's own real variadic call in some other way (e.g. its
-    // internal __vsnprintf call) rather than the bug being isolated to
-    // LogComErrorCall's own buffer math (confirmed safe, 495 chars worst-case
-    // against a 512-byte buffer -- checked directly, not assumed). Rather
-    // than guess at a third patch with no real stack trace to confirm it,
-    // disabled entirely to isolate cleanly -- same methodology already used
-    // for Fix Attempt C. See known_issues.md issue #96 for the full trail.
-    LogFromController("[hooks] com-error-diag SKIPPED (isolation test, 2026-08-26 -- see known_issues.md issue #96)");
+    // RE-ENABLED, 2026-08-26, same-day follow-up -- was disabled to isolate
+    // a mysterious recurring 0xc0000409 that kept reproducing even with this
+    // hook off. Root cause since found via a LIVE debugger attach (mcp-windbg,
+    // real stack trace, not another guess): the recurring crash was actually
+    // `Hook_ExitProcess`'s own buf[160] being too small for its own message
+    // (211+ chars) -- a completely separate hook this whole time, not this
+    // one. `LogComErrorCall`'s own fix (bounded copy, confirmed safe -- 495
+    // chars worst-case against 512) was very likely correct all along; this
+    // hook was cleared by isolation testing for the wrong reason. Re-enabled
+    // now that the real cause is fixed. See known_issues.md issue #96.
+    MH_STATUS sComErrorDiag = MH_CreateHook(reinterpret_cast<LPVOID>(0x00425540), &Hook_FUN_00425540, reinterpret_cast<LPVOID*>(&g_orig_00425540));
+    sprintf_s(buf, "[hooks] MH_CreateHook(00425540 com-error-diag) = %d", static_cast<int>(sComErrorDiag));
+    LogFromController(buf);
+    if (sComErrorDiag == MH_OK) {
+        MH_STATUS eComErrorDiag = MH_EnableHook(reinterpret_cast<LPVOID>(0x00425540));
+        sprintf_s(buf, "[hooks] MH_EnableHook(00425540 com-error-diag) = %d", static_cast<int>(eComErrorDiag));
+        LogFromController(buf);
+    }
 
     // Issue #96 GENERAL DIAGNOSTIC, ROUND 2, 2026-08-26 -- see the big comment
     // above Hook_ExitProcess's definition. Real kernel32.dll export, resolved
