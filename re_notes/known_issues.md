@@ -11814,18 +11814,38 @@ which matches the user's own report ("IT HAPPENS ONLY IN LIVE GAMEPLAY")
 exactly, and explains why nothing about a menu/settings action (fork 4's
 `vid_restart` guard) was ever the right shape for this crash.
 
-**Not yet confirmed**: exactly which player-facing feature `FUN_0057f710`
-represents. Its body references a real string, `"removecorpse"`, and
-conditionally calls the `FUN_0053d640` chain (the whole secondary-viewport
-setup) only along one branch -- consistent with some kind of death/
-downed-state camera transition (Survival's revive/spectate mechanic is the
-most obvious candidate given the "gameplay only" + "removecorpse" combination,
-but this is inference, not confirmed via a decompile of what specifically
-sets state to 6 or what UI/gameplay moment corresponds to it). **Not yet
-confirmed either**: whether this connects to `Underground` specifically --
-plausible if that map causes the player to enter this state (die/go down)
-more often than other maps (tighter corridors, more melee/swarm damage), but
-this is a reasonable inference, not independently verified.
+**Correction (same pass, direct user pushback): "remove corpse.. bro its
+despawning bodies."** Right, and this was worth checking rather than leaving
+as a guess -- decompiled the actual gate functions `FUN_0057f710` calls
+(`FUN_0049c070`, `FUN_00404bb0`, `FUN_00403150`, `FUN_0057f580`,
+`FUN_004d6500`) instead of continuing to infer from string proximity alone.
+Two real, structural facts fell out:
+1. **`"removecorpse"` is NOT connected to the `FUN_0053d640` viewport-setup
+   branch at all** -- it's gated on a completely separate flag
+   (`DAT_0118ce00`, read via `FUN_004d6500`) at the very end of
+   `FUN_0057f710`, reached unconditionally from either of the function's two
+   main branches. The "death cam" inference conflated two independent
+   per-tick housekeeping tasks that happen to live in the same function --
+   a real overreach, corrected here rather than left standing.
+2. **The real trigger for the `FUN_0053d640` branch is a cvar named
+   `"UI_RefreshViewport"`** -- found via `FUN_0057f580`'s own decompile:
+   `FUN_00493b80("UI_RefreshViewport")` is checked directly (a real cvar-name
+   string literal, not inferred). So `FUN_0057f710` is genuinely a per-tick
+   UI/viewport maintenance function, and the secondary-viewport setup this
+   issue has been tracing fires whenever something sets that cvar mid-
+   gameplay -- not death, not corpses, not splitscreen. What actually sets
+   `"UI_RefreshViewport"` is NOT yet traced (a real next step, not yet
+   attempted this pass -- likely several distinct triggers: HUD/interact-
+   prompt changes, resolution-adjacent events, or something else entirely).
+
+**Still not confirmed**: whether `Underground` specifically triggers
+`"UI_RefreshViewport"` more often than other maps -- the corpse-density
+theory no longer applies (that string turned out to be unrelated), so
+whatever explains Underground's map-dependence, if this mechanism is the
+real one, needs its own real trigger-frequency evidence, not reused from
+the corpse-removal inference. This does NOT weaken finding 1 above (the
+ratio-math computation itself, and its dependence on the two globals
+diverging) -- it only corrects what was believed to GATE that computation.
 
 **Real, concrete next step taken this pass (not just documented, actually
 shipped)**: extended the existing `[video-scale]` diagnostic in
