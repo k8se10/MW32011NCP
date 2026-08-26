@@ -12777,7 +12777,15 @@ non-corrupted return-address chain from the stack (`dd esp` + `kb`) --
 entirely via safe, static Ghidra decompilation afterward (see below) --
 zero further live-process risk was needed to use this data.
 
-### `ExitProcess` MECHANISM FULLY RESOLVED, 2026-08-26 (same day): this was never a crash -- it's the CRT's own normal program-exit sequence, reached via the already-confirmed `Com_Error`/`longjmp`
+### `ExitProcess` MECHANISM PARTIALLY RESOLVED, 2026-08-26 -- CORRECTED same day: this was never a crash -- it's the CRT's own normal program-exit sequence -- but the specific claim below that a general `Com_Error`/`longjmp` causes it was WRONG, see the correction subsection after it
+
+**Status as of the correction below: the `ExitProcess` call chain itself (CRT
+plumbing) is genuinely confirmed. The claim that a general-severity `Com_Error`
+call is WHAT makes `FUN_00534380` return is NOT confirmed -- a same-day
+follow-up fork found the general `Com_Error`/`longjmp` path is actually
+per-frame RECOVERABLE on the main thread, not fatal. Read the "CORRECTION"
+subsection below before trusting anything in this section past the CRT chain
+itself.**
 
 Decompiled the four addresses captured from the one safe breakpoint hit
 above. **All four resolve to real, named Visual Studio 2008 CRT library
@@ -12819,25 +12827,133 @@ Quake3 pattern: wrap the entire game loop in a `setjmp`, and a fatal
 out and shuts down cleanly -- no crash dialog, no AV, no WER event, because
 it was never a crash, it's the engine's own designed fatal-error response.
 
-**This closes the loop on tonight's entire investigation**: `Com_Error` was
-the right answer from the very first static-RE pass, hours ago. Every
-subsequent "Com_Error ruled out" conclusion tonight was itself caused by
-self-inflicted bugs in this session's OWN diagnostic hooks (`LogComErrorCall`'s
-original unbounded `%s`, then `Hook_ExitProcess`'s `buf[160]` overflow) --
-both now fixed. The original static-RE theories this issue built up before
-any live diagnostic was added (the viewport/render-target unit mismatch,
-the unclamped shared depth-stencil) remain the live candidates for WHAT
-`Com_Error` call site actually fires and why -- not replaced by tonight's
-detour, just returned to as the right track.
+**This paragraph's "closes the loop" claim was PREMATURE -- see the
+correction directly below.** `Com_Error`'s CRT exit plumbing is real and
+confirmed, but that does not by itself mean any `Com_Error` call is what
+ends the game.
 
-**What's still not found**: the exact `setjmp` call establishing the jump
-target (not visible in `FUN_00534380` itself -- must be in a function it
-calls, most likely something in the pre-loop setup between lines ~43-58 of
-its own decompile, e.g. `FUN_0054b040`/`FUN_0062f170`/similar, none of
-which Ghidra has identified by name). Finding it would directly confirm
-this whole chain rather than leaving it as a very strong but not fully
-closed inference. **Purely static work, safe to do in a future session --
-no live process interaction needed.**
+**What's still not found (as originally written)**: the exact `setjmp` call
+establishing the jump target. **This part turned out to be answerable, and
+answering it is what overturned the "closes the loop" claim above** -- see
+below.
+
+---
+
+### CORRECTION, 2026-08-26 (same day): the general `Com_Error`/`longjmp` path is per-frame RECOVERABLE on the main thread, not fatal -- the real exit trigger is still open
+
+Two more forks (both purely static Ghidra analysis, no live process
+interaction, per the standing constraint from tonight's live-debugger
+incident above) were launched right after the "FULLY RESOLVED" section
+above was written and pushed. One of them found the exact `setjmp` this
+project had been looking for -- and its shape directly contradicts the
+"closes the loop" conclusion.
+
+**The `setjmp` target (`FUN_004411c0(2)`, a genuine per-thread TLS slot
+accessor -- `FS:[0x2C]` -> TEB -> `_tls_index`-indexed block -> `+4` ->
+slot 2) is re-armed by 8 separate `__setjmp3` call sites, not one.** Of
+those, the one that actually matters for mid-gameplay `Com_Error` calls on
+the main thread is **`FUN_0044c7b0` -- the per-frame tick function itself**,
+called every single iteration inside `FUN_00534380`'s main loop. It
+establishes a *fresh* `setjmp` at the top of *every frame*:
+
+```c
+void FUN_0044c7b0(void)
+{
+  ...
+  uVar2 = FUN_004411c0(2);
+  iVar3 = __setjmp3(uVar2,0);
+  if (iVar3 == 0) {
+    // normal frame: sim tick runs here
+    ...
+  }
+  if (DAT_0176b52c != 0) {
+    // Com_Error longjmp lands HERE, runs recovery, then falls through to `return`
+    ...
+    return;
+  }
+  return;
+}
+```
+
+Because this re-arms every frame, a `longjmp` from `FUN_00425540`
+(`Com_Error`) on the main thread does **not** unwind back to
+`FUN_00433560`'s one-time pre-loop `setjmp` (that jmp_buf was overwritten by
+frame 1) -- it unwinds into *whichever frame is currently executing*, lands
+back inside that same frame's `FUN_0044c7b0` call, runs the recovery block
+above, and **returns normally**. `FUN_00534380`'s loop simply continues to
+the next iteration. **Confirmed against `FUN_00425540`'s own decompiled
+tail**: the general (non-early-return) path -- which is what all three
+currently-known real call sites (`FUN_00682bc0`'s and `FUN_00682e50`'s
+unclamped depth-stencil/render-target failures, all severity `0`) actually
+take -- increments `DAT_0176b52c` and falls straight into this same
+recoverable `longjmp`. Severity values `4`/`5`/`6`/`7` get special-cased
+*before* this fall-through and were not fully traced this pass.
+
+**Net effect: the general `Com_Error`/`longjmp` mechanism, on the main
+thread, for the two currently-known real call sites, is a non-fatal,
+per-frame error-recovery mechanism -- not what makes `FUN_00534380` return.**
+The "closes the loop" claim above is withdrawn as stated. What's still
+genuinely confirmed and NOT overturned: the CRT exit chain itself
+(`___tmainCRTStartup` -> `FUN_00534380` returns -> `_exit` -> `doexit` ->
+`___crtExitProcess` -> `ExitProcess`), and `FUN_00534380`'s own infinite
+loop having no internal `break`/`return` -- something must still cause it
+to fall out, it just isn't the general recoverable `Com_Error` path as
+decompiled so far.
+
+**Open candidates for the real fatal trigger, in priority order for a
+future purely-static session:**
+1. A genuinely fatal `param_1`/condition inside `FUN_00425540` that
+   diverges from the general recoverable path -- severities `4`/`5`/`6`/`7`
+   are special-cased before the fall-through and were not decompiled deep
+   enough this pass to see whether any of them skips recovery and forces
+   `FUN_00534380` to actually break its loop (e.g. via some caller checking
+   `DAT_0176b52c` and deciding to `_exit` directly, rather than the count
+   only gating `FUN_0044c7b0`'s own recovery block as currently understood).
+2. An unhandled Windows structured exception (access violation, etc.) that
+   never goes through `Com_Error` at all, hitting the CRT's own SEH/
+   unhandled-exception path directly instead.
+3. A fatal error firing on one of the other **5** `setjmp3` sites found by
+   the same fork -- each looks like a separate thread's own
+   `TLS-setjmp -> do{...}while(true)` main loop (`FUN_0040de80`,
+   `FUN_00586c00`, `FUN_0063a2c0`, `FUN_0068dc40`, plus `FUN_00608b10`'s two
+   init-only sites) -- none examined yet for what their own longjmp-return
+   path actually does; it may not be the same "recover and continue" shape
+   as the main thread's.
+
+**Separately, the other fork re-confirmed `FUN_00682bc0`/`FUN_00682e50`
+(shared depth-stencil / render-target creation) as the stronger of the two
+previously-suspected call sites** -- both have a real, direct, one-step,
+unclamped path into `FUN_00425540` using the scaled size pair
+(`DAT_021d2e00`/`DAT_021d2e04`), severity `0` each. `FUN_00508970` (Fix
+Attempt C's target) does **not** -- its own decompiled body has no call into
+`FUN_00425540`, `CreateRenderTarget`, or `CreateDepthStencilSurface`
+anywhere, only recursion into itself and a call to `FUN_00497210` at the
+base case; reaching `FUN_00425540` from it would need an unconfirmed extra
+hop through `FUN_00497210` not found this pass. This weakens (does not
+disprove) Fix Attempt C's theory relative to the depth-stencil candidate --
+consistent with Fix C's own live test result (crash still occurred).
+**Real unresolved tension on the depth-stencil candidate, flagged not
+hidden**: `FUN_00682bc0`'s depth-stencil creation is cached after its first
+success (`DAT_021d05e8` guard) -- structurally can only fail once per
+cache-lifetime, which doesn't obviously match the crash's own "several
+minutes in, timing varies" character. Nobody has found what resets
+`DAT_021d05e8` (an indirect/vtable call this project's tooling doesn't
+resolve to a named caller) -- open for a future static pass.
+
+**No static ceiling exists anywhere in this allocation chain** (only a
+floor clamp) -- `D3DCAPS9.MaxTextureWidth`/`MaxTextureHeight` are declared
+in this project's own code but never read. A live `GetDeviceCaps` read
+would answer the real device caps directly, but per the incident below,
+**must not be attempted via debugger attach for this issue.** A safe
+alternative exists: log the real caps via the existing `CreateDevice` hook
+on a completely normal launch (no debugger, no process interaction beyond
+starting the game) -- not yet done.
+
+**Standing constraint, unchanged**: live process interaction (debugger
+attach, or anything touching the running `iw5sp.exe` process beyond a
+normal launch) is permanently retired for this issue -- see the incident
+section above. All of the above was produced by purely static Ghidra
+analysis only.
 
 ### Next-session priority order, derived from all 4 forks, RE-ORDERED AGAIN after the gameplay-gated ratio-math finding above
 
