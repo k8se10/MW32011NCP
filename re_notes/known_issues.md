@@ -12677,6 +12677,78 @@ redeployed. **Next live test should finally show the real `ExitProcess`
 call and its exit code** -- the most direct remaining piece of missing
 information.
 
+### REAL BUG FOUND VIA LIVE DEBUGGER, 2026-08-26 (same day): `Hook_ExitProcess` had the exact same class of bug as `com-error-diag`, the whole time -- `ExitProcess` genuinely IS called every single crash
+
+Direct user instruction ("look for a mcp you can ise" / "look on git") led to
+installing `svnscha/mcp-windbg` (a real MCP server wrapping `cdb.exe`,
+`pip install mcp-windbg` + `claude mcp add`) and, since `LocalDumps`
+never produced a usable dump for this fastfail exception class, attaching
+`cdb.exe -server` LIVE to the running game process (found via a `Monitor`
+watch for `iw5sp.exe` appearing, then `cdb -server tcp:port=5005 -p <pid>`,
+connected via `open_cdb_remote`) instead of relying on post-mortem analysis.
+Resumed the target and waited -- this catches a live fail-fast crash
+correctly, unlike Windows' own post-mortem dump generation for this
+exception class.
+
+**Caught it live. Real stack trace, no more guessing:**
+```
+d3d9!_invoke_watson+0xf
+d3d9!_invalid_parameter_internal+0x7c
+d3d9!common_vsprintf_s<char>+0x95
+d3d9!__stdio_common_vsprintf_s+0x2f
+d3d9!vsprintf_s+0x1e (inline)
+d3d9!sprintf_s<160>+0x24
+d3d9!`anonymous namespace'::Hook_ExitProcess+0x27
+```
+Also newly visible this way (not available from Event Log alone):
+**`Subcode: 0x5 FAST_FAIL_INVALID_ARG`** -- confirms this whole crash class
+really is secure-CRT parameter validation, not a raw stack-cookie mismatch.
+
+**Root cause, confirmed directly, not inferred**: `Hook_ExitProcess`'s own
+`char buf[160]` was too small for its own static log message -- 211
+characters BEFORE the exit code digits are even substituted in (checked
+directly: `len(static_text) - 2 + 10_worst_case_digits = 219`, against a
+160-byte buffer). A dumb, simple bug, and the exact same CLASS of mistake as
+`LogComErrorCall`'s original one -- writing a diagnostic message without
+checking its own length against its own declared buffer.
+
+**This is the real explanation for the entire recurring `0xc0000409` cluster
+tonight, not a separate pre-existing bug**: `com-error-diag` was disabled to
+isolate the crash, and it kept reproducing anyway -- at the time this was
+read as proof `com-error-diag` wasn't the cause and something else,
+pre-existing and unrelated to today's work, must be. That conclusion was
+half right and half wrong: `com-error-diag` genuinely wasn't the cause of
+THAT specific recurrence, but the actual cause was never "something
+pre-existing" -- it was `Hook_ExitProcess`, a DIFFERENT hook added the same
+session, which nobody had isolated yet because attention was on
+`com-error-diag` specifically. **Correction to the "pre-existing bug" framing
+from earlier tonight**: withdrawn -- there is no evidence left of a
+genuinely pre-existing crash separate from this session's own diagnostic
+hooks; both real bugs found tonight (`LogComErrorCall`'s original unbounded
+`%s`, and now this) were self-inflicted, in code added this session.
+
+**The single most important consequence**: `Hook_ExitProcess`'s own crash
+happening INSIDE its own logging call is exactly why `[exitprocess-diag]`
+never appeared in a single log all session, despite `ExitProcess` genuinely
+being called every time. **`ExitProcess` IS the real exit mechanism** -- this
+was suspected from the `lpReserved=1` finding earlier and is now directly
+confirmed by catching the call itself live. What still isn't known: the
+actual exit code, and who calls `ExitProcess` (the automatic stack walk
+couldn't see past a MinHook trampoline stub before the process fully
+terminated after the fail-fast completed, ending the debug session).
+
+**Fixed**: `Hook_ExitProcess`'s message shortened and its buffer enlarged to
+256 (comfortably safe). **`com-error-diag` re-enabled** -- it was cleared by
+isolation testing for the wrong reason (the recurring crash was never it),
+and its own fix (a bounded copy, 495 chars worst-case against 512) was
+very likely correct all along. **Fix Attempt C deliberately left disabled**
+for the next test -- it changes real game behavior, not just logging, and
+this next test already has two changed variables (the `ExitProcess` fix,
+`com-error-diag` re-enabled); adding a third would muddy attribution. Built
+(0 errors), redeployed. **Next live test should finally show both the real
+`ExitProcess` exit code AND whether `Com_Error` also fires (revealing
+whether it's a precursor to the `ExitProcess` call, or a separate path).**
+
 ### Next-session priority order, derived from all 4 forks, RE-ORDERED AGAIN after the gameplay-gated ratio-math finding above
 
 **RE-ORDERED AGAIN (2026-08-26), after the `clcState` finding above** --
