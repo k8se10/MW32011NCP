@@ -12647,6 +12647,36 @@ deterministic-offset access violation ever reappears in a FRESH Event Log
 check, resolve it immediately with the CURRENT `.pdb` before rebuilding
 again, so this gap doesn't repeat.
 
+### CLEAN TERMINATION CONFIRMED via lpReserved, 2026-08-26 (same day): a genuinely different signature returns with both new hooks off -- re-enabling `exitprocess-diag` to see the exact call
+
+Live-tested with BOTH `com-error-diag` and `exitprocess-diag` disabled
+(the cleanest baseline available -- only the passive `lpReserved` capture
+active from today's work). **No Windows Event Log entry at all this time**
+-- a real, different result from every `0xc0000409` crash in the recent
+cluster. The log itself ended completely cleanly:
+```
+[detach-diag] lpReserved=00000001 (PROCESS TERMINATING)
+proxy_d3d9 detach
+```
+
+**This directly answers the open question from several rounds ago**:
+`lpReserved` non-NULL means, per Microsoft's own documented `DllMain`
+contract, the WHOLE PROCESS is genuinely terminating -- not just this
+proxy DLL being unloaded via `FreeLibrary` while the game keeps running.
+Rules out the "renderer-restart reloads just this DLL" theory directly.
+This is real, clean process termination through a normal path -- no
+fastfail, no fault, no crash dialog -- matching the VERY FIRST crash
+signature this whole issue started from, before the fastfail cluster was
+ever discovered.
+
+**`exitprocess-diag` re-enabled** (`com-error-diag` stays off -- it remains
+the only hook ever directly implicated in the fastfail crashes across
+multiple isolated tests). `exitprocess-diag` itself was never observed to
+cause a crash on its own in any test this session. Built (0 errors),
+redeployed. **Next live test should finally show the real `ExitProcess`
+call and its exit code** -- the most direct remaining piece of missing
+information.
+
 ### Next-session priority order, derived from all 4 forks, RE-ORDERED AGAIN after the gameplay-gated ratio-math finding above
 
 **RE-ORDERED AGAIN (2026-08-26), after the `clcState` finding above** --
