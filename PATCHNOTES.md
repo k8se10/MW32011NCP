@@ -162,13 +162,17 @@ along the way rather than assumed. See the itemized entries below and
   visual-enhancement-suite plan) — captures the complete, final composed frame
   (this mod's own overlay included) and re-draws it through an arbitrary pixel
   shader, generalizing the existing Options-screen blur's capture/composite
-  technique from a small sub-region to the whole screen.** Not a player-facing
-  feature on its own — a no-op passthrough shader (`[Experimental]
-  FullScreenPassthroughTest`) validates the plumbing itself (no visual change)
-  before Phase B builds the first real effect (RCAS sharpening) on top of it, per
-  the plan's own explicit "isolate plumbing bugs from shader bugs" requirement.
-  Crashed on first live test — see the Fixed entry above and `known_issues.md`
-  issue #93.
+  technique from a small sub-region to the whole screen. NOT closed — see below.**
+  Not a player-facing feature on its own — a no-op passthrough shader
+  (`[Experimental] FullScreenPassthroughTest`) validates the plumbing itself (no
+  visual change) before Phase B builds the first real effect (RCAS sharpening) on
+  top of it, per the plan's own explicit "isolate plumbing bugs from shader bugs"
+  requirement. Crashed on first live test; that specific init-crash bug is fixed
+  and confirmed live — see the Fixed entry above and `known_issues.md` issue #93.
+  **Direct user correction: Phase A overall is NOT done** — it's the foundation
+  every later phase is built on, and a live, reproducible crash regression
+  (issue #96, root cause still unconfirmed) sits in the same build. Stays open
+  alongside Phase E (item 3 above) until #96 has an actual confirmed fix.
 
 ### Investigated, Not Yet Resolved
 1. **Survival scoreboard's real stat data source CONFIRMED -- and the feature is
