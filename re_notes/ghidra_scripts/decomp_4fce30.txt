@@ -1,0 +1,44 @@
+================================================================
+Function: FUN_004fce30 @ 004fce30
+----------------------------------------------------------------
+
+undefined4 FUN_004fce30(float *param_1,int param_2)
+
+{
+  int iVar1;
+  float10 fVar2;
+  uint uVar3;
+  float10 fVar4;
+  
+  fVar4 = (float10)FUN_005078c0();
+  fVar2 = (float10)0;
+  if ((fVar2 != fVar4) && (fVar2 != (float10)*(float *)(&DAT_021d3094 + param_2 * 0x118))) {
+    FUN_005328c0(&DAT_021d308c + param_2 * 0x118,param_1);
+    param_1[3] = 1.0;
+    return 1;
+  }
+  iVar1 = *(int *)(DAT_021cd4e4 + 0xc);
+  if ((iVar1 != 0) && ((iVar1 != 1 || (*(int *)(DAT_021cd614 + 0xc) != 0)))) {
+    if ((iVar1 == 4) && (fVar2 != (float10)*(float *)(&DAT_021d3094 + param_2 * 0x118))) {
+      FUN_005328c0(&DAT_021d308c + param_2 * 0x118,param_1);
+      param_1[3] = 1.0;
+      return 1;
+    }
+    if ((iVar1 != 3) && (uVar3 = FUN_004a1610(), (uVar3 & 0x200) != 0)) {
+      FUN_00532540(DAT_021cd588 + 0xc,param_1);
+      param_1[3] = 1.0;
+      return 1;
+    }
+    FUN_00532540(DAT_021cd5c0 + 0xc,param_1);
+    param_1[3] = 1.0;
+    return 1;
+  }
+  *param_1 = (float)fVar2;
+  param_1[1] = (float)fVar2;
+  param_1[2] = (float)fVar2;
+  param_1[3] = (float)fVar2;
+  return 0;
+}
+
+
+
