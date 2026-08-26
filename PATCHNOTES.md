@@ -270,6 +270,18 @@ along the way rather than assumed. See the itemized entries below and
   into the next session — each lead needs a live test, not more static RE.
   See `known_issues.md` issue #96 for the full trail, including the retracted
   fix kept for the record and all 4 forks' detailed findings.
+  **Same-day follow-up, direct user report ("its not vid_restart related IT
+  HAPPENS ONLY IN LIVE GAMEPLAY (Underground map crashes fastest)")**: traced
+  the real trigger to `FUN_00450740`, a live-gameplay-gated secondary-viewport
+  setup path, live-confirmed this session to compute its own rect using a
+  ratio between the two globals `InternalRenderScalePercent` decouples — a
+  real, exact, live-measured mismatch (`2560x1440` native vs `6400x3600`
+  scaled at 250%), not a static-RE guess. **Fix Attempt A shipped**: a new
+  hook neutralizes that ratio for the exact duration of this one function's
+  call, leaving every other consumer of the scaled globals untouched. Built,
+  redeployed, not yet live-tested. Full trail, including two ruled-out
+  theories (divide-by-zero, `clcState` corruption) and the complete traced
+  chain, in `known_issues.md` issue #96.
 
 ## v0.3.4 — Alpha (2026-08-25) — DualSense input-parity fix, gameplay-hint glyph editor, new plugin API
 
