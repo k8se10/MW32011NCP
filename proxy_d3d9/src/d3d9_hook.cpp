@@ -573,6 +573,53 @@ HRESULT WINAPI Hook_CreateDevice(void* This, UINT Adapter, DWORD DeviceType,
         LogFromController(resLogBuf);
     }
 
+    // Renderer-backend diagnostic (2026-08-26, D3D11/12/Vulkan investigation --
+    // see the approved plan's own "Renderer-backend questions" section): confirms
+    // whether this session is really running through D3D9On12 (a real Microsoft
+    // OS component that maps D3D9 onto D3D12 -- NOT a third-party DLL swap, the
+    // real d3d9.dll this proxy already forwards to is still what's in use either
+    // way) or a native D3D9 driver. Two independent, real checks, logged as raw
+    // evidence rather than a guessed conclusion:
+    // 1. GetModuleHandleA("d3d9on12.dll") -- Microsoft's own documentation
+    //    confirms this DLL is loaded into the process specifically when a
+    //    D3D9On12 device is created, so a non-null handle is a direct positive.
+    // 2. IDirect3D9::GetAdapterIdentifier (vtable index 5, standard fixed COM
+    //    layout, same class of call already relied on elsewhere in this file for
+    //    GetAdapterModeCount/EnumAdapterModes at indices 6/7) -- D3D9On12 is
+    //    documented to report itself distinctly in Driver/Description versus a
+    //    real GPU vendor driver filename (e.g. nvldumdx.dll/aticfx64.dll).
+    // `This` here is the real IDirect3D9* this hook's own CreateDevice method
+    // was called through -- no separate pointer needed.
+    {
+        struct D3DADAPTER_IDENTIFIER9_LOCAL {
+            char Driver[512];
+            char Description[512];
+            char DeviceName[32];
+            LARGE_INTEGER DriverVersion;
+            DWORD VendorId;
+            DWORD DeviceId;
+            DWORD SubSysId;
+            DWORD Revision;
+            GUID DeviceIdentifier;
+            DWORD WHQLLevel;
+        };
+        void** d3d9VtableForDiag = *reinterpret_cast<void***>(This);
+        using GetAdapterIdentifierFn = HRESULT(WINAPI*)(void*, UINT, DWORD, void*);
+        auto getAdapterIdentifier = reinterpret_cast<GetAdapterIdentifierFn>(d3d9VtableForDiag[5]);
+        D3DADAPTER_IDENTIFIER9_LOCAL ident{};
+        HRESULT idHr = getAdapterIdentifier(This, Adapter, 0, &ident);
+        bool d3d9on12Loaded = (GetModuleHandleA("d3d9on12.dll") != nullptr);
+        char diagBuf[700];
+        if (SUCCEEDED(idHr)) {
+            sprintf_s(diagBuf, "[d3d9on12-diag] d3d9on12.dll loaded=%s adapter driver=\"%s\" description=\"%s\"",
+                d3d9on12Loaded ? "yes" : "no", ident.Driver, ident.Description);
+        } else {
+            sprintf_s(diagBuf, "[d3d9on12-diag] d3d9on12.dll loaded=%s (GetAdapterIdentifier failed hr=0x%08lX)",
+                d3d9on12Loaded ? "yes" : "no", static_cast<unsigned long>(idHr));
+        }
+        LogFromController(diagBuf);
+    }
+
     if (SUCCEEDED(hr) && DeviceType == kD3DDEVTYPE_HAL) {
         InstallWndProcHook(hFocusWindow);
         if (ppReturnedDeviceInterface && *ppReturnedDeviceInterface) {

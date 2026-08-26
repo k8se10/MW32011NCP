@@ -5686,6 +5686,166 @@ void __cdecl Hook_FUN_00679680()
 }
 } // namespace
 
+// Issue #92, 2026-08-26 -- [Video] ForceD3D9On12 vid_restart guard. Real incident
+// this fixes: switching display mode (fullscreen<->borderless, or a Resolution
+// change) queues a real `vid_restart` from the vanilla native menu's own internal
+// logic -- issue #91 already found this crashes/breaks rendering under this
+// project's hooks regardless of ForceD3D9On12. Live-reproduced this session: while
+// `ForceD3D9On12` was active, triggering one of these actually corrupted NVIDIA's
+// own PERSISTENT D3D12 pipeline-state cache (`%LOCALAPPDATA%\NVIDIA\DXCache`) --
+// the game then rendered nothing (menu logic/input kept working, matching a
+// classic "device technically alive, nothing visibly renders" symptom) on EVERY
+// subsequent launch, independent of this project's own config or the game's own
+// saved r_displayMode value, until the cache was manually cleared. A materially
+// worse, more persistent failure mode than issue #91's own plain crash, and one
+// this project can actually prevent rather than just document.
+//
+// Real mechanism: `CbufAddText` (0x00457c90, `real_settings.cpp`'s own confirmed
+// Cbuf_AddText-equivalent, plain __cdecl(int localClientNum, const char*)) is the
+// SAME real function the vanilla native menu's own internal .menu-script `exec`
+// actions use to queue console commands -- hooking it directly, rather than only
+// this project's own `QueueConsoleCommand` wrapper (which the native menu never
+// calls), is what lets this actually see and block a native-menu-triggered
+// `vid_restart`, not just ones this project's own code might queue.
+//
+// This hook is a PRE-hook: if `[Video] ForceD3D9On12` is enabled and the incoming
+// text contains "vid_restart" (case-insensitive -- console commands aren't
+// case-sensitive), the command is dropped entirely (never reaches the real
+// trampoline, never gets queued) and a real, visible warning is shown via
+// `ShowOverlayMessage` instead, so the player understands why nothing happened
+// rather than silently eating their input. Every other command passes through
+// completely unmodified.
+namespace {
+using CbufAddTextFn2 = void(__cdecl*)(int, const char*);
+CbufAddTextFn2 g_origCbufAddText = nullptr;
+
+void __cdecl Hook_CbufAddText(int localClientNum, const char* text)
+{
+    // Guard applies whenever EITHER risk-adjacent feature is active, not just
+    // ForceD3D9On12 -- InternalRenderScalePercent's own render targets are only
+    // ever sized once, at real startup device-creation time (issue #88's own
+    // "applied exactly ONCE per process" finding); a live vid_restart tearing
+    // that device down and recreating it mid-session is unverified territory for
+    // this feature too, not just for ForceD3D9On12's own confirmed incident.
+    bool guardActive = g_modConfig.forceD3D9On12 || g_modConfig.internalRenderScalePercent > 0;
+    if (guardActive && text) {
+        bool isVidRestart = false;
+        for (const char* p = text; *p; ++p) {
+            if (_strnicmp(p, "vid_restart", 11) == 0) { isVidRestart = true; break; }
+        }
+        if (isVidRestart) {
+            LogFromController("[d3d9on12-guard] blocked a real 'vid_restart' command while ForceD3D9On12/InternalRenderScalePercent is active -- "
+                "issue #92 live-reproduced this corrupting NVIDIA's own persistent D3D12 pipeline cache under ForceD3D9On12, "
+                "requiring a manual %LOCALAPPDATA%\\NVIDIA\\DXCache clear to recover");
+            // Dismiss-required, not a timed toast (per direct user instruction, issue
+            // #92) -- this is a real, safety-relevant warning (the incident it guards
+            // against corrupted a system-wide GPU driver cache, not just this
+            // project's own state) that must not be missable by looking away.
+            // Short -- DrawWarningModal's own canvas is a real, fixed-size wrapped
+            // panel (640x160), not an unbounded text box, and it already draws a real
+            // controller A-glyph as a separate visual element below this text, so the
+            // message itself only needs to cover keyboard/mouse dismissal in words.
+            ShowOverlayMessageUntilDismissed(
+                "Display mode changes require a full restart to take effect right now, and were "
+                "blocked to avoid corrupting your GPU driver's shader cache.\n\nEnter / Space / Click, or:",
+                OverlayAnimStyle::Plain);
+            return; // real trampoline never called -- command dropped entirely
+        }
+    }
+    g_origCbufAddText(localClientNum, text);
+}
+} // namespace
+
+// Issue #88, 2026-08-26 -- [Video] InternalRenderScalePercent, CORRECTED real
+// implementation. Real motivation, direct user framing: "basically the plan is
+// to allow better texture and internal render res as again above 1080p it looks
+// bad like 2005 bad."
+//
+// SUPERSEDES TWO earlier attempts:
+// 1) The original 2026-08-25 approach wrote the `r_mode` dvar directly + fired a
+//    real `vid_restart` -- crashed the game twice, live. Issue #91 found the SAME
+//    crash happens via the real, unmodified vanilla Resolution menu too, meaning
+//    `vid_restart` itself is unstable in this environment regardless of trigger.
+//    Abandoned.
+// 2) A same-day follow-up hooked FUN_00463820, overriding DAT_021d2e08/DAT_021d2e0c
+//    directly -- built, deployed, and live-confirmed to change what GetViewport()
+//    reports (100%: native 2560x1440 correctly reflected; 300%: 7680x4320
+//    reflected). BUT a live-reported "no FPS change at 300%" caught a real bug:
+//    DAT_021d2e08/0c only feeds a SEPARATE, secondary render target literally named
+//    R_RENDERTARGET_SAVED_SCREEN (FUN_00682d70's own real CreateRenderTarget call,
+//    confirmed via decompile) -- NOT the actual scene render target. The real scene
+//    target (R_RENDERTARGET_RESOLVED_SCENE) and the entire post-processing chain
+//    (SSAO, post-effects, pingpong buffers -- FUN_00683060's own real
+//    CreateRenderTarget calls, all confirmed via decompile) are sized from a
+//    DIFFERENT pair, DAT_021d2e00/DAT_021d2e04 -- meaning that attempt only ever
+//    resized a screenshot/thumbnail buffer's reported metadata, never touched real
+//    GPU render workload at all. Removed.
+//
+// THE REAL MECHANISM (confirmed via full decompile of FUN_00679010,
+// re_notes/known_issues.md issue #88): FUN_00679010 takes a `this`-in-ECX struct
+// pointer with a genuine, confirmed-via-raw-disassembly fastcall convention
+// (single int arg, ECX-only -- matches MSVC's __fastcall exactly for a
+// single-argument function, no naked-asm trampoline needed). Fields: `+0x1c`/
+// `+0x20` = REQUESTED W/H, `+0x24`/`+0x28` = native/upper-bound W/H (also stashed
+// permanently at DAT_021d2e1c/20), `+0x14` = aspect float. Its body:
+//   DAT_021d2e00 = *(param_1+0x1c);   // DIRECT, UNCLAMPED copy of requested W
+//   DAT_021d2e04 = *(param_1+0x20);   // DIRECT, UNCLAMPED copy of requested H
+//   ... (separately) tier-clamped DAT_021d2e08/0c, SAVED_SCREEN-only, capped to
+//       native -- the WRONG pair the previous attempt targeted.
+// DAT_021d2e00/04 (the REAL scene-resolution driver) is a straight, UNCLAMPED copy
+// of the REQUESTED W/H -- meaning overriding `param_1+0x1c`/`+0x20` BEFORE this
+// function runs propagates, uncapped, into the actual RESOLVED_SCENE/post-effect
+// render targets FUN_00683060 allocates (via CreateRenderTarget, real GPU-visible
+// surfaces) -- genuine supersampling above native, not just a reported-metadata
+// change.
+//
+// TIMING: FUN_00679010 has exactly one real caller (FUN_00679db0, itself called
+// exactly once from FUN_0067a320's real device-creation path -- FUN_0067a320's own
+// early-return guard, `if (DAT_021cd928 != 0) { ...; return; }`, confirms it never
+// re-runs its creation path on a later call). This means, unlike the removed
+// FUN_00463820 attempt, this hook fires exactly ONCE per process, at real startup
+// device-creation time -- a config change requires a game restart, same as the
+// abandoned r_mode approach, but with NONE of its risk: this intercepts the value
+// BEFORE the engine's own one-time render-target creation, never triggers a live
+// device teardown/recreate, never touches r_mode or vid_restart at all.
+namespace {
+using RenderResComputeFn = void(__fastcall*)(void* self);
+RenderResComputeFn g_origFUN_00679010 = nullptr;
+
+void __fastcall Hook_FUN_00679010(void* self)
+{
+    int pct = g_modConfig.internalRenderScalePercent;
+    if (pct > 0 && self != nullptr) {
+        auto* base = reinterpret_cast<uint8_t*>(self);
+        int32_t nativeW = *reinterpret_cast<int32_t*>(base + 0x24);
+        int32_t nativeH = *reinterpret_cast<int32_t*>(base + 0x28);
+        if (nativeW > 0 && nativeH > 0) {
+            int targetW = static_cast<int>(static_cast<int64_t>(nativeW) * pct / 100);
+            int targetH = static_cast<int>(static_cast<int64_t>(nativeH) * pct / 100);
+            // Same 640x480 floor FUN_006798e0's own real mode-enumeration logic
+            // already enforces for r_mode (known_issues.md issue #88) -- a target
+            // below that is never a value this engine would produce on its own.
+            // No CEILING clamp against native -- DAT_021d2e00/04 (what this
+            // actually feeds) is a direct, unclamped copy, so values above 100%
+            // are meant to genuinely exceed native for real supersampling.
+            if (targetW >= 640 && targetH >= 480) {
+                *reinterpret_cast<int32_t*>(base + 0x1c) = targetW;
+                *reinterpret_cast<int32_t*>(base + 0x20) = targetH;
+                char buf[256];
+                sprintf_s(buf, "[video-scale] InternalRenderScalePercent=%d -> native=%dx%d target=%dx%d -- "
+                    "overriding requested scene render resolution before FUN_00679010 runs "
+                    "(feeds the real RESOLVED_SCENE/post-effect render targets, no r_mode, no vid_restart)",
+                    pct, static_cast<int>(nativeW), static_cast<int>(nativeH), targetW, targetH);
+                LogFromController(buf);
+            }
+        }
+    }
+
+    g_origFUN_00679010(self); // real function -- consumes whatever +0x1c/+0x20 currently hold
+                               // (ours if we just wrote it above, the engine's own otherwise)
+}
+} // namespace
+
 // ---- DEBUG-ONLY: live dump of the real Font struct for fonts/bigFont (2026-07-19,
 // task #6 UI scope / glyphs, follow-up to the boot-splice crash) --------------------
 //
@@ -8986,6 +9146,13 @@ extern "C" void __cdecl InjectMenuInputTick()
     // InjectAllControllerInput's own request (above) has already stopped firing.
     Controller_RequestPoll();
 
+    // Issue #88: [Video] InternalRenderScalePercent needs no per-tick call at all --
+    // Hook_FUN_00679010 (above in this file) intercepts real device-creation-time
+    // render-target sizing directly. Fires exactly once per process (the real
+    // function it hooks has exactly one caller, itself called exactly once at
+    // startup) -- a config change requires a game restart to take effect, same as
+    // any other startup-time setting.
+
     InjectControllerPauseMenu();
     // BUG FIX (2026-07-16, live report "B doesn't exit pause"): InjectControllerMenuBack
     // was only ever called from InjectAllControllerInput, which the comment block above
@@ -10062,6 +10229,35 @@ void InstallAnalogInputHooks()
     if (s3 == MH_OK) {
         MH_STATUS e3 = MH_EnableHook(reinterpret_cast<LPVOID>(0x00679680));
         sprintf_s(buf, "[hooks] MH_EnableHook(00679680 boot-thunk-diag) = %d", static_cast<int>(e3));
+        LogFromController(buf);
+    }
+
+    // Issue #88, 2026-08-26 -- [Video] InternalRenderScalePercent real hook, see the
+    // big comment above Hook_FUN_00679010's definition for the full mechanism
+    // (corrects an earlier same-day attempt that hooked the wrong function,
+    // FUN_00463820, which only affected a screenshot buffer's reported size, not
+    // real GPU render workload).
+    MH_STATUS sViewportScale = MH_CreateHook(reinterpret_cast<LPVOID>(0x00679010), &Hook_FUN_00679010, reinterpret_cast<LPVOID*>(&g_origFUN_00679010));
+    sprintf_s(buf, "[hooks] MH_CreateHook(00679010 video-scale) = %d", static_cast<int>(sViewportScale));
+    LogFromController(buf);
+    if (sViewportScale == MH_OK) {
+        MH_STATUS eViewportScale = MH_EnableHook(reinterpret_cast<LPVOID>(0x00679010));
+        sprintf_s(buf, "[hooks] MH_EnableHook(00679010 video-scale) = %d", static_cast<int>(eViewportScale));
+        LogFromController(buf);
+    }
+
+    // Issue #92, 2026-08-26 -- [Video] ForceD3D9On12 vid_restart guard, see the big
+    // comment above Hook_CbufAddText's definition for the full incident/mechanism.
+    // Isolation test (temporarily disabling this hook) confirmed it was NOT the
+    // cause of the black-screen issue -- re-enabled here. Still real, needed
+    // protection against issue #91's vid_restart instability whenever
+    // ForceD3D9On12/InternalRenderScalePercent are active.
+    MH_STATUS sCbufGuard = MH_CreateHook(reinterpret_cast<LPVOID>(0x00457c90), &Hook_CbufAddText, reinterpret_cast<LPVOID*>(&g_origCbufAddText));
+    sprintf_s(buf, "[hooks] MH_CreateHook(00457c90 d3d9on12-guard) = %d", static_cast<int>(sCbufGuard));
+    LogFromController(buf);
+    if (sCbufGuard == MH_OK) {
+        MH_STATUS eCbufGuard = MH_EnableHook(reinterpret_cast<LPVOID>(0x00457c90));
+        sprintf_s(buf, "[hooks] MH_EnableHook(00457c90 d3d9on12-guard) = %d", static_cast<int>(eCbufGuard));
         LogFromController(buf);
     }
 

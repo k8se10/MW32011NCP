@@ -17,6 +17,25 @@ Steam Input and this mod's own overlay-draw cost were both directly ruled out
 along the way rather than assumed. See the itemized entries below and
 `known_issues.md` issue #87 for the full investigation trail.
 
+### What's New
+1. **[Video] InternalRenderScalePercent — PREVIEW/WIP, off by default.** Fixes a
+  real, live-confirmed engine behavior where the game looks visibly soft/dated
+  ("2005 bad") above 1080p. Set to 100 to render the actual 3D scene at your real
+  native resolution; values above 100 genuinely supersample above native (real
+  GPU/VRAM cost, quadratic with the percentage); values below 100 downscale for
+  performance. Applied by overriding the engine's own requested render-resolution
+  input right before its one-time, startup device-creation computation runs — that
+  value feeds the real scene render target and its whole post-processing chain
+  directly, not a proxy/metadata value. Zero dvar writes, zero `vid_restart`, zero
+  live device/window recreation — but since the underlying render targets are only
+  ever created once, a config change requires restarting the game to take effect,
+  not just a hot-reload. (Two earlier approaches — a `r_mode`/`vid_restart` write
+  that crashed the game live, and a same-day hook on the wrong function that only
+  changed reported metadata with zero real GPU impact, caught via a "no FPS change"
+  report — were both abandoned; see `known_issues.md` issues #88/#91 for the full
+  trail.) **Confirmed live**: 220fps at 100% vs. 70-80fps at 300% on a real
+  2560x1440 display -- real GPU cost genuinely scales with the setting.
+
 ### Fixed
 1. **Controller poll thread free-ran on an independent 250Hz clock regardless of
   whether anything needed fresh input that tick.** Live-reported: "gotta be that
@@ -116,6 +135,8 @@ along the way rather than assumed. See the itemized entries below and
   before). Builds clean (0 warnings/errors), deployed. Not yet live-confirmed. See
   `known_issues.md` issue #87 (and #79) for the full investigation trail.
 
+2. **Phase A full-screen post-process pipeline (new `[Experimental] FullScreenPassthroughTest`) crashed on launch — a real type-confusion bug on a `Release()` call.** Live-reported "game crashes on init" immediately after this session's own new full-screen capture/composite pipeline shipped. A first fix attempt (an MSAA-resolve `StretchRect` filter theory) did not stop the crash — the exact same fault offset recurred in the real system `d3d9.dll` even after rebuilding, proof the theory was wrong. Bracketed diagnostic logging (crash-safe via this project's existing `FlushLogOnCrash` handler) isolated the real cause on the next attempt: an offscreen surface was being released through a DIFFERENT object's (its parent texture's) vtable — `Release()` sits at the same COM slot on every D3D9 interface, but the real compiled implementation differs per class, so calling the wrong one with the wrong `this` corrupted memory. Same bug class this codebase already hit once before (`DrawBlurredBackgroundRegion`'s own documented `GetSurfaceLevel` fix), a second independent instance of it. Fixed by fetching the surface's own vtable fresh, matching that function's own established pattern. Confirmed live: clean launch, no crash. See `known_issues.md` issue #93 for the full two-round trail.
+
 ### Groundwork
 1. **Internal render resolution confirmed with real numbers: this engine's actual
   D3D9 viewport is 1920x1080 even inside a 2560x1440 backbuffer/window.** Two
@@ -126,14 +147,29 @@ along the way rather than assumed. See the itemized entries below and
   above-1080p GPU-cost theory (`known_issues.md` issue #87/#79): if the real render
   workload is fixed at 1080p regardless of window size, the extra cost at higher
   resolutions more likely comes from the stretch-blit/upscale step or desktop
-  composition, not "more pixels rendered." Open question, not yet answered:
-  whether this tracks the in-game Video resolution SETTING (not just window size)
-  or is a hardcoded internal cap -- needs a test with that setting explicitly at
-  1440p to tell the two apart. See `known_issues.md` issue #88.
+  composition, not "more pixels rendered." **Resolved same-day follow-up:** static
+  RE (`iw5sp.md`'s own `r_mode` disassembly, `FUN_006798e0`) confirms 1920x1080 is
+  a real, saved per-profile `r_mode` config value -- built live from a genuine
+  `EnumAdapterModes` display-mode enumeration, not a hardcoded engine cap -- so it
+  genuinely tracks the in-game Video resolution setting. Practical consequence: no
+  new engine-hooking work is needed to make internal render resolution
+  controllable in either direction -- the engine already exposes this natively via
+  `r_mode`. See `known_issues.md` issue #88.
+2. **New full-screen post-process pipeline foundation (Phase A of the
+  visual-enhancement-suite plan) — captures the complete, final composed frame
+  (this mod's own overlay included) and re-draws it through an arbitrary pixel
+  shader, generalizing the existing Options-screen blur's capture/composite
+  technique from a small sub-region to the whole screen.** Not a player-facing
+  feature on its own — a no-op passthrough shader (`[Experimental]
+  FullScreenPassthroughTest`) validates the plumbing itself (no visual change)
+  before Phase B builds the first real effect (RCAS sharpening) on top of it, per
+  the plan's own explicit "isolate plumbing bugs from shader bugs" requirement.
+  Crashed on first live test — see the Fixed entry above and `known_issues.md`
+  issue #93.
 
 ### Investigated, Not Yet Resolved
-1. **Survival scoreboard's real stat data source CONFIRMED -- and it's a hard
-  blocker for the feature as originally planned.** RE prerequisite for a planned
+1. **Survival scoreboard's real stat data source CONFIRMED -- and the feature is
+  CLOSED for the main mod as a result, deferred to the plugin API.** RE prerequisite for a planned
   live Survival scoreboard feature. Two earlier passes (a binary string/xref
   search, then a native entity-field-dispatcher trace) both came back
   inconclusive-with-real-negative-evidence. Direct follow-up: "do the gsc lookup
@@ -147,12 +183,14 @@ along the way rather than assumed. See the itemized entries below and
   itself -- not a dvar, not a native C struct field, nothing this project's C++
   code has any established way to read. This is GSC-VM script state, the same
   class of live-read (if anything more invasive) as the entity-memory reads this
-  project's aim-assist removal already drew a hard line against. **Blocked, not
-  abandoned**: building this feature as scoped needs an explicit go/no-go
-  conversation about reading GSC-VM state specifically, which this investigation
-  does not make on its own -- per this project's own standing policy, that
-  decision is reserved for the user every time. See `known_issues.md` issue #89
-  for the full decompiled evidence.
+  project's aim-assist removal already drew a hard line against. **Decision:
+  "even sp that poses a risk possible deferrence to plugin"** -- the main mod will
+  NOT read GSC-VM state, SP-only risk profile or not; this project's policy line
+  has never been VAC-conditional. A live Survival scoreboard remains a real
+  candidate for a future PLUGIN (built against the existing `ReadMemory`/
+  `InstallHook` primitives), not main-mod work -- not a promise it will be built,
+  just the correct extension point if it ever is. See `known_issues.md` issue #89
+  for the full decompiled evidence and decision record.
 2. **60fps engine tick: `fixedtime`'s real mechanism decompiled and confirmed --
   a genuine, already-functional native lever for overriding the per-frame
   simulation time delta.** RE prerequisite for a planned opt-in, SP-only 60fps
@@ -171,11 +209,26 @@ along the way rather than assumed. See the itemized entries below and
   functional, not a dead leftover. (Also corrected a stale earlier claim that
   bare `timescale` has zero real references -- it's genuinely, separately
   registered too; the F2 debug-freeze feature's own description doesn't need
-  correcting after all.) Still open: the exact unit `fixedtime` expects, the real
-  call cadence of the functions consuming it, and whether movement/animation/
-  physics code elsewhere separately assumes a fixed 30Hz cadence independent of
-  this value -- the actual go/no-go question for a real patch. No patch attempted
-  or planned until that clears. See `known_issues.md` issue #90.
+  correcting after all.) **Follow-up pass, same day: unit and call cadence both
+  resolved.** `fixedtime`'s value is confirmed in milliseconds (proven by tracing
+  its only caller, `Com_Frame`'s real body, which feeds the same downstream
+  consumer a separately-computed `1000/targetFps` ms value). `Com_Frame` itself is
+  called once per iteration of a tight, unthrottled main-loop -- confirming
+  `fixedtime` overrides the reported elapsed-time VALUE per call, not a separate
+  30Hz call cadence. A promising `SV_Frame`-side accumulator constant (50ms) was
+  traced and ruled out as a false lead -- it belongs to an unrelated co-op
+  host-timeout mechanism (`"COOP_HOSTTIMEOUT"`), not simulation tick-pacing. **The
+  real mechanism producing the confirmed 30Hz-alternating-cost pattern (issue
+  #87/#79) is still not located** -- still the open go/no-go question. No patch
+  attempted or planned until that clears. **Follow-up pass 3, same day**: the five
+  remaining direct callees of `Com_Frame`'s own body were decompiled and each
+  ruled out for a different, confirmed reason (a value-smoothing interpolator, a
+  plain cache store, an unthresholded running-total accumulator, `SV_Frame`'s own
+  real identity confirmed via its embedded profiler string, and an unrelated
+  ~300ms/30s periodic-task loop) -- no accumulator found, but every shallow-level
+  candidate is now checked off. Still not a clean go or a confirmed no-go; next
+  step is `CL_Frame` (`FUN_004c0bb0`) or a whole-binary constant scan. See
+  `known_issues.md` issue #90.
 
 ## v0.3.4 — Alpha (2026-08-25) — DualSense input-parity fix, gameplay-hint glyph editor, new plugin API
 

@@ -49,6 +49,7 @@
 #include "staged_settings.h"
 #include "../resource.h"
 #include "options_blur_ps.h" // compiled ps_2_0 bytecode -- see that file's own header for the real HLSL source and how it was compiled
+#include "fullscreen_passthrough_ps.h" // Phase A visual-suite foundation -- see that file's own header comment
 #include "mw3ncp_plugin_api.h" // MW3NCP_ColorOverrideFn -- see this file's own g_pluginTextGlyphColorOverride comment
 
 #pragma comment(lib, "windowscodecs.lib")
@@ -130,6 +131,9 @@ constexpr int kGetVertexShaderVtableIndex = 93;   // IDirect3DDevice9::GetVertex
 constexpr int kSetPixelShaderVtableIndex = 107;   // IDirect3DDevice9::SetPixelShader
 constexpr int kGetPixelShaderVtableIndex = 108;   // IDirect3DDevice9::GetPixelShader
 constexpr int kGetSurfaceLevelVtableIndex = 18;   // IDirect3DTexture9::GetSurfaceLevel
+constexpr int kSurfaceGetDescVtableIndex = 12;    // IDirect3DSurface9::GetDesc (immediately
+    // before LockRect/UnlockRect below in the real, already-confirmed-correct vtable
+    // ordering -- IDirect3DResource9's own 11 methods (0-10) precede GetContainer=11)
 constexpr int kSurfaceLockRectVtableIndex = 13;   // IDirect3DSurface9::LockRect
 constexpr int kSurfaceUnlockRectVtableIndex = 14; // IDirect3DSurface9::UnlockRect
 constexpr int kSurfaceReleaseVtableIndex = 2;     // IUnknown::Release
@@ -180,6 +184,7 @@ constexpr DWORD kD3DUSAGE_RENDERTARGET = 0x00000001;
 // and the D3DSAMPLERSTATETYPE enum's MIPFILTER slot), not guessed vtable offsets, so safe to
 // hardcode the same way kD3DUSAGE_RENDERTARGET/kD3DSAMP_MAGFILTER above already are.
 constexpr DWORD kD3DUSAGE_AUTOGENMIPMAP = 0x00000400;
+constexpr DWORD kD3DTEXF_NONE = 0;
 constexpr DWORD kD3DTEXF_POINT = 1;
 constexpr DWORD kD3DTEXF_LINEAR = 2;
 constexpr DWORD kD3DSAMP_MAGFILTER = 5;
@@ -205,6 +210,12 @@ typedef HRESULT(WINAPI* GetViewport_t)(void* This, D3DViewport9* pViewport);
 struct LockedRect { INT Pitch; void* pBits; }; // matches real D3DLOCKED_RECT layout exactly
 typedef HRESULT(WINAPI* SurfaceLockRect_t)(void* This, LockedRect* pLockedRect, const RECT* pRect, DWORD Flags);
 typedef HRESULT(WINAPI* SurfaceUnlockRect_t)(void* This);
+// Matches real D3DSURFACE_DESC layout exactly (Format/Type/Usage/Pool/MultiSampleType/
+// MultiSampleQuality/Width/Height, all DWORD-sized fields, 32 bytes total) -- used by
+// Phase A's DrawFullScreenPass to read the real, live backbuffer dimensions directly
+// from the surface itself rather than a cached/assumed value.
+struct SurfaceDesc { DWORD Format, Type, Usage, Pool, MultiSampleType, MultiSampleQuality, Width, Height; };
+typedef HRESULT(WINAPI* SurfaceGetDesc_t)(void* This, SurfaceDesc* pDesc);
 typedef ULONG(WINAPI* Release_t)(void* This);
 typedef HRESULT(WINAPI* SetTexture_t)(void* This, DWORD Stage, void* pTexture);
 typedef HRESULT(WINAPI* SetFVF_t)(void* This, DWORD FVF);
@@ -257,9 +268,34 @@ DWORD g_overlayStartMs = 0;
 DWORD g_overlayDurationMs = 0;
 OverlayAnimStyle g_overlayStyle = OverlayAnimStyle::Plain;
 bool g_overlayActive = false;
+// Issue #92, 2026-08-26 -- [Video] ForceD3D9On12/InternalRenderScalePercent's
+// vid_restart guard needs a real "stays up until the player acknowledges it"
+// message, not a timed toast that could fade before it's read -- this is a
+// safety-relevant warning (the real incident it protects against corrupted a
+// system-wide NVIDIA driver cache, not just this project's own state), so a
+// player must not be able to miss it by looking away for a few seconds. When
+// true, DrawOverlayMessage skips its normal duration-based auto-expire and
+// instead waits for a real dismiss input (Enter/Space/left-click) each frame.
+bool g_overlayRequiresDismiss = false;
 
 void* g_textTexture = nullptr;        // IDirect3DTexture9*, created lazily, kept for the DLL's lifetime
 char g_textureRenderedFor[160] = {};  // which message string the texture currently shows
+
+// Issue #92, 2026-08-26 -- dedicated, separate text canvas for dismiss-required
+// warnings, styled like the custom Options screen ("small 200-250px @1080p warning
+// popup modal"), direct user spec. The existing kTextureWidth/kTextureHeight
+// canvas (512x64, g_textTexture) is a small SINGLE-LINE notification-toast
+// texture, hardcoded throughout RenderMaskLuminance/RenderTextToArgbBuffer (fixed
+// static buffers sized to exactly that canvas, DT_SINGLELINE, no word-wrap) --
+// genuinely unsuited to a multi-line paragraph warning, so this is a real,
+// separate pipeline (own buffers, own texture, own render function) rather than
+// resizing the shared one, to avoid any risk to that already-proven, heavily-used
+// system. See DrawWarningModal (defined after DrawBlurredBackgroundRegion, whose
+// blur-capture mechanism it reuses) for the actual panel/text/glyph composition.
+constexpr int kWarningTextureWidth = 640;
+constexpr int kWarningTextureHeight = 160;
+void* g_warningTextTexture = nullptr;
+char g_warningTextureRenderedFor[512] = {};
 
 // Set once by LoadOverlayFonts (DllMain, DLL_PROCESS_ATTACH) -- needed here too so the
 // glyph-icon loader below can FindResourceA against THIS DLL's own embedded resources
@@ -1042,12 +1078,50 @@ void DrawTexturedQuad(void* device, DWORD elapsedMs)
     }
 }
 
+// Defined after DrawBlurredBackgroundRegion, whose blur-capture mechanism it
+// reuses -- see that function's own header comment for the full design.
+void DrawWarningModal(void* device);
+
 void DrawOverlayMessage(void* device)
 {
     if (!g_overlayActive) return;
     DWORD elapsed = GetTickCount() - g_overlayStartMs;
-    if (elapsed >= g_overlayDurationMs) {
+
+    if (g_overlayRequiresDismiss) {
+        // Real dismiss input, checked every frame this message is up. This is a
+        // CONTROLLER project first -- the original pass here only checked keyboard/
+        // mouse, a real miss caught live ("why enter space/click.. its a CONTROLLER
+        // PROJECT"). Enter/Space cover keyboard, IsLeftMouseButtonHeld() (already
+        // exposed by d3d9_hook.cpp, real WM_LBUTTONDOWN-tracked state, not a fresh
+        // GetAsyncKeyState poll) covers mouse, and Controller_GetRawButtonsAndTriggers'
+        // real XINPUT_GAMEPAD_A bit (0x1000, this project's own established "A =
+        // confirm" convention, matching e.g. the pause-menu/glyph-editor confirm
+        // actions elsewhere in this codebase) covers controller -- checked regardless
+        // of return value's "connected" flag being false, since a disconnected
+        // controller's buttons field is already guaranteed zeroed by that function.
+        // Deliberately not gated to "menu active" or any other state -- this warning
+        // can legitimately fire while the player is mid-menu-navigation.
+        unsigned short xiButtons = 0;
+        unsigned char xiLeftTrigger = 0, xiRightTrigger = 0;
+        Controller_GetRawButtonsAndTriggers(xiButtons, xiLeftTrigger, xiRightTrigger);
+        constexpr unsigned short kXInputGamepadA = 0x1000;
+        bool dismissPressed = (GetAsyncKeyState(VK_RETURN) & 0x8000) != 0
+            || (GetAsyncKeyState(VK_SPACE) & 0x8000) != 0
+            || IsLeftMouseButtonHeld()
+            || (xiButtons & kXInputGamepadA) != 0;
+        if (dismissPressed && elapsed > 200) { // 200ms guard so the SAME press that
+            // triggered the warning (e.g. clicking Apply) can't also instantly dismiss it
+            g_overlayActive = false;
+            g_overlayRequiresDismiss = false;
+            return;
+        }
+    } else if (elapsed >= g_overlayDurationMs) {
         g_overlayActive = false;
+        return;
+    }
+
+    if (g_overlayRequiresDismiss) {
+        DrawWarningModal(device);
         return;
     }
 
@@ -2625,6 +2699,403 @@ void DrawBlurredBackgroundRegion(void* device, float regionX, float regionY, flo
 
     setSamplerState(device, 0, kD3DSAMP_MAGFILTER, oldMagFilter);
     setSamplerState(device, 0, kD3DSAMP_MINFILTER, oldMinFilter);
+}
+
+// Issue #92, 2026-08-26 -- real, word-wrapped, multi-line text render for
+// DrawWarningModal's own dedicated canvas (kWarningTextureWidth/Height). Same
+// two-pass outline+fill compositing technique as RenderTextToArgbBuffer/
+// RenderMaskLuminance (see that function's own comment for why), deliberately
+// NOT sharing those functions' static buffers/DT_SINGLELINE behavior -- this is
+// a genuinely separate, larger, wrapped-text canvas, not a resize of the
+// existing single-line notification-toast pipeline.
+bool RenderWarningTextMask(const char* text, const POINT* offsets, int offsetCount, BYTE* outLuminance, int fontHeightPx)
+{
+    BITMAPINFO bmi = {};
+    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bmi.bmiHeader.biWidth = kWarningTextureWidth;
+    bmi.bmiHeader.biHeight = -kWarningTextureHeight;
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+
+    HDC screenDC = GetDC(nullptr);
+    HDC memDC = CreateCompatibleDC(screenDC);
+    ReleaseDC(nullptr, screenDC);
+    if (!memDC) return false;
+
+    void* bits = nullptr;
+    HBITMAP dib = CreateDIBSection(memDC, &bmi, DIB_RGB_COLORS, &bits, nullptr, 0);
+    if (!dib || !bits) {
+        DeleteDC(memDC);
+        return false;
+    }
+
+    HBITMAP oldBmp = static_cast<HBITMAP>(SelectObject(memDC, dib));
+    RECT full = { 0, 0, kWarningTextureWidth, kWarningTextureHeight };
+    FillRect(memDC, &full, static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH)));
+
+    HFONT font = CreateFontA(fontHeightPx, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
+                              ANSI_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                              ANTIALIASED_QUALITY, DEFAULT_PITCH, ResolveFontFamily(FontRole::Default));
+    HFONT oldFont = static_cast<HFONT>(SelectObject(memDC, font));
+    SetBkMode(memDC, TRANSPARENT);
+    SetTextColor(memDC, RGB(255, 255, 255));
+
+    constexpr int kWarningTextMarginPx = 24;
+    for (int i = 0; i < offsetCount; ++i) {
+        RECT textRect = { kWarningTextMarginPx + offsets[i].x, kWarningTextMarginPx + offsets[i].y,
+                           kWarningTextureWidth - kWarningTextMarginPx + offsets[i].x,
+                           kWarningTextureHeight - kWarningTextMarginPx + offsets[i].y };
+        // DT_WORDBREAK (real multi-line wrap, unlike the single-line notification-toast
+        // pipeline) + DT_CENTER -- this is a centered modal, not a left/right-aligned toast.
+        DrawTextA(memDC, text, -1, &textRect, DT_CENTER | DT_WORDBREAK | DT_NOCLIP | DT_TOP);
+    }
+
+    SelectObject(memDC, oldFont);
+    DeleteObject(font);
+
+    const DWORD* src = static_cast<const DWORD*>(bits);
+    for (int i = 0; i < kWarningTextureWidth * kWarningTextureHeight; ++i) {
+        outLuminance[i] = static_cast<BYTE>(src[i] & 0xFF);
+    }
+
+    SelectObject(memDC, oldBmp);
+    DeleteObject(dib);
+    DeleteDC(memDC);
+    return true;
+}
+
+bool RenderWarningTextToArgbBuffer(const char* text, DWORD* outPixels)
+{
+    static BYTE outlineMask[kWarningTextureWidth * kWarningTextureHeight];
+    static BYTE fillMask[kWarningTextureWidth * kWarningTextureHeight];
+
+    const POINT kOutlineOffsets[9] = {
+        { -1, -1 }, { 0, -1 }, { 1, -1 },
+        { -1, 0 },  { 0, 0 },  { 1, 0 },
+        { -1, 1 },  { 0, 1 },  { 1, 1 },
+    };
+    constexpr int kWarningFontHeightPx = 22;
+    if (!RenderWarningTextMask(text, kOutlineOffsets, 9, outlineMask, kWarningFontHeightPx)) return false;
+
+    const POINT kFillOffset[1] = { { 0, 0 } };
+    if (!RenderWarningTextMask(text, kFillOffset, 1, fillMask, kWarningFontHeightPx)) return false;
+
+    for (int i = 0; i < kWarningTextureWidth * kWarningTextureHeight; ++i) {
+        DWORD alpha = outlineMask[i];
+        DWORD whiteness = fillMask[i];
+        outPixels[i] = (alpha << 24) | (whiteness << 16) | (whiteness << 8) | whiteness;
+    }
+    return true;
+}
+
+void EnsureWarningTextTexture(void* device, const char* text)
+{
+    if (g_warningTextTexture && strcmp(g_warningTextureRenderedFor, text) == 0) return;
+
+    if (!g_warningTextTexture) {
+        void** deviceVtbl = *reinterpret_cast<void***>(device);
+        auto createTexture = reinterpret_cast<CreateTexture_t>(deviceVtbl[kCreateTextureVtableIndex]);
+        HRESULT hr = createTexture(device, kWarningTextureWidth, kWarningTextureHeight, 1, 0,
+                                    kD3DFMT_A8R8G8B8, kD3DPOOL_MANAGED, &g_warningTextTexture, nullptr);
+        if (FAILED(hr) || !g_warningTextTexture) {
+            g_warningTextTexture = nullptr;
+            return;
+        }
+    }
+
+    void** texVtbl = *reinterpret_cast<void***>(g_warningTextTexture);
+    auto getSurfaceLevel = reinterpret_cast<GetSurfaceLevel_t>(texVtbl[kGetSurfaceLevelVtableIndex]);
+    void* surface = nullptr;
+    if (FAILED(getSurfaceLevel(g_warningTextTexture, 0, &surface)) || !surface) return;
+
+    void** surfaceVtbl = *reinterpret_cast<void***>(surface);
+    auto lockRect = reinterpret_cast<SurfaceLockRect_t>(surfaceVtbl[kSurfaceLockRectVtableIndex]);
+    auto unlockRect = reinterpret_cast<SurfaceUnlockRect_t>(surfaceVtbl[kSurfaceUnlockRectVtableIndex]);
+    auto releaseSurface = reinterpret_cast<Release_t>(surfaceVtbl[kSurfaceReleaseVtableIndex]);
+
+    LockedRect locked = {};
+    if (SUCCEEDED(lockRect(surface, &locked, nullptr, 0)) && locked.pBits) {
+        static DWORD pixels[kWarningTextureWidth * kWarningTextureHeight];
+        if (RenderWarningTextToArgbBuffer(text, pixels)) {
+            for (int y = 0; y < kWarningTextureHeight; ++y) {
+                memcpy(static_cast<BYTE*>(locked.pBits) + y * locked.Pitch,
+                       pixels + y * kWarningTextureWidth, kWarningTextureWidth * sizeof(DWORD));
+            }
+            strncpy_s(g_warningTextureRenderedFor, text, _TRUNCATE);
+        }
+        unlockRect(surface);
+    }
+    releaseSurface(surface);
+}
+
+// Issue #92, 2026-08-26 -- the actual dismiss-required warning modal: a real,
+// styled ("like our menu"), ~225px-tall (@1080p design space) blurred panel,
+// direct spec. Reuses DrawBlurredBackgroundRegion (this project's existing
+// Options-screen blur mechanism) for the panel background, the new
+// kWarningTextureWidth/Height canvas for the wrapped explanation text, and the
+// real controller A-glyph (GetControllerGlyphAssetName/GetOrLoadGlyphIconTexture,
+// this project's own established glyph system -- direct correction: "glyph too")
+// as a decorative accent rather than precisely inline with the word "A" in the
+// text (real per-glyph text-layout measurement is a much larger undertaking than
+// this warning's own scope justifies -- the icon is clearly present and legible,
+// just not pixel-locked to one specific word).
+void DrawWarningModal(void* device)
+{
+    float scaleX = 1.0f, scaleY = 1.0f;
+    GetResolutionScale(device, scaleX, scaleY);
+
+    // 1080p design-space panel rect -- 640x225 satisfies the "200-250px @1080p"
+    // spec (225 tall), centered on screen both axes, same design-space convention
+    // (ConvertRealScreenPosToDesignSpace's own 1920x1080 basis) as every other
+    // element in this codebase.
+    constexpr float kPanelW = 640.0f;
+    constexpr float kPanelH = 225.0f;
+    const float panelX = (1920.0f - kPanelW) * 0.5f;
+    const float panelY = (1080.0f - kPanelH) * 0.5f;
+
+    DrawBlurredBackgroundRegion(device, panelX, panelY, kPanelW, kPanelH, scaleX, scaleY);
+
+    EnsureWarningTextTexture(device, g_overlayText);
+    if (g_warningTextTexture) {
+        // Text canvas centered in the upper 2/3 of the panel, leaving room below
+        // for the glyph icon.
+        float textDrawW = static_cast<float>(kWarningTextureWidth);
+        float textDrawH = static_cast<float>(kWarningTextureHeight);
+        float textX = panelX + (kPanelW - textDrawW) * 0.5f;
+        float textY = panelY + 12.0f;
+        DrawGenericTexturedQuad(device, g_warningTextTexture, textX * scaleX, textY * scaleY,
+                                  textDrawW * scaleX, textDrawH * scaleY,
+                                  0xFFFFFFFFu, 0.0f, 0.0f, 1.0f, 1.0f, /*premultipliedAlpha=*/true, /*isTextOrGlyph=*/true);
+    }
+
+    // Real A-button glyph, this project's own established resolver/loader/draw
+    // primitives (GetControllerGlyphAssetName/GetOrLoadGlyphIconTexture/
+    // DrawGenericTexturedQuad) -- same three-call pattern already used for the
+    // Options screen's own row-confirm A-glyph.
+    const char* aAsset = GetControllerGlyphAssetName(PhysicalInput::A, g_modConfig.glyphStyle);
+    if (aAsset && aAsset[0]) {
+        void* iconTex = nullptr; int iconW = 0, iconH = 0;
+        if (GetOrLoadGlyphIconTexture(device, aAsset, iconTex, iconW, iconH) && iconH > 0) {
+            float iconHpx = 28.0f;
+            float iconWpx = iconHpx * (static_cast<float>(iconW) / static_cast<float>(iconH));
+            float iconX = panelX + (kPanelW - iconWpx) * 0.5f;
+            float iconY = panelY + kPanelH - iconHpx - 16.0f;
+            DrawGenericTexturedQuad(device, iconTex, iconX * scaleX, iconY * scaleY,
+                                      iconWpx * scaleX, iconHpx * scaleY,
+                                      0xFFFFFFFFu, 0.0f, 0.0f, 1.0f, 1.0f, /*premultipliedAlpha=*/true, /*isTextOrGlyph=*/true);
+        }
+    }
+}
+
+// ---- Phase A: full-screen post-process pipeline foundation (visual-suite plan,
+// C:\Users\kyesa\.claude\plans\twinkly-tickling-gem.md) --------------------------
+//
+// New, genuinely missing plumbing: a way to capture the fully-rendered frame
+// (this project's own overlay draws included -- this runs at the very end of
+// Hook_EndScene, after every other draw call above), render it into an offscreen
+// texture, run an arbitrary pixel shader pass over it, and present the result.
+// DrawBlurredBackgroundRegion's existing pattern only captures a small SUB-REGION
+// for a downsampled blur -- this is a genuinely different, full-resolution
+// capture, reusing the same real GetRenderTarget/StretchRect technique at 1:1
+// scale instead of a downsample.
+//
+// D3DPOOL_DEFAULT (matches g_optBlurTexture's own reasoning -- a real render
+// target, invalidated by Reset, must be explicitly released beforehand; added to
+// ReleaseAllCachedTextures for exactly this reason, see that function's own
+// comment). Sized dynamically to the REAL current backbuffer dimensions (read
+// live from the backbuffer surface's own GetDesc, not a cached/assumed value),
+// recreated only when that size actually changes -- correctly handles this
+// project's own InternalRenderScalePercent feature and any real window resize.
+void* g_fullscreenCaptureTexture = nullptr;
+int g_fullscreenCaptureTexW = 0;
+int g_fullscreenCaptureTexH = 0;
+
+bool EnsureFullscreenCaptureTexture(void* device, int width, int height)
+{
+    if (g_fullscreenCaptureTexture && g_fullscreenCaptureTexW == width && g_fullscreenCaptureTexH == height) {
+        return true;
+    }
+    if (g_fullscreenCaptureTexture) {
+        void** vtbl = *reinterpret_cast<void***>(g_fullscreenCaptureTexture);
+        reinterpret_cast<Release_t>(vtbl[kSurfaceReleaseVtableIndex])(g_fullscreenCaptureTexture);
+        g_fullscreenCaptureTexture = nullptr;
+    }
+    g_fullscreenCaptureTexW = 0;
+    g_fullscreenCaptureTexH = 0;
+    if (width <= 0 || height <= 0) return false;
+
+    void** deviceVtbl = *reinterpret_cast<void***>(device);
+    auto createTexture = reinterpret_cast<CreateTexture_t>(deviceVtbl[kCreateTextureVtableIndex]);
+    HRESULT hr = createTexture(device, width, height, 1, kD3DUSAGE_RENDERTARGET,
+                                 kD3DFMT_A8R8G8B8, kD3DPOOL_DEFAULT, &g_fullscreenCaptureTexture, nullptr);
+    if (FAILED(hr) || !g_fullscreenCaptureTexture) {
+        g_fullscreenCaptureTexture = nullptr;
+        return false;
+    }
+    g_fullscreenCaptureTexW = width;
+    g_fullscreenCaptureTexH = height;
+    return true;
+}
+
+// Phase A's own no-op validation shader -- see fullscreen_passthrough_ps.h's own
+// header comment. A real effect (RCAS/FXAA/motion blur) reuses this exact same
+// Ensure*/DrawFullScreenPass infrastructure with its own compiled shader instead
+// of this one, once this pass's own plumbing is confirmed stable.
+void* g_fullscreenPassthroughPixelShader = nullptr;
+
+bool EnsureFullscreenPassthroughShader(void* device)
+{
+    if (g_fullscreenPassthroughPixelShader) return true;
+    void** deviceVtbl = *reinterpret_cast<void***>(device);
+    auto createPixelShader = reinterpret_cast<CreatePixelShader_t>(deviceVtbl[kCreatePixelShaderVtableIndex]);
+    HRESULT hr = createPixelShader(device, reinterpret_cast<const DWORD*>(g_fullscreenPassthroughPixelShaderBytecode),
+                                     &g_fullscreenPassthroughPixelShader);
+    if (FAILED(hr) || !g_fullscreenPassthroughPixelShader) {
+        g_fullscreenPassthroughPixelShader = nullptr;
+        return false;
+    }
+    return true;
+}
+
+// Generic, reusable full-screen post-process pass: captures the current real
+// backbuffer into g_fullscreenCaptureTexture, then draws it back over the full
+// backbuffer through the given pixel shader. Every future full-screen effect
+// (RCAS/FXAA/motion blur) calls this SAME function with its own shader -- only
+// Phase A's own passthrough shader is wired up so far, per the plan's own
+// explicit "validate the pipeline before building a real effect on it" step.
+void DrawFullScreenPass(void* device, void* pixelShader)
+{
+    if (!pixelShader) return;
+    void** deviceVtbl = *reinterpret_cast<void***>(device);
+    auto getRenderTarget = reinterpret_cast<GetRenderTarget_t>(deviceVtbl[kGetRenderTargetVtableIndex]);
+    auto stretchRect = reinterpret_cast<StretchRect_t>(deviceVtbl[kStretchRectVtableIndex]);
+    auto getSamplerState = reinterpret_cast<GetSamplerState_t>(deviceVtbl[kGetSamplerStateVtableIndex]);
+    auto setSamplerState = reinterpret_cast<SetSamplerState_t>(deviceVtbl[kSetSamplerStateVtableIndex]);
+    auto setPixelShader = reinterpret_cast<SetPixelShader_t>(deviceVtbl[kSetPixelShaderVtableIndex]);
+    auto getPixelShader = reinterpret_cast<GetPixelShader_t>(deviceVtbl[kGetPixelShaderVtableIndex]);
+    auto setTexture = reinterpret_cast<SetTexture_t>(deviceVtbl[kSetTextureVtableIndex]);
+    auto setFVF = reinterpret_cast<SetFVF_t>(deviceVtbl[kSetFVFVtableIndex]);
+    auto setRenderState = reinterpret_cast<SetRenderState_t>(deviceVtbl[kSetRenderStateVtableIndex]);
+    auto getRenderState = reinterpret_cast<GetRenderState_t>(deviceVtbl[kGetRenderStateVtableIndex]);
+    auto drawPrimitiveUP = reinterpret_cast<DrawPrimitiveUP_t>(deviceVtbl[kDrawPrimitiveUPVtableIndex]);
+
+    void* backSurface = nullptr;
+    // GetRenderTarget(0) IS the real backbuffer surface, already fully rendered
+    // (this project's own game logic AND this project's own overlay draws are
+    // both long done by the time this runs -- called from the very end of
+    // Hook_EndScene, per that function's own call site).
+    if (FAILED(getRenderTarget(device, 0, &backSurface)) || !backSurface) return;
+
+    void** backSurfaceVtbl = *reinterpret_cast<void***>(backSurface);
+    auto getDesc = reinterpret_cast<SurfaceGetDesc_t>(backSurfaceVtbl[kSurfaceGetDescVtableIndex]);
+    SurfaceDesc desc{};
+    if (FAILED(getDesc(backSurface, &desc)) || desc.Width == 0 || desc.Height == 0) {
+        reinterpret_cast<Release_t>(backSurfaceVtbl[kSurfaceReleaseVtableIndex])(backSurface);
+        return;
+    }
+
+    if (!EnsureFullscreenCaptureTexture(device, static_cast<int>(desc.Width), static_cast<int>(desc.Height))) {
+        reinterpret_cast<Release_t>(backSurfaceVtbl[kSurfaceReleaseVtableIndex])(backSurface);
+        return;
+    }
+
+    void** captureTexVtbl = *reinterpret_cast<void***>(g_fullscreenCaptureTexture);
+    auto getSurfaceLevel = reinterpret_cast<GetSurfaceLevel_t>(captureTexVtbl[kGetSurfaceLevelVtableIndex]);
+    void* captureSurface = nullptr;
+    if (FAILED(getSurfaceLevel(g_fullscreenCaptureTexture, 0, &captureSurface)) || !captureSurface) {
+        reinterpret_cast<Release_t>(backSurfaceVtbl[kSurfaceReleaseVtableIndex])(backSurface);
+        return;
+    }
+
+    // Same size, 1:1 copy -- POINT/NONE filtering both legal here, the backbuffer is
+    // NOT multisampled on this system (live-diagnosed 2026-08-26, issue #93:
+    // MultiSampleType=0 in a real GetDesc dump -- the earlier "MSAA resolve requires
+    // D3DTEXF_NONE" theory was wrong and NOT the actual crash cause, kept as NONE
+    // anyway since it's still the correct choice for a non-stretching copy).
+    stretchRect(device, backSurface, nullptr, captureSurface, nullptr, kD3DTEXF_NONE);
+
+    // CRASH FIX (2026-08-26, issue #93): live diagnostic logging (bracketing every
+    // call in this function, see known_issues.md issue #93 for the full trail)
+    // isolated the real access violation to exactly this pair of Release() calls --
+    // specifically the SECOND one. `captureSurface` is an IDirect3DSurface9* (from
+    // GetSurfaceLevel), but was being released through `captureTexVtbl` -- the
+    // TEXTURE's (g_fullscreenCaptureTexture's) own vtable, not the SURFACE's own.
+    // Release() sits at the same IUnknown slot (2) on every D3D9 COM interface, but
+    // the actual compiled function body differs per real implementing class (a
+    // texture's Release() and a surface's Release() manage different internal
+    // layouts) -- calling the TEXTURE's Release() implementation with a SURFACE
+    // pointer as `this` is genuine type confusion, corrupting whatever the texture's
+    // Release() expected to find at that memory location. Exactly the same bug
+    // CLASS this file's own DrawBlurredBackgroundRegion header comment already
+    // documents (GetSurfaceLevel fetched via the wrong vtable) -- this is a second,
+    // independent instance of it, on Release() instead of GetSurfaceLevel. Fixed by
+    // fetching the surface's OWN vtable fresh, exactly like DrawBlurredBackgroundRegion's
+    // own blurSurface release already does two functions above this one.
+    void** captureSurfaceVtbl = *reinterpret_cast<void***>(captureSurface);
+    reinterpret_cast<Release_t>(backSurfaceVtbl[kSurfaceReleaseVtableIndex])(backSurface);
+    reinterpret_cast<Release_t>(captureSurfaceVtbl[kSurfaceReleaseVtableIndex])(captureSurface);
+
+    DWORD oldMagFilter = kD3DTEXF_POINT, oldMinFilter = kD3DTEXF_POINT;
+    getSamplerState(device, 0, kD3DSAMP_MAGFILTER, &oldMagFilter);
+    getSamplerState(device, 0, kD3DSAMP_MINFILTER, &oldMinFilter);
+    setSamplerState(device, 0, kD3DSAMP_MAGFILTER, kD3DTEXF_POINT);
+    setSamplerState(device, 0, kD3DSAMP_MINFILTER, kD3DTEXF_POINT);
+
+    DWORD oldZEnable = 0, oldLighting = 0, oldAlphaBlend = 0, oldCull = 0;
+    getRenderState(device, kD3DRS_ZENABLE, &oldZEnable);
+    getRenderState(device, kD3DRS_LIGHTING, &oldLighting);
+    getRenderState(device, kD3DRS_ALPHABLENDENABLE, &oldAlphaBlend);
+    getRenderState(device, kD3DRS_CULLMODE, &oldCull);
+
+    void* oldPixelShader = nullptr;
+    getPixelShader(device, &oldPixelShader);
+    setPixelShader(device, pixelShader);
+
+    setRenderState(device, kD3DRS_ZENABLE, kD3DZB_FALSE);
+    setRenderState(device, kD3DRS_LIGHTING, FALSE);
+    setRenderState(device, kD3DRS_ALPHABLENDENABLE, FALSE); // full opaque overwrite -- this
+        // pass replaces the ENTIRE frame, not a blended overlay element
+    setRenderState(device, kD3DRS_CULLMODE, kD3DCULL_NONE);
+
+    setTexture(device, 0, g_fullscreenCaptureTexture);
+    setFVF(device, kFVF);
+
+    float w = static_cast<float>(desc.Width);
+    float h = static_cast<float>(desc.Height);
+    ScreenVertex verts[4] = {
+        { -0.5f,      -0.5f,      0.0f, 1.0f, 0xFFFFFFFFu, 0.0f, 0.0f },
+        { w - 0.5f,   -0.5f,      0.0f, 1.0f, 0xFFFFFFFFu, 1.0f, 0.0f },
+        { -0.5f,      h - 0.5f,   0.0f, 1.0f, 0xFFFFFFFFu, 0.0f, 1.0f },
+        { w - 0.5f,   h - 0.5f,   0.0f, 1.0f, 0xFFFFFFFFu, 1.0f, 1.0f },
+    };
+    drawPrimitiveUP(device, kD3DPT_TRIANGLESTRIP, 2, verts, sizeof(ScreenVertex));
+
+    setTexture(device, 0, nullptr);
+    setRenderState(device, kD3DRS_ZENABLE, oldZEnable);
+    setRenderState(device, kD3DRS_LIGHTING, oldLighting);
+    setRenderState(device, kD3DRS_ALPHABLENDENABLE, oldAlphaBlend);
+    setRenderState(device, kD3DRS_CULLMODE, oldCull);
+
+    setPixelShader(device, oldPixelShader);
+    if (oldPixelShader) {
+        void** vtbl = *reinterpret_cast<void***>(oldPixelShader);
+        reinterpret_cast<Release_t>(vtbl[kSurfaceReleaseVtableIndex])(oldPixelShader);
+    }
+
+    setSamplerState(device, 0, kD3DSAMP_MAGFILTER, oldMagFilter);
+    setSamplerState(device, 0, kD3DSAMP_MINFILTER, oldMinFilter);
+}
+
+// Phase A's own entry point, called from the very end of Hook_EndScene. Only the
+// no-op passthrough shader is wired up this pass -- real effects plug in here
+// later, each behind their own independent config toggle, reusing
+// DrawFullScreenPass directly.
+void RunFullScreenPostProcessIfEnabled(void* device)
+{
+    if (!g_modConfig.fullScreenPassthroughTest) return;
+    if (!EnsureFullscreenPassthroughShader(device)) return;
+    DrawFullScreenPass(device, g_fullscreenPassthroughPixelShader);
 }
 
 void FormatOptRowValue(const OptRow& row, char* outBuf, size_t outBufSize)
@@ -5031,6 +5502,8 @@ void ReleaseAllCachedTextures()
     for (auto& c : g_glyphEditHandleLabelCache) releaseIfSetTextCache(c);
     releaseIfSet(g_textTexture);
     g_textureRenderedFor[0] = '\0';
+    releaseIfSet(g_warningTextTexture);
+    g_warningTextureRenderedFor[0] = '\0';
     for (auto& slot : g_gameplayHintSlots) {
         releaseIfSet(slot.prefixTexture);
         slot.prefixRenderedFor[0] = '\0';
@@ -5075,6 +5548,16 @@ void ReleaseAllCachedTextures()
     // real-Reset-vs-full-recreate cases, since correctness matters far more than
     // avoiding one redundant CreatePixelShader call on an ordinary Reset.
     releaseIfSet(g_optBlurPixelShader);
+    // Phase A (visual-suite plan) full-screen capture texture -- same D3DPOOL_DEFAULT
+    // lifecycle as g_optBlurTexture above, same reasoning applies: must be released
+    // before Reset() and won't survive a full device recreation on its own.
+    releaseIfSet(g_fullscreenCaptureTexture);
+    g_fullscreenCaptureTexW = 0;
+    g_fullscreenCaptureTexH = 0;
+    // Same device-bound-shader reasoning as g_optBlurPixelShader above -- released
+    // unconditionally so EnsureFullscreenPassthroughShader recreates it for whichever
+    // device (same or new) is actually current on next use.
+    releaseIfSet(g_fullscreenPassthroughPixelShader);
 }
 
 } // namespace -- closes the file-wide anonymous namespace (see the matching close's
@@ -5122,6 +5605,8 @@ void InvalidateTextTextureCachesOnConfigChange()
     for (auto& c : g_glyphEditHandleLabelCache) releaseIfSetTextCache(c);
     releaseIfSet(g_textTexture);
     g_textureRenderedFor[0] = '\0';
+    releaseIfSet(g_warningTextTexture);
+    g_warningTextureRenderedFor[0] = '\0';
     for (auto& slot : g_gameplayHintSlots) {
         releaseIfSet(slot.prefixTexture);
         slot.prefixRenderedFor[0] = '\0';
@@ -5167,6 +5652,7 @@ HRESULT WINAPI Hook_EndScene(void* device)
     // hook's conversion and this file's draw-time re-scale used two different
     // resolution sources, so they only cancelled out by coincidence).
     g_lastKnownRenderDevice = device;
+
     ++g_endSceneFireCount;
     if (g_endSceneFireCount == 1) {
         LogFromController("[overlay-hud] EndScene hook fired for the first time -- confirmed alive");
@@ -5252,6 +5738,12 @@ HRESULT WINAPI Hook_EndScene(void* device)
 
     FrameBenchmark_LogFrame(BenchMs(tOptionsStart, tOptionsEnd), BenchMs(tOverlayStart, tOverlayEnd),
         BenchMs(tGlyphStart, tGlyphEnd), BenchMs(tHintStart, tHintEnd));
+
+    // Phase A, visual-suite plan -- runs LAST, after every other draw call above
+    // (this project's own overlay included), matching the plan's own design: the
+    // full-screen pass captures the COMPLETE, final frame, not just the game's own
+    // rendering.
+    RunFullScreenPostProcessIfEnabled(device);
 
     return g_origEndScene(device);
 }
@@ -5573,6 +6065,22 @@ void ShowOverlayMessage(const char* text, unsigned long durationMs, OverlayAnimS
     g_overlayStartMs = GetTickCount();
     g_overlayDurationMs = durationMs;
     g_overlayStyle = style;
+    g_overlayRequiresDismiss = false;
+    g_overlayActive = true;
+}
+
+// Issue #92, 2026-08-26 -- real, safety-relevant warnings (currently: the
+// ForceD3D9On12/InternalRenderScalePercent vid_restart guard) that must not be
+// missable by looking away for a few seconds, unlike an ordinary timed toast.
+// Stays on screen until the player presses Enter/Space/left-click -- see
+// DrawOverlayMessage's own dismiss-handling for the mechanism.
+void ShowOverlayMessageUntilDismissed(const char* text, OverlayAnimStyle style)
+{
+    strncpy_s(g_overlayText, text, _TRUNCATE);
+    g_overlayStartMs = GetTickCount();
+    g_overlayDurationMs = 0; // unused while g_overlayRequiresDismiss is true
+    g_overlayStyle = style;
+    g_overlayRequiresDismiss = true;
     g_overlayActive = true;
 }
 

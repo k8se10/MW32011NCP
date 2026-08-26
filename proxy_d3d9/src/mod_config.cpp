@@ -147,7 +147,18 @@ void ReadBool(const char* path, const char* section, const char* key, bool& outV
 // v20->v21 (2026-08-25, plugin API): new [Plugins] Enabled key added -- STRICTLY
 // opt-in, default off. See PLUGIN_API.md and mod_config.h's own pluginsEnabled
 // field comment for the full design/risk statement.
-constexpr unsigned long kCurrentConfigVersion = 21;
+// v21->v22 (2026-08-25, issue #88): new [Video] InternalRenderScalePercent key
+// added -- STRICTLY opt-in, 0/disabled by default. Fixes the engine's real
+// stuck-at-a-legacy-r_mode-default softness on displays above 1080p (direct user
+// framing: "above 1080p it looks bad like 2005 bad") by setting r_mode to a
+// percentage of the real desktop native resolution + a real vid_restart. See
+// mod_config.h's own internalRenderScalePercent field comment for the full design.
+// v22->v23 (2026-08-26, issue #92): new [Video] ForceD3D9On12 key added -- STRICTLY
+// opt-in, off by default. Forces this DLL's own Direct3DCreate9 export to call the
+// real system d3d9.dll's Direct3DCreate9On12 entry point instead of the ordinary
+// one -- a real, Microsoft-documented alternate export, not a third-party DLL swap.
+// See mod_config.h's own forceD3D9On12 field comment for the full design.
+constexpr unsigned long kCurrentConfigVersion = 23;
 
 // Reads a legacy key's raw value, returning true only if the key genuinely existed
 // (unlike ReadFloat, which can't distinguish "absent" from "present but unparsable" --
@@ -497,6 +508,41 @@ void WriteDefaultConfig(const char* path)
         "; 0 = off (real native Options screen, unmodified), 1 = on.\n"
         "UseCustomOptionsScreen=%d\n"
         "\n"
+        "[Video]\n"
+        "; Issue #88: fixes a real engine behavior where the actual 3D scene renders\n"
+        "; smaller than your real display, which looks visibly soft/dated (\"2005 bad\")\n"
+        "; above 1080p. Set to 100 to render the scene at your real native resolution;\n"
+        "; values above 100 genuinely supersample above native (real GPU/VRAM cost,\n"
+        "; quadratic with the percentage); values below 100 downscale for performance.\n"
+        "; 0 = disabled. Applied by overriding the engine's own requested render-\n"
+        "; resolution input right before its one-time startup computation runs -- no\n"
+        "; r_mode writes, no vid_restart, no live device recreation -- but since the\n"
+        "; real render targets are only ever created once, a change requires RESTARTING\n"
+        "; THE GAME, not just a hot-reload. Confirmed live (220fps at 100%% vs. 70-80fps\n"
+        "; at 300%% on a real 2560x1440 display -- real GPU cost genuinely scales).\n"
+        "InternalRenderScalePercent=%d\n"
+        "; Issue #92: forces this DLL's own Direct3DCreate9 export to call the real\n"
+        "; system d3d9.dll's Direct3DCreate9On12 entry point instead of the ordinary\n"
+        "; one -- a real, Microsoft-documented alternate export from the SAME real DLL,\n"
+        "; not a third-party renderer swap (D3D9On12 maps D3D9 onto D3D12, a genuine\n"
+        "; Windows OS component).\n"
+        "; *** DO NOT USE -- CONFIRMED UNSTABLE, 2026-08-26. *** Produces a real,\n"
+        "; reproducible black screen (device alive, menu input keeps working, nothing\n"
+        "; renders) under conditions this project could not fully root-cause after an\n"
+        "; extensive live investigation -- ruled out: memory/address-space exhaustion,\n"
+        "; GPU driver TDR (none logged), shader cache corruption (both real caches\n"
+        "; deleted, still recurs), a GPU driver reset (Win+Ctrl+Shift+B, still recurs),\n"
+        "; this project's own overlay drawing (fully bypassed, still recurs), this\n"
+        "; project's own CreateTexture/Reset hooks (confirmed clean passthroughs). Real,\n"
+        "; live-confirmed visual quality improvement at 100%% scale before it started\n"
+        "; failing, but not safe to use. See known_issues.md issue #92 for the full\n"
+        "; trail, including a real, open microsoft/D3D9On12 GitHub issue for black\n"
+        "; screens on other games/GPUs. Left here (default 0/off) for future\n"
+        "; investigation, not because it currently works. Try raising anisotropic\n"
+        "; filtering (r_texFilterAnisoMax/Min in players2/config.cfg) on the normal\n"
+        "; native driver instead for a similar sharpness improvement, safely.\n"
+        "ForceD3D9On12=%d\n"
+        "\n"
         "[Plugins]\n"
         "; Loads plugin DLLs from a \"plugins\" subfolder next to this DLL at startup.\n"
         "; Plugins get hook-installation and DIRECT PROCESS MEMORY READ/WRITE access --\n"
@@ -655,7 +701,19 @@ void WriteDefaultConfig(const char* path)
         "; felt stutter can be checked against real data instead of guessed. DEFAULT OFF --\n"
         "; per-frame disk I/O has its own real cost. Turn on, play until the stutter is\n"
         "; felt, turn back off, share frametime_benchmark.csv. 0 = off, 1 = on.\n"
-        "FrametimeBenchmarkLogging=%d\n",
+        "FrametimeBenchmarkLogging=%d\n"
+        "; Issue #92, 2026-08-26: logs real process memory (working set, private bytes,\n"
+        "; pagefile usage) and system memory (load %%, available physical/virtual) once a\n"
+        "; second, to check whether a crash at high InternalRenderScalePercent under\n"
+        "; ForceD3D9On12 is real address-space/memory exhaustion. DEFAULT OFF. Turn on,\n"
+        "; reproduce, check proxy_d3d9.log for \"[resource-diag]\" lines. 0 = off, 1 = on.\n"
+        "ResourceUsageLogging=%d\n"
+        "; Phase A, visual-suite plan, 2026-08-26: validates the new full-screen\n"
+        "; capture/composite pipeline with a trivial no-op shader, before any real effect\n"
+        "; (sharpening/FXAA/motion blur) is built on it. Should look IDENTICAL to off --\n"
+        "; a temporary plumbing-validation toggle, not a real feature. DEFAULT OFF.\n"
+        "; 0 = off, 1 = on.\n"
+        "FullScreenPassthroughTest=%d\n",
         kCurrentConfigVersion,
         g_modConfig.lookDegreesPerSecondHorizontal,
         g_modConfig.lookDegreesPerSecondVertical,
@@ -688,6 +746,8 @@ void WriteDefaultConfig(const char* path)
         PhysicalInputName(g_modConfig.customButtonMap.pause),
         PhysicalInputName(g_modConfig.customButtonMap.scoreboard),
         g_modConfig.useCustomOptionsScreen ? 1 : 0,
+        g_modConfig.internalRenderScalePercent,
+        g_modConfig.forceD3D9On12 ? 1 : 0,
         g_modConfig.pluginsEnabled ? 1 : 0,
         g_modConfig.vibrationEnabled ? 1 : 0,
         g_modConfig.vibrationFireIntensity,
@@ -709,7 +769,9 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.forceGlyphOverlay ? 1 : 0,
         g_modConfig.glyphPositionEditMode ? 1 : 0,
         g_modConfig.captureRuntimeMenuAssets ? 1 : 0,
-        g_modConfig.frametimeBenchmarkLogging ? 1 : 0);
+        g_modConfig.frametimeBenchmarkLogging ? 1 : 0,
+        g_modConfig.resourceUsageLogging ? 1 : 0,
+        g_modConfig.fullScreenPassthroughTest ? 1 : 0);
 
     fclose(f);
 }
@@ -955,11 +1017,18 @@ void LoadModConfig()
     ReadBool(path, "Experimental", "GlyphPositionEditMode", g_modConfig.glyphPositionEditMode);
     ReadBool(path, "Experimental", "CaptureRuntimeMenuAssets", g_modConfig.captureRuntimeMenuAssets);
     ReadBool(path, "Experimental", "FrametimeBenchmarkLogging", g_modConfig.frametimeBenchmarkLogging);
+    ReadBool(path, "Experimental", "ResourceUsageLogging", g_modConfig.resourceUsageLogging);
+    ReadBool(path, "Experimental", "FullScreenPassthroughTest", g_modConfig.fullScreenPassthroughTest);
     ReadBool(path, "Gyro", "Enabled", g_modConfig.gyroEnabled);
     ReadFloat(path, "Gyro", "Sensitivity", g_modConfig.gyroSensitivity);
     if (g_modConfig.gyroSensitivity < 0.0f) g_modConfig.gyroSensitivity = 0.0f;
     ReadBool(path, "Gyro", "InvertPitch", g_modConfig.gyroInvertPitch);
     ReadBool(path, "Gyro", "InvertYaw", g_modConfig.gyroInvertYaw);
+    {
+        int v = GetPrivateProfileIntA("Video", "InternalRenderScalePercent", g_modConfig.internalRenderScalePercent, path);
+        g_modConfig.internalRenderScalePercent = v;
+    }
+    ReadBool(path, "Video", "ForceD3D9On12", g_modConfig.forceD3D9On12);
 
     g_buttonMap = ResolveButtonMap(g_modConfig.buttonLayout, g_modConfig.flipTriggers);
 
@@ -969,7 +1038,7 @@ void LoadModConfig()
         "adsSlowdownBaseline=%g adsCloseRangeSlowdownStrength=%g invertLook=%d lookAccelRampMs=%lu proneHoldMs=%lu interactHoldMs=%lu "
         "readyUpHoldMs=%lu "
         "buttonLayout=%s stickLayout=%s flipTriggers=%d glyphStyle=%s glyphStyleAuto=%d "
-        "useCustomOptionsScreen=%d pluginsEnabled=%d "
+        "useCustomOptionsScreen=%d internalRenderScalePercent=%d forceD3D9On12=%d pluginsEnabled=%d "
         "vibrationEnabled=%d vibrationFireIntensity=%g vibrationFireDurationMs=%lu "
         "vibrationDamagePerPoint=%g vibrationDamageMaxIntensity=%g vibrationDamageDurationMs=%lu "
         "overlayFontFamily=%s overlayFontFamilyCondensed=%s overlayFontItalic=%d overlayTestCycleAllVariants=%d "
@@ -988,6 +1057,8 @@ void LoadModConfig()
         g_modConfig.flipTriggers ? 1 : 0, GlyphStyleName(g_modConfig.glyphStyle),
         g_modConfig.glyphStyleAuto ? 1 : 0,
         g_modConfig.useCustomOptionsScreen ? 1 : 0,
+        g_modConfig.internalRenderScalePercent,
+        g_modConfig.forceD3D9On12 ? 1 : 0,
         g_modConfig.pluginsEnabled ? 1 : 0,
         g_modConfig.vibrationEnabled ? 1 : 0, g_modConfig.vibrationFireIntensity,
         g_modConfig.vibrationFireDurationMs, g_modConfig.vibrationDamagePerPoint,
@@ -1118,6 +1189,10 @@ extern "C" void CheckConfigHotReload()
 
     LogFromController("[config] mw3ncp_config.ini changed on disk -- hot-reloading");
     LoadModConfig();
+    // NOTE: InternalRenderScalePercent (issue #88) is a startup-only, restart-required
+    // setting -- Hook_FUN_00679010 (analog_input_hooks.cpp) fires exactly once at real
+    // device-creation time, so a hot-reload here does NOT re-apply it; see mod_config.h's
+    // own field comment.
     // Live-reported 2026-08-24, "its just the word hold not the full text" -- see
     // InvalidateTextTextureCachesOnConfigChange's own comment (overlay_hud.h) for the
     // full bug: without this, any text whose exact string+height hadn't otherwise
@@ -1219,3 +1294,18 @@ void RestoreVanillaSettingsFromIni()
     }
     LogFromController("[config] restored vanilla settings from mw3ncp_config.ini backup");
 }
+
+// Issue #88: the config-driven internal render resolution control used to live
+// here as ApplyInternalRenderScaleIfConfigured() -- a `r_mode`-write + `vid_restart`
+// approach that crashed the game twice, live, and was abandoned (issue #91 later
+// found the SAME crash happens via the real vanilla Resolution menu too, meaning
+// `vid_restart` itself is unstable in this environment regardless of trigger). A
+// same-day follow-up then hooked FUN_00463820, which turned out to be the WRONG
+// target (only resized a secondary screenshot buffer, zero real GPU workload
+// change -- caught live via a "no FPS change at 300%" report). SUPERSEDED, final,
+// 2026-08-26 by Hook_FUN_00679010 (analog_input_hooks.cpp), which overrides the
+// engine's own requested render-resolution input before its one-time,
+// startup-only computation runs -- that value flows unclamped into the REAL scene
+// render target and post-processing chain. Zero r_mode writes, zero vid_restart,
+// zero device/window recreation. See known_issues.md issue #88's final 2026-08-26
+// sections for the full RE trail.

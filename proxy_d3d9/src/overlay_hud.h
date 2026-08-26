@@ -169,6 +169,11 @@ enum class OverlayAnimStyle { Plain, Gold, Rainbow, Sweep };
 // Replaces any message currently showing (only one at a time -- these are meant to
 // be brief, infrequent notifications, not a log feed).
 void ShowOverlayMessage(const char* text, unsigned long durationMs, OverlayAnimStyle style = OverlayAnimStyle::Plain);
+// Issue #92, 2026-08-26 -- like ShowOverlayMessage, but stays up until the player
+// presses Enter/Space/left-click instead of auto-expiring after a fixed duration.
+// For real, safety-relevant warnings that must not be missable (see overlay_hud.cpp's
+// own comment on this function and DrawOverlayMessage's dismiss-handling).
+void ShowOverlayMessageUntilDismissed(const char* text, OverlayAnimStyle style = OverlayAnimStyle::Plain);
 
 // STRICTLY A TESTING AID (2026-07-31, [Overlay] TestCycleAllVariants in
 // mw3ncp_config.ini, default off). Call every tick (analog_input_hooks.cpp's

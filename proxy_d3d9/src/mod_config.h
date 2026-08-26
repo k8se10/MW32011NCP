@@ -542,6 +542,28 @@ struct ModConfig
         // it runs. See dllmain.cpp's InstallAssetCaptureHooks / analog_input_hooks.cpp's
         // FindOrLoadAsset hook for the implementation.
 
+    bool fullScreenPassthroughTest = false; // Phase A, visual-suite plan, 2026-08-26 --
+        // validates the new full-screen capture/composite pipeline (DrawFullScreenPass,
+        // overlay_hud.cpp) with a trivial no-op "output = input" shader before any real
+        // effect (RCAS/FXAA/motion blur) is built on top of it. Should be visually
+        // INDISTINGUISHABLE from off -- if enabling this changes anything visible or
+        // breaks rendering, that's a real plumbing bug in the pipeline itself, isolated
+        // from any real shader's own content. DEFAULT OFF -- temporary validation
+        // toggle, not a real player-facing feature on its own.
+
+    bool resourceUsageLogging = false; // issue #92, 2026-08-26: direct user theory --
+        // the crash seen at InternalRenderScalePercent=225/300 under ForceD3D9On12 might
+        // be real address-space/memory exhaustion (D3D9On12 maintains both a D3D9-side
+        // and D3D12-side representation of every resource, real overhead on top of this
+        // project's own much-larger-than-normal render targets at high scale), not a
+        // pure GPU/TDR stall. iw5sp.exe's PE header WAS checked directly and DOES have
+        // IMAGE_FILE_LARGE_ADDRESS_AWARE set, so the specific "capped at 2GB" theory is
+        // ruled out -- but a 32-bit process is still hard-capped at ~4GB even with that
+        // flag, so this logs real process memory (K32GetProcessMemoryInfo) and system
+        // memory (GlobalMemoryStatusEx) once a second via dllmain.cpp's dedicated
+        // ResourceLogThreadProc, to check the theory directly with real data rather than
+        // reasoning about it further. Default OFF -- diagnostic only.
+
     bool frametimeBenchmarkLogging = false; // 2026-08-17: live-reported "still jittery,
         // 239 fps on the counter but feels like 40" AFTER the log-truncate fix and the
         // asset-capture async-write fix -- both real, evidence-backed fixes that didn't
@@ -569,6 +591,80 @@ struct ModConfig
     // rounds 1-4 built. See re_notes/known_issues.md issue #66 and
     // re_notes/options_menu_full_map.md for the full design/research trail.
     bool useCustomOptionsScreen = false;
+
+    // [Video] InternalRenderScalePercent (issue #88, 2026-08-25) -- STRICTLY OPT-IN,
+    // 0/disabled by default. Real motivation, direct user framing: "basically the plan
+    // is to allow better texture and internal render res as again above 1080p it looks
+    // bad like 2005 bad." THE HEADLINE USE CASE IS "set to 100 to render at native
+    // resolution instead of a smaller stuck value" -- NOT a performance-downscale
+    // tool; downscaling below 100 for performance is a valid secondary use of the
+    // same mechanism, just not why this exists. Values above 100 genuinely
+    // supersample above native (real GPU cost, quadratic with the percentage).
+    //
+    // MECHANISM (2026-08-26, second and final correction -- see known_issues.md
+    // issue #88 for the full trail, including two earlier abandoned attempts: a
+    // `r_mode`/`vid_restart` write that crashed the game twice, and a same-day
+    // hook on the WRONG function, FUN_00463820, which only resized a secondary
+    // screenshot buffer's reported metadata and produced zero real GPU workload
+    // change -- live-caught via a "no FPS change at 300%" report). The REAL fix:
+    // Hook_FUN_00679010 (analog_input_hooks.cpp) intercepts the engine's own
+    // device-creation-time render-resolution computation and overrides its
+    // REQUESTED W/H input fields before the real function runs -- that requested
+    // value flows, unclamped, directly into DAT_021d2e00/DAT_021d2e04, which
+    // genuinely drive the real RESOLVED_SCENE render target and the entire
+    // post-processing chain (SSAO, post-effects, pingpong buffers) FUN_00683060
+    // allocates via real CreateRenderTarget calls. Zero `r_mode` writes, zero
+    // `vid_restart`, zero live device/window recreation.
+    //
+    // Applied exactly ONCE per process: the real function this hooks has exactly
+    // one caller, itself called exactly once at genuine startup device-creation
+    // time (confirmed via decompile -- its own caller's early-return guard proves
+    // it never re-runs its creation path on a later call). A config change
+    // requires a full game restart to take effect -- there is no live-apply path
+    // for this setting, since the underlying render targets are only ever created
+    // once.
+    int internalRenderScalePercent = 0;
+
+    // [Video] ForceD3D9On12 (issue #92, 2026-08-26) -- STRICTLY OPT-IN, OFF by
+    // default. Real background: this project investigated whether this game might
+    // already be transparently running through D3D9On12 (a real Microsoft OS
+    // component that maps the D3D9 API onto D3D12 -- NOT a third-party DLL, the
+    // real d3d9.dll this proxy already forwards to is still what's used either
+    // way). Live-confirmed on the dev system it is NOT active by default (real
+    // native NVIDIA driver, `nvldumd.dll`, in use instead). This flag forces it:
+    // when enabled, this DLL's own Direct3DCreate9 export calls the real system
+    // d3d9.dll's Direct3DCreate9On12 (a genuine, documented alternate entry point
+    // exported by the same real DLL -- confirmed via Microsoft's own DirectX-Specs
+    // documentation, not a third-party swap) instead of the ordinary
+    // Direct3DCreate9. Same real device/vtable class either way -- every existing
+    // hook in this project keeps working unmodified.
+    // LIVE-TESTED, 2026-08-26: CONFIRMED UNSTABLE -- a real, genuine visual quality
+    // improvement at 100% scale (live-confirmed, "genuinely looks 10x better"), but
+    // also produces a real, reproducible black screen (device technically alive,
+    // menu input keeps working, nothing renders) under conditions still not fully
+    // understood -- confirmed NOT caused by any of: memory/address-space exhaustion
+    // (real GetProcessMemoryInfo/GlobalMemoryStatusEx capture stayed flat and
+    // healthy the whole session), a genuine GPU/driver TDR hang (zero such events
+    // in the real Windows System event log), a corrupted GPU shader/pipeline cache
+    // (user directly deleted BOTH %LOCALAPPDATA%\NVIDIA\DXCache and
+    // %LOCALAPPDATA%\D3DSCache, black screen still recurred), or the internal
+    // render-scale feature (recurs at normal/default scale too). Real RE (issue #92)
+    // found the engine architecturally never does a true device+D3D9On12-interface
+    // teardown during a live session -- only at real process exit -- which is a
+    // credible mechanism for the symptom, but the only concrete fix design found
+    // (forcing that teardown+recreate ourselves, synchronously, from inside a
+    // console-command hook) carries real, unruled-out crash risk (use-after-free if
+    // the calling code holds a stale device pointer) and was not implemented blind.
+    // Decisive external finding: Microsoft's own microsoft/D3D9On12 GitHub repo has
+    // an open issue for genuine black-screen bugs across multiple unrelated games
+    // and GPU vendors (github.com/microsoft/D3D9On12/issues/83), and D3D12 itself
+    // does not support true full-screen exclusive mode (substitutes "full-screen
+    // optimizations" instead) -- a real, structural mismatch with how this 2011
+    // engine's own fullscreen code was written. This looks like a genuine, external,
+    // still-unresolved D3D9On12 limitation, not necessarily a bug in this project's
+    // own hooks. Left OFF by default and NOT recommended for normal play until this
+    // is better understood -- full trail in known_issues.md issue #92.
+    bool forceD3D9On12 = false;
 
     // [Plugins] (2026-08-25) -- STRICTLY OPT-IN, OFF by default, same pattern as
     // useCustomOptionsScreen/autoMantleEnabled above. When enabled, plugin_loader.cpp
@@ -609,6 +705,10 @@ void LoadModConfig();
 // own hooks already run on (same file I/O this project's existing config code
 // already does synchronously).
 extern "C" void SaveModConfig();
+
+// [Video] InternalRenderScalePercent (see this struct's own field comment above)
+// needs no separate apply function -- Hook_FUN_00679010 (analog_input_hooks.cpp)
+// reads g_modConfig directly, once, at real device-creation time.
 
 // ---- Vanilla settings mirror (issue #66, 2026-08-04 full-scope pivot) -------------
 //
