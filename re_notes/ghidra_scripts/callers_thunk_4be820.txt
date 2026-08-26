@@ -1,0 +1,69 @@
+Callers of 004be820 (1):
+  FUN_006797d0 @ 006797d0
+
+================================================================
+Function: FUN_006797d0 @ 006797d0
+----------------------------------------------------------------
+
+undefined4 FUN_006797d0(void)
+
+{
+  int iVar1;
+  undefined4 *puVar2;
+  uint uVar3;
+  int **ppiVar4;
+  int *piStack_10;
+  undefined4 uStack_c;
+  undefined4 *puStack_8;
+  
+  puStack_8 = (undefined4 *)0x6797d6;
+  thunk_FUN_00683060();
+  puStack_8 = (undefined4 *)0x6797db;
+  FUN_0049d640();
+  if (DAT_021d362c == '\0') {
+    puStack_8 = (undefined4 *)0x6797e9;
+    FUN_00431ed0();
+    puStack_8 = (undefined4 *)0x6797ee;
+    FUN_004038d0();
+    puStack_8 = (undefined4 *)0x6797f3;
+    FUN_00544d70();
+  }
+  puStack_8 = (undefined4 *)0x6797f8;
+  FUN_0049a320();
+  puStack_8 = (undefined4 *)0x6797fd;
+  FUN_00411f60();
+  if (DAT_021d362c == '\0') {
+    puStack_8 = (undefined4 *)0x67980b;
+    FUN_004d17e0();
+  }
+  puStack_8 = &DAT_021d0608;
+  DAT_021d05d4 = 0;
+  DAT_021d060c = 0;
+  uStack_c = 8;
+  piStack_10 = DAT_021cd928;
+  iVar1 = (**(code **)(*DAT_021cd928 + 0x1d8))();
+  if (iVar1 < 0) {
+    return 0;
+  }
+  puVar2 = &DAT_021d0554;
+  uVar3 = 0;
+  do {
+    iVar1 = (**(code **)(*DAT_021cd928 + 0x1d8))(DAT_021cd928,8,puVar2);
+    if (iVar1 < 0) {
+      return 0;
+    }
+    uVar3 = uVar3 + 4;
+    puVar2 = puVar2 + 1;
+  } while (uVar3 < 0x80);
+  if (DAT_021d362c == '\0') {
+    FUN_004ce930();
+    FUN_004cde60();
+    ppiVar4 = &piStack_10;
+    iVar1 = (**(code **)(*DAT_021cd928 + 0x1d8))(DAT_021cd928,9);
+    DAT_021cd900 = (iVar1 < 0) - 1 & (uint)ppiVar4;
+  }
+  return 1;
+}
+
+
+
