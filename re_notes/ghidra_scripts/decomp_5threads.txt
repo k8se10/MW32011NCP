@@ -1,0 +1,204 @@
+================================================================
+Function: FUN_0040de80 @ 0040de80
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_0040de80(void)
+
+{
+  undefined4 uVar1;
+  int iVar2;
+  int iVar3;
+  int unaff_FS_OFFSET;
+  
+  FUN_004e9000();
+  uVar1 = FUN_004411c0(2);
+  iVar2 = __setjmp3(uVar1,0);
+  while (iVar2 != 0) {
+    if (DAT_021d064a != '\0') {
+      do {
+        FUN_004cfbd0();
+        FUN_00438600(1);
+      } while (DAT_021d0650 != 0);
+      DAT_021d064a = '\0';
+      DAT_021d064c = 1;
+    }
+    if (DAT_025d6e14 != 0) {
+      DAT_025d6e14 = 0;
+      FUN_00496e20();
+    }
+    uVar1 = FUN_004411c0(2);
+    iVar2 = __setjmp3(uVar1,0);
+  }
+  *(undefined4 *)(*(int *)(*(int *)(unaff_FS_OFFSET + 0x2c) + _tls_index * 4) + 0xc) = 0xffffff7f;
+  do {
+    if (*(char *)(DAT_01769f40 + 0xc) == '\0') {
+      FUN_00484b90();
+    }
+    else {
+      FUN_00477d80(&LAB_004b3420,1);
+    }
+    iVar2 = FUN_004d7580();
+    if (iVar2 != 0) {
+      _DAT_02802ae0 = FUN_0045b590();
+      if (_DAT_02802ae0 != 0) {
+        FUN_00693b90(_DAT_02802ae0);
+      }
+      FUN_0042de00();
+      if ((*(char *)(DAT_01769f40 + 0xc) == '\0') || (*(char *)(DAT_021cd44c + 0xc) == '\0')) {
+        FUN_00556d30();
+      }
+      else {
+        FUN_00477d80(&LAB_0040acc0,1);
+      }
+      FUN_0042e1c0();
+    }
+    if (DAT_021d0650 != 0) {
+      _DAT_02802ae0 = FUN_0045b590();
+      if (_DAT_02802ae0 != 0) {
+        FUN_00693b90(_DAT_02802ae0);
+      }
+      if (DAT_021d0650 != 0) {
+        DAT_021d064c = 1;
+        DAT_021d064a = 1;
+        do {
+          FUN_004cfbd0();
+          iVar2 = FUN_004a1610();
+          FUN_004269b0();
+          iVar3 = FUN_004a1610();
+          iVar2 = (iVar2 - iVar3) + 0x21;
+          if (0 < iVar2) {
+            FUN_00438600(iVar2);
+          }
+        } while (DAT_021d0650 != 0);
+        DAT_021d064a = '\0';
+        DAT_021d064c = 1;
+      }
+    }
+    _DAT_02802ae0 = FUN_0045b590();
+    if (_DAT_02802ae0 != 0) {
+      FUN_00693b90(_DAT_02802ae0);
+    }
+  } while( true );
+}
+
+
+
+================================================================
+Function: FUN_00586c00 @ 00586c00
+----------------------------------------------------------------
+
+void FUN_00586c00(void)
+
+{
+  undefined4 uVar1;
+  int iVar2;
+  
+  FUN_0040cb90();
+  uVar1 = FUN_004411c0(2);
+  iVar2 = __setjmp3(uVar1,0);
+  while (iVar2 != 0) {
+    FUN_0045bd40();
+    uVar1 = FUN_004411c0(2);
+    iVar2 = __setjmp3(uVar1,0);
+  }
+  do {
+    FUN_00478a70();
+    FUN_004c91a0();
+    FUN_00586ba0();
+  } while( true );
+}
+
+
+
+================================================================
+Function: FUN_0063a2c0 @ 0063a2c0
+----------------------------------------------------------------
+
+void FUN_0063a2c0(void)
+
+{
+  DWORD DVar1;
+  undefined4 uVar2;
+  int iVar3;
+  
+  DVar1 = timeGetTime();
+  FUN_00738c8a(DVar1);
+  do {
+    uVar2 = FUN_004411c0(2);
+    iVar3 = __setjmp3(uVar2,0);
+  } while (iVar3 != 0);
+  do {
+    uVar2 = FUN_004b67c0();
+    FUN_0050aac0(uVar2);
+  } while( true );
+}
+
+
+
+================================================================
+Function: FUN_0068dc40 @ 0068dc40
+----------------------------------------------------------------
+
+void FUN_0068dc40(void)
+
+{
+  undefined4 uVar1;
+  int iVar2;
+  
+  uVar1 = FUN_004411c0(2);
+  iVar2 = __setjmp3(uVar1,0);
+  if (iVar2 != 0) {
+    FUN_0045bd40();
+  }
+  do {
+    InterlockedIncrement(&DAT_025c84d0);
+    FUN_005df010(0xffffffff,"wait cmd");
+    FUN_0046d230();
+    InterlockedDecrement(&DAT_025c84d0);
+    FUN_0068d9f0();
+  } while( true );
+}
+
+
+
+================================================================
+Function: FUN_00608b10 @ 00608b10
+----------------------------------------------------------------
+
+void FUN_00608b10(void)
+
+{
+  undefined4 uVar1;
+  int iVar2;
+  
+  if (*(char *)(DAT_01769f50 + 0xc) == '\0') {
+    uVar1 = FUN_004411c0(2);
+    iVar2 = __setjmp3(uVar1,0);
+    if (iVar2 != 0) {
+      uVar1 = FUN_004c1c80("Failed init after: %s",&DAT_0176a4c8);
+      FUN_00490d90(uVar1);
+    }
+    if (DAT_00aa4194 == 0) {
+      FUN_0041f060();
+    }
+    FUN_00607ef0();
+    FUN_0050a410(&DAT_0085f9c3);
+    FUN_004feda0();
+    FUN_004d01a0();
+    FUN_004f4020();
+    FUN_004396d0(0,0);
+    FUN_00455990();
+    uVar1 = FUN_004411c0(2);
+    iVar2 = __setjmp3(uVar1,0);
+    if (iVar2 == 0) {
+      FUN_0054b9f0();
+      return;
+    }
+  }
+  return;
+}
+
+
+
