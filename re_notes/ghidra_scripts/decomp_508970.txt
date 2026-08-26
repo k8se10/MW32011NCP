@@ -1,0 +1,75 @@
+================================================================
+Function: FUN_00508970 @ 00508970
+Signature: undefined FUN_00508970(void)
+----------------------------------------------------------------
+
+void FUN_00508970(int param_1,int *param_2,int param_3)
+
+{
+  int iVar1;
+  int *piVar2;
+  int iVar3;
+  int iVar4;
+  undefined4 uVar5;
+  undefined4 uVar6;
+  undefined4 uVar7;
+  int iVar8;
+  int iVar9;
+  int iVar10;
+  int iVar11;
+  
+  do {
+    if ((param_2 == (int *)0x0) || (param_3 == 0)) {
+      FUN_00497210(param_1,0);
+      return;
+    }
+    piVar2 = (int *)*param_2;
+    if ((0 < piVar2[2]) && (0 < piVar2[3])) {
+      iVar3 = *(int *)(param_1 + 0x160);
+      iVar9 = piVar2[2] + *piVar2;
+      iVar1 = piVar2[1] + piVar2[3];
+      iVar10 = *(int *)(param_1 + 0x168) + iVar3;
+      iVar4 = *(int *)(param_1 + 0x164);
+      iVar11 = *(int *)(param_1 + 0x16c) + iVar4;
+      if ((*piVar2 < iVar10) && (((piVar2[1] < iVar11 && (iVar3 < iVar9)) && (iVar4 < iVar1)))) {
+        uVar5 = *(undefined4 *)(param_1 + 0x160);
+        uVar6 = *(undefined4 *)(param_1 + 0x168);
+        uVar7 = *(undefined4 *)(param_1 + 0x16c);
+        iVar8 = piVar2[1];
+        *(int *)(param_1 + 0x16c) = iVar8 - iVar4;
+        if (0 < iVar8 - iVar4) {
+          FUN_00508970(param_1,param_2 + 1,param_3 + -1);
+        }
+        iVar11 = iVar11 - iVar1;
+        *(int *)(param_1 + 0x16c) = iVar11;
+        if (0 < iVar11) {
+          *(int *)(param_1 + 0x164) = iVar1;
+          FUN_00508970(param_1,param_2 + 1,param_3 + -1);
+        }
+        *(int *)(param_1 + 0x164) = piVar2[1];
+        *(int *)(param_1 + 0x16c) = piVar2[3];
+        iVar1 = *piVar2;
+        *(int *)(param_1 + 0x168) = iVar1 - iVar3;
+        if (0 < iVar1 - iVar3) {
+          FUN_00508970(param_1,param_2 + 1,param_3 + -1);
+        }
+        iVar10 = iVar10 - iVar9;
+        *(int *)(param_1 + 0x168) = iVar10;
+        if (0 < iVar10) {
+          *(int *)(param_1 + 0x160) = iVar9;
+          FUN_00508970(param_1,param_2 + 1,param_3 + -1);
+        }
+        *(undefined4 *)(param_1 + 0x160) = uVar5;
+        *(int *)(param_1 + 0x164) = iVar4;
+        *(undefined4 *)(param_1 + 0x168) = uVar6;
+        *(undefined4 *)(param_1 + 0x16c) = uVar7;
+        return;
+      }
+    }
+    param_3 = param_3 + -1;
+    param_2 = param_2 + 1;
+  } while( true );
+}
+
+
+
