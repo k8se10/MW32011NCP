@@ -12005,6 +12005,56 @@ this specific lead is weakened (though still not fully ruled out, since
 SOMETHING could still zero it out again later, before `FUN_00450740` runs).
 Built (0 errors), redeployed. **Needs one more live test to resolve.**
 
+### SECOND LIVE TEST, 2026-08-26 (same day): divide-by-zero RULED OUT, but the real divergence is now LIVE-CONFIRMED, not inferred -- 2560x1440 vs 6400x3600, exact 2.5x
+
+Direct user re-test, same as-is config, crashed again. **"no kills made this
+time so can rule out the body despawn"** -- good corroborating evidence for
+the earlier `removecorpse` correction (it was never connected). Log:
+
+- **`[video-scale-diag2]` (post-trampoline): `DAT_021d2e08/0c = 2560x1440`.**
+  Real, sane, nonzero -- the pre-trampoline `0x0` from the first test was
+  exactly what it looked like: read-before-initialize, harmless. **The
+  divide-by-zero theory is ruled out** -- this pair is never actually zero
+  by the time `FUN_00450740` could plausibly run (mid-gameplay, well after
+  this one-time hook fires).
+- **`clcstate-diag`: 0 hits again.** Second data point against the
+  clcState-corruption theory firing on this specific crash path, though
+  still not permanently ruled out.
+- `d3d9on12-guard`: 0 hits again.
+
+**The real, now LIVE-CONFIRMED divergence**: `DAT_021d2e08/0c` (real native
+display resolution) = `2560x1440`. `DAT_021d2e00/04` (the 9 scaled render
+targets, from the same-session `[video-scale]` line) = `6400x3600`. Ratio =
+**exactly 2.5x**, matching `InternalRenderScalePercent=250` precisely. This
+is no longer an inference from static RE -- it's a real number read out of
+the running, crashing game.
+
+**Refined mechanism, one more decompile this pass**: checked
+`FUN_00684930` (part of the type-2 viewport's own setup, called just before
+`FUN_00684b00` sets `type=2`) hoping it would reveal what surface/dimensions
+back this secondary viewport -- it turned out to configure an unrelated
+quality-tier table lookup (`DAT_021d35xx` fields, indexed by a tier value,
+writes to `param_1+0x954/958/95c`, different offsets than the rect fields)
+-- not the size consumer. Still open. The best-supported theory now: this is
+a UNIT MISMATCH, not a divide-by-zero -- `FUN_00450740` writes this new
+viewport's own `+0x140..16c` bounds already scaled 2.5x (native-space input
+converted into scaled-render-target-space), while the OTHER (primary)
+viewport in the same array almost certainly keeps its own bounds in plain
+native units (2560x1440), set up by a completely separate, unscaled code
+path. `FUN_00508970`'s recursion (issue #95's own already-documented
+mechanism) then intersects/carves rects from BOTH viewports TOGETHER --
+comparing a native-unit rect against a 2.5x-scaled one is comparing
+incompatible coordinate spaces, which could produce negative or huge
+"remaining space" rects feeding whatever runs next. Not yet proven this is
+what actually corrupts state, but a coherent, live-number-backed theory,
+stronger than anything static RE alone had produced.
+
+**Not yet done**: trace what actually creates/sizes the type-2 viewport's
+own backing surface/render-target (to confirm whether the 2.5x-scaled rect
+is even out-of-bounds for whatever it's applied to, or whether -- as the
+UNIT MISMATCH theory above suggests -- the real problem is comparing it
+against the OTHER, unscaled viewport rather than its own bounds specifically).
+
 ### Next-session priority order, derived from all 4 forks, RE-ORDERED AGAIN after the gameplay-gated ratio-math finding above
 
 **RE-ORDERED AGAIN (2026-08-26), after the `clcState` finding above** --
