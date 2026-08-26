@@ -10603,6 +10603,19 @@ void InstallAnalogInputHooks()
     // PRIMARY viewport's container rect up to match the type-2 viewport's
     // (correctly) scaled exclusion rect, only for the exact duration of the
     // outermost carve -- recursive re-entries pass through untouched.
+    //
+    // TEMPORARILY DISABLED, 2026-08-26, direct user instruction "isolate fix C
+    // and see" -- NOT a retraction (unlike Fix Attempt A, no confirmed harm
+    // has ever been found in this fix itself). Installed purely as an
+    // isolation test after [com-error-diag] (also shipped this session)
+    // showed a live crash where FUN_00425540 was NEVER called at all --
+    // contradicting the Com_Error/longjmp mechanism this entire investigation
+    // was built on. Disabling this hook (while leaving every diagnostic
+    // active) checks whether Fix C itself is introducing a NEW, different
+    // crash mechanism this project's own diagnostics were never built to
+    // watch for, or whether the original bug reproduces independently of it.
+    // Re-enable once that's answered -- see known_issues.md issue #96.
+    /*
     MH_STATUS sFixC508970 = MH_CreateHook(reinterpret_cast<LPVOID>(0x00508970), &Hook_FUN_00508970, reinterpret_cast<LPVOID*>(&g_orig_00508970));
     sprintf_s(buf, "[hooks] MH_CreateHook(00508970 issue96-fixC) = %d", static_cast<int>(sFixC508970));
     LogFromController(buf);
@@ -10611,6 +10624,8 @@ void InstallAnalogInputHooks()
         sprintf_s(buf, "[hooks] MH_EnableHook(00508970 issue96-fixC) = %d", static_cast<int>(eFixC508970));
         LogFromController(buf);
     }
+    */
+    LogFromController("[hooks] issue96-fixC SKIPPED (isolation test, 2026-08-26 -- see known_issues.md issue #96)");
 
     // Issue #96 GENERAL DIAGNOSTIC, 2026-08-26 -- see the big comment above
     // Hook_FUN_00425540's definition. Observes EVERY real call into the

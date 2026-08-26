@@ -12344,7 +12344,52 @@ instrumented. Built (0 errors), redeployed. **This is the single most
 decisive diagnostic shipped for this issue so far** -- whatever format
 string appears in the log immediately before the next crash directly
 identifies the real mechanism, cutting through every remaining theory at
-once. **Not yet live-tested.**
+once.
+
+**Live-tested, same day. Result: PIVOTAL -- `FUN_00425540` was NEVER
+called.** Hook confirmed installed and enabled (`MH_CreateHook = 0`,
+`MH_EnableHook = 0`, both `MH_OK`). Zero `[com-error-diag]` lines in the
+log, despite a reproduced crash ending in the same clean
+`proxy_d3d9 detach` as every prior instance. **This directly contradicts
+the `Com_Error`/`longjmp` mechanism this entire investigation has been
+built on since its earliest static-RE pass** -- every theory so far
+(bad `clcState`, unclamped depth-stencil allocation failure, the ratio-math
+chain reaching a fatal error) assumed the exit goes through this specific
+function. This crash instance did not go through it at all, yet exited via
+the exact same "no AV, no WER, clean detach" signature.
+
+Real, honest possibilities, none confirmed: (1) the true exit mechanism is
+something else entirely -- a direct `ExitProcess`/`exit()` call unrelated to
+`Com_Error` that no prior static RE pass ever looked at, because everything
+pointed convincingly at `FUN_00425540` before anyone directly observed
+whether it actually fires; (2) this crash instance genuinely took a
+different path than whichever ones the original static RE was built from;
+(3) **this project's OWN new hooks (Fix Attempt C, or even a diagnostic
+hook itself) are introducing a DIFFERENT crash mechanism that has nothing
+to do with issue #96's original bug** -- three new hooks have been added
+since the crash was first characterized, and none of the diagnostics were
+built to watch for a self-inflicted failure.
+
+### ISOLATION TEST, 2026-08-26 (same day, direct user instruction "isolate fix C and see")
+
+Given how foundational the contradiction above is, the responsible next
+step is determining whether Fix Attempt C itself is now the actual problem,
+rather than guessing further. **Fix Attempt C's hook (`0x00508970`) is
+TEMPORARILY DISABLED** -- NOT a retraction (unlike Fix Attempt A, no
+confirmed harm has ever been found in this fix on its own terms; it never
+caused a visual regression across two live tests). The install call is
+commented out in `InstallAnalogInputHooks`, with a
+`[hooks] issue96-fixC SKIPPED (isolation test...)` log line replacing it so
+this is unambiguous in any future log read. Every diagnostic
+(`[clcstate-diag]`, `[video-scale-diag]`/`[video-scale-diag2]`,
+`[com-error-diag]`) stays fully active. Built (0 errors), redeployed.
+
+**Purpose**: if the crash still reproduces with Fix C disabled, that rules
+out Fix C as the cause of this specific "no Com_Error fired" result --
+pointing back at the original, still-unidentified mechanism. If the crash
+stops (or changes character) with Fix C disabled, that's strong evidence
+Fix C itself introduced a new problem, and it should be re-examined (not
+just re-enabled) before trying again. **Not yet live-tested.**
 
 ### Next-session priority order, derived from all 4 forks, RE-ORDERED AGAIN after the gameplay-gated ratio-math finding above
 
