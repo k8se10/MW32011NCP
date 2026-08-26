@@ -11948,6 +11948,63 @@ write; (2) what triggers `UI_RefreshViewport` -- requires GSC extraction/
 decompilation to answer properly, not yet attempted; (3) whether `Underground`
 correlates with `UI_RefreshViewport` firing more often, still unconfirmed.
 
+### FIRST LIVE TEST of the new diagnostics, 2026-08-26 (same day): `DAT_021d2e08`/`0c` reads `0x0` -- a real divide-by-zero candidate, stronger than the state-corruption theory
+
+Direct user test, as-is config (`InternalRenderScalePercent=250`,
+`FsrSharpenEnabled=1`/`0.80`, `MotionBlurEnabled=1`, `ForceAnisotropicFiltering=1`),
+crashed as expected. Log read directly (`proxy_d3d9.log`, single-session,
+one `attach` marker, ends in a clean `proxy_d3d9 detach` -- still no external
+kill signature):
+
+- **`[clcstate-diag]`: 0 hits.** The `clcState`-corruption theory (previous
+  section) did NOT fire this run -- `DAT_00b36218` was never observed outside
+  its valid set on any frame `InjectAllControllerInput` ran. Doesn't rule the
+  theory out permanently (this is one data point), but this specific crash
+  instance did not go through that exact path.
+- **`[d3d9on12-guard] blocked`: 0 hits.** Further confirms fork 4's
+  `vid_restart`-guard theory is not what happened here either.
+- **`[video-scale-diag]`: 1 hit (fires once, at the one-time render-target
+  creation step) -- `DAT_021d2e08/0c (window-size pair, never overridden) =
+  0x0`.** Both halves of the pair `FUN_00450740` divides by are **literally
+  zero** at the moment this hook's pre-trampoline read captured them.
+
+**Why this is a stronger, more direct candidate than the state-corruption
+theory**: `FUN_00450740`'s ratio math (documented above) is an unsigned
+64-bit `DIV`, `(coord * DAT_021d2e00) / DAT_021d2e08` -- dividing by a
+genuinely zero denominator is a hardware `#DE` (divide-error) CPU fault, not
+a graceful engine-side `Com_Error` call. That's a DIFFERENT, more direct
+crash class than everything else this issue has traced through
+`FUN_00425540`/`longjmp` -- and it would still plausibly present as "no crash
+dialog" if the game's own top-level exception handling (common in shipped
+retail titles) or this project's own `FlushLogOnCrash` vectored handler
+filters specifically for `EXCEPTION_ACCESS_VIOLATION` and doesn't recognize
+`EXCEPTION_INT_DIVIDE_BY_ZERO` as worth a dialog/flush -- not yet checked
+which is true here.
+
+**Real caveat, not yet resolved -- this is why a second diagnostic was added
+immediately rather than declaring this confirmed**: the log line captured
+`DAT_021d2e08/0c` BEFORE the real trampoline (`g_origFUN_00679010`) runs, and
+this hook only fires ONCE, at the engine's one-time render-target creation
+step (early, likely at/near level load) -- NOT at the moment `FUN_00450740`
+actually runs later, mid-gameplay, when `UI_RefreshViewport` fires. `0x0`
+here is genuinely ambiguous: it could mean this pair is dangerously
+uninitialized for the ENTIRE session (strong confirmation), or it could
+simply mean the real trampoline itself is what sets this pair for the first
+time on THIS call, and reading it beforehand was always going to show 0
+harmlessly, with a real nonzero value in place well before gameplay (and
+`FUN_00450740`) ever runs.
+
+**Fix shipped for the next test, not yet confirmed**: added a SECOND read of
+`DAT_021d2e08/0c`, AFTER `g_origFUN_00679010` returns
+(`[video-scale-diag2]`), in the same pass. If this second read is ALSO
+`0x0`, nothing in this call path ever initializes the pair and the
+divide-by-zero theory gets much stronger (`FUN_00450740`'s own decompile has
+no zero-guard anywhere). If it's nonzero, the trampoline is the real
+initializer and the pre-call `0x0` was expected/harmless -- in which case
+this specific lead is weakened (though still not fully ruled out, since
+SOMETHING could still zero it out again later, before `FUN_00450740` runs).
+Built (0 errors), redeployed. **Needs one more live test to resolve.**
+
 ### Next-session priority order, derived from all 4 forks, RE-ORDERED AGAIN after the gameplay-gated ratio-math finding above
 
 **RE-ORDERED AGAIN (2026-08-26), after the `clcState` finding above** --
