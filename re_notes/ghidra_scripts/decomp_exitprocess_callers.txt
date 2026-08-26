@@ -1,0 +1,175 @@
+================================================================
+No function contains address 0073bae6
+
+================================================================
+Function: doexit @ 0073bbbf
+----------------------------------------------------------------
+
+/* WARNING: Function: __SEH_prolog4 replaced with injection: SEH_prolog4 */
+/* WARNING: Function: __SEH_epilog4 replaced with injection: EH_epilog3 */
+/* WARNING: Removing unreachable block (ram,0x0073bcdc) */
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+/* Library Function - Single Match
+    _doexit
+   
+   Library: Visual Studio 2008 Release */
+
+void __cdecl doexit(int param_1,int param_2,int param_3)
+
+{
+  int *piVar1;
+  int *piVar2;
+  int iVar3;
+  code *pcVar4;
+  int *piVar5;
+  int *piVar6;
+  int *local_2c;
+  int *local_24;
+  int *local_20;
+  
+  __lock(8);
+  if (DAT_02825a30 != 1) {
+    _DAT_02825a2c = 1;
+    DAT_02825a28 = (undefined1)param_3;
+    if (param_2 == 0) {
+      piVar1 = (int *)__decode_pointer(DAT_028299dc);
+      if (piVar1 != (int *)0x0) {
+        piVar2 = (int *)__decode_pointer(DAT_028299d8);
+        local_2c = piVar1;
+        local_24 = piVar2;
+        local_20 = piVar1;
+        while (piVar2 = piVar2 + -1, piVar1 <= piVar2) {
+          iVar3 = __encoded_null();
+          if (*piVar2 != iVar3) {
+            if (piVar2 < piVar1) break;
+            pcVar4 = (code *)__decode_pointer(*piVar2);
+            iVar3 = __encoded_null();
+            *piVar2 = iVar3;
+            (*pcVar4)();
+            piVar5 = (int *)__decode_pointer(DAT_028299dc);
+            piVar6 = (int *)__decode_pointer(DAT_028299d8);
+            if ((local_20 != piVar5) || (piVar1 = local_2c, local_24 != piVar6)) {
+              piVar2 = piVar6;
+              piVar1 = piVar5;
+              local_2c = piVar5;
+              local_24 = piVar6;
+              local_20 = piVar5;
+            }
+          }
+        }
+      }
+      __initterm(&DAT_007e27c8);
+    }
+    __initterm(&DAT_007e27d0);
+  }
+  FUN_0073bcd6();
+  if (param_3 == 0) {
+    DAT_02825a30 = 1;
+    FUN_0074a02f(8);
+    ___crtExitProcess(param_1);
+    return;
+  }
+  return;
+}
+
+
+
+================================================================
+Function: _exit @ 0073bceb
+----------------------------------------------------------------
+
+/* Library Function - Single Match
+    _exit
+   
+   Library: Visual Studio 2008 Release */
+
+void __cdecl _exit(int _Code)
+
+{
+  doexit(_Code,0,0);
+  return;
+}
+
+
+
+================================================================
+Function: ___tmainCRTStartup @ 0073cdb3
+----------------------------------------------------------------
+
+/* WARNING: Function: __SEH_prolog4 replaced with injection: SEH_prolog4 */
+/* WARNING: Function: __SEH_epilog4 replaced with injection: EH_epilog3 */
+/* Library Function - Single Match
+    ___tmainCRTStartup
+   
+   Library: Visual Studio 2008 Release */
+
+int ___tmainCRTStartup(void)
+
+{
+  int iVar1;
+  undefined4 uVar2;
+  _STARTUPINFOA local_6c;
+  int local_24;
+  uint local_20;
+  undefined4 uStack_c;
+  undefined4 local_8;
+  
+  uStack_c = 0x73cdbf;
+  local_8 = 0;
+  GetStartupInfoA(&local_6c);
+  local_8 = 0xfffffffe;
+  if ((((IMAGE_DOS_HEADER_00400000.e_magic == (char  [2])0x5a4d) &&
+       (*(int *)(IMAGE_DOS_HEADER_00400000.e_lfanew + 0x400000) == 0x4550)) &&
+      (*(short *)((int)IMAGE_DOS_HEADER_00400000.e_res_4_ + (IMAGE_DOS_HEADER_00400000.e_lfanew - 4)
+                 ) == 0x10b)) &&
+     (0xe < *(uint *)(IMAGE_DOS_HEADER_00400000.e_program +
+                     IMAGE_DOS_HEADER_00400000.e_lfanew + 0x34))) {
+    local_20 = (uint)(*(int *)(IMAGE_DOS_HEADER_00400000.e_program +
+                              IMAGE_DOS_HEADER_00400000.e_lfanew + 0xa8) != 0);
+  }
+  else {
+    local_20 = 0;
+  }
+  iVar1 = __heap_init();
+  if (iVar1 == 0) {
+    fast_error_exit(0x1c);
+  }
+  iVar1 = __mtinit();
+  if (iVar1 == 0) {
+    fast_error_exit(0x10);
+  }
+  __RTC_Initialize();
+  local_8 = 1;
+  iVar1 = __ioinit();
+  if (iVar1 < 0) {
+    __amsg_exit(0x1b);
+  }
+  DAT_028299d0 = GetCommandLineA();
+  DAT_02825a34 = ___crtGetEnvironmentStringsA();
+  iVar1 = __setargv();
+  if (iVar1 < 0) {
+    __amsg_exit(8);
+  }
+  iVar1 = __setenvp();
+  if (iVar1 < 0) {
+    __amsg_exit(9);
+  }
+  iVar1 = __cinit(1);
+  if (iVar1 != 0) {
+    __amsg_exit(iVar1);
+  }
+  uVar2 = __wincmdln();
+  if (((byte)local_6c.dwFlags & 1) == 0) {
+    local_6c.wShowWindow = 10;
+  }
+  local_24 = FUN_00534380(0x400000,0,uVar2,local_6c.wShowWindow);
+  if (local_20 != 0) {
+    __cexit();
+    return local_24;
+  }
+                    /* WARNING: Subroutine does not return */
+  _exit(local_24);
+}
+
+
+
