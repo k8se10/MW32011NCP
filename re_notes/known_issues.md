@@ -10846,9 +10846,18 @@ Two parallel forks dispatched at the user's request ("lets do some forks into th
 
 ---
 
-## 93. Phase A (visual-suite plan) full-screen passthrough crashed on init -- RESOLVED, real type-confusion bug on a `Release()` call (2026-08-26)
+## 93. Phase A (visual-suite plan) full-screen passthrough crashed on init -- this specific init-crash bug RESOLVED, but Phase A overall NOT done, blocked on issue #96's still-open crash regression (2026-08-26)
 
-**Status:** Resolved, confirmed live ("yep no crash this time") -- launches clean with `FullScreenPassthroughTest=1` active.
+**Status:** The init-crash bug this entry originally tracked (a real
+type-confusion bug on a `Release()` call) is resolved and confirmed live
+("yep no crash this time") -- launches clean with `FullScreenPassthroughTest=1`
+active. **But direct user correction (2026-08-26, same standard already
+applied to Phase E/issue #95): "A aswell isnt done either."** Phase A is the
+foundation every later phase (B/E, eventually C/D/F) is built on, and a live,
+reproducible crash regression (issue #96, root cause still unconfirmed) sits
+in the exact same build this phase's pipeline lives in -- so Phase A stays
+open/not-done alongside Phase E until #96 actually has a confirmed fix, not
+just this entry's own narrower init-crash fix.
 
 Live-reported immediately after deploying Phase A of the visual-suite plan
 (`C:\Users\kyesa\.claude\plans\twinkly-tickling-gem.md`) with
