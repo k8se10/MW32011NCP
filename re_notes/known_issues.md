@@ -12154,7 +12154,7 @@ the field the way `Hook_FUN_00679010` already does" pattern) but needs the
 same live-test discipline as every other change in this file before
 shipping.
 
-### FIX ATTEMPT A, 2026-08-26 (same day, direct user instruction "we will try each fix"): shipped, not yet live-tested
+### FIX ATTEMPT A, 2026-08-26 (same day, direct user instruction "we will try each fix"): live-tested, RETRACTED -- stopped the crash but broke the viewport's SIZE
 
 Checked `FUN_0052a4d0`'s own caller count first (`FindCallers`, 29 callers
 across the engine -- menus, HUD, general viewport setup) before touching
@@ -12178,9 +12178,35 @@ real scaled values immediately after it returns. Every other consumer of
 `InternalRenderScalePercent`) is completely unaffected -- the substitution
 exists only inside this one call's own execution window.
 
-Built (0 errors), redeployed. Logged at install time:
-`[hooks] MH_CreateHook(00450740 issue96-fixA)` / `MH_EnableHook(...)`.
-**Not yet live-tested.**
+Built (0 errors), redeployed.
+
+**Live-tested, same day. Result: the crash stopped, but a real, confirmed
+regression replaced it** -- the gameplay 3D viewport shrank into a small box
+confined to the top-left corner of the screen (screenshot on record), while
+every HUD element kept drawing at its correct full-screen position. Not a
+fix. **Direct user reasoning that correctly reframed the whole theory**:
+ratio=1.0 is EXACTLY what happens in vanilla play (`DAT_021d2e00`/`04` always
+equals `DAT_021d2e08`/`0c` with the render-scale feature off) -- so if
+collapsing the ratio to 1.0 does NOT restore a correct full-screen viewport,
+`param_2`'s own coordinates were never meant to be interpreted 1:1 in the
+first place. Something else in this call's own downstream chain
+(`FUN_00684930`, `FUN_00554060`, `FUN_00685930`/`e20`, or a consumer not yet
+identified) still needs `DAT_021d2e00`/`04`'s REAL scaled value for a
+legitimate, unrelated purpose, and this hook's blanket substitution for the
+WHOLE call duration broke that too.
+
+**Retracted same day**: `Hook_FUN_00450740` and its install call removed;
+the hook is never installed. Full retraction comment kept in
+`analog_input_hooks.cpp` for the record (matching this issue's own earlier
+SAVED_SCREEN retraction precedent), not deleted. Built (0 errors),
+redeployed to the clean, pre-Fix-A state.
+
+**Direct user redirect after this result**: "i say we trace plan b and see
+exactly what the game would do naturally first" -- rather than guess at a
+second fix by trial and error, trace the VANILLA (unmodified) data flow
+through this same call chain first, to understand what `param_2` actually
+represents and why the ratio math exists at all, before attempting anything
+else. See the next section.
 
 ### Next-session priority order, derived from all 4 forks, RE-ORDERED AGAIN after the gameplay-gated ratio-math finding above
 

@@ -5989,68 +5989,37 @@ void __fastcall Hook_FUN_00679010(void* self)
 }
 } // namespace
 
-// ---- issue #96 FIX ATTEMPT A (2026-08-26): neutralize FUN_00450740's ratio math
-// for the duration of its own call -----------------------------------------------
+// ---- issue #96 FIX ATTEMPT A (2026-08-26) -- RETRACTED same day, confirmed
+// broken live, do NOT reapply as-written --------------------------------------
 //
-// Full trail in known_issues.md issue #96. Live-confirmed this session:
-// DAT_021d2e00/04 (the 9 real render targets, scaled by InternalRenderScalePercent)
-// and DAT_021d2e08/0c (the real window/native-resolution pair, the primary
-// viewport's own "full-screen" rect source via FUN_0052a4d0/FUN_00683060) genuinely
-// diverge at runtime (2560x1440 vs 6400x3600 at 250%). FUN_00450740 computes a
-// type-2 (secondary) viewport's own rect as `coord * DAT_021d2e00 / DAT_021d2e08` --
-// landing its bounds in SCALED space while the primary viewport's own rect (built
-// from SAVED_SCREEN's dims) stays in NATIVE space. FUN_00508970 then recursively
-// intersects the two together -- a genuine unit mismatch between two coordinate
-// spaces, the root cause this issue traced end-to-end.
+// Full trail in known_issues.md issue #96. The theory: FUN_00450740 computes a
+// type-2 viewport's rect as `coord * DAT_021d2e00 / DAT_021d2e08` -- a ratio
+// between the pair InternalRenderScalePercent scales and the pair it doesn't,
+// live-confirmed to diverge (2560x1440 vs 6400x3600 at 250%). The fix built here
+// temporarily substituted DAT_021d2e00/04 with DAT_021d2e08/0c's own values for
+// the exact duration of the real trampoline call (collapsing the ratio to 1.0),
+// restoring the real scaled values immediately after -- a new hook,
+// Hook_FUN_00450740, confirmed via raw disassembly (not the decompiler's guessed
+// signature) to be a genuine all-stack-args __cdecl function, 5 args, caller
+// cleans up with `ADD ESP,0x14` at its one real call site (FUN_00492e00 @
+// 0x00492e79) -- safe to detour directly, no risky calling-convention guess.
 //
-// Fix approach: rather than patching FUN_00450740's own logic (large, complex,
-// does much more than this one computation) or changing what feeds the primary
-// viewport (FUN_0052a4d0 has 29 callers across the engine -- far too broad a
-// blast radius, see known_issues.md issue #96's own caller-count check), this
-// hook temporarily collapses the ratio to 1.0 for the EXACT DURATION of this one
-// call: substitute DAT_021d2e00/04 with DAT_021d2e08/0c's own real values right
-// before calling the real trampoline, then restore the REAL scaled values
-// immediately after it returns. Every other consumer of DAT_021d2e00/04 (the 9
-// real render targets, this project's own InternalRenderScalePercent feature) is
-// completely unaffected -- the substitution only exists inside this one call's
-// own execution window, on the same thread, with no other code running between
-// the swap and the restore.
-//
-// Confirmed via raw disassembly (not the decompiler's own guessed signature,
-// per this project's own established standard) that FUN_00450740 is a genuine,
-// all-stack-args __cdecl function -- 5 args pushed in reverse order, caller
-// cleans up with `ADD ESP,0x14` (0x14 = 5*4 bytes) immediately after the call
-// site (FUN_00492e00 @ 0x00492e79) -- no risky mixed register/stack convention,
-// safe to detour directly with a matching-signature C function.
-namespace {
-using FixA_450740_Fn = void(__cdecl*)(void*, int*, void*, void*, void*);
-FixA_450740_Fn g_orig_00450740 = nullptr;
-
-void __cdecl Hook_FUN_00450740(void* param1, int* param2, void* param3, void* param4, void* param5)
-{
-    auto* scaledW = reinterpret_cast<int32_t*>(0x021d2e00);
-    auto* scaledH = reinterpret_cast<int32_t*>(0x021d2e04);
-    auto* nativeW = reinterpret_cast<int32_t*>(0x021d2e08);
-    auto* nativeH = reinterpret_cast<int32_t*>(0x021d2e0c);
-
-    int32_t realScaledW = *scaledW;
-    int32_t realScaledH = *scaledH;
-    bool substituted = false;
-
-    if (g_modConfig.internalRenderScalePercent > 0 && realScaledW != *nativeW) {
-        *scaledW = *nativeW;
-        *scaledH = *nativeH;
-        substituted = true;
-    }
-
-    g_orig_00450740(param1, param2, param3, param4, param5);
-
-    if (substituted) {
-        *scaledW = realScaledW;
-        *scaledH = realScaledH;
-    }
-}
-} // namespace
+// **Deployed and live-tested (2026-08-26): the crash stopped, but the gameplay
+// 3D viewport shrank into a small box confined to the top-left corner of the
+// screen, while every HUD element kept drawing at its correct full-screen
+// position** -- a real, confirmed-live regression, not a fix. Direct user
+// observation that reframed this: ratio=1.0 is EXACTLY what happens in vanilla
+// play (DAT_021d2e00/04 always equals DAT_021d2e08/0c with the mod's own scaling
+// feature off), so if collapsing the ratio to 1.0 does NOT restore a correct
+// full-screen viewport, `param_2`'s own coordinates were never meant to be
+// interpreted 1:1 in the first place -- something else in this call's own
+// downstream chain (FUN_00684930, FUN_00554060, FUN_00685930/e20/etc., or a
+// consumer not yet identified) still needs DAT_021d2e00/04's REAL scaled value
+// for a legitimate, unrelated purpose, and this hook's blanket substitution for
+// the WHOLE call duration broke that too. **Retracted, hook not installed** --
+// see the next attempt (if any) in known_issues.md issue #96 for what's tried
+// instead. Do not re-enable this exact substitution without first identifying
+// which specific downstream read actually needs the real scaled value.
 
 // ---- DEBUG-ONLY: live dump of the real Font struct for fonts/bigFont (2026-07-19,
 // task #6 UI scope / glyphs, follow-up to the boot-splice crash) --------------------
@@ -10489,18 +10458,10 @@ void InstallAnalogInputHooks()
         LogFromController(buf);
     }
 
-    // Issue #96 FIX ATTEMPT A, 2026-08-26 -- see the big comment above
-    // Hook_FUN_00450740's definition for the full mechanism/trail. Neutralizes the
-    // DAT_021d2e00/04-vs-DAT_021d2e08/0c ratio math for the duration of this one
-    // call only -- every other consumer of the scaled globals is unaffected.
-    MH_STATUS sFixA450740 = MH_CreateHook(reinterpret_cast<LPVOID>(0x00450740), &Hook_FUN_00450740, reinterpret_cast<LPVOID*>(&g_orig_00450740));
-    sprintf_s(buf, "[hooks] MH_CreateHook(00450740 issue96-fixA) = %d", static_cast<int>(sFixA450740));
-    LogFromController(buf);
-    if (sFixA450740 == MH_OK) {
-        MH_STATUS eFixA450740 = MH_EnableHook(reinterpret_cast<LPVOID>(0x00450740));
-        sprintf_s(buf, "[hooks] MH_EnableHook(00450740 issue96-fixA) = %d", static_cast<int>(eFixA450740));
-        LogFromController(buf);
-    }
+    // Issue #96 Fix Attempt A -- RETRACTED, confirmed broken live (shrank the
+    // gameplay viewport into the top-left corner), not installed. See the big
+    // retraction comment above (near the removed Hook_FUN_00450740 definition)
+    // and known_issues.md issue #96 for the full trail.
 
     // Issue #92, 2026-08-26 -- [Video] ForceD3D9On12 vid_restart guard, see the big
     // comment above Hook_CbufAddText's definition for the full incident/mechanism.
