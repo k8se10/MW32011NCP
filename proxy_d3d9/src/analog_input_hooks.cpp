@@ -5902,7 +5902,6 @@ RenderResComputeFn g_origFUN_00679010 = nullptr;
 void __fastcall Hook_FUN_00679010(void* self)
 {
     int pct = g_modConfig.internalRenderScalePercent;
-    bool didOverride = false;
     if (pct > 0 && self != nullptr) {
         auto* base = reinterpret_cast<uint8_t*>(self);
         int32_t nativeW = *reinterpret_cast<int32_t*>(base + 0x24);

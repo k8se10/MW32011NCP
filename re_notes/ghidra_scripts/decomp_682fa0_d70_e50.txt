@@ -1,0 +1,133 @@
+================================================================
+Function: FUN_00682fa0 @ 00682fa0
+Signature: undefined FUN_00682fa0(void)
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+int * FUN_00682fa0(void)
+
+{
+  uint uVar1;
+  uint uVar2;
+  int *piVar3;
+  int *piVar4;
+  undefined1 local_20 [32];
+  
+  FUN_00682d70();
+  FUN_00682e50();
+  piVar3 = DAT_024bf498;
+  (**(code **)(*DAT_024bf498 + 0x30))(DAT_024bf498,local_20);
+  piVar4 = piVar3;
+  if (DAT_021d362c == '\0') {
+    uVar2 = 1;
+    if (1 < (int)DAT_021d2e00) {
+      uVar2 = DAT_021d2e00 & 0xffff;
+    }
+    uVar1 = 1;
+    if (1 < (int)DAT_021d2e04) {
+      uVar1 = DAT_021d2e04 & 0xffff;
+    }
+    DAT_024bf4d0 = FUN_004d08f0(7,6,0);
+    FUN_004b60a0(DAT_024bf4d0,uVar2,uVar1,piVar3,PTR_s_R_RENDERTARGET_RESOLVED_SCENE_0093a368);
+    _DAT_024bf4d4 = FUN_00455b20(DAT_024bf4d0);
+    _DAT_024bf4dc = uVar2;
+    _DAT_024bf4e0 = uVar1;
+    _DAT_024bf4d8 = FUN_00682bc0();
+  }
+  return piVar4;
+}
+
+
+
+================================================================
+Function: FUN_00682d70 @ 00682d70
+Signature: undefined FUN_00682d70(void)
+----------------------------------------------------------------
+
+void FUN_00682d70(void)
+
+{
+  undefined4 *in_EAX;
+  int iVar1;
+  undefined4 uVar2;
+  
+  in_EAX[3] = DAT_021d2e08;
+  in_EAX[4] = DAT_021d2e0c;
+  *in_EAX = 0;
+  iVar1 = (**(code **)(*DAT_021cd928 + 0x38))(DAT_021cd928,0,&DAT_021d05fc);
+  if (iVar1 < 0) {
+    uVar2 = FUN_004672a0(iVar1);
+    FUN_00425540(0,"Couldn\'t get an interface to the swap chain: %s\n",uVar2);
+  }
+  in_EAX[2] = 0;
+  if (DAT_021d2e18 != 0) {
+    iVar1 = (**(code **)(*DAT_021cd928 + 0x70))
+                      (DAT_021cd928,DAT_021d2e08,DAT_021d2e0c,0x15,0,0,0,in_EAX + 1,0);
+    if (iVar1 < 0) {
+      uVar2 = FUN_004672a0(iVar1);
+      FUN_00425540(0,"Couldn\'t create a %i x %i render target surface: %s\n",DAT_021d2e08,
+                   DAT_021d2e0c,uVar2);
+    }
+    (**(code **)(*DAT_021cd928 + 0x48))(DAT_021cd928,0,0,0,&DAT_021d05d8);
+    return;
+  }
+  (**(code **)(*DAT_021cd928 + 0x48))(DAT_021cd928,0,0,0,in_EAX + 1);
+  DAT_021d05d8 = 0;
+  return;
+}
+
+
+
+================================================================
+Function: FUN_00682e50 @ 00682e50
+Signature: undefined FUN_00682e50(void)
+----------------------------------------------------------------
+
+void FUN_00682e50(void)
+
+{
+  undefined4 *in_EAX;
+  undefined4 uVar1;
+  int iVar2;
+  uint uVar3;
+  uint uVar4;
+  
+  if (DAT_021d05dc == 0) {
+    uVar3 = DAT_021d2e00 & 0xffff;
+    uVar4 = DAT_021d2e04 & 0xffff;
+    uVar1 = FUN_004d08f0(8,6,0);
+    *in_EAX = uVar1;
+    FUN_004b60a0(uVar1,uVar3,uVar4,0x15,
+                 (&PTR_s_R_RENDERTARGET_SAVED_SCREEN_0093a358)[(int)(in_EAX + -0x92fd20) / 0x14]);
+    uVar1 = FUN_00455b20(*in_EAX);
+    in_EAX[1] = uVar1;
+    in_EAX[3] = uVar3;
+    in_EAX[4] = uVar4;
+  }
+  else {
+    in_EAX[3] = DAT_021d2e00;
+    in_EAX[4] = DAT_021d2e04;
+    *in_EAX = 0;
+    iVar2 = (**(code **)(*DAT_021cd928 + 0x70))
+                      (DAT_021cd928,DAT_021d2e00,DAT_021d2e04,0x15,DAT_021d05dc,DAT_021d05e0,0,
+                       in_EAX + 1,0);
+    if (iVar2 < 0) {
+      uVar1 = FUN_004672a0(iVar2);
+      FUN_00425540(0,"Couldn\'t create a %i x %i render target surface: %s\n",DAT_021d2e00,
+                   DAT_021d2e04,uVar1);
+    }
+  }
+  iVar2 = (**(code **)(*DAT_021cd928 + 0x74))
+                    (DAT_021cd928,DAT_021d2e00,DAT_021d2e04,DAT_021cd944,DAT_021d05dc,DAT_021d05e0,0
+                     ,in_EAX + 2,0);
+  if (iVar2 < 0) {
+    uVar1 = FUN_004672a0(iVar2);
+    FUN_00425540(0,"Couldn\'t create a %i x %i depth-stencil surface: %s\n",DAT_021d2e00,
+                 DAT_021d2e04,uVar1);
+  }
+  return;
+}
+
+
+

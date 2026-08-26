@@ -11160,7 +11160,40 @@ check, both for stability (a new hardcoded hook target, `MH_CreateHook`'s own
 return code is the install-time validation per this project's standard) and
 for whether native HUD elements are now genuinely excluded from the blur.
 
-**Round 4 (2026-08-26, same day): real center-to-edge radial falloff.**
+**Round 4 (2026-08-26, real crash investigation, not guessed): per-frame
+multi-fire guard.** Documentation-only entry, added retroactively during the
+2026-08-26 parallel fork pass on issue #96 -- this fix was already live in
+code (`g_motionBlurRanThisFrame`, `overlay_hud.cpp:3331-3363`, its own header
+comment already labeled "ROUND 4 FIX") but had never actually been written up
+under its own heading here, so issue #96 ended up citing "issue #95's own
+Round 4 entry" for content that, until now, didn't exist at this heading --
+a real doc-drift gap, now closed. The original comment above (Round 3) claimed
+`FUN_00497210` runs "once per frame" -- WRONG, caught via this same live
+crash investigation (memdiff livedump snapshots showed no memory-pressure
+signature at all, redirecting the search toward this project's own newest
+code instead of the native engine). `FUN_00497210`'s real caller is
+`FUN_00508970`, a RECURSIVE rectangle-splitting function that carves the
+viewport into sub-rectangles around exclusion zones (real splitscreen/
+picture-in-picture support) and calls `FUN_00497210` SEPARATELY for each
+resulting piece -- its base case (empty exclude list) calls it exactly once,
+but any active exclusion (a PIP element, killcam, etc.) makes it fire
+MULTIPLE TIMES in the same real frame. Each extra fire meant a second/third/
+etc. full capture-and-redraw against a backbuffer still mid-composite between
+sub-rectangle draws -- a real, intermittent (only when an exclusion zone is
+actually active) state-corruption risk, not present every frame, which is
+exactly why this never reproduced consistently. Fixed with a per-real-frame
+guard (`g_motionBlurRanThisFrame`, reset once at the top of `Hook_EndScene`)
+so this pass runs at most once per frame regardless of how many times the
+engine hook itself fires. **Real and still correct, but confirmed (via issue
+#96's own on/off/100% isolation test) NOT sufficient on its own to explain
+the crash** -- the crash still reproduces tied to `InternalRenderScalePercent`
+with this fix already in place. Left standing as a real, independent fix
+regardless of how #96 resolves. `FUN_00508970`'s own exclusion-zone condition
+is also, separately, a live candidate for driving issue #96's OWN mechanism
+(see that issue's fork 1 findings) -- not confirmed to be the same trigger,
+flagged as a next-RE-step there.
+
+**Round 5 (2026-08-26, same day): real center-to-edge radial falloff.**
 Direct user request: "motion blur shouls have a configurable middle to outer
 blue setting ie less blurry in middle more blur on edges" -- a real, standard
 technique (keeps the actual focal point sharp while peripheral vision smears
@@ -11180,17 +11213,22 @@ live-confirmed.
 
 ## 96. Game "literally exited" mid-session, no menu open -- isolated to `InternalRenderScalePercent` (issue #88); the SAVED_SCREEN-size "fix" was WRONG and has been reverted (2026-08-26)
 
-**Status:** Open. Direct user isolation testing narrowed the crash precisely
-to `InternalRenderScalePercent` being active at any value (including 100%)
--- solid, reproduced evidence. A theorized fix (below) was built and
-DEPLOYED, then caught live by the user almost immediately as actively
-harmful and has been reverted (clean rebuild, 0 errors, redeployed). The
-real root-cause mechanism is still unconfirmed. Three earlier "found it"
-claims in this same investigation (VRAM exhaustion; a Phase E multi-fire
-bug; the SAVED_SCREEN-size mismatch below) have now all been disproved or
-retracted -- kept below for the record, not deleted, since each was a real,
-good-faith, evidence-based attempt that genuinely narrowed the search even
-while being wrong itself.
+**Status:** Open, but with 3 live, independent, unreconciled leads plus one
+theory ruled out, as of a 2026-08-26 4-way parallel static-RE pass (see that
+section, below the original investigation). Direct user isolation testing
+narrowed the crash precisely to `InternalRenderScalePercent` being active at
+any value (including 100%) -- solid, reproduced evidence. A theorized fix
+(below) was built and DEPLOYED, then caught live by the user almost
+immediately as actively harmful and has been reverted (clean rebuild, 0
+errors, redeployed). The real root-cause mechanism is still unconfirmed --
+next session's job is live-testing the 3 leads below, not more static
+theorizing. Three earlier "found it" claims in this same investigation (VRAM
+exhaustion; a Phase E multi-fire bug; the SAVED_SCREEN-size mismatch below)
+have now all been disproved or retracted -- kept below for the record, not
+deleted, since each was a real, good-faith, evidence-based attempt that
+genuinely narrowed the search even while being wrong itself. **Demonware/
+anti-tamper is ruled out** (see the parallel-pass section) -- this is a
+controlled internal engine exit, not an external kill.
 
 **Retracted theory/fix (kept for the record, DO NOT reapply):** `FUN_00683060`
 does create `SAVED_SCREEN` from `DAT_021d2e08`/`DAT_021d2e0c` while the other
@@ -11303,6 +11341,24 @@ engine's own CONTROLLED response to a real allocation failure (e.g.
 a crash in the traditional sense -- it unwinds cleanly back to a top-level
 handler and, depending on the real severity code, can result in a clean
 process exit with no dialog at all -- exactly "the game literally exited."
+**User's own framing (2026-08-26), and correct**: "my guess is its not a
+crash at all but a graceful exit forced by some flag we trigger" -- this is
+now independently confirmed, not just a guess: see the 2026-08-26 parallel
+fork pass below, where fork 2 found every real call site into
+`FUN_00425540` passes severity `0`, which that function routes with ZERO UI
+dialog straight to `longjmp` -- a genuinely graceful, controlled exit.
+
+**Correction (2026-08-26, fork 2 of the parallel pass below)**: the specific
+functions named in this paragraph, `FUN_00682fa0`/`FUN_00682d70`/
+`FUN_00682e50`, are NOT actually what creates the 9 scaled render targets --
+fresh decompile of `FUN_00683060` shows those 9 go through a different
+mechanism (`FUN_004d08f0`+`FUN_004b60a0`); the three functions named here
+only fire once, for a narrow, separately-gated swap-chain surface. The
+underlying MECHANISM described in this paragraph (a real, severity-gated
+`Com_Error`/`longjmp` exit on allocation failure) is still correct and still
+the best-supported explanation for "clean exit, no dialog" -- see fork 2's
+own findings below for the function citations that are actually confirmed
+reachable from this project's own override.
 
 **Why now**: the live config at the time had FOUR VRAM-heavy features active
 simultaneously -- `InternalRenderScalePercent=150` (quadratic VRAM cost, issue
@@ -11354,3 +11410,314 @@ at all. The mitigation text below (lower `InternalRenderScalePercent`) is left
 in place as a real, still-valid recommendation if VRAM pressure is ever a
 genuine concern running all of RCAS/motion blur/forced aniso together, but it
 was NOT the actual cause of the crashes this issue investigated.
+
+---
+
+## Parallel deep-RE pass, 2026-08-26: 4 forks, 3 live leads + Demonware ruled out
+
+Direct user request: "launch 4 forks for deep analysis on the dumps and
+ghidra re." Four independent, non-overlapping angles, each writing to its own
+scratch file first (avoiding concurrent edits to this doc), consolidated here
+by the parent session. **None of the 3 leads below is confirmed live yet** --
+that is the actual next step, not more static work. User's own framing mid-
+pass, and correct: "my guess is its not a crash at all but a graceful exit
+forced by some flag we trigger" -- independently confirmed by fork 2 below
+(every real failure call site passes severity 0, routed with zero UI dialog
+straight to `longjmp`).
+
+### Demonware / anti-tamper -- RULED OUT
+
+Raised directly by the user mid-investigation: "shit i didnt think ab this,
+what if this is demonware anttamper related." Checked directly rather than
+assumed either way:
+- Fresh `dumpbin /imports` on BOTH `iw5sp.exe` and `iw5mp.exe`: `ADVAPI32`,
+  `binkw32`, `d3d9`, `GDI32`, `KERNEL32`, `mss32`, `POWRPROF`, `SHELL32`,
+  `steam_api`, `USER32`, `WINMM`, `WS2_32` (+`ole32`/`DSOUND` depending on
+  binary). No `demonware.dll`, no `EasyAntiCheat.dll`, no `BEClient*`,
+  nothing kernel-driver-shaped, in either binary. Per the sibling NSP
+  project's own netcode research, Demonware is reached purely as raw socket
+  traffic (`WS2_32.dll`) the game's own code initiates -- a backend service,
+  not a locally-running anti-tamper agent capable of inspecting this
+  project's injected DLL or killing the process from inside.
+- **Decisive evidence, already on record but never connected to this
+  question until now**: every captured incident's `proxy_d3d9.log` ends with
+  a clean `"proxy_d3d9 detach"` line, meaning `DllMain`'s `DLL_PROCESS_DETACH`
+  genuinely ran. `TerminateProcess` -- how an external watchdog/anti-cheat
+  would forcibly kill a flagged process -- does NOT invoke `DllMain` DETACH
+  notifications at all (documented Win32 behavior). A forced external kill
+  would leave no such line. A clean detach means the process exited through a
+  normal path, exactly matching the `FUN_00425540`/`longjmp` engine-exit
+  mechanism already established above.
+- **Conclusion**: this is a controlled internal engine exit, not an external
+  kill. If a future incident's log is ever missing the clean detach line,
+  that would flip this conclusion and warrant revisiting -- not expected, but
+  worth watching for.
+
+### Fork 1 -- second real consumer of `DAT_021d2e08`/`DAT_021d2e0c` found (a viewport sub-rect, not just SAVED_SCREEN)
+
+Full report: `fork1_second_consumer_hunt.md` (session scratchpad, not
+committed to the repo -- summarized here in full).
+
+`DAT_021d2e08`/`DAT_021d2e0c` -- the pair already confirmed above to be the
+real window size, feeding SAVED_SCREEN, and confirmed unsafe to override --
+has a SECOND real consumer, never connected to this issue before: a
+per-frame 3D-scene viewport sub-rect (`DAT_02802f60+0x174c/+0x1750/+0x1754/
++0x1758`, absolute `0x028046AC/B0/B4/B8`), copied directly from that pair by
+`FUN_00463820` and inline inside `FUN_00469350` (already-committed RE from an
+earlier, unrelated pass, never previously connected to issue #96). A
+separate, independent pass (issue #95's own Round 3) confirmed this same
+sub-rect is what `FUN_004e5b30` (the per-frame viewport-rect compute
+function) selects whenever a mode flag is NOT the "full-screen" value -- a
+real, per-frame-relevant 3D scene viewport rect, not a screenshot buffer.
+
+**Why this reproduces the exact isolation-test signature**: `DAT_021d2e00`/
+`DAT_021d2e04` (feeds `RESOLVED_SCENE` + 8 other real render targets) is a
+direct, unclamped copy of the engine's own "requested W/H" fields, which this
+project's hook overrides to `nativeW/H * pct / 100` using the TRUE
+monitor-native resolution as the base, whenever `InternalRenderScalePercent
+> 0`. `DAT_021d2e08`/`DAT_021d2e0c` is computed by the same real function via
+its own INDEPENDENT tier-clamp (discrete steps 1280/1600/1920) and is NOT
+derived from the field the hook overrides -- so the override never reaches
+it. Net effect: the viewport sub-rect stays pinned near ~1920x1080 regardless
+of the setting's value, while the 9 render targets track true native the
+instant the feature is active AT ALL -- including exactly 100%, since the
+hook's native-size source is the true display resolution, not the engine's
+own ~1080p-capped default. This is a genuine, first-principles size MISMATCH
+tied to the setting being on, not to any specific percentage -- exactly the
+isolation test's own signature.
+
+**Why it would explain the crash's intermittency**: this sub-rect path is
+plausibly driven by the same "an exclusion zone/sub-view is active" condition
+(`FUN_00508970`, the recursive viewport-rectangle splitter) already confirmed
+to drive the motion-blur multi-fire bug (issue #95's own Round 4, above).
+That fix only guards this project's OWN motion-blur pass against firing more
+than once per frame; it does nothing about, and cannot fix, the NATIVE
+engine's own viewport/render-target size relationship during the same
+sub-rect rendering. Not independently confirmed this pass that the two share
+the same trigger condition -- inferred from behavioral similarity, flagged as
+the top next-RE-step below.
+
+**Secondary finding**: no hardcoded max-texture-dimension check exists
+anywhere in `FUN_00683060`'s allocation chain (checked directly) -- every
+target's W/H undergoes only a floor-clamp to 1 and an `& 0xffff` mask, no
+comparison against any literal or device cap. Rules out "a hardcoded ceiling
+silently rejects the request" specifically within this function -- consistent
+with fork 2's own findings below, and with the already-collected memdiff
+evidence (no VRAM/address-space growth toward any ceiling).
+
+**Open discrepancy, not resolved this pass**: two different mode-flag
+addresses are cited for the same "full-screen vs. sub-rect" decision in
+`FUN_004e5b30`, from two different RE passes -- one citation elsewhere in
+this file gives `DAT_02802f60+0x1720`; issue #95's own Round 3 text gives
+`DAT_02802f60+0x1760`. These are NOT the same field. Needs a fresh decompile
+of `FUN_004e5b30` to resolve before this moves from "strong lead" to
+"confirmed" -- do not trust either prior citation without re-checking.
+
+**If confirmed live, the fix direction is NOT another poke to
+`DAT_021d2e08`/`0c`** (already proven unsafe -- it's the real window size) --
+it's making this project's own render-scale hook keep `DAT_02802f60`'s
+downstream sub-rect consistent with whatever `DAT_021d2e00`/`04` actually end
+up being (e.g. patching `FUN_00463820`'s own copy to use the same scaled
+source the 9 render targets use), or clamping/disabling
+`InternalRenderScalePercent` automatically whenever an exclusion-zone render
+path is active.
+
+### Fork 2 -- render-target allocation failure path: doc correction + a real unclamped consumer found
+
+Full report: `fork2_allocation_failure_path.md` (session scratchpad). See
+also the inline correction added above, near the original "Real root cause"
+paragraph.
+
+**Correction to this issue's existing text**: `FUN_00682fa0`/`FUN_00682d70`/
+`FUN_00682e50` (cited above as the render-target allocators) are NOT actually
+what creates the 9 scaled render targets -- fresh decompile of `FUN_00683060`
+shows all 9 go through `FUN_004d08f0`+`FUN_004b60a0` instead; the three
+originally-cited functions only fire once, for a narrow, separately-gated
+swap-chain surface.
+
+**The real confirmed-reachable failure site**: `FUN_00682bc0`, the engine's
+shared depth-stencil surface creator. Cached once, but sized to the FULL,
+undivided `DAT_021d2e00` x `DAT_021d2e04` pair (the exact pair this project's
+hook overrides) -- and this single depth-stencil backs up to 8 of the 9
+render targets simultaneously. Genuinely unclamped `CreateDepthStencilSurface`
+call, real `FUN_00425540` error path on failure.
+
+**Per-target divisors confirmed**: the SSAO family renders at half-res,
+POST_EFFECT/PINGPONG at quarter-res (both scaled down from the base pair) --
+but the SHARED DEPTH-STENCIL is always full-res regardless of any of that,
+meaning it's the single largest, least-divided VRAM consumer in the whole
+chain, and the one most likely to be first to hit a real driver-level
+rejection if one is ever going to happen.
+
+**No hardcoded ceiling exists** on `DAT_021d2e00`/`04` anywhere in this chain
+(only a floor clamp) -- the override flows completely unclamped into every
+D3D call downstream. A real driver-level rejection (VRAM exhaustion, or
+exceeding `D3DCAPS9.MaxTextureWidth`/`MaxTextureHeight`) is the only
+mechanism that could reject it -- not an artificial engine-side gate.
+
+**All 4 real failure-call-sites in this chain pass severity `0`** to
+`FUN_00425540`, which handles severity 0 with ZERO UI dialog, straight to
+`longjmp` -- directly confirms the "clean exit, no dialog" symptom matches
+this mechanism exactly, and directly confirms the user's own "graceful exit
+forced by some flag we trigger" framing (see the top of this section).
+
+**Real gap found**: this project's own code already DECLARES
+`D3DCAPS9.MaxTextureWidth`/`MaxTextureHeight` but never actually READS them
+anywhere -- no live data exists on the real device's actual caps. **Cheapest,
+most decisive next-session step**: extend the existing `GetDeviceCaps` call
+to log these two fields once at `CreateDevice` time, then compare against the
+actual scaled dimensions `InternalRenderScalePercent` requests at whatever
+value reproduces the crash. This would directly confirm or rule out "exceeds
+real device caps" without needing any more static RE.
+
+**Not resolved this pass**: `FUN_004425f0`'s 4 sub-creator dispatch targets
+(the color-texture path, as opposed to the depth-stencil path above) were not
+decompiled -- unknown whether they have their own separate, similarly-
+unclamped failure path.
+
+### Fork 3 -- mining the already-captured memdiff livedump snapshots for a NEW signal (not the already-settled Hunk/total-memory dead end)
+
+Full report: `fork3_memdiff_crash_window.md` (session scratchpad). New,
+read-only tooling built this pass and kept for reuse: `snap_regions.py`/
+`snap_extract.py` in the session scratchpad (fast region-table lister/differ
+and single-region hex dumper -- neither modifies any `.snap` file).
+
+**Bookkeeping correction**: `livedump_004.snap`-`livedump_052.snap` (49
+files, 07:47-07:52) are all capped at exactly 1536.00MB total -- the OLD,
+pre-fix capture, from BEFORE this session's own cap-removal work.
+`livedump_001.snap`-`003.snap` (3 files, 07:57, ~1.9GB each, real uncapped
+totals) are the genuinely uncapped batch this issue's own existing "1807.7MB
+-> 1787.9MB" quote is drawn from. **These are two separate crash instances
+from two different play sessions, not one continuous capture** -- this
+issue's existing phrasing didn't make that distinction clear.
+
+**New signal, crash-2 only (`livedump_001`->`003`, the real uncapped
+batch)**: in the ~9 seconds before this crash, two real memory regions
+collapse hard: `0x34AEA000` (30.4MB -> 1.7MB, a ~94.5% collapse) and
+`0x37FD0000` (32.6MB -> 24.7MB, -7.7MB). The SAME check against crash-1's own
+tail (`livedump_048`->`052`, the capped batch) shows NO comparable collapse
+-- memory-quiet right up to its last snapshot. So this is a real,
+address-identifiable, previously-unreported observation from ONE instance,
+not (yet) a confirmed universal precursor.
+
+**Content check**: the collapsing `0x34AEA000` region's surviving bytes are a
+stable, unchanging repeating pattern both before and after the collapse (`82
+87 00 00 00 00 00 00 11 8C 0F 7C FF FF FF FF`, then a different pattern past
++1MB) -- consistent with a fixed-size pool/free-list, genuinely inconclusive
+about which subsystem owns it without live symbol/heap context a static
+snapshot can't provide.
+
+**Tempering context, important**: the earlier, previously-unexplained size
+dip at `livedump_014/015/016` (flagged earlier in this same investigation)
+turns out to be a real, LARGER, coordinated mass-region-release event (dozens
+of regions, one single 16MB collapse alone) that did NOT crash the game --
+capture continued fine for ~3 more minutes after it. **A region-table
+collapse of this general shape is not inherently fatal on its own** -- this
+tempers how much weight the new crash-2 signal above should carry as a
+standalone cause; it's equally consistent with being part of the trigger, OR
+a downstream EFFECT of `FUN_00425540`'s own unwind already releasing pool
+memory on its way out.
+
+**Bottom line**: no conclusive root cause from this angle alone, but two
+concrete, address-identifiable leads now on record for whoever does the next
+live capture -- specifically worth tagging `0x34AEA000`/`0x37FD0000`
+(relative offset from whatever base they land at next time -- absolute
+addresses will differ run-to-run) with a live `VirtualQuery` memory-type/
+protection check if a fresh live capture is ever done, to identify the actual
+owning subsystem.
+
+### Fork 4 -- this project's OWN pipeline code audited; one real lead found, elsewhere in this project's own code, not in the Phase A/B/E pipeline itself
+
+Full report: `fork4_own_pipeline_audit.md` (session scratchpad).
+
+**The Phase A/B/E full-screen pipeline code itself is genuinely clean** --
+all 4 specific mechanisms checked (capture-texture sizing vs. backbuffer,
+`Hook_Reset` ordering, config hot-reload path, the override arithmetic
+itself) were ruled out with direct code citations: the capture texture reads
+the real backbuffer size live every frame via `GetDesc` and self-corrects
+(`overlay_hud.cpp:3002-3032`/`3088-3098`); `Hook_Reset` releases before the
+real Reset and recreates lazily after (`overlay_hud.cpp:5984-5993`);
+`InternalRenderScalePercent` is explicitly startup-only/restart-required
+(`mod_config.cpp:1251`) with no live hot-reload path to have a bug in; and
+the override math (`analog_input_hooks.cpp:5911-5912`) is `int64_t`-promoted
+with no overflow risk and is a mathematical identity at exactly 100%, which
+is itself evidence the render-target SIZE math isn't where this bug lives
+(there's no size difference to explain a crash with at 100% specifically).
+
+**The real lead is a different piece of this project's own code**:
+`Hook_CbufAddText`'s `vid_restart`-blocking guard (`analog_input_hooks.cpp:5753`)
+--
+
+```cpp
+bool guardActive = g_modConfig.forceD3D9On12 || g_modConfig.internalRenderScalePercent > 0;
+```
+
+-- unconditionally drops any console command containing `vid_restart`
+whenever this condition is true. It was added for issue #92's confirmed
+`ForceD3D9On12` incident, but its condition was written to ALSO cover
+`internalRenderScalePercent > 0` as an untested precaution (per its own
+comment) -- that half was never validated against a real
+InternalRenderScalePercent incident. **This condition is the EXACT condition
+the isolation test measured** -- "reproduces whenever `InternalRenderScalePercent`
+is active AT ALL, even at 100%, never when off" -- independent of the
+render-target-sizing math entirely, since a dropped console command has
+nothing to do with texture dimensions.
+
+**Plausible failure chain**: if anything during a real session legitimately
+issues a `vid_restart` (a native settings-menu video change, an alt-tab/
+focus-loss recovery path, a resolution/AA change, or another native trigger
+not yet enumerated) while this guard is active, the command is now silently
+swallowed -- no trampoline call, no real device recreate. If the engine's own
+code elsewhere assumes a requested `vid_restart` actually completed, that
+mismatch could plausibly reach the same already-confirmed `FUN_00425540`/
+`longjmp` exit path. Would also explain the reported irregularity ("after
+~30s of play," "could not be reliably reproduced") -- only fires if/when
+something actually tries to trigger a live `vid_restart` during the session.
+
+**Cheap, decisive next-session check**: grep the live `proxy_d3d9.log` for
+the literal string `[d3d9on12-guard] blocked` (the log line at
+`analog_input_hooks.cpp:5760-5762`, emitted every time this guard actually
+blocks a command) immediately after reproducing a crash. **Attempted this
+pass, inconclusive**: the only surviving `proxy_d3d9.log` is a single-launch
+file that resets on every relaunch (confirmed: one `attach` marker, and it
+still contains the RETRACTED SAVED_SCREEN-override log line from the harmful
+pre-revert build) -- meaning the actual crash-window sessions' own logs are
+already gone, overwritten by later launches. This check MUST be done live,
+immediately after a fresh reproduction, before the log is overwritten again.
+
+**Cleanup item found, harmless, not the crash cause**: `bool didOverride =
+false;` (`analog_input_hooks.cpp:5905`) is dead leftover state from the
+retracted SAVED_SCREEN-override attempt -- declared, set once, never read
+anywhere else in the file (confirmed via full-file grep, exactly one hit).
+Doesn't affect runtime behavior (an unused local `bool`, and the build is
+already clean at 0 errors) but should be deleted in the same pass as
+whatever fix this issue eventually gets, so a future reader doesn't mistake
+it for live logic. Contradicts this session's own earlier summary claim that
+this dead tracking variable had already been fully removed during the revert
+-- it wasn't, quite.
+
+### Next-session priority order, derived from all 4 forks
+
+None of the 3 leads above is confirmed -- each needs a LIVE test, not more
+static RE, and they are not mutually exclusive (more than one could be a
+real contributing factor):
+
+1. **Cheapest and most decisive first**: reproduce the crash on the current
+   (reverted) build, then immediately grep the live `proxy_d3d9.log` for
+   `[d3d9on12-guard] blocked` (fork 4) before it's overwritten by another
+   launch. A hit strongly implicates the `vid_restart`-swallowing guard; a
+   miss rules it out cleanly.
+2. **Second cheapest**: add the one-line `D3DCAPS9.MaxTextureWidth`/
+   `MaxTextureHeight` log fork 2 recommended, reproduce, and compare against
+   the actual requested dimensions at whatever `InternalRenderScalePercent`
+   value crashes. A hit confirms a real device-cap rejection on the
+   unclamped shared depth-stencil (`FUN_00682bc0`); a miss rules that
+   specific mechanism out.
+3. **Needs fresh Ghidra decompile, not live testing**: resolve fork 1's
+   `0x1720` vs `0x1760` discrepancy in `FUN_004e5b30`, then confirm/deny
+   whether `FUN_00508970`'s exclusion-zone condition actually drives that
+   same mode flag -- if confirmed, this explains both the crash's tie to the
+   setting being on at any value AND its intermittency.
+4. If a fresh live capture is ever taken, tag `0x34AEA000`/`0x37FD0000`-
+   equivalent regions (fork 3) with a live `VirtualQuery` check to identify
+   the owning subsystem, rather than guessing from a static snapshot alone.
