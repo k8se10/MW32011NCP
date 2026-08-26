@@ -12389,7 +12389,43 @@ out Fix C as the cause of this specific "no Com_Error fired" result --
 pointing back at the original, still-unidentified mechanism. If the crash
 stops (or changes character) with Fix C disabled, that's strong evidence
 Fix C itself introduced a new problem, and it should be re-examined (not
-just re-enabled) before trying again. **Not yet live-tested.**
+just re-enabled) before trying again.
+
+**Live-tested, same day, combined with a direct user experiment ("i wonder
+if i stand still if the crash still happens because it seems movement
+triggered")**: played completely stationary, no movement at all. **Result:
+crashed anyway, took longer than usual.** Two clean conclusions from one
+test: (1) **Fix C is cleared** -- confirmed disabled
+(`[hooks] issue96-fixC SKIPPED`), crash reproduced identically without it,
+so it is NOT the cause of the "no Com_Error fired" result; (2) movement is
+NOT strictly required to trigger the crash (rules out a pure per-event
+streaming/movement-only trigger as the SOLE cause), though "took longer"
+is a real, separate data point suggesting movement (or something
+correlated with it) may still increase the crash's frequency without being
+strictly necessary -- not yet explained. **`[com-error-diag]` still 0 hits**
+-- now confirmed across TWO clean, separately-isolated tests (Fix C
+present, Fix C absent) that `Com_Error`/`longjmp` is genuinely not the exit
+mechanism, not an artifact of anything this session added.
+
+### GENERAL DIAGNOSTIC, ROUND 2, 2026-08-26 (same day): hook the actual process-termination call directly
+
+With `Com_Error` cleanly ruled out twice, the natural next general
+diagnostic (same "observe reality instead of guessing" principle that made
+`[com-error-diag]` valuable) is the real termination call itself. **Shipped**:
+`Hook_ExitProcess`, hooking the real `kernel32.dll` export `ExitProcess`
+directly (resolved at runtime via `GetModuleHandleA`/`GetProcAddress` --
+NOT a hardcoded game-binary address, immune to version-offset drift
+entirely). Logs `[exitprocess-diag] *** ExitProcess(<code>) called` with
+the real exit code, then calls the real trampoline unmodified. A clean
+exit that skips the game's own error path virtually always funnels through
+a real `ExitProcess` call (a CRT `exit()`/`abort()` internally calls
+`ExitProcess` in a normal Windows executable), so this should catch every
+remaining candidate path -- game code, CRT, or otherwise -- in one shot.
+
+Fix Attempt C stays disabled for this next test too, to keep the isolation
+clean (re-enabling it at the same time as adding a new diagnostic would
+muddy attribution of the next result). Built (0 errors), redeployed.
+**Not yet live-tested.**
 
 ### Next-session priority order, derived from all 4 forks, RE-ORDERED AGAIN after the gameplay-gated ratio-math finding above
 
