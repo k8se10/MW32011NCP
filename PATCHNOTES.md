@@ -36,7 +36,7 @@ along the way rather than assumed. See the itemized entries below and
   trail.) **Confirmed live**: 220fps at 100% vs. 70-80fps at 300% on a real
   2560x1440 display -- real GPU cost genuinely scales with the setting.
 2. **[Video] FsrSharpenEnabled/FsrSharpenStrength — PREVIEW/WIP, off by default.** Phase B of the visual-enhancement suite plan: FSR 1.0 RCAS (Robust Contrast Adaptive Sharpening), a real full-screen sharpen pass, built on Phase A's new capture/composite pipeline. A direct port of AMD's real FidelityFX-FSR reference math (MIT license, source and full port-fidelity notes in `re_notes/shaders/fsr_rcas.hlsl`). Needs `ps_3_0` (RCAS's real math doesn't fit this project's usual `ps_2_0` — 74 instruction slots vs. the profile's 64 cap); a new device-capability check (`GetDeviceCaps`/`PixelShaderVersion`) refuses gracefully rather than assuming ps_3_0 hardware. `FsrSharpenStrength` (0.0-1.0) maps straight to RCAS's own real sharpen-lobe scale — live-tested same day, 0.5 reported "needs more softness," default lowered to 0.3. See `known_issues.md` issue #94.
-3. **[Video] MotionBlurEnabled/MotionBlurStrength — off by default.** Phase E of the visual-enhancement suite plan: camera-only (view-angle-delta-based) directional motion blur. Driven entirely by real per-frame look data this project's own controller-look injection already computes. **Confirmed production-ready live**, after two same-day follow-up fixes to exclude UI from the blur: first, this project's own overlay (glyph icons, hint text, menus, cursor); then, pushed further via direct user challenge ("im sure we could fit it under the native ui"), the game's own NATIVE HUD too (crosshair, ammo, health, minimap) — real static RE (Ghidra) found the actual per-frame scene-composite function and a new engine hook now runs motion blur right after the real 3D scene finishes compositing, before ANY 2D drawing (native HUD or this project's own) begins. Full RE trail in `known_issues.md` issue #95.
+3. **[Video] MotionBlurEnabled/MotionBlurStrength/MotionBlurCenterFalloff — off by default.** Phase E of the visual-enhancement suite plan: camera-only (view-angle-delta-based) directional motion blur. Driven entirely by real per-frame look data this project's own controller-look injection already computes. **Confirmed production-ready live**, after two same-day follow-up fixes to exclude UI from the blur: first, this project's own overlay (glyph icons, hint text, menus, cursor); then, pushed further via direct user challenge ("im sure we could fit it under the native ui"), the game's own NATIVE HUD too (crosshair, ammo, health, minimap) — real static RE (Ghidra) found the actual per-frame scene-composite function and a new engine hook now runs motion blur right after the real 3D scene finishes compositing, before ANY 2D drawing (native HUD or this project's own) begins. `MotionBlurCenterFalloff` (new, default 1.0) adds a real center-to-edge radial falloff — the screen center stays sharp while the periphery smears more, matching how motion blur is commonly done in racing/FPS titles; set to 0.0 for the original uniform blur. Full RE trail in `known_issues.md` issue #95.
 4. **[Video] ForceAnisotropicFiltering — off by default.** Writes the real native `r_texFilterAnisoMax`/`r_texFilterAnisoMin` dvars to 16 (maximum) via this project's own dvar-write mechanism (the same one the custom Options screen already uses) — a mod-config toggle for the same sharpness improvement this session's own `ForceD3D9On12` investigation already confirmed live and safe as a hand-edited `players2/config.cfg` value, but one that now survives a native "Restore Defaults" or a fresh profile instead of needing to be re-set by hand.
 
 ### Fixed
@@ -232,6 +232,31 @@ along the way rather than assumed. See the itemized entries below and
   candidate is now checked off. Still not a clean go or a confirmed no-go; next
   step is `CL_Frame` (`FUN_004c0bb0`) or a whole-binary constant scan. See
   `known_issues.md` issue #90.
+3. **`InternalRenderScalePercent` (item 1 above) causes a genuine, reproducible
+  crash/silent-exit at ANY value including 100%, not just above-native
+  supersampling -- root cause still not found, one theorized fix tried, deployed,
+  and REVERTED after being caught live as actively harmful.** Direct user
+  isolation testing (on / at 100% / off, motion blur left enabled throughout)
+  narrowed the crash precisely to this one setting. Several earlier theories in
+  this same investigation -- capture-texture thrashing, VRAM/32-bit
+  address-space exhaustion (`LARGE_ADDRESS_AWARE` confirmed already set), the
+  10MB Hunk allocator (a real, correct, unrelated Xbox 360 eDRAM-size finding),
+  sustained memory growth, a Phase E multi-fire bug (real, separate, fixed, but
+  not this crash's cause) -- were all tested live with real evidence and ruled
+  out. A full decompile of the real render-target orchestrator (`FUN_00683060`)
+  found `SAVED_SCREEN` sizes from a separate, independently-tier-clamped pair
+  (`DAT_021d2e08`/`DAT_021d2e0c`) never touched by this feature's own hook,
+  while the other 9 render targets scale correctly -- a real, confirmed size
+  inconsistency. A fix overriding that pair to match was built and deployed,
+  then caught live almost immediately: that pair is actually the real OS
+  window/backbuffer size (also what the menu/UI system's own final composite
+  stage targets, confirmed via `iw5sp.md`), not a safe render-target size to
+  override -- the fix would have resized the actual window to the supersampled
+  resolution. Reverted; the real trampoline's tier-clamp logic now runs
+  completely untouched, matching pre-investigation behavior. Root cause
+  remains unconfirmed heading into the next session. See `known_issues.md`
+  issue #96 for the full trail, including the retracted fix kept for the
+  record.
 
 ## v0.3.4 — Alpha (2026-08-25) — DualSense input-parity fix, gameplay-hint glyph editor, new plugin API
 

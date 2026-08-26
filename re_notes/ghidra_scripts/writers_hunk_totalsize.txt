@@ -1,0 +1,73 @@
+INFO  Using log config file: jar:file:/D:/Tools/Ghidra/ghidra_12.1.2_PUBLIC/Ghidra/Framework/Generic/lib/Generic.jar!/generic.log4j.xml (LoggingInitialization)  
+INFO  Using log file: C:\Users\kyesa\AppData\Roaming\ghidra\ghidra_12.1.2_PUBLIC\application.log (LoggingInitialization)  
+INFO  Loading user preferences: C:\Users\kyesa\AppData\Roaming\ghidra\ghidra_12.1.2_PUBLIC\preferences (Preferences)  
+INFO  Searching for classes... (ClassSearcher)  
+INFO  Class search complete (485 ms) (ClassSearcher)  
+INFO  Initializing SSL Context (DefaultSSLContextInitializer)  
+INFO  Initializing Random Number Generator... (SecureRandomFactory)  
+INFO  Random Number Generator initialization complete: SHA1PRNG (SecureRandomFactory)  
+INFO  Trust manager disabled, cacerts have not been set (DefaultTrustManagerFactory)  
+INFO  Headless startup complete (1662 ms) (AnalyzeHeadless)  
+INFO  Class searcher loaded 59 extension points (20 false positives) (ClassSearcher)  
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::staticFieldOffset has been called by org.apache.felix.framework.util.SecureAction (file:/D:/Tools/Ghidra/ghidra_12.1.2_PUBLIC/Ghidra/Features/Base/lib/org.apache.felix.framework-7.0.5.jar)
+WARNING: Please consider reporting this to the maintainers of class org.apache.felix.framework.util.SecureAction
+WARNING: sun.misc.Unsafe::staticFieldOffset will be removed in a future release
+INFO  HEADLESS Script Paths:
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\FileFormats\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\PyGhidra\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\BSim\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\Decompiler\ghidra_scripts
+    D:\projects\IMPORTANT PUBLIC RELEASED PROJECTS\COD RELATED\MW3\MW32011NCP\re_notes\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\MicrosoftCodeAnalyzer\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Extensions\XEXLoaderWV\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\PDB\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Processors\JVM\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\BytePatterns\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\GnuDemangler\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\SwiftDemangler\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Processors\8051\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Debug\Debugger-rmi-trace\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\DecompilerDependent\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\VersionTracking\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\FunctionID\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\WildcardAssembler\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Debug\Debugger\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\Base\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Processors\DATA\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Processors\PIC\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\SystemEmulation\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Processors\Atmel\ghidra_scripts (HeadlessAnalyzer)  
+INFO  HEADLESS: execution starts (HeadlessAnalyzer)  
+INFO  Opening existing project: D:\projects\IMPORTANT PUBLIC RELEASED PROJECTS\COD RELATED\MW3\MW32011NCP\re_notes\ghidra_project\iw5sp_proj (HeadlessAnalyzer)  
+INFO  Opening project: D:\projects\IMPORTANT PUBLIC RELEASED PROJECTS\COD RELATED\MW3\MW32011NCP\re_notes\ghidra_project\iw5sp_proj (HeadlessProject)  
+INFO  REPORT: Processing project file: /iw5sp.exe (HeadlessAnalyzer)  
+INFO  REPORT: Execute script: FindDataWriters.java '01c2ff1c'  (HeadlessAnalyzer)  
+INFO  SCRIPT: D:\projects\IMPORTANT PUBLIC RELEASED PROJECTS\COD RELATED\MW3\MW32011NCP\re_notes\ghidra_scripts\FindDataWriters.java (HeadlessAnalyzer)  
+INFO  FindDataWriters.java> === References to 01c2ff1c === (GhidraScript)  
+INFO  FindDataWriters.java> read? 00558080 in FUN_00558080@00558080  [MOV ECX,dword ptr [0x01c2ff1c]]  refType=READ (GhidraScript)  
+INFO  FindDataWriters.java> WRITE 0046131e in FUN_00461310@00461310  [MOV dword ptr [0x01c2ff1c],0xa00000]  refType=WRITE (GhidraScript)  
+INFO  FindDataWriters.java> read? 004e9b12 in FUN_004e9af0@004e9af0  [MOV EAX,[0x01c2ff1c]]  refType=READ (GhidraScript)  
+INFO  FindDataWriters.java> read? 004e9b59 in FUN_004e9af0@004e9af0  [SUB EDX,dword ptr [0x01c2ff1c]]  refType=READ (GhidraScript)  
+INFO  FindDataWriters.java> read? 004e9b83 in FUN_004e9af0@004e9af0  [MOV EAX,[0x01c2ff1c]]  refType=READ (GhidraScript)  
+INFO  FindDataWriters.java> read? 0062920b in FUN_006291f0@006291f0  [MOV EAX,[0x01c2ff1c]]  refType=READ (GhidraScript)  
+INFO  FindDataWriters.java> read? 00629140 in FUN_00629140@00629140  [MOV EDX,dword ptr [0x01c2ff1c]]  refType=READ (GhidraScript)  
+INFO  FindDataWriters.java> read? 0041a5b1 in FUN_0041a5a0@0041a5a0  [MOV EBP,dword ptr [0x01c2ff1c]]  refType=READ (GhidraScript)  
+INFO  FindDataWriters.java> read? 00517881 in FUN_00517870@00517870  [MOV EBP,dword ptr [0x01c2ff1c]]  refType=READ (GhidraScript)  
+INFO  FindDataWriters.java> read? 0042ae01 in FUN_0042adf0@0042adf0  [MOV EBX,dword ptr [0x01c2ff1c]]  refType=READ (GhidraScript)  
+INFO  FindDataWriters.java> --- decompile of writer FUN_00461310@00461310 --- (GhidraScript)  
+INFO  FindDataWriters.java> 
+void FUN_00461310(void)
+
+{
+  DAT_01c2ff1c = &DAT_00a00000;
+  DAT_01c39dc4 = VirtualAlloc((LPVOID)0x0,0xa00000,0x2000,4);
+  if (DAT_01c39dc4 == (LPVOID)0x0) {
+    FUN_00486200(6);
+  }
+  return;
+}
+
+ (GhidraScript)  
+INFO  FindDataWriters.java>  (GhidraScript)  
+INFO  REPORT: Save succeeded for processed file: /iw5sp.exe (HeadlessAnalyzer)  

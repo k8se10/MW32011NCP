@@ -703,6 +703,16 @@ struct ModConfig
     // raising this past the point the clamp saturates has no further effect.
     float motionBlurStrength = 1.0f;
 
+    // 0.0-1.0 (2026-08-26, direct user request: "less blurry in middle more
+    // blur on edges"). 0.0 = uniform blur everywhere (the original behavior).
+    // 1.0 = a real center-to-edge radial falloff -- blur fades to ~0 exactly
+    // at screen center, reaching full MotionBlurStrength only at the farthest
+    // on-screen point (a corner). Keeps the real focal point sharp while
+    // peripheral vision smears more, matching how motion blur is commonly
+    // done in racing/FPS titles. Default 1.0 -- this IS the requested
+    // behavior, not an opt-in extra.
+    float motionBlurCenterFalloff = 1.0f;
+
     // [Video] ForceAnisotropicFiltering (2026-08-26) -- writes the real native
     // r_texFilterAnisoMax/r_texFilterAnisoMin dvars to 16 (maximum) via
     // SetDvarFloat, the same real dvar-write mechanism this project's own

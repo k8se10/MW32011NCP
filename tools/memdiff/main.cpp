@@ -136,15 +136,17 @@ bool ShouldScan(const MEMORY_BASIC_INFORMATION& mbi)
     if (mbi.State != MEM_COMMIT) return false;
     if (mbi.Protect & PAGE_NOACCESS) return false;
     if (mbi.Protect & PAGE_GUARD) return false;
-    // Raised from 32MB (2026-07-16): the sprint-kbutton memdiff session found strong
-    // behavioral candidates (matching ADS/Reload's real kbutton "active"-byte pattern
-    // exactly) at addresses whose CONTAINING region the pointer scan couldn't find at
-    // all -- likely because that region is a single large heap arena bigger than the
-    // old 32MB cap, silently excluded from every snapshot entirely (candidate bytes
-    // still get read/diffed fine via direct ReadProcessMemory in scan/dump mode, but
-    // the pointer-scan step needs the FULL region's bytes in the snapshot to search
-    // for anyone holding its base address as a pointer).
-    if (mbi.RegionSize > 256 * 1024 * 1024) return false;
+    // NO per-region size cap (removed 2026-08-26, direct request: "fix the dump
+    // too to not have bounds"). Previously capped at 256MB (raised from an
+    // original 32MB, 2026-07-16) specifically because a real single heap arena
+    // bigger than the cap was silently excluded from every snapshot entirely --
+    // exactly the failure mode a real "full dump" investigation (this project's
+    // own visual-suite crash chase, 2026-08-26) can't afford: a genuinely huge
+    // region (e.g. a large texture/asset arena) is precisely the kind of thing
+    // worth seeing whole, not the kind of thing to silently drop. A 32-bit
+    // process's own address space is bounded at 4GB regardless (LAA-confirmed
+    // for iw5sp.exe this same session), so there's a natural hard ceiling on
+    // total scan cost without needing a self-imposed one here.
     return true;
 }
 
@@ -153,26 +155,27 @@ Snapshot TakeSnapshot(HANDLE proc)
     Snapshot snap;
     uintptr_t addr = 0x00010000;
     const uintptr_t kMaxAddr = 0x7FFF0000;
-    size_t totalBytes = 0;
-    // Raised from 400MB alongside the per-region cap above (2026-07-16), same reason:
-    // needs to cover enough of the process (~1.9GB observed) to actually include large
-    // heap arenas that hold real, live-confirmed candidate bytes the pointer scan
-    // couldn't find a containing region for at the old cap.
-    const size_t kTotalCap = 1536ull * 1024 * 1024;
+    // NO total-bytes cap (removed 2026-08-26, same "fix the dump too to not have
+    // bounds" request as ShouldScan's own per-region cap above -- previously
+    // 1536MB, raised from an original 400MB, 2026-07-16). Every eligible region
+    // is now scanned regardless of running total, up to the real 4GB ceiling a
+    // 32-bit process's own address space imposes anyway (kMaxAddr below, plus
+    // this binary's confirmed-active Large Address Aware flag) -- not an
+    // arbitrary tool-imposed limit that could silently truncate exactly the
+    // data a real memory investigation most needs to see.
 
     while (addr < kMaxAddr) {
         MEMORY_BASIC_INFORMATION mbi{};
         SIZE_T res = VirtualQueryEx(proc, reinterpret_cast<LPCVOID>(addr), &mbi, sizeof(mbi));
         if (res == 0) break;
 
-        if (ShouldScan(mbi) && totalBytes + mbi.RegionSize <= kTotalCap) {
+        if (ShouldScan(mbi)) {
             Region r;
             r.base = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
             r.size = mbi.RegionSize;
             r.data.resize(r.size);
             SIZE_T bytesRead = 0;
             if (ReadProcessMemory(proc, mbi.BaseAddress, r.data.data(), r.size, &bytesRead) && bytesRead == r.size) {
-                totalBytes += r.size;
                 snap.regions.push_back(std::move(r)); // ascending base order guaranteed by scan order
             }
         }
@@ -763,6 +766,167 @@ int main(int argc, char** argv)
         }
         CloseHandle(proc);
         printf("\nDone.\n");
+        return 0;
+    }
+
+    // Special mode: memdiff.exe livedump [keyHex] [autoIntervalMs] -- FULL memory
+    // snapshot (the same real TakeSnapshot() the rest of this tool already uses
+    // -- every committed, accessible, <=256MB region, up to 1.5GB total,
+    // per-region ReadProcessMemory, not just a handful of known addresses)
+    // saved to a fresh, auto-numbered .snap file (a) every time the given key
+    // is pressed (default F9, 0x78 -- NOT F11, which every other mode already
+    // uses as "stop"), AND (b) automatically every autoIntervalMs (default
+    // 5000) regardless of keypresses. Direct user request, verbatim: "we do
+    // dumps like we did before live with my keypress" -- explicitly full
+    // dumps, not a narrow handful of variables -- and, follow-up: "also make
+    // it dump on process exit". A genuine caveat on that follow-up, not
+    // silently assumed away: once the process has ACTUALLY exited, Windows has
+    // already torn down its address space -- nothing can read memory that no
+    // longer exists, so a dump triggered strictly AFTER exit is fundamentally
+    // impossible, not just an engineering gap. What this DOES do instead,
+    // which is the real achievable version of the same intent: (1) auto-dumps
+    // on a timer so there's always a recent capture close to whenever the
+    // process actually dies, not dependent on your own reaction time to a
+    // crash with zero warning, and (2) polls for process exit every loop tick
+    // and, the instant it's detected, attempts ONE LAST best-effort dump
+    // immediately (harmless if it fails -- ReadProcessMemory just returns
+    // false cleanly on a dead process, doesn't crash this tool) before
+    // reporting exactly when and printing which prior dump is the closest
+    // real evidence available.
+    //
+    // Also prints a quick on-screen summary of the real Hunk allocator's own
+    // boundary variables (this project's own visual-suite crash investigation,
+    // 2026-08-26: a genuine, decompile-confirmed fixed-size Hunk pool exists in
+    // this engine -- FUN_004e9af0/Hunk_AllocateTempMemory, FUN_0041a5a0/
+    // Hunk_AllocAlign) alongside each full dump, so there's an immediate sanity
+    // check without needing a separate "dump" mode invocation afterward --
+    // 0x01C2FF1C=total budget, 0x01C2FF30=low mark, 0x01C2FF34=low committed
+    // high-water mark, 0x01C2FF3C=high temp mark, 0x01C39DC4=hunk base pointer.
+    // Every saved .snap file still holds the FULL region set for real post-hoc
+    // analysis (memdiff.exe diff/dump/scan against any two captures).
+    if (argc >= 2 && _stricmp(argv[1], "livedump") == 0) {
+        int key = (argc >= 3) ? static_cast<int>(strtol(argv[2], nullptr, 16)) : 0x78 /* VK_F9 */;
+        DWORD autoIntervalMs = (argc >= 4) ? static_cast<DWORD>(strtoul(argv[3], nullptr, 10)) : 5000;
+
+        constexpr uintptr_t kHunkTotalAddr = 0x01C2FF1C;
+        constexpr uintptr_t kHunkLowMarkAddr = 0x01C2FF30;
+        constexpr uintptr_t kHunkLowCommittedAddr = 0x01C2FF34;
+        constexpr uintptr_t kHunkHighTempMarkAddr = 0x01C2FF3C;
+        constexpr uintptr_t kHunkBaseAddr = 0x01C39DC4;
+
+        printf("memdiff livedump -- FULL memory snapshot on key 0x%02X, and every %lu ms automatically\n", key, autoIntervalMs);
+        printf("Looking for iw5sp.exe...\n");
+
+        DWORD pid = 0;
+        while (pid == 0) {
+            pid = FindProcessId(L"iw5sp.exe");
+            if (pid == 0) {
+                printf("  not found yet, retrying in 2s (launch the game now)...\n");
+                Sleep(2000);
+            }
+        }
+        printf("Found iw5sp.exe, PID %lu\n", pid);
+
+        // SYNCHRONIZE, not just PROCESS_VM_READ/PROCESS_QUERY_INFORMATION --
+        // needed for WaitForSingleObject to actually detect real process exit
+        // (used below for the auto-attempt-a-final-dump-on-exit behavior).
+        HANDLE proc = OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION | SYNCHRONIZE, FALSE, pid);
+        if (!proc) {
+            printf("OpenProcess failed (%lu) -- run this tool as Administrator.\n", GetLastError());
+            return 1;
+        }
+
+        printf("\nWaiting for a level to actually be loaded...\n");
+        while (!IsInLevel(proc)) Sleep(500);
+        printf("Level detected. Ready.\n\n");
+
+        printf("================================================================\n");
+        printf(" Play normally. Press key 0x%02X at any time to take a FULL memory\n"
+               " snapshot (saved as livedump_NNN.snap) plus a quick Hunk-allocator\n"
+               " summary printed right here. Also auto-dumps every %lu ms on its\n"
+               " own, and makes a best-effort final attempt the instant the game\n"
+               " process exits. Press F11 to stop early. Ctrl+C also works.\n", key, autoIntervalMs);
+        printf("================================================================\n\n");
+
+        GetAsyncKeyState(key); // clear any stale "pressed since last call" latch
+        GetAsyncKeyState(VK_F11);
+
+        int dumpCount = 0;
+        DWORD lastAutoDumpTick = GetTickCount();
+
+        auto TakeAndLogDump = [&](const char* reason) {
+            ++dumpCount;
+            printf("[dump #%d] %s -- taking full snapshot...\n", dumpCount, reason);
+
+            uint32_t total = 0, lowMark = 0, lowCommitted = 0, highTempMark = 0, base = 0;
+            SIZE_T br = 0;
+            bool hunkOk = true;
+            hunkOk &= ReadProcessMemory(proc, reinterpret_cast<LPCVOID>(kHunkTotalAddr), &total, 4, &br) && br == 4;
+            hunkOk &= ReadProcessMemory(proc, reinterpret_cast<LPCVOID>(kHunkLowMarkAddr), &lowMark, 4, &br) && br == 4;
+            hunkOk &= ReadProcessMemory(proc, reinterpret_cast<LPCVOID>(kHunkLowCommittedAddr), &lowCommitted, 4, &br) && br == 4;
+            hunkOk &= ReadProcessMemory(proc, reinterpret_cast<LPCVOID>(kHunkHighTempMarkAddr), &highTempMark, 4, &br) && br == 4;
+            hunkOk &= ReadProcessMemory(proc, reinterpret_cast<LPCVOID>(kHunkBaseAddr), &base, 4, &br) && br == 4;
+            if (hunkOk) {
+                printf("  [hunk] total=0x%08X (%.2f MB)  lowMark=0x%08X (%.2f MB)  "
+                       "lowCommitted=0x%08X (%.2f MB)  highTempMark=0x%08X (%.2f MB)  base=0x%08X\n",
+                       total, total / (1024.0 * 1024.0),
+                       lowMark, lowMark / (1024.0 * 1024.0),
+                       lowCommitted, lowCommitted / (1024.0 * 1024.0),
+                       highTempMark, highTempMark / (1024.0 * 1024.0),
+                       base);
+            } else {
+                printf("  [hunk] ReadProcessMemory failed (%lu) -- process may already be gone\n", GetLastError());
+            }
+
+            Snapshot snap = TakeSnapshot(proc);
+            char path[MAX_PATH];
+            sprintf_s(path, "livedump_%03d.snap", dumpCount);
+            size_t totalBytes = 0;
+            for (const auto& r : snap.regions) totalBytes += r.size;
+            if (!snap.regions.empty() && SaveSnapshot(snap, path)) {
+                printf("  [full dump] saved %s -- %zu regions, %.1f MB\n",
+                       path, snap.regions.size(), totalBytes / (1024.0 * 1024.0));
+            } else {
+                printf("  [full dump] no readable regions / FAILED to save %s (process likely already exited)\n", path);
+            }
+        };
+
+        for (;;) {
+            // Exit detection FIRST, every tick -- checked before the key/timer
+            // branches so a genuine exit is caught as fast as this loop's own
+            // 15ms tick allows, not starved behind other work.
+            DWORD waitResult = WaitForSingleObject(proc, 0); // non-blocking poll
+            if (waitResult == WAIT_OBJECT_0) {
+                printf("\n*** iw5sp.exe has exited (detected at tick %lu). "
+                       "Attempting one last best-effort dump... ***\n", GetTickCount());
+                TakeAndLogDump("process-exit (best-effort, may be empty if memory is already gone)");
+                printf("\nThe closest REAL evidence is whichever earlier dump succeeded most\n"
+                       "recently before this -- check livedump_%03d.snap and below.\n", dumpCount - 1);
+                break;
+            }
+
+            if (GetAsyncKeyState(VK_F11) & 0x8000) {
+                printf("\nF11 pressed -- stopping.\n");
+                break;
+            }
+
+            DWORD now = GetTickCount();
+            if (now - lastAutoDumpTick >= autoIntervalMs) {
+                lastAutoDumpTick = now;
+                TakeAndLogDump("auto-interval");
+                continue; // re-check exit/F11 promptly rather than sleeping right after a dump
+            }
+
+            if (GetAsyncKeyState(key) & 0x0001) {
+                TakeAndLogDump("key pressed");
+                continue;
+            }
+
+            Sleep(15);
+        }
+
+        CloseHandle(proc);
+        printf("\nDone -- %d dump(s) captured.\n", dumpCount);
         return 0;
     }
 

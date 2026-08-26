@@ -1,0 +1,144 @@
+================================================================
+Function: FUN_004e9af0 @ 004e9af0
+Signature: undefined FUN_004e9af0(void)
+----------------------------------------------------------------
+
+undefined4 * FUN_004e9af0(int param_1)
+
+{
+  undefined4 *puVar1;
+  uint uVar2;
+  int iVar3;
+  uint uVar4;
+  SIZE_T dwSize;
+  LPVOID pvVar5;
+  
+  iVar3 = DAT_01c2ff3c;
+  uVar2 = DAT_01c39dc4 + 0xfff + DAT_01c2ff3c;
+  uVar4 = DAT_01c2ff3c + 0xfU & 0xfffffff0;
+  puVar1 = (undefined4 *)(DAT_01c39dc4 + uVar4);
+  DAT_01c2ff3c = uVar4 + param_1 + 0x10;
+  uVar4 = DAT_01c39dc4 + 0xfff + DAT_01c2ff3c & 0xfffff000;
+  pvVar5 = (LPVOID)(uVar2 & 0xfffff000);
+  if (((DAT_01c2ff1c - DAT_01c2ff34) + DAT_01c39dc4 & 0xfffff000U) < uVar4) {
+    FUN_00490d90("Hunk_AllocateTempMemory: failed on %i bytes (total %i MB, low %i MB, high %i MB), needs %i more hunk bytes"
+                 ,param_1 + 0x10,(int)(DAT_01c2ff1c + (DAT_01c2ff1c >> 0x1f & 0xfffffU)) >> 0x14,
+                 (int)(DAT_01c2ff3c + (DAT_01c2ff3c >> 0x1f & 0xfffffU)) >> 0x14,
+                 (int)(DAT_01c2ff34 + (DAT_01c2ff34 >> 0x1f & 0xfffffU)) >> 0x14,
+                 (DAT_01c2ff34 - DAT_01c2ff1c) + DAT_01c2ff3c);
+  }
+  dwSize = uVar4 - (int)pvVar5;
+  if (dwSize != 0) {
+    pvVar5 = VirtualAlloc(pvVar5,dwSize,0x1000,4);
+    if (pvVar5 == (LPVOID)0x0) {
+      FUN_00486200(2);
+    }
+  }
+  *puVar1 = 0x89537892;
+  puVar1[1] = DAT_01c2ff3c - iVar3;
+  return puVar1 + 4;
+}
+
+
+
+================================================================
+Function: FUN_004a3850 @ 004a3850
+Signature: undefined FUN_004a3850(void)
+----------------------------------------------------------------
+
+uint FUN_004a3850(int *param_1,int param_2,int param_3)
+
+{
+  SIZE_T dwSize;
+  uint uVar1;
+  int iVar2;
+  LPVOID lpAddress;
+  LPVOID pvVar3;
+  int iVar4;
+  LPVOID pvVar5;
+  uint uVar6;
+  
+  uVar1 = param_3 - 1;
+  pvVar5 = (LPVOID)*param_1;
+  iVar4 = *(int *)((int)pvVar5 + 0x10);
+  uVar6 = iVar4 + uVar1 & ~uVar1;
+  iVar2 = param_2 + uVar6;
+  lpAddress = pvVar5;
+  if (*(int *)((int)pvVar5 + 0xc) < iVar2) {
+    do {
+      if ((char)param_1[6] != '\0') {
+        FUN_00425540(0,"Hunk_UserAlloc: out of memory for \'%s\'",param_1[5]);
+      }
+      dwSize = param_1[2];
+      iVar4 = param_1[7];
+      iVar2 = param_1[5];
+      lpAddress = VirtualAlloc((LPVOID)0x0,dwSize,0x2000,4);
+      pvVar3 = VirtualAlloc(lpAddress,0x20,0x1000,4);
+      if (pvVar3 == (LPVOID)0x0) {
+        FUN_00486200(2);
+      }
+      *(SIZE_T *)((int)lpAddress + 0xc) = (int)lpAddress + dwSize;
+      *(SIZE_T *)((int)lpAddress + 8) = dwSize;
+      *(int *)((int)lpAddress + 0x14) = iVar2;
+      *(int *)((int)lpAddress + 0x10) = (int)lpAddress + 0x20;
+      *(LPVOID *)lpAddress = lpAddress;
+      *(undefined1 *)((int)lpAddress + 0x18) = 0;
+      *(int *)((int)lpAddress + 0x1c) = iVar4;
+      *param_1 = (int)lpAddress;
+      *(LPVOID *)((int)pvVar5 + 4) = lpAddress;
+      iVar4 = *(int *)((int)lpAddress + 0x10);
+      uVar6 = iVar4 + uVar1 & ~uVar1;
+      iVar2 = param_2 + uVar6;
+      pvVar5 = lpAddress;
+    } while (*(int *)((int)lpAddress + 0xc) < iVar2);
+  }
+  pvVar5 = (LPVOID)(iVar4 + 0xfffU & 0xfffff000);
+  *(int *)((int)lpAddress + 0x10) = iVar2;
+  if ((pvVar5 != (LPVOID)(iVar2 + 0xfffU & 0xfffff000)) &&
+     (pvVar5 = VirtualAlloc(pvVar5,iVar2 - (int)pvVar5,0x1000,4), pvVar5 == (LPVOID)0x0)) {
+    FUN_00486200(2);
+  }
+  return uVar6;
+}
+
+
+
+================================================================
+Function: FUN_0041a5a0 @ 0041a5a0
+Signature: undefined FUN_0041a5a0(void)
+----------------------------------------------------------------
+
+void * FUN_0041a5a0(size_t param_1,int param_2)
+
+{
+  LPVOID pvVar1;
+  int iVar2;
+  uint uVar3;
+  SIZE_T dwSize;
+  void *_Dst;
+  
+  iVar2 = DAT_01c2ff1c - DAT_01c2ff30;
+  DAT_01c2ff30 = DAT_01c2ff30 + param_1 + (param_2 - 1U) & ~(param_2 - 1U);
+  _Dst = (void *)((DAT_01c2ff1c - DAT_01c2ff30) + DAT_01c39dc4);
+  uVar3 = iVar2 + DAT_01c39dc4;
+  pvVar1 = (LPVOID)((uint)_Dst & 0xfffff000);
+  DAT_01c2ff34 = DAT_01c2ff30;
+  if (pvVar1 < (LPVOID)(DAT_01c2ff3c + 0xfff + DAT_01c39dc4 & 0xfffff000U)) {
+    FUN_00490d90("Hunk_AllocAlign failed on %i bytes (total %i MB, low %i MB, high %i MB)",param_1,
+                 (int)(DAT_01c2ff1c + (DAT_01c2ff1c >> 0x1f & 0xfffffU)) >> 0x14,
+                 (int)(DAT_01c2ff3c + (DAT_01c2ff3c >> 0x1f & 0xfffffU)) >> 0x14,
+                 (int)(DAT_01c2ff30 + ((int)DAT_01c2ff30 >> 0x1f & 0xfffffU)) >> 0x14);
+  }
+  dwSize = (uVar3 & 0xfffff000) - (int)pvVar1;
+  if (dwSize != 0) {
+    pvVar1 = VirtualAlloc(pvVar1,dwSize,0x1000,4);
+    if (pvVar1 == (LPVOID)0x0) {
+      FUN_00486200(2);
+    }
+  }
+  _memset(_Dst,0,param_1);
+  return _Dst;
+}
+
+
+

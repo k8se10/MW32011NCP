@@ -5879,9 +5879,30 @@ namespace {
 using RenderResComputeFn = void(__fastcall*)(void* self);
 RenderResComputeFn g_origFUN_00679010 = nullptr;
 
+// Issue #96, 2026-08-26 -- investigating an intermittent crash/exit chased
+// across many rounds this session (Hunk allocator, raw VRAM/address-space
+// exhaustion, sustained memory growth, a Phase E multi-fire bug -- ALL tested
+// live and ruled out with real evidence, see known_issues.md issue #96).
+// Direct user isolation test: the crash reproduces whenever
+// InternalRenderScalePercent is active AT ALL, even at 100%, and does NOT
+// reproduce with it off. A theorized fix (writing the scaled target size into
+// DAT_021d2e08/DAT_021d2e0c, believed at the time to be SAVED_SCREEN's own
+// independently-tier-clamped render-target size, per issue #88's older
+// investigation notes) was tried and DEPLOYED, then caught live by the user
+// almost immediately: that pair is actually the REAL WINDOW SIZE, not a
+// render-target size -- writing the upscaled target there would have resized
+// the actual OS window to the supersampled resolution instead of leaving it
+// at native, a real, separate bug. Reverted (see this function's own body,
+// below) rather than patched, since the correct behavior is to not touch
+// those fields at all -- the real trampoline's own logic already sets them
+// correctly. The render-target-size-mismatch theory this was meant to fix
+// needs re-investigating with a correct understanding of what
+// DAT_021d2e08/0c actually is; still open.
+
 void __fastcall Hook_FUN_00679010(void* self)
 {
     int pct = g_modConfig.internalRenderScalePercent;
+    bool didOverride = false;
     if (pct > 0 && self != nullptr) {
         auto* base = reinterpret_cast<uint8_t*>(self);
         int32_t nativeW = *reinterpret_cast<int32_t*>(base + 0x24);
@@ -5909,7 +5930,14 @@ void __fastcall Hook_FUN_00679010(void* self)
     }
 
     g_origFUN_00679010(self); // real function -- consumes whatever +0x1c/+0x20 currently hold
-                               // (ours if we just wrote it above, the engine's own otherwise)
+                               // (ours if we just wrote it above, the engine's own otherwise).
+                               // Deliberately does NOT also touch DAT_021d2e08/0c afterward --
+                               // that pair was briefly (2026-08-26) believed to be SAVED_SCREEN's
+                               // own render-target size and overridden to match, but caught live
+                               // almost immediately: it's actually the REAL WINDOW SIZE, which
+                               // must always track native display resolution, not the upscaled
+                               // target. The real trampoline's own logic already sets it
+                               // correctly on its own -- see known_issues.md issue #96.
 }
 } // namespace
 
