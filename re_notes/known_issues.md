@@ -10932,3 +10932,205 @@ builds a real effect on top of it) -- a separate visual confirmation from the
 user.
 
 ---
+
+## 94. Phase B (visual-suite plan): FSR 1.0 RCAS full-screen sharpening -- built, deployed, not yet live-tuned (2026-08-26)
+
+**Status:** Built and deployed, not yet live-confirmed for visual quality.
+
+First real effect on top of Phase A's capture/composite pipeline (issue #93):
+FSR 1.0 RCAS (Robust Contrast Adaptive Sharpening), a direct port of AMD's real
+FidelityFX-FSR reference source (`ffx_fsr1.h`, `FsrRcasF`/`FsrRcasCon`, MIT
+license) -- fetched and verified line-for-line against the real GitHub source,
+not reconstructed from memory. Full port-fidelity notes (what's a faithful
+translation vs. a deliberate simplification of AMD's own UX scaffolding) live in
+`re_notes/shaders/fsr_rcas.hlsl`'s own header comment.
+
+**ps_2_0 doesn't fit**: tried first, matching this project's usual convention --
+fxc reports 74 arithmetic instruction slots needed, ps_2_0's real hard cap is
+64 (`error X5608`). RCAS's real per-pixel math (5-tap neighborhood, min/max
+ring, noise detection, an exact contrast-clip solve) is bigger than the
+existing 9-tap blur/passthrough shaders. Compiled as `ps_3_0` instead (71
+slots, well within budget) -- safe on this project's real dev hardware (RTX
+2080 Ti, native SM3+ for well over a decade). Per the plan's own text ("check
+real device pixel-shader-version caps before committing to which"),
+`EnsureRcasShader` (`overlay_hud.cpp`) checks the real device's
+`PixelShaderVersion` cap via `GetDeviceCaps` before loading this shader, and
+refuses gracefully (no sharpening, not a crash) on hardware below SM3.
+
+**A new, minimal, byte-layout-verified `D3DCAPS9_MinimalLocal` struct** was
+added for this check (avoids a full `d3d9.h` include, same convention as
+`dllmain.cpp`'s `D3D9ON12_ARGS_LOCAL`) -- every field up to and including
+`PixelShaderVersion` is declared by its real name/type, confirmed against a
+direct fetch of the real `d3d9caps.h` field order (51 consecutive 4-byte
+fields, no padding), with a deliberately oversized trailing pad buffer (512
+bytes past `PixelShaderVersion`, real struct is ~300 bytes total) since the
+real `GetDeviceCaps` call writes the COMPLETE struct regardless of how much of
+it is declared -- undersizing this would be a real stack overflow, the exact
+bug class issue #93 already found once this session (on `Release()`, not
+`GetDeviceCaps`), applied preemptively here instead of found via a crash.
+
+**Config**: `[Video] FsrSharpenEnabled` (default off) + `FsrSharpenStrength`
+(0.0-1.0, default 0.5) -- passed straight through as RCAS's real `con.x`
+sharpen-lobe scale, skipping AMD's stops/exp2 UX framing (not part of
+`FsrRcasF`'s actual per-pixel math, just AMD's own parameter presentation
+choice -- see the HLSL file's header comment). `DrawFullScreenPass` (Phase A)
+was extended with an optional shader-constant-setup callback
+(`FullScreenShaderSetupFn`) so each real effect can bind its own pixel shader
+constants after `SetPixelShader` -- RCAS sets `c0`=texelSize, `c1.x`=sharpness;
+a future FXAA/motion-blur pass would do the same. RCAS takes priority over
+Phase A's own passthrough-test shader when both happen to be enabled (mutually
+exclusive single-shader passes for now -- an ordered multi-pass list is future
+work once more than one real effect exists, per the plan's own Phase A text).
+
+Built clean via MSBuild (0 errors), `d3d9.dll` redeployed, `[Video]
+FsrSharpenEnabled=1`/`FsrSharpenStrength=0.50` set live in
+`mw3ncp_config.ini` for testing. Not yet live-confirmed -- next launch is the
+real check, both for stability and for whether 0.5 strength looks right or
+needs retuning.
+
+**Live feedback, same day: "needs more softness."** `FsrSharpenStrength` lowered
+0.5 -> 0.3 (both the compiled default in `mod_config.h` and the live config).
+
+---
+
+## 95. Phase E (visual-suite plan): camera-only motion blur -- CONFIRMED PRODUCTION-READY LIVE (2026-08-26)
+
+**Status:** Resolved, confirmed production-ready live by the user ("motion blur is prod ready") after the Round 3 native-HUD-exclusion fix below.
+
+Requested directly alongside the RCAS softness feedback above ("also id like
+motion blur in this pass"). A camera-only (view-angle-delta-based) directional
+blur -- NOT per-object motion vectors, matching the visual-suite plan's own
+explicit Phase E scope ("tractable without deep engine motion-vector
+integration"). Reuses Phase A's pipeline exactly like RCAS did.
+
+**Real per-frame view-angle delta, not new RE**: the plan's own Phase E text
+flagged needing "the camera angle/position this project's own existing
+usercmd/view-angle hooks already track -- may already have partial data
+available." Confirmed true: `InjectControllerLookAngles`
+(`analog_input_hooks.cpp`) already computes the exact real degrees applied to
+the engine's own `*kYawAccum`/`*kPitchAccum` every frame, from both stick and
+gyro look. Exposed as two new globals
+(`g_motionBlurYawDeltaDeg`/`g_motionBlurPitchDeltaDeg`, real external linkage,
+deliberately declared outside this file's anonymous namespace per its own
+established linkage lesson) for `overlay_hud.cpp`'s motion-blur pass to read
+each frame -- no new engine hooking needed at all.
+
+**Real, documented limitation**: only reacts to CONTROLLER-driven look (stick
+and gyro) -- mouse look is untouched by this project's own hooks and will not
+trigger blur. Matches this project's controller-first scope, not an oversight
+-- called out directly in both `analog_input_hooks.cpp`'s and
+`motion_blur.hlsl`'s own comments so it isn't mistaken for a bug later.
+
+**Shader**: `re_notes/shaders/motion_blur.hlsl` -- a standard 8-tap directional
+average along a host-computed UV-space vector, NOT a port of any external
+reference the way `fsr_rcas.hlsl` is (there's no single canonical source for
+this well-known technique). Compiles clean as `ps_2_0` (27 instruction slots,
+comfortably under the 64 cap) -- unlike RCAS, no `ps_3_0` fallback needed.
+
+**Composability with RCAS**: `DrawFullScreenPass` (Phase A) already generalizes
+cleanly to multiple passes in one frame with zero new plumbing -- calling it a
+second time naturally captures whatever the FIRST pass already drew to the
+real backbuffer. `RunFullScreenPostProcessIfEnabled` now runs RCAS (if
+enabled) then motion blur (if enabled) in that order, so a sharpened frame
+gets blurred on top rather than the reverse -- an explicit ordering choice
+(sharpen a crisp source, then blur), not yet A/B-tested against the reverse
+order.
+
+**Tuning**: `[Video] MotionBlurStrength` (default 1.0) multiplies the real
+per-frame degrees-of-rotation before an empirical, genuinely-not-yet-tuned
+degrees-to-UV-extent scale (`kDegreesToUvScale = 0.01f`,
+`MotionBlurShaderSetupCallback`) converts it to a blur vector, with a hard
+safety clamp (`kMaxBlurExtent = 0.10f` UV units) so no single fast turn or
+frame-time hitch can smear further than that regardless of strength -- matches
+the plan's own explicit warning that this effect is the most likely to need
+real live-tuning rounds, not a one-shot correct value.
+
+Built clean via MSBuild (0 errors), `d3d9.dll` redeployed, `[Video]
+MotionBlurEnabled=1`/`MotionBlurStrength=1.00` set live for testing. A DLL
+reload (relaunch) is required for this to take effect, not just the config
+hot-reload -- the blur code path itself is new this session, not just a tuned
+value.
+
+**Live feedback, same day: "works but needs to exclude ui from it."** Fixed by
+splitting Phase E's call site away from Phase B's -- motion blur now runs from
+a new, separate `RunPreOverlayMotionBlurPassIfEnabled(device)`, called at the
+very TOP of `Hook_EndScene`, before ANY of this project's own overlay draws
+(Options menu, glyph icons, hint text, cursor). RCAS stays at the original LATE
+call site (after this project's own overlay), since the plan's own design
+deliberately wants RCAS to sharpen this project's own UI too -- only motion
+blur needed excluding, not both effects. `DrawFullScreenPass`'s existing
+capture-then-composite mechanism made this a pure call-site move, no new
+plumbing.
+
+**Round 2's own stated limitation** (native HUD still gets blurred, since
+`Hook_EndScene` only fires after the whole frame -- including native HUD -- is
+already rendered) was directly challenged: **"im sure we could fit it under
+the native ui."** Rather than accept the limitation, pursued it as a real
+static-RE task -- full trail below, ending in a genuine, verified fix.
+
+**RE trail (Ghidra, fresh decompile + raw disassembly throughout, nothing
+guessed or left at decompiler-inferred confidence)**:
+1. Confirmed `R_RENDERTARGET_RESOLVED_SCENE` is a real, separate off-screen
+   texture the 3D scene resolves into (`FUN_004864d0` does a real
+   `StretchRect` resolve into it, called from four real per-frame functions).
+   This IS the "3D scene renders separately" mechanism the user's instinct
+   was pointing at.
+2. Traced every direct reference to that texture's own global pointer to find
+   the CONSUMER (whatever samples it back out to composite onto the
+   backbuffer) -- dead end. Every reference found was on the writing side
+   (things rendering INTO it), confirming the real composite doesn't read
+   this specific global directly.
+3. Pivoted following a direct user re-steer ("remember we located the ui res
+   scale id look arund there... diff render res... would possibly be the
+   coupling mech") -- reused this SAME session's own `InternalRenderScalePercent`
+   (issue #88) research, specifically its already-documented per-frame
+   `SetViewport` dedup chain and `DAT_02802f60` struct base. Decompiled
+   `FUN_004e5b30` (a real viewport-RECT compute function) and found a genuine
+   mode flag at `DAT_02802f60+0x1760`: mode==1 selects a FULL-SCREEN rect
+   (0,0,w,h); anything else selects the 3D scene's own sub-rect
+   (`+0x174c..58`, the exact field issue #88's own render-scale feature
+   already reads/writes).
+4. Found the real writer of that mode flag: `FUN_004f7b40`, which sets
+   mode=1, does ONE 2D draw call, then RESTORES the previous mode --
+   confirming this function wraps EVERY individual native 2D HUD/UI element
+   draw, not a once-per-frame toggle. Its own calling convention (raw
+   disassembly) turned out to be a genuinely risky mix of register- and
+   stack-passed args -- NOT hooked directly; too much room to get wrong for
+   a function called this often (every HUD/UI element, every frame).
+5. Found its caller, `FUN_00697ce0` -- assigns a `POST_EFFECT` render target
+   into a texture slot with real letterbox/aspect-ratio math around it, a
+   strong composite-function signature -- and ITS single caller,
+   `FUN_00497210`: the real per-viewport scene-finish orchestrator
+   (composites the resolved scene, runs the engine's own real post-effects,
+   draws a couple of specific overlay textures). **Confirmed via raw
+   disassembly (not the decompiler's guessed signature) to be a plain,
+   all-stack-args `__cdecl` function** -- no risky convention to get wrong,
+   called once per active viewport (`FUN_00694650`'s own loop; once per frame
+   for this project's real single-viewport scope, no splitscreen support).
+
+**Real fix, implemented same session**: a new engine hook,
+`Hook_FUN_00497210` (`analog_input_hooks.cpp`), a POST-hook on
+`FUN_00497210` (address `0x00497210`) -- the real trampoline runs completely
+unmodified first (both of its own real arguments forwarded byte-for-byte,
+untouched, since this hook doesn't need to understand either one), THEN
+`TriggerMotionBlurFromEngineHook()` (`overlay_hud.cpp`, new `extern "C"`
+forwarder -- deliberately matching this file's own already-validated
+anonymous-namespace-plus-`extern "C"` linkage pattern, header declaration
+updated to match exactly) fires the motion-blur pass. This runs AFTER the
+real scene composite but BEFORE the engine's own native HUD/UI drawing (which
+happens later, via the `FUN_004f39e0`/`FUN_004f7b40` chain found in step 4 --
+deliberately not hooked directly, per that step's own risk reasoning). The
+motion-blur trigger was moved OUT of `Hook_EndScene`'s own top (Round 2's call
+site) to this new, genuinely earlier hook point; this project's own overlay
+(drawn inside `Hook_EndScene`, later still) remains excluded exactly as Round
+2 already achieved -- this is a strictly earlier hook, not a replacement for
+that ordering.
+
+Built clean via MSBuild (0 errors, including no linker errors -- real
+confirmation the new cross-file `extern "C"` linkage resolved correctly) and
+redeployed. Not yet re-confirmed live by the user -- next launch is the real
+check, both for stability (a new hardcoded hook target, `MH_CreateHook`'s own
+return code is the install-time validation per this project's standard) and
+for whether native HUD elements are now genuinely excluded from the blur.
+
+---

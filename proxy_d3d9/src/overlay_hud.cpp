@@ -50,6 +50,8 @@
 #include "../resource.h"
 #include "options_blur_ps.h" // compiled ps_2_0 bytecode -- see that file's own header for the real HLSL source and how it was compiled
 #include "fullscreen_passthrough_ps.h" // Phase A visual-suite foundation -- see that file's own header comment
+#include "fsr_rcas_ps.h" // Phase B visual-suite -- see that file's own header comment
+#include "motion_blur_ps.h" // Phase E visual-suite -- see that file's own header comment
 #include "mw3ncp_plugin_api.h" // MW3NCP_ColorOverrideFn -- see this file's own g_pluginTextGlyphColorOverride comment
 
 #pragma comment(lib, "windowscodecs.lib")
@@ -57,6 +59,11 @@
 #pragma comment(lib, "shlwapi.lib")
 
 extern void LogFromController(const char* msg);
+// Phase E (motion blur) -- real per-frame view-angle deltas, defined in
+// analog_input_hooks.cpp (see that file's own comment on these two globals,
+// right above InjectControllerLookAngles).
+extern float g_motionBlurYawDeltaDeg;
+extern float g_motionBlurPitchDeltaDeg;
 extern "C" HWND GetGameWindow(); // defined in d3d9_hook.cpp
 extern "C" bool GetLastMouseMoveClientPos(int& outX, int& outY); // defined in d3d9_hook.cpp
 extern "C" bool IsLeftMouseButtonHeld(); // defined in d3d9_hook.cpp
@@ -147,6 +154,9 @@ constexpr int kGetSamplerStateVtableIndex = 68;   // IDirect3DDevice9::GetSample
 constexpr int kSetSamplerStateVtableIndex = 69;   // IDirect3DDevice9::SetSamplerState
 constexpr int kCreatePixelShaderVtableIndex = 106;      // IDirect3DDevice9::CreatePixelShader
 constexpr int kSetPixelShaderConstantFVtableIndex = 109; // IDirect3DDevice9::SetPixelShaderConstantF
+constexpr int kGetDeviceCapsVtableIndex = 7;      // IDirect3DDevice9::GetDeviceCaps (after
+    // TestCooperativeLevel=3/GetAvailableTextureMem=4/EvictManagedResources=5/
+    // GetDirect3D=6, standard vtable ordering)
 
 // ---- D3D9 public enum/flag values (fixed COM contract, not this game's own layout) -
 constexpr DWORD kD3DFMT_A8R8G8B8 = 21;
@@ -216,6 +226,84 @@ typedef HRESULT(WINAPI* SurfaceUnlockRect_t)(void* This);
 // from the surface itself rather than a cached/assumed value.
 struct SurfaceDesc { DWORD Format, Type, Usage, Pool, MultiSampleType, MultiSampleQuality, Width, Height; };
 typedef HRESULT(WINAPI* SurfaceGetDesc_t)(void* This, SurfaceDesc* pDesc);
+
+// Phase B, visual-suite plan -- local, minimal D3DCAPS9 declaration (same
+// convention as dllmain.cpp's D3D9ON12_ARGS_LOCAL, avoids a full d3d9.h include)
+// used ONLY to read PixelShaderVersion before trusting a ps_3_0 shader on the
+// real device (fsr_rcas_ps.h needs ps_3_0 -- see that file's own header comment
+// for why ps_2_0 doesn't fit). Every field up to and including PixelShaderVersion
+// is declared by its real name/type, confirmed against the real d3d9caps.h field
+// order (DeviceType through MaxVertexShaderConst are 51 consecutive 4-byte
+// DWORD/UINT/float fields with no padding, verified via a direct fetch of the
+// real header, not guessed) -- so this struct's layout is PROVABLY correct up to
+// that point, not just "probably". `restOfRealStructPad` is deliberately
+// oversized (real D3DCAPS9 is ~300 bytes total; this reserves 512 bytes after
+// PixelShaderVersion) because the real GetDeviceCaps call writes the COMPLETE
+// struct regardless of how much of it we declare -- undersizing this buffer would
+// be a real stack overflow, not just a wrong read (the exact bug class already
+// fixed once this session on Release(), see known_issues.md issue #93 -- this is
+// the same "byte-layout must actually be provably correct, not assumed" standard
+// applied preemptively here instead of found via a crash).
+struct D3DCAPS9_MinimalLocal
+{
+    DWORD DeviceType;
+    DWORD AdapterOrdinal;
+    DWORD Caps;
+    DWORD Caps2;
+    DWORD Caps3;
+    DWORD PresentationIntervals;
+    DWORD CursorCaps;
+    DWORD DevCaps;
+    DWORD PrimitiveMiscCaps;
+    DWORD RasterCaps;
+    DWORD ZCmpCaps;
+    DWORD SrcBlendCaps;
+    DWORD DestBlendCaps;
+    DWORD AlphaCmpCaps;
+    DWORD ShadeCaps;
+    DWORD TextureCaps;
+    DWORD TextureFilterCaps;
+    DWORD CubeTextureFilterCaps;
+    DWORD VolumeTextureFilterCaps;
+    DWORD TextureAddressCaps;
+    DWORD VolumeTextureAddressCaps;
+    DWORD LineCaps;
+    DWORD MaxTextureWidth;
+    DWORD MaxTextureHeight;
+    DWORD MaxVolumeExtent;
+    DWORD MaxTextureRepeat;
+    DWORD MaxTextureAspectRatio;
+    DWORD MaxAnisotropy;
+    float MaxVertexW;
+    float GuardBandLeft;
+    float GuardBandTop;
+    float GuardBandRight;
+    float GuardBandBottom;
+    float ExtentsAdjust;
+    DWORD StencilCaps;
+    DWORD FVFCaps;
+    DWORD TextureOpCaps;
+    DWORD MaxTextureBlendStages;
+    DWORD MaxSimultaneousTextures;
+    DWORD VertexProcessingCaps;
+    DWORD MaxActiveLights;
+    DWORD MaxUserClipPlanes;
+    DWORD MaxVertexBlendMatrices;
+    DWORD MaxVertexBlendMatrixIndex;
+    float MaxPointSize;
+    DWORD MaxPrimitiveCount;
+    DWORD MaxVertexIndex;
+    DWORD MaxStreams;
+    DWORD MaxStreamStride;
+    DWORD VertexShaderVersion;
+    DWORD MaxVertexShaderConst;
+    DWORD PixelShaderVersion; // <-- the one field this project actually reads
+    BYTE  restOfRealStructPad[512];
+};
+typedef HRESULT(WINAPI* GetDeviceCaps_t)(void* This, D3DCAPS9_MinimalLocal* pCaps);
+
+// D3DPS_VERSION(3,0) -- real macro: (0xFFFF0000|((Major)<<8)|(Minor)) = 0xFFFF0300.
+constexpr DWORD kD3DPS_VERSION_3_0 = 0xFFFF0300;
 typedef ULONG(WINAPI* Release_t)(void* This);
 typedef HRESULT(WINAPI* SetTexture_t)(void* This, DWORD Stage, void* pTexture);
 typedef HRESULT(WINAPI* SetFVF_t)(void* This, DWORD FVF);
@@ -2958,13 +3046,20 @@ bool EnsureFullscreenPassthroughShader(void* device)
     return true;
 }
 
+// Phase B -- called right after SetPixelShader, before the draw call, so each
+// real effect can bind its own pixel shader constants (RCAS needs texelSize +
+// sharpness; a future FXAA/motion-blur pass would set its own the same way).
+// texelW/texelH are 1/capturedFrameWidth and 1/capturedFrameHeight -- the exact
+// dimensions DrawFullScreenPass already resolved to g_fullscreenCaptureTexture,
+// correct for every effect since they all sample that same texture.
+using FullScreenShaderSetupFn = void(*)(void* device, float texelW, float texelH);
+
 // Generic, reusable full-screen post-process pass: captures the current real
 // backbuffer into g_fullscreenCaptureTexture, then draws it back over the full
-// backbuffer through the given pixel shader. Every future full-screen effect
-// (RCAS/FXAA/motion blur) calls this SAME function with its own shader -- only
-// Phase A's own passthrough shader is wired up so far, per the plan's own
-// explicit "validate the pipeline before building a real effect on it" step.
-void DrawFullScreenPass(void* device, void* pixelShader)
+// backbuffer through the given pixel shader. Every full-screen effect (Phase A's
+// own passthrough, Phase B's RCAS, a future FXAA/motion-blur pass) calls this
+// SAME function with its own shader and an optional constant-setup callback.
+void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn onShaderBound = nullptr)
 {
     if (!pixelShader) return;
     void** deviceVtbl = *reinterpret_cast<void***>(device);
@@ -3051,6 +3146,7 @@ void DrawFullScreenPass(void* device, void* pixelShader)
     void* oldPixelShader = nullptr;
     getPixelShader(device, &oldPixelShader);
     setPixelShader(device, pixelShader);
+    if (onShaderBound) onShaderBound(device, 1.0f / static_cast<float>(desc.Width), 1.0f / static_cast<float>(desc.Height));
 
     setRenderState(device, kD3DRS_ZENABLE, kD3DZB_FALSE);
     setRenderState(device, kD3DRS_LIGHTING, FALSE);
@@ -3087,15 +3183,224 @@ void DrawFullScreenPass(void* device, void* pixelShader)
     setSamplerState(device, 0, kD3DSAMP_MINFILTER, oldMinFilter);
 }
 
-// Phase A's own entry point, called from the very end of Hook_EndScene. Only the
-// no-op passthrough shader is wired up this pass -- real effects plug in here
-// later, each behind their own independent config toggle, reusing
-// DrawFullScreenPass directly.
+// Phase B -- FSR 1.0 RCAS. See fsr_rcas.hlsl (re_notes/shaders/) for the full
+// port-fidelity notes and citation, fsr_rcas_ps.h for why this needs ps_3_0 (not
+// this project's usual ps_2_0 -- RCAS's real math doesn't fit ps_2_0's 64
+// arithmetic-instruction cap).
+void* g_fsrRcasPixelShader = nullptr;
+bool g_fsrRcasDeviceCapsChecked = false;
+bool g_fsrRcasDeviceSupportsPS3 = false;
+
+bool EnsureRcasShader(void* device)
+{
+    if (g_fsrRcasPixelShader) return true;
+    void** deviceVtbl = *reinterpret_cast<void***>(device);
+
+    // Checked once per device (per the plan's own "check real device pixel-
+    // shader-version caps before committing to which" requirement) -- refuses
+    // gracefully (no sharpening, not a crash) on hardware below SM3 rather than
+    // assuming this project's own real dev hardware (RTX 2080 Ti, native SM3+
+    // for well over a decade) is universal.
+    if (!g_fsrRcasDeviceCapsChecked) {
+        g_fsrRcasDeviceCapsChecked = true;
+        auto getDeviceCaps = reinterpret_cast<GetDeviceCaps_t>(deviceVtbl[kGetDeviceCapsVtableIndex]);
+        D3DCAPS9_MinimalLocal caps{};
+        if (SUCCEEDED(getDeviceCaps(device, &caps)) && caps.PixelShaderVersion >= kD3DPS_VERSION_3_0) {
+            g_fsrRcasDeviceSupportsPS3 = true;
+        } else {
+            LogFromController("[fsr-rcas] device does not report ps_3_0 support -- FsrSharpenEnabled will have no effect");
+        }
+    }
+    if (!g_fsrRcasDeviceSupportsPS3) return false;
+
+    auto createPixelShader = reinterpret_cast<CreatePixelShader_t>(deviceVtbl[kCreatePixelShaderVtableIndex]);
+    HRESULT hr = createPixelShader(device, reinterpret_cast<const DWORD*>(g_fsrRcasPixelShaderBytecode), &g_fsrRcasPixelShader);
+    if (FAILED(hr) || !g_fsrRcasPixelShader) {
+        g_fsrRcasPixelShader = nullptr;
+        return false;
+    }
+    return true;
+}
+
+// DrawFullScreenPass's onShaderBound callback for RCAS -- c0=texelSize (matches
+// fsr_rcas.hlsl's `float4 texelSize : register(c0)`), c1.x=sharpness (matches
+// `float4 sharpness : register(c1)`, this project's own FsrSharpenStrength
+// clamped 0..1 by LoadModConfig, passed straight through as RCAS's real con.x).
+void RcasShaderSetupCallback(void* device, float texelW, float texelH)
+{
+    void** deviceVtbl = *reinterpret_cast<void***>(device);
+    auto setPixelShaderConstantF = reinterpret_cast<SetPixelShaderConstantF_t>(deviceVtbl[kSetPixelShaderConstantFVtableIndex]);
+    const float texelSize[4] = { texelW, texelH, 0.0f, 0.0f };
+    setPixelShaderConstantF(device, 0, texelSize, 1);
+    const float sharpness[4] = { g_modConfig.fsrSharpenStrength, 0.0f, 0.0f, 0.0f };
+    setPixelShaderConstantF(device, 1, sharpness, 1);
+}
+
+// Phase E -- camera-only (view-angle-delta-based) directional motion blur. See
+// motion_blur.hlsl (re_notes/shaders/) for the full design rationale. Plain
+// ps_2_0, no device-caps check needed (unlike RCAS) -- this simple 8-tap
+// average fits comfortably within ps_2_0's own instruction budget.
+void* g_motionBlurPixelShader = nullptr;
+
+bool EnsureMotionBlurShader(void* device)
+{
+    if (g_motionBlurPixelShader) return true;
+    void** deviceVtbl = *reinterpret_cast<void***>(device);
+    auto createPixelShader = reinterpret_cast<CreatePixelShader_t>(deviceVtbl[kCreatePixelShaderVtableIndex]);
+    HRESULT hr = createPixelShader(device, reinterpret_cast<const DWORD*>(g_motionBlurPixelShaderBytecode), &g_motionBlurPixelShader);
+    if (FAILED(hr) || !g_motionBlurPixelShader) {
+        g_motionBlurPixelShader = nullptr;
+        return false;
+    }
+    return true;
+}
+
+// DrawFullScreenPass's onShaderBound callback for motion blur -- c0=blurVec
+// (matches motion_blur.hlsl's `float4 blurVec : register(c0)`), computed here
+// (host-side, not in the shader -- the shader itself stays generic) from this
+// project's own real per-frame yaw/pitch deltas (analog_input_hooks.cpp).
+// texelW/texelH (this pass's captured-frame texel size) aren't needed here --
+// blurVec is already expressed directly in UV units, no texel-count conversion
+// needed, unlike RCAS's neighborhood taps.
+void MotionBlurShaderSetupCallback(void* device, float /*texelW*/, float /*texelH*/)
+{
+    // Empirical degrees-of-real-per-frame-rotation -> UV-extent scale, times
+    // this project's own FsrSharpenStrength-style tunable
+    // (MotionBlurStrength) -- genuinely needs live tuning per the plan's own
+    // explicit warning ("plan for genuine live tuning rounds, not a one-shot
+    // 'looks right first try' expectation"), adjustable via mw3ncp_config.ini's
+    // own hot-reload without a rebuild.
+    constexpr float kDegreesToUvScale = 0.01f;
+    constexpr float kMaxBlurExtent = 0.10f; // hard safety clamp -- caps how far
+        // a single very fast turn or a frame-time hitch can smear, regardless
+        // of MotionBlurStrength, so this can never look like a broken/runaway
+        // effect even at an aggressive strength setting.
+
+    float scale = kDegreesToUvScale * g_modConfig.motionBlurStrength;
+    float blurX = g_motionBlurYawDeltaDeg * scale;
+    float blurY = g_motionBlurPitchDeltaDeg * scale;
+    if (blurX > kMaxBlurExtent) blurX = kMaxBlurExtent;
+    if (blurX < -kMaxBlurExtent) blurX = -kMaxBlurExtent;
+    if (blurY > kMaxBlurExtent) blurY = kMaxBlurExtent;
+    if (blurY < -kMaxBlurExtent) blurY = -kMaxBlurExtent;
+
+    void** deviceVtbl = *reinterpret_cast<void***>(device);
+    auto setPixelShaderConstantF = reinterpret_cast<SetPixelShaderConstantF_t>(deviceVtbl[kSetPixelShaderConstantFVtableIndex]);
+    const float blurVec[4] = { blurX, blurY, 0.0f, 0.0f };
+    setPixelShaderConstantF(device, 0, blurVec, 1);
+}
+
+// Phase E's own entry point. ROUND 2 FIX (2026-08-26, issue #95 follow-up,
+// live-reported "im sure we could fit it under the native ui" after Round 1
+// only excluded this project's OWN overlay): Round 1 called this from the top
+// of Hook_EndScene -- correct relative to this project's own overlay (which
+// draws later, in Hook_EndScene proper), but Hook_EndScene itself fires only
+// after the ENTIRE frame, including the game's own native HUD, is already
+// rendered -- so native HUD (crosshair, ammo, health, minimap, killfeed) was
+// still getting blurred. Fixed via real, verified static RE (Ghidra, fresh
+// decompile + raw disassembly, not guessed): traced the real
+// R_RENDERTARGET_RESOLVED_SCENE scene-composite chain, found a real per-frame
+// viewport-mode flag at DAT_02802f60+0x1760 that every native 2D HUD/UI draw
+// call toggles to "full-screen" around itself, and from there found
+// FUN_00497210 -- the real per-viewport scene-finish orchestrator (composites
+// the resolved scene, applies the engine's own real post-effects, then draws a
+// couple of specific overlay textures) -- confirmed via raw disassembly to be
+// a plain, all-stack-args __cdecl function (no risky mixed register/stack
+// convention), called once per active viewport (once per frame for this
+// project's actual single-viewport scope) from FUN_00694650. This call now
+// runs from Hook_FUN_00497210 (analog_input_hooks.cpp), a POST-hook on that
+// real engine function -- AFTER the real scene composite, BEFORE the engine's
+// own native HUD/UI drawing (which happens via a separate call chain,
+// FUN_004f39e0/FUN_004f7b40, found during this same investigation but not
+// hooked directly -- their calling convention is a genuinely riskier mixed
+// register/stack shape not worth hooking when the composite-function boundary
+// achieves the same real exclusion more safely). This project's own overlay
+// (drawn later still, inside Hook_EndScene) was already excluded by Round 1's
+// ordering and stays excluded now too -- this hook point is strictly EARLIER
+// than Hook_EndScene, not a replacement for that ordering.
+void RunPreOverlayMotionBlurPassIfEnabled(void* device)
+{
+    if (!g_modConfig.motionBlurEnabled) return;
+    if (!EnsureMotionBlurShader(device)) return;
+    DrawFullScreenPass(device, g_motionBlurPixelShader, MotionBlurShaderSetupCallback);
+}
+
+// `extern "C"` deliberately -- this sits inside the file's own anonymous
+// namespace textually, but MSVC gives an `extern "C"` function genuine
+// external (C) linkage regardless (the same established, build-verified
+// pattern this file already uses for InjectControllerLookAngles-style
+// functions -- see analog_input_hooks.cpp's own linkage lesson, CLAUDE.md's
+// "Checking is far cheaper than digging"). Lets Hook_FUN_00497210
+// (analog_input_hooks.cpp) trigger the pass above without needing its own
+// device pointer -- this early in the frame, GetLastKnownRenderDevice() still
+// holds the correct, live device from the previous frame's EndScene (the
+// device object itself persists across frames, only recreated on a real
+// Reset/device-loss, so this is safe).
+extern "C" void TriggerMotionBlurFromEngineHook()
+{
+    void* device = GetLastKnownRenderDevice();
+    if (device) RunPreOverlayMotionBlurPassIfEnabled(device);
+}
+
+// Phase A/B's shared entry point, called from the very end of Hook_EndScene
+// (AFTER this project's own overlay draws -- see RunPreOverlayMotionBlurPassIfEnabled
+// above for why motion blur no longer shares this call site). RCAS deliberately
+// DOES cover this project's own overlay (the plan's own "UI sharpening" design).
+// The no-op passthrough test only runs when RCAS didn't (pure pipeline
+// validation -- a real effect already proves the pipeline works).
 void RunFullScreenPostProcessIfEnabled(void* device)
 {
+    if (g_modConfig.fsrSharpenEnabled && EnsureRcasShader(device)) {
+        DrawFullScreenPass(device, g_fsrRcasPixelShader, RcasShaderSetupCallback);
+        return;
+    }
     if (!g_modConfig.fullScreenPassthroughTest) return;
     if (!EnsureFullscreenPassthroughShader(device)) return;
     DrawFullScreenPass(device, g_fullscreenPassthroughPixelShader);
+}
+
+// [Video] ForceAnisotropicFiltering (2026-08-26) -- writes the real native
+// r_texFilterAnisoMax/r_texFilterAnisoMin dvars to 16 via this project's own
+// already-proven SetDvarFloat (real_settings.h/.cpp, the same mechanism
+// vanilla_settings_sync.cpp already uses for the custom Options screen's
+// native-setting writes) -- NOT a new D3D9-level sampler-state override.
+// Deliberately reuses the real, already-native anisotropic filtering setting
+// (this project's own ForceD3D9On12 investigation, issue #92, already found
+// raising this in players2/config.cfg by hand gives a real sharpness
+// improvement with zero D3D9On12-style risk) rather than force-writing
+// D3DSAMP_MAXANISOTROPY on every sampler stage directly -- the native dvar
+// path is what the engine's own renderer already reads every time it builds
+// its real sampler states, so there's no separate D3D9-level force to keep in
+// sync with it or fight against.
+//
+// Called every frame from Hook_EndScene (see its own call site below) --
+// deliberately NOT called from Hook_CreateDevice, where an existing comment in
+// this exact codebase (d3d9_hook.cpp's own res-diag block) documents a real,
+// already-encountered loader-lock hang (issue #76) from calling into the dvar
+// system too early in that specific function. By the time EndScene has fired
+// even once, the device and a full render loop already exist, well past that
+// risk window -- the same safe-timing precedent this project's other
+// first-frame EndScene diagnostics already rely on. The dvar writes themselves
+// only actually fire on a config value CHANGE (tracked via
+// g_forcedAnisoLastApplied), not literally every frame -- cheap to call
+// unconditionally each frame (one bool compare in the common case), and this
+// naturally re-applies if the setting is hot-reload-toggled live without a
+// restart.
+namespace {
+bool g_forcedAnisoLastApplied = false;
+}
+
+void ApplyForcedAnisotropicFilteringIfEnabled()
+{
+    if (g_modConfig.forceAnisotropicFiltering == g_forcedAnisoLastApplied) return;
+    g_forcedAnisoLastApplied = g_modConfig.forceAnisotropicFiltering;
+    if (!g_modConfig.forceAnisotropicFiltering) return; // turned off -- leaves whatever
+        // value is already set (matches this project's other opt-out-is-inert
+        // conventions elsewhere; doesn't try to restore a prior value since none
+        // was recorded)
+    SetDvarFloat("r_texFilterAnisoMax", 16.0f);
+    SetDvarFloat("r_texFilterAnisoMin", 16.0f);
+    LogFromController("[aniso-force] wrote r_texFilterAnisoMax/r_texFilterAnisoMin = 16 (ForceAnisotropicFiltering)");
 }
 
 void FormatOptRowValue(const OptRow& row, char* outBuf, size_t outBufSize)
@@ -5558,6 +5863,15 @@ void ReleaseAllCachedTextures()
     // unconditionally so EnsureFullscreenPassthroughShader recreates it for whichever
     // device (same or new) is actually current on next use.
     releaseIfSet(g_fullscreenPassthroughPixelShader);
+    // Phase B's own RCAS shader, same device-bound-resource reasoning. Also resets
+    // the cached device-caps check (g_fsrRcasDeviceCapsChecked) so a real device
+    // recreation re-validates PixelShaderVersion rather than trusting a stale
+    // result from a possibly-different device.
+    releaseIfSet(g_fsrRcasPixelShader);
+    g_fsrRcasDeviceCapsChecked = false;
+    g_fsrRcasDeviceSupportsPS3 = false;
+    // Phase E's own motion-blur shader, same device-bound-resource reasoning.
+    releaseIfSet(g_motionBlurPixelShader);
 }
 
 } // namespace -- closes the file-wide anonymous namespace (see the matching close's
@@ -5739,11 +6053,18 @@ HRESULT WINAPI Hook_EndScene(void* device)
     FrameBenchmark_LogFrame(BenchMs(tOptionsStart, tOptionsEnd), BenchMs(tOverlayStart, tOverlayEnd),
         BenchMs(tGlyphStart, tGlyphEnd), BenchMs(tHintStart, tHintEnd));
 
-    // Phase A, visual-suite plan -- runs LAST, after every other draw call above
-    // (this project's own overlay included), matching the plan's own design: the
-    // full-screen pass captures the COMPLETE, final frame, not just the game's own
-    // rendering.
+    // Phase A/B, visual-suite plan -- RCAS/passthrough-test run LAST, after every
+    // other draw call above (this project's own overlay included), matching the
+    // plan's own design: this pass captures the COMPLETE, final frame, sharpening
+    // this project's own UI along with the game's own rendering. Motion blur runs
+    // SEPARATELY, EARLY (see RunPreOverlayMotionBlurPassIfEnabled's own call site
+    // near the top of this function) -- it deliberately does NOT share this call.
     RunFullScreenPostProcessIfEnabled(device);
+
+    // [Video] ForceAnisotropicFiltering -- see this function's own header comment
+    // for why here (well past device creation, avoiding a real, already-
+    // documented loader-lock risk in Hook_CreateDevice) rather than at startup.
+    ApplyForcedAnisotropicFilteringIfEnabled();
 
     return g_origEndScene(device);
 }

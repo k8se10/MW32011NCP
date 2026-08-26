@@ -666,6 +666,54 @@ struct ModConfig
     // is better understood -- full trail in known_issues.md issue #92.
     bool forceD3D9On12 = false;
 
+    // [Video] Phase B, visual-suite plan (2026-08-26) -- FSR 1.0 RCAS (Robust
+    // Contrast Adaptive Sharpening), a real full-screen sharpen pass built on
+    // Phase A's capture/composite pipeline (fsr_rcas.hlsl/fsr_rcas_ps.h,
+    // overlay_hud.cpp's EnsureRcasShader/RunFullScreenPostProcessIfEnabled). A
+    // direct port of AMD's real FidelityFX-FSR reference math (MIT license, see
+    // fsr_rcas.hlsl's own header for the full port-fidelity notes and citation).
+    // PREVIEW/WIP, off by default -- built and compiling clean, not yet
+    // live-tested for actual visual quality/tuning.
+    bool fsrSharpenEnabled = false;
+    // 0.0-1.0, passed straight through as RCAS's own real con.x sharpen-lobe
+    // scale (NOT AMD's stops/exp2 framing -- see fsr_rcas.hlsl's header comment
+    // for why that indirection is skipped). 0.0 = negligible effect, 1.0 = RCAS's
+    // real maximum sharpening. Only takes effect while fsrSharpenEnabled is true.
+    // Live-tested 2026-08-26: 0.5 (the original default) was reported "needs more
+    // softness" -- lowered to 0.3.
+    float fsrSharpenStrength = 0.3f;
+
+    // [Video] Phase E, visual-suite plan (2026-08-26) -- camera-only (view-angle-
+    // delta-based) directional motion blur, built on the same Phase A pipeline,
+    // composable with FsrSharpenEnabled above (both run in sequence when both are
+    // on -- see RunFullScreenPostProcessIfEnabled, overlay_hud.cpp). Real per-
+    // frame degrees-of-rotation (analog_input_hooks.cpp's
+    // g_motionBlurYawDeltaDeg/g_motionBlurPitchDeltaDeg) drive the blur direction/
+    // magnitude -- controller stick and gyro look only, NOT mouse look (this
+    // project's own hooks never touch that path). PREVIEW/WIP, off by default --
+    // builds and runs, direction/magnitude math is new and genuinely untuned;
+    // the visual-suite plan's own Phase E text warns this is the effect most
+    // likely to need real live-tuning rounds before it feels right.
+    bool motionBlurEnabled = false;
+    // Multiplies the real per-frame yaw/pitch delta before converting to a UV-
+    // space blur extent (see MotionBlurShaderSetupCallback, overlay_hud.cpp, for
+    // the actual degrees->UV scale and its own hard safety clamp). 1.0 = the
+    // shipped default scale; 0.0 = no blur regardless of camera motion. No fixed
+    // upper bound, but the hard clamp in MotionBlurShaderSetupCallback means
+    // raising this past the point the clamp saturates has no further effect.
+    float motionBlurStrength = 1.0f;
+
+    // [Video] ForceAnisotropicFiltering (2026-08-26) -- writes the real native
+    // r_texFilterAnisoMax/r_texFilterAnisoMin dvars to 16 (maximum) via
+    // SetDvarFloat, the same real dvar-write mechanism this project's own
+    // custom Options screen already uses. Confirmed live earlier this session
+    // (issue #92) as a real, safe, no-D3D9On12-risk sharpness improvement --
+    // this just makes it a mod-config toggle instead of a hand-edited
+    // players2/config.cfg value, so it survives a native "Restore Defaults" or
+    // a fresh profile. Off by default -- purely a convenience/persistence
+    // layer over a setting the player could already set natively.
+    bool forceAnisotropicFiltering = false;
+
     // [Plugins] (2026-08-25) -- STRICTLY OPT-IN, OFF by default, same pattern as
     // useCustomOptionsScreen/autoMantleEnabled above. When enabled, plugin_loader.cpp
     // scans a "plugins" subfolder next to this DLL at startup and loads any DLL

@@ -158,7 +158,10 @@ void ReadBool(const char* path, const char* section, const char* key, bool& outV
 // real system d3d9.dll's Direct3DCreate9On12 entry point instead of the ordinary
 // one -- a real, Microsoft-documented alternate export, not a third-party DLL swap.
 // See mod_config.h's own forceD3D9On12 field comment for the full design.
-constexpr unsigned long kCurrentConfigVersion = 23;
+constexpr unsigned long kCurrentConfigVersion = 26; // v23->v24: FsrSharpenEnabled/FsrSharpenStrength (Phase B)
+                                                     // v24->v25: MotionBlurEnabled/MotionBlurStrength (Phase E),
+                                                     // FsrSharpenStrength default 0.5->0.3 (live feedback: "needs more softness")
+                                                     // v25->v26: ForceAnisotropicFiltering
 
 // Reads a legacy key's raw value, returning true only if the key genuinely existed
 // (unlike ReadFloat, which can't distinguish "absent" from "present but unparsable" --
@@ -542,6 +545,38 @@ void WriteDefaultConfig(const char* path)
         "; filtering (r_texFilterAnisoMax/Min in players2/config.cfg) on the normal\n"
         "; native driver instead for a similar sharpness improvement, safely.\n"
         "ForceD3D9On12=%d\n"
+        "; Phase B, visual-suite plan: FSR 1.0 RCAS (Robust Contrast Adaptive\n"
+        "; Sharpening), a real full-screen sharpen pass built on the Phase A capture/\n"
+        "; composite pipeline -- a direct port of AMD's real FidelityFX-FSR reference\n"
+        "; math (MIT license, see re_notes/shaders/fsr_rcas.hlsl for the full port and\n"
+        "; citation). PREVIEW/WIP -- builds and runs, not yet live-tuned for actual\n"
+        "; visual quality. 0 = off, 1 = on.\n"
+        "FsrSharpenEnabled=%d\n"
+        "; 0.0-1.0, RCAS's own real sharpen-lobe scale. 0.0 = negligible effect, 1.0 =\n"
+        "; RCAS's real maximum sharpening. Only takes effect while FsrSharpenEnabled=1.\n"
+        "; Live-tested 2026-08-26: 0.5 (the original default) was reported \"needs more\n"
+        "; softness\" -- lowered to 0.3.\n"
+        "FsrSharpenStrength=%.2f\n"
+        "; Phase E, visual-suite plan: camera-only (view-angle-delta-based) directional\n"
+        "; motion blur, built on the same pipeline -- composes with FsrSharpenEnabled\n"
+        "; above when both are on (runs in sequence, after RCAS). Driven by real per-\n"
+        "; frame degrees-of-rotation from controller stick/gyro look only, NOT mouse\n"
+        "; look. PREVIEW/WIP -- builds and runs, genuinely untuned; expect to need\n"
+        "; real live-tuning via MotionBlurStrength below. 0 = off, 1 = on.\n"
+        "MotionBlurEnabled=%d\n"
+        "; Multiplies the real per-frame yaw/pitch delta before converting to blur\n"
+        "; extent -- 1.0 = the shipped default scale, 0.0 = no blur regardless of\n"
+        "; camera motion. A hard safety clamp in the shader-setup code caps how far a\n"
+        "; single fast turn or frame-time hitch can smear, so raising this very high\n"
+        "; is safe (just increasingly less effective) rather than ever looking broken.\n"
+        "MotionBlurStrength=%.2f\n"
+        "; Writes the real native r_texFilterAnisoMax/r_texFilterAnisoMin dvars to 16\n"
+        "; (maximum) via this project's own real dvar-write mechanism -- the same\n"
+        "; sharpness improvement this session's own ForceD3D9On12 investigation (issue\n"
+        "; #92) already confirmed live and safe as a hand-edited players2/config.cfg\n"
+        "; value; this just makes it a mod-config toggle that survives a native\n"
+        "; \"Restore Defaults\" or a fresh profile instead. 0 = off, 1 = on.\n"
+        "ForceAnisotropicFiltering=%d\n"
         "\n"
         "[Plugins]\n"
         "; Loads plugin DLLs from a \"plugins\" subfolder next to this DLL at startup.\n"
@@ -748,6 +783,11 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.useCustomOptionsScreen ? 1 : 0,
         g_modConfig.internalRenderScalePercent,
         g_modConfig.forceD3D9On12 ? 1 : 0,
+        g_modConfig.fsrSharpenEnabled ? 1 : 0,
+        g_modConfig.fsrSharpenStrength,
+        g_modConfig.motionBlurEnabled ? 1 : 0,
+        g_modConfig.motionBlurStrength,
+        g_modConfig.forceAnisotropicFiltering ? 1 : 0,
         g_modConfig.pluginsEnabled ? 1 : 0,
         g_modConfig.vibrationEnabled ? 1 : 0,
         g_modConfig.vibrationFireIntensity,
@@ -1029,6 +1069,14 @@ void LoadModConfig()
         g_modConfig.internalRenderScalePercent = v;
     }
     ReadBool(path, "Video", "ForceD3D9On12", g_modConfig.forceD3D9On12);
+    ReadBool(path, "Video", "FsrSharpenEnabled", g_modConfig.fsrSharpenEnabled);
+    ReadFloat(path, "Video", "FsrSharpenStrength", g_modConfig.fsrSharpenStrength);
+    if (g_modConfig.fsrSharpenStrength < 0.0f) g_modConfig.fsrSharpenStrength = 0.0f;
+    if (g_modConfig.fsrSharpenStrength > 1.0f) g_modConfig.fsrSharpenStrength = 1.0f;
+    ReadBool(path, "Video", "MotionBlurEnabled", g_modConfig.motionBlurEnabled);
+    ReadFloat(path, "Video", "MotionBlurStrength", g_modConfig.motionBlurStrength);
+    if (g_modConfig.motionBlurStrength < 0.0f) g_modConfig.motionBlurStrength = 0.0f;
+    ReadBool(path, "Video", "ForceAnisotropicFiltering", g_modConfig.forceAnisotropicFiltering);
 
     g_buttonMap = ResolveButtonMap(g_modConfig.buttonLayout, g_modConfig.flipTriggers);
 
