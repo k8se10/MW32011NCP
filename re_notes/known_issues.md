@@ -12602,6 +12602,51 @@ buffer sizing that assumes normal-resolution values once this is
 confirmed. If the crash finally stops, that isolates it to `exitprocess-diag`
 specifically, the same fate as `com-error-diag`.
 
+### FULL EVENT LOG TIMELINE PULLED, 2026-08-26 (same day, direct user instruction "look at the crashes early am too"): at least TWO real, distinct native crash signatures today, not one
+
+Direct user pushback, correctly: framing the `0xc0000409`/`_invoke_watson`
+crashes as a "pre-existing bug" risked sounding like it was unrelated to
+this project's own render-scaling work -- it is not. It's pre-existing
+relative to TODAY's diagnostic hooks specifically (`com-error-diag`/
+`exitprocess-diag`, both now definitively cleared), not unrelated to
+`InternalRenderScalePercent` (issue #88) -- that feature's own
+implementation remains the most direct candidate. Pulled the full
+`Application Error` (Id 1000) timeline for `iw5sp.exe` across the last 20
+hours to check this properly rather than only looking at the most recent
+window:
+
+```
+03:58-03:59   nvwgf2um.dll (NVIDIA's own GPU driver)   0xc0000005 (AV)   same offset both times (0x00869bb0)
+05:42-05:59   d3d9.dll (this project's own DLL)         0xc0000005 (AV)   IDENTICAL offset all 4 times (0x0006274a)
+19:52 onward  KERNELBASE.dll / d3d9.dll                 0xc0000409        the fastfail cluster this session has
+                                                         (fastfail)        been isolating (com-error-diag/
+                                                                           exitprocess-diag both now cleared)
+```
+
+**This is a real, previously-unnoticed finding**: the 05:42-05:59 cluster
+is a GENUINE, deterministic ACCESS VIOLATION (a completely different
+exception class from tonight's fastfail crashes) in this project's own
+`d3d9.dll`, at the EXACT SAME offset all four times -- a real, reproducible
+bug from earlier in today's session. The 03:58 NVIDIA-driver AV is a third,
+separate signature again. **Cannot resolve the 05:xx offset** -- every
+rebuild since has overwritten the `.pdb` that would have matched that
+specific binary, and no backup of it exists. This means there have been AT
+LEAST two, quite possibly three, genuinely different native-crash bugs
+across today's work on this feature, not one consistent mechanism --
+the fastfail cluster this session has spent the last several rounds
+isolating may be either a second, later-introduced bug, or the same
+underlying issue manifesting differently after later code changes (the
+build changed substantially between 05:xx and 19:52). Neither can be
+confirmed without the old symbols.
+
+**Going forward**: the currently-reproducing `0xc0000409` cluster remains
+the only one this session can still catch live and investigate further --
+recorded here so the earlier AV cluster isn't lost or forgotten, but not
+pursued further without a way to resolve its symbols. If a similar
+deterministic-offset access violation ever reappears in a FRESH Event Log
+check, resolve it immediately with the CURRENT `.pdb` before rebuilding
+again, so this gap doesn't repeat.
+
 ### Next-session priority order, derived from all 4 forks, RE-ORDERED AGAIN after the gameplay-gated ratio-math finding above
 
 **RE-ORDERED AGAIN (2026-08-26), after the `clcState` finding above** --
