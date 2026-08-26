@@ -1,0 +1,15 @@
+================================================================
+Function: FUN_004411c0 @ 004411c0
+----------------------------------------------------------------
+
+undefined4 FUN_004411c0(int param_1)
+
+{
+  int unaff_FS_OFFSET;
+  
+  return *(undefined4 *)
+          (*(int *)(*(int *)(*(int *)(unaff_FS_OFFSET + 0x2c) + _tls_index * 4) + 4) + param_1 * 4);
+}
+
+
+
