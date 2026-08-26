@@ -1,0 +1,14 @@
+=== Reference counts per global ===
+DAT_0098f948 (0098f948): 10 references
+
+=== Candidate functions, ranked by distinct global diversity (5) ===
+
+---- FUN_00575830 @ 00575830 (globals: DAT_0098f948) ----
+
+---- FUN_00561860 @ 00561860 (globals: DAT_0098f948) ----
+
+---- FUN_0044ca30 @ 0044ca30 (globals: DAT_0098f948) ----
+
+---- FUN_0053d640 @ 0053d640 (globals: DAT_0098f948) ----
+
+---- FUN_0042c2f0 @ 0042c2f0 (globals: DAT_0098f948) ----

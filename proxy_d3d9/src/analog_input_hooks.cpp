@@ -6021,6 +6021,87 @@ void __fastcall Hook_FUN_00679010(void* self)
 // instead. Do not re-enable this exact substitution without first identifying
 // which specific downstream read actually needs the real scaled value.
 
+// ---- issue #96 FIX ATTEMPT C (2026-08-26): scale the PRIMARY viewport's rect
+// UP to match, only for the exact duration of its own exclusion-zone carve -----
+//
+// Full trail in known_issues.md issue #96. Fix Attempt A (retracted, see above)
+// assumed the type-2 viewport's SCALED rect was the wrong one and tried to force
+// it to native -- confirmed live to be wrong: it broke the type-2 viewport's own
+// backing-surface size (some downstream consumer inside FUN_00450740's own call
+// tree legitimately needs the REAL scaled DAT_021d2e00/04, not the substituted
+// native value). Tracing `DAT_0098f948`'s real writer (`FUN_00575830`) settled
+// the question: it's copied straight from `DAT_0096ee00/04/08/0c` (a separate,
+// well-established "current active viewport" global, native-space, e.g.
+// 2560x1440) -- meaning `FUN_00450740`'s scaled OUTPUT (6400x3600 at 250%) is
+// almost certainly CORRECT, matching the space the 9 real render targets
+// actually live in. The real mismatch is the OTHER side: the PRIMARY viewport's
+// own rect (built from SAVED_SCREEN's native dims via FUN_0052a4d0) stays in
+// native units when `FUN_00694650` carves it around this now-correctly-scaled
+// exclusion zone via `FUN_00508970` -- subtracting a rect ~2.5x larger than its
+// own container is what produces the garbage this issue traced end-to-end.
+//
+// Fix approach: rather than touching FUN_0052a4d0 (29 callers across the
+// engine, checked in known_issues.md issue #96 -- far too broad) or
+// FUN_00694650 itself (a register-implicit-argument function, `unaff_EDI`, no
+// formal parameters in its own decompile -- exactly this project's own
+// established "too risky to hook directly" category, per CLAUDE.md's own
+// standing lesson), this hooks `FUN_00508970` -- confirmed via raw disassembly
+// to be a genuine all-stack-args __cdecl function (3 args, caller cleans up
+// with `ADD ESP,0xc` at every one of its 4 real recursive call sites) -- and
+// scales the CONTAINER rect (`param_1+0x160/164/168/16c`) up by the same
+// DAT_021d2e00/DAT_021d2e08 ratio, restoring the real native values
+// immediately after.
+//
+// FUN_00508970 is genuinely recursive (calls itself directly up to 4 times per
+// level) -- since MinHook patches the function's actual entry bytes, its OWN
+// internal recursive calls hit this hook too, not just the one real external
+// call site (FUN_00694650). A depth guard ensures the scale/restore only
+// happens on the OUTERMOST call for a given top-level carve -- recursive
+// re-entries pass straight through to the trampoline untouched, since the
+// scaled starting state from the outermost call is already correctly baked
+// into the shared rect fields the recursion reads/writes in place.
+namespace {
+using FixC_508970_Fn = void(__cdecl*)(int, int*, int);
+FixC_508970_Fn g_orig_00508970 = nullptr;
+int g_fixC_508970_depth = 0;
+
+void __cdecl Hook_FUN_00508970(int param1, int* param2, int param3)
+{
+    bool didScale = false;
+    int32_t savedX = 0, savedY = 0, savedW = 0, savedH = 0;
+
+    if (g_fixC_508970_depth == 0 && g_modConfig.internalRenderScalePercent > 0 && param1 != 0) {
+        auto* scaledW = reinterpret_cast<int32_t*>(0x021d2e00);
+        auto* scaledH = reinterpret_cast<int32_t*>(0x021d2e04);
+        auto* nativeW = reinterpret_cast<int32_t*>(0x021d2e08);
+        auto* nativeH = reinterpret_cast<int32_t*>(0x021d2e0c);
+        if (*nativeW > 0 && *nativeH > 0 && *scaledW != *nativeW) {
+            auto* rx = reinterpret_cast<int32_t*>(param1 + 0x160);
+            auto* ry = reinterpret_cast<int32_t*>(param1 + 0x164);
+            auto* rw = reinterpret_cast<int32_t*>(param1 + 0x168);
+            auto* rh = reinterpret_cast<int32_t*>(param1 + 0x16c);
+            savedX = *rx; savedY = *ry; savedW = *rw; savedH = *rh;
+            *rx = static_cast<int32_t>(static_cast<int64_t>(savedX) * (*scaledW) / (*nativeW));
+            *ry = static_cast<int32_t>(static_cast<int64_t>(savedY) * (*scaledH) / (*nativeH));
+            *rw = static_cast<int32_t>(static_cast<int64_t>(savedW) * (*scaledW) / (*nativeW));
+            *rh = static_cast<int32_t>(static_cast<int64_t>(savedH) * (*scaledH) / (*nativeH));
+            didScale = true;
+        }
+    }
+
+    ++g_fixC_508970_depth;
+    g_orig_00508970(param1, param2, param3);
+    --g_fixC_508970_depth;
+
+    if (didScale) {
+        *reinterpret_cast<int32_t*>(param1 + 0x160) = savedX;
+        *reinterpret_cast<int32_t*>(param1 + 0x164) = savedY;
+        *reinterpret_cast<int32_t*>(param1 + 0x168) = savedW;
+        *reinterpret_cast<int32_t*>(param1 + 0x16c) = savedH;
+    }
+}
+} // namespace
+
 // ---- DEBUG-ONLY: live dump of the real Font struct for fonts/bigFont (2026-07-19,
 // task #6 UI scope / glyphs, follow-up to the boot-splice crash) --------------------
 //
@@ -10462,6 +10543,20 @@ void InstallAnalogInputHooks()
     // gameplay viewport into the top-left corner), not installed. See the big
     // retraction comment above (near the removed Hook_FUN_00450740 definition)
     // and known_issues.md issue #96 for the full trail.
+
+    // Issue #96 FIX ATTEMPT C, 2026-08-26 -- see the big comment above
+    // Hook_FUN_00508970's definition for the full mechanism/trail. Scales the
+    // PRIMARY viewport's container rect up to match the type-2 viewport's
+    // (correctly) scaled exclusion rect, only for the exact duration of the
+    // outermost carve -- recursive re-entries pass through untouched.
+    MH_STATUS sFixC508970 = MH_CreateHook(reinterpret_cast<LPVOID>(0x00508970), &Hook_FUN_00508970, reinterpret_cast<LPVOID*>(&g_orig_00508970));
+    sprintf_s(buf, "[hooks] MH_CreateHook(00508970 issue96-fixC) = %d", static_cast<int>(sFixC508970));
+    LogFromController(buf);
+    if (sFixC508970 == MH_OK) {
+        MH_STATUS eFixC508970 = MH_EnableHook(reinterpret_cast<LPVOID>(0x00508970));
+        sprintf_s(buf, "[hooks] MH_EnableHook(00508970 issue96-fixC) = %d", static_cast<int>(eFixC508970));
+        LogFromController(buf);
+    }
 
     // Issue #92, 2026-08-26 -- [Video] ForceD3D9On12 vid_restart guard, see the big
     // comment above Hook_CbufAddText's definition for the full incident/mechanism.
