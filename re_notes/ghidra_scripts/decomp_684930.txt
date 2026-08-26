@@ -1,0 +1,63 @@
+================================================================
+Function: FUN_00684930 @ 00684930
+----------------------------------------------------------------
+
+/* WARNING: Removing unreachable block (ram,0x006849fb) */
+/* WARNING: Removing unreachable block (ram,0x00684a9f) */
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_00684930(int param_1,int param_2)
+
+{
+  float fVar1;
+  ushort uVar2;
+  float fVar3;
+  int iVar4;
+  int iVar5;
+  int iVar6;
+  uint uVar7;
+  float10 fVar8;
+  undefined4 local_8;
+  
+  uVar2 = DAT_021d2e12;
+  DAT_021d35ac = 1;
+  iVar5 = 10;
+  iVar6 = 2;
+  if ((DAT_021d35b8 != 0) &&
+     (((DAT_021cd2e8 != 0 || (param_2 != 1)) || (iVar4 = FUN_004a18d0(), iVar4 == 0)))) {
+    DAT_021d35b8 = 0;
+  }
+  _DAT_021d35b0 = *(float *)(DAT_021cd664 + 0xc);
+  if (*(char *)(DAT_021cd450 + 0xc) != '\0') {
+    _DAT_021d35b0 = 1.0;
+  }
+  if (DAT_021d35b8 != 0) {
+    fVar1 = _DAT_021d35b0 + _DAT_021d35b0;
+    _DAT_021d35b0 = 1.0;
+    if (fVar1 < (float)_DAT_00865558 != (fVar1 == (float)_DAT_00865558)) {
+      _DAT_021d35b0 = fVar1;
+    }
+    iVar5 = 0xb;
+    iVar6 = 4;
+    uVar2 = DAT_021d2e10;
+  }
+  uVar7 = (uint)uVar2;
+  fVar1 = (float)uVar7;
+  fVar8 = (float10)FUN_00739380((double)(fVar1 * _DAT_021d35b0 * (float)_DAT_00826f48));
+  local_8 = (undefined4)(longlong)ROUND((float)fVar8 + (float)fVar8);
+  DAT_021d35b4 = local_8;
+  *(int *)(param_1 + 0x95c) = iVar6;
+  *(uint *)(param_1 + 0x954) = uVar7;
+  fVar3 = (float)_DAT_0083c0c8;
+  *(int *)(param_1 + 0x958) = iVar5;
+  _DAT_02516aa8 = (&DAT_024bf480)[iVar5 * 5];
+  _DAT_02516aac = fVar3 / fVar1;
+  _DAT_02516ab0 = (float)_DAT_00826f48 / (float)(iVar6 * uVar7);
+  _DAT_02516ab4 = (float)_DAT_00826f48 / fVar1;
+  _DAT_02516ab8 = (float)_DAT_00853e48 / (float)(iVar6 * uVar7);
+  _DAT_021d35bc = ((float)DAT_021d2e12 * *(float *)(DAT_021cd578 + 0xc)) / fVar1;
+  return;
+}
+
+
+
