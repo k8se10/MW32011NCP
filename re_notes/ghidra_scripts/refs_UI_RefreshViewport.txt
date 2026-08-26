@@ -1,0 +1,6 @@
+STRING @ 0082e888 = "UI_RefreshViewport"
+  from 0057f550 type=DATA IN FUNCTION FUN_0057f550@0057f550
+  from 0057f59a type=DATA IN FUNCTION FUN_0057f580@0057f580
+  (2 references)
+
+Total matching strings: 1

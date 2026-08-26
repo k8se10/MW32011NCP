@@ -1,0 +1,60 @@
+Callers of 0057f550 (1):
+  FUN_0057f5f0 @ 0057f5f0
+
+================================================================
+Function: FUN_0057f5f0 @ 0057f5f0
+----------------------------------------------------------------
+
+void FUN_0057f5f0(int param_1)
+
+{
+  char cVar1;
+  int iVar2;
+  
+  FUN_0045dfa0();
+  FUN_004e7680();
+  FUN_0040e480();
+  iVar2 = DAT_00b36218;
+  if (DAT_00aa41a0 == 0) {
+    FUN_004c5040(1,&DAT_0086fc08,0x3f800000,0);
+    return;
+  }
+  if (DAT_00b36218 == 7) {
+    FUN_004c5040(1,&DAT_0086fc08,0x3f800000,0);
+    return;
+  }
+  FUN_0044c1d0(0,DAT_00aa41b0);
+  switch(iVar2) {
+  case 1:
+    FUN_0057f5d0();
+    FUN_00489a10(0);
+    if (*(int *)(DAT_01bf6938 + 0xc) != 0) {
+      FUN_00537210(0);
+    }
+    break;
+  case 2:
+    FUN_0057f5d0();
+    FUN_004d96c0();
+    break;
+  case 3:
+  case 6:
+    cVar1 = FUN_00403750();
+    if ((cVar1 == '\0') || (iVar2 = FUN_004e32f0(), iVar2 == 0)) break;
+  case 0:
+    FUN_0057f5d0();
+    break;
+  case 4:
+    FUN_0057f5d0();
+    FUN_0057f550();
+    return;
+  default:
+    FUN_00425540(0,&DAT_0084cd30);
+  }
+  if ((param_1 == 0) && (cVar1 = FUN_00416150(0,0x10), cVar1 != '\0')) {
+    FUN_0057f550();
+  }
+  return;
+}
+
+
+

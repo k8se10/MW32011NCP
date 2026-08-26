@@ -1,0 +1,31 @@
+Callers of 0057f710 (1):
+  FUN_004269b0 @ 004269b0
+
+================================================================
+Function: FUN_004269b0 @ 004269b0
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_004269b0(void)
+
+{
+  int iVar1;
+  char cVar2;
+  int iVar3;
+  
+  iVar1 = DAT_00b36218;
+  if (((DAT_00b42420 == '\0') &&
+      (((iVar3 = _DAT_00b42424, 5 < DAT_00b36218 ||
+        (iVar3 = FUN_004a1610(), (int)(((iVar1 < 4) - 1 & 0x11) + 0x10) <= iVar3 - _DAT_00b42424))
+       && (_DAT_00b42424 = iVar3, DAT_00b4241c != 0)))) && (cVar2 = FUN_00417d00(), cVar2 == '\0'))
+  {
+    DAT_00b42420 = 1;
+    FUN_0057f710();
+    DAT_00b42420 = '\0';
+  }
+  return;
+}
+
+
+
