@@ -12268,7 +12268,7 @@ CORRECTLY-scaled exclusion rect via `FUN_00508970`. Subtracting a rect
 traced end-to-end -- not the type-2 viewport being wrong, but the primary
 viewport never being scaled to match it for this one operation.
 
-### FIX ATTEMPT C, 2026-08-26 (same day, direct user instruction "try it"): shipped, not yet live-tested
+### FIX ATTEMPT C, 2026-08-26 (same day, direct user instruction "try it"): live-tested -- installed correctly, no visual regression, but STILL CRASHED
 
 Rather than touching `FUN_0052a4d0` (29 callers, checked earlier, too broad)
 or `FUN_00694650` itself (a register-implicit-argument function --
@@ -12294,7 +12294,57 @@ recursion reads/writes in place.
 
 Built (0 errors), redeployed. Logged at install time:
 `[hooks] MH_CreateHook(00508970 issue96-fixC)` / `MH_EnableHook(...)`.
-**Not yet live-tested.**
+
+**Live-tested, same day. Result: "still crashes."** Log confirms the hook
+genuinely installed and enabled this session
+(`MH_CreateHook(00508970 issue96-fixC) = 0`, `MH_EnableHook(...) = 0` -- both
+`MH_OK`). Unlike Fix Attempt A, **no visual regression was reported this
+time** -- the geometric correction itself doesn't appear to break anything
+on its own. `[video-scale-diag2]` again reads `2560x1440` (native, sane),
+confirming the same divergence as before. `clcstate-diag`: 0 hits again --
+**the THIRD live crash in a row where this diagnostic has never fired once**.
+`d3d9on12-guard`: 0 hits again. Not retracted (no confirmed regression, and
+the underlying geometric correction is still believed correct per the
+traced-natural-data-flow finding above) -- left installed, but confirmed NOT
+sufficient on its own to prevent the crash.
+
+**Reassessment after 3 consecutive live crashes with zero positive hits on
+either targeted diagnostic**: rather than keep guessing at more targeted
+fixes for a specific mechanism that's never actually been directly
+observed, shipped a general diagnostic instead -- see below.
+
+### GENERAL DIAGNOSTIC, 2026-08-26 (same day): observe every real call into `FUN_00425540` directly, instead of guessing at which theory is right
+
+Three live crashes in a row (the original, Fix Attempt A's test, and Fix
+Attempt C's test) have all reproduced the crash while `[clcstate-diag]`
+never fired once -- either the `clcState` theory is wrong for these specific
+instances, or the crash goes through a DIFFERENT one of `FUN_00425540`'s
+many real call sites (fork 2 already found at least 4 distinct ones feeding
+it, from the render-target-allocation-failure angle alone) that neither
+existing diagnostic covers.
+
+**Shipped**: `Hook_FUN_00425540`, a naked pre-hook (same established pattern
+as `Hook_0057de60`) that reads `param_1`/`param_2` directly off the stack at
+the function's real entry point -- confirmed via its own already-committed
+decompile (`decomp_425540.txt`) to be a genuine variadic function
+(`void FUN_00425540(int param_1, char *param_2, ...)`, matching id Tech's
+own `Com_Error(level, fmt, ...)` shape). Rather than risk a fragile
+variadic-argument-forwarding hook, this only OBSERVES `param_1` (severity)
+and `param_2` (the format-string literal -- logging it unformatted, without
+touching the variadic args at all, already identifies exactly which call
+site fired) via a small C logging helper, then tail-jumps into the
+completely untouched original -- zero risk to the real call's own
+behavior, since the hook never actually calls the trampoline itself, it
+jumps to it with the stack exactly as the real caller left it.
+
+Logs `[com-error-diag] *** FUN_00425540 (Com_Error-equivalent) called --
+severity=%d fmt="%s"` every single time this function is entered, from
+ANY call site, whether or not it matches either theory already
+instrumented. Built (0 errors), redeployed. **This is the single most
+decisive diagnostic shipped for this issue so far** -- whatever format
+string appears in the log immediately before the next crash directly
+identifies the real mechanism, cutting through every remaining theory at
+once. **Not yet live-tested.**
 
 ### Next-session priority order, derived from all 4 forks, RE-ORDERED AGAIN after the gameplay-gated ratio-math finding above
 
