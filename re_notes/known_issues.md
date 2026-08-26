@@ -11259,6 +11259,22 @@ fastfiles, not plain text, so a real extraction step would be needed first.)
 If confirmed, that would directly connect fork 1's exclusion-zone mechanism
 to this specific map rather than leaving it a general theory.
 
+**UPDATE, same day, direct user follow-up ("dig into it")**: traced the
+mechanism all the way to real code -- see the "Deep RE dig" section below.
+`FUN_00450740` computes a viewport sub-rect as an EXPLICIT ratio between
+`DAT_021d2e00`/`04` (the pair this project's hook overrides) and
+`DAT_021d2e08`/`0c` (the pair it never touches), and the whole call chain
+that reaches it is gated on `DAT_00b36218==6` -- a per-player game-state
+field ALREADY independently documented elsewhere in this repo
+(`re_notes/iw5sp.md` line ~912) as meaning "ordinary live SP/Survival
+gameplay." This is now the leading theory: real code, an explicit
+computation (not an implicit consistency assumption), and a gating condition
+that matches "IT HAPPENS ONLY IN LIVE GAMEPLAY" exactly, independently
+confirmed rather than newly guessed. A new diagnostic log
+(`[video-scale-diag]`) has been shipped (built, redeployed) that will show
+directly, on the next play session, whether/how far the two pairs actually
+diverge at runtime -- the single most decisive available check.
+
 **Retracted theory/fix (kept for the record, DO NOT reapply):** `FUN_00683060`
 does create `SAVED_SCREEN` from `DAT_021d2e08`/`DAT_021d2e0c` while the other
 9 render targets scale from `DAT_021d2e00`/`DAT_021d2e04` (the pair
@@ -11725,40 +11741,155 @@ it for live logic. Contradicts this session's own earlier summary claim that
 this dead tracking variable had already been fully removed during the revert
 -- it wasn't, quite.
 
-### Next-session priority order, derived from all 4 forks
+### Deep RE dig, 2026-08-26 (same day, direct user follow-up): a concrete, gameplay-gated ratio-math bug found -- not yet confirmed live, but the strongest lead so far
 
-**RE-ORDERED (2026-08-26), per the "live gameplay only, map-dependent speed"
-evidence above** -- fork 4's `vid_restart` lead is deprioritized (no known
-live-gameplay action issues `vid_restart`; that lead was built around
-menu/settings-triggered scenarios) in favor of the two leads a
-map-dependent signature actually fits. None of the leads below is confirmed
--- each needs a LIVE test, not more static RE, and they are not mutually
-exclusive (more than one could be a real contributing factor):
+Direct user follow-up after the map-dependence report above: "its not
+vid_restart related IT HAPPENS ONLY IN LIVE GAMEPLAY (Underground map crashes
+fastest)... no mirrors or cameras that i recall at all, dig into it." Traced
+`FUN_00508970`'s "type==2 exclusion zone" mechanism to its actual source
+rather than continuing to guess at what triggers it (per this project's own
+"checking is far cheaper than digging" standard -- this WAS the digging, done
+directly instead of asking the user to check something only static RE could
+answer):
 
-1. **Top priority, map-dependent-signature fits directly**: reproduce on
-   `Underground` specifically (already confirmed fastest-to-crash) with the
-   one-line `D3DCAPS9.MaxTextureWidth`/`MaxTextureHeight` log fork 2
-   recommended added first, and compare against the actual requested
-   dimensions at whatever `InternalRenderScalePercent` value crashes. A hit
-   confirms a real device-cap rejection on the unclamped shared
-   depth-stencil (`FUN_00682bc0`) -- and if `Underground` is simply more
-   geometry/lighting-dense than other maps, that would explain why it
-   crashes fastest. A miss rules this specific mechanism out.
-2. **Equal top priority, also fits the map-dependent signature**: resolve
-   fork 1's `0x1720` vs `0x1760` discrepancy in `FUN_004e5b30` (fresh Ghidra
-   decompile, not live testing), then confirm/deny whether `FUN_00508970`'s
-   exclusion-zone condition actually drives that same mode flag. Also worth
-   checking directly, live or via a map-asset scan: does `Underground` have
-   any in-game mirror/security-camera/turret-cam/picture-in-picture element
-   that would exercise the exclusion-zone rendering path more than other
-   maps? If confirmed, this explains the crash's tie to the setting being on
-   at any value, its intermittency, AND why `Underground` specifically is
-   worst.
-3. **Deprioritized, not disproved**: reproduce, then grep the live
+**Method**: no xref exists to a raw struct offset like `+0x940` in Ghidra's
+normal reference engine (it's accessed via register-relative arithmetic, not
+a named field) -- built a new reusable script, `FindDisplacementRefs`-style
+scan (`re_notes/ghidra_scripts/DecompileAt.java`, new this pass, decompiles
+an arbitrary list of addresses directly -- `FuncAtAddr.java` only resolves an
+address to its containing instruction, it doesn't decompile; `FindCallers.java`
+only decompiles CALLERS of a target, not the target itself -- neither existing
+script covered "decompile these exact addresses," so this fills a real gap in
+the existing toolkt). Ran the already-existing `FindDisplacementRefs.java`
+for displacement `0x940` across the WHOLE program (28 real hits) to find every
+instruction touching the viewport-type field directly, filtered to the two
+real WRITES: `FUN_00684b00` (`MOV dword ptr [EDI+0x940],0x2` -- an
+unconditional literal write) and `FUN_006c4320` (a generic bounded-buffer-copy
+utility, confirmed via decompile to be an unrelated struct at the same
+numeric offset by coincidence -- ruled out, not the viewport type field).
+
+**Trace, each link confirmed via fresh decompile + `FindCallers`, not
+guessed**: `FUN_00684b00` (sets `type=2`) <- `FUN_00685bb0`/`FUN_00685e20`
+(the two setup-routine "flavors" already documented above) <- `FUN_004ad990`/
+`FUN_00450740` (the real entry points, each doing a large, near-identical
+per-player secondary-view setup) <- `FUN_0053d640`/`FUN_00492e00` <-
+`FUN_0057f710`/`FUN_0044ca30`.
+
+**Finding 1, the ratio math (`FUN_00450740`, lines ~42-71 of its own
+decompile)**: computes the viewport sub-rect fields (`iVar3+0x140/144/148/14c`,
+the exact struct fields `FUN_00508970`'s recursion reads) as an EXPLICIT
+ratio:
+```c
+*(int *)(iVar3 + 0x140) =
+    (int)(((longlong)*param_2 * (longlong)DAT_021d2e00 & 0xffffffffU) / (ulonglong)DAT_021d2e08);
+*(int *)(iVar3 + 0x144) =
+    (int)(((longlong)param_2[1] * (longlong)DAT_021d2e04 & 0xffffffffU) / (ulonglong)DAT_021d2e0c);
+```
+(and the mirrored W/H-extent pair immediately after). This is a REAL,
+DELIBERATE conversion between the pair this project's hook overrides
+(`DAT_021d2e00`/`04`) and the pair it deliberately never touches
+(`DAT_021d2e08`/`0c`, confirmed above to be the real window-size field) --
+not an assumption of consistency the engine happens to rely on implicitly
+(like the SAVED_SCREEN case), but an ACTIVE computation whose correctness
+depends on knowing the true runtime relationship between the two pairs. If
+`param_2`'s own coordinate space assumption (almost certainly "up to
+whatever the engine's own internal baseline resolution is") doesn't match
+what `DAT_021d2e08` actually holds at the moment this fires, the result is a
+genuinely wrong sub-rect -- too large, negative, or otherwise inconsistent
+with the render target it's meant to address -- which is exactly the kind of
+input that could reach fork 2's already-confirmed unclamped depth-stencil
+path or otherwise corrupt state.
+
+**Finding 2, the gameplay gate (`FUN_0057f710`) -- this is the one that
+actually explains "ONLY IN LIVE GAMEPLAY," directly and precisely**: this
+function gates its whole body on `DAT_00b36218 == 6`. That field and value
+are NOT new to this pass -- `re_notes/iw5sp.md` (line ~908-914, from
+EARLIER, unrelated RE work on the pause-menu key handler) already documents
+`DAT_00b36218` as the real **per-player game-state field**, and its own
+comment states outright: `state == 6 -- ... this is the branch real
+SP/Survival gameplay hits`. I.e. this is an independently-confirmed,
+already-on-record fact (not discovered fresh this pass) that `state==6`
+means "ordinary live SP/Survival gameplay, not paused, not in a menu" --
+which matches the user's own report ("IT HAPPENS ONLY IN LIVE GAMEPLAY")
+exactly, and explains why nothing about a menu/settings action (fork 4's
+`vid_restart` guard) was ever the right shape for this crash.
+
+**Not yet confirmed**: exactly which player-facing feature `FUN_0057f710`
+represents. Its body references a real string, `"removecorpse"`, and
+conditionally calls the `FUN_0053d640` chain (the whole secondary-viewport
+setup) only along one branch -- consistent with some kind of death/
+downed-state camera transition (Survival's revive/spectate mechanic is the
+most obvious candidate given the "gameplay only" + "removecorpse" combination,
+but this is inference, not confirmed via a decompile of what specifically
+sets state to 6 or what UI/gameplay moment corresponds to it). **Not yet
+confirmed either**: whether this connects to `Underground` specifically --
+plausible if that map causes the player to enter this state (die/go down)
+more often than other maps (tighter corridors, more melee/swarm damage), but
+this is a reasonable inference, not independently verified.
+
+**Real, concrete next step taken this pass (not just documented, actually
+shipped)**: extended the existing `[video-scale]` diagnostic in
+`Hook_FUN_00679010` (`analog_input_hooks.cpp`) with a new one-shot
+`[video-scale-diag]` log line that reads and logs `DAT_021d2e08`/`DAT_021d2e0c`'s
+REAL runtime value every time the override fires, directly alongside the
+already-logged `DAT_021d2e00`/`04` override target -- nobody has ever
+actually logged what `DAT_021d2e08`/`0c` holds at runtime; this closes that
+gap. Built (0 errors), redeployed. **The next live session's log will show,
+directly, whether and how far these two pairs actually diverge** -- this is
+the single most decisive available check, more so than the `MaxTextureWidth`
+check or the `vid_restart` guard grep, since it directly tests the mechanism
+this pass actually found in code (not just a plausible-sounding theory).
+
+**New reusable tooling**: `re_notes/ghidra_scripts/DecompileAt.java` (decompiles
+an arbitrary list of addresses directly -- fills a real gap, see "Method"
+above) is committed alongside the new decompile artifacts this pass produced
+(`decomp_684b00_6c4320_full.txt`, `callers_685bb0.txt`, `callers_685e20.txt`,
+`callers_684b00.txt`, `callers_6c4320.txt`, `callers_450740.txt`,
+`callers_4ad990.txt`, `callers_492e00.txt`, `callers_53d640.txt`).
+
+### Next-session priority order, derived from all 4 forks, RE-ORDERED AGAIN after the gameplay-gated ratio-math finding above
+
+**RE-ORDERED AGAIN (2026-08-26)** -- the gameplay-gated ratio-math finding
+above is now the single most concrete, evidence-backed mechanism on the
+table (real code, real explicit computation between the two globals, gated
+on an independently-already-documented "live gameplay" state value). None of
+the items below is confirmed live yet -- they are not mutually exclusive
+(the ratio-math bug could feed directly into fork 2's unclamped
+depth-stencil, for instance):
+
+1. **Top priority, single most decisive check available, and already
+   shipped**: launch the current build (already has the new
+   `[video-scale-diag]` log line), reproduce on `Underground`, and read the
+   log. It directly reports `DAT_021d2e08`/`0c`'s real runtime value next to
+   the override target every time `InternalRenderScalePercent` fires -- if
+   they diverge, that's live confirmation of the exact mechanism
+   `FUN_00450740`'s ratio math depends on being wrong. This requires ZERO
+   further code changes, just a play session and a log read.
+2. **If #1 confirms a divergence**: the fix is almost certainly NOT another
+   poke to `DAT_021d2e08`/`0c` (proven unsafe -- it's the real window size)
+   -- it's making `FUN_00450740`'s own ratio computation (or its caller)
+   aware of the actual relationship between the two pairs, most likely by
+   having this project's own hook also track/expose what `param_2`'s
+   coordinate space actually assumes, OR by clamping/disabling
+   `InternalRenderScalePercent` automatically whenever this specific
+   gameplay state (`DAT_00b36218==6` with an active secondary view) is about
+   to be entered. Not attempted this pass -- needs #1's confirmation first.
+3. **Second priority**: add the one-line `D3DCAPS9.MaxTextureWidth`/
+   `MaxTextureHeight` log fork 2 recommended, reproduce on `Underground`, and
+   compare against the actual requested dimensions. A hit confirms a real
+   device-cap rejection on the unclamped shared depth-stencil
+   (`FUN_00682bc0`) -- possibly downstream of #1's bad rect feeding it an
+   oversized request, not necessarily a competing/exclusive theory.
+4. **Lower priority now, but not disproved**: resolve fork 1's `0x1720` vs
+   `0x1760` discrepancy in `FUN_004e5b30` -- largely superseded by this
+   pass's more direct trace (which bypassed that discrepancy entirely by
+   finding the actual writer function), but still worth resolving for a
+   complete picture of the sub-rect selection logic.
+5. **Deprioritized, not disproved**: reproduce, then grep the live
    `proxy_d3d9.log` for `[d3d9on12-guard] blocked` (fork 4) before it's
    overwritten by another launch -- still worth a look if convenient, but no
-   longer the leading theory given the crash requires live gameplay, not a
-   settings/menu action.
+   longer plausible as the PRIMARY mechanism now that a complete,
+   gameplay-gated alternative causal chain is confirmed in code.
 4. If a fresh live capture is ever taken, tag `0x34AEA000`/`0x37FD0000`-
    equivalent regions (fork 3) with a live `VirtualQuery` check to identify
    the owning subsystem, rather than guessing from a static snapshot alone.

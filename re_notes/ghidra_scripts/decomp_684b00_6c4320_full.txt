@@ -1,0 +1,46 @@
+================================================================
+Function: FUN_00684b00 @ 00684b00
+----------------------------------------------------------------
+
+void FUN_00684b00(void)
+
+{
+  undefined4 *unaff_ESI;
+  int unaff_EDI;
+  
+  FUN_00452f30(DAT_021ddf00 + 0x118180,unaff_ESI + 0x5c,*(int *)(DAT_021d2c9c + 0x20) * 0x4c);
+  *(undefined4 *)(DAT_021ddf00 + 0x41908) = *unaff_ESI;
+  *(undefined4 *)(DAT_021ddf00 + 0x41f90) = 0;
+  *(undefined4 *)(unaff_EDI + 0x940) = 2;
+  FUN_006842e0();
+  return;
+}
+
+
+
+================================================================
+Function: FUN_006c4320 @ 006c4320
+----------------------------------------------------------------
+
+void * __thiscall FUN_006c4320(void *param_1,int param_2,int param_3,undefined4 param_4)
+
+{
+  size_t _Size;
+  void *_Src;
+  
+  *(undefined4 *)((int)param_1 + 0x940) = param_4;
+  _Src = (void *)(param_2 + -4);
+  *(int *)((int)param_1 + 0x948) = param_3;
+  _Size = param_3 - (int)_Src;
+  *(void **)((int)param_1 + 0x944) = _Src;
+  *(undefined4 *)((int)param_1 + 0x94c) = 4;
+  if (0x93f < _Size) {
+    _Size = 0x93f;
+  }
+  *(size_t *)((int)param_1 + 0x950) = _Size;
+  _memcpy(param_1,_Src,_Size);
+  return param_1;
+}
+
+
+

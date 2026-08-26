@@ -1,0 +1,58 @@
+Callers of 00685bb0 (1):
+  FUN_004ad990 @ 004ad990
+
+================================================================
+Function: FUN_004ad990 @ 004ad990
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_004ad990(undefined4 param_1,undefined4 *param_2,undefined4 param_3,undefined4 param_4)
+
+{
+  int iVar1;
+  undefined *puVar2;
+  undefined *puVar3;
+  
+  FUN_004b9310(0x4b10);
+  iVar1 = FUN_0050aae0();
+  FUN_004a51c0();
+  FUN_00540b60();
+  FUN_0040e480();
+  _DAT_021d2ff4 = param_2[6];
+  _DAT_021d2ff8 = param_2[7];
+  _DAT_021d2ffc = param_2[8];
+  _DAT_021d3000 = param_2[9];
+  _DAT_021d3004 = param_2[10];
+  _DAT_021d3008 = param_2[0xb];
+  puVar2 = (undefined *)FUN_0047f300();
+  FUN_00685370(param_2 + 4,puVar2);
+  FUN_006853e0(param_2,iVar1);
+  *(undefined4 *)(iVar1 + 0x150) = *param_2;
+  *(undefined4 *)(iVar1 + 0x154) = param_2[1];
+  *(undefined4 *)(iVar1 + 0x158) = param_2[2];
+  *(undefined4 *)(iVar1 + 0x15c) = param_2[3];
+  *(undefined4 *)(iVar1 + 0x140) = *param_2;
+  *(undefined4 *)(iVar1 + 0x144) = param_2[1];
+  *(undefined4 *)(iVar1 + 0x148) = param_2[2];
+  *(undefined4 *)(iVar1 + 0x14c) = param_2[3];
+  *(undefined4 *)(iVar1 + 0x160) = *param_2;
+  *(undefined4 *)(iVar1 + 0x164) = param_2[1];
+  *(undefined4 *)(iVar1 + 0x168) = param_2[2];
+  *(undefined4 *)(iVar1 + 0x16c) = param_2[3];
+  *(undefined4 *)(iVar1 + 0xb4) = param_4;
+  FUN_00554060(iVar1 + 0xb8,param_2 + 6);
+  FUN_00685930(iVar1 + 0x170);
+  FUN_00685830();
+  FUN_00685a70(param_3);
+  puVar3 = &DAT_0254bd90;
+  if (*(char *)(DAT_021cd510 + 0xc) == '\0') {
+    puVar3 = puVar2;
+  }
+  FUN_00685bb0(param_1,iVar1,puVar3,puVar2);
+  FUN_004e2640();
+  return;
+}
+
+
+

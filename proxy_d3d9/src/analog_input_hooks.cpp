@@ -5924,6 +5924,31 @@ void __fastcall Hook_FUN_00679010(void* self)
                     "(feeds the real RESOLVED_SCENE/post-effect render targets, no r_mode, no vid_restart)",
                     pct, static_cast<int>(nativeW), static_cast<int>(nativeH), targetW, targetH);
                 LogFromController(buf);
+
+                // Diagnostic, added 2026-08-26 during issue #96's live-gameplay-only
+                // deep RE pass -- confirmed via fresh Ghidra decompile that FUN_00450740
+                // (a live-gameplay-only secondary-viewport setup path, gated on the real
+                // per-player game-state field DAT_00b36218==6, i.e. "ordinary SP/Survival
+                // gameplay" per re_notes/iw5sp.md line ~912 -- matches the user's own
+                // "IT HAPPENS ONLY IN LIVE GAMEPLAY" report exactly) computes a viewport
+                // sub-rect as `coord * DAT_021d2e00 / DAT_021d2e08` (and the H equivalent
+                // with DAT_021d2e04/DAT_021d2e0c) -- an EXPLICIT ratio between the pair
+                // this hook overrides and the pair it deliberately never touches. If these
+                // two pairs diverge by more than this ratio math's own design tolerates,
+                // that's a real, concrete candidate mechanism for issue #96 -- but nobody
+                // has ever logged DAT_021d2e08/0c's actual runtime value, so it's still
+                // unconfirmed whether/how far it actually diverges from DAT_021d2e00/04 at
+                // the point this crash reproduces. One-shot log here (same event as the
+                // override above, so directly comparable) to settle it on the next live
+                // session -- see known_issues.md issue #96 for the full trail.
+                auto* savedScreenW = reinterpret_cast<int32_t*>(0x021d2e08);
+                auto* savedScreenH = reinterpret_cast<int32_t*>(0x021d2e0c);
+                char buf2[256];
+                sprintf_s(buf2, "[video-scale-diag] DAT_021d2e08/0c (window-size pair, never overridden) = %dx%d "
+                    "-- compare against target=%dx%d above; a mismatch here is the live confirmation "
+                    "issue #96's FUN_00450740 ratio-math theory needs",
+                    *savedScreenW, *savedScreenH, targetW, targetH);
+                LogFromController(buf2);
             }
         }
     }

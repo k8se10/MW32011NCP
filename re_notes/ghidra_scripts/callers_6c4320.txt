@@ -1,0 +1,89 @@
+Callers of 006c4320 (1):
+  FUN_006c9ee0 @ 006c9ee0
+
+================================================================
+Function: FUN_006c9ee0 @ 006c9ee0
+----------------------------------------------------------------
+
+void FUN_006c9ee0(undefined4 param_1,int param_2,int param_3,int param_4,int *param_5,int param_6,
+                 int param_7)
+
+{
+  int *piVar1;
+  int iVar2;
+  uint uVar3;
+  int iVar4;
+  int iVar5;
+  uint uVar6;
+  int local_964 [592];
+  int local_24;
+  int local_20;
+  int local_1c;
+  int local_18;
+  int local_14;
+  int *local_8;
+  
+  if (param_2 - param_7 == 0) {
+    FUN_006b8ff0(param_3,param_4);
+    FUN_006b8fc0();
+    return;
+  }
+  FUN_006c4320(param_3,param_3 + param_4,param_2);
+  uVar6 = 0;
+  local_8 = (int *)((int)param_5 + param_6);
+  if (local_20 != local_1c) {
+    do {
+      iVar5 = local_14;
+      if (param_5 == local_8) {
+        iVar2 = 0;
+      }
+      else {
+        iVar2 = (*(ushort *)((int)param_5 + uVar6 * 2 + 8) & 0xfff) + *param_5;
+      }
+      while( true ) {
+        if (iVar5 + 4U < 0x93f) {
+          iVar4 = iVar5 - local_24;
+        }
+        else {
+          iVar4 = (iVar5 - local_24) + -4;
+        }
+        if (iVar4 + local_20 < iVar2) break;
+        if ((local_20 - local_24 <= iVar2) &&
+           ((*(ushort *)((int)param_5 + uVar6 * 2 + 8) & 0xf000) == 0x3000)) {
+          piVar1 = (int *)((int)local_964 + (local_24 - local_20) + iVar2);
+          *piVar1 = *piVar1 - (param_2 - param_7);
+          iVar5 = local_14;
+        }
+        if (param_5 == local_8) break;
+        uVar3 = param_5[1] - 8U >> 1;
+        do {
+          uVar6 = uVar6 + 1;
+          if (uVar3 <= uVar6) break;
+        } while ((*(ushort *)((int)param_5 + uVar6 * 2 + 8) & 0xf000) == 0);
+        if (uVar6 == uVar3) {
+          param_5 = (int *)((int)param_5 + param_5[1]);
+          uVar6 = 0;
+        }
+        if (param_5 == local_8) {
+          iVar2 = 0;
+        }
+        else {
+          iVar2 = (*(ushort *)((int)param_5 + uVar6 * 2 + 8) & 0xfff) + *param_5;
+        }
+      }
+      if (iVar5 + 4U < 0x93f) {
+        iVar5 = iVar5 - local_18;
+      }
+      else {
+        iVar5 = (iVar5 - local_18) + -4;
+      }
+      FUN_006b8ff0((int)local_964 + local_18,iVar5);
+      FUN_006c4380();
+    } while (local_20 != local_1c);
+  }
+  FUN_006b8fc0();
+  return;
+}
+
+
+
