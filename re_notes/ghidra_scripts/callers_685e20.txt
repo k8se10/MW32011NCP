@@ -1,0 +1,118 @@
+Callers of 00685e20 (1):
+  FUN_00450740 @ 00450740
+
+================================================================
+Function: FUN_00450740 @ 00450740
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_00450740(undefined4 param_1,int *param_2,undefined4 param_3,undefined4 param_4,
+                 undefined4 param_5)
+
+{
+  int iVar1;
+  int iVar2;
+  int iVar3;
+  undefined *puVar4;
+  int *piVar5;
+  int iVar6;
+  undefined *puVar7;
+  uint uVar8;
+  
+  FUN_004b9310(0x4b10);
+  iVar3 = FUN_0050aae0();
+  FUN_004a51c0();
+  FUN_00540b60();
+  FUN_0040e480();
+  FUN_0040ddd0(param_1);
+  _DAT_021d2ff4 = param_2[6];
+  _DAT_021d2ff8 = param_2[7];
+  _DAT_021d2ffc = param_2[8];
+  _DAT_021d3000 = param_2[9];
+  _DAT_021d3004 = param_2[10];
+  _DAT_021d3008 = param_2[0xb];
+  puVar4 = (undefined *)FUN_0047f300();
+  FUN_00685370(param_2 + 4,puVar4);
+  FUN_006853e0(param_2,iVar3);
+  *(int *)(iVar3 + 0x150) = *param_2;
+  *(int *)(iVar3 + 0x154) = param_2[1];
+  *(int *)(iVar3 + 0x158) = param_2[2];
+  *(int *)(iVar3 + 0x15c) = param_2[3];
+  *(int *)(iVar3 + 0x140) =
+       (int)(((longlong)*param_2 * (longlong)DAT_021d2e00 & 0xffffffffU) / (ulonglong)DAT_021d2e08);
+  *(int *)(iVar3 + 0x144) =
+       (int)(((longlong)param_2[1] * (longlong)DAT_021d2e04 & 0xffffffffU) / (ulonglong)DAT_021d2e0c
+            );
+  *(int *)(iVar3 + 0x148) =
+       (int)(((longlong)(param_2[2] + *param_2) * (longlong)DAT_021d2e00 & 0xffffffffU) /
+            (ulonglong)DAT_021d2e08) - *(int *)(iVar3 + 0x140);
+  *(int *)(iVar3 + 0x14c) =
+       (int)(((longlong)(param_2[3] + param_2[1]) * (longlong)DAT_021d2e04 & 0xffffffffU) /
+            (ulonglong)DAT_021d2e0c) - *(int *)(iVar3 + 0x144);
+  if ((char)param_2[0x12c8] == '\0') {
+    *(undefined4 *)(iVar3 + 0x160) = *(undefined4 *)(iVar3 + 0x140);
+    *(undefined4 *)(iVar3 + 0x164) = *(undefined4 *)(iVar3 + 0x144);
+    *(undefined4 *)(iVar3 + 0x168) = *(undefined4 *)(iVar3 + 0x148);
+    *(undefined4 *)(iVar3 + 0x16c) = *(undefined4 *)(iVar3 + 0x14c);
+  }
+  else {
+    *(int *)(iVar3 + 0x160) =
+         (int)(((longlong)param_2[0x12c4] * (longlong)DAT_021d2e00 & 0xffffffffU) /
+              (ulonglong)DAT_021d2e08);
+    *(int *)(iVar3 + 0x164) =
+         (int)(((longlong)param_2[0x12c5] * (longlong)DAT_021d2e04 & 0xffffffffU) /
+              (ulonglong)DAT_021d2e0c);
+    *(int *)(iVar3 + 0x168) =
+         (int)(((longlong)(param_2[0x12c6] + param_2[0x12c4]) * (longlong)DAT_021d2e00 & 0xffffffffU
+               ) / (ulonglong)DAT_021d2e08) - *(int *)(iVar3 + 0x160);
+    *(int *)(iVar3 + 0x16c) =
+         (int)(((longlong)(param_2[0x12c7] + param_2[0x12c5]) * (longlong)DAT_021d2e04 & 0xffffffffU
+               ) / (ulonglong)DAT_021d2e0c) - *(int *)(iVar3 + 0x164);
+  }
+  *(undefined4 *)(iVar3 + 0xb4) = param_5;
+  FUN_00554060(iVar3 + 0xb8,param_2 + 6);
+  if (0.0 < (float)param_2[0x12cd]) {
+    if (DAT_021d35cc == '\0') {
+      iVar6 = FUN_005320c0(iVar3 + 0xb8);
+      if ((iVar6 != 0) &&
+         (iVar1 = iVar6 * 0x4c + 0x170 + iVar3, *(char *)(iVar6 * 0x4c + 0x170 + iVar3) == '\x01'))
+      {
+        iVar6 = param_2[0x12cd];
+        iVar2 = param_2[0x12cd];
+        *(int *)(iVar1 + 4) = param_2[0x12cd];
+        *(int *)(iVar1 + 8) = iVar6;
+        *(int *)(iVar1 + 0xc) = iVar2;
+      }
+    }
+    else {
+      iVar6 = param_2[0x12cd];
+      uVar8 = 1;
+      iVar1 = param_2[0x12cd];
+      iVar2 = param_2[0x12cd];
+      if (*(int *)(DAT_021d2c9c + 0x1c) != 0) {
+        piVar5 = (int *)(iVar3 + 0x1c8);
+        do {
+          piVar5[-2] = iVar6;
+          uVar8 = uVar8 + 1;
+          piVar5[-1] = iVar1;
+          *piVar5 = iVar2;
+          piVar5 = piVar5 + 0x13;
+        } while (uVar8 <= *(uint *)(DAT_021d2c9c + 0x1c));
+      }
+    }
+  }
+  FUN_00685930(iVar3 + 0x170);
+  FUN_00685830();
+  FUN_00685a70(param_4);
+  puVar7 = &DAT_0254bd90;
+  if (*(char *)(DAT_021cd510 + 0xc) == '\0') {
+    puVar7 = puVar4;
+  }
+  FUN_00685e20(param_1,param_3,iVar3,puVar7,puVar4);
+  FUN_004e2640();
+  return;
+}
+
+
+
