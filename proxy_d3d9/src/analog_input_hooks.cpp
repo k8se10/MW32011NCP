@@ -10699,14 +10699,22 @@ void InstallAnalogInputHooks()
     // theories already instrumented -- three live crashes in a row have never
     // once fired [clcstate-diag], so this directly identifies the real call
     // site instead of guessing at more targeted theories.
-    MH_STATUS sComErrorDiag = MH_CreateHook(reinterpret_cast<LPVOID>(0x00425540), &Hook_FUN_00425540, reinterpret_cast<LPVOID*>(&g_orig_00425540));
-    sprintf_s(buf, "[hooks] MH_CreateHook(00425540 com-error-diag) = %d", static_cast<int>(sComErrorDiag));
-    LogFromController(buf);
-    if (sComErrorDiag == MH_OK) {
-        MH_STATUS eComErrorDiag = MH_EnableHook(reinterpret_cast<LPVOID>(0x00425540));
-        sprintf_s(buf, "[hooks] MH_EnableHook(00425540 com-error-diag) = %d", static_cast<int>(eComErrorDiag));
-        LogFromController(buf);
-    }
+    //
+    // TEMPORARILY DISABLED, 2026-08-26, same-day follow-up -- a first bug in
+    // LogComErrorCall's own unbounded %s was found and fixed (live-confirmed
+    // via Event Log + local .pdb symbol resolution: Exception 0xc0000409,
+    // _invalid_parameter_internal/_invoke_watson), but the IDENTICAL crash
+    // class reproduced again immediately after that fix, at a new offset
+    // consistent with the rebuild (0x2e856, still _invoke_watson) -- meaning
+    // either the fix was incomplete, or this naked hook is disturbing
+    // FUN_00425540's own real variadic call in some other way (e.g. its
+    // internal __vsnprintf call) rather than the bug being isolated to
+    // LogComErrorCall's own buffer math (confirmed safe, 495 chars worst-case
+    // against a 512-byte buffer -- checked directly, not assumed). Rather
+    // than guess at a third patch with no real stack trace to confirm it,
+    // disabled entirely to isolate cleanly -- same methodology already used
+    // for Fix Attempt C. See known_issues.md issue #96 for the full trail.
+    LogFromController("[hooks] com-error-diag SKIPPED (isolation test, 2026-08-26 -- see known_issues.md issue #96)");
 
     // Issue #96 GENERAL DIAGNOSTIC, ROUND 2, 2026-08-26 -- see the big comment
     // above Hook_ExitProcess's definition. Com_Error is now confirmed NOT the

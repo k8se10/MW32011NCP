@@ -12524,16 +12524,49 @@ out to actually point to. Also now logs the raw pointer value (`%p`)
 alongside the (now-safe) string content, for extra diagnostic value. Built
 (0 errors), redeployed.
 
-**Next live test is now genuinely decisive in a way none of the recent
-ones were**: if `[com-error-diag]` finally fires (with this bug fixed),
-that confirms `Com_Error` really is the mechanism, and every static-RE
-theory built around it (the viewport unit mismatch, the shared
-depth-stencil, `clcState`) becomes live-relevant again. If it still never
-fires even with this fixed, THAT is finally trustworthy evidence that
-`Com_Error` genuinely isn't the mechanism, and the `ExitProcess`/
-`lpReserved` diagnostics (also still active) become the real next lead.
-Fix Attempt C remains disabled for this next test too, to keep the
-isolation clean.
+**Live-tested, same day. Result: the identical crash class reproduced
+again** -- Event Log showed two more `0xc0000409` events, same
+`d3d9.dll`, new fault offset (`0x2e856`, consistent with the rebuild
+shifting code slightly) that ALSO resolves to `_invoke_watson+0xF` via the
+same `.pdb` lookup technique. **The targeted fix did not eliminate the
+crash class.** Checked `LogComErrorCall`'s own worst-case buffer math
+directly rather than assuming the fix was sufficient: static text (225
+chars) + severity (`%d`, up to 11 chars) + pointer (`%p`, up to 10 chars)
++ the now-bounded `safeFmt` (max 255 chars) = 495 chars worst case,
+comfortably under the 512-byte `buf` -- **that specific call is confirmed
+NOT the overflow**. Since `_invoke_watson+0xF` is the function's own
+entry point, a static offset alone can't identify which of potentially
+many CRT-secure-function call sites actually invoked it -- would need a
+real stack trace (no debugger attached to catch this live) to pin down
+further.
+
+**Isolated rather than guessing at a third patch**: `com-error-diag`
+(`Hook_FUN_00425540`) is now TEMPORARILY DISABLED entirely -- same
+methodology already used successfully for Fix Attempt C. Possible causes
+not yet distinguished: (1) a second, still-unfound bug in
+`LogComErrorCall` or its naked prehook's own stack handling: (2) the naked
+hook disturbing `FUN_00425540`'s own REAL internal variadic call (its
+`__vsnprintf(&DAT_0176a4c8, 0x1000, param_2, &stack0x0000000c)`) in a way
+that corrupts the GAME's own secure-CRT call, not this project's own
+logging call at all -- plausible given naked-hook stack manipulation is
+exactly the fragile category this project's own established caution
+already flags, even though manual review of the assembly hasn't found the
+specific error. Built (0 errors), redeployed.
+
+**Purpose of this isolation**: if the crash STOPS (or reverts to the
+earlier "clean detach, no Event Log entry" signature) with `com-error-diag`
+disabled, that confirms this diagnostic itself -- not issue #96's original
+mechanism -- was the source of every crash since it was first added,
+meaning `Com_Error` remains genuinely unconfirmed either way and this whole
+diagnostic needs a from-scratch redesign (or abandonment) before it can be
+trusted again. If the SAME `0xc0000409`/`_invoke_watson` crash still
+reproduces with it fully disabled, that rules this hook out entirely and
+points at something else in this session's own code (or, less likely
+given the specific CRT-internal signature, a genuinely separate, unrelated
+bug) as the real cause of these particular crashes -- worth its own fresh
+investigation, separate from issue #96's original static-RE-based
+theories. Fix Attempt C remains disabled too, to keep this next test
+cleanly isolated to one variable at a time.
 
 ### Next-session priority order, derived from all 4 forks, RE-ORDERED AGAIN after the gameplay-gated ratio-math finding above
 
