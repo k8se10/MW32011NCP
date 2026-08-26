@@ -3004,6 +3004,11 @@ bool EnsureFullscreenCaptureTexture(void* device, int width, int height)
     if (g_fullscreenCaptureTexture && g_fullscreenCaptureTexW == width && g_fullscreenCaptureTexH == height) {
         return true;
     }
+    // Diagnostic (2026-08-26, live-reported "crashes after ~30s") confirmed
+    // this recreates exactly once, at startup, never again during play --
+    // g_fullscreenCaptureTexture (shared between Phase B's RCAS and Phase E's
+    // motion blur, called from two different points in the frame) is NOT
+    // thrashing. Diagnostic logging removed once that was confirmed.
     if (g_fullscreenCaptureTexture) {
         void** vtbl = *reinterpret_cast<void***>(g_fullscreenCaptureTexture);
         reinterpret_cast<Release_t>(vtbl[kSurfaceReleaseVtableIndex])(g_fullscreenCaptureTexture);
@@ -3288,6 +3293,11 @@ void MotionBlurShaderSetupCallback(void* device, float /*texelW*/, float /*texel
     auto setPixelShaderConstantF = reinterpret_cast<SetPixelShaderConstantF_t>(deviceVtbl[kSetPixelShaderConstantFVtableIndex]);
     const float blurVec[4] = { blurX, blurY, 0.0f, 0.0f };
     setPixelShaderConstantF(device, 0, blurVec, 1);
+
+    // c1.x = radial falloff strength -- see motion_blur.hlsl's own header
+    // comment. Passed straight through, already clamped 0..1 by LoadModConfig.
+    const float radialParams[4] = { g_modConfig.motionBlurCenterFalloff, 0.0f, 0.0f, 0.0f };
+    setPixelShaderConstantF(device, 1, radialParams, 1);
 }
 
 // Phase E's own entry point. ROUND 2 FIX (2026-08-26, issue #95 follow-up,
@@ -3306,23 +3316,50 @@ void MotionBlurShaderSetupCallback(void* device, float /*texelW*/, float /*texel
 // the resolved scene, applies the engine's own real post-effects, then draws a
 // couple of specific overlay textures) -- confirmed via raw disassembly to be
 // a plain, all-stack-args __cdecl function (no risky mixed register/stack
-// convention), called once per active viewport (once per frame for this
-// project's actual single-viewport scope) from FUN_00694650. This call now
-// runs from Hook_FUN_00497210 (analog_input_hooks.cpp), a POST-hook on that
-// real engine function -- AFTER the real scene composite, BEFORE the engine's
-// own native HUD/UI drawing (which happens via a separate call chain,
-// FUN_004f39e0/FUN_004f7b40, found during this same investigation but not
-// hooked directly -- their calling convention is a genuinely riskier mixed
-// register/stack shape not worth hooking when the composite-function boundary
-// achieves the same real exclusion more safely). This project's own overlay
-// (drawn later still, inside Hook_EndScene) was already excluded by Round 1's
-// ordering and stays excluded now too -- this hook point is strictly EARLIER
-// than Hook_EndScene, not a replacement for that ordering.
+// convention). This call now runs from Hook_FUN_00497210
+// (analog_input_hooks.cpp), a POST-hook on that real engine function -- AFTER
+// the real scene composite, BEFORE the engine's own native HUD/UI drawing
+// (which happens via a separate call chain, FUN_004f39e0/FUN_004f7b40, found
+// during this same investigation but not hooked directly -- their calling
+// convention is a genuinely riskier mixed register/stack shape not worth
+// hooking when the composite-function boundary achieves the same real
+// exclusion more safely). This project's own overlay (drawn later still,
+// inside Hook_EndScene) was already excluded by Round 1's ordering and stays
+// excluded now too -- this hook point is strictly EARLIER than Hook_EndScene,
+// not a replacement for that ordering.
+//
+// ROUND 4 FIX (2026-08-26, real crash investigation, not guessed): the
+// original comment here claimed FUN_00497210 runs "once per frame" -- WRONG,
+// caught via live crash investigation (memdiff livedump snapshots showed no
+// memory-pressure signature at all, redirecting the search toward this
+// project's own newest code instead of the native engine). FUN_00497210's
+// real caller is FUN_00508970, a RECURSIVE rectangle-splitting function that
+// carves the viewport into sub-rectangles around exclusion zones (real
+// splitscreen/picture-in-picture support) and calls FUN_00497210 SEPARATELY
+// for each resulting piece -- its base case (empty exclude list) calls it
+// exactly once, but any active exclusion (a PIP element, killcam, etc.) makes
+// it fire MULTIPLE TIMES in the same real frame. Each extra fire meant a
+// second/third/etc. full capture-and-redraw against a backbuffer that was
+// still mid-composite between sub-rectangle draws -- a real, intermittent
+// (only when an exclusion zone is actually active) state-corruption risk,
+// not present every frame, which is exactly why this crash never reproduced
+// consistently. Fixed with a per-real-frame guard (g_motionBlurRanThisFrame,
+// reset once at the top of Hook_EndScene -- guaranteed to fire exactly once
+// per real frame, always AFTER this frame's FUN_00497210 call(s) already
+// happened) so this pass runs at most once per frame regardless of how many
+// times the engine hook itself fires.
+bool g_motionBlurRanThisFrame = false;
+
 void RunPreOverlayMotionBlurPassIfEnabled(void* device)
 {
     if (!g_modConfig.motionBlurEnabled) return;
+    if (g_motionBlurRanThisFrame) return; // already ran once this real frame --
+        // FUN_00497210 (this pass's real trigger) can fire more than once per
+        // frame when a splitscreen/PIP exclusion zone is active, see this
+        // function's own header comment
     if (!EnsureMotionBlurShader(device)) return;
     DrawFullScreenPass(device, g_motionBlurPixelShader, MotionBlurShaderSetupCallback);
+    g_motionBlurRanThisFrame = true;
 }
 
 // `extern "C"` deliberately -- this sits inside the file's own anonymous
@@ -5966,6 +6003,15 @@ HRESULT WINAPI Hook_EndScene(void* device)
     // hook's conversion and this file's draw-time re-scale used two different
     // resolution sources, so they only cancelled out by coincidence).
     g_lastKnownRenderDevice = device;
+
+    // Issue #95 Round 4 -- reset the once-per-real-frame motion-blur guard here.
+    // Hook_EndScene fires exactly once per real frame, always AFTER every
+    // FUN_00497210 call this frame already happened (see
+    // RunPreOverlayMotionBlurPassIfEnabled's own header comment for why that
+    // engine function itself can fire more than once per frame) -- so resetting
+    // it here correctly re-arms the guard for the NEXT frame's call(s), not
+    // this one.
+    g_motionBlurRanThisFrame = false;
 
     ++g_endSceneFireCount;
     if (g_endSceneFireCount == 1) {

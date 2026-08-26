@@ -1,0 +1,13 @@
+STRING @ 0083bf30 = "Hunk_AllocateTempMemory: failed on %i bytes (total %i MB, low %i MB, high %i MB), needs %i more hunk bytes"
+  from 004e9b96 type=DATA IN FUNCTION FUN_004e9af0@004e9af0
+  (1 references)
+
+STRING @ 0085030c = "Hunk_UserAlloc: out of memory for '%s'"
+  from 004a3890 type=DATA IN FUNCTION FUN_004a3850@004a3850
+  (1 references)
+
+STRING @ 00859318 = "Hunk_AllocAlign failed on %i bytes (total %i MB, low %i MB, high %i MB)"
+  from 0041a631 type=DATA IN FUNCTION FUN_0041a5a0@0041a5a0
+  (1 references)
+
+Total matching strings: 3

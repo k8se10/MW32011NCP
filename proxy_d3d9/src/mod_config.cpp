@@ -158,10 +158,11 @@ void ReadBool(const char* path, const char* section, const char* key, bool& outV
 // real system d3d9.dll's Direct3DCreate9On12 entry point instead of the ordinary
 // one -- a real, Microsoft-documented alternate export, not a third-party DLL swap.
 // See mod_config.h's own forceD3D9On12 field comment for the full design.
-constexpr unsigned long kCurrentConfigVersion = 26; // v23->v24: FsrSharpenEnabled/FsrSharpenStrength (Phase B)
+constexpr unsigned long kCurrentConfigVersion = 27; // v23->v24: FsrSharpenEnabled/FsrSharpenStrength (Phase B)
                                                      // v24->v25: MotionBlurEnabled/MotionBlurStrength (Phase E),
                                                      // FsrSharpenStrength default 0.5->0.3 (live feedback: "needs more softness")
                                                      // v25->v26: ForceAnisotropicFiltering
+                                                     // v26->v27: MotionBlurCenterFalloff
 
 // Reads a legacy key's raw value, returning true only if the key genuinely existed
 // (unlike ReadFloat, which can't distinguish "absent" from "present but unparsable" --
@@ -570,6 +571,12 @@ void WriteDefaultConfig(const char* path)
         "; single fast turn or frame-time hitch can smear, so raising this very high\n"
         "; is safe (just increasingly less effective) rather than ever looking broken.\n"
         "MotionBlurStrength=%.2f\n"
+        "; 0.0-1.0: 0.0 = uniform blur everywhere (the original behavior). 1.0 = a real\n"
+        "; center-to-edge radial falloff -- blur fades to ~0 exactly at screen center,\n"
+        "; reaching full MotionBlurStrength only at the farthest on-screen point (a\n"
+        "; corner). Keeps the real focal point sharp while peripheral vision smears\n"
+        "; more. Default 1.0 -- this IS the requested behavior, not an opt-in extra.\n"
+        "MotionBlurCenterFalloff=%.2f\n"
         "; Writes the real native r_texFilterAnisoMax/r_texFilterAnisoMin dvars to 16\n"
         "; (maximum) via this project's own real dvar-write mechanism -- the same\n"
         "; sharpness improvement this session's own ForceD3D9On12 investigation (issue\n"
@@ -787,6 +794,7 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.fsrSharpenStrength,
         g_modConfig.motionBlurEnabled ? 1 : 0,
         g_modConfig.motionBlurStrength,
+        g_modConfig.motionBlurCenterFalloff,
         g_modConfig.forceAnisotropicFiltering ? 1 : 0,
         g_modConfig.pluginsEnabled ? 1 : 0,
         g_modConfig.vibrationEnabled ? 1 : 0,
@@ -1076,6 +1084,9 @@ void LoadModConfig()
     ReadBool(path, "Video", "MotionBlurEnabled", g_modConfig.motionBlurEnabled);
     ReadFloat(path, "Video", "MotionBlurStrength", g_modConfig.motionBlurStrength);
     if (g_modConfig.motionBlurStrength < 0.0f) g_modConfig.motionBlurStrength = 0.0f;
+    ReadFloat(path, "Video", "MotionBlurCenterFalloff", g_modConfig.motionBlurCenterFalloff);
+    if (g_modConfig.motionBlurCenterFalloff < 0.0f) g_modConfig.motionBlurCenterFalloff = 0.0f;
+    if (g_modConfig.motionBlurCenterFalloff > 1.0f) g_modConfig.motionBlurCenterFalloff = 1.0f;
     ReadBool(path, "Video", "ForceAnisotropicFiltering", g_modConfig.forceAnisotropicFiltering);
 
     g_buttonMap = ResolveButtonMap(g_modConfig.buttonLayout, g_modConfig.flipTriggers);

@@ -1,0 +1,103 @@
+================================================================
+Function: FUN_00425540 @ 00425540
+Signature: undefined FUN_00425540(void)
+----------------------------------------------------------------
+
+void FUN_00425540(int param_1,char *param_2)
+
+{
+  char cVar1;
+  int *_Buf;
+  int _Value;
+  
+  cVar1 = FUN_0049c070();
+  if (cVar1 != '\0') {
+    FUN_00504630();
+    DAT_0176b538 = FUN_0040fa00();
+    FUN_0048de10();
+  }
+  FUN_00428af0(2);
+  cVar1 = FUN_0049c070();
+  if (cVar1 != '\0') {
+    FUN_004251b0();
+  }
+  if (0 < DAT_0176b52c) {
+    FUN_00515b60(&DAT_0176a4c8);
+    FUN_00490d90(*(undefined4 *)(DAT_0176b550 + 0xc));
+  }
+  if (1 < DAT_0176b52c) {
+    FUN_00490d90(&DAT_0085eaf8,&DAT_0176a4c8);
+  }
+  if ((param_1 == 7) && (DAT_0176a4c8 != '\0')) {
+LAB_004255c7:
+    FUN_00528fe0(2);
+    cVar1 = FUN_0049c070();
+    if (cVar1 != '\0') {
+      FUN_004b6510(0);
+      FUN_00682af0(DAT_0176b538);
+    }
+    return;
+  }
+  __vsnprintf(&DAT_0176a4c8,0x1000,param_2,&stack0x0000000c);
+  DAT_0176b4c7 = 0;
+  cVar1 = FUN_004cc5a0();
+  if (cVar1 != '\0') {
+    FUN_00490d90(&DAT_00867c10,&DAT_0176a4c8);
+  }
+  if ((param_1 == 4) || (param_1 == 6)) {
+    if (DAT_0176b4d0 == 0) {
+      FUN_0041b300();
+    }
+    if (DAT_00aa41a0 != 0) {
+      FUN_00515b60(&DAT_0176a4c8);
+      cVar1 = FUN_0049c070();
+      if (cVar1 != '\0') {
+        FUN_00488fb0(0,"error_popmenu");
+        FUN_004c6b30(0,0x10);
+      }
+      if (DAT_00aa41a0 != 0) goto LAB_004255c7;
+    }
+  }
+  else {
+    if (param_1 != 5) {
+      if (param_1 == 7) {
+        DAT_0176b4d0 = 1;
+        if (DAT_00aa41a0 != 0) {
+          cVar1 = FUN_0049c070();
+          if (cVar1 != '\0') {
+            FUN_00515b60(&DAT_0176a4c8);
+            FUN_004396d0(0,3);
+            FUN_00474e80();
+            return;
+          }
+        }
+      }
+      else {
+        DAT_0176b4d0 = 0;
+      }
+      goto LAB_004256ed;
+    }
+    FUN_0041b300();
+  }
+  param_1 = 1;
+LAB_004256ed:
+  cVar1 = FUN_0047e3e0();
+  if (cVar1 != '\0') {
+    FUN_004cee30();
+  }
+  DAT_0176b52c = DAT_0176b52c + 1;
+  DAT_0176a4c0 = param_1;
+  FUN_00528fe0(2);
+  cVar1 = FUN_0049c070();
+  if (cVar1 != '\0') {
+    FUN_004b6510(0);
+    FUN_00682af0(DAT_0176b538);
+  }
+  _Value = -1;
+  _Buf = (int *)FUN_004411c0(2);
+                    /* WARNING: Subroutine does not return */
+  FID_conflict____longjmp_internal(_Buf,_Value);
+}
+
+
+

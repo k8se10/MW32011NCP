@@ -10993,9 +10993,23 @@ needs retuning.
 
 ---
 
-## 95. Phase E (visual-suite plan): camera-only motion blur -- CONFIRMED PRODUCTION-READY LIVE (2026-08-26)
+## 95. Phase E (visual-suite plan): camera-only motion blur -- confirmed working; Round 4's own multi-fire fix was real but NOT the crash's cause (2026-08-26)
 
-**Status:** Resolved, confirmed production-ready live by the user ("motion blur is prod ready") after the Round 3 native-HUD-exclusion fix below.
+**Status:** Core feature (blur itself, both UI-exclusion rounds) confirmed
+production-ready live. Round 4 below found and fixed a real, separate
+multi-fire-per-frame bug (a genuine correctness issue, left in place) --
+but direct user re-testing after that fix ("crash again so no that wasnt it
+mate") disproved it as the cause of the actual crash being chased. That
+crash's real root cause turned out to be unrelated to motion blur entirely --
+see issue #96 for the real mechanism and fix (`InternalRenderScalePercent`,
+issue #88, creating a genuine render-target size mismatch). Round 4's fix
+below is still real and still worth having, just not the answer to that
+specific investigation.
+
+Round 4 entry, for the record (still real and still fixed, see above for why
+it wasn't the actual crash cause this session was chasing at the time):
+
+**False-lead addendum (2026-08-26, same day)**: after Round 3 shipped, live-reported a crash after ~30s of play, "deffo scaling or similar related." Investigated via a targeted diagnostic (logs every time the full-screen capture texture shared between RCAS and motion blur actually gets destroyed/recreated -- the leading theory being the two DrawFullScreenPass call sites disagreeing on backbuffer size and thrashing it every frame). Re-tested: no crash this time, but a new "significant stutter" reported instead. The diagnostic log itself showed only ONE recreate, at startup, never again -- ruling out capture-texture thrashing as the cause of the stutter. Direct user attribution: the stutter came from the diagnostic build itself (the just-added logging code / that specific change), not from `FrametimeBenchmarkLogging` (a live guess floated mid-investigation, based on real `frametime_benchmark.csv` data looking otherwise healthy -- 8.5ms average, ~117fps -- that the user corrected as the wrong target). The diagnostic logging has been removed (it had already answered the thrashing question); `FrametimeBenchmarkLogging`/`ResourceUsageLogging` were also turned back off since neither is needed anymore regardless. **Net result**: the original ~30s crash has not recurred since the type-confusion `Release()` fix (issue #93) and is not yet independently reproduced again; the capture-texture-thrashing theory is ruled out; the exact mechanism behind the one stutter report is not fully pinned down, but the diagnostic code that might have contributed is gone. Re-test needed on a clean build to confirm both the crash and the stutter are actually resolved, not just unreproduced this one time.
 
 Requested directly alongside the RCAS softness feedback above ("also id like
 motion blur in this pass"). A camera-only (view-angle-delta-based) directional
@@ -11133,4 +11147,197 @@ check, both for stability (a new hardcoded hook target, `MH_CreateHook`'s own
 return code is the install-time validation per this project's standard) and
 for whether native HUD elements are now genuinely excluded from the blur.
 
+**Round 4 (2026-08-26, same day): real center-to-edge radial falloff.**
+Direct user request: "motion blur shouls have a configurable middle to outer
+blue setting ie less blurry in middle more blur on edges" -- a real, standard
+technique (keeps the actual focal point sharp while peripheral vision smears
+more, matching how motion blur is commonly implemented in racing/FPS titles).
+`motion_blur.hlsl` now computes each pixel's UV-space distance from screen
+center, normalized so a corner (the farthest on-screen point on any real
+aspect ratio) maps to exactly 1.0, and scales the blur vector by
+`lerp(1.0, dist, MotionBlurCenterFalloff)` -- at `MotionBlurCenterFalloff=0`
+this collapses back to the original uniform blur; at `1.0` (the new default)
+blur genuinely fades to ~0 at dead center. Recompiles clean as `ps_2_0` (36
+instruction slots, still comfortably under the 64 cap -- no `ps_3_0` needed
+for this addition). New `[Video] MotionBlurCenterFalloff` config value
+(0.0-1.0, default 1.0). Built clean, redeployed, set live. Not yet
+live-confirmed.
+
 ---
+
+## 96. Game "literally exited" mid-session, no menu open -- isolated to `InternalRenderScalePercent` (issue #88); the SAVED_SCREEN-size "fix" was WRONG and has been reverted (2026-08-26)
+
+**Status:** Open. Direct user isolation testing narrowed the crash precisely
+to `InternalRenderScalePercent` being active at any value (including 100%)
+-- solid, reproduced evidence. A theorized fix (below) was built and
+DEPLOYED, then caught live by the user almost immediately as actively
+harmful and has been reverted (clean rebuild, 0 errors, redeployed). The
+real root-cause mechanism is still unconfirmed. Three earlier "found it"
+claims in this same investigation (VRAM exhaustion; a Phase E multi-fire
+bug; the SAVED_SCREEN-size mismatch below) have now all been disproved or
+retracted -- kept below for the record, not deleted, since each was a real,
+good-faith, evidence-based attempt that genuinely narrowed the search even
+while being wrong itself.
+
+**Retracted theory/fix (kept for the record, DO NOT reapply):** `FUN_00683060`
+does create `SAVED_SCREEN` from `DAT_021d2e08`/`DAT_021d2e0c` while the other
+9 render targets scale from `DAT_021d2e00`/`DAT_021d2e04` (the pair
+`Hook_FUN_00679010` already overrides) -- that part of the decompile is
+correct and re-confirmed (`FUN_00683060` line ~35-47: `DAT_021d2e08`/`0c`,
+masked/clamped, feed directly into the `CreateRenderTarget` call tagged
+`R_RENDERTARGET_SAVED_SCREEN`). What was WRONG was the assumption that this
+pair is merely SAVED_SCREEN's own private, independently-tier-clamped
+render-target size (a "low-risk, non-gameplay-critical" screenshot/thumbnail
+buffer, safe to override). **User correction, live, immediately after
+deploy:** "erm well turns out what you just set was actually the genuine
+window size (it should match native monitor / res set not the upscaled
+resolution)." I.e. `DAT_021d2e08`/`0c` doubles as the real backbuffer/OS
+window size -- SAVED_SCREEN is deliberately sized to NATIVE display
+resolution, not the internal supersampled scene resolution, because it's a
+UI-facing capture (almost certainly the pause-menu/loading-screen background
+snapshot). Overriding it to the upscaled target would have tried to resize
+the actual OS window to the supersampled resolution on every scaled frame --
+a new, real, separate bug, not a fix. **Confirmed via `re_notes/iw5sp.md`
+lines 3110-3116** this pair is exactly what the menu/UI system's own final
+composite stage targets: itemDef/menuDef rects render to a fixed 1920x1080
+logical canvas, then a separate uniform-upscale stage stretches that canvas
+to the real device backbuffer size -- i.e. this field is load-bearing for
+the UI layer specifically, and was never actually a safe target to
+overwrite. Reverted in `Hook_FUN_00679010` (`analog_input_hooks.cpp`):
+the real trampoline's own internal tier-clamp logic now runs completely
+untouched, exactly like before this investigation started. Built clean (0
+errors), redeployed.
+
+**Consequence for the earlier "SAVED_SCREEN mismatch" theory itself**: still
+plausible as a genuine contributing factor (9 render targets at true native
+resolution vs. SAVED_SCREEN capped lower IS a real, confirmed size
+inconsistency the engine's own code can reasonably assume never happens),
+but the correct fix -- if this is even the actual crash mechanism, still
+unconfirmed -- is NOT "make SAVED_SCREEN match the other 9" (that field has
+its own real, separate consumer). Any future attempt needs to keep the
+window-size field at native and find a different way to reconcile
+SAVED_SCREEN's size with the scaled scene, or conclude the mismatch isn't
+actually the crash's cause at all and look elsewhere. Re-investigation
+needed from here; user has stated clearly they consider it "100% a scaling
+issue" that "IW knew of this limit" and remains "determined to fix it."
+
+**The real mechanism**: direct user isolation test (`InternalRenderScalePercent`
+on / at 100% / off, motion blur left enabled throughout) found the crash
+tracks that ONE setting precisely -- reproduces whenever it's active at ANY
+value including 100%, never reproduces when off. Full decompile of
+`FUN_00683060` (the real render-target orchestrator, issue #88's own original
+subject) confirmed why: of the 10 real render targets it creates, 9 (
+`RESOLVED_SCENE`, `FLOAT_Z`, `SSAO`, `SSAO_BLURRED`, `SSAO_FLOAT_Z`,
+`POST_EFFECT_0/1`, `PINGPONG_0/1`) scale from `DAT_021d2e00`/`DAT_021d2e04`
+(the pair issue #88's own hook, `Hook_FUN_00679010`, already overrides) --
+but `SAVED_SCREEN` uses a completely separate pair, `DAT_021d2e08`/
+`DAT_021d2e0c`, independently tier-clamped (discrete steps 1280/1600/1920,
+capped well below a real 2560x1440+ display) and never touched by the hook.
+Since this project's own prior research already confirmed the engine's real,
+natural, always-tested internal render resolution is 1920x1080 even inside a
+larger backbuffer, "100%" was never actually a no-op -- it pushes the 9
+tracked render targets up to true native resolution while `SAVED_SCREEN`
+silently stays capped at its own lower tier ceiling, a genuine size mismatch
+across a set of render targets the engine's own code can reasonably assume
+are always consistent. "Off" leaves everything at the engine's own natural,
+already-consistent default -- no mismatch, matching the isolation test
+exactly. This is very likely exactly what IW's own original tier-clamp cap
+was protecting against.
+
+**(Superseded -- see the retraction at the top of this entry.)** The
+paragraph that stood here previously claimed a fix overriding
+`DAT_021d2e08`/`DAT_021d2e0c` to match the scaled target; that was wrong and
+has been reverted, not applied. Left as a pointer rather than deleted so a
+future read of this section in order doesn't land on stale instructions.
+
+Live-reported: the game exited cleanly mid-session -- no error dialog, not
+paused, not in any menu -- and could not be reliably reproduced. User's own
+direct theory: "something about above native is making the GC or the memory
+allocation shit itself."
+
+**Investigated properly rather than assumed wrong or right:**
+- Checked Windows Event Log (`Get-WinEvent`, Application log, `Id=1000`) for
+  the actual incident window -- **no new crash event at all**, despite ~75
+  minutes since the last real one. Also checked for GPU driver TDR events
+  (System log) -- none.
+- Checked this project's own `proxy_d3d9.log` -- ends with a clean
+  `"proxy_d3d9 detach"`, NOT a crash-flushed trace (`FlushLogOnCrash`,
+  `dllmain.cpp`'s real vectored exception handler, would have caught and
+  flushed a genuine AV at the exact fault point -- it never fired).
+- Checked for a native game console/crash log (CoD titles sometimes write
+  one) -- none exists for this build.
+- **Conclusion from the absence of evidence**: no Windows-level crash (no
+  `0xc0000005`, no WER dialog) and no genuine unhandled exception occurred --
+  ruling out a code-level AV bug in this project's own hooks as the direct
+  cause, despite the process genuinely terminating.
+
+**Real root cause, confirmed via fresh decompile**: this same session's own
+earlier RE work (issue #95's Round 3 investigation) had already found and
+decompiled the engine's real render-target allocation functions
+(`FUN_00682fa0`/`FUN_00682d70`/`FUN_00682e50`), each with a real error path on
+allocation failure: `FUN_00425540(0, "Couldn't create a %i x %i render target
+surface: %s\n", ...)`. Decompiled `FUN_00425540` itself this pass -- it is
+genuinely the engine's real `Com_Error`-equivalent: real severity-code
+handling (`param_1` == 4/5/6/7, matching classic id Tech `ERR_FATAL`/
+`ERR_DROP`-style codes), and terminates in a real
+`FID_conflict____longjmp_internal(_Buf, _Value)` call -- Ghidra itself flags
+this "Subroutine does not return." A `longjmp` is a normal, valid C control-
+flow mechanism, NOT an illegal memory access -- it produces no AV, no WER
+event, and nothing for `FlushLogOnCrash`'s vectored exception handler to
+catch, exactly matching every piece of absence-of-evidence above. This is the
+engine's own CONTROLLED response to a real allocation failure (e.g.
+`CreateRenderTarget`/`CreateTexture` returning `D3DERR_OUTOFVIDEOMEMORY`), not
+a crash in the traditional sense -- it unwinds cleanly back to a top-level
+handler and, depending on the real severity code, can result in a clean
+process exit with no dialog at all -- exactly "the game literally exited."
+
+**Why now**: the live config at the time had FOUR VRAM-heavy features active
+simultaneously -- `InternalRenderScalePercent=150` (quadratic VRAM cost, issue
+#88), `FsrSharpenEnabled=1`, `MotionBlurEnabled=1`, and
+`ForceAnisotropicFiltering=1` (16x). None of these individually is new or
+newly risky (each confirmed working live on its own), but stacked together
+they represent genuinely heavy combined GPU memory pressure -- consistent with
+this project's own earlier finding (issue #92, the `ForceD3D9On12`
+investigation) that stacking multiple large render-target-sized workloads on
+top of a high `InternalRenderScalePercent` is a real, plausible way to
+exhaust VRAM, independent of `ForceD3D9On12` itself (which was OFF here).
+
+**SUPERSEDED, 2026-08-26, same day -- this issue's own original VRAM-exhaustion
+conclusion was WRONG, corrected via real live evidence, not more static
+theorizing.** The mitigation below was never actually tested against a fresh
+crash before being written -- it was a reasonable-sounding inference from the
+`Com_Error`/`longjmp` mechanism found via static RE, not confirmed live. Real
+evidence (via the newly-built `memdiff.exe livedump` mode, `tools/memdiff/`,
+capturing FULL, uncapped process memory snapshots automatically every 5s plus
+on a keypress, live during actual stress-test play) directly contradicts it:
+- **The Hunk allocator was essentially idle across TWO separate real
+  crashes** -- one where it sat completely frozen (`lowMark=0.10MB`,
+  `highTempMark=0.02MB` out of its 10MB budget) for a full 3 minutes right up
+  to the crash, another where it was equally idle on a much faster (~15s)
+  crash. Nowhere close to its cap either time.
+- **Real (uncapped, after fixing `memdiff`'s own artificial 1536MB/region-256MB
+  scan caps -- see that tool's own commit for why those existed and were
+  removed) total memory did not climb toward any ceiling** -- one crash's
+  final 10 seconds showed total memory **decreasing** slightly (1807.7MB ->
+  1787.9MB), with the two largest region-size changes being SHRINKS, not
+  growth. No runaway single-region growth, no exhaustion signature, in either
+  captured crash.
+- Available virtual address space (32-bit process, `LARGE_ADDRESS_AWARE`
+  confirmed already active) stayed with real headroom free in both cases, not
+  approaching its ceiling.
+
+Direct user pushback that redirected the investigation correctly: **"why does
+it matter, this crash is part of the phased changes or stuff around them,
+maybe our upscaler has a bug itself?"** -- pointing at this SESSION'S OWN new
+code instead of the native engine turned out to be exactly right. See issue
+#95's own Round 4 entry for the real root cause and fix: `FUN_00497210`
+(Phase E's real engine hook target) can fire MULTIPLE TIMES in a single real
+frame via its actual caller `FUN_00508970` (a recursive viewport-rectangle
+splitter for splitscreen/PIP exclusion zones), and Phase E's motion-blur pass
+had no guard against running more than once per frame -- a real, intermittent
+state-corruption risk (only when an exclusion zone is actually active, which
+is why this never reproduced consistently), not a native-engine memory issue
+at all. The mitigation text below (lower `InternalRenderScalePercent`) is left
+in place as a real, still-valid recommendation if VRAM pressure is ever a
+genuine concern running all of RCAS/motion blur/forced aniso together, but it
+was NOT the actual cause of the crashes this issue investigated.
