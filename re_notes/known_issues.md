@@ -12953,13 +12953,76 @@ base case; reaching `FUN_00425540` from it would need an unconfirmed extra
 hop through `FUN_00497210` not found this pass. This weakens (does not
 disprove) Fix Attempt C's theory relative to the depth-stencil candidate --
 consistent with Fix C's own live test result (crash still occurred).
-**Real unresolved tension on the depth-stencil candidate, flagged not
-hidden**: `FUN_00682bc0`'s depth-stencil creation is cached after its first
-success (`DAT_021d05e8` guard) -- structurally can only fail once per
-cache-lifetime, which doesn't obviously match the crash's own "several
-minutes in, timing varies" character. Nobody has found what resets
-`DAT_021d05e8` (an indirect/vtable call this project's tooling doesn't
-resolve to a named caller) -- open for a future static pass.
+**Tension above RESOLVED, same day, by a follow-up fork -- not by finding a
+writer to `DAT_021d05e8` (still none found), but by finding the real
+question was slightly wrong.** `FUN_00682e50`'s OWN second depth-stencil
+create (its trailing ~8 lines, `vtable+0x74`) has **no cache guard of any
+kind** and re-runs unconditionally on every call into it -- it doesn't need
+`DAT_021d05e8` to reset. Tracing upward from `FUN_00682fa0` (which
+unconditionally calls `FUN_00682d70()`+`FUN_00682e50()` at its own top, even
+when the OTHER 8 cached `FUN_00682bc0()` call sites are already
+short-circuited) reaches, several hops up, a real, identifiable, recurring
+gameplay event:
+
+```
+FUN_00492810 (per-frame render/present orchestrator -- runs every frame)
+  -> FUN_0044b370 (per-frame TestCooperativeLevel() poll -- cheap early-out
+                    if device is fine, escalates only on DEVICELOST/
+                    DEVICENOTRESET)
+    -> FUN_0043e510 (confirms device-lost state, runs cleanup)
+      -> FUN_0067a780 (THE REAL D3D9 DEVICE RESET HANDLER -- calls the
+                        genuine IDirect3DDevice9::Reset via vtable+0x40,
+                        then on success immediately re-runs the full
+                        render-target rebuild)
+        -> FUN_006797d0 -> thunk@4be820 -> FUN_00683060 -> FUN_00682fa0
+          -> FUN_00682d70() + FUN_00682e50()  <- the uncached create
+```
+
+**This is the real explanation for "several minutes in, timing varies," and
+it's a falsifiable, testable prediction, not just a plausible story.** It's
+not that the depth-stencil fails once near level load and randomly
+re-triggers -- it's that **any real D3D9 device-lost/reset event during an
+active gameplay session** (alt-tab, a Windows notification toast stealing
+focus, a UAC/secure-desktop prompt, a GPU driver TDR recovery blip, a
+display-topology change, Steam Overlay toggling, a screen-capture tool
+grabbing exclusive access, sleep/wake) makes the every-frame
+`TestCooperativeLevel()` poll trip a real `Reset()`, which rebuilds every
+render target/depth-stencil surface from scratch at whatever
+`DAT_021d2e00`/`DAT_021d2e04` currently hold -- the **scaled** size while
+`InternalRenderScalePercent` is active -- and `FUN_00682e50`'s uncached
+create runs on every single one of these Resets with nothing shielding it.
+This finally fits a crash that's absent at launch/level-load, fires
+unpredictably minutes in, and correlates with nothing about elapsed time
+itself -- only with whatever real-world event happens to trip a device
+Reset, which is easy to hit without a player ever noticing it happened.
+**Falsifiable prediction for the next live-testing session (not yet
+attempted)**: deliberately alt-tabbing out of and back into the game while
+`InternalRenderScalePercent` is active at a large value (e.g. 250%) should
+reproduce the crash on demand, rather than needing to wait several minutes.
+(`DAT_021d05e8` itself is very likely also reset somewhere in this same
+chain, standard D3D9 practice -- every surface must be released before
+`Reset()` and recreated after -- just not via a data write this project's
+tooling can trace; no longer the important open question either way.)
+
+**`FUN_00425540`'s severities 4/5/6/7 fully traced, same fork -- clean
+negative, confirms candidate 1 (already ruled out above) stays ruled out**:
+every special-cased branch (4/6/7, gated on an active popup-error-menu
+system) is LESS fatal than the general path, not more -- an early return
+with no longjmp at all, presumably because unwinding the stack would be
+wrong while a "press OK to continue" dialog is already up. `DAT_0176b52c`
+(the error counter) is only ever read twice inside `FUN_00425540` itself
+(gating logging thresholds) and once inside `FUN_0044c7b0`'s recovery block
+-- no code path checks it against a give-up threshold anywhere found. **This
+means the real fatal mechanism is downstream of `Com_Error`, not inside
+it** -- most likely a null/invalid-surface use after a failed (re)create
+somewhere in the render pipeline (a `Com_Error` call on the recoverable path
+lets the frame continue with a surface pointer that may still be null/
+stale), or an unhandled SEH exception in this same Reset-triggered rebuild
+chain, consistent with candidate 2 above. **Next static step**: trace what
+actually consumes the depth-stencil/render-target surface pointers this
+chain produces (e.g. `_DAT_024bf4d8` and neighbors) later in the same or a
+following frame, to see what happens when a (re)create legitimately failed
+and left one null/stale.
 
 **No static ceiling exists anywhere in this allocation chain** (only a
 floor clamp) -- `D3DCAPS9.MaxTextureWidth`/`MaxTextureHeight` are declared

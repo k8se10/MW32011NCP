@@ -1,0 +1,39 @@
+Callers of 0043e510 (1):
+  FUN_0044b370 @ 0044b370
+
+================================================================
+Function: FUN_0044b370 @ 0044b370
+----------------------------------------------------------------
+
+undefined4 FUN_0044b370(void)
+
+{
+  char cVar1;
+  int iVar2;
+  undefined4 uVar3;
+  
+  if (DAT_021cd928 != (int *)0x0) {
+    if (DAT_021d05ec == '\0') {
+      iVar2 = (**(code **)(*DAT_021cd928 + 0xc))(DAT_021cd928);
+      if ((iVar2 != -0x7789f798) && (iVar2 != -0x7789f797)) {
+        return 1;
+      }
+    }
+    cVar1 = FUN_0049c070();
+    if (cVar1 != '\0') {
+      FUN_00504630();
+      FUN_004301d0();
+      uVar3 = FUN_0040fa00();
+      FUN_004e31b0();
+      DAT_021d05ec = 1;
+      FUN_0043e510();
+      FUN_00682af0(uVar3);
+      return 0;
+    }
+    DAT_021d05ec = '\x01';
+  }
+  return 0;
+}
+
+
+
