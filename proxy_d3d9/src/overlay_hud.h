@@ -52,6 +52,20 @@ void GetResolutionScale(void* deviceIn, float& outScaleX, float& outScaleY);
 // fallback "broke 16:9" even though the math was correct in isolation.
 void* GetLastKnownRenderDevice();
 
+// Phase E (motion blur), visual-suite plan -- thin forwarder so
+// analog_input_hooks.cpp's engine-level Hook_FUN_00497210 (the real per-frame
+// scene-composite/post-effect orchestrator, hooked so motion blur runs BEFORE
+// native HUD/UI drawing, not just before this project's own overlay) can
+// trigger the motion-blur pass without needing its own device pointer -- reuses
+// GetLastKnownRenderDevice() above, same convention as every other hook-context
+// caller in this project. A no-op if no device is known yet (can't happen in
+// practice once EndScene has fired at least once, but safe regardless).
+// `extern "C"` deliberately -- the real definition (overlay_hud.cpp) sits
+// inside that file's own anonymous namespace textually and uses extern "C" to
+// get genuine external linkage anyway (see that definition's own comment);
+// this declaration must match exactly or the two linkages disagree.
+extern "C" void TriggerMotionBlurFromEngineHook();
+
 // Real current backbuffer/viewport width and height in pixels (same ground-truth
 // source as GetResolutionScale above) -- for positioning hints as fractions of the
 // real screen edges/center, independent of any 1920x1080 reference.

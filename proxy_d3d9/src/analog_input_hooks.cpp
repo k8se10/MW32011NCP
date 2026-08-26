@@ -2232,6 +2232,21 @@ float GetLookAccelerationScale()
 }
 } // namespace
 
+// Phase E (motion blur), visual-suite plan -- real per-frame view-angle deltas
+// applied by InjectControllerLookAngles below, exposed for overlay_hud.cpp's
+// motion-blur pass to read every frame. Deliberately declared OUTSIDE the
+// anonymous namespace above (real external linkage) -- see this file's own
+// established linkage lesson (CLAUDE.md's "Checking is far cheaper than
+// digging," the F3-export/anonymous-namespace bug). Degrees actually applied to
+// the real engine yaw/pitch accumulators THIS FRAME (not a per-second rate) --
+// exactly the magnitude a camera-motion blur needs, not a rate that would need
+// re-deriving. Covers controller-stick and gyro look (both write into
+// *kYawAccum/*kPitchAccum below); does NOT cover mouse look, since this
+// project's own hooks never touch that input path -- a real, documented
+// limitation matching this project's controller-first scope, not an oversight.
+float g_motionBlurYawDeltaDeg = 0.0f;
+float g_motionBlurPitchDeltaDeg = 0.0f;
+
 // "Look-stick" rather than a hardcoded "right stick" -- see InjectControllerMovement's
 // comment on RouteStickAxes/task #15's Stick Layout. Under the default layout this is
 // exactly the original right-stick-only behavior.
@@ -2257,10 +2272,16 @@ extern "C" void __cdecl InjectControllerLookAngles()
         float yawRate = g_modConfig.lookDegreesPerSecondHorizontal * sharedScale;
         float pitchRate = g_modConfig.lookDegreesPerSecondVertical * sharedScale;
         float pitchInput = g_modConfig.invertLook ? -lookY : lookY; // OG console "Invert Look"
-        *kYawAccum -= lookX * yawRate * dt;
-        *kPitchAccum -= pitchInput * pitchRate * dt;
+        float yawDelta = lookX * yawRate * dt;
+        float pitchDelta = pitchInput * pitchRate * dt;
+        *kYawAccum -= yawDelta;
+        *kPitchAccum -= pitchDelta;
+        g_motionBlurYawDeltaDeg = yawDelta;
+        g_motionBlurPitchDeltaDeg = pitchDelta;
     } else {
         g_lookAccelStartMs = 0; // stick back at neutral -- next push starts the ramp fresh
+        g_motionBlurYawDeltaDeg = 0.0f;
+        g_motionBlurPitchDeltaDeg = 0.0f;
     }
 
     // 2026-08-11 (issue #76): additive gyro-aim, PREVIEW/WIP -- see mod_config.h's
@@ -2285,6 +2306,8 @@ extern "C" void __cdecl InjectControllerLookAngles()
             if (g_modConfig.invertLook) pitchDelta = -pitchDelta; // OG console "Invert Look" applies uniformly
             *kYawAccum -= yawDelta;
             *kPitchAccum -= pitchDelta;
+            g_motionBlurYawDeltaDeg += yawDelta;
+            g_motionBlurPitchDeltaDeg += pitchDelta;
         }
     }
 }
@@ -5753,6 +5776,50 @@ void __cdecl Hook_CbufAddText(int localClientNum, const char* text)
         }
     }
     g_origCbufAddText(localClientNum, text);
+}
+} // namespace
+
+// Issue #95 follow-up, 2026-08-26 -- Phase E (motion blur) real engine hook.
+// Live-reported "im sure we could fit it under the native ui" after Round 1
+// only excluded this project's OWN overlay from the blur (motion blur was
+// triggered from the top of Hook_EndScene, overlay_hud.cpp -- correct relative
+// to this project's own overlay, which draws later in that same function, but
+// Hook_EndScene itself only fires after the ENTIRE frame -- including the
+// game's own native HUD -- is already rendered, so native HUD was still being
+// blurred).
+//
+// Found via real static RE (Ghidra, fresh decompile + raw disassembly, not
+// guessed -- full trail in known_issues.md issue #95): traced the
+// R_RENDERTARGET_RESOLVED_SCENE scene-composite chain (the same real
+// render-target system issue #88's own InternalRenderScalePercent work
+// already partially mapped), found a real per-frame viewport-mode flag at
+// DAT_02802f60+0x1760 that every native 2D HUD/UI draw call toggles to
+// "full-screen" around itself (FUN_004f7b40), and traced that back to
+// FUN_00497210 -- the real per-viewport scene-finish orchestrator: composites
+// the resolved scene, runs the engine's own real post-effects, then draws a
+// couple of specific overlay textures. Confirmed via raw disassembly (not the
+// decompiler's own guessed signature) to be a plain, all-stack-args __cdecl
+// function -- no risky mixed register/stack convention to get wrong, unlike
+// FUN_004f7b40 itself (the per-HUD-element draw helper, NOT hooked directly --
+// its own calling convention mixes register and stack args in a way that
+// would need much more careful confirmation before it's safe to touch, and
+// hooking the composite-orchestrator boundary instead achieves the same real
+// exclusion with materially lower risk). Called once per active viewport
+// (FUN_00694650's own loop) -- once per frame for this project's actual
+// single-viewport scope (no splitscreen support).
+//
+// This is a POST-hook: the real function runs completely unmodified via the
+// trampoline FIRST, then TriggerMotionBlurFromEngineHook() (overlay_hud.cpp)
+// fires. Both of its own real arguments are forwarded byte-for-byte, untouched
+// -- this hook doesn't need to understand or rely on either one.
+namespace {
+using SceneFinishFn = void(__cdecl*)(int, int);
+SceneFinishFn g_origSceneFinish = nullptr;
+
+void __cdecl Hook_FUN_00497210(int param1, int param2)
+{
+    g_origSceneFinish(param1, param2);
+    TriggerMotionBlurFromEngineHook();
 }
 } // namespace
 
@@ -10258,6 +10325,20 @@ void InstallAnalogInputHooks()
     if (sCbufGuard == MH_OK) {
         MH_STATUS eCbufGuard = MH_EnableHook(reinterpret_cast<LPVOID>(0x00457c90));
         sprintf_s(buf, "[hooks] MH_EnableHook(00457c90 d3d9on12-guard) = %d", static_cast<int>(eCbufGuard));
+        LogFromController(buf);
+    }
+
+    // Issue #95 follow-up, 2026-08-26 -- Phase E (motion blur) real engine hook,
+    // see the big comment above Hook_FUN_00497210's definition for the full RE
+    // trail. POST-hook on the real per-viewport scene-finish orchestrator, so
+    // motion blur runs after the real scene composite but before the engine's
+    // own native HUD/UI drawing.
+    MH_STATUS sSceneFinish = MH_CreateHook(reinterpret_cast<LPVOID>(0x00497210), &Hook_FUN_00497210, reinterpret_cast<LPVOID*>(&g_origSceneFinish));
+    sprintf_s(buf, "[hooks] MH_CreateHook(00497210 scene-finish-motionblur) = %d", static_cast<int>(sSceneFinish));
+    LogFromController(buf);
+    if (sSceneFinish == MH_OK) {
+        MH_STATUS eSceneFinish = MH_EnableHook(reinterpret_cast<LPVOID>(0x00497210));
+        sprintf_s(buf, "[hooks] MH_EnableHook(00497210 scene-finish-motionblur) = %d", static_cast<int>(eSceneFinish));
         LogFromController(buf);
     }
 
