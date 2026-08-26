@@ -12,6 +12,7 @@
 // the returned IDirect3D9 interface later (CreateDevice -> device vtable -> Present).
 
 #include <windows.h>
+#include <psapi.h>
 #include <cstdio>
 #include <share.h>
 #include "mod_config.h"
@@ -96,6 +97,60 @@ DWORD WINAPI LogFlushThreadProc(LPVOID)
               // existing "install once, never uninstall" background-thread pattern
 }
 
+// Issue #92, 2026-08-26 -- [Experimental] ResourceUsageLogging. Real motivation,
+// direct user theory: the crash seen at InternalRenderScalePercent=225/300 under
+// ForceD3D9On12 might be real address-space/memory exhaustion (D3D9On12 maintains
+// both a D3D9-side and D3D12-side representation of every resource, real overhead
+// on top of this project's own much-larger-than-normal render targets at high
+// scale) rather than a pure GPU/TDR stall. iw5sp.exe's own PE header was checked
+// directly and DOES have IMAGE_FILE_LARGE_ADDRESS_AWARE set (Characteristics=
+// 0x0123), so the specific "capped at 2GB" theory doesn't hold -- but a 32-bit
+// process is still hard-capped at ~4GB total even with that flag, so the broader
+// "running out of address space" theory stays live and worth checking directly
+// rather than reasoning about further.
+//
+// Own dedicated thread (this project's own established background-thread
+// architecture, known_issues.md issue #87 -- division of labor, one thread per
+// distinct job, Sleep-loop since there's no natural external wake event for
+// "check memory periodically"). Uses K32GetProcessMemoryInfo (exported directly
+// from kernel32.dll since Vista, no psapi.lib linking needed -- <psapi.h> is
+// header-only for the struct definitions) and GlobalMemoryStatusEx, both real,
+// standard Win32 APIs. Gated behind the config flag EVERY iteration (not just at
+// thread start) so it can be toggled live via hot-reload without a restart.
+DWORD WINAPI ResourceLogThreadProc(LPVOID)
+{
+    for (;;) {
+        Sleep(1000);
+        if (!g_modConfig.resourceUsageLogging) continue;
+
+        PROCESS_MEMORY_COUNTERS_EX pmc{};
+        pmc.cb = sizeof(pmc);
+        BOOL gotPmc = K32GetProcessMemoryInfo(GetCurrentProcess(),
+            reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&pmc), sizeof(pmc));
+
+        MEMORYSTATUSEX ms{};
+        ms.dwLength = sizeof(ms);
+        BOOL gotMs = GlobalMemoryStatusEx(&ms);
+
+        char buf[400];
+        sprintf_s(buf,
+            "[resource-diag] workingSetMB=%.1f privateBytesMB=%.1f pagefileUsageMB=%.1f | "
+            "sysMemLoad=%lu%% availPhysMB=%.1f availVirtualMB=%.1f (this process' own remaining virtual address space)",
+            gotPmc ? pmc.WorkingSetSize / (1024.0 * 1024.0) : -1.0,
+            gotPmc ? pmc.PrivateUsage / (1024.0 * 1024.0) : -1.0,
+            gotPmc ? pmc.PagefileUsage / (1024.0 * 1024.0) : -1.0,
+            gotMs ? ms.dwMemoryLoad : 0UL,
+            gotMs ? ms.ullAvailPhys / (1024.0 * 1024.0) : -1.0,
+            gotMs ? ms.ullAvailVirtual / (1024.0 * 1024.0) : -1.0);
+        if (g_log) fprintf(g_log, "%s\n", buf); // Log() itself isn't declared yet at this
+                                                  // point in the file -- same buffered
+                                                  // write Log() does, LogFlushThreadProc
+                                                  // covers the periodic disk flush either way
+    }
+    return 0; // unreachable -- lives for the whole process, matching this project's
+              // existing "install once, never uninstall" background-thread pattern
+}
+
 void LogInit()
 {
     char path[MAX_PATH];
@@ -129,6 +184,9 @@ void LogInit()
                          // (LogInit runs once, at DLL attach, not on a hot path).
         AddVectoredExceptionHandler(1, FlushLogOnCrash); // call FIRST (1), see this
             // block's own comment above for why this is safe alongside the game's own
+        if (!CreateThread(nullptr, 0, ResourceLogThreadProc, nullptr, 0, nullptr)) {
+            fprintf(g_log, "[resource-diag] CreateThread FAILED for the resource-usage logging thread -- ResourceUsageLogging disabled this session regardless of config\n");
+        }
         if (!CreateThread(nullptr, 0, LogFlushThreadProc, nullptr, 0, nullptr)) {
             // Can't log this failure through the very mechanism that just failed to
             // get a flush thread -- fall back silently; the log still works (every
@@ -243,15 +301,66 @@ void LogFromController(const char* msg)
     Log(msg);
 }
 
+// [Video] ForceD3D9On12 (issue #92, 2026-08-26) -- local, minimal declarations for
+// the real Direct3DCreate9On12 export, kept out of a d3d9.h include for the same
+// reason the naked forwarding stubs below avoid it (see this file's own top
+// comment). Signature and struct layout confirmed via Microsoft's own DirectX-Specs
+// documentation (TranslationLayerResourceInterop.md), not guessed:
+//   IDirect3D9* WINAPI Direct3DCreate9On12(UINT SDKVersion, D3D9ON12_ARGS* pOverrideList, UINT NumOverrideEntries);
+// D3D_SDK_VERSION is 32 (0x20) -- the same real value this project's own RE already
+// confirmed the game itself passes to the ordinary Direct3DCreate9 (FUN_0067a320's
+// decompile, re_notes/known_issues.md issue #88). Passing NumOverrideEntries=0
+// behaves identically to the ordinary Direct3DCreate9 per Microsoft's own docs, so a
+// real override entry (Enable9On12=TRUE, everything else zeroed -- lets D3D9On12
+// create its own D3D12 device/queue internally) is required to actually force it on.
+namespace {
+constexpr UINT kD3D9SdkVersion = 32;
+
+struct D3D9ON12_ARGS_LOCAL {
+    BOOL Enable9On12;
+    void* pD3D12Device;
+    void* ppD3D12Queues[2];
+    UINT NumQueues;
+    UINT NodeMask;
+};
+
+typedef IDirect3D9* (WINAPI* Direct3DCreate9On12_t)(UINT, D3D9ON12_ARGS_LOCAL*, UINT);
+} // namespace
+
 // ---- Direct3DCreate9: the real interception point --------------------------------
 // Implemented (not forwarded) so we can hold onto / hook the returned IDirect3D9
 // interface (CreateDevice -> device vtable -> Present) once real hooking begins.
-// For now this is a transparent pass-through: identical behavior to vanilla d3d9.dll.
+// Normally a transparent pass-through: identical behavior to vanilla d3d9.dll,
+// UNLESS [Video] ForceD3D9On12 is enabled (issue #92), in which case this calls the
+// real system d3d9.dll's own Direct3DCreate9On12 export instead -- a genuine,
+// Microsoft-documented alternate entry point from the SAME real DLL, not a
+// third-party renderer swap. Either path returns a real IDirect3D9* with the same
+// standard vtable layout, so HookD3D9CreateDevice/every downstream hook is
+// unaffected by which path was taken.
 extern "C" __declspec(dllexport) IDirect3D9* WINAPI Direct3DCreate9(UINT SDKVersion)
 {
     Log("Direct3DCreate9 called");
-    if (!g_real_Direct3DCreate9) return nullptr;
-    IDirect3D9* real = g_real_Direct3DCreate9(SDKVersion);
+
+    IDirect3D9* real = nullptr;
+    if (g_modConfig.forceD3D9On12) {
+        if (g_real_Direct3DCreate9On12) {
+            Log("[d3d9on12-force] ForceD3D9On12 enabled -- calling real Direct3DCreate9On12 instead of Direct3DCreate9");
+            D3D9ON12_ARGS_LOCAL args{};
+            args.Enable9On12 = TRUE;
+            auto create9On12 = reinterpret_cast<Direct3DCreate9On12_t>(g_real_Direct3DCreate9On12);
+            real = create9On12(kD3D9SdkVersion, &args, 1);
+            if (!real) {
+                Log("[d3d9on12-force] Direct3DCreate9On12 returned null -- falling back to real Direct3DCreate9");
+            }
+        } else {
+            Log("[d3d9on12-force] ForceD3D9On12 enabled but real d3d9.dll is missing Direct3DCreate9On12 -- falling back to real Direct3DCreate9");
+        }
+    }
+
+    if (!real) {
+        if (!g_real_Direct3DCreate9) return nullptr;
+        real = g_real_Direct3DCreate9(SDKVersion);
+    }
     if (real) {
         HookD3D9CreateDevice(real);
     }
