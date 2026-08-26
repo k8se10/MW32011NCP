@@ -9147,6 +9147,43 @@ extern "C" void __cdecl InjectAllControllerInput(unsigned char* cmd)
     // the paused/menu state this function's own hook halts during.
     Controller_RequestPoll();
 
+    // Diagnostic (2026-08-26, issue #96's deep RE pass). DAT_00b36218 is the real
+    // per-player `clcState` field (confirmed via the literal error string
+    // "SCR_DrawScreenField: bad clcState" at the switch statement that reads it,
+    // FUN_0057f5f0 @ 0x0057f5f0) -- a native Com_Error(0, ...) fires, straight to
+    // longjmp with zero UI dialog (exactly issue #96's confirmed clean-exit
+    // signature), the instant this value is ever anything other than 0/1/2/3/4/6/7.
+    // That function is called essentially every real frame during active gameplay
+    // (its own caller, FUN_004269b0, is unthrottled specifically when clcState>5).
+    // Direct user reasoning that prompted this check: a STATIC mismatch (e.g. the
+    // render-scale/window-size global divergence issue #96 already found in
+    // FUN_00450740) should crash immediately and every time, not "work fine, then
+    // crash later" -- which fits a LATENT state-corruption bug (something writes a
+    // bad value into this field, or adjacent memory, at some gameplay-triggered
+    // moment) far better than a bug present from frame one. This hook already runs
+    // every real gameplay frame, so it's the cheapest possible vantage point to
+    // catch the corruption BEFORE the engine's own switch statement crashes on it --
+    // logs loudly, once, the moment this field is first observed invalid, which
+    // would be definitive confirmation of this exact mechanism. See known_issues.md
+    // issue #96 for the full trail.
+    {
+        static bool s_clcStateBadLogged = false;
+        if (!s_clcStateBadLogged) {
+            int32_t clcState = *reinterpret_cast<volatile int32_t*>(0x00b36218);
+            if (clcState != 0 && clcState != 1 && clcState != 2 && clcState != 3 &&
+                clcState != 4 && clcState != 6 && clcState != 7) {
+                s_clcStateBadLogged = true;
+                char buf[192];
+                sprintf_s(buf, "[clcstate-diag] *** DAT_00b36218 (clcState) = %d -- OUTSIDE the "
+                    "engine's own valid set {0,1,2,3,4,6,7} -- SCR_DrawScreenField's own "
+                    "Com_Error is about to fire (or already would have, on the next call) -- "
+                    "this is issue #96's crash mechanism if this line is ever hit",
+                    clcState);
+                LogFromController(buf);
+            }
+        }
+    }
+
     int32_t inLevelVal = *reinterpret_cast<volatile int32_t*>(kInLevelFlagAddr);
     bool nowInLevel = inLevelVal > 0;
     // Diagnostic (2026-08-16, issue #1 follow-up, live-reported "the mod starts

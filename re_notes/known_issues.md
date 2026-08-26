@@ -11867,49 +11867,138 @@ above) is committed alongside the new decompile artifacts this pass produced
 `callers_684b00.txt`, `callers_6c4320.txt`, `callers_450740.txt`,
 `callers_4ad990.txt`, `callers_492e00.txt`, `callers_53d640.txt`).
 
+### Deep RE dig, part 2, 2026-08-26 (same day): traced `UI_RefreshViewport`'s reader -- found the ACTUAL crash statement, `SCR_DrawScreenField: bad clcState`, and it fits the "works fine, then breaks" shape far better than a static mismatch would
+
+Direct user follow-up, asked to trace what sets `UI_RefreshViewport`, plus a
+sharp, correct engineering objection raised in the same message: **"there is
+a chance of some race condition or something breaking over time, surely if
+its fucked fucked it wouldnt work then crash."** Right -- a mismatch present
+from frame one (like the ratio-math theory above, taken in isolation) should
+crash immediately and every time, not intermittently after a play session
+already looked fine. Traced further specifically to resolve this objection,
+not just to satisfy the original "what sets the cvar" question.
+
+**What sets `UI_RefreshViewport`**: an exact-string search
+(`re_notes/ghidra_scripts/refs_UI_RefreshViewport.txt`, new this pass) found
+only 2 native-code references to the string, and BOTH are READS (`FUN_0057f550`,
+`FUN_0057f580` -- near-identical: `FUN_00493b80("UI_RefreshViewport")` then
+branch). **No native C++ setter exists for this cvar anywhere in `iw5sp.exe`**
+-- if anything sets it, it's from GSC script code (not yet extracted/decompiled;
+`xensik/gsc-tool` is available per this project's own stack notes but wasn't
+invoked this pass). Flagged honestly as unresolved, not guessed at further.
+
+**The real find, from tracing `FUN_0057f550`'s only caller, `FUN_0057f5f0`**:
+this function is a `clcState`-keyed switch statement (`iVar2 = DAT_00b36218`,
+the same per-player game-state field this whole issue already tracks) with
+explicit cases for values 0/1/2/3/4/6/7 -- and a `default:` case that calls
+**`FUN_00425540(0, &DAT_0084cd30)`, the SAME confirmed `Com_Error`/`longjmp`
+function this whole issue has been tracing, severity 0 (zero-dialog, exactly
+matching every "clean exit" observation)**. Read the actual message string
+directly (`ReadStringAt.java`, new this pass, since Ghidra hadn't recognized
+it as a defined string literal): **`"SCR_DrawScreenField: bad clcState"`** --
+a real, engine-internal function name (`clc` is the classic Quake3-lineage
+"client connection" struct prefix; `SCR_DrawScreenField` is the per-frame
+screen-content dispatcher). Confirmed via `FUN_0057f5f0`'s own caller,
+`FUN_0057f710` (`SCR_UpdateScreen`-equivalent, calls `FUN_0057f5f0`
+unconditionally at its own tail) and THAT function's own caller,
+`FUN_004269b0`: during active gameplay specifically (`5 < DAT_00b36218`,
+i.e. clcState 6 or 7) the whole chain runs with **no rate limit at all** --
+essentially every real frame. Outside gameplay (loading/menus/lower states)
+it's throttled via a real millisecond-timer gate instead.
+
+**Why this reconciles the user's objection completely**: `clcState` (`DAT_00b36218`)
+is a well-behaved connection-state field maintained by the engine's own state
+machine -- it sits at a valid value (6, "ordinary live gameplay," already
+independently confirmed via `re_notes/iw5sp.md` line ~912) for the entire
+normal play session. The `default:` branch above is NOT reachable by anything
+this issue's own ratio-math theory does directly -- it's reachable only if
+`DAT_00b36218` itself, or memory adjacent to it, gets CORRUPTED to a value
+outside the known-valid set. That is a genuinely different failure shape from
+"wrong every frame from the start": the render-scale/window-size divergence
+(`FUN_00450740`'s ratio math, previous section) is a real, present-from-launch
+precondition, but it only becomes actively harmful at the specific,
+gameplay-triggered moment `UI_RefreshViewport` fires and a bad rect actually
+gets computed and used -- and if THAT write ever lands somewhere that
+clobbers `clcState` (directly, or via adjacent-memory corruption), the crash
+doesn't happen at that instant -- it happens on whatever LATER frame
+`SCR_DrawScreenField` next reads the now-bad value, which given the
+"essentially every frame during gameplay" calling pattern above would likely
+be very soon after, but not necessarily the exact same frame. This fits
+"works fine, then exits cleanly some time into a session" far better than a
+same-instant mismatch theory does, without needing to invoke an actual data
+race (though one isn't ruled out either -- just not required to explain the
+delay).
+
+**Real, concrete instrumentation shipped this pass, not just theorized**:
+`InjectAllControllerInput` (`analog_input_hooks.cpp`, the existing
+confirmed-every-real-gameplay-frame hook -- reused rather than installing a
+new, unverified-calling-convention hook on `FUN_0057f5f0` itself, a cheaper
+and lower-risk vantage point on the exact same data) now checks
+`DAT_00b36218` every frame and logs a loud, one-shot `[clcstate-diag]`
+warning the FIRST time it's ever observed outside `{0,1,2,3,4,6,7}` --
+catching the corruption on the same or an earlier frame than the engine's
+own crash, which would be definitive, direct confirmation of this exact
+mechanism if it ever fires. Built (0 errors), redeployed.
+
+**What's still open**: (1) what actually writes a bad value into `clcState`
+or its neighborhood -- not yet identified, the ratio-math rect from the
+previous section is the leading suspect (an oversized/negative rect feeding
+some bounded write) but this is not yet proven to be the specific corrupting
+write; (2) what triggers `UI_RefreshViewport` -- requires GSC extraction/
+decompilation to answer properly, not yet attempted; (3) whether `Underground`
+correlates with `UI_RefreshViewport` firing more often, still unconfirmed.
+
 ### Next-session priority order, derived from all 4 forks, RE-ORDERED AGAIN after the gameplay-gated ratio-math finding above
 
-**RE-ORDERED AGAIN (2026-08-26)** -- the gameplay-gated ratio-math finding
-above is now the single most concrete, evidence-backed mechanism on the
-table (real code, real explicit computation between the two globals, gated
-on an independently-already-documented "live gameplay" state value). None of
-the items below is confirmed live yet -- they are not mutually exclusive
-(the ratio-math bug could feed directly into fork 2's unclamped
-depth-stencil, for instance):
+**RE-ORDERED AGAIN (2026-08-26), after the `clcState` finding above** --
+the `[clcstate-diag]` check is now the single most decisive log to read next
+session, since it catches the ACTUAL failure point (the exact mechanism
+`FUN_00425540` is reached through) rather than an upstream precondition.
+None of the items below is confirmed live yet -- they are not mutually
+exclusive (most plausibly: the ratio-math bug produces a bad rect, which
+corrupts `clcState` or its neighborhood, which the state-diag check catches
+on a later frame):
 
-1. **Top priority, single most decisive check available, and already
-   shipped**: launch the current build (already has the new
-   `[video-scale-diag]` log line), reproduce on `Underground`, and read the
-   log. It directly reports `DAT_021d2e08`/`0c`'s real runtime value next to
-   the override target every time `InternalRenderScalePercent` fires -- if
-   they diverge, that's live confirmation of the exact mechanism
-   `FUN_00450740`'s ratio math depends on being wrong. This requires ZERO
-   further code changes, just a play session and a log read.
-2. **If #1 confirms a divergence**: the fix is almost certainly NOT another
-   poke to `DAT_021d2e08`/`0c` (proven unsafe -- it's the real window size)
-   -- it's making `FUN_00450740`'s own ratio computation (or its caller)
-   aware of the actual relationship between the two pairs, most likely by
-   having this project's own hook also track/expose what `param_2`'s
-   coordinate space actually assumes, OR by clamping/disabling
-   `InternalRenderScalePercent` automatically whenever this specific
-   gameplay state (`DAT_00b36218==6` with an active secondary view) is about
-   to be entered. Not attempted this pass -- needs #1's confirmation first.
+1. **Top priority, most decisive, already shipped**: launch the current
+   build (has both new diagnostics), play on `Underground` until it crashes
+   (or doesn't), then read the log for two things together: (a)
+   `[clcstate-diag]` -- if this appears at all, it's DEFINITIVE confirmation
+   this is issue #96's real mechanism, and it'll show the exact bad value
+   `clcState` took on; (b) the `[video-scale-diag]` lines leading up to it --
+   whether `DAT_021d2e08`/`0c` actually diverges from the override target.
+   Together these either confirm the full causal chain (divergence -> bad
+   ratio-math rect -> `clcState` corruption -> crash) or rule pieces of it
+   out cleanly. Requires zero further code changes, just a play session and
+   a log read.
+2. **If #1's `[clcstate-diag]` fires**: the fix needs to find and correct
+   whatever WRITE actually corrupts `clcState`/neighboring memory -- almost
+   certainly downstream of `FUN_00450740`'s bad rect (the leading suspect,
+   not yet proven), which would need bounds-checking or clamping at its own
+   ratio-computation site, not a patch to `clcState` itself (that's a
+   symptom, not the cause). Not attempted this pass -- needs #1's
+   confirmation first, and likely a fresh decompile of whatever consumes the
+   bad rect after `FUN_00450740` computes it.
 3. **Second priority**: add the one-line `D3DCAPS9.MaxTextureWidth`/
    `MaxTextureHeight` log fork 2 recommended, reproduce on `Underground`, and
    compare against the actual requested dimensions. A hit confirms a real
    device-cap rejection on the unclamped shared depth-stencil
-   (`FUN_00682bc0`) -- possibly downstream of #1's bad rect feeding it an
-   oversized request, not necessarily a competing/exclusive theory.
-4. **Lower priority now, but not disproved**: resolve fork 1's `0x1720` vs
+   (`FUN_00682bc0`) -- possibly a second, independent failure mode rather
+   than the same one #1/#2 target.
+4. **GSC extraction, real effort, not yet attempted**: if #1/#2 confirm the
+   ratio-math/clcState chain, tracing what actually sets `UI_RefreshViewport`
+   (no native C++ setter exists -- see above) would need `xensik/gsc-tool`
+   against the relevant `.ff` fastfiles. Worth doing once the native-code
+   side of the mechanism is confirmed, not before.
+5. **Lower priority now, but not disproved**: resolve fork 1's `0x1720` vs
    `0x1760` discrepancy in `FUN_004e5b30` -- largely superseded by this
    pass's more direct trace (which bypassed that discrepancy entirely by
    finding the actual writer function), but still worth resolving for a
    complete picture of the sub-rect selection logic.
-5. **Deprioritized, not disproved**: reproduce, then grep the live
+6. **Deprioritized, not disproved**: reproduce, then grep the live
    `proxy_d3d9.log` for `[d3d9on12-guard] blocked` (fork 4) before it's
    overwritten by another launch -- still worth a look if convenient, but no
    longer plausible as the PRIMARY mechanism now that a complete,
    gameplay-gated alternative causal chain is confirmed in code.
-4. If a fresh live capture is ever taken, tag `0x34AEA000`/`0x37FD0000`-
+7. If a fresh live capture is ever taken, tag `0x34AEA000`/`0x37FD0000`-
    equivalent regions (fork 3) with a live `VirtualQuery` check to identify
    the owning subsystem, rather than guessing from a static snapshot alone.
