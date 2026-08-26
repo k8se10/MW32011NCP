@@ -1,0 +1,81 @@
+================================================================
+Function: FUN_004d08f0 @ 004d08f0
+Signature: undefined FUN_004d08f0(void)
+----------------------------------------------------------------
+
+void FUN_004d08f0(int param_1,undefined1 param_2,undefined1 param_3)
+
+{
+  int iVar1;
+  
+  iVar1 = param_1 * 0x20;
+  *(undefined **)(&DAT_021cd6dc + iVar1) = (&PTR_s__shadowmap_large_0093a2f0)[param_1];
+  (&DAT_021cd6c6)[iVar1] = param_2;
+  (&DAT_021cd6c5)[iVar1] = param_3;
+  return;
+}
+
+
+
+================================================================
+Function: FUN_004b60a0 @ 004b60a0
+Signature: undefined FUN_004b60a0(void)
+----------------------------------------------------------------
+
+void FUN_004b60a0(undefined4 param_1,undefined2 param_2,undefined2 param_3,undefined4 param_4,
+                 undefined4 param_5)
+
+{
+  thunk_FUN_004425f0(param_1,param_2,param_3,1,&DAT_02000003,param_4,param_5);
+  return;
+}
+
+
+
+================================================================
+Function: FUN_00455b20 @ 00455b20
+Signature: undefined FUN_00455b20(void)
+----------------------------------------------------------------
+
+undefined4 FUN_00455b20(undefined4 *param_1)
+
+{
+  undefined4 uVar1;
+  
+  uVar1 = 0;
+  (**(code **)(*(int *)*param_1 + 0x48))((int *)*param_1,0,&param_1);
+  return uVar1;
+}
+
+
+
+================================================================
+Function: FUN_00682bc0 @ 00682bc0
+Signature: undefined FUN_00682bc0(void)
+----------------------------------------------------------------
+
+int * FUN_00682bc0(void)
+
+{
+  undefined4 uVar1;
+  undefined4 uVar2;
+  int iVar3;
+  undefined4 uVar4;
+  
+  uVar2 = DAT_021d2e04;
+  uVar1 = DAT_021d2e00;
+  if (DAT_021d05e8 != (int *)0x0) {
+    (**(code **)(*DAT_021d05e8 + 4))(DAT_021d05e8);
+    return DAT_021d05e8;
+  }
+  iVar3 = (**(code **)(*DAT_021cd928 + 0x74))
+                    (DAT_021cd928,DAT_021d2e00,DAT_021d2e04,DAT_021cd944,0,0,0,&DAT_021d05e8,0);
+  if (iVar3 < 0) {
+    uVar4 = FUN_004672a0(iVar3);
+    FUN_00425540(0,"Couldn\'t create a %i x %i depth-stencil surface: %s\n",uVar1,uVar2,uVar4);
+  }
+  return DAT_021d05e8;
+}
+
+
+

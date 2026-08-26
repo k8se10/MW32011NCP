@@ -257,10 +257,19 @@ along the way rather than assumed. See the itemized entries below and
   stage targets, confirmed via `iw5sp.md`), not a safe render-target size to
   override -- the fix would have resized the actual window to the supersampled
   resolution. Reverted; the real trampoline's tier-clamp logic now runs
-  completely untouched, matching pre-investigation behavior. Root cause
-  remains unconfirmed heading into the next session. See `known_issues.md`
-  issue #96 for the full trail, including the retracted fix kept for the
-  record.
+  completely untouched, matching pre-investigation behavior. A follow-up
+  4-way parallel static-RE pass (2026-08-26) ruled out Demonware/anti-tamper
+  (no such module is imported by either binary, and the clean DLL-detach log
+  line on every capture is inconsistent with an external forced kill) and
+  found three independent, unconfirmed leads: a second real consumer of the
+  window-size pair (a 3D-scene viewport sub-rect, not just SAVED_SCREEN); an
+  unclamped shared depth-stencil surface sized to the full override with no
+  device-cap check ever performed; and a `vid_restart`-blocking guard that
+  happens to gate on the exact same condition the crash tracks, independent
+  of render-target sizing entirely. Root cause remains unconfirmed heading
+  into the next session — each lead needs a live test, not more static RE.
+  See `known_issues.md` issue #96 for the full trail, including the retracted
+  fix kept for the record and all 4 forks' detailed findings.
 
 ## v0.3.4 — Alpha (2026-08-25) — DualSense input-parity fix, gameplay-hint glyph editor, new plugin API
 
