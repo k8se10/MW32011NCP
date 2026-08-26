@@ -12568,6 +12568,40 @@ investigation, separate from issue #96's original static-RE-based
 theories. Fix Attempt C remains disabled too, to keep this next test
 cleanly isolated to one variable at a time.
 
+### com-error-diag CLEARED DEFINITIVELY, 2026-08-26 (same day): isolate `exitprocess-diag` too, closing in on a clean baseline
+
+Live-tested with `com-error-diag` fully disabled: the identical crash class
+reproduced anyway (Event Log: `0xc0000409`, new offset `0x2e6f6` --
+resolved via the same `.pdb` technique to `_invoke_watson + 0xF` once
+again). **This definitively clears `com-error-diag` as the cause** -- the
+crash is not that hook.
+
+Also a real, distinct new observation this test: the log did NOT truncate
+mid-write this time -- it ends cleanly after a complete line (confirmed
+via raw byte inspection, ends `...selIndex=3)\r\n`), but still with no
+`proxy_d3d9 detach` and no `[detach-diag]` line. A third distinct
+signature from this issue's own crash-tail history (clean detach / mid-
+write truncation / clean-line-then-nothing) -- not yet explained, possibly
+just reflecting where exactly in a write cycle the kill lands.
+
+**Isolated the one remaining active hook added this session**:
+`exitprocess-diag` (`Hook_ExitProcess`) is now also TEMPORARILY DISABLED,
+leaving only the passive `lpReserved` capture from today's additions still
+present (which cannot be the cause -- `DLL_PROCESS_DETACH` has not run for
+any of these crashes, so that code path is never reached). Built (0
+errors), redeployed.
+
+**If the identical `0xc0000409`/`_invoke_watson` crash STILL reproduces
+with literally nothing new from this session actively hooked**, that would
+be strong, genuinely new evidence this is a pre-existing bug in this
+project's own already-shipped code (not something introduced today),
+plausibly triggered specifically by the VRAM-pressure/large-dimension
+conditions `InternalRenderScalePercent` creates at high values -- worth
+auditing existing `sprintf_s`-family calls elsewhere in the codebase for
+buffer sizing that assumes normal-resolution values once this is
+confirmed. If the crash finally stops, that isolates it to `exitprocess-diag`
+specifically, the same fate as `com-error-diag`.
+
 ### Next-session priority order, derived from all 4 forks, RE-ORDERED AGAIN after the gameplay-gated ratio-math finding above
 
 **RE-ORDERED AGAIN (2026-08-26), after the `clcState` finding above** --
