@@ -10384,13 +10384,43 @@ namespace {
 void* g_orig_00425540 = nullptr;
 }
 
+// FIXED 2026-08-26, real live crash found: the original version of this function
+// passed `fmt` straight to sprintf_s's `%s` with no bound and no validation --
+// live Event Log evidence (Exception 0xc0000409, resolved via the local .pdb to
+// _invalid_parameter_internal/_invoke_watson) confirmed this was a REAL,
+// self-inflicted crash in THIS diagnostic itself, not the game: if `fmt` (read
+// off the raw stack in Hook_FUN_00425540's naked prehook) isn't a short, valid,
+// null-terminated C string, sprintf_s's own secure-CRT validation refuses to
+// proceed and fast-fails the whole process by design (not a real stack overrun,
+// despite the exception code's common name) -- exactly matching the pattern
+// where [com-error-diag] never once appeared in a log despite this being the
+// mechanism issue #96 was chasing: the crash happened INSIDE this call, before
+// the real log write could ever complete. Fixed by SEH-guarding a manually
+// bounded copy (matches this project's own established "treat memory read out
+// of the game process as untrusted" standard, CLAUDE.md Input Validation
+// section) -- can no longer crash regardless of what `fmt` actually points to.
 extern "C" void __cdecl LogComErrorCall(int severity, const char* fmt)
 {
+    char safeFmt[256];
+    safeFmt[0] = '\0';
+    __try {
+        if (fmt != nullptr) {
+            size_t i = 0;
+            for (; i < sizeof(safeFmt) - 1 && fmt[i] != '\0'; ++i) {
+                safeFmt[i] = fmt[i];
+            }
+            safeFmt[i] = '\0';
+        }
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        sprintf_s(safeFmt, "(unreadable pointer)");
+    }
+
     char buf[512];
     sprintf_s(buf, "[com-error-diag] *** FUN_00425540 (Com_Error-equivalent) called -- "
-        "severity=%d fmt=\"%s\" -- this is the real exit mechanism issue #96 has been "
-        "tracing; whichever fmt string appears here identifies the real call site",
-        severity, fmt ? fmt : "(null)");
+        "severity=%d fmt_ptr=%p fmt=\"%s\" -- this is the real exit mechanism issue #96 "
+        "has been tracing; whichever fmt string appears here identifies the real call site",
+        severity, static_cast<const void*>(fmt), safeFmt);
     LogFromController(buf);
 }
 

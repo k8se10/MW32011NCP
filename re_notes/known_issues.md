@@ -12464,6 +12464,77 @@ at all -- which would fully explain why NEITHER `Com_Error` NOR
 **This is now the single most decisive open question for the next live
 test.**
 
+### MAJOR CORRECTION, 2026-08-26 (same day): the last several "crashes" were a SELF-INFLICTED bug in this session's own `[com-error-diag]` code, not (necessarily) issue #96's original mechanism at all
+
+Direct user report ("check log i crashed") on the lpReserved-diagnostic
+build showed a genuinely NEW signature: the log file was truncated
+MID-WRITE (confirmed via raw byte inspection -- cuts off mid-line, no
+closing quote, no newline), with no `proxy_d3d9 detach`, no
+`[detach-diag]` -- completely unlike every prior "clean detach" crash this
+issue has analyzed. **Checked Windows Event Log for this exact window for
+the first time all session** (a real methodology gap -- every earlier live
+test this session was assessed purely from this project's own log file,
+never cross-checked against the OS-level record) and found four real
+`Application Error` events (ID 1000), all with the identical signature:
+
+```
+Faulting application name: iw5sp.exe
+Faulting module name: d3d9.dll          <- this project's OWN proxy DLL
+Exception code: 0xc0000409              <- STATUS_STACK_BUFFER_OVERRUN
+Fault offset: 0x0002e7b6 / 0x0002e786
+```
+
+**Resolved both fault offsets to real symbols** using the local `.pdb`
+(via `dbghelp.dll`'s `SymFromAddr`, called directly from PowerShell --
+`_invoke_watson`/`_invalid_parameter_internal`, both CRT-internal
+functions. This is NOT a genuine stack-smash despite the exception code's
+common name -- it's the secure-CRT's own parameter-validation path
+(`sprintf_s` and family) refusing to proceed and fast-failing the whole
+process, since no custom `_set_invalid_parameter_handler` is installed.
+Real culprit found: **`LogComErrorCall`** (added this session for
+`[com-error-diag]`) passed `fmt` -- a raw pointer read directly off the
+stack inside `Hook_FUN_00425540`'s naked prehook -- straight into
+`sprintf_s`'s `%s` with no bound and no validation. If that pointer isn't
+a short, valid, null-terminated string (plausible if the naked hook's
+stack-offset assumption doesn't hold for every real call site, or if
+`fmt`'s actual content is simply longer than expected), `sprintf_s`'s own
+safety check refuses to write and escalates straight to this crash.
+
+**Why this matters far beyond just fixing a diagnostic bug**: this crash
+can ONLY happen if `LogComErrorCall` actually executes -- which can ONLY
+happen if `FUN_00425540` is ACTUALLY BEING CALLED. Every "0 hits" result
+for `[com-error-diag]` across this session's tests (Fix Attempt A's test,
+Fix Attempt C's test, the Fix-C-isolation/stand-still test) is now suspect
+-- the real explanation may not be "`Com_Error` never fires," it may be
+"`Com_Error` fires, and this session's own diagnostic crashes before the
+log line can ever be written." **This means the ORIGINAL `Com_Error`/
+`clcState`/render-target-allocation theories this issue spent most of its
+static-RE effort on may have been right all along**, and the last several
+rounds of live testing (the pivotal "Com_Error ruled out" conclusion, the
+Fix C isolation test, the movement test) may all have been chasing a
+red herring introduced by this session's OWN diagnostic code, not the
+game's real behavior.
+
+**Fixed**: `LogComErrorCall` now SEH-guards (`__try`/`__except`, matching
+this file's own already-established pattern used elsewhere) a manually
+bounded copy of `fmt` (max 255 chars, cannot overflow, cannot read past a
+genuinely invalid pointer without being caught) before ever calling
+`sprintf_s` -- eliminates this exact crash regardless of what `fmt` turns
+out to actually point to. Also now logs the raw pointer value (`%p`)
+alongside the (now-safe) string content, for extra diagnostic value. Built
+(0 errors), redeployed.
+
+**Next live test is now genuinely decisive in a way none of the recent
+ones were**: if `[com-error-diag]` finally fires (with this bug fixed),
+that confirms `Com_Error` really is the mechanism, and every static-RE
+theory built around it (the viewport unit mismatch, the shared
+depth-stencil, `clcState`) becomes live-relevant again. If it still never
+fires even with this fixed, THAT is finally trustworthy evidence that
+`Com_Error` genuinely isn't the mechanism, and the `ExitProcess`/
+`lpReserved` diagnostics (also still active) become the real next lead.
+Fix Attempt C remains disabled for this next test too, to keep the
+isolation clean.
+
 ### Next-session priority order, derived from all 4 forks, RE-ORDERED AGAIN after the gameplay-gated ratio-math finding above
 
 **RE-ORDERED AGAIN (2026-08-26), after the `clcState` finding above** --
