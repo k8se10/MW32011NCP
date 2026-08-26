@@ -10993,18 +10993,22 @@ needs retuning.
 
 ---
 
-## 95. Phase E (visual-suite plan): camera-only motion blur -- confirmed working; Round 4's own multi-fire fix was real but NOT the crash's cause (2026-08-26)
+## 95. Phase E (visual-suite plan): camera-only motion blur -- NOT closed, blocked on issue #96's still-open crash regression (2026-08-26)
 
-**Status:** Core feature (blur itself, both UI-exclusion rounds) confirmed
-production-ready live. Round 4 below found and fixed a real, separate
-multi-fire-per-frame bug (a genuine correctness issue, left in place) --
-but direct user re-testing after that fix ("crash again so no that wasnt it
-mate") disproved it as the cause of the actual crash being chased. That
-crash's real root cause turned out to be unrelated to motion blur entirely --
-see issue #96 for the real mechanism and fix (`InternalRenderScalePercent`,
-issue #88, creating a genuine render-target size mismatch). Round 4's fix
-below is still real and still worth having, just not the answer to that
-specific investigation.
+**Status:** Blocked / Not Done. Direct user correction (2026-08-26): "e is not
+done - crash regression pending deep re and fix" -- do not mark Phase E
+complete while issue #96's crash is still unresolved. The blur itself (both
+UI-exclusion rounds) and Round 4's multi-fire-per-frame fix below are real
+and still believed correct in isolation, and the on/off/100% isolation test
+that pinned issue #96 on `InternalRenderScalePercent` specifically DID have
+motion blur enabled throughout without it recurring -- but that clears
+motion blur as the SOLE/independent cause, it does not clear this phase as
+finished while a live, reproducible crash regression sits in the same build
+with its root cause still unknown. Treat Phase E as reopened until #96 has
+an actual confirmed fix (deep RE still needed there, see that issue), not
+just a revert of one bad attempt. Round 4's fix is still real and still
+worth having regardless of how #96 resolves, just not sufficient on its own
+to call this phase done.
 
 Round 4 entry, for the record (still real and still fixed, see above for why
 it wasn't the actual crash cause this session was chasing at the time):
