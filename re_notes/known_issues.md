@@ -12900,25 +12900,46 @@ loop having no internal `break`/`return` -- something must still cause it
 to fall out, it just isn't the general recoverable `Com_Error` path as
 decompiled so far.
 
-**Open candidates for the real fatal trigger, in priority order for a
-future purely-static session:**
-1. A genuinely fatal `param_1`/condition inside `FUN_00425540` that
-   diverges from the general recoverable path -- severities `4`/`5`/`6`/`7`
-   are special-cased before the fall-through and were not decompiled deep
-   enough this pass to see whether any of them skips recovery and forces
-   `FUN_00534380` to actually break its loop (e.g. via some caller checking
-   `DAT_0176b52c` and deciding to `_exit` directly, rather than the count
-   only gating `FUN_0044c7b0`'s own recovery block as currently understood).
-2. An unhandled Windows structured exception (access violation, etc.) that
-   never goes through `Com_Error` at all, hitting the CRT's own SEH/
-   unhandled-exception path directly instead.
-3. A fatal error firing on one of the other **5** `setjmp3` sites found by
-   the same fork -- each looks like a separate thread's own
-   `TLS-setjmp -> do{...}while(true)` main loop (`FUN_0040de80`,
-   `FUN_00586c00`, `FUN_0063a2c0`, `FUN_0068dc40`, plus `FUN_00608b10`'s two
-   init-only sites) -- none examined yet for what their own longjmp-return
-   path actually does; it may not be the same "recover and continue" shape
-   as the main thread's.
+**Open candidates for the real fatal trigger -- UPDATED same day, two more
+static-only forks launched to chase these down:**
+1. ~~A genuinely fatal `param_1`/condition inside `FUN_00425540`~~ --
+   **RULED OUT.** A full re-trace of `FUN_00425540`'s entire body found
+   every branch on severity (`4`/`5`/`6`/`7`, plus the default/`0` path used
+   by the two known real call sites) either returns with no longjmp at all,
+   or falls into the exact same single shared tail: increment
+   `DAT_0176b52c`, run conditional UI teardown, then unconditionally
+   `longjmp` to TLS slot 2. No branch anywhere in this function calls
+   `_exit`/`ExitProcess`/`TerminateProcess`. Severity cannot be what
+   distinguishes a fatal call from a recoverable one -- the destination is
+   identical either way.
+2. **An unhandled Windows structured exception (access violation, stack
+   overflow, etc.) that never goes through `Com_Error` at all** -- now the
+   single strongest remaining candidate, by elimination (see 1 and 3). This
+   would also cleanly explain why `[com-error-diag]` never once fired
+   despite exhaustive hooking of `FUN_00425540` this session: the real
+   fault never reaches that function. **Concrete next static step**: check
+   for a `SetUnhandledExceptionFilter` call near `___tmainCRTStartup`/CRT
+   init, and check `FUN_00534380`'s own call site inside
+   `___tmainCRTStartup` (and `FUN_00534380` itself) for SEH scope-table
+   wrapping at the disassembly level -- neither's decompile shows an
+   explicit `__SEH_prolog` warning comment the way `doexit` does, but
+   Ghidra's decompiler can elide scope-table SEH that doesn't sugar into
+   `__try`, so this isn't conclusive from the decompile alone and needs a
+   raw disassembly check.
+3. ~~A fatal error firing on one of the other 5 `setjmp3` sites~~ --
+   **RULED OUT.** All 5 fully decompiled (`FUN_0040de80`, `FUN_00586c00`,
+   `FUN_0063a2c0`, `FUN_0068dc40`, `FUN_00608b10`). `FUN_00608b10`
+   reconfirmed genuinely init-only (runs once, no loop). The other 4 are
+   real, separate infinite-loop threads structurally identical to the main
+   thread's `FUN_00534380`/`FUN_0044c7b0` pair -- and every one of their own
+   longjmp-return branches recovers and re-enters its own loop; none calls
+   `_exit`/`ExitProcess`/`TerminateProcess` or breaks out anywhere. (No
+   direct `CreateThread`/`_beginthreadex` call-reference was found for any
+   of the 4 -- consistent with them being referenced only as function-
+   pointer thread-proc arguments, which this project's tooling doesn't
+   trace; their independent `TLS`-setjmp + infinite-loop shape is itself
+   strong indirect evidence they're separate threads, just not a
+   smoking-gun confirmation.)
 
 **Separately, the other fork re-confirmed `FUN_00682bc0`/`FUN_00682e50`
 (shared depth-stencil / render-target creation) as the stronger of the two
