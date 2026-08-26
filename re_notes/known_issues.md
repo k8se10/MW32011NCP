@@ -12154,6 +12154,34 @@ the field the way `Hook_FUN_00679010` already does" pattern) but needs the
 same live-test discipline as every other change in this file before
 shipping.
 
+### FIX ATTEMPT A, 2026-08-26 (same day, direct user instruction "we will try each fix"): shipped, not yet live-tested
+
+Checked `FUN_0052a4d0`'s own caller count first (`FindCallers`, 29 callers
+across the engine -- menus, HUD, general viewport setup) before touching
+anything -- confirmed Fix B (the alternative sketched in the previous
+section) would have a far wider blast radius than Fix A, so Fix A is tried
+first.
+
+**Fix A, implemented**: a new hook, `Hook_FUN_00450740`
+(`analog_input_hooks.cpp`, right after `Hook_FUN_00679010`'s own namespace
+closes). Confirmed via raw disassembly (not the decompiler's guessed
+signature) that `FUN_00450740` is a genuine all-stack-args `__cdecl`
+function -- 5 args, caller cleans up with `ADD ESP,0x14` at the one real
+call site (`FUN_00492e00 @ 0x00492e79`) -- safe to detour directly. The hook
+does NOT patch `FUN_00450740`'s own logic (large, does much more than the
+one ratio computation) -- instead it temporarily substitutes
+`DAT_021d2e00`/`04` with `DAT_021d2e08`/`0c`'s own real values for the exact
+duration of the real trampoline call (collapsing the ratio to 1.0, i.e. "no
+scaling" for this one function's internal math only), then restores the
+real scaled values immediately after it returns. Every other consumer of
+`DAT_021d2e00`/`04` (the 9 real render targets, the whole point of
+`InternalRenderScalePercent`) is completely unaffected -- the substitution
+exists only inside this one call's own execution window.
+
+Built (0 errors), redeployed. Logged at install time:
+`[hooks] MH_CreateHook(00450740 issue96-fixA)` / `MH_EnableHook(...)`.
+**Not yet live-tested.**
+
 ### Next-session priority order, derived from all 4 forks, RE-ORDERED AGAIN after the gameplay-gated ratio-math finding above
 
 **RE-ORDERED AGAIN (2026-08-26), after the `clcState` finding above** --
