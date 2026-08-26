@@ -1,0 +1,44 @@
+Callers of 00682e50 (1):
+  FUN_00682fa0 @ 00682fa0
+
+================================================================
+Function: FUN_00682fa0 @ 00682fa0
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+int * FUN_00682fa0(void)
+
+{
+  uint uVar1;
+  uint uVar2;
+  int *piVar3;
+  int *piVar4;
+  undefined1 local_20 [32];
+  
+  FUN_00682d70();
+  FUN_00682e50();
+  piVar3 = DAT_024bf498;
+  (**(code **)(*DAT_024bf498 + 0x30))(DAT_024bf498,local_20);
+  piVar4 = piVar3;
+  if (DAT_021d362c == '\0') {
+    uVar2 = 1;
+    if (1 < (int)DAT_021d2e00) {
+      uVar2 = DAT_021d2e00 & 0xffff;
+    }
+    uVar1 = 1;
+    if (1 < (int)DAT_021d2e04) {
+      uVar1 = DAT_021d2e04 & 0xffff;
+    }
+    DAT_024bf4d0 = FUN_004d08f0(7,6,0);
+    FUN_004b60a0(DAT_024bf4d0,uVar2,uVar1,piVar3,PTR_s_R_RENDERTARGET_RESOLVED_SCENE_0093a368);
+    _DAT_024bf4d4 = FUN_00455b20(DAT_024bf4d0);
+    _DAT_024bf4dc = uVar2;
+    _DAT_024bf4e0 = uVar1;
+    _DAT_024bf4d8 = FUN_00682bc0();
+  }
+  return piVar4;
+}
+
+
+
