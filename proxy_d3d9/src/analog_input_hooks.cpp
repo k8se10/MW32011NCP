@@ -5962,6 +5962,30 @@ void __fastcall Hook_FUN_00679010(void* self)
                                // must always track native display resolution, not the upscaled
                                // target. The real trampoline's own logic already sets it
                                // correctly on its own -- see known_issues.md issue #96.
+
+    // Diagnostic, added 2026-08-26 same pass as the pre-trampoline [video-scale-diag]
+    // above -- that read captured DAT_021d2e08/0c BEFORE the real trampoline runs and
+    // found it 0x0 (live-confirmed, first real test of this build), but this hook only
+    // fires ONCE (the engine's one-time render-target creation step), and 0x0 pre-call
+    // is genuinely ambiguous: it could mean this pair is dangerously still-zero when
+    // FUN_00450740's ratio math (issue #96) later divides by it -- OR it could simply
+    // mean the real trampoline itself is what sets this pair for the first time, and
+    // reading it beforehand was always going to show 0 harmlessly. This second read,
+    // AFTER the trampoline, resolves that ambiguity directly: if it's still 0x0 here,
+    // this pair is genuinely never initialized by anything in this call, and issue #96's
+    // divide-by-zero theory gets much stronger (FUN_00450740 has no protection against a
+    // zero denominator anywhere in its own decompile). If it's nonzero here, the
+    // trampoline is the real initializer and the pre-call 0x0 was expected/harmless.
+    {
+        auto* savedScreenW = reinterpret_cast<int32_t*>(0x021d2e08);
+        auto* savedScreenH = reinterpret_cast<int32_t*>(0x021d2e0c);
+        char buf3[224];
+        sprintf_s(buf3, "[video-scale-diag2] DAT_021d2e08/0c AFTER the real trampoline = %dx%d "
+            "-- if still 0x0, issue #96's FUN_00450740 divide-by-zero theory is strongly "
+            "confirmed (nothing else in this call path initializes this pair)",
+            *savedScreenW, *savedScreenH);
+        LogFromController(buf3);
+    }
 }
 } // namespace
 
