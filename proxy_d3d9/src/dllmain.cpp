@@ -414,7 +414,7 @@ FORWARD_STUB(PSGPSampleTexture)
 
 #undef FORWARD_STUB
 
-BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID)
+BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
 {
     switch (reason) {
     case DLL_PROCESS_ATTACH:
@@ -437,6 +437,24 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID)
         UnloadPlugins();
         UnloadOverlayFonts(); // release the private font resource before this DLL's
             // own memory (where the embedded font data lives) goes away
+        // issue #96 diagnostic, 2026-08-26: lpReserved distinguishes real process
+        // termination (non-NULL -- process is genuinely exiting, all other threads
+        // already destroyed, per Microsoft's own DllMain documentation) from an
+        // explicit FreeLibrary call unloading just THIS DLL while the process keeps
+        // running (NULL). Two clean, isolated live tests have now shown neither
+        // Com_Error nor ExitProcess ever fires before this detach -- this is the
+        // single most decisive remaining check: if lpReserved is NULL here, the
+        // whole "the game crashed" framing may be wrong -- something is unloading
+        // this proxy DLL specifically (matching a vid_restart-style renderer
+        // teardown, per known_issues.md issue #96), and whatever the user sees as
+        // "the game exiting" afterward happens in code this DLL is no longer
+        // present to observe or log.
+        {
+            char buf[128];
+            sprintf_s(buf, "[detach-diag] lpReserved=%p (%s)", lpReserved,
+                lpReserved ? "PROCESS TERMINATING" : "explicit FreeLibrary -- this DLL specifically unloaded, process may still be running");
+            Log(buf);
+        }
         Log("proxy_d3d9 detach");
         if (g_log) fclose(g_log);
         break;
