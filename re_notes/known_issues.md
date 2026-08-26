@@ -12218,6 +12218,84 @@ through this same call chain first, to understand what `param_2` actually
 represents and why the ratio math exists at all, before attempting anything
 else. See the next section.
 
+### Traced the natural (vanilla) data flow, 2026-08-26 (same day, direct user instruction "i say we trace plan b and see exactly what the game would do naturally first"): flips which side of the mismatch is actually wrong
+
+**Correction to the earlier "gated by `UI_RefreshViewport`" framing**: traced
+the real argument-passing via raw disassembly (the decompile hides it --
+`FUN_0057f580` calls `FUN_0042c2f0` with what LOOKS like no arguments,
+because they're register-implicit, inherited from `FUN_0057f710`). Confirmed
+`FUN_0042c2f0` (a large per-frame client/HUD update function) runs
+UNCONDITIONALLY inside `FUN_0057f580`, BEFORE the `UI_RefreshViewport` check
+even happens -- that cvar gates something else entirely (which of two
+follow-up functions to call), not whether the ratio-math chain runs at all.
+**The whole `FUN_00450740` chain runs essentially every real frame during
+live gameplay** (gated only by `clcState==6`, i.e. "you are playing"), not by
+any rarer per-event trigger. This is actually a simpler, more direct match
+for "works fine, then crashes" -- a per-frame effect reaching some threshold
+over time, not a rare GSC-driven event. Makes the earlier "trace GSC scripts
+to find UI_RefreshViewport's setter" recommendation much lower priority --
+that cvar isn't the gate for the crash-causing computation.
+
+**Traced `FUN_00450740`'s real input rect to its source**: `param_2` resolves
+(through `FUN_0044ca30` -> `FUN_00492e00`) to a fixed global,
+`DAT_0098f948`+family (x/y/w/h). Found its real writer, `FUN_00575830`:
+```c
+_DAT_0098f948 = DAT_0096ee00;   // x
+_DAT_0098f94c = DAT_0096ee04;   // y
+_DAT_0098f950 = DAT_0096ee08;   // w
+_DAT_0098f954 = DAT_0096ee0c;   // h
+```
+`DAT_0096ee00`-`0c` is a separate, well-established "current active viewport"
+global (already seen saved/restored around `FUN_0053d640` in an earlier
+section of this issue) -- almost certainly the real, current NATIVE viewport
+(e.g. `2560x1440`).
+
+**This flips which side of the mismatch is wrong.** If `FUN_00450740`'s
+INPUT is genuinely native-space, then its scaled OUTPUT (`6400x3600` at
+250%) is converting that native rect INTO the space the 9 real render
+targets actually live in -- correct behavior, not a bug. This directly
+explains Fix Attempt A's failure: forcing the ratio to 1.0 for the whole
+call didn't just neutralize a wrong computation, it broke a CORRECT one,
+and (per the live symptom) also broke whatever downstream consumer inside
+that same call tree legitimately needs the real scaled value to size the
+type-2 viewport's own backing surface.
+
+**The real mismatch, reframed**: the PRIMARY viewport's own rect (built from
+SAVED_SCREEN's native dims via `FUN_0052a4d0`, already traced) stays in
+native units when `FUN_00694650` carves it around this now-understood-to-be
+CORRECTLY-scaled exclusion rect via `FUN_00508970`. Subtracting a rect
+~2.5x larger than its own container is what produces the garbage this issue
+traced end-to-end -- not the type-2 viewport being wrong, but the primary
+viewport never being scaled to match it for this one operation.
+
+### FIX ATTEMPT C, 2026-08-26 (same day, direct user instruction "try it"): shipped, not yet live-tested
+
+Rather than touching `FUN_0052a4d0` (29 callers, checked earlier, too broad)
+or `FUN_00694650` itself (a register-implicit-argument function --
+`unaff_EDI`, no formal parameters in its own decompile -- exactly the class
+of function this project's own established standard flags as too risky to
+hook directly), this targets `FUN_00508970` instead. Confirmed via raw
+disassembly to be a genuine all-stack-args `__cdecl` function (3 args,
+caller cleans up with `ADD ESP,0xc` at every one of its 4 real recursive
+call sites) -- safe to detour directly.
+
+**Fix implemented**: `Hook_FUN_00508970` scales the CONTAINER rect
+(`param_1+0x160/164/168/16c`, the primary viewport's own bounds) up by the
+same `DAT_021d2e00`/`DAT_021d2e08` ratio, right before calling the real
+trampoline, restoring the real native values immediately after. Since
+`FUN_00508970` is genuinely recursive (calls itself directly, up to 4 times
+per level) and MinHook patches the function's actual entry bytes, its OWN
+internal recursive calls hit this hook too -- a depth guard
+(`g_fixC_508970_depth`) ensures the scale/restore only happens on the
+OUTERMOST call for a given top-level carve; recursive re-entries pass
+straight through untouched, since the scaled starting state from the
+outermost call is already correctly baked into the shared rect fields the
+recursion reads/writes in place.
+
+Built (0 errors), redeployed. Logged at install time:
+`[hooks] MH_CreateHook(00508970 issue96-fixC)` / `MH_EnableHook(...)`.
+**Not yet live-tested.**
+
 ### Next-session priority order, derived from all 4 forks, RE-ORDERED AGAIN after the gameplay-gated ratio-math finding above
 
 **RE-ORDERED AGAIN (2026-08-26), after the `clcState` finding above** --
