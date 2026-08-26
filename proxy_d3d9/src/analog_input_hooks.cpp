@@ -10409,6 +10409,42 @@ __declspec(naked) void Hook_FUN_00425540()
     }
 }
 
+// ---- issue #96 GENERAL DIAGNOSTIC, ROUND 2 (2026-08-26): observe the actual
+// process-termination call directly, since Com_Error is now confirmed NOT the
+// mechanism ------------------------------------------------------------------
+//
+// Two clean, isolated live tests (the general Com_Error diagnostic's own
+// first test, and a follow-up with Fix Attempt C fully disabled) both showed
+// ZERO calls into FUN_00425540 despite a reproduced crash -- ruling out the
+// Com_Error/longjmp mechanism this entire investigation was built on, and
+// ruling out Fix Attempt C as the cause of that result (the crash reproduced
+// identically with it removed). The process still exits CLEANLY every time
+// (`proxy_d3d9 detach` always logs, confirming real `DLL_PROCESS_DETACH` --
+// already established earlier in this issue to be inconsistent with an
+// external `TerminateProcess`-style kill, since that API does not invoke
+// DLL_PROCESS_DETACH at all). A clean exit that skips the game's own error
+// path virtually always funnels through a real `ExitProcess` call somewhere
+// (a CRT `exit()`/`abort()` call itself calls `ExitProcess` internally in a
+// normal Windows executable, so hooking this one system export should catch
+// every remaining candidate path, not just a specific game-internal one).
+// Hooked as a real Win32 API export (`kernel32.dll`), not a hardcoded
+// game-binary address -- immune to game-version offset drift entirely.
+namespace {
+using ExitProcessFn = void(WINAPI*)(UINT);
+ExitProcessFn g_origExitProcess = nullptr;
+
+void WINAPI Hook_ExitProcess(UINT uExitCode)
+{
+    char buf[160];
+    sprintf_s(buf, "[exitprocess-diag] *** ExitProcess(%u) called -- this is what actually "
+        "terminates the process (Com_Error is confirmed NOT the mechanism, see "
+        "known_issues.md issue #96) -- whatever called this is the real trigger",
+        uExitCode);
+    LogFromController(buf);
+    g_origExitProcess(uExitCode);
+}
+} // namespace
+
 void InstallAnalogInputHooks()
 {
     MH_Initialize();
@@ -10640,6 +10676,28 @@ void InstallAnalogInputHooks()
         MH_STATUS eComErrorDiag = MH_EnableHook(reinterpret_cast<LPVOID>(0x00425540));
         sprintf_s(buf, "[hooks] MH_EnableHook(00425540 com-error-diag) = %d", static_cast<int>(eComErrorDiag));
         LogFromController(buf);
+    }
+
+    // Issue #96 GENERAL DIAGNOSTIC, ROUND 2, 2026-08-26 -- see the big comment
+    // above Hook_ExitProcess's definition. Com_Error is now confirmed NOT the
+    // exit mechanism (two clean, isolated live tests, zero hits) -- this
+    // catches the real termination call directly, whatever it turns out to be.
+    // Real kernel32.dll export, resolved at runtime, not a hardcoded address.
+    {
+        HMODULE hKernel32 = GetModuleHandleA("kernel32.dll");
+        LPVOID pExitProcess = hKernel32 ? reinterpret_cast<LPVOID>(GetProcAddress(hKernel32, "ExitProcess")) : nullptr;
+        if (pExitProcess != nullptr) {
+            MH_STATUS sExitProcess = MH_CreateHook(pExitProcess, &Hook_ExitProcess, reinterpret_cast<LPVOID*>(&g_origExitProcess));
+            sprintf_s(buf, "[hooks] MH_CreateHook(ExitProcess exitprocess-diag) = %d", static_cast<int>(sExitProcess));
+            LogFromController(buf);
+            if (sExitProcess == MH_OK) {
+                MH_STATUS eExitProcess = MH_EnableHook(pExitProcess);
+                sprintf_s(buf, "[hooks] MH_EnableHook(ExitProcess exitprocess-diag) = %d", static_cast<int>(eExitProcess));
+                LogFromController(buf);
+            }
+        } else {
+            LogFromController("[hooks] ExitProcess resolution FAILED -- GetModuleHandleA/GetProcAddress returned null");
+        }
     }
 
     // Issue #92, 2026-08-26 -- [Video] ForceD3D9On12 vid_restart guard, see the big
