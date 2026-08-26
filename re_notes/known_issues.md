@@ -12055,6 +12055,105 @@ is even out-of-bounds for whatever it's applied to, or whether -- as the
 UNIT MISMATCH theory above suggests -- the real problem is comparing it
 against the OTHER, unscaled viewport rather than its own bounds specifically).
 
+### Deep RE dig, part 3, 2026-08-26 (same day, direct user request "keep going in depth"): the FULL chain is now traced, static RE + the two live numbers combined -- this is no longer a lead, it's a complete, coherent mechanism
+
+Resolved the last open question from the previous section (what creates/sizes
+the primary viewport's own bounds, to confirm or deny the unit-mismatch
+theory). Also resolves the `0x1720` vs `0x1760` discrepancy fork 1 flagged
+earlier -- both citations were right about DIFFERENT fields on the same
+struct, confirmed via fresh decompile of `FUN_004e5b30`: `+0x1760` is
+genuinely the full-screen-vs-subrect mode flag (mode==1 selects
+`+0x1764/1768` as W/H); `+0x1720` is a SEPARATE letterbox/safe-area-inset
+flag, gating an unrelated adjustment later in the same function. Not the
+same field, no longer worth treating as a discrepancy.
+
+**Traced `+0x1764/1768`'s real writer**: `FindDisplacementRefs` for those two
+offsets found exactly one writer, `FUN_0052a4d0`:
+```c
+void FUN_0052a4d0(int param_1,int param_2)
+{
+  *(undefined4 *)(param_1 + 0x1760) = *(undefined4 *)(&DAT_00881398 + param_2 * 4);
+  *(undefined4 *)(param_1 + 0x1764) = *(undefined4 *)(&DAT_024bf48c + param_2 * 0x14);
+  *(undefined4 *)(param_1 + 0x1768) = *(undefined4 *)(&DAT_024bf490 + param_2 * 0x14);
+}
+```
+A viewport's "full-screen" W/H is a straight COPY from a table
+(`DAT_024bf48c`/`490`, stride `0x14`) indexed by `param_2`. **Confirmed via
+`FUN_00683060` (issue #88's own render-target orchestrator, already fully
+decompiled) that index 0 of this exact table is populated directly from
+`DAT_021d2e08`/`DAT_021d2e0c` (the native/window-size pair) at the moment
+SAVED_SCREEN is created**:
+```c
+uVar3 = DAT_021d2e08 & 0xffff;
+uVar2 = DAT_021d2e0c & 0xffff;
+DAT_024bf480 = FUN_004d08f0(9,6,0);
+FUN_004b60a0(DAT_024bf480,uVar3,uVar2,uVar1,PTR_s_R_RENDERTARGET_SAVED_SCREEN...);
+_DAT_024bf48c = uVar3;   // <- exactly the field FUN_0052a4d0 copies from at index 0
+_DAT_024bf490 = uVar2;
+```
+
+**The complete, now fully-traced chain**:
+1. `InternalRenderScalePercent=250` (this project's own hook) scales
+   `DAT_021d2e00`/`04` to `6400x3600` -- confirmed live this session.
+2. SAVED_SCREEN, and therefore this table's index-0 entry, stays at the real
+   native resolution `2560x1440` (`DAT_021d2e08`/`0c`) -- also confirmed
+   live this session.
+3. A viewport built with `FUN_0052a4d0(viewport, 0)` (full-screen mode,
+   table index 0) gets its own `+0x1764/1768` bounds set to native
+   `2560x1440` -- this is almost certainly the PRIMARY/main viewport, given
+   index 0 is SAVED_SCREEN's own slot and represents "the whole screen."
+4. Separately, when `UI_RefreshViewport` fires during live gameplay
+   (`DAT_00b36218==6`), `FUN_00450740` builds a NEW type-2 viewport and
+   writes ITS OWN bounds (`+0x140..16c`) using an explicit ratio,
+   `coord * DAT_021d2e00 / DAT_021d2e08` = `coord * 2.5` -- landing its
+   bounds in `6400x3600`-space, NOT `2560x1440`-space.
+5. `FUN_00694650` (issue #95's own already-documented mechanism) then calls
+   `FUN_00508970` to recursively carve the PRIMARY viewport's rect (native,
+   `2560x1440`) around the type-2 viewport's rect as an exclusion zone
+   (2.5x-scaled). **Comparing a native-space rect against a 2.5x-scaled one
+   in the same subtraction/intersection arithmetic is a genuine unit
+   mismatch** -- the exclusion rect looks roughly 2.5x larger than the
+   actual screen it's meant to carve, which the recursion's own arithmetic
+   (repeated subtraction across up to 4 recursive calls per exclusion rect)
+   has no guard against producing negative or nonsensical remaining-rect
+   values from.
+6. Those bad values get written back into the SAME shared per-viewport
+   struct fields (`+0x160/164/168/16c`, temporarily overwritten and restored
+   around each recursive call per `FUN_00508970`'s own decompile) -- not yet
+   proven exactly how this reaches `clcState`/`DAT_00b36218` specifically,
+   but this is now a real, concrete, live-number-backed source of corrupted
+   state feeding directly into the same render/viewport pipeline that runs
+   every frame during gameplay, matching every symptom collected so far.
+
+**This supersedes the "divide-by-zero" and (mostly) the standalone
+"clcState corruption" framings from the previous two sections** -- not
+because those observations were wrong (the `0x0` pre-trampoline read and the
+0-hit `clcstate-diag` results are both real, accurate data points), but
+because this chain now explains WHY a corruption would plausibly occur at
+all, rather than treating "state gets corrupted somehow" as an open
+question. The mechanism is a genuine geometric/unit inconsistency between
+two viewports built from two different table sources that this project's own
+`InternalRenderScalePercent` hook was never designed to keep in sync.
+
+**Fix direction (not yet implemented -- needs discussion before shipping,
+per this project's own standard against unverified/unconfirmed patches)**:
+the render-scale-active-only viewport (index/table-entry the type-2 chain
+ultimately uses) needs its own coordinate space reconciled with whatever the
+PRIMARY viewport's rect actually uses -- most plausibly either (a) making
+`FUN_00450740`'s ratio math divide by `DAT_021d2e00`/`04` instead of
+`DAT_021d2e08`/`0c` when the caller's own coordinate space is already
+scaled-target-relative (removing the 2.5x factor entirely, if `param_2`'s
+own input is meant to already be in output-target units), or (b) hooking
+`FUN_0052a4d0` (or its own caller) to source table index 0 from
+`DAT_021d2e00`/`04` instead of `DAT_021d2e08`/`0c` specifically WHEN
+`InternalRenderScalePercent` is active, so the primary viewport's own
+full-screen rect matches the scaled space the type-2 viewport's ratio math
+already assumes. Neither has been attempted -- (b) is likely lower-risk
+(one new hook, one field, matches this project's own established "override
+the field the way `Hook_FUN_00679010` already does" pattern) but needs the
+same live-test discipline as every other change in this file before
+shipping.
+
 ### Next-session priority order, derived from all 4 forks, RE-ORDERED AGAIN after the gameplay-gated ratio-math finding above
 
 **RE-ORDERED AGAIN (2026-08-26), after the `clcState` finding above** --
