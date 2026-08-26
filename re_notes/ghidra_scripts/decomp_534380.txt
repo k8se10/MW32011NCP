@@ -1,0 +1,88 @@
+================================================================
+Function: FUN_00534380 @ 00534380
+----------------------------------------------------------------
+
+undefined4 FUN_00534380(undefined4 param_1,int param_2,int param_3)
+
+{
+  char cVar1;
+  HANDLE hProcess;
+  undefined4 uVar2;
+  int iVar3;
+  DWORD dwPriorityClass;
+  char acStack_100 [256];
+  
+  dwPriorityClass = 0x80;
+  hProcess = GetCurrentProcess();
+  SetPriorityClass(hProcess,dwPriorityClass);
+  FUN_00521090();
+  cVar1 = FUN_00457c20();
+  if (cVar1 == '\0') {
+    return 0;
+  }
+  cVar1 = SteamAPI_RestartAppIfNecessary(0xa6b8);
+  if (cVar1 != '\0') {
+    FUN_00527110();
+    return 0;
+  }
+  FUN_005418c0();
+  FUN_005371e0();
+  FUN_004795e0();
+  FUN_00460e30(param_3);
+  cVar1 = FUN_004aa450(0);
+  if (cVar1 == '\0') {
+    uVar2 = FUN_00420600();
+    uVar2 = FUN_004c1c80(&DAT_008298d0,uVar2);
+    FUN_004664d0(uVar2,&DAT_008331b8,0x10,0);
+    goto LAB_00534415;
+  }
+  iVar3 = FUN_004a6100(param_3,"allowdupe",9);
+  if ((iVar3 == 0) && (*(char *)(param_3 + 9) < '!')) {
+LAB_00534453:
+    if (param_2 == 0) {
+      FUN_00521640();
+      FUN_004e4c40();
+      FUN_004647f0();
+      FUN_0062ee30();
+      FUN_0051c410();
+      FUN_004c01e0(0);
+      DAT_01ce22f8 = param_1;
+      FUN_0053a950(&DAT_01cdf008,param_3,0x400);
+      FUN_00458330();
+      FUN_0054b040();
+      FUN_0062f170();
+      SetErrorMode(1);
+      FUN_004a1610();
+      FUN_004f6280();
+      FUN_005df010();
+      FUN_00433560(&DAT_01cdf008);
+      FUN_00457c90(0,"readStats\n");
+      __getcwd(acStack_100,0x100);
+      SetFocus(DAT_01ce22f4);
+      do {
+        if (DAT_01ce2300 != 0) {
+          FUN_00438600(5);
+        }
+        if (((DAT_01ce16a4 != '\0') && (cVar1 = FUN_0049c070(), cVar1 != '\0')) &&
+           (DAT_00aa4090 == 0)) {
+          DAT_00aa4090 = 1;
+          FUN_00493420(0,&LAB_0062eed0);
+        }
+        FUN_0044c7b0();
+      } while( true );
+    }
+  }
+  else {
+    FUN_0062f100();
+    iVar3 = FUN_0052a8f0();
+    if (iVar3 != 0) goto LAB_00534453;
+  }
+  FUN_00535b10();
+LAB_00534415:
+  FUN_00411bd0();
+  FUN_00527110();
+  return 0;
+}
+
+
+

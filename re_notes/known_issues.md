@@ -12749,6 +12749,96 @@ this next test already has two changed variables (the `ExitProcess` fix,
 `ExitProcess` exit code AND whether `Com_Error` also fires (revealing
 whether it's a precursor to the `ExitProcess` call, or a separate path).**
 
+### LIVE DEBUGGER SESSION -- SERIOUS INCIDENT, 2026-08-26: caused two full-system freezes, hard resets required. NOT to be reattempted.
+
+**Direct user report, verbatim: "thats twice that its crashed and memory
+leaked my whole pc on you resuming the debugger" / "the game isnt what
+crasheed, my whole system froze on both attempts you did" / "i had to hard
+reset".** Attaching `cdb.exe` live to the running game process (via the
+newly-installed `mcp-windbg` MCP server, `cdb -server` + `open_cdb_remote`,
+then resuming with `g`) caused the user's ENTIRE PC to freeze, not just the
+target process, on two separate occasions, each requiring a hard reset. Real
+harm, not a minor inconvenience -- logged via `SendFeedback` (bug,
+`destructive_actions`). Root cause of the freeze itself is NOT understood
+(plausibly a GPU-driver-level lock held by the render thread at the moment
+of attach/suspend/resume, given the target is a D3D9 process with this
+project's own render-thread hooks, but this is an unconfirmed guess, not a
+finding). **Decision: live-attaching a debugger to this game process is
+retired as a technique for this issue, permanently, not just for tonight.**
+Post-mortem dump analysis via `mcp-windbg`'s `open_cdb_dump` (opening an
+already-existing `.dmp` file) remains fine if a dump is ever successfully
+captured by other means -- the risk is specifically in the live attach/
+resume workflow, not in `mcp-windbg` itself.
+
+**What the live session DID produce, safely usable after the fact**: before
+the freeze, one clean breakpoint hit on `Hook_ExitProcess` captured a REAL,
+non-corrupted return-address chain from the stack (`dd esp` + `kb`) --
+`iw5sp+0x33bae6` / `0x33bcd3` / `0x33bcfc` / `0x33ced4`. These were resolved
+entirely via safe, static Ghidra decompilation afterward (see below) --
+zero further live-process risk was needed to use this data.
+
+### `ExitProcess` MECHANISM FULLY RESOLVED, 2026-08-26 (same day): this was never a crash -- it's the CRT's own normal program-exit sequence, reached via the already-confirmed `Com_Error`/`longjmp`
+
+Decompiled the four addresses captured from the one safe breakpoint hit
+above. **All four resolve to real, named Visual Studio 2008 CRT library
+functions** (Ghidra's own "Library Function - Single Match" identification,
+not guessed): `doexit` (`0x73bbbf`), `_exit` (`0x73bceb`), and
+`___tmainCRTStartup` (`0x73cdb3`, the REAL entry point of `iw5sp.exe`).
+
+**The real call chain, fully traced, entirely standard CRT behavior**:
+```
+___tmainCRTStartup                          -- the real program entry point
+  local_24 = FUN_00534380(...)              -- the game's own top-level main/loop function
+  if (local_20 == 0) _exit(local_24);       -- called DIRECTLY once FUN_00534380 returns
+      -> doexit(code, 0, 0)                 -- runs standard atexit-handler cleanup
+          -> ___crtExitProcess(code)        -- the real, final call into ExitProcess
+```
+This is **not an error path** -- `doexit`/`_exit`/`___crtExitProcess` are the
+exact same functions that would run on ANY normal, intentional program exit
+(e.g. selecting "Exit Game"). `ExitProcess` firing every single crash (now
+fully confirmed, not inferred) simply means `FUN_00534380` -- the game's own
+main/loop wrapper -- returned. This explains, completely, why NEITHER
+`Com_Error`'s own severity/message NOR a raw `ExitProcess` exit code alone
+was ever going to look like a "crash": there isn't one. The engine is
+shutting itself down through its own normal exit machinery.
+
+**Decompiled `FUN_00534380` itself and found the real game loop**: a genuine
+`do { ...; FUN_0044c7b0(); } while( true );` infinite loop with **no
+`break` or `return` anywhere inside its own body** -- every frame of real
+gameplay happens inside repeated calls to `FUN_0044c7b0()`. Since nothing
+inside the loop can make `FUN_00534380` return, and this issue's crash
+reproduces well into an active gameplay session (not at startup, where the
+function's other, pre-loop `return` statements live), **the only mechanism
+that can end this loop mid-session is a non-local jump past it entirely --
+almost certainly the already-confirmed `longjmp` inside `FUN_00425540`**
+(`Com_Error`'s real implementation, decompiled far earlier in this
+investigation, confirmed to end in `FID_conflict____longjmp_internal`,
+Ghidra-flagged "Subroutine does not return"). This is the textbook id Tech/
+Quake3 pattern: wrap the entire game loop in a `setjmp`, and a fatal
+`Com_Error` anywhere deep in a frame's own call chain jumps straight back
+out and shuts down cleanly -- no crash dialog, no AV, no WER event, because
+it was never a crash, it's the engine's own designed fatal-error response.
+
+**This closes the loop on tonight's entire investigation**: `Com_Error` was
+the right answer from the very first static-RE pass, hours ago. Every
+subsequent "Com_Error ruled out" conclusion tonight was itself caused by
+self-inflicted bugs in this session's OWN diagnostic hooks (`LogComErrorCall`'s
+original unbounded `%s`, then `Hook_ExitProcess`'s `buf[160]` overflow) --
+both now fixed. The original static-RE theories this issue built up before
+any live diagnostic was added (the viewport/render-target unit mismatch,
+the unclamped shared depth-stencil) remain the live candidates for WHAT
+`Com_Error` call site actually fires and why -- not replaced by tonight's
+detour, just returned to as the right track.
+
+**What's still not found**: the exact `setjmp` call establishing the jump
+target (not visible in `FUN_00534380` itself -- must be in a function it
+calls, most likely something in the pre-loop setup between lines ~43-58 of
+its own decompile, e.g. `FUN_0054b040`/`FUN_0062f170`/similar, none of
+which Ghidra has identified by name). Finding it would directly confirm
+this whole chain rather than leaving it as a very strong but not fully
+closed inference. **Purely static work, safe to do in a future session --
+no live process interaction needed.**
+
 ### Next-session priority order, derived from all 4 forks, RE-ORDERED AGAIN after the gameplay-gated ratio-math finding above
 
 **RE-ORDERED AGAIN (2026-08-26), after the `clcState` finding above** --
