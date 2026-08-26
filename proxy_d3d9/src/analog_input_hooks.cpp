@@ -10355,6 +10355,60 @@ __declspec(naked) void Hook_0057de60()
     }
 }
 
+// ---- issue #96 GENERAL DIAGNOSTIC (2026-08-26): observe every real call into
+// FUN_00425540 (the confirmed Com_Error/longjmp exit function), not just the
+// two specific theories (clcState, render-target allocation) already
+// instrumented ------------------------------------------------------------------
+//
+// Direct motivation: three live tests in a row (the original crash, and both
+// Fix Attempt A and Fix Attempt C's own test sessions) have all crashed, and
+// [clcstate-diag] has NEVER fired once in any of them -- meaning either the
+// clcState theory is wrong for these specific instances, or something else
+// entirely is the real trigger. Rather than keep guessing at more targeted
+// fixes for a mechanism that's never actually been directly observed, this
+// hooks FUN_00425540 itself -- confirmed via its own already-committed
+// decompile (`decomp_425540.txt`) to be a genuine variadic function
+// (`void FUN_00425540(int param_1, char *param_2, ...)`, matching id Tech's
+// own `Com_Error(level, fmt, ...)` shape, `__vsnprintf`'d internally). Rather
+// than risk a fragile variadic-forwarding hook, this is a naked PRE-hook (same
+// pattern as Hook_0057de60) that reads `param_1`/`param_2` directly off the
+// stack at the function's real entry point, logs them (param_2 is a real
+// format-string literal -- logging it directly, unformatted, is already
+// enough to identify exactly which of this function's many call sites fired,
+// without needing to touch the variadic args at all), then tail-jumps into
+// the completely untouched original -- zero risk of breaking the real
+// call's own variadic argument handling, since this hook never actually
+// calls the original, it jumps to it with the stack exactly as the real
+// caller left it.
+namespace {
+void* g_orig_00425540 = nullptr;
+}
+
+extern "C" void __cdecl LogComErrorCall(int severity, const char* fmt)
+{
+    char buf[512];
+    sprintf_s(buf, "[com-error-diag] *** FUN_00425540 (Com_Error-equivalent) called -- "
+        "severity=%d fmt=\"%s\" -- this is the real exit mechanism issue #96 has been "
+        "tracing; whichever fmt string appears here identifies the real call site",
+        severity, fmt ? fmt : "(null)");
+    LogFromController(buf);
+}
+
+__declspec(naked) void Hook_FUN_00425540()
+{
+    __asm {
+        pushad
+        mov eax, [esp + 0x24]   // 0x20 (pushad) + 0x4 = original [esp+4] = param_1 (severity)
+        mov ecx, [esp + 0x28]   // original [esp+8] = param_2 (format string)
+        push ecx
+        push eax
+        call LogComErrorCall
+        add esp, 8
+        popad
+        jmp dword ptr [g_orig_00425540]
+    }
+}
+
 void InstallAnalogInputHooks()
 {
     MH_Initialize();
@@ -10555,6 +10609,21 @@ void InstallAnalogInputHooks()
     if (sFixC508970 == MH_OK) {
         MH_STATUS eFixC508970 = MH_EnableHook(reinterpret_cast<LPVOID>(0x00508970));
         sprintf_s(buf, "[hooks] MH_EnableHook(00508970 issue96-fixC) = %d", static_cast<int>(eFixC508970));
+        LogFromController(buf);
+    }
+
+    // Issue #96 GENERAL DIAGNOSTIC, 2026-08-26 -- see the big comment above
+    // Hook_FUN_00425540's definition. Observes EVERY real call into the
+    // confirmed Com_Error/longjmp exit function, not just the two specific
+    // theories already instrumented -- three live crashes in a row have never
+    // once fired [clcstate-diag], so this directly identifies the real call
+    // site instead of guessing at more targeted theories.
+    MH_STATUS sComErrorDiag = MH_CreateHook(reinterpret_cast<LPVOID>(0x00425540), &Hook_FUN_00425540, reinterpret_cast<LPVOID*>(&g_orig_00425540));
+    sprintf_s(buf, "[hooks] MH_CreateHook(00425540 com-error-diag) = %d", static_cast<int>(sComErrorDiag));
+    LogFromController(buf);
+    if (sComErrorDiag == MH_OK) {
+        MH_STATUS eComErrorDiag = MH_EnableHook(reinterpret_cast<LPVOID>(0x00425540));
+        sprintf_s(buf, "[hooks] MH_EnableHook(00425540 com-error-diag) = %d", static_cast<int>(eComErrorDiag));
         LogFromController(buf);
     }
 
