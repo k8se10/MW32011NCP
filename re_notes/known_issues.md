@@ -12425,7 +12425,44 @@ remaining candidate path -- game code, CRT, or otherwise -- in one shot.
 Fix Attempt C stays disabled for this next test too, to keep the isolation
 clean (re-enabling it at the same time as adding a new diagnostic would
 muddy attribution of the next result). Built (0 errors), redeployed.
-**Not yet live-tested.**
+
+**Live-tested, same day, direct user report: "fastest crash yet?"** --
+this session crashed after only 3587 log lines (vs 8000-9500+ in every
+prior test), a genuinely faster reproduction. **`[exitprocess-diag]` also
+NEVER fired.** Both `Com_Error` and the real Win32 `ExitProcess` export are
+now ruled out as the exit mechanism -- yet `DLL_PROCESS_DETACH` still runs
+every single time (`proxy_d3d9 detach` always logs). **User's own
+follow-up theory, raised in the same message: could this project's own
+logging/I/O be making things unstable?** Checked directly: none of this
+session's own new diagnostics do frequent unconditional writes --
+`[clcstate-diag]` only ever writes if it fires (never has),
+`[com-error-diag]`/`[exitprocess-diag]` are naked hooks that are silent
+unless their target function is actually called (neither has been), and
+`[video-scale-diag]`/`diag2` are one-shot at level load. Issue #87's own
+real prior stutter cause (log append-mode, poll-thread over-rescanning) is
+a different symptom class (stutter, not exits) and was already fixed. Ruled
+out as the likely driver of THIS specific investigation's results, though
+the underlying caution (this codebase has a real precedent for I/O-adjacent
+performance bugs) is fair to keep in mind generally.
+
+**The real, more important finding from this combination**: `DllMain`'s own
+third parameter, `lpReserved`, distinguishes real process termination
+(non-NULL, per Microsoft's own documented `DllMain` contract) from an
+explicit `FreeLibrary` call unloading just this one DLL while the process
+keeps running (NULL) -- and this project's own `DllMain` (`dllmain.cpp`)
+was DISCARDING this parameter entirely (declared but unnamed). **Captured
+and logged it** (`[detach-diag] lpReserved=... (PROCESS TERMINATING /
+explicit FreeLibrary...)`), right before the existing `"proxy_d3d9 detach"`
+line. If this reads NULL on the next crash, the whole "the game crashed"
+framing may be wrong -- something would be unloading this proxy DLL
+SPECIFICALLY (matching a `vid_restart`-style renderer teardown through a
+path that bypasses the already-built, never-triggered `Cbuf_AddText`
+guard), and whatever the user perceives as "the game exiting" afterward
+would be happening in code this DLL is no longer loaded to observe or log
+at all -- which would fully explain why NEITHER `Com_Error` NOR
+`ExitProcess` has ever been observed to fire. Built (0 errors), redeployed.
+**This is now the single most decisive open question for the next live
+test.**
 
 ### Next-session priority order, derived from all 4 forks, RE-ORDERED AGAIN after the gameplay-gated ratio-math finding above
 
