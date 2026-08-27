@@ -7,6 +7,8 @@
 #include "overlay_hud.h"
 #include "vanilla_settings_table.h"
 #include "vanilla_settings_sync.h"
+#include "frame_benchmark.h" // 2026-08-27 -- times ConfigHotReloadThreadProc's own
+    // real per-check cost (issue #96 follow-up, background-thread visibility gap)
 
 extern void LogFromController(const char* msg); // defined in dllmain.cpp
 
@@ -1200,8 +1202,21 @@ DWORD WINAPI ConfigHotReloadThreadProc(LPVOID)
     GetConfigPath(path, sizeof(path));
 
     for (;;) {
+        // Timed (2026-08-27, issue #96 follow-up) -- this thread's own real
+        // GetFileAttributesExA cost (the exact call this whole thread exists to
+        // move off the main thread, per this section's own header comment) was
+        // completely invisible to frametime_benchmark.csv before now. A cheap
+        // no-op when FrametimeBenchmarkLogging is off (guarded inside
+        // FrameBenchmark_AddHotReloadThreadMs itself).
+        LARGE_INTEGER freq{}, start{}, end{};
+        QueryPerformanceFrequency(&freq);
+        QueryPerformanceCounter(&start);
         WIN32_FILE_ATTRIBUTE_DATA attrData;
-        if (GetFileAttributesExA(path, GetFileExInfoStandard, &attrData)) {
+        BOOL gotAttrs = GetFileAttributesExA(path, GetFileExInfoStandard, &attrData);
+        QueryPerformanceCounter(&end);
+        FrameBenchmark_AddHotReloadThreadMs(
+            (static_cast<double>(end.QuadPart - start.QuadPart) * 1000.0) / static_cast<double>(freq.QuadPart));
+        if (gotAttrs) {
             EnterCriticalSection(&g_hotReloadLock);
             if (!g_haveLastConfigWriteTime) {
                 // First check since DLL load -- LoadModConfig() already read this

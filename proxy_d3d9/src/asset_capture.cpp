@@ -158,12 +158,24 @@ DWORD WINAPI WriteThreadProc(LPVOID)
         LeaveCriticalSection(&g_pendingWriteLock);
         if (have) {
             // The slow part -- now safely off the main/game thread entirely.
+            // Timed (2026-08-27, issue #96 follow-up) -- this thread's own real
+            // disk-write cost was completely invisible to frametime_benchmark.csv
+            // before now, despite being this project's OLDEST background thread
+            // (predates issue #87's whole refactor). A cheap no-op when
+            // FrametimeBenchmarkLogging is off (guarded inside
+            // FrameBenchmark_AddAssetWriteThreadMs itself).
+            LARGE_INTEGER writeBenchFreq{}, writeBenchStart{}, writeBenchEnd{};
+            QueryPerformanceFrequency(&writeBenchFreq);
+            QueryPerformanceCounter(&writeBenchStart);
             FILE* f = nullptr;
             if (fopen_s(&f, job.path, "wb") == 0 && f) {
                 fwrite(job.data, 1, job.size, f);
                 fclose(f);
             }
             free(job.data);
+            QueryPerformanceCounter(&writeBenchEnd);
+            FrameBenchmark_AddAssetWriteThreadMs(
+                (static_cast<double>(writeBenchEnd.QuadPart - writeBenchStart.QuadPart) * 1000.0) / static_cast<double>(writeBenchFreq.QuadPart));
         } else {
             Sleep(10); // idle poll -- capture events are rare (once per NEW
                        // material name, deduped), not a hot loop worth a
