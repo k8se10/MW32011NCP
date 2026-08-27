@@ -5896,6 +5896,18 @@ void __cdecl Hook_CbufAddText(int localClientNum, const char* text)
 // trampoline FIRST, then TriggerMotionBlurFromEngineHook() (overlay_hud.cpp)
 // fires. Both of its own real arguments are forwarded byte-for-byte, untouched
 // -- this hook doesn't need to understand or rely on either one.
+//
+// DISABLED 2026-08-27 (issue #96) -- live-isolated as the real crash cause.
+// FUN_00497210 has 2 real callers: FUN_00694650 (the true once-per-frame
+// driver) and FUN_00508970 (a recursive exclusion-zone rect-carver that calls
+// FUN_00497210 once per carved sub-rect, mid-composite, whenever a killcam/
+// PIP/splitscreen exclusion zone is active). This hook fired a full-screen
+// capture-and-redraw unconditionally on EVERY one of those calls, including
+// ones against a backbuffer only partially composited -- a real, concrete
+// state-corruption mechanism. See known_issues.md issue #96 for the full
+// live-debugging trail, git bisect, and disassembly evidence. REPLACED below
+// by a hook on FUN_00694650 itself (the true once-per-frame driver both real
+// call paths originate from) -- do not re-enable this one.
 namespace {
 using SceneFinishFn = void(__cdecl*)(int, int);
 SceneFinishFn g_origSceneFinish = nullptr;
@@ -5906,6 +5918,49 @@ void __cdecl Hook_FUN_00497210(int param1, int param2)
     TriggerMotionBlurFromEngineHook();
 }
 } // namespace
+
+// Issue #96 REAL FIX, 2026-08-27 -- hooks FUN_00694650 instead of
+// FUN_00497210 above. Confirmed via disassembly (re_notes/ghidra_scripts/
+// disasm_694650_full.txt): exactly 2 clean RET-based exits, no tail-jump
+// complexity (unlike FUN_00497210's own debug-mode branching). ALL real
+// scene-composite work for the frame -- both direct FUN_00497210 calls (2 of
+// its own 3 internal loops) AND the FUN_00508970 recursive exclusion-zone
+// path (its 3rd loop) -- happens INSIDE this function's own body, before
+// either RET. A POST-hook here therefore fires strictly after the ENTIRE
+// frame's composite (every viewport, every exclusion-zone sub-rect) is done
+// -- never mid-composite against a partial backbuffer, the exact mechanism
+// that broke the old hook.
+//
+// NAKED hook, not a plain typed C function: confirmed via raw disassembly
+// that FUN_00694650 takes its one real argument in EDI (`MOV ECX,[EDI+0x419cc]`
+// is its very first real instruction, no stack-argument load beforehand at
+// all) -- the same "genuinely risky mix of register/stack convention" class
+// this project already has a proven, working template for (Hook_0057de60,
+// above in this same file). Unlike that PRE-hook (tail-jumps into the
+// trampoline, never returns to its own code), this is a POST-hook: CALLs the
+// trampoline (so control returns to us afterward), then fires motion blur,
+// then returns exactly as the real function would. `pushad` preserves EDI's
+// VALUE in the register itself (it only pushes a COPY onto the stack) --
+// safe to call the trampoline immediately after, since EDI in the actual
+// register is untouched and still holds the real caller's context pointer.
+// Confirmed via disassembly the real function's own prologue/epilogue is
+// fully self-contained (`SUB ESP,0x20` / `ADD ESP,0x20` / plain `RET`, no
+// operand) -- nothing pushed by the caller to clean up, so this hook's own
+// final `ret` (no operand) is correct.
+namespace {
+void* g_orig_694650 = nullptr;
+}
+
+__declspec(naked) void Hook_694650()
+{
+    __asm {
+        pushad
+        call dword ptr [g_orig_694650]
+        call TriggerMotionBlurFromEngineHook
+        popad
+        ret
+    }
+}
 
 // Issue #88, 2026-08-26 -- [Video] InternalRenderScalePercent, CORRECTED real
 // implementation. Real motivation, direct user framing: "basically the plan is
@@ -10885,32 +10940,26 @@ void InstallAnalogInputHooks()
         LogFromController(buf);
     }
 
-    // Issue #95 follow-up, 2026-08-26 -- Phase E (motion blur) real engine hook,
-    // see the big comment above Hook_FUN_00497210's definition for the full RE
-    // trail. POST-hook on the real per-viewport scene-finish orchestrator, so
-    // motion blur runs after the real scene composite but before the engine's
-    // own native HUD/UI drawing.
-    //
-    // ISOLATION TEST, DISABLED 2026-08-27 (issue #96) -- this was the ONE piece of
-    // this whole commit that ran completely unconditionally, regardless of
-    // MotionBlurEnabled (RunPreOverlayMotionBlurPassIfEnabled's own drawing code
-    // is correctly gated by the config -- this install call itself never was). A
-    // git bisect narrowed issue #96's crash to exactly this commit, and this
-    // function's own header comment already documents FUN_00497210 firing
-    // MULTIPLE TIMES in the same real frame under real conditions (killcam/PIP
-    // exclusion zones) -- the leading suspect. Disabled here to isolate: if this
-    // alone fixes the crash, the hook itself (not RCAS/aniso/the toggle-gated
-    // motion-blur draw code) is confirmed as the real cause. See known_issues.md
-    // issue #96 for the live test result once known. Do not re-enable without
-    // that confirmation.
-    // MH_STATUS sSceneFinish = MH_CreateHook(reinterpret_cast<LPVOID>(0x00497210), &Hook_FUN_00497210, reinterpret_cast<LPVOID*>(&g_origSceneFinish));
-    // sprintf_s(buf, "[hooks] MH_CreateHook(00497210 scene-finish-motionblur) = %d", static_cast<int>(sSceneFinish));
-    // LogFromController(buf);
-    // if (sSceneFinish == MH_OK) {
-    //     MH_STATUS eSceneFinish = MH_EnableHook(reinterpret_cast<LPVOID>(0x00497210));
-    //     sprintf_s(buf, "[hooks] MH_EnableHook(00497210 scene-finish-motionblur) = %d", static_cast<int>(eSceneFinish));
-    //     LogFromController(buf);
-    // }
+    // Issue #95 follow-up, 2026-08-26 -- Phase E (motion blur) real engine hook.
+    // ORIGINAL hook (FUN_00497210) live-isolated as issue #96's real crash cause
+    // -- permanently disabled, see the big comment above Hook_FUN_00497210's own
+    // definition. REPLACED 2026-08-27 with a hook on FUN_00694650 instead, the
+    // true once-per-frame driver both real FUN_00497210/FUN_00508970 call paths
+    // originate from -- see the big comment above Hook_694650's own definition
+    // for the full RE trail (disassembly-confirmed: 2 clean RET exits, all real
+    // scene-composite work happens inside this function's body before either
+    // one). NOT yet independently live-confirmed as of this commit -- verify
+    // live (both that motion blur actually renders again, AND that native HUD
+    // stays excluded from it, matching this phase's own "Round 2" requirement)
+    // before treating this as done.
+    MH_STATUS s694650 = MH_CreateHook(reinterpret_cast<LPVOID>(0x00694650), &Hook_694650, &g_orig_694650);
+    sprintf_s(buf, "[hooks] MH_CreateHook(00694650 scene-composite-motionblur) = %d", static_cast<int>(s694650));
+    LogFromController(buf);
+    if (s694650 == MH_OK) {
+        MH_STATUS e694650 = MH_EnableHook(reinterpret_cast<LPVOID>(0x00694650));
+        sprintf_s(buf, "[hooks] MH_EnableHook(00694650 scene-composite-motionblur) = %d", static_cast<int>(e694650));
+        LogFromController(buf);
+    }
 
     // task #6/#23 follow-up (2026-07-21) -- level-load-safe glyph-font-extension
     // trigger, see the big comment above Hook_FUN_0053cbc0's definition for the full
