@@ -1,0 +1,6 @@
+Symbols containing "ExceptionFilter":
+  SetUnhandledExceptionFilter @ EXTERNAL:0000009b  [Function] EXTERNAL
+  UnhandledExceptionFilter @ EXTERNAL:0000009c  [Function] EXTERNAL
+  __CxxUnhandledExceptionFilter @ 0074f719  [Function]
+  ?__CxxUnhandledExceptionFilter@@YGJPAU_EXCEPTION_POINTERS@@@Z @ 0074f719  [Label]
+Total: 4
