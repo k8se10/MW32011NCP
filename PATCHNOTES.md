@@ -8,14 +8,25 @@ reverse-engineering trail behind each entry.
 
 ## Unreleased
 
-**Summary:** Chased a recurring freeze every 2-5 seconds through three real,
-evidence-backed causes — a fixed-rate controller-poll clock, vibration writes
-blocking the gameplay thread, and (the strongest candidate, dated exactly right by
-a fork diffing v0.2.2 against v0.2.5) an uninstrumented main-thread file-stat call
-in config hot-reload that both prior diagnostic tools structurally couldn't catch.
-Steam Input and this mod's own overlay-draw cost were both directly ruled out
-along the way rather than assumed. See the itemized entries below and
-`known_issues.md` issue #87 for the full investigation trail.
+**Summary:** A large, still-in-progress release. Fixed a recurring freeze every
+2-5 seconds (three real causes, the strongest an uninstrumented main-thread
+file-stat call in config hot-reload). Shipped the start of a visual-enhancement
+suite — internal render resolution control (confirmed real GPU cost scaling,
+220fps@100% vs 70-80fps@300%), FSR 1.0 RCAS sharpening, and camera-only motion
+blur — the last of which caused a real, intermittent crash that was fully
+root-caused (an engine hook firing against a partially-composited frame during
+exclusion-zone sequences) and fixed via a redesigned hook point; motion blur
+stays labeled **EXPERIMENTAL** pending one more open bug (UI dropping out on
+damage while moving, issue #100). Separately root-caused this engine's own
+camera-look stutter down to **vsync** — not a bug, confirmed live via direct
+measurement and a cross-machine test — with a real, standing recommendation
+(disable vsync, use RivaTuner Statistics Server instead) now shipped in the
+config comments; an in-mod alternative to RTSS was attempted and built, failed
+live testing (added real input latency), and was fully removed rather than
+left disabled. Also carries a new, evidence-backed lead on Predator Missile
+guidance's broken steering feel (a native auto-climb constant confirmed 1000x
+the player's own steering rate). See the itemized entries below and
+`known_issues.md` issues #87/#90/#95-#101 for the full investigation trails.
 
 ### What's New
 1. **[Video] InternalRenderScalePercent — PREVIEW/WIP, off by default.** Fixes a
@@ -36,7 +47,7 @@ along the way rather than assumed. See the itemized entries below and
   trail.) **Confirmed live**: 220fps at 100% vs. 70-80fps at 300% on a real
   2560x1440 display -- real GPU cost genuinely scales with the setting.
 2. **[Video] FsrSharpenEnabled/FsrSharpenStrength — PREVIEW/WIP, off by default.** Phase B of the visual-enhancement suite plan: FSR 1.0 RCAS (Robust Contrast Adaptive Sharpening), a real full-screen sharpen pass, built on Phase A's new capture/composite pipeline. A direct port of AMD's real FidelityFX-FSR reference math (MIT license, source and full port-fidelity notes in `re_notes/shaders/fsr_rcas.hlsl`). Needs `ps_3_0` (RCAS's real math doesn't fit this project's usual `ps_2_0` — 74 instruction slots vs. the profile's 64 cap); a new device-capability check (`GetDeviceCaps`/`PixelShaderVersion`) refuses gracefully rather than assuming ps_3_0 hardware. `FsrSharpenStrength` (0.0-1.0) maps straight to RCAS's own real sharpen-lobe scale — live-tested same day, 0.5 reported "needs more softness," default lowered to 0.3. See `known_issues.md` issue #94.
-3. **[Video] MotionBlurEnabled/MotionBlurStrength/MotionBlurCenterFalloff — EXPERIMENTAL, off by default.** Phase E of the visual-enhancement suite plan. The crash this feature originally caused is root-caused and fixed, and it's confirmed stable/correct in normal gameplay, menus, and loading screens — but a real, live-reported, still-open bug (issue #100, below) keeps this at Experimental rather than a finished/done label. Camera-only (view-angle-delta-based) directional motion blur, driven entirely by real per-frame look data this project's own controller-look injection already computes. `MotionBlurCenterFalloff` (default 1.0) adds a real center-to-edge radial falloff — the screen center stays sharp while the periphery smears more, matching how motion blur is commonly done in racing/FPS titles; set to 0.0 for the original uniform blur. **This phase went through a real crash investigation and two hook-target redesigns before landing on its current, confirmed-stable form** — see the Fixed entry below for the full root-cause story. The shipped hook (on `FUN_00693ff0`, ahead of the engine's real per-viewport 2D/HUD command-dispatch loop) correctly excludes both this mod's own overlay and the game's native HUD from the blur, and is gated off during menus and loading screens (two real live-reported false-positive fixes, both shipped). A third report (motion blur bleeding into cutscenes) triggered a dedicated RE search for a real cinematic-lock flag but was retracted by the reporter on retest — no fix was needed. **Recommended companion settings, confirmed live** (`known_issues.md` issue #99): disable vsync and use an external limiter (e.g. RivaTuner Statistics Server) instead — the engine's own camera-look pacing gets visibly worse under vsync (a real, confirmed effect, not this mod's own code) and at very high uncapped framerates alike; a config comment now ships with this same recommendation. **A follow-up, not yet fixed**: motion blur's UI can also drop out when taking damage while moving — suspected to share the same underlying `FUN_00693ff0` multi-fire mechanism as the menu/loading-screen gates above, not yet a confirmed fix. Full trail in `known_issues.md` issues #95/#96/#97/#99/#100.
+3. **[Video] MotionBlurEnabled/MotionBlurStrength/MotionBlurCenterFalloff — EXPERIMENTAL, off by default.** Phase E of the visual-enhancement suite plan. The crash this feature originally caused is root-caused and fixed, and it's confirmed stable/correct in normal gameplay, menus, and loading screens — but a real, live-reported, still-open bug (issue #100, below) keeps this at Experimental rather than a finished/done label. Camera-only (view-angle-delta-based) directional motion blur, driven entirely by real per-frame look data this project's own controller-look injection already computes. `MotionBlurCenterFalloff` (default 1.0) adds a real center-to-edge radial falloff — the screen center stays sharp while the periphery smears more, matching how motion blur is commonly done in racing/FPS titles; set to 0.0 for the original uniform blur. **This phase went through a real crash investigation and two hook-target redesigns before landing on its current, crash-free hook** — see the Fixed entry below for the full root-cause story. The shipped hook (on `FUN_00693ff0`, ahead of the engine's real per-viewport 2D/HUD command-dispatch loop) correctly excludes both this mod's own overlay and the game's native HUD from the blur, and is gated off during menus and loading screens (two real live-reported false-positive fixes, both shipped). A third report (motion blur bleeding into cutscenes) triggered a dedicated RE search for a real cinematic-lock flag but was retracted by the reporter on retest — no fix was needed. **Recommended companion settings, confirmed live** (`known_issues.md` issue #99): disable vsync and use an external limiter (e.g. RivaTuner Statistics Server) instead — the engine's own camera-look pacing gets visibly worse under vsync (a real, confirmed effect, not this mod's own code) and at very high uncapped framerates alike; a config comment now ships with this same recommendation. **A follow-up, not yet fixed**: motion blur's UI can also drop out when taking damage while moving — suspected to share the same underlying `FUN_00693ff0` multi-fire mechanism as the menu/loading-screen gates above, not yet a confirmed fix. Full trail in `known_issues.md` issues #95/#96/#97/#99/#100.
 4. **[Video] ForceAnisotropicFiltering — off by default.** Writes the real native `r_texFilterAnisoMax`/`r_texFilterAnisoMin` dvars to 16 (maximum) via this project's own dvar-write mechanism (the same one the custom Options screen already uses) — a mod-config toggle for the same sharpness improvement this session's own `ForceD3D9On12` investigation already confirmed live and safe as a hand-edited `players2/config.cfg` value, but one that now survives a native "Restore Defaults" or a fresh profile instead of needing to be re-set by hand.
 
 ### Fixed
