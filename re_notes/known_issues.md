@@ -134,6 +134,7 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#99](#99-camera-look-stutterjitter----resolved-real-root-cause-is-vsync-confirmed-via-cross-machine-test-2026-08-27) — Camera-look stutter — **Resolved** (real root cause is vsync, confirmed via cross-machine test)
 - [#100](#100-motion-blur-ui-disappears-when-taking-damage-while-moving----reported-not-yet-investigated-2026-08-27) — Motion blur: UI disappears on damage while moving — **Open** (suspected same root as #97's menu/loading/cutscene bleed, not yet investigated)
 - [#101](#101-roadmap-note-broader-performanceoptimizationmodern-hardware-pass-users-own-framing-2026-08-27) — Roadmap: growing into a "FusionFix-style" general enhancement patch — **Roadmap Idea**, not scoped
+- [#102](#102-external-feature-request-received-custom-widthheight-resolution-override-via-ini-for-custom-monitor-layoutssplitscreen----logged-not-investigated-2026-08-27) — External feature request: custom Width/Height resolution override via .ini — **Roadmap Idea**, not investigated
 
 ---
 
@@ -14373,3 +14374,28 @@ general "definitive enhancement patch" for MW3 (2011), of which the
 visual-enhancement suite (render scale/FSR/motion blur) already shipping
 this session is the first concrete step, not the ceiling. Still not
 scoped into specific tasks -- a direction, not a plan.
+
+## 102. External feature request received: custom Width/Height resolution override via .ini, for custom monitor layouts/splitscreen -- LOGGED, not investigated (2026-08-27)
+
+**Status: Roadmap Idea, not investigated.** Relayed by the user, GitHub-
+issue-template-shaped, requesting explicit action only "post this work
+batch" -- logging per that instruction, not acting on it now. Treat as an
+external requester's own request, not verified architecture guidance:
+
+> "Right now, when it initializes the device, it hard-reads the backbuffer
+> and client window dimensions from the game's default states, which
+> causes clipping or black bars on specific aspect ratios. Would it be
+> possible in the next update to expose Width and Height parameters
+> directly inside the DLL's .ini config file? If you could hook the
+> CreateDevice or GetClientRect backbuffer parameters to read directly
+> from those .ini values, it would give us full control over custom
+> resolutions without breaking the stack."
+
+**Not verified**: whether `CreateDevice`/`GetClientRect` are actually the
+right hook points in this codebase for this (this project already hooks
+`Hook_CreateDevice`, `d3d9_hook.cpp`, for other reasons -- worth checking
+against that existing code first rather than assuming the requester's
+framing is correct), whether the described clipping/black-bar symptom is
+real and reproducible, or whether this overlaps with the already-shipped
+`InternalRenderScalePercent` feature (issue #88) in any way. A real RE/
+design pass is needed before implementation -- not scoped yet.
