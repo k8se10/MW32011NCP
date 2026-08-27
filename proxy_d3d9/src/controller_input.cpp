@@ -461,6 +461,19 @@ bool ApplyDualSenseStateToCache(const DualSenseRawState& dsState)
 DWORD WINAPI XInputPollThreadProc(LPVOID)
 {
     for (;;) {
+        // Timed (2026-08-27, issue #96 follow-up) -- this thread's own real
+        // per-tick cost (XInputGetState/DualSense_Poll, whichever branch below
+        // actually fires) was completely invisible to frametime_benchmark.csv
+        // before now, despite that tool's own original purpose being exactly
+        // this class of suspect ("still jittery... feels like 40" -- see this
+        // file's frame_benchmark.h include comment). Measures from here to just
+        // before the event wait at the bottom of this same loop iteration. A
+        // cheap no-op when FrametimeBenchmarkLogging is off (guarded inside
+        // FrameBenchmark_AddPollThreadMs itself).
+        LARGE_INTEGER pollBenchFreq{}, pollBenchStart{}, pollBenchEnd{};
+        QueryPerformanceFrequency(&pollBenchFreq);
+        QueryPerformanceCounter(&pollBenchStart);
+
         EnsureLoaded();
 
         if (g_lockedSource == LockedInputSource::Undetermined) {
@@ -566,6 +579,10 @@ DWORD WINAPI XInputPollThreadProc(LPVOID)
             }
             NotifyControllerConnectionChange(connected);
         }
+
+        QueryPerformanceCounter(&pollBenchEnd);
+        FrameBenchmark_AddPollThreadMs(
+            (static_cast<double>(pollBenchEnd.QuadPart - pollBenchStart.QuadPart) * 1000.0) / static_cast<double>(pollBenchFreq.QuadPart));
 
         // Event-driven wait (2026-08-25) -- replaces the old fixed Sleep(kPollIntervalMs).
         // Real per-tick consumers (InjectAllControllerInput, the gameplay-tick hook, and
