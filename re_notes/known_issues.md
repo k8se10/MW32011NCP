@@ -133,7 +133,7 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#98](#98-london-mission-cutscene-audio-continues-after-skip-on-some-cutscenes----reported-not-yet-investigated) — London mission: cutscene audio continues after skip — **Open, not investigated**
 - [#99](#99-camera-look-stutterjitter----resolved-real-root-cause-is-vsync-confirmed-via-cross-machine-test-2026-08-27) — Camera-look stutter — **Resolved** (real root cause is vsync, confirmed via cross-machine test)
 - [#100](#100-motion-blur-ui-disappears-when-taking-damage-while-moving----reported-not-yet-investigated-2026-08-27) — Motion blur: UI disappears on damage while moving — **Open** (suspected same root as #97's menu/loading/cutscene bleed, not yet investigated)
-- [#101](#101-roadmap-note-broader-performanceoptimizationmodern-hardware-pass-users-own-framing-2026-08-27) — Roadmap: broader performance/optimization pass — **Roadmap Idea**, not scoped
+- [#101](#101-roadmap-note-broader-performanceoptimizationmodern-hardware-pass-users-own-framing-2026-08-27) — Roadmap: growing into a "FusionFix-style" general enhancement patch — **Roadmap Idea**, not scoped
 
 ---
 
@@ -14327,3 +14327,22 @@ separate from camera/usercmd building), the above-1080p GPU-cost theory
 DXVK/D3D11-12 renderer-backend investigation (issue #92). Revisit and scope
 properly next time this is picked up rather than starting new research from
 zero.
+
+**Given a clearer reference model, same session**: "were aiming in future
+to expand into fusionfix style enhancements too" -- confirmed to mean
+**GTA IV: The Complete Edition FusionFix** (ThirteenAG,
+`github.com/ThirteenAG/GTAIV.EFLC.FusionFix`), not the separate GTA:SA
+Definitive Edition mod of the same name by the same author (a real,
+easy mix-up -- ThirteenAG maintains a "FusionFix" for several GTA titles
+separately). The GTA IV one is a genuinely tight reference model for this
+project's own ambition: bug fixes (e.g. a real Z-fighting fix), graphics/
+visual enhancements (shadow filtering, DOF, bloom, **motion blur**,
+restored reflections, particle/rain improvements), gameplay QoL additions,
+and an in-game menu plus a config file for advanced tuning -- the same
+config-file-plus-planned-in-game-Options-screen shape this project already
+uses. Reframes this roadmap item from "some performance work" to a real
+standing ambition: growing beyond controller input specifically into a
+general "definitive enhancement patch" for MW3 (2011), of which the
+visual-enhancement suite (render scale/FSR/motion blur) already shipping
+this session is the first concrete step, not the ceiling. Still not
+scoped into specific tasks -- a direction, not a plan.
