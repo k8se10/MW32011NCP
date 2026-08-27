@@ -160,7 +160,7 @@ void ReadBool(const char* path, const char* section, const char* key, bool& outV
 // real system d3d9.dll's Direct3DCreate9On12 entry point instead of the ordinary
 // one -- a real, Microsoft-documented alternate export, not a third-party DLL swap.
 // See mod_config.h's own forceD3D9On12 field comment for the full design.
-constexpr unsigned long kCurrentConfigVersion = 29; // v23->v24: FsrSharpenEnabled/FsrSharpenStrength (Phase B)
+constexpr unsigned long kCurrentConfigVersion = 30; // v23->v24: FsrSharpenEnabled/FsrSharpenStrength (Phase B)
                                                      // v24->v25: MotionBlurEnabled/MotionBlurStrength (Phase E),
                                                      // FsrSharpenStrength default 0.5->0.3 (live feedback: "needs more softness")
                                                      // v25->v26: ForceAnisotropicFiltering
@@ -168,6 +168,8 @@ constexpr unsigned long kCurrentConfigVersion = 29; // v23->v24: FsrSharpenEnabl
                                                      // v27->v28: FpsLimitEnabled/FpsLimitTargetFps/FpsLimitEnhancementsOnly
                                                      // v28->v29: FpsLimitEnabled/FpsLimitTargetFps/FpsLimitEnhancementsOnly
                                                      // REMOVED (built+live-tested same night, failed -- see issue #99)
+                                                     // v29->v30: FpsLimitEnabled/FpsLimitTargetFps/FpsLimitEnhancementsOnly
+                                                     // REINTRODUCED on a real native-dvar (com_maxfps) mechanism instead
 
 // Reads a legacy key's raw value, returning true only if the key genuinely existed
 // (unlike ReadFloat, which can't distinguish "absent" from "present but unparsable" --
@@ -604,6 +606,22 @@ void WriteDefaultConfig(const char* path)
         "; value; this just makes it a mod-config toggle that survives a native\n"
         "; \"Restore Defaults\" or a fresh profile instead. 0 = off, 1 = on.\n"
         "ForceAnisotropicFiltering=%d\n"
+        "; In-mod frame-pacing limiter (2026-08-28, issue #99) -- writes the game's own\n"
+        "; real com_maxfps dvar, the same native client render-rate limiter the engine\n"
+        "; already uses correctly (confirmed via decompile, known_issues.md issue #90),\n"
+        "; NOT a custom timing hook of this project's own. Your own original\n"
+        "; com_maxfps value is saved and restored whenever this override activates/\n"
+        "; deactivates. 0 = off (default -- use an external limiter like RTSS if you\n"
+        "; want one, per the recommendation above), 1 = on.\n"
+        "FpsLimitEnabled=%d\n"
+        "; Target framerate cap, whole fps. 60 is a common, reasonable default --\n"
+        "; not a mandated number, tune to your own hardware/display.\n"
+        "FpsLimitTargetFps=%d\n"
+        "; 1 (default): only cap while a graphics-enhancement feature above\n"
+        "; (MotionBlurEnabled/FsrSharpenEnabled/InternalRenderScalePercent>0) is\n"
+        "; actually engaged -- normal gameplay stays uncapped by this feature. 0:\n"
+        "; cap unconditionally, functioning as a general-purpose limiter.\n"
+        "FpsLimitEnhancementsOnly=%d\n"
         "\n"
         "[Plugins]\n"
         "; Loads plugin DLLs from a \"plugins\" subfolder next to this DLL at startup.\n"
@@ -816,6 +834,9 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.motionBlurStrength,
         g_modConfig.motionBlurCenterFalloff,
         g_modConfig.forceAnisotropicFiltering ? 1 : 0,
+        g_modConfig.fpsLimitEnabled ? 1 : 0,
+        g_modConfig.fpsLimitTargetFps,
+        g_modConfig.fpsLimitEnhancementsOnly ? 1 : 0,
         g_modConfig.pluginsEnabled ? 1 : 0,
         g_modConfig.vibrationEnabled ? 1 : 0,
         g_modConfig.vibrationFireIntensity,
@@ -1108,6 +1129,13 @@ void LoadModConfig()
     if (g_modConfig.motionBlurCenterFalloff < 0.0f) g_modConfig.motionBlurCenterFalloff = 0.0f;
     if (g_modConfig.motionBlurCenterFalloff > 1.0f) g_modConfig.motionBlurCenterFalloff = 1.0f;
     ReadBool(path, "Video", "ForceAnisotropicFiltering", g_modConfig.forceAnisotropicFiltering);
+    ReadBool(path, "Video", "FpsLimitEnabled", g_modConfig.fpsLimitEnabled);
+    {
+        int v = GetPrivateProfileIntA("Video", "FpsLimitTargetFps", g_modConfig.fpsLimitTargetFps, path);
+        if (v < 1) v = 1; // a real minimum, not a recommendation -- see field comment
+        g_modConfig.fpsLimitTargetFps = v;
+    }
+    ReadBool(path, "Video", "FpsLimitEnhancementsOnly", g_modConfig.fpsLimitEnhancementsOnly);
 
     g_buttonMap = ResolveButtonMap(g_modConfig.buttonLayout, g_modConfig.flipTriggers);
 

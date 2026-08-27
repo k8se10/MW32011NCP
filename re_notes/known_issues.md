@@ -14225,6 +14225,33 @@ reintroduce an in-mod limiter without first confirming the real
 around that -- this file's own trail above is the starting point, not a
 reason to avoid the idea forever.
 
+**REINTRODUCED next day (2026-08-28) on a completely different mechanism,
+direct user question**: "why not use the actual games fps dvar?" --
+exactly right, and a much better fix than chasing the `EndScene`/`Present`
+timing question at all. `com_maxfps` is a real, already-functional native
+idTech/CoD client render-rate limiter -- already confirmed via decompile
+earlier in THIS SAME issue's own trail (`FUN_00458600`, the genuine
+`Com_Frame`, reads a target-fps dvar and computes a real ms-per-frame
+throttle value its own code already consumes correctly) -- so instead of
+timing anything ourselves, the fix is simply to WRITE that dvar via this
+project's already-proven `SetDvarFloat`/`GetDvarFloat` mechanism (the same
+one `ForceAnisotropicFiltering` already uses) and let the engine pace
+itself with its own, already-correct logic. No `EndScene`/`Present`
+ordering question to resolve at all -- the whole problem class the first
+attempt failed on doesn't apply to this design.
+
+Implementation (`ApplyFpsLimitIfEnabled`, `overlay_hud.cpp`): saves the
+player's own original `com_maxfps` value the moment the override first
+activates, restores it the moment it deactivates -- `com_maxfps` is a
+real, player-facing setting (also exposed in the game's own Advanced Video
+options), not safe to leave silently overridden the way
+`ForceAnisotropicFiltering`'s simpler "opt-out is inert" pattern gets away
+with. `ConfigVersion` bumped 29->30. Builds clean, deployed, enabled live
+for testing. Not yet live-confirmed -- next real step is simply playing
+with it on and checking real framerate actually caps at the configured
+target with no pacing/latency issues, the same live test that caught the
+first design's failure.
+
 ### Investigation trail (original text below, corrected by the finding above)
 
 **This entry originally (and wrongly) attributed a
