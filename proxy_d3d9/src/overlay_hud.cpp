@@ -3417,6 +3417,14 @@ bool g_motionBlurRanThisFrame = false;
 void RunPreOverlayMotionBlurPassIfEnabled(void* device)
 {
     if (!g_modConfig.motionBlurEnabled) return;
+    // FIXED 2026-08-27 (issue #96, FUN_00693ff0 hook follow-up) -- live-reported
+    // "breaks in menu": FUN_00693ff0 fires for menu viewport composites too, not
+    // just real gameplay ones, so this pass was capturing/blurring menu UI. Same
+    // real "menu active" gate this project's own pause-menu logic already uses
+    // (IsMenuActive_Exported, analog_input_hooks.cpp) -- motion blur has no
+    // business running while a menu is up regardless of which engine hook
+    // triggers it.
+    if (IsMenuActive_Exported()) return;
     if (g_motionBlurRanThisFrame) return; // already ran once this real frame --
         // FUN_00497210 (this pass's real trigger) can fire more than once per
         // frame when a splitscreen/PIP exclusion zone is active, see this
