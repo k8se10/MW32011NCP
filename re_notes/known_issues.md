@@ -122,7 +122,15 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#87](#87-recurring-freeze-every-2-5-seconds----three-real-evidence-backed-causes-found-and-fixed-not-yet-live-confirmed-2026-08-25) — Recurring freeze every 2-5 seconds — **Five real causes found and fixed (real, progressive improvement each round); remaining residual traced to a resolution correlation (fine at 1080p/4:3, breaks above 1080p) pointing at native GPU-bound engine cost, not this mod's own code** — poll-thread fixed-rate cadence, vibration writes blocking the gameplay thread, an uninstrumented main-thread file-stat call in config hot-reload (v0.2.5), the log system's periodic fflush() also running on the calling (usually main) thread, and an uncached GDI text-measurement call paid every frame; also caught and fixed a self-inflicted SetEvent-flood regression from this session's own cause-1 fix. Steam Input and this mod's own overlay-draw/scaling code were both directly ruled out; confirmed to affect BOTH XInput and DualSense
 - [#88](#88-internal-render-resolution----confirmed-with-real-numbers-this-engine-renders-at-a-fixed-1920x1080-d3d9-viewport-regardless-of-windowdisplay-size-2026-08-25) — Internal render resolution — **Confirmed with real numbers**: this engine's real D3D9 viewport is 1920x1080 even inside a 2560x1440 backbuffer/window — reframes (doesn't invalidate) issue #87's GPU-cost theory; open question whether this tracks the in-game Video resolution setting or is a hardcoded cap
 - [#89](#89-survival-scoreboard-real-stat-data-source----confirmed-gsc-script-local-state-not-natively-readable-real-policy-checkpoint-now-applies-2026-08-25) — Survival scoreboard real stat data source — **Confirmed: GSC script-local state (`self._id_18D3[...]`), not natively readable — CLOSED for the main mod, deferred to the plugin API** — real decompiled `1571.gsc` source found (was already sitting on disk from an earlier session, a real "check first" miss); every stat is a per-player GSC associative-array field; decision made not to read GSC-VM state from the main mod even SP-only ("even sp that poses a risk"), matching the same policy line the aim-assist removal already established — a real future candidate for a plugin, not main-mod work
-- [#90](#90-60fps-engine-tick-com_maxfpsfixedtimecom_timescale-confirmed-real-registered-and-clustered----fixedtimes-real-mechanism-now-decompiled-and-confirmed-2026-08-25) — 60fps engine tick: `com_maxfps`/`fixedtime`/`com_timescale` — **Investigating, `fixedtime`'s mechanism decompiled and confirmed real** — `com_maxfps` ruled out (just the standard render-rate limiter); `fixedtime`, when set nonzero, directly overrides the per-frame simulation time delta, confirmed via full decompile of the real time-delta function (`FUN_004aa1a0`) — a genuine, already-functional native lever, not yet confirmed whether the exact call cadence/units make it usable for a real 60Hz feature
+- [#90](#90-60fps-engine-tick-com_maxfpsfixedtimecom_timescale-confirmed-real-registered-and-clustered----fixedtimes-real-mechanism-now-decompiled-and-confirmed-2026-08-25) — 60fps engine tick: `com_maxfps`/`fixedtime`/`com_timescale` — **Investigating** — `fixedtime`'s mechanism confirmed real; 2026-08-27 follow-up ran the two previously-recommended next steps (whole-binary constant scan, remaining `CL_Frame` callee trace) — both came back negative, no patchable gate found yet
+- [#91](#91-vanilla-in-game-resolution-change-also-crashes-the-game----confirms-this-is-a-real-pre-existing-enginehook-compatibility-issue-with-vid_restart-not-specific-to-this-projects-own-r_mode-write-attempt-2026-08-26) — Vanilla in-game Resolution change also crashes the game — **Open, not investigated**
+- [#92](#92-renderer-backend-investigation-d3d1112vulkan----dxvk-parked-as-a-real-un-evaluated-vac-risk-d3d9on12-diagnostic-added-awaiting-one-live-launch-2026-08-26) — Renderer-backend investigation (D3D11/12/Vulkan) — **Investigating** — DXVK parked as an un-evaluated VAC risk, D3D9On12 diagnostic shipped, awaiting a live launch capture
+- [#93](#93-phase-a-visual-suite-plan-full-screen-passthrough-crashed-on-init----this-specific-init-crash-bug-resolved-but-phase-a-overall-not-done-blocked-on-issue-96s-still-open-crash-regression-2026-08-26) — Phase A (visual-suite plan) passthrough init crash — **Resolved** (the init bug); Phase A overall still blocked on #96
+- [#94](#94-phase-b-visual-suite-plan-fsr-10-rcas-full-screen-sharpening----built-deployed-not-yet-live-tuned-2026-08-26) — Phase B: FSR 1.0 RCAS full-screen sharpening — **Built, not yet live-tuned**
+- [#95](#95-phase-e-visual-suite-plan-camera-only-motion-blur----not-closed-blocked-on-issue-96s-still-open-crash-regression-2026-08-26) — Phase E: camera-only motion blur — superseded by #96's own motion-blur redesign; see #96/#97
+- [#96](#96-game-literally-exited-mid-session----corrected-2026-08-27-not-caused-by-internalrenderscalepercent-issue-88-that-original-isolation-was-wrong-two-real-crash-sites-now-live-captured-root-cause-still-open) — Motion blur crash ("game literally exited") — **Resolved** — root-caused to `Hook_FUN_00497210`'s unconditional install; final shipped hook is `FUN_00693ff0`, confirmed crash-free live
+- [#97](#97-motion-blur-issue-96-continuation-menu--loading-screen-gates-shipped-cutscene-report-retracted-on-retest----current-state-closed-for-tonight) — Motion blur menu/loading-screen gates + cutscene report — **Resolved** (cutscene report retracted on retest, no code change needed)
+- [#98](#98-london-mission-cutscene-audio-continues-after-skip-on-some-cutscenes----reported-not-yet-investigated) — London mission: cutscene audio continues after skip — **Open, not investigated**
 
 ---
 
@@ -4433,6 +4441,67 @@ below are Xbox-360-only, not translatable 1:1 to the PC binary.
   current approach — genuinely new information, not previously on record
   anywhere in this project. Not investigated further here (out of this
   issue's own scope); see issue #24/#63 for where this belongs.
+
+**NEW LEAD (2026-08-27), found while chasing an unrelated report (London
+mission cutscene-skip audio bug, issue #98) — `missileHellfireUpAccel` is a
+real, disproportionately large dvar, static RE done, NOT yet connected to
+the guidance-dispatch chain above.** User's own observation triggered this:
+noticing `missileHellfireUpAccel` in a broad strings dump and connecting it
+directly to this issue's own steering-feel symptom. Full trail:
+
+- Found via a new `DumpAllStrings.java` Ghidra script (broad printable-ASCII
+  sweep, a `strings`-CLI replacement for this `-noanalysis` project — real
+  `strings` isn't installed in this environment). Confirmed registration
+  (`RawStringScan.java` → `FUN_0044db00`, a batch `Dvar_RegisterFloat`-
+  equivalent call site) and dumped the actual raw float constants via a new
+  `DumpFloatsAt.java` script (reads raw bytes at a given address,
+  interprets as both int32 and IEEE754 float — didn't exist before tonight,
+  needed since the decompiler only shows symbolic `_DAT_xxx` names, not
+  their real values):
+  - `missileHellfireUpAccel` = **1000.0** (min 0.1, max is the generic
+    FLT_MAX sentinel this whole registration batch reuses for "no real
+    cap" — not a meaningful bound).
+  - `missileHellfireMaxSlope` = 0.5 (different unit class, not directly
+    comparable).
+  - `missileRemoteSteerPitchRate` / `missileRemoteSteerYawRate` (the
+    PLAYER's own steering rate) = **35.0**.
+  - `missileRemoteSteerPitchRange` = allowed pitch window 1°–87° (hard
+    bounds -180°/180°).
+  - The 1000-vs-35 disparity between the native auto-climb constant and
+    the player's own steering rate is real and large, not a coincidence —
+    supports the user's own read that this could explain a "steering
+    feels overpowered by an upward pull, especially right after launch"
+    symptom, though this has NOT been live-confirmed as the actual cause
+    of any specific in-game complaint yet.
+- **Traced the real consumer** (`DescribeRefs.java` on the dvar's handle,
+  `DAT_013a142c`) to `FUN_005c7830`. The dvar is used as the **upper clamp
+  bound** of a `Clamp(delta, -downRate, missileHellfireUpAccel)`-shaped call
+  (`FUN_00483910`), not injected as a flat per-frame force — meaning 1000
+  may just be a loose/rarely-approached ceiling in practice, not a value
+  that's actually applied at full strength every frame. This tempers the
+  initial "huge constant = smoking gun" read without ruling it out.
+  `param_2` going into that computation is separately scaled by
+  `missileHellfireMaxSlope` (0.5), so the two dvars interact.
+- **Not yet done, the concrete next step**: confirm whether `FUN_005c7830`
+  runs inside the same per-frame path as the already-documented guidance-
+  dispatch chain (`FUN_004554d0` → `FUN_006423d0`, issue #30's own
+  `controlslinkto`/`clientStruct+0xc` bit `0x80000` mechanism, the one that
+  reads/writes the missile's live pitch while player-controlled) or during a
+  separate, earlier ballistic/pre-guidance phase. If the latter, this would
+  directly explain an "early" symptom shape (native climb dominates before
+  player guidance is even engaged, then player steering takes over once
+  `controlslinkto` fires) without the two mechanisms ever conflicting in the
+  same frame. Static RE only — no live test performed, no fix attempted.
+- **Reusable methodology, worth keeping for future dvar-value RE**: broad
+  string sweep (`DumpAllStrings.java`) → exact-string xref
+  (`RawStringScan.java`) → decompile the registration call site to get the
+  `_DAT_xxx` addresses for default/min/max → `DumpFloatsAt.java` on those
+  exact addresses for the real numeric values → `DescribeRefs.java` on the
+  dvar's own storage handle to find real consumers → decompile the
+  consumer(s). This chain resolved a real dvar's actual numeric value and
+  its role in one focused pass tonight, where guessing at "cg_cinematic"-
+  style names from general knowledge (tried earlier the same session, see
+  the retracted cutscene-gate search below) produced nothing usable.
 
 ## 31. Master `notifyonplayercommand`/`notifyoncommand` survey — two distinct builtins found, squadmate call-in's real failure mode identified (2026-07-18, research pass)
 
@@ -10693,6 +10762,56 @@ Reused `re_notes/ghidra_project/` directly, no re-analysis needed. Traced caller
 
 ---
 
+### Follow-up pass (2026-08-27) -- both recommended next steps done, BOTH came back negative; the tick-gate mechanism remains genuinely elusive
+
+**Status: still Investigating -- no closer to a confirmed go/no-go than the prior pass, but two real, previously-open leads are now ruled out rather than just untried.**
+
+- **Whole-binary constant scan, run** (`ScanFixedTimeConstants.java`, new
+  tonight -- walks every instruction's scalar operands AND every initialized-
+  data dword for int 30/33/34 and float 1/30s, 1/60s, 33.333ms, 33.0, 30.0,
+  within a tight tolerance). **Zero genuine hits.** No literal
+  `0.0333333f`/`33.333f` float constant exists anywhere in the binary's code
+  or data. The two raw numeric matches near already-known frame-timing
+  functions both turned out to be noise on inspection: one was a stack
+  displacement operand (`ESP+0x1e`) misread as a stored value, the other
+  (`FUN_00607ef0`, adjacent to the confirmed `fixedtime` consumer) is a
+  genuine `mov ..., 0x1e` immediate but decompiles to an unrelated AI/
+  pathing-adjacent init routine -- the exact "coincidental constant" trap
+  this file already warned about once (`COOP_HOSTTIMEOUT`'s `0x32`). This
+  rules out a simple literal-constant tick gate; whatever paces the 30Hz
+  cost pattern is not a bare float/int immediate anywhere in the binary.
+- **`FUN_004c0bb0`'s (candidate `CL_Frame`) remaining un-traced callees,
+  decompiled** (`FUN_004be3f0`, `FUN_00553bd0`, `FUN_00537180`,
+  `FUN_006522b0`, `FUN_004708c0`, `FUN_00465e90`, `FUN_004e3200`, plus
+  `FUN_004c0bb0` itself). All are state-check/transition dispatchers
+  (loading-state gates, UI popup triggers, background-download checks) --
+  none contains a visible tick-rate accumulator. `FUN_004c0bb0` itself is a
+  flat, unconditional dispatcher calling ~40 further subsystem-update
+  functions every time it's invoked, with no gate of its own at this level.
+  If a 30Hz throttle exists in this call chain at all, it's inside one of
+  those ~40 still-undecompiled callees, not at any level traced so far.
+- **Consequence**: option (c) from the prior pass's own list -- "not a
+  discrete accumulator at all but an emergent property... genuinely spread
+  across many call sites" -- is now the leading theory by elimination, not
+  just one of three untested possibilities. Finding a single patchable gate
+  may not be realistic; tracing all ~40 of `FUN_004c0bb0`'s remaining
+  callees is the honest next step on this exact angle, but it's a much
+  bigger dig for uncertain payoff, and hasn't started.
+- **Alternative angle raised, not started**: since chasing the engine's own
+  tick rate has now had two full real passes (one 2026-08-25, one tonight)
+  without locating a patchable gate, a genuinely different approach was
+  proposed and discussed -- render-side smoothing/interpolation of the
+  analog-look delta this project's own view-angle hook already injects,
+  applied across rendered frames between simulation ticks, sidestepping the
+  need to ever find or patch the engine's own tick-pacing mechanism. Not
+  implemented; the user chose to keep pushing the tick-gate angle for
+  tonight's session rather than switch, per this file's own Key Principle 9
+  (fresh-perspective pivots are the user's call, not an autonomic response
+  to a setback) -- logged here as a live, standing option for whoever picks
+  this back up.
+
+---
+
 ### Real decompile pass 3 (2026-08-25, same day, continuation) -- five more `FUN_00458600`-adjacent functions ruled out, no accumulator found; confirms pass 2's own recommendation rather than changing it
 
 Reused `re_notes/ghidra_project/` directly via `analyzeHeadless.bat -process iw5sp.exe -noanalysis` (no re-import needed, confirmed the correct invocation: pass an absolute project directory, not `.`, and `-scriptPath` pointing at `re_notes/ghidra_scripts` -- both non-obvious the first try, documented here so the next pass doesn't re-discover the same two CLI gotchas). Decompiled the remaining direct callees of `FUN_00458600` this pass hadn't yet examined -- `FUN_00607d90`, `FUN_00515c90`, `FUN_0052d590`, `FUN_0048b880`, `FUN_004aa560` -- to check each for a hidden msec-threshold gate before committing to the "decompile `CL_Frame`/`FUN_004c0bb0` next" path pass 2 already recommended.
@@ -13873,3 +13992,72 @@ strongest possible confirmation available: genuine, unmodified, native
 has ever shipped in the loop. Closes this out completely -- not a mod bug,
 not a regression from any session's work, ever. Nothing further to
 investigate or fix here; this is simply how the underlying engine behaves.
+
+## 97. Motion blur (issue #96 continuation): menu + loading-screen gates shipped, cutscene report RETRACTED on retest -- current state CLOSED for tonight
+
+**Status: Resolved, as far as tonight's live testing goes.** `RunPreOverlayMotionBlurPassIfEnabled`
+(`proxy_d3d9/src/overlay_hud.cpp`) runs on `Hook_693ff0` (the
+`FUN_00693ff0` PRE-hook, tail-jumping ahead of the real per-viewport HUD
+command-dispatch loop, `FUN_004ee300` -- see the main motion-blur redesign
+trail earlier in this issue for how that hook target was chosen and why it's
+crash-safe where the two prior candidates weren't). Two false-positive gates
+were live-reported and fixed same session, both already shipped:
+
+1. **Menu bleed** (`f2997da`) -- fired during menu viewport composites, not
+   just gameplay. Fixed by gating on `IsMenuActive_Exported()`, the same
+   real menu-active check this project's own pause-menu logic already uses.
+2. **Loading-screen bleed** (`dbf9604`) -- fired during loading-screen
+   composites too, a separate engine state `IsMenuActive_Exported()` doesn't
+   cover. Fixed by also gating on `kInLevelFlagAddr` (`0x00A98ACC`), the
+   same real in-level flag this project's own level-load detection already
+   uses.
+
+**A third report -- "it breaks cutscenes too... that gate clearly detects
+loading screens and gameplay as the same thing" -- triggered a real,
+dedicated RE search for a genuine cutscene/cinematic-lock flag** (new
+`DumpAllStrings.java` Ghidra script, a full binary string sweep confirming
+MW3's internal naming is "cinematic," never "cutscene" -- zero `cutscene`
+string exists anywhere in the binary -- plus real leads surfaced for future
+use: `cg_cinematicFullscreen`, `cg_cinematicCanPause`,
+`com_cinematicEndInWhite`, `hud_letterBoxFadeTime`). **Before a third gate
+was implemented, the user retested and retracted the report**: "apparently
+cutscenes arent broken my bad i retested." **No code change was needed or
+made** -- the existing two gates (menu + in-level) are sufficient as
+currently shipped. The string-sweep tooling and cinematic-dvar leads are
+kept as real, reusable groundwork (see `DumpAllStrings.java`,
+`re_notes/ghidra_scripts/`) even though nothing needed wiring tonight.
+
+**Standing gap, not addressed tonight**: task #25 ("Movement hook bypasses
+scripted player-freeze/cinematic-lock state," logged earlier in this file)
+remains open and unrelated to motion blur specifically -- this session's
+string sweep found real dvar NAMES for the cinematic system but did not
+trace any of them to a live per-frame readable STATE flag, so task #25's
+own blockers (Predator Missile guidance movement-breaking, the "Turbulence"
+plane-breakup sequence) are unchanged by tonight's work.
+
+## 98. London mission: cutscene audio continues after skip on some cutscenes -- REPORTED, not yet investigated
+
+**Status: Open, not investigated.** Direct user report: "if you skip
+certain cutscenes(london mission confirmed broken cutscene audio when
+skipped, keeps talking after you already skipped but skips)" -- the
+cutscene's visual skip works, but its dialogue audio keeps playing after
+the skip, observed during Campaign testing the day before this session.
+
+**Initial check done tonight**: grepped this project's entire own source
+(`proxy_d3d9/src/*.cpp`/`*.h`) for anything touching cutscene-skip input --
+**found nothing**. This mod has no skip-cutscene hook, key mapping, or
+input-synthesis path of any kind; every hook this project owns is
+documented elsewhere in this file and none of them touch cutscene playback
+or skip logic. On current evidence this looks like a native engine bug, not
+something this mod introduces or could be causing -- but this has NOT been
+independently confirmed the way this session's earlier stutter report was
+(full mod-uninstall reproduction). **Recommended next step, not yet done**:
+reproduce with the mod fully uninstalled (stock `d3d9.dll`, no proxy DLL),
+the same decisive test that settled issue #96's stutter follow-up -- if the
+audio-continues-after-skip bug reproduces there too, it's conclusively
+native and out of this project's scope to fix (though still worth noting
+for players); if it does NOT reproduce, this mod is somehow involved despite
+the negative source search above and needs a live-debugging pass to find
+how. Not chased further this session per the user's own explicit prioritization
+tonight (missile-accel lead and the 30Hz-tick dig took precedence, then the
+session moved to documentation close-out).
