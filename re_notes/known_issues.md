@@ -14161,6 +14161,19 @@ symptom on the affected PC -- nothing for this mod to change. This closes
 out the whole camera-tick/stutter thread from tonight cleanly: no gate to
 patch, no code bug, a real and fully explained root cause.
 
+**Follow-up, same night, direct user request**: "we should probably gate
+fps through our mod like riva does... add a general fps limiter that is
+fully configurable if you want it in normal gameplay or with enhancements
+only." Built and shipped as `[Video] FpsLimitEnabled`/`FpsLimitTargetFps`/
+`FpsLimitEnhancementsOnly` (`mod_config.h`/`.cpp`, `overlay_hud.cpp`'s new
+`ApplyFpsLimitIfEnabled`) -- a post-Present hybrid Sleep+spin limiter on
+`Hook_EndScene`'s own tail, same technique real limiters (RTSS included)
+use rather than a bare `Sleep()`. Off by default, `FpsLimitEnhancementsOnly`
+defaults to true (only caps while motion blur/FSR/render-scale is actually
+engaged) with the option to make it a general always-on limiter instead.
+Builds clean; not yet live-tested (the game was running on the test
+machine when this was implemented).
+
 ### Investigation trail (original text below, corrected by the finding above)
 
 **This entry originally (and wrongly) attributed a
