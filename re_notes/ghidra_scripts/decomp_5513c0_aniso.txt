@@ -1,0 +1,25 @@
+================================================================
+Function: FUN_005513c0 @ 005513c0
+----------------------------------------------------------------
+
+void FUN_005513c0(undefined4 param_1,float param_2)
+
+{
+  int iVar1;
+  undefined4 uVar2;
+  undefined4 local_c;
+  undefined4 local_8;
+  undefined4 local_4;
+  
+  iVar1 = FUN_0062abe0();
+  if (iVar1 != 0) {
+    FUN_0047e690(iVar1,param_2,0);
+    return;
+  }
+  uVar2 = FUN_004c1c80(&DAT_0084d4b8,(double)param_2);
+  FUN_0062b610(7,uVar2,local_c,local_8,local_4,0,0);
+  return;
+}
+
+
+

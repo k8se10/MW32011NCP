@@ -13524,3 +13524,70 @@ since it was all found via the same investigation.
    ONLY `FUN_006cdb40` first (the simpler, unconditional-no-op case) once
    a future session has time to test it in isolation -- do not re-enable
    both together again without that isolation step.
+
+### REAL ISOLATION FOUND, same day (2026-08-27): `ForceAnisotropicFiltering` -- NOT `InternalRenderScalePercent`, NOT motion blur -- confirmed via direct user toggle testing
+
+**Status: the strongest, cleanest lead of the entire investigation.** User
+directly toggled every `[Video]` setting on/off in turn (their own
+methodology, not this session's suggestion) and live-confirmed in-game:
+**`ForceAnisotropicFiltering=0` (off) stops the crash, with every other
+Video toggle left on** (`InternalRenderScalePercent=250`,
+`MotionBlurEnabled=1`, `FsrSharpenEnabled=1`). This is consistent with, and
+now explains, the earlier same-day `InternalRenderScalePercent=0` test that
+STILL crashed -- `ForceAnisotropicFiltering` was on (default) throughout
+that entire test, which this new result shows was the actual active
+ingredient the whole time. Two independent data points now agree:
+
+- scale=0, aniso ON (unnoticed at the time) -> crashed
+- scale=250, aniso OFF -> no crash
+
+**The real mechanism, traced from the dvar-write call site**:
+`ApplyForcedAnisotropicFilteringIfEnabled()` (`overlay_hud.cpp`) calls this
+project's own `SetDvarFloat("r_texFilterAnisoMax"/"r_texFilterAnisoMin",
+16.0f)` -> `SetDvarFloatRaw` (a real, hardcoded game function at
+`0x005513c0`) -> `FUN_0062abe0()` gate, then either `FUN_0047e690`
+(existing-dvar-object path) or `FUN_004c1c80` (a float-to-string formatter
+used constantly throughout this binary) + `FUN_0062b610` (the real dvar-SET
+dispatcher, case 7) -> `FUN_0062a8c0`/`FUN_0062b410`. **Not yet traced all
+the way down to `FUN_00500660`/`FUN_006cdb40`** (frames #1/#2 of the
+earlier resolved crash call stack) -- `FUN_0062b610` itself uses this
+engine's familiar register-passed-arg calling convention (`unaff_EBX`),
+the same recurring obstacle this whole project has hit before with
+static-only analysis of this class of function. **This project's own
+"checking is far cheaper than digging" standard applies directly here**:
+the user's live isolation test is real, solid evidence on its own -- do
+not treat the unfinished code trace as a reason to doubt it, only as
+remaining work to fully explain WHY it happens.
+
+**Practical, immediate, safe workaround available right now, requiring NO
+code changes**: leave `ForceAnisotropicFiltering=0` in
+`mw3ncp_config.ini` -- this alone appears to eliminate the crash based on
+current evidence, while `InternalRenderScalePercent`/`MotionBlurEnabled`/
+`FsrSharpenEnabled` all stay usable. The real dvar values
+(`r_texFilterAnisoMax`/`Min`) can still be raised manually via
+`players2/config.cfg` instead (the exact alternative this feature's own
+config comment already points to for `ForceD3D9On12`'s own similar
+situation) if the sharpness improvement is wanted without going through
+this project's own dvar-write call path.
+
+**Concrete next steps, given this new, stronger lead** (supersedes the
+generic `FUN_00500660`/`FUN_006cdb40` trace-the-caller items above as the
+priority order for a future session):
+1. Finish tracing `FUN_0062b610`/`FUN_0062a8c0`/`FUN_0062b410`'s real
+   register-passed args (matching this project's own established technique
+   for this class of function -- live-read the actual register values at
+   the call site rather than trusting Ghidra's `unaff_*` guesses) to
+   confirm or rule out a direct call path to `FUN_00500660`/`FUN_006cdb40`.
+2. If confirmed, the real, root-cause fix becomes narrow and clear: either
+   find what's actually wrong in the dvar-set write path itself (a stale
+   pointer/size in whatever buffer it appends the new value string into),
+   or simply stop calling through the affected path for these two specific
+   dvars -- e.g. write them via a different existing dvar-set entry point,
+   or the same technique this project already uses for other native dvar
+   writes, if one avoids the buggy call chain.
+3. If tracing does NOT confirm a direct connection, the two mechanisms
+   found via live debugging (`FUN_00500660`/`FUN_006cdb40`) and the
+   `ForceAnisotropicFiltering` isolation may be two separate bugs that
+   happen to correlate because of shared timing/state -- worth a fresh,
+   skeptical look rather than assuming the connection once the trace is
+   attempted.
