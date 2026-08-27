@@ -128,10 +128,14 @@ constexpr int kResetVtableIndex = 16;             // IDirect3DDevice9::Reset
 constexpr int kCreateTextureVtableIndex = 23;     // IDirect3DDevice9::CreateTexture
 constexpr int kSetTextureVtableIndex = 65;        // IDirect3DDevice9::SetTexture
 constexpr int kSetFVFVtableIndex = 89;            // IDirect3DDevice9::SetFVF
+constexpr int kGetFVFVtableIndex = 90;            // IDirect3DDevice9::GetFVF
 constexpr int kSetRenderStateVtableIndex = 57;    // IDirect3DDevice9::SetRenderState
 constexpr int kGetRenderStateVtableIndex = 58;    // IDirect3DDevice9::GetRenderState
 constexpr int kSetTextureStageStateVtableIndex = 67; // IDirect3DDevice9::SetTextureStageState
+constexpr int kSetViewportVtableIndex = 47;       // IDirect3DDevice9::SetViewport
 constexpr int kGetViewportVtableIndex = 48;       // IDirect3DDevice9::GetViewport
+constexpr int kGetTextureVtableIndex = 64;        // IDirect3DDevice9::GetTexture (immediately
+    // before SetTexture=65 above, standard vtable ordering)
 constexpr int kDrawPrimitiveUPVtableIndex = 83;   // IDirect3DDevice9::DrawPrimitiveUP
 constexpr int kSetVertexShaderVtableIndex = 92;   // IDirect3DDevice9::SetVertexShader
 constexpr int kGetVertexShaderVtableIndex = 93;   // IDirect3DDevice9::GetVertexShader
@@ -217,6 +221,8 @@ typedef HRESULT(WINAPI* GetSurfaceLevel_t)(void* This, UINT Level, void** ppSurf
 // see.
 struct D3DViewport9 { DWORD X, Y, Width, Height; float MinZ, MaxZ; };
 typedef HRESULT(WINAPI* GetViewport_t)(void* This, D3DViewport9* pViewport);
+typedef HRESULT(WINAPI* SetViewport_t)(void* This, const D3DViewport9* pViewport);
+typedef HRESULT(WINAPI* GetTexture_t)(void* This, DWORD Stage, void** ppTexture);
 struct LockedRect { INT Pitch; void* pBits; }; // matches real D3DLOCKED_RECT layout exactly
 typedef HRESULT(WINAPI* SurfaceLockRect_t)(void* This, LockedRect* pLockedRect, const RECT* pRect, DWORD Flags);
 typedef HRESULT(WINAPI* SurfaceUnlockRect_t)(void* This);
@@ -307,6 +313,7 @@ constexpr DWORD kD3DPS_VERSION_3_0 = 0xFFFF0300;
 typedef ULONG(WINAPI* Release_t)(void* This);
 typedef HRESULT(WINAPI* SetTexture_t)(void* This, DWORD Stage, void* pTexture);
 typedef HRESULT(WINAPI* SetFVF_t)(void* This, DWORD FVF);
+typedef HRESULT(WINAPI* GetFVF_t)(void* This, DWORD* pFVF);
 typedef HRESULT(WINAPI* SetRenderState_t)(void* This, DWORD State, DWORD Value);
 typedef HRESULT(WINAPI* GetRenderState_t)(void* This, DWORD State, DWORD* pValue);
 typedef HRESULT(WINAPI* SetTextureStageState_t)(void* This, DWORD Stage, DWORD Type, DWORD Value);
@@ -3064,6 +3071,22 @@ using FullScreenShaderSetupFn = void(*)(void* device, float texelW, float texelH
 // backbuffer through the given pixel shader. Every full-screen effect (Phase A's
 // own passthrough, Phase B's RCAS, a future FXAA/motion-blur pass) calls this
 // SAME function with its own shader and an optional constant-setup callback.
+//
+// FIXED 2026-08-27 (issue #96 follow-up, motion-blur-on-HUD investigation):
+// this function's own save/restore contract was genuinely incomplete --
+// sampler state, render state, and pixel shader were all correctly saved and
+// restored, but the VIEWPORT was never touched at all (no save, no restore),
+// and texture stage 0 was force-set to nullptr at the end instead of restored
+// to whatever was actually bound before this function ran. A full-screen
+// post-process pass has no business assuming it can leave the device in any
+// state other than exactly how it found it -- the engine's own subsequent
+// draws (compositing the next viewport/exclusion-zone sub-rect, or drawing
+// native HUD elements) commonly assume state persists from their own last
+// draw call rather than re-setting everything themselves, a completely
+// normal D3D9 pattern. Leaving the viewport untouched and texture stage 0
+// nulled instead of restored is a real, concrete way this function could
+// have been corrupting what the engine expected to still be set, independent
+// of which specific hook fires it or how many times per frame.
 void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn onShaderBound = nullptr)
 {
     if (!pixelShader) return;
@@ -3072,6 +3095,10 @@ void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn
     auto stretchRect = reinterpret_cast<StretchRect_t>(deviceVtbl[kStretchRectVtableIndex]);
     auto getSamplerState = reinterpret_cast<GetSamplerState_t>(deviceVtbl[kGetSamplerStateVtableIndex]);
     auto setSamplerState = reinterpret_cast<SetSamplerState_t>(deviceVtbl[kSetSamplerStateVtableIndex]);
+    auto getViewport = reinterpret_cast<GetViewport_t>(deviceVtbl[kGetViewportVtableIndex]);
+    auto setViewport = reinterpret_cast<SetViewport_t>(deviceVtbl[kSetViewportVtableIndex]);
+    auto getTexture = reinterpret_cast<GetTexture_t>(deviceVtbl[kGetTextureVtableIndex]);
+    auto getFVF = reinterpret_cast<GetFVF_t>(deviceVtbl[kGetFVFVtableIndex]);
     auto setPixelShader = reinterpret_cast<SetPixelShader_t>(deviceVtbl[kSetPixelShaderVtableIndex]);
     auto getPixelShader = reinterpret_cast<GetPixelShader_t>(deviceVtbl[kGetPixelShaderVtableIndex]);
     auto setTexture = reinterpret_cast<SetTexture_t>(deviceVtbl[kSetTextureVtableIndex]);
@@ -3148,6 +3175,31 @@ void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn
     getRenderState(device, kD3DRS_ALPHABLENDENABLE, &oldAlphaBlend);
     getRenderState(device, kD3DRS_CULLMODE, &oldCull);
 
+    // FIXED 2026-08-27 (see this function's own header comment) -- the viewport
+    // was never saved/restored at all before. Explicitly forced to full-screen
+    // for our own draw (our pre-transformed quad's screen-space coordinates
+    // assume the WHOLE backbuffer, but the real, currently-active viewport
+    // could be narrowed to a single sub-rect at the exact moment this fires --
+    // e.g. mid-exclusion-zone-composite -- which would otherwise clip/
+    // constrain our full-screen draw to that sub-region), then restored to
+    // whatever was actually there before, exactly like every other state
+    // this function touches.
+    D3DViewport9 oldViewport{};
+    bool haveOldViewport = SUCCEEDED(getViewport(device, &oldViewport));
+    D3DViewport9 fullScreenViewport{ 0, 0, desc.Width, desc.Height, 0.0f, 1.0f };
+    setViewport(device, &fullScreenViewport);
+
+    // FIXED 2026-08-27 -- texture stage 0 was previously force-set to nullptr
+    // at the end of this function instead of restored to whatever was
+    // actually bound before. GetTexture AddRefs on success (real D3D9 COM
+    // semantics) -- released after the real restore call below, matching this
+    // file's own established GetPixelShader/Release pairing immediately below.
+    void* oldTexture0 = nullptr;
+    getTexture(device, 0, &oldTexture0);
+
+    DWORD oldFVF = 0;
+    getFVF(device, &oldFVF);
+
     void* oldPixelShader = nullptr;
     getPixelShader(device, &oldPixelShader);
     setPixelShader(device, pixelShader);
@@ -3172,7 +3224,19 @@ void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn
     };
     drawPrimitiveUP(device, kD3DPT_TRIANGLESTRIP, 2, verts, sizeof(ScreenVertex));
 
-    setTexture(device, 0, nullptr);
+    // FIXED 2026-08-27 -- restores the ACTUAL previous texture (was: force-set
+    // to nullptr, discarding whatever the engine had bound) and FVF (was:
+    // never restored at all), same "leave the device exactly as found"
+    // standard as everything else in this function.
+    setTexture(device, 0, oldTexture0);
+    if (oldTexture0) {
+        void** vtbl = *reinterpret_cast<void***>(oldTexture0);
+        reinterpret_cast<Release_t>(vtbl[kSurfaceReleaseVtableIndex])(oldTexture0);
+    }
+    setFVF(device, oldFVF);
+
+    if (haveOldViewport) setViewport(device, &oldViewport);
+
     setRenderState(device, kD3DRS_ZENABLE, oldZEnable);
     setRenderState(device, kD3DRS_LIGHTING, oldLighting);
     setRenderState(device, kD3DRS_ALPHABLENDENABLE, oldAlphaBlend);
