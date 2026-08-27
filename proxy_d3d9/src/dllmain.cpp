@@ -18,6 +18,8 @@
 #include "mod_config.h"
 #include "overlay_hud.h"
 #include "plugin_loader.h"
+#include "frame_benchmark.h" // 2026-08-27 -- times LogFlushThreadProc's own real
+    // fflush() cost (issue #96 follow-up, background-thread visibility gap)
 
 void InstallAnalogInputHooks(); // defined in analog_input_hooks.cpp
 extern "C" void HookD3D9CreateDevice(void* realD3D9); // defined in d3d9_hook.cpp
@@ -91,7 +93,20 @@ DWORD WINAPI LogFlushThreadProc(LPVOID)
 {
     for (;;) {
         Sleep(kLogFlushIntervalMs);
-        if (g_log) fflush(g_log);
+        if (g_log) {
+            // Timed (2026-08-27, issue #96 follow-up) -- this thread's own real
+            // fflush() cost was completely invisible to frametime_benchmark.csv
+            // before now (that tool predates this thread by over a week). A
+            // cheap no-op when FrametimeBenchmarkLogging is off (guarded inside
+            // FrameBenchmark_AddLogFlushThreadMs itself).
+            LARGE_INTEGER freq{}, start{}, end{};
+            QueryPerformanceFrequency(&freq);
+            QueryPerformanceCounter(&start);
+            fflush(g_log);
+            QueryPerformanceCounter(&end);
+            FrameBenchmark_AddLogFlushThreadMs(
+                (static_cast<double>(end.QuadPart - start.QuadPart) * 1000.0) / static_cast<double>(freq.QuadPart));
+        }
     }
     return 0; // unreachable -- lives for the whole process, matching this project's
               // existing "install once, never uninstall" background-thread pattern
@@ -123,6 +138,18 @@ DWORD WINAPI ResourceLogThreadProc(LPVOID)
         Sleep(1000);
         if (!g_modConfig.resourceUsageLogging) continue;
 
+        // Timed (2026-08-27, issue #96 follow-up) -- this thread's own real
+        // K32GetProcessMemoryInfo/GlobalMemoryStatusEx syscall cost was
+        // completely invisible to frametime_benchmark.csv before now. A cheap
+        // no-op when FrametimeBenchmarkLogging is off (guarded inside
+        // FrameBenchmark_AddResourceLogThreadMs itself) -- note this can be
+        // measuring real cost even while ResourceUsageLogging itself is on and
+        // ForceD3D9On12 isn't in play, since this thread's own syscalls run
+        // unconditionally once resourceUsageLogging is true, independent of why.
+        LARGE_INTEGER resBenchFreq{}, resBenchStart{}, resBenchEnd{};
+        QueryPerformanceFrequency(&resBenchFreq);
+        QueryPerformanceCounter(&resBenchStart);
+
         PROCESS_MEMORY_COUNTERS_EX pmc{};
         pmc.cb = sizeof(pmc);
         BOOL gotPmc = K32GetProcessMemoryInfo(GetCurrentProcess(),
@@ -131,6 +158,10 @@ DWORD WINAPI ResourceLogThreadProc(LPVOID)
         MEMORYSTATUSEX ms{};
         ms.dwLength = sizeof(ms);
         BOOL gotMs = GlobalMemoryStatusEx(&ms);
+
+        QueryPerformanceCounter(&resBenchEnd);
+        FrameBenchmark_AddResourceLogThreadMs(
+            (static_cast<double>(resBenchEnd.QuadPart - resBenchStart.QuadPart) * 1000.0) / static_cast<double>(resBenchFreq.QuadPart));
 
         char buf[400];
         sprintf_s(buf,

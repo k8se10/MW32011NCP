@@ -1,0 +1,168 @@
+Callers of 00497210 (2):
+  FUN_00694650 @ 00694650
+  FUN_00508970 @ 00508970
+
+================================================================
+Function: FUN_00694650 @ 00694650
+----------------------------------------------------------------
+
+void FUN_00694650(void)
+
+{
+  undefined4 uVar1;
+  undefined4 uVar2;
+  int iVar3;
+  uint uVar4;
+  int iVar5;
+  int iVar6;
+  int unaff_EDI;
+  int local_20;
+  int local_1c;
+  uint local_18;
+  int local_14 [4];
+  undefined4 local_4;
+  
+  iVar3 = 0;
+  uVar4 = 1;
+  local_20 = 0;
+  if (1 < *(int *)(unaff_EDI + 0x419cc) + 1U) {
+    iVar5 = 0xf50;
+    do {
+      iVar6 = *(int *)(unaff_EDI + 0x419d4) + iVar5;
+      *(int *)(iVar6 + 0x938) = unaff_EDI;
+      if (*(int *)(iVar6 + 0x940) == 2) {
+        local_14[iVar3] = iVar6 + 0x160;
+        iVar3 = iVar3 + 1;
+        FUN_00497210(iVar6,0);
+        FUN_00693ff0();
+        local_20 = iVar3;
+      }
+      uVar4 = uVar4 + 1;
+      iVar5 = iVar5 + 0xf50;
+    } while (uVar4 < *(int *)(unaff_EDI + 0x419cc) + 1U);
+    if (iVar3 != 0) {
+      local_18 = 0;
+      if (*(int *)(unaff_EDI + 0x419c8) == 0) {
+        return;
+      }
+      local_1c = 0;
+      do {
+        iVar3 = *(int *)(unaff_EDI + 0x419d4) + local_1c;
+        *(int *)(iVar3 + 0x938) = unaff_EDI;
+        if (*(int *)(iVar3 + 0x940) == 2) {
+          local_4 = *(undefined4 *)(iVar3 + 0x16c);
+          local_14[3] = *(int *)(iVar3 + 0x168);
+          uVar1 = *(undefined4 *)(iVar3 + 0x160);
+          uVar2 = *(undefined4 *)(iVar3 + 0x164);
+          if (local_14[3] < *(int *)(iVar3 + 0x158)) {
+            *(int *)(iVar3 + 0x168) = *(int *)(iVar3 + 0x158);
+          }
+          if (*(int *)(iVar3 + 0x16c) < *(int *)(iVar3 + 0x15c)) {
+            *(int *)(iVar3 + 0x16c) = *(int *)(iVar3 + 0x15c);
+          }
+          FUN_00508970(iVar3,local_14,local_20);
+          *(undefined4 *)(iVar3 + 0x160) = uVar1;
+          *(undefined4 *)(iVar3 + 0x164) = uVar2;
+          *(int *)(iVar3 + 0x168) = local_14[3];
+          *(undefined4 *)(iVar3 + 0x16c) = local_4;
+          FUN_00693ff0();
+        }
+        local_1c = local_1c + 0xf50;
+        local_18 = local_18 + 1;
+      } while (local_18 < *(uint *)(unaff_EDI + 0x419c8));
+      return;
+    }
+  }
+  uVar4 = 0;
+  if (*(int *)(unaff_EDI + 0x419c8) != 0) {
+    iVar3 = 0;
+    do {
+      iVar5 = *(int *)(unaff_EDI + 0x419d4) + iVar3;
+      *(int *)(iVar5 + 0x938) = unaff_EDI;
+      if (*(int *)(iVar5 + 0x940) == 2) {
+        FUN_00497210(iVar5,1);
+        FUN_00693ff0();
+      }
+      uVar4 = uVar4 + 1;
+      iVar3 = iVar3 + 0xf50;
+    } while (uVar4 < *(uint *)(unaff_EDI + 0x419c8));
+  }
+  return;
+}
+
+
+
+================================================================
+Function: FUN_00508970 @ 00508970
+----------------------------------------------------------------
+
+void FUN_00508970(int param_1,int *param_2,int param_3)
+
+{
+  int iVar1;
+  int *piVar2;
+  int iVar3;
+  int iVar4;
+  undefined4 uVar5;
+  undefined4 uVar6;
+  undefined4 uVar7;
+  int iVar8;
+  int iVar9;
+  int iVar10;
+  int iVar11;
+  
+  do {
+    if ((param_2 == (int *)0x0) || (param_3 == 0)) {
+      FUN_00497210(param_1,0);
+      return;
+    }
+    piVar2 = (int *)*param_2;
+    if ((0 < piVar2[2]) && (0 < piVar2[3])) {
+      iVar3 = *(int *)(param_1 + 0x160);
+      iVar9 = piVar2[2] + *piVar2;
+      iVar1 = piVar2[1] + piVar2[3];
+      iVar10 = *(int *)(param_1 + 0x168) + iVar3;
+      iVar4 = *(int *)(param_1 + 0x164);
+      iVar11 = *(int *)(param_1 + 0x16c) + iVar4;
+      if ((*piVar2 < iVar10) && (((piVar2[1] < iVar11 && (iVar3 < iVar9)) && (iVar4 < iVar1)))) {
+        uVar5 = *(undefined4 *)(param_1 + 0x160);
+        uVar6 = *(undefined4 *)(param_1 + 0x168);
+        uVar7 = *(undefined4 *)(param_1 + 0x16c);
+        iVar8 = piVar2[1];
+        *(int *)(param_1 + 0x16c) = iVar8 - iVar4;
+        if (0 < iVar8 - iVar4) {
+          FUN_00508970(param_1,param_2 + 1,param_3 + -1);
+        }
+        iVar11 = iVar11 - iVar1;
+        *(int *)(param_1 + 0x16c) = iVar11;
+        if (0 < iVar11) {
+          *(int *)(param_1 + 0x164) = iVar1;
+          FUN_00508970(param_1,param_2 + 1,param_3 + -1);
+        }
+        *(int *)(param_1 + 0x164) = piVar2[1];
+        *(int *)(param_1 + 0x16c) = piVar2[3];
+        iVar1 = *piVar2;
+        *(int *)(param_1 + 0x168) = iVar1 - iVar3;
+        if (0 < iVar1 - iVar3) {
+          FUN_00508970(param_1,param_2 + 1,param_3 + -1);
+        }
+        iVar10 = iVar10 - iVar9;
+        *(int *)(param_1 + 0x168) = iVar10;
+        if (0 < iVar10) {
+          *(int *)(param_1 + 0x160) = iVar9;
+          FUN_00508970(param_1,param_2 + 1,param_3 + -1);
+        }
+        *(undefined4 *)(param_1 + 0x160) = uVar5;
+        *(int *)(param_1 + 0x164) = iVar4;
+        *(undefined4 *)(param_1 + 0x168) = uVar6;
+        *(undefined4 *)(param_1 + 0x16c) = uVar7;
+        return;
+      }
+    }
+    param_3 = param_3 + -1;
+    param_2 = param_2 + 1;
+  } while( true );
+}
+
+
+

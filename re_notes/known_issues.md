@@ -13591,3 +13591,139 @@ priority order for a future session):
    happen to correlate because of shared timing/state -- worth a fresh,
    skeptical look rather than assuming the connection once the trace is
    attempted.
+
+### ROOT CAUSE FOUND AND LIVE-CONFIRMED, same day (2026-08-27): `Hook_FUN_00497210` (Phase E motion blur's engine hook) -- a git bisect + live isolation test, then a concrete mechanism
+
+**Status: RESOLVED as to WHICH code causes the crash (live-confirmed, high
+confidence). NOT YET RESOLVED as to a real fix -- the hook is currently
+DISABLED (motion blur non-functional), a concrete replacement design
+exists but is unimplemented and has one open question left to confirm
+first. Do not re-enable `Hook_FUN_00497210` without that fix.**
+
+**How this was found -- a real git bisect, not more theorizing.** After the
+entire visual-suite toggle-off test still crashed (see "DECISIVE RESULT"
+above), a live user recollection ("issue wasnt present on the previous
+0.3.4 release") was checked against real git history and confirmed exactly
+right: `v0.3.4` (tag `f1ef138`) genuinely predates issue #87's entire
+threading refactor and everything after it. A real bisection followed,
+each commit built and live-tested in a separate git worktree (never
+touching the main branch's own working state):
+
+| Commit | What it is | Live result |
+|---|---|---|
+| `f1ef138` (v0.3.4) | last known-good release | clean (user's own recollection, trusted) |
+| `f2e47ba` | first commit of issue #87's threading refactor | clean |
+| `5f50070` | end of issue #87's threading refactor, zero visual-suite code | clean |
+| `58443df` | Phase A full-screen pipeline first introduced | clean |
+| `3feae6c` | Phase B RCAS + Phase E motion blur + forced aniso, all in one commit | **CRASHED** |
+
+This fully clears `InternalRenderScalePercent`, the entire issue #87
+threading refactor, and the Phase A pipeline's own foundation code as
+causes -- the real cause is somewhere inside `3feae6c` specifically.
+**Isolated further, live, same day**: within that commit, `Hook_FUN_00497210`
+(the Phase E motion-blur engine hook, on the real per-viewport scene-finish
+orchestrator, installed completely unconditionally regardless of
+`MotionBlurEnabled`) was disabled (its `MH_CreateHook`/`MH_EnableHook`
+install call commented out, hook definition kept) while leaving RCAS,
+aniso, and motion blur's own toggle-gated drawing code completely
+untouched. **Live-tested clean.** This is the real, confirmed root cause --
+one specific unconditional engine hook, not the visual suite broadly, not
+render scaling, not threading.
+
+**The concrete mechanism -- found via a follow-up static-only fork, not
+guessed.** `FUN_00497210` has exactly 2 real callers:
+1. `FUN_00694650` -- the true once-per-frame driver (two loops, "primary"
+   and "secondary" viewport sets, matching the original "once per active
+   viewport" description).
+2. **`FUN_00508970` -- a recursive exclusion-zone rect-carving function**
+   (the SAME function this issue's own much earlier "Fix Attempt C"
+   targeted, under a completely different theory, hours earlier tonight --
+   a real, satisfying convergence). Given a container viewport and a list
+   of exclusion zones (killcam PIP windows, splitscreen panes), it carves
+   the container into up to 4 sub-rects around each zone, **recursing once
+   per surviving sub-rect and calling `FUN_00497210` at every recursion
+   leaf** -- i.e. once per carved sub-rect, not once per frame, each call
+   made with the viewport's own rect fields temporarily set to that ONE
+   sub-rect's bounds.
+
+**This is the real, structural explanation for the "fires multiple times
+per frame" behavior this project's own `g_motionBlurRanThisFrame` comment
+already documented** -- not a vague timing quirk, a genuine consequence of
+exclusion-zone handling. `Hook_FUN_00497210` fires a full-screen
+`GetRenderTarget(0)` + `StretchRect` + full-screen-quad capture-and-redraw
+**unconditionally on every one of these calls**, assuming the complete
+composed frame is sitting in the backbuffer -- during an exclusion-zone
+sequence, that assumption is false for every call except (possibly) the
+last: the backbuffer is only partially composited, one sub-rect done,
+others still pending, when the hook fires early. `g_motionBlurRanThisFrame`
+only prevents this project's OWN drawing pass from running more than once
+in a frame -- it does nothing to ensure that one run is the LAST (correct,
+fully-composited) call rather than an EARLY (wrong, partial) one. A
+full-screen capture-and-redraw against a mid-composite backbuffer, mixed
+with `DrawFullScreenPass`'s own render-state save/restore sequence, is a
+real, concrete state-corruption mechanism -- and fits every live symptom
+found tonight (crashes independent of render scale, independent of
+movement, reproducing in menus/cutscenes where similar multi-part/PIP-style
+composites are plausible).
+
+**A second, independent static-only fork tried to find this same mechanism
+via call-graph/trampoline analysis and came back with an honest negative**
+-- traced every function `FUN_00497210` calls two levels deep, grepped all
+of it for the crash-site functions/globals, found zero direct connection;
+checked MinHook's own trampoline generation on this function's leading
+bytes, found nothing structurally unsafe. **This negative result is not a
+contradiction** -- the real mechanism (found by the other fork) isn't a
+call-graph link or a trampoline bug at all, it's about WHEN and HOW OFTEN
+the hook fires relative to a multi-part composite, which neither of those
+checks would ever catch. Worth remembering for future sessions: a clean
+call-graph and a clean trampoline don't rule out a hook being unsafe if
+its TIMING assumptions (here: "the backbuffer is always fully composited
+when I fire") can be violated by a real, documented multi-call pattern.
+
+**`FUN_00497210` is also more structurally complex than its original
+"plain cdecl, nothing risky" description** -- confirmed via disassembly it
+does NOT uniformly `RET`; in the normal-gameplay default case it
+tail-jumps into a debug-visualization function (`FUN_00432b80`) instead of
+returning directly (real, but gated behind flags that are 0 in normal
+play, and doesn't itself break stack balance -- not an independently
+confirmed second bug, just real added complexity worth knowing about).
+
+**Recommended real fix, not yet implemented**: hook `FUN_00694650`
+instead (the true once-per-frame driver both real call paths originate
+from) as a **POST-hook on the whole function** -- fires exactly once per
+real frame, after the ENTIRE scene composite (every viewport, every
+exclusion-zone sub-rect) is fully done, no more firing mid-composite.
+**Real complication**: `FUN_00694650` uses `EDI` as an implicit,
+register-passed context pointer (confirmed via raw disassembly -- its very
+first real instruction is `MOV ECX, dword ptr [EDI + 0x419cc]`, no stack
+load beforehand at all) -- this needs a **naked hook** following the
+project's own proven `Hook_0057de60` template (explicit register capture),
+not a plain typed-C-function hook like the current, buggy
+`Hook_FUN_00497210` is. **Structural advantage found**: `FUN_00694650` has
+exactly 2 exit points, both genuine matching-prologue `RET`s -- no
+tail-jumps, no debug-mode branching, a structurally simpler function to
+hook correctly than `FUN_00497210` ever was.
+
+**Open question, NOT resolved yet -- confirm before implementing**:
+1. What calls `FUN_00694650`, and is it genuinely called exactly once per
+   real frame (matching this project's single-viewport, no-splitscreen
+   scope) or could it also fire multiple times itself under some
+   condition -- would undermine the whole "exactly once per frame"
+   advantage this design is built on.
+2. Whether native HUD drawing (the `FUN_004f7b40` chain, reached via
+   `FUN_00497210` -> `FUN_00697ce0` -> ...) is FULLY contained within
+   `FUN_00694650`'s own call tree, or whether some HUD elements draw from
+   an entirely separate caller -- if so, a post-hook on `FUN_00694650`
+   could still blur some HUD elements, the same class of problem Phase E's
+   own "Round 2" bug already was, just for a different subset. A Ghidra
+   headless project-lock error (two `analyzeHeadless.bat` invocations too
+   close together, not a real analysis failure) blocked checking this on
+   the pass that found the rest of this design -- purely a tooling retry
+   away, not a hard unknown.
+
+**Current shipped state**: `Hook_FUN_00497210`'s install call is commented
+out in `analog_input_hooks.cpp` (hook definition kept). Motion blur is
+functionally dead (the config toggle still exists but nothing ever fires
+it) until the `FUN_00694650` hook above is implemented and confirmed safe.
+RCAS, aniso forcing, and the Phase A pipeline foundation are all
+unaffected and confirmed NOT implicated in this crash.

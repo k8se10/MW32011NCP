@@ -9,10 +9,45 @@ extern void LogFromController(const char* msg); // defined in dllmain.cpp
 
 namespace {
 
+// FIXED 2026-08-27 (issue #96 follow-up): protects every accumulator below
+// that can now be written from a background thread (rumble, poll, hot-reload,
+// log-flush) against the main thread's own read/reset in FrameBenchmark_LogFrame.
+// g_rumbleMsThisFrame specifically had NO lock at all before this -- a real,
+// silent data race since issue #87 moved vibration writes off the main thread
+// (see this variable's own header comment in frame_benchmark.h). asset-capture/
+// real-create-texture stay genuinely main-thread-only (confirmed via their own
+// real call sites) but are included under the same lock anyway -- simpler and
+// safer than reasoning about which specific fields need it versus not.
+CRITICAL_SECTION g_benchLock;
+// INIT_ONCE (not a plain bool guard) -- this lock's very first use can now
+// legitimately race between multiple threads (main, vibration, poll,
+// hot-reload, log-flush all call an Add* function that needs it), unlike this
+// project's other per-subsystem locks, which are safe with a plain bool guard
+// only because their own Ensure*ThreadStarted() always runs on the main
+// thread BEFORE the background thread it creates could ever call back in.
+// This lock has no single "creator" thread to rely on that way.
+INIT_ONCE g_benchLockInitOnce = INIT_ONCE_STATIC_INIT;
+
+BOOL CALLBACK InitBenchLockOnce(PINIT_ONCE, PVOID, PVOID*)
+{
+    InitializeCriticalSection(&g_benchLock);
+    return TRUE;
+}
+
+void EnsureBenchLockInit()
+{
+    InitOnceExecuteOnce(&g_benchLockInitOnce, InitBenchLockOnce, nullptr, nullptr);
+}
+
 double g_rumbleMsThisFrame = 0.0;
 double g_assetCaptureMsThisFrame = 0.0;
 double g_realCreateTextureMsThisFrame = 0.0;
 int g_createTextureCallsThisFrame = 0;
+double g_pollThreadMsThisFrame = 0.0;
+double g_hotReloadThreadMsThisFrame = 0.0;
+double g_logFlushThreadMsThisFrame = 0.0;
+double g_assetWriteThreadMsThisFrame = 0.0;
+double g_resourceLogThreadMsThisFrame = 0.0;
 
 // Dedup set for the "this specific texture size/format took a while" log line --
 // fixed-size, non-STL (this file ships in the real proxy_d3d9.dll), same "log
@@ -47,7 +82,7 @@ void EnsureCsvOpen()
     strcat_s(path, "frametime_benchmark.csv");
     fopen_s(&g_csvFile, path, "w");
     if (g_csvFile) {
-        fprintf(g_csvFile, "frameIndex,frameTimeMs,optionsMenuMs,overlayMessageMs,glyphIconMs,hintSlotsMs,rumbleMs,assetCaptureMs,realCreateTextureMs,createTextureCalls,ourOwnTotalMs\n");
+        fprintf(g_csvFile, "frameIndex,frameTimeMs,optionsMenuMs,overlayMessageMs,glyphIconMs,hintSlotsMs,rumbleMs,assetCaptureMs,realCreateTextureMs,createTextureCalls,ourOwnTotalMs,pollThreadMs,hotReloadThreadMs,logFlushThreadMs,assetWriteThreadMs,resourceLogThreadMs\n");
         fflush(g_csvFile); // header line always visible even if the process is
                             // killed hard before the first periodic flush below.
         LogFromController("[frame-benchmark] frametime_benchmark.csv opened -- logging every frame until FrametimeBenchmarkLogging is turned back off");
@@ -61,20 +96,74 @@ void EnsureCsvOpen()
 void FrameBenchmark_AddRumbleMs(double ms)
 {
     if (!g_modConfig.frametimeBenchmarkLogging) return;
+    EnsureBenchLockInit();
+    EnterCriticalSection(&g_benchLock);
     g_rumbleMsThisFrame += ms;
+    LeaveCriticalSection(&g_benchLock);
 }
 
 void FrameBenchmark_AddAssetCaptureMs(double ms)
 {
     if (!g_modConfig.frametimeBenchmarkLogging) return;
+    EnsureBenchLockInit();
+    EnterCriticalSection(&g_benchLock);
     g_assetCaptureMsThisFrame += ms;
+    LeaveCriticalSection(&g_benchLock);
+}
+
+void FrameBenchmark_AddPollThreadMs(double ms)
+{
+    if (!g_modConfig.frametimeBenchmarkLogging) return;
+    EnsureBenchLockInit();
+    EnterCriticalSection(&g_benchLock);
+    g_pollThreadMsThisFrame += ms;
+    LeaveCriticalSection(&g_benchLock);
+}
+
+void FrameBenchmark_AddHotReloadThreadMs(double ms)
+{
+    if (!g_modConfig.frametimeBenchmarkLogging) return;
+    EnsureBenchLockInit();
+    EnterCriticalSection(&g_benchLock);
+    g_hotReloadThreadMsThisFrame += ms;
+    LeaveCriticalSection(&g_benchLock);
+}
+
+void FrameBenchmark_AddLogFlushThreadMs(double ms)
+{
+    if (!g_modConfig.frametimeBenchmarkLogging) return;
+    EnsureBenchLockInit();
+    EnterCriticalSection(&g_benchLock);
+    g_logFlushThreadMsThisFrame += ms;
+    LeaveCriticalSection(&g_benchLock);
+}
+
+void FrameBenchmark_AddAssetWriteThreadMs(double ms)
+{
+    if (!g_modConfig.frametimeBenchmarkLogging) return;
+    EnsureBenchLockInit();
+    EnterCriticalSection(&g_benchLock);
+    g_assetWriteThreadMsThisFrame += ms;
+    LeaveCriticalSection(&g_benchLock);
+}
+
+void FrameBenchmark_AddResourceLogThreadMs(double ms)
+{
+    if (!g_modConfig.frametimeBenchmarkLogging) return;
+    EnsureBenchLockInit();
+    EnterCriticalSection(&g_benchLock);
+    g_resourceLogThreadMsThisFrame += ms;
+    LeaveCriticalSection(&g_benchLock);
 }
 
 void FrameBenchmark_AddRealCreateTextureCall(double ms, UINT width, UINT height, DWORD format)
 {
     if (!g_modConfig.frametimeBenchmarkLogging) return;
+    EnsureBenchLockInit();
+    EnterCriticalSection(&g_benchLock);
     g_realCreateTextureMsThisFrame += ms;
     ++g_createTextureCallsThisFrame;
+    LeaveCriticalSection(&g_benchLock);
 
     // Log the FIRST time a given (width,height,format) is seen taking a while, so
     // a real repeated-recreation culprit can be identified by its actual
@@ -107,10 +196,23 @@ void FrameBenchmark_LogFrame(double optionsMenuMs, double overlayMessageMs,
         // Still reset the cross-file accumulators even when off, in case the
         // flag was just turned off mid-session -- keeps state clean if it's
         // turned back on later without a full relaunch (config hot-reloads).
+        // Locked like every other touch of these now (2026-08-27) -- a
+        // background thread's Add* call already bails out on this same flag
+        // check before ever taking the lock, but this reset runs regardless
+        // of what raced to set the flag, so it takes the lock too rather than
+        // assume it's safe not to.
+        EnsureBenchLockInit();
+        EnterCriticalSection(&g_benchLock);
         g_rumbleMsThisFrame = 0.0;
         g_assetCaptureMsThisFrame = 0.0;
         g_realCreateTextureMsThisFrame = 0.0;
         g_createTextureCallsThisFrame = 0;
+        g_pollThreadMsThisFrame = 0.0;
+        g_hotReloadThreadMsThisFrame = 0.0;
+        g_logFlushThreadMsThisFrame = 0.0;
+        g_assetWriteThreadMsThisFrame = 0.0;
+        g_resourceLogThreadMsThisFrame = 0.0;
+        LeaveCriticalSection(&g_benchLock);
         return;
     }
 
@@ -132,30 +234,47 @@ void FrameBenchmark_LogFrame(double optionsMenuMs, double overlayMessageMs,
     g_lastFrameTime = now;
     g_haveLastFrameTime = true;
 
+    EnsureBenchLockInit();
+    EnterCriticalSection(&g_benchLock);
     double rumbleMs = g_rumbleMsThisFrame;
     double assetCaptureMs = g_assetCaptureMsThisFrame;
     double realCreateTextureMs = g_realCreateTextureMsThisFrame;
     int createTextureCalls = g_createTextureCallsThisFrame;
+    double pollThreadMs = g_pollThreadMsThisFrame;
+    double hotReloadThreadMs = g_hotReloadThreadMsThisFrame;
+    double logFlushThreadMs = g_logFlushThreadMsThisFrame;
+    double assetWriteThreadMs = g_assetWriteThreadMsThisFrame;
+    double resourceLogThreadMs = g_resourceLogThreadMsThisFrame;
     g_rumbleMsThisFrame = 0.0;
     g_assetCaptureMsThisFrame = 0.0;
     g_realCreateTextureMsThisFrame = 0.0;
     g_createTextureCallsThisFrame = 0;
+    g_pollThreadMsThisFrame = 0.0;
+    g_hotReloadThreadMsThisFrame = 0.0;
+    g_logFlushThreadMsThisFrame = 0.0;
+    g_assetWriteThreadMsThisFrame = 0.0;
+    g_resourceLogThreadMsThisFrame = 0.0;
+    LeaveCriticalSection(&g_benchLock);
 
     // realCreateTextureMs deliberately NOT included in ourOwnTotalMs -- it's real
     // engine/driver texture-creation cost, not overhead this project's own hook
     // code added (see this function's own header comment). Kept as its own
     // column specifically so it can be compared against frameTimeMs directly to
     // test whether repeated real texture creation (ours or the engine's) is what
-    // a felt stutter actually lines up with.
+    // a felt stutter actually lines up with. The three background-thread columns
+    // (2026-08-27) are included the same way -- real cost, but not necessarily
+    // THIS frame's cost (background-thread work isn't frame-aligned), so kept
+    // visible/comparable rather than folded silently into the total.
     double ourOwnTotalMs = optionsMenuMs + overlayMessageMs + glyphIconMs + hintSlotsMs + rumbleMs + assetCaptureMs;
 
     ++g_frameIndex;
     // First row has no meaningful frameTimeMs (no previous frame to diff against)
     // -- still written (as 0) so frameIndex stays a simple running count, not
     // worth a special-case skip for one row out of a whole session's worth.
-    fprintf(g_csvFile, "%lu,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%d,%.4f\n",
+    fprintf(g_csvFile, "%lu,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%d,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\n",
         g_frameIndex, frameTimeMs, optionsMenuMs, overlayMessageMs, glyphIconMs,
-        hintSlotsMs, rumbleMs, assetCaptureMs, realCreateTextureMs, createTextureCalls, ourOwnTotalMs);
+        hintSlotsMs, rumbleMs, assetCaptureMs, realCreateTextureMs, createTextureCalls, ourOwnTotalMs,
+        pollThreadMs, hotReloadThreadMs, logFlushThreadMs, assetWriteThreadMs, resourceLogThreadMs);
 
     // 2026-08-17, third pass -- live data from the first two passes ruled out this
     // project's own instrumented code (never correlated with the real spikes) and
