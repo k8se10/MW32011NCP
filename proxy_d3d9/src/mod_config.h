@@ -690,10 +690,12 @@ struct ModConfig
     // frame degrees-of-rotation (analog_input_hooks.cpp's
     // g_motionBlurYawDeltaDeg/g_motionBlurPitchDeltaDeg) drive the blur direction/
     // magnitude -- controller stick and gyro look only, NOT mouse look (this
-    // project's own hooks never touch that path). PREVIEW/WIP, off by default --
-    // builds and runs, direction/magnitude math is new and genuinely untuned;
-    // the visual-suite plan's own Phase E text warns this is the effect most
-    // likely to need real live-tuning rounds before it feels right.
+    // project's own hooks never touch that path). EXPERIMENTAL, off by default
+    // (2026-08-27) -- a real crash this feature caused (issue #96) was
+    // root-caused and fixed, and it's confirmed stable/correct in normal
+    // gameplay, menus, and loading screens, but a live-reported bug (UI
+    // dropping out on taking damage while moving, issue #100) is still open
+    // and unexplained.
     bool motionBlurEnabled = false;
     // Multiplies the real per-frame yaw/pitch delta before converting to a UV-
     // space blur extent (see MotionBlurShaderSetupCallback, overlay_hud.cpp, for
@@ -724,30 +726,16 @@ struct ModConfig
     // layer over a setting the player could already set natively.
     bool forceAnisotropicFiltering = false;
 
-    // [Video] FpsLimitEnabled/FpsLimitTargetFps/FpsLimitEnhancementsOnly
-    // (2026-08-27, direct user request following issue #99's vsync finding:
-    // "we should probably gate fps through our mod like riva does... add a
-    // general fps limiter that is fully configurable if you want it in
-    // normal gameplay or with enhancements only"). An in-mod frame-pacing
-    // limiter, same purpose as an external tool like RivaTuner Statistics
-    // Server, so a player doesn't need one just to get clean pacing on this
-    // engine. Implemented as a post-Present wait timed off QueryPerformanceCounter
-    // (Hook_EndScene, overlay_hud.cpp) -- NOT a vsync substitute technically
-    // (no tear-free guarantee), but avoids vsync's own confirmed camera-pacing
-    // cost (issue #99) while still capping real framerate the way vsync would.
-    // Off by default -- purely opt-in, same as every other Video toggle here.
-    bool fpsLimitEnabled = false;
-    // Target framerate cap, in whole fps. No fixed upper/lower bound baked in
-    // beyond a sane floor (see ReadConfig's own clamp) -- entirely up to the
-    // player's own hardware/display, not a value this project can recommend
-    // universally. 60 is a reasonable, common default, not a mandated number.
-    int fpsLimitTargetFps = 60;
-    // true (default): only cap framerate while a graphics-enhancement feature
-    // is actually engaged (MotionBlurEnabled, FsrSharpenEnabled, or
-    // InternalRenderScalePercent > 0) -- normal gameplay stays fully uncapped
-    // by this feature. false: cap framerate unconditionally, all the time,
-    // functioning as a general-purpose limiter independent of any enhancement.
-    bool fpsLimitEnhancementsOnly = true;
+    // FpsLimitEnabled/FpsLimitTargetFps/FpsLimitEnhancementsOnly (2026-08-27) --
+    // built, live-tested same night, FAILED (real added input latency + bad
+    // pacing -- the post-EndScene wait landed before the real Present call, not
+    // after, per known_issues.md issue #99's diagnosis) and REMOVED entirely
+    // rather than left disabled. Use an external limiter (RivaTuner Statistics
+    // Server) instead -- see the [Video] section's own comment in
+    // WriteDefaultConfig for the standing recommendation. Do not reintroduce
+    // this without first confirming the real EndScene/Present call separation
+    // and redesigning the wait's placement accordingly -- see issue #99 for
+    // the full trail before attempting this again.
 
     // [Plugins] (2026-08-25) -- STRICTLY OPT-IN, OFF by default, same pattern as
     // useCustomOptionsScreen/autoMantleEnabled above. When enabled, plugin_loader.cpp
