@@ -564,6 +564,34 @@ state directly, as described above:
    keyboard bind read by the UI layer. Implemented, builds clean, not yet separately
    live-confirmed. See `re_notes/known_issues.md` issue #28.
 
+## What makes this project different
+
+No other publicly available tool for this game implements native controller
+support — every alternative (Steam Input, reWASD, gamepad2mkb, and similar)
+works by emulating keyboard and mouse input underneath the game's own
+unmodified control path, not by driving the engine's real input state
+directly the way this project does — see "Why native, not an emulator" above.
+
+This is not the most visually ambitious graphics mod for MW3 (2011) — that
+distinction belongs to **MW3 Remastered** (built on NVIDIA RTX Remix, full
+ray-traced global illumination), a separate, larger-scope project with a
+different technical approach (a renderer replacement, not engine-level
+hooking). What this project does combine, uniquely as far as public MW3
+(2011) mods go, is genuine native controller support with its own,
+from-scratch visual-enhancement suite — internal render resolution control,
+FSR sharpening, and camera motion blur — built via the same reverse-
+engineering and engine-hook methodology as the controller work itself, not a
+third-party shader injector layered on top. See **Status at a glance** and
+**Known limitations** for exactly what's shipped, experimental, or still
+PREVIEW/WIP within that suite.
+
+The long-term direction is a **[GTA IV FusionFix](https://github.com/ThirteenAG/GTAIV.EFLC.FusionFix)-style**
+project — a single, trusted, broad enhancement patch for the whole game
+(bug fixes, visual improvements, quality-of-life additions, wide hardware
+compatibility), not a single-feature mod. The visual-enhancement suite
+above is the first concrete step in that direction, not the ceiling — see
+the Roadmap section below for what's actually planned versus aspirational.
+
 ## Current control map (`iw5sp.exe`, Xbox-layout controller)
 
 | Input | Action | Status |
