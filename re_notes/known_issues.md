@@ -14210,10 +14210,20 @@ hook exists in this codebase, a corrected design likely needs the wait
 moved to a genuinely different point in the per-frame pipeline (e.g. as
 early as possible in the NEXT frame's own pipeline, before that frame's
 input is even sampled, rather than anywhere inside `EndScene` at all) --
-not yet designed. **Parked here, off by default, until that redesign is
-done and independently confirmed correct via a real pacing/latency test
-before ever being turned on again**, rather than guessing at a second fix
-blind the same night as the first one failed live.
+not yet designed.
+
+**Final decision, same night**: "lets remove it from the config and
+reccomend RTSS for now." **Fully removed, not just parked disabled** --
+`FpsLimitEnabled`/`FpsLimitTargetFps`/`FpsLimitEnhancementsOnly` struct
+fields, config read/write, and the `Hook_EndScene` call site are all gone
+from source (`ConfigVersion` bumped 28->29 so existing player configs get
+the dead keys cleanly stripped on next launch, same migration mechanism
+already used for every prior schema change). Standing guidance is purely
+the RTSS recommendation already shipped in the config comments. Do not
+reintroduce an in-mod limiter without first confirming the real
+`EndScene`/`Present` call separation and designing the wait's placement
+around that -- this file's own trail above is the starting point, not a
+reason to avoid the idea forever.
 
 ### Investigation trail (original text below, corrected by the finding above)
 
