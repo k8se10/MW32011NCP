@@ -10624,26 +10624,34 @@ void InstallAnalogInputHooks()
         LogFromController(buf);
     }
 
-    // issue #96 defensive crash mitigation (2026-08-27) -- see the big comment above
-    // Hook_00500660/Hook_006cdb40's own definitions. NOT a real fix, root cause still
-    // unconfirmed -- see known_issues.md.
-    MH_STATUS s500660 = MH_CreateHook(reinterpret_cast<LPVOID>(0x00500660), &Hook_00500660, &g_orig_00500660);
-    sprintf_s(buf, "[hooks] MH_CreateHook(00500660 issue96-mitigation) = %d", static_cast<int>(s500660));
-    LogFromController(buf);
-    if (s500660 == MH_OK) {
-        MH_STATUS e500660 = MH_EnableHook(reinterpret_cast<LPVOID>(0x00500660));
-        sprintf_s(buf, "[hooks] MH_EnableHook(00500660 issue96-mitigation) = %d", static_cast<int>(e500660));
-        LogFromController(buf);
-    }
-
-    MH_STATUS s6cdb40 = MH_CreateHook(reinterpret_cast<LPVOID>(0x006cdb40), &Hook_006cdb40, &g_orig_006cdb40);
-    sprintf_s(buf, "[hooks] MH_CreateHook(006cdb40 issue96-mitigation) = %d", static_cast<int>(s6cdb40));
-    LogFromController(buf);
-    if (s6cdb40 == MH_OK) {
-        MH_STATUS e6cdb40 = MH_EnableHook(reinterpret_cast<LPVOID>(0x006cdb40));
-        sprintf_s(buf, "[hooks] MH_EnableHook(006cdb40 issue96-mitigation) = %d", static_cast<int>(e6cdb40));
-        LogFromController(buf);
-    }
+    // issue #96 defensive crash mitigation (2026-08-27) -- REVERTED same day,
+    // live-reported to prevent the game from launching at all (same failure
+    // signature as the FUN_00552e70 revert earlier in this file -- see that
+    // comment for the general lesson: a clean-looking disassembly/decompile is
+    // NOT sufficient evidence a function is safe to intercept; call frequency,
+    // startup-time timing, or something MinHook's trampoline can't cleanly
+    // handle at these two specific addresses can still crash the game on hook
+    // install, invisible to static analysis alone). Do not re-enable without
+    // isolating which of the two hooks is actually responsible (install only
+    // one at a time) and confirming via a safer method first -- see
+    // known_issues.md issue #96.
+    // MH_STATUS s500660 = MH_CreateHook(reinterpret_cast<LPVOID>(0x00500660), &Hook_00500660, &g_orig_00500660);
+    // sprintf_s(buf, "[hooks] MH_CreateHook(00500660 issue96-mitigation) = %d", static_cast<int>(s500660));
+    // LogFromController(buf);
+    // if (s500660 == MH_OK) {
+    //     MH_STATUS e500660 = MH_EnableHook(reinterpret_cast<LPVOID>(0x00500660));
+    //     sprintf_s(buf, "[hooks] MH_EnableHook(00500660 issue96-mitigation) = %d", static_cast<int>(e500660));
+    //     LogFromController(buf);
+    // }
+    //
+    // MH_STATUS s6cdb40 = MH_CreateHook(reinterpret_cast<LPVOID>(0x006cdb40), &Hook_006cdb40, &g_orig_006cdb40);
+    // sprintf_s(buf, "[hooks] MH_CreateHook(006cdb40 issue96-mitigation) = %d", static_cast<int>(s6cdb40));
+    // LogFromController(buf);
+    // if (s6cdb40 == MH_OK) {
+    //     MH_STATUS e6cdb40 = MH_EnableHook(reinterpret_cast<LPVOID>(0x006cdb40));
+    //     sprintf_s(buf, "[hooks] MH_EnableHook(006cdb40 issue96-mitigation) = %d", static_cast<int>(e6cdb40));
+    //     LogFromController(buf);
+    // }
 
     // Local-var lookup trace hook (2026-08-01, A-glyph investigation continuation) --
     // DISABLED, live-reported to prevent the game from launching at all (same failure
