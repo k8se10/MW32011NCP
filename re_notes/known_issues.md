@@ -13721,12 +13721,54 @@ hook correctly than `FUN_00497210` ever was.
    the pass that found the rest of this design -- purely a tooling retry
    away, not a hard unknown.
 
-**Current shipped state**: `Hook_FUN_00497210`'s install call is commented
-out in `analog_input_hooks.cpp` (hook definition kept). Motion blur is
-functionally dead (the config toggle still exists but nothing ever fires
-it) until the `FUN_00694650` hook above is implemented and confirmed safe.
-RCAS, aniso forcing, and the Phase A pipeline foundation are all
-unaffected and confirmed NOT implicated in this crash.
+**UPDATED same day (2026-08-27), after live-implementing and testing the
+`FUN_00694650` redesign**: it works -- crash-free, confirmed via live play
+after the redesign shipped. But it introduced a real, separate, known
+regression: **native HUD gets blurred along with the 3D scene**, the exact
+"Round 2" problem this whole Phase E effort was originally built to solve.
+Root cause: HUD drawing happens *inside* `FUN_00694650`'s own call tree
+(via the `FUN_00497210` chain), so a POST-hook firing when `FUN_00694650`
+itself returns fires *after* HUD pixels are already baked into the
+backbuffer -- structurally too late, independent of anything else.
+
+**Direct user question, investigated**: "is there something we do which is
+potentially unsafe for constant state" -- yes, a real bug found and fixed:
+`DrawFullScreenPass` never saved/restored the viewport at all, and force-
+nulled texture stage 0 instead of restoring the engine's actual prior
+binding (FVF was never restored either). Fixed properly (full detail in
+that function's own header comment, `overlay_hud.cpp`). **This fix is real
+and worth keeping regardless**, but a direct live re-test answered the
+follow-up question decisively: re-enabling the ORIGINAL `FUN_00497210`
+hook (which correctly excludes HUD) WITH this state fix applied still
+**crashed again, rapidly**. Conclusive: the crash and the HUD-bleed are
+two genuinely separate bugs. The crash is specifically about firing
+against a partial/mid-composite backbuffer during `FUN_00508970`'s
+exclusion-zone recursion -- device-state hygiene never touches that
+mechanism at all.
+
+**Investigated, inconclusive**: `FUN_00693ff0` (called immediately after
+every `FUN_00497210`/`FUN_00508970` completion, inside `FUN_00694650`'s own
+three loops) was checked as a candidate for where native HUD actually
+draws, hoping to find a pre-hook point there instead. Disassembly shows
+it's a conditionally-gated (`[ESI+0x320] != 0`) per-viewport step doing
+the same class of composite bookkeeping as `FUN_00694800`'s own post-
+processing, ending in a call to a new, not-yet-examined function
+(`FUN_004ee300`) -- not obviously the HUD-draw call itself. Genuinely
+unresolved.
+
+**Current shipped state**: `FUN_00694650` hook is active (`Hook_694650`,
+`analog_input_hooks.cpp`) -- motion blur renders, confirmed crash-free
+via two independent live tests. `Hook_FUN_00497210` is disabled again,
+permanently, confirmed via a SECOND live crash even with the state fix
+applied -- do not re-enable without solving the real/partial-composite
+distinction (needs `FUN_00508970` entry/exit tracking, or finding the
+actual HUD-draw call site to hook precisely instead of a coarse function
+boundary). **Known, accepted, open issue with the current shipped
+state: motion blur incorrectly blurs native HUD elements** -- a real
+regression from the feature's own original "Round 2" design intent, not
+new tonight, just re-surfaced by this whole redesign. RCAS, aniso
+forcing, and the Phase A pipeline foundation are all unaffected and
+confirmed NOT implicated in the crash at any point in tonight's testing.
 
 ### FOLLOW-UP STUTTER, same day (2026-08-27) -- RESOLVED: the pre-existing, already-documented 30Hz-tick engine characteristic, made newly perceptible by motion blur being disabled, NOT a new bug
 
