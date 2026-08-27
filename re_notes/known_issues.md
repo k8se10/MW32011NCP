@@ -14166,13 +14166,54 @@ fps through our mod like riva does... add a general fps limiter that is
 fully configurable if you want it in normal gameplay or with enhancements
 only." Built and shipped as `[Video] FpsLimitEnabled`/`FpsLimitTargetFps`/
 `FpsLimitEnhancementsOnly` (`mod_config.h`/`.cpp`, `overlay_hud.cpp`'s new
-`ApplyFpsLimitIfEnabled`) -- a post-Present hybrid Sleep+spin limiter on
-`Hook_EndScene`'s own tail, same technique real limiters (RTSS included)
-use rather than a bare `Sleep()`. Off by default, `FpsLimitEnhancementsOnly`
-defaults to true (only caps while motion blur/FSR/render-scale is actually
-engaged) with the option to make it a general always-on limiter instead.
-Builds clean; not yet live-tested (the game was running on the test
-machine when this was implemented).
+`ApplyFpsLimitIfEnabled`) -- a hybrid Sleep+spin limiter placed right after
+`g_origEndScene(device)` returns, at the tail of `Hook_EndScene`, intended
+as a "post-Present" wait (same technique real limiters like RTSS use).
+
+**LIVE-TESTED, FAILED (2026-08-27, same night): "our limiter makes
+horrible pacing... its mad delay too input lagh... thats with rtss off."**
+**Immediately reverted live** (`FpsLimitEnabled` set back to `0` in the
+running config, hot-reloads within ~1s) -- the feature ships OFF by
+default in code regardless, so no other install was ever affected.
+**Confirmed clean by the user**: "confirmed when toggled off immediately
+fine" -- the hot-reload path itself works correctly, and the limiter was
+the sole, isolated cause (nothing else needed changing).
+
+**Real, likely root cause, diagnosed but not yet independently confirmed**:
+the design assumed `EndScene` and the real `Present` call are effectively
+the same moment, i.e. that waiting right after `g_origEndScene` returns is
+a genuine POST-Present wait. This is very likely wrong -- in normal D3D9
+usage, `EndScene` (ends 3D-scene recording) and `Present` (flips the
+backbuffer, the actual display event) are two separate API calls, with
+`Present` invoked by the game's own render loop AFTER `EndScene` returns,
+not internally by `EndScene` itself. If that's the real sequence here (not
+yet confirmed via RE or a diagnostic timestamp log), the wait this session
+implemented sits BEFORE the real `Present` call, not after -- a genuine
+front-edge wait: it holds an already-fully-rendered frame back from ever
+being displayed for the wait's own duration, then Present finally fires
+right after. That's a direct, sufficient explanation for both reported
+symptoms: real added input/display latency (the frame sits ready but
+delayed), and worse pacing than a correct post-Present design would
+produce (the wait doesn't account for the real, variable gap between
+`EndScene` returning and the game's own subsequent `Present` call).
+
+**Not yet done -- the real next step before attempting another fix**:
+confirm the `EndScene`/`Present` call-separation hypothesis directly
+(e.g. a diagnostic hook/log on the real `Present` vtable slot -- ironic
+given this project's own history already found a direct `Present` hook
+detour itself doesn't reliably fire here, likely Steam Overlay taking the
+same vtable slot, per the 2026-07-15 finding this file already documents
+elsewhere -- so confirming call ORDER may need a different technique than
+hooking Present directly, e.g. timestamping around the real backbuffer
+flip via a different, already-reliable hook). Given no working Present
+hook exists in this codebase, a corrected design likely needs the wait
+moved to a genuinely different point in the per-frame pipeline (e.g. as
+early as possible in the NEXT frame's own pipeline, before that frame's
+input is even sampled, rather than anywhere inside `EndScene` at all) --
+not yet designed. **Parked here, off by default, until that redesign is
+done and independently confirmed correct via a real pacing/latency test
+before ever being turned on again**, rather than guessing at a second fix
+blind the same night as the first one failed live.
 
 ### Investigation trail (original text below, corrected by the finding above)
 
