@@ -131,6 +131,7 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#96](#96-game-literally-exited-mid-session----corrected-2026-08-27-not-caused-by-internalrenderscalepercent-issue-88-that-original-isolation-was-wrong-two-real-crash-sites-now-live-captured-root-cause-still-open) — Motion blur crash ("game literally exited") — **Resolved** — root-caused to `Hook_FUN_00497210`'s unconditional install; final shipped hook is `FUN_00693ff0`, confirmed crash-free live
 - [#97](#97-motion-blur-issue-96-continuation-menu--loading-screen-gates-shipped-cutscene-report-retracted-on-retest----current-state-closed-for-tonight) — Motion blur menu/loading-screen gates + cutscene report — **Resolved** (cutscene report retracted on retest, no code change needed)
 - [#98](#98-london-mission-cutscene-audio-continues-after-skip-on-some-cutscenes----reported-not-yet-investigated) — London mission: cutscene audio continues after skip — **Open, not investigated**
+- [#99](#99-camera-look-stutterjitter----correction-confirmed-pc-specific-via-a-cross-machine-test-not-universal-native-behavior-as-issue-96s-follow-up-concluded-2026-08-27) — Camera-look stutter — **Investigating** (confirmed PC-specific via cross-machine test; corrects issue #96's "universal native behavior" framing)
 
 ---
 
@@ -14127,3 +14128,36 @@ the negative source search above and needs a live-debugging pass to find
 how. Not chased further this session per the user's own explicit prioritization
 tonight (missile-accel lead and the 30Hz-tick dig took precedence, then the
 session moved to documentation close-out).
+
+## 99. Camera-look stutter/jitter -- CORRECTION: confirmed PC-specific via a cross-machine test, not universal native behavior as issue #96's follow-up concluded (2026-08-27)
+
+**Status: Investigating -- real correction to a prior conclusion, not a
+closed item.** **This entry originally (and wrongly) attributed a
+cross-machine PC test to the loading-screen black screen** (issue in
+`PATCHNOTES.md`/git history, since corrected) -- direct user correction:
+"no dude thats not what i was testing for, that is a known mod issue
+[the loading-screen black screen is the already-tracked `ForceD3D9On12`
+black screen, see the Renderer-backend investigation entry above -- not a
+new or PC-specific finding]. what i was checking was the stutter in
+camera." Fixed here; the loading-screen black screen needed no new entry
+(already tracked).
+
+**The real finding**: the user tested the camera-look stutter/jitter
+(issue #90's tickrate-diag investigation, and issue #96's earlier
+"FOLLOW-UP STUTTER... RESOLVED" writeup) across two physical machines --
+**reproduces on the main PC, completely fine on a second PC.**
+
+**This does NOT contradict issue #96's mod-uninstall confirmation** (the
+jitter was still present with the mod fully uninstalled, on the main PC) --
+both facts are independently true and compatible: the jitter is genuinely
+native engine behavior (not this mod's code, confirmed via uninstall) AND
+it's specific to some condition on the main PC that the second PC doesn't
+share (hardware, GPU driver, monitor refresh-rate handling, or a display/
+presentation-mode difference) -- confirmed via the cross-machine test. The
+prior "not a bug, universal native 30Hz-tick behavior" framing was too
+broad; it should read "native engine behavior on at least one real
+hardware/driver/display configuration," not "universal across all
+hardware." **Not yet investigated**: what's actually different between the
+two PCs (refresh rate, GPU vendor/driver, `com_maxfps`/vsync config, RTSS
+presence). User is continuing to test settings on the affected PC; revisit
+once more detail on the actual PC-to-PC difference is available.
