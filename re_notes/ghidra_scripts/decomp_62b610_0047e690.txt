@@ -1,0 +1,50 @@
+================================================================
+Function: FUN_0062b610 @ 0062b610
+----------------------------------------------------------------
+
+int FUN_0062b610(void)
+
+{
+  uint *puVar1;
+  int iVar2;
+  uint unaff_EBX;
+  int unaff_FS_OFFSET;
+  
+  puVar1 = (uint *)(*(int *)(*(int *)(unaff_FS_OFFSET + 0x2c) + _tls_index * 4) + 8);
+  *puVar1 = *puVar1 | unaff_EBX;
+  iVar2 = FUN_0062abe0();
+  if (iVar2 != 0) {
+    FUN_0062b2c0();
+    return iVar2;
+  }
+  iVar2 = FUN_0062b410();
+  return iVar2;
+}
+
+
+
+================================================================
+Function: FUN_0047e690 @ 0047e690
+----------------------------------------------------------------
+
+void FUN_0047e690(int param_1,undefined4 ***param_2,undefined4 param_3)
+
+{
+  undefined4 **local_20;
+  undefined4 local_1c;
+  undefined4 local_18;
+  undefined4 local_14;
+  
+  if (*(char *)(param_1 + 8) == '\x01') {
+    local_20 = param_2;
+  }
+  else {
+    FUN_00514600(&local_20,0x20,&DAT_0084d4b8,(double)(float)param_2);
+    param_2 = &local_20;
+  }
+  FUN_0062a8c0(param_2,local_1c,local_18,local_14,param_3);
+  return;
+}
+
+
+
