@@ -10945,42 +10945,39 @@ void InstallAnalogInputHooks()
     // REPLACED 2026-08-27 with FUN_00694650 instead -- fixed the crash, but
     // live-confirmed to blur native HUD (HUD drawing happens INSIDE
     // FUN_00694650's own call tree, so a post-hook there fires after HUD
-    // pixels are already baked into the backbuffer). FUN_00694650 hook
-    // DISABLED here as a result -- see Hook_694650's own definition, kept for
-    // a future session's use once the real/partial-composite distinction is
-    // solved (needs FUN_00508970 entry/exit tracking, not yet built).
+    // pixels are already baked into the backbuffer).
     //
-    // RE-ENABLED HERE, same day, same session, direct user instruction ("our
-    // original crashing hook is the one we should be trying again with the
-    // restore mech") -- now that DrawFullScreenPass's own real state-restore
-    // bug is fixed (viewport was never saved/restored at all; texture stage 0
-    // was force-nulled instead of restored -- see that function's own big
-    // header comment), testing whether THIS was actually a contributing
-    // factor to the original crash, not just the separate HUD-bleed symptom.
-    // No confirmed causal mechanism connecting D3D9 device-state incompleteness
-    // to the actual crash found (CPU-side memory corruption in unrelated
-    // menu-state/GSC-decode code, not a rendering-state or driver failure) --
-    // this is a genuine, honest experiment, not a confirmed fix. Bounded risk:
-    // worst case is the game crashes again (recoverable, not a system-level
-    // risk like the live-debugger incidents), and a proven git-bisect/
-    // isolation-test process already exists if it does. NOT yet independently
-    // live-confirmed as of this commit.
-    MH_STATUS sSceneFinish = MH_CreateHook(reinterpret_cast<LPVOID>(0x00497210), &Hook_FUN_00497210, reinterpret_cast<LPVOID*>(&g_origSceneFinish));
-    sprintf_s(buf, "[hooks] MH_CreateHook(00497210 scene-finish-motionblur RETRY-WITH-STATE-FIX) = %d", static_cast<int>(sSceneFinish));
-    LogFromController(buf);
-    if (sSceneFinish == MH_OK) {
-        MH_STATUS eSceneFinish = MH_EnableHook(reinterpret_cast<LPVOID>(0x00497210));
-        sprintf_s(buf, "[hooks] MH_EnableHook(00497210 scene-finish-motionblur RETRY-WITH-STATE-FIX) = %d", static_cast<int>(eSceneFinish));
-        LogFromController(buf);
-    }
-    // MH_STATUS s694650 = MH_CreateHook(reinterpret_cast<LPVOID>(0x00694650), &Hook_694650, &g_orig_694650);
-    // sprintf_s(buf, "[hooks] MH_CreateHook(00694650 scene-composite-motionblur) = %d", static_cast<int>(s694650));
+    // RE-TESTED same day: re-enabled FUN_00497210 (HUD exclusion confirmed
+    // correct, exactly as before) now that DrawFullScreenPass's own real
+    // state-restore bug was also fixed (viewport was never saved/restored;
+    // texture stage 0 was force-nulled instead of restored). RESULT: crashed
+    // again, rapidly -- CONCLUSIVE. The state-restore fix does NOT address the
+    // crash mechanism. Confirms the crash is specifically about the multi-fire-
+    // against-a-partial-backbuffer timing issue (FUN_00508970's recursive
+    // exclusion-zone carving), not D3D9 device-state hygiene -- these are two
+    // genuinely separate bugs, both real, only one of which this state fix
+    // touches. FUN_00497210 hook RE-DISABLED here, permanently, based on this
+    // second live crash confirmation -- do not re-enable without solving the
+    // real/partial-composite distinction first (needs FUN_00508970 entry/exit
+    // tracking on FUN_00694650, not yet built). Reverted to FUN_00694650
+    // below -- crash-free, confirmed working baseline, HUD-bleed the one
+    // remaining known issue.
+    // MH_STATUS sSceneFinish = MH_CreateHook(reinterpret_cast<LPVOID>(0x00497210), &Hook_FUN_00497210, reinterpret_cast<LPVOID*>(&g_origSceneFinish));
+    // sprintf_s(buf, "[hooks] MH_CreateHook(00497210 scene-finish-motionblur RETRY-WITH-STATE-FIX) = %d", static_cast<int>(sSceneFinish));
     // LogFromController(buf);
-    // if (s694650 == MH_OK) {
-    //     MH_STATUS e694650 = MH_EnableHook(reinterpret_cast<LPVOID>(0x00694650));
-    //     sprintf_s(buf, "[hooks] MH_EnableHook(00694650 scene-composite-motionblur) = %d", static_cast<int>(e694650));
+    // if (sSceneFinish == MH_OK) {
+    //     MH_STATUS eSceneFinish = MH_EnableHook(reinterpret_cast<LPVOID>(0x00497210));
+    //     sprintf_s(buf, "[hooks] MH_EnableHook(00497210 scene-finish-motionblur RETRY-WITH-STATE-FIX) = %d", static_cast<int>(eSceneFinish));
     //     LogFromController(buf);
     // }
+    MH_STATUS s694650 = MH_CreateHook(reinterpret_cast<LPVOID>(0x00694650), &Hook_694650, &g_orig_694650);
+    sprintf_s(buf, "[hooks] MH_CreateHook(00694650 scene-composite-motionblur) = %d", static_cast<int>(s694650));
+    LogFromController(buf);
+    if (s694650 == MH_OK) {
+        MH_STATUS e694650 = MH_EnableHook(reinterpret_cast<LPVOID>(0x00694650));
+        sprintf_s(buf, "[hooks] MH_EnableHook(00694650 scene-composite-motionblur) = %d", static_cast<int>(e694650));
+        LogFromController(buf);
+    }
 
     // task #6/#23 follow-up (2026-07-21) -- level-load-safe glyph-font-extension
     // trigger, see the big comment above Hook_FUN_0053cbc0's definition for the full
