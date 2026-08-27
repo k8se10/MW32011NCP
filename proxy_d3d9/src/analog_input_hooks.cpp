@@ -10890,14 +10890,27 @@ void InstallAnalogInputHooks()
     // trail. POST-hook on the real per-viewport scene-finish orchestrator, so
     // motion blur runs after the real scene composite but before the engine's
     // own native HUD/UI drawing.
-    MH_STATUS sSceneFinish = MH_CreateHook(reinterpret_cast<LPVOID>(0x00497210), &Hook_FUN_00497210, reinterpret_cast<LPVOID*>(&g_origSceneFinish));
-    sprintf_s(buf, "[hooks] MH_CreateHook(00497210 scene-finish-motionblur) = %d", static_cast<int>(sSceneFinish));
-    LogFromController(buf);
-    if (sSceneFinish == MH_OK) {
-        MH_STATUS eSceneFinish = MH_EnableHook(reinterpret_cast<LPVOID>(0x00497210));
-        sprintf_s(buf, "[hooks] MH_EnableHook(00497210 scene-finish-motionblur) = %d", static_cast<int>(eSceneFinish));
-        LogFromController(buf);
-    }
+    //
+    // ISOLATION TEST, DISABLED 2026-08-27 (issue #96) -- this was the ONE piece of
+    // this whole commit that ran completely unconditionally, regardless of
+    // MotionBlurEnabled (RunPreOverlayMotionBlurPassIfEnabled's own drawing code
+    // is correctly gated by the config -- this install call itself never was). A
+    // git bisect narrowed issue #96's crash to exactly this commit, and this
+    // function's own header comment already documents FUN_00497210 firing
+    // MULTIPLE TIMES in the same real frame under real conditions (killcam/PIP
+    // exclusion zones) -- the leading suspect. Disabled here to isolate: if this
+    // alone fixes the crash, the hook itself (not RCAS/aniso/the toggle-gated
+    // motion-blur draw code) is confirmed as the real cause. See known_issues.md
+    // issue #96 for the live test result once known. Do not re-enable without
+    // that confirmation.
+    // MH_STATUS sSceneFinish = MH_CreateHook(reinterpret_cast<LPVOID>(0x00497210), &Hook_FUN_00497210, reinterpret_cast<LPVOID*>(&g_origSceneFinish));
+    // sprintf_s(buf, "[hooks] MH_CreateHook(00497210 scene-finish-motionblur) = %d", static_cast<int>(sSceneFinish));
+    // LogFromController(buf);
+    // if (sSceneFinish == MH_OK) {
+    //     MH_STATUS eSceneFinish = MH_EnableHook(reinterpret_cast<LPVOID>(0x00497210));
+    //     sprintf_s(buf, "[hooks] MH_EnableHook(00497210 scene-finish-motionblur) = %d", static_cast<int>(eSceneFinish));
+    //     LogFromController(buf);
+    // }
 
     // task #6/#23 follow-up (2026-07-21) -- level-load-safe glyph-font-extension
     // trigger, see the big comment above Hook_FUN_0053cbc0's definition for the full
