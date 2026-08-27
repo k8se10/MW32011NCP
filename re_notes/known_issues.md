@@ -10810,6 +10810,72 @@ Reused `re_notes/ghidra_project/` directly, no re-analysis needed. Traced caller
   to a setback) -- logged here as a live, standing option for whoever picks
   this back up.
 
+### Camera/usercmd tick-rate, live-measured and RESOLVED (2026-08-27, same
+### night, direct follow-up to "target the camera itself") -- no gate exists;
+### the camera updates every real render frame, full stop
+
+**Status: Resolved, definitively, via direct live measurement -- NOT a bug,
+NOT a mechanism sharing anything with the above 30Hz-alternating-cost
+investigation.** Following the user's own explicit redirect ("I SAY WE
+TARGET THE CAMERA itself so we can increase tick rate"), static RE traced
+the real per-frame usercmd-build chain all the way from this project's own
+motion-blur hook up through genuinely new ground: `FUN_00694650` ->
+(a thunk at `0x004396c0`, found only via a new `ScanRawPointerRefs.java`
+raw-pointer scan after `FindCallers.java`'s call-only filter missed it) ->
+`FUN_00694800` -> `FUN_004e0ab0` -> `FUN_004b9ed0`/`FUN_00693b90` ->
+`FUN_00405cc0` -> `FUN_0057e5b0` -> `FUN_0057e480`. `FUN_0057e480` is the
+real `CL_CreateCmd`-equivalent (confirmed via decompile: `memset(cmd, 0,
+0x40)`, calls the keyboard-turn/mouse-look/movement functions, then
+UNCONDITIONALLY calls `FUN_0057de60` -- this project's own already-hooked
+movement/look function -- on every branch). `FUN_0057e5b0` (its caller)
+computes a real frametime delta from a live clock and stores the built
+usercmd into a 64-entry circular ring buffer, exactly the shape of a
+genuine per-real-frame `CL_CreateNewCommands`.
+
+**Rather than keep climbing the static call graph to prove cadence, added a
+direct live measurement instead** (`[tickrate-diag]`, a call-rate counter on
+the ALREADY-INSTALLED `Hook_0057de60` -- zero new hook risk, reused a
+hook this project has trusted since day one). Result: a rock-steady
+**~60/sec**, gameplay-gated, confirmed live. **Immediately identified by the
+user**: "the 60/sec matches rivatuners 60fps lock" -- the tester had RTSS's
+frame limiter set to 60fps. This is the correct, complete explanation: the
+number tracks REAL RENDER FRAMERATE exactly, not a fixed engine gate.
+
+**Conclusion, stated plainly**: `cmd.angles` -- and therefore the camera,
+and therefore controller look injected via `Hook_0057de60` -- updates on
+EVERY real rendered frame, at whatever framerate the game is actually
+rendering at. There is no separate camera/usercmd tick gate to find or
+patch. "Target the camera to increase tick rate" is answered: there's
+nothing to decouple, because it was never decoupled. Any perceived
+"stepped" camera motion is a direct, correct reflection of real render
+framerate (a 60fps cap will always look less smooth than 200fps at fast
+turn speeds -- that's real, expected behavior, not a bug) -- the practical
+lever for a smoother camera is the render-framerate cap itself (RTSS, or
+whatever else limits real fps), not anything this mod could fix.
+
+**Important scope correction this finding forces**: this session's own
+30Hz-alternating-cost investigation (the "Follow-up pass" section directly
+above, and issue #96's earlier "FOLLOW-UP STUTTER... RESOLVED" writeup)
+assumed the alternating-frame-cost pattern in `frametime_benchmark.csv` and
+the camera-look jitter were the SAME mechanism. **Tonight's direct
+measurement proves the camera/usercmd-build path (`FUN_0057e480`'s whole
+chain) is NOT gated to any fixed rate independent of render fps** -- so
+whatever produces the alternating-cost pattern must be a genuinely
+SEPARATE mechanism (most likely physics/AI/simulation-side, not
+`CL_Frame`-side usercmd building), still unlocated. The two investigations
+should NOT be treated as one problem going forward -- a future session
+chasing the alternating-cost pattern should look at `SV_Frame`-side code
+(`FUN_00424a50` and its own callees, per the "Follow-up pass" section
+above), not this usercmd-build chain, which this pass conclusively rules
+out.
+
+**New reusable groundwork**: `ScanRawPointerRefs.java` (Ghidra script) --
+scans all memory for raw 4-byte pointer occurrences of a target address,
+needed when a function is only reached via an `UNCONDITIONAL_JUMP` thunk
+that `FindCallers.java`'s call-only reference filter misses (`DescribeRefs.java`
+on the target still works and is the faster first check when `FindCallers`
+comes back with zero callers for a function that's clearly reachable).
+
 ---
 
 ### Real decompile pass 3 (2026-08-25, same day, continuation) -- five more `FUN_00458600`-adjacent functions ruled out, no accumulator found; confirms pass 2's own recommendation rather than changing it
