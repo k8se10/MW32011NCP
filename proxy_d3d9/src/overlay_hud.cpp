@@ -3417,6 +3417,30 @@ bool g_motionBlurRanThisFrame = false;
 void RunPreOverlayMotionBlurPassIfEnabled(void* device)
 {
     if (!g_modConfig.motionBlurEnabled) return;
+
+    // [Experimental] MotionBlurClcStateTestValue (2026-08-28, issue #99/#100) --
+    // direct user methodology: test each real clcState value exclusively, one
+    // at a time, instead of guessing which one means "gameplay". When active
+    // (>= 0), this REPLACES every other gate below entirely -- motion blur is
+    // conditionally OFF always, ungated only for this one exact clcState value
+    // -- a clean, uncontaminated test signal for whether this single value
+    // alone correctly distinguishes gameplay from menu/loading/cutscene,
+    // rather than layering a guess on top of the existing gates where a wrong
+    // guess could hide behind them. -1 (default) = disabled, falls through to
+    // the normal gates unchanged.
+    if (g_modConfig.motionBlurClcStateTestValue >= 0) {
+        constexpr uintptr_t kClcStateAddrForTest = 0x00B36218;
+        if (*reinterpret_cast<volatile int*>(kClcStateAddrForTest) !=
+            g_modConfig.motionBlurClcStateTestValue) {
+            return;
+        }
+        if (g_motionBlurRanThisFrame) return;
+        if (!EnsureMotionBlurShader(device)) return;
+        DrawFullScreenPass(device, g_motionBlurPixelShader, MotionBlurShaderSetupCallback);
+        g_motionBlurRanThisFrame = true;
+        return;
+    }
+
     // FIXED 2026-08-27 (issue #96, FUN_00693ff0 hook follow-up) -- live-reported
     // "breaks in menu": FUN_00693ff0 fires for menu viewport composites too, not
     // just real gameplay ones, so this pass was capturing/blurring menu UI. Same
@@ -3425,16 +3449,30 @@ void RunPreOverlayMotionBlurPassIfEnabled(void* device)
     // business running while a menu is up regardless of which engine hook
     // triggers it.
     if (IsMenuActive_Exported()) return;
-    // FIXED 2026-08-27, same follow-up -- live-reported "loading screens are
-    // broken" too. Same real in-level flag this project's own level-load
-    // detection already uses (kInLevelFlagAddr, analog_input_hooks.cpp --
-    // "the same flag tools/memdiff uses to detect level load") -- a raw
-    // address constant, safe to read directly here with no cross-file
-    // wrapper needed, matching this file's own established convention for
-    // other hardcoded diagnostic reads. Motion blur has no business running
-    // while a level isn't actually loaded (main menu already covered above,
-    // this covers the loading-screen state specifically, which the menu-
-    // active gate does not).
+    // REVERTED 2026-08-28 -- the clcState==4 allow-list gate tried here (issue
+    // #99/#100) was live-tested and FAILED: "loading/cutscenes are still
+    // affected after a further test and motion blur is now absent in gameplay
+    // despite being enabled." Direct user confirmation: "100% the 0/1/2/3/4
+    // state 4 is not gameplay." The 42-snapshot memdiff capture that produced
+    // this mapping sampled too sparsely (5s auto-interval + a few F9 presses)
+    // to actually validate what clcState reads on a PER-FRAME basis at the
+    // moment this hook fires -- a real reasoning gap: correlation across a
+    // handful of snapshot timestamps was treated as causally established
+    // without ever confirming clcState is consulted anywhere along this
+    // hook's own real call path (FUN_0042c2f0 -> FUN_00694650 ->
+    // FUN_00693ff0), which it may not be at all. See known_issues.md issue
+    // #99/#100 for the full trail -- clcState's real mapping to
+    // menu/loading/gameplay states is NOT settled, don't reuse it here again
+    // without a genuine per-frame live diagnostic (not sparse snapshots)
+    // confirming it first.
+    //
+    // Reverted to the original 2026-08-27 fix: kInLevelFlagAddr (0x00A98ACC)
+    // read as a proxy "in level" boolean. This is a raw per-frame TIME DELTA
+    // (now - lastFrameTime, clamped to 200ms), not a real level-state flag --
+    // but it's the version that was actually confirmed live-working for the
+    // menu case (loading/cutscene bleed was never independently confirmed
+    // fixed by it either way), so it's the safer known-quantity to stand on
+    // while a real replacement is found properly.
     constexpr uintptr_t kInLevelFlagAddrForBlurGate = 0x00A98ACC;
     if (*reinterpret_cast<volatile int*>(kInLevelFlagAddrForBlurGate) <= 0) return;
     if (g_motionBlurRanThisFrame) return; // already ran once this real frame --

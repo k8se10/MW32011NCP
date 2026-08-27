@@ -42,6 +42,9 @@ tools/**/obj/
 vcontroller_sim.exe
 memdiff.exe
 regbreak.exe
+tools/memdiff/diffsnap.exe
+tools/memdiff/dumpregion.exe
+tools/memdiff/readaddr.exe
 
 # memdiff full-process memory snapshots (~400MB each) -- diagnostic scratch data, never
 # meant to be committed

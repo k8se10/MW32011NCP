@@ -160,7 +160,7 @@ void ReadBool(const char* path, const char* section, const char* key, bool& outV
 // real system d3d9.dll's Direct3DCreate9On12 entry point instead of the ordinary
 // one -- a real, Microsoft-documented alternate export, not a third-party DLL swap.
 // See mod_config.h's own forceD3D9On12 field comment for the full design.
-constexpr unsigned long kCurrentConfigVersion = 30; // v23->v24: FsrSharpenEnabled/FsrSharpenStrength (Phase B)
+constexpr unsigned long kCurrentConfigVersion = 31; // v23->v24: FsrSharpenEnabled/FsrSharpenStrength (Phase B)
                                                      // v24->v25: MotionBlurEnabled/MotionBlurStrength (Phase E),
                                                      // FsrSharpenStrength default 0.5->0.3 (live feedback: "needs more softness")
                                                      // v25->v26: ForceAnisotropicFiltering
@@ -170,6 +170,7 @@ constexpr unsigned long kCurrentConfigVersion = 30; // v23->v24: FsrSharpenEnabl
                                                      // REMOVED (built+live-tested same night, failed -- see issue #99)
                                                      // v29->v30: FpsLimitEnabled/FpsLimitTargetFps/FpsLimitEnhancementsOnly
                                                      // REINTRODUCED on a real native-dvar (com_maxfps) mechanism instead
+                                                     // v30->v31: [Experimental] MotionBlurClcStateTestValue
 
 // Reads a legacy key's raw value, returning true only if the key genuinely existed
 // (unlike ReadFloat, which can't distinguish "absent" from "present but unparsable" --
@@ -701,6 +702,13 @@ void WriteDefaultConfig(const char* path)
         "; problem, without needing a recompile. These are not permanent settings --\n"
         "; expect entries here to eventually graduate to unconditional (and be\n"
         "; removed from this section) once confirmed correct and stable.\n"
+        "; Issue #99/#100: test which real clcState value (0/1/2/3/4/6/7) means\n"
+        "; \"gameplay,\" one at a time, instead of guessing. -1 = disabled (normal\n"
+        "; gates). Any other value: motion blur runs ONLY while clcState equals\n"
+        "; exactly that value, bypassing every other gate -- an uncontaminated\n"
+        "; test signal. Hot-reloadable -- change this and stay in-game to try the\n"
+        "; next value without relaunching.\n"
+        "MotionBlurClcStateTestValue=%d\n"
         "; Task #7/#29: also pushes the command \"n\" onto the real client command\n"
         "; queue on Fire's down-edge, alongside the real +attack kbutton call, in an\n"
         "; attempt to reach notifyonplayercommand's delivery mechanism for\n"
@@ -848,6 +856,7 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.overlayFontFamilyCondensed,
         g_modConfig.overlayFontItalic ? 1 : 0,
         g_modConfig.overlayTestCycleAllVariants ? 1 : 0,
+        g_modConfig.motionBlurClcStateTestValue,
         g_modConfig.fireNotifyQueueKick ? 1 : 0,
         g_modConfig.bindResolverHookLogging ? 1 : 0,
         g_modConfig.bindResolverGlyphSubstitution ? 1 : 0,
@@ -1095,6 +1104,11 @@ void LoadModConfig()
     }
     ReadBool(path, "Overlay", "FontItalic", g_modConfig.overlayFontItalic);
     ReadBool(path, "Overlay", "TestCycleAllVariants", g_modConfig.overlayTestCycleAllVariants);
+    {
+        int v = GetPrivateProfileIntA("Experimental", "MotionBlurClcStateTestValue",
+            g_modConfig.motionBlurClcStateTestValue, path);
+        g_modConfig.motionBlurClcStateTestValue = v;
+    }
     ReadBool(path, "Experimental", "FireNotifyQueueKick", g_modConfig.fireNotifyQueueKick);
     ReadBool(path, "Experimental", "BindResolverHookLogging", g_modConfig.bindResolverHookLogging);
     ReadBool(path, "Experimental", "BindResolverGlyphSubstitution", g_modConfig.bindResolverGlyphSubstitution);

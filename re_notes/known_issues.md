@@ -135,6 +135,7 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#100](#100-motion-blur-ui-disappears-when-taking-damage-while-moving----reported-not-yet-investigated-2026-08-27) — Motion blur: UI disappears on damage while moving — **Open** (suspected same root as #97's menu/loading/cutscene bleed, not yet investigated)
 - [#101](#101-roadmap-note-broader-performanceoptimizationmodern-hardware-pass-users-own-framing-2026-08-27) — Roadmap: growing into a "FusionFix-style" general enhancement patch — **Roadmap Idea**, not scoped
 - [#102](#102-external-feature-request-received-custom-widthheight-resolution-override-via-ini-for-custom-monitor-layoutssplitscreen----logged-not-investigated-2026-08-27) — External feature request: custom Width/Height resolution override via .ini — **Roadmap Idea**, not investigated
+- [#103](#103-real-crash--hard-hang-caught-live-via-memdiff----mass-asset-streaming-pool-deallocation-855-regions-during-active-gameplay-all-three-visual-enhancement-features-were-active-2026-08-28) — Real crash + hard hang, caught live via memdiff (asset-streaming-pool teardown) — **Investigating**, isolation test (enhancements on/off) not yet done
 
 ---
 
@@ -14339,6 +14340,25 @@ condition that actually triggers it.
   cross-referenced against a damage-taken timestamp) would settle which of
   these it is faster than guessing further -- not yet built.
 
+**Real gate fix shipped (2026-08-28), replacing the broken `kInLevelFlagAddr`
+heuristic with a ground-truth-confirmed `clcState` check** -- see issue
+#99's own entry for the full 42-snapshot capture that produced the real
+menu/loading/active-gameplay mapping. `RunPreOverlayMotionBlurPassIfEnabled`
+(`overlay_hud.cpp`) now gates on `DAT_00B36218 (clcState) == 4` (confirmed
+ACTIVE GAMEPLAY) as a positive allow-list, replacing the old
+`kInLevelFlagAddr > 0` proxy check (which was never a real level-state flag
+at all -- confirmed to be a raw per-frame time delta). This correctly
+excludes menu (`clcState==0`) and loading (`clcState==6`, corrected from
+this issue's own earlier wrong static-RE guess of state 2) by construction,
+and also excludes cinematic and any other not-yet-characterized state,
+since only the one directly-confirmed-safe value is allowed through.
+**Does NOT address the damage-while-moving report this issue is actually
+about** -- that symptom's own live diagnostic (above) still isn't built;
+this fix only replaces the loading-screen gate's unreliable foundation with
+a real one. Builds clean, deployed. Not yet independently live-tested for
+either the loading-screen case (now real instead of coincidental) or the
+original damage-while-moving report.
+
 ## 101. Roadmap note: broader performance/optimization/modern-hardware pass, user's own framing (2026-08-27)
 
 **Status: Roadmap Idea, not scoped.** Direct user framing, end of a long
@@ -14399,3 +14419,95 @@ framing is correct), whether the described clipping/black-bar symptom is
 real and reproducible, or whether this overlaps with the already-shipped
 `InternalRenderScalePercent` feature (issue #88) in any way. A real RE/
 design pass is needed before implementation -- not scoped yet.
+
+## 103. Real crash + hard hang caught live via memdiff -- mass asset-streaming-pool deallocation (~855 regions) during active gameplay, all three visual-enhancement features were active (2026-08-28)
+
+**Status: Investigating -- real, concrete evidence captured; root cause (native
+engine race vs. this mod's own hooks) not yet isolated.** Direct user report,
+significant escalation from the earlier loading-screen black-screen report:
+"the black screen in menus/loading and cutscenes is a critical issue it even
+made the game crash and process legit hang."
+
+**How this was caught**: `tools/memdiff/main.cpp`'s `livedump` mode (F9-
+triggered + 5s-auto-interval full memory snapshots) was ungated this session
+(direct user request -- it previously waited on `IsInLevel()`, the same
+now-distrusted `kInLevelFlagAddr` frame-time-delta heuristic under
+investigation in issue #99/#100, which blocked it from capturing a main-menu
+state at all) and rebuilt. A live session captured 42 full snapshots
+(`livedump_001.snap`-`livedump_042.snap`) across menu -> level load ->
+active gameplay, ending with the real process exit.
+
+**Two new streaming-analysis tools were built this session** (memdiff's own
+existing `diff`/`correlate` modes load BOTH full snapshots into RAM at once
+-- confirmed to fail outright, exit code 127/no output, once combined
+snapshot size crosses into the multi-GB range on this 32-bit tool):
+- `diffsnap.exe <A.snap> <B.snap>` -- indexes both files' region tables
+  (base+size+file-offset only, no data) then stream-compares matching
+  regions in 64KB chunks via seek+read, plus reports regions present in one
+  file but missing/resized in the other (a real signal memdiff.exe's own
+  diff mode silently drops). Peak memory stays at two small buffers
+  regardless of snapshot size.
+- `dumpregion.exe <addrHex> <lenDec> <file.snap>` -- streams a hex+ASCII
+  dump of a specific address range out of one saved snapshot, same
+  seek-don't-load technique, for inspecting exactly what a freed region held
+  before it was reclaimed.
+- `readaddr.exe <addrHex> <file1.snap> [file2.snap ...]` -- reads a single
+  4-byte int32 at a given address across a batch of snapshots (used for the
+  clcState timeline, issue #99/#100's own entry has the full mapping this
+  produced).
+
+**The real finding**: region-count/size summary across all 42 dumps showed
+two large transitions -- 31->32 (loading finished -> active gameplay,
+499 regions freed but 376 newly mapped/153 resized, real churn in both
+directions, a healthy transition) and 41->42 (**855 regions freed, only 19
+newly mapped, 10 resized** -- an almost entirely one-directional collapse).
+The process exited immediately after dump #42 completed (dump #43's
+best-effort attempt failed, "process may already be gone"). This is a
+genuinely different signature from the healthy loading->gameplay
+transition -- looks like a real teardown/unwind, not routine per-frame
+memory churn.
+
+**Contents of the freed regions, inspected directly from dump #041 (before
+they were freed)**:
+- A 34.94MB region (`0x4E1B0000`) contains structured floating-point data
+  matching a mesh vertex/normal buffer (repeating +/-1.0 boundary values in
+  a clear triplet/quad pattern) -- consistent with a large batch of streamed
+  level geometry.
+- Two paired 1.34MB regions (`0x5DA2A000`/`0x5DB99000`) point at each
+  other's address range in their own first two dwords, and both carry an
+  **identical magic number** (`0x70B5311B`) at the same +0x1C offset,
+  followed by a small header then high-entropy data consistent with
+  compressed texture data -- a real asset-cache block structure, not
+  coincidental heap noise.
+
+**This confirms the freed memory really was the asset-streaming/texture-
+cache pool being torn down mid-gameplay**, not an unrelated allocator.
+Directly matches the user's own stated hypothesis: "the assets are
+streaming and it could corrupt things hence the issue... we already know
+memory can shift in menus" (made independently, before these region
+contents were inspected).
+
+**clcState was stable at 4 (active gameplay, per issue #99/#100's own
+confirmed mapping) across the entire 34->42 range, including the crash
+itself** -- this did NOT happen during a loading screen or menu transition.
+If asset streaming caused this, it was a background streaming burst during
+gameplay (this engine does stream geometry/textures continuously in larger
+levels, not just at the loading screen), not the loading-screen case the
+new `clcState==4`-only motion-blur gate (this same session, issue #99/#100)
+was built to isolate -- **that gate fix does NOT address this crash**, they
+are different mechanisms.
+
+**Not yet isolated -- the real open question**: all three of this project's
+own visual-enhancement features were confirmed active during this capture
+(`InternalRenderScalePercent=150`, `FsrSharpenEnabled=1`,
+`MotionBlurEnabled=1`, live config at time of writing) -- meaning this
+project's own render hooks (motion blur's capture-and-redraw, FSR's
+full-screen pass, the 150%-supersampled render targets) were all live when
+the streaming pool was torn down. Real, unconfirmed possibility: one of
+these hooks held a stale reference to a texture/render-target that a
+background stream-eviction then freed out from under it. **Next step,
+not yet done**: an isolation test -- reproduce with all three enhancement
+features off (does it still crash? then it's native, independent of this
+mod) vs. on again (confirm reproducibility at all -- this was one real
+capture, not yet a repeated reproduction). Do not assume either direction
+without that test.
