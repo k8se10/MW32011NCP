@@ -3425,6 +3425,18 @@ void RunPreOverlayMotionBlurPassIfEnabled(void* device)
     // business running while a menu is up regardless of which engine hook
     // triggers it.
     if (IsMenuActive_Exported()) return;
+    // FIXED 2026-08-27, same follow-up -- live-reported "loading screens are
+    // broken" too. Same real in-level flag this project's own level-load
+    // detection already uses (kInLevelFlagAddr, analog_input_hooks.cpp --
+    // "the same flag tools/memdiff uses to detect level load") -- a raw
+    // address constant, safe to read directly here with no cross-file
+    // wrapper needed, matching this file's own established convention for
+    // other hardcoded diagnostic reads. Motion blur has no business running
+    // while a level isn't actually loaded (main menu already covered above,
+    // this covers the loading-screen state specifically, which the menu-
+    // active gate does not).
+    constexpr uintptr_t kInLevelFlagAddrForBlurGate = 0x00A98ACC;
+    if (*reinterpret_cast<volatile int*>(kInLevelFlagAddrForBlurGate) <= 0) return;
     if (g_motionBlurRanThisFrame) return; // already ran once this real frame --
         // FUN_00497210 (this pass's real trigger) can fire more than once per
         // frame when a splitscreen/PIP exclusion zone is active, see this
