@@ -726,16 +726,38 @@ struct ModConfig
     // layer over a setting the player could already set natively.
     bool forceAnisotropicFiltering = false;
 
-    // FpsLimitEnabled/FpsLimitTargetFps/FpsLimitEnhancementsOnly (2026-08-27) --
-    // built, live-tested same night, FAILED (real added input latency + bad
-    // pacing -- the post-EndScene wait landed before the real Present call, not
-    // after, per known_issues.md issue #99's diagnosis) and REMOVED entirely
-    // rather than left disabled. Use an external limiter (RivaTuner Statistics
-    // Server) instead -- see the [Video] section's own comment in
-    // WriteDefaultConfig for the standing recommendation. Do not reintroduce
-    // this without first confirming the real EndScene/Present call separation
-    // and redesigning the wait's placement accordingly -- see issue #99 for
-    // the full trail before attempting this again.
+    // [Video] FpsLimitEnabled/FpsLimitTargetFps/FpsLimitEnhancementsOnly
+    // (2026-08-27/28, issue #99) -- REBUILT on a completely different, much
+    // safer mechanism after the first attempt (a hand-rolled Sleep+spin wait
+    // on Hook_EndScene's own tail) failed live testing -- real added input
+    // latency and bad pacing, root-caused to the wait landing BEFORE the
+    // real Present call, not after (EndScene and Present are separate D3D9
+    // calls in this engine). Direct user question that prompted the
+    // rebuild: "why not use the actual games fps dvar?" -- correct, and a
+    // much better answer: `com_maxfps` is a real, already-functional native
+    // idTech/CoD client render-rate limiter, confirmed via decompile
+    // (known_issues.md issue #90) to be read by the real main-loop function
+    // (`FUN_00458600`, the genuine `Com_Frame`) to compute a real ms-per-
+    // frame throttle value the engine's own code already consumes
+    // correctly -- no guessing about where Present happens relative to any
+    // hook, because the engine paces itself using its own real mechanism.
+    // Implemented as a simple SetDvarFloat("com_maxfps", ...) write (see
+    // ApplyFpsLimitIfEnabled, overlay_hud.cpp) instead of any timing code of
+    // this project's own -- saves and restores the player's own original
+    // com_maxfps value when the override activates/deactivates, so it's
+    // never silently left overridden. Off by default.
+    bool fpsLimitEnabled = false;
+    // Target framerate cap, in whole fps. No fixed upper/lower bound baked in
+    // beyond a sane floor (see ReadConfig's own clamp) -- entirely up to the
+    // player's own hardware/display, not a value this project can recommend
+    // universally. 60 is a reasonable, common default, not a mandated number.
+    int fpsLimitTargetFps = 60;
+    // true (default): only cap framerate while a graphics-enhancement feature
+    // is actually engaged (MotionBlurEnabled, FsrSharpenEnabled, or
+    // InternalRenderScalePercent > 0) -- normal gameplay stays fully uncapped
+    // by this feature. false: cap framerate unconditionally, all the time,
+    // functioning as a general-purpose limiter independent of any enhancement.
+    bool fpsLimitEnhancementsOnly = true;
 
     // [Plugins] (2026-08-25) -- STRICTLY OPT-IN, OFF by default, same pattern as
     // useCustomOptionsScreen/autoMantleEnabled above. When enabled, plugin_loader.cpp
