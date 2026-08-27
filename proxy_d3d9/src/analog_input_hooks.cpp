@@ -5962,6 +5962,58 @@ __declspec(naked) void Hook_694650()
     }
 }
 
+// Issue #96, 2026-08-27 -- REAL fix attempt #3, replacing FUN_00694650 above
+// (disabled below, kept as a proven-safe fallback -- crash-free but blurs
+// native HUD). Direct user follow-up ("dissassemble any linked or nearby call
+// sites") led to the real answer: `FUN_00497210` itself calls the confirmed
+// per-HUD-element draw chain (`FUN_004f39e0` -> `FUN_004f7b40`) directly, so
+// "inside vs. outside FUN_00497210's call tree" was never the real
+// distinction. The actual mechanism: `FUN_00693ff0` -- called from ALL THREE
+// of `FUN_00694650`'s internal loops, immediately after that loop's own
+// `FUN_00497210`/`FUN_00508970` call returns -- gates on `[ESI+0x320] != 0`
+// and, when set, calls `FUN_004ee300`: a real command-dispatch loop
+// (`while (*param_1 != 0) { jumpTable[*param_1](&param_1); }`, reading an
+// opcode stream and dispatching each through a function-pointer table) --
+// exactly the shape of "draw this viewport's queued batch of 2D/UI elements",
+// not a one-off effect. `FUN_00497210`'s own hook returns BEFORE this
+// dispatch ever runs (correctly excludes it); `FUN_00694650`'s own hook
+// fires AFTER it (captures it). This hook targets the actual boundary
+// between them.
+//
+// Also structurally fixes the ORIGINAL crash mechanism, not just the
+// HUD-bleed: FUN_00693ff0 is called exactly ONCE per fully-composited
+// viewport -- from FUN_00694650's own loop, AFTER FUN_00508970's entire
+// recursive exclusion-zone carve completes and returns, never from within
+// the recursion itself. Unlike hooking FUN_00497210 directly (which fires on
+// every recursion leaf, including partial/mid-composite sub-rects), this
+// point is never reached until the whole viewport's composite -- exclusion
+// zones included -- is genuinely done.
+//
+// PRE-hook, naked (same "genuinely risky register/stack convention" class as
+// FUN_00694650, confirmed via disassembly: `CMP dword ptr [ESI+0x320],0x0` is
+// FUN_00693ff0's very first real instruction, no stack-argument load at all;
+// single plain `RET`, no operand, matching the same self-contained
+// prologue/epilogue shape already confirmed safe for this project's naked-
+// hook template). Fires BEFORE the trampoline (tail-jump, like Hook_0057de60
+// -- our own code doesn't need control back afterward), so motion blur
+// captures the backbuffer right when this viewport's 3D composite is
+// genuinely done, strictly before its own queued 2D/HUD dispatch (if any)
+// runs. `pushad`/`popad` preserve ESI (and everything else) around our own
+// C++ callback exactly like the existing PRE-hook template already does.
+namespace {
+void* g_orig_693ff0 = nullptr;
+}
+
+__declspec(naked) void Hook_693ff0()
+{
+    __asm {
+        pushad
+        call TriggerMotionBlurFromEngineHook
+        popad
+        jmp dword ptr [g_orig_693ff0]
+    }
+}
+
 // Issue #88, 2026-08-26 -- [Video] InternalRenderScalePercent, CORRECTED real
 // implementation. Real motivation, direct user framing: "basically the plan is
 // to allow better texture and internal render res as again above 1080p it looks
@@ -10970,12 +11022,28 @@ void InstallAnalogInputHooks()
     //     sprintf_s(buf, "[hooks] MH_EnableHook(00497210 scene-finish-motionblur RETRY-WITH-STATE-FIX) = %d", static_cast<int>(eSceneFinish));
     //     LogFromController(buf);
     // }
-    MH_STATUS s694650 = MH_CreateHook(reinterpret_cast<LPVOID>(0x00694650), &Hook_694650, &g_orig_694650);
-    sprintf_s(buf, "[hooks] MH_CreateHook(00694650 scene-composite-motionblur) = %d", static_cast<int>(s694650));
+    // FUN_00694650 hook -- proven crash-free but blurs native HUD (HUD's own
+    // queued command-dispatch, FUN_00693ff0->FUN_004ee300, runs INSIDE this
+    // function's own body, before it returns). Disabled here, kept as a
+    // known-safe fallback -- see Hook_694650's own definition.
+    // MH_STATUS s694650 = MH_CreateHook(reinterpret_cast<LPVOID>(0x00694650), &Hook_694650, &g_orig_694650);
+    // sprintf_s(buf, "[hooks] MH_CreateHook(00694650 scene-composite-motionblur) = %d", static_cast<int>(s694650));
+    // LogFromController(buf);
+    // if (s694650 == MH_OK) {
+    //     MH_STATUS e694650 = MH_EnableHook(reinterpret_cast<LPVOID>(0x00694650));
+    //     sprintf_s(buf, "[hooks] MH_EnableHook(00694650 scene-composite-motionblur) = %d", static_cast<int>(e694650));
+    //     LogFromController(buf);
+    // }
+
+    // Issue #96, 2026-08-27 -- REAL fix attempt #3, see the big comment above
+    // Hook_693ff0's own definition for the full RE trail. NOT yet
+    // independently live-confirmed as of this commit.
+    MH_STATUS s693ff0 = MH_CreateHook(reinterpret_cast<LPVOID>(0x00693ff0), &Hook_693ff0, &g_orig_693ff0);
+    sprintf_s(buf, "[hooks] MH_CreateHook(00693ff0 per-viewport-composite-done-motionblur) = %d", static_cast<int>(s693ff0));
     LogFromController(buf);
-    if (s694650 == MH_OK) {
-        MH_STATUS e694650 = MH_EnableHook(reinterpret_cast<LPVOID>(0x00694650));
-        sprintf_s(buf, "[hooks] MH_EnableHook(00694650 scene-composite-motionblur) = %d", static_cast<int>(e694650));
+    if (s693ff0 == MH_OK) {
+        MH_STATUS e693ff0 = MH_EnableHook(reinterpret_cast<LPVOID>(0x00693ff0));
+        sprintf_s(buf, "[hooks] MH_EnableHook(00693ff0 per-viewport-composite-done-motionblur) = %d", static_cast<int>(e693ff0));
         LogFromController(buf);
     }
 
