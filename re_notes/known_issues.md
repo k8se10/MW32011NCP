@@ -13802,3 +13802,23 @@ fix and full six-thread coverage are permanent, genuine improvements to
 this project's own diagnostic tooling, independent of this specific
 stutter report -- kept even though the stutter itself turned out to be a
 non-issue.
+
+**A second, independent symptom confirmed the same root cause, decisively
+this time**: separately, a related report ("looks jittery when turning")
+was directly, cleanly ruled out as anything in this mod's own code --
+**tested on keyboard+mouse look specifically, which this project's own
+input hooks never touch at all** (established, repeated fact throughout
+this project's history -- controller-only input injection, mouse look is
+always 100% native/unhooked), and the identical jitter reproduced there
+too. Since K+M look bypasses every line of this mod's own controller-input
+code entirely, this proves the jitter isn't in `InjectAllControllerInput`,
+the poll thread, or anything else this mod owns -- it's the SAME 30Hz-tick,
+no-interpolation engine characteristic already established above, just a
+different visible symptom of it: the view angle itself only *updates* 30
+times a second regardless of render rate, so a fast look-sweep at high
+framerate shows the same angle held across several consecutive rendered
+frames, then a visible jump to the next one -- "chunky"/stepped rotation,
+not smooth motion, independent of input method since it's a rendering/
+simulation-tick property, not an input-sampling one. Both symptoms
+tonight (the alternating frametime spikes, and this look-jitter) are one
+root cause, now confirmed two independent ways.
