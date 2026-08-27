@@ -13388,3 +13388,50 @@ itself is the cause.
    configure `E06D7363` to auto-ignore chance=3, then hands-off) for any
    further live investigation -- this is the first genuinely stable,
    repeatable live-debugging setup this project has had for this issue.
+
+### DEFENSIVE MITIGATION ATTEMPTED AND REVERTED, same day (2026-08-27) -- broke the game at launch entirely
+
+Attempted a defensive (not root-cause) patch for the two live-captured
+crashes above: hooked `FUN_00500660` (validate the source pointer via this
+file's own `LooksLikeValidPointer` plus an SEH backstop around the real
+trampoline call, skip-and-log instead of crashing) and `FUN_006cdb40` (a
+genuine no-op -- every known caller passes `(0,0)` into a function whose
+entire body is an unconditional write to address 0, so skipping the call
+changes nothing observable except no longer crashing). Both real calling
+conventions were confirmed via actual disassembly first (not just trusting
+the decompiler), matching this project's own established caution:
+`FUN_00500660` is plain `__cdecl` with `param_1`=buffer object @ `[ebp+8]`,
+`param_2`=source pointer @ `[ebp+0xC]`, `param_3`=size @ `[ebp+0x10]`;
+`FUN_006cdb40` is confirmed via `XOR EAX,EAX` then `MOV [EAX],ECX` to
+genuinely, unconditionally write to literal address 0, with its second
+argument loaded but never used for anything.
+
+Built clean (0 errors), deployed. **Live-reported immediately: the game
+would not even launch.** Same failure signature this file already
+documents for the earlier `FUN_00552e70` revert (task/issue history
+earlier in this document) -- a clean disassembly and a correct calling-
+convention read are NOT sufficient evidence a function is safe to
+intercept. Something about call frequency, startup-time timing, or how
+MinHook's trampoline interacts with these two specific addresses breaks
+the game before it can even reach the main menu, invisible to static
+analysis alone. **Reverted the same session** -- both `MH_CreateHook`/
+`MH_EnableHook` install calls commented out (hook definitions themselves
+left in the codebase, matching this project's established revert
+convention), rebuilt clean, redeployed.
+
+**Not yet determined which of the two hooks is actually responsible** --
+they were installed together and reverted together. **Concrete next step
+before ever re-attempting this**: install only ONE of the two hooks at a
+time to isolate which one (if not both) is the actual cause, and consider
+that `FUN_00500660` in particular is described by its own disassembly as a
+generic, widely-shared ring-buffer/stream-append helper (multiple internal
+call sites, referenced from many places per the earlier call-stack trace)
+-- it may simply be called far too early/often during normal startup
+(before this mod's own init has any business intercepting it) for a
+MinHook trampoline to coexist with safely, independent of whether the
+hook's own logic is correct.
+
+**This does not change the standing next-step priority above** -- the
+`InternalRenderScalePercent=100` retest (item 1) remains the single most
+decisive, safest, and cheapest thing to try next, and requires no hook
+changes at all.
