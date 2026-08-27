@@ -13727,3 +13727,78 @@ functionally dead (the config toggle still exists but nothing ever fires
 it) until the `FUN_00694650` hook above is implemented and confirmed safe.
 RCAS, aniso forcing, and the Phase A pipeline foundation are all
 unaffected and confirmed NOT implicated in this crash.
+
+### FOLLOW-UP STUTTER, same day (2026-08-27) -- RESOLVED: the pre-existing, already-documented 30Hz-tick engine characteristic, made newly perceptible by motion blur being disabled, NOT a new bug
+
+**Status: RESOLVED, real per-frame data confirms this is not a code bug at
+all -- it's issue #87/#79's own already-documented, already-accepted engine
+characteristic, unmasked by motion blur going dark as part of this same
+issue's crash fix above.**
+
+After the crash fix above, live-reported a "consistent" stutter (208fps on
+the counter) that survived an AV disable, a full system restart (three real
+unclean-shutdown events confirmed via `Kernel-Power` Event ID 41, ruled
+unrelated to this by timing/character), and every `[Experimental]`
+diagnostic toggle set to 0 (rules out the diagnostic tools themselves as
+the cause -- a real, useful elimination on its own).
+
+**Real gap found and fixed in this project's own stutter-diagnosis tool
+along the way**: `frame_benchmark.cpp`'s `FrameBenchmark_AddRumbleMs` wrote
+into its shared accumulator with ZERO locking, a genuine silent data race
+introduced when issue #87 (2026-08-25) moved vibration writes onto their
+own dedicated thread -- this file predates that refactor by over a week
+and was never revisited. Fixed with a proper `INIT_ONCE`-guarded
+`CRITICAL_SECTION`. Separately, a full `grep CreateThread` audit of the
+whole codebase found this benchmark tool had ZERO visibility into any of
+this project's SIX real background threads (poll, vibration, hot-reload,
+log-flush, asset-write, resource-log) -- it was built to catch main-thread
+stalls specifically, before most of these existed. Added
+`FrameBenchmark_Add{Poll,HotReload,LogFlush,AssetWrite,ResourceLog}ThreadMs`,
+five new CSV columns, each timing that thread's own real per-iteration
+work.
+
+**With full coverage finally in place, a fresh capture (`frametime_benchmark.csv`,
+26,300 frames) resolved this decisively**: frames 975-1002 (a representative
+sample, not an isolated fluke -- the same shape recurs throughout the whole
+capture) show a **perfectly regular alternating pattern** -- roughly
+32-44ms, then roughly 1.2-1.4ms, then 32-44ms again, sustained across dozens
+of consecutive frames. **Every one of the six background threads' own
+measured cost, and every one of this mod's own instrumented main-thread
+hook costs (`ourOwnTotalMs`), stays near-zero throughout** -- none of them
+explain a single one of these spikes. This is a clean, structural
+elimination: whatever costs 30-40ms every other frame is not in any code
+this project's own instrumentation can see, meaning it's genuinely inside
+the game engine itself, not this mod.
+
+**This exactly matches a real engine characteristic this project already
+found and fully explained** (issue #87/#79, 2026-08-25's own real
+`frametime_benchmark.csv` capture at the time): **the simulation tick is
+genuinely locked to 30Hz with no frame interpolation** -- at a high render
+framerate, most rendered frames between two real simulation ticks are
+literal repeats of the same simulated game state, and the frame that
+actually lands on a fresh tick costs meaningfully more than the ones that
+don't. Already documented then as "not a bug, and not something any of
+this project's own hooks can change without patching core engine tick
+logic (a much bigger, unstarted undertaking, not attempted)." This also
+cleanly explains why it doesn't correlate with render resolution (directly
+tested and confirmed this session) -- it's a CPU-side simulation-tick
+characteristic, not a GPU-rendering cost, so resolution has nothing to do
+with it structurally.
+
+**Why it became newly perceptible tonight, not new**: the user's own
+"motion blur made it way less clear" theory (raised independently, before
+this data existed) is exactly right -- that kind of regular frame-to-frame
+variation is precisely what a motion-blur pass visually smooths over.
+Disabling `Hook_FUN_00497210` as part of this same issue's crash fix
+removed that smoothing, making an already-existing, already-understood,
+already-accepted engine characteristic visible again, not introducing
+anything new. Once the real `FUN_00694650`-based motion blur fix above is
+implemented, this should become far less perceptible again -- but the
+underlying 30Hz-tick behavior itself was never a bug to fix, and isn't one
+now.
+
+**Real, lasting value from this detour**: the `frame_benchmark.cpp` race
+fix and full six-thread coverage are permanent, genuine improvements to
+this project's own diagnostic tooling, independent of this specific
+stutter report -- kept even though the stutter itself turned out to be a
+non-issue.
