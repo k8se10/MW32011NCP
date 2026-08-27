@@ -11211,24 +11211,47 @@ live-confirmed.
 
 ---
 
-## 96. Game "literally exited" mid-session, no menu open -- isolated to `InternalRenderScalePercent` (issue #88); the SAVED_SCREEN-size "fix" was WRONG and has been reverted (2026-08-26)
+## 96. Game "literally exited" mid-session -- CORRECTED 2026-08-27: NOT caused by `InternalRenderScalePercent` (issue #88), that original isolation was wrong; two real crash sites now live-captured, root cause still open
 
-**Status:** Open, but with 3 live, independent, unreconciled leads plus one
-theory ruled out, as of a 2026-08-26 4-way parallel static-RE pass (see that
-section, below the original investigation). Direct user isolation testing
-narrowed the crash precisely to `InternalRenderScalePercent` being active at
-any value (including 100%) -- solid, reproduced evidence. A theorized fix
-(below) was built and DEPLOYED, then caught live by the user almost
-immediately as actively harmful and has been reverted (clean rebuild, 0
-errors, redeployed). The real root-cause mechanism is still unconfirmed --
-next session's job is live-testing the 3 leads below, not more static
-theorizing. Three earlier "found it" claims in this same investigation (VRAM
-exhaustion; a Phase E multi-fire bug; the SAVED_SCREEN-size mismatch below)
-have now all been disproved or retracted -- kept below for the record, not
-deleted, since each was a real, good-faith, evidence-based attempt that
-genuinely narrowed the search even while being wrong itself. **Demonware/
-anti-tamper is ruled out** (see the parallel-pass section) -- this is a
-controlled internal engine exit, not an external kill.
+**Status:** Open. **The original framing of this issue (crash isolated to
+`InternalRenderScalePercent`) is DISPROVEN**, not just unconfirmed --
+2026-08-27's live-debugging session (see "LIVE DEBUGGING BREAKTHROUGH" and
+"DECISIVE RESULT" sections far below) reproduced both real crash
+mechanisms with the feature fully disabled (`=0`, its genuine off state)
+and zero player movement. The 2026-08-26 isolation test quoted just below
+this line was real evidence at the time, but incomplete -- it never tested
+with the feature fully off, only on at various percentages, so it could
+only ever show the crash correlates with something ELSE that happened to
+be active throughout that whole testing window (this project's own
+extended play sessions, heavy on menu/cutscene transitions), not that
+`InternalRenderScalePercent` itself is causal. **Two real crash sites are
+now live-confirmed** (`FUN_00500660`'s `memcpy` call with a stale/wild
+source pointer, and `FUN_006cdb40`'s unconditional null-pointer write,
+both reachable through ordinary menu/UI-state processing) -- see the
+bottom of this file for the full live-debugging trail, disassembly
+evidence, and a reverted defensive-patch attempt. Everything below this
+point in the original write-up is kept for the historical investigation
+record (it's how the real crash sites eventually got found), but its own
+"isolated to `InternalRenderScalePercent`" framing should not be trusted
+as current -- treat the sections at the end of this file as the up-to-date
+status.
+
+**Original 2026-08-26 status (superseded, kept for history):** Open, but
+with 3 live, independent, unreconciled leads plus one theory ruled out, as
+of a 2026-08-26 4-way parallel static-RE pass (see that section, below the
+original investigation). Direct user isolation testing narrowed the crash
+precisely to `InternalRenderScalePercent` being active at any value
+(including 100%) -- solid, reproduced evidence AT THE TIME, since
+disproven by the fuller test above. A theorized fix (below) was built and
+DEPLOYED, then caught live by the user almost immediately as actively
+harmful and has been reverted (clean rebuild, 0 errors, redeployed). Three
+earlier "found it" claims in this same investigation (VRAM exhaustion; a
+Phase E multi-fire bug; the SAVED_SCREEN-size mismatch below) have now all
+been disproved or retracted -- kept below for the record, not deleted,
+since each was a real, good-faith, evidence-based attempt that genuinely
+narrowed the search even while being wrong itself. **Demonware/anti-tamper
+is ruled out** (see the parallel-pass section) -- this is a controlled
+internal engine exit, not an external kill.
 
 **Critical new live evidence (2026-08-26, direct user report, after the
 parallel-pass section below was written): "its not vid_restart related IT
@@ -13435,3 +13458,69 @@ hook's own logic is correct.
 `InternalRenderScalePercent=100` retest (item 1) remains the single most
 decisive, safest, and cheapest thing to try next, and requires no hook
 changes at all.
+
+### DECISIVE RESULT, same day (2026-08-27): `InternalRenderScalePercent` is NOT the cause -- CONFIRMED, both crashes reproduce with the feature fully disabled and zero player movement
+
+**Status: RESOLVED, this specific question. Issue #96 as originally scoped
+("a crash regression caused by the render-scaling feature, issue #88") is
+DISPROVEN. Both live-captured crash mechanisms are real, pre-existing
+engine bugs, unrelated to `InternalRenderScalePercent`, that this
+project's own testing sessions happened to trigger while that feature was
+being tested -- not caused by it.**
+
+Corrected test run (the first attempt mistakenly used `=100`, which still
+actively engages the override at a 1:1 ratio -- `=0` is the real
+"hook never touches anything" disabled state per the feature's own doc
+comment): relaunched with `InternalRenderScalePercent=0` and **zero
+player movement**. **Both crashes fired again, in the same session**,
+confirmed via the still-active `logredirect` from the prior live-debugging
+setup (the user attached directly via the x32dbg GUI this time, not
+through the MCP `AttachProcess` tool -- confirms the underlying game
+behavior is not an artifact of any particular attach method either):
+
+- `EXCEPTION_ACCESS_VIOLATION` (read) at `iw5sp.007372EA` (`_memcpy`,
+  same address as every prior occurrence) -- source pointer `0xCC8B1F15`,
+  the exact same value already seen once before during this session's own
+  live call-stack capture (register `ESI`). **A second confirmed instance
+  of a deterministic, repeating bad-pointer value** (distinct from
+  `0xBDA95A85`, the OTHER value seen twice in two earlier crashes) --
+  reinforces that these are real, reproducible stale/dangling values tied
+  to consistent allocation/heap-layout patterns for a given game state,
+  not random uninitialized garbage.
+- `EXCEPTION_ACCESS_VIOLATION` (write) at `iw5sp.006CDB4C` (`FUN_006cdb40`'s
+  literal write to address 0, same as before).
+- Same terminal signature as every crash this entire investigation:
+  `exit code 0x8000DEAD`.
+
+**Practical consequence for how this project talks about this issue going
+forward**: `InternalRenderScalePercent` (issue #88) itself is NOT
+responsible for either crash mechanism found tonight -- it is safe to
+continue treating that feature on its own merits (visual quality, real
+GPU cost scaling, already confirmed live) separately from this crash.
+The real bug is a genuine, pre-existing defect in `FUN_00500660`'s
+memcpy-source-pointer handling and/or `FUN_006cdb40`'s unconditional
+null-write, reachable through ordinary menu/UI-state processing
+(`DAT_00b36210`-adjacent code, per the earlier resolved call stack) that
+this project's own testing sessions simply surfaced more often because
+those sessions run long and touch a lot of menu/cutscene transitions --
+not because scaling itself provokes it. **A future session should
+consider renaming/re-scoping this issue** (or splitting a fresh issue
+number for "the memcpy/null-write crash" distinct from "issue #88's
+scaling feature") for clarity, though the RE trail is kept together here
+since it was all found via the same investigation.
+
+**Updated next-step priority, given this resolution**:
+1. Find where `FUN_00500660`'s bad source pointer (`param_2`) actually
+   comes from -- trace backward from `FUN_006c2040`'s own decode loop
+   (frame #3 in the resolved call stack) to see what feeds it, and whether
+   it's reading from a buffer that was already freed/invalidated by the
+   time this runs.
+2. Determine what makes one of `FUN_006cdb40`'s 15 callers' `param_2` gate
+   true in real play -- this is the more tractable of the two bugs to
+   isolate (a simple boolean condition per caller, vs. a full pointer-
+   provenance trace for the other).
+3. Given the isolation-needed lesson from the reverted mitigation
+   (install only one hook at a time), re-attempt a defensive patch for
+   ONLY `FUN_006cdb40` first (the simpler, unconditional-no-op case) once
+   a future session has time to test it in isolation -- do not re-enable
+   both together again without that isolation step.
