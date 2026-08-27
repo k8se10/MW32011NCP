@@ -9512,6 +9512,29 @@ extern "C" void __cdecl InjectAllControllerInput(unsigned char* cmd)
         }
     }
 
+    // [clcstate-transition-diag] (2026-08-28, motion blur menu/loading/cutscene
+    // shared-root investigation, issue #100). Static RE of the real screen
+    // dispatcher (FUN_0057f5f0, the same function the crash-safety check above
+    // already reads DAT_00b36218/clcState from) strongly suggests clcState==2
+    // is LOADING (a fade-transition draw) and clcState==1 is CINEMATIC (gated
+    // on real bink-video-frame-ready checks) -- but this is inference from
+    // decompiled fade-math and bink-state checks, not a direct observation.
+    // Logs every real clcState transition so a live playtest through a level
+    // load and a cutscene shows the ACTUAL values directly, settling this the
+    // same way [tickrate-diag] settled the camera-tick question earlier
+    // tonight rather than guessing further from statics alone. Remove once
+    // this is confirmed and a real gate is wired from it.
+    {
+        static int32_t s_lastLoggedClcState = -999999;
+        int32_t clcStateNow = *reinterpret_cast<volatile int32_t*>(0x00b36218);
+        if (clcStateNow != s_lastLoggedClcState) {
+            s_lastLoggedClcState = clcStateNow;
+            char buf[96];
+            sprintf_s(buf, "[clcstate-transition-diag] clcState -> %d", clcStateNow);
+            LogFromController(buf);
+        }
+    }
+
     int32_t inLevelVal = *reinterpret_cast<volatile int32_t*>(kInLevelFlagAddr);
     bool nowInLevel = inLevelVal > 0;
     // Diagnostic (2026-08-16, issue #1 follow-up, live-reported "the mod starts
