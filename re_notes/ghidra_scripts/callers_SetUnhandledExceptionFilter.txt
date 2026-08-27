@@ -1,0 +1,176 @@
+Target symbol: SetUnhandledExceptionFilter @ EXTERNAL:0000009b
+Callers (3):
+  ___report_gsfailure @ 0074fcc8
+  __invoke_watson @ 0073f6bb
+  _abort @ 00746d74
+
+================================================================
+Function: ___report_gsfailure @ 0074fcc8
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+/* Library Function - Single Match
+    ___report_gsfailure
+   
+   Libraries: Visual Studio 2005 Release, Visual Studio 2008 Release, Visual Studio 2010 Release */
+
+void __cdecl ___report_gsfailure(void)
+
+{
+  undefined4 in_EAX;
+  HANDLE hProcess;
+  undefined4 in_ECX;
+  undefined4 in_EDX;
+  undefined4 unaff_EBX;
+  undefined4 unaff_EBP;
+  undefined4 unaff_ESI;
+  undefined4 unaff_EDI;
+  undefined2 in_ES;
+  undefined2 in_CS;
+  undefined2 in_SS;
+  undefined2 in_DS;
+  undefined2 in_FS;
+  undefined2 in_GS;
+  byte in_AF;
+  byte in_TF;
+  byte in_IF;
+  byte in_NT;
+  byte in_AC;
+  byte in_VIF;
+  byte in_VIP;
+  byte in_ID;
+  undefined4 unaff_retaddr;
+  UINT uExitCode;
+  undefined4 local_32c;
+  undefined4 local_328;
+  
+  _DAT_028262c0 =
+       (uint)(in_NT & 1) * 0x4000 | (uint)SBORROW4((int)&stack0xfffffffc,0x328) * 0x800 |
+       (uint)(in_IF & 1) * 0x200 | (uint)(in_TF & 1) * 0x100 | (uint)((int)&local_32c < 0) * 0x80 |
+       (uint)(&stack0x00000000 == (undefined1 *)0x32c) * 0x40 | (uint)(in_AF & 1) * 0x10 |
+       (uint)((POPCOUNT((uint)&local_32c & 0xff) & 1U) == 0) * 4 |
+       (uint)(&stack0xfffffffc < (undefined1 *)0x328) | (uint)(in_ID & 1) * 0x200000 |
+       (uint)(in_VIP & 1) * 0x100000 | (uint)(in_VIF & 1) * 0x80000 | (uint)(in_AC & 1) * 0x40000;
+  _DAT_028262c4 = &stack0x00000004;
+  _DAT_02826200 = 0x10001;
+  _DAT_028261a8 = 0xc0000409;
+  _DAT_028261ac = 1;
+  local_32c = DAT_0093cc94;
+  local_328 = DAT_0093cc98;
+  _DAT_028261b4 = unaff_retaddr;
+  _DAT_0282628c = in_GS;
+  _DAT_02826290 = in_FS;
+  _DAT_02826294 = in_ES;
+  _DAT_02826298 = in_DS;
+  _DAT_0282629c = unaff_EDI;
+  _DAT_028262a0 = unaff_ESI;
+  _DAT_028262a4 = unaff_EBX;
+  _DAT_028262a8 = in_EDX;
+  _DAT_028262ac = in_ECX;
+  _DAT_028262b0 = in_EAX;
+  _DAT_028262b4 = unaff_EBP;
+  DAT_028262b8 = unaff_retaddr;
+  _DAT_028262bc = in_CS;
+  _DAT_028262c8 = in_SS;
+  DAT_028261f8 = IsDebuggerPresent();
+  FUN_0075042a(1);
+  SetUnhandledExceptionFilter((LPTOP_LEVEL_EXCEPTION_FILTER)0x0);
+  UnhandledExceptionFilter((_EXCEPTION_POINTERS *)&PTR_DAT_008f6ab8);
+  if (DAT_028261f8 == 0) {
+    FUN_0075042a(1);
+  }
+  uExitCode = 0xc0000409;
+  hProcess = GetCurrentProcess();
+  TerminateProcess(hProcess,uExitCode);
+  return;
+}
+
+
+
+================================================================
+Function: __invoke_watson @ 0073f6bb
+----------------------------------------------------------------
+
+/* Library Function - Single Match
+    __invoke_watson
+   
+   Library: Visual Studio 2008 Release */
+
+void __cdecl
+__invoke_watson(wchar_t *param_1,wchar_t *param_2,wchar_t *param_3,uint param_4,uintptr_t param_5)
+
+{
+  uint uVar1;
+  BOOL BVar2;
+  LONG LVar3;
+  HANDLE hProcess;
+  UINT uExitCode;
+  EXCEPTION_RECORD local_32c;
+  _EXCEPTION_POINTERS local_2dc;
+  undefined4 local_2d4;
+  
+  uVar1 = DAT_0093cc94 ^ (uint)&stack0xfffffffc;
+  local_32c.ExceptionCode = 0;
+  _memset(&local_32c.ExceptionFlags,0,0x4c);
+  local_2dc.ExceptionRecord = &local_32c;
+  local_2dc.ContextRecord = (PCONTEXT)&local_2d4;
+  local_2d4 = 0x10001;
+  local_32c.ExceptionCode = 0xc0000417;
+  local_32c.ExceptionFlags = 1;
+  BVar2 = IsDebuggerPresent();
+  SetUnhandledExceptionFilter((LPTOP_LEVEL_EXCEPTION_FILTER)0x0);
+  LVar3 = UnhandledExceptionFilter(&local_2dc);
+  if ((LVar3 == 0) && (BVar2 == 0)) {
+    FUN_0075042a();
+  }
+  uExitCode = 0xc0000417;
+  hProcess = GetCurrentProcess();
+  TerminateProcess(hProcess,uExitCode);
+  __security_check_cookie(uVar1 ^ (uint)&stack0xfffffffc);
+  return;
+}
+
+
+
+================================================================
+Function: _abort @ 00746d74
+----------------------------------------------------------------
+
+/* Library Function - Single Match
+    _abort
+   
+   Library: Visual Studio 2008 Release */
+
+void __cdecl _abort(void)
+
+{
+  code *pcVar1;
+  _PHNDLR p_Var2;
+  EXCEPTION_RECORD local_32c;
+  _EXCEPTION_POINTERS local_2dc;
+  undefined4 local_2d4;
+  
+  if (((byte)DAT_0093d680 & 1) != 0) {
+    __NMSG_WRITE(10);
+  }
+  p_Var2 = ___get_sigabrt();
+  if (p_Var2 != (_PHNDLR)0x0) {
+    _raise(0x16);
+  }
+  if (((byte)DAT_0093d680 & 2) != 0) {
+    local_2d4 = 0x10001;
+    _memset(&local_32c,0,0x50);
+    local_2dc.ExceptionRecord = &local_32c;
+    local_2dc.ContextRecord = (PCONTEXT)&local_2d4;
+    local_32c.ExceptionCode = 0x40000015;
+    SetUnhandledExceptionFilter((LPTOP_LEVEL_EXCEPTION_FILTER)0x0);
+    UnhandledExceptionFilter(&local_2dc);
+  }
+  __exit(3);
+  pcVar1 = (code *)swi(3);
+  (*pcVar1)();
+  return;
+}
+
+
+
