@@ -132,6 +132,8 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#97](#97-motion-blur-issue-96-continuation-menu--loading-screen-gates-shipped-cutscene-report-retracted-on-retest----current-state-closed-for-tonight) — Motion blur menu/loading-screen gates + cutscene report — **Resolved** (cutscene report retracted on retest, no code change needed)
 - [#98](#98-london-mission-cutscene-audio-continues-after-skip-on-some-cutscenes----reported-not-yet-investigated) — London mission: cutscene audio continues after skip — **Open, not investigated**
 - [#99](#99-camera-look-stutterjitter----resolved-real-root-cause-is-vsync-confirmed-via-cross-machine-test-2026-08-27) — Camera-look stutter — **Resolved** (real root cause is vsync, confirmed via cross-machine test)
+- [#100](#100-motion-blur-ui-disappears-when-taking-damage-while-moving----reported-not-yet-investigated-2026-08-27) — Motion blur: UI disappears on damage while moving — **Open** (suspected same root as #97's menu/loading/cutscene bleed, not yet investigated)
+- [#101](#101-roadmap-note-broader-performanceoptimizationmodern-hardware-pass-users-own-framing-2026-08-27) — Roadmap: broader performance/optimization pass — **Roadmap Idea**, not scoped
 
 ---
 
@@ -14188,3 +14190,76 @@ broad; it should read "native engine behavior on at least one real
 hardware/driver/display configuration," not "universal across all
 hardware." **Resolved above**: the PC-to-PC difference is vsync, confirmed
 directly by the user.
+
+## 100. Motion blur: UI disappears when taking damage while moving -- REPORTED, not yet investigated (2026-08-27)
+
+**Status: Open, not investigated.** Direct user report: "when you take
+damage it loses ui when moving and motion blur activates (minor issue but
+needs fixing still)." Reported live, immediately after the camera-tick/
+vsync investigation closed out, no RE done yet this pass.
+
+**Direct user follow-up, worth treating as the primary hypothesis rather
+than a fourth independent bug**: "lowkey i think that bug may be related
+to main menu and cutscene one too." Plausible and specific -- this issue's
+own menu-bleed fix, loading-screen-bleed fix, and the retracted cutscene
+report (issue #97) all trace back to the exact same trigger,
+`FUN_00693ff0`, and the two SHIPPED fixes only gate specific known states
+(menu-active, in-level) rather than addressing the underlying multi-fire
+mechanism itself (`FUN_00694650` calling `FUN_00693ff0` once per active
+"viewport" entry, confirmed via this exact session's own decompile). If
+damage-while-moving triggers the same kind of extra viewport/composite
+pass a cutscene's letterbox or a damage-flash overlay might also trigger,
+all four symptoms (menu, loading, the retracted cutscene report, and this
+one) could be faces of ONE underlying issue -- the multi-fire behavior
+itself, not four separate states each needing their own gate. **Next
+session should investigate the multi-fire mechanism directly** (log
+`FUN_00693ff0`'s real per-frame fire count and what state each extra fire
+corresponds to) rather than adding a fourth narrow gate on top of the first
+two, and should re-check the retracted cutscene report under this lens
+too -- the original retest may simply not have hit the specific narrower
+condition that actually triggers it.
+
+**Not yet checked, real candidates for the next session**:
+- `RunPreOverlayMotionBlurPassIfEnabled`'s own per-frame guard
+  (`g_motionBlurRanThisFrame`) suppresses the blur pass after its first
+  real fire each frame -- but `FUN_00693ff0` (this pass's current trigger)
+  is already known, via this project's own earlier RE this exact session
+  (`FUN_00694650`'s decompile), to fire MORE than once per real frame when
+  more than one "viewport" entry is active (the same mechanism originally
+  responsible for issue #96's `FUN_00497210` multi-fire crash). Worth
+  checking directly: does taking damage while moving trigger some kind of
+  extra composite pass (a directional damage indicator, a hit-flash
+  vignette, or similar) that gets treated as a second viewport/exclusion
+  zone the way splitscreen/killcam already are -- and does the guard
+  suppressing our SECOND blur fire also, as a side effect, leave that
+  viewport's own HUD dispatch in a state where it doesn't draw correctly?
+  (`Hook_693ff0` itself always tail-jumps through to the real trampoline
+  regardless of the guard, so HUD dispatch for a real viewport call should
+  still run either way -- this needs live verification, not an assumption,
+  before concluding it's the guard's fault.)
+- Alternatively: `DrawFullScreenPass`'s capture-and-redraw could be
+  capturing the backbuffer at a point where damage-specific HUD elements
+  haven't been drawn yet THIS frame, then overwriting them -- structurally
+  similar to (though not the same bug as) the already-fixed
+  `DrawFullScreenPass` state-restore issue from earlier tonight (viewport/
+  texture-stage/FVF save-restore, issue #96).
+- A live diagnostic (log `FUN_00693ff0`'s own per-frame fire count,
+  cross-referenced against a damage-taken timestamp) would settle which of
+  these it is faster than guessing further -- not yet built.
+
+## 101. Roadmap note: broader performance/optimization/modern-hardware pass, user's own framing (2026-08-27)
+
+**Status: Roadmap Idea, not scoped.** Direct user framing, end of a long
+session covering the issue #96 crash fix, the camera-tick/vsync
+investigation, and the Predator Missile lead: "its definitely feeling a bit
+better tho i think the future of this mod leaves room for some serious
+performance fixes, optimizations and modern hardware improvmennet." Logged
+as a standing direction, not a specific task -- no scope, no specific
+targets identified yet. Candidate concrete starting points already on
+record elsewhere in this file that would fall under this umbrella: the
+still-unlocated 30Hz-alternating-cost mechanism (issue #90, now confirmed
+separate from camera/usercmd building), the above-1080p GPU-cost theory
+(issue #79, never confirmed via real GPU profiling), and the D3D9On12/
+DXVK/D3D11-12 renderer-backend investigation (issue #92). Revisit and scope
+properly next time this is picked up rather than starting new research from
+zero.
