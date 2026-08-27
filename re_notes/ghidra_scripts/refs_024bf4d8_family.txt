@@ -1,0 +1,23 @@
+=== Reference counts per global ===
+DAT_024bf4d0 (024bf4d0): 8 references
+DAT_024bf4d4 (024bf4d4): 1 references
+DAT_024bf4d8 (024bf4d8): 1 references
+DAT_024bf4dc (024bf4dc): 1 references
+DAT_024bf4e0 (024bf4e0): 1 references
+DAT_021d05e8 (021d05e8): 5 references
+
+=== Candidate functions, ranked by distinct global diversity (7) ===
+
+---- FUN_00682fa0 @ 00682fa0 (globals: DAT_024bf4d0, DAT_024bf4d4, DAT_024bf4d8, DAT_024bf4dc, DAT_024bf4e0) ----
+
+---- FUN_004cac50 @ 004cac50 (globals: DAT_024bf4d0) ----
+
+---- FUN_006991c0 @ 006991c0 (globals: DAT_024bf4d0) ----
+
+---- FUN_00693ea0 @ 00693ea0 (globals: DAT_024bf4d0) ----
+
+---- FUN_00682bc0 @ 00682bc0 (globals: DAT_021d05e8) ----
+
+---- FUN_0046fac0 @ 0046fac0 (globals: DAT_021d05e8) ----
+
+---- FUN_0044f8d0 @ 0044f8d0 (globals: DAT_024bf4d0) ----

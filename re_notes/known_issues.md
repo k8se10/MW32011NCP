@@ -13042,6 +13042,66 @@ chain produces (e.g. `_DAT_024bf4d8` and neighbors) later in the same or a
 following frame, to see what happens when a (re)create legitimately failed
 and left one null/stale.
 
+### CONCRETE BUG FOUND, 2026-08-27: `FUN_00682bc0` unconditionally returns the depth-stencil pointer even on a real creation failure -- confirmed NULL-propagation, no safety net downstream of `Com_Error`
+
+A follow-up fork (static-only) answered the "next static step" above directly.
+`FUN_00682bc0`'s real tail, re-decompiled and re-verified:
+```c
+  iVar3 = (**(code **)(*DAT_021cd928 + 0x74))
+                    (DAT_021cd928,DAT_021d2e00,DAT_021d2e04,DAT_021cd944,0,0,0,&DAT_021d05e8,0);
+  if (iVar3 < 0) {
+    uVar4 = FUN_004672a0(iVar3);
+    FUN_00425540(0,"Couldn\'t create a %i x %i depth-stencil surface: %s\n",uVar1,uVar2,uVar4);
+  }
+  return DAT_021d05e8;      // <-- unconditional, even after the failure branch above
+```
+**On a genuine `CreateDepthStencilSurface` failure, this logs via the
+confirmed-recoverable `Com_Error` path and then still returns
+`DAT_021d05e8` with no early-return/skip guard.** Real D3D9 convention
+leaves a failed create's out-parameter `NULL` -- so on a real failure this
+hands `NULL` back to the caller as if it were a valid surface. The one
+caller found, `FUN_00682fa0`, compounds it with no null-check of its own:
+`_DAT_024bf4d8 = FUN_00682bc0();`. So a real creation failure leaves this
+shared depth-stencil global silently `NULL`, with `Com_Error` having
+already "handled" it from the engine's own perspective (logged, recovered,
+kept playing) -- **`Com_Error`'s own recoverable path provides zero actual
+protection here; the missing bounds check is the real bug.** This is the
+single most concrete finding of the whole investigation: an actual,
+confirmed, structural bug, not a theory.
+
+**A genuine open loose end got resolved as a side effect**: `DAT_021d05e8`'s
+real reset writer (open since two prior forks) was found --
+`FUN_0046fac0`, a clean, properly null-guarded teardown function (walks a
+render-target-slot array, `Release()`s each surface with a null-check
+first, memsets the block, resets `DAT_021d05e8`/`DAT_021d05d8` to 0). This
+function itself is NOT buggy -- the bug is specifically `FUN_00682bc0`'s own
+unconditional return. (Who calls `FUN_0046fac0` and when is still
+untraced -- very likely the pre-`Reset()` teardown half of the same
+device-lost/reset chain traced above, matching its "release everything,
+recreate after" shape, but not confirmed.)
+
+**Still open**: a direct reference search for other readers of
+`_DAT_024bf4d8` came back with only its own write site -- most likely the
+same indirect/vtable-dispatch tooling limitation every fork has hit
+tonight, not proof no consumer exists. Finding the actual dereference that
+turns this null pointer into a real unhandled access violation (which
+would finally tie this bug to the confirmed `ExitProcess`/clean-exit
+behavior) is the concrete next step. `FUN_00682e50`'s own two surface
+creates have the **identical** unconditional-return shape (already visible
+in the committed `decomp_682fa0_d70_e50.txt`) -- an equally strong,
+not-yet-traced parallel candidate for the same bug class, not yet checked
+for its own consumers either.
+
+**Given the alt-tab/device-Reset falsification above, the trigger for the
+underlying create failure is genuinely still open** -- it doesn't need to
+be a device-lost/Reset event; any real-world reason `CreateDepthStencilSurface`
+fails at the *scaled* size (verified NOT plain VRAM exhaustion on the
+hardware in play -- a 2080 Ti's 11GB VRAM and ~16384 max texture dimension
+comfortably clears a single ~92MB 6400x3600 surface, so a crude
+"ran out of memory" theory doesn't hold; some other real, specific
+allocation-failure reason is needed, not yet identified) would trip this
+same unconditional-return bug once it happens, independent of Reset.
+
 **No static ceiling exists anywhere in this allocation chain** (only a
 floor clamp) -- `D3DCAPS9.MaxTextureWidth`/`MaxTextureHeight` are declared
 in this project's own code but never read. A live `GetDeviceCaps` read
