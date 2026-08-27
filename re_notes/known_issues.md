@@ -12995,10 +12995,28 @@ This finally fits a crash that's absent at launch/level-load, fires
 unpredictably minutes in, and correlates with nothing about elapsed time
 itself -- only with whatever real-world event happens to trip a device
 Reset, which is easy to hit without a player ever noticing it happened.
-**Falsifiable prediction for the next live-testing session (not yet
-attempted)**: deliberately alt-tabbing out of and back into the game while
-`InternalRenderScalePercent` is active at a large value (e.g. 250%) should
-reproduce the crash on demand, rather than needing to wait several minutes.
+**Falsifiable prediction -- TESTED LIVE 2026-08-27, FAILED.** User
+deliberately alt-tabbed out and back in repeatedly during gameplay at high
+`InternalRenderScalePercent`, including in exclusive fullscreen mode
+specifically (ruling out the obvious "borderless/windowed never triggers a
+real D3D9 device-lost/Reset" out-clause) -- **did not crash.** This
+falsifies the specific claim that an alt-tab-triggered device Reset is what
+reproduces issue #96. Two ways to read this, not yet distinguished:
+(a) the `TestCooperativeLevel`/`Reset()` chain traced above is real but
+alt-tab specifically doesn't reach it the way assumed (e.g. this engine's
+own focus-loss handling intercepts/suppresses the device-lost transition
+before `Reset()` is ever called, or `FUN_00682e50`'s uncached create simply
+succeeds fine even at the scaled size when re-run this way and the theory's
+real trigger is a DIFFERENT kind of Reset-adjacent event, not alt-tab), or
+(b) the whole Reset-chain theory is a real, latent bug (the code path
+genuinely is unclamped and uncached, that part isn't in question) but not
+actually THE issue #96 mechanism. Do not present this theory as confirmed
+or as the leading explanation going forward -- it is a live-tested negative
+result now, not an open-but-promising lead. `Com_Error`/`ExitProcess`'s own
+still-unresolved mechanism (see above: ruled-out candidates 1/3, open
+candidate 2 -- an unhandled SEH exception) remains the more likely actual
+answer, independent of whether this specific Reset chain is involved at
+all.
 (`DAT_021d05e8` itself is very likely also reset somewhere in this same
 chain, standard D3D9 practice -- every surface must be released before
 `Reset()` and recreated after -- just not via a data write this project's
