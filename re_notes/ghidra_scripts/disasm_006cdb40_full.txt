@@ -1,0 +1,11 @@
+Disassembly of FUN_006cdb40 @ 006cdb40
+006cdb40  PUSH EBP
+006cdb41  MOV EBP,ESP
+006cdb43  PUSH EDI
+006cdb44  MOV ECX,dword ptr [EBP + 0x8]
+006cdb47  MOV EDI,dword ptr [EBP + 0xc]
+006cdb4a  XOR EAX,EAX
+006cdb4c  MOV dword ptr [EAX],ECX
+006cdb4e  POP EDI
+006cdb4f  POP EBP
+006cdb50  RET

@@ -13171,3 +13171,220 @@ on a later frame):
 7. If a fresh live capture is ever taken, tag `0x34AEA000`/`0x37FD0000`-
    equivalent regions (fork 3) with a live `VirtualQuery` check to identify
    the owning subsystem, rather than guessing from a static snapshot alone.
+
+### LIVE DEBUGGING BREAKTHROUGH, 2026-08-27 -- real crash finally captured via a different debugger, with hard-won safety lessons
+
+**Status: real, confirmed crash data captured live for the first time all
+investigation. Root cause is NOT yet fully resolved -- the resolved call
+stack points at menu/UI-state-adjacent code, structurally separate from
+the render-target-allocation theory this issue spent most of its time on,
+and it remains an open question whether `InternalRenderScalePercent` is
+even the real trigger for this specific chain or just a shared test
+condition. Read to the end before treating either theory as settled.**
+
+**Context**: after the previous night's live-debugger incident (WinDbg
+Preview/`cdb.exe`, two full system freezes requiring hard resets --
+documented in the "LIVE DEBUGGER SESSION -- SERIOUS INCIDENT" section
+above, which permanently retired that specific tool/workflow), the user
+authorized trying a **different** debugger, explicitly conditioned on
+finding a safer approach. Chose **x64dbg/x32dbg** (already an installed,
+established tool for this project per `CLAUDE.md`'s Stack section) over
+another WinDbg-family tool specifically because it lacks WinDbg Preview's
+heavier machinery (Extensions Gallery/NuGet networking, Time Travel
+Debugging) that was a plausible contributor to the earlier incident.
+
+**New tooling**: `duty1g/x64dbg-mcp-server` (MIT, Zig, zero dependencies,
+native x64dbg/x32dbg plugin, speaks real MCP over HTTP/SSE directly -- no
+Python bridge). No prebuilt release existed at the time; built from source
+(Zig 0.14.1, installed fresh) via `zig build -Doptimize=ReleaseSafe`,
+deployed to `D:\Tools\x64dbg\release\x32\plugins\x64dbg-MCP-Server.dp32`,
+registered as an HTTP MCP server (`claude mcp add x64dbg -s user --transport
+http http://localhost:9095/ --header "Authorization: Bearer <token>"`,
+token from the plugin's auto-generated `mcp_config.json`). Exposes 80+
+tools including `GetCallStack`, `GetSEHChain`, `SetExceptionBreakpoint`,
+conditional/logging breakpoints, and a blocking `run` that waits for the
+next pause -- a materially better toolset for this investigation than the
+raw `cdb` command loop used previously.
+
+**Three real, hard-won lessons from tonight, each corresponding to a
+distinct false start:**
+
+1. **x64dbg auto-loads a saved per-binary breakpoint database on attach,
+   including a default "break on TLS Callback" for every loaded module.**
+   The very first live-play attempt produced a rapid, repeating
+   resume-hit-pause cycle (visible directly in the MCP event log: `resumed
+   -> breakpoint hit -> paused`, seven times in a row within about a
+   second) the instant the user clicked into the game -- which corrupted
+   audio and froze input/tick entirely (game stuck, not the whole system
+   this time, but still fully unrecoverable, had to be killed). Root cause
+   confirmed via `ListBreakpoints`: 16 stale breakpoints named
+   `<module>.dll!TLS Callback N`, set on completely unrelated system DLLs
+   (the NVIDIA driver stack, `steamclient.dll`, `dbghelp.dll`, `shlwapi.dll`,
+   etc.) -- these fire on essentially any new thread creation from any of
+   those modules, which happens constantly during real play, and each hit
+   fully suspends every thread in the process via the real Windows debug
+   API (the same fundamental "any exception freezes everything until the
+   debugger responds" mechanism suspected in the original WinDbg incident,
+   just triggered by a different, x64dbg-specific default this time).
+   **Fix**: `DeleteBreakpoint` on all of them immediately after every fresh
+   attach, before doing anything else -- they reload every time, this is
+   not a one-time cleanup.
+2. **A benign, extremely frequent exception (`0xE06D7363`, real C++
+   `throw`/`catch`) was being silently swallowed instead of forwarded to
+   the game's own exception handler, and this by itself caused a second,
+   independent freeze.** x64dbg's plain **F9 (Run)** resumes execution but
+   does NOT pass the current exception to the debuggee -- **Shift+F9 (Run,
+   pass exception to application)** does. Using plain F9 repeatedly meant
+   the game's own `catch` block (whatever normally handles this exception
+   as part of ordinary operation, plausibly in COM/OLE-adjacent input-
+   handling code, since the freeze specifically correlated with a mouse
+   click) never actually ran -- so whatever cleanup/state transition it was
+   supposed to do never happened, leaving the process in a broken,
+   `run`-doesn't-fix-it state that looked identical to a hang. **Fix**: use
+   Shift+F9, or configure `SetExceptionBreakpoint(action=ignore, chance=3)`
+   for this specific code so it passes through automatically without
+   manual intervention every time (chance=3 means BOTH first- and
+   second-chance -- chance=1 alone was insufficient, the exception kept
+   re-surfacing). **This configuration does not persist across a fresh
+   attach** -- confirmed needing to be reapplied every single session,
+   same as the TLS-callback cleanup above.
+3. **A blanket unconditional breakpoint/log on `_memcpy`'s entry (to catch
+   every call site) is not viable, even with x64dbg's own "fast resume"
+   feature.** Tried `SetBreakpointCommand` + `SetBreakpointFastResume` on
+   `_memcpy`'s entry to log every call's source pointer and caller address
+   without pausing -- `memcpy` is called far too often (thousands of times
+   during ordinary play) and fast-resume did not actually suppress
+   user-visible pausing in practice; each `run` call kept re-pausing
+   almost immediately at the same address. Deleted it before it could
+   repeat the same corruption pattern. **A *conditional* breakpoint
+   (`SetConditionalBreakpoint`, matching only a specific known-bad source
+   pointer value) had the same problem** the one time it was tried against
+   a moving target -- still genuinely paused on ordinary hits rather than
+   silently filtering. **Lesson for any future session**: don't trust
+   either "fast resume" or a breakpoint condition to make a
+   hundreds-of-times-per-frame address safe to instrument this way; either
+   find a rarer, more specific instrumentation point, or accept the
+   passive-memory-read alternative (see below) for anything this hot.
+
+**A real, safe, working workflow emerged from all three lessons combined**:
+attach -> immediately clear all default breakpoints -> immediately
+configure the benign exception to auto-ignore (chance=3) -> resume ->
+let the user play with **zero further intervention** unless something
+genuinely rare fires. This combination produced a completely clean,
+uninterrupted play session, unlike every previous attempt tonight.
+
+**The real crash, caught live, twice, with the exact same bad pointer
+value both times**: `EXCEPTION_ACCESS_VIOLATION` at `iw5sp.007372EA`
+(inside the CRT's own `_memcpy`, confirmed via Ghidra -- a genuine,
+recognized "Library Function - Single Match"), reading from
+`0xBDA95A85`. **This exact 32-bit value recurred identically across two
+separate crashes in two different contexts** (once during earlier
+gameplay, once during a Campaign cutscene) -- a strong signal this is a
+**deterministic, reproducible bad pointer** (most likely a stale/dangling
+value landing at the same heap slot due to consistent allocation
+ordering) rather than random uninitialized garbage, which would not be
+expected to repeat exactly across separate runs. Every crash ends in the
+same process-exit signature: `exit code 0x8000DEAD` -- confirmed via exact
+arithmetic to be `INT32_MIN | 0xDEAD` (the gap between `-2147426643` and
+true `INT32_MIN` is precisely `57005` decimal = `0xDEAD` hex), i.e. a
+deliberately hand-picked engine crash-handler marker (same convention as
+`0xDEADBEEF`/Apple's `0x8BADF00D`), not an arithmetic overflow artifact --
+consistent across every crash this session regardless of which underlying
+bug triggered it, supporting a single shared top-level exception-handler
+mechanism (the still-open "unhandled SEH exception" candidate from the
+static-only forks earlier this session).
+
+**A second, structurally distinct real crash was also caught the same
+session**: `EXCEPTION_ACCESS_VIOLATION` (WRITE this time, not read) at
+`iw5sp.006CDB4C`, writing to literal address `0x00000000`. Decompiles to a
+tiny, bizarre function (`FUN_006cdb40`) whose entire body is
+`*(int*)0 = param_1; return;` -- and **every one of its 15 callers found so
+far calls it as `FUN_006cdb40(0, 0)`**, meaning this exact line should
+crash **unconditionally, every single time it's reached with the callers'
+own `param_2` gate set**, independent of render scale or anything else.
+All 8 callers actually read (of 15 total) are structurally identical: a
+GSC-scripting-style file/path-existence check (`CreateFileW` /
+`GetFileInformationByHandle(Ex)` / path comparison against a target
+string), not rendering code. **Open, unresolved caveat, stated honestly**:
+this reading came from a `-noanalysis` Ghidra pass, which skips constant-
+propagation that would normally resolve a computed/register-relative
+target -- the "always literally writes to address 0" interpretation is
+plausible and matches the live fault's own reported target (`Inaccessible
+Address: 00000000`, direct from the CPU's own page fault, not decompiler
+guesswork), but has not been independently re-verified with a full
+analysis pass. Not yet determined what actually causes one of these 15
+callers' `param_2` gate to be true in the first place, or whether it's
+render-scale-related at all.
+
+**The real call stack for the `memcpy` crash was fully captured live** (via
+`GetCallStack` + `GetAllRegisters`, grabbed in the instant the debugger
+paused mid-fault, immediately before detaching) -- resolved via Ghidra:
+
+```
+#0  0x7372EA  _memcpy (faulting instruction, "rep movsd")
+#1  0x5006BA  FUN_00500660  -- generic ring-buffer/streaming memcpy wrapper
+#2  0x4345F1  FUN_004345e0  -- thin __thiscall pass-through wrapper
+#3  0x6C2069  FUN_006c2040  -- a 256-int local-buffer bit/nibble-unpacking
+                                decode loop (shift/mask patterns consistent
+                                with some kind of RLE/delta-style decoder,
+                                not plain rendering code)
+#4  0x479494  FUN_00479300  -- a serialize/pack-style function (XOR'd
+                                fields against a rolling key, bit-shifted
+                                flags)
+#5  0x5293D6  FUN_005293c0  -- writes into `DAT_00b36210 + param_1*0x188`
+#6  0x53454A  (inside FUN_00534380, the main-loop function itself)
+```
+
+**Frame #5 is the important one**: `DAT_00b36210` is **the exact same
+global this project's own architecture doc already identifies as the real
+"menu active" gate bit** (`0x10` at `0xB36210`, used for Start's real
+pause-menu open/close and B's real ESC-forward-to-menu logic -- see §1's
+architecture section and the `FUN_00541020`/`FUN_004d9850` trail earlier in
+this project's history). `FUN_005293c0` writes a per-index (`* 0x188`)
+flags word at that same base, gated behind first calling `FUN_00479300`
+(frame #4) -- i.e., this whole chain runs as part of **per-frame or
+per-state-change menu/UI bookkeeping called directly from the main loop**,
+not from anywhere near the depth-stencil/render-target allocation chain
+(`FUN_00682bc0`/`FUN_00682e50`) this issue spent most of tonight's static
+analysis on. This is also a better structural fit for tonight's own two
+live repros -- one at the main menu, one in a Campaign cutscene -- both
+UI-heavy, non-gameplay-rendering contexts, unlike the render-target
+theory's own natural fit (gameplay render-target rebuilds).
+
+**Bottom line, stated plainly**: tonight produced two real, independently
+confirmed, live-captured crash mechanisms (a `memcpy` read from a
+deterministic bad pointer inside apparent menu-state decode/copy code, and
+a literal write-to-null inside a GSC-file-check helper family) that are
+BOTH structurally separate from the render-target/depth-stencil theory
+this issue was built around. **Whether either of these is actually caused
+by `InternalRenderScalePercent`, or is a pre-existing engine bug that
+happens to reproduce under the same test conditions (this session's config
+still had it active throughout), is not yet established** -- this is the
+single most important open question for a future session, not a "just
+confirm the obvious" formality. If it turns out `InternalRenderScalePercent`
+isn't actually the trigger for these specific chains, that would mean
+issue #96 as originally scoped (a render-scaling regression) may actually
+be conflating at least two, possibly three, unrelated crash-prone code
+paths that all happen to fire during scale-percent testing sessions
+because those sessions run longer / touch more menu and cutscene
+transitions than a typical vanilla playthrough, not because scaling
+itself is the cause.
+
+**Concrete next steps for a future session, in priority order**:
+1. **Test with `InternalRenderScalePercent` reset to 100 (default/off)**,
+   using the exact same safe live-debugging workflow above, and see if
+   either of tonight's two crash mechanisms still reproduces. This is the
+   single most decisive test available and has not yet been run.
+2. Fully decompile `FUN_00479300`/`FUN_006c2040`/`FUN_00500660` (frames
+   #4/#3/#1) to understand what they're actually encoding/decoding and
+   where their input data comes from -- is it genuinely render-scale-
+   dependent sized data, or something else entirely (subtitle text,
+   localization strings, a UI layout descriptor)?
+3. Re-run the `FUN_006cdb40` null-write decompile WITH full analysis
+   (not `-noanalysis`) to confirm or correct the "always writes to literal
+   0" reading, and find what makes one of its 15 callers' `param_2` gate
+   true.
+4. Reuse the now-proven-safe x64dbg workflow (clear TLS breakpoints,
+   configure `E06D7363` to auto-ignore chance=3, then hands-off) for any
+   further live investigation -- this is the first genuinely stable,
+   repeatable live-debugging setup this project has had for this issue.
