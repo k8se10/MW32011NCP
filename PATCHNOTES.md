@@ -36,7 +36,7 @@ along the way rather than assumed. See the itemized entries below and
   trail.) **Confirmed live**: 220fps at 100% vs. 70-80fps at 300% on a real
   2560x1440 display -- real GPU cost genuinely scales with the setting.
 2. **[Video] FsrSharpenEnabled/FsrSharpenStrength — PREVIEW/WIP, off by default.** Phase B of the visual-enhancement suite plan: FSR 1.0 RCAS (Robust Contrast Adaptive Sharpening), a real full-screen sharpen pass, built on Phase A's new capture/composite pipeline. A direct port of AMD's real FidelityFX-FSR reference math (MIT license, source and full port-fidelity notes in `re_notes/shaders/fsr_rcas.hlsl`). Needs `ps_3_0` (RCAS's real math doesn't fit this project's usual `ps_2_0` — 74 instruction slots vs. the profile's 64 cap); a new device-capability check (`GetDeviceCaps`/`PixelShaderVersion`) refuses gracefully rather than assuming ps_3_0 hardware. `FsrSharpenStrength` (0.0-1.0) maps straight to RCAS's own real sharpen-lobe scale — live-tested same day, 0.5 reported "needs more softness," default lowered to 0.3. See `known_issues.md` issue #94.
-3. **[Video] MotionBlurEnabled/MotionBlurStrength/MotionBlurCenterFalloff — off by default. NOT closed — see below.** Phase E of the visual-enhancement suite plan: camera-only (view-angle-delta-based) directional motion blur. Driven entirely by real per-frame look data this project's own controller-look injection already computes. Two same-day follow-up fixes exclude UI from the blur: first, this project's own overlay (glyph icons, hint text, menus, cursor); then, pushed further via direct user challenge ("im sure we could fit it under the native ui"), the game's own NATIVE HUD too (crosshair, ammo, health, minimap) — real static RE (Ghidra) found the actual per-frame scene-composite function and a new engine hook now runs motion blur right after the real 3D scene finishes compositing, before ANY 2D drawing (native HUD or this project's own) begins. `MotionBlurCenterFalloff` (new, default 1.0) adds a real center-to-edge radial falloff — the screen center stays sharp while the periphery smears more, matching how motion blur is commonly done in racing/FPS titles; set to 0.0 for the original uniform blur. **Direct user correction: this phase is NOT done** — a live, reproducible crash regression (issue #96, `InternalRenderScalePercent`-triggered, root cause still unconfirmed) sits in the same build and blocks calling Phase E finished, even though isolation testing cleared motion blur itself as that crash's sole/independent cause. Deep RE and a real fix for #96 still needed before this phase closes. Full trail in `known_issues.md` issues #95/#96.
+3. **[Video] MotionBlurEnabled/MotionBlurStrength/MotionBlurCenterFalloff — off by default. Phase E of the visual-enhancement suite plan, now DONE and crash-free.** Camera-only (view-angle-delta-based) directional motion blur, driven entirely by real per-frame look data this project's own controller-look injection already computes. `MotionBlurCenterFalloff` (default 1.0) adds a real center-to-edge radial falloff — the screen center stays sharp while the periphery smears more, matching how motion blur is commonly done in racing/FPS titles; set to 0.0 for the original uniform blur. **This phase went through a real crash investigation and two hook-target redesigns before landing on its current, confirmed-stable form** — see the Fixed entry below for the full root-cause story. The shipped hook (on `FUN_00693ff0`, ahead of the engine's real per-viewport 2D/HUD command-dispatch loop) correctly excludes both this mod's own overlay and the game's native HUD from the blur, and is gated off during menus and loading screens (two real live-reported false-positive fixes, both shipped). A third report (motion blur bleeding into cutscenes) triggered a dedicated RE search for a real cinematic-lock flag but was retracted by the reporter on retest — no fix was needed. Full trail in `known_issues.md` issues #95/#96/#97.
 4. **[Video] ForceAnisotropicFiltering — off by default.** Writes the real native `r_texFilterAnisoMax`/`r_texFilterAnisoMin` dvars to 16 (maximum) via this project's own dvar-write mechanism (the same one the custom Options screen already uses) — a mod-config toggle for the same sharpness improvement this session's own `ForceD3D9On12` investigation already confirmed live and safe as a hand-edited `players2/config.cfg` value, but one that now survives a native "Restore Defaults" or a fresh profile instead of needing to be re-set by hand.
 
 ### Fixed
@@ -139,6 +139,9 @@ along the way rather than assumed. See the itemized entries below and
   `known_issues.md` issue #87 (and #79) for the full investigation trail.
 
 2. **Phase A full-screen post-process pipeline (new `[Experimental] FullScreenPassthroughTest`) crashed on launch — a real type-confusion bug on a `Release()` call.** Live-reported "game crashes on init" immediately after this session's own new full-screen capture/composite pipeline shipped. A first fix attempt (an MSAA-resolve `StretchRect` filter theory) did not stop the crash — the exact same fault offset recurred in the real system `d3d9.dll` even after rebuilding, proof the theory was wrong. Bracketed diagnostic logging (crash-safe via this project's existing `FlushLogOnCrash` handler) isolated the real cause on the next attempt: an offscreen surface was being released through a DIFFERENT object's (its parent texture's) vtable — `Release()` sits at the same COM slot on every D3D9 interface, but the real compiled implementation differs per class, so calling the wrong one with the wrong `this` corrupted memory. Same bug class this codebase already hit once before (`DrawBlurredBackgroundRegion`'s own documented `GetSurfaceLevel` fix), a second independent instance of it. Fixed by fetching the surface's own vtable fresh, matching that function's own established pattern. Confirmed live: clean launch, no crash. See `known_issues.md` issue #93 for the full two-round trail.
+3. **Issue #96 crash ("game literally exited" mid-session) ROOT-CAUSED and fixed — motion blur's original engine hook ran unconditionally during a partially-composited-frame sequence.** A dedicated debugging session (a new x64dbg-based MCP workflow, after severe stability incidents with the prior debugger forced a switch) plus a `git worktree`-based bisection across the commit history (triggered by the user's own recollection: "the issue wasnt present on the previous 0.3.4 release") root-caused the crash to `Hook_FUN_00497210`'s install call running unconditionally regardless of `MotionBlurEnabled`. That function is called from `FUN_00508970`, a recursive exclusion-zone (killcam/PIP/splitscreen) rect-carving function, once per carved sub-rect — meaning the hook fired a full-screen capture-and-redraw against a PARTIALLY-composited backbuffer during exclusion-zone sequences, a real, concrete state-corruption mechanism. Confirmed via TWO independent live re-tests, including one with an unrelated D3D9 state-restore bug fixed first (see the next entry) to rule out device-state hygiene as an alternative explanation — it crashed again both times. **Fix**: motion blur re-implemented on a different, structurally correct hook point, `FUN_00693ff0` — found via further RE ("what makes this hook work but the other do ui too?", followed by disassembling linked/nearby call sites) to be the real boundary immediately before the engine's per-viewport 2D/HUD command-dispatch loop (`FUN_004ee300`), rather than partway through frame composition. Confirmed crash-free live, correctly excludes both native HUD and this mod's own overlay from the blur. See `known_issues.md` issues #96/#97 for the complete investigation trail (two prior hook-target attempts, both tried and rejected with reasons, are preserved there).
+4. **`DrawFullScreenPass` (the shared full-screen shader-pass helper every visual-suite effect is built on) never fully saved/restored D3D9 device state — found while investigating whether device-state hygiene, not the hook location, was issue #96's real cause.** It never saved or restored the viewport at all, force-nulled texture stage 0 instead of restoring the actual prior binding (discarding the COM reference incorrectly), and never restored FVF. Fixed: the pass's own full-screen quad now explicitly forces a full-screen viewport for its draw (pre-transformed XYZRHW vertices are still constrained by the ambient viewport) then restores the genuine previous viewport; texture stage 0 and FVF are now properly saved and restored (with correct `Release()` on the saved texture reference) instead of discarded/left dirty. A real, independent bug kept regardless of its role in #96 — every current and future full-screen pass (FSR sharpen, motion blur) benefits.
+5. **`frame_benchmark.cpp`'s rumble-time accumulator had a genuine, unguarded data race, and covered only 1 of this project's 6 real background threads.** `FrameBenchmark_AddRumbleMs` wrote `g_rumbleMsThisFrame` with zero locking — a real bug introduced when issue #87 moved vibration writes onto their own dedicated thread (this file predates that refactor and was never updated for it). Fixed with an `INIT_ONCE`-guarded `CRITICAL_SECTION` (not a plain bool guard — unlike this project's other per-subsystem locks, this lock's very first use can legitimately race between multiple threads with no single "creator" thread). Extended, per direct instruction ("we should add all threaded stuff since we ever introduced it for controller polling way back"), to cover all six of this project's real background threads (poll, vibration, hot-reload, log-flush, asset-write, resource-log) via a `grep CreateThread` audit — the CSV benchmark output now has real per-thread timing columns for all of them, not just the one the original tool happened to track.
 
 ### Groundwork
 1. **Internal render resolution confirmed with real numbers: this engine's actual
@@ -162,35 +165,40 @@ along the way rather than assumed. See the itemized entries below and
   visual-enhancement-suite plan) — captures the complete, final composed frame
   (this mod's own overlay included) and re-draws it through an arbitrary pixel
   shader, generalizing the existing Options-screen blur's capture/composite
-  technique from a small sub-region to the whole screen. NOT closed — see below.**
+  technique from a small sub-region to the whole screen. Now DONE.**
   Not a player-facing feature on its own — a no-op passthrough shader
   (`[Experimental] FullScreenPassthroughTest`) validates the plumbing itself (no
   visual change) before Phase B builds the first real effect (RCAS sharpening) on
   top of it, per the plan's own explicit "isolate plumbing bugs from shader bugs"
   requirement. Crashed on first live test; that specific init-crash bug is fixed
   and confirmed live — see the Fixed entry above and `known_issues.md` issue #93.
-  **Direct user correction: Phase A overall is NOT done** — it's the foundation
-  every later phase is built on, and a live, reproducible crash regression
-  (issue #96, root cause still unconfirmed) sits in the same build. Stays open
-  alongside Phase E (item 3 above) until #96 has an actual confirmed fix.
+  The separate live crash regression that blocked calling this phase (and Phase
+  E, motion blur) finished is now root-caused and fixed — see the Fixed entries
+  above and `known_issues.md` issue #96/#97.
+3. **New Ghidra headless RE tooling: a broad string-sweep script, a
+  whole-binary numeric-constant scanner, and a raw-address float reader —
+  three genuinely reusable additions to this project's own RE toolkit,
+  built while chasing an unrelated crash/stutter investigation.**
+  `DumpAllStrings.java` scans every readable/initialized memory block for
+  printable-ASCII runs, a real `strings`-CLI replacement (the actual tool
+  isn't installed in this project's Bash/MSYS environment, and the existing
+  `RawStringScan.java` needs an exact known string rather than supporting
+  open-ended discovery). `ScanFixedTimeConstants.java` walks every
+  instruction's scalar operands and every initialized-data dword checking
+  for int/float matches against a target list, built for the 60fps-tick
+  investigation but written generically. `DumpFloatsAt.java` reads the raw
+  4 bytes at a given address and prints both int32 and IEEE754-float
+  interpretations — needed since Ghidra's decompiler only shows symbolic
+  `_DAT_xxx` names for float literals, never their actual values. Together
+  these proved out a reusable chain for resolving a real dvar's actual
+  numeric value and role from nothing but its name: broad string sweep →
+  exact-string xref → decompile the registration call → read the real
+  constants at the resolved addresses → xref the dvar's own storage handle
+  → decompile the real consumer. See `known_issues.md` issue #30's
+  `missileHellfireUpAccel` entry for this chain used end-to-end.
 
 ### Investigated, Not Yet Resolved
-1. **Issue #96 crash — two real crash sites found live via a safer debugging
-  workflow (x64dbg), a defensive-patch attempt REVERTED same day after it
-  prevented the game from launching at all.** `FUN_00500660` (a shared
-  buffer-append helper) calls the CRT's `memcpy` with a stale/wild source
-  pointer that faulted identically twice across separate live crashes;
-  `FUN_006cdb40`'s entire body is an unconditional write to address 0 that
-  every known caller actually reaches. Hooking both defensively (skip-and-log
-  instead of crash) built clean but broke the game at launch — same failure
-  signature as this file's own earlier `FUN_00552e70` revert: a clean
-  disassembly is not proof a function is safe to intercept. Reverted, hooks
-  left in the codebase but disabled. Root cause for either crash is still
-  unconfirmed, and it remains unconfirmed whether `InternalRenderScalePercent`
-  is even the real trigger (both crash chains trace into menu/UI-state code,
-  not the render-target chain #96 was originally built around). Full trail,
-  disassembly evidence, and next steps in `known_issues.md` issue #96.
-2. **Survival scoreboard's real stat data source CONFIRMED -- and the feature is
+1. **Survival scoreboard's real stat data source CONFIRMED -- and the feature is
   CLOSED for the main mod as a result, deferred to the plugin API.** RE prerequisite for a planned
   live Survival scoreboard feature. Two earlier passes (a binary string/xref
   search, then a native entity-field-dispatcher trace) both came back
@@ -297,6 +305,43 @@ along the way rather than assumed. See the itemized entries below and
   redeployed, not yet live-tested. Full trail, including two ruled-out
   theories (divide-by-zero, `clcState` corruption) and the complete traced
   chain, in `known_issues.md` issue #96.
+  **CORRECTED (2026-08-27): this whole `InternalRenderScalePercent`
+  isolation was wrong.** A proper `git worktree` bisection across the
+  commit history (triggered by the user's own recollection that the crash
+  wasn't present on the previous v0.3.4 release) traced the real cause to
+  motion blur's original engine hook running unconditionally during a
+  partially-composited-frame sequence, unrelated to render scale — see the
+  new Fixed entry above and `known_issues.md` issues #96/#97 for the actual
+  root cause and shipped fix. `InternalRenderScalePercent` itself is not at
+  fault and needs no further isolation work on this specific crash.
+4. **60fps engine tick, follow-up pass: both previously-recommended next
+  steps run, both came back negative.** A whole-binary scan for a hardcoded
+  ~33ms/0.0333f tick constant (new `ScanFixedTimeConstants.java`, see the
+  Groundwork entry above) found none — zero genuine hits anywhere in code
+  or data. The remaining un-traced `CL_Frame` (`FUN_004c0bb0`) callees were
+  also decompiled; all are state-check dispatchers with no visible tick
+  accumulator. The mechanism producing the confirmed 30Hz-alternating-cost
+  pattern remains genuinely elusive — the leading theory is now that it's
+  an emergent property spread across many call sites rather than a single
+  patchable gate, though this isn't proven. See `known_issues.md` issue #90
+  for the full follow-up.
+5. **Predator Missile guidance: `missileHellfireUpAccel` (native auto-climb
+  constant, 1000.0) confirmed real and disproportionately large next to the
+  player's own steering rate (35.0/sec) — a real, well-evidenced lead, not
+  yet connected to a fix.** Found via the user's own direct observation
+  while reviewing a strings dump for an unrelated search. Static RE traced
+  the dvar to its real consumer, which uses it as an upper clamp bound on a
+  computed per-frame acceleration delta rather than a flat applied force —
+  tempering the initial read without ruling it out. Not yet confirmed
+  whether this runs in the same per-frame path as the already-documented
+  player-guidance dispatch chain, or a separate pre-guidance ballistic
+  phase. No fix attempted. See `known_issues.md` issue #30's newest entry.
+6. **London mission: cutscene audio continues after skip on some cutscenes
+  — reported, not yet investigated.** This project's own source has no
+  cutscene-skip input handling of any kind, so on current evidence this
+  looks like a native engine bug rather than something this mod causes —
+  not independently confirmed via mod-uninstall the way this session's
+  stutter report was. See `known_issues.md` issue #98.
 
 ## v0.3.4 — Alpha (2026-08-25) — DualSense input-parity fix, gameplay-hint glyph editor, new plugin API
 
