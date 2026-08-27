@@ -174,22 +174,23 @@ along the way rather than assumed. See the itemized entries below and
   (issue #96, root cause still unconfirmed) sits in the same build. Stays open
   alongside Phase E (item 3 above) until #96 has an actual confirmed fix.
 
-3. **Issue #96 crash — two real crash sites found live and defensively patched,
-  root cause still NOT confirmed, NOT yet live-tested.** A safer live-debugging
-  workflow (x64dbg, not the previously-retired WinDbg-based one) finally caught two
-  real, reproducible faults: `FUN_00500660` (a shared buffer-append helper) calling
-  the CRT's `memcpy` with a stale/wild source pointer, and `FUN_006cdb40`, whose
-  entire body is an unconditional write to address 0 that every known caller
-  actually reaches. Both are now hooked defensively (skip-and-log instead of crash)
-  — **honestly flagged as a mitigation, not a real fix**: neither root cause is
-  understood, and it is NOT yet confirmed that `InternalRenderScalePercent` is even
-  the actual trigger (both crash chains trace into menu/UI-state code, not the
-  render-target allocation chain this issue was originally built around). Built
-  clean, not yet live-tested. Full trail, disassembly evidence, and the real
-  next-step (retest at 100% scale) in `known_issues.md` issue #96.
-
 ### Investigated, Not Yet Resolved
-1. **Survival scoreboard's real stat data source CONFIRMED -- and the feature is
+1. **Issue #96 crash — two real crash sites found live via a safer debugging
+  workflow (x64dbg), a defensive-patch attempt REVERTED same day after it
+  prevented the game from launching at all.** `FUN_00500660` (a shared
+  buffer-append helper) calls the CRT's `memcpy` with a stale/wild source
+  pointer that faulted identically twice across separate live crashes;
+  `FUN_006cdb40`'s entire body is an unconditional write to address 0 that
+  every known caller actually reaches. Hooking both defensively (skip-and-log
+  instead of crash) built clean but broke the game at launch — same failure
+  signature as this file's own earlier `FUN_00552e70` revert: a clean
+  disassembly is not proof a function is safe to intercept. Reverted, hooks
+  left in the codebase but disabled. Root cause for either crash is still
+  unconfirmed, and it remains unconfirmed whether `InternalRenderScalePercent`
+  is even the real trigger (both crash chains trace into menu/UI-state code,
+  not the render-target chain #96 was originally built around). Full trail,
+  disassembly evidence, and next steps in `known_issues.md` issue #96.
+2. **Survival scoreboard's real stat data source CONFIRMED -- and the feature is
   CLOSED for the main mod as a result, deferred to the plugin API.** RE prerequisite for a planned
   live Survival scoreboard feature. Two earlier passes (a binary string/xref
   search, then a native entity-field-dispatcher trace) both came back
