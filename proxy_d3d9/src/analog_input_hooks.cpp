@@ -3334,6 +3334,90 @@ bool LooksLikeValidPointer(uintptr_t p)
     return p >= 0x00010000 && p < 0x7FFF0000;
 }
 
+// ---- issue #96 defensive crash mitigation (2026-08-27) ----------------------------
+//
+// Two real, live-debugger-confirmed crash sites found via x64dbg this session (see
+// re_notes/known_issues.md issue #96, "LIVE DEBUGGING BREAKTHROUGH" section) --
+// NEITHER root cause is understood yet, and it has NOT been confirmed whether
+// InternalRenderScalePercent is even the real trigger for either one (both crash
+// chains trace into menu/UI-state code -- DAT_00b36210, the same "menu active" gate
+// this project's own pause-menu logic already uses -- not the render-target
+// allocation chain issue #96 was originally built around). Ship honestly flagged as a
+// DEFENSIVE MITIGATION, not a real fix, per this project's own documentation
+// standard -- known_issues.md's own next-step list has the real follow-up (retest at
+// 100% scale to see if either of these still reproduces at all).
+//
+//   1. FUN_00500660 -- a generic, widely-shared __cdecl ring-buffer/stream-append
+//      helper (confirmed via real disassembly, not just the decompiler's guess:
+//      param_1=buffer object @ [ebp+8], param_2=source pointer @ [ebp+0xC],
+//      param_3=size @ [ebp+0x10], plain cdecl, caller cleans the stack) -- calls the
+//      CRT's own _memcpy internally with param_2 as the source. Two separate live
+//      crashes both faulted reading from a stale/wild pointer value north of 3GB
+//      (0xBDA95A85 and 0xCC8B1F15 respectively) -- well outside this process's normal
+//      heap range. An EXCEPTION_ACCESS_VIOLATION here is fatal and unrecovered by the
+//      engine (its own top-level handler just calls ExitProcess(0x8000DEAD)).
+//   2. FUN_006cdb40 -- confirmed via real disassembly (`XOR EAX,EAX` then
+//      `MOV [EAX],ECX`) to be a genuinely unconditional `*(int*)0 = param_1;`, full
+//      stop -- its second stack argument is loaded but never used for anything.
+//      Every known caller (15 found, all GSC-file-existence-check-style helpers)
+//      invokes it as FUN_006cdb40(0, 0), meaning this exact line crashes 100% of the
+//      time it's ever reached, unconditionally, with zero legitimate behavior lost by
+//      skipping it.
+namespace {
+using StreamAppendFn = void(__cdecl*)(unsigned param_1, const void* param_2, size_t param_3);
+void* g_orig_00500660 = nullptr;
+
+void __cdecl Hook_00500660(unsigned param_1, const void* param_2, size_t param_3)
+{
+    // Heuristic pre-check (this file's own LooksLikeValidPointer) plus a hard SEH
+    // backstop -- if either catches a bad pointer, skip this specific append rather
+    // than crash the whole process. The ring-buffer's own write-position bookkeeping
+    // (fields inside param_1) ends up slightly inconsistent when this fires -- a real,
+    // accepted tradeoff: a recoverable inconsistency beats a guaranteed crash.
+    bool ok = param_3 == 0 || LooksLikeValidPointer(reinterpret_cast<uintptr_t>(param_2));
+    if (ok) {
+        __try {
+            reinterpret_cast<StreamAppendFn>(g_orig_00500660)(param_1, param_2, param_3);
+            return;
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            ok = false;
+        }
+    }
+    if (!ok) {
+        static bool s_logged = false;
+        if (!s_logged) {
+            s_logged = true;
+            char buf[160];
+            sprintf_s(buf,
+                "[issue96-mitigation] FUN_00500660 skipped a bad-pointer copy (src=%p size=%zu) -- see known_issues.md issue #96",
+                param_2, param_3);
+            LogFromController(buf);
+        }
+    }
+}
+
+void* g_orig_006cdb40 = nullptr;
+
+int __cdecl Hook_006cdb40(int param_1, int param_2)
+{
+    // Every known caller passes (0, 0) into a function whose entire body is an
+    // unconditional write to address 0 -- there is no legitimate value this could
+    // ever write anywhere. Skipping the call entirely (never touching g_orig_006cdb40)
+    // changes nothing observable except that the game no longer crashes here. Logged
+    // once so this is visible if it's ever actually hit.
+    static bool s_logged = false;
+    if (!s_logged) {
+        s_logged = true;
+        char buf[160];
+        sprintf_s(buf,
+            "[issue96-mitigation] FUN_006cdb40(%d,%d) null-write skipped -- see known_issues.md issue #96",
+            param_1, param_2);
+        LogFromController(buf);
+    }
+    return 0;
+}
+} // namespace
+
 // ---- Menu highlighted-item tracking (2026-08-01, menu-glyph work, issue #48) ------
 //
 // User's own framing: "highlighted entries must get the appropriate glyph next to
@@ -10537,6 +10621,27 @@ void InstallAnalogInputHooks()
     if (sOpenMenu == MH_OK) {
         MH_STATUS eOpenMenu = MH_EnableHook(reinterpret_cast<LPVOID>(0x00544a50));
         sprintf_s(buf, "[hooks] MH_EnableHook(00544a50 open-menu-track) = %d", static_cast<int>(eOpenMenu));
+        LogFromController(buf);
+    }
+
+    // issue #96 defensive crash mitigation (2026-08-27) -- see the big comment above
+    // Hook_00500660/Hook_006cdb40's own definitions. NOT a real fix, root cause still
+    // unconfirmed -- see known_issues.md.
+    MH_STATUS s500660 = MH_CreateHook(reinterpret_cast<LPVOID>(0x00500660), &Hook_00500660, &g_orig_00500660);
+    sprintf_s(buf, "[hooks] MH_CreateHook(00500660 issue96-mitigation) = %d", static_cast<int>(s500660));
+    LogFromController(buf);
+    if (s500660 == MH_OK) {
+        MH_STATUS e500660 = MH_EnableHook(reinterpret_cast<LPVOID>(0x00500660));
+        sprintf_s(buf, "[hooks] MH_EnableHook(00500660 issue96-mitigation) = %d", static_cast<int>(e500660));
+        LogFromController(buf);
+    }
+
+    MH_STATUS s6cdb40 = MH_CreateHook(reinterpret_cast<LPVOID>(0x006cdb40), &Hook_006cdb40, &g_orig_006cdb40);
+    sprintf_s(buf, "[hooks] MH_CreateHook(006cdb40 issue96-mitigation) = %d", static_cast<int>(s6cdb40));
+    LogFromController(buf);
+    if (s6cdb40 == MH_OK) {
+        MH_STATUS e6cdb40 = MH_EnableHook(reinterpret_cast<LPVOID>(0x006cdb40));
+        sprintf_s(buf, "[hooks] MH_EnableHook(006cdb40 issue96-mitigation) = %d", static_cast<int>(e6cdb40));
         LogFromController(buf);
     }
 

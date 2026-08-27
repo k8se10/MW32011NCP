@@ -1,0 +1,2458 @@
+Callers of 006cdb40 (15):
+  FUN_006ba8d0 @ 006ba8d0
+  FUN_006bad30 @ 006bad30
+  FUN_006bb190 @ 006bb190
+  FUN_006baf60 @ 006baf60
+  FUN_006bc5d0 @ 006bc5d0
+  FUN_006bc9e0 @ 006bc9e0
+  FUN_006be380 @ 006be380
+  FUN_006be790 @ 006be790
+  FUN_006bd8c0 @ 006bd8c0
+  FUN_006bf260 @ 006bf260
+  FUN_006bf670 @ 006bf670
+  FUN_006c0140 @ 006c0140
+  FUN_006c0570 @ 006c0570
+  FUN_006bab00 @ 006bab00
+  FUN_006bd4a0 @ 006bd4a0
+
+================================================================
+Function: FUN_006ba8d0 @ 006ba8d0
+----------------------------------------------------------------
+
+char FUN_006ba8d0(undefined4 param_1,char param_2)
+
+{
+  char cVar1;
+  LPCWSTR lpFileName;
+  HANDLE pvVar2;
+  BOOL BVar3;
+  int iVar4;
+  undefined4 *puVar5;
+  undefined4 *puVar6;
+  DWORD dwFlags;
+  undefined4 local_328 [180];
+  _BY_HANDLE_FILE_INFORMATION local_58;
+  DWORD local_24;
+  DWORD local_20;
+  undefined4 local_1c;
+  int local_18;
+  code *local_14;
+  int local_10;
+  undefined *local_c;
+  char local_5;
+  
+  cVar1 = FUN_00439ad0();
+  if (cVar1 == '\0') {
+    return '\x01';
+  }
+  puVar5 = &DAT_00884760;
+  puVar6 = local_328;
+  for (iVar4 = 0x82; iVar4 != 0; iVar4 = iVar4 + -1) {
+    *puVar6 = *puVar5;
+    puVar5 = puVar5 + 1;
+    puVar6 = puVar6 + 1;
+  }
+  local_10 = (int)&DAT_00884a04 + DAT_00884a04;
+  local_c = PTR_IMAGE_DOS_HEADER_00884a00;
+  local_5 = '\0';
+  local_18 = 1000000;
+  local_14 = (code *)0x0;
+  FUN_0046cf00(&local_18,&DAT_00884968,(int)&DAT_008849cc + DAT_008849cc,local_328,3,
+               (int)&DAT_008849c0 + DAT_008849c0,DAT_008849d0,(int)&DAT_008849e0 + DAT_008849e0,
+               DAT_008849f0,(int)&DAT_008849c4 + DAT_008849c4,DAT_008849d4,
+               (int)&DAT_008849e4 + DAT_008849e4,DAT_008849f4,(int)&DAT_008849c8 + DAT_008849c8,
+               DAT_008849d8,(int)&DAT_008849e8 + DAT_008849e8,DAT_008849f8);
+  local_1c = 0;
+  lpFileName = (LPCWSTR)FUN_005570a0(local_328,&local_1c);
+  if ((lpFileName != (LPCWSTR)0x0) && (DAT_00884988 == '\0')) {
+    FUN_00467100();
+    pvVar2 = CreateFileW(lpFileName,0x80000000,7,(LPSECURITY_ATTRIBUTES)0x0,3,0,(HANDLE)0xffffffff);
+    if (pvVar2 == (HANDLE)0xffffffff) {
+      pvVar2 = CreateFileW(lpFileName,0x80000000,7,(LPSECURITY_ATTRIBUTES)0x0,3,0x2000000,
+                           (HANDLE)0xffffffff);
+    }
+    if (((local_18 != 0) && (local_14 != (code *)0x0)) && (local_c != (undefined *)0x0)) {
+      local_c = (undefined *)(*local_14)(local_10);
+    }
+    if (pvVar2 != (HANDLE)0xffffffff) {
+      BVar3 = GetFileInformationByHandle(pvVar2,&local_58);
+      if (BVar3 != 0) {
+        FUN_00418d40();
+        local_20 = local_58.nFileIndexHigh;
+        local_24 = local_58.nFileIndexLow;
+        FUN_00503750(&local_24,8);
+        FUN_0043bdc0();
+        local_5 = FUN_00550eb0(&DAT_0088499c);
+        thunk_FUN_005df010();
+      }
+      CloseHandle(pvVar2);
+    }
+    dwFlags = 0;
+    pvVar2 = GetProcessHeap();
+    HeapFree(pvVar2,dwFlags,lpFileName);
+    if (local_5 != '\0') {
+      if (param_2 != '\0') {
+        FUN_006cdb40(0,0);
+      }
+      return local_5;
+    }
+  }
+  FUN_0041a8f0(0,1,&param_1);
+  return local_5;
+}
+
+
+
+================================================================
+Function: FUN_006bad30 @ 006bad30
+----------------------------------------------------------------
+
+char FUN_006bad30(undefined4 param_1,char param_2)
+
+{
+  char cVar1;
+  LPCWSTR lpFileName;
+  HANDLE pvVar2;
+  BOOL BVar3;
+  int iVar4;
+  undefined4 *puVar5;
+  undefined4 *puVar6;
+  DWORD dwFlags;
+  undefined4 local_328 [180];
+  _BY_HANDLE_FILE_INFORMATION local_58;
+  DWORD local_24;
+  DWORD local_20;
+  undefined4 local_1c;
+  int local_18;
+  code *local_14;
+  int local_10;
+  undefined *local_c;
+  char local_6;
+  char local_5;
+  
+  cVar1 = FUN_006ce6a0();
+  if (cVar1 == '\0') {
+    return '\x01';
+  }
+  puVar5 = &DAT_0084f2f0;
+  puVar6 = local_328;
+  for (iVar4 = 0x82; iVar4 != 0; iVar4 = iVar4 + -1) {
+    *puVar6 = *puVar5;
+    puVar5 = puVar5 + 1;
+    puVar6 = puVar6 + 1;
+  }
+  local_10 = (int)&DAT_0085e6cc + DAT_0085e6cc;
+  local_c = PTR_IMAGE_DOS_HEADER_0085e6c8;
+  local_5 = '\0';
+  local_18 = 1000000;
+  local_14 = (code *)0x0;
+  FUN_0053e4b0(&local_18,&PTR_DAT_0084f4f8,(int)&DAT_0085e694 + DAT_0085e694,local_328,3,
+               (int)&DAT_0085e688 + DAT_0085e688,DAT_0085e698,(int)&DAT_0085e6a8 + DAT_0085e6a8,
+               DAT_0085e6b8,(int)&DAT_0085e68c + DAT_0085e68c,DAT_0085e69c,
+               (int)&DAT_0085e6ac + DAT_0085e6ac,DAT_0085e6bc,(int)&DAT_0085e690 + DAT_0085e690,
+               DAT_0085e6a0,(int)&DAT_0085e6b0 + DAT_0085e6b0,DAT_0085e6c0);
+  local_1c = 0;
+  lpFileName = (LPCWSTR)FUN_0052f350(local_328,&local_1c,&local_6);
+  if ((lpFileName != (LPCWSTR)0x0) && (local_6 == DAT_0083653e)) {
+    FUN_00467100();
+    pvVar2 = CreateFileW(lpFileName,0x80000000,7,(LPSECURITY_ATTRIBUTES)0x0,3,0,(HANDLE)0xffffffff);
+    if (pvVar2 == (HANDLE)0xffffffff) {
+      pvVar2 = CreateFileW(lpFileName,0x80000000,7,(LPSECURITY_ATTRIBUTES)0x0,3,0x2000000,
+                           (HANDLE)0xffffffff);
+    }
+    if (((local_18 != 0) && (local_14 != (code *)0x0)) && (local_c != (undefined *)0x0)) {
+      local_c = (undefined *)(*local_14)(local_10);
+    }
+    if (pvVar2 != (HANDLE)0xffffffff) {
+      BVar3 = GetFileInformationByHandle(pvVar2,&local_58);
+      if (BVar3 != 0) {
+        FUN_00418d40();
+        local_24 = local_58.nFileIndexLow;
+        local_20 = local_58.nFileIndexHigh;
+        FUN_00503750(&local_24,8);
+        FUN_0043bdc0();
+        local_5 = FUN_00550eb0(&DAT_00886448);
+        thunk_FUN_005df010();
+      }
+      CloseHandle(pvVar2);
+    }
+    dwFlags = 0;
+    pvVar2 = GetProcessHeap();
+    HeapFree(pvVar2,dwFlags,lpFileName);
+    if (local_5 != '\0') {
+      if (param_2 != '\0') {
+        FUN_006cdb40(0,0);
+      }
+      return local_5;
+    }
+  }
+  FUN_0042f5d0(0,1,&param_1);
+  return local_5;
+}
+
+
+
+================================================================
+Function: FUN_006bb190 @ 006bb190
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+undefined4 FUN_006bb190(undefined4 param_1,char param_2)
+
+{
+  char cVar1;
+  LPCWSTR lpFileName;
+  HANDLE pvVar2;
+  BOOL BVar3;
+  int iVar4;
+  undefined4 *puVar5;
+  undefined4 *puVar6;
+  DWORD dwFlags;
+  undefined4 local_328 [180];
+  _BY_HANDLE_FILE_INFORMATION local_58;
+  DWORD local_24;
+  DWORD local_20;
+  undefined4 local_1c;
+  int local_18;
+  code *local_14;
+  int local_10;
+  undefined *local_c;
+  char local_5;
+  
+  cVar1 = FUN_006ce3c0();
+  if (cVar1 == '\0') {
+    return 1;
+  }
+  puVar5 = &DAT_00887ad0;
+  puVar6 = local_328;
+  for (iVar4 = 0x82; iVar4 != 0; iVar4 = iVar4 + -1) {
+    *puVar6 = *puVar5;
+    puVar5 = puVar5 + 1;
+    puVar6 = puVar6 + 1;
+  }
+  local_10 = (int)&DAT_00887d74 + DAT_00887d74;
+  local_c = PTR_IMAGE_DOS_HEADER_00887d70;
+  local_5 = '\0';
+  local_18 = 1000000;
+  local_14 = (code *)0x0;
+  FUN_0042b690(&local_18,&DAT_00887cd8,(int)&DAT_00887d3c + DAT_00887d3c,local_328,3,
+               (int)&DAT_00887d30 + DAT_00887d30,DAT_00887d40,(int)&DAT_00887d50 + DAT_00887d50,
+               DAT_00887d60,(int)&DAT_00887d34 + DAT_00887d34,DAT_00887d44,
+               (int)&DAT_00887d54 + DAT_00887d54,DAT_00887d64,(int)&DAT_00887d38 + DAT_00887d38,
+               DAT_00887d48,(int)&DAT_00887d58 + DAT_00887d58,DAT_00887d68);
+  local_1c = 0;
+  lpFileName = (LPCWSTR)FUN_004e1370(local_328,&local_1c);
+  if ((lpFileName != (LPCWSTR)0x0) && (DAT_00887cf8 == '\0')) {
+    FUN_00467100();
+    pvVar2 = CreateFileW(lpFileName,0x80000000,7,(LPSECURITY_ATTRIBUTES)0x0,3,0,(HANDLE)0xffffffff);
+    if (pvVar2 == (HANDLE)0xffffffff) {
+      pvVar2 = CreateFileW(lpFileName,0x80000000,7,(LPSECURITY_ATTRIBUTES)0x0,3,0x2000000,
+                           (HANDLE)0xffffffff);
+    }
+    if (((local_18 != 0) && (local_14 != (code *)0x0)) && (local_c != (undefined *)0x0)) {
+      local_c = (undefined *)(*local_14)(local_10);
+    }
+    if (pvVar2 != (HANDLE)0xffffffff) {
+      BVar3 = GetFileInformationByHandle(pvVar2,&local_58);
+      if (BVar3 != 0) {
+        FUN_00418d40();
+        local_20 = local_58.nFileIndexHigh;
+        local_24 = local_58.nFileIndexLow;
+        FUN_00503750(&local_24,8);
+        FUN_0043bdc0();
+        local_5 = FUN_00550eb0(&DAT_00887d0c);
+        thunk_FUN_005df010();
+      }
+      CloseHandle(pvVar2);
+    }
+    dwFlags = 0;
+    pvVar2 = GetProcessHeap();
+    HeapFree(pvVar2,dwFlags,lpFileName);
+    if (local_5 != '\0') {
+      if (param_2 == '\0') {
+        return 1;
+      }
+      FUN_006cdb40(0,0);
+      return 1;
+    }
+  }
+  FUN_004f42f0(0,1,&param_1);
+  if (DAT_00887ddc != 0 || _DAT_00887dc8 != 0) {
+    return 1;
+  }
+  return 0;
+}
+
+
+
+================================================================
+Function: FUN_006baf60 @ 006baf60
+----------------------------------------------------------------
+
+char FUN_006baf60(undefined4 param_1,char param_2)
+
+{
+  char cVar1;
+  LPCWSTR lpFileName;
+  HANDLE pvVar2;
+  BOOL BVar3;
+  int iVar4;
+  undefined4 *puVar5;
+  undefined4 *puVar6;
+  DWORD dwFlags;
+  undefined4 local_328 [180];
+  _BY_HANDLE_FILE_INFORMATION local_58;
+  DWORD local_24;
+  DWORD local_20;
+  undefined4 local_1c;
+  int local_18;
+  code *local_14;
+  int local_10;
+  undefined *local_c;
+  char local_5;
+  
+  cVar1 = FUN_004fc9b0();
+  if (cVar1 == '\0') {
+    return '\x01';
+  }
+  puVar5 = &DAT_00865ff8;
+  puVar6 = local_328;
+  for (iVar4 = 0x82; iVar4 != 0; iVar4 = iVar4 + -1) {
+    *puVar6 = *puVar5;
+    puVar5 = puVar5 + 1;
+    puVar6 = puVar6 + 1;
+  }
+  local_10 = (int)&DAT_00845d7c + DAT_00845d7c;
+  local_c = PTR_IMAGE_DOS_HEADER_00845d78;
+  local_5 = '\0';
+  local_18 = 1000000;
+  local_14 = (code *)0x0;
+  FUN_005159d0(&local_18,&PTR_DAT_00866200,(int)&DAT_00845d44 + DAT_00845d44,local_328,3,
+               (int)&DAT_00845d38 + DAT_00845d38,DAT_00845d48,(int)&DAT_00845d58 + DAT_00845d58,
+               DAT_00845d68,(int)&DAT_00845d3c + DAT_00845d3c,DAT_00845d4c,
+               (int)&DAT_00845d5c + DAT_00845d5c,DAT_00845d6c,(int)&DAT_00845d40 + DAT_00845d40,
+               DAT_00845d50,(int)&DAT_00845d60 + DAT_00845d60,DAT_00845d70);
+  local_1c = 0;
+  lpFileName = (LPCWSTR)FUN_005570a0(local_328,&local_1c);
+  if ((lpFileName != (LPCWSTR)0x0) && (DAT_0083c5ec == '\0')) {
+    FUN_00467100();
+    pvVar2 = CreateFileW(lpFileName,0x80000000,7,(LPSECURITY_ATTRIBUTES)0x0,3,0,(HANDLE)0xffffffff);
+    if (pvVar2 == (HANDLE)0xffffffff) {
+      pvVar2 = CreateFileW(lpFileName,0x80000000,7,(LPSECURITY_ATTRIBUTES)0x0,3,0x2000000,
+                           (HANDLE)0xffffffff);
+    }
+    if (((local_18 != 0) && (local_14 != (code *)0x0)) && (local_c != (undefined *)0x0)) {
+      local_c = (undefined *)(*local_14)(local_10);
+    }
+    if (pvVar2 != (HANDLE)0xffffffff) {
+      BVar3 = GetFileInformationByHandle(pvVar2,&local_58);
+      if (BVar3 != 0) {
+        FUN_00418d40();
+        local_20 = local_58.nFileIndexHigh;
+        local_24 = local_58.nFileIndexLow;
+        FUN_00503750(&local_24,8);
+        FUN_0043bdc0();
+        local_5 = FUN_00550eb0(&DAT_00886d18);
+        thunk_FUN_005df010();
+      }
+      CloseHandle(pvVar2);
+    }
+    dwFlags = 0;
+    pvVar2 = GetProcessHeap();
+    HeapFree(pvVar2,dwFlags,lpFileName);
+    if (local_5 != '\0') {
+      if (param_2 != '\0') {
+        FUN_006cdb40(0,0);
+      }
+      return local_5;
+    }
+  }
+  FUN_00405c60(0,1,&param_1);
+  return local_5;
+}
+
+
+
+================================================================
+Function: FUN_006bc5d0 @ 006bc5d0
+----------------------------------------------------------------
+
+/* WARNING: Function: __alloca_probe replaced with injection: alloca_probe */
+
+char FUN_006bc5d0(undefined4 param_1,char param_2)
+
+{
+  char cVar1;
+  HANDLE pvVar2;
+  SIZE_T SVar3;
+  LPCWSTR pWVar4;
+  int iVar5;
+  WCHAR WVar6;
+  undefined4 *puVar7;
+  uint uVar8;
+  int *piVar9;
+  undefined4 *puVar10;
+  DWORD DVar11;
+  int local_132c [512];
+  WCHAR local_b2c [1024];
+  undefined4 local_32c [180];
+  undefined4 local_5c [9];
+  char local_38;
+  undefined4 local_2c;
+  undefined4 local_28;
+  undefined4 local_24;
+  int local_20;
+  undefined *local_1c;
+  LPCWSTR local_18;
+  LPCWSTR local_14;
+  HANDLE local_10;
+  LPWSTR local_c;
+  undefined3 uStack_8;
+  char local_5;
+  
+  uStack_8 = 0x6bc5dd;
+  local_5 = 0;
+  cVar1 = FUN_00520760();
+  if (cVar1 == '\0') {
+    return '\x01';
+  }
+  puVar7 = &DAT_00884a70;
+  puVar10 = local_32c;
+  for (iVar5 = 0x82; iVar5 != 0; iVar5 = iVar5 + -1) {
+    *puVar10 = *puVar7;
+    puVar7 = puVar7 + 1;
+    puVar10 = puVar10 + 1;
+  }
+  local_20 = (int)&DAT_00884d5c + DAT_00884d5c;
+  local_1c = PTR_IMAGE_DOS_HEADER_00884d58;
+  local_5 = '\0';
+  local_28 = 1000000;
+  local_24 = 0;
+  FUN_00510260(&local_28,&DAT_00884c78,(int)&DAT_00884d24 + DAT_00884d24,local_32c,3,
+               (int)&DAT_00884d18 + DAT_00884d18,DAT_00884d28,(int)&DAT_00884d38 + DAT_00884d38,
+               DAT_00884d48,(int)&DAT_00884d1c + DAT_00884d1c,DAT_00884d2c,
+               (int)&DAT_00884d3c + DAT_00884d3c,DAT_00884d4c,(int)&DAT_00884d20 + DAT_00884d20,
+               DAT_00884d30,(int)&DAT_00884d40 + DAT_00884d40,DAT_00884d50);
+  local_2c = 0;
+  local_14 = (LPCWSTR)FUN_004e1370(local_32c,&local_2c);
+  puVar7 = &DAT_00884a18;
+  puVar10 = local_5c;
+  for (iVar5 = 0xc; iVar5 != 0; iVar5 = iVar5 + -1) {
+    *puVar10 = *puVar7;
+    puVar7 = puVar7 + 1;
+    puVar10 = puVar10 + 1;
+  }
+  local_20 = (int)&DAT_00884d04 + DAT_00884d04;
+  local_1c = PTR_IMAGE_DOS_HEADER_00884d00;
+  local_28 = 1000000;
+  local_24 = 0;
+  FUN_006bb6d0(&local_28,&DAT_00884a48,0,local_5c,3,(int)&DAT_00884cc0 + DAT_00884cc0,DAT_00884cd0,
+               (int)&DAT_00884ce0 + DAT_00884ce0,DAT_00884cf0,(int)&DAT_00884cc4 + DAT_00884cc4,
+               DAT_00884cd4,(int)&DAT_00884ce4 + DAT_00884ce4,DAT_00884cf4,
+               (int)&DAT_00884cc8 + DAT_00884cc8,DAT_00884cd8,(int)&DAT_00884ce8 + DAT_00884ce8,
+               DAT_00884cf8);
+  if ((local_14 != (LPCWSTR)0x0) && (local_38 == '\0')) {
+    DVar11 = 0;
+    pWVar4 = local_14;
+    pvVar2 = GetProcessHeap();
+    SVar3 = HeapSize(pvVar2,DVar11,pWVar4);
+    DVar11 = 8;
+    uVar8 = SVar3 + 0x208;
+    pvVar2 = GetProcessHeap();
+    pWVar4 = HeapAlloc(pvVar2,DVar11,uVar8);
+    uVar8 = SVar3 + 0x208 >> 1;
+    local_18 = pWVar4;
+    if (pWVar4 != (LPCWSTR)0x0) {
+      local_c = (LPCWSTR)0x0;
+      DVar11 = GetFullPathNameW(local_14,uVar8,pWVar4,&local_c);
+      if ((DVar11 != 0) && (DVar11 < uVar8)) {
+        if (local_c == (LPCWSTR)0x0) {
+          WVar6 = (WCHAR)local_18;
+        }
+        else {
+          WVar6 = *local_c;
+          *local_c = L'\0';
+        }
+        FUN_00467100();
+        local_10 = CreateFileW(pWVar4,0x80000000,7,(LPSECURITY_ATTRIBUTES)0x0,3,0x2000000,
+                               (HANDLE)0xffffffff);
+        FUN_006b9240();
+        if (local_c != (WCHAR *)0x0) {
+          *local_c = WVar6;
+        }
+        if (local_10 != (HANDLE)0xffffffff) {
+          while( true ) {
+            _memset(local_132c,0,0x800);
+            iVar5 = _GetFileInformationByHandleEx_16(local_10,10,local_132c,0x800);
+            piVar9 = local_132c;
+            if (iVar5 == 0) break;
+            while( true ) {
+              _memset(local_b2c,0,0x800);
+              uVar8 = piVar9[0xf];
+              if (0x7ff < uVar8) {
+                uVar8 = 0x800;
+              }
+              _memcpy(local_b2c,piVar9 + 0x1a,uVar8);
+              FUN_00418d40();
+              FUN_00503750(piVar9 + 0x18,8);
+              FUN_0043bdc0();
+              cVar1 = FUN_00550eb0(&DAT_00884c98);
+              if ((cVar1 != '\0') &&
+                 (((local_c == (LPCWSTR)0x0 && (iVar5 = lstrcmpiW(local_b2c,L"."), iVar5 == 0)) ||
+                  (iVar5 = lstrcmpiW(local_b2c,local_c), iVar5 == 0)))) {
+                local_5 = '\x01';
+              }
+              iVar5 = *piVar9;
+              piVar9 = (int *)((int)piVar9 + iVar5);
+              thunk_FUN_005df010();
+              if (iVar5 == 0) break;
+              if (local_5 != '\0') goto LAB_006bc96f;
+            }
+            if (local_5 != '\0') break;
+          }
+LAB_006bc96f:
+          CloseHandle(local_10);
+          pWVar4 = local_18;
+        }
+      }
+      DVar11 = 0;
+      pvVar2 = GetProcessHeap();
+      HeapFree(pvVar2,DVar11,pWVar4);
+    }
+    DVar11 = 0;
+    pWVar4 = local_14;
+    pvVar2 = GetProcessHeap();
+    HeapFree(pvVar2,DVar11,pWVar4);
+    if (local_5 != '\0') {
+      if (param_2 != '\0') {
+        FUN_006cdb40(0,0);
+      }
+      return local_5;
+    }
+  }
+  FUN_004c7990(0,1,&param_1);
+  return local_5;
+}
+
+
+
+================================================================
+Function: FUN_006bc9e0 @ 006bc9e0
+----------------------------------------------------------------
+
+char FUN_006bc9e0(undefined4 param_1,char param_2)
+
+{
+  WCHAR WVar1;
+  char cVar2;
+  LPCWSTR lpString;
+  HANDLE pvVar3;
+  SIZE_T SVar4;
+  HANDLE hObject;
+  undefined1 *puVar5;
+  LPCWSTR pWVar6;
+  BOOL BVar7;
+  int iVar8;
+  int iVar9;
+  code *pcVar10;
+  undefined4 *puVar11;
+  WCHAR *pWVar12;
+  uint uVar13;
+  undefined4 *puVar14;
+  DWORD DVar15;
+  LPWSTR lpMem;
+  undefined1 local_db4 [4];
+  WCHAR local_db0 [1022];
+  WCHAR local_5b4 [260];
+  undefined4 local_3ac [180];
+  _BY_HANDLE_FILE_INFORMATION local_dc;
+  undefined4 local_88 [8];
+  uint local_68;
+  DWORD local_60;
+  undefined4 local_58;
+  undefined4 local_54;
+  int local_50;
+  undefined *local_4c;
+  undefined4 local_48;
+  undefined4 local_44;
+  int local_40;
+  undefined *local_3c;
+  undefined4 local_38;
+  undefined4 local_34;
+  int local_30;
+  undefined *local_2c;
+  DWORD local_28;
+  DWORD local_24;
+  LPWSTR local_20;
+  undefined4 local_1c;
+  int local_18;
+  LPWSTR local_14;
+  undefined1 local_d;
+  LPCWSTR local_c;
+  char local_6;
+  char local_5;
+  
+  cVar2 = FUN_004fc9b0();
+  if (cVar2 == '\0') {
+    return '\x01';
+  }
+  local_2c = PTR_IMAGE_DOS_HEADER_00885290;
+  puVar11 = &DAT_00884d70;
+  pWVar12 = local_5b4;
+  for (iVar8 = 0x82; iVar8 != 0; iVar8 = iVar8 + -1) {
+    *(undefined4 *)pWVar12 = *puVar11;
+    puVar11 = puVar11 + 1;
+    pWVar12 = pWVar12 + 2;
+  }
+  iVar8 = (int)&DAT_00885294 + DAT_00885294;
+  local_38 = 1000000;
+  local_34 = 0;
+  local_30 = iVar8;
+  FUN_006b9fe0(&local_38,&DAT_00884f78,(int)&DAT_0088525c + DAT_0088525c,local_5b4,3,
+               (int)&DAT_00885250 + DAT_00885250,DAT_00885260,(int)&DAT_00885270 + DAT_00885270,
+               DAT_00885280,(int)&DAT_00885254 + DAT_00885254,DAT_00885264,
+               (int)&DAT_00885274 + DAT_00885274,DAT_00885284,(int)&DAT_00885258 + DAT_00885258,
+               DAT_00885268,(int)&DAT_00885278 + DAT_00885278,DAT_00885288);
+  local_18 = lstrlenW(local_5b4);
+  if (local_18 != 0) {
+    local_18 = local_18 + -1;
+  }
+  local_3c = PTR_IMAGE_DOS_HEADER_00885290;
+  puVar11 = &DAT_00884ff0;
+  puVar14 = local_3ac;
+  for (iVar9 = 0x82; iVar9 != 0; iVar9 = iVar9 + -1) {
+    *puVar14 = *puVar11;
+    puVar11 = puVar11 + 1;
+    puVar14 = puVar14 + 1;
+  }
+  local_48 = 1000000;
+  local_44 = 0;
+  local_40 = iVar8;
+  FUN_005159d0(&local_48,&PTR_DAT_008851f8,(int)&DAT_0088530c + DAT_0088530c,local_3ac,3,
+               (int)&DAT_00885300 + DAT_00885300,DAT_00885310,(int)&DAT_00885320 + DAT_00885320,
+               DAT_00885330,(int)&DAT_00885304 + DAT_00885304,DAT_00885314,
+               (int)&DAT_00885324 + DAT_00885324,DAT_00885334,(int)&DAT_00885308 + DAT_00885308,
+               DAT_00885318,(int)&DAT_00885328 + DAT_00885328,DAT_00885338);
+  local_5 = '\0';
+  local_1c = 0;
+  lpString = (LPCWSTR)FUN_0052f350(local_3ac,&local_1c,&local_6);
+  local_c = lpString;
+  if ((lpString == (LPCWSTR)0x0) || (DAT_00885218 != local_6)) goto LAB_006bce8e;
+  iVar8 = lstrlenW(lpString);
+  iVar8 = iVar8 + -1;
+  WVar1 = lpString[iVar8];
+  pcVar10 = GetProcessHeap_exref;
+  while (GetProcessHeap_exref = pcVar10, WVar1 == L'\\') {
+    lpString[iVar8] = L'\0';
+    iVar8 = iVar8 + -1;
+    pcVar10 = GetProcessHeap_exref;
+    WVar1 = lpString[iVar8];
+  }
+  DVar15 = 0;
+  pWVar6 = lpString;
+  pvVar3 = GetProcessHeap();
+  SVar4 = HeapSize(pvVar3,DVar15,pWVar6);
+  DVar15 = 8;
+  uVar13 = SVar4 + 0x208;
+  pvVar3 = GetProcessHeap();
+  local_20 = HeapAlloc(pvVar3,DVar15,uVar13);
+  if (local_20 != (LPWSTR)0x0) {
+    uVar13 = SVar4 + 0x208 >> 1;
+    local_14 = (LPWSTR)0x0;
+    DVar15 = GetFullPathNameW(lpString,uVar13,local_20,&local_14);
+    if ((DVar15 != 0) && (DVar15 < uVar13)) {
+      if (local_14 != (LPWSTR)0x0) {
+        *local_14 = L'\0';
+      }
+      FUN_00467100();
+      pvVar3 = CreateFileW(lpString,0x80000000,7,(LPSECURITY_ATTRIBUTES)0x0,3,0x2000000,
+                           (HANDLE)0xffffffff);
+      FUN_006b9240();
+      if (pvVar3 == (HANDLE)0xffffffff) {
+        GetLastError();
+      }
+      else {
+        local_50 = (int)&DAT_008852ec + DAT_008852ec;
+        puVar11 = &DAT_00884f98;
+        puVar14 = local_88;
+        for (iVar8 = 0xc; iVar8 != 0; iVar8 = iVar8 + -1) {
+          *puVar14 = *puVar11;
+          puVar11 = puVar11 + 1;
+          puVar14 = puVar14 + 1;
+        }
+        local_4c = PTR_IMAGE_DOS_HEADER_008852e8;
+        local_58 = 1000000;
+        local_54 = 0;
+        FUN_006bb810(&local_58,&DAT_00884fc8,0,local_88,3,(int)&DAT_008852a8 + DAT_008852a8,
+                     DAT_008852b8,(int)&DAT_008852c8 + DAT_008852c8,DAT_008852d8,
+                     (int)&DAT_008852ac + DAT_008852ac,DAT_008852bc,
+                     (int)&DAT_008852cc + DAT_008852cc,DAT_008852dc,
+                     (int)&DAT_008852b0 + DAT_008852b0,DAT_008852c0,
+                     (int)&DAT_008852d0 + DAT_008852d0,DAT_008852e0);
+        hObject = (HANDLE)_OpenFileById_24(pvVar3,local_88,0x81,7,0,0);
+        if (hObject == (HANDLE)0xffffffff) {
+          GetLastError();
+          hObject = (HANDLE)_OpenFileById_24(pvVar3,local_88,0x81,7,0,0x2000000);
+          if (hObject == (HANDLE)0xffffffff) {
+            FUN_00467100();
+            hObject = (HANDLE)_OpenFileById_24(pvVar3,local_88,0x81,7,0,0x2000000);
+            FUN_006b9240();
+            if (hObject == (HANDLE)0xffffffff) {
+              DVar15 = GetLastError();
+              lpString = local_c;
+              if ((DVar15 == local_60) &&
+                 (pWVar6 = (LPCWSTR)FUN_006b9260(local_3ac,&local_d), lpString = local_c,
+                 pWVar6 != (LPCWSTR)0x0)) {
+                pvVar3 = CreateFileW(pWVar6,0x80000000,7,(LPSECURITY_ATTRIBUTES)0x0,3,0,
+                                     (HANDLE)0xffffffff);
+                if ((pvVar3 != (HANDLE)0xffffffff) ||
+                   (pvVar3 = CreateFileW(pWVar6,0x80000000,7,(LPSECURITY_ATTRIBUTES)0x0,3,0x2000000,
+                                         (HANDLE)0xffffffff), pvVar3 != (HANDLE)0xffffffff)) {
+                  BVar7 = GetFileInformationByHandle(pvVar3,&local_dc);
+                  if (BVar7 != 0) {
+                    local_24 = local_dc.nFileIndexHigh;
+                    local_28 = local_dc.nFileIndexLow;
+                    FUN_00418d40();
+                    FUN_00503750(&local_28,8);
+                    FUN_0043bdc0();
+                    local_5 = FUN_00550eb0(&DAT_0088522c);
+                    thunk_FUN_005df010();
+                  }
+                  CloseHandle(pvVar3);
+                }
+                DVar15 = 0;
+                pvVar3 = GetProcessHeap();
+                HeapFree(pvVar3,DVar15,pWVar6);
+                lpString = local_c;
+              }
+              goto LAB_006bce63;
+            }
+          }
+        }
+        iVar8 = 0x800;
+        puVar5 = local_db4;
+        do {
+          *puVar5 = 0;
+          puVar5 = puVar5 + 1;
+          iVar8 = iVar8 + -1;
+        } while (iVar8 != 0);
+        iVar8 = _GetFileInformationByHandleEx_16(hObject,2,local_db4,0x800);
+        if (iVar8 != 0) {
+          iVar8 = lstrcmpiW(local_c + local_18,local_db0);
+          if ((((local_68 & 0x400) == 0) && (iVar8 == 0)) ||
+             (((local_68 & 0x400) == 0x400 && (iVar8 != 0)))) {
+            local_5 = '\x01';
+          }
+        }
+        CloseHandle(hObject);
+        lpString = local_c;
+      }
+    }
+LAB_006bce63:
+    pcVar10 = GetProcessHeap_exref;
+    DVar15 = 0;
+    lpMem = local_20;
+    pvVar3 = GetProcessHeap();
+    HeapFree(pvVar3,DVar15,lpMem);
+  }
+  DVar15 = 0;
+  pvVar3 = (HANDLE)(*pcVar10)();
+  HeapFree(pvVar3,DVar15,lpString);
+  if (local_5 != '\0') {
+    if (param_2 != '\0') {
+      FUN_006cdb40(0,0);
+    }
+    return local_5;
+  }
+LAB_006bce8e:
+  FUN_00405c60(0,1,&param_1);
+  return local_5;
+}
+
+
+
+================================================================
+Function: FUN_006be380 @ 006be380
+----------------------------------------------------------------
+
+/* WARNING: Function: __alloca_probe replaced with injection: alloca_probe */
+
+char FUN_006be380(undefined4 param_1,char param_2)
+
+{
+  char cVar1;
+  HANDLE pvVar2;
+  SIZE_T SVar3;
+  LPCWSTR pWVar4;
+  int iVar5;
+  WCHAR WVar6;
+  undefined4 *puVar7;
+  uint uVar8;
+  int *piVar9;
+  undefined4 *puVar10;
+  DWORD DVar11;
+  int local_132c [512];
+  WCHAR local_b2c [1024];
+  undefined4 local_32c [180];
+  undefined4 local_5c [9];
+  char local_38;
+  undefined4 local_2c;
+  undefined4 local_28;
+  undefined4 local_24;
+  int local_20;
+  undefined *local_1c;
+  LPCWSTR local_18;
+  LPCWSTR local_14;
+  HANDLE local_10;
+  LPWSTR local_c;
+  undefined3 uStack_8;
+  char local_5;
+  
+  uStack_8 = 0x6be38d;
+  local_5 = 0;
+  cVar1 = FUN_006cddd0();
+  if (cVar1 == '\0') {
+    return '\x01';
+  }
+  puVar7 = &DAT_008420a8;
+  puVar10 = local_32c;
+  for (iVar5 = 0x82; iVar5 != 0; iVar5 = iVar5 + -1) {
+    *puVar10 = *puVar7;
+    puVar7 = puVar7 + 1;
+    puVar10 = puVar10 + 1;
+  }
+  local_20 = (int)&DAT_00845fe4 + DAT_00845fe4;
+  local_1c = PTR_IMAGE_DOS_HEADER_00845fe0;
+  local_5 = '\0';
+  local_28 = 1000000;
+  local_24 = 0;
+  FUN_004a9300(&local_28,&DAT_008422b0,(int)&DAT_00845fac + DAT_00845fac,local_32c,3,
+               (int)&DAT_00845fa0 + DAT_00845fa0,DAT_00845fb0,(int)&DAT_00845fc0 + DAT_00845fc0,
+               DAT_00845fd0,(int)&DAT_00845fa4 + DAT_00845fa4,DAT_00845fb4,
+               (int)&DAT_00845fc4 + DAT_00845fc4,DAT_00845fd4,(int)&DAT_00845fa8 + DAT_00845fa8,
+               DAT_00845fb8,(int)&DAT_00845fc8 + DAT_00845fc8,DAT_00845fd8);
+  local_2c = 0;
+  local_14 = (LPCWSTR)FUN_005570a0(local_32c,&local_2c);
+  puVar7 = &DAT_008864b8;
+  puVar10 = local_5c;
+  for (iVar5 = 0xc; iVar5 != 0; iVar5 = iVar5 + -1) {
+    *puVar10 = *puVar7;
+    puVar7 = puVar7 + 1;
+    puVar10 = puVar10 + 1;
+  }
+  local_20 = (int)&DAT_0088657c + DAT_0088657c;
+  local_1c = PTR_IMAGE_DOS_HEADER_00886578;
+  local_28 = 1000000;
+  local_24 = 0;
+  FUN_006bb450(&local_28,&DAT_008864e8,0,local_5c,3,(int)&DAT_00886538 + DAT_00886538,DAT_00886548,
+               (int)&DAT_00886558 + DAT_00886558,DAT_00886568,(int)&DAT_0088653c + DAT_0088653c,
+               DAT_0088654c,(int)&DAT_0088655c + DAT_0088655c,DAT_0088656c,
+               (int)&DAT_00886540 + DAT_00886540,DAT_00886550,(int)&DAT_00886560 + DAT_00886560,
+               DAT_00886570);
+  if ((local_14 != (LPCWSTR)0x0) && (local_38 == '\0')) {
+    DVar11 = 0;
+    pWVar4 = local_14;
+    pvVar2 = GetProcessHeap();
+    SVar3 = HeapSize(pvVar2,DVar11,pWVar4);
+    DVar11 = 8;
+    uVar8 = SVar3 + 0x208;
+    pvVar2 = GetProcessHeap();
+    pWVar4 = HeapAlloc(pvVar2,DVar11,uVar8);
+    uVar8 = SVar3 + 0x208 >> 1;
+    local_18 = pWVar4;
+    if (pWVar4 != (LPCWSTR)0x0) {
+      local_c = (LPCWSTR)0x0;
+      DVar11 = GetFullPathNameW(local_14,uVar8,pWVar4,&local_c);
+      if ((DVar11 != 0) && (DVar11 < uVar8)) {
+        if (local_c == (LPCWSTR)0x0) {
+          WVar6 = (WCHAR)local_18;
+        }
+        else {
+          WVar6 = *local_c;
+          *local_c = L'\0';
+        }
+        FUN_00467100();
+        local_10 = CreateFileW(pWVar4,0x80000000,7,(LPSECURITY_ATTRIBUTES)0x0,3,0x2000000,
+                               (HANDLE)0xffffffff);
+        FUN_006b9240();
+        if (local_c != (WCHAR *)0x0) {
+          *local_c = WVar6;
+        }
+        if (local_10 != (HANDLE)0xffffffff) {
+          while( true ) {
+            _memset(local_132c,0,0x800);
+            iVar5 = _GetFileInformationByHandleEx_16(local_10,10,local_132c,0x800);
+            piVar9 = local_132c;
+            if (iVar5 == 0) break;
+            while( true ) {
+              _memset(local_b2c,0,0x800);
+              uVar8 = piVar9[0xf];
+              if (0x7ff < uVar8) {
+                uVar8 = 0x800;
+              }
+              _memcpy(local_b2c,piVar9 + 0x1a,uVar8);
+              FUN_00418d40();
+              FUN_00503750(piVar9 + 0x18,8);
+              FUN_0043bdc0();
+              cVar1 = FUN_00550eb0(&DAT_00886510);
+              if ((cVar1 != '\0') &&
+                 (((local_c == (LPCWSTR)0x0 && (iVar5 = lstrcmpiW(local_b2c,L"."), iVar5 == 0)) ||
+                  (iVar5 = lstrcmpiW(local_b2c,local_c), iVar5 == 0)))) {
+                local_5 = '\x01';
+              }
+              iVar5 = *piVar9;
+              piVar9 = (int *)((int)piVar9 + iVar5);
+              thunk_FUN_005df010();
+              if (iVar5 == 0) break;
+              if (local_5 != '\0') goto LAB_006be71f;
+            }
+            if (local_5 != '\0') break;
+          }
+LAB_006be71f:
+          CloseHandle(local_10);
+          pWVar4 = local_18;
+        }
+      }
+      DVar11 = 0;
+      pvVar2 = GetProcessHeap();
+      HeapFree(pvVar2,DVar11,pWVar4);
+    }
+    DVar11 = 0;
+    pWVar4 = local_14;
+    pvVar2 = GetProcessHeap();
+    HeapFree(pvVar2,DVar11,pWVar4);
+    if (local_5 != '\0') {
+      if (param_2 != '\0') {
+        FUN_006cdb40(0,0);
+      }
+      return local_5;
+    }
+  }
+  FUN_004aee70(0,1,&param_1);
+  return local_5;
+}
+
+
+
+================================================================
+Function: FUN_006be790 @ 006be790
+----------------------------------------------------------------
+
+char FUN_006be790(undefined4 param_1,char param_2)
+
+{
+  WCHAR WVar1;
+  char cVar2;
+  LPCWSTR lpString;
+  HANDLE pvVar3;
+  SIZE_T SVar4;
+  HANDLE hObject;
+  undefined1 *puVar5;
+  LPCWSTR pWVar6;
+  BOOL BVar7;
+  int iVar8;
+  int iVar9;
+  code *pcVar10;
+  undefined4 *puVar11;
+  WCHAR *pWVar12;
+  uint uVar13;
+  undefined4 *puVar14;
+  DWORD DVar15;
+  LPWSTR lpMem;
+  undefined1 local_db4 [4];
+  WCHAR local_db0 [1022];
+  WCHAR local_5b4 [260];
+  undefined4 local_3ac [180];
+  _BY_HANDLE_FILE_INFORMATION local_dc;
+  undefined4 local_88 [8];
+  uint local_68;
+  DWORD local_60;
+  undefined4 local_58;
+  undefined4 local_54;
+  int local_50;
+  undefined *local_4c;
+  undefined4 local_48;
+  undefined4 local_44;
+  int local_40;
+  undefined *local_3c;
+  undefined4 local_38;
+  undefined4 local_34;
+  int local_30;
+  undefined *local_2c;
+  DWORD local_28;
+  DWORD local_24;
+  LPWSTR local_20;
+  undefined4 local_1c;
+  int local_18;
+  LPWSTR local_14;
+  undefined1 local_d;
+  LPCWSTR local_c;
+  char local_5;
+  
+  cVar2 = FUN_00439ad0();
+  if (cVar2 == '\0') {
+    return '\x01';
+  }
+  local_3c = PTR_IMAGE_DOS_HEADER_008868c0;
+  puVar11 = &DAT_008865d8;
+  pWVar12 = local_5b4;
+  for (iVar8 = 0x82; iVar8 != 0; iVar8 = iVar8 + -1) {
+    *(undefined4 *)pWVar12 = *puVar11;
+    puVar11 = puVar11 + 1;
+    pWVar12 = pWVar12 + 2;
+  }
+  iVar8 = (int)&DAT_008868c4 + DAT_008868c4;
+  local_48 = 1000000;
+  local_44 = 0;
+  local_40 = iVar8;
+  FUN_006b9d60(&local_48,&DAT_008867e0,(int)&DAT_0088688c + DAT_0088688c,local_5b4,3,
+               (int)&DAT_00886880 + DAT_00886880,DAT_00886890,(int)&DAT_008868a0 + DAT_008868a0,
+               DAT_008868b0,(int)&DAT_00886884 + DAT_00886884,DAT_00886894,
+               (int)&DAT_008868a4 + DAT_008868a4,DAT_008868b4,(int)&DAT_00886888 + DAT_00886888,
+               DAT_00886898,(int)&DAT_008868a8 + DAT_008868a8,DAT_008868b8);
+  local_18 = lstrlenW(local_5b4);
+  if (local_18 != 0) {
+    local_18 = local_18 + -1;
+  }
+  local_2c = PTR_IMAGE_DOS_HEADER_008868c0;
+  puVar11 = &DAT_00829d28;
+  puVar14 = local_3ac;
+  for (iVar9 = 0x82; iVar9 != 0; iVar9 = iVar9 + -1) {
+    *puVar14 = *puVar11;
+    puVar11 = puVar11 + 1;
+    puVar14 = puVar14 + 1;
+  }
+  local_38 = 1000000;
+  local_34 = 0;
+  local_30 = iVar8;
+  FUN_0046cf00(&local_38,&DAT_00829f30,(int)&DAT_0083a574 + DAT_0083a574,local_3ac,3,
+               (int)&DAT_0083a568 + DAT_0083a568,DAT_0083a578,(int)&DAT_0083a588 + DAT_0083a588,
+               DAT_0083a598,(int)&DAT_0083a56c + DAT_0083a56c,DAT_0083a57c,
+               (int)&DAT_0083a58c + DAT_0083a58c,DAT_0083a59c,(int)&DAT_0083a570 + DAT_0083a570,
+               DAT_0083a580,(int)&DAT_0083a590 + DAT_0083a590,DAT_0083a5a0);
+  local_5 = '\0';
+  local_1c = 0;
+  lpString = (LPCWSTR)FUN_004e1370(local_3ac,&local_1c);
+  local_c = lpString;
+  if ((lpString == (LPCWSTR)0x0) || (DAT_00845ba6 != '\0')) goto LAB_006bec3e;
+  iVar8 = lstrlenW(lpString);
+  iVar8 = iVar8 + -1;
+  WVar1 = lpString[iVar8];
+  pcVar10 = GetProcessHeap_exref;
+  while (GetProcessHeap_exref = pcVar10, WVar1 == L'\\') {
+    lpString[iVar8] = L'\0';
+    iVar8 = iVar8 + -1;
+    pcVar10 = GetProcessHeap_exref;
+    WVar1 = lpString[iVar8];
+  }
+  DVar15 = 0;
+  pWVar6 = lpString;
+  pvVar3 = GetProcessHeap();
+  SVar4 = HeapSize(pvVar3,DVar15,pWVar6);
+  DVar15 = 8;
+  uVar13 = SVar4 + 0x208;
+  pvVar3 = GetProcessHeap();
+  local_20 = HeapAlloc(pvVar3,DVar15,uVar13);
+  if (local_20 != (LPWSTR)0x0) {
+    uVar13 = SVar4 + 0x208 >> 1;
+    local_14 = (LPWSTR)0x0;
+    DVar15 = GetFullPathNameW(lpString,uVar13,local_20,&local_14);
+    if ((DVar15 != 0) && (DVar15 < uVar13)) {
+      if (local_14 != (LPWSTR)0x0) {
+        *local_14 = L'\0';
+      }
+      FUN_00467100();
+      pvVar3 = CreateFileW(lpString,0x80000000,7,(LPSECURITY_ATTRIBUTES)0x0,3,0x2000000,
+                           (HANDLE)0xffffffff);
+      FUN_006b9240();
+      if (pvVar3 == (HANDLE)0xffffffff) {
+        GetLastError();
+      }
+      else {
+        local_50 = (int)&DAT_0088691c + DAT_0088691c;
+        puVar11 = &DAT_00886800;
+        puVar14 = local_88;
+        for (iVar8 = 0xc; iVar8 != 0; iVar8 = iVar8 + -1) {
+          *puVar14 = *puVar11;
+          puVar11 = puVar11 + 1;
+          puVar14 = puVar14 + 1;
+        }
+        local_4c = PTR_IMAGE_DOS_HEADER_00886918;
+        local_58 = 1000000;
+        local_54 = 0;
+        FUN_006bb590(&local_58,&DAT_00886830,0,local_88,3,(int)&DAT_008868d8 + DAT_008868d8,
+                     DAT_008868e8,(int)&DAT_008868f8 + DAT_008868f8,DAT_00886908,
+                     (int)&DAT_008868dc + DAT_008868dc,DAT_008868ec,
+                     (int)&DAT_008868fc + DAT_008868fc,DAT_0088690c,
+                     (int)&DAT_008868e0 + DAT_008868e0,DAT_008868f0,
+                     (int)&DAT_00886900 + DAT_00886900,DAT_00886910);
+        hObject = (HANDLE)_OpenFileById_24(pvVar3,local_88,0x81,7,0,0);
+        if (hObject == (HANDLE)0xffffffff) {
+          GetLastError();
+          hObject = (HANDLE)_OpenFileById_24(pvVar3,local_88,0x81,7,0,0x2000000);
+          if (hObject == (HANDLE)0xffffffff) {
+            FUN_00467100();
+            hObject = (HANDLE)_OpenFileById_24(pvVar3,local_88,0x81,7,0,0x2000000);
+            FUN_006b9240();
+            if (hObject == (HANDLE)0xffffffff) {
+              DVar15 = GetLastError();
+              lpString = local_c;
+              if ((DVar15 == local_60) &&
+                 (pWVar6 = (LPCWSTR)FUN_006b92c0(local_3ac,&local_d), lpString = local_c,
+                 pWVar6 != (LPCWSTR)0x0)) {
+                pvVar3 = CreateFileW(pWVar6,0x80000000,7,(LPSECURITY_ATTRIBUTES)0x0,3,0,
+                                     (HANDLE)0xffffffff);
+                if ((pvVar3 != (HANDLE)0xffffffff) ||
+                   (pvVar3 = CreateFileW(pWVar6,0x80000000,7,(LPSECURITY_ATTRIBUTES)0x0,3,0x2000000,
+                                         (HANDLE)0xffffffff), pvVar3 != (HANDLE)0xffffffff)) {
+                  BVar7 = GetFileInformationByHandle(pvVar3,&local_dc);
+                  if (BVar7 != 0) {
+                    local_24 = local_dc.nFileIndexHigh;
+                    local_28 = local_dc.nFileIndexLow;
+                    FUN_00418d40();
+                    FUN_00503750(&local_28,8);
+                    FUN_0043bdc0();
+                    local_5 = FUN_00550eb0(&DAT_00886858);
+                    thunk_FUN_005df010();
+                  }
+                  CloseHandle(pvVar3);
+                }
+                DVar15 = 0;
+                pvVar3 = GetProcessHeap();
+                HeapFree(pvVar3,DVar15,pWVar6);
+                lpString = local_c;
+              }
+              goto LAB_006bec13;
+            }
+          }
+        }
+        iVar8 = 0x800;
+        puVar5 = local_db4;
+        do {
+          *puVar5 = 0;
+          puVar5 = puVar5 + 1;
+          iVar8 = iVar8 + -1;
+        } while (iVar8 != 0);
+        iVar8 = _GetFileInformationByHandleEx_16(hObject,2,local_db4,0x800);
+        if (iVar8 != 0) {
+          iVar8 = lstrcmpiW(local_c + local_18,local_db0);
+          if ((((local_68 & 0x400) == 0) && (iVar8 == 0)) ||
+             (((local_68 & 0x400) == 0x400 && (iVar8 != 0)))) {
+            local_5 = '\x01';
+          }
+        }
+        CloseHandle(hObject);
+        lpString = local_c;
+      }
+    }
+LAB_006bec13:
+    pcVar10 = GetProcessHeap_exref;
+    DVar15 = 0;
+    lpMem = local_20;
+    pvVar3 = GetProcessHeap();
+    HeapFree(pvVar3,DVar15,lpMem);
+  }
+  DVar15 = 0;
+  pvVar3 = (HANDLE)(*pcVar10)();
+  HeapFree(pvVar3,DVar15,lpString);
+  if (local_5 != '\0') {
+    if (param_2 != '\0') {
+      FUN_006cdb40(0,0);
+    }
+    return local_5;
+  }
+LAB_006bec3e:
+  FUN_0041a8f0(0,1,&param_1);
+  return local_5;
+}
+
+
+
+================================================================
+Function: FUN_006bd8c0 @ 006bd8c0
+----------------------------------------------------------------
+
+char FUN_006bd8c0(undefined4 param_1,char param_2)
+
+{
+  WCHAR WVar1;
+  char cVar2;
+  LPCWSTR lpString;
+  HANDLE pvVar3;
+  SIZE_T SVar4;
+  HANDLE hObject;
+  undefined1 *puVar5;
+  LPCWSTR pWVar6;
+  BOOL BVar7;
+  int iVar8;
+  int iVar9;
+  code *pcVar10;
+  undefined4 *puVar11;
+  WCHAR *pWVar12;
+  uint uVar13;
+  undefined4 *puVar14;
+  DWORD DVar15;
+  LPWSTR lpMem;
+  undefined1 local_db4 [4];
+  WCHAR local_db0 [1022];
+  WCHAR local_5b4 [260];
+  undefined4 local_3ac [180];
+  _BY_HANDLE_FILE_INFORMATION local_dc;
+  undefined4 local_88 [8];
+  uint local_68;
+  DWORD local_60;
+  undefined4 local_58;
+  undefined4 local_54;
+  int local_50;
+  undefined *local_4c;
+  undefined4 local_48;
+  undefined4 local_44;
+  int local_40;
+  undefined *local_3c;
+  undefined4 local_38;
+  undefined4 local_34;
+  int local_30;
+  undefined *local_2c;
+  DWORD local_28;
+  DWORD local_24;
+  LPWSTR local_20;
+  undefined4 local_1c;
+  int local_18;
+  LPWSTR local_14;
+  undefined1 local_d;
+  LPCWSTR local_c;
+  char local_5;
+  
+  cVar2 = FUN_006ce3c0();
+  if (cVar2 == '\0') {
+    return '\x01';
+  }
+  local_3c = PTR_IMAGE_DOS_HEADER_00885ff0;
+  puVar11 = &DAT_00885d08;
+  pWVar12 = local_5b4;
+  for (iVar8 = 0x82; iVar8 != 0; iVar8 = iVar8 + -1) {
+    *(undefined4 *)pWVar12 = *puVar11;
+    puVar11 = puVar11 + 1;
+    pWVar12 = pWVar12 + 2;
+  }
+  iVar8 = (int)&DAT_00885ff4 + DAT_00885ff4;
+  local_48 = 1000000;
+  local_44 = 0;
+  local_40 = iVar8;
+  FUN_006ba3a0(&local_48,&DAT_00885f10,(int)&DAT_00885fbc + DAT_00885fbc,local_5b4,3,
+               (int)&DAT_00885fb0 + DAT_00885fb0,DAT_00885fc0,(int)&DAT_00885fd0 + DAT_00885fd0,
+               DAT_00885fe0,(int)&DAT_00885fb4 + DAT_00885fb4,DAT_00885fc4,
+               (int)&DAT_00885fd4 + DAT_00885fd4,DAT_00885fe4,(int)&DAT_00885fb8 + DAT_00885fb8,
+               DAT_00885fc8,(int)&DAT_00885fd8 + DAT_00885fd8,DAT_00885fe8);
+  local_18 = lstrlenW(local_5b4);
+  if (local_18 != 0) {
+    local_18 = local_18 + -1;
+  }
+  local_2c = PTR_IMAGE_DOS_HEADER_00885ff0;
+  puVar11 = &DAT_0084c9e0;
+  puVar14 = local_3ac;
+  for (iVar9 = 0x82; iVar9 != 0; iVar9 = iVar9 + -1) {
+    *puVar14 = *puVar11;
+    puVar11 = puVar11 + 1;
+    puVar14 = puVar14 + 1;
+  }
+  local_38 = 1000000;
+  local_34 = 0;
+  local_30 = iVar8;
+  FUN_0042b690(&local_38,&DAT_0084cbe8,(int)&DAT_0083070c + DAT_0083070c,local_3ac,3,
+               (int)&DAT_00830700 + DAT_00830700,DAT_00830710,(int)&DAT_00830720 + DAT_00830720,
+               DAT_00830730,(int)&DAT_00830704 + DAT_00830704,DAT_00830714,
+               (int)&DAT_00830724 + DAT_00830724,DAT_00830734,(int)&DAT_00830708 + DAT_00830708,
+               DAT_00830718,(int)&DAT_00830728 + DAT_00830728,DAT_00830738);
+  local_5 = '\0';
+  local_1c = 0;
+  lpString = (LPCWSTR)FUN_005570a0(local_3ac,&local_1c);
+  local_c = lpString;
+  if ((lpString == (LPCWSTR)0x0) || (DAT_0082aec6 != '\0')) goto LAB_006bdd6e;
+  iVar8 = lstrlenW(lpString);
+  iVar8 = iVar8 + -1;
+  WVar1 = lpString[iVar8];
+  pcVar10 = GetProcessHeap_exref;
+  while (GetProcessHeap_exref = pcVar10, WVar1 == L'\\') {
+    lpString[iVar8] = L'\0';
+    iVar8 = iVar8 + -1;
+    pcVar10 = GetProcessHeap_exref;
+    WVar1 = lpString[iVar8];
+  }
+  DVar15 = 0;
+  pWVar6 = lpString;
+  pvVar3 = GetProcessHeap();
+  SVar4 = HeapSize(pvVar3,DVar15,pWVar6);
+  DVar15 = 8;
+  uVar13 = SVar4 + 0x208;
+  pvVar3 = GetProcessHeap();
+  local_20 = HeapAlloc(pvVar3,DVar15,uVar13);
+  if (local_20 != (LPWSTR)0x0) {
+    uVar13 = SVar4 + 0x208 >> 1;
+    local_14 = (LPWSTR)0x0;
+    DVar15 = GetFullPathNameW(lpString,uVar13,local_20,&local_14);
+    if ((DVar15 != 0) && (DVar15 < uVar13)) {
+      if (local_14 != (LPWSTR)0x0) {
+        *local_14 = L'\0';
+      }
+      FUN_00467100();
+      pvVar3 = CreateFileW(lpString,0x80000000,7,(LPSECURITY_ATTRIBUTES)0x0,3,0x2000000,
+                           (HANDLE)0xffffffff);
+      FUN_006b9240();
+      if (pvVar3 == (HANDLE)0xffffffff) {
+        GetLastError();
+      }
+      else {
+        local_50 = (int)&DAT_0088604c + DAT_0088604c;
+        puVar11 = &DAT_00885f30;
+        puVar14 = local_88;
+        for (iVar8 = 0xc; iVar8 != 0; iVar8 = iVar8 + -1) {
+          *puVar14 = *puVar11;
+          puVar11 = puVar11 + 1;
+          puVar14 = puVar14 + 1;
+        }
+        local_4c = PTR_IMAGE_DOS_HEADER_00886048;
+        local_58 = 1000000;
+        local_54 = 0;
+        FUN_006bbd10(&local_58,&DAT_00885f60,0,local_88,3,(int)&DAT_00886008 + DAT_00886008,
+                     DAT_00886018,(int)&DAT_00886028 + DAT_00886028,DAT_00886038,
+                     (int)&DAT_0088600c + DAT_0088600c,DAT_0088601c,
+                     (int)&DAT_0088602c + DAT_0088602c,DAT_0088603c,
+                     (int)&DAT_00886010 + DAT_00886010,DAT_00886020,
+                     (int)&DAT_00886030 + DAT_00886030,DAT_00886040);
+        hObject = (HANDLE)_OpenFileById_24(pvVar3,local_88,0x81,7,0,0);
+        if (hObject == (HANDLE)0xffffffff) {
+          GetLastError();
+          hObject = (HANDLE)_OpenFileById_24(pvVar3,local_88,0x81,7,0,0x2000000);
+          if (hObject == (HANDLE)0xffffffff) {
+            FUN_00467100();
+            hObject = (HANDLE)_OpenFileById_24(pvVar3,local_88,0x81,7,0,0x2000000);
+            FUN_006b9240();
+            if (hObject == (HANDLE)0xffffffff) {
+              DVar15 = GetLastError();
+              lpString = local_c;
+              if ((DVar15 == local_60) &&
+                 (pWVar6 = (LPCWSTR)FUN_006b9290(local_3ac,&local_d), lpString = local_c,
+                 pWVar6 != (LPCWSTR)0x0)) {
+                pvVar3 = CreateFileW(pWVar6,0x80000000,7,(LPSECURITY_ATTRIBUTES)0x0,3,0,
+                                     (HANDLE)0xffffffff);
+                if ((pvVar3 != (HANDLE)0xffffffff) ||
+                   (pvVar3 = CreateFileW(pWVar6,0x80000000,7,(LPSECURITY_ATTRIBUTES)0x0,3,0x2000000,
+                                         (HANDLE)0xffffffff), pvVar3 != (HANDLE)0xffffffff)) {
+                  BVar7 = GetFileInformationByHandle(pvVar3,&local_dc);
+                  if (BVar7 != 0) {
+                    local_24 = local_dc.nFileIndexHigh;
+                    local_28 = local_dc.nFileIndexLow;
+                    FUN_00418d40();
+                    FUN_00503750(&local_28,8);
+                    FUN_0043bdc0();
+                    local_5 = FUN_00550eb0(&DAT_00885f88);
+                    thunk_FUN_005df010();
+                  }
+                  CloseHandle(pvVar3);
+                }
+                DVar15 = 0;
+                pvVar3 = GetProcessHeap();
+                HeapFree(pvVar3,DVar15,pWVar6);
+                lpString = local_c;
+              }
+              goto LAB_006bdd43;
+            }
+          }
+        }
+        iVar8 = 0x800;
+        puVar5 = local_db4;
+        do {
+          *puVar5 = 0;
+          puVar5 = puVar5 + 1;
+          iVar8 = iVar8 + -1;
+        } while (iVar8 != 0);
+        iVar8 = _GetFileInformationByHandleEx_16(hObject,2,local_db4,0x800);
+        if (iVar8 != 0) {
+          iVar8 = lstrcmpiW(local_c + local_18,local_db0);
+          if ((((local_68 & 0x400) == 0) && (iVar8 == 0)) ||
+             (((local_68 & 0x400) == 0x400 && (iVar8 != 0)))) {
+            local_5 = '\x01';
+          }
+        }
+        CloseHandle(hObject);
+        lpString = local_c;
+      }
+    }
+LAB_006bdd43:
+    pcVar10 = GetProcessHeap_exref;
+    DVar15 = 0;
+    lpMem = local_20;
+    pvVar3 = GetProcessHeap();
+    HeapFree(pvVar3,DVar15,lpMem);
+  }
+  DVar15 = 0;
+  pvVar3 = (HANDLE)(*pcVar10)();
+  HeapFree(pvVar3,DVar15,lpString);
+  if (local_5 != '\0') {
+    if (param_2 != '\0') {
+      FUN_006cdb40(0,0);
+    }
+    return local_5;
+  }
+LAB_006bdd6e:
+  FUN_004f42f0(0,1,&param_1);
+  return local_5;
+}
+
+
+
+================================================================
+Function: FUN_006bf260 @ 006bf260
+----------------------------------------------------------------
+
+/* WARNING: Function: __alloca_probe replaced with injection: alloca_probe */
+
+char FUN_006bf260(undefined4 param_1,char param_2)
+
+{
+  char cVar1;
+  HANDLE pvVar2;
+  SIZE_T SVar3;
+  LPCWSTR pWVar4;
+  int iVar5;
+  WCHAR WVar6;
+  undefined4 *puVar7;
+  uint uVar8;
+  int *piVar9;
+  undefined4 *puVar10;
+  DWORD DVar11;
+  int local_132c [512];
+  WCHAR local_b2c [1024];
+  undefined4 local_32c [180];
+  undefined4 local_5c [9];
+  char local_38;
+  undefined4 local_2c;
+  undefined4 local_28;
+  undefined4 local_24;
+  int local_20;
+  undefined *local_1c;
+  LPCWSTR local_18;
+  LPCWSTR local_14;
+  HANDLE local_10;
+  LPWSTR local_c;
+  undefined3 uStack_8;
+  char local_5;
+  
+  uStack_8 = 0x6bf26d;
+  local_5 = 0;
+  cVar1 = FUN_006cdf90();
+  if (cVar1 == '\0') {
+    return '\x01';
+  }
+  puVar7 = &DAT_00832f50;
+  puVar10 = local_32c;
+  for (iVar5 = 0x82; iVar5 != 0; iVar5 = iVar5 + -1) {
+    *puVar10 = *puVar7;
+    puVar7 = puVar7 + 1;
+    puVar10 = puVar10 + 1;
+  }
+  local_20 = (int)&DAT_0083a81c + DAT_0083a81c;
+  local_1c = PTR_IMAGE_DOS_HEADER_0083a818;
+  local_5 = '\0';
+  local_28 = 1000000;
+  local_24 = 0;
+  FUN_004afd10(&local_28,&DAT_00833158,(int)&DAT_0083a7e4 + DAT_0083a7e4,local_32c,3,
+               (int)&DAT_0083a7d8 + DAT_0083a7d8,DAT_0083a7e8,(int)&DAT_0083a7f8 + DAT_0083a7f8,
+               DAT_0083a808,(int)&DAT_0083a7dc + DAT_0083a7dc,DAT_0083a7ec,
+               (int)&DAT_0083a7fc + DAT_0083a7fc,DAT_0083a80c,(int)&DAT_0083a7e0 + DAT_0083a7e0,
+               DAT_0083a7f0,(int)&DAT_0083a800 + DAT_0083a800,DAT_0083a810);
+  local_2c = 0;
+  local_14 = (LPCWSTR)FUN_004e1370(local_32c,&local_2c);
+  puVar7 = &DAT_00886d88;
+  puVar10 = local_5c;
+  for (iVar5 = 0xc; iVar5 != 0; iVar5 = iVar5 + -1) {
+    *puVar10 = *puVar7;
+    puVar7 = puVar7 + 1;
+    puVar10 = puVar10 + 1;
+  }
+  local_20 = (int)&DAT_00886e4c + DAT_00886e4c;
+  local_1c = PTR_IMAGE_DOS_HEADER_00886e48;
+  local_28 = 1000000;
+  local_24 = 0;
+  FUN_006bb950(&local_28,&DAT_00886db8,0,local_5c,3,(int)&DAT_00886e08 + DAT_00886e08,DAT_00886e18,
+               (int)&DAT_00886e28 + DAT_00886e28,DAT_00886e38,(int)&DAT_00886e0c + DAT_00886e0c,
+               DAT_00886e1c,(int)&DAT_00886e2c + DAT_00886e2c,DAT_00886e3c,
+               (int)&DAT_00886e10 + DAT_00886e10,DAT_00886e20,(int)&DAT_00886e30 + DAT_00886e30,
+               DAT_00886e40);
+  if ((local_14 != (LPCWSTR)0x0) && (local_38 == '\0')) {
+    DVar11 = 0;
+    pWVar4 = local_14;
+    pvVar2 = GetProcessHeap();
+    SVar3 = HeapSize(pvVar2,DVar11,pWVar4);
+    DVar11 = 8;
+    uVar8 = SVar3 + 0x208;
+    pvVar2 = GetProcessHeap();
+    pWVar4 = HeapAlloc(pvVar2,DVar11,uVar8);
+    uVar8 = SVar3 + 0x208 >> 1;
+    local_18 = pWVar4;
+    if (pWVar4 != (LPCWSTR)0x0) {
+      local_c = (LPCWSTR)0x0;
+      DVar11 = GetFullPathNameW(local_14,uVar8,pWVar4,&local_c);
+      if ((DVar11 != 0) && (DVar11 < uVar8)) {
+        if (local_c == (LPCWSTR)0x0) {
+          WVar6 = (WCHAR)local_18;
+        }
+        else {
+          WVar6 = *local_c;
+          *local_c = L'\0';
+        }
+        FUN_00467100();
+        local_10 = CreateFileW(pWVar4,0x80000000,7,(LPSECURITY_ATTRIBUTES)0x0,3,0x2000000,
+                               (HANDLE)0xffffffff);
+        FUN_006b9240();
+        if (local_c != (WCHAR *)0x0) {
+          *local_c = WVar6;
+        }
+        if (local_10 != (HANDLE)0xffffffff) {
+          while( true ) {
+            _memset(local_132c,0,0x800);
+            iVar5 = _GetFileInformationByHandleEx_16(local_10,10,local_132c,0x800);
+            piVar9 = local_132c;
+            if (iVar5 == 0) break;
+            while( true ) {
+              _memset(local_b2c,0,0x800);
+              uVar8 = piVar9[0xf];
+              if (0x7ff < uVar8) {
+                uVar8 = 0x800;
+              }
+              _memcpy(local_b2c,piVar9 + 0x1a,uVar8);
+              FUN_00418d40();
+              FUN_00503750(piVar9 + 0x18,8);
+              FUN_0043bdc0();
+              cVar1 = FUN_00550eb0(&DAT_00886de0);
+              if ((cVar1 != '\0') &&
+                 (((local_c == (LPCWSTR)0x0 && (iVar5 = lstrcmpiW(local_b2c,L"."), iVar5 == 0)) ||
+                  (iVar5 = lstrcmpiW(local_b2c,local_c), iVar5 == 0)))) {
+                local_5 = '\x01';
+              }
+              iVar5 = *piVar9;
+              piVar9 = (int *)((int)piVar9 + iVar5);
+              thunk_FUN_005df010();
+              if (iVar5 == 0) break;
+              if (local_5 != '\0') goto LAB_006bf5ff;
+            }
+            if (local_5 != '\0') break;
+          }
+LAB_006bf5ff:
+          CloseHandle(local_10);
+          pWVar4 = local_18;
+        }
+      }
+      DVar11 = 0;
+      pvVar2 = GetProcessHeap();
+      HeapFree(pvVar2,DVar11,pWVar4);
+    }
+    DVar11 = 0;
+    pWVar4 = local_14;
+    pvVar2 = GetProcessHeap();
+    HeapFree(pvVar2,DVar11,pWVar4);
+    if (local_5 != '\0') {
+      if (param_2 != '\0') {
+        FUN_006cdb40(0,0);
+      }
+      return local_5;
+    }
+  }
+  FUN_00466450(0,1,&param_1);
+  return local_5;
+}
+
+
+
+================================================================
+Function: FUN_006bf670 @ 006bf670
+----------------------------------------------------------------
+
+char FUN_006bf670(undefined4 param_1,char param_2)
+
+{
+  WCHAR WVar1;
+  char cVar2;
+  LPCWSTR lpString;
+  HANDLE pvVar3;
+  SIZE_T SVar4;
+  HANDLE hObject;
+  undefined1 *puVar5;
+  LPCWSTR pWVar6;
+  BOOL BVar7;
+  int iVar8;
+  int iVar9;
+  code *pcVar10;
+  undefined4 *puVar11;
+  WCHAR *pWVar12;
+  uint uVar13;
+  undefined4 *puVar14;
+  DWORD DVar15;
+  LPWSTR lpMem;
+  undefined1 local_db4 [4];
+  WCHAR local_db0 [1022];
+  WCHAR local_5b4 [260];
+  undefined4 local_3ac [180];
+  _BY_HANDLE_FILE_INFORMATION local_dc;
+  undefined4 local_88 [8];
+  uint local_68;
+  DWORD local_60;
+  undefined4 local_58;
+  undefined4 local_54;
+  int local_50;
+  undefined *local_4c;
+  undefined4 local_48;
+  undefined4 local_44;
+  int local_40;
+  undefined *local_3c;
+  undefined4 local_38;
+  undefined4 local_34;
+  int local_30;
+  undefined *local_2c;
+  DWORD local_28;
+  DWORD local_24;
+  LPWSTR local_20;
+  undefined4 local_1c;
+  int local_18;
+  LPWSTR local_14;
+  undefined1 local_d;
+  LPCWSTR local_c;
+  char local_6;
+  char local_5;
+  
+  cVar2 = FUN_006ce050();
+  if (cVar2 == '\0') {
+    return '\x01';
+  }
+  local_2c = PTR_IMAGE_DOS_HEADER_008873c8;
+  puVar11 = &DAT_00886ea8;
+  pWVar12 = local_5b4;
+  for (iVar8 = 0x82; iVar8 != 0; iVar8 = iVar8 + -1) {
+    *(undefined4 *)pWVar12 = *puVar11;
+    puVar11 = puVar11 + 1;
+    pWVar12 = pWVar12 + 2;
+  }
+  iVar8 = (int)&DAT_008873cc + DAT_008873cc;
+  local_38 = 1000000;
+  local_34 = 0;
+  local_30 = iVar8;
+  FUN_006ba260(&local_38,&DAT_008870b0,(int)&DAT_00887394 + DAT_00887394,local_5b4,3,
+               (int)&DAT_00887388 + DAT_00887388,DAT_00887398,(int)&DAT_008873a8 + DAT_008873a8,
+               DAT_008873b8,(int)&DAT_0088738c + DAT_0088738c,DAT_0088739c,
+               (int)&DAT_008873ac + DAT_008873ac,DAT_008873bc,(int)&DAT_00887390 + DAT_00887390,
+               DAT_008873a0,(int)&DAT_008873b0 + DAT_008873b0,DAT_008873c0);
+  local_18 = lstrlenW(local_5b4);
+  if (local_18 != 0) {
+    local_18 = local_18 + -1;
+  }
+  local_3c = PTR_IMAGE_DOS_HEADER_008873c8;
+  puVar11 = &DAT_00887128;
+  puVar14 = local_3ac;
+  for (iVar9 = 0x82; iVar9 != 0; iVar9 = iVar9 + -1) {
+    *puVar14 = *puVar11;
+    puVar11 = puVar11 + 1;
+    puVar14 = puVar14 + 1;
+  }
+  local_48 = 1000000;
+  local_44 = 0;
+  local_40 = iVar8;
+  FUN_006ba760(&local_48,&DAT_00887330,(int)&DAT_00887444 + DAT_00887444,local_3ac,3,
+               (int)&DAT_00887438 + DAT_00887438,DAT_00887448,(int)&DAT_00887458 + DAT_00887458,
+               DAT_00887468,(int)&DAT_0088743c + DAT_0088743c,DAT_0088744c,
+               (int)&DAT_0088745c + DAT_0088745c,DAT_0088746c,(int)&DAT_00887440 + DAT_00887440,
+               DAT_00887450,(int)&DAT_00887460 + DAT_00887460,DAT_00887470);
+  local_5 = '\0';
+  local_1c = 0;
+  lpString = (LPCWSTR)FUN_0052f350(local_3ac,&local_1c,&local_6);
+  local_c = lpString;
+  if ((lpString == (LPCWSTR)0x0) || (DAT_00887350 != local_6)) goto LAB_006bfb1e;
+  iVar8 = lstrlenW(lpString);
+  iVar8 = iVar8 + -1;
+  WVar1 = lpString[iVar8];
+  pcVar10 = GetProcessHeap_exref;
+  while (GetProcessHeap_exref = pcVar10, WVar1 == L'\\') {
+    lpString[iVar8] = L'\0';
+    iVar8 = iVar8 + -1;
+    pcVar10 = GetProcessHeap_exref;
+    WVar1 = lpString[iVar8];
+  }
+  DVar15 = 0;
+  pWVar6 = lpString;
+  pvVar3 = GetProcessHeap();
+  SVar4 = HeapSize(pvVar3,DVar15,pWVar6);
+  DVar15 = 8;
+  uVar13 = SVar4 + 0x208;
+  pvVar3 = GetProcessHeap();
+  local_20 = HeapAlloc(pvVar3,DVar15,uVar13);
+  if (local_20 != (LPWSTR)0x0) {
+    uVar13 = SVar4 + 0x208 >> 1;
+    local_14 = (LPWSTR)0x0;
+    DVar15 = GetFullPathNameW(lpString,uVar13,local_20,&local_14);
+    if ((DVar15 != 0) && (DVar15 < uVar13)) {
+      if (local_14 != (LPWSTR)0x0) {
+        *local_14 = L'\0';
+      }
+      FUN_00467100();
+      pvVar3 = CreateFileW(lpString,0x80000000,7,(LPSECURITY_ATTRIBUTES)0x0,3,0x2000000,
+                           (HANDLE)0xffffffff);
+      FUN_006b9240();
+      if (pvVar3 == (HANDLE)0xffffffff) {
+        GetLastError();
+      }
+      else {
+        local_50 = (int)&DAT_00887424 + DAT_00887424;
+        puVar11 = &DAT_008870d0;
+        puVar14 = local_88;
+        for (iVar8 = 0xc; iVar8 != 0; iVar8 = iVar8 + -1) {
+          *puVar14 = *puVar11;
+          puVar11 = puVar11 + 1;
+          puVar14 = puVar14 + 1;
+        }
+        local_4c = PTR_IMAGE_DOS_HEADER_00887420;
+        local_58 = 1000000;
+        local_54 = 0;
+        FUN_006bba90(&local_58,&DAT_00887100,0,local_88,3,(int)&DAT_008873e0 + DAT_008873e0,
+                     DAT_008873f0,(int)&DAT_00887400 + DAT_00887400,DAT_00887410,
+                     (int)&DAT_008873e4 + DAT_008873e4,DAT_008873f4,
+                     (int)&DAT_00887404 + DAT_00887404,DAT_00887414,
+                     (int)&DAT_008873e8 + DAT_008873e8,DAT_008873f8,
+                     (int)&DAT_00887408 + DAT_00887408,DAT_00887418);
+        hObject = (HANDLE)_OpenFileById_24(pvVar3,local_88,0x81,7,0,0);
+        if (hObject == (HANDLE)0xffffffff) {
+          GetLastError();
+          hObject = (HANDLE)_OpenFileById_24(pvVar3,local_88,0x81,7,0,0x2000000);
+          if (hObject == (HANDLE)0xffffffff) {
+            FUN_00467100();
+            hObject = (HANDLE)_OpenFileById_24(pvVar3,local_88,0x81,7,0,0x2000000);
+            FUN_006b9240();
+            if (hObject == (HANDLE)0xffffffff) {
+              DVar15 = GetLastError();
+              lpString = local_c;
+              if ((DVar15 == local_60) &&
+                 (pWVar6 = (LPCWSTR)FUN_006b9260(local_3ac,&local_d), lpString = local_c,
+                 pWVar6 != (LPCWSTR)0x0)) {
+                pvVar3 = CreateFileW(pWVar6,0x80000000,7,(LPSECURITY_ATTRIBUTES)0x0,3,0,
+                                     (HANDLE)0xffffffff);
+                if ((pvVar3 != (HANDLE)0xffffffff) ||
+                   (pvVar3 = CreateFileW(pWVar6,0x80000000,7,(LPSECURITY_ATTRIBUTES)0x0,3,0x2000000,
+                                         (HANDLE)0xffffffff), pvVar3 != (HANDLE)0xffffffff)) {
+                  BVar7 = GetFileInformationByHandle(pvVar3,&local_dc);
+                  if (BVar7 != 0) {
+                    local_24 = local_dc.nFileIndexHigh;
+                    local_28 = local_dc.nFileIndexLow;
+                    FUN_00418d40();
+                    FUN_00503750(&local_28,8);
+                    FUN_0043bdc0();
+                    local_5 = FUN_00550eb0(&DAT_00887364);
+                    thunk_FUN_005df010();
+                  }
+                  CloseHandle(pvVar3);
+                }
+                DVar15 = 0;
+                pvVar3 = GetProcessHeap();
+                HeapFree(pvVar3,DVar15,pWVar6);
+                lpString = local_c;
+              }
+              goto LAB_006bfaf3;
+            }
+          }
+        }
+        iVar8 = 0x800;
+        puVar5 = local_db4;
+        do {
+          *puVar5 = 0;
+          puVar5 = puVar5 + 1;
+          iVar8 = iVar8 + -1;
+        } while (iVar8 != 0);
+        iVar8 = _GetFileInformationByHandleEx_16(hObject,2,local_db4,0x800);
+        if (iVar8 != 0) {
+          iVar8 = lstrcmpiW(local_c + local_18,local_db0);
+          if ((((local_68 & 0x400) == 0) && (iVar8 == 0)) ||
+             (((local_68 & 0x400) == 0x400 && (iVar8 != 0)))) {
+            local_5 = '\x01';
+          }
+        }
+        CloseHandle(hObject);
+        lpString = local_c;
+      }
+    }
+LAB_006bfaf3:
+    pcVar10 = GetProcessHeap_exref;
+    DVar15 = 0;
+    lpMem = local_20;
+    pvVar3 = GetProcessHeap();
+    HeapFree(pvVar3,DVar15,lpMem);
+  }
+  DVar15 = 0;
+  pvVar3 = (HANDLE)(*pcVar10)();
+  HeapFree(pvVar3,DVar15,lpString);
+  if (local_5 != '\0') {
+    if (param_2 != '\0') {
+      FUN_006cdb40(0,0);
+    }
+    return local_5;
+  }
+LAB_006bfb1e:
+  FUN_004d7b40(0,1,&param_1);
+  return local_5;
+}
+
+
+
+================================================================
+Function: FUN_006c0140 @ 006c0140
+----------------------------------------------------------------
+
+/* WARNING: Function: __alloca_probe replaced with injection: alloca_probe */
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+undefined4 FUN_006c0140(undefined4 param_1,char param_2)
+
+{
+  char cVar1;
+  HANDLE pvVar2;
+  SIZE_T SVar3;
+  LPCWSTR pWVar4;
+  int iVar5;
+  WCHAR WVar6;
+  undefined4 *puVar7;
+  uint uVar8;
+  int *piVar9;
+  undefined4 *puVar10;
+  DWORD DVar11;
+  int local_132c [512];
+  WCHAR local_b2c [1024];
+  undefined4 local_32c [180];
+  undefined4 local_5c [9];
+  char local_38;
+  undefined4 local_2c;
+  undefined4 local_28;
+  undefined4 local_24;
+  int local_20;
+  undefined *local_1c;
+  LPCWSTR local_18;
+  LPCWSTR local_14;
+  HANDLE local_10;
+  LPWSTR local_c;
+  undefined4 uStack_8;
+  
+  uStack_8 = 0x6c014d;
+  cVar1 = FUN_006ce4d0();
+  if (cVar1 == '\0') {
+    return 1;
+  }
+  puVar7 = &DAT_00887e48;
+  puVar10 = local_32c;
+  for (iVar5 = 0x82; iVar5 != 0; iVar5 = iVar5 + -1) {
+    *puVar10 = *puVar7;
+    puVar7 = puVar7 + 1;
+    puVar10 = puVar10 + 1;
+  }
+  local_20 = (int)&DAT_00888134 + DAT_00888134;
+  local_1c = PTR_IMAGE_DOS_HEADER_00888130;
+  uStack_8 = uStack_8 & 0xffffff;
+  local_28 = 1000000;
+  local_24 = 0;
+  FUN_004d25c0(&local_28,&DAT_00888050,(int)&DAT_008880fc + DAT_008880fc,local_32c,3,
+               (int)&DAT_008880f0 + DAT_008880f0,DAT_00888100,(int)&DAT_00888110 + DAT_00888110,
+               DAT_00888120,(int)&DAT_008880f4 + DAT_008880f4,DAT_00888104,
+               (int)&DAT_00888114 + DAT_00888114,DAT_00888124,(int)&DAT_008880f8 + DAT_008880f8,
+               DAT_00888108,(int)&DAT_00888118 + DAT_00888118,DAT_00888128);
+  local_2c = 0;
+  local_14 = (LPCWSTR)FUN_0052f350(local_32c,&local_2c,(int)&uStack_8 + 2);
+  puVar7 = &DAT_00887df0;
+  puVar10 = local_5c;
+  for (iVar5 = 0xc; iVar5 != 0; iVar5 = iVar5 + -1) {
+    *puVar10 = *puVar7;
+    puVar7 = puVar7 + 1;
+    puVar10 = puVar10 + 1;
+  }
+  local_20 = (int)&DAT_008880dc + DAT_008880dc;
+  local_1c = PTR_IMAGE_DOS_HEADER_008880d8;
+  local_28 = 1000000;
+  local_24 = 0;
+  FUN_006bbe50(&local_28,&DAT_00887e20,0,local_5c,3,(int)&DAT_00888098 + DAT_00888098,DAT_008880a8,
+               (int)&DAT_008880b8 + DAT_008880b8,DAT_008880c8,(int)&DAT_0088809c + DAT_0088809c,
+               DAT_008880ac,(int)&DAT_008880bc + DAT_008880bc,DAT_008880cc,
+               (int)&DAT_008880a0 + DAT_008880a0,DAT_008880b0,(int)&DAT_008880c0 + DAT_008880c0,
+               DAT_008880d0);
+  if ((local_14 != (LPCWSTR)0x0) && (uStack_8._2_1_ == local_38)) {
+    DVar11 = 0;
+    pWVar4 = local_14;
+    pvVar2 = GetProcessHeap();
+    SVar3 = HeapSize(pvVar2,DVar11,pWVar4);
+    DVar11 = 8;
+    uVar8 = SVar3 + 0x208;
+    pvVar2 = GetProcessHeap();
+    pWVar4 = HeapAlloc(pvVar2,DVar11,uVar8);
+    uVar8 = SVar3 + 0x208 >> 1;
+    local_18 = pWVar4;
+    if (pWVar4 != (LPCWSTR)0x0) {
+      local_c = (LPCWSTR)0x0;
+      DVar11 = GetFullPathNameW(local_14,uVar8,pWVar4,&local_c);
+      if ((DVar11 != 0) && (DVar11 < uVar8)) {
+        if (local_c == (LPCWSTR)0x0) {
+          WVar6 = (WCHAR)local_18;
+        }
+        else {
+          WVar6 = *local_c;
+          *local_c = L'\0';
+        }
+        FUN_00467100();
+        local_10 = CreateFileW(pWVar4,0x80000000,7,(LPSECURITY_ATTRIBUTES)0x0,3,0x2000000,
+                               (HANDLE)0xffffffff);
+        FUN_006b9240();
+        if (local_c != (WCHAR *)0x0) {
+          *local_c = WVar6;
+        }
+        if (local_10 != (HANDLE)0xffffffff) {
+          while( true ) {
+            _memset(local_132c,0,0x800);
+            iVar5 = _GetFileInformationByHandleEx_16(local_10,10,local_132c,0x800);
+            piVar9 = local_132c;
+            if (iVar5 == 0) break;
+            while( true ) {
+              _memset(local_b2c,0,0x800);
+              uVar8 = piVar9[0xf];
+              if (0x7ff < uVar8) {
+                uVar8 = 0x800;
+              }
+              _memcpy(local_b2c,piVar9 + 0x1a,uVar8);
+              FUN_00418d40();
+              FUN_00503750(piVar9 + 0x18,8);
+              FUN_0043bdc0();
+              cVar1 = FUN_00550eb0(&DAT_00888070);
+              if ((cVar1 != '\0') &&
+                 (((local_c == (LPCWSTR)0x0 && (iVar5 = lstrcmpiW(local_b2c,L"."), iVar5 == 0)) ||
+                  (iVar5 = lstrcmpiW(local_b2c,local_c), iVar5 == 0)))) {
+                uStack_8 = CONCAT13(1,(undefined3)uStack_8);
+              }
+              iVar5 = *piVar9;
+              piVar9 = (int *)((int)piVar9 + iVar5);
+              thunk_FUN_005df010();
+              if (iVar5 == 0) break;
+              if (uStack_8._3_1_ != '\0') goto LAB_006c04ef;
+            }
+            if (uStack_8._3_1_ != '\0') break;
+          }
+LAB_006c04ef:
+          CloseHandle(local_10);
+          pWVar4 = local_18;
+        }
+      }
+      DVar11 = 0;
+      pvVar2 = GetProcessHeap();
+      HeapFree(pvVar2,DVar11,pWVar4);
+    }
+    DVar11 = 0;
+    pWVar4 = local_14;
+    pvVar2 = GetProcessHeap();
+    HeapFree(pvVar2,DVar11,pWVar4);
+    if (uStack_8._3_1_ != '\0') {
+      if (param_2 == '\0') {
+        return 1;
+      }
+      FUN_006cdb40(0,0);
+      return 1;
+    }
+  }
+  FUN_0042ff90(0,1,&param_1);
+  if (DAT_0088819c != 0 || _DAT_00888188 != 0) {
+    return 1;
+  }
+  return 0;
+}
+
+
+
+================================================================
+Function: FUN_006c0570 @ 006c0570
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+undefined4 FUN_006c0570(undefined4 param_1,char param_2)
+
+{
+  WCHAR WVar1;
+  char cVar2;
+  LPCWSTR lpString;
+  HANDLE pvVar3;
+  SIZE_T SVar4;
+  HANDLE hObject;
+  undefined1 *puVar5;
+  LPCWSTR pWVar6;
+  BOOL BVar7;
+  int iVar8;
+  int iVar9;
+  code *pcVar10;
+  undefined4 *puVar11;
+  WCHAR *pWVar12;
+  uint uVar13;
+  undefined4 *puVar14;
+  DWORD DVar15;
+  LPWSTR lpMem;
+  undefined1 local_db4 [4];
+  WCHAR local_db0 [1022];
+  WCHAR local_5b4 [260];
+  undefined4 local_3ac [180];
+  _BY_HANDLE_FILE_INFORMATION local_dc;
+  undefined4 local_88 [8];
+  uint local_68;
+  DWORD local_60;
+  undefined4 local_58;
+  undefined4 local_54;
+  int local_50;
+  undefined *local_4c;
+  undefined4 local_48;
+  undefined4 local_44;
+  int local_40;
+  undefined *local_3c;
+  undefined4 local_38;
+  undefined4 local_34;
+  int local_30;
+  undefined *local_2c;
+  DWORD local_28;
+  DWORD local_24;
+  LPWSTR local_20;
+  undefined4 local_1c;
+  int local_18;
+  LPWSTR local_14;
+  undefined1 local_d;
+  LPCWSTR local_c;
+  char local_5;
+  
+  cVar2 = FUN_006ce6a0();
+  if (cVar2 == '\0') {
+    return 1;
+  }
+  local_3c = PTR_IMAGE_DOS_HEADER_008886d0;
+  puVar11 = &DAT_008881b0;
+  pWVar12 = local_5b4;
+  for (iVar8 = 0x82; iVar8 != 0; iVar8 = iVar8 + -1) {
+    *(undefined4 *)pWVar12 = *puVar11;
+    puVar11 = puVar11 + 1;
+    pWVar12 = pWVar12 + 2;
+  }
+  iVar8 = (int)&DAT_008886d4 + DAT_008886d4;
+  local_48 = 1000000;
+  local_44 = 0;
+  local_40 = iVar8;
+  FUN_006ba620(&local_48,&DAT_008883b8,(int)&DAT_0088869c + DAT_0088869c,local_5b4,3,
+               (int)&DAT_00888690 + DAT_00888690,DAT_008886a0,(int)&DAT_008886b0 + DAT_008886b0,
+               DAT_008886c0,(int)&DAT_00888694 + DAT_00888694,DAT_008886a4,
+               (int)&DAT_008886b4 + DAT_008886b4,DAT_008886c4,(int)&DAT_00888698 + DAT_00888698,
+               DAT_008886a8,(int)&DAT_008886b8 + DAT_008886b8,DAT_008886c8);
+  local_18 = lstrlenW(local_5b4);
+  if (local_18 != 0) {
+    local_18 = local_18 + -1;
+  }
+  local_2c = PTR_IMAGE_DOS_HEADER_008886d0;
+  puVar11 = &DAT_00888430;
+  puVar14 = local_3ac;
+  for (iVar9 = 0x82; iVar9 != 0; iVar9 = iVar9 + -1) {
+    *puVar14 = *puVar11;
+    puVar11 = puVar11 + 1;
+    puVar14 = puVar14 + 1;
+  }
+  local_38 = 1000000;
+  local_34 = 0;
+  local_30 = iVar8;
+  FUN_0053e4b0(&local_38,&DAT_00888638,(int)&DAT_0088874c + DAT_0088874c,local_3ac,3,
+               (int)&DAT_00888740 + DAT_00888740,DAT_00888750,(int)&DAT_00888760 + DAT_00888760,
+               DAT_00888770,(int)&DAT_00888744 + DAT_00888744,DAT_00888754,
+               (int)&DAT_00888764 + DAT_00888764,DAT_00888774,(int)&DAT_00888748 + DAT_00888748,
+               DAT_00888758,(int)&DAT_00888768 + DAT_00888768,DAT_00888778);
+  local_5 = '\0';
+  local_1c = 0;
+  lpString = (LPCWSTR)FUN_005570a0(local_3ac,&local_1c);
+  local_c = lpString;
+  if ((lpString == (LPCWSTR)0x0) || (DAT_00888658 != '\0')) goto LAB_006c0a1e;
+  iVar8 = lstrlenW(lpString);
+  iVar8 = iVar8 + -1;
+  WVar1 = lpString[iVar8];
+  pcVar10 = GetProcessHeap_exref;
+  while (GetProcessHeap_exref = pcVar10, WVar1 == L'\\') {
+    lpString[iVar8] = L'\0';
+    iVar8 = iVar8 + -1;
+    pcVar10 = GetProcessHeap_exref;
+    WVar1 = lpString[iVar8];
+  }
+  DVar15 = 0;
+  pWVar6 = lpString;
+  pvVar3 = GetProcessHeap();
+  SVar4 = HeapSize(pvVar3,DVar15,pWVar6);
+  DVar15 = 8;
+  uVar13 = SVar4 + 0x208;
+  pvVar3 = GetProcessHeap();
+  local_20 = HeapAlloc(pvVar3,DVar15,uVar13);
+  if (local_20 != (LPWSTR)0x0) {
+    uVar13 = SVar4 + 0x208 >> 1;
+    local_14 = (LPWSTR)0x0;
+    DVar15 = GetFullPathNameW(lpString,uVar13,local_20,&local_14);
+    if ((DVar15 != 0) && (DVar15 < uVar13)) {
+      if (local_14 != (LPWSTR)0x0) {
+        *local_14 = L'\0';
+      }
+      FUN_00467100();
+      pvVar3 = CreateFileW(lpString,0x80000000,7,(LPSECURITY_ATTRIBUTES)0x0,3,0x2000000,
+                           (HANDLE)0xffffffff);
+      FUN_006b9240();
+      if (pvVar3 == (HANDLE)0xffffffff) {
+        GetLastError();
+      }
+      else {
+        local_50 = (int)&DAT_0088872c + DAT_0088872c;
+        puVar11 = &DAT_008883d8;
+        puVar14 = local_88;
+        for (iVar8 = 0xc; iVar8 != 0; iVar8 = iVar8 + -1) {
+          *puVar14 = *puVar11;
+          puVar11 = puVar11 + 1;
+          puVar14 = puVar14 + 1;
+        }
+        local_4c = PTR_IMAGE_DOS_HEADER_00888728;
+        local_58 = 1000000;
+        local_54 = 0;
+        FUN_006bbf90(&local_58,&DAT_00888408,0,local_88,3,(int)&DAT_008886e8 + DAT_008886e8,
+                     DAT_008886f8,(int)&DAT_00888708 + DAT_00888708,DAT_00888718,
+                     (int)&DAT_008886ec + DAT_008886ec,DAT_008886fc,
+                     (int)&DAT_0088870c + DAT_0088870c,DAT_0088871c,
+                     (int)&DAT_008886f0 + DAT_008886f0,DAT_00888700,
+                     (int)&DAT_00888710 + DAT_00888710,DAT_00888720);
+        hObject = (HANDLE)_OpenFileById_24(pvVar3,local_88,0x81,7,0,0);
+        if (hObject == (HANDLE)0xffffffff) {
+          GetLastError();
+          hObject = (HANDLE)_OpenFileById_24(pvVar3,local_88,0x81,7,0,0x2000000);
+          if (hObject == (HANDLE)0xffffffff) {
+            FUN_00467100();
+            hObject = (HANDLE)_OpenFileById_24(pvVar3,local_88,0x81,7,0,0x2000000);
+            FUN_006b9240();
+            if (hObject == (HANDLE)0xffffffff) {
+              DVar15 = GetLastError();
+              lpString = local_c;
+              if ((DVar15 == local_60) &&
+                 (pWVar6 = (LPCWSTR)FUN_006b9290(local_3ac,&local_d), lpString = local_c,
+                 pWVar6 != (LPCWSTR)0x0)) {
+                pvVar3 = CreateFileW(pWVar6,0x80000000,7,(LPSECURITY_ATTRIBUTES)0x0,3,0,
+                                     (HANDLE)0xffffffff);
+                if ((pvVar3 != (HANDLE)0xffffffff) ||
+                   (pvVar3 = CreateFileW(pWVar6,0x80000000,7,(LPSECURITY_ATTRIBUTES)0x0,3,0x2000000,
+                                         (HANDLE)0xffffffff), pvVar3 != (HANDLE)0xffffffff)) {
+                  BVar7 = GetFileInformationByHandle(pvVar3,&local_dc);
+                  if (BVar7 != 0) {
+                    local_24 = local_dc.nFileIndexHigh;
+                    local_28 = local_dc.nFileIndexLow;
+                    FUN_00418d40();
+                    FUN_00503750(&local_28,8);
+                    FUN_0043bdc0();
+                    local_5 = FUN_00550eb0(&DAT_0088866c);
+                    thunk_FUN_005df010();
+                  }
+                  CloseHandle(pvVar3);
+                }
+                DVar15 = 0;
+                pvVar3 = GetProcessHeap();
+                HeapFree(pvVar3,DVar15,pWVar6);
+                lpString = local_c;
+              }
+              goto LAB_006c09f3;
+            }
+          }
+        }
+        iVar8 = 0x800;
+        puVar5 = local_db4;
+        do {
+          *puVar5 = 0;
+          puVar5 = puVar5 + 1;
+          iVar8 = iVar8 + -1;
+        } while (iVar8 != 0);
+        iVar8 = _GetFileInformationByHandleEx_16(hObject,2,local_db4,0x800);
+        if (iVar8 != 0) {
+          iVar8 = lstrcmpiW(local_c + local_18,local_db0);
+          if ((((local_68 & 0x400) == 0) && (iVar8 == 0)) ||
+             (((local_68 & 0x400) == 0x400 && (iVar8 != 0)))) {
+            local_5 = '\x01';
+          }
+        }
+        CloseHandle(hObject);
+        lpString = local_c;
+      }
+    }
+LAB_006c09f3:
+    pcVar10 = GetProcessHeap_exref;
+    DVar15 = 0;
+    lpMem = local_20;
+    pvVar3 = GetProcessHeap();
+    HeapFree(pvVar3,DVar15,lpMem);
+  }
+  DVar15 = 0;
+  pvVar3 = (HANDLE)(*pcVar10)();
+  HeapFree(pvVar3,DVar15,lpString);
+  if (local_5 != '\0') {
+    if (param_2 == '\0') {
+      return 1;
+    }
+    FUN_006cdb40(0,0);
+    return 1;
+  }
+LAB_006c0a1e:
+  FUN_0042f5d0(0,1,&param_1);
+  if (DAT_008887ec != 0 || _DAT_008887d8 != 0) {
+    return 1;
+  }
+  return 0;
+}
+
+
+
+================================================================
+Function: FUN_006bab00 @ 006bab00
+----------------------------------------------------------------
+
+char FUN_006bab00(undefined4 param_1,char param_2)
+
+{
+  char cVar1;
+  LPCWSTR lpFileName;
+  HANDLE pvVar2;
+  BOOL BVar3;
+  int iVar4;
+  undefined4 *puVar5;
+  undefined4 *puVar6;
+  DWORD dwFlags;
+  undefined4 local_328 [180];
+  _BY_HANDLE_FILE_INFORMATION local_58;
+  DWORD local_24;
+  DWORD local_20;
+  undefined4 local_1c;
+  int local_18;
+  code *local_14;
+  int local_10;
+  undefined *local_c;
+  char local_5;
+  
+  cVar1 = FUN_006ce050();
+  if (cVar1 == '\0') {
+    return '\x01';
+  }
+  puVar5 = &DAT_00885930;
+  puVar6 = local_328;
+  for (iVar4 = 0x82; iVar4 != 0; iVar4 = iVar4 + -1) {
+    *puVar6 = *puVar5;
+    puVar5 = puVar5 + 1;
+    puVar6 = puVar6 + 1;
+  }
+  local_10 = (int)&DAT_00885bd4 + DAT_00885bd4;
+  local_c = PTR_IMAGE_DOS_HEADER_00885bd0;
+  local_5 = '\0';
+  local_18 = 1000000;
+  local_14 = (code *)0x0;
+  FUN_006ba760(&local_18,&DAT_00885b38,(int)&DAT_00885b9c + DAT_00885b9c,local_328,3,
+               (int)&DAT_00885b90 + DAT_00885b90,DAT_00885ba0,(int)&DAT_00885bb0 + DAT_00885bb0,
+               DAT_00885bc0,(int)&DAT_00885b94 + DAT_00885b94,DAT_00885ba4,
+               (int)&DAT_00885bb4 + DAT_00885bb4,DAT_00885bc4,(int)&DAT_00885b98 + DAT_00885b98,
+               DAT_00885ba8,(int)&DAT_00885bb8 + DAT_00885bb8,DAT_00885bc8);
+  local_1c = 0;
+  lpFileName = (LPCWSTR)FUN_004e1370(local_328,&local_1c);
+  if ((lpFileName != (LPCWSTR)0x0) && (DAT_00885b58 == '\0')) {
+    FUN_00467100();
+    pvVar2 = CreateFileW(lpFileName,0x80000000,7,(LPSECURITY_ATTRIBUTES)0x0,3,0,(HANDLE)0xffffffff);
+    if (pvVar2 == (HANDLE)0xffffffff) {
+      pvVar2 = CreateFileW(lpFileName,0x80000000,7,(LPSECURITY_ATTRIBUTES)0x0,3,0x2000000,
+                           (HANDLE)0xffffffff);
+    }
+    if (((local_18 != 0) && (local_14 != (code *)0x0)) && (local_c != (undefined *)0x0)) {
+      local_c = (undefined *)(*local_14)(local_10);
+    }
+    if (pvVar2 != (HANDLE)0xffffffff) {
+      BVar3 = GetFileInformationByHandle(pvVar2,&local_58);
+      if (BVar3 != 0) {
+        FUN_00418d40();
+        local_20 = local_58.nFileIndexHigh;
+        local_24 = local_58.nFileIndexLow;
+        FUN_00503750(&local_24,8);
+        FUN_0043bdc0();
+        local_5 = FUN_00550eb0(&DAT_00885b6c);
+        thunk_FUN_005df010();
+      }
+      CloseHandle(pvVar2);
+    }
+    dwFlags = 0;
+    pvVar2 = GetProcessHeap();
+    HeapFree(pvVar2,dwFlags,lpFileName);
+    if (local_5 != '\0') {
+      if (param_2 != '\0') {
+        FUN_006cdb40(0,0);
+      }
+      return local_5;
+    }
+  }
+  FUN_004d7b40(0,1,&param_1);
+  return local_5;
+}
+
+
+
+================================================================
+Function: FUN_006bd4a0 @ 006bd4a0
+----------------------------------------------------------------
+
+/* WARNING: Function: __alloca_probe replaced with injection: alloca_probe */
+
+undefined1 FUN_006bd4a0(undefined4 param_1,char param_2)
+
+{
+  char cVar1;
+  HANDLE pvVar2;
+  SIZE_T SVar3;
+  LPCWSTR pWVar4;
+  int iVar5;
+  WCHAR WVar6;
+  undefined4 *puVar7;
+  uint uVar8;
+  int *piVar9;
+  undefined4 *puVar10;
+  DWORD DVar11;
+  int local_132c [512];
+  WCHAR local_b2c [1024];
+  undefined4 local_32c [180];
+  undefined4 local_5c [9];
+  char local_38;
+  undefined4 local_2c;
+  undefined4 local_28;
+  undefined4 local_24;
+  int local_20;
+  undefined *local_1c;
+  LPCWSTR local_18;
+  LPCWSTR local_14;
+  HANDLE local_10;
+  LPWSTR local_c;
+  undefined4 uStack_8;
+  
+  uStack_8 = 0x6bd4ad;
+  cVar1 = FUN_006ce230();
+  if (cVar1 == '\0') {
+    return 1;
+  }
+  puVar7 = &DAT_00839458;
+  puVar10 = local_32c;
+  for (iVar5 = 0x82; iVar5 != 0; iVar5 = iVar5 + -1) {
+    *puVar10 = *puVar7;
+    puVar7 = puVar7 + 1;
+    puVar10 = puVar10 + 1;
+  }
+  local_20 = (int)&DAT_008680ec + DAT_008680ec;
+  local_1c = PTR_IMAGE_DOS_HEADER_008680e8;
+  uStack_8 = uStack_8 & 0xffffff;
+  local_28 = 1000000;
+  local_24 = 0;
+  FUN_00483380(&local_28,&DAT_00839660,(int)&DAT_008680b4 + DAT_008680b4,local_32c,3,
+               (int)&DAT_008680a8 + DAT_008680a8,DAT_008680b8,(int)&DAT_008680c8 + DAT_008680c8,
+               DAT_008680d8,(int)&DAT_008680ac + DAT_008680ac,DAT_008680bc,
+               (int)&DAT_008680cc + DAT_008680cc,DAT_008680dc,(int)&DAT_008680b0 + DAT_008680b0,
+               DAT_008680c0,(int)&DAT_008680d0 + DAT_008680d0,DAT_008680e0);
+  local_2c = 0;
+  local_14 = (LPCWSTR)FUN_0052f350(local_32c,&local_2c,(int)&uStack_8 + 2);
+  puVar7 = &DAT_00885be8;
+  puVar10 = local_5c;
+  for (iVar5 = 0xc; iVar5 != 0; iVar5 = iVar5 + -1) {
+    *puVar10 = *puVar7;
+    puVar7 = puVar7 + 1;
+    puVar10 = puVar10 + 1;
+  }
+  local_20 = (int)&DAT_00885cac + DAT_00885cac;
+  local_1c = PTR_IMAGE_DOS_HEADER_00885ca8;
+  local_28 = 1000000;
+  local_24 = 0;
+  FUN_006bbbd0(&local_28,&DAT_00885c18,0,local_5c,3,(int)&DAT_00885c68 + DAT_00885c68,DAT_00885c78,
+               (int)&DAT_00885c88 + DAT_00885c88,DAT_00885c98,(int)&DAT_00885c6c + DAT_00885c6c,
+               DAT_00885c7c,(int)&DAT_00885c8c + DAT_00885c8c,DAT_00885c9c,
+               (int)&DAT_00885c70 + DAT_00885c70,DAT_00885c80,(int)&DAT_00885c90 + DAT_00885c90,
+               DAT_00885ca0);
+  if ((local_14 != (LPCWSTR)0x0) && (uStack_8._2_1_ == local_38)) {
+    DVar11 = 0;
+    pWVar4 = local_14;
+    pvVar2 = GetProcessHeap();
+    SVar3 = HeapSize(pvVar2,DVar11,pWVar4);
+    DVar11 = 8;
+    uVar8 = SVar3 + 0x208;
+    pvVar2 = GetProcessHeap();
+    pWVar4 = HeapAlloc(pvVar2,DVar11,uVar8);
+    uVar8 = SVar3 + 0x208 >> 1;
+    local_18 = pWVar4;
+    if (pWVar4 != (LPCWSTR)0x0) {
+      local_c = (LPCWSTR)0x0;
+      DVar11 = GetFullPathNameW(local_14,uVar8,pWVar4,&local_c);
+      if ((DVar11 != 0) && (DVar11 < uVar8)) {
+        if (local_c == (LPCWSTR)0x0) {
+          WVar6 = (WCHAR)local_18;
+        }
+        else {
+          WVar6 = *local_c;
+          *local_c = L'\0';
+        }
+        FUN_00467100();
+        local_10 = CreateFileW(pWVar4,0x80000000,7,(LPSECURITY_ATTRIBUTES)0x0,3,0x2000000,
+                               (HANDLE)0xffffffff);
+        FUN_006b9240();
+        if (local_c != (WCHAR *)0x0) {
+          *local_c = WVar6;
+        }
+        if (local_10 != (HANDLE)0xffffffff) {
+          while( true ) {
+            _memset(local_132c,0,0x800);
+            iVar5 = _GetFileInformationByHandleEx_16(local_10,10,local_132c,0x800);
+            piVar9 = local_132c;
+            if (iVar5 == 0) break;
+            while( true ) {
+              _memset(local_b2c,0,0x800);
+              uVar8 = piVar9[0xf];
+              if (0x7ff < uVar8) {
+                uVar8 = 0x800;
+              }
+              _memcpy(local_b2c,piVar9 + 0x1a,uVar8);
+              FUN_00418d40();
+              FUN_00503750(piVar9 + 0x18,8);
+              FUN_0043bdc0();
+              cVar1 = FUN_00550eb0(&DAT_00885c40);
+              if ((cVar1 != '\0') &&
+                 (((local_c == (LPCWSTR)0x0 && (iVar5 = lstrcmpiW(local_b2c,L"."), iVar5 == 0)) ||
+                  (iVar5 = lstrcmpiW(local_b2c,local_c), iVar5 == 0)))) {
+                uStack_8 = CONCAT13(1,(undefined3)uStack_8);
+              }
+              iVar5 = *piVar9;
+              piVar9 = (int *)((int)piVar9 + iVar5);
+              thunk_FUN_005df010();
+              if (iVar5 == 0) break;
+              if (uStack_8._3_1_ != '\0') goto LAB_006bd84f;
+            }
+            if (uStack_8._3_1_ != '\0') break;
+          }
+LAB_006bd84f:
+          CloseHandle(local_10);
+          pWVar4 = local_18;
+        }
+      }
+      DVar11 = 0;
+      pvVar2 = GetProcessHeap();
+      HeapFree(pvVar2,DVar11,pWVar4);
+    }
+    DVar11 = 0;
+    pWVar4 = local_14;
+    pvVar2 = GetProcessHeap();
+    HeapFree(pvVar2,DVar11,pWVar4);
+    if (uStack_8._3_1_ != '\0') {
+      if (param_2 != '\0') {
+        FUN_006cdb40(0,0);
+      }
+      return uStack_8._3_1_;
+    }
+  }
+  FUN_00489360(0,1,&param_1);
+  return uStack_8._3_1_;
+}
+
+
+

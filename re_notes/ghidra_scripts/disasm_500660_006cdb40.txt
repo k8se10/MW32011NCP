@@ -1,0 +1,8 @@
+Address 00500660:
+  IN FUNCTION FUN_00500660 @ 00500660  (offset +0x0)
+  instruction at addr: PUSH EBP
+
+Address 006cdb40:
+  IN FUNCTION FUN_006cdb40 @ 006cdb40  (offset +0x0)
+  instruction at addr: PUSH EBP
+
