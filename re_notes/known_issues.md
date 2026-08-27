@@ -131,7 +131,7 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#96](#96-game-literally-exited-mid-session----corrected-2026-08-27-not-caused-by-internalrenderscalepercent-issue-88-that-original-isolation-was-wrong-two-real-crash-sites-now-live-captured-root-cause-still-open) — Motion blur crash ("game literally exited") — **Resolved** — root-caused to `Hook_FUN_00497210`'s unconditional install; final shipped hook is `FUN_00693ff0`, confirmed crash-free live
 - [#97](#97-motion-blur-issue-96-continuation-menu--loading-screen-gates-shipped-cutscene-report-retracted-on-retest----current-state-closed-for-tonight) — Motion blur menu/loading-screen gates + cutscene report — **Resolved** (cutscene report retracted on retest, no code change needed)
 - [#98](#98-london-mission-cutscene-audio-continues-after-skip-on-some-cutscenes----reported-not-yet-investigated) — London mission: cutscene audio continues after skip — **Open, not investigated**
-- [#99](#99-camera-look-stutterjitter----correction-confirmed-pc-specific-via-a-cross-machine-test-not-universal-native-behavior-as-issue-96s-follow-up-concluded-2026-08-27) — Camera-look stutter — **Investigating** (confirmed PC-specific via cross-machine test; corrects issue #96's "universal native behavior" framing)
+- [#99](#99-camera-look-stutterjitter----resolved-real-root-cause-is-vsync-confirmed-via-cross-machine-test-2026-08-27) — Camera-look stutter — **Resolved** (real root cause is vsync, confirmed via cross-machine test)
 
 ---
 
@@ -14129,10 +14129,39 @@ how. Not chased further this session per the user's own explicit prioritization
 tonight (missile-accel lead and the 30Hz-tick dig took precedence, then the
 session moved to documentation close-out).
 
-## 99. Camera-look stutter/jitter -- CORRECTION: confirmed PC-specific via a cross-machine test, not universal native behavior as issue #96's follow-up concluded (2026-08-27)
+## 99. Camera-look stutter/jitter -- RESOLVED: real root cause is vsync, confirmed via cross-machine test (2026-08-27)
 
-**Status: Investigating -- real correction to a prior conclusion, not a
-closed item.** **This entry originally (and wrongly) attributed a
+**Status: Resolved.** Root cause confirmed by the user directly: **"yep
+vsync is the clear culprit."** Full chain of evidence, in order:
+
+1. Issue #96's earlier follow-up correctly established this is genuine
+   native engine behavior, not this mod's code (reproduces with the mod
+   fully uninstalled).
+2. Tonight's `[tickrate-diag]` measurement (this same issue, below) proved
+   the camera updates on EVERY real rendered frame with no separate tick
+   gate -- the camera faithfully tracks whatever the real frame timing is,
+   nothing more, nothing less.
+3. The cross-machine test (main PC reproduces the stutter, second PC
+   doesn't) pointed at something environment-specific rather than a
+   universal engine characteristic.
+4. **Confirmed: vsync on the main PC.** With the camera proven to update
+   1:1 with real frames (step 2), vsync-introduced frame-pacing
+   irregularity is a direct, sufficient explanation on its own -- the
+   camera is doing exactly what it should; the actual frame delivery
+   timing is what's irregular. The second PC not reproducing it is
+   consistent with a different vsync/driver/presentation-mode behavior
+   there, not a different engine.
+
+**Practical takeaway**: disabling vsync (or replacing it with a frame-rate
+cap that doesn't introduce the same pacing irregularity, e.g. RTSS's own
+limiter, already in use this session) is the real, actionable fix for this
+symptom on the affected PC -- nothing for this mod to change. This closes
+out the whole camera-tick/stutter thread from tonight cleanly: no gate to
+patch, no code bug, a real and fully explained root cause.
+
+### Investigation trail (original text below, corrected by the finding above)
+
+**This entry originally (and wrongly) attributed a
 cross-machine PC test to the loading-screen black screen** (issue in
 `PATCHNOTES.md`/git history, since corrected) -- direct user correction:
 "no dude thats not what i was testing for, that is a known mod issue
@@ -14157,7 +14186,5 @@ presentation-mode difference) -- confirmed via the cross-machine test. The
 prior "not a bug, universal native 30Hz-tick behavior" framing was too
 broad; it should read "native engine behavior on at least one real
 hardware/driver/display configuration," not "universal across all
-hardware." **Not yet investigated**: what's actually different between the
-two PCs (refresh rate, GPU vendor/driver, `com_maxfps`/vsync config, RTSS
-presence). User is continuing to test settings on the affected PC; revisit
-once more detail on the actual PC-to-PC difference is available.
+hardware." **Resolved above**: the PC-to-PC difference is vsync, confirmed
+directly by the user.
