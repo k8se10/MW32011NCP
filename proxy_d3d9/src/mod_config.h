@@ -377,6 +377,21 @@ struct ModConfig
     // stable, it graduates to being unconditional (the toggle is removed, not left
     // around indefinitely) -- this section is for active experimentation, not a
     // permanent settings surface.
+    // MotionBlurClcStateTestValue (2026-08-28, issue #99/#100) -- direct user
+    // methodology: rather than guess which clcState value means "gameplay",
+    // test each one exclusively, one at a time. -1 (default) = disabled, use
+    // the normal gates (IsMenuActive_Exported + kInLevelFlagAddr) unchanged.
+    // Any other value (0/1/2/3/4/6/7, the engine's own confirmed valid
+    // clcState set -- see analog_input_hooks.cpp's clcstate-diag) makes motion
+    // blur run ONLY while DAT_00B36218 (clcState) equals exactly that value,
+    // bypassing every other gate entirely -- a clean, uncontaminated signal
+    // for "does this one value alone correctly distinguish gameplay from
+    // menu/loading/cutscene," rather than layering it on top of gates that
+    // might mask the real answer. Hot-reloadable -- cycle through values in
+    // one play session without rebuilding. Not a permanent feature; remove
+    // once the real value (or confirmation that no single value works) is
+    // found -- see this section's own header comment.
+    int motionBlurClcStateTestValue = -1;
     bool fireNotifyQueueKick = true; // task #7/#29: also pushes the literal command
         // "n" onto the local player's real command queue (via FUN_00428a70) on
         // Fire's down-edge, alongside the existing real +attack kbutton call --
