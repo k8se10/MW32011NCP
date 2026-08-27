@@ -6076,93 +6076,18 @@ HRESULT WINAPI Hook_Reset(void* device, void* pPresentationParameters)
     return hr;
 }
 
-// [Video] FpsLimitEnabled/FpsLimitTargetFps/FpsLimitEnhancementsOnly (2026-08-27,
-// issue #99 follow-up, direct user request: "we should probably gate fps through
-// our mod like riva does... add a general fps limiter that is fully configurable
-// if you want it in normal gameplay or with enhancements only") -- an in-mod
-// frame-pacing limiter, same purpose as an external tool like RivaTuner
-// Statistics Server. Runs AFTER the real EndScene call returns (Hook_EndScene's
-// own tail, below), not before -- the just-rendered frame's own presentation
-// latency stays as low as possible; only the START of the NEXT frame's work is
-// delayed. This is the same "post-present wait" design real limiters use rather
-// than delaying presentation itself.
-//
-// Deliberately NOT a bare Sleep(): Windows' default timer granularity (~15.6ms)
-// makes a plain Sleep() wildly imprecise against a real target interval (e.g.
-// 16.67ms for 60fps) -- this uses the same hybrid technique real limiters use
-// (RTSS included): sleep for the bulk of the remaining time minus a small
-// safety margin, then a tight spin-wait (QueryPerformanceCounter poll, no
-// further Sleep) for the last couple ms of precision. This IS a deliberate,
-// purpose-built blocking wait -- unlike this file's other hook callbacks,
-// pacing the frame is this function's entire job (see CODE_STANDARDS.md's "no
-// blocking calls" rule, which is about not blocking unexpectedly inside
-// unrelated hook callbacks, not about a limiter whose whole point is to wait).
-bool IsFpsLimitActiveThisFrame()
-{
-    if (!g_modConfig.fpsLimitEnabled) return false;
-    if (!g_modConfig.fpsLimitEnhancementsOnly) return true;
-    // "Engaged" mirrors the same three settings the vsync/RTSS recommendation
-    // above already covers -- see that comment in mod_config.cpp's
-    // WriteDefaultConfig for the full citation (issue #99).
-    return g_modConfig.motionBlurEnabled || g_modConfig.fsrSharpenEnabled ||
-           g_modConfig.internalRenderScalePercent > 0; // >0, not !=100 -- 0 is this
-                                                        // feature's own confirmed "off"
-                                                        // value, not 100 (issue #88)
-}
-
-void ApplyFpsLimitIfEnabled()
-{
-    if (!IsFpsLimitActiveThisFrame()) return;
-    const int targetFps = g_modConfig.fpsLimitTargetFps;
-    if (targetFps < 1) return; // defensive -- ReadConfig already clamps this to >=1,
-                                // but this function has no other guard of its own
-
-    static LARGE_INTEGER s_freq{};
-    static bool s_freqInit = false;
-    if (!s_freqInit) {
-        QueryPerformanceFrequency(&s_freq);
-        s_freqInit = true;
-    }
-    if (s_freq.QuadPart == 0) return; // defensive, should never happen on real hardware
-
-    static LARGE_INTEGER s_lastFrameEnd{};
-    static bool s_haveLastFrame = false;
-
-    const double targetIntervalMs = 1000.0 / static_cast<double>(targetFps);
-
-    if (s_haveLastFrame) {
-        LARGE_INTEGER now{};
-        QueryPerformanceCounter(&now);
-        double elapsedMs = static_cast<double>(now.QuadPart - s_lastFrameEnd.QuadPart) *
-            1000.0 / static_cast<double>(s_freq.QuadPart);
-        double remainingMs = targetIntervalMs - elapsedMs;
-        if (remainingMs > 0.0) {
-            // Sleep for the bulk of it, leaving a small margin for the spin-wait
-            // below to absorb Sleep's own imprecision -- 2ms is conservative
-            // relative to Windows' ~15.6ms default timer granularity.
-            constexpr double kSpinMarginMs = 2.0;
-            if (remainingMs > kSpinMarginMs) {
-                Sleep(static_cast<DWORD>(remainingMs - kSpinMarginMs));
-            }
-            // Tight spin for the remainder -- bounded to at most a couple ms by
-            // the margin above, so this never meaningfully burns a core.
-            LARGE_INTEGER spinNow{};
-            do {
-                QueryPerformanceCounter(&spinNow);
-                elapsedMs = static_cast<double>(spinNow.QuadPart - s_lastFrameEnd.QuadPart) *
-                    1000.0 / static_cast<double>(s_freq.QuadPart);
-            } while (elapsedMs < targetIntervalMs);
-        }
-        // If elapsed already exceeded the target interval (a slow frame, or this
-        // is the first active frame after a period where the limiter was
-        // inactive per IsFpsLimitActiveThisFrame), no wait happens this frame --
-        // pacing simply resumes cleanly from the next one, same as any real
-        // limiter recovering from a frame-time spike.
-    }
-
-    QueryPerformanceCounter(&s_lastFrameEnd);
-    s_haveLastFrame = true;
-}
+// FpsLimitEnabled/FpsLimitTargetFps/FpsLimitEnhancementsOnly (2026-08-27) --
+// built, live-tested same night, FAILED (real added input latency + bad
+// pacing) and REMOVED entirely. The wait was placed right after the real
+// EndScene call returns, assumed to be effectively "post-Present" -- very
+// likely wrong: EndScene and the real Present call are probably two separate
+// D3D9 calls, with Present invoked by the game's own loop AFTER EndScene
+// returns, meaning the wait actually landed BEFORE the real display event (a
+// front-edge wait holding an already-rendered frame back, not the intended
+// back-edge one). See known_issues.md issue #99 for the full trail. Use an
+// external limiter (RivaTuner Statistics Server) instead -- do not
+// reintroduce this without first confirming the real EndScene/Present call
+// separation and redesigning the wait's placement accordingly.
 
 HRESULT WINAPI Hook_EndScene(void* device)
 {
@@ -6284,13 +6209,7 @@ HRESULT WINAPI Hook_EndScene(void* device)
     // documented loader-lock risk in Hook_CreateDevice) rather than at startup.
     ApplyForcedAnisotropicFilteringIfEnabled();
 
-    HRESULT hr = g_origEndScene(device);
-    // [Video] FpsLimitEnabled -- deliberately AFTER the real EndScene call, not
-    // before -- see ApplyFpsLimitIfEnabled's own header comment for why (keeps
-    // this frame's own presentation latency low, only delays the next frame's
-    // start).
-    ApplyFpsLimitIfEnabled();
-    return hr;
+    return g_origEndScene(device);
 }
 
 } // namespace
