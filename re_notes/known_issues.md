@@ -13822,3 +13822,12 @@ not smooth motion, independent of input method since it's a rendering/
 simulation-tick property, not an input-sampling one. Both symptoms
 tonight (the alternating frametime spikes, and this look-jitter) are one
 root cause, now confirmed two independent ways.
+
+**Third and final confirmation, decisive**: the user uninstalled this
+mod entirely -- zero mod code loaded, completely stock `d3d9.dll`/no proxy
+DLL at all -- and the same jitter/stutter is present. This is the
+strongest possible confirmation available: genuine, unmodified, native
+`iw5sp.exe` engine behavior, present with absolutely nothing this project
+has ever shipped in the loop. Closes this out completely -- not a mod bug,
+not a regression from any session's work, ever. Nothing further to
+investigate or fix here; this is simply how the underlying engine behaves.
