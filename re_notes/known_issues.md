@@ -135,7 +135,7 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#100](#100-motion-blur-ui-disappears-when-taking-damage-while-moving----reported-not-yet-investigated-2026-08-27) — Motion blur: UI disappears on damage while moving — **Open** (suspected same root as #97's menu/loading/cutscene bleed, not yet investigated)
 - [#101](#101-roadmap-note-broader-performanceoptimizationmodern-hardware-pass-users-own-framing-2026-08-27) — Roadmap: growing into a "FusionFix-style" general enhancement patch — **Roadmap Idea**, not scoped
 - [#102](#102-external-feature-request-received-custom-widthheight-resolution-override-via-ini-for-custom-monitor-layoutssplitscreen----logged-not-investigated-2026-08-27) — External feature request: custom Width/Height resolution override via .ini — **Roadmap Idea**, not investigated
-- [#103](#103-real-crash--hard-hang-caught-live-via-memdiff----mass-asset-streaming-pool-deallocation-855-regions-during-active-gameplay-all-three-visual-enhancement-features-were-active-2026-08-28) — Real crash + hard hang, caught live via memdiff (asset-streaming-pool teardown) — **Investigating**, isolation test (enhancements on/off) not yet done
+- [#103](#103-real-crash--hard-hang-caught-live-via-memdiff----mass-asset-streaming-pool-deallocation-855-regions-during-active-gameplay-all-three-visual-enhancement-features-were-active-2026-08-28) — Real crash + hard hang, caught live via memdiff (asset-streaming-pool teardown) — **Investigating** — motion blur RULED OUT (still reproduces with it off); FSR/render-scale isolation not yet done
 
 ---
 
@@ -14511,3 +14511,18 @@ features off (does it still crash? then it's native, independent of this
 mod) vs. on again (confirm reproducibility at all -- this was one real
 capture, not yet a repeated reproduction). Do not assume either direction
 without that test.
+
+**Partial isolation done (2026-08-28), MOTION BLUR RULED OUT**: direct user
+test, `MotionBlurEnabled=0` (fully off), same crash/hang AND the
+loading/cutscene visual break both still reproduced. This is a real,
+significant finding -- motion blur's own capture-and-redraw is NOT the
+cause of either symptom, cleanly, not just "less likely." **Not yet fully
+isolated**: `FsrSharpenEnabled=1` and `InternalRenderScalePercent=150`
+were BOTH still active during this specific test (confirmed via the live
+config at the time), so this does not yet clear this project's whole
+visual-enhancement suite -- only motion blur specifically. **Real next
+step**: turn FSR and render-scale off too (full native baseline, all three
+of this project's enhancements off) and retest. If the crash/break still
+reproduces there, it's conclusively native engine behavior, unrelated to
+any code this project has shipped. If it stops, FSR or render-scale (not
+motion blur) is the real remaining suspect.
