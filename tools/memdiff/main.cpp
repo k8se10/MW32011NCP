@@ -695,9 +695,14 @@ int main(int argc, char** argv)
                 && bytesRead == rangeSize;
         };
 
-        printf("\nWaiting for a level to actually be loaded...\n");
-        while (!IsInLevel(proc)) Sleep(500);
-        printf("Level detected. Ready.\n\n");
+        // Ungated 2026-08-28, direct user request -- kInLevelFlagAddr (the same
+        // frame-time-delta-not-a-real-flag this exact tool was blocking on) is
+        // precisely the thing under live investigation right now (motion blur's
+        // menu/loading/cutscene shared-root work, known_issues.md issue #100),
+        // and its writer confirmed not to run at all at the main menu -- so
+        // waiting on it here made a main-menu-state capture impossible. Ready
+        // to capture immediately regardless of level-load state.
+        printf("\nReady immediately (level-load gate removed) -- capture any state, including the main menu.\n\n");
 
         printf("================================================================\n");
         printf(" Toggle %s naturally, as many times as you like. Aim for at least\n"
@@ -836,9 +841,14 @@ int main(int argc, char** argv)
             return 1;
         }
 
-        printf("\nWaiting for a level to actually be loaded...\n");
-        while (!IsInLevel(proc)) Sleep(500);
-        printf("Level detected. Ready.\n\n");
+        // Ungated 2026-08-28, direct user request -- kInLevelFlagAddr (the same
+        // frame-time-delta-not-a-real-flag this exact tool was blocking on) is
+        // precisely the thing under live investigation right now (motion blur's
+        // menu/loading/cutscene shared-root work, known_issues.md issue #100),
+        // and its writer confirmed not to run at all at the main menu -- so
+        // waiting on it here made a main-menu-state capture impossible. Ready
+        // to capture immediately regardless of level-load state.
+        printf("\nReady immediately (level-load gate removed) -- capture any state, including the main menu.\n\n");
 
         printf("================================================================\n");
         printf(" Play normally. Press key 0x%02X at any time to take a FULL memory\n"
@@ -956,11 +966,9 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    printf("\nWaiting for a level to actually be loaded...\n");
-    while (!IsInLevel(proc)) {
-        Sleep(500);
-    }
-    printf("Level detected. Ready.\n\n");
+    // Ungated 2026-08-28 -- see the livedump/rangewatch modes' own comments above
+    // for why (kInLevelFlagAddr is under active distrust, not a safe wait gate).
+    printf("\nReady immediately (level-load gate removed) -- capture any state, including the main menu.\n\n");
 
     if (edgeMode) {
         RunEdgeSequenceMode(proc, vk, label);
