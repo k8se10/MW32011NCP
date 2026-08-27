@@ -10941,25 +10941,46 @@ void InstallAnalogInputHooks()
     }
 
     // Issue #95 follow-up, 2026-08-26 -- Phase E (motion blur) real engine hook.
-    // ORIGINAL hook (FUN_00497210) live-isolated as issue #96's real crash cause
-    // -- permanently disabled, see the big comment above Hook_FUN_00497210's own
-    // definition. REPLACED 2026-08-27 with a hook on FUN_00694650 instead, the
-    // true once-per-frame driver both real FUN_00497210/FUN_00508970 call paths
-    // originate from -- see the big comment above Hook_694650's own definition
-    // for the full RE trail (disassembly-confirmed: 2 clean RET exits, all real
-    // scene-composite work happens inside this function's body before either
-    // one). NOT yet independently live-confirmed as of this commit -- verify
-    // live (both that motion blur actually renders again, AND that native HUD
-    // stays excluded from it, matching this phase's own "Round 2" requirement)
-    // before treating this as done.
-    MH_STATUS s694650 = MH_CreateHook(reinterpret_cast<LPVOID>(0x00694650), &Hook_694650, &g_orig_694650);
-    sprintf_s(buf, "[hooks] MH_CreateHook(00694650 scene-composite-motionblur) = %d", static_cast<int>(s694650));
+    // ORIGINAL hook (FUN_00497210) live-isolated as issue #96's real crash cause.
+    // REPLACED 2026-08-27 with FUN_00694650 instead -- fixed the crash, but
+    // live-confirmed to blur native HUD (HUD drawing happens INSIDE
+    // FUN_00694650's own call tree, so a post-hook there fires after HUD
+    // pixels are already baked into the backbuffer). FUN_00694650 hook
+    // DISABLED here as a result -- see Hook_694650's own definition, kept for
+    // a future session's use once the real/partial-composite distinction is
+    // solved (needs FUN_00508970 entry/exit tracking, not yet built).
+    //
+    // RE-ENABLED HERE, same day, same session, direct user instruction ("our
+    // original crashing hook is the one we should be trying again with the
+    // restore mech") -- now that DrawFullScreenPass's own real state-restore
+    // bug is fixed (viewport was never saved/restored at all; texture stage 0
+    // was force-nulled instead of restored -- see that function's own big
+    // header comment), testing whether THIS was actually a contributing
+    // factor to the original crash, not just the separate HUD-bleed symptom.
+    // No confirmed causal mechanism connecting D3D9 device-state incompleteness
+    // to the actual crash found (CPU-side memory corruption in unrelated
+    // menu-state/GSC-decode code, not a rendering-state or driver failure) --
+    // this is a genuine, honest experiment, not a confirmed fix. Bounded risk:
+    // worst case is the game crashes again (recoverable, not a system-level
+    // risk like the live-debugger incidents), and a proven git-bisect/
+    // isolation-test process already exists if it does. NOT yet independently
+    // live-confirmed as of this commit.
+    MH_STATUS sSceneFinish = MH_CreateHook(reinterpret_cast<LPVOID>(0x00497210), &Hook_FUN_00497210, reinterpret_cast<LPVOID*>(&g_origSceneFinish));
+    sprintf_s(buf, "[hooks] MH_CreateHook(00497210 scene-finish-motionblur RETRY-WITH-STATE-FIX) = %d", static_cast<int>(sSceneFinish));
     LogFromController(buf);
-    if (s694650 == MH_OK) {
-        MH_STATUS e694650 = MH_EnableHook(reinterpret_cast<LPVOID>(0x00694650));
-        sprintf_s(buf, "[hooks] MH_EnableHook(00694650 scene-composite-motionblur) = %d", static_cast<int>(e694650));
+    if (sSceneFinish == MH_OK) {
+        MH_STATUS eSceneFinish = MH_EnableHook(reinterpret_cast<LPVOID>(0x00497210));
+        sprintf_s(buf, "[hooks] MH_EnableHook(00497210 scene-finish-motionblur RETRY-WITH-STATE-FIX) = %d", static_cast<int>(eSceneFinish));
         LogFromController(buf);
     }
+    // MH_STATUS s694650 = MH_CreateHook(reinterpret_cast<LPVOID>(0x00694650), &Hook_694650, &g_orig_694650);
+    // sprintf_s(buf, "[hooks] MH_CreateHook(00694650 scene-composite-motionblur) = %d", static_cast<int>(s694650));
+    // LogFromController(buf);
+    // if (s694650 == MH_OK) {
+    //     MH_STATUS e694650 = MH_EnableHook(reinterpret_cast<LPVOID>(0x00694650));
+    //     sprintf_s(buf, "[hooks] MH_EnableHook(00694650 scene-composite-motionblur) = %d", static_cast<int>(e694650));
+    //     LogFromController(buf);
+    // }
 
     // task #6/#23 follow-up (2026-07-21) -- level-load-safe glyph-font-extension
     // trigger, see the big comment above Hook_FUN_0053cbc0's definition for the full
