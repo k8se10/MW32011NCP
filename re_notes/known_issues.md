@@ -14330,12 +14330,19 @@ introduced). This mod's own motion-blur quad draws using whatever vertex
 format is already ambient at that point in the frame -- occasionally
 visually wrong for that pass specifically (the "pixelated" look already
 reported, right at the moment of an unarmored hit or on level entry) but
-never unsafe. Build clean (0 warnings/0 errors), deployed. **A genuinely
-correct fix for the cosmetic gap (making this mod's own quad render
-correctly without ever touching `SetFVF`/`SetVertexDeclaration`) remains
-unstarted follow-up work** -- not attempted again this pass given the
-real crash risk just confirmed live; the native-UI-breaking bug itself is
-resolved. Original report below, kept for history.
+never unsafe. Build clean (0 warnings/0 errors), deployed.
+
+**LIVE-CONFIRMED (2026-08-28), full multi-wave playtest**: direct user
+report after 4 full Survival waves -- "tested did 4 waves, performant,
+stable, reliably working, no issues other than that seen." No crashes,
+no regressions, no repeat of any native-UI-loss symptom -- the reverted,
+stage-9-equivalent fix (no `SetFVF`, no `SetVertexDeclaration`, ever)
+holds up under real, extended play. This closes the crash risk
+definitively, not just circumstantially. **A genuinely correct fix for
+the cosmetic gap (making this mod's own quad render correctly without
+ever touching `SetFVF`/`SetVertexDeclaration`) remains unstarted
+follow-up work** -- low priority, purely cosmetic, not attempted this
+pass. Original report below, kept for history.
 
 **Status: Open, not investigated.** Direct user report: "when you take
 damage it loses ui when moving and motion blur activates (minor issue but
