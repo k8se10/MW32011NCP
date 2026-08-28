@@ -15323,23 +15323,47 @@ borken" -- **rules out all four render states, including
 `ALPHABLENDENABLE`.** Narrows the remaining candidates to just two:
 sampler filters (MAG/MIN on stage 0), or the texture0/FVF bind.
 
-**Stage 7 built the same pass, not yet tested**: tests the texture0/FVF
-bind next, ahead of sampler filters -- structurally different from
-every state change ruled out so far, since it binds a REAL GPU RESOURCE
-(this mod's own capture texture) rather than just toggling a flag value,
-making it the stronger remaining candidate by domain reasoning. Skips
-`SetTexture(0, g_fullscreenCaptureTexture)`/`SetFVF` entirely (both the
-set and the final restore, gated together same as stages 4/5/6 --
-`oldTexture0` is still fetched via `GetTexture` unconditionally, a
-harmless read, but its extra COM reference still needs releasing
-regardless of stage to avoid a leak, so only the `SetTexture`/`SetFVF`
-calls themselves are gated, not the `GetTexture`/`Release` pair); our own
-quad draws with whatever texture/FVF the native code last had bound
-instead (visually garbage for us, irrelevant to this test). If the
-vignette/text still breaks, only sampler filters remain as the last
-untested candidate; if it comes back, this texture0/FVF bind is the
-cause. Build clean, 0 errors, deployed, `MotionBlurDrawTestStage=7`
-enabled live in `mw3ncp_config.ini` for the next test.
+**Stage 7 built and LIVE-CONFIRMED (2026-08-28) -- THE REAL ROOT CAUSE
+FOUND.** Tests the texture0/FVF bind next, ahead of sampler filters --
+structurally different from every state change ruled out so far, since it
+binds a REAL GPU RESOURCE (this mod's own capture texture) rather than
+just toggling a flag value. Skips `SetTexture(0, g_fullscreenCaptureTexture)`/
+`SetFVF` entirely (both the set and the final restore, gated together
+same as stages 4/5/6); our own quad draws with whatever texture/FVF the
+native code last had bound instead. Direct user report: "okay interesting,
+it fixed by now it looks wrong, like a pixelated low res mess... when you
+get damaged no armor (also same effect randomly triggered on entry to
+level for a split sec)." **The native "hurt, get to cover" warning draws
+correctly again.** The "pixelated mess" and the level-entry flash are
+BOTH fully expected, not new bugs -- this mod's own motion-blur quad now
+draws with whatever wrong texture/FVF the native code happened to have
+bound at that exact moment (predicted directly in this stage's own code
+comment: "visually garbage for us, irrelevant to this test"), and the
+level-entry flash is the same artifact firing during a level-load
+transition (matches the earlier "dark flash on level entry" report, also
+already attributed to this experimental build).
+
+**Root cause, confirmed**: `DrawFullScreenPass` binding this mod's own
+capture texture (and/or FVF) to texture stage 0 -- even though it's
+correctly saved and restored to the exact original value afterward --
+breaks whatever native code draws the low-health warning. The most likely
+mechanism (not yet independently confirmed): the native renderer likely
+tracks its OWN "last bound texture" state separately from the real D3D9
+device state (a common redundant-state-change-avoidance optimization), and
+our intervening `SetTexture` call desyncs that native cache from the real
+device state in a way a plain restore doesn't fix, even though the DEVICE
+itself ends up holding the correct value again.
+
+**Stage 8/9 built the same pass, not yet tested**: splits stage 7's
+combined texture0+FVF skip to find out which one (or both) the real fix
+needs to address. Stage 8 = skip the texture0 bind only (FVF still set
+normally each frame). Stage 9 = skip FVF only (texture0 still bound
+normally). Testing stage 8 first -- texture BINDING a real resource is
+the more likely single culprit of the two by the cache-desync theory
+above (FVF is pure per-draw-call vertex-format state, much less likely to
+have any cross-draw-call side effect). Build clean, 0 errors, deployed,
+`MotionBlurDrawTestStage=8` enabled live in `mw3ncp_config.ini` for the
+next test.
 
 **Two more reports the same session, both addressed without touching
 code**: (1) "a weird graphical bug in this new phase when entering level
