@@ -14971,6 +14971,76 @@ connection has been refused throughout this whole session). Worth
 surfacing to the user directly rather than spawning further static-only
 forks on the same angle without checking in first.
 
+**2-more-forks pass (2026-08-28), direct user redirect** ("2 more
+forkslooking ay our dumpa" -- shift from targeted-hypothesis Ghidra
+tracing back to the existing memdiff dumps, used more thoroughly than the
+4 hand-picked snapshots every prior check relied on). Both land as real,
+useful negative results.
+
+- **Fork K -- stronger, more decisive negative result than before.** Built
+  a full health timeline across all 22 snapshots (`readaddr.exe` on
+  `0x01197C28`, the local-player health field), not just the 4 used all
+  session: `001-003=0` (pre-spawn), `004-016=100` (steady), **`017-019=2`**
+  (a sharp, previously-unnoticed near-death drop held for 3 captures),
+  **`020=100`** (recovered), `021=52` (a second hit), `022`=unmapped
+  (the already-known force-close). This surfaces two NEW, genuinely
+  tighter consecutive-capture pairs than the original 007/009 (armored)
+  and 014/021 (unarmored, 7 snapshots apart): **016->017** (100->2, the
+  single sharpest health-drop event in the whole session) and **020->021**
+  (100->52). Re-ran the existing checks against both: `DAT_021ddf00`
+  still reads **0** in every one of 016/017/019/020/021; the 280-byte
+  blend struct at `0x021d3058` is still **byte-identical** across
+  016-vs-017 and 020-vs-021. **This is a stronger result than the original
+  4-snapshot check**: it's not that 014/021 happened to be a bad pair --
+  even the single tightest, most dramatic health-drop window available in
+  the ENTIRE 22-snapshot capture confirms the same null result. The
+  external async F9/auto-interval capture technique is now confirmed
+  genuinely exhausted for catching this transient state, not just
+  under-tried. (Side note, flagged not chased: the `100->2->100` sequence
+  itself looks like a real near-death/downed-and-revived Survival
+  mechanic, unrelated to this issue -- worth a separate look sometime.)
+- **Fork J -- no new armor-specific candidate, but a real methodological
+  finding that reframes every diff done this session.** Ran a full,
+  unbiased `diffsnap.exe` scan (not a targeted-address check) on both
+  pairs. Region-level: no structured armor signal, just generic heap-page
+  churn. Byte-diff bucket triage found one striking-looking asymmetry (a
+  2311-entry cluster in `0x00A80000`-`0x01090000`, present in the ARMORED
+  pair, absent from the unarmored pair) -- investigated and confirmed to
+  be a methodological artifact, not a real signal: reading
+  `DAT_02516a94` (the level-time global, already established this
+  session) across all 4 snapshots shows the armored pair spans only
+  **3.85 real seconds** (13482->17333) while the unarmored pair spans
+  **31.1 real seconds** (38269->69371) -- an 8x mismatch nobody had
+  checked before. **The four original snapshots were never a controlled
+  A/B** -- every diff/comparison run against this specific 007/009-vs-
+  014/021 pairing this whole session (including the earlier byte-identical
+  blend-struct result) was implicitly comparing across two wildly
+  different real-time windows, which is exactly the kind of noise a
+  "byte-identical" result could plausibly hide behind OR be genuinely
+  robust to (can't distinguish which from these captures alone). A second
+  small candidate region was dumped and also explained as a
+  likely elapsed-time-tracking counter, not armor state.
+
+**Status update, current bottom line**: existing dumps are now confirmed
+exhausted two ways -- Fork K shows no tighter pre/post-hit window helps
+(the transient state genuinely can't be caught by this capture technique
+at any timing available in this dataset), and Fork J shows the specific
+4 snapshots relied on all session were never a clean, time-matched A/B to
+begin with. **Eleven forks across four rounds have now systematically
+weakened or ruled out every specific native mechanism proposed
+(`visionset_pain`, the `.shock`/shellshock system, `painvisionon`), traced
+a real but unconfirmed render-pipeline candidate, and exhausted the
+existing-dumps technique on its own terms.** Genuinely new progress from
+here needs one of: (1) x64dbg reconnected for real live tracing/
+breakpoints (checked again this session, still refusing connection); (2)
+a fresh, TIME-MATCHED capture pair (ideally scripted/automatic, sub-second
+gap, not human-reaction-time F9 presses) taken specifically to fix Fork
+J's newly-found methodology gap; or (3) a different technique entirely
+(e.g. a temporary diagnostic hook added to this mod's own code, logging
+real native state at the moment of a hit, for the user to test live next
+session). Static RE against the existing evidence is, for now, genuinely
+tapped out.
+
 ## 101. Roadmap note: broader performance/optimization/modern-hardware pass, user's own framing (2026-08-27)
 
 **Status: Roadmap Idea, not scoped.** Direct user framing, end of a long
