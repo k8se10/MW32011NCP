@@ -3098,11 +3098,19 @@ using FullScreenShaderSetupFn = void(*)(void* device, float texelW, float texelH
 // nulled instead of restored is a real, concrete way this function could
 // have been corrupting what the engine expected to still be set, independent
 // of which specific hook fires it or how many times per frame.
-// captureOnlySkipDrawTest (2026-08-28, issue #100) -- TEMPORARY, dev-only.
-// See mod_config.h's MotionBlurDrawTestStage comment for the full story.
-// Default false -- FSR's own call site never passes true, unaffected.
+// testStage (2026-08-28, issue #100) -- TEMPORARY, dev-only staged isolation
+// test. See mod_config.h's MotionBlurDrawTestStage comment for the full
+// story. Default 0 -- FSR's own call site never passes anything else,
+// unaffected. 2 = return right after the backbuffer capture (StretchRect),
+// before any render-state changes -- LIVE-CONFIRMED (2026-08-28) this does
+// NOT fix the bug, the capture itself is harmless. 3 = run every state
+// save/set exactly as normal (sampler, render states, viewport, texture0,
+// FVF, pixel shader + its constants) but skip the actual `drawPrimitiveUP`
+// call itself, then still run every restore afterward -- isolates "does
+// merely changing device state break it" from "does the real draw command
+// hitting the GPU break it."
 void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn onShaderBound = nullptr,
-                         bool captureOnlySkipDrawTest = false)
+                         int testStage = 0)
 {
     if (!pixelShader) return;
     void** deviceVtbl = *reinterpret_cast<void***>(device);
@@ -3182,11 +3190,10 @@ void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn
 
     // [Experimental] MotionBlurDrawTestStage==2 isolation test (issue #100) --
     // the backbuffer capture (StretchRect above) has already happened; stop
-    // here, before any render-state changes or the actual quad draw. Narrows
-    // down whether capturing the backbuffer alone is enough to break the
-    // native low-health warning, or whether it's specifically the render-
-    // state-change/redraw sequence below.
-    if (captureOnlySkipDrawTest) return;
+    // here, before any render-state changes or the actual quad draw.
+    // LIVE-CONFIRMED (2026-08-28): does NOT fix the bug -- the capture alone
+    // is harmless, real cause is further down.
+    if (testStage == 2) return;
 
     DWORD oldMagFilter = kD3DTEXF_POINT, oldMinFilter = kD3DTEXF_POINT;
     getSamplerState(device, 0, kD3DSAMP_MAGFILTER, &oldMagFilter);
@@ -3256,7 +3263,14 @@ void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn
         { -0.5f,      h - 0.5f,   0.0f, 1.0f, 0xFFFFFFFFu, 0.0f, 1.0f },
         { w - 0.5f,   h - 0.5f,   0.0f, 1.0f, 0xFFFFFFFFu, 1.0f, 1.0f },
     };
-    drawPrimitiveUP(device, kD3DPT_TRIANGLESTRIP, 2, verts, sizeof(ScreenVertex));
+    // [Experimental] MotionBlurDrawTestStage==3 isolation test (issue #100) --
+    // every state save/set above already ran exactly as normal; skip only
+    // the actual draw command itself, then fall through to every restore
+    // below unchanged. Isolates "device state changes alone" from "the real
+    // GPU draw command" as the cause.
+    if (testStage != 3) {
+        drawPrimitiveUP(device, kD3DPT_TRIANGLESTRIP, 2, verts, sizeof(ScreenVertex));
+    }
 
     // FIXED 2026-08-28 (issue #100) -- DrawPrimitiveUP leaves the device's
     // stream-0 vertex buffer binding in an OFFICIALLY UNDEFINED state (real,
@@ -3500,7 +3514,7 @@ void RunPreOverlayMotionBlurPassIfEnabled(void* device)
         if (g_modConfig.motionBlurDrawTestStage == 1) return; // skip entirely -- LIVE-CONFIRMED this fixes it
         if (!EnsureMotionBlurShader(device)) return;
         DrawFullScreenPass(device, g_motionBlurPixelShader, MotionBlurShaderSetupCallback,
-                            g_modConfig.motionBlurDrawTestStage == 2);
+                            g_modConfig.motionBlurDrawTestStage);
         g_motionBlurRanThisFrame = true;
         return;
     }
@@ -3549,7 +3563,7 @@ void RunPreOverlayMotionBlurPassIfEnabled(void* device)
     if (g_modConfig.motionBlurDrawTestStage == 1) return; // skip entirely -- LIVE-CONFIRMED this fixes it
     if (!EnsureMotionBlurShader(device)) return;
     DrawFullScreenPass(device, g_motionBlurPixelShader, MotionBlurShaderSetupCallback,
-                        g_modConfig.motionBlurDrawTestStage == 2);
+                        g_modConfig.motionBlurDrawTestStage);
     g_motionBlurRanThisFrame = true;
 }
 

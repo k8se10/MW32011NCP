@@ -15253,19 +15253,30 @@ the search narrows to the rest of `DrawFullScreenPass`'s own sequence:
 the `StretchRect` backbuffer capture, or the render-state-change/quad-
 redraw block after it.
 
-**Stage 2 built the same pass, not yet tested**: `MotionBlurSkipDrawTest`
+**Stage 2 built and LIVE-CONFIRMED (2026-08-28)**: `MotionBlurSkipDrawTest`
 (bool) converted to `MotionBlurDrawTestStage` (int) -- 0=normal,
-1=skip entirely (stage 1, confirmed above), 2=new: do the `StretchRect`
-capture but stop before any render-state changes or the actual quad draw
-(`DrawFullScreenPass` gained its own `captureOnlySkipDrawTest` parameter,
-default false, only ever passed true by motion blur's own test call site
--- FSR's calls are unaffected). If stage 2 still breaks the vignette, the
-capture itself is the cause (surprising -- would mean a plain
-`StretchRect` read of the current backbuffer has some real side effect on
-native UI dispatch); if it comes back, it's specifically the render-state-
-change/redraw sequence, narrowing further from there next. `ConfigVersion`
-bumped 33->34. Build clean, 0 errors, deployed, `MotionBlurDrawTestStage=2`
-enabled live in `mw3ncp_config.ini` for the next test.
+1=skip entirely (stage 1, confirmed above), 2=do the `StretchRect`
+capture but stop before any render-state changes or the actual quad draw.
+Direct user report: "yeah still shows as should" -- **the plain backbuffer
+capture is harmless.** Rules out `StretchRect` itself as the cause,
+narrows the search to the render-state-change/quad-redraw block that
+follows it in `DrawFullScreenPass`.
+
+**Stage 3 built the same pass, not yet tested**: further split that
+remaining block. `DrawFullScreenPass`'s test parameter changed from a bool
+to an `int testStage` (2 handled as above; 3 is new) -- every state
+save/set runs exactly as normal (sampler filters, render states, viewport,
+texture0, FVF, pixel shader bind + its constants via `onShaderBound`) but
+the actual `drawPrimitiveUP` call itself is skipped, then every restore
+still runs afterward unchanged. Isolates "do the state CHANGES alone break
+it" from "does the real GPU draw command break it." If stage 3 still
+breaks the vignette, it's specifically one of the state changes (sampler/
+render-state/viewport/texture/FVF/pixel-shader-bind); if it comes back,
+it's the real `DrawPrimitiveUP` draw call itself -- a genuinely different,
+more surprising class of cause (GPU-side synchronization, or native code
+reading back the actually-drawn pixels rather than just device state).
+Build clean, 0 errors, deployed, `MotionBlurDrawTestStage=3` enabled live
+in `mw3ncp_config.ini` for the next test.
 
 ## 101. Roadmap note: broader performance/optimization/modern-hardware pass, user's own framing (2026-08-27)
 
