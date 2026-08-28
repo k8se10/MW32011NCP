@@ -14286,16 +14286,14 @@ directly by the user.
 
 ## 100. Motion blur: UI disappears when taking damage while moving -- REPORTED, not yet investigated (2026-08-27)
 
-**Status: Fixed, built and deployed, NOT YET independently live-confirmed.**
-Real root cause found and fixed 2026-08-28 -- `DrawPrimitiveUP` leaves the
-device's stream-0 vertex buffer binding in an officially undefined state
-(documented D3D9 behavior), never restored by `DrawFullScreenPass`; motion
-blur's own hook point fires before the native queued 2D/HUD dispatch each
-frame, so whatever native UI that dispatch draws right after (only ever
-queued on frames with something to draw -- e.g. the damage-taken vignette)
-inherited garbage stream-0 state. See this entry's own bottom section for
-the full live-diagnosis and fix trail. Original report below, kept for
-history.
+**Status: Open. The stream-0 fix below was tried and LIVE-TESTED FAILED --
+direct user report immediately after deploying it: "not the fix, the issue
+persists."** The `DrawPrimitiveUP`/stream-0 theory (see this entry's own
+bottom section for the full trail) did not hold up under live test --
+either the theory itself is wrong, or the fix doesn't address the actual
+mechanism. Do not treat that section's reasoning as settled; it's kept for
+the record, not as a standing explanation. Real cause still unknown.
+Original report below, kept for history.
 
 **Status: Open, not investigated.** Direct user report: "when you take
 damage it loses ui when moving and motion blur activates (minor issue but
@@ -15169,9 +15167,81 @@ touches. New vtable index constants `kSetStreamSourceVtableIndex=100`/
 `kGetStreamSourceVtableIndex=101` (standard, stable IDirect3DDevice9 COM
 layout, cross-checked against this file's own already-confirmed indices
 the same way every other one here was). Build clean, 0 errors, deployed.
-**NOT YET independently live-confirmed** -- needs an actual unarmored hit
-with motion blur on, checking both that the UI/vignette no longer breaks
-AND that nothing else regressed.
+
+**LIVE-TESTED, FAILED (2026-08-28), same session.** Direct user report
+immediately after testing: "not the fix, the issue persists." The
+stream-0-undefined-state theory does NOT explain this bug, or the fix as
+implemented doesn't address whatever the real mechanism is. The
+reasoning above (ordering relative to `Hook_693ff0`'s pre-hook firing
+before the native queued 2D/HUD dispatch, armor-conditional because
+nothing's queued on a fully-absorbed hit, motion-blur-only because FSR's
+identical `DrawFullScreenPass` call runs after all native UI dispatching
+is done) was a real, well-evidenced theory that turned out not to hold up
+live -- kept here for the record and to avoid re-deriving/re-testing the
+same disproven idea later, not as a standing explanation. The stream-0
+save/restore code itself is left in place (harmless, correct D3D9 hygiene
+regardless of whether it's the real fix) but does not close this issue.
+Real cause still unidentified -- next step needs re-opening the
+investigation rather than building on this theory further.
+
+**The exact broken element identified, direct user report (2026-08-28)**:
+"what is broken is the funtion which shows the 'You are hurt, get to cover'
+with the progressive reddening of the screen" -- the classic CoD low-health
+warning (progressive red-screen vignette + on-screen text), not a generic
+per-hit flash. Confirmed by direct toggle test: "confirmed by turning it
+off not only when that text is drawn but also on the reddening of the
+screen before though note neither reddening or the text shows with motion
+blur active" -- with motion blur OFF, both the vignette and text work
+correctly; with it ON, NEITHER shows, at all, sustained (not a one-frame
+glitch). User's own hypothesis: "i think we may be hooking that exact call
+site replacing it with motion blur."
+
+Two searches run against this, both negative but informative:
+- GSC corpus grep for `hurt`/`cover`/`regenerat` found one real, relevant
+  hit: `184.gsc` (a Special Ops "dead quote" tips list) references
+  `"@DEADQUOTE_SO_RED_FIND_COVER"` -- confirms the effect's real internal
+  name includes "RED_FIND_COVER", but this specific occurrence is a
+  death-screen tip, not the live in-game trigger.
+- `RawStringScan.java` against `iw5sp.exe` for `"You are hurt"`,
+  `"RED_FIND_COVER"`, `"FIND_COVER"`, `"HURT_FIND_COVER"` -- all zero
+  matches, natively. Same shape as `painvisionon`/`painvisionoff` (Fork H)
+  -- this is dispatched via GSC's numeric-ID builtin mechanism or pure
+  native code, unreachable by any string-based search. Given the earlier
+  `painvisionon()`/`_gameskill.gsc` near-death-threshold system (Fork F,
+  gated on `self.health/self.maxhealth <= healthoverlaycutoff`) is
+  structurally the closest match to a low-health SUSTAINED warning found
+  anywhere this session, and Fork G's "likely Campaign-only" conclusion
+  rested on a NAME-based corpus grep for `init::main` -- the same class of
+  blind spot already hit repeatedly this session for GSC dispatch -- that
+  "ruled out" verdict should be treated as weaker than it read at the
+  time, not re-confirmed.
+
+**Architecture check on the user's own hypothesis**: `Hook_693ff0` is a
+tail-jump pre-hook (`jmp dword ptr [g_orig_693ff0]`) -- the real function
+genuinely still executes every time, after our own draw. This rules out
+"we're skipping the call outright" as a literal control-flow explanation.
+Decompiled `FUN_004ee300` (the dispatch `FUN_00693ff0` gates into) directly:
+confirmed as a real, generic opcode-stream player
+(`while (*opcode != 0) jumpTable[*opcode](&stream)`, table at
+`DAT_00881f10`) -- consistent with, but not proof of, the hurt/vignette
+draw being routed through it specifically; enumerating that jump table to
+confirm was not done this pass (a real next static target if picked up
+again).
+
+**Isolation test built instead of more theory-building (2026-08-28)**,
+direct user request ("yes" to the proposed test): new `[Experimental]
+MotionBlurSkipDrawTest` config key, default off, wired into
+`RunPreOverlayMotionBlurPassIfEnabled` (both the normal-gate path and the
+`VisualFxClcStateTestValue` path) right before `EnsureMotionBlurShader`/
+`DrawFullScreenPass` -- every real gate still runs, `Hook_693ff0` still
+fires, `TriggerMotionBlurFromEngineHook()` still gets called, but zero
+D3D9 work happens (no capture, no shader bind, no draw). Purpose: separate
+"the hook existing at that exact call site" from "our draw call's own
+side effects" as the real cause -- if the vignette/text still breaks with
+this on, the cause is the former; if it comes back, the latter, narrowing
+the search space substantially either way. `ConfigVersion` bumped 32->33.
+Build clean, 0 errors, deployed, enabled live in `mw3ncp_config.ini` for
+the next test. **Not yet tested.**
 
 ## 101. Roadmap note: broader performance/optimization/modern-hardware pass, user's own framing (2026-08-27)
 

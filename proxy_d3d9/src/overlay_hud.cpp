@@ -3482,6 +3482,10 @@ void RunPreOverlayMotionBlurPassIfEnabled(void* device)
             return;
         }
         if (g_motionBlurRanThisFrame) return;
+        // [Experimental] MotionBlurSkipDrawTest -- see this function's own
+        // header comment above / mod_config.h. Every real gate above still
+        // ran; the hook still fired; we just stop here instead of drawing.
+        if (g_modConfig.motionBlurSkipDrawTest) return;
         if (!EnsureMotionBlurShader(device)) return;
         DrawFullScreenPass(device, g_motionBlurPixelShader, MotionBlurShaderSetupCallback);
         g_motionBlurRanThisFrame = true;
@@ -3526,6 +3530,12 @@ void RunPreOverlayMotionBlurPassIfEnabled(void* device)
         // FUN_00497210 (this pass's real trigger) can fire more than once per
         // frame when a splitscreen/PIP exclusion zone is active, see this
         // function's own header comment
+    // [Experimental] MotionBlurSkipDrawTest (issue #100) -- see mod_config.h
+    // for the full story. Every real gate above still ran; the engine hook
+    // still fired; we just stop here instead of drawing, to isolate whether
+    // this bug depends on the hook existing at all or on our draw's own
+    // side effects.
+    if (g_modConfig.motionBlurSkipDrawTest) return;
     if (!EnsureMotionBlurShader(device)) return;
     DrawFullScreenPass(device, g_motionBlurPixelShader, MotionBlurShaderSetupCallback);
     g_motionBlurRanThisFrame = true;
