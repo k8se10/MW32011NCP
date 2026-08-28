@@ -15310,19 +15310,36 @@ didn't clip this mod's own quad). Narrows the remaining candidates to:
 sampler filters (MAG/MIN on stage 0), the four render states (ZENABLE/
 LIGHTING/ALPHABLENDENABLE/CULLMODE), or the texture0/FVF bind.
 
-**Stage 6 built the same pass, not yet tested**: tests the four render-
-state changes next. `ALPHABLENDENABLE` is the strongest suspect among
+**Stage 6 built and LIVE-CONFIRMED (2026-08-28)**: tests the four render-
+state changes next. `ALPHABLENDENABLE` was the strongest suspect among
 these -- our own quad forces it `FALSE` ("full opaque overwrite," see
 this function's own inline comment), and a red vignette overlay would
 plausibly rely on alpha blending for its own draw. Skips
 `ZENABLE`/`LIGHTING`/`ALPHABLENDENABLE`/`CULLMODE` entirely (both the set
 and the final restore, same gating pattern as stages 4/5); everything
 else, including the viewport force-set, pixel shader bind, and the
-actual draw call, runs normally. If the vignette/text still breaks, only
-sampler filters and the texture0/FVF bind remain as candidates; if it
-comes back, it's one of these four render states. Build clean, 0 errors,
-deployed, `MotionBlurDrawTestStage=6` enabled live in
-`mw3ncp_config.ini` for the next test.
+actual draw call, runs normally. Direct user report: "confirmed still
+borken" -- **rules out all four render states, including
+`ALPHABLENDENABLE`.** Narrows the remaining candidates to just two:
+sampler filters (MAG/MIN on stage 0), or the texture0/FVF bind.
+
+**Stage 7 built the same pass, not yet tested**: tests the texture0/FVF
+bind next, ahead of sampler filters -- structurally different from
+every state change ruled out so far, since it binds a REAL GPU RESOURCE
+(this mod's own capture texture) rather than just toggling a flag value,
+making it the stronger remaining candidate by domain reasoning. Skips
+`SetTexture(0, g_fullscreenCaptureTexture)`/`SetFVF` entirely (both the
+set and the final restore, gated together same as stages 4/5/6 --
+`oldTexture0` is still fetched via `GetTexture` unconditionally, a
+harmless read, but its extra COM reference still needs releasing
+regardless of stage to avoid a leak, so only the `SetTexture`/`SetFVF`
+calls themselves are gated, not the `GetTexture`/`Release` pair); our own
+quad draws with whatever texture/FVF the native code last had bound
+instead (visually garbage for us, irrelevant to this test). If the
+vignette/text still breaks, only sampler filters remain as the last
+untested candidate; if it comes back, this texture0/FVF bind is the
+cause. Build clean, 0 errors, deployed, `MotionBlurDrawTestStage=7`
+enabled live in `mw3ncp_config.ini` for the next test.
 
 **Two more reports the same session, both addressed without touching
 code**: (1) "a weird graphical bug in this new phase when entering level
