@@ -14516,6 +14516,18 @@ fix -- next step is tracing what native code actually runs differently
 between "health reduced via the plain native damage system" and "health
 force-set via a script-level `setnormalhealth()` call after the fact."
 
+**Side note, real game-balance finding (2026-08-28), unrelated to the UI
+bug itself but confirmed in the same source read**: `_id_3F1B()`'s own
+logic means Body Armor isn't just damage reduction -- as long as
+`self._id_3F16["points"] > 0` and a hit is fully absorbed,
+`self setnormalhealth(1)` unconditionally resets health to 100% on EVERY
+such hit, not a partial mitigation. Functionally, armored Survival play is
+immune to health loss from normal damage entirely until armor fully
+depletes, not just "takes less damage" -- direct user framing: "note set
+normal health on repeat is essentially demigod in mw3." A genuine, real
+mechanic confirmed straight from source, not a bug -- logged here since it
+came directly out of this issue's own RE work.
+
 ## 101. Roadmap note: broader performance/optimization/modern-hardware pass, user's own framing (2026-08-27)
 
 **Status: Roadmap Idea, not scoped.** Direct user framing, end of a long
