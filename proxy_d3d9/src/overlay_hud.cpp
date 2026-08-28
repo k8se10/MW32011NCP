@@ -3615,6 +3615,17 @@ void RunPreOverlayMotionBlurPassIfEnabled(void* device)
     // while a real replacement is found properly.
     constexpr uintptr_t kInLevelFlagAddrForBlurGate = 0x00A98ACC;
     if (*reinterpret_cast<volatile int*>(kInLevelFlagAddrForBlurGate) <= 0) return;
+    // ADDED 2026-08-28 (issue #104) -- same defensive addition as
+    // RunFullScreenPostProcessIfEnabled's own, for the same reason: an
+    // extra, independent check using the one clcState value this project
+    // has already confirmed with high confidence (0 = menu/disconnected),
+    // on top of the existing (raw time-delta) in-level heuristic. Not
+    // specifically implicated in issue #104's own crash (isolation testing
+    // pointed at FSR, not motion blur), added here defensively since both
+    // functions share the exact same DrawFullScreenPass capture-and-redraw
+    // risk class.
+    constexpr uintptr_t kClcStateAddrForBlurMenuCheck = 0x00B36218;
+    if (*reinterpret_cast<volatile int*>(kClcStateAddrForBlurMenuCheck) == 0) return;
     if (g_motionBlurRanThisFrame) return; // already ran once this real frame --
         // FUN_00497210 (this pass's real trigger) can fire more than once per
         // frame when a splitscreen/PIP exclusion zone is active, see this
@@ -3662,6 +3673,35 @@ extern "C" void TriggerMotionBlurFromEngineHook()
 // gates motion blur uses (menu-active + in-level), plus the same
 // VisualFxClcStateTestValue one-value-at-a-time test harness (shared, not a
 // separate value -- both effects are testing the same underlying question).
+// ADDED 2026-08-28 (issue #104) -- direct user report, 100% reproducible:
+// "quit to menu crashes and closes mw3 every time guaranteed" -- confirmed
+// via a direct isolation test ("tested fsr off this time and no such
+// issue") to be FSR specifically, same crash signature (Event Viewer:
+// iw5sp.exe / d3d9.dll, access violation 0xc0000005, fault offset
+// 0x0005e098) initially misattributed to the SetVertexDeclaration work on
+// issue #100 -- that code was already fully reverted by the time this
+// crash recurred identically, ruling it out and pointing back here.
+// Real mechanism: kInLevelFlagAddr (0x00A98ACC) is a raw per-frame TIME
+// DELTA, not a true level-state flag (documented elsewhere in this file) --
+// it can plausibly still read >0 for one or more frames while a level is
+// actively tearing down (frames keep rendering during that transition),
+// letting this function's own capture-and-redraw run against a backbuffer/
+// texture pool that's mid-teardown -- the exact same crash mechanism issue
+// #103 already found and fixed for the general case, just on a specific
+// transition (quit-to-menu) these existing gates don't reliably catch in
+// time. Added as an EXTRA, independent check: clcState (0x00B36218) is a
+// real native client-connection/screen-state enum, not a heuristic --
+// this project's own prior RE independently confirmed clcState==0 means
+// menu/disconnected (via the literal native "SCR_DrawScreenField: bad
+// clcState" error string's own dispatcher) -- a much more direct, engine-
+// driven signal for "we are no longer in a level" than a frame-time delta,
+// and the ONE clcState value this project treats as settled (which exact
+// value means "active gameplay" remains genuinely unresolved -- see issue
+// #99/#100 -- but that dispute doesn't touch this specific, independently-
+// confirmed value). NOT yet independently live-verified to close this
+// exact crash -- a reasoned, additional safety check, not a proven fix;
+// treat as strengthening the existing gates, not a replacement for
+// understanding the real transition-timing gap.
 void RunFullScreenPostProcessIfEnabled(void* device)
 {
     if (g_modConfig.visualFxClcStateTestValue >= 0) {
@@ -3674,6 +3714,8 @@ void RunFullScreenPostProcessIfEnabled(void* device)
         if (IsMenuActive_Exported()) return;
         constexpr uintptr_t kInLevelFlagAddrForFsrGate = 0x00A98ACC;
         if (*reinterpret_cast<volatile int*>(kInLevelFlagAddrForFsrGate) <= 0) return;
+        constexpr uintptr_t kClcStateAddrForMenuCheck = 0x00B36218;
+        if (*reinterpret_cast<volatile int*>(kClcStateAddrForMenuCheck) == 0) return; // 0 = confirmed menu/disconnected
     }
 
     if (g_modConfig.fsrSharpenEnabled && EnsureRcasShader(device)) {

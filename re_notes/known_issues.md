@@ -14342,7 +14342,25 @@ definitively, not just circumstantially. **A genuinely correct fix for
 the cosmetic gap (making this mod's own quad render correctly without
 ever touching `SetFVF`/`SetVertexDeclaration`) remains unstarted
 follow-up work** -- low priority, purely cosmetic, not attempted this
-pass. Original report below, kept for history.
+pass.
+
+**Correction, same day (issue #104)**: the crash originally attributed to
+`SetVertexDeclaration` above was almost certainly misattributed. Issue
+#104 (FSR's own black-screen bug, already on record before any of this
+session's `SetVertexDeclaration` work) turned out to share the IDENTICAL
+Event Viewer crash signature (`iw5sp.exe` / `d3d9.dll`, `0xc0000005`,
+fault offset `0x0005e098`) and was confirmed via direct isolation testing
+to be caused by FSR specifically, unrelated to anything this issue
+touched. This project's own build/test workflow routinely closes the game
+via "quit to menu" between rebuilds -- meaning the pre-existing FSR bug
+was very plausibly firing during every one of those test cycles,
+coincidentally alongside the `SetVertexDeclaration` work, not because of
+it. The `SetVertexDeclaration` revert documented above was not
+necessarily wrong to do (it removed a real, if never fully confirmed,
+theoretical risk, and the resulting code is simpler and proven safe by
+the same 4-wave playtest) -- but it was very likely never the actual fix
+for what was crashing. See issue #104 for the real mechanism and fix.
+Original report below, kept for history.
 
 **Status: Open, not investigated.** Direct user report: "when you take
 damage it loses ui when moving and motion blur activates (minor issue but
@@ -15725,9 +15743,53 @@ screen"). FSR's own missing state gating was the complete explanation --
 not a contributing factor alongside a separate native issue, the actual
 root cause. Closed.
 
-## 104. FSR black-screen/#103-class bug recurs specifically on "exit level -> main menu" -- REPORTED, not yet investigated (2026-08-28)
+## 104. FSR black-screen/#103-class bug recurs specifically on "exit level -> main menu" -- ESCALATED TO A 100% REPRODUCIBLE CRASH, fix applied, not yet independently confirmed (2026-08-28)
 
-**Status: Open, not investigated.** Direct user report, mid-session while
+**Status: Fix applied, NOT YET independently confirmed live.** Escalated
+significantly from the original "black screen" framing: direct user
+report, "new reproducable issue, quit to menu crashes and closes mw3
+every time guaranteed." Confirmed via a direct isolation test -- "yeah
+youre right i tested fsr off this time and no such issue" -- **FSR
+specifically** is the cause, not motion blur, not anything else. **This
+is very likely the SAME crash misattributed to `SetVertexDeclaration`
+during issue #100's investigation** -- both share the identical Event
+Viewer signature (`iw5sp.exe` / `d3d9.dll`, access violation `0xc0000005`,
+fault offset `0x0005e098`), and that crash recurred identically even
+after `SetVertexDeclaration` was fully removed from the codebase, which
+at the time was read as "the theory must be wrong" -- in hindsight, far
+more likely explained by this project's own build/test workflow routinely
+closing the game via "quit to menu" between rebuilds, meaning this
+pre-existing FSR bug was very plausibly firing during EVERY one of those
+test cycles, coincidentally alongside the `SetVertexDeclaration` work,
+not because of it. Real root cause (same mechanism issue #103 already
+established, on a transition its own fix doesn't cover): `kInLevelFlagAddr`
+(0x00A98ACC) is a raw per-frame TIME DELTA, not a true level-state flag --
+it can plausibly still read `>0` for one or more frames while a level is
+actively tearing down (frames keep rendering during that transition),
+letting `RunFullScreenPostProcessIfEnabled`'s own capture-and-redraw run
+against a backbuffer/texture pool that's mid-teardown.
+
+**Fix applied**: an additional, independent gate check added to both
+`RunFullScreenPostProcessIfEnabled` (FSR) and, defensively,
+`RunPreOverlayMotionBlurPassIfEnabled` (motion blur, not specifically
+implicated by the isolation test, but sharing the exact same
+`DrawFullScreenPass` risk class) -- `clcState` (0x00B36218) read directly
+and compared against `0`. Unlike `kInLevelFlagAddr`, `clcState` is a real
+native client-connection/screen-state enum, not a raw heuristic, and this
+project's own prior RE already independently confirmed (via the literal
+native "SCR_DrawScreenField: bad clcState" error string's own dispatcher)
+that `clcState == 0` means menu/disconnected -- the one value in this
+enum this project treats as settled (which specific value means "active
+gameplay" remains genuinely unresolved, see issue #99/#100, but that
+dispute doesn't touch this specific, independently-confirmed value).
+Build clean (0 warnings/0 errors), deployed. **NOT YET independently
+live-confirmed against the exact "quit to menu" repro** -- a reasoned,
+additional safety check on top of the existing gates, not a proven fix;
+the real question of whether `clcState` flips to 0 promptly enough during
+this specific transition to actually close the crash window is still
+open until tested directly.
+
+**Original report below, kept for history.** Direct user report, mid-session while
 testing issue #100's motion-blur isolation stages: "also the fsr bug
 happens if you ever quit a game." Direct follow-up clarified the exact
 symptom: "no the existing loading screen and cutscene bug from before,
