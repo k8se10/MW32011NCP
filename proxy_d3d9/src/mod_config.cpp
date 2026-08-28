@@ -160,7 +160,7 @@ void ReadBool(const char* path, const char* section, const char* key, bool& outV
 // real system d3d9.dll's Direct3DCreate9On12 entry point instead of the ordinary
 // one -- a real, Microsoft-documented alternate export, not a third-party DLL swap.
 // See mod_config.h's own forceD3D9On12 field comment for the full design.
-constexpr unsigned long kCurrentConfigVersion = 34; // v23->v24: FsrSharpenEnabled/FsrSharpenStrength (Phase B)
+constexpr unsigned long kCurrentConfigVersion = 35; // v23->v24: FsrSharpenEnabled/FsrSharpenStrength (Phase B)
                                                      // v24->v25: MotionBlurEnabled/MotionBlurStrength (Phase E),
                                                      // FsrSharpenStrength default 0.5->0.3 (live feedback: "needs more softness")
                                                      // v25->v26: ForceAnisotropicFiltering
@@ -181,6 +181,11 @@ constexpr unsigned long kCurrentConfigVersion = 34; // v23->v24: FsrSharpenEnabl
                                                      // v33->v34: MotionBlurSkipDrawTest -> MotionBlurDrawTestStage
                                                      // (int, issue #100 -- stage 1 confirmed live, added
                                                      // stage 2 to narrow down further)
+                                                     // v34->v35: MotionBlurDrawTestStage REMOVED -- issue
+                                                     // #100's real root cause found and fixed (SetFVF, not
+                                                     // stream-0; DrawFullScreenPass now uses
+                                                     // SetVertexDeclaration instead), staged isolation test
+                                                     // no longer needed
 
 // Reads a legacy key's raw value, returning true only if the key genuinely existed
 // (unlike ReadFloat, which can't distinguish "absent" from "present but unparsable" --
@@ -726,16 +731,6 @@ void WriteDefaultConfig(const char* path)
         "; thread itself -- see overlay_hud.cpp's PollDamageDiagLoggingIfEnabled\n"
         "; for the full story. Not a permanent feature.\n"
         "DamageDiagLoggingEnabled=%d\n"
-        "; Issue #100 (2026-08-28): TEMPORARY dev-only staged isolation test.\n"
-        "; 0 = off/normal (default). The stream-0 fix for the motion-blur\n"
-        "; UI-loss bug was live-tested and FAILED. 1 = skip the whole draw\n"
-        "; entirely (hook still fires, zero D3D9 work) -- LIVE-CONFIRMED this\n"
-        "; fixes it, so it's specifically something the draw itself does.\n"
-        "; 2 = do the backbuffer capture but skip the actual quad redraw, to\n"
-        "; narrow down further. See overlay_hud.cpp's\n"
-        "; RunPreOverlayMotionBlurPassIfEnabled/DrawFullScreenPass for the full\n"
-        "; story. Not a permanent feature.\n"
-        "MotionBlurDrawTestStage=%d\n"
         "; Task #7/#29: also pushes the command \"n\" onto the real client command\n"
         "; queue on Fire's down-edge, alongside the real +attack kbutton call, in an\n"
         "; attempt to reach notifyonplayercommand's delivery mechanism for\n"
@@ -885,7 +880,6 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.overlayTestCycleAllVariants ? 1 : 0,
         g_modConfig.visualFxClcStateTestValue,
         g_modConfig.damageDiagLoggingEnabled ? 1 : 0,
-        g_modConfig.motionBlurDrawTestStage,
         g_modConfig.fireNotifyQueueKick ? 1 : 0,
         g_modConfig.bindResolverHookLogging ? 1 : 0,
         g_modConfig.bindResolverGlyphSubstitution ? 1 : 0,
@@ -1139,11 +1133,6 @@ void LoadModConfig()
         g_modConfig.visualFxClcStateTestValue = v;
     }
     ReadBool(path, "Experimental", "DamageDiagLoggingEnabled", g_modConfig.damageDiagLoggingEnabled);
-    {
-        int v = GetPrivateProfileIntA("Experimental", "MotionBlurDrawTestStage",
-            g_modConfig.motionBlurDrawTestStage, path);
-        g_modConfig.motionBlurDrawTestStage = v;
-    }
     ReadBool(path, "Experimental", "FireNotifyQueueKick", g_modConfig.fireNotifyQueueKick);
     ReadBool(path, "Experimental", "BindResolverHookLogging", g_modConfig.bindResolverHookLogging);
     ReadBool(path, "Experimental", "BindResolverGlyphSubstitution", g_modConfig.bindResolverGlyphSubstitution);
