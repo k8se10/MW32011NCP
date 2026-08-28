@@ -160,7 +160,7 @@ void ReadBool(const char* path, const char* section, const char* key, bool& outV
 // real system d3d9.dll's Direct3DCreate9On12 entry point instead of the ordinary
 // one -- a real, Microsoft-documented alternate export, not a third-party DLL swap.
 // See mod_config.h's own forceD3D9On12 field comment for the full design.
-constexpr unsigned long kCurrentConfigVersion = 35; // v23->v24: FsrSharpenEnabled/FsrSharpenStrength (Phase B)
+constexpr unsigned long kCurrentConfigVersion = 36; // v23->v24: FsrSharpenEnabled/FsrSharpenStrength (Phase B)
                                                      // v24->v25: MotionBlurEnabled/MotionBlurStrength (Phase E),
                                                      // FsrSharpenStrength default 0.5->0.3 (live feedback: "needs more softness")
                                                      // v25->v26: ForceAnisotropicFiltering
@@ -189,6 +189,12 @@ constexpr unsigned long kCurrentConfigVersion = 35; // v23->v24: FsrSharpenEnabl
                                                      // fix but caused an unrelated crash, later traced to
                                                      // issue #104/FSR, and was fully reverted). Staged
                                                      // isolation test no longer needed.
+                                                     // v35->v36: [Gyro] section FIXED to actually
+                                                     // generate into the default .ini (real bug --
+                                                     // it never was, since issue #76 shipped);
+                                                     // Sensitivity default 1.0->0.25 (live feedback:
+                                                     // "far too high"); new OnlyWhileAds toggle
+                                                     // (live-tester request, default off)
 
 // Reads a legacy key's raw value, returning true only if the key genuinely existed
 // (unlike ReadFloat, which can't distinguish "absent" from "present but unparsable" --
@@ -826,7 +832,35 @@ void WriteDefaultConfig(const char* path)
         "; (sharpening/FXAA/motion blur) is built on it. Should look IDENTICAL to off --\n"
         "; a temporary plumbing-validation toggle, not a real feature. DEFAULT OFF.\n"
         "; 0 = off, 1 = on.\n"
-        "FullScreenPassthroughTest=%d\n",
+        "FullScreenPassthroughTest=%d\n"
+        "\n"
+        "[Gyro]\n"
+        "; PREVIEW/WIP (issue #76) -- native gyro-aim, read directly from a raw-HID\n"
+        "; DualSense (see [Video]/dualsense_input.h), NOT routed through Steam\n"
+        "; Input. DEFAULT OFF -- not live-tested by the developer (no DualSense\n"
+        "; hardware available); a first live tester confirmed the mapping/glyphs\n"
+        "; work but flagged the default sensitivity as too high (2026-08-28).\n"
+        "; FIXED 2026-08-28: this whole [Gyro] section previously never generated\n"
+        "; into the .ini at all (a real bug -- the values were always readable if\n"
+        "; hand-typed in, just never written by this default-config template), so\n"
+        "; a player had no discoverable way to find these keys without already\n"
+        "; knowing they existed. 1 = on, 0 = off (default).\n"
+        "Enabled=%d\n"
+        "; Multiplies the raw, uncalibrated gyro units before adding to look delta\n"
+        "; -- NOT a claimed degrees/second value. Lowered 1.0->0.25 (2026-08-28)\n"
+        "; per direct live feedback (\"the sensitivity for the gyro is far too high\n"
+        "; haha\") -- a directional correction, not yet independently confirmed at\n"
+        "; this exact value. Live-tune this until it feels right.\n"
+        "Sensitivity=%g\n"
+        "; Axis-sign guesses, unverified against real hardware -- flip either if\n"
+        "; gyro look feels backwards on that axis. 1 = inverted, 0 = normal (default).\n"
+        "InvertPitch=%d\n"
+        "InvertYaw=%d\n"
+        "; 2026-08-28, direct live-tester request: when on, gyro look only applies\n"
+        "; while aiming down sights (the same input this project's own\n"
+        "; ADS-slowdown feature already tracks), instead of always-on. 1 = on,\n"
+        "; 0 = off (default -- original always-on behavior).\n"
+        "OnlyWhileAds=%d\n",
         kCurrentConfigVersion,
         g_modConfig.lookDegreesPerSecondHorizontal,
         g_modConfig.lookDegreesPerSecondVertical,
@@ -895,7 +929,12 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.captureRuntimeMenuAssets ? 1 : 0,
         g_modConfig.frametimeBenchmarkLogging ? 1 : 0,
         g_modConfig.resourceUsageLogging ? 1 : 0,
-        g_modConfig.fullScreenPassthroughTest ? 1 : 0);
+        g_modConfig.fullScreenPassthroughTest ? 1 : 0,
+        g_modConfig.gyroEnabled ? 1 : 0,
+        g_modConfig.gyroSensitivity,
+        g_modConfig.gyroInvertPitch ? 1 : 0,
+        g_modConfig.gyroInvertYaw ? 1 : 0,
+        g_modConfig.gyroOnlyWhileAds ? 1 : 0);
 
     fclose(f);
 }
@@ -1154,6 +1193,7 @@ void LoadModConfig()
     if (g_modConfig.gyroSensitivity < 0.0f) g_modConfig.gyroSensitivity = 0.0f;
     ReadBool(path, "Gyro", "InvertPitch", g_modConfig.gyroInvertPitch);
     ReadBool(path, "Gyro", "InvertYaw", g_modConfig.gyroInvertYaw);
+    ReadBool(path, "Gyro", "OnlyWhileAds", g_modConfig.gyroOnlyWhileAds);
     {
         int v = GetPrivateProfileIntA("Video", "InternalRenderScalePercent", g_modConfig.internalRenderScalePercent, path);
         g_modConfig.internalRenderScalePercent = v;
