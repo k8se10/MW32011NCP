@@ -1,0 +1,19 @@
+Region 021d3058 - 021d3170, 6 candidate functions
+
+---- FUN_004cbd20 @ 004cbd20 (44 distinct offsets) ----
+    offsets (relative to 021d3058): [44, 48, 52, 56, 60, 64, 68, 72, 76, 80, 84, 88, 92, 96, 108, 109, 112, 116, 120, 124, 128, 129, 132, 136, 140, 144, 148, 152, 156, 160, 164, 165, 168, 172, 176, 180, 184, 185, 188, 192, 196, 200, 204, 208]
+
+---- FUN_0053f110 @ 0053f110 (11 distinct offsets) ----
+    offsets (relative to 021d3058): [0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40]
+
+---- FUN_004ee840 @ 004ee840 (7 distinct offsets) ----
+    offsets (relative to 021d3058): [44, 48, 60, 100, 104, 156, 160]
+
+---- FUN_004fce30 @ 004fce30 (2 distinct offsets) ----
+    offsets (relative to 021d3058): [52, 60]
+
+---- FUN_00491430 @ 00491430 (2 distinct offsets) ----
+    offsets (relative to 021d3058): [40, 96]
+
+---- FUN_006828e0 @ 006828e0 (1 distinct offsets) ----
+    offsets (relative to 021d3058): [68]

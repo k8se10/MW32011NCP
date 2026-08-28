@@ -14604,6 +14604,67 @@ target if this lead is picked up again. Shellshock's own native blur system
 (`bg_shock_screenType`/`bg_shock_screenBlurBlendTime`) remains a second,
 untested, structurally independent candidate from the same Fork 3 batch.
 
+**Per-frame consumer traced (2026-08-28), and a strong proximity finding.**
+`DescribeRefs.java` on the exact blend-state field addresses came back empty
+(writer only) -- the reason turned out to be that Ghidra's reference manager
+only indexes the LITERAL address a "DAT_" symbol resolves to, and the real
+per-frame reader accesses this struct via a different, non-literal
+addressing path. `ScanStructRegion.java` (byte-by-byte reference scan across
+one full player slot, `021d3058`-`021d3170`) found what `DescribeRefs`
+missed: a function touching **44 distinct offsets** across the slot, far
+more than `FUN_0053f110`'s own 11 written fields -- `FUN_004cbd20`.
+
+Decompiled in full, `FUN_004cbd20` is exactly the per-frame BLEND APPLIER:
+
+- Reads current time (`DAT_02516a94`) against the slot's stored blend
+  start/end times, computes a normalized blend fraction `fVar1` (clamped via
+  `FUN_00483910`, a min/max/clamp helper).
+- Linearly interpolates every stored color-correction field (RGB triples,
+  brightness/desaturation bytes) between the "blend-from" values (copied by
+  `FUN_0052cdf0` when the transition started) and the new target values, for
+  the CURRENT frame's blend position.
+- Writes the interpolated result into `&DAT_021d3084 + iVar6` (the same
+  0x118-stride per-player struct, a DIFFERENT field range than what
+  `FUN_0053f110` writes -- confirming the struct holds both "pending
+  transition target" and "current interpolated" data side by side).
+- Then, gated on a per-player "vision-set active" flag
+  (`DAT_021d3474[playerIndex]`): if inactive, `memset`s a 0x38-byte (14-dword)
+  block at `*DAT_021ddf00 + 0x41988` to zero and resets a scale field to
+  `1.0f`; if active, copies the just-computed interpolated 14 dwords into
+  that same `*DAT_021ddf00 + 0x41988` block. **`DAT_021ddf00` is itself a
+  runtime POINTER variable (`iVar2 = DAT_021ddf00;`), not a fixed struct
+  base** -- its value is only known live, which is why the final consumer of
+  `+0x41988` couldn't be traced further by literal-address xref in this pass
+  (would need either a live pointer dump or deeper static type recovery of
+  whatever object `DAT_021ddf00` points to).
+
+**Real proximity finding**: `FUN_004cbd20`'s only two callers are
+`FUN_0053d640` and **`FUN_0042c2f0`** -- the SAME top-level per-frame
+orchestrator this project's own motion-blur/FSR hook chain already runs
+through (`FUN_0042c2f0 -> FUN_00694650 -> FUN_00693ff0`, from the issue #96
+crash fix). Decompiling `FUN_0042c2f0` confirms `FUN_004cbd20(0)` is called
+unconditionally, once per frame, for player 0 -- and the SAME function also
+calls `FUN_0053f110` directly, twice more, for two other environment-driven
+vision-state edge triggers (gated on `DAT_009a1930`/`DAT_009a1938`, not yet
+named/identified) that go through the identical blend-state-write path as
+`visionset_pain`. This doesn't prove the exact interaction yet, but it's a
+real, concrete finding: the native color-correction blend computation and
+this mod's own full-screen post-process hook chain are BOTH driven out of
+the same per-frame top-level function, not distant/unrelated subsystems --
+consistent with, and further strengthening, the state-conflict theory.
+
+**Where this leaves the lead**: the data-flow chain is now fully traced from
+the `visionset_pain` command down to a concrete per-frame color-blend
+applier sitting in close call-graph proximity to this mod's own hook chain.
+What's still missing is (1) the actual native trigger that sends
+`visionset_pain` specifically on an unarmored hit (not yet found), and (2)
+what reads `*DAT_021ddf00 + 0x41988` afterward to actually apply it to the
+D3D9 pipeline (blocked on the runtime-pointer issue above -- static tracing
+alone can't resolve it further; would need a live capture of `DAT_021ddf00`'s
+actual value, e.g. via the existing `memdiff.exe` tooling or x64dbg, neither
+available this pass -- x64dbg's MCP connection was refused when checked).
+Real, substantive progress, still not a confirmed fix.
+
 ## 101. Roadmap note: broader performance/optimization/modern-hardware pass, user's own framing (2026-08-27)
 
 **Status: Roadmap Idea, not scoped.** Direct user framing, end of a long
