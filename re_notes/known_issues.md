@@ -130,7 +130,7 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#95](#95-phase-e-visual-suite-plan-camera-only-motion-blur----not-closed-blocked-on-issue-96s-still-open-crash-regression-2026-08-26) — Phase E: camera-only motion blur — superseded by #96's own motion-blur redesign; see #96/#97
 - [#96](#96-game-literally-exited-mid-session----corrected-2026-08-27-not-caused-by-internalrenderscalepercent-issue-88-that-original-isolation-was-wrong-two-real-crash-sites-now-live-captured-root-cause-still-open) — Motion blur crash ("game literally exited") — **Resolved** — root-caused to `Hook_FUN_00497210`'s unconditional install; final shipped hook is `FUN_00693ff0`, confirmed crash-free live
 - [#97](#97-motion-blur-issue-96-continuation-menu--loading-screen-gates-shipped-cutscene-report-retracted-on-retest----current-state-closed-for-tonight) — Motion blur menu/loading-screen gates + cutscene report — **Resolved** (cutscene report retracted on retest, no code change needed)
-- [#98](#98-london-mission-cutscene-audio-continues-after-skip-on-some-cutscenes----reported-not-yet-investigated) — London mission: cutscene audio continues after skip — **Open, not investigated**
+- [#98](#98-cutscene-skip-audio-keeps-playing-after-skip----controller-specific-2026-08-28-not-yet-fixed) — Cutscene-skip audio keeps playing after skip — **Investigating** — controller-specific (Start), likely this mod's own pause-menu call, not native
 - [#99](#99-camera-look-stutterjitter----resolved-real-root-cause-is-vsync-confirmed-via-cross-machine-test-2026-08-27) — Camera-look stutter — **Resolved** (real root cause is vsync, confirmed via cross-machine test)
 - [#100](#100-motion-blur-ui-disappears-when-taking-damage-while-moving----reported-not-yet-investigated-2026-08-27) — Motion blur: UI disappears on damage while moving (armor-conditional, unrelated to #103) — **Open** — real GSC mechanism found (armor's `setnormalhealth()` bypasses the pure native damage path); which native call actually breaks the UI not yet traced
 - [#101](#101-roadmap-note-broader-performanceoptimizationmodern-hardware-pass-users-own-framing-2026-08-27) — Roadmap: growing into a "FusionFix-style" general enhancement patch — **Roadmap Idea**, not scoped
@@ -14106,32 +14106,74 @@ trace any of them to a live per-frame readable STATE flag, so task #25's
 own blockers (Predator Missile guidance movement-breaking, the "Turbulence"
 plane-breakup sequence) are unchanged by tonight's work.
 
-## 98. London mission: cutscene audio continues after skip on some cutscenes -- REPORTED, not yet investigated
+## 98. Cutscene-skip audio keeps playing after skip -- CONTROLLER-SPECIFIC (2026-08-28), not yet fixed
 
-**Status: Open, not investigated.** Direct user report: "if you skip
-certain cutscenes(london mission confirmed broken cutscene audio when
-skipped, keeps talking after you already skipped but skips)" -- the
-cutscene's visual skip works, but its dialogue audio keeps playing after
-the skip, observed during Campaign testing the day before this session.
+**Status: Investigating -- new lead reopens this issue, likely NOT a native
+engine bug after all.** Original report (London mission, day before an
+earlier session): "if you skip certain cutscenes(london mission confirmed
+broken cutscene audio when skipped, keeps talking after you already
+skipped but skips)" -- visual skip works, dialogue audio keeps playing.
 
-**Initial check done tonight**: grepped this project's entire own source
-(`proxy_d3d9/src/*.cpp`/`*.h`) for anything touching cutscene-skip input --
-**found nothing**. This mod has no skip-cutscene hook, key mapping, or
-input-synthesis path of any kind; every hook this project owns is
-documented elsewhere in this file and none of them touch cutscene playback
-or skip logic. On current evidence this looks like a native engine bug, not
-something this mod introduces or could be causing -- but this has NOT been
-independently confirmed the way this session's earlier stutter report was
-(full mod-uninstall reproduction). **Recommended next step, not yet done**:
-reproduce with the mod fully uninstalled (stock `d3d9.dll`, no proxy DLL),
-the same decisive test that settled issue #96's stutter follow-up -- if the
-audio-continues-after-skip bug reproduces there too, it's conclusively
-native and out of this project's scope to fix (though still worth noting
-for players); if it does NOT reproduce, this mod is somehow involved despite
-the negative source search above and needs a live-debugging pass to find
-how. Not chased further this session per the user's own explicit prioritization
-tonight (missile-accel lead and the 30Hz-tick dig took precedence, then the
-session moved to documentation close-out).
+**Critical new clue, this session, directly narrows the cause**: "i can also
+confirm the bug of audio keeps playing when using controller to skip
+cutscene(not on k+m click) we press start on the controller and it skips
+but the audio stays playing unlike when clicked natively with the mouse."
+This is **device-specific** -- a genuine native mouse click skips cleanly
+(audio stops), but the controller's Start button does not. That directly
+contradicts the earlier "found nothing in this mod's own source, looks
+native" conclusion below, which was written before this distinction was
+known.
+
+**Real, likely mechanism (not yet confirmed live)**: Start's own handler,
+`InjectControllerPauseMenu()` (`analog_input_hooks.cpp`), has NO cutscene
+carve-out in its current, actual implementation -- the "any other state
+(loading, cutscene, etc.) -- real engine does nothing; so do we" line in
+this same file's header comment above the function describes an EARLIER
+design that the code has since moved past (a documentation/code drift this
+file itself doesn't flag). The real current logic: if `IsMenuActive()` is
+false and `state` isn't 1 or 2 (both confirmed non-gameplay-transition
+states), it unconditionally calls `SetMenuState(kLocalClientIndex,
+kMenuStatePausedMenu)` -- i.e. opens the real native pause menu -- with no
+gate excluding an active cutscene. If a cutscene's own state value is
+neither 1 nor 2 (plausible, not yet logged), pressing Start would fall into
+this branch and invoke the real pause-menu-open call during a cutscene.
+The theory: this real native call has a side effect of tearing down the
+cutscene's video playback as a byproduct of pausing (matching the reported
+"it skips"), but does NOT go through whatever real, separate native
+audio-stop routine an actual dedicated skip input (mouse click, or a real
+keyboard skip key) triggers -- explaining the audio persisting.
+
+**Evidence checked, inconclusive so far**: the existing `[pause-diag]`
+Start-press state logging (added earlier for pause-menu work, still live)
+was grepped in the current `proxy_d3d9.log` -- only `state=1` and `state=6`
+have ever been logged, no distinct cutscene state value has been captured
+yet, meaning this hasn't actually been reproduced under logging so the
+mechanism above is a strong, well-reasoned lead, not a confirmed cause.
+
+**Not fixed this session** -- explicitly deferred by the user ("so rn were
+at a good state, that bug has probably existed forever") in favor of
+stopping at a good checkpoint after issues #100/#104's live confirmations.
+**Recommended next step, not yet done**: reproduce a controller-Start
+cutscene skip with logging on, read the `[pause-diag] Start pressed
+(opening): state=%d` line it should produce, and confirm whether that state
+value is genuinely outside `{1, 2}` (supporting the theory above) or
+whether `IsMenuActive()` was actually true (implicating the `ForwardKeyToMenu`
+ESC-forward path instead) -- then either add an explicit cutscene-state
+exclusion to `InjectControllerPauseMenu()` or find the real dedicated
+skip-input/audio-stop mechanism directly, whichever the state value points
+at. The original mod-uninstall reproduction test (below) is now a lower
+priority given the controller-vs-mouse split already points at this mod's
+own Start handling rather than a native-only bug, but is still worth doing
+if the state-logging check comes back ambiguous.
+
+**Original investigation (superseded by the above, kept for the trail)**:
+grepped this project's entire own source (`proxy_d3d9/src/*.cpp`/`*.h`) for
+anything touching cutscene-skip input directly -- found nothing, no
+dedicated skip-cutscene hook/key-mapping/input-synthesis path anywhere in
+this codebase. That's still true and still relevant (there's no PURPOSE-BUILT
+skip mechanism to blame), but it missed the real candidate: Start's own
+pause-menu-open call having an unintended side effect during a cutscene,
+which doesn't require a dedicated skip hook to exist at all.
 
 ## 99. Camera-look stutter/jitter -- RESOLVED: real root cause is vsync, confirmed via cross-machine test (2026-08-27)
 
