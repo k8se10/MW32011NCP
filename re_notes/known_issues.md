@@ -15354,16 +15354,33 @@ our intervening `SetTexture` call desyncs that native cache from the real
 device state in a way a plain restore doesn't fix, even though the DEVICE
 itself ends up holding the correct value again.
 
-**Stage 8/9 built the same pass, not yet tested**: splits stage 7's
-combined texture0+FVF skip to find out which one (or both) the real fix
-needs to address. Stage 8 = skip the texture0 bind only (FVF still set
-normally each frame). Stage 9 = skip FVF only (texture0 still bound
-normally). Testing stage 8 first -- texture BINDING a real resource is
-the more likely single culprit of the two by the cache-desync theory
-above (FVF is pure per-draw-call vertex-format state, much less likely to
-have any cross-draw-call side effect). Build clean, 0 errors, deployed,
-`MotionBlurDrawTestStage=8` enabled live in `mw3ncp_config.ini` for the
-next test.
+**Stage 8/9 built** to split stage 7's combined texture0+FVF skip and find
+out which one (or both) the real fix needs to address. Stage 8 = skip the
+texture0 bind only (FVF still set normally each frame). Stage 9 = skip
+FVF only (texture0 still bound normally). Tested stage 8 first, on the
+(disproven) cache-desync theory that texture BINDING a real resource
+would be the more likely single culprit.
+
+**Stage 8 LIVE-CONFIRMED (2026-08-28) -- texture0 alone is NOT
+sufficient.** Direct user reports: "Still bugged" and "its not showing
+the effect again here." With texture0's bind skipped but FVF still being
+set to `kFVF` every frame, the native warning still fails to draw. This
+disproves the cache-desync-on-texture-bind theory as the SOLE mechanism --
+FVF must still be involved, either alone or in combination with the
+texture bind.
+
+**Stage 9, testing FVF in isolation** (texture0 still bound normally):
+no rebuild needed -- both stages 8 and 9's gating were already compiled
+into the currently-deployed build in the same pass, so this is a pure
+config hot-reload, no relaunch required. If the vignette/text still
+breaks, NEITHER state change alone is sufficient and it's genuinely the
+COMBINATION of both together that matters (a real, if less clean,
+possible answer); if it comes back working, FVF alone is confirmed as
+the real cause -- a genuinely different, and honestly more surprising,
+finding than the original texture-cache-desync theory, since FVF is
+per-draw-call vertex FORMAT state with no documented cross-call side
+effects. `MotionBlurDrawTestStage=9` enabled live in
+`mw3ncp_config.ini` for the next test.
 
 **Two more reports the same session, both addressed without touching
 code**: (1) "a weird graphical bug in this new phase when entering level
