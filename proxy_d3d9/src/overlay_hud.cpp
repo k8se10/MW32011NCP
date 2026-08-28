@@ -3114,7 +3114,12 @@ using FullScreenShaderSetupFn = void(*)(void* device, float texelW, float texelH
 // everything else (sampler, render states, viewport, texture0/FVF, and the
 // actual draw call) runs exactly as normal. Isolates "does binding ANY
 // custom pixel shader, even briefly and even restored after, break the
-// native low-health warning."
+// native low-health warning." 5 = skip forcing the full-screen viewport
+// entirely (both set and restore) -- whatever viewport the native code had
+// stays untouched throughout; everything else, including the pixel shader
+// bind and the actual draw call, runs normally. This exact function had a
+// real, previously-fixed bug tied to viewport handling (2026-08-27), a
+// plausible repeat offender.
 void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn onShaderBound = nullptr,
                          int testStage = 0)
 {
@@ -3222,10 +3227,22 @@ void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn
     // constrain our full-screen draw to that sub-region), then restored to
     // whatever was actually there before, exactly like every other state
     // this function touches.
+    // [Experimental] MotionBlurDrawTestStage==5 isolation test (issue #100) --
+    // skip forcing the full-screen viewport entirely (both the set AND the
+    // final restore, gated together same as stage 4's shader skip) --
+    // whatever viewport the native code already had stays untouched
+    // throughout. Our own quad may draw clipped/wrong if the current
+    // viewport isn't already full-screen (visually irrelevant to this
+    // test). Isolates the viewport force-set specifically -- this exact
+    // function had a real, previously-fixed bug tied to viewport handling
+    // (2026-08-27), a plausible repeat offender.
     D3DViewport9 oldViewport{};
-    bool haveOldViewport = SUCCEEDED(getViewport(device, &oldViewport));
-    D3DViewport9 fullScreenViewport{ 0, 0, desc.Width, desc.Height, 0.0f, 1.0f };
-    setViewport(device, &fullScreenViewport);
+    bool haveOldViewport = false;
+    if (testStage != 5) {
+        haveOldViewport = SUCCEEDED(getViewport(device, &oldViewport));
+        D3DViewport9 fullScreenViewport{ 0, 0, desc.Width, desc.Height, 0.0f, 1.0f };
+        setViewport(device, &fullScreenViewport);
+    }
 
     // FIXED 2026-08-27 -- texture stage 0 was previously force-set to nullptr
     // at the end of this function instead of restored to whatever was
