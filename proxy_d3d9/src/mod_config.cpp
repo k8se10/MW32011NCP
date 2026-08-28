@@ -182,10 +182,13 @@ constexpr unsigned long kCurrentConfigVersion = 35; // v23->v24: FsrSharpenEnabl
                                                      // (int, issue #100 -- stage 1 confirmed live, added
                                                      // stage 2 to narrow down further)
                                                      // v34->v35: MotionBlurDrawTestStage REMOVED -- issue
-                                                     // #100's real root cause found and fixed (SetFVF, not
-                                                     // stream-0; DrawFullScreenPass now uses
-                                                     // SetVertexDeclaration instead), staged isolation test
-                                                     // no longer needed
+                                                     // #100's real root cause found and fixed (SetFVF itself
+                                                     // breaks the native low-health warning, in either
+                                                     // direction; DrawFullScreenPass now calls neither SetFVF
+                                                     // nor SetVertexDeclaration -- the latter was tried as a
+                                                     // fix but caused an unrelated crash, later traced to
+                                                     // issue #104/FSR, and was fully reverted). Staged
+                                                     // isolation test no longer needed.
 
 // Reads a legacy key's raw value, returning true only if the key genuinely existed
 // (unlike ReadFloat, which can't distinguish "absent" from "present but unparsable" --
