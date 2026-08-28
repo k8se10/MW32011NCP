@@ -1,0 +1,12 @@
+STRING @ 0082e918 = "pip_enable_visionset_pain"
+  from 00570322 type=READ IN FUNCTION FUN_0056d4f0@0056d4f0
+  from 00570315 type=DATA IN FUNCTION FUN_0056d4f0@0056d4f0
+  (2 references)
+
+STRING @ 0082f23c = "pip_visionset_pain"
+  from 005cb0c5 type=DATA IN FUNCTION FUN_005cb080@005cb080
+  from 00570142 type=READ IN FUNCTION FUN_0056d4f0@0056d4f0
+  from 00570133 type=DATA IN FUNCTION FUN_0056d4f0@0056d4f0
+  (3 references)
+
+Total matching strings: 2

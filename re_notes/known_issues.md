@@ -14528,6 +14528,82 @@ normal health on repeat is essentially demigod in mw3." A genuine, real
 mechanic confirmed straight from source, not a bug -- logged here since it
 came directly out of this issue's own RE work.
 
+**`pip_enable_visionset_pain` lead, checked (2026-08-28) via headless
+Ghidra static RE (`FindExactStrings.java`/`DecompileAt.java`/`FindCallers.java`
+against `re_notes/ghidra_project/iw5sp_proj.gpr`) -- found something more
+concrete than the PIP-prefixed string Fork 3 originally flagged.**
+
+`FindExactStrings.java` on the exact string set found `pip_visionset_pain`
+has THREE references, not just the giant dispatcher: one from a small,
+dedicated function, `FUN_005cb080`. Decompiled:
+
+```c
+void FUN_005cb080(undefined4 *param_1)
+{
+  uVar2 = FUN_00414290(*(undefined2*)(param_1+0x29), ROUND(...));
+  uVar3 = FUN_004c1c80("%s %s %i", "pip_visionset_pain", uVar2);
+  cVar1 = FUN_00493b80("SV_GameSendServerCommand");
+  FUN_00402130(uVar2, uVar3);   // sends the built command string to the client
+}
+```
+
+This is a genuine SERVER->CLIENT command builder (confirmed via the literal
+`"SV_GameSendServerCommand"` string check) for the PIP variant specifically
+-- real, but `FUN_005cb080` itself has **zero call-reference callers**
+anywhere in the binary (`FindCallers.java` returned 0), meaning whatever
+invokes it does so indirectly (a GSC builtin dispatch by numeric ID, this
+project's own already-documented dead end from the Survival ready-up hunt
+-- not retraced here).
+
+**The more useful find: the PLAIN (non-`pip_`) `"visionset_pain"` command,
+one command earlier in the same dispatcher (`FUN_0056d4f0`), resolves to a
+real, fully-traced native color-grading system** -- distinct from the
+already-ruled-out PIP/exclusion-zone family (`FUN_00508970`/`FUN_00694650`),
+despite the shared `pip_`-prefixed naming that originally suggested a link:
+
+- `FUN_0056d4f0` (the ~3500-line generic command-string dispatcher already on
+  record from Fork 3) matches argv[0] against `"visionset_pain"` (alongside
+  sibling commands `visionset_naked`/`visionset_night`/`visionset_missilecam`/
+  `visionset_thermal`) and on match calls `FUN_0052cdf0(&DAT_009a0af8, 4, 3,
+  &DAT_009a18f0, uVar7, DAT_00984b78)` -- `uVar7` is `argv[2]` parsed as a
+  float (a blend-duration), `4` is this visionset's own channel ID.
+- `FUN_0052cdf0` (decompiled in full) is a real vision-set slot
+  ACTIVATION/REGISTRATION function: looks up a named preset via
+  `FUN_00575f60` (a real 4-slot table of named color-correction presets, each
+  a 0x9c-byte/39-dword block, `param_1+0x270` name array + per-slot data),
+  copies the CURRENTLY active preset's 39 dwords into a "blend-from" slot
+  (`+0x988` -> `+0x370`), then stores the new preset ID and a target end-time
+  (`param_6`) -- a real cross-fade/interpolation setup between two named
+  color-correction presets over time, not a placeholder.
+- Two real native TRIGGER functions were also found and traced,
+  `FUN_004901b0`/`FUN_00571620` (near-identical, index-driven "activate
+  visionset by table index" functions, structurally the generic mechanism
+  ALL visionset presets -- not just pain -- go through): both call the same
+  `FUN_0052cdf0`, then `FUN_0053f110`, which writes a genuine PER-PLAYER
+  color-correction blend-state struct (`DAT_021d3058 + playerIndex*0x118`,
+  280 bytes: start-color RGB, blend duration, end-color RGB, a flag byte, a
+  second target-color RGB, and 3 more fields) -- real client-side state for
+  a full-screen color-grade transition, confirmed via direct decompile.
+
+**Bottom line**: `visionset_pain` is a real, native, full-screen
+COLOR-CORRECTION/post-process system (the same general category as
+naked-eye/night-vision/thermal/missile-cam vision presets) -- structurally
+the same class of full-screen render effect as this mod's own injected
+motion-blur/FSR passes, which is exactly the kind of native mechanism this
+issue's own theory predicted would fire only on the pure-native (unarmored)
+damage path. **Not yet found in this pass**: (1) the specific call site that
+actually SENDS `"visionset_pain"` on an unarmored hit -- likely native
+damage-response code or a GSC builtin reaching the same command path, not
+yet traced; (2) the per-frame CONSUMER that reads
+`DAT_021d3058[playerIndex]` and actually issues the real D3D9 draw/render-
+state calls for the color-correction blend -- this is the most direct
+state-conflict candidate with this mod's own `EndScene`-hooked full-screen
+passes (texture stage state, render target, or shader-constant-register
+leakage between the two full-screen effects) and is the natural next static
+target if this lead is picked up again. Shellshock's own native blur system
+(`bg_shock_screenType`/`bg_shock_screenBlurBlendTime`) remains a second,
+untested, structurally independent candidate from the same Fork 3 batch.
+
 ## 101. Roadmap note: broader performance/optimization/modern-hardware pass, user's own framing (2026-08-27)
 
 **Status: Roadmap Idea, not scoped.** Direct user framing, end of a long
