@@ -125,10 +125,10 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#90](#90-60fps-engine-tick-com_maxfpsfixedtimecom_timescale-confirmed-real-registered-and-clustered----fixedtimes-real-mechanism-now-decompiled-and-confirmed-2026-08-25) — 60fps engine tick: `com_maxfps`/`fixedtime`/`com_timescale` — **Investigating** — `fixedtime`'s mechanism confirmed real; 2026-08-27 follow-up ran the two previously-recommended next steps (whole-binary constant scan, remaining `CL_Frame` callee trace) — both came back negative, no patchable gate found yet
 - [#91](#91-vanilla-in-game-resolution-change-also-crashes-the-game----confirms-this-is-a-real-pre-existing-enginehook-compatibility-issue-with-vid_restart-not-specific-to-this-projects-own-r_mode-write-attempt-2026-08-26) — Vanilla in-game Resolution change also crashes the game — **Open, not investigated**
 - [#92](#92-renderer-backend-investigation-d3d1112vulkan----dxvk-parked-as-a-real-un-evaluated-vac-risk-d3d9on12-diagnostic-added-awaiting-one-live-launch-2026-08-26) — Renderer-backend investigation (D3D11/12/Vulkan) — **Investigating** — DXVK parked as an un-evaluated VAC risk, D3D9On12 diagnostic shipped, awaiting a live launch capture
-- [#93](#93-phase-a-visual-suite-plan-full-screen-passthrough-crashed-on-init----this-specific-init-crash-bug-resolved-but-phase-a-overall-not-done-blocked-on-issue-96s-still-open-crash-regression-2026-08-26) — Phase A (visual-suite plan) passthrough init crash — **Resolved** (the init bug); Phase A overall still blocked on #96
+- [#93](#93-phase-a-visual-suite-plan-full-screen-passthrough-crashed-on-init----resolved-phase-a-now-genuinely-done-2026-08-28) — Phase A (visual-suite plan) passthrough init crash — **Resolved**, Phase A is done
 - [#94](#94-phase-b-visual-suite-plan-fsr-10-rcas-full-screen-sharpening----built-deployed-not-yet-live-tuned-2026-08-26) — Phase B: FSR 1.0 RCAS full-screen sharpening — **Built, not yet live-tuned**
-- [#95](#95-phase-e-visual-suite-plan-camera-only-motion-blur----not-closed-blocked-on-issue-96s-still-open-crash-regression-2026-08-26) — Phase E: camera-only motion blur — superseded by #96's own motion-blur redesign; see #96/#97
-- [#96](#96-game-literally-exited-mid-session----corrected-2026-08-27-not-caused-by-internalrenderscalepercent-issue-88-that-original-isolation-was-wrong-two-real-crash-sites-now-live-captured-root-cause-still-open) — Motion blur crash ("game literally exited") — **Resolved** — root-caused to `Hook_FUN_00497210`'s unconditional install; final shipped hook is `FUN_00693ff0`, confirmed crash-free live
+- [#95](#95-phase-e-visual-suite-plan-camera-only-motion-blur----resolved-phase-e-is-done-2026-08-28) — Phase E: camera-only motion blur — **Resolved**, Phase E is done
+- [#96](#96-game-literally-exited-mid-session----resolved-2026-08-27-root-caused-to-hook_fun_00497210s-unconditional-install-firing-during-partially-composited-frames-fixed-via-a-redesigned-hook-point-fun_00693ff0) — Motion blur crash ("game literally exited") — **Resolved** — root-caused to `Hook_FUN_00497210`'s unconditional install; final shipped hook is `FUN_00693ff0`, confirmed crash-free live
 - [#97](#97-motion-blur-issue-96-continuation-menu--loading-screen-gates-shipped-cutscene-report-retracted-on-retest----current-state-closed-for-tonight) — Motion blur menu/loading-screen gates + cutscene report — **Resolved** (cutscene report retracted on retest, no code change needed)
 - [#98](#98-cutscene-skip-audio-keeps-playing-after-skip----controller-specific-2026-08-28-not-yet-fixed) — Cutscene-skip audio keeps playing after skip — **Investigating** — controller-specific (Start), likely this mod's own pause-menu call, not native
 - [#99](#99-camera-look-stutterjitter----resolved-real-root-cause-is-vsync-confirmed-via-cross-machine-test-2026-08-27) — Camera-look stutter — **Resolved** (real root cause is vsync, confirmed via cross-machine test)
@@ -11049,9 +11049,18 @@ Two parallel forks dispatched at the user's request ("lets do some forks into th
 
 ---
 
-## 93. Phase A (visual-suite plan) full-screen passthrough crashed on init -- this specific init-crash bug RESOLVED, but Phase A overall NOT done, blocked on issue #96's still-open crash regression (2026-08-26)
+## 93. Phase A (visual-suite plan) full-screen passthrough crashed on init -- RESOLVED, Phase A now genuinely done (2026-08-28)
 
-**Status:** The init-crash bug this entry originally tracked (a real
+**Status: Resolved, Phase A's foundation is done.** (Title/status stale until
+2026-08-28 -- issue #96, the last blocker cited below, has been resolved
+since 2026-08-27, and Phase A's own `DrawFullScreenPass` pipeline has since
+been extensively built on, live-tested, and hardened across issues #100/#103/
+#104 -- a 9-round live isolation test, two real state-gating fixes, and a
+full 4-wave Survival playtest confirming stability. There is no longer a
+real open question about whether this foundation works.) Original entry
+kept below for the investigation trail.
+
+The init-crash bug this entry originally tracked (a real
 type-confusion bug on a `Release()` call) is resolved and confirmed live
 ("yep no crash this time") -- launches clean with `FullScreenPassthroughTest=1`
 active. **But direct user correction (2026-08-26, same standard already
@@ -11205,9 +11214,16 @@ needs retuning.
 
 ---
 
-## 95. Phase E (visual-suite plan): camera-only motion blur -- NOT closed, blocked on issue #96's still-open crash regression (2026-08-26)
+## 95. Phase E (visual-suite plan): camera-only motion blur -- RESOLVED, Phase E is done (2026-08-28)
 
-**Status:** Blocked / Not Done. Direct user correction (2026-08-26): "e is not
+**Status: Resolved, Phase E is done.** (Title/status stale until 2026-08-28
+-- issue #96 was resolved 2026-08-27, and motion blur has since been through
+a full 9-round live isolation test (issue #100, the native low-health
+warning bug) plus a menu/loading/cutscene state-gating fix (issue #104),
+confirmed stable across a full 4-wave Survival playtest. Original entry
+kept below for the investigation trail.)
+
+**Original status (2026-08-26):** Blocked / Not Done. Direct user correction (2026-08-26): "e is not
 done - crash regression pending deep re and fix" -- do not mark Phase E
 complete while issue #96's crash is still unresolved. The blur itself (both
 UI-exclusion rounds) and Round 4's multi-fire-per-frame fix below are real
@@ -11414,7 +11430,11 @@ live-confirmed.
 
 ---
 
-## 96. Game "literally exited" mid-session -- CORRECTED 2026-08-27: NOT caused by `InternalRenderScalePercent` (issue #88), that original isolation was wrong; two real crash sites now live-captured, root cause still open
+## 96. Game "literally exited" mid-session -- RESOLVED 2026-08-27: root-caused to `Hook_FUN_00497210`'s unconditional install firing during partially-composited frames; fixed via a redesigned hook point (`FUN_00693ff0`)
+
+**Status: Resolved, confirmed crash-free live.** (This title line was stale until 2026-08-28 -- the fix below was real and already shipped, but the title still read "root cause still open," exactly the drift pattern this project's own documentation standard warns against. See CLAUDE.md's Version Timeline for the same fix, dated 2026-08-27.) Real root cause: `Hook_FUN_00497210`'s install call ran unconditionally regardless of `MotionBlurEnabled`, and that function is called from `FUN_00508970` (a recursive exclusion-zone/killcam/PIP/splitscreen rect-carving function) once per carved sub-rect -- firing a full-screen capture-and-redraw against a PARTIALLY-composited backbuffer during those sequences, real state corruption. Found via a dedicated x64dbg-based MCP debugging session plus a `git worktree`-based history bisection (from the user's own recollection: "the issue wasnt present on the previous 0.3.4 release"). **Fix**: motion blur re-implemented on `FUN_00693ff0` instead -- the real boundary immediately before the engine's per-viewport 2D/HUD dispatch loop (`FUN_004ee300`), found by disassembling linked/nearby call sites once the original hook point was ruled out. Confirmed crash-free live, correctly excludes both native HUD and this mod's own overlay from the blur.
+
+The original correction below (2026-08-27, the two-crash-site finding) is kept for the investigation trail.
 
 **Status:** Open. **The original framing of this issue (crash isolated to
 `InternalRenderScalePercent`) is DISPROVEN**, not just unconfirmed --
