@@ -1,0 +1,110 @@
+================================================================
+Function: FUN_004cbd20 @ 004cbd20
+----------------------------------------------------------------
+
+void FUN_004cbd20(void)
+
+{
+  float fVar1;
+  int iVar2;
+  undefined1 uVar3;
+  int iVar4;
+  byte *pbVar5;
+  int iVar6;
+  int iVar7;
+  undefined4 *puVar8;
+  undefined4 *puVar9;
+  float10 fVar10;
+  int local_8;
+  byte local_4;
+  
+  iVar2 = DAT_021ddf00;
+  iVar4 = *(int *)(DAT_021ddf00 + 0x419c4);
+  iVar6 = iVar4 * 0x118;
+  if (DAT_02516a94 < *(int *)(&DAT_021d30f8 + iVar6)) {
+    local_8 = *(int *)(&DAT_021d30f8 + iVar6) - *(int *)(&DAT_021d30f4 + iVar6);
+    if (local_8 < 1) {
+      local_8 = 1;
+    }
+    fVar10 = (float10)FUN_00483910((float)(DAT_02516a94 - *(int *)(&DAT_021d30f4 + iVar6)) /
+                                   (float)local_8,0,0x3f800000);
+    fVar1 = (float)fVar10;
+    iVar7 = 4;
+    *(float *)(&DAT_021d3090 + iVar6) =
+         *(float *)(&DAT_021d30c8 + iVar6) +
+         fVar1 * (*(float *)(&DAT_021d3100 + iVar6) - *(float *)(&DAT_021d30c8 + iVar6));
+    *(float *)(&DAT_021d3094 + iVar6) =
+         (*(float *)(&DAT_021d3104 + iVar6) - *(float *)(&DAT_021d30cc + iVar6)) * fVar1 +
+         *(float *)(&DAT_021d30cc + iVar6);
+    *(float *)(&DAT_021d3098 + iVar6) =
+         (*(float *)(&DAT_021d3108 + iVar6) - *(float *)(&DAT_021d30d0 + iVar6)) * fVar1 +
+         *(float *)(&DAT_021d30d0 + iVar6);
+    pbVar5 = &DAT_021d30fc + iVar6;
+    do {
+      iVar7 = iVar7 + -1;
+      local_4 = (byte)(int)ROUND((float)(int)((uint)*pbVar5 - (uint)pbVar5[-0x38]) * fVar1 +
+                                 (float)pbVar5[-0x38]);
+      pbVar5[-0x70] = local_4;
+      pbVar5 = pbVar5 + 1;
+    } while (iVar7 != 0);
+    if (((&DAT_021d310c)[iVar6] == '\0') && ((&DAT_021d30d4)[iVar6] == '\0')) {
+      uVar3 = 0;
+    }
+    else {
+      uVar3 = 1;
+    }
+    (&DAT_021d309c)[iVar6] = uVar3;
+    iVar7 = 4;
+    pbVar5 = &DAT_021d3110 + iVar6;
+    do {
+      iVar7 = iVar7 + -1;
+      local_4 = (byte)(int)ROUND((float)(int)((uint)*pbVar5 - (uint)pbVar5[-0x38]) * fVar1 +
+                                 (float)pbVar5[-0x38]);
+      pbVar5[-0x70] = local_4;
+      pbVar5 = pbVar5 + 1;
+    } while (iVar7 != 0);
+    *(float *)(&DAT_021d30a4 + iVar6) =
+         (*(float *)(&DAT_021d3114 + iVar6) - *(float *)(&DAT_021d30dc + iVar6)) * fVar1 +
+         *(float *)(&DAT_021d30dc + iVar6);
+    *(float *)(&DAT_021d30a8 + iVar6) =
+         (*(float *)(&DAT_021d3118 + iVar6) - *(float *)(&DAT_021d30e0 + iVar6)) * fVar1 +
+         *(float *)(&DAT_021d30e0 + iVar6);
+    *(float *)(&DAT_021d30ac + iVar6) =
+         (*(float *)(&DAT_021d311c + iVar6) - *(float *)(&DAT_021d30e4 + iVar6)) * fVar1 +
+         *(float *)(&DAT_021d30e4 + iVar6);
+    *(float *)(&DAT_021d30b0 + iVar6) =
+         (*(float *)(&DAT_021d3120 + iVar6) - *(float *)(&DAT_021d30e8 + iVar6)) * fVar1 +
+         *(float *)(&DAT_021d30e8 + iVar6);
+    *(float *)(&DAT_021d30b4 + iVar6) =
+         (*(float *)(&DAT_021d3124 + iVar6) - *(float *)(&DAT_021d30ec + iVar6)) * fVar1 +
+         *(float *)(&DAT_021d30ec + iVar6);
+    (&DAT_021d30b8)[iVar4 * 0x46] =
+         (*(float *)(&DAT_021d3128 + iVar6) - *(float *)(&DAT_021d30f0 + iVar6)) * fVar1 +
+         *(float *)(&DAT_021d30f0 + iVar6);
+  }
+  else {
+    puVar8 = (undefined4 *)(&DAT_021d30f4 + iVar6);
+    puVar9 = (undefined4 *)(&DAT_021d3084 + iVar6);
+    for (iVar4 = 0xe; iVar4 != 0; iVar4 = iVar4 + -1) {
+      *puVar9 = *puVar8;
+      puVar8 = puVar8 + 1;
+      puVar9 = puVar9 + 1;
+    }
+  }
+  if ((&DAT_021d3474)[*(int *)(iVar2 + 0x419c4)] == 0) {
+    _memset((void *)(iVar2 + 0x41988),0,0x38);
+    *(undefined4 *)(DAT_021ddf00 + 0x419bc) = 0x3f800000;
+    return;
+  }
+  puVar8 = (undefined4 *)(&DAT_021d3084 + iVar6);
+  puVar9 = (undefined4 *)(iVar2 + 0x41988);
+  for (iVar4 = 0xe; iVar4 != 0; iVar4 = iVar4 + -1) {
+    *puVar9 = *puVar8;
+    puVar8 = puVar8 + 1;
+    puVar9 = puVar9 + 1;
+  }
+  return;
+}
+
+
+
