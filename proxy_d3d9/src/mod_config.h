@@ -174,7 +174,13 @@ struct ModConfig
     // right-stick look delta, not a replacement for it (matches how gyro-as-
     // fine-aim commonly works elsewhere, e.g. Splatoon/Steam Input's own default).
     bool gyroEnabled = false;
-    float gyroSensitivity = 1.0f; // multiplies the raw, uncalibrated gyro units
+    // 1.0 -> 0.25 (2026-08-28, first real live-tester report, Nexus/"Biactyk"):
+    // "the sensitivity for the gyro is far too high haha." No specific target
+    // number was given, so this is a directional correction (4x lower), not a
+    // confirmed value -- same iterative "estimate, live-test, correct" pattern
+    // already used for [Look] SensitivityHorizontal/Vertical (250->75->145).
+    // Still genuinely uncalibrated raw units, see the comment below.
+    float gyroSensitivity = 0.25f; // multiplies the raw, uncalibrated gyro units
                                     // (see dualsense_input.h) before adding to look
                                     // delta -- NOT a claimed degrees/second value,
                                     // purely an empirical starting point to be
@@ -184,6 +190,14 @@ struct ModConfig
                                     // real playtesting.
     bool gyroInvertPitch = false; // axis-sign guess, unverified -- see dualsense_input.h
     bool gyroInvertYaw = false;   // axis-sign guess, unverified -- see dualsense_input.h
+    // 2026-08-28, direct live-tester request ("if possible activation on L2
+    // would be appreciated, not strictly necessary just nice to have"):
+    // default OFF (preserves the original always-on gyro behavior this
+    // feature shipped with) -- when ON, the gyro-look delta in
+    // InjectControllerLookAngles() only applies while g_adsHeld is true,
+    // matching a common gyro-aim UX convention (Splatoon/Steam Input's own
+    // default gyro-while-ADS mode).
+    bool gyroOnlyWhileAds = false;
 
     // [Stance]
     unsigned long proneHoldThresholdMs = 400; // B: hold vs. tap threshold
