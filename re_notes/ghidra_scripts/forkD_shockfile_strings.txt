@@ -1,0 +1,5 @@
+STRING @ 00856648 = "hold_breath"
+  from 0056587a type=DATA IN FUNCTION FUN_005654a0@005654a0
+  (1 references)
+
+Total matching strings: 1
