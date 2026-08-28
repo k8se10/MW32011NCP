@@ -15276,7 +15276,7 @@ class of explanation entirely; narrows the search to WHICH specific state
 change (sampler filters, render states, the forced full-screen viewport,
 texture0/FVF bind, or the pixel shader bind + its constants).
 
-**Stage 4 built the same pass, not yet tested**: tests the most "exotic"
+**Stage 4 built and LIVE-CONFIRMED (2026-08-28)**: tests the most "exotic"
 candidate first -- binding a custom pixel shader switches the device from
 fixed-function to programmable pipeline, even if fully restored afterward,
 a real candidate for an undocumented side effect on this old engine's
@@ -15287,11 +15287,45 @@ would itself be a real state change, so both sides are gated together);
 our own quad draws with whatever shader the native code last had bound
 instead (visually irrelevant to this test). Everything else -- sampler,
 render states, viewport, texture0/FVF, and the actual draw call -- runs
-normally. If the vignette/text still breaks, binding ANY custom pixel
-shader is the cause; if it comes back, it's something else in the
-remaining state changes. Build clean, 0 errors, deployed,
-`MotionBlurDrawTestStage=4` enabled live in `mw3ncp_config.ini` for the
+normally. Direct user report: "yeah broken still" -- **rules out binding
+the pixel shader as the cause.** Narrows the remaining candidates to:
+sampler filters (MAG/MIN on stage 0), the four render states (ZENABLE/
+LIGHTING/ALPHABLENDENABLE/CULLMODE), the forced full-screen viewport, or
+the texture0/FVF bind.
+
+**Stage 5 built the same pass, not yet tested**: tests the viewport
+force-set next -- this exact function had a real, previously-fixed bug
+tied to viewport handling (2026-08-27, this function's own header
+comment), a plausible repeat offender. Skips `SetViewport` entirely (both
+the forced full-screen set and the final restore, gated together via the
+existing `haveOldViewport` flag -- it simply never becomes true when this
+stage is active, so the restore call at the bottom already no-ops
+correctly with no extra code needed); everything else, including the
+pixel shader bind and the actual draw call, runs normally. If the
+vignette/text still breaks, it narrows to the render states/sampler
+filters as the only remaining candidates; if it comes back, the viewport
+force-set is the cause. Build clean, 0 errors, deployed,
+`MotionBlurDrawTestStage=5` enabled live in `mw3ncp_config.ini` for the
 next test.
+
+**Two more reports the same session, both addressed without touching
+code**: (1) "a weird graphical bug in this new phase when entering level
+it flashes dark for a sec" -- confirmed by direct follow-up to be
+happening ONLY on this experimental isolation-test build, not a separate
+real bug. Expected: stages 3-5 deliberately leave this mod's own motion-
+blur quad drawing with skipped/wrong state by design, which can look like
+a wrong flash for a frame if the hook fires during a level-load
+transition. Should disappear once `MotionBlurDrawTestStage` returns to 0.
+(2) "the fsr bug happens if you ever quit a game" -- direct follow-up
+clarified this is the SAME class of bug as the already-fixed issue #103
+(FSR's own state gating), but specifically on the "exit level -> main
+menu" transition, not covered by that fix. User's own hypothesis: "we
+need periodic checking for that flag that gates menus" -- plausibly a lag/
+race between the real transition and whichever gate (`IsMenuActive_Exported`/
+`kInLevelFlagAddr`) FSR checks. **Logged, not yet investigated** --
+deliberately deferred rather than touching that code mid-isolation-test on
+this issue, to avoid conflating two live investigations in one build. Real
+next step once #100's isolation test concludes.
 
 ## 101. Roadmap note: broader performance/optimization/modern-hardware pass, user's own framing (2026-08-27)
 
@@ -15500,3 +15534,32 @@ cutscenes too"), and the loading-screen black screen ("and loading
 screen"). FSR's own missing state gating was the complete explanation --
 not a contributing factor alongside a separate native issue, the actual
 root cause. Closed.
+
+## 104. FSR black-screen/#103-class bug recurs specifically on "exit level -> main menu" -- REPORTED, not yet investigated (2026-08-28)
+
+**Status: Open, not investigated.** Direct user report, mid-session while
+testing issue #100's motion-blur isolation stages: "also the fsr bug
+happens if you ever quit a game." Direct follow-up clarified the exact
+symptom: "no the existing loading screen and cutscene bug from before,
+when you exit a level to main menu" -- i.e. the SAME class of visual
+failure issue #103 fixed (FSR's own missing state gating), but on a
+transition #103's fix apparently doesn't fully cover: exiting a level back
+to the main menu, not loading/cutscenes/crash-on-crash specifically.
+
+**User's own hypothesis**: "we need periodic checking for that flag that
+gates menus" -- plausibly a timing gap between the real level->menu
+transition and whichever gate FSR's own `RunFullScreenPostProcessIfEnabled`
+checks (`IsMenuActive_Exported()`/`kInLevelFlagAddr`, the same pair issue
+#103's fix applied) -- if the real transition briefly leaves one of those
+in a stale/ambiguous state, FSR could fire ungated for a frame or more
+during exactly that window, the same underlying failure mode #103 already
+diagnosed, just on a transition not covered by the existing fix.
+
+**Deliberately deferred**, not investigated this pass -- surfaced mid-
+isolation-test on issue #100, and touching `RunFullScreenPostProcessIfEnabled`
+now would conflate two live, in-progress investigations in the same build.
+Real next step: once #100's isolation test concludes, reproduce this
+specific transition (exit a level to main menu with FSR enabled), and
+check whether `IsMenuActive_Exported()`/`kInLevelFlagAddr` genuinely lag
+behind the real transition, or whether a different, not-yet-identified gap
+exists.
