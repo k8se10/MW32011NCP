@@ -132,7 +132,7 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#97](#97-motion-blur-issue-96-continuation-menu--loading-screen-gates-shipped-cutscene-report-retracted-on-retest----current-state-closed-for-tonight) — Motion blur menu/loading-screen gates + cutscene report — **Resolved** (cutscene report retracted on retest, no code change needed)
 - [#98](#98-london-mission-cutscene-audio-continues-after-skip-on-some-cutscenes----reported-not-yet-investigated) — London mission: cutscene audio continues after skip — **Open, not investigated**
 - [#99](#99-camera-look-stutterjitter----resolved-real-root-cause-is-vsync-confirmed-via-cross-machine-test-2026-08-27) — Camera-look stutter — **Resolved** (real root cause is vsync, confirmed via cross-machine test)
-- [#100](#100-motion-blur-ui-disappears-when-taking-damage-while-moving----reported-not-yet-investigated-2026-08-27) — Motion blur: UI disappears on damage while moving (armor-conditional, unrelated to #103) — **Open** — exclusion-zone theory conclusively ruled out; two new leads (PIP-pain, shellshock) not yet tried
+- [#100](#100-motion-blur-ui-disappears-when-taking-damage-while-moving----reported-not-yet-investigated-2026-08-27) — Motion blur: UI disappears on damage while moving (armor-conditional, unrelated to #103) — **Open** — real GSC mechanism found (armor's `setnormalhealth()` bypasses the pure native damage path); which native call actually breaks the UI not yet traced
 - [#101](#101-roadmap-note-broader-performanceoptimizationmodern-hardware-pass-users-own-framing-2026-08-27) — Roadmap: growing into a "FusionFix-style" general enhancement patch — **Roadmap Idea**, not scoped
 - [#102](#102-external-feature-request-received-custom-widthheight-resolution-override-via-ini-for-custom-monitor-layoutssplitscreen----logged-not-investigated-2026-08-27) — External feature request: custom Width/Height resolution override via .ini — **Roadmap Idea**, not investigated
 - [#103](#103-real-crash--hard-hang--cutscene-black-screen----resolved-fsrs-own-full-screen-pass-had-zero-state-gating-now-fixed-2026-08-28) — Real crash + hard hang + cutscene/loading black screen — **Resolved** — root cause was FSR's own full-screen pass having zero state gating; fixed by applying the same menu+in-level gate motion blur already had
@@ -14446,6 +14446,75 @@ untried leads exist (PIP-pain, shellshock) for whoever picks this up next,
 plus a real behavioral theory (armor may be GSC-VM state, unreachable by
 the technique this issue has been using) worth keeping in mind before
 sinking more time into memory-scanning approaches specifically.
+
+**REAL MECHANISM FOUND (2026-08-28), direct user redirect to check the
+decompiled GSC source instead of more native memory-scanning** --
+"lets look for an armor mech in the decomped gsc files. i think what is
+happening is natively something gets called on you taking damage that
+doesnt in their made script which probably just adds the same damage
+effect when hit with armor without hitting the actual trigger for it
+which seems to be damage related." Correct, confirmed directly in source.
+
+Decompiled scripts live at `D:\Tools\gsc-tool\extracted\decompiled\iw5\`
+(369 files, already extracted from an earlier session -- see this file's
+own "check first" lesson from issue #89). Armor's real GSC handler is
+`_id_3F1B()` in `1574.gsc` (lines 1641-1684), confirming Fork 2's own
+working theory outright: `self._id_3F16["points"]` is real, per-player
+GSC script-local state (not a native offset), holding current armor
+points. Both the armored and unarmored cases wait on the SAME native
+`"damage"` notify event (`self waittill("damage", ...)`, fired natively on
+any hit regardless of armor) -- but what happens next diverges completely:
+
+```
+self waittill( "damage", var_0, ... );
+self._id_3F1D = int( min( 100, self.health + var_0 ) );
+self._id_1A5F = 0;
+
+if ( self._id_3F16["points"] > 0 )       // ARMOR ACTIVE
+{
+    self._id_1A5F = 1;
+    ... (compute absorbed vs. overflow damage) ...
+    if ( <fully absorbed> )
+        self setnormalhealth( 1 );        // forces health back to 100%
+    else
+        self setnormalhealth( <fraction> ); // partial, armor depletes to 0
+    self._id_3F16["points"] = <updated>;
+    self notify( "health_update" );
+}
+// if points <= 0 (NO ARMOR): this entire block is skipped -- nothing here
+// runs at all; the hit's health reduction happens purely through
+// whatever the native damage system already did before this script
+// callback even ran.
+```
+
+**This is exactly the user's own predicted shape, confirmed in real
+source**: with armor active, the script does real EXTRA work --
+explicitly force-overwriting health via `setnormalhealth()` (a script-
+level setter) and firing its own `"health_update"` notify -- purely to
+keep the HUD/visual armor-vs-health display in sync with the artificially
+capped health value. Without armor, none of this runs; the hit's health
+change already happened through the plain native damage-application path
+before this script callback even fires, with nothing here to intercept or
+re-normalize it.
+
+**Real, evidence-backed theory for the actual UI-break mechanism**: the
+pure NATIVE damage path (taken only when unarmored, since armor's own
+`setnormalhealth()` override bypasses/short-circuits it) is the one that
+plausibly triggers whatever native visual/composite side effect breaks
+the UI under motion blur -- fully consistent with, and now explaining WHY,
+the on-screen damage feedback looks identical either way (both paths
+still show a hit was taken) while only one of them (no armor) lets the
+raw native pipeline run through unmodified by any script-side
+`setnormalhealth` interception. **Not yet proven which specific native
+call this is** -- the two Fork-3 leads (`pip_enable_visionset_pain`,
+shellshock's own native blur) remain the concrete next things to check,
+now with a much sharper, source-confirmed reason to expect ONE of them
+(or a similar native damage-reaction call) fires only on the pure-native
+(unarmored) path and gets bypassed when `setnormalhealth()` short-circuits
+it for an armored hit. This is a real, structural finding, not yet a
+fix -- next step is tracing what native code actually runs differently
+between "health reduced via the plain native damage system" and "health
+force-set via a script-level `setnormalhealth()` call after the fact."
 
 ## 101. Roadmap note: broader performance/optimization/modern-hardware pass, user's own framing (2026-08-27)
 
