@@ -170,7 +170,9 @@ constexpr unsigned long kCurrentConfigVersion = 31; // v23->v24: FsrSharpenEnabl
                                                      // REMOVED (built+live-tested same night, failed -- see issue #99)
                                                      // v29->v30: FpsLimitEnabled/FpsLimitTargetFps/FpsLimitEnhancementsOnly
                                                      // REINTRODUCED on a real native-dvar (com_maxfps) mechanism instead
-                                                     // v30->v31: [Experimental] MotionBlurClcStateTestValue
+                                                     // v30->v31: [Experimental] MotionBlurClcStateTestValue,
+                                                     // renamed to VisualFxClcStateTestValue same day once
+                                                     // shared with FSR too (issue #103)
 
 // Reads a legacy key's raw value, returning true only if the key genuinely existed
 // (unlike ReadFloat, which can't distinguish "absent" from "present but unparsable" --
@@ -702,13 +704,13 @@ void WriteDefaultConfig(const char* path)
         "; problem, without needing a recompile. These are not permanent settings --\n"
         "; expect entries here to eventually graduate to unconditional (and be\n"
         "; removed from this section) once confirmed correct and stable.\n"
-        "; Issue #99/#100: test which real clcState value (0/1/2/3/4/6/7) means\n"
-        "; \"gameplay,\" one at a time, instead of guessing. -1 = disabled (normal\n"
-        "; gates). Any other value: motion blur runs ONLY while clcState equals\n"
-        "; exactly that value, bypassing every other gate -- an uncontaminated\n"
-        "; test signal. Hot-reloadable -- change this and stay in-game to try the\n"
-        "; next value without relaunching.\n"
-        "MotionBlurClcStateTestValue=%d\n"
+        "; Issue #99/#100/#103: test which real clcState value (0/1/2/3/4/6/7)\n"
+        "; means \"gameplay,\" one at a time, instead of guessing. -1 = disabled\n"
+        "; (normal gates). Any other value: motion blur AND FSR both run ONLY\n"
+        "; while clcState equals exactly that value, bypassing every other gate --\n"
+        "; an uncontaminated test signal. Hot-reloadable -- change this and stay\n"
+        "; in-game to try the next value without relaunching.\n"
+        "VisualFxClcStateTestValue=%d\n"
         "; Task #7/#29: also pushes the command \"n\" onto the real client command\n"
         "; queue on Fire's down-edge, alongside the real +attack kbutton call, in an\n"
         "; attempt to reach notifyonplayercommand's delivery mechanism for\n"
@@ -856,7 +858,7 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.overlayFontFamilyCondensed,
         g_modConfig.overlayFontItalic ? 1 : 0,
         g_modConfig.overlayTestCycleAllVariants ? 1 : 0,
-        g_modConfig.motionBlurClcStateTestValue,
+        g_modConfig.visualFxClcStateTestValue,
         g_modConfig.fireNotifyQueueKick ? 1 : 0,
         g_modConfig.bindResolverHookLogging ? 1 : 0,
         g_modConfig.bindResolverGlyphSubstitution ? 1 : 0,
@@ -1105,9 +1107,9 @@ void LoadModConfig()
     ReadBool(path, "Overlay", "FontItalic", g_modConfig.overlayFontItalic);
     ReadBool(path, "Overlay", "TestCycleAllVariants", g_modConfig.overlayTestCycleAllVariants);
     {
-        int v = GetPrivateProfileIntA("Experimental", "MotionBlurClcStateTestValue",
-            g_modConfig.motionBlurClcStateTestValue, path);
-        g_modConfig.motionBlurClcStateTestValue = v;
+        int v = GetPrivateProfileIntA("Experimental", "VisualFxClcStateTestValue",
+            g_modConfig.visualFxClcStateTestValue, path);
+        g_modConfig.visualFxClcStateTestValue = v;
     }
     ReadBool(path, "Experimental", "FireNotifyQueueKick", g_modConfig.fireNotifyQueueKick);
     ReadBool(path, "Experimental", "BindResolverHookLogging", g_modConfig.bindResolverHookLogging);

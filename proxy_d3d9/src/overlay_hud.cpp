@@ -3418,7 +3418,7 @@ void RunPreOverlayMotionBlurPassIfEnabled(void* device)
 {
     if (!g_modConfig.motionBlurEnabled) return;
 
-    // [Experimental] MotionBlurClcStateTestValue (2026-08-28, issue #99/#100) --
+    // [Experimental] VisualFxClcStateTestValue (2026-08-28, issue #99/#100) --
     // direct user methodology: test each real clcState value exclusively, one
     // at a time, instead of guessing which one means "gameplay". When active
     // (>= 0), this REPLACES every other gate below entirely -- motion blur is
@@ -3428,10 +3428,10 @@ void RunPreOverlayMotionBlurPassIfEnabled(void* device)
     // rather than layering a guess on top of the existing gates where a wrong
     // guess could hide behind them. -1 (default) = disabled, falls through to
     // the normal gates unchanged.
-    if (g_modConfig.motionBlurClcStateTestValue >= 0) {
+    if (g_modConfig.visualFxClcStateTestValue >= 0) {
         constexpr uintptr_t kClcStateAddrForTest = 0x00B36218;
         if (*reinterpret_cast<volatile int*>(kClcStateAddrForTest) !=
-            g_modConfig.motionBlurClcStateTestValue) {
+            g_modConfig.visualFxClcStateTestValue) {
             return;
         }
         if (g_motionBlurRanThisFrame) return;
@@ -3507,8 +3507,35 @@ extern "C" void TriggerMotionBlurFromEngineHook()
 // DOES cover this project's own overlay (the plan's own "UI sharpening" design).
 // The no-op passthrough test only runs when RCAS didn't (pure pipeline
 // validation -- a real effect already proves the pipeline works).
+//
+// GATED 2026-08-28 (issue #103, direct user request: "fsr needs the same
+// working motion blur gameplay gate") -- this function had ZERO state gating
+// of any kind until now, unlike motion blur (which has had a menu gate and an
+// in-level gate since issue #96/#97). A direct isolation test found the real
+// crash/hang + cutscene-break issue #103 was tracking reproduces with motion
+// blur fully OFF, but stops with FSR also OFF (render-scale alone, no FSR, no
+// motion blur, is clean) -- strongly implicating this exact function's own
+// missing gates: an ungated full-screen capture-and-redraw running through
+// every state (menus, loading, cutscenes, background asset-streaming during
+// gameplay) is a real, concrete risk given issue #103's own evidence of a
+// texture/asset-cache pool being torn down mid-session. Applies the SAME
+// gates motion blur uses (menu-active + in-level), plus the same
+// VisualFxClcStateTestValue one-value-at-a-time test harness (shared, not a
+// separate value -- both effects are testing the same underlying question).
 void RunFullScreenPostProcessIfEnabled(void* device)
 {
+    if (g_modConfig.visualFxClcStateTestValue >= 0) {
+        constexpr uintptr_t kClcStateAddrForTest = 0x00B36218;
+        if (*reinterpret_cast<volatile int*>(kClcStateAddrForTest) !=
+            g_modConfig.visualFxClcStateTestValue) {
+            return;
+        }
+    } else {
+        if (IsMenuActive_Exported()) return;
+        constexpr uintptr_t kInLevelFlagAddrForFsrGate = 0x00A98ACC;
+        if (*reinterpret_cast<volatile int*>(kInLevelFlagAddrForFsrGate) <= 0) return;
+    }
+
     if (g_modConfig.fsrSharpenEnabled && EnsureRcasShader(device)) {
         DrawFullScreenPass(device, g_fsrRcasPixelShader, RcasShaderSetupCallback);
         return;

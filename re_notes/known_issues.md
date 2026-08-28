@@ -14526,3 +14526,37 @@ of this project's enhancements off) and retest. If the crash/break still
 reproduces there, it's conclusively native engine behavior, unrelated to
 any code this project has shipped. If it stops, FSR or render-scale (not
 motion blur) is the real remaining suspect.
+
+**FSR IMPLICATED (2026-08-28, same session), render-scale cleared as a
+standalone cause**: direct user test, `FsrSharpenEnabled=0` (with
+`MotionBlurEnabled` still off from the prior test, `InternalRenderScalePercent`
+left at 150 throughout) -- "i confirmed it off is fine." With motion blur
+and FSR both off but render-scale still active at 150%, the crash/hang and
+the cutscene break did NOT reproduce. This narrows the real cause to FSR
+specifically -- render-scale alone (150%, no FSR, no motion blur) is clean.
+
+**Real, concrete explanation found**: `RunFullScreenPostProcessIfEnabled`
+(`overlay_hud.cpp`), FSR's own RCAS full-screen pass, had **zero state
+gating of any kind** -- no `IsMenuActive_Exported()` check, no in-level
+check, nothing. Unlike motion blur (which has had a menu gate and an
+in-level gate since issue #96/#97), FSR's capture-and-redraw has been
+running completely unguarded through every state -- menus, loading
+screens, cutscenes, and whatever background asset-streaming happens during
+gameplay -- since it shipped. Given issue #103's own freed-region evidence
+(a real texture/asset-cache pool torn down mid-session), an ungated
+full-screen capture-and-redraw touching render-target/texture memory
+during exactly that kind of background streaming event is a direct,
+plausible mechanism -- the same class of risk motion blur's own gates were
+built to guard against, just never applied to FSR at all.
+
+**Fix, direct user request ("fsr needs the same working motion blur
+gameplay gate")**: apply the same known-working gates (menu-active +
+in-level) FSR never had, plus wire it into the same clcState one-value-at-
+a-time test harness (issue #99/#100) so both effects can be tested
+together going forward, not just motion blur. See the code-change entry
+this same session for the actual implementation.
+
+**Still open**: whether FSR's own missing gates fully explain issue #103's
+crash, or whether it's a contributing factor alongside a separate native
+issue, is not yet proven -- gating FSR and confirming the crash stops
+entirely (not just less frequent) is the real closing test, not yet done.
