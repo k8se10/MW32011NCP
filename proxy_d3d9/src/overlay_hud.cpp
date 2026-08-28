@@ -3130,6 +3130,12 @@ using FullScreenShaderSetupFn = void(*)(void* device, float texelW, float texelH
 // and restore -- our own quad draws with whatever texture/FVF the native
 // code last had bound instead. Structurally different from everything
 // else tested -- binds a REAL GPU RESOURCE, not just a flag value.
+// LIVE-CONFIRMED (2026-08-28) THIS IS THE REAL ROOT CAUSE -- the native
+// warning draws correctly with stage 7 active (the resulting "pixelated
+// mess" on our own quad is expected, not a new bug). 8 = skip texture0
+// bind only (FVF still set normally) -- splits stage 7 to find out
+// whether it's specifically the texture bind. 9 = skip FVF only
+// (texture0 still bound normally) -- splits stage 7 the other way.
 void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn onShaderBound = nullptr,
                          int testStage = 0)
 {
@@ -3315,9 +3321,18 @@ void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn
     // already ruled out, this one binds a REAL GPU RESOURCE (our capture
     // texture) rather than just toggling a flag value -- a structurally
     // different class of change, the strongest remaining candidate now
-    // that every simple state toggle has been ruled out.
-    if (testStage != 7) {
+    // that every simple state toggle has been ruled out. LIVE-CONFIRMED
+    // (2026-08-28): "it fixed" -- the native warning draws correctly
+    // again (the "pixelated low-res mess" reported is expected -- OUR OWN
+    // quad now draws with the wrong texture/FVF, not a new bug). THIS IS
+    // THE REAL ROOT CAUSE. Stages 8/9 split texture0 vs FVF individually
+    // to find out which one (or both) the real fix needs to address.
+    // Stage 8 = skip texture0 bind only (FVF still set normally).
+    // Stage 9 = skip FVF only (texture0 still bound normally).
+    if (testStage != 7 && testStage != 8) {
         setTexture(device, 0, g_fullscreenCaptureTexture);
+    }
+    if (testStage != 7 && testStage != 9) {
         setFVF(device, kFVF);
     }
 
@@ -3367,18 +3382,20 @@ void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn
     // to nullptr, discarding whatever the engine had bound) and FVF (was:
     // never restored at all), same "leave the device exactly as found"
     // standard as everything else in this function.
-    // testStage==7: we never called SetTexture/SetFVF above, so don't call
-    // them here either -- but oldTexture0 was still fetched via GetTexture
+    // testStage==7/8: we never called SetTexture above, so don't call it
+    // here either -- but oldTexture0 was still fetched via GetTexture
     // unconditionally (a harmless read), which still AddRef'd it, so it
     // still needs releasing regardless of stage to avoid a leak.
-    if (testStage != 7) {
+    if (testStage != 7 && testStage != 8) {
         setTexture(device, 0, oldTexture0);
     }
     if (oldTexture0) {
         void** vtbl = *reinterpret_cast<void***>(oldTexture0);
         reinterpret_cast<Release_t>(vtbl[kSurfaceReleaseVtableIndex])(oldTexture0);
     }
-    if (testStage != 7) {
+    // testStage==7/9: we never called SetFVF above, so don't call it here
+    // either.
+    if (testStage != 7 && testStage != 9) {
         setFVF(device, oldFVF);
     }
 
