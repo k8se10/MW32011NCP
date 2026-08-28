@@ -14665,6 +14665,51 @@ actual value, e.g. via the existing `memdiff.exe` tooling or x64dbg, neither
 available this pass -- x64dbg's MCP connection was refused when checked).
 Real, substantive progress, still not a confirmed fix.
 
+**Checked `DAT_021ddf00` and the per-player blend struct against the
+existing armored/unarmored `.snap` captures (2026-08-28), direct user
+request ("use the existing dumps")** -- reused the same four livedumps from
+the earlier 4-fork investigation (`livedump_007`/`009` = pre/post an ARMORED
+hit; `livedump_014`/`021` = pre/post an UNARMORED hit, health 100->52),
+already sitting in `tools/memdiff/`, with the now-built `readaddr.exe`/
+`dumpregion.exe` tools:
+
+- **`DAT_021ddf00` (the runtime pointer `FUN_004cbd20` dereferences to reach
+  `+0x41988`) reads as `0` in all four captures.** Not a tooling failure --
+  `readaddr.exe` confirmed the address IS mapped (val=0, not NOT_MAPPED).
+  Real, honest negative result: this pointer is very likely only valid
+  transiently, scoped to the actual D3D9 render pass itself, and these
+  captures (triggered by a human F9 press moments after seeing a hit land,
+  not synchronized to any frame boundary) simply never land inside that
+  window. This is a genuine, inherent limitation of this project's
+  async/external-process capture technique for anything frame-transient --
+  matches the same class of timing gap already flagged for the crash-2
+  Hunk-collapse signal in this same fork batch. Confirms static tracing
+  alone (and this capture technique) can't resolve `+0x41988`'s consumer
+  without either a hardware breakpoint (x64dbg, still unavailable) or a much
+  tighter, sub-frame capture cadence right at the hit moment.
+- **The full 280-byte per-player blend struct at `0x021d3058` (player 0) is
+  BYTE-IDENTICAL across all four captures** -- armored and unarmored,
+  pre- and post-hit alike. The player-0 "vision-set active" flag
+  (`DAT_021d3474`) also reads `1` in all four, unhelpfully -- consistent
+  with the DEFAULT/baseline visionset always registering as "active" even
+  with no pain-transition in flight, so this flag alone can't distinguish
+  "pain fired" from "just idling on the default preset."
+- **Read honestly, this is either a real negative result for `visionset_pain`
+  as this issue's mechanism, or an inconclusive one due to capture timing**
+  -- the blend duration constants visible in the struct (small,
+  sub-1.0-unit floats) suggest a short-lived transition that plausibly
+  fully completes and resets to baseline well before a human can react and
+  press F9. Given `FUN_004cbd20` unconditionally recomputes this struct
+  every frame regardless of whether a transition is in flight, catching it
+  mid-blend would need a capture within roughly a blend-duration's worth of
+  the hit landing -- not something four manually-triggered F9 presses,
+  seconds apart, can be expected to hit. **Not ruled out, but not confirmed
+  either** -- this specific check is now exhausted for the existing dumps;
+  confirming or refuting `visionset_pain` as the real mechanism needs either
+  a live debugger breakpoint on `FUN_0053f110`/`FUN_004cbd20` (x64dbg,
+  currently unavailable) or a purpose-built capture triggered programmatically
+  at the exact moment of the hit rather than by human reaction time.
+
 ## 101. Roadmap note: broader performance/optimization/modern-hardware pass, user's own framing (2026-08-27)
 
 **Status: Roadmap Idea, not scoped.** Direct user framing, end of a long
