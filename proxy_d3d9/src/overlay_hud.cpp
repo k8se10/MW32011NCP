@@ -3098,7 +3098,11 @@ using FullScreenShaderSetupFn = void(*)(void* device, float texelW, float texelH
 // nulled instead of restored is a real, concrete way this function could
 // have been corrupting what the engine expected to still be set, independent
 // of which specific hook fires it or how many times per frame.
-void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn onShaderBound = nullptr)
+// captureOnlySkipDrawTest (2026-08-28, issue #100) -- TEMPORARY, dev-only.
+// See mod_config.h's MotionBlurDrawTestStage comment for the full story.
+// Default false -- FSR's own call site never passes true, unaffected.
+void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn onShaderBound = nullptr,
+                         bool captureOnlySkipDrawTest = false)
 {
     if (!pixelShader) return;
     void** deviceVtbl = *reinterpret_cast<void***>(device);
@@ -3175,6 +3179,14 @@ void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn
     void** captureSurfaceVtbl = *reinterpret_cast<void***>(captureSurface);
     reinterpret_cast<Release_t>(backSurfaceVtbl[kSurfaceReleaseVtableIndex])(backSurface);
     reinterpret_cast<Release_t>(captureSurfaceVtbl[kSurfaceReleaseVtableIndex])(captureSurface);
+
+    // [Experimental] MotionBlurDrawTestStage==2 isolation test (issue #100) --
+    // the backbuffer capture (StretchRect above) has already happened; stop
+    // here, before any render-state changes or the actual quad draw. Narrows
+    // down whether capturing the backbuffer alone is enough to break the
+    // native low-health warning, or whether it's specifically the render-
+    // state-change/redraw sequence below.
+    if (captureOnlySkipDrawTest) return;
 
     DWORD oldMagFilter = kD3DTEXF_POINT, oldMinFilter = kD3DTEXF_POINT;
     getSamplerState(device, 0, kD3DSAMP_MAGFILTER, &oldMagFilter);
@@ -3482,12 +3494,13 @@ void RunPreOverlayMotionBlurPassIfEnabled(void* device)
             return;
         }
         if (g_motionBlurRanThisFrame) return;
-        // [Experimental] MotionBlurSkipDrawTest -- see this function's own
+        // [Experimental] MotionBlurDrawTestStage -- see this function's own
         // header comment above / mod_config.h. Every real gate above still
-        // ran; the hook still fired; we just stop here instead of drawing.
-        if (g_modConfig.motionBlurSkipDrawTest) return;
+        // ran; the hook still fired.
+        if (g_modConfig.motionBlurDrawTestStage == 1) return; // skip entirely -- LIVE-CONFIRMED this fixes it
         if (!EnsureMotionBlurShader(device)) return;
-        DrawFullScreenPass(device, g_motionBlurPixelShader, MotionBlurShaderSetupCallback);
+        DrawFullScreenPass(device, g_motionBlurPixelShader, MotionBlurShaderSetupCallback,
+                            g_modConfig.motionBlurDrawTestStage == 2);
         g_motionBlurRanThisFrame = true;
         return;
     }
@@ -3530,14 +3543,13 @@ void RunPreOverlayMotionBlurPassIfEnabled(void* device)
         // FUN_00497210 (this pass's real trigger) can fire more than once per
         // frame when a splitscreen/PIP exclusion zone is active, see this
         // function's own header comment
-    // [Experimental] MotionBlurSkipDrawTest (issue #100) -- see mod_config.h
+    // [Experimental] MotionBlurDrawTestStage (issue #100) -- see mod_config.h
     // for the full story. Every real gate above still ran; the engine hook
-    // still fired; we just stop here instead of drawing, to isolate whether
-    // this bug depends on the hook existing at all or on our draw's own
-    // side effects.
-    if (g_modConfig.motionBlurSkipDrawTest) return;
+    // still fired.
+    if (g_modConfig.motionBlurDrawTestStage == 1) return; // skip entirely -- LIVE-CONFIRMED this fixes it
     if (!EnsureMotionBlurShader(device)) return;
-    DrawFullScreenPass(device, g_motionBlurPixelShader, MotionBlurShaderSetupCallback);
+    DrawFullScreenPass(device, g_motionBlurPixelShader, MotionBlurShaderSetupCallback,
+                        g_modConfig.motionBlurDrawTestStage == 2);
     g_motionBlurRanThisFrame = true;
 }
 

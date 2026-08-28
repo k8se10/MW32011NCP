@@ -408,21 +408,25 @@ struct ModConfig
     // state. Not a permanent feature; remove once issue #100 is resolved or
     // this is confirmed unhelpful.
     bool damageDiagLoggingEnabled = false;
-    // MotionBlurSkipDrawTest (2026-08-28, issue #100) -- TEMPORARY, dev-only
-    // isolation test. Default off. The stream-0 fix for the motion-blur
-    // UI-loss bug was built and LIVE-TESTED FAILED ("not the fix, the issue
-    // persists") -- this toggle separates "the engine hook firing" from
-    // "our draw call actually doing anything," to find out which one the
-    // real bug depends on. When on, RunPreOverlayMotionBlurPassIfEnabled
-    // (overlay_hud.cpp) runs through every real gate exactly as normal (so
-    // Hook_693ff0 still fires, TriggerMotionBlurFromEngineHook still gets
-    // called) but returns immediately before EnsureMotionBlurShader/
-    // DrawFullScreenPass -- zero D3D9 work, zero capture, zero draw. If the
-    // native damage vignette/text still breaks with this on, the cause is
-    // something about the hook's mere existence at that call site, not our
-    // draw's own side effects. If it comes back, the opposite. Not a
-    // permanent feature; remove once issue #100 is resolved.
-    bool motionBlurSkipDrawTest = false;
+    // MotionBlurDrawTestStage (2026-08-28, issue #100) -- TEMPORARY, dev-only
+    // staged isolation test. Default 0 (normal -- draw everything, the
+    // shipped behavior). The stream-0 fix for the motion-blur UI-loss bug
+    // was built and LIVE-TESTED FAILED ("not the fix, the issue persists").
+    // Stage 1 (skip entirely -- LIVE-CONFIRMED "shows as it should", 2026-08-28):
+    // RunPreOverlayMotionBlurPassIfEnabled runs every real gate exactly as
+    // normal (Hook_693ff0 still fires, TriggerMotionBlurFromEngineHook still
+    // gets called) but returns before EnsureMotionBlurShader/
+    // DrawFullScreenPass -- zero D3D9 work at all. Confirmed this rules out
+    // "the hook's mere existence at that call site" -- it's specifically
+    // something our draw call itself does.
+    // Stage 2 (capture-only, no quad draw -- NOT YET TESTED): DrawFullScreenPass
+    // does the StretchRect backbuffer capture but stops before any render-
+    // state changes or the actual quad draw, via its own
+    // captureOnlySkipDrawTest parameter. Separates "does capturing the
+    // backbuffer alone break it" from "does the render-state-change/redraw
+    // sequence break it."
+    // Not a permanent feature; remove once issue #100 is resolved.
+    int motionBlurDrawTestStage = 0;
     bool fireNotifyQueueKick = true; // task #7/#29: also pushes the literal command
         // "n" onto the local player's real command queue (via FUN_00428a70) on
         // Fire's down-edge, alongside the existing real +attack kbutton call --

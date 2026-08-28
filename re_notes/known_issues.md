@@ -15241,7 +15241,31 @@ side effects" as the real cause -- if the vignette/text still breaks with
 this on, the cause is the former; if it comes back, the latter, narrowing
 the search space substantially either way. `ConfigVersion` bumped 32->33.
 Build clean, 0 errors, deployed, enabled live in `mw3ncp_config.ini` for
-the next test. **Not yet tested.**
+the next test.
+
+**Stage 1 LIVE-CONFIRMED (2026-08-28)**: direct user report immediately
+after testing, "yep shows as it should." With the hook firing but zero
+D3D9 work happening, the vignette/text draw correctly. **Rules out "the
+hook's mere existence at that call site" as the cause -- it's specifically
+something the draw call itself does.** Since the stream-0 fix (already
+disproven) was one candidate for "what the draw does" and didn't hold up,
+the search narrows to the rest of `DrawFullScreenPass`'s own sequence:
+the `StretchRect` backbuffer capture, or the render-state-change/quad-
+redraw block after it.
+
+**Stage 2 built the same pass, not yet tested**: `MotionBlurSkipDrawTest`
+(bool) converted to `MotionBlurDrawTestStage` (int) -- 0=normal,
+1=skip entirely (stage 1, confirmed above), 2=new: do the `StretchRect`
+capture but stop before any render-state changes or the actual quad draw
+(`DrawFullScreenPass` gained its own `captureOnlySkipDrawTest` parameter,
+default false, only ever passed true by motion blur's own test call site
+-- FSR's calls are unaffected). If stage 2 still breaks the vignette, the
+capture itself is the cause (surprising -- would mean a plain
+`StretchRect` read of the current backbuffer has some real side effect on
+native UI dispatch); if it comes back, it's specifically the render-state-
+change/redraw sequence, narrowing further from there next. `ConfigVersion`
+bumped 33->34. Build clean, 0 errors, deployed, `MotionBlurDrawTestStage=2`
+enabled live in `mw3ncp_config.ini` for the next test.
 
 ## 101. Roadmap note: broader performance/optimization/modern-hardware pass, user's own framing (2026-08-27)
 
