@@ -14294,41 +14294,48 @@ low-health "you are hurt, get to cover" warning (progressive red-screen
 vignette + text). Found via a 9-round live isolation-test bisection
 (see this entry's own bottom section for the complete trail, including
 every rejected theory along the way -- an earlier stream-0/`DrawPrimitiveUP`
-theory was tried and LIVE-TESTED FAILED before this one was found). Fixed
-by replacing the `SetFVF` call with `SetVertexDeclaration` (a genuinely
-separate D3D9 state slot that never touches whatever the native renderer
-tracks around FVF) -- `DrawFullScreenPass` no longer calls `SetFVF` in
-either direction, ever. The temporary `[Experimental] MotionBlurDrawTestStage`
-diagnostic built for this investigation has been fully removed
-(`ConfigVersion` 34->35) now that its job is done.
+theory was tried and LIVE-TESTED FAILED before this one was found). The
+temporary `[Experimental] MotionBlurDrawTestStage` diagnostic built for
+this investigation has been fully removed (`ConfigVersion` 34->35) now
+that its job is done.
 
-**CRASH found immediately after first deploying the `SetVertexDeclaration`
-rewrite, direct user report** ("critical crash check event viewer") --
-confirmed real via a live Event Viewer check: `iw5sp.exe` access violation
-(`0xc0000005`) inside the real system `d3d9.dll`
-(`AppCrash_iw5sp.exe_..._d3d9.dll`, Application/WER logs). Root cause: the
-new `g_screenVertexDeclaration` cache was never added to
-`ReleaseAllCachedTextures()` -- the exact same bug class this project has
-hit twice before (`g_optBlurPixelShader`, then `g_optWhiteTexture`/every
-`TextTexCache`): a real, device-bound COM object cached by a lazy
-`Ensure*`-style fast path (`if (g_screenVertexDeclaration) return true;`)
-that trusts a non-null handle forever, with zero device-recreation
-invalidation. After a real `Reset()` or a full device recreation
-(`vid_restart`, alt-tab, a resolution/video-settings change), the cached
-declaration becomes a dangling reference to a destroyed object -- the next
-motion-blur draw passed that garbage pointer straight into
-`SetVertexDeclaration` on the real system `d3d9.dll`, a genuine
-access-violation crash. **Fixed**: `releaseIfSet(g_screenVertexDeclaration)`
-added to `ReleaseAllCachedTextures()`, same unconditional-release pattern
-already used for every other device-bound resource there (cheap to
-recreate lazily via `EnsureScreenVertexDeclaration` on next use). Build
-clean (0 warnings/0 errors), deployed. **NOT YET independently
-re-confirmed live** -- this is a strong, well-precedented circumstantial
-match (confirmed real gap in the code, confirmed real crash signature,
-matches this project's own established bug class exactly) but wasn't
-caught live via a debugger, so treat as highly likely rather than
-absolutely certain until confirmed. Original report below, kept for
-history.
+**First fix attempt, tried and reverted the same session: `SetVertexDeclaration`.**
+Replacing `SetFVF` with `SetVertexDeclaration` (a genuinely separate D3D9
+state slot) looked like the clean answer -- but caused a real, repeatable
+crash the moment it shipped, direct user report ("critical crash check
+event viewer") confirmed via a live Event Viewer check: `iw5sp.exe`
+access violation (`0xc0000005`) inside the real system `d3d9.dll`, same
+exact fault offset (`0x0005e098`) on two separate runs. A first theory
+(the new `g_screenVertexDeclaration` cache never added to
+`ReleaseAllCachedTextures()`, the same crash class this project has hit
+twice before with `g_optBlurPixelShader`/`g_optWhiteTexture`, leaving a
+dangling COM pointer after a device Reset) was built and deployed --
+**and the exact same crash recurred, at the exact same offset, on a run
+independently confirmed via the deployed DLL's own build timestamp to be
+running that fix.** This rules out the dangling-pointer-after-Reset
+theory as the real explanation; either `SetVertexDeclaration` itself is
+unsafe in this context, or the declaration/struct data passed to it was
+wrong in some way not yet identified. Rather than keep guessing live
+against a real, repeatable crash, `SetVertexDeclaration` was fully
+removed (not left half-disabled) -- `EnsureScreenVertexDeclaration`,
+`g_screenVertexDeclaration`, the `D3DVertexElement9` struct, and both new
+vtable index constants are all gone.
+
+**Actual shipped fix**: `DrawFullScreenPass` now calls neither `SetFVF`
+nor `SetVertexDeclaration` at all, in either direction -- reproducing
+stage 9 of the original 9-round isolation test exactly, the one
+combination already LIVE-CONFIRMED both to fix the native warning AND to
+never crash (proven safe well before `SetVertexDeclaration` was ever
+introduced). This mod's own motion-blur quad draws using whatever vertex
+format is already ambient at that point in the frame -- occasionally
+visually wrong for that pass specifically (the "pixelated" look already
+reported, right at the moment of an unarmored hit or on level entry) but
+never unsafe. Build clean (0 warnings/0 errors), deployed. **A genuinely
+correct fix for the cosmetic gap (making this mod's own quad render
+correctly without ever touching `SetFVF`/`SetVertexDeclaration`) remains
+unstarted follow-up work** -- not attempted again this pass given the
+real crash risk just confirmed live; the native-UI-breaking bug itself is
+resolved. Original report below, kept for history.
 
 **Status: Open, not investigated.** Direct user report: "when you take
 damage it loses ui when moving and motion blur activates (minor issue but
@@ -15427,48 +15434,62 @@ cause precisely: it's not "texture0 bound to our capture texture," it's
 call, independent of which value is passed, is what disrupts the native
 renderer.
 
-**Real fix implemented (2026-08-28)**: `DrawFullScreenPass` now uses
+**First fix attempt (2026-08-28): `SetVertexDeclaration` -- tried, caused a
+real crash, reverted.** `DrawFullScreenPass` was changed to use
 `SetVertexDeclaration` instead of `SetFVF` to describe `ScreenVertex`'s
 layout for its own draw -- a genuinely separate D3D9 state slot from the
 legacy FVF pipeline, so using it never touches whatever the native
 renderer tracks around FVF (most likely its own "last bound FVF" cache,
 kept separately from the real device value as a redundant-state-avoidance
-optimization -- not independently confirmed, but consistent with every
-result across all 9 rounds). `EnsureScreenVertexDeclaration` (new,
-`overlay_hud.cpp`, same lazy-create-and-cache pattern as
-`EnsureMotionBlurShader`) creates a `D3DVERTEXELEMENT9` array matching
-`ScreenVertex`'s real 28-byte layout (`D3DDECLUSAGE_POSITIONT` for the
-pre-transformed XYZRHW position, `D3DDECLUSAGE_COLOR` for the packed
-diffuse, `D3DDECLUSAGE_TEXCOORD` for UV) once per device, cached
-thereafter. `DrawFullScreenPass` calls `SetVertexDeclaration(device,
-g_screenVertexDeclaration)` before its own draw and
-`SetVertexDeclaration(device, nullptr)` afterward -- `SetFVF` is never
-called from this function again, in either direction, so whatever FVF the
-native code already had stays completely untouched the whole time.
+optimization -- theorized, never independently confirmed).
+`EnsureScreenVertexDeclaration` (new, `overlay_hud.cpp`, same lazy-
+create-and-cache pattern as `EnsureMotionBlurShader`) created a
+`D3DVERTEXELEMENT9` array matching `ScreenVertex`'s real 28-byte layout
+once per device, cached thereafter.
 
 All nine `MotionBlurDrawTestStage` isolation stages, and the config key
-itself, have been fully removed now that their job is done (`ConfigVersion`
-34->35) -- this was always meant as a temporary diagnostic, not a
-permanent feature, matching this project's own standing convention for
-this class of investigation tooling.
-
-Build clean (0 warnings/0 errors), deployed.
+itself, were fully removed at the same time now that their job was done
+(`ConfigVersion` 34->35) -- this was always meant as a temporary
+diagnostic, not a permanent feature, matching this project's own standing
+convention for this class of investigation tooling. Build clean, deployed.
 
 **Real crash found live, immediately** ("critical crash check event
 viewer") -- confirmed via Event Viewer: `iw5sp.exe` access violation
-(`0xc0000005`) inside the real system `d3d9.dll`. Root cause: the new
-`g_screenVertexDeclaration` cache was never back-filled into
-`ReleaseAllCachedTextures()`, the exact same bug class this project has
-hit twice before (`g_optBlurPixelShader`, `g_optWhiteTexture`) -- a
-device-bound COM object cached by a lazy fast path with zero device-
-recreation invalidation, becoming a dangling pointer after any real
-`Reset()`/full device recreation. Fixed with `releaseIfSet(g_screenVertexDeclaration)`,
-same unconditional-release pattern as every other device-bound resource
-in that function. See this entry's own top status section for the full
-write-up. Build clean, 0 errors, deployed. **NOT YET independently
-re-confirmed live** -- a strong, well-precedented circumstantial match,
-not caught via a live debugger (x64dbg still unavailable), so treat as
-highly likely rather than absolutely certain until confirmed.
+(`0xc0000005`) inside the real system `d3d9.dll`, fault offset
+`0x0005e098`. First theory: the new `g_screenVertexDeclaration` cache was
+never back-filled into `ReleaseAllCachedTextures()`, the exact same bug
+class this project has hit twice before (`g_optBlurPixelShader`,
+`g_optWhiteTexture`) -- a device-bound COM object cached by a lazy fast
+path with zero device-recreation invalidation, becoming a dangling
+pointer after any real `Reset()`/full device recreation. Fixed with
+`releaseIfSet(g_screenVertexDeclaration)`, deployed -- **and the exact
+same crash recurred at the exact same offset**, direct user report
+("crash again"), confirmed via the newly-deployed DLL's own build
+timestamp (19:54) falling BEFORE the second crash's own timestamp
+(19:55:46) that this really was the fixed build running, not a stale one.
+This conclusively rules out the dangling-pointer-after-Reset theory --
+either `SetVertexDeclaration` is itself unsafe in this specific context,
+or the declaration data passed to it was wrong in some way the struct/
+enum-value cross-check against real d3d9types.h didn't catch.
+
+**Reverted, not investigated further live.** Continuing to guess against
+a real, repeatable crash without a live debugger (x64dbg still refusing
+connection) was judged too risky to keep doing. `SetVertexDeclaration`,
+`EnsureScreenVertexDeclaration`, `g_screenVertexDeclaration`, the
+`D3DVertexElement9` struct, and both new vtable index constants were all
+fully removed -- not left disabled or half-fixed. `DrawFullScreenPass` now
+calls neither `SetFVF` nor `SetVertexDeclaration` at all, reproducing
+stage 9 of the original isolation test exactly (the one combination
+already proven both to fix the native warning and to never crash, well
+before `SetVertexDeclaration` was ever introduced). Build clean (0
+warnings/0 errors), deployed. **This mod's own motion-blur quad draws
+using whatever vertex format is already ambient at that point in the
+frame** -- occasionally visually wrong for that pass specifically (the
+"pixelated" look already reported, right at the moment of an unarmored
+hit or on level entry) but proven safe. A genuinely correct fix for that
+cosmetic gap, without reintroducing a crash, is real, unstarted follow-up
+work -- the native-UI-breaking bug itself is resolved; this is a separate,
+lower-priority, purely cosmetic issue on top of the real fix.
 
 **Two more reports the same session, both addressed without touching
 code**: (1) "a weird graphical bug in this new phase when entering level

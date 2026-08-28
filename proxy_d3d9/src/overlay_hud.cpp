@@ -142,13 +142,6 @@ constexpr int kGetVertexShaderVtableIndex = 93;   // IDirect3DDevice9::GetVertex
 constexpr int kSetStreamSourceVtableIndex = 100;  // IDirect3DDevice9::SetStreamSource (issue #100 fix,
     // 2026-08-28 -- see DrawFullScreenPass's own header comment for why this matters)
 constexpr int kGetStreamSourceVtableIndex = 101;  // IDirect3DDevice9::GetStreamSource
-constexpr int kCreateVertexDeclarationVtableIndex = 86; // IDirect3DDevice9::CreateVertexDeclaration
-    // (issue #100 real fix, 2026-08-28 -- see DrawFullScreenPass's own header
-    // comment: an 8-round live isolation test proved calling SetFVF at all,
-    // even restored to the exact original value afterward, breaks the native
-    // low-health-warning draw. SetVertexDeclaration is a separate D3D9 state
-    // slot that never touches whatever the native renderer tracks around FVF)
-constexpr int kSetVertexDeclarationVtableIndex = 87;    // IDirect3DDevice9::SetVertexDeclaration
 constexpr int kSetPixelShaderVtableIndex = 107;   // IDirect3DDevice9::SetPixelShader
 constexpr int kGetPixelShaderVtableIndex = 108;   // IDirect3DDevice9::GetPixelShader
 constexpr int kGetSurfaceLevelVtableIndex = 18;   // IDirect3DTexture9::GetSurfaceLevel
@@ -214,19 +207,6 @@ constexpr DWORD kD3DTEXF_LINEAR = 2;
 constexpr DWORD kD3DSAMP_MAGFILTER = 5;
 constexpr DWORD kD3DSAMP_MINFILTER = 6;
 constexpr DWORD kD3DSAMP_MIPFILTER = 7;
-// Issue #100 real fix (2026-08-28) -- real, stable D3D9 vertex-declaration
-// enum values (d3d9types.h), used to describe ScreenVertex's layout to
-// SetVertexDeclaration instead of the legacy SetFVF this project's own
-// 8-round live isolation test proved breaks native UI when called at all.
-constexpr BYTE kD3DDECLTYPE_FLOAT2 = 1;
-constexpr BYTE kD3DDECLTYPE_FLOAT4 = 3;
-constexpr BYTE kD3DDECLTYPE_D3DCOLOR = 4;
-constexpr BYTE kD3DDECLTYPE_UNUSED = 17;
-constexpr BYTE kD3DDECLMETHOD_DEFAULT = 0;
-constexpr BYTE kD3DDECLUSAGE_POSITIONT = 9; // pre-transformed (XYZRHW) position --
-    // NOT D3DDECLUSAGE_POSITION (0), which is for untransformed vertices
-constexpr BYTE kD3DDECLUSAGE_COLOR = 10;
-constexpr BYTE kD3DDECLUSAGE_TEXCOORD = 5;
 
 typedef HRESULT(WINAPI* EndScene_t)(void* This);
 typedef HRESULT(WINAPI* CreateTexture_t)(void* This, UINT Width, UINT Height, UINT Levels,
@@ -263,16 +243,10 @@ typedef HRESULT(WINAPI* SetStreamSource_t)(void* This, UINT StreamNumber, void* 
                                              UINT OffsetInBytes, UINT Stride);
 typedef HRESULT(WINAPI* GetStreamSource_t)(void* This, UINT StreamNumber, void** ppStreamData,
                                              UINT* pOffsetInBytes, UINT* pStride);
-// Issue #100 real fix (2026-08-28) -- matches the real D3DVERTEXELEMENT9
-// struct layout exactly (d3d9types.h: WORD Stream, WORD Offset, BYTE Type,
-// BYTE Method, BYTE Usage, BYTE UsageIndex -- 8 bytes, no padding) and the
-// real IDirect3DDevice9::CreateVertexDeclaration/SetVertexDeclaration
-// signatures. ppOutDecl/pDecl are IDirect3DVertexDeclaration9*, kept as
-// void* like every other COM pointer in this file.
-struct D3DVertexElement9 { WORD Stream, Offset; BYTE Type, Method, Usage, UsageIndex; };
-typedef HRESULT(WINAPI* CreateVertexDeclaration_t)(void* This, const D3DVertexElement9* pVertexElements,
-                                                     void** ppDecl);
-typedef HRESULT(WINAPI* SetVertexDeclaration_t)(void* This, void* pDecl);
+// D3DVertexElement9/CreateVertexDeclaration_t/SetVertexDeclaration_t REMOVED
+// 2026-08-28 -- a SetVertexDeclaration-based fix for issue #100 caused a
+// real, repeatable crash. See DrawFullScreenPass's own header comment and
+// known_issues.md issue #100 for the full story.
 
 // Phase B, visual-suite plan -- local, minimal D3DCAPS9 declaration (same
 // convention as dllmain.cpp's D3D9ON12_ARGS_LOCAL, avoids a full d3d9.h include)
@@ -3079,44 +3053,15 @@ bool EnsureFullscreenCaptureTexture(void* device, int width, int height)
     return true;
 }
 
-// Issue #100 real fix (2026-08-28) -- ScreenVertex's own vertex declaration,
-// created once and cached (same lazy-create-on-device pattern as
-// EnsureMotionBlurShader below). DrawFullScreenPass uses this via
-// SetVertexDeclaration instead of the legacy SetFVF(kFVF) it used to call --
-// an 8-round live isolation test (known_issues.md issue #100) proved that
-// calling SetFVF AT ALL from this function, even restored to the exact
-// original value immediately afterward, breaks whatever native code draws
-// the low-health "you are hurt, get to cover" warning (most likely because
-// the native renderer tracks its own "last bound FVF" state separately from
-// the real device value, and our call desyncs that cache in a way a plain
-// restore can't fix). SetVertexDeclaration is a genuinely separate D3D9
-// state slot -- using it for our own draw, then clearing it back to nullptr
-// afterward (never touching SetFVF in either direction), leaves whatever FVF
-// the native code already had completely untouched throughout.
-void* g_screenVertexDeclaration = nullptr;
-
-bool EnsureScreenVertexDeclaration(void* device)
-{
-    if (g_screenVertexDeclaration) return true;
-    void** deviceVtbl = *reinterpret_cast<void***>(device);
-    auto createVertexDeclaration = reinterpret_cast<CreateVertexDeclaration_t>(deviceVtbl[kCreateVertexDeclarationVtableIndex]);
-    // Matches ScreenVertex's real layout exactly: float x,y,z,rhw (16 bytes,
-    // pre-transformed position) + DWORD color (4 bytes, packed) + float u,v
-    // (8 bytes) = 28 bytes/vertex, the same as kFVF (D3DFVF_XYZRHW |
-    // D3DFVF_DIFFUSE | D3DFVF_TEX1) used to describe.
-    D3DVertexElement9 elements[] = {
-        { 0, 0,  kD3DDECLTYPE_FLOAT4,    kD3DDECLMETHOD_DEFAULT, kD3DDECLUSAGE_POSITIONT, 0 },
-        { 0, 16, kD3DDECLTYPE_D3DCOLOR,  kD3DDECLMETHOD_DEFAULT, kD3DDECLUSAGE_COLOR,     0 },
-        { 0, 20, kD3DDECLTYPE_FLOAT2,    kD3DDECLMETHOD_DEFAULT, kD3DDECLUSAGE_TEXCOORD,  0 },
-        { 0xFF, 0, kD3DDECLTYPE_UNUSED, 0, 0, 0 }, // D3DDECL_END()
-    };
-    HRESULT hr = createVertexDeclaration(device, elements, &g_screenVertexDeclaration);
-    if (FAILED(hr) || !g_screenVertexDeclaration) {
-        g_screenVertexDeclaration = nullptr;
-        return false;
-    }
-    return true;
-}
+// REMOVED 2026-08-28 -- a SetVertexDeclaration-based fix for issue #100
+// (this comment's own former home, EnsureScreenVertexDeclaration/
+// g_screenVertexDeclaration) caused a real, repeatable crash (Event
+// Viewer: iw5sp.exe / d3d9.dll, 0xc0000005, confirmed via the deployed
+// DLL's own timestamp to recur on the build that ALSO had the
+// dangling-pointer-after-Reset theory's fix applied, ruling that out as
+// the explanation). Fully removed rather than left half-fixed -- see
+// DrawFullScreenPass's own header comment and known_issues.md issue #100
+// for the current state of this investigation.
 
 // Phase A's own no-op validation shader -- see fullscreen_passthrough_ps.h's own
 // header comment. A real effect (RCAS/FXAA/motion blur) reuses this exact same
@@ -3191,15 +3136,29 @@ using FullScreenShaderSetupFn = void(*)(void* device, float texelW, float texelH
 // can't fix, even though the device itself ends up holding the correct
 // value again.
 //
-// Real fix: never call `SetFVF` from this function at all. `SetVertexDeclaration`
-// (see `EnsureScreenVertexDeclaration` above) is a genuinely separate D3D9
-// state slot -- using it to describe ScreenVertex's own layout for this
-// function's own draw, then clearing it back to nullptr afterward, leaves
-// whatever FVF the native code already had completely untouched throughout,
-// sidestepping the desync entirely instead of fighting it. `SetFVF`
-// documented behavior means an explicit nullptr declaration lets the
-// device's already-current FVF value (never touched by us) resume being
-// used for the native code's own subsequent draws.
+// Real fix, part 1 (SetVertexDeclaration) -- TRIED AND REVERTED 2026-08-28.
+// `SetVertexDeclaration` looked like the clean answer (a genuinely separate
+// D3D9 state slot from FVF, letting this function describe ScreenVertex's
+// own layout for its draw without ever calling SetFVF) -- but it caused a
+// real, repeatable crash the moment it shipped (Event Viewer: iw5sp.exe /
+// d3d9.dll, access violation 0xc0000005, same exact fault offset on two
+// separate runs). The first theory -- a missing `ReleaseAllCachedTextures`
+// entry for the new cached declaration, leaving a dangling COM pointer
+// after a device Reset -- was fixed and STILL crashed identically on the
+// next run (confirmed via the deployed DLL's own build timestamp that the
+// fix really was loaded), ruling that out as the explanation. Rather than
+// keep guessing live against a real crash, `SetVertexDeclaration` was
+// fully removed. Real fix, part 2: this function now calls neither `SetFVF`
+// nor `SetVertexDeclaration` at all, in either direction -- reproducing
+// the exact isolation-test stage (stage 9 of the original 9-round
+// bisection) already LIVE-CONFIRMED both to fix the native warning and to
+// never crash. Our own quad draws using whatever vertex format is already
+// ambient at this point in the frame -- occasionally visually wrong for
+// this pass specifically (a "pixelated" look already reported, right at
+// the moment of an unarmored hit or on level entry) but proven safe. A
+// real, correct way to also fix that cosmetic gap without reintroducing a
+// crash is unstarted follow-up work, not attempted again this pass. See
+// known_issues.md issue #100 for the complete trail.
 //
 // FSR/RCAS never hit this bug in the first place, not because it's
 // immune to the same root cause, but because its own call to this same
@@ -3235,14 +3194,11 @@ void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn
     auto setPixelShader = reinterpret_cast<SetPixelShader_t>(deviceVtbl[kSetPixelShaderVtableIndex]);
     auto getPixelShader = reinterpret_cast<GetPixelShader_t>(deviceVtbl[kGetPixelShaderVtableIndex]);
     auto setTexture = reinterpret_cast<SetTexture_t>(deviceVtbl[kSetTextureVtableIndex]);
-    auto setVertexDeclaration = reinterpret_cast<SetVertexDeclaration_t>(deviceVtbl[kSetVertexDeclarationVtableIndex]);
     auto setRenderState = reinterpret_cast<SetRenderState_t>(deviceVtbl[kSetRenderStateVtableIndex]);
     auto getRenderState = reinterpret_cast<GetRenderState_t>(deviceVtbl[kGetRenderStateVtableIndex]);
     auto drawPrimitiveUP = reinterpret_cast<DrawPrimitiveUP_t>(deviceVtbl[kDrawPrimitiveUPVtableIndex]);
     auto setStreamSource = reinterpret_cast<SetStreamSource_t>(deviceVtbl[kSetStreamSourceVtableIndex]);
     auto getStreamSource = reinterpret_cast<GetStreamSource_t>(deviceVtbl[kGetStreamSourceVtableIndex]);
-
-    if (!EnsureScreenVertexDeclaration(device)) return;
 
     void* backSurface = nullptr;
     // GetRenderTarget(0) IS the real backbuffer surface, already fully rendered
@@ -3355,9 +3311,23 @@ void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn
     setRenderState(device, kD3DRS_CULLMODE, kD3DCULL_NONE);
 
     setTexture(device, 0, g_fullscreenCaptureTexture);
-    // Issue #100 real fix -- SetVertexDeclaration, NOT SetFVF. See this
-    // function's own header comment for the full story.
-    setVertexDeclaration(device, g_screenVertexDeclaration);
+    // REVERTED 2026-08-28 -- SetVertexDeclaration caused a real, repeatable
+    // crash (Event Viewer: iw5sp.exe / d3d9.dll, 0xc0000005, same exact
+    // fault offset both times -- confirmed via the deployed DLL's own
+    // timestamp that the SECOND crash was already running the
+    // ReleaseAllCachedTextures fix, ruling out the dangling-pointer-after-
+    // Reset theory as the explanation). Deliberately NOT calling SetFVF
+    // *or* SetVertexDeclaration at all here -- reproduces stage 9 of the
+    // original isolation test exactly, the one combination LIVE-CONFIRMED
+    // both to fix the native low-health warning AND to never crash. Our
+    // own quad draws using whatever vertex format is already ambient at
+    // this exact point in the frame -- occasionally visually wrong for
+    // OUR OWN pass specifically (a "pixelated" look, already reported and
+    // understood, right at the moment of an unarmored hit or on level
+    // entry) but never unsafe. Fixing that cosmetic gap without
+    // reintroducing a crash is real, unstarted follow-up work -- not
+    // attempted again this pass given the crash risk just confirmed live.
+    // See known_issues.md issue #100 for the complete trail.
 
     float w = static_cast<float>(desc.Width);
     float h = static_cast<float>(desc.Height);
@@ -3402,14 +3372,8 @@ void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn
         void** vtbl = *reinterpret_cast<void***>(oldTexture0);
         reinterpret_cast<Release_t>(vtbl[kSurfaceReleaseVtableIndex])(oldTexture0);
     }
-    // Issue #100 real fix -- clear OUR vertex declaration back to nullptr,
-    // NOT a SetFVF(oldFVF) restore. We never called SetFVF at all this whole
-    // function, so whatever FVF the native code had is already untouched and
-    // still current -- clearing the declaration lets the device's own
-    // already-correct FVF value resume being used, per real documented
-    // SetVertexDeclaration(nullptr) behavior. See this function's own header
-    // comment for the full story.
-    setVertexDeclaration(device, nullptr);
+    // REVERTED 2026-08-28 -- no SetVertexDeclaration/SetFVF restore needed;
+    // neither was ever called above. See the call site's own comment.
 
     if (haveOldViewport) setViewport(device, &oldViewport);
 
@@ -6416,22 +6380,10 @@ void ReleaseAllCachedTextures()
     g_fsrRcasDeviceSupportsPS3 = false;
     // Phase E's own motion-blur shader, same device-bound-resource reasoning.
     releaseIfSet(g_motionBlurPixelShader);
-    // CRASH FIX (2026-08-28, issue #100's real fix) -- g_screenVertexDeclaration
-    // (DrawFullScreenPass's own vertex declaration, replacing SetFVF) was added
-    // without being back-filled here, the EXACT same bug class as the
-    // g_optBlurPixelShader crash above and the g_optWhiteTexture/TextTexCache
-    // one before it: a real, device-bound COM object cached by a lazy
-    // Ensure*-style fast path that trusts a non-null handle forever with zero
-    // device-recreation invalidation. After a real Reset() OR a full device
-    // recreation, the cached declaration is a dangling reference to a
-    // destroyed object -- the next motion-blur draw call passed it straight
-    // into SetVertexDeclaration on the real system d3d9.dll, a genuine
-    // access-violation crash (Event Viewer: iw5sp.exe / d3d9.dll,
-    // 0xc0000005), confirmed live immediately after this fix first shipped.
-    // Released unconditionally, same as every other device-bound resource
-    // here -- cheap to recreate lazily (EnsureScreenVertexDeclaration) on
-    // next use.
-    releaseIfSet(g_screenVertexDeclaration);
+    // g_screenVertexDeclaration's own releaseIfSet call REMOVED 2026-08-28
+    // along with the SetVertexDeclaration-based fix itself -- see
+    // DrawFullScreenPass's own header comment and known_issues.md issue
+    // #100 for the real crash this caused and the current state.
 }
 
 } // namespace -- closes the file-wide anonymous namespace (see the matching close's
