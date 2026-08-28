@@ -15293,7 +15293,7 @@ sampler filters (MAG/MIN on stage 0), the four render states (ZENABLE/
 LIGHTING/ALPHABLENDENABLE/CULLMODE), the forced full-screen viewport, or
 the texture0/FVF bind.
 
-**Stage 5 built the same pass, not yet tested**: tests the viewport
+**Stage 5 built and LIVE-CONFIRMED (2026-08-28)**: tests the viewport
 force-set next -- this exact function had a real, previously-fixed bug
 tied to viewport handling (2026-08-27, this function's own header
 comment), a plausible repeat offender. Skips `SetViewport` entirely (both
@@ -15301,12 +15301,28 @@ the forced full-screen set and the final restore, gated together via the
 existing `haveOldViewport` flag -- it simply never becomes true when this
 stage is active, so the restore call at the bottom already no-ops
 correctly with no extra code needed); everything else, including the
-pixel shader bind and the actual draw call, runs normally. If the
-vignette/text still breaks, it narrows to the render states/sampler
-filters as the only remaining candidates; if it comes back, the viewport
-force-set is the cause. Build clean, 0 errors, deployed,
-`MotionBlurDrawTestStage=5` enabled live in `mw3ncp_config.ini` for the
-next test.
+pixel shader bind and the actual draw call, runs normally. Direct user
+report: "its broken though blur is visible now" -- **rules out the
+viewport force-set as the cause** (the "blur is visible now" side note
+just confirms the current native viewport already happens to be
+full-screen at the moment the hook fires, so skipping the force-set
+didn't clip this mod's own quad). Narrows the remaining candidates to:
+sampler filters (MAG/MIN on stage 0), the four render states (ZENABLE/
+LIGHTING/ALPHABLENDENABLE/CULLMODE), or the texture0/FVF bind.
+
+**Stage 6 built the same pass, not yet tested**: tests the four render-
+state changes next. `ALPHABLENDENABLE` is the strongest suspect among
+these -- our own quad forces it `FALSE` ("full opaque overwrite," see
+this function's own inline comment), and a red vignette overlay would
+plausibly rely on alpha blending for its own draw. Skips
+`ZENABLE`/`LIGHTING`/`ALPHABLENDENABLE`/`CULLMODE` entirely (both the set
+and the final restore, same gating pattern as stages 4/5); everything
+else, including the viewport force-set, pixel shader bind, and the
+actual draw call, runs normally. If the vignette/text still breaks, only
+sampler filters and the texture0/FVF bind remain as candidates; if it
+comes back, it's one of these four render states. Build clean, 0 errors,
+deployed, `MotionBlurDrawTestStage=6` enabled live in
+`mw3ncp_config.ini` for the next test.
 
 **Two more reports the same session, both addressed without touching
 code**: (1) "a weird graphical bug in this new phase when entering level

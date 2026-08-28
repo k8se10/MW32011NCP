@@ -3119,7 +3119,13 @@ using FullScreenShaderSetupFn = void(*)(void* device, float texelW, float texelH
 // stays untouched throughout; everything else, including the pixel shader
 // bind and the actual draw call, runs normally. This exact function had a
 // real, previously-fixed bug tied to viewport handling (2026-08-27), a
-// plausible repeat offender.
+// plausible repeat offender. 6 = skip the four render-state changes
+// (ZENABLE/LIGHTING/ALPHABLENDENABLE/CULLMODE) entirely, both set and
+// restore -- everything else, including the viewport force-set, pixel
+// shader bind, and the actual draw call, runs normally.
+// ALPHABLENDENABLE is the strongest suspect here -- forced FALSE for our
+// own "opaque overwrite" draw, and a red vignette overlay would plausibly
+// rely on alpha blending for its own draw.
 void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn onShaderBound = nullptr,
                          int testStage = 0)
 {
@@ -3279,11 +3285,22 @@ void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn
         if (onShaderBound) onShaderBound(device, 1.0f / static_cast<float>(desc.Width), 1.0f / static_cast<float>(desc.Height));
     }
 
-    setRenderState(device, kD3DRS_ZENABLE, kD3DZB_FALSE);
-    setRenderState(device, kD3DRS_LIGHTING, FALSE);
-    setRenderState(device, kD3DRS_ALPHABLENDENABLE, FALSE); // full opaque overwrite -- this
-        // pass replaces the ENTIRE frame, not a blended overlay element
-    setRenderState(device, kD3DRS_CULLMODE, kD3DCULL_NONE);
+    // [Experimental] MotionBlurDrawTestStage==6 isolation test (issue #100) --
+    // skip the four render-state changes entirely (both the set AND the
+    // final restore, gated together same as stages 4/5) -- whatever
+    // ZENABLE/LIGHTING/ALPHABLENDENABLE/CULLMODE the native code already
+    // had stay untouched throughout. ALPHABLENDENABLE is the strongest
+    // suspect among these -- our own quad forces it FALSE ("full opaque
+    // overwrite"), and a red vignette overlay would plausibly rely on
+    // alpha blending for its own draw. Sampler filters and texture0/FVF
+    // remain the only other untested candidates if this comes back clean.
+    if (testStage != 6) {
+        setRenderState(device, kD3DRS_ZENABLE, kD3DZB_FALSE);
+        setRenderState(device, kD3DRS_LIGHTING, FALSE);
+        setRenderState(device, kD3DRS_ALPHABLENDENABLE, FALSE); // full opaque overwrite -- this
+            // pass replaces the ENTIRE frame, not a blended overlay element
+        setRenderState(device, kD3DRS_CULLMODE, kD3DCULL_NONE);
+    }
 
     setTexture(device, 0, g_fullscreenCaptureTexture);
     setFVF(device, kFVF);
@@ -3343,10 +3360,14 @@ void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn
 
     if (haveOldViewport) setViewport(device, &oldViewport);
 
-    setRenderState(device, kD3DRS_ZENABLE, oldZEnable);
-    setRenderState(device, kD3DRS_LIGHTING, oldLighting);
-    setRenderState(device, kD3DRS_ALPHABLENDENABLE, oldAlphaBlend);
-    setRenderState(device, kD3DRS_CULLMODE, oldCull);
+    // testStage==6: render states were never touched above -- don't
+    // restore them here either, same gating pattern as stages 4/5.
+    if (testStage != 6) {
+        setRenderState(device, kD3DRS_ZENABLE, oldZEnable);
+        setRenderState(device, kD3DRS_LIGHTING, oldLighting);
+        setRenderState(device, kD3DRS_ALPHABLENDENABLE, oldAlphaBlend);
+        setRenderState(device, kD3DRS_CULLMODE, oldCull);
+    }
 
     // testStage==4: pixel shader was never touched above -- don't touch it
     // here either (setPixelShader(device, nullptr) would itself be a real
