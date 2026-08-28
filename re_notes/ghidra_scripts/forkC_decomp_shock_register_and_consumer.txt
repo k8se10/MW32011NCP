@@ -1,0 +1,337 @@
+================================================================
+Function: FUN_004d39c0 @ 004d39c0
+----------------------------------------------------------------
+
+undefined4 FUN_004d39c0(undefined4 param_1)
+
+{
+  undefined4 uVar1;
+  int iVar2;
+  int iVar3;
+  undefined **ppuVar4;
+  int iVar5;
+  undefined4 *puVar6;
+  undefined *puVar7;
+  undefined1 local_1b8 [64];
+  undefined4 local_178 [27];
+  undefined4 auStack_10c [66];
+  
+  FUN_004b9310(0x80000);
+  uVar1 = FUN_0050aae0();
+  FUN_00514600(local_1b8,0x40,"shock/%s.shock",param_1);
+  iVar2 = thunk_FUN_004e5a90(local_1b8,uVar1,0x80000);
+  if (iVar2 == 0) {
+    iVar2 = thunk_FUN_004e5a90("shock/default.shock",uVar1,0x80000);
+    if (iVar2 == 0) {
+      FUN_004e2640();
+      return 0;
+    }
+  }
+  ppuVar4 = &PTR_s_bg_shock_screenType_00930cf0;
+  puVar6 = local_178;
+  for (iVar3 = 0x1b; iVar3 != 0; iVar3 = iVar3 + -1) {
+    *puVar6 = *ppuVar4;
+    ppuVar4 = ppuVar4 + 1;
+    puVar6 = puVar6 + 1;
+  }
+  iVar5 = 0;
+  iVar3 = FUN_004ef480();
+  if (0 < iVar3) {
+    puVar7 = &DAT_01d35ae8;
+    do {
+      auStack_10c[iVar5] = puVar7;
+      iVar5 = iVar5 + 1;
+      puVar7 = puVar7 + 0x50;
+      iVar3 = FUN_004ef480();
+    } while (iVar5 < iVar3);
+  }
+  iVar2 = FUN_004ef480(iVar2,local_1b8);
+  uVar1 = FUN_0045d3a0(local_178,iVar2 + 0x1b);
+  FUN_004e2640();
+  return uVar1;
+}
+
+
+
+================================================================
+Function: FUN_00494310 @ 00494310
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_00494310(void)
+
+{
+  DAT_01d397a4 = FUN_004f9cc0("bg_viewKickScale",_DAT_00868700,0,_DAT_0084e9ec,0xc4,
+                              "The scale to apply to the damage done to calculate damage view kick")
+  ;
+  DAT_01d39864 = FUN_004f9cc0("bg_viewKickMax",_DAT_0084ec60,0,_DAT_0084ec60,0xc4,
+                              "The maximum view kick");
+  DAT_01d3973c = FUN_004f9cc0("bg_viewKickMin",_DAT_00868260,0,_DAT_0084ec60,0xc4,
+                              "The minimum view kick");
+  DAT_01d39860 = FUN_004f9cc0("bg_viewKickRandom",_DAT_00839948,0,0x3f800000,0xc4,
+                              "The random direction scale view kick");
+  DAT_01d36ef4 = FUN_004f9cc0("player_view_pitch_up",_DAT_0084088c,0,_DAT_0083c280,0x1c0,
+                              "Maximum angle that the player can look up");
+  DAT_01d35ad0 = FUN_004f9cc0("player_view_pitch_down",_DAT_0084088c,_DAT_00835994,_DAT_0084ec60,
+                              0x1c0,"Maximum angle that the player can look down");
+  _DAT_01d35ac8 =
+       FUN_004f9cc0("player_lean_shift_left",_DAT_00868260,0,_DAT_0086870c,0x84,
+                    "Amount to shift the player 3rd person model when leaning left");
+  _DAT_01d3706c =
+       FUN_004f9cc0("player_lean_shift_right",_DAT_00855ee8,0,_DAT_0086870c,0x84,
+                    "Amount to shift the player 3rd person model when leaning right");
+  _DAT_01d39808 =
+       FUN_004f9cc0("player_lean_shift_crouch_left",_DAT_0082cd6c,0,_DAT_0086870c,0x84,
+                    "Amount to shift the player 3rd person model when crouch leaning left");
+  _DAT_01d36f0c =
+       FUN_004f9cc0("player_lean_shift_crouch_right",_DAT_008682b4,0,_DAT_0086870c,0x84,
+                    "Amount to shift the player 3rd person model when crouch leaning right");
+  _DAT_01d3705c =
+       FUN_004f9cc0("player_lean_rotate_left",_DAT_00868700,0,_DAT_0085d7b4,0x84,
+                    "Amount to rotate the player 3rd person model when leaning left");
+  _DAT_01d397ac =
+       FUN_004f9cc0("player_lean_rotate_right",_DAT_00839948,0,_DAT_0085d7b4,0x84,
+                    "Amount to rotate the player 3rd person model when leaning right");
+  _DAT_01d397c4 =
+       FUN_004f9cc0("player_lean_rotate_crouch_left",_DAT_00868700,0,_DAT_0085d7b4,0x84,
+                    "Amount to rotate the player 3rd person model when crouch leaning left");
+  _DAT_01d39728 =
+       FUN_004f9cc0("player_lean_rotate_crouch_right",_DAT_0086829c,0,_DAT_0085d7b4,0x84,
+                    "Amount to rotate the player 3rd person model when crouch leaning right");
+  DAT_01d36f08 = FUN_004f9cc0("bg_foliagesnd_minspeed",_DAT_00825730,0,_DAT_00837418,0x84,
+                              "The speed that a player must be going to make minimum noise while moving through foliage"
+                             );
+  DAT_01d3986c = FUN_004f9cc0("bg_foliagesnd_maxspeed",_DAT_0083c280,0,_DAT_00837418,0x84,
+                              "The speed that a player must be going to make maximum noise while moving through foliage"
+                             );
+  DAT_01d39798 = FUN_0048cd40("bg_foliagesnd_slowinterval",0x5dc,0,0x7fffffff,0x84,
+                              "The time between each foliage sound when moving slowly");
+  DAT_01d39740 = FUN_0048cd40("bg_foliagesnd_fastinterval",500,0,0x7fffffff,0x84,
+                              "The time between each foliage sound when moving quickly");
+  DAT_01d39780 = FUN_0048cd40("bg_foliagesnd_resetinterval",500,0,0x7fffffff,0x84,
+                              "The time interval before foliage sounds are reset after the player has stopped moving"
+                             );
+  DAT_01d36f3c = FUN_004f9cc0("bg_swingSpeed",_DAT_00824248,0,0x3f800000,4,
+                              "The rate at which the player\'s legs swing around when strafing(multi-player only)"
+                             );
+  DAT_01d39804 = FUN_004f9cc0("bg_legYawTolerance",_DAT_0086870c,0,_DAT_0083c280,4,
+                              "The amount the player\'s leg yaw can differ from his torso before moving ta match"
+                             );
+  _DAT_01d39794 =
+       FUN_004f9cc0("bg_viewBobAmplitudeBase",_DAT_008241e0,0,0x3f800000,0xc0,
+                    "The base speed-based view bob amplitude");
+  DAT_01d397a0 = FUN_0051f240("bg_viewBobAmplitudeSprinting",_DAT_00838330,
+                              s_B_e<compassObjectiveMaxHeight_00853f18._0_4_,0,0x3f800000,0xc4,
+                              "The multiplier to apply to the player\'s speed to get the view bob amplitude while sprinting"
+                             );
+  DAT_01d36f28 = FUN_0051f240("bg_viewBobAmplitudeStanding",_DAT_0086271c,_DAT_0086271c,0,0x3f800000
+                              ,0xc4,
+                              "The multiplier to apply to the player\'s speed to get the view bob amplitude while standing"
+                             );
+  DAT_01d37050 = FUN_0051f240("bg_viewBobAmplitudeStandingAds",_DAT_0086271c,_DAT_0086271c,0,
+                              0x3f800000,0xc4,
+                              "The multiplier to apply to the player\'s speed to get the view bob amplitude while standing and ADS"
+                             );
+  DAT_01d35ae4 = FUN_0051f240("bg_viewBobAmplitudeDucked",_DAT_00828074,_DAT_00828074,0,0x3f800000,
+                              0xc4,
+                              "The multiplier to apply to the player\'s speed to get the view bob amplitude while ducking"
+                             );
+  DAT_01d35ac4 = FUN_0051f240("bg_viewBobAmplitudeDuckedAds",_DAT_00828074,_DAT_00828074,0,
+                              0x3f800000,0xc4,
+                              "The multiplier to apply to the player\'s speed to get the view bob amplitude while ducking ADS"
+                             );
+  DAT_01d39750 = FUN_0051f240("bg_viewBobAmplitudeProne",_DAT_00838330,_DAT_0086110c,0,0x3f800000,
+                              0x84,
+                              "The multiplier to apply to the player\'s speed to get the view bob amplitude while prone"
+                             );
+  _DAT_01d36f24 =
+       FUN_004f9cc0("bg_viewBobAmplitudeRoll",_DAT_00832508,0,_DAT_0084ec60,0x84,
+                    "The amplitude applied to the roll for view bobbing");
+  DAT_01d39868 = FUN_004f9cc0("bg_viewBobMax",_DAT_00867e18,0,_DAT_008513d0,0xc4,
+                              "The maximum allowed bob amplitude");
+  _DAT_01d397cc =
+       FUN_004f9cc0("bg_viewBobLag",_DAT_00852fc0,_DAT_0082e3a0,0x3f800000,0x84,
+                    "The lag that will be applied the view bob cycle");
+  DAT_01d36f18 = FUN_004f9cc0("bg_weaponBobAmplitudeBase",_DAT_008241e0,0,0x3f800000,0,
+                              "The base speed-based weapon bob amplitude");
+  DAT_01d397c0 = FUN_0051f240("bg_weaponBobAmplitudeSprinting",_DAT_00838330,
+                              s_B_e<compassObjectiveMaxHeight_00853f18._0_4_,0,0x3f800000,0xc4,
+                              "The multiplier to apply to the players\'s speed to get the weapon/viewmodel bob amplitude while sprinting"
+                             );
+  DAT_01d39870 = FUN_0051f240("bg_weaponBobAmplitudeStanding",_DAT_00828638,_DAT_0083812c,0,
+                              0x3f800000,0xc4,
+                              "The multiplier to apply to the players\'s speed to get the weapon/viewmodel bob amplitude while standing"
+                             );
+  DAT_01d36f00 = FUN_0051f240("bg_weaponBobAmplitudeDucked",_DAT_00832a68,_DAT_0083812c,0,0x3f800000
+                              ,0x84,
+                              "The multiplier to apply to the players\'s speed to get the weapon/viewmodel bob amplitude while ducking"
+                             );
+  DAT_01d37084 = FUN_0051f240("bg_weaponBobAmplitudeProne",_DAT_00838330,_DAT_0086110c,0,0x3f800000,
+                              0x84,
+                              "The multiplier to apply to the players\'s speed to get the weapon/viewmodel bob amplitude while prone"
+                             );
+  DAT_01d39828 = FUN_004f9cc0("bg_weaponBobAmplitudeRoll",_DAT_00832508,0,_DAT_0084ec60,0x84,
+                              "The amplitude applied to the roll for weapon bobbing");
+  DAT_01d36f2c = FUN_004f9cc0("bg_weaponBobMax",_DAT_00867e18,0,_DAT_008513d0,0x84,
+                              "The maximum allowed weapon/viewmodel bob amplitude");
+  DAT_01d39878 = FUN_004f9cc0("bg_weaponBobLag",_DAT_00852fc0,_DAT_0082e3a0,0x3f800000,0x84,
+                              "The lag that will be applied the weapon bob cycle");
+  DAT_01d397b8 = FUN_004f9cc0("bg_bulletExplDmgFactor",0x3f800000,0,_DAT_0084b7d4,4,
+                              "Weapon damage multiplier that will be applied at the center of the slash damage area."
+                             );
+  DAT_01d39730 = FUN_004f9cc0("bg_bulletExplRadius",_DAT_0084b7d4,0,_DAT_0082d1a8,4,
+                              "The radius of the bullet splash damage, where the damage gradually falls off to 0."
+                             );
+  DAT_01d37060 = FUN_004f9cc0("player_breath_snd_lerp",_DAT_0086825c,0,_DAT_0084b7d4,0x84,
+                              "The interpolation rate for the player hold breath sound");
+  DAT_01d39748 = FUN_004f9cc0("player_breath_snd_delay",0x3f800000,0,_DAT_0086825c,0x84,
+                              "The delay before playing the breathe in sound");
+  DAT_01d39754 = FUN_004f9cc0("player_runThreshhold",_DAT_0085ea64,0,_DAT_008616f8,0x84,
+                              "The speed threshold before a player is considered to be running forwards"
+                             );
+  DAT_01d39724 = FUN_004f9cc0("player_moveThreshhold",_DAT_0084e9ec,_DAT_0085c8e0,_DAT_0086870c,
+                              0x2084,
+                              "The speed at which the player is considered to be moving for the purposes of \nview model bob and multiplayer model movement"
+                             );
+  DAT_01d39720 = FUN_004f9cc0("player_strafeAnimCosAngle",_DAT_0082bd70,0,0x3f800000,0x84,
+                              "Cosine of the angle which player starts using strafe animations");
+  _DAT_01d3975c =
+       FUN_004f9cc0("player_spectateSpeedScale",0x3f800000,0,_DAT_0086870c,0x84,
+                    "The scale applied to the player speed when spectating");
+  DAT_01d397e4 = FUN_004f9cc0("player_sprintSpeedScale",_DAT_00832508,0,_DAT_00868260,0xc4,
+                              "The scale applied to the player speed when sprinting");
+  DAT_01d397ec = FUN_004914d0("player_sprintUnlimited",0,0xc4,
+                              "Whether players can sprint forever or not");
+  DAT_01d35ad8 = FUN_004914d0("player_turnAnims",0,0x84,
+                              "Use animations to turn a player\'s model in multiplayer");
+  DAT_01d3983c = FUN_004f9cc0("animSmoothing",_DAT_0084f914,0,0x3f800000,0,
+                              "exponential moving average smoothing factor for anims in network coop"
+                             );
+  DAT_01d39764 = FUN_004f9cc0("player_dmgtimer_timePerPoint",_DAT_0084b7d4,0,_DAT_00837418,0xc,
+                              "The time in milliseconds that the player is slowed down per point of damage"
+                             );
+  DAT_01d397bc = FUN_004f9cc0("player_dmgtimer_maxTime",_DAT_0085293c,0,_DAT_00837418,0xc,
+                              "The maximum time that the player is slowed due to damage");
+  DAT_01d3977c = FUN_0048cd40("player_dmgtimer_stumbleTime",500,0,2000,0xc,
+                              "Maximum time to play stumble animations");
+  DAT_01d36f14 = FUN_0048cd40("player_dmgtimer_flinchTime",500,0,2000,0xc,
+                              "Maximum time to play flinch animations");
+  DAT_01d397d4 = FUN_005197f0("bg_shock_soundLoop","shellshock_loop",0x10004,"Shellshock loop alias"
+                             );
+  DAT_01d39744 = FUN_005197f0("bg_shock_soundLoopSilent","shellshock_loop_silent",0x10004,
+                              "The sound that gets blended with the shellshock loop alias");
+  DAT_01d35acc = FUN_005197f0("bg_shock_soundEnd","shellshock_end",0x10004,
+                              "Shellshock end sound alias");
+  DAT_01d35ae0 = FUN_005197f0("bg_shock_soundEndAbort","shellshock_end_abort",0x10004,
+                              "Shellshock aborted end sound alias");
+  DAT_01d3707c = FUN_00549310("bg_shock_screenType",&PTR_s_blurred_00930d5c,0,0x10004,
+                              "Shell shock screen effect type");
+  DAT_01d36f10 = FUN_004f9cc0("bg_shock_screenBlurBlendTime",_DAT_00839948,0,_DAT_0084e9ec,0x10004,
+                              "The amount of time in seconds for the shellshock effect to blend");
+  DAT_01d36f20 = FUN_004f9cc0("bg_shock_screenBlurBlendFadeTime",0x3f800000,0,_DAT_00842e78,0x10004,
+                              "The amount of time in seconds for the shellshock effect to fade");
+  DAT_01d397c8 = FUN_004f9cc0("bg_shock_screenFlashWhiteFadeTime",0,0,_DAT_00842e78,0x10004,
+                              "In seconds, how soon from the end of the effect to start blending out the whiteout layer."
+                             );
+  DAT_01d39858 = FUN_004f9cc0("bg_shock_screenFlashShotFadeTime",0,0,_DAT_00842e78,0x10004,
+                              "In seconds, how soon from the end of the effect to start blending out the screengrab layer."
+                             );
+  DAT_01d397d8 = FUN_004f9cc0("bg_shock_viewKickPeriod",_DAT_0083ac9c,0,_DAT_00842e78,0x10004,
+                              "The period of the shellshock view kick effect");
+  DAT_01d39820 = FUN_004f9cc0("bg_shock_viewKickRadius",_DAT_0086bb34,0,0x3f800000,0x10004,
+                              "Shell shock kick radius");
+  DAT_01d39710 = FUN_004f9cc0("bg_shock_viewKickFadeTime",_DAT_0085d7b4,0,_DAT_00842e78,0x10004,
+                              "The time for the shellshock kick effect to fade");
+  DAT_01d397f0 = FUN_004914d0("bg_shock_sound",1,0x10004,"Play shell shock sound");
+  DAT_01d39758 = FUN_004f9cc0("bg_shock_soundFadeInTime",_DAT_00852fc0,0,_DAT_00842e78,0x10004,
+                              "Shell shock sound fade in time in seconds");
+  DAT_01d39774 = FUN_004f9cc0("bg_shock_soundFadeOutTime",_DAT_00832aec,0,_DAT_00842e78,0x10004,
+                              "Shell shock sound fade out time in seconds");
+  DAT_01d37068 = FUN_004f9cc0("bg_shock_soundLoopFadeTime",_DAT_00832508,0,_DAT_00842e78,0x10004,
+                              "Shell shock sound loop fade time in seconds");
+  DAT_01d39760 = FUN_004f9cc0("bg_shock_soundLoopEndDelay",_DAT_0084d254,_DAT_0083f808,_DAT_00842e78
+                              ,0x10004,
+                              "Sound loop end offset time from the end of the shellshock in seconds"
+                             );
+  DAT_01d39844 = FUN_00549310("bg_shock_soundRoomType",&PTR_s_generic_00930d70,0,0x10004,
+                              "Shell shock sound room type");
+  DAT_01d36f38 = FUN_004f9cc0("bg_shock_soundDryLevel",0x3f800000,0,0x3f800000,0x10004,
+                              "Shell shock sound dry level");
+  DAT_01d397a8 = FUN_004f9cc0("bg_shock_soundWetLevel",_DAT_0082bd70,0,0x3f800000,0x10004,
+                              "Shell shock sound wet level");
+  DAT_01d3985c = FUN_004f9cc0("bg_shock_soundModEndDelay",_DAT_0086825c,_DAT_0085a7b8,_DAT_00842e78,
+                              0x10004,
+                              "The delay from the end of the shell shock to the end of the sound modification"
+                             );
+  FUN_00534550();
+  DAT_01d3704c = FUN_004914d0("bg_shock_lookControl",1,0x10004,
+                              "Alter player control during shellshock");
+  DAT_01d3981c = FUN_004f9cc0("bg_shock_lookControl_maxpitchspeed",_DAT_0084ec60,0,_DAT_00837418,
+                              0x10004,
+                              "Maximum pitch movement rate while shellshocked in degrees per second"
+                             );
+  DAT_01d39784 = FUN_004f9cc0("bg_shock_lookControl_maxyawspeed",_DAT_0084ec60,0,_DAT_00837418,
+                              0x10004,
+                              "Maximum yaw movement rate while shell shocked in degrees per second")
+  ;
+  DAT_01d35ac0 = FUN_004f9cc0("bg_shock_lookControl_mousesensitivityscale",_DAT_0082bd70,0,
+                              _DAT_0086825c,0x10004,
+                              "Sensitivity scale to apply to a shellshocked player");
+  DAT_01d39718 = FUN_004f9cc0("bg_shock_lookControl_fadeTime",_DAT_0086825c,_DAT_0084fa1c,
+                              _DAT_00842e78,0x10004,
+                              "The time for the shellshock player control to fade in seconds");
+  DAT_01d36f44 = FUN_004914d0("bg_shock_movement",1,0x10004,
+                              "Affect player\'s movement speed duringi shellshock");
+  DAT_01d36eec = FUN_004f9cc0("g_gravity",_DAT_0085fb50,0x3f800000,_DAT_00837418,0xc0,
+                              "Gravity in inches per second per second");
+  DAT_01d36ef0 = FUN_004f9cc0("bullet_penetrationMinFxDist",_DAT_0083a64c,0,_DAT_008699a8,4,
+                              "Min distance a penetrated bullet must travel before it\'ll trigger the effects"
+                             );
+  DAT_01d39714 = FUN_004f9cc0("bullet_ricochetBaseChance",_DAT_0082bd70,0,
+                              s_33s_specialty_quickdraw_008310a0._0_4_,0xc4,
+                              "The base chance a bullet has of ricocheting off of a riot shield.");
+  DAT_01d39818 = FUN_004914d0("bullet_penetration_damage",1,0xc4,
+                              "When false, bullets that have penetrated an object will not do damage to AI or players."
+                             );
+  DAT_01d39734 = FUN_004914d0("useTagFlashSilenced",1,4,
+                              "When true, silenced weapons will use \"tag_flash_silenced\" instead of \"tag_flash\"."
+                             );
+  DAT_01d3978c = FUN_004914d0("turret_adsEnabled",1,4,"Enable/Disable ADS on turrets");
+  DAT_01d37074 = FUN_004f9cc0("turret_adsTime",_DAT_0083f1c8,0,_DAT_0086a19c,4,
+                              "Time (msec) to transition to ADS");
+  _DAT_01d39814 =
+       FUN_0051f240("bg_shieldHitEncodeWidthWorld",_DAT_00858f1c,_DAT_00850ca4,_DAT_008380f4,
+                    _DAT_00837418,0x84,
+                    "The encoding range, in width, of a client\'s world shield.  A hit in this range is encoded into one of 16 collumns."
+                   );
+  _DAT_01d397f8 =
+       FUN_0051f240("bg_shieldHitEncodeHeightWorld",_DAT_0082a954,_DAT_0086870c,_DAT_008380f4,
+                    _DAT_00837418,0x84,
+                    "The encoding range, in height, of a client\'s world shield.  A hit in this range is encoded into one of 8 rows."
+                   );
+  DAT_01d39830 = FUN_0051f240("bg_shieldHitEncodeWidthVM",_DAT_0084f8ac,_DAT_00865060,_DAT_008380f4,
+                              _DAT_00837418,0x84,
+                              "The decoding range, in width, of a client\'s viewmodel shield.");
+  DAT_01d36f04 = FUN_0051f240("bg_shieldHitEncodeHeightVM",_DAT_0083f808,_DAT_0084e9ec,_DAT_008380f4
+                              ,_DAT_00837418,0x84,
+                              "The decoding range, in height, of a client\'s viewmodel shield.");
+  DAT_01d37078 = FUN_0051f240("missileRemoteSteerPitchRange",0x3f800000,_DAT_00864654,_DAT_00835994,
+                              _DAT_0083c280,0xc4,
+                              "Remote-controlled missile allowed up/down range.  To keep players from steering missiles above the horizon."
+                             );
+  DAT_01d36ee8 = FUN_004f9cc0("missileRemoteSteerPitchRate",_DAT_008260b0,0,_DAT_00837418,0xc4,
+                              "Remote-controlled missile up/down steering speed.");
+  DAT_01d36f40 = FUN_004f9cc0("missileRemoteSteerYawRate",_DAT_008260b0,0,_DAT_00837418,0xc4,
+                              "Remote-controlled missile left/right steering speed.");
+  _DAT_01d37070 = FUN_004914d0("ai_debugOverlay",0,4,"Display AI debug overlay");
+  DAT_00a8639c = FUN_004914d0("cg_cinematicFullscreen",1,0x40,"Draw ingame cinematics full screen");
+  DAT_00a86398 = FUN_004914d0("cg_cinematicCanPause",0,0x40,"Ingame cinematics can be paused");
+  FUN_005354a0();
+  FUN_0051a820();
+  FUN_0053b960();
+  return;
+}
+
+
+

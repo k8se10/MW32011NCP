@@ -1,0 +1,8 @@
+STRING @ 0084e0fc = "visionset_pain"
+  from 0056ebf2 type=READ IN FUNCTION FUN_0056d4f0@0056d4f0
+  from 0056ebe3 type=DATA IN FUNCTION FUN_0056d4f0@0056d4f0
+  from 0092c984 type=DATA IN DATA
+  from 0092b284 type=DATA IN DATA
+  (4 references)
+
+Total matching strings: 1

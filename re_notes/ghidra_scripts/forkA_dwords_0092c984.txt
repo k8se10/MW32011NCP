@@ -1,0 +1,32 @@
+0092c950 : 0x1c4  
+0092c954 : 0x5df1a0  
+0092c958 : 0x0  
+0092c95c : 0xe0  
+0092c960 : 0x5df1d0  
+0092c964 : 0x0  
+0092c968 : 0xe1  
+0092c96c : 0x5df210  
+0092c970 : 0x0  
+0092c974 : 0x837d88  -> STRING "visionset_naked"
+0092c978 : 0x82ee98  
+0092c97c : 0x84df98  -> STRING "visionset_missilecam"
+0092c980 : 0x846a48  -> STRING "visionset_thermal"
+0092c984 : 0x84e0fc  -> STRING "visionset_pain"
+0092c988 : 0x1af  
+0092c98c : 0x5e02a0  
+0092c990 : 0x0  
+0092c994 : 0x1b0  
+0092c998 : 0x5e05d0  
+0092c99c : 0x0  
+0092c9a0 : 0x165  
+0092c9a4 : 0x5e0760  
+0092c9a8 : 0x0  
+0092c9ac : 0xf0  
+0092c9b0 : 0x5e0610  
+0092c9b4 : 0x0  
+0092c9b8 : 0x1b1  
+0092c9bc : 0x5e0920  
+0092c9c0 : 0x0  
+0092c9c4 : 0xf1  
+0092c9c8 : 0x5e0930  
+0092c9cc : 0x0  

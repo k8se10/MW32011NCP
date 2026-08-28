@@ -1,0 +1,32 @@
+0092b250 : 0x15c61b2  
+0092b254 : 0x15c61b8  
+0092b258 : 0x15c6108  
+0092b25c : 0x15c6242  
+0092b260 : 0x15c6244  
+0092b264 : 0x15c6246  
+0092b268 : 0x15c6248  
+0092b26c : 0x15c624a  
+0092b270 : 0x15c624c  
+0092b274 : 0x837d88  -> STRING "visionset_naked"
+0092b278 : 0x82ee98  
+0092b27c : 0x84df98  -> STRING "visionset_missilecam"
+0092b280 : 0x846a48  -> STRING "visionset_thermal"
+0092b284 : 0x84e0fc  -> STRING "visionset_pain"
+0092b288 : 0x85946c  
+0092b28c : 0x829bac  -> STRING "helmet"
+0092b290 : 0x840af8  
+0092b294 : 0x834e74  
+0092b298 : 0x8671d4  -> STRING "torso_upper"
+0092b29c : 0x86216c  -> STRING "torso_lower"
+0092b2a0 : 0x8566a4  -> STRING "right_arm_upper"
+0092b2a4 : 0x83e754  -> STRING "left_arm_upper"
+0092b2a8 : 0x824634  -> STRING "right_arm_lower"
+0092b2ac : 0x859fd8  -> STRING "left_arm_lower"
+0092b2b0 : 0x83e1b4  
+0092b2b4 : 0x826a10  -> STRING "left_hand"
+0092b2b8 : 0x82e6d0  -> STRING "right_leg_upper"
+0092b2bc : 0x8243d4  -> STRING "left_leg_upper"
+0092b2c0 : 0x860c4c  -> STRING "right_leg_lower"
+0092b2c4 : 0x83bd08  -> STRING "left_leg_lower"
+0092b2c8 : 0x859844  -> STRING "right_foot"
+0092b2cc : 0x86141c  -> STRING "left_foot"

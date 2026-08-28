@@ -1,0 +1,17 @@
+STRING @ 00825a1c = "shellshock"
+  from 0087fe30 type=DATA IN DATA
+  (1 references)
+
+STRING @ 0083a61c = "bg_shock_screenType"
+  from 004d3a4f type=DATA IN FUNCTION FUN_004d39c0@004d39c0
+  from 00494eed type=DATA IN FUNCTION FUN_00494310@00494310
+  from 00930cf0 type=DATA IN DATA
+  (3 references)
+
+STRING @ 00858854 = "bg_shock_screenBlurBlendTime"
+  from 004d3a4f type=DATA IN FUNCTION FUN_004d39c0@004d39c0
+  from 00494f2a type=DATA IN FUNCTION FUN_00494310@00494310
+  from 00930cf4 type=DATA IN DATA
+  (3 references)
+
+Total matching strings: 3

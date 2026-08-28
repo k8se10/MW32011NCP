@@ -14710,6 +14710,80 @@ already sitting in `tools/memdiff/`, with the now-built `readaddr.exe`/
   currently unavailable) or a purpose-built capture triggered programmatically
   at the exact moment of the hit rather than by human reaction time.
 
+**3-fork parallel narrowing pass (2026-08-28), direct user redirect after
+disagreeing that the lead was exhausted** ("i disagreem i belive via 3
+forks we could narrow it"). Static-RE-only, existing-dumps-only (no live
+game/debugger, no fix, no commits by the forks) -- consolidated here.
+
+- **Fork A -- real negative result, meaningfully weakens the whole
+  `visionset_pain` thread for THIS issue.** Grepped the full decompiled GSC
+  corpus (369 files, exhaustive) for `visionsetpain`: exactly ONE real call
+  site in the entire game, `183.gsc:26`, `visionsetpain("near_death")` -- a
+  Campaign near-death/low-health cinematic effect, not a per-hit damage
+  callback. **Survival's own scripts (`1571.gsc`, `1574.gsc` -- the same
+  files this issue's own armor mechanism was found in) call it ZERO times.**
+  The only visionset call in `1571.gsc` is `visionsetnakedforplayer(...)`,
+  used for the slam-zoom killcam's "sunblind" flash, unrelated to
+  damage/armor. The two extra string references `FindExactStrings` turned
+  up (`0092c984`/`0092b284`) were chased and ruled out as coincidental
+  `.rdata` string-pool adjacency, not a hidden dispatch table. **Conclusion:
+  `visionset_pain`/`visionsetpain` is real and fully traced natively, but is
+  not what Survival's damage/armor path actually calls** -- high confidence
+  on the GSC side (exhaustive corpus grep), medium-high overall since a
+  native-C (non-GSC) trigger for the console-command variant wasn't fully
+  ruled out. This is a genuine, valuable negative result -- stops this
+  specific thread from being re-chased as THE mechanism, even though the
+  render-pipeline groundwork it produced (below) stays useful regardless of
+  which native effect turns out to be the real cause.
+- **Fork B -- structurally CONFIRMS the capture-timing theory, and finds the
+  real downstream consumer.** `DAT_021ddf00` has 240 references but only 2
+  WRITES, and both **zero it** (`FUN_004afb60`, a teardown function; and
+  `FUN_004b9ed0`, an end-of-scene function that reads several `+0x419xx`
+  fields then explicitly nulls it). No non-zero SET site was found via
+  Ghidra's reference list (the same literal-address blind spot already hit
+  this session) -- but this is still a real, structural finding: it
+  confirms `DAT_021ddf00` is deliberately zero except for the live duration
+  of an active scene render, exactly the "captures will always miss this
+  transient window" theory already written up above, now backed by real
+  evidence instead of just inference. Chasing the `+0x41988` offset as a
+  raw register-relative constant (not a literal address, since the base is
+  runtime-only) found two real consumers: `FUN_0048a590` (a trivial
+  memset-clear, called from `FUN_0042c2f0` gated on the
+  `DAT_009a1930`/`DAT_009a1931` flags) and, more significantly,
+  **`FUN_004543d0`** -- reads the same 0x38-byte block `FUN_004cbd20`
+  writes, computes what looks like brightness/contrast/gamma scale-bias
+  coefficients, writes them into a DIFFERENT struct
+  (`param_1+0x2b0`..`0x31c`), and calls `FUN_00694970()` TWICE --
+  structurally adjacent to this mod's own already-hooked
+  `FUN_00694650`/`FUN_00693ff0`. Its only caller, `FUN_006842e0`, sits in
+  the same `0x0068xxx` render-setup neighborhood as everything else this
+  chain has turned up. **`FUN_004543d0` is the strongest render-pipeline
+  proximity finding yet** -- very likely the actual color-correction
+  -> shader-constant setup call, regardless of which upstream trigger
+  (visionset_pain, shellshock, or something else) ends up being the real
+  armor-conditional cause. Not decompiled further (`FUN_006842e0`,
+  `FUN_00694970`) -- the natural next static target.
+- **Fork C -- incomplete (hit a session-wide rate limit mid-task,
+  `resets 5am Europe/London`), but surfaced one real, usable lead before
+  stopping**: for the shellshock dvars (`bg_shock_screenType`/
+  `bg_shock_screenBlurBlendTime`), "both dvar handles are read together in
+  exactly one place: `FUN_004b4290`. That's the real consumer." Never
+  reached the point of checking this against the existing memdiff captures
+  (the task's second half). **`FUN_004b4290` is the concrete next target**
+  whenever this is picked up again -- decompile it, confirm what it does
+  with both shellshock fields, then run it through the same
+  `readaddr.exe`/`dumpregion.exe` check against `livedump_007/009/014/021`
+  already used for `visionset_pain`.
+
+**Status update**: `visionset_pain` is very likely NOT the real mechanism
+for Survival's armor-conditional bug (Fork A's negative result) -- shifts
+weight back toward shellshock (Fork C, incomplete) or a still-unidentified
+third mechanism. `FUN_004543d0`/`FUN_006842e0` (Fork B) is now the
+established render-pipeline landing zone regardless of which upstream
+trigger turns out to be real -- worth tracing on its own merits even before
+the trigger question is settled, since it's real, decompiled, structural
+proximity to this mod's own hook chain.
+
 ## 101. Roadmap note: broader performance/optimization/modern-hardware pass, user's own framing (2026-08-27)
 
 **Status: Roadmap Idea, not scoped.** Direct user framing, end of a long
