@@ -408,6 +408,21 @@ struct ModConfig
     // state. Not a permanent feature; remove once issue #100 is resolved or
     // this is confirmed unhelpful.
     bool damageDiagLoggingEnabled = false;
+    // MotionBlurSkipDrawTest (2026-08-28, issue #100) -- TEMPORARY, dev-only
+    // isolation test. Default off. The stream-0 fix for the motion-blur
+    // UI-loss bug was built and LIVE-TESTED FAILED ("not the fix, the issue
+    // persists") -- this toggle separates "the engine hook firing" from
+    // "our draw call actually doing anything," to find out which one the
+    // real bug depends on. When on, RunPreOverlayMotionBlurPassIfEnabled
+    // (overlay_hud.cpp) runs through every real gate exactly as normal (so
+    // Hook_693ff0 still fires, TriggerMotionBlurFromEngineHook still gets
+    // called) but returns immediately before EnsureMotionBlurShader/
+    // DrawFullScreenPass -- zero D3D9 work, zero capture, zero draw. If the
+    // native damage vignette/text still breaks with this on, the cause is
+    // something about the hook's mere existence at that call site, not our
+    // draw's own side effects. If it comes back, the opposite. Not a
+    // permanent feature; remove once issue #100 is resolved.
+    bool motionBlurSkipDrawTest = false;
     bool fireNotifyQueueKick = true; // task #7/#29: also pushes the literal command
         // "n" onto the local player's real command queue (via FUN_00428a70) on
         // Fire's down-edge, alongside the existing real +attack kbutton call --
