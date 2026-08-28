@@ -135,7 +135,7 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#100](#100-motion-blur-ui-disappears-when-taking-damage-while-moving----reported-not-yet-investigated-2026-08-27) — Motion blur: UI disappears on damage while moving — **Open** (suspected same root as #97's menu/loading/cutscene bleed, not yet investigated)
 - [#101](#101-roadmap-note-broader-performanceoptimizationmodern-hardware-pass-users-own-framing-2026-08-27) — Roadmap: growing into a "FusionFix-style" general enhancement patch — **Roadmap Idea**, not scoped
 - [#102](#102-external-feature-request-received-custom-widthheight-resolution-override-via-ini-for-custom-monitor-layoutssplitscreen----logged-not-investigated-2026-08-27) — External feature request: custom Width/Height resolution override via .ini — **Roadmap Idea**, not investigated
-- [#103](#103-real-crash--hard-hang-caught-live-via-memdiff----mass-asset-streaming-pool-deallocation-855-regions-during-active-gameplay-all-three-visual-enhancement-features-were-active-2026-08-28) — Real crash + hard hang, caught live via memdiff (asset-streaming-pool teardown) — **Investigating** — motion blur RULED OUT (still reproduces with it off); FSR/render-scale isolation not yet done
+- [#103](#103-real-crash--hard-hang--cutscene-black-screen----resolved-fsrs-own-full-screen-pass-had-zero-state-gating-now-fixed-2026-08-28) — Real crash + hard hang + cutscene/loading black screen — **Resolved** — root cause was FSR's own full-screen pass having zero state gating; fixed by applying the same menu+in-level gate motion blur already had
 
 ---
 
@@ -14420,10 +14420,12 @@ real and reproducible, or whether this overlaps with the already-shipped
 `InternalRenderScalePercent` feature (issue #88) in any way. A real RE/
 design pass is needed before implementation -- not scoped yet.
 
-## 103. Real crash + hard hang caught live via memdiff -- mass asset-streaming-pool deallocation (~855 regions) during active gameplay, all three visual-enhancement features were active (2026-08-28)
+## 103. Real crash + hard hang + cutscene black screen -- RESOLVED: FSR's own full-screen pass had zero state gating, now fixed (2026-08-28)
 
-**Status: Investigating -- real, concrete evidence captured; root cause (native
-engine race vs. this mod's own hooks) not yet isolated.** Direct user report,
+**Status: Resolved, confirmed live by the user for both symptoms.** "it was
+all FSR" / "for cutscenes too" -- with the fix below applied (FSR gated the
+same way motion blur already was), both the crash/hard-hang AND the
+loading/cutscene black-screen break are confirmed gone. Started as a
 significant escalation from the earlier loading-screen black-screen report:
 "the black screen in menus/loading and cutscenes is a critical issue it even
 made the game crash and process legit hang."
@@ -14556,7 +14558,11 @@ a-time test harness (issue #99/#100) so both effects can be tested
 together going forward, not just motion blur. See the code-change entry
 this same session for the actual implementation.
 
-**Still open**: whether FSR's own missing gates fully explain issue #103's
-crash, or whether it's a contributing factor alongside a separate native
-issue, is not yet proven -- gating FSR and confirming the crash stops
-entirely (not just less frequent) is the real closing test, not yet done.
+**Closing test done, confirmed live (2026-08-28)**: with the fix deployed
+(FSR gated on menu-active + in-level, same as motion blur), the user
+confirmed all three symptoms this issue was tracking are gone -- the
+crash/hard-hang ("it was all FSR"), the cutscene black screen ("for
+cutscenes too"), and the loading-screen black screen ("and loading
+screen"). FSR's own missing state gating was the complete explanation --
+not a contributing factor alongside a separate native issue, the actual
+root cause. Closed.
