@@ -408,36 +408,6 @@ struct ModConfig
     // state. Not a permanent feature; remove once issue #100 is resolved or
     // this is confirmed unhelpful.
     bool damageDiagLoggingEnabled = false;
-    // MotionBlurDrawTestStage (2026-08-28, issue #100) -- TEMPORARY, dev-only
-    // staged isolation test. Default 0 (normal -- draw everything, the
-    // shipped behavior). The stream-0 fix for the motion-blur UI-loss bug
-    // was built and LIVE-TESTED FAILED ("not the fix, the issue persists").
-    // Stage 1 (skip entirely -- LIVE-CONFIRMED "shows as it should", 2026-08-28):
-    // RunPreOverlayMotionBlurPassIfEnabled runs every real gate exactly as
-    // normal (Hook_693ff0 still fires, TriggerMotionBlurFromEngineHook still
-    // gets called) but returns before EnsureMotionBlurShader/
-    // DrawFullScreenPass -- zero D3D9 work at all. Confirmed this rules out
-    // "the hook's mere existence at that call site" -- it's specifically
-    // something our draw call itself does.
-    // Stage 2 (capture-only, no quad draw -- LIVE-CONFIRMED "still shows as
-    // should", 2026-08-28): DrawFullScreenPass does the StretchRect backbuffer
-    // capture but stops before any render-state changes or the actual quad
-    // draw. Confirmed the plain capture is harmless -- narrows to the render-
-    // state-change/redraw block that follows it.
-    // Stage 3 (state changes only, no draw call -- LIVE-CONFIRMED "broken
-    // here", 2026-08-28): every state save/set (sampler, render states,
-    // viewport, texture0, FVF, pixel shader + constants) runs exactly as
-    // normal, but the actual drawPrimitiveUP call is skipped. Confirmed it's
-    // one of the STATE CHANGES themselves, not the real draw command -- even
-    // though every change is fully restored afterward.
-    // Stage 4 (skip binding our pixel shader only -- NOT YET TESTED): skips
-    // SetPixelShader/its constants entirely (our own quad draws with
-    // whatever shader the native code last had bound); everything else,
-    // including the actual draw call, runs normally. Isolates whether
-    // binding ANY custom pixel shader, even briefly and even restored after,
-    // is the real cause.
-    // Not a permanent feature; remove once issue #100 is resolved.
-    int motionBlurDrawTestStage = 0;
     bool fireNotifyQueueKick = true; // task #7/#29: also pushes the literal command
         // "n" onto the local player's real command queue (via FUN_00428a70) on
         // Fire's down-edge, alongside the existing real +attack kbutton call --

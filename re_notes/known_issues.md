@@ -14284,16 +14284,29 @@ hardware/driver/display configuration," not "universal across all
 hardware." **Resolved above**: the PC-to-PC difference is vsync, confirmed
 directly by the user.
 
-## 100. Motion blur: UI disappears when taking damage while moving -- REPORTED, not yet investigated (2026-08-27)
+## 100. Motion blur: UI disappears when taking damage while moving -- RESOLVED (2026-08-27, real fix 2026-08-28)
 
-**Status: Open. The stream-0 fix below was tried and LIVE-TESTED FAILED --
-direct user report immediately after deploying it: "not the fix, the issue
-persists."** The `DrawPrimitiveUP`/stream-0 theory (see this entry's own
-bottom section for the full trail) did not hold up under live test --
-either the theory itself is wrong, or the fix doesn't address the actual
-mechanism. Do not treat that section's reasoning as settled; it's kept for
-the record, not as a standing explanation. Real cause still unknown.
-Original report below, kept for history.
+**Status: Resolved.** Real root cause: `DrawFullScreenPass` (the shared
+full-screen draw helper motion blur/FSR/RCAS all use) called `SetFVF` --
+calling it AT ALL from that function, even restored to the exact original
+value immediately afterward, breaks whatever native code draws the
+low-health "you are hurt, get to cover" warning (progressive red-screen
+vignette + text). Found via a 9-round live isolation-test bisection
+(see this entry's own bottom section for the complete trail, including
+every rejected theory along the way -- an earlier stream-0/`DrawPrimitiveUP`
+theory was tried and LIVE-TESTED FAILED before this one was found). Fixed
+by replacing the `SetFVF` call with `SetVertexDeclaration` (a genuinely
+separate D3D9 state slot that never touches whatever the native renderer
+tracks around FVF) -- `DrawFullScreenPass` no longer calls `SetFVF` in
+either direction, ever. Build clean (0 warnings/0 errors), deployed. The
+temporary `[Experimental] MotionBlurDrawTestStage` diagnostic built for
+this investigation has been fully removed (`ConfigVersion` 34->35) now
+that its job is done. **NOT YET independently re-confirmed live against
+this specific final build** (the fix was validated stage-by-stage during
+the isolation test itself, but the clean `SetVertexDeclaration`-based
+rewrite hasn't had its own dedicated live pass yet) -- a quick confirming
+playtest is the natural next step. Original report below, kept for
+history.
 
 **Status: Open, not investigated.** Direct user report: "when you take
 damage it loses ui when moving and motion blur activates (minor issue but
@@ -15381,6 +15394,47 @@ finding than the original texture-cache-desync theory, since FVF is
 per-draw-call vertex FORMAT state with no documented cross-call side
 effects. `MotionBlurDrawTestStage=9` enabled live in
 `mw3ncp_config.ini` for the next test.
+
+**Stage 9 LIVE-CONFIRMED (2026-08-28) -- FVF alone is the real cause.**
+Direct user report: "fixed." With `SetFVF` skipped both directions
+(neither our own `SetFVF(kFVF)` before the draw, nor the restoring
+`SetFVF(oldFVF)` after) but texture0 bound normally, the native warning
+draws correctly. Combined with stage 8's negative result, this pins the
+cause precisely: it's not "texture0 bound to our capture texture," it's
+"`SetFVF` gets called at all, in either direction" -- the mere act of the
+call, independent of which value is passed, is what disrupts the native
+renderer.
+
+**Real fix implemented (2026-08-28)**: `DrawFullScreenPass` now uses
+`SetVertexDeclaration` instead of `SetFVF` to describe `ScreenVertex`'s
+layout for its own draw -- a genuinely separate D3D9 state slot from the
+legacy FVF pipeline, so using it never touches whatever the native
+renderer tracks around FVF (most likely its own "last bound FVF" cache,
+kept separately from the real device value as a redundant-state-avoidance
+optimization -- not independently confirmed, but consistent with every
+result across all 9 rounds). `EnsureScreenVertexDeclaration` (new,
+`overlay_hud.cpp`, same lazy-create-and-cache pattern as
+`EnsureMotionBlurShader`) creates a `D3DVERTEXELEMENT9` array matching
+`ScreenVertex`'s real 28-byte layout (`D3DDECLUSAGE_POSITIONT` for the
+pre-transformed XYZRHW position, `D3DDECLUSAGE_COLOR` for the packed
+diffuse, `D3DDECLUSAGE_TEXCOORD` for UV) once per device, cached
+thereafter. `DrawFullScreenPass` calls `SetVertexDeclaration(device,
+g_screenVertexDeclaration)` before its own draw and
+`SetVertexDeclaration(device, nullptr)` afterward -- `SetFVF` is never
+called from this function again, in either direction, so whatever FVF the
+native code already had stays completely untouched the whole time.
+
+All nine `MotionBlurDrawTestStage` isolation stages, and the config key
+itself, have been fully removed now that their job is done (`ConfigVersion`
+34->35) -- this was always meant as a temporary diagnostic, not a
+permanent feature, matching this project's own standing convention for
+this class of investigation tooling.
+
+Build clean (0 warnings/0 errors), deployed. **NOT YET independently
+re-confirmed live against this specific final `SetVertexDeclaration`-based
+build** -- every stage of the isolation test itself was live-confirmed,
+but the clean rewrite (no more test-stage branching) hasn't had its own
+dedicated confirming playtest yet.
 
 **Two more reports the same session, both addressed without touching
 code**: (1) "a weird graphical bug in this new phase when entering level
