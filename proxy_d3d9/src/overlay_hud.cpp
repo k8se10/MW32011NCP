@@ -3125,7 +3125,11 @@ using FullScreenShaderSetupFn = void(*)(void* device, float texelW, float texelH
 // shader bind, and the actual draw call, runs normally.
 // ALPHABLENDENABLE is the strongest suspect here -- forced FALSE for our
 // own "opaque overwrite" draw, and a red vignette overlay would plausibly
-// rely on alpha blending for its own draw.
+// rely on alpha blending for its own draw. 7 = skip binding our own
+// capture texture (and its matching FVF) to stage 0 entirely, both set
+// and restore -- our own quad draws with whatever texture/FVF the native
+// code last had bound instead. Structurally different from everything
+// else tested -- binds a REAL GPU RESOURCE, not just a flag value.
 void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn onShaderBound = nullptr,
                          int testStage = 0)
 {
@@ -3302,8 +3306,20 @@ void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn
         setRenderState(device, kD3DRS_CULLMODE, kD3DCULL_NONE);
     }
 
-    setTexture(device, 0, g_fullscreenCaptureTexture);
-    setFVF(device, kFVF);
+    // [Experimental] MotionBlurDrawTestStage==7 isolation test (issue #100) --
+    // skip binding our own capture texture (and its matching FVF) to stage
+    // 0 entirely (both the set AND the final restore, gated together same
+    // as stages 4/5/6) -- our own quad draws with whatever texture/FVF the
+    // native code last had bound instead (visually garbage for us,
+    // irrelevant to this test). Unlike the render states/viewport/shader
+    // already ruled out, this one binds a REAL GPU RESOURCE (our capture
+    // texture) rather than just toggling a flag value -- a structurally
+    // different class of change, the strongest remaining candidate now
+    // that every simple state toggle has been ruled out.
+    if (testStage != 7) {
+        setTexture(device, 0, g_fullscreenCaptureTexture);
+        setFVF(device, kFVF);
+    }
 
     float w = static_cast<float>(desc.Width);
     float h = static_cast<float>(desc.Height);
@@ -3351,12 +3367,20 @@ void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn
     // to nullptr, discarding whatever the engine had bound) and FVF (was:
     // never restored at all), same "leave the device exactly as found"
     // standard as everything else in this function.
-    setTexture(device, 0, oldTexture0);
+    // testStage==7: we never called SetTexture/SetFVF above, so don't call
+    // them here either -- but oldTexture0 was still fetched via GetTexture
+    // unconditionally (a harmless read), which still AddRef'd it, so it
+    // still needs releasing regardless of stage to avoid a leak.
+    if (testStage != 7) {
+        setTexture(device, 0, oldTexture0);
+    }
     if (oldTexture0) {
         void** vtbl = *reinterpret_cast<void***>(oldTexture0);
         reinterpret_cast<Release_t>(vtbl[kSurfaceReleaseVtableIndex])(oldTexture0);
     }
-    setFVF(device, oldFVF);
+    if (testStage != 7) {
+        setFVF(device, oldFVF);
+    }
 
     if (haveOldViewport) setViewport(device, &oldViewport);
 
