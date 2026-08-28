@@ -132,7 +132,7 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#97](#97-motion-blur-issue-96-continuation-menu--loading-screen-gates-shipped-cutscene-report-retracted-on-retest----current-state-closed-for-tonight) — Motion blur menu/loading-screen gates + cutscene report — **Resolved** (cutscene report retracted on retest, no code change needed)
 - [#98](#98-london-mission-cutscene-audio-continues-after-skip-on-some-cutscenes----reported-not-yet-investigated) — London mission: cutscene audio continues after skip — **Open, not investigated**
 - [#99](#99-camera-look-stutterjitter----resolved-real-root-cause-is-vsync-confirmed-via-cross-machine-test-2026-08-27) — Camera-look stutter — **Resolved** (real root cause is vsync, confirmed via cross-machine test)
-- [#100](#100-motion-blur-ui-disappears-when-taking-damage-while-moving----reported-not-yet-investigated-2026-08-27) — Motion blur: UI disappears on damage while moving — **Open** (suspected same root as #97's menu/loading/cutscene bleed, not yet investigated)
+- [#100](#100-motion-blur-ui-disappears-when-taking-damage-while-moving----reported-not-yet-investigated-2026-08-27) — Motion blur: UI disappears on damage while moving (armor-conditional, unrelated to #103) — **Open** — exclusion-zone theory conclusively ruled out; two new leads (PIP-pain, shellshock) not yet tried
 - [#101](#101-roadmap-note-broader-performanceoptimizationmodern-hardware-pass-users-own-framing-2026-08-27) — Roadmap: growing into a "FusionFix-style" general enhancement patch — **Roadmap Idea**, not scoped
 - [#102](#102-external-feature-request-received-custom-widthheight-resolution-override-via-ini-for-custom-monitor-layoutssplitscreen----logged-not-investigated-2026-08-27) — External feature request: custom Width/Height resolution override via .ini — **Roadmap Idea**, not investigated
 - [#103](#103-real-crash--hard-hang--cutscene-black-screen----resolved-fsrs-own-full-screen-pass-had-zero-state-gating-now-fixed-2026-08-28) — Real crash + hard hang + cutscene/loading black screen — **Resolved** — root cause was FSR's own full-screen pass having zero state gating; fixed by applying the same menu+in-level gate motion blur already had
@@ -14358,6 +14358,94 @@ this fix only replaces the loading-screen gate's unreliable foundation with
 a real one. Builds clean, deployed. Not yet independently live-tested for
 either the loading-screen case (now real instead of coincidental) or the
 original damage-while-moving report.
+
+**SUPERSEDED (2026-08-28) -- the clcState-based approach above was abandoned
+entirely.** The real fix for the loading-screen/cutscene/crash cluster
+turned out to be gating FSR the same way motion blur already was (menu-
+active + in-level), not a clcState-based gate at all -- see issue #103,
+now RESOLVED and confirmed live for all three symptoms (crash/hang,
+cutscene black screen, loading-screen black screen). The `clcState==4`
+experiment, the `VisualFxClcStateTestValue` test harness, and
+`[clcstate-transition-diag]` are all now removed/retired -- see issue #103
+and its own git history for the full story. This issue's own original
+report (motion blur breaking UI on damage while moving) remains open and
+is NOT resolved by #103's fix -- continued below.
+
+**Refined report, direct user follow-up (2026-08-28)**: "we really need to
+fix the motion blur blocking ui when shot thing. its weird as the on
+screen damage looks the same on screen with or without armor but when you
+have no armor and get shot the motion blur breaks the ui." This is a
+sharp, specific clue -- visually identical damage feedback either way, but
+a real underlying difference in what fires. Confirms this is NOT the same
+mechanism issue #103 fixed (that was FSR having zero state gating at all;
+this is armor-conditional, a completely different axis).
+
+**Four-fork parallel investigation (2026-08-28), user's own explicit
+one-time authorization** ("launch 4 forks to investigate... exclusive
+permission this once for investigation only no fix") while away from the
+keyboard. Used a fresh `memdiff.exe livedump` capture session (four F9
+captures: `livedump_007.snap`/`009.snap` = pre/post an ARMORED hit, health
+100->100 unchanged, armor absorbed; `livedump_014.snap`/`021.snap` =
+pre/post an UNARMORED hit, health 100->52) as the shared evidence base for
+all four forks. Findings:
+
+- **Exclusion-zone/second-viewport mechanism (`FUN_00508970`/
+  `FUN_00694650`) -- CONCLUSIVELY RULED OUT.** Two forks independently
+  resolved the real static base for this struct (`DAT_025d6e00`, loaded by
+  `FUN_00694800` immediately before calling `FUN_00694650` -- the
+  register-passed `unaff_EDI` inside that function resolves to this same
+  global) and read the complete chain -- base pointer, both viewport-count
+  fields (`+0x419cc`/`+0x419c8`), the slot-array pointer (`+0x419d4`), and
+  the slot's own type byte (`+0x940`) -- across all four snapshots. Every
+  single value is **byte-identical** between the armored-post and
+  unarmored-post captures (the mechanism IS active in both -- one real
+  `type==2` slot present either way -- just not differently). This was the
+  leading hypothesis since this issue was first written; it's dead. The
+  real cause is NOT reachable through this pathway at all.
+- **Two new, real, unconfirmed leads found**: `pip_enable_visionset_pain`/
+  `pip_visionset_pain`/`visionsetpain` are real native strings -- the
+  `pip_` prefix is the SAME Picture-in-Picture naming family as the
+  now-ruled-out exclusion-zone system, raising a real (if distinct and
+  unconfirmed) possibility that a native "pain vision" effect fires via a
+  DIFFERENT PIP-style path, specifically on unmitigated hits. Its only
+  static code reference (`FUN_0056d4f0`) is a giant, generic network/GSC
+  command-string dispatcher (~3500 lines, dozens of unrelated commands) --
+  confirms it's a real, dispatchable command but not who sends it or under
+  what condition; that logic is almost certainly GSC-side, not reached in
+  the time available. **Separately**, shellshock's own native full-screen
+  blur system (`bg_shock_screenType`, `bg_shock_screenBlurBlendTime`, all
+  already-known real dvars from earlier in this project) is a second,
+  structurally independent candidate: if a hard unarmored hit triggers
+  native shellshock (with its own real blur) while an armor-absorbed hit
+  doesn't, that native blur running concurrently with this mod's own
+  motion-blur pass is a real, plausible conflict mechanism on its own,
+  worth checking before the PIP-pain theory if either needs a live test
+  next.
+- **Body Armor's real memory address -- still not found, but the negative
+  result is now much stronger.** A health-anchored search (dumping and
+  diffing the entity-struct neighborhood around `0x01197AD8` between the
+  armored pre/post pair) found no candidate field with the expected shape
+  (decreases in the armored pair, stays flat in the unarmored pair) --
+  only position/orientation floats and a shared animation/tick counter
+  incrementing regardless of hit type. This is fully consistent with, and
+  extends, this project's own existing negative result (issue #63: a live
+  Xbox 360 whole-memory exact-value scan requiring 4 simultaneous real
+  armor-value matches found ZERO hits at any width/alignment/endianness).
+  Combined with issue #89's own confirmed precedent (Survival's real
+  per-player stats live in GSC-VM script-local state, `self._id_18D3[...]`,
+  not any native C struct), the working theory is now that armor is very
+  likely GSC-VM script-local state too, not a native offset reachable by
+  memory scanning at all -- meaning a clean native "is armor active"
+  differentiator may not exist without GSC-VM tracing (plugin-API
+  territory per this project's own standing policy, not main-mod
+  memory-scanning territory).
+
+**Status update**: still open. The leading hypothesis is dead (a genuine,
+valuable result -- stops this from being re-chased). Two concrete,
+untried leads exist (PIP-pain, shellshock) for whoever picks this up next,
+plus a real behavioral theory (armor may be GSC-VM state, unreachable by
+the technique this issue has been using) worth keeping in mind before
+sinking more time into memory-scanning approaches specifically.
 
 ## 101. Roadmap note: broader performance/optimization/modern-hardware pass, user's own framing (2026-08-27)
 
