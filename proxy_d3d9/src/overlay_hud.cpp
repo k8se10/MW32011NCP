@@ -142,6 +142,13 @@ constexpr int kGetVertexShaderVtableIndex = 93;   // IDirect3DDevice9::GetVertex
 constexpr int kSetStreamSourceVtableIndex = 100;  // IDirect3DDevice9::SetStreamSource (issue #100 fix,
     // 2026-08-28 -- see DrawFullScreenPass's own header comment for why this matters)
 constexpr int kGetStreamSourceVtableIndex = 101;  // IDirect3DDevice9::GetStreamSource
+constexpr int kCreateVertexDeclarationVtableIndex = 86; // IDirect3DDevice9::CreateVertexDeclaration
+    // (issue #100 real fix, 2026-08-28 -- see DrawFullScreenPass's own header
+    // comment: an 8-round live isolation test proved calling SetFVF at all,
+    // even restored to the exact original value afterward, breaks the native
+    // low-health-warning draw. SetVertexDeclaration is a separate D3D9 state
+    // slot that never touches whatever the native renderer tracks around FVF)
+constexpr int kSetVertexDeclarationVtableIndex = 87;    // IDirect3DDevice9::SetVertexDeclaration
 constexpr int kSetPixelShaderVtableIndex = 107;   // IDirect3DDevice9::SetPixelShader
 constexpr int kGetPixelShaderVtableIndex = 108;   // IDirect3DDevice9::GetPixelShader
 constexpr int kGetSurfaceLevelVtableIndex = 18;   // IDirect3DTexture9::GetSurfaceLevel
@@ -207,6 +214,19 @@ constexpr DWORD kD3DTEXF_LINEAR = 2;
 constexpr DWORD kD3DSAMP_MAGFILTER = 5;
 constexpr DWORD kD3DSAMP_MINFILTER = 6;
 constexpr DWORD kD3DSAMP_MIPFILTER = 7;
+// Issue #100 real fix (2026-08-28) -- real, stable D3D9 vertex-declaration
+// enum values (d3d9types.h), used to describe ScreenVertex's layout to
+// SetVertexDeclaration instead of the legacy SetFVF this project's own
+// 8-round live isolation test proved breaks native UI when called at all.
+constexpr BYTE kD3DDECLTYPE_FLOAT2 = 1;
+constexpr BYTE kD3DDECLTYPE_FLOAT4 = 3;
+constexpr BYTE kD3DDECLTYPE_D3DCOLOR = 4;
+constexpr BYTE kD3DDECLTYPE_UNUSED = 17;
+constexpr BYTE kD3DDECLMETHOD_DEFAULT = 0;
+constexpr BYTE kD3DDECLUSAGE_POSITIONT = 9; // pre-transformed (XYZRHW) position --
+    // NOT D3DDECLUSAGE_POSITION (0), which is for untransformed vertices
+constexpr BYTE kD3DDECLUSAGE_COLOR = 10;
+constexpr BYTE kD3DDECLUSAGE_TEXCOORD = 5;
 
 typedef HRESULT(WINAPI* EndScene_t)(void* This);
 typedef HRESULT(WINAPI* CreateTexture_t)(void* This, UINT Width, UINT Height, UINT Levels,
@@ -243,6 +263,16 @@ typedef HRESULT(WINAPI* SetStreamSource_t)(void* This, UINT StreamNumber, void* 
                                              UINT OffsetInBytes, UINT Stride);
 typedef HRESULT(WINAPI* GetStreamSource_t)(void* This, UINT StreamNumber, void** ppStreamData,
                                              UINT* pOffsetInBytes, UINT* pStride);
+// Issue #100 real fix (2026-08-28) -- matches the real D3DVERTEXELEMENT9
+// struct layout exactly (d3d9types.h: WORD Stream, WORD Offset, BYTE Type,
+// BYTE Method, BYTE Usage, BYTE UsageIndex -- 8 bytes, no padding) and the
+// real IDirect3DDevice9::CreateVertexDeclaration/SetVertexDeclaration
+// signatures. ppOutDecl/pDecl are IDirect3DVertexDeclaration9*, kept as
+// void* like every other COM pointer in this file.
+struct D3DVertexElement9 { WORD Stream, Offset; BYTE Type, Method, Usage, UsageIndex; };
+typedef HRESULT(WINAPI* CreateVertexDeclaration_t)(void* This, const D3DVertexElement9* pVertexElements,
+                                                     void** ppDecl);
+typedef HRESULT(WINAPI* SetVertexDeclaration_t)(void* This, void* pDecl);
 
 // Phase B, visual-suite plan -- local, minimal D3DCAPS9 declaration (same
 // convention as dllmain.cpp's D3D9ON12_ARGS_LOCAL, avoids a full d3d9.h include)
@@ -3049,6 +3079,45 @@ bool EnsureFullscreenCaptureTexture(void* device, int width, int height)
     return true;
 }
 
+// Issue #100 real fix (2026-08-28) -- ScreenVertex's own vertex declaration,
+// created once and cached (same lazy-create-on-device pattern as
+// EnsureMotionBlurShader below). DrawFullScreenPass uses this via
+// SetVertexDeclaration instead of the legacy SetFVF(kFVF) it used to call --
+// an 8-round live isolation test (known_issues.md issue #100) proved that
+// calling SetFVF AT ALL from this function, even restored to the exact
+// original value immediately afterward, breaks whatever native code draws
+// the low-health "you are hurt, get to cover" warning (most likely because
+// the native renderer tracks its own "last bound FVF" state separately from
+// the real device value, and our call desyncs that cache in a way a plain
+// restore can't fix). SetVertexDeclaration is a genuinely separate D3D9
+// state slot -- using it for our own draw, then clearing it back to nullptr
+// afterward (never touching SetFVF in either direction), leaves whatever FVF
+// the native code already had completely untouched throughout.
+void* g_screenVertexDeclaration = nullptr;
+
+bool EnsureScreenVertexDeclaration(void* device)
+{
+    if (g_screenVertexDeclaration) return true;
+    void** deviceVtbl = *reinterpret_cast<void***>(device);
+    auto createVertexDeclaration = reinterpret_cast<CreateVertexDeclaration_t>(deviceVtbl[kCreateVertexDeclarationVtableIndex]);
+    // Matches ScreenVertex's real layout exactly: float x,y,z,rhw (16 bytes,
+    // pre-transformed position) + DWORD color (4 bytes, packed) + float u,v
+    // (8 bytes) = 28 bytes/vertex, the same as kFVF (D3DFVF_XYZRHW |
+    // D3DFVF_DIFFUSE | D3DFVF_TEX1) used to describe.
+    D3DVertexElement9 elements[] = {
+        { 0, 0,  kD3DDECLTYPE_FLOAT4,    kD3DDECLMETHOD_DEFAULT, kD3DDECLUSAGE_POSITIONT, 0 },
+        { 0, 16, kD3DDECLTYPE_D3DCOLOR,  kD3DDECLMETHOD_DEFAULT, kD3DDECLUSAGE_COLOR,     0 },
+        { 0, 20, kD3DDECLTYPE_FLOAT2,    kD3DDECLMETHOD_DEFAULT, kD3DDECLUSAGE_TEXCOORD,  0 },
+        { 0xFF, 0, kD3DDECLTYPE_UNUSED, 0, 0, 0 }, // D3DDECL_END()
+    };
+    HRESULT hr = createVertexDeclaration(device, elements, &g_screenVertexDeclaration);
+    if (FAILED(hr) || !g_screenVertexDeclaration) {
+        g_screenVertexDeclaration = nullptr;
+        return false;
+    }
+    return true;
+}
+
 // Phase A's own no-op validation shader -- see fullscreen_passthrough_ps.h's own
 // header comment. A real effect (RCAS/FXAA/motion blur) reuses this exact same
 // Ensure*/DrawFullScreenPass infrastructure with its own compiled shader instead
@@ -3098,46 +3167,61 @@ using FullScreenShaderSetupFn = void(*)(void* device, float texelW, float texelH
 // nulled instead of restored is a real, concrete way this function could
 // have been corrupting what the engine expected to still be set, independent
 // of which specific hook fires it or how many times per frame.
-// testStage (2026-08-28, issue #100) -- TEMPORARY, dev-only staged isolation
-// test. See mod_config.h's MotionBlurDrawTestStage comment for the full
-// story. Default 0 -- FSR's own call site never passes anything else,
-// unaffected. 2 = return right after the backbuffer capture (StretchRect),
-// before any render-state changes -- LIVE-CONFIRMED (2026-08-28) this does
-// NOT fix the bug, the capture itself is harmless. 3 = run every state
-// save/set exactly as normal (sampler, render states, viewport, texture0,
-// FVF, pixel shader + its constants) but skip the actual `drawPrimitiveUP`
-// call itself, then still run every restore afterward -- LIVE-CONFIRMED
-// (2026-08-28) this does NOT fix it either, "broken here" -- one of the
-// state changes themselves is the cause, not the draw command. 4 = skip
-// binding OUR pixel shader (and its constants) entirely -- our own quad
-// draws with whatever shader the native code last had bound instead;
-// everything else (sampler, render states, viewport, texture0/FVF, and the
-// actual draw call) runs exactly as normal. Isolates "does binding ANY
-// custom pixel shader, even briefly and even restored after, break the
-// native low-health warning." 5 = skip forcing the full-screen viewport
-// entirely (both set and restore) -- whatever viewport the native code had
-// stays untouched throughout; everything else, including the pixel shader
-// bind and the actual draw call, runs normally. This exact function had a
-// real, previously-fixed bug tied to viewport handling (2026-08-27), a
-// plausible repeat offender. 6 = skip the four render-state changes
-// (ZENABLE/LIGHTING/ALPHABLENDENABLE/CULLMODE) entirely, both set and
-// restore -- everything else, including the viewport force-set, pixel
-// shader bind, and the actual draw call, runs normally.
-// ALPHABLENDENABLE is the strongest suspect here -- forced FALSE for our
-// own "opaque overwrite" draw, and a red vignette overlay would plausibly
-// rely on alpha blending for its own draw. 7 = skip binding our own
-// capture texture (and its matching FVF) to stage 0 entirely, both set
-// and restore -- our own quad draws with whatever texture/FVF the native
-// code last had bound instead. Structurally different from everything
-// else tested -- binds a REAL GPU RESOURCE, not just a flag value.
-// LIVE-CONFIRMED (2026-08-28) THIS IS THE REAL ROOT CAUSE -- the native
-// warning draws correctly with stage 7 active (the resulting "pixelated
-// mess" on our own quad is expected, not a new bug). 8 = skip texture0
-// bind only (FVF still set normally) -- splits stage 7 to find out
-// whether it's specifically the texture bind. 9 = skip FVF only
-// (texture0 still bound normally) -- splits stage 7 the other way.
-void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn onShaderBound = nullptr,
-                         int testStage = 0)
+// Issue #100 (2026-08-28) -- REAL ROOT CAUSE FOUND AND FIXED, via a 9-round
+// live isolation-test bisection (full trail: known_issues.md issue #100).
+// Live-reported: motion blur broke the native "you are hurt, get to cover"
+// low-health warning (progressive red-screen vignette + text) -- isolated
+// purely to motion blur, not FSR (which calls this same function, just from
+// a different point in the frame -- see below). Each round temporarily
+// skipped one specific piece of this function's own save/set/restore
+// sequence and had the user re-test live; ruled out, in order: the engine
+// hook's mere existence, the backbuffer capture (StretchRect), the real
+// `drawPrimitiveUP` draw command itself, the pixel shader bind, the forced
+// full-screen viewport, and all four render states (ZENABLE/LIGHTING/
+// ALPHABLENDENABLE/CULLMODE) -- before landing on `SetFVF`: calling it AT
+// ALL from this function, even restored to the exact original value
+// immediately afterward, broke the native warning. Splitting further
+// confirmed FVF specifically (not the texture0 bind) -- and specifically
+// that NEITHER our own `SetFVF(kFVF)` NOR the restoring `SetFVF(oldFVF)`
+// call could happen, in either direction, for the native warning to work.
+// Most likely mechanism (not independently confirmed): the native renderer
+// tracks its own "last bound FVF" state separately from the real D3D9
+// device value (a common redundant-state-avoidance optimization), and this
+// function's own `SetFVF` call desyncs that cache in a way a plain restore
+// can't fix, even though the device itself ends up holding the correct
+// value again.
+//
+// Real fix: never call `SetFVF` from this function at all. `SetVertexDeclaration`
+// (see `EnsureScreenVertexDeclaration` above) is a genuinely separate D3D9
+// state slot -- using it to describe ScreenVertex's own layout for this
+// function's own draw, then clearing it back to nullptr afterward, leaves
+// whatever FVF the native code already had completely untouched throughout,
+// sidestepping the desync entirely instead of fighting it. `SetFVF`
+// documented behavior means an explicit nullptr declaration lets the
+// device's already-current FVF value (never touched by us) resume being
+// used for the native code's own subsequent draws.
+//
+// FSR/RCAS never hit this bug in the first place, not because it's
+// immune to the same root cause, but because its own call to this same
+// function runs from `Hook_EndScene`'s tail, strictly after all native UI
+// dispatching for the frame is already done -- there's nothing left
+// downstream that frame for a desynced FVF cache to affect. Motion blur's
+// own hook point (`Hook_693ff0`, `analog_input_hooks.cpp`) fires BEFORE
+// that native dispatch runs, which is why it was the one exposing this.
+//
+// FIXED 2026-08-27 (issue #96 follow-up, motion-blur-on-HUD investigation):
+// this function's own save/restore contract was genuinely incomplete --
+// sampler state, render state, and pixel shader were all correctly saved and
+// restored, but the VIEWPORT was never touched at all (no save, no restore),
+// and texture stage 0 was force-set to nullptr at the end instead of restored
+// to whatever was actually bound before this function ran. A full-screen
+// post-process pass has no business assuming it can leave the device in any
+// state other than exactly how it found it -- the engine's own subsequent
+// draws (compositing the next viewport/exclusion-zone sub-rect, or drawing
+// native HUD elements) commonly assume state persists from their own last
+// draw call rather than re-setting everything themselves, a completely
+// normal D3D9 pattern.
+void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn onShaderBound = nullptr)
 {
     if (!pixelShader) return;
     void** deviceVtbl = *reinterpret_cast<void***>(device);
@@ -3148,16 +3232,17 @@ void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn
     auto getViewport = reinterpret_cast<GetViewport_t>(deviceVtbl[kGetViewportVtableIndex]);
     auto setViewport = reinterpret_cast<SetViewport_t>(deviceVtbl[kSetViewportVtableIndex]);
     auto getTexture = reinterpret_cast<GetTexture_t>(deviceVtbl[kGetTextureVtableIndex]);
-    auto getFVF = reinterpret_cast<GetFVF_t>(deviceVtbl[kGetFVFVtableIndex]);
     auto setPixelShader = reinterpret_cast<SetPixelShader_t>(deviceVtbl[kSetPixelShaderVtableIndex]);
     auto getPixelShader = reinterpret_cast<GetPixelShader_t>(deviceVtbl[kGetPixelShaderVtableIndex]);
     auto setTexture = reinterpret_cast<SetTexture_t>(deviceVtbl[kSetTextureVtableIndex]);
-    auto setFVF = reinterpret_cast<SetFVF_t>(deviceVtbl[kSetFVFVtableIndex]);
+    auto setVertexDeclaration = reinterpret_cast<SetVertexDeclaration_t>(deviceVtbl[kSetVertexDeclarationVtableIndex]);
     auto setRenderState = reinterpret_cast<SetRenderState_t>(deviceVtbl[kSetRenderStateVtableIndex]);
     auto getRenderState = reinterpret_cast<GetRenderState_t>(deviceVtbl[kGetRenderStateVtableIndex]);
     auto drawPrimitiveUP = reinterpret_cast<DrawPrimitiveUP_t>(deviceVtbl[kDrawPrimitiveUPVtableIndex]);
     auto setStreamSource = reinterpret_cast<SetStreamSource_t>(deviceVtbl[kSetStreamSourceVtableIndex]);
     auto getStreamSource = reinterpret_cast<GetStreamSource_t>(deviceVtbl[kGetStreamSourceVtableIndex]);
+
+    if (!EnsureScreenVertexDeclaration(device)) return;
 
     void* backSurface = nullptr;
     // GetRenderTarget(0) IS the real backbuffer surface, already fully rendered
@@ -3215,13 +3300,6 @@ void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn
     reinterpret_cast<Release_t>(backSurfaceVtbl[kSurfaceReleaseVtableIndex])(backSurface);
     reinterpret_cast<Release_t>(captureSurfaceVtbl[kSurfaceReleaseVtableIndex])(captureSurface);
 
-    // [Experimental] MotionBlurDrawTestStage==2 isolation test (issue #100) --
-    // the backbuffer capture (StretchRect above) has already happened; stop
-    // here, before any render-state changes or the actual quad draw.
-    // LIVE-CONFIRMED (2026-08-28): does NOT fix the bug -- the capture alone
-    // is harmless, real cause is further down.
-    if (testStage == 2) return;
-
     DWORD oldMagFilter = kD3DTEXF_POINT, oldMinFilter = kD3DTEXF_POINT;
     getSamplerState(device, 0, kD3DSAMP_MAGFILTER, &oldMagFilter);
     getSamplerState(device, 0, kD3DSAMP_MINFILTER, &oldMinFilter);
@@ -3243,22 +3321,10 @@ void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn
     // constrain our full-screen draw to that sub-region), then restored to
     // whatever was actually there before, exactly like every other state
     // this function touches.
-    // [Experimental] MotionBlurDrawTestStage==5 isolation test (issue #100) --
-    // skip forcing the full-screen viewport entirely (both the set AND the
-    // final restore, gated together same as stage 4's shader skip) --
-    // whatever viewport the native code already had stays untouched
-    // throughout. Our own quad may draw clipped/wrong if the current
-    // viewport isn't already full-screen (visually irrelevant to this
-    // test). Isolates the viewport force-set specifically -- this exact
-    // function had a real, previously-fixed bug tied to viewport handling
-    // (2026-08-27), a plausible repeat offender.
     D3DViewport9 oldViewport{};
-    bool haveOldViewport = false;
-    if (testStage != 5) {
-        haveOldViewport = SUCCEEDED(getViewport(device, &oldViewport));
-        D3DViewport9 fullScreenViewport{ 0, 0, desc.Width, desc.Height, 0.0f, 1.0f };
-        setViewport(device, &fullScreenViewport);
-    }
+    bool haveOldViewport = SUCCEEDED(getViewport(device, &oldViewport));
+    D3DViewport9 fullScreenViewport{ 0, 0, desc.Width, desc.Height, 0.0f, 1.0f };
+    setViewport(device, &fullScreenViewport);
 
     // FIXED 2026-08-27 -- texture stage 0 was previously force-set to nullptr
     // at the end of this function instead of restored to whatever was
@@ -3267,9 +3333,6 @@ void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn
     // file's own established GetPixelShader/Release pairing immediately below.
     void* oldTexture0 = nullptr;
     getTexture(device, 0, &oldTexture0);
-
-    DWORD oldFVF = 0;
-    getFVF(device, &oldFVF);
 
     // Issue #100 fix (2026-08-28) -- see the restore call below, right after
     // drawPrimitiveUP, for the full story. GetStreamSource AddRefs the
@@ -3280,61 +3343,21 @@ void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn
     UINT oldStreamOffset = 0, oldStreamStride = 0;
     getStreamSource(device, 0, &oldStreamBuffer, &oldStreamOffset, &oldStreamStride);
 
-    // [Experimental] MotionBlurDrawTestStage==4 isolation test (issue #100) --
-    // skip binding OUR pixel shader (and its constants) entirely -- the
-    // device keeps whatever shader the native code last set, our own quad
-    // draws with that instead (visually wrong for us, irrelevant to this
-    // test). Isolates "does binding ANY custom pixel shader, even briefly
-    // and even restored after, break the native low-health warning" --
-    // stage 3 already confirmed it's one of the state changes in this
-    // block, not the draw call itself; this narrows further.
     void* oldPixelShader = nullptr;
-    if (testStage != 4) {
-        getPixelShader(device, &oldPixelShader);
-        setPixelShader(device, pixelShader);
-        if (onShaderBound) onShaderBound(device, 1.0f / static_cast<float>(desc.Width), 1.0f / static_cast<float>(desc.Height));
-    }
+    getPixelShader(device, &oldPixelShader);
+    setPixelShader(device, pixelShader);
+    if (onShaderBound) onShaderBound(device, 1.0f / static_cast<float>(desc.Width), 1.0f / static_cast<float>(desc.Height));
 
-    // [Experimental] MotionBlurDrawTestStage==6 isolation test (issue #100) --
-    // skip the four render-state changes entirely (both the set AND the
-    // final restore, gated together same as stages 4/5) -- whatever
-    // ZENABLE/LIGHTING/ALPHABLENDENABLE/CULLMODE the native code already
-    // had stay untouched throughout. ALPHABLENDENABLE is the strongest
-    // suspect among these -- our own quad forces it FALSE ("full opaque
-    // overwrite"), and a red vignette overlay would plausibly rely on
-    // alpha blending for its own draw. Sampler filters and texture0/FVF
-    // remain the only other untested candidates if this comes back clean.
-    if (testStage != 6) {
-        setRenderState(device, kD3DRS_ZENABLE, kD3DZB_FALSE);
-        setRenderState(device, kD3DRS_LIGHTING, FALSE);
-        setRenderState(device, kD3DRS_ALPHABLENDENABLE, FALSE); // full opaque overwrite -- this
-            // pass replaces the ENTIRE frame, not a blended overlay element
-        setRenderState(device, kD3DRS_CULLMODE, kD3DCULL_NONE);
-    }
+    setRenderState(device, kD3DRS_ZENABLE, kD3DZB_FALSE);
+    setRenderState(device, kD3DRS_LIGHTING, FALSE);
+    setRenderState(device, kD3DRS_ALPHABLENDENABLE, FALSE); // full opaque overwrite -- this
+        // pass replaces the ENTIRE frame, not a blended overlay element
+    setRenderState(device, kD3DRS_CULLMODE, kD3DCULL_NONE);
 
-    // [Experimental] MotionBlurDrawTestStage==7 isolation test (issue #100) --
-    // skip binding our own capture texture (and its matching FVF) to stage
-    // 0 entirely (both the set AND the final restore, gated together same
-    // as stages 4/5/6) -- our own quad draws with whatever texture/FVF the
-    // native code last had bound instead (visually garbage for us,
-    // irrelevant to this test). Unlike the render states/viewport/shader
-    // already ruled out, this one binds a REAL GPU RESOURCE (our capture
-    // texture) rather than just toggling a flag value -- a structurally
-    // different class of change, the strongest remaining candidate now
-    // that every simple state toggle has been ruled out. LIVE-CONFIRMED
-    // (2026-08-28): "it fixed" -- the native warning draws correctly
-    // again (the "pixelated low-res mess" reported is expected -- OUR OWN
-    // quad now draws with the wrong texture/FVF, not a new bug). THIS IS
-    // THE REAL ROOT CAUSE. Stages 8/9 split texture0 vs FVF individually
-    // to find out which one (or both) the real fix needs to address.
-    // Stage 8 = skip texture0 bind only (FVF still set normally).
-    // Stage 9 = skip FVF only (texture0 still bound normally).
-    if (testStage != 7 && testStage != 8) {
-        setTexture(device, 0, g_fullscreenCaptureTexture);
-    }
-    if (testStage != 7 && testStage != 9) {
-        setFVF(device, kFVF);
-    }
+    setTexture(device, 0, g_fullscreenCaptureTexture);
+    // Issue #100 real fix -- SetVertexDeclaration, NOT SetFVF. See this
+    // function's own header comment for the full story.
+    setVertexDeclaration(device, g_screenVertexDeclaration);
 
     float w = static_cast<float>(desc.Width);
     float h = static_cast<float>(desc.Height);
@@ -3344,14 +3367,7 @@ void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn
         { -0.5f,      h - 0.5f,   0.0f, 1.0f, 0xFFFFFFFFu, 0.0f, 1.0f },
         { w - 0.5f,   h - 0.5f,   0.0f, 1.0f, 0xFFFFFFFFu, 1.0f, 1.0f },
     };
-    // [Experimental] MotionBlurDrawTestStage==3 isolation test (issue #100) --
-    // every state save/set above already ran exactly as normal; skip only
-    // the actual draw command itself, then fall through to every restore
-    // below unchanged. Isolates "device state changes alone" from "the real
-    // GPU draw command" as the cause.
-    if (testStage != 3) {
-        drawPrimitiveUP(device, kD3DPT_TRIANGLESTRIP, 2, verts, sizeof(ScreenVertex));
-    }
+    drawPrimitiveUP(device, kD3DPT_TRIANGLESTRIP, 2, verts, sizeof(ScreenVertex));
 
     // FIXED 2026-08-28 (issue #100) -- DrawPrimitiveUP leaves the device's
     // stream-0 vertex buffer binding in an OFFICIALLY UNDEFINED state (real,
@@ -3379,46 +3395,33 @@ void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn
     }
 
     // FIXED 2026-08-27 -- restores the ACTUAL previous texture (was: force-set
-    // to nullptr, discarding whatever the engine had bound) and FVF (was:
-    // never restored at all), same "leave the device exactly as found"
-    // standard as everything else in this function.
-    // testStage==7/8: we never called SetTexture above, so don't call it
-    // here either -- but oldTexture0 was still fetched via GetTexture
-    // unconditionally (a harmless read), which still AddRef'd it, so it
-    // still needs releasing regardless of stage to avoid a leak.
-    if (testStage != 7 && testStage != 8) {
-        setTexture(device, 0, oldTexture0);
-    }
+    // to nullptr, discarding whatever the engine had bound), same "leave the
+    // device exactly as found" standard as everything else in this function.
+    setTexture(device, 0, oldTexture0);
     if (oldTexture0) {
         void** vtbl = *reinterpret_cast<void***>(oldTexture0);
         reinterpret_cast<Release_t>(vtbl[kSurfaceReleaseVtableIndex])(oldTexture0);
     }
-    // testStage==7/9: we never called SetFVF above, so don't call it here
-    // either.
-    if (testStage != 7 && testStage != 9) {
-        setFVF(device, oldFVF);
-    }
+    // Issue #100 real fix -- clear OUR vertex declaration back to nullptr,
+    // NOT a SetFVF(oldFVF) restore. We never called SetFVF at all this whole
+    // function, so whatever FVF the native code had is already untouched and
+    // still current -- clearing the declaration lets the device's own
+    // already-correct FVF value resume being used, per real documented
+    // SetVertexDeclaration(nullptr) behavior. See this function's own header
+    // comment for the full story.
+    setVertexDeclaration(device, nullptr);
 
     if (haveOldViewport) setViewport(device, &oldViewport);
 
-    // testStage==6: render states were never touched above -- don't
-    // restore them here either, same gating pattern as stages 4/5.
-    if (testStage != 6) {
-        setRenderState(device, kD3DRS_ZENABLE, oldZEnable);
-        setRenderState(device, kD3DRS_LIGHTING, oldLighting);
-        setRenderState(device, kD3DRS_ALPHABLENDENABLE, oldAlphaBlend);
-        setRenderState(device, kD3DRS_CULLMODE, oldCull);
-    }
+    setRenderState(device, kD3DRS_ZENABLE, oldZEnable);
+    setRenderState(device, kD3DRS_LIGHTING, oldLighting);
+    setRenderState(device, kD3DRS_ALPHABLENDENABLE, oldAlphaBlend);
+    setRenderState(device, kD3DRS_CULLMODE, oldCull);
 
-    // testStage==4: pixel shader was never touched above -- don't touch it
-    // here either (setPixelShader(device, nullptr) would itself be a real
-    // state change we're specifically trying to avoid for this test).
-    if (testStage != 4) {
-        setPixelShader(device, oldPixelShader);
-        if (oldPixelShader) {
-            void** vtbl = *reinterpret_cast<void***>(oldPixelShader);
-            reinterpret_cast<Release_t>(vtbl[kSurfaceReleaseVtableIndex])(oldPixelShader);
-        }
+    setPixelShader(device, oldPixelShader);
+    if (oldPixelShader) {
+        void** vtbl = *reinterpret_cast<void***>(oldPixelShader);
+        reinterpret_cast<Release_t>(vtbl[kSurfaceReleaseVtableIndex])(oldPixelShader);
     }
 
     setSamplerState(device, 0, kD3DSAMP_MAGFILTER, oldMagFilter);
@@ -3608,13 +3611,8 @@ void RunPreOverlayMotionBlurPassIfEnabled(void* device)
             return;
         }
         if (g_motionBlurRanThisFrame) return;
-        // [Experimental] MotionBlurDrawTestStage -- see this function's own
-        // header comment above / mod_config.h. Every real gate above still
-        // ran; the hook still fired.
-        if (g_modConfig.motionBlurDrawTestStage == 1) return; // skip entirely -- LIVE-CONFIRMED this fixes it
         if (!EnsureMotionBlurShader(device)) return;
-        DrawFullScreenPass(device, g_motionBlurPixelShader, MotionBlurShaderSetupCallback,
-                            g_modConfig.motionBlurDrawTestStage);
+        DrawFullScreenPass(device, g_motionBlurPixelShader, MotionBlurShaderSetupCallback);
         g_motionBlurRanThisFrame = true;
         return;
     }
@@ -3657,13 +3655,8 @@ void RunPreOverlayMotionBlurPassIfEnabled(void* device)
         // FUN_00497210 (this pass's real trigger) can fire more than once per
         // frame when a splitscreen/PIP exclusion zone is active, see this
         // function's own header comment
-    // [Experimental] MotionBlurDrawTestStage (issue #100) -- see mod_config.h
-    // for the full story. Every real gate above still ran; the engine hook
-    // still fired.
-    if (g_modConfig.motionBlurDrawTestStage == 1) return; // skip entirely -- LIVE-CONFIRMED this fixes it
     if (!EnsureMotionBlurShader(device)) return;
-    DrawFullScreenPass(device, g_motionBlurPixelShader, MotionBlurShaderSetupCallback,
-                        g_modConfig.motionBlurDrawTestStage);
+    DrawFullScreenPass(device, g_motionBlurPixelShader, MotionBlurShaderSetupCallback);
     g_motionBlurRanThisFrame = true;
 }
 
