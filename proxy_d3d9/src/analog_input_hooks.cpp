@@ -2292,7 +2292,12 @@ extern "C" void __cdecl InjectControllerLookAngles()
     // register even while the right stick sits at neutral, that's the entire point
     // of gyro-assisted aim, unlike the stick path which intentionally does nothing
     // at rest.
-    if (g_modConfig.gyroEnabled) {
+    // 2026-08-28, direct live-tester request ("if possible activation on L2
+    // would be appreciated") -- OnlyWhileAds gates the whole gyro nudge behind
+    // g_adsHeld, the same real ADS-held state GetAdsLookRateScale() above
+    // already reads. Default off, so existing always-on behavior is unchanged
+    // unless a player explicitly opts into the gated mode.
+    if (g_modConfig.gyroEnabled && (!g_modConfig.gyroOnlyWhileAds || g_adsHeld)) {
         float gyroX = 0.0f, gyroY = 0.0f, gyroZ = 0.0f;
         if (Controller_GetGyroRate(gyroX, gyroY, gyroZ)) {
             // Axis-to-yaw/pitch mapping (Z=yaw, X=pitch) is a best-effort guess, not
