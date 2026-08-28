@@ -211,6 +211,18 @@ the player's own steering rate). See the itemized entries below and
   constants at the resolved addresses → xref the dvar's own storage handle
   → decompile the real consumer. See `known_issues.md` issue #30's
   `missileHellfireUpAccel` entry for this chain used end-to-end.
+5. **New `[Experimental] DamageDiagLoggingEnabled` diagnostic (issue #100)** --
+  TEMPORARY, dev-only, built after eleven forks of static Ghidra RE plus
+  existing-memdiff-dump analysis weakened/ruled out every specific native
+  mechanism proposed for the motion-blur-breaks-UI-on-unarmored-hits bug, and
+  confirmed the offline capture technique itself is genuinely exhausted (see
+  `known_issues.md` issue #100's own trail). Logs one line per frame for
+  ~2s of native visionset/render-context state the instant a real hit is
+  detected, sampled live from inside the render thread at the exact point
+  this mod's own full-screen passes run -- something no external memdiff
+  capture could do. Default off; **enabled in the live config this pass**
+  so the next Survival play session captures real data. Not a permanent
+  feature.
 
 ### Investigated, Not Yet Resolved
 1. **Survival scoreboard's real stat data source CONFIRMED -- and the feature is

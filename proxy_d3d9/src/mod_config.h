@@ -397,6 +397,17 @@ struct ModConfig
     // session without rebuilding. Not a permanent feature; remove once the
     // real value (or confirmation that no single value works) is found.
     int visualFxClcStateTestValue = -1;
+    // DamageDiagLoggingEnabled (2026-08-28, issue #100) -- TEMPORARY, dev-only
+    // diagnostic. Default off. See overlay_hud.cpp's
+    // PollDamageDiagLoggingIfEnabled for the full story: logs a per-frame
+    // sample window (native visionset/render-context state) starting the
+    // instant a real hit is detected, sampled from inside the render thread
+    // itself rather than an external memdiff capture -- built after eleven
+    // forks of static RE + existing-dump analysis confirmed the offline
+    // capture technique is genuinely exhausted for this issue's transient
+    // state. Not a permanent feature; remove once issue #100 is resolved or
+    // this is confirmed unhelpful.
+    bool damageDiagLoggingEnabled = false;
     bool fireNotifyQueueKick = true; // task #7/#29: also pushes the literal command
         // "n" onto the local player's real command queue (via FUN_00428a70) on
         // Fire's down-edge, alongside the existing real +attack kbutton call --
