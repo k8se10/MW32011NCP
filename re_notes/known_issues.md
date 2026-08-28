@@ -14897,6 +14897,80 @@ armor-conditional shape, gated on two concrete open questions (threshold-
 vs-per-hit, and Survival's actual reachability of `_gameskill::_id_1E8E()`)
 that the next pass should resolve before going further down this path.
 
+**3-forks-again pass (2026-08-28, "another day" per direct user framing --
+same calendar date, but past whatever earlier rate-limit reset was in
+play), resolving the two `painvisionon` caveats and the Fork E frame-
+cadence question.** Investigation-only, no live game/debugger, no fix, no
+commits by the forks -- consolidated here.
+
+- **Fork G -- resolves both `painvisionon` caveats, negatively.** (1)
+  `_id_1E8E()`'s real call site is `animscripts\init.gsc:369`. Searching
+  the whole 369-file corpus for the literal call form `init::main` (how
+  another script would actually invoke it) found **exactly one caller in
+  the entire corpus: `civilian_init.gsc`** -- an NPC-type init file, not a
+  player-entity or Survival gametype file. (2) The threshold struct
+  (`self._id_20F2`, holding `healthoverlaycutoff`) is populated in `69.gsc`
+  from a per-difficulty table mixing player near-death-vision fields
+  alongside pure AI-combat-tuning fields (`threatbias`,
+  `base_enemy_accuracy`, `dog_presstime`, `dog_hits_before_kill`,
+  `min_sniper_burst_delay_time`) -- the signature of Campaign's
+  easy/normal/hard/veteran AI-difficulty CSV system. Corroborating: a
+  corpus-wide grep for `_id_20F2`/`healthoverlaycutoff`/
+  `near_death_vision_enabled` hits only `init.gsc`, `dubai_code.gsc`
+  (Campaign), `combat_utility.gsc`, `69.gsc`, `65.gsc` -- **zero hits in
+  `1571.gsc` or `1574.gsc`**. Two independent signals both point the same
+  direction: this is real Campaign AI-difficulty infrastructure, not
+  something Survival's own init path reaches. Medium-high confidence this
+  rules `painvisionon` out too -- not absolute proof (a player-entity
+  caller could theoretically live in an unresolved/hash-named file this
+  name-based search can't reach), but a real, meaningful result.
+- **Fork H -- the native implementation can't even be located.**
+  `"painvisionon"`/`"painvisionoff"` are **completely absent from
+  `iw5sp.exe`'s initialized memory** -- confirmed two ways
+  (`FindExactStrings.java`, Ghidra-typed data only; `RawStringScan.java`, a
+  raw byte scan independent of Ghidra's typing). A harder dead end than
+  the `visionset_pain` family, which at least existed as a literal string
+  (just GSC-builtin-ID-dispatched and thus call-graph-unreachable). No
+  storage address found, so the planned memdiff-dump cross-check couldn't
+  even be attempted. This approach is exhausted; finding the real native
+  side would need a GSC-builtin-ID-to-function table (not currently
+  extracted for this binary) or live tracing.
+- **Fork I -- settles Fork E's open frame-cadence question, positively
+  this time.** Traced the caller chain one hop at a time with direct
+  decompile citations at each step: `FUN_0042c2f0` (confirmed per-frame
+  orchestrator) -> `FUN_0044ca30` -> `FUN_00492e00` -> `FUN_00450740` ->
+  `FUN_00685e20` -> `FUN_00684b00` -> `FUN_006842e0` ->
+  `FUN_004543d0`/`FUN_00694970`, called unconditionally, every single
+  hop. **This chain genuinely runs every frame** -- not a rare
+  viewport-resize-only event as Fork E left open. This doesn't undo Fork
+  E's separate, still-standing caution (the specific `+0x940` byte this
+  chain writes is tied to the struct field the ORIGINAL 4-fork
+  investigation already proved byte-identical between armored/unarmored)
+  -- but it does confirm the chain is structurally capable of being a
+  per-hit conflict candidate, rather than something that can be ruled out
+  on cadence grounds alone.
+
+**Status update, honest summary of where four separate candidate
+mechanisms now stand**: `visionset_pain` (Fork A) -- likely unrelated,
+real GSC evidence. The `.shock` preset system (Fork D) -- likely
+unrelated, real GSC/native evidence. `painvisionon` (Fork F/G/H) -- likely
+unrelated (Campaign-only infrastructure), AND its native side can't even
+be located with tools available. The render-pipeline chain
+(`FUN_00450740`.../Fork B/E/I) -- real, confirmed per-frame, but the ONE
+concrete state write traced to it (`+0x940`) is tied to an
+already-dead-ended struct field, so it has cadence without a confirmed
+armor-conditional trigger. **Nine forks across three rounds have now
+systematically weakened or ruled out every specific native mechanism
+proposed so far, without landing on a confirmed cause.** Per this
+project's own CLAUDE.md principle 9 (fresh-perspective threshold, 5-6+
+genuine rounds on the same angle before pausing to ask rather than
+deciding unilaterally to pivot): this static-RE-plus-existing-dumps angle
+has now had a comparable number of genuine rounds, and the recurring wall
+each time is the same one -- no live process access (x64dbg's MCP
+connection has been refused throughout this whole session). Worth
+surfacing to the user directly rather than spawning further static-only
+forks on the same angle without checking in first.
+
 ## 101. Roadmap note: broader performance/optimization/modern-hardware pass, user's own framing (2026-08-27)
 
 **Status: Roadmap Idea, not scoped.** Direct user framing, end of a long
