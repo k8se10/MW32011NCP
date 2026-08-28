@@ -15743,9 +15743,11 @@ screen"). FSR's own missing state gating was the complete explanation --
 not a contributing factor alongside a separate native issue, the actual
 root cause. Closed.
 
-## 104. FSR black-screen/#103-class bug recurs specifically on "exit level -> main menu" -- ESCALATED TO A 100% REPRODUCIBLE CRASH, fix applied, not yet independently confirmed (2026-08-28)
+## 104. FSR black-screen/#103-class bug recurs specifically on "exit level -> main menu" -- RESOLVED (2026-08-28)
 
-**Status: Fix applied, NOT YET independently confirmed live.** Escalated
+**Status: Resolved, confirmed live.** User tested the exact "quit to menu"
+repro against the `clcState == 0` gate fix and confirmed: **"fixed."**
+Escalated
 significantly from the original "black screen" framing: direct user
 report, "new reproducable issue, quit to menu crashes and closes mw3
 every time guaranteed." Confirmed via a direct isolation test -- "yeah
