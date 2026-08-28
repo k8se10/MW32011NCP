@@ -14298,14 +14298,36 @@ theory was tried and LIVE-TESTED FAILED before this one was found). Fixed
 by replacing the `SetFVF` call with `SetVertexDeclaration` (a genuinely
 separate D3D9 state slot that never touches whatever the native renderer
 tracks around FVF) -- `DrawFullScreenPass` no longer calls `SetFVF` in
-either direction, ever. Build clean (0 warnings/0 errors), deployed. The
-temporary `[Experimental] MotionBlurDrawTestStage` diagnostic built for
-this investigation has been fully removed (`ConfigVersion` 34->35) now
-that its job is done. **NOT YET independently re-confirmed live against
-this specific final build** (the fix was validated stage-by-stage during
-the isolation test itself, but the clean `SetVertexDeclaration`-based
-rewrite hasn't had its own dedicated live pass yet) -- a quick confirming
-playtest is the natural next step. Original report below, kept for
+either direction, ever. The temporary `[Experimental] MotionBlurDrawTestStage`
+diagnostic built for this investigation has been fully removed
+(`ConfigVersion` 34->35) now that its job is done.
+
+**CRASH found immediately after first deploying the `SetVertexDeclaration`
+rewrite, direct user report** ("critical crash check event viewer") --
+confirmed real via a live Event Viewer check: `iw5sp.exe` access violation
+(`0xc0000005`) inside the real system `d3d9.dll`
+(`AppCrash_iw5sp.exe_..._d3d9.dll`, Application/WER logs). Root cause: the
+new `g_screenVertexDeclaration` cache was never added to
+`ReleaseAllCachedTextures()` -- the exact same bug class this project has
+hit twice before (`g_optBlurPixelShader`, then `g_optWhiteTexture`/every
+`TextTexCache`): a real, device-bound COM object cached by a lazy
+`Ensure*`-style fast path (`if (g_screenVertexDeclaration) return true;`)
+that trusts a non-null handle forever, with zero device-recreation
+invalidation. After a real `Reset()` or a full device recreation
+(`vid_restart`, alt-tab, a resolution/video-settings change), the cached
+declaration becomes a dangling reference to a destroyed object -- the next
+motion-blur draw passed that garbage pointer straight into
+`SetVertexDeclaration` on the real system `d3d9.dll`, a genuine
+access-violation crash. **Fixed**: `releaseIfSet(g_screenVertexDeclaration)`
+added to `ReleaseAllCachedTextures()`, same unconditional-release pattern
+already used for every other device-bound resource there (cheap to
+recreate lazily via `EnsureScreenVertexDeclaration` on next use). Build
+clean (0 warnings/0 errors), deployed. **NOT YET independently
+re-confirmed live** -- this is a strong, well-precedented circumstantial
+match (confirmed real gap in the code, confirmed real crash signature,
+matches this project's own established bug class exactly) but wasn't
+caught live via a debugger, so treat as highly likely rather than
+absolutely certain until confirmed. Original report below, kept for
 history.
 
 **Status: Open, not investigated.** Direct user report: "when you take
@@ -15430,11 +15452,23 @@ itself, have been fully removed now that their job is done (`ConfigVersion`
 permanent feature, matching this project's own standing convention for
 this class of investigation tooling.
 
-Build clean (0 warnings/0 errors), deployed. **NOT YET independently
-re-confirmed live against this specific final `SetVertexDeclaration`-based
-build** -- every stage of the isolation test itself was live-confirmed,
-but the clean rewrite (no more test-stage branching) hasn't had its own
-dedicated confirming playtest yet.
+Build clean (0 warnings/0 errors), deployed.
+
+**Real crash found live, immediately** ("critical crash check event
+viewer") -- confirmed via Event Viewer: `iw5sp.exe` access violation
+(`0xc0000005`) inside the real system `d3d9.dll`. Root cause: the new
+`g_screenVertexDeclaration` cache was never back-filled into
+`ReleaseAllCachedTextures()`, the exact same bug class this project has
+hit twice before (`g_optBlurPixelShader`, `g_optWhiteTexture`) -- a
+device-bound COM object cached by a lazy fast path with zero device-
+recreation invalidation, becoming a dangling pointer after any real
+`Reset()`/full device recreation. Fixed with `releaseIfSet(g_screenVertexDeclaration)`,
+same unconditional-release pattern as every other device-bound resource
+in that function. See this entry's own top status section for the full
+write-up. Build clean, 0 errors, deployed. **NOT YET independently
+re-confirmed live** -- a strong, well-precedented circumstantial match,
+not caught via a live debugger (x64dbg still unavailable), so treat as
+highly likely rather than absolutely certain until confirmed.
 
 **Two more reports the same session, both addressed without touching
 code**: (1) "a weird graphical bug in this new phase when entering level
