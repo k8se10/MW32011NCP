@@ -15041,6 +15041,41 @@ real native state at the moment of a hit, for the user to test live next
 session). Static RE against the existing evidence is, for now, genuinely
 tapped out.
 
+**Option 3 built (2026-08-28), direct user choice** ("3" -- the temporary
+diagnostic-hook option). `PollDamageDiagLoggingIfEnabled()` added to
+`overlay_hud.cpp`, called from `Hook_EndScene`'s own tail (right before the
+real `EndScene` call, after this mod's own full-screen passes have already
+run this frame). Gated by a new `[Experimental] DamageDiagLoggingEnabled`
+config key (`mod_config.h`/`.cpp`, `ConfigVersion` bumped 31->32), default
+off, **enabled in the live `mw3ncp_config.ini` this pass** so the next
+Survival session captures real data without needing a separate step.
+
+Detects a real hit via an independent per-frame health poll (same delta-
+guard bounds as `rumble.cpp`'s own `PollDamageRumble` -- a plausible
+single-frame decrease, filtering out regen/pickup increases and
+implausibly large checkpoint/respawn-reset drops -- but a SEPARATE
+baseline, doesn't touch or get touched by vibration settings). On a real
+hit, logs one `[dmgdiag]` line per frame for 120 frames (~2s), dumping
+every candidate native global this issue's own RE has turned up so far:
+`DAT_021ddf00` (Fork B/K -- always read 0 in every offline snapshot,
+now sampled live from the exact render-thread context it's most likely
+valid in), the visionset blend struct's live-interpolated RGB output
+(`0x021d3090`/`94`/`98`, confirmed via `FUN_004cbd20`'s own decompile),
+the per-player vision-active flag (`0x021d3474`), the two still-
+unidentified vision-state edge-trigger flags `FUN_0042c2f0` itself reads
+(`DAT_009a1930`/`DAT_009a1938`), `clcState`, and whether this mod's OWN
+motion-blur pass ran that exact frame (`g_motionBlurRanThisFrame`) -- the
+one correlation no offline memdiff capture could ever provide.
+
+This sidesteps both problems the existing-dumps pass (Fork J/K) surfaced:
+zero external-capture timing lag (every real frame, not a human F9 press
+seconds later) and no controlled-A/B requirement (every hit gets its own
+self-contained sample window, timed against the SAME frame clock the
+native code itself runs on). Build clean, 0 errors, deployed. **Not yet
+live-tested** -- needs an actual Survival play session (a few unarmored
+hits) with `proxy_d3d9.log` checked afterward for `[dmgdiag]` lines. Turn
+`DamageDiagLoggingEnabled` back to 0 once done; not a permanent feature.
+
 ## 101. Roadmap note: broader performance/optimization/modern-hardware pass, user's own framing (2026-08-27)
 
 **Status: Roadmap Idea, not scoped.** Direct user framing, end of a long

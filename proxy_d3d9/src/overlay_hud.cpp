@@ -3655,6 +3655,122 @@ void ApplyFpsLimitIfEnabled()
     }
 }
 
+// [Experimental] DamageDiagLoggingEnabled (2026-08-28, issue #100) -- TEMPORARY,
+// dev-only diagnostic, direct user request after eleven forks of static Ghidra RE
+// plus existing-memdiff-dump analysis weakened/ruled out every specific native
+// mechanism proposed for this issue (visionset_pain, the .shock/shellshock
+// system, painvisionon) without landing on a confirmed cause, and confirmed the
+// existing offline captures are genuinely exhausted for this transient state:
+// Fork K found DAT_021ddf00 reads 0 in every offline snapshot regardless of
+// capture timing (even the single tightest pre/post-hit window in a 22-snapshot
+// session), most likely because it's only valid transiently during the live
+// render pass itself; Fork J found the capture pairs relied on all session were
+// never even a controlled A/B (an 8x elapsed-real-time mismatch between the
+// armored and unarmored pairs). See known_issues.md issue #100 for the full
+// trail.
+//
+// This sidesteps both problems by sampling from INSIDE the render thread, at the
+// exact point this mod's own motion-blur/FSR full-screen passes already run
+// (this function's own call site, Hook_EndScene's tail) -- the one place
+// DAT_021ddf00 is most likely to actually be valid, with zero external-capture
+// timing lag (every real frame, not an F9 press seconds after the fact).
+//
+// Detects a real hit the same way rumble.cpp's own PollDamageRumble does (a
+// plausible single-frame health decrease, same guard bounds) via an INDEPENDENT
+// health-poll baseline -- does NOT touch rumble.cpp's own g_lastKnownHealth, so
+// this diagnostic can't interact with or be starved by vibration settings, and
+// vice versa. On a real hit, logs one line per frame for kDamageDiagWindowFrames
+// frames afterward, dumping every candidate native global this issue's own RE
+// has turned up so far: DAT_021ddf00 (Fork B/K), the visionset blend struct's
+// live-interpolated RGB output (0x021d3090/94/98, Fork B's own FUN_004cbd20
+// decompile), the per-player vision-active flag (0x021d3474), the two still-
+// unidentified vision-state edge-trigger flags FUN_0042c2f0 itself reads
+// (DAT_009a1930/DAT_009a1938), clcState, and whether this mod's OWN motion-blur
+// pass ran this exact frame -- so a live session can directly correlate "did
+// anything native change" against "did our own pass run," something no offline
+// snapshot could ever show.
+//
+// DEFAULT OFF. Not a permanent feature -- remove once issue #100 is resolved or
+// this diagnostic is confirmed unhelpful. Purely read-only memory polling, same
+// technique/risk class as PollDamageRumble/PollArmorFieldScanDiag -- no writes,
+// no hooks installed.
+namespace {
+constexpr uintptr_t kDamageDiagLocalPlayerEntity = 0x01197AD8; // same address as rumble.cpp's own kLocalPlayerEntity (SP is always player index 0)
+constexpr uintptr_t kDamageDiagHealthOffset = 0x150;
+constexpr uintptr_t kDamageDiagRenderCtxPtrAddr = 0x021ddf00; // DAT_021ddf00 -- see this function's own header comment
+constexpr uintptr_t kDamageDiagVisionActiveFlagAddr = 0x021d3474; // per-player "vision-set active" flag FUN_004cbd20 gates on (player 0 slot)
+constexpr uintptr_t kDamageDiagBlendRAddr = 0x021d3090; // FUN_004cbd20's own live-interpolated color output (player 0), confirmed via direct decompile this session
+constexpr uintptr_t kDamageDiagBlendGAddr = 0x021d3094;
+constexpr uintptr_t kDamageDiagBlendBAddr = 0x021d3098;
+constexpr uintptr_t kDamageDiagBlendFlagAddr = 0x021d309c; // byte flag FUN_004cbd20 computes fresh each frame from two other struct bytes
+constexpr uintptr_t kDamageDiagVisionEdgeFlagAAddr = 0x009a1930; // FUN_0042c2f0's own two still-unidentified vision-state edge-trigger flags (Fork B) -- gate its OWN direct FUN_0053f110 calls, separate from visionset_pain's own path
+constexpr uintptr_t kDamageDiagVisionEdgeFlagBAddr = 0x009a1938;
+constexpr uintptr_t kDamageDiagClcStateAddr = 0x00B36218; // already-established real clcState global (issue #99/#100/#103)
+constexpr int kDamageDiagWindowFrames = 120; // ~2s at 60fps -- generously past any blend duration seen in this issue's own struct dumps
+constexpr int kDamageDiagMaxWindowsPerSession = 25; // hard cap, same convention as rumble.cpp's own kArmorScanMaxLogLines
+
+int g_damageDiagLastHealth = -1;
+int g_damageDiagFramesRemainingInWindow = 0;
+int g_damageDiagWindowsLoggedThisSession = 0;
+} // namespace
+
+void PollDamageDiagLoggingIfEnabled()
+{
+    if (!g_modConfig.damageDiagLoggingEnabled) return;
+
+    int health = *reinterpret_cast<volatile int*>(kDamageDiagLocalPlayerEntity + kDamageDiagHealthOffset);
+    constexpr int kMaxPlausibleHealth = 1000; // same sanity bound as rumble.cpp's own PollDamageRumble
+    bool healthLooksValid = (health >= 0 && health <= kMaxPlausibleHealth);
+
+    if (!healthLooksValid) {
+        g_damageDiagLastHealth = -1; // no real player right now -- reset baseline, same as PollDamageRumble
+    } else if (g_damageDiagLastHealth < 0) {
+        g_damageDiagLastHealth = health; // first real reading since a reset -- establish baseline only
+    } else {
+        int delta = g_damageDiagLastHealth - health;
+        constexpr int kMaxPlausibleSingleFrameDamage = 200; // same bound as PollDamageRumble -- filters checkpoint/respawn resets
+        if (delta > 0 && delta <= kMaxPlausibleSingleFrameDamage
+            && g_damageDiagFramesRemainingInWindow == 0
+            && g_damageDiagWindowsLoggedThisSession < kDamageDiagMaxWindowsPerSession) {
+            char buf[256];
+            sprintf_s(buf,
+                "[dmgdiag] HIT #%d detected: health %d -> %d (delta=%d) -- starting %d-frame sample window",
+                g_damageDiagWindowsLoggedThisSession + 1, g_damageDiagLastHealth, health, delta,
+                kDamageDiagWindowFrames);
+            LogFromController(buf);
+            g_damageDiagFramesRemainingInWindow = kDamageDiagWindowFrames;
+            g_damageDiagWindowsLoggedThisSession++;
+        }
+        g_damageDiagLastHealth = health;
+    }
+
+    if (g_damageDiagFramesRemainingInWindow > 0) {
+        int frameIndex = kDamageDiagWindowFrames - g_damageDiagFramesRemainingInWindow;
+        int renderCtxPtr = *reinterpret_cast<volatile int*>(kDamageDiagRenderCtxPtrAddr);
+        int visionActive = *reinterpret_cast<volatile signed char*>(kDamageDiagVisionActiveFlagAddr);
+        float blendR = *reinterpret_cast<volatile float*>(kDamageDiagBlendRAddr);
+        float blendG = *reinterpret_cast<volatile float*>(kDamageDiagBlendGAddr);
+        float blendB = *reinterpret_cast<volatile float*>(kDamageDiagBlendBAddr);
+        int blendFlag = *reinterpret_cast<volatile signed char*>(kDamageDiagBlendFlagAddr);
+        int edgeFlagA = *reinterpret_cast<volatile signed char*>(kDamageDiagVisionEdgeFlagAAddr);
+        int edgeFlagB = *reinterpret_cast<volatile signed char*>(kDamageDiagVisionEdgeFlagBAddr);
+        int clcState = *reinterpret_cast<volatile int*>(kDamageDiagClcStateAddr);
+
+        char buf[384];
+        sprintf_s(buf,
+            "[dmgdiag] frame=%d health=%d renderCtxPtr=0x%08X visionActive=%d blendRGB=(%.4f,%.4f,%.4f) "
+            "blendFlag=%d edgeFlagA=%d edgeFlagB=%d clcState=%d motionBlurRanThisFrame=%d",
+            frameIndex, health, static_cast<unsigned int>(renderCtxPtr), visionActive, blendR, blendG, blendB,
+            blendFlag, edgeFlagA, edgeFlagB, clcState, g_motionBlurRanThisFrame ? 1 : 0);
+        LogFromController(buf);
+
+        g_damageDiagFramesRemainingInWindow--;
+        if (g_damageDiagFramesRemainingInWindow == 0) {
+            LogFromController("[dmgdiag] sample window closed");
+        }
+    }
+}
+
 void FormatOptRowValue(const OptRow& row, char* outBuf, size_t outBufSize)
 {
     switch (row.kind) {
@@ -6345,6 +6461,13 @@ HRESULT WINAPI Hook_EndScene(void* device)
     // this needs to sit specifically before/after the real EndScene call --
     // see ApplyFpsLimitIfEnabled's own header comment for the full story.
     ApplyFpsLimitIfEnabled();
+
+    // [Experimental] DamageDiagLoggingEnabled -- issue #100, see
+    // PollDamageDiagLoggingIfEnabled's own header comment. Runs last, after
+    // this mod's own full-screen passes above, so motionBlurRanThisFrame
+    // already reflects the real outcome for this exact frame by the time it's
+    // read here.
+    PollDamageDiagLoggingIfEnabled();
 
     return g_origEndScene(device);
 }
