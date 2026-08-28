@@ -139,6 +139,9 @@ constexpr int kGetTextureVtableIndex = 64;        // IDirect3DDevice9::GetTextur
 constexpr int kDrawPrimitiveUPVtableIndex = 83;   // IDirect3DDevice9::DrawPrimitiveUP
 constexpr int kSetVertexShaderVtableIndex = 92;   // IDirect3DDevice9::SetVertexShader
 constexpr int kGetVertexShaderVtableIndex = 93;   // IDirect3DDevice9::GetVertexShader
+constexpr int kSetStreamSourceVtableIndex = 100;  // IDirect3DDevice9::SetStreamSource (issue #100 fix,
+    // 2026-08-28 -- see DrawFullScreenPass's own header comment for why this matters)
+constexpr int kGetStreamSourceVtableIndex = 101;  // IDirect3DDevice9::GetStreamSource
 constexpr int kSetPixelShaderVtableIndex = 107;   // IDirect3DDevice9::SetPixelShader
 constexpr int kGetPixelShaderVtableIndex = 108;   // IDirect3DDevice9::GetPixelShader
 constexpr int kGetSurfaceLevelVtableIndex = 18;   // IDirect3DTexture9::GetSurfaceLevel
@@ -232,6 +235,14 @@ typedef HRESULT(WINAPI* SurfaceUnlockRect_t)(void* This);
 // from the surface itself rather than a cached/assumed value.
 struct SurfaceDesc { DWORD Format, Type, Usage, Pool, MultiSampleType, MultiSampleQuality, Width, Height; };
 typedef HRESULT(WINAPI* SurfaceGetDesc_t)(void* This, SurfaceDesc* pDesc);
+// Issue #100 fix (2026-08-28) -- see DrawFullScreenPass's own header comment.
+// Matches the real IDirect3DDevice9::SetStreamSource/GetStreamSource signatures
+// (pStreamData is an IDirect3DVertexBuffer9*, kept as void* like every other COM
+// pointer in this file since d3d9.h is deliberately not included here).
+typedef HRESULT(WINAPI* SetStreamSource_t)(void* This, UINT StreamNumber, void* pStreamData,
+                                             UINT OffsetInBytes, UINT Stride);
+typedef HRESULT(WINAPI* GetStreamSource_t)(void* This, UINT StreamNumber, void** ppStreamData,
+                                             UINT* pOffsetInBytes, UINT* pStride);
 
 // Phase B, visual-suite plan -- local, minimal D3DCAPS9 declaration (same
 // convention as dllmain.cpp's D3D9ON12_ARGS_LOCAL, avoids a full d3d9.h include)
@@ -3106,6 +3117,8 @@ void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn
     auto setRenderState = reinterpret_cast<SetRenderState_t>(deviceVtbl[kSetRenderStateVtableIndex]);
     auto getRenderState = reinterpret_cast<GetRenderState_t>(deviceVtbl[kGetRenderStateVtableIndex]);
     auto drawPrimitiveUP = reinterpret_cast<DrawPrimitiveUP_t>(deviceVtbl[kDrawPrimitiveUPVtableIndex]);
+    auto setStreamSource = reinterpret_cast<SetStreamSource_t>(deviceVtbl[kSetStreamSourceVtableIndex]);
+    auto getStreamSource = reinterpret_cast<GetStreamSource_t>(deviceVtbl[kGetStreamSourceVtableIndex]);
 
     void* backSurface = nullptr;
     // GetRenderTarget(0) IS the real backbuffer surface, already fully rendered
@@ -3200,6 +3213,15 @@ void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn
     DWORD oldFVF = 0;
     getFVF(device, &oldFVF);
 
+    // Issue #100 fix (2026-08-28) -- see the restore call below, right after
+    // drawPrimitiveUP, for the full story. GetStreamSource AddRefs the
+    // returned vertex buffer on success (real D3D9 COM semantics), released
+    // after the restore, same pairing already used for oldTexture0/
+    // oldPixelShader elsewhere in this function.
+    void* oldStreamBuffer = nullptr;
+    UINT oldStreamOffset = 0, oldStreamStride = 0;
+    getStreamSource(device, 0, &oldStreamBuffer, &oldStreamOffset, &oldStreamStride);
+
     void* oldPixelShader = nullptr;
     getPixelShader(device, &oldPixelShader);
     setPixelShader(device, pixelShader);
@@ -3223,6 +3245,31 @@ void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn
         { w - 0.5f,   h - 0.5f,   0.0f, 1.0f, 0xFFFFFFFFu, 1.0f, 1.0f },
     };
     drawPrimitiveUP(device, kD3DPT_TRIANGLESTRIP, 2, verts, sizeof(ScreenVertex));
+
+    // FIXED 2026-08-28 (issue #100) -- DrawPrimitiveUP leaves the device's
+    // stream-0 vertex buffer binding in an OFFICIALLY UNDEFINED state (real,
+    // documented D3D9 behavior -- Microsoft's own docs: stream 0 must be
+    // explicitly reset before any subsequent DrawPrimitive-family call).
+    // This was never restored here before. Motion blur's own hook point
+    // (Hook_693ff0, analog_input_hooks.cpp) fires BEFORE the native queued
+    // 2D/HUD-element dispatch runs each frame (only actually queued on
+    // frames where there's real UI to draw -- e.g. the damage-taken
+    // red-screen vignette and related HUD elements) -- so whatever native UI
+    // draws that dispatch issues right afterward inherited this undefined
+    // stream-0 state and could render wrong or not at all. FSR/RCAS never
+    // hit this because its own call to this same function runs from
+    // Hook_EndScene's tail, strictly after all native UI dispatching for the
+    // frame is already done -- matches the live-diagnosed, live-isolated
+    // symptom exactly (UI dropping out AND the native damage vignette
+    // specifically missing, both confirmed isolated to motion blur only,
+    // both independent of MotionBlurCenterFalloff). See known_issues.md
+    // issue #100 for the full trail. NOT YET independently re-confirmed
+    // live as the actual fix -- built and deployed same session.
+    setStreamSource(device, 0, oldStreamBuffer, oldStreamOffset, oldStreamStride);
+    if (oldStreamBuffer) {
+        void** vtbl = *reinterpret_cast<void***>(oldStreamBuffer);
+        reinterpret_cast<Release_t>(vtbl[kSurfaceReleaseVtableIndex])(oldStreamBuffer);
+    }
 
     // FIXED 2026-08-27 -- restores the ACTUAL previous texture (was: force-set
     // to nullptr, discarding whatever the engine had bound) and FVF (was:
