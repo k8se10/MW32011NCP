@@ -6416,6 +6416,22 @@ void ReleaseAllCachedTextures()
     g_fsrRcasDeviceSupportsPS3 = false;
     // Phase E's own motion-blur shader, same device-bound-resource reasoning.
     releaseIfSet(g_motionBlurPixelShader);
+    // CRASH FIX (2026-08-28, issue #100's real fix) -- g_screenVertexDeclaration
+    // (DrawFullScreenPass's own vertex declaration, replacing SetFVF) was added
+    // without being back-filled here, the EXACT same bug class as the
+    // g_optBlurPixelShader crash above and the g_optWhiteTexture/TextTexCache
+    // one before it: a real, device-bound COM object cached by a lazy
+    // Ensure*-style fast path that trusts a non-null handle forever with zero
+    // device-recreation invalidation. After a real Reset() OR a full device
+    // recreation, the cached declaration is a dangling reference to a
+    // destroyed object -- the next motion-blur draw call passed it straight
+    // into SetVertexDeclaration on the real system d3d9.dll, a genuine
+    // access-violation crash (Event Viewer: iw5sp.exe / d3d9.dll,
+    // 0xc0000005), confirmed live immediately after this fix first shipped.
+    // Released unconditionally, same as every other device-bound resource
+    // here -- cheap to recreate lazily (EnsureScreenVertexDeclaration) on
+    // next use.
+    releaseIfSet(g_screenVertexDeclaration);
 }
 
 } // namespace -- closes the file-wide anonymous namespace (see the matching close's
