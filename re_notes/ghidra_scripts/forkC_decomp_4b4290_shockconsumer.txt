@@ -1,0 +1,107 @@
+================================================================
+Function: FUN_004b4290 @ 004b4290
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_004b4290(int *param_1)
+
+{
+  float fVar1;
+  int *piVar2;
+  char *_Source;
+  int iVar3;
+  float *pfVar4;
+  int iVar5;
+  size_t _Count;
+  
+  piVar2 = param_1;
+  fVar1 = *(float *)(DAT_01d36f10 + 0xc);
+  if (fVar1 < (float)_DAT_0085f518 != (fVar1 == (float)_DAT_0085f518)) {
+    fVar1 = _DAT_0084fa1c;
+  }
+  param_1[1] = (int)ROUND(fVar1 * (float)_DAT_00839aa0 + (float)_DAT_00837d30);
+  fVar1 = *(float *)(DAT_01d36f20 + 0xc);
+  if (fVar1 < (float)_DAT_0085f518 != (fVar1 == (float)_DAT_0085f518)) {
+    fVar1 = _DAT_0084fa1c;
+  }
+  *param_1 = (int)ROUND(fVar1 * (float)_DAT_00839aa0 + (float)_DAT_00837d30);
+  param_1[3] = (int)ROUND(*(float *)(DAT_01d39858 + 0xc) * (float)_DAT_00839aa0 +
+                          (float)_DAT_00837d30);
+  param_1[2] = (int)ROUND(*(float *)(DAT_01d397c8 + 0xc) * (float)_DAT_00839aa0 +
+                          (float)_DAT_00837d30);
+  param_1[4] = *(int *)(DAT_01d3707c + 0xc);
+  fVar1 = *(float *)(DAT_01d39710 + 0xc);
+  if (fVar1 < (float)_DAT_0085f518 != (fVar1 == (float)_DAT_0085f518)) {
+    fVar1 = _DAT_0084fa1c;
+  }
+  param_1[5] = (int)ROUND(fVar1 * (float)_DAT_00839aa0 + (float)_DAT_00837d30);
+  fVar1 = *(float *)(DAT_01d397d8 + 0xc);
+  if (fVar1 <= (float)_DAT_0085f518) {
+    fVar1 = _DAT_0084fa1c;
+  }
+  param_1[6] = (int)((float)_DAT_0085f518 / fVar1);
+  param_1[7] = *(int *)(DAT_01d39820 + 0xc);
+  *(undefined1 *)(param_1 + 8) = *(undefined1 *)(DAT_01d397f0 + 0xc);
+  _strncpy((char *)((int)param_1 + 0x21),*(char **)(DAT_01d397d4 + 0xc),0x40);
+  _strncpy((char *)((int)param_1 + 0x61),*(char **)(DAT_01d39744 + 0xc),0x40);
+  _strncpy((char *)((int)param_1 + 0xa1),*(char **)(DAT_01d35acc + 0xc),0x40);
+  _strncpy((char *)((int)param_1 + 0xe1),*(char **)(DAT_01d35ae0 + 0xc),0x40);
+  fVar1 = *(float *)(DAT_01d39758 + 0xc);
+  if (fVar1 < (float)_DAT_0085f518 != (fVar1 == (float)_DAT_0085f518)) {
+    fVar1 = _DAT_0084fa1c;
+  }
+  param_1[0x49] = (int)ROUND(fVar1 * (float)_DAT_00839aa0 + (float)_DAT_00837d30);
+  fVar1 = *(float *)(DAT_01d39774 + 0xc);
+  if (fVar1 < (float)_DAT_0085f518 != (fVar1 == (float)_DAT_0085f518)) {
+    fVar1 = _DAT_0084fa1c;
+  }
+  param_1[0x4a] = (int)ROUND(fVar1 * (float)_DAT_00839aa0 + (float)_DAT_00837d30);
+  fVar1 = *(float *)(DAT_01d37068 + 0xc);
+  if (fVar1 < (float)_DAT_0085f518 != (fVar1 == (float)_DAT_0085f518)) {
+    fVar1 = _DAT_0084fa1c;
+  }
+  param_1[0x92] = (int)ROUND(fVar1 * (float)_DAT_00839aa0 + (float)_DAT_00837d30);
+  param_1[0x93] =
+       (int)ROUND(*(float *)(DAT_01d39760 + 0xc) * (float)_DAT_00839aa0 + (float)_DAT_00837d30);
+  _Count = 0xf;
+  _Source = (char *)FUN_0052dbc0(DAT_01d39844);
+  _strncpy((char *)(param_1 + 0x4d),_Source,_Count);
+  *(undefined1 *)((int)param_1 + 0x143) = 0;
+  param_1[0x4b] = *(int *)(DAT_01d36f38 + 0xc);
+  param_1[0x4c] = *(int *)(DAT_01d397a8 + 0xc);
+  param_1[0x91] =
+       (int)ROUND(*(float *)(DAT_01d3985c + 0xc) * (float)_DAT_00839aa0 + (float)_DAT_00837d30);
+  iVar5 = 0;
+  iVar3 = FUN_004ef480();
+  if (0 < iVar3) {
+    pfVar4 = (float *)(param_1 + 0x51);
+    do {
+      fVar1 = 1.0;
+      param_1 = *(int **)((&DAT_01d36f48)[iVar5] + 0xc);
+      if ((float)param_1 < (float)_DAT_008250c8 == ((float)param_1 == (float)_DAT_008250c8)) {
+        if ((float)param_1 < 1.0) goto LAB_004b46ac;
+      }
+      else {
+        param_1 = (int *)0x0;
+LAB_004b46ac:
+        fVar1 = (float)param_1;
+      }
+      iVar5 = iVar5 + 1;
+      *pfVar4 = fVar1;
+      iVar3 = FUN_004ef480();
+      pfVar4 = pfVar4 + 1;
+    } while (iVar5 < iVar3);
+  }
+  *(undefined1 *)(piVar2 + 0x94) = *(undefined1 *)(DAT_01d3704c + 0xc);
+  piVar2[0x95] = (int)ROUND(*(float *)(DAT_01d39718 + 0xc) * (float)_DAT_00839aa0 +
+                            (float)_DAT_00837d30);
+  piVar2[0x97] = *(int *)(DAT_01d3981c + 0xc);
+  piVar2[0x98] = *(int *)(DAT_01d39784 + 0xc);
+  piVar2[0x96] = *(int *)(DAT_01d35ac0 + 0xc);
+  *(undefined1 *)(piVar2 + 0x99) = *(undefined1 *)(DAT_01d36f44 + 0xc);
+  return;
+}
+
+
+
