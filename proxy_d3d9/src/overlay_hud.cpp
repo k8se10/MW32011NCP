@@ -3106,9 +3106,15 @@ using FullScreenShaderSetupFn = void(*)(void* device, float texelW, float texelH
 // NOT fix the bug, the capture itself is harmless. 3 = run every state
 // save/set exactly as normal (sampler, render states, viewport, texture0,
 // FVF, pixel shader + its constants) but skip the actual `drawPrimitiveUP`
-// call itself, then still run every restore afterward -- isolates "does
-// merely changing device state break it" from "does the real draw command
-// hitting the GPU break it."
+// call itself, then still run every restore afterward -- LIVE-CONFIRMED
+// (2026-08-28) this does NOT fix it either, "broken here" -- one of the
+// state changes themselves is the cause, not the draw command. 4 = skip
+// binding OUR pixel shader (and its constants) entirely -- our own quad
+// draws with whatever shader the native code last had bound instead;
+// everything else (sampler, render states, viewport, texture0/FVF, and the
+// actual draw call) runs exactly as normal. Isolates "does binding ANY
+// custom pixel shader, even briefly and even restored after, break the
+// native low-health warning."
 void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn onShaderBound = nullptr,
                          int testStage = 0)
 {
@@ -3241,10 +3247,20 @@ void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn
     UINT oldStreamOffset = 0, oldStreamStride = 0;
     getStreamSource(device, 0, &oldStreamBuffer, &oldStreamOffset, &oldStreamStride);
 
+    // [Experimental] MotionBlurDrawTestStage==4 isolation test (issue #100) --
+    // skip binding OUR pixel shader (and its constants) entirely -- the
+    // device keeps whatever shader the native code last set, our own quad
+    // draws with that instead (visually wrong for us, irrelevant to this
+    // test). Isolates "does binding ANY custom pixel shader, even briefly
+    // and even restored after, break the native low-health warning" --
+    // stage 3 already confirmed it's one of the state changes in this
+    // block, not the draw call itself; this narrows further.
     void* oldPixelShader = nullptr;
-    getPixelShader(device, &oldPixelShader);
-    setPixelShader(device, pixelShader);
-    if (onShaderBound) onShaderBound(device, 1.0f / static_cast<float>(desc.Width), 1.0f / static_cast<float>(desc.Height));
+    if (testStage != 4) {
+        getPixelShader(device, &oldPixelShader);
+        setPixelShader(device, pixelShader);
+        if (onShaderBound) onShaderBound(device, 1.0f / static_cast<float>(desc.Width), 1.0f / static_cast<float>(desc.Height));
+    }
 
     setRenderState(device, kD3DRS_ZENABLE, kD3DZB_FALSE);
     setRenderState(device, kD3DRS_LIGHTING, FALSE);
@@ -3315,10 +3331,15 @@ void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn
     setRenderState(device, kD3DRS_ALPHABLENDENABLE, oldAlphaBlend);
     setRenderState(device, kD3DRS_CULLMODE, oldCull);
 
-    setPixelShader(device, oldPixelShader);
-    if (oldPixelShader) {
-        void** vtbl = *reinterpret_cast<void***>(oldPixelShader);
-        reinterpret_cast<Release_t>(vtbl[kSurfaceReleaseVtableIndex])(oldPixelShader);
+    // testStage==4: pixel shader was never touched above -- don't touch it
+    // here either (setPixelShader(device, nullptr) would itself be a real
+    // state change we're specifically trying to avoid for this test).
+    if (testStage != 4) {
+        setPixelShader(device, oldPixelShader);
+        if (oldPixelShader) {
+            void** vtbl = *reinterpret_cast<void***>(oldPixelShader);
+            reinterpret_cast<Release_t>(vtbl[kSurfaceReleaseVtableIndex])(oldPixelShader);
+        }
     }
 
     setSamplerState(device, 0, kD3DSAMP_MAGFILTER, oldMagFilter);
