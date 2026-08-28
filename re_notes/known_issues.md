@@ -14286,6 +14286,17 @@ directly by the user.
 
 ## 100. Motion blur: UI disappears when taking damage while moving -- REPORTED, not yet investigated (2026-08-27)
 
+**Status: Fixed, built and deployed, NOT YET independently live-confirmed.**
+Real root cause found and fixed 2026-08-28 -- `DrawPrimitiveUP` leaves the
+device's stream-0 vertex buffer binding in an officially undefined state
+(documented D3D9 behavior), never restored by `DrawFullScreenPass`; motion
+blur's own hook point fires before the native queued 2D/HUD dispatch each
+frame, so whatever native UI that dispatch draws right after (only ever
+queued on frames with something to draw -- e.g. the damage-taken vignette)
+inherited garbage stream-0 state. See this entry's own bottom section for
+the full live-diagnosis and fix trail. Original report below, kept for
+history.
+
 **Status: Open, not investigated.** Direct user report: "when you take
 damage it loses ui when moving and motion blur activates (minor issue but
 needs fixing still)." Reported live, immediately after the camera-tick/
@@ -15075,6 +15086,92 @@ native code itself runs on). Build clean, 0 errors, deployed. **Not yet
 live-tested** -- needs an actual Survival play session (a few unarmored
 hits) with `proxy_d3d9.log` checked afterward for `[dmgdiag]` lines. Turn
 `DamageDiagLoggingEnabled` back to 0 once done; not a permanent feature.
+
+**First live diagnostic capture (2026-08-28), and a real breakthrough.**
+User played Survival on a difficulty where armor isn't available (a
+deliberate methodology choice -- guarantees every hit is a clean,
+unambiguous unarmored sample), read directly from `proxy_d3d9.log`. Exactly
+ONE `[dmgdiag]` window fired the whole session (health 100->94, delta=6),
+matching the user's own account of the sequence ("i still had armor until
+the final hit before i paused which was the trigger of the bug") -- the
+diagnostic correctly filtered out every armor-absorbed hit and captured
+exactly the moment armor depleted.
+
+The data itself: `renderCtxPtr` (`DAT_021ddf00`) read exactly 0 across all
+120 sampled frames, even live/in-process; `motionBlurRanThisFrame=0` for
+the entire window; every single value was bit-for-bit identical frame to
+frame -- a total staticness that turned out to be explained by the user
+pausing immediately after the hit (confirmed directly: "paused after the
+hit"). Since `EndScene` keeps firing every real frame while paused (that's
+how the pause menu renders), frames 1-119 were almost certainly captured
+DURING the pause, not live gameplay -- `IsMenuActive_Exported()` correctly
+gating motion blur off while a menu is open is expected behavior, not the
+bug. This walked back an earlier over-read of the same data as "motion
+blur simply stopped running" being itself the bug.
+
+**The real breakthrough came from a NEW symptom detail, not more RE**:
+direct user report, "i discovered that it also breaks the reddening of the
+screen aka red screen you gte the blood splotches but missing the red
+screen edges that show intensity of the damage done to you." A full-screen
+damage vignette going missing (not a HUD sprite) reframed the whole
+investigation -- and confirmed directly, "deffo the same bug as motion
+blur, its only in that same constant" (isolated to motion blur, not FSR).
+
+Two theories were tested against this, live, by the user:
+1. **Blur washing out a low-contrast edge gradient** (`MotionBlurCenterFalloff`
+   concentrates full blur strength at screen edges/corners, exactly where a
+   vignette renders) -- **directly disproven**: user set
+   `MotionBlurCenterFalloff=0` (uniform blur, no radial concentration at
+   all) and the bug still happened, isolated to motion blur regardless of
+   falloff shape. Real, valuable negative result -- ruled out a whole class
+   of "it's about blur intensity/shape" explanations.
+2. **A real D3D9 state-leak, found by reading this project's OWN code**,
+   not the game's. `DrawFullScreenPass` (`overlay_hud.cpp`) calls
+   `DrawPrimitiveUP` to draw its full-screen quad -- and `DrawPrimitiveUP`
+   is documented, official Microsoft D3D9 behavior to leave the device's
+   stream-0 vertex buffer binding in an OFFICIALLY UNDEFINED state
+   afterward, requiring an explicit reset before any subsequent
+   `DrawPrimitive`-family call. `DrawFullScreenPass` is otherwise very
+   careful (viewport, texture stage 0, FVF, render states, sampler filters,
+   pixel shader are all saved/restored) but never touched stream source at
+   all, before this fix.
+
+   This project's own code already documents the exact ordering that makes
+   this matter: motion blur's real trigger, `Hook_693ff0`
+   (`analog_input_hooks.cpp`), is a PRE-hook that fires "right when this
+   viewport's 3D composite is genuinely done, strictly BEFORE its own
+   queued 2D/HUD dispatch (if any) runs" -- the real `FUN_00693ff0` gates on
+   `[ESI+0x320] != 0` and, when set, calls `FUN_004ee300`, a real
+   command-dispatch loop reading an opcode stream, "exactly the shape of
+   'draw this viewport's queued batch of 2D/UI elements.'" That dispatch
+   only actually has work to do on a frame where something real is queued
+   -- e.g. the damage-taken vignette. Put together: on an ordinary frame,
+   nothing's queued, so the leftover undefined stream-0 state has nothing
+   to break; on the exact frame an unarmored hit lands, real UI gets
+   queued, and whatever native draw calls that dispatch issues inherit
+   garbage stream-0 state -- explaining BOTH the missing vignette AND
+   broader UI loss with one mechanism, not just one low-contrast effect.
+   **Explains every piece of evidence gathered across this entire
+   investigation**: motion-blur-only (FSR calls the identical
+   `DrawFullScreenPass` from `Hook_EndScene`'s tail, strictly after all
+   native UI dispatching for the frame is already done -- nothing runs
+   afterward to be corrupted); armor-conditional (a fully-absorbed hit
+   keeps health pinned at 100 via `setnormalhealth(1)`, so there's likely
+   nothing real to queue for that dispatch); falloff-independent (a stream-
+   source corruption doesn't care how blur is weighted across the screen).
+
+**Fix implemented and deployed, 2026-08-28** -- `DrawFullScreenPass` now
+saves the real stream-0 binding (`GetStreamSource`) before `drawPrimitiveUP`
+and restores it (`SetStreamSource`, releasing the AddRef'd vertex buffer
+pointer) immediately after, matching the "leave the device exactly as
+found" standard already used for every other piece of state that function
+touches. New vtable index constants `kSetStreamSourceVtableIndex=100`/
+`kGetStreamSourceVtableIndex=101` (standard, stable IDirect3DDevice9 COM
+layout, cross-checked against this file's own already-confirmed indices
+the same way every other one here was). Build clean, 0 errors, deployed.
+**NOT YET independently live-confirmed** -- needs an actual unarmored hit
+with motion blur on, checking both that the UI/vignette no longer breaks
+AND that nothing else regressed.
 
 ## 101. Roadmap note: broader performance/optimization/modern-hardware pass, user's own framing (2026-08-27)
 
