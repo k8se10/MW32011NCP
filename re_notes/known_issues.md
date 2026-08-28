@@ -15262,21 +15262,36 @@ capture is harmless.** Rules out `StretchRect` itself as the cause,
 narrows the search to the render-state-change/quad-redraw block that
 follows it in `DrawFullScreenPass`.
 
-**Stage 3 built the same pass, not yet tested**: further split that
+**Stage 3 built and LIVE-CONFIRMED (2026-08-28)**: further split that
 remaining block. `DrawFullScreenPass`'s test parameter changed from a bool
 to an `int testStage` (2 handled as above; 3 is new) -- every state
 save/set runs exactly as normal (sampler filters, render states, viewport,
 texture0, FVF, pixel shader bind + its constants via `onShaderBound`) but
 the actual `drawPrimitiveUP` call itself is skipped, then every restore
-still runs afterward unchanged. Isolates "do the state CHANGES alone break
-it" from "does the real GPU draw command break it." If stage 3 still
-breaks the vignette, it's specifically one of the state changes (sampler/
-render-state/viewport/texture/FVF/pixel-shader-bind); if it comes back,
-it's the real `DrawPrimitiveUP` draw call itself -- a genuinely different,
-more surprising class of cause (GPU-side synchronization, or native code
-reading back the actually-drawn pixels rather than just device state).
-Build clean, 0 errors, deployed, `MotionBlurDrawTestStage=3` enabled live
-in `mw3ncp_config.ini` for the next test.
+still runs afterward unchanged. Direct user report: "broken here" --
+**it's one of the state changes themselves, not the real GPU draw command**
+-- even though every single one gets fully restored to its original value
+afterward. Rules out "the leftover draw command / GPU synchronization"
+class of explanation entirely; narrows the search to WHICH specific state
+change (sampler filters, render states, the forced full-screen viewport,
+texture0/FVF bind, or the pixel shader bind + its constants).
+
+**Stage 4 built the same pass, not yet tested**: tests the most "exotic"
+candidate first -- binding a custom pixel shader switches the device from
+fixed-function to programmable pipeline, even if fully restored afterward,
+a real candidate for an undocumented side effect on this old engine's
+likely fixed-function-based 2D HUD drawing. Skips `SetPixelShader`/its
+constants entirely (both the initial bind AND the final restore -- calling
+`SetPixelShader(device, nullptr)` to "restore" when it was never touched
+would itself be a real state change, so both sides are gated together);
+our own quad draws with whatever shader the native code last had bound
+instead (visually irrelevant to this test). Everything else -- sampler,
+render states, viewport, texture0/FVF, and the actual draw call -- runs
+normally. If the vignette/text still breaks, binding ANY custom pixel
+shader is the cause; if it comes back, it's something else in the
+remaining state changes. Build clean, 0 errors, deployed,
+`MotionBlurDrawTestStage=4` enabled live in `mw3ncp_config.ini` for the
+next test.
 
 ## 101. Roadmap note: broader performance/optimization/modern-hardware pass, user's own framing (2026-08-27)
 

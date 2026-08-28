@@ -419,12 +419,23 @@ struct ModConfig
     // DrawFullScreenPass -- zero D3D9 work at all. Confirmed this rules out
     // "the hook's mere existence at that call site" -- it's specifically
     // something our draw call itself does.
-    // Stage 2 (capture-only, no quad draw -- NOT YET TESTED): DrawFullScreenPass
-    // does the StretchRect backbuffer capture but stops before any render-
-    // state changes or the actual quad draw, via its own
-    // captureOnlySkipDrawTest parameter. Separates "does capturing the
-    // backbuffer alone break it" from "does the render-state-change/redraw
-    // sequence break it."
+    // Stage 2 (capture-only, no quad draw -- LIVE-CONFIRMED "still shows as
+    // should", 2026-08-28): DrawFullScreenPass does the StretchRect backbuffer
+    // capture but stops before any render-state changes or the actual quad
+    // draw. Confirmed the plain capture is harmless -- narrows to the render-
+    // state-change/redraw block that follows it.
+    // Stage 3 (state changes only, no draw call -- LIVE-CONFIRMED "broken
+    // here", 2026-08-28): every state save/set (sampler, render states,
+    // viewport, texture0, FVF, pixel shader + constants) runs exactly as
+    // normal, but the actual drawPrimitiveUP call is skipped. Confirmed it's
+    // one of the STATE CHANGES themselves, not the real draw command -- even
+    // though every change is fully restored afterward.
+    // Stage 4 (skip binding our pixel shader only -- NOT YET TESTED): skips
+    // SetPixelShader/its constants entirely (our own quad draws with
+    // whatever shader the native code last had bound); everything else,
+    // including the actual draw call, runs normally. Isolates whether
+    // binding ANY custom pixel shader, even briefly and even restored after,
+    // is the real cause.
     // Not a permanent feature; remove once issue #100 is resolved.
     int motionBlurDrawTestStage = 0;
     bool fireNotifyQueueKick = true; // task #7/#29: also pushes the literal command
