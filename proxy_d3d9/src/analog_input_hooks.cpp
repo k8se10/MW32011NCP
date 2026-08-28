@@ -9563,36 +9563,11 @@ extern "C" void __cdecl InjectAllControllerInput(unsigned char* cmd)
         }
     }
 
-    // [tickrate-diag] (2026-08-27, issue #90/camera-tick investigation): directly
-    // MEASURE how often this hook (and therefore controller look/movement
-    // injection, and the native cmd.angles pack this hook tail-jumps into) really
-    // fires per real second, instead of trusting the unverified "runs every real
-    // gameplay frame" claim in the clcstate-diag comment above. If this comes back
-    // near real render fps, cmd.angles updates every frame and the stepped-camera
-    // symptom must be downstream (the renderer reading a stale/latched copy
-    // instead of the freshest built usercmd). If it comes back near 30/sec
-    // regardless of render fps, this single hook point IS the 30Hz gate for both
-    // the general engine-cost pattern (issue #87/#79) and the camera-look jitter
-    // (issue #96 follow-up) -- the same mechanism, not two separate ones. Gated to
-    // active gameplay only; logs once per real second, negligible overhead.
-    if (nowInLevel) {
-        static DWORD s_tickRateWindowStartMs = 0;
-        static uint32_t s_tickRateCallsThisWindow = 0;
-        DWORD nowMsForTickRate = GetTickCount();
-        if (s_tickRateWindowStartMs == 0) s_tickRateWindowStartMs = nowMsForTickRate;
-        s_tickRateCallsThisWindow++;
-        DWORD elapsedForTickRate = nowMsForTickRate - s_tickRateWindowStartMs;
-        if (elapsedForTickRate >= 1000) {
-            char tickRateBuf[160];
-            sprintf_s(tickRateBuf,
-                "[tickrate-diag] Hook_0057de60 fired %u times in the last %ums (~%.1f/sec)",
-                s_tickRateCallsThisWindow, elapsedForTickRate,
-                s_tickRateCallsThisWindow * 1000.0 / (double)elapsedForTickRate);
-            LogFromController(tickRateBuf);
-            s_tickRateCallsThisWindow = 0;
-            s_tickRateWindowStartMs = nowMsForTickRate;
-        }
-    }
+    // [tickrate-diag] REMOVED 2026-08-28 -- its investigation (issue #90's
+    // camera-tick/vsync question) concluded and closed same night: the camera
+    // updates on every real render frame with no gate at all, root cause of
+    // the reported stutter was vsync on the affected machine, not this hook's
+    // own cadence. See known_issues.md issue #99 for the full resolution.
 
     // CONFIRMED live 2026-08-16 (see [inlevel-flag-diag] above): a "Restart Mission"
     // never drops this flag to <=0 -- it stays positive the entire time (normal
