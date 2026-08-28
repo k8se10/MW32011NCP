@@ -1,0 +1,270 @@
+================================================================
+Function: FUN_0052d000 @ 0052d000
+----------------------------------------------------------------
+
+void FUN_0052d000(undefined4 param_1,int param_2)
+
+{
+  char *pcVar1;
+  undefined4 uVar2;
+  int iVar3;
+  double dVar4;
+  
+  pcVar1 = (char *)FUN_0044ad10(param_2);
+  if (param_2 == 0xf8e) {
+    FUN_0040a5e0();
+    return;
+  }
+  if (param_2 - 0x562U < 2) {
+    FUN_004204c0(param_1,param_2);
+    return;
+  }
+  if (param_2 == 6) {
+    pcVar1 = (char *)FUN_0044ad10(6);
+    dVar4 = _atof(pcVar1);
+    FUN_00486350((float)dVar4);
+    return;
+  }
+  if (param_2 == 7) {
+    FUN_004ef1c0(param_1);
+    return;
+  }
+  if (param_2 == 8) {
+    FUN_004d4160(param_1);
+    return;
+  }
+  if (param_2 == 9) {
+    FUN_00537ee0(param_1);
+    return;
+  }
+  if (param_2 == 10) {
+    FUN_00468e10(param_1);
+    return;
+  }
+  if (param_2 == 0xb) {
+    FUN_0052f620(param_1);
+    return;
+  }
+  if (param_2 == 0xc) {
+    return;
+  }
+  if (param_2 < 0x56f) {
+    if (0x96e < param_2) goto LAB_0052d0f0;
+    if (0x98e < param_2) goto LAB_0052d112;
+    if (param_2 < 0xb8f) goto LAB_0052d14d;
+  }
+  else {
+    if (param_2 < 0x96f) {
+      FUN_0040e9b0(pcVar1);
+      return;
+    }
+LAB_0052d0f0:
+    if (param_2 < 0x98f) {
+      FUN_005438b0(pcVar1,param_2 + -0x96f);
+      return;
+    }
+LAB_0052d112:
+    if (param_2 < 0xb8f) {
+      FUN_00407340(param_2 + -0x98f);
+      return;
+    }
+  }
+  if (param_2 < 0xd8f) {
+    uVar2 = FUN_004136c0(pcVar1);
+    *(undefined4 *)(&DAT_009a89d0 + param_2 * 4) = uVar2;
+    return;
+  }
+LAB_0052d14d:
+  if (param_2 - 0xe8fU < 0x10) {
+    if ((*pcVar1 != '\0') && (iVar3 = FUN_004d39c0(pcVar1), iVar3 != 0)) {
+      uVar2 = FUN_004aaeb0(param_2 + -0xe8f);
+      FUN_004b4290(uVar2);
+      return;
+    }
+  }
+  else {
+    if (param_2 - 0x11U < 0x20) {
+      FUN_004a46b0(param_1,param_2);
+      return;
+    }
+    if (param_2 - 0xebfU < 0x80) {
+      FUN_0056bfb0();
+      return;
+    }
+    if (param_2 == 0x565) {
+      FUN_004d7c30(param_1);
+      return;
+    }
+    if (param_2 == 0x566) {
+      FUN_0047f5e0(param_1);
+      return;
+    }
+    if (param_2 == 0x567) {
+      FUN_004bfce0(param_1);
+      return;
+    }
+    if (param_2 == 0x568) {
+      FUN_0044a280(param_1);
+      return;
+    }
+    if (param_2 - 0x51U < 0x40) {
+      FUN_0041a110(param_1,param_2);
+      return;
+    }
+    if (param_2 == 0xf8f) {
+      FUN_00466370();
+      return;
+    }
+  }
+  return;
+}
+
+
+
+================================================================
+Function: FUN_005654a0 @ 005654a0
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_005654a0(undefined4 param_1)
+
+{
+  char *pcVar1;
+  undefined4 uVar2;
+  int iVar3;
+  int iVar4;
+  int *piVar5;
+  bool bVar6;
+  
+  FUN_005024b0(0);
+  DAT_009a7958 = FUN_004fd3f0("defaulttracer");
+  DAT_009a795c = FUN_005446b0("gfx_tracer_thermal",6);
+  _DAT_009a796c = FUN_005446b0("hint_health",7);
+  DAT_009a7970 = FUN_005446b0("hint_friendly",7);
+  DAT_009a7d38 = FUN_005446b0("stance_stand",7);
+  DAT_009a7d3c = FUN_005446b0("stance_crouch",7);
+  DAT_009a7d40 = FUN_005446b0("stance_prone",7);
+  DAT_009a7d44 = FUN_005446b0("stance_flash",7);
+  _DAT_009a7d48 = FUN_005446b0("objective",7);
+  _DAT_009a7d4c = FUN_005446b0("objective_ring",7);
+  DAT_009a7d50 = FUN_005446b0("objective_onscreen",7);
+  DAT_009a7d54 = FUN_005446b0("objective_onscreen_arrow",7);
+  DAT_009a7d58 = FUN_005446b0("line_double_sided",7);
+  DAT_009a7d5c = FUN_005446b0("line_horizontal",7);
+  DAT_009a7d60 = FUN_005446b0("hit_direction",7);
+  DAT_009a7d64 = FUN_005446b0("hit_direction_stun",7);
+  DAT_009a7d68 = FUN_005446b0("hint_mantle",7);
+  DAT_009ab724 = FUN_005446b0("hud_checkbox_active",7);
+  DAT_009ab728 = FUN_005446b0("hud_checkbox_current",7);
+  DAT_009ab72c = FUN_005446b0("hud_checkbox_done",7);
+  DAT_009ab730 = FUN_005446b0("hud_checkbox_fail",7);
+  DAT_009ab734 = FUN_005446b0("compassping_player",7);
+  DAT_009ab75c = 0;
+  DAT_009ab738 = FUN_005446b0("compassping_friendly",7);
+  DAT_009ab760 = FUN_005446b0("cb_compassping_friendly",7);
+  DAT_009ab73c = FUN_005446b0("compassping_friendlyfiring",7);
+  DAT_009ab764 = FUN_005446b0("cb_compassping_friendlyfiring",7);
+  _DAT_009ab740 = FUN_005446b0("compassping_friendlyyelling",7);
+  _DAT_009ab768 = FUN_005446b0("cb_compassping_friendlyyelling",7);
+  DAT_009ab744 = FUN_005446b0("compassping_enemyfiring",7);
+  DAT_009ab76c = FUN_005446b0("cb_compassping_enemyfiring",7);
+  _DAT_009ab748 = FUN_005446b0("compassping_enemyyelling",7);
+  _DAT_009ab770 = FUN_005446b0("cb_compassping_enemyyelling",7);
+  _DAT_009ab784 = FUN_005446b0("compassping_grenade",7);
+  _DAT_009ab788 = FUN_005446b0("compassping_explosion",7);
+  DAT_009ab78c = FUN_005446b0("hud_grenadeicon",7);
+  DAT_009ab790 = FUN_005446b0("hud_flashbangicon",7);
+  DAT_009ab794 = FUN_005446b0("hud_grenadethrowback",7);
+  DAT_009ab798 = FUN_005446b0("hud_grenadepointer",7);
+  DAT_009ab79c = FUN_005446b0("hud_offscreenobjectivepointer",7);
+  DAT_009ab7cc = FUN_005446b0("veh_centercircle",7);
+  DAT_009ab7d0 = FUN_005446b0("veh_movingcircle",7);
+  DAT_009ab7d4 = FUN_005446b0("veh_hud_line",7);
+  DAT_009ab7d8 = FUN_005446b0("veh_hud_bouncing_diamond",7);
+  FUN_005653d0();
+  FUN_0040a5e0();
+  iVar4 = 1;
+  do {
+    pcVar1 = (char *)FUN_0044ad10(iVar4 + 0x56f);
+    if (*pcVar1 == '\0') break;
+    FUN_005024b0(0);
+    FUN_0040e9b0(pcVar1);
+    iVar4 = iVar4 + 1;
+  } while (iVar4 < 0x400);
+  DAT_009ab7a0 = 0;
+  DAT_009ab7a4 = 0;
+  iVar4 = 1;
+  do {
+    pcVar1 = (char *)FUN_0044ad10(iVar4 + 0xb8f);
+    if (*pcVar1 == '\0') break;
+    uVar2 = FUN_004136c0(pcVar1);
+    *(undefined4 *)(&DAT_009ab80c + iVar4 * 4) = uVar2;
+    iVar4 = iVar4 + 1;
+  } while (iVar4 < 0x200);
+  iVar4 = 1;
+  do {
+    pcVar1 = (char *)FUN_0044ad10(iVar4 + 0xe8f);
+    if (*pcVar1 == '\0') break;
+    iVar3 = FUN_004d39c0(pcVar1);
+    if (iVar3 == 0) {
+      FUN_00425540(1,&DAT_008287e8,pcVar1);
+    }
+    uVar2 = FUN_004aaeb0(iVar4);
+    FUN_004b4290(uVar2);
+    iVar4 = iVar4 + 1;
+  } while (iVar4 < 0x10);
+  iVar4 = FUN_004d39c0("hold_breath");
+  if (iVar4 == 0) {
+    FUN_00425540(1,"Couldn\'t find shock file [hold_breath.shock]\n");
+  }
+  iVar4 = 0;
+  piVar5 = &DAT_00a9f3c0;
+  do {
+    if (DAT_00a98aac == '\0') {
+      bVar6 = iVar4 < DAT_009310f0;
+    }
+    else {
+      bVar6 = *piVar5 == 2;
+    }
+    if (bVar6) {
+      FUN_004b4290(&DAT_0096ee1c);
+    }
+    piVar5 = piVar5 + 0x998;
+    iVar4 = iVar4 + 1;
+  } while ((int)piVar5 < 0xaa4080);
+  DAT_009ab7a0 = FUN_00406fc0(param_1);
+  if (DAT_009ab7a0 == 0) {
+    FUN_00425540(1,&DAT_00856fb0);
+  }
+  DAT_009ab7a8 = FUN_004136c0("impacts/flesh_hit_noblood");
+  DAT_009ab7ac = FUN_004136c0("impacts/flesh_hit_knife");
+  DAT_009ab7b0 = FUN_004136c0("impacts/flesh_hit_knife_noblood");
+  DAT_009ab7a4 = FUN_0046ed40(param_1);
+  if (DAT_009ab7a4 == 0) {
+    FUN_00425540(1,&DAT_0082e458);
+  }
+  DAT_009ab7b4 = FUN_004136c0("impacts/riotshield_viewmodel_hit");
+  DAT_009ab7b8 = FUN_004136c0("impacts/riotshield_damaged_viewmodel_hit");
+  DAT_009ab7bc = FUN_004136c0("impacts/blood_on_riotshield");
+  DAT_009ab7c0 = FUN_004136c0("code/glass_shatter_piece");
+  DAT_009ab7c4 = FUN_004136c0("code/glass_shatter_64x64");
+  DAT_009ab7c8 = FUN_004136c0("code/glass_shatter_32x32");
+  pcVar1 = (char *)FUN_0044ad10(0x56a);
+  if (*pcVar1 == '1') {
+    DAT_009ab7e0 = FUN_005446b0("nightvision_overlay_goggles_grain",7);
+    DAT_009ab7e4 = FUN_005446b0("nightvision_grain",7);
+    DAT_009ab7e8 = FUN_005446b0("hud_icon_nvg",7);
+    DAT_009ab7dc = FUN_0040e9b0("viewmodel_NVG");
+    FUN_0043efe0();
+  }
+  pcVar1 = (char *)FUN_0044ad10(0x56b);
+  if (*pcVar1 == '1') {
+    FUN_0042d440();
+    return;
+  }
+  return;
+}
+
+
+
