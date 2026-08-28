@@ -14762,7 +14762,10 @@ game/debugger, no fix, no commits by the forks) -- consolidated here.
   -> shader-constant setup call, regardless of which upstream trigger
   (visionset_pain, shellshock, or something else) ends up being the real
   armor-conditional cause. Not decompiled further (`FUN_006842e0`,
-  `FUN_00694970`) -- the natural next static target.
+  `FUN_00694970`) -- the natural next static target. **CORRECTED by Fork E
+  below -- this framing overstated the finding; see the correction, this
+  chain is wired into the same struct as an already-dead-ended mechanism,
+  not independent proximity evidence on its own.**
 - **Fork C -- incomplete (hit a session-wide rate limit mid-task,
   `resets 5am Europe/London`), but surfaced one real, usable lead before
   stopping**: for the shellshock dvars (`bg_shock_screenType`/
@@ -14809,6 +14812,90 @@ shellshock angle is left for next time -- `FUN_004b4290`'s CALLERS (not
 yet inspected) are the natural next step, since whoever populates a given
 player's live class-definition struct from this loader would be a good
 anchor for finding who reads the resulting shock fields per-hit.
+
+**3-more-forks pass (2026-08-28), direct user follow-up** ("kee[ digging
+via 3 ,more forks"). Investigation-only, no live game/debugger, no fix, no
+commits by the forks -- consolidated here.
+
+- **Fork D -- traces `FUN_004b4290`'s real caller, another likely-negative
+  result for shellshock.** Its caller, `FUN_005654a0`, is a real load-time
+  init loop: for up to 16 named `.shock` preset-file slots, it checks the
+  file exists (logging `"Couldn't find shock file [%s.shock]"` if not),
+  then calls `FUN_004b4290` to snapshot that preset's dvar values. The
+  **only concrete preset name findable in static string data is
+  `"hold_breath"`** (checked separately, right after the loop, with its
+  own dedicated error string) -- strongly implying this whole `.shock`
+  system is a generic screen-effect ASSET framework whose only confirmed
+  named user is the already-implemented Hold Breath sniper-scope blur, not
+  a damage/pain reaction. The other ~15 slots resolve their names via a
+  runtime string-table index, not static literals, so couldn't be
+  individually identified this pass. Medium-high confidence this rules
+  shellshock out too, same shape as Fork A's `visionset_pain` result --
+  real and fully traced, but not proven tied to armor/damage.
+- **Fork E -- important CORRECTION to Fork B's "strong proximity" framing
+  above, not just an extension of it.** `FUN_006842e0`'s only caller,
+  `FUN_00684b00`, writes `*(EDI+0x940) = 2` -- **the exact same `+0x940`
+  "type byte" field on the exact same viewport-slot struct**
+  (`DAT_021ddf00 + 0x419d4`, stride `0xf50`) that the ORIGINAL 4-fork
+  investigation earlier this session already traced for the exclusion-zone/
+  PIP mechanism (`FUN_00508970`/`FUN_00694650`) and **conclusively ruled
+  out** (byte-identical between armored/unarmored captures). So
+  `FUN_004543d0`'s color-correction chain isn't independent proximity
+  evidence -- it's wired into the SAME struct as an already-dead mechanism.
+  Not a simple rediscovery of the dead path either, though: `FUN_00684b00`
+  has two callers, and one path (`FUN_00450740`, reached via
+  `FUN_00685e20`) does the same render-scale-ratio math as issue #88's
+  `InternalRenderScalePercent` feature -- meaning this chain is genuinely
+  reachable for the MAIN viewport too, not PIP-exclusive; the hardcoded
+  `type=2` write is presumably only real on the OTHER (PIP-specific,
+  `FUN_004ad990`) call path. Ran out of scope before resolving which path
+  parameterizes what, or -- more importantly -- whether this whole chain
+  runs every frame (a real per-hit-conflict candidate) or only on viewport
+  setup/resize (a rare, one-time event, not a plausible cause at all).
+  **Downgrades Fork B's `FUN_004543d0` finding from "strong proximity
+  evidence" to "real but unproven, needs the frame-cadence question settled
+  before it means anything."**
+- **Fork F -- genuinely new, previously-uncovered candidate.** Re-read
+  `_id_3F1B()` (`1574.gsc:1641-1684`) in full, confirming the existing
+  excerpt in this file was accurate and complete -- nothing else fires
+  unconditionally after `waittill("damage",...)` besides two pure GSC-local
+  variable assignments. Separately, `1571.gsc`'s own damage watcher
+  (`_id_3F9F()`/`_id_3FA1()`, lines 1307-1340) was checked and ruled out --
+  pure stat-counter bookkeeping, no native visual-effect calls. **New
+  find**: `maps\_gameskill.gsc` (file `69.gsc`) calls `self
+  painvisionon()`/`painvisionoff()` (lines 933/1425) -- a DIFFERENT builtin
+  from the already-ruled-out `visionsetpain`. Fires when `self.health /
+  self.maxhealth <= self._id_20F2.healthoverlaycutoff` (a low-health/
+  near-death threshold, gated on a `near_death_vision_enabled` difficulty
+  flag). **Fits this bug's armor-conditional shape well in principle**:
+  `_id_3F1B()`'s `setnormalhealth(1)` pins health at 100% on every
+  fully-absorbed armored hit, so health can never cross a low-health
+  threshold while armor holds; an unarmored hit lets real health drop and
+  could cross it. **Two real, unresolved caveats**: (1) this is a
+  THRESHOLD effect, not a per-hit one -- if the bug fires on literally any
+  unarmored hit regardless of health level, this doesn't fully explain it;
+  fits well only if it was actually noticed after several hits/at low
+  health. (2) Survival's own inclusion path is unconfirmed -- only
+  `init.gsc` (shared engine boot) and `183.gsc` (a Campaign file)
+  reference this function's entry point (`_gameskill::_id_1E8E()`) by
+  name; `1571.gsc`/`1574.gsc` never call it directly, which is EXPECTED if
+  reached via shared boot rather than a per-gametype call, but wasn't
+  independently confirmed. A broad corpus grep for
+  shellshock/stun/screenshake/etc. found nothing else in `1571.gsc`/
+  `1574.gsc` themselves.
+
+**Status update**: `visionset_pain` (Fork A) and the `.shock` preset system
+(Fork D) both now look like real, fully-traced, but likely-unrelated
+mechanisms -- neither ruled out with total certainty, but both weakened by
+concrete evidence. The render-pipeline "proximity" lead (`FUN_004543d0`
+etc.) is walked back from Fork B's original framing -- real code, but tied
+to an already-dead struct field and an unresolved frame-cadence question,
+not standalone evidence any more. **`painvisionon()`/`_gameskill.gsc`
+(Fork F) is now the most promising untested lead** -- a genuinely new,
+previously-uncovered native call with a real mechanistic fit to the
+armor-conditional shape, gated on two concrete open questions (threshold-
+vs-per-hit, and Survival's actual reachability of `_gameskill::_id_1E8E()`)
+that the next pass should resolve before going further down this path.
 
 ## 101. Roadmap note: broader performance/optimization/modern-hardware pass, user's own framing (2026-08-27)
 
