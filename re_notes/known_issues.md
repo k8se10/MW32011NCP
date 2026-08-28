@@ -14784,6 +14784,32 @@ trigger turns out to be real -- worth tracing on its own merits even before
 the trigger question is settled, since it's real, decompiled, structural
 proximity to this mod's own hook chain.
 
+**Follow-up on Fork C's `FUN_004b4290` lead, same pass, direct decompile
+check (no further agent spawn -- session was rate-limited).** Read the
+full decompiled body Fork C already saved
+(`forkC_decomp_4b4290_shockconsumer.txt`): this function reads roughly 20
+different `dvar_t*` handles (each accessed as `*(DAT_xxx + 0xc)`, the
+standard cvar "current value" field offset already established elsewhere
+in this project) into one large output struct, including
+`strncpy`-copying several dvar STRING values into named string fields.
+This shape -- many unrelated dvar handles bulk-read into one struct,
+including string fields -- is much more consistent with a **player-class
+or weapon-class DEFINITION loader** (populating a config struct once from
+`bg_*`-prefixed tuning dvars) than a live, per-frame or per-hit shock
+effect applier. `bg_shock_screenType`/`bg_shock_screenBlurBlendTime` are
+very likely just two of ~20 TUNING fields in that same class definition
+(how long/what type of shock effect a given class/perk uses), not evidence
+of a live "shock just triggered" trigger point. **This means Fork C's
+lead, while real, is probably one layer removed from the actual live
+per-hit consumer** -- the real trigger would be whatever reads the
+resulting struct's shock fields at the moment of taking damage, not
+`FUN_004b4290` itself (a load-time/definition-time function). Not
+identified yet. Given the session's own rate limit, this is where the
+shellshock angle is left for next time -- `FUN_004b4290`'s CALLERS (not
+yet inspected) are the natural next step, since whoever populates a given
+player's live class-definition struct from this loader would be a good
+anchor for finding who reads the resulting shock fields per-hit.
+
 ## 101. Roadmap note: broader performance/optimization/modern-hardware pass, user's own framing (2026-08-27)
 
 **Status: Roadmap Idea, not scoped.** Direct user framing, end of a long
