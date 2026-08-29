@@ -1,5 +1,19 @@
 [color=#E74C3C][b]⚠ 2026-08-18: only v0.2.2 and v0.3.2+ remain on this page[/b][/color] — versions before v0.2.2 were removed 2026-07-31 as a VAC-risk mitigation step (v0.2.2 permanently removed the aim-assist code those builds shipped with). As of v0.3.4, everything between v0.2.2 and the current release (v0.2.5 through v0.3.1.h1 — rapid, in-progress alpha churn, not a stable point worth keeping downloadable) has also been removed. Nothing was deleted — full source history for every version remains on GitHub — only the downloadable files are no longer offered here.
 
+[color=#3498DB][b]Current release: v0.3.5 (2026-08-29).[/b][/color]
+
+[hr]
+
+[b][size=4]v0.3.5 — Alpha (2026-08-29) — Visual-enhancement suite, stutter/threading overhaul[/size][/b]
+
+[color=#E74C3C][b]Headline:[/b][/color] the largest release yet by commit volume — two major bodies of work, not just a bug-fix pass. A new [b]visual-enhancement suite[/b], all off by default under [font=Courier New][Video][/font]: [font=Courier New]InternalRenderScalePercent[/font] (render the actual 3D scene above or below native resolution — real GPU cost scaling confirmed live, 220fps@100% vs. 70-80fps@300% at 2560x1440), FSR 1.0 RCAS sharpening (a direct port of AMD's real reference math), camera-only motion blur (driven by this mod's own real per-frame look data), and forced anisotropic filtering. See the screenshot comparison in the Description tab.
+
+[b]Also this release:[/b] a full [b]stutter/threading-architecture overhaul[/b] — a recurring freeze every 2-5 seconds is fixed, root-caused to five independent causes (a fixed-rate controller poll thread, synchronous vibration writes, an uninstrumented config-hot-reload file check, a synchronous log flush, uncached per-frame text measurement), plus a self-inflicted input-poll flood regression from the poll-thread fix itself caught in the same pass, resolved by moving polling, vibration, config-hot-reload, and log-flushing onto four separate dedicated background threads. [font=Courier New]ForceD3D9On12[/font] is [b]removed entirely[/b] — real-world evidence showed it leaves the system in a bad driver-level state that outlives the setting being turned back off. The in-mod FPS limiter is also [b]removed for good[/b] after a second, independently-designed attempt was live-tested and confirmed to only cap menu framerate, not gameplay — use RivaTuner Statistics Server instead. Also ships [font=Courier New]ForceHighQualityShadows[/font]/[font=Courier New]ForceHighQualityLighting[/font] (real, confirmed native shadow/lighting quality dvars) and a real [font=Courier New][Gyro][/font] config-generation bug fix (the section never appeared in a fresh [font=Courier New].ini[/font]).
+
+[color=#F39C12][b]Investigated, not shipped:[/b][/color] Campaign scripted sequences (QTEs) still ignore controller button presses entirely — real GSC evidence found (the native detection reads a genuine button-press event, not steady-state input), likely unifies with the long-open "Dust to Dust" elevator-mantle report.
+
+Full detail on GitHub: see this mod's Source page and [font=Courier New]PATCHNOTES.md[/font].
+
 [hr]
 
 [b][size=4]v0.3.4 — Alpha (2026-08-25) — DualSense input-parity fix, gameplay-hint glyph editor, new plugin API[/size][/b]

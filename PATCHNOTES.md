@@ -8,15 +8,20 @@ reverse-engineering trail behind each entry.
 
 ## v0.3.5 — Alpha (2026-08-29) — Visual-suite crash fixes, ForceD3D9On12 removed for good, native shadow/lighting quality toggles
 
-**PENDING LIVE STREAM CONFIRMATION as of 2026-08-29** — this build is being
-tested live; if it holds up, this becomes the confirmed v0.3.5 release.
-Everything below is real, built, and deployed, but "confirmed" language in
-individual entries refers to earlier testing within this same development
-window, not a final release sign-off.
+**CONFIRMED live 2026-08-29** — greenlit after a full live-stream test pass.
+Two real, live-found issues surfaced during that same confirmation session
+and are tracked separately rather than blocking this release: a glyph-position
+mis-detection on the main menu (still under investigation, not yet in
+`known_issues.md` pending a confirmed root cause) and issue #110 (buy-station
+stuck-open state when entered while crouched, single occurrence, not yet
+reproduced on demand). Neither reverts anything in this release — both are
+new leads for the next pass.
 
 **Summary:** A large release, primarily a stability/crash-fix pass. Fixed a recurring freeze every
-2-5 seconds (three real causes, the strongest an uninstrumented main-thread
-file-stat call in config hot-reload). Shipped the start of a visual-enhancement
+2-5 seconds (five real causes across two rounds, the strongest an uninstrumented
+main-thread file-stat call in config hot-reload — plus a self-inflicted
+SetEvent-flood regression from the poll-thread fix itself, caught and fixed
+within the same investigation). Shipped the start of a visual-enhancement
 suite — internal render resolution control (confirmed real GPU cost scaling,
 220fps@100% vs 70-80fps@300%), FSR 1.0 RCAS sharpening, and camera-only motion
 blur — the last of which caused a real, intermittent crash that was fully
@@ -89,7 +94,17 @@ investigation trails.
   directly, not a proxy/metadata value. Zero dvar writes, zero `vid_restart`, zero
   live device/window recreation — but since the underlying render targets are only
   ever created once, a config change requires restarting the game to take effect,
-  not just a hot-reload. (Two earlier approaches — a `r_mode`/`vid_restart` write
+  not just a hot-reload.
+
+  Same scene, default settings vs. 250% render scale + this release's other
+  visual-enhancement toggles:
+
+  | Default | v0.3.5+ (250% render scale) |
+  | --- | --- |
+  | ![Default](showcases/visual%20improvements/Default%20non%20zoom.png) | ![v0.3.5+ at 250% render scale](showcases/visual%20improvements/2.5x%20with%20our%20config%20set%20non%20zoom.png) |
+  | ![Default, cropped](showcases/visual%20improvements/Default%20zoom.png) | ![v0.3.5+ at 250% render scale, cropped](showcases/visual%20improvements/2.5x%20with%20our%20config%20set%20zoom.png) |
+
+  (Two earlier approaches — a `r_mode`/`vid_restart` write
   that crashed the game live, and a same-day hook on the wrong function that only
   changed reported metadata with zero real GPU impact, caught via a "no FPS change"
   report — were both abandoned; see `known_issues.md` issues #88/#91 for the full
