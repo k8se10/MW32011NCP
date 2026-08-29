@@ -670,6 +670,23 @@ struct ModConfig
     // once.
     int internalRenderScalePercent = 0;
 
+    // [Video] CustomResolutionWidth/CustomResolutionHeight (issue #102, 2026-08-28)
+    // -- an explicit, independent W/H override for the SAME real hook point/
+    // mechanism as InternalRenderScalePercent above (Hook_FUN_00679010), not a new
+    // hook or any new RE. Community request (GitHub issue #3): custom monitor
+    // layouts and split-screen setups where a single native-resolution PERCENTAGE
+    // can't express what's needed, since it always preserves the desktop's own
+    // aspect ratio -- an independent width and height, potentially a completely
+    // different aspect ratio than the desktop, needs two free values instead.
+    // Both > 0 takes priority over InternalRenderScalePercent when active (checked
+    // first in Hook_FUN_00679010); either at 0 falls through to the percentage
+    // mode, or to native if that's also 0. Same real properties as the percentage
+    // mode inherits for free (same override point): zero `r_mode` writes, zero
+    // `vid_restart`, zero live device/window recreation, applied exactly once at
+    // startup device-creation time, requires a game restart to take effect.
+    int customResolutionWidth = 0;
+    int customResolutionHeight = 0;
+
     // [Video] ForceD3D9On12 (issue #92, 2026-08-26) -- STRICTLY OPT-IN, OFF by
     // default. Real background: this project investigated whether this game might
     // already be transparently running through D3D9On12 (a real Microsoft OS

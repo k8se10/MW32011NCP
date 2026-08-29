@@ -132,10 +132,12 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#97](#97-motion-blur-issue-96-continuation-menu--loading-screen-gates-shipped-cutscene-report-retracted-on-retest----current-state-closed-for-tonight) — Motion blur menu/loading-screen gates + cutscene report — **Resolved** (cutscene report retracted on retest, no code change needed)
 - [#98](#98-cutscene-skip-audio-keeps-playing-after-skip----controller-specific-2026-08-28-not-yet-fixed) — Cutscene-skip audio keeps playing after skip — **Investigating** — controller-specific (Start), likely this mod's own pause-menu call, not native
 - [#99](#99-camera-look-stutterjitter----resolved-real-root-cause-is-vsync-confirmed-via-cross-machine-test-2026-08-27) — Camera-look stutter — **Resolved** (real root cause is vsync, confirmed via cross-machine test)
-- [#100](#100-motion-blur-ui-disappears-when-taking-damage-while-moving----reported-not-yet-investigated-2026-08-27) — Motion blur: UI disappears on damage while moving (armor-conditional, unrelated to #103) — **Open** — real GSC mechanism found (armor's `setnormalhealth()` bypasses the pure native damage path); which native call actually breaks the UI not yet traced
+- [#100](#100-motion-blur-ui-disappears-when-taking-damage-while-moving----reported-not-yet-investigated-2026-08-27) — Motion blur: UI disappears on damage while moving — **Resolved** — real cause was `SetFVF` itself, found via a 9-round live isolation test; `DrawFullScreenPass` now calls neither `SetFVF` nor `SetVertexDeclaration`, confirmed via a 4-wave Survival playtest
 - [#101](#101-roadmap-note-broader-performanceoptimizationmodern-hardware-pass-users-own-framing-2026-08-27) — Roadmap: growing into a "FusionFix-style" general enhancement patch — **Roadmap Idea**, not scoped
-- [#102](#102-external-feature-request-received-custom-widthheight-resolution-override-via-ini-for-custom-monitor-layoutssplitscreen----logged-not-investigated-2026-08-27) — External feature request: custom Width/Height resolution override via .ini — **Investigated (2026-08-28)** — maps onto the already-dead-ended `r_mode`/`vid_restart` mechanism (two confirmed live crashes); needs genuinely new RE, not a quick follow-up to `InternalRenderScalePercent`
+- [#102](#102-external-feature-request-received-custom-widthheight-resolution-override-via-ini-for-custom-monitor-layoutssplitscreen----logged-not-investigated-2026-08-27) — External feature request: custom Width/Height resolution override via .ini — **Implemented (2026-08-28)** — `[Video] CustomResolutionWidth/Height`, reuses `InternalRenderScalePercent`'s existing hook point (no new RE needed after all -- direct user correction), built and deployed, not yet independently live-tested
 - [#103](#103-real-crash--hard-hang--cutscene-black-screen----resolved-fsrs-own-full-screen-pass-had-zero-state-gating-now-fixed-2026-08-28) — Real crash + hard hang + cutscene/loading black screen — **Resolved** — root cause was FSR's own full-screen pass having zero state gating; fixed by applying the same menu+in-level gate motion blur already had
+- [#104](#104-fsr-black-screen103-class-bug-recurs-specifically-on-exit-level---main-menu----resolved-2026-08-28) — FSR crash on "exit level to main menu" — **Resolved** — `clcState==0` gate added, confirmed live ("fixed")
+- [#105](#105-live-crashfreeze-investigation-2026-08-28-night----root-cause-not-confirmed-found-and-fixed-a-real-unrelated-bug-unguarded-hud-font-idgate-log-spam-76-of-one-sessions-log-internalrenderscalepercent-ruled-out-for-this-specific-session) — Live crash/freeze investigation (WATCHDOG_VIOLATION, not a normal app crash) — **Investigating** — root cause not confirmed; found and fixed a real unrelated bug (unguarded log spam, 76% of one session's log); `ResourceUsageLogging` now on for the next test
 
 ---
 
@@ -15646,7 +15648,35 @@ visual-enhancement suite (render scale/FSR/motion blur) already shipping
 this session is the first concrete step, not the ceiling. Still not
 scoped into specific tasks -- a direction, not a plan.
 
-## 102. External feature request received: custom Width/Height resolution override via .ini, for custom monitor layouts/splitscreen -- LOGGED, not investigated (2026-08-27)
+## 102. External feature request received: custom Width/Height resolution override via .ini, for custom monitor layouts/splitscreen -- IMPLEMENTED (2026-08-28), reusing the existing InternalRenderScalePercent mechanism
+
+**Status: Implemented, not yet independently live-tested.** The RE-pass
+section below (2026-08-28) concluded this needed genuinely new RE, mapping
+the request onto the dead-ended `r_mode`/`vid_restart` mechanism -- **that
+conclusion was wrong, corrected the same day by direct user pushback**:
+"i dont think it does need new re we found all these such items when we
+was digging in the past 3 days." Correct read: the request doesn't
+actually need window/backbuffer resizing at all -- `InternalRenderScalePercent`'s
+own already-proven-safe mechanism (`Hook_FUN_00679010`, overriding the
+engine's REQUESTED internal render W/H before its one-time startup
+computation, zero `r_mode`, zero `vid_restart`) already accepts arbitrary
+W/H; it was just only ever exposed as a single percentage that preserves
+the desktop's own aspect ratio. New `[Video] CustomResolutionWidth`/
+`CustomResolutionHeight` (both 0 = disabled, either default) take priority
+over the percentage mode when both are set -- an explicit, independent
+W/H pair the percentage mode can't express, exactly what "custom monitor
+layouts and split-screen setups... a genuinely different aspect ratio"
+needs. Same real hook point, no new RE, no new risk class. `ConfigVersion`
+36->37. Build clean (0 warnings/0 errors), deployed. **Not yet
+independently live-tested** -- next step: the reporter (or another user
+with a non-standard-aspect setup) sets both values and confirms the scene
+actually renders at that resolution with no clipping/black bars.
+
+The original RE-pass finding below is kept for the investigation trail --
+its analysis of `r_mode`/`vid_restart`/`Hook_CreateDevice` is all still
+factually correct, it was just answering the wrong question (window/
+backbuffer size) instead of the one that actually solves the reporter's
+problem (internal render resolution, independent W/H).
 
 **Status: Roadmap Idea, not investigated.** Relayed by the user, GitHub-
 issue-template-shaped, requesting explicit action only "post this work
@@ -15900,3 +15930,22 @@ specific transition (exit a level to main menu with FSR enabled), and
 check whether `IsMenuActive_Exported()`/`kInLevelFlagAddr` genuinely lag
 behind the real transition, or whether a different, not-yet-identified gap
 exists.
+
+## 105. Live crash/freeze investigation (2026-08-28 night) -- root cause NOT confirmed; found and fixed a real unrelated bug (unguarded `[hud-font-id][gate]` log spam, 76% of one session's log); `InternalRenderScalePercent` ruled out for THIS specific session
+
+**Status: Investigating, not resolved.** Live reports, in order:
+1. "new major bug found with our increase in res, basically i opened a spec ops mission 'milehigh jack' and if enabled it crashes within the first 10 secs... i narrowed it by testing wit hjust that setting on and off exclusively" -- pointed at `InternalRenderScalePercent`.
+2. "that hypothesis was also wrong and whatever recent change you made to our resolution scaler broke it and it now crashes faster than ever in all modes not just survival."
+3. "acted very much like a memory leak, started fine then immediately freezes and closes."
+
+**First finding: the deployed DLL could not have been the cause of report #2.** Checked build/source timestamps directly: the `d3d9.dll` running at the time was the gyro-fix build (20:26), and every edit this session made to `Hook_FUN_00679010`/`CustomResolutionWidth`/`CustomResolutionHeight` (issue #102's own implementation) was still uncommitted and unbuilt (source mtimes 20:36-20:37, after the last real build). Whatever caused report #2/#3 was not that code.
+
+**Second finding: this is not a normal application crash.** Checked Windows Event Viewer directly (`Get-WinEvent`, Application log, IDs 1000/1001) -- found 96 `LiveKernelEvent`/`WATCHDOG_VIOLATION` (bug check `0x141`) kernel dumps across two bursts (21:15-21:17 the night of the report, and a second burst at 01:42 the following night, confirmed by the user to be a separate/unrelated moment, not an ongoing freeze -- user confirmed directly: "Never actually froze/reset," and the crash itself was "at 8-10pm yesterday," matching the first burst). This is a materially different signature from every other crash this project has diagnosed to date -- those were all ordinary `0xc0000005` access violations inside `d3d9.dll` at a specific fault offset (issues #96/#100/#104). No GPU-driver TDR events (`nvlddmkm`) were found alongside it in the System log.
+
+**Third finding: `InternalRenderScalePercent` was OFF for the entire session that produced the 21:15-17 crash burst.** `proxy_d3d9.log` never printed a single `[video-scale]` override line all session (only the always-on `[video-scale-diag2]` line, which fires regardless of whether the feature is active) -- and the live config confirms `InternalRenderScalePercent=0`. This directly contradicts the user's own report-#2 hypothesis for THIS session (their original report-#1 "milehigh jack" correlation may still be real, from an earlier, separate session/log not available for this investigation -- not disproven, just not confirmed by this session's evidence).
+
+**Real bug found and fixed, unrelated to any of the above theories but a genuine, serious finding on its own**: `Hook_DrawGlyphText`'s `[hud-font-id][gate]` diagnostic (`analog_input_hooks.cpp`, added 2026-08-11 per issue #74) was **never actually gated by `[Experimental] HudFontIdLogging`** despite the shipped `.ini`'s own comment documenting it as toggleable ("0 = off, 1 = on") -- the same "config toggle exists but doesn't gate anything" bug class this project has hit before (`glyphIconOverlayEnabled` hardcoded off for 3 releases; issue #76's `[Gyro]` section never generating). Live impact, directly measured: with `HudFontIdLogging=0` in the deployed config, this one diagnostic still produced **49,525 of 65,318 lines -- 76% of the entire session's `proxy_d3d9.log`** -- because its dedup key (font name + 3 gate booleans) genuinely flips on almost every call while native HUD text alternates fonts (`hudBigFont`/`smallFont`), defeating the dedup during any sustained HUD/menu activity. The log's own last lines before its abrupt mid-write cutoff (a genuine crash signature -- the write never completed) show `[cursor-pos-diag]`/`[cursor-gate-diag]` -- the user was actively moving the mouse in a menu at the moment of the crash, exactly the condition that would maximize this log-spam bug's output rate. **Fixed**: the whole block now requires `g_modConfig.hudFontIdLogging`, matching its documented contract. Not confirmed as the crash's root cause -- `Log()`'s own `fprintf` is buffered and cheap, not a strong candidate for a literal memory leak on its own -- but a real, serious, unconditional per-frame cost with zero reason to run by default, worth eliminating regardless of whether it explains this specific crash.
+
+**Also enabled for the next test session**: `[Experimental] ResourceUsageLogging` (already-built, unused this session -- zero `[resource-diag]` lines in the crash log) was OFF; set to `1` directly in the live `mw3ncp_config.ini` (not just the default template) so the next session captures real process/system memory data (working set, private bytes, pagefile, system load) once a second -- the actual tool needed to confirm or rule out the user's "acted very much like a memory leak" theory, per issue #92's own original design intent.
+
+**Build clean (0 warnings/0 errors), deployed. Root cause of the crash/freeze itself is NOT yet confirmed.** Real next step: reproduce again with this build (the log-spam fix and `ResourceUsageLogging` both active) and share the resulting `proxy_d3d9.log` -- real memory-growth data over the session, a much cleaner log with the spam removed, and confirmation of whether the fix alone changes anything.

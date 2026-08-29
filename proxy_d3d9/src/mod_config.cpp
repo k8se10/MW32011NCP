@@ -160,7 +160,7 @@ void ReadBool(const char* path, const char* section, const char* key, bool& outV
 // real system d3d9.dll's Direct3DCreate9On12 entry point instead of the ordinary
 // one -- a real, Microsoft-documented alternate export, not a third-party DLL swap.
 // See mod_config.h's own forceD3D9On12 field comment for the full design.
-constexpr unsigned long kCurrentConfigVersion = 36; // v23->v24: FsrSharpenEnabled/FsrSharpenStrength (Phase B)
+constexpr unsigned long kCurrentConfigVersion = 37; // v23->v24: FsrSharpenEnabled/FsrSharpenStrength (Phase B)
                                                      // v24->v25: MotionBlurEnabled/MotionBlurStrength (Phase E),
                                                      // FsrSharpenStrength default 0.5->0.3 (live feedback: "needs more softness")
                                                      // v25->v26: ForceAnisotropicFiltering
@@ -195,6 +195,10 @@ constexpr unsigned long kCurrentConfigVersion = 36; // v23->v24: FsrSharpenEnabl
                                                      // Sensitivity default 1.0->0.25 (live feedback:
                                                      // "far too high"); new OnlyWhileAds toggle
                                                      // (live-tester request, default off)
+                                                     // v36->v37: [Video] CustomResolutionWidth/Height
+                                                     // (issue #102, community request -- reuses the
+                                                     // existing InternalRenderScalePercent hook point,
+                                                     // no new RE). Both default 0/disabled.
 
 // Reads a legacy key's raw value, returning true only if the key genuinely existed
 // (unlike ReadFloat, which can't distinguish "absent" from "present but unparsable" --
@@ -557,6 +561,17 @@ void WriteDefaultConfig(const char* path)
         "; THE GAME, not just a hot-reload. Confirmed live (220fps at 100%% vs. 70-80fps\n"
         "; at 300%% on a real 2560x1440 display -- real GPU cost genuinely scales).\n"
         "InternalRenderScalePercent=%d\n"
+        "; Issue #102 (community request, GitHub issue #3 -- custom monitor layouts\n"
+        "; and split-screen setups). An explicit, independent internal render W/H,\n"
+        "; taking priority over InternalRenderScalePercent above when BOTH are set\n"
+        "; (0 = disabled for either one). The percentage mode always preserves your\n"
+        "; desktop's own aspect ratio -- these two free values don't have to, useful\n"
+        "; when you need a genuinely different aspect ratio than your desktop. Same\n"
+        "; real mechanism/guarantees as InternalRenderScalePercent (see above): no\n"
+        "; r_mode writes, no vid_restart, no live device recreation, requires\n"
+        "; RESTARTING THE GAME to take effect. NOT YET LIVE-TESTED.\n"
+        "CustomResolutionWidth=%d\n"
+        "CustomResolutionHeight=%d\n"
         "; Issue #92: forces this DLL's own Direct3DCreate9 export to call the real\n"
         "; system d3d9.dll's Direct3DCreate9On12 entry point instead of the ordinary\n"
         "; one -- a real, Microsoft-documented alternate export from the SAME real DLL,\n"
@@ -894,6 +909,8 @@ void WriteDefaultConfig(const char* path)
         PhysicalInputName(g_modConfig.customButtonMap.scoreboard),
         g_modConfig.useCustomOptionsScreen ? 1 : 0,
         g_modConfig.internalRenderScalePercent,
+        g_modConfig.customResolutionWidth,
+        g_modConfig.customResolutionHeight,
         g_modConfig.forceD3D9On12 ? 1 : 0,
         g_modConfig.fsrSharpenEnabled ? 1 : 0,
         g_modConfig.fsrSharpenStrength,
@@ -1197,6 +1214,12 @@ void LoadModConfig()
     {
         int v = GetPrivateProfileIntA("Video", "InternalRenderScalePercent", g_modConfig.internalRenderScalePercent, path);
         g_modConfig.internalRenderScalePercent = v;
+    }
+    {
+        int w = GetPrivateProfileIntA("Video", "CustomResolutionWidth", g_modConfig.customResolutionWidth, path);
+        int h = GetPrivateProfileIntA("Video", "CustomResolutionHeight", g_modConfig.customResolutionHeight, path);
+        g_modConfig.customResolutionWidth = w;
+        g_modConfig.customResolutionHeight = h;
     }
     ReadBool(path, "Video", "ForceD3D9On12", g_modConfig.forceD3D9On12);
     ReadBool(path, "Video", "FsrSharpenEnabled", g_modConfig.fsrSharpenEnabled);
