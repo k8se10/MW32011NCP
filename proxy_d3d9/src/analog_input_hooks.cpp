@@ -6098,27 +6098,44 @@ RenderResComputeFn g_origFUN_00679010 = nullptr;
 void __fastcall Hook_FUN_00679010(void* self)
 {
     int pct = g_modConfig.internalRenderScalePercent;
-    if (pct > 0 && self != nullptr) {
+    bool customActive = g_modConfig.customResolutionWidth > 0 && g_modConfig.customResolutionHeight > 0;
+    if ((pct > 0 || customActive) && self != nullptr) {
         auto* base = reinterpret_cast<uint8_t*>(self);
         int32_t nativeW = *reinterpret_cast<int32_t*>(base + 0x24);
         int32_t nativeH = *reinterpret_cast<int32_t*>(base + 0x28);
         if (nativeW > 0 && nativeH > 0) {
-            int targetW = static_cast<int>(static_cast<int64_t>(nativeW) * pct / 100);
-            int targetH = static_cast<int>(static_cast<int64_t>(nativeH) * pct / 100);
+            // Issue #102 (GitHub issue #3, custom monitor layouts/splitscreen):
+            // CustomResolutionWidth/Height, when both set, take priority over the
+            // percentage mode -- an explicit, independent W/H the percentage mode
+            // can't express (it always preserves native's own aspect ratio; two
+            // free values don't have to). Reuses the exact same override point,
+            // no new hook, no new RE.
+            int targetW, targetH;
+            const char* modeLabel;
+            if (customActive) {
+                targetW = g_modConfig.customResolutionWidth;
+                targetH = g_modConfig.customResolutionHeight;
+                modeLabel = "CustomResolutionWidth/Height";
+            } else {
+                targetW = static_cast<int>(static_cast<int64_t>(nativeW) * pct / 100);
+                targetH = static_cast<int>(static_cast<int64_t>(nativeH) * pct / 100);
+                modeLabel = "InternalRenderScalePercent";
+            }
             // Same 640x480 floor FUN_006798e0's own real mode-enumeration logic
             // already enforces for r_mode (known_issues.md issue #88) -- a target
             // below that is never a value this engine would produce on its own.
             // No CEILING clamp against native -- DAT_021d2e00/04 (what this
             // actually feeds) is a direct, unclamped copy, so values above 100%
-            // are meant to genuinely exceed native for real supersampling.
+            // (or an explicit custom value above native) are meant to genuinely
+            // exceed native for real supersampling.
             if (targetW >= 640 && targetH >= 480) {
                 *reinterpret_cast<int32_t*>(base + 0x1c) = targetW;
                 *reinterpret_cast<int32_t*>(base + 0x20) = targetH;
                 char buf[256];
-                sprintf_s(buf, "[video-scale] InternalRenderScalePercent=%d -> native=%dx%d target=%dx%d -- "
+                sprintf_s(buf, "[video-scale] %s -> native=%dx%d target=%dx%d -- "
                     "overriding requested scene render resolution before FUN_00679010 runs "
                     "(feeds the real RESOLVED_SCENE/post-effect render targets, no r_mode, no vid_restart)",
-                    pct, static_cast<int>(nativeW), static_cast<int>(nativeH), targetW, targetH);
+                    modeLabel, static_cast<int>(nativeW), static_cast<int>(nativeH), targetW, targetH);
                 LogFromController(buf);
 
                 // Diagnostic, added 2026-08-26 during issue #96's live-gameplay-only
@@ -7584,33 +7601,57 @@ void __cdecl Hook_DrawGlyphText(
     // for that report specifically and leaves "does this hook fire, and which gate
     // blocks it" as the single most valuable unknown. Deliberately NOT a guessed fix --
     // this project's own standard is to verify via logs before changing behavior.
-    static LONG s_drawGlyphTextFireCount = 0;
-    if (InterlockedIncrement(&s_drawGlyphTextFireCount) == 1) {
-        LogFromController("[hud-font-id] Hook_DrawGlyphText fired for the first time -- confirmed alive");
-    }
-    {
-        static char s_lastLoggedGateKey[160] = {};
-        char fontNameForLog[64] = "<unreadable-or-null>";
-        if (fontArg && LooksLikeValidPointer(reinterpret_cast<uintptr_t>(fontArg))) {
-            const DiagFont* fontForLog = reinterpret_cast<const DiagFont*>(fontArg);
-            if (LooksLikeValidPointer(reinterpret_cast<uintptr_t>(fontForLog->fontName))) {
-                strncpy_s(fontNameForLog, fontForLog->fontName, _TRUNCATE);
-            }
+    // BUG FIXED 2026-08-29 (live-reported freeze/crash investigation): this whole
+    // block was documented in WriteDefaultConfig's own .ini comment as gated by
+    // [Experimental] HudFontIdLogging ("Always forwards unmodified regardless of
+    // this toggle. 0 = off, 1 = on" -- referring to the ORIGINAL hooked call always
+    // proceeding untouched, not to logging being unconditional) but the code never
+    // actually checked g_modConfig.hudFontIdLogging anywhere -- a real, confirmed
+    // "config toggle exists but doesn't gate anything" bug, the same class this
+    // project has hit before (glyphIconOverlayEnabled hardcoded off for 3 releases,
+    // [Gyro] never generating into the default .ini). Live-captured impact: with
+    // HudFontIdLogging=0 in the deployed config, this block still produced 49,525
+    // of 65,318 lines (76%) in one session's proxy_d3d9.log, because the dedup key
+    // (font name + 3 gate booleans) genuinely alternates every single call while
+    // native HUD text cycles between fonts (hudBigFont/smallFont), defeating the
+    // dedup entirely during any sustained HUD/menu activity -- correlated with a
+    // real freeze/crash report ("started fine then immediately freezes and
+    // closes"). Not confirmed as the crash's root cause (Log()'s own fprintf is
+    // buffered/cheap, not a plausible direct memory-leak source on its own), but a
+    // real, unconditional, high-volume diagnostic with no reason to run by default
+    // is exactly the kind of unnecessary background cost this investigation should
+    // rule out first. Fixed: both the one-shot "fired for the first time" log and
+    // the per-change [gate] log now require hudFontIdLogging, matching every other
+    // diagnostic's own documented on/off contract.
+    if (g_modConfig.hudFontIdLogging) {
+        static LONG s_drawGlyphTextFireCount = 0;
+        if (InterlockedIncrement(&s_drawGlyphTextFireCount) == 1) {
+            LogFromController("[hud-font-id] Hook_DrawGlyphText fired for the first time -- confirmed alive");
         }
-        bool wouldDraw = ShouldDrawGlyphOverlay();
-        bool menuActive = IsMenuActive();
-        bool fontAllowed = (fontArg && LooksLikeValidPointer(reinterpret_cast<uintptr_t>(fontArg)))
-            ? IsGameplayHintFont(reinterpret_cast<const DiagFont*>(fontArg)) : false;
-        char gateKey[160];
-        sprintf_s(gateKey, "%s|%d|%d|%d", fontNameForLog, wouldDraw ? 1 : 0, menuActive ? 1 : 0, fontAllowed ? 1 : 0);
-        if (strncmp(s_lastLoggedGateKey, gateKey, sizeof(s_lastLoggedGateKey) - 1) != 0) {
-            strncpy_s(s_lastLoggedGateKey, gateKey, _TRUNCATE);
-            char gateBuf[256];
-            sprintf_s(gateBuf, "[hud-font-id][gate] font=%s ShouldDrawGlyphOverlay=%d IsMenuActive=%d "
-                                 "IsGameplayHintFont=%d forceGlyphOverlay=%d",
-                fontNameForLog, wouldDraw ? 1 : 0, menuActive ? 1 : 0, fontAllowed ? 1 : 0,
-                g_modConfig.forceGlyphOverlay ? 1 : 0);
-            LogFromController(gateBuf);
+        {
+            static char s_lastLoggedGateKey[160] = {};
+            char fontNameForLog[64] = "<unreadable-or-null>";
+            if (fontArg && LooksLikeValidPointer(reinterpret_cast<uintptr_t>(fontArg))) {
+                const DiagFont* fontForLog = reinterpret_cast<const DiagFont*>(fontArg);
+                if (LooksLikeValidPointer(reinterpret_cast<uintptr_t>(fontForLog->fontName))) {
+                    strncpy_s(fontNameForLog, fontForLog->fontName, _TRUNCATE);
+                }
+            }
+            bool wouldDraw = ShouldDrawGlyphOverlay();
+            bool menuActive = IsMenuActive();
+            bool fontAllowed = (fontArg && LooksLikeValidPointer(reinterpret_cast<uintptr_t>(fontArg)))
+                ? IsGameplayHintFont(reinterpret_cast<const DiagFont*>(fontArg)) : false;
+            char gateKey[160];
+            sprintf_s(gateKey, "%s|%d|%d|%d", fontNameForLog, wouldDraw ? 1 : 0, menuActive ? 1 : 0, fontAllowed ? 1 : 0);
+            if (strncmp(s_lastLoggedGateKey, gateKey, sizeof(s_lastLoggedGateKey) - 1) != 0) {
+                strncpy_s(s_lastLoggedGateKey, gateKey, _TRUNCATE);
+                char gateBuf[256];
+                sprintf_s(gateBuf, "[hud-font-id][gate] font=%s ShouldDrawGlyphOverlay=%d IsMenuActive=%d "
+                                     "IsGameplayHintFont=%d forceGlyphOverlay=%d",
+                    fontNameForLog, wouldDraw ? 1 : 0, menuActive ? 1 : 0, fontAllowed ? 1 : 0,
+                    g_modConfig.forceGlyphOverlay ? 1 : 0);
+                LogFromController(gateBuf);
+            }
         }
     }
 
