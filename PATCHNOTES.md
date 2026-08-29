@@ -6,9 +6,15 @@ reverse-engineering trail behind each entry.
 
 ---
 
-## Unreleased
+## v0.3.5 — Alpha (2026-08-29) — Visual-suite crash fixes, ForceD3D9On12 removed for good, native shadow/lighting quality toggles
 
-**Summary:** A large, still-in-progress release. Fixed a recurring freeze every
+**PENDING LIVE STREAM CONFIRMATION as of 2026-08-29** — this build is being
+tested live; if it holds up, this becomes the confirmed v0.3.5 release.
+Everything below is real, built, and deployed, but "confirmed" language in
+individual entries refers to earlier testing within this same development
+window, not a final release sign-off.
+
+**Summary:** A large release, primarily a stability/crash-fix pass. Fixed a recurring freeze every
 2-5 seconds (three real causes, the strongest an uninstrumented main-thread
 file-stat call in config hot-reload). Shipped the start of a visual-enhancement
 suite — internal render resolution control (confirmed real GPU cost scaling,
@@ -57,9 +63,19 @@ scene supersampling, never the real output window size, so it never
 actually fixed the custom-monitor/split-screen problem it was built for;
 genuine future work, noted for post-0.3.5. Also shipped
 `ForceHighQualityShadows`/`ForceHighQualityLighting` (real, confirmed
-native shadow/lighting quality dvars, off by default). See
-issues #76/#92/#99/#102/#105/#106/#107 and the itemized entries below and
-`known_issues.md` issues #87/#90/#95-#101 for the full investigation trails.
+native shadow/lighting quality dvars, off by default). A pre-release
+Campaign/Spec Ops glyph-coverage pass recalibrated `LEVELS_BUTTON_LIST`
+from real F2/F3 editor captures (confirmed correct live); a second part of
+the same capture batch (two Campaign pause-menu confirm popups) turned out
+wrong and was reverted, needing real per-screen detection before it's
+safe to recapture — deferred to before v0.4.0/beta. A new, real,
+unresolved lead was also found and documented: Campaign scripted sequences
+(QTEs) ignore controller button presses entirely, with real GSC evidence
+pointing at a genuine button-press-event requirement rather than steady-state
+kbutton injection, likely unifying with the long-open issue #75. See
+issues #76/#92/#99/#102/#105/#106/#107/#108/#109 and the itemized entries
+below and `known_issues.md` issues #87/#90/#95-#109 for the full
+investigation trails.
 
 ### What's New
 1. **[Video] InternalRenderScalePercent — PREVIEW/WIP, off by default.** Fixes a
@@ -407,6 +423,7 @@ issues #76/#92/#99/#102/#105/#106/#107 and the itemized entries below and
   phase. No fix attempted. See `known_issues.md` issue #30's newest entry.
 6. **Cutscene-skip audio keeps playing after skip — new evidence points at this mod's own Start-button handler, not a native bug as originally suspected.** Original report (London mission): visual skip works, dialogue audio keeps playing. A later, more precise report narrowed it decisively: "audio keeps playing when using controller to skip cutscene(not on k+m click)" — a genuine mouse click skips cleanly, but the controller's Start button doesn't. That's device-specific, which the earlier "no dedicated skip-cutscene hook exists, so it's probably native" read never accounted for. Real, likely mechanism: `InjectControllerPauseMenu()`'s current logic has no cutscene exclusion — a cutscene state outside `{1, 2}` falls through to a real `SetMenuState(..., paused-menu)` call with no gate, theorized to tear down the cutscene as a pause side effect without hitting whatever real audio-stop path a genuine dedicated skip input uses. Not yet confirmed live (no cutscene state value has actually been captured in the existing `[pause-diag]` logging yet) and not fixed. See `known_issues.md` issue #98.
 7. **[Video] FpsLimitEnabled/FpsLimitTargetFps/FpsLimitEnhancementsOnly — first design built, live-tested, FAILED, fully removed; REBUILT the next day on a different mechanism, ALSO live-tested and FAILED, removed again for good.** Kept here as the record of both attempts' real failures. The first version placed a hand-rolled Sleep+spin wait right after `Hook_EndScene`'s real `EndScene` call returns, assumed to be effectively a post-Present wait. Live-tested immediately after shipping: "our limiter makes horrible pacing... its mad delay too input lagh... thats with rtss off." Root cause: `EndScene` and the real `Present` call are almost certainly two separate D3D9 calls, with `Present` invoked by the game's own loop AFTER `EndScene` returns — the wait actually landed BEFORE the real display event (front-edge, not the intended back-edge), directly explaining both the added latency and the bad pacing. Reverted live, confirmed clean by the user, then fully removed from source rather than guessing at a fix the same night. The second design (writing the game's own `com_maxfps` dvar) avoided that whole problem class entirely but, per the What's New entry above, turned out to only cap menu framerate, not gameplay, once actually live-tested. Two independently-designed attempts at this exact goal have now both failed live testing for two completely different reasons — see `known_issues.md` issue #99 for the complete trail of both.
+8. **Campaign scripted sequences (QTEs) ignore controller button presses entirely — real cause found, likely unifies the long-open issue #75 ("Dust to Dust" elevator mantle).** Direct live report: pressing the mapped controller button during a Campaign scripted sequence does nothing at all ("the prompt just sits there"), only keyboard works; direct user framing tied this to issue #75's own unexplained mantle failure — "scripted sequences in campaign look for actual button press beyond normal behaviour same reason the jump fails on last mission etc." Real evidence: the decompiled GSC corpus (`dubai_finale.gsc`) confirms scripted-sequence detection uses `usebuttonpressed()`/`meleebuttonpressed()`/`attackbuttonpressed()`/`adsbuttonpressed()` — real native methods that almost certainly read a genuine edge/frame-of-press signal, not the persistent kbutton state this project's own `KeyDown`/`KeyUp` injection sets, explaining why ordinary interact/buy-station prompts work fine while scripted sequences don't. Leading fix candidate is this project's own precedented Survival-ready-up technique (a real, synthetic `WM_KEYDOWN`/`WM_KEYUP` via `PostMessageA`), not yet implemented. See `known_issues.md` issue #108.
 ## v0.3.4 — Alpha (2026-08-25) — DualSense input-parity fix, gameplay-hint glyph editor, new plugin API
 
 **Summary:** DualSense's Bluetooth stick-garbling bug is fixed — a real
