@@ -4461,23 +4461,19 @@ constexpr ManualGlyphEntry kManualGlyphPositions[] = {
     // same shared list container. Kept depth-specific (unlike the others
     // above) -- confirmed live this SAME group name is reused one level
     // deeper for a per-mission sub-list with a genuinely different Y-base.
-    { "LEVELS_BUTTON_LIST", 3, 20.0f, 5,
-      {605.0f, 605.0f, 605.0f, 605.0f, 605.0f},
-      {288.0f, 333.0f, 378.0f, 423.0f, 468.0f} },
-    // Same group, one level deeper (2026-08-03, second batch capture): the
-    // per-mission sub-list under an Act's own mission list (e.g. Act I:
-    // Prologue/Black Tuesday/Hunter Killer/Persona Non Grata/Turbulence/Back
-    // on the Grid/Mind the Gap). An earlier pass wrongly flagged this as "not
-    // clean enough to calibrate" -- what looked like contamination was just
-    // the FIRST entry's own text drawn 3x for a drop-shadow/outline effect
-    // (identical text at 3 near-identical Y values, e.g. 187/191/198),
-    // trivially distinguishable from real extra rows. Right-aligned column
-    // is slightly left of the ~605 norm (~583, still same convention), same
-    // base=198/45px grid as everything else. Acts II/III only populate 6 of
-    // these 7 slots; harmless, unused higher indices are just never reached.
-    { "LEVELS_BUTTON_LIST", 4, 20.0f, 7,
-      {583.0f, 583.0f, 583.0f, 583.0f, 583.0f, 583.0f, 583.0f},
-      {198.0f, 243.0f, 288.0f, 333.0f, 378.0f, 423.0f, 468.0f} },
+    // RECALIBRATED 2026-08-29 via a real in-game F2/F3 editor capture during a
+    // live Campaign playthrough (superseding the earlier screenshot/estimate-
+    // derived values above) -- per this project's own established standard,
+    // an editor capture is trusted as correct by construction (real dragged
+    // position against the real live screen), not re-estimated.
+    { "LEVELS_BUTTON_LIST", 3, 0.0f, 3,
+      {636.0f, 638.2f, 632.2f},
+      {198.8f, 243.8f, 288.0f} },
+    // Same group, one level deeper -- per-mission sub-list. RECALIBRATED
+    // 2026-08-29, same live editor capture session as depth=3 above.
+    { "LEVELS_BUTTON_LIST", 4, 0.0f, 7,
+      {636.0f, 637.5f, 636.0f, 636.0f, 637.5f, 636.8f, 632.2f},
+      {198.8f, 244.5f, 289.5f, 333.8f, 378.0f, 424.5f, 468.8f} },
     // Special Ops hub (Find Online Match/Private Online Match/Solo Play/
     // Callsign/Barracks/Store/Options/Main Menu/Quit) -- right-aligned shared
     // column, 9 real items.
@@ -4745,6 +4741,11 @@ constexpr VerifiedGlyphGroup kVerifiedGlyphGroups[] = {
     { "PERKS_POPUP", 2 },
     { "WEAPON_UPGRADE_POPUP", 3 },  // added 2026-08-25 follow-up, after index 7 was confirmed
                                       // a real header gap, not a missing capture
+    // 2026-08-29 live Campaign playthrough F2/F3 capture (issue #108's own
+    // investigation session) -- real in-game drag-and-export, same standard
+    // as every other entry in this table.
+    { "LEVELS_BUTTON_LIST", 3 },
+    { "LEVELS_BUTTON_LIST", 4 },
 };
 
 bool IsVerifiedGlyphGroup(const char* groupName, int depth)
