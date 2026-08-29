@@ -21,7 +21,7 @@ It hooks directly into a live game process. Expect bugs, rough edges, unfinished
 
 [size=4][b]Visual-enhancement suite: before/after[/b][/size]
 
-Default settings vs. [font=Courier New]InternalRenderScalePercent=250[/font] + this release's other visual-enhancement toggles, same scene, same map:
+Default settings vs. [font=Courier New]InternalRenderScalePercent=250[/font] + this release's other visual-enhancement toggles, same scene, same map. [b]Click an image to see it at full resolution[/b] — the difference is compressed away at the scaled-down thumbnail size:
 
 [center][img]TODO: upload showcases/visual improvements/Default non zoom.png to the Nexus media gallery and paste its hosted URL here[/img]  [img]TODO: upload showcases/visual improvements/2.5x with our config set non zoom.png to the Nexus media gallery and paste its hosted URL here[/img][/center]
 

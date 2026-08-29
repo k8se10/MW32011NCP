@@ -63,7 +63,9 @@ see `PATCHNOTES.md` for the full itemized list:
 ### Visual-enhancement suite: before/after
 
 Default settings vs. `InternalRenderScalePercent=250` + this release's other
-visual-enhancement toggles, same scene, same map:
+visual-enhancement toggles, same scene, same map. **Click an image to see it
+at full resolution** — the difference is compressed away at the scaled-down
+size these render at inline:
 
 | Default | v0.3.5+ (250% render scale) |
 | --- | --- |
