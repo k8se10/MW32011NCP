@@ -3771,71 +3771,23 @@ void ApplyForcedAnisotropicFilteringIfEnabled()
     LogFromController("[aniso-force] wrote r_texFilterAnisoMax/r_texFilterAnisoMin = 16 (ForceAnisotropicFiltering)");
 }
 
-// [Video] FpsLimitEnabled/FpsLimitTargetFps/FpsLimitEnhancementsOnly (2026-08-28,
-// issue #99, second attempt) -- REBUILT on `com_maxfps`, the game's own real
-// native client render-rate limiter (confirmed via decompile, issue #90, to be
-// read by the genuine main-loop function and converted into a real ms-per-frame
-// throttle the engine's own code already consumes correctly), after the first
-// attempt (a hand-rolled Sleep+spin wait on Hook_EndScene's own tail) failed
-// live testing -- real added input latency and bad pacing, because that wait
-// landed BEFORE the real Present call (EndScene and Present are separate D3D9
-// calls), not after as intended. This version does no timing work of its own
-// at all -- just writes the real dvar via this project's already-proven
-// SetDvarFloat/GetDvarFloat (real_settings.h/.cpp, the same mechanism
-// ForceAnisotropicFiltering above and the custom Options screen already use)
-// and lets the engine pace itself.
+// [Video] FpsLimitEnabled/FpsLimitTargetFps/FpsLimitEnhancementsOnly --
+// REMOVED ENTIRELY 2026-08-29 (issue #99, second removal). See mod_config.h's
+// own removal comment for the full story: confirmed via a real FPS counter to
+// cap MENU framerate but not actual gameplay framerate, despite the
+// com_maxfps write itself being confirmed correct and staying applied the
+// whole session -- the engine evidently treats com_maxfps differently once
+// connected/simulating than this project's own decompile (issue #90) assumed
+// by analogy, a mechanism that was never actually confirmed via decompile.
 //
-// Saves the player's own original com_maxfps value the moment the override
-// first activates, and restores it the moment it deactivates -- this is a
-// REAL, player-facing performance setting (also exposed in the game's own
-// Advanced Video options), not a value safe to just leave overridden forever
-// the way ForceAnisotropicFiltering's simpler "opt-out is inert" pattern does.
-namespace {
-bool g_fpsLimitOverrideActive = false;
-float g_fpsLimitSavedOriginalMaxFps = 0.0f;
-float g_fpsLimitLastAppliedTarget = -1.0f;
-
-bool IsFpsLimitActiveThisFrame()
-{
-    if (!g_modConfig.fpsLimitEnabled) return false;
-    if (!g_modConfig.fpsLimitEnhancementsOnly) return true;
-    // "Engaged" mirrors the same three settings the vsync/RTSS recommendation
-    // above already covers -- see that comment in mod_config.cpp's
-    // WriteDefaultConfig for the full citation (issue #99).
-    return g_modConfig.motionBlurEnabled || g_modConfig.fsrSharpenEnabled ||
-           g_modConfig.internalRenderScalePercent > 0; // >0, not !=100 -- 0 is this
-                                                        // feature's own confirmed "off"
-                                                        // value, not 100 (issue #88)
-}
-} // namespace
-
-void ApplyFpsLimitIfEnabled()
-{
-    bool shouldCap = IsFpsLimitActiveThisFrame();
-    float target = static_cast<float>(g_modConfig.fpsLimitTargetFps);
-
-    if (shouldCap) {
-        if (!g_fpsLimitOverrideActive) {
-            g_fpsLimitSavedOriginalMaxFps = GetDvarFloat("com_maxfps");
-            g_fpsLimitOverrideActive = true;
-            g_fpsLimitLastAppliedTarget = -1.0f; // force the write below
-        }
-        if (target != g_fpsLimitLastAppliedTarget) {
-            SetDvarFloat("com_maxfps", target);
-            g_fpsLimitLastAppliedTarget = target;
-            char buf[128];
-            sprintf_s(buf, "[fps-limit] wrote com_maxfps=%.0f (was %.0f)", target,
-                g_fpsLimitSavedOriginalMaxFps);
-            LogFromController(buf);
-        }
-    } else if (g_fpsLimitOverrideActive) {
-        SetDvarFloat("com_maxfps", g_fpsLimitSavedOriginalMaxFps);
-        g_fpsLimitOverrideActive = false;
-        char buf[128];
-        sprintf_s(buf, "[fps-limit] restored com_maxfps=%.0f", g_fpsLimitSavedOriginalMaxFps);
-        LogFromController(buf);
-    }
-}
+// KNOWN RESIDUE: any player who had this enabled may still have `com_maxfps`
+// sitting at their configured target (e.g. 60) in their own `players2/
+// config.cfg`, since this feature's own restore-on-deactivate logic (removed
+// along with everything else here) never got a chance to run for a player
+// who simply updates without one more relaunch first. Reset it via the game's
+// own in-game Advanced Video "Framerate" option if gameplay still feels
+// capped after this update -- not something this project's own removal can
+// silently undo on its own.
 
 // [Experimental] DamageDiagLoggingEnabled (2026-08-28, issue #100) -- TEMPORARY,
 // dev-only diagnostic, direct user request after eleven forks of static Ghidra RE
@@ -6642,11 +6594,11 @@ HRESULT WINAPI Hook_EndScene(void* device)
     // documented loader-lock risk in Hook_CreateDevice) rather than at startup.
     ApplyForcedAnisotropicFilteringIfEnabled();
 
-    // [Video] FpsLimitEnabled -- a real native com_maxfps dvar write, not a
-    // timing wait, so (unlike the first, failed attempt) there's no reason
-    // this needs to sit specifically before/after the real EndScene call --
-    // see ApplyFpsLimitIfEnabled's own header comment for the full story.
-    ApplyFpsLimitIfEnabled();
+    // [Video] FpsLimitEnabled -- REMOVED ENTIRELY 2026-08-29 (issue #99,
+    // second removal). Full story in mod_config.h's own removal comment and
+    // this file's own removed-code comment (where ApplyFpsLimitIfEnabled
+    // used to live, right after ApplyForcedAnisotropicFilteringIfEnabled's
+    // definition above).
 
     // [Experimental] DamageDiagLoggingEnabled -- issue #100, see
     // PollDamageDiagLoggingIfEnabled's own header comment. Runs last, after
