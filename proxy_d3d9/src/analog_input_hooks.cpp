@@ -6138,6 +6138,50 @@ void __fastcall Hook_FUN_00679010(void* self)
                     modeLabel, static_cast<int>(nativeW), static_cast<int>(nativeH), targetW, targetH);
                 LogFromController(buf);
 
+                // Issue #105, 2026-08-29 -- live crash/freeze investigation. This
+                // engine's own render-target VRAM cost scales with the target's
+                // real pixel area (documented quadratic-with-percentage in this
+                // key's own .ini comment), and `iw5sp.exe` is a 32-bit process --
+                // confirmed via its own PE header (`dumpbin /headers`,
+                // `IMAGE_FILE_LARGE_ADDRESS_AWARE` set) to get a 4GB virtual
+                // address space on this 64-bit system, not the 2GB default, but
+                // still a real, hard ceiling no code fix can raise. Live-captured
+                // this same investigation (ResourceUsageLogging, real
+                // K32GetProcessMemoryInfo data) at 250% (6.25x native area): the
+                // process was already sitting at ~2GB working set with only
+                // ~1.5GB of that 4GB budget left, alongside Task Manager showing
+                // 3.1GB of actual dedicated GPU memory in use -- a real GPU with
+                // 11GB VRAM (2080 Ti) was nowhere near its own ceiling, but a
+                // 32-bit D3D9 process under WDDM commonly can't practically use
+                // the full 4GB in the first place once driver/heap/DLL overhead
+                // is accounted for, so ~3GB total (this project's own process
+                // memory plus whatever the driver maps for it) is a real,
+                // externally-documented practical wall for a 32-bit D3D9 title,
+                // not just this project's own theory. No blocking/hard clamp --
+                // preserves this feature's existing "let advanced users push it"
+                // design -- but a real, un-missable, one-time warning the first
+                // time a session crosses a rough risk threshold (>150% linear,
+                // i.e. >2.25x native pixel area, roughly the midpoint between the
+                // confirmed-safe 100% and the confirmed-risky 250%/300% cases in
+                // known_issues.md issues #92/#105) is a real, cheap safeguard.
+                static bool s_highScaleWarningShown = false;
+                int64_t targetArea = static_cast<int64_t>(targetW) * targetH;
+                int64_t nativeArea = static_cast<int64_t>(nativeW) * nativeH;
+                if (!s_highScaleWarningShown && nativeArea > 0 &&
+                    targetArea * 4 > nativeArea * 9) { // > 2.25x area, i.e. > ~150% linear
+                    s_highScaleWarningShown = true;
+                    LogFromController("[video-scale][WARNING] target resolution is well above native -- "
+                        "this is a 32-bit process with a hard 4GB address-space ceiling (confirmed via "
+                        "IMAGE_FILE_LARGE_ADDRESS_AWARE) and real crashes/freezes have been reproduced "
+                        "at 250-300%% on this hardware (known_issues.md issue #105) -- see the on-screen warning");
+                    ShowOverlayMessageUntilDismissed(
+                        "Render resolution is set well above native. This is a 32-bit game with a hard "
+                        "4GB memory ceiling -- going too high (250%+ has reproduced real crashes/freezes) "
+                        "can genuinely run it out, regardless of how much VRAM your GPU has.\n\n"
+                        "Enter / Space / Click to continue anyway:",
+                        OverlayAnimStyle::Plain);
+                }
+
                 // Diagnostic, added 2026-08-26 during issue #96's live-gameplay-only
                 // deep RE pass -- confirmed via fresh Ghidra decompile that FUN_00450740
                 // (a live-gameplay-only secondary-viewport setup path, gated on the real
