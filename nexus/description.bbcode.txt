@@ -23,7 +23,7 @@ It hooks directly into a live game process. Expect bugs, rough edges, unfinished
 
 Default settings vs. [font=Courier New]InternalRenderScalePercent=250[/font] + this release's other visual-enhancement toggles, same scene, same map, cropped in on the same fixed region — texture and edge detail hold up noticeably better at higher render scale. (Full uncropped comparison is on the [url=https://github.com/k8se10/MW32011NCP#readme]README[/url] — only the cropped pair is hosted here due to Nexus's image size limits.)
 
-[center][img]TODO: upload showcases/visual improvements/Default zoom.png to the Nexus media gallery and paste its hosted URL here[/img]  [img]TODO: upload showcases/visual improvements/2.5x with our config set zoom.png to the Nexus media gallery and paste its hosted URL here[/img][/center]
+[center][img]TODO: upload showcases/visual improvements/Default zoom.png to the Nexus media gallery and paste its hosted URL here[/img]  [img]https://staticdelivery.nexusmods.com/mods/6037/images/29/29-1787984141-2037243557.png[/img][/center]
 
 [hr]
 
