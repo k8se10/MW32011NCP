@@ -107,7 +107,7 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#72](#72-real-resource-lifecycle-crash-bug-g_optwhitetexture-and-every-options-screen-text-cache-never-released--2026-08-08) — Resource-lifecycle crash bug: Options-screen textures never released on device recreation — **Fixed, not yet live-tested**
 - [#73](#73-pickup-weapon--throw-grenade-controller-prompts-dont-show-at-43-resolutions-reload-unaffected----2026-08-08) — Pickup weapon / throw grenade prompts don't show at 4:3 resolutions — **Fixed, not yet live-tested**
 - [#74](#74-no-glyphs-reports-persist-post-v031h1----resolved-root-cause-found-and-fixed-2026-08-11-resolved-2026-08-15) — "No glyphs" reports persist post-v0.3.1.h1 — **Resolved**, root cause was `glyphIconOverlayEnabled` defaulted off since #48, confirmed live 2026-08-15
-- [#75](#75-dust-to-dust-elevator-mantle----controller-falls-through-instead-of-grabbing-ledge-keyboardmouse-unaffected-2026-08-10-reported-not-yet-investigated) — "Dust to Dust" elevator mantle: controller falls through instead of grabbing ledge — **Open**, not yet investigated
+- [#75](#75-dust-to-dust-elevator-mantle----controller-falls-through-instead-of-grabbing-ledge-keyboardmouse-unaffected-2026-08-10-reported-not-yet-investigated) — "Dust to Dust" elevator mantle: controller falls through instead of grabbing ledge — **Open** — likely unified with issue #108 (scripted sequences need a genuine button-press event, not steady-state kbutton injection)
 - [#76](#76-native-dualsense-support-raw-hid-bypassing-steam-input--first-pass-gyro-aim----previewwip-implemented-not-live-tested-2026-08-11) — Native DualSense support (raw HID) + first-pass gyro-aim — **PREVIEW/WIP**, implemented, boot-hang regression fixed same day; first real live-test report in (2026-08-27, glyphs/gyro-move confirmed working) — missing `[Gyro]` config-generation bug fixed, sensitivity lowered, new OnlyWhileAds toggle added (2026-08-28), not yet re-confirmed live
 - [#77](#77-bluetooth-dualsense-stick-input-garbledunusable----resolved-real-integer-overflow-found-and-fixed-2026-08-16-resolved-2026-08-25) — Bluetooth DualSense: stick input garbled/unusable — **Resolved**, real int16 overflow at full-forward deflection, confirmed live 2026-08-25
 - [#78](#78-qte-prompts-campaign-scripted-sequences-and-survivals-doghyena-melee-struggle-have-no-controller-glyph-coverage----parked-deliberately-disabled-pending-v034-release-2026-08-17-reopened-and-progressed-2026-08-25-parked-2026-08-25) — QTE prompts (Campaign scripted sequences + Survival's dog/hyena melee-struggle — the latter IS a QTE, not a separate thing) — **Deferred (parked)** — a real Interact-vs-Qte routing bug surfaced (correct icon resolves but at the wrong slot/size); `objectiveFont` removed from the allowlist again to ship v0.3.4 clean, all other work (paren-stripping fix, Mantle-collision fix, sizing/pulse) intact and one line from re-enabling once the routing bug is solved
@@ -140,6 +140,7 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#105](#105-live-crashfreeze-investigation-2026-08-28-night----resolved-on-its-own-real-world-confirmation-of-the-lingering-driver-corruption-theory-2026-08-29) — Live crash/freeze investigation (WATCHDOG_VIOLATION, not a normal app crash) — **Resolved (self-cleared)**, `ForceD3D9On12` REMOVED ENTIRELY as a result — same repro that reliably crashed now runs clean, supporting the `ForceD3D9On12`/`DXCache` lingering-corruption theory (issue #91's own precedent); unguarded log spam fixed, a high-scale warning added regardless
 - [#106](#106-real-world-performance-note-running-all-visual-enhancement-features-stacked-together-is-genuinely-gpu-intensive----documented-not-a-bug-2026-08-29) — Real-world performance note: running all visual-enhancement features stacked together is GPU-intensive — **Documented, not a bug** — expected, not a defect; genuinely playable on reference hardware, lower-end setups should dial back individual settings
 - [#107](#107-native-shadowlightingreflection-quality-improvements-user-request----tier-1-tuning-dvars-shipped-shadow-map-resolution-investigated-in-depth-but-not-found-2026-08-29) — Native shadow/lighting/reflection quality improvements — **Partially implemented** — `ForceHighQualityShadows`/`ForceHighQualityLighting` shipped (real confirmed dvars); shadow-map resolution investigated in depth (9+ RE rounds, including a full Ghidra analysis pass) but the creation call site not found
+- [#108](#108-campaign-scripted-sequences-require-a-genuine-button-press-event-not-steady-state-kbutton-injection----likely-unifies-issue-75-elevator-mantle-with-a-newly-confirmed-qte-input-gap-2026-08-29) — Campaign scripted sequences ignore controller button presses entirely — **Investigating** — real GSC evidence found (`usebuttonpressed()` family), leading theory is a genuine synthesized keypress is needed, same precedented technique as the Survival ready-up fix; likely unifies with issue #75
 
 ---
 
@@ -10197,6 +10198,7 @@ Rather than guess a fifth blind fix, added a temporary live diagnostic (`[dualse
 - A `[qte-diag]` diagnostic (logs `isQteHint`/`isMantleHint`/`isReadyUpHint`/`slotId`/resolved asset for every objectiveFont draw, gated on the already-on `HudGlyphPositionLogging`) was added to `Hook_DrawGlyphText` to settle this with real data on the next retest -- **left in the codebase but now dead code** (see the parking note below), ready to reactivate the moment `objectiveFont` goes back into the allowlist.
 - **PARKED 2026-08-25, direct user decision**: "lets park and explicitly disable this glyph for now as a known issue then my plan is to release 0.3.4 and then work on this." `fonts/objectiveFont` removed from `IsGameplayHintFont` again (one line) -- QTE prompts render fully native/unmodified again, matching pre-2026-08-25 behavior. Every other piece of this issue's work (paren-stripping key-name fix, Mantle-collision fix, `GameplayHintSlotId::Qte`, `kQteHintScale`, the pulsing icon, the `[qte-diag]` diagnostic) is intact and untouched, just unreachable while this one line stays commented out -- re-enabling is a one-line change once the Interact-vs-Qte routing bug above is actually solved (see that allowlist comment's own explicit warning against re-enabling blind, since the parked symptom is a wrong-SIZE regression, not a missing-glyph one). Confirmed via direct review (not assumption, per the same-session instruction to double-check) that nothing else in `IsGameplayHintFont` (`extraBigFont`/`hudSmallFont`/`hudBigFont`/`bigFont`/`normalFont`, covering pickup/buy-station/ready-up/mantle/throwback/sentry-place) or the entirely separate `IsMenuHintFont` (`smallFont`, behind the confirmed-working "B Back" dedup fix) was touched by this park.
 - **Still open, deferred until this resumes post-v0.3.4**: the Interact-vs-Qte routing bug itself, and the separate green-outline/fade success-flash animation on a successful escape (a wholly undesigned, unimplemented sub-problem, very likely a different draw call/state entirely from this steady-state prompt).
+- **Recommended fix direction, direct user suggestion (2026-08-29)**: "the best way to fix the dog glyph sizing issue is decouple it from normal glyph stuff but still block under same flag." Rather than keep chasing the still-unexplained `IsQteFont`/`IsGameplayHintFont` disagreement inside the shared generic gameplay-hint-slot routing (`DrawOneGameplayHintSlot`) that caused both the Mantle-collision bug and this second, never-root-caused sizing bug, give QTE prompts their own independent slot-assignment/scale/position code path -- no longer sharing machinery with Interact/Mantle/Throwback/SentryPlace at all -- while still gating the whole thing behind the same `objectiveFont`-in-`IsGameplayHintFont` allowlist flag so it stays a single, consistent on/off switch. Sidesteps the mystery entirely rather than requiring it ever be root-caused. Also worth revisiting alongside issue #108 (scripted sequences needing a genuine button-press event) once that's resolved, since a QTE that finally accepts controller input is also a QTE whose glyph needs to actually be sized/positioned correctly.
 
 ---
 
@@ -16125,3 +16127,60 @@ rather than keep digging indefinitely. Real next step, if resumed: search
 for an indirect-call dispatch table referencing `FUN_004d08f0`'s address
 (a function-pointer array, not a direct-call xref), or trace forward from
 `sm_sunEnable`/`sm_spotEnable`'s own consumers instead of `sm_enable`'s.
+
+## 108. Campaign scripted sequences require a genuine button-PRESS event, not steady-state kbutton injection -- likely unifies issue #75 (elevator mantle) with a newly-confirmed QTE input gap (2026-08-29)
+
+**Status: Investigating -- strong, precedented lead, not yet fixed.** Direct
+live report during a Campaign QTE: pressing the mapped controller button
+(X/Interact) does nothing at all -- "the prompt just sits there," only
+keyboard E works. Direct user framing, connecting this to a previously
+unexplained, separate report: "scripted sequences in campaign look for
+actual button press beyond normal behaviour same reason the jump fails on
+last mission etc" -- referring to issue #75 ("Dust to Dust" elevator
+mantle: controller falls through instead of grabbing the ledge,
+keyboard/mouse unaffected), left as "not yet investigated" with two
+competing, unconfirmed theories (an auto-mantle variant, or a
+scenario-specific interact-detection failure). This reframes both as the
+SAME root cause.
+
+**Real evidence found**: searched the decompiled GSC corpus
+(`D:\Tools\gsc-tool\extracted\decompiled\iw5\`) for QTE/button-mash logic
+-- `dubai_finale.gsc` (a real Campaign mission) confirms scripted-sequence
+detection uses real, native engine methods: `level.player
+usebuttonpressed()`, `meleebuttonpressed()`, `attackbuttonpressed()`,
+`adsbuttonpressed()`. These almost certainly read the same real `kbutton_t`
+family this project's own controller injection already drives for
+Interact/Melee/Fire/ADS -- the same kbuttons that work correctly for
+ordinary interact prompts, pickup, and buy-station interactions elsewhere.
+The fact that scripted sequences specifically don't respond, while normal
+interact prompts do, points at these methods reading a genuine
+edge/frame-of-press signal computed from real input events, not simply the
+persistent kbutton "active" flag this project's own `KeyDown`/`KeyUp`
+injection sets directly.
+
+**Leading theory, with a direct, already-proven precedent in this exact
+project**: the Survival ready-up (hold Y -> F5) mystery hit an almost
+identical wall -- extensive native-trigger hunting found nothing, and the
+eventual, explicitly-authorized fix was to synthesize a REAL OS-level
+`WM_KEYDOWN`/`WM_KEYUP` via `PostMessageA` at the game's own `HWND`
+(`SendSyntheticActivationClick`'s sibling mechanism), not to keep trying to
+drive an internal engine flag -- justified because this game's keyboard
+input is genuine window messages with no DirectInput layer, making a
+synthetic keypress indistinguishable from a real one. If scripted-sequence
+button detection similarly requires a genuine keyboard/mouse hardware
+event rather than an internal kbutton state, the same synthetic-keypress
+technique is a direct, precedented candidate fix.
+
+**Not yet implemented** -- real next steps: (1) confirm via a live
+diagnostic whether this project's own per-frame controller-injection hook
+(`FUN_0057de60`) is even running during a scripted sequence at all (it's
+documented to halt during pause by design; scripted sequences may put the
+game into a similar reduced-input-processing state), since if the hook
+never fires, no kbutton gets touched regardless of mechanism; (2) if it
+does fire, confirm the theory above by adding a synthetic real keypress
+(matching the exact bound key for Interact/Jump, read via this project's
+existing `GetKeybind`-style real-settings lookup rather than hardcoded, so
+custom binds aren't broken) alongside the existing kbutton call, gated to
+only fire during a confirmed scripted-sequence state once one is found.
+See issue #75's own entry for the original, still-unconfirmed elevator
+report this reframes.
