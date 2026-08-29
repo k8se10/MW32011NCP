@@ -141,6 +141,7 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#106](#106-real-world-performance-note-running-all-visual-enhancement-features-stacked-together-is-genuinely-gpu-intensive----documented-not-a-bug-2026-08-29) — Real-world performance note: running all visual-enhancement features stacked together is GPU-intensive — **Documented, not a bug** — expected, not a defect; genuinely playable on reference hardware, lower-end setups should dial back individual settings
 - [#107](#107-native-shadowlightingreflection-quality-improvements-user-request----tier-1-tuning-dvars-shipped-shadow-map-resolution-investigated-in-depth-but-not-found-2026-08-29) — Native shadow/lighting/reflection quality improvements — **Partially implemented** — `ForceHighQualityShadows`/`ForceHighQualityLighting` shipped (real confirmed dvars); shadow-map resolution investigated in depth (9+ RE rounds, including a full Ghidra analysis pass) but the creation call site not found
 - [#108](#108-campaign-scripted-sequences-require-a-genuine-button-press-event-not-steady-state-kbutton-injection----likely-unifies-issue-75-elevator-mantle-with-a-newly-confirmed-qte-input-gap-2026-08-29) — Campaign scripted sequences ignore controller button presses entirely — **Investigating** — real GSC evidence found (`usebuttonpressed()` family), leading theory is a genuine synthesized keypress is needed, same precedented technique as the Survival ready-up fix; likely unifies with issue #75
+- [#109](#109-campaign-menu-glyph-editor-batch-levels_button_list-recalibration--swf_common_desc_resize_popup_name-resume_popup-depth3----reverted-needs-better-per-screen-detection-first-2026-08-29) — Campaign menu-glyph editor batch (LEVELS_BUTTON_LIST + pause-menu popups) — **Reverted** — needs a reliable per-screen discriminator (likely `requiredTextSubstring`) before this is safe to recapture; deferred to a dedicated pass before v0.4.0/beta
 
 ---
 
@@ -16184,3 +16185,41 @@ custom binds aren't broken) alongside the existing kbutton call, gated to
 only fire during a confirmed scripted-sequence state once one is found.
 See issue #75's own entry for the original, still-unconfirmed elevator
 report this reframes.
+
+## 109. Campaign menu-glyph editor batch (LEVELS_BUTTON_LIST recalibration + SWF_COMMON_DESC_RESIZE_POPUP_NAME/RESUME_POPUP depth=3) -- REVERTED, needs better per-screen detection first (2026-08-29)
+
+**Status: Reverted, deferred to a dedicated pass before v0.4.0/beta.** Live
+report after testing the batch documented in this session (recalibrated
+`LEVELS_BUTTON_LIST` depth=3/4, new `SWF_COMMON_DESC_RESIZE_POPUP_NAME`/
+`RESUME_POPUP` depth=3 entries, `CAMPAIGN_BUTTON_LIST`/`PAUSE_LIST`
+reconfirmations): "many are wrong that i just told you to set." Direct
+instruction: "just undo commit and note we need better per screen
+detection on this particular batch, all to be fixed with campaign during
+the next phases before 0.4 hits and we enter beta."
+
+Both commits (`1571e97`, `d5b8a73`) reverted via `git revert` (clean, no
+conflicts) rather than patching individual entries -- the real problem,
+per direct framing, is the underlying SCREEN DETECTION for this batch, not
+a specific value being slightly off. This matches a real, already-flagged
+structural concern from earlier in this same session: `depth` alone may
+not reliably distinguish between the several real, distinct Campaign
+pause-menu sub-screens this batch tried to capture (direct user framing
+at the time: "they are all subscreens from campaign pause menu," with no
+more specific identification available) -- if multiple real screens report
+the same depth, whichever one the editor happened to be on at capture time
+can't be reliably told apart from the others at lookup time, explaining
+positions that work for one real screen but are wrong for another sharing
+its depth.
+
+**Real next step, deferred (not now)**: a dedicated Campaign glyph-coverage
+pass needs a genuinely reliable per-screen discriminator for this specific
+popup family -- likely `requiredTextSubstring` (the same mechanism already
+proven correct for distinguishing "Restart Mission" from the generic
+quit-confirm fallback at `SWF_COMMON_DESC_RESIZE_POPUP_NAME` depth=1),
+requiring the real on-screen text for each distinct Campaign pause-menu
+confirm dialog (Restart Level / Exit and Save / New Campaign / etc.) to be
+captured alongside its position, not depth alone. Planned for the next
+development phases, before v0.4.0 and entering beta -- not abandoned, just
+sequenced later with the right tooling/approach.
+
+Build clean (0 warnings/0 errors) after the revert, deployed. `LEVELS_BUTTON_LIST` back to its pre-session values; `SWF_COMMON_DESC_RESIZE_POPUP_NAME`/`RESUME_POPUP` back to depth=-1-only (no depth=3 entries).
