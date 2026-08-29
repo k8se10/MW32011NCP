@@ -17,99 +17,30 @@ stuck-open state when entered while crouched, single occurrence, not yet
 reproduced on demand). Neither reverts anything in this release — both are
 new leads for the next pass.
 
-**Summary:** A large release, primarily a stability/crash-fix pass. Fixed a recurring freeze every
-2-5 seconds (five real causes across two rounds, the strongest an uninstrumented
-main-thread file-stat call in config hot-reload — plus a self-inflicted
-SetEvent-flood regression from the poll-thread fix itself, caught and fixed
-within the same investigation). Shipped the start of a visual-enhancement
-suite — internal render resolution control (confirmed real GPU cost scaling,
-220fps@100% vs 70-80fps@300%), FSR 1.0 RCAS sharpening, and camera-only motion
-blur — the last of which caused a real, intermittent crash that was fully
-root-caused (an engine hook firing against a partially-composited frame during
-exclusion-zone sequences) and fixed via a redesigned hook point; a second bug
-(the native low-health "you are hurt, get to cover" warning going missing on
-an unarmored hit) is now also root-caused and fixed after a 9-round live
-isolation test — the real cause was `SetFVF` itself; a first attempted fix
-(replacing it with `SetVertexDeclaration`) caused a real, repeatable crash
-and was reverted, landing on the actual shipped fix: never calling either
-API from that function at all — motion blur stays labeled
-**EXPERIMENTAL**, see `known_issues.md` issue #100 for the full trail. A
-related crash on "quit to menu" (100% reproducible, initially misattributed
-to the `SetVertexDeclaration` work above) was traced to FSR's full-screen
-pass running unguarded during level teardown and fixed with an additional
-`clcState`-based gate, confirmed live — see issue #104. Separately root-caused this engine's own
-camera-look stutter down to **vsync** — not a bug, confirmed live via direct
-measurement and a cross-machine test — with a real, standing recommendation
-(disable vsync, use RivaTuner Statistics Server instead) now shipped in the
-config comments; an in-mod alternative to RTSS was attempted TWICE, both
-attempts live-tested and both FAILED, and it has been permanently removed
-— a hand-rolled timing wait added real input latency, then a rebuild on the
-game's own native `com_maxfps` dvar turned out to only cap menu framerate,
-not actual gameplay, once tested with a real FPS counter. Also carries a new,
-evidence-backed lead on Predator Missile
-guidance's broken steering feel (a native auto-climb constant confirmed 1000x
-the player's own steering rate). A severe crash/freeze night was traced to
-real Windows kernel-level `WATCHDOG_VIOLATION` events (not a normal app
-crash) and, in the end, to **`ForceD3D9On12`** leaving the system in a bad
-driver-level state that outlived the setting being disabled — that feature
-is now **removed from the mod entirely**, not left as an opt-in option;
-`InternalRenderScalePercent` also picked up a new on-screen warning at high
-values given this project's own 32-bit process has a confirmed hard 4GB
-address-space ceiling. A real, unrelated log-spam bug found during that
-same investigation (`[hud-font-id][gate]`, never actually gated by its own
-config toggle, 76% of one session's log) is also fixed. Separately: a real
-config-generation bug meant `[Gyro]` never appeared in a fresh `.ini`
-despite the feature working — fixed, alongside sensitivity tuning and a new
-gyro-only-while-ADS toggle, per this feature's first real live-test report.
-A `[Video] CustomResolutionWidth/CustomResolutionHeight` pair (community
-request) was built reusing the render-scale mechanism for an independent
-W/H, then live-tested and removed again — it only overrides internal
-scene supersampling, never the real output window size, so it never
-actually fixed the custom-monitor/split-screen problem it was built for;
-genuine future work, noted for post-0.3.5. Also shipped
-`ForceHighQualityShadows`/`ForceHighQualityLighting` (real, confirmed
-native shadow/lighting quality dvars, off by default). A pre-release
-Campaign/Spec Ops glyph-coverage pass recalibrated `LEVELS_BUTTON_LIST`
-from real F2/F3 editor captures (confirmed correct live); a second part of
-the same capture batch (two Campaign pause-menu confirm popups) turned out
-wrong and was reverted, needing real per-screen detection before it's
-safe to recapture — deferred to before v0.4.0/beta. A new, real,
-unresolved lead was also found and documented: Campaign scripted sequences
-(QTEs) ignore controller button presses entirely, with real GSC evidence
-pointing at a genuine button-press-event requirement rather than steady-state
-kbutton injection, likely unifying with the long-open issue #75. See
-issues #76/#92/#99/#102/#105/#106/#107/#108/#109 and the itemized entries
-below and `known_issues.md` issues #87/#90/#95-#109 for the full
-investigation trails.
+**Summary:** A large release covering two major bodies of work: a new visual-enhancement
+suite (render-scale control, FSR 1.0 RCAS sharpening, camera-only motion blur,
+all off by default — see the before/after screenshots below) and a full fix
+for a recurring 2-5 second freeze (five real causes, resolved by moving
+polling/vibration/config-hot-reload/log-flushing onto dedicated background
+threads). `ForceD3D9On12` and the in-mod FPS limiter are both **removed
+entirely** after real-world testing found them unsafe or non-functional.
+Also ships `ForceHighQualityShadows`/`ForceHighQualityLighting` and a
+`[Gyro]` config-generation fix. See the itemized entries below for the full
+list, and `known_issues.md` issues #87/#90/#95-#109 for the investigation
+trails.
+
+### Visual-enhancement suite: before/after
+
+Same scene, default settings vs. `InternalRenderScalePercent=250` + this
+release's other visual-enhancement toggles:
+
+| Default | v0.3.5+ (250% render scale) |
+| --- | --- |
+| ![Default](showcases/visual%20improvements/Default%20non%20zoom.png) | ![v0.3.5+ at 250% render scale](showcases/visual%20improvements/2.5x%20with%20our%20config%20set%20non%20zoom.png) |
+| ![Default, cropped](showcases/visual%20improvements/Default%20zoom.png) | ![v0.3.5+ at 250% render scale, cropped](showcases/visual%20improvements/2.5x%20with%20our%20config%20set%20zoom.png) |
 
 ### What's New
-1. **[Video] InternalRenderScalePercent — PREVIEW/WIP, off by default.** Fixes a
-  real, live-confirmed engine behavior where the game looks visibly soft/dated
-  ("2005 bad") above 1080p. Set to 100 to render the actual 3D scene at your real
-  native resolution; values above 100 genuinely supersample above native (real
-  GPU/VRAM cost, quadratic with the percentage); values below 100 downscale for
-  performance. Applied by overriding the engine's own requested render-resolution
-  input right before its one-time, startup device-creation computation runs — that
-  value feeds the real scene render target and its whole post-processing chain
-  directly, not a proxy/metadata value. Zero dvar writes, zero `vid_restart`, zero
-  live device/window recreation — but since the underlying render targets are only
-  ever created once, a config change requires restarting the game to take effect,
-  not just a hot-reload.
-
-  Same scene, default settings vs. 250% render scale + this release's other
-  visual-enhancement toggles:
-
-  | Default | v0.3.5+ (250% render scale) |
-  | --- | --- |
-  | ![Default](showcases/visual%20improvements/Default%20non%20zoom.png) | ![v0.3.5+ at 250% render scale](showcases/visual%20improvements/2.5x%20with%20our%20config%20set%20non%20zoom.png) |
-  | ![Default, cropped](showcases/visual%20improvements/Default%20zoom.png) | ![v0.3.5+ at 250% render scale, cropped](showcases/visual%20improvements/2.5x%20with%20our%20config%20set%20zoom.png) |
-
-  (Two earlier approaches — a `r_mode`/`vid_restart` write
-  that crashed the game live, and a same-day hook on the wrong function that only
-  changed reported metadata with zero real GPU impact, caught via a "no FPS change"
-  report — were both abandoned; see `known_issues.md` issues #88/#91 for the full
-  trail.) **Confirmed live**: 220fps at 100% vs. 70-80fps at 300% on a real
-  2560x1440 display -- real GPU cost genuinely scales with the setting.
+1. **[Video] InternalRenderScalePercent — PREVIEW/WIP, off by default.** Fixes a real, live-confirmed engine behavior where the game looks visibly soft/dated ("2005 bad") above 1080p. Set to 100 to render the actual 3D scene at your real native resolution; values above 100 genuinely supersample above native (real GPU/VRAM cost, quadratic with the percentage); values below 100 downscale for performance. Applied by overriding the engine's own requested render-resolution input right before its one-time, startup device-creation computation runs — that value feeds the real scene render target and its whole post-processing chain directly, not a proxy/metadata value. Zero dvar writes, zero `vid_restart`, zero live device/window recreation — but since the underlying render targets are only ever created once, a config change requires restarting the game to take effect, not just a hot-reload. (Two earlier approaches — a `r_mode`/`vid_restart` write that crashed the game live, and a same-day hook on the wrong function that only changed reported metadata with zero real GPU impact, caught via a "no FPS change" report — were both abandoned; see `known_issues.md` issues #88/#91 for the full trail.) **Confirmed live**: 220fps at 100% vs. 70-80fps at 300% on a real 2560x1440 display -- real GPU cost genuinely scales with the setting. See the screenshot comparison above.
 2. **[Video] FsrSharpenEnabled/FsrSharpenStrength — PREVIEW/WIP, off by default.** Phase B of the visual-enhancement suite plan: FSR 1.0 RCAS (Robust Contrast Adaptive Sharpening), a real full-screen sharpen pass, built on Phase A's new capture/composite pipeline. A direct port of AMD's real FidelityFX-FSR reference math (MIT license, source and full port-fidelity notes in `re_notes/shaders/fsr_rcas.hlsl`). Needs `ps_3_0` (RCAS's real math doesn't fit this project's usual `ps_2_0` — 74 instruction slots vs. the profile's 64 cap); a new device-capability check (`GetDeviceCaps`/`PixelShaderVersion`) refuses gracefully rather than assuming ps_3_0 hardware. `FsrSharpenStrength` (0.0-1.0) maps straight to RCAS's own real sharpen-lobe scale — live-tested same day, 0.5 reported "needs more softness," default lowered to 0.3. **Critical bug found and fixed same session (issue #103)**: FSR's full-screen pass shipped with zero state gating of any kind — it ran through menus, loading screens, and cutscenes completely unguarded, and was root-caused to a real crash/hard-hang plus a loading-screen/cutscene black screen. Fixed by applying the same menu-active + in-level gate motion blur already had; confirmed live by the reporting tester for all three symptoms (crash/hang, cutscene black screen, loading-screen black screen). See `known_issues.md` issue #94/#103.
 3. **[Video] MotionBlurEnabled/MotionBlurStrength/MotionBlurCenterFalloff — EXPERIMENTAL, off by default.** Phase E of the visual-enhancement suite plan. Camera-only (view-angle-delta-based) directional motion blur, driven entirely by real per-frame look data this project's own controller-look injection already computes. `MotionBlurCenterFalloff` (default 1.0) adds a real center-to-edge radial falloff — the screen center stays sharp while the periphery smears more, matching how motion blur is commonly done in racing/FPS titles; set to 0.0 for the original uniform blur. **This phase went through a real crash investigation and two hook-target redesigns before landing on its current, crash-free hook, plus a separate 9-round isolation test that found and fixed a real bug where it broke the native low-health warning** — both fully resolved and confirmed live, see the Fixed entries below for both root-cause stories (issues #96/#97 and #100). The shipped hook (on `FUN_00693ff0`, ahead of the engine's real per-viewport 2D/HUD command-dispatch loop) correctly excludes both this mod's own overlay and the game's native HUD from the blur, and is gated off during menus and loading screens (two real live-reported false-positive fixes, both shipped). A third report (motion blur bleeding into cutscenes) triggered a dedicated RE search for a real cinematic-lock flag but was retracted by the reporter on retest — no fix was needed. **Recommended companion settings, confirmed live** (`known_issues.md` issue #99): disable vsync and use an external limiter (e.g. RivaTuner Statistics Server) instead — the engine's own camera-look pacing gets visibly worse under vsync (a real, confirmed effect, not this mod's own code) and at very high uncapped framerates alike; a config comment now ships with this same recommendation. Stays labeled EXPERIMENTAL as a general maturity/newness label, not because of any specific known-open bug. Full trail in `known_issues.md` issues #95/#96/#97/#99/#100.
 4. **[Video] ForceAnisotropicFiltering — off by default.** Writes the real native `r_texFilterAnisoMax`/`r_texFilterAnisoMin` dvars to 16 (maximum) via this project's own dvar-write mechanism (the same one the custom Options screen already uses) — a mod-config toggle for the same sharpness improvement this session's own `ForceD3D9On12` investigation already confirmed live and safe as a hand-edited `players2/config.cfg` value, but one that now survives a native "Restore Defaults" or a fresh profile instead of needing to be re-set by hand.
