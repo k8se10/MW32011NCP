@@ -4337,6 +4337,16 @@ constexpr ManualGlyphEntry kManualGlyphPositions[] = {
     // (New Game overwrite: 1202.2/1206.8, 627.0/678.0; Quit: 1193.2/1199.2,
     // 627.0/675.0 -- close enough to be the same real screen).
     { "SWF_COMMON_DESC_RESIZE_POPUP_NAME", 1, 0.0f, 2, {1197.7f, 1203.0f}, {627.0f, 676.5f} },
+    // Real capture, 2026-08-29 live Campaign pause-menu playthrough (issue #108's
+    // own session) -- confirmed real, but which specific confirm dialog (of
+    // "Restart Level"/"Exit and Save"/"New Campaign"-adjacent pause-menu
+    // sub-screens) isn't pinned down (direct user answer: "they are all
+    // subscreens from campaign pause menu," not more specific than that). Placed
+    // BEFORE the depth=-1 fallback below (linear-scan, first-match-wins ordering
+    // -- see TryGetManualGlyphPosition) so it actually takes effect for depth=3
+    // instead of being shadowed. No requiredTextSubstring -- unconditional at
+    // this depth, same as the depth=1 fallback above.
+    { "SWF_COMMON_DESC_RESIZE_POPUP_NAME", 3, 0.0f, 2, {1205.2f, 1204.5f}, {626.2f, 678.0f} },
     { "SWF_COMMON_DESC_RESIZE_POPUP_NAME", -1, 55.0f, 2, {686.0f, 686.0f}, {603.0f, 653.0f} },
     // Covers "Choose Content Pack" (DLC/on-disk-content picker) and "Leave Lobby?"
     // (Yes/No) -- confirmed live to share this exact container/position despite
@@ -4687,6 +4697,14 @@ constexpr ManualGlyphEntry kManualGlyphPositions[] = {
     // X=686 like every other popup, identical position to SWF_COMMON_POPUP_NAME
     // (504/554/603) despite being a different group name -- another instance
     // of the shared popup container reused for different content.
+    // Real capture, 2026-08-29 live Campaign pause-menu playthrough (issue #108's
+    // own session, same batch as the SWF_COMMON_DESC_RESIZE_POPUP_NAME depth=3
+    // entry above) -- a real, different-position variant of this popup reached
+    // specifically via the Campaign pause menu (X~1200, 2-item Yes/No, not the
+    // X=686/3-item layout below). Placed BEFORE the depth=-1 fallback (linear-
+    // scan, first-match-wins -- see TryGetManualGlyphPosition) so it actually
+    // takes effect for depth=3 instead of being shadowed by the fallback.
+    { "RESUME_POPUP", 3, 0.0f, 2, {1196.2f, 1202.2f}, {554.2f, 603.0f} },
     { "RESUME_POPUP", -1, 300.0f, 3, {686.0f, 686.0f, 686.0f}, {504.0f, 554.0f, 603.0f} },
 };
 
@@ -4746,6 +4764,9 @@ constexpr VerifiedGlyphGroup kVerifiedGlyphGroups[] = {
     // as every other entry in this table.
     { "LEVELS_BUTTON_LIST", 3 },
     { "LEVELS_BUTTON_LIST", 4 },
+    // Same session, Campaign pause-menu sub-screens.
+    { "SWF_COMMON_DESC_RESIZE_POPUP_NAME", 3 },
+    { "RESUME_POPUP", 3 },
 };
 
 bool IsVerifiedGlyphGroup(const char* groupName, int depth)
