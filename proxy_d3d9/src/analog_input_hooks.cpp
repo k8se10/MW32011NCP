@@ -6097,32 +6097,30 @@ RenderResComputeFn g_origFUN_00679010 = nullptr;
 // needs re-investigating with a correct understanding of what
 // DAT_021d2e08/0c actually is; still open.
 
+// CustomResolutionWidth/Height (issue #102, GitHub issue #3) -- REMOVED
+// 2026-08-29, not achieving its actual goal. Live-tested (target=3000x1440
+// confirmed correctly applied via [video-scale] log evidence) but the real
+// output window/backbuffer size (DAT_021d2e08/0c) stayed at native the
+// whole time -- this hook only ever overrides the INTERNAL scene
+// supersampling resolution, composited back into the same unchanged
+// window. The original request (fix clipping/black bars on custom monitor
+// layouts) needs the real BackBufferWidth/Height to change, a materially
+// different problem this mechanism can't solve. Direct instruction:
+// "remove for now and note as future work post 0.3.5 release." See
+// known_issues.md issue #102 for the full trail and the real next step
+// (a genuine override for BackBufferWidth/Height, independent of the
+// already-dead-ended r_mode/vid_restart path).
 void __fastcall Hook_FUN_00679010(void* self)
 {
     int pct = g_modConfig.internalRenderScalePercent;
-    bool customActive = g_modConfig.customResolutionWidth > 0 && g_modConfig.customResolutionHeight > 0;
-    if ((pct > 0 || customActive) && self != nullptr) {
+    if (pct > 0 && self != nullptr) {
         auto* base = reinterpret_cast<uint8_t*>(self);
         int32_t nativeW = *reinterpret_cast<int32_t*>(base + 0x24);
         int32_t nativeH = *reinterpret_cast<int32_t*>(base + 0x28);
         if (nativeW > 0 && nativeH > 0) {
-            // Issue #102 (GitHub issue #3, custom monitor layouts/splitscreen):
-            // CustomResolutionWidth/Height, when both set, take priority over the
-            // percentage mode -- an explicit, independent W/H the percentage mode
-            // can't express (it always preserves native's own aspect ratio; two
-            // free values don't have to). Reuses the exact same override point,
-            // no new hook, no new RE.
-            int targetW, targetH;
-            const char* modeLabel;
-            if (customActive) {
-                targetW = g_modConfig.customResolutionWidth;
-                targetH = g_modConfig.customResolutionHeight;
-                modeLabel = "CustomResolutionWidth/Height";
-            } else {
-                targetW = static_cast<int>(static_cast<int64_t>(nativeW) * pct / 100);
-                targetH = static_cast<int>(static_cast<int64_t>(nativeH) * pct / 100);
-                modeLabel = "InternalRenderScalePercent";
-            }
+            int targetW = static_cast<int>(static_cast<int64_t>(nativeW) * pct / 100);
+            int targetH = static_cast<int>(static_cast<int64_t>(nativeH) * pct / 100);
+            const char* modeLabel = "InternalRenderScalePercent";
             // Same 640x480 floor FUN_006798e0's own real mode-enumeration logic
             // already enforces for r_mode (known_issues.md issue #88) -- a target
             // below that is never a value this engine would produce on its own.

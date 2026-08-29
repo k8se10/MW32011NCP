@@ -160,7 +160,7 @@ void ReadBool(const char* path, const char* section, const char* key, bool& outV
 // real system d3d9.dll's Direct3DCreate9On12 entry point instead of the ordinary
 // one -- a real, Microsoft-documented alternate export, not a third-party DLL swap.
 // See mod_config.h's own forceD3D9On12 field comment for the full design.
-constexpr unsigned long kCurrentConfigVersion = 40; // v23->v24: FsrSharpenEnabled/FsrSharpenStrength (Phase B)
+constexpr unsigned long kCurrentConfigVersion = 41; // v23->v24: FsrSharpenEnabled/FsrSharpenStrength (Phase B)
                                                      // v24->v25: MotionBlurEnabled/MotionBlurStrength (Phase E),
                                                      // FsrSharpenStrength default 0.5->0.3 (live feedback: "needs more softness")
                                                      // v25->v26: ForceAnisotropicFiltering
@@ -219,6 +219,12 @@ constexpr unsigned long kCurrentConfigVersion = 40; // v23->v24: FsrSharpenEnabl
                                                      // real, confirmed native dvars (sm_fastSunShadow,
                                                      // r_cacheModelLighting/r_cacheSModelLighting). Both
                                                      // default off.
+                                                     // v40->v41: [Video] CustomResolutionWidth/Height
+                                                     // REMOVED (issue #102) -- live-tested, confirmed to
+                                                     // only override internal scene supersampling
+                                                     // resolution, never the real output window/backbuffer
+                                                     // size; doesn't solve the actual custom-monitor/
+                                                     // splitscreen request. Noted as future work post-0.3.5.
 
 // Reads a legacy key's raw value, returning true only if the key genuinely existed
 // (unlike ReadFloat, which can't distinguish "absent" from "present but unparsable" --
@@ -588,18 +594,6 @@ void WriteDefaultConfig(const char* path)
         "; above ~150%% carry real risk; this mod shows an in-game warning the first\n"
         "; time you cross that line, but does not block you from going higher.\n"
         "InternalRenderScalePercent=%d\n"
-        "; Issue #102 (community request, GitHub issue #3 -- custom monitor layouts\n"
-        "; and split-screen setups). An explicit, independent internal render W/H,\n"
-        "; taking priority over InternalRenderScalePercent above when BOTH are set\n"
-        "; (0 = disabled for either one). The percentage mode always preserves your\n"
-        "; desktop's own aspect ratio -- these two free values don't have to, useful\n"
-        "; when you need a genuinely different aspect ratio than your desktop. Same\n"
-        "; real mechanism/guarantees as InternalRenderScalePercent (see above): no\n"
-        "; r_mode writes, no vid_restart, no live device recreation, requires\n"
-        "; RESTARTING THE GAME to take effect. Same 4GB-ceiling warning above\n"
-        "; applies here too (same underlying mechanism). NOT YET LIVE-TESTED.\n"
-        "CustomResolutionWidth=%d\n"
-        "CustomResolutionHeight=%d\n"
         "; --- Recommended companion settings for everything below (FSR/motion blur/\n"
         "; render-scale) -- confirmed live 2026-08-27, known_issues.md issue #99: this\n"
         "; engine's own camera-look pacing gets visibly worse under vsync (a real,\n"
@@ -849,10 +843,10 @@ void WriteDefaultConfig(const char* path)
         "FrametimeBenchmarkLogging=%d\n"
         "; Issue #92/#105: logs real process memory (working set, private bytes,\n"
         "; pagefile usage) and system memory (load %%, available physical/virtual) once a\n"
-        "; second, to check whether a crash at high InternalRenderScalePercent/\n"
-        "; CustomResolutionWidth is real address-space/memory exhaustion (this project's\n"
-        "; own 32-bit process has a hard 4GB ceiling regardless of GPU VRAM size --\n"
-        "; see those keys' own comments above). DEFAULT OFF. Turn on, reproduce, check\n"
+        "; second, to check whether a crash at high InternalRenderScalePercent is real\n"
+        "; address-space/memory exhaustion (this project's own 32-bit process has a\n"
+        "; hard 4GB ceiling regardless of GPU VRAM size -- see that key's own comment\n"
+        "; above). DEFAULT OFF. Turn on, reproduce, check\n"
         "; proxy_d3d9.log for \"[resource-diag]\" lines. 0 = off, 1 = on.\n"
         "ResourceUsageLogging=%d\n"
         "; Phase A, visual-suite plan, 2026-08-26: validates the new full-screen\n"
@@ -922,8 +916,6 @@ void WriteDefaultConfig(const char* path)
         PhysicalInputName(g_modConfig.customButtonMap.scoreboard),
         g_modConfig.useCustomOptionsScreen ? 1 : 0,
         g_modConfig.internalRenderScalePercent,
-        g_modConfig.customResolutionWidth,
-        g_modConfig.customResolutionHeight,
         g_modConfig.fsrSharpenEnabled ? 1 : 0,
         g_modConfig.fsrSharpenStrength,
         g_modConfig.motionBlurEnabled ? 1 : 0,
@@ -1225,12 +1217,6 @@ void LoadModConfig()
     {
         int v = GetPrivateProfileIntA("Video", "InternalRenderScalePercent", g_modConfig.internalRenderScalePercent, path);
         g_modConfig.internalRenderScalePercent = v;
-    }
-    {
-        int w = GetPrivateProfileIntA("Video", "CustomResolutionWidth", g_modConfig.customResolutionWidth, path);
-        int h = GetPrivateProfileIntA("Video", "CustomResolutionHeight", g_modConfig.customResolutionHeight, path);
-        g_modConfig.customResolutionWidth = w;
-        g_modConfig.customResolutionHeight = h;
     }
     ReadBool(path, "Video", "FsrSharpenEnabled", g_modConfig.fsrSharpenEnabled);
     ReadFloat(path, "Video", "FsrSharpenStrength", g_modConfig.fsrSharpenStrength);

@@ -670,22 +670,25 @@ struct ModConfig
     // once.
     int internalRenderScalePercent = 0;
 
-    // [Video] CustomResolutionWidth/CustomResolutionHeight (issue #102, 2026-08-28)
-    // -- an explicit, independent W/H override for the SAME real hook point/
-    // mechanism as InternalRenderScalePercent above (Hook_FUN_00679010), not a new
-    // hook or any new RE. Community request (GitHub issue #3): custom monitor
-    // layouts and split-screen setups where a single native-resolution PERCENTAGE
-    // can't express what's needed, since it always preserves the desktop's own
-    // aspect ratio -- an independent width and height, potentially a completely
-    // different aspect ratio than the desktop, needs two free values instead.
-    // Both > 0 takes priority over InternalRenderScalePercent when active (checked
-    // first in Hook_FUN_00679010); either at 0 falls through to the percentage
-    // mode, or to native if that's also 0. Same real properties as the percentage
-    // mode inherits for free (same override point): zero `r_mode` writes, zero
-    // `vid_restart`, zero live device/window recreation, applied exactly once at
-    // startup device-creation time, requires a game restart to take effect.
-    int customResolutionWidth = 0;
-    int customResolutionHeight = 0;
+    // [Video] CustomResolutionWidth/CustomResolutionHeight -- REMOVED 2026-08-29,
+    // not achieving its actual goal. Shipped 2026-08-28 (issue #102, community
+    // request/GitHub issue #3) as an independent W/H override reusing
+    // InternalRenderScalePercent's own hook point (Hook_FUN_00679010) -- real,
+    // confirmed to apply correctly via live log evidence (`[video-scale]
+    // CustomResolutionWidth/Height -> native=2560x1440 target=3000x1440`). But
+    // live-tested and found NOT to visibly do anything: that hook only
+    // overrides the INTERNAL 3D scene's supersampling resolution, which gets
+    // composited/stretched back into the real, unchanged output window --
+    // confirmed by the same log capture showing the real window-size pair
+    // (`DAT_021d2e08`/`0c`) staying at native (2560x1440) throughout. The
+    // original request (custom monitor layouts/split-screen, fixing clipping/
+    // black bars) needs the real output `BackBufferWidth`/`Height` to change,
+    // a materially different, harder problem this mechanism was never going
+    // to solve -- see known_issues.md issue #102's own earlier RE pass for why
+    // that specifically maps onto the dead-ended `r_mode`/`vid_restart` path
+    // (two confirmed live crashes). Direct instruction: "remove for now and
+    // note as future work post 0.3.5 release." Removed rather than left
+    // shipped-but-non-functional.
 
     // [Video] ForceD3D9On12 -- REMOVED ENTIRELY 2026-08-29 (issue #105), not just
     // disabled. Already known unstable since issue #92 (2026-08-26): a real,
