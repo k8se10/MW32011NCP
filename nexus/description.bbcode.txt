@@ -13,9 +13,21 @@ It hooks directly into a live game process. Expect bugs, rough edges, unfinished
 
 [hr]
 
-[size=4][b]Status: ALPHA — v0.3.4 (2026-08-25) — DualSense input-parity fix, gameplay-hint glyph editor, new plugin API[/b][/size]
+[size=4][b]Status: ALPHA — v0.3.5 (2026-08-29) — visual-enhancement suite, stutter/threading overhaul[/b][/size]
 
-[color=#E74C3C][b]Headline fix:[/b][/color] DualSense's Bluetooth stick-garbling bug is fixed, confirmed live by the reporting tester — a real signed-16-bit integer overflow at full-forward stick deflection was found and fixed. The fix lives in code shared with the USB path, so it almost certainly applies there too, but [b]USB DualSense input still has not been independently confirmed working by a separate tester[/b] (vibration/gyro/adaptive triggers remain separate, still-PREVIEW/WIP work either way). Also this release: the in-game glyph position editor (F2/F3) was extended from menu items to real gameplay hints, auto-mantle while sprinting is now confirmed working (still off by default, opt-in by design), a glyph-icon fringing bug was fixed, and this mod ships a new opt-in [b]plugin API[/b] (hook install, memory read/write, a text/glyph color-override extension point) with a working example plugin. [color=#F39C12][b]Investigated, not shipped:[/b][/color] controller-glyph coverage for QTE prompts was pursued in depth but deliberately parked after a still-unexplained sizing bug on final retest — these prompts render fully native this release. Full detail in the Changelog tab and GitHub [font=Courier New]re_notes/known_issues.md[/font] issues #77/#62/#78. Not feature-complete, not fully tested end-to-end. Multiplayer ([font=Courier New]iw5mp.exe[/font]) hasn't been started at all. Read [b]What Works / Partial / Not Working[/b] below before assuming any specific feature works — this project is deliberately honest about what's confirmed vs. not, not a marketing pitch.
+[color=#E74C3C][b]Headline:[/b][/color] the largest release yet by commit volume, two major bodies of work. A new [b]visual-enhancement suite[/b] (all off by default under [font=Courier New][Video][/font]): [font=Courier New]InternalRenderScalePercent[/font] (render above or below native resolution — real GPU cost scaling confirmed live, 220fps@100% vs. 70-80fps@300% at 2560x1440), FSR 1.0 RCAS sharpening, camera-only motion blur, and forced anisotropic filtering. And a full [b]stutter/threading-architecture overhaul[/b]: a recurring freeze every 2-5 seconds is fixed, root-caused to five independent causes plus a self-inflicted regression from the poll-thread fix itself, resolved by moving input polling, vibration, config-hot-reload, and log-flushing onto four separate dedicated background threads. [font=Courier New]ForceD3D9On12[/font] and the in-mod FPS limiter are both [b]removed entirely[/b] after real-world testing found them unsafe or non-functional — see the Changelog tab. Also ships [font=Courier New]ForceHighQualityShadows[/font]/[font=Courier New]ForceHighQualityLighting[/font] (real, confirmed native dvars) and a [font=Courier New][Gyro][/font] config-generation fix. [color=#F39C12][b]Investigated, not shipped:[/b][/color] Campaign scripted sequences (QTEs) still ignore controller button presses entirely — real GSC evidence found, likely unifies with the long-open "Dust to Dust" elevator-mantle report. Full detail in the Changelog tab and GitHub [font=Courier New]re_notes/known_issues.md[/font] issues #87/#88/#92/#99/#105/#107/#108. Not feature-complete, not fully tested end-to-end. Multiplayer ([font=Courier New]iw5mp.exe[/font]) hasn't been started at all. Read [b]What Works / Partial / Not Working[/b] below before assuming any specific feature works — this project is deliberately honest about what's confirmed vs. not, not a marketing pitch.
+
+[hr]
+
+[size=4][b]Visual-enhancement suite: before/after[/b][/size]
+
+Default settings vs. [font=Courier New]InternalRenderScalePercent=250[/font] + this release's other visual-enhancement toggles, same scene, same map:
+
+[center][img]TODO: upload showcases/visual improvements/Default non zoom.png to the Nexus media gallery and paste its hosted URL here[/img]  [img]TODO: upload showcases/visual improvements/2.5x with our config set non zoom.png to the Nexus media gallery and paste its hosted URL here[/img][/center]
+
+Cropped in on the same fixed region — texture and edge detail hold up noticeably better at higher render scale:
+
+[center][img]TODO: upload showcases/visual improvements/Default zoom.png to the Nexus media gallery and paste its hosted URL here[/img]  [img]TODO: upload showcases/visual improvements/2.5x with our config set zoom.png to the Nexus media gallery and paste its hosted URL here[/img][/center]
 
 [hr]
 
