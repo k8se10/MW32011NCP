@@ -32,7 +32,9 @@ trails.
 ### Visual-enhancement suite: before/after
 
 Same scene, default settings vs. `InternalRenderScalePercent=250` + this
-release's other visual-enhancement toggles:
+release's other visual-enhancement toggles. **Click an image to see it at
+full resolution** — the difference is compressed away at the scaled-down
+size these render at inline:
 
 | Default | v0.3.5+ (250% render scale) |
 | --- | --- |
