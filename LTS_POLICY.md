@@ -100,12 +100,12 @@ whatever task surfaces that, not as a separately scheduled cleanup pass.
 
 ## Current status
 
-*(Last updated: 2026-08-25.)*
+*(Last updated: 2026-08-29.)*
 
 | Release | Role | Notes |
 |---|---|---|
 | `v0.2.2` | **Current LTS** | Promoted 2026-08-18 archival pass. Aim assist removed; the risk-mitigation release this whole policy's floor is built around. |
-| `v0.3.4` / `v0.3.5` (whichever ships) | **LTS candidate** | Intended to succeed `v0.2.2` — see `re_notes/known_issues.md`'s LTS-plan entry. Promotion is conditional on the 4-week clean window above, not a fixed calendar date. |
+| `v0.3.5` | **LTS candidate** | Shipped and confirmed live 2026-08-29, intended to succeed `v0.2.2` — see `re_notes/known_issues.md`'s LTS-plan entry. The 4-week clean window starts from this ship date; promotion isn't automatic even once it elapses, and won't happen before then regardless of how stable it looks early on. |
 | Everything else in `0.1.x`–`0.3.x` | Superseded | Not LTS-eligible (predates the floor, or superseded by a later release in the same or a later line) — normal `0.x` releases, kept or archived per the usual GitHub Releases housekeeping, not this policy. |
 
 ## What LTS support actually means here
