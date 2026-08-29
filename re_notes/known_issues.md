@@ -134,7 +134,7 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#99](#99-camera-look-stutterjitter----resolved-real-root-cause-is-vsync-confirmed-via-cross-machine-test-2026-08-27) — Camera-look stutter — **Resolved** (real root cause is vsync, confirmed via cross-machine test); its own in-mod FPS limiter sub-investigation — **removed entirely a second time** (2026-08-29), confirmed via real FPS counter to cap menus only, not gameplay — RTSS remains the standing recommendation
 - [#100](#100-motion-blur-ui-disappears-when-taking-damage-while-moving----reported-not-yet-investigated-2026-08-27) — Motion blur: UI disappears on damage while moving — **Resolved** — real cause was `SetFVF` itself, found via a 9-round live isolation test; `DrawFullScreenPass` now calls neither `SetFVF` nor `SetVertexDeclaration`, confirmed via a 4-wave Survival playtest
 - [#101](#101-roadmap-note-broader-performanceoptimizationmodern-hardware-pass-users-own-framing-2026-08-27) — Roadmap: growing into a "FusionFix-style" general enhancement patch — **Roadmap Idea**, not scoped
-- [#102](#102-external-feature-request-received-custom-widthheight-resolution-override-via-ini-for-custom-monitor-layoutssplitscreen----logged-not-investigated-2026-08-27) — External feature request: custom Width/Height resolution override via .ini — **Implemented (2026-08-28)** — `[Video] CustomResolutionWidth/Height`, reuses `InternalRenderScalePercent`'s existing hook point (no new RE needed after all -- direct user correction), built and deployed, not yet independently live-tested
+- [#102](#102-external-feature-request-received-custom-widthheight-resolution-override-via-ini-for-custom-monitor-layoutssplitscreen----removed-2026-08-29-live-tested-and-confirmed-not-to-achieve-the-actual-goal-genuine-future-work-post-035) — External feature request: custom Width/Height resolution override via .ini — **Removed (2026-08-29)** — live-tested, confirmed it only overrides internal scene supersampling, never the real output window size; real fix needs `BackBufferWidth`/`Height` control, genuine future work post-0.3.5
 - [#103](#103-real-crash--hard-hang--cutscene-black-screen----resolved-fsrs-own-full-screen-pass-had-zero-state-gating-now-fixed-2026-08-28) — Real crash + hard hang + cutscene/loading black screen — **Resolved** — root cause was FSR's own full-screen pass having zero state gating; fixed by applying the same menu+in-level gate motion blur already had
 - [#104](#104-fsr-black-screen103-class-bug-recurs-specifically-on-exit-level---main-menu----resolved-2026-08-28) — FSR crash on "exit level to main menu" — **Resolved** — `clcState==0` gate added, confirmed live ("fixed")
 - [#105](#105-live-crashfreeze-investigation-2026-08-28-night----resolved-on-its-own-real-world-confirmation-of-the-lingering-driver-corruption-theory-2026-08-29) — Live crash/freeze investigation (WATCHDOG_VIOLATION, not a normal app crash) — **Resolved (self-cleared)**, `ForceD3D9On12` REMOVED ENTIRELY as a result — same repro that reliably crashed now runs clean, supporting the `ForceD3D9On12`/`DXCache` lingering-corruption theory (issue #91's own precedent); unguarded log spam fixed, a high-scale warning added regardless
@@ -15684,9 +15684,55 @@ visual-enhancement suite (render scale/FSR/motion blur) already shipping
 this session is the first concrete step, not the ceiling. Still not
 scoped into specific tasks -- a direction, not a plan.
 
-## 102. External feature request received: custom Width/Height resolution override via .ini, for custom monitor layouts/splitscreen -- IMPLEMENTED (2026-08-28), reusing the existing InternalRenderScalePercent mechanism
+## 102. External feature request received: custom Width/Height resolution override via .ini, for custom monitor layouts/splitscreen -- REMOVED (2026-08-29), live-tested and confirmed NOT to achieve the actual goal; genuine future work, post-0.3.5
 
-**Status: Implemented, not yet independently live-tested.** The RE-pass
+**Status: Removed, real next step identified.** Live-tested with
+`CustomResolutionWidth=3000`/`CustomResolutionHeight=1440` (native
+2560x1440): direct report, "no i did have it set at 3000 1440 and
+nothing." Checked real log evidence before concluding anything --
+`proxy_d3d9.log` confirmed the override genuinely applied correctly
+(`[video-scale] CustomResolutionWidth/Height -> native=2560x1440
+target=3000x1440`), so this was NOT a bug in the write/apply mechanism.
+The real problem: `[video-scale-diag2] DAT_021d2e08/0c AFTER the real
+trampoline = 2560x1440` -- the real output window/backbuffer size
+(`DAT_021d2e08`/`0c`, the same pair issue #96 already confirmed IS the
+real window size, not a render-target size) stayed at native the entire
+time. This hook (`Hook_FUN_00679010`, shared with `InternalRenderScalePercent`)
+only ever overrides the INTERNAL 3D scene's supersampling resolution,
+which gets composited/stretched back into the real, unchanged output
+window -- exactly as `InternalRenderScalePercent` has always correctly
+done, and exactly why a mismatched-aspect internal value like 3000x1440
+on a 2560x1440 window produces a real but nearly imperceptible effect
+("nothing"), not a visible custom-resolution/aspect-ratio change.
+
+**This is a genuine correction of this issue's own earlier walk-back.**
+The original RE pass below (2026-08-28, "External RE pass") correctly
+concluded this request needed the real `BackBufferWidth`/`Height` to
+change -- mapping onto the already-dead-ended `r_mode`/`vid_restart`
+mechanism (two confirmed live crashes). That conclusion was reversed
+the same day after direct pushback ("i dont think it does need new re
+we found all these such items when we was digging in the past 3 days"),
+on the theory that `InternalRenderScalePercent`'s own hook point already
+covered arbitrary W/H. That reversal was correct about the MECHANISM
+(the hook does accept arbitrary values, confirmed via live log evidence)
+but wrong about whether it solves the REQUEST -- internal supersampling
+resolution and real output resolution are different things, and only
+the latter fixes "clipping or black bars on specific aspect ratios," the
+original reporter's actual problem. The original RE pass's conclusion
+stands: this needs the real `BackBufferWidth`/`Height` to change, which
+still maps onto the dead-ended `r_mode`/`vid_restart` path and would need
+genuinely new RE to find a safe alternative override point, the same
+class of work that found `Hook_FUN_00679010` for internal render scale.
+
+**Decision, direct instruction**: "remove for now and note as future
+work post 0.3.5 release." Removed entirely -- config key
+(`mod_config.h`/`.cpp`, `ConfigVersion` 40->41), the priority-check
+branch in `Hook_FUN_00679010` (`analog_input_hooks.cpp`, back to exactly
+its pre-issue-#102 form). `InternalRenderScalePercent` itself is
+completely unaffected and remains correct/working as designed. Build
+clean (0 warnings/0 errors), deployed.
+
+**Original investigation, kept for the trail (RE-pass and implementation sections below):**
 section below (2026-08-28) concluded this needed genuinely new RE, mapping
 the request onto the dead-ended `r_mode`/`vid_restart` mechanism -- **that
 conclusion was wrong, corrected the same day by direct user pushback**:
