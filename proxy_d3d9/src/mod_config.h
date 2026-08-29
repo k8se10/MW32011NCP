@@ -766,38 +766,23 @@ struct ModConfig
     // layer over a setting the player could already set natively.
     bool forceAnisotropicFiltering = false;
 
-    // [Video] FpsLimitEnabled/FpsLimitTargetFps/FpsLimitEnhancementsOnly
-    // (2026-08-27/28, issue #99) -- REBUILT on a completely different, much
-    // safer mechanism after the first attempt (a hand-rolled Sleep+spin wait
-    // on Hook_EndScene's own tail) failed live testing -- real added input
-    // latency and bad pacing, root-caused to the wait landing BEFORE the
-    // real Present call, not after (EndScene and Present are separate D3D9
-    // calls in this engine). Direct user question that prompted the
-    // rebuild: "why not use the actual games fps dvar?" -- correct, and a
-    // much better answer: `com_maxfps` is a real, already-functional native
-    // idTech/CoD client render-rate limiter, confirmed via decompile
-    // (known_issues.md issue #90) to be read by the real main-loop function
-    // (`FUN_00458600`, the genuine `Com_Frame`) to compute a real ms-per-
-    // frame throttle value the engine's own code already consumes
-    // correctly -- no guessing about where Present happens relative to any
-    // hook, because the engine paces itself using its own real mechanism.
-    // Implemented as a simple SetDvarFloat("com_maxfps", ...) write (see
-    // ApplyFpsLimitIfEnabled, overlay_hud.cpp) instead of any timing code of
-    // this project's own -- saves and restores the player's own original
-    // com_maxfps value when the override activates/deactivates, so it's
-    // never silently left overridden. Off by default.
-    bool fpsLimitEnabled = false;
-    // Target framerate cap, in whole fps. No fixed upper/lower bound baked in
-    // beyond a sane floor (see ReadConfig's own clamp) -- entirely up to the
-    // player's own hardware/display, not a value this project can recommend
-    // universally. 60 is a reasonable, common default, not a mandated number.
-    int fpsLimitTargetFps = 60;
-    // true (default): only cap framerate while a graphics-enhancement feature
-    // is actually engaged (MotionBlurEnabled, FsrSharpenEnabled, or
-    // InternalRenderScalePercent > 0) -- normal gameplay stays fully uncapped
-    // by this feature. false: cap framerate unconditionally, all the time,
-    // functioning as a general-purpose limiter independent of any enhancement.
-    bool fpsLimitEnhancementsOnly = true;
+    // [Video] FpsLimitEnabled/FpsLimitTargetFps/FpsLimitEnhancementsOnly --
+    // REMOVED ENTIRELY 2026-08-29 (issue #99, second removal). Second design
+    // (SetDvarFloat("com_maxfps", ...), replacing the first hand-rolled-wait
+    // attempt that failed live testing for added input latency) confirmed via
+    // a real FPS counter to cap MENU framerate correctly but NOT actual
+    // gameplay framerate -- the write itself was confirmed correct and stayed
+    // applied the whole session (`[fps-limit] wrote com_maxfps=60 (was 0)`,
+    // never reverted), but the engine evidently treats `com_maxfps` differently
+    // once connected/simulating than this project's own decompile (issue #90)
+    // assumed by analogy to "every idTech3-derived engine" -- that consuming
+    // mechanism was never actually confirmed via decompile, only inferred.
+    // Direct instruction, given two failed designs for the same goal: "Remove
+    // it again, recommend RTSS only." Matches this exact feature's own
+    // precedent -- the first design was already fully removed once for the
+    // same reason (a real, live-tested failure, not guessed at). Standing
+    // guidance remains the RTSS recommendation already shipped in the
+    // [Video]/vsync config comments. See known_issues.md issue #99.
 
     // [Plugins] (2026-08-25) -- STRICTLY OPT-IN, OFF by default, same pattern as
     // useCustomOptionsScreen/autoMantleEnabled above. When enabled, plugin_loader.cpp
