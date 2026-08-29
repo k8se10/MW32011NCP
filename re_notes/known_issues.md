@@ -142,6 +142,7 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#107](#107-native-shadowlightingreflection-quality-improvements-user-request----tier-1-tuning-dvars-shipped-shadow-map-resolution-investigated-in-depth-but-not-found-2026-08-29) — Native shadow/lighting/reflection quality improvements — **Partially implemented** — `ForceHighQualityShadows`/`ForceHighQualityLighting` shipped (real confirmed dvars); shadow-map resolution investigated in depth (9+ RE rounds, including a full Ghidra analysis pass) but the creation call site not found
 - [#108](#108-campaign-scripted-sequences-require-a-genuine-button-press-event-not-steady-state-kbutton-injection----likely-unifies-issue-75-elevator-mantle-with-a-newly-confirmed-qte-input-gap-2026-08-29) — Campaign scripted sequences ignore controller button presses entirely — **Investigating** — real GSC evidence found (`usebuttonpressed()` family), leading theory is a genuine synthesized keypress is needed, same precedented technique as the Survival ready-up fix; likely unifies with issue #75
 - [#109](#109-campaign-pause-menu-popup-batch-swf_common_desc_resize_popup_nameresume_popup-depth3----reverted-needs-better-per-screen-detection-first-levels_button_list-from-the-same-session-was-correct-and-stays-shipped-2026-08-29) — Campaign pause-menu popup batch (`SWF_COMMON_DESC_RESIZE_POPUP_NAME`/`RESUME_POPUP` depth=3) — **Reverted** — needs a reliable per-screen discriminator (likely `requiredTextSubstring`) before this is safe to recapture; deferred to a dedicated pass before v0.4.0/beta. `LEVELS_BUTTON_LIST` from the same session was correct and stays shipped.
+- [#110](#110-buy-station-menu-occasionally-opens-into-a-stuck-thinks-its-open-but-isnt-drawn-state-when-entered-while-crouched----investigating-single-occurrence-not-yet-reproduced-on-demand-2026-08-29) — Buy-station menu occasionally opens into a stuck "thinks it's open but isn't drawn" state when entered while crouched — **Investigating** — single live occurrence during the v0.3.5 confirmation stream, not yet reproduced on demand; plausibly related to issue #1's own menu-open gate bit or crouch's stance-lock usercmd forcing, neither confirmed
 
 ---
 
@@ -16226,3 +16227,54 @@ development phases, before v0.4.0 and entering beta -- not abandoned, just
 sequenced later with the right tooling/approach.
 
 Build clean (0 warnings/0 errors) both times (the full revert, then re-applying `LEVELS_BUTTON_LIST`), deployed. Final state: `LEVELS_BUTTON_LIST` depth=3/4 back to its real 2026-08-29 editor-captured values, confirmed correct live and in `kVerifiedGlyphGroups`; `SWF_COMMON_DESC_RESIZE_POPUP_NAME`/`RESUME_POPUP` back to depth=-1-only (no depth=3 entries) pending the per-screen-detection work above.
+
+---
+
+## 110. Buy-station menu occasionally opens into a stuck "thinks it's open but isn't drawn" state when entered while crouched -- Investigating, single occurrence, not yet reproduced on demand (2026-08-29)
+
+**Status: Investigating.** Live-reported during v0.3.5's own confirmation
+stream, direct quote: "the buy station menu sometimes bugs out when you
+crouch and enter it ... basically the menu thinks it open but requires the
+pause menu to show up i only saw the bug once and didnt happen when normally
+interacting with it." Not yet independently reproduced -- logged now, per
+this project's own standard, rather than waiting for a second occurrence to
+write it down.
+
+**Symptom, as reported:** entering a Survival buy station while crouched
+occasionally leaves the buy-station UI not visibly drawn, while the game's
+own internal menu/input state believes a menu is genuinely open (consistent
+with movement/interact input being swallowed the way it normally is whenever
+a real menu has focus). Opening the pause menu (Start) and closing it again
+appears to force a resync that lets the buy station actually show. Did not
+reproduce on a normal (standing) buy-station entry in the same session --
+crouch specifically implicated, not a general buy-station flake.
+
+**Plausible related mechanisms, not yet confirmed against a real repro:**
+- **Issue #1's own gate bit** (`0x10` at `0x00B36210`, the same per-player
+  "menu is open" flag ESC-forwarding and the buy-station+pause fix both key
+  off) is the most direct precedent for "the game's internal menu-state
+  tracking gets desynced from what's actually drawn, and forcing a pause
+  open/close cycle resyncs it" -- issue #1's original fix (a 3-second
+  rising-edge window on this exact bit) was built specifically to stop this
+  project's own code from interfering with legitimate transitions of that
+  flag. Worth checking whether crouch's own stance-lock work (`IsStanceLocked`,
+  `FUN_0057d430`, issues #27/#42) does anything that could delay or skip a
+  frame where that gate bit's real transition needs to be observed.
+- **Crouch's own per-frame usercmd-forcing**: while `IsStanceLocked()` is
+  true, `FUN_0057d430` forces real stance/crouch/prone usercmd bits every
+  frame (see the crouch "needs an initial click" fix, issues #1/#27/#42's
+  cross-reference). If a buy station's own opening sequence reads or briefly
+  depends on a clean (non-forced) usercmd frame at the exact moment it
+  transitions into an open menu state, an unlucky one-frame collision with
+  this forcing could plausibly leave its own internal open/draw state split.
+  Pure hypothesis, not yet traced through a decompile or reproduced live --
+  written down as the leading direction to check first, not a confirmed
+  cause.
+
+**Not yet actionable**: a single, non-reproduced-on-demand occurrence isn't
+enough to safely patch against per this project's own "verify live" standard
+-- next real step is trying to reproduce deliberately (crouch immediately
+before/during a buy-station interact, several repeats) with
+`ListItemPositionLogging`/`[manual-glyph-diag]`-style diagnostics on, to
+capture what the gate bit and menu-stack state actually look like at the
+moment it happens, before attempting any fix.
