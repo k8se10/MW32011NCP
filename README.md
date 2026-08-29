@@ -1,5 +1,12 @@
 # MW3 Native Controller Support (Campaign & Survival)
 
+> **⏸️ DEVELOPMENT ON A SHORT BREAK.** Active development is paused as of
+> 2026-08-29 and is expected to resume within 1-2 weeks. No new commits
+> expected before then — this isn't a project status change, just a planned
+> pause, same as the one that followed v0.2.2. **v0.3.5 is the build being
+> left to sit** while this plays out — see its own confirmed-live status
+> just below.
+
 > **▶️ v0.3.5 (2026-08-29) — a new visual-enhancement suite, and a full
 > stutter/threading-architecture overhaul.** The largest release yet by
 > commit volume. `InternalRenderScalePercent` (real GPU cost scaling,
