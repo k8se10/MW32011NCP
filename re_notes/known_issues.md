@@ -139,6 +139,7 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#104](#104-fsr-black-screen103-class-bug-recurs-specifically-on-exit-level---main-menu----resolved-2026-08-28) — FSR crash on "exit level to main menu" — **Resolved** — `clcState==0` gate added, confirmed live ("fixed")
 - [#105](#105-live-crashfreeze-investigation-2026-08-28-night----resolved-on-its-own-real-world-confirmation-of-the-lingering-driver-corruption-theory-2026-08-29) — Live crash/freeze investigation (WATCHDOG_VIOLATION, not a normal app crash) — **Resolved (self-cleared)**, `ForceD3D9On12` REMOVED ENTIRELY as a result — same repro that reliably crashed now runs clean, supporting the `ForceD3D9On12`/`DXCache` lingering-corruption theory (issue #91's own precedent); unguarded log spam fixed, a high-scale warning added regardless
 - [#106](#106-real-world-performance-note-running-all-visual-enhancement-features-stacked-together-is-genuinely-gpu-intensive----documented-not-a-bug-2026-08-29) — Real-world performance note: running all visual-enhancement features stacked together is GPU-intensive — **Documented, not a bug** — expected, not a defect; genuinely playable on reference hardware, lower-end setups should dial back individual settings
+- [#107](#107-native-shadowlightingreflection-quality-improvements-user-request----tier-1-tuning-dvars-shipped-shadow-map-resolution-investigated-in-depth-but-not-found-2026-08-29) — Native shadow/lighting/reflection quality improvements — **Partially implemented** — `ForceHighQualityShadows`/`ForceHighQualityLighting` shipped (real confirmed dvars); shadow-map resolution investigated in depth (9+ RE rounds, including a full Ghidra analysis pass) but the creation call site not found
 
 ---
 
@@ -16002,3 +16003,79 @@ Real next step, if this recurs: reproduce again with this build (the log-spam fi
 **Status: Documented, no action needed -- honest expectation-setting, not a defect.** Direct user account, running `InternalRenderScalePercent`/`CustomResolutionWidth`, `FsrSharpenEnabled`, `MotionBlurEnabled`, and `ForceAnisotropicFiltering` all active simultaneously: "it is VERY intensive to run all enhancements(still more than playable, just dont be surpised when your PC turns into a JET ENGINE." Real, expected consequence of stacking independently-real GPU costs on top of each other (each of these has already been separately confirmed to have a genuine, non-trivial GPU cost of its own -- issue #88's supersampling, #94's RCAS pass, #96/#100's motion blur pass, #92's anisotropic filtering) -- not a bug in any one of them, and consistent with this session's own #105 investigation showing real, elevated GPU memory/compute load at high settings.
 
 **Not actioned as a fix** (nothing is broken -- fans running loud under heavy combined GPU load is expected, correct behavior for hardware under real load, not a symptom to chase), but worth keeping visible for anyone reading this file wondering whether high combined settings are "supposed to" feel this heavy: yes, and it's still genuinely playable at that cost on this reference hardware (RTX 2080 Ti). Players on lower-end hardware should expect to dial back individual settings (lower `InternalRenderScalePercent`, disable `ForceAnisotropicFiltering`/`MotionBlurEnabled`) rather than assume something is misconfigured if running everything at once feels heavy.
+
+## 107. Native shadow/lighting/reflection quality improvements (user request) -- Tier 1 tuning dvars shipped, shadow-map RESOLUTION investigated in depth but not found (2026-08-29)
+
+**Status: Partially implemented.** Direct user request: "id like to chase
+better res shadows, lighting and reflections(strictly native not like
+reshade)" -- i.e. via real engine dvars/hooks, not a post-process shader
+overlay.
+
+**Real, confirmed findings** (decompiled `FUN_0043a1e0`, this engine's own
+renderer dvar-registration function -- a single clean decompile revealed
+the entire real dvar catalog with names AND descriptions, no guessing):
+
+- **Shadows**: `sm_fastSunShadow` (bool, "Fast sun shadow", default ON --
+  a genuine quality/perf toggle), `sm_qualitySpotShadow` (bool, name and
+  description contradict each other -- "qualitySpotShadow" named but
+  described as "Fast spot shadow" -- NOT wired up, polarity needs live
+  verification before use), `sm_sunSampleSizeNear` ("Shadow sample size"),
+  `sm_polygonOffsetScale`/`Bias`. `sm_maxLights`/`sm_spotLimit` are already
+  registered at their own maximum (4/4) by default -- no headroom to raise.
+- **Lighting**: `r_cacheModelLighting`/`r_cacheSModelLighting` ("Speed up
+  model/static-model lighting by caching previous results," both default
+  ON -- disabling trades a real, uncharacterized perf cost for
+  fresher-every-frame accuracy). `r_dlightLimit` also already maxed (4/4)
+  by default. Primary-light tweak dvars (`r_primaryLightTweakDiffuse/
+  SpecularStrength`) exist but are look/tuning choices, not a clear
+  "better" direction.
+- **Reflections**: confirmed as environment-map (cubemap) based, NOT
+  screen-space reflections -- `r_envMapMinIntensity`/`MaxIntensity`/
+  `Exponent`/`SunIntensity`, all real and tunable, but intensity/exponent
+  changes are a look choice (brighter/duller), not a resolution/fidelity
+  increase in one clear direction -- not wired up pending a clearer ask.
+
+**Shipped**: `[Video] ForceHighQualityShadows` (writes `sm_fastSunShadow=0`)
+and `[Video] ForceHighQualityLighting` (writes `r_cacheModelLighting`/
+`r_cacheSModelLighting=0`), both off by default, same `SetDvarBool`
+mechanism/timing as the existing `ForceAnisotropicFiltering`. `ConfigVersion`
+39->40. Build clean (0 warnings/0 errors), deployed. **Not yet
+live-tested.**
+
+**Shadow-map RESOLUTION specifically -- investigated in real depth, not
+found.** The actual render targets are real and confirmed:
+`R_RENDERTARGET_SHADOWMAP_LARGE`/`_SMALL` (raw string scan), sitting in the
+exact same master render-target name table (`0093a2f0`) and slot-descriptor
+creation system (`FUN_004d08f0`/`FUN_004b60a0`) already confirmed and used
+by `InternalRenderScalePercent` (issue #88) -- `FLOAT_Z`/`SAVED_SCREEN`/
+`RESOLVED_SCENE`/`SSAO`/etc. are all created through this exact same
+mechanism, each scaling directly off `DAT_021d2e00`/`DAT_021d2e04`. The real
+per-target name-array indices were confirmed (index 0 = `$shadowmap_large`,
+1 = `$shadowmap_small`, verified against 8+ other indices that all matched
+their known render targets exactly -- e.g. index 2 = `$floatz` paired with
+`FLOAT_Z`, index 9 = `$savedscreen` paired with `SAVED_SCREEN`). **But no
+caller of the slot-setter (`FUN_004d08f0`) ever passes index 0 or 1** --
+only 6 real callers exist in the whole binary (confirmed twice: once under
+`-noanalysis`, once after running a genuine FULL Ghidra analysis pass
+specifically to rule out an analysis-coverage gap -- same result both
+times, 53s total analysis time). Traced an alternate path from
+`sm_enable`'s own storage handle to its one real consumer
+(`FUN_0055a160`, sets an enable flag at `DAT_0093a395`) to that flag's 4
+real readers (`FUN_00685930`/`FUN_00685bb0`/`FUN_00684ca0`/`FUN_00685e20`)
+-- all decompiled, all confirmed to be per-frame SCENE RENDER PASS setup
+code (view/camera/lighting state for an already-existing render target),
+not render-target CREATION code. The actual creation call site for indices
+0/1 remains unfound -- likely reached via an indirect call (function
+pointer table) rather than a direct `CALL FUN_004d08f0` instruction, which
+would explain why even a full analysis pass didn't surface it.
+
+**Not pursued further this pass** -- a real, multi-round investigation (9+
+distinct RE steps: dvar registration decompile, string scan, two raw
+pointer/constant scans, a struct-region dump, a caller trace, a full
+Ghidra analysis pass, a repeat caller trace, a true-table-base
+re-verification, an alternate consumer-chain trace) without landing the
+creation site is a reasonable point to stop and ship what's confirmed
+rather than keep digging indefinitely. Real next step, if resumed: search
+for an indirect-call dispatch table referencing `FUN_004d08f0`'s address
+(a function-pointer array, not a direct-call xref), or trace forward from
+`sm_sunEnable`/`sm_spotEnable`'s own consumers instead of `sm_enable`'s.

@@ -160,7 +160,7 @@ void ReadBool(const char* path, const char* section, const char* key, bool& outV
 // real system d3d9.dll's Direct3DCreate9On12 entry point instead of the ordinary
 // one -- a real, Microsoft-documented alternate export, not a third-party DLL swap.
 // See mod_config.h's own forceD3D9On12 field comment for the full design.
-constexpr unsigned long kCurrentConfigVersion = 39; // v23->v24: FsrSharpenEnabled/FsrSharpenStrength (Phase B)
+constexpr unsigned long kCurrentConfigVersion = 40; // v23->v24: FsrSharpenEnabled/FsrSharpenStrength (Phase B)
                                                      // v24->v25: MotionBlurEnabled/MotionBlurStrength (Phase E),
                                                      // FsrSharpenStrength default 0.5->0.3 (live feedback: "needs more softness")
                                                      // v25->v26: ForceAnisotropicFiltering
@@ -213,6 +213,12 @@ constexpr unsigned long kCurrentConfigVersion = 39; // v23->v24: FsrSharpenEnabl
                                                      // confirmed via a real FPS counter to cap menu
                                                      // framerate but not actual gameplay. Direct
                                                      // instruction: "remove it again, recommend RTSS only."
+                                                     // v39->v40: [Video] ForceHighQualityShadows/
+                                                     // ForceHighQualityLighting (issue #107, user request for
+                                                     // native shadow/lighting/reflection improvements) --
+                                                     // real, confirmed native dvars (sm_fastSunShadow,
+                                                     // r_cacheModelLighting/r_cacheSModelLighting). Both
+                                                     // default off.
 
 // Reads a legacy key's raw value, returning true only if the key genuinely existed
 // (unlike ReadFloat, which can't distinguish "absent" from "present but unparsable" --
@@ -646,6 +652,19 @@ void WriteDefaultConfig(const char* path)
         "; value; this just makes it a mod-config toggle that survives a native\n"
         "; \"Restore Defaults\" or a fresh profile instead. 0 = off, 1 = on.\n"
         "ForceAnisotropicFiltering=%d\n"
+        "; Writes the real native sm_fastSunShadow dvar (\"Fast sun shadow\", default\n"
+        "; ON) to 0 -- a genuine native shadow-quality/perf toggle, confirmed via\n"
+        "; decompile of this engine's own renderer dvar registration. Does NOT change\n"
+        "; shadow map resolution (that render-target's real creation call site was\n"
+        "; investigated but not found -- see known_issues.md issue #107). 0 = off\n"
+        "; (default), 1 = on.\n"
+        "ForceHighQualityShadows=%d\n"
+        "; Writes the real native r_cacheModelLighting/r_cacheSModelLighting dvars\n"
+        "; (\"Speed up model/static-model lighting by caching previous results\",\n"
+        "; both default ON) to 0 -- forces lighting to recompute fresh every frame\n"
+        "; instead of reusing a cached result. A real accuracy-over-performance\n"
+        "; tradeoff with an uncharacterized real cost. 0 = off (default), 1 = on.\n"
+        "ForceHighQualityLighting=%d\n"
         "; NOTE: an in-mod frame-pacing limiter was attempted twice (issue #99) and\n"
         "; removed both times after failing live testing -- the first added real input\n"
         "; latency, the second (writing the game's own com_maxfps dvar) turned out to\n"
@@ -911,6 +930,8 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.motionBlurStrength,
         g_modConfig.motionBlurCenterFalloff,
         g_modConfig.forceAnisotropicFiltering ? 1 : 0,
+        g_modConfig.forceHighQualityShadows ? 1 : 0,
+        g_modConfig.forceHighQualityLighting ? 1 : 0,
         g_modConfig.pluginsEnabled ? 1 : 0,
         g_modConfig.vibrationEnabled ? 1 : 0,
         g_modConfig.vibrationFireIntensity,
@@ -1222,6 +1243,8 @@ void LoadModConfig()
     if (g_modConfig.motionBlurCenterFalloff < 0.0f) g_modConfig.motionBlurCenterFalloff = 0.0f;
     if (g_modConfig.motionBlurCenterFalloff > 1.0f) g_modConfig.motionBlurCenterFalloff = 1.0f;
     ReadBool(path, "Video", "ForceAnisotropicFiltering", g_modConfig.forceAnisotropicFiltering);
+    ReadBool(path, "Video", "ForceHighQualityShadows", g_modConfig.forceHighQualityShadows);
+    ReadBool(path, "Video", "ForceHighQualityLighting", g_modConfig.forceHighQualityLighting);
 
     g_buttonMap = ResolveButtonMap(g_modConfig.buttonLayout, g_modConfig.flipTriggers);
 

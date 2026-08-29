@@ -766,6 +766,36 @@ struct ModConfig
     // layer over a setting the player could already set natively.
     bool forceAnisotropicFiltering = false;
 
+    // [Video] ForceHighQualityShadows (2026-08-29, user request: "id like to
+    // chase better res shadows, lighting and reflections(strictly native not
+    // like reshade)") -- writes the real native sm_fastSunShadow dvar to 0
+    // via SetDvarBool, the same real dvar-write mechanism ForceAnisotropicFiltering
+    // above already uses. Confirmed via a real decompile of this engine's own
+    // renderer dvar registration function (FUN_0043a1e0): `sm_fastSunShadow`
+    // ("Fast sun shadow", default ON) is a genuine quality/perf toggle the
+    // shadow system already supports natively -- this just forces it off,
+    // same "safe, no new RE risk, just surface an already-real native lever"
+    // shape as ForceAnisotropicFiltering. A genuine shadow-map RESOLUTION
+    // override (the render targets are R_RENDERTARGET_SHADOWMAP_LARGE/_SMALL,
+    // confirmed real, same table-driven creation system InternalRenderScalePercent
+    // already touches) was investigated in depth but the actual creation call
+    // site was not found after a real, multi-round RE pass including a full
+    // (non--noanalysis) Ghidra analysis -- see known_issues.md issue #107 for
+    // the full trail; this toggle covers what WAS confirmed, not resolution.
+    // Off by default.
+    bool forceHighQualityShadows = false;
+
+    // [Video] ForceHighQualityLighting (2026-08-29, same user request as
+    // above) -- writes the real native r_cacheModelLighting/
+    // r_cacheSModelLighting dvars to 0 via SetDvarBool. Both are confirmed
+    // real (FUN_0043a1e0 decompile): "Speed up model/static-model lighting by
+    // caching previous results" (default ON) -- disabling forces lighting to
+    // recompute fresh every frame instead of reusing a cached result, a real
+    // accuracy-over-performance tradeoff, the same class of lever this
+    // project already ships for anisotropic filtering/shadow quality. Off by
+    // default -- has a real, uncharacterized performance cost.
+    bool forceHighQualityLighting = false;
+
     // [Video] FpsLimitEnabled/FpsLimitTargetFps/FpsLimitEnhancementsOnly --
     // REMOVED ENTIRELY 2026-08-29 (issue #99, second removal). Second design
     // (SetDvarFloat("com_maxfps", ...), replacing the first hand-rolled-wait
