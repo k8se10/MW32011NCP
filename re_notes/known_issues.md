@@ -126,7 +126,7 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#91](#91-vanilla-in-game-resolution-change-also-crashes-the-game----confirms-this-is-a-real-pre-existing-enginehook-compatibility-issue-with-vid_restart-not-specific-to-this-projects-own-r_mode-write-attempt-2026-08-26) — Vanilla in-game Resolution change also crashes the game — **Open, not investigated**
 - [#92](#92-renderer-backend-investigation-d3d1112vulkan----forced3d9on12-removed-entirely-2026-08-29-issue-105-dxvk-still-parked-as-a-real-un-evaluated-vac-risk) — Renderer-backend investigation (D3D11/12/Vulkan) — **`ForceD3D9On12` removed entirely** (issue #105) — DXVK still parked as an un-evaluated VAC risk
 - [#93](#93-phase-a-visual-suite-plan-full-screen-passthrough-crashed-on-init----resolved-phase-a-now-genuinely-done-2026-08-28) — Phase A (visual-suite plan) passthrough init crash — **Resolved**, Phase A is done
-- [#94](#94-phase-b-visual-suite-plan-fsr-10-rcas-full-screen-sharpening----built-deployed-not-yet-live-tuned-2026-08-26) — Phase B: FSR 1.0 RCAS full-screen sharpening — **Built, not yet live-tuned**
+- [#94](#94-phase-b-visual-suite-plan-fsr-10-rcas-full-screen-sharpening----resolved-live-tuned-and-stable-2026-08-28) — Phase B: FSR 1.0 RCAS full-screen sharpening — **Resolved**, live-tuned and stable
 - [#95](#95-phase-e-visual-suite-plan-camera-only-motion-blur----resolved-phase-e-is-done-2026-08-28) — Phase E: camera-only motion blur — **Resolved**, Phase E is done
 - [#96](#96-game-literally-exited-mid-session----resolved-2026-08-27-root-caused-to-hook_fun_00497210s-unconditional-install-firing-during-partially-composited-frames-fixed-via-a-redesigned-hook-point-fun_00693ff0) — Motion blur crash ("game literally exited") — **Resolved** — root-caused to `Hook_FUN_00497210`'s unconditional install; final shipped hook is `FUN_00693ff0`, confirmed crash-free live
 - [#97](#97-motion-blur-issue-96-continuation-menu--loading-screen-gates-shipped-cutscene-report-retracted-on-retest----current-state-closed-for-tonight) — Motion blur menu/loading-screen gates + cutscene report — **Resolved** (cutscene report retracted on retest, no code change needed)
@@ -11174,9 +11174,11 @@ user.
 
 ---
 
-## 94. Phase B (visual-suite plan): FSR 1.0 RCAS full-screen sharpening -- built, deployed, not yet live-tuned (2026-08-26)
+## 94. Phase B (visual-suite plan): FSR 1.0 RCAS full-screen sharpening -- RESOLVED, live-tuned and stable (2026-08-28)
 
-**Status:** Built and deployed, not yet live-confirmed for visual quality.
+**Status: Resolved.** (Title/status stale until 2026-08-29 -- this got live-tuned and stabilized across issues #103/#104 without this entry ever being updated to say so.) `FsrSharpenStrength`'s default was live-tested and corrected (0.5 -> 0.3, "needs more softness"). Two real crashes this feature caused were found and fixed: issue #103 (zero state gating at all, ran unguarded through menus/loading/cutscenes, root cause of a real crash/hard-hang) and issue #104 (a separate crash specifically on exit-level-to-main-menu, `clcState==0` gate added, confirmed live). Original investigation kept below for the trail.
+
+**Original status (2026-08-26):** Built and deployed, not yet live-confirmed for visual quality.
 
 First real effect on top of Phase A's capture/composite pipeline (issue #93):
 FSR 1.0 RCAS (Robust Contrast Adaptive Sharpening), a direct port of AMD's real
