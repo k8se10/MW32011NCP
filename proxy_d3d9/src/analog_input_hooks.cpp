@@ -4337,16 +4337,6 @@ constexpr ManualGlyphEntry kManualGlyphPositions[] = {
     // (New Game overwrite: 1202.2/1206.8, 627.0/678.0; Quit: 1193.2/1199.2,
     // 627.0/675.0 -- close enough to be the same real screen).
     { "SWF_COMMON_DESC_RESIZE_POPUP_NAME", 1, 0.0f, 2, {1197.7f, 1203.0f}, {627.0f, 676.5f} },
-    // Real capture, 2026-08-29 live Campaign pause-menu playthrough (issue #108's
-    // own session) -- confirmed real, but which specific confirm dialog (of
-    // "Restart Level"/"Exit and Save"/"New Campaign"-adjacent pause-menu
-    // sub-screens) isn't pinned down (direct user answer: "they are all
-    // subscreens from campaign pause menu," not more specific than that). Placed
-    // BEFORE the depth=-1 fallback below (linear-scan, first-match-wins ordering
-    // -- see TryGetManualGlyphPosition) so it actually takes effect for depth=3
-    // instead of being shadowed. No requiredTextSubstring -- unconditional at
-    // this depth, same as the depth=1 fallback above.
-    { "SWF_COMMON_DESC_RESIZE_POPUP_NAME", 3, 0.0f, 2, {1205.2f, 1204.5f}, {626.2f, 678.0f} },
     { "SWF_COMMON_DESC_RESIZE_POPUP_NAME", -1, 55.0f, 2, {686.0f, 686.0f}, {603.0f, 653.0f} },
     // Covers "Choose Content Pack" (DLC/on-disk-content picker) and "Leave Lobby?"
     // (Yes/No) -- confirmed live to share this exact container/position despite
@@ -4471,19 +4461,23 @@ constexpr ManualGlyphEntry kManualGlyphPositions[] = {
     // same shared list container. Kept depth-specific (unlike the others
     // above) -- confirmed live this SAME group name is reused one level
     // deeper for a per-mission sub-list with a genuinely different Y-base.
-    // RECALIBRATED 2026-08-29 via a real in-game F2/F3 editor capture during a
-    // live Campaign playthrough (superseding the earlier screenshot/estimate-
-    // derived values above) -- per this project's own established standard,
-    // an editor capture is trusted as correct by construction (real dragged
-    // position against the real live screen), not re-estimated.
-    { "LEVELS_BUTTON_LIST", 3, 0.0f, 3,
-      {636.0f, 638.2f, 632.2f},
-      {198.8f, 243.8f, 288.0f} },
-    // Same group, one level deeper -- per-mission sub-list. RECALIBRATED
-    // 2026-08-29, same live editor capture session as depth=3 above.
-    { "LEVELS_BUTTON_LIST", 4, 0.0f, 7,
-      {636.0f, 637.5f, 636.0f, 636.0f, 637.5f, 636.8f, 632.2f},
-      {198.8f, 244.5f, 289.5f, 333.8f, 378.0f, 424.5f, 468.8f} },
+    { "LEVELS_BUTTON_LIST", 3, 20.0f, 5,
+      {605.0f, 605.0f, 605.0f, 605.0f, 605.0f},
+      {288.0f, 333.0f, 378.0f, 423.0f, 468.0f} },
+    // Same group, one level deeper (2026-08-03, second batch capture): the
+    // per-mission sub-list under an Act's own mission list (e.g. Act I:
+    // Prologue/Black Tuesday/Hunter Killer/Persona Non Grata/Turbulence/Back
+    // on the Grid/Mind the Gap). An earlier pass wrongly flagged this as "not
+    // clean enough to calibrate" -- what looked like contamination was just
+    // the FIRST entry's own text drawn 3x for a drop-shadow/outline effect
+    // (identical text at 3 near-identical Y values, e.g. 187/191/198),
+    // trivially distinguishable from real extra rows. Right-aligned column
+    // is slightly left of the ~605 norm (~583, still same convention), same
+    // base=198/45px grid as everything else. Acts II/III only populate 6 of
+    // these 7 slots; harmless, unused higher indices are just never reached.
+    { "LEVELS_BUTTON_LIST", 4, 20.0f, 7,
+      {583.0f, 583.0f, 583.0f, 583.0f, 583.0f, 583.0f, 583.0f},
+      {198.0f, 243.0f, 288.0f, 333.0f, 378.0f, 423.0f, 468.0f} },
     // Special Ops hub (Find Online Match/Private Online Match/Solo Play/
     // Callsign/Barracks/Store/Options/Main Menu/Quit) -- right-aligned shared
     // column, 9 real items.
@@ -4697,14 +4691,6 @@ constexpr ManualGlyphEntry kManualGlyphPositions[] = {
     // X=686 like every other popup, identical position to SWF_COMMON_POPUP_NAME
     // (504/554/603) despite being a different group name -- another instance
     // of the shared popup container reused for different content.
-    // Real capture, 2026-08-29 live Campaign pause-menu playthrough (issue #108's
-    // own session, same batch as the SWF_COMMON_DESC_RESIZE_POPUP_NAME depth=3
-    // entry above) -- a real, different-position variant of this popup reached
-    // specifically via the Campaign pause menu (X~1200, 2-item Yes/No, not the
-    // X=686/3-item layout below). Placed BEFORE the depth=-1 fallback (linear-
-    // scan, first-match-wins -- see TryGetManualGlyphPosition) so it actually
-    // takes effect for depth=3 instead of being shadowed by the fallback.
-    { "RESUME_POPUP", 3, 0.0f, 2, {1196.2f, 1202.2f}, {554.2f, 603.0f} },
     { "RESUME_POPUP", -1, 300.0f, 3, {686.0f, 686.0f, 686.0f}, {504.0f, 554.0f, 603.0f} },
 };
 
@@ -4759,14 +4745,6 @@ constexpr VerifiedGlyphGroup kVerifiedGlyphGroups[] = {
     { "PERKS_POPUP", 2 },
     { "WEAPON_UPGRADE_POPUP", 3 },  // added 2026-08-25 follow-up, after index 7 was confirmed
                                       // a real header gap, not a missing capture
-    // 2026-08-29 live Campaign playthrough F2/F3 capture (issue #108's own
-    // investigation session) -- real in-game drag-and-export, same standard
-    // as every other entry in this table.
-    { "LEVELS_BUTTON_LIST", 3 },
-    { "LEVELS_BUTTON_LIST", 4 },
-    // Same session, Campaign pause-menu sub-screens.
-    { "SWF_COMMON_DESC_RESIZE_POPUP_NAME", 3 },
-    { "RESUME_POPUP", 3 },
 };
 
 bool IsVerifiedGlyphGroup(const char* groupName, int depth)
