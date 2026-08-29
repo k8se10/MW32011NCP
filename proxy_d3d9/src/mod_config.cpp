@@ -160,7 +160,7 @@ void ReadBool(const char* path, const char* section, const char* key, bool& outV
 // real system d3d9.dll's Direct3DCreate9On12 entry point instead of the ordinary
 // one -- a real, Microsoft-documented alternate export, not a third-party DLL swap.
 // See mod_config.h's own forceD3D9On12 field comment for the full design.
-constexpr unsigned long kCurrentConfigVersion = 37; // v23->v24: FsrSharpenEnabled/FsrSharpenStrength (Phase B)
+constexpr unsigned long kCurrentConfigVersion = 38; // v23->v24: FsrSharpenEnabled/FsrSharpenStrength (Phase B)
                                                      // v24->v25: MotionBlurEnabled/MotionBlurStrength (Phase E),
                                                      // FsrSharpenStrength default 0.5->0.3 (live feedback: "needs more softness")
                                                      // v25->v26: ForceAnisotropicFiltering
@@ -199,6 +199,14 @@ constexpr unsigned long kCurrentConfigVersion = 37; // v23->v24: FsrSharpenEnabl
                                                      // (issue #102, community request -- reuses the
                                                      // existing InternalRenderScalePercent hook point,
                                                      // no new RE). Both default 0/disabled.
+                                                     // v37->v38: [Video] ForceD3D9On12 REMOVED ENTIRELY
+                                                     // (issue #105) -- already known unstable (issue
+                                                     // #92, black screen never root-caused), and now
+                                                     // confirmed to leave the system in a bad state
+                                                     // that outlives disabling the flag, causing crashes
+                                                     // in later sessions where it read false the whole
+                                                     // time. Direct instruction: "remove d3d9on12
+                                                     // completely until further notice or decision."
 
 // Reads a legacy key's raw value, returning true only if the key genuinely existed
 // (unlike ReadFloat, which can't distinguish "absent" from "present but unparsable" --
@@ -580,27 +588,6 @@ void WriteDefaultConfig(const char* path)
         "; applies here too (same underlying mechanism). NOT YET LIVE-TESTED.\n"
         "CustomResolutionWidth=%d\n"
         "CustomResolutionHeight=%d\n"
-        "; Issue #92: forces this DLL's own Direct3DCreate9 export to call the real\n"
-        "; system d3d9.dll's Direct3DCreate9On12 entry point instead of the ordinary\n"
-        "; one -- a real, Microsoft-documented alternate export from the SAME real DLL,\n"
-        "; not a third-party renderer swap (D3D9On12 maps D3D9 onto D3D12, a genuine\n"
-        "; Windows OS component).\n"
-        "; *** DO NOT USE -- CONFIRMED UNSTABLE, 2026-08-26. *** Produces a real,\n"
-        "; reproducible black screen (device alive, menu input keeps working, nothing\n"
-        "; renders) under conditions this project could not fully root-cause after an\n"
-        "; extensive live investigation -- ruled out: memory/address-space exhaustion,\n"
-        "; GPU driver TDR (none logged), shader cache corruption (both real caches\n"
-        "; deleted, still recurs), a GPU driver reset (Win+Ctrl+Shift+B, still recurs),\n"
-        "; this project's own overlay drawing (fully bypassed, still recurs), this\n"
-        "; project's own CreateTexture/Reset hooks (confirmed clean passthroughs). Real,\n"
-        "; live-confirmed visual quality improvement at 100%% scale before it started\n"
-        "; failing, but not safe to use. See known_issues.md issue #92 for the full\n"
-        "; trail, including a real, open microsoft/D3D9On12 GitHub issue for black\n"
-        "; screens on other games/GPUs. Left here (default 0/off) for future\n"
-        "; investigation, not because it currently works. Try raising anisotropic\n"
-        "; filtering (r_texFilterAnisoMax/Min in players2/config.cfg) on the normal\n"
-        "; native driver instead for a similar sharpness improvement, safely.\n"
-        "ForceD3D9On12=%d\n"
         "; --- Recommended companion settings for everything below (FSR/motion blur/\n"
         "; render-scale) -- confirmed live 2026-08-27, known_issues.md issue #99: this\n"
         "; engine's own camera-look pacing gets visibly worse under vsync (a real,\n"
@@ -919,7 +906,6 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.internalRenderScalePercent,
         g_modConfig.customResolutionWidth,
         g_modConfig.customResolutionHeight,
-        g_modConfig.forceD3D9On12 ? 1 : 0,
         g_modConfig.fsrSharpenEnabled ? 1 : 0,
         g_modConfig.fsrSharpenStrength,
         g_modConfig.motionBlurEnabled ? 1 : 0,
@@ -1229,7 +1215,6 @@ void LoadModConfig()
         g_modConfig.customResolutionWidth = w;
         g_modConfig.customResolutionHeight = h;
     }
-    ReadBool(path, "Video", "ForceD3D9On12", g_modConfig.forceD3D9On12);
     ReadBool(path, "Video", "FsrSharpenEnabled", g_modConfig.fsrSharpenEnabled);
     ReadFloat(path, "Video", "FsrSharpenStrength", g_modConfig.fsrSharpenStrength);
     if (g_modConfig.fsrSharpenStrength < 0.0f) g_modConfig.fsrSharpenStrength = 0.0f;
@@ -1257,7 +1242,7 @@ void LoadModConfig()
         "adsSlowdownBaseline=%g adsCloseRangeSlowdownStrength=%g invertLook=%d lookAccelRampMs=%lu proneHoldMs=%lu interactHoldMs=%lu "
         "readyUpHoldMs=%lu "
         "buttonLayout=%s stickLayout=%s flipTriggers=%d glyphStyle=%s glyphStyleAuto=%d "
-        "useCustomOptionsScreen=%d internalRenderScalePercent=%d forceD3D9On12=%d pluginsEnabled=%d "
+        "useCustomOptionsScreen=%d internalRenderScalePercent=%d pluginsEnabled=%d "
         "vibrationEnabled=%d vibrationFireIntensity=%g vibrationFireDurationMs=%lu "
         "vibrationDamagePerPoint=%g vibrationDamageMaxIntensity=%g vibrationDamageDurationMs=%lu "
         "overlayFontFamily=%s overlayFontFamilyCondensed=%s overlayFontItalic=%d overlayTestCycleAllVariants=%d "
@@ -1277,7 +1262,6 @@ void LoadModConfig()
         g_modConfig.glyphStyleAuto ? 1 : 0,
         g_modConfig.useCustomOptionsScreen ? 1 : 0,
         g_modConfig.internalRenderScalePercent,
-        g_modConfig.forceD3D9On12 ? 1 : 0,
         g_modConfig.pluginsEnabled ? 1 : 0,
         g_modConfig.vibrationEnabled ? 1 : 0, g_modConfig.vibrationFireIntensity,
         g_modConfig.vibrationFireDurationMs, g_modConfig.vibrationDamagePerPoint,

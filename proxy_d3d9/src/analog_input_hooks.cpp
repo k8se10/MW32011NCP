@@ -5833,22 +5833,24 @@ CbufAddTextFn2 g_origCbufAddText = nullptr;
 
 void __cdecl Hook_CbufAddText(int localClientNum, const char* text)
 {
-    // Guard applies whenever EITHER risk-adjacent feature is active, not just
-    // ForceD3D9On12 -- InternalRenderScalePercent's own render targets are only
-    // ever sized once, at real startup device-creation time (issue #88's own
-    // "applied exactly ONCE per process" finding); a live vid_restart tearing
-    // that device down and recreating it mid-session is unverified territory for
-    // this feature too, not just for ForceD3D9On12's own confirmed incident.
-    bool guardActive = g_modConfig.forceD3D9On12 || g_modConfig.internalRenderScalePercent > 0;
+    // ForceD3D9On12 itself was REMOVED ENTIRELY 2026-08-29 (issue #105) -- see
+    // mod_config.h's own removal comment. This guard stays and still applies to
+    // InternalRenderScalePercent alone: its render targets are only ever sized
+    // once, at real startup device-creation time (issue #88's own "applied
+    // exactly ONCE per process" finding), and a live vid_restart tearing that
+    // device down and recreating it mid-session remains unverified territory
+    // for this feature, independent of the now-removed ForceD3D9On12 incident
+    // that originally motivated building this guard.
+    bool guardActive = g_modConfig.internalRenderScalePercent > 0;
     if (guardActive && text) {
         bool isVidRestart = false;
         for (const char* p = text; *p; ++p) {
             if (_strnicmp(p, "vid_restart", 11) == 0) { isVidRestart = true; break; }
         }
         if (isVidRestart) {
-            LogFromController("[d3d9on12-guard] blocked a real 'vid_restart' command while ForceD3D9On12/InternalRenderScalePercent is active -- "
-                "issue #92 live-reproduced this corrupting NVIDIA's own persistent D3D12 pipeline cache under ForceD3D9On12, "
-                "requiring a manual %LOCALAPPDATA%\\NVIDIA\\DXCache clear to recover");
+            LogFromController("[d3d9on12-guard] blocked a real 'vid_restart' command while InternalRenderScalePercent is active -- "
+                "issue #92 previously live-reproduced a vid_restart under the now-removed ForceD3D9On12 corrupting NVIDIA's own "
+                "persistent D3D12 pipeline cache; this guard now covers InternalRenderScalePercent's own similar, unverified risk");
             // Dismiss-required, not a timed toast (per direct user instruction, issue
             // #92) -- this is a real, safety-relevant warning (the incident it guards
             // against corrupted a system-wide GPU driver cache, not just this

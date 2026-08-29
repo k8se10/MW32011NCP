@@ -124,7 +124,7 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#89](#89-survival-scoreboard-real-stat-data-source----confirmed-gsc-script-local-state-not-natively-readable-real-policy-checkpoint-now-applies-2026-08-25) — Survival scoreboard real stat data source — **Confirmed: GSC script-local state (`self._id_18D3[...]`), not natively readable — CLOSED for the main mod, deferred to the plugin API** — real decompiled `1571.gsc` source found (was already sitting on disk from an earlier session, a real "check first" miss); every stat is a per-player GSC associative-array field; decision made not to read GSC-VM state from the main mod even SP-only ("even sp that poses a risk"), matching the same policy line the aim-assist removal already established — a real future candidate for a plugin, not main-mod work
 - [#90](#90-60fps-engine-tick-com_maxfpsfixedtimecom_timescale-confirmed-real-registered-and-clustered----fixedtimes-real-mechanism-now-decompiled-and-confirmed-2026-08-25) — 60fps engine tick: `com_maxfps`/`fixedtime`/`com_timescale` — **Investigating** — `fixedtime`'s mechanism confirmed real; 2026-08-27 follow-up ran the two previously-recommended next steps (whole-binary constant scan, remaining `CL_Frame` callee trace) — both came back negative, no patchable gate found yet
 - [#91](#91-vanilla-in-game-resolution-change-also-crashes-the-game----confirms-this-is-a-real-pre-existing-enginehook-compatibility-issue-with-vid_restart-not-specific-to-this-projects-own-r_mode-write-attempt-2026-08-26) — Vanilla in-game Resolution change also crashes the game — **Open, not investigated**
-- [#92](#92-renderer-backend-investigation-d3d1112vulkan----dxvk-parked-as-a-real-un-evaluated-vac-risk-d3d9on12-diagnostic-added-awaiting-one-live-launch-2026-08-26) — Renderer-backend investigation (D3D11/12/Vulkan) — **Investigating** — DXVK parked as an un-evaluated VAC risk, D3D9On12 diagnostic shipped, awaiting a live launch capture
+- [#92](#92-renderer-backend-investigation-d3d1112vulkan----forced3d9on12-removed-entirely-2026-08-29-issue-105-dxvk-still-parked-as-a-real-un-evaluated-vac-risk) — Renderer-backend investigation (D3D11/12/Vulkan) — **`ForceD3D9On12` removed entirely** (issue #105) — DXVK still parked as an un-evaluated VAC risk
 - [#93](#93-phase-a-visual-suite-plan-full-screen-passthrough-crashed-on-init----resolved-phase-a-now-genuinely-done-2026-08-28) — Phase A (visual-suite plan) passthrough init crash — **Resolved**, Phase A is done
 - [#94](#94-phase-b-visual-suite-plan-fsr-10-rcas-full-screen-sharpening----built-deployed-not-yet-live-tuned-2026-08-26) — Phase B: FSR 1.0 RCAS full-screen sharpening — **Built, not yet live-tuned**
 - [#95](#95-phase-e-visual-suite-plan-camera-only-motion-blur----resolved-phase-e-is-done-2026-08-28) — Phase E: camera-only motion blur — **Resolved**, Phase E is done
@@ -137,7 +137,7 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#102](#102-external-feature-request-received-custom-widthheight-resolution-override-via-ini-for-custom-monitor-layoutssplitscreen----logged-not-investigated-2026-08-27) — External feature request: custom Width/Height resolution override via .ini — **Implemented (2026-08-28)** — `[Video] CustomResolutionWidth/Height`, reuses `InternalRenderScalePercent`'s existing hook point (no new RE needed after all -- direct user correction), built and deployed, not yet independently live-tested
 - [#103](#103-real-crash--hard-hang--cutscene-black-screen----resolved-fsrs-own-full-screen-pass-had-zero-state-gating-now-fixed-2026-08-28) — Real crash + hard hang + cutscene/loading black screen — **Resolved** — root cause was FSR's own full-screen pass having zero state gating; fixed by applying the same menu+in-level gate motion blur already had
 - [#104](#104-fsr-black-screen103-class-bug-recurs-specifically-on-exit-level---main-menu----resolved-2026-08-28) — FSR crash on "exit level to main menu" — **Resolved** — `clcState==0` gate added, confirmed live ("fixed")
-- [#105](#105-live-crashfreeze-investigation-2026-08-28-night----root-cause-not-confirmed-found-and-fixed-a-real-unrelated-bug-unguarded-hud-font-idgate-log-spam-76-of-one-sessions-log-internalrenderscalepercent-ruled-out-for-this-specific-session) — Live crash/freeze investigation (WATCHDOG_VIOLATION, not a normal app crash) — **Investigating** — leading theory: a `ForceD3D9On12`-corrupted `DXCache` entry (issue #91's own precedent) outliving the config being disabled, self-clearing after hours; unguarded log spam fixed, a high-scale warning added, `ResourceUsageLogging` on for next test
+- [#105](#105-live-crashfreeze-investigation-2026-08-28-night----resolved-on-its-own-real-world-confirmation-of-the-lingering-driver-corruption-theory-2026-08-29) — Live crash/freeze investigation (WATCHDOG_VIOLATION, not a normal app crash) — **Resolved (self-cleared)**, `ForceD3D9On12` REMOVED ENTIRELY as a result — same repro that reliably crashed now runs clean, supporting the `ForceD3D9On12`/`DXCache` lingering-corruption theory (issue #91's own precedent); unguarded log spam fixed, a high-scale warning added regardless
 
 ---
 
@@ -10927,9 +10927,27 @@ Reused `re_notes/ghidra_project/` directly via `analyzeHeadless.bat -process iw5
 
 ---
 
-## 92. Renderer-backend investigation (D3D11/12/Vulkan) -- DXVK parked as a real, un-evaluated VAC risk; D3D9On12 diagnostic added, awaiting one live launch (2026-08-26)
+## 92. Renderer-backend investigation (D3D11/12/Vulkan) -- ForceD3D9On12 REMOVED ENTIRELY 2026-08-29 (issue #105); DXVK still parked as a real, un-evaluated VAC risk
 
-**Status:** Investigating -- research complete for both paths, diagnostic implemented and built clean, not yet live-confirmed.
+**Status:** `ForceD3D9On12` removed entirely, not just disabled -- see issue
+#105 for the full removal trail. This was already known unstable from this
+issue's own investigation below (a real, reproducible black screen, never
+fully root-caused, not fixed by clearing NVIDIA's shader caches at the
+time) but shipped anyway as an opt-in, off-by-default toggle. Issue #105
+then found enabling it even once left the system in a bad state that
+OUTLIVED disabling the flag -- real crashes/freezes in later sessions
+where this config value read false the entire time. Direct instruction:
+"i think the decision is to remove d3d9on12 completely until further
+notice or decision." "Off by default" is not a sufficient safeguard for a
+feature whose damage isn't undone by turning it back off, so it's gone
+from the codebase rather than left disabled. DXVK's own parked status
+(below) is unaffected by this -- separate investigation, still un-pursued
+pending dedicated VAC research. The D3D9On12-diagnostic finding itself
+(this system runs the game through a real native NVIDIA driver, not
+D3D9On12, by default) remains true and useful; only the FORCE-it-on
+feature built on top of that finding is gone.
+
+**Original investigation, kept for the trail:** Investigating -- research complete for both paths, diagnostic implemented and built clean, not yet live-confirmed.
 
 **Context:** user asked about a D3D11/D3D12 renderer for this project (translating the game's real D3D9 calls directly) and Vulkan support, citing DXVK as precedent. Both investigated; they resolve very differently.
 
@@ -15931,9 +15949,13 @@ check whether `IsMenuActive_Exported()`/`kInLevelFlagAddr` genuinely lag
 behind the real transition, or whether a different, not-yet-identified gap
 exists.
 
-## 105. Live crash/freeze investigation (2026-08-28 night) -- root cause NOT confirmed; found and fixed a real unrelated bug (unguarded `[hud-font-id][gate]` log spam, 76% of one session's log); `InternalRenderScalePercent` ruled out for THIS specific session
+## 105. Live crash/freeze investigation (2026-08-28 night) -- RESOLVED ON ITS OWN, real-world confirmation of the lingering-driver-corruption theory (2026-08-29)
 
-**Status: Investigating, not resolved.** Live reports, in order:
+**Status: Resolved (self-cleared), theory confirmed by real-world retest, not by a controlled A/B.** Direct user report: "now its fine real weird, this is the mission that broke it at first, id say it was alingering stability issuew [a lingering stability issue]." Same mission that reliably crashed within 10 seconds now runs clean, with no code change in between -- strong, real-world support for the leading theory below (a `ForceD3D9On12`-corrupted driver-level state that outlived the config being disabled, self-clearing after several hours), independent of anything this session fixed or shipped. Not a rigorous confirmation (no controlled clear-cache-and-compare test was ever run, so the exact mechanism is still technically unproven), but a real, meaningful data point: the SAME repro, unchanged, stopped failing purely with time passing.
+
+The unrelated bug found and fixed along the way (unguarded `[hud-font-id][gate]` log spam, 76% of one session's log) and the new high-scale VRAM/address-space warning both remain shipped regardless -- real, independent improvements, not contingent on this theory being exactly right.
+
+**Original investigation, live reports in order:**
 1. "new major bug found with our increase in res, basically i opened a spec ops mission 'milehigh jack' and if enabled it crashes within the first 10 secs... i narrowed it by testing wit hjust that setting on and off exclusively" -- pointed at `InternalRenderScalePercent`.
 2. "that hypothesis was also wrong and whatever recent change you made to our resolution scaler broke it and it now crashes faster than ever in all modes not just survival."
 3. "acted very much like a memory leak, started fine then immediately freezes and closes."
@@ -15955,3 +15977,5 @@ exists.
 **Not yet independently confirmed** -- no direct A/B test (reproduce with a freshly-cleared `DXCache` vs. not) has been run. **Practical takeaway for future testing, regardless**: whenever `ForceD3D9On12` is tested and then turned back off, proactively clear `%LOCALAPPDATA%\NVIDIA\DXCache` afterward rather than assuming disabling the config flag alone reverts everything -- cheap, safe, reversible, and directly closes the gap this theory identifies. Root cause of the original crash/freeze is still not fully confirmed, but this is now the leading, most evidence-consistent theory.
 
 Real next step, if this recurs: reproduce again with this build (the log-spam fix, the new high-scale warning, and `ResourceUsageLogging` all active) and share the resulting `proxy_d3d9.log` -- real memory-growth data over the session, a much cleaner log with the spam removed, and confirmation of whether the fix alone changes anything. If `ForceD3D9On12` is ever deliberately retested, clear `DXCache` immediately before AND after, so its state can actually be checked at the moment that matters instead of hours later.
+
+**Decisive action taken, same day (2026-08-29): `ForceD3D9On12` removed entirely, not just left off by default.** Direct instruction, given the mechanism above: "as such i think the decision is to remove d3d9on12 completely until further notice or decision." Reasoning: an opt-in flag whose damage isn't undone by turning it back off breaks the usual "off by default = safe" assumption this project's other experimental toggles rely on -- "off by default" only protects players who never touch the toggle at all, not anyone who tried it once. Removed the config key (`mod_config.h`/`.cpp`, `ConfigVersion` 37->38), the `Direct3DCreate9` export's own `Direct3DCreate9On12`-calling branch (`dllmain.cpp`, now a plain, always-transparent passthrough again), and updated the `Hook_CbufAddText` vid_restart guard to cover `InternalRenderScalePercent` alone (its own real, still-open risk, independent of the now-removed feature). `g_real_Direct3DCreate9On12`/`Direct3DCreate9On12_t` stay declared -- still needed for this proxy's own general passthrough forwarding of that real export to other callers, just no longer invoked by this project itself. Build clean (0 warnings/0 errors), deployed. See issue #92's own entry for the matching update there.

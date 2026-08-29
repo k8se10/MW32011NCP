@@ -687,46 +687,24 @@ struct ModConfig
     int customResolutionWidth = 0;
     int customResolutionHeight = 0;
 
-    // [Video] ForceD3D9On12 (issue #92, 2026-08-26) -- STRICTLY OPT-IN, OFF by
-    // default. Real background: this project investigated whether this game might
-    // already be transparently running through D3D9On12 (a real Microsoft OS
-    // component that maps the D3D9 API onto D3D12 -- NOT a third-party DLL, the
-    // real d3d9.dll this proxy already forwards to is still what's used either
-    // way). Live-confirmed on the dev system it is NOT active by default (real
-    // native NVIDIA driver, `nvldumd.dll`, in use instead). This flag forces it:
-    // when enabled, this DLL's own Direct3DCreate9 export calls the real system
-    // d3d9.dll's Direct3DCreate9On12 (a genuine, documented alternate entry point
-    // exported by the same real DLL -- confirmed via Microsoft's own DirectX-Specs
-    // documentation, not a third-party swap) instead of the ordinary
-    // Direct3DCreate9. Same real device/vtable class either way -- every existing
-    // hook in this project keeps working unmodified.
-    // LIVE-TESTED, 2026-08-26: CONFIRMED UNSTABLE -- a real, genuine visual quality
-    // improvement at 100% scale (live-confirmed, "genuinely looks 10x better"), but
-    // also produces a real, reproducible black screen (device technically alive,
-    // menu input keeps working, nothing renders) under conditions still not fully
-    // understood -- confirmed NOT caused by any of: memory/address-space exhaustion
-    // (real GetProcessMemoryInfo/GlobalMemoryStatusEx capture stayed flat and
-    // healthy the whole session), a genuine GPU/driver TDR hang (zero such events
-    // in the real Windows System event log), a corrupted GPU shader/pipeline cache
-    // (user directly deleted BOTH %LOCALAPPDATA%\NVIDIA\DXCache and
-    // %LOCALAPPDATA%\D3DSCache, black screen still recurred), or the internal
-    // render-scale feature (recurs at normal/default scale too). Real RE (issue #92)
-    // found the engine architecturally never does a true device+D3D9On12-interface
-    // teardown during a live session -- only at real process exit -- which is a
-    // credible mechanism for the symptom, but the only concrete fix design found
-    // (forcing that teardown+recreate ourselves, synchronously, from inside a
-    // console-command hook) carries real, unruled-out crash risk (use-after-free if
-    // the calling code holds a stale device pointer) and was not implemented blind.
-    // Decisive external finding: Microsoft's own microsoft/D3D9On12 GitHub repo has
-    // an open issue for genuine black-screen bugs across multiple unrelated games
-    // and GPU vendors (github.com/microsoft/D3D9On12/issues/83), and D3D12 itself
-    // does not support true full-screen exclusive mode (substitutes "full-screen
-    // optimizations" instead) -- a real, structural mismatch with how this 2011
-    // engine's own fullscreen code was written. This looks like a genuine, external,
-    // still-unresolved D3D9On12 limitation, not necessarily a bug in this project's
-    // own hooks. Left OFF by default and NOT recommended for normal play until this
-    // is better understood -- full trail in known_issues.md issue #92.
-    bool forceD3D9On12 = false;
+    // [Video] ForceD3D9On12 -- REMOVED ENTIRELY 2026-08-29 (issue #105), not just
+    // disabled. Already known unstable since issue #92 (2026-08-26): a real,
+    // reproducible black screen under conditions never fully root-caused, and
+    // NOT fixed by clearing NVIDIA's DXCache/D3DSCache at the time (both were
+    // deleted, the black screen still recurred). Direct user account, 2026-08-29,
+    // gave the decisive reason for full removal rather than continuing to leave
+    // this "off by default, opt-in": "it was culprit for crashes after setting
+    // was disabled, seems after some hours the memory cleared out returning
+    // stability" -- i.e. enabling this even once left the system in a bad state
+    // that outlived turning the flag back off, causing real crashes/freezes in
+    // LATER sessions where this config value read false the whole time. That
+    // combination (an opt-in flag whose damage isn't actually undone by turning
+    // it back off) makes "off by default" an insufficient safeguard on its own.
+    // Direct instruction: "i think the decision is to remove d3d9on12 completely
+    // until further notice or decision." Removed, not left disabled -- matches
+    // this project's own precedent for a feature found unsafe (aim-assist,
+    // permanently removed 2026-07-20; SetVertexDeclaration, reverted 2026-08-28).
+    // Full trail: known_issues.md issues #92/#105.
 
     // [Video] Phase B, visual-suite plan (2026-08-26) -- FSR 1.0 RCAS (Robust
     // Contrast Adaptive Sharpening), a real full-screen sharpen pass built on

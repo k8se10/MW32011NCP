@@ -361,37 +361,25 @@ typedef IDirect3D9* (WINAPI* Direct3DCreate9On12_t)(UINT, D3D9ON12_ARGS_LOCAL*, 
 // ---- Direct3DCreate9: the real interception point --------------------------------
 // Implemented (not forwarded) so we can hold onto / hook the returned IDirect3D9
 // interface (CreateDevice -> device vtable -> Present) once real hooking begins.
-// Normally a transparent pass-through: identical behavior to vanilla d3d9.dll,
-// UNLESS [Video] ForceD3D9On12 is enabled (issue #92), in which case this calls the
-// real system d3d9.dll's own Direct3DCreate9On12 export instead -- a genuine,
-// Microsoft-documented alternate entry point from the SAME real DLL, not a
-// third-party renderer swap. Either path returns a real IDirect3D9* with the same
-// standard vtable layout, so HookD3D9CreateDevice/every downstream hook is
-// unaffected by which path was taken.
+// A transparent pass-through: identical behavior to vanilla d3d9.dll.
+//
+// [Video] ForceD3D9On12 (issue #92, briefly forced this to call the real system
+// d3d9.dll's own Direct3DCreate9On12 export instead) was REMOVED ENTIRELY
+// 2026-08-29 (issue #105) -- already known unstable (a real, never-fully-
+// root-caused black screen, not fixed by clearing NVIDIA's shader caches at the
+// time), and confirmed to leave the system in a bad state that outlives
+// disabling the flag, causing crashes in later sessions where it read false the
+// whole time. See mod_config.h's own removal comment and known_issues.md
+// issues #92/#105 for the full trail. `g_real_Direct3DCreate9On12`/
+// `Direct3DCreate9On12_t` and friends stay resolved/declared above -- still
+// needed for this proxy's own transparent FORWARD_STUB passthrough of that
+// real export to OTHER callers, just no longer invoked by this project itself.
 extern "C" __declspec(dllexport) IDirect3D9* WINAPI Direct3DCreate9(UINT SDKVersion)
 {
     Log("Direct3DCreate9 called");
 
-    IDirect3D9* real = nullptr;
-    if (g_modConfig.forceD3D9On12) {
-        if (g_real_Direct3DCreate9On12) {
-            Log("[d3d9on12-force] ForceD3D9On12 enabled -- calling real Direct3DCreate9On12 instead of Direct3DCreate9");
-            D3D9ON12_ARGS_LOCAL args{};
-            args.Enable9On12 = TRUE;
-            auto create9On12 = reinterpret_cast<Direct3DCreate9On12_t>(g_real_Direct3DCreate9On12);
-            real = create9On12(kD3D9SdkVersion, &args, 1);
-            if (!real) {
-                Log("[d3d9on12-force] Direct3DCreate9On12 returned null -- falling back to real Direct3DCreate9");
-            }
-        } else {
-            Log("[d3d9on12-force] ForceD3D9On12 enabled but real d3d9.dll is missing Direct3DCreate9On12 -- falling back to real Direct3DCreate9");
-        }
-    }
-
-    if (!real) {
-        if (!g_real_Direct3DCreate9) return nullptr;
-        real = g_real_Direct3DCreate9(SDKVersion);
-    }
+    if (!g_real_Direct3DCreate9) return nullptr;
+    IDirect3D9* real = g_real_Direct3DCreate9(SDKVersion);
     if (real) {
         HookD3D9CreateDevice(real);
     }
