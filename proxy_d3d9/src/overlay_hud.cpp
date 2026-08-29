@@ -3771,6 +3771,48 @@ void ApplyForcedAnisotropicFilteringIfEnabled()
     LogFromController("[aniso-force] wrote r_texFilterAnisoMax/r_texFilterAnisoMin = 16 (ForceAnisotropicFiltering)");
 }
 
+// [Video] ForceHighQualityShadows/ForceHighQualityLighting (2026-08-29,
+// issue #107, user request: "id like to chase better res shadows, lighting
+// and reflections(strictly native not like reshade)"). Same shape as
+// ForceAnisotropicFiltering above -- real, already-registered native dvars
+// (confirmed via decompile of this engine's own renderer dvar-registration
+// function, FUN_0043a1e0), forced via SetDvarBool rather than anything new.
+// sm_fastSunShadow ("Fast sun shadow", default ON) is a genuine quality/perf
+// toggle; r_cacheModelLighting/r_cacheSModelLighting ("Speed up model/
+// static-model lighting by caching previous results", both default ON)
+// trade a real, uncharacterized performance cost for fresher-every-frame
+// lighting instead of a cached result. Shadow map RESOLUTION specifically
+// (R_RENDERTARGET_SHADOWMAP_LARGE/_SMALL, confirmed real, same table-driven
+// creation system InternalRenderScalePercent already touches) was
+// investigated in real depth -- including a full, non--noanalysis Ghidra
+// pass -- but the actual creation call site was not found; these two
+// toggles cover what WAS confirmed, not a resolution override. See
+// known_issues.md issue #107 for the complete investigation trail.
+namespace {
+bool g_forcedShadowsLastApplied = false;
+bool g_forcedLightingLastApplied = false;
+}
+
+void ApplyForcedHighQualityShadowsIfEnabled()
+{
+    if (g_modConfig.forceHighQualityShadows == g_forcedShadowsLastApplied) return;
+    g_forcedShadowsLastApplied = g_modConfig.forceHighQualityShadows;
+    if (!g_modConfig.forceHighQualityShadows) return; // opt-out-is-inert, same
+        // convention as ForceAnisotropicFiltering above
+    SetDvarBool("sm_fastSunShadow", 0);
+    LogFromController("[shadow-quality-force] wrote sm_fastSunShadow = 0 (ForceHighQualityShadows)");
+}
+
+void ApplyForcedHighQualityLightingIfEnabled()
+{
+    if (g_modConfig.forceHighQualityLighting == g_forcedLightingLastApplied) return;
+    g_forcedLightingLastApplied = g_modConfig.forceHighQualityLighting;
+    if (!g_modConfig.forceHighQualityLighting) return; // opt-out-is-inert
+    SetDvarBool("r_cacheModelLighting", 0);
+    SetDvarBool("r_cacheSModelLighting", 0);
+    LogFromController("[lighting-quality-force] wrote r_cacheModelLighting/r_cacheSModelLighting = 0 (ForceHighQualityLighting)");
+}
+
 // [Video] FpsLimitEnabled/FpsLimitTargetFps/FpsLimitEnhancementsOnly --
 // REMOVED ENTIRELY 2026-08-29 (issue #99, second removal). See mod_config.h's
 // own removal comment for the full story: confirmed via a real FPS counter to
@@ -6593,6 +6635,11 @@ HRESULT WINAPI Hook_EndScene(void* device)
     // for why here (well past device creation, avoiding a real, already-
     // documented loader-lock risk in Hook_CreateDevice) rather than at startup.
     ApplyForcedAnisotropicFilteringIfEnabled();
+
+    // [Video] ForceHighQualityShadows/ForceHighQualityLighting -- same
+    // timing rationale as ForceAnisotropicFiltering directly above.
+    ApplyForcedHighQualityShadowsIfEnabled();
+    ApplyForcedHighQualityLightingIfEnabled();
 
     // [Video] FpsLimitEnabled -- REMOVED ENTIRELY 2026-08-29 (issue #99,
     // second removal). Full story in mod_config.h's own removal comment and
