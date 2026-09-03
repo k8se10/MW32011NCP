@@ -24,7 +24,7 @@ real evidence and honest confidence level; this is just an index.
 
 | Cluster | File | Real confidence |
 |---|---|---|
-| Sprint / weapon switch | [`sprint_weapnext_x64.md`](sprint_weapnext_x64.md) | **Sprint RESOLVED (static, high confidence)**: full Pmove-entry call chain traced (`FUN_140016620` frame-subdivision wrapper → `FUN_1400168a0` per-substep tick → `FUN_140014a80`, the real sprint-bit writer, confirmed via a `pm_flags`-equivalent bit-0x4000 write gated on a held-input check) — the real x64 equivalent of x86's `InjectControllerSprintPmFlags` hook target. **weapnext, narrowed same day**: the entire top-level event-loop architecture is now mapped (`FUN_14023ccb0` = `Com_EventLoop`, `FUN_1402ee660` = `Sys_GetEvent` with a real Win32 message-pump fallback) — 3 of its 4 event types are ruled out (char-typed, console-command-text, `Com_Error`), leaving only the kbutton path (`FUN_14007eaf0`) structurally possible. Real open question narrowed from "which dispatcher" to "which per-tick consumer reads bind index 66," the same class of problem Sprint's own resolution just solved. |
+| Sprint / weapon switch | [`sprint_weapnext_x64.md`](sprint_weapnext_x64.md) | **Both RESOLVED (static, high confidence).** Sprint: full Pmove-entry call chain traced (`FUN_140016620` frame-subdivision wrapper → `FUN_1400168a0` per-substep tick → `FUN_140014a80`, the real sprint-bit writer) — the real x64 equivalent of x86's `InjectControllerSprintPmFlags` hook target. weapnext: `FUN_14007c3a0` case `0x42` (`FUN_1400706d0` → `FUN_140074570`, a real weapon-slot-cycling function with a direction parameter) confirmed as the real dispatcher, once `FUN_14007c3a0`'s case numbers were confirmed to be direct bind-name-table indices — corrects an earlier same-day dismissal of this exact case as coincidence. |
 | Pause menu / key handler | [`pausemenu_keyhandler_x64.md`](pausemenu_keyhandler_x64.md) | `cl_paused`'s real storage global found. **Updated after this file's own section 1g**: the real key-event handler (`FUN_1402aac50`, x86 `FUN_00541020` equivalent) and its wrapper (`FUN_14029baa0`) ARE now found, high confidence — cross-validates `pausemenu_keyhandler_x64.md`'s own `FUN_14029dfd0` candidate as a real part of the chain. **Same-day follow-up**: `FUN_14029baa0` fully decompiled — confirmed x64 `Cvar_Set` equivalent (`FUN_1402c5b30`) and the real resume-gameplay path (`Cvar_Set("cl_paused", 0)` once the menu stack empties). `FUN_1402ac9c0` ruled OUT as `OpenPauseMenu` (it's a bulk close/refresh pass over already-registered menu defs, gated on a menu already being open). **Second same-day follow-up: `SetMenuState`/`OpenPauseMenu` CONFIRMED.** `FUN_14029f3f0(player, mode)` is the real `SetMenuState`, a 10-destination named-screen dispatcher; mode `2` opens `"pausedmenu"` via the newly-found `FUN_1402ad950(ctx, name)` (`OpenMenuByName`) — that's the real `OpenPauseMenu`. **Third same-day follow-up, resolved in practice**: found the real live-gameplay pause TOGGLE, `FUN_1400823b0` (case `0x43` in `FUN_14007c3a0`, the confirmed x64 `FUN_00438710` equivalent) — reads the current `SetMenuState` mode and toggles between open (mode 2) and resume (mode 0). This is structurally independent of the ESC-specific `cls.state==6` branch, which stays an open, lower-priority mystery (real write sites for states 1/4/6/7 found, semantic mapping still uncertain) since Start's pause almost certainly doesn't need it. |
 | D-pad actionslot / generic dvar API | [`actionslot_dvarhelpers_x64.md`](actionslot_dvarhelpers_x64.md) | Dvar API (`Dvar_FindVar`/get/set): high confidence, cross-validated 4 independent call sites — real simplification over x86, standard calling convention, no `__asm` needed; value offset shifted `+0xc`→`+0x10` (real x64 struct-alignment change, confirmed two ways). **D-pad actionslot, upgraded same day**: mapped the ENTIRE kbutton-table function cluster (4 functions total: setter, `IsKeyButtonDown` by index/by name, `ClearAllKeyButtons`) — no separate raw-dispatch table exists anywhere, confirming actionslot is "just another kbutton" at the table level (medium-high confidence). The actual "use the equipped item" consumer is still not found, plausibly GSC-VM script state rather than native C++. |
 
@@ -609,17 +609,26 @@ record — this section is a pointer, not the source of truth)
       Start driving pause through a different path). This resolves the
       practical "how does pause actually open during live gameplay"
       question with high confidence, independent of ever pinning down
-      `cls.state`'s exact semantics. **One coincidence explicitly ruled
-      out, not chased further**: case `0x42` (`FUN_1400706d0`) was checked
-      on the hope it might match x86's own weapnext case number (also
-      `0x42`) — it doesn't; a different, heavily state-gated single action,
-      identity not determined. Real lesson: case numbers between x86's and
-      x64's differently-compiled versions of a structurally similar
-      dispatcher are NOT guaranteed to align — a matching number is not
-      evidence on its own, don't assume it transfers without checking the
-      actual body. weapnext's own case ID in this table is still unknown,
-      but the search now has a confirmed, correct function to search
-      within, a real narrowing even without the final answer.
+      `cls.state`'s exact semantics. **Correction, same day**: case `0x42`
+      (`FUN_1400706d0`) was initially checked here on the hope it might
+      match x86's own weapnext case number and dismissed as coincidence,
+      reasoning that x86/x64 case numbers aren't guaranteed to align —
+      **that dismissal was wrong.** `sprint_weapnext_x64.md`'s own follow-up
+      pass traced the real mechanism: `FUN_14007c3a0`'s case numbers are
+      directly the bind-name-table indices (confirmed via `FUN_14007eff0`,
+      the real string→index resolver, and `FUN_14007f330`/`Key_SetBinding`,
+      which writes that same index into the per-keycode slot
+      `FUN_14007eaf0` reads and passes straight through) — not a separate,
+      independently-numbered case-ID space. Weapnext's own computed
+      bind-name-table index (66 = `0x42`) landing on a real case in this
+      switch isn't a coincidence, it's the direct, mechanical consequence
+      of that shared indexing. **`case 0x42` = `FUN_1400706d0` IS weapnext's
+      real dispatcher, now independently confirmed** by decompiling its own
+      callee `FUN_140074570` — a genuine weapon-slot-cycling function (a
+      15-entry array, `%0xf` wraparound, a real forward/backward direction
+      parameter, ammo/holdability gates, and a real weapon-switch call).
+      See `sprint_weapnext_x64.md` for the full trace — weapnext is now
+      RESOLVED, static, high confidence, not just narrowed.
 1h. **Render-scale/shadow-map thread: found the render-target orchestrator,
     re-confirmed (not just re-found) the x86 team's own hardest open
     question rather than cracking it.** `$shadowmap_large` needed the
