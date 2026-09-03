@@ -121,11 +121,28 @@ project-wide, too broad to fully map) -- state 6's writer is gated on a
 pending-job-count check, the shape of an in-progress loading/connect step,
 raising a genuine possibility that this whole ESC branch is a
 loading-screen-specific cancel/pause prompt rather than the general
-live-gameplay Start-button pause. If so, live pause may route through
-`FUN_14007eaf0`'s OTHER dispatch path (the generic bindIndex case-lookup
-table) for a `+togglemenu`/Start-bound index instead -- a real, structurally
-plausible alternative, not yet checked. Full write-site detail in
-`re_notes/x64_migration/README.md` section 1g.
+live-gameplay Start-button pause.
+
+**RESOLVED (practically) -- the real Start-button pause toggle found,
+independent of the `cls.state` mystery entirely.** Followed through on the
+alternative flagged above: decompiled `FUN_14007c3a0`, confirmed as the
+real x64 equivalent of x86's `FUN_00438710` (the generic case-number
+command dispatcher). Within its large, fully-mapped `switch` (dozens of
+real gameplay commands, mostly KeyDown/KeyUp pairs on a second, separate
+per-bind state system from the kbutton table): **case `0x43` =
+`FUN_1400823b0`, confirmed as the real live-gameplay pause TOGGLE** -- reads
+the current `SetMenuState` mode and calls `SetMenuState(player, 2)` (open)
+if not already paused, or `SetMenuState(player, 0)` (resume) if it is. This
+resolves the practical question with high confidence, independent of ever
+pinning down `cls.state`'s exact semantics -- live Start-button pause almost
+certainly routes through this generic case-dispatch path, not the
+ESC-specific `cls.state==6` branch (the two are separate mechanisms,
+matching x86's own historical ESC-vs-Start split). One coincidence
+explicitly ruled out: case `0x42` was checked hoping it might match x86's
+own weapnext case number (also `0x42`) -- it doesn't (a different,
+heavily-gated single action) -- case numbers between x86/x64 are not
+guaranteed to align. Full detail in `re_notes/x64_migration/README.md`
+section 1g. Not live-tested.
 
 **Sprint thread -- RESOLVED, static, high confidence**: `FUN_140014a80` is
 the real Pmove-entry sprint-bit WRITER (`*(uint*)(lVar3+0xc) |= 0x4000`, the
