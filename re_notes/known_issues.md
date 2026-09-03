@@ -16312,7 +16312,21 @@ that one function appears to be the single unified real entry point for
 injecting any key/bind event on x64 (menu/ESC dispatch included), a real
 architectural simplification over x86's several separate specialized
 functions. **Still not located**: the dedicated `SetMenuState`/
-`OpenPauseMenu`/`ForwardKeyToMenu` functions specifically. **Render-scale/
+`OpenPauseMenu`/`ForwardKeyToMenu` functions specifically. **Same-day
+follow-up**: decompiled `FUN_14029baa0` in full plus its ESC-branch callees.
+Confirmed `FUN_1402c5b30` is the real x64 `Cvar_Set` equivalent (name-lookup
+via `FUN_1402c3890`, direct set or re-register-as-"External Dvar" fallback)
+-- generically useful for any future dvar-write hook, not just this cluster
+-- and confirmed the real resume-gameplay path: once the active-menu stack
+empties, `FUN_14029baa0` runs two cleanup calls then
+`Cvar_Set("cl_paused", 0)`, matching x86 `FUN_004396d0`'s `mode==0` case
+functionally (one merged function here, not a separate mode-driven call).
+Ruled out `FUN_1402ac9c0` as `OpenPauseMenu` -- it's a bulk close/refresh
+pass over a distinct registered-menu-defs array, gated on a menu already
+being open, and `FUN_14029baa0`'s entire body is gated the same way -- so
+neither can be the "open pause menu from nothing" path; that call site is
+still unidentified, plausibly inside `FUN_14007eaf0` before it reaches
+`FUN_14029baa0`, not yet traced. None of this is live-tested. **Render-scale/
 shadow-map thread, same day**: found the x64 render-target orchestrator
 (`FUN_1401b8c80`, equivalent to `FUN_004b60a0`) and confirmed its 5 real
 callers create `SAVED_SCREEN`/`FLOAT_Z`/`SSAO`/`SSAO_BLURRED`/
