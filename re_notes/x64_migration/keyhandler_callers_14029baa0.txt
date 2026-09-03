@@ -1,0 +1,862 @@
+Callers of 14029baa0 (4):
+  FUN_14007eaf0 @ 14007eaf0
+  FUN_14007eeb0 @ 14007eeb0
+  FUN_14029dfd0 @ 14029dfd0
+  FUN_14007e8e0 @ 14007e8e0
+
+================================================================
+Function: FUN_14007eaf0 @ 14007eaf0
+----------------------------------------------------------------
+
+void FUN_14007eaf0(int param_1,int param_2,int param_3)
+
+{
+  int *piVar1;
+  uint uVar2;
+  int iVar3;
+  char cVar4;
+  int iVar5;
+  int iVar6;
+  ulonglong uVar7;
+  longlong lVar8;
+  longlong lVar9;
+  uint *puVar10;
+  
+  lVar8 = (longlong)param_1;
+  lVar9 = lVar8 * 0xd28;
+  uVar7 = (ulonglong)param_2;
+  piVar1 = (int *)(&DAT_140644a64 + uVar7 * 0xc + lVar9);
+  *piVar1 = param_3;
+  iVar5 = 0;
+  if (param_3 == 0) {
+    piVar1[1] = 0;
+    *(int *)(&DAT_140644a60 + lVar9) = *(int *)(&DAT_140644a60 + lVar9) + -1;
+    puVar10 = (uint *)(&DAT_1406e2550 + lVar8 * 400);
+    if (*(int *)(&DAT_140644a60 + lVar9) < 0) {
+      *(undefined4 *)(&DAT_140644a60 + lVar9) = 0;
+    }
+  }
+  else {
+    piVar1[1] = piVar1[1] + 1;
+    if (piVar1[1] == 1) {
+      *(int *)(&DAT_140644a60 + lVar9) = *(int *)(&DAT_140644a60 + lVar9) + 1;
+    }
+    puVar10 = (uint *)(&DAT_1406e2550 + lVar8 * 400);
+    if (1 < piVar1[1]) {
+      if ((*puVar10 & 0x21) == 0) {
+        if ((*puVar10 & 0x10) == 0) {
+          return;
+        }
+        switch(param_2) {
+        case 0x9a:
+        case 0x9b:
+        case 0x9c:
+        case 0x9d:
+        case 0xa3:
+        case 0xa4:
+          break;
+        default:
+          return;
+        }
+      }
+      if (param_2 == 0x60) {
+        return;
+      }
+      if (param_2 == 0x7e) {
+        return;
+      }
+      if (param_2 == 0x1b) {
+        return;
+      }
+    }
+  }
+  uVar2 = *puVar10;
+  if (((uVar2 & 8) == 0) || (param_3 < 1)) {
+    iVar3 = (&DAT_1406e2558)[lVar8 * 100];
+    *(undefined4 *)(&DAT_140645664 + lVar9) = 0;
+    if ((param_3 == 0) ||
+       ((((param_2 != 200 && (0x7f < param_2)) || (1 < iVar3 - 1U)) || (uVar2 != 0)))) {
+      if ((uVar2 & 0x10) != 0) {
+        iVar5 = FUN_14029b470(param_1);
+      }
+    }
+    else {
+      uVar7 = 0x1b;
+    }
+    iVar6 = (int)uVar7;
+    if (iVar6 == 0x1b) {
+      if (param_3 != 0) {
+        if ((*puVar10 & 0x10) != 0) {
+          FUN_14029baa0(param_1,0x1b,param_3);
+          return;
+        }
+        if ((iVar3 == 1) || (iVar3 == 2)) {
+          FUN_140082e70(param_1);
+          return;
+        }
+        if (iVar3 != 6) {
+          return;
+        }
+        if (((*(int *)(DAT_141efb7a8 + 0x10) == 0) &&
+            (((cVar4 = FUN_1401a1e50(), cVar4 != '\0' || (cVar4 = FUN_1401a1e40(), cVar4 != '\0'))
+             && (*(char *)(DAT_14050bde8 + 0x10) != '\0')))) &&
+           (*(char *)(DAT_14050bdf0 + 0x10) == '\0')) {
+          return;
+        }
+        FUN_14029f3f0(param_1,2);
+        return;
+      }
+    }
+    else if (param_3 != 0) {
+      if ((*puVar10 & 1) != 0) {
+        return;
+      }
+      if ((*puVar10 & 0x10) != 0) {
+        if (iVar5 == 5) {
+          uVar7 = 0x1b;
+        }
+        else if ((iVar5 == 3) && (iVar6 != 200)) {
+          return;
+        }
+        if (DAT_14064fe00 == 0) {
+          return;
+        }
+        FUN_14029baa0(param_1,uVar7 & 0xffffffff,param_3);
+        return;
+      }
+      if (iVar3 == 0) {
+        return;
+      }
+      if ((&DAT_140644a6c)[lVar8 * 0x34a + (longlong)iVar6 * 3] == 0) {
+        return;
+      }
+      FUN_14007c3a0(param_1,(&DAT_140644a6c)[lVar8 * 0x34a + (longlong)iVar6 * 3],uVar7 & 0xffffffff
+                   );
+      return;
+    }
+    uVar2 = (&DAT_140644a6c)[lVar8 * 0x34a + (longlong)iVar6 * 3];
+    if (((int)uVar2 < 0x41) && ((uVar2 & 1) != 0)) {
+      FUN_14007c3a0(param_1,uVar2 + 1,uVar7 & 0xffffffff);
+    }
+    if (((*puVar10 & 0x10) != 0) && (DAT_14064fe00 != 0)) {
+      FUN_14029baa0(param_1,uVar7 & 0xffffffff,param_3);
+    }
+  }
+  else if (param_2 == 0x1b) {
+    *(undefined4 *)(&DAT_140645664 + lVar9) = 2;
+  }
+  else if (param_2 == 200) {
+    *(undefined4 *)(&DAT_140645664 + lVar9) = 1;
+  }
+  return;
+}
+
+
+
+================================================================
+Function: FUN_14007eeb0 @ 14007eeb0
+----------------------------------------------------------------
+
+void FUN_14007eeb0(int param_1)
+
+{
+  int *piVar1;
+  undefined4 uVar2;
+  uint uVar3;
+  ulonglong uVar5;
+  longlong lVar6;
+  ulonglong uVar4;
+  
+  uVar4 = 0;
+  lVar6 = (longlong)param_1 * 0xd28;
+  *(undefined4 *)(&DAT_140644a60 + lVar6) = 0;
+  uVar5 = uVar4;
+  do {
+    if (*(int *)(&DAT_140644a64 + uVar5 + lVar6) != 0) {
+      *(undefined8 *)(&DAT_140644a64 + uVar5 + lVar6) = 0;
+      piVar1 = (int *)(&DAT_140644a60 + lVar6);
+      *piVar1 = *piVar1 + -1;
+      uVar2 = *(undefined4 *)(&DAT_140644a60 + lVar6);
+      if (*piVar1 < 0) {
+        uVar2 = 0;
+      }
+      *(undefined4 *)(&DAT_140644a60 + lVar6) = uVar2;
+      *(undefined4 *)(&DAT_140645664 + lVar6) = 0;
+      if (((&DAT_1406e2550)[(longlong)param_1 * 400] & 0x10) != 0) {
+        FUN_14029b470(param_1);
+      }
+      uVar3 = *(uint *)(&DAT_140644a64 + uVar5 + 8 + lVar6);
+      if (((int)uVar3 < 0x41) && ((uVar3 & 1) != 0)) {
+        FUN_14007c3a0(param_1,uVar3 + 1,uVar4);
+      }
+      if ((((&DAT_1406e2550)[(longlong)param_1 * 400] & 0x10) != 0) && (DAT_14064fe00 != 0)) {
+        FUN_14029baa0(param_1,uVar4,0);
+      }
+    }
+    *(undefined8 *)(&DAT_140644a64 + uVar5 + lVar6) = 0;
+    uVar3 = (int)uVar4 + 1;
+    uVar4 = (ulonglong)uVar3;
+    uVar5 = uVar5 + 0xc;
+  } while ((int)uVar3 < 0x100);
+  return;
+}
+
+
+
+================================================================
+Function: FUN_14029dfd0 @ 14029dfd0
+----------------------------------------------------------------
+
+/* WARNING: Function: __chkstk replaced with injection: alloca_probe */
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_14029dfd0(undefined4 param_1,undefined8 param_2)
+
+{
+  char cVar1;
+  int iVar2;
+  int iVar3;
+  undefined4 uVar4;
+  undefined8 uVar5;
+  longlong lVar6;
+  longlong lVar7;
+  undefined4 *puVar8;
+  longlong lVar9;
+  longlong lVar10;
+  char *pcVar11;
+  int *piVar12;
+  int local_res20 [2];
+  undefined8 in_stack_ffffffffffffead8;
+  char local_1518 [128];
+  char local_1498 [1024];
+  undefined1 local_1098 [128];
+  undefined1 local_1018 [1024];
+  undefined1 local_c18 [1024];
+  undefined1 local_818 [1024];
+  undefined1 local_418 [1016];
+  undefined8 uStack_20;
+  
+  uStack_20 = 0x14029dfe6;
+  iVar2 = FUN_1402af840(param_2,local_1498,0x400);
+  if (iVar2 == 0) {
+    return;
+  }
+  iVar2 = FUN_1402ca760(local_1498,"clearError");
+  if (iVar2 == 0) {
+    FUN_1402af8c0(param_1);
+    FUN_1402c52b0(DAT_1406ef580,0);
+    if (*(char *)(DAT_1406479e8 + 0x10) == '\0') {
+      return;
+    }
+    FUN_14022f680(0,"coopSearchStart\n");
+    return;
+  }
+  iVar2 = FUN_1402ca760(local_1498,"LoadSaveGames");
+  if (iVar2 == 0) {
+    FUN_14029bc60(0);
+    return;
+  }
+  iVar2 = FUN_1402ca760(local_1498,"Loadgame");
+  if (iVar2 == 0) {
+    iVar2 = FUN_14029f170(&DAT_142615951);
+    if (iVar2 < 0) {
+      return;
+    }
+    if ((int)(&DAT_14261553c)[iVar2] < 0) {
+      return;
+    }
+    uVar5 = FUN_1402cb690("loadgame %s\n",
+                          *(undefined8 *)
+                           (&DAT_142609530 + (longlong)(int)(&DAT_14261553c)[iVar2] * 0x60));
+    FUN_14022f680(0,uVar5);
+    FUN_1402ac9c0(&DAT_142605050);
+    return;
+  }
+  iVar2 = FUN_1402ca760(local_1498,"Savegame");
+  uVar4 = (undefined4)((ulonglong)in_stack_ffffffffffffead8 >> 0x20);
+  if (iVar2 == 0) {
+    local_1518[0] = '\0';
+    FUN_1402caa00(local_1518,*(undefined8 *)(DAT_142604fe8 + 0x10),0x20);
+    uVar4 = (undefined4)((ulonglong)in_stack_ffffffffffffead8 >> 0x20);
+    lVar7 = -1;
+    do {
+      lVar6 = lVar7 + 1;
+      lVar9 = lVar7 + 1;
+      lVar7 = lVar6;
+    } while (local_1518[lVar9] != '\0');
+    if (lVar6 == 0) {
+      FUN_1402ad950(&DAT_142605050,"save_name_popmenu");
+      return;
+    }
+    iVar2 = 0;
+    if (0 < DAT_142615530) {
+      piVar12 = &DAT_14261553c;
+      do {
+        iVar3 = FUN_1402ca760(local_1518,*(undefined8 *)(&DAT_142609538 + (longlong)*piVar12 * 0x60)
+                             );
+        uVar4 = (undefined4)((ulonglong)in_stack_ffffffffffffead8 >> 0x20);
+        if (iVar3 == 0) {
+          FUN_1402ad950(&DAT_142605050,"save_overwrite_popmenu");
+          break;
+        }
+        iVar2 = iVar2 + 1;
+        piVar12 = piVar12 + 1;
+      } while (iVar2 < DAT_142615530);
+    }
+    if (iVar2 != DAT_142615530) {
+      return;
+    }
+  }
+  else {
+    iVar2 = FUN_1402ca760(local_1498,"forcesave");
+    if (iVar2 != 0) {
+      iVar2 = FUN_1402ca760(local_1498,"DelSavegame");
+      if (iVar2 == 0) {
+        iVar2 = FUN_14029f170(&DAT_142615951);
+        if (iVar2 < 0) {
+          return;
+        }
+        if ((int)(&DAT_14261553c)[iVar2] < 0) {
+          return;
+        }
+        lVar7 = (longlong)(int)(&DAT_14261553c)[iVar2] * 0x60;
+        FUN_1402403a0(local_1518,0x40,"save/%s.svg",*(undefined8 *)(&DAT_142609530 + lVar7));
+        iVar2 = FUN_1402b3de0(local_1518);
+        if (iVar2 != 0) {
+          FUN_1402403a0(local_1518,0x40,"save/%s.jpg",*(undefined8 *)(&DAT_142609530 + lVar7));
+          FUN_1402b3de0(local_1518);
+          iVar2 = 0;
+          if (0 < DAT_142615530) {
+            piVar12 = &DAT_14261553c;
+            do {
+              iVar3 = FUN_1402ca760(&DAT_142615951,
+                                    *(undefined8 *)(&DAT_142609530 + (longlong)*piVar12 * 0x60));
+              if (iVar3 == 0) {
+                if (-1 < iVar2) {
+                  if (iVar2 < DAT_142615530 + -1) {
+                    iVar2 = iVar2 + 1;
+                  }
+                  else if (iVar2 != 0) {
+                    iVar2 = iVar2 + -1;
+                  }
+                  FUN_14029b290(0,DAT_1403e5608,iVar2);
+                  FUN_1402ac400(&DAT_142605050,0,0xf,iVar2,0);
+                }
+                break;
+              }
+              iVar2 = iVar2 + 1;
+              piVar12 = piVar12 + 1;
+            } while (iVar2 < DAT_142615530);
+          }
+        }
+        FUN_14029f1f0(DAT_142615534,1);
+        return;
+      }
+      iVar2 = FUN_1402ca760(local_1498,"SavegameSort");
+      if (iVar2 == 0) {
+        iVar2 = FUN_1402b1da0(param_2,local_res20);
+        if (iVar2 == 0) {
+          return;
+        }
+        if (local_res20[0] == DAT_142615534) {
+          DAT_142615538 = (uint)(DAT_142615538 == 0);
+        }
+        FUN_14029f1f0(local_res20[0],1);
+        return;
+      }
+      iVar2 = FUN_1402ca760(local_1498,"playerstart");
+      if (iVar2 == 0) {
+        FUN_14029ccb0();
+        return;
+      }
+      iVar2 = FUN_1402ca760(local_1498,&DAT_140433b44);
+      if (iVar2 == 0) {
+        FUN_14023e490();
+        return;
+      }
+      iVar2 = FUN_1402ca760(local_1498,"Controls");
+      if (iVar2 == 0) {
+        uVar4 = FUN_140083ae0();
+        FUN_1402c5b30("cl_paused",uVar4);
+        FUN_14007f3b0(0,0x10);
+        FUN_1402ac9c0(&DAT_142605050);
+        FUN_1402ad950(&DAT_142605050,"setup_menu2");
+        return;
+      }
+      iVar2 = FUN_1402ca760(local_1498,"Leave");
+      if (iVar2 == 0) {
+        FUN_14022f680(0,"disconnect\n");
+        FUN_14007f3b0(0,0x10);
+        FUN_1402ac9c0(&DAT_142605050);
+        FUN_1402ad950(&DAT_142605050,&DAT_14042cbf0);
+        return;
+      }
+      iVar2 = FUN_1402ca760(local_1498,"closeingame");
+      if (iVar2 == 0) {
+        FUN_14007f310(param_1,0xffffffef);
+        FUN_14007ee90(param_1);
+        FUN_1402c5b30("cl_paused",0);
+        FUN_1402ac9c0(&DAT_142605050);
+        return;
+      }
+      iVar2 = FUN_1402ca760(local_1498,"update");
+      if (iVar2 == 0) {
+        iVar2 = FUN_1402af840(param_2,local_1018,0x400);
+        if (iVar2 == 0) {
+          return;
+        }
+        iVar2 = FUN_1402ca760(local_1018,"ui_SetName");
+        if (iVar2 == 0) {
+          uVar5 = FUN_1402c3b50("ui_Name");
+          FUN_1402c5e60(&DAT_1403f5b48,uVar5);
+          return;
+        }
+        iVar2 = FUN_1402ca760(local_1018,"ui_GetName");
+        if (iVar2 == 0) {
+          uVar5 = FUN_1402c3b50(&DAT_1403f5b48);
+          FUN_1402c5e60("ui_Name",uVar5);
+          return;
+        }
+        iVar2 = FUN_1402ca760(local_1018,"ui_mousePitch");
+        if (iVar2 == 0) {
+          cVar1 = FUN_1402c3a30();
+          if (cVar1 == '\0') {
+            FUN_1402c5770("m_pitch",_DAT_1403f5fdc);
+            return;
+          }
+          FUN_1402c5770("m_pitch",DAT_1404340e8);
+          return;
+        }
+        iVar2 = FUN_1402ca760(local_1018,"ui_savegameListAutosave");
+        if (iVar2 != 0) {
+          return;
+        }
+        cVar1 = FUN_1402c3a30(local_1018);
+        if (cVar1 == '\0') {
+          FUN_14029bc60(0);
+          return;
+        }
+        FUN_14029bc60("autosave");
+        return;
+      }
+      iVar2 = FUN_1402ca760(local_1498,"startSingleplayer");
+      if ((iVar2 != 0) && (iVar2 = FUN_1402ca760(local_1498,"startMultiplayer"), iVar2 != 0)) {
+        iVar2 = FUN_1402ca760(local_1498,"getLanguage");
+        if (iVar2 == 0) {
+          uVar4 = FUN_1402c3b10("loc_language");
+          FUN_1402c5b30("ui_language",uVar4);
+        }
+        else {
+          iVar2 = FUN_1402ca760(local_1498,"verifyLanguage");
+          if (iVar2 != 0) {
+            iVar2 = FUN_1402ca760(local_1498,"updateLanguage");
+            if (iVar2 != 0) {
+              iVar2 = FUN_1402ca760(local_1498,"saveComplete");
+              if (iVar2 == 0) {
+                uVar4 = FUN_140009eb0(param_1);
+                FUN_14008b220(uVar4);
+                cVar1 = FUN_14008a5a0();
+                if (cVar1 == '\0') {
+                  cVar1 = FUN_1402ec440();
+                  if (cVar1 == '\0') {
+                    return;
+                  }
+                  FUN_1401f3f10();
+                  return;
+                }
+                cVar1 = FUN_1402ec440();
+                if (cVar1 != '\0') {
+                  DAT_1406e24d8 = 1;
+                  return;
+                }
+                if (DAT_142604f08 != '\0') {
+                  uVar5 = FUN_1402cb690(&DAT_1403f3d44,&DAT_142604e08);
+                  FUN_14022f680(0,uVar5);
+                }
+              }
+              else {
+                iVar2 = FUN_1402ca760(local_1498,"saveRevert");
+                if (iVar2 != 0) {
+                  iVar2 = FUN_1402ca760(local_1498,"openMenuOnDvar");
+                  if ((iVar2 == 0) ||
+                     (iVar2 = FUN_1402ca760(local_1498,"openMenuOnDvarNot"), iVar2 == 0)) {
+                    iVar2 = FUN_1402af840(param_2,local_c18,0x400);
+                    if (iVar2 == 0) {
+                      return;
+                    }
+                    iVar2 = FUN_1402af840(param_2,local_818,0x400);
+                    if (iVar2 == 0) {
+                      return;
+                    }
+                    iVar2 = FUN_1402af840(param_2,local_418,0x400);
+                    if (iVar2 == 0) {
+                      return;
+                    }
+                    iVar2 = FUN_1402ca760(local_1498,"openMenuOnDvar");
+                    lVar7 = thunk_FUN_1402c3890(local_c18);
+                    if (lVar7 == 0) {
+                      return;
+                    }
+                    uVar5 = FUN_1402c3be0(local_c18);
+                    iVar3 = FUN_1402ca760(local_818,uVar5);
+                    if ((iVar3 != 0) == (iVar2 == 0)) {
+                      return;
+                    }
+                    FUN_1402ad950(&DAT_142605050,local_418);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"closeMenuOnDvar");
+                  if ((iVar2 == 0) ||
+                     (iVar2 = FUN_1402ca760(local_1498,"closeMenuOnDvarNot"), iVar2 == 0)) {
+                    iVar2 = FUN_1402af840(param_2,local_c18,0x400);
+                    if (iVar2 == 0) {
+                      return;
+                    }
+                    iVar2 = FUN_1402af840(param_2,local_818,0x400);
+                    if (iVar2 == 0) {
+                      return;
+                    }
+                    iVar2 = FUN_1402af840(param_2,local_418,0x400);
+                    if (iVar2 == 0) {
+                      return;
+                    }
+                    iVar2 = FUN_1402ca760(local_1498,"closeMenuOnDvar");
+                    lVar7 = thunk_FUN_1402c3890(local_c18);
+                    if (lVar7 == 0) {
+                      return;
+                    }
+                    uVar5 = FUN_1402c3be0(local_c18);
+                    iVar3 = FUN_1402ca760(local_818,uVar5);
+                    if ((iVar3 != 0) == (iVar2 == 0)) {
+                      return;
+                    }
+                    FUN_1402acbf0(&DAT_142605050,local_418);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"resetvscroll");
+                  if (iVar2 == 0) {
+                    iVar2 = FUN_1402af840(param_2,local_1018,0x400);
+                    if (iVar2 == 0) {
+                      return;
+                    }
+                    iVar2 = 0;
+                    lVar7 = FUN_1402aac20(&DAT_142605050,0);
+                    while( true ) {
+                      if (lVar7 == 0) {
+                        return;
+                      }
+                      lVar7 = FUN_1402aa7f0(lVar7,local_1018);
+                      if ((lVar7 != 0) && (*(int *)(lVar7 + 0xc4) == 0x15)) break;
+                      iVar2 = iVar2 + 1;
+                      lVar7 = FUN_1402aac20(&DAT_142605050,iVar2);
+                    }
+                    puVar8 = (undefined4 *)FUN_1402b2150(lVar7);
+                    *puVar8 = DAT_142605058;
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"setRecommended");
+                  if (iVar2 == 0) {
+                    FUN_14023e920(param_1,1);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"RefreshLeaderboards");
+                  if (iVar2 == 0) {
+                    FUN_1401ef6b0();
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"ViewGamerCard");
+                  if (iVar2 == 0) {
+                    _guard_check_icall(param_1);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"OpenLeaderboard");
+                  if (iVar2 == 0) {
+                    iVar2 = FUN_1402af840(param_2,local_1518,0x80);
+                    if (iVar2 == 0) {
+                      return;
+                    }
+                    FUN_1401effd0(local_1518);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"OpenLeaderboardExt");
+                  if (iVar2 == 0) {
+                    iVar2 = FUN_1402af840(param_2,local_1518,0x80);
+                    if (iVar2 == 0) {
+                      return;
+                    }
+                    iVar2 = FUN_1402af840(param_2,local_1098,0x80);
+                    if (iVar2 == 0) {
+                      return;
+                    }
+                    lVar7 = FUN_1402c3b50(local_1518);
+                    lVar9 = FUN_1402c3b50(local_1098);
+                    if (lVar7 == 0) {
+                      return;
+                    }
+                    lVar6 = -1;
+                    lVar10 = -1;
+                    do {
+                      lVar10 = lVar10 + 1;
+                    } while (*(char *)(lVar7 + lVar10) != '\0');
+                    if (lVar10 == 0) {
+                      return;
+                    }
+                    if (lVar9 == 0) {
+                      return;
+                    }
+                    do {
+                      lVar6 = lVar6 + 1;
+                    } while (*(char *)(lVar9 + lVar6) != '\0');
+                    if (lVar6 == 0) {
+                      return;
+                    }
+                    FUN_1401efff0(lVar7);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"ClearLeaderboard");
+                  if (iVar2 == 0) {
+                    FUN_1401ef560();
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"FriendStoreXUID");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_140284470(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"FriendClearXUID");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_140283d30(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"FriendInvite");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_140283fe0(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"FriendJoin");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_140284190(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"FriendGamerCard");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    thunk_FUN_140240bd0(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"RecentPlayerStoreXUID");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_140285020(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"RecentPlayerClearXUID");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_140284b20(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"RecentPlayerGamerCard");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    _guard_check_icall(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"RecentPlayerFriendRequest");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_140284c20(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"RecentPlayerShowGroups");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_140284e50(param_1,uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"RecentPlayerJoin");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_140284d70(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"RecentPlayerInvite");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_140284c70(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"FacebookStoreXUID");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_140280d90(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"FacebookClearXUID");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_1402807b0(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"FacebookGamerCard");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    _guard_check_icall(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"FacebookFriendRequest");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_140280bb0(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"FacebookPageRight");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_140280cf0(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"FacebookPageLeft");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_140280c80(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"FacebookJoin");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_140280ae0(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"FacebookInvite");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_140280840(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"EliteClanStoreXUID");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_14027c260(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"EliteClanClearXUID");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_14027bdf0(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"EliteClanGamerCard");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    _guard_check_icall(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"EliteClanFriendRequest");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_14027bf40(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"EliteClanJoin");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_14027c100(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"EliteClanInvite");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_14027bfd0(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"coopPlayerShowGroups");
+                  if (iVar2 == 0) {
+                    iVar2 = FUN_1402b1da0(param_2,local_res20);
+                    if (iVar2 == 0) {
+                      return;
+                    }
+                    FUN_140286ff0(param_1,local_res20[0]);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"simulateKeyPress");
+                  if (iVar2 != 0) {
+                    iVar2 = FUN_1402ca760(local_1498,"commerceShowStore");
+                    if (iVar2 != 0) {
+                      return;
+                    }
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_1402ecb30(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402b1da0(param_2,local_res20);
+                  if (iVar2 == 0) {
+                    return;
+                  }
+                  FUN_14029baa0(param_1,local_res20[0],1);
+                  FUN_14029baa0(param_1,local_res20[0],0);
+                  return;
+                }
+                cVar1 = FUN_1402ec440();
+                if (cVar1 != '\0') {
+                  FUN_1401f3f10();
+                }
+              }
+              FUN_140390680(&DAT_142604e08,0,0x100);
+              DAT_142604f08 = 0;
+              return;
+            }
+            uVar4 = FUN_1402c3b10("ui_language");
+            FUN_1402c5b30("loc_language",uVar4);
+            FUN_1402a0090();
+            pcVar11 = "vid_restart\n";
+            goto LAB_14029f0ab;
+          }
+        }
+        FUN_1402a0090();
+        return;
+      }
+      pcVar11 = "startMultiplayer\n";
+LAB_14029f0ab:
+      FUN_14022f680(0,pcVar11);
+      return;
+    }
+    lVar7 = -1;
+    do {
+      lVar7 = lVar7 + 1;
+    } while (local_1498[lVar7] != '\0');
+    if (lVar7 == 0) {
+      FUN_1402ad950(&DAT_142605050,"save_name_popmenu");
+      return;
+    }
+  }
+  FUN_1402ac9c0(&DAT_142605050);
+  FUN_14026b6e0(*(undefined8 *)(DAT_142604fe8 + 0x10),&DAT_1403e6bdb,&DAT_1403e6bdb,2,
+                CONCAT44(uVar4,6),0);
+  return;
+}
+
+
+
+================================================================
+Function: FUN_14007e8e0 @ 14007e8e0
+----------------------------------------------------------------
+
+void FUN_14007e8e0(int param_1,uint param_2)
+
+{
+  if ((((param_2 != 0x60) && (param_2 != 0x7e)) &&
+      ((*(uint *)(&DAT_1406e2550 + (longlong)param_1 * 400) & 1) == 0)) &&
+     ((*(uint *)(&DAT_1406e2550 + (longlong)param_1 * 400) & 0x10) != 0)) {
+    FUN_14029baa0(param_1,param_2 | 0x400,1);
+    return;
+  }
+  return;
+}
+
+
+
