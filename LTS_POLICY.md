@@ -100,13 +100,28 @@ whatever task surfaces that, not as a separately scheduled cleanup pass.
 
 ## Current status
 
-*(Last updated: 2026-08-29.)*
+*(Last updated: 2026-09-03.)*
+
+**Architecture note (2026-09-03):** MW3 (2011) received its first-ever binary
+update, recompiling the live game from x86 to x64 — see `re_notes/x64_migration/README.md`.
+Releases now carry a `-x86`/`-x64` suffix (versioning reset to `v0.0.1-x64` for
+the new architecture line; the table below relabels the existing x86-line
+releases accordingly, it does not rename anything that shipped). **The
+`v0.3.5-x86` candidacy's 4-week clean window is effectively frozen, not
+progressing**: the live game can no longer run a 32-bit build at all, so no
+further real-world play against the current game is possible on this release
+— the clock isn't "reset," it's just stalled with no way to accumulate more
+clean weeks until either an x64 candidate exists to promote instead, or a
+reason to keep testing x86 against an offline/pre-update copy of the game
+arises. This policy's process itself is unchanged; only this one candidate's
+practical status is affected.
 
 | Release | Role | Notes |
 |---|---|---|
-| `v0.2.2` | **Current LTS** | Promoted 2026-08-18 archival pass. Aim assist removed; the risk-mitigation release this whole policy's floor is built around. |
-| `v0.3.5` | **LTS candidate** | Shipped and confirmed live 2026-08-29, intended to succeed `v0.2.2` — see `re_notes/known_issues.md`'s LTS-plan entry. The 4-week clean window starts from this ship date; promotion isn't automatic even once it elapses, and won't happen before then regardless of how stable it looks early on. |
-| Everything else in `0.1.x`–`0.3.x` | Superseded | Not LTS-eligible (predates the floor, or superseded by a later release in the same or a later line) — normal `0.x` releases, kept or archived per the usual GitHub Releases housekeeping, not this policy. |
+| `v0.2.2-x86` | **Current LTS** | Promoted 2026-08-18 archival pass. Aim assist removed; the risk-mitigation release this whole policy's floor is built around. |
+| `v0.3.5-x86` | **LTS candidate (clock frozen)** | Shipped and confirmed live 2026-08-29, intended to succeed `v0.2.2-x86` — see `re_notes/known_issues.md`'s LTS-plan entry. The 4-week clean window started 2026-08-29 but is now frozen (see architecture note above), not actively accumulating further clean time. |
+| Everything else in `0.1.x`–`0.3.x` (all now `-x86`) | Superseded | Not LTS-eligible (predates the floor, or superseded by a later release in the same or a later line) — normal `0.x-x86` releases, kept or archived per the usual GitHub Releases housekeeping, not this policy. |
+| `0.x-x64` line | **Not yet started** | No x64 release exists yet — versioning resets to `v0.0.1-x64` once one ships. This policy's floor (`v0.2.2` and later only) is an x86-line-specific historical fact; whether/how it carries over to the x64 line is an open question for whenever that line matures enough to need its own LTS discussion, not decided here. |
 
 ## What LTS support actually means here
 
