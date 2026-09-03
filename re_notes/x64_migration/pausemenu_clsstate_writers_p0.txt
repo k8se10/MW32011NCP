@@ -1,0 +1,551 @@
+openjdk version "25.0.2" 2026-01-20 LTS
+OpenJDK Runtime Environment Microsoft-13053607 (build 25.0.2+10-LTS)
+OpenJDK 64-Bit Server VM Microsoft-13053607 (build 25.0.2+10-LTS, mixed mode)
+INFO  Using log config file: jar:file:/D:/Tools/Ghidra/ghidra_12.1.2_PUBLIC/Ghidra/Framework/Generic/lib/Generic.jar!/generic.log4j.xml (LoggingInitialization)  
+INFO  Using log file: C:\Users\kyesa\AppData\Roaming\ghidra\ghidra_12.1.2_PUBLIC\application.log (LoggingInitialization)  
+INFO  Loading user preferences: C:\Users\kyesa\AppData\Roaming\ghidra\ghidra_12.1.2_PUBLIC\preferences (Preferences)  
+INFO  Searching for classes... (ClassSearcher)  
+INFO  Class search complete (504 ms) (ClassSearcher)  
+INFO  Initializing SSL Context (DefaultSSLContextInitializer)  
+INFO  Initializing Random Number Generator... (SecureRandomFactory)  
+INFO  Random Number Generator initialization complete: SHA1PRNG (SecureRandomFactory)  
+INFO  Trust manager disabled, cacerts have not been set (DefaultTrustManagerFactory)  
+INFO  Headless startup complete (1674 ms) (AnalyzeHeadless)  
+INFO  Class searcher loaded 59 extension points (20 false positives) (ClassSearcher)  
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::staticFieldOffset has been called by org.apache.felix.framework.util.SecureAction (file:/D:/Tools/Ghidra/ghidra_12.1.2_PUBLIC/Ghidra/Features/Base/lib/org.apache.felix.framework-7.0.5.jar)
+WARNING: Please consider reporting this to the maintainers of class org.apache.felix.framework.util.SecureAction
+WARNING: sun.misc.Unsafe::staticFieldOffset will be removed in a future release
+INFO  HEADLESS Script Paths:
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\FileFormats\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\PyGhidra\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\BSim\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\Decompiler\ghidra_scripts
+    D:\projects\IMPORTANT PUBLIC RELEASED PROJECTS\COD RELATED\MW3\MW32011NCP\re_notes\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\MicrosoftCodeAnalyzer\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Extensions\XEXLoaderWV\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\PDB\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Processors\JVM\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\BytePatterns\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\GnuDemangler\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\SwiftDemangler\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Processors\8051\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Debug\Debugger-rmi-trace\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\DecompilerDependent\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\VersionTracking\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\FunctionID\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\WildcardAssembler\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Debug\Debugger\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\Base\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Processors\DATA\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Processors\PIC\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\SystemEmulation\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Processors\Atmel\ghidra_scripts (HeadlessAnalyzer)  
+INFO  HEADLESS: execution starts (HeadlessAnalyzer)  
+INFO  Opening existing project: D:\projects\IMPORTANT PUBLIC RELEASED PROJECTS\COD RELATED\MW3\MW32011NCP\re_notes\ghidra_project_x64\iw5sp_x64_proj (HeadlessAnalyzer)  
+INFO  Opening project: D:\projects\IMPORTANT PUBLIC RELEASED PROJECTS\COD RELATED\MW3\MW32011NCP\re_notes\ghidra_project_x64\iw5sp_x64_proj (HeadlessProject)  
+INFO  REPORT: Processing read-only project file: /iw5sp.exe (HeadlessAnalyzer)  
+INFO  REPORT: Execute script: FindDataWriters.java '1406e2558'  (HeadlessAnalyzer)  
+INFO  SCRIPT: D:\projects\IMPORTANT PUBLIC RELEASED PROJECTS\COD RELATED\MW3\MW32011NCP\re_notes\ghidra_scripts\FindDataWriters.java (HeadlessAnalyzer)  
+INFO  FindDataWriters.java> === References to 1406e2558 === (GhidraScript)  
+INFO  FindDataWriters.java> read? 14008def1 in FUN_14008ded0@14008ded0  [CMP dword ptr [0x1406e2558],0x0]  refType=READ (GhidraScript)  
+INFO  FindDataWriters.java> read? 1400794b4 in FUN_1400794b0@1400794b0  [CMP dword ptr [0x1406e2558],0x6]  refType=READ (GhidraScript)  
+INFO  FindDataWriters.java> WRITE 14007950f in FUN_1400794b0@1400794b0  [MOV dword ptr [0x1406e2558],0x1]  refType=WRITE (GhidraScript)  
+INFO  FindDataWriters.java> WRITE 140079576 in FUN_140079520@140079520  [MOV dword ptr [0x1406e2558],0x1]  refType=WRITE (GhidraScript)  
+INFO  FindDataWriters.java> read? 14007ff35 in FUN_14007fe50@14007fe50  [CMP dword ptr [0x1406e2558],0x2]  refType=READ (GhidraScript)  
+INFO  FindDataWriters.java> read? 140082b0b in FUN_140082ac0@140082ac0  [CMP dword ptr [0x1406e2558],0x2]  refType=READ (GhidraScript)  
+INFO  FindDataWriters.java> read? 140080137 in FUN_140080100@140080100  [CMP dword ptr [0x1406e2558],0x2]  refType=READ (GhidraScript)  
+INFO  FindDataWriters.java> read? 140080b37 in FUN_140080b30@140080b30  [CMP dword ptr [0x1406e2558],0x6]  refType=READ (GhidraScript)  
+INFO  FindDataWriters.java> read? 140080ba9 in FUN_140080b90@140080b90  [CMP dword ptr [0x1406e2558],ECX]  refType=READ (GhidraScript)  
+INFO  FindDataWriters.java> WRITE 140080d97 in FUN_140080d50@140080d50  [MOV dword ptr [0x1406e2558],0x7]  refType=WRITE (GhidraScript)  
+INFO  FindDataWriters.java> read? 140081c5e in FUN_140081c10@140081c10  [MOV ECX,dword ptr [0x1406e2558]]  refType=READ (GhidraScript)  
+INFO  FindDataWriters.java> WRITE 140081c73 in FUN_140081c10@140081c10  [MOV dword ptr [0x1406e2558],ECX]  refType=WRITE (GhidraScript)  
+INFO  FindDataWriters.java> read? 1401f3d21 in FUN_1401f3c90@1401f3c90  [CMP dword ptr [0x1406e2558],0x0]  refType=READ (GhidraScript)  
+INFO  FindDataWriters.java> read? 1402886af in FUN_140288680@140288680  [CMP dword ptr [0x1406e2558],0x0]  refType=READ (GhidraScript)  
+INFO  FindDataWriters.java> read? 140082fc7 in FUN_140082fc0@140082fc0  [CMP dword ptr [0x1406e2558],0x1]  refType=READ (GhidraScript)  
+INFO  FindDataWriters.java> read? 1400836d3 in FUN_140083690@140083690  [CMP dword ptr [0x1406e2558],0x6]  refType=READ (GhidraScript)  
+INFO  FindDataWriters.java> read? 14008373e in FUN_140083700@140083700  [CMP dword ptr [0x1406e2558],0x6]  refType=READ (GhidraScript)  
+INFO  FindDataWriters.java> read? 140083812 in FUN_140083700@140083700  [MOVSXD RBX,dword ptr [0x1406e2558]]  refType=READ (GhidraScript)  
+INFO  FindDataWriters.java> read? 14029d2a5 in FUN_14029d170@14029d170  [CMP dword ptr [0x1406e2558],R15D]  refType=READ (GhidraScript)  
+INFO  FindDataWriters.java> read? 1400839d2 in FUN_1400839c0@1400839c0  [MOV EBX,dword ptr [0x1406e2558]]  refType=READ (GhidraScript)  
+INFO  FindDataWriters.java> WRITE 1400803ad in FUN_140080390@140080390  [MOV dword ptr [0x1406e2558],EAX]  refType=WRITE (GhidraScript)  
+INFO  FindDataWriters.java> read? 1402936f7 in FUN_14028f3c0@14028f3c0  [CMP dword ptr [RCX + RSI*0x1 + 0x6e2558],0x4]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 140293687 in FUN_14028f3c0@14028f3c0  [CMP dword ptr [RCX + RSI*0x1 + 0x6e2558],0x4]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 1402935b0 in FUN_14028f3c0@14028f3c0  [CMP dword ptr [RCX + RSI*0x1 + 0x6e2558],0x4]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 140293554 in FUN_14028f3c0@14028f3c0  [CMP dword ptr [RCX + RSI*0x1 + 0x6e2558],0x4]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 140293500 in FUN_14028f3c0@14028f3c0  [CMP dword ptr [RCX + RSI*0x1 + 0x6e2558],0x4]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 1402934a4 in FUN_14028f3c0@14028f3c0  [CMP dword ptr [RCX + RSI*0x1 + 0x6e2558],0x4]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 140293450 in FUN_14028f3c0@14028f3c0  [CMP dword ptr [RCX + RSI*0x1 + 0x6e2558],0x4]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 1402933f4 in FUN_14028f3c0@14028f3c0  [CMP dword ptr [RCX + RSI*0x1 + 0x6e2558],0x4]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 140293300 in FUN_14028f3c0@14028f3c0  [CMP dword ptr [RCX + RSI*0x1 + 0x6e2558],0x4]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 140266a2e in FUN_140266a20@140266a20  [LEA RAX,[0x1406e2558]]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 140266a35 in FUN_140266a20@140266a20  [CMP dword ptr [RCX + RAX*0x1],0x6]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 14007ec1e in FUN_14007eaf0@14007eaf0  [MOV EDI,dword ptr [RDX + R10*0x1 + 0x6e2558]]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 140265a6e in FUN_140265a50@140265a50  [LEA RAX,[0x1406e2558]]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> WRITE 140265a75 in FUN_140265a50@140265a50  [MOV dword ptr [RCX + RAX*0x1],ESI]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 140264a9e in FUN_140264a60@140264a60  [LEA RAX,[0x1406e2558]]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 140264aa7 in FUN_140264a60@140264a60  [MOV EBP,dword ptr [R9 + RAX*0x1]]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 140264bf9 in FUN_140264b90@140264b90  [MOV R15D,dword ptr [RDX + RAX*0x1 + 0x6e2558]]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 1402641b8 in FUN_140264160@140264160  [LEA RAX,[0x1406e2558]]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 1402641c6 in FUN_140264160@140264160  [MOV R15D,dword ptr [RCX + RAX*0x1]]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 140264811 in FUN_1402647e0@1402647e0  [LEA RAX,[0x1406e2558]]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 140264818 in FUN_1402647e0@1402647e0  [MOV R14D,dword ptr [R9 + RAX*0x1]]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 14007bcb1 in FUN_14007bc90@14007bc90  [MOV ECX,dword ptr [RAX + R11*0x1 + 0x6e2558]]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 14007bd41 in FUN_14007bd30@14007bd30  [CMP dword ptr [RAX + RCX*0x1 + 0x6e2558],0x3]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 14007bda3 in FUN_14007bd70@14007bd70  [MOV EAX,dword ptr [RAX + R12*0x1 + 0x6e2558]]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 14006bee7 in FUN_14006bed0@14006bed0  [CMP dword ptr [RCX + RDI*0x1 + 0x6e2558],0x6]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 140263f26 in FUN_140263f00@140263f00  [LEA RAX,[0x1406e2558]]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 140263f2d in FUN_140263f00@140263f00  [CMP dword ptr [RCX + RAX*0x1],0x0]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 14003b0ad in FUN_14003b030@14003b030  [CMP dword ptr [RDX + RDI*0x1 + 0x6e2558],0x6]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 1402433d9 in FUN_140243370@140243370  [LEA RCX,[0x1406e2558]]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 1402433e0 in FUN_140243370@140243370  [CMP dword ptr [RAX + RCX*0x1],0x4]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 140083669 in FUN_140083640@140083640  [LEA RAX,[0x1406e2558]]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 140083670 in FUN_140083640@140083640  [CMP dword ptr [RDX + RAX*0x1],0x1]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 14003abb7 in FUN_14003aa90@14003aa90  [CMP dword ptr [RDX + R9*0x1 + 0x6e2558],0x6]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 140072c1e in FUN_140072c10@140072c10  [LEA RAX,[0x1406e2558]]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 140072c25 in FUN_140072c10@140072c10  [CMP dword ptr [RDX + RAX*0x1],0x6]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 140072dfe in FUN_140072df0@140072df0  [LEA RAX,[0x1406e2558]]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 140072e05 in FUN_140072df0@140072df0  [CMP dword ptr [RDX + RAX*0x1],0x6]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 140082e0e in FUN_140082e00@140082e00  [LEA RAX,[0x1406e2558]]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 140082e15 in FUN_140082e00@140082e00  [CMP dword ptr [RCX + RAX*0x1],0x2]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> WRITE 140082e1b in FUN_140082e00@140082e00  [MOV dword ptr [RCX + RAX*0x1],0x0]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 140082e82 in FUN_140082e70@140082e70  [LEA RAX,[0x1406e2558]]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 140082e92 in FUN_140082e70@140082e70  [MOV ESI,dword ptr [RAX + RDX*0x1]]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> WRITE 140082ea8 in FUN_140082e70@140082e70  [MOV dword ptr [RAX + RDX*0x1],EBX]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 14003af91 in FUN_14003af50@14003af50  [CMP dword ptr [RCX + R11*0x1 + 0x6e2558],0x6]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 14004a36a in FUN_14004a360@14004a360  [LEA RAX,[0x1406e2558]]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 14004a371 in FUN_14004a360@14004a360  [CMP dword ptr [RCX + RAX*0x1],0x6]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 1402419bc in FUN_1402418d0@1402418d0  [CMP dword ptr [RAX + R15*0x1 + 0x6e2558],0x4]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 1400819f3 in FUN_1400819f0@1400819f0  [LEA RDX,[0x1406e2558]]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 140081a03 in FUN_1400819f0@1400819f0  [CMP dword ptr [RCX + RDX*0x1],0x6]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 140049b03 in FUN_140049b00@140049b00  [LEA R8,[0x1406e2558]]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 140049b19 in FUN_140049b00@140049b00  [CMP dword ptr [RCX + R8*0x1],0x4]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 140049b8a in FUN_140049b80@140049b80  [LEA RAX,[0x1406e2558]]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 140049b91 in FUN_140049b80@140049b80  [CMP dword ptr [RCX + RAX*0x1],0x6]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 140049bba in FUN_140049bb0@140049bb0  [LEA RAX,[0x1406e2558]]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 140049bc1 in FUN_140049bb0@140049bb0  [CMP dword ptr [RCX + RAX*0x1],0x6]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> WRITE 140079175 in FUN_140079130@140079130  [MOV dword ptr [RCX + R9*0x1 + 0x8],0x6]  refType=WRITE (GhidraScript)  
+INFO  FindDataWriters.java> WRITE 1400791c1 in FUN_140079130@140079130  [MOV dword ptr [RCX + R9*0x1 + 0x8],0x6]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 14007947d in FUN_140079470@140079470  [LEA RAX,[0x1406e2558]]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 140079484 in FUN_140079470@140079470  [CMP dword ptr [RCX + RAX*0x1],0x0]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 1400795e0 in FUN_1400795d0@1400795d0  [LEA RAX,[0x1406e2558]]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 1400795ea in FUN_1400795d0@1400795d0  [CMP dword ptr [RBX],0x1]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> WRITE 14007960c in FUN_1400795d0@1400795d0  [MOV dword ptr [RBX],0x0]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 140080b07 in FUN_140080ab0@140080ab0  [CMP dword ptr [RCX + RBX*0x1 + 0x6e2558],0x0]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> WRITE 140080d12 in FUN_140080cf0@140080cf0  [MOV dword ptr [RAX + RSI*0x1 + 0x6e2558],0x0]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 140278dc2 in FUN_140278d50@140278d50  [LEA RBP,[0x1406e2558]]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 140278df4 in FUN_140278d50@140278d50  [CMP dword ptr [RBP],0x6]  refType=READ (GhidraScript)  
+INFO  FindDataWriters.java> read? 140080447 in FUN_140080400@140080400  [LEA RAX,[0x1406e2558]]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> WRITE 14008044e in FUN_140080400@140080400  [MOV dword ptr [RDX + RAX*0x1],0x0]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 1400804d1 in FUN_1400804b0@1400804b0  [LEA RAX,[0x1406e2558]]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> read? 1400804db in FUN_1400804b0@1400804b0  [MOV EAX,dword ptr [RCX]]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> WRITE 1400804f7 in FUN_1400804b0@1400804b0  [MOV dword ptr [RCX],0x0]  refType=DATA (GhidraScript)  
+INFO  FindDataWriters.java> --- decompile of writer FUN_1400794b0@1400794b0 --- (GhidraScript)  
+INFO  FindDataWriters.java> 
+void FUN_1400794b0(void)
+
+{
+  char *pcVar1;
+  
+  if (DAT_1406e2558 != 6) {
+    DAT_1404c0bf8 = 1;
+    if ((1 < *(int *)(&DAT_141eeaf64 + (longlong)DAT_141eeaf20 * 4)) &&
+       ((pcVar1 = *(char **)(*(longlong *)(&DAT_141eeaf88 + (longlong)DAT_141eeaf20 * 8) + 8),
+        pcVar1 == (char *)0x0 || (*pcVar1 != '\0')))) {
+      thunk_FUN_1401a23a0(pcVar1,0,0);
+      if (DAT_14064fe00 != 0) {
+        FUN_14029f3f0(0,0);
+      }
+      FUN_140079ef0(0);
+      DAT_1406e2558 = 1;
+    }
+  }
+  return;
+}
+
+ (GhidraScript)  
+INFO  FindDataWriters.java> --- decompile of writer FUN_140079520@140079520 --- (GhidraScript)  
+INFO  FindDataWriters.java> 
+void FUN_140079520(void)
+
+{
+  char *pcVar1;
+  
+  DAT_1404c0bf8 = 1;
+  if ((1 < *(int *)(&DAT_141eeaf64 + (longlong)DAT_141eeaf20 * 4)) &&
+     ((pcVar1 = *(char **)(*(longlong *)(&DAT_141eeaf88 + (longlong)DAT_141eeaf20 * 8) + 8),
+      pcVar1 == (char *)0x0 || (*pcVar1 != '\0')))) {
+    thunk_FUN_1401a23a0(pcVar1,0,0);
+    if (DAT_14064fe00 != 0) {
+      FUN_14029f3f0(0,0);
+    }
+    FUN_140079ef0(0);
+    DAT_1406e2558 = 1;
+  }
+  return;
+}
+
+ (GhidraScript)  
+INFO  FindDataWriters.java> --- decompile of writer FUN_140080d50@140080d50 --- (GhidraScript)  
+INFO  FindDataWriters.java> 
+void FUN_140080d50(undefined8 param_1)
+
+{
+  if (DAT_1406e24c4 != '\0') {
+    FUN_1402c5e00(DAT_141efb798,&DAT_1403e6bdb);
+    FUN_140080400(0);
+    _guard_check_icall(0,1);
+    FUN_14029f950(param_1);
+    FUN_140278400(0,0);
+    DAT_1406e2558 = 7;
+  }
+  return;
+}
+
+ (GhidraScript)  
+INFO  FindDataWriters.java> --- decompile of writer FUN_140081c10@140081c10 --- (GhidraScript)  
+INFO  FindDataWriters.java> 
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_140081c10(undefined8 param_1)
+
+{
+  char cVar1;
+  
+  if (DAT_1406e24c4 != '\0') {
+    FUN_140079ef0(0);
+    _DAT_1406e2550 = 0;
+    DAT_1406e2554 = 0;
+    FUN_1402caa00(&DAT_14064fcf4,"localhost",0x100);
+    cVar1 = FUN_14008df40(0);
+    if (cVar1 != '\0') {
+      DAT_1406e2558 = 4;
+    }
+    FUN_140278400(0,0);
+    FUN_140279e90(0);
+    FUN_1402704a0(DAT_1403e3e6c,0);
+    FUN_140270480();
+    if ((DAT_14064fdf8 != 0) && (DAT_14064fdfc == 0)) {
+      FUN_1402ccf50(0x24);
+      DAT_14064fdfc = 1;
+      FUN_14027ac50();
+      FUN_14027a470();
+      DAT_14064fdfc = 0;
+      FUN_1402ccfc0(0x24);
+    }
+    FUN_1402ec9f0(param_1);
+    return;
+  }
+  return;
+}
+
+ (GhidraScript)  
+INFO  FindDataWriters.java> --- decompile of writer FUN_140080390@140080390 --- (GhidraScript)  
+INFO  FindDataWriters.java> 
+void FUN_140080390(void)
+
+{
+  if ((DAT_1406e24c4 != '\0') && (DAT_1406e2558 = 4, DAT_1406e24c5 != '\0')) {
+    DAT_1406e2558 = 7;
+  }
+  return;
+}
+
+ (GhidraScript)  
+INFO  FindDataWriters.java> --- decompile of writer FUN_140265a50@140265a50 --- (GhidraScript)  
+INFO  FindDataWriters.java> 
+void FUN_140265a50(int param_1)
+
+{
+  char cVar1;
+  undefined4 uVar2;
+  undefined8 uVar3;
+  int iVar4;
+  int iVar5;
+  undefined8 *puVar6;
+  
+  (&DAT_1406e2558)[(longlong)param_1 * 100] = 3;
+  FUN_140265dc0();
+  iVar5 = 0;
+  puVar6 = &DAT_14252b608;
+  do {
+    cVar1 = FUN_140087780(iVar5);
+    if (cVar1 != '\0') {
+      uVar2 = FUN_1400873d0(iVar5);
+      FUN_1402c5ad0(*puVar6,uVar2);
+    }
+    iVar5 = iVar5 + 1;
+    puVar6 = puVar6 + 1;
+  } while (iVar5 < 2);
+  iVar5 = FUN_1400845e0();
+  iVar5 = ((int)((iVar5 >> 0x1f & 7U) + iVar5) >> 3) / 2000;
+  if (0x13 < iVar5) {
+    iVar5 = 0x14;
+  }
+  if (iVar5 < 4) {
+    iVar5 = 3;
+  }
+  FUN_1402c5ad0(DAT_14248ee00,iVar5);
+  iVar4 = 3;
+  if (2 < *(int *)(DAT_14248edf0 + 0x10)) {
+    iVar4 = *(int *)(DAT_14248edf0 + 0x10);
+  }
+  if (iVar4 + -2 <= iVar4 - iVar5) {
+    iVar5 = 2;
+  }
+  iVar4 = iVar4 - iVar5;
+  if (iVar4 < 3) {
+    iVar4 = 2;
+  }
+  FUN_1402c5ad0(DAT_14248edf8,iVar4);
+  iVar4 = FUN_1400845e0();
+  iVar5 = iVar4 / 0x1900;
+  if (0x1f < iVar5) {
+    iVar5 = 0x20;
+  }
+  if (iVar5 < 4) {
+    iVar5 = 3;
+  }
+  FUN_1402c5ad0(DAT_14248ee10,iVar5);
+  iVar4 = (iVar4 * 0x3e3) / 1000000 + 5;
+  iVar5 = 1000;
+  if (iVar4 < 0x3e9) {
+    iVar5 = iVar4;
+  }
+  FUN_1402c5ad0(DAT_1406ef560,iVar5);
+  FUN_140088350();
+  uVar3 = FUN_1402cb690("map %s\n",*(undefined8 *)(DAT_14248ee68 + 0x10));
+  FUN_14022f680(0,uVar3);
+  FUN_1402ccf50(0x23);
+  FUN_1402c5e60("com_errorMessage",&DAT_1403e6bdb);
+  FUN_1402ccfc0(0x23);
+  return;
+}
+
+ (GhidraScript)  
+INFO  FindDataWriters.java> --- decompile of writer FUN_140082e00@140082e00 --- (GhidraScript)  
+INFO  FindDataWriters.java> 
+void FUN_140082e00(int param_1)
+
+{
+  undefined8 uVar1;
+  
+  if ((&DAT_1406e2558)[(longlong)param_1 * 100] == 2) {
+    (&DAT_1406e2558)[(longlong)param_1 * 100] = 0;
+    if (**(char **)(DAT_141efb798 + 0x10) != '\0') {
+      uVar1 = FUN_1402cb690(&DAT_1403f3d44);
+      FUN_14022f680(0,uVar1);
+      FUN_1402c5e00(DAT_141efb798,&DAT_1403e6bdb);
+      return;
+    }
+  }
+  return;
+}
+
+ (GhidraScript)  
+INFO  FindDataWriters.java> --- decompile of writer FUN_140082e70@140082e70 --- (GhidraScript)  
+INFO  FindDataWriters.java> 
+void FUN_140082e70(int param_1)
+
+{
+  int iVar1;
+  undefined8 uVar2;
+  
+  iVar1 = (&DAT_1406e2558)[(longlong)param_1 * 100];
+  if (iVar1 == 1) {
+    FUN_1400796b0(param_1);
+  }
+  else if (iVar1 == 2) {
+    (&DAT_1406e2558)[(longlong)param_1 * 100] = 0;
+    if (**(char **)(DAT_141efb798 + 0x10) != '\0') {
+      uVar2 = FUN_1402cb690(&DAT_1403f3d44);
+      FUN_14022f680(0,uVar2);
+      FUN_1402c5e00(DAT_141efb798,&DAT_1403e6bdb);
+    }
+  }
+  FUN_140279e90(0);
+  FUN_14029f3f0(param_1,iVar1 == 0);
+  return;
+}
+
+ (GhidraScript)  
+INFO  FindDataWriters.java> --- decompile of writer FUN_140079130@140079130 --- (GhidraScript)  
+INFO  FindDataWriters.java> 
+void FUN_140079130(void)
+
+{
+  int iVar1;
+  char cVar2;
+  ulonglong uVar3;
+  bool bVar4;
+  
+  cVar2 = DAT_1406446ac;
+  iVar1 = DAT_1404d1b60;
+  if (DAT_1406446ac == '\0') {
+    bVar4 = 0 < DAT_1404d1b60;
+  }
+  else {
+    bVar4 = DAT_140647a00 == 2;
+  }
+  if (bVar4) {
+    if (DAT_1406446ac == '\0') {
+      uVar3 = 0;
+    }
+    else {
+      uVar3 = (ulonglong)DAT_140647a08;
+    }
+    (&DAT_1406e2558)[uVar3 * 100] = 6;
+  }
+  if (cVar2 == '\0') {
+    bVar4 = 1 < iVar1;
+  }
+  else {
+    bVar4 = DAT_14064a070 == 2;
+  }
+  if (bVar4) {
+    if (cVar2 == '\0') {
+      DAT_1406e26e8 = 6;
+      return;
+    }
+    (&DAT_1406e2558)[(ulonglong)DAT_14064a078 * 100] = 6;
+  }
+  return;
+}
+
+ (GhidraScript)  
+INFO  FindDataWriters.java> --- decompile of writer FUN_1400795d0@1400795d0 --- (GhidraScript)  
+INFO  FindDataWriters.java> 
+void FUN_1400795d0(int param_1)
+
+{
+  longlong *plVar1;
+  undefined8 uVar2;
+  
+  if ((&DAT_1406e2558)[(longlong)param_1 * 100] != 1) {
+    FUN_1401a2810();
+    return;
+  }
+  FUN_14007f310(0,0xffffffef);
+  plVar1 = DAT_140641378;
+  (&DAT_1406e2558)[(longlong)param_1 * 100] = 0;
+  if (plVar1 == (longlong *)0x0) {
+    FUN_1401a2810();
+    if (**(char **)(DAT_141efb798 + 0x10) != '\0') {
+      uVar2 = FUN_1402cb690(&DAT_1403f3d44);
+      FUN_14022f680(0,uVar2);
+      FUN_1402c5e00(DAT_141efb798,&DAT_1403e6bdb);
+      return;
+    }
+  }
+  else {
+    uVar2 = FUN_1402cb690("autocinematic %s\n",*plVar1);
+    FUN_14022f680(0,uVar2);
+    DAT_140641378 = DAT_140641378 + 1;
+    if (*DAT_140641378 == 0) {
+      DAT_140641378 = (longlong *)0x0;
+      return;
+    }
+  }
+  return;
+}
+
+ (GhidraScript)  
+INFO  FindDataWriters.java> --- decompile of writer FUN_140080cf0@140080cf0 --- (GhidraScript)  
+INFO  FindDataWriters.java> 
+void FUN_140080cf0(int param_1)
+
+{
+  undefined4 uVar1;
+  
+  (&DAT_1406e2558)[(longlong)param_1 * 100] = 0;
+  uVar1 = FUN_140009eb0(param_1);
+  FUN_14022f760(param_1,uVar1);
+  (&DAT_1406e26e0)[(longlong)param_1 * 0xce5c] = 0;
+  return;
+}
+
+ (GhidraScript)  
+INFO  FindDataWriters.java> --- decompile of writer FUN_140080400@140080400 --- (GhidraScript)  
+INFO  FindDataWriters.java> 
+void FUN_140080400(int param_1)
+
+{
+  undefined4 uVar1;
+  
+  if (DAT_1406e24c4 != '\0') {
+    uVar1 = FUN_140009eb0(param_1);
+    FUN_1400795d0(param_1);
+    FUN_140065510(param_1);
+    FUN_1400658a0(param_1);
+    FUN_140241370(param_1);
+    (&DAT_1406e2558)[(longlong)param_1 * 100] = 0;
+    FUN_14021d2a0();
+    FUN_1400b7630(param_1);
+    FUN_140270360(param_1);
+    FUN_1402ebde0(uVar1);
+    if (DAT_141eea750 != '\0') {
+      FUN_14022da30(&DAT_141eea740);
+    }
+    uVar1 = FUN_140009eb0(param_1);
+    FUN_14008b220(uVar1);
+    return;
+  }
+  return;
+}
+
+ (GhidraScript)  
+INFO  FindDataWriters.java> --- decompile of writer FUN_1400804b0@1400804b0 --- (GhidraScript)  
+INFO  FindDataWriters.java> 
+void FUN_1400804b0(int param_1,char param_2)
+
+{
+  int iVar1;
+  longlong lVar2;
+  char cVar3;
+  undefined8 uVar4;
+  char *pcVar5;
+  
+  FUN_1402753c0();
+  FUN_140274dc0();
+  lVar2 = DAT_141efb798;
+  iVar1 = (&DAT_1406e2558)[(longlong)param_1 * 100];
+  if (iVar1 == 1) {
+    FUN_1400795d0(param_1);
+  }
+  else if (iVar1 == 2) {
+    (&DAT_1406e2558)[(longlong)param_1 * 100] = 0;
+    if (**(char **)(lVar2 + 0x10) != '\0') {
+      uVar4 = FUN_1402cb690(&DAT_1403f3d44);
+      FUN_14022f680(0,uVar4);
+      FUN_1402c5e00(DAT_141efb798,&DAT_1403e6bdb);
+    }
+  }
+  else {
+    if (iVar1 != 0) {
+      FUN_1402c5b30("g_reloading",0);
+      FUN_140080400(param_1);
+      if (DAT_1406446ac == '\0') {
+        pcVar5 = "EXE_DISCONNECTED";
+      }
+      else if (param_2 == '\0') {
+        cVar3 = FUN_140086880();
+        pcVar5 = "COOP_CLIENT_END_GAME";
+        if (cVar3 != '\0') {
+          pcVar5 = "COOP_HOST_END_GAME";
+        }
+      }
+      else {
+        pcVar5 = "COOP_END_GAME_NO_NOTICE";
+      }
+      FUN_14023c700(3,pcVar5);
+      return;
+    }
+    FUN_1401a2810();
+  }
+  FUN_1402c5b30("g_reloading",0);
+  FUN_140080400(param_1);
+  return;
+}
+
+ (GhidraScript)  
+INFO  FindDataWriters.java>  (GhidraScript)  
