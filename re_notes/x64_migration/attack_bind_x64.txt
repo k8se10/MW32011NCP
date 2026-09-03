@@ -1,0 +1,5 @@
+STRING @ 1403f4a90 = "+attack" (block .rdata)
+  from 14007f010 type=PARAM IN FUNCTION FUN_14007eff0@14007eff0
+  from 1404c1878 type=DATA IN DATA/UNKNOWN
+  (2 references)
+
