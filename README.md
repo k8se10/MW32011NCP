@@ -8,7 +8,7 @@
 > 32-bit DLL simply cannot inject into a 64-bit process. **This is not a small
 > fix** — every hook this project has ever found needs to be re-located
 > against the new binary. Work on an x64 rebuild is underway; see
-> `re_notes/known_issues.md` issue #111 and `re_notes/x64_migration/README.md`
+> `re_notes/known_issues_x64.md` issue #1 and `re_notes/x64_migration/README.md`
 > for the full technical record and progress. **Do not expect the current
 > release to work until a new version ships.**
 >

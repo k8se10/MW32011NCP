@@ -6,6 +6,16 @@ kept completely separate from the original x86 project). No hook code has been
 written against the new binaries yet. This is the single biggest event in this
 project's history — read this whole file before touching anything x64-related.
 
+**Issue tracker note (2026-09-03):** the curated, `known_issues.md`-style
+record for this whole effort now lives in
+[`re_notes/known_issues_x64.md`](../known_issues_x64.md) issue #1 — a
+dedicated tracker for the x64 architecture line, split off the same day it
+was opened once it had outgrown a single entry in the main (x86-era)
+`known_issues.md`. This file stays the primary RE scoping/progress document
+(sub-cluster passes, raw Ghidra output, the standing signature-scanning
+caution); `known_issues_x64.md` is the shorter, curated summary a reader
+would check first.
+
 ## Sub-cluster RE passes (2026-09-03) — separate files, cross-linked here
 
 Three parallel passes covering distinct hook clusters, each in its own file to
@@ -515,6 +525,30 @@ record — this section is a pointer, not the source of truth)
         trigger condition needs either a real `cls.state` enum value dump
         or live testing once an injectable build exists — not a case to
         keep guessing past statically.
+    - **Same-day follow-up #3: `FUN_1402aac50` and `ForwardKeyToMenu` both
+      genuinely confirmed, not just "promising leads."** Decompiled
+      `FUN_1402aac50` in full (previously only its callers/call shape were
+      examined). It's a real, confirmed `Menu_KeyEvent`-equivalent — takes
+      the active menu-def struct directly as `param_2`, early-outs entirely
+      when no menu is active (`param_2 == 0`), and its `switch(param_3)`
+      covers a genuine menu-context key set: Tab/select-navigation (`9`,
+      `0x9b`, `0x9d`, `0xbd`, `0xcd`), Enter/confirm (`0xd`, `0xbf`, `0xca`),
+      **ESC** (`0x1b`, forwards into `*(*param_2+0x30)`, matching this
+      section's earlier finding), a `developer`-dvar toggle (`0xb1`) and the
+      confirmed `"screenshot\n"` dev-command anchor (`0xb2`) that originally
+      anchored this whole cluster, and item-select/invoke (`200`/`0xc9`).
+      **`FUN_1402a3ca0` (the `LAB_1402ab2d1` sink) is reached from far more
+      than just the ESC case** — the item-search loop, the "already
+      hovering this item" fast path, and the `200`/`0xc9` case all funnel
+      into it too — confirming it as a real, generic
+      `ForwardKeyToMenu`/item-action-execute primitive, not a guess.
+      **Genuinely useful negative result**: `FUN_1402aac50` has NO case
+      anywhere matching weapnext's dispatch — ruling it out as weapnext's
+      real dispatcher (see the parallel `sprint_weapnext_x64.md` pass,
+      which had flagged this function as worth checking directly for
+      exactly this). weapnext's real x64 dispatch site is still
+      unlocated — this closes off one real candidate rather than leaving
+      it an open guess for a future pass to re-check.
 1h. **Render-scale/shadow-map thread: found the render-target orchestrator,
     re-confirmed (not just re-found) the x86 team's own hardest open
     question rather than cracking it.** `$shadowmap_large` needed the
