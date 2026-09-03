@@ -288,6 +288,50 @@ record — this section is a pointer, not the source of truth)
     `FUN_14007eff0`'s own callers (candidate for the x64
     `FUN_00541020`/key-event-handler equivalent) to trace the rest of the
     chain, or wait for live testing once an x64 build exists.
+1e. **Major follow-up, same session: found the real x64 KeyDown/KeyUp setter
+    itself, and it's a genuinely simpler mechanism than x86's** — high
+    confidence, NOT yet live-verified. Tracing `FUN_14007eff0`'s 7 callers
+    found `FUN_14007f130` ("is bind X currently held", walks
+    `&DAT_140644a6c + playerIndex*0xd28` in 3-int/12-byte strides comparing
+    against the resolved bind index — `0xd28` matches the same per-player
+    stride constant already seen independently in the movement pipeline's
+    `FUN_14007e4e0`, real cross-validation, not a coincidence) and, tracing
+    further, `FUN_14007eaf0`:
+    ```c
+    void FUN_14007eaf0(int playerIndex, int bindIndex, int isDown)
+    {
+        piVar1 = &DAT_140644a64 + bindIndex*0xc + playerIndex*0xd28;
+        *piVar1 = isDown;         // down-state
+        piVar1[1] += isDown ? +1 : (cleared to 0 on release);  // press-count
+        // + an active-kbutton counter at &DAT_140644a60 + playerIndex*0xd28
+    }
+    ```
+    Standard x64 calling convention (RCX/RDX/R8 — no custom register tricks
+    at all, unlike x86's EAX=self/ECX=bindIndex/stack=timeMs thunk this
+    project's `CallKbuttonDown`/`CallKbuttonUp` had to hand-assemble). It
+    takes `bindIndex` directly, not a raw `kbutton_t*` — meaning **the bind
+    index for any action is computable entirely offline** from the name
+    table found in 1d (base `1404c1870`, 8-byte stride,
+    `index = (entryAddr - 1404c1870) / 8`): `+attack` (Fire) → index 1,
+    `+toggleads_throw` (ADS) → index 59. **If this holds up, ADS/Fire/etc.
+    on x64 may not need any custom-calling-convention asm thunk at all** —
+    just a plain call `FUN_14007eaf0(0, 59, 1)`. This would make buttons
+    genuinely EASIER to port than the movement pipeline, a real reversal
+    from how much harder x64 porting looked after hitting the naked-
+    trampoline wall in the build-side work. **Not yet confirmed**: whether
+    `FUN_14007eaf0` is actually reachable/safe to call directly (vs. needing
+    to go through some dispatcher for side effects this trace hasn't found
+    yet), and the computed bind indices are static-only, not live-verified.
+    **Signature-scan reminder, per the locked 2026-09-03 policy (§5/§10.3
+    in `CLAUDE.md`)**: every raw address in this section (`14007eaf0`,
+    `1404c1870`, `140644a64`/`140644a60`, `14007eff0`, etc.) is a real
+    finding against THIS specific binary build, not a value to hardcode
+    directly into shipped hook code. When this actually gets implemented,
+    each of these needs a real byte-pattern signature (resolved once at
+    startup, cached) built from its surrounding, binary-version-independent
+    instruction shape — not the literal address recorded here. Treat every
+    address in this whole document the same way: a coordinate for today's
+    RE work, not tomorrow's hardcoded constant.
 2. ~~Add an x64 build configuration to `proxy_d3d9.vcxproj`~~ **DONE
    2026-09-03, but revealed the real scope is bigger than this line
    originally implied.** Debug/Release x64 configs added, `IntDir` fixed to
