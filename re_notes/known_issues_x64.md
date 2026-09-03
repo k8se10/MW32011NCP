@@ -44,11 +44,12 @@ two files already had for #111 before the split.
 
 *(Carried forward from `known_issues.md`'s former issue #111, opened 2026-09-03. Original numbering/history preserved in that file's own trimmed stub entry.)*
 
-**Status: Implementing. A real, working x64 build now compiles, LINKS, and
-deploys cleanly to the live game install for the first time in this project's
-history — build-verified only, not yet live-tested (no confirmation the
-diagnostic hook actually fires in the running game).** See "Implementation
-begins" below for the full record.
+**Status: Implementing. A real, working x64 build compiles, LINKS, and deploys
+cleanly to the live game install for the first time in this project's
+history — but the FIRST real live launch crashed on startup (2026-09-04), a
+real, reproducible, now-fixed bug (see "First live crash, found and fixed"
+below). Fix is build-verified only so far, not yet re-confirmed live.** See
+"Implementation begins" and "First live crash" below for the full record.
 **Emergency policy action, same day: all support for the entire existing
 `-x86` release line (every version through `v0.3.5-x86`) is discontinued,
 effective immediately** — not a gradual wind-down, since the live game can
@@ -361,6 +362,183 @@ this is probably multi week work"). First real, working x64 build.**
   point `FUN_14007eaf0`, the pause toggle `FUN_1400823b0`, weapnext's
   `FUN_1400706d0`) is the next phase, once the diagnostic hook's live fire
   is confirmed.
+
+**First live crash, found and fixed, 2026-09-04.** Direct user report: "crashes
+on startup." First real launch of the x64 build against the live game.
+
+- **Diagnosis**: `proxy_d3d9.log` showed the pipeline got surprisingly far --
+  `Direct3DCreate9`, `CreateDevice` (real backbuffer 2560x1440), `WndProc`
+  subclass, `EndScene` hook confirmed firing, glyph-icon prewarm, one
+  successful `DrawPrimitiveUP` call -- then stopped mid-frame with no crash
+  annotation. Windows Event Viewer (`Get-WinEvent -FilterHashtable
+  @{LogName='Application'; ProviderName='Application Error'}`, this
+  project's own established crash-diagnosis technique) showed two identical
+  Application Error entries: `iw5sp.exe` faulting in `d3d9.dll` (this
+  project's own DLL) at the exact same offset both times, exception
+  `0xc0000005` (access violation) -- a real, deterministic, reproducible bug
+  in this project's own code, not a flaky game issue.
+- **Root cause, found via `dumpbin /disasm` + the build's own `.pdb`**: the
+  fault RVA (`0x4F30`, resolved against the build's real image base via
+  `dumpbin /headers`) disassembled to `mov eax, dword ptr [0B36210h]` -- a
+  raw, hardcoded x86-only absolute memory address
+  (`kMenuActiveGateAddr`/`IsMenuActive()`, the "is a menu currently open"
+  gate bit), read unconditionally. That address was only ever valid in the
+  OLD 32-bit process's address space; in the x64 process it points at
+  unmapped memory. This function has NO `__asm`/naked code at all, so the
+  earlier same-day `__asm`-only guard pass (see "Implementation begins"
+  above) never caught it -- it compiled cleanly and crashed at runtime the
+  first time it actually ran. Reached via its exported wrapper,
+  `IsMenuActive_Exported()`, called every frame by `overlay_hud.cpp`'s
+  glyph-draw gate logic -- genuinely x64-reachable, unlike most of this
+  file's other x86-only helpers.
+- **Real scope, once actually audited**: this was not an isolated bug. A
+  full, systematic sweep of `analog_input_hooks.cpp` found the same class of
+  landmine in roughly 30 more places -- direct raw-address dereferences
+  (`*reinterpret_cast<...*>(0x00......)`) and calls through global
+  x86-address function pointers (`WeaponNext`, `SetMenuState`,
+  `CbufAddText`, `ForwardKeyToMenu`, `ActionSlotDown`/`Up`, `LoadZones`,
+  `OpenMenuByName`, `ToggleStance`, `GetDvarString`, etc.), scattered
+  throughout functions the earlier `__asm`-only guard pass never touched
+  because none of them use inline assembly. Found via two complementary
+  methods: (1) grepping for every raw-address dereference/function-pointer-
+  call pattern and checking each containing function's guard status against
+  a script-generated preprocessor-depth map, and (2) the far more reliable
+  method once the first crash was fixed -- iteratively rebuilding for x64
+  and fixing each real `error C2065`/`C3861` (undeclared identifier) the
+  compiler reported, which exhaustively finds every symbol reachable from
+  genuinely unguarded code (a compile error can't be missed the way a manual
+  grep audit can).
+- **Fix approach, case by case**: for every function confirmed to have NO
+  real external caller outside `analog_input_hooks.cpp` (checked via a
+  cross-file grep for each function name, filtering out comment-only
+  mentions), the whole function was guarded `#if !defined(_M_X64) &&
+  !defined(_WIN64)` -- dozens of functions this pass (`GetRealStance`,
+  `IsSprintActive`, `InjectControllerButtons`, `InjectControllerSprint`,
+  `InjectControllerLookAngles`, `InjectControllerMenuBack`,
+  `InjectControllerMenuNav`, `InjectControllerDpad`,
+  `IsInSurvivalMode`, `GetTopmostActiveMenu`, `GetMenuStackDepth`,
+  `TryGetStableFocusedGroupAndIndex`, `GetRawTopOfStackMenu`, several debug/
+  test-only functions, and more). **Three functions were confirmed
+  genuinely externally-reachable and given real x64-safe bodies instead of
+  a wholesale guard** (matching the already-established `GetDvarInt`/
+  `GetDvarFloat` pattern from the earlier same-day pass): `IsMenuActive()`
+  now returns `false` on x64 (the crash fix itself), `GetMenuStackDepth()`
+  returns `-1` (an honest "unknown" sentinel, only reached via a debug-log
+  argument), `TryGetStableFocusedGroupAndIndex()` returns `false` (its own
+  real "no stable focus" contract, callers already handle it).
+  `InjectMenuInputTick()` (confirmed called every `WndProc` message from
+  `d3d9_hook.cpp` -- the always-running menu/pause input tick) got surgical
+  internal guarding instead: its genuinely safe, already-cross-platform
+  calls (`Controller_RequestPoll()`, `CheckConfigHotReload()`,
+  `TickOverlayTestCycle()`) stay unconditional; only its x86-only middle
+  section (menu navigation, font-patch debug tests) is excluded on x64.
+  `ResetMenuListItemOrdinalForFrame()` (confirmed called every frame from
+  `overlay_hud.cpp`'s `Hook_EndScene`) got the same surgical treatment: its
+  real glyph-positioning logic stays active, only its F4 AI-suppression
+  debug toggle (a real gameplay feature, not a diagnostic -- deliberately
+  left fully disabled rather than given a fake stub, since there's no
+  honest safe behavior for "toggle AI spawn" other than "do nothing until
+  ported") is excluded.
+- **Verification**: both x64 and Win32 configurations rebuilt clean from
+  scratch (`/t:Rebuild`) after the fix, zero errors. Confirmed via
+  `dumpbin`-derived raw byte-pattern search across the compiled x64
+  `d3d9.dll` that the specific crashing instruction's byte encoding (and
+  the byte encodings of several other previously-dangerous raw addresses)
+  no longer appears anywhere in the binary. **Not yet re-confirmed with an
+  actual live launch** -- this is real, methodical build-time verification,
+  not a live-tested "it works now" claim.
+- **Standing lesson for any future x64 porting pass in this file**: the
+  `__asm`/`__declspec(naked)` sites are NOT the only x64 hazard in this
+  codebase -- any function reading raw process memory at a literal x86
+  address, or calling through a global function pointer initialized from
+  one, is equally dangerous and produces ZERO compile-time warning on x64
+  (a `reinterpret_cast<T>(0x00XXXXXX)` is completely valid C++ regardless
+  of target architecture; it just point at garbage on a different memory
+  layout). The reliable way to find these is NOT a one-time grep audit
+  (easy to miss transitive call chains) but the iterative "rebuild → fix
+  every real compile error → repeat until clean" loop, since a genuinely
+  unreachable x86-only helper never surfaces as a compile error once its
+  own callers are correctly excluded, while a genuinely x64-reachable one
+  always will. **This lesson understated the real scope, corrected below**:
+  the compile-error loop only catches raw-address DEREFERENCES and calls
+  through a NAMED global function pointer that the compiler can see is
+  undeclared once its x86-only home is guarded out -- it does NOT catch a
+  call through a function pointer that's still validly DECLARED (unguarded)
+  but crashes when actually INVOKED. That gap is exactly what caused the
+  second crash below, in a file (`overlay_hud.cpp`) with zero `__asm` that
+  the first crash's fix never even looked at.
+
+**Second live crash, found and fixed, same day (2026-09-04).** Direct user
+report: "still crashes," after the first fix was rebuilt and redeployed.
+
+- **Confirmed genuinely different from the first crash, not a redeploy
+  failure**: Windows Event Viewer showed a fresh Application Error entry with
+  a different `d3d9.dll` module timestamp (confirming the rebuilt DLL really
+  was loaded) and a different fault offset (`0x137BB`, not the first crash's
+  `0x4F30`) -- a real, distinct second bug, not the same one recurring.
+- **Root cause**: the same `dumpbin /disasm` + image-base technique resolved
+  the new fault to `mov eax, dword ptr [0A98ACCh]` -- another raw x86-only
+  address (`kInLevelFlagAddr`/`kInLevelFlagAddrForFsrGate`, a per-frame
+  "in level" gate used by the visual-enhancement suite's FSR/render-scale
+  full-screen post-process pass). **Critically, this was in
+  `overlay_hud.cpp`, not `analog_input_hooks.cpp`** -- a file the first
+  crash's fix never touched, because it has zero `__asm`/naked code and was
+  assumed safe on that basis alone. It isn't: `RunFullScreenPostProcessIfEnabled()`
+  is called unconditionally every frame from the confirmed-active
+  `Hook_EndScene` dispatcher, and reads several raw addresses
+  (`0x00A98ACC`, `0x00B36218`) once past its config gate -- exactly the same
+  bug class as the first crash, just in a file the compile-error-loop method
+  never flagged (the function pointers/addresses here are all validly
+  declared constants; nothing was ever undeclared, so nothing ever failed to
+  compile).
+- **Broader audit triggered by this discovery**: searched every source file
+  for the same raw-address patterns (`reinterpret_cast<...Fn>(0x00...)`,
+  `reinterpret_cast<volatile T*>(0x00...)`), not just
+  `analog_input_hooks.cpp`. Found matches in four more files:
+  `overlay_hud.cpp` (confirmed two live-reachable functions:
+  `RunFullScreenPostProcessIfEnabled` -- the actual second crash --  and
+  `PollDamageDiagLoggingIfEnabled`, both called unconditionally from
+  `Hook_EndScene`; a third, `RunPreOverlayMotionBlurPassIfEnabled`,
+  confirmed currently unreachable but guarded defensively anyway),
+  `real_settings.cpp` (confirmed reachable via `overlay_hud.cpp`'s custom
+  Options-screen/glyph-editor call sites -- `SetDvarBool`/`String`/`Float`,
+  `SetKeybind`/`UnbindKeynum`/`KeyNameToKeynum`/`KeynumToDisplayName`/
+  `QueueConsoleCommand`/`GetLocalizedString` all guarded; its `GetDvarBool`/
+  `Float`/`String` getters were ALREADY safe, since their own `__asm`
+  internals were already correctly wrapped in `#ifdef _M_IX86` from before
+  this session -- a real example of the right pattern already being used
+  elsewhere in this codebase), `rumble.cpp` (confirmed currently
+  UNREACHABLE -- its dangerous functions' only real callers,
+  `Rumble_Tick()`/`Rumble_Install()`, are themselves only called from
+  already-guarded `analog_input_hooks.cpp` code -- audited and left
+  as-is, not defensively guarded, to avoid touching working code without a
+  live reason), `asset_capture.cpp`/`options_render_suppress.cpp` (false
+  positives -- color bitmasks and an already-fully-disabled feature
+  respectively, not addresses).
+- **Fix pattern used for `overlay_hud.cpp`/`real_settings.cpp`**: a simple,
+  robust early-return at the very top of each confirmed- or plausibly-
+  reachable function (`#if defined(_M_X64) || defined(_WIN64) return;
+  #endif`), rather than trying to guard individual internal lines --
+  deliberately chosen after the first crash's more surgical per-line
+  approach required several iterations to get exactly right (an off-by-line
+  `#endif` placement error was caught and fixed mid-pass, see commit
+  history). A whole-function early return is easier to verify correct by
+  inspection and safer against missing an internal landmine than
+  cherry-picking which specific lines are dangerous.
+- **Real, honest scope note carried forward**: the visual-enhancement suite
+  (FSR/RCAS, render-scale, motion blur) and the custom Options screen/glyph
+  editor are now confirmed fully inert on x64 (early-return no-ops) rather
+  than crash-prone -- consistent with "no real gameplay/feature hooks yet,"
+  not a regression from what x64 already had (it never worked on x64 at
+  all before today).
+- **Verification**: both platforms rebuilt clean from scratch again. Same
+  `dumpbin`-derived byte-pattern check confirms `0x00A98ACC`/`0x00B36218`'s
+  encodings no longer appear in the compiled x64 binary either. **Still not
+  live-tested past this point** -- given two real crashes found in a row
+  during actual live launches (not caught by static audit alone until
+  each one crashed first), a third, not-yet-found landmine of the same
+  class remains a real, honestly-acknowledged possibility, not
+  hand-waved away. The next real step is another live launch.
 
 **Still not started**: real per-hook gameplay code (see above); the shadow-map
 creation call site remains the one major unresolved static-RE thread (needs
