@@ -21,7 +21,12 @@
 #include "frame_benchmark.h" // 2026-08-27 -- times LogFlushThreadProc's own real
     // fflush() cost (issue #96 follow-up, background-thread visibility gap)
 
-void InstallAnalogInputHooks(); // defined in analog_input_hooks.cpp
+void InstallAnalogInputHooks(); // defined in analog_input_hooks.cpp -- Win32 only,
+    // see that file's own __declspec(naked)/__asm blocks; not built for x64 at all
+void InstallAnalogInputHooksX64(); // defined in analog_input_hooks_x64.cpp -- 2026-09-03
+    // x64 migration, real signature-scanned hooks (CLAUDE.md SS5/SS10.3 policy).
+    // Deliberately a separate function, not an overload, so the platform split is
+    // visible at the call site below, not hidden in a single shared name.
 extern "C" void HookD3D9CreateDevice(void* realD3D9); // defined in d3d9_hook.cpp
 
 // Deliberately NOT including <d3d9.h>: its prototypes for Direct3DCreate9/D3DPERF_*/etc.
@@ -30,6 +35,39 @@ extern "C" void HookD3D9CreateDevice(void* realD3D9); // defined in d3d9_hook.cp
 // needs its vtable (CreateDevice -> Present hook) — at that point pull in d3d9.h in a
 // separate translation unit that doesn't also define these forwarding stubs.
 struct IDirect3D9;
+
+// One resolved function pointer per forwarded (non-Direct3DCreate9) export.
+// Populated in ResolveRealExports(); consumed by the x86 naked tail-jump stubs
+// further down this file AND (2026-09-03, x64 migration) by
+// forward_stubs_x64.asm's own `EXTERN g_real_X:QWORD` declarations -- a real,
+// previously-undiscovered link-time bug, found once this migration's build got
+// past the compile stage for the first time: these were originally declared
+// INSIDE the anonymous namespace below, giving them C++-mangled internal
+// linkage that a separately-assembled MASM translation unit's plain,
+// undecorated `EXTERN` declarations can never match (LNK2019 on every one, once
+// the x64 build finally reached the link stage). Fixed by moving them here,
+// outside the namespace, with real `extern "C"` linkage -- correct and needed
+// for x64 (MASM), harmless for x86 (still only ever referenced from this same
+// file's own ResolveRealExports() and the FORWARD_STUB macro, whether the name
+// is internal or external doesn't change their behavior there).
+extern "C" {
+void* g_real_D3DPERF_BeginEvent = nullptr;
+void* g_real_D3DPERF_EndEvent = nullptr;
+void* g_real_D3DPERF_GetStatus = nullptr;
+void* g_real_D3DPERF_QueryRepeatFrame = nullptr;
+void* g_real_D3DPERF_SetMarker = nullptr;
+void* g_real_D3DPERF_SetOptions = nullptr;
+void* g_real_D3DPERF_SetRegion = nullptr;
+void* g_real_DebugSetLevel = nullptr;
+void* g_real_DebugSetMute = nullptr;
+void* g_real_Direct3D9EnableMaximizedWindowedModeShim = nullptr;
+void* g_real_Direct3DCreate9Ex = nullptr;
+void* g_real_Direct3DCreate9On12 = nullptr;
+void* g_real_Direct3DCreate9On12Ex = nullptr;
+void* g_real_Direct3DShaderValidatorCreate9 = nullptr;
+void* g_real_PSGPError = nullptr;
+void* g_real_PSGPSampleTexture = nullptr;
+}  // extern "C"
 
 namespace {
 
@@ -259,25 +297,6 @@ bool LoadRealD3D9()
     return true;
 }
 
-// One resolved function pointer per forwarded (non-Direct3DCreate9) export.
-// Populated in LoadRealD3D9Exports(); consumed by the naked tail-jump stubs below.
-void* g_real_D3DPERF_BeginEvent = nullptr;
-void* g_real_D3DPERF_EndEvent = nullptr;
-void* g_real_D3DPERF_GetStatus = nullptr;
-void* g_real_D3DPERF_QueryRepeatFrame = nullptr;
-void* g_real_D3DPERF_SetMarker = nullptr;
-void* g_real_D3DPERF_SetOptions = nullptr;
-void* g_real_D3DPERF_SetRegion = nullptr;
-void* g_real_DebugSetLevel = nullptr;
-void* g_real_DebugSetMute = nullptr;
-void* g_real_Direct3D9EnableMaximizedWindowedModeShim = nullptr;
-void* g_real_Direct3DCreate9Ex = nullptr;
-void* g_real_Direct3DCreate9On12 = nullptr;
-void* g_real_Direct3DCreate9On12Ex = nullptr;
-void* g_real_Direct3DShaderValidatorCreate9 = nullptr;
-void* g_real_PSGPError = nullptr;
-void* g_real_PSGPSampleTexture = nullptr;
-
 typedef IDirect3D9* (WINAPI* Direct3DCreate9_t)(UINT);
 Direct3DCreate9_t g_real_Direct3DCreate9 = nullptr;
 
@@ -457,7 +476,14 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
         if (!LoadRealD3D9()) return FALSE;
         if (!ResolveRealExports()) return FALSE;
         Log("proxy_d3d9 init OK — analog movement/look hooks installing.");
+#if defined(_M_X64) || defined(_WIN64)
+        InstallAnalogInputHooksX64(); // 2026-09-03 x64 migration -- see
+            // analog_input_hooks_x64.cpp. Currently a single diagnostic hook only
+            // (issue #1, known_issues_x64.md) -- real gameplay hooks land here
+            // incrementally as they're built, matching x86's own original pace.
+#else
         InstallAnalogInputHooks(); // task #5 -- see analog_input_hooks.cpp
+#endif
         LoadPlugins(); // 2026-08-25 -- see plugin_loader.h; no-op unless
             // g_modConfig.pluginsEnabled, and must run AFTER InstallAnalogInputHooks
             // so the host's own MinHook instance is already initialized

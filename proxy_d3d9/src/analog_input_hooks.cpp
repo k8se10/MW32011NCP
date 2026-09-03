@@ -1437,6 +1437,7 @@ constexpr int kAdsBindIndex = 13;
 // function). The first implementation missed this stack argument entirely, leaving
 // downtime (in_EAX[2] inside the callee) set to whatever garbage was on the stack --
 // root cause of the "activates once then stays stuck" bug.
+#if !defined(_M_X64) && !defined(_WIN64)
 void CallKbuttonDown(uintptr_t kbutton, int bindIndex)
 {
     uint32_t timeMs = *reinterpret_cast<volatile uint32_t*>(kFrameTimeMsAddr);
@@ -1467,6 +1468,18 @@ void CallKbuttonUp(uintptr_t kbutton, int bindIndex)
         pop ebx
     }
 }
+#else
+// x64: not yet ported. This whole hook-callback cluster (ADS/Reload/Fire/Sprint/
+// HoldBreath injection) only runs at all via InstallAnalogInputHooks()'s own x86
+// hook install below, itself compiled out on x64 -- these two functions are
+// therefore genuinely unreachable dead code on x64 for now, kept only so the file
+// compiles as a single translation unit. Real x64 equivalents exist and are
+// confirmed (FUN_140014a80 for Sprint, FUN_14007eaf0 for the unified buttons/ADS
+// KeyDown/KeyUp entry point -- see re_notes/known_issues_x64.md issue #1) but
+// haven't been wired into real hook-install code yet.
+void CallKbuttonDown(uintptr_t, int) {}
+void CallKbuttonUp(uintptr_t, int) {}
+#endif
 
 bool g_adsHeld = false;
 } // namespace
@@ -1725,6 +1738,7 @@ bool g_sprintHeld = false;
 // string-type dvars; calling it on a boolean/int dvar would read the raw 0/1 stored
 // there as if it were a memory address and crash dereferencing it as a string. General
 // utility, used elsewhere in this file too (e.g. cl_paused), not Sprint-specific.
+#if !defined(_M_X64) && !defined(_WIN64)
 int GetDvarInt(const char* name)
 {
     constexpr uintptr_t kFindDvarFn = 0x0062abe0;
@@ -1740,6 +1754,13 @@ int GetDvarInt(const char* name)
     if (!dvarPtr) return 0;
     return *reinterpret_cast<int*>(reinterpret_cast<uintptr_t>(dvarPtr) + 0xc);
 }
+#else
+// x64: not yet ported (same "dead code until a real x64 hook install exists" note
+// as CallKbuttonDown/Up above). The real x64 equivalent, FUN_1402c3b10, is already
+// confirmed and genuinely simpler -- standard calling convention, no __asm needed
+// at all -- see re_notes/x64_migration/actionslot_dvarhelpers_x64.md.
+int GetDvarInt(const char*) { return 0; }
+#endif
 
 // ---- Sprint (L3): real +sprint kbutton (2026-07-19) ------------------------------
 //
@@ -2080,6 +2101,7 @@ GetEffectiveFovFn const GetEffectiveFov = reinterpret_cast<GetEffectiveFovFn>(0x
 // Raw dvar-value getter, float variant -- same Dvar_FindVar-equivalent as GetDvarInt
 // above, reading dvarPtr+0xc as a float instead of an int. Needed for cg_fov (a real
 // float-type dvar, per its own registration: FUN_004f9cc0("cg_fov", ...)).
+#if !defined(_M_X64) && !defined(_WIN64)
 float GetDvarFloat(const char* name)
 {
     constexpr uintptr_t kFindDvarFn = 0x0062abe0;
@@ -2095,6 +2117,10 @@ float GetDvarFloat(const char* name)
     if (!dvarPtr) return 0.0f;
     return *reinterpret_cast<float*>(reinterpret_cast<uintptr_t>(dvarPtr) + 0xc);
 }
+#else
+// x64: not yet ported, same note as GetDvarInt above.
+float GetDvarFloat(const char*) { return 0.0f; }
+#endif
 
 // How strongly the ADS look-slowdown applies: 0.0 = off (flat rate regardless of
 // zoom), 1.0 = fully proportional to the live FOV ratio (closest to real console
@@ -3995,6 +4021,7 @@ void LogLocalVarStringResult()
 }
 } // namespace
 
+#if !defined(_M_X64) && !defined(_WIN64)
 __declspec(naked) void Hook_00613ac0()
 {
     __asm {
@@ -4032,6 +4059,7 @@ __declspec(naked) void Hook_00613ac0()
         jmp dword ptr [g_localVarStringRealRetAddr]
     }
 }
+#endif
 
 // ---- getfocuseditemname() hook, FUN_00616230 (2026-08-01, issue #50 follow-up) ---
 //
@@ -4970,6 +4998,7 @@ bool IsFriendsListOpen()
     return _strnicmp(g_focusedItemName, "friendList", 10) == 0;
 }
 
+#if !defined(_M_X64) && !defined(_WIN64)
 __declspec(naked) void Hook_00616230()
 {
     __asm {
@@ -4992,6 +5021,7 @@ __declspec(naked) void Hook_00616230()
         jmp dword ptr [g_focusedItemRealRetAddr]
     }
 }
+#endif
 
 // ---- localvarint() hook, FUN_00613b70 (2026-08-01, issue #51 follow-up) ----------
 //
@@ -5059,6 +5089,7 @@ void LogLocalVarIntResult()
 }
 } // namespace
 
+#if !defined(_M_X64) && !defined(_WIN64)
 __declspec(naked) void Hook_00613b70()
 {
     __asm {
@@ -5081,6 +5112,7 @@ __declspec(naked) void Hook_00613b70()
         jmp dword ptr [g_localVarIntRealRetAddr]
     }
 }
+#endif
 
 // ---- Cursor-draw suppression hook, FUN_004d48f0 (2026-08-01, user-requested) -----
 //
@@ -5960,6 +5992,7 @@ namespace {
 void* g_orig_694650 = nullptr;
 }
 
+#if !defined(_M_X64) && !defined(_WIN64)
 __declspec(naked) void Hook_694650()
 {
     __asm {
@@ -5970,6 +6003,7 @@ __declspec(naked) void Hook_694650()
         ret
     }
 }
+#endif
 
 // Issue #96, 2026-08-27 -- REAL fix attempt #3, replacing FUN_00694650 above
 // (disabled below, kept as a proven-safe fallback -- crash-free but blurs
@@ -6013,6 +6047,7 @@ namespace {
 void* g_orig_693ff0 = nullptr;
 }
 
+#if !defined(_M_X64) && !defined(_WIN64)
 __declspec(naked) void Hook_693ff0()
 {
     __asm {
@@ -6022,6 +6057,7 @@ __declspec(naked) void Hook_693ff0()
         jmp dword ptr [g_orig_693ff0]
     }
 }
+#endif
 
 // Issue #88, 2026-08-26 -- [Video] InternalRenderScalePercent, CORRECTED real
 // implementation. Real motivation, direct user framing: "basically the plan is
@@ -10595,6 +10631,7 @@ extern "C" void __cdecl BindResolverLogAfterCall()
     LogFromController(buf);
 }
 
+#if !defined(_M_X64) && !defined(_WIN64)
 __declspec(naked) void Hook_0061f6f0()
 {
     __asm {
@@ -10633,6 +10670,7 @@ __declspec(naked) void Hook_0061f6f0()
         jmp dword ptr [g_bindResolverRealRetAddr]
     }
 }
+#endif
 
 namespace {
 void* g_orig_0057de60 = nullptr;
@@ -10640,6 +10678,7 @@ void* g_orig_0057de60 = nullptr;
 
 // Pure pre-hook: inject our angle delta, then tail-jump into the untouched original
 // (which does its own packing/return -- no need to intercept its return at all).
+#if !defined(_M_X64) && !defined(_WIN64)
 __declspec(naked) void Hook_0057de60()
 {
     __asm {
@@ -10651,6 +10690,13 @@ __declspec(naked) void Hook_0057de60()
         jmp dword ptr [g_orig_0057de60]
     }
 }
+#endif
+// x64: the real per-frame gameplay hook (movement/look/buttons/ADS/Sprint) is not
+// yet ported. The x64 equivalent of this exact hook point (usercmd finalize) is the
+// confirmed Pmove chain -- FUN_140016620 -> FUN_1400168a0 -> FUN_140014a80 for
+// Sprint specifically -- see re_notes/known_issues_x64.md issue #1 and
+// analog_input_hooks_x64.cpp, which installs a diagnostic-only hook on
+// FUN_1400168a0 today as the first real step toward this.
 
 // ---- issue #96 GENERAL DIAGNOSTIC (2026-08-26): observe every real call into
 // FUN_00425540 (the confirmed Com_Error/longjmp exit function), not just the
@@ -10721,6 +10767,7 @@ extern "C" void __cdecl LogComErrorCall(int severity, const char* fmt)
     LogFromController(buf);
 }
 
+#if !defined(_M_X64) && !defined(_WIN64)
 __declspec(naked) void Hook_FUN_00425540()
 {
     __asm {
@@ -10735,6 +10782,11 @@ __declspec(naked) void Hook_FUN_00425540()
         jmp dword ptr [g_orig_00425540]
     }
 }
+#endif
+// x64: this Com_Error-class diagnostic hook is x86-only and not ported -- see the
+// investigation comment just below (issue #96 round 2 already found this specific
+// hook fires zero times against the real crash anyway, so it's low-value to port
+// first regardless of platform).
 
 // ---- issue #96 GENERAL DIAGNOSTIC, ROUND 2 (2026-08-26): observe the actual
 // process-termination call directly, since Com_Error is now confirmed NOT the
@@ -10779,6 +10831,7 @@ void WINAPI Hook_ExitProcess(UINT uExitCode)
 }
 } // namespace
 
+#if !defined(_M_X64) && !defined(_WIN64)
 void InstallAnalogInputHooks()
 {
     MH_Initialize();
@@ -11299,3 +11352,19 @@ void InstallAnalogInputHooks()
     // the standing note on what to check before ever re-enabling this.
     // InstallOptionsRenderSuppressionHooks();
 }
+#else
+void InstallAnalogInputHooks()
+{
+    // x64: not yet ported. Every hook target above is an x86 hardcoded address --
+    // see re_notes/known_issues_x64.md issue #1 for the real x64 hook targets
+    // confirmed so far (Sprint FUN_140014a80, buttons/ADS/menu unified entry
+    // FUN_14007eaf0, the pause toggle FUN_1400823b0, weapnext FUN_1400706d0) and
+    // analog_input_hooks_x64.cpp for the real x64 install path, built on the
+    // policy-required signature scanner (signature_scan.h/.cpp) instead of
+    // hardcoded addresses -- see CLAUDE.md SS5/SS10.3. This x86 function stays
+    // dead code on x64 (never called -- dllmain.cpp calls
+    // InstallAnalogInputHooksX64() instead, see its own #if _M_X64 guard), kept
+    // here only so the rest of this translation unit still compiles as one file.
+    LogFromController("[x64] InstallAnalogInputHooks() is the x86 version -- not called on this build. See InstallAnalogInputHooksX64().");
+}
+#endif
