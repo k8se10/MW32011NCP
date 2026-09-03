@@ -1,11 +1,6 @@
 # MW3 Native Controller Support (Campaign & Survival)
 
-> **⏸️ DEVELOPMENT ON A SHORT BREAK.** Active development is paused as of
-> 2026-08-29 and is expected to resume within 1-2 weeks. No new commits
-> expected before then — this isn't a project status change, just a planned
-> pause, same as the one that followed v0.2.2. **v0.3.5 is the build being
-> left to sit** while this plays out — see its own confirmed-live status
-> just below.
+> **🚨THE MOD IS BROKEN AS OF 1ST SEPTEMBER 2026 UPDATE.** Activision pushed and update out to MW3 which has broken all mods and anything that is based on the original 32-bit executable including this mod. They have now pushed a new 14GB update which is 64-bit which breaks all parts of this mod and many others
 
 > **▶️ v0.3.5 (2026-08-29) — a new visual-enhancement suite, and a full
 > stutter/threading-architecture overhaul.** The largest release yet by
