@@ -1,0 +1,143 @@
+================================================================
+Function: FUN_140080db0 @ 140080db0
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_140080db0(void)
+
+{
+  undefined4 uVar1;
+  undefined4 uVar2;
+  undefined4 uVar3;
+  undefined4 uVar4;
+  DWORD DVar5;
+  
+  FUN_14024b750();
+  DVar5 = timeGetTime();
+  FUN_1403a5a90(DVar5);
+  FUN_14007acb0();
+  DAT_14064fe10 = 0;
+  FUN_14007d4d0();
+  _DAT_1406ef568 =
+       FUN_1402c43f0("useonlinestats",1,0x80,"Whether to use online stats when in offline modes");
+  DAT_1406ef570 = FUN_1402c43f0("requirestats",0,0x80,"Whether stats are currently required");
+  DAT_14064fce8 = FUN_1402c43f0("cl_noprint",0,0,"Print nothing to the console");
+  _DAT_1406e24e0 =
+       FUN_1402c46d0("cl_shownet",0,0xfffffffe,4,0,"Display network debugging information");
+  _DAT_1406e24e8 =
+       FUN_1402c43f0("cl_showServerCommands",0,0,"Enable debug prints for server commands");
+  uVar2 = DAT_1403f3b1c;
+  uVar1 = DAT_1403e8ed8;
+  uVar4 = DAT_1403e5618;
+  DAT_1406446d8 =
+       FUN_1402c4650("cl_yawspeed",DAT_1403f3b1c,DAT_1403e8ed8,DAT_1403e5618,1,
+                     "Max yaw speed in degrees for game pad and keyboard");
+  DAT_1406446e0 =
+       FUN_1402c4650("cl_pitchspeed",uVar2,uVar1,uVar4,1,"Max pitch speed in degrees for game pad");
+  DAT_1406446e8 =
+       FUN_1402c4650("cl_anglespeedkey",DAT_1403e5260,0,uVar4,0,
+                     "Multiplier for max angle speed for gamepad and keyboard");
+  _DAT_1406446f0 =
+       FUN_1402c4650("cl_dirSelConvergenceTime",DAT_1403e5240,DAT_1403e3e64,uVar4,0,
+                     "Time to converge to the new direction when selecting a direction on the map.")
+  ;
+  uVar1 = DAT_1403e8e6c;
+  DAT_1406e24f0 =
+       FUN_1402c4650("sensitivity",DAT_1403e8e3c,DAT_1403e3e64,DAT_1403e8e6c,1,"Mouse sensitivity");
+  DAT_1406e2500 = FUN_1402c4650("cl_mouseAccel",0,0,uVar1,1,"Mouse acceleration");
+  DAT_1406e24f8 = FUN_1402c43f0("cl_freelook",1,1,"Enable looking with mouse");
+  _DAT_1406e2508 =
+       FUN_1402c43f0("cl_showmouserate",0,0,"Print mouse rate debugging information to the console")
+  ;
+  _DAT_1406e2540 = FUN_1402c43f0("r_inGameVideo",1,1,"Allow in game cinematics");
+  uVar3 = _DAT_1403f5fdc;
+  uVar2 = DAT_1403e416c;
+  uVar1 = DAT_1403e3e6c;
+  DAT_1406e2510 =
+       FUN_1402c4650("m_pitch",_DAT_1403f5fdc,DAT_1403e416c,DAT_1403e3e6c,1,"Default pitch");
+  DAT_1406e2518 = FUN_1402c4650("m_yaw",uVar3,uVar2,uVar1,1,"Default yaw");
+  uVar3 = DAT_1403e524c;
+  DAT_1406e2520 =
+       FUN_1402c4650("m_forward",DAT_1403e524c,uVar2,uVar1,1,"Forward speed in units per second");
+  DAT_1406e2528 = FUN_1402c4650("m_side",uVar3,uVar2,uVar1,1,"Sideways motion in units per second");
+  DAT_1406e2530 = FUN_1402c43f0("m_filter",0,1,"Allow mouse movement smoothing");
+  DAT_1406e2538 =
+       FUN_1402c4650("m_vehMouseSteerSensitivity",DAT_1403e5264,DAT_1403e3e64,uVar4,1,
+                     "Vehicle mouse steering sensitivity");
+  DAT_14062cc88 = FUN_1402c43f0("cg_drawCrosshair",1,0x40,"Turn on weapon crosshair");
+  DAT_1406ef540 = FUN_1402c49e0(&DAT_1403f5a4c,&DAT_1403e6bdb,0,"Message of the day");
+  DAT_141efb798 = FUN_1402c49e0("nextmap",&DAT_1403e6bdb,0,"The next map name");
+  DAT_1406ef560 =
+       FUN_1402c46d0("cl_maxpackets",1000,1,1000,1,"Maximum number of packets sent per frame");
+  _DAT_1406e2548 = FUN_1402c43f0("cl_showSend",0,0,"Enable debugging information for sent commands")
+  ;
+  DAT_1406ef558 = FUN_1402c46d0("cl_packetdup",0,0,5,1,"Enable packet duplication");
+  _DAT_1406ef550 = FUN_1402c49e0(&DAT_1403f5b48,"Unknown Soldier",0,"Player name");
+  DAT_1406479e8 =
+       FUN_1402c43f0("coop_matching_type_search",0,0,"Is the matching type set to search");
+  DAT_1406ef580 =
+       FUN_1402c43f0("coop_showing_game_error_popup",0,0,"Are we showing a game error popup");
+  DAT_1406ef588 =
+       FUN_1402c43f0("ui_online_coop",0,0,"Did the user choose to enter an online coop game");
+  DAT_1406ef590 = FUN_1402c46d0("specops_map_itemnum",0,0,99,0,"Level challenge item number");
+  DAT_1406ef598 = FUN_1402c46d0("specops_map_groupnum",0,0,99,0,"Level challenge group number");
+  DAT_1406ef5a0 =
+       FUN_1402c43f0("ui_is_so_dlc",0,0,"Is the user is attempting to play only spec ops DLC maps");
+  FUN_1402c43f0("cg_blood",1,1,"Show blood");
+  FUN_14028c280();
+  FUN_14022fb70(&DAT_1403f5cf4,FUN_140080b30,&DAT_1406ef660);
+  FUN_14022fb70("vid_restart",_guard_check_icall,&DAT_1406ef678);
+  FUN_14022fbe0("vid_restart",FUN_140082fc0,&DAT_1406ef690);
+  FUN_14022fb70("snd_restart",_guard_check_icall,&DAT_1406ef6a8);
+  FUN_14022fbe0("snd_restart",&LAB_140082a90,&DAT_1406ef6c0);
+  FUN_14022fb70("disconnect",_guard_check_icall,&DAT_1406ef6d8);
+  FUN_14022fbe0("disconnect",&LAB_1400805d0,&DAT_1406ef6f0);
+  FUN_14022fb70("disconnect_nomessage",_guard_check_icall,&DAT_1406ef708);
+  FUN_14022fbe0("disconnect_nomessage",&LAB_1400805c0,&DAT_1406ef720);
+  FUN_14022fb70("autocinematic",FUN_1400794b0,&DAT_1406ef738);
+  FUN_14022fb70("cinematic",FUN_140079520,&DAT_1406ef750);
+  FUN_14022fb70(&DAT_1403f5d4c,_guard_check_icall,&DAT_1406ef768);
+  FUN_14022fb70("startMultiplayer",FUN_140083220,&DAT_1406ef780);
+  FUN_14022fb70("resetViewport",FUN_1400825d0,&DAT_1406ef798);
+  FUN_14022fb70("shellExecute",FUN_1400827a0,&DAT_1406ef7b0);
+  FUN_14022fb70("+incAnimWeight",&LAB_140080cb0,&DAT_1406ef7c8);
+  FUN_14022fb70("+decAnimWeight",&LAB_1400803c0,&DAT_1406ef7e0);
+  DAT_1406ef5a8 = FUN_1402c4650("cl_testAnimWeight",0,0,uVar1,0,"test animation weighting");
+  FUN_14022fb70("confirmInvite",&LAB_140080380,&DAT_1406ef7f8);
+  FUN_14022fb70("xshowfriendslist",&LAB_140081b50,&DAT_1406ef5b8);
+  FUN_14022fb70("xsigninlive",FUN_140081b90,&DAT_1406ef5d0);
+  FUN_14022fb70("xsignin",FUN_140081b60,&DAT_1406ef5e8);
+  FUN_14022fb70("xrequirelivesignin",FUN_140081ae0,&DAT_1406ef600);
+  FUN_14022fb70("xopenonlineservicesdialog",FUN_140082380,&DAT_1406ef618);
+  FUN_14022fb70("xcancelconnectingdialog",FUN_140081a30,&DAT_1406ef630);
+  FUN_14022fb70("xopenpopupgettingcoopdata",FUN_140081a60,&DAT_1406ef648);
+  FUN_14008df50();
+  FUN_14022fb70("updateGamerProfile",FUN_140082f40,&DAT_1406ef810);
+  FUN_14022fb70("requestInvite",FUN_140080100,&DAT_1406ef828);
+  FUN_14022fb70("coopSearchStart",FUN_1400802b0,&DAT_1406ef840);
+  FUN_14022fb70("coopStopSearch",FUN_1400802f0,&DAT_1406ef858);
+  FUN_14022fb70("coopOnTwoPlayerMatching",FUN_140082320,&DAT_1406ef870);
+  FUN_14022fb70("coopOnTwoPlayerMatchingNoMenuChange",FUN_140082350,&DAT_1406ef888);
+  FUN_14022fb70("connect",FUN_14007fe50,&DAT_1406ef8a0);
+  FUN_14022fb70("startPrivateListenNoMenuChange",FUN_1400800e0,&DAT_1406ef8b8);
+  FUN_14022fb70("startPrivateListen",FUN_1400800c0,&DAT_1406ef8d0);
+  FUN_14022fb70("stopPrivateListen",FUN_140265ee0,&DAT_1406ef8e8);
+  FUN_14022fb70("coopLaunch",&LAB_1400800b0,&DAT_1406ef900);
+  FUN_14022fb70("resetserverdemodvars",&LAB_140082580,&DAT_1406ef918);
+  FUN_14022fb70("setNetCoOpDifficulty",FUN_140080310,&DAT_1406ef930);
+  FUN_14022fb70("connect_lobby",FUN_140082d90,&DAT_1406ef948);
+  FUN_14022fb70("resolveItemDefAction",&LAB_140082710,&DAT_1406ef960);
+  FUN_140281140();
+  FUN_14027c7c0();
+  FUN_14022fb70("startentitlements",FUN_14027f0b0,&DAT_1406ef978);
+  FUN_1402819e0();
+  FUN_14008abb0();
+  FUN_14008ad80();
+  FUN_1400836f0();
+  DAT_1406e24c4 = 1;
+  return;
+}
+
+
+

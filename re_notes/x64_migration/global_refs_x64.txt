@@ -1,0 +1,40 @@
+=== Reference counts per global ===
+cl_yawspeed (1406446d8): 2 references
+cl_pitchspeed (1406446e0): 2 references
+cl_anglespeedkey (1406446e8): 2 references
+m_pitch (1406e2510): 5 references
+m_yaw (1406e2518): 3 references
+m_forward (1406e2520): 2 references
+m_side (1406e2528): 2 references
+m_filter (1406e2530): 4 references
+sensitivity (1406e24f0): 3 references
+cl_mouseAccel (1406e2500): 6 references
+cl_maxpackets (1406ef560): 3 references
+
+=== Candidate functions, ranked by distinct global diversity (13) ===
+
+---- FUN_140080db0 @ 140080db0 (globals: cl_anglespeedkey, cl_maxpackets, cl_mouseAccel, cl_pitchspeed, cl_yawspeed, m_filter, m_forward, m_pitch, m_side, m_yaw, sensitivity) ----
+
+---- FUN_14007d9f0 @ 14007d9f0 (globals: m_forward, m_pitch, m_side, m_yaw) ----
+
+---- FUN_14008ca70 @ 14008ca70 (globals: m_filter, m_pitch, sensitivity) ----
+
+---- FUN_14007d3b0 @ 14007d3b0 (globals: cl_mouseAccel, m_filter, sensitivity) ----
+
+---- FUN_14007e1e0 @ 14007e1e0 (globals: cl_anglespeedkey, cl_pitchspeed, cl_yawspeed) ----
+
+---- FUN_14007de20 @ 14007de20 (globals: m_pitch, m_yaw) ----
+
+---- FUN_1402ab950 @ 1402ab950 (globals: cl_mouseAccel) ----
+
+---- FUN_140265a50 @ 140265a50 (globals: cl_maxpackets) ----
+
+---- FUN_140072c10 @ 140072c10 (globals: cl_mouseAccel) ----
+
+---- FUN_140072df0 @ 140072df0 (globals: cl_mouseAccel) ----
+
+---- FUN_14007bc90 @ 14007bc90 (globals: cl_maxpackets) ----
+
+---- FUN_14007e4e0 @ 14007e4e0 (globals: m_filter) ----
+
+---- FUN_14004a360 @ 14004a360 (globals: cl_mouseAccel) ----
