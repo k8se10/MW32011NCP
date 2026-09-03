@@ -141,6 +141,42 @@ dispatch. It turned out to be a genuine `Menu_KeyEvent`-equivalent (early-outs
 entirely when no menu is active, `param_2 == 0`), not the raw always-on gameplay
 keycode dispatcher weapnext would need — so this specific "maybe it's a unified
 one-shot dispatcher too" hypothesis is now closed off, not left open for a future
-pass to re-check the same lead. The real x64 weapnext dispatch site is still
-unlocated; the x86 raw-keycode-table approach (a separate, not-yet-found x64
-function) remains the leading theory, not yet confirmed.
+pass to re-check the same lead.
+
+**Second same-day follow-up: the full event-loop architecture is now mapped, and
+the search space for weapnext's dispatch is genuinely narrowed, not just re-checked
+again.** Traced `FUN_14007eaf0`'s own caller (`FindCallers.java`) up one level to
+`FUN_14023ccb0` — a real, confirmed `Com_EventLoop`/`Sys_SendKeyEvents`-equivalent:
+a `while(true)` loop pulling typed events from `FUN_1402ee660` (itself confirmed as
+the real `Sys_GetEvent` — a 256-slot ring buffer fed by a genuine
+`PeekMessageA`/`GetMessageA`/`TranslateMessage`/`DispatchMessageA` Win32 message
+pump when the ring is empty, textbook id-Tech engine architecture) and dispatching
+by a 4-way event-type selector:
+- **type 1 → `FUN_14007eaf0`** — the confirmed key event (kbutton/menu/ESC unified
+  entry point, this whole cluster).
+- **type 2 → `FUN_14007e8e0`** — decompiled and RULED OUT: a real character-typed
+  (`WM_CHAR`-equivalent) event, excludes `` ` ``/`~` (console-toggle keys), gated on
+  a per-player "menu active" flag bit, forwards into `FUN_14029baa0` with a `0x400`
+  char-event flag OR'd into the keycode. Not a command dispatcher.
+- **type 3 → `FUN_14022f680`** — the already-confirmed `Cbuf_AddText`-equivalent
+  (the same function the `"screenshot\n"` anchor uses) — raw console-command-text
+  events.
+- **default → `FUN_14023c700`** — decompiled and RULED OUT: a real
+  `Com_Error`-equivalent, `setjmp`/`longjmp`-based fatal/non-fatal internal error
+  handler (numeric error-code branches for restart/fatal-error cases). Unrelated to
+  weapnext, but a genuinely useful confirmed target for any future crash-diagnostics
+  work.
+
+**Real conclusion**: 3 of the 4 possible event types are now definitively ruled out
+as weapnext's dispatch path, leaving only type 1 (`FUN_14007eaf0`'s kbutton path) as
+structurally possible — there is no hidden "one-shot bound command" event type
+sitting alongside it. This closes the "which dispatcher" question with much higher
+confidence than before (elimination across the ENTIRE real event-type space, not
+just one more candidate checked) and reframes the real open question as **"which
+consumer reads kbutton table index 66 for a rising edge"** — structurally the same
+class of problem Sprint's own resolution just solved (a per-tick consumer reading a
+kbutton-adjacent bit, not a special dispatcher) — not "which dispatcher handles
+weapnext," which is now closed. Not yet found; the x86 raw-keycode-table approach
+(a separate function, never itself relocated on x64) remains a candidate shape for
+that consumer, alongside a plausible index-66-specific reader analogous to
+`FUN_140014a80`'s Sprint pattern.
