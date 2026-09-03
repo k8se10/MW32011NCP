@@ -16314,7 +16314,12 @@ Sprint's full Pmove-entry hook chain (RESOLVED, static, high confidence -- see
 same-day follow-up below), the generic
 dvar read/write API (high confidence, real x64 simplification -- no custom
 calling convention needed at all), and D-pad actionslot's bind indices
-(computed, mechanism unconfirmed). **Update, same day, real key-event
+(computed; same-day follow-up mapped the ENTIRE kbutton-table function
+cluster -- setter, IsKeyButtonDown by index/by name, ClearAllKeyButtons --
+and confirmed no separate raw-dispatch table exists, upgrading confidence
+that actionslot reuses the generic kbutton mechanism to medium-high; the
+actual "use item" consumer is still not found, plausibly GSC-VM state).
+**Update, same day, real key-event
 handler found**: `FUN_1402aac50` (the x86 `FUN_00541020` equivalent,
 confirmed via the exact same `"screenshot"`-dev-command anchor technique the
 original x86 discovery used) and its wrapper `FUN_14029baa0` -- both trace
