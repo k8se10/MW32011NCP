@@ -15,7 +15,7 @@ real evidence and honest confidence level; this is just an index.
 | Cluster | File | Real confidence |
 |---|---|---|
 | Sprint / weapon switch | [`sprint_weapnext_x64.md`](sprint_weapnext_x64.md) | Sprint: storage globals + state machine found, high confidence; the actual Pmove-entry *write* hook still unlocated. weapnext: bind-table position found (index 66), dispatch mechanism not traced. |
-| Pause menu / key handler | [`pausemenu_keyhandler_x64.md`](pausemenu_keyhandler_x64.md) | `cl_paused`'s real storage global found. **Updated after this file's own section 1g**: the real key-event handler (`FUN_1402aac50`, x86 `FUN_00541020` equivalent) and its wrapper (`FUN_14029baa0`) ARE now found, high confidence — cross-validates `pausemenu_keyhandler_x64.md`'s own `FUN_14029dfd0` candidate as a real part of the chain. Dedicated `SetMenuState`/`OpenPauseMenu`/`ForwardKeyToMenu` still not individually pinned. |
+| Pause menu / key handler | [`pausemenu_keyhandler_x64.md`](pausemenu_keyhandler_x64.md) | `cl_paused`'s real storage global found. **Updated after this file's own section 1g**: the real key-event handler (`FUN_1402aac50`, x86 `FUN_00541020` equivalent) and its wrapper (`FUN_14029baa0`) ARE now found, high confidence — cross-validates `pausemenu_keyhandler_x64.md`'s own `FUN_14029dfd0` candidate as a real part of the chain. **Same-day follow-up**: `FUN_14029baa0` fully decompiled — confirmed x64 `Cvar_Set` equivalent (`FUN_1402c5b30`) and the real resume-gameplay path (`Cvar_Set("cl_paused", 0)` once the menu stack empties). `FUN_1402ac9c0` ruled OUT as `OpenPauseMenu` (it's a bulk close/refresh pass over already-registered menu defs, gated on a menu already being open). `OpenPauseMenu`/`ForwardKeyToMenu`'s exact "open from nothing" call site still not pinned. |
 | D-pad actionslot / generic dvar API | [`actionslot_dvarhelpers_x64.md`](actionslot_dvarhelpers_x64.md) | Dvar API (`Dvar_FindVar`/get/set): high confidence, cross-validated 4 independent call sites — real simplification over x86, standard calling convention, no `__asm` needed; value offset shifted `+0xc`→`+0x10` (real x64 struct-alignment change, confirmed two ways). D-pad actionslot: bind indices computed (15/17/19/21), but whether it reuses the buttons/ADS `FUN_14007eaf0` mechanism directly is unconfirmed. |
 
 Section 1 below (this file) covers the movement/look pipeline, buttons/ADS,
@@ -409,6 +409,56 @@ record — this section is a pointer, not the source of truth)
     `ForwardKeyToMenu`'s exact x64 identities — `FUN_1402aac50`'s own ESC
     branch (`LAB_1402ab2d1` → `FUN_1402a3ca0`) is the most promising lead
     for `ForwardKeyToMenu` specifically, not yet independently confirmed.
+    **Follow-up, same day: decompiled `FUN_14029baa0` itself in full** (not
+    just its call shape) plus the three functions it calls in its ESC
+    branch — `FUN_1402ac970`, `FUN_1402ac9c0`, `FUN_1402aaa80` (already
+    named `GetTopmostActiveMenu` above, now decompiled too) — and one more
+    level down, `FUN_1402c5b30`. Real findings:
+    - **`FUN_1402c5b30(name, value)` is a confirmed x64 Cvar_Set equivalent**
+      — looks up the dvar by name (`FUN_1402c3890`), and either sets it
+      directly if it's a known numeric-ish type or re-registers it as an
+      "External Dvar" via `FUN_1402c4a20` if the lookup fails. `FUN_14029baa0`
+      calls it as `FUN_1402c5b30("cl_paused", 0)` — a real, confirmed,
+      literal `Cvar_Set("cl_paused", "0")` call. Generically useful past this
+      cluster: this is the go-to x64 target for any future dvar-write hook,
+      not just pause-menu work.
+    - **`FUN_14029baa0`'s full shape is now clear, and it's narrower than
+      first thought**: the whole function body is gated on
+      `GetTopmostActiveMenu() != 0` — i.e. it only ever runs its logic when
+      a menu is ALREADY open, so this is not the "open the pause menu from
+      nothing" path. Within that gate: on ESC (`0x1b`, key-down) with no
+      other higher-priority active substate (`FUN_1402ac970() == 0`) and a
+      specific leaf-menu field clear (`*(plVar3+0x30) == 0`), it calls
+      `FUN_1402ac9c0()` instead of forwarding the key; on every other
+      key/condition it forwards via the already-confirmed
+      `FUN_1402aac50` (`ForwardKeyToMenu`). Afterward, if
+      `GetTopmostActiveMenu()` now returns 0 (the menu stack fully closed as
+      a result), it runs two cleanup calls (`FUN_14007f310`/
+      `thunk_FUN_14007eeb0`, likely usercmd/input-state resets — not
+      individually decompiled this pass) and then the confirmed
+      `Cvar_Set("cl_paused", 0)` call above — this is the real, confirmed
+      x64 **resume-gameplay path**, matching x86 `FUN_004396d0`'s `mode==0`
+      case functionally, even though it's structurally one merged function
+      here rather than a separate `SetMenuState(mode)` call.
+    - **`FUN_1402ac9c0` is NOT `OpenPauseMenu`** — decompiled in full, it
+      iterates a *different* array (`param_1+0xe`, count `param_1[0x50e]`,
+      distinct from the active-menu-stack array `FUN_1402aaa80`/
+      `FUN_1402ac970` walk at `param_1+0x510`/`param_1[0x530]`) of what look
+      like registered menu-def entries, and for each either closes it
+      (`FUN_1402acf70`) if a flag bit is clear or a data pointer is null, or
+      refreshes/reformats it (`FUN_1402a3ca0`, the same "@"-indirect string
+      formatter seen in `FUN_1402a1540`) otherwise. Best current read: a
+      bulk "close/refresh every registered menu screen" sync pass — the real
+      action ESC triggers when backing out of the topmost menu with nothing
+      else blocking — not a single named-menu open call. **`OpenPauseMenu`
+      (opening a menu from a fully-clean, nothing-open state) still isn't
+      found** — by definition `FUN_14029baa0` can't be it, since its whole
+      body is gated on a menu already being open; the real open call must be
+      a separate, still-unidentified site, plausibly inside
+      `FUN_14007eaf0` (Start's own handler) before it ever reaches
+      `FUN_14029baa0`, not yet traced. None of this is live-tested — Start's
+      open and resume-on-close both need real playtest confirmation once an
+      injectable build exists.
 1h. **Render-scale/shadow-map thread: found the render-target orchestrator,
     re-confirmed (not just re-found) the x86 team's own hardest open
     question rather than cracking it.** `$shadowmap_large` needed the
