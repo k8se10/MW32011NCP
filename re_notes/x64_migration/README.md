@@ -182,6 +182,70 @@ record — this section is a pointer, not the source of truth)
     a known x86 counterpart. Ghidra's decompiler output is clean and fully
     readable for this binary; nothing about the x64 recompile makes it harder
     to read than the original.
+1b. **Movement/look pipeline re-located, high-confidence static match, NOT yet
+    live-verified (no x64 hook code exists to test with).** Replicated the
+    exact original discovery method from `re_notes/iw5sp.md`'s "Input/usercmd
+    pipeline" section: `FindInputRefs.java` against the same cvar-name string
+    set (`cl_yawspeed`, `m_pitch`, `m_forward`, `m_side`, `sensitivity`,
+    etc.) found `FUN_140080db0` hitting all 10 of the exact same strings
+    `FUN_004292f0` (the x86 `CL_InitInput`-equivalent) did. Decompiling it
+    gave the new cvar storage-global table (`FindGlobalRefs.java` on those
+    globals, mirroring the original technique):
+
+    | cvar | x86 global | x64 global |
+    |---|---|---|
+    | `cl_yawspeed` | `DAT_00a98ac0` | `DAT_1406446d8` |
+    | `cl_pitchspeed` | `DAT_00a98ad4` | `DAT_1406446e0` |
+    | `cl_anglespeedkey` | `DAT_00a98d08` | `DAT_1406446e8` |
+    | `m_pitch` | `DAT_00aa4084` | `DAT_1406e2510` |
+    | `m_yaw` | `DAT_00aa4080` | `DAT_1406e2518` |
+    | `m_forward` | `DAT_00b36200` | `DAT_1406e2520` |
+    | `m_side` | `DAT_00b363a4` | `DAT_1406e2528` |
+    | `m_filter` | `DAT_00b363a8` | `DAT_1406e2530` |
+    | `sensitivity` | `DAT_00aa407c` | `DAT_1406e24f0` |
+    | `cl_mouseAccel` | `DAT_00b36208` | `DAT_1406e2500` |
+    | `cl_maxpackets` | `DAT_00b3620c` | `DAT_1406ef560` |
+
+    Cross-referencing those globals found a tight, contiguous function
+    cluster at `14007d3b0`–`14007e4e0` (~0x1130 bytes) — the same "one source
+    file's functions, laid out in original order" shape the x86 cluster had
+    at `0057d1xx`–`0057e3xx`. Decompiled and mapped:
+
+    | x64 function | Role | x86 equivalent |
+    |---|---|---|
+    | `FUN_14007e1e0` | Zeroes a 64-byte struct (`memset(cmd,0,0x40)` shape), orchestrates the rest | `FUN_0057e480` (`CL_CreateCmd`) — **primary hook candidate** |
+    | `FUN_14007d9f0` | Calls the mouse-delta reader, writes `forwardmove`/`rightmove` to `+0x1c`/`+0x1d` (same offsets as the documented x86 `usercmd_t` layout), also does angle-finalize math writing a packed `short` to `+0x38` | Looks like `FUN_0057d430` (keyboard movement) and `FUN_0057de60` (angle finalize) **fused into one function** by the x64 compiler — a real structural difference, not just an address shift |
+    | `FUN_14007d3b0` | Double-buffered accumulator, sensitivity/`cl_mouseAccel` scaling, magnitude+sqrt | `FUN_0057d680` (raw mouse-delta reader) |
+    | `FUN_14007de20` | Alternate-mode angle path, called conditionally | Not yet matched to a specific x86 function — candidate for the vehicle-camera path (`vehCam_*` cvars referenced nearby) |
+    | `FUN_14007e4e0` | Separate double-buffered analog channel, called conditionally alongside `FUN_14007de20` | **Possible x64-side match for issue #30's long-unsolved "third analog input channel"** (DPV/mortar/turret) — worth checking directly once hooks exist, would close a genuinely old open issue as a side effect |
+
+    **Real, important structural finding**: function boundaries do NOT map
+    1:1 between the x86 and x64 builds — the x64 compiler fused at least two
+    previously-separate x86 functions (`FUN_0057d430`/`FUN_0057de60`) into
+    one (`FUN_14007d9f0`). Don't assume a clean one-function-per-one-function
+    mapping anywhere else in the pipeline either; verify each candidate's
+    actual boundaries, don't infer them from the x86 layout.
+1c. **Broad due-diligence sweep, 2026-09-03: every one of 35 strings checked
+    across every major subsystem is identically present in both binaries —
+    the strongest evidence yet this is a clean recompile, not a rewrite.**
+    Direct instruction: "a good lesson while were here is to see everything
+    that has changed." Extended the original 10-string check to cover
+    movement/menus (`weapnext`, `togglemenu`, `+actionslot`, `+scores`,
+    `+gostand`, `vid_restart`), engine tick (`r_mode`, `com_timescale`,
+    `fixedtime`), visual-suite dvars (`sm_qualitySpotShadow`, `sm_maxLights`,
+    `r_dlightLimit`, `r_cacheSModelLighting`), and GSC QTE functions
+    (`usebuttonpressed`/`meleebuttonpressed`/`attackbuttonpressed`/
+    `adsbuttonpressed`, all still absent from both exes as expected — they
+    live in compiled GSC, not the binary). **Real methodology correction
+    along the way**: an initial pass using `grep -c` (line count) flagged
+    `+actionslot` (4→1) and `vid_restart` (4→5) as differing — both were
+    false alarms from `grep -c` counting matching *lines*, not matches, and
+    binary files have no real line structure (a "line" boundary is just
+    wherever a stray `0x0A` byte happens to land). Re-verified with
+    `grep -o | wc -l` (true occurrence counting) and both came back
+    identical. **Standing lesson for any future binary string-presence
+    check in this project: always use `-o | wc -l`, never bare `-c`, against
+    binary files.**
 2. Add an x64 build configuration to `proxy_d3d9.vcxproj` alongside the
    existing Win32 one (MinHook already supports x64 natively — no vendoring
    changes needed, only build config).

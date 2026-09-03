@@ -1,0 +1,137 @@
+=== Raw string hits (53) ===
+[sensitivity] 1403e6a18 : bg_shock_lookControl_mousesensitivityscale
+[sensitivity] 1403e8648 : Sensitivity scale to apply to a shellshocked player
+[cg_fov] 1403ecda0 : cg_fov
+[cg_fov] 1403ecdd8 : cg_fov1
+[cg_fov] 1403ece20 : cg_fovNonVehAdd
+[+movedown] 1403f03e0 : +movedown
+[+prone] 1403f03f8 : +prone
+[+moveup] 1403f0420 : +moveup
+[usercmd] 1403f3cc1 : CL_GetUserCmd: %i >= %i
+[+attack] 1403f4a90 : +attack
+[+smoke] 1403f4ab8 : +smoke
+[+breath_sprint] 1403f4ac8 : +breath_sprint
+[+use] 1403f4ae8 : +usereload
+[+speed] 1403f4b08 : +speed_throw
+[+forward] 1403f4be8 : +forward
+[+back] 1403f4c04 : +back
+[+moveleft] 1403f4c18 : +moveleft
+[+moveright] 1403f4c38 : +moveright
+[+strafe] 1403f4cb8 : +strafe
+[+sprint] 1403f4d40 : +sprint
+[cl_yawspeed] 1403f56e8 : cl_yawspeed
+[cl_pitchspeed] 1403f5720 : cl_pitchspeed
+[cl_anglespeedkey] 1403f5768 : cl_anglespeedkey
+[sensitivity] 1403f57f0 : Mouse sensitivity
+[sensitivity] 1403f5808 : sensitivity
+[m_pitch] 1403f5900 : m_pitch
+[m_yaw] 1403f5914 : m_yaw
+[m_forward] 1403f5948 : m_forward
+[m_side] 1403f597c : m_side
+[m_filter] 1403f59a8 : m_filter
+[sensitivity] 1403f59b8 : Vehicle mouse steering sensitivity
+[sensitivity] 1403f59e0 : m_vehMouseSteerSensitivity
+[cl_maxpackets] 1403f5aa8 : cl_maxpackets
+[sensitivity] 1403f7648 : viewSensitivity
+[sensitivity] 1403f7a68 : profileMenuOption_sensitivity
+[sensitivity] 1403f7bc0 : profile_setViewSensitivity
+[cg_fov] 140405df0 : cg_fovScale
+[cg_fov] 140405ea8 : cg_fovMin
+[m_filter] 140428870 : com_filter_output
+[usercmd] 14042ad80 : coop_maxPacketUserCmds
+[ui_active] 140431120 : ui_active
+[ui_mousepitch] 140432e00 : ui_mousePitch
+[ui_cursor] 140433618 : ui_cursor
+[+sprint] 140435690 : +sprint_zoom
+[m_pitch] 14043c400 : vehCam_pitchTurnRate
+[m_pitch] 14043c438 : vehCam_pitchClamp
+[m_yaw] 14043c478 : vehCam_yawTurnRate
+[m_yaw] 14043c4b0 : vehCam_yawClamp
+[m_pitch] 14043c648 : vehCam_pitchTurnRate3P
+[m_pitch] 14043c690 : vehCam_pitchClamp3P
+[m_yaw] 14043c6d8 : vehCam_yawTurnRate3P
+[m_yaw] 14043c720 : vehCam_yawClamp3P
+[in_mouse] 14043d338 : in_mouse
+
+=== Candidate functions, ranked by distinct target-string diversity (17) ===
+
+---- FUN_140080db0 @ 140080db0 (targets: cl_anglespeedkey, cl_maxpackets, cl_pitchspeed, cl_yawspeed, m_filter, m_forward, m_pitch, m_side, m_yaw, sensitivity) ----
+    string: Mouse sensitivity
+    string: Vehicle mouse steering sensitivity
+    string: cl_anglespeedkey
+    string: cl_maxpackets
+    string: cl_pitchspeed
+    string: cl_yawspeed
+    string: m_filter
+    string: m_forward
+    string: m_pitch
+    string: m_side
+    string: m_vehMouseSteerSensitivity
+    string: m_yaw
+    string: sensitivity
+
+---- FUN_1400519b0 @ 1400519b0 (targets: +movedown, +moveup, +prone) ----
+    string: +movedown
+    string: +moveup
+    string: +prone
+
+---- FUN_14029dfd0 @ 14029dfd0 (targets: m_pitch, ui_mousepitch) ----
+    string: m_pitch
+    string: ui_mousePitch
+
+---- FUN_14029d630 @ 14029d630 (targets: m_pitch, ui_mousepitch) ----
+    string: m_pitch
+    string: ui_mousePitch
+
+---- FUN_1402d8040 @ 1402d8040 (targets: m_pitch, m_yaw) ----
+    string: vehCam_pitchClamp
+    string: vehCam_pitchClamp3P
+    string: vehCam_pitchTurnRate
+    string: vehCam_pitchTurnRate3P
+    string: vehCam_yawClamp
+    string: vehCam_yawClamp3P
+    string: vehCam_yawTurnRate
+    string: vehCam_yawTurnRate3P
+
+---- FUN_1402a3680 @ 1402a3680 (targets: +breath_sprint, +sprint) ----
+    string: +breath_sprint
+    string: +sprint
+    string: +sprint_zoom
+
+---- FUN_1402a0060 @ 1402a0060 (targets: m_pitch, ui_mousepitch) ----
+    string: m_pitch
+    string: ui_mousePitch
+
+---- FUN_1402eb6b0 @ 1402eb6b0 (targets: in_mouse) ----
+    string: in_mouse
+
+---- FUN_14008abb0 @ 14008abb0 (targets: sensitivity) ----
+    string: profile_setViewSensitivity
+
+---- FUN_14007eff0 @ 14007eff0 (targets: +attack) ----
+    string: +attack
+
+---- FUN_14004a870 @ 14004a870 (targets: cg_fov) ----
+    string: cg_fov
+    string: cg_fov1
+    string: cg_fovNonVehAdd
+
+---- FUN_14023d890 @ 14023d890 (targets: m_filter) ----
+    string: com_filter_output
+
+---- FUN_14008ad80 @ 14008ad80 (targets: sensitivity) ----
+    string: profileMenuOption_sensitivity
+
+---- FUN_14029b640 @ 14029b640 (targets: ui_cursor) ----
+    string: ui_cursor
+
+---- FUN_1402694e0 @ 1402694e0 (targets: usercmd) ----
+    string: coop_maxPacketUserCmds
+
+---- FUN_140135b50 @ 140135b50 (targets: cg_fov) ----
+    string: cg_fovMin
+    string: cg_fovScale
+
+---- FUN_14000dba0 @ 14000dba0 (targets: sensitivity) ----
+    string: Sensitivity scale to apply to a shellshocked player
+    string: bg_shock_lookControl_mousesensitivityscale
