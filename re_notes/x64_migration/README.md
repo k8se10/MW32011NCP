@@ -6,6 +6,22 @@ kept completely separate from the original x86 project). No hook code has been
 written against the new binaries yet. This is the single biggest event in this
 project's history — read this whole file before touching anything x64-related.
 
+## Sub-cluster RE passes (2026-09-03) — separate files, cross-linked here
+
+Three parallel passes covering distinct hook clusters, each in its own file to
+avoid concurrent-edit conflicts with this shared README. Read each for the
+real evidence and honest confidence level; this is just an index.
+
+| Cluster | File | Real confidence |
+|---|---|---|
+| Sprint / weapon switch | [`sprint_weapnext_x64.md`](sprint_weapnext_x64.md) | Sprint: storage globals + state machine found, high confidence; the actual Pmove-entry *write* hook still unlocated. weapnext: bind-table position found (index 66), dispatch mechanism not traced. |
+| Pause menu / key handler | [`pausemenu_keyhandler_x64.md`](pausemenu_keyhandler_x64.md) | `cl_paused`'s real storage global found; the dedicated `SetMenuState`/`OpenPauseMenu`/`FUN_00541020`-equivalent functions were **not** conclusively pinned — no clean string/numeric anchor existed, genuine open work for a future pass. |
+| D-pad actionslot / generic dvar API | [`actionslot_dvarhelpers_x64.md`](actionslot_dvarhelpers_x64.md) | Dvar API (`Dvar_FindVar`/get/set): high confidence, cross-validated 4 independent call sites — real simplification over x86, standard calling convention, no `__asm` needed; value offset shifted `+0xc`→`+0x10` (real x64 struct-alignment change, confirmed two ways). D-pad actionslot: bind indices computed (15/17/19/21), but whether it reuses the buttons/ADS `FUN_14007eaf0` mechanism directly is unconfirmed. |
+
+Section 1 below (this file) covers the movement/look pipeline, buttons/ADS,
+and the visual-suite dvar catalog — all found directly in this session, not
+delegated to a sub-pass.
+
 ## Standing caution — this was a huge update, don't assume ANYTHING carried over unverified
 
 Direct instruction (2026-09-03): "some menu entries may now also be broken and

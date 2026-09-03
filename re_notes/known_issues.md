@@ -143,7 +143,7 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#108](#108-campaign-scripted-sequences-require-a-genuine-button-press-event-not-steady-state-kbutton-injection----likely-unifies-issue-75-elevator-mantle-with-a-newly-confirmed-qte-input-gap-2026-08-29) — Campaign scripted sequences ignore controller button presses entirely — **Investigating** — real GSC evidence found (`usebuttonpressed()` family), leading theory is a genuine synthesized keypress is needed, same precedented technique as the Survival ready-up fix; likely unifies with issue #75
 - [#109](#109-campaign-pause-menu-popup-batch-swf_common_desc_resize_popup_nameresume_popup-depth3----reverted-needs-better-per-screen-detection-first-levels_button_list-from-the-same-session-was-correct-and-stays-shipped-2026-08-29) — Campaign pause-menu popup batch (`SWF_COMMON_DESC_RESIZE_POPUP_NAME`/`RESUME_POPUP` depth=3) — **Reverted** — needs a reliable per-screen discriminator (likely `requiredTextSubstring`) before this is safe to recapture; deferred to a dedicated pass before v0.4.0/beta. `LEVELS_BUTTON_LIST` from the same session was correct and stays shipped.
 - [#110](#110-buy-station-menu-occasionally-opens-into-a-stuck-thinks-its-open-but-isnt-drawn-state-when-entered-while-crouched----investigating-single-occurrence-not-yet-reproduced-on-demand-2026-08-29) — Buy-station menu occasionally opens into a stuck "thinks it's open but isn't drawn" state when entered while crouched — **Investigating** — single live occurrence during the v0.3.5 confirmation stream, not yet reproduced on demand; plausibly related to issue #1's own menu-open gate bit or crouch's stance-lock usercmd forcing, neither confirmed
-- [#111](#111-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated-2026-09-03) — **CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken** — **Investigating/scoping** — Activision pushed a real ~14GB update (~1 September 2026) recompiling both `iw5sp.exe`/`iw5mp.exe` from x86 to x64, confirmed directly via the PE header; a 32-bit DLL cannot load into a 64-bit process at all, invalidating every hardcoded hook address. No RE work lost (the existing Ghidra project keeps its own copy of the original binary); `d3d9.dll` is still the graphics API and no native controller support was added. Two locked decisions the same day: project redefined to "native enhancement project," hardcoded-address policy reversed to signature scanning. x64 rebuild not yet started. See `re_notes/x64_migration/README.md`
+- [#111](#111-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated-2026-09-03) — **CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken** — **Investigating/RE underway** — Activision pushed a real ~14GB update (~1 September 2026) recompiling both `iw5sp.exe`/`iw5mp.exe` from x86 to x64, confirmed directly via the PE header; a 32-bit DLL cannot load into a 64-bit process at all, invalidating every hardcoded hook address. No RE work lost (the existing Ghidra project keeps its own copy of the original binary); `d3d9.dll` is still the graphics API and no native controller support was added. Two locked decisions the same day: project redefined to "native enhancement project," hardcoded-address policy reversed to signature scanning. x64 build infrastructure real and working (MASM export forwarding); the ~14 hand-written hook-install trampolines need per-hook redesign, deliberately not rushed. Static RE (high confidence, none live-verified) has found the movement/look pipeline, buttons/ADS (simpler than x86), the visual-suite dvar catalog, and the generic dvar API; Sprint/D-pad actionslot partially found; pause-menu/key-handler and the render-scale hook not yet located. See `re_notes/x64_migration/README.md`
 
 ---
 
@@ -16284,9 +16284,29 @@ moment it happens, before attempting any fix.
 
 ## 111. CRITICAL: MW3 (2011) recompiled to x64 -- mod completely broken, every hardcoded address invalidated (2026-09-03)
 
-**Status: Investigating/scoping. The mod does not currently work at all.**
+**Status: Investigating/RE underway. The mod does not currently work at all.**
 Full technical record and reconnaissance in `re_notes/x64_migration/README.md`
--- this entry is the known_issues.md-standard summary/index pointer.
+(plus its own linked sub-passes for Sprint/weapnext, pause-menu/key-handler,
+and D-pad actionslot/dvar-API) -- this entry is the known_issues.md-standard
+summary/index pointer.
+
+**Progress snapshot, same day**: real x64 build infrastructure exists
+(`.vcxproj` x64 configs, MinHook confirmed working, D3D9 export forwarding
+rebuilt as real MASM since `__declspec(naked)`+inline `__asm` don't exist on
+x64 at all) -- but the ~14 hand-written asm hook-install trampolines
+(`Hook_0057de60` and friends) need real per-hook x64 redesign before a
+functional build is possible, deliberately not rushed. Static RE has found,
+with varying confidence (none live-verified yet, no x64 build exists to test
+against): the movement/look pipeline (high confidence), the bind-name table
+and a simpler-than-x86 buttons/ADS KeyDown/KeyUp mechanism (high confidence),
+the visual-suite dvar catalog (high confidence, all 5 storage globals),
+Sprint's state machine (storage found, write-hook still open), the generic
+dvar read/write API (high confidence, real x64 simplification -- no custom
+calling convention needed at all), and D-pad actionslot's bind indices
+(computed, mechanism unconfirmed). **Not yet located**: the dedicated
+pause-menu/key-handler functions (`FUN_00541020` and friends -- no clean
+anchor found), the render-scale hook (`FUN_00679010` -- no clean anchor
+found either).
 
 **Symptom**: MW3 (2011) received a genuine Steam update between 2026-08-29 and
 2026-09-03 -- the first real binary update in this project's entire history.
