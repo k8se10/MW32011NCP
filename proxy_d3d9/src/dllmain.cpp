@@ -408,6 +408,15 @@ extern "C" __declspec(dllexport) IDirect3D9* WINAPI Direct3DCreate9(UINT SDKVers
 // exports present on essentially any genuine Windows d3d9.dll. Direct3DCreate9 itself
 // (the one export MW3 unconditionally needs) IS correctly guarded -- ResolveRealExports
 // returns false and DllMain aborts entirely if that specific one is missing.
+// x64 note (2026-09-03, issue #111): __declspec(naked) and inline __asm are both
+// unsupported by MSVC's x64 compiler at all (hard compiler limitations -- not
+// something to work around with a different macro, MSVC simply refuses both on this
+// target). The x64 build gets the exact same tail-jump stubs from a real MASM file
+// instead -- see forward_stubs_x64.asm (wired into the x64-only ItemGroup in
+// proxy_d3d9.vcxproj), which references these same g_real_<name> globals via EXTERN.
+// Keep this macro Win32-only rather than trying to make it portable; the two
+// implementations are deliberately separate files, not a shared abstraction.
+#if !defined(_M_X64) && !defined(_WIN64)
 #define FORWARD_STUB(name) \
     extern "C" __declspec(dllexport) __declspec(naked) void WINAPI name() \
     { \
@@ -432,6 +441,7 @@ FORWARD_STUB(PSGPError)
 FORWARD_STUB(PSGPSampleTexture)
 
 #undef FORWARD_STUB
+#endif // !_M_X64 && !_WIN64
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
 {
