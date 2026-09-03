@@ -115,7 +115,17 @@ reaches mode-2 `SetMenuState` via one specific connection-state value
 (`iVar3==6`), and whether that's really the live SP-gameplay/active state
 (vs. an MP-briefing-specific one, given mode 6's own name is "briefing")
 isn't pinned down statically -- needs a real `cls.state` enum value dump or
-live testing.
+live testing. **Follow-up**: found real write sites for states `1`, `4`,
+`6`, `7` on the underlying field (`DAT_1406e2558`, 92 refs/54 functions
+project-wide, too broad to fully map) -- state 6's writer is gated on a
+pending-job-count check, the shape of an in-progress loading/connect step,
+raising a genuine possibility that this whole ESC branch is a
+loading-screen-specific cancel/pause prompt rather than the general
+live-gameplay Start-button pause. If so, live pause may route through
+`FUN_14007eaf0`'s OTHER dispatch path (the generic bindIndex case-lookup
+table) for a `+togglemenu`/Start-bound index instead -- a real, structurally
+plausible alternative, not yet checked. Full write-site detail in
+`re_notes/x64_migration/README.md` section 1g.
 
 **Sprint thread -- RESOLVED, static, high confidence**: `FUN_140014a80` is
 the real Pmove-entry sprint-bit WRITER (`*(uint*)(lVar3+0xc) |= 0x4000`, the

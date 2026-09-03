@@ -549,6 +549,41 @@ record — this section is a pointer, not the source of truth)
       exactly this). weapnext's real x64 dispatch site is still
       unlocated — this closes off one real candidate rather than leaving
       it an open guess for a future pass to re-check.
+    - **Same-day follow-up #4: real `cls.state`-equivalent write sites found,
+      but the semantic mapping stays genuinely open — flagged honestly
+      rather than guessed past.** `DAT_1406e2558` (the connection-state
+      field `FUN_14007eaf0`'s ESC branch reads as `iVar3`) has 92
+      references across 54 functions project-wide — too broad to fully map
+      this pass — but `FindDataWriters.java` on the base address found four
+      concrete, literal-value write sites: **state `1`** (`FUN_1400794b0`/
+      `FUN_140079520`, both identical bodies, gated on `state != 6` and a
+      pending-count check `>1`, then a screen-text update, a conditional
+      `SetMenuState(0, 0)` resume call, and the transition); **state `4`**
+      (`FUN_140081c10`, gated on a flag `DAT_1406e24c4`, resets network
+      fields to `"localhost"` first — strongly suggests "connecting to a
+      local/loopback server"); **state `6`** (`FUN_140079130`, gated on a
+      pending-job count crossing a threshold, via two parallel legacy/
+      new-style code paths — the exact function whose write this session's
+      earlier `FUN_14007eaf0` decompile traces `iVar3==6` back to); **state
+      `7`** (`FUN_140080d50`, gated on the same `DAT_1406e24c4` flag,
+      followed by disconnect-adjacent cleanup calls — plausibly a
+      post-game/end state, correlating loosely with `SetMenuState` mode
+      7="victoryscreen"). Also confirmed: `FUN_140082e70` (the earlier-found
+      connecting-state ESC-cancel handler) fires on states `1` OR `2`
+      specifically (not 6), and unconditionally resumes afterward.
+      **Real, honest uncertainty, not resolved this pass**: state `6`'s
+      writer (`FUN_140079130`) is gated on a *pending-job-count* check, the
+      same shape as an in-progress loading/connect step — raising a genuine
+      possibility that `FUN_14007eaf0`'s ESC→`SetMenuState(x,2)` branch is a
+      **loading-screen-specific cancel/pause prompt**, not the general
+      live-gameplay Start-button pause. If so, live Start-button pause
+      during ordinary gameplay might route through `FUN_14007eaf0`'s OTHER
+      dispatch path entirely — the generic bindIndex case-lookup
+      (`(&DAT_140644a6c)[...]` → `FUN_14007c3a0`, already seen in this same
+      function) for a `+togglemenu`/Start-bound index, not the raw ESC
+      special-case at all. This is a real, structurally plausible
+      alternative, not yet checked — the next concrete step for this
+      thread, before more `cls.state` semantic archaeology.
 1h. **Render-scale/shadow-map thread: found the render-target orchestrator,
     re-confirmed (not just re-found) the x86 team's own hardest open
     question rather than cracking it.** `$shadowmap_large` needed the
