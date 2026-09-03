@@ -15,7 +15,7 @@ real evidence and honest confidence level; this is just an index.
 | Cluster | File | Real confidence |
 |---|---|---|
 | Sprint / weapon switch | [`sprint_weapnext_x64.md`](sprint_weapnext_x64.md) | Sprint: storage globals + state machine found, high confidence; the actual Pmove-entry *write* hook still unlocated. weapnext: bind-table position found (index 66), dispatch mechanism not traced. |
-| Pause menu / key handler | [`pausemenu_keyhandler_x64.md`](pausemenu_keyhandler_x64.md) | `cl_paused`'s real storage global found; the dedicated `SetMenuState`/`OpenPauseMenu`/`FUN_00541020`-equivalent functions were **not** conclusively pinned — no clean string/numeric anchor existed, genuine open work for a future pass. |
+| Pause menu / key handler | [`pausemenu_keyhandler_x64.md`](pausemenu_keyhandler_x64.md) | `cl_paused`'s real storage global found. **Updated after this file's own section 1g**: the real key-event handler (`FUN_1402aac50`, x86 `FUN_00541020` equivalent) and its wrapper (`FUN_14029baa0`) ARE now found, high confidence — cross-validates `pausemenu_keyhandler_x64.md`'s own `FUN_14029dfd0` candidate as a real part of the chain. Dedicated `SetMenuState`/`OpenPauseMenu`/`ForwardKeyToMenu` still not individually pinned. |
 | D-pad actionslot / generic dvar API | [`actionslot_dvarhelpers_x64.md`](actionslot_dvarhelpers_x64.md) | Dvar API (`Dvar_FindVar`/get/set): high confidence, cross-validated 4 independent call sites — real simplification over x86, standard calling convention, no `__asm` needed; value offset shifted `+0xc`→`+0x10` (real x64 struct-alignment change, confirmed two ways). D-pad actionslot: bind indices computed (15/17/19/21), but whether it reuses the buttons/ADS `FUN_14007eaf0` mechanism directly is unconfirmed. |
 
 Section 1 below (this file) covers the movement/look pipeline, buttons/ADS,
@@ -374,6 +374,41 @@ record — this section is a pointer, not the source of truth)
     instruction shape — not the literal address recorded here. Treat every
     address in this whole document the same way: a coordinate for today's
     RE work, not tomorrow's hardcoded constant.
+1g. **Pause-menu/key-handler cluster (unresolved by both this file's own
+    earlier attempt and the parallel `pausemenu_keyhandler_x64.md` pass) —
+    found via re-examining data already on disk, not a fresh scan.**
+    `FUN_1402aac50` (already captured as a raw caller of `FUN_14007eff0` in
+    `callers_14007eff0_x64.txt` from section 1d/1e's own work, just not
+    recognized at the time) is the real x64 key-event handler — the x86
+    `FUN_00541020` equivalent. Confirmed via the exact same anchor technique
+    the original x86 discovery used: a giant keycode `switch` including
+    `case 0x1b:` (ESC, hardcoded specially, forwards to whatever menu has
+    `*(*param_2+0x30)` set) and `case 0xb2:` gated on the `developer` dvar
+    dispatching the literal string `"screenshot\n"` — the same
+    dev-command-string anchor this project's x86 RE already used once
+    before to confirm a real key/command dispatcher. Traced one level up:
+    **`FUN_14029baa0`** (its only relevant caller) ALSO special-cases
+    `0x1b` before calling `FUN_1402aac50(&DAT_142605050, plVar3, keycode,
+    isDown)` — matches x86's `FUN_0054b9f0` (the confirmed 4-arg wrapper
+    around `FUN_00541020`). Traced one more level: **`FUN_14029baa0`'s own
+    callers include `FUN_14007eaf0`** — the SAME buttons/ADS KeyDown/KeyUp
+    setter from section 1e — plus **`FUN_14029dfd0`**, independently
+    already flagged by the parallel `pausemenu_keyhandler_x64.md` pass as
+    its own best (unconfirmed) candidate, now cross-validated as a real
+    part of this exact chain rather than a guess. **Real conclusion**:
+    `FUN_14007eaf0(playerIndex, bindIndex, isDown)` is not just a kbutton-
+    state setter — it appears to be the single, unified real entry point
+    for injecting ANY key/bind event on x64, menu/ESC dispatch included,
+    where x86 needed several separate specialized functions
+    (`FUN_0057d1c0`/`FUN_0057d200` for kbuttons, `FUN_00541020` for raw
+    dispatch, `FUN_0054b9f0` as its wrapper, `FUN_004d9850` for menu-
+    forwarding). If this holds up live, it's a real, welcome architectural
+    simplification for the whole port, not just buttons/ADS. **Still not
+    located**: the dedicated `SetMenuState`(mode 0=resume/mode 2=open)/
+    `OpenPauseMenu` pair specifically, and `GetTopmostActiveMenu`/
+    `ForwardKeyToMenu`'s exact x64 identities — `FUN_1402aac50`'s own ESC
+    branch (`LAB_1402ab2d1` → `FUN_1402a3ca0`) is the most promising lead
+    for `ForwardKeyToMenu` specifically, not yet independently confirmed.
 2. ~~Add an x64 build configuration to `proxy_d3d9.vcxproj`~~ **DONE
    2026-09-03, but revealed the real scope is bigger than this line
    originally implied.** Debug/Release x64 configs added, `IntDir` fixed to
