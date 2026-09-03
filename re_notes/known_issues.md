@@ -143,6 +143,7 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#108](#108-campaign-scripted-sequences-require-a-genuine-button-press-event-not-steady-state-kbutton-injection----likely-unifies-issue-75-elevator-mantle-with-a-newly-confirmed-qte-input-gap-2026-08-29) — Campaign scripted sequences ignore controller button presses entirely — **Investigating** — real GSC evidence found (`usebuttonpressed()` family), leading theory is a genuine synthesized keypress is needed, same precedented technique as the Survival ready-up fix; likely unifies with issue #75
 - [#109](#109-campaign-pause-menu-popup-batch-swf_common_desc_resize_popup_nameresume_popup-depth3----reverted-needs-better-per-screen-detection-first-levels_button_list-from-the-same-session-was-correct-and-stays-shipped-2026-08-29) — Campaign pause-menu popup batch (`SWF_COMMON_DESC_RESIZE_POPUP_NAME`/`RESUME_POPUP` depth=3) — **Reverted** — needs a reliable per-screen discriminator (likely `requiredTextSubstring`) before this is safe to recapture; deferred to a dedicated pass before v0.4.0/beta. `LEVELS_BUTTON_LIST` from the same session was correct and stays shipped.
 - [#110](#110-buy-station-menu-occasionally-opens-into-a-stuck-thinks-its-open-but-isnt-drawn-state-when-entered-while-crouched----investigating-single-occurrence-not-yet-reproduced-on-demand-2026-08-29) — Buy-station menu occasionally opens into a stuck "thinks it's open but isn't drawn" state when entered while crouched — **Investigating** — single live occurrence during the v0.3.5 confirmation stream, not yet reproduced on demand; plausibly related to issue #1's own menu-open gate bit or crouch's stance-lock usercmd forcing, neither confirmed
+- [#111](#111-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated-2026-09-03) — **CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken** — **Investigating/scoping** — Activision pushed a real ~14GB update (~1 September 2026) recompiling both `iw5sp.exe`/`iw5mp.exe` from x86 to x64, confirmed directly via the PE header; a 32-bit DLL cannot load into a 64-bit process at all, invalidating every hardcoded hook address. No RE work lost (the existing Ghidra project keeps its own copy of the original binary); `d3d9.dll` is still the graphics API and no native controller support was added. Two locked decisions the same day: project redefined to "native enhancement project," hardcoded-address policy reversed to signature scanning. x64 rebuild not yet started. See `re_notes/x64_migration/README.md`
 
 ---
 
@@ -16278,3 +16279,76 @@ before/during a buy-station interact, several repeats) with
 `ListItemPositionLogging`/`[manual-glyph-diag]`-style diagnostics on, to
 capture what the gate bit and menu-stack state actually look like at the
 moment it happens, before attempting any fix.
+
+---
+
+## 111. CRITICAL: MW3 (2011) recompiled to x64 -- mod completely broken, every hardcoded address invalidated (2026-09-03)
+
+**Status: Investigating/scoping. The mod does not currently work at all.**
+Full technical record and reconnaissance in `re_notes/x64_migration/README.md`
+-- this entry is the known_issues.md-standard summary/index pointer.
+
+**Symptom**: MW3 (2011) received a genuine Steam update between 2026-08-29 and
+2026-09-03 -- the first real binary update in this project's entire history.
+Both `iw5sp.exe` and `iw5mp.exe` were recompiled from **x86 (32-bit) to x64
+(64-bit)** -- confirmed directly from the PE header's `Machine` field
+(`0x8664`, `IMAGE_FILE_MACHINE_AMD64`) via two independent tools (raw hex
+inspection and the Unix `file` command), not inferred or taken on hearsay.
+This is on the default Steam branch (no `BetaKey` in the local
+`appmanifest_42680.acf`), not an opt-in beta -- no legacy 32-bit branch was
+found to exist.
+
+**Root cause of the break**: this project's `proxy_d3d9.dll` is a hard Win32
+(x86) build (a foundational architecture decision confirmed 2026-07-13 and
+never revisited until now). A 32-bit DLL cannot be loaded into a 64-bit
+process under any circumstance -- the OS loader rejects the architecture
+mismatch before mapping the file at all. This is not "some hardcoded
+addresses shifted" (the ordinary risk hardcoded addresses already carried
+across game updates) -- the entire injection technique stopped applying in
+one step. Confirmed the mod has not actually run since the update:
+`proxy_d3d9.log`'s own last-write timestamp is 2026-08-29 06:08, before the
+update, with exactly one session boundary in the whole file.
+
+**What survived**: the existing 167MB Ghidra project
+(`re_notes/ghidra_project/iw5sp_proj.gpr`+`.rep`) keeps its own internal copy
+of the original x86 binary regardless of what happened to the exe on disk --
+no RE work is lost. A backup of the true original 2026-07-13 x86 binaries
+(recovered from a user-side zip, internal file dates confirm 2026-07-13) and
+the new x64 binaries are both now preserved at
+`re_notes/x64_migration/binaries/`. `d3d9.dll` is still the real graphics
+API (confirmed via `dumpbin /imports`) -- the injection technique itself is
+still structurally valid, it just needs an x64 build. No `xinput`/`dinput8`
+import was added -- the project's founding 2026-07-13 premise (this game has
+zero native controller input path) still holds exactly as it did on day one.
+A 10-string persistence check (dvar names, function-adjacent identifiers)
+came back identical in both binaries for every real hit -- strong evidence
+this is a genuine recompile of the same underlying engine/data, not a
+rewrite, meaning the existing decompiled *understanding* of what each
+function does very likely still transfers even though every address needs
+re-finding.
+
+**Two locked decisions made the same day** (see `CLAUDE.md`/`AGENTS.md` for
+the full record, both files mirror this): (1) the project is redefined from
+"native controller project" to "native enhancement project," formalizing
+what it had already organically become (visual-enhancement suite,
+stutter/threading work, plugin API) rather than narrowing scope; (2) the
+hardcoded-address policy (locked 2026-08-25) is reversed again, back to
+signature scanning -- resolved once at process startup and cached, not a
+continuous re-scan loop, given the demonstrated failure mode a hardcode-only
+approach just hit. This does not resolve the original VAC-risk reasoning
+behind the 2026-08-25 policy; it's superseded by explicit instruction given
+real-world necessity, not a rebuttal of that reasoning.
+
+**Not yet started**: no x64 hook code exists yet. Real next steps: stand up a
+separate Ghidra project against the new x64 `iw5sp.exe` (never overwrite the
+existing x86 project); add an x64 build configuration to
+`proxy_d3d9.vcxproj` (MinHook already supports x64 natively); x64dbg (not
+x32dbg) is already installed for live debugging; design the actual
+signature-scanning mechanism (AOB/IDA-style byte-pattern-plus-wildcards,
+validated before hooking, fail loudly on a bad match); re-derive each hook
+target's real x64 signature by diffing its already-decompiled x86 body
+against the new binary, starting with the highest-value/most-central hooks
+(the per-frame usercmd pipeline) rather than working through every known
+address alphabetically. See `re_notes/x64_migration/README.md` for the
+complete import-table/section-table diff and the full string-persistence
+data table.
