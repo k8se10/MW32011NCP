@@ -1,0 +1,566 @@
+================================================================
+Function: FUN_14004a870 @ 14004a870
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_14004a870(void)
+
+{
+  undefined4 uVar1;
+  undefined4 uVar2;
+  undefined4 uVar3;
+  undefined8 in_stack_ffffffffffffff38;
+  undefined4 uVar6;
+  undefined8 uVar4;
+  undefined4 uVar7;
+  undefined4 uVar8;
+  ulonglong uVar5;
+  undefined4 uVar9;
+  undefined4 uVar10;
+  char *pcVar11;
+  ulonglong uVar12;
+  undefined4 uVar14;
+  undefined8 uVar13;
+  
+  uVar6 = (undefined4)((ulonglong)in_stack_ffffffffffffff38 >> 0x20);
+  DAT_14062cde8 = FUN_1402c43f0("cg_drawGun",1,4,"Draw the view model");
+  uVar4 = CONCAT44(uVar6,1);
+  DAT_14062cdf0 =
+       FUN_1402c46d0("cg_cursorHints",3,0,4,uVar4,
+                     "Draw cursor hints where:\n 0: no hints\n\t1:\tsin size pulse\n\t2:\tone way size pulse\n\t3:\talpha pulse\n\t4:\tstatic image"
+                    );
+  uVar6 = (undefined4)((ulonglong)uVar4 >> 0x20);
+  DAT_14062cdf8 =
+       FUN_1402c43f0("cg_weaponHintsCoD1Style",1,0x40,
+                     "Draw weapon hints in CoD1 style: with the weapon name, and with the icon below"
+                    );
+  DAT_14062ce00 =
+       FUN_1402c46d0("cg_hintFadeTime",100,0,0x7fffffff,CONCAT44(uVar6,1),
+                     "Time in milliseconds for the cursor hint to fade");
+  uVar7 = DAT_1403ef938;
+  uVar6 = DAT_1403e414c;
+  uVar1 = DAT_1403e3e6c;
+  DAT_14062ce60 =
+       FUN_1402c4650("cg_fov",DAT_1403e414c,DAT_1403e3e6c,DAT_1403ef938,0x44,
+                     "The field of view angle in degrees for client 0");
+  DAT_14062ce68 =
+       FUN_1402c4650("cg_fov1",uVar6,uVar1,uVar7,0x44,
+                     "The field of view angle in degrees for client 1");
+  DAT_14062ce80 =
+       FUN_1402c4650("cg_fovNonVehAdd",0,DAT_1403e8ec8,DAT_1403e4150,0x44,
+                     "The field of view angle added in degrees when not in a vehicle");
+  DAT_14062ce10 =
+       FUN_1402c4650("cg_viewVehicleInfluence",uVar1,0,uVar1,0x44,
+                     "The influence on the view angles from being in a vehicle");
+  DAT_14062cd90 = FUN_1402c43f0("cg_draw2D",1,0,"Draw 2D screen elements");
+  DAT_14062cd70 = FUN_1402c43f0("cg_drawHUD",1,0,"Draw HUD elements");
+  DAT_14062cd78 = FUN_1402c43f0("cg_drawHealth",0,4,"Draw health bar");
+  DAT_14062cd80 = FUN_1402c43f0("cg_drawBreathHint",1,0x40,"Draw a \'hold breath to steady\' hint");
+  DAT_14062cd88 = FUN_1402c43f0("cg_drawMantleHint",1,1,"Draw a \'press key to mantle\' hint");
+  _DAT_14062cc50 = FUN_1402c45d0("cg_drawFPS",&PTR_DAT_1404c0960,0,1,"Draw frames per second");
+  _DAT_14062cc68 = FUN_1402c43f0("cg_drawViewpos",0,1,"Draw viewpos");
+  _DAT_14062cc58 = FUN_1402c43f0("cg_drawEffectNum",0,4,"Draw counts of effects and elements");
+  _DAT_14062cc60 = FUN_1402c43f0("cg_drawFPSLabels",1,1,"Draw FPS Info Labels");
+  _DAT_14062cc70 =
+       FUN_1402c45d0("snd_drawInfo",&PTR_DAT_1404c0920,0,0,"Draw debugging information for sounds");
+  _DAT_14062cc78 = FUN_1402c43f0("cg_drawScriptUsage",0,0,"Draw debugging information for scripts");
+  uVar6 = 1;
+  _DAT_14062cc80 =
+       FUN_1402c45d0("cg_drawMaterial",&PTR_DAT_1404c0990,0,4,
+                     "Draw debugging information for materials");
+  DAT_14062cc90 =
+       FUN_1402c43f0("cg_drawTurretCrosshair",1,1,"Draw a cross hair when using a turret");
+  DAT_14062cda8 = FUN_1402c43f0("cg_drawDamageFlash",0,4,"Draw flash when hit.");
+  DAT_14062cdb0 = FUN_1402c43f0("cg_drawDamageDirection",1,4,"Draw hit direction arrow.");
+  DAT_14062cf30 =
+       FUN_1402c43f0("cg_constantSizeHeadIcons",0,4,
+                     "Head icons are the same size regardless of distance from the player");
+  uVar4 = CONCAT44(uVar6,1);
+  DAT_14062cf38 =
+       FUN_1402c4650("cg_headIconMinScreenRadius",DAT_1403e8e10,0,uVar1,uVar4,
+                     "The minumum radius of a head icon on the screen");
+  uVar3 = DAT_1403e8e6c;
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),1);
+  DAT_14062cf40 =
+       FUN_1402c4650("cg_scriptIconSize",0,0,DAT_1403e8e6c,uVar4,"Size of Icons defined by script");
+  uVar6 = DAT_1403e4140;
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),4);
+  DAT_14062cdb8 =
+       FUN_1402c4650("painVisionLerpInRate",DAT_1403e41f4,0,DAT_1403e4140,uVar4,
+                     "Rate at which pain vision effect lerps in");
+  pcVar11 = "Rate at which pain vision effect lerps out";
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),4);
+  DAT_14062cdc0 =
+       FUN_1402c4650("painVisionLerpOutRate",DAT_1403e5250,0,uVar6,uVar4,
+                     "Rate at which pain vision effect lerps out");
+  uVar6 = (undefined4)((ulonglong)uVar4 >> 0x20);
+  _DAT_14062cdc8 =
+       FUN_1402c43f0("cg_drawPlayerPosInFreeMove",1,4,
+                     "Draw a red box at the player\'s pos in noclip/ufo.");
+  uVar4 = CONCAT44(uVar6,uVar1);
+  DAT_14062cc98 =
+       FUN_1402c4440("cg_hudStanceFlash",uVar1,uVar1,uVar1,uVar4,
+                     (ulonglong)pcVar11 & 0xffffffff00000000,
+                     "The background color of the flash when the stance changes");
+  uVar7 = (undefined4)((ulonglong)uVar4 >> 0x20);
+  DAT_14062cca0 =
+       FUN_1402c43f0("cg_hudStanceHintPrints",0,1,"Draw helpful text to say how to change stances");
+  uVar2 = DAT_1403ea7b4;
+  uVar6 = DAT_1403e4154;
+  uVar4 = CONCAT44(uVar7,1);
+  DAT_14062cca8 =
+       FUN_1402c4650("cg_hudDamageIconWidth",DAT_1403e4154,0,DAT_1403ea7b4,uVar4,
+                     "The width of the damage icon");
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),1);
+  DAT_14062ccb0 =
+       FUN_1402c4650("cg_hudDamageIconHeight",DAT_1403e52e4,0,uVar2,uVar4,
+                     "The height of the damage icon");
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),1);
+  DAT_14062ccb8 =
+       FUN_1402c4650("cg_hudDamageIconOffset",uVar6,0,uVar2,uVar4,
+                     "The offset from the center of the damage icon");
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),1);
+  DAT_14062ccc0 =
+       FUN_1402c46d0("cg_hudDamageIconTime",6000,0,0x7fffffff,uVar4,
+                     "The amount of time for the damage icon to stay on screen after damage is taken"
+                    );
+  uVar7 = (undefined4)((ulonglong)uVar4 >> 0x20);
+  DAT_14062ccc8 =
+       FUN_1402c43f0("cg_hudDamageIconInScope",0,1,
+                     "Draw damage icons when aiming down the sight of a scoped weapon");
+  uVar6 = DAT_1403e5284;
+  uVar4 = CONCAT44(uVar7,1);
+  DAT_14062ccd8 =
+       FUN_1402c4650("cg_hudGrenadeIconMaxRangeFrag",DAT_1403eba94,0,DAT_1403e5284,uVar4,
+                     "The maximum distance that a grenade can be from a player in order to be shown on the grenade indicator"
+                    );
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),1);
+  DAT_14062cce0 =
+       FUN_1402c4650("cg_hudGrenadeIconMaxRangeFlash",DAT_1403e9e44,0,DAT_1403ef93c,uVar4,
+                     "The maximum distance that a flashbang can be from a player in order to be shown on the grenade indicator"
+                    );
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),1);
+  DAT_14062cce8 =
+       FUN_1402c4650("cg_hudGrenadeIconMaxHeight",DAT_1403ef934,0,uVar6,uVar4,
+                     "The minimum height difference between a player and a grenade for the grenade to be shown on the grenade indicator"
+                    );
+  uVar6 = (undefined4)((ulonglong)uVar4 >> 0x20);
+  DAT_14062ccd0 =
+       FUN_1402c43f0("cg_hudGrenadeIconInScope",1,1,
+                     "Show the grenade indicator when aiming down the sight of a scoped weapon");
+  uVar10 = DAT_1403e9e20;
+  uVar4 = CONCAT44(uVar6,0x40);
+  DAT_14062ccf0 =
+       FUN_1402c4650("cg_hudGrenadeIconOffset",DAT_1403e9e20,0,uVar2,uVar4,
+                     "The offset from the center of the screen for a grenade icon");
+  uVar7 = DAT_1403e9e14;
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),0x40);
+  DAT_14062ccf8 =
+       FUN_1402c4650("cg_hudGrenadeIconHeight",DAT_1403e9e14,0,uVar2,uVar4,
+                     "The height of the grenade indicator icon");
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),0x40);
+  DAT_14062cd00 =
+       FUN_1402c4650("cg_hudGrenadeIconWidth",uVar7,0,uVar2,uVar4,
+                     "The width of the grenade indicator icon");
+  uVar8 = (undefined4)((ulonglong)uVar4 >> 0x20);
+  DAT_14062cd08 =
+       FUN_1402c43f0("cg_hudGrenadeIconEnabledFlash",0,1,
+                     "Show the grenade indicator for flash grenades");
+  uVar6 = DAT_1403e5270;
+  uVar4 = CONCAT44(uVar8,0x40);
+  DAT_14062cd10 =
+       FUN_1402c4650("cg_hudGrenadePointerHeight",DAT_1403e5270,0,uVar2,uVar4,
+                     "The height of the grenade indicator pointer");
+  uVar8 = 1;
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),0x40);
+  DAT_14062cd18 =
+       FUN_1402c4650("cg_hudGrenadePointerWidth",uVar7,0,uVar2,uVar4,
+                     "The width of the grenade indicator pointer");
+  uVar14 = 1;
+  uVar5 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),uVar2);
+  DAT_14062cd20 =
+       FUN_1402c4c10("cg_hudGrenadePointerPivot",uVar6,DAT_1403ef930,0,uVar5,CONCAT44(uVar8,0x40),
+                     "The pivot point of th grenade indicator pointer");
+  uVar2 = DAT_1403e5268;
+  uVar6 = DAT_1403e5240;
+  uVar5 = uVar5 & 0xffffffff00000000;
+  DAT_14062cd28 =
+       FUN_1402c4650("cg_hudGrenadePointerPulseFreq",DAT_1403e5268,DAT_1403e5240,uVar10,uVar5,
+                     "The number of times per second that the grenade indicator flashes in Hertz");
+  uVar10 = DAT_1403e5264;
+  uVar5 = uVar5 & 0xffffffff00000000;
+  DAT_14062cd30 =
+       FUN_1402c4650("cg_hudGrenadePointerPulseMax",DAT_1403e5264,0,uVar2,uVar5,
+                     "The maximum alpha of the grenade indicator pulse. Values higher than 1 will cause the indicator to remain at full brightness for longer"
+                    );
+  uVar5 = uVar5 & 0xffffffff00000000;
+  DAT_14062cd38 =
+       FUN_1402c4650("cg_hudGrenadePointerPulseMin",uVar6,DAT_1403e8ea8,uVar1,uVar5,
+                     "The minimum alpha of the grenade indicator pulse. Values lower than 0 will cause the indicator to remain at full transparency for longer"
+                    );
+  uVar4 = CONCAT44((int)(uVar5 >> 0x20),1);
+  DAT_14062cd40 =
+       FUN_1402c46d0("cg_weaponCycleDelay",0,0,0x7fffffff,uVar4,
+                     "The delay after cycling to a new weapon to prevent holding down the cycle weapon button from cycling too fast"
+                    );
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),4);
+  DAT_14062cd48 =
+       FUN_1402c4650("cg_crosshairAlpha",uVar1,0,uVar1,uVar4,"The alpha value of the crosshair");
+  uVar7 = DAT_1403e3e68;
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),4);
+  DAT_14062cd50 =
+       FUN_1402c4650("cg_crosshairAlphaMin",DAT_1403e3e68,0,uVar1,uVar4,
+                     "The minimum alpha value of the crosshair when it fades in");
+  uVar9 = (undefined4)((ulonglong)uVar4 >> 0x20);
+  DAT_14062cd58 = FUN_1402c43f0("cg_crosshairDynamic",0,4,"Crosshair is Dynamic");
+  DAT_14062cd60 =
+       FUN_1402c43f0("cg_crosshairEnemyColor",1,0x44,"The crosshair color when over an enemy");
+  DAT_14062cd68 =
+       FUN_1402c43f0("cg_drawFriendlyFireCrosshair",0,4,
+                     "draw the friendly fire crosshair (friendly move)");
+  DAT_14062cde0 = FUN_1402c43f0("cg_brass",1,1,"Weapons eject brass");
+  uVar8 = DAT_1403e5618;
+  uVar5 = CONCAT44(uVar9,4);
+  DAT_14054e0b8 =
+       FUN_1402c4650("cg_centertime",uVar2,0,DAT_1403e5618,uVar5,
+                     "The time for a center printed message to fade");
+  uVar5 = uVar5 & 0xffffffff00000000;
+  DAT_14062cd98 = FUN_1402c4650("cg_errordecay",uVar3,0,uVar8,uVar5,"Decay for predicted error");
+  DAT_14050bde8 =
+       FUN_1402c43f0("cg_cinematicFullscreen",1,0x40,"Draw ingame cinematics full screen");
+  uVar5 = uVar5 & 0xffffffff00000000;
+  _DAT_14062cdd0 = FUN_1402c46d0("cg_showmiss",0,0,2,uVar5,"Show prediction errors");
+  DAT_14062cdd8 = FUN_1402c43f0("cg_footsteps",1,0x44,"Play footstep sounds");
+  DAT_14062ce08 =
+       FUN_1402c43f0("cg_marks_ents_player_only",0,1,
+                     "Marks on entities from player\'s bullets only.");
+  uVar5 = uVar5 & 0xffffffff00000000;
+  DAT_14062ce18 =
+       FUN_1402c4650("tracer_thermalWidthMult",uVar10,uVar6,uVar8,uVar5,
+                     "The multiplier applied to the base width when viewed in thermal vision");
+  pcVar11 = "The maximum width our OWN tracers can be when looking through our ADS";
+  uVar5 = uVar5 & 0xffffffff00000000;
+  DAT_14062ce20 =
+       FUN_1402c4650("tracer_firstPersonMaxWidth",DAT_1403e526c,uVar6,uVar8,uVar5,
+                     "The maximum width our OWN tracers can be when looking through our ADS");
+  DAT_14062ce28 =
+       FUN_1402c43f0("tracer_explosiveOverride",1,0,
+                     "When turned on, will apply an override to the tracer settings when shooting explosive bullets."
+                    );
+  uVar12 = (ulonglong)pcVar11 & 0xffffffff00000000;
+  uVar5 = uVar5 & 0xffffffff00000000;
+  DAT_14062ce30 =
+       FUN_1402c4dd0("tracer_explosiveColor1",0,0,0,uVar5,uVar12,CONCAT44(uVar14,uVar1),0,
+                     "The 1st color of a bullet tracer when using explosive bullets");
+  uVar12 = uVar12 & 0xffffffff00000000;
+  uVar4 = CONCAT44((int)(uVar5 >> 0x20),uVar1);
+  DAT_14062ce38 =
+       FUN_1402c4dd0("tracer_explosiveColor2",uVar1,uVar1,uVar1,uVar4,uVar12,uVar1,0,
+                     "The 2nd color of a bullet tracer when using explosive bullets");
+  uVar12 = uVar12 & 0xffffffff00000000;
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),uVar1);
+  DAT_14062ce40 =
+       FUN_1402c4dd0("tracer_explosiveColor3",uVar1,0,0,uVar4,uVar12,uVar1,0,
+                     "The 3rd color of a bullet tracer when using explosive bullets");
+  uVar12 = uVar12 & 0xffffffff00000000;
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),uVar1);
+  DAT_14062ce48 =
+       FUN_1402c4dd0("tracer_explosiveColor4",uVar1,0,0,uVar4,uVar12,uVar1,0,
+                     "The 4th color of a bullet tracer when using explosive bullets");
+  uVar5 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),uVar1);
+  DAT_14062ce50 =
+       FUN_1402c4dd0("tracer_explosiveColor5",uVar1,uVar1,0,uVar5,uVar12 & 0xffffffff00000000,uVar1,
+                     0,"The 5th color of a bullet tracer when using explosive bullets");
+  uVar5 = uVar5 & 0xffffffff00000000;
+  DAT_14062ce58 =
+       FUN_1402c4650("tracer_explosiveWidth",DAT_1403e8e40,uVar1,uVar8,uVar5,
+                     "The width of a bullet tracer when using explosive bullets");
+  uVar5 = uVar5 & 0xffffffff00000000;
+  DAT_14062ce98 = FUN_1402c46d0("cl_paused",0,0,2,uVar5,"Pause the game");
+  DAT_14062cea0 = FUN_1402c43f0("cg_drawpaused",1,0,"Draw paused screen");
+  uVar5 = uVar5 & 0xffffffff00000000;
+  DAT_14062cea8 =
+       FUN_1402c46d0("cg_objectiveListWrapCountStandard",0x104,100,0x280,uVar5,
+                     "The amount of on-screen length to wrap an objective in non wide-screen mode");
+  uVar5 = uVar5 & 0xffffffff00000000;
+  DAT_14062ceb0 =
+       FUN_1402c46d0("cg_objectiveListWrapCountWidescreen",0x154,100,0x280,uVar5,
+                     "The amount of on-screen length to wrap an objective in wide-screen mode");
+  uVar5 = uVar5 & 0xffffffff00000000;
+  _DAT_14062cf48 = FUN_1402c46d0("developer",0,0,2,uVar5,"Enable development options");
+  uVar4 = CONCAT44((int)(uVar5 >> 0x20),1);
+  DAT_14062cf50 =
+       FUN_1402c4650("cg_subtitleMinTime",uVar2,0,uVar8,uVar4,
+                     "The minimum time that the subtitles are displayed on screen in seconds");
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),1);
+  DAT_14062cf58 =
+       FUN_1402c46d0("cg_subtitleWidthStandard",0x140,0x82,0x680,uVar4,
+                     "The width of the subtitles in non wide-screen");
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),1);
+  DAT_14062cf60 =
+       FUN_1402c46d0("cg_subtitleWidthWidescreen",0x140,0x82,0x680,uVar4,
+                     "The width of the subtitles in wide-screen ");
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),1);
+  DAT_14062cf68 =
+       FUN_1402c46d0("cg_gameMessageWidth",500,0x82,0x680,uVar4,
+                     "The maximum character width of the game messages");
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),1);
+  DAT_14062cf70 =
+       FUN_1402c46d0("cg_gameBoldMessageWidth",0x186,0x82,0x680,uVar4,
+                     "The maximum character width of the bold game messages");
+  uVar10 = (undefined4)((ulonglong)uVar4 >> 0x20);
+  DAT_14062cf78 = FUN_1402c43f0("cg_blood",1,1,"Show blood effects");
+  DAT_14062cf80 =
+       FUN_1402c43f0("cg_bloodLimit",0,1,
+                     "Limit blood effects (to \'prevent excess blood stacking\')");
+  uVar4 = CONCAT44(uVar10,1);
+  DAT_14062cf88 =
+       FUN_1402c46d0("cg_bloodLimitMsec",0x14a,1,2000,uVar4,
+                     "When limiting blood effects, number of milliseconds between effects.");
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),1);
+  _DAT_14062cf90 =
+       FUN_1402c4650("cg_small_dev_string_fontscale",uVar1,0,uVar8,uVar4,
+                     "Font scale for a small development only display string");
+  uVar2 = DAT_1403e9b14;
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),1);
+  DAT_14062cfa8 =
+       FUN_1402c4650("cg_mapLocationSelectionCursorSpeed",DAT_1403e9b14,DAT_1403e3e60,uVar1,uVar4,
+                     "Speed of the cursor when selecting a location on the map");
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),1);
+  DAT_14050bdc8 =
+       FUN_1402c4650("cg_viewZSmoothingMin",uVar1,0,uVar8,uVar4,
+                     "Threshhold for the minimum smoothing distance it must move to smooth");
+  uVar10 = DAT_1403e560c;
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),1);
+  DAT_14050bdd0 =
+       FUN_1402c4650("cg_viewZSmoothingMax",DAT_1403e560c,0,uVar8,uVar4,
+                     "Threshhold for the maximum smoothing distance we\'ll do");
+  uVar5 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),1);
+  DAT_14050bdd8 =
+       FUN_1402c4650("cg_viewZSmoothingTime",uVar6,0,uVar8,uVar5,
+                     "Amount of time to spread the smoothing over");
+  DAT_14062cfb0 =
+       FUN_1402c43f0("overrideNVGModelWithKnife",0,0x40,
+                     "When true, nightvision animations will attach the weapDef\'s knife model instead of the night vision goggles."
+                    );
+  uVar5 = uVar5 & 0xffffffff00000000;
+  DAT_14062cfb8 =
+       FUN_1402c4650("cg_weapHitCullAngle",DAT_1403e4148,0,DAT_1403e5280,uVar5,
+                     "Angle of cone within which to cull back facing weapon hit effects");
+  uVar6 = (undefined4)(uVar5 >> 0x20);
+  DAT_14062cfc0 =
+       FUN_1402c43f0("cg_weapHitCullEnable",1,0,"When true, cull back facing weapon hit fx.");
+  uVar4 = CONCAT44(uVar6,0x44);
+  DAT_14062cfd0 =
+       FUN_1402c4650("objectiveAlpha",uVar2,0,uVar8,uVar4,"Alpha value for objective waypoints.");
+  uVar9 = (undefined4)((ulonglong)uVar4 >> 0x20);
+  DAT_14062cfd8 =
+       FUN_1402c43f0("objectiveAlphaEnabled",0,0x40,
+                     "When true, dvar \"objectiveAlpha\" takes effect.");
+  uVar6 = DAT_1403e9b10;
+  uVar5 = CONCAT44(uVar9,0x40);
+  DAT_14062cfe0 =
+       FUN_1402c4650("objectiveArrowWidth",DAT_1403ea250,DAT_1403e9b10,uVar8,uVar5,
+                     "Width of the objective pointer.");
+  uVar9 = 1;
+  uVar5 = uVar5 & 0xffffffff00000000;
+  DAT_14062cfe8 =
+       FUN_1402c4650("objectiveArrowHeight",uVar10,uVar6,uVar8,uVar5,
+                     "Height of the objective pointer.");
+  uVar14 = 1;
+  uVar4 = CONCAT44((int)(uVar5 >> 0x20),uVar1);
+  DAT_14062cff8 =
+       FUN_1402c4d40("objectiveColor",uVar1,uVar1,uVar1,uVar4,CONCAT44(uVar9,0x40),
+                     "Color of the objective pointer and text.");
+  uVar6 = (undefined4)((ulonglong)uVar4 >> 0x20);
+  DAT_14062cff0 =
+       FUN_1402c43f0("objectiveHideIcon",0,0x44,
+                     "When true, hides the objective pointer\'s icon, but will still show the arrow."
+                    );
+  uVar4 = CONCAT44(uVar6,0x44);
+  DAT_14062cfc8 =
+       FUN_1402c4650("sv_znear",0,0,DAT_1403e8e9c,uVar4,
+                     "Things closer than this aren\'t drawn.  Reducing this increases z-fighting in the distance.  Set to 0 to not specify."
+                    );
+  uVar6 = (undefined4)((ulonglong)uVar4 >> 0x20);
+  FUN_14006abc0();
+  FUN_1402d9b80();
+  FUN_1400b7350();
+  FUN_140077e50();
+  FUN_140037060();
+  FUN_1400307e0();
+  FUN_140068480();
+  FUN_14006c150();
+  FUN_140045f40();
+  FUN_14006a410();
+  FUN_1400490c0();
+  FUN_140072770();
+  FUN_14000dba0();
+  FUN_14028ba50();
+  FUN_14004ec50();
+  FUN_140003d60();
+  uVar4 = CONCAT44(uVar6,1);
+  DAT_14062cf98 =
+       FUN_1402c46d0("cg_invalidCmdHintDuration",0x708,0,0x7fffffff,uVar4,
+                     "Duration of an invalid command hint");
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),1);
+  DAT_14062cfa0 =
+       FUN_1402c46d0("cg_invalidCmdHintBlinkInterval",600,1,0x7fffffff,uVar4,
+                     "Blink rate of an invalid command hint");
+  uVar5 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),0x44);
+  DAT_14062ceb8 =
+       FUN_1402c4650("vehHelicopterFreeLookReleaseSpeed",0,0,uVar8,uVar5,
+                     "The rate that the player\'s view moves back to center when freelook is released"
+                    );
+  DAT_14062cec0 =
+       FUN_1402c43f0("hud_showStance",1,0x40,"When true, allow player\'s stance indicator to draw.")
+  ;
+  DAT_14062cec8 =
+       FUN_1402c43f0("hud_drawHUD",1,0x40,"Draw HUD elements. Controlled from non-UI script");
+  DAT_14062ced0 =
+       FUN_1402c43f0("hud_missionFailed",0,0x40,
+                     "Intended to be set by script and referenced by hud.menu elements.");
+  DAT_14062ced8 =
+       FUN_1402c43f0("friendlyNameFontObjective",1,0,"Use the objective font for friendly prints.");
+  uVar6 = DAT_1403e3e64;
+  uVar5 = uVar5 & 0xffffffff00000000;
+  DAT_14062cee0 =
+       FUN_1402c4650("friendlyNameFontSize",DAT_1403e5250,DAT_1403e3e64,uVar3,uVar5,
+                     "Fontsize of the popup friendly names.");
+  pcVar11 = "Fontsize of the popup friendly names, in splitscreen.";
+  uVar5 = uVar5 & 0xffffffff00000000;
+  _DAT_14062cee8 =
+       FUN_1402c4650("friendlyNameFontSizeSplitscreen",uVar7,uVar6,uVar3,uVar5,
+                     "Fontsize of the popup friendly names, in splitscreen.");
+  uVar8 = DAT_1403e9e5c;
+  uVar10 = DAT_1403e8e2c;
+  uVar13 = CONCAT44(uVar14,uVar1);
+  uVar12 = (ulonglong)pcVar11 & 0xffffffff00000000;
+  uVar4 = CONCAT44((int)(uVar5 >> 0x20),DAT_1403e8e2c);
+  DAT_14062cef0 =
+       FUN_1402c4dd0("friendlyNameFontColor",DAT_1403e9e5c,uVar1,DAT_1403e9e5c,uVar4,uVar12,uVar13,0
+                     ,&DAT_1403e6bdb);
+  uVar13 = CONCAT44((int)((ulonglong)uVar13 >> 0x20),uVar1);
+  uVar12 = uVar12 & 0xffffffff00000000;
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),uVar1);
+  DAT_14062cef8 =
+       FUN_1402c4dd0("friendlyNameFontGlowColor",0,DAT_1403e5250,0,uVar4,uVar12,uVar13,0,
+                     &DAT_1403e6bdb);
+  uVar13 = CONCAT44((int)((ulonglong)uVar13 >> 0x20),uVar1);
+  uVar12 = uVar12 & 0xffffffff00000000;
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),uVar10);
+  DAT_14062cf00 =
+       FUN_1402c4dd0("hostileNameFontColor",uVar1,uVar8,uVar8,uVar4,uVar12,uVar13,0,&DAT_1403e6bdb);
+  uVar13 = CONCAT44((int)((ulonglong)uVar13 >> 0x20),uVar1);
+  uVar5 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),uVar1);
+  DAT_14062cf08 =
+       FUN_1402c4dd0("hostileNameFontGlowColor",uVar2,0,0,uVar5,uVar12 & 0xffffffff00000000,uVar13,0
+                     ,&DAT_1403e6bdb);
+  uVar10 = (undefined4)((ulonglong)uVar13 >> 0x20);
+  uVar5 = uVar5 & 0xffffffff00000000;
+  DAT_14062cf10 =
+       FUN_1402c4650("coopNameFontSize",uVar7,uVar6,uVar3,uVar5,
+                     "Fontsize of the coop friendly names.");
+  pcVar11 = "Fontsize of the coop friendly names.";
+  _DAT_14062cf18 =
+       FUN_1402c4650("coopNameFontSizeSplitscreen",uVar1,uVar6,uVar3,uVar5 & 0xffffffff00000000,
+                     "Fontsize of the coop friendly names.");
+  uVar5 = (ulonglong)pcVar11 & 0xffffffff00000000;
+  DAT_14062cf20 =
+       FUN_1402c4dd0("cg_ColorBlind_EnemyTeam",uVar1,uVar7,0,uVar1,uVar5,CONCAT44(uVar10,uVar1),0,
+                     "Enemy team color for color blind people");
+  DAT_14062cf28 =
+       FUN_1402c4dd0("cg_ColorBlind_MyTeam",DAT_1403e9dec,uVar1,uVar1,uVar1,
+                     uVar5 & 0xffffffff00000000,uVar1,0,"Player team color for color blind people");
+  return;
+}
+
+
+
+================================================================
+Function: FUN_1402a1020 @ 1402a1020
+----------------------------------------------------------------
+
+void FUN_1402a1020(longlong param_1,undefined8 param_2,longlong *param_3)
+
+{
+  int iVar1;
+  int iVar2;
+  char *pcVar3;
+  char *pcVar4;
+  longlong *plVar5;
+  undefined1 local_408 [1024];
+  
+  pcVar3 = (char *)FUN_1402c9c50(param_3);
+  if (*param_3 != 0) {
+    if ((*pcVar3 != '@') || (pcVar4 = (char *)FUN_14028a680(pcVar3 + 1), pcVar4 == (char *)0x0)) {
+      pcVar4 = pcVar3;
+    }
+    FUN_1402caa00(local_408,pcVar4,0x400);
+    iVar1 = FUN_1402c3b10("cl_paused");
+    if ((iVar1 != 0) && (iVar1 = 0, 0 < *(int *)(param_1 + 0x1438))) {
+      plVar5 = (longlong *)(param_1 + 0x38);
+      do {
+        iVar2 = FUN_1402ca760(*(undefined8 *)(*plVar5 + 8),local_408);
+        if (iVar2 == 0) {
+          if (*(longlong *)(param_1 + 0x38 + (longlong)iVar1 * 8) == 0) {
+            return;
+          }
+          FUN_1402acc20(param_1);
+          return;
+        }
+        iVar1 = iVar1 + 1;
+        plVar5 = plVar5 + 1;
+      } while (iVar1 < *(int *)(param_1 + 0x1438));
+    }
+  }
+  return;
+}
+
+
+
+================================================================
+Function: FUN_1402a0f50 @ 1402a0f50
+----------------------------------------------------------------
+
+void FUN_1402a0f50(longlong param_1,undefined8 param_2,longlong *param_3)
+
+{
+  longlong lVar1;
+  int iVar2;
+  int iVar3;
+  char *pcVar4;
+  char *pcVar5;
+  longlong *plVar6;
+  undefined1 local_408 [1024];
+  
+  pcVar4 = (char *)FUN_1402c9c50(param_3);
+  if (*param_3 != 0) {
+    if ((*pcVar4 != '@') || (pcVar5 = (char *)FUN_14028a680(pcVar4 + 1), pcVar5 == (char *)0x0)) {
+      pcVar5 = pcVar4;
+    }
+    FUN_1402caa00(local_408,pcVar5,0x400);
+    iVar2 = FUN_1402c3b10("cl_paused");
+    if ((iVar2 != 0) && (iVar2 = 0, 0 < *(int *)(param_1 + 0x1438))) {
+      plVar6 = (longlong *)(param_1 + 0x38);
+      do {
+        iVar3 = FUN_1402ca760(*(undefined8 *)(*plVar6 + 8),local_408);
+        if (iVar3 == 0) {
+          lVar1 = *(longlong *)(param_1 + 0x38 + (longlong)iVar2 * 8);
+          if (lVar1 == 0) {
+            return;
+          }
+          FUN_1402ad560(param_1,lVar1,0);
+          return;
+        }
+        iVar2 = iVar2 + 1;
+        plVar6 = plVar6 + 1;
+      } while (iVar2 < *(int *)(param_1 + 0x1438));
+    }
+  }
+  return;
+}
+
+
+

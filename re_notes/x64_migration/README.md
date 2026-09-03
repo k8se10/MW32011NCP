@@ -1,8 +1,30 @@
 # x64 migration — MW3 (2011) recompiled to 64-bit, 2026-09-03
 
-## Status: Investigating / scoping. Not yet started (no hook code written against
-the new binaries). This is the single biggest event in this project's history —
-read this whole file before touching anything x64-related.
+## Status: RE underway. A fresh Ghidra project against the new x64 `iw5sp.exe`
+exists and is fully analyzed (`re_notes/ghidra_project_x64/iw5sp_x64_proj.gpr`,
+kept completely separate from the original x86 project). No hook code has been
+written against the new binaries yet. This is the single biggest event in this
+project's history — read this whole file before touching anything x64-related.
+
+## Standing caution — this was a huge update, don't assume ANYTHING carried over unverified
+
+Direct instruction (2026-09-03): "some menu entries may now also be broken and
+we have to reverify old assumption as it was a huge update." The ~14GB size of
+this update means it's not safe to assume only the executable's code addresses
+moved — menu/UI structure, `.menu` layout data, dvar defaults, GSC script
+content, and asset paths could all have changed too, not just where a given
+function lives in memory. **The string-persistence check above (same dvar
+names present in both binaries) is evidence the underlying ENGINE/DATA is
+still recognizable, not proof any specific menu group name, glyph position,
+depth value, or piece of UI behavior this project has ever calibrated still
+holds.** Every existing `kManualGlyphPositions`/`kVerifiedGlyphGroups` entry,
+every menu-navigation assumption, every calibrated position — all of it needs
+live re-verification against the new build once hooks exist again, the same
+"having a table entry isn't evidence" standard this project already applies to
+glyph work, now extended to everything, not just glyphs. Do not silently carry
+forward an old assumption into new x64 code just because the old address/logic
+is now confirmed to still exist — confirm the CURRENT behavior, not just the
+current address.
 
 ## What happened
 
@@ -136,11 +158,30 @@ record — this section is a pointer, not the source of truth)
    address in one step, exactly the failure mode static-only addressing can't
    survive).
 
-## Next real steps (not yet started)
+## Next real steps
 
-1. Stand up a fresh, separate Ghidra project against the new x64 `iw5sp.exe`
-   (`re_notes/ghidra_project_x64/`, kept fully separate from the existing x86
-   project — never overwrite/reimport over the original).
+1. ~~Stand up a fresh, separate Ghidra project against the new x64
+   `iw5sp.exe`~~ **DONE 2026-09-03**: `re_notes/ghidra_project_x64/iw5sp_x64_proj.gpr`,
+   imported from the preserved copy at
+   `re_notes/x64_migration/binaries/iw5sp.exe` (not the live Steam install —
+   stable, won't move under us), full auto-analysis run clean (93s, no
+   errors). Kept fully separate from the existing x86 project — the original
+   is untouched.
+1a. **Proof-of-concept validated 2026-09-03: the exact same string-scan →
+    xref → decompile methodology this project has always used works cleanly
+    against the new x64 binary, no changes needed.** `RawStringScan.java`
+    found `cl_paused` at `1403ee240` (.rdata) with 16 real code references
+    across 11 functions — same shape as the x86 project's own established
+    workflow. Decompiled three candidates cleanly: `FUN_14004a870` is the x64
+    equivalent of the giant dvar-registration batch function (contains the
+    literal `FUN_1402c46d0("cl_paused",0,0,2,...,"Pause the game")`
+    registration call, fully readable); `FUN_1402a1020`/`FUN_1402a0f50` are a
+    matched pair of dispatch functions that check `cl_paused` via a dvar-get
+    helper (`FUN_1402c3b10`) before walking a function-pointer table by name
+    — plausible alias/command-dispatch candidates, not yet confirmed against
+    a known x86 counterpart. Ghidra's decompiler output is clean and fully
+    readable for this binary; nothing about the x64 recompile makes it harder
+    to read than the original.
 2. Add an x64 build configuration to `proxy_d3d9.vcxproj` alongside the
    existing Win32 one (MinHook already supports x64 natively — no vendoring
    changes needed, only build config).
