@@ -137,11 +137,12 @@ resolves the practical question with high confidence, independent of ever
 pinning down `cls.state`'s exact semantics -- live Start-button pause almost
 certainly routes through this generic case-dispatch path, not the
 ESC-specific `cls.state==6` branch (the two are separate mechanisms,
-matching x86's own historical ESC-vs-Start split). One coincidence
-explicitly ruled out: case `0x42` was checked hoping it might match x86's
-own weapnext case number (also `0x42`) -- it doesn't (a different,
-heavily-gated single action) -- case numbers between x86/x64 are not
-guaranteed to align. Full detail in `re_notes/x64_migration/README.md`
+matching x86's own historical ESC-vs-Start split). Case `0x42` was checked
+against the hope it might match x86's own weapnext case number (also
+`0x42`) and initially dismissed as coincidence -- **corrected below (see the
+weapnext thread): it's not a coincidence, `FUN_14007c3a0`'s case numbers are
+directly the bind-name-table indices, and case `0x42` really is weapnext's
+real dispatcher.** Full detail in `re_notes/x64_migration/README.md`
 section 1g. Not live-tested.
 
 **Sprint thread -- RESOLVED, static, high confidence**: `FUN_140014a80` is
@@ -160,26 +161,37 @@ directly, or set the held-input bit at `param_1+0xc` before the chain runs
 and let the existing native logic do the rest. Full detail in
 `re_notes/x64_migration/sprint_weapnext_x64.md`.
 
-**weapnext thread -- narrowed via full event-loop mapping, not just another
-candidate check**: bind-table position found (index 66, no `kbutton_t`
-counterpart, one-shot command). `FUN_1402aac50` (the confirmed `Menu_KeyEvent`
-handler) was ruled out first. Then the entire top-level input-event
-architecture was mapped: `FUN_14007eaf0`'s own caller is `FUN_14023ccb0`, a
-real, confirmed `Com_EventLoop`/`Sys_SendKeyEvents`-equivalent pulling typed
-events from `FUN_1402ee660` (confirmed `Sys_GetEvent` -- a 256-slot ring
-buffer with a genuine `PeekMessageA`/`GetMessageA`/`DispatchMessageA` Win32
-message-pump fallback) and dispatching by a 4-way type selector: type 1 =
-`FUN_14007eaf0` (the known kbutton path), type 2 = `FUN_14007e8e0` (decompiled
-and ruled out -- a real character-typed/`WM_CHAR`-equivalent event, forwards
-to the menu system), type 3 = `FUN_14022f680` (the already-confirmed
-`Cbuf_AddText`-equivalent), default = `FUN_14023c700` (decompiled and ruled
-out -- a real `Com_Error`-equivalent, `setjmp`/`longjmp`-based). With 3 of 4
-event types eliminated across the ENTIRE real event-type space, only the
-kbutton path is structurally possible -- the real open question is now
-narrowed from "which dispatcher" to **"which per-tick consumer reads bind
-index 66 for a rising edge,"** the same class of problem Sprint's own
-resolution (a per-tick consumer reading a state bit, not a special
-dispatcher) just solved. Not yet found.
+**weapnext thread -- RESOLVED, static, high confidence.** Bind-table position
+found (index 66, no `kbutton_t` counterpart, one-shot command). The full
+top-level input-event architecture was mapped first: `FUN_14007eaf0`'s own
+caller is `FUN_14023ccb0`, a real, confirmed `Com_EventLoop`/
+`Sys_SendKeyEvents`-equivalent pulling typed events from `FUN_1402ee660`
+(confirmed `Sys_GetEvent` -- a 256-slot ring buffer with a genuine
+`PeekMessageA`/`GetMessageA`/`DispatchMessageA` Win32 message-pump fallback)
+and dispatching by a 4-way type selector -- 3 of 4 types were ruled out
+(char-typed, console-command-text, `Com_Error`), leaving only the kbutton
+path (`FUN_14007eaf0`) structurally possible.
+
+Within that path, `FUN_14007eaf0` reaches `FUN_14007c3a0` (the real x64
+equivalent of x86's `FUN_00438710`, confirmed while investigating the
+pause-menu cluster) via a per-keycode "bound index" field
+(`DAT_140644a6c`, literally `DAT_140644a64+8` -- kbutton_t's own third `int`
+field: `{down, count, boundIndex}`). Tracing `FUN_14007eff0` (the real
+string->bind-name-table-index resolver every `Key_*` helper calls) and
+`FUN_14007f330` (`Key_SetBinding`, which writes that same resolved index
+into the per-keycode slot) confirmed `FUN_14007c3a0`'s case numbers ARE
+bind-name-table indices directly -- a real, unified x64 architecture, not a
+separate case-ID layer. **This corrects an earlier same-day dismissal**:
+case `0x42` in `FUN_14007c3a0` was initially checked against weapnext's own
+computed index (66 = `0x42`) and dismissed as coincidence -- wrong, since
+the match is a direct mechanical consequence of the shared indexing, not
+luck. `case 0x42` = `FUN_1400706d0`, confirmed as weapnext's real dispatcher
+by decompiling its own callee `FUN_140074570`: a genuine weapon-slot-cycling
+function (15-entry array, `%0xf` wraparound, a real forward/backward
+direction parameter, ammo/holdability gates, a real weapon-switch call).
+`FUN_1400706d0` = the real x64 equivalent of x86's `FUN_004a5f70`;
+`FUN_140074570` = the real equivalent of x86's `FUN_0057a670`. Full trace in
+`re_notes/x64_migration/sprint_weapnext_x64.md`. Not live-tested.
 
 **D-pad actionslot -- upgraded to medium-high confidence**: the ENTIRE
 kbutton-table function cluster is mapped via `FindGlobalRefs.java` -- only 4
@@ -268,11 +280,13 @@ the complete policy record.
 actual signature-scanning mechanism (AOB/IDA-style byte-pattern-plus-
 wildcards, validated before hooking, fail loudly on a bad match); write real
 per-hook x64 hook-install code to replace the ~14 `__asm` trampolines, now
-that several real hook targets are confirmed (Sprint's `FUN_140014a80`,
-the buttons/ADS/menu unified entry point `FUN_14007eaf0`); resolve the
-pause-menu open trigger's exact live-gameplay condition; locate weapnext's
-real dispatch site and the shadow-map creation call site (needs indirect-
-call scanning or live tracing, not more direct-reference scanning). See
+that several real hook targets are confirmed (Sprint's `FUN_140014a80`, the
+buttons/ADS/menu unified entry point `FUN_14007eaf0`, the pause toggle
+`FUN_1400823b0`, weapnext's `FUN_1400706d0`); the shadow-map creation call
+site remains the one major unresolved thread (needs indirect-call scanning
+or live tracing, not more direct-reference scanning), and `cls.state`'s
+exact semantics stay open but low-priority now that pause is resolved via a
+separate path. See
 `re_notes/x64_migration/README.md` for the complete import-table/
 section-table diff, the full string-persistence data table, and every
 sub-cluster's own raw Ghidra output files.

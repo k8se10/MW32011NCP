@@ -1,0 +1,26 @@
+=== Reference counts per global ===
+casetable (140644a6c): 22 references
+
+=== Candidate functions, ranked by distinct global diversity (11) ===
+
+---- FUN_14007f130 @ 14007f130 (globals: casetable) ----
+
+---- FUN_14007f330 @ 14007f330 (globals: casetable) ----
+
+---- FUN_14007f550 @ 14007f550 (globals: casetable) ----
+
+---- FUN_14007f730 @ 14007f730 (globals: casetable) ----
+
+---- FUN_14007efd0 @ 14007efd0 (globals: casetable) ----
+
+---- FUN_14007f9a0 @ 14007f9a0 (globals: casetable) ----
+
+---- FUN_14007f060 @ 14007f060 (globals: casetable) ----
+
+---- FUN_14007f400 @ 14007f400 (globals: casetable) ----
+
+---- FUN_14007f7e0 @ 14007f7e0 (globals: casetable) ----
+
+---- FUN_14007e920 @ 14007e920 (globals: casetable) ----
+
+---- FUN_14007e960 @ 14007e960 (globals: casetable) ----
