@@ -141,16 +141,55 @@ Given `FUN_14007eaf0` (the parent pass's KeyDown/KeyUp setter) is a plain
 `(playerIndex, bindIndex, isDown)` call with no bind-type-specific branching
 visible in its own decompile, it's PLAUSIBLE actionslot on x64 needs no
 separate dedicated function at all — just calling that same setter with
-indices 15/17/19/21. **This is a structural inference, not an independently
-traced/decompiled confirmation** — I did not trace an actual code path from
-"D-pad button press" to `FUN_14007eaf0` with one of these specific indices
-during this pass (ran out of scope budget prioritizing the higher-confidence
-dvar API work above, which had much stronger multi-source cross-validation
-available). Real next step: find the actual per-slot loadout-driven dispatch
-logic (x86's own note: "data-driven per-slot behavior based on loadout" —
-this suggests real logic beyond a flat KeyDown/KeyUp call exists, since
-actionslot behavior depends on what's actually equipped) and confirm whether
-it still funnels through `FUN_14007eaf0` or has its own separate mechanism.
+indices 15/17/19/21.
+
+**Same-day follow-up, this substantially upgrades confidence (though it
+still stops short of full confirmation): mapped the ENTIRE function cluster
+that touches the kbutton table (`DAT_140644a64`) directly, via
+`FindGlobalRefs.java`.** Only 4 functions reference the table at all,
+project-wide:
+- **`FUN_14007eaf0`** — the already-confirmed setter (KeyDown/KeyUp,
+  unified menu/ESC dispatch entry point, section 1e/1g).
+- **`FUN_14007f1b0(playerIndex, bindIndex)`** — a real, confirmed
+  `IsKeyButtonDown`-equivalent: `return *(kbutton_t*)(base +
+  playerIndex*0xd28 + bindIndex*0xc)`, with a `-1` sentinel returning 0.
+  Exactly the generic per-tick query a downstream consumer (GSC or a native
+  per-frame reader) would call to check "is slot bind N currently held" —
+  genuinely useful past this cluster as the real x64 query primitive.
+- **`FUN_14007eab0(playerIndex, name)`** — the same query, but resolves a
+  bind name to an index first via `FUN_14007f420` (a `LookupBindIndexByName`-
+  shaped helper, not itself decompiled this pass) before doing the identical
+  table read. A second, name-based entry point onto the same data.
+- **`FUN_14007eeb0`** — a real, confirmed `ClearAllKeyButtons`-equivalent:
+  iterates all 256 (`0x100`) bind-table entries, zeroing state and firing a
+  real `KeyUp`-equivalent (`FUN_14007c3a0`) plus a menu-forward
+  (`FUN_14029baa0`) for anything still held — this is the exact cleanup
+  function `FUN_14029baa0`'s own menu-close path already calls (`thunk_
+  FUN_14007eeb0`, cross-referenced in section 1g), now independently
+  confirmed to be a generic reset over the whole table, not anything
+  actionslot-specific.
+
+**Real conclusion**: there is no separate raw-keycode dispatch table or
+per-slot-specific function anywhere touching the kbutton table directly —
+the entire infrastructure is this one generic 4-function cluster
+(set/get-by-index/get-by-name/reset-all), a genuine architectural
+unification vs. x86's dedicated, differently-discovered `ActionSlotDown`/
+`ActionSlotUp` pair. This raises real confidence that x64 actionslot is
+"just another kbutton" at the table level — **but it does not confirm the
+actual "use the equipped item" consumer**, which x86's own note flags as
+real, data-driven, loadout-dependent logic (killstreaks/attachments differ
+per slot) — that logic necessarily lives downstream of a
+`FUN_14007f1b0(playerIndex, 15/17/19/21)` read (or an equivalent
+compiled-in check), most plausibly in GSC-VM script state (same category
+this project's plugin-API policy already reserves for live game-state
+reads, see `CLAUDE.md`'s Plugin API section) rather than anywhere in this
+native C++ layer — consistent with why x86 needed its own dedicated,
+separately-discovered mechanism instead of reusing its own generic kbutton
+system. **Confidence upgraded from "Low-medium — structural inference
+only" to "Medium-high — confirmed no separate table-level dispatch
+mechanism exists, matching `FUN_14007eaf0`'s broader unified design" —
+still not independently traced end-to-end to an actual slot-use effect,
+and not live-tested.**
 
 ## Summary
 
@@ -163,4 +202,8 @@ it still funnels through `FUN_14007eaf0` or has its own separate mechanism.
 | Value offset `+0x10` (was `+0xc` on x86) | High — confirmed 2 ways | No |
 | Separate SetDvarBool/SetDvarFloat | NOT FOUND — plausibly unified into `FUN_1402c5b30` | No |
 | D-pad actionslot indices (15/17/19/21) | Medium — table math only, dispatch path not traced | No |
-| Actionslot reuses `FUN_14007eaf0` | Low-medium — structural inference only | No |
+| `FUN_14007f1b0` (IsKeyButtonDown by index) | High — direct decompile, clean signature | No |
+| `FUN_14007eab0` (IsKeyButtonDown by name) | High — direct decompile, clean signature | No |
+| `FUN_14007eeb0` (ClearAllKeyButtons) | High — direct decompile, matches known caller | No |
+| Actionslot reuses `FUN_14007eaf0` (table-level) | Medium-high — confirmed no separate dispatch table exists at all | No |
+| Actionslot's actual "use item" consumer | NOT FOUND — plausibly GSC-VM script state, not native C++ | No |

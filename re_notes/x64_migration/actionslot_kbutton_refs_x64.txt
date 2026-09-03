@@ -1,0 +1,57 @@
+openjdk version "25.0.2" 2026-01-20 LTS
+OpenJDK Runtime Environment Microsoft-13053607 (build 25.0.2+10-LTS)
+OpenJDK 64-Bit Server VM Microsoft-13053607 (build 25.0.2+10-LTS, mixed mode)
+INFO  Using log config file: jar:file:/D:/Tools/Ghidra/ghidra_12.1.2_PUBLIC/Ghidra/Framework/Generic/lib/Generic.jar!/generic.log4j.xml (LoggingInitialization)  
+INFO  Using log file: C:\Users\kyesa\AppData\Roaming\ghidra\ghidra_12.1.2_PUBLIC\application.log (LoggingInitialization)  
+INFO  Loading user preferences: C:\Users\kyesa\AppData\Roaming\ghidra\ghidra_12.1.2_PUBLIC\preferences (Preferences)  
+INFO  Searching for classes... (ClassSearcher)  
+INFO  Class search complete (503 ms) (ClassSearcher)  
+INFO  Initializing SSL Context (DefaultSSLContextInitializer)  
+INFO  Initializing Random Number Generator... (SecureRandomFactory)  
+INFO  Random Number Generator initialization complete: SHA1PRNG (SecureRandomFactory)  
+INFO  Trust manager disabled, cacerts have not been set (DefaultTrustManagerFactory)  
+INFO  Headless startup complete (1695 ms) (AnalyzeHeadless)  
+INFO  Class searcher loaded 59 extension points (20 false positives) (ClassSearcher)  
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::staticFieldOffset has been called by org.apache.felix.framework.util.SecureAction (file:/D:/Tools/Ghidra/ghidra_12.1.2_PUBLIC/Ghidra/Features/Base/lib/org.apache.felix.framework-7.0.5.jar)
+WARNING: Please consider reporting this to the maintainers of class org.apache.felix.framework.util.SecureAction
+WARNING: sun.misc.Unsafe::staticFieldOffset will be removed in a future release
+INFO  HEADLESS Script Paths:
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\FileFormats\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\PyGhidra\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\BSim\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\Decompiler\ghidra_scripts
+    D:\projects\IMPORTANT PUBLIC RELEASED PROJECTS\COD RELATED\MW3\MW32011NCP\re_notes\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\MicrosoftCodeAnalyzer\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Extensions\XEXLoaderWV\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\PDB\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Processors\JVM\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\BytePatterns\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\GnuDemangler\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\SwiftDemangler\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Processors\8051\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Debug\Debugger-rmi-trace\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\DecompilerDependent\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\VersionTracking\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\FunctionID\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\WildcardAssembler\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Debug\Debugger\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\Base\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Processors\DATA\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Processors\PIC\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Features\SystemEmulation\ghidra_scripts
+    D:\Tools\Ghidra\ghidra_12.1.2_PUBLIC\Ghidra\Processors\Atmel\ghidra_scripts (HeadlessAnalyzer)  
+INFO  HEADLESS: execution starts (HeadlessAnalyzer)  
+INFO  Opening existing project: D:\projects\IMPORTANT PUBLIC RELEASED PROJECTS\COD RELATED\MW3\MW32011NCP\re_notes\ghidra_project_x64\iw5sp_x64_proj (HeadlessAnalyzer)  
+INFO  Opening project: D:\projects\IMPORTANT PUBLIC RELEASED PROJECTS\COD RELATED\MW3\MW32011NCP\re_notes\ghidra_project_x64\iw5sp_x64_proj (HeadlessProject)  
+INFO  REPORT: Processing read-only project file: /iw5sp.exe (HeadlessAnalyzer)  
+INFO  REPORT: Execute script: FindDataWriters.java '140644b18' '140644b30' '140644b48' '140644b60'  (HeadlessAnalyzer)  
+INFO  SCRIPT: D:\projects\IMPORTANT PUBLIC RELEASED PROJECTS\COD RELATED\MW3\MW32011NCP\re_notes\ghidra_scripts\FindDataWriters.java (HeadlessAnalyzer)  
+INFO  FindDataWriters.java> === References to 140644b18 === (GhidraScript)  
+INFO  FindDataWriters.java>  (GhidraScript)  
+INFO  FindDataWriters.java> === References to 140644b30 === (GhidraScript)  
+INFO  FindDataWriters.java>  (GhidraScript)  
+INFO  FindDataWriters.java> === References to 140644b48 === (GhidraScript)  
+INFO  FindDataWriters.java>  (GhidraScript)  
+INFO  FindDataWriters.java> === References to 140644b60 === (GhidraScript)  
+INFO  FindDataWriters.java>  (GhidraScript)  

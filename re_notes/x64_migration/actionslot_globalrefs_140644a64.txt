@@ -1,0 +1,12 @@
+=== Reference counts per global ===
+kbutton_table (140644a64): 6 references
+
+=== Candidate functions, ranked by distinct global diversity (4) ===
+
+---- FUN_14007f1b0 @ 14007f1b0 (globals: kbutton_table) ----
+
+---- FUN_14007eab0 @ 14007eab0 (globals: kbutton_table) ----
+
+---- FUN_14007eaf0 @ 14007eaf0 (globals: kbutton_table) ----
+
+---- FUN_14007eeb0 @ 14007eeb0 (globals: kbutton_table) ----
