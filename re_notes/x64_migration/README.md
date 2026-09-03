@@ -15,7 +15,7 @@ real evidence and honest confidence level; this is just an index.
 | Cluster | File | Real confidence |
 |---|---|---|
 | Sprint / weapon switch | [`sprint_weapnext_x64.md`](sprint_weapnext_x64.md) | Sprint: storage globals + state machine found, high confidence; the actual Pmove-entry *write* hook still unlocated. weapnext: bind-table position found (index 66), dispatch mechanism not traced. |
-| Pause menu / key handler | [`pausemenu_keyhandler_x64.md`](pausemenu_keyhandler_x64.md) | `cl_paused`'s real storage global found. **Updated after this file's own section 1g**: the real key-event handler (`FUN_1402aac50`, x86 `FUN_00541020` equivalent) and its wrapper (`FUN_14029baa0`) ARE now found, high confidence — cross-validates `pausemenu_keyhandler_x64.md`'s own `FUN_14029dfd0` candidate as a real part of the chain. **Same-day follow-up**: `FUN_14029baa0` fully decompiled — confirmed x64 `Cvar_Set` equivalent (`FUN_1402c5b30`) and the real resume-gameplay path (`Cvar_Set("cl_paused", 0)` once the menu stack empties). `FUN_1402ac9c0` ruled OUT as `OpenPauseMenu` (it's a bulk close/refresh pass over already-registered menu defs, gated on a menu already being open). `OpenPauseMenu`/`ForwardKeyToMenu`'s exact "open from nothing" call site still not pinned. |
+| Pause menu / key handler | [`pausemenu_keyhandler_x64.md`](pausemenu_keyhandler_x64.md) | `cl_paused`'s real storage global found. **Updated after this file's own section 1g**: the real key-event handler (`FUN_1402aac50`, x86 `FUN_00541020` equivalent) and its wrapper (`FUN_14029baa0`) ARE now found, high confidence — cross-validates `pausemenu_keyhandler_x64.md`'s own `FUN_14029dfd0` candidate as a real part of the chain. **Same-day follow-up**: `FUN_14029baa0` fully decompiled — confirmed x64 `Cvar_Set` equivalent (`FUN_1402c5b30`) and the real resume-gameplay path (`Cvar_Set("cl_paused", 0)` once the menu stack empties). `FUN_1402ac9c0` ruled OUT as `OpenPauseMenu` (it's a bulk close/refresh pass over already-registered menu defs, gated on a menu already being open). **Second same-day follow-up: `SetMenuState`/`OpenPauseMenu` CONFIRMED.** `FUN_14029f3f0(player, mode)` is the real `SetMenuState`, a 10-destination named-screen dispatcher; mode `2` opens `"pausedmenu"` via the newly-found `FUN_1402ad950(ctx, name)` (`OpenMenuByName`) — that's the real `OpenPauseMenu`. Still open: the exact live-gameplay condition that reaches mode `2` from an ordinary Start/ESC press (`FUN_14007eaf0`'s ESC branch only reaches it via connection-state `6`, not confirmed as the live-play state) — needs a `cls.state` enum dump or live testing. |
 | D-pad actionslot / generic dvar API | [`actionslot_dvarhelpers_x64.md`](actionslot_dvarhelpers_x64.md) | Dvar API (`Dvar_FindVar`/get/set): high confidence, cross-validated 4 independent call sites — real simplification over x86, standard calling convention, no `__asm` needed; value offset shifted `+0xc`→`+0x10` (real x64 struct-alignment change, confirmed two ways). D-pad actionslot: bind indices computed (15/17/19/21), but whether it reuses the buttons/ADS `FUN_14007eaf0` mechanism directly is unconfirmed. |
 
 Section 1 below (this file) covers the movement/look pipeline, buttons/ADS,
@@ -459,6 +459,62 @@ record — this section is a pointer, not the source of truth)
       `FUN_14029baa0`, not yet traced. None of this is live-tested — Start's
       open and resume-on-close both need real playtest confirmation once an
       injectable build exists.
+    - **Same-day follow-up #2, this genuinely resolves `SetMenuState`/
+      `OpenPauseMenu` — decompiled `FUN_14007eaf0` in full** (previously
+      only known as "the single unified kbutton/key entry point," never
+      read end to end) plus two functions its ESC branch calls,
+      `FUN_140082e70` and `FUN_14029f3f0`. Real findings:
+      - **`FUN_14029f3f0(param_1, mode)` is a confirmed, full x64
+        `SetMenuState`-equivalent** — a mode-driven switch far richer than
+        x86's `FUN_004396d0` (which only had a documented mode 0/mode 2
+        pair). Ten real named destination screens found, each opened by a
+        literal menu-name string: mode `0` = resume
+        (`Cvar_Set("cl_paused",0)` + `FUN_1402ac9c0()`, matching the
+        already-confirmed resume path exactly), mode `1` = the main/
+        error-popmenu screen, **mode `2` = `"pausedmenu"`** — this is the
+        real, confirmed **`OpenPauseMenu`**: `Cvar_Set("cl_paused",
+        FUN_140083ae0())` then `FUN_1402ad950(&DAT_142605050,
+        "pausedmenu")` — mode `3` = pregame/loaderror, mode `4` =
+        endofgame, mode `6` = briefing, mode `7` = victoryscreen, mode
+        `0xb` = coop_lobby, mode `0xc` = levels_challenge, mode `0xd` =
+        main_text, mode `0xe` = main_specops.
+      - **`FUN_1402ad950(ctx, name)` is a confirmed, real, generically
+        useful `OpenMenuByName`/menu-activation-by-string primitive** —
+        every named screen above opens through it. A genuinely new,
+        reusable find past this cluster: any future work needing to open a
+        specific known menu screen by name has a real, confirmed call
+        shape now.
+      - **`FUN_1402ac9c0` recontextualized, not re-decided**: still the
+        "close/cleanup pass over registered menu screens" found last
+        round, now with clear purpose — `FUN_14029f3f0` calls it as a
+        pre-open cleanup step before several mode transitions (0, 3, 4, 6,
+        0xb), i.e. it's the real `CloseMenu`-adjacent half of the
+        open/close pair, just never itself the function that opens
+        `"pausedmenu"`.
+      - **`FUN_140082e70`** turned out to be a different, narrower thing
+        than hoped — a connecting/loading-state ESC-cancel handler. It
+        reads the exact same per-player connection-state global
+        `FUN_14007eaf0` reads as `iVar3` (`DAT_1406e2558[player*100]`,
+        very likely a `cls.state`-equivalent), and calls `FUN_14029f3f0`
+        with mode `1` or `0` depending on that state — real code, but the
+        "cancel while connecting/loading" path, not the general
+        live-gameplay pause-open path.
+      - **Genuinely still open, flagged honestly rather than guessed
+        past**: `FUN_14007eaf0`'s own ESC branch only reaches
+        `FUN_14029f3f0(x, 2)` (the confirmed pause-open call) via one
+        specific case, `iVar3 == 6` — and whether connection-state `6` is
+        really the live SP-gameplay/"active" state (vs., say, an MP
+        briefing-specific state, given `FUN_14029f3f0`'s own mode `6` is
+        separately named `"briefing"`) isn't pinned down from static
+        analysis alone. The other reachable path,
+        `FUN_14029baa0(param_1, 0x1b, isDown)`, is itself gated on
+        `GetTopmostActiveMenu() != 0` (this section's own earlier finding)
+        — whether the engine's menu-stack always carries a baseline
+        HUD-as-menudef entry during live play (making that gate trivially
+        true) or not is unconfirmed. Resolving the exact live-gameplay
+        trigger condition needs either a real `cls.state` enum value dump
+        or live testing once an injectable build exists — not a case to
+        keep guessing past statically.
 1h. **Render-scale/shadow-map thread: found the render-target orchestrator,
     re-confirmed (not just re-found) the x86 team's own hardest open
     question rather than cracking it.** `$shadowmap_large` needed the

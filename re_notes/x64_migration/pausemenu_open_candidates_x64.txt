@@ -1,0 +1,184 @@
+================================================================
+Function: FUN_140082e70 @ 140082e70
+Signature: undefined FUN_140082e70(void)
+----------------------------------------------------------------
+
+void FUN_140082e70(int param_1)
+
+{
+  int iVar1;
+  undefined8 uVar2;
+  
+  iVar1 = (&DAT_1406e2558)[(longlong)param_1 * 100];
+  if (iVar1 == 1) {
+    FUN_1400796b0(param_1);
+  }
+  else if (iVar1 == 2) {
+    (&DAT_1406e2558)[(longlong)param_1 * 100] = 0;
+    if (**(char **)(DAT_141efb798 + 0x10) != '\0') {
+      uVar2 = FUN_1402cb690(&DAT_1403f3d44);
+      FUN_14022f680(0,uVar2);
+      FUN_1402c5e00(DAT_141efb798,&DAT_1403e6bdb);
+    }
+  }
+  FUN_140279e90(0);
+  FUN_14029f3f0(param_1,iVar1 == 0);
+  return;
+}
+
+
+
+================================================================
+Function: FUN_14029f3f0 @ 14029f3f0
+Signature: undefined FUN_14029f3f0(void)
+----------------------------------------------------------------
+
+undefined8 FUN_14029f3f0(int param_1,int param_2)
+
+{
+  char cVar1;
+  int iVar2;
+  undefined4 uVar3;
+  longlong lVar4;
+  char *pcVar5;
+  char *pcVar6;
+  
+  iVar2 = FUN_1402aa7e0(&DAT_142605050);
+  if ((iVar2 < 1) || ((param_2 == 6 && ((&DAT_142615b20)[param_1] == 6)))) {
+switchD_14029f447_caseD_5:
+    return 0;
+  }
+  (&DAT_142615b20)[param_1] = param_2;
+  switch(param_2) {
+  case 0:
+    FUN_14007f310(param_1,0xffffffef);
+    thunk_FUN_14007eeb0(param_1);
+    FUN_1402c5b30("cl_paused",0);
+    FUN_1402431b0(0);
+    FUN_1402ac9c0(&DAT_142605050);
+    return 1;
+  case 1:
+    FUN_14007f3b0(param_1,0x10);
+    FUN_1402431b0(0);
+    FUN_1402ad950(&DAT_142605050,&DAT_14042cbf0);
+    pcVar5 = (char *)FUN_1402c3b50("com_errorMessage");
+    if (((*pcVar5 == '\0') ||
+        (((lVar4 = FUN_1402acef0(&DAT_142605050,"pregame_loaderror"), lVar4 != 0 &&
+          (iVar2 = FUN_1402ad530(&DAT_142605050,lVar4), iVar2 != 0)) &&
+         (cVar1 = FUN_1402ab950(&DAT_142605050,lVar4), cVar1 != '\0')))) ||
+       (((lVar4 = FUN_1402acef0(&DAT_142605050,"error_popmenu_submenu"), lVar4 != 0 &&
+         (iVar2 = FUN_1402ad530(&DAT_142605050,lVar4), iVar2 != 0)) &&
+        (cVar1 = FUN_1402ab950(&DAT_142605050,lVar4), cVar1 != '\0')))) goto LAB_14029f579;
+    pcVar5 = "error_popmenu";
+    break;
+  case 2:
+    uVar3 = FUN_140083ae0();
+    FUN_1402c5b30("cl_paused",uVar3);
+    FUN_14007f3b0(param_1,0x10);
+    FUN_1402ad950(&DAT_142605050,"pausedmenu");
+    return 1;
+  case 3:
+    if (*(char *)(DAT_142605000 + 0x10) == '\0') {
+      uVar3 = FUN_140083ae0();
+      FUN_1402c5b30("cl_paused",uVar3);
+      FUN_14007f3b0(param_1,0x10);
+      FUN_1402ac9c0(&DAT_142605050);
+      pcVar5 = (char *)FUN_1402c3b50("com_errorMessage");
+      pcVar6 = "pregame_loaderror";
+      if (*pcVar5 == '\0') {
+        pcVar6 = "pregame";
+      }
+      FUN_1402ad950(&DAT_142605050,pcVar6);
+      return 1;
+    }
+    FUN_14029ccb0();
+    return 1;
+  case 4:
+    FUN_14007f3b0(param_1,0x10);
+    FUN_1402ac9c0(&DAT_142605050);
+    FUN_1402ad950(&DAT_142605050,"endofgame");
+    return 1;
+  default:
+    goto switchD_14029f447_caseD_5;
+  case 6:
+    FUN_1402ac9c0(&DAT_142605050);
+    FUN_1402ad950(&DAT_142605050,"briefing");
+    return 1;
+  case 7:
+    DAT_142605060 = 0x43a00000;
+    DAT_142605064 = 0x43e00000;
+    FUN_1402b08e0(&DAT_142605050,DAT_1403e4164,DAT_1404340dc);
+    FUN_14007f3b0(param_1,0x10);
+    FUN_1402ad950(&DAT_142605050,"victoryscreen");
+    return 1;
+  case 10:
+    FUN_1402ad950(&DAT_142605050,"savegameloading");
+    return 1;
+  case 0xb:
+    FUN_14007f3b0(param_1,0x10);
+    FUN_1402704a0(DAT_1403e3e6c,1000);
+    _guard_check_icall(param_1,1);
+    FUN_1402431b0(1);
+    FUN_1402ac9c0(&DAT_142605050);
+    FUN_1402ad950(&DAT_142605050,"coop_lobby");
+    pcVar5 = (char *)FUN_1402c3b50("com_errorMessage");
+    if (*pcVar5 == '\0') {
+      return 1;
+    }
+    FUN_1402ad950(&DAT_142605050,"error_popmenu_lobby");
+    FUN_1402c52b0(DAT_1406ef580,1);
+    FUN_1401f0cb0();
+    return 1;
+  case 0xc:
+    FUN_14007f3b0(param_1,0x10);
+    FUN_1402704a0(DAT_1403e3e6c,1000);
+    FUN_1402431b0(1);
+    cVar1 = FUN_1402999b0(param_1,"levels_challenge");
+    if (cVar1 == '\0') {
+      FUN_1402ad950(&DAT_142605050,"levels_challenge");
+    }
+    pcVar5 = (char *)FUN_1402c3b50("com_errorMessage");
+    if (*pcVar5 != '\0') {
+      FUN_1402ad950(&DAT_142605050,"error_popmenu_submenu");
+    }
+    FUN_1402acb10(&DAT_142605050);
+    return 1;
+  case 0xd:
+    FUN_14007f3b0(param_1,0x10);
+    FUN_1402431b0(0);
+    pcVar5 = "main_text";
+    break;
+  case 0xe:
+    FUN_14007f3b0(param_1,0x10);
+    _guard_check_icall(param_1,1);
+    FUN_1402431b0(1);
+    lVar4 = FUN_1402acef0(&DAT_142605050,"main_specops");
+    if (((lVar4 == 0) || (iVar2 = FUN_1402ad530(&DAT_142605050,lVar4), iVar2 == 0)) ||
+       (cVar1 = FUN_1402ab950(&DAT_142605050,lVar4), cVar1 == '\0')) {
+      FUN_1402ad950(&DAT_142605050,"main_specops");
+    }
+    pcVar5 = (char *)FUN_1402c3b50("com_errorMessage");
+    if (*pcVar5 == '\0') goto LAB_14029f579;
+    pcVar5 = "error_popmenu_submenu";
+  }
+  FUN_1402ad950(&DAT_142605050,pcVar5);
+LAB_14029f579:
+  FUN_1402704a0(DAT_1403e3e6c,1000);
+  return 1;
+}
+
+
+
+================================================================
+Function: FUN_14029b470 @ 14029b470
+Signature: undefined FUN_14029b470(void)
+----------------------------------------------------------------
+
+undefined4 FUN_14029b470(int param_1)
+
+{
+  return (&DAT_142615b20)[param_1];
+}
+
+
+

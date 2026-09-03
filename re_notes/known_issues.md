@@ -16326,8 +16326,25 @@ pass over a distinct registered-menu-defs array, gated on a menu already
 being open, and `FUN_14029baa0`'s entire body is gated the same way -- so
 neither can be the "open pause menu from nothing" path; that call site is
 still unidentified, plausibly inside `FUN_14007eaf0` before it reaches
-`FUN_14029baa0`, not yet traced. None of this is live-tested. **Render-scale/
-shadow-map thread, same day**: found the x64 render-target orchestrator
+`FUN_14029baa0`, not yet traced. None of this is live-tested. **Second
+same-day follow-up -- `SetMenuState`/`OpenPauseMenu` now CONFIRMED**:
+decompiled `FUN_14007eaf0` (the unified kbutton/key entry point) in full,
+plus its ESC-branch callees `FUN_140082e70`/`FUN_14029f3f0`.
+`FUN_14029f3f0(player, mode)` is a real, full `SetMenuState` equivalent --
+ten named destination screens, each opened via a new confirmed primitive,
+`FUN_1402ad950(ctx, name)` (`OpenMenuByName`): mode 0=resume (matches the
+already-confirmed `Cvar_Set("cl_paused",0)` path), mode 1=main/error-popmenu,
+**mode 2="pausedmenu" -- the real `OpenPauseMenu`**, mode 3=pregame/
+loaderror, mode 4=endofgame, mode 6=briefing, mode 7=victoryscreen, mode
+0xb=coop_lobby, mode 0xc=levels_challenge, mode 0xd=main_text, mode
+0xe=main_specops. `FUN_140082e70` turned out to be a connecting/loading-state
+ESC-cancel handler, not the general pause-open path. **Genuinely still
+open**: `FUN_14007eaf0`'s ESC branch only reaches mode-2 `SetMenuState` via
+one specific connection-state value (`iVar3==6`), and whether that's really
+the live SP-gameplay/active state (vs. an MP-briefing-specific one, given
+mode 6's own name is "briefing") isn't pinned down statically -- needs a
+real `cls.state` enum dump or live testing. None of this is live-tested.
+**Render-scale/shadow-map thread, same day**: found the x64 render-target orchestrator
 (`FUN_1401b8c80`, equivalent to `FUN_004b60a0`) and confirmed its 5 real
 callers create `SAVED_SCREEN`/`FLOAT_Z`/`SSAO`/`SSAO_BLURRED`/
 `SSAO_FLOAT_Z` -- but, matching the x86 investigation's own 9+-round
