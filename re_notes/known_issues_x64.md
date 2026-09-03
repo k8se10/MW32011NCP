@@ -133,13 +133,26 @@ directly, or set the held-input bit at `param_1+0xc` before the chain runs
 and let the existing native logic do the rest. Full detail in
 `re_notes/x64_migration/sprint_weapnext_x64.md`.
 
-**weapnext thread**: bind-table position found (index 66, no `kbutton_t`
-counterpart, one-shot command). One real candidate dispatcher ruled out --
-`FUN_1402aac50` (the confirmed `Menu_KeyEvent` handler) has no case matching
-weapnext, closing off the "maybe it's a unified one-shot dispatcher too"
-hypothesis rather than leaving it open. The real x64 weapnext dispatch site
-is still unlocated; the x86 raw-keycode-table approach (a separate,
-not-yet-found x64 function) remains the leading theory.
+**weapnext thread -- narrowed via full event-loop mapping, not just another
+candidate check**: bind-table position found (index 66, no `kbutton_t`
+counterpart, one-shot command). `FUN_1402aac50` (the confirmed `Menu_KeyEvent`
+handler) was ruled out first. Then the entire top-level input-event
+architecture was mapped: `FUN_14007eaf0`'s own caller is `FUN_14023ccb0`, a
+real, confirmed `Com_EventLoop`/`Sys_SendKeyEvents`-equivalent pulling typed
+events from `FUN_1402ee660` (confirmed `Sys_GetEvent` -- a 256-slot ring
+buffer with a genuine `PeekMessageA`/`GetMessageA`/`DispatchMessageA` Win32
+message-pump fallback) and dispatching by a 4-way type selector: type 1 =
+`FUN_14007eaf0` (the known kbutton path), type 2 = `FUN_14007e8e0` (decompiled
+and ruled out -- a real character-typed/`WM_CHAR`-equivalent event, forwards
+to the menu system), type 3 = `FUN_14022f680` (the already-confirmed
+`Cbuf_AddText`-equivalent), default = `FUN_14023c700` (decompiled and ruled
+out -- a real `Com_Error`-equivalent, `setjmp`/`longjmp`-based). With 3 of 4
+event types eliminated across the ENTIRE real event-type space, only the
+kbutton path is structurally possible -- the real open question is now
+narrowed from "which dispatcher" to **"which per-tick consumer reads bind
+index 66 for a rising edge,"** the same class of problem Sprint's own
+resolution (a per-tick consumer reading a state bit, not a special
+dispatcher) just solved. Not yet found.
 
 **D-pad actionslot -- upgraded to medium-high confidence**: the ENTIRE
 kbutton-table function cluster is mapped via `FindGlobalRefs.java` -- only 4
