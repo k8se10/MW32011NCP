@@ -1,0 +1,112 @@
+=== Reference counts per global ===
+cls_state (1406e2558): 92 references
+
+=== Candidate functions, ranked by distinct global diversity (54) ===
+
+---- FUN_140080b90 @ 140080b90 (globals: cls_state) ----
+
+---- FUN_140081c10 @ 140081c10 (globals: cls_state) ----
+
+---- FUN_140083690 @ 140083690 (globals: cls_state) ----
+
+---- FUN_140080390 @ 140080390 (globals: cls_state) ----
+
+---- FUN_14007bc90 @ 14007bc90 (globals: cls_state) ----
+
+---- FUN_140072c10 @ 140072c10 (globals: cls_state) ----
+
+---- FUN_14003aa90 @ 14003aa90 (globals: cls_state) ----
+
+---- FUN_1401f3c90 @ 1401f3c90 (globals: cls_state) ----
+
+---- FUN_140080100 @ 140080100 (globals: cls_state) ----
+
+---- FUN_140083700 @ 140083700 (globals: cls_state) ----
+
+---- FUN_140082e00 @ 140082e00 (globals: cls_state) ----
+
+---- FUN_140080400 @ 140080400 (globals: cls_state) ----
+
+---- FUN_140266a20 @ 140266a20 (globals: cls_state) ----
+
+---- FUN_140049b00 @ 140049b00 (globals: cls_state) ----
+
+---- FUN_140049b80 @ 140049b80 (globals: cls_state) ----
+
+---- FUN_140080b30 @ 140080b30 (globals: cls_state) ----
+
+---- FUN_140080ab0 @ 140080ab0 (globals: cls_state) ----
+
+---- FUN_1400804b0 @ 1400804b0 (globals: cls_state) ----
+
+---- FUN_140264b90 @ 140264b90 (globals: cls_state) ----
+
+---- FUN_1400794b0 @ 1400794b0 (globals: cls_state) ----
+
+---- FUN_14007bd30 @ 14007bd30 (globals: cls_state) ----
+
+---- FUN_140079130 @ 140079130 (globals: cls_state) ----
+
+---- FUN_140049bb0 @ 140049bb0 (globals: cls_state) ----
+
+---- FUN_14003b030 @ 14003b030 (globals: cls_state) ----
+
+---- FUN_140288680 @ 140288680 (globals: cls_state) ----
+
+---- FUN_140263f00 @ 140263f00 (globals: cls_state) ----
+
+---- FUN_140079520 @ 140079520 (globals: cls_state) ----
+
+---- FUN_14008ded0 @ 14008ded0 (globals: cls_state) ----
+
+---- FUN_140080d50 @ 140080d50 (globals: cls_state) ----
+
+---- FUN_14029d170 @ 14029d170 (globals: cls_state) ----
+
+---- FUN_14006bed0 @ 14006bed0 (globals: cls_state) ----
+
+---- FUN_14007fe50 @ 14007fe50 (globals: cls_state) ----
+
+---- FUN_1400795d0 @ 1400795d0 (globals: cls_state) ----
+
+---- FUN_140243370 @ 140243370 (globals: cls_state) ----
+
+---- FUN_14003af50 @ 14003af50 (globals: cls_state) ----
+
+---- FUN_140082ac0 @ 140082ac0 (globals: cls_state) ----
+
+---- FUN_140082fc0 @ 140082fc0 (globals: cls_state) ----
+
+---- FUN_1400839c0 @ 1400839c0 (globals: cls_state) ----
+
+---- FUN_140083640 @ 140083640 (globals: cls_state) ----
+
+---- FUN_140264a60 @ 140264a60 (globals: cls_state) ----
+
+---- FUN_140264160 @ 140264160 (globals: cls_state) ----
+
+---- FUN_1402647e0 @ 1402647e0 (globals: cls_state) ----
+
+---- FUN_140082e70 @ 140082e70 (globals: cls_state) ----
+
+---- FUN_1400819f0 @ 1400819f0 (globals: cls_state) ----
+
+---- FUN_140080cf0 @ 140080cf0 (globals: cls_state) ----
+
+---- FUN_140265a50 @ 140265a50 (globals: cls_state) ----
+
+---- FUN_14007eaf0 @ 14007eaf0 (globals: cls_state) ----
+
+---- FUN_14007bd70 @ 14007bd70 (globals: cls_state) ----
+
+---- FUN_140072df0 @ 140072df0 (globals: cls_state) ----
+
+---- FUN_140079470 @ 140079470 (globals: cls_state) ----
+
+---- FUN_140278d50 @ 140278d50 (globals: cls_state) ----
+
+---- FUN_1402418d0 @ 1402418d0 (globals: cls_state) ----
+
+---- FUN_14028f3c0 @ 14028f3c0 (globals: cls_state) ----
+
+---- FUN_14004a360 @ 14004a360 (globals: cls_state) ----
