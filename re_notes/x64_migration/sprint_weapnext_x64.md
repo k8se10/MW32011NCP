@@ -167,16 +167,56 @@ by a 4-way event-type selector:
   weapnext, but a genuinely useful confirmed target for any future crash-diagnostics
   work.
 
-**Real conclusion**: 3 of the 4 possible event types are now definitively ruled out
-as weapnext's dispatch path, leaving only type 1 (`FUN_14007eaf0`'s kbutton path) as
-structurally possible — there is no hidden "one-shot bound command" event type
-sitting alongside it. This closes the "which dispatcher" question with much higher
-confidence than before (elimination across the ENTIRE real event-type space, not
-just one more candidate checked) and reframes the real open question as **"which
-consumer reads kbutton table index 66 for a rising edge"** — structurally the same
-class of problem Sprint's own resolution just solved (a per-tick consumer reading a
-kbutton-adjacent bit, not a special dispatcher) — not "which dispatcher handles
-weapnext," which is now closed. Not yet found; the x86 raw-keycode-table approach
-(a separate function, never itself relocated on x64) remains a candidate shape for
-that consumer, alongside a plausible index-66-specific reader analogous to
-`FUN_140014a80`'s Sprint pattern.
+**Real conclusion (superseded below, kept for the record)**: 3 of the 4 possible
+event types were ruled out as weapnext's dispatch path, leaving only type 1
+(`FUN_14007eaf0`'s kbutton path) as structurally possible.
+
+**RESOLVED, same day, third follow-up — weapnext's real dispatch found, and an
+earlier conclusion in this file corrected.** `README.md` section 1g's own
+pause-menu investigation separately decompiled `FUN_14007c3a0` (confirmed as the
+real x64 equivalent of x86's `FUN_00438710`, the case-number command dispatcher)
+and, in passing, checked its `case 0x42` (`FUN_1400706d0`) against the hope it
+might be weapnext — and *initially* dismissed it as a coincidence, reasoning that
+x86/x64 case numbers aren't guaranteed to align. **That dismissal was wrong, and
+is corrected here once the real indexing mechanism was traced properly:**
+
+- `FUN_14007eff0(commandString)` — the function every bind-lookup helper in this
+  cluster calls (`FUN_14007f130`, `FUN_14007f060`, `FUN_14007e960`, etc.) — linearly
+  scans `&PTR_DAT_1404c1870` (the SAME bind-name-table base this document's own
+  index-66-for-weapnext computation used) comparing each entry against the input
+  string, returning its index. This is a direct string→bind-name-table-index
+  resolver, confirmed via its own body, not inferred.
+- `FUN_14007f330` (`Key_SetBinding(player, rawKeycode, index)`) writes that
+  resolved index directly into `DAT_140644a6c[rawKeycode*3 + player*0x34a]` — the
+  SAME per-player, per-slot table `FUN_14007eaf0` itself reads (`DAT_140644a6c` is
+  literally `DAT_140644a64 + 8`, i.e. kbutton_t's own third `int` field:
+  `{down, count, boundIndex}`, all indexed by the SAME slot, confirmed via matching
+  strides — `0xc`-byte kbutton_t stride in both, `0x34a`-int (`0xd28`-byte)
+  per-player stride in both).
+- **This means `FUN_14007eaf0`'s dispatch to `FUN_14007c3a0` passes the raw
+  keycode's BOUND BIND-NAME-TABLE INDEX straight through as the "case number"
+  argument** — i.e. `FUN_14007c3a0`'s switch cases ARE bind-name-table indices
+  directly, a real, clean, unified x64 architecture (no separate case-ID mapping
+  layer, unlike x86's more indirect scheme) — not a coincidence that weapnext's
+  computed index (66 decimal = `0x42` hex) happens to also be a real case in
+  `FUN_14007c3a0`. It's the same number by direct mechanical construction.
+
+**With that corrected, `case 0x42` = `FUN_1400706d0` really is weapnext's real
+dispatcher, now confirmed by tracing its own callee, `FUN_140074570`, in full**:
+a genuine weapon-slot-cycling function — iterates a 15-entry weapon-slot array
+(`&DAT_14052a2b8`, `% 0xf` wraparound), with a real direction parameter
+(`param_2 != 0` steps `+1`, else steps `-1` via `0xe mod 0xf` — a textbook
+forward/backward cycle), real ammo/holdability gates
+(`FUN_140027f10`/`FUN_140020390`), a weapon-category filter, and a real
+`FUN_140072c60(player, weaponIndex, altFireMode)` call to actually perform the
+switch. `FUN_1400706d0` itself gates this behind real weapon-busy/reload-state
+exclusion checks before calling it — exactly the shape a real `weapnext` handler
+needs. **weapnext is RESOLVED, static, high confidence**: `FUN_1400706d0`
+(reached via `FUN_14007c3a0` case `0x42`, reached from `FUN_14007eaf0`'s generic
+bindIndex-lookup path) is the real x64 equivalent of x86's `FUN_004a5f70`, and
+`FUN_140074570` is the real equivalent of x86's `FUN_0057a670`. Not live-tested.
+**Real lesson recorded, corrected from the earlier wrong version**: when a
+number matches between two differently-compiled binaries, don't dismiss it as
+coincidence without first tracing whether the underlying indexing MECHANISM
+(not just the specific value) is actually shared — here it genuinely was, and
+the earlier dismissal skipped that check.
