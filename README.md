@@ -11,6 +11,16 @@
 > `re_notes/known_issues.md` issue #111 and `re_notes/x64_migration/README.md`
 > for the full technical record and progress. **Do not expect the current
 > release to work until a new version ships.**
+>
+> **Emergency notice: all support for existing 32-bit (`-x86`) releases is
+> discontinued, effective immediately (2026-09-03).** This is not a gradual
+> wind-down — the live game itself can no longer run a 32-bit build at all,
+> so there is nothing left to support against. No further availability
+> commitments, no backported fixes, no LTS handover window for any `-x86`
+> release, including the current LTS (`v0.2.2-x86`) and the `v0.3.5-x86`
+> LTS candidate — see `LTS_POLICY.md`. The next release will be
+> `v0.0.1-x64`, a fresh version line for the new architecture, once x64
+> support actually exists.
 
 > **▶️ v0.3.5 (2026-08-29) — a new visual-enhancement suite, and a full
 > stutter/threading-architecture overhaul.** The largest release yet by
