@@ -1,6 +1,16 @@
 # MW3 Native Controller Support (Campaign & Survival)
 
-> **🚨THE MOD IS BROKEN AS OF 1ST SEPTEMBER 2026 UPDATE.** Activision pushed and update out to MW3 which has broken all mods and anything that is based on the original 32-bit executable including this mod. They have now pushed a new 14GB update which is 64-bit which breaks all parts of this mod and many others
+> **🚨 THE MOD IS CURRENTLY BROKEN — MW3 (2011) was recompiled to 64-bit.**
+> Activision pushed a ~14GB update (around 1 September 2026) that rebuilt both
+> `iw5sp.exe` and `iw5mp.exe` from 32-bit to 64-bit — the first real binary
+> update in this game's history. This mod (and any other tool built on the
+> original 32-bit executable) cannot load at all against the new build: a
+> 32-bit DLL simply cannot inject into a 64-bit process. **This is not a small
+> fix** — every hook this project has ever found needs to be re-located
+> against the new binary. Work on an x64 rebuild is underway; see
+> `re_notes/known_issues.md` issue #111 and `re_notes/x64_migration/README.md`
+> for the full technical record and progress. **Do not expect the current
+> release to work until a new version ships.**
 
 > **▶️ v0.3.5 (2026-08-29) — a new visual-enhancement suite, and a full
 > stutter/threading-architecture overhaul.** The largest release yet by
