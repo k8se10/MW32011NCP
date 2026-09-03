@@ -25,7 +25,7 @@ real evidence and honest confidence level; this is just an index.
 | Cluster | File | Real confidence |
 |---|---|---|
 | Sprint / weapon switch | [`sprint_weapnext_x64.md`](sprint_weapnext_x64.md) | **Sprint RESOLVED (static, high confidence)**: full Pmove-entry call chain traced (`FUN_140016620` frame-subdivision wrapper → `FUN_1400168a0` per-substep tick → `FUN_140014a80`, the real sprint-bit writer, confirmed via a `pm_flags`-equivalent bit-0x4000 write gated on a held-input check) — the real x64 equivalent of x86's `InjectControllerSprintPmFlags` hook target. **weapnext, narrowed same day**: the entire top-level event-loop architecture is now mapped (`FUN_14023ccb0` = `Com_EventLoop`, `FUN_1402ee660` = `Sys_GetEvent` with a real Win32 message-pump fallback) — 3 of its 4 event types are ruled out (char-typed, console-command-text, `Com_Error`), leaving only the kbutton path (`FUN_14007eaf0`) structurally possible. Real open question narrowed from "which dispatcher" to "which per-tick consumer reads bind index 66," the same class of problem Sprint's own resolution just solved. |
-| Pause menu / key handler | [`pausemenu_keyhandler_x64.md`](pausemenu_keyhandler_x64.md) | `cl_paused`'s real storage global found. **Updated after this file's own section 1g**: the real key-event handler (`FUN_1402aac50`, x86 `FUN_00541020` equivalent) and its wrapper (`FUN_14029baa0`) ARE now found, high confidence — cross-validates `pausemenu_keyhandler_x64.md`'s own `FUN_14029dfd0` candidate as a real part of the chain. **Same-day follow-up**: `FUN_14029baa0` fully decompiled — confirmed x64 `Cvar_Set` equivalent (`FUN_1402c5b30`) and the real resume-gameplay path (`Cvar_Set("cl_paused", 0)` once the menu stack empties). `FUN_1402ac9c0` ruled OUT as `OpenPauseMenu` (it's a bulk close/refresh pass over already-registered menu defs, gated on a menu already being open). **Second same-day follow-up: `SetMenuState`/`OpenPauseMenu` CONFIRMED.** `FUN_14029f3f0(player, mode)` is the real `SetMenuState`, a 10-destination named-screen dispatcher; mode `2` opens `"pausedmenu"` via the newly-found `FUN_1402ad950(ctx, name)` (`OpenMenuByName`) — that's the real `OpenPauseMenu`. Still open: the exact live-gameplay condition that reaches mode `2` from an ordinary Start/ESC press (`FUN_14007eaf0`'s ESC branch only reaches it via connection-state `6`, not confirmed as the live-play state) — needs a `cls.state` enum dump or live testing. |
+| Pause menu / key handler | [`pausemenu_keyhandler_x64.md`](pausemenu_keyhandler_x64.md) | `cl_paused`'s real storage global found. **Updated after this file's own section 1g**: the real key-event handler (`FUN_1402aac50`, x86 `FUN_00541020` equivalent) and its wrapper (`FUN_14029baa0`) ARE now found, high confidence — cross-validates `pausemenu_keyhandler_x64.md`'s own `FUN_14029dfd0` candidate as a real part of the chain. **Same-day follow-up**: `FUN_14029baa0` fully decompiled — confirmed x64 `Cvar_Set` equivalent (`FUN_1402c5b30`) and the real resume-gameplay path (`Cvar_Set("cl_paused", 0)` once the menu stack empties). `FUN_1402ac9c0` ruled OUT as `OpenPauseMenu` (it's a bulk close/refresh pass over already-registered menu defs, gated on a menu already being open). **Second same-day follow-up: `SetMenuState`/`OpenPauseMenu` CONFIRMED.** `FUN_14029f3f0(player, mode)` is the real `SetMenuState`, a 10-destination named-screen dispatcher; mode `2` opens `"pausedmenu"` via the newly-found `FUN_1402ad950(ctx, name)` (`OpenMenuByName`) — that's the real `OpenPauseMenu`. **Third same-day follow-up, resolved in practice**: found the real live-gameplay pause TOGGLE, `FUN_1400823b0` (case `0x43` in `FUN_14007c3a0`, the confirmed x64 `FUN_00438710` equivalent) — reads the current `SetMenuState` mode and toggles between open (mode 2) and resume (mode 0). This is structurally independent of the ESC-specific `cls.state==6` branch, which stays an open, lower-priority mystery (real write sites for states 1/4/6/7 found, semantic mapping still uncertain) since Start's pause almost certainly doesn't need it. |
 | D-pad actionslot / generic dvar API | [`actionslot_dvarhelpers_x64.md`](actionslot_dvarhelpers_x64.md) | Dvar API (`Dvar_FindVar`/get/set): high confidence, cross-validated 4 independent call sites — real simplification over x86, standard calling convention, no `__asm` needed; value offset shifted `+0xc`→`+0x10` (real x64 struct-alignment change, confirmed two ways). **D-pad actionslot, upgraded same day**: mapped the ENTIRE kbutton-table function cluster (4 functions total: setter, `IsKeyButtonDown` by index/by name, `ClearAllKeyButtons`) — no separate raw-dispatch table exists anywhere, confirming actionslot is "just another kbutton" at the table level (medium-high confidence). The actual "use the equipped item" consumer is still not found, plausibly GSC-VM script state rather than native C++. |
 
 Section 1 below (this file) covers the movement/look pipeline, buttons/ADS,
@@ -584,6 +584,42 @@ record — this section is a pointer, not the source of truth)
       special-case at all. This is a real, structurally plausible
       alternative, not yet checked — the next concrete step for this
       thread, before more `cls.state` semantic archaeology.
+    - **Same-day follow-up #5, the real breakthrough: found the actual
+      Start-button pause TOGGLE, structurally independent of the
+      `cls.state==6` mystery entirely.** Followed through on the alternative
+      flagged above — decompiled `FUN_14007c3a0`, confirming it as the real
+      x64 equivalent of x86's `FUN_00438710` (the generic case-number
+      command dispatcher `FUN_14007eaf0`'s other branch reaches via the
+      `(&DAT_140644a6c)[...]` case-lookup table). It's a huge, real, fully
+      readable `switch(param_2)` covering dozens of distinct gameplay
+      commands — mostly `FUN_14007e460`(down)/`FUN_14007e490`(up) pairs on
+      per-player struct fields at `DAT_140644xxx + player*0x230`, a SECOND,
+      separate per-bind state system from the kbutton table `FUN_14007eaf0`
+      itself owns. Within it: **case `0x43` = `FUN_1400823b0`, confirmed as
+      the real live-gameplay pause TOGGLE** — reads the current
+      `SetMenuState` mode via `FUN_14029b470` (the earlier-decompiled
+      `(&DAT_142615b20)[player]` reader) and calls `SetMenuState(player, 2)`
+      (open) if not already paused, or `SetMenuState(player, 0)` (resume) if
+      it is — a clean, complete, self-contained toggle, structurally
+      unrelated to `cls.state`/`iVar3==6` at all. **Real conclusion**: live
+      Start-button pause almost certainly routes through this generic
+      case-dispatch path (case `0x43`), not the ESC-specific `cls.state==6`
+      branch — the two are separate mechanisms, matching x86's own
+      historical split (ESCAPE hardcoded specially in the key handler vs.
+      Start driving pause through a different path). This resolves the
+      practical "how does pause actually open during live gameplay"
+      question with high confidence, independent of ever pinning down
+      `cls.state`'s exact semantics. **One coincidence explicitly ruled
+      out, not chased further**: case `0x42` (`FUN_1400706d0`) was checked
+      on the hope it might match x86's own weapnext case number (also
+      `0x42`) — it doesn't; a different, heavily state-gated single action,
+      identity not determined. Real lesson: case numbers between x86's and
+      x64's differently-compiled versions of a structurally similar
+      dispatcher are NOT guaranteed to align — a matching number is not
+      evidence on its own, don't assume it transfers without checking the
+      actual body. weapnext's own case ID in this table is still unknown,
+      but the search now has a confirmed, correct function to search
+      within, a real narrowing even without the final answer.
 1h. **Render-scale/shadow-map thread: found the render-target orchestrator,
     re-confirmed (not just re-found) the x86 team's own hardest open
     question rather than cracking it.** `$shadowmap_large` needed the
