@@ -1,0 +1,725 @@
+================================================================
+Function: FUN_1401b50e0 @ 1401b50e0
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_1401b50e0(void)
+
+{
+  uint uVar1;
+  undefined8 uVar2;
+  char *pcVar3;
+  char *pcVar4;
+  undefined8 uVar5;
+  undefined8 in_stack_ffffffffffffff38;
+  longlong lVar6;
+  undefined4 uVar8;
+  undefined4 uVar9;
+  undefined4 uVar10;
+  ulonglong uVar7;
+  undefined4 uVar11;
+  undefined4 uVar12;
+  undefined4 uVar13;
+  undefined4 uVar15;
+  ulonglong uVar14;
+  undefined4 uVar16;
+  undefined8 in_stack_ffffffffffffff48;
+  undefined4 uVar17;
+  undefined4 uVar18;
+  undefined8 in_stack_ffffffffffffff50;
+  undefined4 uVar19;
+  
+  uVar17 = (undefined4)((ulonglong)in_stack_ffffffffffffff48 >> 0x20);
+  uVar19 = (undefined4)((ulonglong)in_stack_ffffffffffffff50 >> 0x20);
+  uVar1 = (uint)((ulonglong)in_stack_ffffffffffffff38 >> 0x20);
+  FUN_1401dc140();
+  FUN_1401974f0();
+  lVar6 = (ulonglong)uVar1 << 0x20;
+  _DAT_141884ad8 =
+       FUN_1402c46d0("r_ignore",0,0x80000000,0x7fffffff,lVar6,"used for debugging anything");
+  uVar2 = CONCAT44((int)((ulonglong)lVar6 >> 0x20),1);
+  DAT_141884ae0 =
+       FUN_1402c46d0("vid_xpos",3,0xfffff000,0x1000,uVar2,"Game window horizontal position");
+  uVar2 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),1);
+  DAT_141884ae8 =
+       FUN_1402c46d0("vid_ypos",0x16,0xfffff000,0x1000,uVar2,"game window vertical position");
+  uVar8 = (undefined4)((ulonglong)uVar2 >> 0x20);
+  if (DAT_1418854e0 != '\0') {
+    uVar8 = 1;
+    DAT_141884af0 =
+         FUN_1402c45d0("r_displayMode",&PTR_s_fullscreen_1404c7d90,DAT_141885538,DAT_14188553c,
+                       "Video display mode");
+  }
+  uVar13 = DAT_1403e3e68;
+  uVar2 = CONCAT44(uVar8,1);
+  DAT_141884b00 =
+       FUN_1402c4650("r_gamma",DAT_1403e525c,DAT_1403e3e68,DAT_1403e5268,uVar2,"Gamma value");
+  uVar8 = (undefined4)((ulonglong)uVar2 >> 0x20);
+  DAT_141884af8 = FUN_1402c43f0("r_ignorehwgamma",0,3,"Ignore hardware gamma");
+  uVar2 = CONCAT44(uVar8,1);
+  DAT_141884b08 =
+       FUN_1402c4650("r_blacklevel",0,DAT_1403f7d40,DAT_1403eba18,uVar2,
+                     "Black level (negative brightens output)");
+  uVar2 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),1);
+  DAT_141884b10 =
+       FUN_1402c46d0("r_texFilterAnisoMax",0x10,1,0x10,uVar2,
+                     "Maximum anisotropy to use for texture filtering");
+  uVar8 = (undefined4)((ulonglong)uVar2 >> 0x20);
+  DAT_141884b18 =
+       FUN_1402c43f0("r_texFilterDisable",0,4,"Disables all texture filtering (uses nearest only.)")
+  ;
+  DAT_141884b20 =
+       FUN_1402c46d0("r_texFilterAnisoMin",1,1,0x10,CONCAT44(uVar8,1),
+                     "Minimum anisotropy to use for texture filtering (overridden by max)");
+  uVar8 = 1;
+  DAT_141884b28 =
+       FUN_1402c45d0("r_texFilterMipMode",&PTR_s_Unchanged_1404c7e28,0,1,
+                     "Forces all mipmaps to use a particular blend between levels (or disables mipping.)"
+                    );
+  uVar10 = DAT_1403e8eb4;
+  uVar2 = CONCAT44(uVar8,4);
+  DAT_141884b30 =
+       FUN_1402c4650("r_texFilterMipBias",0,DAT_1403e8eb4,DAT_140413550,uVar2,
+                     "Change the mipmap bias");
+  uVar9 = (undefined4)((ulonglong)uVar2 >> 0x20);
+  DAT_141884b38 = FUN_1402c43f0("r_fastSkin",0,1,"Enable fast model skinning");
+  DAT_141884b70 = FUN_1402c43f0("r_smc_enable",1,0,"Enable static model cache");
+  DAT_141884b78 =
+       FUN_1402c43f0("r_smc_optimize",1,0,
+                     "Flush large models from the cache to make room for small ones when the cache is full"
+                    );
+  DAT_141884b80 = FUN_1402c43f0("r_pretess",1,0,"Batch surfaces to reduce primitive count");
+  uVar11 = DAT_1403e526c;
+  uVar8 = DAT_1403e3e6c;
+  uVar2 = CONCAT44(uVar9,1);
+  DAT_141884b88 =
+       FUN_1402c4650("r_lodScaleRigid",DAT_1403e3e6c,DAT_1403e3e6c,DAT_1403e526c,uVar2,
+                     "Scale the level of detail distance for rigid models (larger reduces detail)");
+  uVar9 = DAT_1403e8ed4;
+  uVar2 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),1);
+  DAT_141884b90 =
+       FUN_1402c4650("r_lodBiasRigid",0,DAT_1403e8ed4,0,uVar2,
+                     "Bias the level of detail distance for rigid models (negative increases detail)"
+                    );
+  uVar2 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),1);
+  DAT_141884b98 =
+       FUN_1402c4650("r_lodScaleSkinned",uVar8,uVar8,uVar11,uVar2,
+                     "Scale the level of detail distance for skinned models (larger reduces detail)"
+                    );
+  uVar15 = 1;
+  uVar2 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),1);
+  DAT_141884ba0 =
+       FUN_1402c4650("r_lodBiasSkinned",0,uVar9,0,uVar2,
+                     "Bias the level of detail distance for skinned models (negative increases detail)"
+                    );
+  uVar9 = DAT_1403e560c;
+  uVar2 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),uVar8);
+  DAT_141884ba8 =
+       FUN_1402c4dd0("r_subwindow",0,uVar8,0,uVar2,CONCAT44(uVar15,uVar10),
+                     CONCAT44(uVar17,DAT_1403e560c),CONCAT44(uVar19,4),
+                     "subwindow to draw: left, right, top, bottom");
+  uVar2 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),4);
+  DAT_141884bb0 =
+       FUN_1402c4650("r_zfar",0,0,DAT_1403e5618,uVar2,
+                     "Change the distance at which culling fog reaches 100% opacity; 0 is off");
+  uVar19 = (undefined4)((ulonglong)uVar2 >> 0x20);
+  DAT_141884bb8 = FUN_1402c43f0("r_fog",1,4,"Set to 0 to disable fog");
+  uVar17 = DAT_1403e416c;
+  uVar2 = CONCAT44(uVar19,0x44);
+  DAT_141884bc0 =
+       FUN_1402c4650("r_fog_depthhack_scale",DAT_1403e416c,DAT_1403e416c,uVar8,uVar2,
+                     "Fog color scale for viewmodel (< 0 disabled) [SP Only]");
+  uVar2 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),1);
+  DAT_141884bc8 =
+       FUN_1402c4650("r_polygonOffsetScale",uVar17,DAT_1403f4264,0,uVar2,
+                     "Offset scale for decal polygons; bigger values z-fight less but poke through walls more"
+                    );
+  uVar2 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),1);
+  DAT_141884bd0 =
+       FUN_1402c4650("r_polygonOffsetBias",uVar17,uVar10,0,uVar2,
+                     "Offset bias for decal polygons; bigger values z-fight less but poke through walls more"
+                    );
+  uVar2 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),0x44);
+  DAT_141884bd8 =
+       FUN_1402c4650("r_polygonOffsetBiasMult",uVar8,0,uVar8,uVar2,
+                     "Scriptable multiplier to apply to r_polygonOffsetBias to be used when we have sort issues because of lack of depth precision; for example, in sniper view"
+                    );
+  uVar19 = (undefined4)((ulonglong)uVar2 >> 0x20);
+  DAT_141884be0 =
+       FUN_1402c43f0("r_picmip_manual",0,1,
+                     "If 0, picmip is set automatically.  If 1, picmip is set based on the other r_picmip dvars."
+                    );
+  DAT_141884be8 =
+       FUN_1402c46d0("r_picmip",0,0,3,CONCAT44(uVar19,1),
+                     "Picmip level of color maps.  If r_picmip_manual is 0, this is read-only.");
+  DAT_141884bf0 =
+       FUN_1402c46d0("r_picmip_bump",0,0,3,1,
+                     "Picmip level of normal maps.  If r_picmip_manual is 0, this is read-only.");
+  DAT_141884bf8 =
+       FUN_1402c46d0("r_picmip_spec",0,0,3,1,
+                     "Picmip level of specular maps.  If r_picmip_manual is 0, this is read-only.");
+  DAT_141884c00 = FUN_1402c46d0("r_picmip_water",0,0,1,3,"Picmip level of water maps.");
+  DAT_141884c08 = FUN_1402c46d0("r_imageQuality",1,0,4,3,"Image quality");
+  DAT_141884c10 = FUN_1402c43f0("r_detail",1,0,"Allows shaders to use detail textures");
+  DAT_141884c18 = FUN_1402c43f0("r_normal",1,0,"Allows shaders to use normal maps");
+  DAT_141884c20 = FUN_1402c43f0("r_specular",1,1,"Allows shaders to use phong specular lighting");
+  DAT_141884c28 =
+       FUN_1402c45d0("r_lightMap",&PTR_s_Black_1404c7db0,1,4,
+                     "Replace all lightmaps with pure black or pure white");
+  DAT_141884c30 =
+       FUN_1402c45d0("r_colorMap",&PTR_s_Black_1404c7db0,1,4,
+                     "Replace all color maps with pure black or pure white");
+  DAT_141884c38 =
+       FUN_1402c45d0("r_detailMap",&PTR_s_Hidden_1404c7dd8,1,4,
+                     "Replace all detail maps with an image that effectively disables them");
+  DAT_141884c40 =
+       FUN_1402c45d0("r_normalMap",&PTR_DAT_1404c7df0,1,4,
+                     "Replace all normal maps with a flat normal map");
+  uVar19 = 1;
+  DAT_141884c48 =
+       FUN_1402c45d0("r_specularMap",&PTR_s_Black_1404c7db0,1,4,
+                     "Replace all specular maps with pure black (off) or pure white (super shiny)");
+  uVar2 = CONCAT44(uVar19,0x4c);
+  DAT_141884c50 =
+       FUN_1402c4650("r_specularColorScale",DAT_1403e8e34,0,DAT_1403e9e14,uVar2,
+                     "Set greater than 1 to brighten specular highlights");
+  uVar19 = DAT_1403e41f4;
+  uVar2 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),0x4c);
+  DAT_141884c58 =
+       FUN_1402c4650("r_diffuseColorScale",uVar8,0,DAT_1403e41f4,uVar2,
+                     "Globally scale the diffuse color of all point lights");
+  uVar10 = (undefined4)((ulonglong)uVar2 >> 0x20);
+  DAT_141884c60 = FUN_1402c43f0("r_primaryLightUseTweaks",0,4,"Use primary light intensity tweaks");
+  uVar2 = CONCAT44(uVar10,4);
+  DAT_141884c68 =
+       FUN_1402c4650("r_primaryLightTweakDiffuseStrength",uVar8,0,uVar19,uVar2,
+                     "Tweak the diffuse intensity for primary lights");
+  uVar10 = 1;
+  uVar2 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),4);
+  DAT_141884c70 =
+       FUN_1402c4650("r_primaryLightTweakSpecularStrength",uVar8,0,uVar19,uVar2,
+                     "Tweak the specular intensity for primary lights");
+  uVar2 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),uVar8);
+  DAT_141884c78 =
+       FUN_1402c4d40("r_charLightAmbient",0,0,0,uVar2,CONCAT44(uVar10,4),
+                     "Tweak the base ambient color for characters.");
+  uVar10 = (undefined4)((ulonglong)uVar2 >> 0x20);
+  DAT_141884c80 =
+       FUN_1402c43f0("r_viewModelPrimaryLightUseTweaks",0,4,"Use primary light intensity tweaks");
+  uVar2 = CONCAT44(uVar10,4);
+  DAT_141884c88 =
+       FUN_1402c4650("r_viewModelPrimaryLightTweakDiffuseStrength",uVar8,0,uVar19,uVar2,
+                     "Tweak the diffuse intensity for view model primary lights");
+  uVar10 = 1;
+  uVar2 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),4);
+  DAT_141884c90 =
+       FUN_1402c4650("r_viewModelPrimaryLightTweakSpecularStrength",uVar8,0,uVar19,uVar2,
+                     "Tweak the specular intensity for view model primary lights");
+  uVar2 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),uVar8);
+  DAT_141884c98 =
+       FUN_1402c4d40("r_viewModelLightAmbient",0,0,0,uVar2,CONCAT44(uVar10,4),
+                     "Tweak the base ambient color for the view model.");
+  uVar10 = (undefined4)((ulonglong)uVar2 >> 0x20);
+  _DAT_141884ca0 =
+       FUN_1402c43f0("r_useLayeredMaterials",0,2,
+                     "Set to true to use layered materials on shader model 3 hardware");
+  DAT_141884ca8 =
+       FUN_1402c43f0("r_loadForRenderer",1,2,
+                     "Set to false to disable dx allocations (for dedicated server mode)");
+  _DAT_141884cb0 =
+       FUN_1402c43f0("r_resampleScene",1,4,
+                     "Upscale the frame buffer with sharpen filter and color correction.");
+  uVar2 = CONCAT44(uVar10,1);
+  _DAT_141884cb8 =
+       FUN_1402c4650("r_debugLineWidth",uVar8,0,uVar9,uVar2,"Width of server side debug lines");
+  uVar7 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),2);
+  DAT_141884cc0 =
+       FUN_1402c46d0("r_vc_makelog",0,0,2,uVar7,
+                     "Enable logging of light grid points for the vis cache.  1 starts from scratch, 2 appends."
+                    );
+  uVar7 = uVar7 & 0xffffffff00000000;
+  DAT_141884cc8 =
+       FUN_1402c46d0("r_vc_showlog",0,0,0x400,uVar7,
+                     "Show this many rows of light grid points for the vis cache");
+  uVar2 = CONCAT44((int)(uVar7 >> 0x20),4);
+  _DAT_141884cd0 =
+       FUN_1402c46d0("r_showLightGrid",0,0,3,uVar2,
+                     "Show light grid debugging information (2: detailed, 3: detailed for this box only)"
+                    );
+  uVar10 = (undefined4)((ulonglong)uVar2 >> 0x20);
+  DAT_141884cd8 =
+       FUN_1402c43f0("r_showMissingLightGrid",0,4,
+                     "Use rainbow colors for entities that are outside the light grid");
+  _DAT_141884ce0 =
+       FUN_1402c43f0("r_cacheSModelLighting",1,0,
+                     "Speed up static model lighting by caching previous results");
+  DAT_141884ce8 =
+       FUN_1402c43f0("r_cacheModelLighting",1,0,
+                     "Speed up model lighting by caching previous results");
+  DAT_141884cf0 =
+       FUN_1402c43f0("r_lightGridEnableTweaks",0,0x48,
+                     "Enable tweaks of the light color from the light grid");
+  DAT_141884cf8 =
+       FUN_1402c43f0("r_lightGridUseTweakedValues",1,0,"Use tweaked values instead of default");
+  uVar9 = DAT_1403e5264;
+  uVar2 = CONCAT44(uVar10,0x48);
+  DAT_141884d00 =
+       FUN_1402c4650("r_lightGridIntensity",uVar8,0,DAT_1403e5264,uVar2,
+                     "Adjust the intensity of light color from the light grid");
+  uVar7 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),0x48);
+  DAT_141884d08 =
+       FUN_1402c4650("r_lightGridContrast",0,uVar17,uVar8,uVar7,
+                     "Adjust the contrast of light color from the light grid");
+  DAT_141884d10 = FUN_1402c43f0("r_heroLighting",1,0,"Enable hero-only lighting");
+  uVar7 = uVar7 & 0xffffffff00000000;
+  DAT_141884d18 =
+       FUN_1402c46d0("r_lightCacheLessFrequentPeriod",10,1,100,uVar7,
+                     "Adjust how frequently fx models (and models tagged as less-frequently-lit by script) get relit on average (1 is every frame, 8 is every 8th frame)"
+                    );
+  uVar10 = DAT_1403e52e4;
+  uVar7 = uVar7 & 0xffffffff00000000;
+  DAT_141884d20 =
+       FUN_1402c4650("r_lightCacheLessFrequentMaxDistance",DAT_1403e52e4,0,DAT_1403e8e9c,uVar7,
+                     "Adjust the distance fx models (and models tagged as less-frequently-lit by script) move before immediately being relit"
+                    );
+  _DAT_141884d28 =
+       FUN_1402c43f0("r_showModelLightingLowWaterMark",0,4,"Vertex count for each entity");
+  DAT_141884d50 =
+       FUN_1402c43f0("r_envMapOverride",0,0,"Min reflection intensity based on glancing angle.");
+  uVar7 = uVar7 & 0xffffffff00000000;
+  _DAT_141884d30 =
+       FUN_1402c4650("r_envMapMinIntensity",DAT_1403e5248,0,uVar9,uVar7,
+                     "Min reflection intensity based on glancing angle.");
+  uVar7 = uVar7 & 0xffffffff00000000;
+  _DAT_141884d38 =
+       FUN_1402c4650("r_envMapMaxIntensity",uVar13,DAT_1403e3e64,uVar9,uVar7,
+                     "Max reflection intensity based on glancing angle.");
+  uVar15 = DAT_1403e8e3c;
+  uVar7 = uVar7 & 0xffffffff00000000;
+  _DAT_141884d40 =
+       FUN_1402c4650("r_envMapExponent",DAT_1403e8e3c,DAT_1403e523c,DAT_1403e41f8,uVar7,
+                     "Reflection exponent.");
+  uVar7 = uVar7 & 0xffffffff00000000;
+  _DAT_141884d48 =
+       FUN_1402c4650("r_envMapSunIntensity",uVar9,0,uVar11,uVar7,
+                     "Max sun specular intensity intensity with env map materials.");
+  uVar2 = CONCAT44((int)(uVar7 >> 0x20),4);
+  DAT_141884d58 =
+       FUN_1402c4650("r_scaleViewport",uVar8,0,uVar8,uVar2,
+                     "Scale 3D viewports by this fraction.  Use this to see if framerate is pixel shader bound."
+                    );
+  uVar11 = (undefined4)((ulonglong)uVar2 >> 0x20);
+  DAT_141884d60 =
+       FUN_1402c43f0("r_smp_backend",1,0,"Process renderer back end in a separate thread");
+  _DAT_141884d68 =
+       FUN_1402c43f0("r_smp_worker",1,0,"Process renderer front end in a separate thread");
+  pcVar3 = "Enable worker thread";
+  pcVar4 = "Enable worker thread";
+  uVar2 = 1;
+  uVar1 = FUN_140249fd0();
+  if ((uVar1 < 3) || (uVar5 = 0, *(char *)(DAT_141efb808 + 0x10) == '\0')) {
+    uVar2 = 0;
+    pcVar4 = "Worker thread always disabled; not enough hardware threads";
+    uVar5 = 0x2000;
+  }
+  DAT_141884d70 = FUN_1402c43f0("r_smp_worker_thread0",uVar2,uVar5,pcVar4);
+  uVar2 = 1;
+  uVar1 = FUN_140249fd0();
+  if ((uVar1 < 4) || (uVar5 = 0, *(char *)(DAT_141efb808 + 0x10) == '\0')) {
+    uVar2 = 0;
+    pcVar3 = "Worker thread always disabled; not enough hardware threads";
+    uVar5 = 0x2000;
+  }
+  DAT_141884d78 = FUN_1402c43f0("r_smp_worker_thread1",uVar2,uVar5,pcVar3);
+  DAT_141884d90 =
+       FUN_1402c46d0("r_aaSamples",1,1,0x10,CONCAT44(uVar11,3),
+                     "Anti-aliasing sample count; 1 disables anti-aliasing");
+  pcVar4 = "Max anti-aliasing quality";
+  DAT_141884d88 = FUN_1402c46d0("r_aaMaxQuality",0,0,0x1f,3,"Max anti-aliasing quality");
+  DAT_141884d80 =
+       FUN_1402c43f0("r_vsync",1,3,
+                     "Enable v-sync before drawing the next frame to avoid \'tearing\' artifacts.");
+  pcVar3 = "Controls how the color buffer is cleared";
+  DAT_141884d98 =
+       FUN_1402c45d0("r_clear",&PTR_s_never_1404c7ea0,1,0,"Controls how the color buffer is cleared"
+                    );
+  uVar14 = (ulonglong)pcVar4 & 0xffffffff00000000;
+  uVar7 = (ulonglong)pcVar3 & 0xffffffff00000000;
+  DAT_141884da0 =
+       FUN_1402c4440("r_clearColor",0,0,0,uVar7,uVar14,
+                     "Color to clear the screen to when clearing the frame buffer");
+  uVar18 = 1;
+  uVar7 = uVar7 & 0xffffffff00000000;
+  DAT_141884da8 =
+       FUN_1402c4440("r_clearColor2",0,0,0,uVar7,uVar14 & 0xffffffff00000000,
+                     "Color to clear every second frame to (for use during development)");
+  uVar11 = (undefined4)(uVar7 >> 0x20);
+  DAT_141884db0 = FUN_1402c43f0("r_drawSun",1,1,"Enable sun effects");
+  DAT_141884db8 = FUN_1402c43f0("r_drawDecals",1,4,"Enable world decal rendering");
+  uVar2 = CONCAT44(uVar11,0x40);
+  DAT_141884dc0 =
+       FUN_1402c46d0("r_dlightLimit",4,0,4,uVar2,
+                     "Maximum number of dynamic lights drawn simultaneously");
+  uVar11 = (undefined4)((ulonglong)uVar2 >> 0x20);
+  DAT_141884dc8 = FUN_1402c43f0("r_spotLightShadows",1,4,"Enable shadows for spot lights.");
+  DAT_141884dd0 =
+       FUN_1402c43f0("r_spotLightEntityShadows",1,4,"Enable entity shadows for spot lights.");
+  DAT_141884dd8 = FUN_1402c43f0("r_drawWater",1,1,"Enable water animation");
+  DAT_141884de0 =
+       FUN_1402c43f0("r_lockPvs",0,4,
+                     "Lock the viewpoint used for determining what is visible to the current position and direction"
+                    );
+  DAT_141884de8 =
+       FUN_1402c43f0("r_skipPvs",0,4,
+                     "Skipt the determination of what is in the potentially visible set (disables most drawing)"
+                    );
+  uVar2 = CONCAT44(uVar11,1);
+  DAT_141884df0 =
+       FUN_1402c4650("r_portalBevels",DAT_1403e8e2c,0,uVar8,uVar2,
+                     "Helps cull geometry by angles of portals that are acute when projected onto the screen, value is the cosine of the angle"
+                    );
+  uVar11 = (undefined4)((ulonglong)uVar2 >> 0x20);
+  DAT_141884df8 =
+       FUN_1402c43f0("r_portalBevelsOnly",0,0,
+                     "Use screen-space bounding box of portals rather than the actual shape of the portal projected onto the screen"
+                    );
+  DAT_141884e00 =
+       FUN_1402c43f0("r_singleCell",0,4,
+                     "Only draw things in the same cell as the camera.  Most useful for seeing how big the current cell is."
+                    );
+  uVar7 = CONCAT44(uVar11,4);
+  DAT_141884e08 =
+       FUN_1402c46d0("r_portalWalkLimit",0,0,100,uVar7,
+                     "Stop portal recursion after this many iterations.  Useful for debugging portal errors."
+                    );
+  DAT_141884e10 =
+       FUN_1402c4650("r_portalMinClipArea",DAT_1403e8e10,0,uVar8,uVar7 & 0xffffffff00000000,
+                     "Don\'t clip child portals by a parent portal smaller than this fraction of the screen area."
+                    );
+  DAT_141884e18 =
+       FUN_1402c46d0("r_portalMinRecurseDepth",2,0,100,4,
+                     "Ignore r_portalMinClipArea for portals with fewer than this many parent portals."
+                    );
+  _DAT_141884e28 = FUN_1402c46d0("r_showPortals",0,0,3,4,"Show portals for debugging");
+  DAT_141884e20 =
+       FUN_1402c4650("r_showPortalsOverview",0,0,DAT_1403fd9b0,4,
+                     "Render 2d XY portal overlay scaled to fit to this distance.  Useful for debugging portal errors."
+                    );
+  uVar11 = 1;
+  DAT_141884e30 =
+       FUN_1402c45d0("r_showFbColorDebug",&PTR_DAT_1404c7e08,0,4,
+                     "Show front buffer color debugging information");
+  DAT_141884e38 =
+       FUN_1402c46d0("r_showFloatZDebug",0,0,2,CONCAT44(uVar11,4),
+                     "Show float z buffer used to eliminate hard edges on particles near geometry");
+  DAT_141884e40 =
+       FUN_1402c43f0("r_floatz",1,2,
+                     "Allocate a float z buffer (required for effects such as floatz, dof, laser light and SSAO)"
+                    );
+  DAT_141884e48 =
+       FUN_1402c43f0("r_floatzClearToThreshold",0,0x44,
+                     "Clear floatz buffer to threshold value so that DoF is applied to all pixels");
+  DAT_141884e50 =
+       FUN_1402c43f0("r_zFeather",1,1,"Enable z feathering (fixes particles clipping into geometry)"
+                    );
+  uVar12 = 1;
+  DAT_141884e58 =
+       FUN_1402c45d0("r_depthPrepass",&PTR_DAT_1404c7e50,0,1,
+                     "Enable depth prepass (usually improves performance)");
+  uVar11 = DAT_1403e5618;
+  DAT_141884e60 =
+       FUN_1402c4650("r_highLodDist",uVar17,uVar17,DAT_1403e5618,CONCAT44(uVar12,4),
+                     "Distance for high level of detail");
+  DAT_141884e68 =
+       FUN_1402c4650("r_mediumLodDist",uVar17,uVar17,uVar11,4,"Distance for medium level of detail")
+  ;
+  DAT_141884e70 =
+       FUN_1402c4650("r_lowLodDist",uVar17,uVar17,uVar11,4,"Distance for low level of detail");
+  DAT_141884e78 =
+       FUN_1402c4650("r_lowestLodDist",uVar17,uVar17,uVar11,4,"Distance for lowest level of detail")
+  ;
+  uVar12 = 1;
+  DAT_141884e80 =
+       FUN_1402c45d0("r_forceLod",&PTR_DAT_1404c7e70,4,4,"Force all level of detail to this level");
+  DAT_141884e88 = FUN_1402c43f0("sm_enable",1,1,"Enable shadow mapping");
+  DAT_141884e90 = FUN_1402c43f0("sm_sunEnable",1,0x44,"Enable sun shadow mapping from script");
+  DAT_141884e98 = FUN_1402c43f0("sm_spotEnable",1,0x44,"Enable spot shadow mapping from script");
+  uVar2 = CONCAT44(uVar12,0x44);
+  DAT_141884ea0 =
+       FUN_1402c46d0("sm_spotLimit",4,0,4,uVar2,"Limit number of spot shadows from script");
+  uVar7 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),1);
+  DAT_141884ea8 =
+       FUN_1402c46d0("sm_maxLights",4,0,4,uVar7,
+                     "Limits how many primary lights can have shadow maps");
+  uVar7 = uVar7 & 0xffffffff00000000;
+  DAT_141884eb0 =
+       FUN_1402c4650("sm_minSpotLightScore",uVar13,0,DAT_1403e8e6c,uVar7,
+                     "Minimum score (based on intensity, radius, and position relative to the camera) for a spot light to have shadow maps."
+                    );
+  uVar7 = CONCAT44((int)(uVar7 >> 0x20),0x4c);
+  DAT_141884eb8 =
+       FUN_1402c4650("sm_spotLightScoreModelScale",0,0,uVar8,uVar7,
+                     "Scale the calculated spot light score by this value if the light currently only affects static or script brush models."
+                    );
+  uVar7 = uVar7 & 0xffffffff00000000;
+  DAT_141884ec0 =
+       FUN_1402c4650("sm_spotShadowFadeTime",uVar8,DAT_1403e3e64,uVar15,uVar7,
+                     "How many seconds it takes for a primary light shadow map to fade in or out");
+  uVar13 = (undefined4)(uVar7 >> 0x20);
+  DAT_141884ec8 =
+       FUN_1402c43f0("sm_dynlightAllSModels",0,0x44,
+                     "Enable, from script, rendering all static models in dynamic light volume when shadow mapping"
+                    );
+  uVar2 = CONCAT44(uVar13,0x44);
+  DAT_141884ed0 =
+       FUN_1402c4650("sm_lightScore_eyeProjectDist",uVar10,0,DAT_140413558,uVar2,
+                     "When picking shadows for primary lights, measure distance from a point this far in front of the camera."
+                    );
+  uVar13 = DAT_1403e8e24;
+  uVar2 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),0x44);
+  DAT_141884ed8 =
+       FUN_1402c4650("sm_lightScore_spotProjectFrac",DAT_1403e8e24,0,uVar8,uVar2,
+                     "When picking shadows for primary lights, measure distance to a point this fraction of the light\'s radius along it\'s shadow direction."
+                    );
+  uVar7 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),0x44);
+  DAT_141884ee0 =
+       FUN_1402c4650("sm_cameraOffset",0,0,DAT_1403f2694,uVar7,
+                     "Step size for XB2 shadow map projection sampling.");
+  uVar10 = DAT_1403e8e48;
+  uVar7 = uVar7 & 0xffffffff00000000;
+  DAT_141884ef0 =
+       FUN_1402c4650("sm_sunPolygonOffsetScale",uVar9,0,DAT_1403e8e48,uVar7,
+                     "Sun shadow map offset scale");
+  uVar12 = DAT_1403ea250;
+  uVar7 = uVar7 & 0xffffffff00000000;
+  DAT_141884ee8 =
+       FUN_1402c4650("sm_sunPolygonOffsetBias",uVar13,0,DAT_1403ea250,uVar7,
+                     "Sun shadow map offset bias");
+  uVar7 = uVar7 & 0xffffffff00000000;
+  DAT_141884f00 =
+       FUN_1402c4650("sm_spotPolygonOffsetScale",uVar9,0,uVar10,uVar7,"Spot shadow map offset scale"
+                    );
+  uVar7 = uVar7 & 0xffffffff00000000;
+  DAT_141884ef8 =
+       FUN_1402c4650("sm_spotPolygonOffsetBias",uVar13,0,uVar12,uVar7,"Spot shadow map offset bias")
+  ;
+  uVar7 = uVar7 & 0xffffffff00000000;
+  DAT_141884f10 =
+       FUN_1402c4650("sm_spotPolygonOffsetScale",uVar9,0,uVar10,uVar7,"Spot shadow map offset scale"
+                    );
+  uVar7 = uVar7 & 0xffffffff00000000;
+  DAT_141884f08 =
+       FUN_1402c4650("sm_spotPolygonOffsetBias",uVar13,0,uVar12,uVar7,"Spot shadow map offset bias")
+  ;
+  uVar13 = DAT_1403e524c;
+  uVar16 = 1;
+  uVar2 = CONCAT44((int)(uVar7 >> 0x20),0x44);
+  DAT_141884f18 =
+       FUN_1402c4650("sm_sunSampleSizeNear",DAT_1403e524c,DAT_1403fcbdc,uVar12,uVar2,
+                     "Shadow sample size");
+  uVar15 = DAT_1403e8ed8;
+  uVar2 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),DAT_1403e8ed8);
+  DAT_141884f20 =
+       FUN_1402c4ca0("sm_sunShadowCenter",0,0,0,uVar2,CONCAT44(uVar16,uVar11),CONCAT44(uVar18,0x44),
+                     "Sun shadow center, 0 0 0 means don\'t override");
+  uVar11 = (undefined4)((ulonglong)uVar2 >> 0x20);
+  DAT_141884f28 =
+       FUN_1402c43f0("sm_sunShadowCenterMode",0,0x44,
+                     "When false center value only used for far map, when true sets both maps");
+  uVar2 = CONCAT44(uVar11,0x4c);
+  DAT_141884f30 =
+       FUN_1402c4650("sm_sunShadowScale",uVar8,uVar13,uVar8,uVar2,"Sun shadow scale optimization");
+  uVar13 = (undefined4)((ulonglong)uVar2 >> 0x20);
+  DAT_141884f38 = FUN_1402c43f0("sm_strictCull",1,4,"Strict shadow map cull");
+  DAT_141884f40 = FUN_1402c43f0("sm_spotDistCull",1,4,"Distance cull spot shadows");
+  DAT_141884f50 = FUN_1402c43f0("sm_fastSunShadow",1,4,"Fast sun shadow");
+  DAT_141884f48 =
+       FUN_1402c43f0("sm_sunShadowScaleLocked",0,1,"Lock usage of sm_sunShadowScale at 1");
+  DAT_141884f58 = FUN_1402c43f0("sm_qualitySpotShadow",1,0x44,"Fast spot shadow");
+  uVar2 = CONCAT44(uVar13,4);
+  DAT_141884f60 = FUN_1402c4650("r_blur",0,0,uVar12,uVar2,"Dev tweak to blur the screen");
+  uVar13 = (undefined4)((ulonglong)uVar2 >> 0x20);
+  DAT_141884f68 = FUN_1402c43f0("r_distortion",1,1,"Enable distortion");
+  DAT_141884f70 = FUN_1402c43f0("r_glow_allowed",0,1,"Allow glow.");
+  DAT_141884f78 =
+       FUN_1402c43f0("r_glow_allowed_script_forced",0,0x40,
+                     "Force \'allow glow\' to be treated as true, by script.");
+  DAT_141884f80 = FUN_1402c43f0("r_glow",1,4,"Enable glow.");
+  DAT_141884f88 = FUN_1402c43f0("r_glowUseTweaks",0,4,"Overide glow with tweak dvar values.");
+  DAT_141884f90 = FUN_1402c43f0("r_glowTweakEnable",0,4,"Tweak dev var; Enable glow");
+  uVar2 = CONCAT44(uVar13,4);
+  DAT_141884f98 =
+       FUN_1402c4650("r_glowTweakRadius0",DAT_1403e8e3c,0,uVar12,uVar2,
+                     "Tweak dev var; Glow radius in pixels at 640x480");
+  uVar2 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),4);
+  DAT_141884fa0 =
+       FUN_1402c4650("r_glowTweakBloomIntensity0",uVar8,0,DAT_1403e41f8,uVar2,
+                     "Tweak dev var; Glow bloom intensity");
+  uVar2 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),4);
+  DAT_141884fa8 =
+       FUN_1402c4650("r_glowTweakBloomCutoff",DAT_1403e3e68,0,uVar8,uVar2,
+                     "Tweak dev var; Glow bloom cut off fraction");
+  uVar2 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),4);
+  DAT_141884fb0 =
+       FUN_1402c4650("r_glowTweakBloomDesaturation",0,0,uVar8,uVar2,
+                     "Tweak dev var; Glow bloom desaturation");
+  uVar11 = (undefined4)((ulonglong)uVar2 >> 0x20);
+  DAT_141884fb8 =
+       FUN_1402c43f0("r_filmUseTweaks",0,4,"Overide film effects with tweak dvar values.");
+  DAT_141884fc0 =
+       FUN_1402c43f0("r_filmAltShader",1,4,
+                     "Use alternate shader (with middle tint and dark desat) for film color.");
+  DAT_141884fc8 =
+       FUN_1402c43f0("r_filmTweakEnable",0,0x40,"Tweak dev var; enable film color effects");
+  uVar13 = DAT_1403e526c;
+  uVar2 = CONCAT44(uVar11,0x40);
+  DAT_141884fd0 =
+       FUN_1402c4650("r_filmTweakContrast",DAT_1403ec5ec,0,DAT_1403e526c,uVar2,
+                     "Tweak dev var; film color contrast");
+  uVar2 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),4);
+  DAT_141885018 = FUN_1402c4650("r_contrast",uVar8,0,uVar13,uVar2,"Contrast adjustment");
+  uVar2 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),4);
+  DAT_141885020 = FUN_1402c4650("r_brightness",0,uVar17,uVar8,uVar2,"Brightness adjustment");
+  uVar2 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),4);
+  DAT_141885028 = FUN_1402c4650("r_desaturation",uVar8,0,uVar13,uVar2,"Desaturation adjustment");
+  uVar2 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),0x40);
+  DAT_141884fd8 =
+       FUN_1402c4650("r_filmTweakBrightness",0,uVar17,uVar8,uVar2,
+                     "Tweak dev var; film color brightness");
+  uVar11 = DAT_1403e52e8;
+  uVar17 = DAT_1403e5248;
+  uVar2 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),0x40);
+  DAT_141884fe0 =
+       FUN_1402c4650("r_filmTweakDesaturation",DAT_1403e5248,DAT_1403e52e8,uVar9,uVar2,
+                     "Tweak dev var; Desaturation applied after all 3D drawing to light areas");
+  uVar2 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),0x40);
+  DAT_141884fe8 =
+       FUN_1402c4650("r_filmTweakDesaturationDark",uVar17,uVar11,uVar9,uVar2,
+                     "Tweak dev var; Additional desaturation applied after all 3D drawing to dark areas"
+                    );
+  uVar11 = DAT_1403f4264;
+  uVar16 = 1;
+  uVar2 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),0x40);
+  DAT_141884ff0 =
+       FUN_1402c4650("r_filmTweakHeroSaturation",uVar8,DAT_1403f4264,uVar13,uVar2,
+                     "Tweak dev var; Additional saturation applied to characters");
+  uVar12 = (undefined4)((ulonglong)uVar2 >> 0x20);
+  DAT_141884ff8 = FUN_1402c43f0("r_filmTweakInvert",0,0x40,"Tweak dev var; enable inverted video");
+  uVar17 = DAT_1403e9dfc;
+  uVar2 = CONCAT44(uVar12,uVar9);
+  DAT_141885000 =
+       FUN_1402c4d40("r_filmTweakDarkTint",DAT_1403e8e2c,DAT_1403e9dfc,uVar8,uVar2,
+                     CONCAT44(uVar16,0x40),"Tweak dev var; film color dark tint color");
+  uVar2 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),uVar9);
+  DAT_141885008 =
+       FUN_1402c4d40("r_filmTweakMediumTint",DAT_1403e9e5c,uVar8,DAT_1403e9e5c,uVar2,0x40,
+                     "Tweak dev var; film color medium tint color");
+  uVar2 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),uVar9);
+  DAT_141885010 =
+       FUN_1402c4d40("r_filmTweakLightTint",DAT_1403f0688,DAT_140413548,uVar17,uVar2,0x40,
+                     "Tweak dev var; film color light tint color");
+  uVar17 = (undefined4)((ulonglong)uVar2 >> 0x20);
+  DAT_141885030 = FUN_1402c43f0("r_dof_enable",1,1,"Enable the depth of field effect");
+  DAT_141885038 =
+       FUN_1402c43f0("r_dof_tweak",0,4,
+                     "Use dvars to set the depth of field effect; overrides r_dof_enable");
+  uVar2 = CONCAT44(uVar17,4);
+  DAT_141885040 =
+       FUN_1402c4650("r_dof_nearBlur",DAT_1403e8e40,uVar13,uVar19,uVar2,
+                     "Sets the radius of the gaussian blur used by depth of field, in pixels at 640x480"
+                    );
+  uVar2 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),4);
+  DAT_141885048 =
+       FUN_1402c4650("r_dof_farBlur",DAT_14041354c,0,uVar19,uVar2,
+                     "Sets the radius of the gaussian blur used by depth of field, in pixels at 640x480"
+                    );
+  uVar17 = DAT_1403e4154;
+  uVar2 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),4);
+  DAT_141885050 =
+       FUN_1402c4650("r_dof_viewModelStart",uVar9,0,DAT_1403e4154,uVar2,
+                     "Depth of field viewmodel start distance, in inches");
+  uVar2 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),4);
+  DAT_141885058 =
+       FUN_1402c4650("r_dof_viewModelEnd",uVar10,0,uVar17,uVar2,
+                     "Depth of field viewmodel end distance, in inches");
+  uVar17 = DAT_1403e5284;
+  uVar2 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),4);
+  DAT_141885060 =
+       FUN_1402c4650("r_dof_nearStart",uVar19,0,DAT_1403e5284,uVar2,
+                     "Depth of field near start distance, in inches");
+  uVar2 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),4);
+  DAT_141885068 =
+       FUN_1402c4650("r_dof_nearEnd",DAT_1403e5614,0,uVar17,uVar2,
+                     "Depth of field near end distance, in inches");
+  uVar19 = DAT_140413554;
+  uVar2 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),4);
+  DAT_141885070 =
+       FUN_1402c4650("r_dof_farStart",uVar17,0,DAT_140413554,uVar2,
+                     "Depth of field far start distance, in inches");
+  uVar2 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),4);
+  DAT_141885078 =
+       FUN_1402c4650("r_dof_farEnd",DAT_1404006d4,0,uVar19,uVar2,
+                     "Depth of field far end distance, in inches");
+  uVar2 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),4);
+  DAT_141885080 =
+       FUN_1402c4650("r_dof_bias",DAT_1403e3e68,DAT_1403e5240,DAT_1403e5268,uVar2,
+                     "Depth of field bias as a power function (like gamma); less than 1 is sharper")
+  ;
+  uVar17 = (undefined4)((ulonglong)uVar2 >> 0x20);
+  DAT_141885088 = FUN_1402c43f0("r_outdoor",1,0x40,"Prevents snow from going indoors");
+  uVar2 = CONCAT44(uVar17,0x40);
+  DAT_141885090 =
+       FUN_1402c4650("r_outdoorFeather",uVar10,uVar15,DAT_1403e5618,uVar2,
+                     "Outdoor z-feathering value");
+  uVar17 = (undefined4)((ulonglong)uVar2 >> 0x20);
+  FUN_1402c5df0(DAT_141885090);
+  DAT_141885098 =
+       FUN_1402c43f0("r_sun_from_dvars",0,4,"Set sun flare values from dvars rather than the level")
+  ;
+  uVar7 = CONCAT44(uVar17,4);
+  DAT_1418850a0 =
+       FUN_1402c46d0("r_atlasAnimFPS",0xf,1,0x78,uVar7,"Speed to animate atlased 2d materials");
+  uVar7 = uVar7 & 0xffffffff00000000;
+  DAT_1418850a8 = FUN_1402c46d0("developer",0,0,2,uVar7,"Enable development options");
+  uVar17 = (undefined4)(uVar7 >> 0x20);
+  DAT_1418850b0 = FUN_1402c43f0("r_sse_skinning",1,0,"Use Streaming SIMD Extensions for skinning");
+  DAT_141884b40 =
+       FUN_1402c46d0("r_monitor",0,0,8,CONCAT44(uVar17,3),
+                     "Index of the monitor to use in a multi monitor system; 0 picks automatically."
+                    );
+  DAT_141884b58 =
+       FUN_1402c45d0("r_rendererPreference",&PTR_s_Shader_model_3_0_14040fd07_1_1404c7d50,1,3,
+                     "Preferred renderer; unsupported renderers will never be used.");
+  DAT_141884b60 =
+       FUN_1402c45d0("r_rendererInUse",&PTR_s_Shader_model_3_0_14040fd07_1_1404c7d50,1,0x2000,
+                     "The renderer currently used");
+  uVar19 = 1;
+  DAT_141884b68 =
+       FUN_1402c45d0("r_aspectRatio",&PTR_DAT_1404c7d68,0,3,
+                     "Screen aspect ratio.  Most widescreen monitors are 16:10 instead of 16:9.");
+  FUN_1401e84a0();
+  _DAT_1418850b8 =
+       FUN_1402c43f0("r_altModelLightingUpdate",1,3,"Use alternate model lighting update technique")
+  ;
+  DAT_1418850c0 =
+       FUN_1402c43f0("r_preloadShaders",0,3,
+                     "Force D3D to draw dummy geometry with all shaders during level load; may fix long pauses at level start."
+                    );
+  uVar17 = DAT_1403e526c;
+  DAT_1418850c8 =
+       FUN_1402c4650("r_thermalColorScale",uVar8,uVar11,DAT_1403e526c,CONCAT44(uVar19,0x4c),
+                     "Scale of the thermal colors (offset + scale*color)");
+  DAT_1418850d0 =
+       FUN_1402c4650("r_thermalColorOffset",0,uVar11,uVar17,0x4c,
+                     "Offset of the thermal colors (offset + scale*color)");
+  DAT_1418850d8 =
+       FUN_1402c4650("r_thermalDetailScale",uVar8,uVar11,uVar17,0x4c,
+                     "Scale of the detail that is added to the thermal map from the normal map (multiplies the detail amount from AssetManager)"
+                    );
+  FUN_1400c06d0();
+  return;
+}
+
+
+

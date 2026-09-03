@@ -1,0 +1,4 @@
+STRING @ 140412810 = "sm_fastSunShadow" (block .rdata)
+  from 1401b699b type=DATA IN FUNCTION FUN_1401b50e0@1401b50e0
+  (1 references)
+
