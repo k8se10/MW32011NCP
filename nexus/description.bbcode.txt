@@ -1,6 +1,12 @@
 [center][size=6][b]MW3 (2011) Native Controller Support[/b][/size]
 [size=3]Campaign & Survival[/size][/center]
 
+[center][color=#E74C3C][b]🚨 THE MOD IS CURRENTLY BROKEN — MW3 (2011) was recompiled to 64-bit 🚨[/b][/color][/center]
+
+Activision pushed a real ~14GB update (around 1 September 2026) that rebuilt the game from 32-bit to 64-bit — the first binary update in this game's history. Every existing release of this mod is a 32-bit DLL and cannot load into the new build at all. [b]Emergency notice: all support for every existing 32-bit ([font=Courier New]-x86[/font]) release is discontinued, effective immediately[/b] — not a gradual wind-down, since the live game can no longer run a 32-bit build at all. Work on an x64 rebuild is underway; see the GitHub repo's [url=https://github.com/k8se10/MW32011NCP/blob/main/re_notes/known_issues.md]known_issues.md[/url] issue #111 for the full technical record. [b]Do not download expecting the current release to work.[/b]
+
+[hr]
+
 [center][color=#E74C3C][b]⚠ THIS IS EXPERIMENTAL, ALPHA-STAGE SOFTWARE ⚠[/b][/color][/center]
 
 It hooks directly into a live game process. Expect bugs, rough edges, unfinished features, and the occasional need to fall back to keyboard/mouse. Use at your own risk. Not affiliated with, endorsed by, or sponsored by Activision, Infinity Ward, or any of their affiliates.

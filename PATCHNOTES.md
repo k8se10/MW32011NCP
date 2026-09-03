@@ -6,6 +6,35 @@ reverse-engineering trail behind each entry.
 
 ---
 
+## Unreleased — Emergency notice (2026-09-03) — 32-bit (`-x86`) support discontinued
+
+**Summary:** MW3 (2011) received its first-ever binary update, recompiling the
+live game from 32-bit to 64-bit. Every existing release of this mod is a
+32-bit DLL and can no longer load into the game at all — this is not a bug to
+fix, it's a hard architectural break. Effective immediately, all support for
+the entire existing `-x86` release line is discontinued as an emergency
+policy action. Releases now carry a `-x86`/`-x64` suffix, and versioning
+resets to `v0.0.1-x64` once the x64 rebuild ships. See `re_notes/known_issues.md`
+issue #111 and `re_notes/x64_migration/README.md` for the full technical
+record and rebuild progress.
+
+### Documentation
+1. **All `-x86` support discontinued, effective 2026-09-03.** `v0.2.2-x86`
+   (formerly Current LTS) and `v0.3.5-x86` (formerly the LTS candidate) both
+   lose their support status outright, outside the normal LTS promotion/
+   demotion process — no further availability commitment beyond what's
+   already published, no backported fixes, no handover window. Existing
+   `-x86` release files stay published as historical artifacts; nothing is
+   deleted, just unsupported going forward. Full policy record in
+   `LTS_POLICY.md`.
+2. **New release-naming convention adopted**: every release now carries a
+   `-x86`/`-x64` suffix, since a bare version number can no longer
+   disambiguate which architecture a release targets. All 15 existing GitHub
+   Release titles relabeled accordingly (tags left untouched). Versioning
+   resets to `v0.0.1-x64` for the new architecture line.
+
+---
+
 ## v0.3.5 — Alpha (2026-08-29) — Visual-suite crash fixes, ForceD3D9On12 removed for good, native shadow/lighting quality toggles
 
 **CONFIRMED live 2026-08-29** — greenlit after a full live-stream test pass.
