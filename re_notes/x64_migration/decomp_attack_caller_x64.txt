@@ -1,0 +1,26 @@
+================================================================
+Function: FUN_14007eff0 @ 14007eff0
+----------------------------------------------------------------
+
+uint FUN_14007eff0(undefined8 param_1)
+
+{
+  int iVar1;
+  uint uVar2;
+  undefined **ppuVar3;
+  
+  ppuVar3 = &PTR_DAT_1404c1870;
+  uVar2 = 0;
+  do {
+    iVar1 = FUN_1402ca760(param_1,*ppuVar3);
+    if (iVar1 == 0) {
+      return uVar2;
+    }
+    uVar2 = uVar2 + 1;
+    ppuVar3 = ppuVar3 + 1;
+  } while (uVar2 < 0x51);
+  return 0;
+}
+
+
+

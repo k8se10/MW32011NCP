@@ -246,6 +246,48 @@ record — this section is a pointer, not the source of truth)
     identical. **Standing lesson for any future binary string-presence
     check in this project: always use `-o | wc -l`, never bare `-c`, against
     binary files.**
+1d. **Bind-name table re-located, complete structural match — but the actual
+    `kbutton_t` addresses (ADS/Reload/Fire/Sprint/etc.) still need live
+    testing, not just this.** The x86 project's own ADS/Reload/Fire/Sprint
+    kbutton addresses (`0x00A98B8C`/`0x00A98CB8` ADS, `0x00A98C68` Reload,
+    `0x00A98C00` Fire, `0x00A98CCC` Sprint — see `analog_input_hooks.cpp`)
+    were never found via strings at all; they were found via **live
+    differential testing** (press/release a real key, diff process memory
+    for the byte that changed). That technique needs a running, injectable
+    build to test against, which doesn't exist yet for x64. What static
+    analysis CAN do, and did: `RawStringScan.java` on `"+attack"` and
+    `"+toggleads_throw"` found both as `DATA` references at `1404c1878`/
+    `1404c1a48` — 0x1D0 bytes apart. Wrote a new script,
+    `DumpRawQwords.java` (the x64/8-byte equivalent of the existing
+    `DumpRawDwords.java` — genuinely reusable tooling for the rest of this
+    migration, not a one-off), and dumped that region: it's the **complete
+    32-entry bind-name table**, every single `{+name, -name}` string pair
+    intact and readable (`+attack`/`-attack`, `+toggleads_throw`/
+    `-toggleads_throw`, `+usereload`, `+sprint`, `+prone`, `+actionslot
+    1`-`4`, `+stance`, `+gostand`, all of it), stride `0x10` (2×8-byte
+    pointers/entry — proportionally identical to the x86 table's 2×4-byte
+    stride). This confirms the table structure carried over exactly, but it
+    only stores the bind NAME strings — the real `kbutton_t*` addresses live
+    in a separate, parallel state array this table doesn't directly expose.
+    **Real next step for buttons**: find the x64 equivalent of
+    `FUN_00541020` (the real key-event handler/dispatcher that correlates
+    this name table's row index against the kbutton state array) via the
+    same string-anchor technique, which would at least locate the
+    correlation logic even before live testing is possible — OR wait for an
+    injectable x64 build to exist and redo the original live-diff technique
+    directly.
+    **Follow-up, same pass**: `+attack`'s own `PARAM` reference (from the
+    earlier `RawStringScan.java` output) led to `FUN_14007eff0` —
+    **the bind-name-to-table-index resolver itself**: walks the table
+    starting at `PTR_DAT_1404c1870` (the slot immediately before `+attack`),
+    comparing the input string against each entry via `FUN_1402ca760`
+    (a `strcmp`-equivalent), returning the matching row index. This is a
+    real, concrete piece of the correlation mechanism, but not the whole
+    chain — the actual kbutton-state array and how a resolved index maps to
+    one of its entries is still unlocated. **Real next step**: find
+    `FUN_14007eff0`'s own callers (candidate for the x64
+    `FUN_00541020`/key-event-handler equivalent) to trace the rest of the
+    chain, or wait for live testing once an x64 build exists.
 2. Add an x64 build configuration to `proxy_d3d9.vcxproj` alongside the
    existing Win32 one (MinHook already supports x64 natively — no vendoring
    changes needed, only build config).
