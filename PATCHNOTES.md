@@ -14,8 +14,8 @@ live game from 32-bit to 64-bit. Every existing release of this mod is a
 fix, it's a hard architectural break. Effective immediately, all support for
 the entire existing `-x86` release line is discontinued as an emergency
 policy action. Releases now carry a `-x86`/`-x64` suffix, and versioning
-resets to `v0.0.1-x64` once the x64 rebuild ships. See `re_notes/known_issues.md`
-issue #111 and `re_notes/x64_migration/README.md` for the full technical
+resets to `v0.0.1-x64` once the x64 rebuild ships. See `re_notes/known_issues_x64.md`
+issue #1 and `re_notes/x64_migration/README.md` for the full technical
 record and rebuild progress.
 
 ### Documentation

@@ -1,6 +1,6 @@
 # x64 migration — D-pad actionslot + generic dvar helpers (2026-09-03)
 
-Parallel fork of the x64 migration RE work (issue #111). Scope: relocate the
+Parallel fork of the x64 migration RE work (`known_issues_x64.md` issue #1). Scope: relocate the
 generic dvar read/write API (used throughout nearly every feature in this
 codebase) and check whether D-pad actionslot needs its own dedicated
 mechanism on x64 or reuses the bind-index KeyDown/KeyUp setter another
