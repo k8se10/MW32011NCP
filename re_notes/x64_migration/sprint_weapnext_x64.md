@@ -1,6 +1,6 @@
 # Sprint and weapnext — x64 relocation (2026-09-03)
 
-Continuation of the x64 migration RE work (issue #111, `re_notes/x64_migration/README.md`).
+Continuation of the x64 migration RE work (`known_issues_x64.md` issue #1, `re_notes/x64_migration/README.md`).
 Same methodology as the rest of this pass: `RawStringScan.java` → `DecompileAt.java` →
 `FindGlobalRefs.java`, run via `analyzeHeadless.bat -process iw5sp.exe -noanalysis`
 against the existing `re_notes/ghidra_project_x64/iw5sp_x64_proj.gpr` — not re-imported,
@@ -133,3 +133,14 @@ complete answer on its own. Given this session's separate finding of `FUN_14007e
 it's plausible but NOT confirmed that a parallel, similarly-simple index-based
 dispatcher exists for one-shot commands too — worth checking directly before assuming
 the x86 raw-keycode-table approach is still the only path in the x64 build.
+
+**Same-day follow-up: one real candidate ruled out.** `FUN_1402aac50` (`README.md`
+section 1g/1e, the confirmed unified key/menu-event handler) was decompiled in full
+and checked directly, as flagged above — it has no case anywhere matching weapnext's
+dispatch. It turned out to be a genuine `Menu_KeyEvent`-equivalent (early-outs
+entirely when no menu is active, `param_2 == 0`), not the raw always-on gameplay
+keycode dispatcher weapnext would need — so this specific "maybe it's a unified
+one-shot dispatcher too" hypothesis is now closed off, not left open for a future
+pass to re-check the same lead. The real x64 weapnext dispatch site is still
+unlocated; the x86 raw-keycode-table approach (a separate, not-yet-found x64
+function) remains the leading theory, not yet confirmed.
