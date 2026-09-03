@@ -1,0 +1,6 @@
+=== Reference counts per global ===
+shadowmap_table (1404d0690): 1 references
+
+=== Candidate functions, ranked by distinct global diversity (1) ===
+
+---- FUN_1401b8c80 @ 1401b8c80 (globals: shadowmap_table) ----

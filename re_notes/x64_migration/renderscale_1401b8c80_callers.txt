@@ -1,0 +1,510 @@
+Callers of 1401b8c80 (5):
+  FUN_140197460 @ 140197460
+  FUN_1401c8170 @ 1401c8170
+  FUN_1401d44f0 @ 1401d44f0
+  FUN_1401d4040 @ 1401d4040
+  FUN_1401d4440 @ 1401d4440
+
+================================================================
+Function: FUN_140197460 @ 140197460
+----------------------------------------------------------------
+
+void FUN_140197460(void)
+
+{
+  char cVar1;
+  
+  cVar1 = DAT_1418854b9;
+  if (DAT_1418854b9 != '\0') {
+    DAT_1415e69f0 = FUN_1401b8c80(0xd,4,1);
+    FUN_1401ba0c0(DAT_1415e69f0,4,4,1,2,0x70,"<random rotations>");
+    FUN_1401971d0(DAT_1415e69f0);
+  }
+  FUN_1402c43f0("r_supportsSSAO",cVar1,0x2000,
+                "True if the videocard supports features needed for SSAO");
+  return;
+}
+
+
+
+================================================================
+Function: FUN_1401c8170 @ 1401c8170
+----------------------------------------------------------------
+
+void FUN_1401c8170(void)
+
+{
+  char cVar1;
+  
+  cVar1 = FUN_1402c3a30("r_altModelLightingUpdate");
+  DAT_141896698 = FUN_1401b8c80(0xb,4,1);
+  if (cVar1 == '\0') {
+    FUN_1401ba0c0(DAT_141896698,0x100,DAT_141896690,4,0x20002,0x15,"<model lighting>");
+    DAT_1418966a0 = 0;
+  }
+  else {
+    FUN_1401ba0c0(DAT_141896698,0x100,DAT_141896690,4,0x1020002,0x15,"<model lighting>");
+    DAT_1418966a0 = FUN_1401b8c80(0xc,4,1);
+    FUN_1401ba0c0(DAT_1418966a0,0x100,DAT_141896690,4,0x4020002,0x15,"<model lighting>");
+  }
+  DAT_1418966a8 = DAT_141896698;
+  return;
+}
+
+
+
+================================================================
+Function: FUN_1401d44f0 @ 1401d44f0
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_1401d44f0(void)
+
+{
+  uint uVar1;
+  uint uVar2;
+  undefined4 uVar3;
+  int iVar4;
+  undefined8 uVar5;
+  uint uVar6;
+  uint uVar7;
+  undefined *puVar8;
+  
+  uVar3 = FUN_1401d4040();
+  if (DAT_141885488 == '\0') {
+    if (*(char *)(DAT_141884e40 + 0x10) != '\0') {
+      uVar7 = DAT_141888670;
+      if ((int)DAT_141888670 < 2) {
+        uVar7 = 1;
+      }
+      uVar6 = DAT_141888674;
+      if ((int)DAT_141888674 < 2) {
+        uVar6 = 1;
+      }
+      DAT_141bb6ea0 = FUN_1401b8c80(2,6,0);
+      puVar8 = PTR_s_R_RENDERTARGET_FLOAT_Z_1404d0768;
+      FUN_1401b92d0(DAT_141bb6ea0,uVar7 & 0xffff,uVar6 & 0xffff,0x72,
+                    PTR_s_R_RENDERTARGET_FLOAT_Z_1404d0768);
+      DAT_141bb6ea8 = FUN_1401b91b0(DAT_141bb6ea0);
+      uVar2 = DAT_141888674;
+      uVar1 = DAT_141888670;
+      _DAT_141bb6eb8 = uVar7 & 0xffff;
+      _DAT_141bb6ebc = uVar6 & 0xffff;
+      if (DAT_14188bc28 == (longlong *)0x0) {
+        iVar4 = (**(code **)(*DAT_1418886d0 + 0xe8))
+                          (DAT_1418886d0,DAT_141888670,DAT_141888674,DAT_1418886f0,
+                           (ulonglong)puVar8 & 0xffffffff00000000,0,0,&DAT_14188bc28,0);
+        if (iVar4 < 0) {
+          uVar5 = FUN_1401bccf0(iVar4);
+          FUN_14023c700(0,"Couldn\'t create a %i x %i depth-stencil surface: %s\n",uVar1,uVar2,uVar5
+                       );
+        }
+      }
+      else {
+        (**(code **)(*DAT_14188bc28 + 8))();
+      }
+      _DAT_141bb6eb0 = DAT_14188bc28;
+    }
+    DAT_141bb6e60 = DAT_141bb6e80;
+    plRam0000000141bb6e68 = _DAT_141bb6e88;
+    DAT_141bb6e70._0_4_ = _DAT_141bb6e90;
+    DAT_141bb6e70._4_4_ = uRam0000000141bb6e94;
+    uRam0000000141bb6e78 = _DAT_141bb6e98;
+    uRam0000000141bb6e7c = _DAT_141bb6e9c;
+    if (_DAT_141bb6e88 != (longlong *)0x0) {
+      (**(code **)(*_DAT_141bb6e88 + 8))();
+    }
+    if ((longlong *)CONCAT44(DAT_141bb6e70._4_4_,(undefined4)DAT_141bb6e70) != (longlong *)0x0) {
+      (**(code **)(*(longlong *)CONCAT44(DAT_141bb6e70._4_4_,(undefined4)DAT_141bb6e70) + 8))();
+    }
+    uVar7 = DAT_141888678;
+    if ((int)DAT_141888678 < 2) {
+      uVar7 = 1;
+    }
+    uVar6 = DAT_14188867c;
+    if ((int)DAT_14188867c < 2) {
+      uVar6 = 1;
+    }
+    DAT_141bb6e00 = FUN_1401b8c80(9,6);
+    FUN_1401b92d0(DAT_141bb6e00,uVar7 & 0xffff,uVar6 & 0xffff,uVar3,
+                  PTR_s_R_RENDERTARGET_SAVED_SCREEN_1404d0740);
+    DAT_141bb6e08 = FUN_1401b91b0(DAT_141bb6e00);
+    _DAT_141bb6e18 = uVar7 & 0xffff;
+    _DAT_141bb6e1c = uVar6 & 0xffff;
+    FUN_1401d4e50(0,DAT_141888682,2,&DAT_141bb6f40);
+    FUN_1401d4e50(1,DAT_141888680,4,&DAT_141bb6f60);
+    if (*(int *)(DAT_1415e69c0 + 0x10) != 0) {
+      uVar7 = (int)DAT_141888670 >> 1;
+      if ((int)uVar7 < 2) {
+        uVar7 = 1;
+      }
+      uVar6 = (int)DAT_141888674 >> 1;
+      if ((int)uVar6 < 2) {
+        uVar6 = 1;
+      }
+      DAT_141bb6f80 = FUN_1401b8c80(0xe,6);
+      puVar8 = PTR_s_R_RENDERTARGET_SSAO_1404d07a0;
+      FUN_1401b92d0(DAT_141bb6f80,uVar7 & 0xffff,uVar6 & 0xffff,uVar3,
+                    PTR_s_R_RENDERTARGET_SSAO_1404d07a0);
+      _DAT_141bb6f88 = FUN_1401b91b0(DAT_141bb6f80);
+      uVar2 = DAT_141888674;
+      uVar1 = DAT_141888670;
+      _DAT_141bb6f98 = uVar7 & 0xffff;
+      _DAT_141bb6f9c = uVar6 & 0xffff;
+      if (DAT_14188bc28 == (longlong *)0x0) {
+        iVar4 = (**(code **)(*DAT_1418886d0 + 0xe8))
+                          (DAT_1418886d0,DAT_141888670,DAT_141888674,DAT_1418886f0,
+                           (ulonglong)puVar8 & 0xffffffff00000000,0,0,&DAT_14188bc28,0);
+        if (iVar4 < 0) {
+          uVar5 = FUN_1401bccf0(iVar4);
+          FUN_14023c700(0,"Couldn\'t create a %i x %i depth-stencil surface: %s\n",uVar1,uVar2,uVar5
+                       );
+        }
+      }
+      else {
+        (**(code **)(*DAT_14188bc28 + 8))();
+      }
+      uVar7 = (int)DAT_141888670 >> 1;
+      _DAT_141bb6f90 = DAT_14188bc28;
+      if ((int)uVar7 < 2) {
+        uVar7 = 1;
+      }
+      uVar6 = (int)DAT_141888674 >> 1;
+      if ((int)uVar6 < 2) {
+        uVar6 = 1;
+      }
+      DAT_141bb6fa0 = FUN_1401b8c80(0xf,6);
+      puVar8 = PTR_s_R_RENDERTARGET_SSAO_BLURRED_1404d07a8;
+      FUN_1401b92d0(DAT_141bb6fa0,uVar7 & 0xffff,uVar6 & 0xffff,uVar3,
+                    PTR_s_R_RENDERTARGET_SSAO_BLURRED_1404d07a8);
+      _DAT_141bb6fa8 = FUN_1401b91b0(DAT_141bb6fa0);
+      uVar2 = DAT_141888674;
+      uVar1 = DAT_141888670;
+      _DAT_141bb6fb8 = uVar7 & 0xffff;
+      _DAT_141bb6fbc = uVar6 & 0xffff;
+      if (DAT_14188bc28 == (longlong *)0x0) {
+        iVar4 = (**(code **)(*DAT_1418886d0 + 0xe8))
+                          (DAT_1418886d0,DAT_141888670,DAT_141888674,DAT_1418886f0,
+                           (ulonglong)puVar8 & 0xffffffff00000000,0,0,&DAT_14188bc28,0);
+        if (iVar4 < 0) {
+          uVar5 = FUN_1401bccf0(iVar4);
+          FUN_14023c700(0,"Couldn\'t create a %i x %i depth-stencil surface: %s\n",uVar1,uVar2,uVar5
+                       );
+        }
+      }
+      else {
+        (**(code **)(*DAT_14188bc28 + 8))();
+      }
+      uVar7 = (int)DAT_141888670 >> 1;
+      _DAT_141bb6fb0 = DAT_14188bc28;
+      if ((int)uVar7 < 2) {
+        uVar7 = 1;
+      }
+      uVar6 = (int)DAT_141888674 >> 1;
+      if ((int)uVar6 < 2) {
+        uVar6 = 1;
+      }
+      DAT_141bb6fc0 = FUN_1401b8c80(0x10,6);
+      puVar8 = PTR_s_R_RENDERTARGET_SSAO_FLOAT_Z_1404d07b0;
+      FUN_1401b92d0(DAT_141bb6fc0,uVar7 & 0xffff,uVar6 & 0xffff,0x72,
+                    PTR_s_R_RENDERTARGET_SSAO_FLOAT_Z_1404d07b0);
+      _DAT_141bb6fc8 = FUN_1401b91b0(DAT_141bb6fc0);
+      uVar2 = DAT_141888674;
+      uVar1 = DAT_141888670;
+      _DAT_141bb6fd8 = uVar7 & 0xffff;
+      _DAT_141bb6fdc = uVar6 & 0xffff;
+      if (DAT_14188bc28 == (longlong *)0x0) {
+        iVar4 = (**(code **)(*DAT_1418886d0 + 0xe8))
+                          (DAT_1418886d0,DAT_141888670,DAT_141888674,DAT_1418886f0,
+                           (ulonglong)puVar8 & 0xffffffff00000000,0,0,&DAT_14188bc28,0);
+        if (iVar4 < 0) {
+          uVar5 = FUN_1401bccf0(iVar4);
+          FUN_14023c700(0,"Couldn\'t create a %i x %i depth-stencil surface: %s\n",uVar1,uVar2,uVar5
+                       );
+        }
+      }
+      else {
+        (**(code **)(*DAT_14188bc28 + 8))();
+      }
+      _DAT_141bb6fd0 = DAT_14188bc28;
+    }
+    uVar7 = DAT_141888670;
+    if ((int)DAT_141888670 < 2) {
+      uVar7 = 1;
+    }
+    uVar6 = DAT_141888674;
+    if ((int)DAT_141888674 < 2) {
+      uVar6 = 1;
+    }
+    DAT_141bb6f00 = FUN_1401b8c80(3,6);
+    puVar8 = PTR_s_R_RENDERTARGET_POST_EFFECT_0_1404d0780;
+    FUN_1401b92d0(DAT_141bb6f00,uVar7 & 0xffff,uVar6 & 0xffff,uVar3,
+                  PTR_s_R_RENDERTARGET_POST_EFFECT_0_1404d0780);
+    _DAT_141bb6f08 = FUN_1401b91b0(DAT_141bb6f00);
+    uVar2 = DAT_141888674;
+    uVar1 = DAT_141888670;
+    DAT_141bb6f18 = uVar7 & 0xffff;
+    DAT_141bb6f1c = uVar6 & 0xffff;
+    if (DAT_14188bc28 == (longlong *)0x0) {
+      iVar4 = (**(code **)(*DAT_1418886d0 + 0xe8))
+                        (DAT_1418886d0,DAT_141888670,DAT_141888674,DAT_1418886f0,
+                         (ulonglong)puVar8 & 0xffffffff00000000,0,0,&DAT_14188bc28,0);
+      if (iVar4 < 0) {
+        uVar5 = FUN_1401bccf0(iVar4);
+        FUN_14023c700(0,"Couldn\'t create a %i x %i depth-stencil surface: %s\n",uVar1,uVar2,uVar5);
+      }
+    }
+    else {
+      (**(code **)(*DAT_14188bc28 + 8))();
+    }
+    uVar7 = DAT_141888670;
+    if ((int)DAT_141888670 < 2) {
+      uVar7 = 1;
+    }
+    _DAT_141bb6f10 = DAT_14188bc28;
+    uVar6 = DAT_141888674;
+    if ((int)DAT_141888674 < 2) {
+      uVar6 = 1;
+    }
+    DAT_141bb6f20 = FUN_1401b8c80(4,6);
+    puVar8 = PTR_s_R_RENDERTARGET_POST_EFFECT_1_1404d0788;
+    FUN_1401b92d0(DAT_141bb6f20,uVar7 & 0xffff,uVar6 & 0xffff,uVar3,
+                  PTR_s_R_RENDERTARGET_POST_EFFECT_1_1404d0788);
+    _DAT_141bb6f28 = FUN_1401b91b0(DAT_141bb6f20);
+    uVar2 = DAT_141888674;
+    uVar1 = DAT_141888670;
+    _DAT_141bb6f38 = uVar7 & 0xffff;
+    _DAT_141bb6f3c = uVar6 & 0xffff;
+    if (DAT_14188bc28 == (longlong *)0x0) {
+      iVar4 = (**(code **)(*DAT_1418886d0 + 0xe8))
+                        (DAT_1418886d0,DAT_141888670,DAT_141888674,DAT_1418886f0,
+                         (ulonglong)puVar8 & 0xffffffff00000000,0,0,&DAT_14188bc28,0);
+      if (iVar4 < 0) {
+        uVar5 = FUN_1401bccf0(iVar4);
+        FUN_14023c700(0,"Couldn\'t create a %i x %i depth-stencil surface: %s\n",uVar1,uVar2,uVar5);
+      }
+    }
+    else {
+      (**(code **)(*DAT_14188bc28 + 8))();
+    }
+    uVar7 = DAT_141888670;
+    if ((int)DAT_141888670 < 2) {
+      uVar7 = 1;
+    }
+    _DAT_141bb6f30 = DAT_14188bc28;
+    uVar6 = DAT_141888674;
+    if ((int)DAT_141888674 < 2) {
+      uVar6 = 1;
+    }
+    DAT_141bb6ec0 = FUN_1401b8c80(5,6);
+    puVar8 = PTR_s_R_RENDERTARGET_PINGPONG_0_1404d0770;
+    FUN_1401b92d0(DAT_141bb6ec0,uVar7 & 0xffff,uVar6 & 0xffff,uVar3,
+                  PTR_s_R_RENDERTARGET_PINGPONG_0_1404d0770);
+    _DAT_141bb6ec8 = FUN_1401b91b0(DAT_141bb6ec0);
+    uVar2 = DAT_141888674;
+    uVar1 = DAT_141888670;
+    _DAT_141bb6ed8 = uVar7 & 0xffff;
+    _DAT_141bb6edc = uVar6 & 0xffff;
+    if (DAT_14188bc28 == (longlong *)0x0) {
+      iVar4 = (**(code **)(*DAT_1418886d0 + 0xe8))
+                        (DAT_1418886d0,DAT_141888670,DAT_141888674,DAT_1418886f0,
+                         (ulonglong)puVar8 & 0xffffffff00000000,0,0,&DAT_14188bc28,0);
+      if (iVar4 < 0) {
+        uVar5 = FUN_1401bccf0(iVar4);
+        FUN_14023c700(0,"Couldn\'t create a %i x %i depth-stencil surface: %s\n",uVar1,uVar2,uVar5);
+      }
+    }
+    else {
+      (**(code **)(*DAT_14188bc28 + 8))();
+    }
+    uVar7 = DAT_141888670;
+    if ((int)DAT_141888670 < 2) {
+      uVar7 = 1;
+    }
+    _DAT_141bb6ed0 = DAT_14188bc28;
+    uVar6 = DAT_141888674;
+    if ((int)DAT_141888674 < 2) {
+      uVar6 = 1;
+    }
+    DAT_141bb6ee0 = FUN_1401b8c80(6,6);
+    puVar8 = PTR_s_R_RENDERTARGET_PINGPONG_1_1404d0778;
+    FUN_1401b92d0(DAT_141bb6ee0,uVar7 & 0xffff,uVar6 & 0xffff,uVar3,
+                  PTR_s_R_RENDERTARGET_PINGPONG_1_1404d0778);
+    _DAT_141bb6ee8 = FUN_1401b91b0(DAT_141bb6ee0);
+    uVar2 = DAT_141888674;
+    uVar1 = DAT_141888670;
+    _DAT_141bb6ef8 = uVar7 & 0xffff;
+    _DAT_141bb6efc = uVar6 & 0xffff;
+    if (DAT_14188bc28 == (longlong *)0x0) {
+      iVar4 = (**(code **)(*DAT_1418886d0 + 0xe8))
+                        (DAT_1418886d0,DAT_141888670,DAT_141888674,DAT_1418886f0,
+                         (ulonglong)puVar8 & 0xffffffff00000000,0,0,&DAT_14188bc28,0);
+      if (iVar4 < 0) {
+        uVar5 = FUN_1401bccf0(iVar4);
+        FUN_14023c700(0,"Couldn\'t create a %i x %i depth-stencil surface: %s\n",uVar1,uVar2,uVar5);
+      }
+    }
+    else {
+      (**(code **)(*DAT_14188bc28 + 8))();
+    }
+    _DAT_141bb6ef0 = DAT_14188bc28;
+  }
+  return;
+}
+
+
+
+================================================================
+Function: FUN_1401d4040 @ 1401d4040
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+undefined4 FUN_1401d4040(void)
+
+{
+  uint uVar1;
+  uint uVar2;
+  int iVar3;
+  undefined8 uVar4;
+  undefined8 uVar5;
+  uint uVar6;
+  uint uVar7;
+  undefined8 in_stack_ffffffffffffffa8;
+  undefined4 uVar8;
+  undefined4 uVar9;
+  undefined4 uVar10;
+  undefined *puVar11;
+  undefined4 local_28 [8];
+  
+  uVar6 = (uint)((ulonglong)in_stack_ffffffffffffffa8 >> 0x20);
+  _DAT_141bb6e38 = DAT_141888678;
+  _DAT_141bb6e3c = DAT_14188867c;
+  DAT_141bb6e20 = 0;
+  iVar3 = (**(code **)(*DAT_1418886d0 + 0x70))(DAT_1418886d0,0,&DAT_14188bc48);
+  if (iVar3 < 0) {
+    uVar4 = FUN_1401bccf0(iVar3);
+    FUN_14023c700(0,"Couldn\'t get an interface to the swap chain: %s\n",uVar4);
+  }
+  DAT_141bb6e30 = 0;
+  if (DAT_141888688 == 0) {
+    uVar8 = 1;
+    (**(code **)(*DAT_1418886d0 + 0x90))(DAT_1418886d0,0,0,0,&DAT_141bb6e28);
+    DAT_14188bc10 = 0;
+  }
+  else {
+    iVar3 = (**(code **)(*DAT_1418886d0 + 0xe0))
+                      (DAT_1418886d0,DAT_141888678,DAT_14188867c,0x15,(ulonglong)uVar6 << 0x20,0,0,
+                       &DAT_141bb6e28,0);
+    if (iVar3 < 0) {
+      uVar4 = FUN_1401bccf0(iVar3);
+      FUN_14023c700(0,"Couldn\'t create a %i x %i render target surface: %s\n",DAT_141888678,
+                    DAT_14188867c,uVar4);
+    }
+    uVar8 = 1;
+    (**(code **)(*DAT_1418886d0 + 0x90))(DAT_1418886d0,0,0,0,&DAT_14188bc10);
+  }
+  if (DAT_14188bc18 == 0) {
+    uVar7 = DAT_141888674 & 0xffff;
+    uVar6 = DAT_141888670 & 0xffff;
+    DAT_141bb6e40 = FUN_1401b8c80(8,6,0);
+    puVar11 = PTR_s_R_RENDERTARGET_SCENE_1404d0750;
+    FUN_1401b92d0(DAT_141bb6e40,uVar6,uVar7,0x15,PTR_s_R_RENDERTARGET_SCENE_1404d0750);
+    uVar8 = (undefined4)((ulonglong)puVar11 >> 0x20);
+    _DAT_141bb6e48 = FUN_1401b91b0(DAT_141bb6e40);
+    DAT_141bb6e58 = uVar6;
+    DAT_141bb6e5c = uVar7;
+  }
+  else {
+    uVar4 = 0;
+    DAT_141bb6e58 = DAT_141888670;
+    DAT_141bb6e5c = DAT_141888674;
+    DAT_141bb6e40 = 0;
+    puVar11 = &DAT_141bb6e48;
+    uVar10 = 0;
+    uVar9 = DAT_14188bc1c;
+    iVar3 = (**(code **)(*DAT_1418886d0 + 0xe0))();
+    if (iVar3 < 0) {
+      uVar5 = FUN_1401bccf0(iVar3);
+      FUN_14023c700(0,"Couldn\'t create a %i x %i render target surface: %s\n",DAT_141888670,
+                    DAT_141888674,uVar5,uVar9,uVar10,puVar11,uVar4);
+      uVar8 = (undefined4)((ulonglong)uVar5 >> 0x20);
+    }
+  }
+  iVar3 = (**(code **)(*DAT_1418886d0 + 0xe8))
+                    (DAT_1418886d0,DAT_141888670,DAT_141888674,DAT_1418886f0,
+                     CONCAT44(uVar8,DAT_14188bc18),DAT_14188bc1c,0,&DAT_141bb6e50,0);
+  if (iVar3 < 0) {
+    uVar4 = FUN_1401bccf0(iVar3);
+    FUN_14023c700(0,"Couldn\'t create a %i x %i depth-stencil surface: %s\n",DAT_141888670,
+                  DAT_141888674,uVar4);
+  }
+  (**(code **)(*DAT_141bb6e28 + 0x60))(DAT_141bb6e28,local_28);
+  uVar8 = local_28[0];
+  if (DAT_141885488 == '\0') {
+    uVar6 = DAT_141888670;
+    if ((int)DAT_141888670 < 2) {
+      uVar6 = 1;
+    }
+    uVar7 = DAT_141888674;
+    if ((int)DAT_141888674 < 2) {
+      uVar7 = 1;
+    }
+    DAT_141bb6e80 = FUN_1401b8c80(7,6,0);
+    puVar11 = PTR_s_R_RENDERTARGET_RESOLVED_SCENE_1404d0760;
+    FUN_1401b92d0(DAT_141bb6e80,uVar6 & 0xffff,uVar7 & 0xffff,uVar8,
+                  PTR_s_R_RENDERTARGET_RESOLVED_SCENE_1404d0760);
+    _DAT_141bb6e88 = FUN_1401b91b0(DAT_141bb6e80);
+    uVar2 = DAT_141888674;
+    uVar1 = DAT_141888670;
+    _DAT_141bb6e98 = uVar6 & 0xffff;
+    _DAT_141bb6e9c = uVar7 & 0xffff;
+    if (DAT_14188bc28 == (longlong *)0x0) {
+      iVar3 = (**(code **)(*DAT_1418886d0 + 0xe8))
+                        (DAT_1418886d0,DAT_141888670,DAT_141888674,DAT_1418886f0,
+                         (ulonglong)puVar11 & 0xffffffff00000000,0,0,&DAT_14188bc28,0);
+      if (iVar3 < 0) {
+        uVar4 = FUN_1401bccf0(iVar3);
+        FUN_14023c700(0,"Couldn\'t create a %i x %i depth-stencil surface: %s\n",uVar1,uVar2,uVar4);
+      }
+    }
+    else {
+      (**(code **)(*DAT_14188bc28 + 8))();
+    }
+    _DAT_141bb6e90 = DAT_14188bc28;
+  }
+  return local_28[0];
+}
+
+
+
+================================================================
+Function: FUN_1401d4440 @ 1401d4440
+----------------------------------------------------------------
+
+void FUN_1401d4440(undefined8 param_1,uint param_2,ushort param_3,undefined4 param_4,int param_5,
+                  undefined8 *param_6)
+
+{
+  undefined8 uVar1;
+  
+  uVar1 = FUN_1401b8c80(param_1,6,0);
+  *param_6 = uVar1;
+  FUN_1401b92d0(uVar1,param_2 & 0xffff,param_3,param_4,
+                (&PTR_s_R_RENDERTARGET_SAVED_SCREEN_1404d0740)
+                [(int)((longlong)(param_6 + -0x28376dc0) >> 5)]);
+  uVar1 = FUN_1401b91b0(*param_6);
+  if (param_5 == 0) {
+    param_6[2] = uVar1;
+  }
+  else {
+    param_6[1] = uVar1;
+  }
+  *(uint *)(param_6 + 3) = param_2 & 0xffff;
+  *(uint *)((longlong)param_6 + 0x1c) = (uint)param_3;
+  return;
+}
+
+
+

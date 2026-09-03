@@ -409,6 +409,32 @@ record — this section is a pointer, not the source of truth)
     `ForwardKeyToMenu`'s exact x64 identities — `FUN_1402aac50`'s own ESC
     branch (`LAB_1402ab2d1` → `FUN_1402a3ca0`) is the most promising lead
     for `ForwardKeyToMenu` specifically, not yet independently confirmed.
+1h. **Render-scale/shadow-map thread: found the render-target orchestrator,
+    re-confirmed (not just re-found) the x86 team's own hardest open
+    question rather than cracking it.** `$shadowmap_large` needed the
+    literal `$`-prefixed string (bare `RESOLVED_SCENE`/`SAVED_SCREEN`
+    substrings returned zero raw matches for reasons not tracked down —
+    a real, unexplained tooling gap, not evidence those targets don't
+    exist) — found at `1404135a0`, one data reference at `1404d0690`
+    (the x64 render-target name-table base, equivalent to x86's
+    `0093a2f0`). That table has exactly one code reference,
+    `FUN_1401b8c80` — the x64 equivalent of `FUN_004b60a0` (the shared
+    slot-descriptor creator `InternalRenderScalePercent` already sits on
+    top of). Its 5 real callers were decompiled in full: they create
+    `SAVED_SCREEN` (index 9), `FLOAT_Z` (index 2), `SSAO`/`SSAO_BLURRED`/
+    `SSAO_FLOAT_Z` (indices 0xe/0xf/0x10), and three unlabeled indices
+    (0xb/0xc/0xd, model-lighting-related). **None of the 5 callers pass
+    index 0 or 1 (shadowmap large/small)** — the exact same negative
+    result the original x86 investigation reached after 9+ rounds
+    including a full Ghidra analysis pass. This is now a SECOND
+    independent binary generation confirming the same gap, which raises
+    real confidence this isn't a tooling/coverage miss specific to either
+    binary — the actual creation call site is very plausibly reached via
+    an indirect call (a function pointer, not a direct `CALL`), which
+    static direct-xref tooling structurally cannot find either way. Not
+    pursued further this pass; a genuinely different technique (indirect-
+    call pattern scanning, or live tracing once an injectable build
+    exists) is the real next step, not more direct-reference scanning.
 2. ~~Add an x64 build configuration to `proxy_d3d9.vcxproj`~~ **DONE
    2026-09-03, but revealed the real scope is bigger than this line
    originally implied.** Debug/Release x64 configs added, `IntDir` fixed to
