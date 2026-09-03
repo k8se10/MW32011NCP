@@ -97,6 +97,7 @@ constexpr int kLocalClientIndex = 0;
 // early, same rationale as everything else on this page: InjectControllerButtons'
 // Jump bit (task #22) needs it too, and that function is defined well before the
 // menu-back code further down the file.
+#if !defined(_M_X64) && !defined(_WIN64)
 constexpr uintptr_t kMenuActiveGateAddr = 0x00B36210;
 constexpr uint32_t kMenuActiveGateBit = 0x10u;
 
@@ -105,6 +106,23 @@ bool IsMenuActive()
     uint32_t gate = *reinterpret_cast<volatile uint32_t*>(kMenuActiveGateAddr);
     return (gate & kMenuActiveGateBit) != 0;
 }
+#else
+// x64: not yet ported -- CONFIRMED REAL CRASH SOURCE, 2026-09-04. This raw
+// x86-address read (0x00B36210, a fixed low address only ever valid in the old
+// 32-bit process's address space) compiled cleanly on x64 -- no __asm, so it
+// wasn't caught by the earlier __asm-only guard pass -- but crashed on EVERY
+// real launch via its exported wrapper (IsMenuActive_Exported(), called every
+// frame by overlay_hud.cpp's glyph-draw gate logic, genuinely x64-reachable
+// unlike most of this file's other x86-only helpers). Confirmed via two
+// identical Windows Event Log Application Error entries, both faulting
+// d3d9.dll at the exact same offset, both resolving via dumpbin /disasm +
+// the build's own .pdb to this exact `mov eax,[0B36210h]` instruction.
+// Real x64 equivalent not yet found -- returns false (assume no menu active)
+// as the safer default until one is: glyph overlay draws unconditionally
+// while this returns false, worse cosmetically than a wrong pause-gate would
+// be, but never a crash.
+bool IsMenuActive() { return false; }
+#endif
 
 // Real native menu-stack depth (2026-08-02, dedicated Ghidra research pass -- see
 // menu_stack_findings.md / re_notes/known_issues.md for the full decompiled evidence).
@@ -117,12 +135,21 @@ bool IsMenuActive()
 // accessor, called directly by ForwardKeyToMenu (0x004d9850, already used throughout
 // this file for every synthetic keypress) right before it decides where to route
 // input. This is a plain memory read, no hooking needed.
+#if !defined(_M_X64) && !defined(_WIN64)
 constexpr uintptr_t kMenuStackCtx = 0x01c00458;
 constexpr int kMenuStackDepthOffset = 0xA7C;
 int GetMenuStackDepth()
 {
     return *reinterpret_cast<volatile int*>(kMenuStackCtx + kMenuStackDepthOffset);
 }
+#else
+// x64: not yet ported. Real x86-only address, unsafe on x64 -- see IsMenuActive()'s
+// own note above (same class of bug, same fix). Reachable on x64 today only via
+// ResetMenuListItemOrdinalForFrame()'s debug-log call sites (a diagnostic message
+// argument, not gameplay logic) -- -1 is a real, honest "unknown" sentinel there,
+// distinct from any real depth value (0, 1, 2+).
+int GetMenuStackDepth() { return -1; }
+#endif
 
 // Same research (4 passes total, see re_notes/known_issues.md): FUN_00547980(&ctx) is
 // the engine's own real "get current topmost active menu" accessor -- called directly
@@ -137,6 +164,7 @@ int GetMenuStackDepth()
 // (assumed __cdecl, matching every other "clean" FUN_ pointer in this file) was
 // inferred from a clean decompile with no unaff_ESI/EDI register-guess artifacts, but
 // hasn't been live-exercised yet.
+#if !defined(_M_X64) && !defined(_WIN64)
 using GetTopmostActiveMenuFn = void*(__cdecl*)(void* ctx);
 GetTopmostActiveMenuFn const GetTopmostActiveMenuNative = reinterpret_cast<GetTopmostActiveMenuFn>(0x00547980);
 
@@ -148,6 +176,11 @@ void* GetTopmostActiveMenu()
         return nullptr;
     }
 }
+#else
+// x64: not yet ported, same note as GetMenuStackDepth() above. No confirmed external
+// callers currently -- kept for source-compat with the rest of this file.
+void* GetTopmostActiveMenu() { return nullptr; }
+#endif
 
 // menu+0xa8 -- confirmed via FUN_004c1220's own decompile (see the big comment above).
 int GetActiveMenuItemCount()
@@ -279,6 +312,7 @@ bool TryGetRealFocusedGroupAndIndex(char* outGroupName, size_t outGroupNameSize,
 // filter out. State is a single shared instance (not per-caller) since only one
 // screen/item can be genuinely focused at a time -- callers that ask on the same
 // frame this returns for see the same stable answer.
+#if !defined(_M_X64) && !defined(_WIN64)
 bool TryGetStableFocusedGroupAndIndex(char* outGroupName, size_t outGroupNameSize,
                                         int& outDepth, int& outIndex, int& outSiblingCount)
 {
@@ -324,6 +358,14 @@ bool TryGetStableFocusedGroupAndIndex(char* outGroupName, size_t outGroupNameSiz
     outSiblingCount = s_stableSiblingCount;
     return true;
 }
+#else
+// x64: not yet ported (real x86-only menu-focus tracking, depends on
+// GetMenuStackDepth()/TryGetRealFocusedGroupAndIndex()). Reachable on x64 today via
+// ResetMenuListItemOrdinalForFrame()'s glyph-positioning logic -- returning false
+// (honest "no stable focus found") is this function's own real contract for that
+// case already, every caller already handles it.
+bool TryGetStableFocusedGroupAndIndex(char*, size_t, int&, int&, int&) { return false; }
+#endif
 
 // BUG-051 diagnostic (2026-08-02) -- user question: is FUN_00547980 itself returning
 // the wrong stack entry for a lightweight popup? That function walks the stack
@@ -338,6 +380,7 @@ bool TryGetStableFocusedGroupAndIndex(char* outGroupName, size_t outGroupNameSiz
 // filtering at all, so its result can be compared against GetTopmostActiveMenu()'s.
 constexpr int kMenuStackArrayOffset = 0xA3C;
 
+#if !defined(_M_X64) && !defined(_WIN64)
 void* GetRawTopOfStackMenu()
 {
     int depth = GetMenuStackDepth();
@@ -349,7 +392,9 @@ void* GetRawTopOfStackMenu()
         return nullptr;
     }
 }
+#endif
 
+#if !defined(_M_X64) && !defined(_WIN64)
 int GetRawTopOfStackItemCount()
 {
     void* menu = GetRawTopOfStackMenu();
@@ -360,6 +405,7 @@ int GetRawTopOfStackItemCount()
         return -1;
     }
 }
+#endif
 
 // User-requested (2026-08-02): the glyph/hint overlay system should turn itself off
 // whenever keyboard/mouse becomes the active input method, same as console never
@@ -527,14 +573,17 @@ using ToggleStanceFn = void(__fastcall*)(int playerIndex, unsigned int mode);
 ToggleStanceFn const ToggleStance = reinterpret_cast<ToggleStanceFn>(0x0057d2c0);
 constexpr uintptr_t kRealStanceFieldAddr = 0xB363CC; // player 0 (SP-only, stride*0 offset)
 
+#if !defined(_M_X64) && !defined(_WIN64)
 int GetRealStance()
 {
     return *reinterpret_cast<volatile int*>(kRealStanceFieldAddr);
 }
+#endif
 
 // Brings the real stance back to Standing (0) from whatever it currently is, by
 // calling ToggleStance with the mode that EQUALS the current value (per the toggle
 // logic above, current==mode always resolves to 0) -- a no-op if already standing.
+#if !defined(_M_X64) && !defined(_WIN64)
 void ForceStandingViaRealToggle()
 {
     int current = GetRealStance();
@@ -542,6 +591,7 @@ void ForceStandingViaRealToggle()
         ToggleStance(kLocalClientIndex, static_cast<unsigned int>(current));
     }
 }
+#endif
 
 // Forward declaration -- defined further down the file (its own diagnostic-log
 // section); needed here since ProcessPendingStanceRetry below logs through it and
@@ -588,6 +638,7 @@ void GetStanceGuardBytes(uint8_t& guard1, uint8_t& guard2)
 // tap/hold code did. Logs guard-byte values on every attempt (the diagnostic issue
 // #27's Bug #2 write-up asked for), and arms a short retry window if the call was
 // silently blocked instead of dropping the press.
+#if !defined(_M_X64) && !defined(_WIN64)
 void RequestStanceToggle(unsigned int mode, const char* tag)
 {
     int before = GetRealStance();
@@ -612,11 +663,13 @@ void RequestStanceToggle(unsigned int mode, const char* tag)
     g_pendingStanceExpected = expected;
     g_pendingStanceStartMs = GetTickCount();
 }
+#endif
 
 // Re-attempts a blocked stance toggle once per frame until it takes effect or
 // kStanceRetryTimeoutMs elapses. Safe for the same reason RequestStanceToggle's own
 // first retry is: ToggleStance is a guaranteed no-op while genuinely gated, so calling
 // it again every frame can only ever succeed once, never mis-fire early.
+#if !defined(_M_X64) && !defined(_WIN64)
 void ProcessPendingStanceRetry()
 {
     if (g_pendingStanceMode == 0) return;
@@ -635,6 +688,7 @@ void ProcessPendingStanceRetry()
         g_pendingStanceMode = 0;
     }
 }
+#endif
 } // namespace
 
 // BUG-001 follow-up (2026-08-02): IsMenuActive() above lives in an anonymous
@@ -840,6 +894,7 @@ DWORD g_lastStanceDiagLogMs = 0;
 // hook already sits on top of -- forcing real stance to 0 and forcing usercmd crouch/
 // prone button bits while locked, guard1-set = force prone, guard2-only-set = force
 // crouch).
+#if !defined(_M_X64) && !defined(_WIN64)
 void LogStanceDiag(const char* tag)
 {
     uint8_t guard1, guard2;
@@ -849,6 +904,7 @@ void LogStanceDiag(const char* tag)
               tag, GetRealStance(), guard1, guard2, GetTickCount());
     LogFromController(buf);
 }
+#endif
 
 // ---- Missile-guidance / third-analog-channel diagnostic (2026-07-18, task #30) -----
 //
@@ -886,6 +942,7 @@ void LogStanceDiag(const char* tag)
 constexpr uintptr_t kMissileGuidanceFlagAddr = 0xB374E4; // player 0: 0xB363B0 + 0x1094
 unsigned int g_lastMissileGuidanceFlagValue = 0xFFFFFFFF; // sentinel: force first log
 
+#if !defined(_M_X64) && !defined(_WIN64)
 void LogMissileGuidanceFlagDiag()
 {
     unsigned int current = *reinterpret_cast<volatile unsigned int*>(kMissileGuidanceFlagAddr);
@@ -898,6 +955,7 @@ void LogMissileGuidanceFlagDiag()
     LogFromController(buf);
     g_lastMissileGuidanceFlagValue = current;
 }
+#endif
 
 // ---- controlslinkto diagnostic hook (2026-07-18, task #30 follow-up) ---------------
 //
@@ -934,6 +992,7 @@ using ControlsLinkToFn = void(__cdecl*)(unsigned int entityHandle);
 constexpr uintptr_t kControlsLinkToAddr = 0x005d7f20;
 ControlsLinkToFn g_origControlsLinkTo = nullptr;
 
+#if !defined(_M_X64) && !defined(_WIN64)
 void __cdecl Hook_ControlsLinkTo(unsigned int entityHandle)
 {
     g_origControlsLinkTo(entityHandle);
@@ -961,6 +1020,7 @@ void __cdecl Hook_ControlsLinkTo(unsigned int entityHandle)
     }
     LogFromController(buf);
 }
+#endif
 } // namespace
 
 // ---- Missile-guidance per-frame angle dispatcher diagnostic (2026-07-19, task #30
@@ -1019,6 +1079,7 @@ MissileGuidanceDispatchFn g_origMissileGuidanceDispatch = nullptr;
 float g_lastLoggedPmlPitch = 0.0f;
 bool g_missileGuidanceDiagHasLogged = false;
 
+#if !defined(_M_X64) && !defined(_WIN64)
 void __cdecl Hook_MissileGuidanceDispatch(
     void* pmlPtr, void* clientStructPtr, float frameDeltaMs, void* pmlPlusOne, char flagByte)
 {
@@ -1065,6 +1126,7 @@ void __cdecl Hook_MissileGuidanceDispatch(
 
     g_origMissileGuidanceDispatch(pmlPtr, clientStructPtr, frameDeltaMs, pmlPlusOne, flagByte);
 }
+#endif
 } // namespace
 
 // ---- Interact: hold-to-interact, not instant-on-tap (2026-07-16) -------------------
@@ -1120,6 +1182,7 @@ bool IsMantleHintCurrentlyShowing(); // defined later in this file -- auto-mantl
 bool g_moneyShareButtonWasHeld = false;
 }
 
+#if !defined(_M_X64) && !defined(_WIN64)
 extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
 {
     if (!cmd) return;
@@ -1385,6 +1448,7 @@ extern "C" void __cdecl InjectControllerButtons(unsigned char* cmd)
     uint32_t* buttonsField = reinterpret_cast<uint32_t*>(cmd + 4);
     *buttonsField |= out;
 }
+#endif
 
 // ---- ADS: left trigger -> true hold-to-aim via the real +toggleads_throw kbuttons ----
 //
@@ -1484,6 +1548,7 @@ void CallKbuttonUp(uintptr_t, int) {}
 bool g_adsHeld = false;
 } // namespace
 
+#if !defined(_M_X64) && !defined(_WIN64)
 extern "C" void __cdecl InjectControllerAds()
 {
     unsigned short buttons;
@@ -1502,6 +1567,7 @@ extern "C" void __cdecl InjectControllerAds()
         CallKbuttonUp(kAdsKbutton2, kAdsBindIndex);
     }
 }
+#endif
 
 // ---- Reload: X -> real +reload kbutton, found via memdiff + pointer scan (2026-07-15) --
 //
@@ -1520,6 +1586,7 @@ constexpr int kReloadBindIndex = 15; // distinct from ADS's 13 -- arbitrary but 
 bool g_reloadHeld = false;
 } // namespace
 
+#if !defined(_M_X64) && !defined(_WIN64)
 extern "C" void __cdecl InjectControllerReload()
 {
     unsigned short buttons;
@@ -1536,6 +1603,7 @@ extern "C" void __cdecl InjectControllerReload()
         CallKbuttonUp(kReloadKbutton, kReloadBindIndex);
     }
 }
+#endif
 
 // ---- Fire: RT -> real +attack kbutton (2026-07-18, task #7) -----------------------
 //
@@ -1800,10 +1868,12 @@ int GetDvarInt(const char*) { return 0; }
 // the synthetic-Shift path (which naturally also drives this same kbutton, exactly
 // like a real keyboard press) owns it whenever aiming -- matching real console
 // behavior anyway, since hip-fire sprint speed has no meaning while ADS'd.
+#if !defined(_M_X64) && !defined(_WIN64)
 bool IsSprintActive()
 {
     return g_sprintHeld && GetRealStance() == 0 && !g_adsHeld;
 }
+#endif
 
 constexpr uintptr_t kSprintKbutton = 0x00A98CCC;
 constexpr int kSprintBindIndex = 16; // distinct from ADS's 13/Reload's 15 -- arbitrary,
@@ -1819,6 +1889,7 @@ bool g_sprintKbuttonActive = false; // tracks whether OUR CallKbuttonDown is cur
 // Drives the real kbutton off IsSprintActive()'s logical state (held + upright stance),
 // not just the raw physical hold -- keeps KeyDown/KeyUp edge-triggered exactly once per
 // real transition, same convention as ADS/Reload/Fire.
+#if !defined(_M_X64) && !defined(_WIN64)
 void UpdateSprintKbutton(bool active)
 {
     if (active == g_sprintKbuttonActive) return;
@@ -1829,6 +1900,7 @@ void UpdateSprintKbutton(bool active)
         CallKbuttonUp(kSprintKbutton, kSprintBindIndex);
     }
 }
+#endif
 
 // ---- Hold Breath (L3 while ADS'd): genuine native kbutton (2026-07-20, task #24) --
 //
@@ -1935,6 +2007,7 @@ constexpr int kHoldBreathBindIndex = 18; // distinct from ADS's 13/Reload's 15/S
                                           // with Fire) until the fix above.
 } // namespace
 
+#if !defined(_M_X64) && !defined(_WIN64)
 extern "C" void __cdecl InjectControllerSprint()
 {
     unsigned short buttons;
@@ -2032,6 +2105,7 @@ extern "C" void __cdecl InjectControllerSprint()
         }
     }
 }
+#endif
 
 // ---- Look: right stick -> the pitch/yaw angle-delta accumulator directly -------
 //
@@ -2155,6 +2229,7 @@ float GetDvarFloat(const char*) { return 0.0f; }
 // configure a stronger-than-1.0 slowdown (rejected a plain clamp-to-1.0 fix for
 // exactly this reason) while making the "overflow" that caused inversion
 // structurally impossible instead of just guarding against one specific value.
+#if !defined(_M_X64) && !defined(_WIN64)
 float GetAdsLookRateScale()
 {
     if (!g_adsHeld || g_modConfig.adsSlowdownStrength <= 0.0f) return 1.0f;
@@ -2217,6 +2292,7 @@ float GetAdsLookRateScale()
 
     return scale;
 }
+#endif
 
 // ---- Look acceleration ramp (2026-07-19, known_issues.md issue #32) ---------------
 //
@@ -2276,6 +2352,7 @@ float g_motionBlurPitchDeltaDeg = 0.0f;
 // "Look-stick" rather than a hardcoded "right stick" -- see InjectControllerMovement's
 // comment on RouteStickAxes/task #15's Stick Layout. Under the default layout this is
 // exactly the original right-stick-only behavior.
+#if !defined(_M_X64) && !defined(_WIN64)
 extern "C" void __cdecl InjectControllerLookAngles()
 {
     float leftX, leftY, rightX, rightY;
@@ -2342,6 +2419,7 @@ extern "C" void __cdecl InjectControllerLookAngles()
         }
     }
 }
+#endif
 
 // ---- Investigation record: Cbuf_AddText / Cmd_ExecuteString exist, but aren't the
 // mechanism for weapnext/togglemenu (2026-07-15) -----------------------------------
@@ -2440,12 +2518,14 @@ DWORD g_yPressStartMs = 0;
 bool g_yReadyUpFired = false; // debounces per physical Y hold -- only fires once, even
                               // if held well past the threshold
 
+#if !defined(_M_X64) && !defined(_WIN64)
 bool IsInSurvivalMode()
 {
     const char* mapName = GetDvarString("mapname");
     if (!mapName) return false;
     return _strnicmp(mapName, "so_survival_", 12) == 0; // matches FUN_00526b30's own check
 }
+#endif
 
 void SendSyntheticF5()
 {
@@ -2463,6 +2543,7 @@ void SendSyntheticF5()
 }
 } // namespace
 
+#if !defined(_M_X64) && !defined(_WIN64)
 extern "C" void __cdecl InjectControllerWeaponNext()
 {
     unsigned short buttons;
@@ -2489,6 +2570,7 @@ extern "C" void __cdecl InjectControllerWeaponNext()
     }
     g_yHeld = held;
 }
+#endif
 // See re_notes/known_issues.md issue #2 for the full trace.
 
 // ---- Start -> real pause-menu toggle, via FUN_00541020's hardcoded ESC path -----
@@ -2604,6 +2686,7 @@ constexpr int kKeyEscape = 0x1b;
 bool g_menuBackHeld = false;
 } // namespace
 
+#if !defined(_M_X64) && !defined(_WIN64)
 extern "C" void __cdecl InjectControllerMenuBack()
 {
     unsigned short buttons;
@@ -2634,6 +2717,7 @@ extern "C" void __cdecl InjectControllerMenuBack()
     }
     g_menuBackHeld = held;
 }
+#endif
 
 // ---- D-pad Up/Down + A -> real menu item navigation/select (2026-07-17, task #22) ----
 //
@@ -2773,6 +2857,7 @@ void SendSyntheticF1()
 // signal without disturbing that function's real ESC-forward edge tracking.
 bool g_optMenuBackHeldForCustomMenu = false;
 
+#if !defined(_M_X64) && !defined(_WIN64)
 extern "C" void __cdecl InjectControllerMenuNav()
 {
     if (!IsMenuActive()) {
@@ -2918,7 +3003,9 @@ extern "C" void __cdecl InjectControllerMenuNav()
     }
     g_menuNavBackButtonHeld = backButtonHeld;
 }
+#endif
 
+#if !defined(_M_X64) && !defined(_WIN64)
 extern "C" void __cdecl InjectControllerPauseMenu()
 {
     unsigned short buttons;
@@ -2964,6 +3051,7 @@ extern "C" void __cdecl InjectControllerPauseMenu()
     }
     g_startHeld = held;
 }
+#endif
 
 // ---- Combined per-frame entry point -- all controller injection lives here now ----
 //
@@ -3214,6 +3302,7 @@ extern "C" void __cdecl InjectControllerScoreboard()
     }
 }
 
+#if !defined(_M_X64) && !defined(_WIN64)
 extern "C" void __cdecl InjectControllerDpad()
 {
     unsigned short buttons;
@@ -3259,6 +3348,7 @@ extern "C" void __cdecl InjectControllerDpad()
         }
     }
 }
+#endif
 
 // ---- DEBUG-ONLY: live test of the real zone-loading entry point (task #23) ----
 //
@@ -5066,6 +5156,7 @@ uintptr_t g_localVarIntRealRetAddr = 0;
 // the real selection index in lockstep becomes directly visible by comparison
 // against selIndex in the SAME line, without needing to manually correlate
 // timestamps across two separate diagnostic tags.
+#if !defined(_M_X64) && !defined(_WIN64)
 void LogLocalVarIntResult()
 {
     __try {
@@ -5087,6 +5178,7 @@ void LogLocalVarIntResult()
         // Never let this crash the game over an unexpected operand shape.
     }
 }
+#endif
 } // namespace
 
 #if !defined(_M_X64) && !defined(_WIN64)
@@ -5202,6 +5294,7 @@ int __cdecl Hook_00486990(void* ctx, const char* name)
 }
 } // namespace
 
+#if !defined(_M_X64) && !defined(_WIN64)
 void LogMenuRegistry(const char* tag)
 {
     int32_t count = *reinterpret_cast<volatile int32_t*>(kMenuRegistryCountAddr);
@@ -5232,6 +5325,7 @@ void LogMenuRegistry(const char* tag)
         LogFromController(buf);
     }
 }
+#endif
 
 // FUN_0050a350's real per-menu body, confirmed via RAW DISASSEMBLY 2026-07-17 (not
 // just decompile -- the decompile summary omitted a real step): for EVERY menu it
@@ -5311,6 +5405,7 @@ void* __cdecl Hook_FindOrLoadAsset(int assetType, const char* name, int flag)
     return result;
 }
 
+#if !defined(_M_X64) && !defined(_WIN64)
 void RegisterMenu(void* menuDefPtr)
 {
     uintptr_t entryPtr = reinterpret_cast<uintptr_t>(menuDefPtr);
@@ -5354,10 +5449,12 @@ void RegisterMenu(void* menuDefPtr)
     sprintf_s(buf, "[menureg] \"%s\" appended at new slot %d (0x%08X)", name, count, static_cast<unsigned>(entryPtr));
     LogFromController(buf);
 }
+#endif
 
 // Iterates a loaded MenuList (menuCount at +4, menuDef_t** menus at +8 -- matches
 // OpenAssetTools' own MenuList{int menuCount; menuDef_t** menus;} struct, same shape
 // FUN_0050a350 itself walks) and registers every menu it defines under its own name.
+#if !defined(_M_X64) && !defined(_WIN64)
 void RegisterLoadedMenuList(void* menuList)
 {
     if (menuList == nullptr) return;
@@ -5378,6 +5475,7 @@ void RegisterLoadedMenuList(void* menuList)
         RegisterMenu(menus[i]);
     }
 }
+#endif
 } // namespace -- closes the one opened above ZoneLoadEntry (was previously closed
   // after the old blocking scan function; that function got replaced by
   // StartMenuDefScan/TickMenuDefScan below, each in their own separate namespace)
@@ -5540,6 +5638,7 @@ bool TickMenuDefScan()
 // isolated look, but the real test is backing out (B/ESC) afterward and navigating
 // there NORMALLY (pause -> Options -> Controller) to confirm the override is visible
 // through the game's own real navigation, not just our direct-open shortcut.
+#if !defined(_M_X64) && !defined(_WIN64)
 void InjectZoneLoadDebugTest()
 {
     if (g_zoneLoadTestStage != ZoneLoadTestStage::WaitingForCombo) return;
@@ -5615,6 +5714,7 @@ void InjectZoneLoadDebugTest()
     g_zoneLoadTestLoadedMs = GetTickCount();
     g_zoneLoadTestStage = ZoneLoadTestStage::Loaded;
 }
+#endif
 
 // ---- Boot-time zone splice: auto-load the extended button-glyph font (2026-07-19,
 // task #6 UI scope / controller glyphs) ------------------------------------------
@@ -5663,6 +5763,7 @@ constexpr uintptr_t kBootZoneSpliceReturnAddr = 0x006797C2; // FUN_00679680 Call
 constexpr int kBootZoneArrayCapacity = 10; // int[30] local == 10 entries * 3 ints, confirmed
 bool g_bootZoneSpliced = false; // idempotency guard -- splice at most once per process
 
+#if !defined(_M_X64) && !defined(_WIN64)
 void __cdecl Hook_LoadZonesForBootSplice(void* zoneArray, int count, int mode)
 {
     uintptr_t returnAddr = reinterpret_cast<uintptr_t>(_ReturnAddress());
@@ -5690,6 +5791,7 @@ void __cdecl Hook_LoadZonesForBootSplice(void* zoneArray, int count, int mode)
     // to the real function either way, exactly as if this hook didn't exist.
     g_origLoadZonesForBootSplice(zoneArray, count, mode);
 }
+#endif
 } // namespace
 
 // ---- Boot-thunk resolution diagnostic (2026-07-20, task #23 follow-up) -----------
@@ -6725,6 +6827,7 @@ bool TryGetSentryPlaceGlyphAssetName(char* outAssetName, size_t outSize);
 // Reuses the same obscure LB+RB-held-2s convention as the zoneload-test above (that
 // test is disabled/not wired into the live tick, so no collision) -- deliberately
 // impossible to trigger by accident during normal play.
+#if !defined(_M_X64) && !defined(_WIN64)
 void InjectFontStructDebugTest()
 {
     if (g_fontDiagStage != FontDiagStage::WaitingForCombo) return;
@@ -6800,6 +6903,7 @@ void InjectFontStructDebugTest()
 
     LogFromController("[font-struct-diag] dump complete -- compare against re_notes/known_issues.md issue #6/#31 Font struct notes before attempting any patch");
 }
+#endif
 
 // ---- Live HUD-text font identification (2026-07-21, task #6/#34 follow-up) --------
 //
@@ -7542,6 +7646,14 @@ extern "C" void __cdecl ResetMenuListItemOrdinalForFrame()
         // (g_aiSpawnDisabled), own edge-detected key, own log lines. Still
         // gated behind the same glyphPositionEditMode master switch as every
         // other debug-only feature in this block (default OFF).
+#if !defined(_M_X64) && !defined(_WIN64)
+        // x64: not yet ported. CbufAddText is a raw x86-only address -- this whole F4
+        // AI-suppression toggle (issue tracked in project memory as "AI suppression
+        // settled") is real gameplay logic, not a diagnostic, so it's fully disabled
+        // on x64 for now rather than given a fake stub; F4 simply does nothing until
+        // a real x64 Cbuf_AddText-equivalent hook exists (FUN_1402c5b30 is the
+        // confirmed x64 Cvar_Set, not Cbuf_AddText -- a separate function, not yet
+        // located for this specific command-execution path).
         static bool s_lastF4Held = false;
         bool f4Held = (GetAsyncKeyState(VK_F4) & 0x8000) != 0;
         bool f4Edge = f4Held && !s_lastF4Held;
@@ -7556,6 +7668,7 @@ extern "C" void __cdecl ResetMenuListItemOrdinalForFrame()
                 LogFromController("[ai-spawn-toggle] AI spawn restored: ai_disableSpawn 0");
             }
         }
+#endif
         // Debounced (2026-08-16, live-reported "it goes to the set position but after
         // x amount of time [it] moves") -- see TryGetStableFocusedGroupAndIndex's own
         // comment. Shares its single debounce state with the shipped manual-table
@@ -8972,6 +9085,7 @@ FontPatchStage g_fontPatchStage = FontPatchStage::WaitingForCombo;
 DWORD g_fontPatchHoldStartMs = 0;
 } // namespace
 
+#if !defined(_M_X64) && !defined(_WIN64)
 void InjectFontGlyphPatchTest()
 {
     if (g_fontPatchStage != FontPatchStage::WaitingForCombo) return;
@@ -9061,6 +9175,7 @@ void InjectFontGlyphPatchTest()
 
     LogFromController("[font-patch-test] patch applied -- if the mechanism is sound, any UI text containing byte 0x81 should now render as a visible (borrowed) 'A' glyph instead of missing/tofu. Compare against re_notes/known_issues.md before trusting this without a visual confirm.");
 }
+#endif
 
 // ---- hudBigFont-targeted retarget of the two tests above (2026-07-21, task #6/#34
 // follow-up, real-data-driven) ------------------------------------------------------
@@ -9105,6 +9220,7 @@ DWORD g_hudFontPatchHoldStartMs = 0;
 // Read-only struct-layout diagnostic, retargeted at fonts/hudBigFont. Distinct combo
 // (LB+RB+X) from every existing one (LB+RB = bigfont struct diag, LB+RB+A = bigfont
 // patch test) so it can never fire alongside or be confused with either.
+#if !defined(_M_X64) && !defined(_WIN64)
 void InjectFontStructDebugTest_HudBigFont()
 {
     if (g_hudFontDiagStage != HudFontDiagStage::WaitingForCombo) return;
@@ -9174,6 +9290,7 @@ void InjectFontStructDebugTest_HudBigFont()
 
     LogFromController("[hudbigfont-struct-diag] dump complete -- if this struct layout matches the already-confirmed bigfont one (it should, per FUN_0047dfa0's generic lookup logic), hudBigFont is a safe patch target too.");
 }
+#endif
 
 // Borrowed-UV glyph-array patch mechanism test, retargeted at fonts/hudBigFont. Same
 // mechanism, same safety ordering (glyphs pointer written before glyphCount), same
@@ -9187,6 +9304,7 @@ void InjectFontStructDebugTest_HudBigFont()
 // display (7929 real draws in one session) -- so if this patch fires and a future
 // pass adds byte 0x81 into any hudBigFont-rendered string, this is a genuinely
 // visible, repeatable test vehicle, not a one-time-per-profile dead end.
+#if !defined(_M_X64) && !defined(_WIN64)
 void InjectFontGlyphPatchTest_HudBigFont()
 {
     if (g_hudFontPatchStage != HudFontPatchStage::WaitingForCombo) return;
@@ -9298,6 +9416,7 @@ void InjectFontGlyphPatchTest_HudBigFont()
     g_hudBigFontPtr = rawFont;
     g_hudFontPatchInsertedCodepoint = kNewCodepoint;
 }
+#endif
 
 // ---- Visibility test for the hudBigFont glyph-array patch (task #6/#34 follow-up,
 // 2026-07-21) ------------------------------------------------------------------------
@@ -9430,6 +9549,7 @@ enum class GlyphFontExtStage { NotStarted, Done };
 GlyphFontExtStage g_glyphFontExtStage = GlyphFontExtStage::NotStarted;
 } // namespace
 
+#if !defined(_M_X64) && !defined(_WIN64)
 void InstallGlyphFontExtension()
 {
     if (g_glyphFontExtStage != GlyphFontExtStage::NotStarted) return;
@@ -9486,6 +9606,7 @@ void InstallGlyphFontExtension()
 
     LogFromController("[glyph-font-ext] repoint complete -- real fonts/bigfont now has the extended glyph set and atlas. If sound, codepoint 0x81 should render its real intended glyph wherever bigfont draws text.");
 }
+#endif
 
 // ---- Level-load-safe trigger for the glyph font extension: hook FUN_0053cbc0 ------
 // (2026-07-21, task #6/#23 follow-up, "safer address-recovery approach" successor to
@@ -9594,6 +9715,7 @@ void __cdecl Hook_FUN_0053cbc0(void* param1, int param2)
     // InstallGlyphFontExtension();
 }
 
+#if !defined(_M_X64) && !defined(_WIN64)
 extern "C" void __cdecl InjectAllControllerInput(unsigned char* cmd)
 {
     // 2026-08-25: request a fresh poll sample as early as possible this tick -- see
@@ -9742,6 +9864,7 @@ extern "C" void __cdecl InjectAllControllerInput(unsigned char* cmd)
     Rumble_Tick(); // task #17 -- gameplay-tick only, not the menu tick (rumble is a
                     // gameplay-feedback feature, not a UI one)
 }
+#endif
 
 // ---- Menu input tick -- driven by a WndProc subclass hook, NOT this file's gameplay tick
 //
@@ -9772,6 +9895,14 @@ extern "C" void __cdecl InjectMenuInputTick()
     // InjectAllControllerInput's own request (above) has already stopped firing.
     Controller_RequestPoll();
 
+#if !defined(_M_X64) && !defined(_WIN64)
+    // x64: everything below through InjectFontGlyphVisibilityTest_HudBigFont() is
+    // x86-only gameplay-menu-nav/debug-test code, not yet ported (2026-09-04 --
+    // this whole block was found unguarded and crashing on x64 via
+    // InjectControllerPauseMenu's own raw-address reads; the real, confirmed
+    // x64-safe calls -- Controller_RequestPoll above, CheckConfigHotReload/
+    // TickOverlayTestCycle below -- stay unconditional, only this x86-only
+    // middle section is excluded).
     // Issue #88: [Video] InternalRenderScalePercent needs no per-tick call at all --
     // Hook_FUN_00679010 (above in this file) intercepts real device-creation-time
     // render-target sizing directly. Fires exactly once per process (the real
@@ -9867,6 +9998,7 @@ extern "C" void __cdecl InjectMenuInputTick()
     // InjectFontGlyphVisibilityTest_HudBigFont's own definition for the full
     // rationale and the option considered and rejected (a console-command anchor).
     InjectFontGlyphVisibilityTest_HudBigFont();
+#endif
 
     // Config hot-reload QoL feature (2026-07-31, user request) -- checked from this
     // always-running (WndProc/SetTimer) tick rather than the gameplay tick so it keeps
@@ -9960,10 +10092,12 @@ char g_bindResolverLastLoggedText[128] = {};
 // threaded assumption as the rest of this file's naked-hook globals; safe as long as
 // this project never becomes multi-threaded without revisiting that assumption
 // everywhere at once.
+#if !defined(_M_X64) && !defined(_WIN64)
 const char* GetLastResolvedBindKeyName()
 {
     return g_bindResolverLastLoggedText;
 }
+#endif
 
 namespace {
 

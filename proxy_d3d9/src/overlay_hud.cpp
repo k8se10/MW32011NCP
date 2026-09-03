@@ -3556,6 +3556,17 @@ bool g_motionBlurRanThisFrame = false;
 
 void RunPreOverlayMotionBlurPassIfEnabled(void* device)
 {
+#if defined(_M_X64) || defined(_WIN64)
+    // x64: not yet ported, same class of bug as RunFullScreenPostProcessIfEnabled
+    // above (raw x86-only address reads: kClcStateAddrForTest/ForBlurMenuCheck=
+    // 0x00B36218, kInLevelFlagAddrForBlurGate=0x00A98ACC). Currently only reached
+    // via TriggerMotionBlurFromEngineHook(), itself only called from the
+    // already-guarded x86-only naked hooks (Hook_694650/Hook_693ff0,
+    // analog_input_hooks.cpp) -- so this return is defensive insurance against a
+    // future change adding a new x64-reachable call site, not a confirmed second
+    // crash source.
+    return;
+#endif
     if (!g_modConfig.motionBlurEnabled) return;
 
     // [Experimental] VisualFxClcStateTestValue (2026-08-28, issue #99/#100) --
@@ -3704,6 +3715,24 @@ extern "C" void TriggerMotionBlurFromEngineHook()
 // understanding the real transition-timing gap.
 void RunFullScreenPostProcessIfEnabled(void* device)
 {
+#if defined(_M_X64) || defined(_WIN64)
+    // x64: CONFIRMED REAL CRASH SOURCE, 2026-09-04 (second live crash, after the
+    // first -- IsMenuActive() -- was fixed). This function is called
+    // unconditionally every frame from the real Hook_EndScene draw dispatcher
+    // (confirmed running on x64), and its body reads several raw x86-only
+    // addresses (kInLevelFlagAddrForFsrGate=0x00A98ACC, kClcStateAddrForTest/
+    // ForMenuCheck=0x00B36218) unconditionally once past the config gate --
+    // exactly the same class of bug as IsMenuActive's own crash, just in a
+    // genuinely cross-platform file (overlay_hud.cpp) the earlier __asm-only
+    // audit of analog_input_hooks.cpp never covered. The whole visual-enhancement
+    // full-screen post-process pass (FSR/RCAS, render-scale passthrough) is not
+    // yet ported to x64 -- an early return here is the safe, honest behavior
+    // (matching the config's own `internalRenderScalePercent=200` being
+    // effectively inert on x64 for now) rather than guessing at which specific
+    // internal lines are safe to keep. Real x64 signature-scan-based hook
+    // targets for this whole pass are future work, not attempted this pass.
+    return;
+#endif
     if (g_modConfig.visualFxClcStateTestValue >= 0) {
         constexpr uintptr_t kClcStateAddrForTest = 0x00B36218;
         if (*reinterpret_cast<volatile int*>(kClcStateAddrForTest) !=
@@ -3892,6 +3921,15 @@ int g_damageDiagWindowsLoggedThisSession = 0;
 
 void PollDamageDiagLoggingIfEnabled()
 {
+#if defined(_M_X64) || defined(_WIN64)
+    // x64: not yet ported -- same class of bug as RunFullScreenPostProcessIfEnabled
+    // above (raw x86-only address reads: kDamageDiagRenderCtxPtrAddr and friends).
+    // Called unconditionally every frame from the real Hook_EndScene dispatcher
+    // (confirmed running on x64), only gated by damageDiagLoggingEnabled (default
+    // off) -- an early return here is real, not just defensive, since the config
+    // gate alone isn't a safe enough guarantee to leave the raw reads reachable.
+    return;
+#endif
     if (!g_modConfig.damageDiagLoggingEnabled) return;
 
     int health = *reinterpret_cast<volatile int*>(kDamageDiagLocalPlayerEntity + kDamageDiagHealthOffset);

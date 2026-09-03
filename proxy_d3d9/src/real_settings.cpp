@@ -105,9 +105,33 @@ const char* GetDvarString(const char* name)
     return *reinterpret_cast<const char**>(reinterpret_cast<uintptr_t>(dvarPtr) + 0xc);
 }
 
-extern "C" void SetDvarBool(const char* name, int value) { SetDvarBoolRaw(name, value); }
-extern "C" void SetDvarString(const char* name, const char* value) { SetDvarStringRaw(name, value); }
-extern "C" void SetDvarFloat(const char* name, float value) { SetDvarFloatRaw(name, value); }
+// x64 note (2026-09-04, after two real live crashes traced to the same class of
+// bug elsewhere in this codebase): unlike FindDvar()/GetKeybind() above, whose own
+// __asm bodies were already correctly guarded with #ifdef _M_IX86 (a safe no-op
+// return on x64, not a crash), every setter/writer below calls straight through a
+// raw x86-only function pointer with NO guard at all -- a real, confirmed-class
+// crash risk if ever invoked on x64 (this project's own custom Options
+// screen/glyph-position-editor systems are the real callers, per overlay_hud.cpp).
+// Each gets a real early-return here rather than being left to crash the first
+// time a config toggle makes one of those systems active.
+extern "C" void SetDvarBool(const char* name, int value) {
+#if defined(_M_X64) || defined(_WIN64)
+    (void)name; (void)value; return;
+#endif
+    SetDvarBoolRaw(name, value);
+}
+extern "C" void SetDvarString(const char* name, const char* value) {
+#if defined(_M_X64) || defined(_WIN64)
+    (void)name; (void)value; return;
+#endif
+    SetDvarStringRaw(name, value);
+}
+extern "C" void SetDvarFloat(const char* name, float value) {
+#if defined(_M_X64) || defined(_WIN64)
+    (void)name; (void)value; return;
+#endif
+    SetDvarFloatRaw(name, value);
+}
 
 // GetKeybind -- custom register calling convention, confirmed via raw disassembly of
 // FUN_0057e640 (options_menu_full_map.md sec 7): EAX=command string, ECX=configIndex,
@@ -142,6 +166,9 @@ int GetKeybind(const char* command, int configIndex, int outKeynums[2])
 
 void SetKeybind(const char* command, int configIndex, int keynum)
 {
+#if defined(_M_X64) || defined(_WIN64)
+    (void)command; (void)configIndex; (void)keynum; return; // see note above SetDvarBool
+#endif
     int commandId = CommandStringToId(command);
     if (commandId == 0) return; // unrecognized command -- matches the real "bind" command's own silent no-op
     SetKeybindRaw(configIndex, keynum, commandId);
@@ -149,6 +176,9 @@ void SetKeybind(const char* command, int configIndex, int keynum)
 
 void UnbindKeynum(int keynum, int configIndex)
 {
+#if defined(_M_X64) || defined(_WIN64)
+    (void)keynum; (void)configIndex; return; // see note above SetDvarBool
+#endif
     // Confirmed equivalent to the real "unbind" handler's own effect on the table
     // (options_menu_full_map.md sec 7: it writes 0 into this exact slot) -- reusing
     // the real setter with commandId=0 rather than re-deriving the unbind handler's
@@ -158,12 +188,19 @@ void UnbindKeynum(int keynum, int configIndex)
 
 int KeyNameToKeynum(const char* keyName)
 {
+#if defined(_M_X64) || defined(_WIN64)
+    (void)keyName; return -1; // see note above SetDvarBool -- -1 matches this
+        // function's own "not a recognized key name" contract
+#endif
     return KeyNameToKeynumRaw(keyName);
 }
 
 void KeynumToDisplayName(int keynum, char* outBuf, int outBufSize)
 {
     if (!outBuf || outBufSize <= 0) return;
+#if defined(_M_X64) || defined(_WIN64)
+    (void)keynum; outBuf[0] = '\0'; return; // see note above SetDvarBool
+#endif
     // Real function's own internal buffer convention uses 0x80 -- enforce that floor
     // here rather than trusting an undersized caller buffer, since the real function
     // does not itself take a trustworthy bounds parameter (see header comment).
@@ -178,10 +215,17 @@ void KeynumToDisplayName(int keynum, char* outBuf, int outBufSize)
 
 void QueueConsoleCommand(const char* command)
 {
+#if defined(_M_X64) || defined(_WIN64)
+    (void)command; return; // see note above SetDvarBool
+#endif
     CbufAddText(0, command);
 }
 
 const char* GetLocalizedString(const char* referenceKey)
 {
+#if defined(_M_X64) || defined(_WIN64)
+    return referenceKey; // see note above SetDvarBool -- the real function's own
+        // documented fallback (echo the raw key back) is a reasonable x64 default
+#endif
     return GetLocalizedStringRaw(referenceKey);
 }
