@@ -60,15 +60,48 @@ functions beyond the registration site itself:
   blending shape, not the core duration/flag logic) — lower priority for a controller
   hook, noted for completeness.
 
-**Not yet done**: the actual Pmove-entry HOOK POINT (the function this project's own
-`InjectControllerSprintPmFlags`/`ReassertSprintPmFlags`-equivalent would need to hook to
-force the sprint bit, per-tick, the way the x86 hook does) hasn't been separately
-pinned down — `FUN_140014a80` is the strongest candidate given it's the one function
-that actually READS and interprets the flags bit as a real state machine, but which
-function actually WRITES `param_1+0xc`'s bit `0x4000` in the first place (the analog of
-where a controller hook would need to intervene) is still unlocated. Real next step for
-whoever picks this up: `FindDataWriters.java`-style search for writers to that flags
-field, scoped to the `+0xc` offset pattern, not just readers.
+**RESOLVED, same day, follow-up pass: the Pmove-entry hook point IS `FUN_140014a80`
+itself, and the full per-tick call chain is now traced end to end.** Decompiled
+`FUN_140014a80` in full (previously only its consumer-side reads were examined) —
+line 97, `*(uint *)(lVar3 + 0xc) = *(uint *)(lVar3 + 0xc) | 0x4000;`, is the actual
+WRITE of the sprint bit, gated on a real held-input check at `param_1+0xc & 2`
+("is the sprint control currently held") plus a long chain of real state exclusions
+(prone/mantle/reload/etc. bits at `param_1+0xc`, a minimum-speed-history check via
+the function-pointer table at `PTR_FUN_1404c05b0`, and the `player_sprintUnlimited`
+bypass already confirmed above). **This is the real, confirmed x64 equivalent of
+the x86 project's own `InjectControllerSprintPmFlags`/`ReassertSprintPmFlags` hook
+target** — not a reader to build a separate hook next to, the actual function to
+hook or the actual bit-check to feed a synthesized "held" state into.
+
+**Full per-tick call chain, traced via `FindCallers.java`, two levels up:**
+- **`FUN_1400168a0`** (found as `FUN_140014a80`'s sole caller) is the x64 Pmove
+  per-substep tick function — a giant per-tick player-physics/movement-type
+  dispatcher (dispatches on `piVar1[1]`, a real `pm_type`-equivalent, cases
+  1/2/3/7 plus a default/fallback branch) that calls `FUN_140014a80` from
+  *every* reachable branch (movement types 2, 3, 7, and the default case) —
+  confirming Sprint is evaluated on every real Pmove tick regardless of
+  player state, matching the x86 design ("forced every tick").
+- **`FUN_140016620`** (found as `FUN_1400168a0`'s sole caller) is the outer
+  Pmove frame-subdivision wrapper — subdivides the frame's elapsed time into
+  sub-steps capped at `0x42` (66, decimal) ms each, looping
+  `while(iVar2 != iVar5) { ...; FUN_1400168a0(param_1); ... }`. The `66ms`
+  cap is the exact, well-known id Tech/Quake3-lineage `Pmove()` frame-
+  subdivision constant (prevents large timesteps from breaking movement
+  physics) — strong independent corroboration that this whole chain really
+  is `Pmove()`, not a coincidentally-similar function.
+- **Real x64 injection target, going forward**: `param_1` (shared identically
+  across all three functions — `piVar1 = *param_1` in both
+  `FUN_1400168a0`/`FUN_140016620`, `lVar3 = *param_1` in `FUN_140014a80`) is
+  the per-player Pmove input/state wrapper struct — bit `0x2` at `+0xc` is
+  the real "sprint control held" flag `FUN_140014a80` checks before setting
+  `pm_flags` bit `0x4000`. A controller Sprint hook has two real options once
+  live testing is possible: (a) hook `FUN_140014a80` directly and force its
+  bit-0x4000 write the way x86 did, or (b) the cleaner, more "native"
+  option — set bit `0x2` at `param_1+0xc` before `FUN_1400168a0`/
+  `FUN_140014a80` runs, letting the existing native logic (speed-history
+  check, exclusion bits, `player_sprintUnlimited` bypass) do the real work
+  unmodified. Neither has been live-tested; this is a static-RE conclusion
+  only, per the standing caution.
 
 ## weapnext — anchor found, same table as buttons, NOT live-verified
 

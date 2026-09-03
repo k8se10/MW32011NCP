@@ -16310,7 +16310,8 @@ with varying confidence (none live-verified yet, no x64 build exists to test
 against): the movement/look pipeline (high confidence), the bind-name table
 and a simpler-than-x86 buttons/ADS KeyDown/KeyUp mechanism (high confidence),
 the visual-suite dvar catalog (high confidence, all 5 storage globals),
-Sprint's state machine (storage found, write-hook still open), the generic
+Sprint's full Pmove-entry hook chain (RESOLVED, static, high confidence -- see
+same-day follow-up below), the generic
 dvar read/write API (high confidence, real x64 simplification -- no custom
 calling convention needed at all), and D-pad actionslot's bind indices
 (computed, mechanism unconfirmed). **Update, same day, real key-event
@@ -16363,7 +16364,24 @@ Now confirmed independently in TWO binary generations, raising real
 confidence the actual creation site is reached via an indirect call
 (a function pointer), which direct-xref static tooling structurally can't
 find -- a genuinely different technique is the real next step, not more
-scanning.
+scanning. **Sprint thread, same day -- RESOLVED, static, high confidence**:
+decompiled `FUN_140014a80` in full (previously only its consumer-side reads
+were examined) -- it's the real Pmove-entry sprint-bit WRITER, not a reader
+to hook around: `*(uint*)(lVar3+0xc) |= 0x4000` (the confirmed `pm_flags`-
+equivalent) gated on a real held-input check (`param_1+0xc & 2`) plus the
+already-confirmed `player_sprintUnlimited` bypass and a chain of real state
+exclusions (prone/mantle/reload bits, a speed-history check). Traced two
+levels up via `FindCallers.java`: `FUN_1400168a0` (Pmove per-substep tick,
+calls `FUN_140014a80` from every movement-type branch) is itself called
+from `FUN_140016620` (the outer Pmove frame-subdivision wrapper, sub-steps
+capped at 66ms -- the exact classic id Tech/Quake3-lineage `Pmove()`
+constant, strong independent corroboration this chain really is Pmove).
+This is the real, confirmed x64 equivalent of x86's
+`InjectControllerSprintPmFlags`/`ReassertSprintPmFlags` hook target -- two
+real options once live testing is possible: hook `FUN_140014a80` directly
+(matches x86's approach), or set the held-input bit at `param_1+0xc` before
+the chain runs and let the existing native logic do the rest. Full detail
+in `re_notes/x64_migration/sprint_weapnext_x64.md`. Not live-tested.
 
 **Symptom**: MW3 (2011) received a genuine Steam update between 2026-08-29 and
 2026-09-03 -- the first real binary update in this project's entire history.
