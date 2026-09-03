@@ -1,0 +1,4 @@
+STRING @ 1404135a0 = "$shadowmap_large" (block .rdata)
+  from 1404d0690 type=DATA IN DATA/UNKNOWN
+  (1 references)
+

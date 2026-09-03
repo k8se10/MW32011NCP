@@ -16312,8 +16312,17 @@ that one function appears to be the single unified real entry point for
 injecting any key/bind event on x64 (menu/ESC dispatch included), a real
 architectural simplification over x86's several separate specialized
 functions. **Still not located**: the dedicated `SetMenuState`/
-`OpenPauseMenu`/`ForwardKeyToMenu` functions specifically, and the render-
-scale hook (`FUN_00679010` -- no clean anchor found).
+`OpenPauseMenu`/`ForwardKeyToMenu` functions specifically. **Render-scale/
+shadow-map thread, same day**: found the x64 render-target orchestrator
+(`FUN_1401b8c80`, equivalent to `FUN_004b60a0`) and confirmed its 5 real
+callers create `SAVED_SCREEN`/`FLOAT_Z`/`SSAO`/`SSAO_BLURRED`/
+`SSAO_FLOAT_Z` -- but, matching the x86 investigation's own 9+-round
+conclusion exactly, none of them pass the shadowmap indices (0/1) either.
+Now confirmed independently in TWO binary generations, raising real
+confidence the actual creation site is reached via an indirect call
+(a function pointer), which direct-xref static tooling structurally can't
+find -- a genuinely different technique is the real next step, not more
+scanning.
 
 **Symptom**: MW3 (2011) received a genuine Steam update between 2026-08-29 and
 2026-09-03 -- the first real binary update in this project's entire history.
