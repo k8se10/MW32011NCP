@@ -9,14 +9,29 @@
       <Configuration>Release</Configuration>
       <Platform>Win32</Platform>
     </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
   </ItemGroup>
 
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>
     <ProjectGuid>{6E1B1D1A-9C7B-4B7A-9E7B-7C1B1A2D3E4F}</ProjectGuid>
     <RootNamespace>proxyd3d9</RootNamespace>
-    <!-- Game binaries (iw5sp.exe / iw5mp.exe) are confirmed x86 (32-bit) — see CLAUDE.md.
-         This project only ever targets Win32; there is no x64 configuration on purpose. -->
+    <!-- Game binaries (iw5sp.exe / iw5mp.exe) were confirmed x86 (32-bit) from
+         2026-07-13 through 2026-08-29; see CLAUDE.md's original "Key technical
+         finding" and Stack section. Activision recompiled both to x64 in a real
+         update (~1 September 2026, see re_notes/x64_migration/README.md, issue
+         #111); x64 configurations added the same day so the proxy DLL can
+         target the current live binary. Win32 configurations are kept, not
+         removed, in case the game is ever reverted or a legacy branch appears;
+         they will simply fail to load (32-bit DLL into a 64-bit process,
+         rejected by the OS loader) against the current live install. -->
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
 
@@ -31,6 +46,12 @@
   </PropertyGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <!-- MASM build customization, needed for forward_stubs_x64.asm (x64 only, see
+       that file's own header comment and the x64-only ItemGroup below). Harmless
+       for Win32 configs; they simply never reference a MASM-typed source file. -->
+  <ImportGroup Label="ExtensionSettings">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.props" />
+  </ImportGroup>
 
   <PropertyGroup>
     <TargetName>d3d9</TargetName>
@@ -41,7 +62,10 @@
          this .vcxproj and the game install to rely on anymore. If the game is ever
          reinstalled to a different drive/path, this needs updating too. -->
     <OutDir>D:\SteamLibrary\steamapps\common\Call of Duty Modern Warfare 3\</OutDir>
-    <IntDir>obj\$(Configuration)\</IntDir>
+    <!-- $(Platform) added 2026-09-03 alongside the x64 configs above; without it,
+         Win32 and x64 builds would share the same obj\Debug|Release\ intermediate
+         folder and silently step on each other's .obj files. -->
+    <IntDir>obj\$(Platform)\$(Configuration)\</IntDir>
   </PropertyGroup>
 
   <ItemDefinitionGroup>
@@ -102,12 +126,28 @@
     <ClCompile Include="src\asset_capture.cpp" />
     <ClCompile Include="src\frame_benchmark.cpp" />
     <ClCompile Include="src\plugin_loader.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- x64-only real MASM replacement for dllmain.cpp's x86 __asm/naked forward
+         stubs, see forward_stubs_x64.asm's own header comment. Excluded from
+         Win32 builds entirely (ml.exe/ml64.exe are different assemblers; this file
+         is written for ml64.exe specifically). -->
+    <MASM Include="src\forward_stubs_x64.asm" Condition="'$(Platform)'=='x64'">
+      <ExcludedFromBuild Condition="'$(Platform)'!='x64'">true</ExcludedFromBuild>
+    </MASM>
+  </ItemGroup>
+  <ItemGroup>
     <!-- MinHook (BSD-style license, see third_party\minhook\LICENSE.txt;
-         attribution required if this mod is ever shipped, see CLAUDE.md paragraph 6). -->
+         attribution required if this mod is ever shipped, see CLAUDE.md paragraph 6).
+         trampoline.c/hook.c/buffer.c already branch on _M_X64/__x86_64__ internally
+         and need no changes for x64; only the HDE (Hacker Disassembler Engine)
+         variant is a real per-architecture file, hde32.c vs. hde64.c (both were
+         already vendored, just hde32.c was the only one ever compiled before). -->
     <ClCompile Include="third_party\minhook\src\buffer.c" />
     <ClCompile Include="third_party\minhook\src\hook.c" />
     <ClCompile Include="third_party\minhook\src\trampoline.c" />
-    <ClCompile Include="third_party\minhook\src\hde\hde32.c" />
+    <ClCompile Include="third_party\minhook\src\hde\hde32.c" Condition="'$(Platform)'=='Win32'" />
+    <ClCompile Include="third_party\minhook\src\hde\hde64.c" Condition="'$(Platform)'=='x64'" />
   </ItemGroup>
   <ItemGroup>
     <None Include="def\proxy_d3d9.def" />
@@ -140,4 +180,7 @@
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.targets" />
+  </ImportGroup>
 </Project>
