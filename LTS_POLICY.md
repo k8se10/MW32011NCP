@@ -106,21 +106,37 @@ whatever task surfaces that, not as a separately scheduled cleanup pass.
 update, recompiling the live game from x86 to x64 — see `re_notes/x64_migration/README.md`.
 Releases now carry a `-x86`/`-x64` suffix (versioning reset to `v0.0.1-x64` for
 the new architecture line; the table below relabels the existing x86-line
-releases accordingly, it does not rename anything that shipped). **The
-`v0.3.5-x86` candidacy's 4-week clean window is effectively frozen, not
-progressing**: the live game can no longer run a 32-bit build at all, so no
-further real-world play against the current game is possible on this release
-— the clock isn't "reset," it's just stalled with no way to accumulate more
-clean weeks until either an x64 candidate exists to promote instead, or a
-reason to keep testing x86 against an offline/pre-update copy of the game
-arises. This policy's process itself is unchanged; only this one candidate's
-practical status is affected.
+releases accordingly, it does not rename anything that shipped).
+
+**Emergency escalation, same day: ALL support for the entire `-x86` line is
+discontinued, effective immediately — not a frozen clock, a full stop.**
+Direct instruction: update the docs "to state the immediate discontinuation
+of all support (emergency case) for the existing 32-bit versions." This
+supersedes the "frozen candidate" framing this section carried earlier today
+— the practical trigger is the same fact (the live game can no longer run a
+32-bit build at all, so there is nothing left to verify or support against),
+but the policy response is stronger: **every `-x86` release loses its
+support status outright**, not just the LTS candidate. Concretely:
+- `v0.2.2-x86`, the **Current LTS**, is no longer under active LTS support as
+  of 2026-09-03 — no further availability commitment beyond what's already
+  published, no backported fixes, no scheduled handover to a successor.
+- `v0.3.5-x86`'s LTS candidacy is **withdrawn**, not paused — its 4-week
+  clean window will never resume or complete under this policy.
+- This is an emergency policy action taken outside the normal promotion/
+  demotion process in this document (no successor is being promoted, no
+  4-week handover overlap applies) — the process above still governs the
+  eventual `0.x-x64` line, this is a one-time break in continuity forced by
+  the architecture change, not a precedent for how this policy normally
+  operates.
+- Existing `-x86` release files remain published on GitHub/Nexus as
+  historical artifacts (nothing is being deleted), just with zero ongoing
+  support commitment attached to any of them going forward.
 
 | Release | Role | Notes |
 |---|---|---|
-| `v0.2.2-x86` | **Current LTS** | Promoted 2026-08-18 archival pass. Aim assist removed; the risk-mitigation release this whole policy's floor is built around. |
-| `v0.3.5-x86` | **LTS candidate (clock frozen)** | Shipped and confirmed live 2026-08-29, intended to succeed `v0.2.2-x86` — see `re_notes/known_issues.md`'s LTS-plan entry. The 4-week clean window started 2026-08-29 but is now frozen (see architecture note above), not actively accumulating further clean time. |
-| Everything else in `0.1.x`–`0.3.x` (all now `-x86`) | Superseded | Not LTS-eligible (predates the floor, or superseded by a later release in the same or a later line) — normal `0.x-x86` releases, kept or archived per the usual GitHub Releases housekeeping, not this policy. |
+| `v0.2.2-x86` | **Support discontinued (2026-09-03, emergency)** | Formerly Current LTS (promoted 2026-08-18 archival pass). No longer under active support as of 2026-09-03 — see the emergency escalation note above. File stays published as a historical artifact. |
+| `v0.3.5-x86` | **LTS candidacy withdrawn (2026-09-03, emergency)** | Shipped and confirmed live 2026-08-29; its 4-week LTS clean window (started 2026-08-29) is withdrawn, not paused — see the emergency escalation note above. File stays published as a historical artifact. |
+| Everything else in `0.1.x`–`0.3.x` (all now `-x86`) | Superseded, no support | Was never LTS-eligible (predates the floor, or superseded by a later release in the same or a later line); now additionally covered by the blanket `-x86` discontinuation above regardless. |
 | `0.x-x64` line | **Not yet started** | No x64 release exists yet — versioning resets to `v0.0.1-x64` once one ships. This policy's floor (`v0.2.2` and later only) is an x86-line-specific historical fact; whether/how it carries over to the x64 line is an open question for whenever that line matures enough to need its own LTS discussion, not decided here. |
 
 ## What LTS support actually means here
