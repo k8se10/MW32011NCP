@@ -1,0 +1,4 @@
+STRING @ 1403f4d70 = "weapnext" (block .rdata)
+  from 1404c1a80 type=DATA IN DATA/UNKNOWN
+  (1 references)
+

@@ -1,0 +1,276 @@
+================================================================
+Function: FUN_14023d890 @ 14023d890
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_14023d890(void)
+
+{
+  uint uVar1;
+  ulonglong in_stack_ffffffffffffffe8;
+  undefined4 uVar4;
+  undefined8 uVar2;
+  ulonglong uVar3;
+  
+  DAT_141efb9e8 =
+       FUN_1402c46d0("com_maxfps",0,0,1000,in_stack_ffffffffffffffe8 & 0xffffffff00000000,
+                     "Cap frames per second");
+  uVar4 = 1;
+  DAT_141efb810 =
+       FUN_1402c45d0("sys_lockThreads",&PTR_DAT_1404d1528,0,0,
+                     "Prevents specified threads from changing CPUs; improves profiling and may fix some bugs, but can hurt performance"
+                    );
+  uVar1 = FUN_140249fd0();
+  DAT_141efb808 = FUN_1402c43f0("sys_smp_allowed",1 < uVar1,0x800,"Allow multi-threading");
+  uVar2 = CONCAT44(uVar4,0x204c);
+  DAT_141efb778 =
+       FUN_1402c4650("com_timescale",DAT_1403e3e6c,DAT_1403e3e60,DAT_1403e5284,uVar2,
+                     "Scale time of each frame");
+  uVar2 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),0xc);
+  DAT_141efb9d0 =
+       FUN_1402c4650("timescale",DAT_1403e3e6c,DAT_1403e3e60,DAT_1403e5284,uVar2,
+                     "Scale time of each frame");
+  uVar3 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),4);
+  DAT_141efb9d8 = FUN_1402c46d0("fixedtime",0,0,1000,uVar3,"Use a fixed time rate for each frame");
+  uVar3 = uVar3 & 0xffffffff00000000;
+  DAT_141efb9e0 =
+       FUN_1402c46d0("com_maxFrameTime",100,0x32,5000,uVar3,
+                     "Time slows down if a frame takes longer than this many milliseconds");
+  uVar3 = CONCAT44((int)(uVar3 >> 0x20),0x10000);
+  DAT_141efb7a8 = FUN_1402c46d0("cl_paused",0,0,2,uVar3,"Pause the client");
+  DAT_141efb780 = FUN_1402c43f0("sv_running",0,0x2000,"Server is running");
+  _DAT_141efb788 =
+       FUN_1402c43f0("com_filter_output",0,0,"Use console filters for filtering output.");
+  DAT_141efb9f0 = FUN_1402c43f0("intro",1,1,"Intro movie should play");
+  DAT_141efbe10 = FUN_1402c43f0("com_animCheck",0,0,"Check anim tree");
+  _DAT_141efb7a0 = FUN_1402c43f0("hiDef",1,0x2000,"True if the game video is running in high-def.");
+  DAT_141efb9f8 =
+       FUN_1402c43f0("wideScreen",1,0x2000,
+                     "True if the game video is running in 16x9 aspect, false if 4x3.");
+  DAT_141efba00 =
+       FUN_1402c43f0("com_cinematicEndInWhite",0,0x40,
+                     "Set by script. True if cinematic ends with a white screen.");
+  DAT_141efb7f8 =
+       FUN_1402c49e0("com_errorResolveCommand",&DAT_1403e6bdb,0x2000,
+                     "Command to run when they close the error box");
+  DAT_141efb800 =
+       FUN_1402c49e0("com_completionResolveCommand",&DAT_1403e6bdb,0x2000,
+                     "Command to run when the message box successfully closes");
+  uVar3 = uVar3 & 0xffffffff00000000;
+  _DAT_141efbe38 =
+       FUN_1402c46d0("band_2players",64000,0,0x7fffffff,uVar3,"2 player bandwidth req\'d");
+  uVar3 = uVar3 & 0xffffffff00000000;
+  _DAT_141efbe40 =
+       FUN_1402c46d0("band_4players",0x1f400,0,0x7fffffff,uVar3,"4 player bandwidth req\'d");
+  uVar3 = uVar3 & 0xffffffff00000000;
+  _DAT_141efbe48 =
+       FUN_1402c46d0("band_8players",0x3e800,0,0x7fffffff,uVar3,"8 player bandwidth req\'d");
+  uVar3 = uVar3 & 0xffffffff00000000;
+  _DAT_141efbe50 =
+       FUN_1402c46d0("band_12players",0x5dc00,0,0x7fffffff,uVar3,"12 player bandwidth req\'d");
+  uVar3 = uVar3 & 0xffffffff00000000;
+  _DAT_141efbe58 =
+       FUN_1402c46d0("band_18players",580000,0,0x7fffffff,uVar3,"18 player bandwidth req\'d");
+  _DAT_141efbe18 =
+       FUN_1402c46d0("stringtable_debug",0,0,2,uVar3 & 0xffffffff00000000,
+                     "spam debug info for stringtable lookups");
+  DAT_141efb818 =
+       FUN_1402c43f0("prologue_select",0,0x100,
+                     "Toggles intro.map between the prologue and the persona non grata setup.");
+  DAT_141efbe78 =
+       FUN_1402c43f0("accessToSubscriberContent",1,0,"Whether to display the subscriber maps.");
+  _DAT_141efbe80 =
+       FUN_1402c43f0("ui_open_free_content_notice",0,0,"flag to open the free content popup");
+  return;
+}
+
+
+
+================================================================
+Function: FUN_14029f3f0 @ 14029f3f0
+----------------------------------------------------------------
+
+undefined8 FUN_14029f3f0(int param_1,int param_2)
+
+{
+  char cVar1;
+  int iVar2;
+  undefined4 uVar3;
+  longlong lVar4;
+  char *pcVar5;
+  char *pcVar6;
+  
+  iVar2 = FUN_1402aa7e0(&DAT_142605050);
+  if ((iVar2 < 1) || ((param_2 == 6 && ((&DAT_142615b20)[param_1] == 6)))) {
+switchD_14029f447_caseD_5:
+    return 0;
+  }
+  (&DAT_142615b20)[param_1] = param_2;
+  switch(param_2) {
+  case 0:
+    FUN_14007f310(param_1,0xffffffef);
+    thunk_FUN_14007eeb0(param_1);
+    FUN_1402c5b30("cl_paused",0);
+    FUN_1402431b0(0);
+    FUN_1402ac9c0(&DAT_142605050);
+    return 1;
+  case 1:
+    FUN_14007f3b0(param_1,0x10);
+    FUN_1402431b0(0);
+    FUN_1402ad950(&DAT_142605050,&DAT_14042cbf0);
+    pcVar5 = (char *)FUN_1402c3b50("com_errorMessage");
+    if (((*pcVar5 == '\0') ||
+        (((lVar4 = FUN_1402acef0(&DAT_142605050,"pregame_loaderror"), lVar4 != 0 &&
+          (iVar2 = FUN_1402ad530(&DAT_142605050,lVar4), iVar2 != 0)) &&
+         (cVar1 = FUN_1402ab950(&DAT_142605050,lVar4), cVar1 != '\0')))) ||
+       (((lVar4 = FUN_1402acef0(&DAT_142605050,"error_popmenu_submenu"), lVar4 != 0 &&
+         (iVar2 = FUN_1402ad530(&DAT_142605050,lVar4), iVar2 != 0)) &&
+        (cVar1 = FUN_1402ab950(&DAT_142605050,lVar4), cVar1 != '\0')))) goto LAB_14029f579;
+    pcVar5 = "error_popmenu";
+    break;
+  case 2:
+    uVar3 = FUN_140083ae0();
+    FUN_1402c5b30("cl_paused",uVar3);
+    FUN_14007f3b0(param_1,0x10);
+    FUN_1402ad950(&DAT_142605050,"pausedmenu");
+    return 1;
+  case 3:
+    if (*(char *)(DAT_142605000 + 0x10) == '\0') {
+      uVar3 = FUN_140083ae0();
+      FUN_1402c5b30("cl_paused",uVar3);
+      FUN_14007f3b0(param_1,0x10);
+      FUN_1402ac9c0(&DAT_142605050);
+      pcVar5 = (char *)FUN_1402c3b50("com_errorMessage");
+      pcVar6 = "pregame_loaderror";
+      if (*pcVar5 == '\0') {
+        pcVar6 = "pregame";
+      }
+      FUN_1402ad950(&DAT_142605050,pcVar6);
+      return 1;
+    }
+    FUN_14029ccb0();
+    return 1;
+  case 4:
+    FUN_14007f3b0(param_1,0x10);
+    FUN_1402ac9c0(&DAT_142605050);
+    FUN_1402ad950(&DAT_142605050,"endofgame");
+    return 1;
+  default:
+    goto switchD_14029f447_caseD_5;
+  case 6:
+    FUN_1402ac9c0(&DAT_142605050);
+    FUN_1402ad950(&DAT_142605050,"briefing");
+    return 1;
+  case 7:
+    DAT_142605060 = 0x43a00000;
+    DAT_142605064 = 0x43e00000;
+    FUN_1402b08e0(&DAT_142605050,DAT_1403e4164,DAT_1404340dc);
+    FUN_14007f3b0(param_1,0x10);
+    FUN_1402ad950(&DAT_142605050,"victoryscreen");
+    return 1;
+  case 10:
+    FUN_1402ad950(&DAT_142605050,"savegameloading");
+    return 1;
+  case 0xb:
+    FUN_14007f3b0(param_1,0x10);
+    FUN_1402704a0(DAT_1403e3e6c,1000);
+    _guard_check_icall(param_1,1);
+    FUN_1402431b0(1);
+    FUN_1402ac9c0(&DAT_142605050);
+    FUN_1402ad950(&DAT_142605050,"coop_lobby");
+    pcVar5 = (char *)FUN_1402c3b50("com_errorMessage");
+    if (*pcVar5 == '\0') {
+      return 1;
+    }
+    FUN_1402ad950(&DAT_142605050,"error_popmenu_lobby");
+    FUN_1402c52b0(DAT_1406ef580,1);
+    FUN_1401f0cb0();
+    return 1;
+  case 0xc:
+    FUN_14007f3b0(param_1,0x10);
+    FUN_1402704a0(DAT_1403e3e6c,1000);
+    FUN_1402431b0(1);
+    cVar1 = FUN_1402999b0(param_1,"levels_challenge");
+    if (cVar1 == '\0') {
+      FUN_1402ad950(&DAT_142605050,"levels_challenge");
+    }
+    pcVar5 = (char *)FUN_1402c3b50("com_errorMessage");
+    if (*pcVar5 != '\0') {
+      FUN_1402ad950(&DAT_142605050,"error_popmenu_submenu");
+    }
+    FUN_1402acb10(&DAT_142605050);
+    return 1;
+  case 0xd:
+    FUN_14007f3b0(param_1,0x10);
+    FUN_1402431b0(0);
+    pcVar5 = "main_text";
+    break;
+  case 0xe:
+    FUN_14007f3b0(param_1,0x10);
+    _guard_check_icall(param_1,1);
+    FUN_1402431b0(1);
+    lVar4 = FUN_1402acef0(&DAT_142605050,"main_specops");
+    if (((lVar4 == 0) || (iVar2 = FUN_1402ad530(&DAT_142605050,lVar4), iVar2 == 0)) ||
+       (cVar1 = FUN_1402ab950(&DAT_142605050,lVar4), cVar1 == '\0')) {
+      FUN_1402ad950(&DAT_142605050,"main_specops");
+    }
+    pcVar5 = (char *)FUN_1402c3b50("com_errorMessage");
+    if (*pcVar5 == '\0') goto LAB_14029f579;
+    pcVar5 = "error_popmenu_submenu";
+  }
+  FUN_1402ad950(&DAT_142605050,pcVar5);
+LAB_14029f579:
+  FUN_1402704a0(DAT_1403e3e6c,1000);
+  return 1;
+}
+
+
+
+================================================================
+Function: FUN_14029baa0 @ 14029baa0
+----------------------------------------------------------------
+
+void FUN_14029baa0(undefined4 param_1,int param_2,int param_3)
+
+{
+  char cVar1;
+  int iVar2;
+  longlong *plVar3;
+  longlong lVar4;
+  
+  iVar2 = FUN_1402aa7e0(&DAT_142605050);
+  if (((iVar2 != 0) && (cVar1 = FUN_14024a250(), cVar1 != '\0')) &&
+     (iVar2 = FUN_1401d3290(), iVar2 == 0)) {
+    plVar3 = (longlong *)FUN_1402aaa80(&DAT_142605050);
+    if (plVar3 != (longlong *)0x0) {
+      if (((param_2 == 0x1b) && (param_3 != 0)) &&
+         ((iVar2 = FUN_1402ac970(&DAT_142605050), iVar2 == 0 && (*(longlong *)(*plVar3 + 0x30) == 0)
+          ))) {
+        FUN_1402ac9c0(&DAT_142605050);
+      }
+      else {
+        FUN_1402aac50(&DAT_142605050,plVar3,param_2,param_3);
+      }
+      lVar4 = FUN_1402aaa80(&DAT_142605050);
+      if (lVar4 != 0) {
+        return;
+      }
+    }
+    FUN_14007f310(param_1,0xffffffef);
+    thunk_FUN_14007eeb0(param_1);
+    iVar2 = 0;
+    do {
+      lVar4 = FUN_1402aaa80(&DAT_142605050);
+      if (lVar4 != 0) {
+        return;
+      }
+      iVar2 = iVar2 + 1;
+    } while (iVar2 < 1);
+    FUN_1402c5b30("cl_paused",0);
+  }
+  return;
+}
+
+
+

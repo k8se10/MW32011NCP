@@ -1,0 +1,57 @@
+================================================================
+Function: FUN_1402c3890 @ 1402c3890
+----------------------------------------------------------------
+
+undefined8 * FUN_1402c3890(char *param_1)
+
+{
+  undefined8 *puVar1;
+  char cVar2;
+  int iVar3;
+  char *pcVar4;
+  uint uVar5;
+  int iVar6;
+  
+  LOCK();
+  DAT_1426f5c08 = DAT_1426f5c08 + 1;
+  UNLOCK();
+  while (DAT_1426f5c0c != 0) {
+    Sleep(0);
+  }
+  if (param_1 == (char *)0x0) {
+    FUN_14023c700(1,&DAT_1404390b0);
+  }
+  cVar2 = *param_1;
+  uVar5 = 0;
+  if (cVar2 != '\0') {
+    iVar6 = 0x77;
+    pcVar4 = param_1;
+    do {
+      iVar3 = tolower((int)cVar2);
+      iVar3 = iVar3 * iVar6;
+      pcVar4 = pcVar4 + 1;
+      iVar6 = iVar6 + 1;
+      uVar5 = uVar5 + iVar3;
+      cVar2 = *pcVar4;
+    } while (cVar2 != '\0');
+  }
+  puVar1 = (undefined8 *)(&DAT_1426f3c00)[uVar5 & 0x3ff];
+  while( true ) {
+    if (puVar1 == (undefined8 *)0x0) {
+      LOCK();
+      DAT_1426f5c08 = DAT_1426f5c08 + -1;
+      UNLOCK();
+      return (undefined8 *)0x0;
+    }
+    iVar6 = FUN_1402ca760(param_1,*puVar1);
+    if (iVar6 == 0) break;
+    puVar1 = (undefined8 *)puVar1[0xb];
+  }
+  LOCK();
+  DAT_1426f5c08 = DAT_1426f5c08 + -1;
+  UNLOCK();
+  return puVar1;
+}
+
+
+
