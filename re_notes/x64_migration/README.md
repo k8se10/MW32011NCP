@@ -288,9 +288,45 @@ record — this section is a pointer, not the source of truth)
     `FUN_14007eff0`'s own callers (candidate for the x64
     `FUN_00541020`/key-event-handler equivalent) to trace the rest of the
     chain, or wait for live testing once an x64 build exists.
-2. Add an x64 build configuration to `proxy_d3d9.vcxproj` alongside the
-   existing Win32 one (MinHook already supports x64 natively — no vendoring
-   changes needed, only build config).
+2. ~~Add an x64 build configuration to `proxy_d3d9.vcxproj`~~ **DONE
+   2026-09-03, but revealed the real scope is bigger than this line
+   originally implied.** Debug/Release x64 configs added, `IntDir` fixed to
+   include `$(Platform)` (was about to silently collide Win32/x64 object
+   files in the same folder), `hde32.c`/`hde64.c` correctly split per
+   platform. MinHook's `trampoline.c`/`hook.c`/`buffer.c` do already branch
+   on `_M_X64` cleanly, confirmed by getting a clean compile — that part of
+   the original claim held up. **What it didn't anticipate**: two real,
+   separate x86-only inline-assembly problems, found only by actually
+   attempting the build:
+   - `dllmain.cpp`'s D3D9 export-forwarding stubs (`__declspec(naked)` +
+     inline `__asm { jmp dword ptr [...] }`, for every real d3d9.dll export
+     other than `Direct3DCreate9`) — neither `__declspec(naked)` nor inline
+     `__asm` exist on MSVC's x64 target at all (hard compiler rejection, not
+     a warning). **Fixed**: real MASM (`forward_stubs_x64.asm`, assembled by
+     `ml64.exe`, wired into the `.vcxproj` via the `masm.props`/`masm.targets`
+     build customization) — functionally identical tail-jump thunks, just
+     expressed as real x64 assembly instead of inline C `__asm`. This part
+     is genuinely done and confirmed assembling clean.
+   - **The much bigger one**: `analog_input_hooks.cpp` alone has 12 more
+     `__asm` blocks (`real_settings.cpp` has 2 more), and unlike the export
+     stubs, most of these are the actual **hook-install trampolines
+     themselves** — `__declspec(naked)` functions like `Hook_0057de60`
+     (literally the movement/look pipeline hook this doc's own section 1b
+     re-located the x64 target for earlier) and `Hook_693ff0`/
+     `Hook_0061f6f0`/etc., plus two raw custom-calling-convention call
+     thunks (`CallKbuttonDown`/`CallKbuttonUp` for ADS). **None of this
+     compiles for x64 as-is, and none of it can be mechanically translated
+     the way the export stubs were** — each one needs a real per-hook x64
+     redesign, and most of their underlying target addresses aren't even
+     confirmed for x64 yet (only the movement/look cluster from section 1b
+     is). **Direct decision (2026-09-03): stop here rather than rush a
+     stub-everything pass** — continue finding real x64 hook-target
+     addresses via Ghidra first; don't write more hook-install/asm code
+     until a given hook's real target is actually confirmed. The build
+     infrastructure itself (x64 configs, MASM export forwarding, MinHook)
+     is genuinely done and stays; `analog_input_hooks.cpp`/
+     `real_settings.cpp` are excluded from further x64 build attempts until
+     their real targets are found.
 3. x64dbg (not x32dbg) is already installed
    (`D:\Tools\x64dbg\release\x64\x64dbg.exe`) — no new tooling needed for live
    debugging.
