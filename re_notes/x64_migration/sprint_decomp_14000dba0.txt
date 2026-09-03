@@ -1,0 +1,472 @@
+================================================================
+Function: FUN_14000dba0 @ 14000dba0
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_14000dba0(void)
+
+{
+  undefined4 uVar1;
+  undefined4 uVar2;
+  undefined4 uVar3;
+  undefined4 uVar4;
+  undefined4 uVar5;
+  undefined4 uVar6;
+  int iVar7;
+  undefined8 uVar8;
+  undefined8 uVar9;
+  undefined8 *puVar10;
+  int iVar11;
+  undefined8 in_stack_ffffffffffffff38;
+  ulonglong uVar12;
+  undefined4 uVar13;
+  undefined4 uVar14;
+  undefined4 uVar15;
+  undefined4 uVar16;
+  undefined4 uVar17;
+  
+  uVar3 = DAT_1403e525c;
+  uVar8 = CONCAT44((int)((ulonglong)in_stack_ffffffffffffff38 >> 0x20),0xc4);
+  DAT_1404e7fc8 =
+       FUN_1402c4650("bg_viewKickScale",DAT_1403e525c,0,DAT_1403e41f4,uVar8,
+                     "The scale to apply to the damage done to calculate damage view kick");
+  uVar1 = DAT_1403e4150;
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0xc4);
+  DAT_1404e7fd0 =
+       FUN_1402c4650("bg_viewKickMax",DAT_1403e4150,0,DAT_1403e4150,uVar8,"The maximum view kick");
+  uVar4 = DAT_1403e8e3c;
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0xc4);
+  DAT_1404e7fd8 =
+       FUN_1402c4650("bg_viewKickMin",DAT_1403e8e3c,0,uVar1,uVar8,"The minimum view kick");
+  uVar2 = DAT_1403e5258;
+  uVar17 = DAT_1403e3e6c;
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0xc4);
+  DAT_1404e7fe0 =
+       FUN_1402c4650("bg_viewKickRandom",DAT_1403e5258,0,DAT_1403e3e6c,uVar8,
+                     "The random direction scale view kick");
+  uVar16 = DAT_1403e8e64;
+  uVar15 = DAT_1403e5280;
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0x1c0);
+  DAT_1404e7fe8 =
+       FUN_1402c4650("player_view_pitch_up",DAT_1403e8e64,0,DAT_1403e5280,uVar8,
+                     "Maximum angle that the player can look up");
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0x1c0);
+  DAT_1404e7ff0 =
+       FUN_1402c4650("player_view_pitch_down",uVar16,DAT_1403e8ed0,uVar1,uVar8,
+                     "Maximum angle that the player can look down");
+  uVar16 = DAT_1403e41f8;
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0x84);
+  _DAT_1404e8008 =
+       FUN_1402c4650("player_lean_shift_left",uVar4,0,DAT_1403e41f8,uVar8,
+                     "Amount to shift the player 3rd person model when leaning left");
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0x84);
+  _DAT_1404e8010 =
+       FUN_1402c4650("player_lean_shift_right",DAT_1403e8e4c,0,uVar16,uVar8,
+                     "Amount to shift the player 3rd person model when leaning right");
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0x84);
+  _DAT_1404e8018 =
+       FUN_1402c4650("player_lean_shift_crouch_left",DAT_1403e526c,0,uVar16,uVar8,
+                     "Amount to shift the player 3rd person model when crouch leaning left");
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0x84);
+  _DAT_1404e8020 =
+       FUN_1402c4650("player_lean_shift_crouch_right",DAT_1403e5608,0,uVar16,uVar8,
+                     "Amount to shift the player 3rd person model when crouch leaning right");
+  uVar4 = DAT_1403e5268;
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0x84);
+  _DAT_1404e8028 =
+       FUN_1402c4650("player_lean_rotate_left",uVar3,0,DAT_1403e5268,uVar8,
+                     "Amount to rotate the player 3rd person model when leaning left");
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0x84);
+  _DAT_1404e8030 =
+       FUN_1402c4650("player_lean_rotate_right",uVar2,0,uVar4,uVar8,
+                     "Amount to rotate the player 3rd person model when leaning right");
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0x84);
+  _DAT_1404e8038 =
+       FUN_1402c4650("player_lean_rotate_crouch_left",uVar3,0,uVar4,uVar8,
+                     "Amount to rotate the player 3rd person model when crouch leaning left");
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0x84);
+  _DAT_1404e8040 =
+       FUN_1402c4650("player_lean_rotate_crouch_right",DAT_1403e5250,0,uVar4,uVar8,
+                     "Amount to rotate the player 3rd person model when crouch leaning right");
+  uVar2 = DAT_1403e5618;
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0x84);
+  DAT_1404e8058 =
+       FUN_1402c4650("bg_foliagesnd_minspeed",DAT_1403e4144,0,DAT_1403e5618,uVar8,
+                     "The speed that a player must be going to make minimum noise while moving through foliage"
+                    );
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0x84);
+  DAT_1404e8060 =
+       FUN_1402c4650("bg_foliagesnd_maxspeed",uVar15,0,uVar2,uVar8,
+                     "The speed that a player must be going to make maximum noise while moving through foliage"
+                    );
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0x84);
+  DAT_1404e8068 =
+       FUN_1402c46d0("bg_foliagesnd_slowinterval",0x5dc,0,0x7fffffff,uVar8,
+                     "The time between each foliage sound when moving slowly");
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0x84);
+  DAT_1404e8070 =
+       FUN_1402c46d0("bg_foliagesnd_fastinterval",500,0,0x7fffffff,uVar8,
+                     "The time between each foliage sound when moving quickly");
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0x84);
+  DAT_1404e8078 =
+       FUN_1402c46d0("bg_foliagesnd_resetinterval",500,0,0x7fffffff,uVar8,
+                     "The time interval before foliage sounds are reset after the player has stopped moving"
+                    );
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),4);
+  DAT_1404e80c8 =
+       FUN_1402c4650("bg_swingSpeed",DAT_1403e5248,0,uVar17,uVar8,
+                     "The rate at which the player\'s legs swing around when strafing(multi-player only)"
+                    );
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),4);
+  DAT_1404e80d0 =
+       FUN_1402c4650("bg_legYawTolerance",uVar16,0,uVar15,uVar8,
+                     "The amount the player\'s leg yaw can differ from his torso before moving ta match"
+                    );
+  uVar13 = DAT_1403e8e28;
+  uVar16 = 1;
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0xc0);
+  _DAT_1404e80d8 =
+       FUN_1402c4650("bg_viewBobAmplitudeBase",DAT_1403e8e28,0,uVar17,uVar8,
+                     "The base speed-based view bob amplitude");
+  uVar5 = DAT_1403e8e10;
+  uVar3 = DAT_1403e8e0c;
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),uVar17);
+  DAT_1404e80e0 =
+       FUN_1402c4c10("bg_viewBobAmplitudeSprinting",DAT_1403e8e10,DAT_1403e8e0c,0,uVar8,
+                     CONCAT44(uVar16,0xc4),
+                     "The multiplier to apply to the player\'s speed to get the view bob amplitude while sprinting"
+                    );
+  uVar16 = DAT_1403e8e04;
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),uVar17);
+  DAT_1404e80e8 =
+       FUN_1402c4c10("bg_viewBobAmplitudeStanding",DAT_1403e8e04,DAT_1403e8e04,0,uVar8,0xc4,
+                     "The multiplier to apply to the player\'s speed to get the view bob amplitude while standing"
+                    );
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),uVar17);
+  DAT_1404e80f0 =
+       FUN_1402c4c10("bg_viewBobAmplitudeStandingAds",uVar16,uVar16,0,uVar8,0xc4,
+                     "The multiplier to apply to the player\'s speed to get the view bob amplitude while standing and ADS"
+                    );
+  uVar16 = DAT_1403e8e08;
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),uVar17);
+  DAT_1404e80f8 =
+       FUN_1402c4c10("bg_viewBobAmplitudeDucked",DAT_1403e8e08,DAT_1403e8e08,0,uVar8,0xc4,
+                     "The multiplier to apply to the player\'s speed to get the view bob amplitude while ducking"
+                    );
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),uVar17);
+  DAT_1404e8100 =
+       FUN_1402c4c10("bg_viewBobAmplitudeDuckedAds",uVar16,uVar16,0,uVar8,0xc4,
+                     "The multiplier to apply to the player\'s speed to get the view bob amplitude while ducking ADS"
+                    );
+  uVar16 = DAT_1403e8e00;
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),uVar17);
+  DAT_1404e8108 =
+       FUN_1402c4c10("bg_viewBobAmplitudeProne",uVar5,DAT_1403e8e00,0,uVar8,0x84,
+                     "The multiplier to apply to the player\'s speed to get the view bob amplitude while prone"
+                    );
+  uVar15 = DAT_1403e5260;
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0x84);
+  _DAT_1404e8110 =
+       FUN_1402c4650("bg_viewBobAmplitudeRoll",DAT_1403e5260,0,uVar1,uVar8,
+                     "The amplitude applied to the roll for view bobbing");
+  uVar14 = DAT_1403e8e5c;
+  uVar6 = DAT_1403e8e48;
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0xc4);
+  DAT_1404e8120 =
+       FUN_1402c4650("bg_viewBobMax",DAT_1403e8e48,0,DAT_1403e8e5c,uVar8,
+                     "The maximum allowed bob amplitude");
+  uVar4 = DAT_1403e524c;
+  uVar2 = DAT_1403e416c;
+  uVar12 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0x84);
+  _DAT_1404e8118 =
+       FUN_1402c4650("bg_viewBobLag",DAT_1403e524c,DAT_1403e416c,uVar17,uVar12,
+                     "The lag that will be applied the view bob cycle");
+  iVar11 = 0;
+  uVar17 = 1;
+  uVar12 = uVar12 & 0xffffffff00000000;
+  DAT_1404e8128 =
+       FUN_1402c4650("bg_weaponBobAmplitudeBase",uVar13,0,DAT_1403e3e6c,uVar12,
+                     "The base speed-based weapon bob amplitude");
+  uVar1 = DAT_1403e3e6c;
+  uVar8 = CONCAT44((int)(uVar12 >> 0x20),DAT_1403e3e6c);
+  DAT_1404e8130 =
+       FUN_1402c4c10("bg_weaponBobAmplitudeSprinting",uVar5,uVar3,0,uVar8,CONCAT44(uVar17,0xc4),
+                     "The multiplier to apply to the players\'s speed to get the weapon/viewmodel bob amplitude while sprinting"
+                    );
+  uVar17 = DAT_1403e8e14;
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),uVar1);
+  DAT_1404e8138 =
+       FUN_1402c4c10("bg_weaponBobAmplitudeStanding",DAT_1403e8e1c,DAT_1403e8e14,0,uVar8,0xc4,
+                     "The multiplier to apply to the players\'s speed to get the weapon/viewmodel bob amplitude while standing"
+                    );
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),uVar1);
+  DAT_1404e8140 =
+       FUN_1402c4c10("bg_weaponBobAmplitudeDucked",DAT_1403e8e18,uVar17,0,uVar8,0x84,
+                     "The multiplier to apply to the players\'s speed to get the weapon/viewmodel bob amplitude while ducking"
+                    );
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),uVar1);
+  DAT_1404e8148 =
+       FUN_1402c4c10("bg_weaponBobAmplitudeProne",uVar5,uVar16,0,uVar8,0x84,
+                     "The multiplier to apply to the players\'s speed to get the weapon/viewmodel bob amplitude while prone"
+                    );
+  uVar16 = DAT_1403e4150;
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0x84);
+  DAT_1404e8150 =
+       FUN_1402c4650("bg_weaponBobAmplitudeRoll",uVar15,0,DAT_1403e4150,uVar8,
+                     "The amplitude applied to the roll for weapon bobbing");
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0x84);
+  DAT_1404e8158 =
+       FUN_1402c4650("bg_weaponBobMax",uVar6,0,uVar14,uVar8,
+                     "The maximum allowed weapon/viewmodel bob amplitude");
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0x84);
+  DAT_1404e8160 =
+       FUN_1402c4650("bg_weaponBobLag",uVar4,uVar2,uVar1,uVar8,
+                     "The lag that will be applied the weapon bob cycle");
+  uVar13 = DAT_1403e8e6c;
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),4);
+  DAT_1404e8168 =
+       FUN_1402c4650("bg_bulletExplDmgFactor",uVar1,0,DAT_1403e8e6c,uVar8,
+                     "Weapon damage multiplier that will be applied at the center of the slash damage area."
+                    );
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),4);
+  DAT_1404e8170 =
+       FUN_1402c4650("bg_bulletExplRadius",uVar13,0,DAT_1403e8e9c,uVar8,
+                     "The radius of the bullet splash damage, where the damage gradually falls off to 0."
+                    );
+  uVar5 = DAT_1403e5264;
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0x84);
+  DAT_1404e81b8 =
+       FUN_1402c4650("player_breath_snd_lerp",DAT_1403e5264,0,uVar13,uVar8,
+                     "The interpolation rate for the player hold breath sound");
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0x84);
+  DAT_1404e81c0 =
+       FUN_1402c4650("player_breath_snd_delay",uVar1,0,uVar5,uVar8,
+                     "The delay before playing the breathe in sound");
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0x84);
+  DAT_1404e7f38 =
+       FUN_1402c4650("player_runThreshhold",DAT_1403e8e70,0,DAT_1403e8ea0,uVar8,
+                     "The speed threshold before a player is considered to be running forwards");
+  uVar3 = DAT_1403e41f8;
+  uVar2 = DAT_1403e41f4;
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0x2084);
+  DAT_1404e7f40 =
+       FUN_1402c4650("player_moveThreshhold",DAT_1403e41f4,DAT_1403e8dfc,DAT_1403e41f8,uVar8,
+                     "The speed at which the player is considered to be moving for the purposes of \nview model bob and multiplayer model movement"
+                    );
+  uVar17 = DAT_1403e3e68;
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0x84);
+  DAT_1404e7f50 =
+       FUN_1402c4650("player_strafeAnimCosAngle",DAT_1403e3e68,0,uVar1,uVar8,
+                     "Cosine of the angle which player starts using strafe animations");
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0x84);
+  _DAT_1404e7f68 =
+       FUN_1402c4650("player_spectateSpeedScale",uVar1,0,uVar3,uVar8,
+                     "The scale applied to the player speed when spectating");
+  uVar12 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0xc4);
+  DAT_1404e7f90 =
+       FUN_1402c4650("player_sprintSpeedScale",uVar15,0,DAT_1403e8e3c,uVar12,
+                     "The scale applied to the player speed when sprinting");
+  DAT_1404e8208 =
+       FUN_1402c43f0("player_sprintUnlimited",0,0xc4,"Whether players can sprint forever or not");
+  DAT_1404e7f70 =
+       FUN_1402c43f0("player_turnAnims",0,0x84,
+                     "Use animations to turn a player\'s model in multiplayer");
+  DAT_1404e7fa0 =
+       FUN_1402c4650("animSmoothing",DAT_1403e5240,0,uVar1,uVar12 & 0xffffffff00000000,
+                     "exponential moving average smoothing factor for anims in network coop");
+  uVar6 = DAT_1403e5618;
+  DAT_1404e8210 =
+       FUN_1402c4650("player_dmgtimer_timePerPoint",uVar13,0,DAT_1403e5618,0xc,
+                     "The time in milliseconds that the player is slowed down per point of damage");
+  DAT_1404e8218 =
+       FUN_1402c4650("player_dmgtimer_maxTime",DAT_1403e8e88,0,uVar6,0xc,
+                     "The maximum time that the player is slowed due to damage");
+  DAT_1404e8228 =
+       FUN_1402c46d0("player_dmgtimer_stumbleTime",500,0,2000,0xc,
+                     "Maximum time to play stumble animations");
+  DAT_1404e8230 =
+       FUN_1402c46d0("player_dmgtimer_flinchTime",500,0,2000,0xc,
+                     "Maximum time to play flinch animations");
+  DAT_1404e41d8 =
+       FUN_1402c49e0("bg_shock_soundLoop","shellshock_loop",0x10004,"Shellshock loop alias");
+  DAT_1404e41e0 =
+       FUN_1402c49e0("bg_shock_soundLoopSilent","shellshock_loop_silent",0x10004,
+                     "The sound that gets blended with the shellshock loop alias");
+  DAT_1404e41e8 =
+       FUN_1402c49e0("bg_shock_soundEnd","shellshock_end",0x10004,"Shellshock end sound alias");
+  DAT_1404e41f0 =
+       FUN_1402c49e0("bg_shock_soundEndAbort","shellshock_end_abort",0x10004,
+                     "Shellshock aborted end sound alias");
+  uVar13 = 1;
+  DAT_1404e4190 =
+       FUN_1402c45d0("bg_shock_screenType",&PTR_s_blurred_1404c0480,0,0x10004,
+                     "Shell shock screen effect type");
+  uVar8 = CONCAT44(uVar13,0x10004);
+  DAT_1404e4198 =
+       FUN_1402c4650("bg_shock_screenBlurBlendTime",DAT_1403e5258,0,uVar2,uVar8,
+                     "The amount of time in seconds for the shellshock effect to blend");
+  uVar13 = DAT_1403e5284;
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0x10004);
+  DAT_1404e41a0 =
+       FUN_1402c4650("bg_shock_screenBlurBlendFadeTime",uVar1,0,DAT_1403e5284,uVar8,
+                     "The amount of time in seconds for the shellshock effect to fade");
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0x10004);
+  DAT_1404e41a8 =
+       FUN_1402c4650("bg_shock_screenFlashWhiteFadeTime",0,0,uVar13,uVar8,
+                     "In seconds, how soon from the end of the effect to start blending out the whiteout layer."
+                    );
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0x10004);
+  DAT_1404e41b0 =
+       FUN_1402c4650("bg_shock_screenFlashShotFadeTime",0,0,uVar13,uVar8,
+                     "In seconds, how soon from the end of the effect to start blending out the screengrab layer."
+                    );
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0x10004);
+  DAT_1404e41b8 =
+       FUN_1402c4650("bg_shock_viewKickPeriod",DAT_1403e413c,0,uVar13,uVar8,
+                     "The period of the shellshock view kick effect");
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0x10004);
+  DAT_1404e41c0 =
+       FUN_1402c4650("bg_shock_viewKickRadius",DAT_1403e523c,0,uVar1,uVar8,"Shell shock kick radius"
+                    );
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0x10004);
+  DAT_1404e41c8 =
+       FUN_1402c4650("bg_shock_viewKickFadeTime",DAT_1403e5268,0,uVar13,uVar8,
+                     "The time for the shellshock kick effect to fade");
+  uVar14 = (undefined4)((ulonglong)uVar8 >> 0x20);
+  DAT_1404e41d0 = FUN_1402c43f0("bg_shock_sound",1,0x10004,"Play shell shock sound");
+  DAT_1404e41f8 =
+       FUN_1402c4650("bg_shock_soundFadeInTime",uVar4,0,uVar13,CONCAT44(uVar14,0x10004),
+                     "Shell shock sound fade in time in seconds");
+  DAT_1404e4200 =
+       FUN_1402c4650("bg_shock_soundFadeOutTime",DAT_1403e8e34,0,uVar13,0x10004,
+                     "Shell shock sound fade out time in seconds");
+  DAT_1404e4208 =
+       FUN_1402c4650("bg_shock_soundLoopFadeTime",uVar15,0,uVar13,0x10004,
+                     "Shell shock sound loop fade time in seconds");
+  uVar4 = DAT_1403e8eac;
+  DAT_1404e4210 =
+       FUN_1402c4650("bg_shock_soundLoopEndDelay",DAT_1403e8ea8,DAT_1403e8eac,uVar13,0x10004,
+                     "Sound loop end offset time from the end of the shellshock in seconds");
+  uVar15 = 1;
+  DAT_1404e4218 =
+       FUN_1402c45d0("bg_shock_soundRoomType",&PTR_s_generic_1404c0240,0,0x10004,
+                     "Shell shock sound room type");
+  uVar8 = CONCAT44(uVar15,0x10004);
+  DAT_1404e4220 =
+       FUN_1402c4650("bg_shock_soundDryLevel",uVar1,0,uVar1,uVar8,"Shell shock sound dry level");
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0x10004);
+  DAT_1404e4228 =
+       FUN_1402c4650("bg_shock_soundWetLevel",uVar17,0,uVar1,uVar8,"Shell shock sound wet level");
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0x10004);
+  DAT_1404e4230 =
+       FUN_1402c4650("bg_shock_soundModEndDelay",uVar5,DAT_1403e8ed4,uVar13,uVar8,
+                     "The delay from the end of the shell shock to the end of the sound modification"
+                    );
+  iVar7 = FUN_140270b80();
+  uVar15 = (undefined4)((ulonglong)uVar8 >> 0x20);
+  if (0 < iVar7) {
+    puVar10 = &DAT_1404e4240;
+    do {
+      uVar15 = (undefined4)((ulonglong)uVar8 >> 0x20);
+      uVar8 = FUN_140270c00(iVar11);
+      FUN_1402ca430(&DAT_1404e44b0 + (longlong)iVar11 * 0x50,0x50,"bg_shock_volume_%s",uVar8);
+      uVar8 = CONCAT44(uVar15,0x10004);
+      uVar9 = FUN_1402c4650(&DAT_1404e44b0 + (longlong)iVar11 * 0x50,uVar17,0,uVar1,uVar8,
+                            &DAT_1403e6bdb);
+      *puVar10 = uVar9;
+      puVar10 = puVar10 + 1;
+      iVar11 = iVar11 + 1;
+      iVar7 = FUN_140270b80();
+      uVar15 = (undefined4)((ulonglong)uVar8 >> 0x20);
+    } while (iVar11 < iVar7);
+  }
+  DAT_1404e4238 =
+       FUN_1402c43f0("bg_shock_lookControl",1,0x10004,"Alter player control during shellshock");
+  uVar8 = CONCAT44(uVar15,0x10004);
+  DAT_1404e4440 =
+       FUN_1402c4650("bg_shock_lookControl_maxpitchspeed",uVar16,0,uVar6,uVar8,
+                     "Maximum pitch movement rate while shellshocked in degrees per second");
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0x10004);
+  DAT_1404e4448 =
+       FUN_1402c4650("bg_shock_lookControl_maxyawspeed",uVar16,0,uVar6,uVar8,
+                     "Maximum yaw movement rate while shell shocked in degrees per second");
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0x10004);
+  DAT_1404e4450 =
+       FUN_1402c4650("bg_shock_lookControl_mousesensitivityscale",uVar17,0,uVar5,uVar8,
+                     "Sensitivity scale to apply to a shellshocked player");
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0x10004);
+  DAT_1404e4458 =
+       FUN_1402c4650("bg_shock_lookControl_fadeTime",uVar5,DAT_1403e3e60,uVar13,uVar8,
+                     "The time for the shellshock player control to fade in seconds");
+  uVar16 = (undefined4)((ulonglong)uVar8 >> 0x20);
+  DAT_1404e4460 =
+       FUN_1402c43f0("bg_shock_movement",1,0x10004,
+                     "Affect player\'s movement speed duringi shellshock");
+  uVar8 = CONCAT44(uVar16,0xc0);
+  DAT_1404e80c0 =
+       FUN_1402c4650("g_gravity",DAT_1403e8e8c,uVar1,uVar6,uVar8,
+                     "Gravity in inches per second per second");
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),4);
+  DAT_1404e8278 =
+       FUN_1402c4650("bullet_penetrationMinFxDist",DAT_1403e4140,0,DAT_1403e8e90,uVar8,
+                     "Min distance a penetrated bullet must travel before it\'ll trigger the effects"
+                    );
+  uVar8 = CONCAT44((int)((ulonglong)uVar8 >> 0x20),0xc4);
+  DAT_1404e8280 =
+       FUN_1402c4650("bullet_ricochetBaseChance",uVar17,0,DAT_1403e8e30,uVar8,
+                     "The base chance a bullet has of ricocheting off of a riot shield.");
+  uVar17 = (undefined4)((ulonglong)uVar8 >> 0x20);
+  DAT_1404e8290 =
+       FUN_1402c43f0("bullet_penetration_damage",1,0xc4,
+                     "When false, bullets that have penetrated an object will not do damage to AI or players."
+                    );
+  DAT_1404e7fa8 =
+       FUN_1402c43f0("useTagFlashSilenced",1,4,
+                     "When true, silenced weapons will use \"tag_flash_silenced\" instead of \"tag_flash\"."
+                    );
+  DAT_1404e7fb0 = FUN_1402c43f0("turret_adsEnabled",1,4,"Enable/Disable ADS on turrets");
+  uVar16 = 1;
+  DAT_1404e7fb8 =
+       FUN_1402c4650("turret_adsTime",DAT_1403e8e7c,0,DAT_1403e8e98,CONCAT44(uVar17,4),
+                     "Time (msec) to transition to ADS");
+  uVar17 = DAT_1403e8ed8;
+  _DAT_1404e4470 =
+       FUN_1402c4c10("bg_shieldHitEncodeWidthWorld",DAT_1403e8eb0,DAT_1403e8e50,DAT_1403e8ed8,uVar6,
+                     CONCAT44(uVar16,0x84),
+                     "The encoding range, in width, of a client\'s world shield.  A hit in this range is encoded into one of 16 collumns."
+                    );
+  _DAT_1404e4478 =
+       FUN_1402c4c10("bg_shieldHitEncodeHeightWorld",DAT_1403e8eb8,uVar3,uVar17,uVar6,0x84,
+                     "The encoding range, in height, of a client\'s world shield.  A hit in this range is encoded into one of 8 rows."
+                    );
+  DAT_1404e4480 =
+       FUN_1402c4c10("bg_shieldHitEncodeWidthVM",DAT_1403e8eb4,DAT_1403e560c,uVar17,uVar6,0x84,
+                     "The decoding range, in width, of a client\'s viewmodel shield.");
+  DAT_1404e4488 =
+       FUN_1402c4c10("bg_shieldHitEncodeHeightVM",uVar4,uVar2,uVar17,uVar6,0x84,
+                     "The decoding range, in height, of a client\'s viewmodel shield.");
+  DAT_1404e4490 =
+       FUN_1402c4c10("missileRemoteSteerPitchRange",uVar1,DAT_1403e8e68,DAT_1403e8ed0,DAT_1403e5280,
+                     0xc4,
+                     "Remote-controlled missile allowed up/down range.  To keep players from steering missiles above the horizon."
+                    );
+  uVar17 = DAT_1403e8e58;
+  DAT_1404e4498 =
+       FUN_1402c4650("missileRemoteSteerPitchRate",DAT_1403e8e58,0,uVar6,0xc4,
+                     "Remote-controlled missile up/down steering speed.");
+  DAT_1404e44a0 =
+       FUN_1402c4650("missileRemoteSteerYawRate",uVar17,0,uVar6,0xc4,
+                     "Remote-controlled missile left/right steering speed.");
+  _DAT_1404e8298 = FUN_1402c43f0("ai_debugOverlay",0,4,"Display AI debug overlay");
+  DAT_14050bde8 =
+       FUN_1402c43f0("cg_cinematicFullscreen",1,0x40,"Draw ingame cinematics full screen");
+  DAT_14050bdf0 = FUN_1402c43f0("cg_cinematicCanPause",0,0x40,"Ingame cinematics can be paused");
+  FUN_14000a3a0();
+  FUN_14000b4a0();
+  FUN_14000fef0();
+  return;
+}
+
+
+

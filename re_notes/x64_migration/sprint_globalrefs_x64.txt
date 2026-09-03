@@ -1,0 +1,17 @@
+=== Reference counts per global ===
+player_sprintSpeedScale (1404e7f90): 3 references
+player_sprintUnlimited (1404e8208): 5 references
+
+=== Candidate functions, ranked by distinct global diversity (6) ===
+
+---- FUN_14000dba0 @ 14000dba0 (globals: player_sprintSpeedScale, player_sprintUnlimited) ----
+
+---- FUN_140011d60 @ 140011d60 (globals: player_sprintSpeedScale) ----
+
+---- FUN_1400124c0 @ 1400124c0 (globals: player_sprintSpeedScale) ----
+
+---- FUN_140012e20 @ 140012e20 (globals: player_sprintUnlimited) ----
+
+---- FUN_140012eb0 @ 140012eb0 (globals: player_sprintUnlimited) ----
+
+---- FUN_140014a80 @ 140014a80 (globals: player_sprintUnlimited) ----

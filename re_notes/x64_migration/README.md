@@ -225,6 +225,32 @@ record — this section is a pointer, not the source of truth)
     one (`FUN_14007d9f0`). Don't assume a clean one-function-per-one-function
     mapping anywhere else in the pipeline either; verify each candidate's
     actual boundaries, don't infer them from the x86 layout.
+1f. **Visual-enhancement suite dvar catalog re-located, high-confidence static
+    match, NOT yet live-verified.** `RawStringScan.java` on `sm_fastSunShadow`
+    found a single `DATA` reference in `FUN_1401b50e0` — the x64 equivalent of
+    `FUN_0043a1e0`, the giant renderer dvar-registration function this
+    project's `ForceHighQualityShadows`/`ForceHighQualityLighting`/
+    `ForceAnisotropicFiltering` toggles were originally built against.
+    Decompiling it (725 lines, same "one function, whole dvar catalog" shape
+    as the x86 original) found every dvar this session's own visual suite
+    needs, registered identically, at these new storage globals:
+
+    | dvar | x64 global |
+    |---|---|
+    | `sm_fastSunShadow` | `DAT_141884f50` |
+    | `r_cacheSModelLighting` | `_DAT_141884ce0` |
+    | `r_cacheModelLighting` | `DAT_141884ce8` |
+    | `r_texFilterAnisoMax` | `DAT_141884b10` |
+    | `r_texFilterAnisoMin` | `DAT_141884b20` |
+
+    (`sm_qualitySpotShadow`, `sm_maxLights`, `r_dlightLimit` were also found
+    in the same function, confirming the whole catalog carried over — not
+    yet individually mapped to storage globals since nothing in this
+    project's own shipped features currently needs them.) **Real write-side
+    mechanism (the actual `SetDvarBool`/`SetDvarFloat`-equivalent that turns
+    a resolved `+0xc`-offset global into an applied dvar write) is being
+    traced separately** — see whichever of this session's parallel fork
+    passes covers dvar helpers, to avoid duplicating that work here.
 1c. **Broad due-diligence sweep, 2026-09-03: every one of 35 strings checked
     across every major subsystem is identically present in both binaries —
     the strongest evidence yet this is a clean recompile, not a rewrite.**
