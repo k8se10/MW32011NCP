@@ -44,12 +44,15 @@ two files already had for #111 before the split.
 
 *(Carried forward from `known_issues.md`'s former issue #111, opened 2026-09-03. Original numbering/history preserved in that file's own trimmed stub entry.)*
 
-**Status: Implementing. A real, working x64 build compiles, LINKS, and deploys
-cleanly to the live game install for the first time in this project's
-history — but the FIRST real live launch crashed on startup (2026-09-04), a
-real, reproducible, now-fixed bug (see "First live crash, found and fixed"
-below). Fix is build-verified only so far, not yet re-confirmed live.** See
-"Implementation begins" and "First live crash" below for the full record.
+**Status: Implementing. A real, working x64 build compiles, LINKS, deploys,
+and now LAUNCHES cleanly against the live game for the first time in this
+project's history (2026-09-04)** — two real startup crashes were found and
+fixed first (see "First/Second live crash, found and fixed" below), and the
+third attempt reached a clean main-menu session and normal process exit
+with no crash. **Still open**: the diagnostic hook's actual live fire during
+real gameplay (Pmove only runs once a level is loaded) hasn't been confirmed
+yet — this session only reached the main menu before exiting. See
+"Implementation begins" and the crash write-ups below for the full record.
 **Emergency policy action, same day: all support for the entire existing
 `-x86` release line (every version through `v0.3.5-x86`) is discontinued,
 effective immediately** — not a gradual wind-down, since the live game can
@@ -539,6 +542,30 @@ report: "still crashes," after the first fix was rebuilt and redeployed.
   each one crashed first), a third, not-yet-found landmine of the same
   class remains a real, honestly-acknowledged possibility, not
   hand-waved away. The next real step is another live launch.
+
+**First clean, non-crashing live launch, same day (2026-09-04).** Direct
+user report: "no crash this time." `proxy_d3d9.log` for this run goes well
+past where both prior crashes hit -- through the signature scan, MinHook
+diagnostic-hook install, `Direct3DCreate9`/`CreateDevice`, the WndProc
+subclass, `EndScene` firing, glyph-icon prewarm, the `ForceAnisotropicFiltering`/
+`ForceHighQualityShadows`/`ForceHighQualityLighting` dvar writes (now
+confirmed genuinely inert on x64 per the `real_settings.cpp` fix above --
+each still logs its own "wrote X" line unconditionally even though the
+underlying x64 write is currently a no-op, a real but harmless log-wording
+mismatch worth fixing later, not a functional bug), XInput loading, and all
+the way to a clean `DLL_PROCESS_DETACH`/`proxy_d3d9 detach` -- a genuine
+normal exit, not a crash. This is the first x64 session in this project's
+history to reach a clean shutdown.
+
+**One honest gap, not yet closed**: `"[x64-diag] Pmove tick hook fired"`
+never appears in this log. The diagnostic hook's install (signature scan +
+`MH_CreateHook`/`MH_EnableHook`) is confirmed successful, but this specific
+session's log shows only main-menu-level activity before exit -- Pmove
+(`FUN_1400168a0`) only runs once a level is actually loaded (Campaign
+mission or Survival match), which this run apparently never reached. The
+real, final confirmation that the whole signature-scan -> MinHook pipeline
+fires correctly during live gameplay (not just installs cleanly at menu
+time) is still pending an actual in-level test.
 
 **Still not started**: real per-hook gameplay code (see above); the shadow-map
 creation call site remains the one major unresolved static-RE thread (needs
