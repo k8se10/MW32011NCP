@@ -112,7 +112,25 @@
 
   <ItemGroup>
     <ClCompile Include="src\dllmain.cpp" />
+    <!-- Compiles for BOTH platforms; this file provides many genuinely
+         cross-platform utility functions (glyph/menu/controller-activity helpers)
+         other translation units depend on, interleaved throughout its ~11000 lines
+         with x86-only hook-callback logic, not separable into one contiguous
+         block (confirmed 2026-09-03 after an initial whole-file exclusion broke
+         real cross-file symbol dependencies; see the git history for that
+         attempt and correction). The dozen or so real __declspec(naked)/inline
+         __asm sites (a hard MSVC x64 compile error, C2485/C4235/etc, not a
+         stopgap) are individually guarded in-place with
+         `#if !defined(_M_X64) && !defined(_WIN64)`, same pattern dllmain.cpp's
+         own FORWARD_STUB macro already used for its x64 guard. -->
     <ClCompile Include="src\analog_input_hooks.cpp" />
+    <!-- x64-only: real signature-scanned hooks (CLAUDE.md SS5/SS10.3 policy),
+         2026-09-03 migration. Built on signature_scan.cpp below (platform-agnostic,
+         compiled for both, though only x64 calls into it so far). -->
+    <ClCompile Include="src\analog_input_hooks_x64.cpp" Condition="'$(Platform)'=='x64'">
+      <ExcludedFromBuild Condition="'$(Platform)'!='x64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="src\signature_scan.cpp" />
     <ClCompile Include="src\controller_input.cpp" />
     <ClCompile Include="src\dualsense_input.cpp" />
     <ClCompile Include="src\d3d9_hook.cpp" />
@@ -162,6 +180,7 @@
     <ResourceCompile Include="proxy_d3d9.rc" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\signature_scan.h" />
     <ClInclude Include="src\controller_input.h" />
     <ClInclude Include="src\dualsense_input.h" />
     <ClInclude Include="src\mod_config.h" />

@@ -44,7 +44,11 @@ two files already had for #111 before the split.
 
 *(Carried forward from `known_issues.md`'s former issue #111, opened 2026-09-03. Original numbering/history preserved in that file's own trimmed stub entry.)*
 
-**Status: Investigating/RE underway. The mod does not currently work at all.**
+**Status: Implementing. A real, working x64 build now compiles, LINKS, and
+deploys cleanly to the live game install for the first time in this project's
+history — build-verified only, not yet live-tested (no confirmation the
+diagnostic hook actually fires in the running game).** See "Implementation
+begins" below for the full record.
 **Emergency policy action, same day: all support for the entire existing
 `-x86` release line (every version through `v0.3.5-x86`) is discontinued,
 effective immediately** — not a gradual wind-down, since the live game can
@@ -276,17 +280,93 @@ line) and, later the same day, escalated to an emergency full discontinuation
 of all `-x86` support -- see the Status line above and `LTS_POLICY.md` for
 the complete policy record.
 
-**Not yet started**: no x64 hook code exists yet. Real next steps: design the
-actual signature-scanning mechanism (AOB/IDA-style byte-pattern-plus-
-wildcards, validated before hooking, fail loudly on a bad match); write real
-per-hook x64 hook-install code to replace the ~14 `__asm` trampolines, now
-that several real hook targets are confirmed (Sprint's `FUN_140014a80`, the
-buttons/ADS/menu unified entry point `FUN_14007eaf0`, the pause toggle
-`FUN_1400823b0`, weapnext's `FUN_1400706d0`); the shadow-map creation call
-site remains the one major unresolved thread (needs indirect-call scanning
-or live tracing, not more direct-reference scanning), and `cls.state`'s
-exact semantics stay open but low-priority now that pause is resolved via a
-separate path. See
+**Implementation begins, 2026-09-03 (direct instruction: "now we start
+implementing and then getting this closer to parity though i acknowledge
+this is probably multi week work"). First real, working x64 build.**
+
+- **`signature_scan.h`/`.cpp` (new, platform-agnostic)**: the real runtime
+  AOB (Array-of-Bytes) byte-pattern scanner the locked 2026-09-03 policy
+  requires (`CLAUDE.md` SS5/SS10.3) -- every x64 hook target is resolved
+  through this, once at startup, cached, never a repeated re-scan loop.
+  Parses a `"48 83 3D ?? ?? ?? ?? 00"`-style pattern string, scans the
+  game's own main module (resolved via a real PE-header walk, not
+  `psapi.h`), and fails loudly (per SS5's own standard) on zero matches OR
+  more matches than expected -- an ambiguous signature is refused, not
+  silently guessed.
+- **New Ghidra script, `DumpSigBytes.java`**: dumps a function's real raw
+  instruction bytes plus Ghidra's own PC-relative/reference analysis per
+  instruction, as a starting point for building an actual signature. **Real
+  tooling lesson found while using it**: its reference-based heuristic
+  produces false positives on RSP/RBP-relative operands (a `LEA
+  RBP,[RSP-0x80]` or `MOVAPS [RSP+0x120],XMM10` is NOT an address that
+  shifts between builds, just a small fixed stack displacement) -- Ghidra
+  attaches a reference to these too, but they don't need wildcarding.
+  Always hand-review the suggested mask; only true RIP-relative/absolute
+  operands (a real global reference, or a CALL/JMP rel32) actually need it.
+- **`analog_input_hooks_x64.cpp` (new)**: the designated home for every
+  real x64 hook going forward, parallel to (not merged into) the existing
+  x86 file. First deliverable: a single, deliberately zero-behavior-change
+  diagnostic hook on `FUN_1400168a0` (the confirmed Pmove per-substep
+  tick) -- signature-scans it, installs a MinHook detour that logs a
+  rate-limited fire count (first 5 calls, then every 5000) and calls
+  straight through to the real function unmodified. Matches this project's
+  own established "trivial passthrough first, to isolate plumbing bugs
+  from real-effect bugs" convention (the visual-suite Phase A precedent).
+  Proves signature-scan -> MinHook-install -> detour-fires works end to
+  end on this exact binary before any real gameplay hook goes in on top.
+- **A real, substantial bug found and fixed while wiring this up**: the
+  existing x64 build infrastructure (MASM export-forwarding stubs, built
+  earlier this same day) had never actually reached the link stage before
+  today, since the naked-asm compile errors blocked it first. Once those
+  were fixed, linking exposed a genuine, previously-undiscovered bug: the
+  `g_real_D3DPERF_BeginEvent`-class globals `forward_stubs_x64.asm`
+  references via plain `EXTERN name:QWORD` were declared inside dllmain.cpp's
+  own anonymous namespace, giving them C++-mangled internal linkage a
+  separately-assembled MASM translation unit can never match (LNK2019 on
+  all 15). Fixed by moving them outside the namespace with real `extern "C"`
+  linkage -- correct and necessary for x64, harmless for x86 (unchanged
+  behavior there, only ever referenced from the same file either way).
+- **Porting `analog_input_hooks.cpp` itself for x64 without touching x86**:
+  the file's ~11000 lines interleave genuinely cross-platform utility
+  functions (glyph editor exports, menu-active queries, controller-activity
+  tracking -- dozens of symbols other translation units depend on) with
+  x86-only hook-callback logic throughout, not separable into one
+  contiguous block. An initial attempt to exclude the WHOLE file from the
+  x64 build was too blunt and broke those real cross-file dependencies
+  (confirmed via a real link failure, ~29 unresolved externals) --
+  corrected by individually guarding each of the ~12 real
+  `__declspec(naked)`/inline-`__asm` sites (8 naked hook trampolines, 4
+  plain helper functions: `CallKbuttonDown`/`Up`, `GetDvarInt`/`Float`) plus
+  the whole `InstallAnalogInputHooks()` function body (every one of its
+  `MH_CreateHook` calls targets an x86 hardcoded address, meaningless on
+  x64 regardless of `__asm` use) with `#if !defined(_M_X64) &&
+  !defined(_WIN64)`, same pattern `dllmain.cpp`'s own `FORWARD_STUB` macro
+  already used. Everything else in the file -- the real majority of its
+  content -- now compiles for x64 unmodified, restoring every symbol other
+  files needed.
+- **Real result, both platforms verified building clean**: `x64` Release
+  now compiles AND links a complete, real `d3d9.dll`
+  (`PE32+ ... x86-64`, confirmed via `file`), deployed to the live game
+  install directory for the first time in this project's history. `Win32`
+  Release was re-verified to still build clean afterward -- no regression
+  from any of the above. **Not yet live-tested** -- no x64dbg/live-attach
+  session confirmed the diagnostic hook actually fires in the running
+  game; the next real step is launching MW3 with this build and checking
+  `proxy_d3d9.log` for `"[x64-diag] Pmove tick hook fired"`.
+- **Explicit scope note**: this is genuinely the first slice of a
+  multi-week effort, not a finished port. No real gameplay behavior
+  (movement/look/buttons/ADS/Sprint/etc.) is hooked yet -- only the
+  no-op diagnostic. Real per-hook work (starting from the now-confirmed
+  targets: Sprint's `FUN_140014a80`, the unified buttons/ADS/menu entry
+  point `FUN_14007eaf0`, the pause toggle `FUN_1400823b0`, weapnext's
+  `FUN_1400706d0`) is the next phase, once the diagnostic hook's live fire
+  is confirmed.
+
+**Still not started**: real per-hook gameplay code (see above); the shadow-map
+creation call site remains the one major unresolved static-RE thread (needs
+indirect-call scanning or live tracing, not more direct-reference scanning),
+and `cls.state`'s exact semantics stay open but low-priority now that pause
+is resolved via a separate path. See
 `re_notes/x64_migration/README.md` for the complete import-table/
 section-table diff, the full string-persistence data table, and every
 sub-cluster's own raw Ghidra output files.
