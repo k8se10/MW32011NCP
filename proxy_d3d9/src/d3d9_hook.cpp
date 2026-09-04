@@ -57,6 +57,20 @@ extern "C" bool IsGlyphPositionEditModeActive(); // defined in analog_input_hook
 
 namespace {
 
+#if defined(_M_X64) || defined(_WIN64)
+// Forward-declared so HookWndProc (defined earlier in this file than the
+// function itself) can call it periodically -- see that function's own
+// definition, further down, for the full "needs re-firing per level, not
+// just once per process" rationale. Must live INSIDE this anonymous
+// namespace (not before it) -- a forward declaration at global scope for a
+// function actually defined inside the namespace mangles to a DIFFERENT
+// symbol, which is exactly the LNK2019 this project's own established
+// linkage lesson (CLAUDE.md's "checking is far cheaper than digging")
+// already warns about, caught here immediately via the real build error
+// rather than left unnoticed.
+void SendPeriodicActivationNudgeX64(HWND hwnd);
+#endif
+
 constexpr int kCreateDeviceVtableIndex = 16; // IDirect3D9::CreateDevice
 constexpr DWORD kD3DDEVTYPE_HAL = 1;         // the real hardware device, not a REF/NULLREF probe
 constexpr UINT_PTR kPollTimerId = 0xC0D3;    // arbitrary, just needs to be ours
@@ -396,6 +410,38 @@ LRESULT CALLBACK HookWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     }
     InjectMenuInputTick();
 
+#if defined(_M_X64) || defined(_WIN64)
+    // Real structural gap found 2026-09-04, after diagnostic heartbeat data +
+    // direct user clarification ("check it i played a bit after but yeah
+    // always on entry of level as we had in x86"): both
+    // SendSyntheticActivationClick and SendRealFocusNudgeX64 only ever fired
+    // ONCE, from InstallWndProcHook -- which itself only runs once per game
+    // SESSION (CreateDevice's own hwnd doesn't change across an ordinary
+    // level load, so the subclass/one-shot-fire logic never re-triggers for
+    // one). If the real x64 gate needs this activation-style event on EVERY
+    // level entry -- exactly x86's own original issue #1 shape (a per-level
+    // transition, not a one-time launch quirk; x86's real fix for THAT issue
+    // was a windowed re-assertion tied to level load, not a single one-shot
+    // event either) -- neither experiment could ever have worked, regardless
+    // of which one's underlying theory was closer to correct: they simply
+    // never got a chance to run again for the second, third, Nth level.
+    // Fixed by re-firing periodically for the whole session via this
+    // already-existing ~60Hz WM_TIMER tick -- see
+    // SendPeriodicActivationNudgeX64's own comment for why this calls a
+    // NEW, click-free function rather than the original
+    // SendSyntheticActivationClick (which stays one-shot-only, unchanged).
+    // Rate-limited to once every 2 seconds (matching x86's own original
+    // "3-second window" scale for this exact bug class).
+    {
+        static DWORD s_lastPeriodicNudgeMs = 0;
+        DWORD nowMs = GetTickCount();
+        if (g_gameHwnd && (nowMs - s_lastPeriodicNudgeMs >= 2000)) {
+            s_lastPeriodicNudgeMs = nowMs;
+            SendPeriodicActivationNudgeX64(g_gameHwnd);
+        }
+    }
+#endif
+
     // Glyph position editor (2026-08-16, issue #51 follow-up): live-reported "it
     // skips through the menu" -- a click meant to grab/drag a calibration handle was
     // ALSO reaching the real menu's own native mouse-click support (this engine
@@ -500,6 +546,41 @@ void SendRealFocusNudgeX64(HWND hwnd)
                        "issued (x64-only experiment, distinct from the synthetic-message-only "
                        "approach already proven sufficient on x86) -- confirm live whether "
                        "input now works without a manual click.");
+}
+
+// ---- Periodic (per-level, not just per-process) activation nudge, x64 --------------
+//
+// 2026-09-04, real gap found via diagnostic data + direct user clarification: both
+// SendSyntheticActivationClick and SendRealFocusNudgeX64 above only ever fire ONCE,
+// from InstallWndProcHook -- which itself only runs once per game session (the hwnd
+// doesn't change across an ordinary level load). If the real x64 gate needs this
+// activation event on EVERY level entry (confirmed repro shape: "always on entry of
+// level as we had in x86", matching x86's own issue #1 -- a per-LEVEL transition
+// bug, not a one-time launch quirk), neither one-shot experiment could ever have
+// worked regardless of which theory was closer to correct.
+//
+// Deliberately does NOT include SendSyntheticActivationClick's own
+// WM_LBUTTONDOWN/WM_LBUTTONUP click simulation -- that function's own "(1,1) as the
+// click coordinate" safety reasoning only holds for a ONE-TIME fire before any real
+// UI or gameplay exists yet (right at device creation). Repeating a real click every
+// 2 seconds for an entire play session is a genuinely different risk: if the game's
+// own WndProc treats WM_LBUTTONDOWN as a real input event (e.g. keyboard/mouse Fire,
+// or a world-interact prompt), firing it periodically DURING ACTUAL GAMEPLAY could
+// misfire a real gameplay action -- a regression risk the one-shot version never
+// had. This function only re-asserts WM_ACTIVATE/WM_SETFOCUS (through the engine's
+// own WndProc, same as the one-shot version) plus the real OS-level
+// SetForegroundWindow/SetActiveWindow/SetFocus calls (also already proven side-
+// effect-free for a single fire) -- no click, safe to repeat indefinitely.
+void SendPeriodicActivationNudgeX64(HWND hwnd)
+{
+    if (g_origWndProc) {
+        CallWindowProcA(g_origWndProc, hwnd, WM_ACTIVATE, MAKEWPARAM(WA_ACTIVE, 0),
+                         reinterpret_cast<LPARAM>(hwnd));
+        CallWindowProcA(g_origWndProc, hwnd, WM_SETFOCUS, 0, 0);
+    }
+    SetForegroundWindow(hwnd);
+    SetActiveWindow(hwnd);
+    SetFocus(hwnd);
 }
 #endif
 
