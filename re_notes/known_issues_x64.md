@@ -36,7 +36,7 @@ two files already had for #111 before the split.
 
 ## Index
 
-- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **Every gameplay hook (Sprint/Movement/Look/Pause/Fire/Reload/ADS/Weapnext) CONFIRMED WORKING LIVE; "needs a click for input" — user confirmed the real fix is the pause/unpause workaround, now automated, awaiting test**
+- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **Every implemented control CONFIRMED WORKING LIVE (D-pad untested, not known-broken); auto-unstick cycle confirmed working; CrouchProne is the sole remaining gap, next task**
 
 ---
 
@@ -1494,3 +1494,79 @@ threshold -- as close to "instant" as this tick-based, non-blocking
 design (`CLAUDE.md` SS5's hook-safety rule against blocking calls) can
 get. Build-verified on both platforms, x64 redeployed and confirmed via
 `dumpbin`. Not yet re-tested live.
+
+**Third real-time tuning pass, same day: "could still be earlier try
+1.25s."** `kLevelSettleDelayMs` refined further, `1750ms -> 1250ms`.
+Build-verified, x64 redeployed and confirmed via `dumpbin`.
+
+**Remaining x64 controls implemented in the same pass, direct
+instruction: "also make sure we add all remaining controls that are
+missing in this pass."** Re-read x86's own `InjectControllerButtons`/
+`InjectControllerDpad` in full before writing any code -- a real, useful
+finding: x86 does NOT drive Melee/Tactical/Lethal/Jump/Interact through
+kbutton down/up calls at all (unlike Fire/ADS/Reload) -- it ORs raw bits
+directly into `usercmd_t.buttons` (a `uint` at `+0x04`, confirmed in
+`re_notes/iw5sp.md`'s own struct-layout table) every tick. Since x64's
+`usercmd_t` is already confirmed identical at `+0x1c`/`+0x1d`
+(forwardmove/rightmove, this session's own Movement work), the same
+`+0x04` buttons field is trusted to carry over too -- mirrors x86's own
+proven raw-bit mechanism directly rather than inventing a new one.
+
+- **Melee** (`0x4`), **Lethal/frag** (`0x4000`), **Tactical/smoke**
+  (`0x8000`) -- raw bits, additively OR'd every tick while held, real
+  values copied directly from x86's own confirmed constants.
+- **Jump** (`0x400`, `+gostand`) -- same raw bit, suppressed while a menu
+  is active (reusing `g_menuActiveGateFlag`, resolved earlier this
+  session for the "needs a click" diagnostic heartbeat, now ALSO used for
+  its real, originally-intended purpose: this project's confirmed x64
+  `IsMenuActive()` equivalent). x86's own "auto-stand from crouch/prone on
+  Jump's rising edge" enhancement is deliberately NOT ported yet -- it
+  depends on the same real stance-toggle mechanism CrouchProne itself
+  needs (see below); Jump's own core bit-force works standalone without
+  it, a minor feature gap, not a functional bug.
+- **Interact** (`0x8`) -- hold-to-interact (`g_modConfig.interactHoldThresholdMs`,
+  already a cross-platform config value), dual-purpose with Reload on the
+  SAME physical button (X), matching x86's exact design (both the kbutton-
+  based Reload call and this raw bit fire off the same physical press).
+- **D-pad actionslot** -- the one exception to the raw-bit approach: x86
+  itself ALSO calls a real function here (`ActionSlotDown`/`Up`), and
+  x64's own confirmed equivalent, `FUN_14006dee0(playerIndex, slotIndex)`
+  (decompiled in full this round --
+  `re_notes/x64_migration/decomp_actionslot_stance.txt`), matches that
+  shape: a genuine "use this actionslot item now" one-shot action
+  (internally dispatches to weapon-switch/killstreak-use logic based on
+  the slot's own equipped-item type), not a hold-based kbutton -- called
+  once on the press edge only, same pattern as Weapnext, no "up" call
+  needed. Real signature via `DumpSigBytes.java`
+  (`re_notes/x64_migration/impl_sig_14006dee0.txt`).
+- **CrouchProne (B) deliberately NOT included this round.** x64's own real
+  stance-lock gate, `FUN_14007e430`, is now fully confirmed via real
+  disassembly (`re_notes/x64_migration/disasm_14007e430.txt`) as a genuine
+  `IsStanceLocked(player)`-equivalent (`XOR AL,AL` when both guard bytes
+  are clear, `MOV AL,1` when either is set), structurally matching x86's
+  own `FUN_0057d190` closely. But `FUN_14007c3a0`'s own case `0x17`/`0x18`
+  (`+stance` down/up) toggle logic has real, unresolved ambiguity in its
+  "restore previous posture" semantics on release (checks whether the
+  SAVED old posture equals exactly `1`, not a simple restore-to-saved-
+  value) that this pass's decompile alone doesn't cleanly resolve. Given
+  this project's own documented history of genuinely nasty stuck-crouch/
+  stuck-prone regressions (`CLAUDE.md`'s "Crouch 'needs an initial click
+  at launch'" section, and the live x86 incident that motivated
+  `ToggleStance`'s own real-toggle redesign in the first place), shipping
+  this blind risks a real softlock -- honestly deferred rather than
+  guessed.
+- **Verification**: build clean (0 errors) on x64; Win32 rebuilt
+  immediately after, also clean (0 regression); x64 rebuilt again with a
+  forced `/t:Rebuild`, confirmed genuinely deployed via `dumpbin /headers`
+  (`8664 machine (x64)`). **Not yet live-tested.**
+
+**Live-test result, same day: "everything works but dpad is unconfirmed
+and also as known crouch isnt donw that needs doing next."** Direct
+confirmation -- the auto-unstick pause/unpause cycle (all three tuning
+rounds, settled at 1.25s settle / ~50ms close) and every newly-added
+control (Melee, Lethal, Tactical, Jump, Interact) are all CONFIRMED
+WORKING LIVE. D-pad actionslot is confirmed BUILT but not yet
+independently exercised in this test pass -- not a known bug, just
+untested; worth a dedicated check next time. CrouchProne (B), already
+flagged above as deliberately deferred this round, is the explicitly
+named next task.

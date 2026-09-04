@@ -1,0 +1,108 @@
+================================================================
+Function: FUN_14006dee0 @ 14006dee0
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_14006dee0(undefined4 param_1,int param_2)
+
+{
+  uint uVar1;
+  uint uVar2;
+  char cVar3;
+  undefined1 uVar4;
+  int iVar5;
+  longlong lVar6;
+  uint uVar7;
+  undefined4 *puVar8;
+  
+  iVar5 = FUN_140078f00();
+  if (iVar5 == 0) {
+    return;
+  }
+  puVar8 = &DAT_140514580;
+  cVar3 = FUN_14006de30(&DAT_140514580,param_2);
+  uVar2 = DAT_140539eac;
+  uVar1 = _DAT_14052a3b4;
+  if (cVar3 == '\0') {
+    return;
+  }
+  iVar5 = puVar8[(longlong)param_2 + 0x57f8];
+  if (iVar5 == 1) {
+    uVar7 = puVar8[(longlong)param_2 + 0x57fc];
+    if (*(int *)((&DAT_1404e8e60)[_DAT_14052a3b4 & 0xff] + 0x60) != 4) {
+      if (uVar7 == DAT_140539e9c) {
+        if ((uVar7 == DAT_140539eac) ||
+           (iVar5 = FUN_14000d820(&DAT_14052a084,DAT_140539eac), iVar5 == 0)) {
+          FUN_140074570(param_1,1,0);
+          DAT_14053b08c = DAT_14052a070._4_4_;
+          return;
+        }
+        lVar6 = FUN_1400189f0(&DAT_14052a084,uVar2);
+        uVar7 = uVar2;
+        if (lVar6 == 0) {
+          uVar4 = 0;
+        }
+        else {
+          uVar4 = *(undefined1 *)(lVar6 + 2);
+        }
+      }
+      else {
+        iVar5 = FUN_14000d820(&DAT_14052a084,uVar7);
+        if (iVar5 == 0) {
+          DAT_14053b08c = DAT_14052a070._4_4_;
+          return;
+        }
+        if (uVar1 == uVar7) {
+          DAT_14053b08c = DAT_14052a070._4_4_;
+          return;
+        }
+        lVar6 = FUN_1400189f0(&DAT_14052a084,uVar7);
+        uVar4 = 0;
+        if (lVar6 != 0) {
+          uVar4 = *(undefined1 *)(lVar6 + 2);
+        }
+      }
+      FUN_140072c60(param_1,uVar7,uVar4);
+    }
+  }
+  else if (iVar5 == 2) {
+    FUN_140075950(param_1);
+  }
+  else if (iVar5 == 3) {
+    DAT_1405479dc = DAT_1405479dc | 0x40000;
+  }
+  DAT_14053b08c = DAT_14052a070._4_4_;
+  return;
+}
+
+
+
+================================================================
+Function: FUN_140078f00 @ 140078f00
+----------------------------------------------------------------
+
+undefined1 FUN_140078f00(void)
+
+{
+  return DAT_1406e24c5;
+}
+
+
+
+================================================================
+Function: FUN_14007e430 @ 14007e430
+----------------------------------------------------------------
+
+undefined * FUN_14007e430(int param_1)
+
+{
+  if (((&DAT_1406448c8)[(longlong)param_1 * 0x230] == '\0') &&
+     ((&DAT_1406447ec)[(longlong)param_1 * 0x230] == '\0')) {
+    return &DAT_140644700;
+  }
+  return &DAT_140644701;
+}
+
+
+

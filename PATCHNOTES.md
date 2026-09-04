@@ -20,6 +20,20 @@ x64 rebuild ships. See `re_notes/known_issues_x64.md` issue #1 and
 `re_notes/x64_migration/README.md` for the full technical record and rebuild
 progress.
 
+### What's New
+1. **x64 controller support: Melee, Lethal, Tactical, Jump, Interact, and
+   D-pad actionslot all now implemented.** Completes the button-mapping
+   pass alongside Fire/ADS/Reload/Sprint/Pause/Weapnext from earlier this
+   line — mirrors x86's own real design exactly (Melee/Lethal/Tactical/
+   Jump/Interact as raw `usercmd_t.buttons` bits, matching x86's confirmed
+   bit values; D-pad actionslot as a genuine one-shot action call, matching
+   x86's own `ActionSlotDown`/`Up` shape). **CrouchProne (B) is
+   deliberately NOT included** — the real x64 toggle mechanism has
+   unresolved ambiguity in its own release-time semantics that this pass
+   couldn't safely resolve, and this project's own history with nasty
+   stuck-crouch bugs makes shipping it blind too risky. Not yet
+   live-tested. Full trail in `re_notes/known_issues_x64.md` issue #1.
+
 ### Documentation
 1. **All `-x86` support discontinued, effective 2026-09-03.** `v0.2.2-x86`
    (formerly Current LTS) and `v0.3.5-x86` (formerly the LTS candidate) both
@@ -162,8 +176,13 @@ ADS, Weapnext — is now confirmed working live.**
    a real manual pause/unpause) — widened both delays substantially to
    match a real player's own natural pace. Same feedback also confirmed
    this project's own hooks (Sprint specifically) keep running correctly
-   even while gated, narrowing the real cause. Not yet re-tested live.
-   Full trail in `re_notes/known_issues_x64.md` issue #1.
+   even while gated, narrowing the real cause. Two further rounds of
+   direct real-time tuning brought the settle delay down to 1.25s and the
+   close delay down to ~50ms (near-instant, imperceptible to the player)
+   as the fix converged. **Live-confirmed working** alongside every other
+   control added this pass — the one exception is D-pad actionslot,
+   confirmed built but not yet independently tested live. Full trail in
+   `re_notes/known_issues_x64.md` issue #1.
 
 ---
 
