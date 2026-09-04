@@ -36,7 +36,7 @@ two files already had for #111 before the split.
 
 ## Index
 
-- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **Every implemented control CONFIRMED WORKING LIVE (D-pad untested, not known-broken); auto-unstick cycle confirmed working; CrouchProne is the sole remaining gap, next task**
+- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **Every implemented control CONFIRMED WORKING LIVE (D-pad and CrouchProne build-verified, not yet independently live-tested); auto-unstick cycle confirmed working**
 
 ---
 
@@ -1570,3 +1570,49 @@ independently exercised in this test pass -- not a known bug, just
 untested; worth a dedicated check next time. CrouchProne (B), already
 flagged above as deliberately deferred this round, is the explicitly
 named next task.
+
+**CrouchProne (B) implemented, same day -- direct instruction: "as known
+crouch isnt donw that needs doing next."** Rather than trying to replicate
+`FUN_14007c3a0`'s own case `0x17`/`0x18` internal state machine (the real,
+unresolved "restore previous posture" ambiguity flagged as the reason this
+was deferred in the previous round), the SAFE design chosen instead:
+forward B's own real press/release edges DIRECTLY to
+`FUN_14007c3a0(0, 0x17, 1)` (down) / `FUN_14007c3a0(0, 0x18, 0)` (up) --
+confirmed safe specifically because neither case body actually reads its
+own `param_3` argument at all (only the shared timestamp global,
+`DAT_141efb764`), so bypassing the ambiguous internal "what was the prior
+posture" logic entirely and just re-firing the same real dispatcher B
+would already reach through the normal input path carries none of that
+ambiguity's risk. This sidesteps the stuck-crouch/stuck-prone regression
+class this project has hit before (see the previous round's own deferral
+reasoning) without needing to fully resolve `case 0x17`/`0x18`'s internal
+semantics.
+
+- No new signature scan needed -- `g_stanceDispatch` reuses the SAME
+  already-resolved `FUN_14007c3a0` entry point (`kAnchorSignature`) every
+  other struct/flag this session anchors off of already uses.
+- Edge-tracked exactly like every other held-button control this session
+  (`g_crouchProneHeldX64`, polled in `Hook_MovementTick` right after the
+  D-pad block) -- press fires the down case once, release fires the up
+  case once, no per-tick re-fire.
+- **Verification**: build clean (0 errors) on x64; Win32 rebuilt
+  immediately after, also clean (0 regression); x64 rebuilt again with a
+  forced `/t:Rebuild`, confirmed genuinely deployed via `dumpbin /headers`
+  (`8664 machine (x64)`, fresh `LastWriteTime`). **Not yet live-tested** --
+  build-verified only, same honesty bar as every other round in this
+  issue; CrouchProne needs a direct live confirmation before it can be
+  marked working.
+
+**Current status, this session:** every control this issue's own history
+has ever named -- Sprint, Movement, Look, Pause (open+close), Fire,
+Reload, ADS, Weapnext, Melee, Lethal, Tactical, Jump, Interact, D-pad
+actionslot, CrouchProne, and the auto-unstick pause/unpause cycle -- is
+now IMPLEMENTED and BUILD-VERIFIED. Directly live-confirmed by the user:
+Sprint, Movement, Look, Pause, Fire, Reload, ADS, Weapnext, Melee, Lethal,
+Tactical, Jump, Interact, and the auto-unstick cycle. **Awaiting live
+confirmation**: D-pad actionslot and CrouchProne (both built, deployed,
+not independently exercised yet). x86's own "auto-stand from crouch/prone
+on Jump's rising edge" enhancement remains a deliberately deferred, named
+future gap (see Jump's own entry above) now that CrouchProne's mechanism
+exists to build it on top of, once CrouchProne itself is proven stable
+live.
