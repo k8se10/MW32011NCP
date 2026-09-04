@@ -36,7 +36,7 @@ two files already had for #111 before the split.
 
 ## Index
 
-- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **Sprint+Movement+Look+Pause(open+close)+Fire+Reload+Weapnext CONFIRMED WORKING LIVE; ADS "is-aiming" flag fix applied, awaiting re-test**
+- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **Every gameplay hook (Sprint/Movement/Look/Pause/Fire/Reload/ADS/Weapnext) CONFIRMED WORKING LIVE; new "needs a click for input" focus-gate symptom under investigation, experimental fix deployed awaiting test**
 
 ---
 
@@ -104,9 +104,19 @@ resolving that flag too and FORCING it directly to the desired absolute
 value on the edge, on top of the existing kbutton call. Full trail in
 "Real crash found and fixed," "Real live playtest," "Second live
 playtest," and "Third live playtest" below. **Sprint, Movement, Look,
-Pause (open+close), Fire, and Reload are all confirmed working live**;
-ADS's flag-force fix is build-verified but **NOT YET RE-TESTED LIVE** —
-next step is another playtest, ADS specifically.
+Pause (open+close), Fire, Reload, ADS, and Weapnext are now ALL CONFIRMED
+WORKING LIVE** ("ads fixed now") — every gameplay hook this issue's own
+"next steps" list ever named is now live-confirmed. **A separate, older-
+class symptom resurfaced the same session**: "we have the original issue
+where we need to click in to get input (that internal focus mechanism)" --
+the same SYMPTOM CLASS as x86's own real, already-fixed "needs an initial
+click at launch" bug, but confirmed NOT actually fixed by that same
+mechanism on x64 (the x86 fix's own log line already fires every x64
+session, the symptom persists regardless) -- a genuinely new, open x64
+investigation, not a regression of a closed issue. An experimental real-
+OS-focus-call addition (`SendRealFocusNudgeX64`, x64-only) has been added
+and deployed but is **NOT YET LIVE-TESTED** -- see "x64 focus-gate
+symptom" below.
 **Emergency policy action, same day: all support for the entire existing
 `-x86` release line (every version through `v0.3.5-x86`) is discontinued,
 effective immediately** — not a gradual wind-down, since the live game can
@@ -1129,3 +1139,51 @@ plumbing bug for ADS specifically.
   (`8664 machine (x64)`). **Not yet re-tested live** -- Fire/Reload/Pause
   are all now confirmed working; ADS's flag-force fix specifically needs
   the next playtest.
+
+**ADS CONFIRMED WORKING LIVE** (direct user report: "ads fixed now").
+**Same session, a real, older-class symptom resurfaced: "we have the
+original issue where we need to click in to get input (that internal
+focus mechanism)."** This is the exact same SYMPTOM CLASS as x86's own
+"needs an initial click at launch" bug (`known_issues.md` issues
+#1/#27/#42, fixed 2026-07-31 via `SendSyntheticActivationClick()` --
+synthesizing `WM_ACTIVATE`/`WM_SETFOCUS`/click messages directly into the
+game's real `WndProc` via `CallWindowProcA`) -- confirmed via
+`proxy_d3d9.log` that this exact x86 fix's own log line
+(`[focus-gate-fix] synthesized...`) already fires unconditionally on
+every x64 session too (the function itself has no platform guard). **The
+symptom being back despite the fix already running means x86's own
+mechanism isn't sufficient for whatever x64's real equivalent gate
+actually needs** -- per this project's own standing "x86/x64 are
+separately-built binaries, don't assume a mechanism carries over
+unverified" principle (`CLAUDE.md` §10.8), this is NOT assumed to be the
+same crouch-specific guard-byte pair x86's fix targeted (crouch input
+isn't even wired on x64 yet as of this session) -- a genuinely open, new
+x64 investigation.
+
+- **Real, testable theory**: `SendSyntheticActivationClick`'s own design
+  deliberately never touches real OS-level focus state (`GetForegroundWindow`/
+  `GetActiveWindow`/`GetFocus`) -- its own original comment explicitly
+  chose "no `SetForegroundWindow`, no stealing focus" since x86's own gate
+  apparently only cared about the MESSAGE arriving, not real OS window
+  state. If x64's own equivalent gate reads actual OS focus state instead,
+  the synthetic-message-only approach would never satisfy it regardless of
+  how many times it fires.
+- **Fixed, as an explicit EXPERIMENT (same honesty standard as the
+  original x86 fix -- not a confirmed root-cause fix until live-tested)**:
+  added `SendRealFocusNudgeX64()` (`d3d9_hook.cpp`), a real
+  `SetForegroundWindow`/`SetActiveWindow`/`SetFocus` call sequence, x64-only
+  (guarded `#if defined(_M_X64) || defined(_WIN64)`), called immediately
+  after the existing synthetic click in `InstallWndProcHook`. Deliberately
+  NOT enabled on x86 -- x86 is already confirmed working without it
+  (live-tested, "never clicked the window once"), and `SetForegroundWindow`
+  specifically can genuinely steal focus from an unrelated window if
+  misused, exactly the risk x86's own fix chose to avoid; no reason to
+  introduce that risk where it isn't needed.
+- **Verification**: build clean (0 errors) on x64; Win32 rebuilt
+  immediately after, confirmed the new code compiles out entirely for
+  Win32 (no regression risk, the x64-only guard works as intended); x64
+  rebuilt again with a forced `/t:Rebuild`, confirmed genuinely deployed
+  via `dumpbin /headers` (`8664 machine (x64)`). **Not yet live-tested** --
+  genuinely experimental, watch for `[focus-gate-fix-x64]` in
+  `proxy_d3d9.log` and confirm live whether input now works without a
+  manual click before treating this as resolved.
