@@ -504,6 +504,17 @@ bool IsPhysicalHeld(PhysicalInput p, unsigned short buttons, unsigned char leftT
     return false;
 }
 
+// Thin exported wrapper (2026-09-04, x64 hook work) -- IsPhysicalHeld() above lives
+// inside an anonymous namespace opened much earlier in this file (confirmed via a
+// real LNK2019 the first time analog_input_hooks_x64.cpp tried to call it directly),
+// same class of bug and same fix as IsMenuActive_Exported() elsewhere in this file:
+// a thin exported forwarder around the internal-linkage function everything else
+// already trusts, rather than restructuring the namespace or duplicating the switch.
+extern "C" bool IsPhysicalHeld_Exported(PhysicalInput p, unsigned short buttons, unsigned char leftTrigger, unsigned char rightTrigger)
+{
+    return IsPhysicalHeld(p, buttons, leftTrigger, rightTrigger);
+}
+
 // ---- Stick layout routing (task #15) ----------------------------------------------
 //
 // Default: left stick = move (fwd/back, strafe), right stick = look (pitch, turn).
@@ -534,6 +545,19 @@ void RouteStickAxes(float leftX, float leftY, float rightX, float rightY, StickL
             lookX = rightX; lookY = rightY;
             break;
     }
+}
+
+// Thin exported wrapper (2026-09-04, x64 Movement hook work) -- RouteStickAxes()
+// above lives inside the same anonymous namespace as IsPhysicalHeld() (opened at
+// file scope well before this point), confirmed via the same brace-depth trace
+// that caught IsPhysicalHeld's LNK2019 earlier today. Same fix, applied
+// preemptively this time rather than after a build error: a thin extern "C"
+// forwarder, since this routing logic is genuinely reused (x64 Movement now,
+// x64 Look later) rather than a one-off worth duplicating.
+extern "C" void RouteStickAxes_Exported(float leftX, float leftY, float rightX, float rightY, StickLayout layout,
+                                         float& moveX, float& moveY, float& lookX, float& lookY)
+{
+    RouteStickAxes(leftX, leftY, rightX, rightY, layout, moveX, moveY, lookX, lookY);
 }
 
 // ---- Real togglecrouch/toggleprone -- FUN_0057d2c0 (2026-07-16) -------------------
