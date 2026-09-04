@@ -47,6 +47,15 @@ Ship the same release zip already built for GitHub releases
 rather than maintaining a separate Nexus-only archive — one build artifact, two
 distribution points, less to keep in sync.
 
+**Current state (2026-09-04): no main file is live on either platform.** MW3
+(2011)'s x86→x64 recompile broke every existing `-x86` release outright, and
+every release has since been archived on both Nexus (done directly by the
+user) and GitHub (`gh release edit <tag> --draft`, see `LTS_POLICY.md` and
+`re_notes/known_issues_x64.md` issue #1). The next real main file to ship is
+`v0.0.1-x64`, once the x64 rebuild produces something actually installable —
+this note is the reminder to re-follow the convention above (one shared zip,
+two distribution points) once that happens, not to improvise a new process.
+
 ## Things to double check before every Nexus update
 - Nexus's own "Adult content"/"Contains mature content" flags — this project has
   no such content itself, but check current Nexus policy on injection-based/DLL
