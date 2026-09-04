@@ -36,7 +36,7 @@ two files already had for #111 before the split.
 
 ## Index
 
-- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **Foundation live-confirmed; Sprint+Movement hooks implemented, build-verified only, not yet live-tested**
+- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **Foundation live-confirmed; Sprint+Movement hooks CONFIRMED WORKING LIVE**
 
 ---
 
@@ -44,22 +44,23 @@ two files already had for #111 before the split.
 
 *(Carried forward from `known_issues.md`'s former issue #111, opened 2026-09-03. Original numbering/history preserved in that file's own trimmed stub entry.)*
 
-**Status: Foundation confirmed working, end to end, live; first two real
-gameplay hooks (Sprint, Movement) now implemented and build-verified, NOT
-YET LIVE-TESTED (2026-09-04).** A real x64 build compiles, LINKS, deploys,
-LAUNCHES cleanly, and its diagnostic hook FIRES DURING REAL GAMEPLAY — two
-real startup crashes were found and fixed first (see "First/Second live
-crash, found and fixed" below); the third launch reached a clean main-menu
-session with no crash; a later session reached live Pmove-ticking gameplay
-and `proxy_d3d9.log` shows the diagnostic hook firing 5 times in a row with
-a clean call-through each time. **The entire signature-scan → MinHook →
+**Status: Foundation confirmed working, end to end, live; Sprint and
+Movement — the first two real gameplay hooks — now CONFIRMED WORKING LIVE
+(2026-09-04).** A real x64 build compiles, LINKS, deploys, LAUNCHES
+cleanly, and its diagnostic hook FIRES DURING REAL GAMEPLAY — two real
+startup crashes were found and fixed first (see "First/Second live crash,
+found and fixed" below); the third launch reached a clean main-menu session
+with no crash; a later session reached live Pmove-ticking gameplay and
+`proxy_d3d9.log` shows the diagnostic hook firing 5 times in a row with a
+clean call-through each time. **The entire signature-scan → MinHook →
 detour pipeline is live-confirmed on this x64 binary, not just
-build-verified.** On top of that proven foundation, Sprint and Movement are
-now real, wired-in hooks (see "Sprint + Movement hooks implemented" below
-for the full record) — build-verified on both platforms, but not yet run
-against the actual game. Next: an actual playtest of both together, then
-the remaining gameplay hooks (buttons/ADS, pause toggle, weapnext) one at a
-time on the same foundation.
+build-verified.** On top of that proven foundation, Sprint and Movement
+were wired in, hit one real deployment bug along the way (a shared-`OutDir`
+platform-switch redeploy silently leaving an x86 DLL loaded — found, fixed,
+documented below), and are now direct-user-confirmed working together in
+real gameplay: "movement and sprint work." See "Sprint + Movement hooks
+implemented" below for the full record. Next: the remaining gameplay hooks
+(buttons/ADS, pause toggle, weapnext) one at a time on the same foundation.
 **Emergency policy action, same day: all support for the entire existing
 `-x86` release line (every version through `v0.3.5-x86`) is discontinued,
 effective immediately** — not a gradual wind-down, since the live game can
@@ -601,8 +602,9 @@ is resolved via a separate path. See
 section-table diff, the full string-persistence data table, and every
 sub-cluster's own raw Ghidra output files.
 
-**Sprint + Movement hooks implemented, same day (2026-09-04) -- BUILD-VERIFIED
-ONLY, NOT YET LIVE-TESTED.** First two real gameplay hooks on top of the
+**Sprint + Movement hooks implemented, same day (2026-09-04) -- CONFIRMED
+WORKING LIVE** (direct user report, after the deployment bug below was
+found and fixed: "movement and sprint work"). First two real gameplay hooks on top of the
 now-confirmed-working diagnostic foundation, in `analog_input_hooks_x64.cpp`.
 Movement was added specifically because Sprint alone produces no observable
 effect without movement to multiply -- can't meaningfully test one without
@@ -651,14 +653,14 @@ the other, so both went in together this round.
   `ClampToSByteX64` instead, a deliberate case-by-case call (export what's
   genuinely reused/nontrivial, duplicate what's trivial), not a blanket rule
   either way.
-- **Verification so far**: both hooks build clean (0 errors) on x64; Win32
-  rebuilt immediately after and also builds clean (0 warnings introduced,
-  confirming no regression to the still-working x86 build); x64 rebuilt again
-  after to leave it as the deployed artifact (`OutDir` is shared between
-  platforms). **Neither hook has been live-tested yet** -- per CLAUDE.md §8,
-  manual playtest is required for anything touching movement, and this is the
-  first x64 session to reach real gameplay-hook code, not just the diagnostic
-  passthrough. Next step: an actual playtest.
+- **Verification**: both hooks build clean (0 errors) on x64; Win32 rebuilt
+  immediately after and also builds clean (0 warnings introduced, confirming
+  no regression to the still-working x86 build). A first "redeploy x64 last"
+  step silently left an x86 DLL deployed (see the deployment-bug entry right
+  below) -- once that was caught and fixed with a real `/t:Rebuild`, the user
+  live-tested both hooks together and confirmed **"movement and sprint
+  work."** This is the first live-confirmed real gameplay hook pair on the
+  x64 line, beyond the zero-behavior-change Pmove diagnostic above.
 
 **Real, self-caught deployment bug, same round: the "rebuild x64 last to
 redeploy" step above did NOT actually redeploy x64 -- silently left an x86

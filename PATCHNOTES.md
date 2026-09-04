@@ -43,16 +43,19 @@ progress.
    at all.
 
 ### Groundwork
-1. **First two real x64 gameplay hooks: Sprint and Movement.** Built on the
-   x64 rebuild's now-confirmed-working signature-scan + MinHook foundation
-   (`re_notes/known_issues_x64.md` issue #1). Sprint forces the real pm_flags
-   sprint bit with the same bit-ownership tracking that protects vanilla
-   keyboard sprint on x86; Movement adds left-stick forward/strafe on top of
-   native input, mirroring x86's own `InjectControllerMovement` math exactly
-   (additive, no inversion). Movement was added alongside Sprint specifically
-   because Sprint alone has no observable effect without movement to
-   multiply. **Build-verified on both platforms only — not yet live-tested.**
-   Full technical record in `re_notes/known_issues_x64.md` issue #1.
+1. **First two real x64 gameplay hooks: Sprint and Movement — CONFIRMED
+   WORKING LIVE.** Built on the x64 rebuild's now-confirmed-working
+   signature-scan + MinHook foundation (`re_notes/known_issues_x64.md` issue
+   #1). Sprint forces the real pm_flags sprint bit with the same
+   bit-ownership tracking that protects vanilla keyboard sprint on x86;
+   Movement adds left-stick forward/strafe on top of native input, mirroring
+   x86's own `InjectControllerMovement` math exactly (additive, no
+   inversion). Movement was added alongside Sprint specifically because
+   Sprint alone has no observable effect without movement to multiply.
+   Direct user confirmation after a real playtest: "movement and sprint
+   work." Full technical record, including a real shared-`OutDir`
+   platform-switch deployment bug found and fixed along the way, in
+   `re_notes/known_issues_x64.md` issue #1.
 
 ---
 
