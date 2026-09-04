@@ -44,15 +44,20 @@ two files already had for #111 before the split.
 
 *(Carried forward from `known_issues.md`'s former issue #111, opened 2026-09-03. Original numbering/history preserved in that file's own trimmed stub entry.)*
 
-**Status: Implementing. A real, working x64 build compiles, LINKS, deploys,
-and now LAUNCHES cleanly against the live game for the first time in this
-project's history (2026-09-04)** — two real startup crashes were found and
-fixed first (see "First/Second live crash, found and fixed" below), and the
-third attempt reached a clean main-menu session and normal process exit
-with no crash. **Still open**: the diagnostic hook's actual live fire during
-real gameplay (Pmove only runs once a level is loaded) hasn't been confirmed
-yet — this session only reached the main menu before exiting. See
-"Implementation begins" and the crash write-ups below for the full record.
+**Status: Foundation confirmed working, end to end, live. A real x64 build
+compiles, LINKS, deploys, LAUNCHES cleanly, and its diagnostic hook FIRES
+DURING REAL GAMEPLAY (2026-09-04)** — two real startup crashes were found
+and fixed first (see "First/Second live crash, found and fixed" below); the
+third launch reached a clean main-menu session with no crash; a later
+session reached live Pmove-ticking gameplay and `proxy_d3d9.log` shows the
+diagnostic hook firing 5 times in a row with a clean call-through each
+time. **The entire signature-scan → MinHook → detour pipeline is now
+live-confirmed on this x64 binary, not just build-verified** — the real
+foundation this implementation phase was building toward. Next phase: wire
+in the real, already-confirmed gameplay hooks (Sprint, buttons/ADS, pause
+toggle, weapnext) one at a time on top of this same proven foundation. See
+"Implementation begins" and the crash/confirmation write-ups below for the
+full record.
 **Emergency policy action, same day: all support for the entire existing
 `-x86` release line (every version through `v0.3.5-x86`) is discontinued,
 effective immediately** — not a gradual wind-down, since the live game can
@@ -557,15 +562,30 @@ the way to a clean `DLL_PROCESS_DETACH`/`proxy_d3d9 detach` -- a genuine
 normal exit, not a crash. This is the first x64 session in this project's
 history to reach a clean shutdown.
 
-**One honest gap, not yet closed**: `"[x64-diag] Pmove tick hook fired"`
-never appears in this log. The diagnostic hook's install (signature scan +
-`MH_CreateHook`/`MH_EnableHook`) is confirmed successful, but this specific
-session's log shows only main-menu-level activity before exit -- Pmove
-(`FUN_1400168a0`) only runs once a level is actually loaded (Campaign
-mission or Survival match), which this run apparently never reached. The
-real, final confirmation that the whole signature-scan -> MinHook pipeline
-fires correctly during live gameplay (not just installs cleanly at menu
-time) is still pending an actual in-level test.
+**One honest gap, not yet closed [now CLOSED, see below]**: `"[x64-diag]
+Pmove tick hook fired"` never appears in this log. The diagnostic hook's
+install (signature scan + `MH_CreateHook`/`MH_EnableHook`) is confirmed
+successful, but this specific session's log shows only main-menu-level
+activity before exit -- Pmove (`FUN_1400168a0`) only runs once a level is
+actually loaded (Campaign mission or Survival match), which this run
+apparently never reached. The real, final confirmation that the whole
+signature-scan -> MinHook pipeline fires correctly during live gameplay
+(not just installs cleanly at menu time) is still pending an actual
+in-level test.
+
+**RESOLVED, same day: the diagnostic hook fired live, during real gameplay.**
+Direct user follow-up ("check log") on a later session -- `proxy_d3d9.log`
+shows `[x64-diag] Pmove tick hook fired (count=1)` through `(count=5)`
+immediately after the menu-time init sequence (XInput load), meaning the
+game actually reached live Pmove-ticking gameplay this time and the
+installed detour fired and returned control to the real function correctly,
+five times in a row, no crash. **This is the real, final confirmation this
+whole implementation phase was building toward**: the entire pipeline --
+real signature scan against the live x64 binary, successful `MH_CreateHook`/
+`MH_EnableHook`, the detour firing during actual gameplay, and a clean
+call-through back to the original function with zero behavior change --
+is now confirmed working end to end on x64, not just build-verified. This
+is the first real, live-confirmed x64 hook in this project's history.
 
 **Still not started**: real per-hook gameplay code (see above); the shadow-map
 creation call site remains the one major unresolved static-RE thread (needs
