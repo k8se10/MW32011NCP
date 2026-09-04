@@ -151,8 +151,14 @@ ADS, Weapnext — is now confirmed working live.**
    could ever have worked regardless of which one's theory was closer to
    correct. Fixed by re-triggering a (deliberately click-free, to avoid
    misfiring a real gameplay action) version of the activation nudge
-   periodically for the whole session. Not yet re-tested live. Full trail
-   in `re_notes/known_issues_x64.md` issue #1.
+   periodically for the whole session — this ALSO did not resolve it.
+   **Direct user report identified the actual fix**: genuinely opening and
+   closing the pause menu is what unsticks input, every time — not a
+   window-focus event at all. Automated that exact workaround using this
+   project's own already-confirmed-working Pause toggle: opens pause once
+   a level is detected as freshly active, waits briefly, closes it again.
+   Not yet re-tested live. Full trail in `re_notes/known_issues_x64.md`
+   issue #1.
 
 ---
 
