@@ -75,19 +75,37 @@ bool MatchesAt(const uint8_t* haystack, const ParsedPattern& pat)
 
 }  // namespace
 
+// Real, live-crash-confirmed bug fixed 2026-09-04 (found via Windows Event Viewer +
+// dumpbin/PDB symbol resolution, not guessed): every char buf[] below used to be
+// 256/320 bytes, sized for this project's early, short signatures -- but this
+// function's own log lines embed the FULL pattern string via "%s", and
+// analog_input_hooks_x64.cpp's Buttons/Pause/Weapnext signatures added the same
+// day are considerably longer (kWeaponNextSignature alone is 242 chars). The
+// success-path message ("[sigscan] OK: pattern \"%s\" resolved to 0x%llX (%d
+// match%s)") alone comes out to ~309 chars with that pattern -- a real ~53-byte
+// overflow of the old buf[256]. sprintf_s is a "safe" function (it detects this
+// rather than raw-overflowing), but its DEFAULT failure path calls
+// _invoke_watson -> int 29h (__fastfail), which bypasses SEH/VEH entirely -- this
+// is exactly why the crash showed no exception in proxy_d3d9.log (FlushLogOnCrash
+// never got a chance to run) and manifested as "game just exits, no splash" with
+// Windows Event Viewer's own crash report pointing at __report_gsfailure/
+// _invoke_watson inside d3d9.dll, confirmed via dumpbin /disasm at the exact
+// fault offset. Fixed by bumping every buffer here to 1024 bytes -- generous
+// headroom for any signature this project is likely to need, not a tight fit to
+// today's longest pattern specifically.
 Result FindPattern(const char* pattern, uintptr_t moduleBase, size_t moduleSize, int expectedOccurrences)
 {
     Result out;
 
     ParsedPattern pat = Parse(pattern);
     if (!pat.valid) {
-        char buf[256];
+        char buf[1024];
         sprintf_s(buf, "[sigscan] FAILED to parse pattern (malformed token): \"%s\"", pattern ? pattern : "(null)");
         LogFromController(buf);
         return out;
     }
     if (moduleBase == 0 || moduleSize < pat.bytes.size()) {
-        char buf[256];
+        char buf[1024];
         sprintf_s(buf, "[sigscan] FAILED: invalid module range (base=0x%llX size=%llu) for pattern \"%s\"",
                    static_cast<unsigned long long>(moduleBase), static_cast<unsigned long long>(moduleSize), pattern);
         LogFromController(buf);
@@ -121,7 +139,7 @@ Result FindPattern(const char* pattern, uintptr_t moduleBase, size_t moduleSize,
     }
 
     if (matchCount == 0) {
-        char buf[256];
+        char buf[1024];
         sprintf_s(buf, "[sigscan] FAILED: 0 matches for pattern \"%s\" in module range [0x%llX, 0x%llX)",
                    pattern, static_cast<unsigned long long>(moduleBase),
                    static_cast<unsigned long long>(moduleBase + moduleSize));
@@ -129,14 +147,14 @@ Result FindPattern(const char* pattern, uintptr_t moduleBase, size_t moduleSize,
         return out;
     }
     if (matchCount != expectedOccurrences) {
-        char buf[320];
+        char buf[1024];
         sprintf_s(buf, "[sigscan] FAILED: pattern \"%s\" matched %d times, expected exactly %d -- "
                    "signature is ambiguous, refusing to guess which one is correct", pattern, matchCount, expectedOccurrences);
         LogFromController(buf);
         return out;
     }
 
-    char buf[256];
+    char buf[1024];
     sprintf_s(buf, "[sigscan] OK: pattern \"%s\" resolved to 0x%llX (%d match%s)",
                pattern, static_cast<unsigned long long>(firstMatch), matchCount, matchCount == 1 ? "" : "es");
     LogFromController(buf);
