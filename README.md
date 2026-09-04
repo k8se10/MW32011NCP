@@ -35,6 +35,18 @@
 > overhaul, the largest release yet by commit volume. See the itemized list
 > further below for what it shipped. Not offered for download — see the
 > archival notice above.
+>
+> **Estimated timeline for the first `-x64` release: 2-4 weeks (as of
+> 2026-09-05).** Direct release criterion, not a soft target: **no `-x64`
+> release ships until it reaches feature parity with where the `-x86` line
+> ended (`v0.3.5-x86`)** — every control, the visual-enhancement suite, and
+> the stutter/threading fixes all working, not just the input-remapping
+> core. Every gameplay control is now implemented and build-verified
+> (`re_notes/known_issues_x64.md` issue #1), most already confirmed live,
+> but real gaps remain open (see that issue for the current list) and the
+> entire visual-enhancement suite/plugin API/custom Options screen still
+> need porting. This is an estimate, not a promise — it will move if the
+> work does.
 
 > **⚠️ SUPPORTED VERSIONS — none. All `-x86` releases (every version through
 > `v0.3.5-x86`) had support discontinued effective 2026-09-03 (emergency

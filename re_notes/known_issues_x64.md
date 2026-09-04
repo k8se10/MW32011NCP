@@ -36,7 +36,7 @@ two files already had for #111 before the split.
 
 ## Index
 
-- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **CrouchProne CONFIRMED WORKING LIVE; Jump auto-stand build-verified, not yet live-tested; D-pad still unconfirmed**
+- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **Every control implemented; two open bugs found live (sniper Fire/ADS, D-pad "diff keys"), investigation paused for a docs/ETA pass — release ETA 2-4 weeks, gated on x86 parity**
 
 ---
 
@@ -1680,3 +1680,74 @@ ADS, Weapnext, Melee, Lethal, Tactical, Jump (core bit-force only, not
 auto-stand specifically), Interact, CrouchProne, and the auto-unstick
 cycle. **Awaiting live confirmation**: D-pad actionslot and Jump
 auto-stand (both built, deployed, not independently exercised yet).
+
+**Two new bugs found live, same day, both OPEN -- investigation started
+then explicitly paused mid-session ("were going to hold here rn you need
+to update the main docs with an eta") to prioritize a docs/ETA update
+first. Recorded here as-is, not yet root-caused, so a future session
+picks up the actual investigation state honestly instead of from
+scratch.**
+
+- **Bug: Fire and ADS both fail on sniper-class weapons specifically**
+  (direct report: "cant shoot and ads? on sniper why" -- other weapon
+  classes already confirmed working, so this is weapon-class-specific,
+  not a general Fire/ADS regression). **Leading investigation angle,
+  NOT YET CONFIRMED**: this project's own x64 Fire/ADS design calls
+  `g_kbuttonActivate`/`g_kbuttonDeactivate` (`FUN_14007e460`/`e490`)
+  DIRECTLY on the Fire/ADS kbutton structs, bypassing
+  `FUN_14007c3a0`'s own case dispatch entirely for these two binds
+  (unlike Weapnext/CrouchProne/Jump-autostand, which all go through
+  `g_stanceDispatch`/the case dispatcher itself). `FUN_14007c3a0`'s own
+  decompile (`decomp_14007c3a0_full.txt`, line ~18) shows every case
+  runs `FUN_14007fc00(param_1, param_2)` BEFORE its own real handler,
+  whenever `param_2 != 0` -- a per-case pre-call this project's direct
+  kbutton calls never invoke. Not yet decompiled/confirmed what
+  `FUN_14007fc00` actually does, or whether it's specifically relevant
+  to bolt-action/scoped-weapon fire gating (a real, precedented bug
+  class on x86 -- see `known_issues.md` issue #46, "can't fire while
+  holding breath on a sniper," though that was a bind-index collision,
+  a different mechanism, not directly transferable). **Also worth
+  checking**: x64 has NOT yet implemented Hold Breath at all (grep
+  confirms no `HoldBreath`/`breath` reference in
+  `analog_input_hooks_x64.cpp`), so issue #46's own specific fix does
+  not apply here -- this needs its own fresh root-cause, not a reapplied
+  old fix. Next step when resumed: decompile `FUN_14007fc00`, and/or
+  live-diagnostic capture of what state differs between a working
+  weapon class and a sniper at the moment Fire/ADS should engage.
+- **Report: D-pad actionslot "weirdly not just number but also have
+  sometimes diff keys used."** Partially explained by ALREADY-KNOWN,
+  EXPECTED x86 behavior re-confirmed by re-reading
+  `analog_input_hooks.cpp`'s own D-pad section: the real per-slot action
+  is genuinely DATA-DRIVEN by loadout (`FUN_00410ad0`'s x86 equivalent
+  reads a per-slot "what's assigned here" type and dispatches to
+  weapon-switch, killstreak/equipment select, or an NVG-style toggle
+  depending on what's equipped) -- matching the user's own original
+  expectation that D-pad maps to killstreaks/attachments which vary by
+  loadout, not a bug on its own. **But a real, NOT-YET-PORTED gap found
+  while re-reading that same x86 section**: x86 needed one explicit,
+  narrowly-scoped exception for D-pad Left specifically (`+actionslot4`)
+  -- a synthesized real `WM_KEYDOWN`/`WM_KEYUP` for `'4'` instead of the
+  direct native call, because the pure native call path failed 100% of
+  the time for Survival's AI-squadmate call-in (a GSC script watching
+  for a real key event, not reachable via the native call alone; turret
+  call-ins on the same slot worked fine via the native call). x64's
+  current D-pad implementation calls `g_actionSlot(0, slot)` uniformly
+  for all four directions with NO equivalent exception for slot 3 (Left)
+  -- if x64 has the same GSC-script gap x86 did (likely, same engine
+  lineage, not yet confirmed), Survival squadmate call-ins specifically
+  would be expected to fail the same way x86's did before that fix,
+  which may be part of what's behind "sometimes diff keys used." Not yet
+  confirmed live which specific report the user is describing. Next step
+  when resumed: clarify with the user whether this is the loadout-driven
+  behavior (expected) or a specific D-pad Left/squadmate-callin failure
+  (a real, portable fix), and if the latter, port x86's own
+  `SendSyntheticActionSlot4Key` synthesis to x64 the same way.
+
+**Release ETA set, same day: "i wont release until were at the same
+level x86 was at" (2-4 weeks, user's own estimate).** The first `-x64`
+release ships only once it reaches feature parity with `v0.3.5-x86`'s
+own final state -- every control (including the two open bugs above,
+resolved), the full visual-enhancement suite, stutter/threading fixes,
+and the plugin API, not just the input-remapping core this pass has
+focused on. Reflected in `README.md`'s top banner and `CLAUDE.md`/
+`AGENTS.md`'s Version Timeline.
