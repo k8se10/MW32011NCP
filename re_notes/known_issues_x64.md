@@ -659,3 +659,32 @@ the other, so both went in together this round.
   manual playtest is required for anything touching movement, and this is the
   first x64 session to reach real gameplay-hook code, not just the diagnostic
   passthrough. Next step: an actual playtest.
+
+**Real, self-caught deployment bug, same round: the "rebuild x64 last to
+redeploy" step above did NOT actually redeploy x64 -- silently left an x86
+DLL loaded into the x64 game process.** User relaunched the game, tried
+controller, "nothing happened," then reported `proxy_d3d9.log` hadn't been
+touched at all even after a full relaunch -- the real tell, since a genuine
+attach always opens/writes the log first thing. Root cause, confirmed via
+`dumpbin /headers`: the "final x64 rebuild" MSBuild invocation reported
+`Link: All outputs are up-to-date` and skipped relinking entirely, because
+its own incremental-build state only tracks whether ITS OWN inputs (the x64
+object files) changed since ITS OWN last link -- it has no way to know the
+shared `OutDir` target file was overwritten by the INTERVENING Win32 build's
+own link step in between. The deployed `d3d9.dll` was still genuinely x86
+(confirmed `14C machine (x86)` via `dumpbin /headers`) -- a 32-bit DLL can
+never load into a 64-bit process at all (`LoadLibrary` fails outright at the
+OS loader level), so the proxy never attached, `DllMain` never ran, and the
+log file was never opened, exactly matching what the user saw. **Fixed** by
+forcing a genuine `/t:Rebuild` (not incremental `/t:Build`) for the final
+x64 pass -- confirmed via `dumpbin /headers` afterward (`8664 machine
+(x64)`), not just trusted from MSBuild's own text output. **Standing lesson
+for any future "switch platform back to X to redeploy" step on this shared-
+OutDir project**: MSBuild's own "up-to-date" verdict is per-platform-config
+local state, not aware of a sibling config's build clobbering the same
+output file in between -- always verify the ACTUAL deployed binary's real
+architecture with `dumpbin /headers` after a platform-switch-back redeploy,
+never trust the build log's silence on relinking. Direct instance of
+CLAUDE.md's own "checking is far cheaper than digging" principle -- this
+should have been checked before telling the user to test, not found the
+expensive way after a wasted live-test round.
