@@ -64,10 +64,13 @@ effective immediately** — not a gradual wind-down, since the live game can
 no longer run a 32-bit build at all. This includes withdrawing `v0.2.2-x86`'s
 Current LTS status and `v0.3.5-x86`'s LTS candidacy outright, outside this
 project's normal LTS promotion/demotion process — see `LTS_POLICY.md`'s own
-emergency-escalation note for the full policy record. Existing `-x86` files
-stay published as historical artifacts; nothing is deleted, just unsupported
-going forward. Releases now carry a `-x86`/`-x64` suffix, versioning reset to
-`v0.0.1-x64` for the new architecture line once it ships.
+emergency-escalation note for the full policy record. **Further escalated
+2026-09-04**: every `-x86` release archived/unpublished on both Nexus and
+GitHub (all 15 GitHub Releases converted to Draft) — "no release works and
+as such i refuse to serve it." Nothing deleted on either platform, just no
+longer downloadable through either one's normal listing. Releases now carry
+a `-x86`/`-x64` suffix, versioning reset to `v0.0.1-x64` for the new
+architecture line once it ships.
 Full technical record and reconnaissance in `re_notes/x64_migration/README.md`
 (plus its own linked sub-passes for Sprint/weapnext, pause-menu/key-handler,
 and D-pad actionslot/dvar-API) -- this entry is the known_issues-standard

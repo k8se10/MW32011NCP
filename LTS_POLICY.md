@@ -100,7 +100,26 @@ whatever task surfaces that, not as a separately scheduled cleanup pass.
 
 ## Current status
 
-*(Last updated: 2026-09-03.)*
+*(Last updated: 2026-09-04.)*
+
+**Further escalation, 2026-09-04: every `-x86` release archived/unpublished
+on both Nexus and GitHub, not just support-discontinued.** Direct
+instruction: "ive actually archived all releases on nexus and we should do
+the same on github. no release works and as such i refuse to serve it."
+This goes further than the 2026-09-03 support-discontinuation below (which
+left the files themselves downloadable, just unsupported) — since the x64
+recompile means literally every `-x86` build fails to load into the live
+game at all (not degraded, not partially working — genuinely non-functional
+against the only game binary that exists now), the user's own judgment is
+that serving a build that cannot work at all is worse than serving nothing.
+All 15 GitHub Releases (`v0.1.0-prealpha` through `v0.3.5`) were converted
+to **Draft** (`gh release edit <tag> --draft`) — GitHub's own mechanism for
+removing a release from the public Releases page and download counts while
+keeping the tag, release notes, and uploaded assets intact and restorable,
+the same mechanism this project already used for the v0.2.5–v0.3.1.h1
+stretch back on 2026-08-18. Nothing was deleted on either platform. The
+"remains published as a historical artifact" framing below is now
+superseded — see the Current Status table.
 
 **Architecture note (2026-09-03):** MW3 (2011) received its first-ever binary
 update, recompiling the live game from x86 to x64 — see `re_notes/x64_migration/README.md`.
@@ -128,15 +147,17 @@ support status outright**, not just the LTS candidate. Concretely:
   eventual `0.x-x64` line, this is a one-time break in continuity forced by
   the architecture change, not a precedent for how this policy normally
   operates.
-- Existing `-x86` release files remain published on GitHub/Nexus as
-  historical artifacts (nothing is being deleted), just with zero ongoing
-  support commitment attached to any of them going forward.
+- Existing `-x86` release files remain intact on GitHub/Nexus, not deleted
+  — but as of 2026-09-04 (see the further escalation note above) they are
+  archived/unpublished (GitHub: every release converted to Draft; Nexus:
+  archived by the user directly) rather than left downloadable as
+  historical artifacts. Restorable at any time, currently not being served.
 
 | Release | Role | Notes |
 |---|---|---|
-| `v0.2.2-x86` | **Support discontinued (2026-09-03, emergency)** | Formerly Current LTS (promoted 2026-08-18 archival pass). No longer under active support as of 2026-09-03 — see the emergency escalation note above. File stays published as a historical artifact. |
-| `v0.3.5-x86` | **LTS candidacy withdrawn (2026-09-03, emergency)** | Shipped and confirmed live 2026-08-29; its 4-week LTS clean window (started 2026-08-29) is withdrawn, not paused — see the emergency escalation note above. File stays published as a historical artifact. |
-| Everything else in `0.1.x`–`0.3.x` (all now `-x86`) | Superseded, no support | Was never LTS-eligible (predates the floor, or superseded by a later release in the same or a later line); now additionally covered by the blanket `-x86` discontinuation above regardless. |
+| `v0.2.2-x86` | **Support discontinued, archived (emergency)** | Formerly Current LTS (promoted 2026-08-18 archival pass). Support discontinued 2026-09-03; the release itself archived/unpublished (Draft on GitHub, archived on Nexus) 2026-09-04 — no longer downloadable through either platform's normal listing. |
+| `v0.3.5-x86` | **LTS candidacy withdrawn, archived (emergency)** | Shipped and confirmed live 2026-08-29; its 4-week LTS clean window (started 2026-08-29) was withdrawn 2026-09-03, and the release itself archived/unpublished 2026-09-04 — no longer downloadable through either platform's normal listing. |
+| Everything else in `0.1.x`–`0.3.x` (all now `-x86`) | Superseded, no support, archived | Was never LTS-eligible (predates the floor, or superseded by a later release in the same or a later line); already Draft on GitHub since 2026-08-18, now additionally covered by the blanket `-x86` discontinuation and archival above. |
 | `0.x-x64` line | **Not yet started** | No x64 release exists yet — versioning resets to `v0.0.1-x64` once one ships. This policy's floor (`v0.2.2` and later only) is an x86-line-specific historical fact; whether/how it carries over to the x64 line is an open question for whenever that line matures enough to need its own LTS discussion, not decided here. |
 
 ## What LTS support actually means here
