@@ -36,7 +36,7 @@ two files already had for #111 before the split.
 
 ## Index
 
-- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **Every gameplay hook (Sprint/Movement/Look/Pause/Fire/Reload/ADS/Weapnext) CONFIRMED WORKING LIVE; new "needs a click for input" focus-gate symptom under investigation, experimental fix deployed awaiting test**
+- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **Every gameplay hook (Sprint/Movement/Look/Pause/Fire/Reload/ADS/Weapnext) CONFIRMED WORKING LIVE; "needs a click for input" gate still unresolved after 3 fix attempts, now diagnostic-logging-only pending real data**
 
 ---
 
@@ -1258,3 +1258,61 @@ instead of a third blind Win32-level guess.
   (x64)`). **Not yet live-tested** -- watch for `[x64-inputgate] Resolved
   @ 0x...` in `proxy_d3d9.log` (confirms the flag's real address was found)
   and confirm live whether input now works without a manual click.
+
+**Fourth live-test report, same day: "nope still the same" -- the
+`DAT_1406e4774` force-clear did NOT resolve it.** Direct user follow-up,
+crucially with a specific, precise historical pointer: **"it was the exact
+same issue we had way back before we ever released ncp as 0.1."** This
+identifies `known_issues.md` issue #1 ("Buy-station + pause menu completely
+breaks movement," 2026-07-15, x86) as the real precedent, not x86's later
+crouch-specific issue #42 (already tried twice this session and also
+failed). Issue #1's real root cause: this project's OWN early code
+(`InjectAllControllerInput`) unconditionally forced a "menu active" gate
+bit (`0x10` at x86 address `0x00B36210`, paired with a "game state" field
+at `+8`, `0x00B36218`) to 0 every frame -- permanently suppressing a
+transition the buy-station's own closing sequence needed to briefly see,
+desyncing the game's own menu-depth tracking. **Real, honest caution**:
+this is a DIFFERENT bug shape than a simple "click needed" gate -- the
+actual x86 bug was THIS PROJECT'S OWN CODE breaking a native transition by
+forcing a bit permanently, not a native engine defect needing an external
+nudge. Two things are true at once here: this project isn't currently
+forcing any x64 equivalent of this exact bit (so it's not repeating issue
+#1's own specific mistake) -- but the user's broader point (this general
+BUG CLASS, "an internal gate needs a genuine transition, forcing/ignoring
+it wrong breaks things") is the right lens for continued investigation,
+more so than treating it as identical to issue #42's shape.
+- **x64's real structural equivalent of the 0x00B36210/0x00B36218 pair,
+  confirmed, not guessed**: `DAT_1406e2550` (a per-player gate struct,
+  0x190-byte stride) paired with `DAT_1406e2558` (`+8`, matching x86's
+  exact relative offset) as a "state" field --
+  `re_notes/x64_migration/decomp_buttons_pause_weapnext.txt`'s own
+  `FUN_14007eaf0` decompile reads both together
+  (`(&DAT_1406e2550)[player*400] & 0x10`-style "menu active" checks
+  alongside `(&DAT_1406e2558)[player*100]` as the "state" value), and this
+  project's OWN already-confirmed-working Pause hook (`FUN_1400823b0`)
+  independently reads the exact same `DAT_1406e2550` bit `0x10` directly.
+  Since Pause (open AND close) is already confirmed working live off this
+  bit, it's evidently being read/tracked CORRECTLY by native logic already
+  -- this project isn't the one desyncing it, unlike x86's own issue #1.
+- **Deliberately NOT forced/written this round** -- given issue #1's own
+  lesson (permanently forcing this CLASS of bit is exactly what broke
+  things on x86), guessing a blind force here risks repeating that same
+  mistake rather than fixing anything. Instead, resolved `DAT_1406e2550`
+  purely for DIAGNOSTIC logging (via the already-scanned
+  `kPauseToggleSignature` match plus a fixed, directly-verified `+0x70`
+  byte offset) and added a rate-limited (~1s) heartbeat log inside
+  `Hook_MovementTick` dumping both `DAT_1406e4774` and `DAT_1406e2550`'s
+  live values -- the same "log first, then find the real fix" methodology
+  that solved x86's own issue #42 (which added a full guard-byte heartbeat
+  BEFORE the actual fix was found, not instead of trying a fix). The
+  existing `DAT_1406e4774` bit-0x800 force-clear from the previous round is
+  left in place (didn't help, but nothing reported as newly broken by it
+  either) -- not removed pending real data on whether it's relevant at all.
+- **Verification**: build clean (0 errors) on x64; Win32 rebuilt
+  immediately after, also clean (0 regression); x64 rebuilt again with a
+  forced `/t:Rebuild`, confirmed genuinely deployed via `dumpbin /headers`
+  (`8664 machine (x64)`). **This round is diagnostic-only, not a fix
+  attempt** -- the next playtest needs to capture `proxy_d3d9.log`'s
+  `[x64-diag-gate] heartbeat` lines across a real "stuck, then unstuck by a
+  manual click" cycle, so the actual bit transition (or lack of one) can be
+  seen directly instead of guessed at.

@@ -580,6 +580,33 @@ constexpr const char* kPauseToggleSignature =
 using PauseToggleFn = void(__fastcall*)(int playerIndex);
 PauseToggleFn g_pauseToggle = nullptr;
 
+// Diagnostic-only, added 2026-09-04 after a THIRD "needs a click for input"
+// live-test failure (the DAT_1406e4774 bit-0x800 force-clear above did NOT
+// resolve it) -- direct user correction: "it was the exact same issue we had
+// way back before we ever released ncp as 0.1", pointing at x86's own
+// documented issue #1 (known_issues.md, "Buy-station + pause menu completely
+// breaks movement"), whose real root cause was a per-player gate struct at
+// x86 address 0x00B36210 (a "menu active" bit, 0x10) paired with a "game
+// state" field at +8 (0x00B36218). `DAT_1406e2550` is x64's own confirmed
+// structural equivalent of 0x00B36210 -- same relative +8 pairing with
+// `DAT_1406e2558` (`re_notes/x64_migration/decomp_buttons_pause_weapnext.txt`:
+// FUN_14007eaf0 reads `(&DAT_1406e2558)[player*100]` as its own "state"
+// value right next to `DAT_1406e2550`'s own bit-0x10 "menu active" read), and
+// this project's ALREADY-confirmed-working Pause hook (FUN_1400823b0) reads
+// this SAME `DAT_1406e2550` bit 0x10 directly. Resolved here purely for
+// DIAGNOSTIC logging (NOT forced/written -- unlike x86's issue #1, whose real
+// bug was OUR OWN code unconditionally forcing this exact class of bit,
+// desyncing real engine state; deliberately not repeating that mistake
+// blind) -- the next live test needs REAL DATA on what this value (and
+// DAT_1406e4774) actually read during the "stuck" window vs. after a real
+// click resolves it, rather than a fourth blind guess. Resolved via the
+// ALREADY-scanned `kPauseToggleSignature` match (no separate scan) plus a
+// fixed, directly-verified offset (`+0x70`, `re_notes/x64_migration/
+// disasm_1400823b0_full.txt` + `rawbytes_1406e2550.txt`) to the real
+// `LEA RAX,[rip+disp32]` instruction (7 bytes).
+constexpr ptrdiff_t kMenuActiveGateInsnOffset = 0x70;
+uint32_t* g_menuActiveGateFlag = nullptr;  // DAT_1406e2550 equivalent, diagnostic-only
+
 // FUN_1400706d0(playerIndex, direction) -- the confirmed x64 weapnext dispatcher
 // (re_notes/x64_migration/sprint_weapnext_x64.md), reached via FUN_14007c3a0
 // case 0x42 during a real keypress but called directly here, same as x86's own
@@ -640,6 +667,26 @@ extern "C" void PollPauseToggleX64()
 
 void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
 {
+    // Rate-limited (~1s) diagnostic heartbeat -- real data for the "needs a
+    // click for input" investigation (see kMenuActiveGateInsnOffset's own
+    // comment), so the NEXT test run shows what these candidate gate values
+    // actually read during the stuck window vs. after a real click resolves
+    // it, instead of guessing a fourth blind fix. Purely informational --
+    // does not affect behavior.
+    {
+        static DWORD s_lastGateDiagMs = 0;
+        DWORD nowMs = GetTickCount();
+        if (nowMs - s_lastGateDiagMs >= 1000) {
+            s_lastGateDiagMs = nowMs;
+            char buf[192];
+            sprintf_s(buf, "[x64-diag-gate] heartbeat: inputGateFlag(DAT_1406e4774)=0x%08X "
+                "menuActiveGateFlag(DAT_1406e2550)=0x%08X",
+                g_inputGateFlag ? *g_inputGateFlag : 0xFFFFFFFFu,
+                g_menuActiveGateFlag ? *g_menuActiveGateFlag : 0xFFFFFFFFu);
+            LogFromController(buf);
+        }
+    }
+
     // LOOK first, PRE-hook (before call-through) -- see the design comment above
     // g_pitchAccum/g_yawAccum: the native call itself both consumes and packs
     // these accumulators in one pass, so our contribution has to already be
@@ -1005,6 +1052,18 @@ void InstallAnalogInputHooksX64()
             sprintf_s(buf, "[x64-pause] Pause toggle resolved @ 0x%llX -- active (direct call, no hook installed).",
                 static_cast<unsigned long long>(r.address));
             LogFromController(buf);
+
+            // Diagnostic-only menu-active gate resolve, see
+            // kMenuActiveGateInsnOffset's own comment above.
+            g_menuActiveGateFlag = reinterpret_cast<uint32_t*>(
+                SigScan::ResolveRipRelative(r.address + kMenuActiveGateInsnOffset, 7));
+            if (g_menuActiveGateFlag) {
+                char buf2[160];
+                sprintf_s(buf2, "[x64-diag-gate] menu-active gate resolved @ 0x%p (diagnostic only, "
+                    "not forced/written) -- watch for [x64-diag-gate] heartbeat lines.",
+                    (void*)g_menuActiveGateFlag);
+                LogFromController(buf2);
+            }
         }
     }
 
