@@ -117,7 +117,21 @@ work correctly.**
    deliberately stopped touching turned out to be the actual "is aiming
    down sights" state this engine reads. Fixed by forcing that flag
    directly to the correct value on press/release, on top of the existing
-   kbutton call. Not yet re-tested live. Full trail in
+   kbutton call. Full trail in `re_notes/known_issues_x64.md` issue #1.
+
+**Live-confirmed: ADS now works correctly. Every x64 gameplay hook this
+migration set out to build — Sprint, Movement, Look, Pause, Fire, Reload,
+ADS, Weapnext — is now confirmed working live.**
+
+### Investigated, Not Yet Resolved
+1. **x64 needs a manual window click before controller input responds.**
+   The same symptom class as an older, already-fixed x86 issue — but
+   confirmed NOT actually fixed by that same mechanism on x64, since the
+   x86 fix's own log line is confirmed already firing every x64 session
+   with the symptom still present. A real, open x64 investigation, not a
+   regression of the closed x86 issue. An experimental fix (a real OS-level
+   focus call, x64-only, not touching the already-working x86 path) has
+   been deployed but not yet live-tested. Full trail in
    `re_notes/known_issues_x64.md` issue #1.
 
 ---
