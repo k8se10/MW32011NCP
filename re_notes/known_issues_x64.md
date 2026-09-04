@@ -1435,3 +1435,41 @@ input, every time. This is a direct answer, not a new theory to test.
   (x64)`). **Not yet live-tested** -- this is the first attempt that
   automates the user's own DIRECTLY CONFIRMED fix rather than a new theory,
   the strongest candidate so far.
+
+**Real live-test feedback, same day, two separate findings from one
+report: "weird, sprint fires when gated and when standing still so its
+reading it but not allowing the other input, also the workaround fires
+too early to work."**
+
+- **Finding 1, real diagnostic signal, not yet acted on**: Sprint's own
+  `pm_flags` bit-force (`Hook_SprintTick`, `FUN_140014a80` inside the
+  Pmove tick chain) still fires correctly even while the game is in the
+  "gated" state -- proving this project's OWN hooks genuinely run and
+  write correctly regardless of whatever's blocking things; the block is
+  downstream of hook execution, not upstream. Since Sprint lives in a
+  structurally SEPARATE function from Movement/Look (`FUN_140014a80` vs.
+  `FUN_14007d9f0`), this is consistent with -- though not proof of --
+  different input paths being gated independently rather than one single
+  global switch. Not yet chased further; recorded for whenever the
+  pause/unpause automation below is confirmed insufficient on its own.
+- **Finding 2, real, concrete, and directly actionable**: the auto-unstick
+  cycle's own timing was simply too aggressive to actually replicate what
+  a real manual pause/unpause does. It fired the moment Pmove was
+  confirmed ticking steadily (500ms) and closed pause again after only
+  250ms -- both far shorter than how a real player naturally performs the
+  manual workaround (well after actually settling into a level, with a
+  real, unhurried gap between the two presses). **Fixed**: added a genuine
+  settle delay (4 seconds after Pmove is first confirmed live, via a new
+  `WaitingToSettle` state tracking `g_levelActiveSinceMs` -- the timestamp
+  Pmove FIRST went live this streak, not merely "ticked recently") before
+  opening pause at all, and widened the open-to-close gap from 250ms to
+  1000ms -- both now matching x86's own original "3-second window" scale
+  for this exact bug class (`known_issues.md` issue #1) rather than this
+  session's own first-guess short values.
+- **Verification**: build clean (0 errors) on x64; Win32 rebuilt
+  immediately after, also clean (0 regression); x64 rebuilt again with a
+  forced `/t:Rebuild`, confirmed genuinely deployed via `dumpbin /headers`
+  (`8664 machine (x64)`). **Not yet live-tested** -- same mechanism as the
+  previous round (automating the user's own confirmed manual fix), just
+  with real timing corrections from direct live-test feedback rather than
+  a new theory.

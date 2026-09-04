@@ -704,13 +704,30 @@ extern "C" void PollPauseToggleX64()
 // from running at all until the CLOSE step happens, so this has to live on the
 // tick that keeps running regardless of pause state).
 namespace {
-enum class AutoUnstickState { Idle, JustOpenedPause };
+enum class AutoUnstickState { Idle, WaitingToSettle, JustOpenedPause };
 AutoUnstickState g_autoUnstickState = AutoUnstickState::Idle;
 DWORD g_autoUnstickStateChangedMs = 0;
+DWORD g_levelActiveSinceMs = 0; // when Pmove was FIRST confirmed ticking this streak, not "last tick"
 bool g_autoUnstickDoneForThisLevel = true; // starts true -- nothing to unstick before a level exists
-constexpr DWORD kLevelActiveConfirmMs = 500;  // Pmove must have ticked this recently to count as "live"
-constexpr DWORD kLevelIdleResetMs = 2000;      // Pmove silent this long -- treat as "back at a menu"
-constexpr DWORD kAutoUnstickCloseDelayMs = 250; // real gap between the open and close step
+
+// CORRECTED 2026-09-04, real live-test feedback ("weird, sprint fires when
+// gated and when standing still so its reading it but not allowing the other
+// input, also the workaround fires too early to work"): the original 500ms/
+// 250ms delays were both far too short. Two real, separate timing bugs:
+// (1) firing the auto-cycle the instant Pmove starts ticking steadily is too
+//     early -- a real manual "pause then unpause" only ever happens well
+//     after the player is actually settled into a level, not the literal
+//     instant it starts simulating (loading-screen-to-gameplay transitions,
+//     spawn cinematics, etc. may still be resolving); (2) a 250ms open-close
+//     gap may be too brief for the pause state to genuinely "stick" long
+//     enough for whatever real internal re-sync this depends on to run --
+//     nothing about a real player's own pace suggests they re-press that
+//     fast either. Both widened substantially, matching x86's own original
+//     "3-second window" scale for this exact bug class (known_issues.md
+//     issue #1) rather than this session's own first-guess short values.
+constexpr DWORD kLevelSettleDelayMs = 4000;     // wait this long after Pmove first goes live before opening pause
+constexpr DWORD kLevelIdleResetMs = 2000;        // Pmove silent this long -- treat as "back at a menu"
+constexpr DWORD kAutoUnstickCloseDelayMs = 1000; // real gap between the open and close step
 }  // namespace
 
 extern "C" void AutoUnstickPauseCycleX64()
@@ -718,6 +735,7 @@ extern "C" void AutoUnstickPauseCycleX64()
     if (!g_pauseToggle) return;
     DWORD nowMs = GetTickCount();
     DWORD sinceLastPmoveTick = nowMs - g_lastPmoveTickMs;
+    bool pmoveLiveNow = sinceLastPmoveTick <= 500;
 
     if (sinceLastPmoveTick > kLevelIdleResetMs) {
         // Back at a menu/loading screen (or not yet in a level at all) -- arm
@@ -727,26 +745,36 @@ extern "C" void AutoUnstickPauseCycleX64()
         return;
     }
 
-    if (g_autoUnstickState == AutoUnstickState::JustOpenedPause) {
-        if (nowMs - g_autoUnstickStateChangedMs >= kAutoUnstickCloseDelayMs) {
-            g_pauseToggle(0); // currently paused (we just opened it) -- this call closes it
-            g_autoUnstickState = AutoUnstickState::Idle;
-            g_autoUnstickDoneForThisLevel = true;
-            LogFromController("[x64-auto-unstick] closed pause -- automated open/close cycle complete "
-                "for this level (real fix confirmed by direct user report: \"still requires the "
-                "classic pause unpause workaround\").");
-        }
-        return;
-    }
+    switch (g_autoUnstickState) {
+        case AutoUnstickState::Idle:
+            if (!g_autoUnstickDoneForThisLevel && pmoveLiveNow) {
+                // Level just became active -- start the settle timer, don't
+                // open pause yet.
+                g_levelActiveSinceMs = nowMs;
+                g_autoUnstickState = AutoUnstickState::WaitingToSettle;
+            }
+            break;
 
-    if (!g_autoUnstickDoneForThisLevel && sinceLastPmoveTick <= kLevelActiveConfirmMs) {
-        // Pmove has been ticking steadily and we haven't run the cycle for this
-        // level yet -- start it.
-        g_pauseToggle(0); // not currently paused -- this call opens it
-        g_autoUnstickState = AutoUnstickState::JustOpenedPause;
-        g_autoUnstickStateChangedMs = nowMs;
-        LogFromController("[x64-auto-unstick] opened pause -- starting automated open/close cycle "
-            "for this level, closing again shortly.");
+        case AutoUnstickState::WaitingToSettle:
+            if (nowMs - g_levelActiveSinceMs >= kLevelSettleDelayMs) {
+                g_pauseToggle(0); // not currently paused -- this call opens it
+                g_autoUnstickState = AutoUnstickState::JustOpenedPause;
+                g_autoUnstickStateChangedMs = nowMs;
+                LogFromController("[x64-auto-unstick] opened pause -- starting automated open/close "
+                    "cycle for this level (after a real settle delay), closing again shortly.");
+            }
+            break;
+
+        case AutoUnstickState::JustOpenedPause:
+            if (nowMs - g_autoUnstickStateChangedMs >= kAutoUnstickCloseDelayMs) {
+                g_pauseToggle(0); // currently paused (we just opened it) -- this call closes it
+                g_autoUnstickState = AutoUnstickState::Idle;
+                g_autoUnstickDoneForThisLevel = true;
+                LogFromController("[x64-auto-unstick] closed pause -- automated open/close cycle "
+                    "complete for this level (real fix confirmed by direct user report: \"still "
+                    "requires the classic pause unpause workaround\").");
+            }
+            break;
     }
 }
 
