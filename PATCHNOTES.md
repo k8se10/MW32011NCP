@@ -143,8 +143,15 @@ ADS, Weapnext — is now confirmed working live.**
    day-one issue, not the crouch-specific one tried twice already);
    confirmed x64's structural equivalent of that older bug's root-cause
    struct, but forcing it blind risks repeating that exact bug rather than
-   fixing anything, so this round adds real diagnostic logging of every
-   candidate gate value instead of a fourth guess. Still open. Full trail
+   fixing anything, so a round of real diagnostic logging was added
+   instead of a fourth guess. **The captured data plus a direct user
+   clarification ("always on entry of level") found the actual gap**:
+   both prior fix attempts only ever fired ONCE per game session (at
+   device creation), never re-firing for each new level — so neither
+   could ever have worked regardless of which one's theory was closer to
+   correct. Fixed by re-triggering a (deliberately click-free, to avoid
+   misfiring a real gameplay action) version of the activation nudge
+   periodically for the whole session. Not yet re-tested live. Full trail
    in `re_notes/known_issues_x64.md` issue #1.
 
 ---

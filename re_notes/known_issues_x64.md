@@ -36,7 +36,7 @@ two files already had for #111 before the split.
 
 ## Index
 
-- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **Every gameplay hook (Sprint/Movement/Look/Pause/Fire/Reload/ADS/Weapnext) CONFIRMED WORKING LIVE; "needs a click for input" gate still unresolved after 3 fix attempts, now diagnostic-logging-only pending real data**
+- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **Every gameplay hook (Sprint/Movement/Look/Pause/Fire/Reload/ADS/Weapnext) CONFIRMED WORKING LIVE; "needs a click for input" gate recurs every level -- real fix-timing gap found (one-shot nudges never re-fired per level), periodic re-trigger deployed, awaiting test**
 
 ---
 
@@ -1316,3 +1316,72 @@ more so than treating it as identical to issue #42's shape.
   `[x64-diag-gate] heartbeat` lines across a real "stuck, then unstuck by a
   manual click" cycle, so the actual bit transition (or lack of one) can be
   seen directly instead of guessed at.
+
+**Real diagnostic data captured, real structural gap found, same day.**
+Direct user report with the actual heartbeat log attached, plus a precise
+clarification: **"check it i played a bit after but yeah always on entry
+of level as we had in x86."**
+
+- **What the heartbeat data actually showed**: `menuActiveGateFlag
+  (DAT_1406e2550)` stayed frozen at `0x00000000` for the ENTIRE captured
+  session, never once changing -- no correlation with anything, ruling it
+  out as a live diagnostic signal for this symptom (consistent with it
+  simply never being in a menu-open moment during the capture, not
+  evidence it's broken -- Pause already reads this same bit successfully).
+  `inputGateFlag (DAT_1406e4774)` DID vary actively during real gameplay
+  (`0x20`, `0x4000`, `0x50`, `0x70`, etc.) but NEVER showed bit `0x800` set
+  in any heartbeat -- confirming the previous round's force-clear IS
+  running correctly -- yet the symptom persisted regardless, meaning that
+  bit genuinely isn't the (or isn't the ONLY) blocker.
+- **The real, structural gap, found from the user's clarification, not
+  from the log data**: "always on entry of level" means this happens on
+  EVERY level load, not just the very first launch. But
+  `SendSyntheticActivationClick` and `SendRealFocusNudgeX64` (this
+  session's first two fix attempts) BOTH only ever fire ONCE, from
+  `InstallWndProcHook` -- which itself only runs once per game SESSION
+  (`CreateDevice`'s own hwnd doesn't change across an ordinary level load,
+  so the one-shot-fire logic never re-triggers). **Neither experiment
+  could ever have worked, regardless of which underlying theory was
+  closer to correct** -- they simply never got a chance to run again for
+  the second, third, Nth level. This is a real bug in the FIX'S OWN
+  design/trigger timing, independent of which native mechanism is
+  actually being satisfied.
+- **Fixed**: added `SendPeriodicActivationNudgeX64()` (`d3d9_hook.cpp`,
+  x64-only), re-fired every ~2 seconds for the WHOLE session (not gated to
+  "just once at startup") via the already-existing ~60Hz WM_TIMER tick
+  already driving `InjectMenuInputTick`/`PollPauseToggleX64`. Rate-limited
+  to match x86's own original "3-second window" scale for this exact bug
+  class (`known_issues.md` issue #1's own fix shape: a windowed
+  re-assertion tied to level transitions, not a one-shot event).
+  Deliberately does NOT include the real click
+  (`WM_LBUTTONDOWN`/`WM_LBUTTONUP`) `SendSyntheticActivationClick` sends --
+  that function's own "(1,1) coordinate" safety reasoning only holds for a
+  ONE-TIME fire before any real UI/gameplay exists yet; repeating a real
+  click every 2 seconds throughout an entire play session is a genuinely
+  different risk (could misfire a real gameplay action if the game's own
+  WndProc treats `WM_LBUTTONDOWN` as Fire/interact for keyboard-and-mouse
+  players). The new periodic function only re-asserts
+  `WM_ACTIVATE`/`WM_SETFOCUS` (through the engine's own WndProc, same as
+  the one-shot version) plus the real OS-level `SetForegroundWindow`/
+  `SetActiveWindow`/`SetFocus` calls -- both already proven side-effect-free
+  for a single fire, safe to repeat indefinitely. `SendSyntheticActivationClick`
+  itself stays one-shot-only, completely unchanged.
+- **Real, self-caught linkage bug found and fixed the same round**: the
+  new function's forward declaration was initially placed BEFORE the
+  anonymous namespace `HookWndProc` and the function itself both live
+  inside, rather than inside it -- an immediate `LNK2019` (mangled symbol
+  mismatch, the exact class of bug `CLAUDE.md`'s own "checking is far
+  cheaper than digging" lesson already documents), caught by the real
+  build error and fixed by moving the declaration inside the namespace,
+  not by guessing at linkage.
+- **Verification**: build clean (0 errors) on x64; Win32 rebuilt
+  immediately after, also clean (0 regression, the x64-only guard compiles
+  out entirely for Win32); x64 rebuilt again with a forced `/t:Rebuild`,
+  confirmed genuinely deployed via `dumpbin /headers` (`8664 machine
+  (x64)`). **Not yet live-tested** -- this is the first fix attempt that
+  actually addresses the "recurs on every level" shape of the symptom
+  rather than a one-shot launch-time nudge; the diagnostic heartbeat
+  logging from the previous round is left in place, so the next playtest
+  will show both whether the symptom is gone AND what the candidate gate
+  values were doing throughout, in case this doesn't fully resolve it
+  either.
