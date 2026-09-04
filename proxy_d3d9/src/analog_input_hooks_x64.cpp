@@ -725,10 +725,21 @@ bool g_autoUnstickDoneForThisLevel = true; // starts true -- nothing to unstick 
 //     fast either. Both widened substantially, matching x86's own original
 //     "3-second window" scale for this exact bug class (known_issues.md
 //     issue #1) rather than this session's own first-guess short values.
-constexpr DWORD kLevelSettleDelayMs = 2000;     // wait this long after Pmove first goes live before opening pause
-                                                 // (halved from 4000ms 2026-09-04, direct live-test feedback: "wait needs to be halved")
+constexpr DWORD kLevelSettleDelayMs = 1750;     // wait this long after Pmove first goes live before opening pause
+                                                 // (2026-09-04 tuning: 4000ms -> 2000ms -> 1750ms, both direct
+                                                 // live-test feedback -- "wait needs to be halved" then "still a
+                                                 // touch slow maybe 1.75s")
 constexpr DWORD kLevelIdleResetMs = 2000;        // Pmove silent this long -- treat as "back at a menu"
-constexpr DWORD kAutoUnstickCloseDelayMs = 1000; // real gap between the open and close step
+// Close as fast as possible -- direct user request: "make it close basically
+// instantly, it should basically look flawless user end". NOT reduced to 0
+// (same tick as the open call) -- keeps the open and close as two genuinely
+// separate ticks with real, if minimal, elapsed engine time between them,
+// rather than risking the native side treating them as one indistinguishable
+// event. 50ms is roughly 3 WM_TIMER ticks at this project's own ~16ms/60Hz
+// cadence -- well under normal human flash-perception threshold, about as
+// close to "instant" as this project's own tick-based (non-blocking, see
+// CLAUDE.md SS5's hook-safety rule) design can get.
+constexpr DWORD kAutoUnstickCloseDelayMs = 50;
 }  // namespace
 
 extern "C" void AutoUnstickPauseCycleX64()
