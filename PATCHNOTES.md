@@ -106,7 +106,18 @@ progress.
    on after release. Fixed by calling the real handlers directly with a
    consistent synthetic identifier, which resolves both symptoms at once —
    Fire now holds/releases correctly and ADS is genuine hold-to-aim,
-   matching x86. Not yet re-tested live. Full trail in
+   matching x86. Full trail in `re_notes/known_issues_x64.md` issue #1.
+
+**Live-confirmed this round: Fire, Reload, and Pause (open and close) all
+work correctly.**
+
+5. **ADS did nothing at all after the previous fix.** Live evidence showed
+   the kbutton call alone (used successfully for Fire/Reload) isn't what
+   drives real ADS engagement — a separate flag the previous fix
+   deliberately stopped touching turned out to be the actual "is aiming
+   down sights" state this engine reads. Fixed by forcing that flag
+   directly to the correct value on press/release, on top of the existing
+   kbutton call. Not yet re-tested live. Full trail in
    `re_notes/known_issues_x64.md` issue #1.
 
 ---

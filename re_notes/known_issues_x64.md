@@ -36,7 +36,7 @@ two files already had for #111 before the split.
 
 ## Index
 
-- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **Sprint+Movement+Look+Pause-open+Weapnext CONFIRMED WORKING LIVE; Buttons/ADS/Reload wrong-function bug + Pause-close bug found and fixed, awaiting re-test**
+- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **Sprint+Movement+Look+Pause(open+close)+Fire+Reload+Weapnext CONFIRMED WORKING LIVE; ADS "is-aiming" flag fix applied, awaiting re-test**
 
 ---
 
@@ -94,12 +94,19 @@ is a source identifier, not an isDown boolean — fixed by calling those two
 functions directly with a consistent synthetic id, which also eliminates
 ADS's unwanted toggle side effect as a free consequence (that toggle only
 existed inside `FUN_14007c3a0`'s own case dispatch, now bypassed
-entirely). Full trail in "Real crash found and fixed," "Real live
-playtest," and "Second live playtest" below. **Sprint, Movement, Look,
-Pause-open, and Weapnext are all confirmed working live**; Buttons/ADS/
-Reload (now hold-based) and Pause-close are build-verified with real fixes
-applied but **NOT YET RE-TESTED LIVE** — next step is another playtest of
-the full set.
+entirely). **A THIRD playtest confirmed Fire and Reload both working live
+("fire reliable", "reload works"), and Pause fully confirmed
+open+close ("pause unpause works")** — but found ADS broken in a NEW way
+(did nothing at all): live evidence that `DAT_1406e26e0` (the flag
+`FUN_14007c3a0`'s own case dispatch toggles) genuinely IS the real "is
+aiming down sights" state, not safely bypassable as assumed. Fixed by
+resolving that flag too and FORCING it directly to the desired absolute
+value on the edge, on top of the existing kbutton call. Full trail in
+"Real crash found and fixed," "Real live playtest," "Second live
+playtest," and "Third live playtest" below. **Sprint, Movement, Look,
+Pause (open+close), Fire, and Reload are all confirmed working live**;
+ADS's flag-force fix is build-verified but **NOT YET RE-TESTED LIVE** —
+next step is another playtest, ADS specifically.
 **Emergency policy action, same day: all support for the entire existing
 `-x86` release line (every version through `v0.3.5-x86`) is discontinued,
 effective immediately** — not a gradual wind-down, since the live game can
@@ -1082,3 +1089,43 @@ to ads like we did for x86." Both trace to the SAME root cause.
   immediately after, also clean (0 regression); x64 rebuilt again with a
   forced `/t:Rebuild`, confirmed genuinely deployed via `dumpbin /headers`
   (`8664 machine (x64)`). **Not yet re-tested live.**
+
+**Third live playtest, same day: Fire and Reload both CONFIRMED WORKING
+LIVE ("pause unpause works and reload works" / fire "reliable"), ADS
+found broken in a NEW way, root-caused and fixed.** Direct user report:
+"ads now does not work at all but shoot is reliable." Real, useful signal
+rather than a setback -- the resolved-address log line
+(`[x64-buttons] Fire/ADS/Reload active: fireStruct=0x140644818
+reloadStruct=0x1406448A4 adsStruct=0x1406448E0
+timestampPtr=0x141EFB764`) confirmed every address matches this session's
+own independently hand-verified values exactly, proving the whole
+resolution mechanism (anchor + fixed-offset RIP-relative reads) is sound
+-- Fire and Reload's own success on the IDENTICAL mechanism rules out a
+plumbing bug for ADS specifically.
+
+- **Real cause**: the sixth round's fix (calling `FUN_14007e460`/
+  `FUN_14007e490` directly, bypassing `FUN_14007c3a0`'s case 0x3b/0x3c
+  entirely) was reasoned to be safe because x86's own proven ADS design is
+  pure kbutton-hold, with no toggle involved. **Live-tested: wrong for this
+  specific x64 bind.** With the kbutton call alone, ADS did nothing at all
+  (worse than the toggle symptom from the previous round) -- direct,
+  unambiguous evidence that `DAT_1406e26e0` (the flag `FUN_14007c3a0`'s
+  case 0x3b/0x3c toggles as a side effect) genuinely IS the real "is aiming
+  down sights" state this engine's aim/FOV/camera code reads, not a
+  secondary/cosmetic effect safe to bypass as originally assumed.
+- **Fixed**: resolve `DAT_1406e26e0`'s real address too (same
+  anchor-plus-fixed-offset technique, offset independently re-verified via
+  `DumpRawBytes.java` for the case 0x3b `LEA R8,[DAT_1406e26e0]`
+  instruction) and FORCE it directly to the desired absolute value on the
+  edge -- `1` while ADS is held, `0` while it isn't -- rather than relying
+  on the native code's own toggle-on-press-only semantics (which is what
+  broke hold behavior in the fifth round in the first place). Still also
+  calls `FUN_14007e460`/`FUN_14007e490` on the ADS kbutton struct
+  (whatever secondary state that drives, e.g. slowdown/animation, likely
+  still wanted) -- the flag force is additive on top, not a replacement.
+- **Verification**: build clean (0 errors) on x64; Win32 rebuilt
+  immediately after, also clean (0 regression); x64 rebuilt again with a
+  forced `/t:Rebuild`, confirmed genuinely deployed via `dumpbin /headers`
+  (`8664 machine (x64)`). **Not yet re-tested live** -- Fire/Reload/Pause
+  are all now confirmed working; ADS's flag-force fix specifically needs
+  the next playtest.
