@@ -30,18 +30,11 @@
 > files too), but every release is currently unpublished on both platforms
 > rather than left downloadable despite being non-functional.
 
-> **▶️ v0.3.5 (2026-08-29) — a new visual-enhancement suite, and a full
-> stutter/threading-architecture overhaul.** The largest release yet by
-> commit volume. `InternalRenderScalePercent` (real GPU cost scaling,
-> confirmed live), FSR 1.0 RCAS sharpening, camera-only motion blur, and
-> forced anisotropic filtering all ship as new, off-by-default `[Video]`
-> toggles — see the screenshot comparison below. A recurring freeze every
-> 2-5 seconds was root-caused to five independent causes and fixed by moving
-> polling, vibration, config-hot-reload, and log-flushing onto four
-> dedicated background threads. `ForceD3D9On12` and the in-mod FPS limiter
-> are both **removed entirely** after real-world testing found them unsafe
-> or non-functional. See **Status: ALPHA** just below for the full itemized
-> list, and `PATCHNOTES.md` for the complete changelog.
+> **v0.3.5-x86 (2026-08-29) was the final `-x86` release** — a new
+> visual-enhancement suite, and a full stutter/threading-architecture
+> overhaul, the largest release yet by commit volume. See the itemized list
+> further below for what it shipped. Not offered for download — see the
+> archival notice above.
 
 > **⚠️ SUPPORTED VERSIONS — none. All `-x86` releases (every version through
 > `v0.3.5-x86`) had support discontinued effective 2026-09-03 (emergency
@@ -85,10 +78,11 @@
 > Server) trigger on some scanners. Full source is in this repository if you
 > want to verify for yourself. See `known_issues.md` #64.
 
-**Status: ALPHA — v0.3.5-x86 (2026-08-29), visual-enhancement suite + stutter/threading
-overhaul. This was the final `-x86` release — see the emergency notice at the top of
-this file, support discontinued 2026-09-03.** Changes below since v0.3.4-x86,
-see `PATCHNOTES.md` for the full itemized list:
+**Last `-x86` release (archived, not currently available for download): v0.3.5-x86
+(2026-08-29), visual-enhancement suite + stutter/threading overhaul.** See the
+archival notice at the top of this file — no `-x86` release is served anywhere
+right now. Kept below as a historical record of what it shipped, changes since
+v0.3.4-x86; see `PATCHNOTES.md` for the full itemized list:
 
 - **New visual-enhancement suite, all off by default under `[Video]`**: `InternalRenderScalePercent` (render the actual 3D scene above or below native resolution — real GPU cost scaling confirmed live, 220fps@100% vs. 70-80fps@300% at 2560x1440), `FsrSharpenEnabled` (AMD FSR 1.0 RCAS sharpening, a direct port of the real reference math), `MotionBlurEnabled` (camera-only, driven by this project's own real per-frame look data), and `ForceAnisotropicFiltering`. See the screenshot comparison below.
 - **A recurring freeze every 2-5 seconds is fixed** — root-caused to five independent causes (a fixed-rate controller poll thread, synchronous vibration writes, an uninstrumented config-hot-reload file check, a synchronous log flush, and uncached per-frame text measurement), plus a self-inflicted input-poll flood from the poll-thread fix itself, caught and fixed in the same pass. Fixed by moving polling, vibration, config-hot-reload, and log-flushing onto four separate dedicated background threads.
@@ -311,7 +305,7 @@ kind of durable record git/`PATCHNOTES.md` provides.
 | Vibration/rumble | 1.5 | 2 | Rebuilt after an earlier version's startup-crash disable: fire rumble via a re-verified-safe hook, damage rumble via a per-frame health poll (the originally-recommended damage-hook target turned out unsafe on closer inspection, so it's deliberately not hooked). Physically confirmed working, maxed out in software. **Known gap: doesn't register hits absorbed by Survival's Body Armor** (not counted against this row — a genuinely separate, unlocated field). Per-animation-step reload vibration is a real, deliberately-deferred final-scope item (also not counted) — see `known_issues.md` #24/#63 |
 | Auto-mantle (sprint) | 1 | 1 | **Confirmed working (v0.3.4)** — a real coupling bug (the mantle-fire gate accidentally required an unrelated icon lookup to succeed first) was found and decoupled. Still ships OFF by default, opt-in by design, not because it doesn't work — see `known_issues.md` #62 |
 | Extreme Conditioning override | 1 | 1 | Resolved for free (2026-07-19) — Sprint's real-kbutton migration means the native perk system applies its own duration override automatically, same as for keyboard players; no separate detection/override code was needed once the kbutton was found |
-| **Total** | **46.5** | **49** | **46.5/49 ≈ 95/100** — every row current as of 2026-08-29 (auto-mantle 0→1 and button-glyph 5→5.5 corrected/raised this pass; see each row's own note). **Scope note**: this matrix scores the original planned SP/Survival core-input roadmap (foundation, movement/look/buttons, menu nav, glyphs, killstreaks, options menu, vibration) — it deliberately does not add new rows for capability that expanded the project beyond that original roadmap since 2026-08-06 (native DualSense/gyro support, the opt-in plugin API, the v0.3.5 visual-enhancement suite, and the extended-session stutter/threading overhaul) — those are real, shipped, and covered in **Status: ALPHA** and `PATCHNOTES.md` above, just outside what this specific completeness score was ever meant to measure |
+| **Total** | **46.5** | **49** | **46.5/49 ≈ 95/100** — every row current as of 2026-08-29 (auto-mantle 0→1 and button-glyph 5→5.5 corrected/raised this pass; see each row's own note). **Scope note**: this matrix scores the original planned SP/Survival core-input roadmap (foundation, movement/look/buttons, menu nav, glyphs, killstreaks, options menu, vibration) — it deliberately does not add new rows for capability that expanded the project beyond that original roadmap since 2026-08-06 (native DualSense/gyro support, the opt-in plugin API, the v0.3.5 visual-enhancement suite, and the extended-session stutter/threading overhaul) — those are real, shipped, and covered in the **Last `-x86` release** section and `PATCHNOTES.md` above, just outside what this specific completeness score was ever meant to measure |
 
 ### Raw functionality methodology
 
