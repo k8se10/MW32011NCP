@@ -1473,3 +1473,10 @@ too early to work."**
   previous round (automating the user's own confirmed manual fix), just
   with real timing corrections from direct live-test feedback rather than
   a new theory.
+
+**Real-time tuning, same day: "wait needs to be halved."** Direct,
+concrete feedback after the above -- `kLevelSettleDelayMs` halved from
+4000ms to 2000ms (the pre-open settle wait specifically; the 1000ms
+open-to-close gap left unchanged pending any separate feedback on it).
+Build-verified on both platforms, x64 redeployed and confirmed via
+`dumpbin`. Not yet re-tested live.

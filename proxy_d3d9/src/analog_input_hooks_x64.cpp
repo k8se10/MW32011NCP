@@ -725,7 +725,8 @@ bool g_autoUnstickDoneForThisLevel = true; // starts true -- nothing to unstick 
 //     fast either. Both widened substantially, matching x86's own original
 //     "3-second window" scale for this exact bug class (known_issues.md
 //     issue #1) rather than this session's own first-guess short values.
-constexpr DWORD kLevelSettleDelayMs = 4000;     // wait this long after Pmove first goes live before opening pause
+constexpr DWORD kLevelSettleDelayMs = 2000;     // wait this long after Pmove first goes live before opening pause
+                                                 // (halved from 4000ms 2026-09-04, direct live-test feedback: "wait needs to be halved")
 constexpr DWORD kLevelIdleResetMs = 2000;        // Pmove silent this long -- treat as "back at a menu"
 constexpr DWORD kAutoUnstickCloseDelayMs = 1000; // real gap between the open and close step
 }  // namespace
