@@ -60,6 +60,18 @@ progress.
    sprint work" and "works" (Look). Full technical record, including a real
    shared-`OutDir` platform-switch deployment bug found and fixed along the
    way, in `re_notes/known_issues_x64.md` issue #1.
+2. **Three more x64 gameplay hooks land in one pass: Buttons/ADS/Reload,
+   Pause toggle, and Weapnext — build-verified, not yet live-tested.** Per
+   direct instruction ("do all in one pass"), all three of the remaining
+   items from the x64 migration's own hook list landed together: Fire/ADS/
+   Reload via the confirmed unified x64 kbutton-state setter, Pause via the
+   confirmed self-contained pause-toggle function, and Weapnext via the
+   confirmed weapon-cycling dispatcher — all direct calls into real engine
+   functions (no new hooks), polled from the same per-tick point Look
+   already uses. Buttons/ADS/Reload carries one real, honestly-flagged
+   residual uncertainty in its underlying function worth extra care during
+   the next playtest. Full record in `re_notes/known_issues_x64.md` issue
+   #1.
 
 ---
 

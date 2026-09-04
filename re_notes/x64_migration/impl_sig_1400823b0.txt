@@ -1,0 +1,24 @@
+Signature-byte dump of FUN_1400823b0 @ 1400823b0
+(byte offsets relative to function entry point)
+
++0x00  40 53                          PUSH RBX                                 
++0x02  48 83 EC 20                    SUB RSP,0x20                             
++0x06  48 8B 05 EB 93 E7 01           MOV RAX,qword ptr [0x141efb7a8]          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x0D  48 63 D9                       MOVSXD RBX,ECX                           
++0x10  83 78 10 00                    CMP dword ptr [RAX + 0x10],0x0           
++0x14  75 3E                          JNZ 0x140082404                          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x16  E8 85 FA 11 00                 CALL 0x1401a1e50                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x1B  84 C0                          TEST AL,AL                               
++0x1D  75 09                          JNZ 0x1400823d8                          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x1F  E8 6C FA 11 00                 CALL 0x1401a1e40                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x24  84 C0                          TEST AL,AL                               
++0x26  74 2C                          JZ 0x140082404                           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x28  48 8B 05 09 9A 48 00           MOV RAX,qword ptr [0x14050bde8]          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x2F  48 85 C0                       TEST RAX,RAX                             
++0x32  74 06                          JZ 0x1400823ea                           [PC-RELATIVE/REF -- likely needs wildcarding]
+
+Raw bytes (52 total): 40 53 48 83 EC 20 48 8B 05 EB 93 E7 01 48 63 D9 83 78 10 00 75 3E E8 85 FA 11 00 84 C0 75 09 E8 6C FA 11 00 84 C0 74 2C 48 8B 05 09 9A 48 00 48 85 C0 74 06
+
+Suggested masked signature (PC-relative/ref instructions fully
+wildcarded -- refine by hand, this is a starting point only):
+40 53 48 83 EC 20 ?? ?? ?? ?? ?? ?? ?? 48 63 D9 83 78 10 00 ?? ?? ?? ?? ?? ?? ?? 84 C0 ?? ?? ?? ?? ?? ?? ?? 84 C0 ?? ?? ?? ?? ?? ?? ?? ?? ?? 48 85 C0 ?? ??
