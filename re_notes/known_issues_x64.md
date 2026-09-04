@@ -36,7 +36,7 @@ two files already had for #111 before the split.
 
 ## Index
 
-- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **Foundation live-confirmed; Sprint+Movement hooks CONFIRMED WORKING LIVE**
+- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **Foundation live-confirmed; Sprint+Movement+Look hooks CONFIRMED WORKING LIVE**
 
 ---
 
@@ -59,8 +59,15 @@ were wired in, hit one real deployment bug along the way (a shared-`OutDir`
 platform-switch redeploy silently leaving an x86 DLL loaded — found, fixed,
 documented below), and are now direct-user-confirmed working together in
 real gameplay: "movement and sprint work." See "Sprint + Movement hooks
-implemented" below for the full record. Next: the remaining gameplay hooks
-(buttons/ADS, pause toggle, weapnext) one at a time on the same foundation.
+implemented" below for the full record. **Look (right stick) is now also
+implemented AND CONFIRMED WORKING LIVE** (direct user report: "works") — a
+direct-write port of x86's own current accumulator-write design, folded
+into the same Movement hook (MinHook only allows one detour per target),
+including a real new `SigScan::ResolveRipRelative` capability to resolve
+the angle-accumulator DATA globals without a hardcoded offset. Sprint,
+Movement, and Look are now all live-confirmed working together on x64.
+Next: the remaining gameplay hooks (buttons/ADS, pause toggle, weapnext)
+one at a time on the same foundation.
 **Emergency policy action, same day: all support for the entire existing
 `-x86` release line (every version through `v0.3.5-x86`) is discontinued,
 effective immediately** — not a gradual wind-down, since the live game can
@@ -690,3 +697,80 @@ never trust the build log's silence on relinking. Direct instance of
 CLAUDE.md's own "checking is far cheaper than digging" principle -- this
 should have been checked before telling the user to test, not found the
 expensive way after a wasted live-test round.
+
+**Look (right stick) implemented, same day (2026-09-04) -- CONFIRMED WORKING
+LIVE** (direct user report: "works"). Third real gameplay hook on the x64
+line, added directly onto the now-live-confirmed Sprint+Movement
+foundation.
+
+- **Real target found via full decompile**: `re_notes/x64_migration/
+  decomp_14007d3b0.txt` confirmed `FUN_14007d3b0` (the function
+  `FUN_14007d9f0` calls at its own top) as the x64 equivalent of x86's
+  `FUN_0057d680` (raw mouse-delta reader) -- but per x86's OWN documented
+  history (see `analog_input_hooks.cpp`'s `InjectControllerLookAngles`
+  comment, "Superseded 2026-07-14"), hooking the raw-delta source was
+  explicitly abandoned there in favor of writing straight to the real
+  pitch/yaw angle-ACCUMULATOR globals, bypassing the mouse-cvar pipeline
+  entirely -- a direct user correction that look-via-mouse-delta-injection
+  was still mouse emulation under the hood, not true native input. This x64
+  implementation follows the CURRENT x86 design, not the superseded one.
+- **Accumulator globals found via full decompile of `FUN_14007d9f0`**
+  (`re_notes/x64_migration/impl_movement_14007d9f0.txt`, the same function
+  already hooked for Movement): `DAT_1406e2738` (pitch, accumulated via `+=`)
+  / `DAT_1406e273c` (yaw, accumulated via `-=`) are read, packed into the
+  real `usercmd_t.angles` short (`param_1+0x38`) and byte (`+0x3a`) fields
+  via a call to `FUN_140003fc0`, and have their leftover fractional
+  remainder written back -- ALL unconditionally, on every single call to
+  this function, regardless of whether there was any real mouse delta that
+  tick (that guard only gates whether NATIVE delta gets accumulated on top
+  of whatever's already there, not whether the pack step runs -- confirmed
+  via the decompile's own control flow, `LAB_14007dd3a` is reached
+  unconditionally). This means a value written to these accumulators BEFORE
+  the native call gets picked up and packed in the SAME tick, and correctly
+  STACKS with simultaneous real mouse input rather than either clobbering
+  the other.
+- **A real new SigScan capability needed and added**: every previous x64
+  signature resolved a CODE target (a hook's own entry point) directly from
+  the match address. The accumulators are DATA, referenced only via
+  RIP-relative operands *inside* `FUN_14007d9f0`'s body -- resolving their
+  real addresses via a hardcoded RVA-from-function-base offset would
+  reintroduce exactly the fragility the signature-scanning policy exists to
+  avoid (CLAUDE.md SS5/SS10.3). Added `SigScan::ResolveRipRelative(insnAddress,
+  insnLength)` (`signature_scan.h`) -- reads the disp32 always encoded as an
+  instruction's LAST 4 bytes for this addressing mode and computes
+  `target = insnAddress + insnLength + disp32`, the standard x64 RIP-relative
+  formula. A single 33-byte, 5-instruction signature
+  (`kAngleAccumSignature`, `re_notes/x64_migration/
+  full_sigbytes_14007d9f0.txt` offsets +0x394-+0x3B4 -- two different
+  RIP-relative float reads to two different globals, into two different
+  stack slots, immediately followed by a CALL, distinctive enough to be
+  unique in the whole binary) resolves BOTH accumulators from one scan: the
+  match address is the pitch read, the yaw read starts exactly 14 bytes in.
+- **Design**: PRE-hook, not post-hook (the opposite of Movement/Sprint) --
+  since the native call itself both consumes and packs the accumulators in
+  one pass, the controller's contribution has to already be sitting there
+  before `g_realMovementTick` runs. Reads both sticks, routes via
+  `RouteStickAxes_Exported` (the same wrapper Movement already uses),
+  computes `yawDelta`/`pitchDelta` from `g_modConfig.lookDegreesPerSecond
+  Horizontal/Vertical` * a look-acceleration-ramp scale (`GetLookAcceleration
+  ScaleX64`, a direct, unmodified port of x86's own `GetLookAccelerationScale`
+  -- pure `g_modConfig`/`GetTickCount()` math, no hardcoded x86 addresses, so
+  it needed no RE at all) * `dt`, and subtracts both from their respective
+  accumulators -- sign convention copied directly from x86's own
+  confirmed-correct `InjectControllerLookAngles`, not re-derived.
+- **Deliberately deferred, not overlooked**: x86's ADS-FOV look-slowdown
+  (`GetAdsLookRateScale`) needs an x64 equivalent of the hardcoded
+  `GetEffectiveFov`/`Dvar_FindVar` addresses it depends on -- genuinely
+  unresolved RE targets, not yet found, and a clean separate follow-up.
+  Gyro-aim is already PREVIEW/WIP and never live-tested even on x86 itself --
+  lowest priority. Motion-blur's per-frame yaw/pitch delta globals
+  (`g_motionBlurYawDeltaDeg`/`g_motionBlurPitchDeltaDeg` on x86) were also
+  left out of this pass -- the whole x64 visual-enhancement suite is still
+  confirmed fully inert (see above), so there's no consumer to feed yet.
+- **Verification**: signature_scan.h's new `ResolveRipRelative` helper and
+  the full Look hook build clean (0 errors) on x64; Win32 rebuilt immediately
+  after and also builds clean (0 warnings introduced, confirming no
+  regression); x64 rebuilt again with a forced `/t:Rebuild` and confirmed
+  genuinely deployed via `dumpbin /headers` (`8664 machine (x64)`), applying
+  the deployment-bug lesson immediately above rather than repeating it. User
+  live-tested and confirmed: "works."

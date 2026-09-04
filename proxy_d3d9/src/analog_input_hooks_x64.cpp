@@ -213,6 +213,25 @@ void __fastcall Hook_SprintTick(void* param1, void* param2)
 constexpr const char* kMovementTickSignature =
     "48 8B C4 53 48 81 EC D0 00 00 00 83 3D ?? ?? ?? ?? 00 48 8B D9";
 
+// Angle-accumulator DATA signature, also inside FUN_14007d9f0 -- NOT a hook
+// target, resolved via SigScan::ResolveRipRelative instead of MH_CreateHook.
+// This exact 5-instruction/33-byte sequence (re_notes/x64_migration/
+// full_sigbytes_14007d9f0.txt, offsets +0x394-+0x3B4) is the block that reads
+// BOTH angle accumulators into stack scratch immediately before the real
+// packing call (FUN_140003fc0) -- distinctive enough (two different RIP-
+// relative float reads to two different globals, into two different stack
+// slots, immediately followed by a CALL) to be unique in the whole binary:
+//   F3 0F 10 05 ?? ?? ?? ??   movss xmm0,[rip+????]     -> DAT_1406e2738 (pitch)
+//   F3 0F 11 44 24 38         movss [rsp+0x38],xmm0
+//   F3 0F 10 05 ?? ?? ?? ??   movss xmm0,[rip+????]     -> DAT_1406e273c (yaw)
+//   F3 0F 11 44 24 44         movss [rsp+0x44],xmm0
+//   E8 ?? ?? ?? ??            call FUN_140003fc0
+// The match's own address is the FIRST movss (pitch); the second movss (yaw)
+// starts exactly 14 bytes in (8 + 6), both resolved via ResolveRipRelative
+// against the same single match -- see the install block below.
+constexpr const char* kAngleAccumSignature =
+    "F3 0F 10 05 ?? ?? ?? ?? F3 0F 11 44 24 38 F3 0F 10 05 ?? ?? ?? ?? F3 0F 11 44 24 44 E8 ?? ?? ?? ??";
+
 using MovementTickFn = void(__fastcall*)(void* param1, unsigned int param2);
 MovementTickFn g_realMovementTick = nullptr;
 
@@ -228,13 +247,95 @@ inline int8_t ClampToSByteX64(int v)
     return static_cast<int8_t>(v);
 }
 
+// ---- Look: right stick -> the pitch/yaw angle-delta accumulators directly, x64 ----
+//
+// x86's own current design (analog_input_hooks.cpp's InjectControllerLookAngles,
+// superseded 2026-07-14 from an earlier "hook the raw mouse-delta source" approach
+// per direct user correction -- see that comment for the full history) writes
+// STRAIGHT to the engine's real pitch/yaw angle-accumulator globals, bypassing the
+// mouse-cvar pipeline (sensitivity/m_yaw/m_pitch/cl_mouseAccel/filtering) entirely --
+// controller look gets its own independent rate, not mouse emulation under the hood.
+//
+// On x64, those accumulators (re_notes/x64_migration/decomp_14007d3b0.txt +
+// re_notes/x64_migration/full_sigbytes_14007d9f0.txt) are DAT_1406e2738 (pitch,
+// added-to) / DAT_1406e273c (yaw, subtracted-from) -- confirmed via full decompile
+// of FUN_14007d9f0 to be read, packed into the real usercmd_t.angles short (+0x38)/
+// byte (+0x3a) via a call to FUN_140003fc0, and have their leftover fractional
+// remainder written back, ALL UNCONDITIONALLY on every call to this same function --
+// this happens regardless of whether there was any raw mouse delta this tick (that
+// guard only gates whether NATIVE mouse/keyboard delta gets ADDED on top of
+// whatever's already in the accumulators, an accumulate not an overwrite, so
+// simultaneous mouse+controller input correctly stacks rather than one clobbering
+// the other). This means our own write just needs to land in the accumulators
+// BEFORE this function's native body runs -- a PRE-hook, unlike Movement's
+// post-hook design below, since the native call itself both consumes AND packs
+// them in one pass. Their real addresses aren't hardcoded (that would violate the
+// locked signature-scanning policy the exact same way a hook target would) --
+// resolved via SigScan::ResolveRipRelative against a real RIP-relative reference
+// inside FUN_14007d9f0's own body, see kAngleAccumSignature below.
+float* g_pitchAccum = nullptr;  // DAT_1406e2738 equivalent
+float* g_yawAccum = nullptr;    // DAT_1406e273c equivalent
+
+// Mirrors x86's own GetLookAccelerationScale (analog_input_hooks.cpp) exactly --
+// pure math against g_modConfig + GetTickCount(), no hardcoded x86 addresses, so
+// it ports directly with no RE needed. Deliberately scoped OUT of this first x64
+// pass: the ADS-FOV look-slowdown (GetAdsLookRateScale, needs an x64 equivalent of
+// the hardcoded GetEffectiveFov/Dvar_FindVar addresses -- genuinely unresolved RE
+// targets, not yet found) and gyro-aim (already PREVIEW/WIP and never live-tested
+// on x86 itself, lowest priority). Both are real, honest gaps, not overlooked --
+// see known_issues_x64.md issue #1.
+DWORD g_lookAccelStartMsX64 = 0;
+
+float GetLookAccelerationScaleX64()
+{
+    if (g_modConfig.lookAccelerationRampMs == 0) return 1.0f;
+
+    DWORD nowMs = GetTickCount();
+    if (g_lookAccelStartMsX64 == 0) {
+        g_lookAccelStartMsX64 = nowMs; // rising edge: stick just left neutral this frame
+    }
+    DWORD elapsed = nowMs - g_lookAccelStartMsX64;
+    if (elapsed >= g_modConfig.lookAccelerationRampMs) return 1.0f;
+
+    return static_cast<float>(elapsed) / static_cast<float>(g_modConfig.lookAccelerationRampMs);
+}
+
 void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
 {
-    // Call through first, untouched -- same "native logic runs to completion,
-    // then this hook adds its own contribution on top" design as Sprint above,
-    // and matching x86's own InjectControllerMovement, which is itself a
-    // POST-hook additive layer on top of the keyboard writer, not a replacement
-    // of it.
+    // LOOK first, PRE-hook (before call-through) -- see the design comment above
+    // g_pitchAccum/g_yawAccum: the native call itself both consumes and packs
+    // these accumulators in one pass, so our contribution has to already be
+    // sitting in them before g_realMovementTick runs.
+    if (param1 && g_pitchAccum && g_yawAccum) {
+        float leftX, leftY, rightX, rightY;
+        if (Controller_GetLeftStick(leftX, leftY) && Controller_GetRightStick(rightX, rightY)) {
+            float moveX, moveY, lookX, lookY;
+            RouteStickAxes_Exported(leftX, leftY, rightX, rightY, g_modConfig.stickLayout, moveX, moveY, lookX, lookY);
+            float dt = Controller_DeltaTimeSeconds();
+            if (dt > 0.0f && (lookX != 0.0f || lookY != 0.0f)) {
+                float scale = GetLookAccelerationScaleX64();
+                float yawRate = g_modConfig.lookDegreesPerSecondHorizontal * scale;
+                float pitchRate = g_modConfig.lookDegreesPerSecondVertical * scale;
+                float pitchInput = g_modConfig.invertLook ? -lookY : lookY; // OG console "Invert Look"
+                float yawDelta = lookX * yawRate * dt;
+                float pitchDelta = pitchInput * pitchRate * dt;
+                // Sign convention mirrored directly from x86's own confirmed-correct
+                // InjectControllerLookAngles (analog_input_hooks.cpp) -- both accumulators
+                // are SUBTRACTED from, not added.
+                *g_yawAccum -= yawDelta;
+                *g_pitchAccum -= pitchDelta;
+            } else {
+                g_lookAccelStartMsX64 = 0; // stick back at neutral -- next push starts the ramp fresh
+            }
+        }
+    }
+
+    // Call through -- native logic runs to completion (picks up our look write
+    // above as part of its own unconditional accumulator-pack step; for
+    // movement, this is the same "native logic runs to completion, then this
+    // hook adds its own contribution on top" design as Sprint above, matching
+    // x86's own InjectControllerMovement, a POST-hook additive layer on top of
+    // the keyboard writer, not a replacement of it).
     g_realMovementTick(param1, param2);
 
     if (!param1) return;
@@ -367,6 +468,38 @@ void InstallAnalogInputHooksX64()
                         "forward/right movement on top of whatever the native keyboard writer already produced "
                         "this tick, additive and unclamped-input-gated (no stick deflection = no-op).");
                 }
+            }
+        }
+    }
+
+    // Look shares the Movement hook above (both live in FUN_14007d9f0 -- MinHook
+    // only supports one detour per target address, so this can't be a separate
+    // MH_CreateHook) -- this block just resolves the two angle-accumulator DATA
+    // addresses Hook_MovementTick's own look logic needs (g_pitchAccum/
+    // g_yawAccum), independent of whether the Movement hook install above
+    // succeeded, per this file's own decoupled-block convention. If this fails,
+    // Sprint/Movement still work -- Look alone silently no-ops (g_pitchAccum/
+    // g_yawAccum stay null, Hook_MovementTick's own null-check skips the whole
+    // look block).
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kAngleAccumSignature);
+        if (!r.found) {
+            LogFromController("[x64-look] FATAL: angle-accumulator signature did not resolve -- Look hook not "
+                "installed, controller right-stick look will not work this session");
+        } else {
+            uintptr_t pitchInsnAddr = r.address;       // first movss, 8 bytes
+            uintptr_t yawInsnAddr = r.address + 14;    // second movss, 8 bytes, starts after the first movss (8) + its stack store (6)
+            g_pitchAccum = reinterpret_cast<float*>(SigScan::ResolveRipRelative(pitchInsnAddr, 8));
+            g_yawAccum = reinterpret_cast<float*>(SigScan::ResolveRipRelative(yawInsnAddr, 8));
+            if (!g_pitchAccum || !g_yawAccum) {
+                LogFromController("[x64-look] FATAL: angle-accumulator RIP-relative resolution failed -- Look hook "
+                    "not installed, controller right-stick look will not work this session");
+            } else {
+                char buf[192];
+                sprintf_s(buf, "[x64-look] Angle accumulators resolved: pitch=0x%p yaw=0x%p -- look injection "
+                    "active, folded into the Movement hook (same tick, pre-call write).",
+                    (void*)g_pitchAccum, (void*)g_yawAccum);
+                LogFromController(buf);
             }
         }
     }
