@@ -13,7 +13,7 @@ It hooks directly into a live game process. Expect bugs, rough edges, unfinished
 
 [hr]
 
-[color=#E74C3C][b]⚠ Only v0.2.2 and v0.3.2+ are currently distributed here:[/b][/color] versions before v0.2.2 shipped with an aim-assist feature's code compiled into the DLL (disabled by default, but present in the binary) and were removed as a VAC-risk precaution. Everything between v0.2.2 and the current release (v0.2.5 through v0.3.1.h1) was rapid, in-progress alpha churn and has also been unpublished — not a security concern, just not worth keeping downloadable alongside the current release. Nothing has been deleted — full source history for every version remains available in the GitHub repository — only the downloadable packages are no longer offered. See the Changelog tab for full detail.
+[color=#E74C3C][b]⚠ Nothing is currently distributed here — every release has been archived (2026-09-04):[/b][/color] the crisis banner above explains why (the game's own 64-bit recompile broke every existing 32-bit build outright). Historically, versions before v0.2.2 shipped with an aim-assist feature's code compiled into the DLL (disabled by default, but present in the binary) and were removed as a VAC-risk precaution, and the v0.2.5–v0.3.1.h1 stretch was unpublished as rapid, in-progress alpha churn not worth keeping downloadable — both real, separate reasons from the current full archival. Nothing has been deleted — full source history for every version remains available in the GitHub repository — only the downloadable packages are no longer offered, on either platform. See the Changelog tab for full detail.
 
 [color=#F39C12][b]A note on antivirus scans:[/b][/color] a small number of scanners have flagged released DLLs with generic heuristic labels — v0.3.0 got 1/67 on VirusTotal (VBA32, generic label [font=Courier New]dbadur[/font]); v0.3.1 got a report of MaxSecure flagging it as [font=Courier New]Trojan.Malware.300983.susgen[/font]. Every major vendor (Microsoft, Kaspersky, ESET, Malwarebytes, CrowdStrike, BitDefender, and more) has shown clean on every release so far. Both labels are generic "suspicious-generic" heuristic buckets, not a named-family match — consistent with a heuristic false positive on the DLL's real, intentional behavior — hooking functions inside the game process via MinHook and runtime byte-pattern scanning — the same general shape plenty of legitimate tools (ReShade, RivaTuner Statistics Server) trigger on some scanners. Full source is on GitHub if you want to verify yourself.
 
@@ -102,6 +102,8 @@ Every other "controller support" option for this game works by faking keyboard/m
 [hr]
 
 [size=4][b]Installation[/b][/size]
+
+[color=#E74C3C][b]No file is currently available to install — see the archival notice at the top of this page.[/b][/color] The steps below describe how installation normally works, for when an x64 build ships.
 
 [list=1]
 [*]Copy [font=Courier New]d3d9.dll[/font] from this download into your MW3 install folder — the same folder as [font=Courier New]iw5sp.exe[/font].

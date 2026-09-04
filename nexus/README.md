@@ -29,6 +29,19 @@ covers the FILE upload only — the page text fields above (`description`,
 `changelog`, `credits`, etc.) still need manually pasting into the Nexus web
 UI when they change; the Upload API doesn't cover page-content edits yet.
 
+**⚠ Real gotcha, confirmed 2026-09-04 while archiving every `-x86` release**:
+this workflow's trigger (`on: release: types: [published]`) fires specifically
+on the transition INTO published — meaning it does NOT fire when converting a
+release TO Draft (confirmed safe; drafting all 15 releases that day triggered
+nothing), but it WILL silently fire again if any of those archived releases is
+ever un-drafted later (via `gh release edit <tag> --draft=false` or the "This
+is a draft" checkbox in the GitHub web UI) — automatically re-uploading that
+broken 32-bit build to Nexus as a new file version, undoing the archival this
+same pass just did there directly. **Before ever un-drafting an archived
+`-x86` release for any reason** (e.g. deliberately restoring one as a
+historical download), either delete/disable this workflow first, or plan to
+immediately delete the resulting Nexus file version it will create.
+
 **Update checklist for every release** (mirrors the `PATCHNOTES.md` version-bump habit):
 1. Re-check every ✅/🟡/⬜ claim in `description.bbcode.txt` against `README.md`'s
    current "Status at a glance" table — don't let a feature stay listed as working
