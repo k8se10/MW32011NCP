@@ -271,6 +271,61 @@ constexpr const char* kAngleAccumSignature =
 using MovementTickFn = void(__fastcall*)(void* param1, unsigned int param2);
 MovementTickFn g_realMovementTick = nullptr;
 
+// ---- "Needs a click to get input" gate, x64 (2026-09-04, live-reported) -----------
+//
+// Direct, corrected user report: NOT Windows/OS-level focus (the two experiments in
+// d3d9_hook.cpp's own SendSyntheticActivationClick/SendRealFocusNudgeX64 both fire
+// every session, confirmed via their own log lines, with the symptom still present)
+// -- a genuine INTERNAL engine mechanism, the same SYMPTOM CLASS as an already-fixed
+// x86 issue, relocated by the recompile rather than removed ("deffo internal they
+// juist moved it").
+//
+// Found via full decompile of FUN_14007d9f0 itself (the function this project's own
+// Movement/Look hook already sits on): its very first real branch, right after the
+// mouse-delta-accumulator call, is `if ((DAT_1406e4774 & 0x800) != 0) return;` --
+// when this ONE bit is set, the ENTIRE function (movement, look-angle packing,
+// everything) is a complete no-op, for BOTH controller injection and real native
+// keyboard/mouse input alike (this bit lives inside the native function itself, our
+// hook just calls through to it). A SECOND, structurally distinct function,
+// FUN_14007d5f0 (re_notes/x64_migration/decomp_14007d5f0.txt -- a real usercmd
+// movement writer in its own right, touching the same forwardmove/rightmove/+0x1e/
+// +0x1f usercmd fields), gates its ENTIRE body behind the exact same bit
+// (`&DAT_1406e4774 + player*0xce5c`, the same per-player field FUN_14007d9f0 reads
+// at offset 0 for SP's player 0). Two independent functions gating all their real
+// work behind the identical single bit is strong, convergent evidence this is
+// genuinely a broad "movement/input processing suppressed" gate, not a narrow
+// crouch-specific lock like x86's own stance-guard bytes were.
+//
+// Static analysis could NOT find a writer to this flag (same limitation x86's own
+// original investigation hit for ITS guard bytes, per known_issues.md issue #42 --
+// `FindDataWriters.java` found only TEST/read references, no direct writes, likely
+// because the real writer uses register-relative addressing Ghidra's reference
+// tracker doesn't resolve back to this literal address). Rather than continue a
+// static hunt with no confirmed writer to find, this applies the SAME empirical
+// philosophy that already fixed both x86's original issue AND this session's own
+// ADS toggle-flag bug: resolve the flag's real address and FORCE it to the desired
+// state directly, every tick, rather than trying to trigger whatever real event
+// naturally clears it. Real, honest uncertainty: it's not confirmed what ELSE this
+// bit's legitimate SET state might represent (a deliberate "not yet controllable"
+// window early in a level load being the most likely one) -- but forcing it clear
+// only from inside Hook_MovementTick, which itself only ever runs during an active
+// Pmove simulation tick in the first place (never during a menu/pause/loading
+// screen, per this session's own established Pmove-tick-halts-during-pause
+// finding), should keep this narrowly scoped to exactly the "stuck after launch"
+// window this is meant to fix.
+//
+// Resolved via the SAME already-scanned kMovementTickSignature match (no separate
+// scan needed) plus a fixed, directly-verified byte offset to the real
+// `TEST dword ptr [rip+disp32], 0x800` instruction (re_notes/x64_migration/
+// full_sigbytes_14007d9f0.txt, offset +0x54, 10 bytes: F7 05 + disp32 + the 0x800
+// immediate) -- the first instruction shape this project has hit where the disp32
+// ISN'T the instruction's last 4 bytes, hence SigScan::ResolveRipRelativeAt's own
+// new, more general two-address form (signature_scan.h) rather than the existing
+// ResolveRipRelative overload.
+constexpr ptrdiff_t kInputGateFlagTestInsnOffset = 0x54;
+uint32_t* g_inputGateFlag = nullptr;
+constexpr uint32_t kInputGateBit = 0x800u;
+
 // Trivial int8 clamp, duplicated locally rather than exported -- ClampToSByte()
 // in analog_input_hooks.cpp is ALSO anonymous-namespace-scoped (its own separate
 // small namespace, same class of internal linkage as IsPhysicalHeld/
@@ -613,6 +668,14 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
         }
     }
 
+    // Force-clear the "needs a click" input gate BEFORE calling through -- see
+    // kInputGateFlagTestInsnOffset's own comment above for the full trace. Must
+    // happen before the call, since FUN_14007d9f0 itself checks this bit as its
+    // very first real branch and returns immediately (skipping everything,
+    // including our own already-written look accumulators' native pack step)
+    // if it's set.
+    if (g_inputGateFlag) *g_inputGateFlag &= ~kInputGateBit;
+
     // Call through -- native logic runs to completion (picks up our look write
     // above as part of its own unconditional accumulator-pack step; for
     // movement, this is the same "native logic runs to completion, then this
@@ -826,6 +889,24 @@ void InstallAnalogInputHooksX64()
                         "forward/right movement on top of whatever the native keyboard writer already produced "
                         "this tick, additive and unclamped-input-gated (no stick deflection = no-op).");
                 }
+            }
+
+            // "Needs a click" input-gate flag -- resolved from the SAME match
+            // address as the Movement hook above (no separate scan), see
+            // kInputGateFlagTestInsnOffset's own comment for the full trace.
+            // Independent of whether the hook install above succeeded.
+            uintptr_t testInsnAddr = r.address + kInputGateFlagTestInsnOffset;
+            g_inputGateFlag = reinterpret_cast<uint32_t*>(
+                SigScan::ResolveRipRelativeAt(testInsnAddr + 2, testInsnAddr + 10));
+            if (g_inputGateFlag) {
+                char buf[160];
+                sprintf_s(buf, "[x64-inputgate] Resolved @ 0x%p -- forcing bit 0x%X clear every "
+                    "Movement tick (experimental fix for \"needs a click to get input\").",
+                    (void*)g_inputGateFlag, kInputGateBit);
+                LogFromController(buf);
+            } else {
+                LogFromController("[x64-inputgate] FATAL: input-gate flag failed to resolve -- the "
+                    "\"needs a click to get input\" symptom will not be addressed this session");
             }
         }
     }
