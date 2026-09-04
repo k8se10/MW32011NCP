@@ -460,6 +460,49 @@ void SendSyntheticActivationClick(HWND hwnd)
                        "WM_LBUTTONDOWN+UP into the real WndProc (issue #42 experiment)");
 }
 
+#if defined(_M_X64) || defined(_WIN64)
+// ---- x64 real-focus nudge experiment (2026-09-04) -----------------------------------
+//
+// Live-reported: the exact same class of symptom SendSyntheticActivationClick above
+// was built to fix on x86 ("needs an initial click at launch" -- known_issues.md
+// issues #1/#27/#42) is BACK on x64, even though that same synthetic-message
+// function is confirmed still firing here too (`[focus-gate-fix]` appears in
+// proxy_d3d9.log every x64 session). This means the x86 fix's own MECHANISM
+// (synthesize WM_ACTIVATE/WM_SETFOCUS/click messages THROUGH the engine's own
+// WndProc via CallWindowProcA, deliberately never touching real OS focus state --
+// "no SetForegroundWindow, no stealing focus," per that function's own original
+// comment) isn't sufficient for whatever x64's OWN equivalent internal gate
+// actually checks. Per this project's own standing principle (CLAUDE.md SS10.8 --
+// x86/x64 are separately-built binaries, don't assume a mechanism carries over
+// unverified), this is NOT assumed to be the same crouch-specific guard-byte pair
+// x86's fix targeted (crouch input isn't even wired on x64 yet as of this
+// session) -- it's a genuinely new x64 investigation, still open.
+//
+// The one real, testable difference between "a synthesized message reaches the
+// WndProc" and "a real user click": a genuine click also changes actual OS-level
+// window state (GetForegroundWindow/GetActiveWindow/GetFocus) that
+// CallWindowProcA's direct-dispatch approach never touches, by design, on x86.
+// If x64's own gate reads THAT real OS state (rather than reacting purely to the
+// message content, which is what x86's own gate apparently did), the synthetic-
+// message-only approach would never satisfy it. This function tests that theory
+// empirically -- EXPERIMENTAL, not a confirmed fix, same honesty standard as the
+// original x86 experiment above. x64-only: x86 is already confirmed working
+// without this (live-tested, "never clicked the window once"), so this must not
+// risk regressing it -- SetForegroundWindow specifically CAN steal focus from an
+// unrelated window if misused, which is exactly why x86's own fix deliberately
+// avoided it; gated here to only ever run on the x64 build.
+void SendRealFocusNudgeX64(HWND hwnd)
+{
+    SetForegroundWindow(hwnd);
+    SetActiveWindow(hwnd);
+    SetFocus(hwnd);
+    LogFromController("[focus-gate-fix-x64] real SetForegroundWindow/SetActiveWindow/SetFocus "
+                       "issued (x64-only experiment, distinct from the synthetic-message-only "
+                       "approach already proven sufficient on x86) -- confirm live whether "
+                       "input now works without a manual click.");
+}
+#endif
+
 // ---- "MW32011NCP Started" QoL notification (2026-07-31, user request) -------------
 //
 // Fires once, right after the real HAL device exists (the earliest point overlay_hud
@@ -535,6 +578,14 @@ void InstallWndProcHook(HWND hwnd)
     // arrive, which isn't reliably frequent enough to catch a quick Start press/release.
     SetTimer(hwnd, kPollTimerId, 16, nullptr);
     SendSyntheticActivationClick(hwnd);
+#if defined(_M_X64) || defined(_WIN64)
+    // 2026-09-04, live-reported: the synthetic-message-only approach above,
+    // already confirmed proven sufficient on x86, is NOT sufficient on x64 --
+    // see SendRealFocusNudgeX64's own comment for the full experimental
+    // rationale. x64-only, deliberately not run on x86 (already working
+    // without it, no reason to add risk there).
+    SendRealFocusNudgeX64(hwnd);
+#endif
 }
 
 HRESULT WINAPI Hook_CreateDevice(void* This, UINT Adapter, DWORD DeviceType,
