@@ -1,14 +1,18 @@
 # x64 migration — MW3 (2011) recompiled to 64-bit, 2026-09-03
 
-## Status: Implementing. A fresh Ghidra project against the new x64 `iw5sp.exe`
-exists and is fully analyzed (`re_notes/ghidra_project_x64/iw5sp_x64_proj.gpr`,
-kept completely separate from the original x86 project). A real x64 build now
-compiles, LINKS, and deploys cleanly to the live game install (first time in
-this project's history) with one working diagnostic hook — see
-`known_issues_x64.md` issue #1's "Implementation begins" section for the full
-record. No real gameplay hooks exist yet; not live-tested. This is the single
-biggest event in this project's history — read this whole file before
-touching anything x64-related.
+## Status: Foundation confirmed working, end to end, live. A fresh Ghidra
+project against the new x64 `iw5sp.exe` exists and is fully analyzed
+(`re_notes/ghidra_project_x64/iw5sp_x64_proj.gpr`, kept completely separate
+from the original x86 project). A real x64 build compiles, LINKS, deploys,
+LAUNCHES cleanly, and its diagnostic hook (a real signature-scanned MinHook
+detour on the confirmed Pmove tick, `FUN_1400168a0`) FIRES DURING LIVE
+GAMEPLAY (2026-09-04, `proxy_d3d9.log` shows 5 real fires with a clean
+call-through each time) — after two real startup crashes were found and
+fixed along the way, see `known_issues_x64.md` issue #1 for the complete
+record. No real gameplay hooks exist yet — this is the proven signature-
+scan + MinHook foundation the next phase builds real hooks on top of. This
+is the single biggest event in this project's history — read this whole
+file before touching anything x64-related.
 
 **Issue tracker note (2026-09-03):** the curated, `known_issues.md`-style
 record for this whole effort now lives in
