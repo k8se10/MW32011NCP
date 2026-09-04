@@ -21,6 +21,14 @@
 > LTS candidate — see `LTS_POLICY.md`. The next release will be
 > `v0.0.1-x64`, a fresh version line for the new architecture, once x64
 > support actually exists.
+>
+> **Further escalation (2026-09-04): every `-x86` release has been archived
+> on both Nexus and GitHub — none are currently downloadable anywhere.**
+> Direct reasoning: "no release works and as such i refuse to serve it."
+> Nothing has been deleted (git tags, release notes, and uploaded assets all
+> remain intact and restorable on GitHub; Nexus's own archive keeps its
+> files too), but every release is currently unpublished on both platforms
+> rather than left downloadable despite being non-functional.
 
 > **▶️ v0.3.5 (2026-08-29) — a new visual-enhancement suite, and a full
 > stutter/threading-architecture overhaul.** The largest release yet by
@@ -52,14 +60,17 @@
 > GitHub Releases and Nexus Mods.**
 >
 > **v0.2.2-x86 was kept available as a stable, LTS-style anchor release —
-> GitHub only** (archived on Nexus) until its support was withdrawn above.
-> Everything between it and v0.3.5-x86 (v0.2.5, v0.3.0, v0.3.1, v0.3.1.h1) had
-> already been unpublished from GitHub Releases as of v0.3.4 — that stretch was
-> rapid, in-progress alpha churn, not a stable point worth keeping downloadable
-> alongside the current release at the time. Nothing has been deleted: the
-> underlying git tags, commits, and full source history for every version
-> remain available in this repository; only the built, downloadable release
-> packages are hidden.
+> GitHub only** (archived on Nexus) until its support was withdrawn above,
+> and it too has since been archived on GitHub as of the 2026-09-04 escalation
+> noted above. Everything between it and v0.3.5-x86 (v0.2.5, v0.3.0, v0.3.1,
+> v0.3.1.h1) had already been unpublished from GitHub Releases as of v0.3.4 —
+> that stretch was rapid, in-progress alpha churn, not a stable point worth
+> keeping downloadable alongside the current release at the time. **As of
+> 2026-09-04, every release (v0.1.0-prealpha through v0.3.5) is archived on
+> both platforms — nothing is currently downloadable.** Nothing has been
+> deleted: the underlying git tags, commits, and full source history for
+> every version remain available in this repository; only the built,
+> downloadable release packages are hidden.
 
 > **A note on antivirus scans:** a small number of scanners have flagged
 > released DLLs with generic heuristic labels — v0.3.0 got 1/67 on VirusTotal
