@@ -31,14 +31,24 @@ progress.
    (Melee/Lethal/Tactical/Jump/Interact and the auto-unstick cycle) — D-pad
    actionslot is built and deployed but not yet independently exercised in
    a live test. Full trail in `re_notes/known_issues_x64.md` issue #1.
-2. **x64 CrouchProne (B) implemented.** Forwards B's real press/release
-   edges directly to the real stance dispatcher's own `+stance`/`-stance`
-   cases, sidestepping that dispatcher's genuinely unresolved "restore
-   previous posture" release-time ambiguity (neither case body actually
-   reads the argument that ambiguity lives in, so bypassing it entirely is
-   safe) rather than trying to replicate it — chosen specifically to avoid
-   this project's own documented history of nasty stuck-crouch/stuck-prone
-   regressions. Build-verified on both platforms, deployment confirmed via
+2. **x64 CrouchProne (B) implemented — CONFIRMED WORKING LIVE.** Forwards
+   B's real press/release edges directly to the real stance dispatcher's
+   own `+stance`/`-stance` cases, sidestepping that dispatcher's genuinely
+   unresolved "restore previous posture" release-time ambiguity (neither
+   case body actually reads the argument that ambiguity lives in, so
+   bypassing it entirely is safe) rather than trying to replicate it —
+   chosen specifically to avoid this project's own documented history of
+   nasty stuck-crouch/stuck-prone regressions. Full trail in
+   `re_notes/known_issues_x64.md` issue #1.
+3. **x64 Jump auto-stand implemented.** Ports x86's own "auto-stand from
+   crouch/prone on Jump's rising edge" enhancement — jumping while crouched
+   or prone now stands the player up first, matching console/x86 behavior.
+   Reuses the already-resolved stance-dispatch and ADS-toggle-flag pointers
+   (no new signature scan needed), calling the real `togglecrouch`/
+   `toggleprone` case matching whatever the current stance actually is —
+   the same underlying trick x86's `ForceStandingViaRealToggle` uses,
+   expressed through x64's fixed-case dispatch instead of a dynamic mode
+   parameter. Build-verified on both platforms, deployment confirmed via
    `dumpbin`. **Not yet live-tested.** Full trail in
    `re_notes/known_issues_x64.md` issue #1.
 

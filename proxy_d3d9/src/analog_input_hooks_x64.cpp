@@ -569,6 +569,62 @@ StanceDispatchFn g_stanceDispatch = nullptr;
 constexpr int kCrouchProneCaseDown = 0x17; // "+stance" down
 constexpr int kCrouchProneCaseUp = 0x18;   // "-stance" up
 
+// ---- Jump auto-stand (2026-09-05, same day as CrouchProne) -- direct
+// instruction: "you need to implement the press a to stand up thing we did for
+// x86 too" ---------------------------------------------------------------------
+//
+// x86 precedent (analog_input_hooks.cpp): ForceStandingViaRealToggle() reads the
+// real current stance directly from a fixed +0x1C offset in the player struct
+// (kRealStanceFieldAddr), then calls the real ToggleStance(playerIndex, mode)
+// with mode SET TO THE CURRENT VALUE -- since ToggleStance's own logic is a
+// genuine toggle (`current == mode ? 0 : mode`), passing mode=current always
+// resolves to 0 (standing), whether current was 1 (crouch) or 2 (prone).
+//
+// x64 has no standalone ToggleStance(mode) function to call the same way --
+// crouch/prone are driven through FUN_14007c3a0's own FIXED case numbers
+// instead (0x48 = togglecrouch, toggles 0<->1; 0x49 = toggleprone, toggles
+// 0<->2 -- both confirmed via decomp_14007c3a0_full.txt, and 0x48 is
+// independently corroborated as the SAME case number x86's own togglecrouch
+// dispatch uses, re_notes/iw5sp.md's "Found togglecrouch's REAL dispatch" note).
+// Replicating x86's exact "call toggle with mode=current" trick just means
+// picking the MATCHING case for whatever the current stance actually is: if
+// current==1, case 0x48's own `(current != 1)` check is false, forcing 0; if
+// current==2, case 0x49's own `(current != 2)` check is false, forcing 0. Same
+// result as x86's dynamic-mode call, just expressed through x64's fixed-case
+// dispatch instead.
+//
+// The real stance field itself: the decompile's `DAT_1406e26fc` is genuinely
+// `DAT_1406e26e0 + 0x1c` -- confirmed by re-reading disasm_14007c3a0_full.txt's
+// own case 0x49/0x4a/0x4b blocks, every one of them `[RAX + R8*0x1 + 0x1c]` off
+// the SAME `LEA R8,[0x1406e26e0]` base kAdsToggleFlagInsnOffset already resolves
+// for the ADS toggle flag. No new signature scan needed -- just a fixed +0x1c
+// byte offset on top of the ALREADY-resolved g_adsToggleFlag pointer. This also
+// mirrors x86's own design one level deeper: x86's kRealStanceFieldAddr is
+// itself a fixed +0x1C offset from its own per-player struct base -- the exact
+// same offset, 0x1C, carried over identically to x64's analogous struct. Reads
+// here are direct/read-only, same as x86's own GetRealStance(); writes always
+// go through the real case dispatch (which re-checks the same stance-lock guard
+// bytes FUN_14007e430 itself checks), never a raw memory write.
+constexpr ptrdiff_t kStanceFieldByteOffset = 0x1c; // g_adsToggleFlag base + this = real stance int
+constexpr int kToggleCrouchCase = 0x48; // "togglecrouch" -- toggles stance 0<->1
+constexpr int kToggleProneCase = 0x49;  // "toggleprone" -- toggles stance 0<->2
+
+int GetRealStanceX64()
+{
+    if (!g_adsToggleFlag) return 0;
+    auto* stanceField = reinterpret_cast<volatile int*>(
+        reinterpret_cast<uintptr_t>(g_adsToggleFlag) + kStanceFieldByteOffset);
+    return *stanceField;
+}
+
+void ForceStandingViaRealToggleX64()
+{
+    if (!g_stanceDispatch) return;
+    int current = GetRealStanceX64();
+    if (current == 1) g_stanceDispatch(0, kToggleCrouchCase, 0);      // crouched -> stand
+    else if (current == 2) g_stanceDispatch(0, kToggleProneCase, 0);  // prone -> stand
+}
+
 // FUN_14007e460 -- the real kbutton "activate source" handler (down).
 // Signature via DumpSigBytes.java (re_notes/x64_migration/
 // impl_sig_14007e460.txt) -- every branch target in this function is a
@@ -1080,13 +1136,14 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
             bool menuActiveNow = g_menuActiveGateFlag && ((*g_menuActiveGateFlag & 0x10u) != 0);
             bool jumpHeld = IsPhysicalHeld_Exported(g_buttonMap.jump, xiButtons, leftTrigger, rightTrigger) && !menuActiveNow;
             if (jumpHeld) out |= kJumpUsercmdBit;
+            // Auto-stand from crouch/prone on Jump's rising edge -- ports x86's own
+            // InjectControllerButtons precedent (ForceStandingViaRealToggle) now that
+            // CrouchProne's own stance-dispatch mechanism (g_stanceDispatch) exists to
+            // build it on top of -- see ForceStandingViaRealToggleX64's own comment.
+            if (jumpHeld && !g_jumpHeldX64) {
+                ForceStandingViaRealToggleX64();
+            }
             g_jumpHeldX64 = jumpHeld;
-            // NOTE: x86's own "auto-stand from crouch/prone on Jump's rising edge"
-            // enhancement (ForceStandingViaRealToggle) is deliberately NOT ported
-            // yet -- it depends on the same real stance-toggle mechanism
-            // CrouchProne itself needs, which this pass explicitly defers (see
-            // the big comment above). Jump's own core bit-force works standalone
-            // without it; this is a minor feature gap, not a functional bug.
 
             // Interact (X) -- hold-to-interact, dual-purpose with Reload on the
             // SAME physical button, matching x86's own design exactly (both the
@@ -1316,7 +1373,9 @@ void InstallAnalogInputHooksX64()
     // used both as a stable anchor for locating the three per-bind struct
     // addresses and the shared timestamp global via fixed byte offsets (see
     // kFireStructInsnOffset's own comment), AND as a genuine callable
-    // dispatcher for CrouchProne (see kCrouchProneCaseDown's own comment).
+    // dispatcher for CrouchProne (see kCrouchProneCaseDown's own comment) and
+    // Jump's own auto-stand (see ForceStandingViaRealToggleX64's own comment) --
+    // the same g_stanceDispatch pointer serves both.
     {
         SigScan::Result activateResult = SigScan::FindPatternInMainModule(kKbuttonActivateSignature);
         if (!activateResult.found) {
