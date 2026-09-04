@@ -612,7 +612,12 @@ PauseToggleFn g_pauseToggle = nullptr;
 // disasm_1400823b0_full.txt` + `rawbytes_1406e2550.txt`) to the real
 // `LEA RAX,[rip+disp32]` instruction (7 bytes).
 constexpr ptrdiff_t kMenuActiveGateInsnOffset = 0x70;
-uint32_t* g_menuActiveGateFlag = nullptr;  // DAT_1406e2550 equivalent, diagnostic-only
+// DAT_1406e2550 equivalent -- resolved for the "needs a click" investigation's
+// own diagnostic heartbeat (still used there), and ALSO now read for its real,
+// originally-intended purpose: this project's confirmed x64 IsMenuActive()
+// equivalent (bit 0x10), gating Jump below the same way x86's own
+// InjectControllerButtons already does. Read-only either way -- never forced.
+uint32_t* g_menuActiveGateFlag = nullptr;
 
 // FUN_1400706d0(playerIndex, direction) -- the confirmed x64 weapnext dispatcher
 // (re_notes/x64_migration/sprint_weapnext_x64.md), reached via FUN_14007c3a0
@@ -634,6 +639,81 @@ constexpr const char* kWeaponNextSignature =
 using WeaponNextFn = void(__fastcall*)(int playerIndex, int direction);
 WeaponNextFn g_weaponNext = nullptr;
 
+// ---- Remaining controls, x64 (2026-09-04, direct instruction "add all remaining
+// controls that are missing in this pass") -----------------------------------------
+//
+// Re-read x86's own InjectControllerButtons/InjectControllerDpad in full before
+// writing any of this -- real, important finding: x86 does NOT drive Melee/
+// Tactical/Lethal/Jump/Interact through kbutton down/up calls at all (unlike Fire/
+// ADS/Reload) -- it ORs raw bits directly into `usercmd_t.buttons` (a uint at
+// `+0x04`, confirmed in `re_notes/iw5sp.md`'s own struct-layout table) every tick,
+// then does one additive `*(uint32_t*)(cmd+4) |= out;` at the end. Since x64's
+// `usercmd_t` is ALREADY confirmed identical at +0x1c/+0x1d (forwardmove/
+// rightmove, this session's own Movement work), the SAME `+0x04` buttons field is
+// overwhelmingly likely to carry over too (same underlying struct, same recompile)
+// -- so this mirrors x86's own proven raw-bit mechanism directly rather than
+// routing through FUN_14007c3a0's kbutton dispatch (a DIFFERENT, unproven-for-
+// this-purpose mechanism this session only verified for Fire/ADS/Reload, which
+// x86 itself drives through real kbuttons too, unlike these five). Real bit
+// values copied directly from x86's own confirmed constants: Melee=0x4,
+// Lethal(frag)=0x4000, Tactical(smoke)=0x8000, Jump(+gostand)=0x400,
+// Interact=0x8 (dual-purpose with Reload's own physical button, same as x86).
+//
+// D-pad actionslot is the one exception -- x86 itself ALSO calls a real function
+// there (ActionSlotDown/Up), not raw bits, and x64's own confirmed equivalent
+// (FUN_14006dee0, decompiled in full this round --
+// re_notes/x64_migration/decomp_actionslot_stance.txt) matches that shape: a
+// genuine "use this actionslot item now" one-shot action call (internally
+// dispatches to weapon-switch/killstreak-use logic based on the slot's own
+// equipped-item type), not a hold-based kbutton -- called once on the press edge
+// only, same pattern as weapnext.
+//
+// CrouchProne (B) is DELIBERATELY NOT included this round. x64's own real
+// stance-lock gate (FUN_14007e430, confirmed via real disassembly this round --
+// re_notes/x64_migration/disasm_14007e430.txt -- a genuine IsStanceLocked(player)
+// equivalent, structurally matching x86's own FUN_0057d190) is real and
+// understood, but the actual toggle logic in FUN_14007c3a0's own case 0x17/0x18
+// (+stance down/up) has real, unresolved ambiguity in its own "restore previous
+// posture" semantics on release (checks whether the SAVED old posture equals 1
+// specifically, not a simple restore-to-saved-value) that this pass's decompile
+// alone doesn't cleanly resolve. Given this project's own documented history of
+// genuinely nasty stuck-crouch/stuck-prone regressions (CLAUDE.md's "Crouch
+// 'needs an initial click at launch'" section, and the live x86 incident that
+// motivated ToggleStance's own real-toggle redesign in the first place), shipping
+// this blind risks a real softlock -- honestly deferred rather than guessed, per
+// this project's own "checking is far cheaper than digging" standard extended to
+// "guessing wrong here is a genuinely worse regression than not shipping it yet."
+constexpr int kMeleeUsercmdBit = 0x4;
+constexpr int kLethalUsercmdBit = 0x4000;
+constexpr int kTacticalUsercmdBit = 0x8000;
+constexpr int kJumpUsercmdBit = 0x400;
+constexpr int kInteractUsercmdBit = 0x8;
+
+// FUN_14006dee0(playerIndex, slotIndex) -- the confirmed x64 D-pad actionslot
+// handler, decompiled in full this round
+// (re_notes/x64_migration/decomp_actionslot_stance.txt): reads the equipped
+// item's own type at the given slot and dispatches to the correct real action
+// (weapon-switch-class call, a second distinct action call, or a raw flag-bit
+// set) accordingly -- a genuine "use this slot now" one-shot, matching x86's
+// own ActionSlotDown/Up shape closely enough to call directly the same way
+// weapnext already is. Signature via DumpSigBytes.java
+// (re_notes/x64_migration/impl_sig_14006dee0.txt).
+constexpr const char* kActionSlotSignature =
+    "48 89 5C 24 10 56 48 83 EC 20 48 63 DA 8B F1 "
+    "E8 ?? ?? ?? ?? 85 C0 0F 84 ?? ?? ?? ?? 4C 8D 1D ?? ?? ?? ?? 8B D3 "
+    "49 8B CB E8 ?? ?? ?? ?? 84 C0 0F 84 ?? ?? ?? ?? 41 8B 8C 9B E0 5F 01 00";
+
+using ActionSlotFn = void(__fastcall*)(int playerIndex, int slotIndex);
+ActionSlotFn g_actionSlot = nullptr;
+
+// XInput D-pad bit values -- standard, shared constants, matching
+// analog_input_hooks.cpp's own identical definitions (kept local here rather
+// than cross-file since they're plain protocol constants, not real state).
+constexpr unsigned short kXI_DPAD_UP_X64 = 0x0001;
+constexpr unsigned short kXI_DPAD_DOWN_X64 = 0x0002;
+constexpr unsigned short kXI_DPAD_LEFT_X64 = 0x0004;
+constexpr unsigned short kXI_DPAD_RIGHT_X64 = 0x0008;
+
 // Edge-tracking state, one bool per logical action -- mirrors x86's own
 // g_adsHeld/g_reloadHeld/g_startHeld pattern (analog_input_hooks.cpp).
 bool g_fireHeldX64 = false;
@@ -641,6 +721,10 @@ bool g_adsHeldX64 = false;
 bool g_reloadHeldX64 = false;
 bool g_pauseHeldX64 = false;
 bool g_weaponSwitchHeldX64 = false;
+bool g_jumpHeldX64 = false;                 // rising-edge diag not needed, just for parity w/ other bools
+bool g_interactButtonWasHeldX64 = false;
+DWORD g_interactPressStartMsX64 = 0;        // matches x86's own hold-to-interact timing (g_modConfig.interactHoldThresholdMs)
+bool g_dpadHeldX64[4] = { false, false, false, false }; // Up, Down, Left, Right -- matches kXI_DPAD_*_X64 order
 
 // Real fix for "obvs cant unpause when paused" (2026-09-04, live-confirmed
 // bug): Hook_MovementTick below rides FUN_14007d9f0, part of the per-frame
@@ -725,10 +809,10 @@ bool g_autoUnstickDoneForThisLevel = true; // starts true -- nothing to unstick 
 //     fast either. Both widened substantially, matching x86's own original
 //     "3-second window" scale for this exact bug class (known_issues.md
 //     issue #1) rather than this session's own first-guess short values.
-constexpr DWORD kLevelSettleDelayMs = 1750;     // wait this long after Pmove first goes live before opening pause
-                                                 // (2026-09-04 tuning: 4000ms -> 2000ms -> 1750ms, both direct
-                                                 // live-test feedback -- "wait needs to be halved" then "still a
-                                                 // touch slow maybe 1.75s")
+constexpr DWORD kLevelSettleDelayMs = 1250;     // wait this long after Pmove first goes live before opening pause
+                                                 // (2026-09-04 tuning: 4000 -> 2000 -> 1750 -> 1250ms, all direct
+                                                 // live-test feedback -- "wait needs to be halved", "still a touch
+                                                 // slow maybe 1.75s", "could still be earlier try 1.25s")
 constexpr DWORD kLevelIdleResetMs = 2000;        // Pmove silent this long -- treat as "back at a menu"
 // Close as fast as possible -- direct user request: "make it close basically
 // instantly, it should basically look flawless user end". NOT reduced to 0
@@ -943,6 +1027,74 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
                 g_weaponNext(0, 1);
             }
             g_weaponSwitchHeldX64 = weaponSwitchHeld;
+        }
+
+        // Melee/Lethal/Tactical/Jump/Interact -- raw usercmd_t.buttons bits,
+        // additively OR'd every tick while held, exactly mirroring x86's own
+        // InjectControllerButtons (see the big comment above kMeleeUsercmdBit
+        // for the full trace on why this mirrors x86's raw-bit design rather
+        // than the kbutton-dispatch mechanism used for Fire/ADS/Reload above).
+        {
+            uint32_t out = 0;
+            if (IsPhysicalHeld_Exported(g_buttonMap.melee, xiButtons, leftTrigger, rightTrigger)) out |= kMeleeUsercmdBit;
+            if (IsPhysicalHeld_Exported(g_buttonMap.lethal, xiButtons, leftTrigger, rightTrigger)) out |= kLethalUsercmdBit;
+            if (IsPhysicalHeld_Exported(g_buttonMap.tactical, xiButtons, leftTrigger, rightTrigger)) out |= kTacticalUsercmdBit;
+
+            // Jump -- suppressed while a menu is active, matching x86's own
+            // InjectControllerButtons exactly (A doubles as menu-select there).
+            // g_menuActiveGateFlag was resolved earlier this session purely for
+            // diagnostic logging (the "needs a click" investigation) -- reused
+            // here for its own real, originally-intended purpose (this project's
+            // own confirmed x64 IsMenuActive() equivalent, bit 0x10).
+            bool menuActiveNow = g_menuActiveGateFlag && ((*g_menuActiveGateFlag & 0x10u) != 0);
+            bool jumpHeld = IsPhysicalHeld_Exported(g_buttonMap.jump, xiButtons, leftTrigger, rightTrigger) && !menuActiveNow;
+            if (jumpHeld) out |= kJumpUsercmdBit;
+            g_jumpHeldX64 = jumpHeld;
+            // NOTE: x86's own "auto-stand from crouch/prone on Jump's rising edge"
+            // enhancement (ForceStandingViaRealToggle) is deliberately NOT ported
+            // yet -- it depends on the same real stance-toggle mechanism
+            // CrouchProne itself needs, which this pass explicitly defers (see
+            // the big comment above). Jump's own core bit-force works standalone
+            // without it; this is a minor feature gap, not a functional bug.
+
+            // Interact (X) -- hold-to-interact, dual-purpose with Reload on the
+            // SAME physical button, matching x86's own design exactly (both the
+            // kbutton-based Reload call above AND this raw bit fire off the same
+            // physical press).
+            bool interactHeld = IsPhysicalHeld_Exported(g_buttonMap.reloadUse, xiButtons, leftTrigger, rightTrigger);
+            if (interactHeld && !g_interactButtonWasHeldX64) {
+                g_interactPressStartMsX64 = GetTickCount();
+            }
+            if (interactHeld && (GetTickCount() - g_interactPressStartMsX64) >= g_modConfig.interactHoldThresholdMs) {
+                out |= kInteractUsercmdBit;
+            }
+            g_interactButtonWasHeldX64 = interactHeld;
+
+            if (out != 0) {
+                // Real usercmd_t.buttons field, confirmed at +0x04 on x86
+                // (re_notes/iw5sp.md) -- see the big comment above for why this
+                // offset is trusted to carry over unverified-by-a-fresh-scan
+                // (the SAME struct's +0x1c/+0x1d fields are already independently
+                // confirmed identical this session).
+                auto* buttonsField = reinterpret_cast<uint32_t*>(cmd + 4);
+                *buttonsField |= out;
+            }
+        }
+
+        // D-pad actionslot -- one-shot action call on the press edge only, same
+        // pattern as Weapnext above (see kActionSlotSignature's own comment for
+        // why this doesn't need an "up" call the way Fire/ADS/Reload do).
+        if (g_actionSlot) {
+            struct { unsigned short bit; int slot; } kDpad[4] = {
+                { kXI_DPAD_UP_X64, 0 }, { kXI_DPAD_RIGHT_X64, 1 }, { kXI_DPAD_DOWN_X64, 2 }, { kXI_DPAD_LEFT_X64, 3 }
+            };
+            for (int i = 0; i < 4; ++i) {
+                bool held = (xiButtons & kDpad[i].bit) != 0;
+                if (held && !g_dpadHeldX64[i]) {
+                    g_actionSlot(0, kDpad[i].slot);
+                }
+                g_dpadHeldX64[i] = held;
+            }
         }
     }
 
@@ -1203,6 +1355,24 @@ void InstallAnalogInputHooksX64()
             char buf[160];
             sprintf_s(buf, "[x64-weapnext] Weapnext resolved @ 0x%llX -- active (direct call, no hook installed).",
                 static_cast<unsigned long long>(r.address));
+            LogFromController(buf);
+        }
+    }
+
+    // D-pad actionslot -- same direct-call pattern as Weapnext/Pause above.
+    // Melee/Lethal/Tactical/Jump/Interact need NO separate resolve at all --
+    // they're raw usercmd_t.buttons bits, written directly via the SAME `cmd`
+    // pointer Movement/Look already use, no new signature required.
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kActionSlotSignature);
+        if (!r.found) {
+            LogFromController("[x64-actionslot] FATAL: D-pad actionslot signature did not resolve -- controller "
+                "D-pad will not work this session");
+        } else {
+            g_actionSlot = reinterpret_cast<ActionSlotFn>(r.address);
+            char buf[160];
+            sprintf_s(buf, "[x64-actionslot] D-pad actionslot resolved @ 0x%llX -- active (direct call, no hook "
+                "installed).", static_cast<unsigned long long>(r.address));
             LogFromController(buf);
         }
     }
