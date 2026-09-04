@@ -1,6 +1,6 @@
-[color=#E74C3C][b]⚠ 2026-08-18: only v0.2.2 and v0.3.2+ remain on this page[/b][/color] — versions before v0.2.2 were removed 2026-07-31 as a VAC-risk mitigation step (v0.2.2 permanently removed the aim-assist code those builds shipped with). As of v0.3.4, everything between v0.2.2 and the current release (v0.2.5 through v0.3.1.h1 — rapid, in-progress alpha churn, not a stable point worth keeping downloadable) has also been removed. Nothing was deleted — full source history for every version remains on GitHub — only the downloadable files are no longer offered here.
+[color=#E74C3C][b]⚠ 2026-09-04: EVERY release has been archived — nothing remains downloadable on this page[/b][/color] — MW3 (2011) was recompiled to 64-bit, and no existing 32-bit build can load into the game at all (see the Description tab's crisis banner). This supersedes the two earlier, narrower removal passes below: versions before v0.2.2 were removed 2026-07-31 as a VAC-risk mitigation step (v0.2.2 permanently removed the aim-assist code those builds shipped with), and as of v0.3.4 the v0.2.5–v0.3.1.h1 stretch (rapid, in-progress alpha churn) was also removed. Nothing was ever deleted — full source history for every version remains on GitHub — only the downloadable files are no longer offered anywhere.
 
-[color=#3498DB][b]Current release: v0.3.5 (2026-08-29).[/b][/color]
+[color=#3498DB][b]Last release before the x64 break: v0.3.5-x86 (2026-08-29). No current release exists — see the archival notice above.[/b][/color]
 
 [hr]
 
