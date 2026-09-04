@@ -1,0 +1,127 @@
+================================================================
+Function: FUN_14007d5f0 @ 14007d5f0
+----------------------------------------------------------------
+
+void FUN_14007d5f0(int param_1,longlong param_2)
+
+{
+  char cVar1;
+  undefined1 uVar2;
+  undefined4 uVar3;
+  longlong lVar4;
+  uint uVar5;
+  uint uVar6;
+  int iVar7;
+  longlong lVar8;
+  longlong lVar9;
+  undefined *puVar10;
+  int iVar11;
+  ulonglong uVar12;
+  float fVar13;
+  float fVar14;
+  float fVar15;
+  float fVar16;
+  float fVar17;
+  float fVar18;
+  
+  lVar4 = (longlong)param_1;
+  lVar9 = lVar4 * 0x230;
+  lVar8 = lVar4 * 0xce5c;
+  cVar1 = (&DAT_1406448c8)[lVar9];
+  if ((cVar1 == '\0') && ((&DAT_1406447ec)[lVar9] == '\0')) {
+    if (((&DAT_1406e26f8)[lVar8] != '\0') &&
+       (299 < DAT_141efb764 - *(int *)(&DAT_1406e2704 + lVar8))) {
+      uVar3 = 0;
+      if (*(int *)(&DAT_1406e2700 + lVar8) != 2) {
+        uVar3 = 2;
+      }
+      *(undefined4 *)(&DAT_1406e26fc + lVar8) = uVar3;
+      (&DAT_1406e26f8)[lVar8] = 0;
+    }
+    uVar5 = *(uint *)(param_2 + 4);
+    if (*(int *)(&DAT_1406e26fc + lVar8) == 1) {
+      *(uint *)(param_2 + 4) = uVar5 & 0xfffffeff | 0x200;
+      uVar5 = uVar5 & 0xffffeeff | 0x200;
+    }
+    else if (*(int *)(&DAT_1406e26fc + lVar8) == 2) {
+      *(uint *)(param_2 + 4) = uVar5 & 0xfffffdff | 0x100;
+      uVar5 = uVar5 & 0xffffedff | 0x100;
+    }
+    else {
+      *(uint *)(param_2 + 4) = uVar5 & 0xfffffcff;
+      uVar5 = uVar5 & 0xffffecff;
+    }
+  }
+  else {
+    *(undefined4 *)(&DAT_1406e26fc + lVar8) = 0;
+    uVar5 = *(uint *)(param_2 + 4) & 0xfffffeff | 0x200;
+    if (cVar1 != '\0') {
+      uVar5 = *(uint *)(param_2 + 4) & 0xfffffdff | 0x100;
+    }
+    *(uint *)(param_2 + 4) = uVar5;
+    uVar5 = uVar5 | 0x1000;
+  }
+  iVar7 = 0;
+  *(uint *)(param_2 + 4) = uVar5;
+  if ((*(uint *)(&DAT_1406e4774 + lVar8) & 0x800) == 0) {
+    puVar10 = &DAT_140644700 + lVar9;
+    uVar6 = uVar5 & 0xfffff7ff;
+    if ((&DAT_1406447c4)[lVar9] != (&DAT_1406e26e0)[lVar8]) {
+      uVar6 = uVar5 | 0x800;
+    }
+    *(uint *)(param_2 + 4) = uVar6;
+    if (((&DAT_1406e26e0)[lVar8] == '\0') || ((&DAT_1406447c4)[lVar9] != '\0')) {
+      uVar6 = uVar6 & 0xfeffffff;
+    }
+    else {
+      uVar6 = uVar6 | 0x1000000;
+    }
+    *(uint *)(param_2 + 4) = uVar6;
+    fVar17 = DAT_1403e9e34;
+    fVar18 = DAT_1403e8ecc;
+    if (*(char *)(&DAT_1406447b0 + lVar4 * 0x46) != '\0') {
+      fVar13 = (float)FUN_14007d8b0(&DAT_140644714 + lVar9,uVar6,DAT_1403e9e34,DAT_1403e8ecc);
+      fVar13 = fVar13 * fVar17;
+      fVar14 = (float)FUN_14007d8b0(puVar10);
+      iVar7 = (int)fVar13 + (int)(fVar14 * fVar18);
+    }
+    fVar13 = (float)FUN_14007d8b0(puVar10 + 0x8c);
+    fVar13 = fVar13 * fVar17;
+    fVar14 = (float)FUN_14007d8b0(puVar10 + 0x78);
+    iVar7 = iVar7 + (int)fVar13 + (int)(fVar14 * fVar18);
+    fVar13 = (float)FUN_14007d8b0(puVar10 + 0x28);
+    iVar11 = (int)(fVar13 * fVar17);
+    fVar13 = (float)FUN_14007d8b0(puVar10 + 0x3c);
+    uVar12 = (ulonglong)(uint)(iVar11 + (int)(fVar13 * fVar18));
+    fVar13 = (float)FUN_14007d8b0(puVar10 + 0x118);
+    fVar13 = fVar13 * fVar17;
+    fVar14 = (float)FUN_14007d8b0(puVar10 + 0x1e0);
+    fVar14 = fVar14 * fVar17;
+    if (puVar10[0x4c] == '\0') {
+      if ((puVar10[0x204] == '\0') && (puVar10[0x205] == '\0')) {
+        *(uint *)(param_2 + 4) = *(uint *)(param_2 + 4) & 0xfffffffd;
+      }
+      else {
+        *(uint *)(param_2 + 4) = *(uint *)(param_2 + 4) | 2;
+        puVar10[0x205] = 0;
+      }
+    }
+    if ((puVar10[0xb0] != '\0') && ((*(byte *)(param_2 + 4) & 2) == 0)) {
+      fVar15 = (float)FUN_14007d8b0(puVar10 + 0x14);
+      fVar16 = (float)FUN_14007d8b0(puVar10);
+      iVar7 = iVar7 + (int)(fVar15 * fVar17) + (int)(fVar16 * fVar18);
+    }
+    uVar2 = FUN_1402b8140(uVar12 & 0xffffffff);
+    *(undefined1 *)(param_2 + 0x1c) = uVar2;
+    uVar2 = FUN_1402b8140(iVar7);
+    *(undefined1 *)(param_2 + 0x1d) = uVar2;
+    uVar2 = FUN_1402b8140((int)fVar13);
+    *(undefined1 *)(param_2 + 0x1e) = uVar2;
+    uVar2 = FUN_1402b8140((int)fVar14);
+    *(undefined1 *)(param_2 + 0x1f) = uVar2;
+  }
+  return;
+}
+
+
+
