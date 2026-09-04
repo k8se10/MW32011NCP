@@ -36,7 +36,7 @@ two files already had for #111 before the split.
 
 ## Index
 
-- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **Sprint+Movement+Look CONFIRMED WORKING LIVE; Buttons/ADS/Reload+Pause+Weapnext build-verified, awaiting playtest**
+- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **Sprint+Movement+Look CONFIRMED WORKING LIVE; Buttons/ADS/Reload+Pause+Weapnext build-verified; a real launch-crash bug (sprintf_s overflow) found+fixed, awaiting re-test**
 
 ---
 
@@ -69,13 +69,25 @@ Movement, and Look are now all live-confirmed working together on x64.
 **Buttons/ADS/Reload, Pause toggle, and Weapnext are now ALSO implemented**
 (direct instruction: "do all in one pass") — all three via direct calls
 into confirmed, self-contained real engine functions (not MinHook detours),
-polled from the same per-tick orchestration point Look uses. Build-verified
-on both platforms, deployment double-checked via `dumpbin`, but NOT YET
-LIVE-TESTED — this completes every hook this issue named as remaining
-work. Next: a real playtest of the full set together, with Buttons/ADS/
-Reload flagged for extra care given one real, honestly-documented residual
+polled from the same per-tick orchestration point Look uses. **This
+immediately exposed a real, separate, pre-existing bug**: the game crashed
+on launch before even its splash video (`0xc0000409` STATUS_STACK_BUFFER_
+OVERRUN, root-caused via Windows Event Viewer + `dumpbin /disasm` to a
+`sprintf_s` overflow in `signature_scan.cpp`'s OWN logging code — the new
+`kWeaponNextSignature` string is 242 characters, longer than the fixed
+`char buf[256]` its log line formats into, a latent bug in place since that
+file was first written, never triggered before because every earlier
+signature was short enough) — found and fixed (buffers bumped to 1024
+bytes), see "Real crash found and fixed" below for the full root-cause
+trail. Build-verified on both platforms, deployment double-checked via
+`dumpbin`, but **NOT YET RE-TESTED LIVE** after this fix — the
+launch-then-exit repro needs to be re-attempted before any of Sprint/
+Movement/Look/Buttons/Pause/Weapnext can be meaningfully playtested. This
+completes every hook this issue named as remaining work; Buttons/ADS/Reload
+also still carries its own separate, honestly-documented residual
 uncertainty in its underlying function (see "Buttons/ADS/Reload, Pause
-toggle, and Weapnext implemented" below).
+toggle, and Weapnext implemented" below) — worth extra care once a real
+playtest is possible again.
 **Emergency policy action, same day: all support for the entire existing
 `-x86` release line (every version through `v0.3.5-x86`) is discontinued,
 effective immediately** — not a gradual wind-down, since the live game can
@@ -855,3 +867,73 @@ resolved via signature scan for their address only.
   "next steps" list named (Sprint, Movement, Look, Buttons/ADS/Reload,
   Pause, Weapnext all now implemented); next is a real playtest of the
   full set together.
+
+**Real crash found and fixed, same day, immediately after the round above:
+"no launch just exits no splash" -- a genuine stack-buffer-overflow bug in
+`signature_scan.cpp`'s own logging code, exposed (not caused) by this
+round's longer signature strings.** Direct user report after trying to
+launch with the Buttons/Pause/Weapnext build deployed: the game process
+started and immediately exited, before even the intro splash video --
+`proxy_d3d9.log` showed only the `"---- proxy_d3d9 attach ----"` line, no
+crash diagnostic despite this project's own `FlushLogOnCrash` vectored
+exception handler.
+
+- **Root-caused via real evidence, not guessed**: Windows Event Viewer
+  (`Get-WinEvent`, Application log, Event ID 1000) showed the actual crash
+  record -- `Exception code: 0xc0000409` (STATUS_STACK_BUFFER_OVERRUN) at
+  fault offset `0x2d304` inside `d3d9.dll` itself (this project's own
+  module, not the game's), matching this exact build's timestamp.
+  `0xc0000409` is raised via `int 29h`/`__fastfail`, which bypasses SEH/VEH
+  entirely -- explaining directly why `FlushLogOnCrash` never fired and the
+  log stopped dead after the attach line, without needing to guess.
+- **Pinpointed the exact instruction, not inferred**: `dumpbin /disasm` on
+  the deployed `d3d9.dll` (with its matching PDB alongside it, so symbol
+  names resolved automatically) confirmed the fault address is the `int
+  29h` inside the CRT's own `_invoke_watson`, reached from
+  `__report_gsfailure` -- the standard MSVC `/GS` stack-cookie-check-failure
+  handler. `_invoke_watson` is also the exact function `sprintf_s`'s
+  DEFAULT invalid-parameter handler calls when a formatted string would
+  exceed its destination buffer -- the same failure path, not a coincidence.
+- **Real cause, confirmed by direct measurement**: `signature_scan.cpp`'s
+  `FindPattern()` logs its own result via `sprintf_s` into fixed `char
+  buf[256]`/`buf[320]` buffers that embed the FULL pattern string via
+  `"%s"` -- sized adequately for every signature this project had used
+  before today. This round's new `kWeaponNextSignature`
+  (`analog_input_hooks_x64.cpp`) is **242 characters long** on its own; the
+  success-path log line alone (`"[sigscan] OK: pattern \"%s\" resolved to
+  0x%llX (%d match%s)"`) comes out to roughly 309 characters with that
+  pattern substituted in -- a real ~53-byte overflow of the old `buf[256]`.
+  `sprintf_s` is a "safe" function (it detects an overflow rather than
+  writing past the buffer), but its default failure response IS
+  `_invoke_watson` -> `int 29h` -- exactly the crash observed. This is a
+  genuinely pre-existing latent bug in the logging code (present since
+  `signature_scan.cpp` was first written), never triggered before because
+  every earlier signature happened to be short enough to fit -- this
+  round's longer, more complex function signatures are what finally
+  exposed it, not new code that introduced the bug itself.
+- **Fixed**: every `char buf[...]` in `signature_scan.cpp`'s `FindPattern()`
+  bumped to `1024` bytes -- generous headroom for any signature this
+  project is realistically likely to need, not a tight fit to today's
+  specific longest pattern. Documented in-code at the top of `FindPattern()`
+  so a future session hitting a similar overflow with an even longer
+  pattern understands the real mechanism immediately rather than
+  re-deriving it.
+- **Verification**: rebuilt x64 clean (0 errors); Win32 rebuilt immediately
+  after, also clean (0 regression); x64 rebuilt again with a forced
+  `/t:Rebuild` and confirmed genuinely deployed via `dumpbin /headers`
+  (`8664 machine (x64)`). **Not yet re-tested live** -- this fix is
+  build-verified only; the actual launch-then-exit repro needs to be
+  re-attempted to confirm the game now reaches its splash screen again,
+  before any of Sprint/Movement/Look/Buttons/Pause/Weapnext can be
+  meaningfully playtested.
+- **Real lesson for this project's own signature-scanning tooling going
+  forward**: `DumpSigBytes.java`'s own suggested masked signatures can
+  legitimately run to 150-250+ characters for functions with many
+  RIP-relative references needing wildcarding (exactly this round's
+  Buttons/Pause/Weapnext functions) -- any future logging code that embeds
+  a full pattern string via `%s` needs headroom for that, not an assumption
+  that signatures stay short. `CLAUDE.md`'s own "grep the whole file for
+  existing values first" lesson (issue #46, Hold Breath/Fire bind-index
+  collision) is the same class of lesson here in a different shape: a fixed
+  buffer sized for today's inputs silently becomes wrong once a genuinely
+  different-shaped input (a much longer string) shows up later.

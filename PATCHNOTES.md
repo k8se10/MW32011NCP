@@ -73,6 +73,20 @@ progress.
    the next playtest. Full record in `re_notes/known_issues_x64.md` issue
    #1.
 
+### Fixed
+1. **Launch crash (game exits before splash), root-caused to a real
+   `sprintf_s` buffer overflow in the signature scanner's own logging
+   code.** Introduced by the above: the new Weapnext signature string (242
+   characters) overflowed the fixed 256-byte buffer `signature_scan.cpp`
+   used to log a resolved signature's own pattern text — `sprintf_s`
+   detects this rather than corrupting memory, but its default failure
+   path terminates the process immediately (bypassing this project's own
+   crash-log flush handler, which is why the log showed nothing useful).
+   Root-caused via Windows Event Viewer + `dumpbin /disasm` against the
+   deployed binary, not guessed. Fixed by giving every logging buffer in
+   that file real headroom. Full trail in `re_notes/known_issues_x64.md`
+   issue #1.
+
 ---
 
 ## v0.3.5 — Alpha (2026-08-29) — Visual-suite crash fixes, ForceD3D9On12 removed for good, native shadow/lighting quality toggles
