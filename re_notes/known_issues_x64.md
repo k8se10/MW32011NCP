@@ -1480,3 +1480,17 @@ concrete feedback after the above -- `kLevelSettleDelayMs` halved from
 open-to-close gap left unchanged pending any separate feedback on it).
 Build-verified on both platforms, x64 redeployed and confirmed via
 `dumpbin`. Not yet re-tested live.
+
+**Second real-time tuning pass, same day: "still a touch slow maybe
+1.75s and also make it close basically instantly, it should basically
+look flawless user end."** `kLevelSettleDelayMs` refined further, `2000ms
+-> 1750ms`. `kAutoUnstickCloseDelayMs` cut drastically, `1000ms -> 50ms`
+-- kept deliberately non-zero (not fired in the same tick as the open
+call) so the open and close remain two genuinely separate real engine
+ticks rather than risking native logic treating them as one
+indistinguishable event, but 50ms (~3 WM_TIMER ticks at this project's
+own ~16ms/60Hz cadence) is well under normal human flash-perception
+threshold -- as close to "instant" as this tick-based, non-blocking
+design (`CLAUDE.md` SS5's hook-safety rule against blocking calls) can
+get. Build-verified on both platforms, x64 redeployed and confirmed via
+`dumpbin`. Not yet re-tested live.
