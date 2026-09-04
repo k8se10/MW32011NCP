@@ -54,10 +54,21 @@
 //     second parameter is really a raw keycode slot, not a bind-name-table
 //     index (misread on first pass); fixed by calling FUN_14007c3a0 (the
 //     real case-number dispatcher, cases ARE bind-name-table indices) the
-//     same way Pause/Weapnext already do. See kCommandDispatchSignature's
-//     own comment for the full corrected trace.
+//     same way Pause/Weapnext already do.
 // Sprint/Movement/Look/Pause-open/Weapnext were all already confirmed
 // working live before this round.
+//
+// SIXTH ROUND (2026-09-04, same day, a second live test after the fifth
+// round's fix): Fire fired ONCE then stopped; ADS came out as a toggle
+// (stays zoomed after releasing) instead of hold. Both traced to the same
+// root cause -- FUN_14007c3a0's own down/up cases tail-call
+// FUN_14007e460/FUN_14007e490, and their second argument is a SOURCE
+// IDENTIFIER (real dual-key-binding tracking), not an isDown boolean --
+// passing 0/1 there broke release-slot matching. Fixed by calling
+// FUN_14007e460/FUN_14007e490 directly with a consistent synthetic source
+// id (see kSyntheticSourceId's own comment for the full corrected trace,
+// including why this also fixes ADS's toggle problem as a direct
+// consequence, not a separate patch).
 
 #include <windows.h>
 #include <cstdio>
@@ -341,74 +352,138 @@ float GetLookAccelerationScaleX64()
 // Fire/PauseMenu/WeaponNext ALL from the SAME per-frame usercmd-build
 // orchestration point FUN_14007d9f0 is this project's own x64 equivalent of).
 
-// CORRECTED 2026-09-04 (real bug found via live test, not guessed): the
-// original approach here called FUN_14007eaf0(player, bindIndex, isDown)
-// directly, treating its second parameter as a bind-name-table row index --
-// this was WRONG. Live-tested: Pause and Weapnext both worked, Fire/ADS/
-// Reload did not, and re-reading FUN_14007eaf0's OWN decompile
-// (re_notes/x64_migration/decomp_buttons_pause_weapnext.txt) more rigorously
-// explains exactly why. FUN_14007eaf0's param_2 is really a RAW KEYCODE
-// SLOT, not a bind-name-table index -- the raw `*piVar1 = isDown` write at
-// the top of the function DOES land somewhere (harmlessly, into whatever
-// per-keycode-slot struct that slot number happens to correspond to), but
-// the function's REAL dispatch logic further down looks up
-// `DAT_140644a6c[playerIndex*0x34a + param_2*3]` -- the "which bind is
-// this KEYCODE currently bound to" field, populated only by
-// `Key_SetBinding` for genuine raw keycodes with a real key binding, never
-// for an arbitrary bind-name-table index passed in directly. Calling it
-// with bindIndex=1/11/59 as if those were keycodes hits an unpopulated
-// slot, the `== 0` early-out fires, and `FUN_14007c3a0` (the REAL case-
-// number dispatcher) is never reached -- exactly matching the observed
-// "no buttons other than weapnext work" symptom (weapnext/pause both
-// bypass this function entirely, calling their own terminal functions
-// directly).
+// CORRECTED 2026-09-04, round 2 (real bug found via a SECOND live test, not
+// guessed): the FIRST correction here (calling FUN_14007c3a0(player,
+// caseNumber, isDown) directly, cases 1/2=Fire, 0xb/0xc=Reload,
+// 0x3b/0x3c=ADS) genuinely fixed the "silently does nothing" symptom --
+// Fire fired on the first press. But it then STOPPED after that one shot,
+// and ADS came out as a toggle (stays zoomed after releasing the trigger)
+// instead of a hold. Both trace to the SAME root cause, found by decompiling
+// FUN_14007e460/FUN_14007e490 in full
+// (re_notes/x64_migration/decomp_14007e460_e490.txt) -- the REAL down/up
+// handlers FUN_14007c3a0 tail-calls into for every regular held bind:
 //
-// FUN_14007c3a0(playerIndex, caseNumber, isDown) -- decompiled in full this
-// round (re_notes/x64_migration/decomp_14007c3a0_full.txt): this IS the
-// real case-number dispatcher (confirmed x64 equivalent of x86's
-// FUN_00438710), and its case numbers ARE bind-name-table indices directly
-// (already established for weapnext=case 0x42, pause=case 0x43 --
-// re_notes/x64_migration/README.md section 1g). Cases 1/2 = Fire
-// (+attack) down/up, 0xb/0xc = Reload (+usereload) down/up, 0x3b/0x3c = ADS
-// (+toggleads_throw) down/up -- each pair confirmed via the decompile
-// calling FUN_14007e460 (down)/FUN_14007e490 (up) on the correct per-bind
-// struct base for that action. This is the SAME direct-call-into-the-real-
-// dispatcher pattern already proven for Pause/Weapnext, just one level up
-// the call chain from where this project first tried to enter it.
-// Signature via DumpSigBytes.java (re_notes/x64_migration/
-// impl_sig_14007c3a0.txt): real prologue plus its first two real gate
-// checks (a call + two dvar/state reads), RSP-relative stack spills at
-// +0x00/+0x05 kept literal per this file's own established false-positive
-// lesson, every genuine CALL/JZ rel32 and RIP-relative reference wildcarded:
-//   48 89 5C 24 08                  mov [rsp+8],rbx        (RSP-relative, keep literal)
-//   48 89 74 24 10                  mov [rsp+0x10],rsi      (RSP-relative, keep literal)
-//   57                              push rdi
-//   48 83 EC 20                     sub rsp,0x20
-//   48 63 D9                        movsxd rbx,ecx
-//   41 8B F8                        mov edi,r8d
-//   8B CB                           mov ecx,ebx
-//   8B F2                           mov esi,edx
-//   E8 ?? ?? ?? ??                  call FUN_140078f00 (wildcard rel32)
-//   85 C0                           test eax,eax
-//   0F 84 ?? ?? ?? ??               jz ... (wildcard rel32)
-//   48 83 3D ?? ?? ?? ?? 00         cmp qword ptr [rip+????],0 (wildcard disp32)
-//   0F 84 ?? ?? ?? ??               jz ... (wildcard rel32)
-//   85 F6                           test esi,esi
-//   74 ??                           jz short (wildcard disp8)
-constexpr const char* kCommandDispatchSignature =
+//   void FUN_14007e460(int* kbutton, int sourceId, int timestamp) {
+//       if (sourceId != kbutton[0] && sourceId != kbutton[1]) {
+//           if (kbutton[0] == 0) kbutton[0] = sourceId;
+//           else { if (kbutton[1] != 0) return; kbutton[1] = sourceId; }
+//           ... activates on a genuinely NEW sourceId ...
+//       }
+//   }
+//   void FUN_14007e490(int* kbutton, int sourceId, int timestamp) {
+//       if (kbutton[0] == sourceId) { kbutton[0] = 0; ... }
+//       else { if (kbutton[1] != sourceId) return; kbutton[1] = 0; ...
+//              if (kbutton[0] != 0) return; }
+//       ... deactivates only once BOTH slots are clear ...
+//   }
+//
+// This is a real dual-binding kbutton_t (classic id-Tech/Quake lineage --
+// tracks up to TWO simultaneous key sources bound to the same action, e.g.
+// mouse1 AND spacebar both bound to Fire, without one release cancelling
+// the other's hold). The second argument is NOT an isDown boolean -- it's a
+// SOURCE IDENTIFIER, and the up-call's identifier must exactly match
+// whichever slot the matching down-call actually wrote into, or the
+// release is silently misrouted. Confirmed directly from
+// FUN_14007eaf0's own real call sites into FUN_14007c3a0: it forwards the
+// RAW KEYCODE itself as this third argument on every real native call, not
+// a 0/1 flag -- so on a real keyboard press, `sourceId` is genuinely "which
+// key" (VK/ASCII-ish), consistent for that key's own down+up pair.
+//
+// The first correction above passed `isDown ? 1 : 0` (0 or 1) as this
+// argument -- on release, "0" happened to accidentally match `kbutton[1]`
+// (the never-used SECOND slot, which defaults to 0), not `kbutton[0]`
+// (which our own press actually wrote "1" into) -- so the release call hit
+// its early-out `if (kbutton[0] != 0) return;` before ever clearing
+// `kbutton[0]`, permanently wedging the kbutton "active" in a state the
+// real weapon-fire logic apparently can't recover from cleanly. The next
+// press then got silently ignored too (`sourceId == kbutton[0]` already,
+// so FUN_14007e460's own new-source check never re-fires) -- matching
+// "fire worked once, then stopped" exactly.
+//
+// FIXED, two changes together:
+// (1) Call FUN_14007e460/FUN_14007e490 DIRECTLY (their own real, standalone
+//     function signatures, resolved independently -- not through
+//     FUN_14007c3a0 at all anymore) with a FIXED, consistent non-zero
+//     synthetic source-id per bind (kSyntheticSourceId below), identical on
+//     both the down and up call for the same bind -- guarantees the
+//     release always finds and clears the exact slot the press wrote.
+// (2) This also fixes ADS's toggle-vs-hold problem as a direct consequence,
+//     not a separate patch: FUN_14007c3a0's case 0x3b/0x3c wrapped this
+//     exact same FUN_14007e460/e490 call with an EXTRA, unconditional
+//     toggle of a completely separate flag (DAT_1406e26e0, confirmed via
+//     real disassembly at 0x14007ce3f-0x14007ce50: `flag = (flag==0)`,
+//     unconditional on every press, never touched on release) -- that flag
+//     toggle is what made ADS look like "press to toggle on, stays on."
+//     Calling FUN_14007e460/e490 directly bypasses FUN_14007c3a0's case
+//     dispatch entirely, so that toggle mutation never happens -- ADS now
+//     drives purely off the SAME real kbutton-held mechanism Fire/Reload
+//     use, matching x86's own proven hold-to-ADS design (x86's
+//     InjectControllerAds already does exactly this: CallKbuttonDown on
+//     press, CallKbuttonUp on release, nothing else).
+//
+// The three per-bind struct base addresses (kFireStructOffset/etc.) and the
+// real timestamp global FUN_14007e460/e490's third argument reads from
+// (DAT_141efb764) are all DATA, not code -- resolved the same way the Look
+// accumulators were, via SigScan::ResolveRipRelative -- but anchored off
+// FUN_14007c3a0's OWN already-reliably-resolved address (kAnchorSignature)
+// plus a FIXED byte offset to each real instruction, rather than four more
+// standalone multi-instruction signatures. This is the same sanctioned
+// "resolve an entry point, then apply a byte offset" pattern
+// signature_scan.h's own ResolveAs<FnT> already documents for the
+// function-pointer case, extended here to a data reference at a fixed,
+// directly-verified (via DumpRawBytes.java, not guessed) offset within the
+// same already-scanned function -- these offsets can't drift independently
+// of FUN_14007c3a0's own start address within a single build.
+constexpr const char* kAnchorSignature =
     "48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 20 48 63 D9 41 8B F8 8B CB 8B F2 "
     "E8 ?? ?? ?? ?? 85 C0 0F 84 ?? ?? ?? ?? 48 83 3D ?? ?? ?? ?? 00 "
     "0F 84 ?? ?? ?? ?? 85 F6 74 ??";
 
-using CommandDispatchFn = void(__fastcall*)(int playerIndex, int caseNumber, int isDown);
-CommandDispatchFn g_commandDispatch = nullptr;
+// Byte offsets from FUN_14007c3a0's own entry point to each real
+// `LEA reg,[rip+disp32]` (or, for the timestamp, `MOV r32,[rip+disp32]`)
+// instruction -- each independently verified via DumpRawBytes.java against
+// the live binary (re_notes/x64_migration/rawbytes_c3a0_targets.txt), not
+// estimated from the decompile's own pseudo-C alone. All four are 7-byte
+// instructions (REX + opcode + ModRM(rip) + 4-byte disp).
+constexpr ptrdiff_t kFireStructInsnOffset = 0x70;    // -> DAT_140644818 (Fire kbutton)
+constexpr ptrdiff_t kReloadStructInsnOffset = 0x1EF; // -> DAT_1406448a4 (Reload kbutton)
+constexpr ptrdiff_t kAdsStructInsnOffset = 0xAB4;    // -> DAT_1406448e0 (ADS kbutton)
+constexpr ptrdiff_t kTimestampInsnOffset = 0x41;     // -> DAT_141efb764 (shared timestamp)
+constexpr size_t kRipInsnLength = 7;
 
-constexpr int kFireCaseDown = 1;      // +attack down
-constexpr int kFireCaseUp = 2;        // +attack up
-constexpr int kReloadCaseDown = 0xb;  // +usereload down (NOT the separate +reload
-constexpr int kReloadCaseUp = 0xc;    // at a different index -- see kbutton_table_x64.txt)
-constexpr int kAdsCaseDown = 0x3b;    // +toggleads_throw down
-constexpr int kAdsCaseUp = 0x3c;      // +toggleads_throw up
+int* g_fireStruct = nullptr;
+int* g_reloadStruct = nullptr;
+int* g_adsStruct = nullptr;
+volatile uint32_t* g_timestampPtr = nullptr;
+
+// FUN_14007e460 -- the real kbutton "activate source" handler (down).
+// Signature via DumpSigBytes.java (re_notes/x64_migration/
+// impl_sig_14007e460.txt) -- every branch target in this function is a
+// SHORT (rel8) jump to another point within this same function; wildcarded
+// per this file's own established future-proofing convention even though
+// they're deterministic for this specific build.
+constexpr const char* kKbuttonActivateSignature =
+    "44 8B 09 41 3B D1 ?? ?? 8B 41 04 3B D0 ?? ?? 45 85 C9 ?? ?? 89 11 ?? ?? "
+    "85 C0 ?? ?? 89 51 04 80 79 10 00 ?? ??";
+
+// FUN_14007e490 -- the real kbutton "deactivate source" handler (up). Same
+// short-rel8-jump wildcarding convention as above.
+constexpr const char* kKbuttonDeactivateSignature =
+    "44 8B 09 44 3B CA ?? ?? 33 C0 89 01 8B 41 04 ?? ?? 39 51 04 ?? ?? "
+    "33 C0 89 41 04 45 85 C9 ?? ?? 85 C0 ?? ??";
+
+using KbuttonActivateFn = void(__fastcall*)(int* kbutton, int sourceId, int timestamp);
+using KbuttonDeactivateFn = void(__fastcall*)(int* kbutton, int sourceId, int timestamp);
+KbuttonActivateFn g_kbuttonActivate = nullptr;
+KbuttonDeactivateFn g_kbuttonDeactivate = nullptr;
+
+// Any fixed, non-zero value works -- this engine has no real "controller"
+// keycode space to collide with, so a single shared synthetic id is safe
+// reused across Fire/Reload/ADS (each has its own independent kbutton
+// struct, no cross-bind collision risk). Chosen well outside any real
+// VK/ASCII keycode range (0-255) purely so it's visually obvious in a
+// memory dump that it's synthetic, not a real key.
+constexpr int kSyntheticSourceId = 0x1000;
 
 // FUN_1400823b0(playerIndex) -- the confirmed x64 live-gameplay pause TOGGLE
 // (re_notes/x64_migration/README.md section 1g, "Same-day follow-up #5").
@@ -555,10 +630,11 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
     // Hook_0057de60): this function (FUN_14007d9f0) IS that x64 orchestration
     // point, called once per real usercmd-build tick, same as x86's. Held-style
     // actions (Fire/ADS/Reload) fire on the edge only, calling the real
-    // dispatcher's own down/up CASE PAIR (not a single "set held" call, since
-    // FUN_14007c3a0's cases are one-shot down/up EVENTS, not a level-triggered
-    // state) -- mirroring x86's own InjectControllerAds/Reload/Fire down/up
-    // edge design. Weapnext (one-shot) fires on the PRESS edge only. Pause is
+    // kbutton activate/deactivate handlers directly with a consistent
+    // synthetic source-id (see kSyntheticSourceId's own comment for why --
+    // real dual-source kbutton tracking, not a simple isDown boolean) --
+    // mirroring x86's own InjectControllerAds/Reload/Fire down/up edge
+    // design. Weapnext (one-shot) fires on the PRESS edge only. Pause is
     // NOT polled here (see PollPauseToggleX64 below) -- the Pmove tick this
     // hook rides on halts entirely while the game is paused (by design, same
     // architecture x86 already documented), so a pause-only-here poll could
@@ -567,23 +643,34 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
     unsigned short xiButtons = 0;
     unsigned char leftTrigger = 0, rightTrigger = 0;
     if (Controller_GetRawButtonsAndTriggers(xiButtons, leftTrigger, rightTrigger)) {
-        if (g_commandDispatch) {
-            bool fireHeld = IsPhysicalHeld_Exported(g_buttonMap.fire, xiButtons, leftTrigger, rightTrigger);
-            if (fireHeld != g_fireHeldX64) {
-                g_fireHeldX64 = fireHeld;
-                g_commandDispatch(0, fireHeld ? kFireCaseDown : kFireCaseUp, fireHeld ? 1 : 0);
+        if (g_kbuttonActivate && g_kbuttonDeactivate) {
+            int timestamp = g_timestampPtr ? static_cast<int>(*g_timestampPtr) : 0;
+
+            if (g_fireStruct) {
+                bool fireHeld = IsPhysicalHeld_Exported(g_buttonMap.fire, xiButtons, leftTrigger, rightTrigger);
+                if (fireHeld != g_fireHeldX64) {
+                    g_fireHeldX64 = fireHeld;
+                    if (fireHeld) g_kbuttonActivate(g_fireStruct, kSyntheticSourceId, timestamp);
+                    else g_kbuttonDeactivate(g_fireStruct, kSyntheticSourceId, timestamp);
+                }
             }
 
-            bool adsHeld = IsPhysicalHeld_Exported(g_buttonMap.ads, xiButtons, leftTrigger, rightTrigger);
-            if (adsHeld != g_adsHeldX64) {
-                g_adsHeldX64 = adsHeld;
-                g_commandDispatch(0, adsHeld ? kAdsCaseDown : kAdsCaseUp, adsHeld ? 1 : 0);
+            if (g_adsStruct) {
+                bool adsHeld = IsPhysicalHeld_Exported(g_buttonMap.ads, xiButtons, leftTrigger, rightTrigger);
+                if (adsHeld != g_adsHeldX64) {
+                    g_adsHeldX64 = adsHeld;
+                    if (adsHeld) g_kbuttonActivate(g_adsStruct, kSyntheticSourceId, timestamp);
+                    else g_kbuttonDeactivate(g_adsStruct, kSyntheticSourceId, timestamp);
+                }
             }
 
-            bool reloadHeld = IsPhysicalHeld_Exported(g_buttonMap.reloadUse, xiButtons, leftTrigger, rightTrigger);
-            if (reloadHeld != g_reloadHeldX64) {
-                g_reloadHeldX64 = reloadHeld;
-                g_commandDispatch(0, reloadHeld ? kReloadCaseDown : kReloadCaseUp, reloadHeld ? 1 : 0);
+            if (g_reloadStruct) {
+                bool reloadHeld = IsPhysicalHeld_Exported(g_buttonMap.reloadUse, xiButtons, leftTrigger, rightTrigger);
+                if (reloadHeld != g_reloadHeldX64) {
+                    g_reloadHeldX64 = reloadHeld;
+                    if (reloadHeld) g_kbuttonActivate(g_reloadStruct, kSyntheticSourceId, timestamp);
+                    else g_kbuttonDeactivate(g_reloadStruct, kSyntheticSourceId, timestamp);
+                }
             }
         }
 
@@ -747,21 +834,50 @@ void InstallAnalogInputHooksX64()
         }
     }
 
-    // Buttons/ADS/Reload -- resolves FUN_14007c3a0's real address for a DIRECT
-    // CALL, not a hook (MH_CreateHook is for detouring an existing call site;
-    // this project calls this function itself, the same way it already calls
-    // g_pauseToggle/g_weaponNext below). No MinHook involvement at all here.
+    // Buttons/ADS/Reload -- resolves FUN_14007e460/FUN_14007e490 (the real
+    // kbutton activate/deactivate handlers) directly for a DIRECT CALL, not
+    // a hook -- no MinHook involvement. FUN_14007c3a0 is ALSO resolved here,
+    // but only as a stable anchor for locating the three per-bind struct
+    // addresses and the shared timestamp global via fixed byte offsets
+    // (see kFireStructInsnOffset's own comment) -- it's never itself called.
     {
-        SigScan::Result r = SigScan::FindPatternInMainModule(kCommandDispatchSignature);
-        if (!r.found) {
-            LogFromController("[x64-buttons] FATAL: command-dispatch signature did not resolve -- Fire/ADS/Reload "
+        SigScan::Result activateResult = SigScan::FindPatternInMainModule(kKbuttonActivateSignature);
+        if (!activateResult.found) {
+            LogFromController("[x64-buttons] FATAL: kbutton-activate signature did not resolve -- Fire/ADS/Reload "
                 "will not work this session");
         } else {
-            g_commandDispatch = reinterpret_cast<CommandDispatchFn>(r.address);
-            char buf[160];
-            sprintf_s(buf, "[x64-buttons] command-dispatch resolved @ 0x%llX -- Fire/ADS/Reload active "
-                "(direct call, no hook installed).", static_cast<unsigned long long>(r.address));
+            g_kbuttonActivate = reinterpret_cast<KbuttonActivateFn>(activateResult.address);
+        }
+
+        SigScan::Result deactivateResult = SigScan::FindPatternInMainModule(kKbuttonDeactivateSignature);
+        if (!deactivateResult.found) {
+            LogFromController("[x64-buttons] FATAL: kbutton-deactivate signature did not resolve -- Fire/ADS/Reload "
+                "will not work this session");
+        } else {
+            g_kbuttonDeactivate = reinterpret_cast<KbuttonDeactivateFn>(deactivateResult.address);
+        }
+
+        SigScan::Result anchorResult = SigScan::FindPatternInMainModule(kAnchorSignature);
+        if (!anchorResult.found) {
+            LogFromController("[x64-buttons] FATAL: struct-anchor signature did not resolve -- Fire/ADS/Reload "
+                "will not work this session");
+        } else {
+            uintptr_t anchor = anchorResult.address;
+            g_fireStruct = reinterpret_cast<int*>(SigScan::ResolveRipRelative(anchor + kFireStructInsnOffset, kRipInsnLength));
+            g_reloadStruct = reinterpret_cast<int*>(SigScan::ResolveRipRelative(anchor + kReloadStructInsnOffset, kRipInsnLength));
+            g_adsStruct = reinterpret_cast<int*>(SigScan::ResolveRipRelative(anchor + kAdsStructInsnOffset, kRipInsnLength));
+            g_timestampPtr = reinterpret_cast<volatile uint32_t*>(SigScan::ResolveRipRelative(anchor + kTimestampInsnOffset, kRipInsnLength));
+        }
+
+        if (g_kbuttonActivate && g_kbuttonDeactivate && g_fireStruct && g_reloadStruct && g_adsStruct && g_timestampPtr) {
+            char buf[256];
+            sprintf_s(buf, "[x64-buttons] Fire/ADS/Reload active: fireStruct=0x%p reloadStruct=0x%p "
+                "adsStruct=0x%p timestampPtr=0x%p (direct calls, no hook installed).",
+                (void*)g_fireStruct, (void*)g_reloadStruct, (void*)g_adsStruct, (void*)g_timestampPtr);
             LogFromController(buf);
+        } else {
+            LogFromController("[x64-buttons] FATAL: one or more Fire/ADS/Reload targets failed to resolve -- "
+                "these will not work this session");
         }
     }
 
