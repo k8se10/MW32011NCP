@@ -131,9 +131,16 @@ PmoveTickFn g_realPmoveTick = nullptr;
 // nowhere near flood territory).
 long long g_fireCount = 0;
 
+// Real "is a level currently live" signal for the auto-unstick sequence below --
+// updated on every real Pmove tick, read from the always-on menu tick to detect
+// a fresh level becoming active (Pmove tick resuming after being stopped, e.g.
+// at a menu/loading screen) without needing dedicated level-load RE.
+DWORD g_lastPmoveTickMs = 0;
+
 void __fastcall Hook_PmoveTick(void* param1)
 {
     ++g_fireCount;
+    g_lastPmoveTickMs = GetTickCount();
     if (g_fireCount <= 5 || (g_fireCount % 5000) == 0) {
         char buf[128];
         sprintf_s(buf, "[x64-diag] Pmove tick hook fired (count=%lld)", g_fireCount);
@@ -663,6 +670,84 @@ extern "C" void PollPauseToggleX64()
         g_pauseToggle(0);
     }
     g_pauseHeldX64 = pauseHeld;
+}
+
+// ---- Auto pause/unpause "unstick" cycle, x64 (2026-09-04) -------------------------
+//
+// Real, DIRECT user confirmation of the actual fix, not a theory: "still no
+// difference it still requires the classic pause unpause workaround." This
+// project's two prior fix attempts this session (SendSyntheticActivationClick,
+// SendRealFocusNudgeX64/SendPeriodicActivationNudgeX64 -- all in d3d9_hook.cpp)
+// were both built around the theory that some WndProc-level activation/focus
+// EVENT is what's needed. That theory is now directly disproven by the user's
+// own report -- what ACTUALLY fixes it, every time, is manually opening the
+// pause menu and closing it again. Genuinely pausing and unpausing evidently
+// triggers some real internal re-sync this project's own earlier x86 work
+// already suspected but never pinned down for ITS OWN version of this exact
+// bug class (known_issues.md issue #1's own theory: "some engine-side state
+// expects a genuine transition/event... to occur" -- the "genuine transition"
+// turns out to be a real menu open+close, not a WndProc message).
+//
+// Rather than keep guessing at WHICH internal flag needs forcing (three
+// attempts already, all wrong), this automates the user's OWN confirmed manual
+// fix directly, using this project's ALREADY-confirmed-working Pause toggle
+// (g_pauseToggle/FUN_1400823b0) -- open pause, wait one real beat, close it
+// again. Triggered once per level: `g_lastPmoveTickMs` (updated by
+// Hook_PmoveTick on every real tick) tells us whether the Pmove/gameplay-
+// simulation pipeline is CURRENTLY live -- when it transitions from "not
+// ticking recently" (a menu/loading screen) to "ticking steadily for the last
+// half-second" (a level is genuinely active), that's this project's own
+// reusable proxy for "a level just (re)loaded," without needing dedicated
+// level-load-flag RE work. Runs from the SAME always-on menu tick
+// PollPauseToggleX64 above already uses (must NOT run from Hook_MovementTick --
+// this function's own OPEN step pauses the game, which stops Hook_MovementTick
+// from running at all until the CLOSE step happens, so this has to live on the
+// tick that keeps running regardless of pause state).
+namespace {
+enum class AutoUnstickState { Idle, JustOpenedPause };
+AutoUnstickState g_autoUnstickState = AutoUnstickState::Idle;
+DWORD g_autoUnstickStateChangedMs = 0;
+bool g_autoUnstickDoneForThisLevel = true; // starts true -- nothing to unstick before a level exists
+constexpr DWORD kLevelActiveConfirmMs = 500;  // Pmove must have ticked this recently to count as "live"
+constexpr DWORD kLevelIdleResetMs = 2000;      // Pmove silent this long -- treat as "back at a menu"
+constexpr DWORD kAutoUnstickCloseDelayMs = 250; // real gap between the open and close step
+}  // namespace
+
+extern "C" void AutoUnstickPauseCycleX64()
+{
+    if (!g_pauseToggle) return;
+    DWORD nowMs = GetTickCount();
+    DWORD sinceLastPmoveTick = nowMs - g_lastPmoveTickMs;
+
+    if (sinceLastPmoveTick > kLevelIdleResetMs) {
+        // Back at a menu/loading screen (or not yet in a level at all) -- arm
+        // for the NEXT level's own first activation.
+        g_autoUnstickDoneForThisLevel = false;
+        g_autoUnstickState = AutoUnstickState::Idle;
+        return;
+    }
+
+    if (g_autoUnstickState == AutoUnstickState::JustOpenedPause) {
+        if (nowMs - g_autoUnstickStateChangedMs >= kAutoUnstickCloseDelayMs) {
+            g_pauseToggle(0); // currently paused (we just opened it) -- this call closes it
+            g_autoUnstickState = AutoUnstickState::Idle;
+            g_autoUnstickDoneForThisLevel = true;
+            LogFromController("[x64-auto-unstick] closed pause -- automated open/close cycle complete "
+                "for this level (real fix confirmed by direct user report: \"still requires the "
+                "classic pause unpause workaround\").");
+        }
+        return;
+    }
+
+    if (!g_autoUnstickDoneForThisLevel && sinceLastPmoveTick <= kLevelActiveConfirmMs) {
+        // Pmove has been ticking steadily and we haven't run the cycle for this
+        // level yet -- start it.
+        g_pauseToggle(0); // not currently paused -- this call opens it
+        g_autoUnstickState = AutoUnstickState::JustOpenedPause;
+        g_autoUnstickStateChangedMs = nowMs;
+        LogFromController("[x64-auto-unstick] opened pause -- starting automated open/close cycle "
+            "for this level, closing again shortly.");
+    }
 }
 
 void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
