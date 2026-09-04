@@ -1,0 +1,24 @@
+Signature-byte dump of FUN_1400706d0 @ 1400706d0
+(byte offsets relative to function entry point)
+
++0x00  48 89 5C 24 08                 MOV qword ptr [RSP + 0x8],RBX            [PC-RELATIVE/REF -- likely needs wildcarding]
++0x05  57                             PUSH RDI                                 
++0x06  48 83 EC 20                    SUB RSP,0x20                             
++0x0A  48 83 3D C6 3E 4A 00 00        CMP qword ptr [0x1405145a8],0x0          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x12  8B FA                          MOV EDI,EDX                              
++0x14  8B D9                          MOV EBX,ECX                              
++0x16  0F 84 CB 00 00 00              JZ 0x1400707b7                           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x1C  F7 05 9A 99 4B 00 08 0C 00 00  TEST dword ptr [0x14052a090],0xc08       [PC-RELATIVE/REF -- likely needs wildcarding]
++0x26  0F 85 BB 00 00 00              JNZ 0x1400707b7                          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x2C  F7 05 B2 9C 4B 00 80 08 00 00  TEST dword ptr [0x14052a3b8],0x880       [PC-RELATIVE/REF -- likely needs wildcarding]
++0x36  0F 85 AB 00 00 00              JNZ 0x1400707b7                          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x3C  F6 05 81 99 4B 00 02           TEST byte ptr [0x14052a094],0x2          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x43  0F 85 9E 00 00 00              JNZ 0x1400707b7                          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x49  8B 15 55 99 4B 00              MOV EDX,dword ptr [0x14052a074]          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x4F  8B CA                          MOV ECX,EDX                              
+
+Raw bytes (81 total): 48 89 5C 24 08 57 48 83 EC 20 48 83 3D C6 3E 4A 00 00 8B FA 8B D9 0F 84 CB 00 00 00 F7 05 9A 99 4B 00 08 0C 00 00 0F 85 BB 00 00 00 F7 05 B2 9C 4B 00 80 08 00 00 0F 85 AB 00 00 00 F6 05 81 99 4B 00 02 0F 85 9E 00 00 00 8B 15 55 99 4B 00 8B CA
+
+Suggested masked signature (PC-relative/ref instructions fully
+wildcarded -- refine by hand, this is a starting point only):
+?? ?? ?? ?? ?? 57 48 83 EC 20 ?? ?? ?? ?? ?? ?? ?? ?? 8B FA 8B D9 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 8B CA

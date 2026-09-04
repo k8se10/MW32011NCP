@@ -36,7 +36,7 @@ two files already had for #111 before the split.
 
 ## Index
 
-- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **Foundation live-confirmed; Sprint+Movement+Look hooks CONFIRMED WORKING LIVE**
+- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **Sprint+Movement+Look CONFIRMED WORKING LIVE; Buttons/ADS/Reload+Pause+Weapnext build-verified, awaiting playtest**
 
 ---
 
@@ -66,8 +66,16 @@ into the same Movement hook (MinHook only allows one detour per target),
 including a real new `SigScan::ResolveRipRelative` capability to resolve
 the angle-accumulator DATA globals without a hardcoded offset. Sprint,
 Movement, and Look are now all live-confirmed working together on x64.
-Next: the remaining gameplay hooks (buttons/ADS, pause toggle, weapnext)
-one at a time on the same foundation.
+**Buttons/ADS/Reload, Pause toggle, and Weapnext are now ALSO implemented**
+(direct instruction: "do all in one pass") — all three via direct calls
+into confirmed, self-contained real engine functions (not MinHook detours),
+polled from the same per-tick orchestration point Look uses. Build-verified
+on both platforms, deployment double-checked via `dumpbin`, but NOT YET
+LIVE-TESTED — this completes every hook this issue named as remaining
+work. Next: a real playtest of the full set together, with Buttons/ADS/
+Reload flagged for extra care given one real, honestly-documented residual
+uncertainty in its underlying function (see "Buttons/ADS/Reload, Pause
+toggle, and Weapnext implemented" below).
 **Emergency policy action, same day: all support for the entire existing
 `-x86` release line (every version through `v0.3.5-x86`) is discontinued,
 effective immediately** — not a gradual wind-down, since the live game can
@@ -774,3 +782,76 @@ foundation.
   genuinely deployed via `dumpbin /headers` (`8664 machine (x64)`), applying
   the deployment-bug lesson immediately above rather than repeating it. User
   live-tested and confirmed: "works."
+
+**Buttons/ADS/Reload, Pause toggle, and Weapnext implemented, same day
+(2026-09-04, direct instruction "do all in one pass") -- BUILD-VERIFIED
+ONLY, NOT YET LIVE-TESTED.** The remaining three items from this issue's
+own "next steps" list, all landed together per the user's explicit request.
+All three are polled from inside the already-hooked `Hook_MovementTick`
+(the same per-tick orchestration point Look was folded into) rather than
+via any new `MH_CreateHook` -- none of these call sites are hooks at all,
+they're direct calls into confirmed, self-contained real engine functions,
+resolved via signature scan for their address only.
+
+- **Buttons/ADS/Reload** (`FUN_14007eaf0`, `re_notes/x64_migration/
+  README.md` sections 1e/1g, decompiled in full this round --
+  `re_notes/x64_migration/decomp_buttons_pause_weapnext.txt`): the confirmed
+  unified x64 kbutton-state setter, `void FUN_14007eaf0(int playerIndex, int
+  bindIndex, int isDown)` -- standard fastcall, no custom register
+  convention (a real x64 architectural simplification over x86's own
+  hand-assembled `CallKbuttonDown`/`CallKbuttonUp` thunks, which needed a
+  third stack-passed timestamp argument neither x64 function needs).
+  `bindIndex` is a row index into the 32-entry bind-name table
+  (`re_notes/x64_migration/kbutton_table_x64.txt`, base `1404c1870`, 8-byte
+  stride) -- computed the same offline `index = (entryAddr - base) / 8`
+  technique this project's own RE notes already established for weapnext:
+  Fire (`+attack`) = 1, Reload (`+usereload` -- NOT the separate `+reload`
+  at index 53, a genuinely distinct bind this table also has) = 11, ADS
+  (`+toggleads_throw`) = 59. Held-style, edge-triggered exactly like x86's
+  own `InjectControllerAds`/`InjectControllerReload`/`InjectControllerFire`
+  (call on state CHANGE only, matching a real keypress/release, not every
+  tick).
+- **Pause toggle** (`FUN_1400823b0`, confirmed via the README's own
+  "Same-day follow-up #5" as the real, self-contained live-gameplay pause
+  TOGGLE): reads the current `SetMenuState` mode and calls
+  `SetMenuState(player, 2)` (open) or `SetMenuState(player, 0)` (resume)
+  accordingly -- a complete toggle in one call, `void
+  FUN_1400823b0(int playerIndex)`. Called ONLY on the press edge (never on
+  release -- calling a toggle twice per press would immediately undo
+  itself).
+- **Weapnext** (`FUN_1400706d0`, confirmed RESOLVED in
+  `re_notes/x64_migration/sprint_weapnext_x64.md` after this project's own
+  self-corrected coincidence-vs-mechanism investigation): the real x64
+  weapnext dispatcher, `void FUN_1400706d0(int playerIndex, int direction)`
+  -- internally gates on real weapon-busy/reload-state exclusion checks
+  before calling `FUN_140074570` (the actual weapon-slot-cycling function),
+  safe to call directly on the press edge the same way a real bound key's
+  press already does. `direction=1` matches the confirmed forward-cycle
+  convention.
+- **A real, honest residual caution flagged in-code and here, not glossed
+  over**: `FUN_14007eaf0`'s full body (beyond the state-write this project
+  relies on) also contains menu-forwarding/ESC-dispatch logic this pass
+  didn't exhaustively re-trace for every input value -- this project's own
+  prior RE notes already flag "not yet confirmed whether `FUN_14007eaf0` is
+  actually reachable/safe to call directly... the computed bind indices are
+  static-only, not live-verified." This IS the same function real native
+  keyboard Fire/ADS/Reload presses already route through today in vanilla,
+  unmodified play (real evidence favoring safety), but unlike Sprint/
+  Movement/Look/Pause/Weapnext (each independently confirmed
+  self-contained), Buttons/ADS/Reload carries more residual uncertainty --
+  test this one carefully during the upcoming playtest, not blindly assumed
+  safe from the RE trail alone.
+- **Signatures** (`re_notes/x64_migration/impl_sig_14007eaf0.txt`,
+  `impl_sig_1400823b0.txt`, `impl_sig_1400706d0.txt`): each derived via
+  `DumpSigBytes.java` against the real disassembly, RSP-relative stack
+  spills kept literal per this file's own established false-positive
+  lesson, every genuine RIP-relative/rel32 reference wildcarded.
+- **Verification**: all three build clean (0 errors) on x64; Win32 rebuilt
+  immediately after and also builds clean (0 warnings introduced, no
+  regression); x64 rebuilt again with a forced `/t:Rebuild` and confirmed
+  genuinely deployed via `dumpbin /headers` (`8664 machine (x64)`), same
+  double-check discipline as every round since the deployment-bug lesson.
+  **Not yet live-tested** -- this completes every item this issue's own
+  "next steps" list named (Sprint, Movement, Look, Buttons/ADS/Reload,
+  Pause, Weapnext all now implemented); next is a real playtest of the
+  full set together.
