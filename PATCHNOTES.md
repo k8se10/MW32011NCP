@@ -16,7 +16,12 @@ the entire existing `-x86` release line is discontinued as an emergency
 policy action, and every `-x86` release has since been archived/unpublished
 on both Nexus and GitHub — none are currently downloadable. Releases now
 carry a `-x86`/`-x64` suffix, and versioning resets to `v0.0.1-x64` once the
-x64 rebuild ships. See `re_notes/known_issues_x64.md` issue #1 and
+x64 rebuild ships. **Estimated timeline for the first `-x64` release: 2-4
+weeks (as of 2026-09-05).** Direct release criterion: no `-x64` release
+ships until it reaches feature parity with where the `-x86` line ended
+(`v0.3.5-x86`) — every control, the visual-enhancement suite, and the
+stutter/threading fixes, not just the input-remapping core. This is an
+estimate, not a promise. See `re_notes/known_issues_x64.md` issue #1 and
 `re_notes/x64_migration/README.md` for the full technical record and rebuild
 progress.
 
