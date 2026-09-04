@@ -1,0 +1,29 @@
+Signature-byte dump of FUN_14007d3b0 @ 14007d3b0
+(byte offsets relative to function entry point)
+
++0x00  48 89 5C 24 08                 MOV qword ptr [RSP + 0x8],RBX            [PC-RELATIVE/REF -- likely needs wildcarding]
++0x05  48 89 74 24 10                 MOV qword ptr [RSP + 0x10],RSI           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x0A  57                             PUSH RDI                                 
++0x0B  48 83 EC 40                    SUB RSP,0x40                             
++0x0F  48 8B 05 6A 51 66 00           MOV RAX,qword ptr [0x1406e2530]          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x16  49 8B F8                       MOV RDI,R8                               
++0x19  0F 29 74 24 30                 MOVAPS xmmword ptr [RSP + 0x30],XMM6     [PC-RELATIVE/REF -- likely needs wildcarding]
++0x1E  48 8B F2                       MOV RSI,RDX                              
++0x21  0F 29 7C 24 20                 MOVAPS xmmword ptr [RSP + 0x20],XMM7     [PC-RELATIVE/REF -- likely needs wildcarding]
++0x26  48 8B D9                       MOV RBX,RCX                              
++0x29  80 78 10 00                    CMP byte ptr [RAX + 0x10],0x0            
++0x2D  74 2F                          JZ 0x14007d40e                           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x2F  8B 41 08                       MOV EAX,dword ptr [RCX + 0x8]            
++0x32  03 41 04                       ADD EAX,dword ptr [RCX + 0x4]            
++0x35  66 0F 6E F0                    MOVD XMM6,EAX                            
++0x39  8B 41 10                       MOV EAX,dword ptr [RCX + 0x10]           
++0x3C  03 41 0C                       ADD EAX,dword ptr [RCX + 0xc]            
++0x3F  8B 49 14                       MOV ECX,dword ptr [RCX + 0x14]           
++0x42  0F 5B F6                       CVTDQ2PS XMM6,XMM6                       
++0x45  66 0F 6E F8                    MOVD XMM7,EAX                            
+
+Raw bytes (73 total): 48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 40 48 8B 05 6A 51 66 00 49 8B F8 0F 29 74 24 30 48 8B F2 0F 29 7C 24 20 48 8B D9 80 78 10 00 74 2F 8B 41 08 03 41 04 66 0F 6E F0 8B 41 10 03 41 0C 8B 49 14 0F 5B F6 66 0F 6E F8
+
+Suggested masked signature (PC-relative/ref instructions fully
+wildcarded -- refine by hand, this is a starting point only):
+?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 57 48 83 EC 40 ?? ?? ?? ?? ?? ?? ?? 49 8B F8 ?? ?? ?? ?? ?? 48 8B F2 ?? ?? ?? ?? ?? 48 8B D9 80 78 10 00 ?? ?? 8B 41 08 03 41 04 66 0F 6E F0 8B 41 10 03 41 0C 8B 49 14 0F 5B F6 66 0F 6E F8

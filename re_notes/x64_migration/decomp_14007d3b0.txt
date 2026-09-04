@@ -1,0 +1,41 @@
+================================================================
+Function: FUN_14007d3b0 @ 14007d3b0
+----------------------------------------------------------------
+
+void FUN_14007d3b0(longlong param_1,float *param_2,float *param_3)
+
+{
+  uint uVar1;
+  float fVar2;
+  float fVar3;
+  float fVar4;
+  
+  if (*(char *)(DAT_1406e2530 + 0x10) == '\0') {
+    uVar1 = *(uint *)(param_1 + 0x14);
+    fVar3 = (float)*(int *)(param_1 + 4 + (longlong)(int)uVar1 * 4);
+    fVar4 = (float)*(int *)(param_1 + 0xc + (longlong)(int)uVar1 * 4);
+  }
+  else {
+    uVar1 = *(uint *)(param_1 + 0x14);
+    fVar3 = (float)(*(int *)(param_1 + 8) + *(int *)(param_1 + 4)) * DAT_1403e3e68;
+    fVar4 = (float)(*(int *)(param_1 + 0x10) + *(int *)(param_1 + 0xc)) * DAT_1403e3e68;
+  }
+  *(uint *)(param_1 + 0x14) = uVar1 ^ 1;
+  *(undefined4 *)(param_1 + 4 + (longlong)(int)(uVar1 ^ 1) * 4) = 0;
+  fVar2 = fVar3 * fVar3 + fVar4 * fVar4;
+  *(undefined4 *)(param_1 + 0xc + (longlong)*(int *)(param_1 + 0x14) * 4) = 0;
+  if (fVar2 < 0.0) {
+    fVar2 = (float)FUN_140395608(fVar2);
+  }
+  else {
+    fVar2 = SQRT(fVar2);
+  }
+  fVar2 = ((fVar2 / (float)DAT_1406446c0) * *(float *)(DAT_1406e2500 + 0x10) +
+          *(float *)(DAT_1406e24f0 + 0x10)) * *(float *)(param_1 + 0x48);
+  *param_2 = fVar2 * fVar3;
+  *param_3 = fVar2 * fVar4;
+  return;
+}
+
+
+
