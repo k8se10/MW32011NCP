@@ -6,32 +6,41 @@ reverse-engineering trail behind each entry.
 
 ---
 
-## Unreleased — Emergency notice (2026-09-03) — 32-bit (`-x86`) support discontinued
+## Unreleased — Emergency notice (2026-09-03/04) — 32-bit (`-x86`) support discontinued, all releases archived
 
 **Summary:** MW3 (2011) received its first-ever binary update, recompiling the
 live game from 32-bit to 64-bit. Every existing release of this mod is a
 32-bit DLL and can no longer load into the game at all — this is not a bug to
 fix, it's a hard architectural break. Effective immediately, all support for
 the entire existing `-x86` release line is discontinued as an emergency
-policy action. Releases now carry a `-x86`/`-x64` suffix, and versioning
-resets to `v0.0.1-x64` once the x64 rebuild ships. See `re_notes/known_issues_x64.md`
-issue #1 and `re_notes/x64_migration/README.md` for the full technical
-record and rebuild progress.
+policy action, and every `-x86` release has since been archived/unpublished
+on both Nexus and GitHub — none are currently downloadable. Releases now
+carry a `-x86`/`-x64` suffix, and versioning resets to `v0.0.1-x64` once the
+x64 rebuild ships. See `re_notes/known_issues_x64.md` issue #1 and
+`re_notes/x64_migration/README.md` for the full technical record and rebuild
+progress.
 
 ### Documentation
 1. **All `-x86` support discontinued, effective 2026-09-03.** `v0.2.2-x86`
    (formerly Current LTS) and `v0.3.5-x86` (formerly the LTS candidate) both
    lose their support status outright, outside the normal LTS promotion/
    demotion process — no further availability commitment beyond what's
-   already published, no backported fixes, no handover window. Existing
-   `-x86` release files stay published as historical artifacts; nothing is
-   deleted, just unsupported going forward. Full policy record in
-   `LTS_POLICY.md`.
+   already published, no backported fixes, no handover window. Full policy
+   record in `LTS_POLICY.md`.
 2. **New release-naming convention adopted**: every release now carries a
    `-x86`/`-x64` suffix, since a bare version number can no longer
    disambiguate which architecture a release targets. All 15 existing GitHub
    Release titles relabeled accordingly (tags left untouched). Versioning
    resets to `v0.0.1-x64` for the new architecture line.
+3. **All releases archived/unpublished, effective 2026-09-04.** Direct
+   instruction: "ive actually archived all releases on nexus and we should
+   do the same on github. no release works and as such i refuse to serve
+   it." All 15 GitHub Releases converted to Draft (removed from the public
+   Releases page and download listing, tags/notes/assets kept intact and
+   restorable) to match the same archival already done on Nexus. Nothing
+   deleted on either platform — every `-x86` release simply isn't served
+   anywhere right now, since none of them can load into the live x64 game
+   at all.
 
 ---
 
