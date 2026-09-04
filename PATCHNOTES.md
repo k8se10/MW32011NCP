@@ -157,8 +157,13 @@ ADS, Weapnext — is now confirmed working live.**
    window-focus event at all. Automated that exact workaround using this
    project's own already-confirmed-working Pause toggle: opens pause once
    a level is detected as freshly active, waits briefly, closes it again.
-   Not yet re-tested live. Full trail in `re_notes/known_issues_x64.md`
-   issue #1.
+   Live-test feedback found the automated cycle's own timing was too
+   aggressive to actually work (firing and closing again far faster than
+   a real manual pause/unpause) — widened both delays substantially to
+   match a real player's own natural pace. Same feedback also confirmed
+   this project's own hooks (Sprint specifically) keep running correctly
+   even while gated, narrowing the real cause. Not yet re-tested live.
+   Full trail in `re_notes/known_issues_x64.md` issue #1.
 
 ---
 
