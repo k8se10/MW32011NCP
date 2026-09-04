@@ -94,4 +94,20 @@ inline uintptr_t ResolveRipRelative(uintptr_t insnAddress, size_t insnLength)
     return insnAddress + insnLength + static_cast<uintptr_t>(disp);
 }
 
+// General form of ResolveRipRelative above, needed the first time this project
+// hit an instruction shape where the disp32 ISN'T the last 4 bytes -- e.g.
+// `TEST dword ptr [rip+disp32], imm32` (opcode + disp32 + a trailing 4-byte
+// immediate, 10 bytes total: the disp32 sits at bytes 2-5, not the final 4).
+// Takes the disp32 field's own absolute address and the address RIP actually
+// points from (the instruction's real end, i.e. the next instruction) as two
+// separate, explicit values instead of assuming a fixed relationship between
+// them -- correct for any instruction encoding, not just the "disp32 is the
+// last 4 bytes" shape the simpler overload above covers.
+inline uintptr_t ResolveRipRelativeAt(uintptr_t dispFieldAddress, uintptr_t nextInsnAddress)
+{
+    if (dispFieldAddress == 0 || nextInsnAddress == 0) return 0;
+    int32_t disp = *reinterpret_cast<const int32_t*>(dispFieldAddress);
+    return nextInsnAddress + static_cast<uintptr_t>(disp);
+}
+
 }  // namespace SigScan

@@ -128,11 +128,17 @@ ADS, Weapnext — is now confirmed working live.**
    The same symptom class as an older, already-fixed x86 issue — but
    confirmed NOT actually fixed by that same mechanism on x64, since the
    x86 fix's own log line is confirmed already firing every x64 session
-   with the symptom still present. A real, open x64 investigation, not a
-   regression of the closed x86 issue. An experimental fix (a real OS-level
-   focus call, x64-only, not touching the already-working x86 path) has
-   been deployed but not yet live-tested. Full trail in
-   `re_notes/known_issues_x64.md` issue #1.
+   with the symptom still present. A real OS-level-focus experiment was
+   also tried and also confirmed insufficient — direct user correction:
+   not a Windows/OS focus issue at all, a genuine internal engine
+   mechanism, relocated (not removed) by the x64 recompile. Static RE
+   found a real, strong candidate: a single flag bit that, when set,
+   makes the entire native movement/look-processing function a complete
+   no-op — confirmed via two independent functions both gating all their
+   real work behind the identical bit. Fixed experimentally by forcing
+   that bit clear every tick, the same "force the desired state directly"
+   approach already proven for two other real bugs this session. Not yet
+   live-tested. Full trail in `re_notes/known_issues_x64.md` issue #1.
 
 ---
 

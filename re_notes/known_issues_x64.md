@@ -1187,3 +1187,74 @@ x64 investigation.
   genuinely experimental, watch for `[focus-gate-fix-x64]` in
   `proxy_d3d9.log` and confirm live whether input now works without a
   manual click before treating this as resolved.
+
+**Real correction, same day: the OS-focus experiment above was WRONG --
+direct user correction: "and not windows focus deffo internal they juist
+moved it."** Confirmed via both experiments' own log lines firing every
+session with the symptom still present -- neither synthesizing WndProc
+messages nor real `SetForegroundWindow`/`SetActiveWindow`/`SetFocus` calls
+touch whatever x64's real gate actually is. Pivoted to genuine static RE
+instead of a third blind Win32-level guess.
+
+- **Real find, via full decompile of `FUN_14007d9f0` itself** (the
+  function this project's own Movement/Look hook already sits on, full
+  decompile already on disk from earlier this session): its very first
+  real branch, immediately after the mouse-delta-accumulator call, is
+  `if ((DAT_1406e4774 & 0x800) != 0) return;` -- when this ONE bit is set,
+  the ENTIRE function (movement, look-angle packing, everything) is a
+  complete no-op, for BOTH controller injection and real native
+  keyboard/mouse input alike (the bit lives inside the native function
+  itself; this project's own hook just calls through to it either way).
+- **Independent corroboration, not just one data point**: a SECOND,
+  structurally distinct function, `FUN_14007d5f0`
+  (`re_notes/x64_migration/decomp_14007d5f0.txt` -- a genuine usercmd
+  movement writer in its own right, touching the same forwardmove/
+  rightmove/+0x1e/+0x1f usercmd fields), gates its ENTIRE body behind the
+  exact same bit (`&DAT_1406e4774 + player*0xce5c`, the same per-player
+  field `FUN_14007d9f0` reads at offset 0 for SP's player 0). Two
+  independent functions gating all their real work behind the identical
+  single bit is strong, convergent evidence this is genuinely a broad
+  "movement/input processing suppressed" gate, not a narrow crouch-specific
+  lock like x86's own stance-guard bytes were.
+- **Static analysis could NOT find a writer** to this flag --
+  `FindDataWriters.java` found only TEST/read references, zero direct
+  writes, the SAME limitation x86's own original investigation hit for its
+  own guard bytes (`known_issues.md` issue #42: "an exhaustive whole-binary
+  scan... found only 4 reader functions and ZERO writers"), likely because
+  the real writer uses register-relative addressing Ghidra's reference
+  tracker doesn't resolve back to this literal address.
+- **Fixed via the same empirical philosophy that already fixed x86's
+  original issue AND this session's own ADS toggle-flag bug**: rather than
+  continue a static hunt for an unconfirmed writer, resolve the flag's real
+  address and FORCE it clear directly, every Movement tick, before calling
+  through to native logic -- bypassing whatever real event naturally clears
+  it, the same "force the desired state directly" pattern already proven
+  live for Sprint's pm_flags bit and ADS's is-aiming flag. Resolved via the
+  ALREADY-scanned `kMovementTickSignature` match (no separate scan needed)
+  plus a fixed, directly-verified byte offset (`+0x54`,
+  `re_notes/x64_migration/full_sigbytes_14007d9f0.txt`) to the real `TEST
+  dword ptr [rip+disp32], 0x800` instruction. This is the FIRST instruction
+  shape this project has hit where the disp32 isn't the instruction's last
+  4 bytes (a 10-byte `TEST reg/mem, imm32` form: opcode + disp32 + a
+  trailing 4-byte immediate) -- added `SigScan::ResolveRipRelativeAt()`
+  (`signature_scan.h`), a more general two-explicit-address form, alongside
+  the existing `ResolveRipRelative()` rather than changing that one's
+  contract and risking the already-working Look/ADS-flag resolutions.
+- **Real, honest uncertainty, not glossed over**: it's not confirmed what
+  ELSE this bit's legitimate SET state might represent (a deliberate "not
+  yet controllable" window early in a level load being the most likely
+  guess) -- but forcing it clear only from inside `Hook_MovementTick`,
+  which itself only ever runs during an active Pmove simulation tick in the
+  first place (never during a menu/pause/loading screen, per this session's
+  own established "Pmove tick halts during pause" finding), should keep
+  this narrowly scoped to exactly the "stuck after launch" window it's
+  meant to fix, without touching whatever legitimately needs this bit set
+  during a genuine non-gameplay state.
+- **Verification**: build clean (0 errors) on x64; Win32 rebuilt
+  immediately after, also clean (0 regression, the new
+  `ResolveRipRelativeAt` helper is additive, doesn't touch the existing
+  overload's behavior); x64 rebuilt again with a forced `/t:Rebuild`,
+  confirmed genuinely deployed via `dumpbin /headers` (`8664 machine
+  (x64)`). **Not yet live-tested** -- watch for `[x64-inputgate] Resolved
+  @ 0x...` in `proxy_d3d9.log` (confirms the flag's real address was found)
+  and confirm live whether input now works without a manual click.
