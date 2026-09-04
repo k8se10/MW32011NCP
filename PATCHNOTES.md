@@ -96,8 +96,18 @@ progress.
    function's own parameter semantics routed these through the wrong
    engine function entirely, which silently no-op'd every call. Fixed by
    routing through the real case-number command dispatcher instead — the
-   same one Pause and Weapnext already use successfully. Not yet
-   re-tested live. Full trail in `re_notes/known_issues_x64.md` issue #1.
+   same one Pause and Weapnext already use successfully.
+4. **Fire stopped working after one shot; ADS came out as a toggle instead
+   of hold.** Both traced to the same root cause: the real down/up handlers
+   the previous fix's dispatcher tail-calls into track held state via a
+   dual-source identifier, not a simple on/off flag — passing 0/1 there
+   broke release matching (permanently wedging the button) and, for ADS
+   specifically, routed through an extra native toggle that made it stick
+   on after release. Fixed by calling the real handlers directly with a
+   consistent synthetic identifier, which resolves both symptoms at once —
+   Fire now holds/releases correctly and ADS is genuine hold-to-aim,
+   matching x86. Not yet re-tested live. Full trail in
+   `re_notes/known_issues_x64.md` issue #1.
 
 ---
 

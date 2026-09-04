@@ -85,11 +85,21 @@ polling from the always-on menu tick, matching x86's own real fix for this
 identical bug class years earlier); and Fire/ADS/Reload did nothing at all
 (a genuine misread of `FUN_14007eaf0`'s own parameter semantics — fixed by
 routing through `FUN_14007c3a0`, the real case-number dispatcher, the same
-way Pause/Weapnext already do). Full trail in "Real crash found and fixed"
-and "Real live playtest" below. **Sprint, Movement, Look, Pause-open, and
-Weapnext are all confirmed working live**; Buttons/ADS/Reload and
-Pause-close are build-verified with real fixes applied but **NOT YET
-RE-TESTED LIVE** — next step is another playtest of the full set.
+way Pause/Weapnext already do). **A THIRD live playtest after that found
+two more real bugs, both fixed via the same root cause**: Fire fired once
+then stopped, and ADS came out as a toggle instead of hold — both traced
+to `FUN_14007c3a0`'s own down/up cases tail-calling `FUN_14007e460`/
+`FUN_14007e490`, real dual-source kbutton handlers whose second argument
+is a source identifier, not an isDown boolean — fixed by calling those two
+functions directly with a consistent synthetic id, which also eliminates
+ADS's unwanted toggle side effect as a free consequence (that toggle only
+existed inside `FUN_14007c3a0`'s own case dispatch, now bypassed
+entirely). Full trail in "Real crash found and fixed," "Real live
+playtest," and "Second live playtest" below. **Sprint, Movement, Look,
+Pause-open, and Weapnext are all confirmed working live**; Buttons/ADS/
+Reload (now hold-based) and Pause-close are build-verified with real fixes
+applied but **NOT YET RE-TESTED LIVE** — next step is another playtest of
+the full set.
 **Emergency policy action, same day: all support for the entire existing
 `-x86` release line (every version through `v0.3.5-x86`) is discontinued,
 effective immediately** — not a gradual wind-down, since the live game can
@@ -1011,3 +1021,64 @@ real, understood bugs, not mysteries -- fixed the same round.
   with a forced `/t:Rebuild`, confirmed genuinely deployed via `dumpbin
   /headers` (`8664 machine (x64)`). **Not yet re-tested live** -- both
   fixes are build-verified only until run against the actual game again.
+
+**Second live playtest, same day: two more real bugs found in the fixes
+above, both root-caused and fixed by decompiling ONE more function pair
+in full.** Direct user report: "okay weird, fire worked initially once,
+then stopped working also our ads is the wrong behaviour we need the hold
+to ads like we did for x86." Both trace to the SAME root cause.
+
+- **Real root cause, confirmed via full decompile of `FUN_14007e460`/
+  `FUN_14007e490`** (`re_notes/x64_migration/decomp_14007e460_e490.txt` --
+  these are the actual down/up handlers `FUN_14007c3a0`'s cases tail-call
+  into, previously only known by call shape, never read end to end): this
+  is a real **dual-source kbutton_t** (classic id-Tech/Quake lineage --
+  tracks up to TWO simultaneous key sources bound to the same action, e.g.
+  mouse1 AND spacebar both bound to Fire, so releasing one doesn't cancel
+  the other's hold). The handlers' own second argument is a SOURCE
+  IDENTIFIER (confirmed via `FUN_14007eaf0`'s own real call sites: on a
+  genuine native keypress it forwards the RAW KEYCODE itself as this
+  argument, not a 0/1 flag), not an isDown boolean. The previous fix passed
+  `isDown ? 1 : 0` as this argument -- on release, "0" happened to
+  accidentally match the kbutton's unused SECOND slot (which defaults to
+  0), not the FIRST slot the press actually wrote "1" into, so the release
+  call hit its own early-out before ever clearing the first slot --
+  permanently wedging the kbutton "active." The next press was then
+  silently ignored too (the handler's own new-source check saw "1" already
+  present) -- exactly matching "fire worked once, then stopped."
+- **Fixed**: call `FUN_14007e460`/`FUN_14007e490` DIRECTLY (their own real,
+  independently-resolved signatures -- no longer routed through
+  `FUN_14007c3a0` at all) with a single, FIXED, consistent non-zero
+  synthetic source id (`kSyntheticSourceId = 0x1000`, reused safely across
+  Fire/Reload/ADS since each has its own independent struct) -- identical
+  on both the down and up call for a given press, guaranteeing the release
+  always finds and clears the exact slot the press wrote.
+- **This also fixes the ADS toggle-vs-hold complaint as a direct
+  consequence, not a separate patch**: `FUN_14007c3a0`'s case 0x3b/0x3c
+  wrapped the SAME `FUN_14007e460`/`e490` call with an extra, unconditional
+  toggle of a completely separate flag (`DAT_1406e26e0`, confirmed via real
+  disassembly at `0x14007ce3f`-`0x14007ce50`: `flag = (flag==0)`,
+  unconditional on every DOWN press, never touched on release) -- that
+  flag toggle is exactly what made ADS look like "press to toggle on,
+  stays on after releasing." Calling the kbutton handlers directly
+  bypasses `FUN_14007c3a0`'s case dispatch entirely, so that toggle
+  mutation never runs -- ADS now drives purely off the same real
+  kbutton-held mechanism Fire/Reload use, matching x86's own proven
+  hold-to-ADS design exactly (`InjectControllerAds`: `CallKbuttonDown` on
+  press, `CallKbuttonUp` on release, nothing else).
+- **Real per-bind struct/timestamp addresses**, all DATA not code, resolved
+  via `SigScan::ResolveRipRelative` -- but anchored off `FUN_14007c3a0`'s
+  own already-reliable resolved address plus a FIXED byte offset to each
+  real instruction, rather than four more standalone multi-instruction
+  signatures. Every offset independently verified via `DumpRawBytes.java`
+  against the live binary (`re_notes/x64_migration/
+  rawbytes_c3a0_targets.txt`), not estimated from the decompile's own
+  pseudo-C. This is the same sanctioned "resolve an entry point, apply a
+  byte offset" pattern `signature_scan.h`'s own `ResolveAs<FnT>` already
+  documents for the function-pointer case, extended here to a data
+  reference at a verified fixed offset within the same already-scanned
+  function.
+- **Verification**: build clean (0 errors) on x64; Win32 rebuilt
+  immediately after, also clean (0 regression); x64 rebuilt again with a
+  forced `/t:Rebuild`, confirmed genuinely deployed via `dumpbin /headers`
+  (`8664 machine (x64)`). **Not yet re-tested live.**
