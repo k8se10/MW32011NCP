@@ -36,7 +36,7 @@ two files already had for #111 before the split.
 
 ## Index
 
-- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **Sprint+Movement+Look CONFIRMED WORKING LIVE; Buttons/ADS/Reload+Pause+Weapnext build-verified; a real launch-crash bug (sprintf_s overflow) found+fixed, awaiting re-test**
+- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **Sprint+Movement+Look+Pause-open+Weapnext CONFIRMED WORKING LIVE; Buttons/ADS/Reload wrong-function bug + Pause-close bug found and fixed, awaiting re-test**
 
 ---
 
@@ -78,16 +78,18 @@ OVERRUN, root-caused via Windows Event Viewer + `dumpbin /disasm` to a
 `char buf[256]` its log line formats into, a latent bug in place since that
 file was first written, never triggered before because every earlier
 signature was short enough) — found and fixed (buffers bumped to 1024
-bytes), see "Real crash found and fixed" below for the full root-cause
-trail. Build-verified on both platforms, deployment double-checked via
-`dumpbin`, but **NOT YET RE-TESTED LIVE** after this fix — the
-launch-then-exit repro needs to be re-attempted before any of Sprint/
-Movement/Look/Buttons/Pause/Weapnext can be meaningfully playtested. This
-completes every hook this issue named as remaining work; Buttons/ADS/Reload
-also still carries its own separate, honestly-documented residual
-uncertainty in its underlying function (see "Buttons/ADS/Reload, Pause
-toggle, and Weapnext implemented" below) — worth extra care once a real
-playtest is possible again.
+bytes). **A real live playtest after that fix found two more real bugs**,
+both fixed the same day: Pause could open but not close (its poll only ran
+from the gameplay tick, which halts entirely while paused — fixed by also
+polling from the always-on menu tick, matching x86's own real fix for this
+identical bug class years earlier); and Fire/ADS/Reload did nothing at all
+(a genuine misread of `FUN_14007eaf0`'s own parameter semantics — fixed by
+routing through `FUN_14007c3a0`, the real case-number dispatcher, the same
+way Pause/Weapnext already do). Full trail in "Real crash found and fixed"
+and "Real live playtest" below. **Sprint, Movement, Look, Pause-open, and
+Weapnext are all confirmed working live**; Buttons/ADS/Reload and
+Pause-close are build-verified with real fixes applied but **NOT YET
+RE-TESTED LIVE** — next step is another playtest of the full set.
 **Emergency policy action, same day: all support for the entire existing
 `-x86` release line (every version through `v0.3.5-x86`) is discontinued,
 effective immediately** — not a gradual wind-down, since the live game can
@@ -937,3 +939,75 @@ exception handler.
   collision) is the same class of lesson here in a different shape: a fixed
   buffer sized for today's inputs silently becomes wrong once a genuinely
   different-shaped input (a much longer string) shows up later.
+
+**Real live playtest, same day: Sprint/Movement/Look/Pause-open/Weapnext all
+confirmed working; two real bugs found in Buttons/ADS/Reload and Pause-
+close, both root-caused and fixed.** Direct user report: "Okay, pause
+works, no buttons other than weapnext work" (later, same session: "obvs
+cant unpause when paused which was a early x86 known issue"). Both are
+real, understood bugs, not mysteries -- fixed the same round.
+
+- **Bug 1: Pause could open but never close.** Root cause: `PollPauseToggleX64`
+  was only ever called from `Hook_MovementTick`, which rides `FUN_14007d9f0`
+  -- part of the per-frame GAMEPLAY SIMULATION pipeline, which halts
+  entirely while genuinely paused (confirmed architecture, not a guess --
+  the same reason x86's own `InjectAllControllerInput` stops firing while
+  paused, `CLAUDE.md`'s "One-shot commands and the real pause-menu path"
+  section). Once Start's first press opened pause, the ONLY code path
+  polling for the second press to close it also stopped running -- a
+  structurally identical bug to a real, already-documented x86 one from
+  this project's own early history (2026-07-15's "REAL FIX" for the same
+  symptom, `analog_input_hooks.cpp`'s own `InjectMenuInputTick` comment).
+  **Fixed** the exact same way x86 already fixed it: `PollPauseToggleX64`
+  is now ALSO called from `InjectMenuInputTick` (the WndProc-subclass +
+  SetTimer-driven tick that keeps running unconditionally even during
+  pause, already confirmed firing on x64 via `Controller_RequestPoll`'s own
+  unconditional call there) -- exported from `analog_input_hooks_x64.cpp`
+  via `extern "C"` (same established anonymous-namespace-with-real-linkage
+  pattern this file already uses elsewhere), declared and called from
+  `analog_input_hooks.cpp` under an `#if defined(_M_X64)` guard.
+  Redundantly still also called from `Hook_MovementTick` itself (handles
+  OPENING pause during live gameplay; the menu-tick call is what now
+  handles CLOSING it) -- same "safe/idempotent from either call site"
+  design x86's own `InjectControllerPauseMenu` already established.
+- **Bug 2: Fire/ADS/Reload silently did nothing.** Root cause: a genuine
+  misread of `FUN_14007eaf0`'s own semantics, corrected by re-reading its
+  full decompile (`re_notes/x64_migration/decomp_buttons_pause_weapnext.txt`)
+  more rigorously rather than re-testing the same call with different
+  values. The original implementation called
+  `FUN_14007eaf0(player, bindIndex, isDown)` directly, treating `bindIndex`
+  (computed offline from the bind-name table: Fire=1, Reload=11, ADS=59) as
+  if it were that function's own dispatch key. It isn't -- `FUN_14007eaf0`'s
+  second parameter is really a RAW KEYCODE SLOT: the function's own raw
+  `*piVar1 = isDown` write at the top lands harmlessly into whatever
+  per-keycode struct that slot number happens to be, but its REAL dispatch
+  logic further down looks up `DAT_140644a6c[player*0x34a + param_2*3]` --
+  the "which bind is THIS KEYCODE currently bound to" field, populated only
+  by `Key_SetBinding` for genuine raw keycodes with a real key binding,
+  never for an arbitrary bind-name-table index passed in directly. Calling
+  it with 1/11/59 as if those were keycodes hit an unpopulated slot, the
+  function's own `== 0` early-out fired every time, and `FUN_14007c3a0`
+  (the REAL case-number dispatcher) was never reached -- exactly matching
+  the observed symptom (Pause/Weapnext both bypass `FUN_14007eaf0` entirely,
+  calling their own terminal functions directly, which is why only those
+  two worked).
+  **Fixed**: decompiled `FUN_14007c3a0` in full
+  (`re_notes/x64_migration/decomp_14007c3a0_full.txt`, confirmed x64
+  equivalent of x86's `FUN_00438710`) and confirmed its case numbers ARE
+  bind-name-table indices directly (already independently established for
+  weapnext=case 0x42/pause=case 0x43 -- `re_notes/x64_migration/README.md`
+  section 1g). Fire = cases 1(down)/2(up), Reload(+usereload) =
+  0xb(down)/0xc(up), ADS(+toggleads_throw) = 0x3b(down)/0x3c(up) -- each
+  pair confirmed via the decompile calling `FUN_14007e460`(down)/
+  `FUN_14007e490`(up) on the correct per-bind struct base for that action.
+  Now calls `FUN_14007c3a0(player, caseNumber, isDown)` directly on the
+  edge, exactly the same "direct call into the real dispatcher, bypassing
+  the raw-key-event layer entirely" pattern already proven working for
+  Pause/Weapnext -- just entered one level higher in the real call chain
+  than the original (wrong) attempt. Real signature via `DumpSigBytes.java`
+  (`re_notes/x64_migration/impl_sig_14007c3a0.txt`).
+- **Verification**: both fixes build clean (0 errors) on x64; Win32
+  rebuilt immediately after, also clean (0 regression); x64 rebuilt again
+  with a forced `/t:Rebuild`, confirmed genuinely deployed via `dumpbin
+  /headers` (`8664 machine (x64)`). **Not yet re-tested live** -- both
+  fixes are build-verified only until run against the actual game again.
