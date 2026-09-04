@@ -1,0 +1,222 @@
+Signature-byte dump of FUN_14007d9f0 @ 14007d9f0
+(byte offsets relative to function entry point)
+
++0x00  48 8B C4                       MOV RAX,RSP                              
++0x03  53                             PUSH RBX                                 
++0x04  48 81 EC D0 00 00 00           SUB RSP,0xd0                             
++0x0B  83 3D BE 6C 5C 00 00           CMP dword ptr [0x1406446c0],0x0          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x12  48 8B D9                       MOV RBX,RCX                              
++0x15  44 0F 29 68 88                 MOVAPS xmmword ptr [RAX + -0x78],XMM13   [PC-RELATIVE/REF -- likely needs wildcarding]
++0x1A  44 0F 28 E9                    MOVAPS XMM13,XMM1                        
++0x1E  0F 86 FA 03 00 00              JBE 0x14007de0e                          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x24  0F 29 70 E8                    MOVAPS xmmword ptr [RAX + -0x18],XMM6    [PC-RELATIVE/REF -- likely needs wildcarding]
++0x28  4C 8D 40 18                    LEA R8,[RAX + 0x18]                      [PC-RELATIVE/REF -- likely needs wildcarding]
++0x2C  48 8D 50 20                    LEA RDX,[RAX + 0x20]                     [PC-RELATIVE/REF -- likely needs wildcarding]
++0x30  48 C7 05 19 4D 66 00 00 00 00 00 MOV qword ptr [0x1406e2744],0x0          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x3B  48 8D 0D AE 4C 66 00           LEA RCX,[0x1406e26e0]                    [PC-RELATIVE/REF -- likely needs wildcarding]
++0x42  C7 05 10 4D 66 00 00 00 00 00  MOV dword ptr [0x1406e274c],0x0          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x4C  0F 57 F6                       XORPS XMM6,XMM6                          
++0x4F  E8 6C F9 FF FF                 CALL 0x14007d3b0                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x54  F7 05 26 6D 66 00 00 08 00 00  TEST dword ptr [0x1406e4774],0x800       [PC-RELATIVE/REF -- likely needs wildcarding]
++0x5E  0F 85 B2 03 00 00              JNZ 0x14007de06                          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x64  0F 29 BC 24 B0 00 00 00        MOVAPS xmmword ptr [RSP + 0xb0],XMM7     [PC-RELATIVE/REF -- likely needs wildcarding]
++0x6C  F3 0F 10 BC 24 F0 00 00 00     MOVSS XMM7,dword ptr [RSP + 0xf0]        [PC-RELATIVE/REF -- likely needs wildcarding]
++0x75  44 0F 29 84 24 A0 00 00 00     MOVAPS xmmword ptr [RSP + 0xa0],XMM8     [PC-RELATIVE/REF -- likely needs wildcarding]
++0x7E  F3 44 0F 10 84 24 F8 00 00 00  MOVSS XMM8,dword ptr [RSP + 0xf8]        [PC-RELATIVE/REF -- likely needs wildcarding]
++0x88  44 0F 2E C6                    UCOMISS XMM8,XMM6                        
++0x8C  44 0F 29 94 24 80 00 00 00     MOVAPS xmmword ptr [RSP + 0x80],XMM10    [PC-RELATIVE/REF -- likely needs wildcarding]
++0x95  F3 44 0F 10 15 DA 63 36 00     MOVSS XMM10,dword ptr [0x1403e3e68]      [PC-RELATIVE/REF -- likely needs wildcarding]
++0x9E  7A 0D                          JP 0x14007da9d                           [PC-RELATIVE/REF -- likely needs wildcarding]
++0xA0  75 0B                          JNZ 0x14007da9d                          [PC-RELATIVE/REF -- likely needs wildcarding]
++0xA2  0F 2E FE                       UCOMISS XMM7,XMM6                        
++0xA5  7A 06                          JP 0x14007da9d                           [PC-RELATIVE/REF -- likely needs wildcarding]
++0xA7  0F 84 9D 02 00 00              JZ 0x14007dd3a                           [PC-RELATIVE/REF -- likely needs wildcarding]
++0xAD  48 8B 0D 0C 6D 5C 00           MOV RCX,qword ptr [0x1406447b0]          [PC-RELATIVE/REF -- likely needs wildcarding]
++0xB4  44 0F 29 8C 24 90 00 00 00     MOVAPS xmmword ptr [RSP + 0x90],XMM9     [PC-RELATIVE/REF -- likely needs wildcarding]
++0xBD  F3 44 0F 10 0D DA 63 36 00     MOVSS XMM9,dword ptr [0x1403e3e90]       [PC-RELATIVE/REF -- likely needs wildcarding]
++0xC6  84 C9                          TEST CL,CL                               
++0xC8  74 3E                          JZ 0x14007daf8                           [PC-RELATIVE/REF -- likely needs wildcarding]
++0xCA  48 8B 05 67 4A 66 00           MOV RAX,qword ptr [0x1406e2528]          [PC-RELATIVE/REF -- likely needs wildcarding]
++0xD1  41 0F 28 C0                    MOVAPS XMM0,XMM8                         
++0xD5  F3 0F 59 40 10                 MULSS XMM0,dword ptr [RAX + 0x10]        
++0xDA  F3 41 0F 58 C2                 ADDSS XMM0,XMM10                         
++0xDF  0F 5A C0                       CVTPS2PD XMM0,XMM0                       
++0xE2  E8 D1 7B 31 00                 CALL 0x1403956a8                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0xE7  0F BE 4B 1D                    MOVSX ECX,byte ptr [RBX + 0x1d]          
++0xEB  F2 0F 2C C0                    CVTTSD2SI EAX,XMM0                       
++0xEF  03 C8                          ADD ECX,EAX                              
++0xF1  E8 5A A6 23 00                 CALL 0x1402b8140                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0xF6  88 43 1D                       MOV byte ptr [RBX + 0x1d],AL             
++0xF9  48 8B 0D C0 6C 5C 00           MOV RCX,qword ptr [0x1406447b0]          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x100  8B 15 86 6C 66 00              MOV EDX,dword ptr [0x1406e477c]          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x106  EB 76                          JMP 0x14007db6e                          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x108  8B 15 7E 6C 66 00              MOV EDX,dword ptr [0x1406e477c]          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x10E  F6 C2 01                       TEST DL,0x1                              
++0x111  75 6B                          JNZ 0x14007db6e                          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x113  48 8B 05 0E 4A 66 00           MOV RAX,qword ptr [0x1406e2518]          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x11A  41 0F 28 D0                    MOVAPS XMM2,XMM8                         
++0x11E  F3 0F 10 05 1A 4C 66 00        MOVSS XMM0,dword ptr [0x1406e2730]       [PC-RELATIVE/REF -- likely needs wildcarding]
++0x126  0F 2E C6                       UCOMISS XMM0,XMM6                        
++0x129  F3 0F 59 50 10                 MULSS XMM2,dword ptr [RAX + 0x10]        
++0x12E  7A 02                          JP 0x14007db22                           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x130  74 2C                          JZ 0x14007db4e                           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x132  8B 05 98 6B 5C 00              MOV EAX,dword ptr [0x1406446c0]          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x138  0F 57 C9                       XORPS XMM1,XMM1                          
++0x13B  F3 48 0F 2A C8                 CVTSI2SS XMM1,RAX                        
++0x140  F3 0F 59 C8                    MULSS XMM1,XMM0                          
++0x144  F3 0F 59 0D 24 63 36 00        MULSS XMM1,dword ptr [0x1403e3e60]       [PC-RELATIVE/REF -- likely needs wildcarding]
++0x14C  0F 28 C1                       MOVAPS XMM0,XMM1                         
++0x14F  F3 0F 5D CA                    MINSS XMM1,XMM2                          
++0x153  41 0F 57 C1                    XORPS XMM0,XMM9                          
++0x157  0F 28 D0                       MOVAPS XMM2,XMM0                         
++0x15A  F3 0F 5F D1                    MAXSS XMM2,XMM1                          
++0x15E  F3 0F 10 05 E6 4B 66 00        MOVSS XMM0,dword ptr [0x1406e273c]       [PC-RELATIVE/REF -- likely needs wildcarding]
++0x166  F3 0F 5C C2                    SUBSS XMM0,XMM2                          
++0x16A  41 0F 57 D1                    XORPS XMM2,XMM9                          
++0x16E  F3 0F 11 15 E2 4B 66 00        MOVSS dword ptr [0x1406e2748],XMM2       [PC-RELATIVE/REF -- likely needs wildcarding]
++0x176  F3 0F 11 05 CE 4B 66 00        MOVSS dword ptr [0x1406e273c],XMM0       [PC-RELATIVE/REF -- likely needs wildcarding]
++0x17E  80 3D 9F 6C 5C 00 00           CMP byte ptr [0x140644814],0x0           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x185  75 0D                          JNZ 0x14007db84                          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x187  48 8B 05 7A 49 66 00           MOV RAX,qword ptr [0x1406e24f8]          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x18E  80 78 10 00                    CMP byte ptr [RAX + 0x10],0x0            
++0x192  74 75                          JZ 0x14007dbf9                           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x194  84 C9                          TEST CL,CL                               
++0x196  75 71                          JNZ 0x14007dbf9                          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x198  F6 C2 01                       TEST DL,0x1                              
++0x19B  0F 85 96 00 00 00              JNZ 0x14007dc27                          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x1A1  48 8B 05 78 49 66 00           MOV RAX,qword ptr [0x1406e2510]          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x1A8  0F 28 D7                       MOVAPS XMM2,XMM7                         
++0x1AB  F3 0F 10 05 89 4B 66 00        MOVSS XMM0,dword ptr [0x1406e272c]       [PC-RELATIVE/REF -- likely needs wildcarding]
++0x1B3  0F 2E C6                       UCOMISS XMM0,XMM6                        
++0x1B6  F3 0F 59 50 10                 MULSS XMM2,dword ptr [RAX + 0x10]        
++0x1BB  7A 02                          JP 0x14007dbaf                           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x1BD  74 2C                          JZ 0x14007dbdb                           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x1BF  8B 05 0B 6B 5C 00              MOV EAX,dword ptr [0x1406446c0]          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x1C5  0F 57 C9                       XORPS XMM1,XMM1                          
++0x1C8  F3 48 0F 2A C8                 CVTSI2SS XMM1,RAX                        
++0x1CD  F3 0F 59 C8                    MULSS XMM1,XMM0                          
++0x1D1  F3 0F 59 0D 97 62 36 00        MULSS XMM1,dword ptr [0x1403e3e60]       [PC-RELATIVE/REF -- likely needs wildcarding]
++0x1D9  0F 28 C1                       MOVAPS XMM0,XMM1                         
++0x1DC  F3 0F 5D CA                    MINSS XMM1,XMM2                          
++0x1E0  41 0F 57 C1                    XORPS XMM0,XMM9                          
++0x1E4  0F 28 D0                       MOVAPS XMM2,XMM0                         
++0x1E7  F3 0F 5F D1                    MAXSS XMM2,XMM1                          
++0x1EB  F3 0F 10 05 55 4B 66 00        MOVSS XMM0,dword ptr [0x1406e2738]       [PC-RELATIVE/REF -- likely needs wildcarding]
++0x1F3  F3 0F 58 C2                    ADDSS XMM0,XMM2                          
++0x1F7  F3 0F 11 15 55 4B 66 00        MOVSS dword ptr [0x1406e2744],XMM2       [PC-RELATIVE/REF -- likely needs wildcarding]
++0x1FF  F3 0F 11 05 41 4B 66 00        MOVSS dword ptr [0x1406e2738],XMM0       [PC-RELATIVE/REF -- likely needs wildcarding]
++0x207  EB 2E                          JMP 0x14007dc27                          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x209  48 8B 05 20 49 66 00           MOV RAX,qword ptr [0x1406e2520]          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x210  0F 28 C7                       MOVAPS XMM0,XMM7                         
++0x213  F3 0F 59 40 10                 MULSS XMM0,dword ptr [RAX + 0x10]        
++0x218  F3 41 0F 58 C2                 ADDSS XMM0,XMM10                         
++0x21D  0F 5A C0                       CVTPS2PD XMM0,XMM0                       
++0x220  E8 93 7A 31 00                 CALL 0x1403956a8                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x225  0F BE 4B 1C                    MOVSX ECX,byte ptr [RBX + 0x1c]          
++0x229  F2 0F 2C C0                    CVTTSD2SI EAX,XMM0                       
++0x22D  2B C8                          SUB ECX,EAX                              
++0x22F  E8 1C A5 23 00                 CALL 0x1402b8140                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x234  88 43 1C                       MOV byte ptr [RBX + 0x1c],AL             
++0x237  8B 05 4B 6B 66 00              MOV EAX,dword ptr [0x1406e4778]          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x23D  0F BA E0 12                    BT EAX,0x12                              
++0x241  73 52                          JNC 0x14007dc85                          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x243  F3 44 0F 59 05 28 76 36 00     MULSS XMM8,dword ptr [0x1403e5264]       [PC-RELATIVE/REF -- likely needs wildcarding]
++0x24C  F3 45 0F 58 C2                 ADDSS XMM8,XMM10                         
++0x251  41 0F 5A C0                    CVTPS2PD XMM0,XMM8                       
++0x255  E8 5E 7A 31 00                 CALL 0x1403956a8                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x25A  0F BE 43 21                    MOVSX EAX,byte ptr [RBX + 0x21]          
++0x25E  F2 0F 2C C8                    CVTTSD2SI ECX,XMM0                       
++0x262  03 C8                          ADD ECX,EAX                              
++0x264  E8 E7 A4 23 00                 CALL 0x1402b8140                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x269  F3 0F 59 3D 03 76 36 00        MULSS XMM7,dword ptr [0x1403e5264]       [PC-RELATIVE/REF -- likely needs wildcarding]
++0x271  88 43 21                       MOV byte ptr [RBX + 0x21],AL             
++0x274  F3 41 0F 58 FA                 ADDSS XMM7,XMM10                         
++0x279  0F 5A C7                       CVTPS2PD XMM0,XMM7                       
++0x27C  E8 37 7A 31 00                 CALL 0x1403956a8                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x281  0F BE 43 20                    MOVSX EAX,byte ptr [RBX + 0x20]          
++0x285  F2 0F 2C C8                    CVTTSD2SI ECX,XMM0                       
++0x289  03 C8                          ADD ECX,EAX                              
++0x28B  E8 C0 A4 23 00                 CALL 0x1402b8140                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x290  E9 A9 00 00 00                 JMP 0x14007dd2e                          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x295  0F BA E0 10                    BT EAX,0x10                              
++0x299  0F 83 A2 00 00 00              JNC 0x14007dd31                          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x29F  48 8B 05 A2 48 66 00           MOV RAX,qword ptr [0x1406e2538]          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x2A6  44 0F 29 5C 24 70              MOVAPS xmmword ptr [RSP + 0x70],XMM11    [PC-RELATIVE/REF -- likely needs wildcarding]
++0x2AC  F3 44 0F 10 1D 8F C1 36 00     MOVSS XMM11,dword ptr [0x1403e9e34]      [PC-RELATIVE/REF -- likely needs wildcarding]
++0x2B5  41 0F 28 CB                    MOVAPS XMM1,XMM11                        
++0x2B9  F3 44 0F 59 40 10              MULSS XMM8,dword ptr [RAX + 0x10]        
++0x2BF  F3 41 0F 5D C8                 MINSS XMM1,XMM8                          
++0x2C4  F3 44 0F 10 05 0F B2 36 00     MOVSS XMM8,dword ptr [0x1403e8ecc]       [PC-RELATIVE/REF -- likely needs wildcarding]
++0x2CD  41 0F 28 C0                    MOVAPS XMM0,XMM8                         
++0x2D1  F3 0F 5F C1                    MAXSS XMM0,XMM1                          
++0x2D5  F3 41 0F 58 C2                 ADDSS XMM0,XMM10                         
++0x2DA  0F 5A C0                       CVTPS2PD XMM0,XMM0                       
++0x2DD  E8 D6 79 31 00                 CALL 0x1403956a8                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x2E2  0F BE 43 21                    MOVSX EAX,byte ptr [RBX + 0x21]          
++0x2E6  F2 0F 2C C8                    CVTTSD2SI ECX,XMM0                       
++0x2EA  03 C8                          ADD ECX,EAX                              
++0x2EC  E8 5F A4 23 00                 CALL 0x1402b8140                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x2F1  88 43 21                       MOV byte ptr [RBX + 0x21],AL             
++0x2F4  48 8B 05 25 48 66 00           MOV RAX,qword ptr [0x1406e2510]          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x2FB  0F 2F 70 10                    COMISS XMM6,dword ptr [RAX + 0x10]       
++0x2FF  76 04                          JBE 0x14007dcf5                          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x301  41 0F 57 F9                    XORPS XMM7,XMM9                          
++0x305  48 8B 05 3C 48 66 00           MOV RAX,qword ptr [0x1406e2538]          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x30C  F3 0F 59 78 10                 MULSS XMM7,dword ptr [RAX + 0x10]        
++0x311  F3 44 0F 5D DF                 MINSS XMM11,XMM7                         
++0x316  F3 45 0F 5F C3                 MAXSS XMM8,XMM11                         
++0x31B  F3 45 0F 58 C2                 ADDSS XMM8,XMM10                         
++0x320  41 0F 5A C0                    CVTPS2PD XMM0,XMM8                       
++0x324  E8 8F 79 31 00                 CALL 0x1403956a8                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x329  0F BE 43 20                    MOVSX EAX,byte ptr [RBX + 0x20]          
++0x32D  F2 0F 2C C8                    CVTTSD2SI ECX,XMM0                       
++0x331  03 C8                          ADD ECX,EAX                              
++0x333  E8 18 A4 23 00                 CALL 0x1402b8140                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x338  44 0F 28 5C 24 70              MOVAPS XMM11,xmmword ptr [RSP + 0x70]    [PC-RELATIVE/REF -- likely needs wildcarding]
++0x33E  88 43 20                       MOV byte ptr [RBX + 0x20],AL             
++0x341  44 0F 28 8C 24 90 00 00 00     MOVAPS XMM9,xmmword ptr [RSP + 0x90]     [PC-RELATIVE/REF -- likely needs wildcarding]
++0x34A  66 0F 6E 05 C2 20 5D 00        MOVD XMM0,dword ptr [0x14064fe04]        [PC-RELATIVE/REF -- likely needs wildcarding]
++0x352  48 8D 54 24 20                 LEA RDX,[RSP + 0x20]                     [PC-RELATIVE/REF -- likely needs wildcarding]
++0x357  8B 43 04                       MOV EAX,dword ptr [RBX + 0x4]            
++0x35A  48 8D 4C 24 30                 LEA RCX,[RSP + 0x30]                     [PC-RELATIVE/REF -- likely needs wildcarding]
++0x35F  0F 5B C0                       CVTDQ2PS XMM0,XMM0                       
++0x362  48 C7 44 24 3C 00 00 00 00     MOV qword ptr [RSP + 0x3c],0x0           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x36B  89 44 24 58                    MOV dword ptr [RSP + 0x58],EAX           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x36F  C7 44 24 5C 00 00 00 00        MOV dword ptr [RSP + 0x5c],0x0           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x377  0F 57 C9                       XORPS XMM1,XMM1                          
++0x37A  F3 44 0F 11 6C 24 30           MOVSS dword ptr [RSP + 0x30],XMM13       [PC-RELATIVE/REF -- likely needs wildcarding]
++0x381  F3 0F 59 05 E7 60 36 00        MULSS XMM0,dword ptr [0x1403e3e60]       [PC-RELATIVE/REF -- likely needs wildcarding]
++0x389  0F 11 4C 24 48                 MOVUPS xmmword ptr [RSP + 0x48],XMM1     [PC-RELATIVE/REF -- likely needs wildcarding]
++0x38E  F3 0F 11 44 24 34              MOVSS dword ptr [RSP + 0x34],XMM0        [PC-RELATIVE/REF -- likely needs wildcarding]
++0x394  F3 0F 10 05 AC 49 66 00        MOVSS XMM0,dword ptr [0x1406e2738]       [PC-RELATIVE/REF -- likely needs wildcarding]
++0x39C  F3 0F 11 44 24 38              MOVSS dword ptr [RSP + 0x38],XMM0        [PC-RELATIVE/REF -- likely needs wildcarding]
++0x3A2  F3 0F 10 05 A2 49 66 00        MOVSS XMM0,dword ptr [0x1406e273c]       [PC-RELATIVE/REF -- likely needs wildcarding]
++0x3AA  F3 0F 11 44 24 44              MOVSS dword ptr [RSP + 0x44],XMM0        [PC-RELATIVE/REF -- likely needs wildcarding]
++0x3B0  E8 1B 62 F8 FF                 CALL 0x140003fc0                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x3B5  F3 0F 10 44 24 20              MOVSS XMM0,dword ptr [RSP + 0x20]        [PC-RELATIVE/REF -- likely needs wildcarding]
++0x3BB  F3 0F 10 4C 24 24              MOVSS XMM1,dword ptr [RSP + 0x24]        [PC-RELATIVE/REF -- likely needs wildcarding]
++0x3C1  F3 0F 11 05 7F 49 66 00        MOVSS dword ptr [0x1406e2738],XMM0       [PC-RELATIVE/REF -- likely needs wildcarding]
++0x3C9  F3 0F 10 44 24 28              MOVSS XMM0,dword ptr [RSP + 0x28]        [PC-RELATIVE/REF -- likely needs wildcarding]
++0x3CF  F3 0F 59 05 35 65 37 00        MULSS XMM0,dword ptr [0x1403f42fc]       [PC-RELATIVE/REF -- likely needs wildcarding]
++0x3D7  F3 0F 11 0D 6D 49 66 00        MOVSS dword ptr [0x1406e273c],XMM1       [PC-RELATIVE/REF -- likely needs wildcarding]
++0x3DF  F3 41 0F 58 C2                 ADDSS XMM0,XMM10                         
++0x3E4  0F 5A C0                       CVTPS2PD XMM0,XMM0                       
++0x3E7  E8 CC 78 31 00                 CALL 0x1403956a8                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x3EC  44 0F 28 94 24 80 00 00 00     MOVAPS XMM10,xmmword ptr [RSP + 0x80]    [PC-RELATIVE/REF -- likely needs wildcarding]
++0x3F5  44 0F 28 84 24 A0 00 00 00     MOVAPS XMM8,xmmword ptr [RSP + 0xa0]     [PC-RELATIVE/REF -- likely needs wildcarding]
++0x3FE  0F 28 BC 24 B0 00 00 00        MOVAPS XMM7,xmmword ptr [RSP + 0xb0]     [PC-RELATIVE/REF -- likely needs wildcarding]
++0x406  F2 0F 2C C0                    CVTTSD2SI EAX,XMM0                       
++0x40A  66 89 43 38                    MOV word ptr [RBX + 0x38],AX             
++0x40E  0F B6 44 24 2C                 MOVZX EAX,byte ptr [RSP + 0x2c]          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x413  88 43 3A                       MOV byte ptr [RBX + 0x3a],AL             
++0x416  0F 28 B4 24 C0 00 00 00        MOVAPS XMM6,xmmword ptr [RSP + 0xc0]     [PC-RELATIVE/REF -- likely needs wildcarding]
++0x41E  44 0F 28 6C 24 60              MOVAPS XMM13,xmmword ptr [RSP + 0x60]    [PC-RELATIVE/REF -- likely needs wildcarding]
++0x424  48 81 C4 D0 00 00 00           ADD RSP,0xd0                             
++0x42B  5B                             POP RBX                                  
++0x42C  C3                             RET                                      
+
+Raw bytes (1069 total): 48 8B C4 53 48 81 EC D0 00 00 00 83 3D BE 6C 5C 00 00 48 8B D9 44 0F 29 68 88 44 0F 28 E9 0F 86 FA 03 00 00 0F 29 70 E8 4C 8D 40 18 48 8D 50 20 48 C7 05 19 4D 66 00 00 00 00 00 48 8D 0D AE 4C 66 00 C7 05 10 4D 66 00 00 00 00 00 0F 57 F6 E8 6C F9 FF FF F7 05 26 6D 66 00 00 08 00 00 0F 85 B2 03 00 00 0F 29 BC 24 B0 00 00 00 F3 0F 10 BC 24 F0 00 00 00 44 0F 29 84 24 A0 00 00 00 F3 44 0F 10 84 24 F8 00 00 00 44 0F 2E C6 44 0F 29 94 24 80 00 00 00 F3 44 0F 10 15 DA 63 36 00 7A 0D 75 0B 0F 2E FE 7A 06 0F 84 9D 02 00 00 48 8B 0D 0C 6D 5C 00 44 0F 29 8C 24 90 00 00 00 F3 44 0F 10 0D DA 63 36 00 84 C9 74 3E 48 8B 05 67 4A 66 00 41 0F 28 C0 F3 0F 59 40 10 F3 41 0F 58 C2 0F 5A C0 E8 D1 7B 31 00 0F BE 4B 1D F2 0F 2C C0 03 C8 E8 5A A6 23 00 88 43 1D 48 8B 0D C0 6C 5C 00 8B 15 86 6C 66 00 EB 76 8B 15 7E 6C 66 00 F6 C2 01 75 6B 48 8B 05 0E 4A 66 00 41 0F 28 D0 F3 0F 10 05 1A 4C 66 00 0F 2E C6 F3 0F 59 50 10 7A 02 74 2C 8B 05 98 6B 5C 00 0F 57 C9 F3 48 0F 2A C8 F3 0F 59 C8 F3 0F 59 0D 24 63 36 00 0F 28 C1 F3 0F 5D CA 41 0F 57 C1 0F 28 D0 F3 0F 5F D1 F3 0F 10 05 E6 4B 66 00 F3 0F 5C C2 41 0F 57 D1 F3 0F 11 15 E2 4B 66 00 F3 0F 11 05 CE 4B 66 00 80 3D 9F 6C 5C 00 00 75 0D 48 8B 05 7A 49 66 00 80 78 10 00 74 75 84 C9 75 71 F6 C2 01 0F 85 96 00 00 00 48 8B 05 78 49 66 00 0F 28 D7 F3 0F 10 05 89 4B 66 00 0F 2E C6 F3 0F 59 50 10 7A 02 74 2C 8B 05 0B 6B 5C 00 0F 57 C9 F3 48 0F 2A C8 F3 0F 59 C8 F3 0F 59 0D 97 62 36 00 0F 28 C1 F3 0F 5D CA 41 0F 57 C1 0F 28 D0 F3 0F 5F D1 F3 0F 10 05 55 4B 66 00 F3 0F 58 C2 F3 0F 11 15 55 4B 66 00 F3 0F 11 05 41 4B 66 00 EB 2E 48 8B 05 20 49 66 00 0F 28 C7 F3 0F 59 40 10 F3 41 0F 58 C2 0F 5A C0 E8 93 7A 31 00 0F BE 4B 1C F2 0F 2C C0 2B C8 E8 1C A5 23 00 88 43 1C 8B 05 4B 6B 66 00 0F BA E0 12 73 52 F3 44 0F 59 05 28 76 36 00 F3 45 0F 58 C2 41 0F 5A C0 E8 5E 7A 31 00 0F BE 43 21 F2 0F 2C C8 03 C8 E8 E7 A4 23 00 F3 0F 59 3D 03 76 36 00 88 43 21 F3 41 0F 58 FA 0F 5A C7 E8 37 7A 31 00 0F BE 43 20 F2 0F 2C C8 03 C8 E8 C0 A4 23 00 E9 A9 00 00 00 0F BA E0 10 0F 83 A2 00 00 00 48 8B 05 A2 48 66 00 44 0F 29 5C 24 70 F3 44 0F 10 1D 8F C1 36 00 41 0F 28 CB F3 44 0F 59 40 10 F3 41 0F 5D C8 F3 44 0F 10 05 0F B2 36 00 41 0F 28 C0 F3 0F 5F C1 F3 41 0F 58 C2 0F 5A C0 E8 D6 79 31 00 0F BE 43 21 F2 0F 2C C8 03 C8 E8 5F A4 23 00 88 43 21 48 8B 05 25 48 66 00 0F 2F 70 10 76 04 41 0F 57 F9 48 8B 05 3C 48 66 00 F3 0F 59 78 10 F3 44 0F 5D DF F3 45 0F 5F C3 F3 45 0F 58 C2 41 0F 5A C0 E8 8F 79 31 00 0F BE 43 20 F2 0F 2C C8 03 C8 E8 18 A4 23 00 44 0F 28 5C 24 70 88 43 20 44 0F 28 8C 24 90 00 00 00 66 0F 6E 05 C2 20 5D 00 48 8D 54 24 20 8B 43 04 48 8D 4C 24 30 0F 5B C0 48 C7 44 24 3C 00 00 00 00 89 44 24 58 C7 44 24 5C 00 00 00 00 0F 57 C9 F3 44 0F 11 6C 24 30 F3 0F 59 05 E7 60 36 00 0F 11 4C 24 48 F3 0F 11 44 24 34 F3 0F 10 05 AC 49 66 00 F3 0F 11 44 24 38 F3 0F 10 05 A2 49 66 00 F3 0F 11 44 24 44 E8 1B 62 F8 FF F3 0F 10 44 24 20 F3 0F 10 4C 24 24 F3 0F 11 05 7F 49 66 00 F3 0F 10 44 24 28 F3 0F 59 05 35 65 37 00 F3 0F 11 0D 6D 49 66 00 F3 41 0F 58 C2 0F 5A C0 E8 CC 78 31 00 44 0F 28 94 24 80 00 00 00 44 0F 28 84 24 A0 00 00 00 0F 28 BC 24 B0 00 00 00 F2 0F 2C C0 66 89 43 38 0F B6 44 24 2C 88 43 3A 0F 28 B4 24 C0 00 00 00 44 0F 28 6C 24 60 48 81 C4 D0 00 00 00 5B C3
+
+Suggested masked signature (PC-relative/ref instructions fully
+wildcarded -- refine by hand, this is a starting point only):
+48 8B C4 53 48 81 EC D0 00 00 00 ?? ?? ?? ?? ?? ?? ?? 48 8B D9 ?? ?? ?? ?? ?? 44 0F 28 E9 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 0F 57 F6 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 44 0F 2E C6 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 0F 2E FE ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 84 C9 ?? ?? ?? ?? ?? ?? ?? ?? ?? 41 0F 28 C0 F3 0F 59 40 10 F3 41 0F 58 C2 0F 5A C0 ?? ?? ?? ?? ?? 0F BE 4B 1D F2 0F 2C C0 03 C8 ?? ?? ?? ?? ?? 88 43 1D ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? F6 C2 01 ?? ?? ?? ?? ?? ?? ?? ?? ?? 41 0F 28 D0 ?? ?? ?? ?? ?? ?? ?? ?? 0F 2E C6 F3 0F 59 50 10 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 0F 57 C9 F3 48 0F 2A C8 F3 0F 59 C8 ?? ?? ?? ?? ?? ?? ?? ?? 0F 28 C1 F3 0F 5D CA 41 0F 57 C1 0F 28 D0 F3 0F 5F D1 ?? ?? ?? ?? ?? ?? ?? ?? F3 0F 5C C2 41 0F 57 D1 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 80 78 10 00 ?? ?? 84 C9 ?? ?? F6 C2 01 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 0F 28 D7 ?? ?? ?? ?? ?? ?? ?? ?? 0F 2E C6 F3 0F 59 50 10 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 0F 57 C9 F3 48 0F 2A C8 F3 0F 59 C8 ?? ?? ?? ?? ?? ?? ?? ?? 0F 28 C1 F3 0F 5D CA 41 0F 57 C1 0F 28 D0 F3 0F 5F D1 ?? ?? ?? ?? ?? ?? ?? ?? F3 0F 58 C2 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 0F 28 C7 F3 0F 59 40 10 F3 41 0F 58 C2 0F 5A C0 ?? ?? ?? ?? ?? 0F BE 4B 1C F2 0F 2C C0 2B C8 ?? ?? ?? ?? ?? 88 43 1C ?? ?? ?? ?? ?? ?? 0F BA E0 12 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? F3 45 0F 58 C2 41 0F 5A C0 ?? ?? ?? ?? ?? 0F BE 43 21 F2 0F 2C C8 03 C8 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 88 43 21 F3 41 0F 58 FA 0F 5A C7 ?? ?? ?? ?? ?? 0F BE 43 20 F2 0F 2C C8 03 C8 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 0F BA E0 10 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 41 0F 28 CB F3 44 0F 59 40 10 F3 41 0F 5D C8 ?? ?? ?? ?? ?? ?? ?? ?? ?? 41 0F 28 C0 F3 0F 5F C1 F3 41 0F 58 C2 0F 5A C0 ?? ?? ?? ?? ?? 0F BE 43 21 F2 0F 2C C8 03 C8 ?? ?? ?? ?? ?? 88 43 21 ?? ?? ?? ?? ?? ?? ?? 0F 2F 70 10 ?? ?? 41 0F 57 F9 ?? ?? ?? ?? ?? ?? ?? F3 0F 59 78 10 F3 44 0F 5D DF F3 45 0F 5F C3 F3 45 0F 58 C2 41 0F 5A C0 ?? ?? ?? ?? ?? 0F BE 43 20 F2 0F 2C C8 03 C8 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 88 43 20 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 8B 43 04 ?? ?? ?? ?? ?? 0F 5B C0 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 0F 57 C9 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? F3 41 0F 58 C2 0F 5A C0 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? F2 0F 2C C0 66 89 43 38 ?? ?? ?? ?? ?? 88 43 3A ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 48 81 C4 D0 00 00 00 5B C3

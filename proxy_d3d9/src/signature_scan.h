@@ -70,4 +70,28 @@ inline FnT ResolveAs(const Result& r, ptrdiff_t offset = 0)
     return reinterpret_cast<FnT>(r.address + offset);
 }
 
+// Resolves a RIP-relative DATA reference (e.g. a global read via `MOVSS xmm0,
+// dword ptr [rip+disp32]`) into its real absolute address -- needed when a
+// signature match's own address isn't the hook target itself, but a nearby
+// instruction that references some global this project wants a pointer to
+// (an angle accumulator, a dvar handle, etc.), the same class of reference
+// DumpSigBytes.java flags as "[PC-RELATIVE/REF]" and this project always
+// wildcards out of a signature *when the goal is to hook the code* -- this is
+// the inverse case, where the goal IS that reference's own target.
+// `insnAddress` is the address of the specific instruction carrying the
+// disp32 (which may be partway into a longer multi-instruction signature
+// match, not necessarily `r.address` itself); `insnLength` is that ONE
+// instruction's total byte length. Standard x64 RIP-relative addressing
+// formula: target = (address of the NEXT instruction) + disp32, and for
+// every instruction shape this project has hit so far (a mem operand with no
+// trailing immediate), the disp32 is always the last 4 bytes of the
+// instruction -- so `insnAddress + insnLength - 4` finds it without needing
+// per-encoding opcode/ModRM parsing.
+inline uintptr_t ResolveRipRelative(uintptr_t insnAddress, size_t insnLength)
+{
+    if (insnAddress == 0 || insnLength < 4) return 0;
+    int32_t disp = *reinterpret_cast<const int32_t*>(insnAddress + insnLength - 4);
+    return insnAddress + insnLength + static_cast<uintptr_t>(disp);
+}
+
 }  // namespace SigScan
