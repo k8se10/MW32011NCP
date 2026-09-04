@@ -137,8 +137,15 @@ ADS, Weapnext — is now confirmed working live.**
    no-op — confirmed via two independent functions both gating all their
    real work behind the identical bit. Fixed experimentally by forcing
    that bit clear every tick, the same "force the desired state directly"
-   approach already proven for two other real bugs this session. Not yet
-   live-tested. Full trail in `re_notes/known_issues_x64.md` issue #1.
+   approach already proven for two other real bugs this session — this
+   did NOT resolve the symptom either. Direct user correction pointed at
+   a specific, precise historical precedent (this project's own real
+   day-one issue, not the crouch-specific one tried twice already);
+   confirmed x64's structural equivalent of that older bug's root-cause
+   struct, but forcing it blind risks repeating that exact bug rather than
+   fixing anything, so this round adds real diagnostic logging of every
+   candidate gate value instead of a fourth guess. Still open. Full trail
+   in `re_notes/known_issues_x64.md` issue #1.
 
 ---
 
