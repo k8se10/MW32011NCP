@@ -42,6 +42,18 @@ progress.
    anywhere right now, since none of them can load into the live x64 game
    at all.
 
+### Groundwork
+1. **First two real x64 gameplay hooks: Sprint and Movement.** Built on the
+   x64 rebuild's now-confirmed-working signature-scan + MinHook foundation
+   (`re_notes/known_issues_x64.md` issue #1). Sprint forces the real pm_flags
+   sprint bit with the same bit-ownership tracking that protects vanilla
+   keyboard sprint on x86; Movement adds left-stick forward/strafe on top of
+   native input, mirroring x86's own `InjectControllerMovement` math exactly
+   (additive, no inversion). Movement was added alongside Sprint specifically
+   because Sprint alone has no observable effect without movement to
+   multiply. **Build-verified on both platforms only — not yet live-tested.**
+   Full technical record in `re_notes/known_issues_x64.md` issue #1.
+
 ---
 
 ## v0.3.5 — Alpha (2026-08-29) — Visual-suite crash fixes, ForceD3D9On12 removed for good, native shadow/lighting quality toggles

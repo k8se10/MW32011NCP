@@ -1,0 +1,24 @@
+Signature-byte dump of FUN_14007d9f0 @ 14007d9f0
+(byte offsets relative to function entry point)
+
++0x00  48 8B C4                       MOV RAX,RSP                              
++0x03  53                             PUSH RBX                                 
++0x04  48 81 EC D0 00 00 00           SUB RSP,0xd0                             
++0x0B  83 3D BE 6C 5C 00 00           CMP dword ptr [0x1406446c0],0x0          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x12  48 8B D9                       MOV RBX,RCX                              
++0x15  44 0F 29 68 88                 MOVAPS xmmword ptr [RAX + -0x78],XMM13   [PC-RELATIVE/REF -- likely needs wildcarding]
++0x1A  44 0F 28 E9                    MOVAPS XMM13,XMM1                        
++0x1E  0F 86 FA 03 00 00              JBE 0x14007de0e                          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x24  0F 29 70 E8                    MOVAPS xmmword ptr [RAX + -0x18],XMM6    [PC-RELATIVE/REF -- likely needs wildcarding]
++0x28  4C 8D 40 18                    LEA R8,[RAX + 0x18]                      [PC-RELATIVE/REF -- likely needs wildcarding]
++0x2C  48 8D 50 20                    LEA RDX,[RAX + 0x20]                     [PC-RELATIVE/REF -- likely needs wildcarding]
++0x30  48 C7 05 19 4D 66 00 00 00 00 00 MOV qword ptr [0x1406e2744],0x0          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x3B  48 8D 0D AE 4C 66 00           LEA RCX,[0x1406e26e0]                    [PC-RELATIVE/REF -- likely needs wildcarding]
++0x42  C7 05 10 4D 66 00 00 00 00 00  MOV dword ptr [0x1406e274c],0x0          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x4C  0F 57 F6                       XORPS XMM6,XMM6                          
+
+Raw bytes (79 total): 48 8B C4 53 48 81 EC D0 00 00 00 83 3D BE 6C 5C 00 00 48 8B D9 44 0F 29 68 88 44 0F 28 E9 0F 86 FA 03 00 00 0F 29 70 E8 4C 8D 40 18 48 8D 50 20 48 C7 05 19 4D 66 00 00 00 00 00 48 8D 0D AE 4C 66 00 C7 05 10 4D 66 00 00 00 00 00 0F 57 F6
+
+Suggested masked signature (PC-relative/ref instructions fully
+wildcarded -- refine by hand, this is a starting point only):
+48 8B C4 53 48 81 EC D0 00 00 00 ?? ?? ?? ?? ?? ?? ?? 48 8B D9 ?? ?? ?? ?? ?? 44 0F 28 E9 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 0F 57 F6
