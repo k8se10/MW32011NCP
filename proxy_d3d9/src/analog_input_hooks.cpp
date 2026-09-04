@@ -56,6 +56,11 @@ extern "C" void CheckConfigHotReload();
 // itself #if-guarded to x64 only, matching every other cross-platform-declared/
 // platform-guarded-call pattern in this file.
 extern "C" void PollPauseToggleX64();
+// Defined in analog_input_hooks_x64.cpp -- x64-only, the automated "open pause
+// then close it again" unstick cycle for the "needs a click for input" bug,
+// real fix confirmed by direct user report ("still requires the classic pause
+// unpause workaround") after two WndProc-message-based theories both failed.
+extern "C" void AutoUnstickPauseCycleX64();
 // Defined in overlay_hud.cpp -- a no-op unless [Overlay] TestCycleAllVariants is on,
 // strictly a testing aid (see that config key's own comment).
 void TickOverlayTestCycle();
@@ -9934,6 +9939,13 @@ extern "C" void __cdecl InjectMenuInputTick()
     // this always-on tick, matching InjectControllerPauseMenu's placement here
     // on the x86 side just above/below this block.
     PollPauseToggleX64();
+    // 2026-09-04, real fix (not another theory) for "needs a click for
+    // input"/"needs the classic pause unpause workaround" -- see
+    // AutoUnstickPauseCycleX64's own comment (analog_input_hooks_x64.cpp) for
+    // the full trace. Must run from this same always-on tick, not the
+    // gameplay tick -- its own OPEN step pauses the game, which would stop a
+    // gameplay-tick-based caller from ever reaching the CLOSE step.
+    AutoUnstickPauseCycleX64();
 #endif
 
 #if !defined(_M_X64) && !defined(_WIN64)

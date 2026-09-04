@@ -36,7 +36,7 @@ two files already had for #111 before the split.
 
 ## Index
 
-- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **Every gameplay hook (Sprint/Movement/Look/Pause/Fire/Reload/ADS/Weapnext) CONFIRMED WORKING LIVE; "needs a click for input" gate recurs every level -- real fix-timing gap found (one-shot nudges never re-fired per level), periodic re-trigger deployed, awaiting test**
+- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **Every gameplay hook (Sprint/Movement/Look/Pause/Fire/Reload/ADS/Weapnext) CONFIRMED WORKING LIVE; "needs a click for input" — user confirmed the real fix is the pause/unpause workaround, now automated, awaiting test**
 
 ---
 
@@ -1385,3 +1385,53 @@ of level as we had in x86."**
   will show both whether the symptom is gone AND what the candidate gate
   values were doing throughout, in case this doesn't fully resolve it
   either.
+
+**Fifth fix attempt, same day: the periodic activation-nudge fix above did
+NOT resolve it either.** Direct, decisive user report: **"still no
+difference it still requires the classic pause unpause workaround."** This
+finally disproves the entire WndProc-message/OS-focus THEORY line this
+session pursued across three attempts (synthetic click, real focus, then
+periodic re-fire of both) -- none of them are the mechanism, regardless of
+timing/frequency. But the report also hands over the actual, confirmed fix:
+genuinely opening the pause menu and closing it again is what unsticks
+input, every time. This is a direct answer, not a new theory to test.
+
+- **Real reframe**: rather than keep guessing which internal flag a
+  WndProc-level event might satisfy, this automates the user's OWN
+  confirmed manual fix -- using this project's ALREADY-confirmed-working
+  Pause toggle (`g_pauseToggle`/`FUN_1400823b0`) to open pause, wait one
+  real beat, then close it again, exactly replicating the manual
+  workaround programmatically instead of trying to reverse-engineer WHY it
+  works.
+- **Real "has a level just (re)loaded" signal, no dedicated level-load RE
+  needed**: `g_lastPmoveTickMs` (updated on every real `Hook_PmoveTick`
+  fire) tracks whether the Pmove/gameplay-simulation pipeline is currently
+  live. When it transitions from "not ticking recently" (a menu/loading
+  screen) to "ticking steadily for the last half-second" (a level is
+  genuinely active), that's a reusable proxy for "a level just started,"
+  reused directly from infrastructure this project already had rather than
+  new RE work.
+- **New function `AutoUnstickPauseCycleX64()`** (`analog_input_hooks_x64.cpp`),
+  a small tick-based state machine (Idle / JustOpenedPause) -- NOT a
+  blocking sleep (per `CLAUDE.md` §5's own hook-safety rule against
+  blocking calls in hook callbacks): opens pause on the first tick a fresh
+  level is detected as live, waits ~250ms of real elapsed ticks, then
+  closes it again, once per level (armed again only once Pmove goes quiet
+  for ~2s, i.e. back at a menu/loading screen). **Must run from the
+  always-on menu tick** (`InjectMenuInputTick`, alongside
+  `PollPauseToggleX64`), not the gameplay tick -- its own OPEN step pauses
+  the game, which halts the gameplay tick entirely, so a gameplay-tick-based
+  caller could never reach its own CLOSE step.
+- **Real, honest scope note**: the earlier WndProc-message experiments
+  (`SendSyntheticActivationClick`, `SendPeriodicActivationNudgeX64`) are
+  left in place, not removed -- confirmed not the mechanism, but harmless,
+  and pulling them out is a cleanup task for once this is fully confirmed
+  resolved, not before.
+- **Verification**: build clean (0 errors) on x64 (after a locked-DLL link
+  failure from the still-running game process, resolved once the user
+  closed it -- not a code issue); Win32 rebuilt immediately after, also
+  clean (0 regression); x64 rebuilt again with a forced `/t:Rebuild`,
+  confirmed genuinely deployed via `dumpbin /headers` (`8664 machine
+  (x64)`). **Not yet live-tested** -- this is the first attempt that
+  automates the user's own DIRECTLY CONFIRMED fix rather than a new theory,
+  the strongest candidate so far.
