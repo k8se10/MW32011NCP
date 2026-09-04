@@ -36,7 +36,7 @@ two files already had for #111 before the split.
 
 ## Index
 
-- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **Every implemented control CONFIRMED WORKING LIVE (D-pad and CrouchProne build-verified, not yet independently live-tested); auto-unstick cycle confirmed working**
+- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **CrouchProne CONFIRMED WORKING LIVE; Jump auto-stand build-verified, not yet live-tested; D-pad still unconfirmed**
 
 ---
 
@@ -1603,16 +1603,80 @@ semantics.
   issue; CrouchProne needs a direct live confirmation before it can be
   marked working.
 
+**CrouchProne (B) CONFIRMED WORKING LIVE, same day: "yep works fine."**
+Direct confirmation of the previous round's implementation -- no further
+changes needed.
+
+**Jump auto-stand implemented, same day -- direct instruction: "you need
+to implement the press a to stand up thing we did for x86 too."** Ports
+x86's own real "auto-stand from crouch/prone on Jump's rising edge"
+enhancement (`ForceStandingViaRealToggle`), the gap explicitly named and
+deferred in both of the two prior rounds pending CrouchProne's own
+mechanism existing to build on.
+
+- **x86 precedent, re-read in full before writing any x64 code** (direct
+  user correction this session: "you need to be comparing at every stage
+  to the original so you can see the things like this youre constantly
+  overlooking"): `ForceStandingViaRealToggle()` reads the real current
+  stance directly from a fixed `+0x1C` offset in the player struct
+  (`kRealStanceFieldAddr`), then calls the real `ToggleStance(playerIndex,
+  mode)` with `mode` set to the CURRENT value -- since `ToggleStance`'s own
+  logic is a genuine toggle (`current == mode ? 0 : mode`), passing
+  `mode=current` always resolves to 0 (standing) regardless of whether
+  current was 1 (crouch) or 2 (prone).
+- **x64 has no standalone `ToggleStance(mode)` function to call the same
+  way** -- crouch/prone are driven through `FUN_14007c3a0`'s own FIXED case
+  numbers instead. Re-reading the full case list in
+  `decomp_14007c3a0_full.txt` (not just the two cases CrouchProne itself
+  already used) found case `0x48` = `togglecrouch` (toggles stance 0<->1)
+  and case `0x49` = `toggleprone` (toggles stance 0<->2) -- `0x48` is
+  independently corroborated as the SAME case number x86's own
+  `togglecrouch` dispatch uses (`re_notes/iw5sp.md`'s "Found togglecrouch's
+  REAL dispatch" note), a direct, comparable cross-check against the
+  original rather than a fresh guess. Replicating x86's exact "call toggle
+  with mode=current" trick means picking the MATCHING case for whatever
+  the current stance actually is: current==1 -> case `0x48` (its own
+  `current != 1` check is false, forces 0); current==2 -> case `0x49` (its
+  own `current != 2` check is false, forces 0). Same result as x86's
+  dynamic-mode call, expressed through x64's fixed-case dispatch instead.
+- **The real stance field itself, found by re-reading
+  `disasm_14007c3a0_full.txt` alongside the decompile rather than trusting
+  the decompiler's separate `DAT_` names at face value**: the decompile's
+  `DAT_1406e26fc` is genuinely `DAT_1406e26e0 + 0x1c` -- every one of case
+  `0x49`/`0x4a`/`0x4b`'s real instructions is `[RAX + R8*0x1 + 0x1c]` off
+  the SAME `LEA R8,[0x1406e26e0]` base `kAdsToggleFlagInsnOffset` already
+  resolves for the ADS toggle flag (confirmed via `case 0x3b`'s own
+  `LEA R8,[0x1406e26e0]` at `0x14007ce3f`, the same instruction that
+  anchor's own comment already cites). **No new signature scan needed** --
+  just a fixed `+0x1c` byte offset on top of the ALREADY-resolved
+  `g_adsToggleFlag` pointer. This also mirrors x86's own design one level
+  deeper, not just at the case-number level: x86's `kRealStanceFieldAddr`
+  is itself a fixed `+0x1C` offset from its own per-player struct base --
+  the exact same offset, `0x1C`, carried over identically to x64's
+  analogous struct. A real, direct architectural parallel found BY
+  comparing to the original, not assumed.
+- Reads (`GetRealStanceX64()`) are direct/read-only, same as x86's own
+  `GetRealStance()`; writes always go through the real case dispatch
+  (`g_stanceDispatch`, the same pointer CrouchProne already resolves --
+  no new anchor needed there either), which re-checks the same
+  stance-lock guard bytes `FUN_14007e430` itself checks, never a raw
+  memory write.
+- Wired into the existing Jump block in `Hook_MovementTick`: on Jump's
+  rising edge only (before updating `g_jumpHeldX64`), calls
+  `ForceStandingViaRealToggleX64()`, which reads current stance and fires
+  the matching case.
+- **Verification**: build clean (0 errors) on x64; Win32 rebuilt
+  immediately after, also clean (0 regression); x64 rebuilt again with a
+  forced `/t:Rebuild`, confirmed genuinely deployed via `dumpbin /headers`
+  (`8664 machine (x64)`, fresh `LastWriteTime`). **Not yet live-tested.**
+
 **Current status, this session:** every control this issue's own history
 has ever named -- Sprint, Movement, Look, Pause (open+close), Fire,
-Reload, ADS, Weapnext, Melee, Lethal, Tactical, Jump, Interact, D-pad
-actionslot, CrouchProne, and the auto-unstick pause/unpause cycle -- is
-now IMPLEMENTED and BUILD-VERIFIED. Directly live-confirmed by the user:
-Sprint, Movement, Look, Pause, Fire, Reload, ADS, Weapnext, Melee, Lethal,
-Tactical, Jump, Interact, and the auto-unstick cycle. **Awaiting live
-confirmation**: D-pad actionslot and CrouchProne (both built, deployed,
-not independently exercised yet). x86's own "auto-stand from crouch/prone
-on Jump's rising edge" enhancement remains a deliberately deferred, named
-future gap (see Jump's own entry above) now that CrouchProne's mechanism
-exists to build it on top of, once CrouchProne itself is proven stable
-live.
+Reload, ADS, Weapnext, Melee, Lethal, Tactical, Jump (including auto-
+stand), Interact, D-pad actionslot, CrouchProne, and the auto-unstick
+pause/unpause cycle -- is now IMPLEMENTED and BUILD-VERIFIED. Directly
+live-confirmed by the user: Sprint, Movement, Look, Pause, Fire, Reload,
+ADS, Weapnext, Melee, Lethal, Tactical, Jump (core bit-force only, not
+auto-stand specifically), Interact, CrouchProne, and the auto-unstick
+cycle. **Awaiting live confirmation**: D-pad actionslot and Jump
+auto-stand (both built, deployed, not independently exercised yet).
