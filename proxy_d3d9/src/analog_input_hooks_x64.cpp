@@ -539,6 +539,36 @@ int* g_adsStruct = nullptr;
 volatile uint32_t* g_timestampPtr = nullptr;
 volatile uint8_t* g_adsToggleFlag = nullptr;
 
+// ---- CrouchProne (B), x64 (2026-09-05, next task after the remaining-controls
+// pass -- deliberately deferred there pending exactly this) ------------------------
+//
+// The real ambiguity flagged in the earlier deferral (`FUN_14007c3a0`'s own case
+// 0x17/0x18 "+stance" down/up bodies -- re_notes/x64_migration/decomp_14007c3a0_full.txt
+// -- their own "restore previous posture" semantics on release, checking whether the
+// SAVED old posture equals exactly 1) is a real, still-unresolved detail -- but it
+// doesn't need resolving to implement this safely. Neither case body reads its own
+// `param_3` argument at all (confirmed via the same decompile: `uVar3` used inside
+// is `DAT_141efb764`, the shared TIMESTAMP global, not `param_3` -- unlike Fire/ADS/
+// Reload's own dispatch, which passes `param_3` straight through to
+// `FUN_14007e460`/`e490` as the dual-source identifier that mattered so much this
+// session). This means the SAFEST possible implementation is to NOT try to replicate
+// `FUN_14007c3a0`'s own internal state machine (hold-duration escalation to prone,
+// tap-vs-hold, whatever it turns out to be) at all -- just forward B's real press and
+// release edges to the REAL native case dispatch, exactly as a real key bound to
+// "+stance" would, and trust the already-correct native logic to handle tap/hold
+// internally on its own terms, the same way it already does for a real keyboard
+// player. `FUN_14007c3a0` itself is reused as a genuine CALLABLE function here (not
+// just an anchor for other offsets, its only use so far) -- its own internal gate
+// (`FUN_140078f00()!=0 && DAT_1405145a8!=0`) is a real dvar-handle-existence /
+// client-ready check, not a per-frame toggling flag, so it's expected to be stable
+// (true) throughout ordinary live gameplay -- this project's own earlier Fire bug
+// was NEVER about this gate (confirmed via the source-id root-cause trace), so
+// there's no reason to expect it to intermittently block CrouchProne either.
+using StanceDispatchFn = void(__fastcall*)(int playerIndex, int caseNumber, int param3);
+StanceDispatchFn g_stanceDispatch = nullptr;
+constexpr int kCrouchProneCaseDown = 0x17; // "+stance" down
+constexpr int kCrouchProneCaseUp = 0x18;   // "-stance" up
+
 // FUN_14007e460 -- the real kbutton "activate source" handler (down).
 // Signature via DumpSigBytes.java (re_notes/x64_migration/
 // impl_sig_14007e460.txt) -- every branch target in this function is a
@@ -725,6 +755,7 @@ bool g_jumpHeldX64 = false;                 // rising-edge diag not needed, just
 bool g_interactButtonWasHeldX64 = false;
 DWORD g_interactPressStartMsX64 = 0;        // matches x86's own hold-to-interact timing (g_modConfig.interactHoldThresholdMs)
 bool g_dpadHeldX64[4] = { false, false, false, false }; // Up, Down, Left, Right -- matches kXI_DPAD_*_X64 order
+bool g_crouchProneHeldX64 = false;
 
 // Real fix for "obvs cant unpause when paused" (2026-09-04, live-confirmed
 // bug): Hook_MovementTick below rides FUN_14007d9f0, part of the per-frame
@@ -1096,6 +1127,18 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
                 g_dpadHeldX64[i] = held;
             }
         }
+
+        // CrouchProne (B) -- forwards real press/release edges directly to the
+        // native "+stance" case dispatch (see kCrouchProneCaseDown's own comment
+        // for why this is the safe design, not a state-machine replication).
+        if (g_stanceDispatch) {
+            bool crouchProneHeld = IsPhysicalHeld_Exported(g_buttonMap.crouchProne, xiButtons, leftTrigger, rightTrigger);
+            if (crouchProneHeld != g_crouchProneHeldX64) {
+                g_crouchProneHeldX64 = crouchProneHeld;
+                if (crouchProneHeld) g_stanceDispatch(0, kCrouchProneCaseDown, 1);
+                else g_stanceDispatch(0, kCrouchProneCaseUp, 0);
+            }
+        }
     }
 
     // Pause also polled from here, redundantly -- matches x86's own established
@@ -1269,10 +1312,11 @@ void InstallAnalogInputHooksX64()
 
     // Buttons/ADS/Reload -- resolves FUN_14007e460/FUN_14007e490 (the real
     // kbutton activate/deactivate handlers) directly for a DIRECT CALL, not
-    // a hook -- no MinHook involvement. FUN_14007c3a0 is ALSO resolved here,
-    // but only as a stable anchor for locating the three per-bind struct
-    // addresses and the shared timestamp global via fixed byte offsets
-    // (see kFireStructInsnOffset's own comment) -- it's never itself called.
+    // a hook -- no MinHook involvement. FUN_14007c3a0 is ALSO resolved here --
+    // used both as a stable anchor for locating the three per-bind struct
+    // addresses and the shared timestamp global via fixed byte offsets (see
+    // kFireStructInsnOffset's own comment), AND as a genuine callable
+    // dispatcher for CrouchProne (see kCrouchProneCaseDown's own comment).
     {
         SigScan::Result activateResult = SigScan::FindPatternInMainModule(kKbuttonActivateSignature);
         if (!activateResult.found) {
@@ -1301,6 +1345,13 @@ void InstallAnalogInputHooksX64()
             g_adsStruct = reinterpret_cast<int*>(SigScan::ResolveRipRelative(anchor + kAdsStructInsnOffset, kRipInsnLength));
             g_timestampPtr = reinterpret_cast<volatile uint32_t*>(SigScan::ResolveRipRelative(anchor + kTimestampInsnOffset, kRipInsnLength));
             g_adsToggleFlag = reinterpret_cast<volatile uint8_t*>(SigScan::ResolveRipRelative(anchor + kAdsToggleFlagInsnOffset, kRipInsnLength));
+            g_stanceDispatch = reinterpret_cast<StanceDispatchFn>(anchor);
+            if (g_stanceDispatch) {
+                char buf[128];
+                sprintf_s(buf, "[x64-crouchprone] Stance dispatch resolved @ 0x%llX -- CrouchProne active "
+                    "(direct call, no hook installed).", static_cast<unsigned long long>(anchor));
+                LogFromController(buf);
+            }
         }
 
         if (g_kbuttonActivate && g_kbuttonDeactivate && g_fireStruct && g_reloadStruct && g_adsStruct

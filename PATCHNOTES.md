@@ -27,12 +27,20 @@ progress.
    line — mirrors x86's own real design exactly (Melee/Lethal/Tactical/
    Jump/Interact as raw `usercmd_t.buttons` bits, matching x86's confirmed
    bit values; D-pad actionslot as a genuine one-shot action call, matching
-   x86's own `ActionSlotDown`/`Up` shape). **CrouchProne (B) is
-   deliberately NOT included** — the real x64 toggle mechanism has
-   unresolved ambiguity in its own release-time semantics that this pass
-   couldn't safely resolve, and this project's own history with nasty
-   stuck-crouch bugs makes shipping it blind too risky. Not yet
-   live-tested. Full trail in `re_notes/known_issues_x64.md` issue #1.
+   x86's own `ActionSlotDown`/`Up` shape). **CONFIRMED WORKING LIVE**
+   (Melee/Lethal/Tactical/Jump/Interact and the auto-unstick cycle) — D-pad
+   actionslot is built and deployed but not yet independently exercised in
+   a live test. Full trail in `re_notes/known_issues_x64.md` issue #1.
+2. **x64 CrouchProne (B) implemented.** Forwards B's real press/release
+   edges directly to the real stance dispatcher's own `+stance`/`-stance`
+   cases, sidestepping that dispatcher's genuinely unresolved "restore
+   previous posture" release-time ambiguity (neither case body actually
+   reads the argument that ambiguity lives in, so bypassing it entirely is
+   safe) rather than trying to replicate it — chosen specifically to avoid
+   this project's own documented history of nasty stuck-crouch/stuck-prone
+   regressions. Build-verified on both platforms, deployment confirmed via
+   `dumpbin`. **Not yet live-tested.** Full trail in
+   `re_notes/known_issues_x64.md` issue #1.
 
 ### Documentation
 1. **All `-x86` support discontinued, effective 2026-09-03.** `v0.2.2-x86`
