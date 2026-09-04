@@ -449,12 +449,33 @@ constexpr ptrdiff_t kFireStructInsnOffset = 0x70;    // -> DAT_140644818 (Fire k
 constexpr ptrdiff_t kReloadStructInsnOffset = 0x1EF; // -> DAT_1406448a4 (Reload kbutton)
 constexpr ptrdiff_t kAdsStructInsnOffset = 0xAB4;    // -> DAT_1406448e0 (ADS kbutton)
 constexpr ptrdiff_t kTimestampInsnOffset = 0x41;     // -> DAT_141efb764 (shared timestamp)
+// CORRECTED 2026-09-04, round 3 (real bug found via a THIRD live test): the
+// sixth round above bypassed FUN_14007c3a0's case 0x3b/0x3c entirely to
+// dodge its unwanted toggle mutation on DAT_1406e26e0 -- reasoning that the
+// kbutton's own held state (matching x86's proven design) was the real
+// driver of ADS. Live-tested: WRONG for this specific bind. With the
+// kbutton-only approach, ADS did nothing at all (worse than the toggle
+// symptom) -- real, direct evidence that DAT_1406e26e0 IS the actual "is
+// aiming down sights" flag this engine's aim/FOV/camera code reads, not a
+// secondary/cosmetic side effect safe to ignore. Fixed by resolving this
+// flag too and FORCING it to our own desired absolute value on the edge
+// (1 while held, 0 while not) -- explicit set, never relying on the
+// native code's own toggle-on-press-only semantics, which is what broke
+// hold behavior in the first place. Still calls FUN_14007e460/e490 on the
+// ADS kbutton struct too (whatever secondary state that drives, e.g.
+// slowdown/animation, likely still wanted) -- this is additive on top of
+// the direct flag write, not a replacement for it. Same offset already
+// verified via DumpRawBytes.java (re_notes/x64_migration/
+// rawbytes_c3a0_targets.txt) for the case 0x3b `LEA R8,[DAT_1406e26e0]`
+// instruction at 0x14007ce3f -- 0x14007c3a0 = 0xA9F.
+constexpr ptrdiff_t kAdsToggleFlagInsnOffset = 0xA9F; // -> DAT_1406e26e0 (real "is ADS active" flag)
 constexpr size_t kRipInsnLength = 7;
 
 int* g_fireStruct = nullptr;
 int* g_reloadStruct = nullptr;
 int* g_adsStruct = nullptr;
 volatile uint32_t* g_timestampPtr = nullptr;
+volatile uint8_t* g_adsToggleFlag = nullptr;
 
 // FUN_14007e460 -- the real kbutton "activate source" handler (down).
 // Signature via DumpSigBytes.java (re_notes/x64_migration/
@@ -661,6 +682,13 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
                     g_adsHeldX64 = adsHeld;
                     if (adsHeld) g_kbuttonActivate(g_adsStruct, kSyntheticSourceId, timestamp);
                     else g_kbuttonDeactivate(g_adsStruct, kSyntheticSourceId, timestamp);
+                    // Force the real "is aiming down sights" flag directly to our
+                    // own desired absolute state -- see kAdsToggleFlagInsnOffset's
+                    // own comment: live-tested, the kbutton call above alone does
+                    // NOT drive actual ADS engagement, this flag does. Explicit
+                    // set/clear, never a toggle -- correct regardless of whatever
+                    // value native logic left it at.
+                    if (g_adsToggleFlag) *g_adsToggleFlag = adsHeld ? 1 : 0;
                 }
             }
 
@@ -867,13 +895,16 @@ void InstallAnalogInputHooksX64()
             g_reloadStruct = reinterpret_cast<int*>(SigScan::ResolveRipRelative(anchor + kReloadStructInsnOffset, kRipInsnLength));
             g_adsStruct = reinterpret_cast<int*>(SigScan::ResolveRipRelative(anchor + kAdsStructInsnOffset, kRipInsnLength));
             g_timestampPtr = reinterpret_cast<volatile uint32_t*>(SigScan::ResolveRipRelative(anchor + kTimestampInsnOffset, kRipInsnLength));
+            g_adsToggleFlag = reinterpret_cast<volatile uint8_t*>(SigScan::ResolveRipRelative(anchor + kAdsToggleFlagInsnOffset, kRipInsnLength));
         }
 
-        if (g_kbuttonActivate && g_kbuttonDeactivate && g_fireStruct && g_reloadStruct && g_adsStruct && g_timestampPtr) {
-            char buf[256];
+        if (g_kbuttonActivate && g_kbuttonDeactivate && g_fireStruct && g_reloadStruct && g_adsStruct
+            && g_timestampPtr && g_adsToggleFlag) {
+            char buf[320];
             sprintf_s(buf, "[x64-buttons] Fire/ADS/Reload active: fireStruct=0x%p reloadStruct=0x%p "
-                "adsStruct=0x%p timestampPtr=0x%p (direct calls, no hook installed).",
-                (void*)g_fireStruct, (void*)g_reloadStruct, (void*)g_adsStruct, (void*)g_timestampPtr);
+                "adsStruct=0x%p timestampPtr=0x%p adsToggleFlag=0x%p (direct calls, no hook installed).",
+                (void*)g_fireStruct, (void*)g_reloadStruct, (void*)g_adsStruct, (void*)g_timestampPtr,
+                (void*)g_adsToggleFlag);
             LogFromController(buf);
         } else {
             LogFromController("[x64-buttons] FATAL: one or more Fire/ADS/Reload targets failed to resolve -- "
