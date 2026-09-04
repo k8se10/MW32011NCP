@@ -40,11 +40,24 @@
 // FOURTH DELIVERABLE (2026-09-04, same day, direct instruction "do all in one
 // pass"): Buttons/ADS/Reload, Pause toggle, and Weapnext -- all via direct
 // calls into confirmed, self-contained real engine functions (not MinHook
-// detours), polled from the same per-tick point Look uses. NOT YET
-// LIVE-TESTED -- build-verified only until run against the actual game.
-// Buttons/ADS/Reload specifically carries one real, honestly-documented
-// residual uncertainty (see kKbuttonSetSignature's own comment) -- flagged
-// for extra care during the next playtest, not silently assumed safe.
+// detours), polled from the same per-tick point Look uses.
+//
+// FIFTH ROUND (2026-09-04, same day, live-test fixes): the first live test
+// against this deliverable found two real bugs, both fixed:
+// (1) Pause opened but couldn't close -- PollPauseToggleX64 now also polled
+//     from InjectMenuInputTick (analog_input_hooks.cpp), the always-on tick
+//     that keeps running during pause, not just from Hook_MovementTick (which
+//     halts entirely while paused, same architecture x86 already hit this
+//     exact bug class on).
+// (2) Fire/ADS/Reload silently did nothing -- the original approach called
+//     FUN_14007eaf0(player, bindIndex, isDown) directly, but that function's
+//     second parameter is really a raw keycode slot, not a bind-name-table
+//     index (misread on first pass); fixed by calling FUN_14007c3a0 (the
+//     real case-number dispatcher, cases ARE bind-name-table indices) the
+//     same way Pause/Weapnext already do. See kCommandDispatchSignature's
+//     own comment for the full corrected trace.
+// Sprint/Movement/Look/Pause-open/Weapnext were all already confirmed
+// working live before this round.
 
 #include <windows.h>
 #include <cstdio>
@@ -328,57 +341,74 @@ float GetLookAccelerationScaleX64()
 // Fire/PauseMenu/WeaponNext ALL from the SAME per-frame usercmd-build
 // orchestration point FUN_14007d9f0 is this project's own x64 equivalent of).
 
-// FUN_14007eaf0(playerIndex, bindIndex, isDown) -- the confirmed unified x64
-// kbutton-state setter, reached from every real key/bind event on this build
-// (re_notes/x64_migration/README.md section 1e/1g). bindIndex is a row index
-// into the 32-entry bind-name table (base 1404c1870, 8-byte stride --
-// re_notes/x64_migration/kbutton_table_x64.txt), computed the same way x86's
-// own bind-index work always has: index = (entryAddr - 1404c1870) / 8.
-// Fire (+attack) = 1, Reload (+usereload -- matches g_buttonMap.reloadUse's own
-// "X to reload/use" naming, NOT the separate +reload at index 53, a genuinely
-// distinct bind this table also has) = 11, ADS (+toggleads_throw) = 59.
-// Signature via DumpSigBytes.java (re_notes/x64_migration/impl_sig_14007eaf0.txt):
-// real prologue, one genuine RIP-relative wildcard (an image-base LEA) and one
-// register-relative data-global reference wildcarded for future-proofing (the
-// RSP-relative stack spills at +0x00/+0x05 are the same established
-// false-positive class as every other signature in this file, kept literal):
-//   48 89 5C 24 10                  mov [rsp+0x10],rbx    (RSP-relative, keep literal)
-//   48 89 6C 24 18                  mov [rsp+0x18],rbp    (RSP-relative, keep literal)
-//   56 41 56 41 57                  push rsi/r14/r15
-//   48 83 EC 20                     sub rsp,0x20
-//   48 63 F1                        movsxd rsi,ecx
-//   4C 8D 15 ?? ?? ?? ??            lea r10,[rip+????]     (image base, wildcard)
-//   4C 69 CE 28 0D 00 00            imul r9,rsi,0xd28       (fixed struct stride, keep literal)
-//   41 8B E8                        mov ebp,r8d
-//   48 63 DA                        movsxd rbx,edx
-//   4D 8D BA ?? ?? ?? ??            lea r15,[r10+????]      (data global ref, wildcard)
-//   48 8B CE                        mov rcx,rsi
-//   4D 03 F9                        add r15,r9
-//   48 8D 14 5B                     lea rdx,[rbx+rbx*2]
+// CORRECTED 2026-09-04 (real bug found via live test, not guessed): the
+// original approach here called FUN_14007eaf0(player, bindIndex, isDown)
+// directly, treating its second parameter as a bind-name-table row index --
+// this was WRONG. Live-tested: Pause and Weapnext both worked, Fire/ADS/
+// Reload did not, and re-reading FUN_14007eaf0's OWN decompile
+// (re_notes/x64_migration/decomp_buttons_pause_weapnext.txt) more rigorously
+// explains exactly why. FUN_14007eaf0's param_2 is really a RAW KEYCODE
+// SLOT, not a bind-name-table index -- the raw `*piVar1 = isDown` write at
+// the top of the function DOES land somewhere (harmlessly, into whatever
+// per-keycode-slot struct that slot number happens to correspond to), but
+// the function's REAL dispatch logic further down looks up
+// `DAT_140644a6c[playerIndex*0x34a + param_2*3]` -- the "which bind is
+// this KEYCODE currently bound to" field, populated only by
+// `Key_SetBinding` for genuine raw keycodes with a real key binding, never
+// for an arbitrary bind-name-table index passed in directly. Calling it
+// with bindIndex=1/11/59 as if those were keycodes hits an unpopulated
+// slot, the `== 0` early-out fires, and `FUN_14007c3a0` (the REAL case-
+// number dispatcher) is never reached -- exactly matching the observed
+// "no buttons other than weapnext work" symptom (weapnext/pause both
+// bypass this function entirely, calling their own terminal functions
+// directly).
 //
-// **Real, honest residual uncertainty, not glossed over**: this function's full
-// body (beyond the state-write this project actually relies on) also contains
-// menu-forwarding/ESC-dispatch logic gated on live per-player state flags this
-// pass didn't exhaustively trace for every input value -- the project's own RE
-// notes flag this directly ("not yet confirmed whether FUN_14007eaf0 is actually
-// reachable/safe to call directly... the computed bind indices are static-only,
-// not live-verified"). This IS the same function real native keyboard Fire/ADS/
-// Reload presses already route through today in vanilla, unmodified play, which
-// is real evidence in favor of it being safe for held-bind use -- but unlike
-// Sprint/Movement/Look/Pause/Weapnext (each independently confirmed
-// self-contained), this one carries more residual risk. Flagged here, in
-// known_issues_x64.md, and to the user directly -- test this one first/carefully.
-constexpr const char* kKbuttonSetSignature =
-    "48 89 5C 24 10 48 89 6C 24 18 56 41 56 41 57 48 83 EC 20 48 63 F1 "
-    "4C 8D 15 ?? ?? ?? ?? 4C 69 CE 28 0D 00 00 41 8B E8 48 63 DA "
-    "4D 8D BA ?? ?? ?? ?? 48 8B CE 4D 03 F9 48 8D 14 5B";
+// FUN_14007c3a0(playerIndex, caseNumber, isDown) -- decompiled in full this
+// round (re_notes/x64_migration/decomp_14007c3a0_full.txt): this IS the
+// real case-number dispatcher (confirmed x64 equivalent of x86's
+// FUN_00438710), and its case numbers ARE bind-name-table indices directly
+// (already established for weapnext=case 0x42, pause=case 0x43 --
+// re_notes/x64_migration/README.md section 1g). Cases 1/2 = Fire
+// (+attack) down/up, 0xb/0xc = Reload (+usereload) down/up, 0x3b/0x3c = ADS
+// (+toggleads_throw) down/up -- each pair confirmed via the decompile
+// calling FUN_14007e460 (down)/FUN_14007e490 (up) on the correct per-bind
+// struct base for that action. This is the SAME direct-call-into-the-real-
+// dispatcher pattern already proven for Pause/Weapnext, just one level up
+// the call chain from where this project first tried to enter it.
+// Signature via DumpSigBytes.java (re_notes/x64_migration/
+// impl_sig_14007c3a0.txt): real prologue plus its first two real gate
+// checks (a call + two dvar/state reads), RSP-relative stack spills at
+// +0x00/+0x05 kept literal per this file's own established false-positive
+// lesson, every genuine CALL/JZ rel32 and RIP-relative reference wildcarded:
+//   48 89 5C 24 08                  mov [rsp+8],rbx        (RSP-relative, keep literal)
+//   48 89 74 24 10                  mov [rsp+0x10],rsi      (RSP-relative, keep literal)
+//   57                              push rdi
+//   48 83 EC 20                     sub rsp,0x20
+//   48 63 D9                        movsxd rbx,ecx
+//   41 8B F8                        mov edi,r8d
+//   8B CB                           mov ecx,ebx
+//   8B F2                           mov esi,edx
+//   E8 ?? ?? ?? ??                  call FUN_140078f00 (wildcard rel32)
+//   85 C0                           test eax,eax
+//   0F 84 ?? ?? ?? ??               jz ... (wildcard rel32)
+//   48 83 3D ?? ?? ?? ?? 00         cmp qword ptr [rip+????],0 (wildcard disp32)
+//   0F 84 ?? ?? ?? ??               jz ... (wildcard rel32)
+//   85 F6                           test esi,esi
+//   74 ??                           jz short (wildcard disp8)
+constexpr const char* kCommandDispatchSignature =
+    "48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 20 48 63 D9 41 8B F8 8B CB 8B F2 "
+    "E8 ?? ?? ?? ?? 85 C0 0F 84 ?? ?? ?? ?? 48 83 3D ?? ?? ?? ?? 00 "
+    "0F 84 ?? ?? ?? ?? 85 F6 74 ??";
 
-using KbuttonSetFn = void(__fastcall*)(int playerIndex, int bindIndex, int isDown);
-KbuttonSetFn g_kbuttonSet = nullptr;
+using CommandDispatchFn = void(__fastcall*)(int playerIndex, int caseNumber, int isDown);
+CommandDispatchFn g_commandDispatch = nullptr;
 
-constexpr int kFireBindIndex = 1;     // +attack
-constexpr int kReloadBindIndex = 11;  // +usereload
-constexpr int kAdsBindIndex = 59;     // +toggleads_throw
+constexpr int kFireCaseDown = 1;      // +attack down
+constexpr int kFireCaseUp = 2;        // +attack up
+constexpr int kReloadCaseDown = 0xb;  // +usereload down (NOT the separate +reload
+constexpr int kReloadCaseUp = 0xc;    // at a different index -- see kbutton_table_x64.txt)
+constexpr int kAdsCaseDown = 0x3b;    // +toggleads_throw down
+constexpr int kAdsCaseUp = 0x3c;      // +toggleads_throw up
 
 // FUN_1400823b0(playerIndex) -- the confirmed x64 live-gameplay pause TOGGLE
 // (re_notes/x64_migration/README.md section 1g, "Same-day follow-up #5").
@@ -426,6 +456,36 @@ bool g_adsHeldX64 = false;
 bool g_reloadHeldX64 = false;
 bool g_pauseHeldX64 = false;
 bool g_weaponSwitchHeldX64 = false;
+
+// Real fix for "obvs cant unpause when paused" (2026-09-04, live-confirmed
+// bug): Hook_MovementTick below rides FUN_14007d9f0, part of the per-frame
+// GAMEPLAY SIMULATION pipeline -- which halts entirely while genuinely
+// paused, by design (same architecture x86 already documented for its own
+// InjectAllControllerInput/InjectControllerPauseMenu split). That's fine
+// for movement/look/buttons (meaningless while paused anyway) but means
+// Start's second press could never be observed to CLOSE pause, only ever
+// open it. Declared extern "C" -- even though it's lexically inside this
+// anonymous namespace, that gives it genuine external linkage (this
+// project's own established MSVC linkage lesson, CLAUDE.md's "Checking is
+// far cheaper than digging") -- so analog_input_hooks.cpp's own
+// InjectMenuInputTick (the WndProc-subclass + SetTimer-driven tick that
+// keeps running even during pause, already confirmed firing unconditionally
+// on x64) can poll it too. The exact same fix shape as x86's own real fix
+// for this identical bug class, just reached one architecture generation
+// later.
+extern "C" void PollPauseToggleX64()
+{
+    if (!g_pauseToggle) return;
+    unsigned short xiButtons = 0;
+    unsigned char leftTrigger = 0, rightTrigger = 0;
+    if (!Controller_GetRawButtonsAndTriggers(xiButtons, leftTrigger, rightTrigger)) return;
+
+    bool pauseHeld = IsPhysicalHeld_Exported(g_buttonMap.pause, xiButtons, leftTrigger, rightTrigger);
+    if (pauseHeld && !g_pauseHeldX64) {
+        g_pauseToggle(0);
+    }
+    g_pauseHeldX64 = pauseHeld;
+}
 
 void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
 {
@@ -489,44 +549,42 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
     cmd[0x1c] = static_cast<unsigned char>(ClampToSByteX64(curForward + addForward));
     cmd[0x1d] = static_cast<unsigned char>(ClampToSByteX64(curRight + addRight));
 
-    // Buttons/ADS/Reload/Pause/Weapnext -- polled from here for the same reason
-    // x86 calls InjectControllerButtons/Ads/Reload/Fire/PauseMenu/WeaponNext all
-    // from ONE per-frame orchestration point (analog_input_hooks.cpp's own
+    // Buttons/ADS/Reload/Weapnext -- polled from here for the same reason x86
+    // calls InjectControllerButtons/Ads/Reload/Fire/WeaponNext all from ONE
+    // per-frame orchestration point (analog_input_hooks.cpp's own
     // Hook_0057de60): this function (FUN_14007d9f0) IS that x64 orchestration
     // point, called once per real usercmd-build tick, same as x86's. Held-style
-    // actions (Fire/ADS/Reload) fire on the edge only, mirroring x86's own
-    // InjectControllerAds/Reload/Fire; one-shot actions (Pause/Weapnext) fire on
-    // the PRESS edge only, never on release (calling a one-shot dispatcher twice
-    // per press, or on release too, would double-fire/misbehave).
+    // actions (Fire/ADS/Reload) fire on the edge only, calling the real
+    // dispatcher's own down/up CASE PAIR (not a single "set held" call, since
+    // FUN_14007c3a0's cases are one-shot down/up EVENTS, not a level-triggered
+    // state) -- mirroring x86's own InjectControllerAds/Reload/Fire down/up
+    // edge design. Weapnext (one-shot) fires on the PRESS edge only. Pause is
+    // NOT polled here (see PollPauseToggleX64 below) -- the Pmove tick this
+    // hook rides on halts entirely while the game is paused (by design, same
+    // architecture x86 already documented), so a pause-only-here poll could
+    // toggle pause ON but could never observe the press that would toggle it
+    // back OFF. Real bug, live-confirmed ("obvs cant unpause when paused").
     unsigned short xiButtons = 0;
     unsigned char leftTrigger = 0, rightTrigger = 0;
     if (Controller_GetRawButtonsAndTriggers(xiButtons, leftTrigger, rightTrigger)) {
-        if (g_kbuttonSet) {
+        if (g_commandDispatch) {
             bool fireHeld = IsPhysicalHeld_Exported(g_buttonMap.fire, xiButtons, leftTrigger, rightTrigger);
             if (fireHeld != g_fireHeldX64) {
                 g_fireHeldX64 = fireHeld;
-                g_kbuttonSet(0, kFireBindIndex, fireHeld ? 1 : 0);
+                g_commandDispatch(0, fireHeld ? kFireCaseDown : kFireCaseUp, fireHeld ? 1 : 0);
             }
 
             bool adsHeld = IsPhysicalHeld_Exported(g_buttonMap.ads, xiButtons, leftTrigger, rightTrigger);
             if (adsHeld != g_adsHeldX64) {
                 g_adsHeldX64 = adsHeld;
-                g_kbuttonSet(0, kAdsBindIndex, adsHeld ? 1 : 0);
+                g_commandDispatch(0, adsHeld ? kAdsCaseDown : kAdsCaseUp, adsHeld ? 1 : 0);
             }
 
             bool reloadHeld = IsPhysicalHeld_Exported(g_buttonMap.reloadUse, xiButtons, leftTrigger, rightTrigger);
             if (reloadHeld != g_reloadHeldX64) {
                 g_reloadHeldX64 = reloadHeld;
-                g_kbuttonSet(0, kReloadBindIndex, reloadHeld ? 1 : 0);
+                g_commandDispatch(0, reloadHeld ? kReloadCaseDown : kReloadCaseUp, reloadHeld ? 1 : 0);
             }
-        }
-
-        if (g_pauseToggle) {
-            bool pauseHeld = IsPhysicalHeld_Exported(g_buttonMap.pause, xiButtons, leftTrigger, rightTrigger);
-            if (pauseHeld && !g_pauseHeldX64) {
-                g_pauseToggle(0);
-            }
-            g_pauseHeldX64 = pauseHeld;
         }
 
         if (g_weaponNext) {
@@ -537,6 +595,15 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
             g_weaponSwitchHeldX64 = weaponSwitchHeld;
         }
     }
+
+    // Pause also polled from here, redundantly -- matches x86's own established
+    // "call the same edge-debounced poll from both the gameplay tick AND the
+    // always-on menu tick, it's safe/idempotent either way" pattern
+    // (InjectControllerPauseMenu's own comment, analog_input_hooks.cpp). This
+    // call is what handles OPENING pause during live gameplay; PollPauseToggleX64
+    // called from InjectMenuInputTick below is what handles CLOSING it, since
+    // this whole function stops being called at all once actually paused.
+    PollPauseToggleX64();
 }
 
 }  // namespace
@@ -680,19 +747,19 @@ void InstallAnalogInputHooksX64()
         }
     }
 
-    // Buttons/ADS/Reload -- resolves FUN_14007eaf0's real address for a DIRECT
+    // Buttons/ADS/Reload -- resolves FUN_14007c3a0's real address for a DIRECT
     // CALL, not a hook (MH_CreateHook is for detouring an existing call site;
     // this project calls this function itself, the same way it already calls
     // g_pauseToggle/g_weaponNext below). No MinHook involvement at all here.
     {
-        SigScan::Result r = SigScan::FindPatternInMainModule(kKbuttonSetSignature);
+        SigScan::Result r = SigScan::FindPatternInMainModule(kCommandDispatchSignature);
         if (!r.found) {
-            LogFromController("[x64-buttons] FATAL: kbutton-set signature did not resolve -- Fire/ADS/Reload "
+            LogFromController("[x64-buttons] FATAL: command-dispatch signature did not resolve -- Fire/ADS/Reload "
                 "will not work this session");
         } else {
-            g_kbuttonSet = reinterpret_cast<KbuttonSetFn>(r.address);
+            g_commandDispatch = reinterpret_cast<CommandDispatchFn>(r.address);
             char buf[160];
-            sprintf_s(buf, "[x64-buttons] kbutton-set resolved @ 0x%llX -- Fire/ADS/Reload active "
+            sprintf_s(buf, "[x64-buttons] command-dispatch resolved @ 0x%llX -- Fire/ADS/Reload active "
                 "(direct call, no hook installed).", static_cast<unsigned long long>(r.address));
             LogFromController(buf);
         }

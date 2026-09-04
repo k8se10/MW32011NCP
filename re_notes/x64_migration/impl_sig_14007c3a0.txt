@@ -1,0 +1,24 @@
+Signature-byte dump of FUN_14007c3a0 @ 14007c3a0
+(byte offsets relative to function entry point)
+
++0x00  48 89 5C 24 08                 MOV qword ptr [RSP + 0x8],RBX            [PC-RELATIVE/REF -- likely needs wildcarding]
++0x05  48 89 74 24 10                 MOV qword ptr [RSP + 0x10],RSI           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x0A  57                             PUSH RDI                                 
++0x0B  48 83 EC 20                    SUB RSP,0x20                             
++0x0F  48 63 D9                       MOVSXD RBX,ECX                           
++0x12  41 8B F8                       MOV EDI,R8D                              
++0x15  8B CB                          MOV ECX,EBX                              
++0x17  8B F2                          MOV ESI,EDX                              
++0x19  E8 42 CB FF FF                 CALL 0x140078f00                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x1E  85 C0                          TEST EAX,EAX                             
++0x20  0F 84 4B 0D 00 00              JZ 0x14007d111                           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x26  48 83 3D DA 81 49 00 00        CMP qword ptr [0x1405145a8],0x0          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x2E  0F 84 3D 0D 00 00              JZ 0x14007d111                           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x34  85 F6                          TEST ESI,ESI                             
++0x36  74 09                          JZ 0x14007c3e1                           [PC-RELATIVE/REF -- likely needs wildcarding]
+
+Raw bytes (56 total): 48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 20 48 63 D9 41 8B F8 8B CB 8B F2 E8 42 CB FF FF 85 C0 0F 84 4B 0D 00 00 48 83 3D DA 81 49 00 00 0F 84 3D 0D 00 00 85 F6 74 09
+
+Suggested masked signature (PC-relative/ref instructions fully
+wildcarded -- refine by hand, this is a starting point only):
+?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 57 48 83 EC 20 48 63 D9 41 8B F8 8B CB 8B F2 ?? ?? ?? ?? ?? 85 C0 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 85 F6 ?? ??

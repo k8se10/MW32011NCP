@@ -49,6 +49,13 @@ extern "C" bool IsGlyphPositionEditModeActive();
 // LoadModConfig() if it changed since the last check, showing an on-screen
 // confirmation via ShowOverlayMessage (overlay_hud.cpp).
 extern "C" void CheckConfigHotReload();
+// Defined in analog_input_hooks_x64.cpp -- x64-only (that file doesn't compile
+// on Win32 at all, see this file's own #if _M_X64/_WIN64 guards below), the
+// real live-test fix for "obvs cant unpause when paused" on the x64 line.
+// Declared here unconditionally since InjectMenuInputTick's own call to it is
+// itself #if-guarded to x64 only, matching every other cross-platform-declared/
+// platform-guarded-call pattern in this file.
+extern "C" void PollPauseToggleX64();
 // Defined in overlay_hud.cpp -- a no-op unless [Overlay] TestCycleAllVariants is on,
 // strictly a testing aid (see that config key's own comment).
 void TickOverlayTestCycle();
@@ -9918,6 +9925,16 @@ extern "C" void __cdecl InjectMenuInputTick()
     // own header comment) -- the one that keeps running during pause/menus, when
     // InjectAllControllerInput's own request (above) has already stopped firing.
     Controller_RequestPoll();
+
+#if defined(_M_X64) || defined(_WIN64)
+    // 2026-09-04, live-test fix ("obvs cant unpause when paused"): x64's own
+    // gameplay-tick hook (Hook_MovementTick, analog_input_hooks_x64.cpp) halts
+    // entirely while genuinely paused, the exact same architecture x86 already
+    // documented above -- so Pause's own toggle poll needs to ALSO run from
+    // this always-on tick, matching InjectControllerPauseMenu's placement here
+    // on the x86 side just above/below this block.
+    PollPauseToggleX64();
+#endif
 
 #if !defined(_M_X64) && !defined(_WIN64)
     // x64: everything below through InjectFontGlyphVisibilityTest_HudBigFont() is

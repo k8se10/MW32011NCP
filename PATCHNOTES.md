@@ -86,6 +86,18 @@ progress.
    deployed binary, not guessed. Fixed by giving every logging buffer in
    that file real headroom. Full trail in `re_notes/known_issues_x64.md`
    issue #1.
+2. **Pause couldn't close once opened.** The x64 Pause poll only ran from
+   the gameplay-simulation tick, which halts entirely while genuinely
+   paused — a real bug, not unique to x64 (the same class x86 hit and
+   fixed early in this project's history). Fixed by also polling from the
+   always-on menu tick that keeps running during pause. Confirmed working
+   live (opening pause) before this fix; closing needs re-testing.
+3. **Fire/ADS/Reload did nothing on x64.** A genuine misread of the target
+   function's own parameter semantics routed these through the wrong
+   engine function entirely, which silently no-op'd every call. Fixed by
+   routing through the real case-number command dispatcher instead — the
+   same one Pause and Weapnext already use successfully. Not yet
+   re-tested live. Full trail in `re_notes/known_issues_x64.md` issue #1.
 
 ---
 
