@@ -85,6 +85,20 @@ Full technical trail (every function found, every dead end ruled out):
 [`re_notes/known_issues_x64.md`](re_notes/known_issues_x64.md) and
 [`re_notes/x64_migration/README.md`](re_notes/x64_migration/README.md).
 
+## Compatibility
+
+Built and verified only against retail Steam MW3. See the
+[wiki Compatibility page](../../wiki/Compatibility) for the full
+per-client/per-mission breakdown.
+
+**⚠ Do not use this with Plutonium multiplayer.** Plutonium's own anti-cheat
+is confirmed to ban DLL injection and memory access — a 7-day ban on first
+offense, permanent after. This project's entire architecture (a proxy
+`d3d9.dll`, function hooking) is exactly what that system is built to catch,
+regardless of this being input-only rather than a gameplay cheat. This is a
+real, confirmed risk, not theoretical. Supported: retail Steam
+Campaign/Survival only.
+
 ## Installation
 
 1. Requires a legitimate copy of Call of Duty: Modern Warfare 3 (2011) on

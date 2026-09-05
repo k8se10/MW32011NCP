@@ -1,4 +1,4 @@
-MW32011NCP (native controller & enhancement project for MW3 2011) License
+MW3 Native Controller Project (MW3NCP) License
 Copyright (c) 2026 Kye Savage
 
 This license applies to the original source code of this project (the "Mod") —
@@ -47,9 +47,9 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE. This includes, without limitation, any risk associated with running
 third-party code alongside an online-connected game client or a third-party
-game client/launcher — see the Compatibility section of README.md, which
-documents a confirmed anti-cheat risk on at least one such client (Plutonium
-multiplayer bans DLL injection and memory access), plus a separate,
+game client/launcher — see the Client compatibility section of README.md,
+which documents a confirmed anti-cheat risk on at least one such client
+(Plutonium multiplayer bans DLL injection and memory access), plus a separate,
 still-unresolved question for retail `iw5mp.exe` itself.
 
 --------------------------------------------------------------------------------
