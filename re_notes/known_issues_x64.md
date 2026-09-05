@@ -36,7 +36,7 @@ two files already had for #111 before the split.
 
 ## Index
 
-- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **D-pad Left synthetic-key exception AND a sniper Fire/ADS fix attempt both shipped (build-verified, neither live-tested yet); Plugin API ported (build-verified, needed no host code changes); visual-enhancement-suite x64 port attempted TWICE, still blocked on two addresses that resist exhaustive static RE (render-scale, clcState/in-level-flag) — likely needs live tracing, not more static analysis; FXAA/MSAA found to not even exist on x86, out of scope for parity; NEW live bug "no mod overlays render" — one real cause (cursor's own unguarded x86 address landmine) found and fixed, rest of the audit handed to a fork — release ETA 2-4 weeks, gated on x86 parity**
+- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **D-pad Left synthetic-key exception AND a sniper Fire/ADS fix attempt both shipped (build-verified, neither live-tested yet); Plugin API ported (build-verified, needed no host code changes); visual-enhancement-suite x64 port attempted TWICE, still blocked on two addresses that resist exhaustive static RE (render-scale, clcState/in-level-flag) — likely needs live tracing, not more static analysis; FXAA/MSAA found to not even exist on x86, out of scope for parity; overlay-render bug fully audited — cursor's own unguarded x86 address landmine found and fixed, rest of the render path confirmed clean; Custom Options screen wired into x64's input pipeline (build-verified, temporary manual open-chord substitute pending a real focus-detection RE pass) — release ETA 2-4 weeks, gated on x86 parity**
 
 ---
 
@@ -2066,6 +2066,7 @@ from the toast's own apparent one-time success. Full audit of
 `DrawGameplayHintSlotsIfRequested`, `DrawMenuHintsIfRequested`) for similar
 unguarded address reads, plus tracing why glyph-position-resolution comes back
 empty, is the next step -- handed to a dedicated fork this same session.
+
 **Visual-enhancement suite x64 port, second attempt (same day, direct
 follow-up instruction: "implement as much as we can... as long as it works
 and doesnt regress") -- STILL BLOCKED, nothing shipped, one real scope
@@ -2222,3 +2223,63 @@ the concrete next step toward closing this specific parity gap -- a genuine,
 scoped RE task (native x64 equivalents of `GetMenuStackDepth`/
 `TryGetRealFocusedGroupAndIndex`/`g_focusedItemName`'s populating hook), not
 attempted this pass.
+
+**Custom Options screen wired into x64's input pipeline, same day --
+BUILD-VERIFIED, NOT YET LIVE-TESTED, one real gap honestly flagged rather than
+guessed around.** Read x86's own `CustomOptionsMenu_TickInput`/
+`DrawCustomOptionsMenuIfOpen` (`overlay_hud.cpp`) in full first, per this
+project's standing compare-to-x86-original rule. Confirmed by inspection: the
+whole draw/navigate-once-open half of this feature is ALREADY genuinely
+cross-platform -- zero hardcoded addresses anywhere in either function -- so
+none of that needed porting.
+
+**The real gap**: x86's own real TRIGGER for opening the screen
+(`InjectControllerMenuNav`, `analog_input_hooks.cpp`) never runs on x64 at
+all -- x64's per-frame input pipeline never called `CustomOptionsMenu_TickInput`,
+so `g_optMenuOpen` could never become true and the screen was completely
+unreachable in-game, independent of the "no visual elements" bug documented
+above. **Fixed**: a new `PollCustomOptionsMenuX64()` (`analog_input_hooks_x64.cpp`),
+called from the same always-on `InjectMenuInputTick` tick `PollPauseToggleX64`/
+`AutoUnstickPauseCycleX64` already use (must run there, not the gameplay tick,
+since the gameplay tick halts entirely while a menu/pause is active -- the only
+time this screen is ever reachable). Computes the same D-pad/A/B/LB/RB edges
+`CustomOptionsMenu_TickInput` expects, using this file's own already-resolved
+primitives (`IsPhysicalHeld_Exported`, `kXI_DPAD_*_X64`, `g_menuActiveGateFlag`
+bit `0x10` for "is a real menu active" -- all already confirmed working on x64
+this session, none re-derived).
+
+**One real, DELIBERATELY NOT PORTED gap, found and independently confirmed via
+two separate routes this same session**: x86's real open-trigger detects a
+real NATIVE menu-item focus via `TryGetRealFocusedGroupAndIndex`
+(`analog_input_hooks.cpp`) -- a raw itemDef-array walk hardcoding a **4-byte
+pointer stride** (`arr + i * 4`) and item-struct field offsets (`+0x48` flags,
+`+0x0` name pointer, `+0xa8`/`+0xac` array count/pointer), all genuine
+32-bit-pointer-width assumptions. On x64 (8-byte pointers) this reads
+misaligned garbage, which the function's own `LooksSane()` checks correctly
+reject -- it always returns false. This independently confirms the exact same
+symptom the concurrent overlay-visibility audit fork found via
+`[manual-glyph-diag]` log evidence (`realGroup="" realIndex=-1` every frame,
+regardless of `ShouldDrawGlyphOverlay()`'s own value) -- same underlying
+mechanism, found from two different angles the same day. Re-deriving x64's
+real per-item struct offsets needs its own dedicated Ghidra decompile pass (a
+genuinely different struct layout under 64-bit alignment, not just doubling
+the stride) -- deliberately NOT attempted this pass, consistent with this
+session's own standard of not guessing at unverified struct offsets (x86's own
+issue #3 lesson: never trust an offset without independent confirmation).
+
+**Temporary substitute, honestly labeled as such, not a permanent design**:
+opening is gated on holding LB+RB together while a real native menu is already
+active (`[Options] UseCustomOptionsScreen` still required, default OFF,
+matching x86's own opt-in convention exactly) -- gives real, testable access
+to the screen's own already-correct draw/navigate code without waiting on the
+deeper RE. Replace with the real focus-based trigger once the struct-offset
+work above is done.
+
+**Build-verified**: x64 `/t:Rebuild` (0 errors) -> `dumpbin /headers` confirmed
+`8664 machine (x64)` with a fresh `LastWriteTime` -> Win32 regression rebuild
+(0 errors, no regression). **NOT YET LIVE-TESTED** -- next step when the user
+next enables `UseCustomOptionsScreen` and tests: confirm the LB+RB chord opens
+the screen while a native menu (e.g. pause) is active, the panel/blur/list
+draw correctly, D-pad/A/B navigate and select rows, and closing returns
+cleanly to the native menu with no regression to normal D-pad/A/B gameplay
+input once closed.

@@ -61,6 +61,12 @@ extern "C" void PollPauseToggleX64();
 // real fix confirmed by direct user report ("still requires the classic pause
 // unpause workaround") after two WndProc-message-based theories both failed.
 extern "C" void AutoUnstickPauseCycleX64();
+// Defined in analog_input_hooks_x64.cpp -- x64-only, drives the custom Options
+// screen's own CustomOptionsMenu_TickInput (overlay_hud.cpp) since x86's real
+// trigger (InjectControllerMenuNav's native-menu-focus detection, this file)
+// never runs on x64 -- see PollCustomOptionsMenuX64's own comment for the full
+// gap and its temporary open-chord substitute.
+extern "C" void PollCustomOptionsMenuX64();
 // Defined in overlay_hud.cpp -- a no-op unless [Overlay] TestCycleAllVariants is on,
 // strictly a testing aid (see that config key's own comment).
 void TickOverlayTestCycle();
@@ -9946,6 +9952,11 @@ extern "C" void __cdecl InjectMenuInputTick()
     // gameplay tick -- its own OPEN step pauses the game, which would stop a
     // gameplay-tick-based caller from ever reaching the CLOSE step.
     AutoUnstickPauseCycleX64();
+    // 2026-09-05, release-parity pass -- the custom Options screen only needs
+    // to navigate while a real native menu is already active (same class of
+    // state as Pause's own toggle above), so it belongs on this same always-on
+    // tick too, not the gameplay tick (which halts entirely while paused).
+    PollCustomOptionsMenuX64();
 #endif
 
 #if !defined(_M_X64) && !defined(_WIN64)
