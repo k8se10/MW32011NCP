@@ -1,0 +1,35 @@
+STRING @ 14048f348 = "frag_grenade_mp"
+  from 140276523 type=READ IN FUNCTION FUN_140276380@140276380
+  from 14054a5a0 type=DATA IN DATA
+  (2 references)
+
+STRING @ 14048f358 = "semtex_mp"
+  from 140276523 type=READ IN FUNCTION FUN_140276380@140276380
+  from 14054a5a8 type=DATA IN DATA
+  (2 references)
+
+STRING @ 14048f368 = "throwingknife_mp"
+  from 14054a5b0 type=DATA IN DATA
+  (1 references)
+
+STRING @ 14048f380 = "bouncingbetty_mp"
+  from 14054a5b8 type=DATA IN DATA
+  (1 references)
+
+STRING @ 14048f398 = "claymore_mp"
+  from 14054a5c0 type=DATA IN DATA
+  (1 references)
+
+STRING @ 14048f3a4 = "c4_mp"
+  from 14054a5c8 type=DATA IN DATA
+  (1 references)
+
+STRING @ 14048f408 = "flash_grenade_mp"
+  from 14054a650 type=DATA IN DATA
+  (1 references)
+
+STRING @ 14048f460 = "smoke_grenade_mp"
+  from 14054a670 type=DATA IN DATA
+  (1 references)
+
+Total matching strings: 8

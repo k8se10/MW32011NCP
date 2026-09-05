@@ -1,0 +1,32 @@
+================================================================
+Function: FUN_1400cfef0 @ 1400cfef0
+Signature: undefined FUN_1400cfef0(void)
+----------------------------------------------------------------
+
+float FUN_1400cfef0(longlong param_1)
+
+{
+  uint uVar1;
+  uint uVar2;
+  
+  uVar2 = *(uint *)(param_1 + 0xc);
+  *(undefined4 *)(param_1 + 0xc) = 0;
+  if (*(char *)(param_1 + 0x10) != '\0') {
+    uVar1 = DAT_142cddcfc;
+    if (*(int *)(param_1 + 8) != 0) {
+      uVar1 = uVar2 + (DAT_142cddcfc - *(int *)(param_1 + 8));
+    }
+    uVar2 = uVar1;
+    *(uint *)(param_1 + 8) = DAT_142cddcfc;
+  }
+  if (0 < (int)uVar2) {
+    if (uVar2 < DAT_1415e5920) {
+      return (float)(int)uVar2 / (float)DAT_1415e5920;
+    }
+    return DAT_1404e848c;
+  }
+  return 0.0;
+}
+
+
+
