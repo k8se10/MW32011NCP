@@ -1644,7 +1644,13 @@ void InstallAnalogInputHooksX64()
                 LogFromController(buf);
             }
             if (g_notifyBindDispatch) {
-                char buf[160];
+                // Was char buf[160] -- too small for this message's own worst case (169 chars +
+                // null = 170 bytes: a 16-hex-digit %p plus surrounding text), a real, previously
+                // unexecuted bug caught live 2026-09-05 (see known_issues_x64.md issue #1): this
+                // UCRT's sprintf_s fails fast (0xC0000409 / FAST_FAIL_INVALID_ARG) rather than
+                // silently truncating when the formatted output doesn't fit, unlike the truncation
+                // behavior this codebase's other sprintf_s call sites happened to never exceed.
+                char buf[256];
                 sprintf_s(buf, "[x64-sniper-fix] Reliable-command notify dispatch resolved @ 0x%p -- "
                     "sniper Fire/ADS fix attempt active (fixed +0x%llX offset from stance-dispatch anchor).",
                     (void*)g_notifyBindDispatch, static_cast<unsigned long long>(kNotifyBindFuncOffset));
