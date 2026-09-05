@@ -6144,6 +6144,28 @@ namespace {
 
 void DrawCustomCursorIfNeeded(void* device)
 {
+#if defined(_M_X64) || defined(_WIN64)
+    // x64: CONFIRMED REAL BUG, 2026-09-05 (live report: "no visual rendered
+    // elements show on screen... including our own mw32011ncp started messages
+    // and such" -- investigation traced this specific function as one real,
+    // confirmed cause). kCursorVisibleFlagAddr/kCursorUiStateAddr below are raw
+    // x86-only hardcoded addresses (0x01c00474/0x01c0ad14 -- well within the
+    // x86 process's address space, meaningless against x64's real module base
+    // of 0x140000000, confirmed via this file's own env-diag log line) --
+    // exactly the same landmine class the 2026-09-04 crash audit already found
+    // and fixed ~30 instances of in this file, EXCEPT this one slipped through
+    // that audit because it's wrapped in __try/__except: on x86 these addresses
+    // are real and safe, but on x64 dereferencing them is almost certainly an
+    // access violation into unmapped memory -- which SEH silently swallows
+    // instead of crashing, so this failed completely invisibly (no crash, no
+    // log line) rather than surfacing the way IsMenuActive's own unguarded
+    // read did. Early-returning here (same pattern as every other x64-deferred
+    // function in this file, e.g. RunFullScreenPostProcessIfEnabled) is the
+    // honest, correct behavior until a real x64 signature-scan finds this
+    // engine's actual cursor-visible-flag/UI-state equivalents -- not attempted
+    // this pass. See known_issues_x64.md issue #1 for the full trail.
+    return;
+#endif
     __try {
         constexpr uintptr_t kCursorVisibleFlagAddr = 0x01c00474;
         constexpr uintptr_t kCursorUiStateAddr = 0x01c0ad14;
