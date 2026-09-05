@@ -30,7 +30,7 @@ below without re-running Ghidra.
 
 ---
 
-## Status: First real x64 MP session. Key-event -> gameplay-bind dispatch chain fully mapped end to end, high confidence, addresses for essentially all 89 dispatch cases already extracted from the decompiler (a level of completeness x86 MP's own multi-session effort never reached). Movement/look pipeline NOT yet located -- clear next step.
+## Status: Movement/look pipeline now FOUND and confirmed (Session 2), on top of Session 1's fully-mapped key-event -> gameplay-bind dispatch chain. Both pillars of "on par with x86 MP" are now static-confirmed. ADS candidate (case 0x43/0x44) upgraded with real independent corroborating evidence; killstreak/loadout-slot candidate (cases 0xf-0x1a) reinforced by a second, independent function cluster. No case is asserted "confirmed by name" beyond the 4 already found via literal command string in Session 1.
 
 This session started from string anchors (bind-name literals: `+attack`,
 `+sprint`, `+holdbreath`, `+frag`, `+gostand`, etc.) rather than trying to
