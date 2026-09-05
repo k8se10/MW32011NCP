@@ -76,6 +76,8 @@
 #include "signature_scan.h"
 #include "controller_input.h"
 #include "mod_config.h"
+#include "overlay_hud.h" // CustomOptionsMenu_TickInput/_ResetOnMenuClose -- see
+                          // PollCustomOptionsMenuX64's own comment below
 
 extern void LogFromController(const char* msg);  // dllmain.cpp, shared log file (see analog_input_hooks.cpp's
                                     // own identical convention)
@@ -940,6 +942,118 @@ extern "C" void PollPauseToggleX64()
         g_pauseToggle(0);
     }
     g_pauseHeldX64 = pauseHeld;
+}
+
+// ---- Custom Options screen, x64 (2026-09-05, release-parity pass) -----------------
+//
+// x86 precedent: `CustomOptionsMenu_TickInput` (overlay_hud.cpp) and the screen it
+// drives (`DrawCustomOptionsMenuIfOpen`) are genuinely cross-platform already -- read
+// in full before writing anything here, per this project's standing compare-to-x86-
+// original rule. Neither function reads a single hardcoded address; the whole
+// draw/navigate-once-open half of this feature already works correctly on x64 with
+// zero porting needed, confirmed by inspection.
+//
+// The REAL gap, found this pass: x86's own real TRIGGER for opening the screen
+// (`InjectControllerMenuNav`, analog_input_hooks.cpp) never runs on x64 at all --
+// x64's own per-frame input pipeline (this file) never calls
+// `CustomOptionsMenu_TickInput`, so `g_optMenuOpen` can never become true and the
+// whole screen is currently unreachable in-game, even though drawing it would work
+// fine once open.
+//
+// x86's real trigger detects a real NATIVE menu-item focus (`TryGetRealFocusedGroupAndIndex`,
+// analog_input_hooks.cpp) landing on the pause/campaign/specops menu's own real
+// "Options" button, via a raw itemDef-array walk. That walk hardcodes a 4-BYTE
+// pointer stride (`arr + i * 4`) and item-struct field offsets (`+0x48` flags,
+// `+0x0` name pointer, `+0xa8`/`+0xac` array count/pointer) that are all genuine
+// 32-bit-pointer-width assumptions -- on x64 (8-byte pointers), this reads
+// misaligned garbage, which its own `LooksSane()` checks correctly reject, so the
+// function always returns false. This independently confirms the SAME "focus
+// detection returns nothing" symptom another concurrent x64 investigation this
+// session already found via `[manual-glyph-diag]` log evidence
+// (`realGroup="" realIndex=-1` every frame). Re-deriving x64's real per-item struct
+// offsets needs its own dedicated Ghidra decompile pass (a genuinely different
+// struct layout under 64-bit alignment, not just doubling the stride) -- explicitly
+// NOT attempted this pass, consistent with this session's own standard of not
+// guessing at unverified struct offsets (x86's own issue #3 lesson).
+//
+// TEMPORARY substitute, honestly labeled as such: since the real native-menu-focus
+// trigger can't be ported this pass, opening is gated on a manual chord (LB+RB held
+// together) while a real native menu is already active (`g_menuActiveGateFlag`,
+// already-confirmed x64 IsMenuActive() equivalent, bit 0x10) -- gives real,
+// testable access to the screen's own already-correct draw/navigate code without
+// needing the deeper RE. Still gated on `[Options] UseCustomOptionsScreen` (default
+// OFF), matching x86's own opt-in convention exactly. Replace this chord with the
+// real focus-based trigger once the struct-offset RE above is done -- not a
+// permanent design, a stand-in.
+bool g_optNavUpHeldX64 = false, g_optNavDownHeldX64 = false, g_optNavLeftHeldX64 = false,
+     g_optNavRightHeldX64 = false, g_optNavSelectHeldX64 = false, g_optNavBackHeldX64 = false,
+     g_optNavTabPrevHeldX64 = false, g_optNavTabNextHeldX64 = false;
+bool g_optOpenComboHeldX64 = false;
+bool g_optMenuWasActiveX64 = false;
+
+extern "C" void PollCustomOptionsMenuX64()
+{
+    if (!g_modConfig.useCustomOptionsScreen) return;
+
+    bool menuActiveNow = g_menuActiveGateFlag && ((*g_menuActiveGateFlag & 0x10u) != 0);
+    if (!menuActiveNow) {
+        // Mirrors x86's own InjectControllerMenuNav early-return-and-reset when the
+        // real menu system isn't active -- next open should always see a fresh
+        // rising edge, and the screen itself must forget any drilldown/open state.
+        g_optNavUpHeldX64 = g_optNavDownHeldX64 = g_optNavLeftHeldX64 = g_optNavRightHeldX64 = false;
+        g_optNavSelectHeldX64 = g_optNavBackHeldX64 = false;
+        g_optNavTabPrevHeldX64 = g_optNavTabNextHeldX64 = false;
+        g_optOpenComboHeldX64 = false;
+        if (g_optMenuWasActiveX64) CustomOptionsMenu_ResetOnMenuClose();
+        g_optMenuWasActiveX64 = false;
+        return;
+    }
+    g_optMenuWasActiveX64 = true;
+
+    unsigned short xiButtons = 0;
+    unsigned char leftTrigger = 0, rightTrigger = 0;
+    if (!Controller_GetRawButtonsAndTriggers(xiButtons, leftTrigger, rightTrigger)) return;
+
+    bool upHeld = (xiButtons & kXI_DPAD_UP_X64) != 0;
+    bool upEdge = upHeld && !g_optNavUpHeldX64;
+    bool downHeld = (xiButtons & kXI_DPAD_DOWN_X64) != 0;
+    bool downEdge = downHeld && !g_optNavDownHeldX64;
+    bool leftHeld = (xiButtons & kXI_DPAD_LEFT_X64) != 0;
+    bool leftEdge = leftHeld && !g_optNavLeftHeldX64;
+    bool rightHeld = (xiButtons & kXI_DPAD_RIGHT_X64) != 0;
+    bool rightEdge = rightHeld && !g_optNavRightHeldX64;
+    bool selectHeld = IsPhysicalHeld_Exported(PhysicalInput::A, xiButtons, leftTrigger, rightTrigger);
+    bool selectEdge = selectHeld && !g_optNavSelectHeldX64;
+    bool backHeld = IsPhysicalHeld_Exported(PhysicalInput::B, xiButtons, leftTrigger, rightTrigger);
+    bool backEdge = backHeld && !g_optNavBackHeldX64;
+    bool tabPrevHeld = IsPhysicalHeld_Exported(PhysicalInput::LB, xiButtons, leftTrigger, rightTrigger);
+    bool tabPrevEdge = tabPrevHeld && !g_optNavTabPrevHeldX64;
+    bool tabNextHeld = IsPhysicalHeld_Exported(PhysicalInput::RB, xiButtons, leftTrigger, rightTrigger);
+    bool tabNextEdge = tabNextHeld && !g_optNavTabNextHeldX64;
+
+    // Temporary open chord -- see this function's own header comment. Only checked
+    // while our own menu isn't already open (CustomOptionsMenu_TickInput's own
+    // openRequestedEdge parameter is ignored once g_optMenuOpen is already true, but
+    // avoiding the edge computation entirely here is clearer than relying on that).
+    bool openCombo = tabPrevHeld && tabNextHeld;
+    bool openComboEdge = openCombo && !g_optOpenComboHeldX64;
+    g_optOpenComboHeldX64 = openCombo;
+    // Suppress the tab-prev/tab-next edges on the SAME tick the open chord fires --
+    // otherwise opening on LB+RB would also immediately register as a tab-switch
+    // the instant the screen appears (both were pressed to open it).
+    if (openComboEdge) { tabPrevEdge = false; tabNextEdge = false; }
+
+    CustomOptionsMenu_TickInput(openComboEdge, upEdge, downEdge, leftEdge, rightEdge,
+                                  selectEdge, backEdge, tabPrevEdge, tabNextEdge);
+
+    g_optNavUpHeldX64 = upHeld;
+    g_optNavDownHeldX64 = downHeld;
+    g_optNavLeftHeldX64 = leftHeld;
+    g_optNavRightHeldX64 = rightHeld;
+    g_optNavSelectHeldX64 = selectHeld;
+    g_optNavBackHeldX64 = backHeld;
+    g_optNavTabPrevHeldX64 = tabPrevHeld;
+    g_optNavTabNextHeldX64 = tabNextHeld;
 }
 
 // ---- Auto pause/unpause "unstick" cycle, x64 (2026-09-04) -------------------------
