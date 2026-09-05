@@ -36,7 +36,7 @@ two files already had for #111 before the split.
 
 ## Index
 
-- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **D-pad Left synthetic-key exception AND a sniper Fire/ADS fix attempt both shipped (build-verified, neither live-tested yet); Plugin API ported (build-verified, needed no host code changes); visual-enhancement-suite x64 port attempted, blocked on two unresolved addresses, nothing shipped; NEW live bug "no mod overlays render" — one real cause (cursor's own unguarded x86 address landmine) found and fixed, rest of the audit handed to a fork — release ETA 2-4 weeks, gated on x86 parity**
+- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **D-pad Left synthetic-key exception AND a sniper Fire/ADS fix attempt both shipped (build-verified, neither live-tested yet); Plugin API ported (build-verified, needed no host code changes); visual-enhancement-suite x64 port attempted TWICE, still blocked on two addresses that resist exhaustive static RE (render-scale, clcState/in-level-flag) — likely needs live tracing, not more static analysis; FXAA/MSAA found to not even exist on x86, out of scope for parity; NEW live bug "no mod overlays render" — one real cause (cursor's own unguarded x86 address landmine) found and fixed, rest of the audit handed to a fork — release ETA 2-4 weeks, gated on x86 parity**
 
 ---
 
@@ -2066,3 +2066,100 @@ from the toast's own apparent one-time success. Full audit of
 `DrawGameplayHintSlotsIfRequested`, `DrawMenuHintsIfRequested`) for similar
 unguarded address reads, plus tracing why glyph-position-resolution comes back
 empty, is the next step -- handed to a dedicated fork this same session.
+**Visual-enhancement suite x64 port, second attempt (same day, direct
+follow-up instruction: "implement as much as we can... as long as it works
+and doesnt regress") -- STILL BLOCKED, nothing shipped, one real scope
+correction found.** Picked up exactly where the first attempt (`bad3d26`)
+left off, with a much more exhaustive push on the same two gaps before
+concluding they're genuinely static-RE-hard, not just under-tried.
+
+**Scope correction, found before writing any code**: re-checked whether x86
+actually ships FXAA or "better MSAA" as real, shipped features before
+treating them as port targets. **Neither exists on x86.** `grep`-ing the
+entire x86 `analog_input_hooks.cpp`/`overlay_hud.cpp` for `Fxaa`/`FXAA`
+turns up only forward-looking comments ("a future FXAA/motion-blur pass
+would set its own [pixel shader constants] the same way") -- FXAA was
+planned (`twinkly-tickling-gem.md` Phase C) but never built. Likewise every
+`MultiSampleType`/`MultiSampleQuality` mention is an incidental
+`D3DSURFACE_DESC` struct-field reference or an issue #93 diagnostic note,
+not a real `[Graphics] ForcedMsaaSamples`-style feature. **Building these
+for x64 first would not be "reaching x86 parity" -- it would be new work
+beyond parity**, against a plan-only spec x86 itself never validated live.
+Correctly out of scope for this task; not attempted. If genuinely wanted,
+these need their own fresh scoping/implementation pass on x86 first (or a
+direct decision to build x64-first, which is a real option but a different
+task than "port to reach parity").
+
+**`InternalRenderScalePercent` (`FUN_00679010`'s x64 equivalent) -- still
+NOT located, not re-attempted this round.** The first attempt's own
+diagnosis (x86's ONE real caller of `FUN_00679010` is reached via what is
+very plausibly an indirect/function-pointer call, the same static-xref-proof
+shape that already stumped the ORIGINAL x86 investigation for 9+ rounds
+including a full Ghidra pass) is a structural finding, not a tooling gap a
+different script fixes -- confirmed by finding the SAME shape independently
+on x64's render-target-name-table caller chain (`FUN_1401b8c80`). Spent this
+round's effort on the more tractable-looking `clcState` gap instead (below);
+if `clcState`/in-level-flag get resolved in a future pass, `FUN_00679010`
+would still need its own dedicated live-tracing session (an actual
+injectable build logging its own caller's return address at runtime is the
+real next step, not more static xref scanning -- consistent with the first
+attempt's own conclusion).
+
+**`clcState`/in-level-flag x64 equivalents -- still NOT located, despite a
+genuinely more thorough attempt than the first pass, using three independent
+static techniques in sequence:**
+1. Re-ran `RawStringScan.java` against `"SCR_DrawScreenField: bad clcState"`
+   AFTER running a real, full Ghidra auto-analysis pass on a working copy of
+   the project (the original attempt used `-noanalysis` throughout this
+   session for speed -- confirmed here that headless `-process` WITHOUT
+   `-noanalysis` really does run the complete default analyzer pipeline,
+   including `Data Reference`/`Scalar Operand References`, and completes in
+   under a minute on this already-substantially-analyzed project, not the
+   many-minutes worst case assumed). **Still 0 references** to the string.
+2. Wrote a new script, `FindLeaRefsToAddr.java` (committed, genuinely
+   reusable for future indirect-reference hunts), that scans raw
+   executable-section bytes directly for `LEA reg,[RIP+disp32]` instruction
+   encodings whose COMPUTED target equals the string's address -- bypassing
+   Ghidra's instruction/reference database entirely, so it doesn't matter
+   whether Ghidra's own disassembler ever visited or recognized the
+   instruction. **0 hits.**
+3. Broadened the same script to scan EVERY initialized memory block (not
+   just executable ones) for both the LEA-rip pattern AND a raw 8-byte
+   absolute-pointer match (covering a `MOV r64, imm64` load or a plain
+   pointer-table entry). **Still 0 hits, anywhere in the loaded image.**
+
+Three independent techniques, one exhaustive raw-byte pass across the whole
+loaded image, zero references found. This rules out "wrong analyzer" or
+"missing xref" as the explanation -- either this exact error string's print
+call site was compiled out of this specific release build entirely (leaving
+an orphaned literal in `.rdata`, which the compiler/linker can do even for
+reachable error paths depending on how the string pool is organized), or the
+real reference is constructed through an addressing pattern this scan
+doesn't cover (e.g. built from two separate 32-bit halves at runtime,
+vanishingly unlikely for a compiler-emitted string load, but not
+disprovable without a live trace). Either way: **this is not the same class
+of gap a smarter static script fixes** -- `x64_migration/README.md`'s own
+"second independent binary generation confirming the same [indirect-call]
+gap" framing for the render-scale problem applies here too, now backed by a
+much more exhaustive attempt than the first pass made.
+
+**Decision, same standard as the first attempt: nothing shipped, no gates
+relaxed.** Confirmed a weaker substitute (menu-active gate alone, which x64
+already has via `g_menuActiveGateFlag`) is NOT an acceptable stand-in --
+that's the EXACT configuration x86's own issue #103/#104 already proved
+crashes on loading screens and quit-to-menu. Shipping FSR RCAS or motion
+blur gated on menu-active alone would knowingly reproduce an
+already-documented crash class, which is explicitly out of bounds even
+under this round's "move fast" instruction (extended-playtest bugs are
+acceptable; re-shipping a KNOWN crash is not). The x64 early-return stubs in
+`RunFullScreenPostProcessIfEnabled`/`RunPreOverlayMotionBlurPassIfEnabled`
+are left exactly as they were.
+
+**Next step when resumed**: this specific pair of addresses (and
+`FUN_00679010`'s equivalent) most likely needs LIVE tracing rather than more
+static analysis -- e.g. a diagnostic build that logs candidate global
+addresses' values across a real play session spanning menu/loading/gameplay
+transitions, then correlating by hand (the same methodology x86's own
+issue #99/#100 ultimately had to fall back on after its own static/heuristic
+attempts at clcState's real mapping were reverted for being wrong). Not
+attempted here since this pass has no live-testable build to run it against.

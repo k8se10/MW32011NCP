@@ -253,19 +253,28 @@ ADS, Weapnext — is now confirmed working live.**
    confirmed built but not yet independently tested live. Full trail in
    `re_notes/known_issues_x64.md` issue #1.
 2. **Visual-enhancement suite x64 port (`InternalRenderScalePercent`,
-   FSR RCAS sharpening) — blocked on unresolved x64 addresses, nothing
-   shipped.** The shader/pipeline plumbing itself (`overlay_hud.cpp`)
-   is already x64-clean and needs no porting — it's entirely
-   COM-vtable-based, no hardcoded addresses. What's missing: x64's own
-   equivalent of `FUN_00679010` (render-scale's real resolution-compute
-   function) hasn't been located, and two of FSR RCAS's three required
+   FSR RCAS sharpening, motion blur) — attempted twice, still blocked on
+   two addresses that resist exhaustive static RE, nothing shipped.**
+   The shader/pipeline plumbing itself (`overlay_hud.cpp`) is already
+   x64-clean and needs no porting — it's entirely COM-vtable-based, no
+   hardcoded addresses. What's missing: x64's own equivalent of
+   `FUN_00679010` (render-scale's real resolution-compute function)
+   hasn't been located, and two of FSR RCAS/motion blur's required
    crash-safety gates (`clcState`, the in-level flag — both load-bearing
    per x86's own issue #103/#104 crash history, not optional) haven't
    either, though the third (menu-active) is already resolved and
-   reusable. Left the existing x64 early-return stub in place rather
-   than ship an under-gated pass that risks reproducing a known crash
-   class with no way to live-test it first. Full trail in
-   `re_notes/known_issues_x64.md` issue #1.
+   reusable. A second pass tried three further static techniques
+   (full-analysis re-scan, then two raw byte-level reference scans
+   covering both RIP-relative and absolute-pointer addressing) and found
+   zero references anywhere in the loaded image — a genuinely exhausted
+   static-RE path, not an under-tried one; real next step is live tracing.
+   Also found, and correcting the plan's own framing: **FXAA and "better
+   MSAA" don't exist on x86 at all** — they were planned but never built,
+   so implementing them for x64 first wouldn't be reaching parity, it'd be
+   new work beyond it; out of scope here. Left the existing x64
+   early-return stubs in place rather than ship an under-gated pass that
+   risks reproducing a known crash class with no way to live-test it
+   first. Full trail in `re_notes/known_issues_x64.md` issue #1.
 
 ---
 
