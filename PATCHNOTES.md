@@ -70,6 +70,12 @@ live, detailed status on every item below.
    repo, the Nexus mod-page copy, and the GitHub wiki were archived to
    `legacy-x86-docs/` and rewritten fresh to describe the current x64-based
    project rather than the discontinued 32-bit line.
+3. **Security notice added for unpatched base-game netcode vulnerabilities.**
+   Sibling project MW32011NSP's research confirmed three RCE-class stack
+   overflows in `iw5sp.exe`/`iw5mp.exe` netcode survive unchanged into the
+   current x64 build. Reported to Activision through their official
+   disclosure channel; a general risk notice (no exploit-enabling detail)
+   now sits at the top of `README.md` pending a fix.
 
 ### Groundwork
 1. **`signature_scan.h`/`.cpp`** — the runtime AOB byte-pattern scanner this

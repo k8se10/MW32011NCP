@@ -14,6 +14,36 @@ unlock. Every control this project supports was found and wired up through
 static reverse engineering (Ghidra) plus live verification against the
 running game, not assumed.
 
+## ⚠ Security notice: unpatched MW3 (2011) netcode vulnerabilities
+
+Independent security research (this project's sibling repo,
+[MW32011NSP](https://github.com/k8se10/MW32011NSP)) has identified real,
+network-reachable vulnerabilities in MW3 (2011)'s own base-game code —
+**not in this mod** — affecting both Multiplayer and Spec-Ops/Survival
+co-op. These were re-confirmed present and unpatched in the game's most
+recent (September 2026) update, so they are not something you can fix by
+updating.
+
+**What this means practically**: a malicious peer, server, or party/lobby
+host could potentially crash your game or worse. We are not publishing
+exact technical detail while these remain unpatched — doing so before
+Activision has a chance to fix them would put every MW3 player at risk, not
+just this mod's users. A full report has been submitted to Activision
+through their official security-disclosure channel.
+
+**What you can do in the meantime**:
+- Be cautious joining Multiplayer servers/lobbies you don't trust, especially
+  third-party-hosted ones.
+- Be cautious in Spec-Ops/Survival co-op sessions with strangers.
+- This risk exists independent of whether you use this mod — it's in the
+  base game's own networking code.
+
+We'll update this notice with full technical detail once a fix ships and is
+verified, per standard responsible-disclosure practice. See
+[MW32011NSP](https://github.com/k8se10/MW32011NSP) for the project working
+on fixes for these directly (a proxy-DLL patch, the same technique this mod
+uses for input).
+
 ## Status
 
 **Alpha, `v0.0.1-x64` line.** On 2026-09-03 MW3 received its first real
