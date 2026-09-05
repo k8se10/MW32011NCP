@@ -30,7 +30,7 @@ below without re-running Ghidra.
 
 ---
 
-## Status: Session 6 complete. Both of section 4-6's own untried next steps attempted this round. Type-1 killstreak-slot: a real, cleanly-bounded, exactly-6-entry lethal-equipment content table found (frag/semtex/knife/betty/claymore/C4) sitting in the same real Create-a-Class content-name region as the already-confirmed killstreak tables, thematically and numerically consistent with the equipment-cycling hypothesis -- upgraded from "reasonable hypothesis" to "reasonable hypothesis with a real, specific table candidate," explicitly NOT the same evidentiary strength as type-2's own runtime-array-bound match (no pointer-chase from type-1's actual runtime array to this table was found). `DAT_140e1dbc4` ambiguity: `FUN_1400cfef0`'s full decompile didn't directly touch it (a correction to Session 5's own framing), but its call sites let the byte be precisely located at offset 0xC4 within the confirmed per-player kbutton-region struct, immediately after the digital-hold-duration field cluster -- real support for the "digital-look-active" reading, but the ADS-flag comparison itself remains unresolved; no further concrete untried next step is currently recorded for this specific thread. Sessions 1-5's own findings all stand unchanged.
+## Status: Session 7 complete. Per the coordinator's own direction, moved off the backgrounded type-1/`DAT_140e1dbc4` threads (Session 6's findings stand unchanged) onto fresh ground: the 14 previously-uninvestigated "mechanical continuation" dispatch cases (`0x25`-`0x40`) are now fully addressed via a pure documentation-completeness pass over the already-saved decompile. 13 of 14 remain unnamed (no overlap against the confirmed 14-bit table), but one real, new finding: `0x39`/`0x3a` drives the identical kbutton case `9`/`10`'s first kbutton already drives, and connecting that to an already-recorded but previously-unlinked fact (case 9/10's SECOND kbutton also has its own separate twin, `0x45`/`0x46`) reveals that BOTH halves of case 9/10's dual-kbutton pair independently have single-kbutton twins elsewhere -- real structural evidence case 9/10 may be a compound/alias-bind dispatch entry (matching this project's own confirmed `+sprint`-alias mechanism, section 1) rather than an atomic bind, reframing rather than just reinforcing its existing `+toggleads_throw`-style candidacy. Sessions 1-6's own findings all stand unchanged.
 
 This session started from string anchors (bind-name literals: `+attack`,
 `+sprint`, `+holdbreath`, `+frag`, `+gostand`, etc.) rather than trying to
@@ -324,13 +324,13 @@ All addresses are per-player base; actual runtime address is
 | 3/4 | `0x140e1dc7c` | single | -- |
 | 5/6 | `0x140e1dc54` | single | -- |
 | 7/8 | `0x140e1dc68` | single | -- |
-| 9/10 | `0x140e1dc2c` **and** `0x140e1dd08` (driven together) | **dual kbutton** | Exact structural match to x86 MP's confirmed dual-kbutton case (9/10 in x86 too) -- x86 flagged this as a strong `+toggleads_throw`/ADS-grenade-context candidate by pattern alone, not confirmed by name. Same caveat applies here: **candidate, not confirmed.** |
+| 9/10 | `0x140e1dc2c` **and** `0x140e1dd08` (driven together) | **dual kbutton** | Exact structural match to x86 MP's confirmed dual-kbutton case (9/10 in x86 too) -- x86 flagged this as a strong `+toggleads_throw`/ADS-grenade-context candidate by pattern alone, not confirmed by name. **New (Session 7, section 4-8): BOTH of this case's two kbuttons independently turn out to have their own separate single-kbutton "twin" case elsewhere in the table** (`0x140e1dc2c` also driven by `0x39`/`0x3a`; `0x140e1dd08` also driven by `0x45`/`0x46`, already recorded) -- real, new structural evidence this compound dual-kbutton case may be a real alias/compound-bind dispatch (matching this project's own confirmed `+sprint`->`{+breath_sprint,+sprint_zoom}`-style alias mechanism from section 1) that fires both of two otherwise-independent single-purpose kbuttons together, rather than being one atomic bind of its own. Still **candidate, not confirmed** by name. |
 | 0xb/0xc | `0x140e1dcb8` | single | -- |
 | 0xd/0xe | `0x140e1dcf4` (always) + `0x140e1dbb4` (conditional, connect-state>5) | dual, conditional | On down: also zeroes `DAT_140e1df60` (a toggle flag, see 0x43/0x44 below). Medium-confidence candidate for **Sprint** (`+speed`) -- forcing an ADS-toggle flag off on sprint-start matches known "can't ADS while sprinting" behavior, and `"+speed"` is a real bind-name literal seen in section 2's HUD-prompt cluster. **Not independently re-checked this pass beyond the section-4-1 cross-check below** -- still candidate, not confirmed. |
 | 0x1f/0x20 | `0x140e1dbf0` + `0x140e1dbc8` | dual, gated on connect-state>5 | -- |
 | 0x21/0x22 | `0x140e1dc7c` (shared with case 3/4!) + `0x140e1dc40` | dual, one kbutton shared with another case | Real multi-source kbutton -- same "one kbutton, two independent bind commands" mechanism `FUN_1400d0ea0`'s two-source (`kb[0]`/`kb[1]`) design supports. |
 | 0x23/0x24 | `0x140e1dc40` | single | -- |
-| 0x25/0x26 .. 0x3f/0x40 | `0x140e1db00`..`0x140e1dccc` (14 more single-kbutton pairs, contiguous region) | single, uniform | Not individually investigated -- straightforward mechanical continuation of the same pattern, matching x86 MP's own "remaining cases are mechanical, not a new unknown" framing for its own leftover cases. |
+| 0x25/0x26 .. 0x3f/0x40 | Exact addresses now extracted (Session 7, see section 4-8) -- `0x140e1db28`, `db3c`, `db78`, `db8c`, `dbdc`, `db00`, `db14`, `db50`, `db64`, `dba0`, `dc2c`, `dc90`, `dca4`, `dccc` | single, uniform, EXCEPT 0x39/0x3a | Cross-referenced against the 14-bit table's confirmed addresses (section 4-4) -- no direct overlaps found for 13 of the 14 pairs, still unnamed. **`0x39`/`0x3a` is the one exception**: it drives `0x140e1dc2c`, the EXACT SAME kbutton case 9/10 already drives -- see section 4-8, a real new dual-source link, not previously recorded. |
 | 0x41 (down only) | `0x140e1dc14` (direct byte flag, NOT a kbutton_t) | raw boolean set=1 | -- |
 | 0x42 (up) | same byte, conditional clear + `LAB_1400cf55d`: `DAT_140e21454 = DAT_140e1dfc8 ^ DAT_1404e87e0` | raw boolean + XOR-toggle side effect | **Candidate for `+scores`** (Back/scoreboard-toggle bind) -- a raw hold-flag rather than a kbutton_t, matching the conceptual shape of a "hold to show scoreboard" bind rather than a continuous-movement bind. Case 0x51 (no matching even case) reaches the SAME `LAB_1400cf55d` XOR side effect directly, suggesting 0x51 is a second, one-shot-tap bind for the same underlying action (e.g. a keyboard Tab-equivalent alongside a controller hold). **Not confirmed by name.** |
 | 0x43 (down) / 0x44 (up) | `0x140e1dcf4` (SAME kbutton as case 0xd!) | single, shared kbutton, down-edge also toggles `DAT_140e1df60` | **The strongest-supported non-command-string case in this whole table.** Four independent dispatch cases (`0xd`, `0x43`, and section 4-4's `0x56`/`0x57`) all touch `DAT_140e1df60` consistent with a real ADS toggle/cancel state, plus the section 4-1 movement-pipeline cross-check. Still not name-confirmed per issue #3, but the evidentiary base is now real and multi-sourced, not a single table-position guess. |
@@ -865,6 +865,53 @@ specific thread; a future pass would likely need to decompile a wider
 survey of every other consumer of the surrounding `0x00`-`0xC4` region to
 build a fuller struct map, a larger undertaking than this pass's scope.
 
+### 4-8. Session 7 (2026-09-05): fresh ground -- cases 0x25-0x40 fully addressed, a real new dual-source link found for case 9/10
+
+Per the coordinator's own explicit instruction this round to move off the
+backgrounded `DAT_140e1dbc4`/type-1 threads and pick fresh ground: the
+14 dispatch-case pairs (`0x25`/`0x26` through `0x3f`/`0x40`) previously
+recorded only as "mechanical continuation, not individually investigated"
+(the largest remaining block of genuinely unexamined cases) were pulled
+directly from the already-saved full dispatcher decompile
+(`re_notes/x64_migration/mp_decomp_1400b5820_ce950.txt`, no new Ghidra
+query needed -- pure documentation-completeness work, matching section
+4-4's own precedent).
+
+**Method**: extracted each case's real kbutton address, then
+cross-referenced the full set against section 4-4's own already
+cross-architecture-validated 14-bit generic-array table (Fire/Melee/Frag/
+Smoke/Use-Reload/Actionslot1-3/Jump, all real, x86-matched addresses) --
+looking for a genuine ADDRESS-level intersection between the two
+independently-derived tables, a fundamentally different (and stronger)
+technique than a table-POSITION guess, which this project's own issue #3
+policy specifically warns against trusting alone.
+
+**Result**: 13 of the 14 pairs (`0x25`-`0x38`, `0x3b`-`0x40`) drive
+addresses (`0x140e1db00`-`0x140e1dba0`, `0x140e1dc90`-`0x140e1dccc`) with
+**no overlap** against the 14-bit table's confirmed set -- still genuinely
+unnamed, now at least fully addressed for any future cross-reference
+attempt rather than left as a vague range.
+
+**One real exception, a genuinely new finding**: `0x39`/`0x3a` drives
+`0x140e1dc2c` -- the EXACT SAME kbutton case `9`/`10` already drives as
+the first of its own confirmed dual-kbutton pair (section 4). Checking
+this connected it to an ALREADY-recorded fact this file hadn't previously
+cross-linked: case `9`/`10`'s SECOND kbutton (`0x140e1dd08`) also has its
+own separate single-kbutton twin, `0x45`/`0x46` (recorded in the original
+case table, but not previously connected to this pattern). **Both halves
+of case 9/10's dual-kbutton pair independently have their own single-
+kbutton twin elsewhere in the dispatch table.** This is real, new
+structural evidence for a specific hypothesis this project already has
+independent precedent for: section 1's confirmed `+sprint` ->
+`{+breath_sprint, +sprint_zoom}`-style compound/alias-bind mechanism
+(`FUN_1402f0f80`) -- case `9`/`10` may itself be a compound/alias
+dispatch entry that fires two otherwise-independent single-purpose
+kbuttons TOGETHER (the same two kbuttons `0x39`/`0x3a` and `0x45`/`0x46`
+drive individually), rather than being one atomic bind of its own. This
+reframes, rather than just reinforces, the existing `+toggleads_throw`-
+style candidacy for case 9/10 -- still **not name-confirmed**, but now a
+mechanically-explained shape rather than an unexplained oddity.
+
 ### `FUN_1400c3290` -- confirmed Killcam/Theater-mode dispatcher (x86 `FUN_006ada70` analog)
 
 Entire body gated on `DAT_140e1dddc == 0xb` (inert everywhere else, return-only
@@ -1142,15 +1189,13 @@ a retraction.
 
 ## Signature-Scanning Readiness
 
-**Status: ~69% ready** (Session 6 found a genuinely new, real, well-bounded
-content-table candidate for type-1 -- not just reinforcing an existing
-candidate the way Session 5 did, so a small increment over Session 5's
-flat ~68% is warranted; still explicitly short of type-2's own stronger
-runtime-array-bound-match evidentiary bar, per the honesty caveat recorded
-in section 4-7. The `DAT_140e1dbc4` thread was precisely located but not
-resolved -- no percentage weight given to location-without-resolution.
-The remaining gap is unchanged in kind -- case-to-real-bind-NAME
-confirmation for the movement-CRITICAL dispatch cases
+**Status: ~69% ready, unchanged this session** (Session 7's own finding is
+real -- a mechanical explanation for case 9/10's dual-kbutton shape, and
+13 previously-vague cases now fully addressed -- but it doesn't move any
+case from unnamed to named, so per this project's own standard (move the
+number on genuine closure, not on effort or structural insight alone) the
+percentage holds. The remaining gap is unchanged in kind -- case-to-real-
+bind-NAME confirmation for the movement-CRITICAL dispatch cases
 (Fire/ADS/Sprint/Reload/Hold-Breath), not missing mechanism, which per
 this project's own issue #3 policy may be gated on live verification for
 the cases static evidence alone can't fully close).
@@ -1166,25 +1211,28 @@ the cases static evidence alone can't fully close).
 - Case-to-real-bind-NAME mapping: 4 of ~89 cases confirmed by literal command string (chat/vote actions); the ADS candidate (0x43/0x44) now has real independent corroborating evidence (section 4-1) beyond table position; the rest are structural candidates only -- **none of the movement-critical candidates (Fire/ADS/Sprint/Reload) are name-confirmed**, same open item x86 MP's own Session 6 closed with
 - **Movement/look/orchestrator pipeline: CONFIRMED this session** (section 6) -- top-level orchestrator, movement writer (exact `usercmd_t` byte-offset match to x86), reduced-scope button-summer/angle-finalize (exact byte-offset match), and the full 14-bit generic-array summer (exact bit-value match to x86 MP's own independently-derived table) are all found and cross-validated
 - 6-slot parameterized case family (0xf-0x1a): first real look taken (section 4-2) -- structural "item/equipment-slot system" read reinforced by a second, independent function cluster (HUD-prompt rendering), not yet resolved to a specific real category name
+- Cases `0x25`-`0x40` (Session 7, section 4-8): all 14 pairs now fully addressed (no more vague ranges); 13 remain unnamed, `0x39`/`0x3a` linked to case 9/10's own dual-kbutton shape as a likely compound/alias-bind twin
 - Byte-pattern signatures: still none extracted -- reasonable to start once the two movement-pipeline open items (section 6) and the case-name-confirmation gap are resolved or a live-verification phase is authorized
 - Live validation: not started, and out of scope for this project's own locked static-first MP ordering until explicitly authorized for a live/injection phase
 
-**Ready to proceed with** (updated Session 6): the type-1 killstreak-slot
-thread now has a real, specific, well-bounded content-table candidate
-(section 4-7); the `DAT_140e1dbc4` thread is precisely located but has no
-further concrete untried next step recorded -- likely near diminishing
-returns for now without a larger struct-mapping undertaking. **Natural
-next steps for a future session**: (1) attempt an actual pointer-chase
-from type-1's real runtime array (`DAT_1405a6604`) to the static
-lethal-equipment table (`0x14054a5a0`) to bring type-1's confirmation up
-to type-2's own evidentiary bar -- the concrete gap section 4-7 itself
-flags; (2) the slot-3-specific exclusion condition found in
-`FUN_14007c4f0` (section 4-6) remains a real, unexplained structural
-oddity; (3) the real per-player "activity state" enum found Session 4
-(`FUN_1403077c0`/`FUN_14030eed0`, values 0/1/2/6 observed) remains a
-reusable lead for a future pass wanting to pin down state 6 (case
-0x47/0x48) or state 2 (case 0x4b's Killcam branch); (4) fresher ground
-elsewhere in the 89-case table may now offer better returns than further
-narrow pushes on the `DAT_140e1dbc4` thread specifically -- a genuine
-judgment call for whoever picks this up next. All static-only. **Blocked
-on nothing.**
+**Ready to proceed with** (updated Session 7): type-1 (section 4-7) and
+`DAT_140e1dbc4` (section 4-6/4-7) both remain backgrounded per the
+coordinator's own direction, their own recorded next steps unchanged from
+before. Cases `0x25`-`0x40` are now fully addressed (section 4-8) --
+mostly a documentation/cross-reference pass, not a new investigation
+target on its own. **Natural next steps for a future session**: (1) if
+case 9/10 really is a compound/alias-bind entry (section 4-8's new
+hypothesis), the game's own confirmed alias-resolution function
+(`FUN_1402f0f80`, section 1) might name the specific compound bind
+directly if its own string table happens to include one matching
+`+toggleads_throw`-shaped names -- not checked this pass; (2) the
+remaining ~75 still-unnamed dispatch cases beyond `0x25`-`0x40` (the
+bulk of the 89-case table) are a large, not-yet-systematically-swept
+space -- this session's address-cross-reference technique against the
+14-bit table could be extended to the REST of the table's addresses, not
+just the one contiguous block checked this pass; (3) Melee's own
+candidacy (case `0x4b`, complicated not resolved in Session 4) remains a
+real open question, not revisited this session; (4) type-1's pointer-chase
+gap (section 4-7) and `DAT_140e1dbc4`'s struct-mapping gap (section 4-6)
+remain the deepest, highest-effort open threads, backgrounded rather than
+closed. All static-only. **Blocked on nothing.**
