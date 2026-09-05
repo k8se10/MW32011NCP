@@ -7536,11 +7536,16 @@ extern "C" void __cdecl ResetMenuListItemOrdinalForFrame()
             TryGetStableFocusedGroupAndIndex(realGroup, sizeof(realGroup), unusedDepth, realIndex, siblingCount);
         float autoX = 0.0f, autoY = 0.0f;
         bool havePos = haveFocus && TryGetAutomaticGlyphPosition(realIndex, autoX, autoY);
+        // Same overlayOn-flicker/rate-limit fix as the manual path below -- see its
+        // own comment (2026-09-05).
+        static DWORD s_lastAutoDiagLogMs = 0;
         char dkey[220];
         sprintf_s(dkey, "%d|%d|%d|%s|%d|%d|%d", overlayOn ? 1 : 0, haveFocus ? 1 : 0,
                   havePos ? 1 : 0, realGroup, realIndex, siblingCount, g_autoGlyphCandidateCount);
-        if (strcmp(dkey, s_lastAutoDiagKey) != 0) {
+        DWORD nowMsAutoDiag = GetTickCount();
+        if (strcmp(dkey, s_lastAutoDiagKey) != 0 && (nowMsAutoDiag - s_lastAutoDiagLogMs) >= 250) {
             strncpy_s(s_lastAutoDiagKey, dkey, _TRUNCATE);
+            s_lastAutoDiagLogMs = nowMsAutoDiag;
             char dbuf[280];
             sprintf_s(dbuf, "[auto-glyph-diag] overlayOn=%d haveFocus=%d havePos=%d "
                             "realGroup=\"%s\" realIndex=%d siblingCount=%d candidates=%d x=%.1f y=%.1f",
@@ -7592,11 +7597,25 @@ extern "C" void __cdecl ResetMenuListItemOrdinalForFrame()
         bool havePos = haveFocus &&
             TryGetManualGlyphPosition(realGroup, manualDepth, manualSelIndex, siblingCount, manualX, manualY);
         bool isVerified = havePos && IsVerifiedGlyphGroup(realGroup, manualDepth);
+        // Rate-limited on top of the dedup key below (2026-09-05, live-reported
+        // "dire" performance right after this diagnostic's first-ever x64 exercise):
+        // overlayOn (fed by IsControllerActiveInputMethod()) can legitimately flap
+        // frame-to-frame during ordinary play, which defeats a pure change-detection
+        // dedup and was confirmed live in proxy_d3d9.log re-firing every frame for a
+        // real, sustained stretch of gameplay -- same "unthrottled per-frame log
+        // write" bug class issue #87 already root-caused and fixed once for this
+        // codebase's background threads; this call site is a different, newer one
+        // hit the same way. A 250ms floor still catches every genuine state change
+        // promptly while bounding worst-case log volume to 4/sec regardless of how
+        // often this frame's caller runs.
+        static DWORD s_lastManualDiagLogMs = 0;
         char dkey[220];
         sprintf_s(dkey, "%d|%d|%d|%d|%s|%d|%d", overlayOn ? 1 : 0, haveFocus ? 1 : 0,
                   havePos ? 1 : 0, isVerified ? 1 : 0, realGroup, manualSelIndex, siblingCount);
-        if (strcmp(dkey, s_lastDiagKey) != 0) {
+        DWORD nowMsDiag = GetTickCount();
+        if (strcmp(dkey, s_lastDiagKey) != 0 && (nowMsDiag - s_lastManualDiagLogMs) >= 250) {
             strncpy_s(s_lastDiagKey, dkey, _TRUNCATE);
+            s_lastManualDiagLogMs = nowMsDiag;
             char dbuf[300];
             sprintf_s(dbuf, "[manual-glyph-diag] overlayOn=%d haveFocus=%d havePos=%d verified=%d "
                             "realGroup=\"%s\" realIndex=%d siblingCount=%d depth=%d x=%.1f y=%.1f",
