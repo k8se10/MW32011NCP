@@ -206,6 +206,22 @@ work correctly.**
 migration set out to build — Sprint, Movement, Look, Pause, Fire, Reload,
 ADS, Weapnext — is now confirmed working live.**
 
+6. **Custom cursor silently non-functional on x64.** Live report: "no visual
+   rendered elements show on screen when using the x64 rebuild." Root cause:
+   `DrawCustomCursorIfNeeded` read two raw x86-only hardcoded addresses,
+   completely unguarded — the same landmine class the 2026-09-04 crash audit
+   already fixed ~30 instances of, except this one hid silently instead of
+   crashing because the whole function is wrapped in `__try`/`__except` (on
+   x64 the dereference is almost certainly an access violation into unmapped
+   memory, swallowed by SEH rather than surfacing as a crash). Fixed with the
+   same early-return guard every other x64-deferred function in this file
+   already uses. A full follow-up audit of every function `Hook_EndScene`
+   calls found no further hidden landmines of this class — the remaining
+   glyph/hint-icon "doesn't draw" symptom is honest, already-documented
+   not-yet-ported scope (the menu-focus/itemDef-position-tracking
+   infrastructure these features depend on), not a hidden bug. Full trail in
+   `re_notes/known_issues_x64.md` issue #1.
+
 ### Investigated, Not Yet Resolved
 1. **x64 needs a manual window click before controller input responds.**
    The same symptom class as an older, already-fixed x86 issue — but
