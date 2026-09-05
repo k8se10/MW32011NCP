@@ -95,6 +95,11 @@ extern "C" bool IsPhysicalHeld_Exported(PhysicalInput p, unsigned short buttons,
 // second time.
 extern "C" void RouteStickAxes_Exported(float leftX, float leftY, float rightX, float rightY, StickLayout layout,
                                          float& moveX, float& moveY, float& lookX, float& lookY);
+// d3d9_hook.cpp's own real game HWND getter -- plain extern "C", not arch-guarded
+// there, so callable directly (no _Exported wrapper needed, unlike the two above
+// which exist specifically to escape an anonymous namespace). Needed for D-pad
+// Left's synthetic-key exception below (SendSyntheticActionSlot4KeyX64).
+extern "C" HWND GetGameWindow();
 
 namespace {
 
@@ -792,6 +797,32 @@ constexpr const char* kActionSlotSignature =
 using ActionSlotFn = void(__fastcall*)(int playerIndex, int slotIndex);
 ActionSlotFn g_actionSlot = nullptr;
 
+// ---- D-pad Left / actionslot4 squadmate call-in: same narrowly-scoped exception
+// x86 already needed (analog_input_hooks.cpp's own SendSyntheticActionSlot4Key,
+// user-approved 2026-07-16), ported here 2026-09-05 as the leading fix for the
+// live "D-pad sometimes diff keys used" report (known_issues_x64.md issue #1).
+// Re-read x86's own comment in full before porting -- the real finding there:
+// AI-squadmate call-ins (Survival, same buy-station/same D-pad-Left slot as
+// turret call-ins, which DO work via the plain native call) failed 100% of the
+// time via the direct native action-slot call, most likely because a Survival-
+// only GSC script watches for a genuine WM_KEYDOWN/KEYUP ('4', the real bound
+// key for +actionslot4) that a native call alone never produces. x64's own
+// FUN_14006dee0 is confirmed structurally equivalent to x86's ActionSlotDown
+// (same "use this slot now" one-shot dispatch, see kActionSlotSignature's own
+// comment above) so the same gap is expected to exist here too, unconfirmed
+// until live-tested. GetGameWindow() (d3d9_hook.cpp) already exists for x64
+// unmodified -- no separate WndProc-subclass prerequisite was needed.
+void SendSyntheticActionSlot4KeyX64(bool down)
+{
+    HWND hwnd = GetGameWindow();
+    if (!hwnd) return;
+    if (down) {
+        PostMessageA(hwnd, WM_KEYDOWN, '4', 0x00000001);
+    } else {
+        PostMessageA(hwnd, WM_KEYUP, '4', 0xC0000001);
+    }
+}
+
 // XInput D-pad bit values -- standard, shared constants, matching
 // analog_input_hooks.cpp's own identical definitions (kept local here rather
 // than cross-file since they're plain protocol constants, not real state).
@@ -1172,16 +1203,28 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
         // D-pad actionslot -- one-shot action call on the press edge only, same
         // pattern as Weapnext above (see kActionSlotSignature's own comment for
         // why this doesn't need an "up" call the way Fire/ADS/Reload do).
-        if (g_actionSlot) {
+        // EXCEPTION: slot 3 (D-pad Left) goes through SendSyntheticActionSlot4KeyX64
+        // instead of g_actionSlot -- see that function's own comment. Held on both
+        // edges (down on press, up on release) to mirror a real keypress exactly,
+        // same as x86's own paired call; deliberately does NOT also call g_actionSlot
+        // for this slot (would double-dispatch -- the synthesized key's own real
+        // dispatch already reaches FUN_14006dee0 itself). The other three directions
+        // are unchanged, still driven by the direct native call.
+        {
             struct { unsigned short bit; int slot; } kDpad[4] = {
                 { kXI_DPAD_UP_X64, 0 }, { kXI_DPAD_RIGHT_X64, 1 }, { kXI_DPAD_DOWN_X64, 2 }, { kXI_DPAD_LEFT_X64, 3 }
             };
             for (int i = 0; i < 4; ++i) {
                 bool held = (xiButtons & kDpad[i].bit) != 0;
-                if (held && !g_dpadHeldX64[i]) {
-                    g_actionSlot(0, kDpad[i].slot);
+                bool isSlot4 = (kDpad[i].slot == 3);
+                if (held != g_dpadHeldX64[i]) {
+                    if (isSlot4) {
+                        SendSyntheticActionSlot4KeyX64(held);
+                    } else if (held && g_actionSlot) {
+                        g_actionSlot(0, kDpad[i].slot);
+                    }
+                    g_dpadHeldX64[i] = held;
                 }
-                g_dpadHeldX64[i] = held;
             }
         }
 

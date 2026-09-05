@@ -56,6 +56,19 @@ progress.
    parameter. Build-verified on both platforms, deployment confirmed via
    `dumpbin`. **Not yet live-tested.** Full trail in
    `re_notes/known_issues_x64.md` issue #1.
+4. **x64 D-pad Left synthetic-key exception ported (leading fix for the
+   live "sometimes diff keys used" report).** Ports x86's own narrowly-
+   scoped D-pad Left workaround: D-pad Left now synthesizes a real
+   `WM_KEYDOWN`/`WM_KEYUP` for `'4'` instead of calling the native
+   action-slot function directly, matching how a real keyboard press
+   reaches the game — needed because x86's own equivalent native-only call
+   failed 100% of the time for Survival's AI-squadmate call-in specifically
+   (turret call-ins on the same slot worked fine natively). The other
+   three D-pad directions are unchanged. Build-verified on both platforms,
+   deployment confirmed via `dumpbin`. **Not yet live-tested** — and not a
+   confirmed root-cause fix, since x64's own GSC-side behavior hasn't been
+   independently re-verified to share the same gap x86 did. Full trail in
+   `re_notes/known_issues_x64.md` issue #1.
 
 ### Documentation
 1. **All `-x86` support discontinued, effective 2026-09-03.** `v0.2.2-x86`

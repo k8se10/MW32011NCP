@@ -36,7 +36,7 @@ two files already had for #111 before the split.
 
 ## Index
 
-- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **Every control implemented; two open bugs found live (sniper Fire/ADS, D-pad "diff keys"), investigation paused for a docs/ETA pass — release ETA 2-4 weeks, gated on x86 parity**
+- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **D-pad Left synthetic-key exception ported (build-verified, not yet live-tested) — leading fix for the "diff keys" report; sniper Fire/ADS still OPEN, no confirmed root cause — release ETA 2-4 weeks, gated on x86 parity**
 
 ---
 
@@ -1715,7 +1715,11 @@ scratch.**
   live-diagnostic capture of what state differs between a working
   weapon class and a sniper at the moment Fire/ADS should engage.
 - **Report: D-pad actionslot "weirdly not just number but also have
-  sometimes diff keys used."** Partially explained by ALREADY-KNOWN,
+  sometimes diff keys used."** UPDATE, same day: the D-pad Left gap
+  described below has now been PORTED (build-verified, not yet
+  live-tested) -- see "D-pad Left synthetic-key exception ported" below
+  this section for the fix. Original writeup kept for context. Partially
+  explained by ALREADY-KNOWN,
   EXPECTED x86 behavior re-confirmed by re-reading
   `analog_input_hooks.cpp`'s own D-pad section: the real per-slot action
   is genuinely DATA-DRIVEN by loadout (`FUN_00410ad0`'s x86 equivalent
@@ -1751,3 +1755,48 @@ resolved), the full visual-enhancement suite, stutter/threading fixes,
 and the plugin API, not just the input-remapping core this pass has
 focused on. Reflected in `README.md`'s top banner and `CLAUDE.md`/
 `AGENTS.md`'s Version Timeline.
+
+**D-pad Left synthetic-key exception ported, same day (investigation
+resumed) -- BUILD-VERIFIED, NOT YET LIVE-TESTED.** Re-read x86's own
+`SendSyntheticActionSlot4Key` and its D-pad call site
+(`analog_input_hooks.cpp`, `ActionSlotDown`/`ActionSlotUp` section) in
+full again before writing anything, per this project's own standing
+compare-to-x86-original discipline. Confirmed x64 already has every
+prerequisite x86's synthesis relies on with zero new plumbing needed:
+`GetGameWindow()` (`d3d9_hook.cpp`) is plain `extern "C"`, not
+arch-guarded, and the WndProc subclass behind it already installs for
+x64 exactly as it does for x86 -- no blocking gap found.
+
+Ported directly: a new `SendSyntheticActionSlot4KeyX64(bool down)`
+(`analog_input_hooks_x64.cpp`) synthesizes `WM_KEYDOWN`/`WM_KEYUP` for
+`'4'` via `PostMessageA`, identical mechanism and rationale to x86's own.
+The D-pad dispatch loop in `Hook_MovementTick` now special-cases slot 3
+(D-pad Left): press and release edges both route through the synthetic
+key instead of `g_actionSlot(0, 3)`, mirroring x86's exact down/up
+pairing (a real keypress has both edges, so the synthetic one does too)
+-- deliberately does NOT also call `g_actionSlot` for this slot, same
+"don't double-dispatch" reasoning x86's own comment gives (the
+synthesized key's own real dispatch already reaches `FUN_14006dee0`,
+x64's confirmed action-slot handler, on its own). The other three D-pad
+directions are completely unchanged, still driven by the direct native
+one-shot call.
+
+This is the LEADING FIX for the "sometimes diff keys used" report, not a
+confirmed root-cause resolution -- x64's own GSC-side behavior for the
+Survival squadmate call-in specifically has not been independently
+re-verified to have the same gap x86 did, only inferred from the
+identical engine lineage and identical native-call shape
+(`FUN_14006dee0` confirmed structurally equivalent to x86's
+`ActionSlotDown`, see `kActionSlotSignature`'s own comment in
+`analog_input_hooks_x64.cpp`). **Build-verified**: x64 `/t:Rebuild` (0
+errors) -> Win32 regression build (0 errors, no new warnings) -> x64
+`/t:Rebuild` again (forced) -> `dumpbin /headers` confirmed `8664
+machine (x64)` with a fresh `LastWriteTime`. **Not yet live-tested** --
+next step when the user next plays Survival is to confirm the AI-
+squadmate call-in specifically now works via D-pad Left, and that turret
+call-ins (D-pad Left's other loadout option, and the other three D-pad
+directions generally) show no regression.
+
+Sniper Fire/ADS (the other open bug above) is out of scope for this
+round -- being investigated in parallel elsewhere this same session; not
+touched here.
