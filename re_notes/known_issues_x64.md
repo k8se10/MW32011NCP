@@ -2310,3 +2310,69 @@ implementation is a separate, parallel effort); the loader logs a clear
 line either way ("matches the greenlit/trusted allowlist" or the
 no-plugins-folder-found case) so this is independently verifiable the
 moment that DLL exists, without needing to touch this code again.
+
+**Real crash on first live deploy of the above (2026-09-05, "game failed to
+launch") -- ROOT-CAUSED AND FIXED, same session.** Once NSP's own
+`mw32011nsp_security.dll` actually existed and was deployed as a greenlit
+plugin (see NSP's own repo for that work) and a freshly-rebuilt `d3d9.dll`
+was deployed alongside it, the game failed to launch, deterministically,
+across 3 repeated attempts.
+
+**New diagnostic technique for this project: live crash-dump analysis via
+WinDbg/`cdb`, not just Event Viewer.** Windows had already been silently
+writing full crash dumps to `%LOCALAPPDATA%\CrashDumps\iw5sp.exe.<pid>.dmp`
+for every crash this session (a pre-existing `LocalDumps` registry
+configuration, not something set up for this investigation specifically);
+opening the newest one with `mcp-windbg`'s `open_cdb_dump`, pointed at the
+exact just-built `d3d9.pdb` (plus `mw32011nsp_security.pdb` from NSP's own
+build output) gave a fully symbolized stack trace and `!analyze -v`
+verdict in one step -- a real step up from the Event-Viewer-plus-manual-
+`dumpbin`-offset-correlation technique this file's own earlier rounds used
+(see "First/Second live crash, found and fixed" above), which only gives
+a module+offset, not a symbolized frame. Worth reaching for by name next
+time a live crash needs root-causing: check
+`%LOCALAPPDATA%\CrashDumps\<exe>.<pid>.dmp` before falling back to Event
+Viewer alone.
+
+**Real root cause, and a real methodology lesson on reading the OS
+exception code literally.** The reported exception was, again, `0xC0000409`
+(`STATUS_STACK_BUFFER_OVERRUN`) -- but `!analyze -v`'s own
+`FailFast.Name: INVALID_ARG` / `Subcode: 0x5 FAST_FAIL_INVALID_ARG` line
+proved this was NOT a literal stack-cookie/buffer-smash violation (that
+would show a different FailFast name) -- Windows reports EVERY
+`__fastfail`/`RaiseFailFastException` call under this same generic OS
+exception code regardless of the specific underlying CRT-level trigger, so
+the exception code name alone is not diagnostic; the fail-fast *subcode* is.
+The symbolized stack (`d3d9!InstallAnalogInputHooksX64+0x46c` ->
+`sprintf_s<160>` -> `vsprintf_s` -> `__stdio_common_vsprintf_s` ->
+`_invalid_parameter_internal` -> `_invoke_watson`) pointed at one exact
+line: the brand-new sniper Fire/ADS fix's own diagnostic log call (added
+earlier this same session, see "A fix attempt for sniper-class Fire/ADS"
+above) formats a 16-hex-digit `%p` plus a `%llX` into `char buf[160]` --
+worst-case output is 169 chars + null = 170 bytes, exceeding the buffer by
+10. This UCRT's `sprintf_s` fails fast rather than silently truncating
+when the formatted output doesn't fit -- **the exact same bug class as
+this issue's own earlier "First/Second live crash" round** (a
+`kWeaponNextSignature` string overflowing a fixed log buffer in
+`signature_scan.cpp`), recurring here in a different file because the new
+code was, again, never actually executed against the real game until this
+exact live test -- build-verification and byte-signature-matching alone
+never exercise a log line's own string-formatting path.
+
+Swept every other `sprintf_s` call site in `analog_input_hooks_x64.cpp`
+(16 total, all logging calls added across this project's x64 work) plus
+NSP's own fix-module logging (`p2p_fix.cpp`, `matchdatadone_memberjoin_
+fix.cpp`, `signature_scan.cpp`) for the same undersized-buffer class before
+declaring this done -- every other buffer has comfortable margin against
+its own worst-case output; only the one call site was actually broken.
+Fixed by widening `buf[160]` to `buf[256]`.
+
+**Build-verified**: x64 `/t:Rebuild` (0 errors) -> `dumpbin /headers`
+confirmed `8664 machine (x64)` with a fresh `LastWriteTime`, redeployed to
+the live game install. **NOT YET LIVE-RETESTED** -- next step: user
+relaunches; if this was the only bug, the game should now reach a normal
+session with the greenlit `mw32011nsp_security.dll` loading and its own
+`[plugin-loader]`/fix-install log lines appearing in `proxy_d3d9.log`
+alongside every other hook's own confirmation line. If a further crash
+occurs, repeat the same `CrashDumps` + `cdb` technique above rather than
+falling back to Event-Viewer-only triage.
