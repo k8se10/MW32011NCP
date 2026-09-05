@@ -1,0 +1,1 @@
+⚠ ARCHIVED, not currently available -- MW3's 64-bit game update broke every existing release. Was native (non-emulated) controller support for Campaign & Survival: analog movement/look, glyph icons, vibration, DualSense/gyro. x64 rebuild in progress, see Description tab.
