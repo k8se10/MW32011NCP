@@ -55,17 +55,28 @@ live, detailed status on every item below.
    matching isn't cryptographic).
 
 ### Fixed
-1. **D-pad Left's squadmate-call-in exception ported.** D-pad Left now
+1. **Crash on launch with the sniper Fire/ADS fix's own log line.** The
+   diagnostic message that fix attempt logs on resolving its target
+   formatted a 16-hex-digit pointer into a buffer 10 bytes too small,
+   which this UCRT fails fast on rather than truncating (surfaced as
+   `0xC0000409`, misleadingly labeled `STATUS_STACK_BUFFER_OVERRUN` by
+   Windows even though the real cause was a CRT argument-validation
+   fail-fast, not a stack-cookie violation). Root-caused via a full
+   crash-dump analysis (WinDbg/`cdb` against `%LOCALAPPDATA%\CrashDumps`,
+   symbolized against the exact built PDB) rather than Event Viewer alone
+   — see `re_notes/known_issues_x64.md` issue #1 for the full trail and
+   the reusable diagnostic technique.
+2. **D-pad Left's squadmate-call-in exception ported.** D-pad Left now
    synthesizes a real keypress instead of calling the native action-slot
    function directly, matching how a real keyboard press reaches the game —
    a leading fix for a live "sometimes different keys used" report, not yet
    independently confirmed.
-2. **A fix attempt for sniper-class Fire/ADS.** Real RE work found that
+3. **A fix attempt for sniper-class Fire/ADS.** Real RE work found that
    every other bind press/release sends a client-side notification the
    game's own scripting layer can react to, which controller Fire/ADS never
    sent; now sends it alongside the existing input logic. Not yet confirmed
    live.
-3. **The on-screen cursor was silently non-functional.** It read raw,
+4. **The on-screen cursor was silently non-functional.** It read raw,
    unguarded addresses left over from the 32-bit binary, which safely but
    silently failed against the 64-bit process instead of crashing — fixed
    by gating it off honestly pending a real x64 port of the underlying
