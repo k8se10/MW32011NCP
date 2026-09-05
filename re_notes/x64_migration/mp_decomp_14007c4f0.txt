@@ -1,0 +1,36 @@
+================================================================
+Function: FUN_14007c4f0 @ 14007c4f0
+Signature: undefined FUN_14007c4f0(void)
+----------------------------------------------------------------
+
+ulonglong FUN_14007c4f0(longlong param_1,int param_2)
+
+{
+  uint uVar1;
+  int iVar2;
+  ulonglong uVar3;
+  
+  uVar3 = FUN_1400bc120(*(undefined4 *)(param_1 + 0x334c));
+  if ((((char)uVar3 == '\0') && (*(longlong *)(param_1 + 0x3378) != 0)) &&
+     ((param_2 != 3 || ((*(byte *)(param_1 + 0xc) & 4) == 0)))) {
+    uVar1 = *(int *)(param_1 + 0x24c) - 1;
+    uVar3 = (ulonglong)uVar1;
+    if (4 < uVar1) {
+      uVar1 = *(int *)(param_1 + 0x24c) - 0xd;
+      uVar3 = (ulonglong)uVar1;
+      if (((((2 < uVar1) && ((*(uint *)(param_1 + 0xc) & 0xc00) == 0)) &&
+           ((*(uint *)(param_1 + 0x374) & 0x880) == 0)) &&
+          (((*(uint *)(param_1 + 0x10) & 0x1000) != 0 &&
+           ((*(uint *)(param_1 + 0xf8) >> 0x15 & 1) == 0)))) &&
+         (((iVar2 = *(int *)(param_1 + 0x518 + (longlong)param_2 * 4), iVar2 != 1 && (iVar2 != 2))
+          || (((*(uint *)(param_1 + 0xc) & 8) == 0 && ((*(uint *)(param_1 + 0xf8) & 0x3800) == 0))))
+         )) {
+        return CONCAT71((uint7)(uint3)(uVar1 >> 8),1);
+      }
+    }
+  }
+  return uVar3 & 0xffffffffffffff00;
+}
+
+
+
