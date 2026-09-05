@@ -36,7 +36,7 @@ two files already had for #111 before the split.
 
 ## Index
 
-- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **D-pad Left synthetic-key exception ported (build-verified, not yet live-tested) — leading fix for the "diff keys" report; sniper Fire/ADS still OPEN, no confirmed root cause — release ETA 2-4 weeks, gated on x86 parity**
+- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **D-pad Left synthetic-key exception AND a sniper Fire/ADS fix attempt both shipped (build-verified, neither live-tested yet); Plugin API ported (build-verified, needed no host code changes); visual-enhancement-suite x64 port attempted, blocked on two unresolved addresses, nothing shipped — release ETA 2-4 weeks, gated on x86 parity**
 
 ---
 
@@ -1878,3 +1878,59 @@ every stage). Real findings, both negative but concrete:
   (not `-noanalysis`, to pick up indirect references the current
   tooling misses) or a live-diagnostic capture once other x64 work
   reaches a live-testable state.
+**Plugin API ported to x64, same day -- build-verified, not yet live-tested.**
+Read x86's plugin API in full first, per this project's own standing
+comparison discipline. The loading infrastructure itself
+(`mw3ncp_plugin_api.h`, `plugin_loader.h`/`.cpp`, the `[Plugins] Enabled`
+path in `mod_config.h`/`.cpp`) turned out to need ZERO code changes:
+`mw3ncp_plugin_api.h` is plain C with no architecture-specific types by
+design (deliberately kept ABI-stable across compilers/DLLs), and
+`plugin_loader.cpp` was already compiled unconditionally for both
+platforms in `proxy_d3d9.vcxproj` (no `Condition="'$(Platform)'=='x64'"`
+exclusion, unlike `analog_input_hooks_x64.cpp`) -- its dependencies
+(`InstallHook`/`RemoveHook` via the host's own MinHook instance,
+SEH-guarded `ReadMemory`/`WriteMemory`, `LogFromController`,
+`GetGameWindow()`, `GetGameModuleBase()`, `SetPluginTextGlyphColorOverride()`)
+all live in files (`d3d9_hook.cpp`, `overlay_hud.cpp`, `dllmain.cpp`,
+`mod_config.cpp`) that were already confirmed cross-platform during the
+2026-09-03/04 migration audit. Specifically confirmed live-real, not
+assumed: `GetGameWindow()` returns `g_gameHwnd`, which is set by the same
+`SetWindowLongPtrA`/`GWLP_WNDPROC` subclass call this session's own x64
+auto-unstick feature (`SendPeriodicActivationNudgeX64`) already proved
+working live against the real running game -- so the plugin API's one
+real prerequisite (a working game window handle) was already satisfied
+before this port even started.
+
+Verified via a forced x64 `/t:Rebuild` (0 errors, `plugin_loader.cpp`
+compiles clean, links clean; `dumpbin /headers` confirms `8664 machine
+(x64)`) and a Win32 regression rebuild (0 errors, no regression) --
+both builds redirected to a local, non-deployed output folder for
+verification only, since the project's `OutDir` is an absolute path
+into the live shared game install and this round of work happened in an
+isolated worktree alongside other concurrent x64 work; the primary
+session deploys for real once this is merged.
+
+The one real, necessary code change: the bundled RGB Text example
+plugin's own project (`tools/example_plugin_rgb_text/example_plugin_rgb_text.vcxproj`)
+was Win32-only (a leftover from when `iw5sp.exe` itself was x86) -- a
+plugin DLL must be the SAME bitness as the process it loads into, so
+the old Win32-only build could never have loaded into today's x64 game
+at all, regardless of whether the host-side loader worked. Added a
+`Debug|x64` project configuration (Win32 kept for anyone still running
+an archived `-x86` build) and split `OutDir`/`IntDir` by `$(Platform)`
+so the two builds don't clobber each other's output. Verified via a
+clean x64 rebuild (0 errors) plus `dumpbin /headers /exports` confirming
+`8664 machine (x64)` and both required exports (`MW3NCP_PluginInit`,
+`MW3NCP_PluginShutdown`) present with correct names; Win32 rebuilt clean
+too (no regression on the existing config).
+
+**Not yet live-tested** -- no build here was deployed to the live game
+install (see above), so "the plugin loader actually finds/loads/inits a
+real plugin DLL against the real running x64 game" is still an open
+confirmation, same as this session's other x64 features awaiting live
+play. Next step when resumed: deploy a real x64 build, drop the built
+`rgb_text_plugin.dll` (x64 config) into a `plugins` folder next to it,
+set `[Plugins] Enabled=1` in `mw3ncp_config.ini`, and confirm live that
+every piece of text/glyph this mod draws actually rainbow-cycles --
+this is also this project's own live-verification vehicle for the API
+itself, per the plugin's own header comment.
