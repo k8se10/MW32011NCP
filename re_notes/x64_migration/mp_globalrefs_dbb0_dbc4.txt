@@ -1,0 +1,11 @@
+=== Reference counts per global ===
+freelook_branch_dbb0 (140e1dbb0): 4 references
+anglespeed_scale_dbc4 (140e1dbc4): 3 references
+
+=== Candidate functions, ranked by distinct global diversity (3) ===
+
+---- FUN_1400cfce0 @ 1400cfce0 (globals: anglespeed_scale_dbc4, freelook_branch_dbb0) ----
+
+---- FUN_1400d0be0 @ 1400d0be0 (globals: anglespeed_scale_dbc4, freelook_branch_dbb0) ----
+
+---- FUN_1400d0050 @ 1400d0050 (globals: freelook_branch_dbb0) ----

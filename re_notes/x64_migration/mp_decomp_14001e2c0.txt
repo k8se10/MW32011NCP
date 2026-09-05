@@ -1,0 +1,65 @@
+================================================================
+Function: FUN_14001e2c0 @ 14001e2c0
+Signature: undefined FUN_14001e2c0(void)
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_14001e2c0(longlong param_1,undefined4 *param_2)
+
+{
+  float fVar1;
+  char cVar2;
+  float *pfVar3;
+  longlong lVar4;
+  longlong lVar5;
+  float fVar6;
+  
+  *param_2 = *(undefined4 *)(param_1 + 8);
+  param_2[1] = *(undefined4 *)(param_1 + 0x14);
+  lVar5 = (longlong)*(int *)(param_1 + 0x2c) * 0xe60;
+  if ((&DAT_14055a490)[lVar5] != '\0') {
+    pfVar3 = (float *)FUN_1400bb180();
+    fVar6 = (float)FUN_1400bb240();
+    fVar1 = DAT_14044817c;
+    *(float *)(&DAT_14055a498 + lVar5) =
+         (fVar6 * DAT_14044817c * *pfVar3) / *(float *)(&DAT_14055a50c + lVar5);
+    fVar6 = (float)FUN_1400bb260();
+    *(float *)(&DAT_14055a49c + lVar5) =
+         (fVar6 * fVar1 * pfVar3[1]) / *(float *)(&DAT_14055a510 + lVar5);
+    fVar6 = (float)FUN_1400bb240();
+    *(float *)(&DAT_14055a4a0 + lVar5) =
+         ((fVar6 * DAT_140448190 * *pfVar3) / *(float *)(&DAT_14055a50c + lVar5)) *
+         *(float *)(&DAT_14055a4fc + lVar5);
+    fVar6 = (float)FUN_1400bb260();
+    *(float *)(&DAT_14055a4a4 + lVar5) =
+         ((fVar6 * _DAT_140448188 * pfVar3[1]) / *(float *)(&DAT_14055a510 + lVar5)) *
+         *(float *)(&DAT_14055a4fc + lVar5);
+    fVar6 = (float)FUN_1400bb240();
+    *(float *)(&DAT_14055a4a8 + lVar5) =
+         (fVar6 * fVar1 * *pfVar3) / *(float *)(&DAT_14055a50c + lVar5);
+    fVar6 = (float)FUN_1400bb260();
+    *(float *)(&DAT_14055a4ac + lVar5) =
+         (fVar6 * fVar1 * pfVar3[1]) / *(float *)(&DAT_14055a510 + lVar5);
+    lVar4 = (longlong)*(int *)(param_1 + 0x2c) * 0xe60;
+    cVar2 = FUN_1400bc120();
+    if (cVar2 == '\0') {
+      *(undefined4 *)(&DAT_14055a500 + lVar4) = *(undefined4 *)(&DAT_14055a400 + lVar4);
+      if ((((*(uint *)(&DAT_14055a3ec + lVar4) & 0x3800) != 0) &&
+          ((*(uint *)(param_1 + 0x28) & 0x800) != 0)) ||
+         (cVar2 = FUN_140081a20(*(undefined4 *)(param_1 + 0x2c)), cVar2 != '\0')) {
+        *(undefined4 *)(&DAT_14055a500 + lVar4) = 0x3f800000;
+      }
+    }
+    else {
+      *(undefined4 *)(&DAT_14055a500 + lVar4) = 0;
+    }
+    FUN_14001d3e0(param_1,param_2);
+    *(undefined4 *)(&DAT_14055a494 + lVar5) = *(undefined4 *)(param_1 + 0x28);
+    return;
+  }
+  return;
+}
+
+
+
