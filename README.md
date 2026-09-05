@@ -810,20 +810,33 @@ real ForwardKeyToMenu (FUN_004d9850) call, generic keycode forward to whatever m
     FUN_004dfd30 dispatcher rather than assumed (task #22, see known_issues.md)
 ```
 
-Every hook target is found via static Ghidra analysis (decompile/disassemble, confirm
-via disassembly, then hardcode the address) — deliberately, not a runtime signature
-scan, per binary since game updates and the SP/MP binary split both shift offsets
-(corrected 2026-08-25: a runtime scanner was previously framed here as the safer/more
-robust approach; it's the opposite — walking process memory at runtime searching for a
-byte pattern is closer to what VAC's own signature-based heuristics watch for than a
-fixed address resolved once offline ever is). Live memory-diffing is a separate,
-offline investigative TECHNIQUE used to find some of those addresses in the first
-place (comparing two heap snapshots to spot a changed byte) — not something this
-project does at runtime in the shipped mod. Several of this project's real kbutton/flag
-fields live inside dynamically-allocated per-tick structures reached via a fixed offset
-from an already-hardcoded base pointer, not fixed static memory directly — that's a
-real, separate detail about the game's own data layout, unrelated to how this project
-chooses to find and hook function addresses. See `re_notes/iw5sp.md` for the complete
+**Current (`-x64`) policy: every hook target is resolved via runtime signature
+scanning** — a wildcarded byte-pattern scan against the game's own main module,
+resolved ONCE at process startup and cached for the session, never a repeated
+re-scan loop. This is the CURRENT policy as of 2026-09-03, reversing the prior
+(`-x86`-era) approach of hardcoding addresses found via static Ghidra analysis.
+That reversal was forced by real-world necessity, not a change of mind about the
+underlying risk tradeoff: a genuine MW3 (2011) binary update recompiled both
+`iw5sp.exe`/`iw5mp.exe` from x86 to x64 in one step, invalidating every one of
+this project's ~100+ hardcoded addresses at once — a hardcode-only policy simply
+cannot survive a binary update, while signature scanning does. The original
+VAC-safety reasoning for preferring hardcoded addresses (a runtime scanner has to
+walk process memory searching for a byte pattern, closer to what VAC's own
+signature-based heuristics watch for than a fixed offline-resolved address) still
+stands as a real, accepted, unresolved tradeoff — it's outweighed by demonstrated
+necessity, not disproven. The frozen, discontinued `-x86` line's own hook targets
+remain literal hardcoded addresses, found via static Ghidra analysis
+(decompile/disassemble, confirm via disassembly, then hardcode) — accurate
+history for that line, not the current approach. Live memory-diffing is a
+separate, offline investigative TECHNIQUE used to find some real addresses/fields
+in the first place (comparing two heap snapshots to spot a changed byte) — not
+something this project does at runtime in the shipped mod, on either
+architecture. Several of this project's real kbutton/flag fields live inside
+dynamically-allocated per-tick structures reached via a fixed offset from an
+already-resolved base pointer, not fixed static memory directly — that's a real,
+separate detail about the game's own data layout, unrelated to how this project
+chooses to find and hook function addresses. See `re_notes/iw5sp.md` (x86) and
+`re_notes/known_issues_x64.md`/`re_notes/x64_migration/` (x64) for the complete
 reverse-engineering log: every function found, every dead end ruled out, and why.
 
 ## Controller compatibility by mission/mode
@@ -1076,8 +1089,9 @@ project.
 ## Contributing
 
 Contributions are welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md) for the
-ground rules (native RE only, no hardcoded addresses, verify live, SP/MP are
-separate efforts) and [`CODE_STANDARDS.md`](CODE_STANDARDS.md) for the
+ground rules (native RE only, signature-scanned hook targets on the current
+`-x64` line, verify live, SP/MP are separate efforts) and
+[`CODE_STANDARDS.md`](CODE_STANDARDS.md) for the
 production-ready bar every change is held to (no placeholder hooks, no
 half-finished work presented as done — applies identically to AI-assisted
 code) before opening a PR.

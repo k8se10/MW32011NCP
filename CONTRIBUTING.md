@@ -22,41 +22,53 @@ Before opening a PR, please read this file in full.
   found via signature scanning, or in a couple of narrowly-scoped cases, our
   own additive timer/state layer on top of them. See `re_notes/iw5sp.md` for
   the full trail of what's been found so far.
-- **Hook targets are found via static Ghidra analysis (decompile/disassemble,
-  confirm via disassembly, then hardcode the address) — deliberately, not a
-  runtime signature scan.** REVERSED 2026-08-25 (direct correction: "no
-  hardcoded addresses isnt a claim we can make anymore, its safer for vac
-  than pattern scanning which could touch protected regions of memory") —
-  this used to be framed as an honest-current-state-not-the-aspiration
-  situation, implying a runtime byte-pattern scanner would be strictly
-  better if this project ever got around to building one. That framing is
-  wrong and should not come back: a runtime scanner has to walk arbitrary
-  regions of the game's own process memory searching for a byte sequence
-  every time it resolves, which is exactly the class of behavior VAC's own
-  signature-based heuristics are built to notice, and a real way to touch a
-  protected/guarded memory region this project never intended to read. A
-  hardcoded address found offline (static Ghidra analysis, no live process
-  attached) and simply called at a known, fixed location has no such runtime
-  search surface at all — a narrower, safer, more predictable interaction
-  with the game process, and the deliberate reason every single
-  engine-function hook in this codebase (10 currently active, plus a handful
-  more implemented and kept in the source but disabled — corrected
-  2026-08-01, the "~50+" this line previously said was never an accurate
-  count of hook installations) is a literal address found once via static
-  analysis, not a scan performed at runtime. **Exception**: the three D3D9
-  hooks (`IDirect3DDevice9::EndScene`/`Reset` in `overlay_hud.cpp`,
+- **Hook targets are found via runtime signature scanning (a byte-pattern
+  scan resolved ONCE at process startup and cached for the session, never a
+  repeated/continuous re-scan loop) — this is the CURRENT policy, and has
+  been since 2026-09-03.** This project's addressing policy has genuinely
+  reversed twice, and the full record matters for understanding why:
+  1. **Originally (through 2026-08-24), signature scanning was the honest
+     current-state approach**, not a chosen ideal.
+  2. **REVERSED 2026-08-25** to hardcoded addresses (found once via static
+     Ghidra analysis, no live process attached, then called at a known fixed
+     location) on VAC-safety grounds: a runtime scanner has to walk arbitrary
+     regions of the game's own process memory searching for a byte sequence
+     every time it resolves — exactly the class of behavior VAC's own
+     signature-based heuristics are built to notice — while a hardcoded
+     address has no such runtime search surface at all.
+  3. **REVERSED AGAIN 2026-09-03**, back to signature scanning, superseding
+     #2 — not because the VAC-risk reasoning above was wrong (it wasn't, and
+     still isn't resolved), but because a genuine MW3 (2011) binary update
+     recompiled both `iw5sp.exe`/`iw5mp.exe` from x86 to x64 in one step,
+     invalidating every one of this project's ~100+ hardcoded addresses at
+     once — precisely the failure mode a hardcode-only policy cannot survive,
+     and a real-world cost the 2026-08-25 policy never weighed against its
+     own VAC reasoning. Signature scanning is the only approach that
+     survives a binary update at all; the VAC-risk tradeoff is accepted, not
+     eliminated, as the reasonable cost of that resilience.
+  
+  **What this means in practice for the CURRENT (`-x64`) line**: every
+  engine-function hook target is resolved via `signature_scan.h`/`.cpp`
+  (parses `"?? "`-wildcarded hex patterns, scans the game's own main module
+  via a real PE-header walk, fails loudly and refuses to hook on a zero or
+  ambiguous match) — once per process start, cached for the rest of the
+  session. **Do not hardcode a fixed address for a new `-x64` engine-function
+  hook** — that's the rejected, superseded approach, and it's specifically
+  what a real binary update already proved fragile. Match the existing
+  pattern instead (find the target in Ghidra against the x64 binary, build a
+  wildcarded byte signature around it, resolve via `signature_scan`, validate
+  before hooking, document it in `re_notes/known_issues_x64.md`/
+  `re_notes/x64_migration/`). The frozen, unsupported `-x86` line's own hook
+  targets remain literal hardcoded addresses, found via static Ghidra
+  analysis against `iw5sp.exe`/`iw5mp.exe`'s x86 builds — that's accurate
+  history for that now-discontinued line, not a live policy to extend.
+  **Exception, unchanged by either reversal**: the three D3D9 hooks
+  (`IDirect3DDevice9::EndScene`/`Reset` in `overlay_hud.cpp`,
   `IDirect3D9::CreateDevice` in `d3d9_hook.cpp`) resolve their real target
-  address live from the actual COM vtable at runtime — not a hardcoded
-  literal — since that's the standard, correct way to hook a COM interface
-  method regardless of this project's own engine-function convention, and
-  doesn't touch arbitrary memory searching for a pattern the way a scanner
-  would. Match the existing pattern for a NEW engine-function hook (find it
-  in Ghidra, verify the calling convention via raw disassembly, hardcode it,
-  document it in `re_notes/iw5sp.md`). **Do not open a PR introducing a
-  runtime signature scanner for engine-function hooks** — it isn't a
-  deferred goal this project is waiting on, it's a rejected approach on VAC-
-  safety grounds; raise an issue first if you think this reasoning is wrong,
-  rather than building one.
+  address live from the actual COM vtable at runtime — the standard, correct
+  way to hook a COM interface method regardless of this project's own
+  engine-function convention, and unrelated to either the scan-vs-hardcode
+  question or the VAC-risk tradeoff either way.
 - **`iw5sp.exe` (Campaign/Survival) and `iw5mp.exe` (Multiplayer) are
   separate efforts.** Don't assume a function or offset found in one binary
   carries over to the other — each needs its own independently-found
