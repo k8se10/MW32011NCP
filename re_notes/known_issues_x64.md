@@ -2163,3 +2163,62 @@ transitions, then correlating by hand (the same methodology x86's own
 issue #99/#100 ultimately had to fall back on after its own static/heuristic
 attempts at clcState's real mapping were reverted for being wrong). Not
 attempted here since this pass has no live-testable build to run it against.
+
+**Follow-up audit complete, same day -- no further code changes needed beyond
+the cursor fix above.** Full audit of every function `Hook_EndScene` calls
+(`overlay_hud.cpp`): `DrawCustomOptionsMenuIfOpen`, `DrawOverlayMessage`,
+`DrawGlyphIconIfRequested`, `DrawGameplayHintSlotsIfRequested`,
+`DrawMenuHintsIfRequested`, `DrawDebugMarkerIfRequested`,
+`DrawGlyphEditHandlesIfRequested`, `ApplyForcedAnisotropicFilteringIfEnabled`,
+`ApplyForcedHighQualityShadowsIfEnabled`, `ApplyForcedHighQualityLightingIfEnabled`
+-- every body checked line-by-line for raw hex constants in the x86 process-
+space range (`0x00400000`-`0x02000000`) outside an `#if defined(_M_X64)` guard.
+**Zero additional landmines found** -- every hex literal in these functions is
+a color/flag constant (`0x00FFFFFF`, `0x90000000u`, etc.), not an address. The
+cursor was the ONLY real `__try`-wrapped SEH-hidden landmine in this file's
+own draw path (confirmed via a full `__try` census: `overlay_hud.cpp` has
+exactly one, the cursor's, now fixed).
+
+**Glyph-position-empty finding, resolved -- NOT a bug.**
+`TryGetStableFocusedGroupAndIndex` (`analog_input_hooks.cpp`) is already an
+explicit, deliberate x64 stub: `#if !defined(_M_X64) && !defined(_WIN64)` guards
+the real x86-only implementation (depends on `GetMenuStackDepth()`/
+`TryGetRealFocusedGroupAndIndex()`, neither ported), `#else` returns `false`
+unconditionally with its own comment already documenting this exact case:
+"x64: not yet ported... returning false is this function's own real contract
+for that case already, every caller already handles it." The observed
+`realGroup="" realIndex=-1` in every `[manual-glyph-diag]` log line is this
+stub working exactly as designed and documented, not a regression.
+
+**Broader finding: the entire glyph/hint-icon system is currently unwired for
+x64, not landmine-broken.** `analog_input_hooks_x64.cpp` makes zero calls to
+any glyph/hint-request function (`RequestGlyphIcon`,
+`RequestMenuHintOverlay`, or equivalent) -- confirmed via a whole-file grep.
+`DrawGlyphIconIfRequested`'s own gate (`g_pendingIconRequestedThisFrame`) and
+`DrawGameplayHintSlotsIfRequested`'s equivalent per-slot flags are plain,
+harmless booleans that simply never get set to true on x64, since nothing in
+the x64 input-hook file requests one. This isn't a hidden failure -- it's
+real, honest, not-yet-ported scope (matching this project's own convention
+elsewhere), and traces back to the same root cause as the stub above: the
+menu-focus/itemDef-position-reading infrastructure this whole system is built
+on was never ported to x64. `InjectSyntheticBackHintIfNeeded`'s own chain
+(`IsInsideSpecOpsNestedModal`) is similarly and harmlessly inert on x64 for
+the same reason -- it reads `g_focusedItemName`, a global only ever populated
+by an `#if !defined(_M_X64)`-guarded naked-asm hook, so it correctly,
+non-crashingly stays empty and the function correctly no-ops.
+
+**Net conclusion on the "no visual elements" report**: the startup toast
+(`DrawOverlayMessage`/`ShowStartupMessage`) IS wired for x64 and the log
+already shows it drawing successfully once (`hr=0x00000000`) -- the user may
+simply have missed its one 15-second window at launch, not a code bug.
+Everything glyph/hint/cursor-related genuinely doesn't draw on x64 today,
+but for an honest, already-scoped reason (menu-focus-tracking infrastructure
+not yet ported), not a hidden regression -- the cursor was the one place that
+gap manifested as a SILENT landmine instead of an honest no-op, now fixed to
+match the honest-no-op pattern everything else in this class already follows.
+**Real x64 port of menu-focus/itemDef-position tracking** (to make glyphs/
+hints/the in-game glyph editor actually draw on x64, not just fail safely) is
+the concrete next step toward closing this specific parity gap -- a genuine,
+scoped RE task (native x64 equivalents of `GetMenuStackDepth`/
+`TryGetRealFocusedGroupAndIndex`/`g_focusedItemName`'s populating hook), not
+attempted this pass.
