@@ -30,7 +30,7 @@ below without re-running Ghidra.
 
 ---
 
-## Status: Session 5 complete. Both of Session 4's own recorded open items pursued honestly, neither fully closed, both genuinely advanced. Type-1 killstreak-slot: found real evidence it shares the same per-weapon capability table Hold Breath uses (different field offset), reinforcing that a real weapon-database table underlies both systems; a lethal/tactical-equipment-cycling reading is now a reasonable (not confirmed) hypothesis for "type 1," pending a future string-search check. `DAT_140e1dbc4` ambiguity (section 6): confirmed real via a direct stride check (not a coincidental address overlap between two different loop variables) -- the double-duty meaning is genuinely unresolved, not an artifact, with a concrete untried next step recorded (`FUN_1400cfef0`'s own full decompile). `FUN_14007c4f0` (the killstreak-slot cross-type eligibility helper) checked and ruled out as a naming path, but surfaced a real, unexplained slot-3-specific exclusion condition worth remembering. Session 4's own findings (Hold Breath upgraded, Melee complicated, cases 0x47/0x48's activity-state pair, `FUN_1400cd110` dead end, `DAT_1406be770`'s per-frame-clear role) all stand unchanged. Sessions 1-3 (key-event dispatch chain, movement/look pipeline, killstreak assaultStreaks-category match) remain static-confirmed.
+## Status: Session 6 complete. Both of section 4-6's own untried next steps attempted this round. Type-1 killstreak-slot: a real, cleanly-bounded, exactly-6-entry lethal-equipment content table found (frag/semtex/knife/betty/claymore/C4) sitting in the same real Create-a-Class content-name region as the already-confirmed killstreak tables, thematically and numerically consistent with the equipment-cycling hypothesis -- upgraded from "reasonable hypothesis" to "reasonable hypothesis with a real, specific table candidate," explicitly NOT the same evidentiary strength as type-2's own runtime-array-bound match (no pointer-chase from type-1's actual runtime array to this table was found). `DAT_140e1dbc4` ambiguity: `FUN_1400cfef0`'s full decompile didn't directly touch it (a correction to Session 5's own framing), but its call sites let the byte be precisely located at offset 0xC4 within the confirmed per-player kbutton-region struct, immediately after the digital-hold-duration field cluster -- real support for the "digital-look-active" reading, but the ADS-flag comparison itself remains unresolved; no further concrete untried next step is currently recorded for this specific thread. Sessions 1-5's own findings all stand unchanged.
 
 This session started from string anchors (bind-name literals: `+attack`,
 `+sprint`, `+holdbreath`, `+frag`, `+gostand`, etc.) rather than trying to
@@ -799,6 +799,72 @@ addresses (`puVar6 + 0x78`, etc.) in `FUN_1400cfce0` itself -- its own
 full body might reveal what per-player struct region `dbc4` actually
 belongs to, rather than treating it as an isolated single byte.
 
+### 4-7. Session 6 (2026-09-05): both of section 4-6's own untried next steps attempted -- a real, well-bounded content-table candidate found for type-1; `DAT_140e1dbc4` precisely located (not resolved)
+
+Per the coordinator's own explicit framing this round ("keep pushing on
+those same two specific threads... or pick fresher ground -- your call"):
+both of section 4-6's own recorded next steps were tractable, so both were
+attempted rather than switching targets. Full raw output:
+`re_notes/x64_migration/mp_decomp_1400cfef0.txt`,
+`mp_equipment_strings.txt`, `mp_equipment_table_qwords.txt`.
+
+**Type-1 killstreak-slot: a real, exactly-bounded content-table candidate
+found.** A direct string search for real MW3 lethal/tactical equipment
+names (`frag_grenade_mp`, `semtex_mp`, `throwingknife_mp`,
+`bouncingbetty_mp`, `claymore_mp`, `c4_mp`, `flash_grenade_mp`,
+`smoke_grenade_mp`) found real hits, and dumping the raw table region
+around them (`DumpRawQwords.java`, `0x14054a5a0`-`0x14054a700`) revealed
+the SAME content-name table region section 4-3 already found for
+killstreaks, extended further back: a **cleanly-bounded, exactly 6-entry
+LETHAL equipment table** at `0x14054a5a0`-`0x14054a5c8` (frag, semtex,
+throwing knife, bouncing betty, claymore, C4 -- the complete, real MW3
+lethal-grenade roster), immediately followed by a large perks table
+(`specialty_paint`/`specialty_fastreload`/`specialty_hardline`/etc.,
+`0x14054a5d0`-`0x14054a648`), then a tactical-equipment cluster
+(`flash_grenade_mp`/`concussion_grenade_mp`/`emp_grenade_mp`/
+`smoke_grenade_mp`/`trophy_mp`, `0x14054a650`-`0x14054a678`), then the
+already-confirmed killstreak trees starting at `0x14054a690`. **This is a
+real, coherent, ordered Create-a-Class content taxonomy** (lethal → perks
+→ tactical → killstreak trees), not a coincidental string cluster.
+
+**Honest strength assessment, matching Session 3's own standard for this
+exact class of evidence**: the lethal table's entry count (6) is an EXACT
+match to the killstreak-slot family's own total slot count (6, cases
+`0xf`-`0x1a`) -- real, notable, and thematically coherent with section
+4-6's equipment-cycling hypothesis for "type 1." But per this project's
+own issue #3 discipline, **this is NOT the same strength of evidence as
+type-2's own confirmation** (which matched a runtime-populated array's OWN
+bound, not just the outer slot family's total count) -- no pointer-chase
+from type-1's actual runtime lookup array (`DAT_1405a6604`) to THIS
+specific static table was attempted or found this pass. Upgraded from "a
+reasonable hypothesis" to "a reasonable hypothesis with a real, specific,
+well-bounded, thematically-coherent content-table candidate identified" --
+still short of a name confirmation, honestly labeled as such.
+
+**`DAT_140e1dbc4` ambiguity: precisely located within its own struct,
+still not resolved.** Decompiled `FUN_1400cfef0` in full as section 4-6
+recommended -- it turned out NOT to take `&DAT_140e1dbc4` as an argument
+anywhere (a slight correction to section 4-6's own framing of why this
+function was promising); it confirms the digital-hold-duration struct's
+exact field layout (`{heldMs:+0xc, lastTimestamp:+8, isHeld:+0x10}`) but
+doesn't itself touch `dbc4`. **A genuinely new, useful fact found instead
+by simple arithmetic**: `DAT_140e1dbc4` is exactly **offset `0xC4` from
+the confirmed per-player kbutton-region base** (`&DAT_140e1db00 +
+player*600`) -- i.e. it's `puVar6 + 0xC4` in this section's own established
+notation, sitting immediately AFTER the cluster of digital movement/look
+hold-duration sub-fields `FUN_1400cfef0` reads from (which occupy roughly
+the region's first ~0x90 bytes: `+0x00`, `+0x14`, `+0x28`, `+0x3c`, `+0x78`
+are all confirmed call sites). This places `dbc4` structurally WITHIN the
+same "digital key state" cluster, not in an unrelated part of the region
+-- real support for the "digital-look-active" reading being genuinely
+correct, which makes `FUN_1400cfce0`'s ADS-flag comparison against it MORE
+puzzling on its face, not less. **Honest verdict**: precisely located, not
+resolved -- the double-duty (or genuinely dual-purpose) meaning remains
+open. No further untried concrete next step is currently recorded for this
+specific thread; a future pass would likely need to decompile a wider
+survey of every other consumer of the surrounding `0x00`-`0xC4` region to
+build a fuller struct map, a larger undertaking than this pass's scope.
+
 ### `FUN_1400c3290` -- confirmed Killcam/Theater-mode dispatcher (x86 `FUN_006ada70` analog)
 
 Entire body gated on `DAT_140e1dddc == 0xb` (inert everywhere else, return-only
@@ -1076,12 +1142,15 @@ a retraction.
 
 ## Signature-Scanning Readiness
 
-**Status: ~68% ready, unchanged this session** (Session 5 pursued both of
-Session 4's own recorded open items honestly -- real evidence found for
-both, neither fully closed, so the percentage itself doesn't move; this
-project's own standard is to move the number on genuine closure, not on
-effort spent. The remaining gap is unchanged in kind -- case-to-real-
-bind-NAME confirmation for the movement-CRITICAL dispatch cases
+**Status: ~69% ready** (Session 6 found a genuinely new, real, well-bounded
+content-table candidate for type-1 -- not just reinforcing an existing
+candidate the way Session 5 did, so a small increment over Session 5's
+flat ~68% is warranted; still explicitly short of type-2's own stronger
+runtime-array-bound-match evidentiary bar, per the honesty caveat recorded
+in section 4-7. The `DAT_140e1dbc4` thread was precisely located but not
+resolved -- no percentage weight given to location-without-resolution.
+The remaining gap is unchanged in kind -- case-to-real-bind-NAME
+confirmation for the movement-CRITICAL dispatch cases
 (Fire/ADS/Sprint/Reload/Hold-Breath), not missing mechanism, which per
 this project's own issue #3 policy may be gated on live verification for
 the cases static evidence alone can't fully close).
@@ -1100,24 +1169,22 @@ the cases static evidence alone can't fully close).
 - Byte-pattern signatures: still none extracted -- reasonable to start once the two movement-pipeline open items (section 6) and the case-name-confirmation gap are resolved or a live-verification phase is authorized
 - Live validation: not started, and out of scope for this project's own locked static-first MP ordering until explicitly authorized for a live/injection phase
 
-**Ready to proceed with** (updated Session 5): both of Session 4's open
-items were advanced (section 4-6) -- type-1 killstreak-slot now has a
-real, if unconfirmed, "lethal/tactical equipment" hypothesis; the
-`DAT_140e1dbc4` ambiguity is confirmed genuine (not a stride artifact),
-with a concrete untried next step. **Natural next steps for a future
-session**: (1) decompile `FUN_1400cfef0` in full (its own current
-understanding is return-value SHAPE only, "0.0-1.0 hold fraction") -- the
-most promising untried path to actually resolving section 6's
-`DAT_140e1dbc4` ambiguity, per section 4-6's own reasoning; (2) a real
-lethal/tactical-equipment-name string search (frag/flash/smoke/semtex/
-throwing knife, etc. -- some of which already appeared incidentally in
-`FUN_140276380`'s own strings, e.g. `frag_grenade_mp`/`flash_grenade_mp`)
-against the type-1 killstreak-slot's own consumed data to test section
-4-6's equipment-cycling hypothesis directly; (3) the slot-3-specific
-exclusion condition found in `FUN_14007c4f0` (section 4-6) is a real,
-unexplained structural oddity worth a future look; (4) the real per-player
-"activity state" enum found Session 4 (`FUN_1403077c0`/`FUN_14030eed0`,
-values 0/1/2/6 observed) remains a reusable lead if a future pass wants to
-pin down what state 6 (case 0x47/0x48) or state 2 (case 0x4b's Killcam
-branch) actually represent -- not pursued this session either. All
-static-only. **Blocked on nothing.**
+**Ready to proceed with** (updated Session 6): the type-1 killstreak-slot
+thread now has a real, specific, well-bounded content-table candidate
+(section 4-7); the `DAT_140e1dbc4` thread is precisely located but has no
+further concrete untried next step recorded -- likely near diminishing
+returns for now without a larger struct-mapping undertaking. **Natural
+next steps for a future session**: (1) attempt an actual pointer-chase
+from type-1's real runtime array (`DAT_1405a6604`) to the static
+lethal-equipment table (`0x14054a5a0`) to bring type-1's confirmation up
+to type-2's own evidentiary bar -- the concrete gap section 4-7 itself
+flags; (2) the slot-3-specific exclusion condition found in
+`FUN_14007c4f0` (section 4-6) remains a real, unexplained structural
+oddity; (3) the real per-player "activity state" enum found Session 4
+(`FUN_1403077c0`/`FUN_14030eed0`, values 0/1/2/6 observed) remains a
+reusable lead for a future pass wanting to pin down state 6 (case
+0x47/0x48) or state 2 (case 0x4b's Killcam branch); (4) fresher ground
+elsewhere in the 89-case table may now offer better returns than further
+narrow pushes on the `DAT_140e1dbc4` thread specifically -- a genuine
+judgment call for whoever picks this up next. All static-only. **Blocked
+on nothing.**
