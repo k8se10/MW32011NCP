@@ -102,6 +102,19 @@ progress.
    platforms. **Not yet live-tested — this is a fix ATTEMPT, not a
    confirmed resolution.** Full trail in `re_notes/known_issues_x64.md`
    issue #1.
+7. **Custom Options screen wired into x64.** The screen's own draw/navigate
+   code (`overlay_hud.cpp`) was already fully cross-platform — the real gap
+   was that nothing on x64 ever called it, so it was completely unreachable.
+   A new `PollCustomOptionsMenuX64()` drives it from the same always-on tick
+   Pause's own toggle uses. Opening currently uses a **temporary** LB+RB
+   chord while a native menu is active, standing in for x86's real
+   native-menu-focus detection — that detection hardcodes a 32-bit pointer
+   stride and is confirmed broken on x64 (misaligned reads, always fails
+   safely rather than crashing), and re-deriving its real x64 struct offsets
+   is separate, not-yet-started RE work. Still gated behind
+   `[Options] UseCustomOptionsScreen` (default OFF), same opt-in convention
+   as x86. Build-verified on both platforms. **Not yet live-tested.** Full
+   trail in `re_notes/known_issues_x64.md` issue #1.
 
 ### Documentation
 1. **All `-x86` support discontinued, effective 2026-09-03.** `v0.2.2-x86`
