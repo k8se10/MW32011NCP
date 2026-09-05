@@ -1,0 +1,24 @@
+=== Reference counts per global ===
+weaponclass_631c (1405a631c): 15 references
+
+=== Candidate functions, ranked by distinct global diversity (10) ===
+
+---- FUN_140084800 @ 140084800 (globals: weaponclass_631c) ----
+
+---- FUN_140084ca0 @ 140084ca0 (globals: weaponclass_631c) ----
+
+---- FUN_140087540 @ 140087540 (globals: weaponclass_631c) ----
+
+---- FUN_140081280 @ 140081280 (globals: weaponclass_631c) ----
+
+---- FUN_140062560 @ 140062560 (globals: weaponclass_631c) ----
+
+---- FUN_14007abd0 @ 14007abd0 (globals: weaponclass_631c) ----
+
+---- FUN_1400792c0 @ 1400792c0 (globals: weaponclass_631c) ----
+
+---- FUN_14007c2d0 @ 14007c2d0 (globals: weaponclass_631c) ----
+
+---- FUN_14007f5b0 @ 14007f5b0 (globals: weaponclass_631c) ----
+
+---- FUN_14005a7b0 @ 14005a7b0 (globals: weaponclass_631c) ----
