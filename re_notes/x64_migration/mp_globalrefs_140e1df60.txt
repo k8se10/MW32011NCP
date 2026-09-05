@@ -1,0 +1,34 @@
+=== Reference counts per global ===
+ads_toggle_candidate (140e1df60): 28 references
+
+=== Candidate functions, ranked by distinct global diversity (15) ===
+
+---- FUN_1400ce950 @ 1400ce950 (globals: ads_toggle_candidate) ----
+
+---- FUN_1400cff50 @ 1400cff50 (globals: ads_toggle_candidate) ----
+
+---- FUN_1400cca30 @ 1400cca30 (globals: ads_toggle_candidate) ----
+
+---- FUN_1400c1e30 @ 1400c1e30 (globals: ads_toggle_candidate) ----
+
+---- FUN_1400c87d0 @ 1400c87d0 (globals: ads_toggle_candidate) ----
+
+---- FUN_1400dc4f0 @ 1400dc4f0 (globals: ads_toggle_candidate) ----
+
+---- FUN_1400dc730 @ 1400dc730 (globals: ads_toggle_candidate) ----
+
+---- FUN_1400d0050 @ 1400d0050 (globals: ads_toggle_candidate) ----
+
+---- FUN_1400d0350 @ 1400d0350 (globals: ads_toggle_candidate) ----
+
+---- FUN_1400d0790 @ 1400d0790 (globals: ads_toggle_candidate) ----
+
+---- FUN_140287810 @ 140287810 (globals: ads_toggle_candidate) ----
+
+---- FUN_1400cd800 @ 1400cd800 (globals: ads_toggle_candidate) ----
+
+---- FUN_1400cfce0 @ 1400cfce0 (globals: ads_toggle_candidate) ----
+
+---- FUN_1400dbca0 @ 1400dbca0 (globals: ads_toggle_candidate) ----
+
+---- FUN_1400d1c60 @ 1400d1c60 (globals: ads_toggle_candidate) ----

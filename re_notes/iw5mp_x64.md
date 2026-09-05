@@ -326,18 +326,18 @@ All addresses are per-player base; actual runtime address is
 | 7/8 | `0x140e1dc68` | single | -- |
 | 9/10 | `0x140e1dc2c` **and** `0x140e1dd08` (driven together) | **dual kbutton** | Exact structural match to x86 MP's confirmed dual-kbutton case (9/10 in x86 too) -- x86 flagged this as a strong `+toggleads_throw`/ADS-grenade-context candidate by pattern alone, not confirmed by name. Same caveat applies here: **candidate, not confirmed.** |
 | 0xb/0xc | `0x140e1dcb8` | single | -- |
-| 0xd/0xe | `0x140e1dcf4` (always) + `0x140e1dbb4` (conditional, connect-state>5) | dual, conditional | On down: also zeroes `DAT_140e1df60` (a toggle flag, see 0x43/0x44 below). Medium-confidence candidate for **Sprint** (`+speed`) -- forcing an ADS-toggle flag off on sprint-start matches known "can't ADS while sprinting" behavior, and `"+speed"` is a real bind-name literal seen in section 2's HUD-prompt cluster. |
+| 0xd/0xe | `0x140e1dcf4` (always) + `0x140e1dbb4` (conditional, connect-state>5) | dual, conditional | On down: also zeroes `DAT_140e1df60` (a toggle flag, see 0x43/0x44 below). Medium-confidence candidate for **Sprint** (`+speed`) -- forcing an ADS-toggle flag off on sprint-start matches known "can't ADS while sprinting" behavior, and `"+speed"` is a real bind-name literal seen in section 2's HUD-prompt cluster. **Not independently re-checked this pass beyond the section-4-1 cross-check below** -- still candidate, not confirmed. |
 | 0x1f/0x20 | `0x140e1dbf0` + `0x140e1dbc8` | dual, gated on connect-state>5 | -- |
 | 0x21/0x22 | `0x140e1dc7c` (shared with case 3/4!) + `0x140e1dc40` | dual, one kbutton shared with another case | Real multi-source kbutton -- same "one kbutton, two independent bind commands" mechanism `FUN_1400d0ea0`'s two-source (`kb[0]`/`kb[1]`) design supports. |
 | 0x23/0x24 | `0x140e1dc40` | single | -- |
 | 0x25/0x26 .. 0x3f/0x40 | `0x140e1db00`..`0x140e1dccc` (14 more single-kbutton pairs, contiguous region) | single, uniform | Not individually investigated -- straightforward mechanical continuation of the same pattern, matching x86 MP's own "remaining cases are mechanical, not a new unknown" framing for its own leftover cases. |
 | 0x41 (down only) | `0x140e1dc14` (direct byte flag, NOT a kbutton_t) | raw boolean set=1 | -- |
 | 0x42 (up) | same byte, conditional clear + `LAB_1400cf55d`: `DAT_140e21454 = DAT_140e1dfc8 ^ DAT_1404e87e0` | raw boolean + XOR-toggle side effect | **Candidate for `+scores`** (Back/scoreboard-toggle bind) -- a raw hold-flag rather than a kbutton_t, matching the conceptual shape of a "hold to show scoreboard" bind rather than a continuous-movement bind. Case 0x51 (no matching even case) reaches the SAME `LAB_1400cf55d` XOR side effect directly, suggesting 0x51 is a second, one-shot-tap bind for the same underlying action (e.g. a keyboard Tab-equivalent alongside a controller hold). **Not confirmed by name.** |
-| 0x43 (down) / 0x44 (up) | `0x140e1dcf4` (SAME kbutton as case 0xd!) | single, shared kbutton, down-edge also toggles `DAT_140e1df60` | Medium-high confidence candidate for **ADS**: `DAT_140e1df60` toggling on the down-edge is structurally identical to x64 SP's own confirmed ADS toggle-flag pattern (`DAT_1406e26e0`, per `known_issues_x64.md` issue #1's "Third live playtest" section -- SP's real ADS state had to be force-set on the edge on top of the kbutton call because the dispatcher's own internal toggle wasn't safely bypassable). The fact that TWO different case numbers (0xd and 0x43) both drive the same kbutton is consistent with two different physical binds (e.g. mouse2 and a controller trigger) sharing one ADS kbutton via the two-source `kb[0]`/`kb[1]` mechanism. **Not confirmed by name -- flagged as the single strongest lead in this table for a live-verification pass.** |
+| 0x43 (down) / 0x44 (up) | `0x140e1dcf4` (SAME kbutton as case 0xd!) | single, shared kbutton, down-edge also toggles `DAT_140e1df60` | **Upgraded this pass (section 4-1 below) with real, independent corroborating evidence from the confirmed movement pipeline, not just table position -- still not name-confirmed, but the strongest-supported non-command-string case in this whole table.** |
 | 0x47/0x48 (down/up) | none (calls `FUN_140090c80`/`FUN_140090d20(player)` directly, no kbutton at all) | one-shot start/stop pair | A distinct case TYPE, not a raw kbutton -- worth remembering when a future pass extends this table, since not every case follows the kbutton pattern. |
 | 0x4b (down only, no matching up) | `FUN_1400d71b0(player)` | one-shot | -- |
 | 0x4c / 0x50 | `FUN_14007f5b0(player, 1)` / `FUN_14007f5b0(player, 0)` | boolean set/clear | -- |
-| **0xf/0x10 .. 0x19/0x1a** (6 parameterized slots) | `FUN_14007c5b0(player, N)` / `FUN_14007c760(player, N)`, N=0..5 | **parameterized slot family, 6 slots** | **New, notable lead, not in x86 MP's own notes at all.** A clean 6-slot down/up family sharing two functions differing only by an integer slot index is a strong structural shape for a **killstreak-slot or weapon-loadout-select family** -- directly relevant to this project's own stated MP motivation (CLAUDE.md: "a significant part of the motivation for wanting MP... is `iw5mp.exe`'s killstreak-call-in/killstreak-control code"). **Purely a shape-based lead, zero name confirmation yet** -- `FUN_14007c5b0`/`FUN_14007c760` were not decompiled this pass. Worth prioritizing early next session. |
+| **0xf/0x10 .. 0x19/0x1a** (6 parameterized slots) | `FUN_14007c5b0(player, N)` / `FUN_14007c760(player, N)`, N=0..5 | **parameterized slot family, 6 slots** | **First real look taken this pass (Session 2, section 4-2 below) -- structural read REINFORCED, not refuted, by a second independent function cluster (HUD-prompt rendering).** Directly relevant to this project's own stated MP motivation. |
 | `"+chatmodepublic"`-adjacent: 0x4e | `FUN_140262850(player, "chatmodepublic\n")` | one-shot command string | **Confirmed by literal command string** -- real Cbuf_AddText call, not a kbutton. |
 | 0x4f | `FUN_140262850(player, "chatmodeteam\n")` | one-shot command string | **Confirmed by literal command string.** |
 | 0x58 | `FUN_140262850(player, "vote yes\n")` (gated on an active-vote check) | one-shot command string | **Confirmed by literal command string.** |
@@ -353,6 +353,124 @@ signal than x86 MP Session 5/6 ever had (x86's own notes flagged case-to-name
 mapping as possibly gated on live verification with no static path at all --
 this session shows that's not universally true for x64, even if most cases
 still need it).
+
+### 4-1. Case 0x43/0x44 (ADS candidate) -- independently cross-checked against the confirmed movement pipeline (Session 2)
+
+Per this project's own issue #3 policy ("never trust a case number without
+independent confirmation"), this is a genuine cross-check against a
+SEPARATE piece of evidence (the movement/look pipeline found in section 6),
+not just the case's position in the dispatch table. Full raw output:
+`re_notes/x64_migration/mp_globalrefs_140e1df60.txt`,
+`mp_decomp_ads_consumers.txt`.
+
+**Method**: `FindGlobalRefs.java` against `DAT_140e1df60` alone (not the
+kbutton addresses, which Session 1 already showed dead-end at the writer)
+found **28 references across 15 functions** -- a genuinely high reference
+count for a single byte flag, consistent with a widely-consulted piece of
+gameplay state (not a rarely-touched field). Two of those 15 functions are
+directly relevant:
+
+- **`FUN_1400cfb60`** (the confirmed raw mouse-delta reader from section 6)
+  is called as `FUN_1400cfb60(&DAT_140e1df60, ...)` -- **checked directly,
+  not assumed**: its own body only ever reads/writes offsets `+0x3420`
+  through `+0x3450` relative to that pointer, never byte 0 itself. **This
+  does NOT corroborate the ADS hypothesis** -- `&DAT_140e1df60` is being
+  used here purely as the base address of an unrelated mouse-delta-buffer
+  struct that happens to start at the same address, not as a read of the
+  flag's own value. Recorded here explicitly as a checked-and-ruled-out
+  angle, per this project's own "checking is cheaper than digging" standard
+  -- an earlier pass through this same call site briefly mis-read it as
+  corroborating evidence before the struct-offset check caught it.
+- **`FUN_1400cfce0`**, called directly inside the confirmed live-gameplay
+  movement/button pipeline (`FUN_1400d0be0` calls it immediately before
+  `FUN_1400d0050`, the movement writer) DOES read `DAT_140e1df60` directly
+  (not as a struct base):
+  ```c
+  if ((&DAT_140e1dbc4)[lVar5] != DAT_140e1df60) {
+      uVar3 = uVar2 | 0x800;              // set usercmd.buttons bit 0x800
+  }
+  ...
+  if ((DAT_140e1df60 == '\0') || ((&DAT_140e1dbc4)[lVar5] != '\0')) {
+      uVar3 = uVar3 & 0xefffffff;
+  } else {
+      uVar3 = uVar3 | 0x10000000;         // set usercmd.buttons bit 0x10000000
+  }
+  ```
+  This compares the GLOBAL `DAT_140e1df60` against a PER-PLAYER mirror byte
+  (`DAT_140e1dbc4[player]`) and sets two distinct `usercmd_t.buttons` bits
+  depending on whether they match/mismatch -- **an edge-detection shape**
+  (comparing a "requested" state against a "currently applied" per-player
+  state and flagging the transition) that is structurally consistent with
+  "ADS state just changed this frame," a real and expected thing for a
+  network-synced multiplayer usercmd to need to signal explicitly (unlike
+  SP, MP's usercmd has to communicate discrete state transitions to the
+  server, not just continuous button-held state).
+
+**Net effect on confidence**: this is real, new, independent evidence --
+not a second look at the same dispatch-table fact -- and it's consistent
+with the ADS hypothesis without being a decisive name-level confirmation.
+`DAT_140e1dbc4[player]`'s own exact meaning is not fully pinned down either
+(see section 6's open items -- it's also read by the angle-speed-scaling
+code, which complicates a clean "current ADS state" reading of it). Honest
+verdict: **upgraded from "medium-high, table-position-only" to "medium-high,
+with real corroborating structural evidence from an independent function" --
+still short of this project's own bar for a hook-ready confirmation**,
+which per issue #3 requires either a genuine name anchor or live testing.
+
+### 4-2. Cases 0xf/0x10 .. 0x19/0x1a (6-slot family) -- first real look, structural read reinforced (Session 2)
+
+Per the task's own framing ("decompile it enough to say whether the
+structural read is right or wrong, don't need to fully resolve it"), this
+is a first pass, not a closing one. Full raw output:
+`re_notes/x64_migration/mp_decomp_14007c5b0_c760.txt`,
+`mp_globalrefs_killstreak_slots.txt`, `mp_callers_140059710.txt`.
+
+**`FUN_14007c5b0(playerIdx, slotIdx)`** (the "down" half) reads a per-slot
+**TYPE byte** from `&DAT_1405a65e8[slotIdx]` (values observed: 1, 2, 3) and
+branches on it:
+- type 1: a real "cycle to next available item in this slot" flow, gated by
+  a **~100ms press-and-hold debounce** (`DAT_1406112d0 - _DAT_1406be80c >
+  99`) against a "currently equipped index" global (`DAT_1405a6440`,
+  37 references project-wide -- a heavily-used real piece of state) and a
+  per-slot index array (`&DAT_1405a6604[slotIdx]`).
+- type 2: delegates to a separate single function, `FUN_140087540`.
+- type 3: sets a standalone flag bit (`DAT_1406be770 |= 0x40000`).
+
+**`FUN_14007c760(playerIdx, slotIdx)`** (the "up" half) is much simpler --
+just resolves the slot via `FUN_14007c4f0(&DAT_1405a60d0, slotIdx)`, real
+"release does less work than press" asymmetry.
+
+**Independent reinforcement found via `FindGlobalRefs.java` on the same
+three globals** (`DAT_1405a65e8` slot-type array, `DAT_1405a6604` slot-index
+array, `DAT_1405a6440` equipped-index): the SAME three globals are also
+touched by **`FUN_140059710`**, a completely separate function reached from
+section 2's confirmed HUD button-prompt cluster (`FUN_1400a0cf0`, cases
+`0xab`-`0xae`, called with `param_11 - 0xab` as a 0-3 slot index -- a
+smaller 4-slot subset of the same system, plausibly the subset visible
+during a specific game mode/context). Decompiling `FUN_140059710` shows it:
+- Also branches on the SAME `(&DAT_1405a65e8)[slot]==1` / `==2` type check.
+- For type 2, walks a **15-entry array** (`&DAT_1405a6344`, bound `0xf`)
+  looking for a matching item ID, then reads an internal item-name string
+  and explicitly checks for an **`"iw5_"` prefix** (`pcVar2[0]=='i' &&
+  [1]=='w' && [2]=='5' && [3]=='_'`) -- a real, recognizable CoD internal-
+  asset-naming convention (weapon/equipment reference names in this engine
+  commonly carry an `iw5_`-style prefix), strong evidence this system
+  really does hold references to real game items/equipment, not arbitrary
+  UI state.
+- Ends by calling the same HUD-prompt draw primitive (`FUN_1402fd6f0`)
+  section 2 already confirmed for on-screen button-prompt icons.
+
+**Verdict**: the structural read from Session 1 (an item/equipment-slot
+system, killstreak-shaped) is **reinforced, not refuted** -- two
+independent function clusters (gameplay dispatch AND HUD-prompt rendering)
+both consume the same three globals the same way, and the item-name-prefix
+check confirms real game-item references are involved. **Still not
+resolved to "killstreak specifically" vs. "general equipment/lethal-
+tactical/killstreak slots collectively"** -- no `"killstreak"`-literal
+string anchor was found pointing directly at this cluster this pass, and
+the type-1/2/3 per-slot distinction (cycle-with-hold vs. single-delegate
+vs. flag-set) hasn't been mapped to real category names. A reasonable
+next-session target, not resolved further here per the task's own scope.
 
 ### `FUN_1400c3290` -- confirmed Killcam/Theater-mode dispatcher (x86 `FUN_006ada70` analog)
 
@@ -561,11 +679,13 @@ id-Tech "digital direction key" read pattern) and returns a normalized
 
 ## Signature-Scanning Readiness
 
-**Status: ~40% ready** (first x64 MP pass -- not directly comparable to x86
-MP's own "~55%" figure, which was reached after 6 sessions; this reflects one
-session's worth of work with an unusually complete result for the button/
-dispatch half specifically, offset by the movement/look half being completely
-unstarted).
+**Status: ~60% ready** (updated Session 2 -- both the button/dispatch chain
+AND the movement/look pipeline are now static-confirmed, matching or
+exceeding x86 MP's own "~55%" figure reached after 6 sessions, in two
+sessions here. The remaining gap is case-to-real-bind-NAME confirmation for
+the movement-critical dispatch cases, and two open reconciliation items in
+the movement pipeline itself -- not missing mechanism, missing final
+identity/detail confirmation).
 
 - Bind-name table + lookup/resolver (`FUN_1400b5cf0`, `FUN_1400b4800`) [OK] confirmed
 - Controls-menu rebind flow, alias-cluster/KEY_OR display [OK] confirmed UI-only, correctly not pursued as hook targets (mirrors x86 MP's own already-closed dead end)
@@ -575,13 +695,17 @@ unstarted).
 - Killcam/Theater dispatcher (`FUN_1400c3290`) [OK] confirmed inert outside connect-state 0xb, correctly ruled out as the general dispatcher
 - **Real gameplay-bind dispatcher (`FUN_1400ce950`)** [OK] confirmed via direct traced call sites on both key-down and key-up edges (not a heuristic) -- full case table (1 through 0x59) extracted directly from the decompiler output, a first for either architecture's MP work
 - **Real `kbutton_t` KeyDown/KeyUp (`FUN_1400d0ea0`/`FUN_1400d0ed0`)** [OK] confirmed, exact struct match to both x86 binaries, real x64 simplification noted (explicit pointer arg)
-- Case-to-real-bind-NAME mapping: 4 of ~89 cases confirmed by literal command string (chat/vote actions); the rest are structural candidates only (dual-kbutton shape, shared-kbutton shape, toggle-flag shape, parameterized-slot shape) -- **none of the movement-critical candidates (Fire/ADS/Sprint/Reload) are confirmed**, same open item x86 MP's own Session 6 closed with
-- Movement/look/orchestrator pipeline: **NOT located this session** -- the clear #1 priority for the next pass
-- Byte-pattern signatures: none extracted yet for anything found this session -- deferred until movement/look is found and/or the highest-value button cases (ADS/Sprint candidates above) get independent confirmation
+- Case-to-real-bind-NAME mapping: 4 of ~89 cases confirmed by literal command string (chat/vote actions); the ADS candidate (0x43/0x44) now has real independent corroborating evidence (section 4-1) beyond table position; the rest are structural candidates only -- **none of the movement-critical candidates (Fire/ADS/Sprint/Reload) are name-confirmed**, same open item x86 MP's own Session 6 closed with
+- **Movement/look/orchestrator pipeline: CONFIRMED this session** (section 6) -- top-level orchestrator, movement writer (exact `usercmd_t` byte-offset match to x86), reduced-scope button-summer/angle-finalize (exact byte-offset match), and the full 14-bit generic-array summer (exact bit-value match to x86 MP's own independently-derived table) are all found and cross-validated
+- 6-slot parameterized case family (0xf-0x1a): first real look taken (section 4-2) -- structural "item/equipment-slot system" read reinforced by a second, independent function cluster (HUD-prompt rendering), not yet resolved to a specific real category name
+- Byte-pattern signatures: still none extracted -- reasonable to start once the two movement-pipeline open items (section 6) and the case-name-confirmation gap are resolved or a live-verification phase is authorized
 - Live validation: not started, and out of scope for this project's own locked static-first MP ordering until explicitly authorized for a live/injection phase
 
-**Ready to proceed with**: locating the movement/look pipeline (section 6's
-recommended approach), and independently confirming or refuting the case
-0x43/0x44 ADS candidate and the case 0xf-0x1a 6-slot killstreak/loadout
-candidate -- both static-only next steps, no live process needed for either.
-**Blocked on nothing** -- this is a continuation task, not a stalled one.
+**Ready to proceed with**: reconciling the two open items in section 6
+(the second angle-write site, and the `DAT_140e1dbb0`/`DAT_140e1dbc4`
+field-identity question), taking a full pass at the remaining ~75
+undissasembled dispatch cases the same way x86 MP's own Session 6 checklist
+called for, and/or extending the killstreak-slot investigation (section 4-2)
+toward a real category-name anchor -- all static-only next steps, no live
+process needed for any of them. **Blocked on nothing** -- this remains a
+continuation task, not a stalled one.
