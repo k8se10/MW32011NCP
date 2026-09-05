@@ -30,7 +30,7 @@ below without re-running Ghidra.
 
 ---
 
-## Status: Movement/look pipeline now FOUND and confirmed (Session 2), on top of Session 1's fully-mapped key-event -> gameplay-bind dispatch chain. Both pillars of "on par with x86 MP" are now static-confirmed. ADS candidate (case 0x43/0x44) upgraded with real independent corroborating evidence; killstreak/loadout-slot candidate (cases 0xf-0x1a) reinforced by a second, independent function cluster. No case is asserted "confirmed by name" beyond the 4 already found via literal command string in Session 1.
+## Status: Movement/look pipeline confirmed (Session 2); both Session 2 open items resolved (Session 3), including a significant side-discovery (the game's own native aim-assist function, `AimAssist_GetTagPos`-anchored) that turned out to explain a usercmd_t field this project had mis-read as an angle write. Key-event -> gameplay-bind dispatch chain (Session 1) and movement/look pipeline (Session 2) are both static-confirmed. ADS candidate (case 0x43/0x44) has real corroborating evidence with one honestly-flagged residual ambiguity; killstreak/loadout-slot candidate (cases 0xf-0x1a) reinforced but not yet name-confirmed. No case is asserted "confirmed by name" beyond the 4 already found via literal command string in Session 1.
 
 This session started from string anchors (bind-name literals: `+attack`,
 `+sprint`, `+holdbreath`, `+frag`, `+gostand`, etc.) rather than trying to
@@ -630,23 +630,93 @@ id-Tech "digital direction key" read pattern) and returns a normalized
 `FUN_1400d0be0` and for analog-adjacent reads in `FUN_1400ce5c0`/
 `FUN_1400d0be0`'s freelook branch.
 
-### Open items, movement/look
+### Open items -- RESOLVED (Session 3, 2026-09-05)
 
-- The final compressed-angle write in `FUN_1400d0050` (`param_2+0x20`/
-  `+0x22`) has not been reconciled against `FUN_1400d0350`'s own
-  `+0x26`-`+0x2a` angle-byte writes -- both write SOME angle-related field of
-  the same `usercmd_t`, but whether they're the same logical field (written
-  from two different code paths depending on freelook state) or genuinely
-  different fields (e.g. a compressed short-angle vs. the final per-axis
-  bytes) is not resolved. Worth a focused pass before any hook is written on
-  either.
-- `DAT_140e1dbb0` (freelook-mode-branch byte in `FUN_1400d0050`) vs.
-  `DAT_140e1dbc4` (angle-speed-scale byte in `FUN_1400d0be0`, and the
-  per-player mirror compared against `DAT_140e1df60` in `FUN_1400cfce0`,
-  see section 4 below) are 20 bytes apart in the same small per-player
-  state cluster (`~0x140e1dbb0`-`0x140e1dbc4`) -- plausibly related fields
-  of one small "input mode" struct, not investigated further this pass.
-  Do not assume they're the same field.
+Both items flagged at the end of Session 2 were followed to a real
+conclusion this session using the same static toolkit (no live process).
+Full raw output: `re_notes/x64_migration/mp_decomp_14001e2c0.txt`,
+`mp_decomp_14001d3e0.txt`, `mp_globalrefs_dbb0_dbc4.txt`.
+
+**Item A -- `usercmd_t+0x20`/`+0x22` are NOT angle fields at all.**
+Decompiling `FUN_1400d0050`'s own `FUN_14001e2c0` call (the function that
+writes those two offsets) resolved this decisively, and turned up a
+significant, unrelated discovery along the way -- flagged carefully below.
+
+`FUN_14001e2c0` copies the current yaw/pitch accumulators
+(`DAT_140e21454`/`DAT_140e21458`) into a small output struct, then --
+**only if a per-weapon "zoom active" config flag is set** -- calls
+`FUN_14001d3e0`, which turned out to be **the game's own native aim-assist
+targeting function**, confirmed beyond doubt by a real embedded debug string
+still present in the retail binary: `"AimAssist_GetTagPos: Cannot find tag
+[%s] on entity %i.\n"`. It scans nearby entities within a screen-space
+bounding cone, computes a yaw/pitch "pull" toward a locked target's tag
+position, and folds that into the yaw/pitch accumulators it was handed.
+Two further fields it writes turned out to be exactly the two offsets from
+open item A: a 2-byte **locked-target handle** (`0x7ff` = a real sentinel
+for "no target locked") written to `usercmd_t+0x20`, and a 1-byte
+**assist-strength/distance value** (clamped 0-255) written to
+`usercmd_t+0x22`. **Neither offset is an angle field** -- they're native
+aim-assist target-tracking state that rides along in the per-frame usercmd,
+entirely separate from the real per-axis angle bytes at `+0x26`-`+0x2a`
+(which `FUN_1400d0350` writes independently, on a code path this
+aim-assist function is never even called from). This fully explains why the
+two "angle-adjacent" writes never lined up -- they were never the same kind
+of field to begin with.
+
+**Standing note, read before touching this**: this is the GAME'S OWN native
+engine system (`iw5mp.exe`'s own compiled code), found here purely by
+following a data-flow trail from the already-confirmed movement pipeline --
+not a rediscovery of, a step toward, or any kind of reopening of this
+project's own **permanently removed** aim-assist feature (see the main
+`CLAUDE.md`'s "Aim-assist target" entry, 2026-07-20: reversed and
+permanently removed, explicitly "not a 'not yet done' item, it's a closed,
+deliberately-abandoned one," and not to be resurrected without a fresh,
+explicit risk discussion). Documenting that the native engine has its own
+aim-assist implementation is ordinary static-RE bookkeeping, exactly the
+same class of finding as this project's own already-documented
+`missileHellfireUpAccel`/Predator Missile constant or `player_sprintUnlimited`
+dvar discoveries -- describing what the retail binary does, not proposing
+this project read live entity/aim-target memory itself. No further detail
+beyond what's needed to close the two open items was extracted, and none of
+it is being carried into any hook-target recommendation.
+
+**Item B -- `DAT_140e1dbb0` and `DAT_140e1dbc4` are two distinct fields, with
+different (though not perfectly disambiguated) roles.** `FindGlobalRefs.java`
+against both addresses individually found both are read-only (no writer
+resolvable via typed references, the same static wall other per-player mode
+bytes in this binary have hit) by the same two functions
+(`FUN_1400cfce0`, `FUN_1400d0be0`), plus `FUN_1400d0050` reads `dbb0` alone
+-- consistent with both sitting in one small per-player "input mode" state
+cluster, but re-reading each one's OWN specific usage separately (not just
+noting proximity) gives each a distinct, reasonably-supported role:
+
+- **`DAT_140e1dbb0[player]`**: in `FUN_1400d0050`, this is the actual
+  decision bit for whether raw mouse-Y drives look-pitch (0, normal
+  mouselook) or `usercmd_t.rightmove`/strafe (nonzero) -- the real,
+  runtime per-player instance of x86 MP's own documented "mouse Y as
+  movement vs. look pitch" freelook branching, not just the static
+  `cl_freelook` dvar value (which is checked separately, elsewhere).
+- **`DAT_140e1dbc4[player]`**: in `FUN_1400d0be0`, gates whether
+  `cl_anglespeedkey`'s multiplier ("Multiplier for max angle speed for game
+  pad and keyboard," per its own registration string) applies to the
+  digital-look angle-speed calculation -- consistent with a "digital/
+  keyboard-arrow-key look active this frame" flag, since that dvar's own
+  description only makes sense applied to discrete key input, not
+  continuous mouse/analog-stick deltas.
+
+**Honest residual ambiguity, not papered over**: section 4-1's ADS
+discussion also found `DAT_140e1dbc4[player]` compared directly against the
+ADS candidate `DAT_140e1df60` inside `FUN_1400cfce0`. Given the
+"digital-look-active" reading above, that specific comparison's exact
+intent (why would ADS state be checked against digital-look-active
+specifically?) is not fully explained by either role alone -- either the
+byte genuinely serves double duty in a way this pass didn't fully trace, or
+one of the two readings is incomplete. Recorded honestly as still open,
+rather than forcing a clean answer neither piece of evidence fully
+supports. This does not roll back section 4-1's own conclusion (the
+edge-detection SHAPE of that comparison is real regardless of exactly what
+`dbc4` represents) -- it's a refinement flag on the supporting detail, not
+a retraction.
 
 ---
 
