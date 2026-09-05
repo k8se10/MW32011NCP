@@ -1,0 +1,6 @@
+=== Reference counts per global ===
+perk_streak_table (14054a600): 1 references
+
+=== Candidate functions, ranked by distinct global diversity (1) ===
+
+---- FUN_140276380 @ 140276380 (globals: perk_streak_table) ----

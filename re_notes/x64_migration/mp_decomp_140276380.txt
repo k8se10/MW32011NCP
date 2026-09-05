@@ -1,0 +1,220 @@
+================================================================
+Function: FUN_140276380 @ 140276380
+Signature: undefined FUN_140276380(void)
+----------------------------------------------------------------
+
+undefined8 FUN_140276380(undefined8 param_1,undefined8 param_2,undefined4 param_3,char param_4)
+
+{
+  char cVar1;
+  char cVar2;
+  int iVar3;
+  undefined8 uVar4;
+  longlong lVar5;
+  char *pcVar6;
+  char *pcVar7;
+  uint uVar8;
+  ulonglong uVar10;
+  char **ppcVar11;
+  undefined **ppuVar12;
+  int local_res20 [2];
+  undefined1 *local_148;
+  undefined1 *local_140;
+  undefined1 *local_138;
+  undefined1 *local_130;
+  undefined8 local_128;
+  char *local_120 [4];
+  char *local_100;
+  char *local_f8;
+  char *local_f0;
+  undefined1 local_e8 [32];
+  undefined1 local_c8 [32];
+  undefined1 local_a8 [32];
+  undefined1 local_88 [32];
+  undefined1 local_68 [64];
+  ulonglong uVar9;
+  
+  local_148 = local_c8;
+  pcVar7 = "privateMatchCustomClasses";
+  local_140 = local_a8;
+  local_138 = local_88;
+  local_130 = local_68;
+  local_128 = 0;
+  if (param_4 == '\0') {
+    pcVar7 = "customClasses";
+  }
+  FUN_14032be10(local_c8,pcVar7,0x20);
+  uVar4 = FUN_14032cde0(&DAT_140449da4,param_3);
+  FUN_14032be10(local_a8,uVar4,0x20);
+  FUN_14032be10(local_88,"perks",0x20);
+  ppcVar11 = local_120;
+  uVar9 = 0;
+  do {
+    uVar4 = FUN_14032cde0(&DAT_140449da4,uVar9);
+    FUN_14032be10(local_68,uVar4,0x20);
+    FUN_14031f250(param_1,local_e8);
+    cVar2 = FUN_14031f690(local_e8,&local_148,4,local_res20);
+    if (cVar2 == '\0') {
+      FUN_14026fab0(1,"Error getting persistent data: see console\n");
+    }
+    if (local_res20[0] != 4) {
+      FUN_14026fab0(1,"Error setting persistent data: incorrect number of arguments; see console\n")
+      ;
+    }
+    iVar3 = FUN_14031f110(local_e8);
+    if (iVar3 == 2) {
+      pcVar7 = (char *)FUN_14031f200(local_e8,param_2);
+    }
+    else {
+      FUN_14026fab0(1,
+                    "Error getting persistent data: result type was a %i, expected string; see console\n"
+                    ,iVar3);
+      pcVar7 = "";
+    }
+    *ppcVar11 = pcVar7;
+    uVar8 = (int)uVar9 + 1;
+    uVar9 = (ulonglong)uVar8;
+    ppcVar11 = ppcVar11 + 1;
+  } while ((int)uVar8 < 7);
+  ppuVar12 = &PTR_s_frag_grenade_mp_14054a5a0;
+  do {
+    pcVar7 = local_120[0];
+    do {
+      cVar2 = *pcVar7;
+      cVar1 = pcVar7[(longlong)*ppuVar12 - (longlong)local_120[0]];
+      if (cVar2 != cVar1) break;
+      pcVar7 = pcVar7 + 1;
+    } while (cVar1 != '\0');
+    if (cVar2 == cVar1) {
+      ppuVar12 = &PTR_s_specialty_paint_14054a5d0;
+      do {
+        pcVar7 = local_120[1];
+        do {
+          cVar2 = *pcVar7;
+          cVar1 = pcVar7[(longlong)*ppuVar12 - (longlong)local_120[1]];
+          if (cVar2 != cVar1) break;
+          pcVar7 = pcVar7 + 1;
+        } while (cVar1 != '\0');
+        if (cVar2 == cVar1) {
+          ppuVar12 = &PTR_s_specialty_quickdraw_14054a5f8;
+          do {
+            pcVar7 = local_120[2];
+            do {
+              cVar2 = *pcVar7;
+              cVar1 = pcVar7[(longlong)*ppuVar12 - (longlong)local_120[2]];
+              if (cVar2 != cVar1) break;
+              pcVar7 = pcVar7 + 1;
+            } while (cVar1 != '\0');
+            if (cVar2 == cVar1) {
+              ppuVar12 = &PTR_s_specialty_autospot_14054a620;
+              do {
+                pcVar7 = local_120[3];
+                do {
+                  cVar2 = *pcVar7;
+                  cVar1 = pcVar7[(longlong)*ppuVar12 - (longlong)local_120[3]];
+                  if (cVar2 != cVar1) break;
+                  pcVar7 = pcVar7 + 1;
+                } while (cVar1 != '\0');
+                if (cVar2 == cVar1) {
+                  iVar3 = strcmp(local_100,"specialty_null");
+                  if (iVar3 != 0) {
+                    return 0;
+                  }
+                  ppuVar12 = &PTR_s_flash_grenade_mp_14054a650;
+                  do {
+                    pcVar7 = local_f0;
+                    do {
+                      cVar2 = *pcVar7;
+                      cVar1 = pcVar7[(longlong)*ppuVar12 - (longlong)local_f0];
+                      if (cVar2 != cVar1) break;
+                      pcVar7 = pcVar7 + 1;
+                    } while (cVar1 != '\0');
+                    if (cVar2 == cVar1) {
+                      iVar3 = strcmp(local_f8,"streaktype_specialist");
+                      if (((iVar3 != 0) &&
+                          (iVar3 = strcmp(local_f8,"streaktype_support"), iVar3 != 0)) &&
+                         (iVar3 = strcmp(local_f8,"streaktype_assault"), iVar3 != 0)) {
+                        return 0;
+                      }
+                      FUN_14032be10(local_88,"assaultStreaks",0x20);
+                      cVar2 = FUN_140278e50(param_1,param_2,local_c8,&local_148,&PTR_DAT_14054a690,
+                                            0xf,param_3,0,local_120);
+                      if (cVar2 == '\0') {
+                        return 0;
+                      }
+                      FUN_14032be10(local_88,"defenseStreaks",0x20);
+                      cVar2 = FUN_140278e50(param_1,param_2,local_c8,&local_148,
+                                            &PTR_s_uav_support_14054a710,0xc,param_3,0,local_120);
+                      if (cVar2 == '\0') {
+                        return 0;
+                      }
+                      FUN_14032be10(local_88,"specialistStreaks",0x20);
+                      cVar2 = FUN_140278e50(param_1,param_2,local_c8,&local_148,
+                                            &PTR_s_specialty_longersprint_ks_14054a770,0xe,param_3,1
+                                            ,local_120);
+                      if (cVar2 == '\0') {
+                        return 0;
+                      }
+                      FUN_14032be10(local_88,"deathstreak",0x20);
+                      pcVar7 = (char *)FUN_14027b9e0(&local_148,3,param_2,param_1);
+                      ppuVar12 = &PTR_s_specialty_juiced_14054a7e0;
+                      do {
+                        pcVar6 = pcVar7;
+                        do {
+                          cVar2 = *pcVar6;
+                          cVar1 = pcVar6[(longlong)*ppuVar12 - (longlong)pcVar7];
+                          if (cVar2 != cVar1) break;
+                          pcVar6 = pcVar6 + 1;
+                        } while (cVar1 != '\0');
+                        if (cVar2 == cVar1) {
+                          FUN_14032be10(local_88,"specialGrenade",0x20);
+                          lVar5 = FUN_14027b9e0(&local_148,3,param_2,param_1);
+                          uVar9 = 0;
+                          do {
+                            uVar10 = uVar9 + 1;
+                            if (*(char *)(lVar5 + uVar9) != (&DAT_140448db4)[uVar9]) {
+                              return 0;
+                            }
+                            uVar9 = uVar10;
+                          } while (uVar10 != 5);
+                          return 1;
+                        }
+                        ppuVar12 = ppuVar12 + 1;
+                        if (0x14054a80f < (longlong)ppuVar12) {
+                          return 0;
+                        }
+                      } while( true );
+                    }
+                    ppuVar12 = ppuVar12 + 1;
+                    if (0x14054a68f < (longlong)ppuVar12) {
+                      return 0;
+                    }
+                  } while( true );
+                }
+                ppuVar12 = ppuVar12 + 1;
+                if (0x14054a647 < (longlong)ppuVar12) {
+                  return 0;
+                }
+              } while( true );
+            }
+            ppuVar12 = ppuVar12 + 1;
+            if (0x14054a61f < (longlong)ppuVar12) {
+              return 0;
+            }
+          } while( true );
+        }
+        ppuVar12 = ppuVar12 + 1;
+        if (0x14054a5f7 < (longlong)ppuVar12) {
+          return 0;
+        }
+      } while( true );
+    }
+    ppuVar12 = ppuVar12 + 1;
+    if (0x14054a5cf < (longlong)ppuVar12) {
+      return 0;
+    }
+  } while( true );
+}
+
+
+

@@ -1,0 +1,19 @@
+STRING @ 14046f610 = "sentry"
+  from 140189fe7 type=DATA IN FUNCTION FUN_1401899e0@1401899e0
+  (1 references)
+
+STRING @ 140472c68 = "airstrike"
+  from 1401a0bc0 type=DATA IN FUNCTION FUN_1401a0b90@1401a0b90
+  from 1401a0bc7 type=DATA IN FUNCTION FUN_1401a0b90@1401a0b90
+  from 1401a0c43 type=PARAM IN FUNCTION FUN_1401a0b90@1401a0b90
+  (3 references)
+
+STRING @ 14048f4e0 = "predator_missile"
+  from 14054a6a8 type=DATA IN DATA
+  (1 references)
+
+STRING @ 14048f57c = "ac130"
+  from 14054a6e8 type=DATA IN DATA
+  (1 references)
+
+Total matching strings: 4
