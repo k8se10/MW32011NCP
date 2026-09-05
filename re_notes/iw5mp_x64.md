@@ -30,7 +30,7 @@ below without re-running Ghidra.
 
 ---
 
-## Status: Movement/look pipeline confirmed (Session 2); both Session 2 open items resolved (Session 3), including a significant side-discovery (the game's own native aim-assist function, `AimAssist_GetTagPos`-anchored) that turned out to explain a usercmd_t field this project had mis-read as an angle write. Key-event -> gameplay-bind dispatch chain (Session 1) and movement/look pipeline (Session 2) are both static-confirmed. ADS candidate (case 0x43/0x44) has real corroborating evidence with one honestly-flagged residual ambiguity; killstreak/loadout-slot candidate (cases 0xf-0x1a) reinforced but not yet name-confirmed. No case is asserted "confirmed by name" beyond the 4 already found via literal command string in Session 1.
+## Status: Session 3 complete. Both Session 2 open items resolved (including a significant side-discovery -- the game's own native aim-assist function, `AimAssist_GetTagPos`-anchored -- that explained a usercmd_t field this project had mis-read as an angle write). Killstreak/loadout 6-slot family (cases 0xf-0x1a) now has a real name anchor: "type 2" slots resolve with high confidence to MW3's own `assaultStreaks` killstreak category. Key-event dispatch chain (Session 1) and movement/look pipeline (Session 2) remain static-confirmed. ADS candidate (case 0x43/0x44) has real corroborating evidence with one honestly-flagged residual ambiguity. No dispatch case is asserted "confirmed by name" beyond the 4 command-string cases (Session 1) and the assaultStreaks-category evidence (Session 3) -- movement-critical cases (Fire/ADS/Sprint/Reload) remain candidates pending live verification, per this project's own issue #3 policy.
 
 This session started from string anchors (bind-name literals: `+attack`,
 `+sprint`, `+holdbreath`, `+frag`, `+gostand`, etc.) rather than trying to
@@ -337,7 +337,7 @@ All addresses are per-player base; actual runtime address is
 | 0x47/0x48 (down/up) | none (calls `FUN_140090c80`/`FUN_140090d20(player)` directly, no kbutton at all) | one-shot start/stop pair | A distinct case TYPE, not a raw kbutton -- worth remembering when a future pass extends this table, since not every case follows the kbutton pattern. |
 | 0x4b (down only, no matching up) | `FUN_1400d71b0(player)` | one-shot | -- |
 | 0x4c / 0x50 | `FUN_14007f5b0(player, 1)` / `FUN_14007f5b0(player, 0)` | boolean set/clear | -- |
-| **0xf/0x10 .. 0x19/0x1a** (6 parameterized slots) | `FUN_14007c5b0(player, N)` / `FUN_14007c760(player, N)`, N=0..5 | **parameterized slot family, 6 slots** | **First real look taken this pass (Session 2, section 4-2 below) -- structural read REINFORCED, not refuted, by a second independent function cluster (HUD-prompt rendering).** Directly relevant to this project's own stated MP motivation. |
+| **0xf/0x10 .. 0x19/0x1a** (6 parameterized slots) | `FUN_14007c5b0(player, N)` / `FUN_14007c760(player, N)`, N=0..5 | **parameterized slot family, 6 slots** | **Name-anchored (Session 3, section 4-3): "type 2" slot handling resolves with high confidence to MW3's real `assaultStreaks` killstreak category** (exact 15-entry count match to a table a real loadout-validator function names explicitly), not just a structural shape. "Type 1"/"type 3" still unresolved to a category name. Directly relevant to this project's own stated MP motivation. |
 | `"+chatmodepublic"`-adjacent: 0x4e | `FUN_140262850(player, "chatmodepublic\n")` | one-shot command string | **Confirmed by literal command string** -- real Cbuf_AddText call, not a kbutton. |
 | 0x4f | `FUN_140262850(player, "chatmodeteam\n")` | one-shot command string | **Confirmed by literal command string.** |
 | 0x58 | `FUN_140262850(player, "vote yes\n")` (gated on an active-vote check) | one-shot command string | **Confirmed by literal command string.** |
@@ -460,17 +460,89 @@ during a specific game mode/context). Decompiling `FUN_140059710` shows it:
 - Ends by calling the same HUD-prompt draw primitive (`FUN_1402fd6f0`)
   section 2 already confirmed for on-screen button-prompt icons.
 
-**Verdict**: the structural read from Session 1 (an item/equipment-slot
-system, killstreak-shaped) is **reinforced, not refuted** -- two
-independent function clusters (gameplay dispatch AND HUD-prompt rendering)
-both consume the same three globals the same way, and the item-name-prefix
-check confirms real game-item references are involved. **Still not
-resolved to "killstreak specifically" vs. "general equipment/lethal-
-tactical/killstreak slots collectively"** -- no `"killstreak"`-literal
-string anchor was found pointing directly at this cluster this pass, and
-the type-1/2/3 per-slot distinction (cycle-with-hold vs. single-delegate
-vs. flag-set) hasn't been mapped to real category names. A reasonable
-next-session target, not resolved further here per the task's own scope.
+**Verdict from Session 2**: the structural read from Session 1 (an item/
+equipment-slot system, killstreak-shaped) is **reinforced, not refuted** --
+two independent function clusters (gameplay dispatch AND HUD-prompt
+rendering) both consume the same three globals the same way, and the
+item-name-prefix check confirms real game-item references are involved.
+
+### 4-3. Cases 0xf-0x1a: real category name found (Session 3) -- "type 2" slots resolved to MW3's Assault Streak system, with high confidence
+
+A genuine `"killstreak"`-literal string search (`FindExactStrings.java` for
+`killstreak`, `airstrike`, `uav`, `sentry`, `predator_missile`, `ac130`,
+and a dozen more real MW3 killstreak internal names) found real hits, and
+following the data table two of them (`predator_missile`, `ac130`) sit in
+led to a genuine, unambiguous confirmation. Full raw output:
+`re_notes/x64_migration/mp_killstreak_strings.txt`,
+`mp_killstreak_table_qwords.txt`, `mp_decomp_140276380.txt`.
+
+`DumpRawQwords.java` over the table those two strings' pointers sit in
+(`0x14054a600`-`0x14054a900`) revealed a large, contiguous, real MW3
+content-name table: perks (`specialty_hardline`, `specialty_stalker`,
+`specialty_scrambler`, ...), killstreaks (`predator_missile`, `ac130`,
+`uav_support`, `counter_uav`, `precision_airstrike`, `airdrop_juggernaut`,
+`remote_mg_turret`, `sam_turret`, `escort_airdrop`, `osprey_gunner`,
+`littlebird_flock`, `remote_mortar`, ...), killstreak-unlock perks
+(`specialty_longersprint_ks`, `specialty_fastreload_ks`, ...), and
+deathstreaks (`specialty_juiced`, `specialty_revenge`, `specialty_finalstand`,
+`specialty_c4death`, `specialty_grenadepulldeath`) -- genuine retail MW3
+content data, not a coincidental string cluster.
+
+**The decisive find**: this table has exactly one direct code reference,
+`FUN_140276380` -- a real challenge/achievement-style **loadout validator**
+that checks a player's saved custom class against specific criteria. Its own
+literal string labels name the table's sub-ranges explicitly:
+
+```c
+FUN_14032be10(local_88,"assaultStreaks",0x20);
+cVar2 = FUN_140278e50(param_1,param_2,local_c8,&local_148,&PTR_DAT_14054a690,
+                      0xf,param_3,0,local_120);          // 15 entries
+...
+FUN_14032be10(local_88,"defenseStreaks",0x20);
+cVar2 = FUN_140278e50(...,&PTR_s_uav_support_14054a710,0xc,...);   // 12 entries
+...
+FUN_14032be10(local_88,"specialistStreaks",0x20);
+cVar2 = FUN_140278e50(...,&PTR_s_specialty_longersprint_ks_14054a770,0xe,...); // 14 entries
+...
+FUN_14032be10(local_88,"deathstreak",0x20);
+```
+
+**`&PTR_DAT_14054a690`, the real "assaultStreaks" table, has exactly `0xf`
+(15) entries** -- an EXACT count match to `FUN_140059710`'s own confirmed
+"type 2" slot-lookup array (`&DAT_1405a6344`, bound `0xf`, from section 4-2
+above), which walks the same structure shape (linear scan for a matching
+item ID) for the same reason (resolving which killstreak the player has
+equipped in a given slot). **This is a real, named category confirmation**,
+not a table-position guess: MW3's own three killstreak play-style trees are
+literally named `assaultStreaks` (traditional streak-count killstreaks --
+UAV, Predator Missile, AC-130, etc.), `defenseStreaks` (Support-style,
+count resets on death, e.g. `uav_support`, `sam_turret`, `remote_mg_turret`),
+and `specialistStreaks` (Specialist-style, perk-based rather than
+kill-count-based, e.g. `specialty_longersprint_ks`) -- console MW3's real,
+documented Create-a-Class killstreak-tree choice.
+
+**Honest caveat on the remaining gap**: `DAT_1405a6344` (the runtime array
+`FUN_140059710` actually walks) and `&PTR_DAT_14054a690` (the static
+content-name table `FUN_140276380` names) are NOT the same memory address --
+the static table is compile-time asset-name data (`0x14054axxx` region), the
+runtime array is very likely a per-loadout CACHE built from it when a match/
+class loads (a live-populated array of resolved killstreak entries at a
+completely different, dynamically-allocated-looking address,
+`0x1405a6xxx`). **The exact runtime code that populates `DAT_1405a6344` from
+this static table was not traced this pass** -- the identity claim rests on
+the count match (15, an unusual and specific number unlikely to coincide by
+chance) plus both consuming the same "linear-scan for a matching item ID,
+resolve a display name" shape, not a direct pointer-chase proof. Treat as
+**high confidence, not a certainty** -- a reasonable, well-evidenced
+stopping point for this pass, with the exact runtime-population code as the
+natural next step if full certainty is ever needed.
+
+**Net effect on the original task-3 question**: the 6-slot family (cases
+0xf-0x1a) is now name-anchored, not just structurally reinforced --
+"type 2" slots resolve to MW3's real Assault Streak system with high
+confidence. "Type 1" and "type 3" slot semantics (the other two branches in
+`FUN_14007c5b0`) remain unresolved to a specific category by name -- a
+reasonable follow-up, not attempted further this pass.
 
 ### `FUN_1400c3290` -- confirmed Killcam/Theater-mode dispatcher (x86 `FUN_006ada70` analog)
 
@@ -749,13 +821,14 @@ a retraction.
 
 ## Signature-Scanning Readiness
 
-**Status: ~60% ready** (updated Session 2 -- both the button/dispatch chain
-AND the movement/look pipeline are now static-confirmed, matching or
-exceeding x86 MP's own "~55%" figure reached after 6 sessions, in two
+**Status: ~65% ready** (updated Session 3 -- both movement-pipeline open
+items resolved for real, and the killstreak-slot family upgraded from
+"structurally reinforced" to a real, high-confidence category-name match.
+Exceeds x86 MP's own "~55%" figure reached after 6 sessions, in three
 sessions here. The remaining gap is case-to-real-bind-NAME confirmation for
-the movement-critical dispatch cases, and two open reconciliation items in
-the movement pipeline itself -- not missing mechanism, missing final
-identity/detail confirmation).
+the movement-CRITICAL dispatch cases specifically (Fire/ADS/Sprint/Reload)
+-- not missing mechanism, missing final identity confirmation, which per
+this project's own issue #3 policy may be gated on live verification).
 
 - Bind-name table + lookup/resolver (`FUN_1400b5cf0`, `FUN_1400b4800`) [OK] confirmed
 - Controls-menu rebind flow, alias-cluster/KEY_OR display [OK] confirmed UI-only, correctly not pursued as hook targets (mirrors x86 MP's own already-closed dead end)
