@@ -69,6 +69,39 @@ progress.
    confirmed root-cause fix, since x64's own GSC-side behavior hasn't been
    independently re-verified to share the same gap x86 did. Full trail in
    `re_notes/known_issues_x64.md` issue #1.
+5. **Plugin API ported to x64.** The loading infrastructure
+   (`mw3ncp_plugin_api.h`, `plugin_loader.h`/`.cpp`) needed no code changes
+   at all — it was already architecture-neutral and already compiled
+   unconditionally for both platforms; its dependencies (`GetGameWindow()`
+   and friends) were already confirmed working live on x64 by other
+   features in this line. The bundled RGB Text example plugin's own build
+   did need a new `x64` project configuration, since a plugin DLL must
+   match the bitness of the process it loads into — the old Win32-only
+   build could never have loaded into today's x64 game. Build-verified on
+   both platforms (0 errors, correct exports confirmed via `dumpbin`).
+   **Not yet live-tested** — deploying and confirming a real plugin loads
+   against the live x64 game is still open. Full trail in
+   `re_notes/known_issues_x64.md` issue #1.
+6. **Sniper Fire/ADS fix attempt: reliable-command notify now fires for
+   controller Fire/ADS.** RE work found x64's real case dispatcher
+   (`FUN_14007c3a0`) sends a client→server reliable-command notification
+   (`FUN_14007fc00`, confirmed via decompile) for every real bind
+   press/release before running the bind's own logic — including Fire
+   (case 1/2) and ADS (case 0xd/0xe), confirmed by matching their kbutton
+   struct addresses against this project's own already-resolved pointers.
+   Controller Fire/ADS call the real kbutton handlers directly, bypassing
+   this dispatcher entirely, so that notify never fires — the same gap
+   x86's own research already flagged and never confirmed for
+   `notifyonplayercommand`-gated GSC logic (Predator Missile section,
+   `re_notes/iw5sp.md`, 2026-07-17). Leading hypothesis: a sniper-class
+   weapon's bolt-action/scope state machine needs this notify where most
+   other weapon classes don't. Fix is purely additive — the same notify
+   call now fires alongside the existing kbutton calls, resolved as a
+   fixed function-offset from the already-resolved stance-dispatch anchor,
+   with zero change to the kbutton logic itself. Build-verified on both
+   platforms. **Not yet live-tested — this is a fix ATTEMPT, not a
+   confirmed resolution.** Full trail in `re_notes/known_issues_x64.md`
+   issue #1.
 
 ### Documentation
 1. **All `-x86` support discontinued, effective 2026-09-03.** `v0.2.2-x86`
