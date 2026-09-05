@@ -1934,3 +1934,81 @@ set `[Plugins] Enabled=1` in `mw3ncp_config.ini`, and confirm live that
 every piece of text/glyph this mod draws actually rainbow-cycles --
 this is also this project's own live-verification vehicle for the API
 itself, per the plugin's own header comment.
+
+**Sniper Fire/ADS -- first real fix attempt, same day, root-cause investigation
+resumed in parallel with the three forks above -- BUILD-VERIFIED, NOT YET
+LIVE-TESTED.** Picked back up exactly where the docs/ETA pause left off:
+decompiled `FUN_14007fc00` (the per-case "pre-call" every case in
+`FUN_14007c3a0`/`g_stanceDispatch` makes when `param_2 != 0`, flagged as an
+unconfirmed hypothesis before the pause) via a headless Ghidra
+`DecompileAt.java` run against `iw5sp_x64_proj`.
+
+**What `FUN_14007fc00` actually is, now confirmed, not guessed:** a real
+client->server RELIABLE COMMAND send, matching this engine family's classic
+Quake3-descended reliable-command channel exactly. Gated on a real
+connection-state check (`FUN_14026afa0`: `DAT_142533370 == 2`) and a
+demo/override-flag check (`FUN_140265a20`), it formats the case number into a
+short string (`"n %i"` -- confirmed via `ReadStringAt.java`/`DumpRawBytes.java`,
+a genuinely standalone literal, MSVC tail-merged in the same string pool as
+`"cubemapShot"` and others) and calls `FUN_14007fb30`, which writes it into a
+128-entry ring buffer (`(seq+1) & 0x7f`, per-client stride `0x3618`) with the
+exact `"EXE_ERR_CLIENT_CMD_OVERFLOW"` overflow message this engine's own
+reliable-command mechanism uses. In plain terms: every real bind press/release
+(including a real keyboard `+attack`/`+ads`) tells the game's own (local,
+loopback) server "bind N fired," entirely separately from raw `usercmd_t`
+button state.
+
+**Case numbers for Fire/ADS confirmed by address match, not position** --
+directly applying the standing compare-to-x86-original discipline (x86's own
+issue #3: never trust a bind-index as a case number without independent
+confirmation). Case 1/2 in `FUN_14007c3a0` call the real kbutton
+activate/deactivate pair on `&DAT_140644818` -- the EXACT address
+`kFireStructInsnOffset` already resolves to `g_fireStruct`. Case 0xd/0xe call
+the same pair on `&DAT_1406448e0` -- the EXACT address `kAdsStructInsnOffset`
+already resolves to `g_adsStruct` (case 0xd/0xe also clear the ads-toggle-flag
+byte first, matching this project's own `g_adsToggleFlag` handling exactly).
+Confirmed: **case 1 = "+attack" down, case 2 = "-attack" up, case 0xd =
+"+ads" down, case 0xe = "-ads" up.**
+
+**Why this matters -- the same gap x86's own research already flagged and
+never confirmed.** `re_notes/iw5sp.md`'s Predator Missile section (2026-07-17)
+already raised this exact hypothesis for x86, months before x64 existed:
+"this project's Fire (RT) is raw `usercmd_t` button bits, not a synthesized
+`+attack` bind/command execution. If `notifyonplayercommand` only fires on
+real bind/command dispatch (not raw usercmd bits), that directly explains
+[a GSC-side gate never firing]... Worth a native-side check... before
+assuming this is the whole story" -- flagged, never independently confirmed,
+on either binary, until now. `notifyonplayercommand`/`notifyoncommand` are
+already confirmed (same file) as the general native<->GSC bridge for
+player-triggered actions. x64's own Fire/ADS implementation (like x86's) calls
+the real kbutton activate/deactivate handlers DIRECTLY, bypassing
+`FUN_14007c3a0` entirely -- so this reliable-command notify never fires for
+controller Fire/ADS, unlike a real keyboard press. **Leading hypothesis, not
+yet confirmed**: a sniper-class weapon's bolt-action/scope state machine is
+plausibly the one weapon class whose GSC/native logic needs this notify
+(a "+attack"/"+ads" bind literally happened) where most other weapon classes
+evidently don't.
+
+**Fix, deliberately minimal and additive.** Resolved `FUN_14007fc00`'s real
+address as a fixed function-to-function byte offset from the already-resolved
+`g_stanceDispatch` anchor (`0x14007fc00 - 0x14007c3a0 = 0x3860`) -- the same
+anchor-plus-fixed-offset pattern this file already uses everywhere for
+struct/field offsets, here applied to a CODE offset instead of a data offset
+for the first time (holds for the identical reason: both addresses are fixed
+positions within the same static PE image, differing only by the one ASLR
+base that cancels out in the subtraction). Calls the resolved function
+(`g_notifyBindDispatch`) with the confirmed case number on every Fire/ADS
+down/up edge, alongside (never instead of) the existing direct kbutton calls
+-- if the hypothesis is wrong, the extra notify is inert; the proven-working
+kbutton logic is completely untouched.
+
+**Build-verified**: x64 `/t:Rebuild` (0 errors) -> `dumpbin /headers`
+confirmed `8664 machine (x64)` with a fresh `LastWriteTime` -> Win32
+regression rebuild (0 errors, `analog_input_hooks_x64.cpp` correctly excluded
+from the Win32 compile, no regression). **NOT YET LIVE-TESTED -- this is a
+fix ATTEMPT, not a confirmed root-cause resolution.** Next step when the user
+next plays with a sniper-class weapon: confirm Fire/ADS now work, and that
+non-sniper weapon classes show no regression. If the symptom persists, the
+next RE angle is tracing `FUN_14007fb30`'s ring-buffer consumer server-side
+(who reads `"n %i"` off the reliable-command queue and what it does with it)
+rather than assuming the notify alone was sufficient.
