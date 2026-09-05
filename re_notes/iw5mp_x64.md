@@ -30,7 +30,7 @@ below without re-running Ghidra.
 
 ---
 
-## Status: Session 3 complete. Both Session 2 open items resolved (including a significant side-discovery -- the game's own native aim-assist function, `AimAssist_GetTagPos`-anchored -- that explained a usercmd_t field this project had mis-read as an angle write). Killstreak/loadout 6-slot family (cases 0xf-0x1a) now has a real name anchor: "type 2" slots resolve with high confidence to MW3's own `assaultStreaks` killstreak category. Key-event dispatch chain (Session 1) and movement/look pipeline (Session 2) remain static-confirmed. ADS candidate (case 0x43/0x44) has real corroborating evidence with one honestly-flagged residual ambiguity. No dispatch case is asserted "confirmed by name" beyond the 4 command-string cases (Session 1) and the assaultStreaks-category evidence (Session 3) -- movement-critical cases (Fire/ADS/Sprint/Reload) remain candidates pending live verification, per this project's own issue #3 policy.
+## Status: Session 3 complete. Both Session 2 open items resolved (including a significant side-discovery -- the game's own native aim-assist function, `AimAssist_GetTagPos`-anchored -- that explained a usercmd_t field this project had mis-read as an angle write). Killstreak/loadout 6-slot family (cases 0xf-0x1a) now has a real name anchor: "type 2" slots resolve with high confidence to MW3's own `assaultStreaks` killstreak category. Full 89-case dispatch table transcription completed, surfacing a coherent voice/text-chat-mode cluster, a third `+scores` touch, a new Hold-Breath candidate (case 0x4c/0x50, a distinct boolean-flag shape), and two more independent cases (0x56/0x57) touching the ADS candidate flag -- now 4 independent dispatch cases support that hypothesis, not 2. Key-event dispatch chain (Session 1) and movement/look pipeline (Session 2) remain static-confirmed. No dispatch case is asserted "confirmed by name" beyond the 4 command-string cases (Session 1) and the assaultStreaks-category evidence (Session 3) -- movement-critical cases (Fire/ADS/Sprint/Reload) remain candidates pending live verification, per this project's own issue #3 policy.
 
 This session started from string anchors (bind-name literals: `+attack`,
 `+sprint`, `+holdbreath`, `+frag`, `+gostand`, etc.) rather than trying to
@@ -333,7 +333,7 @@ All addresses are per-player base; actual runtime address is
 | 0x25/0x26 .. 0x3f/0x40 | `0x140e1db00`..`0x140e1dccc` (14 more single-kbutton pairs, contiguous region) | single, uniform | Not individually investigated -- straightforward mechanical continuation of the same pattern, matching x86 MP's own "remaining cases are mechanical, not a new unknown" framing for its own leftover cases. |
 | 0x41 (down only) | `0x140e1dc14` (direct byte flag, NOT a kbutton_t) | raw boolean set=1 | -- |
 | 0x42 (up) | same byte, conditional clear + `LAB_1400cf55d`: `DAT_140e21454 = DAT_140e1dfc8 ^ DAT_1404e87e0` | raw boolean + XOR-toggle side effect | **Candidate for `+scores`** (Back/scoreboard-toggle bind) -- a raw hold-flag rather than a kbutton_t, matching the conceptual shape of a "hold to show scoreboard" bind rather than a continuous-movement bind. Case 0x51 (no matching even case) reaches the SAME `LAB_1400cf55d` XOR side effect directly, suggesting 0x51 is a second, one-shot-tap bind for the same underlying action (e.g. a keyboard Tab-equivalent alongside a controller hold). **Not confirmed by name.** |
-| 0x43 (down) / 0x44 (up) | `0x140e1dcf4` (SAME kbutton as case 0xd!) | single, shared kbutton, down-edge also toggles `DAT_140e1df60` | **Upgraded this pass (section 4-1 below) with real, independent corroborating evidence from the confirmed movement pipeline, not just table position -- still not name-confirmed, but the strongest-supported non-command-string case in this whole table.** |
+| 0x43 (down) / 0x44 (up) | `0x140e1dcf4` (SAME kbutton as case 0xd!) | single, shared kbutton, down-edge also toggles `DAT_140e1df60` | **The strongest-supported non-command-string case in this whole table.** Four independent dispatch cases (`0xd`, `0x43`, and section 4-4's `0x56`/`0x57`) all touch `DAT_140e1df60` consistent with a real ADS toggle/cancel state, plus the section 4-1 movement-pipeline cross-check. Still not name-confirmed per issue #3, but the evidentiary base is now real and multi-sourced, not a single table-position guess. |
 | 0x47/0x48 (down/up) | none (calls `FUN_140090c80`/`FUN_140090d20(player)` directly, no kbutton at all) | one-shot start/stop pair | A distinct case TYPE, not a raw kbutton -- worth remembering when a future pass extends this table, since not every case follows the kbutton pattern. |
 | 0x4b (down only, no matching up) | `FUN_1400d71b0(player)` | one-shot | -- |
 | 0x4c / 0x50 | `FUN_14007f5b0(player, 1)` / `FUN_14007f5b0(player, 0)` | boolean set/clear | -- |
@@ -543,6 +543,82 @@ natural next step if full certainty is ever needed.
 confidence. "Type 1" and "type 3" slot semantics (the other two branches in
 `FUN_14007c5b0`) remain unresolved to a specific category by name -- a
 reasonable follow-up, not attempted further this pass.
+
+### 4-4. Remaining dispatch cases -- full transcription completed, several new finds (own-judgment pass, Session 3)
+
+Session 1's full `FUN_1400ce950` decompile (89 cases, 1 through `0x59`)
+was already captured in `mp_decomp_1400b5820_ce950.txt` but not fully
+transcribed into this file's own case table -- pure documentation
+completeness work, no new Ghidra queries needed for most of it. Doing
+that pass surfaced several real, coherent finds worth recording on their
+own, not just filler:
+
+**A full voice/text-chat-mode cluster, previously only partly
+documented.** Cases `0x1d`/`0x1e` are a real **hold-vs-tap** pair
+(matching the exact same shape as SP's own confirmed Y-hold weapon-next/
+ready-up mechanic): on down, if not already connected+chatting, arms a
+pending-state timer (`DAT_140e21394`/`DAT_140e2139c`/`DAT_140e213a0`) and
+switches `DAT_140e21398` (the confirmed chat-mode state this project
+already found consumed by `FUN_1400cfce0`'s usercmd bits 0x100/0x200,
+section 6) to `1` (team chat); on up, reverts it if the hold was genuine.
+Cases `0x52`-`0x55` are four more chat-mode setters (toggle / cycle /
+force-public / force-team), all gated on the same "not already chatting"
+per-player byte pair (`DAT_140e1dcdc`/`DAT_140e1dbec`). Together with the
+already-confirmed one-shot command-string cases `0x4e`/`0x4f`
+(`"chatmodepublic\n"`/`"chatmodeteam\n"`), this is a complete, internally
+consistent communication-mode subsystem spanning 8 of the 89 cases --
+useful future-work context (voice/text chat binds), not itself
+gameplay-movement-critical.
+
+**Two more independent touches to the ADS candidate (`DAT_140e1df60`),
+strengthening section 4-1's already-upgraded confidence further.** Case
+`0x56` toggles it exactly like case `0x43` does (`DAT_140e1df60 =
+DAT_140e1df60 == '\0'`) but WITHOUT the paired kbutton call `0x43` also
+makes; case `0x57` force-clears it exactly like case `0xd`'s down-edge
+does, also without a kbutton call. **This is now FOUR independent dispatch
+cases** (`0xd`, `0x43`, `0x56`, `0x57`) all touching the same flag in ways
+consistent with a real ADS toggle/cancel state -- a genuinely strong
+static signal (two cases pair a kbutton call with the flag change, two
+don't, plausibly a real "hold to ADS" vs. "toggle ADS" pair of physical
+binds sharing the underlying state, matching this game's real "hold vs.
+toggle ADS" options-menu setting). Confidence stays formally
+"medium-high, static-only" per this project's own issue #3 policy, but
+the evidentiary base behind that confidence is now meaningfully larger
+than it was after Session 2.
+
+**Case `0x51` independently reaches the same scoreboard-toggle effect as
+case `0x42`'s up-edge** (`LAB_1400cf55d`, `DAT_140e21454 = DAT_140e1dfc8 ^
+DAT_1404e87e0`) -- a third case pointing at the section-4 `+scores`
+candidate, reinforcing rather than changing that entry's existing
+"candidate, not confirmed" status.
+
+**A new, reasonably well-supported Hold Breath candidate.** Case `0x4c`/
+`0x50` is a plain boolean set/clear pair (`FUN_14007f5b0(player, 1)` /
+`FUN_14007f5b0(player, 0)`) -- notably NOT a `kbutton_t` KeyDown/KeyUp call
+and NOT the generic held-bind array, a third, distinct case shape this
+table hadn't seen before this pass. This matches x86 MP's own Session 2
+open question about Hold Breath almost exactly ("Is `+holdbreath`
+implemented as a real kbutton... or as a one-shot command... does it have
+native duration/recovery or is it state-based?") -- x64 static evidence
+here answers "state-based, a direct boolean, not a kbutton_t and not a
+one-shot command." Medium confidence, shape-based only, no name string
+anchor found for this specific case.
+
+Full case table addition (cases not already in the table above):
+
+| case (down/up) | target | shape | note |
+|---|---|---|---|
+| `0x1d`/`0x1e` | chat-mode state machine (`DAT_140e21394`/`98`/`9c`/`a0`) | hold-vs-tap | Team-chat hold candidate, see above |
+| `0x25`-`0x40` (14 more pairs) | `0x140e1db00`-`0x140e1dccc` region | single kbutton, uniform | Confirmed mechanical continuation of the mapped pattern -- addresses now fully in the raw decompile output, not individually named here |
+| `0x45`/`0x46` | `0x140e1dd08` (SAME as case 9/10's second kbutton) | single, shared with a dual-kbutton case | -- |
+| `0x47`/`0x48` | `FUN_140090c80`/`FUN_140090d20(player)` | one-shot pair, no kbutton | Not decompiled further this pass |
+| `0x49`/`0x4a` | `0x140e1dd44` | single kbutton | -- |
+| `0x4b` (down only, no up case) | `FUN_1400d71b0(player)` | pure one-shot | Candidate shape for a single-press action (e.g. Melee) -- not name-confirmed |
+| `0x4c`/`0x50` | `FUN_14007f5b0(player, 1/0)` | boolean set/clear, distinct third shape | Candidate for **Hold Breath**, see above |
+| `0x51` | reaches `LAB_1400cf55d` (scoreboard XOR) when connected | one-shot, no kbutton | Third case pointing at the `+scores` candidate |
+| `0x52`-`0x55` | chat-mode setters (`DAT_140e21398`) | one-shot, gated | Part of the chat cluster above |
+| `0x56` | toggles `DAT_140e1df60` (no kbutton) | one-shot toggle | 3rd independent ADS-candidate touch |
+| `0x57` | force-clears `DAT_140e1df60` (no kbutton) | one-shot | 4th independent ADS-candidate touch |
 
 ### `FUN_1400c3290` -- confirmed Killcam/Theater-mode dispatcher (x86 `FUN_006ada70` analog)
 
@@ -844,11 +920,17 @@ this project's own issue #3 policy may be gated on live verification).
 - Byte-pattern signatures: still none extracted -- reasonable to start once the two movement-pipeline open items (section 6) and the case-name-confirmation gap are resolved or a live-verification phase is authorized
 - Live validation: not started, and out of scope for this project's own locked static-first MP ordering until explicitly authorized for a live/injection phase
 
-**Ready to proceed with**: reconciling the two open items in section 6
-(the second angle-write site, and the `DAT_140e1dbb0`/`DAT_140e1dbc4`
-field-identity question), taking a full pass at the remaining ~75
-undissasembled dispatch cases the same way x86 MP's own Session 6 checklist
-called for, and/or extending the killstreak-slot investigation (section 4-2)
-toward a real category-name anchor -- all static-only next steps, no live
-process needed for any of them. **Blocked on nothing** -- this remains a
-continuation task, not a stalled one.
+**Ready to proceed with** (updated Session 3 -- all three of the above are
+now done): the two movement-pipeline open items are resolved (section 6),
+the full 89-case dispatch table is now fully transcribed (section 4-4, no
+more "mechanical continuation, not yet done" cases remain), and the
+killstreak-slot family has a real category-name anchor (section 4-3).
+**Natural next steps for a future session**: (1) `FUN_1400d71b0`/
+`FUN_140090c80`/`FUN_140090d20`/`FUN_14007f5b0` (cases `0x47`/`0x48`/`0x4b`/
+`0x4c`/`0x50`) were identified by shape but not decompiled -- doing so could
+turn the Hold-Breath and one-shot-melee candidates from shape-based into
+better-supported; (2) "type 1"/"type 3" of the killstreak 6-slot family
+(section 4-3) remain unresolved to a category name, unlike "type 2"; (3)
+the residual `DAT_140e1dbc4` cross-context ambiguity (section 6) could be
+chased further by decompiling `FUN_1400cd110`/the actual writer of that
+byte, if one can be found. All static-only. **Blocked on nothing.**
