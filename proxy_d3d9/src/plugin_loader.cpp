@@ -21,6 +21,35 @@ HMODULE g_loadedPlugins[kMaxPlugins] = {};
 MW3NCP_PluginShutdownFn g_pluginShutdownFns[kMaxPlugins] = {};
 int g_loadedPluginCount = 0;
 
+// ---- "Greenlit" trusted-plugin allowlist (2026-09-05) ----------------------------
+//
+// A small, explicit allowlist of first-party, pre-approved plugin filenames --
+// these load UNCONDITIONALLY, regardless of [Plugins] Enabled, unlike arbitrary
+// third-party plugins (which still require the normal opt-in). Direct instruction:
+// the sibling MW32011NSP project's own security-fix plugin should ship built into
+// this mod by default, not gated behind the same risk-acknowledgment an unknown
+// third-party plugin gets -- see PLUGIN_API.md's own "Greenlit (trusted) plugins"
+// section for the full design and the real caveat this does NOT cover (filename
+// matching is not cryptographic; see that section before assuming this is a
+// security boundary rather than a UX default).
+//
+// Matched case-insensitively against just the filename (not the full path) via
+// _stricmp, since FindFirstFileA/FindNextFileA already scope the scan to the
+// plugins\ folder -- no path-traversal surface here, same as the general scan
+// below.
+constexpr const char* kTrustedPluginFilenames[] = {
+    "mw32011nsp_security.dll",
+};
+constexpr int kTrustedPluginCount = sizeof(kTrustedPluginFilenames) / sizeof(kTrustedPluginFilenames[0]);
+
+bool IsTrustedPluginFilename(const char* filename)
+{
+    for (int i = 0; i < kTrustedPluginCount; ++i) {
+        if (_stricmp(filename, kTrustedPluginFilenames[i]) == 0) return true;
+    }
+    return false;
+}
+
 // ---- MW3NCP_PluginAPI implementations --------------------------------------------
 
 int Plugin_InstallHook(void* target, void* detour, void** outOriginal)
@@ -164,8 +193,11 @@ void TryLoadOnePlugin(const char* fullPath)
 
 void LoadPlugins()
 {
-    if (!g_modConfig.pluginsEnabled) return; // fully inert -- no directory scan at all
-
+    // Unlike before 2026-09-05, this can no longer return early on
+    // !pluginsEnabled -- the plugins\ folder must always be scanned at least once
+    // to find any "greenlit" trusted-filename plugin (see kTrustedPluginFilenames
+    // above), which loads regardless of this flag. The general opt-in scan below
+    // is still fully gated on pluginsEnabled, unchanged from before.
     char dllDir[MAX_PATH];
     GetModuleFileNameA(nullptr, dllDir, MAX_PATH); // full path of the .exe that loaded us
     char* lastSlash = strrchr(dllDir, '\\');
@@ -177,14 +209,31 @@ void LoadPlugins()
     WIN32_FIND_DATAA findData = {};
     HANDLE findHandle = FindFirstFileA(searchPattern, &findData);
     if (findHandle == INVALID_HANDLE_VALUE) {
-        LogFromController("[plugin-loader] PluginsEnabled=1 but no \"plugins\" folder (or no .dll files in it) -- nothing to load");
+        LogFromController(g_modConfig.pluginsEnabled
+            ? "[plugin-loader] PluginsEnabled=1 but no \"plugins\" folder (or no .dll files in it) -- nothing to load"
+            : "[plugin-loader] no \"plugins\" folder (or no .dll files in it) -- no greenlit/trusted plugin found either");
         return;
     }
 
     do {
         if (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+
+        // A single pass handles both paths -- a file is either the one, specific
+        // trusted filename (loaded unconditionally, "greenlit") or an ordinary
+        // plugin (loaded only if the player opted in), never both, so there's no
+        // double-load/double-init risk to guard against separately.
+        bool isTrusted = IsTrustedPluginFilename(findData.cFileName);
+        if (!isTrusted && !g_modConfig.pluginsEnabled) continue;
+
         char fullPath[MAX_PATH];
         sprintf_s(fullPath, "%splugins\\%s", dllDir, findData.cFileName);
+
+        if (isTrusted) {
+            char buf[512];
+            sprintf_s(buf, "[plugin-loader] \"%s\" matches the greenlit/trusted allowlist -- loading regardless of PluginsEnabled (currently %d)",
+                findData.cFileName, g_modConfig.pluginsEnabled ? 1 : 0);
+            LogFromController(buf);
+        }
         TryLoadOnePlugin(fullPath);
     } while (FindNextFileA(findHandle, &findData));
 

@@ -36,7 +36,7 @@ two files already had for #111 before the split.
 
 ## Index
 
-- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **D-pad Left synthetic-key exception AND a sniper Fire/ADS fix attempt both shipped (build-verified, neither live-tested yet); Plugin API ported (build-verified, needed no host code changes); visual-enhancement-suite x64 port attempted TWICE, still blocked on two addresses that resist exhaustive static RE (render-scale, clcState/in-level-flag) — likely needs live tracing, not more static analysis; FXAA/MSAA found to not even exist on x86, out of scope for parity; overlay-render bug fully audited — cursor's own unguarded x86 address landmine found and fixed, rest of the render path confirmed clean; Custom Options screen wired into x64's input pipeline (build-verified, temporary manual open-chord substitute pending a real focus-detection RE pass) — release ETA 2-4 weeks, gated on x86 parity**
+- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **D-pad Left synthetic-key exception AND a sniper Fire/ADS fix attempt both shipped (build-verified, neither live-tested yet); Plugin API ported (build-verified, needed no host code changes); visual-enhancement-suite x64 port attempted TWICE, still blocked on two addresses that resist exhaustive static RE (render-scale, clcState/in-level-flag) — likely needs live tracing, not more static analysis; FXAA/MSAA found to not even exist on x86, out of scope for parity; overlay-render bug fully audited — cursor's own unguarded x86 address landmine found and fixed, rest of the render path confirmed clean; Custom Options screen wired into x64's input pipeline (build-verified, temporary manual open-chord substitute pending a real focus-detection RE pass); a "greenlit" trusted-plugin allowlist added to plugin_loader.cpp so the sibling MW32011NSP project's own security-fix plugin can ship built in by default (build-verified, end-to-end test pending that plugin's own existence) — release ETA 2-4 weeks, gated on x86 parity**
 
 ---
 
@@ -2283,3 +2283,30 @@ the screen while a native menu (e.g. pause) is active, the panel/blur/list
 draw correctly, D-pad/A/B navigate and select rows, and closing returns
 cleanly to the native menu with no regression to normal D-pad/A/B gameplay
 input once closed.
+
+**"Greenlit" trusted-plugin allowlist added to `plugin_loader.cpp`, same
+day.** Direct instruction: the sibling `MW32011NSP` project's own netcode
+security-fix plugin should ship built into this mod by default, not gated
+behind the normal third-party-plugin opt-in acknowledgment
+(`[Plugins] Enabled=1`). Added a small, explicit allowlist
+(`kTrustedPluginFilenames`, currently one entry:
+`mw32011nsp_security.dll`) that `LoadPlugins()` checks and loads
+UNCONDITIONALLY -- the general opt-in scan for every other `.dll` in the
+`plugins\` folder is completely unchanged, still fully gated on
+`PluginsEnabled`. A single directory-scan pass now handles both paths (a
+file is either the one trusted filename or an ordinary plugin, never
+both), so there's no double-load risk to guard against separately. Real,
+explicitly documented caveat (`PLUGIN_API.md`'s new "Greenlit (trusted)
+plugins" section): filename matching is not cryptographic -- this is a
+default-behavior UX convenience over the same physical-access trust
+boundary the rest of the plugin system already rests on, not a new
+security guarantee.
+
+**Build-verified**: x64 `/t:Rebuild` (0 errors) -> `dumpbin /headers`
+confirmed `8664 machine (x64)` with a fresh `LastWriteTime` -> Win32
+regression rebuild (0 errors, no regression). **Cannot be end-to-end
+tested yet** -- `mw32011nsp_security.dll` doesn't exist yet (NSP's own
+implementation is a separate, parallel effort); the loader logs a clear
+line either way ("matches the greenlit/trusted allowlist" or the
+no-plugins-folder-found case) so this is independently verifiable the
+moment that DLL exists, without needing to touch this code again.
