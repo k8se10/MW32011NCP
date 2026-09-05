@@ -1,0 +1,33 @@
+=== Reference counts per global ===
+cl_yawspeed (140e1dad0): 2 references
+cl_pitchspeed (140e1dad8): 2 references
+cl_anglespeedkey (140e1dae0): 2 references
+m_pitch (1415e1758): 4 references
+m_yaw (1415e1760): 3 references
+m_forward (1415e1768): 2 references
+m_side (1415e1770): 2 references
+sensitivity (1415e1738): 3 references
+cl_freelook (1415e1740): 4 references
+cl_bypassMouseInput (140e1daf0): 4 references
+
+=== Candidate functions, ranked by distinct global diversity (10) ===
+
+---- FUN_1400d4370 @ 1400d4370 (globals: cl_anglespeedkey, cl_bypassMouseInput, cl_freelook, cl_pitchspeed, cl_yawspeed, m_forward, m_pitch, m_side, m_yaw, sensitivity) ----
+
+---- FUN_1400d0050 @ 1400d0050 (globals: cl_freelook, m_forward, m_pitch, m_side, m_yaw) ----
+
+---- FUN_1400d0be0 @ 1400d0be0 (globals: cl_anglespeedkey, cl_pitchspeed, cl_yawspeed) ----
+
+---- FUN_1400ba3b0 @ 1400ba3b0 (globals: cl_freelook, m_pitch, sensitivity) ----
+
+---- FUN_1400d0350 @ 1400d0350 (globals: m_pitch, m_yaw) ----
+
+---- FUN_1400cfb60 @ 1400cfb60 (globals: sensitivity) ----
+
+---- FUN_1400ce950 @ 1400ce950 (globals: cl_freelook) ----
+
+---- FUN_1400ce5c0 @ 1400ce5c0 (globals: cl_bypassMouseInput) ----
+
+---- FUN_1400cff50 @ 1400cff50 (globals: cl_bypassMouseInput) ----
+
+---- FUN_1400b4960 @ 1400b4960 (globals: cl_bypassMouseInput) ----
