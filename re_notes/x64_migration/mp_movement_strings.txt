@@ -1,0 +1,54 @@
+STRING @ 14044d9a0 = "player_sprintUnlimited"
+  from 14003207f type=DATA IN FUNCTION FUN_140030d70@140030d70
+  (1 references)
+
+STRING @ 140461268 = "cl_yawspeed"
+  from 1400d4901 type=DATA IN FUNCTION FUN_1400d4370@1400d4370
+  (1 references)
+
+STRING @ 1404612a0 = "cl_pitchspeed"
+  from 1400d4949 type=DATA IN FUNCTION FUN_1400d4370@1400d4370
+  (1 references)
+
+STRING @ 1404612f0 = "cl_anglespeedkey"
+  from 1400d497b type=DATA IN FUNCTION FUN_1400d4370@1400d4370
+  (1 references)
+
+STRING @ 140461408 = "sensitivity"
+  from 1400d4a46 type=DATA IN FUNCTION FUN_1400d4370@1400d4370
+  from 14054a858 type=DATA IN DATA
+  (2 references)
+
+STRING @ 140461460 = "cl_freelook"
+  from 1400d4ac3 type=DATA IN FUNCTION FUN_1400d4370@1400d4370
+  from 140283d00 type=PARAM IN FUNCTION FUN_140283c10@140283c10
+  from 14054a838 type=DATA IN DATA
+  (3 references)
+
+STRING @ 140461580 = "cl_bypassMouseInput"
+  from 1400d4b54 type=DATA IN FUNCTION FUN_1400d4370@1400d4370
+  from 14030b6ae type=DATA IN FUNCTION FUN_14030b3b0@14030b3b0
+  from 1403093c8 type=DATA IN FUNCTION FUN_1403093c0@1403093c0
+  (3 references)
+
+STRING @ 1404615a8 = "m_pitch"
+  from 1400d4b6b type=DATA IN FUNCTION FUN_1400d4370@1400d4370
+  from 1403090e8 type=DATA IN FUNCTION FUN_140308c90@140308c90
+  from 1403103d7 type=DATA IN FUNCTION FUN_1403102f0@1403102f0
+  from 140310624 type=DATA IN FUNCTION FUN_140310620@140310620
+  from 14054a850 type=DATA IN DATA
+  (5 references)
+
+STRING @ 1404615bc = "m_yaw"
+  from 1400d4bb3 type=DATA IN FUNCTION FUN_1400d4370@1400d4370
+  (1 references)
+
+STRING @ 1404615f0 = "m_forward"
+  from 1400d4bf8 type=DATA IN FUNCTION FUN_1400d4370@1400d4370
+  (1 references)
+
+STRING @ 140461624 = "m_side"
+  from 1400d4c1d type=DATA IN FUNCTION FUN_1400d4370@1400d4370
+  (1 references)
+
+Total matching strings: 11

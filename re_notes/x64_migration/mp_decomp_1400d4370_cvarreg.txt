@@ -1,0 +1,224 @@
+================================================================
+Function: FUN_1400d4370 @ 1400d4370
+Signature: undefined FUN_1400d4370(void)
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_1400d4370(void)
+
+{
+  undefined4 uVar1;
+  undefined4 uVar2;
+  undefined4 uVar3;
+  DWORD DVar4;
+  
+  DVar4 = timeGetTime();
+  FUN_14040be5c(DVar4);
+  FUN_1400b2cb0();
+  _guard_check_icall();
+  DAT_1410c2878 = FUN_140325070("cl_noprint",0,0,"Print nothing to the console");
+  DAT_140e1dd68 = FUN_140325580("playlist",0,0,0x7fffffff,0,"The playlist number");
+  DAT_140e1dd60 =
+       FUN_140325070("onlinegame",0,0x80,
+                     "Current game is an online game with stats, custom classes, unlocks");
+  DAT_1415e1818 =
+       FUN_140325070("useonlinestats",0,0x80,"Whether to use online stats when in offline modes");
+  FUN_140326330(DAT_140e1dd60,1);
+  DAT_1415e17b0 = FUN_140325070("cl_hudDrawsBehindUI",1,0,"Should the HUD draw when the UI is up?");
+  DAT_1415e17f8 = FUN_140325070("cl_voice",1,0x201,"Use voice communications");
+  _DAT_1415e1800 = FUN_140325070("cl_chat",1,0x201,"Enable video and text chat");
+  _DAT_1415e1808 =
+       FUN_140325070("cl_enableDedicatedServerBrowser",0,0x201,"Enable dedicated server browser.");
+  DAT_1415e1788 = FUN_140325070("cl_enableRCon",0,1,"Enable remote console.");
+  uVar1 = DAT_140461a98;
+  DAT_1415e1790 =
+       FUN_140325450("cl_timeout",DAT_1404494b4,0,DAT_140461a98,0,
+                     "Seconds with no received packets until a timeout occurs");
+  DAT_1415e1798 =
+       FUN_140325450("cl_connectTimeout",DAT_14044faf0,0,uVar1,0,
+                     "Timeout time in seconds while connecting to a server");
+  DAT_1415e17a0 =
+       FUN_140325580("cl_connectionAttempts",0x19,0,0x7fffffff,0,
+                     "Maximum number of connection attempts before aborting");
+  DAT_1415e17a8 =
+       FUN_140325450("cl_connectHostMigrationFactor",DAT_14045328c,0,DAT_14045328c,0,
+                     "Factor [ms] to increase cl_connectTimeout - timeout time [s] while connecting to a server"
+                    );
+  DAT_1415e16a8 =
+       FUN_140325580("cl_timescale_slowdown_divisorBookend",1,1,100,0,"Timescale slowdown rate");
+  DAT_1415e16b0 =
+       FUN_140325580("cl_timescale_slowdown_divisorNeg",4,1,100,0,"Timescale slowdown rate");
+  DAT_1415e16b8 =
+       FUN_140325580("cl_timescale_slowdown_divisorPos",0x14,1,100,0,"Timescale slowdown rate");
+  DAT_1415e16c0 =
+       FUN_140325580("cl_timescale_speedup_divisorBookend",10,1,100,0,"Timescale speedup rate");
+  DAT_1415e16c8 =
+       FUN_140325580("cl_timescale_speedup_divisorNeg",10,1,100,0,"Timescale speedup rate");
+  DAT_1415e16d0 =
+       FUN_140325580("cl_timescale_speedup_divisorPos",10,1,100,0,"Timescale speedup rate");
+  DAT_1415e16d8 =
+       FUN_140325580("cl_penaltyTime",0,0,100,0,
+                     "Host penalty time, add to sv_local_client_snapshot_msec");
+  DAT_1415e16e0 = FUN_140325580("cl_penaltyTimeBookend",100,0,200,0,"Bookend penalty time");
+  DAT_1415e16e8 = FUN_140325580("cl_penaltyTimeNeg",0x21,0,100,0,"Server time error adjustment");
+  DAT_1415e16f0 =
+       FUN_140325580("cl_penaltyThresholdNeg",0xfffffff8,0xffffffdf,0x21,0,
+                     "Server time error adjustment threshold");
+  DAT_1415e16f8 =
+       FUN_140325580("cl_penaltyThreshold",0,0xffffffdf,0x21,0,
+                     "Server time error adjustment threshold");
+  DAT_1415e1700 = FUN_140325580("cl_penaltyClamp",0x21,0,100,0,"Server time error adjustment clamp")
+  ;
+  DAT_1415e1708 = FUN_140325580("cl_minErrorTime",300,100,1000,0,"Min server time error");
+  DAT_1415e1710 = FUN_140325580("cl_maxErrorTime",400,100,1000,0,"Max server time error");
+  DAT_1415e1718 = FUN_140325580("cl_timeBufferSize",4,1,10,0,"Server time error buffer size");
+  DAT_1415e1720 =
+       FUN_140325580("cl_inhibit_stats_upload",1,0,1,0,
+                     "Inhibit upload of stats during demo playback");
+  DAT_1415e1728 =
+       FUN_140325580("cl_repair_games_played",1,0,1,0,
+                     "Repair the gamesPlayed in the player stats before uploading or saving stats");
+  DAT_1415e1730 =
+       FUN_140325580("cl_adjTimeDeltaCalcAlgorithmMW2",0,0,1,0,
+                     "Determines which time delta calculation method to use. Set true for MW2. Default is MW3 (false)."
+                    );
+  _DAT_1415e17b8 =
+       FUN_140325450("cl_migrationTimeout",DAT_140448174,0,uVar1,0,
+                     "Seconds to wait to hear from new host during host migration before timeout occurs"
+                    );
+  uVar3 = DAT_140456710;
+  uVar1 = DAT_14044e960;
+  uVar2 = DAT_140449bd8;
+  DAT_140e1dad0 =
+       FUN_140325450("cl_yawspeed",DAT_140456710,DAT_14044e960,DAT_140449bd8,1,
+                     "Max yaw speed in degrees for game pad and keyboard");
+  DAT_140e1dad8 =
+       FUN_140325450("cl_pitchspeed",uVar3,uVar1,uVar2,1,"Max pitch speed in degrees for game pad");
+  DAT_140e1dae0 =
+       FUN_140325450("cl_anglespeedkey",DAT_1404494ac,0,uVar2,0,
+                     "Multiplier for max angle speed for game pad and keyboard");
+  uVar1 = DAT_140447ff4;
+  _DAT_140e1dae8 =
+       FUN_140325450("cl_dirSelConvergenceTime",DAT_1404e842c,DAT_140447ff4,uVar2,0,
+                     "Time to converge to the new direction when selecting a direction on the map.")
+  ;
+  DAT_1415e1698 =
+       FUN_140325580("cl_maxpackets",0x1e,0xf,100,0,"Maximum number of packets sent per frame");
+  DAT_1415e16a0 = FUN_140325580("cl_packetdup",2,0,5,1,"Enable packet duplication");
+  uVar2 = DAT_1404e8684;
+  DAT_1415e1738 =
+       FUN_140325450("sensitivity",DAT_1404e863c,uVar1,DAT_1404e8684,1,"Mouse sensitivity");
+  DAT_1415e1748 = FUN_140325450("cl_mouseAccel",0,0,uVar2,1,"Mouse acceleration");
+  DAT_1415e1740 = FUN_140325070("cl_freelook",1,1,"Enable looking with mouse");
+  _DAT_1415e1750 =
+       FUN_140325070("cl_showmouserate",0,0,"Print mouse rate debugging information to the console")
+  ;
+  _DAT_1415e1780 = FUN_140325070("r_inGameVideo",1,1,"Allow in game cinematics");
+  DAT_1415e17d0 =
+       FUN_140325580("cl_serverStatusResendTime",0xe10,0x2ee,0xe10,0,
+                     "Time in milliseconds to resend a server status message");
+  DAT_140e1daf0 =
+       FUN_140325070("cl_bypassMouseInput",0,0,"Bypass UI mouse input and send directly to the game"
+                    );
+  uVar3 = DAT_1404e86b8;
+  uVar2 = DAT_1404e848c;
+  uVar1 = DAT_140461a94;
+  DAT_1415e1758 =
+       FUN_140325450("m_pitch",DAT_140461a94,DAT_1404e86b8,DAT_1404e848c,1,"Default pitch");
+  DAT_1415e1760 = FUN_140325450("m_yaw",uVar1,uVar3,uVar2,1,"Default yaw");
+  uVar1 = DAT_140449498;
+  DAT_1415e1768 =
+       FUN_140325450("m_forward",DAT_140449498,uVar3,uVar2,1,"Forward speed in units per second");
+  DAT_1415e1770 = FUN_140325450("m_side",uVar1,uVar3,uVar2,1,"Sideways motion in units per second");
+  DAT_1415e1778 = FUN_140325070("m_filter",0,1,"Allow mouse movement smoothing");
+  _DAT_1415e17c0 = FUN_140325920("cl_motdString",&DAT_1404e5210,0x2000,"Message of the day");
+  DAT_1415e17e8 = FUN_140325070("cl_ingame",0,0x12000,"True if the game is active");
+  FUN_140325580("cl_maxPing",800,0x14,2000,1,"Maximum ping for the client");
+  _DAT_1415e17f0 = FUN_140325920(&DAT_140450484,"Unknown Soldier",0x200,"Player name");
+  FUN_140325580(&DAT_140461728,25000,1000,0x7fffffff,0x201,"Player\'s preferred network rate");
+  DAT_1415e1810 = FUN_140325920("password",&DAT_1404e5210,0x200,"password");
+  FUN_140325070("hud_enable",1,1,"Enable the HUD display");
+  FUN_140325070("cg_blood",1,1,"Show blood");
+  DAT_1415e17d8 = FUN_140325920(&DAT_140461764,&DAT_1404e5210,0,"Message of the day");
+  DAT_1415e17e0 = FUN_140325920("iotdText",&DAT_1404e5210,0,"Image of the day text");
+  _guard_check_icall();
+  DAT_140e2b268 = 0x10;
+  DAT_140e2b26c = 0xf;
+  DAT_140e2b274 = 0x120;
+  DAT_140e2b270 = 0x2580;
+  FUN_140262d50(&DAT_140461794,FUN_1400d3ef0,&DAT_1415e5a68);
+  FUN_140262d50("vid_restart",_guard_check_icall,&DAT_1415e5a80);
+  FUN_140262dc0("vid_restart",FUN_1400d72d0,&DAT_1415e5a98);
+  FUN_140262d50("snd_restart",_guard_check_icall,&DAT_1415e5ab0);
+  FUN_140262dc0("snd_restart",FUN_1400d7040,&DAT_1415e5ac8);
+  FUN_140262d50("snd_restart_withdisconnect",_guard_check_icall,&DAT_1415e5ae0);
+  FUN_140262dc0("snd_restart_withdisconnect",FUN_1400d6fc0,&DAT_1415e5af8);
+  FUN_140262d50("disconnect",_guard_check_icall,&DAT_1415e5b10);
+  FUN_140262dc0("disconnect",&LAB_1400d2630,&DAT_1415e5b28);
+  FUN_140262d50("xstartlobby",FUN_1400d5d60,&DAT_1415e5b40);
+  FUN_140262d50("xstartprivateparty",FUN_1400d6010,&DAT_1415e5b58);
+  FUN_140262d50("xstopprivateparty",FUN_1400d6210,&DAT_1415e5b70);
+  FUN_140262d50("xstartprivatematch",FUN_1400d5ef0,&DAT_1415e5b88);
+  FUN_140262d50("xstopparty",FUN_1400d61b0,&DAT_1415e5ba0);
+  FUN_140262d50("resetdlcsearchtimer",FUN_1400d5a40,&DAT_1415e5bb8);
+  FUN_140262d50("xjoinpasswordparty",FUN_1400d5690,&DAT_1415e5bd0);
+  FUN_140262d50("xsessionupdate",FUN_1400d5a80,&DAT_1415e5be8);
+  FUN_140262d50("xtogprivateslots",FUN_1400d6240,&DAT_1415e5c00);
+  FUN_1400bc990();
+  FUN_1400bc890();
+  FUN_140262d50("autocinematic",FUN_1400b0150,&DAT_1415e5c18);
+  FUN_140262d50("cinematic",FUN_1400b01c0,&DAT_1415e5c30);
+  FUN_140262d50("connect",_guard_check_icall,&DAT_1415e5c48);
+  FUN_140262dc0("connect",FUN_1400d79c0,&DAT_1415e5c60);
+  FUN_1400d8090();
+  FUN_140262d50(&DAT_1404618c0,FUN_1400d80e0,&DAT_1415e5c78);
+  FUN_140262d50("fs_openedList",FUN_1400d64b0,&DAT_1415e5c90);
+  FUN_140262d50("fs_referencedList",FUN_1400d67c0,&DAT_1415e5ca8);
+  FUN_140262d50("startSingleplayer",FUN_1400d76e0,&DAT_1415e5cc0);
+  FUN_140262d50("resetViewport",FUN_1400d6830,&DAT_1415e5cd8);
+  FUN_140262d50("updateGamerProfile",FUN_1400d7250,&DAT_1415e5cf0);
+  FUN_140262d50("closemenu",FUN_140301f20,&DAT_1415e5d08);
+  FUN_140262d50("connect_lobby",FUN_1400d70d0,&DAT_1415e5d20);
+  FUN_140262d50("xpartygo",FUN_1400d56d0,&DAT_1415e5d38);
+  FUN_140262d50("xpartyvote",FUN_1400d5720,&DAT_1415e5d50);
+  FUN_140262d50("xupdatepartystate",FUN_1400d62a0,&DAT_1415e5d68);
+  FUN_140262d50("xpartydisbandafterround",FUN_1400d5650,&DAT_1415e5d80);
+  FUN_140262d50("xpartybackout",&LAB_1400d5770,&DAT_1415e5d98);
+  FUN_140262d50("xstoplobbybackout",FUN_1400d6150,&DAT_1415e5db0);
+  FUN_140262d50("selectStringTableEntryInDvar",FUN_140300c70,&DAT_1415e5dc8);
+  FUN_140262d50("downloadplaylist",FUN_1400d3650,&DAT_1415e5de0);
+  FUN_140262d50("resolveItemDefAction",&LAB_1400d6930,&DAT_1415e5df8);
+  FUN_1402ca9f0();
+  FUN_1402c5ac0();
+  FUN_140262d50("startentitlements",FUN_1402c8870,&DAT_1415e5e10);
+  FUN_1402cb510();
+  _guard_check_icall();
+  FUN_1400d8030();
+  FUN_140262d50(&DAT_1404609b0,_guard_check_icall,&DAT_1415e5930);
+  FUN_140262d50("xplaylistprimaryvetoed",&LAB_1400d67b0,&DAT_1415e5948);
+  FUN_140262d50("xshowfriendslist",&LAB_1400d5c00,&DAT_1415e5960);
+  FUN_140262d50("xsigninlive",FUN_1400d5c70,&DAT_1415e5978);
+  FUN_140262d50("xsignin",FUN_1400d5c10,&DAT_1415e5990);
+  FUN_140262d50("xrequirelivesignin",FUN_1400d5810,&DAT_1415e59a8);
+  FUN_140262d50("xrequirelivesigninforvault",FUN_1400d5890,&DAT_1415e59c0);
+  FUN_140262d50("xrequiresignin",FUN_1400d57b0,&DAT_1415e59d8);
+  FUN_140262d50("xcheckezpatch",_guard_check_icall,&DAT_1415e59f0);
+  FUN_140262d50("xcheckezpatchversion",_guard_check_icall,&DAT_1415e5a08);
+  FUN_140262d50("xopenonlineservicesdialog",FUN_1400d6480,&DAT_1415e5a20);
+  FUN_140262d50("xcancelconnectingdialog",FUN_1400d5610,&DAT_1415e5a38);
+  FUN_140262d50("cancelsocialconfigvaultdialog",&LAB_1400d5640,&DAT_1415e5a50);
+  FUN_1400b8780();
+  FUN_1400b8910();
+  FUN_1400bb940();
+  FUN_1400dcfa0();
+  FUN_140098a60();
+  FUN_14028f6e0();
+  DAT_141606eb8 = 0;
+  FUN_1400de4a0(&DAT_142cbd2d0);
+  FUN_1400d9c30();
+  return;
+}
+
+
+

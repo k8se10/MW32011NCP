@@ -1,0 +1,74 @@
+================================================================
+Function: FUN_1400cfb60 @ 1400cfb60
+Signature: undefined FUN_1400cfb60(void)
+----------------------------------------------------------------
+
+void FUN_1400cfb60(longlong param_1,float *param_2,float *param_3)
+
+{
+  uint uVar1;
+  float fVar2;
+  float fVar3;
+  float fVar4;
+  
+  if (*(char *)(DAT_1415e1778 + 0x10) == '\0') {
+    uVar1 = *(uint *)(param_1 + 0x3430);
+    fVar3 = (float)*(int *)(param_1 + 0x3420 + (longlong)(int)uVar1 * 4);
+    fVar4 = (float)*(int *)(param_1 + 0x3428 + (longlong)(int)uVar1 * 4);
+  }
+  else {
+    uVar1 = *(uint *)(param_1 + 0x3430);
+    fVar3 = (float)(*(int *)(param_1 + 0x3424) + *(int *)(param_1 + 0x3420)) * DAT_1404e8438;
+    fVar4 = (float)(*(int *)(param_1 + 0x342c) + *(int *)(param_1 + 0x3428)) * DAT_1404e8438;
+  }
+  *(uint *)(param_1 + 0x3430) = uVar1 ^ 1;
+  *(undefined4 *)(param_1 + 0x3420 + (longlong)(int)(uVar1 ^ 1) * 4) = 0;
+  fVar2 = fVar3 * fVar3 + fVar4 * fVar4;
+  *(undefined4 *)(param_1 + 0x3428 + (longlong)*(int *)(param_1 + 0x3430) * 4) = 0;
+  if (fVar2 < 0.0) {
+    fVar2 = (float)FUN_1403fa9b8(fVar2);
+  }
+  else {
+    fVar2 = SQRT(fVar2);
+  }
+  fVar2 = ((fVar2 / (float)DAT_1415e5920) * *(float *)(DAT_1415e1748 + 0x10) +
+          *(float *)(DAT_1415e1738 + 0x10)) * *(float *)(param_1 + 0x3450);
+  *param_2 = fVar2 * fVar3;
+  *param_3 = fVar2 * fVar4;
+  return;
+}
+
+
+
+================================================================
+Function: FUN_1400cfef0 @ 1400cfef0
+Signature: undefined FUN_1400cfef0(void)
+----------------------------------------------------------------
+
+float FUN_1400cfef0(longlong param_1)
+
+{
+  uint uVar1;
+  uint uVar2;
+  
+  uVar2 = *(uint *)(param_1 + 0xc);
+  *(undefined4 *)(param_1 + 0xc) = 0;
+  if (*(char *)(param_1 + 0x10) != '\0') {
+    uVar1 = DAT_142cddcfc;
+    if (*(int *)(param_1 + 8) != 0) {
+      uVar1 = uVar2 + (DAT_142cddcfc - *(int *)(param_1 + 8));
+    }
+    uVar2 = uVar1;
+    *(uint *)(param_1 + 8) = DAT_142cddcfc;
+  }
+  if (0 < (int)uVar2) {
+    if (uVar2 < DAT_1415e5920) {
+      return (float)(int)uVar2 / (float)DAT_1415e5920;
+    }
+    return DAT_1404e848c;
+  }
+  return 0.0;
+}
+
+
+
