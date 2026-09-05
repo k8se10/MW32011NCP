@@ -288,33 +288,37 @@ code-quality standard as a debugging-methodology one.
 
 ## Native project code (C/C++)
 
-- **Hardcoded, statically-resolved addresses are this project's deliberate,
-  permanent policy — REVERSED 2026-08-25 (direct correction: "no hardcoded
-  addresses isnt a claim we can make anymore, its safer for vac than pattern
-  scanning which could touch protected regions of memory").** This standard
-  used to frame a runtime byte-pattern/signature scanner as the aspirational
-  goal, with static-hardcode-per-binary as an honest-but-temporary current
-  state. That framing is wrong and is not coming back: a runtime scanner has
-  to walk arbitrary regions of the game's own process memory searching for a
-  byte sequence every time it resolves — exactly the class of behavior VAC's
-  own signature-based heuristics are built to notice, and a real way to
-  touch a protected/guarded memory region this project never intended to
-  read. A hardcoded address found offline (static Ghidra analysis, no live
-  process attached) and simply called at a known, fixed location has no such
-  runtime search surface at all — narrower, safer, and more predictable.
-  Every real engine-function hook in this codebase is a literal hardcoded
-  address, found once via static analysis and never re-resolved at runtime —
-  see `CONTRIBUTING.md`'s own matching correction for the exact wording.
-  **Do not propose a runtime scanner for engine-function hooks** — it is a
-  rejected idea on VAC-safety grounds, not a deferred project-wide effort
-  waiting to happen; match the established pattern (static analysis,
-  hardcode, document per binary) for any new hook instead.
+- **Runtime signature scanning, resolved once at process startup and cached
+  for the session, is the CURRENT policy for the active `-x64` line — this
+  has reversed twice, and both reversals matter, not just the latest one.**
+  Originally (through 2026-08-24) signature scanning was the honest
+  current-state approach. **REVERSED 2026-08-25** to hardcoded addresses
+  (static Ghidra analysis, no live process attached, then called at a known
+  fixed location) on real VAC-safety grounds: a runtime scanner has to walk
+  arbitrary regions of the game's own process memory searching for a byte
+  sequence every time it resolves — exactly the class of behavior VAC's own
+  signature-based heuristics are built to notice — while a hardcoded address
+  has no such runtime search surface at all. **REVERSED AGAIN 2026-09-03**,
+  superseding #2, after a genuine MW3 (2011) binary update recompiled both
+  `iw5sp.exe`/`iw5mp.exe` from x86 to x64 in a single step, invalidating
+  every one of this project's ~100+ hardcoded addresses at once — a
+  hardcode-only policy cannot survive a binary update; a resolve-once,
+  cache-for-the-session signature scanner does. **This does not disprove the
+  2026-08-25 VAC-safety reasoning** — that tradeoff is real and still
+  unresolved, it's outweighed by demonstrated necessity, not wrong. **Do not
+  hardcode a new `-x64` engine-function hook address** — match the current
+  pattern instead (`signature_scan.h`/`.cpp`: build a wildcarded byte
+  signature, resolve once at startup, validate before hooking, fail loudly on
+  a zero/ambiguous match, cache the result). The frozen, discontinued `-x86`
+  line's own hook targets remain literal hardcoded addresses found via static
+  Ghidra analysis — accurate history for that line, not a live policy to
+  extend. See `CONTRIBUTING.md`'s own matching correction for the exact
+  wording.
 - Validate a signature actually resolved (non-null, sane surrounding bytes)
   before installing a hook on it — fail loudly and refuse to hook rather than
-  jumping to garbage. Applies to the static, offline Ghidra-analysis pass
-  used to find every hardcoded address above, not to a runtime scan (see
-  that bullet for why this project deliberately doesn't do runtime
-  scanning).
+  jumping to garbage. Applies to both the current runtime scan (`-x64`) and
+  the frozen, historical static-Ghidra-analysis pass that found every
+  hardcoded address on the discontinued `-x86` line.
 - All hook callbacks must be safe to call from the game's own thread(s) — no
   blocking calls, no heavy work inline; queue/defer anything expensive.
 - **Not currently done (corrected 2026-08-01 — this standard also previously
@@ -421,8 +425,10 @@ code-quality standard as a debugging-methodology one.
 - Only make changes that are explicitly requested or clearly required by the
   task at hand — don't bundle unrelated fixes or refactors into the same
   change.
-- No hardcoded addresses, no OS-level input emulation beyond the three
-  documented, narrowly-scoped exceptions (`re_notes/known_issues.md` issues
-  #5, #13/#14, and #28 — corrected 2026-08-25, this line previously said
-  "two" and named only #5/#14, missing the Back/`+scores` synthetic-TAB
-  exception added later) — see `CONTRIBUTING.md` for the full ground rules.
+- No hardcoded addresses on the current `-x64` line (signature-scanned only —
+  see the "Native project code" section above), no OS-level input emulation
+  beyond the three documented, narrowly-scoped exceptions
+  (`re_notes/known_issues.md` issues #5, #13/#14, and #28 — corrected
+  2026-08-25, this line previously said "two" and named only #5/#14, missing
+  the Back/`+scores` synthetic-TAB exception added later) — see
+  `CONTRIBUTING.md` for the full ground rules.
