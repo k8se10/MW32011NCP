@@ -219,6 +219,20 @@ ADS, Weapnext — is now confirmed working live.**
    control added this pass — the one exception is D-pad actionslot,
    confirmed built but not yet independently tested live. Full trail in
    `re_notes/known_issues_x64.md` issue #1.
+2. **Visual-enhancement suite x64 port (`InternalRenderScalePercent`,
+   FSR RCAS sharpening) — blocked on unresolved x64 addresses, nothing
+   shipped.** The shader/pipeline plumbing itself (`overlay_hud.cpp`)
+   is already x64-clean and needs no porting — it's entirely
+   COM-vtable-based, no hardcoded addresses. What's missing: x64's own
+   equivalent of `FUN_00679010` (render-scale's real resolution-compute
+   function) hasn't been located, and two of FSR RCAS's three required
+   crash-safety gates (`clcState`, the in-level flag — both load-bearing
+   per x86's own issue #103/#104 crash history, not optional) haven't
+   either, though the third (menu-active) is already resolved and
+   reusable. Left the existing x64 early-return stub in place rather
+   than ship an under-gated pass that risks reproducing a known crash
+   class with no way to live-test it first. Full trail in
+   `re_notes/known_issues_x64.md` issue #1.
 
 ---
 

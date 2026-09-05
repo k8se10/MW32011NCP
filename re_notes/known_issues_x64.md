@@ -1800,3 +1800,81 @@ directions generally) show no regression.
 Sniper Fire/ADS (the other open bug above) is out of scope for this
 round -- being investigated in parallel elsewhere this same session; not
 touched here.
+
+**Visual-enhancement suite x64 port, first attempt (same day) -- scoped
+to `InternalRenderScalePercent` (x86 issue #88) and FSR 1.0 RCAS
+sharpening (x86 issue #94), both BLOCKED on unresolved x64 addresses,
+nothing unsafe shipped.** Read both x86 implementations in full first,
+per this project's own standing rule (compare to the x86 original at
+every stage). Real findings, both negative but concrete:
+
+- **The full-screen shader/pipeline infrastructure itself is ALREADY
+  x64-clean today**, confirmed by inspection rather than assumed:
+  `overlay_hud.cpp` (home of `EnsureRcasShader`/`DrawFullScreenPass`/
+  `RcasShaderSetupCallback`/the whole Phase A/B pipeline) has zero
+  `_M_IX86`-only exclusions and compiles unconditionally into the x64
+  build already -- every call it makes (`CreatePixelShader`/
+  `SetPixelShader`/`SetPixelShaderConstantF`/`DrawPrimitiveUP`) is
+  COM-vtable-index-based, not a hardcoded address, so none of it needed
+  porting in the first place. The ONLY x64-specific code in this whole
+  path is a single early-return stub already added during the
+  2026-09-04 crash-fix pass (`RunFullScreenPostProcessIfEnabled`,
+  `overlay_hud.cpp`), which explicitly documents "future work, not
+  attempted this pass" -- this round is that attempted follow-up.
+- **`InternalRenderScalePercent` needs x64's own equivalent of
+  `FUN_00679010`** (the this-in-ECX resolution-compute function whose
+  `+0x1c`/`+0x20` fields feed the real, unclamped scene render-target
+  size) -- NOT the same function as `FUN_1401b8c80`
+  (`re_notes/x64_migration/README.md`'s own "Render-scale/shadow-map
+  thread" entry, x64 equivalent of `FUN_004b60a0`, the DOWNSTREAM
+  render-target slot-descriptor creator). `FUN_00679010`'s x64
+  equivalent has not been located by any pass to date. Not attempted
+  further this round -- flagging the exact gap rather than guessing at
+  an address.
+- **FSR RCAS needs x64 equivalents of x86's `clcState` (0x00B36218)
+  and the in-level time-delta flag (0x00A98ACC)** -- both load-bearing
+  safety gates, not optional polish: x86's own issue #103/#104 history
+  proved a menu-gate-only version of this exact pass crashes during
+  loading screens and hangs/crashes on quit-to-menu, so shipping it on
+  x64 without equivalent gating would very likely reproduce the same
+  crash class. **One of the three x86 gates is already resolved for
+  x64**: the menu-active check (`IsMenuActive_Exported`'s x86
+  equivalent) has a real, confirmed x64 counterpart already wired up
+  and in live use elsewhere this session -- `g_menuActiveGateFlag`
+  (`analog_input_hooks_x64.cpp`, signature-scan-resolved pointer to
+  `DAT_1406e2550`, bit `0x10` = menu active), directly reusable here.
+  **`clcState` and the in-level flag are NOT yet resolved for x64.**
+  Attempted via `RawStringScan.java` against the exact native error
+  string `"SCR_DrawScreenField: bad clcState"` -- confirmed the string
+  itself still exists in the x64 binary verbatim (`STRING @ 1403f6069`,
+  consistent with this project's earlier ~10-identifier persistence
+  check suggesting a genuine recompile of the same engine/data), but
+  came back with **zero direct code references** under `-noanalysis` --
+  the same class of indirect-reference tooling gap
+  `x64_migration/README.md` already documents for a different target
+  (`$shadowmap_large`), not evidence the check doesn't exist. Also
+  traced the adjacent `SetMenuState`-equivalent dispatcher
+  (`dvar_decomp_clpaused_users.txt`'s own decompile, `DAT_142615b20`
+  per-player menu-state array, `FUN_14007f3b0(param_1, 0x10)` as the
+  real bit-0x10 setter) far enough to independently confirm it's the
+  SAME mechanism already backing `g_menuActiveGateFlag` above -- useful
+  corroboration, but it's UI menu-state, not connection/`clcState`, so
+  it doesn't close this gap on its own.
+- **Decision: did not wire either feature's real enable path into the
+  live per-frame call.** The existing x64 early-return stub in
+  `RunFullScreenPostProcessIfEnabled` was left exactly as-is rather than
+  removed or partially relaxed -- per `CLAUDE.md` §7 (verified live,
+  no placeholder hooks) and §5 (fail loudly rather than hook garbage),
+  shipping a full-screen capture-and-redraw pass with a known-incomplete
+  safety-gate set, that cannot be live-tested by this pass, is a real
+  crash risk to the actual game process, not an acceptable "probably
+  fine" gap. Nothing built this round changes runtime behavior on
+  either platform.
+- **Next step when resumed**: find `FUN_00679010`'s x64 equivalent
+  (likely via its one real caller chain, `FUN_00679db0`/its own
+  device-creation-time caller, mirroring how the x86 original was
+  found) for render-scale; find `clcState`/the in-level flag's x64
+  addresses via either a fresh Ghidra pass with real analysis enabled
+  (not `-noanalysis`, to pick up indirect references the current
+  tooling misses) or a live-diagnostic capture once other x64 work
+  reaches a live-testable state.
