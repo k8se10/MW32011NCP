@@ -1,0 +1,96 @@
+14054a600 : 0x14048f3c0  -> STRING "_specialty_blastshield"
+14054a608 : 0x14048f3d8  -> STRING "specialty_hardline"
+14054a610 : 0x14044ed20  -> STRING "specialty_coldblooded"
+14054a618 : 0x14044ea48  -> STRING "specialty_twoprimaries"
+14054a620 : 0x14048f3f0  -> STRING "specialty_autospot"
+14054a628 : 0x14044eb80  -> STRING "specialty_stalker"
+14054a630 : 0x14044e9f8  -> STRING "specialty_detectexplosive"
+14054a638 : 0x14044e980  
+14054a640 : 0x14044ec70  -> STRING "specialty_quieter"
+14054a648 : 0x0  
+14054a650 : 0x14048f408  -> STRING "flash_grenade_mp"
+14054a658 : 0x14048f420  -> STRING "concussion_grenade_mp"
+14054a660 : 0x14048f438  -> STRING "specialty_scrambler"
+14054a668 : 0x14048f450  -> STRING "emp_grenade_mp"
+14054a670 : 0x14048f460  -> STRING "smoke_grenade_mp"
+14054a678 : 0x14048f478  -> STRING "trophy_mp"
+14054a680 : 0x14048f488  -> STRING "specialty_tacticalinsertion"
+14054a688 : 0x14048f4a8  -> STRING "specialty_portable_radar"
+14054a690 : 0x14048f4c4  
+14054a698 : 0x14048f4c8  -> STRING "airdrop_assault"
+14054a6a0 : 0x14048f4d8  
+14054a6a8 : 0x14048f4e0  -> STRING "predator_missile"
+14054a6b0 : 0x14048f4f8  -> STRING "airdrop_sentry_minigun"
+14054a6b8 : 0x14048f510  -> STRING "precision_airstrike"
+14054a6c0 : 0x140459e70  -> STRING "helicopter"
+14054a6c8 : 0x14048f528  -> STRING "littlebird_flock"
+14054a6d0 : 0x14048f540  -> STRING "littlebird_support"
+14054a6d8 : 0x14048f558  -> STRING "remote_mortar"
+14054a6e0 : 0x14048f568  -> STRING "airdrop_remote_tank"
+14054a6e8 : 0x14048f57c  -> STRING "ac130"
+14054a6f0 : 0x14048f588  -> STRING "helicopter_flares"
+14054a6f8 : 0x14048f5a0  -> STRING "airdrop_juggernaut"
+14054a700 : 0x14048f5b8  -> STRING "osprey_gunner"
+14054a708 : 0x0  
+14054a710 : 0x14048f5c8  -> STRING "uav_support"
+14054a718 : 0x14048f5d8  -> STRING "counter_uav"
+14054a720 : 0x14048f5e8  -> STRING "deployable_vest"
+14054a728 : 0x14048f5f8  -> STRING "airdrop_trap"
+14054a730 : 0x140470690  -> STRING "sam_turret"
+14054a738 : 0x14048f608  -> STRING "remote_uav"
+14054a740 : 0x14048f618  -> STRING "triple_uav"
+14054a748 : 0x14048f628  -> STRING "remote_mg_turret"
+14054a750 : 0x14048f640  -> STRING "stealth_airstrike"
+14054a758 : 0x14048f654  
+14054a760 : 0x14048f658  -> STRING "airdrop_juggernaut_recon"
+14054a768 : 0x14048f678  -> STRING "escort_airdrop"
+14054a770 : 0x14048f688  -> STRING "specialty_longersprint_ks"
+14054a778 : 0x14048f6a8  -> STRING "specialty_fastreload_ks"
+14054a780 : 0x14048f6c0  -> STRING "specialty_scavenger_ks"
+14054a788 : 0x14048f6d8  -> STRING "specialty_blindeye_ks"
+14054a790 : 0x14048f6f0  -> STRING "specialty_paint_ks"
+14054a798 : 0x14048f708  -> STRING "specialty_hardline_ks"
+14054a7a0 : 0x14048f720  -> STRING "specialty_coldblooded_ks"
+14054a7a8 : 0x14048f740  -> STRING "specialty_quickdraw_ks"
+14054a7b0 : 0x14048f758  -> STRING "_specialty_blastshield_ks"
+14054a7b8 : 0x14048f778  -> STRING "specialty_detectexplosive_ks"
+14054a7c0 : 0x14048f798  -> STRING "specialty_autospot_ks"
+14054a7c8 : 0x14048f7b0  -> STRING "specialty_bulletaccuracy_ks"
+14054a7d0 : 0x14048f7d0  -> STRING "specialty_quieter_ks"
+14054a7d8 : 0x14048f7e8  -> STRING "specialty_stalker_ks"
+14054a7e0 : 0x14048f800  -> STRING "specialty_juiced"
+14054a7e8 : 0x14048f818  -> STRING "specialty_revenge"
+14054a7f0 : 0x14048f830  -> STRING "specialty_finalstand"
+14054a7f8 : 0x14044ec38  -> STRING "specialty_grenadepulldeath"
+14054a800 : 0x14048f848  -> STRING "specialty_c4death"
+14054a808 : 0x14048f860  -> STRING "specialty_stopping_power"
+14054a810 : 0x100000001  
+14054a818 : 0x1404905d8  
+14054a820 : 0x0  
+14054a828 : 0x0  
+14054a830 : 0x0  
+14054a838 : 0x140461460  -> STRING "cl_freelook"
+14054a840 : 0x140461430  -> STRING "cl_mouseAccel"
+14054a848 : 0x140461650  -> STRING "m_filter"
+14054a850 : 0x1404615a8  -> STRING "m_pitch"
+14054a858 : 0x140461408  -> STRING "sensitivity"
+14054a860 : 0x1404907a8  -> STRING "ui_mousePitch"
+14054a868 : 0x0  
+14054a870 : 0x0  
+14054a878 : 0x0  
+14054a880 : 0x305000000e3  
+14054a888 : 0x1a6000003c6  
+14054a890 : 0x586000001c6  
+14054a898 : 0xba700000746  
+14054a8a0 : 0x90700000ca7  
+14054a8a8 : 0x118800001768  
+14054a8b0 : 0xaa800001b68  
+14054a8b8 : 0xf28000000a8  
+14054a8c0 : 0x1d2800000d47  
+14054a8c8 : 0x18800000128  
+14054a8d0 : 0xb28000017a8  
+14054a8d8 : 0x36900001d08  
+14054a8e0 : 0xb8800001128  
+14054a8e8 : 0x2a6900000608  
+14054a8f0 : 0x1fa800001048  
+14054a8f8 : 0x94800002769  
