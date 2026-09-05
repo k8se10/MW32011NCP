@@ -1,0 +1,11 @@
+[size=4][b]Changelog[/b][/size]
+
+Condensed from [font=Courier New]PATCHNOTES.md[/font] in the source repo — see there for the full, itemized detail behind each entry.
+
+[hr]
+
+[size=4][b]v0.0.1-x64 — Unreleased[/b][/size]
+
+The first release on the [font=Courier New]-x64[/font] line, rebuilding this project from scratch against MW3's recompiled 64-bit binaries. Every core gameplay control is implemented and build-verified, most confirmed live: analog movement/look, Sprint, Fire, true hold-to-aim ADS, Reload, weapon switch, Melee, Lethal, Tactical, Jump, Interact, the full Crouch/Prone stance ladder, and pause menu open/close. The plugin API is ported, and the custom Options screen is wired in (temporary open method). Not yet on this line: controller-glyph icons, on-screen hint prompts, the custom cursor, and the visual-enhancement suite that shipped on the prior 32-bit line. [b]This release has not shipped.[/b]
+
+The prior [font=Courier New]-x86[/font] line's full changelog history is preserved in this project's GitHub repository under [font=Courier New]legacy-x86-docs/nexus/changelog.bbcode.txt[/font].

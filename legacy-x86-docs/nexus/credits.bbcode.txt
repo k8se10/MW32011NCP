@@ -9,7 +9,7 @@
 
 Full license text for both is reproduced verbatim in the source repo at [font=Courier New]proxy_d3d9/third_party/minhook/LICENSE.txt[/font].
 
-[b]Special thanks:[/b] the wider MW3/IW5 modding and reverse-engineering community whose prior public research informed parts of this project's own investigation — see the source repo's [font=Courier New]re_notes/[/font] folder for specific citations where external research is referenced.
+[b]Special thanks:[/b] the wider MW3/IW5 modding and reverse-engineering community whose prior public research (client compatibility surveys, engine-behavior write-ups) informed parts of this project's own investigation — see the source repo's [font=Courier New]re_notes/[/font] folder for specific citations where external research is referenced.
 
 [hr]
 

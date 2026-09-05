@@ -1,0 +1,1 @@
+[b]v0.0.1-x64[/b] (Unreleased) — First release on the -x64 line, rebuilding from scratch against MW3's recompiled 64-bit binaries. Every core gameplay control implemented and build-verified, most confirmed live; plugin API and custom Options screen wired in; visual-enhancement suite not yet ported. Not yet shipped.
