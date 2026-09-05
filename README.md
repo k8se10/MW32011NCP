@@ -146,6 +146,23 @@ from source requires Windows, MSVC (Visual Studio Build Tools or Community
 with the Windows 10 SDK), and MSBuild; see
 [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full build/RE-tooling setup.
 
+## Related project: MW32011NSP
+
+[MW32011NSP](https://github.com/k8se10/MW32011NSP) is a sibling project —
+same author, same reverse-engineering methodology, same proxy-DLL injection
+technique — that finds and fixes real, exploitable vulnerabilities in MW3's
+own netcode, independent of anything this mod does. It exists because
+Steam's VAC doesn't cover packet-level attacks from a malicious server or
+peer, a real gap for anyone playing Multiplayer or Spec-Ops/Survival co-op.
+
+This mod optionally ships NSP's fixes **built in by default**: a small,
+explicit "greenlit" allowlist in this project's own plugin loader
+auto-loads NSP's security-fix plugin without requiring the normal
+third-party-plugin opt-in (`[Plugins] Enabled=1`) — see
+[`PLUGIN_API.md`](PLUGIN_API.md) for the full design. You can also run
+NSP standalone, with or without this mod. See the security notice above for
+current vulnerability status.
+
 ## Contributing
 
 Contributions are welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md) for the
