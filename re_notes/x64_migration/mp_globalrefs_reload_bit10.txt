@@ -1,0 +1,7 @@
+=== Reference counts per global ===
+reload_candidate_dcb4 (140e1dcb4): 1 references
+bit4_candidate_dc8c (140e1dc8c): 1 references
+
+=== Candidate functions, ranked by distinct global diversity (1) ===
+
+---- FUN_1400ce5c0 @ 1400ce5c0 (globals: bit4_candidate_dc8c, reload_candidate_dcb4) ----
