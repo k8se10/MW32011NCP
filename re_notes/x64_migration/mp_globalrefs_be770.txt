@@ -1,0 +1,10 @@
+=== Reference counts per global ===
+be770_flags (1406be770): 5 references
+
+=== Candidate functions, ranked by distinct global diversity (3) ===
+
+---- FUN_140091780 @ 140091780 (globals: be770_flags) ----
+
+---- FUN_14007c5b0 @ 14007c5b0 (globals: be770_flags) ----
+
+---- FUN_14007f5b0 @ 14007f5b0 (globals: be770_flags) ----

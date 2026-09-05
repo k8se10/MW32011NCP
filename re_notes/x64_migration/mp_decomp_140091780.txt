@@ -1,0 +1,34 @@
+================================================================
+Function: FUN_140091780 @ 140091780
+Signature: undefined FUN_140091780(void)
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_140091780(undefined4 param_1,undefined4 param_2)
+
+{
+  float fVar1;
+  float local_18;
+  float local_14;
+  float local_10;
+  
+  fVar1 = DAT_14061e2b0;
+  if (DAT_14061fe68 != 0.0) {
+    fVar1 = DAT_14061e2b0 * DAT_14061fe68;
+  }
+  FUN_1400cdbf0(0,fVar1);
+  local_18 = DAT_14061fdb8 + _DAT_14061fdc4;
+  local_14 = DAT_14061fdc8 + DAT_14061fdbc;
+  local_10 = DAT_14061fdcc + _DAT_14061fdc0;
+  FUN_1400cdc00(param_1,&local_18);
+  _guard_check_icall(DAT_14061fa50);
+  FUN_1400cddf0(param_1,(undefined4)DAT_14061ec70,DAT_14061fa50,DAT_14061ec70._4_4_);
+  FUN_1400cdbe0(param_1,DAT_1406be770);
+  DAT_1406be770 = 0;
+  FUN_1400cd280(param_1,&DAT_1406112f8,param_2);
+  return;
+}
+
+
+
