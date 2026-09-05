@@ -5,6 +5,10 @@
       <Configuration>Debug</Configuration>
       <Platform>Win32</Platform>
     </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
   </ItemGroup>
 
   <PropertyGroup Label="Globals">
@@ -12,11 +16,16 @@
     <ProjectGuid>{7E4A9C1D-2B6F-4E8A-9C3D-5F7B1E9A4C6D}</ProjectGuid>
     <RootNamespace>examplepluginrgbtext</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
-    <!-- Example/dev-test MW32011NCP plugin (mw3ncp_plugin_api.h). Win32 to match
-         iw5sp.exe's own architecture, since a plugin loaded into that process must
-         be the same bitness. NOT shipped as part of the main mod's own release
-         packaging, see PLUGIN_API.md. Build, drop the .dll in a "plugins" folder
-         next to the deployed d3d9.dll, set [Plugins] Enabled=1 to use it. -->
+    <!-- Example/dev-test MW32011NCP plugin (mw3ncp_plugin_api.h). Originally Win32
+         to match iw5sp.exe's own architecture; the game recompiled to x64 on
+         2026-09-03 (see CLAUDE.md's Version Timeline) so an x64 platform config
+         was added 2026-09-05: a plugin DLL must be the SAME bitness as the
+         process it loads into, so the old Win32-only build could never load into
+         today's x64 game at all. Win32 config kept for anyone still running an
+         archived x86 build (see LTS_POLICY.md). NOT shipped as part of the main
+         mod's own release packaging, see PLUGIN_API.md. Build the config matching
+         your target game build, drop the .dll in a "plugins" folder next to the
+         deployed d3d9.dll, set [Plugins] Enabled=1 to use it. -->
   </PropertyGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -32,8 +41,11 @@
 
   <PropertyGroup>
     <TargetName>rgb_text_plugin</TargetName>
-    <OutDir>bin\$(Configuration)\</OutDir>
-    <IntDir>obj\$(Configuration)\</IntDir>
+    <!-- $(Platform) added 2026-09-05 alongside the new x64 config: Win32 and x64
+         must not share one output folder (the two DLLs are not interchangeable and
+         would silently clobber each other on a rebuild of the other platform). -->
+    <OutDir>bin\$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>obj\$(Platform)\$(Configuration)\</IntDir>
   </PropertyGroup>
 
   <ItemDefinitionGroup>
