@@ -574,6 +574,74 @@ StanceDispatchFn g_stanceDispatch = nullptr;
 constexpr int kCrouchProneCaseDown = 0x17; // "+stance" down
 constexpr int kCrouchProneCaseUp = 0x18;   // "-stance" up
 
+// ---- Sniper Fire/ADS fix attempt, x64 (2026-09-05, resumed after the docs/ETA
+// pause -- known_issues_x64.md issue #1's "two new bugs found live" thread) ----
+//
+// Root-cause investigation, not a guess: decompiled FUN_14007c3a0 (this file's own
+// g_stanceDispatch) in full (decomp_14007c3a0_full.txt) and matched its case bodies
+// against this file's ALREADY-resolved kbutton struct pointers by ADDRESS, not by
+// position -- exactly the lesson from x86's own issue #3 ("never trust a bind-index
+// as a case number without independent confirmation"). Case 1/2 call
+// FUN_14007e460/e490 on `&DAT_140644818`, the SAME address kFireStructInsnOffset
+// resolves to g_fireStruct -- confirming case 1 = "+attack" down, case 2 = "-attack"
+// up. Case 0xd/0xe call the SAME pair on `&DAT_1406448e0`, matching g_adsStruct
+// exactly (kAdsStructInsnOffset's own target) -- confirming case 0xd = "+ads" down,
+// 0xe = "-ads" up (case 0xd/0xe ALSO clear the ads-toggle-flag byte first, matching
+// this file's own g_adsToggleFlag handling one section up).
+//
+// The critical part: `FUN_14007c3a0` calls `FUN_14007fc00(playerIndex, caseNumber)`
+// as the VERY FIRST thing it does for every non-zero case (decomp_14007c3a0_full.txt
+// line 17-19), BEFORE the switch. Decompiling FUN_14007fc00 and its three callees
+// (FUN_14007fb30/FUN_14026afa0/FUN_140265a20) shows it's a real client->server
+// RELIABLE COMMAND send: gated on real connection-state/demo-override checks, it
+// formats the case number into a short string ("n %i" -- confirmed via
+// ReadStringAt.java, a genuinely standalone literal, MSVC tail-merged against
+// "cubemapShot" et al in the same string pool) and writes it into a 128-entry ring
+// buffer (`(seq+1) & 0x7f`, with the exact "EXE_ERR_CLIENT_CMD_OVERFLOW" message
+// this engine family uses for its classic Quake3-descended reliable-command
+// channel) -- i.e. every REAL bind press/release, including a real keyboard
+// "+attack"/"+ads", tells the (local, loopback) server "bind N fired," separately
+// from raw usercmd button bits.
+//
+// This is the SAME mechanism x86's own re_notes/iw5sp.md already flagged and never
+// confirmed, months before x64 existed: "**Actionable hypothesis, not confirmed**:
+// this project's Fire (RT) is raw usercmd_t button bits, not a synthesized +attack
+// bind/command execution. If notifyonplayercommand only fires on real bind/command
+// dispatch (not raw usercmd bits), that directly explains [a GSC-side gate never
+// firing]... Worth a native-side check... before assuming this is the whole story"
+// (Predator Missile section, 2026-07-17). GSC's `notifyonplayercommand("event",
+// "+bind")`/`notifyoncommand` primitives are the confirmed native<->script bridge
+// for exactly this class of event (re_notes/iw5sp.md, "General pattern confirmed").
+// x64's own Fire/ADS implementation (like x86's) calls the real kbutton
+// activate/deactivate handlers DIRECTLY, bypassing FUN_14007c3a0/g_stanceDispatch
+// entirely -- so this reliable-command notify never fires for controller Fire/ADS,
+// unlike a real keyboard press. Leading hypothesis for the sniper-only symptom: a
+// sniper-class weapon's bolt-action/scope state machine is plausibly the one weapon
+// class whose GSC/native logic needs this notify (a "+attack"/"+ads" bind literally
+// happened) rather than relying on raw usercmd state alone, the way most other
+// weapon classes evidently can.
+//
+// Fix: PURELY ADDITIVE. Resolve FUN_14007fc00's real address as a fixed function-to-
+// function byte offset from the already-resolved g_stanceDispatch anchor (the same
+// anchor-plus-fixed-offset pattern this file already uses for every struct/field
+// this function resolves -- here applied to a CODE offset instead of a data offset,
+// which holds for the identical reason: both addresses are fixed positions within
+// the same static PE image, differing only by the one ASLR base that cancels out in
+// the subtraction). Offset computed directly from Ghidra's own two addresses:
+// 0x14007fc00 - 0x14007c3a0 = 0x3860. Calling it alongside (not instead of) the
+// existing direct kbutton calls cannot regress anything already working -- worst
+// case if this hypothesis is wrong, the extra notify is inert; the existing Fire/ADS
+// kbutton logic is untouched. NOT YET LIVE-TESTED -- this is a build-verified fix
+// attempt pending live confirmation the sniper symptom is actually gone, exactly
+// this session's established convention for every other x64 feature so far.
+using NotifyBindFn = void(__fastcall*)(int playerIndex, int caseNumber);
+NotifyBindFn g_notifyBindDispatch = nullptr;
+constexpr ptrdiff_t kNotifyBindFuncOffset = 0x3860; // FUN_14007fc00 - FUN_14007c3a0
+constexpr int kFireBindCaseDown = 1;   // "+attack" down -- confirmed via g_fireStruct address match
+constexpr int kFireBindCaseUp = 2;     // "-attack" up
+constexpr int kAdsBindCaseDown = 0xd;  // "+ads" down -- confirmed via g_adsStruct address match
+constexpr int kAdsBindCaseUp = 0xe;    // "-ads" up
+
 // ---- Jump auto-stand (2026-09-05, same day as CrouchProne) -- direct
 // instruction: "you need to implement the press a to stand up thing we did for
 // x86 too" ---------------------------------------------------------------------
@@ -1108,6 +1176,9 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
                 bool fireHeld = IsPhysicalHeld_Exported(g_buttonMap.fire, xiButtons, leftTrigger, rightTrigger);
                 if (fireHeld != g_fireHeldX64) {
                     g_fireHeldX64 = fireHeld;
+                    // Sniper Fire/ADS fix attempt -- see kNotifyBindFuncOffset's own
+                    // comment. Purely additive alongside the existing kbutton call.
+                    if (g_notifyBindDispatch) g_notifyBindDispatch(0, fireHeld ? kFireBindCaseDown : kFireBindCaseUp);
                     if (fireHeld) g_kbuttonActivate(g_fireStruct, kSyntheticSourceId, timestamp);
                     else g_kbuttonDeactivate(g_fireStruct, kSyntheticSourceId, timestamp);
                 }
@@ -1117,6 +1188,9 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
                 bool adsHeld = IsPhysicalHeld_Exported(g_buttonMap.ads, xiButtons, leftTrigger, rightTrigger);
                 if (adsHeld != g_adsHeldX64) {
                     g_adsHeldX64 = adsHeld;
+                    // Sniper Fire/ADS fix attempt -- see kNotifyBindFuncOffset's own
+                    // comment. Purely additive alongside the existing kbutton call.
+                    if (g_notifyBindDispatch) g_notifyBindDispatch(0, adsHeld ? kAdsBindCaseDown : kAdsBindCaseUp);
                     if (adsHeld) g_kbuttonActivate(g_adsStruct, kSyntheticSourceId, timestamp);
                     else g_kbuttonDeactivate(g_adsStruct, kSyntheticSourceId, timestamp);
                     // Force the real "is aiming down sights" flag directly to our
@@ -1448,10 +1522,18 @@ void InstallAnalogInputHooksX64()
             g_timestampPtr = reinterpret_cast<volatile uint32_t*>(SigScan::ResolveRipRelative(anchor + kTimestampInsnOffset, kRipInsnLength));
             g_adsToggleFlag = reinterpret_cast<volatile uint8_t*>(SigScan::ResolveRipRelative(anchor + kAdsToggleFlagInsnOffset, kRipInsnLength));
             g_stanceDispatch = reinterpret_cast<StanceDispatchFn>(anchor);
+            g_notifyBindDispatch = reinterpret_cast<NotifyBindFn>(anchor + kNotifyBindFuncOffset);
             if (g_stanceDispatch) {
                 char buf[128];
                 sprintf_s(buf, "[x64-crouchprone] Stance dispatch resolved @ 0x%llX -- CrouchProne active "
                     "(direct call, no hook installed).", static_cast<unsigned long long>(anchor));
+                LogFromController(buf);
+            }
+            if (g_notifyBindDispatch) {
+                char buf[160];
+                sprintf_s(buf, "[x64-sniper-fix] Reliable-command notify dispatch resolved @ 0x%p -- "
+                    "sniper Fire/ADS fix attempt active (fixed +0x%llX offset from stance-dispatch anchor).",
+                    (void*)g_notifyBindDispatch, static_cast<unsigned long long>(kNotifyBindFuncOffset));
                 LogFromController(buf);
             }
         }
