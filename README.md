@@ -63,6 +63,13 @@ weeks out. See [`re_notes/known_issues_x64.md`](re_notes/known_issues_x64.md)
 issue #1 for the live, detailed tracking of exactly what's done and what's
 left.
 
+**Multiplayer (`iw5mp.exe`) does not gate this release**, but work on it
+starts now, alongside Campaign/Survival's remaining gaps, rather than
+after — the `-x86` line's own Multiplayer effort never actually shipped
+(it stalled at reverse-engineering only) and this project doesn't want to
+repeat that. Expect it as a close fast-follow release once the first
+`-x64` build ships, not bundled into it.
+
 ### What works right now
 
 | Confirmed live (direct playtest) | Build-verified (not yet live-tested) |
@@ -109,7 +116,10 @@ Full detail, investigation trails, and current status on every item:
   exhaustive search — see [`CONTRIBUTING.md`](CONTRIBUTING.md).
 - **Both target binaries** (`iw5sp.exe` for Campaign/Survival, `iw5mp.exe`
   for Multiplayer) are treated as independent reverse-engineering efforts —
-  Multiplayer work has not started.
+  a fix or signature found in one is never assumed to carry over to the
+  other. Multiplayer's x64 reverse engineering is in progress now, as a
+  fast-follow to this release rather than blocking it (see the Status
+  section above).
 
 Full technical trail (every function found, every dead end ruled out):
 [`re_notes/known_issues_x64.md`](re_notes/known_issues_x64.md) and
