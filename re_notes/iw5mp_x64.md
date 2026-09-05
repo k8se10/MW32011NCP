@@ -383,45 +383,152 @@ tick functions were NOT found via this angle and remain unlocated.**
 
 ---
 
-## 6. Movement/look pipeline -- NOT YET LOCATED, clear next-session priority
+## 6. Movement/look pipeline -- CONFIRMED (Session 2, 2026-09-05)
 
-Per this project's own stated priority order (movement/look before buttons,
-matching the original SP investigation order), this was the intended
-priority #1 for this session but was not reached -- the key-event/dispatch
-chain in sections 3-4 turned out to be deep and well worth following to a
-clean conclusion first, and consumed the session's effort. **Genuinely
-unfound, not a dead end**: no Pmove-tick, `usercmd_t` forwardmove/rightmove
-writer, or raw-mouse-delta function was identified this pass.
+**Found via the exact technique Session 1 recommended**: not the section-5
+kbutton-global-reference dead end, and not a locality/constant-scan sweep --
+instead, the dvar-registration function itself. `FindExactStrings.java` for
+the classic id-Tech movement/look cvar names (`cl_yawspeed`,
+`cl_pitchspeed`, `cl_anglespeedkey`, `m_pitch`, `m_yaw`, `m_forward`,
+`m_side`, `sensitivity`, `cl_freelook`, `cl_bypassMouseInput`,
+`player_sprintUnlimited`) found every one of them registered in a single
+function, `FUN_1400d4370` -- the real x64 MP boot-time dvar-registration
+function (x86 MP's `FUN_00492560` analog). Decompiling it gave the real
+storage-handle globals for each dvar; `FindGlobalRefs.java` against those
+handles (the exact "dvar-value-discovery chain" technique this project's own
+CLAUDE.md documents, and the literal example the `FindGlobalRefs.java`
+header comment gives -- "a function touching cl_yawspeed + cl_pitchspeed +
+m_pitch + m_yaw + cl_anglespeedkey together is a strong CL_AdjustAngles/
+usercmd-angle-update candidate") led straight to the real pipeline in one
+pass. Full raw output: `re_notes/x64_migration/mp_movement_strings.txt`,
+`mp_decomp_1400d4370_cvarreg.txt`, `mp_globalrefs_movement_dvars.txt`,
+`mp_decomp_movement_candidates.txt`.
 
-**Recommended next-session approach**, in priority order:
-1. **Do not** try the section-5 kbutton-global-reference angle again for
-   movement -- just demonstrated to be a dead end for this binary the same
-   way it was for x86 MP.
-2. Try the exact technique that found x64 SP's own movement/Sprint chain
-   (per `known_issues_x64.md` issue #1 / `re_notes/x64_migration/
-   sprint_weapnext_x64.md`): trace forward from a real, dvar-gated sprint/
-   movement-adjacent global (`player_sprintUnlimited`-equivalent, or MP's own
-   `DAT_140e1df60`/`DAT_140e1dcf4` sprint-candidate flag from section 4's
-   case 0xd/0xe) via `FindCallers.java` on whatever real Pmove-entry function
-   consumes it, rather than trying to find movement top-down from a string
-   anchor the way section 4's chain was found -- movement/look has no bind-
-   name string of its own to anchor from (forwardmove/rightmove are raw
-   `usercmd_t` byte fields, not named commands).
-3. Alternatively, reuse x86 MP's own top-down technique from its Session 1/5
-   (`re_notes/iw5mp.md`): the per-frame orchestrator was originally found via
-   locality (movement/look functions cluster together in the compiled
-   binary, separate from the key-event/menu cluster this session mapped) --
-   worth a `FindConstantRefs.java` sweep for a distinctive small integer
-   scalar (e.g. the same `0x1b`/ESCAPE byte-scan x86 MP Session 4 used) to
-   re-locate the per-frame tick's own module, since it will almost certainly
-   sit in a numerically distinct address range from the `0x1400bxxxx`-
-   `0x1400cexxx` key-event cluster this session mapped.
-4. Cross-check `usercmd_t`'s own byte layout against x86 (0x40 bytes,
-   forwardmove @ +0x1c, rightmove @ +0x1d, angles @ +0x26-+0x2a per
-   `iw5sp.md`/`iw5mp.md`) -- x64 SP confirmed this layout survived the
-   recompile unchanged (per `known_issues_x64.md`), so it's a reasonable
-   starting assumption for MP too, worth verifying rather than re-deriving
-   from scratch.
+### `FUN_1400d0be0(usercmdOut, playerIdx)` -- the real top-level per-frame orchestrator (x86 MP `FUN_0048a7b0` analog)
+
+Zeros a `usercmd_t`-shaped output struct, then:
+- Applies `cl_yawspeed`/`cl_pitchspeed`/`cl_anglespeedkey`-scaled deltas
+  (via a `FUN_1400cfef0` per-key-held-duration reader, see below) into
+  **`DAT_140e21454`/`DAT_140e21458`** -- confirmed (cross-validated across
+  three separate functions in this section) as the real per-frame **yaw/
+  pitch view-angle accumulators**, direct x64 analog of x86's fixed-point
+  angle accumulators. This whole block is gated `(_DAT_140e1df74 & 0x800)
+  == 0` -- the exact x86 MP "freelook mode" bit this project's own Session 1
+  notes already flagged (`iw5mp.md`: "MP's FUN_00489c40 branches on freelook
+  mode").
+- Branches on `_DAT_140e1df74 & 0x80000` -- **the exact same bit value**
+  x86 MP's own Session 5 confirmed as the "reduced-summer gate"
+  (`DAT_010627a4 & 0x80000`, spectator/killcam-restricted state, per
+  `iw5mp.md`). When clear (normal live gameplay): calls
+  `FUN_1400ce5c0` -> `FUN_1400cfce0` -> `FUN_1400d0050` (movement, see
+  below). When set (restricted state): calls `FUN_1400d0350` instead.
+  **This is the exact same two-path branch structure x86 MP's own
+  `FUN_0048a7b0` was confirmed to have** (full-scope `FUN_00489f40` path vs.
+  reduced `FUN_0048a5d0` path) -- reproduced independently in x64 without
+  any x86 address being assumed.
+
+### `FUN_1400d0050(playerIdx, usercmdPtr, ...)` -- CONFIRMED real movement writer (x86 MP `FUN_00489c40` analog)
+
+```c
+// (abridged)
+FUN_1400cfb60(&DAT_140e1df60, local_88, local_res20);   // raw mouse-delta read (see below)
+...
+*(char*)(param_2 + 0x1d) = FUN_1403170f0(...);   // usercmd_t.rightmove  <-- EXACT x86 offset
+...
+*(char*)(param_2 + 0x1c) = FUN_1403170f0(...);   // usercmd_t.forwardmove <-- EXACT x86 offset
+```
+
+**Writes `usercmd_t.forwardmove`/`.rightmove` at the exact same byte offsets
+(+0x1c/+0x1d) x86 confirmed for BOTH `iw5sp.exe` and `iw5mp.exe`** -- this is
+the single strongest confirmation in this section, a byte-offset match, not
+a structural-shape inference. Branches on a per-player byte
+(`&DAT_140e1dbb0)[player]`) to decide whether the scaled Y-axis delta feeds
+strafe (`m_side`-scaled) or look-pitch (`m_pitch`-scaled) -- **exact
+reproduction of x86 MP's own documented "real structural difference: MP's
+FUN_00489c40 branches on freelook mode (mouse Y as movement vs. look
+pitch)"**. Also calls `FUN_14001e2c0` to fold the yaw/pitch accumulators
+(`DAT_140e21454`/`DAT_140e21458`) into a final compressed angle write at
+`param_2+0x20`/`+0x22` (not yet reconciled against x86's documented
++0x26-+0x2a angle-byte range -- see open item below).
+
+### `FUN_1400d0350(playerIdx, usercmdPtr)` -- CONFIRMED reduced-scope button-summer + angle finalize (x86 MP `FUN_0048a5d0` analog)
+
+Writes `usercmd_t.buttons` (at `+4`) bits `0x1`/`0x8`/`0x20`/`0x4000`/`0x8000`
+from the SAME generic-array kbutton region as `FUN_1400ce5c0` (below) --
+**5 checks only**, exactly matching x86 MP's own documented "`FUN_0048a5d0`
+(5 bind checks only)" reduced variant. Separately writes final `usercmd_t`
+angle BYTES at `param_2+0x26`, `+0x27`, `+0x28`, `+0x29`, `+0x2a` --
+**exact byte-for-byte match to x86's documented usercmd_t angle range
+(+0x26-+0x2a)**, using `m_yaw`/`m_pitch`-scaled accumulator deltas. This is
+the clearest single confirmation that x64's `usercmd_t` layout is
+byte-identical to x86's for the angle fields, independently reproducing
+x64 SP's own already-documented finding that this struct survived the
+recompile unchanged.
+
+### `FUN_1400ce5c0(playerIdx, usercmdPtr)` -- CONFIRMED full generic "simple held bind" array summer (x86 MP `FUN_00489f40` analog)
+
+**14 bit checks, all 14 bit VALUES an exact match to x86 MP's own
+Session 5 confirmed table** (`iw5mp.md`), reproduced independently here with
+different (x64) `DAT_` addresses:
+
+| bit | x64 kbutton address (per-player, `+player*600`) | x86 MP bit identity (from `iw5mp.md`) | match |
+|---|---|---|---|
+| `0x1` | `0x140e1dc28`/`29` | `+attack` (Fire), High confidence | exact |
+| `0x2000` | `0x140e1dc3c`/`3d` | `+melee`, High confidence (bit match) | exact |
+| `0x4000000` | `0x140e1dc50`/`51` | New, no SP analog | exact |
+| `0x4000` | `0x140e1dc64`/`65` | `+frag`, High confidence | exact (also independently seen in `FUN_1400d0350` above) |
+| `0x8000` | `0x140e1dc78`/`79` | `+smoke`, High confidence | exact (also seen in `FUN_1400d0350`) |
+| `0x4` | `0x140e1dc8c`/`8d` | Retracted/unreliable in x86, Low confidence | exact position |
+| `0x8` | `0x140e1dca0`/`a1` | `+usereload` (Use), High confidence | exact (also seen in `FUN_1400d0350`) |
+| `0x10` | `0x140e1dcb4`/`b5` | "Reload" empirically, bind-name mismatch flagged, Low confidence | exact position |
+| `0x20` | `0x140e1dcc8`/`c9` | `+actionslot 1`, High confidence | exact (also seen in `FUN_1400d0350`) |
+| `0x100` | `0x140e1dcdc`/`dd` | `+actionslot 2`, High confidence | exact |
+| `0x200` | `0x140e1dcf0`/`f1` | `+actionslot 3`, High confidence | exact |
+| `0x400` | `0x140e1dbd8`/`d9` | `+gostand` (jump), High confidence | exact |
+| `0x80000` | `0x140e1dd04`/`05` | New, no SP analog | exact |
+| `0x400` (2nd, conditional on `DAT_140e1dddc>6` and a killcam/follow-mode-shaped guard) | `0x140e1dc00`/`01` | New, "likely a killcam/spectator-follow-specific duplicate of the jump bit, not independently investigated" | exact, including the conditional shape |
+
+**This is a genuinely strong cross-architecture validation** -- not just bit
+values matching, but the exact SET of 14 bits, their relative ordering, and
+even the one conditional/gated duplicate bit all carrying over unchanged
+from x86 MP's own independently-derived table. Reinforces confidence in
+BOTH tables simultaneously (any given bit identity is now supported by two
+independent binaries' worth of static evidence, not one).
+
+### `FUN_1400cfb60`/`FUN_1400cfef0` -- raw mouse-delta and per-key-hold-duration readers (x86 MP `FUN_00489ba0` analog, split into two helpers)
+
+`FUN_1400cfb60(structBase, outX, outY)` reads a double-buffered raw
+mouse-delta accumulator (`structBase+0x3420`/`+0x3424` and `+0x3428`/
+`+0x342c`, parity-toggled via `structBase+0x3430`), scales by
+`cl_mouseAccel`/`sensitivity`, and returns `outX`/`outY`. Called as
+`FUN_1400cfb60(&DAT_140e1df60, ...)` -- **note this passes `&DAT_140e1df60`
+purely as a struct BASE POINTER for its own +0x3420-range fields, not as a
+meaningful read of byte 0 itself** -- see the explicit correction in
+section 4's ADS discussion below, this was checked directly (not assumed)
+after an initial mis-read. `FUN_1400cfef0(fieldPtr)` reads a single
+`{lastFrameHoldMs, lastTimestamp, isHeld}`-shaped field (matches the classic
+id-Tech "digital direction key" read pattern) and returns a normalized
+0.0-1.0 hold fraction -- used both for arrow-key angle accumulation in
+`FUN_1400d0be0` and for analog-adjacent reads in `FUN_1400ce5c0`/
+`FUN_1400d0be0`'s freelook branch.
+
+### Open items, movement/look
+
+- The final compressed-angle write in `FUN_1400d0050` (`param_2+0x20`/
+  `+0x22`) has not been reconciled against `FUN_1400d0350`'s own
+  `+0x26`-`+0x2a` angle-byte writes -- both write SOME angle-related field of
+  the same `usercmd_t`, but whether they're the same logical field (written
+  from two different code paths depending on freelook state) or genuinely
+  different fields (e.g. a compressed short-angle vs. the final per-axis
+  bytes) is not resolved. Worth a focused pass before any hook is written on
+  either.
+- `DAT_140e1dbb0` (freelook-mode-branch byte in `FUN_1400d0050`) vs.
+  `DAT_140e1dbc4` (angle-speed-scale byte in `FUN_1400d0be0`, and the
+  per-player mirror compared against `DAT_140e1df60` in `FUN_1400cfce0`,
+  see section 4 below) are 20 bytes apart in the same small per-player
+  state cluster (`~0x140e1dbb0`-`0x140e1dbc4`) -- plausibly related fields
+  of one small "input mode" struct, not investigated further this pass.
+  Do not assume they're the same field.
 
 ---
 
