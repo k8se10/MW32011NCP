@@ -30,7 +30,7 @@ below without re-running Ghidra.
 
 ---
 
-## Status: Session 3 complete. Both Session 2 open items resolved (including a significant side-discovery -- the game's own native aim-assist function, `AimAssist_GetTagPos`-anchored -- that explained a usercmd_t field this project had mis-read as an angle write). Killstreak/loadout 6-slot family (cases 0xf-0x1a) now has a real name anchor: "type 2" slots resolve with high confidence to MW3's own `assaultStreaks` killstreak category. Full 89-case dispatch table transcription completed, surfacing a coherent voice/text-chat-mode cluster, a third `+scores` touch, a new Hold-Breath candidate (case 0x4c/0x50, a distinct boolean-flag shape), and two more independent cases (0x56/0x57) touching the ADS candidate flag -- now 4 independent dispatch cases support that hypothesis, not 2. Key-event dispatch chain (Session 1) and movement/look pipeline (Session 2) remain static-confirmed. No dispatch case is asserted "confirmed by name" beyond the 4 command-string cases (Session 1) and the assaultStreaks-category evidence (Session 3) -- movement-critical cases (Fire/ADS/Sprint/Reload) remain candidates pending live verification, per this project's own issue #3 policy.
+## Status: Session 4 complete. Hold Breath candidate (case 0x4c/0x50) significantly upgraded to high confidence via three independent, mechanically-specific corroborating gates (ADS-state bit, a narrow sniper-weapon-class range check, a per-weapon capability-table lookup) -- the strongest static evidence this project has for any non-command-string MP dispatch case, though still not name-confirmed per issue #3. Melee candidate (case 0x4b) candidacy COMPLICATED (not strengthened) by real dual Killcam-mode/live-gameplay behavior a genuine melee bind wouldn't typically need. Cases 0x47/0x48 decompiled: a real, generic per-player "activity state" getter/setter pair found (`FUN_1403077c0`/`FUN_14030eed0`, reused by multiple cases with different state values) but no name anchor. Session 3's own "if one can be found" follow-up on `DAT_140e1dbc4`'s writer is honestly closed: `FUN_1400cd110` is a trivial getter for a different, unrelated global -- that specific ambiguity (section 6) remains genuinely open. The shared per-player event-flags register both Hold Breath and the killstreak-slot type-3 branch write into (`DAT_1406be770`) is now structurally understood: a per-frame, self-clearing "event occurred this frame" accumulator, not persistent state. Everything from Sessions 1-3 (key-event dispatch chain, movement/look pipeline, killstreak assaultStreaks-category match) remains static-confirmed, unchanged this session.
 
 This session started from string anchors (bind-name literals: `+attack`,
 `+sprint`, `+holdbreath`, `+frag`, `+gostand`, etc.) rather than trying to
@@ -334,9 +334,9 @@ All addresses are per-player base; actual runtime address is
 | 0x41 (down only) | `0x140e1dc14` (direct byte flag, NOT a kbutton_t) | raw boolean set=1 | -- |
 | 0x42 (up) | same byte, conditional clear + `LAB_1400cf55d`: `DAT_140e21454 = DAT_140e1dfc8 ^ DAT_1404e87e0` | raw boolean + XOR-toggle side effect | **Candidate for `+scores`** (Back/scoreboard-toggle bind) -- a raw hold-flag rather than a kbutton_t, matching the conceptual shape of a "hold to show scoreboard" bind rather than a continuous-movement bind. Case 0x51 (no matching even case) reaches the SAME `LAB_1400cf55d` XOR side effect directly, suggesting 0x51 is a second, one-shot-tap bind for the same underlying action (e.g. a keyboard Tab-equivalent alongside a controller hold). **Not confirmed by name.** |
 | 0x43 (down) / 0x44 (up) | `0x140e1dcf4` (SAME kbutton as case 0xd!) | single, shared kbutton, down-edge also toggles `DAT_140e1df60` | **The strongest-supported non-command-string case in this whole table.** Four independent dispatch cases (`0xd`, `0x43`, and section 4-4's `0x56`/`0x57`) all touch `DAT_140e1df60` consistent with a real ADS toggle/cancel state, plus the section 4-1 movement-pipeline cross-check. Still not name-confirmed per issue #3, but the evidentiary base is now real and multi-sourced, not a single table-position guess. |
-| 0x47/0x48 (down/up) | none (calls `FUN_140090c80`/`FUN_140090d20(player)` directly, no kbutton at all) | one-shot start/stop pair | A distinct case TYPE, not a raw kbutton -- worth remembering when a future pass extends this table, since not every case follows the kbutton pattern. |
-| 0x4b (down only, no matching up) | `FUN_1400d71b0(player)` | one-shot | -- |
-| 0x4c / 0x50 | `FUN_14007f5b0(player, 1)` / `FUN_14007f5b0(player, 0)` | boolean set/clear | -- |
+| 0x47/0x48 (down/up) | none (calls `FUN_140090c80`/`FUN_140090d20(player)` directly, no kbutton at all) | one-shot start/stop pair | **Decompiled Session 4** -- see section 4-5. Real state-machine shape (2-second cooldown, per-player activity-state getter/setter pair), no name anchor found. |
+| 0x4b (down only, no matching up) | `FUN_1400d71b0(player)` | one-shot | **Decompiled Session 4** -- see section 4-5. Melee candidacy COMPLICATED, not strengthened: reveals dual Killcam-mode/live-gameplay behavior real melee wouldn't typically need. |
+| 0x4c / 0x50 | `FUN_14007f5b0(player, 1)` / `FUN_14007f5b0(player, 0)` | boolean set/clear | **Decompiled Session 4 -- Hold Breath candidacy significantly upgraded.** See section 4-5: real ADS-gate + sniper-weapon-class-range check + per-weapon capability-table lookup, matching MW3's actual Hold Breath behavior precisely. |
 | **0xf/0x10 .. 0x19/0x1a** (6 parameterized slots) | `FUN_14007c5b0(player, N)` / `FUN_14007c760(player, N)`, N=0..5 | **parameterized slot family, 6 slots** | **Name-anchored (Session 3, section 4-3): "type 2" slot handling resolves with high confidence to MW3's real `assaultStreaks` killstreak category** (exact 15-entry count match to a table a real loadout-validator function names explicitly), not just a structural shape. "Type 1"/"type 3" still unresolved to a category name. Directly relevant to this project's own stated MP motivation. |
 | `"+chatmodepublic"`-adjacent: 0x4e | `FUN_140262850(player, "chatmodepublic\n")` | one-shot command string | **Confirmed by literal command string** -- real Cbuf_AddText call, not a kbutton. |
 | 0x4f | `FUN_140262850(player, "chatmodeteam\n")` | one-shot command string | **Confirmed by literal command string.** |
@@ -620,6 +620,106 @@ Full case table addition (cases not already in the table above):
 | `0x56` | toggles `DAT_140e1df60` (no kbutton) | one-shot toggle | 3rd independent ADS-candidate touch |
 | `0x57` | force-clears `DAT_140e1df60` (no kbutton) | one-shot | 4th independent ADS-candidate touch |
 
+### 4-5. Cases 0x47/0x48, 0x4b, 0x4c/0x50 decompiled (Session 4, 2026-09-05) -- Hold Breath significantly upgraded, Melee candidacy complicated, one dead end honestly closed
+
+Per Session 3's own recorded next step ("`FUN_1400d71b0`/`FUN_140090c80`/
+`FUN_140090d20`/`FUN_14007f5b0`... were identified by shape but not
+decompiled -- doing so could turn the Hold-Breath and one-shot-melee
+candidates from shape-based into better-supported"). Full raw output:
+`re_notes/x64_migration/mp_decomp_case47_48_4b_4c_50.txt`,
+`mp_decomp_1400cd110.txt`, `mp_globalrefs_weaponclass_631c.txt`,
+`mp_globalrefs_be770.txt`, `mp_decomp_140091780.txt`.
+
+**Cases 0x4c/0x50 (`FUN_14007f5b0`) -- Hold Breath, upgraded from "medium,
+shape-based only" to high confidence, multi-signal corroborated.** The
+decompile shows real, specific gating that matches MW3's actual Hold Breath
+mechanic precisely, not a generic "any special ability" shape:
+- Gated on bit 0xc of a per-player state field (`(DAT_1405a60e0 >> 0xc & 1)
+  != 0`) -- consistent with an "is aiming down sights" check (Hold Breath is
+  ADS-only in real MW3).
+- Gated on `DAT_1405a631c - 0x10U < 3` -- a **3-value range check** against
+  a per-player field, consistent with a weapon-CLASS enum restricted to a
+  small contiguous range (sniper-rifle-class weapons specifically, matching
+  Hold Breath's real weapon-class restriction). **Independently checked, not
+  assumed**: `FindGlobalRefs.java` against `DAT_1405a631c` alone found it
+  referenced by **10 distinct functions** (including `FUN_140087540`, the
+  same function section 4-2's killstreak-slot "type 2" branch delegates to)
+  -- a genuinely widely-consulted field, consistent with a general "current
+  weapon class ID" enum rather than a coincidental one-off variable.
+- If the weapon-class check passes, looks up a **per-weapon-class
+  capability byte** at a fixed offset (`+0x9ae`) in a per-weapon data table
+  (`&DAT_1405711a0`, indexed by `DAT_1405a6434`) -- exactly the shape of a
+  "does this specific weapon support Hold Breath" flag, not a hardcoded
+  weapon-class check alone.
+- Two distinct outcomes: if the capability check + an "already active" flag
+  region are set, it just flips a bit in a shared per-frame event-flags
+  register (`DAT_1406be770 |= 0x200000`) and returns; otherwise it calls
+  `FUN_1400abe80(player, 1)` + `FUN_140085c20(player, 0, 0, 0)`, the real
+  activation pair.
+
+**Still not name-confirmed** per this project's own issue #3 policy (no
+literal string/bind-name anchor found), but this is now the strongest
+static evidence this project has for any non-command-string MP dispatch
+case -- three independent, mechanically-specific gates (ADS state, a narrow
+weapon-class range, a per-weapon capability table) all pointing the same
+direction, not a single structural coincidence.
+
+**Case 0x4b (`FUN_1400d71b0`) -- Melee candidacy COMPLICATED, not
+strengthened.** The decompile reveals genuinely dual-context behavior: a
+distinct branch when `DAT_140e1dddc == 0xb` (the SAME Killcam/Theater
+connect-state section 4's `FUN_1400c3290` gates on) that does
+Killcam-specific state transitions (state 2/0 via the `FUN_1403077c0`/
+`FUN_14030eed0` getter/setter pair, see below), versus a separate branch
+for live gameplay that checks a per-player byte (`&DAT_140e1dd75)[player]`)
+before setting state 1. A genuine single-press Melee bind would not
+typically need Killcam-mode-specific logic at all -- this doesn't rule out
+Melee, but it's a real complication worth recording honestly rather than
+treating the earlier "candidate shape" note as reinforced by this pass. No
+replacement candidate identified.
+
+**Cases 0x47/0x48 (`FUN_140090c80`/`FUN_140090d20`) -- real state-machine
+shape found, no name anchor.** Both gate on `DAT_1405a9448` (a mode-active
+flag also referenced by the Hold Breath function above) and a shared getter,
+`FUN_1400cd110()` (see the dead-end note below). The down case (0x47) is
+further gated by a real **2000ms (2-second) cooldown**
+(`DAT_14061e7dc + 2000 < DAT_1406112d0`), then transitions a per-player
+"activity/animation state" field to value `6` via `FUN_14030eed0(player,
+6)` -- but only if currently NOT already in state 6 (read via
+`FUN_1403077c0(player)`). The up case (0x48) reverses this back toward
+state 0. **New reusable finding**: `FUN_1403077c0`/`FUN_14030eed0` is a
+real, generic per-player "activity state" get/set accessor pair -- multiple
+different case handlers in this section use it with different numeric
+states (0, 1, 2, 6), suggesting a small enum of mutually-exclusive
+special-action states (e.g. reviving/being-revived, a downed/last-stand
+state, Killcam playback state) that different binds transition into and out
+of. Worth reaching for by name if a future pass investigates any of the
+remaining un-decompiled one-shot cases. No specific name confirmed for
+state value 6 itself this pass.
+
+**`FUN_1400cd110` -- checked and honestly ruled out as Item B's writer
+(Session 3's own "if one can be found" follow-up).** Decompiles to a
+trivial one-line getter: `return DAT_140e1dd82;` -- a completely different
+global from `DAT_140e1dbc4`, not its writer. This specific avenue is
+closed; **section 6's `DAT_140e1dbc4` cross-context ambiguity (the "why is
+ADS state compared against digital-look-active specifically" open question)
+remains genuinely unresolved.** Recorded per this project's own "document
+dead ends" standard rather than silently dropped.
+
+**`DAT_1406be770` (the shared event-flags register both Hold Breath and
+killstreak-slot type 3 write into) -- structural role confirmed.**
+Decompiled its one meaningful consumer, `FUN_140091780`: reads the entire
+flags register, passes it to `FUN_1400cdbe0(player, flags)`, then
+**immediately zeroes it** (`DAT_1406be770 = 0`) every call, alongside
+per-frame float/position math and calls that look like a client-side
+feedback/effects packaging step (`FUN_1400cdc00`/`FUN_1400cddf0`/
+`FUN_1400cdbe0`). **This is a per-frame, self-clearing "gameplay event
+occurred this frame" flag accumulator, not persistent per-player state** --
+meaning bits like Hold Breath's `0x200000` and the killstreak-slot type-3
+bit (`0x40000`, section 4-2) are one-shot per-frame triggers (plausibly for
+client-side sound/HUD-flash feedback), not "currently active" flags. Real
+architectural context for any future work touching this system; does not
+by itself name either specific bit.
+
 ### `FUN_1400c3290` -- confirmed Killcam/Theater-mode dispatcher (x86 `FUN_006ada70` analog)
 
 Entire body gated on `DAT_140e1dddc == 0xb` (inert everywhere else, return-only
@@ -897,14 +997,16 @@ a retraction.
 
 ## Signature-Scanning Readiness
 
-**Status: ~65% ready** (updated Session 3 -- both movement-pipeline open
-items resolved for real, and the killstreak-slot family upgraded from
-"structurally reinforced" to a real, high-confidence category-name match.
-Exceeds x86 MP's own "~55%" figure reached after 6 sessions, in three
-sessions here. The remaining gap is case-to-real-bind-NAME confirmation for
-the movement-CRITICAL dispatch cases specifically (Fire/ADS/Sprint/Reload)
--- not missing mechanism, missing final identity confirmation, which per
-this project's own issue #3 policy may be gated on live verification).
+**Status: ~68% ready** (updated Session 4 -- the Hold Breath candidate moved
+from a single structural shape to three independent, mechanically-specific
+corroborating gates, the strongest static case-identity evidence this
+project has produced for MP outside literal command strings. Small
+increment over Session 3's ~65%, not a leap: the remaining gap is
+unchanged in kind -- case-to-real-bind-NAME confirmation for the
+movement-CRITICAL dispatch cases (Fire/ADS/Sprint/Reload/Hold-Breath), not
+missing mechanism, which per this project's own issue #3 policy may be
+gated on live verification for the cases static evidence alone can't fully
+close).
 
 - Bind-name table + lookup/resolver (`FUN_1400b5cf0`, `FUN_1400b4800`) [OK] confirmed
 - Controls-menu rebind flow, alias-cluster/KEY_OR display [OK] confirmed UI-only, correctly not pursued as hook targets (mirrors x86 MP's own already-closed dead end)
@@ -920,17 +1022,21 @@ this project's own issue #3 policy may be gated on live verification).
 - Byte-pattern signatures: still none extracted -- reasonable to start once the two movement-pipeline open items (section 6) and the case-name-confirmation gap are resolved or a live-verification phase is authorized
 - Live validation: not started, and out of scope for this project's own locked static-first MP ordering until explicitly authorized for a live/injection phase
 
-**Ready to proceed with** (updated Session 3 -- all three of the above are
-now done): the two movement-pipeline open items are resolved (section 6),
-the full 89-case dispatch table is now fully transcribed (section 4-4, no
-more "mechanical continuation, not yet done" cases remain), and the
-killstreak-slot family has a real category-name anchor (section 4-3).
-**Natural next steps for a future session**: (1) `FUN_1400d71b0`/
-`FUN_140090c80`/`FUN_140090d20`/`FUN_14007f5b0` (cases `0x47`/`0x48`/`0x4b`/
-`0x4c`/`0x50`) were identified by shape but not decompiled -- doing so could
-turn the Hold-Breath and one-shot-melee candidates from shape-based into
-better-supported; (2) "type 1"/"type 3" of the killstreak 6-slot family
-(section 4-3) remain unresolved to a category name, unlike "type 2"; (3)
-the residual `DAT_140e1dbc4` cross-context ambiguity (section 6) could be
-chased further by decompiling `FUN_1400cd110`/the actual writer of that
-byte, if one can be found. All static-only. **Blocked on nothing.**
+**Ready to proceed with** (updated Session 4): cases `0x47`/`0x48`/`0x4b`/
+`0x4c`/`0x50` are now all decompiled (section 4-5) -- Hold Breath
+significantly upgraded, Melee complicated, 0x47/0x48 given a real
+state-machine shape with no name yet. **Natural next steps for a future
+session**: (1) "type 1"/"type 3" of the killstreak 6-slot family (section
+4-3) still remain unresolved to a category name, unlike "type 2" -- not
+attempted this session, still open; (2) the residual `DAT_140e1dbc4`
+cross-context ambiguity (section 6) is still open -- `FUN_1400cd110` was a
+dead end (section 4-5), the actual writer of that byte remains genuinely
+unlocated; (3) the real per-player "activity state" enum found this session
+(`FUN_1403077c0`/`FUN_14030eed0`, values 0/1/2/6 observed) is a new,
+reusable lead worth decompiling other consumers of if a future pass wants
+to pin down what state 6 (case 0x47/0x48) or state 2 (case 0x4b's Killcam
+branch) actually represent; (4) `FUN_140087540` (the killstreak-slot "type
+2" delegate, section 4-2) and the Hold Breath weapon-class field
+(`DAT_1405a631c`, section 4-5) share overlapping consumers -- not
+investigated for a connection this session, flagged as a curiosity, not a
+confirmed lead. All static-only. **Blocked on nothing.**
