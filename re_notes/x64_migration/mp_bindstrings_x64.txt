@@ -1,0 +1,73 @@
+STRING @ 14044ff50 = "screenshot"
+  from 1400ca52b type=DATA IN FUNCTION FUN_1400ca510@1400ca510
+  from 1400ca59b type=DATA IN FUNCTION FUN_1400ca580@1400ca580
+  from 140539b18 type=DATA IN DATA
+  (3 references)
+
+STRING @ 14045b324 = "+frag"
+  from 14009cc07 type=DATA IN FUNCTION FUN_14009c830@14009c830
+  from 14053ac08 type=DATA IN DATA
+  (2 references)
+
+STRING @ 14045b3d0 = "+attack"
+  from 1400b5d10 type=PARAM IN FUNCTION FUN_1400b5cf0@1400b5cf0
+  from 1400a045d type=DATA IN FUNCTION FUN_1400a0350@1400a0350
+  from 1400a0467 type=DATA IN FUNCTION FUN_1400a0350@1400a0350
+  from 1400a0570 type=PARAM IN FUNCTION FUN_1400a0350@1400a0350
+  from 14053abe8 type=DATA IN DATA
+  (5 references)
+
+STRING @ 14045b498 = "+holdbreath"
+  from 1400a10f2 type=DATA IN FUNCTION FUN_1400a0cf0@1400a0cf0
+  from 1402f107d type=DATA IN FUNCTION FUN_1402f0f80@1402f0f80
+  from 14053ada8 type=DATA IN DATA
+  (3 references)
+
+STRING @ 14045b4c0 = "+gostand"
+  from 1400a11fa type=DATA IN FUNCTION FUN_1400a0cf0@1400a0cf0
+  from 14053acd8 type=DATA IN DATA
+  (2 references)
+
+STRING @ 14045d780 = "+smoke"
+  from 14053ac18 type=DATA IN DATA
+  (1 references)
+
+STRING @ 14045d790 = "+breath_sprint"
+  from 1402f0fe4 type=DATA IN FUNCTION FUN_1402f0f80@1402f0f80
+  from 1402f0ffc type=DATA IN FUNCTION FUN_1402f0f80@1402f0f80
+  from 1402f1019 type=DATA IN FUNCTION FUN_1402f0f80@1402f0f80
+  from 1402f10c4 type=PARAM IN FUNCTION FUN_1402f0f80@1402f0f80
+  from 14053ac28 type=DATA IN DATA
+  (5 references)
+
+STRING @ 14045d7b0 = "+usereload"
+  from 14053ac38 type=DATA IN DATA
+  (1 references)
+
+STRING @ 14045d7e0 = "+actionslot 1"
+  from 14053ac58 type=DATA IN DATA
+  (1 references)
+
+STRING @ 14045d800 = "+actionslot 2"
+  from 14053ac68 type=DATA IN DATA
+  (1 references)
+
+STRING @ 14045d820 = "+actionslot 3"
+  from 14053ac78 type=DATA IN DATA
+  (1 references)
+
+STRING @ 14045da10 = "+reload"
+  from 14053adc8 type=DATA IN DATA
+  (1 references)
+
+STRING @ 14045da58 = "+sprint"
+  from 1402f104d type=DATA IN FUNCTION FUN_1402f0f80@1402f0f80
+  from 1402f1067 type=READ IN FUNCTION FUN_1402f0f80@1402f0f80
+  from 14053ae08 type=DATA IN DATA
+  (3 references)
+
+STRING @ 14045da68 = "+scores"
+  from 14053ae18 type=DATA IN DATA
+  (1 references)
+
+Total matching strings: 14

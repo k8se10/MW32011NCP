@@ -1,0 +1,8 @@
+=== Reference counts per global ===
+ads_or_sprint_140e1dcf4 (140e1dcf4): 4 references
+dbb4_candidate (140e1dbb4): 2 references
+dc2c_candidate (140e1dc2c): 4 references
+
+=== Candidate functions, ranked by distinct global diversity (1) ===
+
+---- FUN_1400ce950 @ 1400ce950 (globals: ads_or_sprint_140e1dcf4, dbb4_candidate, dc2c_candidate) ----
