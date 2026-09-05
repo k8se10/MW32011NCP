@@ -55,6 +55,41 @@ the same way, because:
 If you don't know why a specific plugin needs memory read/write access,
 don't run it.
 
+## Greenlit (trusted) plugins — an exception to opt-in, not a loosening of it
+
+A small, explicit allowlist of exact plugin filenames (see
+`kTrustedPluginFilenames` in `plugin_loader.cpp`) load **unconditionally**,
+regardless of `[Plugins] Enabled` — this is a real, narrow exception to the
+opt-in rule above, not a change to it. Every other plugin still needs
+`Enabled=1` exactly as before; this allowlist doesn't touch that path at
+all. The first (and currently only) entry is `mw32011nsp_security.dll` —
+the sibling [MW32011NSP](https://github.com/k8se10/MW32011NSP) project's
+own netcode security-fix plugin, which patches real, confirmed network
+vulnerabilities in the base game. It ships built into this mod by default
+specifically because it's first-party, defensive-only (bounds-check gates
+on real vulnerable code paths, never a memory read of gameplay-entity
+state), and protects players regardless of whether they'd otherwise think
+to opt into third-party plugins at all.
+
+**Real caveat, read this before assuming more than is actually true**:
+filename matching is **not cryptographic**. Nothing stops a
+differently-sourced DLL from being named `mw32011nsp_security.dll` to ride
+this same allowlist — there is no code-signing or hash verification here,
+just a string comparison. This does not introduce a NEW trust-boundary
+problem, though: whatever sits in a player's own `plugins/` folder, they
+put there themselves — the same physical-access trust boundary the rest of
+this plugin system already rests on (see the Risk statement above). The
+allowlist is a **default-behavior convenience** ("this one specific,
+first-party, defensive-only plugin doesn't need the same
+risk-acknowledgment step as an arbitrary third-party one"), not a security
+guarantee that the file at that name is genuinely what it claims to be.
+
+The mechanism itself is generic — a future first-party plugin from this
+project could be added to the same allowlist, this isn't hardcoded to know
+anything about NSP specifically. It's currently a one-entry list because
+NSP's security plugin is the first and only plugin that has earned this
+treatment.
+
 ## Enabling plugin loading
 
 In `mw3ncp_config.ini`:

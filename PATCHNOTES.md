@@ -45,6 +45,14 @@ live, detailed status on every item below.
    target is resolved via a wildcarded byte-pattern scan against the game's
    own main module, once at process startup and cached for the session —
    see `CODE_STANDARDS.md` for the full policy and rationale.
+7. **"Greenlit" trusted-plugin allowlist.** A small, explicit allowlist of
+   first-party plugin filenames now load automatically, without requiring
+   `[Plugins] Enabled=1` — the sibling
+   [MW32011NSP](https://github.com/k8se10/MW32011NSP) project's own netcode
+   security-fix plugin ships built in this way by default. Every other,
+   arbitrary third-party plugin still needs the normal opt-in — see
+   `PLUGIN_API.md` for the full design and its real caveat (filename
+   matching isn't cryptographic).
 
 ### Fixed
 1. **D-pad Left's squadmate-call-in exception ported.** D-pad Left now
