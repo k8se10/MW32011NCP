@@ -1,0 +1,56 @@
+=== Reference counts per global ===
+slot_type_array (1405a65e8): 6 references
+slot_idx_array (1405a6604): 5 references
+equipped_index (1405a6440): 37 references
+
+=== Candidate functions, ranked by distinct global diversity (25) ===
+
+---- FUN_140059710 @ 140059710 (globals: equipped_index, slot_idx_array, slot_type_array) ----
+
+---- FUN_14007c5b0 @ 14007c5b0 (globals: equipped_index, slot_idx_array, slot_type_array) ----
+
+---- FUN_140059070 @ 140059070 (globals: equipped_index, slot_idx_array, slot_type_array) ----
+
+---- FUN_1400593b0 @ 1400593b0 (globals: equipped_index, slot_idx_array, slot_type_array) ----
+
+---- FUN_140059d60 @ 140059d60 (globals: equipped_index, slot_idx_array, slot_type_array) ----
+
+---- FUN_1402dc130 @ 1402dc130 (globals: equipped_index) ----
+
+---- FUN_1400806d0 @ 1400806d0 (globals: equipped_index) ----
+
+---- FUN_14006b910 @ 14006b910 (globals: equipped_index) ----
+
+---- FUN_14007ffd0 @ 14007ffd0 (globals: equipped_index) ----
+
+---- FUN_140084800 @ 140084800 (globals: equipped_index) ----
+
+---- FUN_140087540 @ 140087540 (globals: equipped_index) ----
+
+---- FUN_14005ad00 @ 14005ad00 (globals: equipped_index) ----
+
+---- FUN_1400a2bb0 @ 1400a2bb0 (globals: equipped_index) ----
+
+---- FUN_1400a0cf0 @ 1400a0cf0 (globals: equipped_index) ----
+
+---- FUN_140092d70 @ 140092d70 (globals: equipped_index) ----
+
+---- FUN_14006be30 @ 14006be30 (globals: equipped_index) ----
+
+---- FUN_14005a7b0 @ 14005a7b0 (globals: equipped_index) ----
+
+---- FUN_1400a57a0 @ 1400a57a0 (globals: equipped_index) ----
+
+---- FUN_140081360 @ 140081360 (globals: equipped_index) ----
+
+---- FUN_1400810e0 @ 1400810e0 (globals: equipped_index) ----
+
+---- FUN_14009f120 @ 14009f120 (globals: equipped_index) ----
+
+---- FUN_140061f20 @ 140061f20 (globals: equipped_index) ----
+
+---- FUN_140063d20 @ 140063d20 (globals: equipped_index) ----
+
+---- FUN_14006d720 @ 14006d720 (globals: equipped_index) ----
+
+---- FUN_14005a5a0 @ 14005a5a0 (globals: equipped_index) ----
