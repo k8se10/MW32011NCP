@@ -30,7 +30,7 @@ below without re-running Ghidra.
 
 ---
 
-## Status: Session 4 complete. Hold Breath candidate (case 0x4c/0x50) significantly upgraded to high confidence via three independent, mechanically-specific corroborating gates (ADS-state bit, a narrow sniper-weapon-class range check, a per-weapon capability-table lookup) -- the strongest static evidence this project has for any non-command-string MP dispatch case, though still not name-confirmed per issue #3. Melee candidate (case 0x4b) candidacy COMPLICATED (not strengthened) by real dual Killcam-mode/live-gameplay behavior a genuine melee bind wouldn't typically need. Cases 0x47/0x48 decompiled: a real, generic per-player "activity state" getter/setter pair found (`FUN_1403077c0`/`FUN_14030eed0`, reused by multiple cases with different state values) but no name anchor. Session 3's own "if one can be found" follow-up on `DAT_140e1dbc4`'s writer is honestly closed: `FUN_1400cd110` is a trivial getter for a different, unrelated global -- that specific ambiguity (section 6) remains genuinely open. The shared per-player event-flags register both Hold Breath and the killstreak-slot type-3 branch write into (`DAT_1406be770`) is now structurally understood: a per-frame, self-clearing "event occurred this frame" accumulator, not persistent state. Everything from Sessions 1-3 (key-event dispatch chain, movement/look pipeline, killstreak assaultStreaks-category match) remains static-confirmed, unchanged this session.
+## Status: Session 5 complete. Both of Session 4's own recorded open items pursued honestly, neither fully closed, both genuinely advanced. Type-1 killstreak-slot: found real evidence it shares the same per-weapon capability table Hold Breath uses (different field offset), reinforcing that a real weapon-database table underlies both systems; a lethal/tactical-equipment-cycling reading is now a reasonable (not confirmed) hypothesis for "type 1," pending a future string-search check. `DAT_140e1dbc4` ambiguity (section 6): confirmed real via a direct stride check (not a coincidental address overlap between two different loop variables) -- the double-duty meaning is genuinely unresolved, not an artifact, with a concrete untried next step recorded (`FUN_1400cfef0`'s own full decompile). `FUN_14007c4f0` (the killstreak-slot cross-type eligibility helper) checked and ruled out as a naming path, but surfaced a real, unexplained slot-3-specific exclusion condition worth remembering. Session 4's own findings (Hold Breath upgraded, Melee complicated, cases 0x47/0x48's activity-state pair, `FUN_1400cd110` dead end, `DAT_1406be770`'s per-frame-clear role) all stand unchanged. Sessions 1-3 (key-event dispatch chain, movement/look pipeline, killstreak assaultStreaks-category match) remain static-confirmed.
 
 This session started from string anchors (bind-name literals: `+attack`,
 `+sprint`, `+holdbreath`, `+frag`, `+gostand`, etc.) rather than trying to
@@ -720,6 +720,85 @@ client-side sound/HUD-flash feedback), not "currently active" flags. Real
 architectural context for any future work touching this system; does not
 by itself name either specific bit.
 
+### 4-6. Follow-up on Session 4's own recorded open items (Session 5, 2026-09-05): type-1 killstreak-slot gets a real (if not name-confirmed) structural lead; the `DAT_140e1dbc4` ambiguity confirmed genuine, not an artifact
+
+Both items Session 4 flagged as open. Full raw output:
+`re_notes/x64_migration/mp_decomp_14007c4f0.txt`,
+`mp_decomp_ads_consumers.txt` (already saved Session 3, re-examined in full
+this pass).
+
+**Type-1 killstreak-slot: a real cross-link found, structural lead only,
+not a name.** `FUN_14007c5b0`'s type-1 branch (section 4-2) indexes the
+SAME per-weapon capability table (`&DAT_1405711a0`) Hold Breath's function
+indexes (section 4-5) -- but at a DIFFERENT field offset (`+0x60` here vs.
+`+0x9ae` for Hold Breath), keyed by `DAT_1405a6440` ("currently equipped
+index," masked to a byte) rather than a weapon-class-range value, and
+compared against the constant `4`. This is genuine, new evidence that
+`&DAT_1405711a0` is a real, general per-weapon (or per-weapon-class)
+capability/definition table serving multiple, otherwise-unrelated systems
+(type-1 slot cycling AND Hold Breath) -- reinforces both findings'
+underlying premise (a real weapon-database table exists and is what each
+system is actually querying) without pinning down type-1's specific
+category name. Given CoD's own real engine convention of storing
+lethal/tactical equipment through the same "weapon" definition system as
+guns, and given "type 2" is confirmed killstreaks (section 4-3), a
+plausible (NOT confirmed) reading is that "type 1" represents
+lethal/tactical equipment cycling rather than a second killstreak
+category -- flagged as a reasonable hypothesis worth checking against a
+real equipment-name string search next session, not asserted as fact.
+
+**Separately checked and ruled out as a naming path**: decompiled
+`FUN_14007c4f0`, the small helper both `FUN_14007c5b0` and `FUN_14007c760`
+call through before their own type-specific logic. It reads/writes a large
+per-player context struct (offsets up to `+0x3378`+, consistent with the
+same class of big per-player struct section 6 already found offsets into)
+and a genuine 6-entry per-slot state array at `+0x518` (`+ slotIdx*4`) --
+but every check inside is slot-INDEX-specific eligibility gating (is this
+slot currently selectable this frame), not slot-TYPE-specific content
+logic. One concrete, real, non-naming finding: **slot index 3 specifically
+gets an extra exclusion condition no other slot has** (`param_2 != 3 ||
+(structByte_0xc & 4) == 0`), a genuine structural oddity -- plausibly a
+mode-gated slot (e.g. Support-streak-only, or unavailable in certain game
+modes), not investigated further this pass. This function is a dead end
+for the type-1/type-3 NAMING question specifically -- recorded so a future
+pass doesn't re-walk it expecting a different answer.
+
+**`DAT_140e1dbc4` ambiguity (section 6, Item B): confirmed to be a real,
+structural double-duty byte, not a stride-mismatch artifact.** Re-read
+`FUN_1400cfce0`'s FULL decompile (not just the excerpt previously quoted)
+specifically to check one thing: does `lVar5` in the ADS-comparison
+function actually use the same per-player stride as `FUN_1400d0be0`'s
+confirmed digital-angle-speed-key usage of `DAT_140e1dbc4`, or could this
+be two different loop variables coincidentally overlapping at the same
+byte address? **Directly confirmed, not assumed**: line 22 of
+`FUN_1400cfce0` is `lVar5 = (longlong)param_1 * 600` -- the exact same
+per-player-index * 600 stride confirmed everywhere else in this file. This
+rules out the "coincidental address overlap" explanation the ambiguity
+could otherwise have had -- both functions genuinely read the identical
+per-player field, so the double-duty (or single, more-general-than-assumed)
+meaning is real, not an artifact of two different things sharing a name by
+chance.
+
+Re-reading the full function also surfaced a real, previously-unrecorded
+structural detail worth keeping for a future attempt at this: the
+comparison this project has been calling "ADS state" (`DAT_140e1df60`, a
+GLOBAL, not per-player) against `DAT_140e1dbc4[player]` (per-player) is an
+inherently ASYMMETRIC pairing -- one shared global compared against one
+per-player mirror -- which doesn't cleanly fit either of section 6's two
+proposed readings for `dbc4` alone (a simple "digital-look-active" flag,
+confirmed real in `FUN_1400d0be0`, has no obvious reason to gate an ADS
+network-state signal; equally, nothing here suggests `dbc4` secretly means
+something ADS-specific instead). **Honest verdict, not forced**: this
+pass CONFIRMS the ambiguity is real and worth resolving, and RULES OUT one
+possible innocent explanation (stride mismatch) for it, but does not
+itself resolve it. The most promising untried next step, not attempted
+this pass: decompile `FUN_1400cfef0` fully (currently only understood by
+its return-value SHAPE, "a normalized 0.0-1.0 hold fraction," per section
+6) since it's the one function called with `DAT_140e1dbc4`-ADJACENT
+addresses (`puVar6 + 0x78`, etc.) in `FUN_1400cfce0` itself -- its own
+full body might reveal what per-player struct region `dbc4` actually
+belongs to, rather than treating it as an isolated single byte.
+
 ### `FUN_1400c3290` -- confirmed Killcam/Theater-mode dispatcher (x86 `FUN_006ada70` analog)
 
 Entire body gated on `DAT_140e1dddc == 0xb` (inert everywhere else, return-only
@@ -997,16 +1076,15 @@ a retraction.
 
 ## Signature-Scanning Readiness
 
-**Status: ~68% ready** (updated Session 4 -- the Hold Breath candidate moved
-from a single structural shape to three independent, mechanically-specific
-corroborating gates, the strongest static case-identity evidence this
-project has produced for MP outside literal command strings. Small
-increment over Session 3's ~65%, not a leap: the remaining gap is
-unchanged in kind -- case-to-real-bind-NAME confirmation for the
-movement-CRITICAL dispatch cases (Fire/ADS/Sprint/Reload/Hold-Breath), not
-missing mechanism, which per this project's own issue #3 policy may be
-gated on live verification for the cases static evidence alone can't fully
-close).
+**Status: ~68% ready, unchanged this session** (Session 5 pursued both of
+Session 4's own recorded open items honestly -- real evidence found for
+both, neither fully closed, so the percentage itself doesn't move; this
+project's own standard is to move the number on genuine closure, not on
+effort spent. The remaining gap is unchanged in kind -- case-to-real-
+bind-NAME confirmation for the movement-CRITICAL dispatch cases
+(Fire/ADS/Sprint/Reload/Hold-Breath), not missing mechanism, which per
+this project's own issue #3 policy may be gated on live verification for
+the cases static evidence alone can't fully close).
 
 - Bind-name table + lookup/resolver (`FUN_1400b5cf0`, `FUN_1400b4800`) [OK] confirmed
 - Controls-menu rebind flow, alias-cluster/KEY_OR display [OK] confirmed UI-only, correctly not pursued as hook targets (mirrors x86 MP's own already-closed dead end)
@@ -1022,21 +1100,24 @@ close).
 - Byte-pattern signatures: still none extracted -- reasonable to start once the two movement-pipeline open items (section 6) and the case-name-confirmation gap are resolved or a live-verification phase is authorized
 - Live validation: not started, and out of scope for this project's own locked static-first MP ordering until explicitly authorized for a live/injection phase
 
-**Ready to proceed with** (updated Session 4): cases `0x47`/`0x48`/`0x4b`/
-`0x4c`/`0x50` are now all decompiled (section 4-5) -- Hold Breath
-significantly upgraded, Melee complicated, 0x47/0x48 given a real
-state-machine shape with no name yet. **Natural next steps for a future
-session**: (1) "type 1"/"type 3" of the killstreak 6-slot family (section
-4-3) still remain unresolved to a category name, unlike "type 2" -- not
-attempted this session, still open; (2) the residual `DAT_140e1dbc4`
-cross-context ambiguity (section 6) is still open -- `FUN_1400cd110` was a
-dead end (section 4-5), the actual writer of that byte remains genuinely
-unlocated; (3) the real per-player "activity state" enum found this session
-(`FUN_1403077c0`/`FUN_14030eed0`, values 0/1/2/6 observed) is a new,
-reusable lead worth decompiling other consumers of if a future pass wants
-to pin down what state 6 (case 0x47/0x48) or state 2 (case 0x4b's Killcam
-branch) actually represent; (4) `FUN_140087540` (the killstreak-slot "type
-2" delegate, section 4-2) and the Hold Breath weapon-class field
-(`DAT_1405a631c`, section 4-5) share overlapping consumers -- not
-investigated for a connection this session, flagged as a curiosity, not a
-confirmed lead. All static-only. **Blocked on nothing.**
+**Ready to proceed with** (updated Session 5): both of Session 4's open
+items were advanced (section 4-6) -- type-1 killstreak-slot now has a
+real, if unconfirmed, "lethal/tactical equipment" hypothesis; the
+`DAT_140e1dbc4` ambiguity is confirmed genuine (not a stride artifact),
+with a concrete untried next step. **Natural next steps for a future
+session**: (1) decompile `FUN_1400cfef0` in full (its own current
+understanding is return-value SHAPE only, "0.0-1.0 hold fraction") -- the
+most promising untried path to actually resolving section 6's
+`DAT_140e1dbc4` ambiguity, per section 4-6's own reasoning; (2) a real
+lethal/tactical-equipment-name string search (frag/flash/smoke/semtex/
+throwing knife, etc. -- some of which already appeared incidentally in
+`FUN_140276380`'s own strings, e.g. `frag_grenade_mp`/`flash_grenade_mp`)
+against the type-1 killstreak-slot's own consumed data to test section
+4-6's equipment-cycling hypothesis directly; (3) the slot-3-specific
+exclusion condition found in `FUN_14007c4f0` (section 4-6) is a real,
+unexplained structural oddity worth a future look; (4) the real per-player
+"activity state" enum found Session 4 (`FUN_1403077c0`/`FUN_14030eed0`,
+values 0/1/2/6 observed) remains a reusable lead if a future pass wants to
+pin down what state 6 (case 0x47/0x48) or state 2 (case 0x4b's Killcam
+branch) actually represent -- not pursued this session either. All
+static-only. **Blocked on nothing.**
