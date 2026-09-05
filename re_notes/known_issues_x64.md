@@ -36,7 +36,7 @@ two files already had for #111 before the split.
 
 ## Index
 
-- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **D-pad Left synthetic-key exception AND a sniper Fire/ADS fix attempt both shipped (build-verified, neither live-tested yet); Plugin API ported (build-verified, needed no host code changes); visual-enhancement-suite x64 port attempted, blocked on two unresolved addresses, nothing shipped — release ETA 2-4 weeks, gated on x86 parity**
+- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **D-pad Left synthetic-key exception AND a sniper Fire/ADS fix attempt both shipped (build-verified, neither live-tested yet); Plugin API ported (build-verified, needed no host code changes); visual-enhancement-suite x64 port attempted, blocked on two unresolved addresses, nothing shipped; NEW live bug "no mod overlays render" — one real cause (cursor's own unguarded x86 address landmine) found and fixed, rest of the audit handed to a fork — release ETA 2-4 weeks, gated on x86 parity**
 
 ---
 
@@ -2012,3 +2012,57 @@ non-sniper weapon classes show no regression. If the symptom persists, the
 next RE angle is tracing `FUN_14007fb30`'s ring-buffer consumer server-side
 (who reads `"n %i"` off the reliable-command queue and what it does with it)
 rather than assuming the notify alone was sufficient.
+
+**New live bug report, same day: "no visual rendered elements show on screen
+... including our own mw32011ncp started messages" -- one real cause CONFIRMED
+and fixed, scope of the rest still open.** User confirmed via clarifying
+question: the game itself (menus/HUD/gameplay) renders completely normally --
+only this mod's OWN drawn elements (toast notifications, glyph icons, hint
+prompts, custom cursor) fail to appear.
+
+Investigation, `proxy_d3d9.log` first (a session from earlier the same day):
+`EndScene` hook confirmed firing ("confirmed alive"), and the startup toast's
+own `DrawPrimitiveUP` call logged `hr=0x00000000` (success) at least once.
+`RunFullScreenPostProcessIfEnabled` (the visual-enhancement pass) is a
+confirmed no-op stub on x64 right now, so it can't be painting over anything.
+`Hook_CreateDevice` doesn't touch `D3DPRESENT_PARAMETERS`/MSAA on either
+platform. `EnsureTextTexture`'s `CreateTexture`/`GetSurfaceLevel`/`LockRect`
+chain has proper HRESULT checks and logs on failure -- none of those failure
+lines appear in the log, so the text-texture pipeline isn't silently erroring
+either.
+
+**One real, confirmed cause found and fixed: `DrawCustomCursorIfNeeded`
+(overlay_hud.cpp) read two RAW, UNGUARDED x86-only hardcoded addresses**
+(`kCursorVisibleFlagAddr = 0x01c00474`, `kCursorUiStateAddr = 0x01c0ad14`) --
+meaningless against x64's real module base (`0x140000000`, confirmed via this
+file's own env-diag log line) and almost certainly unmapped memory in the x64
+process. This is the exact same landmine class the 2026-09-04 crash audit
+already found and fixed ~30 instances of in this file -- but this ONE slipped
+through that audit specifically because the whole function is wrapped in
+`__try`/`__except`: on x86 the addresses are real and safe, but on x64
+dereferencing them is almost certainly an access violation that SEH silently
+swallows instead of crashing, so it failed completely invisibly (no crash, no
+log line) rather than surfacing the way `IsMenuActive`'s own unguarded read
+did (that one crashed outright, which is WHY it got caught during the
+2026-09-04 audit and this one didn't). **Fixed** with the same `#if defined
+(_M_X64) || defined(_WIN64)` early-return guard every other x64-deferred
+function in this file already uses -- honest "not yet ported" behavior, not a
+real cursor-visibility fix (finding this engine's actual x64 cursor-state
+equivalents is real future RE work, not attempted this pass). Build-verified
+on both platforms.
+
+**Not yet fully explained**: the cursor fix accounts for the cursor
+specifically, but the toast/glyph/hint symptoms need their own investigation
+-- a secondary finding worth flagging: `[manual-glyph-diag]` log lines show
+`ShouldDrawGlyphOverlay()` (analog_input_hooks.cpp) genuinely returning true
+at points during the session (`overlayOn=1`), yet `realGroup=""` `realIndex=-1`
+`siblingCount=-1` in EVERY logged line regardless -- meaning even when the
+gate allows drawing, the underlying glyph-position-resolution mechanism never
+found a single valid focused-item position throughout the whole session. That
+could be its own separate x64 bug (position resolution failing to find real
+data) rather than a draw-call visibility problem, and hasn't been isolated
+from the toast's own apparent one-time success. Full audit of
+`overlay_hud.cpp`'s other draw functions (`DrawGlyphIconIfRequested`,
+`DrawGameplayHintSlotsIfRequested`, `DrawMenuHintsIfRequested`) for similar
+unguarded address reads, plus tracing why glyph-position-resolution comes back
+empty, is the next step -- handed to a dedicated fork this same session.
