@@ -1062,6 +1062,40 @@ constexpr const char* kGetTopmostActiveMenuSignature =
 using GetTopmostActiveMenuFnX64 = long long(__fastcall*)(void* ctx);
 GetTopmostActiveMenuFnX64 g_getTopmostActiveMenuX64 = nullptr;
 
+// FUN_1402aac50(ctx, menu, keyCode, isDown) -- the confirmed x64 combined equivalent
+// of x86's ForwardKeyToMenu (0x004d9850) + the function its own non-ESC branch calls
+// (FUN_004dfd30) -- found 2026-09-12 while porting native D-pad+A/B menu navigation.
+// Full decompile: re_notes/x64_migration/keyhandler_1402aac50_full.txt. Confirmed via
+// its own internal switch(keyCode), which matches x86's FUN_004dfd30 switch case-for-
+// case: {9,0x9b,0x9d,0xbd,0xcd} -> FUN_1402ac5d0 (next-item, matches x86 Group A ->
+// FUN_006253d0), {0x9a,0x9c,0xb7,0xce} -> FUN_1402ac6f0 (prev-item, matches x86 Group
+// B -> FUN_00625290), {0xd,0xbf,0xca} -> select/activate (matches x86's Enter case,
+// 0xd), and 0x1b -> ESC/back handling. Confirmed real call site
+// (re_notes/x64_migration/keyhandler_callers_1402aac50.txt, FUN_14029baa0, this
+// project's own confirmed x64 key-event-resume path):
+//     plVar3 = (longlong *)FUN_1402aaa80(&DAT_142605050);   // = GetTopmostActiveMenuX64()
+//     FUN_1402aac50(&DAT_142605050, plVar3, keyCode, isDown);
+// i.e. `ctx` and `menu` are exactly this file's own already-resolved
+// g_uiMenuContextX64/GetTopmostActiveMenuX64() -- no new context-resolution needed,
+// just this one additional signature. Signature via DumpSigBytes.java
+// (re_notes/x64_migration/impl_sig_1402aac50.txt) -- the first instruction (MOV
+// qword ptr [RSP+0x18],RBX, a stack spill) is flagged PC-RELATIVE by that script's
+// own over-eager reference heuristic, kept literal here per this file's own
+// established false-positive lesson (same as kUiContextAnchorSignature's prologue);
+// every genuine RIP-relative LEA/MOV/CMP disp32 and CALL/JMP/Jcc rel32/rel8 IS
+// wildcarded.
+constexpr const char* kMenuKeyEventSignature =
+    "48 89 5C 24 18 55 57 41 55 41 56 41 57 48 81 EC 50 02 00 00 "
+    "45 33 FF 45 8B E9 45 8B F7 41 8B E8 44 39 35 ?? ?? ?? ?? "
+    "48 8B FA 48 8B D9 ?? ?? 45 85 C9 ?? ?? "
+    "48 8B 15 ?? ?? ?? ?? E8 ?? ?? ?? ?? E9 ?? ?? ?? ?? "
+    "44 39 35 ?? ?? ?? ?? ?? ?? 45 85 ED ?? ?? "
+    "48 8B 15 ?? ?? ?? ?? E8 ?? ?? ?? ?? "
+    "85 C0 ?? ?? 44 89 3D ?? ?? ?? ?? 4C 89 3D ?? ?? ?? ??";
+
+using MenuKeyEventFnX64 = void(__fastcall*)(void* ctx, void* menu, uint32_t keyCode, int isDown);
+MenuKeyEventFnX64 g_menuKeyEventX64 = nullptr;
+
 constexpr ptrdiff_t kMenuStackDepthOffsetX64 = 0x14C0;  // ctx+0x14C0 -- x86's kMenuStackDepthOffset (0xA7C)
 constexpr ptrdiff_t kMenuItemCountOffsetX64 = 0xB8;      // menu+0xB8 (0x17*8) -- x86's menu+0xa8
 constexpr ptrdiff_t kMenuItemArrayOffsetX64 = 0xC0;      // menu+0xC0 (0x18*8) -- x86's menu+0xac
