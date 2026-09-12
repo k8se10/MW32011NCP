@@ -1,0 +1,51 @@
+# Steering docs are deliberately kept out of this repo -- they carry candid internal
+# reasoning (VAC-risk research, vulnerability framing/disclosure timing) not meant for
+# a public audience. Both live one directory up from this repo root; never meant to be
+# copied back in, but ignored here too as a defensive safety net. Same policy as the
+# sibling MW32011NCP project's own .gitignore.
+CLAUDE.md
+AGENTS.md
+
+# Build outputs (whatever the eventual patch DLL is deployed straight into the
+# game root, not committed -- same convention as the sibling MW32011NCP project)
+obj/
+Debug/
+Release/
+*.obj
+*.pdb
+*.ilk
+*.log
+*.exp
+*.lib
+*.dll
+
+# Build outputs for dev-only test/research tools (not shipped, not part of the patch)
+tools/*/bin/
+tools/*/obj/
+
+# Packet captures / traffic dumps used to research or reproduce a vulnerability --
+# may contain real player data (IPs, etc.) even from the researcher's own sessions;
+# never meant to be committed. Summarize findings in re_notes/ instead.
+*.pcap
+*.pcapng
+
+# Third-party reference material (cloned locally for research only), same policy as
+# the sibling project -- learn from and independently re-verify, never redistribute
+# as part of this repo.
+references/
+
+# Extracted MW3 game assets -- Activision's copyrighted game data, never ours to
+# redistribute. Same defensive safety net as the sibling project.
+zone_dump/
+ff_dump/
+*.gdt
+
+# Internal-only technical detail (exact vulnerable function addresses, precise
+# buffer/offset values, exact fix implementation logic) -- NEVER committed/pushed
+# to the public repo before a fix for that specific item has shipped. See
+# SECURITY.md's "Redaction policy" and CODE_STANDARDS.md's "Documentation
+# Standards" for what belongs here vs. in the public re_notes/ docs.
+re_notes/INTERNAL_*.md
+re_notes/internal/
+# Local Codex steering mirror; the shared copy lives one directory above both repos.
+AGENTS.md
