@@ -36,7 +36,7 @@ two files already had for #111 before the split.
 
 ## Index
 
-- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **D-pad Left synthetic-key exception AND a sniper Fire/ADS fix attempt both shipped (build-verified, neither live-tested yet); Plugin API ported (build-verified, needed no host code changes); visual-enhancement-suite x64 port attempted TWICE, still blocked on two addresses that resist exhaustive static RE (render-scale, clcState/in-level-flag) — likely needs live tracing, not more static analysis; FXAA/MSAA found to not even exist on x86, out of scope for parity; overlay-render bug fully audited — cursor's own unguarded x86 address landmine found and fixed, rest of the render path confirmed clean; Custom Options screen wired into x64's input pipeline (build-verified, temporary manual open-chord substitute pending a real focus-detection RE pass -- **RE pass now done 2026-09-12: real x64 menu-focus/itemDef-array offsets re-derived and cross-confirmed, TryGetRealFocusedGroupAndIndexX64 wired in as the real Options-screen open trigger alongside the chord (kept as a fallback), build-verified, not yet live-tested**); a "greenlit" trusted-plugin allowlist added to plugin_loader.cpp so the sibling MW32011NSP project's own security-fix plugin can ship built in by default (build-verified, end-to-end test pending that plugin's own existence); Sprint (L3) migrated from raw pm_flags-forcing to the real +sprint kbutton, matching x86's final design, plus the rising-edge stand-from-crouch/prone behavior (build-verified, not yet live-tested) — release ETA 2-4 weeks, gated on x86 parity**
+- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **D-pad Left synthetic-key exception AND a sniper Fire/ADS fix attempt both shipped (build-verified, neither live-tested yet); Plugin API ported (build-verified, needed no host code changes); visual-enhancement-suite x64 port attempted TWICE, still blocked on two addresses that resist exhaustive static RE (render-scale, clcState/in-level-flag) — likely needs live tracing, not more static analysis; FXAA/MSAA found to not even exist on x86, out of scope for parity; overlay-render bug fully audited — cursor's own unguarded x86 address landmine found and fixed, rest of the render path confirmed clean; Custom Options screen wired into x64's input pipeline (build-verified, temporary manual open-chord substitute pending a real focus-detection RE pass -- **RE pass now done 2026-09-12: real x64 menu-focus/itemDef-array offsets re-derived and cross-confirmed, TryGetRealFocusedGroupAndIndexX64 wired in as the real Options-screen open trigger alongside the chord (kept as a fallback), build-verified, not yet live-tested**); a "greenlit" trusted-plugin allowlist added to plugin_loader.cpp so the sibling MW32011NSP project's own security-fix plugin can ship built in by default (build-verified, end-to-end test pending that plugin's own existence); Sprint (L3) migrated from raw pm_flags-forcing to the real +sprint kbutton, matching x86's final design, plus the rising-edge stand-from-crouch/prone behavior (build-verified, not yet live-tested); native D-pad+A/B controller menu navigation ported (InjectControllerMenuNavX64/InjectControllerMenuBackX64, driven by a newly-resolved ForwardKeyToMenu equivalent, FUN_1402aac50) — main menu, pause menu, options drill-down, buy-station/armory lists, and B-back all now controller-navigable in principle, plus two real menu-active-gating conflicts found and fixed along the way (D-pad actionslot, CrouchProne/B dual-purpose) — build-verified, not yet live-tested — release ETA 2-4 weeks, gated on x86 parity**
 
 ---
 
@@ -2668,3 +2668,142 @@ still engages/disengages correctly, the native duration/recovery timer
 now applies (should no longer be unlimited), and the rising-edge stand-up
 behavior fires correctly from both crouch and prone without regressing
 ADS/Hold-Breath-adjacent behavior.
+
+---
+
+**Native D-pad+A/B controller menu navigation ported to x64, 2026-09-12 --
+the single highest-impact gap the same-day full feature-parity audit found
+(parity audit rows #29/#33): a controller player on x64 could not navigate
+ANY native menu at all (main menu, pause menu, options screen, buy-station/
+armory lists) and had to use keyboard/mouse for every menu interaction.**
+
+**Read first, per this project's own compare-to-x86-original rule**: x86's
+`InjectControllerMenuNav()`/`InjectControllerMenuBack()`
+(`analog_input_hooks.cpp` ~2725-3047) -- both entirely wrapped in
+`#if !defined(_M_X64) && !defined(_WIN64)` and never compiled for x64 at
+all before this fix, let alone called.
+
+**Confirmed real x64 target: `FUN_1402aac50` is the combined equivalent of
+x86's `ForwardKeyToMenu` (`0x004d9850`) + the function its non-ESC branch
+calls (`FUN_004dfd30`).** Its full decompile was ALREADY on disk from the
+2026-09-12 menu-focus/itemDef port
+(`re_notes/x64_migration/keyhandler_1402aac50_full.txt`) but had never been
+connected to a signature or wired up -- this fix's main RE contribution was
+recognizing what was already found, not discovering it from zero. Confirmed
+via its own internal `switch(keyCode)`, which matches x86's `FUN_004dfd30`
+switch case-for-case:
+- `{9, 0x9b, 0x9d, 0xbd, 0xcd}` -> `FUN_1402ac5d0` (next-item) -- matches
+  x86's Group A -> `FUN_006253d0`.
+- `{0x9a, 0x9c, 0xb7, 0xce}` -> `FUN_1402ac6f0` (prev-item) -- matches
+  x86's Group B -> `FUN_00625290`.
+- `{0xd, 0xbf, 0xca}` -> select/activate -- matches x86's Enter case
+  (`0xd`).
+- `0x1b` -> ESC/back handling -- matches x86's ESC case.
+
+Real call site (`FUN_14029baa0`, `re_notes/x64_migration/
+keyhandler_callers_1402aac50.txt`, this project's own confirmed x64
+key-event-resume path):
+```c
+plVar3 = (longlong *)FUN_1402aaa80(&DAT_142605050);   // = GetTopmostActiveMenuX64()
+FUN_1402aac50(&DAT_142605050, plVar3, param_2 /*keyCode*/, param_3 /*isDown*/);
+```
+i.e. `ctx`/`menu` are exactly this file's own already-resolved
+`g_uiMenuContextX64`/`GetTopmostActiveMenuX64()` (from the earlier
+menu-focus/itemDef port) -- no new context-resolution work was needed, just
+one additional signature.
+
+**Signature derivation**: `DumpSigBytes.java` run against `1402aac50`
+(`re_notes/x64_migration/impl_sig_1402aac50.txt`), hand-refined the same
+way every other signature in this file was -- the RSP-relative stack-spill
+prologue (`MOV qword ptr [RSP+0x18],RBX`) kept literal, per this file's own
+established `DumpSigBytes.java` false-positive lesson (its reference-based
+heuristic over-flags RSP-relative operands); every genuine RIP-relative
+disp32 (`CMP`/`MOV`) and `CALL`/`JMP`/`Jcc` rel32/rel8 wildcarded.
+
+**Implementation** (`analog_input_hooks_x64.cpp`):
+- `ForwardKeyToMenuX64(keyCode, isDown)` -- resolves the topmost active menu
+  fresh on every call (matching the real call site's own shape) and calls
+  `g_menuKeyEventX64` (the resolved `FUN_1402aac50`).
+- `InjectControllerMenuNavX64()` -- direct port of x86's
+  `InjectControllerMenuNav()`. Two intentional differences from a literal
+  line-for-line port:
+  1. LB/RB tab-prev/tab-next needed NO new code -- `PollCustomOptionsMenuX64`
+     (from the 2026-09-05 Custom Options screen work) already owns them for
+     the custom overlay's own tab bar.
+  2. x86 has ONE function that calls `CustomOptionsMenu_TickInput` itself
+     and branches on its return ("claimed this tick" or not). x64 already
+     has that call living in the separately-scheduled
+     `PollCustomOptionsMenuX64`, so `InjectControllerMenuNavX64` instead
+     reads `CustomOptionsMenu_IsOpen()` (a plain state read) and skips every
+     `ForwardKeyToMenuX64`/synthetic-key call for the tick when it's true,
+     while still updating every held-state edge tracker unconditionally
+     (mirrors x86's own "claimed this tick" branch). This REQUIRES
+     `PollCustomOptionsMenuX64()` to run before `InjectControllerMenuNavX64()`
+     in the same tick, now wired that way in `InjectMenuInputTick`
+     (`analog_input_hooks.cpp`).
+  Y/X/Back-button synthetic sends (Friends/Game Summary/Leaderboards)
+  reimplemented locally (`SendSyntheticFX64`/`GX64`/`F1X64`) rather than
+  cross-file-exposing x86's versions, which sit in an anonymous namespace
+  in `analog_input_hooks.cpp` with internal linkage only -- same local-
+  reimplementation pattern this file already used for
+  `SendSyntheticActionSlot4KeyX64`.
+- `InjectControllerMenuBackX64()` -- direct port of x86's
+  `InjectControllerMenuBack()`, forwarding real ESC (`0x1b`) to
+  `ForwardKeyToMenuX64` on B's edge changes while a menu is active and the
+  custom Options overlay isn't open.
+
+**Two real conflicts found and fixed during the port** (neither in the
+original task description -- found by diffing current x64 code against
+x86's `InjectControllerDpad`/`InjectControllerButtons`):
+1. **D-pad actionslot dispatch (`Hook_MovementTick`) had no menu-active
+   gate at all on x64** -- unlike x86's `InjectControllerDpad`, which
+   suppresses `ActionSlotDown/Up`/`SendSyntheticActionSlot4Key` while a
+   menu is active, symmetrically on both press AND release edges. Without
+   this fix, native D-pad menu-nav (new) and the raw actionslot dispatch
+   (existing, gameplay tick -- which keeps running while a non-pause menu,
+   e.g. a Survival buy station, is open) would double-fire on the same
+   physical D-pad press. Fixed, matching x86's symmetric gate exactly.
+2. **CrouchProne (B) dispatch (`Hook_MovementTick`) had no menu-active gate
+   either.** B is dual-purpose on x64 too (crouch/prone vs. menu-back), and
+   x86 solves the conflict via a shared `g_currentBPressTouchedMenu` bool.
+   Added `g_currentBPressTouchedMenuX64`, x64's own equivalent, maintained
+   by `InjectControllerMenuBackX64` and read by the CrouchProne dispatch
+   before firing `g_stanceDispatch` -- without this, B backing out of a
+   menu would ALSO toggle real native stance underneath it, a genuine
+   stuck-crouch/prone regression risk (see CLAUDE.md's "Crouch 'needs an
+   initial click at launch'" history).
+
+**Constraint check, per direct coordinator instruction**: whether the
+Custom Options screen's temporary LB+RB open-chord workaround (see this
+issue's earlier "Custom Options screen wired into x64's input pipeline"
+round) could now be simplified/removed. **Left in place, deliberately not
+touched** -- the chord is a fallback for the real focus-based open trigger
+(`onAnyRealOptionsButtonX64 && selectEdge`, already wired 2026-09-12,
+independent RE pass), which depends on `TryGetRealFocusedGroupAndIndexX64`
+(focus-tracking) and button-edge detection, NOT on `ForwardKeyToMenu` --
+adding `ForwardKeyToMenuX64` doesn't make that trigger any more reliable,
+so this fix provides no real basis to remove the chord. Per the prior
+agent's own comment, it should stay until the real trigger is
+independently live-confirmed.
+
+**Build-verified**: x64 `/t:Rebuild` (0 errors) -> `dumpbin /headers`
+confirmed `8664 machine (x64)` with a fresh timestamp; Win32 `/t:Rebuild`
+(0 errors, `analog_input_hooks_x64.cpp` correctly excluded from that
+build) confirmed no regression; x64 rebuilt a THIRD time, last, so the
+deployed DLL is the correct architecture (shared `OutDir`).
+**NOT YET LIVE-TESTED** -- next step: a live playtest confirming each of
+main menu, pause menu, options drill-down, buy-station/armory lists, and
+B-back actually work as expected, plus that the two conflict fixes above
+(D-pad actionslot suppression, CrouchProne/B dual-purpose handling) don't
+themselves regress ordinary gameplay D-pad/crouch-prone use outside any
+menu context.
+
+**Process note**: this fix pass ran concurrently, in the same shared
+working directory, with the Sprint kbutton fix above -- both landed in
+this file's `analog_input_hooks_x64.cpp` at the same time. Commits were
+kept separated by hand (`git apply --cached` against a hand-extracted
+single-hunk patch, rather than a blanket `git add`) so each agent's own
+work stayed attributed to its own commit wherever the interleaving allowed
+it to be cleanly separated -- worth noting as a real, reusable technique
+for any future session that finds itself in the same shared-working-
+directory situation this project's own concurrent-agent model can produce.

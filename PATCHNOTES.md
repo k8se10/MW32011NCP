@@ -53,6 +53,18 @@ live, detailed status on every item below.
    arbitrary third-party plugin still needs the normal opt-in — see
    `PLUGIN_API.md` for the full design and its real caveat (filename
    matching isn't cryptographic).
+8. **Native D-pad+A/B controller menu navigation.** Previously 100% absent
+   on x64 — a controller player could not navigate any native menu (main
+   menu, pause menu, options screen, buy-station/armory lists) and needed
+   keyboard/mouse for every menu interaction. Now drives the same real
+   engine call the game's own ESC key uses to forward input to whatever
+   menu is active, resolved via signature scan. Also fixes two real
+   conflicts found during the port: D-pad's menu navigation could have
+   double-fired against the existing raw D-pad actionslot dispatch, and B's
+   menu-back could have toggled real crouch/prone underneath an open menu
+   — both now correctly suppress the gameplay-side action while a menu is
+   active. Not yet live-tested. See `re_notes/known_issues_x64.md` issue #1
+   for the full RE trail.
 
 ### Fixed
 1. **Crash on launch with the sniper Fire/ADS fix's own log line.** The
