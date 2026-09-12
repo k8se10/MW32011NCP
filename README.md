@@ -80,10 +80,13 @@ being discontinued — every control, the visual-enhancement suite, and the
 custom Options screen all working, not just the input-remapping core.
 Current estimate: a few weeks out. See
 [`re_notes/known_issues_x64.md`](re_notes/known_issues_x64.md) issue #1 for
-the live, detailed tracking of exactly what's done and what's left, and
+the live, detailed tracking of exactly what's done and what's left,
 [`re_notes/x64_feature_parity_audit.md`](re_notes/x64_feature_parity_audit.md)
 for the complete, systematic audit against every `-x86` feature (61 items
-tracked).
+tracked), and
+[`re_notes/x64_live_testing_checklist.md`](re_notes/x64_live_testing_checklist.md)
+for exactly what's build-verified but still needs a real playtest before
+this gate can close.
 
 Netcode security fixes and Multiplayer support each have their own status —
 see their own sections below; neither gates this release.
