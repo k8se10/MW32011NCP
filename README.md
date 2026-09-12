@@ -85,14 +85,42 @@ repeat that. Expect it as a close fast-follow release once the first
 
 ### Known gaps
 
-These are honestly documented as not-yet-implemented, not hidden bugs:
+These are honestly documented as not-yet-implemented, not hidden bugs. A
+**complete, systematic audit against every `-x86` feature is now done** — see
+[`re_notes/x64_feature_parity_audit.md`](re_notes/x64_feature_parity_audit.md)
+for the full 61-item table (34 confirmed present, 21 confirmed absent, 6
+partial/regressed). The items below are the highest-impact gaps it found;
+see that file for everything else (menu glyphs, killstreaks, config
+presets, the plugin API, background threads, and more).
 
-- **Controller-glyph icons, on-screen hint prompts, and the custom cursor**
-  don't draw on x64 yet — the underlying menu-focus/item-position tracking
-  they depend on hasn't been ported. Everything else renders normally.
+- **Native controller menu/UI navigation is 100% absent on x64.** Not just
+  the custom Options screen's own open-trigger (already known) — the entire
+  underlying D-pad+A navigation mechanism (main menu, pause menu, options
+  two-pane drill, buy-station/armory lists, slider value adjustment) and B's
+  ESC-forward menu-back are both wrapped in x86-only code that never runs on
+  x64. A controller player currently cannot navigate any native menu at all
+  — keyboard/mouse is required for every menu interaction. This is the
+  single highest-impact gap found by the audit.
+- **Sprint (L3) uses a different, likely worse mechanism than `-x86`'s final
+  design.** x64 forces the raw sprint-state bit directly (the same approach
+  `-x86` used originally, before it was deliberately replaced with a real
+  kbutton specifically because it gave infinite sprint with no native
+  duration/recovery timer and no Extreme Conditioning perk override). x64
+  was never re-pointed at that same real-kbutton design — it likely has the
+  same infinite-sprint/no-perk-override regression `-x86` already fixed
+  once, not yet independently confirmed live either way.
+- **Controller-glyph icons, on-screen hint prompts, the highlighted-item
+  A-glyph, the F2/F3 glyph-position editor, and the custom cursor** don't
+  draw on x64 yet — the underlying menu-focus/item-position tracking they
+  all depend on hasn't been ported. Everything else renders normally
+  (including this mod's own startup/hot-reload toast messages, which ARE
+  confirmed working on x64).
 - **The visual-enhancement suite** (internal render scale, FSR sharpening,
   motion blur) isn't on x64 yet — blocked on two engine addresses that have
-  resisted signature-scan-based discovery so far.
+  resisted signature-scan-based discovery so far, across multiple attempts.
+  `ForceAnisotropicFiltering`/`ForceHighQualityShadows`/
+  `ForceHighQualityLighting` are NOT part of this gap — those three are
+  confirmed already working on x64.
 - **Vibration/rumble doesn't work on x64 at all.** Fully implemented and
   working on the `-x86` line; the code simply never runs on x64 (it lives
   entirely inside an x86-only code path) — not started, not attempted.
@@ -100,15 +128,15 @@ These are honestly documented as not-yet-implemented, not hidden bugs:
   stick input (movement/look) works fine on x64 already; gyro-aim
   specifically doesn't. This was still a preview/WIP feature even on the
   `-x86` line, so this is a lower-priority gap than the others above.
-
-A systematic audit against every other `-x86` feature is still in progress
-— the items above are what's been confirmed missing so far, not
-necessarily the complete list yet.
+- **Hold Breath, Survival ready-up (hold Y), Auto-Mantle, and Back's
+  `+scores` scoreboard** are all absent on x64 — none of the four have any
+  wiring in the current x64 input pipeline yet.
 - **FXAA and a forced-MSAA option** were never actually built even on the
   old `-x86` line (only ever planned) — real future work, not a regression.
 
 Full detail, investigation trails, and current status on every item:
-[`re_notes/known_issues_x64.md`](re_notes/known_issues_x64.md).
+[`re_notes/known_issues_x64.md`](re_notes/known_issues_x64.md) and
+[`re_notes/x64_feature_parity_audit.md`](re_notes/x64_feature_parity_audit.md).
 
 ## How it works
 
