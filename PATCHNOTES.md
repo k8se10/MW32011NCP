@@ -126,6 +126,18 @@ live, detailed status on every item below.
     update as two independent state machines, matching `-x86`'s own design
     shape. Build-verified, not yet live-tested. See
     `re_notes/known_issues_x64.md` issue #1 for the full trail.
+14. **DualSense gyro-aim ported to x64, staying PREVIEW/WIP.** Turned out to
+    be the same "real mechanism exists, was just never called from the x64
+    tick" shape as the vibration/rumble gap this session already closed —
+    `dualsense_input.cpp`/`controller_input.cpp`'s gyro-read path has no
+    architecture guard at all, it simply wasn't wired into the x64 look
+    pipeline. Now applied additively on top of stick-based look (the same
+    `+=` pattern `-x86`'s own `InjectControllerLookAngles` uses for its gyro
+    contribution), gated by the existing gyro-only-while-ADS toggle. Axis
+    mapping and invert-sign handling copied verbatim from `-x86`'s own
+    still-unverified-on-real-hardware mapping. Build-verified, not yet
+    live-tested (needs real DualSense hardware to exercise). See
+    `re_notes/known_issues_x64.md` issue #1 for the full trail.
 
 ### Fixed
 1. **Crash on launch with the sniper Fire/ADS fix's own log line.** The

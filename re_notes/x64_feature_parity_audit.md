@@ -31,6 +31,25 @@ Of **61 distinct features/mechanisms** tracked below:
   x86's own final shipped design, or genuinely ambiguous/unconfirmed pending a
   live test)
 
+**The 34/21/6 split above is this audit's original snapshot, deliberately
+not renumbered as fixes land** (same convention as `PATCHNOTES.md` — a
+snapshot describes a point in time; individual row updates below carry the
+current truth). As a running tally, not a replacement for reading the
+actual table: menu-focus/itemDef tracking, vibration/rumble, the visual-
+enhancement suite, native menu navigation, Sprint's kbutton migration,
+Survival ready-up, Hold Breath, and DualSense gyro-aim have all moved from
+ABSENT/PARTIAL to FIXED since this audit was taken, all same-day
+(2026-09-12) — roughly 8 of the original 21+6 non-present items.
+Auto-Mantle was separately investigated (not just left unattempted) and
+found genuinely blocked on a missing native text-draw hook
+(`Hook_DrawGlyphText`'s x64 equivalent) — see its own row below and
+`known_issues_x64.md` issue #1. **Gameplay glyph-icon drawing itself
+depends on that same missing hook, still genuinely not-yet-attempted as of
+this note** (a dispatched pass on it was paused before any real
+investigation began, due to a session token-budget constraint, not because
+it turned out blocked) — the honest current count is row by row, not this
+summary.
+
 **Two findings below are new — not in `known_issues_x64.md`'s existing
 "Corrected gap list, 2026-09-12" entry or anywhere else in this project's
 documentation before this pass:**
@@ -182,7 +201,7 @@ bar (CLAUDE.md SS7/SS8) applied separately — many are build-verified only.
 | # | Feature | x86 status | x64 status | Evidence |
 |---|---|---|---|---|
 | 49 | DualSense stick input (movement/look, USB + Bluetooth) | Confirmed working (Bluetooth fix live-confirmed, USB not independently re-confirmed by a 2nd tester) | **PRESENT** | `Controller_GetLeftStick`/`GetRightStick` (`controller_input.cpp`) carry no arch guards anywhere in that file and are called directly by `Hook_MovementTick` — transparent abstraction over XInput/DualSense, already in active x64 use |
-| 50 | DualSense gyro-aim | Preview/WIP even on x86 (Enabled, Sensitivity, InvertPitch/Yaw, OnlyWhileAds) | **ABSENT** | Zero gyro/DualSense-specific references anywhere in `analog_input_hooks_x64.cpp`. Config keys still generate in a fresh `.ini` (shared `mod_config.cpp`) but have no consumer on x64. Already documented in `known_issues_x64.md`'s "Corrected gap list," confirmed again this pass |
+| 50 | DualSense gyro-aim | Preview/WIP even on x86 (Enabled, Sensitivity, InvertPitch/Yaw, OnlyWhileAds) | **FIXED (2026-09-12)** | Same "mechanism exists, never wired into the x64 tick" shape as the vibration gap — `Controller_GetGyroRate` (`controller_input.cpp`) has no arch guard at all. Wired into `Hook_MovementTick`'s LOOK PRE-hook block (`analog_input_hooks_x64.cpp`), applied additively onto the yaw/pitch accumulators and motion-blur delta feed after the stick-look branch (confirmed matching x86's own `=` then `+=` pattern in `InjectControllerLookAngles` before writing this). Stays PREVIEW/WIP, same as x86 — issues #76/#77 carry over unchanged. Build-verified; **not yet live-tested** (needs real DualSense hardware) |
 
 ### Configuration & customization
 
