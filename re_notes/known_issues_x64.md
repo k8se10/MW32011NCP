@@ -2311,6 +2311,68 @@ line either way ("matches the greenlit/trusted allowlist" or the
 no-plugins-folder-found case) so this is independently verifiable the
 moment that DLL exists, without needing to touch this code again.
 
+**Corrected gap list, 2026-09-12 (direct instruction: "ALL 0.3.5 stuff
+needs to be present at the same level or better") -- this issue's own
+"Known gaps" summary (also mirrored in README.md) was INCOMPLETE, not
+just imprecise.** A real, systematic audit against
+`legacy-x86-docs/README.md`'s own "Status at a glance" and "Feature
+completeness matrix" (the actual authoritative record of what v0.3.5-x86
+had, not this file's own summary of it) found real gaps that were never
+listed here at all:
+
+- **Vibration/rumble: 100% unported to x64, not attempted.**
+  `Rumble_Install()` (`rumble.cpp`) is only ever called from
+  `InstallAnalogInputHooks()` (`analog_input_hooks.cpp`), which is
+  entirely wrapped in `#if !defined(_M_X64) && !defined(_WIN64)` -- on
+  x64 this call site simply never executes. Not a signature-scan failure
+  (which would at least log something), not a landmine (nothing crashes)
+  -- it's silent, total absence, confirmed via direct code trace, not
+  inferred. x86 scored this 1.5/2 in the completeness matrix (fire
+  rumble live-confirmed, damage rumble live-confirmed via health-poll,
+  known gaps only around Body Armor hits and 2-player co-op) -- a real,
+  previously-shipped, fully-working feature currently regressed to
+  nothing on x64. Real next step: port `rumble.cpp`'s two hook/poll
+  mechanisms (fire-effects hook, per-frame health-poll for damage) the
+  same way every other x64 hook this session has been ported --
+  signature-scan resolution replacing the x86 hardcoded byte pattern,
+  following this file's own established `analog_input_hooks_x64.cpp`
+  conventions.
+- **DualSense gyro-aim: not wired into the x64 look pipeline.** Zero
+  references to gyro/DualSense-specific state anywhere in
+  `analog_input_hooks_x64.cpp`. Lower priority than vibration -- this
+  was still a genuine preview/WIP feature even on x86 at v0.3.5 (Bluetooth
+  fixed and confirmed, issue #77; USB never independently confirmed by a
+  second tester, issue #76) -- but per today's direct instruction, "at
+  the same level" means x64 should still reach at least that same WIP
+  state, not silently regress to fully absent. Basic DualSense STICK
+  input (movement/look) is NOT part of this gap -- `Controller_GetLeftStick`/
+  `Controller_GetRightStick` (`controller_input.cpp`, no `_M_IX86`/`_M_X64`
+  guards anywhere in that file) already abstract over XInput and DualSense
+  transparently and are already in active x64 use
+  (`analog_input_hooks_x64.cpp`'s own movement/look hook calls them
+  directly) -- only the GYRO-specific additive rotation data is unwired.
+- **Confirmed NOT gaps, checked directly rather than assumed** (so this
+  correction doesn't overcorrect into re-litigating things that are
+  actually fine): `ForceAnisotropicFiltering`/`ForceHighQualityShadows`/
+  `ForceHighQualityLighting` (`overlay_hud.cpp`, no arch guards, real
+  native `SetDvarBool` calls -- already confirmed firing on x64 via this
+  session's own crash-investigation log evidence, `[aniso-force]`/
+  `[shadow-quality-force]`/`[lighting-quality-force]` lines). The full
+  issue #87 four-thread background architecture (poll, vibration-output,
+  config-hot-reload, log-flush -- `controller_input.cpp`, `mod_config.cpp`,
+  `asset_capture.cpp`) is present and thread-creation call sites carry no
+  arch guards either -- the THREAD infrastructure is intact; the
+  vibration gap above is specifically that nothing currently feeds the
+  vibration-output thread real trigger events on x64, not that the
+  thread itself is missing.
+- **Full re-audit against every other v0.3.5-x86 feature (menu nav, D-pad,
+  killstreaks, the F2/F3 glyph-position editor, plugin API, etc.) is not
+  yet complete** -- this pass focused on the areas most likely to hide a
+  silent gap (anything historically implemented via hardcoded x86
+  addresses, per this project's own hardcode-era history). Do not treat
+  the absence of a new entry here as proof something else is fine; treat
+  it as not yet re-checked.
+
 **Real crash on first live deploy of the above (2026-09-05, "game failed to
 launch") -- ROOT-CAUSED AND FIXED, same session.** Once NSP's own
 `mw32011nsp_security.dll` actually existed and was deployed as a greenlit
