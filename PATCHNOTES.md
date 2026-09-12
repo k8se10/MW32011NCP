@@ -97,6 +97,21 @@ live, detailed status on every item below.
     gameplay glyph icons still needs a separate, not-yet-ported native
     text-draw hook (a different, larger RE task) — see Investigated, Not Yet
     Resolved below.
+12. **Survival ready-up (hold Y) ported to x64.** Previously 100% absent —
+    the same narrowly-scoped, already-approved exception `-x86` ships (no
+    native dispatch was ever found for F5/"skip" after an exhaustive search,
+    see `CLAUDE.md`): holding Y for `[Survival] ReadyUpHoldThresholdMs`
+    (740ms default) synthesizes a real `WM_KEYDOWN`/`WM_KEYUP` F5 via
+    `PostMessageA` at the game's own window; releasing early instead fires
+    the normal weapon-switch, same hold-vs-tap split as `-x86`. One honest,
+    deliberate difference from `-x86`: the extra `IsInSurvivalMode()` gate
+    isn't wired in, since x64's own `Dvar_FindVar` equivalent needed to read
+    the `mapname` dvar is a separate, still-unresolved RE target — the
+    synthetic F5 fires unconditionally on the hold edge instead, relying on
+    the same "a misplaced F5 outside its one context is simply ignored"
+    reasoning `-x86`'s own design already documents as sufficient even
+    without that gate. Build-verified, not yet live-tested. See
+    `re_notes/known_issues_x64.md` issue #1 for the full trail.
 
 ### Fixed
 1. **Crash on launch with the sniper Fire/ADS fix's own log line.** The

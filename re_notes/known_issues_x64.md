@@ -45,7 +45,7 @@ this whole session (grows as new fixes land, items move to its own
 
 ## Index
 
-- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **D-pad Left synthetic-key exception AND a sniper Fire/ADS fix attempt both shipped (build-verified, neither live-tested yet); Plugin API ported (build-verified, needed no host code changes); visual-enhancement-suite x64 port attempted TWICE, still blocked on two addresses that resist exhaustive static RE (render-scale, clcState/in-level-flag) — likely needs live tracing, not more static analysis; FXAA/MSAA found to not even exist on x86, out of scope for parity; overlay-render bug fully audited — cursor's own unguarded x86 address landmine found and fixed, rest of the render path confirmed clean; Custom Options screen wired into x64's input pipeline (build-verified, temporary manual open-chord substitute pending a real focus-detection RE pass -- **RE pass now done 2026-09-12: real x64 menu-focus/itemDef-array offsets re-derived and cross-confirmed, TryGetRealFocusedGroupAndIndexX64 wired in as the real Options-screen open trigger alongside the chord (kept as a fallback), build-verified, not yet live-tested**); a "greenlit" trusted-plugin allowlist added to plugin_loader.cpp so the sibling MW32011NSP project's own security-fix plugin can ship built in by default (build-verified, end-to-end test pending that plugin's own existence); Sprint (L3) migrated from raw pm_flags-forcing to the real +sprint kbutton, matching x86's final design, plus the rising-edge stand-from-crouch/prone behavior (build-verified, not yet live-tested); native D-pad+A/B controller menu navigation ported (InjectControllerMenuNavX64/InjectControllerMenuBackX64, driven by a newly-resolved ForwardKeyToMenu equivalent, FUN_1402aac50) — main menu, pause menu, options drill-down, buy-station/armory lists, and B-back all now controller-navigable in principle, plus two real menu-active-gating conflicts found and fixed along the way (D-pad actionslot, CrouchProne/B dual-purpose) — build-verified, not yet live-tested; Auto-Mantle (while sprinting) investigated and found genuinely BLOCKED, not implemented — its real ledge-availability gate depends entirely on the native hint text-draw hook (x86's Hook_DrawGlyphText), which has no x64 equivalent yet (same separate, larger RE task blocking gameplay-hint glyph overlays generally), and a considered alternative (reading the engine's own raw mantle condition-flag memory directly) was deliberately rejected as a diverging, policy-adjacent workaround rather than a real port — release ETA 2-4 weeks, gated on x86 parity**
+- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **D-pad Left synthetic-key exception AND a sniper Fire/ADS fix attempt both shipped (build-verified, neither live-tested yet); Plugin API ported (build-verified, needed no host code changes); visual-enhancement-suite x64 port attempted TWICE, still blocked on two addresses that resist exhaustive static RE (render-scale, clcState/in-level-flag) — likely needs live tracing, not more static analysis; FXAA/MSAA found to not even exist on x86, out of scope for parity; overlay-render bug fully audited — cursor's own unguarded x86 address landmine found and fixed, rest of the render path confirmed clean; Custom Options screen wired into x64's input pipeline (build-verified, temporary manual open-chord substitute pending a real focus-detection RE pass -- **RE pass now done 2026-09-12: real x64 menu-focus/itemDef-array offsets re-derived and cross-confirmed, TryGetRealFocusedGroupAndIndexX64 wired in as the real Options-screen open trigger alongside the chord (kept as a fallback), build-verified, not yet live-tested**); a "greenlit" trusted-plugin allowlist added to plugin_loader.cpp so the sibling MW32011NSP project's own security-fix plugin can ship built in by default (build-verified, end-to-end test pending that plugin's own existence); Sprint (L3) migrated from raw pm_flags-forcing to the real +sprint kbutton, matching x86's final design, plus the rising-edge stand-from-crouch/prone behavior (build-verified, not yet live-tested); native D-pad+A/B controller menu navigation ported (InjectControllerMenuNavX64/InjectControllerMenuBackX64, driven by a newly-resolved ForwardKeyToMenu equivalent, FUN_1402aac50) — main menu, pause menu, options drill-down, buy-station/armory lists, and B-back all now controller-navigable in principle, plus two real menu-active-gating conflicts found and fixed along the way (D-pad actionslot, CrouchProne/B dual-purpose) — build-verified, not yet live-tested; Auto-Mantle (while sprinting) investigated and found genuinely BLOCKED, not implemented — its real ledge-availability gate depends entirely on the native hint text-draw hook (x86's Hook_DrawGlyphText), which has no x64 equivalent yet (same separate, larger RE task blocking gameplay-hint glyph overlays generally), and a considered alternative (reading the engine's own raw mantle condition-flag memory directly) was deliberately rejected as a diverging, policy-adjacent workaround rather than a real port; Survival ready-up (hold Y) ported — same synthetic-F5-via-PostMessageA exception x86 already ships, direct port of SendSyntheticF5/InjectControllerWeaponNext's hold-vs-tap split, one honest scoped difference from x86 (the IsInSurvivalMode() mode gate is omitted, since x64's own Dvar_FindVar equivalent is a still-unresolved RE target — fires unconditionally on the hold edge instead, relying on the same "safe by construction" reasoning x86's own design already documents) — build-verified, not yet live-tested — release ETA 2-4 weeks, gated on x86 parity**
 
 ---
 
@@ -2895,3 +2895,95 @@ oversight) and the concrete prerequisite (`Hook_DrawGlyphText`'s x64 port)
 that would unblock it. **Status: Deferred**, pending that separate,
 larger RE task -- not a small remaining step, and not to be force-shipped
 via a diverging native-flag read without a fresh explicit decision.
+
+---
+
+**Survival ready-up (hold Y) -- PORTED, build-verified, not yet live-tested
+(2026-09-12).** Cross-reference: `re_notes/x64_feature_parity_audit.md`'s
+own "zero wiring in x64's input pipeline" finding for this control.
+Direct port of x86's own `SendSyntheticF5`/`InjectControllerWeaponNext`
+(`analog_input_hooks.cpp`), re-read in full first per this project's own
+standing rule.
+
+**Not a native-kbutton case** -- same explicitly-authorized, narrowly-scoped
+exception to the "no OS-level input emulation" rule x86 already ships
+(user-approved 2026-07-15, see `CLAUDE.md`'s "Survival ready-up (hold Y)"
+section). x86's own real trigger for F5/"skip" was never found despite an
+exhaustive search across multiple techniques (real `+gostand` kbutton: wrong
+system; `togglecrouch`/`FUN_0057d2c0` mode variants: inert, or a genuine
+unrelated prone-toggle that got a player stuck prone live; GSC
+`notifyonplayercommand`/`VM_Notify`: real primitives but need live GSC-VM
+stack manipulation from an async hook, too risky). That search is NOT
+re-run here per this task's own explicit scope -- the game data/GSC scripts
+are unchanged by the x64 recompile, so the same "no native call" conclusion
+is assumed to carry over.
+
+**Prerequisites confirmed already in place before writing any new code**:
+`GetGameWindow()` (`d3d9_hook.cpp`) is a plain `extern "C"` function, not
+architecture-guarded there at all, and already in active x64 use --
+`SendSyntheticActionSlot4KeyX64` (D-pad Left's squadmate-call-in fix, same
+file) already calls it for an identical `PostMessageA`-based synthetic-key
+technique, used directly as this port's template. `g_weaponNext`
+(`FUN_1400706d0`, resolved via `kWeaponNextSignature`) was already confirmed
+working live from this session's earlier work, so the "release before
+threshold fires weapon-switch instead" fallback reuses it directly with no
+new signature-scan needed.
+
+**Implementation**: `SendSyntheticF5X64()` added (same file, right after
+`SendSyntheticActionSlot4KeyX64`, matching its structure exactly) --
+`PostMessageA(hwnd, WM_KEYDOWN, VK_F5, 1)` then
+`PostMessageA(hwnd, WM_KEYUP, VK_F5, 0xC0000001)`, same lParam values as
+x86's own `SendSyntheticF5`. The existing Weapnext dispatch block (inside
+`Hook_MovementTick`, where Fire/ADS/Reload/Weapnext already live) was
+extended with the same hold-vs-tap state machine x86's
+`InjectControllerWeaponNext` uses: `g_yPressStartMsX64`/
+`g_yReadyUpFiredX64` track press-start time and a per-hold debounce; a hold
+past `g_modConfig.readyUpHoldThresholdMs` (740ms default, `[Survival]
+ReadyUpHoldThresholdMs`, already architecture-neutral config -- no new
+config plumbing needed) fires `SendSyntheticF5X64()` once; a release before
+the threshold fires `g_weaponNext(0, 1)` instead (the pre-existing
+weapon-switch call), exactly mirroring x86's own deferred-to-release design
+(firing weapnext unconditionally on the press edge would also switch
+weapons on every ready-up hold attempt, since Survival's between-wave break
+is live gameplay with usable weapons, not a frozen wait).
+
+**One honest, deliberate difference from x86**: x86 additionally gates the
+synthetic F5 behind `IsInSurvivalMode()`, a `mapname` dvar read via x86's
+raw `Dvar_FindVar`-equivalent (`FUN_0062abe0` @ `0x0062abe0`). x64's own
+equivalent of that raw dvar-lookup function is a genuinely unresolved RE
+target, already documented earlier in this same issue
+(`GetLookAccelerationScaleX64`'s own comment: "the hardcoded
+GetEffectiveFov/Dvar_FindVar addresses... genuinely unresolved RE targets,
+not yet found") -- `real_settings.cpp`'s `FindDvar()`/`GetDvarString()` are
+x86-only (their `__asm` body is `#ifdef _M_IX86`-guarded, a safe no-op
+returning `nullptr` on x64, not a crash, but not a real lookup either).
+Rather than block this port on a separate RE task outside its own scope
+(this task's own hard constraint #1 explicitly said not to go hunting for a
+"real" native trigger -- extended here to also not chase down an unrelated
+dvar-lookup prerequisite mid-port), `SendSyntheticF5X64()` fires
+unconditionally on the hold-threshold edge. This relies on the SAME "safe
+by construction" reasoning x86's own design comment already documents as
+sufficient even without the mode gate: IW5 has no DirectInput import at all
+(this project's own founding finding), so keyboard input is real
+`WM_KEYDOWN`/`WM_KEYUP` messages, and a misplaced synthetic F5 outside
+Survival's ready-up wait is simply ignored by the game, the same as a real,
+misplaced press would be. Worth revisiting if x64's `Dvar_FindVar`
+equivalent is ever resolved for other work, but not a blocker for this
+control specifically.
+
+**Build verification**: x64 `-t:Rebuild` (0 errors, 10 pre-existing
+`C4312` warnings in x86-only code compiled into the x64 TU, unrelated to
+this change), `dumpbin -headers` confirmed `8664 machine (x64)` with a
+fresh timestamp. Win32 `-t:Rebuild` (0 errors, 0 warnings) confirmed no
+regression. x64 rebuilt a THIRD time, last, so the deployed DLL (shared
+`OutDir`) is the correct architecture.
+
+**NOT YET LIVE-TESTED** -- next step: a live Survival playtest confirming
+(1) a ~740ms Y hold between waves actually readies up (same as `-x86`'s
+confirmed-live behavior), (2) a quick tap or a hold that falls short of the
+threshold still switches weapons, and (3) the missing `IsInSurvivalMode()`
+gate doesn't cause any observable side effect outside Survival (expected:
+none, per the "safe by construction" reasoning above, but unconfirmed
+against real hardware on this binary specifically).
+
+**Status: Build-verified, not yet live-tested.**
