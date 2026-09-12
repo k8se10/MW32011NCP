@@ -145,11 +145,24 @@ live, detailed status on every item below.
    `legacy-x86-docs/` and rewritten fresh to describe the current x64-based
    project rather than the discontinued 32-bit line.
 3. **Security notice added for unpatched base-game netcode vulnerabilities.**
-   Sibling project MW32011NSP's research confirmed three RCE-class stack
-   overflows in `iw5sp.exe`/`iw5mp.exe` netcode survive unchanged into the
-   current x64 build. Reported to Activision through their official
-   disclosure channel; a general risk notice (no exploit-enabling detail)
-   now sits at the top of `README.md` pending a fix.
+   MW32011NSP's research confirmed three RCE-class stack overflows in
+   `iw5sp.exe`/`iw5mp.exe` netcode survive unchanged into the current x64
+   build. Reported to Activision through their official disclosure channel;
+   a general risk notice (no exploit-enabling detail) now sits at the top
+   of `README.md` pending a fix.
+4. **NCP redefined as Native Community Patches; `MW32011NSP` absorbed as a
+   nested component.** NCP's own identity expanded 2026-09-12 from "Native
+   Controller Project" — name/repo unchanged, meaning redefined, same
+   pattern as the earlier 2026-09-03 redefinition — to cover netcode
+   security patching alongside controller input and the visual-enhancement
+   suite. The former sibling `MW32011NSP` repo's full commit history
+   (24 commits, including its original vendor security-disclosure record)
+   carried over intact via a `git subtree` merge into this repo's own
+   `security/` directory — not a fresh copy. Mechanically unchanged: the
+   same three fixes, the same standalone DLL, the same "greenlit" plugin
+   loaded the same way — see `security/PATCHNOTES.md` for that component's
+   own detailed history, and `CLAUDE.md`'s 2026-09-12 Version Timeline
+   entry for the full decision record.
 
 ### Groundwork
 1. **`signature_scan.h`/`.cpp`** — the runtime AOB byte-pattern scanner this
