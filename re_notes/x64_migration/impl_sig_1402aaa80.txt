@@ -1,0 +1,33 @@
+Signature-byte dump of FUN_1402aaa80 @ 1402aaa80
+(byte offsets relative to function entry point)
+
++0x00  8B 91 C0 14 00 00              MOV EDX,dword ptr [RCX + 0x14c0]         
++0x06  83 EA 01                       SUB EDX,0x1                              
++0x09  78 38                          JS 0x1402aaac3                           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x0B  4C 63 09                       MOVSXD R9,dword ptr [RCX]                
++0x0E  48 63 C2                       MOVSXD RAX,EDX                           
++0x11  48 8D 0C C1                    LEA RCX,[RCX + RAX*0x8]                  
++0x15  48 81 C1 40 14 00 00           ADD RCX,0x1440                           
++0x1C  0F 1F 40 00                    NOP dword ptr [RAX]                      
++0x20  4C 8B 01                       MOV R8,qword ptr [RCX]                   
++0x23  43 8B 44 88 58                 MOV EAX,dword ptr [R8 + R9*0x4 + 0x58]   
++0x28  A8 04                          TEST AL,0x4                              
++0x2A  74 0E                          JZ 0x1402aaaba                           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x2C  D1 E8                          SHR EAX,0x1                              
++0x2E  24 01                          AND AL,0x1                               
++0x30  74 08                          JZ 0x1402aaaba                           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x32  43 F6 44 88 58 04              TEST byte ptr [R8 + R9*0x4 + 0x58],0x4   
++0x38  75 0C                          JNZ 0x1402aaac6                          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x3A  48 83 E9 08                    SUB RCX,0x8                              
++0x3E  83 EA 01                       SUB EDX,0x1                              
++0x41  79 DD                          JNS 0x1402aaaa0                          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x43  33 C0                          XOR EAX,EAX                              
++0x45  C3                             RET                                      
++0x46  49 8B C0                       MOV RAX,R8                               
++0x49  C3                             RET                                      
+
+Raw bytes (74 total): 8B 91 C0 14 00 00 83 EA 01 78 38 4C 63 09 48 63 C2 48 8D 0C C1 48 81 C1 40 14 00 00 0F 1F 40 00 4C 8B 01 43 8B 44 88 58 A8 04 74 0E D1 E8 24 01 74 08 43 F6 44 88 58 04 75 0C 48 83 E9 08 83 EA 01 79 DD 33 C0 C3 49 8B C0 C3
+
+Suggested masked signature (PC-relative/ref instructions fully
+wildcarded -- refine by hand, this is a starting point only):
+8B 91 C0 14 00 00 83 EA 01 ?? ?? 4C 63 09 48 63 C2 48 8D 0C C1 48 81 C1 40 14 00 00 0F 1F 40 00 4C 8B 01 43 8B 44 88 58 A8 04 ?? ?? D1 E8 24 01 ?? ?? 43 F6 44 88 58 04 ?? ?? 48 83 E9 08 83 EA 01 ?? ?? 33 C0 C3 49 8B C0 C3

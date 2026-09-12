@@ -1,0 +1,38 @@
+STRING @ 1403f5a65 = "name" (block .rdata)
+  (0 references)
+
+STRING @ 1403f5b2f = "name" (block .rdata)
+  (0 references)
+
+STRING @ 1403f5b48 = "name" (block .rdata)
+  from 140291d96 type=DATA IN FUNCTION FUN_14028f3c0@14028f3c0
+  from 140291c83 type=DATA IN FUNCTION FUN_14028f3c0@14028f3c0
+  from 140291b68 type=DATA IN FUNCTION FUN_14028f3c0@14028f3c0
+  from 140291a55 type=DATA IN FUNCTION FUN_14028f3c0@14028f3c0
+  from 14029e5a5 type=DATA IN FUNCTION FUN_14029dfd0@14029dfd0
+  from 14029e5cd type=DATA IN FUNCTION FUN_14029dfd0@14029dfd0
+  from 14028cb27 type=DATA IN FUNCTION FUN_14028ca50@14028ca50
+  from 14028ccf0 type=DATA IN FUNCTION FUN_14028cc80@14028cc80
+  from 14017ae2b type=DATA IN FUNCTION FUN_1401795b0@1401795b0
+  from 140081296 type=DATA IN FUNCTION FUN_140080db0@140080db0
+  from 1404c4750 type=DATA IN DATA/UNKNOWN
+  (11 references)
+
+STRING @ 140427f1a = "name" (block .rdata)
+  (0 references)
+
+STRING @ 14042a236 = "name" (block .rdata)
+  (0 references)
+
+STRING @ 14042b584 = "name" (block .rdata)
+  (0 references)
+
+STRING @ 140432ef2 = "name" (block .rdata)
+  (0 references)
+
+STRING @ 140435aba = "name" (block .rdata)
+  (0 references)
+
+STRING @ 14043df2b = "name" (block .rdata)
+  (0 references)
+

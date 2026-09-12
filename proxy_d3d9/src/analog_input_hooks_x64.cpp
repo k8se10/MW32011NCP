@@ -72,6 +72,9 @@
 
 #include <windows.h>
 #include <cstdio>
+#include <cstring>
+#include <cctype>
+#include <cstdlib>
 #include "../third_party/minhook/include/MinHook.h"
 #include "signature_scan.h"
 #include "controller_input.h"
@@ -380,6 +383,20 @@ inline int8_t ClampToSByteX64(int v)
 // inside FUN_14007d9f0's own body, see kAngleAccumSignature below.
 float* g_pitchAccum = nullptr;  // DAT_1406e2738 equivalent
 float* g_yawAccum = nullptr;    // DAT_1406e273c equivalent
+
+// x64 equivalents of x86's g_motionBlurYawDeltaDeg/g_motionBlurPitchDeltaDeg
+// (analog_input_hooks.cpp) -- real per-frame look-rotation magnitude in degrees,
+// mirrored here rather than shared cross-TU since the x86 globals live inside
+// that file's own anonymous namespace (internal linkage, same class of "extern C
+// wrapper needed" situation this file already handles for IsPhysicalHeld_Exported/
+// RouteStickAxes_Exported). Set alongside the real yaw/pitch accumulator writes
+// below (same values, same sign), read by overlay_hud.cpp's
+// MotionBlurShaderSetupCallback via GetMotionBlurDeltasX64() once motion blur's
+// own x64 gates are wired. Covers controller-stick look only, same real,
+// documented limitation as x86 (gyro-aim isn't wired for x64 yet at all -- see
+// known_issues_x64.md issue #1 -- so there's no gyro contribution to add here).
+float g_motionBlurYawDeltaDegX64 = 0.0f;
+float g_motionBlurPitchDeltaDegX64 = 0.0f;
 
 // Mirrors x86's own GetLookAccelerationScale (analog_input_hooks.cpp) exactly --
 // pure math against g_modConfig + GetTickCount(), no hardcoded x86 addresses, so
@@ -944,6 +961,207 @@ extern "C" void PollPauseToggleX64()
     g_pauseHeldX64 = pauseHeld;
 }
 
+// ---- Menu-focus / itemDef-array tracking, x64 port (2026-09-12) -------------------
+//
+// Real x64 equivalent of x86's `TryGetRealFocusedGroupAndIndex`/`GetMenuStackDepth`/
+// `GetTopmostActiveMenu` (analog_input_hooks.cpp) -- closes the parity gap
+// known_issues_x64.md documented under "Real x64 port of menu-focus/itemDef-position
+// tracking": x86's raw itemDef-array walk hardcodes a 4-byte pointer stride and
+// 32-bit-width struct offsets that read misaligned garbage on x64 (safely caught by
+// its own LooksSane() check, never crashes, just always returns false -- the reason
+// the Custom Options screen's real open-trigger and every glyph/hint-icon request
+// have been unreachable on x64 until now). Read x86's own full implementation first
+// (this project's standing compare-to-x86-original rule) before reading the below --
+// the STRUCTURE of the logic is intentionally unchanged, only the offsets/stride are
+// re-derived for real 64-bit pointer width.
+//
+// Every offset below was independently re-derived via a dedicated Ghidra decompile
+// pass (re_notes/x64_migration/decomp_gettopmostmenu_x64.txt,
+// decomp_menuctx_helpers_x64.txt, decomp_itemnav_x64.txt, decomp_itemhelpers2_x64.txt,
+// decomp_itemfocus_x64.txt) and cross-checked against MULTIPLE independent real
+// consumers before being trusted -- per this project's own issue #3 lesson ("never
+// trust an offset without independent confirmation"), not taken from a single call
+// site:
+//   - The real x64 UI-context global (x86's `kMenuStackCtx` equivalent) is
+//     `DAT_142605050` -- a fixed, single-instance data address confirmed via its own
+//     literal `LEA RCX,[0x142605050]` in `FUN_14029baa0` (the real x64
+//     `Menu_KeyEvent` caller/resume-path, `re_notes/x64_migration/
+//     impl_sig_14029baa0.txt`) and independently re-used, unmodified, across every
+//     other menu-stack helper decompiled this pass (`FUN_1402acef0`, `FUN_1402ac9c0`,
+//     `FUN_1402ad530`, `FUN_1402ad560`, `FUN_1402aa7e0`, `FUN_1402aaa80`).
+//   - `ctx + 0x14C0` = the real open-menu-stack depth (an int) -- confirmed via TWO
+//     independent functions reading the identical offset (`FUN_1402aaa80`,
+//     `FUN_1402ad530`). x86's own equivalent is `kMenuStackCtx + 0xA7C`.
+//   - `ctx + 0x1440` = the real open-menu stack array base, 8 bytes/entry (a pointer
+//     array, matching x64 pointer width) -- confirmed via the same two functions.
+//   - `FUN_1402aaa80(ctx)` = the real x64 `GetTopmostActiveMenu()` equivalent (x86's
+//     `FUN_00547980`) -- confirmed via its OWN call site in `FUN_14029baa0`
+//     (`plVar3 = FUN_1402aaa80(&DAT_142605050);` immediately followed by passing
+//     `plVar3` into `FUN_1402aac50`, the confirmed x64 `Menu_KeyEvent` -- the exact
+//     same "resolve the topmost menu, then route input into it" shape x86's own
+//     `ForwardKeyToMenu` uses) AND structurally, by its own disassembly
+//     (`re_notes/x64_migration/impl_sig_1402aaa80.txt`): walks the stack top-down
+//     from `ctx+0x14C0`/`ctx+0x1440`, returning the first entry whose per-player
+//     flags at `entry+0x58+player*4` have bits 0x4 and 0x2 both set -- the exact
+//     "genuinely visible/focused" test x86's own `FUN_00547980` is documented to run.
+//   - The returned "menu" pointer's item count/array live at `menu+0xB8`
+//     (`0x17*8` -- x86's `menu+0xa8`) and `menu+0xC0` (`0x18*8` -- x86's `menu+0xac`),
+//     confirmed via THREE independent consumers agreeing on both offsets
+//     (`FUN_1402aac50`, `FUN_1402ac5d0`, `FUN_1402ac6f0` -- the real x64
+//     `Menu_KeyEvent`/list-up-nav/list-down-nav functions).
+//   - Each itemDef pointer's own per-player focus flags live at `item+0x50+player*4`
+//     (x86's `item+0x48`, no player index there since x86 never splits this field per
+//     player) -- confirmed via FIVE independent consumers testing the identical
+//     `(flags & 4) != 0 && ((flags >> 1) & 1) != 0` pair (`FUN_1402aac50`,
+//     `FUN_1402ad560`, `FUN_1402b21b0`, `FUN_1402b1de0`, `FUN_1402a7f00`) -- the exact
+//     same bit pair x86's own function tests.
+//   - Each itemDef's own name pointer lives at `item+0x0` (unchanged from x86 --
+//     the first field of a struct can never shift regardless of pointer width) --
+//     confirmed via TWO independent consumers directly string-comparing
+//     `*itemPtr` against known literal item-name strings (`FUN_1402ac6f0`:
+//     `FUN_1402ca760(*puVar2,"playlist_listing")` and friends; `FUN_1402a4580`: the
+//     identical pattern against `*param_3`), not merely assumed from struct-layout
+//     convention.
+// Player index is hardcoded to 0 throughout (`kLocalClientIndexX64`), matching this
+// file's own existing convention (`g_menuActiveGateFlag`'s `player*400` indexing
+// elsewhere in this file always uses local player 0 too) and x86's own
+// single-player-only design for this exact function.
+namespace {
+
+// FUN_14029baa0's own real prologue -- signature via DumpSigBytes.java
+// (re_notes/x64_migration/impl_sig_14029baa0.txt). The two `MOV qword ptr
+// [RSP+xx],reg` stack-spill stores at the very start are RSP-relative, NOT
+// PC-relative -- DumpSigBytes.java's own reference-based heuristic over-flags them
+// (the same false positive this file's kPmoveTickSignature comment already
+// documents for LEA RBP,[RSP-0x80]), kept literal here rather than wildcarded.
+// Every real CALL/JZ rel32 IS wildcarded (opcode byte(s) kept literal, only the
+// displacement bytes masked) since those genuinely shift between builds.
+constexpr const char* kUiContextAnchorSignature =
+    "48 89 6C 24 10 48 89 74 24 18 57 48 83 EC 20 8B E9 41 8B F8 48 8D 0D "
+    "?? ?? ?? ?? 8B F2 E8 ?? ?? ?? ?? 85 C0 0F 84 ?? ?? ?? ?? E8 ?? ?? ?? ?? "
+    "84 C0 0F 84 ?? ?? ?? ?? E8 ?? ?? ?? ??";
+// Byte offset (from the signature match's own start) of the `LEA RCX,[rip+disp32]`
+// instruction that loads `&DAT_142605050` -- 7 bytes long (3-byte opcode/ModRM +
+// 4-byte disp32), disp32 is the instruction's own last 4 bytes so
+// SigScan::ResolveRipRelative applies directly (no ResolveRipRelativeAt needed).
+constexpr ptrdiff_t kCtxLoadInsnOffset = 0x14;
+void* g_uiMenuContextX64 = nullptr;
+
+// FUN_1402aaa80(ctx) -- the confirmed x64 GetTopmostActiveMenu() equivalent (see this
+// section's own header comment for the full confirmation trail). Signature via
+// DumpSigBytes.java (re_notes/x64_migration/impl_sig_1402aaa80.txt) -- every flagged
+// byte is a genuine short (rel8) conditional-jump displacement, wildcarded whole
+// (2 bytes) per this file's own convention for that instruction shape.
+constexpr const char* kGetTopmostActiveMenuSignature =
+    "8B 91 C0 14 00 00 83 EA 01 ?? ?? 4C 63 09 48 63 C2 48 8D 0C C1 48 81 C1 "
+    "40 14 00 00 0F 1F 40 00 4C 8B 01 43 8B 44 88 58 A8 04 ?? ?? D1 E8 24 01 "
+    "?? ?? 43 F6 44 88 58 04 ?? ?? 48 83 E9 08 83 EA 01 ?? ?? 33 C0 C3 49 8B C0 C3";
+
+using GetTopmostActiveMenuFnX64 = long long(__fastcall*)(void* ctx);
+GetTopmostActiveMenuFnX64 g_getTopmostActiveMenuX64 = nullptr;
+
+constexpr ptrdiff_t kMenuStackDepthOffsetX64 = 0x14C0;  // ctx+0x14C0 -- x86's kMenuStackDepthOffset (0xA7C)
+constexpr ptrdiff_t kMenuItemCountOffsetX64 = 0xB8;      // menu+0xB8 (0x17*8) -- x86's menu+0xa8
+constexpr ptrdiff_t kMenuItemArrayOffsetX64 = 0xC0;      // menu+0xC0 (0x18*8) -- x86's menu+0xac
+constexpr ptrdiff_t kItemFocusFlagsOffsetX64 = 0x50;     // item+0x50+player*4 -- x86's item+0x48 (no player index there)
+constexpr ptrdiff_t kItemNameOffsetX64 = 0x0;            // item+0x0, unchanged from x86
+constexpr int kLocalClientIndexX64 = 0;                   // matches this file's existing single-player convention
+
+// Real x64 sanity check on a 64-bit pointer read out of live process memory (x86's
+// own LooksSane() only covered the 32-bit address space) -- rejects null/low
+// sentinel values and anything above the real x64 user-mode VA ceiling
+// (0x00007FFFFFFFFFFF) before ever dereferencing it.
+inline bool LooksSaneX64(uintptr_t p)
+{
+    return p >= 0x10000 && p < 0x00007FFFFFFFFFFFull;
+}
+
+int GetMenuStackDepthX64()
+{
+    if (!g_uiMenuContextX64) return -1;
+    __try {
+        return *reinterpret_cast<volatile int*>(reinterpret_cast<uintptr_t>(g_uiMenuContextX64) + kMenuStackDepthOffsetX64);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+}
+
+void* GetTopmostActiveMenuX64()
+{
+    if (!g_getTopmostActiveMenuX64 || !g_uiMenuContextX64) return nullptr;
+    __try {
+        long long menu = g_getTopmostActiveMenuX64(g_uiMenuContextX64);
+        return reinterpret_cast<void*>(static_cast<uintptr_t>(menu));
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
+// Direct x64 port of x86's TryGetRealFocusedGroupAndIndex(4-arg overload) --
+// structurally identical logic (walk the topmost menu's real itemDef array, find the
+// one item whose focus-flag bits are both set, parse its name as "<group>_<index>",
+// then count real siblings sharing that base name), only the offsets/stride differ.
+// See this section's own header comment for the full per-offset confirmation trail.
+bool TryGetRealFocusedGroupAndIndexX64(char* outGroupName, size_t outGroupNameSize, int& outIndex, int& outSiblingCount)
+{
+    void* menuVoid = GetTopmostActiveMenuX64();
+    if (!menuVoid) return false;
+    uintptr_t menu = reinterpret_cast<uintptr_t>(menuVoid);
+    __try {
+        int count = *reinterpret_cast<int*>(menu + kMenuItemCountOffsetX64);
+        uintptr_t arr = *reinterpret_cast<uintptr_t*>(menu + kMenuItemArrayOffsetX64);
+        if (count <= 0 || count > 500 || !LooksSaneX64(arr)) return false;
+        for (int i = 0; i < count; ++i) {
+            uintptr_t itemPtr = *reinterpret_cast<uintptr_t*>(arr + static_cast<uintptr_t>(i) * 8);
+            if (!LooksSaneX64(itemPtr)) continue;
+            uint32_t flags0 = *reinterpret_cast<uint32_t*>(
+                itemPtr + kItemFocusFlagsOffsetX64 + static_cast<uintptr_t>(kLocalClientIndexX64) * 4);
+            if ((flags0 & 0x4) == 0 || ((flags0 >> 1) & 1) == 0) continue;
+            uintptr_t nameAddr = *reinterpret_cast<uintptr_t*>(itemPtr + kItemNameOffsetX64);
+            if (!LooksSaneX64(nameAddr)) return false;
+            const char* name = reinterpret_cast<const char*>(nameAddr);
+            size_t len = strnlen(name, 128);
+            size_t j = len;
+            while (j > 0 && isdigit(static_cast<unsigned char>(name[j - 1]))) --j;
+            if (j == len || j == 0 || name[j - 1] != '_') return false;
+            size_t baseLen = j - 1;
+            if (baseLen == 0 || baseLen >= outGroupNameSize) return false;
+            memcpy(outGroupName, name, baseLen);
+            outGroupName[baseLen] = '\0';
+            outIndex = atoi(name + j);
+
+            // Second pass: count real siblings sharing this exact base name, same
+            // technique x86's own overload uses (bounded by the same validated
+            // count/arr, so no extra validation needed).
+            int siblingCount = 0;
+            for (int k = 0; k < count; ++k) {
+                uintptr_t siblingPtr = *reinterpret_cast<uintptr_t*>(arr + static_cast<uintptr_t>(k) * 8);
+                if (!LooksSaneX64(siblingPtr)) continue;
+                uintptr_t siblingNameAddr = *reinterpret_cast<uintptr_t*>(siblingPtr + kItemNameOffsetX64);
+                if (!LooksSaneX64(siblingNameAddr)) continue;
+                const char* siblingName = reinterpret_cast<const char*>(siblingNameAddr);
+                if (_strnicmp(siblingName, outGroupName, baseLen) != 0) continue;
+                if (siblingName[baseLen] != '_') continue;
+                size_t sj = baseLen + 1;
+                size_t slen = strnlen(siblingName, 128);
+                if (sj >= slen) continue;
+                bool allDigits = true;
+                for (size_t d = sj; d < slen; ++d) {
+                    if (!isdigit(static_cast<unsigned char>(siblingName[d]))) { allDigits = false; break; }
+                }
+                if (allDigits) ++siblingCount;
+            }
+            outSiblingCount = siblingCount;
+            return true;
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    return false;
+}
+
+}  // namespace
+
 // ---- Custom Options screen, x64 (2026-09-05, release-parity pass) -----------------
 //
 // x86 precedent: `CustomOptionsMenu_TickInput` (overlay_hud.cpp) and the screen it
@@ -953,38 +1171,32 @@ extern "C" void PollPauseToggleX64()
 // draw/navigate-once-open half of this feature already works correctly on x64 with
 // zero porting needed, confirmed by inspection.
 //
-// The REAL gap, found this pass: x86's own real TRIGGER for opening the screen
-// (`InjectControllerMenuNav`, analog_input_hooks.cpp) never runs on x64 at all --
-// x64's own per-frame input pipeline (this file) never calls
-// `CustomOptionsMenu_TickInput`, so `g_optMenuOpen` can never become true and the
-// whole screen is currently unreachable in-game, even though drawing it would work
-// fine once open.
+// The gap this section originally documented: x86's own real TRIGGER for opening the
+// screen (`InjectControllerMenuNav`, analog_input_hooks.cpp) never ran on x64 at all
+// -- x64's own per-frame input pipeline (this file) never called
+// `CustomOptionsMenu_TickInput`, so `g_optMenuOpen` could never become true and the
+// whole screen was unreachable in-game, even though drawing it worked fine once open.
 //
-// x86's real trigger detects a real NATIVE menu-item focus (`TryGetRealFocusedGroupAndIndex`,
-// analog_input_hooks.cpp) landing on the pause/campaign/specops menu's own real
-// "Options" button, via a raw itemDef-array walk. That walk hardcodes a 4-BYTE
-// pointer stride (`arr + i * 4`) and item-struct field offsets (`+0x48` flags,
-// `+0x0` name pointer, `+0xa8`/`+0xac` array count/pointer) that are all genuine
-// 32-bit-pointer-width assumptions -- on x64 (8-byte pointers), this reads
-// misaligned garbage, which its own `LooksSane()` checks correctly reject, so the
-// function always returns false. This independently confirms the SAME "focus
-// detection returns nothing" symptom another concurrent x64 investigation this
-// session already found via `[manual-glyph-diag]` log evidence
-// (`realGroup="" realIndex=-1` every frame). Re-deriving x64's real per-item struct
-// offsets needs its own dedicated Ghidra decompile pass (a genuinely different
-// struct layout under 64-bit alignment, not just doubling the stride) -- explicitly
-// NOT attempted this pass, consistent with this session's own standard of not
-// guessing at unverified struct offsets (x86's own issue #3 lesson).
+// **REAL TRIGGER NOW WIRED (2026-09-12)**, alongside the temporary chord below, not
+// replacing it outright until this specific path is live-tested -- see
+// `openOptionsRequestedEdge` in `PollCustomOptionsMenuX64` further down, which uses
+// the newly-ported `TryGetRealFocusedGroupAndIndexX64` the exact same way x86's own
+// `InjectControllerMenuNav` does: detect real NATIVE menu-item focus landing on the
+// pause/campaign/specops menu's own real "Options" button (`PAUSE_LIST`/1,
+// `CAMPAIGN_BUTTON_LIST`/3, `SPECOPS_BUTTON_LIST`/5 -- the same group names/indices
+// x86 uses, expected to carry over unchanged since the x86->x64 migration was a code
+// recompile against the same game data, not a content update -- see this project's
+// own "10-string persistence check" finding in the Version Timeline). Both paths
+// funnel into the same single `openRequestedEdge` bool `CustomOptionsMenu_TickInput`
+// already accepts, so there's no double-open risk from having both wired at once.
 //
-// TEMPORARY substitute, honestly labeled as such: since the real native-menu-focus
-// trigger can't be ported this pass, opening is gated on a manual chord (LB+RB held
+// TEMPORARY substitute, KEPT as a safety net until the real trigger above is
+// confirmed live: opening is ALSO still reachable via a manual chord (LB+RB held
 // together) while a real native menu is already active (`g_menuActiveGateFlag`,
-// already-confirmed x64 IsMenuActive() equivalent, bit 0x10) -- gives real,
-// testable access to the screen's own already-correct draw/navigate code without
-// needing the deeper RE. Still gated on `[Options] UseCustomOptionsScreen` (default
-// OFF), matching x86's own opt-in convention exactly. Replace this chord with the
-// real focus-based trigger once the struct-offset RE above is done -- not a
-// permanent design, a stand-in.
+// already-confirmed x64 IsMenuActive() equivalent, bit 0x10). Still gated on
+// `[Options] UseCustomOptionsScreen` (default OFF), matching x86's own opt-in
+// convention exactly. Remove this chord once the real trigger is live-confirmed to
+// work reliably on its own -- it is no longer the ONLY way in, just a fallback.
 bool g_optNavUpHeldX64 = false, g_optNavDownHeldX64 = false, g_optNavLeftHeldX64 = false,
      g_optNavRightHeldX64 = false, g_optNavSelectHeldX64 = false, g_optNavBackHeldX64 = false,
      g_optNavTabPrevHeldX64 = false, g_optNavTabNextHeldX64 = false;
@@ -1031,10 +1243,44 @@ extern "C" void PollCustomOptionsMenuX64()
     bool tabNextHeld = IsPhysicalHeld_Exported(PhysicalInput::RB, xiButtons, leftTrigger, rightTrigger);
     bool tabNextEdge = tabNextHeld && !g_optNavTabNextHeldX64;
 
-    // Temporary open chord -- see this function's own header comment. Only checked
-    // while our own menu isn't already open (CustomOptionsMenu_TickInput's own
-    // openRequestedEdge parameter is ignored once g_optMenuOpen is already true, but
-    // avoiding the edge computation entirely here is clearer than relying on that).
+    // Real trigger (2026-09-12) -- see this function's own header comment for the
+    // full confirmation trail. Mirrors x86's InjectControllerMenuNav exactly: real
+    // native menu-item focus landing on the pause/campaign/specops menu's own real
+    // "Options" button, via the newly-ported itemDef-array walk.
+    char focusedGroupX64[128] = {};
+    int focusedIndexX64 = -1, siblingCountX64 = -1;
+    bool haveFocusX64 = TryGetRealFocusedGroupAndIndexX64(focusedGroupX64, sizeof(focusedGroupX64),
+                                                              focusedIndexX64, siblingCountX64);
+    // Deduped live-confirmation diagnostic for the newly-ported itemDef walk itself
+    // (independent of whether it happens to land on an Options button this tick) --
+    // this is the cheapest possible way to confirm TryGetRealFocusedGroupAndIndexX64
+    // is resolving real, changing values live against actual gameplay, without
+    // needing the separate (not-yet-ported) native text-draw hook a full on-screen
+    // glyph overlay would require. Only runs while a menu is genuinely active (this
+    // function's own early-return above already gates that).
+    {
+        static char s_lastFocusDiagKeyX64[200] = "";
+        char focusDiagKeyX64[200];
+        sprintf_s(focusDiagKeyX64, "%d|%s|%d|%d", haveFocusX64 ? 1 : 0, focusedGroupX64, focusedIndexX64, siblingCountX64);
+        if (strcmp(focusDiagKeyX64, s_lastFocusDiagKeyX64) != 0) {
+            strncpy_s(s_lastFocusDiagKeyX64, focusDiagKeyX64, _TRUNCATE);
+            char fbuf[256];
+            sprintf_s(fbuf, "[x64-menufocus-diag] haveFocus=%d group=\"%s\" index=%d siblingCount=%d",
+                haveFocusX64 ? 1 : 0, focusedGroupX64, focusedIndexX64, siblingCountX64);
+            LogFromController(fbuf);
+        }
+    }
+    bool onPauseMenuOptionsButtonX64 = haveFocusX64 && _stricmp(focusedGroupX64, "PAUSE_LIST") == 0 && focusedIndexX64 == 1;
+    bool onCampaignMenuOptionsButtonX64 = haveFocusX64 && _stricmp(focusedGroupX64, "CAMPAIGN_BUTTON_LIST") == 0 && focusedIndexX64 == 3;
+    bool onSpecOpsMenuOptionsButtonX64 = haveFocusX64 && _stricmp(focusedGroupX64, "SPECOPS_BUTTON_LIST") == 0 && focusedIndexX64 == 5;
+    bool onAnyRealOptionsButtonX64 = onPauseMenuOptionsButtonX64 || onCampaignMenuOptionsButtonX64 || onSpecOpsMenuOptionsButtonX64;
+    bool openOptionsRequestedEdge = onAnyRealOptionsButtonX64 && selectEdge && g_modConfig.useCustomOptionsScreen;
+
+    // Temporary open chord -- KEPT as a fallback, see this function's own header
+    // comment. Only checked while our own menu isn't already open
+    // (CustomOptionsMenu_TickInput's own openRequestedEdge parameter is ignored once
+    // g_optMenuOpen is already true, but avoiding the edge computation entirely here
+    // is clearer than relying on that).
     bool openCombo = tabPrevHeld && tabNextHeld;
     bool openComboEdge = openCombo && !g_optOpenComboHeldX64;
     g_optOpenComboHeldX64 = openCombo;
@@ -1043,7 +1289,13 @@ extern "C" void PollCustomOptionsMenuX64()
     // the instant the screen appears (both were pressed to open it).
     if (openComboEdge) { tabPrevEdge = false; tabNextEdge = false; }
 
-    CustomOptionsMenu_TickInput(openComboEdge, upEdge, downEdge, leftEdge, rightEdge,
+    bool openRequestedEdge = openComboEdge || openOptionsRequestedEdge;
+    if (openOptionsRequestedEdge) {
+        LogFromController("[x64-optmenu-realtrigger] Real focus-based Options trigger fired "
+            "(group=\"PAUSE_LIST/CAMPAIGN_BUTTON_LIST/SPECOPS_BUTTON_LIST\") -- opening Custom Options screen.");
+    }
+
+    CustomOptionsMenu_TickInput(openRequestedEdge, upEdge, downEdge, leftEdge, rightEdge,
                                   selectEdge, backEdge, tabPrevEdge, tabNextEdge);
 
     g_optNavUpHeldX64 = upHeld;
@@ -1218,8 +1470,15 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
                 // are SUBTRACTED from, not added.
                 *g_yawAccum -= yawDelta;
                 *g_pitchAccum -= pitchDelta;
+                // Motion blur's own real per-frame delta feed -- same values, same
+                // sign convention x86's InjectControllerLookAngles uses for its own
+                // g_motionBlurYawDeltaDeg/g_motionBlurPitchDeltaDeg (analog_input_hooks.cpp).
+                g_motionBlurYawDeltaDegX64 = yawDelta;
+                g_motionBlurPitchDeltaDegX64 = pitchDelta;
             } else {
                 g_lookAccelStartMsX64 = 0; // stick back at neutral -- next push starts the ramp fresh
+                g_motionBlurYawDeltaDegX64 = 0.0f;
+                g_motionBlurPitchDeltaDegX64 = 0.0f;
             }
         }
     }
@@ -1730,5 +1989,53 @@ void InstallAnalogInputHooksX64()
                 "installed).", static_cast<unsigned long long>(r.address));
             LogFromController(buf);
         }
+    }
+
+    // Menu-focus/itemDef tracking (2026-09-12 port) -- resolves the real x64 UI
+    // context global (DAT_142605050) via a RIP-relative LEA inside FUN_14029baa0's
+    // own confirmed prologue, and GetTopmostActiveMenu's real entry point
+    // (FUN_1402aaa80) for a direct call. Both independent of each other and of
+    // every other resolve in this function -- a failure here only disables the
+    // real Options-screen trigger and the itemDef-walk diagnostic, the temporary
+    // LB+RB chord (already resolved above via g_menuActiveGateFlag) stays available
+    // either way. See this file's own "Menu-focus / itemDef-array tracking" section
+    // header comment for the full confirmation trail behind every offset used here.
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kUiContextAnchorSignature);
+        if (!r.found) {
+            LogFromController("[x64-menufocus] FATAL: UI-context anchor signature did not resolve -- the real "
+                "Options-screen open trigger and menu-focus diagnostic will not work this session (LB+RB chord "
+                "still available)");
+        } else {
+            g_uiMenuContextX64 = reinterpret_cast<void*>(
+                SigScan::ResolveRipRelative(r.address + kCtxLoadInsnOffset, 7));
+            if (g_uiMenuContextX64) {
+                char buf[160];
+                sprintf_s(buf, "[x64-menufocus] UI context resolved @ 0x%p.", g_uiMenuContextX64);
+                LogFromController(buf);
+            } else {
+                LogFromController("[x64-menufocus] FATAL: UI-context RIP-relative resolution failed -- the real "
+                    "Options-screen open trigger and menu-focus diagnostic will not work this session (LB+RB "
+                    "chord still available)");
+            }
+        }
+    }
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kGetTopmostActiveMenuSignature);
+        if (!r.found) {
+            LogFromController("[x64-menufocus] FATAL: GetTopmostActiveMenu signature did not resolve -- the real "
+                "Options-screen open trigger and menu-focus diagnostic will not work this session (LB+RB chord "
+                "still available)");
+        } else {
+            g_getTopmostActiveMenuX64 = reinterpret_cast<GetTopmostActiveMenuFnX64>(r.address);
+            char buf[160];
+            sprintf_s(buf, "[x64-menufocus] GetTopmostActiveMenu resolved @ 0x%llX -- active (direct call, no "
+                "hook installed).", static_cast<unsigned long long>(r.address));
+            LogFromController(buf);
+        }
+    }
+    if (g_uiMenuContextX64 && g_getTopmostActiveMenuX64) {
+        LogFromController("[x64-menufocus] Real menu-focus/itemDef tracking active -- the real focus-based "
+            "Options-screen trigger and [x64-menufocus-diag]/[x64-optmenu-realtrigger] log lines are live.");
     }
 }
