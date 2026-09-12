@@ -1,0 +1,33 @@
+Signature-byte dump of FUN_14011f850 @ 14011f850
+(byte offsets relative to function entry point)
+
++0x00  40 53                          PUSH RBX                                 
++0x02  48 83 EC 20                    SUB RSP,0x20                             
++0x06  48 63 C1                       MOVSXD RAX,ECX                           
++0x09  48 69 D8 A0 02 00 00           IMUL RBX,RAX,0x2a0                       
++0x10  48 8D 05 89 84 E3 00           LEA RAX,[0x140f57cf0]                    [PC-RELATIVE/REF -- likely needs wildcarding]
++0x17  48 03 D8                       ADD RBX,RAX                              
++0x1A  48 8B 83 10 01 00 00           MOV RAX,qword ptr [RBX + 0x110]          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x21  0F 10 80 58 AD 00 00           MOVUPS XMM0,xmmword ptr [RAX + 0xad58]   
++0x28  0F 11 80 98 AD 00 00           MOVUPS xmmword ptr [RAX + 0xad98],XMM0   
++0x2F  0F 10 88 68 AD 00 00           MOVUPS XMM1,xmmword ptr [RAX + 0xad68]   
++0x36  0F 11 88 A8 AD 00 00           MOVUPS xmmword ptr [RAX + 0xada8],XMM1   
++0x3D  0F 10 80 78 AD 00 00           MOVUPS XMM0,xmmword ptr [RAX + 0xad78]   
++0x44  0F 11 80 B8 AD 00 00           MOVUPS xmmword ptr [RAX + 0xadb8],XMM0   
++0x4B  0F 10 88 88 AD 00 00           MOVUPS XMM1,xmmword ptr [RAX + 0xad88]   
++0x52  0F 11 88 C8 AD 00 00           MOVUPS xmmword ptr [RAX + 0xadc8],XMM1   
++0x59  48 8B 93 10 01 00 00           MOV RDX,qword ptr [RBX + 0x110]          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x60  48 81 C2 58 AD 00 00           ADD RDX,0xad58                           
++0x67  E8 A4 AE 14 00                 CALL 0x14026a760                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x6C  48 8B CB                       MOV RCX,RBX                              
++0x6F  E8 1C 00 00 00                 CALL 0x14011f8e0                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x74  48 8B CB                       MOV RCX,RBX                              
++0x77  48 83 C4 20                    ADD RSP,0x20                             
++0x7B  5B                             POP RBX                                  
++0x7C  E9 BF 31 00 00                 JMP 0x140122a90                          [PC-RELATIVE/REF -- likely needs wildcarding]
+
+Raw bytes (129 total): 40 53 48 83 EC 20 48 63 C1 48 69 D8 A0 02 00 00 48 8D 05 89 84 E3 00 48 03 D8 48 8B 83 10 01 00 00 0F 10 80 58 AD 00 00 0F 11 80 98 AD 00 00 0F 10 88 68 AD 00 00 0F 11 88 A8 AD 00 00 0F 10 80 78 AD 00 00 0F 11 80 B8 AD 00 00 0F 10 88 88 AD 00 00 0F 11 88 C8 AD 00 00 48 8B 93 10 01 00 00 48 81 C2 58 AD 00 00 E8 A4 AE 14 00 48 8B CB E8 1C 00 00 00 48 8B CB 48 83 C4 20 5B E9 BF 31 00 00
+
+Suggested masked signature (PC-relative/ref instructions fully
+wildcarded -- refine by hand, this is a starting point only):
+40 53 48 83 EC 20 48 63 C1 48 69 D8 A0 02 00 00 ?? ?? ?? ?? ?? ?? ?? 48 03 D8 ?? ?? ?? ?? ?? ?? ?? 0F 10 80 58 AD 00 00 0F 11 80 98 AD 00 00 0F 10 88 68 AD 00 00 0F 11 88 A8 AD 00 00 0F 10 80 78 AD 00 00 0F 11 80 B8 AD 00 00 0F 10 88 88 AD 00 00 0F 11 88 C8 AD 00 00 ?? ?? ?? ?? ?? ?? ?? 48 81 C2 58 AD 00 00 ?? ?? ?? ?? ?? 48 8B CB ?? ?? ?? ?? ?? 48 8B CB 48 83 C4 20 5B ?? ?? ?? ?? ??

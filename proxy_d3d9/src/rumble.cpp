@@ -7,10 +7,31 @@
 #include "../third_party/minhook/include/MinHook.h"
 #include "controller_input.h"
 #include "mod_config.h"
+#include "signature_scan.h" // x64 port only (2026-09-12) -- signature.cpp compiles for both
+                             // platforms already (per proxy_d3d9.vcxproj's own comment), the
+                             // x86 half of this file below still uses its own local
+                             // FindPatternInMainModule() and never calls into this.
 
 extern void LogFromController(const char* msg); // defined in dllmain.cpp
 
 namespace {
+
+// x86-only from here through IsRealPlayerEntity below (2026-09-12, x64 port) -- every
+// one of these reads a HARDCODED x86 address/offset (0x10c, the local FindPatternInMainModule's
+// own non-ASLR-base assumption baked into its comment, etc.) that is NOT valid on x64 --
+// entity struct offsets shifted for real (confirmed via Ghidra: the "has client struct"
+// pointer moved 0x10c -> 0x110, and it's now an 8-byte pointer not a 4-byte int) and this
+// hand-rolled scanner duplicates what signature_scan.cpp already does generically. Left
+// unguarded before this pass purely by omission -- Rumble_Install()/Rumble_Tick() were
+// simply never CALLED from x64 code at all (the actual root cause of the "vibration 100%
+// unported" gap, known_issues_x64.md's "Corrected gap list, 2026-09-12" entry), so this
+// compiling-but-dead code never actually ran against a live x64 process. Guarding it now
+// anyway, matching this project's own established landmine-prevention convention
+// (analog_input_hooks.cpp/overlay_hud.cpp's own 2026-09-04 audits) -- an x86-address read
+// left reachable on x64 is exactly the bug class that already caused two real startup
+// crashes elsewhere in this codebase, and Rumble_Tick() is about to start actually being
+// called every x64 gameplay frame.
+#if !defined(_M_X64) && !defined(_WIN64)
 
 // ---- Byte-pattern signature scan (2026-08-03, issue #24 reimplementation) --------
 //
@@ -106,8 +127,11 @@ bool IsRealPlayerEntity(int entityPtr)
     return *reinterpret_cast<volatile int*>(entityPtr + 0x10c) != 0;
 }
 
+#endif // !_M_X64 && !_WIN64 (x86-only block above)
+
 // ---- Rumble decay state, same GetTickCount()-based timer style already established
 // by InjectControllerSprint's stamina/cooldown timer elsewhere in this codebase -----
+// SHARED across both platforms -- pure timer/math, no raw memory addresses.
 DWORD g_rumbleDecayStartMs = 0;
 DWORD g_rumbleDecayDurationMs = 0;
 float g_rumblePeakIntensity = 0.0f;
@@ -136,6 +160,13 @@ void TriggerRumble(float intensity, unsigned long durationMs)
     g_rumbleDecayStartMs = GetTickCount();
     g_rumbleDecayDurationMs = durationMs;
 }
+
+// x86-only from here through PollArmorFieldScanDiag below (2026-09-12, x64 port) --
+// same rationale as the earlier x86-only guard above: hardcoded x86 entity-struct
+// addresses/offsets (kEntityArrayBase, +0x150 health, IsRealPlayerEntity's +0x10c),
+// none valid on x64. See this file's own x64 block below (after PollArmorFieldScanDiag)
+// for the x64 equivalents.
+#if !defined(_M_X64) && !defined(_WIN64)
 
 void __cdecl Hook_FireEffects(int entity, unsigned int unusedParam2)
 {
@@ -376,6 +407,282 @@ void PollArmorFieldScanDiag()
     g_armorScanPrimed = true;
 }
 
+#endif // !_M_X64 && !_WIN64 (x86-only block above)
+
+// ==================== x64 PORT (2026-09-12) =========================================
+//
+// Ports both real x86 mechanisms above -- the FIRE hook and the per-frame DAMAGE health
+// poll -- to x64. Root cause of the gap this closes: Rumble_Install()/Rumble_Tick() were
+// simply never CALLED from any x64 code path at all (InstallAnalogInputHooks(), the only
+// x86 caller of Rumble_Install(), is entirely wrapped in
+// `#if !defined(_M_X64) && !defined(_WIN64)` -- see known_issues_x64.md's "Corrected gap
+// list, 2026-09-12" entry for the full context). This block resolves BOTH x64 targets via
+// this project's own locked signature-scanning policy (CLAUDE.md SS5/SS10.3, the same
+// `signature_scan.h`/analog_input_hooks_x64.cpp conventions every other x64 hook already
+// follows) -- never a hardcoded address, resolved once at startup and cached.
+//
+// RE trail (full raw Ghidra output preserved under re_notes/x64_migration/rumble_scratch/
+// for this pass): started from the SAME anchor the x86 research used originally --
+// the interned GSC notify-event-name table (this binary's own x64 equivalent of
+// FUN_00470d00, found at FUN_1401795b0, contains the literal `"weapon_fired"`/`"damage"`
+// string args to its own interning calls). `FindGlobalRefs` on the resulting handle
+// globals (DAT_1413b839e = weapon_fired, DAT_1413b82aa = damage) found the real x64
+// consumer functions directly, the same "hash string -> handle -> xref its reads"
+// technique re_notes/iw5sp.md's own "Vibration/rumble trigger points" section used for x86.
+#if defined(_M_X64) || defined(_WIN64)
+
+// ---- FIRE rumble, x64: FUN_14016bf50 -----------------------------------------------
+//
+// Confirmed as the real x64 equivalent of x86's FUN_0045e320, independently, three
+// separate ways (not just "it reads the weapon_fired handle," which alone would be
+// weak evidence -- TWO functions read that handle, this is the one that survives every
+// further check):
+//   1. Its own gate matches x86's BYTE FOR BYTE: `TEST dword ptr [client+0xac],0x201800`
+//      -- the exact same 0x00201800 mask x86's own kFireEffectsSig ends on, read off a
+//      "client struct" pointer at entity+0x110 (x86: entity+0x10c -- shifted by the
+//      recompile, same role, now an 8-byte pointer not a 4-byte int). Then reads
+//      entity+0x7c as its own internal fire-gate byte -- the SAME OFFSET as x86 (0x7c),
+//      unusual enough to not be a coincidence given the mask already matched exactly.
+//   2. Its one real caller, FUN_14011f320 (the x64 equivalent of x86's FUN_005b68c0),
+//      reaches this exact call site from 8 distinct notify-dispatch case values
+//      (0x24/0x25/0x29/0x2a/0x34/0x35/0x36/0x37) -- matching x86's own documented "8
+//      different notify-dispatch case values from its one real caller" precisely.
+//   3. The call site itself (re_notes/x64_migration/rumble_scratch/disasm_14011f320.txt)
+//      is a single physical CALL reached via a jump table, `MOV EDX,[R15]` /
+//      `MOV RCX,RDI` / `CALL FUN_14016bf50` -- standard x64 fastcall, 2 args, matching
+//      the confirmed 2-parameter decompiled signature exactly (RCX=entity, EDX=param2,
+//      param2 unused by the callee's own body, same as x86's unusedParam2).
+//
+// Signature: 42 literal bytes of FUN_14016bf50's real prologue (dumped via
+// DumpSigBytes.java from the live x64 binary, not hand-encoded), through and including
+// the TEST's own 0x00201800 immediate -- no wildcards needed (the one apparent
+// PC-relative flag DumpSigBytes.java raised in this range, the `LEA RBP,[RSP-0x448]` at
+// +0x05, is RSP-relative, a fixed stack displacement not an address -- the exact same
+// false-positive class this project's kPmoveTickSignature comment already documents;
+// left literal, matching that established precedent). Cut short right before the
+// function's first conditional jump (`JZ`), the same "stop before a relative jump
+// displacement, don't embed or wildcard it" choice x86's own kFireEffectsSig comment
+// documents ("Ends right before the JZ's own 1-byte relative displacement"). Confirmed
+// unique in the whole module via a direct pattern-count check
+// (re_notes/x64_migration/rumble_scratch/patcheck_fire_x64.txt -- exactly 1 match, at
+// FUN_14016bf50 itself).
+constexpr const char* kFireEffectsSigX64 =
+    "40 55 53 56 57 48 8D AC 24 B8 FB FF FF 48 81 EC 48 05 00 00 "
+    "48 8B B1 10 01 00 00 8B DA 48 8B F9 F7 86 AC 00 00 00 00 18 20 00";
+
+using FireEffectsX64Fn = void(__fastcall*)(void* entity, unsigned int unusedParam2);
+FireEffectsX64Fn g_origFireEffectsX64 = nullptr;
+
+// ---- Entity array, x64: DAT_140f57cf0, stride 0x2a0 ---------------------------------
+//
+// x86's own local-player entity lives at a fixed array base (0x01197AD8, stride 0x270,
+// "SP is always player index 0" -- re_notes/iw5sp.md). Found the x64 equivalent by
+// tracing FUN_14016bf50's own entity-pointer argument up its real call chain:
+// FUN_14011f320 (fire dispatcher) <- FUN_14011f8e0 (per-player "think"/Pmove-orchestration
+// function -- confirmed by its own call to FUN_140016620, the ALREADY-confirmed x64
+// Pmove frame-subdivision wrapper Sprint's own hook chain runs through) <- FUN_14011f850,
+// which computes the entity pointer directly: `FUN_14011f8e0(&DAT_140f57cf0 +
+// playerIndex*0x2a0)` (re_notes/x64_migration/rumble_scratch/callers_14011f8e0_x64.txt).
+// This is exactly x86's own "&entityArrayBase + playerIndex*stride" shape. A SECOND,
+// independent function reading the weapon_fired handle (FUN_1402e4210, NOT the one
+// hooked above) does the identical `&DAT_140f57cf0 + entityNumber*0x2a0` computation
+// from a raw entity NUMBER rather than a pointer -- corroborating this is genuinely the
+// global entity-number-indexed array, not a per-caller-local coincidence. A THIRD
+// independent confirmation: FUN_14012c280 (one of the real x64 "damage" handle
+// consumers, the x64 equivalent of x86's alternate scripted/melee damage paths) reads
+// `param[0x110]`/`param[0x7c]`/`param[0x130]` directly off ITS OWN entity-pointer
+// parameters -- the same field offsets confirmed above, on pointers from the same family.
+//
+// Per CLAUDE.md SS5/SS10.3, this address is NOT hardcoded directly -- resolved via a
+// RIP-relative LEA inside FUN_14011f850 (`LEA RAX,[DAT_140f57cf0]`), anchored on a
+// signature covering that whole tiny wrapper function's real prologue (through the LEA's
+// own opcode+ModRM, disp32 wildcarded) -- confirmed unique in the module
+// (re_notes/x64_migration/rumble_scratch/patcheck_entityarray_x64.txt, 1 match). The
+// embedded `A0 02 00 00` mid-signature is the literal `IMUL RBX,RAX,0x2a0` immediate --
+// the real per-player stride, baked directly into the same bytes that anchor the
+// address resolve, not a separately-guessed constant.
+constexpr const char* kEntityArrayAnchorSigX64 =
+    "40 53 48 83 EC 20 48 63 C1 48 69 D8 A0 02 00 00 48 8D 05 ?? ?? ?? ??";
+constexpr ptrdiff_t kEntityArrayLeaInsnOffset = 0x10; // byte offset of the LEA within the signature match
+constexpr size_t kEntityArrayLeaInsnLength = 7;       // 48 8D 05 + disp32
+constexpr uintptr_t kEntityStrideX64 = 0x2a0;         // confirmed via the IMUL immediate above
+
+uint8_t* g_entityArrayBaseX64 = nullptr; // resolved once at startup, cached (SS10.3) -- index 0 = local player (SP)
+
+// entity+0x110: the same "client struct" pointer field FUN_14016bf50's own fire-gate
+// TEST reads (see kFireEffectsSigX64's own comment) -- x86's IsRealPlayerEntity
+// equivalent, now an 8-byte pointer (x86 was a 4-byte int at +0x10c). Same HONEST
+// CAVEAT as x86's own IsRealPlayerEntity: "has a non-null client struct" is equivalent
+// to "is the local player" only in solo SP/Survival (this project's only currently-
+// supported x64 configuration) -- not scoped to exclude a co-op partner specifically.
+constexpr int kClientPtrOffsetX64 = 0x110;
+constexpr int kFireGateByteOffsetX64 = 0x7c; // same offset as x86, independently confirmed (see kFireEffectsSigX64 comment)
+
+// entity+0x16c: x86's health field was +0x150 -- CONFIRMED SHIFTED for x64, not assumed
+// to carry over (per CLAUDE.md's "don't assume any x86 offset/address carries over"
+// standard). Found via the x64 equivalent of x86's own confirmation method: FUN_1402d19b0
+// (the real x64 "damage" handle consumer, matching x86 FUN_0045f770's own 13-parameter
+// signature exactly) does `*(int*)(param_1+0x16c) -= amount` immediately before its own
+// call to the "damage" notify dispatcher (DAT_1413b82aa) and, on health reaching <= 0, a
+// "death" notify (DAT_1413b82ae) -- the same real shape x86's FUN_0045f770 has. Like x86's
+// own FUN_0045f770, FUN_1402d19b0 is NOT hooked -- only used to identify this offset; its
+// many real call sites carry the same "inconsistent argument shape across callers" risk
+// x86's own research already ruled out hooking for (re_notes/known_issues.md issue #24).
+constexpr int kHealthFieldOffsetX64 = 0x16c;
+
+bool IsRealPlayerEntityX64(uint8_t* entity)
+{
+    if (!entity) return false;
+    return *reinterpret_cast<uint64_t volatile*>(entity + kClientPtrOffsetX64) != 0;
+}
+
+uint8_t* LocalPlayerEntityX64()
+{
+    return g_entityArrayBaseX64; // index 0 -- SP is always player index 0, same as x86
+}
+
+uint8_t* SecondPlayerEntityX64()
+{
+    if (!g_entityArrayBaseX64) return nullptr;
+    return g_entityArrayBaseX64 + kEntityStrideX64; // index 1 -- 2-player Survival co-op partner, if present
+}
+
+// Same MITIGATION as x86's own SecondRealPlayerEntityPresent -- see that function's own
+// comment (in the x86 block above) for the full "in coop it triggers when the other tm8
+// is shot" history. Not re-solved for x64 either (same real, unconfirmed "which array
+// index is THIS client" mechanism gap x86 has); mirrored here so x64 damage-rumble
+// doesn't ship the same known co-op bug x86 already has a name for.
+bool SecondRealPlayerEntityPresentX64()
+{
+    return IsRealPlayerEntityX64(SecondPlayerEntityX64());
+}
+
+void __fastcall Hook_FireEffectsX64(void* entityVoid, unsigned int unusedParam2)
+{
+    g_origFireEffectsX64(entityVoid, unusedParam2);
+
+    if (!g_modConfig.vibrationEnabled) return;
+    uint8_t* entity = reinterpret_cast<uint8_t*>(entityVoid);
+    if (!IsRealPlayerEntityX64(entity)) return;
+    // Mirrors FUN_14016bf50's OWN internal fire-gate byte (see kFireEffectsSigX64's own
+    // comment) -- same rationale as x86's Hook_FireEffects: re-derive the real gate
+    // ourselves rather than rumbling on whichever of the 8 real dispatch cases this
+    // function is reachable from DON'T represent an actual shot.
+    if (*reinterpret_cast<volatile unsigned char*>(entity + kFireGateByteOffsetX64) == 0) return;
+
+    static int s_fireRumbleLogCountX64 = 0;
+    if (s_fireRumbleLogCountX64 < 30) {
+        ++s_fireRumbleLogCountX64;
+        char buf[160];
+        sprintf_s(buf, "[rumble-x64-diag] fire trigger #%d, intensity=%.2f durationMs=%lu",
+            s_fireRumbleLogCountX64, g_modConfig.vibrationFireIntensity, g_modConfig.vibrationFireDurationMs);
+        LogFromController(buf);
+    }
+
+    TriggerRumble(g_modConfig.vibrationFireIntensity, g_modConfig.vibrationFireDurationMs);
+}
+
+int g_lastKnownHealthX64 = -1; // -1 = not yet established a baseline this "session" (same convention as x86)
+
+void PollDamageRumbleX64()
+{
+    if (!g_modConfig.vibrationEnabled) return;
+    if (!g_entityArrayBaseX64) return; // signature scan failed at startup -- nothing to poll
+
+    if (SecondRealPlayerEntityPresentX64()) {
+        g_lastKnownHealthX64 = -1;
+        return;
+    }
+
+    uint8_t* local = LocalPlayerEntityX64();
+    if (!IsRealPlayerEntityX64(local)) {
+        g_lastKnownHealthX64 = -1;
+        return;
+    }
+
+    int health = *reinterpret_cast<volatile int*>(local + kHealthFieldOffsetX64);
+
+    constexpr int kMaxPlausibleHealth = 1000; // same sanity bound as x86's own PollDamageRumble
+    if (health < 0 || health > kMaxPlausibleHealth) {
+        g_lastKnownHealthX64 = -1;
+        return;
+    }
+
+    if (g_lastKnownHealthX64 < 0) {
+        g_lastKnownHealthX64 = health;
+        return;
+    }
+
+    int delta = g_lastKnownHealthX64 - health;
+    g_lastKnownHealthX64 = health;
+
+    if (delta <= 0) return; // health INCREASED or unchanged -- regen/perk/pickup, never damage
+    constexpr int kMaxPlausibleSingleFrameDamage = 200; // same bound as x86 -- filters checkpoint/respawn resets
+    if (delta > kMaxPlausibleSingleFrameDamage) return;
+
+    float intensity = static_cast<float>(delta) * g_modConfig.vibrationDamagePerPoint;
+    if (intensity > g_modConfig.vibrationDamageMaxIntensity) {
+        intensity = g_modConfig.vibrationDamageMaxIntensity;
+    }
+    TriggerRumble(intensity, g_modConfig.vibrationDamageDurationMs);
+}
+
+// Armor-field scan diagnostic (x86's own PollArmorFieldScanDiag) is deliberately NOT
+// ported this pass -- it's an off-by-default exploratory RE tool (issue #63 follow-up),
+// not one of the two real shipped mechanisms this task scopes (fire hook + damage poll).
+// g_modConfig.armorFieldScanLogging simply has no effect on x64 -- honest gap, not a
+// silent one; a future pass can port it the same way if the armor field is ever needed.
+
+void InstallFireHookX64()
+{
+    char buf[256];
+
+    SigScan::Result r = SigScan::FindPatternInMainModule(kFireEffectsSigX64);
+    if (!r.found) {
+        LogFromController("[rumble-x64] FIRE hook signature scan FAILED -- pattern not found, hook NOT installed "
+            "(fire rumble disabled this session)");
+        return;
+    }
+    sprintf_s(buf, "[rumble-x64] FIRE hook signature scan OK -- found at 0x%p (FUN_14016bf50 in the original static analysis)",
+        reinterpret_cast<void*>(r.address));
+    LogFromController(buf);
+
+    MH_STATUS s1 = MH_CreateHook(reinterpret_cast<LPVOID>(r.address),
+        reinterpret_cast<LPVOID>(&Hook_FireEffectsX64), reinterpret_cast<LPVOID*>(&g_origFireEffectsX64));
+    sprintf_s(buf, "[rumble-x64] MH_CreateHook(fire @ 0x%p) = %d", reinterpret_cast<void*>(r.address), static_cast<int>(s1));
+    LogFromController(buf);
+    if (s1 == MH_OK) {
+        MH_STATUS e1 = MH_EnableHook(reinterpret_cast<LPVOID>(r.address));
+        sprintf_s(buf, "[rumble-x64] MH_EnableHook(fire) = %d", static_cast<int>(e1));
+        LogFromController(buf);
+    }
+}
+
+void ResolveEntityArrayX64()
+{
+    char buf[256];
+
+    SigScan::Result r = SigScan::FindPatternInMainModule(kEntityArrayAnchorSigX64);
+    if (!r.found) {
+        LogFromController("[rumble-x64] Entity-array anchor signature scan FAILED -- damage rumble disabled this "
+            "session (fire rumble unaffected, resolved independently above)");
+        return;
+    }
+
+    uintptr_t leaInsnAddr = r.address + kEntityArrayLeaInsnOffset;
+    g_entityArrayBaseX64 = reinterpret_cast<uint8_t*>(SigScan::ResolveRipRelative(leaInsnAddr, kEntityArrayLeaInsnLength));
+    if (!g_entityArrayBaseX64) {
+        LogFromController("[rumble-x64] Entity-array RIP-relative resolution FAILED -- damage rumble disabled this session");
+        return;
+    }
+    sprintf_s(buf, "[rumble-x64] Entity array resolved @ 0x%p (stride 0x%llX) -- damage rumble active "
+        "(per-frame health poll, no hook installed).",
+        reinterpret_cast<void*>(g_entityArrayBaseX64), static_cast<unsigned long long>(kEntityStrideX64));
+    LogFromController(buf);
+}
+
+#endif // _M_X64 || _WIN64 (x64 port block above)
+
 // Shared by Rumble_Tick (gameplay tick) and Rumble_TickExpiryWatchdog (menu
 // tick -- see rumble.h's own comment on why this needed splitting out). Enforces
 // the CURRENT event's own already-scheduled expiry (g_rumbleDecayStartMs +
@@ -416,6 +723,13 @@ void UpdateRumbleOutput()
 
 void Rumble_Install()
 {
+#if defined(_M_X64) || defined(_WIN64)
+    // 2026-09-12 x64 port -- see this file's own "x64 PORT" block above for the full
+    // RE trail. Two independent resolves, each fails loudly and disables only its own
+    // mechanism on failure (never falls through to a garbage address, per CLAUDE.md SS5).
+    InstallFireHookX64();
+    ResolveEntityArrayX64();
+#else
     char buf[220];
 
     uintptr_t fireAddr = FindPatternInMainModule(kFireEffectsSig, sizeof(kFireEffectsSig));
@@ -440,12 +754,20 @@ void Rumble_Install()
     // No damage hook installed -- see PollDamageRumble's own big comment. Damage
     // rumble is driven entirely by Rumble_Tick()'s per-frame poll below, not a hook.
     LogFromController("[rumble] DAMAGE rumble uses a per-frame health poll, not a hook (FUN_0045f770 confirmed unsafe to hook -- inconsistent real argument counts across its 14 real call sites, see known_issues.md issue #24)");
+#endif
 }
 
 void Rumble_Tick()
 {
+#if defined(_M_X64) || defined(_WIN64)
+    PollDamageRumbleX64();
+    // Armor-scan diagnostic not ported to x64 this pass -- see its own comment in the
+    // x64 PORT block above (out of scope: an off-by-default exploratory RE tool, not
+    // one of the two real shipped mechanisms).
+#else
     PollDamageRumble();
     PollArmorFieldScanDiag(); // OFF by default -- see its own comment (issue #63 follow-up)
+#endif
     UpdateRumbleOutput();
 }
 

@@ -81,6 +81,8 @@
 #include "mod_config.h"
 #include "overlay_hud.h" // CustomOptionsMenu_TickInput/_ResetOnMenuClose -- see
                           // PollCustomOptionsMenuX64's own comment below
+#include "rumble.h" // Rumble_Install()/Rumble_Tick() -- 2026-09-12 x64 port, see
+                     // rumble.cpp's own "x64 PORT" block for the full RE trail
 
 extern void LogFromController(const char* msg);  // dllmain.cpp, shared log file (see analog_input_hooks.cpp's
                                     // own identical convention)
@@ -1696,6 +1698,179 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
     // called from InjectMenuInputTick below is what handles CLOSING it, since
     // this whole function stops being called at all once actually paused.
     PollPauseToggleX64();
+
+    // Vibration/rumble (2026-09-12 x64 port, known_issues_x64.md's "Corrected gap
+    // list, 2026-09-12" entry) -- gameplay-tick only, matching x86's own placement
+    // (InjectAllControllerInput's own call to Rumble_Tick(), analog_input_hooks.cpp):
+    // rumble is a gameplay-feedback feature, not a UI one, and this is the same
+    // per-frame usercmd-build tick x86's Fire/damage-poll logic already rides on.
+    // Rumble_Tick() itself is architecture-neutral (rumble.cpp) and internally
+    // dispatches to the x64-specific fire-hook/damage-poll implementations resolved
+    // by Rumble_Install() below.
+    Rumble_Tick();
+}
+
+// ---- Visual-enhancement suite x64 gating (2026-09-12) -- InternalRenderScalePercent
+// (x86 issue #88) and the clcState/in-level-flag safety gates FSR RCAS (x86 issue
+// #94/#103/#104) and motion blur (x86 issue #96/#97) both need before either can be
+// wired into the x64 per-frame call at all. x86 originals live in overlay_hud.cpp
+// (RunFullScreenPostProcessIfEnabled/RunPreOverlayMotionBlurPassIfEnabled) and
+// analog_input_hooks.cpp (Hook_FUN_00679010) -- re-read in full before writing this,
+// per this project's own standing compare-to-x86-original rule. Closes the two
+// blockers known_issues_x64.md's "Visual-enhancement suite x64 port" entry flagged
+// as needing live tracing -- both resolved statically instead, via decompile-based
+// structural pattern matching (not the string/reference scan that had already come
+// up empty for clcState, three separate techniques, per that entry's own record).
+
+// FUN_1401bd1d0 -- the confirmed x64 equivalent of x86's FUN_00679010 (the
+// this-in-RCX quality-tier-clamp function InternalRenderScalePercent hooks). Found
+// via a different route than x86's own investigation: traced the real "r_mode"/
+// "Direct X resolution mode" dvar-registration string (FUN_1401bc8a0, confirmed via
+// FindStringRefs.java) to its one real caller (FUN_1401bcf30, the x64 equivalent of
+// x86's FUN_0067a320 -- same Direct3DCreate9(0x20) call, same early-return
+// "already initialized" guard, same r_mode-registration-then-retry-loop shape), then
+// down through that retry loop's own window-creation pair (FUN_1401bda40 computes
+// requested/native W/H into a shared struct; FUN_1401bc780 creates the real OS
+// window and -- on success -- calls FUN_1401bd1d0(param_1) with that SAME struct,
+// exactly mirroring x86's own confirmed "FUN_00679db0 passes its own struct through
+// unchanged via MOV ECX,ESI immediately before CALL FUN_00679010" relationship).
+// Raw disassembly (DumpDisasm.java) of FUN_1401bd1d0 confirms the exact same
+// quality-tier-clamp shape x86's FUN_00679010 has: `+0x20`/`+0x24` = requested W/H
+// (copied UNCLAMPED into DAT_141888670/674, the real scene-resolution driver -- x64
+// equivalent of x86's DAT_021d2e00/04), `+0x28`/`+0x2c` = native/upper-bound W/H
+// (also permanently stashed once into DAT_14188868c/690, x64 equivalent of x86's
+// DAT_021d2e1c/20), `+0x18` = aspect-ratio float, tier-clamped output written to
+// DAT_141888678/67c (x64 equiv of DAT_021d2e08/0c) with an "is scaled" flag at
+// DAT_141888688 (equiv of DAT_021d2e18). Standard x64 fastcall (RCX = the struct
+// pointer) -- confirmed via raw disassembly (`MOV RBX,[RCX]` / `MOV RDI,RCX` at
+// entry), no custom register convention, matching this file's own documented
+// "x64 hooks are simpler than x86" pattern. Signature covers the function's first
+// 63 bytes (DumpSigBytes.java + PatternScan.java, confirmed exactly 1 match in the
+// whole binary) -- literal bytes kept for the two `LEA reg,[RSP+0x20]` instructions
+// (RSP-relative, not an address -- the same false-positive class this file's own
+// kPmoveTickSignature comment already documents), wildcarded for the three real
+// internal CALLs and the one RIP-relative data write.
+constexpr const char* kRenderResComputeSignature =
+    "48 89 5C 24 08 57 48 83 EC 60 48 8B 19 48 8B F9 B9 15 00 00 00 "
+    "E8 ?? ?? ?? ?? 48 8B D7 89 05 ?? ?? ?? ?? 48 8D 4C 24 20 "
+    "E8 ?? ?? ?? ?? 4C 8D 44 24 20 BA 46 00 00 00 48 8B CB E8 ?? ?? ?? ??";
+
+using RenderResComputeFn = void(__fastcall*)(void* self);
+RenderResComputeFn g_origRenderResCompute = nullptr;
+
+// Same override mechanism as x86's Hook_FUN_00679010: write the desired requested
+// W/H into the incoming struct BEFORE the real trampoline runs, so its own
+// unconditional, unclamped copy (DAT_141888670/674) picks up our value instead of
+// the engine's own dvar-driven default -- no r_mode write, no vid_restart, no
+// device/window recreation, identical risk profile to the x86 original this ports.
+void __fastcall Hook_RenderResCompute(void* self)
+{
+    int pct = g_modConfig.internalRenderScalePercent;
+    if (pct > 0 && self != nullptr) {
+        auto* base = reinterpret_cast<uint8_t*>(self);
+        int32_t nativeW = *reinterpret_cast<int32_t*>(base + 0x28);
+        int32_t nativeH = *reinterpret_cast<int32_t*>(base + 0x2c);
+        if (nativeW > 0 && nativeH > 0) {
+            int targetW = static_cast<int>(static_cast<int64_t>(nativeW) * pct / 100);
+            int targetH = static_cast<int>(static_cast<int64_t>(nativeH) * pct / 100);
+            // Same 640x480 floor x86's own mode-enumeration logic enforces (issue
+            // #88) -- a target below that is never a value this engine would
+            // produce on its own.
+            if (targetW >= 640 && targetH >= 480) {
+                *reinterpret_cast<int32_t*>(base + 0x20) = targetW;
+                *reinterpret_cast<int32_t*>(base + 0x24) = targetH;
+                char buf[256];
+                sprintf_s(buf, "[x64-video-scale] InternalRenderScalePercent -> native=%dx%d target=%dx%d -- "
+                    "overriding requested scene render resolution before FUN_1401bd1d0 runs (feeds the real "
+                    "unclamped scene render-target driver, no r_mode, no vid_restart)",
+                    static_cast<int>(nativeW), static_cast<int>(nativeH), targetW, targetH);
+                LogFromController(buf);
+            }
+        }
+    }
+    g_origRenderResCompute(self);
+}
+
+// In-level time-delta flag -- x64 equivalent of x86's kInLevelFlagAddr
+// (0x00A98ACC). Found via the same per-frame orchestrator chain this project's own
+// movement/look work already confirmed: x86's writer, FUN_0057e5b0, computes
+// `DAT_00a98acc = now - lastFrameTime` (clamped to 200ms) then calls FUN_0057e480
+// (the confirmed CL_CreateCmd-equivalent) -- x64's own confirmed equivalent of
+// FUN_0057e480 is FUN_14007e1e0 (x64_migration/README.md's own per-frame usercmd
+// table); its one real caller, FUN_14007d500, does the exact same computation with
+// the exact same 200 (0xC8) clamp constant immediately before calling FUN_14007e1e0
+// -- confirmed via decompile, not assumed from the caller relationship alone.
+// Signature anchors the whole computation sequence (MOV ECX,[rip] / MOV EDX,0xC8 /
+// SUB EAX,[rip] / CMP / MOV[rip] / LEA RSP-relative / CMOVA / XOR / MOV[rip] / CALL
+// / MOV[rip], PatternScan.java-confirmed as the ONLY match in the whole binary) so
+// the resolve is anchored on real, unique surrounding structure, not just the
+// two-byte write opcode alone. The target write instruction (`MOV dword ptr
+// [rip+disp32],EAX`, the final, already-clamped value) sits at a fixed +0x25 byte
+// offset into this signature's own match, confirmed via raw disassembly.
+constexpr const char* kInLevelFlagSignature =
+    "8B 0D ?? ?? ?? ?? BA C8 00 00 00 8B C1 2B 05 ?? ?? ?? ?? 3B C2 89 0D ?? ?? ?? ?? "
+    "48 8D 4C 24 20 0F 47 C2 33 D2 89 05 ?? ?? ?? ?? E8 ?? ?? ?? ?? 8B 0D ?? ?? ?? ??";
+constexpr ptrdiff_t kInLevelFlagWriteInsnOffset = 0x25;
+
+int32_t* g_inLevelFlag = nullptr;
+
+// clcState -- x64 equivalent of x86's kClcStateAddrForTest/ForMenuCheck/
+// ForBlurMenuCheck (0x00B36218). NOT independently signature-scanned -- derived
+// directly from g_menuActiveGateFlag (already confirmed, resolved, and LIVE-
+// working elsewhere this session) plus a fixed +8 byte struct offset, mirroring
+// x86's own real relationship exactly (0x00B36218 = 0x00B36210 + 8, and
+// g_menuActiveGateFlag is this project's own confirmed x64 counterpart of
+// 0x00B36210). Cross-validated via a SECOND, fully independent code site:
+// FUN_14007eaf0's own kbutton dispatch (decomp_buttons_pause_weapnext.txt) reads
+// this exact per-player field via a totally different addressing mode
+// (`[RDX + R10*0x1 + 0x6e2558]`, base-register + SIB, not RIP-relative) -- its own
+// module-relative displacement, 0x6E2558, is EXACTLY 0x6E2550 + 8 (0x6E2550 being
+// kPauseToggleSignature's own already-confirmed module-relative offset for
+// DAT_1406e2550/g_menuActiveGateFlag), independently confirming the +8
+// relationship from a second, unrelated function/addressing mode. Semantic
+// cross-check, same decompile: this field's value gates real per-case logic at
+// `== 6` -- matching this project's own already-confirmed x86 finding that
+// clcState==6 means "ordinary SP/Survival gameplay" (re_notes/known_issues.md,
+// FUN_00450740's own DAT_00b36218==6 gate) -- and separately at `== 1 || == 2`,
+// both small-int-enum shapes matching clcState's real role, not some unrelated
+// per-player counter. No separate signature/pointer needed: computed on demand
+// from the already-resolved g_menuActiveGateFlag below.
+constexpr ptrdiff_t kClcStateOffsetFromMenuGate = 8;
+
+// Exported accessors for overlay_hud.cpp (a different translation unit) -- same
+// "extern C escapes this anonymous namespace's internal linkage" pattern already
+// established by IsMenuActive_Exported()/PollPauseToggleX64()/IsPhysicalHeld_Exported()
+// elsewhere in this codebase. Each returns false/0 (never dereferences a null
+// pointer) when its own signature hasn't resolved -- matching this file's own
+// "read-only, defensive default" convention for every other not-yet-fully-proven
+// x64 flag, and per CLAUDE.md SS5 ("fail loudly and refuse to hook... rather than
+// jumping to garbage") the CALLER (overlay_hud.cpp) is expected to treat a false
+// return as "this gate cannot be confirmed safe, do not run the pass" -- same
+// fail-closed posture x86's own gating already has.
+extern "C" bool IsMenuActiveX64_Exported()
+{
+    return g_menuActiveGateFlag && ((*g_menuActiveGateFlag & 0x10u) != 0);
+}
+
+extern "C" bool TryGetClcStateX64(int* outValue)
+{
+    if (!g_menuActiveGateFlag || !outValue) return false;
+    *outValue = *reinterpret_cast<int32_t*>(
+        reinterpret_cast<uint8_t*>(g_menuActiveGateFlag) + kClcStateOffsetFromMenuGate);
+    return true;
+}
+
+extern "C" bool TryGetInLevelFlagX64(int* outValue)
+{
+    if (!g_inLevelFlag || !outValue) return false;
+    *outValue = *g_inLevelFlag;
+    return true;
+}
+
+extern "C" void GetMotionBlurDeltasX64(float* outYawDeg, float* outPitchDeg)
+{
+    if (outYawDeg) *outYawDeg = g_motionBlurYawDeltaDegX64;
+    if (outPitchDeg) *outPitchDeg = g_motionBlurPitchDeltaDegX64;
 }
 
 }  // namespace
@@ -1958,6 +2133,65 @@ void InstallAnalogInputHooksX64()
         }
     }
 
+    // InternalRenderScalePercent -- MinHook detour on FUN_1401bd1d0 (x64 equivalent
+    // of x86's FUN_00679010), same override-before-trampoline mechanism as the
+    // x86 original. See kRenderResComputeSignature's own comment for the full
+    // discovery trail.
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kRenderResComputeSignature);
+        if (!r.found) {
+            LogFromController("[x64-video-scale] FATAL: render-resolution-compute signature did not resolve -- "
+                "InternalRenderScalePercent will have no effect this session");
+        } else {
+            void* target = reinterpret_cast<void*>(r.address);
+            MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_RenderResCompute),
+                                                    reinterpret_cast<void**>(&g_origRenderResCompute));
+            if (createStatus != MH_OK) {
+                char buf[160];
+                sprintf_s(buf, "[x64-video-scale] FATAL: MH_CreateHook failed for render-res-compute @ 0x%llX (status=%d)",
+                           static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+                LogFromController(buf);
+            } else {
+                MH_STATUS enableStatus = MH_EnableHook(target);
+                if (enableStatus != MH_OK) {
+                    char buf[160];
+                    sprintf_s(buf, "[x64-video-scale] FATAL: MH_EnableHook failed for render-res-compute @ 0x%llX (status=%d)",
+                               static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+                    LogFromController(buf);
+                } else {
+                    LogFromController("[x64-video-scale] InternalRenderScalePercent hook installed and enabled -- "
+                        "FUN_1401bd1d0 (x64 equivalent of x86's FUN_00679010).");
+                }
+            }
+        }
+    }
+
+    // In-level time-delta flag -- resolves g_inLevelFlag (one of FSR RCAS/motion
+    // blur's two real safety gates on x64; the third, menu-active, is already
+    // covered by g_menuActiveGateFlag above). See kInLevelFlagSignature's own
+    // comment for the full discovery trail. clcState needs no separate resolve --
+    // it's derived on demand from g_menuActiveGateFlag (TryGetClcStateX64 above).
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kInLevelFlagSignature);
+        if (!r.found) {
+            LogFromController("[x64-visualfx-gate] FATAL: in-level time-delta flag signature did not resolve -- "
+                "FSR RCAS and motion blur will stay disabled this session (safety gate unresolved)");
+        } else {
+            uintptr_t writeInsnAddr = r.address + kInLevelFlagWriteInsnOffset;
+            g_inLevelFlag = reinterpret_cast<int32_t*>(SigScan::ResolveRipRelative(writeInsnAddr, 6));
+            if (g_inLevelFlag) {
+                char buf[192];
+                sprintf_s(buf, "[x64-visualfx-gate] In-level flag resolved @ 0x%p -- FSR RCAS/motion blur gating "
+                    "now available (menu-active + in-level>0 + clcState!=0, matching x86's own three-gate design).",
+                    (void*)g_inLevelFlag);
+                LogFromController(buf);
+            } else {
+                LogFromController("[x64-visualfx-gate] FATAL: in-level time-delta flag RIP-relative resolution "
+                    "failed -- FSR RCAS and motion blur will stay disabled this session (safety gate unresolved)");
+            }
+        }
+    }
+
     // Weapnext -- same direct-call pattern as Buttons/Pause above.
     {
         SigScan::Result r = SigScan::FindPatternInMainModule(kWeaponNextSignature);
@@ -2038,4 +2272,11 @@ void InstallAnalogInputHooksX64()
         LogFromController("[x64-menufocus] Real menu-focus/itemDef tracking active -- the real focus-based "
             "Options-screen trigger and [x64-menufocus-diag]/[x64-optmenu-realtrigger] log lines are live.");
     }
+
+    // Vibration/rumble (2026-09-12 x64 port) -- see rumble.cpp's own "x64 PORT" block
+    // for the full RE trail (fire-effects hook + entity-array resolve for the damage
+    // health poll). Called last, same as every other independent hook/resolve group
+    // in this function -- its own success/failure is logged and gated internally by
+    // Rumble_Install(), doesn't block or depend on anything else installed above.
+    Rumble_Install();
 }

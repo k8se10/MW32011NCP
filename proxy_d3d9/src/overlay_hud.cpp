@@ -104,6 +104,25 @@ extern "C" const char* GetControllerGlyphAssetName(PhysicalInput input, GlyphSty
 extern "C" void GetStickLayoutAxisSources(StickLayout layout, bool& moveXFromRight, bool& moveYFromRight,
                                             bool& lookXFromRight, bool& lookYFromRight); // defined in analog_input_hooks.cpp
 
+// x64 visual-enhancement-suite gates (2026-09-12), defined in analog_input_hooks_x64.cpp
+// -- see that file's own "Visual-enhancement suite x64 gating" section for the full
+// discovery trail (InternalRenderScalePercent's FUN_1401bd1d0, clcState, and the
+// in-level time-delta flag). Each returns false when its own signature hasn't
+// resolved, matching this project's own fail-closed gating convention -- the callers
+// below (RunFullScreenPostProcessIfEnabled/RunPreOverlayMotionBlurPassIfEnabled)
+// treat a false return the same way they treat an unresolved x86 address: don't run
+// the pass. Only ever called from the `#if defined(_M_X64) || defined(_WIN64)`
+// branches below -- on Win32 these symbols don't exist (analog_input_hooks_x64.cpp
+// isn't compiled into that configuration), so declaring them unconditionally here
+// would be a link error on Win32 if anything outside those branches ever called them;
+// nothing does.
+#if defined(_M_X64) || defined(_WIN64)
+extern "C" bool IsMenuActiveX64_Exported();
+extern "C" bool TryGetClcStateX64(int* outValue);
+extern "C" bool TryGetInLevelFlagX64(int* outValue);
+extern "C" void GetMotionBlurDeltasX64(float* outYawDeg, float* outPitchDeg);
+#endif
+
 // Plugin text/glyph color override (2026-08-25, see mw3ncp_plugin_api.h and
 // PLUGIN_API.md) -- a plain global at FILE scope (not inside the anonymous
 // namespace below) so DrawGenericTexturedQuad (which IS inside it) can see it via
@@ -3486,8 +3505,22 @@ void MotionBlurShaderSetupCallback(void* device, float /*texelW*/, float /*texel
         // effect even at an aggressive strength setting.
 
     float scale = kDegreesToUvScale * g_modConfig.motionBlurStrength;
+#if defined(_M_X64) || defined(_WIN64)
+    // x64: g_motionBlurYawDeltaDeg/g_motionBlurPitchDeltaDeg (analog_input_hooks.cpp)
+    // are never written on this platform -- that file's own InjectControllerLookAngles,
+    // the only writer, is entirely #if !defined(_M_X64)-guarded. x64's own equivalent
+    // per-frame deltas are set by Hook_MovementTick (analog_input_hooks_x64.cpp) into
+    // its own g_motionBlurYawDeltaDegX64/g_motionBlurPitchDeltaDegX64, fetched here via
+    // GetMotionBlurDeltasX64 (same "extern C escapes the anonymous namespace" pattern
+    // this project already uses for every other cross-TU x64 accessor).
+    float yawDeg = 0.0f, pitchDeg = 0.0f;
+    GetMotionBlurDeltasX64(&yawDeg, &pitchDeg);
+    float blurX = yawDeg * scale;
+    float blurY = pitchDeg * scale;
+#else
     float blurX = g_motionBlurYawDeltaDeg * scale;
     float blurY = g_motionBlurPitchDeltaDeg * scale;
+#endif
     if (blurX > kMaxBlurExtent) blurX = kMaxBlurExtent;
     if (blurX < -kMaxBlurExtent) blurX = -kMaxBlurExtent;
     if (blurY > kMaxBlurExtent) blurY = kMaxBlurExtent;
@@ -3556,19 +3589,36 @@ bool g_motionBlurRanThisFrame = false;
 
 void RunPreOverlayMotionBlurPassIfEnabled(void* device)
 {
-#if defined(_M_X64) || defined(_WIN64)
-    // x64: not yet ported, same class of bug as RunFullScreenPostProcessIfEnabled
-    // above (raw x86-only address reads: kClcStateAddrForTest/ForBlurMenuCheck=
-    // 0x00B36218, kInLevelFlagAddrForBlurGate=0x00A98ACC). Currently only reached
-    // via TriggerMotionBlurFromEngineHook(), itself only called from the
-    // already-guarded x86-only naked hooks (Hook_694650/Hook_693ff0,
-    // analog_input_hooks.cpp) -- so this return is defensive insurance against a
-    // future change adding a new x64-reachable call site, not a confirmed second
-    // crash source.
-    return;
-#endif
     if (!g_modConfig.motionBlurEnabled) return;
 
+#if defined(_M_X64) || defined(_WIN64)
+    // x64 gating (2026-09-12) -- real gates now wired, replacing the prior
+    // unconditional return. Mirrors the x86 gate sequence below exactly (menu-
+    // active, then VisualFxClcStateTestValue OR the normal in-level>0 + clcState!=0
+    // pair) using analog_input_hooks_x64.cpp's own resolved equivalents
+    // (g_menuActiveGateFlag via IsMenuActiveX64_Exported, g_inLevelFlag via
+    // TryGetInLevelFlagX64, and clcState -- derived from g_menuActiveGateFlag+8 --
+    // via TryGetClcStateX64). Fail-closed: any gate that can't be confirmed (signature
+    // didn't resolve) blocks the pass, same posture x86 has for an unresolved address.
+    // See analog_input_hooks_x64.cpp's own "Visual-enhancement suite x64 gating"
+    // section for the full discovery trail behind these three gates -- do NOT ship
+    // with fewer than x86's own three (issue #96/#97 proved menu-active alone isn't
+    // enough; issue #103/#104 proved the same for FSR's identical gate class).
+    if (g_modConfig.visualFxClcStateTestValue >= 0) {
+        int clcState = 0;
+        if (!TryGetClcStateX64(&clcState) || clcState != g_modConfig.visualFxClcStateTestValue) return;
+        if (g_motionBlurRanThisFrame) return;
+        if (!EnsureMotionBlurShader(device)) return;
+        DrawFullScreenPass(device, g_motionBlurPixelShader, MotionBlurShaderSetupCallback);
+        g_motionBlurRanThisFrame = true;
+        return;
+    }
+    if (IsMenuActiveX64_Exported()) return;
+    int inLevel = 0;
+    if (!TryGetInLevelFlagX64(&inLevel) || inLevel <= 0) return;
+    int clcState = 0;
+    if (!TryGetClcStateX64(&clcState) || clcState == 0) return; // 0 = confirmed menu/disconnected
+#else
     // [Experimental] VisualFxClcStateTestValue (2026-08-28, issue #99/#100) --
     // direct user methodology: test each real clcState value exclusively, one
     // at a time, instead of guessing which one means "gameplay". When active
@@ -3637,6 +3687,7 @@ void RunPreOverlayMotionBlurPassIfEnabled(void* device)
     // risk class.
     constexpr uintptr_t kClcStateAddrForBlurMenuCheck = 0x00B36218;
     if (*reinterpret_cast<volatile int*>(kClcStateAddrForBlurMenuCheck) == 0) return;
+#endif
     if (g_motionBlurRanThisFrame) return; // already ran once this real frame --
         // FUN_00497210 (this pass's real trigger) can fire more than once per
         // frame when a splitscreen/PIP exclusion zone is active, see this
@@ -3716,23 +3767,32 @@ extern "C" void TriggerMotionBlurFromEngineHook()
 void RunFullScreenPostProcessIfEnabled(void* device)
 {
 #if defined(_M_X64) || defined(_WIN64)
-    // x64: CONFIRMED REAL CRASH SOURCE, 2026-09-04 (second live crash, after the
-    // first -- IsMenuActive() -- was fixed). This function is called
-    // unconditionally every frame from the real Hook_EndScene draw dispatcher
-    // (confirmed running on x64), and its body reads several raw x86-only
-    // addresses (kInLevelFlagAddrForFsrGate=0x00A98ACC, kClcStateAddrForTest/
-    // ForMenuCheck=0x00B36218) unconditionally once past the config gate --
-    // exactly the same class of bug as IsMenuActive's own crash, just in a
-    // genuinely cross-platform file (overlay_hud.cpp) the earlier __asm-only
-    // audit of analog_input_hooks.cpp never covered. The whole visual-enhancement
-    // full-screen post-process pass (FSR/RCAS, render-scale passthrough) is not
-    // yet ported to x64 -- an early return here is the safe, honest behavior
-    // (matching the config's own `internalRenderScalePercent=200` being
-    // effectively inert on x64 for now) rather than guessing at which specific
-    // internal lines are safe to keep. Real x64 signature-scan-based hook
-    // targets for this whole pass are future work, not attempted this pass.
-    return;
-#endif
+    // x64 gating (2026-09-12) -- real gates now wired, replacing the prior
+    // unconditional return that followed the 2026-09-04 crash fix. Mirrors the
+    // x86 gate sequence below exactly (VisualFxClcStateTestValue OR the normal
+    // menu-active + in-level>0 + clcState!=0 triple) using
+    // analog_input_hooks_x64.cpp's own resolved equivalents (g_menuActiveGateFlag
+    // via IsMenuActiveX64_Exported, g_inLevelFlag via TryGetInLevelFlagX64, and
+    // clcState -- derived from g_menuActiveGateFlag+8 -- via TryGetClcStateX64).
+    // Fail-closed: any gate that can't be confirmed (signature didn't resolve)
+    // blocks the pass, same posture x86 has for an unresolved address -- this is
+    // the ENTIRE reason InternalRenderScalePercent/FSR RCAS were blocked pending
+    // these two RE targets (known_issues_x64.md's "Visual-enhancement suite x64
+    // port" entry) -- see analog_input_hooks_x64.cpp's own "Visual-enhancement
+    // suite x64 gating" section for the full discovery trail. Do NOT ship with
+    // fewer than x86's own three gates (issue #103/#104: menu-active alone
+    // crashes on loading screens and quit-to-menu).
+    if (g_modConfig.visualFxClcStateTestValue >= 0) {
+        int clcState = 0;
+        if (!TryGetClcStateX64(&clcState) || clcState != g_modConfig.visualFxClcStateTestValue) return;
+    } else {
+        if (IsMenuActiveX64_Exported()) return;
+        int inLevel = 0;
+        if (!TryGetInLevelFlagX64(&inLevel) || inLevel <= 0) return;
+        int clcState = 0;
+        if (!TryGetClcStateX64(&clcState) || clcState == 0) return; // 0 = confirmed menu/disconnected
+    }
+#else
     if (g_modConfig.visualFxClcStateTestValue >= 0) {
         constexpr uintptr_t kClcStateAddrForTest = 0x00B36218;
         if (*reinterpret_cast<volatile int*>(kClcStateAddrForTest) !=
@@ -3746,6 +3806,7 @@ void RunFullScreenPostProcessIfEnabled(void* device)
         constexpr uintptr_t kClcStateAddrForMenuCheck = 0x00B36218;
         if (*reinterpret_cast<volatile int*>(kClcStateAddrForMenuCheck) == 0) return; // 0 = confirmed menu/disconnected
     }
+#endif
 
     if (g_modConfig.fsrSharpenEnabled && EnsureRcasShader(device)) {
         DrawFullScreenPass(device, g_fsrRcasPixelShader, RcasShaderSetupCallback);

@@ -9976,6 +9976,16 @@ extern "C" void __cdecl InjectMenuInputTick()
     // state as Pause's own toggle above), so it belongs on this same always-on
     // tick too, not the gameplay tick (which halts entirely while paused).
     PollCustomOptionsMenuX64();
+    // 2026-09-12, vibration/rumble x64 port -- same "gets stuck on" fix x86 already
+    // has (see Rumble_TickExpiryWatchdog's own header comment in rumble.h): x64's
+    // gameplay tick (Hook_MovementTick, analog_input_hooks_x64.cpp) halts entirely
+    // while genuinely paused, same as x86's InjectAllControllerInput, so a rumble
+    // event triggered right before a pause needs its own expiry enforced from THIS
+    // always-on tick or the motor would buzz for the whole paused duration instead
+    // of cutting off on schedule. Does not poll for new damage/fire events (that
+    // stays gameplay-tick-only via Rumble_Tick() in Hook_MovementTick) -- a no-op
+    // whenever no rumble is currently active, safe to call unconditionally here.
+    Rumble_TickExpiryWatchdog();
 #endif
 
 #if !defined(_M_X64) && !defined(_WIN64)
