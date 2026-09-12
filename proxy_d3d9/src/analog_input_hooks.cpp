@@ -56,6 +56,15 @@ extern "C" void CheckConfigHotReload();
 // itself #if-guarded to x64 only, matching every other cross-platform-declared/
 // platform-guarded-call pattern in this file.
 extern "C" void PollPauseToggleX64();
+// Defined in analog_input_hooks_x64.cpp -- x64-only (2026-09-12), the native
+// D-pad+A/B menu-navigation port -- x64 equivalents of this file's own
+// InjectControllerMenuBack()/InjectControllerMenuNav() (below, x86-only). Must
+// run from the same always-on tick as PollPauseToggleX64 above, for the same
+// reason (x64's gameplay-tick hook halts entirely while paused/most menus are
+// open). Declared here unconditionally, same pattern as every other x64-only
+// declaration in this block.
+extern "C" void InjectControllerMenuBackX64();
+extern "C" void InjectControllerMenuNavX64();
 // Defined in analog_input_hooks_x64.cpp -- x64-only, the automated "open pause
 // then close it again" unstick cycle for the "needs a click for input" bug,
 // real fix confirmed by direct user report ("still requires the classic pause
@@ -9976,6 +9985,14 @@ extern "C" void __cdecl InjectMenuInputTick()
     // state as Pause's own toggle above), so it belongs on this same always-on
     // tick too, not the gameplay tick (which halts entirely while paused).
     PollCustomOptionsMenuX64();
+    // 2026-09-12, native D-pad+A/B menu navigation, x64 port -- MUST run AFTER
+    // PollCustomOptionsMenuX64 above so CustomOptionsMenu_IsOpen() reflects this
+    // tick's own open/close decision (see InjectControllerMenuNavX64's own header
+    // comment in analog_input_hooks_x64.cpp for the full reasoning). Order matches
+    // x86's own InjectControllerMenuBack() then InjectControllerMenuNav() call
+    // order (this file's x86-only block below).
+    InjectControllerMenuBackX64();
+    InjectControllerMenuNavX64();
     // 2026-09-12, vibration/rumble x64 port -- same "gets stuck on" fix x86 already
     // has (see Rumble_TickExpiryWatchdog's own header comment in rumble.h): x64's
     // gameplay tick (Hook_MovementTick, analog_input_hooks_x64.cpp) halts entirely
