@@ -61,6 +61,16 @@ documentation before this pass:**
    either way: x64 Sprint likely has no duration limit/cooldown and the Extreme
    Conditioning perk's duration override likely does not apply automatically,
    both real regressions from `v0.3.5-x86`'s confirmed-working behavior if true.
+   **FIXED same day (2026-09-12), a separate fix pass, per this doc's own note
+   above that findings here don't fix anything by themselves**: `Hook_SprintTick`
+   now drives the real kbutton (`FUN_14007e460`/`FUN_14007e490` on
+   `DAT_1406448f4`, case `0x3d`/`0x3e` of `FUN_14007c3a0` — the same dispatcher
+   already resolved for Fire/ADS/Reload/CrouchProne), matching x86's design
+   exactly, plus the rising-edge stand-from-crouch/prone behavior. Build-verified
+   both platforms; not yet live-tested. See row #22 below and
+   `re_notes/known_issues_x64.md` issue #1 for the full trail. This paragraph is
+   intentionally left in place, not deleted, so the audit's own original finding
+   stays legible — only this annotation records the fix.
 
 See the **Methodology & caveats** section at the end for what this pass could
 and couldn't verify statically.
@@ -109,10 +119,10 @@ bar (CLAUDE.md SS7/SS8) applied separately — many are build-verified only.
 | # | Feature | x86 status | x64 status | Evidence |
 |---|---|---|---|---|
 | 21 | Crouch/Prone 3-state stance ladder (B) | Confirmed working, real native toggle, tap-vs-hold ladder | **PRESENT**, different mechanism | x64 forwards raw press/release edges directly to `FUN_14007c3a0`'s case 0x17/0x18 (`+stance`/`-stance`), trusting native logic to handle tap/hold internally, rather than replicating x86's own explicit tap/hold state machine — a deliberate, reasoned design choice (see the in-file comment on why replicating the ambiguous "restore previous posture" semantics was judged riskier than trusting native dispatch), but the exact resulting behavior (does it match x86's documented tap→crouch/hold→prone table exactly?) is **not independently live-confirmed** |
-| 22 | Sprint (L3) | Confirmed working, **real `+sprint` kbutton**, native duration/recovery timer + Extreme Conditioning apply automatically | **PARTIAL / regressed** | `Hook_SprintTick` forces the `pm_flags`-equivalent bit directly (`FUN_140014a80`'s own field) — this is x86's ORIGINAL, deprecated pre-kbutton design, not the final one. See Summary finding #2 above for full detail. Bit-ownership tracking (never clear a bit we didn't set) IS correctly ported, so keyboard sprint should stay unaffected |
-| 23 | Hold Breath (L3 while ADS'd, sniper) | Confirmed working, real kbutton | **ABSENT** | Zero references anywhere in `analog_input_hooks_x64.cpp` (grepped: `Hold Breath`, `HoldBreath`, `breath_sprint` — all 0 hits). L3 on x64 only ever drives raw Sprint, with no ADS-aware branch to a separate Hold Breath kbutton |
-| 24 | Auto-Mantle while sprinting | Confirmed working (v0.3.4), ships off by default | **ABSENT** | Zero references to `AutoMantle`/`auto.?mantle` anywhere in the x64 file. Not gated off — simply never implemented for x64 |
-| 25 | Extreme Conditioning perk override | Resolved "for free" via Sprint's real kbutton | **ABSENT / not applicable** | Depends entirely on #22's kbutton design, which x64 doesn't use — no override mechanism exists or was needed to exist under x86's own original design either (it also lacked this until the kbutton was found) |
+| 22 | Sprint (L3) | Confirmed working, **real `+sprint` kbutton**, native duration/recovery timer + Extreme Conditioning apply automatically | **FIXED (2026-09-12, same day, separate fix pass)** | `Hook_SprintTick` now calls the real kbutton activate/deactivate handlers (`FUN_14007e460`/`e490`) on `DAT_1406448f4` (case `0x3d`/`0x3e`), matching x86's final design exactly, plus the rising-edge stand-from-crouch/prone behavior (reuses `ForceStandingViaRealToggleX64()`). Build-verified both platforms; **not yet live-tested**. Originally: `Hook_SprintTick` forced the `pm_flags`-equivalent bit directly (`FUN_140014a80`'s own field) — x86's ORIGINAL, deprecated pre-kbutton design. See Summary finding #2 above for the original finding and the fix's full trail |
+| 23 | Hold Breath (L3 while ADS'd, sniper) | Confirmed working, real kbutton | **ABSENT** (unchanged by the #22 fix — out of scope) | Zero references anywhere in `analog_input_hooks_x64.cpp` (grepped: `Hold Breath`, `HoldBreath`, `breath_sprint` — all 0 hits). L3 on x64 only ever drives raw Sprint, with no ADS-aware branch to a separate Hold Breath kbutton |
+| 24 | Auto-Mantle while sprinting | Confirmed working (v0.3.4), ships off by default | **ABSENT** (unchanged by the #22 fix — out of scope) | Zero references to `AutoMantle`/`auto.?mantle` anywhere in the x64 file. Not gated off — simply never implemented for x64 |
+| 25 | Extreme Conditioning perk override | Resolved "for free" via Sprint's real kbutton | **Now applies "for free," same as x86** (fixed alongside #22 — the real kbutton is what makes this automatic, no separate code needed) | Depends entirely on #22's kbutton design, which x64 now uses |
 | 26 | Jump (A) | Confirmed working | **PRESENT** | Raw bit `kJumpUsercmdBit=0x400`, suppressed while a menu is active via `g_menuActiveGateFlag` |
 | 27 | Jump auto-stand from crouch/prone | Implemented (`ForceStandingViaRealToggle`) | **PRESENT**, w/ caveat | `ForceStandingViaRealToggleX64()`, ported 2026-09-05 — listed in `known_issues_x64.md` as "still awaiting live confirmation" as of that entry |
 

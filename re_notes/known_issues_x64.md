@@ -36,7 +36,7 @@ two files already had for #111 before the split.
 
 ## Index
 
-- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **D-pad Left synthetic-key exception AND a sniper Fire/ADS fix attempt both shipped (build-verified, neither live-tested yet); Plugin API ported (build-verified, needed no host code changes); visual-enhancement-suite x64 port attempted TWICE, still blocked on two addresses that resist exhaustive static RE (render-scale, clcState/in-level-flag) — likely needs live tracing, not more static analysis; FXAA/MSAA found to not even exist on x86, out of scope for parity; overlay-render bug fully audited — cursor's own unguarded x86 address landmine found and fixed, rest of the render path confirmed clean; Custom Options screen wired into x64's input pipeline (build-verified, temporary manual open-chord substitute pending a real focus-detection RE pass -- **RE pass now done 2026-09-12: real x64 menu-focus/itemDef-array offsets re-derived and cross-confirmed, TryGetRealFocusedGroupAndIndexX64 wired in as the real Options-screen open trigger alongside the chord (kept as a fallback), build-verified, not yet live-tested**); a "greenlit" trusted-plugin allowlist added to plugin_loader.cpp so the sibling MW32011NSP project's own security-fix plugin can ship built in by default (build-verified, end-to-end test pending that plugin's own existence) — release ETA 2-4 weeks, gated on x86 parity**
+- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **D-pad Left synthetic-key exception AND a sniper Fire/ADS fix attempt both shipped (build-verified, neither live-tested yet); Plugin API ported (build-verified, needed no host code changes); visual-enhancement-suite x64 port attempted TWICE, still blocked on two addresses that resist exhaustive static RE (render-scale, clcState/in-level-flag) — likely needs live tracing, not more static analysis; FXAA/MSAA found to not even exist on x86, out of scope for parity; overlay-render bug fully audited — cursor's own unguarded x86 address landmine found and fixed, rest of the render path confirmed clean; Custom Options screen wired into x64's input pipeline (build-verified, temporary manual open-chord substitute pending a real focus-detection RE pass -- **RE pass now done 2026-09-12: real x64 menu-focus/itemDef-array offsets re-derived and cross-confirmed, TryGetRealFocusedGroupAndIndexX64 wired in as the real Options-screen open trigger alongside the chord (kept as a fallback), build-verified, not yet live-tested**); a "greenlit" trusted-plugin allowlist added to plugin_loader.cpp so the sibling MW32011NSP project's own security-fix plugin can ship built in by default (build-verified, end-to-end test pending that plugin's own existence); Sprint (L3) migrated from raw pm_flags-forcing to the real +sprint kbutton, matching x86's final design, plus the rising-edge stand-from-crouch/prone behavior (build-verified, not yet live-tested) — release ETA 2-4 weeks, gated on x86 parity**
 
 ---
 
@@ -2571,3 +2571,100 @@ session with the greenlit `mw32011nsp_security.dll` loading and its own
 alongside every other hook's own confirmation line. If a further crash
 occurs, repeat the same `CrashDumps` + `cdb` technique above rather than
 falling back to Event-Viewer-only triage.
+
+---
+
+**Sprint (L3) migrated to the real `+sprint` kbutton (2026-09-12) -- fixes
+the raw `pm_flags`-forcing regression recorded above ("Sprint's real x64
+kbutton was never searched for") and identified again independently the
+same day by the full feature-parity audit (`re_notes/
+x64_feature_parity_audit.md`, finding #2 / row #22).**
+
+The x64 `+sprint`-style kbutton this file's own earlier round said was
+"never searched for" has now been found and wired in. Resolved via the
+SAME anchor+offset technique already proven for Fire/Reload/ADS
+(`kFireStructInsnOffset` etc.) -- confirmed via TWO independent angles,
+matching this project's own issue #3 standard (never trust a case/lead
+without independent confirmation):
+
+1. Decompiled `FUN_14007c3a0` (`decomp_14007c3a0_full.txt`) case `0x3d`/
+   `0x3e` (61/62 decimal -- x86's own exact "+sprint"/"-sprint" case
+   numbers) calls `FUN_14007e460`/`FUN_14007e490` on
+   `&DAT_1406448f4 + lVar4*0x230` -- the same per-bind-struct pattern
+   already confirmed for Fire/Reload/ADS, and the same case-number-carries-
+   over-from-x86 pattern already independently confirmed for every other
+   bind in this dispatcher (Fire=1/2, Reload=0xb/0xc, ADS=0x3b/0x3c,
+   togglecrouch=0x48, etc.).
+2. Independent cross-check, the SAME technique x86's own original
+   discovery used: case 9 ("+breath_sprint" down, the real default SHIFT
+   bind) in the same decompile fires `FUN_14007e460` on `&DAT_14064482c`
+   (Hold Breath's alias) AND on `&DAT_1406448f4` back-to-back -- i.e. the
+   real default Sprint/Hold-Breath key already drives this exact same
+   struct today, mirroring x86's own "case 9 disassembles to two
+   back-to-back kbutton calls, one of which is the Sprint kbutton"
+   cross-confirmation exactly.
+
+A prior session's RE scratch pass (`re_notes/x64_migration/
+rawbytes_sprint_struct.txt`) had already dumped the raw bytes at the two
+real `LEA reg,[rip+disp32]` instructions for case 0x3d/0x3e (`0x14007cead`/
+`0x14007ced7`) but was cut off by a rate limit before writing any code.
+Independently decoded by hand this session rather than trusted blindly:
+both `48 8D 05 <disp32>` instructions resolve to `0x1406448f4`, matching
+the decompile's `DAT_1406448f4` name exactly -- confirms that scratch lead
+was correct.
+
+**Implementation**: `Hook_SprintTick` now calls `g_kbuttonActivate`/
+`g_kbuttonDeactivate` (the same real `FUN_14007e460`/`FUN_14007e490`
+resolved for Fire/ADS/Reload) on a newly-resolved `g_sprintStruct`
+(`kSprintStructInsnOffset = 0xB0D` from the `FUN_14007c3a0` anchor), using
+the same synthetic-source-id pattern (own local
+`kSprintSyntheticSourceId = 0x1000`, same value/rationale as the later
+`kSyntheticSourceId`, kept separate to avoid a `constexpr` forward-
+declaration problem -- `Hook_SprintTick` is defined earlier in the file
+than Fire/ADS/Reload's own struct-resolve cluster, so `extern` forward
+declarations were added for `g_kbuttonActivate`/`g_kbuttonDeactivate`/
+`g_sprintStruct`/`g_timestampPtr` instead of relocating the function). The
+raw `pm_flags`-forcing code and its `g_sprintBitForcedByUs` bit-ownership
+tracking were removed entirely -- no longer needed, since driving the real
+kbutton hands `pm_flags` back to native engine ownership, the same handoff
+x86 made in 2026-07-19.
+
+Gating excludes ADS (matches x86's `!g_adsHeld` exclusion), computed
+locally inside `Hook_SprintTick` from the controller state it already
+reads, rather than reaching for the separate `g_adsHeldX64` global
+(`Hook_MovementTick`'s own tracking variable, defined much later in the
+same anonymous namespace -- same physical-input source either way, this
+just avoids a second forward-declaration dependency). x64 has no Hold
+Breath kbutton yet (parity audit item #23, confirmed ABSENT, a separately
+tracked gap, not this fix's scope), so there's no second consumer of the
+bind to stay mutually exclusive with -- this narrows to a plain ADS
+exclusion.
+
+**Also ports the rising-edge "stand up from crouch/prone" behavior** from
+x86's `InjectControllerSprint` (real console sprint stands the player back
+up before running) -- per direct coordinator instruction after the initial
+plan flagged this as borderline-in-scope: confirmed as genuine x86
+behavior (not optional polish) by directly re-reading
+`analog_input_hooks.cpp`, and the standing directive for this whole parity
+pass is "all 0.3.5 stuff needs to be present at the same level or better."
+Reuses `ForceStandingViaRealToggleX64()` as-is (already built and wired
+for Jump's own auto-stand, this same issue's earlier "Jump auto-stand"
+round) rather than reimplementing -- same real native toggle-case dispatch
+(0x48/0x49 stance cases), just called from a second trigger site (Sprint's
+own rising edge while crouched/prone and not ADS'd).
+
+Hold Breath, Auto-Mantle-while-sprinting, and the "needs a fresh feature"
+class of gap stay explicitly out of scope (parity audit items #23/#24,
+unchanged by this fix). Extreme Conditioning (item #25) is resolved "for
+free" as a direct consequence of the real kbutton now driving Sprint --
+same as x86, no separate code needed.
+
+**Build-verified**: x64 `/t:Rebuild` (0 errors) -> `dumpbin /headers`
+confirmed `8664 machine (x64)` with a fresh timestamp; Win32 `/t:Rebuild`
+(0 errors, 0 warnings) confirmed no regression; x64 rebuilt a THIRD time,
+last, so the deployed DLL is the correct architecture (shared `OutDir`).
+**NOT YET LIVE-TESTED** -- next step: a live playtest confirming Sprint
+still engages/disengages correctly, the native duration/recovery timer
+now applies (should no longer be unlimited), and the rising-edge stand-up
+behavior fires correctly from both crouch and prone without regressing
+ADS/Hold-Breath-adjacent behavior.
