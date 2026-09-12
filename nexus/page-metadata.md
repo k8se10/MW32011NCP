@@ -6,12 +6,18 @@ description body.
 
 ## Category
 Utilities / Miscellaneous — closest fit; Nexus's MW3 (2011) category list
-doesn't have a dedicated "controller support" bucket. Re-check at
-page-creation time in case one's been added.
+doesn't have a dedicated "controller support" or "security patch" bucket.
+Re-check at page-creation time in case one's been added.
 
 ## Suggested tags
 `Controller Support`, `Gamepad`, `XInput`, `Accessibility`, `QoL`,
-`Campaign`, `Survival`, `Alpha`
+`Campaign`, `Survival`, `Security Patch`, `Bug Fix`, `Alpha`
+
+Note (2026-09-12): this project's scope expanded from controller-only to a
+broader "Native Community Patches" umbrella (controller + visual/performance
+enhancements + netcode security). Tags above reflect the expanded scope —
+don't drop the controller-specific tags, since that's still the flagship,
+most mature piece, just add the security-related ones alongside them.
 
 ## Requirements
 - Retail Steam copy of Call of Duty: Modern Warfare 3 (2011), current version
