@@ -92,8 +92,18 @@ These are honestly documented as not-yet-implemented, not hidden bugs:
   they depend on hasn't been ported. Everything else renders normally.
 - **The visual-enhancement suite** (internal render scale, FSR sharpening,
   motion blur) isn't on x64 yet — blocked on two engine addresses that have
-  resisted signature-scan-based discovery so far; next step is live tracing
-  rather than more static analysis.
+  resisted signature-scan-based discovery so far.
+- **Vibration/rumble doesn't work on x64 at all.** Fully implemented and
+  working on the `-x86` line; the code simply never runs on x64 (it lives
+  entirely inside an x86-only code path) — not started, not attempted.
+- **DualSense gyro-aim isn't wired into x64's look input.** Basic DualSense
+  stick input (movement/look) works fine on x64 already; gyro-aim
+  specifically doesn't. This was still a preview/WIP feature even on the
+  `-x86` line, so this is a lower-priority gap than the others above.
+
+A systematic audit against every other `-x86` feature is still in progress
+— the items above are what's been confirmed missing so far, not
+necessarily the complete list yet.
 - **FXAA and a forced-MSAA option** were never actually built even on the
   old `-x86` line (only ever planned) — real future work, not a regression.
 
