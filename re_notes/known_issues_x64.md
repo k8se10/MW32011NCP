@@ -45,7 +45,7 @@ this whole session (grows as new fixes land, items move to its own
 
 ## Index
 
-- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **D-pad Left synthetic-key exception AND a sniper Fire/ADS fix attempt both shipped (build-verified, neither live-tested yet); Plugin API ported (build-verified, needed no host code changes); visual-enhancement-suite x64 port attempted TWICE, still blocked on two addresses that resist exhaustive static RE (render-scale, clcState/in-level-flag) — likely needs live tracing, not more static analysis; FXAA/MSAA found to not even exist on x86, out of scope for parity; overlay-render bug fully audited — cursor's own unguarded x86 address landmine found and fixed, rest of the render path confirmed clean; Custom Options screen wired into x64's input pipeline (build-verified, temporary manual open-chord substitute pending a real focus-detection RE pass -- **RE pass now done 2026-09-12: real x64 menu-focus/itemDef-array offsets re-derived and cross-confirmed, TryGetRealFocusedGroupAndIndexX64 wired in as the real Options-screen open trigger alongside the chord (kept as a fallback), build-verified, not yet live-tested**); a "greenlit" trusted-plugin allowlist added to plugin_loader.cpp so the sibling MW32011NSP project's own security-fix plugin can ship built in by default (build-verified, end-to-end test pending that plugin's own existence); Sprint (L3) migrated from raw pm_flags-forcing to the real +sprint kbutton, matching x86's final design, plus the rising-edge stand-from-crouch/prone behavior (build-verified, not yet live-tested); native D-pad+A/B controller menu navigation ported (InjectControllerMenuNavX64/InjectControllerMenuBackX64, driven by a newly-resolved ForwardKeyToMenu equivalent, FUN_1402aac50) — main menu, pause menu, options drill-down, buy-station/armory lists, and B-back all now controller-navigable in principle, plus two real menu-active-gating conflicts found and fixed along the way (D-pad actionslot, CrouchProne/B dual-purpose) — build-verified, not yet live-tested; Auto-Mantle (while sprinting) investigated and found genuinely BLOCKED, not implemented — its real ledge-availability gate depends entirely on the native hint text-draw hook (x86's Hook_DrawGlyphText), which has no x64 equivalent yet (same separate, larger RE task blocking gameplay-hint glyph overlays generally), and a considered alternative (reading the engine's own raw mantle condition-flag memory directly) was deliberately rejected as a diverging, policy-adjacent workaround rather than a real port; Survival ready-up (hold Y) ported — same synthetic-F5-via-PostMessageA exception x86 already ships, direct port of SendSyntheticF5/InjectControllerWeaponNext's hold-vs-tap split, one honest scoped difference from x86 (the IsInSurvivalMode() mode gate is omitted, since x64's own Dvar_FindVar equivalent is a still-unresolved RE target — fires unconditionally on the hold edge instead, relying on the same "safe by construction" reasoning x86's own design already documents) — build-verified, not yet live-tested — release ETA 2-4 weeks, gated on x86 parity**
+- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **D-pad Left synthetic-key exception AND a sniper Fire/ADS fix attempt both shipped (build-verified, neither live-tested yet); Plugin API ported (build-verified, needed no host code changes); visual-enhancement-suite x64 port attempted TWICE, still blocked on two addresses that resist exhaustive static RE (render-scale, clcState/in-level-flag) — likely needs live tracing, not more static analysis; FXAA/MSAA found to not even exist on x86, out of scope for parity; overlay-render bug fully audited — cursor's own unguarded x86 address landmine found and fixed, rest of the render path confirmed clean; Custom Options screen wired into x64's input pipeline (build-verified, temporary manual open-chord substitute pending a real focus-detection RE pass -- **RE pass now done 2026-09-12: real x64 menu-focus/itemDef-array offsets re-derived and cross-confirmed, TryGetRealFocusedGroupAndIndexX64 wired in as the real Options-screen open trigger alongside the chord (kept as a fallback), build-verified, not yet live-tested**); a "greenlit" trusted-plugin allowlist added to plugin_loader.cpp so the sibling MW32011NSP project's own security-fix plugin can ship built in by default (build-verified, end-to-end test pending that plugin's own existence); Sprint (L3) migrated from raw pm_flags-forcing to the real +sprint kbutton, matching x86's final design, plus the rising-edge stand-from-crouch/prone behavior (build-verified, not yet live-tested); native D-pad+A/B controller menu navigation ported (InjectControllerMenuNavX64/InjectControllerMenuBackX64, driven by a newly-resolved ForwardKeyToMenu equivalent, FUN_1402aac50) — main menu, pause menu, options drill-down, buy-station/armory lists, and B-back all now controller-navigable in principle, plus two real menu-active-gating conflicts found and fixed along the way (D-pad actionslot, CrouchProne/B dual-purpose) — build-verified, not yet live-tested; Auto-Mantle (while sprinting) investigated and found genuinely BLOCKED, not implemented — its real ledge-availability gate depends entirely on the native hint text-draw hook (x86's Hook_DrawGlyphText), which has no x64 equivalent yet (same separate, larger RE task blocking gameplay-hint glyph overlays generally), and a considered alternative (reading the engine's own raw mantle condition-flag memory directly) was deliberately rejected as a diverging, policy-adjacent workaround rather than a real port; Survival ready-up (hold Y) ported — same synthetic-F5-via-PostMessageA exception x86 already ships, direct port of SendSyntheticF5/InjectControllerWeaponNext's hold-vs-tap split, one honest scoped difference from x86 (the IsInSurvivalMode() mode gate is omitted, since x64's own Dvar_FindVar equivalent is a still-unresolved RE target — fires unconditionally on the hold edge instead, relying on the same "safe by construction" reasoning x86's own design already documents) — build-verified, not yet live-tested; Hold Breath (L3 while ADS'd) ported (parity audit item #23, closes the last confirmed-ABSENT control) — same no-explicit-sniper-check gating as x86 (`sprintHeld && adsHeldNow`), real kbutton struct resolved via the same anchor+offset technique (two independent angles: decompile + independently re-dumped raw LEA bytes), structurally a genuinely separate dedicated kbutton_t on x64 (not the internal-field alias x86's own address is), a real pre-existing early-return bug in Hook_SprintTick that would have silently starved Hold Breath's own edge check on steady ticks was caught and fixed in the same pass — build-verified, not yet live-tested — release ETA 2-4 weeks, gated on x86 parity**
 
 ---
 
@@ -2985,5 +2985,103 @@ threshold still switches weapons, and (3) the missing `IsInSurvivalMode()`
 gate doesn't cause any observable side effect outside Survival (expected:
 none, per the "safe by construction" reasoning above, but unconfirmed
 against real hardware on this binary specifically).
+
+**Status: Build-verified, not yet live-tested.**
+
+---
+
+**Hold Breath (L3 while ADS'd) ported to x64 (2026-09-12) -- closes parity
+audit item #23 (row #23, previously ABSENT: "Zero references anywhere in
+`analog_input_hooks_x64.cpp`").**
+
+Read x86's own implementation in full first (`analog_input_hooks.cpp`'s
+"Hold Breath (L3 while ADS'd)" section) per this project's own standing
+"compare to x86 original at every stage" rule. Real mechanism confirmed:
+x86 gates purely on `g_sprintHeld && g_adsHeld` -- no explicit sniper-class
+check in ITS OWN code either; the real native kbutton is what limits the
+sway-reduction/accuracy effect to sniper-class weapons, not anything this
+project's own injection code does. x64 mirrors this exactly: no weapon-class
+logic added, gating is `sprintHeld && adsHeldNow` inside `Hook_SprintTick`.
+
+**Struct resolved via the SAME anchor+offset technique already proven for
+Fire/Reload/ADS/Sprint, confirmed via TWO independent angles (this
+project's own issue #3 standard):**
+
+1. Decompiled `FUN_14007c3a0` case 9 ("+breath_sprint" down, the real
+   default SHIFT bind -- `re_notes/x64_migration/decomp_14007c3a0_full.txt`)
+   fires `FUN_14007e460` on `&DAT_14064482c + lVar4*0x230` FIRST, then on
+   `&DAT_1406448f4 + lVar4*0x230` (= `g_sprintStruct`, already resolved by
+   the earlier Sprint port) SECOND -- the real default Sprint/Hold-Breath
+   key already drives both structs back-to-back today, mirroring x86's own
+   original discovery of this exact same two-call shape on that binary.
+2. Independently re-derived the raw bytes at both real
+   `LEA reg,[rip+disp32]` instructions this decompile reference resolves to
+   (`0x14007cc69` and `0x14007cc93`, dumped fresh via `DumpRawBytes.java`
+   against the live `iw5sp_x64_proj` Ghidra project --
+   `re_notes/x64_migration/rawbytes_holdbreath_struct.txt` -- not read off
+   the decompile alone): both are genuine 7-byte `48 8D 05 <disp32>` LEA
+   instructions whose RIP-relative target computes to `0x14064482C`
+   bit-for-bit, matching the decompile's `DAT_14064482c` name exactly.
+
+A third, structural cross-check: `0x14064482c` is exactly `0x14` bytes past
+`g_fireStruct`'s own target (`DAT_140644818`) -- the very NEXT `kbutton_t`
+in the contiguous per-player array (this engine's x64 `kbutton_t` is 0x14/20
+bytes: down0/down1/timestamp/downtime as int32 + a 1-byte active flag, per
+`FUN_14007e460`/`e490`'s own decompile), NOT an internal field of Fire's own
+struct the way x86's `0xA98C04` alias is (x86's own `kbutton_t` stride is
+smaller, so ITS Hold Breath address lands INSIDE Fire's struct at its
+down[1] field -- a real x86-specific aliasing quirk, `known_issues.md` issue
+#6). x64's Hold Breath struct is a genuinely separate, dedicated `kbutton_t`
+-- there is no structural reason to expect x86's own "active flag never
+self-clears on this alias" bug (issue #24, the reason x86 needed a debounce
++ force-clear workaround) to recur here, and x64's own Sprint migration
+(same session, immediately above) already proved this exact call pattern
+(`g_kbuttonActivate`/`g_kbuttonDeactivate`, no debounce, no active-flag
+force-clear) works cleanly with no such workaround needed -- so none was
+added for Hold Breath either. **Flagged for live confirmation, not assumed
+risk-free from static analysis alone.**
+
+Also referenced by decompile lines 201-206: a SEPARATE case, 0x31/0x32 --
+a standalone (likely unbound-by-default) `+breath_hold`-class bind that
+drives this exact same struct alone, with no paired Sprint call --
+independent corroboration this is a real, dedicated Hold Breath kbutton,
+not an incidental byproduct of case 9's own dual-call shape.
+
+**A real bug was caught and fixed while writing this, not shipped**:
+`Hook_SprintTick`'s own pre-existing early `return` (`if (active ==
+g_sprintKbuttonActiveX64) return;`) would have silently skipped Hold
+Breath's own edge check on every tick where Sprint's state happened to be
+steady -- i.e. most ticks while ADS-holding-still, exactly the case that
+matters most for this feature. Restructured Sprint and Hold Breath into two
+independent per-tick state machines in the same function (matching x86's
+own `InjectControllerSprint` shape, which already handles both this way)
+instead of a shared early exit.
+
+**Implementation**: `Hook_SprintTick` (`analog_input_hooks_x64.cpp`) now
+also computes `holdBreathActive = sprintHeld && adsHeldNow` and edge-
+triggers `g_kbuttonActivate`/`g_kbuttonDeactivate` on the newly-resolved
+`g_holdBreathStruct` (`kHoldBreathStructInsnOffset = 0x8C9` from the
+`FUN_14007c3a0` anchor), using its own `kHoldBreathSyntheticSourceId`
+(`0x1000`, same value/rationale as every other bind's synthetic source id --
+distinct struct pointers mean no cross-bind collision risk regardless of
+source-id reuse) and its own `g_holdBreathKbuttonActiveX64` edge-tracking
+bool, kept separate from `g_sprintKbuttonActiveX64`.
+
+**Build-verified**: x64 `/t:Rebuild` (0 errors, same pre-existing C4312
+warnings as every other round, unrelated to this change), `dumpbin
+/headers` confirmed `8664 machine (x64)` with a fresh timestamp. Win32
+`/t:Rebuild` (0 errors) confirmed no regression -- `analog_input_hooks_x64.cpp`
+correctly does not compile into the Win32 build at all. x64 rebuilt a THIRD
+time, last, so the deployed DLL (shared `OutDir`) is the correct
+architecture.
+
+**NOT YET LIVE-TESTED** -- next step: a live playtest with a sniper-class
+weapon, ADS'd, confirming (1) holding the Sprint bind while ADS'd produces
+the real sway-reduction/steadier-aim effect and accuracy degrades once
+breath runs out (same as `-x86`'s confirmed-live behavior), (2) the kbutton
+correctly releases on letting go of the bind or breaking ADS (watch
+specifically for any sign of x86's own "active flag latches, never clears"
+symptom recurring here despite the structural reasoning above that it
+shouldn't), and (3) ordinary hip-fire Sprint (not ADS'd) is unaffected.
 
 **Status: Build-verified, not yet live-tested.**

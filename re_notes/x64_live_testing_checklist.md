@@ -50,6 +50,18 @@ for any item lives in `re_notes/known_issues_x64.md` issue #1.
       observable side effect from the missing `IsInSurvivalMode()` gate
       outside Survival (expected none, but unconfirmed against real
       hardware on this binary).
+- [ ] Hold Breath (L3 while ADS'd, sniper-class) — **new this session
+      (2026-09-12), ported (parity audit item #23, was previously
+      completely absent).** Confirm: holding the Sprint bind while ADS'd
+      on a sniper-class weapon produces the real sway-reduction/steadier-
+      aim effect and accuracy degrades once breath runs out (same as
+      `-x86`'s confirmed-live behavior); confirm the kbutton correctly
+      releases on letting go of the bind or breaking ADS (watch
+      specifically for any sign of x86's own "active flag latches, never
+      clears" symptom recurring here, even though x64's struct is
+      structurally a separate, dedicated kbutton_t and shouldn't need
+      x86's own debounce/force-clear workaround); confirm ordinary
+      hip-fire Sprint (not ADS'd) is unaffected.
 
 ## Menu & UI navigation (new this session)
 
@@ -119,10 +131,6 @@ for any item lives in `re_notes/known_issues_x64.md` issue #1.
 - [ ] RGB Text example plugin — confirm it still loads and renders when
       manually opted in (`[Plugins] Enabled=1`), unaffected by the
       security-plugin/merge work.
-
-## Not yet dispatched / still in progress as of this checklist's creation
-
-- [ ] Hold Breath (L3 while ADS'd on a sniper) — port in progress.
 
 ## Not testable — investigated and found genuinely blocked, not implemented
 

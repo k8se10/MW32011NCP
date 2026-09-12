@@ -104,6 +104,7 @@ see their own sections below; neither gates this release.
 | Pause menu open/close | Custom Options screen (native trigger + temporary open-chord) |
 | Auto-unstick (no more "click once at launch") | Vibration/rumble (fire + damage) |
 | | Survival ready-up (hold Y, synthetic F5) |
+| | Hold Breath (L3 while ADS'd, sniper-class) |
 | | Visual-enhancement suite (render scale, FSR, motion blur) |
 | | Native controller menu/UI navigation (main menu, pause, options, buy-stations) |
 | | Menu-focus/itemDef tracking (glyph-icon dependency) |
@@ -129,10 +130,12 @@ presets, the plugin API, background threads, and more).
   stick input (movement/look) works fine on x64 already; gyro-aim
   specifically doesn't. This was still a preview/WIP feature even on the
   `-x86` line, so this is a lower-priority gap than the others above.
-- **Hold Breath, Auto-Mantle, and Back's `+scores` scoreboard** are still
-  absent on x64 — none of the three have any wiring in the current x64 input
-  pipeline yet. (Survival ready-up, hold Y, was ported 2026-09-12 — see the
-  build-verified column above; same synthetic-F5 mechanism as `-x86`.)
+- **Auto-Mantle and Back's `+scores` scoreboard** are still absent on x64 —
+  neither has any wiring in the current x64 input pipeline yet. (Survival
+  ready-up, hold Y, and Hold Breath, L3 while ADS'd, were both ported
+  2026-09-12 — see the build-verified column above; Hold Breath uses the
+  same no-explicit-sniper-check gating as `-x86`, relying on the real native
+  kbutton to limit the effect to sniper-class weapons.)
 - **FXAA and a forced-MSAA option** were never actually built even on the
   old `-x86` line (only ever planned) — real future work, not a regression.
 
