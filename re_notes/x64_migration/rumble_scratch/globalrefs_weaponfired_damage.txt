@@ -1,0 +1,19 @@
+=== Reference counts per global ===
+weapon_fired (1413b839e): 3 references
+damage (1413b82aa): 5 references
+
+=== Candidate functions, ranked by distinct global diversity (7) ===
+
+---- FUN_1401795b0 @ 1401795b0 (globals: damage, weapon_fired) ----
+
+---- FUN_1402e4210 @ 1402e4210 (globals: weapon_fired) ----
+
+---- FUN_1402d19b0 @ 1402d19b0 (globals: damage) ----
+
+---- FUN_14016bf50 @ 14016bf50 (globals: weapon_fired) ----
+
+---- FUN_1401684f0 @ 1401684f0 (globals: damage) ----
+
+---- FUN_1401687b0 @ 1401687b0 (globals: damage) ----
+
+---- FUN_14012c280 @ 14012c280 (globals: damage) ----

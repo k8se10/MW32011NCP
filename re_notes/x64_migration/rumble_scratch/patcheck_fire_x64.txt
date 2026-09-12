@@ -1,0 +1,3 @@
+Pattern scan for fire_effects_sig: "40 55 53 56 57 48 8D AC 24 B8 FB FF FF 48 81 EC 48 05 00 00 48 8B B1 10 01 00 00 8B DA 48 8B F9 F7 86 AC 00 00 00 00 18 20 00"
+  match @ 14016bf50  ->  deref(+0) = 0x56535540
+

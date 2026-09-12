@@ -1,0 +1,4 @@
+STRING @ 14040c5f0 = "weapon_fired" (block .rdata)
+  from 14017a04a type=DATA IN FUNCTION FUN_1401795b0@1401795b0
+  (1 references)
+

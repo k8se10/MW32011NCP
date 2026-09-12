@@ -1,0 +1,35 @@
+Callers of 14011f8e0 (1):
+  FUN_14011f850 @ 14011f850
+
+================================================================
+Function: FUN_14011f850 @ 14011f850
+----------------------------------------------------------------
+
+void FUN_14011f850(int param_1)
+
+{
+  longlong lVar1;
+  longlong lVar2;
+  
+  lVar2 = (longlong)param_1;
+  lVar1 = (&DAT_140f57e00)[lVar2 * 0x54];
+  *(undefined8 *)(lVar1 + 0xad98) = *(undefined8 *)(lVar1 + 0xad58);
+  *(undefined8 *)(lVar1 + 0xada0) = *(undefined8 *)(lVar1 + 0xad60);
+  *(undefined8 *)(lVar1 + 0xada8) = *(undefined8 *)(lVar1 + 0xad68);
+  *(undefined8 *)(lVar1 + 0xadb0) = *(undefined8 *)(lVar1 + 0xad70);
+  *(undefined4 *)(lVar1 + 0xadb8) = *(undefined4 *)(lVar1 + 0xad78);
+  *(undefined4 *)(lVar1 + 0xadbc) = *(undefined4 *)(lVar1 + 0xad7c);
+  *(undefined4 *)(lVar1 + 0xadc0) = *(undefined4 *)(lVar1 + 0xad80);
+  *(undefined4 *)(lVar1 + 0xadc4) = *(undefined4 *)(lVar1 + 0xad84);
+  *(undefined4 *)(lVar1 + 0xadc8) = *(undefined4 *)(lVar1 + 0xad88);
+  *(undefined4 *)(lVar1 + 0xadcc) = *(undefined4 *)(lVar1 + 0xad8c);
+  *(undefined4 *)(lVar1 + 0xadd0) = *(undefined4 *)(lVar1 + 0xad90);
+  *(undefined4 *)(lVar1 + 0xadd4) = *(undefined4 *)(lVar1 + 0xad94);
+  FUN_14026a760(*(undefined4 *)(lVar1 + 0xad78),(&DAT_140f57e00)[lVar2 * 0x54] + 0xad58);
+  FUN_14011f8e0(&DAT_140f57cf0 + lVar2 * 0x2a0);
+  FUN_140122a90(&DAT_140f57cf0 + lVar2 * 0x2a0);
+  return;
+}
+
+
+
