@@ -81,6 +81,16 @@ live, detailed status on every item below.
    silently failed against the 64-bit process instead of crashing — fixed
    by gating it off honestly pending a real x64 port of the underlying
    mechanism.
+5. **Sprint (L3) was using x86's original, deliberately-abandoned mechanism**
+   (forcing the raw `pm_flags`-equivalent bit directly), not the real
+   `+sprint` kbutton x86 ultimately shipped — meaning the native sprint
+   duration/recovery timer and the Extreme Conditioning perk override never
+   applied. Found by a full feature-parity audit against the `-x86` line;
+   fixed by driving the same real kbutton activate/deactivate calls already
+   used for Fire/ADS/Reload. Also ports the "stand up from crouch/prone on
+   Sprint's rising edge" behavior, reusing the same real toggle Jump's own
+   auto-stand already calls. See `re_notes/known_issues_x64.md` issue #1 for
+   the full RE trail.
 
 ### Documentation
 1. **`re_notes/known_issues_x64.md` established** as the dedicated x64 issue
