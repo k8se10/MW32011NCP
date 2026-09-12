@@ -202,47 +202,139 @@ constexpr const char* kSprintTickSignature =
 using SprintTickFn = void(__fastcall*)(void* param1, void* param2);
 SprintTickFn g_realSprintTick = nullptr;
 
-// Bit-ownership tracking (2026-09-04) -- matches x86's own established fix for
-// the EXACT same regression class (CLAUDE.md's "Sprint's real kbutton" section:
-// InjectControllerSprintPmFlags/ReassertSprintPmFlags unconditionally clearing a
-// bit it didn't set broke vanilla keyboard sprint). Only ever clear the pm_flags
-// sprint bit here if THIS hook was the one that set it -- if native (keyboard)
-// logic set it, this hook must never touch it, in either direction.
-bool g_sprintBitForcedByUs = false;
+// Forward declarations -- these real symbols are defined further down this
+// same anonymous namespace (alongside Fire/ADS/Reload's own struct-resolve
+// cluster and CrouchProne/Jump's stance-dispatch helpers), but Hook_SprintTick
+// below needs to reference them here, earlier in the file (this hook rides an
+// earlier per-tick engine call than the one those symbols' own real resolve
+// code sits on). `extern` on a variable declared inside an unnamed namespace
+// is a plain forward declaration -- internal linkage is still enforced by the
+// enclosing unnamed namespace regardless, not by the extern keyword; the
+// matching real definitions appear unchanged below.
+using KbuttonActivateFn = void(__fastcall*)(int* kbutton, int sourceId, int timestamp);
+using KbuttonDeactivateFn = void(__fastcall*)(int* kbutton, int sourceId, int timestamp);
+extern KbuttonActivateFn g_kbuttonActivate;
+extern KbuttonDeactivateFn g_kbuttonDeactivate;
+extern int* g_sprintStruct;
+extern volatile uint32_t* g_timestampPtr;
+int GetRealStanceX64();
+void ForceStandingViaRealToggleX64();
+
+// ---- Sprint (L3): migrated to the real +sprint kbutton (2026-09-12) --------------
+//
+// SUPERSEDES the 2026-09-04 pm_flags-forcing design below (kept as history, not
+// reintroduced): that was x86's own ORIGINAL, deliberately-abandoned Sprint
+// mechanism (see CLAUDE.md's "Sprint's real kbutton" section) -- it bypasses the
+// engine's own native sprint duration/recovery timer AND the Extreme Conditioning
+// perk's automatic duration override entirely, both of which x86 gets "for free"
+// once the real kbutton drives Sprint instead. Found as a genuine, previously-
+// undocumented x64 regression by the 2026-09-12 full feature-parity audit
+// (re_notes/x64_feature_parity_audit.md, finding #2 / table row #22).
+//
+// Real kbutton struct resolved via the SAME anchor+offset technique already
+// proven for Fire/Reload/ADS (kFireStructInsnOffset etc., below) -- confirmed via
+// TWO independent angles, matching this project's own issue #3 standard (never
+// trust a case/lead without independent confirmation):
+//   1. Decompiled FUN_14007c3a0 (re_notes/x64_migration/decomp_14007c3a0_full.txt)
+//      case 0x3d/0x3e (61/62 decimal -- x86's own exact "+sprint"/"-sprint" case
+//      numbers, per CLAUDE.md) calls FUN_14007e460/FUN_14007e490 on
+//      `&DAT_1406448f4 + lVar4*0x230` -- the same per-bind-struct pattern already
+//      confirmed for Fire/Reload/ADS, and the same case-number-carries-over-from-
+//      x86 pattern already independently confirmed for every other bind in this
+//      dispatcher this session (Fire=1/2, Reload=0xb/0xc, ADS=0x3b/0x3c,
+//      togglecrouch=0x48, etc.).
+//   2. Independent cross-check, the SAME technique x86's own original discovery
+//      used: case 9 ("+breath_sprint" down, the real default SHIFT bind) in the
+//      same decompile fires FUN_14007e460 on `&DAT_14064482c` (Hold Breath's
+//      alias -- Hold Breath itself is NOT implemented on x64, see
+//      known_issues_x64.md) AND on `&DAT_1406448f4` back-to-back -- i.e. the real
+//      default Sprint/Hold-Breath key already drives this exact same struct
+//      today, mirroring x86's own "case 9 disassembles to two back-to-back
+//      kbutton calls, one of which is the Sprint kbutton" cross-confirmation
+//      exactly.
+// A prior session's RE scratch pass (re_notes/x64_migration/
+// rawbytes_sprint_struct.txt) had already dumped the raw bytes at the two real
+// `LEA reg,[rip+disp32]` instructions for case 0x3d/0x3e (0x14007cead/
+// 0x14007ced7) but was cut off before writing any code -- independently decoded
+// by hand this session: both resolve to 0x1406448f4, matching the decompile's
+// DAT name exactly (confirms that scratch lead was correct, not just assumed).
+//
+// Gating: excludes ADS (matches x86's `!g_adsHeld` exclusion -- the same
+// physical bind is Hold Breath while aiming a sniper on x86, and hip-fire sprint
+// speed has no meaning while ADS'd anyway). Computed locally from the controller
+// state already read in this function rather than reaching for the separate
+// g_adsHeldX64 global (Hook_MovementTick's own tracking variable) -- same
+// physical-input source, avoids a forward-declaration dependency on a variable
+// defined much later in this same anonymous namespace, and this hook rides a
+// different, earlier per-tick engine call (FUN_140014a80/Pmove-entry) than
+// Hook_MovementTick's own FUN_14007d9f0. x64 has no Hold Breath kbutton yet
+// (feature-parity audit item #23, confirmed ABSENT, a separately tracked gap,
+// not this fix's scope) so there's no second consumer of the bind to stay
+// mutually exclusive with -- this narrows to a plain ADS exclusion, matching
+// what x86's own comment describes as the two paths' real end effect anyway.
+//
+// Rising-edge stand-from-crouch/prone, ported alongside the kbutton fix per
+// direct instruction (2026-09-12 coordinator follow-up: x86's own
+// InjectControllerSprint really does this, confirmed by re-reading
+// analog_input_hooks.cpp directly -- not optional polish, standing directive
+// for this whole parity pass is "all 0.3.5 stuff needs to be present at the
+// same level or better"). Reuses ForceStandingViaRealToggleX64() as-is (already
+// built and wired for Jump's own auto-stand, re_notes/known_issues_x64.md issue
+// #1) rather than reimplementing -- same real native toggle-case dispatch
+// (0x48/0x49), just called from a second trigger site. Fires once on Sprint's
+// own rising edge while crouched/prone and NOT ADS'd (same "hip-fire Sprint
+// only, not Hold Breath" reasoning as x86's own excluded-while-ADS'd comment
+// for this exact call).
+bool g_sprintKbuttonActiveX64 = false; // tracks whether OUR activate call is
+                                         // currently "claimed" on the real
+                                         // kbutton, mirrors x86's own
+                                         // g_sprintKbuttonActive -- edge-
+                                         // triggers the real activate/deactivate
+                                         // calls exactly once per transition.
+constexpr int kSprintSyntheticSourceId = 0x1000; // same value/rationale as the
+                                                   // later kSyntheticSourceId
+                                                   // (Fire/ADS/Reload) -- kept as
+                                                   // its own local constant
+                                                   // rather than forward-
+                                                   // referencing that one, since
+                                                   // a constexpr (unlike a
+                                                   // variable) can't be forward-
+                                                   // declared separately from its
+                                                   // definition.
 
 void __fastcall Hook_SprintTick(void* param1, void* param2)
 {
-    // Let native logic run to completion FIRST, untouched -- matches x86's own
-    // "force the OUTPUT bit directly, after the real logic runs" design
-    // (InjectControllerSprintPmFlags), not the alternative of feeding a
-    // synthetic "held" input bit into param1 before the call, which risks
-    // corrupting a shared bitfield with only partially-understood semantics
-    // (see the real x64 finding: bit 0x2 at param1+0xc is read by more than
-    // just this one function).
+    // Let native logic run to completion first, untouched -- same ordering
+    // this hook always used, just no longer followed by a raw pm_flags write:
+    // driving the real kbutton below lets the native engine own that bit (and
+    // its own duration/recovery timer) again, the same handoff x86 made.
     g_realSprintTick(param1, param2);
-
-    if (!param1) return;
-    void* lVar3 = *reinterpret_cast<void**>(param1);
-    if (!lVar3) return;
-
-    // pm_flags-equivalent field, confirmed via this session's own RE (the exact
-    // field FUN_140014a80 itself ORs 0x4000 into on its own native sprint path).
-    auto* pmFlags = reinterpret_cast<uint32_t*>(reinterpret_cast<uintptr_t>(lVar3) + 0xc);
-    constexpr uint32_t kSprintBit = 0x4000u;
 
     unsigned short buttons = 0;
     unsigned char leftTrigger = 0, rightTrigger = 0;
     bool haveController = Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger);
     bool sprintHeld = haveController && IsPhysicalHeld_Exported(g_buttonMap.sprint, buttons, leftTrigger, rightTrigger);
+    bool adsHeldNow = haveController && IsPhysicalHeld_Exported(g_buttonMap.ads, buttons, leftTrigger, rightTrigger);
+    bool active = sprintHeld && !adsHeldNow;
 
-    if (sprintHeld) {
-        if ((*pmFlags & kSprintBit) == 0) {
-            *pmFlags |= kSprintBit;
-            g_sprintBitForcedByUs = true;
-        }
-    } else if (g_sprintBitForcedByUs) {
-        *pmFlags &= ~kSprintBit;
-        g_sprintBitForcedByUs = false;
+    // Rising edge while crouched/prone: stand up first, matching x86's own
+    // InjectControllerSprint exactly (real console sprint stands the player
+    // back up before running). Checked BEFORE updating g_sprintKbuttonActiveX64
+    // below so this only fires on a genuine transition into "active," not every
+    // tick while held.
+    if (active && !g_sprintKbuttonActiveX64 && GetRealStanceX64() != 0) {
+        ForceStandingViaRealToggleX64();
+    }
+
+    if (active == g_sprintKbuttonActiveX64) return;
+    g_sprintKbuttonActiveX64 = active;
+
+    if (!g_kbuttonActivate || !g_kbuttonDeactivate || !g_sprintStruct) return;
+    int timestamp = g_timestampPtr ? static_cast<int>(*g_timestampPtr) : 0;
+    if (active) {
+        g_kbuttonActivate(g_sprintStruct, kSprintSyntheticSourceId, timestamp);
+    } else {
+        g_kbuttonDeactivate(g_sprintStruct, kSprintSyntheticSourceId, timestamp);
     }
 }
 
@@ -557,11 +649,20 @@ constexpr ptrdiff_t kTimestampInsnOffset = 0x41;     // -> DAT_141efb764 (shared
 // rawbytes_c3a0_targets.txt) for the case 0x3b `LEA R8,[DAT_1406e26e0]`
 // instruction at 0x14007ce3f -- 0x14007c3a0 = 0xA9F.
 constexpr ptrdiff_t kAdsToggleFlagInsnOffset = 0xA9F; // -> DAT_1406e26e0 (real "is ADS active" flag)
+// Sprint kbutton struct (2026-09-12) -- case 0x3d's own `LEA reg,[rip+disp32]`
+// instruction, same class of offset as the four above. Independently decoded
+// by hand from re_notes/x64_migration/rawbytes_sprint_struct.txt's raw bytes
+// (48 8D 05 40 7A 5C 00 @ 0x14007cead -> resolves to 0x1406448f4) and
+// cross-checked against decomp_14007c3a0_full.txt's own `DAT_1406448f4` name
+// for case 0x3d/0x3e -- see Hook_SprintTick's own big comment block for the
+// full two-angle confirmation trail.
+constexpr ptrdiff_t kSprintStructInsnOffset = 0xB0D; // -> DAT_1406448f4 (Sprint kbutton)
 constexpr size_t kRipInsnLength = 7;
 
 int* g_fireStruct = nullptr;
 int* g_reloadStruct = nullptr;
 int* g_adsStruct = nullptr;
+int* g_sprintStruct = nullptr;
 volatile uint32_t* g_timestampPtr = nullptr;
 volatile uint8_t* g_adsToggleFlag = nullptr;
 
@@ -686,6 +787,11 @@ constexpr int kAdsBindCaseUp = 0xe;    // "-ads" up
 // current==2, case 0x49's own `(current != 2)` check is false, forcing 0. Same
 // result as x86's dynamic-mode call, just expressed through x64's fixed-case
 // dispatch instead.
+//
+// Second call site added 2026-09-12: Hook_SprintTick (above, earlier in this
+// file) now also calls this on Sprint's own rising edge while crouched/prone
+// (excluding ADS), matching x86's InjectControllerSprint exactly -- same
+// function, no new logic needed, just a second, independent trigger.
 //
 // The real stance field itself: the decompile's `DAT_1406e26fc` is genuinely
 // `DAT_1406e26e0 + 0x1c` -- confirmed by re-reading disasm_14007c3a0_full.txt's
@@ -932,6 +1038,16 @@ bool g_interactButtonWasHeldX64 = false;
 DWORD g_interactPressStartMsX64 = 0;        // matches x86's own hold-to-interact timing (g_modConfig.interactHoldThresholdMs)
 bool g_dpadHeldX64[4] = { false, false, false, false }; // Up, Down, Left, Right -- matches kXI_DPAD_*_X64 order
 bool g_crouchProneHeldX64 = false;
+// B is dual-purpose on x64 too (crouch/prone toggle vs. menu-back/ESC-forward),
+// same as x86 -- this shared flag is x64's own equivalent of x86's
+// g_currentBPressTouchedMenu (analog_input_hooks.cpp), maintained by
+// InjectControllerMenuBackX64 (the always-on-tick B/ESC-forward function, added
+// 2026-09-12) and read here by the CrouchProne dispatch below, so a B press that
+// touched an open menu at any point during its hold never ALSO toggles real
+// native stance underneath the menu (a genuine stuck-crouch/prone regression
+// risk otherwise -- see CLAUDE.md's "Crouch 'needs an initial click at launch'"
+// history and known_issues.md issue #13 for why x86 needed this exact fix).
+bool g_currentBPressTouchedMenuX64 = false;
 
 // Real fix for "obvs cant unpause when paused" (2026-09-04, live-confirmed
 // bug): Hook_MovementTick below rides FUN_14007d9f0, part of the per-frame
@@ -1198,6 +1314,20 @@ bool TryGetRealFocusedGroupAndIndexX64(char* outGroupName, size_t outGroupNameSi
 
 }  // namespace
 
+// Real x64 "ForwardKeyToMenu" wrapper -- see kMenuKeyEventSignature's own big
+// comment (above) for the full confirmation trail. Resolves the topmost active
+// menu itself on every call (exactly matching the real call site's own shape,
+// FUN_14029baa0: `plVar3 = FUN_1402aaa80(ctx); FUN_1402aac50(ctx, plVar3, key,
+// isDown);`) rather than caching a menu pointer across ticks, since which menu
+// is topmost can change between calls (a real menu opening/closing).
+void ForwardKeyToMenuX64(int keyCode, int isDown)
+{
+    if (!g_menuKeyEventX64 || !g_uiMenuContextX64) return;
+    void* menu = GetTopmostActiveMenuX64();
+    if (!menu) return;
+    g_menuKeyEventX64(g_uiMenuContextX64, menu, static_cast<uint32_t>(keyCode), isDown);
+}
+
 // ---- Custom Options screen, x64 (2026-09-05, release-parity pass) -----------------
 //
 // x86 precedent: `CustomOptionsMenu_TickInput` (overlay_hud.cpp) and the screen it
@@ -1342,6 +1472,186 @@ extern "C" void PollCustomOptionsMenuX64()
     g_optNavBackHeldX64 = backHeld;
     g_optNavTabPrevHeldX64 = tabPrevHeld;
     g_optNavTabNextHeldX64 = tabNextHeld;
+}
+
+// ---- Native D-pad+A/B menu navigation, x64 (2026-09-12) ---------------------------
+//
+// Direct port of x86's InjectControllerMenuNav()/InjectControllerMenuBack()
+// (analog_input_hooks.cpp ~2725-3047) -- read those in full before touching this
+// section, per this project's standing compare-to-x86-original rule. Structurally
+// unchanged (same keycodes, same edge-fires-both-down-and-up-transitions design, same
+// dual-purpose-B handling), with two real differences from a literal line-for-line
+// port, both intentional:
+//
+//   1. LB/RB tab-prev/tab-next are NOT reimplemented here -- x64 already has that
+//      exact logic in PollCustomOptionsMenuX64 (feeds tabPrevEdge/tabNextEdge into
+//      CustomOptionsMenu_TickInput). InjectControllerMenuNavX64 only owns
+//      Up/Down/Left/Right/A(select)/Y/X/Back-button.
+//
+//   2. x86 has ONE function that calls CustomOptionsMenu_TickInput itself and
+//      branches on its return value ("claimed this tick" vs. not) to decide whether
+//      to forward D-pad/A to the real native menu. x64 already has that call living
+//      in a SEPARATELY-scheduled function (PollCustomOptionsMenuX64) -- to preserve
+//      the same "custom overlay owns input exclusively while open" guarantee without
+//      duplicating that call, InjectControllerMenuNavX64 instead reads
+//      CustomOptionsMenu_IsOpen() (a plain state read, no side effects) and skips
+//      every ForwardKeyToMenuX64/synthetic-key call for the tick when it's true --
+//      while still updating every held-state edge tracker unconditionally, mirroring
+//      x86's own "claimed this tick" branch (which updates trackers before
+//      returning, so edge detection never goes stale across an open/close).
+//      REQUIRES PollCustomOptionsMenuX64() to run BEFORE this function in the same
+//      tick so CustomOptionsMenu_IsOpen() reflects this tick's own open/close
+//      decision -- see the wiring in InjectMenuInputTick (analog_input_hooks.cpp).
+//
+// Y/X/Back-button synthetic sends (Friends/Game Summary/Leaderboards) reimplemented
+// locally here (SendSyntheticFX64/GX64/F1X64) rather than cross-file-exposing x86's
+// versions -- x86's SendSyntheticF/G/F1 sit in an anonymous namespace in
+// analog_input_hooks.cpp (internal/file linkage only, confirmed by reading that
+// namespace block), so calling them from this TU would need an extern "C" export;
+// simplest, lowest-risk option is the same local-reimplementation pattern this file
+// already uses for SendSyntheticActionSlot4KeyX64 (GetGameWindow()/PostMessageA,
+// already proven working on x64).
+namespace {
+constexpr int kKeyEscapeX64 = 0x1b;
+constexpr int kKeyPrevItemX64 = 0x9a;  // real Up alt-keycode -- generic previous only
+constexpr int kKeyNextItemX64 = 0x9b;  // real Down alt-keycode -- generic next only
+constexpr int kKeyLeftNavX64 = 0x9c;   // real Left keycode -- drill-out on options screens, generic previous elsewhere
+constexpr int kKeyRightNavX64 = 0x9d;  // real Right keycode -- drill-in on options screens, generic next elsewhere
+constexpr int kKeyEnterX64 = 13;       // K_ENTER
+
+bool g_menuNavUpHeldX64 = false;
+bool g_menuNavDownHeldX64 = false;
+bool g_menuNavLeftHeldX64 = false;
+bool g_menuNavRightHeldX64 = false;
+bool g_menuNavSelectHeldX64 = false;
+bool g_menuNavYHeldX64 = false;
+bool g_menuNavXHeldX64 = false;
+bool g_menuNavBackButtonHeldX64 = false;
+bool g_menuBackHeldX64 = false; // InjectControllerMenuBackX64's own physical-B edge tracker
+
+void SendSyntheticFX64()
+{
+    HWND hwnd = GetGameWindow();
+    if (!hwnd) return;
+    PostMessageA(hwnd, WM_KEYDOWN, 'F', 0x00000001);
+    PostMessageA(hwnd, WM_KEYUP, 'F', 0xC0000001);
+}
+
+void SendSyntheticGX64()
+{
+    HWND hwnd = GetGameWindow();
+    if (!hwnd) return;
+    PostMessageA(hwnd, WM_KEYDOWN, 'G', 0x00000001);
+    PostMessageA(hwnd, WM_KEYUP, 'G', 0xC0000001);
+}
+
+void SendSyntheticF1X64()
+{
+    HWND hwnd = GetGameWindow();
+    if (!hwnd) return;
+    PostMessageA(hwnd, WM_KEYDOWN, VK_F1, 0x00000001);
+    PostMessageA(hwnd, WM_KEYUP, VK_F1, 0xC0000001);
+}
+}  // namespace
+
+extern "C" void InjectControllerMenuNavX64()
+{
+    bool menuActiveNow = g_menuActiveGateFlag && ((*g_menuActiveGateFlag & 0x10u) != 0);
+    if (!menuActiveNow) {
+        // Not stale-tracking across a menu close -- next press should always be seen
+        // as a fresh rising edge once a menu is open again. Matches x86's own
+        // InjectControllerMenuNav early-return-and-reset exactly.
+        g_menuNavUpHeldX64 = false;
+        g_menuNavDownHeldX64 = false;
+        g_menuNavLeftHeldX64 = false;
+        g_menuNavRightHeldX64 = false;
+        g_menuNavSelectHeldX64 = false;
+        g_menuNavYHeldX64 = false;
+        g_menuNavXHeldX64 = false;
+        g_menuNavBackButtonHeldX64 = false;
+        return;
+    }
+
+    unsigned short buttons = 0;
+    unsigned char leftTrigger = 0, rightTrigger = 0;
+    if (!Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger)) return;
+
+    bool upHeld = (buttons & kXI_DPAD_UP_X64) != 0;
+    bool downHeld = (buttons & kXI_DPAD_DOWN_X64) != 0;
+    bool leftHeld = (buttons & kXI_DPAD_LEFT_X64) != 0;
+    bool rightHeld = (buttons & kXI_DPAD_RIGHT_X64) != 0;
+    bool selectHeld = IsPhysicalHeld_Exported(PhysicalInput::A, buttons, leftTrigger, rightTrigger);
+
+    // Custom Options overlay owns D-pad/A exclusively while open -- see this
+    // section's own header comment (point 2) for why this is a state READ here
+    // rather than a claim-and-branch call, and why PollCustomOptionsMenuX64 must
+    // run first in the same tick for this to be accurate.
+    bool customMenuOpen = CustomOptionsMenu_IsOpen();
+
+    if (!customMenuOpen) {
+        if (upHeld != g_menuNavUpHeldX64) ForwardKeyToMenuX64(kKeyPrevItemX64, upHeld ? 1 : 0);
+        if (downHeld != g_menuNavDownHeldX64) ForwardKeyToMenuX64(kKeyNextItemX64, downHeld ? 1 : 0);
+        if (leftHeld != g_menuNavLeftHeldX64) ForwardKeyToMenuX64(kKeyLeftNavX64, leftHeld ? 1 : 0);
+        if (rightHeld != g_menuNavRightHeldX64) ForwardKeyToMenuX64(kKeyRightNavX64, rightHeld ? 1 : 0);
+        if (selectHeld != g_menuNavSelectHeldX64) ForwardKeyToMenuX64(kKeyEnterX64, selectHeld ? 1 : 0);
+    }
+    g_menuNavUpHeldX64 = upHeld;
+    g_menuNavDownHeldX64 = downHeld;
+    g_menuNavLeftHeldX64 = leftHeld;
+    g_menuNavRightHeldX64 = rightHeld;
+    g_menuNavSelectHeldX64 = selectHeld;
+
+    if (!customMenuOpen) {
+        // Friends (Y), Game Summary (X), Leaderboards (Back) -- rising edge only,
+        // matching x86's own InjectControllerMenuNav exactly.
+        bool yHeld = IsPhysicalHeld_Exported(PhysicalInput::Y, buttons, leftTrigger, rightTrigger);
+        if (yHeld && !g_menuNavYHeldX64) SendSyntheticFX64();
+        g_menuNavYHeldX64 = yHeld;
+
+        bool xHeld = IsPhysicalHeld_Exported(PhysicalInput::X, buttons, leftTrigger, rightTrigger);
+        if (xHeld && !g_menuNavXHeldX64) SendSyntheticGX64();
+        g_menuNavXHeldX64 = xHeld;
+
+        bool backButtonHeld = IsPhysicalHeld_Exported(PhysicalInput::Back, buttons, leftTrigger, rightTrigger);
+        if (backButtonHeld && !g_menuNavBackButtonHeldX64) SendSyntheticF1X64();
+        g_menuNavBackButtonHeldX64 = backButtonHeld;
+    }
+}
+
+// Direct port of x86's InjectControllerMenuBack() -- B forwards real ESC to
+// whatever native menu is active (main menu, pause menu, buy station, options,
+// etc.), the exact same mechanism Start's own pause-menu-open work already
+// established. Deliberately hardcoded to physical B (not routed through
+// g_buttonMap/layout remapping), matching x86 exactly -- this is a system-level
+// menu action, not a gameplay bind. Maintains g_currentBPressTouchedMenuX64 (see
+// its own declaration comment above, near g_crouchProneHeldX64) so CrouchProne's
+// own dispatch in Hook_MovementTick never fires for a B press that overlapped an
+// open menu.
+extern "C" void InjectControllerMenuBackX64()
+{
+    unsigned short buttons = 0;
+    unsigned char leftTrigger = 0, rightTrigger = 0;
+    if (!Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger)) return;
+
+    bool held = IsPhysicalHeld_Exported(PhysicalInput::B, buttons, leftTrigger, rightTrigger);
+    bool menuActiveNow = g_menuActiveGateFlag && ((*g_menuActiveGateFlag & 0x10u) != 0);
+
+    if (held && !g_menuBackHeldX64) {
+        // Rising edge of B itself: a fresh physical press is starting.
+        g_currentBPressTouchedMenuX64 = false;
+    }
+    if (held && menuActiveNow) {
+        g_currentBPressTouchedMenuX64 = true;
+    }
+    // Custom Options overlay (mirrors x86's own guard): while it's open, B closes
+    // IT, not the real native menu underneath -- PollCustomOptionsMenuX64's own
+    // backEdge handles that close. Without this guard the same B press would also
+    // forward a real ESC here, backing out of both the overlay AND the real menu
+    // in one press.
+    if (menuActiveNow && held != g_menuBackHeldX64 && !CustomOptionsMenu_IsOpen()) {
+        ForwardKeyToMenuX64(kKeyEscapeX64, held ? 1 : 0);
+    }
+    g_menuBackHeldX64 = held;
 }
 
 // ---- Auto pause/unpause "unstick" cycle, x64 (2026-09-04) -------------------------
@@ -1693,18 +2003,30 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
         // for this slot (would double-dispatch -- the synthesized key's own real
         // dispatch already reaches FUN_14006dee0 itself). The other three directions
         // are unchanged, still driven by the direct native call.
+        //
+        // GATING FIX (2026-09-12, menu-nav port): suppressed while a menu is active,
+        // matching x86's own InjectControllerDpad exactly ("While a menu is open,
+        // D-pad drives item navigation instead") -- both the press AND release
+        // branches, same symmetric gate x86 uses. Without this, native D-pad menu
+        // navigation (InjectControllerMenuNavX64, always-on tick) and this raw
+        // actionslot dispatch (gameplay tick, which keeps running while a non-pause
+        // menu -- e.g. a Survival buy station -- is open) would double-fire on the
+        // same physical D-pad press.
         {
             struct { unsigned short bit; int slot; } kDpad[4] = {
                 { kXI_DPAD_UP_X64, 0 }, { kXI_DPAD_RIGHT_X64, 1 }, { kXI_DPAD_DOWN_X64, 2 }, { kXI_DPAD_LEFT_X64, 3 }
             };
+            bool menuActiveNowForDpad = g_menuActiveGateFlag && ((*g_menuActiveGateFlag & 0x10u) != 0);
             for (int i = 0; i < 4; ++i) {
                 bool held = (xiButtons & kDpad[i].bit) != 0;
                 bool isSlot4 = (kDpad[i].slot == 3);
                 if (held != g_dpadHeldX64[i]) {
-                    if (isSlot4) {
-                        SendSyntheticActionSlot4KeyX64(held);
-                    } else if (held && g_actionSlot) {
-                        g_actionSlot(0, kDpad[i].slot);
+                    if (!menuActiveNowForDpad) {
+                        if (isSlot4) {
+                            SendSyntheticActionSlot4KeyX64(held);
+                        } else if (held && g_actionSlot) {
+                            g_actionSlot(0, kDpad[i].slot);
+                        }
                     }
                     g_dpadHeldX64[i] = held;
                 }
@@ -1714,12 +2036,23 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
         // CrouchProne (B) -- forwards real press/release edges directly to the
         // native "+stance" case dispatch (see kCrouchProneCaseDown's own comment
         // for why this is the safe design, not a state-machine replication).
+        //
+        // GATING FIX (2026-09-12, menu-nav port): B is dual-purpose (crouch/prone vs.
+        // menu-back/ESC-forward, InjectControllerMenuBackX64) -- suppressed for any
+        // press that has touched an open menu at any point during its hold
+        // (g_currentBPressTouchedMenuX64, maintained by InjectControllerMenuBackX64),
+        // mirroring x86's own InjectControllerButtons guard exactly. Without this, B
+        // backing out of a menu would ALSO toggle real native stance underneath it --
+        // a real stuck-crouch/prone regression risk (see g_currentBPressTouchedMenuX64's
+        // own declaration comment for the full rationale).
         if (g_stanceDispatch) {
             bool crouchProneHeld = IsPhysicalHeld_Exported(g_buttonMap.crouchProne, xiButtons, leftTrigger, rightTrigger);
             if (crouchProneHeld != g_crouchProneHeldX64) {
                 g_crouchProneHeldX64 = crouchProneHeld;
-                if (crouchProneHeld) g_stanceDispatch(0, kCrouchProneCaseDown, 1);
-                else g_stanceDispatch(0, kCrouchProneCaseUp, 0);
+                if (!g_currentBPressTouchedMenuX64) {
+                    if (crouchProneHeld) g_stanceDispatch(0, kCrouchProneCaseDown, 1);
+                    else g_stanceDispatch(0, kCrouchProneCaseUp, 0);
+                }
             }
         }
     }
@@ -1978,9 +2311,10 @@ void InstallAnalogInputHooksX64()
                                static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
                     LogFromController(buf);
                 } else {
-                    LogFromController("[x64-sprint] Sprint hook installed and enabled -- forces the real pm_flags "
-                        "sprint bit while the controller's mapped Sprint input is held, bit-ownership tracked so "
-                        "vanilla keyboard sprint is never touched.");
+                    LogFromController("[x64-sprint] Sprint hook installed and enabled -- drives the real +sprint "
+                        "kbutton (FUN_14007e460/e490 on the Sprint struct, resolved below) while the controller's "
+                        "mapped Sprint input is held, matching x86's final shipped design (native duration/recovery "
+                        "timer + Extreme Conditioning apply automatically; vanilla keyboard sprint untouched).");
                 }
             }
         }
@@ -2101,6 +2435,7 @@ void InstallAnalogInputHooksX64()
             g_fireStruct = reinterpret_cast<int*>(SigScan::ResolveRipRelative(anchor + kFireStructInsnOffset, kRipInsnLength));
             g_reloadStruct = reinterpret_cast<int*>(SigScan::ResolveRipRelative(anchor + kReloadStructInsnOffset, kRipInsnLength));
             g_adsStruct = reinterpret_cast<int*>(SigScan::ResolveRipRelative(anchor + kAdsStructInsnOffset, kRipInsnLength));
+            g_sprintStruct = reinterpret_cast<int*>(SigScan::ResolveRipRelative(anchor + kSprintStructInsnOffset, kRipInsnLength));
             g_timestampPtr = reinterpret_cast<volatile uint32_t*>(SigScan::ResolveRipRelative(anchor + kTimestampInsnOffset, kRipInsnLength));
             g_adsToggleFlag = reinterpret_cast<volatile uint8_t*>(SigScan::ResolveRipRelative(anchor + kAdsToggleFlagInsnOffset, kRipInsnLength));
             g_stanceDispatch = reinterpret_cast<StanceDispatchFn>(anchor);
@@ -2137,6 +2472,20 @@ void InstallAnalogInputHooksX64()
         } else {
             LogFromController("[x64-buttons] FATAL: one or more Fire/ADS/Reload targets failed to resolve -- "
                 "these will not work this session");
+        }
+
+        // Sprint's own kbutton struct -- resolved in the same block (shares the
+        // anchor + g_kbuttonActivate/g_kbuttonDeactivate above) but logged/
+        // checked separately since it's consumed by Hook_SprintTick, a
+        // different hook than Fire/ADS/Reload's direct-call site.
+        if (g_kbuttonActivate && g_kbuttonDeactivate && g_sprintStruct && g_timestampPtr) {
+            char buf[192];
+            sprintf_s(buf, "[x64-sprint] Sprint kbutton struct resolved @ 0x%p -- real +sprint kbutton active "
+                "(direct call from Hook_SprintTick, no raw pm_flags-forcing).", (void*)g_sprintStruct);
+            LogFromController(buf);
+        } else {
+            LogFromController("[x64-sprint] FATAL: Sprint kbutton struct failed to resolve -- controller Sprint "
+                "will not work this session");
         }
     }
 
@@ -2305,6 +2654,35 @@ void InstallAnalogInputHooksX64()
     if (g_uiMenuContextX64 && g_getTopmostActiveMenuX64) {
         LogFromController("[x64-menufocus] Real menu-focus/itemDef tracking active -- the real focus-based "
             "Options-screen trigger and [x64-menufocus-diag]/[x64-optmenu-realtrigger] log lines are live.");
+    }
+
+    // Native D-pad+A/B menu navigation (2026-09-12) -- FUN_1402aac50, the real x64
+    // ForwardKeyToMenu equivalent (see kMenuKeyEventSignature's own header comment
+    // for the full confirmation trail). Independent of the menu-focus resolve above
+    // (a failure here only disables native menu-item navigation/B-back -- the
+    // Options-screen focus-based trigger and LB+RB chord above are unaffected either
+    // way, and vice versa).
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kMenuKeyEventSignature);
+        if (!r.found) {
+            LogFromController("[x64-menunav] FATAL: ForwardKeyToMenu (FUN_1402aac50) signature did not resolve -- "
+                "native D-pad+A/B menu navigation and B's ESC-forward will not work this session (keyboard/mouse "
+                "still required for all menu interaction)");
+        } else {
+            g_menuKeyEventX64 = reinterpret_cast<MenuKeyEventFnX64>(r.address);
+            char buf[160];
+            sprintf_s(buf, "[x64-menunav] ForwardKeyToMenu resolved @ 0x%llX -- active (direct call, no hook "
+                "installed).", static_cast<unsigned long long>(r.address));
+            LogFromController(buf);
+        }
+    }
+    if (g_uiMenuContextX64 && g_getTopmostActiveMenuX64 && g_menuKeyEventX64) {
+        LogFromController("[x64-menunav] Native D-pad+A/B menu navigation and B's ESC-forward are active -- main "
+            "menu, pause menu, options drill-down, and buy-station/armory lists are now controller-navigable.");
+    } else {
+        LogFromController("[x64-menunav] Native menu navigation NOT fully active this session (see FATAL lines "
+            "above for which real target failed to resolve) -- keyboard/mouse will still be needed for some or "
+            "all menu interaction.");
     }
 
     // Vibration/rumble (2026-09-12 x64 port) -- see rumble.cpp's own "x64 PORT" block
