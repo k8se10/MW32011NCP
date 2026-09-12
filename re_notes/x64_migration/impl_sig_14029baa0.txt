@@ -1,0 +1,24 @@
+Signature-byte dump of FUN_14029baa0 @ 14029baa0
+(byte offsets relative to function entry point)
+
++0x00  48 89 6C 24 10                 MOV qword ptr [RSP + 0x10],RBP           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x05  48 89 74 24 18                 MOV qword ptr [RSP + 0x18],RSI           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x0A  57                             PUSH RDI                                 
++0x0B  48 83 EC 20                    SUB RSP,0x20                             
++0x0F  8B E9                          MOV EBP,ECX                              
++0x11  41 8B F8                       MOV EDI,R8D                              
++0x14  48 8D 0D 95 95 36 02           LEA RCX,[0x142605050]                    [PC-RELATIVE/REF -- likely needs wildcarding]
++0x1B  8B F2                          MOV ESI,EDX                              
++0x1D  E8 1E ED 00 00                 CALL 0x1402aa7e0                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x22  85 C0                          TEST EAX,EAX                             
++0x24  0F 84 D1 00 00 00              JZ 0x14029bb9b                           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x2A  E8 81 E7 FA FF                 CALL 0x14024a250                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x2F  84 C0                          TEST AL,AL                               
++0x31  0F 84 C4 00 00 00              JZ 0x14029bb9b                           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x37  E8 B4 77 F3 FF                 CALL 0x1401d3290                         [PC-RELATIVE/REF -- likely needs wildcarding]
+
+Raw bytes (60 total): 48 89 6C 24 10 48 89 74 24 18 57 48 83 EC 20 8B E9 41 8B F8 48 8D 0D 95 95 36 02 8B F2 E8 1E ED 00 00 85 C0 0F 84 D1 00 00 00 E8 81 E7 FA FF 84 C0 0F 84 C4 00 00 00 E8 B4 77 F3 FF
+
+Suggested masked signature (PC-relative/ref instructions fully
+wildcarded -- refine by hand, this is a starting point only):
+?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 57 48 83 EC 20 8B E9 41 8B F8 ?? ?? ?? ?? ?? ?? ?? 8B F2 ?? ?? ?? ?? ?? 85 C0 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 84 C0 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ??

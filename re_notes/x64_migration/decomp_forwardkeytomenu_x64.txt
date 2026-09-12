@@ -1,0 +1,134 @@
+================================================================
+Function: FUN_1402a3ca0 @ 1402a3ca0
+----------------------------------------------------------------
+
+void FUN_1402a3ca0(undefined4 *param_1,undefined8 param_2,int *param_3)
+
+{
+  int iVar1;
+  longlong *plVar2;
+  char *pcVar3;
+  bool bVar4;
+  char cVar5;
+  undefined1 uVar6;
+  int iVar7;
+  char *pcVar8;
+  char *pcVar9;
+  longlong lVar10;
+  undefined8 uVar11;
+  undefined8 *puVar12;
+  uint uVar13;
+  undefined **ppuVar14;
+  longlong lVar15;
+  undefined4 uVar16;
+  char *local_res18;
+  longlong local_res20;
+  char local_438;
+  char local_437;
+  
+  if (param_3 != (int *)0x0) {
+    local_res20 = *(longlong *)(param_3 + 2);
+    iVar1 = *param_3;
+    bVar4 = false;
+    if (0 < (longlong)iVar1) {
+      lVar15 = 0;
+      do {
+        plVar2 = *(longlong **)(local_res20 + lVar15 * 8);
+        switch((char)plVar2[1]) {
+        case '\0':
+          pcVar3 = (char *)*plVar2;
+          if ((pcVar3 != (char *)0x0) && (pcVar8 = pcVar3, *pcVar3 != '\0')) {
+            while( true ) {
+              local_res18 = pcVar8;
+              ppuVar14 = &PTR_s_fadein_140434140;
+              pcVar8 = (char *)FUN_1402c9c50(&local_res18);
+              if (local_res18 == (char *)0x0) break;
+              if ((*pcVar8 != '@') ||
+                 (pcVar9 = (char *)FUN_14028a680(pcVar8 + 1), pcVar9 == (char *)0x0)) {
+                pcVar9 = pcVar8;
+              }
+              FUN_1402caa00(&local_438,pcVar9,0x400);
+              if ((local_438 != ';') || (pcVar8 = local_res18, local_437 != '\0')) {
+                uVar13 = 0;
+                do {
+                  iVar7 = FUN_1402ca760(&local_438,*ppuVar14);
+                  if (iVar7 == 0) {
+                    (*(code *)(&PTR_FUN_140434148)[(ulonglong)uVar13 * 2])
+                              (param_1,param_2,&local_res18);
+                    break;
+                  }
+                  uVar13 = uVar13 + 1;
+                  ppuVar14 = ppuVar14 + 2;
+                } while (uVar13 < 0x59);
+                iVar7 = FUN_1402ca760(&local_438,"uiscript");
+                pcVar8 = local_res18;
+                if (iVar7 == 0) {
+                  FUN_14029dfd0(*param_1,&local_res18,pcVar3);
+                  pcVar8 = local_res18;
+                }
+              }
+            }
+          }
+          break;
+        case '\x01':
+          cVar5 = FUN_14028eb80(*param_1,*(undefined8 *)(*plVar2 + 8));
+          if (cVar5 == '\0') {
+            bVar4 = true;
+          }
+          else {
+            FUN_1402a3ca0(param_1,param_2,*(undefined8 *)*plVar2);
+            bVar4 = false;
+          }
+          break;
+        case '\x02':
+          if (bVar4) {
+            FUN_1402a3ca0(param_1,param_2,*plVar2);
+            bVar4 = false;
+          }
+          break;
+        case '\x03':
+          lVar10 = FUN_140299570(param_1 + 0x532,*(undefined8 *)*plVar2);
+          puVar12 = (undefined8 *)*plVar2;
+          if (lVar10 == 0) {
+LAB_1402a3e82:
+            uVar11 = FUN_1402cb690("Couldn\'t create local var for %s.",*puVar12);
+            FUN_14023c700(1,uVar11);
+          }
+          else {
+            uVar6 = FUN_14028eb80(*param_1,puVar12[1]);
+            FUN_1402997c0(lVar10,uVar6);
+          }
+          break;
+        case '\x04':
+          lVar10 = FUN_140299570(param_1 + 0x532,*(undefined8 *)*plVar2);
+          puVar12 = (undefined8 *)*plVar2;
+          if (lVar10 == 0) goto LAB_1402a3e82;
+          uVar16 = FUN_14028d000(*param_1,puVar12[1]);
+          FUN_140299840(lVar10,uVar16);
+          break;
+        case '\x05':
+          lVar10 = FUN_140299570(param_1 + 0x532,*(undefined8 *)*plVar2);
+          puVar12 = (undefined8 *)*plVar2;
+          if (lVar10 == 0) goto LAB_1402a3e82;
+          uVar16 = FUN_14028cf80(*param_1,puVar12[1]);
+          FUN_140299800(lVar10,uVar16);
+          break;
+        case '\x06':
+          lVar10 = FUN_140299570(param_1 + 0x532,*(undefined8 *)*plVar2);
+          puVar12 = (undefined8 *)*plVar2;
+          if (lVar10 == 0) goto LAB_1402a3e82;
+          uVar11 = FUN_14028d080(*param_1,puVar12[1]);
+          FUN_140299880(lVar10,uVar11);
+          break;
+        default:
+          FUN_14023c700(1,"Unexpected event handler type %d");
+        }
+        lVar15 = lVar15 + 1;
+      } while (lVar15 < iVar1);
+    }
+  }
+  return;
+}
+
+
+
