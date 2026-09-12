@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <ProjectGuid>{4C8E9A1F-6D3B-4F7C-A5E2-9B1D8C4F6A3E}</ProjectGuid>
+    <RootNamespace>ncppluginnetcodefixes</RootNamespace>
+    <!-- The MW32011NCP-plugin variant of this project's own netcode security
+         fixes. Compiles the SAME fix-module .cpp files the standalone
+         proxy_d3d9 build uses, directly from ../../proxy_d3d9/src (not
+         copied): one implementation, two build targets. x64 only, since
+         NCP's own plugin host is x64-only (MW3 can no longer run as a
+         32-bit process at all). -->
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries Condition="'$(Configuration)'=='Debug'">true</UseDebugLibraries>
+    <UseDebugLibraries Condition="'$(Configuration)'=='Release'">false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+
+  <PropertyGroup>
+    <!-- This exact output filename is load-bearing: NCP's own plugin_loader.cpp
+         "greenlit" trusted-plugin allowlist checks for this specific name to
+         auto-load without requiring [Plugins] Enabled=1. See PLUGIN_API.md
+         (MW32011NCP repo) for the full design. -->
+    <TargetName>mw32011nsp_security</TargetName>
+    <OutDir>bin\$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>obj\$(Platform)\$(Configuration)\</IntDir>
+  </PropertyGroup>
+
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;_WINDOWS;_USRDLL;NCPPLUGINNETCODEFIXES_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <!-- The fix-module .cpp files (compiled here directly from ../../proxy_d3d9/src)
+           use plain-quote includes ("netcode_fixes.h", "signature_scan.h") assuming
+           they sit next to their own headers; this include path lets those resolve
+           correctly even though this project's own source tree is elsewhere. -->
+      <AdditionalIncludeDirectories>..\..\proxy_d3d9\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+    </ClCompile>
+  </ItemDefinitionGroup>
+
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
+    <ClCompile>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <ItemGroup>
+    <ClCompile Include="plugin_main.cpp" />
+    <!-- The SAME fix-module source the standalone proxy_d3d9 build compiles,
+         referenced directly, not copied: one implementation, two targets. -->
+    <ClCompile Include="..\..\proxy_d3d9\src\netcode_fixes.cpp" />
+    <ClCompile Include="..\..\proxy_d3d9\src\p2p_fix.cpp" />
+    <ClCompile Include="..\..\proxy_d3d9\src\matchdatadone_memberjoin_fix.cpp" />
+    <ClCompile Include="..\..\proxy_d3d9\src\signature_scan.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="mw3ncp_plugin_api.h" />
+    <ClInclude Include="..\..\proxy_d3d9\src\netcode_fixes.h" />
+    <ClInclude Include="..\..\proxy_d3d9\src\signature_scan.h" />
+  </ItemGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>
