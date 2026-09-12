@@ -105,6 +105,7 @@ see their own sections below; neither gates this release.
 | Auto-unstick (no more "click once at launch") | Vibration/rumble (fire + damage) |
 | | Survival ready-up (hold Y, synthetic F5) |
 | | Hold Breath (L3 while ADS'd, sniper-class) |
+| | DualSense gyro-aim (preview/WIP, same status as `-x86`, needs real hardware to test) |
 | | Visual-enhancement suite (render scale, FSR, motion blur) |
 | | Native controller menu/UI navigation (main menu, pause, options, buy-stations) |
 | | Menu-focus/itemDef tracking (glyph-icon dependency) |
@@ -126,10 +127,6 @@ presets, the plugin API, background threads, and more).
   ported piece (the native text-draw hook itself). Everything else renders
   normally (including this mod's own startup/hot-reload toast messages,
   which ARE confirmed working on x64).
-- **DualSense gyro-aim isn't wired into x64's look input.** Basic DualSense
-  stick input (movement/look) works fine on x64 already; gyro-aim
-  specifically doesn't. This was still a preview/WIP feature even on the
-  `-x86` line, so this is a lower-priority gap than the others above.
 - **Auto-Mantle** is still absent on x64 — no wiring in the current input
   pipeline yet, genuinely blocked (not just not-yet-attempted) on the same
   native text-draw hook that blocks gameplay glyph icons above. (Survival

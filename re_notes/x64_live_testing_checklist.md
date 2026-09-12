@@ -91,6 +91,21 @@ for any item lives in `re_notes/known_issues_x64.md` issue #1.
 - [ ] Confirm no regression to vanilla keyboard/mouse play (rumble should
       only ever add behavior, never interfere with unmodified input).
 
+## DualSense gyro-aim (new this session — requires real DualSense hardware, preview/WIP on x86 too)
+
+- [ ] With `[Gyro] Enabled=1`, confirm tilting the controller nudges the
+      camera (yaw from Z-axis, pitch from X-axis per the current mapping —
+      note if this feels backwards/wrong, the axis mapping is explicitly
+      unverified on real hardware, copied from x86's own unconfirmed guess).
+- [ ] `GyroOnlyWhileAds=1` — confirm gyro contribution only applies while
+      ADS'd; `=0` — confirm it applies at all times.
+- [ ] `GyroInvertYaw`/`GyroInvertPitch`/`InvertLook` — confirm each flips
+      its respective axis correctly.
+- [ ] Confirm gyro stacks additively with stick look (moving the right
+      stick AND tilting the controller at once should combine, not fight).
+- [ ] USB DualSense specifically — confirm gyro works at all (issue #76:
+      never independently confirmed by a second tester, even on x86).
+
 ## Visual-enhancement suite (new this session — off by default, opt in via `mw3ncp_config.ini` to test)
 
 - [ ] `InternalRenderScalePercent` — confirm it actually scales real GPU
@@ -131,6 +146,21 @@ for any item lives in `re_notes/known_issues_x64.md` issue #1.
 - [ ] RGB Text example plugin — confirm it still loads and renders when
       manually opted in (`[Plugins] Enabled=1`), unaffected by the
       security-plugin/merge work.
+
+## Not yet dispatched / paused (session token-budget constraint, 2026-09-12)
+
+Not testable yet — no real investigation happened, work was paused before
+starting rather than found blocked. Genuinely open, not attempted:
+
+- Gameplay glyph-icon text-draw hook (x86's `Hook_DrawGlyphText` x64
+  equivalent) — the single missing piece blocking glyph icons, hint
+  prompts, the F2/F3 editor, the custom cursor, and Auto-Mantle. A real,
+  large RE task — resume when budget allows.
+- Back's `+scores` scoreboard synthesis port to x64 — small, cheap, well-
+  understood (the function already exists arch-clean on x86, just needs
+  wiring in). Expected test outcome once ported: confirm it does nothing
+  visible in SP (correct, matches confirmed real console behavior) — real
+  value arrives once Multiplayer ships its own scoreboard.
 
 ## Not testable — investigated and found genuinely blocked, not implemented
 
