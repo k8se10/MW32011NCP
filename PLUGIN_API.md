@@ -63,13 +63,15 @@ regardless of `[Plugins] Enabled` — this is a real, narrow exception to the
 opt-in rule above, not a change to it. Every other plugin still needs
 `Enabled=1` exactly as before; this allowlist doesn't touch that path at
 all. The first (and currently only) entry is `mw32011nsp_security.dll` —
-the sibling [MW32011NSP](https://github.com/k8se10/MW32011NSP) project's
-own netcode security-fix plugin, which patches real, confirmed network
-vulnerabilities in the base game. It ships built into this mod by default
-specifically because it's first-party, defensive-only (bounds-check gates
-on real vulnerable code paths, never a memory read of gameplay-entity
-state), and protects players regardless of whether they'd otherwise think
-to opt into third-party plugins at all.
+this project's own netcode security-fix plugin (built from
+[`security/tools/ncp_plugin_netcode_fixes/`](security/tools/ncp_plugin_netcode_fixes/),
+originally a separate sibling repo, absorbed 2026-09-12 — see
+`CLAUDE.md`'s Version Timeline for the full record), which patches real,
+confirmed network vulnerabilities in the base game. It ships built into
+this mod by default specifically because it's first-party, defensive-only
+(bounds-check gates on real vulnerable code paths, never a memory read of
+gameplay-entity state), and protects players regardless of whether they'd
+otherwise think to opt into third-party plugins at all.
 
 **Real caveat, read this before assuming more than is actually true**:
 filename matching is **not cryptographic**. Nothing stops a

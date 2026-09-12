@@ -173,22 +173,40 @@ from source requires Windows, MSVC (Visual Studio Build Tools or Community
 with the Windows 10 SDK), and MSBuild; see
 [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full build/RE-tooling setup.
 
-## Related project: MW32011NSP
+## Security: netcode vulnerability patches
 
-[MW32011NSP](https://github.com/k8se10/MW32011NSP) is a sibling project —
-same author, same reverse-engineering methodology, same proxy-DLL injection
-technique — that finds and fixes real, exploitable vulnerabilities in MW3's
-own netcode, independent of anything this mod does. It exists because
-Steam's VAC doesn't cover packet-level attacks from a malicious server or
-peer, a real gap for anyone playing Multiplayer or Spec-Ops/Survival co-op.
+**NCP now stands for Native Community Patches** — this project's identity
+expanded 2026-09-12 to cover not just controller input and visual/QoL
+enhancements, but native netcode security patching too, absorbed from what
+was previously a separate sibling repo (`MW32011NSP`). Controller support
+remains the flagship, first-shipped patch; it isn't the whole of what this
+project is anymore. Full record of the redefinition and the merge itself:
+`CLAUDE.md`'s 2026-09-12 Version Timeline entry.
 
-This mod optionally ships NSP's fixes **built in by default**: a small,
+[`security/`](security/) is this project's own netcode security component
+— same reverse-engineering methodology and proxy-DLL injection technique as
+the rest of this repo, finding and fixing real, exploitable vulnerabilities
+in MW3's own netcode, independent of anything the controller/enhancement
+side does. It exists because Steam's VAC doesn't cover packet-level attacks
+from a malicious server or peer, a real gap for anyone playing Multiplayer
+or Spec-Ops/Survival co-op. See [`security/README.md`](security/README.md)
+for its own full technical detail (findings table, current fix status).
+
+This mod ships `security/`'s fixes **built in by default**: a small,
 explicit "greenlit" allowlist in this project's own plugin loader
-auto-loads NSP's security-fix plugin without requiring the normal
-third-party-plugin opt-in (`[Plugins] Enabled=1`) — see
-[`PLUGIN_API.md`](PLUGIN_API.md) for the full design. You can also run
-NSP standalone, with or without this mod. See the security notice above for
-current vulnerability status.
+auto-loads the security-fix plugin (built from `security/tools/
+ncp_plugin_netcode_fixes/`) without requiring the normal third-party-plugin
+opt-in (`[Plugins] Enabled=1`) — see [`PLUGIN_API.md`](PLUGIN_API.md) for
+the full design. `security/` also still builds its own standalone DLL
+(`security/proxy_d3d9/`) for anyone who wants the netcode fixes without the
+rest of this mod. See the security notice above for current vulnerability
+status.
+
+The former `github.com/k8se10/MW32011NSP` repo's full commit history
+(including the original vendor security-disclosure record) carried over
+intact into this repo's own history via a `git subtree` merge, not a fresh
+copy. That repo itself is being archived as a historical, read-only
+pointer to this new location — nothing there is lost, just superseded.
 
 ## Contributing
 

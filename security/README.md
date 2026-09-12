@@ -1,4 +1,4 @@
-# MW3 Netcode Security Patch (MW32011NSP)
+# MW3 Netcode Security Patch (part of MW32011NCP)
 
 A defensive security patch for Call of Duty: Modern Warfare 3 (2011, IW5
 engine) — finding and fixing real, exploitable vulnerabilities in this
@@ -8,9 +8,21 @@ on `iw5mp.exe`) does not protect against any of them — VAC is signature-based
 cheat detection, a completely different threat model from a malicious
 server or peer sending crafted packets. That gap is why this project exists.
 
-This is a sibling project to [`MW32011NCP`](https://github.com/k8se10/MW32011NCP)
-(the native controller and enhancement mod for the same game) — see
-**Relationship to MW32011NCP** below for how the two connect.
+**This was originally a separate sibling repo (`MW32011NSP`), absorbed
+2026-09-12 into [`MW32011NCP`](https://github.com/k8se10/MW32011NCP) as a
+nested component** — NCP itself was redefined the same day, from "Native
+Controller Project" to "Native Community Patches," formalizing that
+controller support, the visual-enhancement suite, and this netcode security
+work are all real, shipped scopes of one project rather than separate
+efforts. This directory's own git history (including the original vendor
+security-disclosure record) carried over intact via a `git subtree` merge,
+not a fresh copy — see NCP's own `CLAUDE.md` 2026-09-12 Version Timeline
+entry for the full decision record. Mechanically, nothing here changed: the
+same three real, exploitable vulnerabilities are still being fixed the same
+way, this directory still builds its own standalone DLL, and the plugin
+variant still ships via NCP's existing "greenlit" allowlist — see
+**Relationship to MW32011NCP** below for exactly how the pieces fit
+together.
 
 ## Status
 
@@ -59,27 +71,33 @@ passes through unmodified (hooks are scoped by return address, not
 whole-function or whole-primitive). See `proxy_d3d9/src/` for the actual
 implementation and each fix module's own detailed header comment.
 
-## Relationship to MW32011NCP
+## Relationship to the rest of MW32011NCP
 
-The fix code ships **three ways**, all built from the same shared source
-(`proxy_d3d9/src/netcode_fixes.h` and its per-finding modules):
+This directory sits alongside the main mod's own `proxy_d3d9/` at the repo
+root — same repo, same git history, but a deliberately separate build
+artifact (not compiled directly into the main mod's `d3d9.dll`), per the
+2026-09-12 merge decision. The fix code ships **three ways**, all built
+from the same shared source (`proxy_d3d9/src/netcode_fixes.h` and its
+per-finding modules):
 
-1. **Standalone** (`proxy_d3d9/`) — this project's own injected `d3d9.dll`,
-   for anyone who wants the protection independent of MW32011NCP, or who
-   doesn't use it at all.
-2. **Built into MW32011NCP directly, on by default** (`tools/ncp_plugin_netcode_fixes/`,
-   builds to `mw32011nsp_security.dll`) — NCP's own plugin loader has a
-   small, explicit "greenlit" allowlist that loads this one specific,
-   first-party, defensive-only plugin automatically, without requiring a
-   player to have opted into arbitrary third-party plugins. See NCP's own
-   `PLUGIN_API.md` for the full design.
+1. **Standalone** (`security/proxy_d3d9/`) — this component's own injected
+   `d3d9.dll`, for anyone who wants the protection without the rest of
+   this mod, or who doesn't use it at all.
+2. **Built into the main mod directly, on by default**
+   (`security/tools/ncp_plugin_netcode_fixes/`, builds to
+   `mw32011nsp_security.dll`) — the main mod's own plugin loader
+   (`../../proxy_d3d9/src/plugin_loader.cpp`) has a small, explicit
+   "greenlit" allowlist that loads this one specific, first-party,
+   defensive-only plugin automatically, without requiring a player to have
+   opted into arbitrary third-party plugins. See `../PLUGIN_API.md` for the
+   full design.
 3. **The same DLL as #2, placed manually** — for anyone who wants it as an
-   ordinary opt-in plugin on their own NCP install without the default-on
+   ordinary opt-in plugin on their own install without the default-on
    behavior.
 
-If you want controller support for this game too, see
-[MW32011NCP](https://github.com/k8se10/MW32011NCP) — the same proxy-DLL
-technique, same reverse-engineering methodology, a different problem.
+If you want controller support for this game too, see the repo root
+[`../README.md`](../README.md) — same proxy-DLL technique, same
+reverse-engineering methodology, a different problem, now one project.
 
 ## Phased plan
 
