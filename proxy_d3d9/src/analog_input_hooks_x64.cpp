@@ -303,6 +303,74 @@ constexpr int kSprintSyntheticSourceId = 0x1000; // same value/rationale as the
                                                    // declared separately from its
                                                    // definition.
 
+// ---- Hold Breath (L3 while ADS'd, sniper-class): ported 2026-09-12, parity
+// audit item #23 -- previously ABSENT on x64 (grepped confirmed zero
+// references before this change). Same physical bind as Sprint on real
+// console/keyboard, exactly like x86 (analog_input_hooks.cpp's own
+// "Hold Breath (L3 while ADS'd)" section) -- gated on ADS instead of
+// "not ADS," no explicit sniper-class check in OUR code either, mirroring
+// x86's own design exactly: x86's InjectControllerSprint computes
+// `holdBreathActive = g_sprintHeld && g_adsHeld` with zero weapon-class
+// logic of its own, relying entirely on the real native kbutton to only
+// produce the sway-reduction/accuracy effect on sniper-class weapons --
+// this is a genuine native kbutton, not something this project's own code
+// needs to gate by weapon type.
+//
+// Struct resolved via the SAME anchor+offset technique as Fire/Reload/ADS/
+// Sprint (kHoldBreathStructInsnOffset below) -- confirmed via TWO
+// independent angles, matching this project's own issue #3 standard:
+//   1. Decompiled FUN_14007c3a0 case 9 ("+breath_sprint" down, the real
+//      default SHIFT bind -- re_notes/x64_migration/decomp_14007c3a0_full.txt)
+//      fires FUN_14007e460 on `&DAT_14064482c + lVar4*0x230` FIRST, then on
+//      `&DAT_1406448f4 + lVar4*0x230` (= g_sprintStruct) SECOND -- i.e. the
+//      real default Sprint/Hold-Breath key already drives both structs
+//      back-to-back today, exactly mirroring x86's own original discovery
+//      ("case 9 disassembles to two back-to-back kbutton calls, one of
+//      which is the Sprint kbutton").
+//   2. Independently re-derived the raw bytes at both real
+//      `LEA reg,[rip+disp32]` instructions this decompile reference
+//      resolves to (0x14007cc69 and 0x14007cc93, re_notes/x64_migration/
+//      rawbytes_holdbreath_struct.txt, dumped via DumpRawBytes.java against
+//      the live binary, not read off the decompile alone) -- both are
+//      genuine 7-byte `48 8D 05 <disp32>` LEA instructions whose RIP-
+//      relative target computes to 0x14064482C bit-for-bit, matching the
+//      decompile's `DAT_14064482c` name exactly.
+// A third, structural cross-check: 0x14064482c is exactly 0x14 bytes past
+// g_fireStruct's own target (DAT_140644818) -- i.e. the very NEXT kbutton_t
+// in the contiguous per-player array (kbutton_t is 0x14/20 bytes here:
+// down0/down1/timestamp/downtime as int32 + a 1-byte active flag, per
+// FUN_14007e460/e490's own decompile), not an internal field of Fire's own
+// struct the way x86's 0xA98C04 alias is (x86's kbutton_t stride is
+// smaller, so its own Hold Breath address lands INSIDE Fire's struct at
+// its down[1] field -- a real x86-specific aliasing quirk, per
+// known_issues.md issue #6). x64's Hold Breath struct is a genuinely
+// separate, dedicated kbutton_t -- there is no reason to expect x86's own
+// "active flag never self-clears on this specific alias" bug (issue #24)
+// to recur here, and x64's own Sprint migration (immediately above) already
+// proved this exact call pattern (g_kbuttonActivate/g_kbuttonDeactivate,
+// no debounce, no active-flag force-clear) works cleanly with no such
+// workaround needed -- so none is added here either. Flagged for live
+// confirmation regardless, not assumed risk-free from static analysis alone.
+//
+// Also referenced (decompile lines 201-206) by a SEPARATE case, 0x31/0x32 --
+// a standalone (likely unbound-by-default) "+breath_hold"-class bind that
+// drives this exact same struct alone, with no paired Sprint call -- further
+// corroborating this is a real, dedicated Hold Breath kbutton, not an
+// incidental byproduct of case 9's own dual-call shape.
+constexpr int kHoldBreathSyntheticSourceId = 0x1000; // any fixed non-zero
+                                                       // value works, same
+                                                       // reasoning as
+                                                       // kSprintSyntheticSourceId
+                                                       // -- distinct struct
+                                                       // pointer means no
+                                                       // cross-bind collision
+                                                       // risk regardless of
+                                                       // source-id reuse.
+bool g_holdBreathKbuttonActiveX64 = false; // mirrors g_sprintKbuttonActiveX64
+                                             // -- edge-triggers the real
+                                             // activate/deactivate calls
+                                             // exactly once per transition.
+
 void __fastcall Hook_SprintTick(void* param1, void* param2)
 {
     // Let native logic run to completion first, untouched -- same ordering
@@ -327,15 +395,40 @@ void __fastcall Hook_SprintTick(void* param1, void* param2)
         ForceStandingViaRealToggleX64();
     }
 
-    if (active == g_sprintKbuttonActiveX64) return;
-    g_sprintKbuttonActiveX64 = active;
-
-    if (!g_kbuttonActivate || !g_kbuttonDeactivate || !g_sprintStruct) return;
     int timestamp = g_timestampPtr ? static_cast<int>(*g_timestampPtr) : 0;
-    if (active) {
-        g_kbuttonActivate(g_sprintStruct, kSprintSyntheticSourceId, timestamp);
-    } else {
-        g_kbuttonDeactivate(g_sprintStruct, kSprintSyntheticSourceId, timestamp);
+
+    // NOTE: this used to be a single early `return` once Sprint's own active
+    // state matched its last-sent state -- moved to a per-block `if` instead,
+    // since that early return would otherwise skip Hold Breath's own edge
+    // check entirely on every tick where Sprint's state happens to be
+    // steady (i.e. most ticks while ADS-holding-still-and-not-sprinting) --
+    // both binds now update independently, matching x86's own
+    // InjectControllerSprint shape (Sprint and Hold Breath handled as two
+    // separate state machines in the same per-tick function, not chained).
+    if (active != g_sprintKbuttonActiveX64) {
+        g_sprintKbuttonActiveX64 = active;
+        if (g_kbuttonActivate && g_kbuttonDeactivate && g_sprintStruct) {
+            if (active) {
+                g_kbuttonActivate(g_sprintStruct, kSprintSyntheticSourceId, timestamp);
+            } else {
+                g_kbuttonDeactivate(g_sprintStruct, kSprintSyntheticSourceId, timestamp);
+            }
+        }
+    }
+
+    // Hold Breath (L3 while ADS'd): same physical bind as Sprint, gated on
+    // ADS instead of "not ADS" -- see the big comment above
+    // kHoldBreathSyntheticSourceId for the full discovery trail.
+    bool holdBreathActive = sprintHeld && adsHeldNow;
+    if (holdBreathActive != g_holdBreathKbuttonActiveX64) {
+        g_holdBreathKbuttonActiveX64 = holdBreathActive;
+        if (g_kbuttonActivate && g_kbuttonDeactivate && g_holdBreathStruct) {
+            if (holdBreathActive) {
+                g_kbuttonActivate(g_holdBreathStruct, kHoldBreathSyntheticSourceId, timestamp);
+            } else {
+                g_kbuttonDeactivate(g_holdBreathStruct, kHoldBreathSyntheticSourceId, timestamp);
+            }
+        }
     }
 }
 
@@ -658,12 +751,29 @@ constexpr ptrdiff_t kAdsToggleFlagInsnOffset = 0xA9F; // -> DAT_1406e26e0 (real 
 // for case 0x3d/0x3e -- see Hook_SprintTick's own big comment block for the
 // full two-angle confirmation trail.
 constexpr ptrdiff_t kSprintStructInsnOffset = 0xB0D; // -> DAT_1406448f4 (Sprint kbutton)
+// Hold Breath kbutton struct (2026-09-12) -- resolved from case 9's
+// ("+breath_sprint" down) FIRST call target, one of the two back-to-back
+// kbutton calls that bind fires (the second is kSprintStructInsnOffset's own
+// target). Raw bytes independently dumped via DumpRawBytes.java
+// (re_notes/x64_migration/rawbytes_holdbreath_struct.txt): the real
+// instruction at this offset is `48 8D 05 BC 7B 5C 00` (a genuine 7-byte
+// `LEA reg,[rip+disp32]`), whose RIP-relative target computes to
+// 0x14064482C -- matches decomp_14007c3a0_full.txt's own `DAT_14064482c`
+// name exactly, and matches x86's own original discovery (case 9's real
+// disassembly fires two kbutton calls, one Hold Breath's, one Sprint's).
+// See Hook_SprintTick's own big Hold Breath comment for the full trail
+// (including the structural note that unlike x86's own Hold Breath address,
+// which lands INSIDE Fire's kbutton struct as its down[1] field -- a real
+// x86-specific aliasing quirk -- x64's struct here is a genuinely separate,
+// dedicated kbutton_t, the very next one after Fire's own in the array).
+constexpr ptrdiff_t kHoldBreathStructInsnOffset = 0x8C9; // -> DAT_14064482c (Hold Breath kbutton)
 constexpr size_t kRipInsnLength = 7;
 
 int* g_fireStruct = nullptr;
 int* g_reloadStruct = nullptr;
 int* g_adsStruct = nullptr;
 int* g_sprintStruct = nullptr;
+int* g_holdBreathStruct = nullptr;
 volatile uint32_t* g_timestampPtr = nullptr;
 volatile uint8_t* g_adsToggleFlag = nullptr;
 
@@ -2523,6 +2633,7 @@ void InstallAnalogInputHooksX64()
             g_reloadStruct = reinterpret_cast<int*>(SigScan::ResolveRipRelative(anchor + kReloadStructInsnOffset, kRipInsnLength));
             g_adsStruct = reinterpret_cast<int*>(SigScan::ResolveRipRelative(anchor + kAdsStructInsnOffset, kRipInsnLength));
             g_sprintStruct = reinterpret_cast<int*>(SigScan::ResolveRipRelative(anchor + kSprintStructInsnOffset, kRipInsnLength));
+            g_holdBreathStruct = reinterpret_cast<int*>(SigScan::ResolveRipRelative(anchor + kHoldBreathStructInsnOffset, kRipInsnLength));
             g_timestampPtr = reinterpret_cast<volatile uint32_t*>(SigScan::ResolveRipRelative(anchor + kTimestampInsnOffset, kRipInsnLength));
             g_adsToggleFlag = reinterpret_cast<volatile uint8_t*>(SigScan::ResolveRipRelative(anchor + kAdsToggleFlagInsnOffset, kRipInsnLength));
             g_stanceDispatch = reinterpret_cast<StanceDispatchFn>(anchor);
@@ -2573,6 +2684,20 @@ void InstallAnalogInputHooksX64()
         } else {
             LogFromController("[x64-sprint] FATAL: Sprint kbutton struct failed to resolve -- controller Sprint "
                 "will not work this session");
+        }
+
+        // Hold Breath's own kbutton struct -- resolved in the same block
+        // (shares the anchor + g_kbuttonActivate/g_kbuttonDeactivate above),
+        // consumed by Hook_SprintTick alongside Sprint's own struct. See
+        // kHoldBreathStructInsnOffset's own comment for the full resolve trail.
+        if (g_kbuttonActivate && g_kbuttonDeactivate && g_holdBreathStruct && g_timestampPtr) {
+            char buf[224];
+            sprintf_s(buf, "[x64-holdbreath] Hold Breath kbutton struct resolved @ 0x%p -- real kbutton active "
+                "(direct call from Hook_SprintTick, gated on ADS -- parity audit item #23).", (void*)g_holdBreathStruct);
+            LogFromController(buf);
+        } else {
+            LogFromController("[x64-holdbreath] FATAL: Hold Breath kbutton struct failed to resolve -- controller "
+                "Hold Breath will not work this session");
         }
     }
 

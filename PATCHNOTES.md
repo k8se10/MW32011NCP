@@ -112,6 +112,20 @@ live, detailed status on every item below.
     reasoning `-x86`'s own design already documents as sufficient even
     without that gate. Build-verified, not yet live-tested. See
     `re_notes/known_issues_x64.md` issue #1 for the full trail.
+13. **Hold Breath (L3 while ADS'd, sniper-class) ported to x64.** Previously
+    100% absent (parity audit item #23) — L3 only ever drove raw Sprint,
+    with no ADS-aware branch to a separate kbutton. Now edge-triggers the
+    real kbutton activate/deactivate handlers on a newly-resolved,
+    dedicated struct, matching `-x86`'s exact gating (`sprintHeld && adsHeld`,
+    no explicit sniper-class check in either platform's own code — the real
+    native kbutton is what limits the sway-reduction/accuracy effect to
+    sniper weapons). Also fixes a real bug found while implementing this: a
+    pre-existing early `return` in the same per-tick function would have
+    silently skipped Hold Breath's own edge check on every tick where
+    Sprint's own state was steady — restructured so Sprint and Hold Breath
+    update as two independent state machines, matching `-x86`'s own design
+    shape. Build-verified, not yet live-tested. See
+    `re_notes/known_issues_x64.md` issue #1 for the full trail.
 
 ### Fixed
 1. **Crash on launch with the sniper Fire/ADS fix's own log line.** The
