@@ -90,3 +90,24 @@ tools/ui_harness/exported_diagram_layout.txt
 # across sessions so RE work doesn't re-pay the analysis time, but never
 # committed -- too large (166MB+) and not meaningful to diff/review.
 re_notes/ghidra_project/
+
+# Same policy, x64 line (2026-09-03 recompile) -- iw5sp.exe AND iw5mp.exe Ghidra
+# projects. FOUND UNPROTECTED 2026-09-12: this entry was missing entirely, and a
+# .gbf database file inside it (80.95MB) had already been committed and pushed to
+# the public repo, triggering GitHub's own "recommended maximum file size"
+# warning -- fixed here going forward; the already-tracked file(s) still need a
+# separate `git rm --cached` pass, not just this ignore rule (an ignore rule alone
+# doesn't untrack something already committed).
+re_notes/ghidra_project_x64/
+
+# Internal-only technical detail on unpatched vulnerabilities (exact function
+# addresses, precise buffer/offset values, exact fix implementation logic) -- same
+# redaction policy and file-naming convention as the sibling MW32011NSP project's
+# own SECURITY.md/.gitignore (re_notes/INTERNAL_*.md, re_notes/internal/). Added
+# proactively 2026-09-12, ahead of any NSP-into-NCP structural work, specifically
+# so this protection is already in place before any of NSP's own internal files
+# could ever land inside this repo's working tree -- never committed/pushed before
+# a fix for that specific finding has shipped, regardless of which repo the file
+# physically sits in.
+re_notes/INTERNAL_*.md
+re_notes/internal/
