@@ -36,7 +36,7 @@ two files already had for #111 before the split.
 
 ## Index
 
-- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **D-pad Left synthetic-key exception AND a sniper Fire/ADS fix attempt both shipped (build-verified, neither live-tested yet); Plugin API ported (build-verified, needed no host code changes); visual-enhancement-suite x64 port attempted TWICE, still blocked on two addresses that resist exhaustive static RE (render-scale, clcState/in-level-flag) — likely needs live tracing, not more static analysis; FXAA/MSAA found to not even exist on x86, out of scope for parity; overlay-render bug fully audited — cursor's own unguarded x86 address landmine found and fixed, rest of the render path confirmed clean; Custom Options screen wired into x64's input pipeline (build-verified, temporary manual open-chord substitute pending a real focus-detection RE pass); a "greenlit" trusted-plugin allowlist added to plugin_loader.cpp so the sibling MW32011NSP project's own security-fix plugin can ship built in by default (build-verified, end-to-end test pending that plugin's own existence) — release ETA 2-4 weeks, gated on x86 parity**
+- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **D-pad Left synthetic-key exception AND a sniper Fire/ADS fix attempt both shipped (build-verified, neither live-tested yet); Plugin API ported (build-verified, needed no host code changes); visual-enhancement-suite x64 port attempted TWICE, still blocked on two addresses that resist exhaustive static RE (render-scale, clcState/in-level-flag) — likely needs live tracing, not more static analysis; FXAA/MSAA found to not even exist on x86, out of scope for parity; overlay-render bug fully audited — cursor's own unguarded x86 address landmine found and fixed, rest of the render path confirmed clean; Custom Options screen wired into x64's input pipeline (build-verified, temporary manual open-chord substitute pending a real focus-detection RE pass -- **RE pass now done 2026-09-12: real x64 menu-focus/itemDef-array offsets re-derived and cross-confirmed, TryGetRealFocusedGroupAndIndexX64 wired in as the real Options-screen open trigger alongside the chord (kept as a fallback), build-verified, not yet live-tested**); a "greenlit" trusted-plugin allowlist added to plugin_loader.cpp so the sibling MW32011NSP project's own security-fix plugin can ship built in by default (build-verified, end-to-end test pending that plugin's own existence) — release ETA 2-4 weeks, gated on x86 parity**
 
 ---
 
@@ -2248,41 +2248,131 @@ primitives (`IsPhysicalHeld_Exported`, `kXI_DPAD_*_X64`, `g_menuActiveGateFlag`
 bit `0x10` for "is a real menu active" -- all already confirmed working on x64
 this session, none re-derived).
 
-**One real, DELIBERATELY NOT PORTED gap, found and independently confirmed via
-two separate routes this same session**: x86's real open-trigger detects a
-real NATIVE menu-item focus via `TryGetRealFocusedGroupAndIndex`
-(`analog_input_hooks.cpp`) -- a raw itemDef-array walk hardcoding a **4-byte
-pointer stride** (`arr + i * 4`) and item-struct field offsets (`+0x48` flags,
-`+0x0` name pointer, `+0xa8`/`+0xac` array count/pointer), all genuine
-32-bit-pointer-width assumptions. On x64 (8-byte pointers) this reads
-misaligned garbage, which the function's own `LooksSane()` checks correctly
-reject -- it always returns false. This independently confirms the exact same
-symptom the concurrent overlay-visibility audit fork found via
-`[manual-glyph-diag]` log evidence (`realGroup="" realIndex=-1` every frame,
-regardless of `ShouldDrawGlyphOverlay()`'s own value) -- same underlying
-mechanism, found from two different angles the same day. Re-deriving x64's
-real per-item struct offsets needs its own dedicated Ghidra decompile pass (a
-genuinely different struct layout under 64-bit alignment, not just doubling
-the stride) -- deliberately NOT attempted this pass, consistent with this
-session's own standard of not guessing at unverified struct offsets (x86's own
-issue #3 lesson: never trust an offset without independent confirmation).
+**Gap ABOVE -- RESOLVED 2026-09-12, real x64 offsets re-derived and wired
+in.** x86's real open-trigger detects a real NATIVE menu-item focus via
+`TryGetRealFocusedGroupAndIndex` (`analog_input_hooks.cpp`) -- a raw
+itemDef-array walk hardcoding a **4-byte pointer stride** (`arr + i * 4`) and
+item-struct field offsets (`+0x48` flags, `+0x0` name pointer, `+0xa8`/`+0xac`
+array count/pointer), all genuine 32-bit-pointer-width assumptions. On x64
+(8-byte pointers) this reads misaligned garbage, which the function's own
+`LooksSane()` checks correctly reject -- it always returns false. This
+independently confirmed the exact same symptom the concurrent
+overlay-visibility audit fork found via `[manual-glyph-diag]` log evidence
+(`realGroup="" realIndex=-1` every frame, regardless of
+`ShouldDrawGlyphOverlay()`'s own value) -- same underlying mechanism, found
+from two different angles the same day.
 
-**Temporary substitute, honestly labeled as such, not a permanent design**:
-opening is gated on holding LB+RB together while a real native menu is already
-active (`[Options] UseCustomOptionsScreen` still required, default OFF,
-matching x86's own opt-in convention exactly) -- gives real, testable access
-to the screen's own already-correct draw/navigate code without waiting on the
-deeper RE. Replace with the real focus-based trigger once the struct-offset
-work above is done.
+**2026-09-12 -- dedicated Ghidra decompile pass completed** (a genuinely
+different x64 struct layout, not just doubling the x86 stride, exactly as
+flagged above as the required next step). Full trail:
+`re_notes/x64_migration/decomp_gettopmostmenu_x64.txt`,
+`decomp_menuctx_helpers_x64.txt`, `decomp_itemnav_x64.txt`,
+`decomp_itemhelpers2_x64.txt`, `decomp_itemfocus_x64.txt`,
+`impl_sig_14029baa0.txt`, `impl_sig_1402aaa80.txt`. Every offset
+independently cross-checked against MULTIPLE real consumers before being
+trusted, per this project's own issue #3 lesson:
+- Real x64 UI-context global (x86's `kMenuStackCtx` equivalent):
+  `DAT_142605050` -- a fixed, single-instance data address confirmed via its
+  own literal `LEA RCX,[0x142605050]` in `FUN_14029baa0` (the real x64
+  `Menu_KeyEvent` caller/resume-path) and reused unmodified across 6 other
+  menu-stack helpers decompiled this pass.
+- `ctx + 0x14C0` = real open-menu-stack depth (x86: `kMenuStackCtx + 0xA7C`),
+  confirmed via TWO independent functions reading the identical offset
+  (`FUN_1402aaa80`, `FUN_1402ad530`).
+- `ctx + 0x1440` = real open-menu stack array base, 8 bytes/entry, confirmed
+  via the same two functions.
+- `FUN_1402aaa80(ctx)` = the real x64 `GetTopmostActiveMenu()` equivalent
+  (x86's `FUN_00547980`) -- confirmed via its OWN call site in
+  `FUN_14029baa0` (`plVar3 = FUN_1402aaa80(&DAT_142605050);` feeding directly
+  into `FUN_1402aac50`, the confirmed x64 `Menu_KeyEvent` -- the exact
+  "resolve the topmost menu, then route input into it" shape x86's own
+  `ForwardKeyToMenu` uses) AND structurally via its own disassembly (walks
+  the stack top-down, returns the first entry whose per-player flags at
+  `entry+0x58+player*4` have bits 0x4 and 0x2 both set).
+- The returned menu's item count/array live at `menu+0xB8` (`0x17*8`, x86's
+  `menu+0xa8`) and `menu+0xC0` (`0x18*8`, x86's `menu+0xac`), confirmed via
+  THREE independent consumers agreeing on both offsets (`FUN_1402aac50`,
+  `FUN_1402ac5d0`, `FUN_1402ac6f0`).
+- Each itemDef's per-player focus flags live at `item+0x50+player*4` (x86's
+  `item+0x48`, no player index there), confirmed via FIVE independent
+  consumers testing the identical `(flags & 4) != 0 && ((flags >> 1) & 1) !=
+  0` pair (`FUN_1402aac50`, `FUN_1402ad560`, `FUN_1402b21b0`,
+  `FUN_1402b1de0`, `FUN_1402a7f00`).
+- Each itemDef's name pointer lives at `item+0x0`, UNCHANGED from x86 (the
+  first field of a struct can never shift regardless of pointer width) --
+  confirmed via TWO independent consumers directly string-comparing
+  `*itemPtr` against known literal item-name strings (`FUN_1402ac6f0`,
+  `FUN_1402a4580`), not merely assumed from struct-layout convention.
+
+Implemented as `TryGetRealFocusedGroupAndIndexX64` (`analog_input_hooks_x64.cpp`,
+new "Menu-focus / itemDef-array tracking, x64 port" section) -- structurally
+identical logic to x86's own function, only the offsets/stride differ, exactly
+per this section's own earlier note that this would need re-deriving, not
+recalculating. `GetMenuStackDepthX64`/`GetTopmostActiveMenuX64` ported
+alongside it as support functions. Resolution follows this file's own
+established signature-scan-once-at-startup convention: `DAT_142605050`'s
+address is resolved via `SigScan::ResolveRipRelative` off a real RIP-relative
+`LEA` inside a signature-matched `FUN_14029baa0` prologue;
+`FUN_1402aaa80`'s entry point is resolved via its own dedicated signature for
+a direct call (no hook installed, same pattern as `g_weaponNext`/
+`g_pauseToggle`/`g_actionSlot`). Both resolves are logged
+(`[x64-menufocus]`), independent of each other and of every other resolve in
+`InstallAnalogInputHooksX64()` -- a failure here only disables the real
+Options-screen trigger and the diagnostic below, the LB+RB chord (already
+resolved via `g_menuActiveGateFlag`) stays available regardless.
+
+**Real Options-screen trigger now wired**, mirroring x86's own
+`InjectControllerMenuNav` exactly: real native menu-item focus landing on the
+pause/campaign/specops menu's own real "Options" button (`PAUSE_LIST`/1,
+`CAMPAIGN_BUTTON_LIST`/3, `SPECOPS_BUTTON_LIST`/5 -- the same group
+names/indices x86 uses, expected to carry over unchanged since the x86->x64
+migration was a code recompile against the same game data, not a content
+update). Wired into `PollCustomOptionsMenuX64`, OR'd together with the
+existing LB+RB chord into a single `openRequestedEdge` -- **the chord is KEPT
+as a fallback, not replaced outright**, until the real trigger is
+live-tested; both funnel into the same `CustomOptionsMenu_TickInput` call so
+there's no double-open risk from having both wired at once. A deduped
+`[x64-menufocus-diag]` log line (haveFocus/group/index/siblingCount, logged
+only on change) and a one-shot `[x64-optmenu-realtrigger]` fire confirmation
+give direct live visibility into whether the port is resolving real, changing
+focus state during actual play.
+
+**Scope note, honestly flagged**: this closes the menu-focus/itemDef-tracking
+dependency specifically. Full gameplay controller-glyph icon overlays (the
+in-hint "Press [A]" replacement, which needs the caller to already know the
+native text draw's own screen-space position/scale) remain blocked on a
+SEPARATE, not-yet-ported piece -- the native text-draw hook (x86's
+`Hook_DrawGlyphText`) has no x64 equivalent yet. That is a different,
+larger RE task (hooking the actual text-draw call site, matching fonts, the
+glyph allowlist) not attempted this pass -- only the menu-focus/itemDef
+detection this section covers is resolved. `g_focusedItemName`'s x86-only
+naked-asm populating hook (x86's `FUN_00616230`, a `getfocuseditemname()`
+VM-opcode hook) was also NOT ported this pass -- a genuinely separate RE
+thread (finding the x64 GSC-VM opcode dispatch and its own case for this
+specific builtin), not a quick addition; `TryGetRealFocusedGroupAndIndexX64`
+is the PRIMARY signal now and does not depend on it, so this is a secondary,
+still-open gap, not a blocker.
 
 **Build-verified**: x64 `/t:Rebuild` (0 errors) -> `dumpbin /headers` confirmed
-`8664 machine (x64)` with a fresh `LastWriteTime` -> Win32 regression rebuild
-(0 errors, no regression). **NOT YET LIVE-TESTED** -- next step when the user
-next enables `UseCustomOptionsScreen` and tests: confirm the LB+RB chord opens
-the screen while a native menu (e.g. pause) is active, the panel/blur/list
-draw correctly, D-pad/A/B navigate and select rows, and closing returns
-cleanly to the native menu with no regression to normal D-pad/A/B gameplay
-input once closed.
+`8664 machine (x64)` with a fresh `LastWriteTime`. **Win32 regression rebuild
+blocked this pass by an unrelated, pre-existing/concurrent issue** (a
+mismatched `#if`/`#endif` in `rumble.cpp`, a file this work never touched,
+left uncommitted by a different concurrent session) -- confirmed via the
+project's own `proxy_d3d9.vcxproj` that `analog_input_hooks_x64.cpp` is
+entirely `ExcludedFromBuild` for any platform other than x64
+(`Condition="'$(Platform)'=='x64'"`), so this change cannot be the cause and
+cannot regress the Win32 configuration; a clean Win32 rebuild should be
+re-attempted once that unrelated file's own edit is resolved. **NOT YET
+LIVE-TESTED** -- next step when the user next enables `UseCustomOptionsScreen`
+and tests: confirm the real trigger (approach the pause/campaign/specops
+menu's own Options button with a real controller and press A) opens the
+screen without needing the LB+RB chord at all, watch `proxy_d3d9.log` for
+`[x64-menufocus]`/`[x64-menufocus-diag]`/`[x64-optmenu-realtrigger]` lines
+confirming live resolution, and re-confirm the panel/blur/list draw
+correctly, D-pad/A/B navigate and select rows, and closing returns cleanly to
+the native menu with no regression to normal D-pad/A/B gameplay input once
+closed. Once confirmed reliable, the LB+RB chord can be removed as no longer
+needed.
 
 **"Greenlit" trusted-plugin allowlist added to `plugin_loader.cpp`, same
 day.** Direct instruction: the sibling `MW32011NSP` project's own netcode
