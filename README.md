@@ -1,12 +1,18 @@
-# MW32011NCP — Native Controller & Enhancement Project for MW3 (2011)
+# MW32011NCP — Native Community Patches for MW3 (2011)
 
-A from-scratch, native reverse-engineering project that brings real controller
-support — plus a growing suite of visual and quality-of-life enhancements — to
-**Call of Duty: Modern Warfare 3 (2011, IW5 engine)**, covering Campaign and
-Survival. It is not a keyboard/mouse-emulation mapper: analog movement, look,
-and every button hook the game's own real engine functions directly, the same
-internal calls a keyboard/mouse player already uses, just fed from a
-controller instead.
+A from-scratch, native reverse-engineering project bringing three real,
+shipped patches to **Call of Duty: Modern Warfare 3 (2011, IW5 engine)**:
+real controller support (Campaign and Survival), a growing suite of visual
+and quality-of-life enhancements, and native netcode security patching
+(merged in 2026-09-12 from what was previously a separate sibling repo,
+`MW32011NSP` — see the [Security](#security-netcode-vulnerability-patches)
+section below). Controller support is the flagship, first-shipped patch —
+it isn't the whole of what this project is anymore. None of it is a
+keyboard/mouse-emulation mapper or a config tweak: analog movement, look,
+and every button hook the game's own real engine functions directly, the
+same internal calls a keyboard/mouse player already uses, just fed from a
+controller instead; the security fixes hook the game's own real
+network-message-parsing functions the same way.
 
 MW3 (2011) shipped on PC with **zero working controller input path** — no
 `xinput`/`dinput8` import anywhere in either binary, no hidden setting to
@@ -16,8 +22,9 @@ running game, not assumed.
 
 ## ⚠ Security notice: unpatched MW3 (2011) netcode vulnerabilities
 
-Independent security research (this project's sibling repo,
-[MW32011NSP](https://github.com/k8se10/MW32011NSP)) has identified real,
+Independent security research (this project's own `security/` component,
+formerly the separate sibling repo `MW32011NSP`, absorbed 2026-09-12) has
+identified real,
 network-reachable vulnerabilities in MW3 (2011)'s own base-game code —
 **not in this mod** — affecting both Multiplayer and Spec-Ops/Survival
 co-op. These were re-confirmed present and unpatched in the game's most
@@ -40,9 +47,8 @@ through their official security-disclosure channel.
 
 We'll update this notice with full technical detail once a fix ships and is
 verified, per standard responsible-disclosure practice. See
-[MW32011NSP](https://github.com/k8se10/MW32011NSP) for the project working
-on fixes for these directly (a proxy-DLL patch, the same technique this mod
-uses for input).
+[`security/`](security/) for this project's own work fixing these directly
+(a proxy-DLL patch, the same technique this mod uses for input).
 
 ## Status
 

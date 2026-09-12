@@ -60,8 +60,8 @@ since MW3 is affected regardless of whether that mod is installed.
 
 ## How the fixes work
 
-Same proxy-DLL injection technique already proven working in the sibling
-`MW32011NCP` project (a proxy `d3d9.dll` gets code execution inside the game
+Same proxy-DLL injection technique already proven working in the main mod
+(`../proxy_d3d9/`, a proxy `d3d9.dll` gets code execution inside the game
 process), but hooking the real, vulnerable network-message-parsing functions
 directly instead of input functions. Each fix is a pre-hook that validates/
 clamps incoming attacker-controlled data to a real, known-safe size *before*
@@ -128,7 +128,7 @@ This project vendors and links
 [MinHook](https://github.com/TsudaKageyu/minhook) (Copyright © 2009–2017
 Tsuda Kageyu, BSD 2-Clause-style license) for all API hooking, and the
 Hacker Disassembler Engine (HDE) 32/64 C it bundles — same library, same
-terms, as the sibling `MW32011NCP` project.
+terms, as the main mod's own vendored copy (`../proxy_d3d9/third_party/minhook/`).
 
 ## License
 

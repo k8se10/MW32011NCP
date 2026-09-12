@@ -1,9 +1,20 @@
 MW32011NSP (MW3 2011 Netcode Security Patch) License
 Copyright (c) 2026 Kye Savage
 
-This license applies to the original source code of this project (the "Patch") —
-everything in this repository except any third-party components listed under
-"Third-party components" below, which remain under their own licenses.
+**Scope note (added 2026-09-12, when this component merged into
+MW32011NCP's own repo)**: this file covers the `security/` directory
+specifically — it's not a leftover duplicate. The repo root's own
+`../LICENSE` covers everything else in this repository. Both are the same
+permissive, no-charge, attribution-required license in substance; this one
+adds one extra clause (5, below) specific to this component's own
+responsible-disclosure obligations, which doesn't apply to the rest of the
+repo. If you're distributing or forking only this directory, this file is
+the one that governs it.
+
+This license applies to the original source code of this component (the
+"Patch") — everything in this directory except any third-party components
+listed under "Third-party components" below, which remain under their own
+licenses.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to use,
@@ -63,9 +74,9 @@ public servers.
 --------------------------------------------------------------------------------
 Third-party components
 
-This repository vendors the following third-party library, under its own
-license, unmodified in license terms — same library, same terms, as the
-sibling `MW32011NCP` project:
+This directory vendors its own copy of the following third-party library,
+under its own license, unmodified in terms — same library, same terms, as
+the repo root's own copy (`../proxy_d3d9/third_party/minhook/`):
 
 - MinHook (`proxy_d3d9/third_party/minhook/`), including the bundled Hacker
   Disassembler Engine (HDE) 32/64 C — see

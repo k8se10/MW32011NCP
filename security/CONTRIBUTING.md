@@ -44,7 +44,7 @@ public/untrusted servers. Before opening a PR, please read this file in full.
 
 ## Code style
 
-- Same general discipline as the sibling `MW32011NCP` project: keep hook
+- Same general discipline as the rest of this repo: keep hook
   installation/signature-scanning plumbing separate from the actual
   validation/fix logic.
 - Hook callbacks must be safe to call from the game's own thread(s) — no blocking
@@ -59,7 +59,7 @@ public/untrusted servers. Before opening a PR, please read this file in full.
 
 ## Building
 
-- Windows only, same target binaries as the sibling project. Requires MSVC
+- Windows only, same target binaries as the rest of this repo. Requires MSVC
   (Visual Studio Build Tools or Community, with the Windows 10 SDK) and MSBuild.
 - Both target binaries are 64-bit — build as x64. (MW3 received its
   first-ever binary update in 2026-09-03, recompiling from 32-bit; the
@@ -69,9 +69,8 @@ public/untrusted servers. Before opening a PR, please read this file in full.
 - Hook targets are resolved via runtime signature scanning
   (`proxy_d3d9/src/signature_scan.h`/`.cpp`), a wildcarded byte-pattern scan
   against the game's own main module, resolved once at process startup and
-  cached for the session — same policy and reasoning as the sibling
-  `MW32011NCP` project. Do not hardcode a fixed address for a new hook
-  target.
+  cached for the session — same policy and reasoning as the main mod. Do
+  not hardcode a fixed address for a new hook target.
 
 ## Submitting a PR
 
@@ -85,7 +84,7 @@ public/untrusted servers. Before opening a PR, please read this file in full.
    production-ready, live-verified against a real reproduction of the original
    bug, no placeholder/half-finished work.
 4. Commit messages follow `[type]: [description]` (`feat:`, `fix:`, `docs:`,
-   `chore:`, `refactor:`, `test:`) — same convention as the sibling project.
+   `chore:`, `refactor:`, `test:`) — same convention as the rest of this repo.
 5. Describe your verification in the PR description: which binary, how you
    reproduced the original bug, how you confirmed the fix stops it, and that
    normal play still works.
