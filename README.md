@@ -130,12 +130,19 @@ presets, the plugin API, background threads, and more).
   stick input (movement/look) works fine on x64 already; gyro-aim
   specifically doesn't. This was still a preview/WIP feature even on the
   `-x86` line, so this is a lower-priority gap than the others above.
-- **Auto-Mantle and Back's `+scores` scoreboard** are still absent on x64 —
-  neither has any wiring in the current x64 input pipeline yet. (Survival
+- **Auto-Mantle** is still absent on x64 — no wiring in the current input
+  pipeline yet, genuinely blocked (not just not-yet-attempted) on the same
+  native text-draw hook that blocks gameplay glyph icons above. (Survival
   ready-up, hold Y, and Hold Breath, L3 while ADS'd, were both ported
   2026-09-12 — see the build-verified column above; Hold Breath uses the
   same no-explicit-sniper-check gating as `-x86`, relying on the real native
   kbutton to limit the effect to sniper-class weapons.)
+- **Back's `+scores` scoreboard** has no wiring on x64 yet either, but this
+  isn't a real functionality gap — confirmed live on `-x86`, including
+  direct testimony from actual Xbox 360 console play, that this bind is a
+  genuine no-op in Campaign/Survival on every platform (no scoreboard UI
+  exists there at all). It'll have real value once Multiplayer support
+  ships, where a scoreboard genuinely exists.
 - **FXAA and a forced-MSAA option** were never actually built even on the
   old `-x86` line (only ever planned) — real future work, not a regression.
 
