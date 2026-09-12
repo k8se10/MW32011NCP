@@ -123,9 +123,17 @@ for any item lives in `re_notes/known_issues_x64.md` issue #1.
 ## Not yet dispatched / still in progress as of this checklist's creation
 
 - [ ] Hold Breath (L3 while ADS'd on a sniper) — port in progress.
-- [ ] Auto-Mantle (while sprinting) — port in progress, may be found
-      blocked on the glyph-draw-hook dependency; check
-      `re_notes/known_issues_x64.md` for the actual outcome before testing.
+
+## Not testable — investigated and found genuinely blocked, not implemented
+
+- **Auto-Mantle (while sprinting)** — confirmed BLOCKED (2026-09-12), not a
+  port that was skipped. Depends on `IsMantleHintCurrentlyShowing()`, which
+  x86 detects by hooking the native hint *text-draw* call and pattern-
+  matching the rendered string (`Hook_DrawGlyphText`) — not a native engine
+  flag this project reads directly. `Hook_DrawGlyphText`'s x64 equivalent
+  doesn't exist yet (the same separate, larger RE task blocking gameplay
+  glyph icons generally). Nothing to test here until that's ported — see
+  `re_notes/known_issues_x64.md` issue #1 for the full dependency trace.
 
 ## Multiplayer (`iw5mp.exe`) — separate track, not part of this release gate
 
