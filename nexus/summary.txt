@@ -1,1 +1,1 @@
-Native (non-emulated) controller support and enhancements for MW3 (2011) Campaign & Survival. Alpha, rebuilding against the game's new 64-bit binaries -- no release available yet. See Description tab for current status.
+Native (non-emulated) reverse-engineering patches for MW3 (2011) -- controller support, visual/performance enhancements, and netcode security fixes, all hooking the game's own real engine. Alpha, rebuilding against the new 64-bit binaries -- no release available yet. See Description tab for current status.
