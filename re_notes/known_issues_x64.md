@@ -45,7 +45,7 @@ this whole session (grows as new fixes land, items move to its own
 
 ## Index
 
-- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **D-pad Left synthetic-key exception AND a sniper Fire/ADS fix attempt both shipped (build-verified, neither live-tested yet); Plugin API ported (build-verified, needed no host code changes); visual-enhancement-suite x64 port attempted TWICE, still blocked on two addresses that resist exhaustive static RE (render-scale, clcState/in-level-flag) — likely needs live tracing, not more static analysis; FXAA/MSAA found to not even exist on x86, out of scope for parity; overlay-render bug fully audited — cursor's own unguarded x86 address landmine found and fixed, rest of the render path confirmed clean; Custom Options screen wired into x64's input pipeline (build-verified, temporary manual open-chord substitute pending a real focus-detection RE pass -- **RE pass now done 2026-09-12: real x64 menu-focus/itemDef-array offsets re-derived and cross-confirmed, TryGetRealFocusedGroupAndIndexX64 wired in as the real Options-screen open trigger alongside the chord (kept as a fallback), build-verified, not yet live-tested**); a "greenlit" trusted-plugin allowlist added to plugin_loader.cpp so the sibling MW32011NSP project's own security-fix plugin can ship built in by default (build-verified, end-to-end test pending that plugin's own existence); Sprint (L3) migrated from raw pm_flags-forcing to the real +sprint kbutton, matching x86's final design, plus the rising-edge stand-from-crouch/prone behavior (build-verified, not yet live-tested); native D-pad+A/B controller menu navigation ported (InjectControllerMenuNavX64/InjectControllerMenuBackX64, driven by a newly-resolved ForwardKeyToMenu equivalent, FUN_1402aac50) — main menu, pause menu, options drill-down, buy-station/armory lists, and B-back all now controller-navigable in principle, plus two real menu-active-gating conflicts found and fixed along the way (D-pad actionslot, CrouchProne/B dual-purpose) — build-verified, not yet live-tested — release ETA 2-4 weeks, gated on x86 parity**
+- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **D-pad Left synthetic-key exception AND a sniper Fire/ADS fix attempt both shipped (build-verified, neither live-tested yet); Plugin API ported (build-verified, needed no host code changes); visual-enhancement-suite x64 port attempted TWICE, still blocked on two addresses that resist exhaustive static RE (render-scale, clcState/in-level-flag) — likely needs live tracing, not more static analysis; FXAA/MSAA found to not even exist on x86, out of scope for parity; overlay-render bug fully audited — cursor's own unguarded x86 address landmine found and fixed, rest of the render path confirmed clean; Custom Options screen wired into x64's input pipeline (build-verified, temporary manual open-chord substitute pending a real focus-detection RE pass -- **RE pass now done 2026-09-12: real x64 menu-focus/itemDef-array offsets re-derived and cross-confirmed, TryGetRealFocusedGroupAndIndexX64 wired in as the real Options-screen open trigger alongside the chord (kept as a fallback), build-verified, not yet live-tested**); a "greenlit" trusted-plugin allowlist added to plugin_loader.cpp so the sibling MW32011NSP project's own security-fix plugin can ship built in by default (build-verified, end-to-end test pending that plugin's own existence); Sprint (L3) migrated from raw pm_flags-forcing to the real +sprint kbutton, matching x86's final design, plus the rising-edge stand-from-crouch/prone behavior (build-verified, not yet live-tested); native D-pad+A/B controller menu navigation ported (InjectControllerMenuNavX64/InjectControllerMenuBackX64, driven by a newly-resolved ForwardKeyToMenu equivalent, FUN_1402aac50) — main menu, pause menu, options drill-down, buy-station/armory lists, and B-back all now controller-navigable in principle, plus two real menu-active-gating conflicts found and fixed along the way (D-pad actionslot, CrouchProne/B dual-purpose) — build-verified, not yet live-tested; Auto-Mantle (while sprinting) investigated and found genuinely BLOCKED, not implemented — its real ledge-availability gate depends entirely on the native hint text-draw hook (x86's Hook_DrawGlyphText), which has no x64 equivalent yet (same separate, larger RE task blocking gameplay-hint glyph overlays generally), and a considered alternative (reading the engine's own raw mantle condition-flag memory directly) was deliberately rejected as a diverging, policy-adjacent workaround rather than a real port — release ETA 2-4 weeks, gated on x86 parity**
 
 ---
 
@@ -2816,3 +2816,82 @@ work stayed attributed to its own commit wherever the interleaving allowed
 it to be cleanly separated -- worth noting as a real, reusable technique
 for any future session that finds itself in the same shared-working-
 directory situation this project's own concurrent-agent model can produce.
+
+---
+
+**Auto-Mantle (while sprinting) -- INVESTIGATED, BLOCKED, not implemented
+this pass (2026-09-12).** Cross-reference: `re_notes/x64_feature_parity_audit.md`
+row #24 ("Zero references to `AutoMantle`/`auto.?mantle` anywhere in the x64
+file. Not gated off -- simply never implemented for x64"). This round traced
+the real dependency chain rather than porting the feature on assumption, per
+this task's own explicit instruction to investigate before committing to an
+approach.
+
+**x86's real detection chain, read in full first** (`analog_input_hooks.cpp`):
+the condition gating `out |= 0x400u; // +gostand` (line ~1478) is
+`g_modConfig.autoMantleEnabled && IsSprintActive() && IsMantleHintCurrentlyShowing() &&`
+cooldown-elapsed. `IsMantleHintCurrentlyShowing()` (line 3763) is a pure
+grace-window timestamp check against `g_mantleHintLastSeenMs`, which is only
+ever advanced from `g_mantleHintDrawnThisFrame` (set at line 8178,
+`if (isMantleHint) g_mantleHintDrawnThisFrame = true;`) -- and `isMantleHint`
+itself (line 8163) is computed INSIDE `Hook_DrawGlyphText`'s own body, via a
+structural template match (`RenderedTextMatchesSubstitutionTemplate(param_1,
+"PLATFORM_MANTLE")`) against the literal text string the native engine is
+handing to that hooked draw call THIS frame. In other words: Auto-Mantle's
+entire ledge-availability signal is not a native engine flag this project
+reads directly -- it is inferred by hooking the real native hint TEXT-DRAW
+call and pattern-matching what string is being rendered. This is deliberate,
+not incidental: issue #62's own history (see `CLAUDE.md`'s "Auto-mantle"
+timeline entry and this file's cross-references) shows the design was
+explicitly built and fixed around "the engine itself has ALREADY decided a
+ledge is mantleable" being observable ONLY through what it chooses to draw,
+not through a separately-read condition byte.
+
+**Concrete finding: this exact dependency is confirmed still unported on
+x64.** `Hook_DrawGlyphText`'s x64 equivalent does not exist -- already
+documented earlier in this same issue (`known_issues_x64.md` issue #1,
+"Scope note, honestly flagged" round, 2026-09-12): "Full gameplay
+controller-glyph icon overlays... remain blocked on a SEPARATE,
+not-yet-ported piece -- the native text-draw hook (x86's
+`Hook_DrawGlyphText`) has no x64 equivalent yet." Independently
+re-confirmed this round via direct grep of `analog_input_hooks_x64.cpp`:
+zero references to `mantle`, `AutoMantle`, `DrawGlyphText`, or any
+text-draw hook at all. `g_mantleHintDrawnThisFrame`/`g_mantleHintLastSeenMs`/
+`IsMantleHintCurrentlyShowing()` have no x64 counterpart because there is no
+x64 hook that could ever set them -- there is currently no code path on x64
+that observes native hint text being drawn, mantle-related or otherwise.
+**Auto-Mantle is therefore blocked on the same not-yet-attempted RE task as
+the gameplay-hint glyph overlay generally (row #34 in
+`x64_feature_parity_audit.md`), not a separate, smaller gap of its own.**
+
+**Alternative path considered and deliberately rejected**: `re_notes/iw5sp.md`'s
+"Mantle -- found, concretely" section (2026-07-xx SP research) separately
+documents real native condition flags the ENGINE itself checks to decide
+whether `+gostand` means "mantle" vs. "stand" (`DAT_00a760ec`/`DAT_00a7610c`/
+`DAT_00a86390`/`DAT_00a86ae0`, all `+0xc`-offset checks). Reading these
+directly on x64 (once re-signature-scanned) would technically produce SOME
+ledge-availability signal without needing the text-draw hook at all. **Not
+pursued, for three concrete reasons, not just caution**: (1) it would
+directly read raw engine condition-flag memory rather than observe the
+already-rendered native hint text -- a materially different, riskier signal
+class than the one x86 deliberately chose, and closer to the class of
+live-state read this project's own standing policy reserves away from the
+main mod (see `CLAUDE.md`'s permanently-removed aim-assist reasoning and the
+Plugin API's "even SP that poses a risk, possible deferrence to plugin"
+precedent, issue #85/#89) -- worth a fresh, explicit discussion before use,
+not a default fallback; (2) it would be a parallel native-state check that
+duplicates but diverges from x86's actual shipped hint-detection logic --
+exactly the workaround this task's own hard constraint #1 explicitly rules
+out; (3) those four addresses were never independently re-derived for x64 in
+this pass, so this would be fresh, unverified signature-scan work on top of
+an already-rejected approach, not a shortcut.
+
+**No code changes made to `analog_input_hooks_x64.cpp` for Auto-Mantle this
+pass** -- shipping a stub or a diverging parallel check would violate this
+task's own explicit honesty-over-completion instruction. `x64_feature_parity_audit.md`
+row #24 stays accurate as written ("simply never implemented for x64");
+this round adds the WHY (a real, traced blocking dependency, not an
+oversight) and the concrete prerequisite (`Hook_DrawGlyphText`'s x64 port)
+that would unblock it. **Status: Deferred**, pending that separate,
+larger RE task -- not a small remaining step, and not to be force-shipped
+via a diverging native-flag read without a fresh explicit decision.
