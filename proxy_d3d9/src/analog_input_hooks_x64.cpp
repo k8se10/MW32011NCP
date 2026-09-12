@@ -216,6 +216,7 @@ using KbuttonDeactivateFn = void(__fastcall*)(int* kbutton, int sourceId, int ti
 extern KbuttonActivateFn g_kbuttonActivate;
 extern KbuttonDeactivateFn g_kbuttonDeactivate;
 extern int* g_sprintStruct;
+extern int* g_holdBreathStruct;
 extern volatile uint32_t* g_timestampPtr;
 int GetRealStanceX64();
 void ForceStandingViaRealToggleX64();
@@ -1017,6 +1018,69 @@ void SendSyntheticActionSlot4KeyX64(bool down)
         PostMessageA(hwnd, WM_KEYUP, '4', 0xC0000001);
     }
 }
+
+// ---- Survival ready-up (hold Y ~740ms): same narrowly-scoped exception x86
+// already needed (analog_input_hooks.cpp's own SendSyntheticF5/
+// InjectControllerWeaponNext, user-approved 2026-07-15), ported here
+// 2026-09-12 per re_notes/x64_feature_parity_audit.md (confirmed zero x64
+// wiring for this control). Re-read x86's own comment block in full before
+// touching this -- the real finding there: F5/"skip" (Survival's real
+// between-wave ready-up trigger) has no locatable native dispatch after an
+// extensive multi-technique search (real +gostand kbutton: wrong system;
+// togglecrouch/FUN_0057d2c0 mode variants: inert or a genuine unrelated
+// prone-toggle that got a player stuck prone live; GSC
+// notifyonplayercommand/VM_Notify: real but needs live GSC-VM-stack
+// manipulation from an async hook, too risky). That search was exhaustive
+// for x86 and is NOT being re-run here -- the game data/GSC scripts are
+// unchanged by the x64 recompile, so the same "no native call" conclusion is
+// assumed to carry over per this task's own explicit scope.
+//
+// Mechanism, identical to x86's SendSyntheticF5: IW5 has no DirectInput
+// import at all (CLAUDE.md's own key finding), so keyboard input is real
+// WM_KEYDOWN/WM_KEYUP window messages -- synthesizing a real F5 via
+// PostMessageA at the game's own HWND is indistinguishable from an actual
+// keypress, and safe to fire even outside the one context it matters (a
+// misplaced synthetic F5 is simply ignored by the game, same as a real,
+// misplaced press would be). GetGameWindow() (d3d9_hook.cpp) is already
+// confirmed architecture-neutral and in active x64 use -- same call this
+// file's own SendSyntheticActionSlot4KeyX64 above already uses, direct
+// template for this function.
+//
+// ONE HONEST, DELIBERATE DIFFERENCE FROM x86: x86 additionally gates the
+// fire behind IsInSurvivalMode() (a mapname-dvar read via x86's raw
+// Dvar_FindVar-equivalent, FUN_0062abe0 @ 0x0062abe0). x64's own equivalent
+// of that raw dvar-lookup function is a genuinely unresolved RE target --
+// real_settings.cpp's FindDvar()/GetDvarString() are x86-only (the __asm
+// body is `#ifdef _M_IX86`-guarded, a safe no-op returning nullptr on x64,
+// not a crash, but also not a real lookup) and analog_input_hooks_x64.cpp's
+// own GetLookAccelerationScaleX64 comment already documents this exact gap
+// (GetEffectiveFov/Dvar_FindVar addresses "genuinely unresolved RE targets,
+// not yet found" -- known_issues_x64.md issue #1). Rather than block this
+// port on a separate RE task outside its scope, this fires unconditionally
+// on the hold-threshold edge, relying on the SAME "safe by construction"
+// reasoning x86's own comment already documents as sufficient even without
+// the mode gate (a misplaced F5 outside Survival's ready-up wait is inert).
+// Revisit if x64's Dvar_FindVar equivalent is ever resolved for other work.
+void SendSyntheticF5X64()
+{
+    HWND hwnd = GetGameWindow();
+    if (!hwnd) return;
+    // lParam bit 24 (extended-key flag) doesn't apply to F5; repeat count 1,
+    // scan code left 0 -- the game reads the virtual-key (wParam), matching
+    // x86's own SendSyntheticF5 exactly (same VK, same lParam values).
+    PostMessageA(hwnd, WM_KEYDOWN, VK_F5, 0x00000001);
+    PostMessageA(hwnd, WM_KEYUP, VK_F5, 0xC0000001);
+    LogFromController("[x64-ready-up-diag] SendSyntheticF5X64 fired");
+}
+
+// Edge-tracking state for the Y hold-vs-tap split -- mirrors x86's own
+// g_yPressStartMs/g_yReadyUpFired (analog_input_hooks.cpp) exactly. The
+// existing g_weaponSwitchHeldX64 bool (declared further below alongside this
+// file's other g_*HeldX64 edge trackers) already tracks the raw held state;
+// these two add the hold-duration/debounce layer on top of it.
+DWORD g_yPressStartMsX64 = 0;
+bool g_yReadyUpFiredX64 = false; // debounces per physical Y hold -- only
+                                  // fires once, even if held past threshold
 
 // XInput D-pad bit values -- standard, shared constants, matching
 // analog_input_hooks.cpp's own identical definitions (kept local here rather
@@ -1932,9 +1996,32 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
             }
         }
 
+        // Weapnext / Survival ready-up -- same physical button (Y), same
+        // hold-vs-tap split as x86's own InjectControllerWeaponNext: a quick
+        // tap (or a hold that never reaches the threshold) fires the normal
+        // weapon-switch on release; a hold past
+        // g_modConfig.readyUpHoldThresholdMs fires the synthetic F5 exactly
+        // once per press (debounced by g_yReadyUpFiredX64), and SUPPRESSES
+        // the release-edge weapon-switch for that same press (matching x86's
+        // own "!g_yReadyUpFired" release-edge guard) -- Survival's between-
+        // wave break is live gameplay with usable weapons, so firing
+        // weapnext unconditionally on Y's press edge would also switch
+        // weapons on every ready-up hold, an unwanted side effect x86 already
+        // solved by deferring weapnext to the release edge.
         if (g_weaponNext) {
             bool weaponSwitchHeld = IsPhysicalHeld_Exported(g_buttonMap.weaponSwitch, xiButtons, leftTrigger, rightTrigger);
             if (weaponSwitchHeld && !g_weaponSwitchHeldX64) {
+                g_yPressStartMsX64 = GetTickCount();
+                g_yReadyUpFiredX64 = false;
+            }
+            if (weaponSwitchHeld && !g_yReadyUpFiredX64 &&
+                (GetTickCount() - g_yPressStartMsX64) >= g_modConfig.readyUpHoldThresholdMs) {
+                g_yReadyUpFiredX64 = true;
+                SendSyntheticF5X64();
+            }
+            if (!weaponSwitchHeld && g_weaponSwitchHeldX64 && !g_yReadyUpFiredX64) {
+                // Falling edge, ready-up threshold never reached this press --
+                // switch weapons, same as x86's own release-edge fallback.
                 g_weaponNext(0, 1);
             }
             g_weaponSwitchHeldX64 = weaponSwitchHeld;

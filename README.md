@@ -103,6 +103,7 @@ see their own sections below; neither gates this release.
 | Crouch/Prone (tap vs. hold) | Plugin API (loader, hook/memory access) |
 | Pause menu open/close | Custom Options screen (native trigger + temporary open-chord) |
 | Auto-unstick (no more "click once at launch") | Vibration/rumble (fire + damage) |
+| | Survival ready-up (hold Y, synthetic F5) |
 | | Visual-enhancement suite (render scale, FSR, motion blur) |
 | | Native controller menu/UI navigation (main menu, pause, options, buy-stations) |
 | | Menu-focus/itemDef tracking (glyph-icon dependency) |
@@ -128,9 +129,10 @@ presets, the plugin API, background threads, and more).
   stick input (movement/look) works fine on x64 already; gyro-aim
   specifically doesn't. This was still a preview/WIP feature even on the
   `-x86` line, so this is a lower-priority gap than the others above.
-- **Hold Breath, Survival ready-up (hold Y), Auto-Mantle, and Back's
-  `+scores` scoreboard** are all absent on x64 — none of the four have any
-  wiring in the current x64 input pipeline yet.
+- **Hold Breath, Auto-Mantle, and Back's `+scores` scoreboard** are still
+  absent on x64 — none of the three have any wiring in the current x64 input
+  pipeline yet. (Survival ready-up, hold Y, was ported 2026-09-12 — see the
+  build-verified column above; same synthetic-F5 mechanism as `-x86`.)
 - **FXAA and a forced-MSAA option** were never actually built even on the
   old `-x86` line (only ever planned) — real future work, not a regression.
 

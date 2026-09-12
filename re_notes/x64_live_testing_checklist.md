@@ -42,6 +42,14 @@ for any item lives in `re_notes/known_issues_x64.md` issue #1.
       (`g_currentBPressTouchedMenuX64`) was added; B should still toggle
       real stance during gameplay and should NOT toggle stance when used
       to back out of an open menu.
+- [ ] Survival ready-up (hold Y) — **new this session (2026-09-12), synthetic-
+      F5 exception ported.** Confirm: holding Y for ~740ms between Survival
+      waves readies up (same synthetic `WM_KEYDOWN`/`WM_KEYUP` F5 via
+      `PostMessageA` x86 already ships); a quick tap or a hold that falls
+      short of the threshold still switches weapons instead; confirm no
+      observable side effect from the missing `IsInSurvivalMode()` gate
+      outside Survival (expected none, but unconfirmed against real
+      hardware on this binary).
 
 ## Menu & UI navigation (new this session)
 
@@ -115,7 +123,6 @@ for any item lives in `re_notes/known_issues_x64.md` issue #1.
 ## Not yet dispatched / still in progress as of this checklist's creation
 
 - [ ] Hold Breath (L3 while ADS'd on a sniper) — port in progress.
-- [ ] Survival ready-up (hold Y) — port in progress.
 - [ ] Auto-Mantle (while sprinting) — port in progress, may be found
       blocked on the glyph-draw-hook dependency; check
       `re_notes/known_issues_x64.md` for the actual outcome before testing.
