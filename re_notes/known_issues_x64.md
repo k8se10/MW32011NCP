@@ -2373,6 +2373,49 @@ listed here at all:
   the absence of a new entry here as proof something else is fine; treat
   it as not yet re-checked.
 
+**Full re-audit now complete, 2026-09-12 -- see
+`re_notes/x64_feature_parity_audit.md` for the full 61-item table** (34
+confirmed present, 21 confirmed absent, 6 partial/regressed), superseding
+the "not yet complete" note directly above. Cross-referencing rather than
+duplicating that file's full table here -- two findings from it are
+important enough to call out explicitly in this tracker too, since they
+were NOT covered by this entry's own original gap list above and are, by
+player impact, more significant than the vibration/gyro gaps already
+documented here:
+
+- **Native D-pad+A menu/UI navigation is 100% absent on x64 -- not just the
+  custom Options screen's own open-trigger (already covered above under
+  "Custom Options screen wired into x64's input pipeline"), but the entire
+  underlying mechanism.** `InjectControllerMenuNav()` (main menu, pause
+  menu, options two-pane drill, buy-station/armory lists, slider value
+  adjustment) and `InjectControllerMenuBack()` (B's real ESC-forward) are
+  BOTH wrapped in `#if !defined(_M_X64) && !defined(_WIN64)` in their
+  entirety (`analog_input_hooks.cpp`) and neither is called from x64's
+  `InjectMenuInputTick` -- confirmed directly: that function's x64-only
+  `#if` block calls only `PollPauseToggleX64`/`AutoUnstickPauseCycleX64`/
+  `PollCustomOptionsMenuX64`, and the x86-only block containing both menu-nav
+  functions is excluded entirely for x64 builds. Practical consequence: a
+  controller player on x64 today cannot navigate ANY native menu at all
+  (main menu, pause menu, buy stations, sliders) -- keyboard/mouse is
+  required for every menu interaction. This is the single highest-impact
+  gap the audit found, ahead of vibration/gyro in practical effect on
+  ordinary play, since it blocks basic controller-only menu use entirely
+  rather than degrading one specific feature.
+- **Sprint (L3) uses `-x86`'s ORIGINAL, deprecated pre-kbutton design, not
+  its final shipped one.** `Hook_SprintTick` (`analog_input_hooks_x64.cpp`)
+  forces the `pm_flags`-equivalent bit (`FUN_140014a80`'s own field)
+  directly -- structurally identical to `-x86`'s first Sprint
+  implementation, which was deliberately replaced (2026-07-19, see
+  `CLAUDE.md`'s "Sprint's real kbutton" section) once the real `+sprint`
+  kbutton was found, specifically because raw bit-forcing gave infinite
+  sprint with no native duration/recovery timer and no automatic Extreme
+  Conditioning perk override. A real x64 `+sprint`-style kbutton was never
+  searched for this session -- the RE effort found and hooked the
+  `pm_flags` WRITER itself (a real, working, but earlier-generation
+  design) and stopped there. Not yet live-confirmed whether x64 Sprint
+  is actually unlimited in practice, but that's the predicted behavior
+  given `-x86`'s own documented history with the identical mechanism.
+
 **Real crash on first live deploy of the above (2026-09-05, "game failed to
 launch") -- ROOT-CAUSED AND FIXED, same session.** Once NSP's own
 `mw32011nsp_security.dll` actually existed and was deployed as a greenlit
