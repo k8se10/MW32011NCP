@@ -74,14 +74,17 @@ repeat that. Expect it as a close fast-follow release once the first
 
 | Confirmed live (direct playtest) | Build-verified (not yet live-tested) |
 |---|---|
-| Analog movement, analog look | Jump auto-stand (crouch/prone → standing) |
-| Sprint, Jump, Interact | D-pad actionslot (all four directions) |
-| Fire, ADS (true hold-to-aim), Reload | D-pad Left's squadmate-call-in fix |
-| Melee, Lethal, Tactical | A fix attempt for sniper-class Fire/ADS |
-| Weapon switch (Y) | Plugin API (loader, hook/memory access) |
-| Crouch/Prone (tap vs. hold) | Custom Options screen (temporary open-chord) |
-| Pause menu open/close | |
-| Auto-unstick (no more "click once at launch") | |
+| Analog movement, analog look | Sprint (real kbutton — mechanism changed 2026-09-12, needs re-confirming) |
+| Jump, Interact | Jump auto-stand (crouch/prone → standing) |
+| Fire, ADS (true hold-to-aim), Reload | D-pad actionslot (all four directions) |
+| Melee, Lethal, Tactical | D-pad Left's squadmate-call-in fix |
+| Weapon switch (Y) | A fix attempt for sniper-class Fire/ADS |
+| Crouch/Prone (tap vs. hold) | Plugin API (loader, hook/memory access) |
+| Pause menu open/close | Custom Options screen (native trigger + temporary open-chord) |
+| Auto-unstick (no more "click once at launch") | Vibration/rumble (fire + damage) |
+| | Visual-enhancement suite (render scale, FSR, motion blur) |
+| | Native controller menu/UI navigation (main menu, pause, options, buy-stations) |
+| | Menu-focus/itemDef tracking (glyph-icon dependency) |
 
 ### Known gaps
 
@@ -93,37 +96,13 @@ partial/regressed). The items below are the highest-impact gaps it found;
 see that file for everything else (menu glyphs, killstreaks, config
 presets, the plugin API, background threads, and more).
 
-- **Native controller menu/UI navigation is 100% absent on x64.** Not just
-  the custom Options screen's own open-trigger (already known) — the entire
-  underlying D-pad+A navigation mechanism (main menu, pause menu, options
-  two-pane drill, buy-station/armory lists, slider value adjustment) and B's
-  ESC-forward menu-back are both wrapped in x86-only code that never runs on
-  x64. A controller player currently cannot navigate any native menu at all
-  — keyboard/mouse is required for every menu interaction. This is the
-  single highest-impact gap found by the audit.
-- **Sprint (L3) uses a different, likely worse mechanism than `-x86`'s final
-  design.** x64 forces the raw sprint-state bit directly (the same approach
-  `-x86` used originally, before it was deliberately replaced with a real
-  kbutton specifically because it gave infinite sprint with no native
-  duration/recovery timer and no Extreme Conditioning perk override). x64
-  was never re-pointed at that same real-kbutton design — it likely has the
-  same infinite-sprint/no-perk-override regression `-x86` already fixed
-  once, not yet independently confirmed live either way.
 - **Controller-glyph icons, on-screen hint prompts, the highlighted-item
-  A-glyph, the F2/F3 glyph-position editor, and the custom cursor** don't
-  draw on x64 yet — the underlying menu-focus/item-position tracking they
-  all depend on hasn't been ported. Everything else renders normally
-  (including this mod's own startup/hot-reload toast messages, which ARE
-  confirmed working on x64).
-- **The visual-enhancement suite** (internal render scale, FSR sharpening,
-  motion blur) isn't on x64 yet — blocked on two engine addresses that have
-  resisted signature-scan-based discovery so far, across multiple attempts.
-  `ForceAnisotropicFiltering`/`ForceHighQualityShadows`/
-  `ForceHighQualityLighting` are NOT part of this gap — those three are
-  confirmed already working on x64.
-- **Vibration/rumble doesn't work on x64 at all.** Fully implemented and
-  working on the `-x86` line; the code simply never runs on x64 (it lives
-  entirely inside an x86-only code path) — not started, not attempted.
+  A-glyph, the F2/F3 glyph-position editor, and the custom cursor** still
+  don't draw on x64. The underlying menu-focus/item-position tracking they
+  depend on has now been ported — the remaining gap is a separate, not-yet-
+  ported piece (the native text-draw hook itself). Everything else renders
+  normally (including this mod's own startup/hot-reload toast messages,
+  which ARE confirmed working on x64).
 - **DualSense gyro-aim isn't wired into x64's look input.** Basic DualSense
   stick input (movement/look) works fine on x64 already; gyro-aim
   specifically doesn't. This was still a preview/WIP feature even on the
