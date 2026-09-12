@@ -12,9 +12,14 @@ patch history is preserved in
 
 **Summary:** The first release on the `-x64` line, rebuilding this project
 from scratch against MW3's recompiled 64-bit binaries. Every core gameplay
-control is implemented and build-verified, most confirmed live; the plugin
-API and custom Options screen are both wired in with one real gap each; the
-visual-enhancement suite has not yet been ported. **This release has not
+control is implemented and build-verified, most confirmed live; the visual-
+enhancement suite, vibration/rumble, native controller menu navigation, and
+the menu-focus/itemDef tracking glyph icons depend on are all now ported and
+build-verified (none live-tested yet). A full feature-parity audit against
+the `-x86` line (`re_notes/x64_feature_parity_audit.md`) found and closed
+several real gaps this file's own prior summary had missed, most notably
+Sprint silently running on x86's own deprecated pre-kbutton design and
+vibration never having been wired to x64 at all. **This release has not
 shipped** — see `README.md` for the current release gate (parity with the
 `-x86` line's final state) and `re_notes/known_issues_x64.md` issue #1 for
 live, detailed status on every item below.
@@ -38,9 +43,11 @@ live, detailed status on every item below.
    example plugin gained its own x64 build configuration.
 5. **Custom Options screen wired into the input pipeline.** The screen's own
    draw/navigate code was already cross-platform; a new poll function drives
-   it from the same always-on tick Pause's own toggle uses. Opens via a
-   temporary LB+RB chord while a native menu is active — see Investigated,
-   Not Yet Resolved below for the real trigger this substitutes for.
+   it from the same always-on tick Pause's own toggle uses. Its real, native
+   open trigger (focus landing on the actual in-game "Options" menu item) is
+   now also ported and wired in alongside the original temporary LB+RB
+   chord, which stays as a fallback until the real trigger is live-confirmed
+   — see item 11 below.
 6. **Addressing architecture: runtime signature scanning.** Every hook
    target is resolved via a wildcarded byte-pattern scan against the game's
    own main module, once at process startup and cached for the session —
@@ -65,6 +72,32 @@ live, detailed status on every item below.
    — both now correctly suppress the gameplay-side action while a menu is
    active. Not yet live-tested. See `re_notes/known_issues_x64.md` issue #1
    for the full RE trail.
+9. **Vibration/rumble ported to x64.** Previously 100% absent — the code
+   that installs it was only ever called from an x86-only-guarded path, so
+   it silently never ran, despite not appearing anywhere in this project's
+   own prior gap list. Both real mechanisms ported: fire rumble (a real
+   engine hook, its x64 target confirmed three independent ways) and damage
+   rumble (a per-frame health poll against the real x64 entity array,
+   confirmed via three independent consumers computing the same array
+   layout). Not yet live-tested.
+10. **The visual-enhancement suite ported to x64** — internal render scale,
+    FSR 1.0 RCAS sharpening, and camera motion blur. Resolves a target
+    (`InternalRenderScalePercent`'s own resolution-compute function) two
+    prior static-RE passes couldn't find. All three of x86's own proven-
+    necessary safety gates (menu-active, `clcState`, in-level) are wired for
+    both FSR and motion blur — deliberately not shipped on a weaker gate
+    than x86's own documented crash history (issues #103/#104) proved
+    necessary. Not yet live-tested.
+11. **Menu-focus/itemDef-array tracking ported to x64.** The underlying
+    mechanism controller-glyph icons, the custom cursor, and the custom
+    Options screen's real (non-chord) open trigger all depend on — every
+    struct offset independently re-derived and cross-confirmed for x64's
+    different (64-bit-aligned) layout, not assumed from the x86 original.
+    The real Options-screen trigger is now wired (see item 5). **Scope
+    note**: this resolves the focus-DETECTION half only — actually drawing
+    gameplay glyph icons still needs a separate, not-yet-ported native
+    text-draw hook (a different, larger RE task) — see Investigated, Not Yet
+    Resolved below.
 
 ### Fixed
 1. **Crash on launch with the sniper Fire/ADS fix's own log line.** The
@@ -126,16 +159,14 @@ live, detailed status on every item below.
    for tracking down indirect references static analysis alone misses.
 
 ### Investigated, Not Yet Resolved
-1. **The visual-enhancement suite** (internal render scale, FSR sharpening,
-   motion blur) is not yet on x64. Two engine addresses it depends on have
-   resisted signature-scan-based discovery across multiple exhaustive
-   attempts — next step is live tracing, not more static analysis.
-2. **Controller-glyph icons, on-screen hint prompts, and the custom cursor**
-   don't draw on x64. Confirmed via audit: not a hidden bug, but an honest
-   gap — the menu-focus/item-position tracking they depend on hasn't been
-   ported, since it hardcodes 32-bit-only pointer/struct assumptions that
-   read misaligned garbage on x64 (safely caught, never crashes, just always
-   declines to draw).
-3. **FXAA and a forced-MSAA option** don't exist on either line — checked
+1. **Gameplay controller-glyph icon overlays** (in-hint "Press [A]"-style
+   replacements, on-screen hint prompts, the custom cursor) still don't
+   draw on x64. The dependency this was originally blocked on (menu-focus/
+   itemDef tracking) is now resolved — see item 11 above — but the actual
+   native text-draw hook glyphs need to intercept (x86's `Hook_DrawGlyphText`)
+   has no x64 equivalent yet. A different, larger, not-yet-attempted RE
+   task (the hook itself, font/asset matching, the glyph allowlist), not a
+   quick follow-up to item 11.
+2. **FXAA and a forced-MSAA option** don't exist on either line — checked
    directly, and neither was ever actually built even on the old `-x86`
    line, only ever planned. Real future work, not a regression.
