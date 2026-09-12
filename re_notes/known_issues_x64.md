@@ -32,6 +32,15 @@ raw Ghidra output files, the standing signature-scanning caution) — this file
 is the `known_issues.md`-style curated issue record, same relationship the
 two files already had for #111 before the split.
 
+**Live-testing tracking, added 2026-09-12**: this file records what's
+build-verified and (once tested) what's confirmed live, but doesn't track
+"what still needs a real playtest" as a standalone, workable checklist —
+that's [`re_notes/x64_live_testing_checklist.md`](x64_live_testing_checklist.md),
+a living document seeded with every build-verified-but-untested item across
+this whole session (grows as new fixes land, items move to its own
+"Completed" section once actually confirmed). Direct methodology, same day:
+"rapid push for parity then mass testing through everything done."
+
 ---
 
 ## Index
