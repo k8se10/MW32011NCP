@@ -1,9 +1,18 @@
-MW32011NCP (native controller & enhancement project for MW3 2011) License
+MW32011NCP (native community patches for MW3 2011) License
 Copyright (c) 2026 Kye Savage
 
+**Scope note**: this file covers everything in this repository EXCEPT the
+`security/` directory, which has its own `security/LICENSE` — the same
+permissive, no-charge, attribution-required terms below, plus one extra
+clause specific to that component's own responsible-disclosure
+obligations. `security/` merged into this repo 2026-09-12 as its own
+component with its own license file already in place; see
+`CLAUDE.md`'s 2026-09-12 Version Timeline entry for the full record.
+
 This license applies to the original source code of this project (the "Mod") —
-everything in this repository except the third-party components listed under
-"Third-party components" below, which remain under their own licenses.
+everything in this repository outside `security/` (see the scope note above)
+except the third-party components listed under "Third-party components"
+below, which remain under their own licenses.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to use,

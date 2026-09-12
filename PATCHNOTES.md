@@ -54,10 +54,9 @@ live, detailed status on every item below.
    see `CODE_STANDARDS.md` for the full policy and rationale.
 7. **"Greenlit" trusted-plugin allowlist.** A small, explicit allowlist of
    first-party plugin filenames now load automatically, without requiring
-   `[Plugins] Enabled=1` — the sibling
-   [MW32011NSP](https://github.com/k8se10/MW32011NSP) project's own netcode
-   security-fix plugin ships built in this way by default. Every other,
-   arbitrary third-party plugin still needs the normal opt-in — see
+   `[Plugins] Enabled=1` — this project's own `security/` component's
+   netcode security-fix plugin ships built in this way by default. Every
+   other, arbitrary third-party plugin still needs the normal opt-in — see
    `PLUGIN_API.md` for the full design and its real caveat (filename
    matching isn't cryptographic).
 8. **Native D-pad+A/B controller menu navigation.** Previously 100% absent

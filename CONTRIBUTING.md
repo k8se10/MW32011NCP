@@ -1,10 +1,16 @@
 # Contributing to MW32011NCP
 
 Thanks for taking an interest in this project. It's a from-scratch, native
-reverse-engineering effort to bring real controller support and a growing
-suite of visual/QoL enhancements to Call of Duty: Modern Warfare 3 (2011, IW5
-engine) — not a keyboard/mouse-emulation mapper. Before opening a PR, please
-read this file in full.
+reverse-engineering effort bringing real controller support, a growing suite
+of visual/QoL enhancements, and native netcode security patching to Call of
+Duty: Modern Warfare 3 (2011, IW5 engine) — not a keyboard/mouse-emulation
+mapper. Before opening a PR, please read this file in full.
+
+**Contributing to `security/` specifically** (the netcode security
+component)? It has its own [`security/CONTRIBUTING.md`](security/CONTRIBUTING.md)
+and [`security/CODE_STANDARDS.md`](security/CODE_STANDARDS.md), extending
+this file's own rules with that component's own responsible-disclosure
+requirements — read that instead for anything under `security/`.
 
 > **Read [`CODE_STANDARDS.md`](CODE_STANDARDS.md) before writing any code.**
 > It is the authoritative statement of the bar every change is held to —

@@ -21,8 +21,8 @@ how this project handles that tension.
 
 ## Supported Versions
 
-Pre-alpha software under active development, same as the sibling `MW32011NCP`
-project. Only the most recent release is supported.
+Pre-alpha software under active development, same as the rest of
+MW32011NCP. Only the most recent release is supported.
 
 | Version | Supported |
 | ------- | --------- |
@@ -61,8 +61,8 @@ from-scratch project worked on outside full-time hours — response and fix time
 will vary, but security reports are prioritized over regular feature work.
 Once a fix ships, the vulnerability and fix get documented in `re_notes/` and
 `PATCHNOTES.md` in enough detail for the community to verify the fix, following
-the same "document every last detail" standard as the sibling `MW32011NCP`
-project's `CODE_STANDARDS.md` — but a genuinely severe, actively-exploited
+the same "document every last detail" standard as the repo root's own
+`../CODE_STANDARDS.md` — but a genuinely severe, actively-exploited
 finding may have its full technical detail held back for a short period after
 the fix ships, to give the community running-server operators time to update
 before the exact mechanism is public. This project does not follow a rigid

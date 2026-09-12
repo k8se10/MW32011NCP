@@ -1,16 +1,17 @@
 # Code Standards
 
-This document is the authoritative statement of the bar every change in this
-repository is held to — human-written or AI-assisted, no distinction. It's
-referenced from `CONTRIBUTING.md`; read this file in full before opening a PR.
-Mirrors the sibling `MW32011NCP` project's own `CODE_STANDARDS.md`, extended
-with this project's own responsible-disclosure requirements.
+This document is the authoritative statement of the bar every change under
+this `security/` component is held to — human-written or AI-assisted, no
+distinction. It's referenced from `CONTRIBUTING.md`; read this file in full
+before opening a PR. Mirrors the repo root's own `../CODE_STANDARDS.md`
+(the standard for the rest of MW32011NCP), extended here with this
+component's own responsible-disclosure requirements.
 
 ## AI-assisted contributions are permitted — held to the exact same bar
 
-This project (like its sibling) is developed with heavy use of AI coding
-assistance. That is explicitly fine. What is **not** fine, from any
-contributor, human or AI:
+This component (like the rest of the repo) is developed with heavy use of
+AI coding assistance. That is explicitly fine. What is **not** fine, from
+any contributor, human or AI:
 
 - **No placeholder hooks.** No `// TODO: find real offset later`, no stub
   function committed as if it were the real thing, no "this should fix it"
@@ -57,8 +58,8 @@ the description of it sounds.
 
 ## Documentation Standards
 
-Same standard as the sibling project: document every last detail, including
-dead ends. Additionally, for this project specifically:
+Same standard as the rest of MW32011NCP: document every last detail,
+including dead ends. Additionally, for this component specifically:
 
 - **Every fix documents the vulnerability it closes precisely enough to
   verify, and no more than that** — real, specific technical detail for a
@@ -96,7 +97,7 @@ dead ends. Additionally, for this project specifically:
   or a related title (MW2, etc.) without confirming the same function/bug
   exists at whatever address it resolves to in this project's own binaries.
 - **`iw5sp.exe` and `iw5mp.exe` are separate binaries, RE'd independently** —
-  same principle as the sibling project. Don't assume a vulnerable function
+  same principle as the rest of this repo. Don't assume a vulnerable function
   found in one exists at the same offset, or even in the same form, in the
   other.
 - All hook callbacks must be safe to call from the game's own thread(s) — no
@@ -128,12 +129,12 @@ dead ends. Additionally, for this project specifically:
   (`proxy_d3d9/src/signature_scan.h`/`.cpp`) — a wildcarded byte-pattern
   scan against the game's own main module, resolved once at process
   startup and cached for the session, not a continuous re-scan loop. This
-  is the current policy, matching the sibling `MW32011NCP` project's own
-  (see that project's `CODE_STANDARDS.md` for the full history: a runtime
-  scanner was framed as a real VAC-risk tradeoff at one point, but a
-  hardcode-only policy cannot survive a binary update at all — MW3's own
-  2026-09-03 recompile proved that concretely for the sibling project, and
-  the same reasoning applies here). Do not hardcode a fixed address for a
+  is the current policy, matching the main mod's own (see `../CODE_STANDARDS.md`
+  for the full history: a runtime scanner was framed as a real VAC-risk
+  tradeoff at one point, but a hardcode-only policy cannot survive a binary
+  update at all — MW3's own 2026-09-03 recompile, back when this was still
+  a separate sibling repo, proved that concretely, and the same reasoning
+  applies here). Do not hardcode a fixed address for a
   new hook target. Validate a signature actually resolved (non-null, sane
   surrounding bytes) before installing a hook on it — fail loudly rather
   than hooking garbage.

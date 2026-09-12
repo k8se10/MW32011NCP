@@ -1,5 +1,13 @@
 # Security Policy
 
+**Found a vulnerability in the base game's own netcode** (a crash/RCE-class
+bug reachable from a malicious server or peer, not a bug in this project's
+own code)? That's a different document — see
+[`security/SECURITY.md`](security/SECURITY.md), which has its own
+responsible-disclosure process for that exact class of report (including
+coordination with Activision). This file covers vulnerabilities in this
+project's *own* code specifically — read on only if that's what you found.
+
 ## Supported Versions
 
 This project is pre-alpha software under active development, currently on
