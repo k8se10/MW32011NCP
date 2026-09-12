@@ -2000,6 +2000,43 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
                 g_motionBlurYawDeltaDegX64 = 0.0f;
                 g_motionBlurPitchDeltaDegX64 = 0.0f;
             }
+
+            // Gyro-aim, ported 2026-09-12 -- mirrors x86's own InjectControllerLookAngles
+            // (analog_input_hooks.cpp) exactly, same PREVIEW/WIP status carried over, not
+            // promoted. dualsense_input.cpp/controller_input.cpp's gyro-read path (HID
+            // report parsing, Controller_GetGyroRate) has no _M_IX86/_M_X64 guard anywhere
+            // in either file -- confirmed by direct grep before writing this, not assumed
+            // -- so this is the same "real mechanism exists, was just never called from the
+            // x64 tick" shape as the vibration gap this session already closed (rumble.h),
+            // not a new RE target. Applied regardless of the stick-look block above being
+            // active (a gyro nudge should register even at right-stick neutral -- that's
+            // the entire point of gyro-assisted aim), gated by g_modConfig.gyroOnlyWhileAds
+            // against g_adsHeldX64 (Hook_MovementTick's own ADS-held tracking var, already
+            // ported for Hold Breath -- see its own comment above), same as x86 uses
+            // g_adsHeld. Axis-to-yaw/pitch mapping (Z=yaw, X=pitch) and the Invert Yaw/
+            // Pitch/Look sign handling are copied verbatim from x86's still-unverified-on-
+            // real-hardware mapping -- if it's ever corrected there, port the correction
+            // here too, don't re-derive independently. Bluetooth-vs-USB: no extra handling
+            // needed here -- dualsense_input.cpp's own DualSense_Poll already produces
+            // gyroX/Y/Z uniformly for both transports (BT's CRC32 validation is internal to
+            // that file); issue #76 (USB never independently confirmed by a second tester)
+            // and issue #77 (BT stick input, not gyro, was the int16-overflow bug) both
+            // stay exactly as true/untrue on x64 as they already are on x86 -- this port
+            // doesn't change either finding's status.
+            if (g_modConfig.gyroEnabled && (!g_modConfig.gyroOnlyWhileAds || g_adsHeldX64)) {
+                float gyroX = 0.0f, gyroY = 0.0f, gyroZ = 0.0f;
+                if (Controller_GetGyroRate(gyroX, gyroY, gyroZ)) {
+                    float gyroYawDelta = gyroZ * g_modConfig.gyroSensitivity * dt;
+                    float gyroPitchDelta = gyroX * g_modConfig.gyroSensitivity * dt;
+                    if (g_modConfig.gyroInvertYaw) gyroYawDelta = -gyroYawDelta;
+                    if (g_modConfig.gyroInvertPitch) gyroPitchDelta = -gyroPitchDelta;
+                    if (g_modConfig.invertLook) gyroPitchDelta = -gyroPitchDelta; // OG console "Invert Look" applies uniformly
+                    *g_yawAccum -= gyroYawDelta;
+                    *g_pitchAccum -= gyroPitchDelta;
+                    g_motionBlurYawDeltaDegX64 += gyroYawDelta;
+                    g_motionBlurPitchDeltaDegX64 += gyroPitchDelta;
+                }
+            }
         }
     }
 
