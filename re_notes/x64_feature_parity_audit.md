@@ -72,6 +72,23 @@ genuinely absent (see that row's own updated detail and
 `re_notes/x64_migration/drawtext_hook_x64.md`'s "Stage (c)" for exactly why
 each one is blocked).
 
+**Correction, 2026-09-13 — five rows found silently stale, fixed same day
+they were caught.** Rows #20 (vibration/rumble) and #43/#44/#45 (the visual-
+enhancement suite: render scale, FSR, motion blur) were all genuinely fixed
+in the 2026-09-12 `942936c` commit, but that commit's own docs pass never
+came back to annotate these specific rows with a "FIXED" note the way
+rows #22/#29/#33 correctly were — anyone reading this table would have
+wrongly concluded all four were still blocked. Row #41 (the Custom Options
+screen's real open trigger) had the identical problem: fixed the same day
+menu-focus tracking landed, never annotated here. All five corrected in
+place, same "leave the original finding legible, only the annotation
+records the fix" convention as every other correction in this file — this
+brings the running tally to 15 (10 from the paragraph above, plus these 5).
+Lesson for future sessions: after a multi-file fix commit, re-check this
+specific document's own rows for the feature just fixed, don't assume the
+commit's other doc updates (README/PATCHNOTES/known_issues_x64.md) covered
+it here too — they're separate files with separate update passes.
+
 **Two findings below are new — not in `known_issues_x64.md`'s existing
 "Corrected gap list, 2026-09-12" entry or anywhere else in this project's
 documentation before this pass:**
@@ -168,7 +185,7 @@ bar (CLAUDE.md SS7/SS8) applied separately — many are build-verified only.
 | 17 | Killstreak: Predator Missile — post-fire guidance aim | Already broken/partial on x86 itself (known lead, not fixed) | **ABSENT**, not attempted | No x64 work on this; inherits x86's own open status, not a new regression |
 | 18 | Killstreak: Precision Airstrike | Confirmed working (rides on Fire) | **PRESENT**, likely, unverified | Depends only on Fire (#6, present) — no x64-specific mechanism needed per x86's own design, but never independently live-tested on x64 |
 | 19 | Killstreak: AI squadmate call-in | Confirmed working | Same as #13 | Duplicate of D-pad Left row above |
-| 20 | Vibration/rumble (fire + damage) | Confirmed working, 1.5/2 completeness | **ABSENT — 100% unported** | `Rumble_Install()` (`rumble.cpp`) is only ever called from `InstallAnalogInputHooks()` (`analog_input_hooks.cpp`), entirely wrapped in `#if !defined(_M_X64) && !defined(_WIN64)` — never executes on x64. `Rumble_Tick()`/`Rumble_TickExpiryWatchdog()` are called but are harmless no-ops with nothing ever triggering an event. Already documented in `known_issues_x64.md`'s "Corrected gap list, 2026-09-12," confirmed again independently this pass |
+| 20 | Vibration/rumble (fire + damage) | Confirmed working, 1.5/2 completeness | **FIXED (2026-09-12)** | Was 100% unported (`Rumble_Install()` only ever called from x86-only-guarded code). Ported same day: fire rumble via `FUN_14016bf50` (x64 equivalent of x86's `FUN_0045e320`, confirmed 3 independent ways), damage rumble via the real x64 entity array (`DAT_140f57cf0`, stride `0x2a0`, confirmed via 3 independent consumers). `Rumble_Install()` now called from `InstallAnalogInputHooksX64()`, `Rumble_Tick()`/`Rumble_TickExpiryWatchdog()` now have real events to consume. Build-verified; **not yet live-tested**. See `re_notes/known_issues_x64.md` issue #1 and `re_notes/x64_migration/rumble_scratch/` for the full RE trail. This paragraph is intentionally left in place per this doc's own convention — only this annotation records the fix |
 
 ### Stance & Sprint
 
@@ -204,16 +221,16 @@ bar (CLAUDE.md SS7/SS8) applied separately — many are build-verified only.
 | 38 | Non-English language glyph-position fix | Confirmed working (v0.3.1) | **N/A** | Moot — the whole glyph system is absent on x64, so there's nothing to be correctly or incorrectly positioned |
 | 39 | On-screen notifications (startup "MW32011NCP Started" / hot-reload toast) | Confirmed working | **PRESENT** | `DrawOverlayMessage`/`ShowStartupMessage` (`overlay_hud.cpp`) carry no arch guard and confirmed firing successfully on x64 (`proxy_d3d9.log` showed `DrawPrimitiveUP hr=0x00000000` at least once per `known_issues_x64.md`'s own investigation) |
 | 40 | Custom Options screen's own draw/navigate-once-open logic | Confirmed present (preview/WIP on x86) | **PRESENT** | `DrawCustomOptionsMenuIfOpen`/`CustomOptionsMenu_TickInput` (`overlay_hud.cpp`) confirmed genuinely cross-platform by inspection — zero hardcoded addresses in either function |
-| 41 | Custom Options screen's real open TRIGGER (native menu-focus detection) | Confirmed present (via `InjectControllerMenuNav`'s focus-read) | **ABSENT — temporary substitute shipped instead** | Real trigger depends on the same #35/#36 x86-only focus-reading infra. Replaced with a documented-as-temporary LB+RB chord (`PollCustomOptionsMenuX64`), gated on `g_menuActiveGateFlag` + `[Options] UseCustomOptionsScreen` (still opt-in, matching x86's default-off convention) |
+| 41 | Custom Options screen's real open TRIGGER (native menu-focus detection) | Confirmed present (via `InjectControllerMenuNav`'s focus-read) | **FIXED (2026-09-12)** | Was blocked on the same #35/#36 x86-only focus-reading infra, substituted with a temporary LB+RB chord. Resolved same day: `TryGetRealFocusedGroupAndIndexX64`/`GetTopmostActiveMenuX64` (real x64 menu-focus/itemDef-array tracking, independently re-derived offsets for x64's different 64-bit-aligned struct layout) wired as the real trigger, OR'd with the existing LB+RB chord into one `openRequestedEdge` — the chord is kept as a fallback, not replaced outright, until the real trigger is live-confirmed. A `[x64-optmenu-realtrigger]` log line fires on real activation. Note: this does NOT retroactively fix #35/#36 (the A-glyph/F2-F3-editor) — those consume a *different* pair of functions (the old x86-only stubs in `analog_input_hooks.cpp`), never re-pointed at this new x64 implementation. Build-verified; **not yet live-tested**. This paragraph is intentionally left in place — only this annotation records the fix |
 | 42 | Custom Options screen chord-based open/navigate/close flow | New to x64 (no x86 equivalent needed) | **PRESENT**, unverified live | Build-verified only per `known_issues_x64.md`: "NOT YET LIVE-TESTED" |
 
 ### Visual-enhancement suite (v0.3.5)
 
 | # | Feature | x86 status | x64 status | Evidence |
 |---|---|---|---|---|
-| 43 | `InternalRenderScalePercent` | Confirmed working live (real GPU cost scaling) | **ABSENT — blocked, not a simple port** | `RunFullScreenPostProcessIfEnabled` early-returns unconditionally on x64. Root hook target (`FUN_00679010`'s x64 equivalent) not located across two dedicated attempts — real caller is reached via what both attempts independently conclude is an indirect/function-pointer call, which static xref tooling structurally cannot find. Needs live tracing, not more static analysis, per `known_issues_x64.md`'s own conclusion |
-| 44 | `FsrSharpenEnabled`/`FsrSharpenStrength` (FSR 1.0 RCAS) | Confirmed working live | **ABSENT — blocked** | Same early-return function as #43; `clcState`/in-level-flag x64 equivalents genuinely not found despite three independent static techniques |
-| 45 | `MotionBlurEnabled`/`Strength`/`CenterFalloff` | Confirmed working live | **ABSENT — blocked** | `RunPreOverlayMotionBlurPassIfEnabled` early-returns unconditionally on x64, same root cause as #43/#44 |
+| 43 | `InternalRenderScalePercent` | Confirmed working live (real GPU cost scaling) | **FIXED (2026-09-12)** | Was blocked across two dedicated attempts (indirect/function-pointer call, resisted static xref tooling). Resolved same day: `FUN_1401bd1d0` confirmed as the real x64 equivalent of x86's `FUN_00679010`, hooked via MinHook, same override-before-native-call design as x86. Build-verified; **not yet live-tested**. This paragraph is intentionally left in place per this doc's own convention — only this annotation records the fix |
+| 44 | `FsrSharpenEnabled`/`FsrSharpenStrength` (FSR 1.0 RCAS) | Confirmed working live | **FIXED (2026-09-12)** | Was blocked (same early-return as #43; `clcState`/in-level-flag genuinely not found across three independent static techniques). Resolved same day: `clcState` resolved cleverly as a fixed `+8` byte offset from the already-resolved `g_menuActiveGateFlag` pointer (no separate signature scan needed); the in-level flag resolved via its own dedicated signature. All three of x86's proven-necessary safety gates (menu-active, clcState, in-level) now wired, fail-closed, matching x86's gating exactly — deliberately not shipped on a weaker gate than x86's own issue #103/#104 crash history proved necessary. Build-verified; **not yet live-tested**. This paragraph is intentionally left in place — only this annotation records the fix |
+| 45 | `MotionBlurEnabled`/`Strength`/`CenterFalloff` | Confirmed working live | **FIXED (2026-09-12)** | Same root cause and same-day fix as #44 (shares all three safety gates). Per-frame yaw/pitch deltas sourced from `Hook_MovementTick`'s own already-computed look-injection data, not a new RE target. Build-verified; **not yet live-tested**. This paragraph is intentionally left in place — only this annotation records the fix |
 | 46 | `ForceAnisotropicFiltering` | Confirmed working live | **PRESENT** | `overlay_hud.cpp`, no arch guard, real `SetDvarBool` call — confirmed firing on x64 via `[aniso-force]` log evidence |
 | 47 | `ForceHighQualityShadows` | Confirmed working live | **PRESENT** | Same file, no guard, `[shadow-quality-force]` log evidence |
 | 48 | `ForceHighQualityLighting` | Confirmed working live | **PRESENT** | Same file, no guard, `[lighting-quality-force]` log evidence |
