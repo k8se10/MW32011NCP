@@ -4407,3 +4407,61 @@ machine (x64)` fresh timestamp (`6AA71006`, Sun Sep 13 22:05:10 2026);
 Win32 regression rebuild 0 errors, no regression; x64 rebuilt and
 redeployed last. **Not yet re-confirmed live** -- this is the very next
 thing to verify on the next launch attempt.
+
+---
+
+**UPDATE 2026-09-13 (live playtest, same session) — two more real findings
+after the launch-crash and gameplay-hint-position fixes: menu corner-hint
+glyphs still positioned wrong (a different code path than the fix already
+shipped), and a real logging-volume concern echoing x86's own issue #87.**
+
+**1. Menu corner-hint glyphs (Back/Friends/Quit/Leaderboards/Game Summary)
+still not visible — CONFIRMED ROOT CAUSE, same class of bug as the
+gameplay-hint fix, different code path never updated.** Live report:
+"the menu glyphs for bottom right hints dont show... assuming theyre off
+screen top left." Directly verified in source: the menu-corner-hint block
+in `Hook_DrawTextX64` (`analog_input_hooks_x64.cpp`, ~lines 3969-4061)
+still calls `ConvertRealScreenPosToDesignSpaceX64` directly on the raw,
+pre-transform `x`/`y` -- the SAME confirmed-wrong function the gameplay-
+hint fix (`aa8a910`) replaced with `ComputeRealDrawPositionX64` for
+Mantle/Pickup/Throwback/Reload only. The menu-hint block was never
+updated to use the new, correct transform. This is not a new bug --
+it's the exact same root cause already fixed for gameplay hints, just a
+separate call site the fix didn't reach. Real fix: route all four
+`ConvertRealScreenPosToDesignSpaceX64` call sites in the menu-hint block
+through `ComputeRealDrawPositionX64` first, same as the gameplay-hint
+sites already do.
+
+**2. Real logging-volume concern, matching x86's own issue #87 precedent
+directly.** Live report: "we are logging too much again like we had the
+log issues with lag in x86 too." A short session (launch -> brief menu
+navigation -> close) produced 604 total log lines. Breakdown by tag:
+`[overlay-hud]` 147, `[manual-glyph-diag]` 106, `[automantle-diag-x64]`
+102 (expected -- `AutoMantleEnabled=1` in this live config),
+`[x64-diag-gate]` 52, `[cursor-pos-diag]` 33, `[x64-drawtext]` 26,
+`[sigscan]` 25, `[rumble-x64-diag]` 20, `[cursor-gate-diag]` 9. Spot-
+checked two: `[manual-glyph-diag]` already carries the exact fix issue
+#87 established (a 250ms time floor ON TOP OF a dedup key, added
+2026-09-05 after a live "dire" performance report, specifically because
+a legitimately-flapping value like `overlayOn` can defeat pure dedup) --
+this one is correctly guarded, its volume here is plausibly real
+(menu navigation genuinely changes focus state that often). But
+`[cursor-gate-diag]` (`overlay_hud.cpp` ~line 6265) has ONLY a dedup
+check, no time floor -- the exact gap issue #87's own lesson warns
+against, for a value (`visFlag`/`uiState`) that's a real native-engine
+read, plausibly flappy the same way `overlayOn` was. Only fired 9 times
+this particular short session (not yet the dominant contributor), but is
+a real, unaudited risk, not confirmed safe. The other high-volume tags
+(`[overlay-hud]`'s own 147, `[x64-diag-gate]`'s 52, `[cursor-pos-diag]`'s
+33) have NOT yet been individually audited for the same gap -- this
+needs a real, careful pass across every logging call site added/active
+on x64 today, not a guess at which one tag is "the" culprit.
+
+**Not yet fixed — both are real, scoped findings, dispatched as separate
+follow-up tasks.** Menu corner-hint positioning is a small, high-
+confidence fix (reuse of the already-working transform). The logging
+audit needs to be careful and systematic, following the same methodology
+issue #87 itself used (this project's own precedent: "event-driven,
+never a fixed-interval poll... two rules: never call a wake/poll-request
+function unconditionally from a flood-prone path without its own rate
+limit").
