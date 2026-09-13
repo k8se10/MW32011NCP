@@ -4038,3 +4038,58 @@ specifier's real worst-case width, not just "big enough for the address
 I'm about to print" -- and should specifically distrust any format
 string with more than ~100 characters of surrounding literal text, since
 that's exactly the shape both real crashes had.
+
+---
+
+**UPDATE 2026-09-13 (live test, same session) — real glyph-icon SUBSTITUTION
+positioning bug confirmed live, on both manifestations the code's own
+honest caveat predicted.** Two live reports, same root system:
+
+- **Mantle**: native hint text suppression works (confirmed correctly
+  hidden), but no substituted icon is visible in its place.
+- **Interact (weapon pickup) and Reload**: the substituted hint text DOES
+  render, but at the very top of the screen, not anchored near the
+  player's actual interact prompt / weapon HUD position.
+
+**Why these are very likely the SAME root bug, not two separate ones**:
+both cases flow through the identical position pipeline --
+`Hook_DrawTextX64` captures the native draw call's own `x`/`y` params,
+converts them via `ConvertRealScreenPosToDesignSpaceX64` (divide by the
+current resolution scale), and passes the result into
+`RequestCustomHintOverlay`. The only structural difference between the
+two symptoms is `centerOnScreen`: Mantle passes `centerOnScreen=false`
+(anchored to the raw converted position, matching x86's own design of
+anchoring Mantle near the real ledge/arrow sprite rather than centering
+it), while Interact/Reload pass `centerOnScreen=true`. A bad/near-zero Y
+value would plausibly still render SOMEWHERE on screen when centered
+(hence "top of screen" for Interact/Reload -- consistent with Y coming
+out near 0, i.e. the very top), but could push the NON-centered Mantle
+render fully off the visible frame (hence "no glyph" for Mantle) --
+same underlying wrong coordinate, different visible symptom depending on
+whether centering happens to mask it.
+
+**This was already an honestly-flagged, predicted risk, now confirmed
+real, not a surprise**: `Hook_DrawTextX64`'s own comment on this exact
+code path already said "unlike x86 (which reached its exact pixel
+alignment via multiple live-tested rounds of empirical nudge constants),
+NO equivalent nudge has been derived or applied here... on-screen
+alignment... has NOT been live-verified and may need the same kind of
+empirical correction x86 required." That caveat is now live-confirmed
+accurate. However, "top of screen" specifically suggests something
+larger than a missing fine-tuning nudge (x86's own nudge constants were
+small pixel-level corrections on top of an already-roughly-correct
+position, not a fix for a coordinate landing at the wrong end of the
+screen entirely) -- worth checking whether the raw `x`/`y` captured at
+this hook's own call site are genuinely the values this file's own
+header comment claims ("THIS call's own already-computed real
+screen-pixel position... not raw pre-layout input" -- confirmed via
+decompile per that comment, but worth re-verifying given the actual
+symptom) before assuming a simple nudge-constant fix is sufficient.
+
+**Not yet root-caused or fixed.** Next real investigative step: trace
+`ConvertRealScreenPosToDesignSpaceX64`'s actual inputs/outputs at
+runtime for a real Mantle/Interact/Reload hint (a diagnostic log line
+printing the raw `x`/`y` params, the resolved `scaleX`/`scaleY`, and the
+final converted design-space coordinates would directly show whether the
+bug is in the raw input, the scale resolve, or the divide itself) rather
+than guessing at a nudge constant blind.
