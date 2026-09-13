@@ -4708,3 +4708,103 @@ Not yet fixed — this is a real, moderately-sized RE task (finding/
 confirming a genuinely new x64 hook point, or re-validating a design
 constraint against different engine internals), not a small wiring gap
 like vibration/gyro-aim turned out to be.
+
+---
+
+**UPDATE 2026-09-13 (dedicated follow-up task, same day) -- real x64 hook
+point FOUND and wired. Option 1 above (a genuine x64 equivalent of
+`FUN_00693ff0`), NOT option 2 -- `Hook_EndScene` was never touched for this.
+Build-verified, not yet live-tested.**
+
+Re-read x86's own full `Hook_693ff0`/`FUN_00693ff0` history in
+`analog_input_hooks.cpp` (the two prior failed attempts: a raw
+`FUN_00497210` hook that captured a partially-composited backbuffer during
+exclusion-zone/PIP recursion, and a `FUN_00694650` post-hook that
+crash-fixed but blurred native HUD) before touching anything, per this
+task's own instruction -- neither mistake was repeated here.
+
+**Discovery method**: rather than trying to trace x64's own version of the
+large per-frame orchestrator (`FUN_0042c2f0`) top-down -- hundreds of calls,
+not tractable to match structurally in one pass -- worked from x86's OWN
+most distinctive intermediate function instead. `FUN_00508970` (the
+exclusion-zone/PIP rect-carver `FUN_00694650` calls between
+`FUN_00497210`/`FUN_00693ff0`) is genuinely rare: it calls itself directly
+up to 4 times per invocation. Wrote a new whole-binary Ghidra script,
+`FindSelfRecursiveFuncs.java` (`re_notes/ghidra_scripts/`), that flags any
+function containing >=2 direct self-recursive CALL instructions -- run
+against `iw5sp_x64_proj` (`analyzeHeadless.bat -process iw5sp.exe -readOnly
+-noanalysis`), it scanned 13295 functions and returned only 31 hits
+(`re_notes/ghidra_scripts/selfrecursive_x64.txt`). Of the 4 candidates with
+exactly 4 self-calls, decompiling all four
+(`re_notes/ghidra_scripts/decomp_selfrec_candidates_x64.txt`) found
+`FUN_140194130` is a byte-for-byte structural match for x86's
+`FUN_00508970` -- same base case
+(`if (param_2==0 || param_3==0) { <SceneFinishEquiv>(param_1,0); return; }`),
+same four-way rect-split recursion, and -- the strongest single piece of
+evidence -- the SAME NUMERIC field offsets for the viewport rect
+(`+0x160`/`+0x164`/`+0x168`/`+0x16c`), completely unshifted despite the
+x86->x64 pointer-width growth that moved every larger/pointer field around
+them.
+
+**Chain confirmed, one hop at a time, via `FindCallers.java`/`DecompileAt.java`**:
+
+- `FUN_140194130`'s only external caller, `FUN_14018e720`
+  (`re_notes/ghidra_scripts/callers_140194130_x64.txt`), is the x64
+  equivalent of `FUN_00694650` -- same triple-loop shape (`+0x9d0==2` gate
+  matching x86's `+0x940==2`, `0x14c0` struct stride replacing x86's
+  `0xf50`), calling `FUN_1401939f0(ctx,0)`/`FUN_1401939f0(ctx,1)` (x64
+  equivalent of `FUN_00497210` -- confirmed via decompile to be a large
+  per-viewport scene-finish orchestrator with the same debug-mode branch
+  shape) or `FUN_140194130(ctx,&rects,count)` (the exclusion-zone carve).
+  **In all three call sites -- exactly mirroring x86's own three
+  `FUN_00693ff0` call sites -- it calls `FUN_14018def0(ctx)` immediately
+  afterward.** That's the real trigger point.
+- `FUN_14018def0` itself
+  (`re_notes/ghidra_scripts/decomp_14018def0_x64.txt`) decompiles to the
+  same gate-then-dispatch shape as x86's `FUN_00693ff0`:
+  `if (*(longlong*)(ctx+0x330) != 0) { ...; FUN_140189940(*(...)(ctx+0x330)); }`.
+  The gate's field offset shifted from x86's `+0x320` to `+0x330` (expected
+  struct growth, irrelevant to this hook -- motion blur's own capture
+  target, the already-composited backbuffer, doesn't depend on that field).
+- `FUN_140189940`
+  (`re_notes/ghidra_scripts/decomp_140189940_1401939f0_x64.txt`) decompiles
+  to the EXACT opcode-stream dispatch-loop shape x86's `FUN_004ee300` has:
+  `while (*p != 0) { jumpTable[*p](&p); }`
+  (`(**(code**)(&DAT_14040e630 + uVar1*8))(local_res8)`) -- confirming
+  `FUN_14018def0` really is the boundary immediately before a viewport's
+  queued 2D/HUD command dispatch, not just a same-shaped decoy.
+
+**Not a naked hook, unlike x86.** Raw disassembly
+(`re_notes/ghidra_scripts/sigbytes_14018def0_x64.txt`) confirms
+`FUN_14018def0(longlong param_1)` takes its one real argument in `RCX` via
+plain MS x64 fastcall (`PUSH RBX / SUB RSP,0x30 / CMP qword ptr
+[RCX+0x330],0x0 / MOV RBX,RCX` -- a fully self-contained, standard
+prologue), matching this project's own repeated finding that x64 functions
+use standard calling conventions even where x86 needed raw
+register-implicit `__asm`. Wired as a normal (non-naked) MinHook C++
+detour, `Hook_MotionBlurTrigger` (`analog_input_hooks_x64.cpp`): calls
+`TriggerMotionBlurFromEngineHook()` first, then the real trampoline --
+matching x86's PRE-hook semantics (capture before the real 2D/HUD dispatch
+runs) without needing pushad/popad/tail-jump asm at all.
+
+**Signature**: the function's first 17 bytes
+(`40 53 48 83 EC 30 48 83 B9 30 03 00 00 00 48 8B D9`) are all literal --
+no CALL/JMP/RIP-relative bytes in that span (`DumpSigBytes.java`'s
+PC-relative flagging starts at the `JZ` immediately after), so no
+wildcarding needed. `PatternScan.java`-confirmed exactly ONE match in the
+whole binary (`re_notes/ghidra_scripts/patternscan_14018def0_x64.txt`), at
+the expected address -- resolved via `SigScan::FindPatternInMainModule` at
+startup per the locked signature-scanning policy (CLAUDE.md SS5/SS10.3), no
+hardcoded address.
+
+**Build-verified**: x64 `/t:Rebuild` 0 errors, `dumpbin`-confirmed `8664
+machine (x64)` fresh timestamp (`6AA71937`, Sun Sep 13 22:44:23 2026); Win32
+regression rebuild 0 errors (`analog_input_hooks_x64.cpp` fully excluded
+from that platform, confirmed via the link-step object list); x64 rebuilt
+and redeployed last, re-confirmed via a second `dumpbin` pass.
+`iw5sp.exe` was not running at any build step (checked via
+`Get-Process -Name iw5sp` before each). **Not yet re-confirmed live** --
+next step is a live playtest with `MotionBlurEnabled=1` to confirm the
+effect is actually visible now, and that it correctly excludes native HUD
+and this mod's own overlay (the two failure modes x86's own history for
+this exact hook point warns about).

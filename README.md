@@ -106,7 +106,7 @@ see their own sections below; neither gates this release.
 | | Survival ready-up (hold Y, synthetic F5) |
 | | Hold Breath (L3 while ADS'd, sniper-class) |
 | | DualSense gyro-aim (preview/WIP, same status as `-x86`, needs real hardware to test) |
-| | Visual-enhancement suite (render scale, FSR) — motion blur's safety gates are wired but its real trigger hook was never ported to x64 (raw x86 asm, doesn't compile for x64); live-tested absent, see Known gaps |
+| | Visual-enhancement suite (render scale, FSR, motion blur — real x64 trigger hook found 2026-09-13, see Known gaps for verification status) |
 | | Native controller menu/UI navigation (main menu, pause, options, buy-stations) |
 | | Menu-focus/itemDef tracking (glyph-icon dependency) |
 | | Real glyph-icon substitution: Mantle, Pickup/Swap/Pickup-health, Throwback grenade, Reload/low-ammo, menu corner hints (Back/Friends/Quit/Leaderboards/Game Summary) (see Known gaps for what's still native-only) |
@@ -130,17 +130,21 @@ screen's real data layer, see below — is a genuinely large gap). The items
 below are the highest-impact gaps found across both passes; see that file
 for everything else (menu glyphs, killstreaks, config presets, the plugin
 API, background threads, and more).
-- **Motion blur doesn't render on x64 — live-confirmed 2026-09-13, real
-  gap, not yet fixed.** Its safety gates (menu-active/`clcState`/in-level)
-  and per-frame yaw/pitch delta feed were genuinely wired 2026-09-12 — but
-  the earlier "FIXED" verdict was an overclaim: the function's only real
-  trigger is an x86-only raw-assembly engine hook, never ported to x64 (x64
-  doesn't support that register-convention trick), so the gate is armed but
-  nothing ever calls it. FSR sharpening is unaffected — it hooks a
-  different, already-ported point (`EndScene`). Real next step: find a
-  C-callable x64 equivalent trigger, or determine whether `EndScene` is
-  actually safe for this specific effect on x64 (x86 deliberately avoided
-  it for real reasons — see parity audit row #45).
+- **Motion blur's real x64 trigger hook found and wired — 2026-09-13,
+  build-verified, not yet live-tested.** Live-tested absent earlier the same
+  day (its safety gates and per-frame yaw/pitch delta feed were genuinely
+  wired 2026-09-12, but the function's only real trigger was an x86-only
+  raw-assembly engine hook that never compiled for x64, so the gate was
+  armed with nothing calling it). Fresh Ghidra RE found the real x64
+  equivalent hook point (`FUN_14018def0`, reached via the same call chain
+  as x86's own hook, confirmed via decompile at every hop) — unlike x86 it
+  needs no raw assembly, since x64 uses a standard calling convention there.
+  Wired via a normal MinHook C++ detour, resolved by signature scan per the
+  project's signature-scanning policy. Build-verified on both platforms;
+  awaits a live playtest to confirm the effect is visible and correctly
+  excludes native HUD and this mod's own overlay, the two failure modes
+  its x86 counterpart's own history warns about. Full trail: parity audit
+  row #45, `known_issues_x64.md` issue #1's "where is motion blur?" round.
 - **Fire and/or ADS intermittently failed — root cause found and fixed
   2026-09-13, build-verified, awaiting live re-confirmation.** Originally
   reported and investigated as sniper-class-specific (a fix attempt was

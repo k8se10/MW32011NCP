@@ -1,0 +1,33 @@
+Scanned 13295 functions, minSelfCalls=2
+Hits: 31
+  _Sort_unchecked<MemBlock*___ptr64,bool_(__cdecl*)(MemBlock_const&___ptr64,MemBlock_const&___ptr64)> @ 1400b4140  self-calls=2  params=4  bodySize=761
+  _Sort_unchecked<REFMINIPDB2*___ptr64*___ptr64,bool_(__cdecl*)(REFMINIPDB2_const*___ptr64,REFMINIPDB2_const*___ptr64)> @ 1400c12f0  self-calls=2  params=4  bodySize=819
+  FUN_1400c3800 @ 1400c3800  self-calls=2  params=0  bodySize=763
+  FUN_1400cf6b0 @ 1400cf6b0  self-calls=2  params=0  bodySize=710
+  FUN_1400d2400 @ 1400d2400  self-calls=2  params=0  bodySize=1068
+  FUN_1400da5b0 @ 1400da5b0  self-calls=5  params=0  bodySize=296
+  FUN_1400e2c40 @ 1400e2c40  self-calls=4  params=0  bodySize=694
+  FUN_1400f4730 @ 1400f4730  self-calls=2  params=0  bodySize=774
+  FUN_140194130 @ 140194130  self-calls=4  params=0  bodySize=375
+  FUN_14019bee0 @ 14019bee0  self-calls=2  params=0  bodySize=1068
+  FUN_1401a92a0 @ 1401a92a0  self-calls=2  params=0  bodySize=707
+  FUN_1401a95f0 @ 1401a95f0  self-calls=2  params=0  bodySize=660
+  FUN_1401aea90 @ 1401aea90  self-calls=2  params=0  bodySize=597
+  FUN_1401b00d0 @ 1401b00d0  self-calls=2  params=0  bodySize=901
+  FUN_1401b8940 @ 1401b8940  self-calls=2  params=0  bodySize=819
+  FUN_1401c56d0 @ 1401c56d0  self-calls=2  params=0  bodySize=836
+  FUN_140225b00 @ 140225b00  self-calls=2  params=0  bodySize=545
+  FUN_140236150 @ 140236150  self-calls=2  params=0  bodySize=781
+  FUN_140236890 @ 140236890  self-calls=2  params=0  bodySize=875
+  FUN_140237c40 @ 140237c40  self-calls=2  params=0  bodySize=661
+  FUN_14023b820 @ 14023b820  self-calls=3  params=0  bodySize=417
+  FUN_140241a60 @ 140241a60  self-calls=3  params=0  bodySize=672
+  FUN_14028f3c0 @ 14028f3c0  self-calls=2  params=0  bodySize=36852
+  FUN_1402a3ca0 @ 1402a3ca0  self-calls=2  params=0  bodySize=849
+  FUN_1402b2e10 @ 1402b2e10  self-calls=2  params=0  bodySize=685
+  FUN_1402c0960 @ 1402c0960  self-calls=2  params=0  bodySize=281
+  FUN_1402c1f20 @ 1402c1f20  self-calls=3  params=0  bodySize=1230
+  FUN_1402f9d00 @ 1402f9d00  self-calls=4  params=0  bodySize=1308
+  FUN_140302520 @ 140302520  self-calls=4  params=0  bodySize=2114
+  FUN_140341890 @ 140341890  self-calls=2  params=0  bodySize=565
+  FUN_1403b3ce0 @ 1403b3ce0  self-calls=15  params=0  bodySize=3813
