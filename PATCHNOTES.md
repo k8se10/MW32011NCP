@@ -25,7 +25,10 @@ is now ported too, with Mantle-hint detection wired on top, and Auto-Mantle's
 actual `+gostand`-forcing feature now ships on top of that (off by default).
 Real visual glyph substitution now works for three hint families (Mantle,
 pickup/swap/pickup-health, grenade throwback) — see items 16-18 under
-What's New. **This release has not
+What's New. `Dvar_FindVar`/`GetEffectiveFov`'s x64 equivalents are now
+resolved too, closing the ADS zoom-aware look-slowdown and Survival
+ready-up's `IsInSurvivalMode()` gate in the same pass (item 20). **This
+release has not
 shipped** — see `README.md` for the current release gate (parity with the
 `-x86` line's final state) and `re_notes/known_issues_x64.md` issue #1 for
 live, detailed status on every item below.
@@ -109,14 +112,11 @@ live, detailed status on every item below.
     see `CLAUDE.md`): holding Y for `[Survival] ReadyUpHoldThresholdMs`
     (740ms default) synthesizes a real `WM_KEYDOWN`/`WM_KEYUP` F5 via
     `PostMessageA` at the game's own window; releasing early instead fires
-    the normal weapon-switch, same hold-vs-tap split as `-x86`. One honest,
-    deliberate difference from `-x86`: the extra `IsInSurvivalMode()` gate
-    isn't wired in, since x64's own `Dvar_FindVar` equivalent needed to read
-    the `mapname` dvar is a separate, still-unresolved RE target — the
-    synthetic F5 fires unconditionally on the hold edge instead, relying on
-    the same "a misplaced F5 outside its one context is simply ignored"
-    reasoning `-x86`'s own design already documents as sufficient even
-    without that gate. Build-verified, not yet live-tested. See
+    the normal weapon-switch, same hold-vs-tap split as `-x86`. The extra
+    `IsInSurvivalMode()` gate `-x86` also uses — originally omitted, since
+    x64's own `Dvar_FindVar` equivalent needed to read the `mapname` dvar
+    was a separate, unresolved RE target — is now wired in too (see item 20
+    below for the resolution). Build-verified, not yet live-tested. See
     `re_notes/known_issues_x64.md` issue #1 for the full trail.
 13. **Hold Breath (L3 while ADS'd, sniper-class) ported to x64.** Previously
     100% absent (parity audit item #23) — L3 only ever drove raw Sprint,
@@ -213,7 +213,7 @@ live, detailed status on every item below.
     on-screen alignment for the three working cases is unverified pending
     live test. Full trail: `re_notes/x64_migration/drawtext_hook_x64.md`.
     Build-verified, not yet live-tested.
-18. **Highlighted-item A-glyph (menu list navigation) and the F2/F3 in-game
+19. **Highlighted-item A-glyph (menu list navigation) and the F2/F3 in-game
     glyph-position editor wired to real x64 menu-focus tracking** — a
     separate system from item 17's gameplay-hint icon substitution: this one
     draws an A-button icon on whichever native menu list item is currently
@@ -227,6 +227,19 @@ live, detailed status on every item below.
     namespace in a different translation unit). No new reverse engineering.
     Build-verified, not yet live-tested — see `re_notes/known_issues_x64.md`
     issue #1 and `re_notes/x64_feature_parity_audit.md` rows #35/#36.
+20. **ADS zoom-aware look-slowdown ported to x64** (`GetAdsLookRateScaleX64`),
+    closing parity audit row #3. Its two real dependencies — x64 equivalents
+    of `Dvar_FindVar` and `GetEffectiveFov` — were genuinely unresolved RE
+    targets until this pass: found via this project's own established
+    dvar-value-discovery chain (`FUN_1402c3890`/`FUN_140069e60`, full trail
+    `re_notes/x64_migration/getEffectiveFov_dvarFindVar_x64.md`). The formula
+    itself is a byte-for-byte port of `-x86`'s own `GetAdsLookRateScale`
+    (the power-curve scale plus the close-range taper for low-zoom
+    weapons), wired into `Hook_MovementTick`'s Look pre-hook. The same
+    `Dvar_FindVar` resolution also closed a second, unrelated gap in the
+    same pass: Survival ready-up's `IsInSurvivalMode()` gate (item 12 above),
+    previously omitted, now wired at `SendSyntheticF5X64`'s call site.
+    Build-verified, not yet live-tested.
 
 ### Fixed
 1. **Crash on launch with the sniper Fire/ADS fix's own log line.** The
