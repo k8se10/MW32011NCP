@@ -1183,6 +1183,48 @@ void SendSyntheticF5X64()
     LogFromController("[x64-ready-up-diag] SendSyntheticF5X64 fired");
 }
 
+// ---- Back -> real +scores (scoreboard/objectives) via key synthesis, x64 port
+// (2026-09-13) -- same narrowly-scoped exception x86 already needed
+// (analog_input_hooks.cpp's own InjectControllerScoreboard, user-approved
+// 2026-07-17, "THIRD and final narrow exception to the no-OS-level-input-
+// emulation rule"). Re-read x86's own comment block in full before touching
+// this -- the real finding there: `+scores` is a plain keyboard bind
+// (`bind TAB "+scores"`), not a per-frame usercmd button/kbutton at all, read
+// directly by whatever UI draws the scoreboard/objectives overlay, so a genuine
+// WM_KEYDOWN/KEYUP is the only known way to trigger it, same category as
+// SendSyntheticF5X64/SendSyntheticActionSlot4KeyX64 above.
+//
+// x86's OWN function (InjectControllerScoreboard, analog_input_hooks.cpp) has
+// no architecture guard at all and would compile fine here unchanged -- per
+// this session's own parity audit (re_notes/x64_feature_parity_audit.md row
+// 30), it was simply never CALLED from x64's own input pipeline. This is a
+// pure wiring port, not new logic: same PostMessageA(VK_TAB) mechanism,
+// re-expressed as a bool-down/up function matching this file's own
+// SendSyntheticActionSlot4KeyX64 shape so it can be called from
+// Hook_MovementTick's existing edge-tracking block below.
+//
+// CONFIRMED GENUINE NO-OP IN CAMPAIGN/SURVIVAL (Xbox 360 console testimony,
+// 2026-08-04, known_issues.md issue #28): there is no scoreboard UI in SP at
+// all, on any platform. This port exists for completeness/consistency (the
+// function costs nothing to wire in) and for real future value once
+// Multiplayer support ships with its own actual scoreboard -- NOT to make a
+// visible feature appear in SP. Live-testing this should confirm Back
+// continues to do nothing visible in Campaign/Survival, matching real console
+// behavior exactly -- that is success, not a regression.
+//
+// Hold-through-passthrough, not tap/toggle -- mirrors x86 exactly: Back down
+// -> TAB down, Back up -> TAB up.
+void SendSyntheticScoreboardKeyX64(bool down)
+{
+    HWND hwnd = GetGameWindow();
+    if (!hwnd) return;
+    if (down) {
+        PostMessageA(hwnd, WM_KEYDOWN, VK_TAB, 0x00000001);
+    } else {
+        PostMessageA(hwnd, WM_KEYUP, VK_TAB, 0xC0000001);
+    }
+}
+
 // Edge-tracking state for the Y hold-vs-tap split -- mirrors x86's own
 // g_yPressStartMs/g_yReadyUpFired (analog_input_hooks.cpp) exactly. The
 // existing g_weaponSwitchHeldX64 bool (declared further below alongside this
@@ -1212,6 +1254,7 @@ bool g_interactButtonWasHeldX64 = false;
 DWORD g_interactPressStartMsX64 = 0;        // matches x86's own hold-to-interact timing (g_modConfig.interactHoldThresholdMs)
 bool g_dpadHeldX64[4] = { false, false, false, false }; // Up, Down, Left, Right -- matches kXI_DPAD_*_X64 order
 bool g_crouchProneHeldX64 = false;
+bool g_scoreboardHeldX64 = false; // Back -> +scores key-synth, see SendSyntheticScoreboardKeyX64
 // B is dual-purpose on x64 too (crouch/prone toggle vs. menu-back/ESC-forward),
 // same as x86 -- this shared flag is x64's own equivalent of x86's
 // g_currentBPressTouchedMenu (analog_input_hooks.cpp), maintained by
@@ -2287,6 +2330,19 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
                     if (crouchProneHeld) g_stanceDispatch(0, kCrouchProneCaseDown, 1);
                     else g_stanceDispatch(0, kCrouchProneCaseUp, 0);
                 }
+            }
+        }
+
+        // Scoreboard (Back) -- hold-through-passthrough key synthesis, x64 port
+        // 2026-09-13 (see SendSyntheticScoreboardKeyX64's own comment for the full
+        // rationale and the "confirmed genuine no-op in SP" framing). No menu-active
+        // gate needed -- x86's own InjectControllerScoreboard has none either, and
+        // Back has no other current meaning on x64 to conflict with.
+        {
+            bool scoreboardHeld = IsPhysicalHeld_Exported(g_buttonMap.scoreboard, xiButtons, leftTrigger, rightTrigger);
+            if (scoreboardHeld != g_scoreboardHeldX64) {
+                g_scoreboardHeldX64 = scoreboardHeld;
+                SendSyntheticScoreboardKeyX64(scoreboardHeld);
             }
         }
     }

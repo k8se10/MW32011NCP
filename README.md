@@ -109,6 +109,7 @@ see their own sections below; neither gates this release.
 | | Visual-enhancement suite (render scale, FSR, motion blur) |
 | | Native controller menu/UI navigation (main menu, pause, options, buy-stations) |
 | | Menu-focus/itemDef tracking (glyph-icon dependency) |
+| | Back (scoreboard, `+scores` key-synthesis) — see Known gaps below for why this is correctly a no-op in SP |
 
 ### Known gaps
 
@@ -134,12 +135,12 @@ presets, the plugin API, background threads, and more).
   2026-09-12 — see the build-verified column above; Hold Breath uses the
   same no-explicit-sniper-check gating as `-x86`, relying on the real native
   kbutton to limit the effect to sniper-class weapons.)
-- **Back's `+scores` scoreboard** has no wiring on x64 yet either, but this
-  isn't a real functionality gap — confirmed live on `-x86`, including
-  direct testimony from actual Xbox 360 console play, that this bind is a
-  genuine no-op in Campaign/Survival on every platform (no scoreboard UI
-  exists there at all). It'll have real value once Multiplayer support
-  ships, where a scoreboard genuinely exists.
+- **Back's `+scores` scoreboard** is now ported (build-verified, not yet
+  live-tested), but this was never a real functionality gap — confirmed live
+  on `-x86`, including direct testimony from actual Xbox 360 console play,
+  that this bind is a genuine no-op in Campaign/Survival on every platform
+  (no scoreboard UI exists there at all). It'll have real value once
+  Multiplayer support ships, where a scoreboard genuinely exists.
 - **FXAA and a forced-MSAA option** were never actually built even on the
   old `-x86` line (only ever planned) — real future work, not a regression.
 

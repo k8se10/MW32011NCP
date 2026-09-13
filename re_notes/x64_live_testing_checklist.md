@@ -62,6 +62,17 @@ for any item lives in `re_notes/known_issues_x64.md` issue #1.
       structurally a separate, dedicated kbutton_t and shouldn't need
       x86's own debounce/force-clear workaround); confirm ordinary
       hip-fire Sprint (not ADS'd) is unaffected.
+- [ ] Back (scoreboard/`+scores`) — **new this session (2026-09-13),
+      ported (parity audit row 30).** UNLIKE every other item on this list,
+      the expected, CORRECT outcome is that holding Back does **nothing
+      visible** in Campaign/Survival — confirmed by direct Xbox 360 console
+      testimony (`known_issues.md` issue #28) that no scoreboard UI exists
+      in SP at all, on any platform. This test is confirming the port is a
+      correct no-op, not confirming a visible feature works — do not treat
+      "nothing happened" as a failure here. Real value only confirmable
+      once Multiplayer ships its own scoreboard. Watch for any unexpected
+      side effect instead (a stuck TAB key state, interference with another
+      control) — that WOULD be a real bug.
 
 ## Menu & UI navigation (new this session)
 
