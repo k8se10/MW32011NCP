@@ -97,9 +97,9 @@ see their own sections below; neither gates this release.
 |---|---|
 | Analog movement, analog look | Sprint (real kbutton — mechanism changed 2026-09-12, needs re-confirming) |
 | Jump, Interact | Jump auto-stand (crouch/prone → standing) |
-| Fire, ADS (true hold-to-aim), Reload | D-pad actionslot (all four directions) |
+| Fire, ADS (true hold-to-aim), Reload — **a real Fire/ADS regression also confirmed live 2026-09-13, see Known gaps** | D-pad actionslot (all four directions) |
 | Melee, Lethal, Tactical | D-pad Left's squadmate-call-in fix |
-| Weapon switch (Y) | A fix attempt for sniper-class Fire/ADS |
+| Weapon switch (Y) | |
 | Crouch/Prone (tap vs. hold) | Plugin API (loader, hook/memory access) |
 | Pause menu open/close | Custom Options screen (native trigger + temporary open-chord) |
 | Auto-unstick (no more "click once at launch") | Vibration/rumble (fire + damage) |
@@ -130,6 +130,17 @@ screen's real data layer, see below — is a genuinely large gap). The items
 below are the highest-impact gaps found across both passes; see that file
 for everything else (menu glyphs, killstreaks, config presets, the plugin
 API, background threads, and more).
+- **Fire and/or ADS fails — a real live-confirmed bug, not a missing
+  feature.** Originally reported and investigated as sniper-class-specific
+  (a fix attempt was shipped around that theory, `g_notifyBindDispatch`
+  resolving a real client->server reliable-command notify every bind
+  press/release should send but this project's direct-kbutton-call design
+  skipped); **live-tested 2026-09-13 and confirmed NOT weapon-class-
+  specific — happens on the base pistol too**, which directly undercuts
+  the sniper-specific theory the shipped fix was built around. Root cause
+  genuinely not yet re-established. See
+  [`re_notes/known_issues_x64.md`](re_notes/known_issues_x64.md)'s
+  2026-09-13 correction round for exact open questions.
 - **The custom Options screen's real vanilla-setting tabs
   (Look/Video/Audio/Voice/Advanced Video/Movement/Actions) are silently
   non-functional on x64**, found 2026-09-13. The screen itself opens,
