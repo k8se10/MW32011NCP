@@ -1,0 +1,4 @@
+STRING @ 1403f0568 = "PLATFORM_MANTLE" (block .rdata)
+  from 1400527a7 type=DATA IN FUNCTION FUN_140052220@140052220
+  (1 references)
+

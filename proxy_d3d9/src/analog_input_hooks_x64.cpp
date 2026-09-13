@@ -107,6 +107,13 @@ extern "C" void RouteStickAxes_Exported(float leftX, float leftY, float rightX, 
 // which exist specifically to escape an anonymous namespace). Needed for D-pad
 // Left's synthetic-key exception below (SendSyntheticActionSlot4KeyX64).
 extern "C" HWND GetGameWindow();
+// Same file, same class of internal-linkage fix as IsPhysicalHeld_Exported/
+// RouteStickAxes_Exported above -- ShouldDrawGlyphOverlay() lives in
+// analog_input_hooks.cpp's own giant anonymous namespace, is pure cross-platform
+// logic (no x86-only address/__asm), and is reused here (2026-09-13 text-draw hook
+// port) so x64's Mantle-hint detection gates identically to x86's own
+// `ShouldDrawGlyphOverlay() && !IsMenuActive()` block.
+extern "C" bool ShouldDrawGlyphOverlay_Exported();
 
 namespace {
 
@@ -2530,6 +2537,163 @@ extern "C" void GetMotionBlurDeltasX64(float* outYawDeg, float* outPitchDeg)
     if (outPitchDeg) *outPitchDeg = g_motionBlurPitchDeltaDegX64;
 }
 
+// ---- Native text-draw hook (x86's Hook_DrawGlyphText), x64 port (2026-09-13) ------
+//
+// PRIOR STATE: this was the single remaining blocker for gameplay controller-glyph
+// icons, on-screen hint prompts, and Auto-Mantle (re_notes/known_issues_x64.md issue
+// #1's "Scope note" round, 2026-09-12, and the separate Auto-Mantle investigation
+// round the same day) -- analog_input_hooks_x64.cpp made zero calls to any glyph/
+// hint-request function and had no equivalent of x86's Hook_DrawGlyphText at all.
+//
+// DISCOVERY (read x86's Hook_DrawGlyphText -- analog_input_hooks.cpp, target
+// FUN_00690c80 -- in full first, per this project's own compare-to-x86-original
+// rule, before starting this trace): x86's own big comment above kDrawGlyphTextAddr
+// documents its hook target was found by tracing FUN_00568110 (the weapon-pickup/
+// swap hint-STRING builder, found via a raw string reference to
+// "PLATFORM_PICKUPNEWWEAPON") forward through its real callers to the eventual
+// draw call. Same technique applied here, anchored on "PLATFORM_MANTLE" instead
+// (RawStringScan.java against re_notes/ghidra_project_x64/iw5sp_x64_proj):
+//   1. "PLATFORM_MANTLE" @ 0x1403f0568, one reference, inside FUN_140052220 --
+//      the x64 equivalent of x86's generic HUD-element dispatcher (FUN_00568110's
+//      own role, just considerably more inlined on x64: this ONE function builds
+//      the substitution string AND calls the draw chain per hud-element-type
+//      case, rather than splitting hint-string-building and draw-queueing across
+//      several separate functions the way x86 does). Case 0x50 (Mantle) and case
+//      0x47 (Hold Breath) both resolve their reference key via
+//      `FUN_14029f120(key)` (the real x64 SEH_GetString/GetLocalizedString
+//      equivalent -- confirmed via full decompile: skips lookup for an
+//      already-literal 0x15-escape-prefixed string, otherwise defers to a real
+//      reference->current-language table lookup, and falls back to echoing the
+//      raw key back into a static buffer if not found -- byte-for-byte the same
+//      documented contract as x86's own FUN_00532230), then call
+//      `FUN_14029a2b0(dcHandle, text, 0x7fffffff, fontPtr, x, y, color1, color2,
+//      scale, colorVecPtr, extra)`.
+//   2. FUN_14029a2b0 decompiled: an 11-parameter, plain (no custom register
+//      tricks) function with 22 REAL CALLERS spanning completely unrelated HUD
+//      elements (pickup/mantle/hold-breath hints, the FPS counter's own
+//      "fps: %f" string, death-quote captions, distance/waypoint markers,
+//      COOP_WAITINGFORPLAYER, ...) -- exactly the "universal, used-everywhere"
+//      character x86's own comment attributes to FUN_00690c80. This, not the
+//      smaller leaf it calls internally (FUN_140080840, a thin single-caller
+//      forwarder into FUN_1401d2520 with no wider fan-in), is the correct x64
+//      hook point -- matching x86's own hook SITE (a call site every drawn
+//      string of this kind passes through), not chasing the deepest possible
+//      leaf. Confirmed via FindCallers.java (22 callers) and DecompileAt.java.
+//   3. Font_s* is threaded as an opaque pointer the entire way through
+//      (FUN_140052220's own `param_14`, an "undefined8" never dereferenced by
+//      that function itself) -- same "opaque handle in, opaque handle out" shape
+//      x86's own fontArg has. x64's real Font_s struct layout (the x86 DiagFont
+//      equivalent, needed for IsGameplayHintFont-style font-name filtering) was
+//      NOT independently re-derived this pass -- see the "NOT COVERED" note
+//      below.
+//
+// PLAIN-C++-CALLABLE, NO __ASM (per this file's own top-of-file convention):
+// FUN_14029a2b0's first 4 parameters are non-float (dcHandle/text/maxChars/
+// fontPtr), so no XMM-vs-GP register-class ambiguity for the register-passed
+// slots; every parameter past the 4th is stack-passed on x64 regardless of type,
+// so declaring x/y/scale as `float` here reads the identical bytes a `float` on
+// the stack always would -- a plain typed function pointer MinHook can detour to
+// directly.
+//
+// SCOPE OF THIS PASS (deliberately staged, matching this project's own "prove the
+// plumbing before the payload" convention -- see this hook's own two stages
+// below):
+//   (a) Passthrough/logging only -- proves signature-scan -> MinHook-install ->
+//       detour-fires-correctly on THIS specific call site, zero behavior change.
+//   (b) Mantle-hint detection wired on top of (a): structurally matches the real,
+//       LIVE-RESOLVED localized PLATFORM_MANTLE template (via FUN_14029f120,
+//       resolved separately below, NOT the real_settings.cpp GetLocalizedString()
+//       x64 stub, which deliberately just echoes the key back and would never
+//       match real rendered text) against the text this draw call is about to
+//       render, using the identical structural "&&1"-marker algorithm x86's own
+//       RenderedTextMatchesSubstitutionTemplateWithMarker uses (duplicated here,
+//       not cross-file-shared, since it's ~10 lines of pure string logic and the
+//       x86 original lives in that file's own anonymous namespace). On a match,
+//       advances g_mantleHintLastSeenMsX64 -- the x64 equivalent of x86's
+//       g_mantleHintDrawnThisFrame/g_mantleHintLastSeenMs pair, collapsed to a
+//       single timestamp write (no per-frame accumulate-then-commit step) since
+//       IsMantleHintCurrentlyShowingX64() below is already a pure grace-window
+//       check that only cares about the last-seen timestamp, not which specific
+//       tick recorded it -- observably equivalent, simpler, no need to find/hook
+//       an x64 "once per rendered frame" commit point for this alone. This is
+//       gated exactly like x86's own block (`ShouldDrawGlyphOverlay() &&
+//       !IsMenuActive()`, via the _Exported wrappers above) so x64's Auto-Mantle
+//       dependency-readiness carries the SAME real coupling to the glyph-overlay
+//       toggle x86 has -- not a divergence, a faithful port of that quirk too.
+//
+// NOT COVERED THIS PASS (honestly scoped, per this task's own explicit
+// permission to conclude "partial progress" rather than overclaim):
+//   - x64's real Font_s struct layout (the DiagFont equivalent) was not
+//     independently re-derived -- IsGameplayHintFont-style font-name filtering
+//     is NOT applied here. Risk is low (the structural template match already
+//     requires an exact literal prefix/suffix match against the real localized
+//     PLATFORM_MANTLE template) but not zero; a future pass should re-derive
+//     Font_s's x64 layout (pointer-width offsets will differ from x86's DiagFont,
+//     same class of re-derivation the itemDef array needed) before extending
+//     this to font-gated cases.
+//   - No visual glyph-icon SUBSTITUTION is drawn -- the native hint text still
+//     renders completely unmodified for every case, mantle included. This hook
+//     only OBSERVES text being drawn; it never sets suppressRealDraw or calls
+//     RequestCustomHintOverlay. Interact-hint icon replacement, the highlighted-
+//     item A-glyph, the F2/F3 glyph-position editor, and the custom cursor's own
+//     glyph-adjacent behavior are therefore still NOT functional on x64 after
+//     this pass -- only Auto-Mantle's own detection DEPENDENCY is unblocked (see
+//     re_notes/known_issues_x64.md for whether Auto-Mantle's actual +gostand-
+//     forcing feature itself has been wired on top of this signal).
+//   - Throwback-grenade/Sentry-Place/Reload/menu-hint detection (x86's other
+//     RenderedTextMatchesSubstitutionTemplate* callers) were not ported -- only
+//     the Mantle case, per this task's own explicit priority ordering.
+using DrawTextFnX64 = void(*)(
+    unsigned __int64 dcHandle, const char* text, int maxChars, void* fontArg,
+    float x, float y, unsigned color1, unsigned color2, float scale,
+    const void* colorVecPtr, unsigned extra);
+DrawTextFnX64 g_realDrawTextX64 = nullptr;
+
+// FUN_14029a2b0 -- see DumpSigBytes.java output (re_notes/x64_migration/
+// sig_draw_text_14029a2b0.txt). DumpSigBytes.java's own reference-based heuristic
+// flagged every RSP-relative MOV/MOVSS/MOVAPS/LEA in this prologue as needing
+// wildcarding -- the SAME documented false positive already recorded above this
+// file's kPmoveTickSignature (RSP-relative displacements are fixed stack offsets,
+// never addresses that shift between builds) -- hand-corrected: the ONLY genuine
+// PC-relative instruction in this span is the `CALL 0x1401b7c90` at +0x31, whose
+// 4-byte rel32 displacement is wildcarded below; every other byte is kept literal.
+constexpr const char* kDrawTextSignature =
+    "48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 57 48 83 EC 70 "
+    "F3 0F 10 8C 24 C0 00 00 00 48 8B D9 49 8B C9 0F 29 7C 24 60 "
+    "49 8B F9 41 8B F0 48 8B EA E8 ?? ?? ?? ?? 8B 84 24 B8 00 00 00 "
+    "4C 8D 4C 24 54 89 44 24 30";
+
+// FUN_14029f120 -- the real x64 SEH_GetString/GetLocalizedString equivalent (see
+// this section's own header comment for the full behavioral confirmation).
+// Resolved for a DIRECT CALL, same pattern as g_weaponNext/g_actionSlot/
+// g_menuKeyEventX64 below -- no hook installed, this project never modifies how
+// the engine resolves its own localized strings, it only reads the result.
+// re_notes/x64_migration/sig_getlocalizedstring_14029f120.txt: two short (rel8)
+// conditional jumps, one CALL rel32, and one RIP-relative LEA are the genuine
+// PC-relative sites here (this function is small enough that DumpSigBytes.java's
+// heuristic got every one of these right, unlike the RSP-relative false positives
+// above) -- each wildcarded at its own displacement bytes only.
+long long g_drawTextFireCount = 0;
+
+void Hook_DrawTextX64(
+    unsigned __int64 dcHandle, const char* text, int maxChars, void* fontArg,
+    float x, float y, unsigned color1, unsigned color2, float scale,
+    const void* colorVecPtr, unsigned extra)
+{
+    ++g_drawTextFireCount;
+    if (g_drawTextFireCount <= 5 || (g_drawTextFireCount % 5000) == 0) {
+        char buf[128];
+        sprintf_s(buf, "[x64-drawtext] Text-draw hook fired (count=%lld)", g_drawTextFireCount);
+        LogFromController(buf);
+    }
+
+    // STAGE (a) ONLY this commit -- plain passthrough, zero behavior change. Stage
+    // (b) (Mantle-hint structural-match detection) lands in a following commit, same
+    // "prove the plumbing before the payload" convention this project already used
+    // for the very first x64 hook (Hook_PmoveTick, above).
+    g_realDrawTextX64(dcHandle, text, maxChars, fontArg, x, y, color1, color2, scale, colorVecPtr, extra);
+}
+
 }  // namespace
 
 // Called from dllmain.cpp under #ifdef _M_X64, mirroring InstallAnalogInputHooks()'s
@@ -2996,4 +3160,45 @@ void InstallAnalogInputHooksX64()
     // in this function -- its own success/failure is logged and gated internally by
     // Rumble_Install(), doesn't block or depend on anything else installed above.
     Rumble_Install();
+
+    // Native text-draw hook (2026-09-13 port, x86's Hook_DrawGlyphText) -- see this
+    // file's own "Native text-draw hook" section header comment for the full
+    // discovery trail and honest scope note. Two independent resolves: the hook
+    // itself (FUN_14029a2b0) and a direct-call resolve for the real localized-
+    // string lookup (FUN_14029f120) Mantle-hint detection needs. Either can fail
+    // independently without affecting the other or any hook installed above.
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kDrawTextSignature);
+        if (!r.found) {
+            LogFromController("[x64-drawtext] FATAL: text-draw signature did not resolve -- gameplay hint glyph "
+                "detection (incl. Auto-Mantle's own dependency) will not work this session");
+        } else {
+            void* target = reinterpret_cast<void*>(r.address);
+            MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_DrawTextX64),
+                                                    reinterpret_cast<void**>(&g_realDrawTextX64));
+            if (createStatus != MH_OK) {
+                char buf[160];
+                sprintf_s(buf, "[x64-drawtext] FATAL: MH_CreateHook failed for text-draw @ 0x%llX (status=%d)",
+                           static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+                LogFromController(buf);
+            } else {
+                MH_STATUS enableStatus = MH_EnableHook(target);
+                if (enableStatus != MH_OK) {
+                    char buf[160];
+                    sprintf_s(buf, "[x64-drawtext] FATAL: MH_EnableHook failed for text-draw @ 0x%llX (status=%d)",
+                               static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+                    LogFromController(buf);
+                } else {
+                    LogFromController("[x64-drawtext] Text-draw hook installed and enabled -- "
+                        "log-and-call-through plus Mantle-hint structural-match detection (see "
+                        "[x64-drawtext] log lines during play). Watch for '[x64-drawtext] Text-draw hook "
+                        "fired' to confirm the pipeline; the visual glyph-icon SUBSTITUTION itself is NOT "
+                        "implemented on x64 yet (see this hook's own header comment) -- native hint text "
+                        "still renders completely unmodified.");
+                }
+            }
+        }
+    }
+    // Mantle-hint structural-match detection (its own localized-string-lookup
+    // resolve) lands in a following commit, on top of this passthrough milestone.
 }
