@@ -1,0 +1,4 @@
+STRING @ 1404336f0 = "fonts/objectivefont" (block .rdata)
+  from 14029b8a6 type=DATA IN FUNCTION FUN_14029b640@14029b640
+  (1 references)
+

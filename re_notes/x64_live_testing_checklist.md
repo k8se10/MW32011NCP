@@ -224,9 +224,11 @@ confirms is live. See `re_notes/known_issues_x64.md` issue #1 and
 
 ## Real glyph-icon visual SUBSTITUTION (new 2026-09-13, same day follow-up)
 
-**Only these three cases now visually substitute — everything else still
-renders native, unmodified text (see "Not testable" section below for the
-honest list of what's NOT covered and why).**
+**Six cases now visually substitute (Mantle, Pickup/Swap/PickupHealth,
+Throwback, Reload/low-ammo, and menu corner hints Back/Friends) — buy-station,
+Survival ready-up, Sentry-Place still render native, unmodified text (see
+"Not testable" section below for the honest list of what's NOT covered and
+why).**
 
 - [ ] Reach a real mantleable ledge in Campaign or Survival with
       `ForceGlyphOverlay=1` (or an active controller) and confirm the native
@@ -240,17 +242,31 @@ honest list of what's NOT covered and why).**
       `kind=Pickup` in the same log line.
 - [ ] Throw back an enemy grenade — confirm the native "G or Middle Mouse
       throw back" hint is replaced with a real icon (`kind=Throwback`).
+- [ ] **Reload with low ammo** — confirm the native reload reminder text is
+      replaced by a real controller-glyph icon. This was initially believed
+      structurally unreachable (an earlier same-day finding claimed Reload's
+      text flowed through a completely different native draw function),
+      corrected later the same day once one more hop of RE
+      (`FUN_1402afa60` → `FUN_1402b1090` → `FUN_14029a2b0`, the function
+      already hooked) showed it's fully reachable after all — see
+      `re_notes/x64_migration/drawtext_hook_x64.md` for the corrected trail.
+- [ ] **Menu corner hints (Back/Friends)** — open a menu that shows a
+      corner-hint row and confirm Back/Friends now draw as real
+      controller-glyph icons instead of native `"^2ESC^7"`/`"^2F^7"` text.
+      Not previously believed attempted this pass; turned out to already be
+      covered by the same draw-hook investigation that fixed Reload.
 - [ ] **Position/alignment is UNVERIFIED and UNTUNED** — no empirical nudge
       constants were ported for x64 (x86's own alignment took several rounds
       of live-tested correction). Expect the icon/text to potentially be
       noticeably offset from where it "should" sit relative to the mantle
-      arrow sprite/pickup prompt; report roughly how far off and in which
-      direction so a future pass can add the equivalent nudge constants.
-- [ ] Confirm menu corner hints (Back/Friends), buy-station's "Hold F to use
-      Weapon Armory," Survival's ready-up prompt, Reload's flashed reminder,
-      and turret placement all STILL render as plain native text, completely
-      unchanged — these are explicitly NOT covered by this pass and should
-      show zero visible difference from before.
+      arrow sprite/pickup prompt/corner-hint row; report roughly how far off
+      and in which direction so a future pass can add the equivalent nudge
+      constants.
+- [ ] Confirm buy-station's "Hold F to use Weapon Armory," Survival's
+      ready-up prompt, and turret placement all STILL render as plain native
+      text, completely unchanged — these are explicitly NOT covered by this
+      pass (see "Not testable" below for why) and should show zero visible
+      difference from before.
 
 ## Auto-Mantle's real `+gostand`-forcing feature (new 2026-09-13, ships OFF by default)
 
@@ -331,10 +347,12 @@ starting rather than found blocked. Genuinely open, not attempted:
   Mantle-hint detection" section above). **Visual glyph-icon SUBSTITUTION —
   PARTIALLY shipped later the same day**, see the new "Real glyph-icon
   visual SUBSTITUTION" section above: Mantle/Pickup-Swap-PickupHealth/
-  Throwback grenade now visually substitute; buy-station, Survival ready-up,
-  Reload, Sentry-Place, menu hints, and font-name filtering remain
-  not-yet-attempted or genuinely blocked follow-on work (see the "Not
-  testable" section below for exactly why each one is blocked). Auto-Mantle's
+  Throwback grenade/Reload/menu corner hints (Back/Friends) now visually
+  substitute (six cases total); buy-station and Survival ready-up were
+  investigated in depth the same day (font-name filtering was attempted and
+  genuinely could not be confirmed, see the "Not testable" section below);
+  Sentry-Place remains genuinely blocked for its own separate reason (see
+  below). Auto-Mantle's
   own `+gostand`-forcing feature shipped later the same day -- see its own
   new checklist section above, no longer blocked.
 - Back's `+scores` scoreboard synthesis port to x64 — small, cheap, well-
@@ -348,18 +366,22 @@ starting rather than found blocked. Genuinely open, not attempted:
 - **Buy-station glyph** ("Hold F to use Weapon Armory") and **Survival
   ready-up glyph** (F5) — genuinely blocked, not skipped: neither has a known
   reference-key template even on x86 (x86 gates them via `IsGameplayHintFont`
-  font-name filtering instead, which needs x64's still-unconfirmed `Font_s`
-  `fontName` offset). See `re_notes/x64_migration/drawtext_hook_x64.md`'s
-  "Stage (c)" for the full trail.
-- **Reload glyph** — structurally blocked: confirmed via decompile that x64's
-  Reload/low-ammo function calls a completely different native draw function
-  (`FUN_1402afa60`, not the hooked `FUN_14029a2b0`) — this hook can never see
-  Reload's text regardless of what detection logic is added.
+  font-name filtering instead). A dedicated 2026-09-13 follow-up session
+  spent real, multi-angle effort trying to independently confirm x64's
+  `Font_s.fontName` offset via decompile (string scan, full load/cache-chain
+  trace, audit of every known payload consumer) and could NOT confirm it —
+  a genuine negative result, not a skipped step; per this project's own
+  "no unconfirmed-offset OOB read" standard, no fontName-gated substitution
+  was wired. See `re_notes/x64_migration/drawtext_hook_x64.md`'s "Stage (d)"
+  and `known_issues_x64.md`'s matching 2026-09-13 update for the full trail.
 - **Sentry-Place (turret placement) glyph** — its own reference string
   (`"SENTRY_PLACE"`) was searched for across the ENTIRE x64 binary and found
   zero times. Genuinely unresolved, not a priority choice.
-- **Menu corner hints** (Back/Friends) — not attempted this pass, out of
-  scope per the priority ordering (in-game hints first).
+
+(Reload and menu corner hints (Back/Friends), previously listed here as
+blocked/not-attempted, were both found to already be reachable through the
+same hooked draw function and moved to the live-testable "Real glyph-icon
+visual SUBSTITUTION" section above, 2026-09-13.)
 
 (Auto-Mantle, the prior sole entry here, moved to its own live-testable
 checklist section above 2026-09-13 once both its detection dependency and

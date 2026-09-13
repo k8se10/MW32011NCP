@@ -137,6 +137,17 @@ header comment is kept in sync with actual scope). Summary:
     `FUN_1402afa60`, not `FUN_14029a2b0` (the same alternate draw function
     dispatcher case `0x61`'s death-quote captions use). Reload's text can never
     be seen by this hook — a real, structural reason, not a priority choice.
+    **Correction, same day, a separate follow-up session: this was WRONG.**
+    `FUN_1402afa60` decompiles misleadingly as a bare one-line tail-forward
+    under this project's `-noanalysis` policy (no parameter-ID pass) — a real
+    decompiler artifact, not the actual function shape. `DumpDisasm.java`
+    showed it re-marshals ~12 real args and tail-forwards them to
+    `FUN_1402b1090`, a generic word-wrap/line-layout helper whose own draw
+    loop calls `FUN_14029a2b0` — the SAME function this hook already hooks —
+    once per wrapped line. `FindCallers.java` confirmed all 6 real callers of
+    `FUN_1402afa60` (including Reload's `FUN_140031bc0`) always take that
+    branch. Reload IS reachable after all — ported the same day, see "What
+    was NOT implemented this pass" below for current status.
   - `RawStringScan.java` against `"SENTRY_PLACE"` found **zero** references
     anywhere in this x64 binary — genuinely unresolved (different storage,
     doesn't exist in this build, or needs a different anchor), not pursued
@@ -175,31 +186,89 @@ header comment is kept in sync with actual scope). Summary:
     Pickup/Swap/PickupHealth, Throwback — so none of them needed the still-
     unconfirmed `fontName` filtering above.
 
+- **Stage (d)**, 2026-09-13, a separate, later session: a dedicated attempt to
+  independently confirm `fontName`'s real offset via decompile (not the
+  alignment inference Stage (c) left standing), specifically to unlock
+  buy-station and Survival ready-up. Re-read x86's `IsGameplayHintFont`/
+  `IsQteFont`/`IsMenuHintFont` (`analog_input_hooks.cpp`) in full first,
+  confirming buy-station/ready-up both flow through x86's GENERIC
+  `TryGetGlyphAssetNameForKeyName(highlighted)` fallback (gated purely by
+  font identity + a found `^N...^7` span) rather than any content-based
+  template of their own — x86 gets them "for free" once the font gate
+  passes.
+  - `RawStringScan.java` against x86's exact-case font-name literals
+    (`"fonts/extraBigFont"` etc.) found **zero** hits in the x64 binary;
+    lowercased variants each found exactly ONE reference, all from
+    `FUN_14029b640` (`x64_migration/fontname_scan_*.txt`, `decomp_14029b640_
+    fontinit.txt`) — x64 stores font-name strings lowercase, x86 apparently
+    doesn't (irrelevant there since `IsGameplayHintFont` already uses
+    `_stricmp`).
+  - Traced that ONE reference forward through the full load chain
+    (`thunk_FUN_1401b7cb0` → `FUN_1400a5a20` → `FUN_1400a54c0` →
+    `FUN_14038ffd0`, `decomp_1401b7cb0_findorloadfont.txt` through
+    `decomp_14038ffd0_typeloaddispatch.txt`): this is a GENERIC,
+    type-agnostic asset-cache system where the cache ENTRY (a separate
+    allocation from the `Font_s*` payload callers actually receive) tracks
+    its own name via an indirected get/set pair (`FUN_14008e3c0`/
+    `FUN_14008e3f0`); the one path that touches real struct bytes for a
+    "default" font turned out to be a raw SSE/AVX `memcpy`
+    (`FUN_14038ffd0`, confirmed via full decompile) copying an opaque
+    template BLOB, not a per-field constructor a static trace can see
+    inside.
+  - Audited every CONFIRMED consumer of the actual payload pointer:
+    `FUN_1401b7cd0` (pixelHeight@+0x08, literal 3-byte function body,
+    `sigbytes_1401b7cd0.txt`), the glyph advance-width lookups inside
+    `FUN_1401b7ab0`/`FUN_1401b7ce0` (word-wrap helpers, both re-confirm
+    pixelHeight@+0x08 and call `FUN_1401b7bf0(font)` for the per-char
+    glyph), and `FUN_1401b80f0` (glyphCount@+0x0C, `DiagGlyph*`@+0x20).
+    **None dereference offset +0x00.** Noted for the record:
+    `FUN_1401b7cd0` has 11 total callers (`callers_1401b7cd0_pixelheight.txt`)
+    and most of them are NOT fonts at all — its return value is used as a
+    small 0-7 discriminator in those other call sites, almost certainly
+    MSVC `/OPT:ICF` identical-code-folding merging an unrelated struct's
+    byte-identical one-line getter into the same physical address. Those
+    callers were correctly excluded; only the ones confirmed (via
+    `FUN_14029fac0`/`FUN_14029fb10`) to receive a real `Font_s*` are
+    relevant, and none of those touch offset 0 either.
+  - **Result: could not independently confirm `fontName`@+0x00 via decompile
+    this session**, despite genuine multi-angle effort. A real negative
+    result — see `known_issues_x64.md`'s matching 2026-09-13 update for the
+    full writeup and the honest comparison against how x86's own (also
+    never decompile-confirmed) `fontName` field was validated instead.
+  - No source changes resulted; per this project's own "no unconfirmed-
+    offset OOB read" standard, buy-station and Survival ready-up remain
+    unported rather than shipping a substitution gated on this offset.
+
 ## What was NOT implemented this pass (honest scope)
 
-- x64's real `Font_s` `fontName` offset remains unconfirmed (see Stage (c) above)
-  — no `IsGameplayHintFont`-style font-name filtering exists. Not needed for the
-  three substituted cases (structural template match is the gate instead), but
-  still blocks any future case that has no known reference-key template of its
-  own — which is exactly why buy-station and ready-up (next bullet) are stuck.
+- x64's real `Font_s` `fontName` offset remains unconfirmed — no
+  `IsGameplayHintFont`-style font-name filtering exists. Not needed for the
+  three substituted cases (structural template match is the gate instead).
+  **A dedicated follow-up session (Stage (d) above, 2026-09-13) spent real
+  effort trying to confirm this offset via decompile and could not** — see
+  that section for the full trail. This is a genuine, investigated dead end,
+  not an unattempted gap.
 - **Buy-station** (`"Hold ^3F^7 to use Weapon Armory"`) and **Survival ready-up**
   (`F5`) remain unported — genuinely blocked, not skipped for convenience: x86
   itself has no reference-key template for either (per `ui_assets.md`'s own
   zone-dump research — ready-up's text is Survival-script-driven, buy-station's
   key was never found even for x86), so x86 protects them from false positives
   via `IsGameplayHintFont`, not a structural match. Porting these safely needs
-  the `fontName` gap above closed first.
-- **Reload** remains unported for a structural reason, not a priority one — see
-  Stage (c) above: it flows through a completely different native draw function
-  (`FUN_1402afa60`), which this hook (on `FUN_14029a2b0`) can never observe.
-  Would need its own separate signature/hook.
+  the `fontName` gap above closed first — attempted and NOT closed (Stage (d)).
+- **Reload IS NOW PORTED** (2026-09-13, same day, corrected in Stage (c)
+  above) — the original finding here was wrong (a decompiler artifact, not a
+  real structural block); one more hop of RE confirmed `FUN_1402afa60`
+  tail-forwards to `FUN_1402b1090`, which calls the already-hooked
+  `FUN_14029a2b0`. Kept as a visible correction rather than silently
+  deleted, per this file's own documentation convention.
 - **Sentry-Place** remains unported — its own reference string
   (`"SENTRY_PLACE"`) was not found anywhere in this x64 binary at all (see
   Stage (c) above); `TryGetSentryPlaceGlyphAssetName` exists and is ready to use
   once a real x64 reference/template is found.
-- Menu-hint detection (x86's `ResolveMenuGlyphAssetNameForKeyName` block) was
-  not ported — out of scope per this task's own priority ordering (in-game
-  hints first).
+- **Menu corner hints (Back/Friends) ARE NOW PORTED** (2026-09-13, same day)
+  — found reachable through the same investigation that fixed Reload; no
+  longer out of scope. Kept as a visible correction — this bullet previously
+  said menu-hint detection wasn't ported at all.
 - **No position/scale nudge tuning was ported.** x86's own pixel-perfect
   alignment (`kHintVerticalNudge`, `kMantleHintXNudge`/`YNudge`) was reached via
   several rounds of LIVE-TESTED empirical correction specific to x86's own

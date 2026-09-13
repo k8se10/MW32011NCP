@@ -3094,6 +3094,26 @@ extern "C" bool TryGetCursorGateX64(int* outVisFlag, int* outUiState)
 //     positives via IsGameplayHintFont + !IsMenuActive(), not a structural match.
 //     Porting these safely needs the font-name-filtering gap above closed first --
 //     genuinely blocked on real RE, not skipped for convenience.
+//
+//   UPDATE (2026-09-13, later same day, separate session): a dedicated attempt
+//   was made to independently confirm Font_s.fontName's real offset via decompile
+//   specifically to unlock these two cases -- real, multi-angle effort (RawStringScan
+//   against the real x64 font-name literals, a full trace of the font load/asset-
+//   cache chain, and an audit of every function confirmed to dereference the actual
+//   Font_s* PAYLOAD pointer), and it could NOT be confirmed. The load chain
+//   (FUN_14029b640 -> thunk_FUN_1401b7cb0 -> FUN_1400a5a20/FUN_1400a54c0) turned out
+//   to be a generic, type-agnostic asset-cache system where the CACHE ENTRY (a
+//   separate allocation from the payload callers actually receive) tracks its own
+//   name via an indirected get/set pair, not a fact about the payload's own layout;
+//   the one path that touches real struct bytes for a "default" font is a raw
+//   memcpy of an opaque template blob, not a per-field constructor a static trace
+//   can see inside. Every confirmed payload consumer (the pixelHeight/glyphCount/
+//   glyphs getters) was audited and none dereferences offset +0x00. This is a real
+//   negative result, not an unattempted gap -- see re_notes/x64_migration/
+//   drawtext_hook_x64.md's "Stage (d)" and known_issues_x64.md's matching
+//   2026-09-13 update for the full trail. Per this project's own "no unconfirmed-
+//   offset OOB read" standard (CLAUDE.md SS5), NO fontName-gated substitution was
+//   wired -- buy-station and Survival ready-up remain unported.
 //   - Reload/low-ammo IS NOW COVERED (see stage (d) above) -- the claim
 //     previously here ("calls a COMPLETELY DIFFERENT native draw function...
 //     this hook can never see Reload's text") was WRONG, root-caused and
@@ -3111,12 +3131,13 @@ extern "C" bool TryGetCursorGateX64(int* outVisFlag, int* outUiState)
 //     "Menu corner hints" block, right before the final real-draw call below) --
 //     the claim previously here ("was not ported -- deliberately out of scope")
 //     no longer holds for these two specific hints. Kept as a visible correction
-//     rather than silently deleted, same convention as the Reload correction
-//     immediately above. Still NOT ported for menu hints generally: Quit/
-//     Leaderboards/Game-Summary's own literal-text special cases and the
-//     corner-hint-row positional-tolerance/Special-Ops-Friends-suppression logic
-//     -- see that block's own header comment for the honest reason each is out
-//     of scope (x86-only menu-focus/itemDef infrastructure, mostly).
+//     rather than silently deleted, per this project's own documentation
+//     standard of preserving investigation history. Still NOT ported for menu
+//     hints generally: Quit/Leaderboards/Game-Summary's own literal-text special
+//     cases and the corner-hint-row positional-tolerance/Special-Ops-Friends-
+//     suppression logic -- see that block's own header comment for the honest
+//     reason each is out of scope (x86-only menu-focus/itemDef infrastructure,
+//     mostly).
 using DrawTextFnX64 = void(*)(
     unsigned __int64 dcHandle, const char* text, int maxChars, void* fontArg,
     float x, float y, unsigned color1, unsigned color2, float scale,

@@ -126,27 +126,36 @@ partial/regressed). The items below are the highest-impact gaps it found;
 see that file for everything else (menu glyphs, killstreaks, config
 presets, the plugin API, background threads, and more).
 
-- **Controller-glyph icons now draw for real on x64 for three in-game hints**
-  (2026-09-13, same day as the text-draw hook itself shipped): **Mantle,
-  weapon pickup/swap/pickup-health, and grenade throwback** all now suppress
+- **Controller-glyph icons now draw for real on x64 for five in-game/menu
+  hint categories** (2026-09-13, same day as the text-draw hook itself
+  shipped): **Mantle, weapon pickup/swap/pickup-health, grenade throwback,
+  Reload/low-ammo, and menu corner hints (Back/Friends)** all now suppress
   the native hint text and draw this project's own icon+text instead,
   detected via an exact structural match against the real, live-resolved
-  reference-key text (no font-name filtering needed for these three).
+  reference-key text (no font-name filtering needed for any of these).
+  Reload and the menu corner hints were both initially believed unreachable
+  from this hook (an earlier finding the same day claimed Reload's text
+  "flows through a completely different native draw function," and menu
+  corner hints simply weren't attempted), but that was a decompiler
+  artifact — one more hop of RE (`FUN_1402afa60` → `FUN_1402b1090` →
+  `FUN_14029a2b0`, the exact function this hook already detours) confirmed
+  both are fully reachable after all; see `re_notes/x64_migration/
+  drawtext_hook_x64.md` for the corrected trail.
   **Buy-station's "Hold F to use Weapon Armory," Survival's ready-up
-  prompt, Reload, turret placement, and menu corner hints (Back/Friends)
-  still render completely native/unmodified** — buy-station
-  and ready-up are blocked on x64's still-unconfirmed `Font_s` `fontName`
-  offset (needed for `IsGameplayHintFont`-style filtering, since neither has
-  a known reference-key template even on `-x86`); Reload is confirmed to
-  flow through a different native draw function this hook can't observe at
-  all; Sentry-Place's own reference string wasn't found anywhere in the x64
-  binary; menu corner hints (Back/Friends) weren't attempted this pass. The
-  custom mouse cursor overlay is a separate system (a different pair of
-  native globals, no shared dependency with the text-draw hook above) and
-  was ported the same day (build-verified, not yet live-tested — see the
-  table above).
-  On-screen alignment for the three working cases is also unverified — no
-  pixel-tuning nudges were ported yet. See
+  prompt, and turret placement still render completely native/
+  unmodified** — buy-station and ready-up are blocked on x64's genuinely
+  unconfirmed `Font_s` `fontName` offset (needed for `IsGameplayHintFont`-
+  style filtering, since neither has a known reference-key template even on
+  `-x86`; a dedicated same-day investigation tried to independently confirm
+  this offset via decompile and could not — a real negative result, not a
+  skipped step, see `re_notes/x64_migration/drawtext_hook_x64.md`'s "Stage
+  (d)"); Sentry-Place's own reference string wasn't found anywhere in the
+  x64 binary. The custom mouse cursor overlay is a separate system (a
+  different pair of native globals, no shared dependency with the
+  text-draw hook above) and was ported the same day (build-verified, not
+  yet live-tested — see the table above).
+  On-screen alignment for all five working categories is also unverified —
+  no pixel-tuning nudges were ported yet. See
   `re_notes/x64_migration/drawtext_hook_x64.md` for the exact scope and
   reasoning behind each gap. Everything else renders normally (including
   this mod's own startup/hot-reload toast messages, which ARE confirmed

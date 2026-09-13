@@ -1,0 +1,4 @@
+STRING @ 140433690 = "fonts/bigfont" (block .rdata)
+  from 14029b828 type=DATA IN FUNCTION FUN_14029b640@14029b640
+  (1 references)
+
