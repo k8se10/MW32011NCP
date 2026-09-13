@@ -241,6 +241,20 @@ live, detailed status on every item below.
     previously omitted, now wired at `SendSyntheticF5X64`'s call site.
     Build-verified, not yet live-tested.
 
+21. **Custom mouse cursor overlay ported to x64**, closing parity audit row
+    #37 — previously an honest early-return stub (see Fixed item 4 below).
+    The real native cursor-visible-flag and UI-state globals were found via
+    fresh RE (`kCursorGateSignature`, `analog_input_hooks_x64.cpp`), cross-
+    confirmed two independent ways: they're read by a function structurally
+    identical to x86's own native cursor-draw dispatcher (same gate/switch
+    shape, same literal strings, same `"ui_cursor"` asset), AND they sit at
+    the exact same struct offsets from their UI-context base as x86's own
+    equivalents do from theirs. A second, previously-invisible gap found
+    along the way — the function's menu-active check was silently always
+    false on x64, which alone would have kept the cursor from ever drawing
+    outside the glyph-position editor — is fixed too. Build-verified,
+    not yet live-tested.
+
 ### Fixed
 1. **Crash on launch with the sniper Fire/ADS fix's own log line.** The
    diagnostic message that fix attempt logs on resolving its target
@@ -267,7 +281,8 @@ live, detailed status on every item below.
    unguarded addresses left over from the 32-bit binary, which safely but
    silently failed against the 64-bit process instead of crashing — fixed
    by gating it off honestly pending a real x64 port of the underlying
-   mechanism.
+   mechanism. **Superseded — see What's New item 21 above**: the real x64
+   port has since shipped.
 5. **Sprint (L3) was using x86's original, deliberately-abandoned mechanism**
    (forcing the raw `pm_flags`-equivalent bit directly), not the real
    `+sprint` kbutton x86 ultimately shipped — meaning the native sprint

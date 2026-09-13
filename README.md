@@ -114,6 +114,7 @@ see their own sections below; neither gates this release.
 | | Auto-Mantle (while sprinting) — ships off by default |
 | | Back (scoreboard, `+scores` key-synthesis) — see Known gaps below for why this is correctly a no-op in SP |
 | | ADS zoom-aware look-slowdown (`AdsSlowdownStrength`/`Baseline`/close-range taper) |
+| | Custom mouse cursor overlay |
 
 ### Known gaps
 
@@ -139,7 +140,11 @@ presets, the plugin API, background threads, and more).
   a known reference-key template even on `-x86`); Reload is confirmed to
   flow through a different native draw function this hook can't observe at
   all; Sentry-Place's own reference string wasn't found anywhere in the x64
-  binary; custom cursor and menu corner hints weren't attempted this pass.
+  binary; menu corner hints (Back/Friends) weren't attempted this pass. The
+  custom mouse cursor overlay is a separate system (a different pair of
+  native globals, no shared dependency with the text-draw hook above) and
+  was ported the same day (build-verified, not yet live-tested — see the
+  table above).
   On-screen alignment for the three working cases is also unverified — no
   pixel-tuning nudges were ported yet. See
   `re_notes/x64_migration/drawtext_hook_x64.md` for the exact scope and

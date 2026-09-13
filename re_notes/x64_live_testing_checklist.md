@@ -279,6 +279,34 @@ honest list of what's NOT covered and why).**
 - [ ] Confirm vanilla keyboard/mouse play is unaffected with the feature
       enabled (this project's own strict-additive standard, CLAUDE.md SS7).
 
+## Custom mouse cursor overlay (new 2026-09-13, closes parity audit row #37)
+
+- [ ] With keyboard/mouse as the active input method, open the main menu
+      and confirm this mod's own custom cursor (`cursor_arrow` texture)
+      draws over glyph icons and other overlay elements, tracking real
+      mouse movement correctly at the current resolution (test at 1920x1080
+      and at least one non-16:9 resolution, e.g. 800x600, per the position-
+      scaling history this feature has -- see `known_issues.md` issue #52).
+- [ ] Confirm the cursor correctly disappears the moment a controller is
+      used (within ~300ms, per `IsControllerActiveInputMethod`'s recency
+      window) and reappears once real mouse movement resumes.
+- [ ] Confirm the cursor does NOT draw during ordinary active gameplay with
+      no menu open (the real regression class issue #55 originally caught)
+      -- this depends on the newly-fixed `IsMenuActiveX64_Exported()`
+      branch, not just the two resolved gate addresses.
+- [ ] Confirm the cursor DOES draw correctly inside Survival buy-station/
+      armory menus and the pause menu (states where x86's own uiState
+      exclusion list intentionally allows it).
+- [ ] Watch `proxy_d3d9.log` for `[x64-cursor] Cursor gate resolved:
+      visFlag=... uiState=...` at startup (confirms both signatures
+      resolved) and `[cursor-gate-diag]`/`[cursor-pos-diag]` lines during
+      play (confirms real values are changing sensibly, not stuck).
+- [ ] If the cursor never appears at all, check for `[x64-cursor] FATAL`
+      in the log first -- that means `kCursorGateSignature` failed to
+      resolve or match this exact build (a real signature-scan miss, not a
+      gating bug) and should be reported as its own issue, not conflated
+      with the gating logic above.
+
 ## Plugin API / security component
 
 - [ ] Confirm `proxy_d3d9.log` shows `mw32011nsp_security.dll` greenlit-
