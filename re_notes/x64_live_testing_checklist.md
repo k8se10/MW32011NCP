@@ -18,6 +18,22 @@ for any item lives in `re_notes/known_issues_x64.md` issue #1.
 
 ---
 
+## Launch (check this FIRST, before anything else on this list)
+
+- [ ] **Game actually launches** — 2026-09-13, a live report ("game doesn't
+      launch") was root-caused to a guaranteed `sprintf_s` buffer overflow
+      (`0xc0000409`, same bug class as `PATCHNOTES.md`'s Fixed item 1 from
+      2026-09-05) in a log line added earlier the same day for the native
+      text-draw hook. It was 100% reproducible on every launch, not
+      intermittent. Fixed, plus a full sweep of every similar call site
+      added that day (`re_notes/known_issues_x64.md`'s 2026-09-13 "game
+      doesn't launch" round has the full trail). Build-verified only —
+      **this specific fix has not itself been confirmed live yet**, since
+      the crash itself is what was blocking every other item on this
+      checklist from being testable at all. Confirm the game reaches a
+      normal main-menu session with no crash before testing anything else
+      below.
+
 ## Core gameplay (Campaign/Survival, `iw5sp.exe`)
 
 - [ ] Sprint (L3) — **mechanism changed 2026-09-12** (was raw `pm_flags`-

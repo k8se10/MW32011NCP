@@ -3854,3 +3854,123 @@ warning) involved a code change; items 1/2/4/5/6 needed no changes (already
 working); item 3 was deliberately left as documentation only. The single
 code change was build-verified per the standard sequence above and is
 already deployed.
+
+---
+
+**UPDATE 2026-09-13 (same day, immediately after the audit-completeness
+round above) -- live report "game doesn't launch." Root-caused to a
+guaranteed sprintf_s buffer overflow, the same bug class item 1 near the
+top of `PATCHNOTES.md`'s Fixed section (2026-09-05) already fixed once,
+recurring in code added the same day. Fixed, plus a full sweep of every
+similar call site added during today's session.**
+
+Real crash, confirmed via Windows Application-Error event log (exception
+`0xc0000409`, faulting module `d3d9.dll`, matching the deployed build's
+own timestamp exactly) and a live crash dump opened in WinDbg/`cdb`
+(`iw5sp.exe.14364.dmp`, `%LOCALAPPDATA%\CrashDumps`, symbolized against
+the built PDB, same technique the 2026-09-05 crash used). Stack:
+
+```
+d3d9!_invoke_watson+0x18
+d3d9!_invalid_parameter_internal+0xb6
+d3d9!__stdio_common_vsprintf_s+0xbb
+d3d9!sprintf_s<160>+0x48
+d3d9!InstallAnalogInputHooksX64+0xa2e
+d3d9!DllMain+0x42a
+```
+
+`FailFast.Name: INVALID_ARG`, `Subcode: 0x5 FAST_FAIL_INVALID_ARG` -- this
+is the UCRT's own argument-validation fail-fast, not an actual stack-
+cookie violation, despite Windows' misleading `STATUS_STACK_BUFFER_OVERRUN`
+label on the exception code -- exactly the same root-cause SHAPE as the
+2026-09-05 crash (`PATCHNOTES.md` Fixed item 1), just a different call
+site this time.
+
+**Confirmed root cause**: `InstallAnalogInputHooksX64`'s own
+"`[x64-drawtext] Localized-string lookup resolved`" log line (the native
+text-draw hook's Mantle-detection dependency resolve, added 2026-09-13
+earlier the same day during the glyph text-draw hook work) formats a
+239-character literal (plus a `%llX` substitution, up to 16 more hex
+digits) into a `char buf[160]` -- a 92-byte overflow. This is NOT
+conditional on any runtime value (the literal text alone, with zero
+substitution, already exceeds the buffer) -- it fires deterministically
+every single time this code path is reached, which is every ordinary
+launch once the signature it depends on resolves (which it reliably
+does, per the same session's own earlier successful test). This is the
+direct explanation for "game doesn't launch," not an intermittent bug.
+
+**Full sweep, not just the one confirmed site**: given the volume of new
+log lines added today across `analog_input_hooks_x64.cpp`/
+`overlay_hud.cpp`/`rumble.cpp` by many concurrent background sessions
+(same failure MODE as the 2026-09-05 crash: a new log line added without
+the buffer-safety discipline the rest of the file's `sprintf_s` sites
+already carry), wrote a small script computing each call site's real
+worst-case output length (accounting for the actual per-specifier max
+width -- `%llX`=16, `%p`=16, `%d`=11, `%s`=unbounded-unless-provably-
+fixed, etc. -- not just eyeballing the literal text) against its
+destination buffer size, across all three files. Found and fixed:
+
+1. **The confirmed crash site** (`buf[160]` -> `320`, comment records the
+   crash-dump evidence for future reference).
+2. **`InternalRenderScalePercent`'s own resolve-override log line**
+   (`buf[256]` -> `320`) -- same deterministic-overflow shape (a
+   245-character literal plus 4 `%d` substitutions each needing up to 11
+   chars worst case), not yet observed crashing live but guaranteed to
+   the moment a render-scale change actually fires with this feature
+   enabled.
+3. **Two sites in the Reload glyph-substitution code** (added the same
+   day as the crash site, same root session) interpolating the raw,
+   live-resolved NATIVE hint text (`text`, the actual on-screen string
+   the game itself produced) via an untruncated `%s` -- genuinely
+   unbounded from this code's own point of view, unlike every other `%s`
+   substitution in this file (which are all fixed-length internal
+   identifiers -- `assetName[32]`, 2-3-way ternaries, enum names --
+   individually verified bounded well under their buffer before being
+   ruled safe, not assumed). Truncated to `%.43s`/`%.40s`, matching this
+   project's own long-established convention for exactly this class of
+   risk (`analog_input_hooks.cpp` already does this at over a dozen call
+   sites, e.g. lines 4231/4323/8029/9106 -- this convention existed
+   BEFORE today's crash, the new code just didn't follow it).
+4. **Two float-heavy diagnostic lines in `overlay_hud.cpp`**
+   (`key[96]`->`160`, `buf[224]`->`320`) -- much lower real-world risk
+   (the float values involved are always sane screen/design-space
+   coordinates derived from real resolution math, never attacker- or
+   game-text-controlled, so a pathological worst-case magnitude is a
+   theoretical concern, not a realistic one) but padded above the true
+   worst case anyway since it costs nothing -- not a response to an
+   observed crash at these two sites specifically.
+
+Every other flagged candidate was individually verified SAFE by hand
+before being ruled out, not assumed safe from the automated scan's own
+conservative default (which over-estimates `%s` worst case at 64 chars
+unless it can prove a specific bound) -- this was a real fix pass with
+real verification per site, not a blanket buffer-inflation sweep.
+`envBuf[256]`'s three `%s` args are always exactly `"loaded"`/
+`"not loaded"` (10 chars max); `source=%s` in the `res-scale` viewport
+log is always one of two fixed literals (22 chars max); `styleName` is a
+fixed `GlyphStyle` enum name; the menu-corner-hint `kind=%s` sites are
+all bounded ternaries ("Back"/"Friends"/"Quit"/"Leaderboards"/
+"GameSummary"/"Mantle"/"Pickup"/"Throwback", 11 chars max) -- all
+confirmed genuinely safe, not just assumed so.
+
+**Build-verified**: x64 `/t:Rebuild` 0 errors, `dumpbin`-confirmed `8664
+machine (x64)` fresh timestamp (`6AA6D93A`, Sun Sep 13 18:11:22 2026);
+Win32 regression rebuild 0 errors, no regression; x64 rebuilt and
+redeployed last. **Not yet re-confirmed live** (the fix removes the
+guaranteed crash mechanically, per the crash-dump evidence above, but
+this specific build has not itself been launched and confirmed clean
+yet) -- this is the very next thing to verify.
+
+**Process lesson, worth carrying forward**: this is the SECOND time this
+exact bug class (an `sprintf_s` log line sized for its literal text alone,
+without accounting for substitution worst-case) has caused a 100%
+launch-blocking crash in this project. Both times, the crash didn't
+exist when the code was written earlier in a session -- it was
+introduced by a LOG LINE added later, almost as an afterthought, without
+being held to the same buffer-safety bar as the surrounding "real" code.
+Any future session adding a new `sprintf_s` call into a fixed-size
+buffer should size the buffer to the literal text's own length plus each
+specifier's real worst-case width, not just "big enough for the address
+I'm about to print" -- and should specifically distrust any format
+string with more than ~100 characters of surrounding literal text, since
+that's exactly the shape both real crashes had.

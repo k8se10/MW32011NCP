@@ -318,6 +318,21 @@ live, detailed status on every item below.
    Sprint's rising edge" behavior, reusing the same real toggle Jump's own
    auto-stand already calls. See `re_notes/known_issues_x64.md` issue #1 for
    the full RE trail.
+6. **Crash on every single launch (2026-09-13), same bug class as item 1
+   above, recurring in new code.** A log line added the same day for the
+   native text-draw hook's own localized-string-lookup resolve formatted a
+   239-character literal into a 160-byte buffer — a guaranteed, not
+   conditional, overflow, so the game failed to launch 100% of the time
+   once that code path was built and deployed. Root-caused via a live
+   crash dump (WinDbg/`cdb`) the same way item 1 was. Given the volume of
+   new log lines added across the same session, swept every `sprintf_s`-
+   into-fixed-buffer call site added that day rather than fixing only the
+   confirmed crash — found and fixed one more guaranteed overflow
+   (`InternalRenderScalePercent`'s own resolve log) and two sites
+   interpolating raw, unbounded live-resolved game text without the
+   truncation (`%.Ns`) this project already uses everywhere else for
+   exactly this situation. See `re_notes/known_issues_x64.md` issue #1 for
+   the full trail.
 
 ### Documentation
 1. **`re_notes/known_issues_x64.md` established** as the dedicated x64 issue
