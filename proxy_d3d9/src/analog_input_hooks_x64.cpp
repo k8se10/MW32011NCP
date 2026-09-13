@@ -2437,7 +2437,12 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
             if (weaponSwitchHeld && !g_yReadyUpFiredX64 &&
                 (GetTickCount() - g_yPressStartMsX64) >= g_modConfig.readyUpHoldThresholdMs) {
                 g_yReadyUpFiredX64 = true;
-                SendSyntheticF5X64();
+                // IsInSurvivalModeX64() gate wired 2026-09-13, matching x86's own
+                // InjectControllerWeaponNext exactly (analog_input_hooks.cpp) -- see
+                // SendSyntheticF5X64's own comment above for the resolution trail.
+                if (IsInSurvivalModeX64()) {
+                    SendSyntheticF5X64();
+                }
             }
             if (!weaponSwitchHeld && g_weaponSwitchHeldX64 && !g_yReadyUpFiredX64) {
                 // Falling edge, ready-up threshold never reached this press --
