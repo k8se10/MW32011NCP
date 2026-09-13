@@ -122,6 +122,19 @@ for any item lives in `re_notes/known_issues_x64.md` issue #1.
       menu with no regression to normal D-pad/A/B gameplay input after.
 - [ ] Custom Options screen — LB+RB chord fallback still works if the
       real trigger doesn't fire for some reason.
+- [x] **Custom Options screen — Controller and Custom Binds tabs only
+      (KNOWN, not a bug to report)**: parity audit row #64 (2026-09-13)
+      confirms the other 7 vanilla tabs (Look/Video/Audio/Voice/
+      AdvancedVideo/Movement/Actions) are UI-only on x64 right now — every
+      row displays a stub/unbound value and every edit is silently
+      discarded, because `real_settings.cpp`'s actual dvar/keybind
+      read+write layer is x86-only (deliberately stubbed to a safe no-op
+      on x64 since 2026-09-04 to prevent a crash, not an oversight). Expect
+      this exact symptom; it's a real, already-documented open item, not
+      something to file as a new bug. Confirm it looks EXACTLY like that
+      (silently inert, no crash, no visible error) — anything worse (a
+      crash, a setting that appears to apply but doesn't actually take
+      effect in-game) would be a new, different finding worth reporting.
 
 ## Vibration/rumble (new this session)
 
