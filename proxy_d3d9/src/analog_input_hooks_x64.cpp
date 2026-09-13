@@ -153,6 +153,15 @@ extern "C" bool IsMantleHintCurrentlyShowingX64();
 bool TryGetMantleGlyphAssetName(char* outAssetName, size_t outSize);
 bool TryGetThrowbackGlyphAssetName(char* outAssetName, size_t outSize);
 bool TryGetPickupGlyphAssetName(char* outAssetName, size_t outSize);
+// TryGetMenuGlyphAssetNameForKeyName (2026-09-13, menu corner-hint port): existing
+// x86 function (issue #68), reused verbatim -- resolves through the SEPARATE
+// menu-specific bind vocabulary (ResolveMenuGlyphAssetNameForKeyName), not the
+// gameplay table the four functions above use, since "ESC"/"F" mean different
+// physical buttons in a menu-hint context (B/Y) than they would in gameplay's own
+// table (Start/X) -- see that function's own header comment in analog_input_hooks.cpp.
+// Also defined at file scope there (outside the anonymous namespace), same linkage
+// class as the four above.
+bool TryGetMenuGlyphAssetNameForKeyName(const char* keyName, char* outAssetName, size_t outSize);
 
 namespace {
 
@@ -3008,6 +3017,56 @@ extern "C" bool TryGetCursorGateX64(int* outVisFlag, int* outUiState)
 //       GameplayHintSlotId::Mantle; Pickup/Throwback share GameplayHintSlotId::
 //       Interact, matching x86's own slot assignment exactly (see that file's own
 //       Hook_DrawGlyphText, the `GameplayHintSlotId slotId = ...` line).
+//   (d) REAL RELOAD/LOW-AMMO GLYPH-ICON SUBSTITUTION (2026-09-13, fourth pass,
+//       same day) -- CORRECTS an earlier finding in this same pass (see the git
+//       history/known_issues_x64.md issue #1 for the original claim): a prior
+//       round of this investigation concluded Reload's text "flows through a
+//       COMPLETELY DIFFERENT native draw function, FUN_1402afa60 -- NOT
+//       FUN_14029a2b0, the function this hook observes" and is "structurally
+//       unreachable from this hook." That was based on decompiling only
+//       FUN_1402afa60 ITSELF, which (under this project's `-noanalysis` Ghidra
+//       policy, no parameter-ID analysis pass) decompiles misleadingly as a
+//       bare `void FUN_1402afa60(void) { FUN_1402b1090(); return; }` -- a real
+//       decompiler artifact, not the truth. A full disassembly (`DumpDisasm.java`)
+//       shows it actually re-marshals ~12 real incoming stack/register args into
+//       a bigger frame and tail-forwards them to FUN_1402b1090 -- and DecompileAt
+//       on FUN_1402b1090 shows THAT function is a generic word-wrap/line-layout
+//       helper whose inner draw loop calls FUN_14029a2b0 directly (the exact same
+//       function this hook already detours) once per wrapped line, via a
+//       `param_13 == '\0'` branch (an alternate, extended-signature sibling,
+//       FUN_14029a610, exists for `param_13 != 0` but was confirmed DEAD for
+//       this purpose -- see below). One more hop of chasing (this project's own
+//       "checking is cheaper than digging" / "never trust a correspondence
+//       without independent confirmation" standards, CLAUDE.md SS5) would have
+//       caught this the first time.
+//       **Confirmed FUN_14029a610 is unreachable for every real caller, not just
+//       assumed**: FindCallers.java on FUN_1402afa60 lists exactly 6 real
+//       callers (killstreak-notify-style messages FUN_140030a70, Reload/low-ammo
+//       FUN_140031bc0, vehicle boost/throttle/brake/fire FUN_1400674d0/
+//       FUN_140067610, the EXE_KEYCHANGE/KEYWAIT message in FUN_14029c350, and
+//       death-quote captions inline in FUN_140052220 case 0x61) -- EVERY single
+//       one passes a final argument whose low byte is either a literal `0` or an
+//       explicit `& 0xffffffffffffff00`/`& 0xffffff00` mask clearing exactly that
+//       byte. That byte is `param_13` by the time it reaches FUN_1402b1090, so
+//       all 6 real call sites take the `FUN_14029a2b0` branch unconditionally --
+//       FUN_14029a610 is dead code for this whole function's real usage in this
+//       build, not a case this hook needs to also cover.
+//       Detection: Reload/low-ammo hints have NO "^N...^7" highlight span at all
+//       (matching x86's own documented finding for this exact hint -- "the real
+//       reload reminder has no ^N...^7 button-name span... it's just a bare
+//       flashed/pulsed word"), so TextMatchesTemplateStructurallyX64's marker-
+//       based split doesn't apply; a new plain case-insensitive whole-string
+//       compare (TextMatchesResolvedExactlyX64) against the live-resolved
+//       PLATFORM_RELOAD/MENU_RELOAD_WEAPON templates (g_getLocalizedStringX64,
+//       same resolver Mantle/Pickup/Throwback already use) is used instead,
+//       mirroring x86's own RenderedTextMatchesReferenceKey exactly (same two
+//       reference keys, same case-insensitive full-string match, same
+//       language-independence guarantee). On a match, builds "Press "+word
+//       exactly like x86's own Reload branch (analog_input_hooks.cpp), resolves
+//       the icon via the existing TryGetPickupGlyphAssetName (same ReloadUse
+//       physical key x86's own `TryGetGlyphAssetNameForKeyName("F", ...)` call
+//       resolves), and requests GameplayHintSlotId::Reload -- x86's own dedicated
+//       slot for this hint, already defined in overlay_hud.h, unchanged.
 //
 // NOT COVERED THIS PASS (honestly scoped, per this task's own explicit
 // permission to conclude "partial progress" rather than overclaim):
@@ -3035,15 +3094,12 @@ extern "C" bool TryGetCursorGateX64(int* outVisFlag, int* outUiState)
 //     positives via IsGameplayHintFont + !IsMenuActive(), not a structural match.
 //     Porting these safely needs the font-name-filtering gap above closed first --
 //     genuinely blocked on real RE, not skipped for convenience.
-//   - Reload is UNPORTED for a DIFFERENT, more fundamental reason: DecompileAt
-//     confirmed x64's own Reload/low-ammo-warning function (FUN_140031bc0, found
-//     via its own real "PLATFORM_RELOAD" string reference) calls a COMPLETELY
-//     DIFFERENT native draw function, FUN_1402afa60 (shared with death-quote
-//     captions, dispatcher case 0x61) -- NOT FUN_14029a2b0, the function this hook
-//     observes. This hook can never see Reload's text no matter what detection
-//     logic is added to it; a real Reload glyph would need its own separate
-//     signature/hook on FUN_1402afa60, out of scope for "extending the existing
-//     hook."
+//   - Reload/low-ammo IS NOW COVERED (see stage (d) above) -- the claim
+//     previously here ("calls a COMPLETELY DIFFERENT native draw function...
+//     this hook can never see Reload's text") was WRONG, root-caused and
+//     corrected the same day (see stage (d)'s own comment for the full trail).
+//     Kept as a visible correction rather than silently deleted, per this
+//     project's own documentation standard of preserving investigation history.
 //   - Sentry-Place (turret placement, SENTRY_PLACE) -- RawStringScan against
 //     "SENTRY_PLACE" found ZERO references anywhere in this x64 binary (unlike
 //     Pickup/Throwback/Reload's keys, all found on the first try). Genuinely
@@ -3051,9 +3107,16 @@ extern "C" bool TryGetCursorGateX64(int* outVisFlag, int* outUiState)
 //     hint doesn't exist in this build, or it needs a different anchor string --
 //     not pursued further this pass; TryGetSentryPlaceGlyphAssetName exists and is
 //     ready to use the moment a real x64 reference/template is found.
-//   - Menu-hint detection (x86's `ResolveMenuGlyphAssetNameForKeyName` block, e.g.
-//     "Back ^2ESC^7"/"Friends ^2F^7") was not ported -- deliberately out of scope
-//     per this task's own priority ordering (in-game hints first).
+//   - Menu corner hints (Back/Friends) ARE NOW COVERED (see this hook's own
+//     "Menu corner hints" block, right before the final real-draw call below) --
+//     the claim previously here ("was not ported -- deliberately out of scope")
+//     no longer holds for these two specific hints. Kept as a visible correction
+//     rather than silently deleted, same convention as the Reload correction
+//     immediately above. Still NOT ported for menu hints generally: Quit/
+//     Leaderboards/Game-Summary's own literal-text special cases and the
+//     corner-hint-row positional-tolerance/Special-Ops-Friends-suppression logic
+//     -- see that block's own header comment for the honest reason each is out
+//     of scope (x86-only menu-focus/itemDef infrastructure, mostly).
 using DrawTextFnX64 = void(*)(
     unsigned __int64 dcHandle, const char* text, int maxChars, void* fontArg,
     float x, float y, unsigned color1, unsigned color2, float scale,
@@ -3139,6 +3202,24 @@ bool TextMatchesTemplateStructurallyX64(const char* renderedText, const char* tm
     if (strncmp(renderedText, tmpl, prefixLen) != 0) return false;
     if (suffixLen > 0 && strcmp(renderedText + (renderedLen - suffixLen), markerPos + markerLen) != 0) return false;
     return true;
+}
+
+// x64-local reimplementation of x86's RenderedTextMatchesReferenceKey
+// (analog_input_hooks.cpp) -- a plain, case-insensitive WHOLE-STRING compare
+// against a live-resolved template, no "&&N"/"^N...^7" marker involved at all.
+// Needed for Reload/low-ammo (stage (d), see this file's own header comment):
+// unlike Mantle/Pickup/Throwback, that hint's real resolved text is a bare word
+// with no embedded highlight span ("the real reload reminder has no ^N...^7
+// button-name span at all -- it's just a bare flashed/pulsed word", x86's own
+// documented finding for this exact hint), so TextMatchesTemplateStructurallyX64's
+// marker-based prefix/suffix split doesn't apply -- this is the direct x64
+// counterpart instead. `resolvedTmpl` must already be the LIVE-RESOLVED string
+// (via g_getLocalizedStringX64), same calling convention as every other
+// structural-match helper in this file, not a raw reference key.
+bool TextMatchesResolvedExactlyX64(const char* renderedText, const char* resolvedTmpl)
+{
+    if (!renderedText || !resolvedTmpl) return false;
+    return _stricmp(renderedText, resolvedTmpl) == 0;
 }
 
 // x64-local reimplementation of x86's ColorHighlightSpan/FindColorHighlightSpan
@@ -3303,6 +3384,235 @@ void Hook_DrawTextX64(
                                 "instead)", isMantleHint ? "Mantle" : isThrowbackHint ? "Throwback" : "Pickup",
                                 assetName);
                             LogFromController(subBuf);
+                        }
+                    }
+                }
+            }
+
+            // Reload/low-ammo hint (stage (d), see this file's own header comment for
+            // the full RE trail of how this call site was confirmed reachable from
+            // this hook after all). Gated by the SAME `ShouldDrawGlyphOverlay_Exported()
+            // && !IsMenuActiveX64_Exported()` condition as Mantle/Pickup/Throwback
+            // above -- matches x86's own placement exactly (its Reload branch lives
+            // inside the SAME `ShouldDrawGlyphOverlay() && !IsMenuActive()` gameplay-
+            // hint block as its Mantle/Pickup handling, analog_input_hooks.cpp ~line
+            // 8209 -- NOT the separate menu-hint block a few hundred lines later,
+            // which is deliberately NOT gated on !IsMenuActive() for a reason specific
+            // to actual menu hints that doesn't apply to a gameplay-only prompt like
+            // Reload). Matches x86's own two candidate reference keys exactly
+            // ("MENU_RELOAD_WEAPON"/"PLATFORM_RELOAD", zone_dump-confirmed to both
+            // resolve to English "Reload" -- checking both since it's not confirmed
+            // which one this specific HUD hint actually uses, same as x86). `text`
+            // here IS already the bare resolved word (FUN_140289a60's own return
+            // value, copied verbatim into FUN_1402b1090's line buffer with no
+            // "&&N"/"^N...^7" markup at all -- confirmed via decompile), so a plain
+            // exact compare against the live-resolved template is correct, not a
+            // structural prefix/suffix match.
+            const char* reloadTmpl1 = g_getLocalizedStringX64("PLATFORM_RELOAD");
+            const char* reloadTmpl2 = g_getLocalizedStringX64("MENU_RELOAD_WEAPON");
+            bool isReloadHint =
+                (reloadTmpl1 && LooksSaneX64(reinterpret_cast<uintptr_t>(reloadTmpl1)) &&
+                 TextMatchesResolvedExactlyX64(text, reloadTmpl1)) ||
+                (reloadTmpl2 && LooksSaneX64(reinterpret_cast<uintptr_t>(reloadTmpl2)) &&
+                 TextMatchesResolvedExactlyX64(text, reloadTmpl2));
+
+            if (isReloadHint) {
+                char assetName[32] = {};
+                // Same physical key x86's own Reload branch resolves
+                // (TryGetGlyphAssetNameForKeyName("F", ...), ReloadUse's real default
+                // bind) -- reused here via the already-existing TryGetPickupGlyphAssetName
+                // (ported this same pass for the Pickup/Swap/PickupHealth family, resolves
+                // through the identical LogicalAction::ReloadUse).
+                if (TryGetPickupGlyphAssetName(assetName, sizeof(assetName))) {
+                    // x86's own template: "Press "+word (its own added text, the real
+                    // string has neither) -- see analog_input_hooks.cpp's own Reload
+                    // branch for the identical construction.
+                    char suffixText[48] = {};
+                    sprintf_s(suffixText, " To %s", text);
+
+                    // x/y here are this call's own already-computed final draw position
+                    // (post word-wrap/alignment, inside FUN_1402b1090) -- same convention
+                    // as Mantle/Pickup/Throwback above. HONEST CAVEAT: x86's own Reload
+                    // branch deliberately does NOT use its call's raw position (its own
+                    // comment: the real p3 "rendered noticeably above the weapon... anchored
+                    // directly to the same known-good target pickup/buy-station's own formula
+                    // resolves to" instead, via a live-tuned constant) -- no equivalent x64
+                    // live-tuning has been done here, so this uses the raw converted real
+                    // position with zero empirical correction, same as this hook's other
+                    // three substituted hints. On-screen alignment is UNVERIFIED and may need
+                    // the same class of tuning x86 required once actually seen running.
+                    float startX = x, startY = y;
+                    ConvertRealScreenPosToDesignSpaceX64(startX, startY, startX, startY);
+
+                    RequestCustomHintOverlay(startX, startY, "Press ", suffixText, assetName,
+                                               /*centerOnScreen=*/true, /*flashIcon=*/true,
+                                               GameplayHintSlotId::Reload);
+                    suppressRealDraw = true;
+
+                    static bool s_loggedFirstReloadMatch = false;
+                    if (!s_loggedFirstReloadMatch) {
+                        s_loggedFirstReloadMatch = true;
+                        char subBuf[192];
+                        sprintf_s(subBuf, "[x64-drawtext] First real Reload glyph-icon SUBSTITUTION "
+                            "fired (structural match against live PLATFORM_RELOAD/MENU_RELOAD_WEAPON "
+                            "template, text=\"%s\")", text);
+                        LogFromController(subBuf);
+                    }
+                }
+            }
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+        }
+    }
+
+    // ---- Menu corner hints (x86's "Back ^2ESC^7"/"Friends ^2F^7"), x64 port
+    // (2026-09-13). Read x86's own Hook_DrawGlyphText menu-hint block in full first
+    // (analog_input_hooks.cpp, ~line 8689 at the time of this port) per this
+    // project's own compare-to-x86-original rule -- summary of what carries over
+    // and what genuinely differs on x64:
+    //
+    // - REFERENCE KEYS ARE FIXED STRINGS, NOT "&&1" SUBSTITUTION TEMPLATES. Unlike
+    //   Mantle/Pickup/Throwback above (each a template with a substituted key-name
+    //   marker), x86's own comment on PLATFORM_FRIENDS_SHORTCUT/BACK_SHORTCUT is
+    //   explicit: these are "real, fixed reference-key strings ... with the
+    //   accelerator letter baked directly into the template -- NOT run through the
+    //   &&1 substitution." So this block does a plain exact-string compare against
+    //   the live-resolved template (strcmp), not TextMatchesTemplateStructurallyX64
+    //   (which requires an "&&1" marker inside the template to even attempt a match
+    //   -- it would silently reject both of these forever, since neither template
+    //   contains one).
+    // - RawStringScan.java confirmed ZERO references to the literal strings
+    //   "PLATFORM_BACK_SHORTCUT"/"PLATFORM_FRIENDS_SHORTCUT" anywhere in this x64
+    //   binary's own image -- NOT a sign the reference keys don't exist on x64: per
+    //   x86's own line 3764 comment, these keys are itemDef "text:" properties
+    //   defined in .menu UI ASSET files (popmenu_specops_survival.menu etc.),
+    //   parsed from FastFiles at runtime, never baked into the executable's own
+    //   code the way Mantle/Pickup's dispatcher-embedded literals are (which IS why
+    //   RawStringScan could anchor on those). The localization TABLE these keys
+    //   resolve against also lives in FastFile-loaded data, unaffected by the
+    //   x86->x64 recompile (same game content, only the exe recompiled) -- so
+    //   g_getLocalizedStringX64("PLATFORM_BACK_SHORTCUT") is expected to resolve
+    //   correctly at runtime despite the negative RawStringScan result, same as
+    //   x86's own zone_dump-verified (not exe-verified) confirmation for these two
+    //   keys. Not independently re-verified against a live zone_dump this pass --
+    //   flagged honestly below.
+    // - CONFIRMED (not assumed) TO FLOW THROUGH THIS SAME HOOK: per this project's
+    //   own issue #3 lesson (never trust a correspondence without independent
+    //   confirmation), traced the real call chain via decompile rather than
+    //   assuming x86's "same Hook_DrawGlyphText call site as gameplay hints" claim
+    //   carries over unverified: FUN_1402a9950 (a generic itemDef-paint function,
+    //   reads itemDef-struct-shaped fields directly off param_2 at offsets like
+    //   +0xd0/+0xe0/+0xd8/+0x1f0) calls FUN_1402b1090 (a generic, color-code-aware,
+    //   word-wrapping text painter -- confirmed via decompile to carry the exact
+    //   Quake3-lineage "^N...^7" color-code-carry-across-wrap-boundary logic every
+    //   corner hint's own highlight span depends on), which itself calls
+    //   FUN_14029a2b0 directly (`FUN_14029a2b0(param_1,local_4d8,0x7fffffff,param_4,
+    //   fVar14,param_6,...)`) -- the exact function this hook already detours.
+    //   Confirmed via FindCallers.java against both 14029a2b0 and 1402b1090
+    //   (re_notes/ghidra_project_x64/iw5sp_x64_proj, analyzeHeadless -readOnly
+    //   -noanalysis). Short, single-line corner-hint text (no wrap needed) reaches
+    //   FUN_14029a2b0 as a verbatim copy of the full resolved string, same as every
+    //   other case this hook already handles.
+    // - GATING DELIBERATELY DIFFERENT FROM THE BLOCK ABOVE. x86's own comment is
+    //   explicit: menu hints are "Deliberately NOT gated on !IsMenuActive() (unlike
+    //   the gameplay block above) -- these hints only ever draw WHILE a menu is
+    //   active, so suppressing them in that state would suppress them entirely."
+    //   Mirrored exactly here -- this is its own top-level `if`, gated only on
+    //   ShouldDrawGlyphOverlay_Exported(), NOT ANDed with !IsMenuActiveX64_Exported()
+    //   the way the gameplay-hint block above is. Putting this logic inside that
+    //   block instead would silently never fire, since corner hints only ever draw
+    //   while IsMenuActiveX64_Exported() is true.
+    // - POSITION: x86 uses the RAW, unscaled param_3 (y) directly plus a fixed
+    //   kMenuHintVerticalNudge (-18.0f) -- explicitly NOT the "param_3 * param_6"
+    //   vertical-center formula the gameplay-hint block above uses, per x86's own
+    //   comment: "That formula does not transfer to fonts/smallFont; use the raw,
+    //   unscaled param_3 instead." x64's own `y` parameter here is already the
+    //   equivalent raw value (Hook_DrawTextX64's own named y param, mapping to
+    //   x86's param_3 the same way x86's param_2/param_6 map to this function's
+    //   named x/scale params) -- used directly below, not multiplied by `scale`.
+    // - ICON RESOLUTION: reuses TryGetMenuGlyphAssetNameForKeyName verbatim (x86
+    //   function, confirmed external linkage, see this file's own forward
+    //   declaration above) with "ESC"/"F" -- the SAME menu-specific bind vocabulary
+    //   x86 uses, resolving to the real B/Y physical buttons via
+    //   ResolveMenuGlyphAssetNameForKeyName's own dedicated table, NOT the
+    //   LogicalAction-based shortcut TryGetMantleGlyphAssetName/TryGetPickupGlyphAssetName
+    //   use above -- that shortcut exists purely to dodge a translated-substituted-
+    //   text risk that doesn't apply here (nothing is substituted into these two
+    //   templates at all), so there's no reason to deviate from x86's own resolution
+    //   path, and doing so keeps the real menu-specific ESC->B/F->Y mapping intact.
+    // - DRAW CALL: RequestMenuHintOverlay (the multi-slot pool), NOT
+    //   RequestCustomHintOverlay -- x86's own comment explains why: MW3's menu UI
+    //   can show multiple corner hints (Back AND Friends) simultaneously every
+    //   frame, unlike a single gameplay interact prompt. Already wired into x64's
+    //   own EndScene draw pass (DrawMenuHintsIfRequested, overlay_hud.cpp -- no
+    //   platform guard, already audited landmine-free for x64 per
+    //   known_issues_x64.md) -- this is the first call site that actually POPULATES
+    //   a slot for it on x64, the draw/consume side was already live and idle.
+    //
+    // NOT PORTED THIS PASS (honest scope, matching x86's own header comment on this
+    // block): Quit/Leaderboards/Game-Summary's own literal-text/prefix special
+    // cases, the corner-hint-row positional tolerance check
+    // (looksLikeCornerHintRow), and IsInsideSpecOpsNestedModal/IsFriendsListOpen's
+    // own Friends-suppression logic -- all of those depend on either x86-only menu-
+    // focus/itemDef-position infrastructure not yet ported to x64 (per
+    // known_issues_x64.md's "Broader finding" on this exact gap) or fonts/smallFont
+    // font-name filtering (x64's own Font_s.fontName offset remains unconfirmed,
+    // see this hook's own header comment above) -- Back/Friends alone were the
+    // explicitly scoped ask for this pass and don't need either dependency, since
+    // an exact-string match against a fixed, un-substituted template is already a
+    // highly specific discriminator on its own.
+    if (g_getLocalizedStringX64 && text && LooksSaneX64(reinterpret_cast<uintptr_t>(text)) &&
+        !suppressRealDraw && ShouldDrawGlyphOverlay_Exported()) {
+        __try {
+            const char* backTmpl = g_getLocalizedStringX64("PLATFORM_BACK_SHORTCUT");
+            bool isBackCornerHint = backTmpl && LooksSaneX64(reinterpret_cast<uintptr_t>(backTmpl)) &&
+                strcmp(text, backTmpl) == 0;
+            const char* friendsTmpl = g_getLocalizedStringX64("PLATFORM_FRIENDS_SHORTCUT");
+            bool isFriendsCornerHint = friendsTmpl && LooksSaneX64(reinterpret_cast<uintptr_t>(friendsTmpl)) &&
+                strcmp(text, friendsTmpl) == 0;
+
+            if (isBackCornerHint || isFriendsCornerHint) {
+                char assetName[32] = {};
+                bool haveAssetName = isBackCornerHint
+                    ? TryGetMenuGlyphAssetNameForKeyName("ESC", assetName, sizeof(assetName))
+                    : TryGetMenuGlyphAssetNameForKeyName("F", assetName, sizeof(assetName));
+                if (haveAssetName) {
+                    size_t textLen = strlen(text);
+                    ColorHighlightSpanX64 span = FindColorHighlightSpanX64(text, textLen);
+                    if (span.found) {
+                        char prefixText[128] = {};
+                        size_t prefixLen = span.markerStart < sizeof(prefixText) - 1 ? span.markerStart : sizeof(prefixText) - 1;
+                        memcpy(prefixText, text, prefixLen);
+                        prefixText[prefixLen] = '\0';
+
+                        char suffixText[128] = {};
+                        if (span.markerEnd < textLen) {
+                            size_t suffixLen = textLen - span.markerEnd;
+                            if (suffixLen >= sizeof(suffixText)) suffixLen = sizeof(suffixText) - 1;
+                            memcpy(suffixText, text + span.markerEnd, suffixLen);
+                            suffixText[suffixLen] = '\0';
+                        }
+
+                        // Raw y + fixed nudge, NOT y*scale -- see this block's own header
+                        // comment. kMenuHintVerticalNudgeX64 matches x86's own
+                        // kMenuHintVerticalNudge value exactly, but is UNVERIFIED live on
+                        // x64 (same honest caveat as the gameplay-hint block above -- x86
+                        // reached this exact constant via live-tested empirical rounds
+                        // this port has not repeated).
+                        constexpr float kMenuHintVerticalNudgeX64 = -18.0f;
+                        float designX = 0.0f, designY = 0.0f;
+                        ConvertRealScreenPosToDesignSpaceX64(x, y + kMenuHintVerticalNudgeX64, designX, designY);
+                        RequestMenuHintOverlay(designX, designY, prefixText, suffixText, assetName,
+                                                 0xFFFFFFFFu, /*isBackShortcut=*/isBackCornerHint);
+                        suppressRealDraw = true;
+
+                        static bool s_loggedFirstMenuHintMatch = false;
+                        if (!s_loggedFirstMenuHintMatch) {
+                            s_loggedFirstMenuHintMatch = true;
+                            char buf[176];
+                            sprintf_s(buf, "[x64-drawtext] Menu corner-hint structural match confirmed "
+                                "(kind=%s) -- native hint text suppressed, our own icon+text drawn instead",
+                                isBackCornerHint ? "Back" : "Friends");
+                            LogFromController(buf);
                         }
                     }
                 }
