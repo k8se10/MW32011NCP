@@ -138,6 +138,19 @@ live, detailed status on every item below.
     still-unverified-on-real-hardware mapping. Build-verified, not yet
     live-tested (needs real DualSense hardware to exercise). See
     `re_notes/known_issues_x64.md` issue #1 for the full trail.
+15. **Back's `+scores` scoreboard key-synthesis ported to x64.** A small,
+    cheap wiring fix (parity audit row 30), not new RE work — `-x86`'s own
+    `InjectControllerScoreboard()` had no architecture guard at all and
+    would compile fine on x64 as-is, it was simply never called from
+    anywhere in the x64 input pipeline. Now wired in with the same
+    hold-through-passthrough `PostMessageA(VK_TAB)` mechanism, gated on the
+    Back button's real physical mapping. **This is intentionally, correctly
+    a no-op in Campaign/Survival** — confirmed by direct Xbox 360 console
+    testimony that no scoreboard UI exists in SP at all, on any platform
+    (`known_issues.md` issue #28) — real value arrives once Multiplayer
+    ships with its own actual scoreboard. Build-verified, not yet
+    live-tested. See `re_notes/known_issues_x64.md` issue #1 for the full
+    trail.
 
 ### Fixed
 1. **Crash on launch with the sniper Fire/ADS fix's own log line.** The
