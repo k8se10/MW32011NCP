@@ -2752,6 +2752,23 @@ void Hook_DrawTextX64(
             if (tmpl && LooksSaneX64(reinterpret_cast<uintptr_t>(tmpl)) &&
                 TextMatchesTemplateStructurallyX64(text, tmpl, "&&1")) {
                 g_mantleHintLastSeenMsX64 = GetTickCount();
+                // One-shot confirmation, same "prove it fired at least once" convention
+                // as this file's other diagnostics -- gives direct live visibility that a
+                // real Mantle-hint MATCH occurred (not just that the hook itself fired for
+                // whatever unrelated text was drawn), needed since re_notes/
+                // x64_live_testing_checklist.md's own live-test item otherwise has no way
+                // to confirm this signal specifically. Deliberately one-shot, not
+                // dedup'd-by-change -- this can fire many times per second while a real
+                // ledge is in view (once per rendered frame the hint draws), and a single
+                // confirmation is all a live test needs.
+                static bool s_loggedFirstMantleMatch = false;
+                if (!s_loggedFirstMantleMatch) {
+                    s_loggedFirstMantleMatch = true;
+                    LogFromController("[x64-drawtext] Mantle-hint structural match confirmed (real "
+                        "PLATFORM_MANTLE template matched against live rendered text) -- "
+                        "IsMantleHintCurrentlyShowingX64() will now return true while this hint keeps "
+                        "showing.");
+                }
             }
         } __except (EXCEPTION_EXECUTE_HANDLER) {
         }

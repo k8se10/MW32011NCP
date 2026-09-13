@@ -19,7 +19,11 @@ build-verified (none live-tested yet). A full feature-parity audit against
 the `-x86` line (`re_notes/x64_feature_parity_audit.md`) found and closed
 several real gaps this file's own prior summary had missed, most notably
 Sprint silently running on x86's own deprecated pre-kbutton design and
-vibration never having been wired to x64 at all. **This release has not
+vibration never having been wired to x64 at all. The native text-draw hook
+that blocked gameplay glyph icons and Auto-Mantle's own detection dependency
+is now ported too, with Mantle-hint detection wired on top — visual glyph
+substitution itself and Auto-Mantle's actual `+gostand`-forcing feature both
+remain unimplemented, see item 16 under What's New. **This release has not
 shipped** — see `README.md` for the current release gate (parity with the
 `-x86` line's final state) and `re_notes/known_issues_x64.md` issue #1 for
 live, detailed status on every item below.
@@ -151,6 +155,33 @@ live, detailed status on every item below.
     ships with its own actual scoreboard. Build-verified, not yet
     live-tested. See `re_notes/known_issues_x64.md` issue #1 for the full
     trail.
+16. **Native text-draw hook ported to x64, with Mantle-hint detection wired
+    on top.** This was the single remaining blocker for gameplay controller-
+    glyph icons, on-screen hint prompts, the F2/F3 glyph-position editor,
+    and Auto-Mantle's own ledge-detection signal (`known_issues_x64.md`
+    issue #1's 2026-09-12 "Scope note" round and the separate Auto-Mantle
+    investigation the same day). Finds and hooks `FUN_14029a2b0` — the x64
+    equivalent of x86's `Hook_DrawGlyphText` target (`FUN_00690c80`),
+    confirmed via 22 real callers spanning every kind of HUD/hint text drawn
+    on this engine — via the same `RawStringScan.java` anchor technique x86's
+    own discovery used. On top of the plain passthrough hook, wires a real,
+    language-independent structural match against the LIVE localized
+    `PLATFORM_MANTLE` template (resolved via `FUN_14029f120`, the real x64
+    `SEH_GetString` equivalent — not `real_settings.cpp`'s x64
+    `GetLocalizedString()` stub, which just echoes the key back and would
+    never match). **This unblocks Auto-Mantle's own detection DEPENDENCY**
+    specifically — `IsMantleHintCurrentlyShowingX64()` now exists and can be
+    read by a future pass. **Auto-Mantle's actual `+gostand`-forcing feature
+    is NOT wired this release** (x64 has no direct `IsSprintActive()`-
+    equivalent read since Sprint moved to a real kbutton, so this needs a
+    further, separate task), and **no visual glyph-icon substitution is
+    drawn** — native hint text, Mantle included, still renders completely
+    unmodified; only Interact-hint/Reload/menu-hint/Throwback/Sentry-Place
+    detection and x64's real `Font_s` struct layout remain unported. Full
+    honest scope, discovery trail, and what's still missing:
+    `re_notes/x64_migration/drawtext_hook_x64.md`. Build-verified, not yet
+    live-tested. See `re_notes/known_issues_x64.md` issue #1 for the full
+    trail.
 
 ### Fixed
 1. **Crash on launch with the sniper Fire/ADS fix's own log line.** The
@@ -223,16 +254,35 @@ live, detailed status on every item below.
    the game's own PE headers, fails loudly on a zero or ambiguous match.
 2. New Ghidra tooling for x64 RE work, including raw-byte reference scanners
    for tracking down indirect references static analysis alone misses.
+3. **Full RE trail for the x64 text-draw hook discovery**
+   (`re_notes/x64_migration/drawtext_hook_x64.md`) — the `RawStringScan.java`
+   → `DecompileAt.java` → `FindCallers.java` → `DumpSigBytes.java` chain
+   applied to find `FUN_14029a2b0` (item 16 above) via the same
+   "anchor on a real reference-key string, trace forward to the draw call"
+   technique x86's own original discovery used, plus a real, independently-
+   confirmed x64 `SEH_GetString` equivalent (`FUN_14029f120`).
 
 ### Investigated, Not Yet Resolved
 1. **Gameplay controller-glyph icon overlays** (in-hint "Press [A]"-style
-   replacements, on-screen hint prompts, the custom cursor) still don't
-   draw on x64. The dependency this was originally blocked on (menu-focus/
-   itemDef tracking) is now resolved — see item 11 above — but the actual
-   native text-draw hook glyphs need to intercept (x86's `Hook_DrawGlyphText`)
-   has no x64 equivalent yet. A different, larger, not-yet-attempted RE
-   task (the hook itself, font/asset matching, the glyph allowlist), not a
-   quick follow-up to item 11.
-2. **FXAA and a forced-MSAA option** don't exist on either line — checked
+   replacements, on-screen hint prompts, the highlighted-item A-glyph, the
+   F2/F3 glyph-position editor, the custom cursor's own glyph-adjacent
+   behavior) still don't draw on x64. Both dependencies this was originally
+   blocked on are now resolved — menu-focus/itemDef tracking (item 11 above)
+   and the native text-draw hook itself (item 16 above) — but no visual
+   substitution is wired on top of either yet: the hook currently only
+   OBSERVES drawn text (for Mantle-hint detection), it never calls
+   `RequestCustomHintOverlay` or suppresses a real draw. Font-name filtering
+   (x64's real `Font_s` struct layout) and every case besides Mantle
+   (Interact, Reload, Throwback, Sentry-Place, menu hints) also remain
+   unported. See `re_notes/x64_migration/drawtext_hook_x64.md` for the exact
+   scope.
+2. **Auto-Mantle's actual `+gostand`-forcing feature** — its own detection
+   dependency (`IsMantleHintCurrentlyShowingX64()`) now exists (item 16
+   above), but the feature itself (the injection gated on
+   `autoMantleEnabled && IsSprintActive() && IsMantleHintCurrentlyShowing()
+   && cooldown` on x86) has not been wired on x64. x64 has no direct
+   `IsSprintActive()`-equivalent read to build the gate from (Sprint is now
+   kbutton-driven, not a native `pm_flags` read) — a further, separate task.
+3. **FXAA and a forced-MSAA option** don't exist on either line — checked
    directly, and neither was ever actually built even on the old `-x86`
    line, only ever planned. Real future work, not a regression.

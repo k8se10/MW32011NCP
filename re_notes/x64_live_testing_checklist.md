@@ -140,10 +140,40 @@ for any item lives in `re_notes/known_issues_x64.md` issue #1.
       track real, changing focus state as you move between menu items
       (not stuck at `realGroup="" realIndex=-1` the way it was before
       this session's port).
-- [ ] Note: this does NOT yet mean glyph icons themselves draw — that's a
-      separate, larger, not-yet-attempted RE task (the native text-draw
-      hook). Don't expect to see "Press [A]"-style icons yet; this item
-      is just confirming the underlying focus-detection signal is real.
+- [ ] Note: this does NOT yet mean glyph icons themselves draw — the native
+      text-draw hook now exists (2026-09-13, see the next section) but only
+      does detection, not substitution. Don't expect to see "Press [A]"-
+      style icons yet; this item is just confirming the underlying focus-
+      detection signal is real.
+
+## Native text-draw hook / Mantle-hint detection (new 2026-09-13)
+
+- [ ] Watch `proxy_d3d9.log` for `[x64-drawtext] Text-draw hook fired` during
+      any real gameplay/menu session — confirms the signature-scan ->
+      MinHook-install -> detour pipeline works on this call site (should
+      fire constantly, any time HUD/hint/menu text is drawn).
+- [ ] Confirm no visible change to ANY on-screen text as a result of this
+      hook existing — it's designed as a zero-behavior-change passthrough
+      plus a read-only detection layer; any visible text difference (wrong
+      position, missing text, garbled text) on any screen is a real
+      regression to report, not expected behavior.
+- [ ] Confirm `[x64-drawtext] Localized-string lookup resolved` appears in
+      the log at startup (the direct-call resolve for Mantle-hint
+      detection's own dependency) — if it's missing/FATAL instead, Mantle
+      detection silently never works even though the hook itself is fine.
+- [ ] Reach a real mantleable ledge in Campaign or Survival with
+      `ForceGlyphOverlay=1` (or an active controller) and confirm the native
+      "Press [Space] to..." mantle hint is still visible and UNCHANGED (no
+      icon substitution should appear — none is implemented yet). This is
+      purely a "did the hook break anything" check, not a feature test.
+- [ ] Watch for the one-shot `[x64-drawtext] Mantle-hint structural match
+      confirmed` log line specifically while standing at a real mantleable
+      ledge — this is the direct confirmation that
+      `IsMantleHintCurrentlyShowingX64()` actually goes true for a real
+      ledge (not just that the hook fires at all). If the hook-fired line
+      appears but this one never does anywhere in a session that definitely
+      showed a mantle prompt, that's a real bug to report (the structural
+      match itself, or the live-resolved template, is wrong).
 
 ## Plugin API / security component
 
@@ -163,10 +193,13 @@ for any item lives in `re_notes/known_issues_x64.md` issue #1.
 Not testable yet — no real investigation happened, work was paused before
 starting rather than found blocked. Genuinely open, not attempted:
 
-- Gameplay glyph-icon text-draw hook (x86's `Hook_DrawGlyphText` x64
-  equivalent) — the single missing piece blocking glyph icons, hint
-  prompts, the F2/F3 editor, the custom cursor, and Auto-Mantle. A real,
-  large RE task — resume when budget allows.
+- **Gameplay glyph-icon text-draw hook — RESOLVED 2026-09-13, see its own
+  new section above.** The hook itself and Mantle-hint detection are now
+  build-verified and live-testable (see the "Native text-draw hook /
+  Mantle-hint detection" section above); visual glyph-icon SUBSTITUTION
+  (Interact hints, Reload, Throwback, Sentry-Place, menu hints, font-name
+  filtering) and Auto-Mantle's own `+gostand`-forcing feature remain
+  not-yet-attempted follow-on work, not part of this list until implemented.
 - Back's `+scores` scoreboard synthesis port to x64 — small, cheap, well-
   understood (the function already exists arch-clean on x86, just needs
   wiring in). Expected test outcome once ported: confirm it does nothing
@@ -175,13 +208,15 @@ starting rather than found blocked. Genuinely open, not attempted:
 
 ## Not testable — investigated and found genuinely blocked, not implemented
 
-- **Auto-Mantle (while sprinting)** — confirmed BLOCKED (2026-09-12), not a
-  port that was skipped. Depends on `IsMantleHintCurrentlyShowing()`, which
-  x86 detects by hooking the native hint *text-draw* call and pattern-
-  matching the rendered string (`Hook_DrawGlyphText`) — not a native engine
-  flag this project reads directly. `Hook_DrawGlyphText`'s x64 equivalent
-  doesn't exist yet (the same separate, larger RE task blocking gameplay
-  glyph icons generally). Nothing to test here until that's ported — see
+- **Auto-Mantle (while sprinting) — detection dependency RESOLVED
+  2026-09-13, feature itself still not implemented.** `IsMantleHintCurrentlyShowingX64()`
+  now exists and is live-testable (see the "Native text-draw hook / Mantle-
+  hint detection" section above for how to confirm it). The actual
+  `+gostand`-forcing feature (`autoMantleEnabled && IsSprintActive() &&
+  IsMantleHintCurrentlyShowing() && cooldown` on x86) is NOT wired on x64 --
+  x64 has no `IsSprintActive()`-equivalent read to build that gate from
+  (Sprint moved to a real kbutton, not a native `pm_flags` read). Nothing to
+  test for the FEATURE itself until that further, separate task lands — see
   `re_notes/known_issues_x64.md` issue #1 for the full dependency trace.
 
 ## Multiplayer (`iw5mp.exe`) — separate track, not part of this release gate
