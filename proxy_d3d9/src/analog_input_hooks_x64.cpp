@@ -2249,7 +2249,10 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
             RouteStickAxes_Exported(leftX, leftY, rightX, rightY, g_modConfig.stickLayout, moveX, moveY, lookX, lookY);
             float dt = Controller_DeltaTimeSeconds();
             if (dt > 0.0f && (lookX != 0.0f || lookY != 0.0f)) {
-                float scale = GetLookAccelerationScaleX64();
+                // ADS-FOV look-slowdown now wired in (2026-09-13, GetAdsLookRateScaleX64
+                // above) -- mirrors x86's own `GetAdsLookRateScale() * GetLookAccelerationScale()`
+                // sharedScale exactly (analog_input_hooks.cpp's InjectControllerLookAngles).
+                float scale = GetAdsLookRateScaleX64() * GetLookAccelerationScaleX64();
                 float yawRate = g_modConfig.lookDegreesPerSecondHorizontal * scale;
                 float pitchRate = g_modConfig.lookDegreesPerSecondVertical * scale;
                 float pitchInput = g_modConfig.invertLook ? -lookY : lookY; // OG console "Invert Look"
