@@ -109,6 +109,7 @@ see their own sections below; neither gates this release.
 | | Visual-enhancement suite (render scale, FSR, motion blur) |
 | | Native controller menu/UI navigation (main menu, pause, options, buy-stations) |
 | | Menu-focus/itemDef tracking (glyph-icon dependency) |
+| | Native text-draw hook + Mantle-hint detection (glyph-icon substitution and Auto-Mantle's own `+gostand`-forcing feature still not wired — see Known gaps) |
 | | Back (scoreboard, `+scores` key-synthesis) — see Known gaps below for why this is correctly a no-op in SP |
 
 ### Known gaps
@@ -123,14 +124,25 @@ presets, the plugin API, background threads, and more).
 
 - **Controller-glyph icons, on-screen hint prompts, the highlighted-item
   A-glyph, the F2/F3 glyph-position editor, and the custom cursor** still
-  don't draw on x64. The underlying menu-focus/item-position tracking they
-  depend on has now been ported — the remaining gap is a separate, not-yet-
-  ported piece (the native text-draw hook itself). Everything else renders
-  normally (including this mod's own startup/hot-reload toast messages,
-  which ARE confirmed working on x64).
-- **Auto-Mantle** is still absent on x64 — no wiring in the current input
-  pipeline yet, genuinely blocked (not just not-yet-attempted) on the same
-  native text-draw hook that blocks gameplay glyph icons above. (Survival
+  don't draw on x64. Both dependencies they needed are now resolved — the
+  menu-focus/item-position tracking, and (2026-09-13) the native text-draw
+  hook itself (`FUN_14029a2b0`, the x64 equivalent of x86's
+  `Hook_DrawGlyphText` target) — but no visual glyph SUBSTITUTION is wired
+  on top yet: the hook currently only observes drawn text (for Mantle-hint
+  detection, see below), it never replaces it with an icon. Font-name
+  filtering and every case besides Mantle (Interact, Reload, Throwback,
+  Sentry-Place, menu hints) remain unported — see
+  `re_notes/x64_migration/drawtext_hook_x64.md` for the exact scope.
+  Everything else renders normally (including this mod's own startup/
+  hot-reload toast messages, which ARE confirmed working on x64).
+- **Auto-Mantle's ledge-DETECTION dependency is now resolved** (2026-09-13):
+  the native text-draw hook above includes a real, language-independent
+  structural match against the live localized `PLATFORM_MANTLE` template,
+  and `IsMantleHintCurrentlyShowingX64()` now exists. **The feature's actual
+  `+gostand`-forcing injection itself is still NOT wired** — x64 has no
+  direct `IsSprintActive()`-equivalent read to gate it with (Sprint moved to
+  a real kbutton on x64, not a native `pm_flags` read), so this needs a
+  further, separate task on top of the now-unblocked signal. (Survival
   ready-up, hold Y, and Hold Breath, L3 while ADS'd, were both ported
   2026-09-12 — see the build-verified column above; Hold Breath uses the
   same no-explicit-sniper-check gating as `-x86`, relying on the real native

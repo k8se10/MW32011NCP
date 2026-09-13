@@ -46,12 +46,17 @@ already had no arch guard) — bringing the running tally to 9.
 Auto-Mantle was separately investigated (not just left unattempted) and
 found genuinely blocked on a missing native text-draw hook
 (`Hook_DrawGlyphText`'s x64 equivalent) — see its own row below and
-`known_issues_x64.md` issue #1. **Gameplay glyph-icon drawing itself
-depends on that same missing hook, still genuinely not-yet-attempted as of
-this note** (a dispatched pass on it was paused before any real
-investigation began, due to a session token-budget constraint, not because
-it turned out blocked) — the honest current count is row by row, not this
-summary.
+`known_issues_x64.md` issue #1. **That missing hook shipped 2026-09-13**
+(`FUN_14029a2b0`, found via the same anchor-string RE technique x86's own
+discovery used, confirmed via 22 real callers — full trail:
+`re_notes/x64_migration/drawtext_hook_x64.md`), with Mantle-hint structural-
+match detection wired on top — **this resolves Auto-Mantle's own detection
+DEPENDENCY specifically, not the feature itself** (the actual `+gostand`-
+forcing injection still isn't wired, and x64 has no `IsSprintActive()`-
+equivalent read to gate it with) **and not gameplay glyph-icon drawing
+generally** (the hook currently only observes text, it never substitutes an
+icon for any case, Mantle included) — the honest current count is row by
+row, not this summary.
 
 **Two findings below are new — not in `known_issues_x64.md`'s existing
 "Corrected gap list, 2026-09-12" entry or anywhere else in this project's
@@ -158,7 +163,7 @@ bar (CLAUDE.md SS7/SS8) applied separately — many are build-verified only.
 | 21 | Crouch/Prone 3-state stance ladder (B) | Confirmed working, real native toggle, tap-vs-hold ladder | **PRESENT**, different mechanism | x64 forwards raw press/release edges directly to `FUN_14007c3a0`'s case 0x17/0x18 (`+stance`/`-stance`), trusting native logic to handle tap/hold internally, rather than replicating x86's own explicit tap/hold state machine — a deliberate, reasoned design choice (see the in-file comment on why replicating the ambiguous "restore previous posture" semantics was judged riskier than trusting native dispatch), but the exact resulting behavior (does it match x86's documented tap→crouch/hold→prone table exactly?) is **not independently live-confirmed** |
 | 22 | Sprint (L3) | Confirmed working, **real `+sprint` kbutton**, native duration/recovery timer + Extreme Conditioning apply automatically | **FIXED (2026-09-12, same day, separate fix pass)** | `Hook_SprintTick` now calls the real kbutton activate/deactivate handlers (`FUN_14007e460`/`e490`) on `DAT_1406448f4` (case `0x3d`/`0x3e`), matching x86's final design exactly, plus the rising-edge stand-from-crouch/prone behavior (reuses `ForceStandingViaRealToggleX64()`). Build-verified both platforms; **not yet live-tested**. Originally: `Hook_SprintTick` forced the `pm_flags`-equivalent bit directly (`FUN_140014a80`'s own field) — x86's ORIGINAL, deprecated pre-kbutton design. See Summary finding #2 above for the original finding and the fix's full trail |
 | 23 | Hold Breath (L3 while ADS'd, sniper) | Confirmed working, real kbutton | **FIXED (2026-09-12, same day, separate fix pass)** | `Hook_SprintTick` now also computes `holdBreathActive = sprintHeld && adsHeldNow` and edge-triggers the real kbutton activate/deactivate handlers on `g_holdBreathStruct` (`DAT_14064482c`, resolved via case 9's own dual-call disassembly + independently re-dumped raw LEA bytes), matching x86's exact gating (no explicit sniper-class check in either platform's own code — the native kbutton itself limits the effect to sniper weapons). A real pre-existing bug in `Hook_SprintTick` (an early `return` that would have starved Hold Breath's own edge check on steady ticks) was found and fixed in the same pass. Build-verified both platforms; **not yet live-tested**. Full trail in `known_issues_x64.md` issue #1, "Hold Breath (L3 while ADS'd) ported to x64" |
-| 24 | Auto-Mantle while sprinting | Confirmed working (v0.3.4), ships off by default | **ABSENT** (unchanged by the #22 fix — out of scope) | Zero references to `AutoMantle`/`auto.?mantle` anywhere in the x64 file. Not gated off — simply never implemented for x64 |
+| 24 | Auto-Mantle while sprinting | Confirmed working (v0.3.4), ships off by default | **PARTIAL (2026-09-13) — detection dependency resolved, feature itself still ABSENT** | Was: zero references to `AutoMantle`/`auto.?mantle` anywhere in the x64 file, blocked on the missing native text-draw hook (`known_issues_x64.md` issue #1, 2026-09-12 investigation). That hook now exists (`FUN_14029a2b0`, `re_notes/x64_migration/drawtext_hook_x64.md`) with real Mantle-hint structural-match detection wired on top (`IsMantleHintCurrentlyShowingX64()`) — the ledge-availability SIGNAL Auto-Mantle would consume is real and build-verified. The actual `+gostand`-forcing injection itself is still not wired — x64 has no `IsSprintActive()`-equivalent read to gate it with (Sprint is kbutton-driven on x64, not a native `pm_flags` read) — a further, separate task |
 | 25 | Extreme Conditioning perk override | Resolved "for free" via Sprint's real kbutton | **Now applies "for free," same as x86** (fixed alongside #22 — the real kbutton is what makes this automatic, no separate code needed) | Depends entirely on #22's kbutton design, which x64 now uses |
 | 26 | Jump (A) | Confirmed working | **PRESENT** | Raw bit `kJumpUsercmdBit=0x400`, suppressed while a menu is active via `g_menuActiveGateFlag` |
 | 27 | Jump auto-stand from crouch/prone | Implemented (`ForceStandingViaRealToggle`) | **PRESENT**, w/ caveat | `ForceStandingViaRealToggleX64()`, ported 2026-09-05 — listed in `known_issues_x64.md` as "still awaiting live confirmation" as of that entry |
@@ -178,7 +183,7 @@ bar (CLAUDE.md SS7/SS8) applied separately — many are build-verified only.
 
 | # | Feature | x86 status | x64 status | Evidence |
 |---|---|---|---|---|
-| 34 | Button-glyph UI prompts (in-game interact hints, menu corner hints) | Confirmed working | **ABSENT** | `known_issues_x64.md`'s own follow-up audit (same investigation, pre-dates the 2026-09-12 gap-list entry): "`analog_input_hooks_x64.cpp` makes zero calls to any glyph/hint-request function... `DrawGlyphIconIfRequested`'s own gate... simply never gets set to true on x64." Confirmed independently this pass via the same grep |
+| 34 | Button-glyph UI prompts (in-game interact hints, menu corner hints) | Confirmed working | **ABSENT, but the blocking hook now exists (2026-09-13)** | Was: `known_issues_x64.md`'s own follow-up audit: "`analog_input_hooks_x64.cpp` makes zero calls to any glyph/hint-request function... `DrawGlyphIconIfRequested`'s own gate... simply never gets set to true on x64." The native text-draw hook this needed (x86's `Hook_DrawGlyphText` target) is now ported (`FUN_14029a2b0`, `re_notes/x64_migration/drawtext_hook_x64.md`), but it currently only OBSERVES drawn text for Mantle-hint detection (#24) — it never calls `RequestCustomHintOverlay`/suppresses a real draw for any case, Interact hints included, and x64's real `Font_s` struct layout (needed for font-name filtering) was not re-derived. Still absent as a visible feature, but the prerequisite RE task is done |
 | 35 | Highlighted-item A-glyph (menu list navigation) | 🟡 on x86 too (draws where manually calibrated) | **ABSENT** | Depends on `TryGetRealFocusedGroupAndIndex`/`GetMenuStackDepth` (`analog_input_hooks.cpp`), both explicit x64 stubs returning `false`/`-1` — hardcode a 4-byte pointer stride (`arr + i*4`) that's meaningless on x64's 8-byte pointers even if un-stubbed |
 | 36 | F2/F3 in-game glyph-position editor | Confirmed working (menu items + gameplay hints) | **ABSENT** | Same root dependency as #35 — the editor needs real focused-item position data that doesn't resolve on x64 |
 | 37 | Custom mouse cursor overlay | Confirmed working | **ABSENT — explicit early-return** | `DrawCustomCursorIfNeeded` (`overlay_hud.cpp`) reads raw x86-only addresses (`kCursorVisibleFlagAddr`/`kCursorUiStateAddr`); found as a real, previously-invisible bug (SEH silently swallowed the resulting access violation) and fixed 2026-09-04/05 by adding an honest `#if defined(_M_X64)` early-return stub, same pattern as the other deferred functions |
