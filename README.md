@@ -109,7 +109,7 @@ see their own sections below; neither gates this release.
 | | Visual-enhancement suite (render scale, FSR, motion blur) |
 | | Native controller menu/UI navigation (main menu, pause, options, buy-stations) |
 | | Menu-focus/itemDef tracking (glyph-icon dependency) |
-| | Native text-draw hook + Mantle-hint detection (glyph-icon substitution still not wired — see Known gaps) |
+| | Real glyph-icon substitution: Mantle, Pickup/Swap/Pickup-health, Throwback grenade (see Known gaps for what's still native-only) |
 | | Auto-Mantle (while sprinting) — ships off by default |
 | | Back (scoreboard, `+scores` key-synthesis) — see Known gaps below for why this is correctly a no-op in SP |
 
@@ -123,19 +123,28 @@ partial/regressed). The items below are the highest-impact gaps it found;
 see that file for everything else (menu glyphs, killstreaks, config
 presets, the plugin API, background threads, and more).
 
-- **Controller-glyph icons, on-screen hint prompts, the highlighted-item
-  A-glyph, the F2/F3 glyph-position editor, and the custom cursor** still
-  don't draw on x64. Both dependencies they needed are now resolved — the
-  menu-focus/item-position tracking, and (2026-09-13) the native text-draw
-  hook itself (`FUN_14029a2b0`, the x64 equivalent of x86's
-  `Hook_DrawGlyphText` target) — but no visual glyph SUBSTITUTION is wired
-  on top yet: the hook currently only observes drawn text (for Mantle-hint
-  detection, see below), it never replaces it with an icon. Font-name
-  filtering and every case besides Mantle (Interact, Reload, Throwback,
-  Sentry-Place, menu hints) remain unported — see
-  `re_notes/x64_migration/drawtext_hook_x64.md` for the exact scope.
-  Everything else renders normally (including this mod's own startup/
-  hot-reload toast messages, which ARE confirmed working on x64).
+- **Controller-glyph icons now draw for real on x64 for three in-game hints**
+  (2026-09-13, same day as the text-draw hook itself shipped): **Mantle,
+  weapon pickup/swap/pickup-health, and grenade throwback** all now suppress
+  the native hint text and draw this project's own icon+text instead,
+  detected via an exact structural match against the real, live-resolved
+  reference-key text (no font-name filtering needed for these three).
+  **Everything else the F2/F3 editor and highlighted-item A-glyph would
+  cover, plus buy-station's "Hold F to use Weapon Armory," Survival's
+  ready-up prompt, Reload, turret placement, and menu corner hints
+  (Back/Friends), still render completely native/unmodified** — buy-station
+  and ready-up are blocked on x64's still-unconfirmed `Font_s` `fontName`
+  offset (needed for `IsGameplayHintFont`-style filtering, since neither has
+  a known reference-key template even on `-x86`); Reload is confirmed to
+  flow through a different native draw function this hook can't observe at
+  all; Sentry-Place's own reference string wasn't found anywhere in the x64
+  binary; the F2/F3 editor/A-glyph/custom cursor and menu hints weren't
+  attempted this pass. On-screen alignment for the three working cases is
+  also unverified — no pixel-tuning nudges were ported yet. See
+  `re_notes/x64_migration/drawtext_hook_x64.md` for the exact scope and
+  reasoning behind each gap. Everything else renders normally (including
+  this mod's own startup/hot-reload toast messages, which ARE confirmed
+  working on x64).
 - **Auto-Mantle (while sprinting) is now fully wired on x64** (2026-09-13),
   build-verified, ships off by default matching `-x86`'s exact default. The
   native text-draw hook includes a real, language-independent structural

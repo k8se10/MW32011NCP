@@ -22,8 +22,9 @@ Sprint silently running on x86's own deprecated pre-kbutton design and
 vibration never having been wired to x64 at all. The native text-draw hook
 that blocked gameplay glyph icons and Auto-Mantle's own detection dependency
 is now ported too, with Mantle-hint detection wired on top, and Auto-Mantle's
-actual `+gostand`-forcing feature now ships on top of that (off by default) —
-visual glyph substitution itself remains unimplemented, see items 16-17 under
+actual `+gostand`-forcing feature now ships on top of that (off by default).
+Real visual glyph substitution now works for three hint families (Mantle,
+pickup/swap/pickup-health, grenade throwback) — see items 16-18 under
 What's New. **This release has not
 shipped** — see `README.md` for the current release gate (parity with the
 `-x86` line's final state) and `re_notes/known_issues_x64.md` issue #1 for
@@ -171,11 +172,10 @@ live, detailed status on every item below.
     `SEH_GetString` equivalent — not `real_settings.cpp`'s x64
     `GetLocalizedString()` stub, which just echoes the key back and would
     never match). **This unblocks Auto-Mantle's own detection DEPENDENCY**
-    specifically (see item 17 below for the feature itself) — **no visual
-    glyph-icon substitution is drawn** — native hint text, Mantle included,
-    still renders completely unmodified; only Interact-hint/Reload/menu-hint/
-    Throwback/Sentry-Place detection and x64's real `Font_s` struct layout
-    remain unported. Full honest scope, discovery trail, and what's still
+    specifically (see item 17 below for the feature itself) — at the time
+    this hook first shipped, no visual glyph-icon substitution was drawn yet;
+    see item 18 below for the same-day follow-up that changed this for three
+    hint families. Full honest scope, discovery trail, and what's still
     missing: `re_notes/x64_migration/drawtext_hook_x64.md`. Build-verified,
     not yet live-tested. See `re_notes/known_issues_x64.md` issue #1 for the
     full trail.
@@ -191,6 +191,28 @@ live, detailed status on every item below.
     uses, with the same 750ms cooldown and forward-stick-cone check `-x86`
     ships. Build-verified, not yet live-tested — see
     `re_notes/known_issues_x64.md` issue #1 for the full trail.
+18. **Real glyph-icon visual substitution now draws on x64 for three hint
+    families** (same day as item 16, a follow-up pass on top of it): Mantle,
+    weapon pickup/swap/pickup-health, and grenade throwback now suppress the
+    native hint text and draw this project's own icon+text instead —
+    `RequestCustomHintOverlay` actually gets called from x64 for the first
+    time. All three are confirmed, via fresh decompile, to flow through the
+    same `FUN_14029a2b0` draw call item 16 hooks; detection stays a purely
+    structural match against the real, live-resolved reference-key template
+    (`PLATFORM_PICKUPNEWWEAPON`/`SWAPWEAPONS`/`PICKUPHEALTH`/
+    `THROWBACKGRENADE`, same technique as Mantle), so no font-name filtering
+    was needed. A new function, `TryGetPickupGlyphAssetName`, resolves the
+    pickup family's icon via the same physical key Reload's own icon already
+    uses. **Buy-station, Survival ready-up, Reload, Sentry-Place, and menu
+    corner hints remain native/unmodified** — buy-station and ready-up have
+    no known reference-key template even on `-x86` (blocked on x64's still-
+    unconfirmed `Font_s` `fontName` offset); Reload is confirmed to flow
+    through a completely different native draw function this hook can't
+    observe; Sentry-Place's own reference string wasn't found anywhere in
+    the x64 binary. No position/scale alignment tuning was ported either —
+    on-screen alignment for the three working cases is unverified pending
+    live test. Full trail: `re_notes/x64_migration/drawtext_hook_x64.md`.
+    Build-verified, not yet live-tested.
 
 ### Fixed
 1. **Crash on launch with the sniper Fire/ADS fix's own log line.** The
@@ -272,19 +294,22 @@ live, detailed status on every item below.
    confirmed x64 `SEH_GetString` equivalent (`FUN_14029f120`).
 
 ### Investigated, Not Yet Resolved
-1. **Gameplay controller-glyph icon overlays** (in-hint "Press [A]"-style
-   replacements, on-screen hint prompts, the highlighted-item A-glyph, the
-   F2/F3 glyph-position editor, the custom cursor's own glyph-adjacent
-   behavior) still don't draw on x64. Both dependencies this was originally
-   blocked on are now resolved — menu-focus/itemDef tracking (item 11 above)
-   and the native text-draw hook itself (item 16 above) — but no visual
-   substitution is wired on top of either yet: the hook currently only
-   OBSERVES drawn text (for Mantle-hint detection), it never calls
-   `RequestCustomHintOverlay` or suppresses a real draw. Font-name filtering
-   (x64's real `Font_s` struct layout) and every case besides Mantle
-   (Interact, Reload, Throwback, Sentry-Place, menu hints) also remain
-   unported. See `re_notes/x64_migration/drawtext_hook_x64.md` for the exact
-   scope.
+1. **Gameplay controller-glyph icon overlays — PARTIAL, not fully resolved.**
+   Item 18 above now draws real icons for Mantle, weapon pickup/swap/pickup-
+   health, and grenade throwback. Still native/unmodified: buy-station's
+   "Hold F to use Weapon Armory," Survival's ready-up prompt (F5), Reload's
+   flashed reminder, turret placement (Sentry-Place), menu corner hints
+   (Back/Friends), the highlighted-item A-glyph, the F2/F3 glyph-position
+   editor, and the custom cursor's own glyph-adjacent behavior. Buy-station
+   and ready-up are blocked on x64's real `Font_s` `fontName` offset, still
+   unconfirmed (needed for `IsGameplayHintFont`-style filtering, since
+   neither has a known reference-key template even on `-x86`); Reload is
+   confirmed to flow through a completely different native draw function
+   this hook can't observe at all; Sentry-Place's own reference string
+   wasn't found anywhere in the x64 binary; the F2/F3 editor/A-glyph/cursor
+   and menu hints weren't attempted this pass. See
+   `re_notes/x64_migration/drawtext_hook_x64.md` for the exact scope and why
+   each remaining case is blocked.
 2. **FXAA and a forced-MSAA option** don't exist on either line — checked
    directly, and neither was ever actually built even on the old `-x86`
    line, only ever planned. Real future work, not a regression.
