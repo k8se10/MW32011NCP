@@ -45,7 +45,7 @@ this whole session (grows as new fixes land, items move to its own
 
 ## Index
 
-- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **D-pad Left synthetic-key exception AND a sniper Fire/ADS fix attempt both shipped (build-verified, neither live-tested yet); Plugin API ported (build-verified, needed no host code changes); visual-enhancement-suite x64 port attempted TWICE, still blocked on two addresses that resist exhaustive static RE (render-scale, clcState/in-level-flag) — likely needs live tracing, not more static analysis; FXAA/MSAA found to not even exist on x86, out of scope for parity; overlay-render bug fully audited — cursor's own unguarded x86 address landmine found and fixed, rest of the render path confirmed clean; Custom Options screen wired into x64's input pipeline (build-verified, temporary manual open-chord substitute pending a real focus-detection RE pass -- **RE pass now done 2026-09-12: real x64 menu-focus/itemDef-array offsets re-derived and cross-confirmed, TryGetRealFocusedGroupAndIndexX64 wired in as the real Options-screen open trigger alongside the chord (kept as a fallback), build-verified, not yet live-tested**); a "greenlit" trusted-plugin allowlist added to plugin_loader.cpp so the sibling MW32011NSP project's own security-fix plugin can ship built in by default (build-verified, end-to-end test pending that plugin's own existence); Sprint (L3) migrated from raw pm_flags-forcing to the real +sprint kbutton, matching x86's final design, plus the rising-edge stand-from-crouch/prone behavior (build-verified, not yet live-tested); native D-pad+A/B controller menu navigation ported (InjectControllerMenuNavX64/InjectControllerMenuBackX64, driven by a newly-resolved ForwardKeyToMenu equivalent, FUN_1402aac50) — main menu, pause menu, options drill-down, buy-station/armory lists, and B-back all now controller-navigable in principle, plus two real menu-active-gating conflicts found and fixed along the way (D-pad actionslot, CrouchProne/B dual-purpose) — build-verified, not yet live-tested; Auto-Mantle (while sprinting) investigated and found genuinely BLOCKED, not implemented — its real ledge-availability gate depends entirely on the native hint text-draw hook (x86's Hook_DrawGlyphText), which has no x64 equivalent yet (same separate, larger RE task blocking gameplay-hint glyph overlays generally), and a considered alternative (reading the engine's own raw mantle condition-flag memory directly) was deliberately rejected as a diverging, policy-adjacent workaround rather than a real port; Survival ready-up (hold Y) ported — same synthetic-F5-via-PostMessageA exception x86 already ships, direct port of SendSyntheticF5/InjectControllerWeaponNext's hold-vs-tap split, one honest scoped difference from x86 (the IsInSurvivalMode() mode gate is omitted, since x64's own Dvar_FindVar equivalent is a still-unresolved RE target — fires unconditionally on the hold edge instead, relying on the same "safe by construction" reasoning x86's own design already documents) — build-verified, not yet live-tested; Hold Breath (L3 while ADS'd) ported (parity audit item #23, closes the last confirmed-ABSENT control) — same no-explicit-sniper-check gating as x86 (`sprintHeld && adsHeldNow`), real kbutton struct resolved via the same anchor+offset technique (two independent angles: decompile + independently re-dumped raw LEA bytes), structurally a genuinely separate dedicated kbutton_t on x64 (not the internal-field alias x86's own address is), a real pre-existing early-return bug in Hook_SprintTick that would have silently starved Hold Breath's own edge check on steady ticks was caught and fixed in the same pass — build-verified, not yet live-tested; DualSense gyro-aim ported, same day, directly by the coordinator (not a fork) after the background session pool was paused for a low-token-budget check — turned out to be the identical "mechanism exists, never wired into the x64 tick" shape vibration/rumble already was: `Controller_GetGyroRate` (`controller_input.cpp`) has no arch guard at all, wired into `Hook_MovementTick`'s existing LOOK PRE-hook block, applied additively onto the yaw/pitch accumulators and the motion-blur delta feed after the stick-look branch (confirmed matching x86's own `=` then `+=` pattern in `InjectControllerLookAngles` before writing it), stays PREVIEW/WIP exactly as x86 does — build-verified (x64 rebuild, dumpbin-confirmed, Win32 regression clean, x64 redeployed last), not yet live-tested (needs real DualSense hardware). Back's `+scores` scoreboard port shipped 2026-09-13 (`SendSyntheticScoreboardKeyX64`, same hold-through-passthrough `PostMessageA(VK_TAB)` mechanism as x86's `InjectControllerScoreboard()`, a pure wiring port — x86's own function already had no arch guard, per the parity audit's row 30 finding — build-verified both platforms, correctly expected to remain a visible no-op in SP, see `known_issues.md` issue #28, real value only once Multiplayer ships). The gameplay glyph-icon native text-draw hook (the large remaining RE task, also blocked Auto-Mantle) shipped 2026-09-13, in two commits: a passthrough milestone hooking `FUN_14029a2b0` (the x64 equivalent of x86's `Hook_DrawGlyphText` target, found via the same `RawStringScan.java`-anchor technique x86's own discovery used, confirmed via 22 real callers), then Mantle-hint structural-match detection wired on top (`IsMantleHintCurrentlyShowingX64()`, resolving the real x64 `SEH_GetString` equivalent `FUN_14029f120` for a live, language-independent template match — NOT `real_settings.cpp`'s x64 `GetLocalizedString()` stub). This unblocks Auto-Mantle's own detection DEPENDENCY specifically; every visual glyph-icon SUBSTITUTION (Interact hints, Reload, Throwback, Sentry-Place, menu hints, x64's real `Font_s` struct layout) remains unimplemented — build-verified both platforms, x64 redeployed last, not yet live-tested. Full trail: `re_notes/x64_migration/drawtext_hook_x64.md`. **Auto-Mantle's own `+gostand`-forcing feature shipped later the same day (2026-09-13)**: `IsSprintActiveX64()` composed from three already-existing x64 tracking vars (`g_sprintKbuttonActiveX64`/`GetRealStanceX64()`/`g_adsHeldX64`, exact parity port of x86's own `IsSprintActive()`, no new RE needed) wired together with `IsMantleHintCurrentlyShowingX64()` and the same 750ms cooldown/stick-forward-cone check x86 uses, into `Hook_MovementTick`'s existing Jump raw-usercmd-bit block (same `kJumpUsercmdBit`/0x400) — ships off by default, build-verified both platforms, x64 redeployed last, not yet live-tested. See this issue's own "UPDATE 2026-09-13 (later same day)" round under the Auto-Mantle section for the full trace. **A separate, concurrent 2026-09-13 session then shipped real visual glyph-icon SUBSTITUTION** (not just detection) for Mantle, Pickup/Swap/PickupHealth, and Throwback grenade — `RequestCustomHintOverlay` now actually draws this project's own icon+text and suppresses the native draw for those three hint families, all detected via a purely structural template match (no font-name filtering needed); buy-station, Survival ready-up, Sentry-Place, and Reload remain genuinely unported (the first three lack any known reference-key template even on x86 or in this binary at all; Reload is confirmed to flow through a completely different native draw function this hook can't observe) — see this issue's own newest "UPDATE 2026-09-13 (a separate, concurrent session, same day)" round under the Auto-Mantle section, and `re_notes/x64_migration/drawtext_hook_x64.md`'s "Stage (c)," for the full trail — release ETA 2-4 weeks, gated on x86 parity. Highlighted-item A-glyph and the F2/F3 in-game glyph-position editor (parity audit rows #35/#36) both wired to the real x64 menu-focus tracking the same day (2026-09-13) — neither ever called the raw itemDef-array functions directly, both went through one shared debounced wrapper (`TryGetStableFocusedGroupAndIndex`) whose x64 branch was still a pre-2026-09-12 stub; giving that one wrapper a real x64 branch (calling `TryGetRealFocusedGroupAndIndexX64`/`GetMenuStackDepthX64` via two new `extern "C"` wrappers) closed both rows in one small commit, no new RE — build-verified both platforms, x64 redeployed last, not yet live-tested**; `Dvar_FindVar`/`GetEffectiveFov`'s x64 equivalents resolved 2026-09-13 (`FUN_1402c3890`/`FUN_140069e60`, full trail `re_notes/x64_migration/getEffectiveFov_dvarFindVar_x64.md`), closing two real, previously-flagged gaps in one pass: the ADS zoom-aware look-slowdown (`GetAdsLookRateScaleX64`, parity audit row #3, wired into `Hook_MovementTick`'s Look pre-hook) and Survival ready-up's missing `IsInSurvivalMode()` gate (`IsInSurvivalModeX64`, wired at `SendSyntheticF5X64`'s one call site) — both build-verified both platforms, x64 redeployed last, not yet live-tested; the custom mouse cursor overlay (parity audit row #37) ported the same day (`kCursorGateSignature` resolving `DAT_14260506c`/`DAT_142615b20`, the x64 equivalents of x86's `DAT_01c00474`/`DAT_01c0ad14`, plus a second fix for `IsMenuActive_Exported()`'s always-false x64 stub which would otherwise have made the whole function a permanent no-op) — build-verified both platforms, x64 redeployed last, not yet live-tested**
+- [#1](#1-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated) — CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken — **D-pad Left synthetic-key exception AND a sniper Fire/ADS fix attempt both shipped (build-verified, neither live-tested yet); Plugin API ported (build-verified, needed no host code changes); visual-enhancement-suite x64 port attempted TWICE, still blocked on two addresses that resist exhaustive static RE (render-scale, clcState/in-level-flag) — likely needs live tracing, not more static analysis; FXAA/MSAA found to not even exist on x86, out of scope for parity; overlay-render bug fully audited — cursor's own unguarded x86 address landmine found and fixed, rest of the render path confirmed clean; Custom Options screen wired into x64's input pipeline (build-verified, temporary manual open-chord substitute pending a real focus-detection RE pass -- **RE pass now done 2026-09-12: real x64 menu-focus/itemDef-array offsets re-derived and cross-confirmed, TryGetRealFocusedGroupAndIndexX64 wired in as the real Options-screen open trigger alongside the chord (kept as a fallback), build-verified, not yet live-tested**); a "greenlit" trusted-plugin allowlist added to plugin_loader.cpp so the sibling MW32011NSP project's own security-fix plugin can ship built in by default (build-verified, end-to-end test pending that plugin's own existence); Sprint (L3) migrated from raw pm_flags-forcing to the real +sprint kbutton, matching x86's final design, plus the rising-edge stand-from-crouch/prone behavior (build-verified, not yet live-tested); native D-pad+A/B controller menu navigation ported (InjectControllerMenuNavX64/InjectControllerMenuBackX64, driven by a newly-resolved ForwardKeyToMenu equivalent, FUN_1402aac50) — main menu, pause menu, options drill-down, buy-station/armory lists, and B-back all now controller-navigable in principle, plus two real menu-active-gating conflicts found and fixed along the way (D-pad actionslot, CrouchProne/B dual-purpose) — build-verified, not yet live-tested; Auto-Mantle (while sprinting) investigated and found genuinely BLOCKED, not implemented — its real ledge-availability gate depends entirely on the native hint text-draw hook (x86's Hook_DrawGlyphText), which has no x64 equivalent yet (same separate, larger RE task blocking gameplay-hint glyph overlays generally), and a considered alternative (reading the engine's own raw mantle condition-flag memory directly) was deliberately rejected as a diverging, policy-adjacent workaround rather than a real port; Survival ready-up (hold Y) ported — same synthetic-F5-via-PostMessageA exception x86 already ships, direct port of SendSyntheticF5/InjectControllerWeaponNext's hold-vs-tap split, one honest scoped difference from x86 (the IsInSurvivalMode() mode gate is omitted, since x64's own Dvar_FindVar equivalent is a still-unresolved RE target — fires unconditionally on the hold edge instead, relying on the same "safe by construction" reasoning x86's own design already documents) — build-verified, not yet live-tested; Hold Breath (L3 while ADS'd) ported (parity audit item #23, closes the last confirmed-ABSENT control) — same no-explicit-sniper-check gating as x86 (`sprintHeld && adsHeldNow`), real kbutton struct resolved via the same anchor+offset technique (two independent angles: decompile + independently re-dumped raw LEA bytes), structurally a genuinely separate dedicated kbutton_t on x64 (not the internal-field alias x86's own address is), a real pre-existing early-return bug in Hook_SprintTick that would have silently starved Hold Breath's own edge check on steady ticks was caught and fixed in the same pass — build-verified, not yet live-tested; DualSense gyro-aim ported, same day, directly by the coordinator (not a fork) after the background session pool was paused for a low-token-budget check — turned out to be the identical "mechanism exists, never wired into the x64 tick" shape vibration/rumble already was: `Controller_GetGyroRate` (`controller_input.cpp`) has no arch guard at all, wired into `Hook_MovementTick`'s existing LOOK PRE-hook block, applied additively onto the yaw/pitch accumulators and the motion-blur delta feed after the stick-look branch (confirmed matching x86's own `=` then `+=` pattern in `InjectControllerLookAngles` before writing it), stays PREVIEW/WIP exactly as x86 does — build-verified (x64 rebuild, dumpbin-confirmed, Win32 regression clean, x64 redeployed last), not yet live-tested (needs real DualSense hardware). Back's `+scores` scoreboard port shipped 2026-09-13 (`SendSyntheticScoreboardKeyX64`, same hold-through-passthrough `PostMessageA(VK_TAB)` mechanism as x86's `InjectControllerScoreboard()`, a pure wiring port — x86's own function already had no arch guard, per the parity audit's row 30 finding — build-verified both platforms, correctly expected to remain a visible no-op in SP, see `known_issues.md` issue #28, real value only once Multiplayer ships). The gameplay glyph-icon native text-draw hook (the large remaining RE task, also blocked Auto-Mantle) shipped 2026-09-13, in two commits: a passthrough milestone hooking `FUN_14029a2b0` (the x64 equivalent of x86's `Hook_DrawGlyphText` target, found via the same `RawStringScan.java`-anchor technique x86's own discovery used, confirmed via 22 real callers), then Mantle-hint structural-match detection wired on top (`IsMantleHintCurrentlyShowingX64()`, resolving the real x64 `SEH_GetString` equivalent `FUN_14029f120` for a live, language-independent template match — NOT `real_settings.cpp`'s x64 `GetLocalizedString()` stub). This unblocks Auto-Mantle's own detection DEPENDENCY specifically; every visual glyph-icon SUBSTITUTION (Interact hints, Reload, Throwback, Sentry-Place, menu hints, x64's real `Font_s` struct layout) remains unimplemented — build-verified both platforms, x64 redeployed last, not yet live-tested. Full trail: `re_notes/x64_migration/drawtext_hook_x64.md`. **Auto-Mantle's own `+gostand`-forcing feature shipped later the same day (2026-09-13)**: `IsSprintActiveX64()` composed from three already-existing x64 tracking vars (`g_sprintKbuttonActiveX64`/`GetRealStanceX64()`/`g_adsHeldX64`, exact parity port of x86's own `IsSprintActive()`, no new RE needed) wired together with `IsMantleHintCurrentlyShowingX64()` and the same 750ms cooldown/stick-forward-cone check x86 uses, into `Hook_MovementTick`'s existing Jump raw-usercmd-bit block (same `kJumpUsercmdBit`/0x400) — ships off by default, build-verified both platforms, x64 redeployed last, not yet live-tested. See this issue's own "UPDATE 2026-09-13 (later same day)" round under the Auto-Mantle section for the full trace. **A separate, concurrent 2026-09-13 session then shipped real visual glyph-icon SUBSTITUTION** (not just detection) for Mantle, Pickup/Swap/PickupHealth, and Throwback grenade — `RequestCustomHintOverlay` now actually draws this project's own icon+text and suppresses the native draw for those three hint families, all detected via a purely structural template match (no font-name filtering needed); buy-station, Survival ready-up, Sentry-Place, and Reload remain genuinely unported (the first three lack any known reference-key template even on x86 or in this binary at all; Reload is confirmed to flow through a completely different native draw function this hook can't observe) — see this issue's own newest "UPDATE 2026-09-13 (a separate, concurrent session, same day)" round under the Auto-Mantle section, and `re_notes/x64_migration/drawtext_hook_x64.md`'s "Stage (c)," for the full trail — release ETA 2-4 weeks, gated on x86 parity. Highlighted-item A-glyph and the F2/F3 in-game glyph-position editor (parity audit rows #35/#36) both wired to the real x64 menu-focus tracking the same day (2026-09-13) — neither ever called the raw itemDef-array functions directly, both went through one shared debounced wrapper (`TryGetStableFocusedGroupAndIndex`) whose x64 branch was still a pre-2026-09-12 stub; giving that one wrapper a real x64 branch (calling `TryGetRealFocusedGroupAndIndexX64`/`GetMenuStackDepthX64` via two new `extern "C"` wrappers) closed both rows in one small commit, no new RE — build-verified both platforms, x64 redeployed last, not yet live-tested**; `Dvar_FindVar`/`GetEffectiveFov`'s x64 equivalents resolved 2026-09-13 (`FUN_1402c3890`/`FUN_140069e60`, full trail `re_notes/x64_migration/getEffectiveFov_dvarFindVar_x64.md`), closing two real, previously-flagged gaps in one pass: the ADS zoom-aware look-slowdown (`GetAdsLookRateScaleX64`, parity audit row #3, wired into `Hook_MovementTick`'s Look pre-hook) and Survival ready-up's missing `IsInSurvivalMode()` gate (`IsInSurvivalModeX64`, wired at `SendSyntheticF5X64`'s one call site) — both build-verified both platforms, x64 redeployed last, not yet live-tested; the custom mouse cursor overlay (parity audit row #37) ported the same day (`kCursorGateSignature` resolving `DAT_14260506c`/`DAT_142615b20`, the x64 equivalents of x86's `DAT_01c00474`/`DAT_01c0ad14`, plus a second fix for `IsMenuActive_Exported()`'s always-false x64 stub which would otherwise have made the whole function a permanent no-op) — build-verified both platforms, x64 redeployed last, not yet live-tested**. **Fire/ADS "intermittent, on and off" bug (2026-09-13): real root cause found and fixed** — a stray `if (moveX == 0.0f && moveY == 0.0f) return;` in `Hook_MovementTick` early-returned the WHOLE function (not just the movement-byte write it was meant to guard) whenever the left stick was centered, silently skipping Fire/ADS/Reload/Weapnext/Melee/Lethal/Tactical/Jump/Interact/D-pad/CrouchProne/Scoreboard/gameplay-tick-Pause-open/Rumble on every such tick — exactly the moments a player stands still to aim, and unrelated to weapon class or the earlier sniper/notify theory (left in place, unaffected). Confirmed x64-only by x86's own `InjectAllControllerInput`, which calls the equivalent functions independently with no such gating. Fixed by scoping the early-out to just the movement write — build-verified both platforms, x64 redeployed last, **not yet live-tested**
 
 ---
 
@@ -2201,6 +2201,150 @@ Parity audit row #16 and `x64_live_testing_checklist.md` updated to match.
 Full Ghidra outputs from this pass, saved under `re_notes/x64_migration/`:
 `predator_decomp_14007fc00_chain.txt`, `predator_bindname_table_x64.txt`,
 `predator_notify_strings_x64.txt`, `predator_fmt_string_x64.txt`.
+
+**UPDATE 2026-09-13 -- root cause found and fixed. NOT the notify mechanism,
+NOT weapon-class-specific, NOT even Fire/ADS-specific code at all: a stray
+early `return` in `Hook_MovementTick` silently skipped Fire/ADS/Reload/
+Weapnext/Melee/Lethal/Tactical/Jump/Interact/D-pad/CrouchProne/Scoreboard/
+Pause-open/Rumble on every tick the left stick was centered. Build-verified
+on both platforms; NOT YET LIVE-TESTED.**
+
+Per the task's own instructions, this round re-derived everything from
+scratch rather than trusting prior rounds' framing (the sniper theory, then
+the pistol correction, then "intermittent, on/off, my guess is they changed
+how ads/fire works in this build" -- all real reports, but the intermittent
+shape was the one genuinely new, decisive clue: a missing one-shot native
+notify would explain constant failure for whatever needs it, never
+flickering).
+
+**Step 1 -- re-read x86's own Fire/ADS in full first** (`analog_input_hooks.cpp`,
+per this project's own standing compare-to-x86-original discipline).
+Confirmed `InjectControllerFire()`/`InjectControllerAds()`/
+`InjectControllerReload()` are edge-triggered (`if (nowHeld == g_attackHeld)
+return;`, only calling `CallKbuttonDown`/`CallKbuttonUp` on an actual
+transition) -- no unconditional per-tick reassert/write anywhere in x86's own
+design. This immediately weakens the Sprint-`pm_flags`-bug-class hypothesis
+(`known_issues.md` issues #10-11) as a direct analogy: that bug was an
+UNCONDITIONAL per-tick force fighting the engine's own state; x86's Fire/ADS
+was never built that way, on either platform, so there's no unconditional
+write for x64 to have inherited or reintroduced by copying x86's own design.
+Critically, `InjectAllControllerInput` (the x86 per-frame orchestrator, same
+file) calls `InjectControllerMovement`, `InjectControllerAds`,
+`InjectControllerFire`, `InjectControllerReload`, `InjectControllerWeaponNext`,
+`InjectControllerDpad`, `InjectControllerScoreboard`,
+`InjectControllerPauseMenu`, `InjectControllerMenuBack`, and `Rumble_Tick()`
+as **fully independent function calls in sequence** -- `InjectControllerMovement`
+is gated on `if (cmd)` only; none of the others depend in any way on whether
+movement produced nonzero output that tick. This is the load-bearing fact
+the rest of this round confirms x64 violates.
+
+**Step 2 -- read x64's current implementation in full**
+(`analog_input_hooks_x64.cpp`, `Hook_MovementTick`). Confirmed the Fire/ADS/
+Reload block (`g_fireStruct`/`g_adsStruct`/`g_reloadStruct`,
+`g_kbuttonActivate`/`g_kbuttonDeactivate`) is ALSO edge-triggered
+(`if (fireHeld != g_fireHeldX64) { g_fireHeldX64 = fireHeld; ... }`), matching
+x86's design exactly -- so the kbutton-call logic itself was never the bug.
+But unlike x86, every one of those controls (plus Weapnext, Melee, Lethal,
+Tactical, Jump, Interact, Auto-Mantle, D-pad, CrouchProne, Scoreboard) lives
+inside ONE function, `Hook_MovementTick`, which x64 rides on `FUN_14007d9f0`
+(confirmed elsewhere in this file to be a genuine x64-compiler fusion of
+x86's separate `FUN_0057d430`/`FUN_0057de60`). Reading straight through that
+function top to bottom surfaced the actual bug immediately, near the very
+top, well before the Fire/ADS block:
+
+```cpp
+float moveX, moveY, lookX, lookY;
+RouteStickAxes_Exported(leftX, leftY, rightX, rightY, g_modConfig.stickLayout, moveX, moveY, lookX, lookY);
+if (moveX == 0.0f && moveY == 0.0f) return;   // <-- THE BUG
+
+auto* cmd = reinterpret_cast<unsigned char*>(param1);
+int8_t curForward = static_cast<int8_t>(cmd[0x1c]);
+...
+cmd[0x1c] = static_cast<unsigned char>(ClampToSByteX64(curForward + addForward));
+cmd[0x1d] = static_cast<unsigned char>(ClampToSByteX64(curRight + addRight));
+
+// Buttons/ADS/Reload/Weapnext -- polled from here for the same reason x86 ...
+```
+
+`moveX`/`moveY` are the LEFT stick's axes after layout routing (movement, not
+look). Whenever the player isn't actively pushing the movement stick --
+which includes the extremely common case of standing still to aim precisely
+before firing -- `moveX == 0.0f && moveY == 0.0f` is true and this `return`
+exits the ENTIRE function, never reaching the Fire/ADS/Reload/Weapnext/
+Melee/Lethal/Tactical/Jump/Interact/D-pad/CrouchProne/Scoreboard block below
+it, and never reaching `PollPauseToggleX64()`/`Rumble_Tick()` at the very
+end either. The comment immediately above the button block even says "polled
+from here" -- confirming the author's intent was for that block to run every
+tick regardless; the early return was almost certainly meant only to skip
+the next four lines (the movement-byte write, a genuine no-op when there's
+nothing to add), not everything that followed. This fused/shared-function
+structure is unique to x64 (item 5 of this round's own task list asked
+whether Hook_MovementTick's block is tick-driven with internal edge
+detection -- yes, and the edge detection itself was fine; the bug was a
+FUNCTION-LEVEL early return placed above code that has nothing to do with
+the condition it's testing).
+
+**Why this explains every reported symptom precisely, not just plausibly**:
+constant-vs-intermittent -- a player alternates between moving the stick
+(bug inactive, controls work) and holding still to aim (bug active, controls
+silently do nothing), producing exactly "intermittent, on and off, a really
+abnormal bug," not a clean on/off toggle a config flag or connection-state
+gate would produce. All-weapons -- the bug has zero relationship to weapon
+class, matching the base-pistol repro exactly; the original sniper-only
+framing was almost certainly an early, incomplete read of an intermittent
+symptom (the player likely happened to be moving the stick less while
+testing with non-sniper weapons in those first sessions, coincidence, not a
+real weapon-class distinction). "My guess is they changed how ads/fire works
+in this build" (the user's own hypothesis, pointing at the recompile) --
+wrong in the specific mechanism, but right that this is architecturally
+tied to the x64 build: this exact bug cannot exist on x86, because x86 never
+fused Fire/ADS into the same function as movement in the first place. Also
+explains why Reload/Weapnext/Melee/Lethal/Tactical/Jump/Interact/D-pad/
+CrouchProne/Scoreboard were never separately reported broken -- they're
+subject to the identical bug, but Fire/ADS are the two controls a player is
+most likely to be exercising at the EXACT moment they've also stopped
+moving the stick (aiming down sights, lining up a shot), so they were simply
+the first and most noticeable casualties, not the only ones.
+
+**Steps 3/4 (dispatcher-side state, other engine writers to the kbutton
+structs) -- not needed, investigation closed before reaching them.** Once a
+confirmed, fully sufficient root cause was found in this project's own code
+via straightforward reading (not exotic engine-state racing), further
+speculative RE into `FUN_14007c3a0`'s other per-case behavior or other
+possible native writers to `g_fireStruct`/`g_adsStruct` was not pursued --
+consistent with this file's own standing principle of not manufacturing
+extra investigation once a confident, verifiable cause is in hand.
+
+**Fix, deliberately minimal.** Moved the `if (moveX == 0.0f && moveY ==
+0.0f)` check to scope ONLY the movement-byte write (`cmd[0x1c]`/`cmd[0x1d]`,
+now inside an `if (moveX != 0.0f || moveY != 0.0f) { ... }` block) instead of
+early-returning the whole function. Everything below -- Fire/ADS/Reload,
+Weapnext, Melee/Lethal/Tactical/Jump/Interact/Auto-Mantle, D-pad,
+CrouchProne, Scoreboard, `PollPauseToggleX64()`, `Rumble_Tick()` -- now runs
+unconditionally every tick again, matching x86's own independent-function
+design. `cmd` itself is still declared unconditionally (it's reused later
+for the raw usercmd-buttons bitfield write at `cmd + 4`). No other logic
+changed -- the `g_notifyBindDispatch` sniper-fix call from the earlier round
+is untouched and still fires alongside the kbutton calls; if that hypothesis
+was never actually relevant, it stays exactly as inert as it always was.
+
+**Build-verified**: x64 `/t:Rebuild` (`Configuration=Debug`, `Platform=x64`),
+0 errors, only pre-existing C4312 warnings in unrelated x86-only code (not
+new) -> `dumpbin /headers` confirmed `8664 machine (x64)` with a fresh
+`LastWriteTime` -> Win32 regression `/t:Rebuild` (`Configuration=Debug`,
+`Platform=Win32`), 0 errors, `analog_input_hooks_x64.cpp` correctly excluded
+from the Win32 file list, no regression -> x64 rebuilt again with a forced
+`/t:Rebuild` and redeployed last, confirmed genuinely deployed via
+`dumpbin /headers` (`8664 machine (x64)`, timestamp advanced again). **NOT
+YET LIVE-TESTED** -- this is a confident, verifiable fix (the bug was found
+by direct reading of this project's own code and independently corroborated
+by x86's own contrasting design, not inferred from partial symptoms), but
+per this project's own "verify live" standard it is not "done" until the
+next live playtest confirms Fire/ADS (and ideally Reload/Weapnext/Melee/
+Jump/Interact/D-pad/CrouchProne too, all of which were silently affected by
+the same bug) now work correctly while standing still, not just while
+moving. `re_notes/x64_feature_parity_audit.md` row #6 and `README.md`'s
+Known gaps/status table updated to match.
 
 **New live bug report, same day: "no visual rendered elements show on screen
 ... including our own mw32011ncp started messages" -- one real cause CONFIRMED
