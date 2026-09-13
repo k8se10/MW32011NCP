@@ -120,8 +120,8 @@ for any item lives in `re_notes/known_issues_x64.md` issue #1.
 
 ## Menu & UI navigation (new this session)
 
-- [ ] Native D-pad+A/B menu navigation — main menu: can you navigate and
-      select with D-pad/A alone, no mouse/keyboard?
+- [x] Native D-pad+A/B menu navigation — main menu: **CONFIRMED 2026-09-13**
+      ("menus are on par from what i saw main menu wise").
 - [ ] Native menu navigation — pause menu: same check, in-game.
 - [ ] Native menu navigation — Options screen two-pane drill-down.
 - [ ] Native menu navigation — Survival buy-station/armory lists,
@@ -274,26 +274,26 @@ Leaderboards/Game-Summary) — buy-station, Survival ready-up, Sentry-Place
 still render native, unmodified text (see "Not testable" section below for
 the honest list of what's NOT covered and why).**
 
-- [ ] Reach a real mantleable ledge in Campaign or Survival with
-      `ForceGlyphOverlay=1` (or an active controller) and confirm the native
-      "Press [Space] to..." mantle hint is now REPLACED by this project's own
-      icon+text (previously it stayed unchanged — that expectation has
-      changed as of this update). Watch for `[x64-drawtext] First real
-      glyph-icon SUBSTITUTION fired` (kind=Mantle) in the log.
-- [ ] Pick up a new weapon / swap weapons / pick up health in Campaign or
-      Survival — confirm the native "Press F to pick up"/"...to swap for"
-      hint is replaced with a real controller-glyph icon. Watch for
-      `kind=Pickup` in the same log line.
-- [ ] Throw back an enemy grenade — confirm the native "G or Middle Mouse
-      throw back" hint is replaced with a real icon (`kind=Throwback`).
-- [ ] **Reload with low ammo** — confirm the native reload reminder text is
-      replaced by a real controller-glyph icon. This was initially believed
-      structurally unreachable (an earlier same-day finding claimed Reload's
-      text flowed through a completely different native draw function),
-      corrected later the same day once one more hop of RE
-      (`FUN_1402afa60` → `FUN_1402b1090` → `FUN_14029a2b0`, the function
-      already hooked) showed it's fully reachable after all — see
-      `re_notes/x64_migration/drawtext_hook_x64.md` for the corrected trail.
+- [x] Reach a real mantleable ledge — **BROKEN, live-confirmed 2026-09-13**:
+      native hint text suppression works, but no substituted icon is
+      visible. Likely a position bug (draws off-screen since Mantle uses
+      `centerOnScreen=false`), not a total substitution failure — see
+      `known_issues_x64.md`'s 2026-09-13 "glyph-icon SUBSTITUTION
+      positioning bug" round.
+- [x] Pick up a new weapon / swap weapons / pick up health — **BROKEN,
+      live-confirmed 2026-09-13**: text renders but at the very top of the
+      screen, not anchored near the real prompt location — same root
+      position-pipeline bug as Mantle/Reload, see above.
+- [ ] Throw back an enemy grenade — not specifically reported yet, but
+      shares the identical position pipeline as the two confirmed-broken
+      cases above — expect the same symptom (top-of-screen) until the
+      root cause is fixed.
+- [x] **Reload with low ammo** — **BROKEN, live-confirmed 2026-09-13**:
+      text renders at the very top of the screen, same root cause as
+      Interact above. (The structural-reachability question this item
+      used to describe — whether Reload's text is even visible to this
+      hook at all — is resolved and correct; this is a newer, position-
+      specific bug, not a recurrence of the old reachability issue.)
 - [ ] **Menu corner hints (Back/Friends)** — open a menu that shows a
       corner-hint row and confirm Back/Friends now draw as real
       controller-glyph icons instead of native `"^2ESC^7"`/`"^2F^7"` text.
