@@ -4465,3 +4465,72 @@ issue #87 itself used (this project's own precedent: "event-driven,
 never a fixed-interval poll... two rules: never call a wake/poll-request
 function unconditionally from a flood-prone path without its own rate
 limit").
+
+---
+
+**UPDATE 2026-09-13 (menu corner-hint positioning fix, dispatched follow-up
+task) — FIXED, build-verified, not yet live-tested.**
+
+Applied the same `ComputeRealDrawPositionX64` fix the gameplay-hint block
+already got, to all four `ConvertRealScreenPosToDesignSpaceX64` call sites
+in the menu corner-hint block (`Hook_DrawTextX64`, `analog_input_hooks_x64.cpp`
+~lines 3965-4110):
+
+1. **`looksLikeCornerHintRowX64`'s own row-tolerance check** (was:
+   `ConvertRealScreenPosToDesignSpaceX64(0.0f, y, ...)` directly on raw `y`).
+   Checked carefully rather than fixed mechanically, per this project's own
+   "checking is cheaper than digging" lesson: x86's own equivalent check
+   (`analog_input_hooks.cpp` ~line 8747) is explicit that its `param_3` "is a
+   REAL, current-resolution screen pixel" — that's the entire reason
+   comparing it against `kStandardCornerHintY`(995, captured at a real
+   1920x1080 viewport) is valid. x64's `y` is NOT that — same pre-transform
+   fact `ComputeRealDrawPositionX64`'s own header comment documents for the
+   gameplay-hint block. So this check WAS comparing a wrong-domain value
+   against a real-domain constant and needed the fix too, not just the three
+   draw-call sites — confirmed, not assumed. Fixed by running
+   `ComputeRealDrawPositionX64` first (dummy `rawX=0.0f`, matching this
+   check's own Y-only intent — the real alignment transform computes X/Y
+   independently via separate `alignH`/`alignV` enums, so a dummy X doesn't
+   affect the real Y) before feeding the result to
+   `ConvertRealScreenPosToDesignSpaceX64`.
+2. **Quit** (`ConvertRealScreenPosToDesignSpaceX64(x, y + kMenuHintVerticalNudgeX64, ...)`)
+   — same fix, nudge now applied to the REAL y (post-`ComputeRealDrawPositionX64`),
+   matching x86's own `param_3 + kMenuHintVerticalNudge` where `param_3` is
+   already real.
+3. **Leaderboards** — identical fix.
+4. **Back/Friends/GameSummary** (the shared span-gated block) — identical fix.
+
+All four now match the gameplay-hint call sites' proven-correct pattern
+exactly: `ComputeRealDrawPositionX64(dcHandle, fontArg, scale, color1, color2,
+x, y, startX, startY)` first, then `ConvertRealScreenPosToDesignSpaceX64` on
+its output (with the nudge applied to the real `startY`, not the raw one).
+`dcHandle`/`fontArg`/`scale`/`color1`/`color2` are all already in scope
+throughout `Hook_DrawTextX64`, so no new parameters were threaded through.
+
+Also corrected this block's own header comment (~line 3901), which had
+gone stale in exactly the way this bug describes: it claimed x64's `y`
+"is already the equivalent raw value... used directly below, not
+multiplied by scale" — true of x86's OWN param_3 (already real at its
+hook point) but not of x64's `y` (pre-transform), and the comment didn't
+distinguish the two. Reworded to point at `ComputeRealDrawPositionX64`'s
+own header comment for the real reason, so a future session doesn't read
+the stale claim as still accurate.
+
+No `sprintf_s` calls were added or modified by this fix (checked per this
+session's standing buffer-safety requirement — not applicable, but
+verified rather than assumed).
+
+Build-verified: x64 `/t:Rebuild` 0 errors, `dumpbin`-confirmed `8664
+machine (x64)` fresh timestamp (`6AA712E8`, Sun Sep 13 22:17:28 2026);
+Win32 regression rebuild 0 errors, no regression; x64 rebuilt and
+redeployed last (`6AA71302`, Sun Sep 13 22:17:54 2026, confirmed via a
+second `dumpbin` pass). **Not yet re-confirmed live** — `iw5sp.exe` was
+not running during this fix pass (checked before every build step), so
+this is build-verified only; next step is a live playtest to confirm the
+menu corner-hint glyphs now render in the correct on-screen position, same
+as the gameplay-hint fix's own outstanding live-test item.
+
+The second finding from the same round (real logging-volume concern,
+`[cursor-gate-diag]` and others not yet individually audited for issue
+#87's time-floor lesson) remains open, not addressed by this pass — still
+a separate, dispatched follow-up.

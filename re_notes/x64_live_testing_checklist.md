@@ -287,6 +287,23 @@ see the fallback variant, the position bug below is NOT fixed this run)
 on the very first substituted hint of any kind — confirms whether the fix
 is actually active before judging on-screen placement.
 
+**SECOND, SEPARATE POSITION FIX for the menu corner-hint block specifically
+(2026-09-13, later same day) — also build-verified, NOT yet live-tested.**
+The fix above was wired into the Mantle/Pickup/Throwback/Reload call sites
+only, when it originally shipped. A live report ("the menu glyphs for
+bottom right hints dont show... assuming theyre off screen top left")
+found the menu corner-hint block (Back/Friends/Quit/Leaderboards/
+Game-Summary, all four `ConvertRealScreenPosToDesignSpaceX64` call sites
+including the `looksLikeCornerHintRowX64` gating check) had NOT been
+updated to the same fix and was still feeding raw, pre-transform x/y
+straight into `ConvertRealScreenPosToDesignSpaceX64` — same root cause,
+separate call site. Now fixed identically. This means every "Menu corner
+hints"/Quit/Leaderboards/Game-Summary checklist item below should be
+re-tested for POSITION specifically, not just presence/suppression — a
+prior pass may have found the native text correctly suppressed (which
+doesn't depend on this fix) while the substituted icon/text itself was
+off-screen (which does).
+
 - [ ] Reach a real mantleable ledge — **was BROKEN (live-confirmed
       2026-09-13, native hint text suppression worked but no substituted
       icon was visible — position bug, Mantle uses `centerOnScreen=false`

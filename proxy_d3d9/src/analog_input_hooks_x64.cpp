@@ -3902,10 +3902,18 @@ void Hook_DrawTextX64(
     //   kMenuHintVerticalNudge (-18.0f) -- explicitly NOT the "param_3 * param_6"
     //   vertical-center formula the gameplay-hint block above uses, per x86's own
     //   comment: "That formula does not transfer to fonts/smallFont; use the raw,
-    //   unscaled param_3 instead." x64's own `y` parameter here is already the
-    //   equivalent raw value (Hook_DrawTextX64's own named y param, mapping to
-    //   x86's param_3 the same way x86's param_2/param_6 map to this function's
-    //   named x/scale params) -- used directly below, not multiplied by `scale`.
+    //   unscaled param_3 instead." x64's own `y` parameter maps to x86's param_3 the
+    //   same way x86's param_2/param_6 map to this function's named x/scale params --
+    //   BUT, CORRECTED 2026-09-13 (second pass, live report: menu corner-hint glyphs
+    //   not visible): unlike x86's param_3 (already a REAL screen pixel at its own
+    //   hook point, per that file's own comment at analog_input_hooks.cpp ~line 8747),
+    //   x64's `y` is PRE-transform -- this hook's interception point sits BEFORE the
+    //   real scale-multiply + alignment-anchor add (FUN_14008d020), same fact
+    //   ComputeRealDrawPositionX64's own header comment documents for the gameplay-
+    //   hint block above. So "used directly, not multiplied by scale" (x86's actual
+    //   design intent -- no vertical-center formula) now means: call
+    //   ComputeRealDrawPositionX64 to get the REAL y first, THEN use that directly
+    //   (plus the nudge), not multiplied by anything -- see each call site below.
     // - ICON RESOLUTION: reuses TryGetMenuGlyphAssetNameForKeyName verbatim (x86
     //   function, confirmed external linkage, see this file's own forward
     //   declaration above) with "ESC"/"F" -- the SAME menu-specific bind vocabulary
@@ -3965,8 +3973,28 @@ void Hook_DrawTextX64(
             constexpr float kStandardCornerHintYX64 = 995.0f;
             constexpr float kCornerHintRowTolerancePxX64 = 40.0f;
             constexpr float kMenuHintVerticalNudgeX64 = -18.0f;
+            // FIXED 2026-09-13 (second pass, live report: "the menu glyphs for bottom
+            // right hints dont show"). x86's own equivalent check (analog_input_hooks.cpp
+            // ~line 8747) is explicit that its `param_3` "is a REAL, current-resolution
+            // screen pixel" -- that's WHY comparing it against kStandardCornerHintY(995),
+            // itself captured at a real 1920x1080 viewport, is valid. x64's `y` here is
+            // NOT that -- it's Hook_DrawTextX64's raw, PRE-transform value (the exact
+            // same fact ComputeRealDrawPositionX64's own header comment documents for
+            // the gameplay-hint block above: the real scale-multiply + alignment-anchor
+            // add doesn't happen until FUN_14008d020, which runs AFTER this hook's
+            // interception point). Comparing a pre-transform value straight against a
+            // real-domain constant was never going to classify correctly -- this is the
+            // same root cause as the Quit/Leaderboards/Back/Friends/GameSummary draw-
+            // position bug below, just feeding a GATING check instead of a draw call.
+            // Runs the real transform first, same as every other site in this block:
+            // rawX is a dummy 0.0f (matching this check's own Y-only intent -- the real
+            // alignment transform computes X/Y independently via separate alignH/alignV
+            // enums, so a dummy X doesn't affect the real Y), so designRowY is now
+            // actually comparable to kStandardCornerHintYX64.
+            float unusedRealX = 0.0f, realRowY = 0.0f;
+            ComputeRealDrawPositionX64(dcHandle, fontArg, scale, color1, color2, 0.0f, y, unusedRealX, realRowY);
             float unusedDesignX = 0.0f, designRowY = 0.0f;
-            ConvertRealScreenPosToDesignSpaceX64(0.0f, y, unusedDesignX, designRowY);
+            ConvertRealScreenPosToDesignSpaceX64(unusedRealX, realRowY, unusedDesignX, designRowY);
             bool looksLikeCornerHintRowX64 = fabsf(designRowY - kStandardCornerHintYX64) < kCornerHintRowTolerancePxX64;
 
             // Quit (2026-09-13 port of x86's MENU_QUIT literal-text case,
@@ -3982,8 +4010,16 @@ void Hook_DrawTextX64(
             if (isQuitCornerHint) {
                 char bAsset[32] = {};
                 if (TryGetMenuGlyphAssetNameForKeyName("ESC", bAsset, sizeof(bAsset))) {
+                    // FIXED 2026-09-13 (second pass): same root cause/fix as the
+                    // gameplay-hint block above (ComputeRealDrawPositionX64's own header
+                    // comment) -- raw x/y are pre-transform, not the final draw position.
+                    // Nudge is applied to the REAL y (matching x86's own
+                    // `param_3 + kMenuHintVerticalNudge`, where param_3 is already real),
+                    // not the raw pre-transform one.
+                    float startX = 0.0f, startY = 0.0f;
+                    ComputeRealDrawPositionX64(dcHandle, fontArg, scale, color1, color2, x, y, startX, startY);
                     float designX = 0.0f, designY = 0.0f;
-                    ConvertRealScreenPosToDesignSpaceX64(x, y + kMenuHintVerticalNudgeX64, designX, designY);
+                    ConvertRealScreenPosToDesignSpaceX64(startX, startY + kMenuHintVerticalNudgeX64, designX, designY);
                     RequestMenuHintOverlay(designX, designY, "Quit", "", bAsset);
                     suppressRealDraw = true;
                 }
@@ -4000,8 +4036,11 @@ void Hook_DrawTextX64(
             if (isLeaderboardsCornerHint) {
                 char backAsset[32] = {};
                 if (TryGetMenuGlyphAssetNameForKeyName("F1", backAsset, sizeof(backAsset))) {
+                    // FIXED 2026-09-13 (second pass): same fix as Quit above.
+                    float startX = 0.0f, startY = 0.0f;
+                    ComputeRealDrawPositionX64(dcHandle, fontArg, scale, color1, color2, x, y, startX, startY);
                     float designX = 0.0f, designY = 0.0f;
-                    ConvertRealScreenPosToDesignSpaceX64(x, y + kMenuHintVerticalNudgeX64, designX, designY);
+                    ConvertRealScreenPosToDesignSpaceX64(startX, startY + kMenuHintVerticalNudgeX64, designX, designY);
                     RequestMenuHintOverlay(designX, designY, "Leaderboards ", "", backAsset);
                     suppressRealDraw = true;
                 }
@@ -4050,15 +4089,25 @@ void Hook_DrawTextX64(
                             suffixText[suffixLen] = '\0';
                         }
 
-                        // Raw y + fixed nudge, NOT y*scale -- see this block's own header
-                        // comment. kMenuHintVerticalNudgeX64 (declared above, alongside
-                        // looksLikeCornerHintRowX64) matches x86's own
+                        // Raw REAL y + fixed nudge, NOT y*scale -- see this block's own
+                        // header comment. kMenuHintVerticalNudgeX64 (declared above,
+                        // alongside looksLikeCornerHintRowX64) matches x86's own
                         // kMenuHintVerticalNudge value exactly, but is UNVERIFIED live on
                         // x64 (same honest caveat as the gameplay-hint block above -- x86
                         // reached this exact constant via live-tested empirical rounds
                         // this port has not repeated).
+                        // FIXED 2026-09-13 (second pass): this site was still feeding the
+                        // raw, pre-transform x/y straight into ConvertRealScreenPosToDesignSpaceX64
+                        // -- the exact same root cause the gameplay-hint block above was
+                        // fixed for (ComputeRealDrawPositionX64's own header comment), just
+                        // never applied here. Computes the REAL screen position first, then
+                        // applies the nudge to the REAL y (matching x86's own
+                        // `param_3 + kMenuHintVerticalNudge`, where param_3 is already
+                        // real), then converts to design space.
+                        float startX = 0.0f, startY = 0.0f;
+                        ComputeRealDrawPositionX64(dcHandle, fontArg, scale, color1, color2, x, y, startX, startY);
                         float designX = 0.0f, designY = 0.0f;
-                        ConvertRealScreenPosToDesignSpaceX64(x, y + kMenuHintVerticalNudgeX64, designX, designY);
+                        ConvertRealScreenPosToDesignSpaceX64(startX, startY + kMenuHintVerticalNudgeX64, designX, designY);
                         suppressRealDraw = true;
                         // Special-Ops-nested-modal / Friends-list-open suppression
                         // (2026-09-13 port of x86's IsInsideSpecOpsNestedModal()/
