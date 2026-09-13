@@ -2842,7 +2842,16 @@ void __fastcall Hook_RenderResCompute(void* self)
             if (targetW >= 640 && targetH >= 480) {
                 *reinterpret_cast<int32_t*>(base + 0x20) = targetW;
                 *reinterpret_cast<int32_t*>(base + 0x24) = targetH;
-                char buf[256];
+                // 2026-09-13 CRASH FIX: this literal text alone (before any %d substitution) is
+                // 245 chars -- the old buf[256] only had room for 11 more bytes total (10 digits +
+                // null), but 4 int substitutions can each need up to 11 chars (a negative sign +
+                // 10 digits), so the true worst case is well over 256 and sprintf_s's own UCRT
+                // fail-fast (0xc0000409, exception subcode 5 FAST_FAIL_INVALID_ARG) crashed on
+                // EVERY launch reaching this line -- confirmed via a live crash dump
+                // (iw5sp.exe.14364.dmp), same bug class as the 2026-09-05 sprintf_s sweep. Sized
+                // generously above the real worst case rather than trimmed to the exact minimum,
+                // per this project's own established fix convention for this bug class.
+                char buf[320];
                 sprintf_s(buf, "[x64-video-scale] InternalRenderScalePercent -> native=%dx%d target=%dx%d -- "
                     "overriding requested scene render resolution before FUN_1401bd1d0 runs (feeds the real "
                     "unclamped scene render-target driver, no r_mode, no vid_restart)",
@@ -3613,7 +3622,14 @@ void Hook_DrawTextX64(
                     // string has neither) -- see analog_input_hooks.cpp's own Reload
                     // branch for the identical construction.
                     char suffixText[48] = {};
-                    sprintf_s(suffixText, " To %s", text);
+                    // 2026-09-13 safety fix: `text` is the raw, live-resolved native hint
+                    // string -- genuinely unbounded from this code's own point of view (not
+                    // a fixed internal identifier like assetName/kind elsewhere in this
+                    // file). An untruncated %s here risks the same sprintf_s UCRT fail-fast
+                    // crash class already confirmed live (iw5sp.exe.14364.dmp, 2026-09-13) --
+                    // truncated per this project's own established convention for unbounded
+                    // strings (see analog_input_hooks.cpp's %.Ns sites, e.g. line 4231/4323).
+                    sprintf_s(suffixText, " To %.43s", text);
 
                     // x/y here are this call's own already-computed final draw position
                     // (post word-wrap/alignment, inside FUN_1402b1090) -- same convention
@@ -3638,9 +3654,13 @@ void Hook_DrawTextX64(
                     if (!s_loggedFirstReloadMatch) {
                         s_loggedFirstReloadMatch = true;
                         char subBuf[192];
+                        // 2026-09-13 safety fix: same unbounded-`text` risk as suffixText
+                        // above (this is a diagnostic-only log line, not gameplay-visible,
+                        // but the crash it could cause is real) -- truncated per this
+                        // project's established %.Ns convention for unbounded strings.
                         sprintf_s(subBuf, "[x64-drawtext] First real Reload glyph-icon SUBSTITUTION "
                             "fired (structural match against live PLATFORM_RELOAD/MENU_RELOAD_WEAPON "
-                            "template, text=\"%s\")", text);
+                            "template, text=\"%.40s\")", text);
                         LogFromController(subBuf);
                     }
                 }
