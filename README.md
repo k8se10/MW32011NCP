@@ -109,7 +109,8 @@ see their own sections below; neither gates this release.
 | | Visual-enhancement suite (render scale, FSR, motion blur) |
 | | Native controller menu/UI navigation (main menu, pause, options, buy-stations) |
 | | Menu-focus/itemDef tracking (glyph-icon dependency) |
-| | Native text-draw hook + Mantle-hint detection (glyph-icon substitution and Auto-Mantle's own `+gostand`-forcing feature still not wired — see Known gaps) |
+| | Native text-draw hook + Mantle-hint detection (glyph-icon substitution still not wired — see Known gaps) |
+| | Auto-Mantle (while sprinting) — ships off by default |
 | | Back (scoreboard, `+scores` key-synthesis) — see Known gaps below for why this is correctly a no-op in SP |
 
 ### Known gaps
@@ -135,17 +136,19 @@ presets, the plugin API, background threads, and more).
   `re_notes/x64_migration/drawtext_hook_x64.md` for the exact scope.
   Everything else renders normally (including this mod's own startup/
   hot-reload toast messages, which ARE confirmed working on x64).
-- **Auto-Mantle's ledge-DETECTION dependency is now resolved** (2026-09-13):
-  the native text-draw hook above includes a real, language-independent
-  structural match against the live localized `PLATFORM_MANTLE` template,
-  and `IsMantleHintCurrentlyShowingX64()` now exists. **The feature's actual
-  `+gostand`-forcing injection itself is still NOT wired** — x64 has no
-  direct `IsSprintActive()`-equivalent read to gate it with (Sprint moved to
-  a real kbutton on x64, not a native `pm_flags` read), so this needs a
-  further, separate task on top of the now-unblocked signal. (Survival
-  ready-up, hold Y, and Hold Breath, L3 while ADS'd, were both ported
-  2026-09-12 — see the build-verified column above; Hold Breath uses the
-  same no-explicit-sniper-check gating as `-x86`, relying on the real native
+- **Auto-Mantle (while sprinting) is now fully wired on x64** (2026-09-13),
+  build-verified, ships off by default matching `-x86`'s exact default. The
+  native text-draw hook includes a real, language-independent structural
+  match against the live localized `PLATFORM_MANTLE` template
+  (`IsMantleHintCurrentlyShowingX64()`), and the `+gostand`-forcing
+  injection itself is now wired on top of it: `IsSprintActiveX64()` was
+  composed from three already-existing x64 tracking variables (an exact
+  parity port of `-x86`'s own `IsSprintActive()` — Sprint's move to a real
+  kbutton on x64 turned out not to remove the pieces this needed, just
+  relocate them). Not yet live-tested. (Survival ready-up, hold Y, and Hold
+  Breath, L3 while ADS'd, were both ported 2026-09-12 — see the
+  build-verified column above; Hold Breath uses the same
+  no-explicit-sniper-check gating as `-x86`, relying on the real native
   kbutton to limit the effect to sniper-class weapons.)
 - **Back's `+scores` scoreboard** is now ported (build-verified, not yet
   live-tested), but this was never a real functionality gap — confirmed live
