@@ -2673,7 +2673,62 @@ constexpr const char* kDrawTextSignature =
 // PC-relative sites here (this function is small enough that DumpSigBytes.java's
 // heuristic got every one of these right, unlike the RSP-relative false positives
 // above) -- each wildcarded at its own displacement bytes only.
+// FUN_14029f120 -- the real x64 SEH_GetString/GetLocalizedString equivalent (see
+// this section's own header comment for the full behavioral confirmation).
+// Resolved for a DIRECT CALL, same pattern as g_weaponNext/g_actionSlot/
+// g_menuKeyEventX64 elsewhere in this file -- no hook installed, this project
+// never modifies how the engine resolves its own localized strings, it only
+// reads the result. re_notes/x64_migration/impl_sig_14029f120.txt: two short
+// (rel8) conditional jumps, one CALL rel32, and one RIP-relative LEA are the
+// genuine PC-relative sites here (this function is small enough that
+// DumpSigBytes.java's heuristic got every one of these right, unlike the
+// RSP-relative false positives on kDrawTextSignature above) -- each wildcarded
+// at its own displacement bytes only.
+using GetLocalizedStringFnX64 = const char*(*)(const char*);
+GetLocalizedStringFnX64 g_getLocalizedStringX64 = nullptr;
+constexpr const char* kGetLocalizedStringSignature =
+    "40 53 48 83 EC 20 80 39 15 48 8B D9 75 ?? 48 FF C3 EB ?? "
+    "E8 ?? ?? ?? ?? 48 85 C0 75 ?? 48 8D 0D ?? ?? ?? ?? 48 2B CB";
+
 long long g_drawTextFireCount = 0;
+
+// Mirrors x86's g_mantleHintDrawnThisFrame/g_mantleHintLastSeenMs pair
+// (analog_input_hooks.cpp) collapsed to a single timestamp -- see this section's
+// header comment for why the per-frame accumulate-then-commit step isn't needed
+// here. Auto-Mantle's own +gostand-forcing feature is a SEPARATE, not-yet-ported
+// piece (re_notes/known_issues_x64.md) -- this is only the detection signal it
+// would consume.
+DWORD g_mantleHintLastSeenMsX64 = 0;
+constexpr DWORD kMantleHintGraceMsX64 = 400; // matches x86's kMantleHintGraceMs exactly
+extern "C" bool IsMantleHintCurrentlyShowingX64()
+{
+    return (GetTickCount() - g_mantleHintLastSeenMsX64) <= kMantleHintGraceMsX64;
+}
+
+// x64-local reimplementation of x86's RenderedTextMatchesSubstitutionTemplateWithMarker
+// (analog_input_hooks.cpp) -- identical algorithm (position-based, not content-based,
+// so it stays correct for any substituted key length in any language), duplicated
+// rather than cross-file-shared: the x86 original lives in that file's own giant
+// anonymous namespace (internal linkage) and calls GetLocalizedString(), whose x64
+// build is a deliberate stub (real_settings.cpp: "#if defined(_M_X64)... return
+// referenceKey") since nothing on x64 had a REAL template resolver before this pass.
+// Callers here pass the REAL resolved template (via g_getLocalizedStringX64) directly
+// instead of a reference key, so this stays a genuine, language-independent
+// structural match, not an English-only shortcut.
+bool TextMatchesTemplateStructurallyX64(const char* renderedText, const char* tmpl, const char* marker)
+{
+    if (!renderedText || !tmpl || !marker) return false;
+    const char* markerPos = strstr(tmpl, marker);
+    if (!markerPos) return false;
+    size_t markerLen = strlen(marker);
+    size_t prefixLen = static_cast<size_t>(markerPos - tmpl);
+    size_t suffixLen = strlen(markerPos + markerLen);
+    size_t renderedLen = strlen(renderedText);
+    if (renderedLen < prefixLen + suffixLen) return false;
+    if (strncmp(renderedText, tmpl, prefixLen) != 0) return false;
+    if (suffixLen > 0 && strcmp(renderedText + (renderedLen - suffixLen), markerPos + markerLen) != 0) return false;
+    return true;
+}
 
 void Hook_DrawTextX64(
     unsigned __int64 dcHandle, const char* text, int maxChars, void* fontArg,
@@ -2687,10 +2742,21 @@ void Hook_DrawTextX64(
         LogFromController(buf);
     }
 
-    // STAGE (a) ONLY this commit -- plain passthrough, zero behavior change. Stage
-    // (b) (Mantle-hint structural-match detection) lands in a following commit, same
-    // "prove the plumbing before the payload" convention this project already used
-    // for the very first x64 hook (Hook_PmoveTick, above).
+    // Mantle-hint detection -- see this section's header comment for the full
+    // design/scope. Gated exactly like x86's own block so this carries the same
+    // real coupling to the glyph-overlay toggle, not a new behavior.
+    if (g_getLocalizedStringX64 && text && LooksSaneX64(reinterpret_cast<uintptr_t>(text)) &&
+        ShouldDrawGlyphOverlay_Exported() && !IsMenuActiveX64_Exported()) {
+        __try {
+            const char* tmpl = g_getLocalizedStringX64("PLATFORM_MANTLE");
+            if (tmpl && LooksSaneX64(reinterpret_cast<uintptr_t>(tmpl)) &&
+                TextMatchesTemplateStructurallyX64(text, tmpl, "&&1")) {
+                g_mantleHintLastSeenMsX64 = GetTickCount();
+            }
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+        }
+    }
+
     g_realDrawTextX64(dcHandle, text, maxChars, fontArg, x, y, color1, color2, scale, colorVecPtr, extra);
 }
 
@@ -3199,6 +3265,24 @@ void InstallAnalogInputHooksX64()
             }
         }
     }
-    // Mantle-hint structural-match detection (its own localized-string-lookup
-    // resolve) lands in a following commit, on top of this passthrough milestone.
+    // Mantle-hint structural-match detection's own dependency: the real localized-
+    // string lookup (FUN_14029f120), resolved for a direct call, no hook. Failing
+    // here leaves the text-draw hook above installed and passthrough-safe -- only
+    // Mantle-hint detection (and Auto-Mantle's own dependency on it) is affected.
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kGetLocalizedStringSignature);
+        if (!r.found) {
+            LogFromController("[x64-drawtext] FATAL: localized-string-lookup signature did not resolve -- "
+                "Mantle-hint detection will not work this session even though the text-draw hook above "
+                "installed fine (Auto-Mantle's own dependency stays unresolved)");
+        } else {
+            g_getLocalizedStringX64 = reinterpret_cast<GetLocalizedStringFnX64>(r.address);
+            char buf[160];
+            sprintf_s(buf, "[x64-drawtext] Localized-string lookup resolved @ 0x%llX -- Mantle-hint "
+                "structural-match detection active (direct call, no hook installed). Auto-Mantle's own "
+                "+gostand-forcing feature still needs a separate follow-on to consume this signal.",
+                static_cast<unsigned long long>(r.address));
+            LogFromController(buf);
+        }
+    }
 }
