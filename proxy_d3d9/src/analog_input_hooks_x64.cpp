@@ -1609,6 +1609,108 @@ bool TryGetRealFocusedGroupAndIndexX64(char* outGroupName, size_t outGroupNameSi
     return false;
 }
 
+// TryGetRealFocusedItemNameX64 (2026-09-13, menu-hint parity follow-up) -- a small,
+// deliberate extension of TryGetRealFocusedGroupAndIndexX64 immediately above: THE
+// SAME topmost-menu/itemDef-array walk and THE SAME focus-flag check
+// (kMenuItemCountOffsetX64/kMenuItemArrayOffsetX64/kItemFocusFlagsOffsetX64/
+// kItemNameOffsetX64, all already live-confirmed working via the A-glyph/F2-F3 fix,
+// 2026-09-12), just returning the focused item's RAW name unconditionally instead of
+// requiring it to parse as "<group>_<index>". No new RE -- every offset here is
+// already validated.
+//
+// Why this is needed as a SEPARATE function rather than reusing
+// TryGetRealFocusedGroupAndIndexX64 directly: x86's own g_focusedItemName (fed by a
+// register hook on the real getfocuseditemname()-equivalent, analog_input_hooks.cpp
+// Hook_00616230) captures the focused item's name in EVERY case, including ones that
+// deliberately do NOT fit the "<group>_<index>" shape -- "Chaos"/"Mission"/"Survival"
+// (Special Ops mode-picker buttons), "none" (no focus), "friendList" (the Friends
+// list screen), "SWF_COMMON_POPUP_NAME_0" (a generic popup template). x86's own
+// IsInsideSpecOpsNestedModal()/IsFriendsListOpen() (analog_input_hooks.cpp) key
+// directly off exactly these non-numeric-suffixed names -- TryGetRealFocusedGroupAndIndexX64
+// would return false and never expose them (see its own `if (j == len || j == 0 ||
+// name[j - 1] != '_') return false;` line), so it cannot serve as this function's
+// data source even though it walks the identical structure.
+bool TryGetRealFocusedItemNameX64(char* outName, size_t outNameSize)
+{
+    if (outNameSize > 0) outName[0] = '\0';
+    void* menuVoid = GetTopmostActiveMenuX64();
+    if (!menuVoid) return false;
+    uintptr_t menu = reinterpret_cast<uintptr_t>(menuVoid);
+    __try {
+        int count = *reinterpret_cast<int*>(menu + kMenuItemCountOffsetX64);
+        uintptr_t arr = *reinterpret_cast<uintptr_t*>(menu + kMenuItemArrayOffsetX64);
+        if (count <= 0 || count > 500 || !LooksSaneX64(arr)) return false;
+        for (int i = 0; i < count; ++i) {
+            uintptr_t itemPtr = *reinterpret_cast<uintptr_t*>(arr + static_cast<uintptr_t>(i) * 8);
+            if (!LooksSaneX64(itemPtr)) continue;
+            uint32_t flags0 = *reinterpret_cast<uint32_t*>(
+                itemPtr + kItemFocusFlagsOffsetX64 + static_cast<uintptr_t>(kLocalClientIndexX64) * 4);
+            if ((flags0 & 0x4) == 0 || ((flags0 >> 1) & 1) == 0) continue;
+            uintptr_t nameAddr = *reinterpret_cast<uintptr_t*>(itemPtr + kItemNameOffsetX64);
+            if (!LooksSaneX64(nameAddr)) return false;
+            const char* name = reinterpret_cast<const char*>(nameAddr);
+            strncpy_s(outName, outNameSize, name, _TRUNCATE);
+            return true;
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    return false;
+}
+
+// x64 port of x86's IsInsideSpecOpsNestedModal() (analog_input_hooks.cpp, "v4,
+// allowlist + sticky state" -- read that function's own large header comment for the
+// full investigation history behind this exact logic; byte-for-byte the same
+// algorithm here, only the data source differs (TryGetRealFocusedItemNameX64 instead
+// of the x86 register-hook-fed g_focusedItemName). g_specOpsModalStickyX64 mirrors
+// x86's g_specOpsModalSticky -- carries forward through generic/ambiguous focus
+// states, only clears on a confirmed return to a real indexed list item.
+bool g_specOpsModalStickyX64 = false;
+
+bool IsInsideSpecOpsNestedModalX64()
+{
+    char name[128] = {};
+    bool have = TryGetRealFocusedItemNameX64(name, sizeof(name));
+    if (!have || name[0] == '\0') return g_specOpsModalStickyX64;
+
+    static const char* const kKnownModalItemNames[] = {
+        "Chaos", "Mission", "Survival",
+    };
+    for (const char* known : kKnownModalItemNames) {
+        if (_stricmp(name, known) == 0) {
+            g_specOpsModalStickyX64 = true;
+            return true;
+        }
+    }
+
+    if (_stricmp(name, "none") == 0) return g_specOpsModalStickyX64;
+
+    // Same "<name>_<digits>" indexed-list-item detection as x86's own function,
+    // including the "SWF_"-prefix exclusion (a generic popup template can ALSO
+    // match "<name>_<digits>" -- see x86's own comment for the live-confirmed
+    // false-clear this excludes).
+    size_t len = strlen(name);
+    size_t i = len;
+    while (i > 0 && isdigit(static_cast<unsigned char>(name[i - 1]))) --i;
+    bool looksLikeIndexedListItem = (i < len && i > 0 && name[i - 1] == '_') &&
+                                      _strnicmp(name, "SWF_", 4) != 0;
+    if (looksLikeIndexedListItem) {
+        g_specOpsModalStickyX64 = false;
+        return false;
+    }
+
+    return g_specOpsModalStickyX64;
+}
+
+// x64 port of x86's IsFriendsListOpen() (analog_input_hooks.cpp) -- direct,
+// stateless check, same as x86: no sticky/staleness concerns needed here.
+bool IsFriendsListOpenX64()
+{
+    char name[128] = {};
+    if (!TryGetRealFocusedItemNameX64(name, sizeof(name))) return false;
+    return _strnicmp(name, "friendList", 10) == 0;
+}
+
 }  // namespace
 
 // Thin exported wrappers (2026-09-13, parity audit rows #35/#36 -- highlighted-item
@@ -3243,6 +3345,23 @@ bool TextMatchesResolvedExactlyX64(const char* renderedText, const char* resolve
     return _stricmp(renderedText, resolvedTmpl) == 0;
 }
 
+// x64-local reimplementation of x86's RenderedTextMatchesReferenceKeyPrefix
+// (analog_input_hooks.cpp) -- needed for Leaderboards (2026-09-13 menu-hint parity
+// follow-up), whose real resolved template has TWO embedded "^N...^7" spans
+// ("Leaderboards ^2Right Mouse^7/^2F1^7"), so a full-string match never applies --
+// compares only up to the template's own first '^' marker (or full length if none),
+// same reasoning as x86's own comment: stays correct even if the embedded bind text
+// differs by language/layout. `resolvedTmpl` must already be the LIVE-RESOLVED
+// string (via g_getLocalizedStringX64), matching this file's own calling convention.
+bool TextMatchesResolvedPrefixX64(const char* renderedText, const char* resolvedTmpl)
+{
+    if (!renderedText || !resolvedTmpl) return false;
+    const char* caret = strchr(resolvedTmpl, '^');
+    size_t prefixLen = caret ? static_cast<size_t>(caret - resolvedTmpl) : strlen(resolvedTmpl);
+    if (prefixLen == 0) return false;
+    return _strnicmp(renderedText, resolvedTmpl, prefixLen) == 0;
+}
+
 // x64-local reimplementation of x86's ColorHighlightSpan/FindColorHighlightSpan
 // (analog_input_hooks.cpp) -- same internal-linkage reason TextMatchesTemplateStructurallyX64
 // above is duplicated rather than cross-file-shared (the x86 original lives in that
@@ -3569,33 +3688,114 @@ void Hook_DrawTextX64(
     //   known_issues_x64.md) -- this is the first call site that actually POPULATES
     //   a slot for it on x64, the draw/consume side was already live and idle.
     //
-    // NOT PORTED THIS PASS (honest scope, matching x86's own header comment on this
-    // block): Quit/Leaderboards/Game-Summary's own literal-text/prefix special
-    // cases, the corner-hint-row positional tolerance check
-    // (looksLikeCornerHintRow), and IsInsideSpecOpsNestedModal/IsFriendsListOpen's
-    // own Friends-suppression logic -- all of those depend on either x86-only menu-
-    // focus/itemDef-position infrastructure not yet ported to x64 (per
-    // known_issues_x64.md's "Broader finding" on this exact gap) or fonts/smallFont
-    // font-name filtering (x64's own Font_s.fontName offset remains unconfirmed,
-    // see this hook's own header comment above) -- Back/Friends alone were the
-    // explicitly scoped ask for this pass and don't need either dependency, since
-    // an exact-string match against a fixed, un-substituted template is already a
-    // highly specific discriminator on its own.
+    // UPDATED 2026-09-13 (menu-hint parity follow-up): Quit/Leaderboards/Game-Summary
+    // and the Friends-suppression logic below, previously listed as "NOT PORTED THIS
+    // PASS" citing "x86-only menu-focus/itemDef-position infrastructure not yet
+    // ported to x64" -- that claim was RE-CHECKED and found stale/wrong. The real
+    // data each one needs, checked against x86's own originals in full first (per
+    // this project's own compare-to-x86-original rule):
+    //  - looksLikeCornerHintRow (x86) is NOT itemDef/focus data at all -- it reads
+    //    only this draw call's own raw `y` parameter (x86's param_3), the exact same
+    //    input this hook already has. Ported directly below as looksLikeCornerHintRowX64.
+    //  - Quit/Leaderboards/Game-Summary's own literal-text matches are plain
+    //    resolved-template string compares (same class as Back/Friends, already
+    //    live on x64) -- no itemDef dependency either.
+    //  - IsInsideSpecOpsNestedModal()/IsFriendsListOpen() (x86) key off the
+    //    CURRENTLY FOCUSED ITEM'S RAW NAME, not the (group,index,siblingCount,depth)
+    //    tuple TryGetRealFocusedGroupAndIndexX64 exposes -- that function
+    //    deliberately returns false for names like "Chaos"/"friendList"/"none" that
+    //    don't parse as "<group>_<index>" (exactly the names this logic needs). A
+    //    small, confident extension of the SAME already-working x64 itemDef walk
+    //    (TryGetRealFocusedItemNameX64, added this pass, same offsets already
+    //    validated by the 2026-09-12 A-glyph/F2-F3 fix) closes this gap with no new
+    //    RE. See that function's own header comment for the full reasoning.
+    // The one thing genuinely still NOT available is x64's own Font_s.fontName
+    // offset (fonts/smallFont family filtering, x86's IsMenuHintFont) -- not needed
+    // here: x86 itself relies on looksLikeCornerHintRow, not font filtering, as the
+    // real discriminator that stops Quit from hijacking a genuine navigable "Quit"
+    // list item elsewhere on screen (see BUG-006 in analog_input_hooks.cpp) --
+    // ported below for exactly that reason, not skipped.
     if (g_getLocalizedStringX64 && text && LooksSaneX64(reinterpret_cast<uintptr_t>(text)) &&
         !suppressRealDraw && ShouldDrawGlyphOverlay_Exported()) {
         __try {
+            // Corner-hint-row positional tolerance (2026-09-13 port of x86's
+            // looksLikeCornerHintRow, analog_input_hooks.cpp ~line 8765). Pure
+            // position check on this call's own raw `y` -- no itemDef/focus
+            // dependency. kStandardCornerHintYX64/kCornerHintRowTolerancePxX64 match
+            // x86's own kStandardCornerHintY(995.0f)/kCornerHintRowTolerancePx(40.0f)
+            // exactly (see x86's own declaration comment for why 995 is usable
+            // directly as a design-space reference).
+            constexpr float kStandardCornerHintYX64 = 995.0f;
+            constexpr float kCornerHintRowTolerancePxX64 = 40.0f;
+            constexpr float kMenuHintVerticalNudgeX64 = -18.0f;
+            float unusedDesignX = 0.0f, designRowY = 0.0f;
+            ConvertRealScreenPosToDesignSpaceX64(0.0f, y, unusedDesignX, designRowY);
+            bool looksLikeCornerHintRowX64 = fabsf(designRowY - kStandardCornerHintYX64) < kCornerHintRowTolerancePxX64;
+
+            // Quit (2026-09-13 port of x86's MENU_QUIT literal-text case,
+            // analog_input_hooks.cpp ~line 8773). Case-SENSITIVE exact match, same as
+            // x86, to keep excluding the Special Ops hub's own separate all-caps
+            // "QUIT" item. Gated on looksLikeCornerHintRowX64 -- BUG-006's own real
+            // precedent (x86, 2026-08-02): a bare content match alone once hijacked a
+            // genuine navigable "Leaderboards"/"Quit" menu list item sharing the same
+            // label; position is the fix, not font family.
+            const char* quitTmpl = g_getLocalizedStringX64("MENU_QUIT");
+            bool isQuitCornerHint = looksLikeCornerHintRowX64 && quitTmpl &&
+                LooksSaneX64(reinterpret_cast<uintptr_t>(quitTmpl)) && strcmp(text, quitTmpl) == 0;
+            if (isQuitCornerHint) {
+                char bAsset[32] = {};
+                if (TryGetMenuGlyphAssetNameForKeyName("ESC", bAsset, sizeof(bAsset))) {
+                    float designX = 0.0f, designY = 0.0f;
+                    ConvertRealScreenPosToDesignSpaceX64(x, y + kMenuHintVerticalNudgeX64, designX, designY);
+                    RequestMenuHintOverlay(designX, designY, "Quit", "", bAsset);
+                    suppressRealDraw = true;
+                }
+            }
+
+            // Leaderboards (2026-09-13 port of x86's PLATFORM_LEADERBOARDS_SHORTCUT
+            // prefix case, analog_input_hooks.cpp ~line 8800). "F1" resolves to
+            // PhysicalInput::Back (the real Back/Select/View button, distinct from
+            // ESC's B), same as x86.
+            const char* leaderboardsTmpl = g_getLocalizedStringX64("PLATFORM_LEADERBOARDS_SHORTCUT");
+            bool isLeaderboardsCornerHint = looksLikeCornerHintRowX64 && leaderboardsTmpl &&
+                LooksSaneX64(reinterpret_cast<uintptr_t>(leaderboardsTmpl)) &&
+                TextMatchesResolvedPrefixX64(text, leaderboardsTmpl);
+            if (isLeaderboardsCornerHint) {
+                char backAsset[32] = {};
+                if (TryGetMenuGlyphAssetNameForKeyName("F1", backAsset, sizeof(backAsset))) {
+                    float designX = 0.0f, designY = 0.0f;
+                    ConvertRealScreenPosToDesignSpaceX64(x, y + kMenuHintVerticalNudgeX64, designX, designY);
+                    RequestMenuHintOverlay(designX, designY, "Leaderboards ", "", backAsset);
+                    suppressRealDraw = true;
+                }
+            }
+
             const char* backTmpl = g_getLocalizedStringX64("PLATFORM_BACK_SHORTCUT");
             bool isBackCornerHint = backTmpl && LooksSaneX64(reinterpret_cast<uintptr_t>(backTmpl)) &&
                 strcmp(text, backTmpl) == 0;
             const char* friendsTmpl = g_getLocalizedStringX64("PLATFORM_FRIENDS_SHORTCUT");
             bool isFriendsCornerHint = friendsTmpl && LooksSaneX64(reinterpret_cast<uintptr_t>(friendsTmpl)) &&
                 strcmp(text, friendsTmpl) == 0;
+            // Game Summary (2026-09-13 port of x86's PLATFORM_GAMESUMMARY_SHORTCUT
+            // exact-match case, analog_input_hooks.cpp ~line 8849 -- same span-gated
+            // block as Back/Friends there, ported alongside them here for the same
+            // reason).
+            const char* gameSummaryTmpl = g_getLocalizedStringX64("PLATFORM_GAMESUMMARY_SHORTCUT");
+            bool isGameSummaryCornerHint = gameSummaryTmpl && LooksSaneX64(reinterpret_cast<uintptr_t>(gameSummaryTmpl)) &&
+                strcmp(text, gameSummaryTmpl) == 0;
 
-            if (isBackCornerHint || isFriendsCornerHint) {
+            // !suppressRealDraw guard (defensive, matches x86's own textLen=0-when-
+            // already-suppressed pattern for this same block, analog_input_hooks.cpp
+            // ~line 8813) -- in practice Quit/Leaderboards' own text content never
+            // equals Back/Friends/GameSummary's, so this is a fail-safe, not a
+            // load-bearing condition.
+            if (!suppressRealDraw && (isBackCornerHint || isFriendsCornerHint || isGameSummaryCornerHint)) {
                 char assetName[32] = {};
                 bool haveAssetName = isBackCornerHint
                     ? TryGetMenuGlyphAssetNameForKeyName("ESC", assetName, sizeof(assetName))
-                    : TryGetMenuGlyphAssetNameForKeyName("F", assetName, sizeof(assetName));
+                    : isGameSummaryCornerHint
+                        ? TryGetMenuGlyphAssetNameForKeyName("G", assetName, sizeof(assetName))
+                        : TryGetMenuGlyphAssetNameForKeyName("F", assetName, sizeof(assetName));
                 if (haveAssetName) {
                     size_t textLen = strlen(text);
                     ColorHighlightSpanX64 span = FindColorHighlightSpanX64(text, textLen);
@@ -3614,17 +3814,27 @@ void Hook_DrawTextX64(
                         }
 
                         // Raw y + fixed nudge, NOT y*scale -- see this block's own header
-                        // comment. kMenuHintVerticalNudgeX64 matches x86's own
+                        // comment. kMenuHintVerticalNudgeX64 (declared above, alongside
+                        // looksLikeCornerHintRowX64) matches x86's own
                         // kMenuHintVerticalNudge value exactly, but is UNVERIFIED live on
                         // x64 (same honest caveat as the gameplay-hint block above -- x86
                         // reached this exact constant via live-tested empirical rounds
                         // this port has not repeated).
-                        constexpr float kMenuHintVerticalNudgeX64 = -18.0f;
                         float designX = 0.0f, designY = 0.0f;
                         ConvertRealScreenPosToDesignSpaceX64(x, y + kMenuHintVerticalNudgeX64, designX, designY);
-                        RequestMenuHintOverlay(designX, designY, prefixText, suffixText, assetName,
-                                                 0xFFFFFFFFu, /*isBackShortcut=*/isBackCornerHint);
                         suppressRealDraw = true;
+                        // Special-Ops-nested-modal / Friends-list-open suppression
+                        // (2026-09-13 port of x86's IsInsideSpecOpsNestedModal()/
+                        // IsFriendsListOpen() suppression, analog_input_hooks.cpp
+                        // ~line 8918). Only ever suppresses the FRIENDS request
+                        // specifically, same as x86 -- Back/GameSummary always draw.
+                        // suppressRealDraw above still hides the native legend text
+                        // either way, matching x86's own unconditional suppressRealDraw
+                        // assignment.
+                        if (!(isFriendsCornerHint && (IsInsideSpecOpsNestedModalX64() || IsFriendsListOpenX64()))) {
+                            RequestMenuHintOverlay(designX, designY, prefixText, suffixText, assetName,
+                                                     0xFFFFFFFFu, /*isBackShortcut=*/isBackCornerHint);
+                        }
 
                         static bool s_loggedFirstMenuHintMatch = false;
                         if (!s_loggedFirstMenuHintMatch) {
@@ -3632,7 +3842,7 @@ void Hook_DrawTextX64(
                             char buf[176];
                             sprintf_s(buf, "[x64-drawtext] Menu corner-hint structural match confirmed "
                                 "(kind=%s) -- native hint text suppressed, our own icon+text drawn instead",
-                                isBackCornerHint ? "Back" : "Friends");
+                                isBackCornerHint ? "Back" : isGameSummaryCornerHint ? "GameSummary" : "Friends");
                             LogFromController(buf);
                         }
                     }
