@@ -1,0 +1,4 @@
+STRING @ 1403ece20 = "cg_fovNonVehAdd" (block .rdata)
+  from 14004a9d4 type=DATA IN FUNCTION FUN_14004a870@14004a870
+  (1 references)
+

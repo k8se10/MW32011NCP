@@ -1,0 +1,4 @@
+STRING @ 140405df0 = "cg_fovScale" (block .rdata)
+  from 1401365b4 type=DATA IN FUNCTION FUN_140135b50@140135b50
+  (1 references)
+

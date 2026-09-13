@@ -1,0 +1,4 @@
+STRING @ 1403ecda0 = "cg_fov" (block .rdata)
+  from 14004a959 type=DATA IN FUNCTION FUN_14004a870@14004a870
+  (1 references)
+

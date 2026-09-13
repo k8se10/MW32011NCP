@@ -1,0 +1,227 @@
+================================================================
+Function: FUN_140135b50 @ 140135b50
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_140135b50(void)
+
+{
+  undefined4 uVar3;
+  undefined8 uVar1;
+  ulonglong uVar2;
+  undefined4 uVar4;
+  undefined4 uVar5;
+  undefined4 uVar6;
+  undefined4 uVar7;
+  
+  _DAT_14114ad68 =
+       FUN_1402c46d0("g_drawGrenadeHints",0,0,0x7fffffff,4,"Draw debug information for grenades");
+  DAT_14114ad70 =
+       FUN_1402c46d0("g_deathDelay",3000,0,0x7fffffff,0x41,"Delay a level restart on death");
+  uVar3 = 1;
+  _DAT_14114a9f8 =
+       FUN_1402c45d0("path_nodeInfoType",&PTR_s_index_1404c54c0,0,4,"Path node information type");
+  uVar1 = CONCAT44(uVar3,4);
+  _DAT_14114aa10 =
+       FUN_1402c46d0("ai_showNodes",0,0,4,uVar1,"Show AI navigation node debug information");
+  uVar5 = DAT_1403e5618;
+  uVar1 = CONCAT44((int)((ulonglong)uVar1 >> 0x20),4);
+  _DAT_14114aa18 =
+       FUN_1402c4650("ai_showNodesDist",DAT_1403e9e44,0,DAT_1403e5618,uVar1,
+                     "Maximum distance from the camera at which AI nodes are shown");
+  uVar1 = CONCAT44((int)((ulonglong)uVar1 >> 0x20),4);
+  _DAT_14114aa20 = FUN_1402c46d0("ai_showNearbyNodes",0,0,0x40,uVar1,"Show nearby nodes");
+  uVar3 = (undefined4)((ulonglong)uVar1 >> 0x20);
+  _DAT_14114aa28 = FUN_1402c43f0("ai_showNearestNodes",0,4,"Show nearest node of AI");
+  _DAT_14114aa30 = FUN_1402c43f0("ai_showAmbushNodes",0,4,"Show ambush nodes AI is considering");
+  _DAT_14114aa38 = FUN_1402c43f0("ai_showLikelyEnemyPathNode",0,4,"Show likely enemy path node");
+  _DAT_14114aa40 =
+       FUN_1402c43f0("ai_showLastKnownEnemyPos",0,4,"Shows the last known position of enemies");
+  _DAT_14114aa48 =
+       FUN_1402c46d0("ai_showFriendlyChains",0,0,2,CONCAT44(uVar3,4),
+                     "Display debug information for friendly chains");
+  _DAT_14114aa50 =
+       FUN_1402c46d0("ai_showVisData",0,0,2,4,"Display debug information for visibility data");
+  _DAT_14114aa58 =
+       FUN_1402c4650("ai_showVisDataDist",DAT_1403e8e84,0,uVar5,4,
+                     "Maximum distance for visibility data debugging information to be shown");
+  _DAT_14114aac0 =
+       FUN_1402c43f0("ai_showBadPlaces",0,4,"Display debug information for \'bad places\'");
+  _DAT_14114aac8 = FUN_1402c43f0("ai_showDodge",0,4,"Display debug information for AI dodging");
+  _DAT_14114aaf8 =
+       FUN_1402c43f0("ai_debugMayMove",0,4,
+                     "Display debug information for AI \'may move\' calculations");
+  _DAT_14114aaa0 =
+       FUN_1402c43f0("ai_showPotentialThreatDir",0,4,"Display AI potential threat direction");
+  uVar3 = 1;
+  DAT_14114aaa8 =
+       FUN_1402c45d0("ai_moveOrientMode",&PTR_s_invalid_1404c5488,0,4,"Debug AI Orient Mode");
+  uVar1 = CONCAT44(uVar3,4);
+  _DAT_14114ab50 =
+       FUN_1402c46d0("ai_showSuppression",0xffffffff,0xffffffff,0x7ff,uVar1,
+                     "Draw the suppression planes for this entity");
+  uVar3 = (undefined4)((ulonglong)uVar1 >> 0x20);
+  _DAT_14114ab58 =
+       FUN_1402c43f0("ai_debugCorpsePlant",0,4,"Display debug information for AI corpse planting");
+  _DAT_14114ab60 = FUN_1402c43f0("ai_debugGunBlocked",0,4,"Show gun blocked by wall traces");
+  uVar1 = CONCAT44(uVar3,4);
+  _DAT_14114aa60 = FUN_1402c46d0("ai_showPaths",0,0,2,uVar1,"Show AI navigation paths");
+  uVar3 = (undefined4)((ulonglong)uVar1 >> 0x20);
+  _DAT_14114aa68 =
+       FUN_1402c43f0("ai_showPathFindNodes",0,4,"Show nodes consider in latest path find");
+  uVar1 = CONCAT44(uVar3,4);
+  _DAT_14114aa70 =
+       FUN_1402c46d0("ai_debugFindPath",0,0,5,uVar1,"Display AI \'find path\' debugging information"
+                    );
+  uVar3 = (undefined4)((ulonglong)uVar1 >> 0x20);
+  _DAT_14114aa78 =
+       FUN_1402c43f0("ai_debugFindPathDirect",0,4,
+                     "Display AI \'find direct path\' debugging information");
+  uVar1 = CONCAT44(uVar3,4);
+  _DAT_14114aa80 =
+       FUN_1402c4650("ai_debugFindPathWidth",0,DAT_1403e8ed8,uVar5,uVar1,
+                     "Display paths with the given width");
+  uVar3 = (undefined4)((ulonglong)uVar1 >> 0x20);
+  _DAT_14114aa88 = FUN_1402c43f0("ai_debugFindPathLock",0,4,"Find path lock");
+  uVar1 = CONCAT44(uVar3,4);
+  _DAT_14114aa90 =
+       FUN_1402c46d0("ai_debugAnimDeltas",0,0,0x7ff,uVar1,
+                     "Display animation delta debug information");
+  uVar3 = (undefined4)((ulonglong)uVar1 >> 0x20);
+  _DAT_14114ad58 =
+       FUN_1402c43f0("ai_debugGrenadeFailSafe",0,4,"Display grenade fail safe debug information");
+  uVar6 = DAT_1403e5280;
+  uVar1 = CONCAT44(uVar3,4);
+  DAT_14114ad60 =
+       FUN_1402c4650("ai_debugGrenadeHintArc",DAT_1403e527c,0,DAT_1403e5280,uVar1,
+                     "Grenade hint arc in degrees");
+  uVar3 = (undefined4)((ulonglong)uVar1 >> 0x20);
+  _DAT_14114aab0 =
+       FUN_1402c43f0("ai_ShowCanshootChecks",0,1,
+                     "Display debugging information for \'can shoot\' checks");
+  _DAT_14114aab8 =
+       FUN_1402c43f0("ai_badPathSpam",0,1,"Write debugging information for a bad AI paths");
+  uVar2 = CONCAT44(uVar3,4);
+  _DAT_14114ab00 =
+       FUN_1402c46d0("ai_debugCoverEntityNum",0xffffffff,0xffffffff,0x7ff,uVar2,
+                     "Display debug info for cover");
+  _DAT_14114ab08 =
+       FUN_1402c43f0("ai_debugCoverSelection",0,4,"Enable debugging information for cover selection"
+                    );
+  _DAT_14114ab10 =
+       FUN_1402c43f0("ai_debugEngagementDist",0,4,
+                     "Show the engagement distances for currently selected AI");
+  _DAT_14114ab18 = FUN_1402c43f0("ai_debugTargets",0,4,"Show primary and secondary targets");
+  _DAT_14114ab20 =
+       FUN_1402c43f0("ai_debugThreatSelection",0,4,
+                     "Enable debugging information for threat selection");
+  _DAT_14114ab28 =
+       FUN_1402c43f0("ai_debugMeleeAttackSpots",0,4,
+                     "Enable debugging information for melee attack spots");
+  _DAT_14114ab30 = FUN_1402c43f0("ai_debugAccuracy",0,4,"Enable debugging information for accuracy")
+  ;
+  uVar2 = uVar2 & 0xffffffff00000000;
+  _DAT_14114ab40 =
+       FUN_1402c46d0("ai_debugVolume",0xffffffff,0xffffffff,0x7ff,uVar2,"Show volume entity");
+  _DAT_14114ab48 = FUN_1402c43f0("ai_showRegion",0,4,"Draw all the cover in a volume for debugging")
+  ;
+  uVar2 = uVar2 & 0xffffffff00000000;
+  _DAT_14114ab38 =
+       FUN_1402c46d0("ai_debugEntIndex",0xffffffff,0xffffffff,0x7ff,uVar2,
+                     "Entity index of an entity to debug");
+  uVar4 = (undefined4)(uVar2 >> 0x20);
+  _DAT_14114ac80 =
+       FUN_1402c43f0("ai_debugPlayerLOS",0,4,"Debug information for AI staying out of player LOS");
+  _DAT_14114adf8 = FUN_1402c43f0("melee_debug",0,4,"Turn on debug lines for melee traces");
+  _DAT_14114ae00 =
+       FUN_1402c43f0("radius_damage_debug",0,4,"Turn on debug lines for radius damage traces");
+  uVar3 = DAT_1403e8e9c;
+  uVar1 = CONCAT44(uVar4,0x40);
+  FUN_1402c4650("vehHudTargetSize",DAT_1403e4140,DAT_1403e3e64,DAT_1403e8e9c,uVar1,
+                "The width of the enemy target indicator on the hud.");
+  uVar4 = DAT_1403f2698;
+  uVar1 = CONCAT44((int)((ulonglong)uVar1 >> 0x20),0x40);
+  FUN_1402c4650("vehHudTargetScreenEdgeClampBufferLeft",0,DAT_1403f2698,uVar3,uVar1,
+                "The distance from the edge of the screen at which the enemy targets clamp.");
+  uVar1 = CONCAT44((int)((ulonglong)uVar1 >> 0x20),0x40);
+  FUN_1402c4650("vehHudTargetScreenEdgeClampBufferRight",0,uVar4,uVar3,uVar1,
+                "The distance from the edge of the screen at which the enemy targets clamp.");
+  uVar1 = CONCAT44((int)((ulonglong)uVar1 >> 0x20),0x40);
+  FUN_1402c4650("vehHudTargetScreenEdgeClampBufferTop",0,uVar4,uVar3,uVar1,
+                "The distance from the edge of the screen at which the enemy targets clamp.");
+  uVar7 = 1;
+  uVar1 = CONCAT44((int)((ulonglong)uVar1 >> 0x20),0x40);
+  FUN_1402c4650("vehHudTargetScreenEdgeClampBufferBottom",0,uVar4,uVar3,uVar1,
+                "The distance from the edge of the screen at which the enemy targets clamp.");
+  uVar3 = DAT_1403e3e6c;
+  uVar1 = CONCAT44((int)((ulonglong)uVar1 >> 0x20),DAT_1403e3e6c);
+  DAT_14114ae28 =
+       FUN_1402c4440("g_fogColorReadOnly",DAT_1403e3e6c,0,0,uVar1,CONCAT44(uVar7,0x2044),
+                     "Fog color that was set in the most recent call to \"setexpfog\"");
+  uVar1 = CONCAT44((int)((ulonglong)uVar1 >> 0x20),0x2044);
+  DAT_14114ae30 =
+       FUN_1402c4650("g_fogStartDistReadOnly",0,0,uVar5,uVar1,
+                     "Fog start distance that was set in the most recent call to \"setexpfog\"");
+  uVar1 = CONCAT44((int)((ulonglong)uVar1 >> 0x20),0x2044);
+  DAT_14114ae38 =
+       FUN_1402c4650("g_fogHalfDistReadOnly",DAT_1403e5240,0,uVar5,uVar1,
+                     "Fog start distance that was set in the most recent call to \"setexpfog\"");
+  uVar4 = 1;
+  uVar1 = CONCAT44((int)((ulonglong)uVar1 >> 0x20),0x2044);
+  DAT_14114ae40 =
+       FUN_1402c4650("g_fogMaxOpacityReadOnly",uVar3,0,uVar3,uVar1,
+                     "Fog max opacity that was set in the most recent call to \"setexpfog\"");
+  uVar5 = (undefined4)((ulonglong)uVar1 >> 0x20);
+  DAT_14114ae48 =
+       FUN_1402c43f0("g_sunFogEnabledReadOnly",0,0x2044,
+                     "Sun fog was enabled in the most recent call to \"setexpfog\"");
+  uVar7 = 1;
+  uVar1 = CONCAT44(uVar5,uVar3);
+  DAT_14114ae50 =
+       FUN_1402c4440("g_sunFogColorReadOnly",uVar3,0,0,uVar1,CONCAT44(uVar4,0x2044),
+                     "Sun fog color that was set in the most recent call to \"setexpfog\"");
+  uVar1 = CONCAT44((int)((ulonglong)uVar1 >> 0x20),DAT_1403e416c);
+  DAT_14114ae58 =
+       FUN_1402c4ca0("g_sunFogDirReadOnly",uVar3,0,0,uVar1,uVar3,CONCAT44(uVar7,0x2044),
+                     "Sun fog direction that was set in the most recent call to \"setexpfog\"");
+  uVar1 = CONCAT44((int)((ulonglong)uVar1 >> 0x20),0x2044);
+  DAT_14114ae60 =
+       FUN_1402c4650("g_sunFogBeginFadeAngleReadOnly",0,0,uVar6,uVar1,
+                     "Angle from the sun direction to start fade away from the sun fog color that was set in the most recent call to \"setexpfog\""
+                    );
+  uVar1 = CONCAT44((int)((ulonglong)uVar1 >> 0x20),0x2044);
+  DAT_14114ae68 =
+       FUN_1402c4650("g_sunFogEndFadeAngleReadOnly",uVar6,0,uVar6,uVar1,
+                     "Angle from the sun direction to end fade away from the sun fog color that was set in the most recent call to \"setexpfog\""
+                    );
+  uVar1 = CONCAT44((int)((ulonglong)uVar1 >> 0x20),0x2044);
+  DAT_14114ae70 =
+       FUN_1402c4650("g_sunFogScaleReadOnly",uVar3,0,DAT_1403e8e6c,uVar1,
+                     "Distance scale in the sun fog direction that was set in the most recent call to \"setexpfog\""
+                    );
+  uVar6 = (undefined4)((ulonglong)uVar1 >> 0x20);
+  DAT_14114ae80 =
+       FUN_1402c43f0("g_compassShowEnemies",0,0x44,
+                     "Whether enemies are visible on the compass at all times");
+  _DAT_14114a9f0 =
+       FUN_1402c46d0("g_aiEventDump",0xffffffff,0xffffffff,0x7ff,CONCAT44(uVar6,4),
+                     "Print AI events happening for this entity");
+  uVar6 = DAT_1403e5264;
+  DAT_14062ce78 =
+       FUN_1402c4650("cg_fovScale",uVar3,DAT_1403e5248,DAT_1403e5264,0x40,
+                     "Scale applied to the field of view");
+  DAT_14062ce88 =
+       FUN_1402c4650("cg_playerFovScale0",uVar3,DAT_1403e3e64,uVar6,0x40,
+                     "Scale applied to player 0 field of view");
+  DAT_14062ce90 =
+       FUN_1402c4650("cg_playerFovScale1",uVar3,DAT_1403e3e64,uVar6,0x40,
+                     "Scale applied to player 1 field of view");
+  DAT_14062ce70 =
+       FUN_1402c4650("cg_fovMin",uVar3,uVar3,DAT_1403ef938,0x40,"The minimum possible field of view"
+                    );
+  return;
+}
+
+
+

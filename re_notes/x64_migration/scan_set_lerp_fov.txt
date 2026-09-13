@@ -1,0 +1,5 @@
+STRING @ 1403f0d80 = "set_lerp_fov" (block .rdata)
+  from 14015ad3d type=DATA IN FUNCTION FUN_14015acc0@14015acc0
+  from 14005b0ee type=DATA IN FUNCTION FUN_1400595c0@1400595c0
+  (2 references)
+
