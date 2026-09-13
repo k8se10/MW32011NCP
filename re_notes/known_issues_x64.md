@@ -2057,18 +2057,43 @@ is now confirmed wrong, and the true scope/trigger condition needs
 re-establishing before assuming the shipped fix is sufficient or that
 the "n 1" mechanism is even the right angle at all.
 
-**Not yet re-root-caused — needs precise scoping from the live tester
-before further RE, per this project's own "ask before assuming" 
-discipline (CLAUDE.md SS4) rather than guessing at a new theory blind.**
-Open questions for the next report: is Fire itself broken (no bullets/no
-sound/no effect), or only ADS (can't aim down sights), or both together;
-is it constant (never works) or intermittent (works sometimes, fails
-under a specific condition -- e.g. after a certain action, after some
-elapsed time, only on a fresh spawn); and does it affect every weapon
-tried so far (pistol + at least one other class) or just the two data
-points reported (sniper class originally, pistol now). Whatever the real
-trigger condition turns out to be, it is evidently NOT "this weapon has a
-bolt-action/scope state machine."
+**Follow-up live report, same session: INTERMITTENT, not constant --
+"its intermittent like on and off a really abnormal bug."** Direct user
+framing/hypothesis: "my guess is where they changed how ads/fire works
+in this build" -- i.e. suspects a genuine Activision-side behavioral
+change in the 2026-09-03 x86->x64 recompile itself (not a gap in this
+project's own port), something about how the native engine's own
+Fire/ADS state is read/cleared/ticked differs from x86 in a way this
+project's existing design doesn't fully account for.
+
+**Why "intermittent, on/off" is a real, useful clue, not just a vaguer
+version of "broken"**: a genuinely MISSING one-time signal (the original
+notify-dispatch hypothesis) would predict CONSTANT failure for whatever
+weapon/case needs it, not on/off flakiness -- a notify either gets sent
+or it doesn't, it doesn't flicker. An intermittent symptom is a much
+better structural match for: (a) a race/ordering issue between this
+project's own direct kbutton calls and the game's own per-tick Fire/ADS
+state management (plausible given this project's own precedented bug
+class -- see Sprint's `pm_flags`-forcing history, `CLAUDE.md`'s "Sprint's
+real kbutton" section, where an UNCONDITIONAL per-tick clear from this
+project's own code silently fought the native engine's own state); (b) a
+genuine native per-tick reset/reassert this project's kbutton calls don't
+participate in correctly, intermittently losing a race against it; or (c)
+some other per-frame condition (a flag, a cooldown, a state machine)
+that's sometimes true and sometimes false, unrelated to weapon class at
+all -- consistent with the pistol/sniper-both-affected finding above.
+
+**Next real investigative step, not yet started**: compare x64's own
+direct-kbutton-call Fire/ADS design against whatever PER-TICK
+bookkeeping (if any) the real dispatcher path (`FUN_14007c3a0`) does for
+these cases beyond the one-shot notify already found and ported --
+specifically look for a per-tick REASSERT/clear this project's design
+might race against, the same shape as the already-fixed Sprint
+`pm_flags` bug. Also worth checking directly: does the symptom correlate
+with anything observable (a specific button-layout preset, ADS-toggle vs.
+hold-to-aim, a recent Sprint/CrouchProne/Jump press, elapsed session
+time) -- the live tester's own next report, if they notice a pattern, is
+higher-value evidence than more static RE right now.
 
 **UPDATE 2026-09-13 — dedicated static-RE task: does the sniper-fix notify
 mechanism also correctly fire Predator Missile's launch on x64? Confirmed
