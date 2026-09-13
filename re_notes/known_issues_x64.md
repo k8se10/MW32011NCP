@@ -3386,6 +3386,81 @@ Build-verified anyway (a comment-only change): x64 `/t:Rebuild` 0 errors
 (dumpbin-confirmed `8664 machine (x64)`, fresh timestamp), Win32 regression
 rebuild 0 errors/0 warnings, x64 rebuilt and redeployed last.
 
+**UPDATE 2026-09-13 (a separate, concurrent session, later same day) --
+menu-hint parity follow-up: Quit/Leaderboards/Game-Summary + Friends-
+suppression logic ARE PORTED after all; the "NOT PORTED THIS PASS" claim
+citing missing itemDef infrastructure was stale, not still true.** Task:
+re-check whether `Hook_DrawTextX64`'s own header comment ("NOT PORTED THIS
+PASS ... Quit/Leaderboards/Game-Summary's own literal-text/prefix special
+cases, the corner-hint-row positional tolerance check, and
+IsInsideSpecOpsNestedModal/IsFriendsListOpen's own Friends-suppression logic
+-- all of those depend on ... x86-only menu-focus/itemDef-position
+infrastructure not yet ported to x64") still held, given that the SAME DAY's
+earlier A-glyph/F2-F3 fix (rows #35/#36) had already closed that exact
+"itemDef infrastructure not ported" gap for a different consumer
+(`TryGetRealFocusedGroupAndIndexX64`/`GetMenuStackDepthX64`). Read x86's own
+`looksLikeCornerHintRow`, `IsInsideSpecOpsNestedModal`, `IsFriendsListOpen`,
+and the Quit/Leaderboards/Game-Summary special-case handling in full first
+(`analog_input_hooks.cpp`), per this project's own compare-to-x86-original
+rule, before writing any x64 code. Finding: the claim was stale.
+
+- **`looksLikeCornerHintRow` is NOT itemDef/focus data at all** -- it reads
+  only the draw call's own raw `y` parameter (x86's `param_3`) against a
+  fixed reference row (`kStandardCornerHintY`=995.0f) with a tolerance
+  (`kCornerHintRowTolerancePx`=40.0f). Ported directly as
+  `looksLikeCornerHintRowX64` using the already-existing
+  `ConvertRealScreenPosToDesignSpaceX64`. No new RE needed.
+- **Quit/Leaderboards/Game-Summary are plain resolved-template string
+  compares** -- same class as the already-working Back/Friends corner hints
+  (`g_getLocalizedStringX64("MENU_QUIT"/"PLATFORM_LEADERBOARDS_SHORTCUT"/
+  "PLATFORM_GAMESUMMARY_SHORTCUT")`, compared via `strcmp`/a new
+  `TextMatchesResolvedPrefixX64` helper for Leaderboards' two-span template).
+  Quit and Leaderboards are additionally gated on `looksLikeCornerHintRowX64`
+  -- matches x86's own BUG-006 precedent (a bare content match once hijacked
+  a genuine navigable menu list item sharing the same label; position, not
+  font family, is the real discriminator x86 uses). Game-Summary joins the
+  existing Back/Friends span-gated block (icon "G").
+- **`IsInsideSpecOpsNestedModal`/`IsFriendsListOpen` key off the CURRENTLY
+  FOCUSED ITEM'S RAW NAME**, not the `(group,index,siblingCount,depth)`
+  tuple `TryGetRealFocusedGroupAndIndexX64` exposes. That function
+  deliberately returns `false` for names like "Chaos"/"Mission"/"Survival"
+  (Special Ops mode-picker buttons)/"none"/"friendList" that don't parse as
+  `"<group>_<index>"` -- exactly the names this suppression logic needs to
+  see. Closed via a new function, `TryGetRealFocusedItemNameX64`, a small,
+  confident extension reusing the SAME already-live-confirmed
+  topmost-menu/itemDef-array walk and focus-flag check
+  (`kMenuItemCountOffsetX64`/`kMenuItemArrayOffsetX64`/
+  `kItemFocusFlagsOffsetX64`/`kItemNameOffsetX64`, all validated by the
+  2026-09-12 A-glyph/F2-F3 fix) as `TryGetRealFocusedGroupAndIndexX64`, just
+  returning the raw name unconditionally instead of requiring it to parse.
+  No new RE. `IsInsideSpecOpsNestedModalX64`/`IsFriendsListOpenX64` are then
+  direct ports of x86's own v4 allowlist+sticky-state algorithm
+  (byte-for-byte the same logic, `g_specOpsModalStickyX64` mirroring x86's
+  `g_specOpsModalSticky`), backed by this new function instead of x86's
+  register-hook-fed `g_focusedItemName`.
+- The one thing genuinely still unavailable is x64's own `Font_s.fontName`
+  offset (the prior update's negative result, above) -- not needed here:
+  x86 itself gates Quit/Leaderboards/Game-Summary via `IsMenuHintFont`
+  (font family) AND `looksLikeCornerHintRow` (position) together, but
+  BUG-006's own history shows position is the real discriminator that
+  actually stops a false match -- font family alone was never sufficient
+  even on x86 (corner-hint legends and real navigable list items share the
+  same `fonts/smallFont` family). Ported without the font gate, relying on
+  position + exact/prefix template match, which is what x86's own bug
+  history says the discriminator actually needs to be.
+- `Hook_DrawTextX64`'s own header comment (two places, ~line 3136 and
+  ~line 3572 at the time of the prior update) was corrected in the same
+  commit to remove the now-stale "NOT PORTED THIS PASS" claim.
+
+Build-verified: x64 `/t:Rebuild` 0 errors (dumpbin-confirmed `8664 machine
+(x64)`, fresh timestamp), Win32 regression rebuild 0 errors/0 warnings, x64
+rebuilt and redeployed last. **Not yet live-tested** -- needs a real
+controller navigating the main menu (Quit prompt), Leaderboards screen,
+post-match Game Summary screen, and the Special Ops mode-picker/Friends list
+specifically (to confirm the suppression doesn't over- or under-fire).
+Cross-reference: `re_notes/x64_feature_parity_audit.md` row #34's own updated
+detail cell.
+
 ---
 
 **Survival ready-up (hold Y) -- PORTED, build-verified, not yet live-tested

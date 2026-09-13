@@ -126,20 +126,28 @@ partial/regressed). The items below are the highest-impact gaps it found;
 see that file for everything else (menu glyphs, killstreaks, config
 presets, the plugin API, background threads, and more).
 
-- **Controller-glyph icons now draw for real on x64 for five in-game/menu
-  hint categories** (2026-09-13, same day as the text-draw hook itself
-  shipped): **Mantle, weapon pickup/swap/pickup-health, grenade throwback,
-  Reload/low-ammo, and menu corner hints (Back/Friends)** all now suppress
-  the native hint text and draw this project's own icon+text instead,
-  detected via an exact structural match against the real, live-resolved
-  reference-key text (no font-name filtering needed for any of these).
-  Reload and the menu corner hints were both initially believed unreachable
-  from this hook (an earlier finding the same day claimed Reload's text
-  "flows through a completely different native draw function," and menu
-  corner hints simply weren't attempted), but that was a decompiler
-  artifact — one more hop of RE (`FUN_1402afa60` → `FUN_1402b1090` →
-  `FUN_14029a2b0`, the exact function this hook already detours) confirmed
-  both are fully reachable after all; see `re_notes/x64_migration/
+- **Controller-glyph icons now draw for real on x64 for eight in-game/menu
+  hint categories** (2026-09-13, three same-day follow-up passes on top of
+  the text-draw hook itself): **Mantle, weapon pickup/swap/pickup-health,
+  grenade throwback, Reload/low-ammo, and menu corner hints (Back, Friends,
+  Quit, Leaderboards, Game Summary)** all now suppress the native hint text
+  and draw this project's own icon+text instead, detected via an exact
+  structural match against the real, live-resolved reference-key text (no
+  font-name filtering needed for any of these — Quit/Leaderboards instead
+  use a position check, matching `-x86`'s own real discriminator for this
+  exact class of false-positive). Reload and the first two menu corner
+  hints (Back/Friends) were initially believed unreachable from this hook
+  (an earlier finding the same day claimed Reload's text "flows through a
+  completely different native draw function," and menu corner hints simply
+  weren't attempted), but that was a decompiler artifact — one more hop of
+  RE (`FUN_1402afa60` → `FUN_1402b1090` → `FUN_14029a2b0`, the exact
+  function this hook already detours) confirmed both are fully reachable
+  after all. A THIRD same-day pass then closed Quit/Leaderboards/Game
+  Summary plus the Special-Ops-mode-picker/Friends-list Friends-suppression
+  logic, previously believed blocked on missing x64 menu-focus/itemDef
+  infrastructure — that claim turned out to be stale (the same day's
+  earlier menu-focus fix for the A-glyph/F2-F3 features had already closed
+  the actual dependency for a different consumer); see `re_notes/x64_migration/
   drawtext_hook_x64.md` for the corrected trail.
   **Buy-station's "Hold F to use Weapon Armory," Survival's ready-up
   prompt, and turret placement still render completely native/
@@ -154,12 +162,14 @@ presets, the plugin API, background threads, and more).
   different pair of native globals, no shared dependency with the
   text-draw hook above) and was ported the same day (build-verified, not
   yet live-tested — see the table above).
-  On-screen alignment for all five working categories is also unverified —
-  no pixel-tuning nudges were ported yet. See
-  `re_notes/x64_migration/drawtext_hook_x64.md` for the exact scope and
-  reasoning behind each gap. Everything else renders normally (including
-  this mod's own startup/hot-reload toast messages, which ARE confirmed
-  working on x64).
+  On-screen alignment for all eight working categories is also unverified —
+  no pixel-tuning nudges were ported yet, and the Special-Ops/Friends-list
+  suppression logic (a faithful port of `-x86`'s own v4 sticky-state
+  algorithm, which itself took four iterations to get right) has never been
+  live-exercised on x64. See `re_notes/x64_migration/drawtext_hook_x64.md`
+  for the exact scope and reasoning behind each gap. Everything else
+  renders normally (including this mod's own startup/hot-reload toast
+  messages, which ARE confirmed working on x64).
 - **Highlighted-item A-glyph (menu list navigation) and the F2/F3 in-game
   glyph-position editor are now wired to real x64 menu-focus tracking**
   (2026-09-13) — a separate system from the gameplay-hint icon substitution
