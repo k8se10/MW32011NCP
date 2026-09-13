@@ -43,13 +43,26 @@ for any item lives in `re_notes/known_issues_x64.md` issue #1.
       real stance during gameplay and should NOT toggle stance when used
       to back out of an open menu.
 - [ ] Survival ready-up (hold Y) — **new this session (2026-09-12), synthetic-
-      F5 exception ported.** Confirm: holding Y for ~740ms between Survival
-      waves readies up (same synthetic `WM_KEYDOWN`/`WM_KEYUP` F5 via
-      `PostMessageA` x86 already ships); a quick tap or a hold that falls
-      short of the threshold still switches weapons instead; confirm no
-      observable side effect from the missing `IsInSurvivalMode()` gate
-      outside Survival (expected none, but unconfirmed against real
-      hardware on this binary).
+      F5 exception ported; `IsInSurvivalMode()` gate closed 2026-09-13.**
+      Confirm: holding Y for ~740ms between Survival waves readies up (same
+      synthetic `WM_KEYDOWN`/`WM_KEYUP` F5 via `PostMessageA` x86 already
+      ships); a quick tap or a hold that falls short of the threshold still
+      switches weapons instead; confirm `IsInSurvivalModeX64()` (real
+      `mapname` dvar read, wired 2026-09-13) actually gates the fire
+      correctly — no observable side effect outside Survival, AND ready-up
+      still fires correctly during an actual Survival match (a wrong gate
+      read would now silently suppress it entirely, the opposite failure
+      mode from before this fix).
+- [ ] ADS zoom-aware look-slowdown (`AdsSlowdownStrength`/`Baseline`/
+      `AdsCloseRangeSlowdownStrength`) — **new this session (2026-09-13),
+      closes parity audit row #3.** Confirm: aiming down sights with a zoom
+      optic (ACOG/sniper) slows controller look sensitivity proportionally
+      to the live FOV ratio, matching `-x86`'s confirmed-correct feel
+      (issue #8/#44); confirm low-zoom weapons (pistols/red-dots, FOV ratio
+      near 1.0) still get the close-range taper's extra slowdown; confirm
+      no look-direction inversion at any `AdsSlowdownStrength` value (the
+      exact x86 bug issue #8 root-caused and fixed, now riding the same
+      power-curve formula on x64).
 - [ ] Hold Breath (L3 while ADS'd, sniper-class) — **new this session
       (2026-09-12), ported (parity audit item #23, was previously
       completely absent).** Confirm: holding the Sprint bind while ADS'd

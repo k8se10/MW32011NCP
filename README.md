@@ -113,6 +113,7 @@ see their own sections below; neither gates this release.
 | | Highlighted-item A-glyph (menu list navigation) and the F2/F3 glyph-position editor |
 | | Auto-Mantle (while sprinting) — ships off by default |
 | | Back (scoreboard, `+scores` key-synthesis) — see Known gaps below for why this is correctly a no-op in SP |
+| | ADS zoom-aware look-slowdown (`AdsSlowdownStrength`/`Baseline`/close-range taper) |
 
 ### Known gaps
 
