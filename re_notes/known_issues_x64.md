@@ -2031,6 +2031,45 @@ next RE angle is tracing `FUN_14007fb30`'s ring-buffer consumer server-side
 (who reads `"n %i"` off the reliable-command queue and what it does with it)
 rather than assuming the notify alone was sufficient.
 
+**UPDATE 2026-09-13 (live test, same day) — CORRECTION: the bug is NOT
+sniper-specific. Fire/ADS fails on the base pistol too.** Direct live
+report during this session's own first real playtest of the x64 build:
+"found the ads and shoot issues is not weapon specific at all and happens
+even with the base pistol." This directly contradicts the ORIGINAL report
+this whole investigation was built on ("cant shoot and ads? on sniper why
+-- other weapon classes already confirmed working") — either that
+original framing was itself incomplete/wrong, or something changed
+between then and now, but the CURRENT confirmed truth is: this is a
+general Fire/ADS problem, not a weapon-class-specific one.
+
+**Why this matters for the leading hypothesis above**: "a sniper-class
+weapon's bolt-action/scope state machine is plausibly the one weapon
+class whose GSC/native logic needs this notify" cannot be the (whole)
+explanation if a pistol -- no bolt-action, no scope state machine --
+shows the identical symptom. The `g_notifyBindDispatch` fix shipped
+earlier the same day (resolving `FUN_14007fc00`, calling it alongside the
+existing direct kbutton calls) was built and reasoned about specifically
+around the sniper-only framing; it may still be a correct, valid fix for
+whatever the REAL shared mechanism turns out to be (the reliable-command
+notify itself is real, confirmed, and additive/inert-if-wrong regardless
+of which weapons need it) -- but the sniper-specific NARRATIVE around it
+is now confirmed wrong, and the true scope/trigger condition needs
+re-establishing before assuming the shipped fix is sufficient or that
+the "n 1" mechanism is even the right angle at all.
+
+**Not yet re-root-caused — needs precise scoping from the live tester
+before further RE, per this project's own "ask before assuming" 
+discipline (CLAUDE.md SS4) rather than guessing at a new theory blind.**
+Open questions for the next report: is Fire itself broken (no bullets/no
+sound/no effect), or only ADS (can't aim down sights), or both together;
+is it constant (never works) or intermittent (works sometimes, fails
+under a specific condition -- e.g. after a certain action, after some
+elapsed time, only on a fresh spawn); and does it affect every weapon
+tried so far (pistol + at least one other class) or just the two data
+points reported (sniper class originally, pistol now). Whatever the real
+trigger condition turns out to be, it is evidently NOT "this weapon has a
+bolt-action/scope state machine."
+
 **UPDATE 2026-09-13 — dedicated static-RE task: does the sniper-fix notify
 mechanism also correctly fire Predator Missile's launch on x64? Confirmed
 YES, structurally, via two independent methods — still NOT live-tested.**

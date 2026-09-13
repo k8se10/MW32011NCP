@@ -300,8 +300,11 @@ live, detailed status on every item below.
 3. **A fix attempt for sniper-class Fire/ADS.** Real RE work found that
    every other bind press/release sends a client-side notification the
    game's own scripting layer can react to, which controller Fire/ADS never
-   sent; now sends it alongside the existing input logic. Not yet confirmed
-   live.
+   sent; now sends it alongside the existing input logic. **Correction,
+   2026-09-13 (live test): the underlying bug is NOT weapon-class-specific
+   after all — Fire/ADS fails on the base pistol too, contradicting the
+   sniper-specific framing this fix was built around.** See "Investigated,
+   Not Yet Resolved" below.
 4. **The on-screen cursor was silently non-functional.** It read raw,
    unguarded addresses left over from the 32-bit binary, which safely but
    silently failed against the 64-bit process instead of crashing — fixed
@@ -376,7 +379,22 @@ live, detailed status on every item below.
    confirmed x64 `SEH_GetString` equivalent (`FUN_14029f120`).
 
 ### Investigated, Not Yet Resolved
-1. **Gameplay controller-glyph icon overlays — PARTIAL, not fully resolved
+1. **Fire and/or ADS fails — first live playtest of the x64 build,
+   2026-09-13, confirmed a real bug, not just a "not yet live-tested" fix
+   attempt.** Originally reported and investigated as sniper-class-
+   specific (What's New item 3 above); the live test found it happens on
+   the base pistol too, directly contradicting the sniper-specific
+   framing that fix attempt was built around. The `g_notifyBindDispatch`
+   fix itself (a real client->server reliable-command notify controller
+   Fire/ADS was skipping) may still be valid — it's additive and
+   inert-if-wrong by design — but its own reasoning ("a sniper-class
+   bolt-action/scope state machine needs this notify") no longer explains
+   the actual, now-confirmed-broader symptom. Root cause not yet
+   re-established; needs a more precise report (is it Fire, ADS, or both;
+   constant or intermittent; which weapons confirmed affected) before
+   further RE. See `re_notes/known_issues_x64.md`'s 2026-09-13 correction
+   round for the full trail.
+2. **Gameplay controller-glyph icon overlays — PARTIAL, not fully resolved
    (updated, item 22 above).** Items 18/19/21/22 now draw real icons/tracking
    for Mantle, weapon pickup/swap/pickup-health, grenade throwback, Reload,
    every menu corner hint (Back/Friends/Quit/Leaderboards/Game Summary), the
@@ -392,6 +410,6 @@ live, detailed status on every item below.
    string wasn't found anywhere in the x64 binary. See
    `re_notes/x64_migration/drawtext_hook_x64.md` for the exact scope and why
    each remaining case is blocked.
-2. **FXAA and a forced-MSAA option** don't exist on either line — checked
+3. **FXAA and a forced-MSAA option** don't exist on either line — checked
    directly, and neither was ever actually built even on the old `-x86`
    line, only ever planned. Real future work, not a regression.

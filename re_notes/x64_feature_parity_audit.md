@@ -237,7 +237,7 @@ bar (CLAUDE.md SS7/SS8) applied separately — many are build-verified only.
 
 | # | Feature | x86 status | x64 status | Evidence |
 |---|---|---|---|---|
-| 6 | Fire (RT) | Confirmed working | **PRESENT**, w/ caveat | `g_kbuttonActivate`/`Deactivate` on `g_fireStruct`; the additional "sniper Fire/ADS fix" (`g_notifyBindDispatch`) is explicitly flagged **NOT YET LIVE-TESTED** in-file |
+| 6 | Fire (RT) | Confirmed working | **PRESENT, but a real live-confirmed regression exists** | `g_kbuttonActivate`/`Deactivate` on `g_fireStruct`. **Live-tested 2026-09-13: Fire/ADS fails, and this is NOT weapon-class-specific** — happens on the base pistol, not just sniper-class weapons as the bug was originally reported and investigated. This directly contradicts the leading hypothesis behind the `g_notifyBindDispatch` fix attempt below (a sniper-only bolt-action/scope state machine needing the notify — a pistol has neither), so that fix's own reasoning no longer holds even though the fix itself may still be valid/inert. Root cause is NOT yet re-established — see `known_issues_x64.md`'s 2026-09-13 correction round for exact open questions (is it Fire, ADS, or both; constant or intermittent; which weapons confirmed affected) pending a more precise report before further RE |
 | 7 | ADS (LT) hold-to-aim | Confirmed working, real kbutton | **PRESENT** | kbutton call + explicit force of `g_adsToggleFlag` (the real "is aiming" flag) — went through 3 live-test-driven correction rounds documented in-file, currently believed correct |
 | 8 | Melee (R3) | Confirmed working | **PRESENT** | Raw usercmd bit `kMeleeUsercmdBit=0x4`, mirrors x86 |
 | 9 | Reload (X) | Confirmed working | **PRESENT** | kbutton call on `g_reloadStruct` |
