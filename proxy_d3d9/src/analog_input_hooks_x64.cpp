@@ -3229,17 +3229,24 @@ extern "C" bool TryGetCursorGateX64(int* outVisFlag, int* outUiState)
 //     hint doesn't exist in this build, or it needs a different anchor string --
 //     not pursued further this pass; TryGetSentryPlaceGlyphAssetName exists and is
 //     ready to use the moment a real x64 reference/template is found.
-//   - Menu corner hints (Back/Friends) ARE NOW COVERED (see this hook's own
-//     "Menu corner hints" block, right before the final real-draw call below) --
-//     the claim previously here ("was not ported -- deliberately out of scope")
-//     no longer holds for these two specific hints. Kept as a visible correction
-//     rather than silently deleted, per this project's own documentation
-//     standard of preserving investigation history. Still NOT ported for menu
-//     hints generally: Quit/Leaderboards/Game-Summary's own literal-text special
-//     cases and the corner-hint-row positional-tolerance/Special-Ops-Friends-
-//     suppression logic -- see that block's own header comment for the honest
-//     reason each is out of scope (x86-only menu-focus/itemDef infrastructure,
-//     mostly).
+//   - Menu corner hints (Back/Friends/Quit/Leaderboards/Game-Summary) ARE NOW
+//     COVERED (see this hook's own "Menu corner hints" block, right before the
+//     final real-draw call below) -- the claim previously here ("was not
+//     ported -- deliberately out of scope") no longer holds for any of these
+//     five. Kept as a visible correction rather than silently deleted, per
+//     this project's own documentation standard of preserving investigation
+//     history. **Corrected again, 2026-09-13 (menu-hint parity follow-up)**:
+//     an intermediate version of this comment (Back/Friends-only pass) claimed
+//     Quit/Leaderboards/Game-Summary and the Special-Ops/Friends-suppression
+//     logic depended on "x86-only menu-focus/itemDef infrastructure not yet
+//     ported to x64" -- that was RE-CHECKED against x86's own originals and
+//     found stale (the itemDef walk this logic actually needs was already
+//     ported for a DIFFERENT consumer, the same day, by the A-glyph/F2-F3
+//     fix) -- see this block's own header comment, right before the "Menu
+//     corner hints" block below, for the full corrected reasoning. The one
+//     thing genuinely still unavailable is x64's own `Font_s.fontName` offset
+//     (buy-station/Survival ready-up/Sentry-Place remain absent for that
+//     reason, unrelated to menu corner hints).
 using DrawTextFnX64 = void(*)(
     unsigned __int64 dcHandle, const char* text, int maxChars, void* fontArg,
     float x, float y, unsigned color1, unsigned color2, float scale,

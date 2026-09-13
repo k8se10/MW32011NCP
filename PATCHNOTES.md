@@ -23,10 +23,12 @@ vibration never having been wired to x64 at all. The native text-draw hook
 that blocked gameplay glyph icons and Auto-Mantle's own detection dependency
 is now ported too, with Mantle-hint detection wired on top, and Auto-Mantle's
 actual `+gostand`-forcing feature now ships on top of that (off by default).
-Real visual glyph substitution now works for three hint families (Mantle,
-pickup/swap/pickup-health, grenade throwback) — see items 16-18 under
-What's New. `Dvar_FindVar`/`GetEffectiveFov`'s x64 equivalents are now
-resolved too, closing the ADS zoom-aware look-slowdown and Survival
+Real visual glyph substitution now works for nine hint families (Mantle,
+pickup/swap/pickup-health, grenade throwback, Reload, and every menu corner
+hint — Back/Friends/Quit/Leaderboards/Game Summary, the last three plus
+Friends-suppression logic added in a later follow-up) — see items 16-19 and
+22 under What's New. `Dvar_FindVar`/`GetEffectiveFov`'s x64 equivalents are
+now resolved too, closing the ADS zoom-aware look-slowdown and Survival
 ready-up's `IsInSurvivalMode()` gate in the same pass (item 20). **This
 release has not
 shipped** — see `README.md` for the current release gate (parity with the
@@ -212,7 +214,8 @@ live, detailed status on every item below.
     the x64 binary. No position/scale alignment tuning was ported either —
     on-screen alignment for the three working cases is unverified pending
     live test. Full trail: `re_notes/x64_migration/drawtext_hook_x64.md`.
-    Build-verified, not yet live-tested.
+    Build-verified, not yet live-tested. **Superseded — see What's New
+    item 22 below**: Reload and every menu corner hint are now covered too.
 19. **Highlighted-item A-glyph (menu list navigation) and the F2/F3 in-game
     glyph-position editor wired to real x64 menu-focus tracking** — a
     separate system from item 17's gameplay-hint icon substitution: this one
@@ -254,6 +257,28 @@ live, detailed status on every item below.
     false on x64, which alone would have kept the cursor from ever drawing
     outside the glyph-position editor — is fixed too. Build-verified,
     not yet live-tested.
+
+22. **Quit/Leaderboards/Game-Summary menu-hint glyphs, plus Special-Ops-modal/
+    Friends-list Friends-suppression, now wired on x64** — a menu-hint parity
+    follow-up on top of items 16/18/19. The prior claim (this file and this
+    hook's own in-code comment) that these depended on "x86-only menu-focus/
+    itemDef infrastructure not yet ported to x64" was re-checked against
+    `-x86`'s own originals and found stale: `looksLikeCornerHintRow` reads
+    only the draw call's own raw screen position (no itemDef dependency at
+    all); Quit/Leaderboards/Game-Summary are plain resolved-template string
+    compares, same class as the already-working Back/Friends; and the
+    Friends-suppression logic needs the focused item's raw NAME, not the
+    `(group,index,siblingCount,depth)` tuple the existing x64 menu-focus walk
+    exposes — closed with a small, confident extension of that SAME
+    already-working walk (`TryGetRealFocusedItemNameX64`, no new RE), then a
+    direct port of `-x86`'s own four-iteration sticky-state algorithm on top
+    of it. Quit/Leaderboards are gated on position (not font family, which
+    x64 still can't confirm) — matching `-x86`'s own BUG-006 precedent that
+    position, not font, is the real discriminator that stops a false match
+    against a genuine navigable menu item sharing the same label. Nine hint
+    categories now visually substitute in total. Build-verified, not yet
+    live-tested. See `re_notes/known_issues_x64.md` issue #1 and
+    `re_notes/x64_feature_parity_audit.md` row #34.
 
 ### Fixed
 1. **Crash on launch with the sniper Fire/ADS fix's own log line.** The
@@ -336,20 +361,20 @@ live, detailed status on every item below.
    confirmed x64 `SEH_GetString` equivalent (`FUN_14029f120`).
 
 ### Investigated, Not Yet Resolved
-1. **Gameplay controller-glyph icon overlays — PARTIAL, not fully resolved.**
-   Item 18 above now draws real icons for Mantle, weapon pickup/swap/pickup-
-   health, and grenade throwback. Still native/unmodified: buy-station's
-   "Hold F to use Weapon Armory," Survival's ready-up prompt (F5), Reload's
-   flashed reminder, turret placement (Sentry-Place), menu corner hints
-   (Back/Friends), the highlighted-item A-glyph, the F2/F3 glyph-position
-   editor, and the custom cursor's own glyph-adjacent behavior. Buy-station
-   and ready-up are blocked on x64's real `Font_s` `fontName` offset, still
-   unconfirmed (needed for `IsGameplayHintFont`-style filtering, since
-   neither has a known reference-key template even on `-x86`); Reload is
-   confirmed to flow through a completely different native draw function
-   this hook can't observe at all; Sentry-Place's own reference string
-   wasn't found anywhere in the x64 binary; the F2/F3 editor/A-glyph/cursor
-   and menu hints weren't attempted this pass. See
+1. **Gameplay controller-glyph icon overlays — PARTIAL, not fully resolved
+   (updated, item 22 above).** Items 18/19/21/22 now draw real icons/tracking
+   for Mantle, weapon pickup/swap/pickup-health, grenade throwback, Reload,
+   every menu corner hint (Back/Friends/Quit/Leaderboards/Game Summary), the
+   Special-Ops-modal/Friends-list Friends-suppression logic, the
+   highlighted-item A-glyph, the F2/F3 glyph-position editor, and the custom
+   cursor. **Still genuinely native/unmodified**: buy-station's "Hold F to
+   use Weapon Armory," Survival's ready-up prompt (F5), and turret placement
+   (Sentry-Place) — buy-station and ready-up are blocked on x64's real
+   `Font_s` `fontName` offset, still unconfirmed (needed for
+   `IsGameplayHintFont`-style filtering, since neither has a known
+   reference-key template even on `-x86`, and a dedicated investigation
+   could not resolve the offset via decompile); Sentry-Place's own reference
+   string wasn't found anywhere in the x64 binary. See
    `re_notes/x64_migration/drawtext_hook_x64.md` for the exact scope and why
    each remaining case is blocked.
 2. **FXAA and a forced-MSAA option** don't exist on either line — checked

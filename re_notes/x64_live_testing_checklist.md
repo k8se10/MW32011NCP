@@ -239,11 +239,11 @@ confirms is live. See `re_notes/known_issues_x64.md` issue #1 and
 
 ## Real glyph-icon visual SUBSTITUTION (new 2026-09-13, same day follow-up)
 
-**Six cases now visually substitute (Mantle, Pickup/Swap/PickupHealth,
-Throwback, Reload/low-ammo, and menu corner hints Back/Friends) — buy-station,
-Survival ready-up, Sentry-Place still render native, unmodified text (see
-"Not testable" section below for the honest list of what's NOT covered and
-why).**
+**Nine cases now visually substitute (Mantle, Pickup/Swap/PickupHealth,
+Throwback, Reload/low-ammo, and menu corner hints Back/Friends/Quit/
+Leaderboards/Game-Summary) — buy-station, Survival ready-up, Sentry-Place
+still render native, unmodified text (see "Not testable" section below for
+the honest list of what's NOT covered and why).**
 
 - [ ] Reach a real mantleable ledge in Campaign or Survival with
       `ForceGlyphOverlay=1` (or an active controller) and confirm the native
@@ -270,6 +270,41 @@ why).**
       controller-glyph icons instead of native `"^2ESC^7"`/`"^2F^7"` text.
       Not previously believed attempted this pass; turned out to already be
       covered by the same draw-hook investigation that fixed Reload.
+- [ ] **Quit (main menu)** — open the main menu's Quit confirmation and
+      confirm the native "Quit" corner legend is replaced with a real B-glyph
+      icon (`RequestMenuHintOverlay`, no "^N...^7" span needed for this one
+      since it's a bare literal-text match). Watch for `[x64-drawtext] Menu
+      corner-hint structural match confirmed` — this specific case does NOT
+      log a `kind=` for Quit/Leaderboards (only the Back/Friends/GameSummary
+      span-gated block logs `kind=`), so absence of native "Quit" text plus
+      presence of the B icon is the real confirmation. **Also confirm the
+      Special Ops hub's own separate all-caps "QUIT" item is UNAFFECTED**
+      (case-sensitive match, same as x86, deliberately excludes it).
+- [ ] **Leaderboards (main menu)** — confirm the native "Leaderboards ^2Right
+      Mouse^7/^2F1^7" corner hint is replaced with a real Back/Select-button
+      icon (`PhysicalInput::Back`, distinct from Quit's B/ESC icon).
+- [ ] **Game Summary (post-match screen)** — confirm the native "Game
+      Summary ^2G^7" hint is replaced with a real X-glyph icon. Watch for
+      `kind=GameSummary` in the `[x64-drawtext] Menu corner-hint structural
+      match confirmed` log line.
+- [ ] **Friends-suppression (Special Ops mode-picker / Friends list)** — new
+      this session (2026-09-13, menu-hint parity follow-up), genuinely
+      untested. Open the Special Ops hub, enter the Chaos/Mission/Survival
+      mode-picker (and the on-disk/DLC content-picker one level deeper) and
+      confirm the native "Friends ^2F^7" hint does NOT show (this project's
+      own Back hint should show instead/alongside). Separately, open the
+      Friends list itself and confirm the native "Friends" hint is also
+      suppressed there. **This is the least-confident item in this whole
+      section** — x86's own version of this exact logic (`IsInsideSpecOpsNestedModal`)
+      went through FOUR versions before landing on the current sticky-state
+      algorithm (see that function's own header comment,
+      `analog_input_hooks.cpp`) after two earlier attempts each had a real,
+      live-reported false positive/negative; the x64 port is a faithful
+      byte-for-byte port of that same v4 algorithm, but has never itself
+      been live-exercised, so the SAME class of edge case x86 needed two
+      rounds to find could plausibly still be lurking here. If Friends
+      shows when it shouldn't (or Back fails to show when Friends is
+      correctly suppressed), report exactly which screen/list you were on.
 - [ ] **Position/alignment is UNVERIFIED and UNTUNED** — no empirical nudge
       constants were ported for x64 (x86's own alignment took several rounds
       of live-tested correction). Expect the icon/text to potentially be
@@ -362,14 +397,15 @@ starting rather than found blocked. Genuinely open, not attempted:
   Mantle-hint detection" section above). **Visual glyph-icon SUBSTITUTION —
   PARTIALLY shipped later the same day**, see the new "Real glyph-icon
   visual SUBSTITUTION" section above: Mantle/Pickup-Swap-PickupHealth/
-  Throwback grenade/Reload/menu corner hints (Back/Friends) now visually
-  substitute (six cases total); buy-station and Survival ready-up were
-  investigated in depth the same day (font-name filtering was attempted and
-  genuinely could not be confirmed, see the "Not testable" section below);
-  Sentry-Place remains genuinely blocked for its own separate reason (see
-  below). Auto-Mantle's
-  own `+gostand`-forcing feature shipped later the same day -- see its own
-  new checklist section above, no longer blocked.
+  Throwback grenade/Reload/menu corner hints (Back/Friends/Quit/Leaderboards/
+  Game-Summary, the last three plus the Special-Ops/Friends-suppression
+  logic added in a THIRD same-day follow-up pass) now visually substitute
+  (nine cases total); buy-station and Survival ready-up were investigated in
+  depth the same day (font-name filtering was attempted and genuinely could
+  not be confirmed, see the "Not testable" section below); Sentry-Place
+  remains genuinely blocked for its own separate reason (see below).
+  Auto-Mantle's own `+gostand`-forcing feature shipped later the same day --
+  see its own new checklist section above, no longer blocked.
 - Back's `+scores` scoreboard synthesis port to x64 — small, cheap, well-
   understood (the function already exists arch-clean on x86, just needs
   wiring in). Expected test outcome once ported: confirm it does nothing
