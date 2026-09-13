@@ -3368,6 +3368,133 @@ constexpr const char* kGetLocalizedStringSignature =
     "40 53 48 83 EC 20 80 39 15 48 8B D9 75 ?? 48 FF C3 EB ?? "
     "E8 ?? ?? ?? ?? 48 85 C0 75 ?? 48 8D 0D ?? ?? ?? ?? 48 2B CB";
 
+// CORRECTED 2026-09-13 (live-reported glyph-icon SUBSTITUTION positioning bug --
+// Mantle invisible, Interact/Reload rendering at the very top of the screen, see
+// known_issues_x64.md's matching round): the header comment on the Mantle/Pickup/
+// Throwback/Reload call sites below used to claim x/y as captured by this hook are
+// already "the final draw-call screen-pixel position." Re-verified via a fresh
+// decompile+disassembly of FUN_14029a2b0 itself (this hook's own target) -- THAT
+// CLAIM IS WRONG. FUN_14029a2b0's own body:
+//   local_28 = FUN_1401b7c90(fontArg, scale);       // a small per-font/scale ratio,
+//   local_24[0] = local_28;                          // NOT text width/height (see below)
+//   thunk_FUN_14008d020(dcHandle, &x, &y, local_24, &local_28, color1, color2);
+//   x = floorf(x + 0.5f); y = floorf(y + 0.5f);       // round-to-nearest only
+//   FUN_140080840(text, maxChars, fontArg, x, y, local_24[0], local_28, colorVecPtr, extra);
+// i.e. the REAL final screen position isn't computed until `thunk_FUN_14008d020`
+// (a plain `JMP FUN_14008d020` stub, confirmed via disassembly) runs -- which is
+// AFTER this hook's own interception point (a MinHook detour on FUN_14029a2b0's
+// entry sees x/y exactly as its 22 real callers passed them in, before this
+// internal transform). Decompiling FUN_14008d020 (`re_notes/x64_migration/
+// decomp_14008d020.txt`... actually captured via raw disassembly, see
+// `sigbytes_14008d020.txt` -- the decompiler mis-rendered this one as a bare
+// switch, the disassembly is the ground truth used here) shows it: reads
+// `*dcHandle`/`dcHandle[0x8]` as a per-draw-context scaleX/scaleY pair, and adds
+// ONE of several other dcHandle-relative anchor-offset floats, selected by a
+// jump table over `color1`/`color2` (an 11-way 0-10 enum -- NOT RGBA color
+// values, despite this hook's own long-standing parameter names; confirmed via
+// FUN_140052220's own local vars feeding them, `bVar4`/`bVar5`, both declared
+// `byte`, not `unsigned`/`uint`). So x/y as THIS hook captures them are really
+// PRE-TRANSFORM coordinates in the draw-context's own local units -- feeding them
+// straight into ConvertRealScreenPosToDesignSpaceX64 (which divides by a
+// COMPLETELY UNRELATED scale, this project's own GetResolutionScale/viewport
+// read) was never going to reproduce the real position, at any resolution. This
+// fully explains both live-reported symptoms: a bad/near-origin Y would still
+// render SOMEWHERE when centered (Interact/Reload's "top of screen") but could
+// push a non-centered element (Mantle) off the visible frame entirely.
+//
+// FIX: call the REAL native transform ourselves (ComputeRealDrawPositionX64,
+// below) instead of guessing at dcHandle's own field layout -- resolves
+// FUN_1401b7c90 and FUN_14008d020 as two more direct-call targets (same
+// no-hook-installed pattern as g_getLocalizedStringX64 above; this project never
+// modifies this transform, it only needs the SAME answer the real draw call
+// would compute) and calls them with local copies of x/y before handing the
+// TRUE final screen-pixel result to the existing, already-correct
+// ConvertRealScreenPosToDesignSpaceX64. FUN_1401b7c90 itself is NOT a text-
+// measurement function despite feeding a variable named like one --
+// disassembly confirms `return (scale * DAT_1403eb9f0) / *(int*)(fontPtr+8)`
+// (fontPtr+8 = pixelHeight, already confirmed in this file's own Font_s notes),
+// a small cursor/underline-thickness-style ratio, only read back by two of
+// FUN_14008d020's eleven alignment-mode branches -- computed here regardless
+// since we can't know in advance which mode a given hint uses.
+//
+// HONEST CAVEAT: this is a decompile/disassembly-confirmed structural fix, not a
+// live-tested one -- the game could not be launched from this investigation.
+// Both new signatures were verified via PatternScan.java to resolve to exactly
+// their expected addresses (14008d020 / 1401b7c90) against the same
+// `iw5sp_x64_proj` this whole file's other signatures were derived from. See
+// known_issues_x64.md's matching round for the full trail and current live-test
+// status.
+using ComputeAuxMetricFnX64 = float(*)(void* fontPtr, float scale);
+ComputeAuxMetricFnX64 g_realComputeAuxMetricX64 = nullptr;
+constexpr const char* kComputeAuxMetricSignature =
+    "F3 0F 59 0D ?? ?? ?? ?? 66 0F 6E 41 08 0F 5B C0 F3 0F 5E C8 0F 28 C1 C3";
+
+using ApplyDrawAlignFnX64 = void(*)(void* dcHandle, float* xInOut, float* yInOut,
+                                     float* auxWInOut, float* auxHInOut,
+                                     unsigned alignH, unsigned alignV);
+ApplyDrawAlignFnX64 g_realApplyDrawAlignX64 = nullptr;
+// 99-byte signature: function prologue + module-base LEA (wildcarded) + the
+// DAT_1403e3e68 (0.5f round constant) RIP-relative load (wildcarded) + the
+// `CMP EAX,0xA` / `JA` alignment-mode-range check (JA target wildcarded) + the
+// jump-table dispatch itself (kept LITERAL -- SIB-relative to the already-
+// resolved module-base register, not a raw RIP-relative reference, same
+// "don't wildcard a register-relative displacement" lesson this file's own
+// kPmoveTickSignature comment already documents for RSP) + the first two
+// alignment-mode case bodies with their own trailing JMP rel32s wildcarded.
+// Verified via PatternScan.java to match exactly once, at 0x14008d020.
+constexpr const char* kApplyDrawAlignSignature =
+    "48 89 5C 24 08 48 63 44 24 30 48 8D 1D ?? ?? ?? ?? F3 0F 10 15 ?? ?? ?? ?? "
+    "4C 8B D9 83 F8 0A 0F 87 ?? ?? ?? ?? 44 8B 94 83 90 D2 08 00 4C 03 D3 41 FF E2 "
+    "F3 0F 10 01 F3 0F 59 02 F3 0F 58 41 38 E9 ?? ?? ?? ?? F3 0F 10 09 F3 0F 10 41 20 "
+    "F3 0F 59 0A F3 0F 59 C2 F3 0F 58 C8 F3 0F 11 0A E9 ?? ?? ?? ??";
+
+// Computes the REAL final screen-pixel position for one of this hook's own draw
+// calls, by calling the actual native transform above instead of assuming raw
+// x/y already ARE that position (see kApplyDrawAlignSignature's own header
+// comment for the full root-cause trail). Falls back to the raw, untransformed
+// x/y (this hook's PREVIOUS, now-confirmed-wrong behavior) if either real
+// function failed to resolve or the call raises -- keeps this hook
+// passthrough-safe exactly like every other __try/__except block in this file,
+// never crashes the host over an unexpected dcHandle/fontArg shape on some
+// not-yet-seen call site. Logs its own inputs/output exactly ONCE (first call
+// only, matching this project's own "one-shot, not per-frame" diagnostic
+// convention) so the next live-test session can directly see the raw-vs-real
+// values without guessing whether the fix actually changed anything.
+void ComputeRealDrawPositionX64(unsigned __int64 dcHandle, void* fontArg, float scale,
+                                  unsigned alignH, unsigned alignV,
+                                  float rawX, float rawY, float& outX, float& outY)
+{
+    outX = rawX;
+    outY = rawY;
+    bool usedRealTransform = false;
+    if (g_realApplyDrawAlignX64 && g_realComputeAuxMetricX64 && LooksSaneX64(dcHandle) &&
+        fontArg && LooksSaneX64(reinterpret_cast<uintptr_t>(fontArg))) {
+        __try {
+            float aux = g_realComputeAuxMetricX64(fontArg, scale);
+            float auxW = aux, auxH = aux;
+            float x = rawX, y = rawY;
+            g_realApplyDrawAlignX64(reinterpret_cast<void*>(dcHandle), &x, &y, &auxW, &auxH, alignH, alignV);
+            outX = x;
+            outY = y;
+            usedRealTransform = true;
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            outX = rawX;
+            outY = rawY;
+            usedRealTransform = false;
+        }
+    }
+    static bool s_loggedFirstPositionTransform = false;
+    if (!s_loggedFirstPositionTransform) {
+        s_loggedFirstPositionTransform = true;
+        char posBuf[224];
+        sprintf_s(posBuf, "[x64-drawtext-pos] raw=(%.1f,%.1f) alignH=%u alignV=%u -> %s=(%.1f,%.1f)",
+                   rawX, rawY, alignH, alignV,
+                   usedRealTransform ? "REAL-TRANSFORM" : "RAW-FALLBACK(sig-unresolved-or-raised)",
+                   outX, outY);
+        LogFromController(posBuf);
+    }
+}
+
 long long g_drawTextFireCount = 0;
 
 // Mirrors x86's g_mantleHintDrawnThisFrame/g_mantleHintLastSeenMs pair
@@ -3565,24 +3692,32 @@ void Hook_DrawTextX64(
                             suffixText[suffixLen] = '\0';
                         }
 
-                        // x/y here are THIS call's own already-computed real screen-pixel
-                        // position (confirmed via decompile: e.g. Mantle's own
-                        // `fVar16 = local_518 - (...)`, Pickup's own `fVar19`/`fVar17*fVar18+
-                        // param_2[1]` -- both real final draw-call coordinates, not raw
-                        // pre-layout input), same convention as x86's own param_2/param_3 at
-                        // its equivalent hook site. Converted to design-space so
-                        // DrawOneGameplayHintSlot's own single scaleX/scaleY multiply lands
-                        // correctly at any resolution/aspect ratio, exactly like x86.
+                        // CORRECTED 2026-09-13 (live-reported positioning bug -- see
+                        // kApplyDrawAlignSignature's own header comment above for the full
+                        // root-cause trail): x/y here are NOT already the final draw-call
+                        // screen-pixel position -- they're PRE-TRANSFORM coordinates in
+                        // FUN_14029a2b0's own draw-context-local units, still needing the
+                        // real internal scale-multiply + alignment-mode anchor-offset add
+                        // (FUN_14008d020) this hook's own interception point sits BEFORE.
+                        // ComputeRealDrawPositionX64 calls that real transform directly
+                        // (falls back to the raw, previously-assumed-correct x/y if the
+                        // real functions didn't resolve) so what reaches
+                        // ConvertRealScreenPosToDesignSpaceX64 below is the actual real
+                        // screen pixel position, matching x86's own already-validated
+                        // param_2/param_3 convention at its equivalent hook site.
                         //
                         // HONEST CAVEAT: unlike x86 (which reached its exact pixel alignment
                         // via multiple live-tested rounds of empirical nudge constants --
                         // kHintVerticalNudge, kMantleHintXNudge/YNudge -- see that file's own
                         // history), NO equivalent nudge has been derived or applied here. This
-                        // is the raw converted position with zero tuning; on-screen alignment
+                        // is the real converted position with zero tuning; on-screen alignment
                         // against the real mantle-arrow sprite/pickup icon has NOT been live-
                         // verified and may need the same kind of empirical correction x86
-                        // required once this is actually seen running.
-                        float startX = x, startY = y;
+                        // required once this is actually seen running -- but it should now at
+                        // least land somewhere near the real element instead of at/near the
+                        // screen origin.
+                        float startX = 0.0f, startY = 0.0f;
+                        ComputeRealDrawPositionX64(dcHandle, fontArg, scale, color1, color2, x, y, startX, startY);
                         ConvertRealScreenPosToDesignSpaceX64(startX, startY, startX, startY);
 
                         GameplayHintSlotId slotId = isMantleHint ? GameplayHintSlotId::Mantle
@@ -3658,18 +3793,28 @@ void Hook_DrawTextX64(
                     // strings (see analog_input_hooks.cpp's %.Ns sites, e.g. line 4231/4323).
                     sprintf_s(suffixText, " To %.43s", text);
 
-                    // x/y here are this call's own already-computed final draw position
-                    // (post word-wrap/alignment, inside FUN_1402b1090) -- same convention
-                    // as Mantle/Pickup/Throwback above. HONEST CAVEAT: x86's own Reload
-                    // branch deliberately does NOT use its call's raw position (its own
-                    // comment: the real p3 "rendered noticeably above the weapon... anchored
-                    // directly to the same known-good target pickup/buy-station's own formula
-                    // resolves to" instead, via a live-tuned constant) -- no equivalent x64
-                    // live-tuning has been done here, so this uses the raw converted real
-                    // position with zero empirical correction, same as this hook's other
-                    // three substituted hints. On-screen alignment is UNVERIFIED and may need
-                    // the same class of tuning x86 required once actually seen running.
-                    float startX = x, startY = y;
+                    // CORRECTED 2026-09-13 -- same fix, same root cause, as the Mantle/
+                    // Pickup/Throwback block above (see kApplyDrawAlignSignature's own
+                    // header comment): x/y here are ALSO pre-transform, not the final
+                    // draw position, regardless of which native function chain reaches
+                    // FUN_14029a2b0 (Reload's own path goes through FUN_1402afa60 ->
+                    // FUN_1402b1090's word-wrap loop first, but that loop still calls
+                    // FUN_14029a2b0 -- the same function this hook detours -- for the
+                    // actual draw, so the same pre-transform-x/y fact applies here too).
+                    // HONEST CAVEAT: x86's own Reload branch deliberately does NOT use its
+                    // call's raw position at all (its own comment: the real p3 "rendered
+                    // noticeably above the weapon... anchored directly to the same
+                    // known-good target pickup/buy-station's own formula resolves to"
+                    // instead, via a live-tuned constant) -- no equivalent x64 live-tuning
+                    // has been done here, so this uses the REAL (post-transform, via
+                    // ComputeRealDrawPositionX64) converted position with zero empirical
+                    // correction, same as this hook's other three substituted hints.
+                    // On-screen alignment is UNVERIFIED and may need the same class of
+                    // tuning x86 required once actually seen running -- but, like Mantle/
+                    // Pickup/Throwback above, it should now at least land somewhere near
+                    // the real element instead of at/near the screen origin.
+                    float startX = 0.0f, startY = 0.0f;
+                    ComputeRealDrawPositionX64(dcHandle, fontArg, scale, color1, color2, x, y, startX, startY);
                     ConvertRealScreenPosToDesignSpaceX64(startX, startY, startX, startY);
 
                     RequestCustomHintOverlay(startX, startY, "Press ", suffixText, assetName,
@@ -4482,6 +4627,43 @@ void InstallAnalogInputHooksX64()
             sprintf_s(buf, "[x64-drawtext] Localized-string lookup resolved @ 0x%llX -- Mantle-hint "
                 "structural-match detection active (direct call, no hook installed). Auto-Mantle's own "
                 "+gostand-forcing feature still needs a separate follow-on to consume this signal.",
+                static_cast<unsigned long long>(r.address));
+            LogFromController(buf);
+        }
+    }
+    // Real draw-position transform (2026-09-13, glyph-icon positioning-bug fix) --
+    // two more direct-call resolves, both feeding ComputeRealDrawPositionX64 (see
+    // that function's own header comment / kApplyDrawAlignSignature's header
+    // comment for the full root-cause trail). Independent of every resolve above:
+    // failing here just makes ComputeRealDrawPositionX64 fall back to the raw,
+    // previously-shipped (now-confirmed-wrong) x/y -- the text-draw hook itself
+    // and Mantle-hint detection stay unaffected either way.
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kComputeAuxMetricSignature);
+        if (!r.found) {
+            LogFromController("[x64-drawtext-pos] FATAL: aux-metric-compute signature (FUN_1401b7c90) did not "
+                "resolve -- glyph-icon SUBSTITUTION position will fall back to the raw, pre-transform x/y this "
+                "session (the known-buggy behavior live-reported 2026-09-13)");
+        } else {
+            g_realComputeAuxMetricX64 = reinterpret_cast<ComputeAuxMetricFnX64>(r.address);
+            char buf[192];
+            sprintf_s(buf, "[x64-drawtext-pos] Aux-metric-compute resolved @ 0x%llX (direct call, no hook).",
+                       static_cast<unsigned long long>(r.address));
+            LogFromController(buf);
+        }
+    }
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kApplyDrawAlignSignature);
+        if (!r.found) {
+            LogFromController("[x64-drawtext-pos] FATAL: draw-align-transform signature (FUN_14008d020) did not "
+                "resolve -- glyph-icon SUBSTITUTION position will fall back to the raw, pre-transform x/y this "
+                "session (the known-buggy behavior live-reported 2026-09-13)");
+        } else {
+            g_realApplyDrawAlignX64 = reinterpret_cast<ApplyDrawAlignFnX64>(r.address);
+            char buf[224];
+            sprintf_s(buf, "[x64-drawtext-pos] Draw-align-transform resolved @ 0x%llX (direct call, no hook) -- "
+                "glyph-icon SUBSTITUTION positioning fix active. Watch for '[x64-drawtext-pos] raw=...' to "
+                "confirm the real transform is actually running (not the raw fallback) on the next live test.",
                 static_cast<unsigned long long>(r.address));
             LogFromController(buf);
         }

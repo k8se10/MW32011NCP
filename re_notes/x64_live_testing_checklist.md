@@ -274,26 +274,41 @@ Leaderboards/Game-Summary) — buy-station, Survival ready-up, Sentry-Place
 still render native, unmodified text (see "Not testable" section below for
 the honest list of what's NOT covered and why).**
 
-- [x] Reach a real mantleable ledge — **BROKEN, live-confirmed 2026-09-13**:
-      native hint text suppression works, but no substituted icon is
-      visible. Likely a position bug (draws off-screen since Mantle uses
-      `centerOnScreen=false`), not a total substitution failure — see
-      `known_issues_x64.md`'s 2026-09-13 "glyph-icon SUBSTITUTION
-      positioning bug" round.
-- [x] Pick up a new weapon / swap weapons / pick up health — **BROKEN,
-      live-confirmed 2026-09-13**: text renders but at the very top of the
-      screen, not anchored near the real prompt location — same root
-      position-pipeline bug as Mantle/Reload, see above.
-- [ ] Throw back an enemy grenade — not specifically reported yet, but
-      shares the identical position pipeline as the two confirmed-broken
-      cases above — expect the same symptom (top-of-screen) until the
-      root cause is fixed.
-- [x] **Reload with low ammo** — **BROKEN, live-confirmed 2026-09-13**:
-      text renders at the very top of the screen, same root cause as
-      Interact above. (The structural-reachability question this item
-      used to describe — whether Reload's text is even visible to this
-      hook at all — is resolved and correct; this is a newer, position-
-      specific bug, not a recurrence of the old reachability issue.)
+**POSITION FIX SHIPPED, same day, NOT yet live-tested (build-verified only
+— see `known_issues_x64.md`'s newest 2026-09-13 round for the full root-
+cause trail).** Root cause: `Hook_DrawTextX64`'s own x/y were pre-transform,
+draw-context-local coordinates, not the final screen-pixel position they
+were assumed to be — fixed via `ComputeRealDrawPositionX64`, which now
+calls the real native position transform directly. **Watch for the new
+one-shot `[x64-drawtext-pos] raw=(...) alignH=... alignV=... ->
+REAL-TRANSFORM=(...)` log line** (or `RAW-FALLBACK(sig-unresolved-or-
+raised)` if the fix's own two new signatures failed to resolve — if you
+see the fallback variant, the position bug below is NOT fixed this run)
+on the very first substituted hint of any kind — confirms whether the fix
+is actually active before judging on-screen placement.
+
+- [ ] Reach a real mantleable ledge — **was BROKEN (live-confirmed
+      2026-09-13, native hint text suppression worked but no substituted
+      icon was visible — position bug, Mantle uses `centerOnScreen=false`
+      so a bad coordinate pushed it off-frame entirely). Position fix
+      shipped same day, re-test needed** — confirm the icon is now visible
+      near the real ledge/arrow sprite (exact pixel alignment not expected
+      yet, no nudge constants ported — see the "HONEST CAVEAT" in this
+      hook's own header comment).
+- [ ] Pick up a new weapon / swap weapons / pick up health — **was BROKEN
+      (live-confirmed 2026-09-13, text rendered at the very top of the
+      screen instead of near the real prompt). Position fix shipped same
+      day, re-test needed** — confirm text now renders in the correct
+      general screen area (near the weapon HUD row), not pixel-perfect yet.
+- [ ] Throw back an enemy grenade — shares the identical position pipeline
+      as the confirmed-broken-then-fixed cases above — re-test alongside
+      them now that the position fix has shipped.
+- [ ] **Reload with low ammo** — **was BROKEN (live-confirmed 2026-09-13,
+      same top-of-screen symptom as Interact). Position fix shipped same
+      day, re-test needed.** (The structural-reachability question this
+      item used to describe — whether Reload's text is even visible to
+      this hook at all — was already resolved and correct; this was
+      always the position bug, not a reachability issue.)
 - [ ] **Menu corner hints (Back/Friends)** — open a menu that shows a
       corner-hint row and confirm Back/Friends now draw as real
       controller-glyph icons instead of native `"^2ESC^7"`/`"^2F^7"` text.
