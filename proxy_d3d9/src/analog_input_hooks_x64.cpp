@@ -2448,21 +2448,48 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
 
     float moveX, moveY, lookX, lookY;
     RouteStickAxes_Exported(leftX, leftY, rightX, rightY, g_modConfig.stickLayout, moveX, moveY, lookX, lookY);
-    if (moveX == 0.0f && moveY == 0.0f) return;
 
+    // FIX (2026-09-13, Fire/ADS "intermittent, on and off" investigation --
+    // known_issues_x64.md issue #1's Fire/ADS section): this used to be
+    // `if (moveX == 0.0f && moveY == 0.0f) return;` -- an early return for the
+    // WHOLE REST OF THE FUNCTION, not just the movement-byte write immediately
+    // below it. x86's own equivalent (InjectAllControllerInput,
+    // analog_input_hooks.cpp) calls InjectControllerMovement/Ads/Fire/Sprint/
+    // Reload/WeaponNext/Dpad/Scoreboard/PauseMenu/MenuBack/Rumble_Tick as
+    // COMPLETELY SEPARATE, unconditionally-called functions -- none of them
+    // gated on whether the movement stick is currently producing nonzero
+    // output. x64 fused all of that into this one per-tick function (see this
+    // file's own FOURTH/FIFTH/SIXTH ROUND history above), and the early return
+    // -- almost certainly intended only to skip the "nothing to add" case for
+    // the cmd[0x1c]/[0x1d] write two lines down -- ended up silently gating
+    // EVERY control below it (Fire, ADS, Reload, Weapnext, Melee, Lethal,
+    // Tactical, Jump, Interact, D-pad, CrouchProne, Scoreboard, the gameplay-
+    // tick Pause-open poll, and Rumble_Tick) behind "is the left stick
+    // currently off-center." A player standing still to aim precisely (the
+    // exact moment Fire/ADS matter most) has moveX==moveY==0.0f essentially by
+    // definition, so this function returned before ever reading the trigger/
+    // button state at all -- reported live as "intermittent, on and off, a
+    // really abnormal bug," reproducing on every weapon (nothing to do with
+    // weapon class, matching the earlier 2026-09-13 pistol repro that already
+    // ruled out the sniper-specific theory). Fixed by scoping the early-out to
+    // just the movement-byte write (the one piece that's actually a no-op with
+    // no stick input), letting every downstream control run unconditionally
+    // every tick again, matching x86's own independent-function design.
     auto* cmd = reinterpret_cast<unsigned char*>(param1);
-    int8_t curForward = static_cast<int8_t>(cmd[0x1c]);
-    int8_t curRight   = static_cast<int8_t>(cmd[0x1d]);
+    if (moveX != 0.0f || moveY != 0.0f) {
+        int8_t curForward = static_cast<int8_t>(cmd[0x1c]);
+        int8_t curRight   = static_cast<int8_t>(cmd[0x1d]);
 
-    // Confirmed correct as-is (no inversion) via x86's own real-hardware playtest
-    // (analog_input_hooks.cpp's InjectControllerMovement, 2026-07-14) -- only
-    // look (right stick) was ever reported inverted, not movement. Mirrored here
-    // unchanged since the underlying usercmd_t layout is confirmed identical.
-    int addForward = static_cast<int>(moveY * 127.0f);
-    int addRight   = static_cast<int>(moveX * 127.0f);
+        // Confirmed correct as-is (no inversion) via x86's own real-hardware playtest
+        // (analog_input_hooks.cpp's InjectControllerMovement, 2026-07-14) -- only
+        // look (right stick) was ever reported inverted, not movement. Mirrored here
+        // unchanged since the underlying usercmd_t layout is confirmed identical.
+        int addForward = static_cast<int>(moveY * 127.0f);
+        int addRight   = static_cast<int>(moveX * 127.0f);
 
-    cmd[0x1c] = static_cast<unsigned char>(ClampToSByteX64(curForward + addForward));
-    cmd[0x1d] = static_cast<unsigned char>(ClampToSByteX64(curRight + addRight));
+        cmd[0x1c] = static_cast<unsigned char>(ClampToSByteX64(curForward + addForward));
+        cmd[0x1d] = static_cast<unsigned char>(ClampToSByteX64(curRight + addRight));
+    }
 
     // Buttons/ADS/Reload/Weapnext -- polled from here for the same reason x86
     // calls InjectControllerButtons/Ads/Reload/Fire/WeaponNext all from ONE
