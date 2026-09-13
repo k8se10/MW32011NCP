@@ -6890,6 +6890,18 @@ bool TryGetMantleGlyphAssetName(char* outAssetName, size_t outSize);
 bool TryGetThrowbackGlyphAssetName(char* outAssetName, size_t outSize);
 // Same technique, for the turret-placement hint's known LogicalAction::Fire mapping.
 bool TryGetSentryPlaceGlyphAssetName(char* outAssetName, size_t outSize);
+// Added 2026-09-13 for the x64 native text-draw hook's own pickup/swap/pickup-health
+// glyph substitution (analog_input_hooks_x64.cpp) -- x86 itself has never needed this
+// as a dedicated function since its own generic TryGetGlyphAssetNameForKeyName(highlighted)
+// path already resolves the right icon from the substituted "+activate" bind text (the
+// real default key "F", a literal ASCII key name with no translation risk, unlike
+// Mantle/Throwback/SentryPlace's translatable substituted text). Added here (not only in
+// the x64 file) for consistency with those three siblings and because PhysicalInputForAction/
+// GlyphAssetName have internal (anonymous-namespace) linkage in THIS translation unit --
+// x64's own file can't call them directly. Purely additive: x86's existing working code
+// path for pickup/swap/health is completely unchanged, this function is simply never
+// called from x86's own Hook_DrawGlyphText.
+bool TryGetPickupGlyphAssetName(char* outAssetName, size_t outSize);
 
 // Reuses the same obscure LB+RB-held-2s convention as the zoneload-test above (that
 // test is disabled/not wired into the live tick, so no collision) -- deliberately
@@ -10667,6 +10679,27 @@ bool TryGetThrowbackGlyphAssetName(char* outAssetName, size_t outSize)
 bool TryGetSentryPlaceGlyphAssetName(char* outAssetName, size_t outSize)
 {
     const char* assetName = GlyphAssetName(PhysicalInputForAction(LogicalAction::Fire), g_modConfig.glyphStyle);
+    if (!assetName || assetName[0] == '\0') return false;
+    strncpy_s(outAssetName, outSize, assetName, _TRUNCATE);
+    return true;
+}
+
+// Added 2026-09-13, x64 native text-draw hook's own pickup/swap/pickup-health glyph
+// substitution (analog_input_hooks_x64.cpp -- PLATFORM_PICKUPNEWWEAPON/SWAPWEAPONS/
+// PICKUPHEALTH, all confirmed live in the x64 binary via FUN_14004fa00, all resolving
+// their bind text from the SAME "+activate" command per ui_assets.md's own zone-dump
+// research). "+activate" is this project's own ReloadUse action's real default bind
+// ("F", kKeyActionTable) -- same LogicalAction Reload's own icon already resolves
+// through (TryGetGlyphAssetNameForKeyName("F", ...) at the Reload call site above).
+// Resolved directly via the known LogicalAction rather than re-parsing the substituted
+// key text, same precedent as TryGetMantleGlyphAssetName/TryGetThrowbackGlyphAssetName/
+// TryGetSentryPlaceGlyphAssetName immediately above -- not because the text-based path
+// is known broken for this specific bind (kKeyActionTable's "F" entry is literal ASCII,
+// not translated), just for consistency with how every other structurally-detected hint
+// in this family resolves its icon.
+bool TryGetPickupGlyphAssetName(char* outAssetName, size_t outSize)
+{
+    const char* assetName = GlyphAssetName(PhysicalInputForAction(LogicalAction::ReloadUse), g_modConfig.glyphStyle);
     if (!assetName || assetName[0] == '\0') return false;
     strncpy_s(outAssetName, outSize, assetName, _TRUNCATE);
     return true;
