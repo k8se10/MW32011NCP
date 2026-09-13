@@ -2848,6 +2848,44 @@ void __fastcall Hook_RenderResCompute(void* self)
                     "unclamped scene render-target driver, no r_mode, no vid_restart)",
                     static_cast<int>(nativeW), static_cast<int>(nativeH), targetW, targetH);
                 LogFromController(buf);
+
+                // Port of x86's high-render-scale safety warning (2026-09-13, x64
+                // feature-parity audit item #7; x86 original: analog_input_hooks.cpp
+                // Hook_FUN_00679010, issue #105, 2026-08-29). This was missed when
+                // InternalRenderScalePercent itself was ported to x64 2026-09-12 (row
+                // #43) -- the base feature carried over, this warning didn't. Same
+                // >2.25x-area (~150% linear) threshold, same one-time-per-session
+                // gate, same ShowOverlayMessageUntilDismissed mechanism as x86's
+                // original. Honest caveat x86's own warning didn't need: iw5sp_x64/
+                // iw5mp_x64.exe are 64-bit processes, so the specific "hard 4GB
+                // address-space ceiling" reasoning behind x86's warning text doesn't
+                // apply as-is here -- worded accordingly below rather than copied
+                // verbatim, and the underlying crash/freeze risk at high scale has NOT
+                // been independently re-tested against x64's own larger address
+                // space. Ported as a precaution (a real risk was demonstrated on x86
+                // at this same render-cost multiplier; the x64 architecture change
+                // alone doesn't prove it can't recur), not because the identical
+                // failure mode is confirmed to reproduce here.
+                static bool s_highScaleWarningShownX64 = false;
+                int64_t targetAreaX64 = static_cast<int64_t>(targetW) * targetH;
+                int64_t nativeAreaX64 = static_cast<int64_t>(nativeW) * nativeH;
+                if (!s_highScaleWarningShownX64 && nativeAreaX64 > 0 &&
+                    targetAreaX64 * 4 > nativeAreaX64 * 9) { // > 2.25x area, i.e. > ~150% linear
+                    s_highScaleWarningShownX64 = true;
+                    LogFromController("[x64-video-scale][WARNING] target resolution is well above native -- "
+                        "x86's own version of this warning (known_issues.md issue #105) cited a hard 4GB "
+                        "address-space ceiling and real crashes/freezes reproduced at 250-300%% -- this is a "
+                        "64-bit process so that specific ceiling doesn't apply as-is, and the underlying "
+                        "high-scale crash/freeze risk has NOT been independently re-tested on x64 -- see the "
+                        "on-screen warning");
+                    ShowOverlayMessageUntilDismissed(
+                        "Render resolution is set well above native. x86 builds of this mod hit real "
+                        "crashes/freezes above ~250% scale due to a 32-bit memory ceiling that doesn't apply "
+                        "to this 64-bit build as-is, but high-scale stability has not been independently "
+                        "re-tested here.\n\n"
+                        "Enter / Space / Click to continue anyway:",
+                        OverlayAnimStyle::Plain);
+                }
             }
         }
     }
