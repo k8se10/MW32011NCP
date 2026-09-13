@@ -4353,3 +4353,57 @@ still need the same class of empirical nudge-constant tuning x86 required
 (`kHintVerticalNudge`, `kMantleHintXNudge`/`YNudge`) once the position is
 at least landing in the right neighborhood -- this fix corrects the
 coordinate SPACE, not necessarily pixel-perfect placement within it.
+
+---
+
+**UPDATE 2026-09-13 (later same session) — a THIRD instance of the exact
+same sprintf_s bug class, introduced by the glyph-position fix ITSELF
+after this session's own sweep had already run, causing "no boot" again.**
+
+Live report: "no boot check log." Root-caused via a fresh crash dump
+(`iw5sp.exe.9844.dmp`, WinDbg) -- identical exception (`0xc0000409`,
+`FAST_FAIL_INVALID_ARG`), identical mechanism (`sprintf_s<224>`), new
+location: `InstallAnalogInputHooksX64`'s "`[x64-drawtext-pos] Draw-align-
+transform resolved`" log line, added by the SAME-DAY glyph-icon
+positioning-bug fix (`aa8a910`). That fix landed AFTER this session's own
+earlier sprintf_s buffer-safety sweep (`3813c30`/`f8cf9f4`), so its own
+new log line was never checked against the same standard -- a 262-char
+literal (plus a `%llX` substitution) into a 224-byte buffer, a 55-byte
+deterministic overflow (the resolve behind it always succeeds, so this
+crashed on every single launch once that code path was built).
+
+Fixed (`37a4679`): `buf[224]` -> `320`. Re-ran the session's own
+worst-case sprintf_s scanner against the CURRENT file state afterward
+(not trusted from memory) to check for anything else the positioning
+fix's new code introduced -- found one more flagged candidate
+(`posBuf[224]`, the "`[x64-drawtext-pos] raw=...`" diagnostic line) and
+individually verified it SAFE by hand: its one `%s` substitutes a fixed
+2-way ternary (`"REAL-TRANSFORM"`/`"RAW-FALLBACK(sig-unresolved-or-
+raised)"`, 38 chars max), true worst case 189 bytes against 224 -- a
+scanner false positive (generic `%s` handling defaults to a conservative
+64-char assumption, doesn't know this specific substitution is bounded),
+not a real bug. No further code changes.
+
+**Standing process lesson, now reinforced a third time**: this exact bug
+class has now caused three separate "game won't launch" incidents in one
+session (2026-09-05's original discovery, plus two more today), each
+time from a NEW log line added without being checked against the
+project's own buffer-safety standard. The pattern is specifically: a
+long, human-readable diagnostic message (100+ characters of literal
+text) written alongside a genuinely new feature/fix, sized by eyeballing
+"looks big enough" rather than computing the real worst case. **Any
+session adding a new `sprintf_s`-into-fixed-buffer call, in ANY commit,
+should treat it as guilty until proven innocent** -- compute literal
+length + each specifier's true worst-case width (16 hex digits for
+`%llX`/`%p`, 11 for `%d`, the real max length for a bounded `%s`
+substitution, or `%.Ns`-truncate if genuinely unbounded) before
+committing, not after a live crash report forces the question. A
+same-day buffer-safety sweep does NOT retroactively cover code written
+after the sweep ran -- this needs to be habitual per-commit discipline,
+not a periodic pass.
+
+Build-verified: x64 `/t:Rebuild` 0 errors, `dumpbin`-confirmed `8664
+machine (x64)` fresh timestamp (`6AA71006`, Sun Sep 13 22:05:10 2026);
+Win32 regression rebuild 0 errors, no regression; x64 rebuilt and
+redeployed last. **Not yet re-confirmed live** -- this is the very next
+thing to verify on the next launch attempt.
