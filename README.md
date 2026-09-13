@@ -110,6 +110,7 @@ see their own sections below; neither gates this release.
 | | Native controller menu/UI navigation (main menu, pause, options, buy-stations) |
 | | Menu-focus/itemDef tracking (glyph-icon dependency) |
 | | Real glyph-icon substitution: Mantle, Pickup/Swap/Pickup-health, Throwback grenade (see Known gaps for what's still native-only) |
+| | Highlighted-item A-glyph (menu list navigation) and the F2/F3 glyph-position editor |
 | | Auto-Mantle (while sprinting) — ships off by default |
 | | Back (scoreboard, `+scores` key-synthesis) — see Known gaps below for why this is correctly a no-op in SP |
 
@@ -129,22 +130,36 @@ presets, the plugin API, background threads, and more).
   the native hint text and draw this project's own icon+text instead,
   detected via an exact structural match against the real, live-resolved
   reference-key text (no font-name filtering needed for these three).
-  **Everything else the F2/F3 editor and highlighted-item A-glyph would
-  cover, plus buy-station's "Hold F to use Weapon Armory," Survival's
-  ready-up prompt, Reload, turret placement, and menu corner hints
-  (Back/Friends), still render completely native/unmodified** — buy-station
+  **Buy-station's "Hold F to use Weapon Armory," Survival's ready-up
+  prompt, Reload, turret placement, and menu corner hints (Back/Friends)
+  still render completely native/unmodified** — buy-station
   and ready-up are blocked on x64's still-unconfirmed `Font_s` `fontName`
   offset (needed for `IsGameplayHintFont`-style filtering, since neither has
   a known reference-key template even on `-x86`); Reload is confirmed to
   flow through a different native draw function this hook can't observe at
   all; Sentry-Place's own reference string wasn't found anywhere in the x64
-  binary; the F2/F3 editor/A-glyph/custom cursor and menu hints weren't
-  attempted this pass. On-screen alignment for the three working cases is
-  also unverified — no pixel-tuning nudges were ported yet. See
+  binary; custom cursor and menu corner hints weren't attempted this pass.
+  On-screen alignment for the three working cases is also unverified — no
+  pixel-tuning nudges were ported yet. See
   `re_notes/x64_migration/drawtext_hook_x64.md` for the exact scope and
   reasoning behind each gap. Everything else renders normally (including
   this mod's own startup/hot-reload toast messages, which ARE confirmed
   working on x64).
+- **Highlighted-item A-glyph (menu list navigation) and the F2/F3 in-game
+  glyph-position editor are now wired to real x64 menu-focus tracking**
+  (2026-09-13) — a separate system from the gameplay-hint icon substitution
+  above: this one draws an A-button icon on whichever native menu list item
+  is currently highlighted, using the same manually-calibrated position
+  table `-x86` already ships, and the F2/F3 editor is the tool used to
+  build/extend that table. Both features only ever depended on one shared
+  focus-tracking wrapper, which previously always reported "no focus" on
+  x64 because its x64 branch predated the real x64 itemDef-array walk built
+  2026-09-12 for the Custom Options screen's own open trigger — now routed
+  to that same, already-working implementation. Build-verified, not yet
+  live-tested. The A-glyph will only draw for menu groups already
+  calibrated on `-x86` (the position table itself is shared, unmodified);
+  any new/uncalibrated group still needs the F2/F3 editor re-run on x64 to
+  confirm it lines up.
 - **Auto-Mantle (while sprinting) is now fully wired on x64** (2026-09-13),
   build-verified, ships off by default matching `-x86`'s exact default. The
   native text-draw hook includes a real, language-independent structural
