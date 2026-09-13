@@ -2825,6 +2825,78 @@ extern "C" void GetMotionBlurDeltasX64(float* outYawDeg, float* outPitchDeg)
     if (outPitchDeg) *outPitchDeg = g_motionBlurPitchDeltaDegX64;
 }
 
+// ---- Custom mouse cursor overlay (x86's DrawCustomCursorIfNeeded gate), x64 port (2026-09-13) ----
+//
+// x86's DrawCustomCursorIfNeeded (overlay_hud.cpp) early-returns unconditionally on
+// x64 -- kCursorVisibleFlagAddr/kCursorUiStateAddr (0x01c00474/0x01c0ad14) are raw
+// x86-only addresses, meaningless against x64's real module base, see that
+// function's own header comment (known_issues_x64.md issue #1). Real x64
+// equivalents found via analyzeHeadless.bat -process iw5sp.exe -readOnly
+// -noanalysis against re_notes/ghidra_project_x64/iw5sp_x64_proj (full trail:
+// re_notes/known_issues_x64.md issue #1's own "Custom mouse cursor overlay" round).
+//
+// x86's DAT_01c00474 (cursor-visible flag, written by FUN_005385d0 from a real
+// mouse-position bounds check) and DAT_01c0ad14 (per-player UI/menu-state value,
+// gated as a switch with cases 0/6/10 hidden) are both read together by ONE native
+// function, FUN_00478540 -- the real native cursor-draw dispatcher (confirmed via
+// full decompile, re_notes/known_issues.md issue #52's own writer trail). The x64
+// equivalent of THAT function is FUN_14029d170, found by tracing every reference to
+// DAT_142615b20 -- already independently confirmed elsewhere in this file as x64's
+// exact equivalent of x86's DAT_01c0ad14 (FUN_14029f3f0/kPauseToggleSignature's own
+// SetMenuState work: `(&DAT_142615b20)[player] = mode`, writing the SAME literal
+// mode values x86's own writer used -- 6=briefing, 7=victoryscreen, etc., see
+// re_notes/x64_migration/decomp_menustate_openmenu_x64.txt). One of that global's
+// 21 total references (DescribeRefs.java) landed inside a function performing the
+// EXACT same gate/switch/draw shape as x86's FUN_00478540: skip if visFlag==0 or
+// uiState==0; if uiState==3, check "sp_acceptinvite_warning[_nosave]" (the SAME two
+// literal strings x86's own FUN_00478540 checks, byte-for-byte); else skip if
+// uiState==6 or ==10; otherwise draw via an 8-parameter native quad-draw call using
+// an asset explicitly loaded as "ui_cursor" (FUN_14029b640, the x64 UI-init
+// function: `DAT_142604f58 = FUN_1401c4ba0("ui_cursor",0)`) at a position read from
+// DAT_142605060/142605064 -- offset +0x10/+0x14 from the confirmed UI-context base
+// DAT_142605050, the EXACT SAME +0x10 offset x86's own cursor-position pair
+// (DAT_01c00468/046c) sits at relative to ITS OWN uiContext base (DAT_01c00458).
+// The visible-flag address, DAT_14260506c, sits at +0x1c from that same base --
+// again the identical offset to x86 (0x01c00458+0x1c=0x01c00474). Two fully
+// independent lines of evidence (structural function-shape match AND identical
+// struct-offset arithmetic on both platforms) agree -- high confidence despite
+// neither address being live-tested yet.
+//
+// Signature anchors the two-instruction gate directly (re_notes/x64_migration/
+// rawbytes_cursor_gate2.txt -- hand-verified byte-for-byte against the real
+// disassembly, not DumpSigBytes.java's own reference-based heuristic, since both
+// hits here are genuine RIP-relative loads to global data with no RSP-relative
+// false-positive risk): `CMP dword ptr [rip+disp],R15D` (the visFlag test, offset
+// 0, 7 bytes) then `JZ`, then `MOV EAX,[rip+disp]` (the uiState read, offset +13, 6
+// bytes), then `TEST EAX,EAX / JZ / CMP EAX,3 / JZ` -- 16 literal bytes across 5
+// distinct opcodes plus 2 wildcarded 4-byte rel32 jump targets (function-internal,
+// never resolved -- only the two RIP-relative data loads are), extremely unlikely
+// to collide elsewhere in this binary.
+constexpr const char* kCursorGateSignature =
+    "44 39 3D ?? ?? ?? ?? 0F 84 ?? ?? ?? ?? 8B 05 ?? ?? ?? ?? 85 C0 0F 84 ?? ?? ?? ?? 83 F8 03 74 0A";
+constexpr ptrdiff_t kCursorVisFlagInsnOffset = 0;
+constexpr size_t kCursorVisFlagInsnLength = 7;
+constexpr ptrdiff_t kCursorUiStateInsnOffset = 13;
+constexpr size_t kCursorUiStateInsnLength = 6;
+
+int32_t* g_cursorVisibleFlagX64 = nullptr;
+int32_t* g_cursorUiStateX64 = nullptr;
+
+// Exported accessor for overlay_hud.cpp (a different translation unit) -- same
+// "extern C escapes this anonymous namespace's internal linkage" pattern as
+// IsMenuActiveX64_Exported/TryGetClcStateX64 above. Fails closed (returns false,
+// never dereferences a null pointer) when either signature hasn't resolved --
+// DrawCustomCursorIfNeeded is expected to skip drawing entirely rather than guess
+// at a value that was never confirmed, matching x86's own "never crash on a bad
+// read" __except posture with a resolve-time check instead of a runtime SEH catch.
+extern "C" bool TryGetCursorGateX64(int* outVisFlag, int* outUiState)
+{
+    if (!g_cursorVisibleFlagX64 || !g_cursorUiStateX64 || !outVisFlag || !outUiState) return false;
+    *outVisFlag = *g_cursorVisibleFlagX64;
+    *outUiState = *g_cursorUiStateX64;
+    return true;
+}
+
 // ---- Native text-draw hook (x86's Hook_DrawGlyphText), x64 port (2026-09-13) ------
 //
 // PRIOR STATE: this was the single remaining blocker for gameplay controller-glyph
@@ -3768,6 +3840,38 @@ void InstallAnalogInputHooksX64()
                 "+gostand-forcing feature still needs a separate follow-on to consume this signal.",
                 static_cast<unsigned long long>(r.address));
             LogFromController(buf);
+        }
+    }
+
+    // Custom mouse cursor overlay (2026-09-13 port) -- resolves the two real x64
+    // globals overlay_hud.cpp's DrawCustomCursorIfNeeded needs to replace its
+    // current x64 early-return stub. See this file's own "Custom mouse cursor
+    // overlay" section header comment (above TryGetCursorGateX64) for the full
+    // discovery trail. Independent of every other resolve in this function -- a
+    // failure here only keeps the existing safe early-return stub in place, no
+    // other feature is affected either way.
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kCursorGateSignature);
+        if (!r.found) {
+            LogFromController("[x64-cursor] FATAL: cursor-gate signature did not resolve -- the custom mouse "
+                "cursor overlay will not draw this session (safe early-return stub stays in place)");
+        } else {
+            g_cursorVisibleFlagX64 = reinterpret_cast<int32_t*>(
+                SigScan::ResolveRipRelative(r.address + kCursorVisFlagInsnOffset, kCursorVisFlagInsnLength));
+            g_cursorUiStateX64 = reinterpret_cast<int32_t*>(
+                SigScan::ResolveRipRelative(r.address + kCursorUiStateInsnOffset, kCursorUiStateInsnLength));
+            if (g_cursorVisibleFlagX64 && g_cursorUiStateX64) {
+                char buf[224];
+                sprintf_s(buf, "[x64-cursor] Cursor gate resolved: visFlag=0x%p uiState=0x%p -- custom cursor "
+                    "overlay active (read-only, no hook installed).",
+                    (void*)g_cursorVisibleFlagX64, (void*)g_cursorUiStateX64);
+                LogFromController(buf);
+            } else {
+                g_cursorVisibleFlagX64 = nullptr;
+                g_cursorUiStateX64 = nullptr;
+                LogFromController("[x64-cursor] FATAL: cursor-gate RIP-relative resolution failed -- the custom "
+                    "mouse cursor overlay will not draw this session (safe early-return stub stays in place)");
+            }
         }
     }
 }

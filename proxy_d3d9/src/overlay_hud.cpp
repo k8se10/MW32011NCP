@@ -121,6 +121,12 @@ extern "C" bool IsMenuActiveX64_Exported();
 extern "C" bool TryGetClcStateX64(int* outValue);
 extern "C" bool TryGetInLevelFlagX64(int* outValue);
 extern "C" void GetMotionBlurDeltasX64(float* outYawDeg, float* outPitchDeg);
+// Custom mouse cursor overlay (2026-09-13 port), defined in analog_input_hooks_x64.cpp
+// -- see that file's own "Custom mouse cursor overlay" section for the full discovery
+// trail. Fails closed (false, outputs untouched) when either signature hasn't
+// resolved -- DrawCustomCursorIfNeeded below treats that the same as x86's own
+// __except handler: skip drawing rather than guess.
+extern "C" bool TryGetCursorGateX64(int* outVisFlag, int* outUiState);
 #endif
 
 // Plugin text/glyph color override (2026-08-25, see mw3ncp_plugin_api.h and
@@ -6205,32 +6211,7 @@ namespace {
 
 void DrawCustomCursorIfNeeded(void* device)
 {
-#if defined(_M_X64) || defined(_WIN64)
-    // x64: CONFIRMED REAL BUG, 2026-09-05 (live report: "no visual rendered
-    // elements show on screen... including our own mw32011ncp started messages
-    // and such" -- investigation traced this specific function as one real,
-    // confirmed cause). kCursorVisibleFlagAddr/kCursorUiStateAddr below are raw
-    // x86-only hardcoded addresses (0x01c00474/0x01c0ad14 -- well within the
-    // x86 process's address space, meaningless against x64's real module base
-    // of 0x140000000, confirmed via this file's own env-diag log line) --
-    // exactly the same landmine class the 2026-09-04 crash audit already found
-    // and fixed ~30 instances of in this file, EXCEPT this one slipped through
-    // that audit because it's wrapped in __try/__except: on x86 these addresses
-    // are real and safe, but on x64 dereferencing them is almost certainly an
-    // access violation into unmapped memory -- which SEH silently swallows
-    // instead of crashing, so this failed completely invisibly (no crash, no
-    // log line) rather than surfacing the way IsMenuActive's own unguarded
-    // read did. Early-returning here (same pattern as every other x64-deferred
-    // function in this file, e.g. RunFullScreenPostProcessIfEnabled) is the
-    // honest, correct behavior until a real x64 signature-scan finds this
-    // engine's actual cursor-visible-flag/UI-state equivalents -- not attempted
-    // this pass. See known_issues_x64.md issue #1 for the full trail.
-    return;
-#endif
     __try {
-        constexpr uintptr_t kCursorVisibleFlagAddr = 0x01c00474;
-        constexpr uintptr_t kCursorUiStateAddr = 0x01c0ad14;
-
         // Debug-freeze override (2026-08-25, direct request: cursor must be
         // available in ACTUAL gameplay while the glyph position editor is active,
         // not just in menus) -- computed up front so every native visFlag/uiState/
@@ -6240,7 +6221,27 @@ void DrawCustomCursorIfNeeded(void* device)
         // another special case.
         bool forceCursorForEditor = IsGlyphPositionEditModeActive();
 
-        int visFlag = *reinterpret_cast<int*>(kCursorVisibleFlagAddr);
+        int visFlag = 0;
+        int uiState = 0;
+#if defined(_M_X64) || defined(_WIN64)
+        // x64 (2026-09-13 port, known_issues_x64.md issue #1): real signature-
+        // scanned equivalents of x86's raw kCursorVisibleFlagAddr/kCursorUiStateAddr
+        // addresses below (analog_input_hooks_x64.cpp, DAT_14260506c/DAT_142615b20 --
+        // see that file's own "Custom mouse cursor overlay" section for the full
+        // discovery trail). Fails closed: if either signature never resolved this
+        // session, skip drawing entirely rather than guess -- same posture every
+        // other not-yet-fully-proven x64 gate in this file already has. The editor
+        // override still works even when the gate itself can't be read (matches
+        // x86: the editor is a debug tool that deliberately bypasses this gate, not
+        // a consumer of its resolved value).
+        bool gateResolved = TryGetCursorGateX64(&visFlag, &uiState);
+        if (!forceCursorForEditor && !gateResolved) return;
+#else
+        constexpr uintptr_t kCursorVisibleFlagAddr = 0x01c00474;
+        constexpr uintptr_t kCursorUiStateAddr = 0x01c0ad14;
+        visFlag = *reinterpret_cast<int*>(kCursorVisibleFlagAddr);
+        uiState = *reinterpret_cast<int*>(kCursorUiStateAddr);
+#endif
         // Live-reported 2026-08-02: with the input-method gating now working
         // correctly, a keyboard/mouse player sees the cursor persist through
         // ACTIVE gameplay (not just menus/pause) -- meaning the uiState exclusion
@@ -6255,17 +6256,16 @@ void DrawCustomCursorIfNeeded(void* device)
         {
             static int s_lastLoggedVisFlag = -1;
             static int s_lastLoggedUiState = -1;
-            if (visFlag != s_lastLoggedVisFlag || (visFlag != 0 && *reinterpret_cast<int*>(kCursorUiStateAddr) != s_lastLoggedUiState)) {
+            if (visFlag != s_lastLoggedVisFlag || (visFlag != 0 && uiState != s_lastLoggedUiState)) {
                 s_lastLoggedVisFlag = visFlag;
-                s_lastLoggedUiState = visFlag != 0 ? *reinterpret_cast<int*>(kCursorUiStateAddr) : s_lastLoggedUiState;
+                s_lastLoggedUiState = visFlag != 0 ? uiState : s_lastLoggedUiState;
                 char buf[96];
                 sprintf_s(buf, "[cursor-gate-diag] visFlag=%d uiState=%d t=%lu", visFlag,
-                          visFlag != 0 ? *reinterpret_cast<int*>(kCursorUiStateAddr) : -1, GetTickCount());
+                          visFlag != 0 ? uiState : -1, GetTickCount());
                 LogFromController(buf);
             }
         }
         if (!forceCursorForEditor && visFlag == 0) return;
-        int uiState = *reinterpret_cast<int*>(kCursorUiStateAddr);
         if (!forceCursorForEditor && (uiState == 0 || uiState == 6 || uiState == 10)) return;
         // Real fix (2026-08-02): a live capture showed uiState taking on several
         // values during ordinary active gameplay (1, 9 -- held 20+ seconds straight
@@ -6274,7 +6274,22 @@ void DrawCustomCursorIfNeeded(void* device)
         // already-proven-reliable "a real menu is open" signal instead (the same one
         // every corner hint/ESC-forward call already trusts) -- ordinary gameplay
         // reliably reads false here regardless of what uiState happens to be.
+        //
+        // x64 NOTE (2026-09-13, found while porting the cursor gate above):
+        // IsMenuActive_Exported() itself is an x86-only real read (analog_input_hooks.cpp's
+        // IsMenuActive()) that unconditionally returns false as its x64 stub (2026-09-04
+        // crash fix, never since replaced there) -- calling it unguarded here would have
+        // made this whole function a no-op on x64 outside the glyph editor (forceCursorForEditor
+        // aside, "!forceCursorForEditor && !IsMenuActive_Exported()" is always true when the
+        // stub always reports false, so this would return every single call). Use the REAL,
+        // already-resolved x64 equivalent (IsMenuActiveX64_Exported, analog_input_hooks_x64.cpp)
+        // on that platform instead -- same bit, same struct, already proven live for Pause/
+        // motion-blur/FSR gating this session.
+#if defined(_M_X64) || defined(_WIN64)
+        if (!forceCursorForEditor && !IsMenuActiveX64_Exported()) return;
+#else
         if (!forceCursorForEditor && !IsMenuActive_Exported()) return;
+#endif
 
         // BUG-004 co-op report (2026-08-02): the native visFlag/uiState combo above
         // can consider the cursor "visible" during co-op-only states (e.g. co-op's own
