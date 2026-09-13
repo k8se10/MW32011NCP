@@ -4440,7 +4440,18 @@ void InstallAnalogInputHooksX64()
                 "installed fine (Auto-Mantle's own dependency stays unresolved)");
         } else {
             g_getLocalizedStringX64 = reinterpret_cast<GetLocalizedStringFnX64>(r.address);
-            char buf[160];
+            // 2026-09-13 CONFIRMED CRASH SITE, actually fixed here (a prior same-day commit's
+            // message claimed this line was fixed as part of a broader sweep, but the sweep
+            // never actually touched this specific line -- caught only because the game still
+            // failed to launch afterward, at the identical fault offset/crash-dump signature,
+            // proving the fix had never landed). This literal text alone is 239 chars -- the
+            // old buf[160] only had room for 20 more bytes total (16-hex %llX + null), so
+            // sprintf_s's own UCRT fail-fast (0xc0000409, FAST_FAIL_INVALID_ARG subcode 5)
+            // crashed on EVERY launch reaching this line, confirmed via two separate live
+            // crash dumps (iw5sp.exe.14364.dmp and iw5sp.exe.4540.dmp, both symbolized in
+            // WinDbg against the built PDB, both showing the identical stack:
+            // sprintf_s<160> <- InstallAnalogInputHooksX64+0xa2e <- DllMain).
+            char buf[320];
             sprintf_s(buf, "[x64-drawtext] Localized-string lookup resolved @ 0x%llX -- Mantle-hint "
                 "structural-match detection active (direct call, no hook installed). Auto-Mantle's own "
                 "+gostand-forcing feature still needs a separate follow-on to consume this signal.",
