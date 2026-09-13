@@ -75,6 +75,8 @@
 #include <cstring>
 #include <cctype>
 #include <cstdlib>
+#include <cmath> // sqrtf/atan2f/fabsf -- Auto-Mantle's stick-cone check (2026-09-13),
+                 // mirrors x86's own InjectControllerButtons math exactly
 #include "../third_party/minhook/include/MinHook.h"
 #include "signature_scan.h"
 #include "controller_input.h"
@@ -114,6 +116,14 @@ extern "C" HWND GetGameWindow();
 // port) so x64's Mantle-hint detection gates identically to x86's own
 // `ShouldDrawGlyphOverlay() && !IsMenuActive()` block.
 extern "C" bool ShouldDrawGlyphOverlay_Exported();
+// Forward declaration -- defined later in this file (Mantle-hint structural-match
+// detection, 2026-09-13 text-draw hook port). extern "C" here matches its actual
+// definition's linkage-specification exactly (this project's own established MSVC
+// lesson, CLAUDE.md's "Checking is far cheaper than digging": the FIRST declaration
+// of a name establishes its linkage, so a forward declaration of an extern "C"
+// function must itself say extern "C" or the later definition conflicts).
+// Auto-Mantle's own fire condition (Hook_MovementTick, below) needs this.
+extern "C" bool IsMantleHintCurrentlyShowingX64();
 
 namespace {
 
@@ -1273,6 +1283,31 @@ bool g_scoreboardHeldX64 = false; // Back -> +scores key-synth, see SendSyntheti
 // history and known_issues.md issue #13 for why x86 needed this exact fix).
 bool g_currentBPressTouchedMenuX64 = false;
 
+// ---- IsSprintActiveX64() (2026-09-13) -- Auto-Mantle's own fire-condition needs
+// this exact logical check, per x86's own IsSprintActive() (analog_input_hooks.cpp,
+// line ~1939: `return g_sprintHeld && GetRealStance() == 0 && !g_adsHeld;`). Composed
+// from three x64 tracking vars that already exist for other, unrelated reasons --
+// no new RE needed, confirmed by re-reading x86's own function in full first (it's a
+// plain logical state check, not a native memory read):
+//   - g_sprintKbuttonActiveX64 (Hook_SprintTick, above) is x64's own equivalent of
+//     x86's g_sprintHeld -- true whenever this project's own real +sprint kbutton
+//     claim is currently active (sprintHeld && !adsHeldNow, computed fresh every
+//     Sprint-hook tick).
+//   - GetRealStanceX64() (this file) is the direct x64 equivalent of x86's
+//     GetRealStance(), already used elsewhere this session (Hook_SprintTick's own
+//     rising-edge stand-up call, ForceStandingViaRealToggleX64's dispatch).
+//   - g_adsHeldX64 (Hook_MovementTick, below) is x64's own equivalent of x86's
+//     g_adsHeld, already used for Hold Breath and gyro-only-while-ADS gating.
+// Same honest caveat x86's own design already carries (not a new one introduced
+// here): this reads LOGICAL input intent (button state + stance + not-ADS), not
+// the native sprint duration/recovery timer's own internal state -- x86's
+// IsSprintActive() has never accounted for that either, so this is an exact parity
+// port, not a regression relative to x86.
+bool IsSprintActiveX64()
+{
+    return g_sprintKbuttonActiveX64 && GetRealStanceX64() == 0 && !g_adsHeldX64;
+}
+
 // Real fix for "obvs cant unpause when paused" (2026-09-04, live-confirmed
 // bug): Hook_MovementTick below rides FUN_14007d9f0, part of the per-frame
 // GAMEPLAY SIMULATION pipeline -- which halts entirely while genuinely
@@ -2252,6 +2287,66 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
                 ForceStandingViaRealToggleX64();
             }
             g_jumpHeldX64 = jumpHeld;
+
+            // Auto-mantle (2026-09-13 x64 port) -- STRICTLY opt-in, matches x86's
+            // exact default (g_modConfig.autoMantleEnabled = false, mod_config.h --
+            // unchanged by this port). Drives the SAME real +gostand usercmd bit
+            // (kJumpUsercmdBit, 0x400 -- identical value/offset to x86's own
+            // confirmed +0x04 usercmd_t.buttons field, this session's own Movement
+            // work) Jump already uses just above -- no new native trigger needed,
+            // see analog_input_hooks.cpp's own "Auto-mantle" comment block (line
+            // ~1431) for the full original rationale/regression history (the
+            // "jumps always when trying to sprint" fix that made gating on the
+            // real native mantle-hint text-draw mandatory, not optional).
+            //
+            // Both of x86's real fire-condition pieces are now available on x64:
+            //   - IsMantleHintCurrentlyShowingX64() (this file, defined later --
+            //     see the forward declaration near the top) -- x64's own real,
+            //     structural-match ledge-availability gate, shipped 2026-09-13,
+            //     the dependency this feature was previously blocked on
+            //     (known_issues_x64.md issue #1's Auto-Mantle section).
+            //   - IsSprintActiveX64() (this file, above) -- composed this same
+            //     pass from three already-existing x64 tracking vars, exact parity
+            //     port of x86's own IsSprintActive(), no new RE needed.
+            // moveX/moveY are reused directly from this function's own earlier
+            // RouteStickAxes_Exported() call (this same tick) rather than a second
+            // stick read -- x86's InjectControllerButtons is a separate function
+            // from InjectControllerMovement so it has to re-read the stick itself;
+            // Hook_MovementTick is both, so the values are already in scope.
+            //
+            // Cooldown (750ms, matches x86's own kAutoMantleCooldownMs exactly,
+            // 2026-08-03 user-requested value) -- suppresses re-triggering every
+            // single tick the hint stays showing, same reasoning as x86.
+            if (g_modConfig.autoMantleEnabled) {
+                static DWORD s_lastAutoMantleTriggerMsX64 = 0;
+                constexpr DWORD kAutoMantleCooldownMsX64 = 750;
+
+                static DWORD s_lastAutoMantleDiagLogMsX64 = 0;
+                DWORD nowMsDiag = GetTickCount();
+                bool sprintActiveDiag = IsSprintActiveX64();
+                bool mantleHintDiag = IsMantleHintCurrentlyShowingX64();
+                if (mantleHintDiag || (nowMsDiag - s_lastAutoMantleDiagLogMsX64) >= 500) {
+                    s_lastAutoMantleDiagLogMsX64 = nowMsDiag;
+                    char amDiagBuf[128];
+                    sprintf_s(amDiagBuf, "[automantle-diag-x64] sprintActive=%d mantleHintShowing=%d",
+                        sprintActiveDiag ? 1 : 0, mantleHintDiag ? 1 : 0);
+                    LogFromController(amDiagBuf);
+                }
+
+                if (sprintActiveDiag && mantleHintDiag &&
+                    (GetTickCount() - s_lastAutoMantleTriggerMsX64) >= kAutoMantleCooldownMsX64) {
+                    float amMagnitude = sqrtf(moveX * moveX + moveY * moveY);
+                    if (moveY > 0.0f && amMagnitude >= g_modConfig.autoMantleMinStickMagnitude) {
+                        constexpr float kPiX64 = 3.14159265f;
+                        float amHalfConeRad = (g_modConfig.autoMantleForwardConeDegrees * 0.5f) * (kPiX64 / 180.0f);
+                        float amAngleFromForward = atan2f(fabsf(moveX), moveY);
+                        if (amAngleFromForward <= amHalfConeRad) {
+                            out |= kJumpUsercmdBit;
+                            s_lastAutoMantleTriggerMsX64 = GetTickCount();
+                        }
+                    }
+                }
+            }
 
             // Interact (X) -- hold-to-interact, dual-purpose with Reload on the
             // SAME physical button, matching x86's own design exactly (both the
