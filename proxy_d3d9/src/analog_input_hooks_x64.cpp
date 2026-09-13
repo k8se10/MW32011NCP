@@ -125,6 +125,35 @@ extern "C" bool ShouldDrawGlyphOverlay_Exported();
 // Auto-Mantle's own fire condition (Hook_MovementTick, below) needs this.
 extern "C" bool IsMantleHintCurrentlyShowingX64();
 
+// Forward declarations for real glyph-icon SUBSTITUTION (2026-09-13, text-draw hook
+// extension) -- all four are plain C++ (NOT extern "C") functions defined at file
+// scope (outside the giant anonymous namespace) in analog_input_hooks.cpp, so a
+// plain matching declaration here links correctly via ordinary C++ name mangling
+// (both TUs compile with the same MSVC/ABI) -- no _Exported wrapper needed, unlike
+// IsPhysicalHeld_Exported/RouteStickAxes_Exported/ShouldDrawGlyphOverlay_Exported
+// above, which exist specifically to escape THAT file's anonymous namespace
+// (internal linkage). These four already have external linkage as written.
+//   - TryGetMantleGlyphAssetName/TryGetThrowbackGlyphAssetName: existing x86
+//     functions (issue #68), reused verbatim, zero x86 changes.
+//   - TryGetPickupGlyphAssetName: NEW function added to analog_input_hooks.cpp this
+//     same pass specifically for this x64 port (see that file's own comment on it) --
+//     purely additive, x86's own Hook_DrawGlyphText never calls it, so x86's existing
+//     generic-path behavior for pickup/swap/health is completely unchanged.
+// ConvertRealScreenPosToDesignSpace is NOT declared here -- confirmed via a real
+// LNK2019 (checking beats digging, CLAUDE.md SS5) that x86's own copy has internal
+// linkage too (it turned out to sit inside a SECOND anonymous namespace opening at
+// that file's line ~7019, not the one closing at ~6873 immediately above it -- an
+// easy miss by eye, caught by the linker instead of assumed). Duplicated locally
+// below (Hook_DrawTextX64's own section) instead, same convention as
+// TextMatchesTemplateStructurallyX64/FindColorHighlightSpanX64 -- it's four lines of
+// pure math over two already-cross-platform functions (GetResolutionScale/
+// GetLastKnownRenderDevice, overlay_hud.h, already used on x64 by
+// controller_input.cpp/overlay_hud.cpp), not worth adding a fourth _Exported wrapper
+// to analog_input_hooks.cpp for.
+bool TryGetMantleGlyphAssetName(char* outAssetName, size_t outSize);
+bool TryGetThrowbackGlyphAssetName(char* outAssetName, size_t outSize);
+bool TryGetPickupGlyphAssetName(char* outAssetName, size_t outSize);
+
 namespace {
 
 // FUN_1400168a0 -- the confirmed x64 Pmove per-substep tick function (the real hook
@@ -2715,29 +2744,80 @@ extern "C" void GetMotionBlurDeltasX64(float* outYawDeg, float* outPitchDeg)
 //       !IsMenuActive()`, via the _Exported wrappers above) so x64's Auto-Mantle
 //       dependency-readiness carries the SAME real coupling to the glyph-overlay
 //       toggle x86 has -- not a divergence, a faithful port of that quirk too.
+//   (c) REAL VISUAL GLYPH-ICON SUBSTITUTION (2026-09-13, second pass, same day):
+//       extends (b)'s structural-match technique to two more hint families
+//       CONFIRMED to flow through this exact same hook (FUN_14004fa00, found via
+//       RawStringScan anchored on their own real reference-key strings, then
+//       DecompileAt-confirmed to call FUN_14029a2b0 directly, same as Mantle/Hold
+//       Breath in FUN_140052220):
+//         - PLATFORM_PICKUPNEWWEAPON / PLATFORM_SWAPWEAPONS / PLATFORM_PICKUPHEALTH
+//           ("Press^3 &&1 ^7to pick up"/"...to swap for"/pickup-health's own
+//           equivalent, all real "+activate" binds per ui_assets.md's zone-dump
+//           research) -- icon resolved via the NEW TryGetPickupGlyphAssetName
+//           (analog_input_hooks.cpp, LogicalAction::ReloadUse, same physical key
+//           Reload's own icon already uses).
+//         - PLATFORM_THROWBACKGRENADE ("^3&&1 ^7throw back") -- icon resolved via
+//           the EXISTING TryGetThrowbackGlyphAssetName (LogicalAction::Lethal),
+//           unchanged from x86.
+//       On any match, extracts the real "^N...^7" highlighted span from the ACTUAL
+//       rendered text (FindColorHighlightSpanX64, a local duplicate of x86's own
+//       FindColorHighlightSpan for the same internal-linkage reason
+//       TextMatchesTemplateStructurallyX64 is duplicated -- see that function's own
+//       comment), splits it into prefix/suffix text, converts this call's own real
+//       x/y into design-space (ConvertRealScreenPosToDesignSpace, existing x86
+//       function, pure resolution-scale math already cross-platform), and calls
+//       RequestCustomHintOverlay -- setting suppressRealDraw so the native call-
+//       through is skipped for this specific draw. Mantle now ALSO gets real
+//       substitution this pass (previously detection-only) via the same path,
+//       GameplayHintSlotId::Mantle; Pickup/Throwback share GameplayHintSlotId::
+//       Interact, matching x86's own slot assignment exactly (see that file's own
+//       Hook_DrawGlyphText, the `GameplayHintSlotId slotId = ...` line).
 //
 // NOT COVERED THIS PASS (honestly scoped, per this task's own explicit
 // permission to conclude "partial progress" rather than overclaim):
-//   - x64's real Font_s struct layout (the DiagFont equivalent) was not
-//     independently re-derived -- IsGameplayHintFont-style font-name filtering
-//     is NOT applied here. Risk is low (the structural template match already
-//     requires an exact literal prefix/suffix match against the real localized
-//     PLATFORM_MANTLE template) but not zero; a future pass should re-derive
-//     Font_s's x64 layout (pointer-width offsets will differ from x86's DiagFont,
-//     same class of re-derivation the itemDef array needed) before extending
-//     this to font-gated cases.
-//   - No visual glyph-icon SUBSTITUTION is drawn -- the native hint text still
-//     renders completely unmodified for every case, mantle included. This hook
-//     only OBSERVES text being drawn; it never sets suppressRealDraw or calls
-//     RequestCustomHintOverlay. Interact-hint icon replacement, the highlighted-
-//     item A-glyph, the F2/F3 glyph-position editor, and the custom cursor's own
-//     glyph-adjacent behavior are therefore still NOT functional on x64 after
-//     this pass -- only Auto-Mantle's own detection DEPENDENCY is unblocked (see
-//     re_notes/known_issues_x64.md for whether Auto-Mantle's actual +gostand-
-//     forcing feature itself has been wired on top of this signal).
-//   - Throwback-grenade/Sentry-Place/Reload/menu-hint detection (x86's other
-//     RenderedTextMatchesSubstitutionTemplate* callers) were not ported -- only
-//     the Mantle case, per this task's own explicit priority ordering.
+//   - x64's real Font_s struct layout was only PARTIALLY derived this pass (see
+//     FUN_1401b7cd0/FUN_1401b80f0's real dereferences: pixelHeight confirmed at
+//     font+0x08, glyphCount confirmed at font+0x0C, DiagGlyph* confirmed at
+//     font+0x20 -- DiagGlyph's own 24-byte-stride internal layout is confirmed
+//     BYTE-IDENTICAL to x86's, since it's raw loaded font-asset data with no
+//     pointers, architecture-independent by construction). fontName's own offset
+//     (font+0x00, by natural alignment inference matching x86's exact field order
+//     widened for 8-byte pointers -- material/glowMaterial fill the confirmed
+//     0x10-byte gap between glyphCount and glyphs, exactly two pointers, exactly
+//     like x86) was NOT independently confirmed via decompile (no leaf function
+//     found this pass that dereferences it) -- IsGameplayHintFont-style font-name
+//     filtering therefore still is NOT implemented or used anywhere in this hook.
+//     It was NOT NEEDED for the three cases below either: Mantle/Pickup-family/
+//     Throwback are all gated by an exact structural template match against a
+//     LIVE-RESOLVED reference-key template (the same protection x86's own
+//     Mantle/Throwback/SentryPlace special cases rely on), not by font identity.
+//   - Buy-station ("Hold ^3F^7 to use Weapon Armory") and Survival ready-up (F5)
+//     remain UNPORTED -- both are x86's OWN generic-bucket cases (no reference-key
+//     template of their own was ever found even for x86, per ui_assets.md's own
+//     zone-dump research; ready-up's hint text is Survival-script-driven, not in
+//     code_post_gfx.str at all), meaning x86 itself protects them from false
+//     positives via IsGameplayHintFont + !IsMenuActive(), not a structural match.
+//     Porting these safely needs the font-name-filtering gap above closed first --
+//     genuinely blocked on real RE, not skipped for convenience.
+//   - Reload is UNPORTED for a DIFFERENT, more fundamental reason: DecompileAt
+//     confirmed x64's own Reload/low-ammo-warning function (FUN_140031bc0, found
+//     via its own real "PLATFORM_RELOAD" string reference) calls a COMPLETELY
+//     DIFFERENT native draw function, FUN_1402afa60 (shared with death-quote
+//     captions, dispatcher case 0x61) -- NOT FUN_14029a2b0, the function this hook
+//     observes. This hook can never see Reload's text no matter what detection
+//     logic is added to it; a real Reload glyph would need its own separate
+//     signature/hook on FUN_1402afa60, out of scope for "extending the existing
+//     hook."
+//   - Sentry-Place (turret placement, SENTRY_PLACE) -- RawStringScan against
+//     "SENTRY_PLACE" found ZERO references anywhere in this x64 binary (unlike
+//     Pickup/Throwback/Reload's keys, all found on the first try). Genuinely
+//     unresolved: either this specific string is stored differently on x64, this
+//     hint doesn't exist in this build, or it needs a different anchor string --
+//     not pursued further this pass; TryGetSentryPlaceGlyphAssetName exists and is
+//     ready to use the moment a real x64 reference/template is found.
+//   - Menu-hint detection (x86's `ResolveMenuGlyphAssetNameForKeyName` block, e.g.
+//     "Back ^2ESC^7"/"Friends ^2F^7") was not ported -- deliberately out of scope
+//     per this task's own priority ordering (in-game hints first).
 using DrawTextFnX64 = void(*)(
     unsigned __int64 dcHandle, const char* text, int maxChars, void* fontArg,
     float x, float y, unsigned color1, unsigned color2, float scale,
@@ -2825,6 +2905,48 @@ bool TextMatchesTemplateStructurallyX64(const char* renderedText, const char* tm
     return true;
 }
 
+// x64-local reimplementation of x86's ColorHighlightSpan/FindColorHighlightSpan
+// (analog_input_hooks.cpp) -- same internal-linkage reason TextMatchesTemplateStructurallyX64
+// above is duplicated rather than cross-file-shared (the x86 original lives in that
+// file's own giant anonymous namespace). Byte-for-byte the same algorithm: finds the
+// engine's own "^N...^7" color-highlight marker pair and returns the byte range of
+// its CONTENT plus the byte range of the WHOLE marker run (both tokens included),
+// so a caller can split the surrounding text into prefix/suffix once the highlighted
+// content is being replaced by a real icon instead of drawn as text.
+struct ColorHighlightSpanX64 { size_t contentStart; size_t contentLen; size_t markerStart; size_t markerEnd; bool found; };
+
+ColorHighlightSpanX64 FindColorHighlightSpanX64(const char* text, size_t textLen)
+{
+    for (size_t i = 0; i + 1 < textLen; ++i) {
+        if (text[i] == '^' && text[i + 1] >= '0' && text[i + 1] <= '9') {
+            size_t contentStart = i + 2;
+            for (size_t j = contentStart; j + 1 < textLen; ++j) {
+                if (text[j] == '^' && text[j + 1] >= '0' && text[j + 1] <= '9') {
+                    return { contentStart, j - contentStart, i, j + 2, true };
+                }
+            }
+            break; // opening marker with no closing marker -- don't guess an end
+        }
+    }
+    return { 0, 0, 0, 0, false };
+}
+
+// x64-local reimplementation of x86's ConvertRealScreenPosToDesignSpace
+// (analog_input_hooks.cpp) -- confirmed via a real LNK2019 to have internal linkage
+// there too (a second anonymous namespace, not the one immediately above its
+// definition -- see this section's own header comment). Identical logic: divides a
+// REAL screen-space pixel position by the actual current resolution scale so
+// RequestCustomHintOverlay's consumer (DrawOneGameplayHintSlot, overlay_hud.cpp),
+// which multiplies by that same scale exactly once, doesn't double-scale an
+// already-real position -- see x86's own copy for the full original rationale.
+void ConvertRealScreenPosToDesignSpaceX64(float realX, float realY, float& outDesignX, float& outDesignY)
+{
+    float scaleX = 1.0f, scaleY = 1.0f;
+    GetResolutionScale(GetLastKnownRenderDevice(), scaleX, scaleY);
+    outDesignX = (scaleX > 0.0001f) ? (realX / scaleX) : realX;
+    outDesignY = (scaleY > 0.0001f) ? (realY / scaleY) : realY;
+}
+
 void Hook_DrawTextX64(
     unsigned __int64 dcHandle, const char* text, int maxChars, void* fontArg,
     float x, float y, unsigned color1, unsigned color2, float scale,
@@ -2837,25 +2959,25 @@ void Hook_DrawTextX64(
         LogFromController(buf);
     }
 
-    // Mantle-hint detection -- see this section's header comment for the full
-    // design/scope. Gated exactly like x86's own block so this carries the same
+    // Real glyph-icon substitution -- see this section's own header comment (part
+    // (c), 2026-09-13) for the full design/scope. Gated exactly like x86's own
+    // block (ShouldDrawGlyphOverlay() && !IsMenuActive()) so this carries the same
     // real coupling to the glyph-overlay toggle, not a new behavior.
+    bool suppressRealDraw = false;
     if (g_getLocalizedStringX64 && text && LooksSaneX64(reinterpret_cast<uintptr_t>(text)) &&
         ShouldDrawGlyphOverlay_Exported() && !IsMenuActiveX64_Exported()) {
         __try {
-            const char* tmpl = g_getLocalizedStringX64("PLATFORM_MANTLE");
-            if (tmpl && LooksSaneX64(reinterpret_cast<uintptr_t>(tmpl)) &&
-                TextMatchesTemplateStructurallyX64(text, tmpl, "&&1")) {
+            const char* mantleTmpl = g_getLocalizedStringX64("PLATFORM_MANTLE");
+            bool isMantleHint = mantleTmpl && LooksSaneX64(reinterpret_cast<uintptr_t>(mantleTmpl)) &&
+                TextMatchesTemplateStructurallyX64(text, mantleTmpl, "&&1");
+            if (isMantleHint) {
+                // Auto-Mantle's own detection dependency (IsMantleHintCurrentlyShowingX64) --
+                // unchanged from the 2026-09-13 first pass, kept independent of whether the
+                // visual substitution below also succeeds (same reasoning x86's own
+                // g_mantleHintDrawnThisFrame assignment documents: the ledge-availability
+                // SIGNAL must not be coupled to whether this project's OWN icon lookup
+                // happens to succeed this frame).
                 g_mantleHintLastSeenMsX64 = GetTickCount();
-                // One-shot confirmation, same "prove it fired at least once" convention
-                // as this file's other diagnostics -- gives direct live visibility that a
-                // real Mantle-hint MATCH occurred (not just that the hook itself fired for
-                // whatever unrelated text was drawn), needed since re_notes/
-                // x64_live_testing_checklist.md's own live-test item otherwise has no way
-                // to confirm this signal specifically. Deliberately one-shot, not
-                // dedup'd-by-change -- this can fire many times per second while a real
-                // ledge is in view (once per rendered frame the hint draws), and a single
-                // confirmation is all a live test needs.
                 static bool s_loggedFirstMantleMatch = false;
                 if (!s_loggedFirstMantleMatch) {
                     s_loggedFirstMantleMatch = true;
@@ -2865,11 +2987,97 @@ void Hook_DrawTextX64(
                         "showing.");
                 }
             }
+
+            // Pickup/swap/pickup-health family (all real "+activate" binds, all confirmed
+            // via DecompileAt to flow through this exact draw call -- see header comment).
+            const char* pickupTmpl = g_getLocalizedStringX64("PLATFORM_PICKUPNEWWEAPON");
+            const char* swapTmpl = g_getLocalizedStringX64("PLATFORM_SWAPWEAPONS");
+            const char* healthTmpl = g_getLocalizedStringX64("PLATFORM_PICKUPHEALTH");
+            bool isPickupHint =
+                (pickupTmpl && LooksSaneX64(reinterpret_cast<uintptr_t>(pickupTmpl)) &&
+                 TextMatchesTemplateStructurallyX64(text, pickupTmpl, "&&1")) ||
+                (swapTmpl && LooksSaneX64(reinterpret_cast<uintptr_t>(swapTmpl)) &&
+                 TextMatchesTemplateStructurallyX64(text, swapTmpl, "&&1")) ||
+                (healthTmpl && LooksSaneX64(reinterpret_cast<uintptr_t>(healthTmpl)) &&
+                 TextMatchesTemplateStructurallyX64(text, healthTmpl, "&&1"));
+
+            const char* throwbackTmpl = g_getLocalizedStringX64("PLATFORM_THROWBACKGRENADE");
+            bool isThrowbackHint = throwbackTmpl && LooksSaneX64(reinterpret_cast<uintptr_t>(throwbackTmpl)) &&
+                TextMatchesTemplateStructurallyX64(text, throwbackTmpl, "&&1");
+
+            if (isMantleHint || isPickupHint || isThrowbackHint) {
+                size_t textLen = strlen(text);
+                ColorHighlightSpanX64 span = FindColorHighlightSpanX64(text, textLen);
+                if (span.found) {
+                    char assetName[32] = {};
+                    bool haveAssetName = isMantleHint ? TryGetMantleGlyphAssetName(assetName, sizeof(assetName))
+                        : isThrowbackHint ? TryGetThrowbackGlyphAssetName(assetName, sizeof(assetName))
+                        : TryGetPickupGlyphAssetName(assetName, sizeof(assetName));
+                    if (haveAssetName) {
+                        char prefixText[128] = {};
+                        size_t prefixLen = span.markerStart < sizeof(prefixText) - 1 ? span.markerStart : sizeof(prefixText) - 1;
+                        memcpy(prefixText, text, prefixLen);
+                        prefixText[prefixLen] = '\0';
+
+                        char suffixText[128] = {};
+                        if (span.markerEnd < textLen) {
+                            size_t suffixLen = textLen - span.markerEnd;
+                            if (suffixLen >= sizeof(suffixText)) suffixLen = sizeof(suffixText) - 1;
+                            memcpy(suffixText, text + span.markerEnd, suffixLen);
+                            suffixText[suffixLen] = '\0';
+                        }
+
+                        // x/y here are THIS call's own already-computed real screen-pixel
+                        // position (confirmed via decompile: e.g. Mantle's own
+                        // `fVar16 = local_518 - (...)`, Pickup's own `fVar19`/`fVar17*fVar18+
+                        // param_2[1]` -- both real final draw-call coordinates, not raw
+                        // pre-layout input), same convention as x86's own param_2/param_3 at
+                        // its equivalent hook site. Converted to design-space so
+                        // DrawOneGameplayHintSlot's own single scaleX/scaleY multiply lands
+                        // correctly at any resolution/aspect ratio, exactly like x86.
+                        //
+                        // HONEST CAVEAT: unlike x86 (which reached its exact pixel alignment
+                        // via multiple live-tested rounds of empirical nudge constants --
+                        // kHintVerticalNudge, kMantleHintXNudge/YNudge -- see that file's own
+                        // history), NO equivalent nudge has been derived or applied here. This
+                        // is the raw converted position with zero tuning; on-screen alignment
+                        // against the real mantle-arrow sprite/pickup icon has NOT been live-
+                        // verified and may need the same kind of empirical correction x86
+                        // required once this is actually seen running.
+                        float startX = x, startY = y;
+                        ConvertRealScreenPosToDesignSpaceX64(startX, startY, startX, startY);
+
+                        GameplayHintSlotId slotId = isMantleHint ? GameplayHintSlotId::Mantle
+                                                                   : GameplayHintSlotId::Interact;
+                        // Condensed role for Throwback, matching x86's own
+                        // `(isThrowbackHint || isSentryPlaceHint) ? FontRole::Condensed :
+                        // FontRole::Default` exactly (analog_input_hooks.cpp).
+                        FontRole fontRole = isThrowbackHint ? FontRole::Condensed : FontRole::Default;
+                        RequestCustomHintOverlay(startX, startY, prefixText, suffixText, assetName,
+                                                   /*centerOnScreen=*/!isMantleHint, /*flashIcon=*/false, slotId,
+                                                   /*topLineText=*/"", fontRole);
+                        suppressRealDraw = true;
+
+                        static bool s_loggedFirstSubstitution = false;
+                        if (!s_loggedFirstSubstitution) {
+                            s_loggedFirstSubstitution = true;
+                            char subBuf[192];
+                            sprintf_s(subBuf, "[x64-drawtext] First real glyph-icon SUBSTITUTION fired -- "
+                                "kind=%s asset=%s (native hint text suppressed, our own icon+text drawn "
+                                "instead)", isMantleHint ? "Mantle" : isThrowbackHint ? "Throwback" : "Pickup",
+                                assetName);
+                            LogFromController(subBuf);
+                        }
+                    }
+                }
+            }
         } __except (EXCEPTION_EXECUTE_HANDLER) {
         }
     }
 
-    g_realDrawTextX64(dcHandle, text, maxChars, fontArg, x, y, color1, color2, scale, colorVecPtr, extra);
+    if (!suppressRealDraw) {
+        g_realDrawTextX64(dcHandle, text, maxChars, fontArg, x, y, color1, color2, scale, colorVecPtr, extra);
+    }
 }
 
 }  // namespace
@@ -3367,12 +3575,13 @@ void InstallAnalogInputHooksX64()
                                static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
                     LogFromController(buf);
                 } else {
-                    LogFromController("[x64-drawtext] Text-draw hook installed and enabled -- "
-                        "log-and-call-through plus Mantle-hint structural-match detection (see "
-                        "[x64-drawtext] log lines during play). Watch for '[x64-drawtext] Text-draw hook "
-                        "fired' to confirm the pipeline; the visual glyph-icon SUBSTITUTION itself is NOT "
-                        "implemented on x64 yet (see this hook's own header comment) -- native hint text "
-                        "still renders completely unmodified.");
+                    LogFromController("[x64-drawtext] Text-draw hook installed and enabled -- real visual "
+                        "glyph-icon SUBSTITUTION now active for Mantle/Pickup-Swap-PickupHealth/Throwback "
+                        "(see this hook's own header comment, part (c), 2026-09-13). Watch for "
+                        "'[x64-drawtext] First real glyph-icon SUBSTITUTION fired' to confirm live. "
+                        "Buy-station, Survival ready-up, Reload, and Sentry-Place remain UNPORTED (native "
+                        "text still renders unmodified for those) -- see the header comment's own honest "
+                        "scope note for why each one is blocked.");
                 }
             }
         }
