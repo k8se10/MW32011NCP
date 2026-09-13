@@ -213,6 +213,20 @@ live, detailed status on every item below.
     on-screen alignment for the three working cases is unverified pending
     live test. Full trail: `re_notes/x64_migration/drawtext_hook_x64.md`.
     Build-verified, not yet live-tested.
+18. **Highlighted-item A-glyph (menu list navigation) and the F2/F3 in-game
+    glyph-position editor wired to real x64 menu-focus tracking** — a
+    separate system from item 17's gameplay-hint icon substitution: this one
+    draws an A-button icon on whichever native menu list item is currently
+    highlighted, using the same manually-calibrated position table `-x86`
+    already ships, and the F2/F3 editor is the tool used to build/extend
+    that table. Both features only ever depended on one shared debounced
+    focus-tracking function, whose x64 branch was still a stub predating the
+    real x64 itemDef-array walk built for item 5's own Options-screen
+    trigger — now routed to that same, already-working implementation via
+    two new thin `extern "C"` wrappers (the functions live in an anonymous
+    namespace in a different translation unit). No new reverse engineering.
+    Build-verified, not yet live-tested — see `re_notes/known_issues_x64.md`
+    issue #1 and `re_notes/x64_feature_parity_audit.md` rows #35/#36.
 
 ### Fixed
 1. **Crash on launch with the sniper Fire/ADS fix's own log line.** The

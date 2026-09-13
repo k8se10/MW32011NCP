@@ -140,11 +140,50 @@ for any item lives in `re_notes/known_issues_x64.md` issue #1.
       track real, changing focus state as you move between menu items
       (not stuck at `realGroup="" realIndex=-1` the way it was before
       this session's port).
-- [ ] Note: this does NOT yet mean glyph icons themselves draw — the native
-      text-draw hook now exists (2026-09-13, see the next section) but only
-      does detection, not substitution. Don't expect to see "Press [A]"-
-      style icons yet; this item is just confirming the underlying focus-
-      detection signal is real.
+- [ ] Note: this does NOT mean the gameplay-hint "Press [A]"-style icons
+      draw — the native text-draw hook (see the next section) is a
+      completely separate system, and as of 2026-09-13 only does detection,
+      not substitution, for most hints. This item is just confirming the
+      underlying focus-detection signal is real. (The highlighted-item
+      A-glyph and F2/F3 editor below are a THIRD, separate system that DOES
+      now draw off this same signal — see their own new section.)
+
+## Highlighted-item A-glyph + F2/F3 glyph-position editor (new 2026-09-13)
+
+**Separate system from both sections above** — this is the manually-
+calibrated menu-list-highlight overlay (`kManualGlyphPositions`,
+`ResetMenuListItemOrdinalForFrame`), not the native-hint text-draw hook.
+Both of its consumers previously always saw "no focus" on x64 (dead stub);
+now routed to the same real x64 itemDef-array walk the section above
+confirms is live. See `re_notes/known_issues_x64.md` issue #1 and
+`re_notes/x64_feature_parity_audit.md` rows #35/#36 for the full trail.
+
+- [ ] Highlighted-item A-glyph: navigate to any menu list this project
+      already has a calibrated `kManualGlyphPositions` entry for (e.g. the
+      pause menu, `PAUSE_LIST`) and confirm an A-button icon now actually
+      draws near the currently-highlighted item — previously silently never
+      drew at all on x64. Confirm it tracks correctly as you move the
+      highlight up/down the list, and does not visibly lag/snap onto the
+      wrong item during a fast navigation burst (the 4-frame debounce should
+      prevent this, same as `-x86`).
+- [ ] Watch `proxy_d3d9.log` for `[manual-glyph-diag]` lines while doing the
+      above — confirm `haveFocus=1`/`havePos=1` with a real, changing
+      `realGroup`/`realIndex`, not permanently `haveFocus=0`.
+- [ ] F2/F3 in-game glyph-position editor: enable `[Debug]
+      GlyphPositionEditMode=1` in `mw3ncp_config.ini`, launch, press F2 in
+      any menu. Confirm the on-screen status readout switches from
+      "no real item focused | fallback: ..." to a real
+      `focus=<group> d<depth> i<index>/<siblingCount>` line that updates as
+      you move the highlight.
+- [ ] With the editor active, click-drag the ICON and TEXT handles for a
+      focused item and confirm both move independently and the on-screen
+      coordinate readout updates live.
+- [ ] Press F3 and confirm `exported_glyph_positions.txt` (next to the
+      deployed `d3d9.dll`) contains a real, non-placeholder entry (not
+      `0.0f, 0.0f`) for whatever item was focused/dragged.
+- [ ] Confirm no regression to the shipped manual A-glyph draw while the F2
+      editor is OFF (`glyphPositionEditMode=0`, the default) — this whole
+      feature is opt-in and must not change default behavior.
 
 ## Native text-draw hook / Mantle-hint detection (new 2026-09-13)
 
