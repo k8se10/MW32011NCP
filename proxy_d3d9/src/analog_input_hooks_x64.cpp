@@ -4660,7 +4660,16 @@ void InstallAnalogInputHooksX64()
                 "session (the known-buggy behavior live-reported 2026-09-13)");
         } else {
             g_realApplyDrawAlignX64 = reinterpret_cast<ApplyDrawAlignFnX64>(r.address);
-            char buf[224];
+            // 2026-09-13 CRASH FIX: this literal text alone (before the %llX
+            // substitution) is 262 chars -- the old buf[224] only had room for 39 more
+            // bytes, well short of the 16 hex digits + null a worst-case pointer needs,
+            // so sprintf_s's own UCRT fail-fast (0xc0000409, FAST_FAIL_INVALID_ARG
+            // subcode 5) crashed on every launch that reached this line (the resolve
+            // always succeeds, so this was deterministic, not conditional) -- confirmed
+            // via a live crash dump (iw5sp.exe.9844.dmp), same bug class as this
+            // session's own earlier sprintf_s sweep, just introduced afterward in code
+            // that sweep predates. Sized generously above the real worst case.
+            char buf[320];
             sprintf_s(buf, "[x64-drawtext-pos] Draw-align-transform resolved @ 0x%llX (direct call, no hook) -- "
                 "glyph-icon SUBSTITUTION positioning fix active. Watch for '[x64-drawtext-pos] raw=...' to "
                 "confirm the real transform is actually running (not the raw fallback) on the next live test.",
