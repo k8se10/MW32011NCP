@@ -1602,6 +1602,27 @@ bool TryGetRealFocusedGroupAndIndexX64(char* outGroupName, size_t outGroupNameSi
 
 }  // namespace
 
+// Thin exported wrappers (2026-09-13, parity audit rows #35/#36 -- highlighted-item
+// A-glyph + F2/F3 glyph-position editor) -- GetMenuStackDepthX64/
+// TryGetRealFocusedGroupAndIndexX64 above live inside this file's own anonymous
+// namespace (opened well before this point), same class of internal-linkage issue
+// this file already fixed once for IsPhysicalHeld_Exported/RouteStickAxes_Exported
+// (analog_input_hooks.cpp) -- confirmed via the same reasoning rather than assumed:
+// a function in an anonymous namespace has internal linkage and cannot be called
+// directly from a different translation unit. analog_input_hooks.cpp's own
+// TryGetStableFocusedGroupAndIndex() (x64 branch) is the one real consumer that
+// needs these from outside this file, closing the parity gap for both features in
+// one place since neither ever calls the raw functions directly.
+extern "C" bool TryGetRealFocusedGroupAndIndexX64_Exported(char* outGroupName, size_t outGroupNameSize, int& outIndex, int& outSiblingCount)
+{
+    return TryGetRealFocusedGroupAndIndexX64(outGroupName, outGroupNameSize, outIndex, outSiblingCount);
+}
+
+extern "C" int GetMenuStackDepthX64_Exported()
+{
+    return GetMenuStackDepthX64();
+}
+
 // Real x64 "ForwardKeyToMenu" wrapper -- see kMenuKeyEventSignature's own big
 // comment (above) for the full confirmation trail. Resolves the topmost active
 // menu itself on every call (exactly matching the real call site's own shape,

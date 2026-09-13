@@ -386,12 +386,71 @@ bool TryGetStableFocusedGroupAndIndex(char* outGroupName, size_t outGroupNameSiz
     return true;
 }
 #else
-// x64: not yet ported (real x86-only menu-focus tracking, depends on
-// GetMenuStackDepth()/TryGetRealFocusedGroupAndIndex()). Reachable on x64 today via
-// ResetMenuListItemOrdinalForFrame()'s glyph-positioning logic -- returning false
-// (honest "no stable focus found") is this function's own real contract for that
-// case already, every caller already handles it.
-bool TryGetStableFocusedGroupAndIndex(char*, size_t, int&, int&, int&) { return false; }
+// x64: REAL port (2026-09-13), closing parity audit rows #35 (highlighted-item
+// A-glyph) and #36 (F2/F3 glyph-position editor) -- both of ResetMenuListItemOrdinalForFrame()'s
+// consumers (the shipped manual-table draw AND EditGlyphPositionsForFrame's own
+// caller) call ONLY this wrapper, never the raw per-frame function directly, so
+// wiring it here is sufficient to fix both in one place; no separate per-consumer
+// change needed. Structurally IDENTICAL debounce logic to the x86 overload above
+// (same "why debounce" rationale -- a transient misread can briefly report a stale
+// (group, index) for a few frames during a menu transition) -- only the raw calls
+// differ, now routed to the real x64 itemDef-array walk/menu-stack-depth read
+// (analog_input_hooks_x64.cpp, TryGetRealFocusedGroupAndIndexX64/GetMenuStackDepthX64,
+// independently re-derived for x64's 8-byte pointer width and built 2026-09-12 for
+// the Custom Options screen's own open-trigger -- this is its second real consumer,
+// not new RE work) via their own thin extern "C" exported wrappers (same anonymous-
+// namespace-internal-linkage fix already applied to IsPhysicalHeld_Exported/
+// RouteStickAxes_Exported elsewhere in this file). Own static debounce state,
+// separate from the x86 overload's (only one of the two ever compiles into a given
+// build, so there's no cross-arch state-sharing concern).
+extern "C" bool TryGetRealFocusedGroupAndIndexX64_Exported(char* outGroupName, size_t outGroupNameSize, int& outIndex, int& outSiblingCount);
+extern "C" int GetMenuStackDepthX64_Exported();
+
+bool TryGetStableFocusedGroupAndIndex(char* outGroupName, size_t outGroupNameSize,
+                                        int& outDepth, int& outIndex, int& outSiblingCount)
+{
+    static char s_stableGroup[64] = "";
+    static int s_stableDepth = -999, s_stableIndex = -999, s_stableSiblingCount = -1;
+    static char s_pendingGroup[64] = "";
+    static int s_pendingDepth = -999, s_pendingIndex = -999, s_pendingSiblingCount = -1;
+    static int s_pendingStableFrames = 0;
+    static int s_pendingLostFrames = 0;
+    constexpr int kFocusStableFrameThreshold = 4;
+
+    char rawGroup[64] = {};
+    int rawIndex = -1, rawSiblingCount = -1;
+    bool haveRaw = TryGetRealFocusedGroupAndIndexX64_Exported(rawGroup, sizeof(rawGroup), rawIndex, rawSiblingCount);
+    if (haveRaw) {
+        s_pendingLostFrames = 0;
+        int curDepth = GetMenuStackDepthX64_Exported();
+        if (_stricmp(rawGroup, s_pendingGroup) == 0 && rawIndex == s_pendingIndex && curDepth == s_pendingDepth) {
+            if (s_pendingStableFrames < kFocusStableFrameThreshold) ++s_pendingStableFrames;
+        } else {
+            strncpy_s(s_pendingGroup, rawGroup, _TRUNCATE);
+            s_pendingDepth = curDepth;
+            s_pendingIndex = rawIndex;
+            s_pendingSiblingCount = rawSiblingCount;
+            s_pendingStableFrames = 1;
+        }
+        if (s_pendingStableFrames >= kFocusStableFrameThreshold) {
+            strncpy_s(s_stableGroup, s_pendingGroup, _TRUNCATE);
+            s_stableDepth = s_pendingDepth;
+            s_stableIndex = s_pendingIndex;
+            s_stableSiblingCount = s_pendingSiblingCount;
+        }
+    } else if (++s_pendingLostFrames >= kFocusStableFrameThreshold) {
+        s_pendingStableFrames = 0;
+        s_stableIndex = -999;
+        s_stableGroup[0] = '\0';
+    }
+
+    if (s_stableIndex < 0 || s_stableGroup[0] == '\0') return false;
+    strncpy_s(outGroupName, outGroupNameSize, s_stableGroup, _TRUNCATE);
+    outDepth = s_stableDepth;
+    outIndex = s_stableIndex;
+    outSiblingCount = s_stableSiblingCount;
+    return true;
+}
 #endif
 
 // BUG-051 diagnostic (2026-08-02) -- user question: is FUN_00547980 itself returning
