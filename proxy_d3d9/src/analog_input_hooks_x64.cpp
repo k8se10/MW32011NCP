@@ -2928,6 +2928,101 @@ void __fastcall Hook_RenderResCompute(void* self)
     g_origRenderResCompute(self);
 }
 
+// ---- Motion blur's real x64 TRIGGER (2026-09-13) -- FUN_14018def0, the x64
+// equivalent of x86's FUN_00693ff0 ------------------------------------------------
+//
+// 2026-09-12's motion-blur x64 port (RunPreOverlayMotionBlurPassIfEnabled,
+// overlay_hud.cpp) wired the three safety GATES (menu-active/clcState/in-level)
+// and the yaw/pitch delta feed, but never gave the pass an actual TRIGGER on x64
+// at all -- x86's own trigger, Hook_693ff0 (analog_input_hooks.cpp), is a
+// __declspec(naked) hook on FUN_00693ff0, wrapped in
+// `#if !defined(_M_X64) && !defined(_WIN64)` and never compiled for this
+// architecture. See known_issues_x64.md issue #1's "where is motion blur?" round
+// for the full gap writeup. This closes it with a genuine x64 hook point, found
+// via fresh Ghidra RE against iw5sp_x64_proj, not assumed to carry over from
+// x86's own address/shape.
+//
+// DISCOVERY TRAIL (re_notes/ghidra_scripts/*.txt has the full raw output):
+// x86's FUN_00693ff0 is only reachable via FUN_00694650 -> [FUN_00497210 |
+// FUN_00508970] -> FUN_00693ff0. FUN_00508970 is a rare, structurally
+// distinctive function -- a recursive exclusion-zone/PIP rect-carver that calls
+// itself directly up to 4 times per invocation -- narrow enough to find directly
+// via a new whole-binary scan (FindSelfRecursiveFuncs.java: 13295 functions
+// scanned, 31 with >=2 genuine self-recursive CALL sites,
+// re_notes/ghidra_scripts/selfrecursive_x64.txt). Of the 4 candidates with
+// exactly 4 self-calls, FUN_140194130 is a byte-for-byte structural match for
+// x86's FUN_00508970 (re_notes/ghidra_scripts/decomp_selfrec_candidates_x64.txt):
+// same base case (`if (param_2==0 || param_3==0) { SceneFinishEquiv(param_1,0);
+// return; }`), same four-way rect-split recursion, and -- the strongest
+// confirmation -- the SAME NUMERIC field offsets for the viewport rect
+// (+0x160/+0x164/+0x168/+0x16c), unshifted by the x86->x64 pointer-width growth
+// that moved every larger/pointer field around it.
+//
+// FUN_140194130's only external caller, FUN_14018e720
+// (re_notes/ghidra_scripts/callers_140194130_x64.txt), is the x64 equivalent of
+// FUN_00694650: same triple-loop shape (`+0x9d0==2` gate matching x86's
+// `+0x940==2`, same 0x14c0 struct stride replacing x86's 0xf50), calling
+// FUN_1401939f0(ctx,0)/FUN_1401939f0(ctx,1) (x64 equivalent of x86's
+// FUN_00497210 -- confirmed via decompile to be a large per-viewport scene-finish
+// orchestrator with the same debug-mode branch shape,
+// re_notes/ghidra_scripts/decomp_140189940_1401939f0_x64.txt) or
+// FUN_140194130(ctx,&rects,count) (the exclusion-zone carve), and -- in ALL
+// THREE call sites, exactly mirroring x86's own three FUN_00693ff0 call sites --
+// calling **FUN_14018def0(ctx)** immediately afterward. That's this hook's real
+// target.
+//
+// FUN_14018def0 itself (re_notes/ghidra_scripts/decomp_14018def0_x64.txt)
+// confirms the same gate-then-dispatch shape as x86's FUN_00693ff0: `if
+// (*(longlong*)(param_1+0x330) != 0) { ...; FUN_140189940(*(...)(param_1+0x330));
+// }` -- FUN_140189940 decompiles to the exact opcode-stream dispatch-loop shape
+// x86's own FUN_004ee300 has (`while (*p != 0) { jumpTable[*p](&p); }`) -- i.e.
+// this really is the boundary immediately before a viewport's queued 2D/HUD
+// command dispatch, not just a same-shaped decoy. (The gate's own field offset
+// shifted from x86's +0x320 to +0x330 -- expected pointer-width struct growth,
+// irrelevant to this hook since motion blur's own capture target, the
+// already-composited backbuffer, doesn't depend on that field at all.)
+//
+// UNLIKE x86, THIS IS NOT A NAKED HOOK. Raw disassembly
+// (re_notes/ghidra_scripts/sigbytes_14018def0_x64.txt) confirms
+// FUN_14018def0(longlong param_1) takes its one real argument in RCX via plain
+// MS x64 fastcall (`PUSH RBX / SUB RSP,0x30 / CMP qword ptr [RCX+0x330],0x0 /
+// MOV RBX,RCX` -- a completely standard, self-contained prologue), matching this
+// project's own repeated finding that x64 functions use standard calling
+// conventions even at points where x86 needed raw register-implicit `__asm`. A
+// normal C++ MinHook detour is both correct and simpler than x86's
+// pushad/popad/naked-asm template -- MSVC's own x64 calling convention already
+// preserves caller state at the call site, nothing to do by hand.
+//
+// Signature: the function's first 17 bytes (PUSH RBX; SUB RSP,0x30; CMP qword
+// ptr [RCX+0x330],0x0; MOV RBX,RCX) are all literal -- no CALL/JMP/RIP-relative
+// bytes in this span (DumpSigBytes.java's own PC-relative flagging starts at the
+// JZ immediately after this prologue), so no wildcarding needed.
+// PatternScan.java-confirmed EXACTLY ONE match in the whole binary
+// (re_notes/ghidra_scripts/patternscan_14018def0_x64.txt), at the expected
+// address.
+constexpr const char* kMotionBlurTriggerSignature =
+    "40 53 48 83 EC 30 48 83 B9 30 03 00 00 00 48 8B D9";
+
+using MotionBlurTriggerFn = void(__fastcall*)(void* viewportCtx);
+MotionBlurTriggerFn g_origMotionBlurTrigger = nullptr;
+
+// PRE-hook, matching x86's Hook_693ff0 semantics exactly: fire motion blur's own
+// capture-and-redraw BEFORE the real trampoline runs, so it captures the
+// backbuffer right when this viewport's 3D composite is genuinely done, strictly
+// before its own queued 2D/HUD dispatch (FUN_140189940, confirmed above) runs.
+// Unlike x86's tail-jumping naked hook, this is a plain call-then-call wrapper --
+// equivalent semantics (our own code always runs first), simpler implementation,
+// since a normal C++ function doesn't need to hand-manage a tail-jump to avoid an
+// extra stack frame the way naked asm did. TriggerMotionBlurFromEngineHook()
+// (overlay_hud.cpp) itself re-checks MotionBlurEnabled and all three x64 safety
+// gates before doing anything real -- this firing on every viewport composite
+// (menu included, same as x86's FUN_00693ff0) is safe by design, not by luck.
+void __fastcall Hook_MotionBlurTrigger(void* viewportCtx)
+{
+    TriggerMotionBlurFromEngineHook();
+    g_origMotionBlurTrigger(viewportCtx);
+}
+
 // In-level time-delta flag -- x64 equivalent of x86's kInLevelFlagAddr
 // (0x00A98ACC). Found via the same per-frame orchestrator chain this project's own
 // movement/look work already confirmed: x86's writer, FUN_0057e5b0, computes
@@ -4489,6 +4584,41 @@ void InstallAnalogInputHooksX64()
             } else {
                 LogFromController("[x64-visualfx-gate] FATAL: in-level time-delta flag RIP-relative resolution "
                     "failed -- FSR RCAS and motion blur will stay disabled this session (safety gate unresolved)");
+            }
+        }
+    }
+
+    // Motion blur's real x64 TRIGGER -- MinHook detour on FUN_14018def0 (x64
+    // equivalent of x86's FUN_00693ff0). See kMotionBlurTriggerSignature's own
+    // comment (above Hook_MotionBlurTrigger) for the full discovery trail. This
+    // is what was actually missing from the 2026-09-12 motion-blur x64 port --
+    // the gates/delta-feed were already real, this hook is the missing trigger.
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kMotionBlurTriggerSignature);
+        if (!r.found) {
+            LogFromController("[x64-motionblur] FATAL: motion-blur trigger signature did not resolve -- "
+                "MotionBlurEnabled will have no visible effect this session (gates/delta-feed are wired, "
+                "but nothing will call into them)");
+        } else {
+            void* target = reinterpret_cast<void*>(r.address);
+            MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_MotionBlurTrigger),
+                                                    reinterpret_cast<void**>(&g_origMotionBlurTrigger));
+            if (createStatus != MH_OK) {
+                char buf[160];
+                sprintf_s(buf, "[x64-motionblur] FATAL: MH_CreateHook failed for motion-blur trigger @ 0x%llX (status=%d)",
+                           static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+                LogFromController(buf);
+            } else {
+                MH_STATUS enableStatus = MH_EnableHook(target);
+                if (enableStatus != MH_OK) {
+                    char buf[160];
+                    sprintf_s(buf, "[x64-motionblur] FATAL: MH_EnableHook failed for motion-blur trigger @ 0x%llX (status=%d)",
+                               static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+                    LogFromController(buf);
+                } else {
+                    LogFromController("[x64-motionblur] Motion blur trigger hook installed and enabled -- "
+                        "FUN_14018def0 (x64 equivalent of x86's FUN_00693ff0).");
+                }
             }
         }
     }
