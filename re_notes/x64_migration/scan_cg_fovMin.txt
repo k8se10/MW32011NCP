@@ -1,0 +1,4 @@
+STRING @ 140405ea8 = "cg_fovMin" (block .rdata)
+  from 14013665b type=DATA IN FUNCTION FUN_140135b50@140135b50
+  (1 references)
+

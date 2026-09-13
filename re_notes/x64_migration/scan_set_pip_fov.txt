@@ -1,0 +1,5 @@
+STRING @ 1403f0e58 = "set_pip_fov" (block .rdata)
+  from 140142c51 type=DATA IN FUNCTION FUN_140142c20@140142c20
+  from 14005be43 type=DATA IN FUNCTION FUN_1400595c0@1400595c0
+  (2 references)
+

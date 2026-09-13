@@ -634,12 +634,16 @@ float g_motionBlurPitchDeltaDegX64 = 0.0f;
 
 // Mirrors x86's own GetLookAccelerationScale (analog_input_hooks.cpp) exactly --
 // pure math against g_modConfig + GetTickCount(), no hardcoded x86 addresses, so
-// it ports directly with no RE needed. Deliberately scoped OUT of this first x64
-// pass: the ADS-FOV look-slowdown (GetAdsLookRateScale, needs an x64 equivalent of
-// the hardcoded GetEffectiveFov/Dvar_FindVar addresses -- genuinely unresolved RE
-// targets, not yet found) and gyro-aim (already PREVIEW/WIP and never live-tested
-// on x86 itself, lowest priority). Both are real, honest gaps, not overlooked --
-// see known_issues_x64.md issue #1.
+// it ports directly with no RE needed.
+//
+// RESOLVED 2026-09-13 (was scoped OUT of the first x64 pass): the ADS-FOV
+// look-slowdown (GetAdsLookRateScale) needed x64 equivalents of GetEffectiveFov/
+// Dvar_FindVar -- both now found (FUN_140069e60/FUN_1402c3890, see the
+// GetAdsLookRateScaleX64 block further down this file, right before
+// Hook_MovementTick, for the full resolution trail) and wired into
+// Hook_MovementTick's own Look pre-hook. gyro-aim stays out of scope for this
+// pass (already PREVIEW/WIP and never live-tested on x86 itself, lowest
+// priority, unrelated dependency) -- see known_issues_x64.md issue #1.
 DWORD g_lookAccelStartMsX64 = 0;
 
 float GetLookAccelerationScaleX64()
@@ -1202,21 +1206,17 @@ void SendSyntheticActionSlot4KeyX64(bool down)
 // file's own SendSyntheticActionSlot4KeyX64 above already uses, direct
 // template for this function.
 //
-// ONE HONEST, DELIBERATE DIFFERENCE FROM x86: x86 additionally gates the
-// fire behind IsInSurvivalMode() (a mapname-dvar read via x86's raw
-// Dvar_FindVar-equivalent, FUN_0062abe0 @ 0x0062abe0). x64's own equivalent
-// of that raw dvar-lookup function is a genuinely unresolved RE target --
-// real_settings.cpp's FindDvar()/GetDvarString() are x86-only (the __asm
-// body is `#ifdef _M_IX86`-guarded, a safe no-op returning nullptr on x64,
-// not a crash, but also not a real lookup) and analog_input_hooks_x64.cpp's
-// own GetLookAccelerationScaleX64 comment already documents this exact gap
-// (GetEffectiveFov/Dvar_FindVar addresses "genuinely unresolved RE targets,
-// not yet found" -- known_issues_x64.md issue #1). Rather than block this
-// port on a separate RE task outside its scope, this fires unconditionally
-// on the hold-threshold edge, relying on the SAME "safe by construction"
-// reasoning x86's own comment already documents as sufficient even without
-// the mode gate (a misplaced F5 outside Survival's ready-up wait is inert).
-// Revisit if x64's Dvar_FindVar equivalent is ever resolved for other work.
+// RESOLVED 2026-09-13: x86 additionally gates the fire behind IsInSurvivalMode()
+// (a mapname-dvar read via x86's raw Dvar_FindVar-equivalent, FUN_0062abe0 @
+// 0x0062abe0). x64's own Dvar_FindVar equivalent (FUN_1402c3890) is now resolved
+// (see the IsInSurvivalModeX64()/GetDvarStringX64() block further down this file,
+// right before Hook_MovementTick) -- this function itself still fires
+// unconditionally on any call (kept simple/self-contained, matching
+// SendSyntheticActionSlot4KeyX64's own shape), but its ONE real call site
+// (Hook_MovementTick's Y/weapnext hold-edge block, below) now wraps it in the
+// same `if (IsInSurvivalModeX64())` gate x86 uses, closing the gap the comment
+// here used to document. See known_issues_x64.md issue #1's "Survival ready-up"
+// section for the full resolution record.
 void SendSyntheticF5X64()
 {
     HWND hwnd = GetGameWindow();
@@ -2080,6 +2080,141 @@ extern "C" void AutoUnstickPauseCycleX64()
             break;
     }
 }
+
+// ---- Dvar_FindVar + GetEffectiveFov x64 equivalents (2026-09-13) -- RESOLVED --------
+//
+// Closes the "genuinely unresolved RE target" gap GetLookAccelerationScaleX64's own
+// comment above and SendSyntheticF5X64's own comment further down both flag. Found via
+// this project's own established dvar-value-discovery chain (CLAUDE.md's "New Ghidra
+// RE tooling" section): a broad RawStringScan.java sweep for "cg_fov" led to its real
+// x64 registration call (FUN_14004a870), which also independently re-confirms (fresh
+// decompile+disassembly this session, not just trusted from the earlier doc) the real
+// x64 dvar VALUE offset is +0x10, not x86's +0xc -- already found once before by
+// re_notes/x64_migration/actionslot_dvarhelpers_x64.md for the generic int/string
+// getters, now confirmed a second, independent way for the float case specifically.
+// A follow-up string sweep for the three sibling FOV dvars x86's own GetEffectiveFov
+// comment names by name (cg_fovScale/cg_fovMin/cg_fovNonVehAdd) led straight to the
+// real consumer, FUN_140069e60 -- full trail in re_notes/x64_migration/
+// getEffectiveFov_dvarFindVar_x64.md.
+namespace {
+
+// Dvar_FindVar-equivalent: FUN_1402c3890(name) -> dvar_t*. Standard x64 calling
+// convention (name in RCX) -- confirmed via disassembly of its own callers (e.g. the
+// int/bool getter below): `CALL 0x1402c3890` sits right at function entry with ZERO
+// register setup beforehand, RCX passed straight through unmodified from the caller.
+// Genuinely simpler than x86's FUN_0062abe0, which needed a custom EDI-register
+// convention and an inline __asm block (real_settings.cpp/analog_input_hooks.cpp's own
+// GetDvarInt) -- no __asm needed here at all.
+using FindDvarX64Fn = void*(*)(const char* name);
+FindDvarX64Fn const FindDvarX64Raw = reinterpret_cast<FindDvarX64Fn>(0x1402c3890);
+
+// Deliberately NOT reusing the generic GetDvarInt/Bool-equivalent (FUN_1402c3b10,
+// re_notes/x64_migration/actionslot_dvarhelpers_x64.md) for float dvars -- confirmed
+// via disassembly that it special-cases type tags 5/6 (float/string) to return the raw
+// dword at +0x10 UNCONVERTED, while every OTHER type tag goes through a generic
+// to-int conversion call (FUN_140396f34) -- exactly backwards from a naive "GetDvarInt
+// so surely it converts floats" assumption. Reading the float directly ourselves at
+// the confirmed +0x10 offset (same pattern x86's own GetDvarFloat already uses at its
+// own +0xc offset) sidesteps that ambiguity entirely -- matches this project's own
+// established "don't reuse one getter across dvar types" policy (real_settings.cpp's
+// own GetDvarBool/Float/String header comment) and is independently re-confirmed by
+// FUN_140069e60 below reading cg_fov/cg_fov1 the exact same way (raw MOVSS at +0x10).
+float GetDvarFloatX64(const char* name)
+{
+    void* dvarPtr = FindDvarX64Raw(name);
+    if (!dvarPtr) return 0.0f;
+    return *reinterpret_cast<float*>(reinterpret_cast<uintptr_t>(dvarPtr) + 0x10);
+}
+
+// GetDvarString-equivalent: FUN_1402c3b50(name) -> const char*. Confirmed via direct
+// decompile+disassembly to be safe to call as-is (same real function the x64
+// actionslot/dvar-helpers doc already found, independently re-verified this session):
+// type tag 6 (string) does an extra indirection through a live string table at +0x48,
+// every other type returns the raw pointer at +0x10 directly, and a not-found dvar
+// returns the same real empty-string sentinel (&DAT_1403e6bdb) x86's own GetDvarString
+// falls back to -- always safe to call, never returns null.
+using GetDvarStringX64Fn = const char*(*)(const char* name);
+GetDvarStringX64Fn const GetDvarStringX64Raw = reinterpret_cast<GetDvarStringX64Fn>(0x1402c3b50);
+
+const char* GetDvarStringX64(const char* name)
+{
+    return GetDvarStringX64Raw(name);
+}
+
+// GetEffectiveFov-equivalent: FUN_140069e60(playerIndex) -> float. Standard x64
+// calling convention (playerIndex in ECX, confirmed via disassembly: `MOV EDI, ECX`
+// at function entry, no other register setup beforehand) -- returns in XMM0 as a
+// plain float (the standard x64 ABI float-return register), not x86's x87 float10/
+// ST(0), so no cast is needed on our side the way x86's
+// `static_cast<float>(GetEffectiveFov(...))` needed one.
+//
+// Independently confirmed via disassembly to implement the EXACT SAME blend x86's own
+// GetEffectiveFov comment documents, dvar-handle-for-dvar-handle: reads cg_fov/cg_fov1
+// (selected by playerIndex, at the confirmed +0x10 value offset) as the base/no-zoom
+// value; an alt-scope weapon path gated by the same bit-2/mask-0x4 flag-byte check
+// x86's DAT_00984b9c uses (a different address, same bit convention); a real
+// time-based lerp driving toward cg_fovScale's value for the transition system x86's
+// own comment names (set_lerp_fov/set_pip_fov/set_turret_fov -- confirmed via those
+// three strings' own real xrefs converging on this exact call chain, both directly
+// and via its one sibling helper, FUN_140068a80); cg_playerFovScale0/1 folded in via
+// a per-entity table walk; and a final cg_fovNonVehAdd add + cg_fovMin floor clamp.
+// Matches x86's documented formula component-for-component, not a guess from the
+// function's name alone. Confirmed read-only in its own disassembly (no stores to any
+// of the transition-state globals it reads) -- matches x86's own "pure query, no
+// observed side effects" note.
+using GetEffectiveFovX64Fn = float(*)(int playerIndex);
+GetEffectiveFovX64Fn const GetEffectiveFovX64 = reinterpret_cast<GetEffectiveFovX64Fn>(0x140069e60);
+
+// Mirrors x86's own GetAdsLookRateScale (analog_input_hooks.cpp) formula exactly, now
+// that both of its real dependencies are resolved above -- see that function's own
+// comment block for the full rationale/history behind each term (the 2026-07-16
+// negative-scale root-cause fix that moved this to a power curve, the 2026-07-31
+// close-range taper for zero-zoom weapons like pistols); not re-derived here, just
+// ported verbatim against the x64 equivalents. Deliberately omits x86's own rate-
+// limited `[ads-fov-diag]` byte-flag diagnostic (DAT_00984b9c's x64 equivalent was
+// not part of this pass's RE scope, and this formula's math itself was already
+// confirmed correct on x86 -- issue #8/#44 -- so there is no open question here that
+// diagnostic would be answering).
+float GetAdsLookRateScaleX64()
+{
+    if (!g_adsHeldX64 || g_modConfig.adsSlowdownStrength <= 0.0f) return 1.0f;
+
+    float baseFov = GetDvarFloatX64("cg_fov");
+    if (baseFov <= 0.0f) return 1.0f;
+
+    float effectiveFov = GetEffectiveFovX64(kLocalClientIndexX64);
+    if (effectiveFov <= 0.0f) return 1.0f;
+
+    float ratio = effectiveFov / baseFov;
+    float scale = g_modConfig.adsSlowdownBaseline * powf(ratio, g_modConfig.adsSlowdownStrength);
+
+    // Issue #44's close-range taper, ported verbatim (see x86's own comment for the
+    // full derivation) -- mathematically safe for any adsCloseRangeSlowdownStrength
+    // in [0, 1] (clamped on config load): ratio is always in (0, 1], so closeRangeFactor
+    // is always in [1-strength, 1], never negative, never inverts.
+    constexpr float kCloseRangeFocusPower = 8.0f;
+    float closeRangeFactor = 1.0f - g_modConfig.adsCloseRangeSlowdownStrength * powf(ratio, kCloseRangeFocusPower);
+    scale *= closeRangeFactor;
+
+    return scale;
+}
+
+// IsInSurvivalMode-equivalent: reads the real `mapname` dvar (a string-type dvar, so
+// GetDvarStringX64, not GetDvarFloatX64) via the now-resolved GetDvarStringX64 above.
+// Byte-for-byte the same check as x86's own IsInSurvivalMode (analog_input_hooks.cpp):
+// matches FUN_00526b30's own "so_survival_" prefix check on x86 -- the GSC data/map-
+// naming convention itself is unchanged by the x64 recompile (per this task's own
+// scope note and this project's standing "game data/scripts are unchanged by the
+// recompile" assumption elsewhere in this file), so the same prefix carries over
+// unmodified rather than needing independent x64 confirmation of the string itself.
+bool IsInSurvivalModeX64()
+{
+    const char* mapName = GetDvarStringX64("mapname");
+    if (!mapName) return false;
+    return _strnicmp(mapName, "so_survival_", 12) == 0;
+}
+
+} // namespace
 
 void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
 {

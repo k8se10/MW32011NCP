@@ -1,0 +1,5 @@
+STRING @ 1403f0d70 = "set_turret_fov" (block .rdata)
+  from 14015ac6d type=DATA IN FUNCTION FUN_14015abe0@14015abe0
+  from 14005b0a5 type=DATA IN FUNCTION FUN_1400595c0@1400595c0
+  (2 references)
+
