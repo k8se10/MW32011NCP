@@ -6263,14 +6263,28 @@ void DrawCustomCursorIfNeeded(void* device)
         // real values during a live "cursor incorrectly showing mid-gameplay" repro
         // before guessing at another exclusion value.
         {
+            // Rate-limited on top of the dedup key below (2026-09-13, live-reported
+            // "we are logging too much again" -- re_notes/known_issues_x64.md's
+            // logging-volume round): visFlag/uiState are a real native-engine read,
+            // exactly the class of value this project's own [manual-glyph-diag] fix
+            // (analog_input_hooks.cpp, 2026-09-05) already found CAN legitimately
+            // flap frame-to-frame and defeat a pure change-detection dedup. Same
+            // 250ms floor, same reasoning: still catches every genuine state change
+            // promptly, bounds worst-case volume to 4/sec regardless of how often
+            // this draw path runs.
             static int s_lastLoggedVisFlag = -1;
             static int s_lastLoggedUiState = -1;
-            if (visFlag != s_lastLoggedVisFlag || (visFlag != 0 && uiState != s_lastLoggedUiState)) {
+            static DWORD s_lastCursorGateLogMs = 0;
+            DWORD nowMsGate = GetTickCount();
+            bool gateChanged = (visFlag != s_lastLoggedVisFlag ||
+                                 (visFlag != 0 && uiState != s_lastLoggedUiState));
+            if (gateChanged && (nowMsGate - s_lastCursorGateLogMs) >= 250) {
                 s_lastLoggedVisFlag = visFlag;
                 s_lastLoggedUiState = visFlag != 0 ? uiState : s_lastLoggedUiState;
+                s_lastCursorGateLogMs = nowMsGate;
                 char buf[96];
                 sprintf_s(buf, "[cursor-gate-diag] visFlag=%d uiState=%d t=%lu", visFlag,
-                          visFlag != 0 ? uiState : -1, GetTickCount());
+                          visFlag != 0 ? uiState : -1, nowMsGate);
                 LogFromController(buf);
             }
         }
@@ -6388,12 +6402,25 @@ void DrawCustomCursorIfNeeded(void* device)
         // actually wrong (raw WM_MOUSEMOVE pos vs. window rect vs. viewport size vs.
         // the final scaled result) rather than guessing further.
         {
+            // Rate-limited on top of the dedup key below (2026-09-13, live-reported
+            // "we are logging too much again" -- re_notes/known_issues_x64.md's
+            // logging-volume round). CONFIRMED GAP, not just a candidate: rawMouseX/
+            // rawMouseY are fed straight from WM_MOUSEMOVE, so they change on
+            // essentially every frame of real mouse movement -- pure change-detection
+            // dedup does nothing to bound volume while the player is actually moving
+            // the mouse (the exact scenario this draw path exists for, since it only
+            // runs while the custom cursor is shown). Same [manual-glyph-diag]-
+            // established 250ms floor as the [cursor-gate-diag] fix right above.
             static int s_lastLoggedRawX = -999999, s_lastLoggedRawY = -999999;
             static int s_lastLoggedFinalX = -999999, s_lastLoggedFinalY = -999999;
-            if (rawMouseX != s_lastLoggedRawX || rawMouseY != s_lastLoggedRawY ||
-                pt.x != s_lastLoggedFinalX || pt.y != s_lastLoggedFinalY) {
+            static DWORD s_lastCursorPosLogMs = 0;
+            DWORD nowMsPos = GetTickCount();
+            bool posChanged = (rawMouseX != s_lastLoggedRawX || rawMouseY != s_lastLoggedRawY ||
+                pt.x != s_lastLoggedFinalX || pt.y != s_lastLoggedFinalY);
+            if (posChanged && (nowMsPos - s_lastCursorPosLogMs) >= 250) {
                 s_lastLoggedRawX = rawMouseX; s_lastLoggedRawY = rawMouseY;
                 s_lastLoggedFinalX = pt.x; s_lastLoggedFinalY = pt.y;
+                s_lastCursorPosLogMs = nowMsPos;
                 char buf[224];
                 sprintf_s(buf, "[cursor-pos-diag] raw=(%d,%d) window=%dx%d viewport=%dx%d gotRatio=%d -> final=(%d,%d)",
                            rawMouseX, rawMouseY, windowW, windowH, viewportW, viewportH, gotRatio ? 1 : 0, pt.x, pt.y);
