@@ -3712,3 +3712,145 @@ Multiplayer ships.
 **Status: Build-verified, not yet live-tested.**
 
 **Status: Build-verified, not yet live-tested.**
+
+---
+
+**Git-history audit-completeness sweep (2026-09-13) -- 7 x86-era
+features/fixes found with zero mention anywhere in this file,
+`re_notes/x64_feature_parity_audit.md`, or `README.md`; 6 confirmed already
+PRESENT on x64 (inherited "for free" from shared code), 1 gap fixed in this
+pass, 1 genuinely large gap found and left open. Full detail in
+`re_notes/x64_feature_parity_audit.md` rows #62-68 -- this is the summary.**
+
+A full six-way parallel sweep of the ENTIRE x86-era git history (539
+commits, project start through the discontinued `v0.3.5-x86` release) --
+not just `legacy-x86-docs/README.md` and `CLAUDE.md`'s own timeline entries,
+which is what the 2026-09-12 parity audit's original 61-row pass was sourced
+from -- found 7 real, shipped x86 features/fixes never mentioned in either
+of this project's own x64 tracking documents. Each was independently
+re-verified against its real x86 origin commit(s) via `git show`, then
+traced through current x64 source to a real, precise verdict (the actual
+call chain from a confirmed-reachable x64 entry point, not "no arch guard
+visible" alone).
+
+**Six confirmed already PRESENT, no code changes needed:**
+1. **Display-mode-change device recreation / WndProc re-subclassing**
+   (parity audit row #62) -- `InstallWndProcHook`'s re-subclass-on-hwnd-change
+   logic (`d3d9_hook.cpp:627-652`) and `OnDeviceRecreated`'s cached-texture
+   cleanup (`overlay_hud.cpp:6943`) are both fully arch-neutral, called
+   unconditionally from the already-shared `Hook_CreateDevice`.
+2. **Non-16:9 aspect-ratio-safe overlay rendering, size AND position**
+   (row #63) -- the uniform-scale size fix (`GetUniformSizeScale`/
+   `DrawOneGameplayHintSlot`) and the position/corner-hint-row fix
+   (`ConvertRealScreenPosToDesignSpaceX64`/`looksLikeCornerHintRowX64`,
+   already covered in row #34's own text) are both confirmed live in the
+   x64 draw pipeline. Same honest caveat as row #34: the empirical pixel
+   NUDGE constants from x86's later rounds were never ported, only the
+   scale/position-conversion math itself.
+4. **Custom/system UI font support** (row #65) -- `LoadOverlayFonts` is
+   called unconditionally from `DllMain` regardless of architecture;
+   `ResolveFontFamily`/`CreateFontA`/`AddFontMemResourceEx` are pure GDI
+   calls with zero arch guards.
+5. **Glyph icon mip-chain/LINEAR-filtering fix + texture prewarm** (row #66)
+   -- `LoadGlyphIconTexture`'s `D3DUSAGE_AUTOGENMIPMAP` and
+   `DrawGenericTexturedQuad`'s LINEAR-filter save/restore are unguarded;
+   `PrewarmGlyphIconTextures` (plus the blur/white/debug texture prewarm
+   extension) is called from the same shared `Hook_CreateDevice` chain as
+   item 1 above.
+6. **`GlyphStyleAuto` VID/PID controller-type auto-detection** (row #67) --
+   `TryDetectXboxGlyphStyle`/`Controller_DetectGlyphStyle`
+   (`dualsense_input.cpp`) carry no arch guards, wired into
+   `XInputPollThreadProc`'s real session-lock point
+   (`controller_input.cpp`), the same poll thread already confirmed
+   running on x64 (parity audit row #58).
+
+**One gap found and fixed in this same pass:**
+7. **High-render-scale safety warning** (row #68) -- x86's real 4GB-
+   address-space warning (`known_issues.md` issue #105, commit
+   `1e107cf62b`) lived entirely inside `Hook_FUN_00679010`
+   (`analog_input_hooks.cpp`, a whole file guarded out of the x64 build) and
+   was never carried over when `InternalRenderScalePercent`'s own base
+   mechanism was separately ported to x64 as `Hook_RenderResCompute`
+   (2026-09-12, parity audit row #43). Confirmed genuinely absent by direct
+   inspection before fixing (zero references to the warning anywhere in
+   `analog_input_hooks_x64.cpp`). Ported into `Hook_RenderResCompute`
+   directly: same `>2.25x`-area (`>150%` linear) threshold, same
+   one-time-per-session gate, same `ShowOverlayMessageUntilDismissed`
+   mechanism -- wording deliberately NOT copied verbatim, since x86's text
+   cites a hard 4GB ceiling specific to a 32-bit process, which doesn't
+   apply as-is to the genuinely 64-bit `iw5sp_x64.exe`/`iw5mp_x64.exe`; the
+   ported warning says so explicitly and frames itself as a precaution
+   (the underlying crash/freeze risk was never independently re-tested at
+   high scale on x64), not a claim the identical x86 failure mode
+   reproduces here.
+
+   **Build-verified**: x64 `/t:Rebuild` (0 errors, same 10 pre-existing
+   `C4312` warnings as every other round, unrelated to this change),
+   `dumpbin /headers` confirmed `8664 machine (x64)` with a fresh
+   timestamp (`Sun Sep 13 17:52:28 2026`). Win32 `/t:Rebuild` (0 errors,
+   0 warnings) confirmed no regression. x64 rebuilt a second time, last, so
+   the deployed DLL (shared `OutDir`) is the correct architecture.
+
+   **NOT YET LIVE-TESTED** -- next step: push `InternalRenderScalePercent`
+   or `CustomResolutionWidth`/`Height` above ~150% and confirm the on-screen
+   warning and `[x64-video-scale][WARNING]` log line both fire exactly
+   once per session.
+
+**One genuinely large gap found, left OPEN (not fixed this pass, per the
+task's own instruction to document rather than attempt real RE work in the
+same pass):**
+
+3. **Custom Options screen's real depth** (row #64) -- the single largest
+   finding of this sweep, more significant in scope than anything else here.
+   The screen's entire UI SHELL is real and reachable on x64: all 9 tabs
+   (`UnifiedTab::{Controller,Look,Video,Audio,Voice,AdvancedVideo,Movement,
+   Actions,Binds}`), navigation, mouse-click hit-testing, the Apply Settings
+   popup, and the controller-photo Stick/Button Layout diagrams all live in
+   `DrawCustomOptionsMenuIfOpen`/`CustomOptionsMenu_TickInput`
+   (`overlay_hud.cpp`) -- genuinely the SAME compiled code on both
+   platforms, zero arch guards anywhere in either function, and the real
+   open trigger is already wired (row #41, FIXED 2026-09-12). **But the
+   actual DATA LAYER for every one of the 7 real vanilla-game-setting tabs
+   (Look/Video/Audio/Voice/AdvancedVideo/Movement/Actions -- the entire
+   substance of x86's own "EVERY SINGLE OPTION FROM NATIVE AND OUR MOD"
+   expansion) is silently dead on x64.** Every row in those 7 tabs is a
+   `VanillaSettingKind::{DvarBool,DvarFloat,DvarString,Keybind}`, read and
+   written exclusively through `real_settings.cpp`'s dvar/keybind
+   functions -- and on x64, EVERY ONE of those functions is either an
+   `#ifdef _M_IX86`-only `__asm` body that silently returns
+   `nullptr`/`0`/unbound (`FindDvar`, `GetKeybind`) or an EXPLICIT
+   `#if defined(_M_X64) || defined(_WIN64)` early-return no-op
+   (`SetDvarBool`/`SetDvarFloat`/`SetDvarString`/`SetKeybind`/
+   `UnbindKeynum`/`KeyNameToKeynum`/`KeynumToDisplayName`/
+   `QueueConsoleCommand`, all added 2026-09-04 specifically to stop these
+   raw x86-only function-pointer calls from crashing the x64 build --
+   confirmed deliberate via that block's own in-code comment, not an
+   oversight). **Practical consequence**: a controller/mouse/keyboard
+   player can open the screen, navigate every tab, and "adjust" any real
+   vanilla setting -- every value always displays a stub (`0`, `-1,-1` for
+   an unbound keybind), and every edit is silently discarded, with nothing
+   about the UI indicating this. Only 2 of the 9 tabs actually work:
+   Controller (backed by `g_modConfig` fields, this mod's own config) and
+   the new Custom Binds tab (writes `g_modConfig.customButtonMap` directly,
+   `overlay_hud.cpp:4304-4305`, confirmed to never touch `real_settings.h`
+   at all).
+
+   **Not fixed this pass.** Closing this for real needs genuine x64 RE
+   work: x64 equivalents of the custom-register-convention
+   `FindDvar`/`SetDvarBool`/`SetDvarFloat`/`SetDvarString`/`GetKeybind`/
+   `SetKeybind`/`KeyNameToKeynum`/`KeynumToDisplayName` internals all need
+   to be found and resolved -- the same class of work already done once
+   for `Dvar_FindVar`/`GetEffectiveFov` (2026-09-13, row #3's ADS-slowdown
+   fix: `FUN_1402c3890`/`FUN_140069e60`). Note `GetDvarFloatX64`/
+   `GetDvarStringX64` (`analog_input_hooks_x64.cpp:2233`/`2250`) already
+   exist from that same-day work, but are NOT wired into
+   `real_settings.cpp`/`vanilla_settings_sync.cpp` at all -- a genuinely
+   separate call path the Options screen's data layer never reaches.
+   Flagged here as a real, precisely-scoped follow-up task, not attempted
+   in this documentation-focused pass.
+
+**Build/deploy note for this whole round**: only item 7 (the render-scale
+warning) involved a code change; items 1/2/4/5/6 needed no changes (already
+working); item 3 was deliberately left as documentation only. The single
+code change was build-verified per the standard sequence above and is
+already deployed.

@@ -122,9 +122,28 @@ These are honestly documented as not-yet-implemented, not hidden bugs. A
 **complete, systematic audit against every `-x86` feature is now done** — see
 [`re_notes/x64_feature_parity_audit.md`](re_notes/x64_feature_parity_audit.md)
 for the full 61-item table (34 confirmed present, 21 confirmed absent, 6
-partial/regressed). The items below are the highest-impact gaps it found;
-see that file for everything else (menu glyphs, killstreaks, config
-presets, the plugin API, background threads, and more).
+partial/regressed) — **plus 7 more rows (#62-68) added 2026-09-13 from a
+direct git-history audit-completeness sweep** (the original 61-row pass was
+sourced from documentation, not raw commit history; 6 of the 7 turned out
+already present, 1 was fixed on the spot, and 1 — the Custom Options
+screen's real data layer, see below — is a genuinely large gap). The items
+below are the highest-impact gaps found across both passes; see that file
+for everything else (menu glyphs, killstreaks, config presets, the plugin
+API, background threads, and more).
+- **The custom Options screen's real vanilla-setting tabs
+  (Look/Video/Audio/Voice/Advanced Video/Movement/Actions) are silently
+  non-functional on x64**, found 2026-09-13. The screen itself opens,
+  navigates, and responds to mouse clicks correctly — the UI shell is
+  genuinely shared, arch-neutral code — but every value shown on those 7
+  tabs is a stub (dvar reads and keybind reads both return nothing on x64)
+  and every edit is silently discarded (dvar and keybind writes are
+  explicit no-ops on x64, added 2026-09-04 to stop a real x86-only crash
+  risk, never replaced with a working x64 path). Nothing in the UI
+  indicates this. Only the Controller tab and the new Custom Binds tab
+  (both backed by this mod's own config, not real game settings) actually
+  work. See `re_notes/x64_feature_parity_audit.md` row #64 for the full
+  trace — closing this needs real x64 reverse-engineering work, not
+  attempted yet.
 
 - **Controller-glyph icons now draw for real on x64 for eight in-game/menu
   hint categories** (2026-09-13, three same-day follow-up passes on top of
