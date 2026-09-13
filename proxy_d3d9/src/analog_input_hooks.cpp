@@ -758,6 +758,22 @@ extern "C" bool IsMenuActive_Exported()
     return IsMenuActive();
 }
 
+// Same "internal linkage" situation as IsMenuActive_Exported above, this time for
+// ShouldDrawGlyphOverlay -- needed by analog_input_hooks_x64.cpp's own 2026-09-13
+// text-draw hook port (Hook_DrawTextX64) so x64's Mantle-hint detection can replicate
+// x86's exact gating (`ShouldDrawGlyphOverlay() && !IsMenuActive()`) rather than
+// running unconditionally, which would make x64's Auto-Mantle dependency-readiness
+// behave differently from x86's (x86's own coupling to the glyph-overlay toggle is a
+// real, faithfully-preserved quirk, not something to silently drop during the port --
+// see CLAUDE.md's "compare to x86 original at every stage" standing rule). This
+// function itself has no x86-only hardcoded address or __asm -- already compiles and
+// behaves identically on both platforms, only the anonymous-namespace scoping needed
+// escaping.
+extern "C" bool ShouldDrawGlyphOverlay_Exported()
+{
+    return ShouldDrawGlyphOverlay();
+}
+
 // Same "internal linkage, invisible to overlay_hud.cpp" situation as IsMenuActive_Exported
 // above, this time for RouteStickAxes -- issue #66 restyle (2026-08-05), needed by the
 // Stick Layout drill-down screen's controller diagram to know which PHYSICAL stick each
