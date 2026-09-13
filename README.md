@@ -106,7 +106,7 @@ see their own sections below; neither gates this release.
 | | Survival ready-up (hold Y, synthetic F5) |
 | | Hold Breath (L3 while ADS'd, sniper-class) |
 | | DualSense gyro-aim (preview/WIP, same status as `-x86`, needs real hardware to test) |
-| | Visual-enhancement suite (render scale, FSR, motion blur) |
+| | Visual-enhancement suite (render scale, FSR) — motion blur's safety gates are wired but its real trigger hook was never ported to x64 (raw x86 asm, doesn't compile for x64); live-tested absent, see Known gaps |
 | | Native controller menu/UI navigation (main menu, pause, options, buy-stations) |
 | | Menu-focus/itemDef tracking (glyph-icon dependency) |
 | | Real glyph-icon substitution: Mantle, Pickup/Swap/Pickup-health, Throwback grenade, Reload/low-ammo, menu corner hints (Back/Friends/Quit/Leaderboards/Game Summary) (see Known gaps for what's still native-only) |
@@ -130,6 +130,17 @@ screen's real data layer, see below — is a genuinely large gap). The items
 below are the highest-impact gaps found across both passes; see that file
 for everything else (menu glyphs, killstreaks, config presets, the plugin
 API, background threads, and more).
+- **Motion blur doesn't render on x64 — live-confirmed 2026-09-13, real
+  gap, not yet fixed.** Its safety gates (menu-active/`clcState`/in-level)
+  and per-frame yaw/pitch delta feed were genuinely wired 2026-09-12 — but
+  the earlier "FIXED" verdict was an overclaim: the function's only real
+  trigger is an x86-only raw-assembly engine hook, never ported to x64 (x64
+  doesn't support that register-convention trick), so the gate is armed but
+  nothing ever calls it. FSR sharpening is unaffected — it hooks a
+  different, already-ported point (`EndScene`). Real next step: find a
+  C-callable x64 equivalent trigger, or determine whether `EndScene` is
+  actually safe for this specific effect on x64 (x86 deliberately avoided
+  it for real reasons — see parity audit row #45).
 - **Fire and/or ADS intermittently failed — root cause found and fixed
   2026-09-13, build-verified, awaiting live re-confirmation.** Originally
   reported and investigated as sniper-class-specific (a fix attempt was

@@ -4636,3 +4636,75 @@ second `dumpbin` pass). `iw5sp.exe` was not running at any build step
 live playtest (ideally reproducing the same "launch -> menu navigation ->
 close" shape as the original 604-line capture) to confirm the total line
 count drops and no other tag has grown to fill the gap.
+
+---
+
+**UPDATE 2026-09-13 (live playtest, same session) — "where is motion
+blur?" A real gap found, exposing an overclaim in this file's own
+2026-09-12 entry.**
+
+Live report: motion blur (`MotionBlurEnabled=1` in the tester's own live
+config) is not visible despite the earlier same-day "FIXED" verdict.
+Investigated directly, confirmed via code read (not assumed):
+
+`RunPreOverlayMotionBlurPassIfEnabled` (`overlay_hud.cpp`) has its three
+safety gates and its yaw/pitch delta feed genuinely wired for x64 — that
+part of the 2026-09-12 fix was real, not fabricated. But its only real-
+world trigger, `TriggerMotionBlurFromEngineHook()`, is called exclusively
+from `Hook_693ff0` (`analog_input_hooks.cpp`) — a `__declspec(naked)`
+function using inline `__asm` (`pushad`/`call`/`popad`/`jmp`) to hook
+`FUN_00693ff0` at a raw register-convention boundary, wrapped in
+`#if !defined(_M_X64) && !defined(_WIN64)` and never compiled for x64 at
+all. Grepped both `analog_input_hooks_x64.cpp` and `overlay_hud.cpp`:
+zero callers of `TriggerMotionBlurFromEngineHook`/
+`RunPreOverlayMotionBlurPassIfEnabled` exist anywhere reachable from x64.
+The gate is armed, but nothing on x64 ever pulls the trigger — same
+"mechanism exists, never wired into the tick" bug class already found
+for vibration and gyro-aim earlier this session, here caused by
+non-portable inline assembly rather than a simply-missed call site.
+
+**Why the 2026-09-12 entry called this "FIXED" without catching this**:
+that pass's own evidence column only described the safety-gate/delta-feed
+work — accurate as far as it went — but never checked or mentioned
+whether the actual TRIGGER existed on x64 at all. A genuine documentation
+gap, now corrected in `re_notes/x64_feature_parity_audit.md` row #45,
+`README.md`'s status table and Known gaps.
+
+**Why this isn't a simple "just port `Hook_693ff0` to x64" fix**: x86's
+own crash history for this exact hook point (issue #96/#97, extensively
+documented earlier in this file) required TWO real fix attempts before
+landing on `FUN_00693ff0` specifically — the wrong hook point caused
+real crashes (partial-backbuffer capture) and real HUD-bleed (blurring
+native UI elements), not just cosmetic issues. `FUN_00693ff0` was chosen
+because it fires strictly after a viewport's 3D composite but strictly
+BEFORE that viewport's own queued 2D/HUD draw dispatch — a narrow timing
+window found only after real live-debugging. x64's engine internals
+(different compiler, different inlining, confirmed elsewhere in this
+project to have real structural differences from x86 at points like the
+entity array/struct offsets) have NOT been independently re-verified to
+have an equivalent narrow window, or that `FUN_00693ff0`'s x64 equivalent
+(if findable) has the same clean, naked-hookable prologue/epilogue shape
+x86's did (`CMP [ESI+0x320],0` first instruction, plain `RET` — x64's
+calling convention doesn't use ESI the same way at all, so this exact
+disassembly signature can't carry over unchanged).
+
+**Two real options for a fix, neither attempted yet:**
+1. Find a genuine x64 equivalent of `FUN_00693ff0`'s hook point via fresh
+   Ghidra RE (not assumed to exist at a predictable address) — likely
+   callable as a plain C function (x64's calling convention doesn't have
+   the same "naked hook required" class of risk x86's register-argument
+   functions did, per this project's own repeated finding that x64
+   functions tend to use standard fastcall/stack conventions even where
+   x86 needed raw `__asm`).
+2. Determine whether `Hook_EndScene` (already confirmed live on x64, and
+   already motion blur's OWN Phase A/B sibling FSR's real trigger point)
+   is actually safe for motion blur specifically on x64's engine internals
+   — x86's reasons to avoid it (crash risk, HUD bleed) were real but
+   specific to x86's own composite/dispatch ordering, not a law of nature;
+   worth a fresh, direct investigation rather than assuming x86's
+   constraint automatically carries over.
+
+Not yet fixed — this is a real, moderately-sized RE task (finding/
+confirming a genuinely new x64 hook point, or re-validating a design
+constraint against different engine internals), not a small wiring gap
+like vibration/gyro-aim turned out to be.
