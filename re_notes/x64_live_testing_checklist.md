@@ -38,6 +38,21 @@ for any item lives in `re_notes/known_issues_x64.md` issue #1.
 - [ ] Sniper-class Fire/ADS fix attempt — confirm Fire and ADS both work
       on sniper-class weapons specifically (the original bug: worked on
       other weapon classes, failed on snipers).
+- [ ] Killstreak: Predator Missile launch (Survival buy-station, 2500,
+      `remote_missile`) — **strengthened 2026-09-13, still not live-tested.**
+      A dedicated static-RE pass confirmed controller Fire-down provably
+      sends the byte-identical `"n 1"` reliable-command string a real x64
+      keyboard `+attack` press already sends natively (same function,
+      `FUN_14007fc00`, same argument, by construction — not just "the same
+      mechanism as a different bug's fix" as previously documented). Confirm
+      live: aim the missile camera (already known-working, shares the
+      generic UAV-control system), press Fire, missile actually launches.
+      If it does NOT launch despite this confirmation, the next RE angle is
+      tracing `FUN_14007fb30`'s ring-buffer consumer server-side (who reads
+      `"n %i"` off the queue and what it does with it) rather than
+      re-litigating whether `"1"` is the right index — that part is now
+      confirmed two independent ways. See `known_issues_x64.md`'s
+      2026-09-13 Predator Missile round and parity audit row #16.
 - [ ] CrouchProne (B) — confirm no regression now that a menu-active gate
       (`g_currentBPressTouchedMenuX64`) was added; B should still toggle
       real stance during gameplay and should NOT toggle stance when used

@@ -2031,6 +2031,113 @@ next RE angle is tracing `FUN_14007fb30`'s ring-buffer consumer server-side
 (who reads `"n %i"` off the reliable-command queue and what it does with it)
 rather than assuming the notify alone was sufficient.
 
+**UPDATE 2026-09-13 — dedicated static-RE task: does the sniper-fix notify
+mechanism also correctly fire Predator Missile's launch on x64? Confirmed
+YES, structurally, via two independent methods — still NOT live-tested.**
+Parity audit row #16 had this marked PARTIAL/unconfirmed ("functionally the
+same mechanism as x86's fix, built for a different bug, never connected to
+or tested against Predator Missile specifically"). x86's own confirmed
+mechanism (see `re_notes/iw5sp.md`/`killstreak_reference.md`): the queued
+client command needs to be exactly `"n 1"` — bare `"n"` left `Cmd_Argv(1)`
+empty and never matched — because `1` is the decimal index for `"+attack"`
+in a real 81-entry bind-name table (`FUN_005330a0`-style resolution on the
+registration side, `atol(Cmd_Argv(1))` on the receiving side). The open
+question for x64 was whether `kFireBindCaseDown = 1` (the value the mod
+passes to `g_notifyBindDispatch`) is really the same "1" x86 confirmed, or
+just a coincidentally-matching case number from an unrelated enumeration
+(dispatch case number vs. bind-name-table index are NOT guaranteed to be the
+same numbering space — this is the exact lesson x86's own issue #3, the Back
+button regression, already burned a live regression learning).
+
+Two independent static checks, both re-derived fresh via headless Ghidra
+(`re_notes/ghidra_project_x64/iw5sp_x64_proj`), not just re-reading existing
+in-file comments:
+
+1. **`FUN_14007c3a0` decompiled in full** (fresh `DecompileAt.java` run, not
+   the existing `decomp_14007c3a0_full.txt` alone, to confirm nothing had
+   drifted): confirms `FUN_14007fc00(param_1,param_2)` is called
+   **unconditionally, as the literal first executed statement for every
+   non-zero case, before the switch even runs** — i.e. this call happens for
+   a real x64 keyboard `+attack` press too, not something this mod invented.
+   Case `1` of that same switch independently resolves to `+attack` (calls
+   the real kbutton activate/deactivate pair on `&DAT_140644818` — the exact
+   address `kFireStructInsnOffset` already resolves `g_fireStruct` to,
+   confirmed by address match, not position, per this project's own standing
+   discipline).
+2. **`FUN_14007fc00` itself decompiled fresh** (it had never had its own
+   saved decompile file before this pass, only inline description in
+   comments): confirms it does nothing but gate (`FUN_14026afa0`: real
+   connection-state check, `DAT_142533370 == 2`; `FUN_140265a20`: demo/
+   override flag) and then `FUN_1402ca430(buf, 0x400, &DAT_1403f5fd4,
+   param_2)` — a `sprintf`-style call formatting `param_2` **directly**, no
+   intermediate table lookup, into `DAT_1403f5fd4`. Read that address raw
+   (`ReadStringAt.java`, bypassing Ghidra's string-recognition entirely, same
+   technique this project has used before for tail-merged literals): it is
+   exactly `"n %i"`. Since `g_notifyBindDispatch` is `FUN_14007fc00` resolved
+   via the already-proven anchor-plus-fixed-offset pattern, and
+   `kFireBindCaseDown = 1`, controller Fire-down provably sends `"n 1"` —
+   the identical string, by construction, not by coincidence.
+
+**Independently cross-checked from the OTHER side too, not just relying on
+the dispatch-case match**: `FUN_14007eff0` (found via a fresh
+`FindExactStrings.java` search for `"+attack"` in the x64 binary, one of only
+two references — the other being a raw DATA pointer into the same table) is
+the x64 bind-name→index resolver: iterates a pointer array at
+`PTR_DAT_1404c1870`, up to `0x51` (81 decimal) entries, `strcmp`-style
+matching against the input string, returning the loop index. **81 entries —
+the exact same size as x86's own independently-confirmed 81-entry table.**
+Dumped the table directly (`DumpRawQwords.java`, resolving each pointer to
+its string): index `0` is an empty placeholder (matches x86's own "avoids
+ambiguity with not-found" design), **index `1` is literally `"+attack"`**,
+index `2` is `"-attack"`. This is the same index x86 independently confirmed
+via a completely different table (`0x00929fa0`, a different address, same
+role) on a different binary — two unrelated RE paths (dispatch-case address
+matching on x64, and a direct bind-name-table memory dump on x64, cross-
+checked against x86's own separately-derived table) converge on the same
+number for the same reason.
+
+**Secondary finding, NOT part of this task's scope, flagged honestly rather
+than silently noticed and dropped**: the same table dump did NOT find
+`"+ads"`/`"-ads"` anywhere near case `0xd`/`0xe` (table index `0xd` is
+`"+speed_throw"` instead) — i.e., dispatch-case-number and bind-name-table-
+index are demonstrably NOT the same enumeration in general, only confirmed
+to coincide for Fire specifically (case 1 = index 1 = `"+attack"`, doubly
+verified above). This does NOT undermine the Predator Missile finding
+(`launch_remote_missile` is registered against `"+attack"` only, never
+`"+ads"`, per x86's own confirmed GSC trace) but it DOES mean the sniper
+Fire/ADS notify fix's own ADS half (`kAdsBindCaseDown = 0xd`) has one fewer
+independent confirmation leg than Fire does — its correctness still rests
+entirely on the `g_adsStruct`-address match, not on any bind-name-table
+cross-check, since `"+ads"` doesn't appear to live in this particular table
+at all (plausibly bound/dispatched through a different path entirely, e.g.
+`+toggleads_throw`/`toggleads`, both of which DO appear in the table at other
+indices). Not investigated further — out of scope for this task, which is
+Fire/Predator-Missile-specific — but worth a future session's attention if
+the sniper ADS half specifically is ever reported still broken on x64.
+
+**Honest residual gaps, not closed by this pass and not claimed to be:**
+(a) this is a static-RE argument, not a live repro — nothing here confirms
+the missile visually launches, only that the exact correct wire-protocol
+command is provably sent; (b) `FUN_14007c3a0`'s own outer gate
+(`FUN_140078f00(param_1)!=0 && DAT_1405145a8!=0`, described in-file as a
+client-ready/dvar-handle-existence check) is bypassed by the mod's direct
+call to `g_notifyBindDispatch` — believed inert during ordinary gameplay
+(same reasoning already on record for why this was considered safe for the
+sniper fix), not independently re-verified this pass; (c) x64 has no
+config-toggle equivalent to x86's `[Experimental] FireNotifyQueueKick`
+(default-on) — the notify fires unconditionally whenever
+`g_notifyBindDispatch` resolves. This mirrors x86's own default-on,
+config-gated-but-on-by-default behavior and is not a functional bug (x86's
+own unconditional-per-keypress design is exactly what's already
+live-confirmed safe there), just a missing parity toggle — not fixed here
+per this task's own scope (only touch code for a confirmed bug, and this
+isn't one). **No code changes made this pass** — the existing wiring was
+already correct; this investigation only strengthens the evidence for it.
+Parity audit row #16 and `x64_live_testing_checklist.md` updated to match.
+Full Ghidra outputs from this pass, saved under `re_notes/x64_migration/`:
+`predator_decomp_14007fc00_chain.txt`, `predator_bindname_table_x64.txt`,
+`predator_notify_strings_x64.txt`, `predator_fmt_string_x64.txt`.
+
 **New live bug report, same day: "no visual rendered elements show on screen
 ... including our own mw32011ncp started messages" -- one real cause CONFIRMED
 and fixed, scope of the rest still open.** User confirmed via clarifying
