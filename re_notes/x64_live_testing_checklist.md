@@ -161,11 +161,6 @@ for any item lives in `re_notes/known_issues_x64.md` issue #1.
       the log at startup (the direct-call resolve for Mantle-hint
       detection's own dependency) — if it's missing/FATAL instead, Mantle
       detection silently never works even though the hook itself is fine.
-- [ ] Reach a real mantleable ledge in Campaign or Survival with
-      `ForceGlyphOverlay=1` (or an active controller) and confirm the native
-      "Press [Space] to..." mantle hint is still visible and UNCHANGED (no
-      icon substitution should appear — none is implemented yet). This is
-      purely a "did the hook break anything" check, not a feature test.
 - [ ] Watch for the one-shot `[x64-drawtext] Mantle-hint structural match
       confirmed` log line specifically while standing at a real mantleable
       ledge — this is the direct confirmation that
@@ -174,6 +169,36 @@ for any item lives in `re_notes/known_issues_x64.md` issue #1.
       appears but this one never does anywhere in a session that definitely
       showed a mantle prompt, that's a real bug to report (the structural
       match itself, or the live-resolved template, is wrong).
+
+## Real glyph-icon visual SUBSTITUTION (new 2026-09-13, same day follow-up)
+
+**Only these three cases now visually substitute — everything else still
+renders native, unmodified text (see "Not testable" section below for the
+honest list of what's NOT covered and why).**
+
+- [ ] Reach a real mantleable ledge in Campaign or Survival with
+      `ForceGlyphOverlay=1` (or an active controller) and confirm the native
+      "Press [Space] to..." mantle hint is now REPLACED by this project's own
+      icon+text (previously it stayed unchanged — that expectation has
+      changed as of this update). Watch for `[x64-drawtext] First real
+      glyph-icon SUBSTITUTION fired` (kind=Mantle) in the log.
+- [ ] Pick up a new weapon / swap weapons / pick up health in Campaign or
+      Survival — confirm the native "Press F to pick up"/"...to swap for"
+      hint is replaced with a real controller-glyph icon. Watch for
+      `kind=Pickup` in the same log line.
+- [ ] Throw back an enemy grenade — confirm the native "G or Middle Mouse
+      throw back" hint is replaced with a real icon (`kind=Throwback`).
+- [ ] **Position/alignment is UNVERIFIED and UNTUNED** — no empirical nudge
+      constants were ported for x64 (x86's own alignment took several rounds
+      of live-tested correction). Expect the icon/text to potentially be
+      noticeably offset from where it "should" sit relative to the mantle
+      arrow sprite/pickup prompt; report roughly how far off and in which
+      direction so a future pass can add the equivalent nudge constants.
+- [ ] Confirm menu corner hints (Back/Friends), buy-station's "Hold F to use
+      Weapon Armory," Survival's ready-up prompt, Reload's flashed reminder,
+      and turret placement all STILL render as plain native text, completely
+      unchanged — these are explicitly NOT covered by this pass and should
+      show zero visible difference from before.
 
 ## Auto-Mantle's real `+gostand`-forcing feature (new 2026-09-13, ships OFF by default)
 
@@ -223,12 +248,15 @@ starting rather than found blocked. Genuinely open, not attempted:
 - **Gameplay glyph-icon text-draw hook — RESOLVED 2026-09-13, see its own
   new section above.** The hook itself and Mantle-hint detection are now
   build-verified and live-testable (see the "Native text-draw hook /
-  Mantle-hint detection" section above); visual glyph-icon SUBSTITUTION
-  (Interact hints, Reload, Throwback, Sentry-Place, menu hints, font-name
-  filtering) remains not-yet-attempted follow-on work, not part of this
-  list until implemented. Auto-Mantle's own `+gostand`-forcing feature
-  shipped later the same day -- see its own new checklist section above,
-  no longer blocked.
+  Mantle-hint detection" section above). **Visual glyph-icon SUBSTITUTION —
+  PARTIALLY shipped later the same day**, see the new "Real glyph-icon
+  visual SUBSTITUTION" section above: Mantle/Pickup-Swap-PickupHealth/
+  Throwback grenade now visually substitute; buy-station, Survival ready-up,
+  Reload, Sentry-Place, menu hints, and font-name filtering remain
+  not-yet-attempted or genuinely blocked follow-on work (see the "Not
+  testable" section below for exactly why each one is blocked). Auto-Mantle's
+  own `+gostand`-forcing feature shipped later the same day -- see its own
+  new checklist section above, no longer blocked.
 - Back's `+scores` scoreboard synthesis port to x64 — small, cheap, well-
   understood (the function already exists arch-clean on x86, just needs
   wiring in). Expected test outcome once ported: confirm it does nothing
@@ -237,11 +265,25 @@ starting rather than found blocked. Genuinely open, not attempted:
 
 ## Not testable — investigated and found genuinely blocked, not implemented
 
-(No items currently blocked in this category — Auto-Mantle, the last entry
-here, moved to its own live-testable checklist section above 2026-09-13
-once both its detection dependency and its actual `+gostand`-forcing
-feature shipped. Kept as an empty section header, not deleted, so a future
-session knows this category exists and where entries belonging to it go.)
+- **Buy-station glyph** ("Hold F to use Weapon Armory") and **Survival
+  ready-up glyph** (F5) — genuinely blocked, not skipped: neither has a known
+  reference-key template even on x86 (x86 gates them via `IsGameplayHintFont`
+  font-name filtering instead, which needs x64's still-unconfirmed `Font_s`
+  `fontName` offset). See `re_notes/x64_migration/drawtext_hook_x64.md`'s
+  "Stage (c)" for the full trail.
+- **Reload glyph** — structurally blocked: confirmed via decompile that x64's
+  Reload/low-ammo function calls a completely different native draw function
+  (`FUN_1402afa60`, not the hooked `FUN_14029a2b0`) — this hook can never see
+  Reload's text regardless of what detection logic is added.
+- **Sentry-Place (turret placement) glyph** — its own reference string
+  (`"SENTRY_PLACE"`) was searched for across the ENTIRE x64 binary and found
+  zero times. Genuinely unresolved, not a priority choice.
+- **Menu corner hints** (Back/Friends) — not attempted this pass, out of
+  scope per the priority ordering (in-game hints first).
+
+(Auto-Mantle, the prior sole entry here, moved to its own live-testable
+checklist section above 2026-09-13 once both its detection dependency and
+its actual `+gostand`-forcing feature shipped.)
 
 ## Multiplayer (`iw5mp.exe`) — separate track, not part of this release gate
 

@@ -120,30 +120,101 @@ header comment is kept in sync with actual scope). Summary:
   `IsMenuActiveX64_Exported()` already existing) — this is a faithful port of x86's
   real coupling between the glyph-overlay toggle and Auto-Mantle's own detection
   signal, not a new behavior introduced by this port.
+- **Stage (c)**, 2026-09-13, same day: real VISUAL glyph-icon substitution,
+  extending the structural-match technique to two more hint families and wiring
+  `RequestCustomHintOverlay` for the first time on x64. New RE this stage (all via
+  `analyzeHeadless.bat -process iw5sp.exe -readOnly -noanalysis` against the
+  already-imported `iw5sp_x64_proj`, same toolkit):
+  - `RawStringScan.java` against `"PLATFORM_PICKUPNEWWEAPON"`/
+    `"PLATFORM_THROWBACKGRENADE"` found both inside `FUN_14004fa00` (2/1
+    references); `DecompileAt.java` confirmed this function ALSO handles
+    `PLATFORM_SWAPWEAPONS`/`PLATFORM_PICKUPHEALTH` (both real `"+activate"`
+    binds, per `ui_assets.md`'s zone-dump research) and calls `FUN_14029a2b0`
+    (this hook's own target) directly for all four, at the exact same call site
+    shape as Mantle/Hold Breath in `FUN_140052220`.
+  - `RawStringScan.java` against `"PLATFORM_RELOAD"` found it in a DIFFERENT
+    function, `FUN_140031bc0` — `DecompileAt.java` confirmed THAT function calls
+    `FUN_1402afa60`, not `FUN_14029a2b0` (the same alternate draw function
+    dispatcher case `0x61`'s death-quote captions use). Reload's text can never
+    be seen by this hook — a real, structural reason, not a priority choice.
+  - `RawStringScan.java` against `"SENTRY_PLACE"` found **zero** references
+    anywhere in this x64 binary — genuinely unresolved (different storage,
+    doesn't exist in this build, or needs a different anchor), not pursued
+    further.
+  - `DecompileAt.java` against `FUN_14029fac0`/`FUN_14029fb10` (the width/height
+    text-measure functions, called with `fontArg` directly) → `FUN_1401b7cd0`/
+    `FUN_1401b80f0` (the real leaves) recovered a PARTIAL x64 `Font_s` layout:
+    `pixelHeight` confirmed at `font+0x08` (`FUN_1401b7cd0`'s own
+    `return *(undefined4*)(param_1+8)`), `glyphCount` confirmed at `font+0x0C`
+    and the `DiagGlyph*` array confirmed at `font+0x20` (both direct
+    dereferences inside `FUN_1401b80f0`'s own binary-search/direct-index glyph
+    lookup). `DiagGlyph`'s own internal 24-byte stride (`letter`@+0x00,
+    `dx`/advance-width@+0x04) is confirmed BYTE-IDENTICAL to x86's — expected,
+    since it's raw loaded font-asset data with no pointers, architecture-
+    independent by construction. `fontName`'s own offset (`font+0x00`, the one
+    field `IsGameplayHintFont`-style filtering would actually need) was NOT
+    independently confirmed — no leaf function dereferencing it was found this
+    pass; its placement is inferred by natural x64 struct alignment (matches
+    x86's exact field order widened for 8-byte pointers: the confirmed 0x10-byte
+    gap between `glyphCount` and `glyphs` is exactly two pointers, `material`/
+    `glowMaterial`, precisely like x86) but this is an INFERENCE, not a decompile-
+    confirmed fact — flagged here so a future pass doesn't cite it as settled.
+  - New function: `TryGetPickupGlyphAssetName` (`analog_input_hooks.cpp`,
+    resolves via `LogicalAction::ReloadUse` — the real `"+activate"` bind's own
+    default key, "F", the same one Reload's own icon already resolves through)
+    — purely additive, x86's own `Hook_DrawGlyphText` never calls it, zero
+    change to x86's existing generic-path pickup/swap/health behavior.
+  - `ConvertRealScreenPosToDesignSpace` turned out to have internal linkage in
+    the x86 file too (confirmed via a real `LNK2019` — it sits inside a SECOND
+    anonymous namespace opening a few hundred lines before its own definition,
+    an easy miss by eye) — duplicated locally as
+    `ConvertRealScreenPosToDesignSpaceX64`, same convention as
+    `TextMatchesTemplateStructurallyX64`/`FindColorHighlightSpanX64`.
+  - Detection stays purely structural (exact prefix/suffix match against the
+    real, live-resolved template) for all three substituted cases — Mantle,
+    Pickup/Swap/PickupHealth, Throwback — so none of them needed the still-
+    unconfirmed `fontName` filtering above.
 
 ## What was NOT implemented this pass (honest scope)
 
-- x64's real `Font_s` struct layout (the x86 `DiagFont` equivalent) was not
-  independently re-derived — no `IsGameplayHintFont`-style font-name filtering is
-  applied. The structural template match alone is the only gate on false positives
-  for the Mantle case.
-- No visual glyph-icon substitution — `RequestCustomHintOverlay` is never called from
-  this hook, native hint text renders completely unmodified for every case observed,
-  Mantle included.
-- Interact hints, Reload's bare-word detection, Throwback-grenade/Sentry-Place
-  detection, and menu-hint detection (x86's other
-  `RenderedTextMatchesSubstitutionTemplate*`/`RenderedTextMatchesReferenceKey*`
-  callers) were not ported — Mantle only, per this task's own explicit priority
-  ordering ("at least... the Mantle hint specifically since Auto-Mantle depends on
-  it").
-- Auto-Mantle's own `+gostand`-forcing feature (the actual `out |= 0x400u` injection,
-  gated on `autoMantleEnabled && IsSprintActive() && IsMantleHintCurrentlyShowing() &&`
-  cooldown on x86) was NOT wired on x64 this pass — only the detection DEPENDENCY
-  (`IsMantleHintCurrentlyShowingX64()`) now exists for a future pass to consume. x64
-  has no direct `IsSprintActive()`-equivalent read either (Sprint is now kbutton-
-  driven on x64, per the 2026-09-12 migration — see `sprint_weapnext_x64.md` — with
-  no native pm_flags read exposed), so wiring the feature itself is a further,
-  separate task, not a trivial follow-on.
+- x64's real `Font_s` `fontName` offset remains unconfirmed (see Stage (c) above)
+  — no `IsGameplayHintFont`-style font-name filtering exists. Not needed for the
+  three substituted cases (structural template match is the gate instead), but
+  still blocks any future case that has no known reference-key template of its
+  own — which is exactly why buy-station and ready-up (next bullet) are stuck.
+- **Buy-station** (`"Hold ^3F^7 to use Weapon Armory"`) and **Survival ready-up**
+  (`F5`) remain unported — genuinely blocked, not skipped for convenience: x86
+  itself has no reference-key template for either (per `ui_assets.md`'s own
+  zone-dump research — ready-up's text is Survival-script-driven, buy-station's
+  key was never found even for x86), so x86 protects them from false positives
+  via `IsGameplayHintFont`, not a structural match. Porting these safely needs
+  the `fontName` gap above closed first.
+- **Reload** remains unported for a structural reason, not a priority one — see
+  Stage (c) above: it flows through a completely different native draw function
+  (`FUN_1402afa60`), which this hook (on `FUN_14029a2b0`) can never observe.
+  Would need its own separate signature/hook.
+- **Sentry-Place** remains unported — its own reference string
+  (`"SENTRY_PLACE"`) was not found anywhere in this x64 binary at all (see
+  Stage (c) above); `TryGetSentryPlaceGlyphAssetName` exists and is ready to use
+  once a real x64 reference/template is found.
+- Menu-hint detection (x86's `ResolveMenuGlyphAssetNameForKeyName` block) was
+  not ported — out of scope per this task's own priority ordering (in-game
+  hints first).
+- **No position/scale nudge tuning was ported.** x86's own pixel-perfect
+  alignment (`kHintVerticalNudge`, `kMantleHintXNudge`/`YNudge`) was reached via
+  several rounds of LIVE-TESTED empirical correction specific to x86's own
+  position-math convention (documented in detail in
+  `analog_input_hooks.cpp`'s own history around those constants). x64's own
+  substitution uses the raw converted position with zero tuning — on-screen
+  alignment against the real mantle-arrow sprite/pickup icon is UNVERIFIED and
+  will very likely need the same class of empirical correction once actually
+  seen running.
+- Auto-Mantle's own `+gostand`-forcing feature is now wired on x64 by a
+  concurrent session the same day (`known_issues_x64.md` issue #1, commits
+  `21e2546`/`811523d`) — unrelated to this glyph-substitution work, not
+  something this pass touched.
 
-Not yet live-tested — build-verified only (see `known_issues_x64.md` issue #1 for the
-live-test status this lands under).
+Not yet live-tested — build-verified only (x64 `/t:Rebuild` 0 errors, dumpbin-
+confirmed `8664 machine (x64)` fresh timestamp, Win32 regression rebuild 0
+errors/0 warnings, x64 redeployed last). See `known_issues_x64.md` issue #1 for
+the live-test status this lands under.
