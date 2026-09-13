@@ -21,9 +21,10 @@ several real gaps this file's own prior summary had missed, most notably
 Sprint silently running on x86's own deprecated pre-kbutton design and
 vibration never having been wired to x64 at all. The native text-draw hook
 that blocked gameplay glyph icons and Auto-Mantle's own detection dependency
-is now ported too, with Mantle-hint detection wired on top — visual glyph
-substitution itself and Auto-Mantle's actual `+gostand`-forcing feature both
-remain unimplemented, see item 16 under What's New. **This release has not
+is now ported too, with Mantle-hint detection wired on top, and Auto-Mantle's
+actual `+gostand`-forcing feature now ships on top of that (off by default) —
+visual glyph substitution itself remains unimplemented, see items 16-17 under
+What's New. **This release has not
 shipped** — see `README.md` for the current release gate (parity with the
 `-x86` line's final state) and `re_notes/known_issues_x64.md` issue #1 for
 live, detailed status on every item below.
@@ -170,18 +171,26 @@ live, detailed status on every item below.
     `SEH_GetString` equivalent — not `real_settings.cpp`'s x64
     `GetLocalizedString()` stub, which just echoes the key back and would
     never match). **This unblocks Auto-Mantle's own detection DEPENDENCY**
-    specifically — `IsMantleHintCurrentlyShowingX64()` now exists and can be
-    read by a future pass. **Auto-Mantle's actual `+gostand`-forcing feature
-    is NOT wired this release** (x64 has no direct `IsSprintActive()`-
-    equivalent read since Sprint moved to a real kbutton, so this needs a
-    further, separate task), and **no visual glyph-icon substitution is
-    drawn** — native hint text, Mantle included, still renders completely
-    unmodified; only Interact-hint/Reload/menu-hint/Throwback/Sentry-Place
-    detection and x64's real `Font_s` struct layout remain unported. Full
-    honest scope, discovery trail, and what's still missing:
-    `re_notes/x64_migration/drawtext_hook_x64.md`. Build-verified, not yet
-    live-tested. See `re_notes/known_issues_x64.md` issue #1 for the full
-    trail.
+    specifically (see item 17 below for the feature itself) — **no visual
+    glyph-icon substitution is drawn** — native hint text, Mantle included,
+    still renders completely unmodified; only Interact-hint/Reload/menu-hint/
+    Throwback/Sentry-Place detection and x64's real `Font_s` struct layout
+    remain unported. Full honest scope, discovery trail, and what's still
+    missing: `re_notes/x64_migration/drawtext_hook_x64.md`. Build-verified,
+    not yet live-tested. See `re_notes/known_issues_x64.md` issue #1 for the
+    full trail.
+17. **Auto-Mantle's real `+gostand`-forcing feature wired on x64**, ships off
+    by default matching `-x86`'s exact default (`AutoMantleEnabled=0`).
+    Composes `IsSprintActiveX64()` from three already-existing x64 tracking
+    variables (`g_sprintKbuttonActiveX64`, `GetRealStanceX64()`,
+    `g_adsHeldX64`) — an exact parity port of `-x86`'s own `IsSprintActive()`,
+    no new reverse-engineering needed, since Sprint's earlier move to a real
+    kbutton (item 8's own Sprint work) turned out to relocate the pieces this
+    needed rather than remove them. Wired together with item 16's Mantle-hint
+    detection into the same real `+gostand` usercmd bit (0x400) Jump already
+    uses, with the same 750ms cooldown and forward-stick-cone check `-x86`
+    ships. Build-verified, not yet live-tested — see
+    `re_notes/known_issues_x64.md` issue #1 for the full trail.
 
 ### Fixed
 1. **Crash on launch with the sniper Fire/ADS fix's own log line.** The
@@ -276,13 +285,6 @@ live, detailed status on every item below.
    (Interact, Reload, Throwback, Sentry-Place, menu hints) also remain
    unported. See `re_notes/x64_migration/drawtext_hook_x64.md` for the exact
    scope.
-2. **Auto-Mantle's actual `+gostand`-forcing feature** — its own detection
-   dependency (`IsMantleHintCurrentlyShowingX64()`) now exists (item 16
-   above), but the feature itself (the injection gated on
-   `autoMantleEnabled && IsSprintActive() && IsMantleHintCurrentlyShowing()
-   && cooldown` on x86) has not been wired on x64. x64 has no direct
-   `IsSprintActive()`-equivalent read to build the gate from (Sprint is now
-   kbutton-driven, not a native `pm_flags` read) — a further, separate task.
-3. **FXAA and a forced-MSAA option** don't exist on either line — checked
+2. **FXAA and a forced-MSAA option** don't exist on either line — checked
    directly, and neither was ever actually built even on the old `-x86`
    line, only ever planned. Real future work, not a regression.

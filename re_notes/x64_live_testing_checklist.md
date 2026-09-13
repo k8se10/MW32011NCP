@@ -175,6 +175,33 @@ for any item lives in `re_notes/known_issues_x64.md` issue #1.
       showed a mantle prompt, that's a real bug to report (the structural
       match itself, or the live-resolved template, is wrong).
 
+## Auto-Mantle's real `+gostand`-forcing feature (new 2026-09-13, ships OFF by default)
+
+- [ ] Set `[Movement] AutoMantleEnabled=1` in `mw3ncp_config.ini` first --
+      this feature is strictly opt-in, confirm it does NOTHING at the
+      default `=0` before testing the enabled path.
+- [ ] Watch `proxy_d3d9.log` for `[automantle-diag-x64] sprintActive=.. mantleHintShowing=..`
+      while sprinting toward a real mantleable ledge -- confirm
+      `sprintActive=1` and `mantleHintShowing=1` are BOTH observed at the
+      same time at some point (if `mantleHintShowing` never goes true while
+      `sprintActive=1`, that points at the native hint not rendering during
+      a real sprint state, same open question x86's own diagnostic was
+      built to catch -- see analog_input_hooks.cpp's own comment).
+- [ ] With both true and the left stick held forward (within
+      `AutoMantleForwardConeDegrees`/`AutoMantleMinStickMagnitude` of
+      straight ahead), confirm the player actually mantles the ledge
+      without pressing Jump.
+- [ ] **Regression check, same class x86 hit live 2026-08-03** ("the sprint
+      mantle is borked... it jumps always when trying to sprint"): confirm
+      sprinting forward with NOTHING mantleable nearby does NOT cause
+      repeated/spammed jumping. This is the single highest-risk regression
+      for this feature -- test it deliberately, not just the happy path.
+- [ ] Confirm the ~750ms cooldown holds -- shouldn't be possible to trigger
+      two mantles from one continuous ledge-hint-showing window faster than
+      that.
+- [ ] Confirm vanilla keyboard/mouse play is unaffected with the feature
+      enabled (this project's own strict-additive standard, CLAUDE.md SS7).
+
 ## Plugin API / security component
 
 - [ ] Confirm `proxy_d3d9.log` shows `mw32011nsp_security.dll` greenlit-
@@ -198,8 +225,10 @@ starting rather than found blocked. Genuinely open, not attempted:
   build-verified and live-testable (see the "Native text-draw hook /
   Mantle-hint detection" section above); visual glyph-icon SUBSTITUTION
   (Interact hints, Reload, Throwback, Sentry-Place, menu hints, font-name
-  filtering) and Auto-Mantle's own `+gostand`-forcing feature remain
-  not-yet-attempted follow-on work, not part of this list until implemented.
+  filtering) remains not-yet-attempted follow-on work, not part of this
+  list until implemented. Auto-Mantle's own `+gostand`-forcing feature
+  shipped later the same day -- see its own new checklist section above,
+  no longer blocked.
 - Back's `+scores` scoreboard synthesis port to x64 — small, cheap, well-
   understood (the function already exists arch-clean on x86, just needs
   wiring in). Expected test outcome once ported: confirm it does nothing
@@ -208,16 +237,11 @@ starting rather than found blocked. Genuinely open, not attempted:
 
 ## Not testable — investigated and found genuinely blocked, not implemented
 
-- **Auto-Mantle (while sprinting) — detection dependency RESOLVED
-  2026-09-13, feature itself still not implemented.** `IsMantleHintCurrentlyShowingX64()`
-  now exists and is live-testable (see the "Native text-draw hook / Mantle-
-  hint detection" section above for how to confirm it). The actual
-  `+gostand`-forcing feature (`autoMantleEnabled && IsSprintActive() &&
-  IsMantleHintCurrentlyShowing() && cooldown` on x86) is NOT wired on x64 --
-  x64 has no `IsSprintActive()`-equivalent read to build that gate from
-  (Sprint moved to a real kbutton, not a native `pm_flags` read). Nothing to
-  test for the FEATURE itself until that further, separate task lands — see
-  `re_notes/known_issues_x64.md` issue #1 for the full dependency trace.
+(No items currently blocked in this category — Auto-Mantle, the last entry
+here, moved to its own live-testable checklist section above 2026-09-13
+once both its detection dependency and its actual `+gostand`-forcing
+feature shipped. Kept as an empty section header, not deleted, so a future
+session knows this category exists and where entries belonging to it go.)
 
 ## Multiplayer (`iw5mp.exe`) — separate track, not part of this release gate
 
