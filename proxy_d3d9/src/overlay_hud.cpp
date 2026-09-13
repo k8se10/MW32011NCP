@@ -2071,11 +2071,20 @@ void DrawOneGameplayHintSlot(void* device, GameplayHintSlot& slot, GameplayHintS
     // pixel-measured screenshot, instead of guessing at another fix blind.
     {
         static char s_lastLoggedKey[96] = {};
-        char key[96];
+        // 2026-09-13 safety hardening: theoretical worst-case %f width for a pathological
+        // float magnitude exceeds this buffer's old size -- practically these are always
+        // sane screen/design-space coordinates, never attacker/game-text-controlled, but
+        // sized generously above the true worst case anyway per this project's own
+        // established convention (cheap insurance, not a response to an observed crash
+        // here specifically).
+        char key[160];
         sprintf_s(key, "%s|%.1f|%.1f|%.4f|%.4f", slot.assetName, cursorX, slot.y, scaleX, scaleY);
         if (strncmp(s_lastLoggedKey, key, sizeof(s_lastLoggedKey) - 1) != 0) {
             strncpy_s(s_lastLoggedKey, key, _TRUNCATE);
-            char buf[224];
+            // 2026-09-13 safety hardening: same rationale as the `key` buffer above --
+            // padded above the theoretical worst case for six %f substitutions, cheap
+            // insurance rather than a response to an observed crash here specifically.
+            char buf[320];
             sprintf_s(buf, "[overlay-hud][res-scale] hint asset=%s designCursorX=%.1f designHintY=%.1f "
                              "scaleX=%.4f scaleY=%.4f -> screenX=%.1f screenY=%.1f",
                        slot.assetName, cursorX, slot.y, scaleX, scaleY,
