@@ -109,7 +109,7 @@ see their own sections below; neither gates this release.
 | | Visual-enhancement suite (render scale, FSR, motion blur) |
 | | Native controller menu/UI navigation (main menu, pause, options, buy-stations) |
 | | Menu-focus/itemDef tracking (glyph-icon dependency) |
-| | Real glyph-icon substitution: Mantle, Pickup/Swap/Pickup-health, Throwback grenade (see Known gaps for what's still native-only) |
+| | Real glyph-icon substitution: Mantle, Pickup/Swap/Pickup-health, Throwback grenade, Reload/low-ammo, menu corner hints (Back/Friends/Quit/Leaderboards/Game Summary) (see Known gaps for what's still native-only) |
 | | Highlighted-item A-glyph (menu list navigation) and the F2/F3 glyph-position editor |
 | | Auto-Mantle (while sprinting) — ships off by default |
 | | Back (scoreboard, `+scores` key-synthesis) — see Known gaps below for why this is correctly a no-op in SP |
