@@ -1,0 +1,4 @@
+STRING @ 140433720 = "fonts/hudsmallfont" (block .rdata)
+  from 14029b8d0 type=DATA IN FUNCTION FUN_14029b640@14029b640
+  (1 references)
+

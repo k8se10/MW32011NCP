@@ -1,0 +1,75 @@
+================================================================
+Function: FUN_14029b640 @ 14029b640
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_14029b640(void)
+
+{
+  char cVar1;
+  undefined8 uVar2;
+  
+  FUN_140299400();
+  FUN_14029d630();
+  FUN_14022fb70("openmenu",FUN_14029bfb0,&DAT_142615b48);
+  FUN_14022fb70("closemenu",FUN_140299a70,&DAT_142615b60);
+  FUN_140390680(&DAT_142604df0,0,0x120);
+  FUN_1402c52b0(DAT_142604da0,0);
+  FUN_1402b24e0();
+  DAT_142604f50 = FUN_1401c4ba0("white",3);
+  DAT_142604f30 = FUN_1401c4ba0("ui_scrollbar",3);
+  _DAT_142604f18 = FUN_1401c4ba0("ui_scrollbar_arrow_dwn_a",3);
+  _DAT_142604f10 = FUN_1401c4ba0("ui_scrollbar_arrow_up_a",3);
+  DAT_142604f20 = FUN_1401c4ba0("ui_scrollbar_arrow_left",3);
+  DAT_142604f28 = FUN_1401c4ba0("ui_scrollbar_arrow_right",3);
+  DAT_142604f38 = FUN_1401c4ba0("ui_scrollbar",3);
+  _DAT_142604f40 = FUN_1401c4ba0("ui_slider2",3);
+  _DAT_142604f48 = FUN_1401c4ba0("ui_sliderbutt_1",3);
+  DAT_142604f80 = FUN_1401c4ba0("decode_characters",3);
+  DAT_142604f88 = FUN_1401c4ba0("decode_characters_glow",3);
+  DAT_142604f58 = FUN_1401c4ba0("ui_cursor",0);
+  DAT_142604f60 = FUN_1401c4ba0("scrollbar_arrow_up",3);
+  DAT_142604f68 = FUN_1401c4ba0("scrollbar_arrow_up_over",3);
+  DAT_142604f70 = FUN_1401c4ba0("scrollbar_arrow_down",3);
+  DAT_142604f78 = FUN_1401c4ba0("scrollbar_arrow_down_over",3);
+  DAT_142604f90 = thunk_FUN_1401b7cb0("fonts/bigfont",0);
+  DAT_142604f98 = thunk_FUN_1401b7cb0("fonts/smallfont",0);
+  DAT_142604fa0 = thunk_FUN_1401b7cb0("fonts/consolefont",0);
+  DAT_142604fa8 = thunk_FUN_1401b7cb0("fonts/boldfont",0);
+  DAT_142604fb0 = thunk_FUN_1401b7cb0("fonts/normalfont",0);
+  DAT_142604fb8 = thunk_FUN_1401b7cb0("fonts/extrabigfont",0);
+  DAT_142604fc0 = thunk_FUN_1401b7cb0("fonts/objectivefont",0);
+  DAT_142604fc8 = thunk_FUN_1401b7cb0("fonts/hudbigfont",0);
+  DAT_142604fd0 = thunk_FUN_1401b7cb0("fonts/hudsmallfont",0);
+  FUN_1402c43f0("ui_multiplayer",0,0x2000,"True if the game is multiplayer");
+  _DAT_142604d60 = FUN_1402c46d0("uiscript_debug",0,0,2,0,"spam debug info for the ui script");
+  FUN_140390680(&DAT_142605054,0,0x108fc);
+  FUN_140390680(&DAT_142615951,0,399);
+  DAT_142605050 = 0;
+  DAT_142615b20 = 0;
+  DAT_142615950 = 1;
+  FUN_1402ac850(&DAT_142605050);
+  FUN_140078c90(&DAT_142605074,&DAT_142605078,&DAT_14260507c);
+  if (DAT_142605078 * 0x280 < DAT_142605074 * 0x1e0) {
+    _DAT_142605054 = ((float)DAT_142605074 - (float)DAT_142605078 * DAT_1403ef92c) * DAT_1403e3e68;
+  }
+  else {
+    _DAT_142605054 = 0.0;
+  }
+  uVar2 = FUN_1402b1620("ui/code.txt",3);
+  FUN_1402af910(&DAT_142605050,uVar2,1);
+  cVar1 = FUN_140009ea0();
+  if ((cVar1 == '\0') && (DAT_142615ae0 == '\0')) {
+    uVar2 = FUN_1402b1620("ui/menus.txt",3);
+    FUN_1402af910(&DAT_142605050,uVar2,1);
+    uVar2 = FUN_1402b1620("ui/patch_menus.txt",3);
+    FUN_1402af910(&DAT_142605050,uVar2,1);
+  }
+  FUN_1402ac9c0(&DAT_142605050);
+  FUN_140274900(0);
+  return;
+}
+
+
+

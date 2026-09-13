@@ -3172,6 +3172,113 @@ glyph-icon SUBSTITUTION fired` in `proxy_d3d9.log` and visually confirming
 the icon draws in a reasonable position (see the honest position-tuning
 caveat above).
 
+**UPDATE 2026-09-13 (a separate, concurrent session, later same day) --
+`Font_s.fontName` investigated in depth, genuinely NOT confirmed; buy-station
+and Survival ready-up remain unported, correctly, per this project's own
+"no unconfirmed-offset OOB read" standard.** Task: resolve `fontName`'s real
+x64 offset via fresh Ghidra decompile (not the alignment inference above),
+then use it to unlock buy-station/ready-up the same way x86's
+`IsGameplayHintFont` does. Real effort spent, real negative result -- full
+trail: `re_notes/x64_migration/drawtext_hook_x64.md`'s own "Stage (d)"
+section. Summary:
+
+- Re-read x86's `IsGameplayHintFont`/`IsQteFont`/`IsMenuHintFont`
+  (`analog_input_hooks.cpp`) in full first, per this project's own standing
+  rule -- confirmed the exact font-name allowlist x86 checks
+  (`fonts/extraBigFont`/`hudSmallFont`/`hudBigFont`/`bigFont`/`normalFont`
+  for gameplay hints; `fonts/objectiveFont` for QTE; `fonts/smallFont` for
+  menu hints) and confirmed buy-station/ready-up both fall through x86's
+  own GENERIC `TryGetGlyphAssetNameForKeyName(highlighted)` path (gated by
+  font identity + a found `^N...^7` span, not by any reference-key template
+  of their own) -- i.e. x86 gets buy-station "for free" once the font gate
+  passes, it isn't special-cased by content at all.
+- `RawStringScan.java` against the exact-case literals from x86's allowlist
+  (`"fonts/extraBigFont"` etc.) found **zero** references anywhere in the
+  x64 binary. Lower-cased variants (`"fonts/extrabigfont"`,
+  `"fonts/bigfont"`, `"fonts/hudbigfont"`, `"fonts/hudsmallfont"`,
+  `"fonts/objectivefont"`) all found exactly ONE reference each, all from
+  the SAME function, `FUN_14029b640` (the UI-init function already known
+  from the cursor-overlay port) -- `x64_migration/fontname_scan_*.txt`.
+  x64 stores every font-name string lowercase; x86 apparently doesn't
+  (`_stricmp` in `IsGameplayHintFont` already made this case-insensitivity
+  irrelevant on x86, so it was never noticed there).
+- Decompiled the load chain from that one reference forward
+  (`x64_migration/decomp_14029b640_fontinit.txt` through
+  `decomp_1400a54c0_assetinit.txt`/`decomp_14038ffd0_typeloaddispatch.txt`):
+  `FUN_14029b640` calls `thunk_FUN_1401b7cb0("fonts/xxx", 0)` (the real
+  x64 `FindOrLoadFont` equivalent, confirmed via decompile to be a thin
+  wrapper hardcoding asset-type `0x18` into a GENERIC asset-cache function,
+  `FUN_1400a5a20`) for each of the 9 real fonts. That generic cache system
+  turned out to be architecturally deep and TYPE-AGNOSTIC: the cache
+  ENTRY (a separate allocation from the payload `Font_s*` callers actually
+  receive) tracks its own name via `FUN_14008e3c0`/`FUN_14008e3f0`
+  (get/set), themselves indirected through a per-asset-type function-pointer
+  table -- i.e. name tracking for CACHE LOOKUP purposes lives on the entry
+  wrapper, not provably on the payload. The one path that DOES touch actual
+  struct contents for a "default" font (`FUN_1400a54c0`, reached when a
+  real load fails) turned out to be a raw `memcpy`-equivalent
+  (`FUN_14038ffd0`, confirmed via full decompile to be an optimized SSE/AVX
+  `memcpy`, not a per-field constructor) copying an opaque default-template
+  BLOB whose contents are DATA, not something a static call-graph trace can
+  see the internal layout of.
+- Checked every CONFIRMED consumer of the actual `Font_s*` PAYLOAD (the
+  pointer `fontArg`/`param_14` callers actually receive, not the cache
+  entry): `FUN_1401b7cd0` (pixelHeight@+0x08, a literal 4-byte function body
+  `MOV EAX,[RCX+8]; RET` -- `sigbytes_1401b7cd0.txt`), the glyph
+  advance-width lookups inside `FUN_1401b7ab0`/`FUN_1401b7ce0` (word-wrap
+  helpers, both dereference `*(int*)(param_5+8)` == pixelHeight again, and
+  call `FUN_1401b7bf0(font)` for the per-char glyph, matching the confirmed
+  `DiagGlyph.dx`@+0x04 convention), and `FUN_1401b80f0` (glyphCount@+0x0C,
+  `DiagGlyph*`@+0x20). **None of these, or any other function found this
+  session, ever dereferences offset +0x00 of the payload.** Note also:
+  `FUN_1401b7cd0` (the pixelHeight getter) is called from many OTHER,
+  clearly non-font call sites too (`callers_1401b7cd0_pixelheight.txt`,
+  11 callers total) where its return value is used as a small 0-7
+  discriminator, not a pixel height -- almost certainly MSVC identical-code-
+  folding (`/OPT:ICF`) merging byte-identical one-line getters from
+  UNRELATED struct types into one physical address, meaning those OTHER
+  callers say nothing about `Font_s`'s own layout and were correctly
+  excluded from this analysis.
+- **Conclusion: `fontName`@+0x00 could NOT be independently confirmed via
+  decompile this session**, despite genuine, multi-angle effort (string
+  scan for the literals, full trace of the load/cache chain, and a direct
+  audit of every known payload consumer). This is a real negative result,
+  not a skipped step. Per this project's own standard (`CLAUDE.md` SS5,
+  "validate a scanned signature... before installing a hook... fail loudly
+  and refuse to hook rather than jumping to garbage") and this task's own
+  explicit hard constraint, **no fontName-gated substitution was wired**
+  for buy-station or Survival ready-up -- shipping one gated on an
+  unconfirmed offset risks a real out-of-bounds read on a struct this
+  project does not yet fully understand on x64. Note for a future session:
+  x86's OWN `fontName`@+0x00 was never decompile-confirmed via a READER
+  either (its own struct comment already says so) -- it was validated only
+  by live testing after shipping. That path remains open for x64 too, but
+  is a materially different risk (x86's assumption was validated by the
+  SAME struct layout the load-body WRITER, `FUN_005021c0`, was decompile-
+  confirmed to populate at nearby offsets; x64's load path traced this
+  session turned out to be the generic/fallback system, not a per-field
+  font constructor, so there is no equivalent partial-writer confirmation
+  to lean on here).
+- No source changes were made as a result of this investigation --
+  `Hook_DrawTextX64`'s fontName-gated substitution logic is unchanged from
+  the prior update. Buy-station and Survival ready-up remain unported
+  (font-name gap, this update). Sentry-Place also remains unported (its
+  reference string was not found in this binary, see the prior update).
+  **Correction, same day, a separate concurrent session**: Reload was
+  believed unported for a fourth, different reason (a structurally
+  different draw function this hook could never see) as of the prior
+  update -- that turned out to be a decompiler artifact, not a real
+  structural block, and was fixed the same day once traced one hop further
+  (`FUN_1402afa60` -> `FUN_1402b1090` -> `FUN_14029a2b0`, the exact function
+  already hooked). Reload IS now ported -- see the "Real glyph-icon visual
+  SUBSTITUTION" entries above for the current, accurate state. Left this
+  correction here rather than silently editing the prior update's own
+  bullets, per this file's own documented convention.
+
+Build-verified anyway (a comment-only change): x64 `/t:Rebuild` 0 errors
+(dumpbin-confirmed `8664 machine (x64)`, fresh timestamp), Win32 regression
+rebuild 0 errors/0 warnings, x64 rebuilt and redeployed last.
+
 ---
 
 **Survival ready-up (hold Y) -- PORTED, build-verified, not yet live-tested

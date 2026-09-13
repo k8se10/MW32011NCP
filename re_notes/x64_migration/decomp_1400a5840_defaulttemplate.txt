@@ -1,0 +1,144 @@
+================================================================
+Function: FUN_1400a5840 @ 1400a5840
+----------------------------------------------------------------
+
+undefined8 FUN_1400a5840(uint param_1)
+
+{
+  longlong lVar1;
+  undefined *puVar2;
+  ushort uVar3;
+  char *pcVar4;
+  int iVar5;
+  undefined8 uVar6;
+  int iVar7;
+  ulonglong uVar8;
+  char *pcVar9;
+  
+  uVar8 = (ulonglong)param_1;
+  pcVar4 = (&PTR_s_default_1404c30d0)[(int)param_1];
+  pcVar9 = pcVar4;
+  while( true ) {
+    while( true ) {
+      iVar5 = tolower((int)*pcVar9);
+      iVar7 = (int)uVar8;
+      if (iVar5 != 0x5c) break;
+      uVar8 = (ulonglong)(iVar7 * 0x1f + 0x2f);
+      pcVar9 = pcVar9 + 1;
+    }
+    if (iVar5 == 0) break;
+    uVar8 = (ulonglong)(uint)(iVar7 * 0x1f + iVar5);
+    pcVar9 = pcVar9 + 1;
+  }
+  uVar3 = (&DAT_140c5cf00)[iVar7 + (int)(uVar8 / 42000) * -42000];
+  do {
+    if (uVar3 == 0) {
+      return 0;
+    }
+    lVar1 = (ulonglong)uVar3 * 0x18;
+    puVar2 = &DAT_140c75740 + lVar1;
+    if (*(uint *)(&DAT_140c75740 + (ulonglong)uVar3 * 0x18) == param_1) {
+      uVar6 = FUN_14008e3c0(puVar2);
+      iVar5 = FUN_1402ca760(uVar6,pcVar4);
+      if (iVar5 == 0) {
+        for (uVar3 = *(ushort *)(&DAT_140c75754 + lVar1); uVar3 != 0;
+            uVar3 = *(ushort *)(&DAT_140c75754 + (ulonglong)uVar3 * 0x18)) {
+          puVar2 = &DAT_140c75740 + (ulonglong)uVar3 * 0x18;
+        }
+        return *(undefined8 *)(puVar2 + 8);
+      }
+    }
+    uVar3 = *(ushort *)(&DAT_140c75752 + lVar1);
+  } while( true );
+}
+
+
+
+================================================================
+Function: FUN_1400a52b0 @ 1400a52b0
+----------------------------------------------------------------
+
+int * FUN_1400a52b0(int param_1,undefined1 param_2)
+
+{
+  int *piVar1;
+  longlong lVar2;
+  
+  piVar1 = DAT_140c75730;
+  if (DAT_140c75730 == (int *)0x0) {
+    LOCK();
+    DAT_140c5ceec = DAT_140c5ceec + -1;
+    UNLOCK();
+    FUN_14024a7f0(&DAT_140c5cef0);
+                    /* WARNING: Subroutine does not return */
+    FUN_1402ee570(&DAT_1403f8628);
+  }
+  DAT_140c75730 =
+       (int *)(&DAT_140c75740 + (ulonglong)*(ushort *)((longlong)DAT_140c75730 + 0x16) * 0x18);
+  lVar2 = (*(code *)(&PTR_LAB_1404c2c80)[param_1])((&PTR_DAT_1404c2f60)[param_1]);
+  if (lVar2 == 0) {
+    LOCK();
+    DAT_140c5ceec = DAT_140c5ceec + -1;
+    UNLOCK();
+    FUN_14024a7f0(&DAT_140c5cef0);
+                    /* WARNING: Subroutine does not return */
+    FUN_1402ee570(&DAT_1403f8600,(&DAT_1404c2a50)[param_1],(&PTR_s_physpreset_1404c2430)[param_1]);
+  }
+  *(longlong *)(piVar1 + 2) = lVar2;
+  *piVar1 = param_1;
+  *(undefined1 *)(piVar1 + 4) = param_2;
+  *(undefined4 *)((longlong)piVar1 + 0x12) = 0;
+  *(undefined1 *)((longlong)piVar1 + 0x11) = 0;
+  return piVar1;
+}
+
+
+
+================================================================
+Function: FUN_1400a5950 @ 1400a5950
+----------------------------------------------------------------
+
+undefined * FUN_1400a5950(uint param_1,char *param_2)
+
+{
+  longlong lVar1;
+  ushort uVar2;
+  int iVar3;
+  undefined8 uVar4;
+  int iVar5;
+  ulonglong uVar6;
+  char *pcVar7;
+  
+  uVar6 = (ulonglong)param_1;
+  pcVar7 = param_2;
+  while( true ) {
+    while( true ) {
+      iVar3 = tolower((int)*pcVar7);
+      iVar5 = (int)uVar6;
+      if (iVar3 != 0x5c) break;
+      uVar6 = (ulonglong)(iVar5 * 0x1f + 0x2f);
+      pcVar7 = pcVar7 + 1;
+    }
+    if (iVar3 == 0) break;
+    uVar6 = (ulonglong)(uint)(iVar5 * 0x1f + iVar3);
+    pcVar7 = pcVar7 + 1;
+  }
+  uVar2 = (&DAT_140c5cf00)[iVar5 + (int)(uVar6 / 42000) * -42000];
+  do {
+    if (uVar2 == 0) {
+      return (undefined *)0x0;
+    }
+    lVar1 = (ulonglong)uVar2 * 0x18;
+    if (*(uint *)(&DAT_140c75740 + (ulonglong)uVar2 * 0x18) == param_1) {
+      uVar4 = FUN_14008e3c0(&DAT_140c75740 + lVar1);
+      iVar3 = FUN_1402ca760(uVar4,param_2);
+      if (iVar3 == 0) {
+        return &DAT_140c75740 + lVar1;
+      }
+    }
+    uVar2 = *(ushort *)(&DAT_140c75752 + lVar1);
+  } while( true );
+}
+
+
+

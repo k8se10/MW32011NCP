@@ -1,0 +1,11 @@
+Signature-byte dump of FUN_1401b7cd0 @ 1401b7cd0
+(byte offsets relative to function entry point)
+
++0x00  8B 41 08                       MOV EAX,dword ptr [RCX + 0x8]            
++0x03  C3                             RET                                      
+
+Raw bytes (4 total): 8B 41 08 C3
+
+Suggested masked signature (PC-relative/ref instructions fully
+wildcarded -- refine by hand, this is a starting point only):
+8B 41 08 C3

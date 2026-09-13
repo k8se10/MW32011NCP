@@ -1,0 +1,66 @@
+================================================================
+Function: FUN_1400a54c0 @ 1400a54c0
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+longlong FUN_1400a54c0(int param_1,char *param_2)
+
+{
+  int iVar1;
+  undefined4 uVar2;
+  longlong lVar3;
+  longlong lVar4;
+  undefined8 uVar5;
+  char *pcVar6;
+  int iVar7;
+  ulonglong uVar8;
+  
+  uVar8 = (ulonglong)param_1;
+  lVar3 = FUN_1400a5840(param_1);
+  if (lVar3 != 0) {
+    _DAT_140d6d9e4 = _DAT_140d6d9e4 + 1;
+    lVar4 = FUN_1400a52b0(param_1,0);
+    pcVar6 = param_2;
+    if ((*(code **)(&DAT_1404c3240 + uVar8 * 8) == (code *)0x0) ||
+       (iVar1 = (**(code **)(&DAT_1404c3240 + uVar8 * 8))(lVar3,*(undefined8 *)(lVar4 + 8),0),
+       iVar1 != 0)) {
+      uVar2 = FUN_14008e3e0(param_1);
+      FUN_14038ffd0(*(undefined8 *)(lVar4 + 8),lVar3,uVar2);
+    }
+    while( true ) {
+      while( true ) {
+        iVar1 = tolower((int)*pcVar6);
+        iVar7 = (int)uVar8;
+        if (iVar1 != 0x5c) break;
+        uVar8 = (ulonglong)(iVar7 * 0x1f + 0x2f);
+        pcVar6 = pcVar6 + 1;
+      }
+      if (iVar1 == 0) break;
+      uVar8 = (ulonglong)(uint)(iVar7 * 0x1f + iVar1);
+      pcVar6 = pcVar6 + 1;
+    }
+    iVar7 = iVar7 + (int)((uVar8 & 0xffffffff) / 42000) * -42000;
+    *(undefined2 *)(lVar4 + 0x12) = (&DAT_140c5cf00)[iVar7];
+    (&DAT_140c5cf00)[iVar7] = (short)((lVar4 + -0x140c75740) / 0x18);
+    uVar2 = FUN_140255e60(param_2,4);
+    uVar5 = FUN_140255a60(uVar2);
+    FUN_14008e3f0(lVar4,uVar5);
+    return lVar4;
+  }
+  LOCK();
+  DAT_140c5ceec = DAT_140c5ceec + -1;
+  UNLOCK();
+  FUN_14024a7f0(&DAT_140c5cef0);
+  if (param_1 != 0xe) {
+                    /* WARNING: Subroutine does not return */
+    FUN_1402ee570("Could not load default asset \'%s\' for asset type \'%s\'.\nTried to load asset \'%s\'."
+                  ,(&PTR_s_default_1404c30d0)[uVar8],(&PTR_s_physpreset_1404c2430)[uVar8],param_2);
+  }
+                    /* WARNING: Subroutine does not return */
+  FUN_1402ee570("Couldn\'t find the bsp for this map.  Please build the fast file associated with %s and try again."
+                ,param_2);
+}
+
+
+

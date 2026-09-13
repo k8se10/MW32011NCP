@@ -1,0 +1,86 @@
+================================================================
+Function: FUN_1401b80f0 @ 1401b80f0
+----------------------------------------------------------------
+
+int FUN_1401b80f0(char *param_1,int param_2,longlong param_3,undefined4 param_4)
+
+{
+  uint uVar1;
+  int iVar2;
+  uint uVar3;
+  int iVar4;
+  int iVar5;
+  int iVar6;
+  longlong lVar7;
+  int iVar8;
+  int iVar9;
+  int iVar10;
+  char *local_res8;
+  
+  iVar5 = 0;
+  iVar9 = 0;
+  iVar8 = 0x7fffffff;
+  if (0 < param_2) {
+    iVar8 = param_2;
+  }
+  iVar10 = 0;
+  local_res8 = param_1;
+  if (*param_1 == '\0') {
+    return 0;
+  }
+  do {
+    if (iVar8 <= iVar10) {
+      return iVar9;
+    }
+    uVar1 = FUN_14028a010(&local_res8,0,param_4);
+    iVar4 = iVar9;
+    if ((uVar1 == 0xd) || (uVar1 == 10)) {
+      iVar5 = 0;
+    }
+    else {
+      if (uVar1 == 0x5e) {
+        if ((local_res8 != (char *)0x0) && ((byte)(*local_res8 - 0x30U) < 0xc)) {
+          local_res8 = local_res8 + 1;
+          goto LAB_1401b820c;
+        }
+LAB_1401b818e:
+        lVar7 = *(longlong *)(param_3 + 0x20) + (ulonglong)(uVar1 - 0x20) * 0x18;
+      }
+      else {
+        if (uVar1 - 0x20 < 0x60) goto LAB_1401b818e;
+        iVar6 = 0x60;
+        iVar4 = *(int *)(param_3 + 0xc) + -1;
+        if (0x5f < iVar4) {
+          do {
+            iVar2 = (iVar6 + iVar4) / 2;
+            lVar7 = *(longlong *)(param_3 + 0x20) + (longlong)iVar2 * 0x18;
+            uVar3 = (uint)*(ushort *)(*(longlong *)(param_3 + 0x20) + (longlong)iVar2 * 0x18);
+            if (uVar3 == uVar1) goto LAB_1401b81ed;
+            if (uVar3 < uVar1) {
+              iVar6 = iVar2 + 1;
+            }
+            else {
+              iVar4 = iVar2 + -1;
+            }
+          } while (iVar6 <= iVar4);
+        }
+        lVar7 = *(longlong *)(param_3 + 0x20) + 0x150;
+      }
+LAB_1401b81ed:
+      iVar10 = iVar10 + 1;
+      iVar5 = iVar5 + (uint)*(byte *)(lVar7 + 4);
+      iVar4 = iVar5;
+      if (iVar5 <= iVar9) {
+        iVar4 = iVar9;
+      }
+    }
+LAB_1401b820c:
+    iVar9 = iVar4;
+    if (*local_res8 == '\0') {
+      return iVar9;
+    }
+  } while( true );
+}
+
+
+
