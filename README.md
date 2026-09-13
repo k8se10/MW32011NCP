@@ -208,10 +208,23 @@ API, background threads, and more).
   no pixel-tuning nudges were ported yet, and the Special-Ops/Friends-list
   suppression logic (a faithful port of `-x86`'s own v4 sticky-state
   algorithm, which itself took four iterations to get right) has never been
-  live-exercised on x64. See `re_notes/x64_migration/drawtext_hook_x64.md`
-  for the exact scope and reasoning behind each gap. Everything else
-  renders normally (including this mod's own startup/hot-reload toast
-  messages, which ARE confirmed working on x64).
+  live-exercised on x64. **A real positioning bug in this substitution was
+  live-confirmed 2026-09-13** (Mantle's icon never draws at all; Interact/
+  Reload's substituted text renders at the very top of the screen instead
+  of near the real prompt) and root-caused the same day via a fresh
+  decompile/disassembly: this hook's own x/y were pre-transform,
+  draw-context-local coordinates, not the final screen-pixel position they
+  were assumed to be — the real position isn't computed until a native
+  scale+alignment-offset step (`FUN_14008d020`) that runs AFTER this hook's
+  own interception point. Fixed by calling that real transform directly
+  instead of guessing at its internal field layout; build-verified but
+  **not yet live-tested** (could not deploy to the live game process this
+  session — see `known_issues_x64.md`'s matching round for the full trail
+  and a one-shot diagnostic log line to watch for on the next test). See
+  `re_notes/x64_migration/drawtext_hook_x64.md` for the exact scope and
+  reasoning behind each remaining gap. Everything else renders normally
+  (including this mod's own startup/hot-reload toast messages, which ARE
+  confirmed working on x64).
 - **Highlighted-item A-glyph (menu list navigation) and the F2/F3 in-game
   glyph-position editor are now wired to real x64 menu-focus tracking**
   (2026-09-13) — a separate system from the gameplay-hint icon substitution

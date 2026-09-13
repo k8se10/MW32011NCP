@@ -4237,3 +4237,119 @@ printing the raw `x`/`y` params, the resolved `scaleX`/`scaleY`, and the
 final converted design-space coordinates would directly show whether the
 bug is in the raw input, the scale resolve, or the divide itself) rather
 than guessing at a nudge constant blind.
+
+---
+
+**UPDATE 2026-09-13 (dedicated static-RE follow-up session) — ROOT CAUSE
+FOUND, high confidence, fix shipped as a HYPOTHESIS (not yet live-tested).**
+Re-verified this file's own header-comment claim ("THIS call's own
+already-computed real screen-pixel position... confirmed via decompile")
+via a FRESH decompile + disassembly pass against `iw5sp_x64_proj`
+(`analyzeHeadless.bat -process iw5sp.exe -readOnly -noanalysis`, per the
+prior round's own "worth re-verifying" note) instead of trusting it —
+**the claim was wrong.**
+
+**What the fresh decompile/disassembly actually shows** (`FUN_14029a2b0`,
+this hook's own target):
+
+```
+local_28 = FUN_1401b7c90(fontArg, scale);      // NOT text width/height -- see below
+local_24[0] = local_28;
+thunk_FUN_14008d020(dcHandle, &x, &y, local_24, &local_28, color1, color2);
+x = floorf(x + 0.5f);                           // round-to-nearest only, AFTER the above
+y = floorf(y + 0.5f);
+FUN_140080840(text, maxChars, fontArg, x, y, local_24[0], local_28, colorVecPtr, extra);
+```
+
+`thunk_FUN_14008d020` is a plain `JMP FUN_14008d020` (confirmed via
+disassembly, not a "thin forwarder" assumption). `FUN_14008d020` itself
+(full raw disassembly captured, `sigbytes_14008d020.txt`) is an 11-way
+jump table over TWO enum values (`color1`=alignH, `color2`=alignV -- see
+below) that, for each mode, reads `*dcHandle` / `dcHandle[0x08]` as a
+per-draw-context scaleX/scaleY pair and ADDS one of several OTHER
+dcHandle-relative anchor-offset floats (different field per mode) before
+writing the result back through the `&x`/`&y` pointers it was given.
+
+**This means x/y as `Hook_DrawTextX64` captures them (its own function-
+entry parameters, i.e. BEFORE `FUN_14008d020` ever runs) are PRE-TRANSFORM
+coordinates in the draw-context's own local units -- not the final real
+screen-pixel position.** Feeding them straight into
+`ConvertRealScreenPosToDesignSpaceX64` (which divides by a COMPLETELY
+UNRELATED scale -- this project's own `GetResolutionScale`/viewport read)
+was never going to reproduce the real position, at any resolution. This
+fully explains both live-reported symptoms exactly as the prior round's
+own last paragraph anticipated: a bad/near-origin pre-transform Y would
+still render SOMEWHERE when centered (Interact/Reload's "top of screen")
+but could push a non-centered element (Mantle) off the visible frame
+entirely.
+
+**Corollary finding, worth flagging on its own**: `color1`/`color2` (this
+hook's own long-standing parameter names, assumed to be RGBA color values
+since `Hook_DrawTextX64` was first written) are NOT colors -- they're an
+11-way (0-10) alignment-mode enum. Confirmed two ways: (1) `FUN_14008d020`
+uses them directly as a jump-table index (`CMP EAX,0xA` / `JA` range
+check, a shape that makes no sense for an arbitrary 32-bit RGBA value);
+(2) tracing back to `FUN_140052220`'s own Mantle case (0x50), the values
+threaded through to these exact parameter slots are `bVar4`/`bVar5`, both
+declared `byte` in the decompile, not `unsigned`/`uint`. The real color is
+carried separately, via `colorVecPtr` (param 10, `&DAT_1404393c0` for
+Mantle) -- already correctly identified as such. Not renamed in code this
+pass (would touch unrelated call sites for no functional benefit); flagged
+here so a future session doesn't rely on the "color1/color2" names as
+ground truth.
+
+**Fix shipped**: `ComputeRealDrawPositionX64` (new function,
+`analog_input_hooks_x64.cpp`, right after `kGetLocalizedStringSignature`)
+calls the REAL native transform directly instead of guessing at
+`dcHandle`'s own field layout -- two more direct-call resolves
+(`FUN_1401b7c90`/`FUN_14008d020`, same no-hook-installed pattern as
+`g_getLocalizedStringX64`), called with local copies of x/y before the
+result is handed to the existing, already-correct
+`ConvertRealScreenPosToDesignSpaceX64`. Falls back to the raw (previous,
+now-confirmed-wrong) x/y if either signature fails to resolve or the call
+raises inside `__try`/`__except`, so this can never regress the hook's own
+passthrough safety. `FUN_1401b7c90` itself is NOT a text-measurement
+function despite feeding a variable that looked like one at first glance
+-- disassembly confirms `return (scale * DAT_1403eb9f0) / *(int*)(fontArg+8)`
+(`fontArg+8` = `pixelHeight`, already confirmed elsewhere in this file's
+own `Font_s` notes), a small cursor/underline-thickness-style ratio, only
+read back by two of `FUN_14008d020`'s eleven alignment-mode branches --
+computed unconditionally anyway since which mode a given hint actually
+uses was never independently confirmed (deliberately not needed to be,
+since the real function is called instead of reimplementing its logic).
+
+**Both new signatures independently verified via `PatternScan.java`**
+(not just `DumpSigBytes.java`'s own suggested wildcarding) to resolve to
+EXACTLY their expected addresses against the same `iw5sp_x64_proj`:
+`FUN_14008d020` @ `0x14008d020`, `FUN_1401b7c90` @ `0x1401b7c90` -- both
+single, unambiguous matches.
+
+**One-shot diagnostic added alongside the fix**: `ComputeRealDrawPositionX64`
+logs `[x64-drawtext-pos] raw=(...) alignH=... alignV=... -> REAL-TRANSFORM=(...)`
+(or `RAW-FALLBACK(sig-unresolved-or-raised)` if either signature failed to
+resolve or the SEH guard caught something) exactly once, on the very first
+substituted hint of any kind. This is the thing to watch for on the next
+live-test pass -- confirms both that the real transform is actually
+running (not silently falling back) and shows the corrected position
+directly, without needing to eyeball on-screen placement alone to know
+whether the fix took effect.
+
+**Build-verified, NOT live-tested** (the game could not be launched from
+this static-RE session -- a live game process was already running under a
+different, concurrent investigation at the time). x64 `/t:Rebuild`: 0
+errors (11 pre-existing warnings, all in `analog_input_hooks.cpp`,
+unrelated to this change), verified via a scratch `OutDir` since the real
+deployed `d3d9.dll` was locked by that live process; `dumpbin /headers`
+confirmed `8664 machine (x64)` with a fresh build timestamp. Win32
+regression rebuild: 0 errors, 0 warnings from this file (it's fully
+`ExcludedFromBuild` on Win32 already, confirmed via the `.vcxproj` itself,
+so this change has zero Win32 surface). **Deploy to the real game
+directory and an actual live playtest are both still needed to confirm
+Mantle/Interact/Reload now land at the correct on-screen position** -- this
+is a decompile/disassembly-confirmed STRUCTURAL fix (high confidence the
+root cause is real and correctly understood), not a live-confirmed one.
+Per this project's own "HONEST CAVEAT" convention, on-screen alignment may
+still need the same class of empirical nudge-constant tuning x86 required
+(`kHintVerticalNudge`, `kMantleHintXNudge`/`YNudge`) once the position is
+at least landing in the right neighborhood -- this fix corrects the
+coordinate SPACE, not necessarily pixel-perfect placement within it.

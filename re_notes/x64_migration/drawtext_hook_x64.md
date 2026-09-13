@@ -287,3 +287,35 @@ Not yet live-tested — build-verified only (x64 `/t:Rebuild` 0 errors, dumpbin-
 confirmed `8664 machine (x64)` fresh timestamp, Win32 regression rebuild 0
 errors/0 warnings, x64 redeployed last). See `known_issues_x64.md` issue #1 for
 the live-test status this lands under.
+
+## CORRECTION, 2026-09-13 (dedicated follow-up session): the position claim above was wrong
+
+Stage (c)/(d)'s own comment (and this file's own text above) claimed x/y as
+`Hook_DrawTextX64` captures them are "THIS call's own already-computed real
+screen-pixel position... confirmed via decompile." A live test the same day
+found this predicted real, on-screen bugs (Mantle's icon never draws; Interact/
+Reload render at the very top of the screen) — a dedicated re-verification
+pass (fresh decompile + disassembly of `FUN_14029a2b0` itself, not trusting the
+existing comment) found the claim does not hold: `FUN_14029a2b0`'s own body
+calls `thunk_FUN_14008d020` (a plain `JMP FUN_14008d020`, confirmed via
+disassembly) with `&x`/`&y` BEFORE the `floorf(x+0.5f)` rounding and the actual
+raster call — `FUN_14008d020` is where the REAL final screen-pixel position
+gets computed (a per-draw-context scale-multiply + one of eleven alignment-
+mode-selected anchor-offset adds, full raw disassembly in
+`sigbytes_14008d020.txt`), and that runs strictly AFTER this hook's own
+MinHook-detour interception point. So x/y as this hook sees them were always
+pre-transform, draw-context-local coordinates — never the final position.
+
+Also corrected: `color1`/`color2` (this hook's parameter names, assumed RGBA
+colors when first written) are an 11-way alignment-mode enum, not colors —
+confirmed via `FUN_14008d020`'s own `CMP EAX,0xA`/jump-table dispatch on them,
+and via tracing back to `FUN_140052220`'s Mantle case, where the values feeding
+these exact slots are declared `byte` (`bVar4`/`bVar5`), not `unsigned`. The
+real color is `colorVecPtr` (already correctly identified as such).
+
+Fixed via `ComputeRealDrawPositionX64` (`analog_input_hooks_x64.cpp`), which
+calls the real `FUN_1401b7c90`/`FUN_14008d020` directly (two new signatures,
+each independently verified via `PatternScan.java` to resolve to exactly one
+match) instead of reimplementing their logic from guessed field offsets. Full
+trail, live-test status, and the one-shot diagnostic log line to watch for:
+`known_issues_x64.md`'s newest 2026-09-13 round (search "ROOT CAUSE FOUND").
