@@ -4534,3 +4534,105 @@ The second finding from the same round (real logging-volume concern,
 `[cursor-gate-diag]` and others not yet individually audited for issue
 #87's time-floor lesson) remains open, not addressed by this pass — still
 a separate, dispatched follow-up.
+
+---
+
+**UPDATE 2026-09-13 (logging-volume audit, dispatched follow-up task) —
+FIXED for the two confirmed gaps, remaining tags confirmed safe,
+build-verified, not yet live-tested.**
+
+Full tag-by-tag pass over every untraced tag from the prior round's 604-
+line capture (`[overlay-hud]` 147, `[x64-diag-gate]` 52, `[cursor-pos-diag]`
+33, `[rumble-x64-diag]` 20), following issue #87's own methodology and the
+already-established `[manual-glyph-diag]` fix pattern (dedup key + a 250ms
+`GetTickCount()` floor on top of it).
+
+1. **`[cursor-gate-diag]` (`overlay_hud.cpp` ~line 6265) — CONFIRMED GAP,
+   FIXED.** Already flagged as a real risk by the prior round (dedup-only
+   on `visFlag`/`uiState`, no time floor, the exact `[manual-glyph-diag]`-
+   class gap for a real native-engine read that can legitimately flap
+   frame-to-frame). Added the same 250ms floor on top of the existing
+   dedup, `s_lastCursorGateLogMs`/`GetTickCount()`. No `sprintf_s` format
+   change — same buffer, same specifiers.
+2. **`[cursor-pos-diag]` (`overlay_hud.cpp` ~line 6398) — NEWLY CONFIRMED
+   GAP, FIXED.** Not yet investigated by the prior round. Dedup-only on
+   `rawMouseX`/`rawMouseY` (fed straight from `WM_MOUSEMOVE` via
+   `GetLastMouseMoveClientPos`) and the final scaled position — these
+   change on essentially every frame of real mouse movement, and this
+   draw path (`DrawCustomCursorIfNeeded`) only runs while the custom
+   cursor is actually shown, i.e. exactly while the player is likely
+   moving the mouse. Pure dedup does nothing to bound volume in that
+   scenario — worse than `[cursor-gate-diag]`'s own gap, since a boolean/
+   small-enum flapping is bounded by its own state space but a live mouse
+   position is not. Same 250ms floor added, `s_lastCursorPosLogMs`.
+3. **`[overlay-hud]` (`overlay_hud.cpp`, 16 distinct call sites found by
+   grepping the whole file for the literal tag, not just the first
+   match) — CONFIRMED SAFE, no fix needed.** Individually audited every
+   site:
+   - Lines 885/900/925 (`CreateTexture`/`GetSurfaceLevel`/`LockRect`
+     failure) and line 1211 (`DrawPrimitiveUP` result) — each behind its
+     own `static bool loggedOnce` guard, fires at most once per process
+     lifetime.
+   - Lines 6687/6705 — both gated on `g_endSceneFireCount == 1`, fire
+     exactly once (first `EndScene`).
+   - Lines 6992/6996/7006/7010 — hook-install results, called once from
+     startup install code.
+   - Lines 6634/6642/6646/6954 — real rare events (config hot-reload,
+     device `Reset()`, device recreation without a `Reset()` call), not
+     per-frame.
+   - Line 2088 (`[overlay-hud][res-scale]` hint-asset position) — dedup-
+     keyed on `(assetName, cursorX, slot.y, scaleX, scaleY)`. Traced
+     `cursorX`/`slot.y`'s real inputs (`DrawOneGameplayHintSlot`): stable
+     per requested slot under normal play (native layout position or a
+     centered-on-screen computation, neither animated/jittered frame to
+     frame) — no `[manual-glyph-diag]`-class flapping input feeds this
+     key, so a new key only appears on a genuine new hint/position, which
+     is the intended "log once per distinct combination" behavior working
+     as designed, not a gap.
+   - Line 6871 (`GetRealScreenSize`'s own `[overlay-hud][res-scale]` real
+     screen size) — dedup-keyed on exact integer `outWidth`/`outHeight`/
+     `vpX`/`vpY`. These are window/viewport dimensions, stable across
+     nearly all frames (only change on a genuine resize/fullscreen
+     toggle/Reset) — same "no legitimately-flapping input" reasoning as
+     line 2088, confirmed safe.
+   - None of the 16 sites log unconditionally on every call with no
+     guard at all.
+4. **`[x64-diag-gate]` (`analog_input_hooks_x64.cpp`) — CONFIRMED SAFE, no
+   fix needed.** Two call sites: the heartbeat (`Hook_MovementTick`)
+   already has its own explicit 1000ms floor (`s_lastGateDiagMs`/
+   `GetTickCount()`, `>= 1000` check) — its own header comment even calls
+   it "rate-limited (~1s)". The other site (`"menu-active gate resolved"`)
+   is a one-time startup signature-resolve log, not per-frame.
+5. **`[rumble-x64-diag]` (`rumble.cpp` ~line 573) — CONFIRMED SAFE, no fix
+   needed.** Already count-capped: `static int s_fireRumbleLogCountX64`
+   stops logging after the first 30 real fire-trigger events, for the
+   life of the process — same "logs first N then stops" pattern already
+   confirmed safe for `[x64-drawtext]`. Bounded regardless of session
+   length or fire rate.
+
+**Net result**: of the 4 tags this round covered, 2 real gaps found and
+fixed (`[cursor-gate-diag]`, `[cursor-pos-diag]`), 2 confirmed already
+safe (`[x64-diag-gate]`, `[rumble-x64-diag]`), and the largest-volume tag
+(`[overlay-hud]`, 16 call sites individually traced) confirmed to have no
+gap at all — its high line count in the original 604-line capture is
+explained by genuinely-repeated-but-legitimate distinct hint/position
+combinations during real menu navigation, not an unthrottled per-frame
+write. Combined with the prior round's already-safe `[manual-glyph-diag]`,
+`[automantle-diag-x64]`, `[x64-drawtext]`, and `[sigscan]`, every tag from
+the original 604-line capture has now been individually audited — no
+tags remain unchecked.
+
+No new `sprintf_s` calls in this pass — both fixes only wrap the existing
+`LogFromController` call in an additional time-floor condition, verified
+per this session's own standing buffer-safety requirement (checked, not
+applicable: no new/modified format strings or buffers).
+
+Build-verified: x64 `/t:Rebuild` 0 errors, `dumpbin`-confirmed `8664
+machine (x64)` fresh timestamp (`6AA71326`, Sun Sep 13 22:18:30 2026);
+Win32 regression rebuild 0 errors, no regression; x64 rebuilt and
+redeployed last (`6AA7134A`, Sun Sep 13 22:19:06 2026, confirmed via a
+second `dumpbin` pass). `iw5sp.exe` was not running at any build step
+(checked before each). **Not yet re-confirmed live** — next step is a
+live playtest (ideally reproducing the same "launch -> menu navigation ->
+close" shape as the original 604-line capture) to confirm the total line
+count drops and no other tag has grown to fill the gap.
