@@ -6965,3 +6965,42 @@ dump-and-compare technique against `hamburg.ff`/`common.ff`'s own failures
 to determine whether this is one narrow fix or a systemic one, before
 writing any fix code. Full trail:
 `re_notes/x64_migration/fastfile_format_research.md` §5.16.
+
+### UPDATE, 2026-09-14 (later still, "keep going") — the pattern IS consistent across all three failing zones (same block index every time), but `hamburg.ff`/`common.ff` resolve to unwritten memory, not readable content — real progress, real complication, still no fix
+
+**Status: pattern confirmed, generalized to all three zones — but not a
+clean "same fix unblocks everything" result. No fix implemented.**
+
+Ran the round above's own recommended next step directly: extended the
+same diagnostic to all four `ConvertOffsetTo*` throw sites (not just the
+one already tested), re-ran against `hamburg.ff`/`common.ff`.
+
+**Confirmed real, non-coincidental**: all three failing zones —
+`code_post_gfx.ff`, `hamburg.ff`, `common.ff` — decode to the exact SAME
+block index (3, `XFILE_BLOCK_VIRTUAL`) under the alternate 32-bit-wide
+scheme, despite three totally different asset types and raw values. That
+consistency is strong, independent evidence the 32-bit decode width is
+structurally correct generally, not a coincidence specific to
+`MaterialPixelShader::name`.
+
+**The real complication**: unlike `code_post_gfx.ff`'s readable string,
+`hamburg.ff`/`common.ff`'s alt-decoded positions resolve to all-zero
+bytes — comfortably within the real (much larger) VIRTUAL block size in
+both cases, but unwritten. Most likely explanation (not yet confirmed):
+VIRTUAL's buffer fills progressively as the file streams in;
+`code_post_gfx.ff`'s working case was a backward reference to already-
+written content, while `common.ff` fails on asset index 0 — the very
+first asset in the zone — where almost nothing has been written to any
+block yet. If `AddonMapEnts`'s reference here is a forward reference, the
+position would legitimately read as zero regardless of whether the width
+decode is correct. This means the width-mismatch fix is probably still
+needed for these two zones, but likely isn't sufficient alone — a second,
+separate question (how forward references into VIRTUAL are meant to
+resolve) would need its own investigation.
+
+No fix applied — instrumentation reverted, rebuilt, 0 regression across
+all five known zones. Given the number of genuine rounds this bug family
+has now been through across two sessions, this is a reasonable pause
+point rather than opening a third new thread (forward-reference handling)
+in the same sitting. Full trail:
+`re_notes/x64_migration/fastfile_format_research.md` §5.17.
