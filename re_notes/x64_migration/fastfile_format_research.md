@@ -588,6 +588,99 @@ thread, and needs the SAME native-decompile rigor as the fixes above,
 starting from the 44-byte block-size header's own real byte layout to
 confirm PHYSICAL's declared size for a real test zone.
 
+## 5.10. UPDATE, 2026-09-14 (later still, "yes keep pushin") — the shader-bytecode block theory disproven with real evidence; a byte-exact hex dump isolates the corruption to exactly 8 bytes; the underlying cause still not found after exhaustive verification — paused per this project's own standing "fresh perspective" principle
+
+Continued the §5.9 investigation into why `MaterialPixelShader`'s own `name`
+field still reads garbage even with every struct byte-count confirmed
+correct. This round's real findings, each backed by direct evidence:
+
+**The "XFILE_BLOCK_PHYSICAL vs VIRTUAL" theory (end of §5.9) is
+definitively wrong — decompiled the actual primitive, not just its call
+sites.** `FUN_1400aad70`'s real signature is
+`void FUN_1400aad70(char param_1, void* dst, int size)` — `param_1` is a
+plain boolean ("perform this read at all"), not a block-type selector;
+the literal `1`/`0`/`3` values I'd been reading as `XFILE_BLOCK_*` indices
+are just C truthiness (`0`=skip, anything else=do the read). The REAL
+block-switch primitives are separate (`FUN_1400aac10`/`FUN_1400aac60`/
+`FUN_1400aabd0`, matching `PushBlock`/the internal switch/`PopBlock`
+exactly) and confirmed structurally identical to this fork's own C++
+`m_block_offsets[]`-per-block-type design (a real per-block-type saved-
+position array, `DAT_140d6ddb0[N]`, 1:1 with `m_block_offsets[]`).
+Separately confirmed via `LoadDataFromBlock`'s own C++ switch and
+`ZoneLoaderFactoryIW5.cpp`'s own `XBLOCK_DEF` table that `XFILE_BLOCK_
+VIRTUAL`/`XFILE_BLOCK_PHYSICAL` are BOTH `XBlockType::BLOCK_TYPE_NORMAL`
+(real reads either way) and that blocks are purely an OUTPUT-memory
+concern — every "NORMAL"/"TEMP" block reads from the exact same shared
+linear `m_stream` cursor regardless of which block is nominally active.
+Which block is pushed genuinely cannot cause a stream-position desync.
+This retroactively explains why the earlier `PushBlock(XFILE_BLOCK_
+PHYSICAL)` experiment (§5.9) produced a hard overflow: it was cramming
+real OUTPUT allocations into a block that was never sized to receive
+them, unrelated to input bytes at all — a real, if accidental, empirical
+confirmation of this correction, not a coincidence.
+
+**A byte-exact hex dump precisely isolates the corruption.** Added a
+temporary diagnostic dumping every raw byte `LoadWithFill` reads for both
+`MaterialVertexShader`'s and `MaterialPixelShader`'s own 32-byte headers
+(added, used, then reverted — not part of any commit). Result:
+`MaterialVertexShader`'s full header is byte-perfect
+(`name`=FOLLOWING, `vs`=0 [confirmed-correct unfilled runtime cache],
+`program`=FOLLOWING, `programSize`=0x73=115, all exactly as expected).
+`MaterialPixelShader`'s header is correct EVERYWHERE EXCEPT `name` —
+`ps`=0 (correct), `program`=FOLLOWING (correct), `programSize`=0x37=55
+(plausible) — only the first 8 bytes (`name`) hold a value
+(`0x0000000030012AAB`) that decodes as a structurally well-formed but
+out-of-range `XFILE_BLOCK_TEMP` offset pointer, not the expected
+FOLLOWING sentinel. This is real, hard evidence that whatever is wrong is
+NOT a stream-position desync (which would corrupt every field after
+`name` too, not just the first 8 bytes) — it is something narrowly
+specific to how `name`'s own 8 bytes get read, immediately following a
+read (`vertexShader`'s own header + bytecode) that is independently
+confirmed 100% correct.
+
+**Checked and ruled out, with evidence, in the same round**: hardcoded
+x86-era alignment literals passed to `AllocOutOfBlock<T>(4)` (a genuinely
+real, separate, unfixed bug class — confirmed present at 40+ call sites,
+never touched by any of the `x64_offset_fixes/` scripts, which only
+targeted offset/size literals, not alignment arguments) — but for this
+specific zone's exact byte layout, the relevant `TEMP` block offsets
+(176 before `vertexShader`, 208 before `pixelShader`) are already
+divisible by 8, so a 4-vs-8 alignment difference makes no numeric
+difference here, ruling it out as THIS bug's cause (though it remains a
+real, latent issue worth fixing separately later, since it could matter
+for a different offset elsewhere).
+
+**Status: paused, not resolved.** This investigation has now run many
+genuine, well-reasoned rounds on the same fundamental question ("why does
+exactly 8 bytes of `MaterialPixelShader`'s otherwise-correct header read
+wrong") — struct layouts, field order, block semantics, alignment
+mechanics, and the real native read primitive have all been directly
+verified against native decompile and found correct, without turning up
+the actual cause. Per this project's own standing principle (`CLAUDE.md`
+§10 point 9 — persist through ordinary setbacks, but stop and check in
+once an angle has been pushed 5-6+ genuine rounds without new traction),
+this is the natural point to pause this specific thread rather than keep
+re-deriving the same conclusions. All temporary diagnostic instrumentation
+was reverted; the build tree was regenerated clean and re-verified to
+reproduce the exact same (already-documented) failure behavior with only
+the two confirmed-real, committed fixes applied (the dispatch record/
+header fix, and `Material::subMaterials`).
+
+**Concrete next steps, for whoever picks this back up**: the most
+promising untried angle is a genuinely different technique, not more
+native-decompile comparison — either (a) live debugging via x64dbg
+against the real running `iw5sp.exe` (the x64dbg MCP integration was
+unavailable this session — connection refused), single-stepping the exact
+dispatch-record processing for this specific `MaterialTechniqueSet` to
+watch the real engine's own read cursor advance byte-by-byte across the
+vertexShader→pixelShader boundary, or (b) a raw hex-editor comparison of
+`code_post_gfx.ff`'s own decompressed bytes at the computed expected file
+offset for this exact technique/pass, cross-referenced against every
+byte-count already confirmed correct in this document, to find exactly
+where the REAL on-disk bytes diverge from what this fork's own code
+consumes. Both are qualitatively different from the native-decompile
+cross-referencing already exhausted this round.
+
 ## 6. Scoped plan for in-house tooling — an MVP, not a full OpenAssetTools replacement
 
 **This project's own actual need is narrow**: GSC/rawfile extraction to

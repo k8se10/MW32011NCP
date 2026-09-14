@@ -6680,3 +6680,55 @@ thread.
 
 Full trail: `re_notes/x64_migration/fastfile_format_research.md` §5.9
 (parent repo).
+
+### PAUSED (not resolved), 2026-09-14 (later still) — the shader-bytecode block theory disproven; corruption isolated to an exact 8-byte field via hex dump; root cause still unfound after exhaustive verification, paused per this project's own standing persistence-threshold principle
+
+**Status: Paused, not resolved. The block-selector theory from the §5.9
+entry above is now definitively disproven (decompiled the actual read
+primitive directly, not just its call sites) — blocks are purely an
+output-memory concern and cannot cause a stream desync. A byte-exact hex
+dump precisely isolates the remaining corruption to exactly the 8 bytes
+of `MaterialPixelShader::name` — every other field in the same 32-byte
+read, and `MaterialVertexShader`'s entire header read immediately before
+it, are confirmed byte-perfect. The actual cause is still not found
+despite many genuine rounds of native-decompile verification (struct
+layouts, field order, block push/pop semantics, alignment) — paused per
+`CLAUDE.md`'s own "Fresh Perspective Breaks Real Stalemates" principle
+rather than continuing to re-derive the same conclusions.**
+
+Real, evidence-backed findings this round:
+- `FUN_1400aad70`'s real signature is `(char doRead, void* dst, int
+  size)` — the literal values I'd read as block-type selectors in §5.9
+  are just a plain boolean gate, not block indices. Disproven directly by
+  decompiling the function itself.
+- The REAL block-switch primitives (separate functions) are confirmed
+  structurally identical to this fork's own C++ per-block-type offset
+  array — and `LoadDataFromBlock`'s own switch, cross-checked against
+  `ZoneLoaderFactoryIW5.cpp`'s own block-type table, confirms
+  `XFILE_BLOCK_VIRTUAL`/`XFILE_BLOCK_PHYSICAL` are both `BLOCK_TYPE_
+  NORMAL` — real reads from the SAME shared linear stream cursor
+  regardless of which is active. Blocks affect only where output lands,
+  never which input bytes get consumed. This retroactively explains why
+  the earlier `PushBlock(PHYSICAL)` experiment made things worse (it was
+  cramming real output into an undersized block) — confirming, not just
+  asserting, that the whole block-selector theory was a wrong turn.
+- A temporary raw hex-dump diagnostic (added, used, reverted) proved
+  `MaterialVertexShader`'s own full 32-byte header reads byte-perfect,
+  while `MaterialPixelShader`'s reads correctly everywhere except its
+  first 8 bytes (`name`) — ruling out a stream-position desync (which
+  would corrupt every field after `name`, not just it) in favor of
+  something narrower and not yet identified.
+- Checked and ruled out (for this specific case, though flagged as a real
+  separate latent bug): hardcoded x86-era alignment literals in
+  `AllocOutOfBlock<T>(4)` calls (40+ sites, never touched by
+  `x64_offset_fixes/`) — the relevant block offsets for this zone happen
+  to already be 8-aligned, so this doesn't explain the current symptom,
+  but is a real, unfixed gap worth addressing separately.
+
+**Concrete next steps for whoever resumes this**: a genuinely different
+technique is needed, not more native-decompile comparison — either live
+debugging via x64dbg against the real running game (unavailable this
+session, MCP connection refused) to watch the real read cursor advance
+across this exact boundary, or a raw hex-editor comparison of the actual
+decompressed zone bytes at the computed expected offset. Full trail:
+`re_notes/x64_migration/fastfile_format_research.md` §5.10.
