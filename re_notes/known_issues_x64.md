@@ -6220,3 +6220,61 @@ resulting from this investigation, not a promise, logged here so it isn't
 lost: this project could ship a "restored" get-to-cover text as a genuine
 NEW feature (not a fix to existing native code) the next time visual/UI
 work is prioritized.
+
+### RESOLVED (root cause), 2026-09-14 (later still) — the GSC-extraction blocker's REAL cause found: OpenAssetTools hardcodes 32-bit word size for IW5, confirmed via raw bytes AND the tool's own source; in-house tooling scoped
+
+**Status: Resolved (diagnosis). In-house tooling: scoped, not started.**
+
+Direct instruction: "we should re zone and ff format ourselves and build
+our own in house tooling for it as rn there is practically no chance of
+getting another community based one in time for release." Full technical
+writeup, evidence, and the scoped MVP plan: **new dedicated doc,
+`re_notes/x64_migration/fastfile_format_research.md`** — summary here,
+that file is the source of truth.
+
+**Correction to this file's own earlier framing** (the "GSC-first pass"
+rounds above, both today): "the recompile changed the zone/fastfile
+container format" was imprecise. Hex-dumped the real header of both a
+working thin zone (`sp_intro.ff`) and a segfaulting real-content zone
+(`hamburg.ff`) directly from the live install — **the outer container
+(magic `IWffu100`, version, zlib compression) is byte-for-byte unchanged**,
+confirmed at the exact same relative offsets in both files. The real
+divergence is INSIDE the decompressed content.
+
+**Root cause, confirmed via OpenAssetTools' own current source (cloned
+and read directly, `Laupetin/OpenAssetTools`)**:
+`ZoneLoaderFactoryIW5.cpp`'s `InspectZoneHeader()` hardcodes
+`GameWordSize::ARCH_32` unconditionally for every IW5 zone — correct for
+every MW3 build before 2026-09-03, wrong now that the recompile's own
+on-disk zone-content serialization uses 64-bit-wide fields (independently
+confirmed via raw decompressed-payload bytes: consistent 8-byte-wide
+0xFF-sentinel runs in both test zones, not the 4-byte width OpenAssetTools
+assumes). Parsing 64-bit data with 32-bit struct definitions desyncs every
+offset after the first real pointer, explaining both why thin zones
+"work" (barely touch the mismatched table) and why every real-content zone
+reliably segfaults deeper in.
+
+**Why this isn't a quick community fix — checked, not assumed**:
+`GameWordSize::ARCH_64` exists only as a bare enum value — grepped the
+ENTIRE OpenAssetTools codebase and confirmed it is never branched on
+anywhere, in any game loader, including T6 (Black Ops 2, a game with a
+real 64-bit console release) which also hardcodes `ARCH_32` throughout.
+No 64-bit struct definitions or word-size-conditional codegen exist to
+build on — this is genuinely large, ground-up work for anyone, upstream or
+not, directly validating the decision to go in-house rather than wait.
+
+**Scoped MVP, not full OpenAssetTools parity**: this project's real need
+is narrow — GSC/rawfile extraction for the standing GSC-first methodology,
+not full asset coverage (models/materials/sounds/etc.). Plan: a minimal
+custom zone-header parser (reusing the confirmed-unchanged outer-container
+logic) targeting only the struct chain needed to reach
+`scriptfile`/`rawfile` assets, with x64 struct widths derived from
+`iw5sp.exe`'s own real zone-loading code (ground truth — the game loads
+these files successfully every launch) via Ghidra, the same technique this
+session's entire UI-pipeline map was built on. **Not started this round**
+— RE of the actual x64 struct layout is the real next step. Explicitly
+scoped as future public tooling per direct instruction — built and
+documented to that bar from the start, not disposable scratch work.
+
+Full technical detail, exact source excerpts, and the raw evidence trail:
+`re_notes/x64_migration/fastfile_format_research.md`.
