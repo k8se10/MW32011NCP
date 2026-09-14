@@ -11,7 +11,18 @@ set reusable constantTable;
 set count constantTable constantCount;
 set reusable stateBitsTable;
 set count stateBitsTable stateBitsCount;
-set condition subMaterials never;
+// MW32011NCP / iw5oat, 2026-09-14: subMaterials removed from the real
+// Material struct (Common/Game/IW5/IW5_Assets.h) -- confirmed via direct
+// Ghidra decompile of iw5sp.exe's own real Material fill function
+// (FUN_140094730) that the native struct is exactly 0x80 (128) bytes,
+// ending at stateBitsTable, with no room for a trailing pointer field.
+// This "condition ... never" line (upstream's own, present before this
+// fork existed) only ever suppressed generating a Fill call for the
+// field -- it never affected sizeof(Material), which was the actual bug:
+// every LoadWithFill(sizeof(Material)) call was reading 8+ phantom bytes
+// beyond the real on-disk struct, desyncing every asset loaded after a
+// Material in the same zone. Full trail: re_notes/x64_migration/
+// fastfile_format_research.md (parent repo) SS5.9.
 
 // MaterialTextureDef
 use MaterialTextureDef;

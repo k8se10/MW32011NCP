@@ -1,0 +1,126 @@
+================================================================
+Function: FUN_140094e20 @ 140094e20
+----------------------------------------------------------------
+
+void FUN_140094e20(undefined8 param_1)
+
+{
+  ulonglong uVar1;
+  ulonglong *puVar2;
+  
+  FUN_1400aad70(param_1,DAT_1407be888,8);
+  FUN_1400aac10(0);
+  uVar1 = *DAT_1407be888;
+  if (uVar1 != 0) {
+    if (uVar1 < 0xfffffffffffffffe) {
+      FUN_1400aad10();
+      FUN_1400aabd0();
+      return;
+    }
+    DAT_1407be880 = FUN_1400aaa90(3);
+    *DAT_1407be888 = DAT_1407be880;
+    if (uVar1 == 0xfffffffffffffffe) {
+      puVar2 = (ulonglong *)FUN_1400aab50();
+      FUN_140094cf0(1);
+      FUN_1400a9540(DAT_1407be888);
+      if (puVar2 != (ulonglong *)0x0) {
+        *puVar2 = *DAT_1407be888;
+        FUN_1400aabd0();
+        return;
+      }
+    }
+    else {
+      FUN_140094cf0(1);
+      FUN_1400a9540(DAT_1407be888);
+    }
+  }
+  FUN_1400aabd0();
+  return;
+}
+
+
+
+================================================================
+Function: FUN_140095450 @ 140095450
+----------------------------------------------------------------
+
+void FUN_140095450(undefined8 param_1)
+
+{
+  ulonglong uVar1;
+  ulonglong *puVar2;
+  
+  FUN_1400aad70(param_1,DAT_1407be878,8);
+  FUN_1400aac10(0);
+  uVar1 = *DAT_1407be878;
+  if (uVar1 != 0) {
+    if (uVar1 < 0xfffffffffffffffe) {
+      FUN_1400aad10();
+      FUN_1400aabd0();
+      return;
+    }
+    DAT_1407be870 = FUN_1400aaa90(3);
+    *DAT_1407be878 = DAT_1407be870;
+    if (uVar1 == 0xfffffffffffffffe) {
+      puVar2 = (ulonglong *)FUN_1400aab50();
+      FUN_140095320(1);
+      FUN_1400a97a0(DAT_1407be878);
+      if (puVar2 != (ulonglong *)0x0) {
+        *puVar2 = *DAT_1407be878;
+        FUN_1400aabd0();
+        return;
+      }
+    }
+    else {
+      FUN_140095320(1);
+      FUN_1400a97a0(DAT_1407be878);
+    }
+  }
+  FUN_1400aabd0();
+  return;
+}
+
+
+
+================================================================
+Function: FUN_140095260 @ 140095260
+----------------------------------------------------------------
+
+void FUN_140095260(undefined8 param_1)
+
+{
+  ulonglong uVar1;
+  ulonglong *puVar2;
+  
+  FUN_1400aad70(param_1,DAT_1407be8a0,8);
+  FUN_1400aac10(0);
+  uVar1 = *DAT_1407be8a0;
+  if (uVar1 != 0) {
+    if (uVar1 < 0xfffffffffffffffe) {
+      FUN_1400aad10();
+      FUN_1400aabd0();
+      return;
+    }
+    DAT_1407be898 = FUN_1400aaa90(3);
+    *DAT_1407be8a0 = DAT_1407be898;
+    if (uVar1 == 0xfffffffffffffffe) {
+      puVar2 = (ulonglong *)FUN_1400aab50();
+      FUN_1400951a0(1);
+      FUN_1400a96e0(DAT_1407be8a0);
+      if (puVar2 != (ulonglong *)0x0) {
+        *puVar2 = *DAT_1407be8a0;
+        FUN_1400aabd0();
+        return;
+      }
+    }
+    else {
+      FUN_1400951a0(1);
+      FUN_1400a96e0(DAT_1407be8a0);
+    }
+  }
+  FUN_1400aabd0();
+  return;
+}
+
+
+

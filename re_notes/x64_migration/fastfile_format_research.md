@@ -484,6 +484,110 @@ load). Resolving it needs native Ghidra RE against `iw5sp.exe`'s own
 zone-content reader — the same technique that resolved the dispatch-
 record/header bugs (§5) — not more struct-field-name reasoning.
 
+## 5.9. UPDATE, 2026-09-14 (later still, "dig into the decl/ps/vs question with ghidra") — the open question definitively resolved via native decompile: decl[]/ps/vs ARE on the wire; found and fixed a real, different bug (`Material::subMaterials`, a phantom field) along the way; found a new, unresolved lead (shader bytecode's real block)
+
+Direct instruction: "dig into the decl/ps/vs question with ghidra then once
+our iw5oat is usable we can test on real files." Located the real native
+handlers for all three affected asset types via the already-mapped master
+dispatch switch (`FUN_14009bce0` in `iw5sp.exe`, case index = `ASSET_TYPE_*`
+enum value directly — confirmed again here: case 5=Material, case
+6=MaterialPixelShader, case 7=MaterialVertexShader, case
+8=MaterialVertexDeclaration, case 9=MaterialTechniqueSet, matching the
+already-known RawFile=0x26/ScriptFile=0x27 cases exactly), then decompiled
+each one's real "fill struct from the wire" function directly.
+
+**The original question is answered, decisively, by direct native
+evidence — no more guessing needed**: every native read size for these
+three structs matches `sizeof(Type)`/`offsetof(Type, field)` computed via
+the REAL C++ struct definitions in `IW5_Assets.h`, INCLUDING the
+previously-unfilled fields:
+- `MaterialPixelShader`: native reads exactly `0x20` (32) bytes —
+  matches `sizeof(MaterialPixelShader)` = name(8) + prog(24, where prog =
+  ps(8) + loadDef(16)) = 32. **`ps` is genuinely on the wire.**
+- `MaterialVertexShader`: same shape, same math, same conclusion for `vs`.
+- `MaterialVertexDeclaration`: native reads exactly `0xb0` (176) bytes —
+  matches `sizeof(MaterialVertexDeclaration)` = name(8) +
+  streamCount/hasOptionalSource(2) + pad(6) + routing(160, where routing
+  = data[13](26) + pad(6) + decl[16](128)) = 176. **`decl[]` is
+  genuinely on the wire.**
+
+Both fields are simply never explicitly *filled with a meaningful value*
+by their own `FillStruct_*` function (they're runtime-only D3D
+shader-object/vertex-declaration caches, populated later by actually
+compiling the shader — never by anything read from disk) — but their
+BYTES are still genuinely part of the on-wire struct layout and must be
+consumed from the stream regardless, exactly matching what the earlier
+automated `sizeof(Type)`-based fix already did correctly. **The earlier
+"exclude decl[] from the read size" experiment (SS5.8) was wrong** — this
+explains why it made the failure mode worse (a segfault instead of a
+clean, caught exception): it was cutting 128 genuinely-real bytes out of
+the read, immediately desyncing the stream.
+
+**A real, different bug found via the SAME technique, fixed**: while
+cross-verifying `Material`'s own native read size (`FUN_140094730`,
+confirmed exactly `0x80` = 128 bytes, with `techniqueSet`/`textureTable`/
+`constantTable`/`stateBitsTable` landing at native offsets 0x60/0x68/0x70/
+0x78 — all matching `offsetof()` computed from the current struct exactly),
+the struct definition in `IW5_Assets.h` had a TRAILING `const char**
+subMaterials;` field that inflates `sizeof(Material)` past the real
+128-byte boundary. Unlike `ps`/`vs`/`decl[]` (embedded mid-struct, so their
+bytes are unavoidably consumed to reach later fields), `subMaterials` is
+the LAST field — genuinely absent from the real native struct, not just
+unfilled. Confirmed via: (1) the native total-read-size math only works out
+to exactly 128 bytes WITHOUT it; (2) grepping the entire fork found zero
+references to it anywhere outside the one struct declaration and one
+`ZoneCodeGenerator` "commands" file line (`Material.txt`'s own `set
+condition subMaterials never;` — upstream OAT's own pre-existing marker,
+which only ever suppressed generating a `Fill` call for it, never affected
+`sizeof()`). **Removed the field from `IW5_Assets.h` and the now-dangling
+`Material.txt` reference** — a genuine, permanent struct-definition
+correction, not a workaround.
+
+**The real lesson, now written down for future reference**: `ZoneCodeGenerator`'s
+own `set condition <field> never;` marker does NOT distinguish "field is
+genuinely absent from the wire" from "field is on the wire but never
+meaningfully filled" — both `subMaterials` (absent) and `ps`/`vs`/`decl[]`
+(present, unfilled) carry this SAME marker. The only reliable way to tell
+them apart is native verification: compare the REAL decompiled read size
+against `sizeof()` computed with vs. without the field. A trailing field is
+worth checking (only a trailing field CAN be spuriously excluded without
+affecting any other field's own offset); an embedded field never can be
+(removing it would shift every subsequent field, which native evidence
+would immediately disprove).
+
+**A parallel, unresolved lead found while chasing why the fix still didn't
+get further**: `MaterialTechniqueSet`/`MaterialTechnique`/`MaterialPass`
+were ALL independently re-verified byte-correct against fresh native
+decompile (including cross-checking `MaterialPass`'s own real per-element
+stride, 40 bytes, and `MaterialTechnique`'s own real header size, 16 bytes,
+both via a dedicated per-technique native function, `FUN_140094ee0`/
+`FUN_140094b90`) — and the FIELD PROCESSING ORDER (vertexDecl, then
+vertexShader, then pixelShader, then args) also matches natively exactly.
+Despite this, live testing still fails immediately after `vertexShader`'s
+own load completes, when `pixelShader`'s very first field (`name`) reads as
+garbage. The most promising remaining lead: `FUN_1400aad70`'s first
+parameter looks like a real block-type selector matching the
+`XFILE_BLOCK_*` enum (`TEMP`=0, `PHYSICAL`=1, `RUNTIME`=2, `VIRTUAL`=3, ...)
+— and BOTH `RawFile::buffer`'s own real read (`FUN_140096200`, independently
+re-checked) AND `GfxVertexShaderLoadDef::program`'s real read
+(`FUN_1400953c0`) use literal `1` (PHYSICAL), while the generated code
+currently reads these while `XFILE_BLOCK_VIRTUAL` is still the top of the
+block stack (pushed once at the top of `Load_RawFile`/
+`Load_MaterialVertexShader` and never switched before the buffer/bytecode
+read). **This is a real, generalizable finding that would also affect
+`RawFile`/`ScriptFile`'s own buffer content — this fork's actual stated
+purpose — not just the shader chain**, but a direct experimental test
+(wrapping the vertex/pixel shader bytecode reads in
+`PushBlock(XFILE_BLOCK_PHYSICAL)`/`PopBlock()`) produced a DIFFERENT failure
+("XBlock XFILE_BLOCK_PHYSICAL overflowed") rather than success — meaning
+either `PHYSICAL`'s own real block-size accounting has a separate,
+not-yet-understood issue, or the block-selector mapping isn't as simple as
+"literal N = XFILE_BLOCK_N" for every call site. **Not shipped** — reverted
+rather than guessed further. This is the concrete next investigation
+thread, and needs the SAME native-decompile rigor as the fixes above,
+starting from the 44-byte block-size header's own real byte layout to
+confirm PHYSICAL's declared size for a real test zone.
+
 ## 6. Scoped plan for in-house tooling — an MVP, not a full OpenAssetTools replacement
 
 **This project's own actual need is narrow**: GSC/rawfile extraction to

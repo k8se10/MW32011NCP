@@ -966,7 +966,28 @@ namespace IW5
         MaterialTextureDef* textureTable;
         MaterialConstantDef* constantTable;
         GfxStateBits* stateBitsTable;
-        const char** subMaterials;
+        // MW32011NCP / iw5oat, 2026-09-14: `const char** subMaterials;` removed here
+        // -- confirmed via direct Ghidra decompile of iw5sp.exe's own real
+        // Material fill function (FUN_140094730) that the native on-wire/in-memory
+        // struct is exactly 0x80 (128) bytes: offsetof(techniqueSet)=0x60,
+        // offsetof(textureTable)=0x68, offsetof(constantTable)=0x70,
+        // offsetof(stateBitsTable)=0x78, ending exactly at 0x80 -- there is no
+        // room for a trailing pointer field after stateBitsTable. Also never
+        // referenced anywhere in this fork's own generated/source code (grepped);
+        // ZoneCodeGenerator's own Material.txt already had `set condition
+        // subMaterials never;`, which only suppresses generating a Fill call for
+        // it, not sizeof(Material) -- the field being present at all was silently
+        // inflating every `LoadWithFill(sizeof(Material))` read by 8+ bytes,
+        // desyncing every asset loaded after a Material in the same zone. Real
+        // trail: re_notes/x64_migration/fastfile_format_research.md (parent
+        // repo) SS5.9. NOTE this class of bug (a struct field that is genuinely
+        // not part of the real wire format, vs. one that IS on the wire but
+        // simply never filled with a meaningful value -- confirmed true for
+        // MaterialPixelShaderProgram::ps/MaterialVertexShaderProgram::vs/
+        // MaterialVertexStreamRouting::decl[], all cross-checked against native
+        // reads and kept as-is) needs the SAME native-decompile verification
+        // per field -- ZoneCodeGenerator's own `condition ... never` marking
+        // alone does not distinguish the two cases.
     };
 
     struct GfxShaderLoadDef
