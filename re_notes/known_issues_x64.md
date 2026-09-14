@@ -5959,3 +5959,48 @@ Full updated case table, the raw label-table dump, and the reusable
 demonstrated: `re_notes/x64_migration/ui_draw_pipeline_map.md` (updated)
 and `re_notes/x64_migration/ui_pipeline_trace/` (new round-2 files). No
 source changes — still pure reference material.
+
+### UPDATE 2026-09-14 (round 3, "keep digging" again) — a native named-HUD-element show/hide registry found; Health, Sprint Meter, and the entire Compass cluster confirmed by name
+
+**Status: Reference/groundwork, no source changes.**
+
+Chasing `0x4f`/`0x62`/`0x72`'s previously-INFERRED "danger/proximity
+indicator" identity to its WRITER functions (not just readers) found
+something bigger than that one guess: a generic named-element show/hide API
+(`FUN_1402adad0`/`FUN_1402ad500`, name-string argument) that seven-plus
+native HUD elements are gated through. Real, literal names recovered
+directly from the decompile: `"Health"`, `"weaponinfo"`/
+`"weaponinfo_lowdef"`, `"Compass"`, `"stance"`, `"sprintMeter"`,
+`"offhandinfo"`, `"objectiveinfo"`, `"challenge"`, `"voiceMenu"`.
+
+**Real corrections this closes**: `0x4f`/`0x62` are confirmed the native
+low-Health warning (not a generic "danger" guess); `0x72` is confirmed the
+Sprint Meter — correcting round 2's own weapon-name-based guess
+("`"iw5_"` prefix check" was real but scales the meter's fill-rate per
+weapon, it isn't the element's identity); the ENTIRE `0x96`-`0xbd` compass/
+marker cluster from round 1/2 is confirmed member-for-member to be the
+native Compass, via `DescribeRefs.java` on its own gate variable — every
+real reader of that global is a cluster member already in the table, no
+exceptions; and round 2's `"offhandinfo"` = Lethal/Tactical grenade-HUD
+finding is independently re-confirmed via a completely different trace
+path than the one that found it, with zero shared assumptions between the
+two.
+
+**A genuine architecture refinement**: `"weaponinfo"` turned out to NOT go
+through `FUN_140052220`'s numbered dispatcher at all — its one real
+consumer (`FUN_140051e90`) is called from a separate chain
+(`FUN_14028f3c0`), not traced further this round. Not every native HUD
+element lives in the one master switch this whole map has centered on.
+
+**A real -noanalysis decompiler limitation caught and worked around**:
+`FUN_14004f3a0` decompiled as an empty `void` with no visible computation
+despite a caller clearly using its return value as a float — raw
+disassembly showed the real body, a plain `clamp(a/b, 0, 1)` ratio, that
+`-noanalysis`'s lack of a parameter-ID pass simply couldn't type correctly.
+Worth remembering: an apparently-empty function a caller treats as
+meaningful is a decompiler artifact to disassemble around, not a dead end.
+
+Full updated map, the new named-element table, and every raw script output
+backing this round: `re_notes/x64_migration/ui_draw_pipeline_map.md`
+(section 3.5, new) and `re_notes/x64_migration/ui_pipeline_trace/`. No
+source changes — still pure reference material.
