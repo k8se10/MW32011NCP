@@ -1,0 +1,54 @@
+================================================================
+Function: FUN_1400aad10 @ 1400aad10
+----------------------------------------------------------------
+
+void FUN_1400aad10(int *param_1)
+
+{
+  *(undefined8 *)param_1 =
+       *(undefined8 *)
+        ((ulonglong)(*param_1 - 1U & 0xfffffff) +
+        *(longlong *)(DAT_140d6de00 + (ulonglong)(*param_1 - 1U >> 0x1c) * 0x10));
+  return;
+}
+
+
+
+================================================================
+Function: FUN_1400aad40 @ 1400aad40
+----------------------------------------------------------------
+
+void FUN_1400aad40(longlong *param_1)
+
+{
+  uint uVar1;
+  
+  uVar1 = (int)*param_1 - 1;
+  *param_1 = (ulonglong)(uVar1 & 0xfffffff) +
+             *(longlong *)(DAT_140d6de00 + (ulonglong)(uVar1 >> 0x1c) * 0x10);
+  return;
+}
+
+
+
+================================================================
+Function: FUN_1400aad70 @ 1400aad70
+----------------------------------------------------------------
+
+void FUN_1400aad70(char param_1,undefined8 param_2,int param_3)
+
+{
+  if ((param_1 != '\0') && (param_3 != 0)) {
+    if (DAT_140d6ddf8 == 2) {
+      FUN_140390680(param_2,0,(longlong)param_3);
+      FUN_1400aaab0(param_3);
+      return;
+    }
+    FUN_14008ef80(param_2,param_3,0);
+    FUN_1400aaab0(param_3);
+  }
+  return;
+}
+
+
+

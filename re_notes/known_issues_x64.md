@@ -7234,3 +7234,39 @@ Paused per the same persistence-threshold reasoning as the round above —
 next step would be a native decompile of LoadedSound's own real fill
 function, not more ad hoc diagnostics. Doesn't block any current need.
 Full trail: `re_notes/x64_migration/fastfile_format_research.md` §5.22.
+
+### UPDATE (RE only, no fix), 2026-09-14 (later still, "dig on both") — native x64 decompile of the materialHandles resolution path finds a second real primitive that initially looked different but is functionally identical to the already-fixed one; one hypothesis eliminated with hard proof, root cause still open
+
+**Status: real native evidence gathered, one theory eliminated; the
+actual "invalid block 15" root cause remains unresolved.**
+
+Decompiled `iw5sp.exe`'s own real `Material`/`MaterialTechniqueSet`
+outer pointer-handlers directly. Confirmed with real code (not just
+live testing) that the engine's own FOLLOWING/INSERT sentinel check
+operates on the genuine full 64-bit value, no truncation — hard proof
+that §5.21's own sentinel-truncation experiment was wrong in premise,
+not just in result.
+
+Found a second offset-resolution primitive, `FUN_1400aad10`, called
+from these handlers for the "already resolved" case. Its own decompiled
+signature (`int *param_1`, reads only 4 bytes) initially looked like
+genuine evidence of a narrower on-wire width for this context — but
+tracing the actual caller data flow shows it operates on a global the
+caller had already loaded as a full 8-byte value moments earlier; its
+4-byte read is just the compiler's own chosen expression of "read the
+low 32 bits," functionally identical to the already-fixed
+`FUN_1400aad40`'s own `(int)*longlongPtr` approach — not a different
+on-wire encoding. Confirmed generic (48 real callers, not
+Material-specific) via `FindCallers.java`.
+
+**Rules out** "a genuinely different decode primitive explains the
+malformed values" — does NOT explain what does. Real next step: find
+and decompile the actual native `materialHandles`/`numsurfs`
+array-WALKING loop itself (a different, not-yet-found function), or
+compare this fork's own `LoadPtrArray_Material` stride/count logic
+against it directly — neither attempted this round.
+
+No code changes, pure RE. Two new evidence files committed. Ghidra
+project's own known `.gbf` corruption pattern hit twice more, restored
+both times. Full trail:
+`re_notes/x64_migration/fastfile_format_research.md` §5.23.
