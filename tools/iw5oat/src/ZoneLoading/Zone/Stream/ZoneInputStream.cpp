@@ -1,6 +1,7 @@
 #include "ZoneInputStream.h"
 
 #include "Loading/Exception/BlockOverflowException.h"
+#include "Loading/Exception/InvalidLookupPositionException.h"
 #include "Loading/Exception/InvalidOffsetBlockException.h"
 #include "Loading/Exception/InvalidOffsetBlockOffsetException.h"
 #include "Loading/Exception/OutOfBlockBoundsException.h"
@@ -58,9 +59,34 @@ namespace
               m_stream(stream),
               m_memory(memory),
               m_pointer_byte_count(pointerBitCount / 8u),
-              m_block_mask((std::numeric_limits<uintptr_t>::max() >> (sizeof(uintptr_t) * 8 - blockBitCount)) << (pointerBitCount - blockBitCount)),
-              m_block_shift(pointerBitCount - blockBitCount),
-              m_offset_mask(std::numeric_limits<uintptr_t>::max() >> (sizeof(uintptr_t) * 8 - (pointerBitCount - blockBitCount))),
+              // MW32011NCP / iw5oat, 2026-09-14: this used to derive the block-index shift/
+              // mask from `pointerBitCount` (64u for this fork's own IW5 x64 target) -- i.e.
+              // it assumed the zone format's own "already-resolved offset pointer" encoding
+              // scales up to the platform's real native pointer width. Confirmed WRONG via
+              // direct decompile of iw5sp.exe's own real offset-resolution primitive
+              // (FUN_1400aad40, the exact native equivalent of this function -- 86 real
+              // callers spanning every asset type, not a per-field special case): the real
+              // x64 engine casts the raw value to a plain 32-bit `int` FIRST, unconditionally,
+              // then applies the SAME 4-bit-block-index-in-a-32-bit-word scheme this format
+              // has always used, even on the current x64 recompile -- this specific encoding
+              // was simply never widened. Confirmed empirically too, not just by decompile: a
+              // live diagnostic resolved MaterialPixelShader::name's own raw wire bytes under
+              // this exact 32-bit scheme to a real, readable string
+              // ("trivial_vertcol_simple.hlsl"), and the same alternate-decode block index
+              // (XFILE_BLOCK_VIRTUAL) independently reproduced across all three zones this
+              // fork was failing on. Full trail: re_notes/x64_migration/
+              // fastfile_format_research.md (parent repo) SS5.16-SS5.18.
+              //
+              // Deliberately hardcoded to 32u here, decoupled from `pointerBitCount` -- this
+              // is the zone format's own fixed on-wire encoding width for this specific
+              // pointer class, not a property of the platform this fork happens to build for.
+              // `pointerBitCount` itself stays correctly used for genuine native-pointer-
+              // field-size purposes elsewhere (m_pointer_byte_count/GetPointerBitCount(),
+              // e.g. LoadXStringArray's own per-element stride) -- those really are 8 bytes
+              // wide on x64, unlike this offset-encoding scheme.
+              m_block_mask((std::numeric_limits<uintptr_t>::max() >> (sizeof(uintptr_t) * 8 - blockBitCount)) << (32u - blockBitCount)),
+              m_block_shift(32u - blockBitCount),
+              m_offset_mask(std::numeric_limits<uintptr_t>::max() >> (sizeof(uintptr_t) * 8 - (32u - blockBitCount))),
               m_last_fill_size(0),
               m_has_progress_callback(false),
               m_progress_current_size(0uz),
@@ -326,7 +352,15 @@ namespace
         // explicitly below, not merely permitted by accident).
         const char* TryConvertOffsetToStringPointerNative(const void* offset) override
         {
-            const auto offsetInt = reinterpret_cast<uintptr_t>(offset) - 1u;
+            // Truncate to the real on-wire 32-bit word FIRST, then subtract 1 -- matching the
+            // real native offset-resolution primitive's own exact operation order (confirmed
+            // via direct decompile, `(int)*param_1 - 1`; see the constructor's own comment on
+            // m_block_shift for the full trail). Subtracting first and truncating after (the
+            // prior, incorrect order) would silently corrupt one narrow edge case: a raw value
+            // whose low 32 bits are all zero, where a borrow from the subtraction would cross
+            // into bits this format never uses instead of wrapping within the low 32 bits, as
+            // the real engine's own 32-bit-only arithmetic guarantees.
+            const auto offsetInt = static_cast<uintptr_t>(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(offset)) - 1u);
 
             const auto blockNum = static_cast<block_t>((offsetInt & m_block_mask) >> m_block_shift);
             const auto blockOffset = static_cast<size_t>(offsetInt & m_offset_mask);
@@ -394,7 +428,15 @@ namespace
         {
             // -1 because otherwise Block 0 Offset 0 would be just 0 which is already used to signalize a nullptr.
             // So all offsets are moved by 1.
-            const auto offsetInt = reinterpret_cast<uintptr_t>(offset) - 1u;
+            // Truncate to the real on-wire 32-bit word FIRST, then subtract 1 -- matching the
+            // real native offset-resolution primitive's own exact operation order (confirmed
+            // via direct decompile, `(int)*param_1 - 1`; see the constructor's own comment on
+            // m_block_shift for the full trail). Subtracting first and truncating after (the
+            // prior, incorrect order) would silently corrupt one narrow edge case: a raw value
+            // whose low 32 bits are all zero, where a borrow from the subtraction would cross
+            // into bits this format never uses instead of wrapping within the low 32 bits, as
+            // the real engine's own 32-bit-only arithmetic guarantees.
+            const auto offsetInt = static_cast<uintptr_t>(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(offset)) - 1u);
 
             const auto blockNum = static_cast<block_t>((offsetInt & m_block_mask) >> m_block_shift);
             const auto blockOffset = static_cast<size_t>(offsetInt & m_offset_mask);
@@ -404,7 +446,24 @@ namespace
 
             auto* block = m_blocks[blockNum];
 
-            if (block->m_buffer_size <= blockOffset)
+            // MW32011NCP / iw5oat, 2026-09-14: the corrected 32-bit-wide decode above is
+            // confirmed correct (re_notes/x64_migration/fastfile_format_research.md SS5.18 in
+            // the parent repo), but correctness alone isn't safety -- a real, in-bounds-of-
+            // BUFFER-CAPACITY offset can still point at a position this stream simply hasn't
+            // written to YET (a genuine forward reference into a NORMAL block, which fills
+            // progressively as the zone stream is consumed, not pre-populated). The OLD, wrong
+            // 64-bit decode accidentally caught this case too (it produced a wildly out-of-
+            // bounds offset that tripped the size check below on its own) -- fixing the decode
+            // width removes that accidental protection, so it has to be replaced with a real
+            // one: `m_block_offsets[blockNum]` is this block's own progressive write cursor
+            // (only ever advances, via IncBlockPos, as real content is actually read into it --
+            // never a proxy for "how much space exists," only "how much has genuinely been
+            // written so far"). Confirmed live as a REAL, serious regression, not a theoretical
+            // one: without this check, hamburg.ff and common.ff (whose own still-separately-
+            // unresolved failures are forward references, not this bug) silently resolved to
+            // genuinely unwritten/zeroed memory and SEGFAULTED downstream instead of throwing
+            // the clean, catchable exception this format is supposed to produce.
+            if (block->m_buffer_size <= blockOffset || m_block_offsets[blockNum] <= blockOffset)
                 throw InvalidOffsetBlockOffsetException(block, blockOffset);
 
             return &block->m_buffer[blockOffset];
@@ -413,7 +472,15 @@ namespace
         void* ConvertOffsetToAliasNative(const void* offset) override
         {
             // For details see ConvertOffsetToPointer
-            const auto offsetInt = reinterpret_cast<uintptr_t>(offset) - 1u;
+            // Truncate to the real on-wire 32-bit word FIRST, then subtract 1 -- matching the
+            // real native offset-resolution primitive's own exact operation order (confirmed
+            // via direct decompile, `(int)*param_1 - 1`; see the constructor's own comment on
+            // m_block_shift for the full trail). Subtracting first and truncating after (the
+            // prior, incorrect order) would silently corrupt one narrow edge case: a raw value
+            // whose low 32 bits are all zero, where a borrow from the subtraction would cross
+            // into bits this format never uses instead of wrapping within the low 32 bits, as
+            // the real engine's own 32-bit-only arithmetic guarantees.
+            const auto offsetInt = static_cast<uintptr_t>(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(offset)) - 1u);
 
             const auto blockNum = static_cast<block_t>((offsetInt & m_block_mask) >> m_block_shift);
             const auto blockOffset = static_cast<size_t>(offsetInt & m_offset_mask);
@@ -423,7 +490,10 @@ namespace
 
             auto* block = m_blocks[blockNum];
 
-            if (block->m_buffer_size <= blockOffset + sizeof(void*))
+            // See ConvertOffsetToPointerNative's own comment for the full rationale -- a
+            // write-cursor check is required alongside the total-capacity check, or a genuine
+            // forward reference resolves to unwritten memory instead of throwing.
+            if (block->m_buffer_size <= blockOffset + sizeof(void*) || m_block_offsets[blockNum] <= blockOffset + sizeof(void*))
                 throw InvalidOffsetBlockOffsetException(block, blockOffset);
 
             return *reinterpret_cast<void**>(&block->m_buffer[blockOffset]);
@@ -448,7 +518,15 @@ namespace
         MaybePointerFromLookup<void> ConvertOffsetToPointerLookup(const void* offset) override
         {
             // For details see ConvertOffsetToPointer
-            const auto offsetInt = reinterpret_cast<uintptr_t>(offset) - 1u;
+            // Truncate to the real on-wire 32-bit word FIRST, then subtract 1 -- matching the
+            // real native offset-resolution primitive's own exact operation order (confirmed
+            // via direct decompile, `(int)*param_1 - 1`; see the constructor's own comment on
+            // m_block_shift for the full trail). Subtracting first and truncating after (the
+            // prior, incorrect order) would silently corrupt one narrow edge case: a raw value
+            // whose low 32 bits are all zero, where a borrow from the subtraction would cross
+            // into bits this format never uses instead of wrapping within the low 32 bits, as
+            // the real engine's own 32-bit-only arithmetic guarantees.
+            const auto offsetInt = static_cast<uintptr_t>(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(offset)) - 1u);
 
             const auto blockNum = static_cast<block_t>((offsetInt & m_block_mask) >> m_block_shift);
             const auto blockOffset = static_cast<size_t>(offsetInt & m_offset_mask);
@@ -458,7 +536,10 @@ namespace
 
             auto* block = m_blocks[blockNum];
 
-            if (block->m_buffer_size <= blockOffset + sizeof(void*))
+            // See ConvertOffsetToPointerNative's own comment for the full rationale -- a
+            // write-cursor check is required alongside the total-capacity check, or a genuine
+            // forward reference resolves to unwritten memory instead of throwing.
+            if (block->m_buffer_size <= blockOffset + sizeof(void*) || m_block_offsets[blockNum] <= blockOffset + sizeof(void*))
                 throw InvalidOffsetBlockOffsetException(block, blockOffset);
 
             const auto foundPointerLookup = m_pointer_redirect_lookup.find(offsetInt);
@@ -468,32 +549,95 @@ namespace
             return MaybePointerFromLookup<void>(&block->m_buffer[blockOffset], blockNum, blockOffset);
         }
 
+        // A resolved value whose own bit pattern still fits in 32 bits is not a genuine native
+        // pointer -- every real heap/asset-memory address this fork's own allocator hands out
+        // sits far above the 4GB mark in practice (confirmed live: e.g. 0x165b694d018), while a
+        // raw, not-yet-resolved zone offset is always shaped exactly like the pointer-width bug
+        // this whole fix is about (SS5.16-SS5.18 in fastfile_format_research.md, parent repo) --
+        // top 32 bits zero. Used to detect "this alias target itself hasn't been resolved yet"
+        // rather than trusting an unresolved raw offset as if it were a real memory address.
+        [[nodiscard]] static bool LooksLikeUnresolvedRawOffset(const void* value)
+        {
+            return reinterpret_cast<uintptr_t>(value) < 0x1'0000'0000ull;
+        }
+
         void* ConvertOffsetToAliasLookup(const void* offset) override
         {
             // For details see ConvertOffsetToPointer
-            const auto offsetInt = reinterpret_cast<uintptr_t>(offset) - 1u;
+            // Truncate to the real on-wire 32-bit word FIRST, then subtract 1 -- matching the
+            // real native offset-resolution primitive's own exact operation order (confirmed
+            // via direct decompile, `(int)*param_1 - 1`; see the constructor's own comment on
+            // m_block_shift for the full trail). Subtracting first and truncating after (the
+            // prior, incorrect order) would silently corrupt one narrow edge case: a raw value
+            // whose low 32 bits are all zero, where a borrow from the subtraction would cross
+            // into bits this format never uses instead of wrapping within the low 32 bits, as
+            // the real engine's own 32-bit-only arithmetic guarantees.
+            auto offsetInt = static_cast<uintptr_t>(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(offset)) - 1u);
 
-            const auto blockNum = static_cast<block_t>((offsetInt & m_block_mask) >> m_block_shift);
-            const auto blockOffset = static_cast<size_t>(offsetInt & m_offset_mask);
+            // MW32011NCP / iw5oat, 2026-09-14: a real, separate bug found live while testing the
+            // SS5.16-SS5.18 pointer-width fix against hamburg.ff -- confirmed via a temporary
+            // diagnostic, not guessed. `m_pointer_redirect_lookup`'s own stored "alias" value is
+            // the ADDRESS of another asset's own pointer field, registered via AddPointerLookup
+            // so a FORWARD reference to that field can find it before it's been filled in. But
+            // when the referenced field genuinely hasn't been resolved yet at the moment THIS
+            // lookup runs (a real reference chain: asset A's pointer aliases asset B's pointer,
+            // and B's own field hasn't itself been converted from raw offset to real native
+            // pointer yet), dereferencing that address reads back whatever raw, still-unresolved
+            // offset value was written there by the initial FillPtr byte-copy -- confirmed live:
+            // resolving hamburg.ff's own asset index 16 (XModel) returned 0x30029229, IDENTICAL
+            // in shape to the raw offset just looked up, not a real ~0x165b694d018-class heap
+            // address. Blindly trusting that as a resolved pointer is exactly what segfaulted.
+            // Fixed by chasing the SAME resolution this function already does one more hop,
+            // bounded, rather than either trusting a not-yet-real value or giving up on a
+            // reference that IS genuinely resolvable, just not resolved on the first try.
+            constexpr int kMaxAliasChainHops = 16;
+            block_t lastBlockNum = -1;
+            size_t lastBlockOffset = 0;
+            for (int hop = 0; hop < kMaxAliasChainHops; hop++)
+            {
+                const auto blockNum = static_cast<block_t>((offsetInt & m_block_mask) >> m_block_shift);
+                const auto blockOffset = static_cast<size_t>(offsetInt & m_offset_mask);
+                lastBlockNum = blockNum;
+                lastBlockOffset = blockOffset;
 
-            if (blockNum < 0 || blockNum >= static_cast<block_t>(m_blocks.size()))
-                throw InvalidOffsetBlockException(blockNum);
+                if (blockNum < 0 || blockNum >= static_cast<block_t>(m_blocks.size()))
+                    throw InvalidOffsetBlockException(blockNum);
 
-            auto* block = m_blocks[blockNum];
+                auto* block = m_blocks[blockNum];
 
-            if (block->m_buffer_size <= blockOffset + sizeof(uintptr_t))
+                // See ConvertOffsetToPointerNative's own comment for the full rationale -- a
+                // write-cursor check is required alongside the total-capacity check, or a
+                // genuine forward reference resolves to unwritten memory instead of throwing.
+                if (block->m_buffer_size <= blockOffset + sizeof(uintptr_t) || m_block_offsets[blockNum] <= blockOffset + sizeof(uintptr_t))
+                    throw InvalidOffsetBlockOffsetException(block, blockOffset);
+
+                const auto foundAliasLookup = m_alias_redirect_lookup.find(offsetInt);
+                if (foundAliasLookup != m_alias_redirect_lookup.end())
+                    return foundAliasLookup->second;
+
+                const auto foundPointerLookup = m_pointer_redirect_lookup.find(offsetInt);
+                if (foundPointerLookup != m_pointer_redirect_lookup.end())
+                {
+                    const auto* resolvedSlot = static_cast<void**>(foundPointerLookup->second);
+                    const auto resolved = *resolvedSlot;
+
+                    if (!LooksLikeUnresolvedRawOffset(resolved))
+                        return resolved;
+
+                    // The aliased field itself still holds a raw offset, not a real pointer --
+                    // chase it exactly the same way, rather than trusting or giving up on it.
+                    offsetInt = static_cast<uintptr_t>(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(resolved)) - 1u);
+                    continue;
+                }
+
+                assert(false);
                 throw InvalidOffsetBlockOffsetException(block, blockOffset);
+            }
 
-            const auto foundAliasLookup = m_alias_redirect_lookup.find(offsetInt);
-            if (foundAliasLookup != m_alias_redirect_lookup.end())
-                return foundAliasLookup->second;
-
-            const auto foundPointerLookup = m_pointer_redirect_lookup.find(offsetInt);
-            if (foundPointerLookup != m_pointer_redirect_lookup.end())
-                return *static_cast<void**>(foundPointerLookup->second);
-
-            assert(false);
-            throw InvalidOffsetBlockOffsetException(block, blockOffset);
+            // A genuinely circular or pathologically long alias chain -- real content never
+            // needs anywhere close to kMaxAliasChainHops hops (a single hop covers every case
+            // confirmed live so far); this is a clean, catchable failure, not a crash.
+            throw InvalidLookupPositionException(lastBlockNum, lastBlockOffset);
         }
 
 #ifdef DEBUG_OFFSETS
