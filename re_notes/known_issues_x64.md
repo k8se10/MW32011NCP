@@ -7194,3 +7194,43 @@ Paused per this project's own persistence-threshold principle after
 several genuine rounds without a fix — real, useful scope narrowing on
 record, no regression risk taken, doesn't block any current need. Full
 trail: `re_notes/x64_migration/fastfile_format_research.md` §5.21.
+
+### PAUSED (not resolved), 2026-09-14 (later still, "keep goin") — code_post_gfx.ff's own new CALLBACK-block failure traced to a snd_alias_list_t -> recursive LoadedSound load; the union-branch theory tested and disproven; a real recurring pattern found (bugs hide inside recursive sub-asset loads, not top-level fields) but no fix landed
+
+**Status: real, precise progress on scope and a generalizable pattern —
+root cause of the actual malformed value still open.**
+
+Traced `code_post_gfx.ff`'s own `"block XFILE_BLOCK_CALLBACK...size 0"`
+failure to asset 4481, `snd_alias_list_t` (SOUND) — structurally
+unrelated to the XModel/Material chain in the round above. The raw
+malformed value (`0x59EE65FC5439FFD3`) has no zero half and no sentinel
+pattern anywhere — a genuinely different shape from every other case
+this session.
+
+Formed and directly tested (not just theorized) a union-branch-selection
+hypothesis: `snd_alias_list_t`'s own struct holds both a `loadSnd`
+pointer and a `streamSnd` struct at different offsets, with a runtime
+`type` field selecting which is "real" — if `type` were misread, the
+wrong branch could misinterpret the other member's bytes as a pointer.
+A live diagnostic dumping `type`/`SAT_LOADED`/both members disproved
+this cleanly: the branch selection is entirely correct
+(`type=1=SAT_LOADED`, `loadSnd` is a clean FOLLOWING sentinel) — the
+code correctly starts a RECURSIVE load of a separate `LoadedSound`
+asset, and the real malformed value lives somewhere inside that
+recursive load, not reached by this round's own diagnostics.
+
+**A real, generalizable pattern across two independent cases this
+session**: this is the THIRD time a malformed value has turned out to
+live inside a recursively-loaded sub-asset rather than the "obvious"
+top-level field checked first (XModel->materialHandles->Material in the
+round above; snd_alias_list_t->LoadedSound here) — surface fields are
+consistently clean, real problems hide behind array/handle-driven
+recursive loads.
+
+All instrumentation reverted (including cleaning the diagnostic out of
+the gitignored, regenerated snd_alias_list_t build output, not just
+tracked source), 0 regression confirmed against all six known zones.
+Paused per the same persistence-threshold reasoning as the round above —
+next step would be a native decompile of LoadedSound's own real fill
+function, not more ad hoc diagnostics. Doesn't block any current need.
+Full trail: `re_notes/x64_migration/fastfile_format_research.md` §5.22.
