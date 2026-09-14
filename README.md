@@ -188,6 +188,12 @@ API, background threads, and more).
   graduating past that all the way through v0.3.5). x64's specific gap
   (the data layer, not the UI) is real and worth closing eventually, but
   it isn't "behind a finished x86 feature" — neither line ever finished it.
+  **Deferred, 2026-09-14 (direct decision): explicitly NOT a priority for
+  this release.** The INI config (`mw3ncp_config.ini`) is a reliable,
+  already-working settings path for everything this mod itself controls;
+  the custom Options screen's remaining value is only for real VANILLA
+  game settings, a real but genuinely lower-value target. Not planned
+  again until a later pass, well past the current `-x64` parity push.
 
 - **Controller-glyph icons now draw for real on x64 for eight in-game/menu
   hint categories** (2026-09-13, three same-day follow-up passes on top of

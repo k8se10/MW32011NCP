@@ -4079,6 +4079,16 @@ same pass):**
    original framing suggested. Deprioritize relative to items that
    genuinely regressed x64 below a real, confirmed-working x86 baseline.
 
+   **DEFERRED, 2026-09-14 (direct decision, same session as the correction
+   above): explicitly NOT a priority for this release.** Direct
+   reasoning: `mw3ncp_config.ini` is a reliable, already-working settings
+   path for everything this mod itself controls -- the Options screen's
+   remaining value is only for real VANILLA game settings, genuinely
+   lower-value than it looks. Status: **Deferred** (this file's own
+   status vocabulary) -- not planned again until a later pass, well past
+   the current `-x64` parity push. Do not pick this back up without an
+   explicit prompt to revisit it.
+
 **Build/deploy note for this whole round**: only item 7 (the render-scale
 warning) involved a code change; items 1/2/4/5/6 needed no changes (already
 working); item 3 was deliberately left as documentation only. The single
