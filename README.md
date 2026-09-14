@@ -10,7 +10,7 @@ native call exists, never a config tweak):
 | Component | What it does | Status |
 |---|---|---|
 | **Controller support** | Real analog movement/look/every button for Campaign & Survival, matching console behavior | Flagship, most mature — see [What works](#what-works-right-now) |
-| **Visual/performance enhancements** | Internal render scale, FSR 1.0 sharpening, motion blur, forced anisotropic filtering/shadow/lighting quality, stutter/threading fixes | Wired for x64, not yet live-tested |
+| **Visual/performance enhancements** | Internal render scale, FSR 1.0 sharpening, motion blur, forced anisotropic filtering/shadow/lighting quality, stutter/threading fixes | Render scale and motion blur live-confirmed; rest wired for x64, not yet live-tested |
 | **Netcode security patches** | Finds and fixes real, exploitable vulnerabilities in the base game's own netcode | 3 of 4 confirmed vulnerabilities fixed — see [Security](#security-netcode-vulnerability-patches) |
 | **Multiplayer (`iw5mp.exe`)** | Same controller/security methodology, ported to the separate MP binary | Active reverse-engineering, opt-in-only when it ships — see [Multiplayer](#multiplayer) |
 
@@ -112,7 +112,8 @@ ADS" and "Custom mouse cursor overlay" below.
 | Survival ready-up (hold Y, synthetic F5) — mechanism confirmed live; the prompt itself still renders native/unmodified, see Known gaps | |
 | Hold Breath (L3 while ADS'd, sniper-class) | |
 | Predator Missile launch (Survival buy-station) | |
-| Motion blur (real x64 trigger hook found 2026-09-13, live-confirmed 2026-09-14) | Internal render scale, FSR sharpening — the game has launched and run without crashing at a high render-scale setting, but neither has been explicitly confirmed to produce its real visible effect the way `-x86` was |
+| Motion blur (real x64 trigger hook found 2026-09-13, live-confirmed 2026-09-14) | FSR sharpening — the game has launched and run without crashing with it enabled, but hasn't been explicitly confirmed to produce its real visible effect the way `-x86` was |
+| Internal render scale — live-confirmed 2026-09-14 | |
 | Native controller menu/UI navigation — main menu confirmed; pause/options/buy-stations not yet separately exercised | |
 | Mantle glyph-icon substitution — confirmed visible live 2026-09-14; on-screen alignment needed a first-pass position fix the same day, may still need further tuning | Real glyph-icon substitution for Pickup/Swap/Pickup-health, Throwback grenade, Reload/low-ammo, menu corner hints (Back/Friends/Quit/Leaderboards/Game Summary) — same underlying mechanism as Mantle, not yet individually live-confirmed (see Known gaps for what's still native-only) |
 | Highlighted-item A-glyph (menu list navigation) and the F2/F3 glyph-position editor | |
