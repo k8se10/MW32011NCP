@@ -1724,6 +1724,82 @@ rounds. Doesn't block any current need — `code_post_gfx.ff` already
 progressed further than it had before §5.20's own shipped fix, and
 nothing about this investigation put that progress at risk.
 
+## 5.23. UPDATE, 2026-09-14 (later still, "dig on both", native x64 decompile of the `materialHandles` resolution path) — a second real native primitive found (`FUN_1400aad10`) and initially looked like a different, narrower-width scheme, but closer analysis shows it's functionally identical to the already-fixed primitive — one hypothesis cleanly eliminated, the real root cause still open
+
+**Status: real native evidence gathered, one theory eliminated with hard
+proof; the actual root cause of `"invalid block 15"` remains
+unresolved.**
+
+Decompiled the real native x64 `iw5sp.exe`'s own `Material`/
+`MaterialTechniqueSet` outer pointer-handlers (`FUN_140094950`/
+`FUN_1400950e0` — already on file from earlier this session) in full,
+tracing their own sentinel-check logic directly rather than continuing
+to guess from raw-value shapes alone. **Confirmed the real engine's own
+FOLLOWING/INSERT sentinel check operates on the genuine, full 64-bit
+value** (`0xFFFFFFFFFFFFFFFE`/`0xFFFFFFFFFFFFFFFF`, compared directly,
+no truncation) — this directly explains, with real evidence, WHY
+§5.21's own `GetZonePointerType`-truncation experiment made things
+worse rather than better: that experiment's premise (the sentinel check
+itself needs 32-bit truncation) is now confirmed wrong by the real
+native code, not just empirically disproven by testing.
+
+**Found a second real offset-resolution primitive, `FUN_1400aad10`**,
+called from these same outer handlers for the "already resolved, not a
+sentinel" case — genuinely different in its own decompiled signature
+from the already-fixed `FUN_1400aad40` (§5.18): `void
+FUN_1400aad10(int *param_1)` takes an `int*` and reads only 4 bytes as
+input, writing the resolved 8-byte pointer back in place — versus
+`FUN_1400aad40`'s own `longlong *param_1`, reading a full 8 bytes then
+truncating in software. **Initially looked like decisive evidence of a
+genuinely different, narrower on-wire width for this specific call
+context** — but tracing the actual caller data flow shows this reading
+is NOT a narrower on-wire field: `FUN_1400aad10` is called on the SAME
+global (`DAT_1407be920`) the caller had already loaded as a full 8-byte
+value moments earlier (`FUN_1400aad70(param_1, DAT_1407be920, 8)`), and
+which the caller's own sentinel check just read as a genuine 8-byte
+quantity. `FUN_1400aad10`'s own 4-byte read is simply the COMPILER's own
+chosen expression of "read the low 32 bits" for this specific call site
+(the C source almost certainly reads `*(int*)&alreadyLoaded64BitValue`,
+functionally IDENTICAL to `FUN_1400aad40`'s own `(int)*longlongPtr`
+approach) — not evidence of a real, narrower packed-array encoding.
+**Conclusion: both primitives implement the exact same 32-bit-truncate
+decode already fixed in `e2fdeb07`, just compiled two different ways at
+two different call sites** — this rules out "a genuinely different
+decode primitive for this specific array context" as an explanation for
+the `"invalid block 15"` malformed values, but does not itself explain
+what IS producing them.
+
+**Confirmed via `FindCallers.java`**: `FUN_1400aad10` has 48 real
+callers across the binary (a generic, widely-shared primitive, matching
+`FUN_1400aad40`'s own earlier-confirmed 86-caller generality) — not a
+function specific to `Material`/`materialHandles` at all, further
+supporting that it's simply an alternate compiled form of the same
+generic logic, not a context-specific encoding variant.
+
+**Real, concrete next step, not yet attempted**: since the decode
+primitives themselves are now confirmed identical/correct, the actual
+bug must live either in how the real native engine's own
+`materialHandles`/`numsurfs` array-WALKING loop is structured (a
+genuinely different function from the two now-decompiled primitives,
+not yet found — likely reachable a few hops deeper from the master
+dispatch switch's own `case 4` XModel handler) or in this fork's own
+C++ array-population code (`LoadPtrArray_Material`'s own stride/count
+logic in the generated `xmodel_iw5_load_db.cpp`, not yet directly
+compared against a decompiled native equivalent). Finding and
+decompiling that real array-walking loop specifically — not another
+single-pointer resolution primitive — is the concrete next step for
+whoever continues this.
+
+Two raw Ghidra decompile evidence files added:
+`re_notes/ghidra_scripts/decomp_1400aad10_family.txt`,
+`re_notes/ghidra_scripts/callers_1400aad10.txt`. No code changes — pure
+RE, no fix attempted (per this round's own explicit scope: don't force
+a fix without solid evidence). Ghidra headless invocations against
+`re_notes/ghidra_project_x64/` again incidentally deleted two tracked
+`.gbf` database files (the same known, already-documented corruption
+pattern hit repeatedly this session) — restored via `git checkout --`
+both times, confirmed clean before finishing.
+
 ## 6. Scoped plan for in-house tooling — an MVP, not a full OpenAssetTools replacement
 
 **This project's own actual need is narrow**: GSC/rawfile extraction to
