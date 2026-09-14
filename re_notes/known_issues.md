@@ -107,7 +107,7 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#72](#72-real-resource-lifecycle-crash-bug-g_optwhitetexture-and-every-options-screen-text-cache-never-released--2026-08-08) — Resource-lifecycle crash bug: Options-screen textures never released on device recreation — **Fixed, not yet live-tested**
 - [#73](#73-pickup-weapon--throw-grenade-controller-prompts-dont-show-at-43-resolutions-reload-unaffected----2026-08-08) — Pickup weapon / throw grenade prompts don't show at 4:3 resolutions — **Fixed, not yet live-tested**
 - [#74](#74-no-glyphs-reports-persist-post-v031h1----resolved-root-cause-found-and-fixed-2026-08-11-resolved-2026-08-15) — "No glyphs" reports persist post-v0.3.1.h1 — **Resolved**, root cause was `glyphIconOverlayEnabled` defaulted off since #48, confirmed live 2026-08-15
-- [#75](#75-dust-to-dust-elevator-mantle----controller-falls-through-instead-of-grabbing-ledge-keyboardmouse-unaffected-2026-08-10-reported-not-yet-investigated) — "Dust to Dust" elevator mantle: controller falls through instead of grabbing ledge — **Open** — likely unified with issue #108 (scripted sequences need a genuine button-press event, not steady-state kbutton injection)
+- [#75](#75-dust-to-dust-elevator-mantle----controller-falls-through-instead-of-grabbing-ledge-keyboardmouse-unaffected-2026-08-10-reported-not-yet-investigated) — "Dust to Dust" elevator mantle: controller falls through instead of grabbing ledge — **Partially Resolved (x64)** — root cause confirmed (`notifyoncommand("playerjump",...)` needs a real command dispatch our raw usercmd Jump bit never produces), synthetic-keypress fix shipped, not yet live-tested — see issue #108
 - [#76](#76-native-dualsense-support-raw-hid-bypassing-steam-input--first-pass-gyro-aim----previewwip-implemented-not-live-tested-2026-08-11) — Native DualSense support (raw HID) + first-pass gyro-aim — **PREVIEW/WIP**, implemented, boot-hang regression fixed same day; first real live-test report in (2026-08-27, glyphs/gyro-move confirmed working) — missing `[Gyro]` config-generation bug fixed, sensitivity lowered, new OnlyWhileAds toggle added (2026-08-28), not yet re-confirmed live
 - [#77](#77-bluetooth-dualsense-stick-input-garbledunusable----resolved-real-integer-overflow-found-and-fixed-2026-08-16-resolved-2026-08-25) — Bluetooth DualSense: stick input garbled/unusable — **Resolved**, real int16 overflow at full-forward deflection, confirmed live 2026-08-25
 - [#78](#78-qte-prompts-campaign-scripted-sequences-and-survivals-doghyena-melee-struggle-have-no-controller-glyph-coverage----parked-deliberately-disabled-pending-v034-release-2026-08-17-reopened-and-progressed-2026-08-25-parked-2026-08-25) — QTE prompts (Campaign scripted sequences + Survival's dog/hyena melee-struggle — the latter IS a QTE, not a separate thing) — **Deferred (parked)** — a real Interact-vs-Qte routing bug surfaced (correct icon resolves but at the wrong slot/size); `objectiveFont` removed from the allowlist again to ship v0.3.4 clean, all other work (paren-stripping fix, Mantle-collision fix, sizing/pulse) intact and one line from re-enabling once the routing bug is solved
@@ -140,7 +140,7 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#105](#105-live-crashfreeze-investigation-2026-08-28-night----resolved-on-its-own-real-world-confirmation-of-the-lingering-driver-corruption-theory-2026-08-29) — Live crash/freeze investigation (WATCHDOG_VIOLATION, not a normal app crash) — **Resolved (self-cleared)**, `ForceD3D9On12` REMOVED ENTIRELY as a result — same repro that reliably crashed now runs clean, supporting the `ForceD3D9On12`/`DXCache` lingering-corruption theory (issue #91's own precedent); unguarded log spam fixed, a high-scale warning added regardless
 - [#106](#106-real-world-performance-note-running-all-visual-enhancement-features-stacked-together-is-genuinely-gpu-intensive----documented-not-a-bug-2026-08-29) — Real-world performance note: running all visual-enhancement features stacked together is GPU-intensive — **Documented, not a bug** — expected, not a defect; genuinely playable on reference hardware, lower-end setups should dial back individual settings
 - [#107](#107-native-shadowlightingreflection-quality-improvements-user-request----tier-1-tuning-dvars-shipped-shadow-map-resolution-investigated-in-depth-but-not-found-2026-08-29) — Native shadow/lighting/reflection quality improvements — **Partially implemented** — `ForceHighQualityShadows`/`ForceHighQualityLighting` shipped (real confirmed dvars); shadow-map resolution investigated in depth (9+ RE rounds, including a full Ghidra analysis pass) but the creation call site not found
-- [#108](#108-campaign-scripted-sequences-require-a-genuine-button-press-event-not-steady-state-kbutton-injection----likely-unifies-issue-75-elevator-mantle-with-a-newly-confirmed-qte-input-gap-2026-08-29) — Campaign scripted sequences ignore controller button presses entirely — **Investigating** — real GSC evidence found (`usebuttonpressed()` family), leading theory is a genuine synthesized keypress is needed, same precedented technique as the Survival ready-up fix; likely unifies with issue #75
+- [#108](#108-campaign-scripted-sequences-require-a-genuine-button-press-event-not-steady-state-kbutton-injection----likely-unifies-issue-75-elevator-mantle-with-a-newly-confirmed-qte-input-gap-2026-08-29) — Campaign scripted sequences ignore controller button presses entirely — **Partially Resolved (x64)** — 2026-09-14: real GSC root cause confirmed for Jump/chopper-elevator-jump (`notifyoncommand` needs a real command dispatch our raw usercmd bit never produces, `dubai_finale.gsc`), synthetic-keypress fix shipped and build-verified; a lower-confidence additive fix also shipped for Interact; not yet live-tested
 - [#109](#109-campaign-pause-menu-popup-batch-swf_common_desc_resize_popup_nameresume_popup-depth3----reverted-needs-better-per-screen-detection-first-levels_button_list-from-the-same-session-was-correct-and-stays-shipped-2026-08-29) — Campaign pause-menu popup batch (`SWF_COMMON_DESC_RESIZE_POPUP_NAME`/`RESUME_POPUP` depth=3) — **Reverted** — needs a reliable per-screen discriminator (likely `requiredTextSubstring`) before this is safe to recapture; deferred to a dedicated pass before v0.4.0/beta. `LEVELS_BUTTON_LIST` from the same session was correct and stays shipped.
 - [#110](#110-buy-station-menu-occasionally-opens-into-a-stuck-thinks-its-open-but-isnt-drawn-state-when-entered-while-crouched----investigating-single-occurrence-not-yet-reproduced-on-demand-2026-08-29) — Buy-station menu occasionally opens into a stuck "thinks it's open but isn't drawn" state when entered while crouched — **Investigating** — single live occurrence during the v0.3.5 confirmation stream, not yet reproduced on demand; plausibly related to issue #1's own menu-open gate bit or crouch's stance-lock usercmd forcing, neither confirmed
 - [#111](#111-critical-mw3-2011-recompiled-to-x64----mod-completely-broken-every-hardcoded-address-invalidated-2026-09-03----moved-see-known_issues_x64md) — **CRITICAL: MW3 (2011) recompiled to x64 — mod completely broken** — **MOVED** — full content now lives in [`known_issues_x64.md`](known_issues_x64.md) issue #1, a dedicated tracker for the x64 architecture line split off 2026-09-03 once this entry outgrew a single-issue scope. This stub is kept only so old links still resolve.
@@ -10555,11 +10555,13 @@ gate first, not a license to escalate to a more exotic theory.
 
 ## 75. "Dust to Dust" elevator mantle -- controller falls through instead of grabbing ledge, keyboard/mouse unaffected (2026-08-10, reported, not yet investigated)
 
-**Status**: Open, not yet investigated. Separate, unrelated bug surfaced in the same Nexus thread as issue #74 -- logged here rather than conflated with the glyph-visibility investigation above.
+**Status**: Partially Resolved (x64 only) -- see issue #108's 2026-09-14 round for the full investigation and fix; summarized here, not duplicated.
 
 **Report, Saithedarkness, verbatim**: "Sorry just ran into another bug. The last mission 'Dust to Dust' when jumping from one elevator to the next the playable character doesn't grab hold of the ledge and just falls right through. then is only when using the controller and not the keyboard & mouse."
 
 Controller-only, mission-specific (or at least this-scenario-specific) mantle/ledge-grab failure. This project's auto-mantle system has prior history of exactly this class of bug -- issue #62 ("Auto-mantle while sprinting -- Open / Not Working") was shipped disabled for v0.3.0 after two rounds neither confirmed working. Worth checking whether this elevator-to-elevator jump is a variant of that same underlying auto-mantle gap, or a genuinely new interact-detection failure specific to this level's geometry/scripted sequence, before assuming either.
+
+**UPDATE 2026-09-14**: reframed by issue #108's own investigation as the SAME root cause as the general Campaign QTE input gap, not an auto-mantle variant. Real GSC evidence found in `dubai_finale.gsc` (this project's strongest candidate for "Dust to Dust" itself -- the Dubai-arc finale) -- a real, confirmed-called chopper-to-chopper jump QTE structurally identical to the reported elevator-to-elevator jump, gated on `notifyoncommand("playerjump", "+gostand"/"+moveup")`, which requires the LITERAL "+gostand"/"+moveup" command to be dispatched through the engine's real command-execution chain -- something this project's raw-usercmd-bit Jump injection never does, explaining "falls right through" exactly (the jump itself works, the level's own script just never learns it happened, so the platform-catch/ledge-grab logic never runs). Fix shipped (`SendSyntheticJumpKeyX64`, `analog_input_hooks_x64.cpp`, x64 only) -- a real synthetic SPACE keypress fired 1:1 on the same edge as the existing usercmd bit, same precedented PostMessageA technique as this project's other synthetic-key exceptions. Build-verified, **NOT YET LIVE-TESTED**. Full technical trail in issue #108's own 2026-09-14 round -- not duplicated here.
 
 ---
 
@@ -16618,7 +16620,7 @@ for an indirect-call dispatch table referencing `FUN_004d08f0`'s address
 
 ## 108. Campaign scripted sequences require a genuine button-PRESS event, not steady-state kbutton injection -- likely unifies issue #75 (elevator mantle) with a newly-confirmed QTE input gap (2026-08-29)
 
-**Status: Investigating -- strong, precedented lead, not yet fixed.** Direct
+**Status: Partially Resolved (x64 only) -- real root cause found for the Jump/chopper-elevator-jump half (issue #75), fix shipped, build-verified, NOT YET LIVE-TESTED; a lower-confidence, additive fix also shipped for the Interact/X half. See the 2026-09-14 round at the end of this entry for the full finding.** Direct
 live report during a Campaign QTE: pressing the mapped controller button
 (X/Interact) does nothing at all -- "the prompt just sits there," only
 keyboard E works. Direct user framing, connecting this to a previously
@@ -16672,6 +16674,149 @@ custom binds aren't broken) alongside the existing kbutton call, gated to
 only fire during a confirmed scripted-sequence state once one is found.
 See issue #75's own entry for the original, still-unconfirmed elevator
 report this reframes.
+
+**UPDATE 2026-09-14 -- real, first-hand GSC root cause found for the Jump/
+chopper-elevator-jump half; fix shipped (x64 only); a related, lower-
+confidence fix also shipped for Interact. Build-verified both platforms,
+NOT YET LIVE-TESTED.**
+
+Per this session's own explicit directive, started from GSC script logic,
+not native disassembly. The pre-blocker extraction (`D:\Tools\gsc-tool\
+extracted\decompiled\iw5\`) is still present and usable -- the Unlinker.exe
+segfault (issue #40) doesn't affect it, since it's a prior extraction, not a
+fresh one. Read `dubai_finale.gsc` (3533 lines) in full, not just the prior
+summary.
+
+**`dubai_finale.gsc` is this project's strongest candidate for "Dust to
+Dust" itself** -- the Dubai-arc finale culminating in Makarov's death (the
+`start_hanging`/`beatdown_hanging_idle` choke-out sequence near the end of
+the file). It contains a real, live, CONFIRMED-CALLED chopper-to-chopper
+jump QTE (`_id_74CB`/`_id_74CC`/`_id_74CD`/`_id_74CE`, gated on a
+`"trig_player_chopperjump"` trigger) structurally identical in shape to the
+reported elevator-to-elevator jump: a timed leap between two moving objects
+at height, using the Jump key, with a real airborne-velocity/direction check
+(`_id_74CE`: `isonground()==0`, `getstance()=="stand"`, a velocity-dot-product
+threshold toward the target) gating whether the player successfully "catches"
+the far side or the scripted sequence ends. No file literally named for an
+elevator was found in this partial extraction (only dubai/hamburg/london/
+westminster/berlin/warlord zones are present) -- this is the closest
+structural and thematic match found, not a 100%-certain file-name match.
+
+**The actual detection mechanism is NOT `usebuttonpressed()` for this part --
+it's `notifyoncommand`:**
+
+```
+notifyoncommand( "playerjump", "+gostand" );
+notifyoncommand( "playerjump", "+moveup" );
+...
+level.player waittill( "playerjump" );
+```
+
+(`_id_74CC`, line ~539.) `notifyoncommand(event, command)` fires `event`
+only when the LITERAL command string is actually dispatched through the
+engine's own real command-execution chain -- not merely when the resulting
+usercmd/kbutton state changes. This project's controller Jump
+(`kJumpUsercmdBit`/0x400 on x64, the equivalent raw bit on x86) is
+deliberately a raw `usercmd_t.buttons` OR (see that constant's own comment
+block in `analog_input_hooks_x64.cpp`) -- it makes the player physically
+jump (Pmove reads the bit directly) but never touches the command-dispatch
+chain, so `notifyoncommand("playerjump", ...)` never fires,
+`_id_74CC()`'s `waittill` never wakes, `player_jumping` never sets, and
+`_id_74CE()`'s catch-the-far-side check is never evaluated -- matching
+"falls right through" exactly: the jump itself works, the SCRIPT just never
+learns it happened.
+
+**Cross-referenced with a different, concurrent 2026-09-14 investigation in
+this same repo** (`known_issues_x64.md` issue #1's "Sniper Fire/ADS" thread):
+that session independently found and RE-confirmed `FUN_14007fc00`
+(`g_notifyBindDispatch`), the engine's real reliable-command notify --
+called as the literal first statement of every case in `FUN_14007c3a0` (the
+raw-keycode command dispatcher Fire/ADS/Weapnext/ActionSlot/CrouchProne all
+route through for a REAL keyboard press) -- and shipped a fix calling it
+directly for Fire/ADS, which also bypass that dispatcher via direct kbutton
+calls. Same structural bug class, independently discovered from two
+different angles (native RE there, GSC-first here) converging on the same
+mechanism: any control that reaches usercmd/kbutton state without going
+through the real case-dispatch function never fires whatever native<->GSC
+notify bridge GSC's `notifyoncommand`/`notifyonplayercommand` hook into.
+
+**Distinguished from Survival ready-up's own "Attempt 1"** (`re_notes/
+iw5sp.md`, "+gostand, wrong system entirely"): that attempt called
+`+gostand`'s real kbutton pair directly (the same dispatch-bypass this
+project's raw-bit injection also does) against a DIFFERENT, dead/unused GSC
+notify target (`_id_1814`, confirmed never called from anywhere in the real
+script corpus). Its failure is now explained by the SAME bypass mechanism
+documented here -- it isn't evidence against this fix. `dubai_finale.gsc`'s
+`notifyoncommand("playerjump", ...)` is a real, live, confirmed-called
+script path, not a dead one.
+
+**Fix shipped (x64 only, `proxy_d3d9/src/analog_input_hooks_x64.cpp`):**
+`SendSyntheticJumpKeyX64(bool down)` -- a real synthetic `WM_KEYDOWN`/
+`WM_KEYUP` for `VK_SPACE` (the confirmed real default bind,
+`players2/config.cfg`: `bind SPACE "+gostand"`) via `PostMessageA` at the
+game's own `HWND`, same established, precedented technique as
+`SendSyntheticF5X64`/`SendSyntheticActionSlot4KeyX64`/
+`SendSyntheticScoreboardKeyX64` already in this file. Fired 1:1 on the exact
+same physical press/release edge that already drives `kJumpUsercmdBit`
+(`Hook_MovementTick`'s `g_jumpHeldX64` tracker) -- no new trigger condition,
+no "is a QTE active" gate needed, same reasoning as every sibling synthetic-
+key function in this file already documents (a synthetic SPACE fired exactly
+when the player physically jumps is indistinguishable from, and harmless
+outside a QTE compared to, a real keyboard jump press).
+
+**Deliberately did NOT resolve a `g_notifyBindDispatch` case number for
+`+gostand` the way the Fire/ADS fix did.** A synthetic keypress runs through
+the ENTIRE real native chain (bind lookup -> dispatch -> case handling ->
+the same reliable-command notify) with zero risk of resolving the wrong x64
+case number -- this project's own issue #3 (the Back-button regression) is
+the standing lesson on trusting an unconfirmed dispatch case number, and
+this fix sidesteps that risk category entirely rather than repeating it.
+
+**Also shipped, lower confidence, additive: `SendSyntheticInteractKeyX64`**
+(`'F'`, `players2/config.cfg`: `bind F "+activate"`), fired on the SAME
+delayed post-hold-threshold edge the existing raw Interact usercmd bit
+already uses. This targets issue #108's own headline report (X/Interact QTE
+prompt doing nothing). Honest caveat: unlike Jump's `notifyoncommand` finding,
+`usebuttonpressed()`'s own native implementation was NOT independently
+pinned down this pass -- the literal string `"usebuttonpressed"` is
+confirmed absent from both binaries (`re_notes/x64_migration/README.md`),
+meaning GSC builtin methods dispatch by a compile-time numeric ID, not a
+name lookup this project can string-search for (the same `"coopready"`
+problem `re_notes/iw5sp.md`'s ready-up hunt already documented) -- a
+confirmed dead end, not worth repeating. `dubai_finale.gsc`'s own QTE helper
+(`_id_7518`/`_id_751C`) polls `usebuttonpressed()` as a per-tick GETTER and
+does its OWN rising-edge detection in GSC script (`!var1 && var2`), which is
+at least equally consistent with it reading raw `usercmd`/`ps->buttons`
+state directly (in which case a DIFFERENT concurrent x64 fix this same
+session -- `known_issues_x64.md` issue #1's `Hook_MovementTick` early-return
+bug, which was silently skipping this entire button block whenever the left
+stick was centered -- may already be sufficient on its own) as it is with
+needing the notify-dispatch chain. The synthetic 'F' is shipped anyway
+because it's inert-if-unnecessary (same "additive, safe even if the
+hypothesis is wrong" reasoning the concurrent Fire/ADS notify fix already
+used), not because the mechanism is confirmed.
+
+**Not extended to Melee** (`meleebuttonpressed()`, lines 316/671 of the same
+file) or Lethal/Tactical this pass -- same raw-usercmd-bit bucket as
+Jump/Interact per this project's own architecture comment (`analog_input_
+hooks_x64.cpp`, the block above `kMeleeUsercmdBit`), so the identical theory
+almost certainly applies, but none of these were part of the explicit live
+report driving this investigation. Flagged here as a predicted, not yet
+reported or fixed, extension of the same bug class for a future session.
+
+**Build verification**: x64 `/t:Rebuild` (`Configuration=Debug`,
+`Platform=x64`) -- 0 errors, only pre-existing C4312 warnings in unrelated
+x86-only code (not new) -> `dumpbin /headers` confirmed `8664 machine (x64)`
+with a fresh timestamp -> Win32 regression `/t:Rebuild` -- 0 errors, 0
+warnings, `analog_input_hooks_x64.cpp` correctly excluded from the Win32
+file list, no regression -> x64 rebuilt again and redeployed last, confirmed
+via `dumpbin /headers` (fresh timestamp, later than the Win32 build). **NOT
+YET LIVE-TESTED** -- per this project's own "verify live" standard, this is
+a confident, well-evidenced fix for the Jump half and a reasonable,
+low-risk, honestly-caveated fix for the Interact half, not a closed issue.
+Next step: live-test the actual chopper-jump QTE in `dubai_finale.gsc`
+(reachable near the mission's end) and any X/Interact QTE prompt on
+controller, x64 build. `known_issues_x64.md` issue #1 updated to match.
 
 ## 109. Campaign pause-menu popup batch (SWF_COMMON_DESC_RESIZE_POPUP_NAME/RESUME_POPUP depth=3) -- REVERTED, needs better per-screen detection first; LEVELS_BUTTON_LIST from the SAME session was correct and stays shipped (2026-08-29)
 

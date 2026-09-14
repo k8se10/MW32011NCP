@@ -5649,3 +5649,73 @@ carve-out in the real pause-menu-open call). Worth checking whether
 THIS specific gap (no skip at all) has the same root, a related but
 distinct one, or something entirely separate specific to x64's own
 pause-toggle resolve/dispatch.
+
+---
+
+**UPDATE 2026-09-14 — Campaign scripted-sequence (QTE) controller input gap:
+real root cause found for the Jump/chopper-elevator-jump case (`known_issues.md`
+issues #108/#75), fix shipped, build-verified, NOT YET LIVE-TESTED.**
+
+Dispatched with an explicit "start from GSC, not native disassembly" directive.
+The pre-blocker GSC extraction (`D:\Tools\gsc-tool\extracted\decompiled\iw5\`)
+is still present and usable — the Unlinker.exe segfault (issue #40) only
+affects fresh extraction attempts against the current zone files, not this
+already-extracted corpus. Full first-hand read of `dubai_finale.gsc` (this
+project's strongest candidate for "Dust to Dust," the Dubai-arc finale)
+found its real chopper-to-chopper jump QTE gated on
+`notifyoncommand("playerjump", "+gostand"/"+moveup")` — a GSC notify that
+fires only when that LITERAL command string is dispatched through the
+engine's real command-execution chain, not merely when usercmd/kbutton state
+changes. This project's controller Jump (`kJumpUsercmdBit`/0x400) is a raw
+`usercmd_t.buttons` OR that never touches that chain — explaining "falls
+right through" precisely (the jump physically works, the script never learns
+it happened).
+
+**Directly corroborates, and is corroborated by, this file's own separate
+"Sniper Fire/ADS" thread above** (`FUN_14007fc00`/`g_notifyBindDispatch`,
+the real reliable-command notify called as the first statement of every
+`FUN_14007c3a0` case) — two independent investigations this same day, one
+native-RE-first, one GSC-first, converging on the same underlying mechanism:
+any control that reaches usercmd/kbutton state without going through the
+real case-dispatch function never fires whatever native<->GSC notify bridge
+GSC's `notifyoncommand`/`notifyonplayercommand` hook into.
+
+**Fix shipped** (`analog_input_hooks_x64.cpp`): `SendSyntheticJumpKeyX64`
+(real `PostMessageA` `WM_KEYDOWN`/`WM_KEYUP` for `VK_SPACE`, the confirmed
+real default bind — `players2/config.cfg`: `bind SPACE "+gostand"`), fired
+1:1 on the same physical press/release edge that already drives
+`kJumpUsercmdBit`, same precedented technique as this file's own
+`SendSyntheticF5X64`/`SendSyntheticActionSlot4KeyX64`/
+`SendSyntheticScoreboardKeyX64`. Deliberately did NOT resolve a
+`g_notifyBindDispatch` case number for `+gostand` the way the Fire/ADS fix
+did above — a synthetic keypress runs the entire real native chain (bind
+lookup, dispatch, case handling, notify) with zero risk of resolving the
+wrong case number, sidestepping issue #3's own standing lesson on trusting
+an unconfirmed dispatch case number rather than repeating it.
+
+Also shipped, lower confidence, additive: `SendSyntheticInteractKeyX64`
+('F', `bind F "+activate"`) for issue #108's own headline Interact/X QTE
+report — `usebuttonpressed()`'s native implementation was NOT independently
+pinned down this pass (the string is confirmed absent from both binaries,
+GSC methods dispatch by compile-time numeric ID, a confirmed dead end for
+string search); this fix is inert-if-unnecessary, not confirmed necessary.
+Worth noting: this same session's separate `Hook_MovementTick` early-return
+fix (this file's own "Fire/ADS intermittent" thread, above) — which was
+silently skipping the ENTIRE button block, Interact included, whenever the
+left stick was centered — may already independently improve or fully fix
+the Interact QTE symptom on its own, since `usebuttonpressed()` is a polled
+getter (not a notify), at least as plausibly reading raw usercmd/`ps->buttons`
+state as needing the notify-dispatch chain.
+
+Not extended to Melee/Lethal/Tactical this pass (same raw-usercmd-bit bucket,
+same predicted bug class, but not part of the live report driving this
+investigation) — flagged for a future session.
+
+**Build verification**: x64 `/t:Rebuild` — 0 errors, only pre-existing C4312
+warnings (unrelated x86-only code) → `dumpbin /headers` confirmed `8664
+machine (x64)`, fresh timestamp → Win32 regression `/t:Rebuild` — 0 errors,
+0 warnings, `analog_input_hooks_x64.cpp` correctly excluded, no regression →
+x64 rebuilt again and redeployed last, confirmed via `dumpbin /headers`
+(fresh timestamp, later than the Win32 build). **NOT YET LIVE-TESTED.** Full
+trail: `known_issues.md` issue #108's own 2026-09-14 round (not duplicated
+here).
