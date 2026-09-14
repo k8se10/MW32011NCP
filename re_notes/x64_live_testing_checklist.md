@@ -20,103 +20,64 @@ for any item lives in `re_notes/known_issues_x64.md` issue #1.
 
 ## Launch (check this FIRST, before anything else on this list)
 
-- [ ] **Game actually launches** — 2026-09-13, a live report ("game doesn't
-      launch") was root-caused to a guaranteed `sprintf_s` buffer overflow
-      (`0xc0000409`, same bug class as `PATCHNOTES.md`'s Fixed item 1 from
-      2026-09-05) in a log line added earlier the same day for the native
-      text-draw hook. It was 100% reproducible on every launch, not
-      intermittent. Fixed, plus a full sweep of every similar call site
-      added that day (`re_notes/known_issues_x64.md`'s 2026-09-13 "game
-      doesn't launch" round has the full trail). Build-verified only —
-      **this specific fix has not itself been confirmed live yet**, since
-      the crash itself is what was blocking every other item on this
-      checklist from being testable at all. Confirm the game reaches a
-      normal main-menu session with no crash before testing anything else
-      below.
+- [x] **Game actually launches** — **CONFIRMED 2026-09-13**, after two
+      further sprintf_s overflow fixes the same day (same bug class,
+      new call sites each time — see `known_issues_x64.md`'s full trail).
+      Reaches main menu clean, no crash.
 
 ## Core gameplay (Campaign/Survival, `iw5sp.exe`)
 
-- [ ] Sprint (L3) — **mechanism changed 2026-09-12** (was raw `pm_flags`-
-      forcing, now a real kbutton). Confirm: sprint engages/disengages
-      correctly, the native duration/recovery timer applies (no more
-      infinite sprint), Extreme Conditioning's perk override applies on a
-      mission that sets it, and the rising-edge "stand up from crouch/prone
-      on sprint" behavior fires correctly.
-- [ ] D-pad actionslot (all four directions) — confirm each of the 4
-      real, loadout-driven actions fires correctly, and confirm no
-      double-fire now that a menu-active gate was added alongside the new
-      menu-navigation work.
-- [ ] D-pad Left's squadmate-call-in fix (Survival) — confirm the
-      synthetic-key path actually calls in an AI squadmate; confirm no
-      regression to turret call-ins or the other 3 D-pad directions.
-- [ ] Jump auto-stand — confirm jumping while crouched/prone stands the
-      player up first, matching console behavior.
-- [ ] Sniper-class Fire/ADS fix attempt — confirm Fire and ADS both work
-      on sniper-class weapons specifically (the original bug: worked on
-      other weapon classes, failed on snipers).
-- [ ] Killstreak: Predator Missile launch (Survival buy-station, 2500,
-      `remote_missile`) — **strengthened 2026-09-13, still not live-tested.**
-      A dedicated static-RE pass confirmed controller Fire-down provably
-      sends the byte-identical `"n 1"` reliable-command string a real x64
-      keyboard `+attack` press already sends natively (same function,
-      `FUN_14007fc00`, same argument, by construction — not just "the same
-      mechanism as a different bug's fix" as previously documented). Confirm
-      live: aim the missile camera (already known-working, shares the
-      generic UAV-control system), press Fire, missile actually launches.
-      If it does NOT launch despite this confirmation, the next RE angle is
-      tracing `FUN_14007fb30`'s ring-buffer consumer server-side (who reads
-      `"n %i"` off the queue and what it does with it) rather than
-      re-litigating whether `"1"` is the right index — that part is now
-      confirmed two independent ways. See `known_issues_x64.md`'s
-      2026-09-13 Predator Missile round and parity audit row #16.
-- [ ] CrouchProne (B) — confirm no regression now that a menu-active gate
-      (`g_currentBPressTouchedMenuX64`) was added; B should still toggle
-      real stance during gameplay and should NOT toggle stance when used
-      to back out of an open menu.
-- [ ] Survival ready-up (hold Y) — **new this session (2026-09-12), synthetic-
-      F5 exception ported; `IsInSurvivalMode()` gate closed 2026-09-13.**
-      Confirm: holding Y for ~740ms between Survival waves readies up (same
-      synthetic `WM_KEYDOWN`/`WM_KEYUP` F5 via `PostMessageA` x86 already
-      ships); a quick tap or a hold that falls short of the threshold still
-      switches weapons instead; confirm `IsInSurvivalModeX64()` (real
-      `mapname` dvar read, wired 2026-09-13) actually gates the fire
-      correctly — no observable side effect outside Survival, AND ready-up
-      still fires correctly during an actual Survival match (a wrong gate
-      read would now silently suppress it entirely, the opposite failure
-      mode from before this fix).
-- [ ] ADS zoom-aware look-slowdown (`AdsSlowdownStrength`/`Baseline`/
-      `AdsCloseRangeSlowdownStrength`) — **new this session (2026-09-13),
-      closes parity audit row #3.** Confirm: aiming down sights with a zoom
-      optic (ACOG/sniper) slows controller look sensitivity proportionally
-      to the live FOV ratio, matching `-x86`'s confirmed-correct feel
-      (issue #8/#44); confirm low-zoom weapons (pistols/red-dots, FOV ratio
-      near 1.0) still get the close-range taper's extra slowdown; confirm
-      no look-direction inversion at any `AdsSlowdownStrength` value (the
-      exact x86 bug issue #8 root-caused and fixed, now riding the same
-      power-curve formula on x64).
-- [ ] Hold Breath (L3 while ADS'd, sniper-class) — **new this session
-      (2026-09-12), ported (parity audit item #23, was previously
-      completely absent).** Confirm: holding the Sprint bind while ADS'd
-      on a sniper-class weapon produces the real sway-reduction/steadier-
-      aim effect and accuracy degrades once breath runs out (same as
-      `-x86`'s confirmed-live behavior); confirm the kbutton correctly
-      releases on letting go of the bind or breaking ADS (watch
-      specifically for any sign of x86's own "active flag latches, never
-      clears" symptom recurring here, even though x64's struct is
-      structurally a separate, dedicated kbutton_t and shouldn't need
-      x86's own debounce/force-clear workaround); confirm ordinary
-      hip-fire Sprint (not ADS'd) is unaffected.
-- [ ] Back (scoreboard/`+scores`) — **new this session (2026-09-13),
-      ported (parity audit row 30).** UNLIKE every other item on this list,
-      the expected, CORRECT outcome is that holding Back does **nothing
-      visible** in Campaign/Survival — confirmed by direct Xbox 360 console
-      testimony (`known_issues.md` issue #28) that no scoreboard UI exists
-      in SP at all, on any platform. This test is confirming the port is a
-      correct no-op, not confirming a visible feature works — do not treat
-      "nothing happened" as a failure here. Real value only confirmable
-      once Multiplayer ships its own scoreboard. Watch for any unexpected
-      side effect instead (a stuck TAB key state, interference with another
-      control) — that WOULD be a real bug.
+- [x] Sprint (L3) — **CONFIRMED 2026-09-14** (part of "every main control
+      but dpad stuff" live-confirmed). Broad confirmation only — the
+      specific sub-details this item's own description called out
+      (duration/recovery timer, Extreme Conditioning override, the
+      rising-edge stand-up behavior) were not individually itemized by
+      the tester; flag if any of those specifically misbehave later.
+- [ ] D-pad actionslot (all four directions) — **explicitly excluded**
+      from the 2026-09-14 "every main control but dpad stuff" confirmation
+      — still genuinely untested.
+- [ ] D-pad Left's squadmate-call-in fix (Survival) — same, explicitly
+      excluded, still untested.
+- [x] Jump auto-stand — **CONFIRMED 2026-09-14** (broad confirmation, see
+      Sprint's note above).
+- [x] Sniper-class Fire/ADS fix attempt — **CONFIRMED 2026-09-14** (broad
+      confirmation). Note: this checklist item's own original framing
+      ("works on other weapon classes, failed on snipers") was already
+      corrected 2026-09-13 to NOT weapon-class-specific — the real fix
+      that landed was `Hook_MovementTick`'s scoped early-return, not the
+      sniper-specific notify-dispatch fix. This confirmation covers
+      Fire/ADS working generally, consistent with that correction.
+- [x] Killstreak: Predator Missile launch (Survival buy-station, 2500,
+      `remote_missile`) — **CONFIRMED 2026-09-14** (broad confirmation) —
+      the two-independent-methods static proof from 2026-09-13 holds up
+      live.
+- [x] CrouchProne (B) — **CONFIRMED 2026-09-14** (broad confirmation).
+- [x] Survival ready-up (hold Y) — **FUNCTIONALLY CONFIRMED 2026-09-14,
+      but a real, already-known glyph gap is now confirmed VISIBLE
+      during actual play, not just a theoretical risk.** The mechanism
+      itself works (holding Y readies up). Live report: "the ready up
+      works but prompt needs to be shown and suppress the old" — this is
+      NOT a new bug, it's the already-documented Font_s.fontName
+      investigation's own confirmed-blocked gap (`known_issues_x64.md`'s
+      2026-09-13 "Font_s.fontName investigation" round, `x64_feature_
+      parity_audit.md` row #34): ready-up has no known reference-key
+      template even on x86, so it can't use the structural-match
+      substitution the other 9 working glyph categories use, and the
+      font-name-filtering alternative x86 uses instead was investigated
+      and genuinely could not be resolved via decompile. Net effect,
+      now live-confirmed rather than just predicted: the native
+      "ready up" prompt text still shows unmodified, uncontroller-ified,
+      instead of being suppressed and replaced with a controller-glyph
+      icon. Real fix needs the same `Font_s.fontName` offset the earlier
+      investigation couldn't close — not a quick follow-up, a genuinely
+      blocked RE target unless a fresh angle is found.
+- [x] ADS zoom-aware look-slowdown (`AdsSlowdownStrength`/`Baseline`/
+      `AdsCloseRangeSlowdownStrength`) — **CONFIRMED 2026-09-14** (broad
+      confirmation).
+- [x] Hold Breath (L3 while ADS'd, sniper-class) — **CONFIRMED 2026-09-14**
+      (broad confirmation).
+- [x] Back (scoreboard/`+scores`) — **CONFIRMED 2026-09-14** (broad
+      confirmation) — consistent with the expected correct no-op in SP.
 
 ## Menu & UI navigation (new this session)
 
@@ -183,9 +144,10 @@ for any item lives in `re_notes/known_issues_x64.md` issue #1.
       doesn't crash on loading screens or "quit to menu" (the exact
       crash class x86's own issues #103/#104 document — this is the
       highest-risk item on this whole list, test it deliberately).
-- [ ] Camera motion blur — confirm it activates during real look-input
-      movement and doesn't crash during exclusion-zone/killcam sequences
-      (x86's own issue #96/#97 crash class).
+- [x] Camera motion blur — **CONFIRMED 2026-09-14** ("it works now"),
+      after the real x64 trigger hook (`FUN_14018def0`, x86's `FUN_00693ff0`
+      equivalent) was found and wired 2026-09-13 — the gate had been armed
+      since 2026-09-12 but nothing was calling it until this fix.
 - [ ] Confirm all three gates (menu-active, `clcState`, in-level) actually
       prevent the passes from running in menus/loading screens — the
       whole reason this took two prior blocked attempts.
