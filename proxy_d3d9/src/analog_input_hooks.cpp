@@ -2784,6 +2784,80 @@ SetMenuStateFn const SetMenuState = reinterpret_cast<SetMenuStateFn>(0x004396d0)
 constexpr int kMenuStateUnpause = 0;
 constexpr int kMenuStatePausedMenu = 2;
 
+// ---- Real native ESC-handler divergence, found 2026-09-14 (issue #98) --------------
+//
+// Full decompile of FUN_00541020 (the real key-event handler ESC is hardcoded into,
+// same function this whole section is already built from) shows this function's
+// actual branching is NOT the simple "state==1||2 -> open pause, else -> open pause
+// anyway" shape InjectControllerPauseMenu below has always implemented. The real
+// logic, once a menu isn't already active:
+//   state == 1 or 2  -> FUN_004d6620 (OpenPauseMenu above) -- confirmed this IS the
+//                       real Bink-cinematic-skip path for state 1 (FUN_004d6620 ->
+//                       FUN_004038b0 -> FUN_00489950 -> FUN_0049cee0, the real Bink
+//                       teardown call -- stops BOTH video and audio cleanly, since
+//                       Bink owns both under one handle). Our own state==1||2 branch
+//                       below already matches this real call exactly.
+//   state == 6        -> an ADDITIONAL real guard the header comment above never
+//                       documented: suppresses the open entirely (does nothing) while
+//                       a real Bink cinematic is confirmed still playing (checked via
+//                       FUN_00495d20/FUN_00485d40 in the real binary, replicated as
+//                       IsBinkCinematicPlaying() below) plus a few extra dvar-handle
+//                       conditions this project has not independently resolved yet
+//                       (left unreplicated -- see issue #98's own recorded caveat).
+//                       Otherwise calls FUN_004396d0(player,2), i.e. SetMenuState
+//                       above.
+//   anything else      -> real engine does a hard `return`, zero side effects. This
+//                       is exactly what the ORIGINAL 2026-07-15 header comment above
+//                       already said ("any other state (loading, cutscene, etc.) --
+//                       real engine does nothing; so do we") -- but the actual code
+//                       below never implemented that "so do we" part; it unconditionally
+//                       called SetMenuState for every non-1/2 state instead, including
+//                       this one. That's the real doc/code drift issue #98 flagged as
+//                       its leading theory, now independently confirmed via decompile
+//                       rather than just trusted from the old comment.
+//
+// FUN_00495d20/FUN_00485d40 (Ghidra decompile, iw5sp.exe) read fixed, non-pointer-
+// indirected globals confirmed via their own writers to be genuine Bink Video API
+// state (FUN_0066eae0/FUN_0066ece0 call BinkSetSoundTrack_8/BinkGoto_12/etc. and set
+// these same bytes; FUN_0049cee0/FUN_004033b0, the real Bink-stop functions, clear
+// them) -- not dvar handles, safe to read directly the same way kPlayerStateAddr
+// already is:
+//   FUN_00495d20(): return (DAT_0217c15c=='\0' || DAT_0217c168==DAT_0217c164) &&
+//                   DAT_0217bf4c!='\0';
+//   FUN_00485d40(): return DAT_0217c15d;
+// Replicated below as an OR of both (matching the real state==6 guard's own
+// "FUN_00495d20()!=0 || FUN_00485d40()!=0" term) without the extra, unconfirmed
+// dvar-handle conditions (DAT_01769f34+0xc / DAT_00a8639c+0xc / DAT_00a86398+0xc) the
+// real guard also ANDs in -- that omission only makes this suppress in a SUPERSET of
+// the real cases (i.e. errs toward "don't force-pause during a confirmed-playing Bink
+// cinematic" rather than narrowly matching the exact real condition), which is the
+// safe direction given those three globals are pointer-indirected and have not been
+// independently confirmed live this session (see issue #98's newest round for the
+// full trail). Does NOT cover GSC-scripted in-engine cinematics (camera-locked story
+// beats that stay at clcState==6 the whole time, never touching Bink at all) -- issue
+// #97 already found real dvar names for that system (`cg_cinematicFullscreen` etc.)
+// but never traced any of them to a live-readable state flag, and this pass didn't
+// either; that remains open, see issue #98's own newest round for the honest gap.
+namespace {
+constexpr uintptr_t kBinkActiveByteAddr = 0x0217c15c;   // DAT_0217c15c
+constexpr uintptr_t kBinkAltActiveByteAddr = 0x0217c15d; // DAT_0217c15d
+constexpr uintptr_t kBinkSeqCounterAddr = 0x0217c168;   // DAT_0217c168
+constexpr uintptr_t kBinkSeqTargetAddr = 0x0217c164;    // DAT_0217c164
+constexpr uintptr_t kBinkNameBufAddr = 0x0217bf4c;      // DAT_0217bf4c (char[256], first byte)
+
+inline bool IsBinkCinematicPlaying()
+{
+    volatile uint8_t* active = reinterpret_cast<volatile uint8_t*>(kBinkActiveByteAddr);
+    volatile uint8_t* altActive = reinterpret_cast<volatile uint8_t*>(kBinkAltActiveByteAddr);
+    volatile int32_t* seqCounter = reinterpret_cast<volatile int32_t*>(kBinkSeqCounterAddr);
+    volatile int32_t* seqTarget = reinterpret_cast<volatile int32_t*>(kBinkSeqTargetAddr);
+    volatile char* nameBuf = reinterpret_cast<volatile char*>(kBinkNameBufAddr);
+    bool fun495d20 = ((*active == 0) || (*seqCounter == *seqTarget)) && (*nameBuf != 0);
+    bool fun485d40 = (*altActive != 0);
+    return fun495d20 || fun485d40;
+}
+} // namespace
+
 // ---- Cbuf_AddText, real console text-buffer append (re_notes/iw5sp.md, task #10) --
 //
 // FUN_00457c90 = Cbuf_AddText(int clientIndex, const char* text), found via the
@@ -3191,13 +3265,38 @@ extern "C" void __cdecl InjectControllerPauseMenu()
             int32_t state = *reinterpret_cast<volatile int32_t*>(kPlayerStateAddr);
             sprintf_s(buf, "[pause-diag] Start pressed (opening): state=%d", state);
             LogFromController(buf);
-            // Both live-confirmed real gameplay states (2026-07-15): normal SP/Survival
-            // gameplay reports state 6; state 1/2 kept as a fallback for whatever other
-            // context might report it (menu-transition edge cases, not yet hit live).
+            // Real gameplay states (2026-07-15, re-confirmed via full FUN_00541020
+            // decompile 2026-09-14, issue #98): normal SP/Survival gameplay reports
+            // state 6; state 1/2 is the real Bink-cinematic-playing state (confirmed --
+            // see IsBinkCinematicPlaying()'s own header comment above). Branching below
+            // now mirrors the real native ESC handler's own three-way split instead of
+            // the old two-way "1/2 vs. everything else" shape, which unconditionally
+            // forced SetMenuState for every non-1/2 state including ones the real
+            // engine does nothing for (issue #98's confirmed doc/code drift).
             if (state == 1 || state == 2) {
+                // Real native path for a Bink cinematic -- FUN_004d6620 (OpenPauseMenu)
+                // -> FUN_004038b0 -> FUN_00489950 -> FUN_0049cee0, the real Bink
+                // teardown that stops both video and audio together. Unchanged from
+                // before; already matches the real engine exactly.
                 OpenPauseMenu(kLocalClientIndex);
+            } else if (state == 6) {
+                if (!IsBinkCinematicPlaying()) {
+                    SetMenuState(kLocalClientIndex, kMenuStatePausedMenu);
+                } else {
+                    // Real engine suppresses the pause-menu-open entirely here (an
+                    // additional guard the old header comment never documented) --
+                    // mirror that instead of forcing SetMenuState over a still-playing
+                    // Bink cinematic, which was reaching neither FUN_0049cee0 nor any
+                    // other real audio-stop call (issue #98's root-cause finding).
+                    sprintf_s(buf, "[pause-diag] Start: state=6, Bink cinematic active -- suppressing forced pause (issue #98)");
+                    LogFromController(buf);
+                }
             } else {
-                SetMenuState(kLocalClientIndex, kMenuStatePausedMenu);
+                // Real engine does a hard `return` here -- zero side effects for any
+                // state outside {1,2,6} (loading, menu-transition edge cases, etc.).
+                // Matching that instead of the old unconditional SetMenuState call.
+                sprintf_s(buf, "[pause-diag] Start: state=%d outside {1,2,6} -- native does nothing here, matching (issue #98)", state);
+                LogFromController(buf);
             }
         } else {
             LogFromController("[pause-diag] Start pressed (closing): calling SetMenuState(0, unpause)");
