@@ -2427,12 +2427,12 @@ points — mainly vehicles and killstreaks, not blanket failures.
 
 **Per-bug status summary** (each bug is documented in full, in the order
 found, in the findings below — this is a scan aid, not a replacement):
-- DPV aiming (Hunter Killer) — **Open**, root cause not diagnosed.
+- DPV aiming (Hunter Killer) — **x64: mechanism confirmed and fix implemented 2026-09-14, NOT yet live-tested; x86: still Open, root cause never fixed there.** Real cause found: the engine's per-frame orchestrator routes DPV/mortar/turret aim through a separate function (`FUN_14007de20` on x64, `FUN_0057e360` on x86, both gated by the same per-client bit) that this project's normal look hook never ran on. See issue #30's 2026-09-14 entry for the full trail and `analog_input_hooks_x64.cpp`'s `Hook_MountedAimTick`.
 - Bug #2, crouch intermittent failure — **Resolved**, see issue #42.
 - Bug #3, Hold Breath never implemented — **Resolved**, final native design shipped 2026-07-20.
 - Bug #4, Turbulence movement-lock bypass — **Open**, real freeze flag found (`+0x1094` bit `0x800`), fix not yet implemented.
-- Bug #5, Goalpost mortar/turret — **Resolved**, decisively (both the mission mis-ID and the regen-buff hypothesis were run down).
-- Bug #6, mounted-turret feels harder — **Resolved** (Hypothesis A: missing aim-precision channel, same as DPV/mortar; Hypothesis B, a scripted regen buff, was refuted).
+- Bug #5, Goalpost mortar fire — **Mission-ID question left exactly as previously documented below (still unsettled between Goalpost/"Back on the Grid" — see the REOPENED 2026-07-20 entry), but the underlying INPUT MECHANISM is now separately confirmed on x64: 2026-09-14, same missing aim-precision-channel fix as DPV above (`FUN_14007de20`/issue #30), NOT yet live-tested.** Whichever mission this sequence actually lives in, the native aim-channel root cause and x64 fix are the same as DPV/turret.
+- Bug #6, mounted-turret feels harder — **Hypothesis A (missing aim-precision channel) CONFIRMED and fixed on x64, 2026-09-14, NOT yet live-tested** — same `FUN_14007de20` mechanism/fix as DPV and mortar above (issue #30's 2026-09-14 entry). Hypothesis B (scripted regen buff) remains refuted, unchanged from the earlier finding below.
 - Bug #7, "Mind the Gap" vehicle-exit prompt — **Open**, real exit-trigger not located.
 - Bug #8, SMAW lock-on vs. an aircraft — **Resolved (2026-09-14): confirmed NOT a bug.** The Goalpost SMAW is a native, data-driven dumb-fire-only weapon variant (`weapons/smaw_nolock`, `lockonSupported\0`) — lock-on is structurally absent from the weapon itself, identically on every input device. No entity/scripting investigation or native RE was needed.
 - Bug #9, Predator Missile post-fire guidance — **corrected 2026-08-01, this
@@ -4586,6 +4586,80 @@ directly to this issue's own steering-feel symptom. Full trail:
   its role in one focused pass tonight, where guessing at "cg_cinematic"-
   style names from general knowledge (tried earlier the same session, see
   the retracted cutscene-gate search below) produced nothing usable.
+
+**x64 CONFIRMATION AND FIX, 2026-09-14 (DPV/mortar/turret specifically —
+Predator Missile guidance above is unaffected, separate mechanism per the
+2026-07-19 correction).** This session's task was DPV (Hunter Killer)/
+Goalpost's mortar/Goalpost's M2 turret aim — this bug had never worked on
+EITHER the `-x86` or `-x64` line, genuinely new ground, not a parity gap.
+Re-derived the whole mechanism independently against the x64 binary
+(per this project's own "start from GSC first" directive — see the GSC-side
+findings below) rather than assuming the x86 hypothesis carries over
+unverified, and confirmed it does, with the exact x64 function identified:
+
+- **GSC-first pass blocked by a real, newly-discovered toolchain issue**:
+  OpenAssetTools' Unlinker (v0.31.0, already vendored, AND v0.33.0, the
+  latest public release, freshly downloaded this session) reproducibly
+  segfaults loading ANY real-content zone in this install post the
+  2026-09-03 x64 recompile — confirmed against `ny_harbor.ff` (Hunter
+  Killer/DPV), `hamburg.ff` (Goalpost), and `so_stealth_prague.ff`, three
+  different zones, three different sizes (650KB–195MB), same crash every
+  time, vs. a clean load for the near-empty `sp_intro.ff` thin-loader zone.
+  This is a real, project-wide GSC-extraction blocker as of this session,
+  not specific to this bug — see `re_notes/known_issues_x64.md`'s matching
+  2026-09-14 entry for the full repro detail. Fell back to this project's
+  pre-2026-09-03 decompiled GSC corpus (confirmed to include Goalpost's
+  real named scripts and the player-turret script `32281.gsc` already
+  documented above in issue #27 Bug #5/#6's own 2026-07-18 pass) — DPV/
+  `ny_harbor.ff` content was never dumped in that corpus either, so DPV's
+  GSC side remains genuinely unexamined. The requested structural
+  comparison against the confirmed-working Boat/UGV/door-gun systems could
+  not be completed, same blocker.
+- **Native mechanism, x64, fully confirmed via decompile
+  (`re_notes/ghidra_scripts/decomp_dpv_channel_candidates_x64.txt`)**:
+  `FUN_14007e1e0` (x64 equivalent of `FUN_0057e480`) dispatches to EITHER
+  `FUN_14007d9f0` (normal movement/look) OR `FUN_14007de20` every tick,
+  mutually exclusive, gated on `(DAT_1406e4774 + player*0xce5c) & 0x80000`
+  — the exact same per-client bit this issue's own x86 research identified
+  (`+0x1094` bit `0x80000`), confirming the x86 hypothesis was structurally
+  correct all along, just never implemented on either architecture.
+  `FUN_14007de20` reads the same raw-mouse-delta source
+  (`FUN_14007d3b0`/x86's `FUN_0057d680`) `FUN_14007d9f0` also reads, scales
+  by m_pitch/m_yaw, and floor-packs into cmd+0x3e (pitch)/cmd+0x3f (yaw) —
+  confirming x86's original `cmd+0x3e`/`0x3f` byte-pair theory exactly.
+  **This session's x64 investigation also corrected an existing wrong
+  candidate**: `re_notes/x64_migration/README.md` (2026-09-03) had guessed
+  `FUN_14007e4e0` for this role — that function is actually the x64
+  equivalent of x86's `FUN_0057df60` (branch 3, cursor-placement/vehicle-
+  driving mode dispatch), a different feature entirely. Corrected in that
+  file directly.
+- **Fix implemented**: a new MinHook detour on `FUN_14007de20`
+  (`Hook_MountedAimTick`, `analog_input_hooks_x64.cpp`) — separate from
+  `Hook_MovementTick` since the two target functions are never both called
+  the same tick. Calls through for native correctness, then additively
+  writes a right-stick-derived delta into cmd+0x3e/0x3f (same "native
+  completes, hook adds on top" design as Movement's own byte injection).
+  Signature-scanned (not hardcoded, per this project's current policy),
+  confirmed unique in the binary. Build-verified: x64 `/t:Rebuild` 0
+  errors, `dumpbin /headers` confirms `8664 machine (x64)` fresh timestamp,
+  Win32 regression rebuild 0 errors/0 warnings, x64 rebuilt+redeployed
+  last.
+- **NOT yet live-tested** — mechanism confidence is high (confirmed via
+  direct decompile of the dispatch structure and both functions' bodies,
+  not inferred), but the sensitivity constant and pitch/yaw sign convention
+  are an untested starting guess, since there is no working reference build
+  on either architecture to calibrate against. Next DPV/Goalpost playtest
+  should confirm the `[x64-mountedaim] FUN_14007de20 fired` log line
+  appears during one of the three sequences (confirms targeting) and
+  whether the resulting aim direction/rate needs retuning (does not affect
+  targeting confidence either way). Full writeup:
+  `re_notes/known_issues_x64.md`'s 2026-09-14 entry.
+- **x86 line**: unaffected by this fix (x64-only code change) and remains
+  exactly as broken/undiagnosed-to-a-shipped-fix as before — this session's
+  scope and remaining project priority is the `-x64` line per CLAUDE.md's
+  own current-focus framing; the x86 mechanism (`FUN_0057e360`, same
+  `+0x1094` bit `0x80000`) is now equally well understood via this
+  confirmation but was not itself touched.
 
 ## 31. Master `notifyonplayercommand`/`notifyoncommand` survey — two distinct builtins found, squadmate call-in's real failure mode identified (2026-07-18, research pass)
 
