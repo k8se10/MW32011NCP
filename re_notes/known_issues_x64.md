@@ -7004,3 +7004,62 @@ has now been through across two sessions, this is a reasonable pause
 point rather than opening a third new thread (forward-reference handling)
 in the same sitting. Full trail:
 `re_notes/x64_migration/fastfile_format_research.md` §5.17.
+
+### DEFINITIVELY SETTLED, 2026-09-14 (later still, "three forks digging into potential") — the pointer-width scope question is answered via direct x64 native decompile: it's global, not field-specific — the real engine's own offset-pointer resolution function, called from 86 sites across every asset type, uses a 32-bit-wide scheme, full stop
+
+**Status: scope of the fix definitively settled via native ground truth
+— not inference, not arithmetic, read directly from the compiled x64
+engine. Fix not yet implemented (deliberately out of scope this round).**
+
+Found and decompiled the real x64 equivalent of this fork's own
+`ConvertOffsetToPointerNative`: `FUN_1400aad40` in `iw5sp.exe`, called
+directly from `MaterialPixelShader`'s own real FillStruct function
+(`FUN_140094cf0`, already decompiled in an earlier round) in exactly the
+"not FOLLOWING" branch this fork's generated code also has. Its real
+code:
+
+```c
+void FUN_1400aad40(longlong *param_1)
+{
+  uint uVar1;
+  uVar1 = (int)*param_1 - 1;
+  *param_1 = (ulonglong)(uVar1 & 0xfffffff) +
+             *(longlong *)(DAT_140d6de00 + (ulonglong)(uVar1 >> 0x1c) * 0x10);
+}
+```
+
+**The real engine casts the raw pointer to a plain 32-bit `int` before
+any other math, shifts right by 28 (not 60) to get the block index, and
+masks with `0x0FFFFFFF` (not a 60-bit mask) to get the block-relative
+offset** — the exact x86-era 4-bit-block-index-in-a-32-bit-word scheme,
+never widened when the game recompiled to x64. This exactly matches (not
+just resembles) the alternate 32-bit decode this fork's own diagnostic
+already tested empirically in the two rounds above.
+
+**Confirmed generic, not a special case**: `FUN_1400aad40` has 86 real
+callers spanning the entire asset-loading function range this session's
+own dispatch table already covers (Material, RawFile, ScriptFile, every
+other type) — one single shared primitive, not something inlined
+per-caller or branched by field/asset type.
+
+**Practical conclusion**: this fork's `IW5_X64_POINTER_BIT_COUNT = 64u`
+(and the resulting `m_block_shift=60` in `ZoneInputStream.cpp`) is simply
+wrong for this whole class of pointer, not a narrow exception. The
+correct fix is a single, well-scoped change — decode every
+already-resolved offset pointer at 32-bit width (`shift=28`,
+`mask=0x0FFFFFFF`, truncating to 32 bits BEFORE the `-1` adjustment,
+matching `(int)*param_1 - 1` exactly) across all four
+`ConvertOffsetTo*` functions, not a per-field discriminator.
+
+**Does NOT on its own explain** the separate `hamburg.ff`/`common.ff`
+unwritten-memory finding from the round above — that stays open, most
+likely the forward-reference/fill-order theory already proposed there,
+not investigated further this round (deliberately out of scope).
+
+No fix implemented this round (pure RE/scoping, by design). Ghidra
+project safety note: this round's headless invocations against
+`re_notes/ghidra_project_x64/` again caused two `.gbf` files to show
+deleted in `git status` — the same known, gitignored corruption pattern
+documented twice already this session; left as-is, flagged rather than
+silently ignored. Full trail:
+`re_notes/x64_migration/fastfile_format_research.md` §5.18.
