@@ -70,3 +70,18 @@ license, unmodified in license terms:
 - MinHook (`proxy_d3d9/third_party/minhook/`), including the bundled Hacker
   Disassembler Engine (HDE) 32/64 C — see
   `proxy_d3d9/third_party/minhook/LICENSE.txt` for full terms.
+- OpenAssetTools (`tools/iw5oat/`), forked 2026-09-14 from
+  `Laupetin/OpenAssetTools` via a history-preserving `git subtree` merge, as
+  the base for this project's own in-house IW5 x64 zone/fastfile tooling
+  (see `re_notes/x64_migration/fastfile_format_research.md` for why —
+  OpenAssetTools' own Unlinker segfaults against current x64 retail zones
+  and has no working 64-bit word-size support to build on). **Licensed
+  under the GNU GPLv3, NOT this project's own permissive license above** —
+  see `tools/iw5oat/LICENSE` for the full, unmodified GPLv3 text.
+  Any modifications this project makes to that fork remain GPLv3 and
+  publicly available in that directory's own git history, per GPLv3's own
+  copyleft requirement — this project's "no charging" clause (condition 3
+  above) does not and cannot apply to this component, since GPLv3 does not
+  permit adding further distribution restrictions on top of it. Same
+  co-existing-license pattern this repository already uses for
+  `security/`'s own separate `LICENSE` file.
