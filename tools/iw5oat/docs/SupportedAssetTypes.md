@@ -1,5 +1,17 @@
 # Supported Asset Types
 
+**This fork's own development focus is IW5 only** (see the [root
+README](../README.md)) — the table below is inherited from upstream
+OpenAssetTools and still lists all games upstream supports. Only the
+**IW5 (Call of Duty: Modern Warfare 3)** section below is relevant to
+this fork going forward; the rest is unmaintained reference. None of
+these ✅/❌ marks reflect this fork's own still-unstarted x64 work
+either — they describe upstream's pre-x64-recompile support level, which
+no longer loads against the current retail build at all (any support
+level shown below is moot until that's fixed — see
+`re_notes/x64_migration/fastfile_format_research.md` in the parent
+project).
+
 All asset types are supported to be loaded from other fastfiles in memory. The following section specify which assets
 are supported to be dumped to disk (using `Unlinker`) and loaded from disk (using `Linker`):
 
