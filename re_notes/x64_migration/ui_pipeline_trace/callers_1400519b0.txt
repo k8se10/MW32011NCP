@@ -1,0 +1,78 @@
+Callers of 1400519b0 (1):
+  FUN_1400514e0 @ 1400514e0
+
+================================================================
+Function: FUN_1400514e0 @ 1400514e0
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_1400514e0(ulonglong param_1,float *param_2,undefined8 *param_3,undefined8 param_4,
+                  undefined4 param_5,undefined4 param_6)
+
+{
+  float fVar1;
+  float fVar2;
+  float fVar3;
+  undefined1 uVar4;
+  byte bVar5;
+  float fVar6;
+  undefined8 uVar7;
+  undefined8 uVar8;
+  float fVar9;
+  float fVar10;
+  undefined8 in_stack_ffffffffffffff70;
+  undefined4 uVar12;
+  undefined8 uVar11;
+  undefined8 local_68;
+  undefined8 uStack_60;
+  
+  fVar6 = DAT_1403e3e6c;
+  uVar12 = (undefined4)((ulonglong)in_stack_ffffffffffffff70 >> 0x20);
+  if ((*(char *)(DAT_14062cec0 + 0x10) != '\0') && ((DAT_14052a130 & 0x2200000) != 0x200000)) {
+    if ((DAT_14052a070._4_4_ < DAT_140539e94) || (DAT_140539e90 != (DAT_14052a090 & 3))) {
+      DAT_140539e94 = DAT_14052a070._4_4_;
+    }
+    DAT_140539e90 = DAT_14052a090 & 3;
+    fVar1 = param_2[1];
+    fVar10 = (*(float *)(DAT_1404f7930 + 0x10) - DAT_1403e3e6c) * _DAT_14062ca54 * DAT_1403e8e2c +
+             *param_2;
+    if ((*(char *)(DAT_14062cca0 + 0x10) != '\0') && (DAT_14052a070._4_4_ < DAT_140539e94 + 3000)) {
+      FUN_1400519b0(param_1,param_2,fVar10,param_3,DAT_1403e3e6c,param_4,param_5,param_6);
+      uVar12 = (undefined4)((ulonglong)param_4 >> 0x20);
+    }
+    fVar2 = param_2[2];
+    fVar3 = param_2[3];
+    local_68 = *param_3;
+    uStack_60 = param_3[1];
+    uVar8 = DAT_14050c5e0;
+    if (((DAT_140539e90 & 1) == 0) && (uVar8 = DAT_14050c5d0, (DAT_140539e90 & 2) != 0)) {
+      uVar8 = DAT_14050c5d8;
+    }
+    uVar4 = *(undefined1 *)((longlong)param_2 + 0x11);
+    bVar5 = *(byte *)(param_2 + 4);
+    uVar7 = FUN_14008d8f0(param_1 & 0xffffffff);
+    uVar11 = CONCAT44(uVar12,(uint)bVar5);
+    FUN_14028c2b0(uVar7,fVar10,fVar1,fVar2,fVar3,uVar11,uVar4,&local_68,uVar8);
+    uVar12 = (undefined4)((ulonglong)uVar11 >> 0x20);
+    if (DAT_14052a070._4_4_ < DAT_140539e94 + 1000) {
+      FUN_1402c3b90(DAT_14062cc98,&local_68);
+      uVar8 = DAT_14050c5e8;
+      fVar9 = ((float)((DAT_140539e94 - DAT_14052a070._4_4_) + 1000) / DAT_1403e5284) *
+              DAT_1403e525c;
+      uStack_60 = CONCAT44(fVar9,(undefined4)uStack_60);
+      if (fVar6 < fVar9) {
+        uStack_60 = CONCAT44(0x3f800000,(undefined4)uStack_60);
+      }
+      uVar4 = *(undefined1 *)((longlong)param_2 + 0x11);
+      bVar5 = *(byte *)(param_2 + 4);
+      uVar7 = FUN_14008d8f0(param_1 & 0xffffffff);
+      FUN_14028c2b0(uVar7,fVar10,fVar1,fVar2,fVar3,CONCAT44(uVar12,(uint)bVar5),uVar4,&local_68,
+                    uVar8);
+    }
+  }
+  return;
+}
+
+
+

@@ -1,0 +1,70 @@
+Callers of 1402abec0 (2):
+  FUN_1402ac2b0 @ 1402ac2b0
+  FUN_1402ac290 @ 1402ac290
+
+================================================================
+Function: FUN_1402ac2b0 @ 1402ac2b0
+----------------------------------------------------------------
+
+void FUN_1402ac2b0(undefined4 *param_1)
+
+{
+  float fVar1;
+  longlong *plVar2;
+  undefined4 uVar3;
+  char cVar4;
+  undefined8 uVar5;
+  undefined8 uVar6;
+  undefined8 uVar7;
+  int iVar8;
+  undefined8 *puVar9;
+  
+  iVar8 = 0;
+  param_1[0xd] = 0;
+  if (0 < (int)param_1[0x50e]) {
+    puVar9 = (undefined8 *)(param_1 + 0xe);
+    do {
+      plVar2 = (longlong *)*puVar9;
+      cVar4 = FUN_1402ab950(param_1,plVar2);
+      if ((cVar4 != '\0') &&
+         (fVar1 = *(float *)(*plVar2 + 0x14),
+         (float)param_1[0xd] <= fVar1 && fVar1 != (float)param_1[0xd])) {
+        param_1[0xd] = fVar1;
+      }
+      iVar8 = iVar8 + 1;
+      puVar9 = puVar9 + 1;
+    } while (iVar8 < (int)param_1[0x50e]);
+  }
+  FUN_1402abec0(param_1,0);
+  if (*(char *)(DAT_142604de0 + 0x10) != '\0') {
+    uVar5 = FUN_14008d8f0(*param_1);
+    uVar3 = DAT_1403e3e68;
+    uVar6 = FUN_14029b4a0(uVar5,0,DAT_1403e3e68);
+    uVar7 = FUN_1402cb690("fps: %f\n%.0f, %.0f",(double)(float)param_1[0xc],
+                          (double)(float)param_1[4],(double)(float)param_1[5]);
+    FUN_14029a2b0(uVar5,uVar7,0x7fffffff,uVar6,DAT_1403e8e3c,DAT_1403e9e14,0,0,uVar3,&DAT_1404393c0,
+                  0);
+  }
+  param_1[8] = 1;
+  return;
+}
+
+
+
+================================================================
+Function: FUN_1402ac290 @ 1402ac290
+----------------------------------------------------------------
+
+void FUN_1402ac290(longlong param_1)
+
+{
+  if (*(int *)(param_1 + 0x20) != 0) {
+    *(undefined4 *)(param_1 + 0x20) = 0;
+    FUN_1402abec0(param_1,1);
+    return;
+  }
+  return;
+}
+
+
+

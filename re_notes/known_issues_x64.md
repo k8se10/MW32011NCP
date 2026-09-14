@@ -5875,3 +5875,53 @@ warnings). Not yet live-tested — the next Survival session should confirm
 the substituted prompt appears correctly positioned and the native one is
 gone. `re_notes/x64_live_testing_checklist.md` should be updated once
 that's confirmed live.
+
+### UPDATE 2026-09-14 (later still) — full native UI/HUD draw-pipeline architecture mapped, general-purpose groundwork, new dedicated reference document
+
+**Status: Reference/groundwork, no source changes.**
+
+Direct instruction: "we need to trace the draw mechanisms," clarified via
+explicit question to mean the BROAD native draw pipeline (not just the
+still-blocked QTE/buy-station gap left open by the ready-up round above),
+then "once we have that all ui work becomes much easier."
+
+Traced the callers-of-callers above `FUN_14029a2b0` (this project's own
+text-draw hook target) for the first time — previously this project's own
+knowledge stopped at that function's 22 direct callers. Found the real
+three-tier architecture sitting above them: a per-frame entry
+(`FUN_1401d83a0` → `FUN_1401d7480`) driving a per-frame "HUD element tick"
+(`FUN_140039f40`) which in turn drives the master numbered-HUD-element
+dispatcher this project's own Mantle/Pickup/Hold-Breath/Reload substitution
+work already found and used (`FUN_140052220`) — now mapped as a FULL
+~100-case table, not just the handful of cases those features needed. A
+separate, parallel scoreboard/name-tag/subtitle compositor
+(`FUN_1402a7660` → `FUN_1402a9520` → `FUN_1402a9dd0`) was also found,
+confirmed independent of the numbered-element dispatcher.
+
+New concrete opportunities the full case table surfaced, ranked by
+actionability: weapon/stance-blocked warning messages (`WEAPON_NO_AMMO`,
+`WEAPON_LOCKON_REQUIRED`, etc. — same real template-based detection shape
+as already-substituted hints, lowest RE risk); the native stance-change
+hint row (stand/crouch/prone, real `PLATFORM_STANCEHINT_*` templates
+already confirmed, same substitution technique as Mantle should port
+directly); a data-driven, table-indexed label pair (`0x69`-`0x6c`) whose
+real identity (killstreak slots? objective markers?) was not resolved this
+pass — the single highest-ceiling, lowest-certainty lead; a whole cluster of
+compass/entity-marker handlers; and vehicle boost/throttle/brake/fire HUD
+(`0xcf`/`0xd0`), cross-referenced against this project's own existing
+research and directly relevant to today's earlier DPV/Goalpost mortar/M2
+turret fix.
+
+**A real correction recorded mid-investigation**: `COOP_WAITINGFORPLAYER`
+(one of `FUN_140039f40`'s direct sub-draws) was initially considered as a
+possible lead for the real native Survival ready-up trigger this project
+has never found on either architecture — user correction: this is a
+genuinely separate "waiting for other co-op player" HUD element, not
+ready-up, and was not pursued further under that hypothesis.
+
+Full map, the complete case table, confidence-graded per finding (CONFIRMED
+via decompile vs. INFERRED from shape/naming), and the raw Ghidra output
+backing every claim: `re_notes/x64_migration/ui_draw_pipeline_map.md` (new
+file) and `re_notes/x64_migration/ui_pipeline_trace/` (raw decompiles/
+caller-lists). No source changes this round — reference material only, for
+whatever UI work comes next.
