@@ -379,6 +379,60 @@ segfaults are flagged as a separate, unexplored lead, not assumed to be
 the same root cause (they fail before any output at all, unlike every
 real content zone, which gets deep into the load path first).
 
+## 5.7. UPDATE, 2026-09-14 (later still) — root-caused "invalid block 15"; one more real generic bug fixed; the true remaining scope is every asset type, not just RawFile/ScriptFile
+
+Instrumented `ContentLoaderIW5.cpp` temporarily (trace prints before/
+after each step of `Load()`/`LoadScriptStringList`/`LoadXAssetArray`,
+removed after use) to find exactly where "invalid block 15" fires.
+
+**§5.6's header fix is further confirmed correct**: the trace showed
+`assetCount=4770`, `stringCount=4` (small, plausible real values) and
+the `strings`/`assets` fields decoding as the genuine `FOLLOWING`
+sentinel (`0xFFFF...FFFF`, an intentional in-format marker), matching
+the code's own assert. The 32-byte header read is right.
+
+**A second real, generic bug found and fixed**:
+`ContentLoaderBase::LoadXStringArray` — a file SHARED across every
+game, not IW5-specific — still hardcoded a 4-byte (x86 pointer) stride
+for its own `ARCH_x64` array-of-string-pointers branch, same bug class
+as the dispatch record and XAssetList header, just never reached by any
+test before this round. Fixed to use the stream's own configured real
+pointer width (`GetPointerBitCount()/8u`) instead of a literal — a
+generic fix, correct for any game/arch, not another IW5-only patch.
+Confirmed live: loading now proceeds past `LoadScriptStringList`
+entirely into the real per-asset dispatch loop for the first time.
+
+**Then a real scope correction**: the dispatch loop immediately dies on
+asset index 0 (`type=9`, `MaterialTechniqueSet`) — the exact same bug
+class already known for RawFile/ScriptFile (§5.5), confirming
+`ZoneCodeGenerator`'s generated per-type loader code has zero x64
+awareness across the board, not just those two types. Checking
+`UnlinkerArgs.cpp`/`Unlinker.cpp` directly confirmed `--include-assets`/
+`--exclude-assets` only filter what gets WRITTEN after loading
+(`ObjWriting::Configuration.AssetTypesToHandleBitfield`) — the zone
+loader unconditionally parses every asset in the file first. **This
+means any real, mixed-content retail zone needs correct x64 offsets
+across all ~46 asset types before it can load at all** — §5.5/§6's
+framing of RawFile/ScriptFile as "the one remaining per-type fix" was
+too narrow; it only holds for a hypothetical zone containing exclusively
+those two asset types, which no real retail zone does.
+
+RawFile/ScriptFile's own derived offsets were hand-patched directly into
+the generated (gitignored) `build/` output as a proof of concept and
+confirmed to compile — not committed (generated, not tracked source;
+discarded on a real `ZoneCodeGenerator` re-run regardless) and not
+sufficient on its own, since `MaterialTechniqueSet` breaks first.
+Fully unblocking real zone extraction needs the same class of fix
+applied across every generated per-type loader — flagged as a genuinely
+large, mechanical-but-not-trivial task needing its own explicit scoping
+decision, not attempted piecemeal this round. A promising angle for a
+scaled approach, not yet tried: since the real C++ compiler already
+lays out every struct correctly for x64 (confirmed for `RawFile`), a
+small `offsetof()`-introspection helper could programmatically derive
+every field's real offset per struct and drive an automated rewrite of
+each generated `FillStruct_*` function, rather than deriving and
+hand-patching each of the ~46 offset tables individually.
+
 ## 6. Scoped plan for in-house tooling — an MVP, not a full OpenAssetTools replacement
 
 **This project's own actual need is narrow**: GSC/rawfile extraction to
