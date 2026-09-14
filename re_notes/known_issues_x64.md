@@ -6520,3 +6520,87 @@ real `ZoneCodeGenerator` re-run regardless.
 
 Full trail: `re_notes/x64_migration/fastfile_format_research.md` §5.7
 (parent repo).
+
+### UPDATE, 2026-09-14 (later still) — built an automated offsetof()/sizeof() fix generator, applied it to all 46 asset types, checked it into the repo as reusable tooling; three more real bugs found and fixed along the way; one genuine open question remains
+
+**Status: `tools/iw5oat/x64_offset_fixes/` (new, checked into the repo,
+not gitignored) now patches every one of the ~46 IW5 asset types'
+generated loader code for x64 automatically — 2,499+ literal-offset
+substitutions across 40 files, confirmed reproducible (identical output
+on a from-scratch `ZoneCodeGenerator` regenerate + re-run). All three
+real retail zones tested (`hamburg.ff`, `common.ff`, `code_post_gfx.ff`)
+now fail at the exact same later point (previously three different,
+earlier points) — real, consistent progress, not fully resolved.**
+
+Direct instruction: "build the offsetof() fix generator and apply it to
+all asset types." Rather than hand-deriving and hand-patching each asset
+type's own offset table the way RawFile/ScriptFile/the dispatch record
+were, wrote a script that rewrites every literal byte offset
+`ZoneCodeGenerator` emits (`fillAccessor.Fill(field, N)` and friends) into
+a compiler-verified `offsetof(Type, field)`/`sizeof(Type)` expression —
+letting the real x64 MSVC compiler compute the correct value instead of
+trusting a number precomputed for the wrong architecture. Validated the
+naming convention it depends on (`var<Suffix>` always maps 1:1 to a real
+struct type `<Suffix>`) against all 211 declarations across every
+generated header before trusting it — zero mismatches.
+
+**Real bugs found and fixed in the course of building/applying this,
+each confirmed via direct before/after testing, not just reasoned about**:
+1. The main pass itself (8 distinct call shapes: plain/loop-indexed
+   `Fill`/`FillPtr`, `FillArray`, `LoadWithFill`, struct-array pairs,
+   pointer-array fills, nested `FillStruct` calls at fixed/loop offsets,
+   `AddPointerLookup`/`BlockBuffer` registration) — 2,499 substitutions.
+2. **A real gap in the main pass's own struct-array regex**: 10 sites
+   where the paired `FillStruct`/`LoadWithFill` didn't get converted
+   together (fixed by `02_fix_loadwithfill_mismatch.py`).
+3. **A real cross-function-boundary false positive** in that same regex:
+   non-greedy DOTALL matching with no function-boundary anchor let a
+   `ptrArrayFill = m_stream.LoadWithFill(4 * count)` (correctly a plain
+   pointer array) get paired with an unrelated `FillStruct_<WrongType>`
+   call found later in the SAME FILE but a DIFFERENT function — producing
+   `sizeof(WrongType) * count` instead of `sizeof(void*) * count`. This
+   was the actual, confirmed cause of `MaterialTechniqueSet`'s own
+   `LoadPtrArray_MaterialTechnique` reading a wildly wrong buffer size
+   for its 54-pointer array, corrupting everything read after it — found
+   by tracing the exact stream state with temporary diagnostic prints
+   (added, used, then reverted, per the same "instrument, find, then
+   revert" pattern used for the earlier `ContentLoaderIW5.cpp` trace).
+   Fixed by `03_fix_ptrarrayfill_crosscontam.py` (10 sites, all confirmed
+   `ptrArrayFill`-pattern, unconditionally correct as `sizeof(void*)`).
+4. **A separate, distinct call shape the main pass never targeted at
+   all**: `LoadDynamicFill_<Type>` functions (used for variable-length
+   assets like `MaterialTechnique`'s own `passArray[]` tail) have their
+   own `m_stream.AppendToFill(N)` literals — both a fixed "header size"
+   (the bytes before the dynamic tail) and, separately, a per-element
+   size for the dynamic array itself. Both classes confirmed wrong on x64
+   wherever the relevant field/element type embeds a pointer (even
+   several levels deep — `XAnimDeltaPartQuat2`'s own header-size literal
+   was wrong because the union member ONE LEVEL IN starts with a pointer,
+   forcing 8-byte alignment on x64 that the immediately-preceding
+   `uint16_t size` field alone wouldn't suggest). Fixed by
+   `04_fix_dynamicfill_sizes.py`, which derives the correct value from
+   the SAME function's own return-statement `offsetof()`/`sizeof()` call
+   rather than trying to hand-compute alignment — 16 replacements across
+   3 files (`gfximage`, `materialtechniqueset`, `xanimparts`).
+
+**One genuine, unresolved open question, tried and reverted rather than
+guessed past**: `MaterialVertexStreamRouting::decl[VERTDECL_COUNT]`
+(a real 16-pointer array, 128 bytes on x64) and
+`MaterialPixelShaderProgram::ps`/`MaterialVertexShaderProgram::vs`
+(single pointers) are never read from the wire by their own `FillStruct_*`
+functions at all — whether they're genuinely serialized on disk (raw
+uninitialized memory, matching this format's "dump the in-memory struct"
+convention) or runtime-only fields the wire format never included isn't
+resolved. A direct experiment (excluding `decl[]` from the computed read
+size for `MaterialVertexDeclaration`) was tried and made the failure mode
+**worse** — a segfault instead of a clean, caught bounds exception — so
+it was reverted rather than shipped as a guess. This is the actual,
+confirmed reason all three test zones now fail at the same point
+(`MaterialPass`'s own `pixelShader`/`vertexShader` load) — resolving it
+needs native Ghidra RE against `iw5sp.exe`'s own zone-content reader (the
+same technique that resolved the dispatch-record/header bugs), not more
+struct-field-name guessing.
+
+Full trail, including the exact regex bugs and their fixes:
+`tools/iw5oat/x64_offset_fixes/README.md` (new); root cause narrative:
+`re_notes/x64_migration/fastfile_format_research.md` §5.8 (parent repo).

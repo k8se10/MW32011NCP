@@ -40,6 +40,52 @@ Given that, and a real release-timeline constraint, waiting on an
 upstream or community fix wasn't realistic. This fork exists to build
 exactly the support this project actually needs, directly.
 
+## Current status
+
+The real x64 fix has three parts, the first two done and confirmed live,
+the third still open:
+
+1. **The outer dispatch-record/header bugs — fixed.** `iw5sp.exe`'s own
+   zone-loading code was decompiled directly (Ghidra) to find the real
+   x64 per-asset dispatch record (16 bytes, not OAT's assumed 8) and the
+   real `XAssetList` header (32 bytes, not 16) — both now correct in
+   `ZoneLoadingIW5`. Full trail:
+   [`re_notes/x64_migration/fastfile_format_research.md`](../../re_notes/x64_migration/fastfile_format_research.md)
+   §5.
+2. **Every generated per-asset-type loader's own field offsets — fixed,
+   via automated tooling, not hand-patching.** `ZoneCodeGenerator`'s
+   generated code hardcodes x86-layout byte offsets for every one of the
+   ~46 IW5 asset types, not just the outer dispatch — the same bug class,
+   one level deeper. Rather than hand-deriving and hand-patching each
+   type's own offset table, a set of scripts (**[`x64_offset_fixes/`](x64_offset_fixes/)**
+   — see its own README) rewrite every literal offset into a
+   compiler-verified `offsetof()`/`sizeof()` expression, letting the real
+   x64 compiler compute the correct value instead of trusting a number
+   `ZoneCodeGenerator` precomputed for the wrong architecture. **These
+   scripts have to be re-run after every real `ZoneCodeGenerator`
+   invocation** — their target is gitignored, regenerated build output,
+   not tracked source; see that README for the exact sequence.
+3. **Still open**: a small number of generated structs
+   (`MaterialVertexStreamRouting::decl[]`, `MaterialPixelShaderProgram::ps`,
+   `MaterialVertexShaderProgram::vs`) declare real pointer fields that are
+   never read from the wire by their own `FillStruct_*` function — whether
+   these are genuinely on-disk (raw serialized memory, matching this
+   format's own convention) or runtime-only fields the wire format never
+   included isn't resolved yet. This is the actual reason `Unlinker`
+   still fails partway through real retail zones (confirmed: the same
+   `MaterialPass` → shader-asset chain, on all three zones tested) —
+   see `x64_offset_fixes/README.md`'s own "Known open question" section
+   for the full detail and what it'll take to resolve (native Ghidra RE,
+   not more guessing).
+
+**Confirmed via direct testing against real retail zones from the live
+game install** (`hamburg.ff`, `common.ff`, `code_post_gfx.ff`): the
+original unconditional segfault is gone — all three now load through
+decompression, the block-size header, and the entire dispatch loop with
+no crash, failing instead with a clean, structured error partway through
+real content. That's real progress (a crash vs. a legible, bounded
+failure) even though full extraction isn't there yet.
+
 ## Scope: IW5 only, deliberately
 
 Upstream OAT is a genuine multi-game project (IW3/IW4/IW5/QOS/T4/T5/T6).
@@ -54,12 +100,10 @@ multi-game state for now; treat any non-IW5 content in this fork as
 unmaintained reference, not something this project is actively keeping in
 sync with upstream.
 
-**Current status**: forked (a history-preserving merge, so this
-directory's own git history still traces back to the real upstream
-commits), licensing set up (see Legal below) — the actual x64 support
-(fixing the hardcoded word size, deriving real x64 struct layouts from
-`iw5sp.exe`'s own zone-loading code) has **not started yet**. This is
-groundwork, not a working tool yet.
+Forked as a history-preserving merge, so this directory's own git history
+still traces back to the real upstream commits; licensing set up (see
+Legal below). See "Current status" above for where the actual x64 work
+stands.
 
 ## Relationship to upstream
 
@@ -75,10 +119,13 @@ narrowly to what MW3's own x64 recompile actually broke, not a general
 ## Building
 
 Same build system as upstream (Premake-generated project files) — see
-`generate.bat` (Windows, Visual Studio) / `generate.sh` (Linux). Until
-this fork's own IW5 x64 work lands, building from this directory produces
-the same tool as upstream, with the same IW5 x64 limitation described
-above — there is nothing to build for yet.
+`generate.bat` (Windows, Visual Studio) / `generate.sh` (Linux). After a
+fresh `ZoneCodeGenerator` run for IW5 (part of the normal build, or run
+standalone), apply **[`x64_offset_fixes/`](x64_offset_fixes/)** before
+building `UnlinkerCli` (or anything else linking `ZoneLoading`/`ZoneWriting`
+for IW5) — see that directory's own README for the exact command.
+Skipping this step silently rebuilds against `ZoneCodeGenerator`'s raw,
+x86-offset output, reintroducing the bugs described above.
 
 ## Legal
 
