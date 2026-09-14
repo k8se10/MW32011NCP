@@ -1,0 +1,28 @@
+#pragma once
+
+#include "ICodeTemplate.h"
+#include "Utils/FileUtils.h"
+#include "ZoneCodeGeneratorArguments.h"
+
+#include <memory>
+#include <string>
+#include <unordered_map>
+
+class CodeGenerator
+{
+public:
+    explicit CodeGenerator(const ZoneCodeGeneratorArguments* args);
+
+    bool GenerateCode(const IDataRepository* repository);
+
+private:
+    void SetupTemplates();
+
+    utils::TextFileCheckDirtyResult GenerateCodeOncePerTemplate(const OncePerTemplateRenderingContext& context, ICodeTemplate* codeTemplate) const;
+    utils::TextFileCheckDirtyResult GenerateCodeOncePerAsset(const OncePerAssetRenderingContext& context, ICodeTemplate* codeTemplate) const;
+
+    static bool GetAssetWithName(const IDataRepository* repository, const std::string& name, StructureInformation*& asset);
+
+    const ZoneCodeGeneratorArguments* m_args;
+    std::unordered_map<std::string, std::unique_ptr<ICodeTemplate>> m_template_mapping;
+};

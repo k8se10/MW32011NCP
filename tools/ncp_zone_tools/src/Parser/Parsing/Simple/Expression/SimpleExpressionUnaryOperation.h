@@ -1,0 +1,53 @@
+#pragma once
+
+#include "ISimpleExpression.h"
+#include "SimpleExpressionValue.h"
+
+#include <functional>
+#include <memory>
+#include <string>
+
+enum class SimpleUnaryOperationId
+{
+    NOT,
+    BITWISE_NOT,
+    NEGATIVE,
+
+    COUNT
+};
+
+class SimpleExpressionUnaryOperationType
+{
+public:
+    using evaluation_function_t = std::function<SimpleExpressionValue(const SimpleExpressionValue& operand)>;
+
+    SimpleUnaryOperationId m_id;
+    std::string m_syntax;
+    evaluation_function_t m_evaluation_function;
+
+private:
+    SimpleExpressionUnaryOperationType(SimpleUnaryOperationId id, std::string syntax, evaluation_function_t evaluationFunction);
+
+public:
+    static const SimpleExpressionUnaryOperationType OPERATION_NOT;
+    static const SimpleExpressionUnaryOperationType OPERATION_BITWISE_NOT;
+    static const SimpleExpressionUnaryOperationType OPERATION_NEGATIVE;
+
+    static const SimpleExpressionUnaryOperationType* const ALL_OPERATION_TYPES[static_cast<int>(SimpleUnaryOperationId::COUNT)];
+};
+
+class SimpleExpressionUnaryOperation final : public ISimpleExpression
+{
+public:
+    const SimpleExpressionUnaryOperationType* m_operation_type;
+    std::unique_ptr<ISimpleExpression> m_operand;
+
+    SimpleExpressionUnaryOperation(const SimpleExpressionUnaryOperationType* operationType, std::unique_ptr<ISimpleExpression> operand);
+
+    [[nodiscard]] bool OperandNeedsParenthesis() const;
+
+    [[nodiscard]] bool Equals(const ISimpleExpression* other) const override;
+    [[nodiscard]] bool IsStatic() const override;
+    [[nodiscard]] SimpleExpressionValue EvaluateStatic() const override;
+    [[nodiscard]] SimpleExpressionValue EvaluateNonStatic(const ISimpleExpressionScopeValues* scopeValues) const override;
+};

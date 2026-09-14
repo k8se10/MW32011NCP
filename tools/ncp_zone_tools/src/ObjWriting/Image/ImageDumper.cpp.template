@@ -1,0 +1,132 @@
+#options GAME (IW3, IW4, IW5, QOS, T4, T5, T6)
+
+#filename "Game/" + GAME + "/Image/ImageDumper" + GAME + ".cpp"
+
+#set DUMPER_HEADER "\"ImageDumper" + GAME + ".h\""
+
+#set CONVERTER_HEADER "\"ImageToCommonConverter" + GAME + ".h\""
+
+#if GAME == "IW3"
+#define FEATURE_IW3
+#define DX9
+#define IWI6
+#elif GAME == "IW4"
+#define FEATURE_IW4
+#define DX9
+#define IWI8
+#elif GAME == "IW5"
+#define FEATURE_IW5
+#define DX9
+#define IWI8
+#elif GAME == "QOS"
+#define FEATURE_QOS
+#define DX9
+#define IWI6
+#elif GAME == "T4"
+#define FEATURE_T4
+#define DX9
+#define IWI6
+#elif GAME == "T5"
+#define FEATURE_T5
+#define DX9
+#define IWI13
+#elif GAME == "T6"
+#define FEATURE_T6
+#define DX11
+#define IWI27
+#endif
+
+// This file was templated.
+// See ImageDumper.cpp.template.
+// Do not modify, changes will be lost.
+
+#include DUMPER_HEADER
+
+#ifdef DX9
+#include "Image/Dx9TextureLoader.h"
+#else
+#include "Image/Dx12TextureLoader.h"
+#endif
+
+#ifdef FEATURE_T6
+#include "ObjContainer/IPak/IPak.h"
+#endif
+
+#if defined(IWI6)
+#include "Image/IwiWriter6.h"
+#define IWI_NS iwi6
+#elif defined(IWI8)
+#include "Image/IwiWriter8.h"
+#define IWI_NS iwi8
+#elif defined(IWI13)
+#include "Image/IwiWriter13.h"
+#define IWI_NS iwi13
+#elif defined(IWI27)
+#include "Image/IwiWriter27.h"
+#define IWI_NS iwi27
+#endif
+
+#include CONVERTER_HEADER
+#include "Image/DdsWriter.h"
+#include "Image/ImageCommon.h"
+#include "Image/IwiLoader.h"
+#include "ObjWriting.h"
+#include "Utils/Logging/Log.h"
+
+#include <cassert>
+
+using namespace GAME;
+using namespace image;
+
+#set CLASS_NAME "Dumper" + GAME
+
+namespace image
+{
+    CLASS_NAME::CLASS_NAME()
+    {
+        switch (ObjWriting::Configuration.ImageOutputFormat)
+        {
+        case ImageOutputFormat_e::DDS:
+            m_writer = std::make_unique<DdsWriter>();
+            break;
+        case ImageOutputFormat_e::IWI:
+            m_writer = std::make_unique<IWI_NS::IwiWriter>();
+            break;
+        default:
+            assert(false);
+            m_writer = nullptr;
+            break;
+        }
+    }
+
+#set CONVERTER_NAME "ToCommonConverter" + GAME
+
+    void CLASS_NAME::DumpAsset(AssetDumpingContext& context, const XAssetInfo<AssetImage::Type>& asset)
+    {
+        const auto* image = asset.Asset();
+        auto texture = CONVERTER_NAME().Convert(asset, context.m_obj_search_path);
+        if (!texture)
+            return;
+        
+        auto convertedTexture = ConvertTextureForDdsFileOutputIfNecessary(texture.get());
+        if (convertedTexture)
+            texture = std::move(convertedTexture);
+
+        if (!m_writer->SupportsImageFormat(texture->GetFormat()))
+        {
+            con::warn("Not dumping image {} as {} does not support the image format {}",
+                      image->name,
+                      GetImageOutputFormatName(ObjWriting::Configuration.ImageOutputFormat),
+                      texture->GetFormat()->GetName());
+            return;
+        }
+
+        const auto assetFile = context.OpenAssetFile(GetFileNameForAsset(asset.m_name, m_writer->GetFileExtension()));
+
+        if (!assetFile)
+            return;
+
+        auto& stream = *assetFile;
+        m_writer->DumpImage(stream, texture.get());
+    }
+} // namespace image

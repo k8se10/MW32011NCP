@@ -1,0 +1,1228 @@
+#include "MenuConverterIW5.h"
+
+#include "Menu/AbstractMenuConverter.h"
+#include "MenuConversionZoneStateIW5.h"
+#include "Parsing/Menu/Domain/EventHandler/CommonEventHandlerCondition.h"
+#include "Parsing/Menu/Domain/EventHandler/CommonEventHandlerScript.h"
+#include "Parsing/Menu/Domain/EventHandler/CommonEventHandlerSetLocalVar.h"
+#include "Parsing/Menu/Domain/Expression/CommonExpressionBaseFunctionCall.h"
+#include "Parsing/Menu/Domain/Expression/CommonExpressionCustomFunctionCall.h"
+#include "Parsing/Menu/MenuAssetZoneState.h"
+#include "Parsing/Simple/Expression/SimpleExpressionBinaryOperation.h"
+#include "Parsing/Simple/Expression/SimpleExpressionConditionalOperator.h"
+#include "Parsing/Simple/Expression/SimpleExpressionUnaryOperation.h"
+#include "Utils/StringUtils.h"
+
+#include <algorithm>
+#include <cassert>
+#include <cstring>
+#include <format>
+#include <sstream>
+#include <vector>
+
+using namespace IW5;
+using namespace menu;
+
+namespace
+{
+    class MenuConverter final : public AbstractMenuConverter, public IMenuConverter
+    {
+        [[nodiscard]] static rectDef_s ConvertRectDef(const CommonRect& rect)
+        {
+            return rectDef_s{
+                .x = static_cast<float>(rect.x),
+                .y = static_cast<float>(rect.y),
+                .w = static_cast<float>(rect.w),
+                .h = static_cast<float>(rect.h),
+                .horzAlign = static_cast<unsigned char>(rect.horizontalAlign),
+                .vertAlign = static_cast<unsigned char>(rect.verticalAlign),
+            };
+        }
+
+        [[nodiscard]] static rectDef_s ConvertRectDefRelativeTo(const rectDef_s& rect, const rectDef_s& relativeTo)
+        {
+            return rectDef_s{
+                .x = relativeTo.x + rect.x,
+                .y = relativeTo.y + rect.y,
+                .w = static_cast<float>(rect.w),
+                .h = static_cast<float>(rect.h),
+                .horzAlign = static_cast<unsigned char>(rect.horzAlign),
+                .vertAlign = static_cast<unsigned char>(rect.vertAlign),
+            };
+        }
+
+        static void ConvertColor(float (&output)[4], const CommonColor& input)
+        {
+            output[0] = static_cast<float>(input.r);
+            output[1] = static_cast<float>(input.g);
+            output[2] = static_cast<float>(input.b);
+            output[3] = static_cast<float>(input.a);
+        }
+
+        static void ApplyFlag(unsigned& flags, const bool shouldApply, const unsigned flagValue)
+        {
+            if (!shouldApply)
+                return;
+
+            flags |= flagValue;
+        }
+
+        [[nodiscard]] Material* ConvertMaterial(const std::string& materialName, const CommonMenuDef* menu, const CommonItemDef* item = nullptr) const
+        {
+            if (materialName.empty())
+                return nullptr;
+
+            auto* materialDependency = m_context.LoadDependency<AssetMaterial>(materialName);
+            if (!materialDependency)
+                throw MenuConversionException(std::format("Failed to load material \"{}\"", materialName), menu, item);
+
+            return materialDependency->Asset();
+        }
+
+        [[nodiscard]] snd_alias_list_t* ConvertSound(const std::string& soundName, const CommonMenuDef* menu, const CommonItemDef* item = nullptr) const
+        {
+            if (soundName.empty())
+                return nullptr;
+
+            auto* soundDependency = m_context.LoadDependency<AssetSound>(soundName);
+            if (!soundDependency)
+                throw MenuConversionException(std::format("Failed to load sound \"{}\"", soundName), menu, item);
+
+            return soundDependency->Asset();
+        }
+
+        constexpr static expressionOperatorType_e UNARY_OPERATION_MAPPING[]{
+            OP_NOT,
+            OP_BITWISENOT,
+            OP_SUBTRACT,
+        };
+        static_assert(std::size(UNARY_OPERATION_MAPPING) == static_cast<unsigned>(SimpleUnaryOperationId::COUNT));
+
+        constexpr static expressionOperatorType_e BINARY_OPERATION_MAPPING[]{
+            OP_ADD,
+            OP_SUBTRACT,
+            OP_MULTIPLY,
+            OP_DIVIDE,
+            OP_MODULUS,
+            OP_BITWISEAND,
+            OP_BITWISEOR,
+            OP_BITSHIFTLEFT,
+            OP_BITSHIFTRIGHT,
+            OP_GREATERTHAN,
+            OP_GREATERTHANEQUALTO,
+            OP_LESSTHAN,
+            OP_LESSTHANEQUALTO,
+            OP_EQUALS,
+            OP_NOTEQUAL,
+            OP_AND,
+            OP_OR,
+        };
+        static_assert(std::size(BINARY_OPERATION_MAPPING) == static_cast<unsigned>(SimpleBinaryOperationId::COUNT));
+
+        [[nodiscard]] bool IsOperation(const ISimpleExpression* expression) const
+        {
+            if (!m_disable_optimizations && expression->IsStatic())
+                return false;
+
+            return dynamic_cast<const SimpleExpressionBinaryOperation*>(expression) != nullptr
+                   || dynamic_cast<const SimpleExpressionUnaryOperation*>(expression) != nullptr;
+        }
+
+        bool HandleStaticDvarFunctionCall(Statement_s* gameStatement,
+                                          std::vector<expressionEntry>& entries,
+                                          const CommonExpressionBaseFunctionCall* functionCall,
+                                          const int targetFunctionIndex) const
+        {
+            if (functionCall->m_args.size() != 1)
+                return false;
+
+            const auto* dvarNameExpression = functionCall->m_args[0].get();
+            if (!dvarNameExpression->IsStatic())
+                return false;
+
+            const auto staticDvarNameExpressionValue = dvarNameExpression->EvaluateStatic();
+            if (staticDvarNameExpressionValue.m_type != SimpleExpressionValue::Type::STRING)
+                return false;
+
+            entries.emplace_back(expressionEntry{.type = EET_OPERATOR, .data = {.op = targetFunctionIndex}});
+
+            const auto dvarIntVal = static_cast<int>(m_conversion_zone_state.AddStaticDvar(*staticDvarNameExpressionValue.m_string_value));
+            entries.emplace_back(expressionEntry{.type = EET_OPERAND, .data = {.operand = {.dataType = VAL_INT, .internals = {.intVal = dvarIntVal}}}});
+
+            entries.emplace_back(expressionEntry{.type = EET_OPERATOR, .data = {.op = OP_RIGHTPAREN}});
+
+            gameStatement->supportingData = m_conversion_zone_state.m_supporting_data;
+
+            return true;
+        }
+
+        bool HandleSpecialBaseFunctionCall(Statement_s* gameStatement,
+                                           std::vector<expressionEntry>& entries,
+                                           const CommonExpressionBaseFunctionCall* baseFunction) const
+        {
+            switch (baseFunction->m_function_index)
+            {
+            case EXP_FUNC_DVAR_INT:
+                return HandleStaticDvarFunctionCall(gameStatement, entries, baseFunction, EXP_FUNC_STATIC_DVAR_INT);
+            case EXP_FUNC_DVAR_BOOL:
+                return HandleStaticDvarFunctionCall(gameStatement, entries, baseFunction, EXP_FUNC_STATIC_DVAR_BOOL);
+            case EXP_FUNC_DVAR_FLOAT:
+                return HandleStaticDvarFunctionCall(gameStatement, entries, baseFunction, EXP_FUNC_STATIC_DVAR_FLOAT);
+            case EXP_FUNC_DVAR_STRING:
+                return HandleStaticDvarFunctionCall(gameStatement, entries, baseFunction, EXP_FUNC_STATIC_DVAR_STRING);
+            default:
+                break;
+            }
+
+            return false;
+        }
+
+        void ConvertExpressionEntryBaseFunctionCall(Statement_s* gameStatement,
+                                                    std::vector<expressionEntry>& entries,
+                                                    const CommonExpressionBaseFunctionCall* baseFunction,
+                                                    const CommonMenuDef* menu,
+                                                    const CommonItemDef* item) const
+        {
+            if (!HandleSpecialBaseFunctionCall(gameStatement, entries, baseFunction))
+            {
+                entries.emplace_back(expressionEntry{.type = EET_OPERATOR, .data = {.op = static_cast<int>(baseFunction->m_function_index)}});
+
+                auto firstArg = true;
+                for (const auto& arg : baseFunction->m_args)
+                {
+                    if (firstArg)
+                        firstArg = false;
+                    else
+                        entries.emplace_back(expressionEntry{.type = EET_OPERATOR, .data = {.op = OP_COMMA}});
+
+                    ConvertExpressionEntry(gameStatement, entries, arg.get(), menu, item);
+                }
+
+                entries.emplace_back(expressionEntry{.type = EET_OPERATOR, .data = {.op = OP_RIGHTPAREN}});
+            }
+        }
+
+        void ConvertExpressionEntryCustomFunctionCall(Statement_s* gameStatement,
+                                                      std::vector<expressionEntry>& entries,
+                                                      const CommonExpressionCustomFunctionCall* customFunction,
+                                                      const CommonMenuDef* menu,
+                                                      const CommonItemDef* item) const
+        {
+            std::string lowerCaseFunctionName(customFunction->m_function_name);
+            utils::MakeStringLowerCase(lowerCaseFunctionName);
+
+            auto* functionStatement = m_conversion_zone_state.FindFunction(lowerCaseFunctionName);
+
+            if (!functionStatement)
+            {
+                // Function was not converted yet: Convert it now
+                const auto foundCommonFunction = m_parsing_zone_state.m_functions_by_name.find(lowerCaseFunctionName);
+
+                if (foundCommonFunction == m_parsing_zone_state.m_functions_by_name.end())
+                {
+                    throw MenuConversionException(
+                        std::format("Failed to find definition for custom function \"{}\"", customFunction->m_function_name), menu, item);
+                }
+
+                functionStatement = ConvertExpression(foundCommonFunction->second->m_value.get(), menu, item);
+                functionStatement = m_conversion_zone_state.AddFunction(lowerCaseFunctionName, functionStatement);
+            }
+
+            entries.emplace_back(expressionEntry{
+                .type = EET_OPERAND,
+                .data = {.operand = {.dataType = VAL_FUNCTION, .internals = {.function = functionStatement}}},
+            });
+
+            // Statement uses custom function so it needs supporting data
+            gameStatement->supportingData = m_conversion_zone_state.m_supporting_data;
+        }
+
+        void ConvertExpressionEntryUnaryOperation(Statement_s* gameStatement,
+                                                  std::vector<expressionEntry>& entries,
+                                                  const SimpleExpressionUnaryOperation* unary,
+                                                  const CommonMenuDef* menu,
+                                                  const CommonItemDef* item) const
+        {
+            assert(static_cast<unsigned>(unary->m_operation_type->m_id) < static_cast<unsigned>(SimpleUnaryOperationId::COUNT));
+
+            entries.emplace_back(expressionEntry{
+                .type = EET_OPERATOR,
+                .data = {.op = UNARY_OPERATION_MAPPING[static_cast<unsigned>(unary->m_operation_type->m_id)]},
+            });
+
+            const auto wrapOperand = IsOperation(unary->m_operand.get());
+            if (wrapOperand)
+                entries.emplace_back(expressionEntry{.type = EET_OPERATOR, .data = {.op = OP_LEFTPAREN}});
+            ConvertExpressionEntry(gameStatement, entries, unary->m_operand.get(), menu, item);
+            if (wrapOperand)
+                entries.emplace_back(expressionEntry{.type = EET_OPERATOR, .data = {.op = OP_RIGHTPAREN}});
+        }
+
+        void ConvertExpressionEntryBinaryOperation(Statement_s* gameStatement,
+                                                   std::vector<expressionEntry>& entries,
+                                                   const SimpleExpressionBinaryOperation* binary,
+                                                   const CommonMenuDef* menu,
+                                                   const CommonItemDef* item) const
+        {
+            // Game needs all nested operations to have parenthesis
+            const auto wrapLeft = IsOperation(binary->m_operand1.get());
+            if (wrapLeft)
+                entries.emplace_back(expressionEntry{.type = EET_OPERATOR, .data = {.op = OP_LEFTPAREN}});
+            ConvertExpressionEntry(gameStatement, entries, binary->m_operand1.get(), menu, item);
+            if (wrapLeft)
+                entries.emplace_back(expressionEntry{.type = EET_OPERATOR, .data = {.op = OP_RIGHTPAREN}});
+
+            assert(static_cast<unsigned>(binary->m_operation_type->m_id) < static_cast<unsigned>(SimpleBinaryOperationId::COUNT));
+            entries.emplace_back(expressionEntry{
+                .type = EET_OPERATOR,
+                .data = {.op = BINARY_OPERATION_MAPPING[static_cast<unsigned>(binary->m_operation_type->m_id)]},
+            });
+
+            // Game needs all nested operations to have parenthesis
+            const auto wrapRight = IsOperation(binary->m_operand2.get());
+            if (wrapRight)
+                entries.emplace_back(expressionEntry{.type = EET_OPERATOR, .data = {.op = OP_LEFTPAREN}});
+            ConvertExpressionEntry(gameStatement, entries, binary->m_operand2.get(), menu, item);
+            if (wrapRight)
+                entries.emplace_back(expressionEntry{.type = EET_OPERATOR, .data = {.op = OP_RIGHTPAREN}});
+        }
+
+        void ConvertExpressionValue(std::vector<expressionEntry>& entries, const SimpleExpressionValue& value) const
+        {
+            expressionEntry entry{};
+            entry.type = EET_OPERAND;
+
+            switch (value.m_type)
+            {
+            case SimpleExpressionValue::Type::INT:
+                entry.data.operand.dataType = VAL_INT;
+                entry.data.operand.internals.intVal = value.m_int_value;
+                break;
+            case SimpleExpressionValue::Type::DOUBLE:
+                entry.data.operand.dataType = VAL_FLOAT;
+                entry.data.operand.internals.floatVal = static_cast<float>(value.m_double_value);
+                break;
+            case SimpleExpressionValue::Type::STRING:
+                entry.data.operand.dataType = VAL_STRING;
+                entry.data.operand.internals.stringVal.string = m_conversion_zone_state.AddString(*value.m_string_value);
+                break;
+            }
+
+            entries.emplace_back(entry);
+        }
+
+        void ConvertExpressionEntry(Statement_s* gameStatement,
+                                    std::vector<expressionEntry>& entries,
+                                    const ISimpleExpression* expression,
+                                    const CommonMenuDef* menu,
+                                    const CommonItemDef* item) const
+        {
+            if (!m_disable_optimizations && expression->IsStatic())
+            {
+                const auto staticValue = expression->EvaluateStatic();
+                ConvertExpressionValue(entries, staticValue);
+            }
+            else if (const auto* value = dynamic_cast<const SimpleExpressionValue*>(expression))
+            {
+                ConvertExpressionValue(entries, *value);
+            }
+            else if (const auto* binary = dynamic_cast<const SimpleExpressionBinaryOperation*>(expression))
+            {
+                ConvertExpressionEntryBinaryOperation(gameStatement, entries, binary, menu, item);
+            }
+            else if (const auto* unary = dynamic_cast<const SimpleExpressionUnaryOperation*>(expression))
+            {
+                ConvertExpressionEntryUnaryOperation(gameStatement, entries, unary, menu, item);
+            }
+            else if (const auto* baseFunction = dynamic_cast<const CommonExpressionBaseFunctionCall*>(expression))
+            {
+                ConvertExpressionEntryBaseFunctionCall(gameStatement, entries, baseFunction, menu, item);
+            }
+            else if (const auto* customFunction = dynamic_cast<const CommonExpressionCustomFunctionCall*>(expression))
+            {
+                ConvertExpressionEntryCustomFunctionCall(gameStatement, entries, customFunction, menu, item);
+            }
+            else if (dynamic_cast<const SimpleExpressionConditionalOperator*>(expression))
+            {
+                throw MenuConversionException("Cannot use conditional expression in menu expressions", menu, item);
+            }
+            else
+            {
+                assert(false);
+                throw MenuConversionException("Unknown expression entry type in menu expressions", menu, item);
+            }
+        }
+
+        [[nodiscard]] Statement_s* ConvertExpression(const ISimpleExpression* expression, const CommonMenuDef* menu, const CommonItemDef* item = nullptr) const
+        {
+            if (!expression)
+                return nullptr;
+
+            auto* statement = m_memory.Alloc<Statement_s>();
+
+            std::vector<expressionEntry> entries;
+            ConvertExpressionEntry(statement, entries, expression, menu, item);
+
+            auto* outEntries = m_memory.Alloc<expressionEntry>(entries.size());
+            std::memcpy(outEntries, entries.data(), sizeof(expressionEntry) * entries.size());
+
+            statement->numEntries = static_cast<int>(entries.size());
+            statement->entries = outEntries;
+
+            return statement;
+        }
+
+        [[nodiscard]] Statement_s* ConvertOrApplyStatement(float& staticValue,
+                                                           const ISimpleExpression* expression,
+                                                           const CommonMenuDef* menu,
+                                                           const CommonItemDef* item = nullptr) const
+        {
+            if (!expression)
+                return nullptr;
+
+            if (!m_disable_optimizations && expression->IsStatic())
+            {
+                const auto value = expression->EvaluateStatic();
+
+                if (value.m_type == SimpleExpressionValue::Type::INT)
+                    staticValue = static_cast<float>(value.m_int_value);
+                else if (value.m_type == SimpleExpressionValue::Type::DOUBLE)
+                    staticValue = static_cast<float>(value.m_double_value);
+                else
+                    throw MenuConversionException("Cannot convert string expression value to floating point", menu, item);
+
+                return nullptr;
+            }
+
+            return ConvertExpression(expression, menu, item);
+        }
+
+        [[nodiscard]] Statement_s* ConvertOrApplyStatement(const char*& staticValue,
+                                                           const ISimpleExpression* expression,
+                                                           const CommonMenuDef* menu,
+                                                           const CommonItemDef* item = nullptr) const
+        {
+            if (!expression)
+                return nullptr;
+
+            if (!m_disable_optimizations && expression->IsStatic())
+            {
+                const auto value = expression->EvaluateStatic();
+                if (value.m_type != SimpleExpressionValue::Type::STRING)
+                    throw MenuConversionException("Cannot convert numeric expression value to string", menu, item);
+
+                staticValue = m_memory.Dup(value.m_string_value->c_str());
+
+                return nullptr;
+            }
+
+            return ConvertExpression(expression, menu, item);
+        }
+
+        [[nodiscard]] Statement_s* ConvertOrApplyStatement(Material*& staticValue,
+                                                           const ISimpleExpression* expression,
+                                                           const CommonMenuDef* menu,
+                                                           const CommonItemDef* item = nullptr) const
+        {
+            if (!expression)
+                return nullptr;
+
+            if (!m_disable_optimizations && expression->IsStatic())
+            {
+                const auto value = expression->EvaluateStatic();
+                if (value.m_type != SimpleExpressionValue::Type::STRING)
+                    throw MenuConversionException("Cannot convert numeric expression value to material", menu, item);
+
+                staticValue = ConvertMaterial(*value.m_string_value, menu, item);
+
+                return nullptr;
+            }
+
+            return ConvertExpression(expression, menu, item);
+        }
+
+        [[nodiscard]] Statement_s* ConvertVisibleExpression(windowDef_t& window,
+                                                            const ISimpleExpression* expression,
+                                                            const CommonMenuDef* commonMenu,
+                                                            const CommonItemDef* commonItem = nullptr) const
+        {
+            if (!expression)
+                return nullptr;
+
+            bool isStatic;
+            bool isTruthy;
+            if (m_disable_optimizations)
+            {
+                const auto* staticValue = dynamic_cast<const SimpleExpressionValue*>(expression);
+                isStatic = staticValue != nullptr;
+                isTruthy = isStatic && (staticValue->m_type == SimpleExpressionValue::Type::INT || staticValue->m_type == SimpleExpressionValue::Type::DOUBLE)
+                           && staticValue->IsTruthy();
+            }
+            else
+            {
+                isStatic = expression->IsStatic();
+                isTruthy = isStatic && expression->EvaluateStatic().IsTruthy();
+            }
+
+            if (isStatic)
+            {
+                if (isTruthy)
+                    window.dynamicFlags[0] |= WINDOW_FLAG_VISIBLE;
+                return nullptr;
+            }
+
+            window.dynamicFlags[0] |= WINDOW_FLAG_VISIBLE;
+            return ConvertExpression(expression, commonMenu, commonItem);
+        }
+
+        [[nodiscard]] static EventType SetLocalVarTypeToEventType(const SetLocalVarType setLocalVarType)
+        {
+            switch (setLocalVarType)
+            {
+            case SetLocalVarType::BOOL:
+                return EVENT_SET_LOCAL_VAR_BOOL;
+            case SetLocalVarType::STRING:
+                return EVENT_SET_LOCAL_VAR_STRING;
+            case SetLocalVarType::FLOAT:
+                return EVENT_SET_LOCAL_VAR_FLOAT;
+            case SetLocalVarType::INT:
+                return EVENT_SET_LOCAL_VAR_INT;
+            default:
+            case SetLocalVarType::UNKNOWN:
+                assert(false);
+                return EVENT_SET_LOCAL_VAR_INT;
+            }
+        }
+
+        void ConvertEventHandlerSetLocalVar(std::vector<MenuEventHandler*>& elements,
+                                            const CommonEventHandlerSetLocalVar* setLocalVar,
+                                            const CommonMenuDef* menu,
+                                            const CommonItemDef* item) const
+        {
+            assert(setLocalVar);
+            if (!setLocalVar)
+                return;
+
+            auto* outputHandler = m_memory.Alloc<MenuEventHandler>();
+            auto* outputSetLocalVar = m_memory.Alloc<SetLocalVarData>();
+
+            outputHandler->eventType = SetLocalVarTypeToEventType(setLocalVar->m_type);
+            outputHandler->eventData.setLocalVarData = outputSetLocalVar;
+
+            outputSetLocalVar->localVarName = m_memory.Dup(setLocalVar->m_var_name.c_str());
+            outputSetLocalVar->expression = ConvertExpression(setLocalVar->m_value.get(), menu, item);
+
+            elements.emplace_back(outputHandler);
+        }
+
+        void ConvertEventHandlerScript(std::vector<MenuEventHandler*>& elements, const CommonEventHandlerScript* script) const
+        {
+            assert(script);
+            if (!script)
+                return;
+
+            auto* outputHandler = m_memory.Alloc<MenuEventHandler>();
+            outputHandler->eventType = EVENT_UNCONDITIONAL;
+            outputHandler->eventData.unconditionalScript = m_memory.Dup(script->m_script.c_str());
+
+            elements.emplace_back(outputHandler);
+        }
+
+        void ConvertEventHandlerCondition(std::vector<MenuEventHandler*>& elements,
+                                          const CommonEventHandlerCondition* condition,
+                                          const CommonMenuDef* menu,
+                                          const CommonItemDef* item) const
+        {
+            assert(condition);
+            if (!condition || !condition->m_condition)
+                return;
+
+            if (!m_disable_optimizations && condition->m_condition->IsStatic())
+            {
+                const auto staticValueIsTruthy = condition->m_condition->EvaluateStatic().IsTruthy();
+
+                if (staticValueIsTruthy)
+                    ConvertEventHandlerElements(elements, condition->m_condition_elements.get(), menu, item);
+                else if (condition->m_else_elements)
+                    ConvertEventHandlerElements(elements, condition->m_else_elements.get(), menu, item);
+            }
+            else
+            {
+                auto* outputHandler = m_memory.Alloc<MenuEventHandler>();
+                auto* outputCondition = m_memory.Alloc<ConditionalScript>();
+
+                outputHandler->eventType = EVENT_IF;
+                outputHandler->eventData.conditionalScript = outputCondition;
+
+                outputCondition->eventExpression = ConvertExpression(condition->m_condition.get(), menu, item);
+                outputCondition->eventHandlerSet = ConvertEventHandlerSet(condition->m_condition_elements.get(), menu, item);
+
+                elements.emplace_back(outputHandler);
+
+                if (condition->m_else_elements)
+                {
+                    auto* outputElseHandler = m_memory.Alloc<MenuEventHandler>();
+                    outputElseHandler->eventType = EVENT_ELSE;
+                    outputElseHandler->eventData.elseScript = ConvertEventHandlerSet(condition->m_else_elements.get(), menu, item);
+
+                    elements.emplace_back(outputElseHandler);
+                }
+            }
+        }
+
+        void ConvertEventHandler(std::vector<MenuEventHandler*>& elements,
+                                 const ICommonEventHandlerElement* eventHandler,
+                                 const CommonMenuDef* menu,
+                                 const CommonItemDef* item) const
+        {
+            assert(eventHandler);
+            if (!eventHandler)
+                return;
+
+            switch (eventHandler->GetType())
+            {
+            case CommonEventHandlerElementType::CONDITION:
+                ConvertEventHandlerCondition(elements, dynamic_cast<const CommonEventHandlerCondition*>(eventHandler), menu, item);
+                break;
+
+            case CommonEventHandlerElementType::SCRIPT:
+                ConvertEventHandlerScript(elements, dynamic_cast<const CommonEventHandlerScript*>(eventHandler));
+                break;
+
+            case CommonEventHandlerElementType::SET_LOCAL_VAR:
+                ConvertEventHandlerSetLocalVar(elements, dynamic_cast<const CommonEventHandlerSetLocalVar*>(eventHandler), menu, item);
+                break;
+            }
+        }
+
+        void ConvertEventHandlerElements(std::vector<MenuEventHandler*>& elements,
+                                         const CommonEventHandlerSet* eventHandlerSet,
+                                         const CommonMenuDef* menu,
+                                         const CommonItemDef* item) const
+        {
+            for (const auto& element : eventHandlerSet->m_elements)
+                ConvertEventHandler(elements, element.get(), menu, item);
+        }
+
+        [[nodiscard]] MenuEventHandlerSet*
+            ConvertEventHandlerSet(const CommonEventHandlerSet* eventHandlerSet, const CommonMenuDef* menu, const CommonItemDef* item = nullptr) const
+        {
+            if (!eventHandlerSet)
+                return nullptr;
+
+            std::vector<MenuEventHandler*> elements;
+            ConvertEventHandlerElements(elements, eventHandlerSet, menu, item);
+
+            if (elements.empty())
+                return nullptr;
+
+            auto* outputSet = m_memory.Alloc<MenuEventHandlerSet>();
+            auto* outputElements = m_memory.Alloc<MenuEventHandler*>(elements.size());
+            std::memcpy(outputElements, elements.data(), sizeof(void*) * elements.size());
+
+            outputSet->eventHandlerCount = static_cast<int>(elements.size());
+            outputSet->eventHandlers = outputElements;
+
+            return outputSet;
+        }
+
+        [[nodiscard]] ItemKeyHandler* ConvertKeyHandler(const std::multimap<int, std::unique_ptr<CommonEventHandlerSet>>& keyHandlers,
+                                                        const CommonMenuDef* menu,
+                                                        const CommonItemDef* item = nullptr) const
+        {
+            if (keyHandlers.empty())
+                return nullptr;
+
+            const auto keyHandlerCount = keyHandlers.size();
+            auto* output = m_memory.Alloc<ItemKeyHandler>(keyHandlerCount);
+            auto currentKeyHandler = keyHandlers.cbegin();
+            for (auto i = 0u; i < keyHandlerCount; i++)
+            {
+                output[i].key = currentKeyHandler->first;
+                output[i].action = ConvertEventHandlerSet(currentKeyHandler->second.get(), menu, item);
+
+                if (i + 1 < keyHandlerCount)
+                    output[i].next = &output[i + 1];
+                else
+                    output[i].next = nullptr;
+                ++currentKeyHandler;
+            }
+
+            return output;
+        }
+
+        ItemFloatExpression*
+            ConvertFloatExpressions(const CommonItemDef* commonItem, itemDef_s* item, const CommonMenuDef* parentMenu, int& floatExpressionCount) const
+        {
+            struct FloatExpressionLocation
+            {
+                ISimpleExpression* m_expression;
+                bool m_expression_is_static;
+                ItemFloatExpressionTarget m_target;
+                float* m_static_value;
+                unsigned m_static_value_array_size;
+                unsigned m_dynamic_flags_to_set;
+            };
+
+            FloatExpressionLocation locations[]{
+                {
+                 .m_expression = commonItem->m_rect_x_exp.get(),
+                 .m_expression_is_static = false,
+                 .m_target = ITEM_FLOATEXP_TGT_RECT_X,
+                 .m_static_value = &item->window.rectClient.x,
+                 .m_static_value_array_size = 1,
+                 .m_dynamic_flags_to_set = 0,
+                 },
+                {
+                 .m_expression = commonItem->m_rect_y_exp.get(),
+                 .m_expression_is_static = false,
+                 .m_target = ITEM_FLOATEXP_TGT_RECT_Y,
+                 .m_static_value = &item->window.rectClient.y,
+                 .m_static_value_array_size = 1,
+                 .m_dynamic_flags_to_set = 0,
+                 },
+                {
+                 .m_expression = commonItem->m_rect_w_exp.get(),
+                 .m_expression_is_static = false,
+                 .m_target = ITEM_FLOATEXP_TGT_RECT_W,
+                 .m_static_value = &item->window.rectClient.w,
+                 .m_static_value_array_size = 1,
+                 .m_dynamic_flags_to_set = 0,
+                 },
+                {
+                 .m_expression = commonItem->m_rect_h_exp.get(),
+                 .m_expression_is_static = false,
+                 .m_target = ITEM_FLOATEXP_TGT_RECT_H,
+                 .m_static_value = &item->window.rectClient.h,
+                 .m_static_value_array_size = 1,
+                 .m_dynamic_flags_to_set = 0,
+                 },
+                {
+                 .m_expression = commonItem->m_forecolor_expressions.m_r_exp.get(),
+                 .m_expression_is_static = false,
+                 .m_target = ITEM_FLOATEXP_TGT_FORECOLOR_R,
+                 .m_static_value = &item->window.foreColor[0],
+                 .m_static_value_array_size = 1,
+                 .m_dynamic_flags_to_set = WINDOW_FLAG_NON_DEFAULT_FORECOLOR,
+                 },
+                {
+                 .m_expression = commonItem->m_forecolor_expressions.m_g_exp.get(),
+                 .m_expression_is_static = false,
+                 .m_target = ITEM_FLOATEXP_TGT_FORECOLOR_G,
+                 .m_static_value = &item->window.foreColor[1],
+                 .m_static_value_array_size = 1,
+                 .m_dynamic_flags_to_set = WINDOW_FLAG_NON_DEFAULT_FORECOLOR,
+                 },
+                {
+                 .m_expression = commonItem->m_forecolor_expressions.m_b_exp.get(),
+                 .m_expression_is_static = false,
+                 .m_target = ITEM_FLOATEXP_TGT_FORECOLOR_B,
+                 .m_static_value = &item->window.foreColor[2],
+                 .m_static_value_array_size = 1,
+                 .m_dynamic_flags_to_set = WINDOW_FLAG_NON_DEFAULT_FORECOLOR,
+                 },
+                {
+                 .m_expression = commonItem->m_forecolor_expressions.m_a_exp.get(),
+                 .m_expression_is_static = false,
+                 .m_target = ITEM_FLOATEXP_TGT_FORECOLOR_A,
+                 .m_static_value = &item->window.foreColor[3],
+                 .m_static_value_array_size = 1,
+                 .m_dynamic_flags_to_set = WINDOW_FLAG_NON_DEFAULT_FORECOLOR,
+                 },
+                {
+                 .m_expression = commonItem->m_forecolor_expressions.m_rgb_exp.get(),
+                 .m_expression_is_static = false,
+                 .m_target = ITEM_FLOATEXP_TGT_FORECOLOR_RGB,
+                 .m_static_value = &item->window.foreColor[0],
+                 .m_static_value_array_size = 3,
+                 .m_dynamic_flags_to_set = WINDOW_FLAG_NON_DEFAULT_FORECOLOR,
+                 },
+                {
+                 .m_expression = commonItem->m_glowcolor_expressions.m_r_exp.get(),
+                 .m_expression_is_static = false,
+                 .m_target = ITEM_FLOATEXP_TGT_GLOWCOLOR_R,
+                 .m_static_value = &item->glowColor[0],
+                 .m_static_value_array_size = 1,
+                 .m_dynamic_flags_to_set = 0,
+                 },
+                {
+                 .m_expression = commonItem->m_glowcolor_expressions.m_g_exp.get(),
+                 .m_expression_is_static = false,
+                 .m_target = ITEM_FLOATEXP_TGT_GLOWCOLOR_G,
+                 .m_static_value = &item->glowColor[1],
+                 .m_static_value_array_size = 1,
+                 .m_dynamic_flags_to_set = 0,
+                 },
+                {
+                 .m_expression = commonItem->m_glowcolor_expressions.m_b_exp.get(),
+                 .m_expression_is_static = false,
+                 .m_target = ITEM_FLOATEXP_TGT_GLOWCOLOR_B,
+                 .m_static_value = &item->glowColor[2],
+                 .m_static_value_array_size = 1,
+                 .m_dynamic_flags_to_set = 0,
+                 },
+                {
+                 .m_expression = commonItem->m_glowcolor_expressions.m_a_exp.get(),
+                 .m_expression_is_static = false,
+                 .m_target = ITEM_FLOATEXP_TGT_GLOWCOLOR_A,
+                 .m_static_value = &item->glowColor[3],
+                 .m_static_value_array_size = 1,
+                 .m_dynamic_flags_to_set = 0,
+                 },
+                {
+                 .m_expression = commonItem->m_glowcolor_expressions.m_rgb_exp.get(),
+                 .m_expression_is_static = false,
+                 .m_target = ITEM_FLOATEXP_TGT_GLOWCOLOR_RGB,
+                 .m_static_value = &item->glowColor[0],
+                 .m_static_value_array_size = 3,
+                 .m_dynamic_flags_to_set = 0,
+                 },
+                {
+                 .m_expression = commonItem->m_backcolor_expressions.m_r_exp.get(),
+                 .m_expression_is_static = false,
+                 .m_target = ITEM_FLOATEXP_TGT_BACKCOLOR_R,
+                 .m_static_value = &item->window.backColor[0],
+                 .m_static_value_array_size = 1,
+                 .m_dynamic_flags_to_set = 0,
+                 },
+                {
+                 .m_expression = commonItem->m_backcolor_expressions.m_g_exp.get(),
+                 .m_expression_is_static = false,
+                 .m_target = ITEM_FLOATEXP_TGT_BACKCOLOR_G,
+                 .m_static_value = &item->window.backColor[1],
+                 .m_static_value_array_size = 1,
+                 .m_dynamic_flags_to_set = 0,
+                 },
+                {
+                 .m_expression = commonItem->m_backcolor_expressions.m_b_exp.get(),
+                 .m_expression_is_static = false,
+                 .m_target = ITEM_FLOATEXP_TGT_BACKCOLOR_B,
+                 .m_static_value = &item->window.backColor[2],
+                 .m_static_value_array_size = 1,
+                 .m_dynamic_flags_to_set = 0,
+                 },
+                {
+                 .m_expression = commonItem->m_backcolor_expressions.m_a_exp.get(),
+                 .m_expression_is_static = false,
+                 .m_target = ITEM_FLOATEXP_TGT_BACKCOLOR_A,
+                 .m_static_value = &item->window.backColor[3],
+                 .m_static_value_array_size = 1,
+                 .m_dynamic_flags_to_set = 0,
+                 },
+                {
+                 .m_expression = commonItem->m_backcolor_expressions.m_rgb_exp.get(),
+                 .m_expression_is_static = false,
+                 .m_target = ITEM_FLOATEXP_TGT_BACKCOLOR_RGB,
+                 .m_static_value = &item->window.backColor[0],
+                 .m_static_value_array_size = 3,
+                 .m_dynamic_flags_to_set = 0,
+                 },
+            };
+
+            floatExpressionCount = 0;
+            for (auto& [expression, expressionIsStatic, target, staticValue, staticValueArraySize, dynamicFlagsToSet] : locations)
+            {
+                expressionIsStatic = !m_disable_optimizations && staticValue != nullptr && expression && expression->IsStatic();
+
+                if (expressionIsStatic)
+                {
+                    const auto evaluatedValue = expression->EvaluateStatic();
+
+                    if (evaluatedValue.m_type == SimpleExpressionValue::Type::INT)
+                    {
+                        item->window.dynamicFlags[0] |= dynamicFlagsToSet;
+
+                        auto* staticValuePtr = staticValue;
+                        for (auto i = 0u; i < staticValueArraySize; i++)
+                        {
+                            *staticValuePtr = static_cast<float>(evaluatedValue.m_int_value);
+                            staticValuePtr++;
+                        }
+                        continue;
+                    }
+                    if (evaluatedValue.m_type == SimpleExpressionValue::Type::DOUBLE)
+                    {
+                        item->window.dynamicFlags[0] |= dynamicFlagsToSet;
+                        auto* staticValuePtr = staticValue;
+                        for (auto i = 0u; i < staticValueArraySize; i++)
+                        {
+                            *staticValue = static_cast<float>(evaluatedValue.m_double_value);
+                            staticValuePtr++;
+                        }
+                        continue;
+                    }
+
+                    // Do not consider this a mistake since the games menus do this by mistake and it should be able to compile them anyway
+                    // But the game should also not know what to do with this i guess
+                    expressionIsStatic = false;
+                }
+
+                if (expression)
+                    floatExpressionCount++;
+            }
+
+            if (floatExpressionCount <= 0)
+                return nullptr;
+
+            auto* floatExpressions = m_memory.Alloc<ItemFloatExpression>(floatExpressionCount);
+            auto floatExpressionIndex = 0;
+            for (const auto& [expression, expressionIsStatic, target, staticValue, staticValueArraySize, dynamicFlagsToSet] : locations)
+            {
+                if (!expression || expressionIsStatic)
+                    continue;
+
+                assert(floatExpressionIndex < floatExpressionCount && floatExpressionIndex >= 0);
+                floatExpressions[floatExpressionIndex].target = target;
+                floatExpressions[floatExpressionIndex].expression = ConvertExpression(expression, parentMenu, commonItem);
+                item->window.dynamicFlags[0] |= dynamicFlagsToSet;
+                floatExpressionIndex++;
+            }
+
+            return floatExpressions;
+        }
+
+        [[nodiscard]] const char* CreateEnableDvarString(const std::vector<std::string>& stringElements) const
+        {
+            std::ostringstream ss;
+
+            for (const auto& element : stringElements)
+            {
+                ss << "\"" << element << "\" ";
+            }
+
+            return m_memory.Dup(ss.str().c_str());
+        }
+
+        [[nodiscard]] const char* ConvertEnableDvar(const CommonItemDef& commonItem, int& dvarFlags) const
+        {
+            dvarFlags = 0;
+
+            if (!commonItem.m_enable_dvar.empty())
+            {
+                dvarFlags |= ITEM_DVAR_FLAG_ENABLE;
+                return CreateEnableDvarString(commonItem.m_enable_dvar);
+            }
+
+            if (!commonItem.m_disable_dvar.empty())
+            {
+                dvarFlags |= ITEM_DVAR_FLAG_DISABLE;
+                return CreateEnableDvarString(commonItem.m_disable_dvar);
+            }
+
+            if (!commonItem.m_show_dvar.empty())
+            {
+                dvarFlags |= ITEM_DVAR_FLAG_SHOW;
+                return CreateEnableDvarString(commonItem.m_show_dvar);
+            }
+
+            if (!commonItem.m_hide_dvar.empty())
+            {
+                dvarFlags |= ITEM_DVAR_FLAG_HIDE;
+                return CreateEnableDvarString(commonItem.m_hide_dvar);
+            }
+
+            if (!commonItem.m_focus_dvar.empty())
+            {
+                dvarFlags |= ITEM_DVAR_FLAG_FOCUS;
+                return CreateEnableDvarString(commonItem.m_focus_dvar);
+            }
+
+            return nullptr;
+        }
+
+        [[nodiscard]] listBoxDef_s* ConvertListBoxFeatures(itemDef_s* item,
+                                                           const CommonItemFeaturesListBox* commonListBox,
+                                                           const CommonMenuDef& parentMenu,
+                                                           const CommonItemDef& commonItem) const
+        {
+            if (!commonListBox)
+                return nullptr;
+
+            auto* listBox = m_memory.Alloc<listBoxDef_s>();
+            listBox->notselectable = commonListBox->m_not_selectable ? 1 : 0;
+            listBox->noScrollBars = commonListBox->m_no_scrollbars ? 1 : 0;
+            listBox->usePaging = commonListBox->m_use_paging ? 1 : 0;
+            listBox->elementWidth = static_cast<float>(commonListBox->m_element_width);
+            listBox->elementHeight = static_cast<float>(commonListBox->m_element_height);
+            item->special = static_cast<float>(commonListBox->m_feeder);
+            listBox->elementStyle = commonListBox->m_element_style;
+            listBox->onDoubleClick = ConvertEventHandlerSet(commonListBox->m_on_double_click.get(), &parentMenu, &commonItem);
+            ConvertColor(listBox->selectBorder, commonListBox->m_select_border);
+            listBox->selectIcon = ConvertMaterial(commonListBox->m_select_icon, &parentMenu, &commonItem);
+            listBox->elementHeightExp =
+                ConvertOrApplyStatement(listBox->elementHeight, commonListBox->m_element_height_expression.get(), &parentMenu, &commonItem);
+
+            listBox->numColumns = static_cast<int>(std::min(std::size(listBox->columnInfo), commonListBox->m_columns.size()));
+            for (auto i = 0; i < listBox->numColumns; i++)
+            {
+                auto& col = listBox->columnInfo[i];
+                const auto& commonCol = commonListBox->m_columns[i];
+
+                col.xpos = commonCol.m_x_pos;
+                col.ypos = commonCol.m_y_pos;
+                col.width = commonCol.m_width;
+                col.maxChars = commonCol.m_max_chars;
+                col.alignment = commonCol.m_alignment;
+            }
+
+            return listBox;
+        }
+
+        [[nodiscard]] editFieldDef_s* ConvertEditFieldFeatures(itemDef_s* item, const CommonItemFeaturesEditField* commonEditField) const
+        {
+            if (!commonEditField)
+                return nullptr;
+
+            auto* editField = m_memory.Alloc<editFieldDef_s>();
+            editField->stepVal = static_cast<float>(commonEditField->m_def_val);
+            editField->minVal = static_cast<float>(commonEditField->m_min_val);
+            editField->maxVal = static_cast<float>(commonEditField->m_max_val);
+            item->localVar = ConvertString(commonEditField->m_local_var);
+            editField->maxChars = commonEditField->m_max_chars;
+            editField->maxCharsGotoNext = commonEditField->m_max_chars_goto_next ? 1 : 0;
+            editField->maxPaintChars = commonEditField->m_max_paint_chars;
+
+            return editField;
+        }
+
+        [[nodiscard]] multiDef_s* ConvertMultiValueFeatures(const CommonItemFeaturesMultiValue* commonMultiValue) const
+        {
+            if (!commonMultiValue)
+                return nullptr;
+
+            auto* multiValue = m_memory.Alloc<multiDef_s>();
+            multiValue->count = static_cast<int>(std::min(std::size(multiValue->dvarList), commonMultiValue->m_step_names.size()));
+            multiValue->strDef = !commonMultiValue->m_string_values.empty() ? 1 : 0;
+
+            for (auto i = 0; i < multiValue->count; i++)
+            {
+                multiValue->dvarList[i] = ConvertString(commonMultiValue->m_step_names[i]);
+
+                if (multiValue->strDef)
+                {
+                    if (commonMultiValue->m_string_values.size() > static_cast<unsigned>(i))
+                        multiValue->dvarStr[i] = ConvertString(commonMultiValue->m_string_values[i]);
+                }
+                else
+                {
+                    if (commonMultiValue->m_double_values.size() > static_cast<unsigned>(i))
+                        multiValue->dvarValue[i] = static_cast<float>(commonMultiValue->m_double_values[i]);
+                }
+            }
+
+            return multiValue;
+        }
+
+        [[nodiscard]] newsTickerDef_s* ConvertNewsTickerFeatures(const CommonItemFeaturesNewsTicker* commonNewsTicker) const
+        {
+            if (!commonNewsTicker)
+                return nullptr;
+
+            auto* newsTicker = m_memory.Alloc<newsTickerDef_s>();
+            newsTicker->spacing = commonNewsTicker->m_spacing;
+            newsTicker->speed = commonNewsTicker->m_speed;
+            newsTicker->feedId = commonNewsTicker->m_news_feed_id;
+
+            return newsTicker;
+        }
+
+        [[nodiscard]] itemDef_s* ConvertItem(const CommonMenuDef& commonParentMenu, menuDef_t& parentMenu, const CommonItemDef& commonItem) const
+        {
+            auto* item = m_memory.Alloc<itemDef_s>();
+            memset(item, 0, sizeof(itemDef_s));
+
+            item->window.name = ConvertString(commonItem.m_name);
+            item->text = commonItem.m_text ? m_memory.Dup(commonItem.m_text->c_str()) : nullptr;
+            ApplyFlag(item->itemFlags, commonItem.m_text_save_game, ITEM_FLAG_SAVE_GAME_INFO);
+            ApplyFlag(item->itemFlags, commonItem.m_text_cinematic_subtitle, ITEM_FLAG_CINEMATIC_SUBTITLE);
+            item->window.group = ConvertString(commonItem.m_group);
+            item->window.rectClient = ConvertRectDef(commonItem.m_rect);
+            item->window.style = commonItem.m_style;
+            ApplyFlag(item->window.staticFlags, commonItem.m_decoration, WINDOW_FLAG_DECORATION);
+            ApplyFlag(item->window.staticFlags, commonItem.m_auto_wrapped, WINDOW_FLAG_AUTO_WRAPPED);
+            ApplyFlag(item->window.staticFlags, commonItem.m_horizontal_scroll, WINDOW_FLAG_HORIZONTAL_SCROLL);
+            item->type = commonItem.m_type;
+            item->dataType = commonItem.m_type;
+            item->window.border = commonItem.m_border;
+            item->window.borderSize = static_cast<float>(commonItem.m_border_size);
+            item->visibleExp = ConvertVisibleExpression(item->window, commonItem.m_visible_expression.get(), &commonParentMenu, &commonItem);
+            item->disabledExp = ConvertExpression(commonItem.m_disabled_expression.get(), &commonParentMenu, &commonItem);
+            item->window.ownerDraw = commonItem.m_owner_draw;
+            item->window.ownerDrawFlags = commonItem.m_owner_draw_flags;
+            item->alignment = commonItem.m_align;
+            item->textAlignMode = commonItem.m_text_align;
+            item->textalignx = static_cast<float>(commonItem.m_text_align_x);
+            item->textaligny = static_cast<float>(commonItem.m_text_align_y);
+            item->textscale = static_cast<float>(commonItem.m_text_scale);
+            item->textStyle = commonItem.m_text_style;
+            item->fontEnum = commonItem.m_text_font;
+            ConvertColor(item->window.backColor, commonItem.m_back_color);
+
+            ConvertColor(item->window.foreColor, commonItem.m_fore_color);
+            ApplyFlag(item->window.dynamicFlags[0], !commonItem.m_fore_color.Equals(CommonColor(1.0, 1.0, 1.0, 1.0)), WINDOW_FLAG_NON_DEFAULT_FORECOLOR);
+
+            ConvertColor(item->window.borderColor, commonItem.m_border_color);
+            ConvertColor(item->window.outlineColor, commonItem.m_outline_color);
+            ConvertColor(item->window.disableColor, commonItem.m_disable_color);
+            ConvertColor(item->glowColor, commonItem.m_glow_color);
+            item->window.background = ConvertMaterial(commonItem.m_background, &commonParentMenu, &commonItem);
+            item->onFocus = ConvertEventHandlerSet(commonItem.m_on_focus.get(), &commonParentMenu, &commonItem);
+            item->hasFocus = ConvertEventHandlerSet(commonItem.m_has_focus.get(), &commonParentMenu, &commonItem);
+            item->leaveFocus = ConvertEventHandlerSet(commonItem.m_on_leave_focus.get(), &commonParentMenu, &commonItem);
+            item->mouseEnter = ConvertEventHandlerSet(commonItem.m_on_mouse_enter.get(), &commonParentMenu, &commonItem);
+            item->mouseExit = ConvertEventHandlerSet(commonItem.m_on_mouse_exit.get(), &commonParentMenu, &commonItem);
+            item->mouseEnterText = ConvertEventHandlerSet(commonItem.m_on_mouse_enter_text.get(), &commonParentMenu, &commonItem);
+            item->mouseExitText = ConvertEventHandlerSet(commonItem.m_on_mouse_exit_text.get(), &commonParentMenu, &commonItem);
+            item->action = ConvertEventHandlerSet(commonItem.m_on_action.get(), &commonParentMenu, &commonItem);
+            item->onAccept = ConvertEventHandlerSet(commonItem.m_on_accept.get(), &commonParentMenu, &commonItem);
+            item->focusSound = ConvertSound(commonItem.m_focus_sound, &commonParentMenu, &commonItem);
+            item->dvar = ConvertString(commonItem.m_dvar);
+            item->dvarTest = ConvertString(commonItem.m_dvar_test);
+            item->enableDvar = ConvertEnableDvar(commonItem, item->dvarFlags);
+            item->onKey = ConvertKeyHandler(commonItem.m_key_handlers, &commonParentMenu, &commonItem);
+            item->textExp = ConvertOrApplyStatement(item->text, commonItem.m_text_expression.get(), &commonParentMenu, &commonItem);
+            item->textAlignYExp = ConvertOrApplyStatement(item->textaligny, commonItem.m_text_align_y_expression.get(), &commonParentMenu, &commonItem);
+            item->materialExp = ConvertOrApplyStatement(item->window.background, commonItem.m_material_expression.get(), &commonParentMenu, &commonItem);
+            item->disabledExp = ConvertExpression(commonItem.m_disabled_expression.get(), &commonParentMenu, &commonItem);
+            item->floatExpressions = ConvertFloatExpressions(&commonItem, item, &commonParentMenu, item->floatExpressionCount);
+            item->gameMsgWindowIndex = commonItem.m_game_message_window_index;
+            item->gameMsgWindowMode = commonItem.m_game_message_window_mode;
+            item->fxLetterTime = commonItem.m_fx_letter_time;
+            item->fxDecayStartTime = commonItem.m_fx_decay_start_time;
+            item->fxDecayDuration = commonItem.m_fx_decay_duration;
+
+            switch (commonItem.m_feature_type)
+            {
+            case CommonItemFeatureType::LISTBOX:
+                item->typeData.listBox = ConvertListBoxFeatures(item, commonItem.m_list_box_features.get(), commonParentMenu, commonItem);
+                break;
+
+            case CommonItemFeatureType::EDIT_FIELD:
+                item->typeData.editField = ConvertEditFieldFeatures(item, commonItem.m_edit_field_features.get());
+                break;
+
+            case CommonItemFeatureType::MULTI_VALUE:
+                item->typeData.multi = ConvertMultiValueFeatures(commonItem.m_multi_value_features.get());
+                break;
+
+            case CommonItemFeatureType::ENUM_DVAR:
+                item->typeData.enumDvarName = ConvertString(commonItem.m_enum_dvar_name);
+                break;
+
+            case CommonItemFeatureType::NEWS_TICKER:
+                item->typeData.ticker = ConvertNewsTickerFeatures(commonItem.m_news_ticker_features.get());
+                break;
+
+            case CommonItemFeatureType::NONE:
+            default:
+                if (item->type == ITEM_TYPE_TEXT_SCROLL)
+                    item->typeData.scroll = m_memory.Alloc<textScrollDef_s>();
+
+                break;
+            }
+
+            // Do this last so any optimizations are considered
+            item->window.rect = ConvertRectDefRelativeTo(item->window.rectClient, parentMenu.window.rect);
+
+            item->parent = &parentMenu;
+
+            return item;
+        }
+
+        itemDef_s** ConvertMenuItems(const CommonMenuDef& commonMenu, menuDef_t& menu, int& itemCount) const
+        {
+            if (commonMenu.m_items.empty())
+            {
+                itemCount = 0;
+                return nullptr;
+            }
+
+            auto* items = m_memory.Alloc<itemDef_s*>(commonMenu.m_items.size());
+            for (auto i = 0u; i < commonMenu.m_items.size(); i++)
+                items[i] = ConvertItem(commonMenu, menu, *commonMenu.m_items[i]);
+
+            itemCount = static_cast<int>(commonMenu.m_items.size());
+
+            return items;
+        }
+
+    public:
+        MenuConverter(const bool disableOptimizations, ISearchPath& searchPath, MemoryManager& memory, AssetCreationContext& context)
+            : AbstractMenuConverter(disableOptimizations, searchPath, memory, context),
+              m_conversion_zone_state(context.GetZoneAssetCreationState<MenuConversionZoneState>()),
+              m_parsing_zone_state(context.GetZoneAssetCreationState<MenuAssetZoneState>())
+        {
+        }
+
+        bool ConvertMenu(const CommonMenuDef& commonMenu, menuDef_t& menu, AssetRegistration<AssetMenu>& registration) override
+        {
+            try
+            {
+                auto* menuData = m_memory.Alloc<menuData_t>();
+
+                menu.data = menuData;
+                menu.window.name = m_memory.Dup(commonMenu.m_name.c_str());
+                menuData->fullScreen = commonMenu.m_full_screen ? 1 : 0;
+                ApplyFlag(menu.window.staticFlags, commonMenu.m_screen_space, WINDOW_FLAG_SCREEN_SPACE);
+                ApplyFlag(menu.window.staticFlags, commonMenu.m_decoration, WINDOW_FLAG_DECORATION);
+                menu.window.rect = ConvertRectDef(commonMenu.m_rect);
+                menu.window.rectClient = menu.window.rect;
+                menu.window.style = commonMenu.m_style;
+                menu.window.border = commonMenu.m_border;
+                menu.window.borderSize = static_cast<float>(commonMenu.m_border_size);
+                ConvertColor(menu.window.backColor, commonMenu.m_back_color);
+                ConvertColor(menu.window.foreColor, commonMenu.m_fore_color);
+                ConvertColor(menu.window.borderColor, commonMenu.m_border_color);
+                ConvertColor(menuData->focusColor, commonMenu.m_focus_color);
+                menu.window.background = ConvertMaterial(commonMenu.m_background, &commonMenu);
+                menu.window.ownerDraw = commonMenu.m_owner_draw;
+                menu.window.ownerDrawFlags = commonMenu.m_owner_draw_flags;
+                ApplyFlag(menu.window.staticFlags, commonMenu.m_out_of_bounds_click, WINDOW_FLAG_OUT_OF_BOUNDS_CLICK);
+                menuData->soundName = ConvertString(commonMenu.m_sound_loop);
+                ApplyFlag(menu.window.staticFlags, commonMenu.m_popup, WINDOW_FLAG_POPUP);
+                menuData->fadeClamp = static_cast<float>(commonMenu.m_fade_clamp);
+                menuData->fadeCycle = commonMenu.m_fade_cycle;
+                menuData->fadeAmount = static_cast<float>(commonMenu.m_fade_amount);
+                menuData->fadeInAmount = static_cast<float>(commonMenu.m_fade_in_amount);
+                menuData->blurRadius = static_cast<float>(commonMenu.m_blur_radius);
+                ApplyFlag(menu.window.staticFlags, commonMenu.m_legacy_split_screen_scale, WINDOW_FLAG_LEGACY_SPLIT_SCREEN_SCALE);
+                ApplyFlag(menu.window.staticFlags, commonMenu.m_hidden_during_scope, WINDOW_FLAG_HIDDEN_DURING_SCOPE);
+                ApplyFlag(menu.window.staticFlags, commonMenu.m_hidden_during_flashbang, WINDOW_FLAG_HIDDEN_DURING_FLASH_BANG);
+                ApplyFlag(menu.window.staticFlags, commonMenu.m_hidden_during_ui, WINDOW_FLAG_HIDDEN_DURING_UI);
+                menuData->allowedBinding = ConvertString(commonMenu.m_allowed_binding);
+                ApplyFlag(menu.window.staticFlags, commonMenu.m_text_only_focus, WINDOW_FLAG_TEXT_ONLY_FOCUS);
+                menuData->visibleExp = ConvertVisibleExpression(menu.window, commonMenu.m_visible_expression.get(), &commonMenu);
+                menuData->rectXExp = ConvertOrApplyStatement(menu.window.rect.x, commonMenu.m_rect_x_exp.get(), &commonMenu);
+                menuData->rectYExp = ConvertOrApplyStatement(menu.window.rect.y, commonMenu.m_rect_y_exp.get(), &commonMenu);
+                menuData->rectWExp = ConvertOrApplyStatement(menu.window.rect.w, commonMenu.m_rect_w_exp.get(), &commonMenu);
+                menuData->rectHExp = ConvertOrApplyStatement(menu.window.rect.h, commonMenu.m_rect_h_exp.get(), &commonMenu);
+                menuData->openSoundExp = ConvertExpression(commonMenu.m_open_sound_exp.get(), &commonMenu);
+                menuData->closeSoundExp = ConvertExpression(commonMenu.m_close_sound_exp.get(), &commonMenu);
+                menuData->onOpen = ConvertEventHandlerSet(commonMenu.m_on_open.get(), &commonMenu);
+                menuData->onClose = ConvertEventHandlerSet(commonMenu.m_on_close.get(), &commonMenu);
+                menuData->onCloseRequest = ConvertEventHandlerSet(commonMenu.m_on_request_close.get(), &commonMenu);
+                menuData->onESC = ConvertEventHandlerSet(commonMenu.m_on_esc.get(), &commonMenu);
+                menuData->onFocusDueToClose = ConvertEventHandlerSet(commonMenu.m_on_focus_due_to_close.get(), &commonMenu);
+                menuData->onKey = ConvertKeyHandler(commonMenu.m_key_handlers, &commonMenu);
+                menu.items = ConvertMenuItems(commonMenu, menu, menu.itemCount);
+                menuData->expressionData = m_conversion_zone_state.m_supporting_data;
+            }
+            catch (const MenuConversionException& e)
+            {
+                PrintConversionExceptionDetails(e);
+                return false;
+            }
+
+            return true;
+        }
+
+        MenuConversionZoneState& m_conversion_zone_state;
+        MenuAssetZoneState& m_parsing_zone_state;
+    };
+} // namespace
+
+std::unique_ptr<IMenuConverter>
+    IMenuConverter::Create(const bool disableOptimizations, ISearchPath& searchPath, MemoryManager& memory, AssetCreationContext& context)
+{
+    return std::make_unique<MenuConverter>(disableOptimizations, searchPath, memory, context);
+}

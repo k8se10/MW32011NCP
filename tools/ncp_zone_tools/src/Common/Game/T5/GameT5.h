@@ -1,0 +1,17 @@
+#pragma once
+
+#include "Game/IGame.h"
+
+namespace T5
+{
+    class Game final : public AbstractGame
+    {
+    public:
+        Game();
+
+        [[nodiscard]] GameId GetId() const override;
+        [[nodiscard]] const std::string& GetFullName() const override;
+        [[nodiscard]] const std::string& GetShortName() const override;
+        [[nodiscard]] const std::vector<GameLanguagePrefix>& GetLanguagePrefixes() const override;
+    };
+} // namespace T5

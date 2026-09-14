@@ -1,0 +1,10 @@
+// =========================================
+// KeyValuePairs
+// =========================================
+use KeyValuePairs;
+set block XFILE_BLOCK_TEMP;
+set string name;
+set count keyValuePairs numVariables;
+
+// KeyValuePair
+set string KeyValuePair::value;

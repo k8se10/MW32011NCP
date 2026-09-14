@@ -1,0 +1,41 @@
+#pragma once
+
+#include "Domain/Definition/DefinitionWithMembers.h"
+#include "Domain/Definition/EnumMember.h"
+#include "Domain/Extension/CustomAction.h"
+#include "Domain/FastFile/FastFileBlock.h"
+#include "MemberInformation.h"
+#include "TypeInformation.h"
+
+#include <memory>
+#include <vector>
+
+class MemberInformation;
+
+class StructureInformation
+{
+public:
+    StructureInformation(DefinitionWithMembers* definition, TypeInformation* typeInfo);
+
+    DefinitionWithMembers* m_definition;
+    TypeInformation* m_type_info;
+    std::string m_asset_name;
+
+    std::unique_ptr<IEvaluation> m_alloc_alignment;
+    std::vector<StructureInformation*> m_usages;
+    std::vector<std::unique_ptr<MemberInformation>> m_ordered_members;
+
+    bool m_is_leaf;
+    bool m_requires_marking;
+    bool m_has_matching_cross_platform_structure;
+
+    bool m_embedded_reference_exists;
+    bool m_non_embedded_reference_exists;
+    bool m_single_pointer_reference_exists;
+    bool m_array_pointer_reference_exists;
+    bool m_array_reference_exists;
+    bool m_reference_from_non_default_normal_block_exists;
+
+    std::unique_ptr<CustomAction> m_post_load_action;
+    const FastFileBlock* m_block;
+};
