@@ -7,6 +7,7 @@
 #include "Utils/Alignment.h"
 #include "Utils/Logging/Log.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cstring>
 #include <iostream>
@@ -303,6 +304,90 @@ namespace
         {
             assert((static_cast<block_t>((zonePtr & m_block_mask) >> m_block_shift)) < m_blocks.size());
             m_alias_redirect_lookup.emplace(zonePtr, value);
+        }
+
+        // Real, permanent fix (not diagnostic): see ZoneInputStream.h's own doc comment on
+        // TryConvertOffsetToStringPointerNative for the full rationale. Confirmed root cause
+        // (re_notes/x64_migration/fastfile_format_research.md SS5.16 in the parent repo):
+        // MaterialPixelShader::name in code_post_gfx.ff is a shared/interned shader-filename
+        // cross-reference genuinely encoded at 32-bit width on the wire (the pre-x64-recompile
+        // legacy scheme), not this stream's own configured 64-bit native width -- confirmed
+        // empirically (a live diagnostic resolved the alternate decode to a real, readable
+        // string, "trivial_vertcol_simple.hlsl"). Deliberately scoped to STRING resolution only
+        // (LoadXString's own call site), not the shared pointer-conversion path every other
+        // asset type's already-working pointer fields go through, and deliberately requires a
+        // real validated non-empty null-terminated printable string before trusting the
+        // fallback -- rejects the different, separate case (SS5.17: hamburg.ff/common.ff's own
+        // XModel/AddonMapEnts failures) where the identical "top 32 bits zero" shape appears on
+        // a genuine forward reference into a block that hasn't been written yet, which would
+        // otherwise misread real, in-bounds, but all-zero/unwritten memory as if it were valid
+        // (an all-zero span's very first byte is already a NUL, so an empty-string result is
+        // the actual signature of that different bug, not a real resolved string -- rejected
+        // explicitly below, not merely permitted by accident).
+        const char* TryConvertOffsetToStringPointerNative(const void* offset) override
+        {
+            const auto offsetInt = reinterpret_cast<uintptr_t>(offset) - 1u;
+
+            const auto blockNum = static_cast<block_t>((offsetInt & m_block_mask) >> m_block_shift);
+            const auto blockOffset = static_cast<size_t>(offsetInt & m_offset_mask);
+
+            // If the standard, native-width decode is already valid, this isn't the narrow
+            // case this fallback exists for -- let the real call resolve it as normal.
+            if (blockNum < static_cast<block_t>(m_blocks.size()) && m_blocks[blockNum]->m_buffer_size > blockOffset)
+                return nullptr;
+
+            // The confirmed empirical signature of a pointer genuinely encoded at 32-bit width
+            // rather than this stream's native width: the raw value's bits above 32 are exactly
+            // zero. A genuine native-width offset with a small real value would never reach this
+            // point at all, since it would already have resolved successfully just above.
+            if ((offsetInt >> 32) != 0u)
+                return nullptr;
+
+            constexpr unsigned kLegacyBlockBitCount = 4u;
+            constexpr unsigned kLegacyPointerBitCount = 32u;
+            constexpr unsigned kLegacyBlockShift = kLegacyPointerBitCount - kLegacyBlockBitCount;
+            constexpr uint32_t kLegacyOffsetMask = (1u << kLegacyBlockShift) - 1u;
+
+            const auto offsetInt32 = static_cast<uint32_t>(offsetInt);
+            const auto altBlockNum = static_cast<block_t>((offsetInt32 >> kLegacyBlockShift) & 0xFu);
+            const auto altBlockOffset = static_cast<size_t>(offsetInt32 & kLegacyOffsetMask);
+
+            if (altBlockNum >= static_cast<block_t>(m_blocks.size()))
+                return nullptr;
+
+            auto* altBlock = m_blocks[altBlockNum];
+            if (altBlockOffset >= altBlock->m_buffer_size)
+                return nullptr;
+
+            constexpr size_t kMaxScanLength = 4096u;
+            const auto remaining = altBlock->m_buffer_size - altBlockOffset;
+            const auto scanLimit = std::min<size_t>(remaining, kMaxScanLength);
+
+            bool foundNul = false;
+            size_t nulPos = 0;
+            for (size_t i = 0; i < scanLimit; i++)
+            {
+                const auto b = static_cast<uint8_t>(altBlock->m_buffer[altBlockOffset + i]);
+                if (b == 0)
+                {
+                    foundNul = true;
+                    nulPos = i;
+                    break;
+                }
+
+                // Reject anything that isn't printable ASCII -- a real filename/identifier
+                // string, not binary noise from a misinterpreted non-string pointer.
+                if (b < 0x20 || b >= 0x7Fu)
+                    return nullptr;
+            }
+
+            // A NUL at the very first byte (an "empty string") is the actual signature of
+            // unwritten memory, not a genuine resolved string -- reject it explicitly rather
+            // than silently accepting the different, unrelated forward-reference bug (SS5.17).
+            if (!foundNul || nulPos == 0)
+                return nullptr;
+
+            return reinterpret_cast<const char*>(&altBlock->m_buffer[altBlockOffset]);
         }
 
         void* ConvertOffsetToPointerNative(const void* offset) override
