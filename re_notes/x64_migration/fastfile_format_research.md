@@ -681,6 +681,48 @@ where the REAL on-disk bytes diverge from what this fork's own code
 consumes. Both are qualitatively different from the native-decompile
 cross-referencing already exhausted this round.
 
+## 5.11. UPDATE, 2026-09-14 (later still, "for what we need surely we dont really need that? at this time anyway") — `iw5oat` is already usable TODAY for real GSC extraction, independent of the still-open §5.10 shader bug
+
+**Status: confirmed working.** Direct pushback on continuing the §5.10
+deep-dive prompted a pivot: rather than keep chasing the `MaterialPixelShader::name`
+corruption, tested whether zones that never reference a `Material` asset at
+all already extract cleanly with the fixes already committed (the dispatch-
+record fix, `LoadXStringArray`'s stride fix, and the full `x64_offset_fixes/`
+pass) — since this project's own actual need (`CLAUDE.md`'s standing
+GSC-first RE methodology) never required Material/shader loading in the
+first place, only RawFile/ScriptFile.
+
+**Result: yes.** `zone/english/sp_intro.ff` and `zone/english/sp_prague.ff`
+(both real, retail, script-only Campaign zones — no `Material`-referencing
+content) load and extract through `Unlinker.exe` **with 0 warnings, 0
+errors**, producing genuinely valid output, byte-verified, not just "the
+tool exited 0":
+- `808.gscbin` (33 bytes) and `maps/sp_intro.gscbin` (71 bytes) — both open
+  with a real zlib `78 DA` deflate header, the same compression magic this
+  document's own §1 already established for the outer FastFile container
+  — real, valid, compressed GSC bytecode, not garbage.
+- `maps/sp_intro.mapents` (146 bytes) — readable, valid entity-definition
+  text.
+- `sp_intro` itself (an empty 0-byte RawFile marker asset) extracts
+  correctly as empty, matching its expected real content.
+
+**Practical conclusion**: `iw5oat` is genuinely usable *right now* for its
+actual stated purpose — GSC/rawfile extraction to support the GSC-first RE
+methodology — on any zone that doesn't pull in a `Material` asset, entirely
+independent of whether §5.10's shader-bytecode corruption is ever resolved.
+The remaining open bug only blocks zones that reference Materials (most
+zones with real rendered geometry/UI, e.g. `hamburg.ff`, `common.ff`,
+`code_post_gfx.ff`) — it does not block script-only zones. This significantly
+changes the practical urgency of §5.10: it's a real, still-open bug worth
+eventually fixing, but not one that was ever blocking this project's actual
+day-to-day GSC RE work, which can already proceed today against any
+script-only zone.
+
+**Not yet done**: a full sweep of every `sp_*.ff`/`so_*.ff` zone to map out
+exactly which ones are script-only (already usable) vs. Material-referencing
+(still blocked) — only `sp_intro.ff`/`sp_prague.ff` have been directly
+confirmed so far, both by direct test, not by inference from filename.
+
 ## 6. Scoped plan for in-house tooling — an MVP, not a full OpenAssetTools replacement
 
 **This project's own actual need is narrow**: GSC/rawfile extraction to

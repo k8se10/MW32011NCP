@@ -42,8 +42,22 @@ exactly the support this project actually needs, directly.
 
 ## Current status
 
-The real x64 fix has three parts, the first two done and confirmed live,
-the third still open:
+**Already usable today for this project's actual need — GSC/rawfile
+extraction on script-only zones.** `zone/english/sp_intro.ff` and
+`zone/english/sp_prague.ff` (real retail Campaign zones with no `Material`
+content) load and extract cleanly through `Unlinker.exe`: **0 warnings, 0
+errors**, real valid output confirmed byte-by-byte — `.gscbin` files
+opening with a genuine zlib `78 DA` header, a readable `.mapents` file, an
+empty `RawFile` marker extracting as empty. This is independent of the one
+remaining open bug below, which only affects zones that reference a
+`Material` asset. Full trail:
+[`re_notes/x64_migration/fastfile_format_research.md`](../../re_notes/x64_migration/fastfile_format_research.md)
+§5.11. Not yet swept: which other `sp_*.ff`/`so_*.ff` zones are script-only
+vs. Material-referencing — only these two are directly confirmed so far.
+
+The real x64 fix has four parts. The first three are done and confirmed
+live; the fourth is a separate, narrower, still-open bug that only blocks
+Material-referencing zones:
 
 1. **The outer dispatch-record/header bugs — fixed.** `iw5sp.exe`'s own
    zone-loading code was decompiled directly (Ghidra) to find the real
@@ -65,26 +79,33 @@ the third still open:
    scripts have to be re-run after every real `ZoneCodeGenerator`
    invocation** — their target is gitignored, regenerated build output,
    not tracked source; see that README for the exact sequence.
-3. **Still open**: a small number of generated structs
-   (`MaterialVertexStreamRouting::decl[]`, `MaterialPixelShaderProgram::ps`,
-   `MaterialVertexShaderProgram::vs`) declare real pointer fields that are
-   never read from the wire by their own `FillStruct_*` function — whether
-   these are genuinely on-disk (raw serialized memory, matching this
-   format's own convention) or runtime-only fields the wire format never
-   included isn't resolved yet. This is the actual reason `Unlinker`
-   still fails partway through real retail zones (confirmed: the same
-   `MaterialPass` → shader-asset chain, on all three zones tested) —
-   see `x64_offset_fixes/README.md`'s own "Known open question" section
-   for the full detail and what it'll take to resolve (native Ghidra RE,
-   not more guessing).
-
-**Confirmed via direct testing against real retail zones from the live
-game install** (`hamburg.ff`, `common.ff`, `code_post_gfx.ff`): the
-original unconditional segfault is gone — all three now load through
-decompression, the block-size header, and the entire dispatch loop with
-no crash, failing instead with a clean, structured error partway through
-real content. That's real progress (a crash vs. a legible, bounded
-failure) even though full extraction isn't there yet.
+3. **The `decl[]`/`ps`/`vs`/`Material::subMaterials` question — resolved.**
+   Direct Ghidra decompile of `iw5sp.exe`'s own real fill functions
+   confirmed `MaterialVertexStreamRouting::decl[]`,
+   `MaterialPixelShaderProgram::ps`, and `MaterialVertexShaderProgram::vs`
+   are all genuinely on the wire (never explicitly filled because they're
+   runtime-only D3D shader-object caches, not because they're absent) —
+   no code change needed, the scripts above already handle them correctly
+   by trusting `sizeof()`. The same native-verification technique found a
+   real, different bug along the way: `Material::subMaterials` was a
+   genuinely phantom trailing field, now removed from the struct. See
+   `x64_offset_fixes/README.md`'s own "Resolved: the decl[]/ps/vs
+   question" section.
+4. **Still open, paused**: `MaterialTechniqueSet`'s own `MaterialPass` →
+   `MaterialVertexDeclaration`/`MaterialVertexShader`/`MaterialPixelShader`
+   chain still fails on every Material-referencing zone tested
+   (`hamburg.ff`, `common.ff`, `code_post_gfx.ff`). A byte-exact hex dump
+   isolated the corruption to exactly the 8 bytes of
+   `MaterialPixelShader::name` — every other field in the same read, and
+   the entire `MaterialVertexShader` read immediately before it, are
+   byte-perfect. An "wrong `XFILE_BLOCK_*`" theory was tested and
+   disproven with direct decompile evidence. Root cause not yet found
+   despite many rounds of native verification — paused per this project's
+   own standing persistence-threshold principle rather than continuing to
+   re-derive the same conclusions; concrete next steps (live x64dbg
+   debugging or a raw hex-editor comparison) are on record. See
+   `x64_offset_fixes/README.md`'s own "Known open issue, not yet resolved"
+   section.
 
 ## Scope: IW5 only, deliberately
 
