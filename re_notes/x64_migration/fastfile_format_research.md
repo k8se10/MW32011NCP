@@ -1137,6 +1137,78 @@ against real block buffers under the alternate decode) against
 specifically, to determine whether this is one narrow fix or a systemic
 one before implementing anything.
 
+## 5.17. UPDATE, 2026-09-14 (later still, "keep going") — the recommended next step from §5.16 run directly: the 32-bit-decode pattern IS consistent across all three failing zones (same block index every time), but `hamburg.ff`/`common.ff` resolve to genuinely unwritten memory, not readable content — a real complication, not a clean confirmation
+
+**Status: pattern confirmed consistent, but NOT a clean "same fix for
+everything" result — a real, unresolved complication found. Still no fix
+implemented.**
+
+Extended the same diagnostic technique from §5.16 (log both the current
+64-bit decode and an alternate 32-bit decode at the exact point of
+throw, non-behavior-changing) to every `ConvertOffsetTo*` throw site in
+`ZoneInputStream.cpp` (`ConvertOffsetToPointerNative`,
+`ConvertOffsetToAliasNative`, `ConvertOffsetToPointerLookup`,
+`ConvertOffsetToAliasLookup` — four real call sites share the identical
+decode-and-throw shape, not just the one already tested), then re-ran
+against `hamburg.ff` and `common.ff`.
+
+**Real, non-coincidental pattern confirmed**: all three zones' failures —
+`code_post_gfx.ff` (Material/shader chain), `hamburg.ff` (`XModel`),
+`common.ff` (`AddonMapEnts`) — decode to the **exact same block index (3,
+`XFILE_BLOCK_VIRTUAL`)** under the alternate 32-bit-wide scheme, despite
+being three completely different asset types with three different real
+on-wire values. That consistency is itself strong evidence the 32-bit
+decode width is structurally correct as a general phenomenon in this x64
+zone format, not a one-off coincidence specific to
+`MaterialPixelShader::name`.
+
+**The complication**: unlike `code_post_gfx.ff` (whose alt-decoded bytes
+were a genuine, readable string), both `hamburg.ff`'s and `common.ff`'s
+alt-decoded positions resolve to **all-zero bytes** — not corrupted, not
+obviously wrong, just empty/unwritten memory at the computed position,
+even though the offset comfortably fits within `XFILE_BLOCK_VIRTUAL`'s
+own real (much larger) buffer size in both cases (`hamburg.ff`:
+offset 61188 of a 128,640,144-byte block; `common.ff`: offset 153474 of a
+55,425,096-byte block).
+
+**Most likely explanation, not yet confirmed**: `XFILE_BLOCK_VIRTUAL`'s
+buffer is filled progressively, in file order, as the zone stream is
+consumed — not pre-populated. `code_post_gfx.ff`'s working case was a
+*backward* reference (to a shader filename string plausibly interned
+earlier in the same load sequence, already written by the time it's
+referenced). `common.ff` fails on asset index 0 — the very first asset in
+the entire zone (§5.15) — meaning almost nothing has been written to
+ANY block yet; if `AddonMapEnts`'s own reference at that point is a
+*forward* reference (to content written later in the stream), the
+computed block position would legitimately still be zero-filled
+regardless of whether the pointer-width decode itself is right. This
+would mean the width-mismatch bug is real and probably still needs fixing
+for `hamburg.ff`/`common.ff` too, but isn't sufficient on its own to
+unblock them — a second, real question (how forward references into
+`XFILE_BLOCK_VIRTUAL` are supposed to resolve, if the real engine even
+allows them, or whether this fork's own progressive fill order is itself
+missing a two-pass or deferred-resolution step) would need its own
+investigation before either zone can extract.
+
+**No fix applied.** All instrumentation (this round's extended version
+across four call sites, sharing one small helper, `DiagLogAltDecode`)
+fully reverted via `git checkout --`, confirmed clean, rebuilt, and all
+five known zones re-verified to reproduce their exact prior signatures
+with 0 regression.
+
+**Where this leaves the investigation**: the pointer-width-mismatch root
+cause (§5.16) is now corroborated by three independent zones/asset types,
+not just one — a real, generalizable finding worth fixing regardless of
+whether it alone unblocks `hamburg.ff`/`common.ff`. But actually
+implementing that fix correctly needs the still-unanswered question from
+§5.16 (which pointers are 32-bit vs. 64-bit) resolved first, and
+`hamburg.ff`/`common.ff` specifically may need a second, separate
+investigation into forward-reference/fill-order handling on top of that,
+regardless. Given the number of genuine, well-evidenced rounds this
+specific bug family has now been through across two sessions, this is a
+reasonable point to pause again rather than open a third new investigative
+thread (forward-reference resolution) in the same sitting.
+
 ## 6. Scoped plan for in-house tooling — an MVP, not a full OpenAssetTools replacement
 
 **This project's own actual need is narrow**: GSC/rawfile extraction to
