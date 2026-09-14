@@ -6763,8 +6763,30 @@ not script-only ones. This doesn't reopen or deprioritize the shader bug as
 something worth eventually fixing — it just means it was never actually
 gating this project's day-to-day GSC RE work, which can proceed today.
 
-**Not yet done**: a full sweep of every `sp_*.ff`/`so_*.ff` zone to map
-which are script-only (already usable) vs. Material-referencing (still
-blocked) — only `sp_intro.ff`/`sp_prague.ff` directly confirmed so far, by
-direct test, not filename inference. Full trail: `re_notes/x64_migration/
-fastfile_format_research.md` §5.11.
+**Now done — see the round directly below**: the full `sp_*.ff`/`so_*.ff`
+sweep this entry originally flagged as not yet done.
+
+### UPDATE, 2026-09-14 (later still, "check all") — full zone sweep: only 2 of 39 `sp_*.ff`/`so_*.ff` zones are actually script-only; the other 37 all hit the identical, already-tracked Material-chain bug above
+
+**Status: swept, scope narrowed, not a new bug.** Ran `Unlinker.exe`
+against all 39 `sp_*.ff`/`so_*.ff` zones in the live retail install (every
+Campaign mission, every Spec-Ops/Survival zone). **Only `sp_intro.ff` and
+`sp_prague.ff` extract cleanly** (0 warnings, 0 errors, matching the round
+above). **All 37 others fail**, every one with the exact same error shape
+(`Zone referenced offset <N> of block XFILE_BLOCK_TEMP which is larger
+than its size <M>`) — cross-checked directly against `hamburg.ff`/
+`common.ff`/`code_post_gfx.ff` and confirmed byte-identical in shape, so
+this is the same paused `MaterialPixelShader::name` bug from the round
+above, not a new failure mode. All 16 `so_survival_mp_*.ff` zones fail at
+nearly the same offset/size pair, consistent with sharing one asset base.
+
+**Corrects the practical framing of the round above**: `sp_prague.ff`
+being a real, full Campaign mission and still succeeding is the exception,
+not representative — most real mission zones DO reference a `Material`
+asset and remain blocked. The genuinely-usable set today is 2 of 39 real
+zones, not "most script-only content already works." This raises, not
+lowers, the practical value of eventually fixing the paused bug above —
+it would unblock 37 zones, not a couple of edge cases — while the core
+point of the earlier round still stands: those 2 zones' GSC content is
+real and extractable today. Full trail: `re_notes/x64_migration/
+fastfile_format_research.md` §5.12.
