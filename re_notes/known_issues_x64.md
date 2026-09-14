@@ -6175,3 +6175,48 @@ responsible. **Needs a live relaunch + low-health test with the mod
 disabled to actually decide this** — not run yet, the rename alone doesn't
 answer the question. Restore path: rename
 `d3d9.dll.mod_disabled_for_vanilla_test` back to `d3d9.dll` once tested.
+
+### RESOLVED (root cause), 2026-09-14 (later still) — decisive: "get to cover" text is a genuine, native Activision regression, NOT caused by this project
+
+**Status: Resolved (diagnosis) — closed as a native regression, not a bug
+in this project. Deployed mod DLL restored** (`d3d9.dll.mod_disabled_for_vanilla_test`
+renamed back to `d3d9.dll` immediately after the test).
+
+Direct result of the vanilla test above: **"it's still missing even
+vanilla."** With this project's own DLL completely absent from the game
+directory — the real system `d3d9.dll` loading directly, zero mod code
+running — the native low-health "You are hurt, get to cover" TEXT still
+does not appear. This is the decisive result hypothesis (2) predicted:
+**Activision's 2026-09-03 x64 recompile silently dropped this specific
+native feature.** Nothing in this project's own code (hooks, the text-draw
+substitution logic, motion blur, or anything else) can be the cause of a
+symptom that reproduces with the project entirely uninstalled — closed,
+not a bug to keep chasing as "our fault."
+
+**Consistent with, and now further corroborated by, this same session's
+two independent findings that the update changed real content, not just
+executables**: the OpenAssetTools Unlinker zone-format-segfault finding
+(this file's own "GSC-first pass" round), and the MW3Downgrader file-size
+cross-reference (`main/iw_00.iwd`, ~314MB→~420MB, immediately above this
+round). A silently dropped native UI feature is a small, entirely
+plausible casualty of whatever broader asset/engine changes that update
+actually made — consistent with, not proof of, the same root event, but a
+coherent picture across three independently-obtained pieces of evidence
+now, not a coincidence being over-read.
+
+**A real opportunity this closes the door on blaming ourselves for, and
+opens the door to as a genuinely new feature idea**: this project already
+has every RE building block needed to REBUILD this effect from scratch
+rather than "fix" something that no longer exists natively — the exact
+health-ratio formula and struct offsets (`FUN_14004f3a0`,
+`clamp(current/max, 0, 1)`, this session's own `ui_draw_pipeline_map.md`),
+the exact native "Health" element gate confirmed still firing correctly
+(`DAT_14053b088`, the vignette itself IS still live per the user's own
+earlier live confirmation with motion blur on), and this project's own
+already-proven glyph/text-overlay drawing infrastructure
+(`RequestCustomHintOverlay`, already substituting five other hints on
+x64). **Not started, not decided** — a real, well-scoped ROADMAP IDEA
+resulting from this investigation, not a promise, logged here so it isn't
+lost: this project could ship a "restored" get-to-cover text as a genuine
+NEW feature (not a fix to existing native code) the next time visual/UI
+work is prioritized.

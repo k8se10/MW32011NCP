@@ -595,3 +595,23 @@ item below.
 3. **FXAA and a forced-MSAA option** don't exist on either line — checked
    directly, and neither was ever actually built even on the old `-x86`
    line, only ever planned. Real future work, not a regression.
+4. **The native low-health "You are hurt, get to cover" TEXT is missing
+   on the current retail x64 build — confirmed to be Activision's own
+   regression, not caused by this project.** A live-reported symptom
+   ("i think the x64 update removed the get to cover message present in
+   x86") was root-caused through direct elimination: the red-screen
+   vignette itself still shows correctly, ruling out the class of bug
+   that broke both together on `-x86` (issue #100); this project's own
+   text-draw substitution logic was checked and confirmed to never
+   suppress unmatched text; and, decisively, the text stays missing with
+   this project's own `d3d9.dll` removed entirely and the real system DLL
+   loading in its place — a genuinely vanilla, zero-mod-code test. Nothing
+   this project ships can be the cause of a symptom that reproduces with
+   the project uninstalled. Likely connected to this same session's own
+   independent finding that the 2026-09-03 update changed real zone/asset
+   content, not just the executables (see `re_notes/known_issues_x64.md`'s
+   matching round). A real candidate for a future RESTORED feature (not a
+   fix) once UI work is next prioritized — this project already has the
+   native health-ratio detection and the text-overlay infrastructure this
+   would need. See `re_notes/known_issues_x64.md`'s newest round for the
+   full trail.
