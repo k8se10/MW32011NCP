@@ -155,7 +155,7 @@ own; not confirmed further this pass.
 | `0x14` | `FUN_1400514e0` → `FUN_1400519b0` | **CONFIRMED**: the native stance-change hint row(s) — up to 3 simultaneous rows (stand/crouch/prone), each matched against the player's OWN currently-bound key for that action (`+gostand`/`togglecrouch`/`+prone` etc.) via `PLATFORM_STANCEHINT_STAND`/`_CROUCH`/`_PRONE` templates | **Not substituted — new opportunity, see section 5** |
 | `0x47` | inline | Hold Breath hint (`PLATFORM_HOLD_BREATH`) | **Substituted** (glyph icon) |
 | `0x48` | `FUN_14004fa00` | Pickup/Swap/PickupHealth/Throwback family | **Substituted** |
-| `0x4f` | `FUN_140050c30` | Not traced this pass | Unknown |
+| `0x4f` | `FUN_140050c30` | **CONFIRMED (round 2)**: an icon-only fade/blend draw (`FUN_140078540`, no text), gated on `DAT_14062cd78` and a fade value from `FUN_140051e10(..., DAT_14053b088, ...)` — shares its exact gate variables with `0x62`/`0x72` below (**INFERRED** as one family: a directional danger/proximity indicator, e.g. the classic "incoming grenade" arrow — no string evidence found to confirm) | Not substituted |
 | `0x50` | inline | Mantle hint (`PLATFORM_MANTLE`) | **Substituted** |
 | `0x51`/`0x52` | inline, falls through to `0x53` | A gate/param-massage step before the shared single-hint draw | See `0x53` |
 | `0x53` | `FUN_140051850` | **CONFIRMED**: a generic single-line hint draw, gated on the same "controller/gamepad hint visible" flag (`FUN_140051f80`) `0x54`/`0x5a` also check — likely the shared native path several distinct prompts alias through | Not substituted |
@@ -163,21 +163,21 @@ own; not confirmed further this pass.
 | `0x5a` | `FUN_14003a590` | **CONFIRMED**: a per-slot (array-indexed by `param_1`), fading numeric readout — shape strongly suggests a HUD element with its own fade-out timer (a notification/counter with a lifetime — **INFERRED** exact identity, e.g. hit marker or pickup-confirm text) | Not substituted |
 | `0x5f`/`0x60` | inline | **CONFIRMED**: real-world-to-screen waypoint/marker positioning — `0x60` specifically calls the real position transform (`thunk_FUN_14008d020`) directly, see section 2 | Not substituted |
 | `0x61` | inline | Death-quote / `"game message"` caption (calls `FUN_1402afa60`, NOT `FUN_14029a2b0` directly — a different draw variant for this one case) | Not substituted |
-| `0x62` | `FUN_140050f80` | Not traced this pass | Unknown |
+| `0x62` | `FUN_140050f80` | **CONFIRMED (round 2)**: same family as `0x4f` above — icon-only, same `DAT_14062cd78`/`FUN_140051e10(...,DAT_14053b088,...)` gate, adds a second fade phase keyed on `FUN_14004f3a0` crossing one of two distance thresholds | Not substituted |
 | `0x63` (99) | `FUN_140057e30` | **CONFIRMED**: `CGAME_MISSIONOBJECTIVES` header label, single line, gated on an active-objective check | Not substituted |
 | `0x64` (100) | `FUN_140057f80` | **CONFIRMED** (partial): the objective TEXT body itself (distinct from the header above), resolves via `FUN_140289a60(..., "objective text", 0)` | Not substituted |
-| `0x65` | `FUN_140057d40` | Not traced this pass | Unknown |
-| `0x66` | `FUN_1400586f0` | Not traced this pass | Unknown |
-| `0x67`/`0x68` | `FUN_140077940` | Not traced this pass (a paired-variant shape like `0x69`/`0x6a` below) | Unknown |
-| `0x69`/`0x6a` | `FUN_140077510` | **CONFIRMED**: a data-driven, TABLE-INDEXED text label — `param_7` (the element instance's own integer ID) is looked up through a real reference-key table (`FUN_1402cb690`, an indirection this pass did not chase to its own definition) then resolved via `FUN_14029f120` (this project's own real localized-string resolver, `g_getLocalizedStringX64`'s underlying call). Gated on a small enum bound (`param_7 < 6`, `DAT_14052a088 < 6`) — the shape (small fixed ID space, real localized template per ID) strongly fits a fixed-size, numbered UI element set. **Not independently identified WHICH set** — candidates worth checking first in a follow-up: compass/objective-marker numbers, or killstreak-slot labels (**INFERRED**, not confirmed) | Not substituted — **flagged as the single most promising lead for future killstreak/objective-marker UI work**, see section 5 |
-| `0x6b`/`0x6c` | `FUN_140077b60` | **CONFIRMED**: near-identical twin of `0x69`/`0x6a` above — same gates, same `(&PTR_DAT_1404c0bc8)[param_7]` table-indexed lookup feeding the SAME real localized-string resolver, drawing via the SAME `FUN_14029a2b0` call. Almost certainly a second pass (outline/shadow, or a secondary label) over the identical element set `0x69`/`0x6a` labels — not confirmed which | Not substituted, same lead as above |
-| `0x6d`/`0x6e` | `FUN_140077700` | Not traced this pass (third member of the `0x67`-`0x6e` paired-variant family) | Unknown |
+| `0x65` | `FUN_140057d40` | **CONFIRMED (round 2)**: icon-only (`FUN_140078c90`/`FUN_14028c4d0`, no text), same "is an objective currently active" gate as `0x63`/`0x66` (mission-objective family) | Not substituted |
+| `0x66` | `FUN_1400586f0` | **CONFIRMED (round 2)**: also icon-only, same objective-active gate as `0x63`/`0x65`, computes a screen-edge-relative offset (`FUN_14008d930`/`FUN_14008d2f0`) — likely an off-screen objective-direction arrow, paired with `0x63`'s text label and `0x64`'s body text | Not substituted |
+| `0x67`/`0x68` | `FUN_140077940` | **CONFIRMED (round 2, 2026-09-14)**: the ICON draw of the SAME Lethal/Tactical grenade-HUD element identified below — resolves a per-inventory-slot icon handle (`FUN_140052120`/a per-client array walk keyed by `param_6`) and draws it via `FUN_14028c2b0` (a blend/texture call, no text) | Not substituted |
+| `0x69`/`0x6a` | `FUN_140077510` | **CONFIRMED, upgraded from round 1's guess**: part of the same Lethal/Tactical grenade-HUD element family (see `0x6b`/`0x6c` below for the confirming evidence) — this specific case draws a NUMBER, not a name: `FUN_1402cb690` is a generic per-frame ring-buffer `sprintf`-style formatter (traced this round, `decomp_batch3.txt`), called here with `&DAT_1403e9b0c` as the format string against a value from `FUN_140078070(&DAT_14052a084, param_7)` — almost certainly the held AMMO COUNT for the currently-equipped grenade type (**INFERRED** specifically "count," the surrounding shape is confirmed) | Not substituted |
+| `0x6b`/`0x6c` | `FUN_140077b60` | **CONFIRMED AND IDENTIFIED (round 2, 2026-09-14) — this is the Lethal/Tactical grenade-type HUD indicator.** Dumped the real table this case indexes (`(&PTR_DAT_1404c0bc8)[param_7]`, `dump_ptr_dat_1404c0bc8.txt`/`readstring_lethaltac_0_1.txt`) and got real, unambiguous reference-key strings: index 0 = `""` (no grenade equipped), 1 = `WEAPON_FRAGGRENADE`, 2 = `WEAPON_SMOKEGRENADE`, 3 = `WEAPON_FLASHGRENADE`, 4/5 = unused (null). `param_7` is the currently-equipped Lethal/Tactical grenade-type enum, drawn as its real localized name via the same `FUN_14029f120` resolver every other substituted hint in this project already uses | Not substituted — **the single most concrete new lead this map has produced, see section 5** |
+| `0x6d`/`0x6e` | `FUN_140077700` | **CONFIRMED (round 2)**: a fourth aspect of the same grenade-HUD family — same gates (`FUN_140025480`/`FUN_140025490(&DAT_14052a084, param_6)`, `DAT_14053b098`), but keyed on `_DAT_14053ac80` (a "currently active/selected" index check, `param_6 == *(int*)(&DAT_1404e8e60)[idx]+0x68`) and drives a countdown-style icon flash (`FUN_14039ca20`) — likely the "just switched grenade type" or low-ammo flash animation, not text | Not substituted |
 | `0x6f` | inline | Conditional icon-only draw (`FUN_140078540`, no text) | N/A |
 | `0x70` | inline | A fade-in element gated on `DAT_14052a088` (an apparent GAME-STATE enum — excludes states 2/3/6/7; **INFERRED** meaning, not decoded this pass, but this variable recurs across MANY cases below as the same style of gate and is worth a dedicated future pass to enumerate its real states) | Not substituted |
 | `0x71` | `FUN_140050410` | **CONFIRMED**: weapon/stance-BLOCKED warning messages — `WEAPON_NO_AMMO`, `GAME_STAND_BLOCKED`, `GAME_CROUCH_BLOCKED`, `CGAME_PRONE_BLOCKED`/`_WEAPON`, `WEAPON_TARGET_TOO_CLOSE`, `WEAPON_LOCKON_REQUIRED`, `WEAPON_TARGET_NOT_ENOUGH_CLEARANCE` — a real `switch(DAT_140539e68)` selecting WHICH warning is currently active, one shared draw call site | Not substituted — **new opportunity, see section 5** |
-| `0x72` | `FUN_140051250` | Not traced this pass | Unknown |
+| `0x72` | `FUN_140051250` | **CONFIRMED (round 2)**: third member of the `0x4f`/`0x62`/`0x72` danger-indicator family (same `DAT_14053b094` fade-gate style) — this one additionally reads a per-loadout WEAPON name string and specifically checks whether it starts with the literal prefix `"iw5_"` (a real, native weapon-asset naming convention this project had not previously confirmed) before selecting an index — icon-only draw (`FUN_140078540`) | Not substituted |
 | `0x73` | inline | Another fade-gated icon draw (`FUN_140051e10`) | Not substituted |
-| `0x74`-`0x79` | `FUN_140031910`/`1400319e0`/`1400316f0`/`140031bc0`/`140031540` | `0x78` = **CONFIRMED Reload** (already substituted, per `drawtext_hook_x64.md` Stage (c)). `0x77` (`FUN_1400316f0`) **CONFIRMED**: a gated readout structurally identical in shape to `0x05`/`0x54` (same `DAT_14052a130 & 0x200000` gate, same `sprintf`-into-buffer-then-draw pattern) — **INFERRED** ammo/compass-style, not pinned down. `0x74`/`0x76`/`0x79` not traced this pass | `0x78` substituted; rest not |
+| `0x74`-`0x79` | `FUN_140031910`/`1400319e0`/`1400316f0`/`140031bc0`/`140031540` | `0x78` = **CONFIRMED Reload** (already substituted, per `drawtext_hook_x64.md` Stage (c)). `0x77` (`FUN_1400316f0`) **CONFIRMED**: a gated readout structurally identical in shape to `0x05`/`0x54` (same `DAT_14052a130 & 0x200000` gate, same `sprintf`-into-buffer-then-draw pattern) — **INFERRED** ammo/compass-style, not pinned down. `0x74`/`0x76`/`0x79` **CONFIRMED (round 2), all icon-only, no text**: `0x74` a plain gated icon blend; `0x76` the same real transform pair (`thunk_FUN_14008d020`) section 2 already covers, with a screen-edge clamp; `0x79` gates on a real per-client "has an active challenge/unlock notification" check (`FUN_140018980`/`FUN_140030540`) and draws via a `(&DAT_14052a2f6)[slot*0xc]`-indexed table — likely the in-game challenge/unlock popup icon (**INFERRED**) | `0x78` substituted; rest not |
 | `0x91`/`0x92` | `FUN_140036720` | **CONFIRMED**: objective distance/direction markers — `CGAME_OBJECTIVE_ABOVE`/`_BELOW` plus a live `"%.1fm"`-formatted distance | Not substituted |
 | `0x96`-`0x99`, `0x9b`/`0xbe`, `0x9f`-`0xa3`, `0xa4`, `0xa5`, `0xa6`, `0xaa`-`0xae` | a cluster of ~14 similarly-shaped handlers (`FUN_140034250`/`140034570`/`140035e30`/`140037e40`/`1402ddc60`/`140034ce0`/`140035a80`/`140034980`/`140035740`/`1400346a0`/`140033dc0`/`1400384a0`/`140036 5e0`/`140031160`/`140030a70`) | **CONFIRMED shape, not content**: most take a `(param_1, 0 or 1, param_2, ...)` signature — the SAME handler function often gets reused for TWO adjacent case values differing only in that leading 0/1 flag (e.g. `0x97`→`FUN_140034570(...,0,...)` and `0xb4`→`FUN_140034570(...,1,...)`, `0x98`/`0xb6` likewise, `0x96`/`0xb7` likewise) — a real, structural "two variants of the same element" pattern (friendly/enemy, primary/secondary — **INFERRED** which). `0xa4` (`FUN_140033dc0`) is the one member independently decompiled this pass: **CONFIRMED** a directional marker ("Above"/"Nearby"/"Below" text) | Not substituted — this whole cluster is COMPASS/ENTITY-MARKER territory (waypoints, player blips, objective icons), consistent with `0x5f`/`0x60`'s real-position-transform usage right above it in the table |
 | `0xb4`-`0xbd` | (see cluster above) | Same cluster, the "flag=1" variants | Not substituted |
@@ -217,7 +217,18 @@ function under the ready-up hypothesis without new evidence.
 Not implemented this pass — this is a map, not a feature branch. Ranked by
 how directly actionable each one is:
 
-1. **Weapon/stance-blocked warnings (`0x71`, `FUN_140050410`)** — the exact
+1. **Lethal/Tactical grenade-type indicator (`0x67`-`0x6e`, confirmed round
+   2) — now the single most concrete lead in this whole map.** A real,
+   decompile-confirmed HUD element: an icon (`0x67`/`0x68`), an ammo count
+   (`0x69`/`0x6a`), the grenade's real localized name — `WEAPON_FRAGGRENADE`/
+   `_SMOKEGRENADE`/`_FLASHGRENADE`, table dumped and read directly, not
+   guessed (`0x6b`/`0x6c`) — and a switch/low-ammo flash (`0x6d`/`0x6e`).
+   Unlike every other lead in this section, this one has zero remaining
+   identity risk — the next step is purely implementation: does controller
+   Lethal/Tactical SWITCHING already work on x64 (check the existing parity
+   tracker), and if so, does this element's name text deserve the same
+   substitution treatment Mantle/Pickup already get.
+2. **Weapon/stance-blocked warnings (`0x71`, `FUN_140050410`)** — the exact
    same structural shape (`ShouldDrawGlyphOverlay_Exported() && !IsMenuActiveX64_Exported()`
    gate, a live-resolved template, one shared draw call) as the already-
    substituted Mantle/Pickup/Hold-Breath/Reload cases. `WEAPON_LOCKON_REQUIRED`/
@@ -228,7 +239,7 @@ how directly actionable each one is:
    message) rather than the substitution-in-place technique the marker-based
    hints use. Lowest RE risk of anything in this list — the detection
    template strings are already known verbatim from this pass.
-2. **Stance-change hint (`0x14`/`FUN_1400519b0`)** — real native rows for
+3. **Stance-change hint (`0x14`/`FUN_1400519b0`)** — real native rows for
    "you can currently stand/crouch/prone," each independently matched
    against the player's own live keybind. A genuine gap: this project has
    CrouchProne's own INPUT working on x64 (per the 2026-09-05 parity work)
@@ -236,14 +247,6 @@ how directly actionable each one is:
    PROMPT. Real key-name templates (`PLATFORM_STANCEHINT_STAND`/`_CROUCH`/
    `_PRONE`) already confirmed this pass — same "&&1"-style substitution
    shape as Mantle, should port with the same technique.
-3. **The `0x69`-`0x6c` table-indexed label pair** — the single highest-
-   ceiling, lowest-certainty item here. If this turns out to be killstreak-
-   slot or objective-marker labels (not yet confirmed), it's a real,
-   previously-unavailable window into UI this project has never had a
-   foothold on. Next step for a future pass: decompile `FUN_1402cb690` (the
-   indirection `0x69`/`0x6a` reads through) and dump `(&PTR_DAT_1404c0bc8)`
-   as a raw pointer table (`DumpRawQwords.java`/`DescribeRefs.java`) to read
-   its real contents rather than guessing from shape alone.
 4. **Objective distance/direction markers (`0x91`/`0x92`, `0xa4`, and the
    `0x96`-`0xbd` marker cluster)** — real compass/waypoint UI, structurally
    confirmed to already use the real position-transform utility
@@ -254,6 +257,14 @@ how directly actionable each one is:
    Goalpost M2 turret work already shipped this same day
    (`Hook_MountedAimTick`) — a natural next step if that feature ever needs
    its own HUD glyph treatment.
+6. **A danger/proximity-indicator family, newly found round 2 (`0x4f`/`0x62`/
+   `0x72`)** — three icon-only handlers sharing one gate/fade system
+   (`DAT_14053b088`/`DAT_14053b094`), one of which (`0x72`) confirms a real
+   native weapon-asset naming convention (`"iw5_"` prefix check) not
+   previously on record anywhere in this project's own notes. Identity
+   still INFERRED (a proximity/danger arrow is the leading guess, no string
+   evidence found) — lowest actionability of this list until that's
+   resolved.
 
 None of the above should be started without first checking whether the
 underlying INPUT already works (per the existing parity audit/known-issues
@@ -288,6 +299,35 @@ All backing decompiles/caller-lists for this pass live in
   covers the same general UI-pipeline territory (not re-verified or
   re-described as part of THIS pass — see `drawtext_hook_x64.md`'s own menu
   corner-hint section for that trail).
+
+**Round 2 (same day, "keep digging"), the Lethal/Tactical grenade-HUD find**:
+
+- `decomp_batch3.txt` — full decompiles: `FUN_1402cb690`, `FUN_140050c30`,
+  `FUN_140050f80`, `FUN_140057d40`, `FUN_1400586f0`, `FUN_140077940`,
+  `FUN_140077700`, `FUN_140051250`, `FUN_140031910`, `FUN_1400319e0`,
+  `FUN_140031540`, `FUN_1400678e0`, `FUN_1400668b0`, `FUN_140067870`,
+  `FUN_1400514e0` — filling in every remaining "not traced this pass" cell
+  from round 1's table.
+- `dump_ptr_dat_1404c0bc8.txt` — raw qword dump of the `0x6b`/`0x6c` label
+  table (`DumpRawQwords.java`), the direct evidence for the grenade-HUD
+  identification.
+- `readstring_lethaltac_0_1.txt` — the two table entries `DumpRawQwords`
+  didn't auto-resolve as strings, read directly (`ReadStringAt.java`):
+  confirms index 0 is the empty string (no grenade equipped) and index 1 is
+  `WEAPON_FRAGGRENADE`.
+- `describerefs_1404c0bc8.txt` — cross-reference dump
+  (`DescribeRefs.java`) confirming which functions read `DAT_14053b098`/
+  `DAT_14052a088` (the two gate variables recurring across most of this
+  table), used to sanity-check the "shared family" groupings in section 3.
+
+**Reusable technique from this round, worth naming for next time**: when a
+decompile shows `(&PTR_DAT_<addr>)[indexVar]` feeding a string-resolver
+call, don't stop at "table-indexed lookup, identity unknown" — dump the
+actual table contents (`DumpRawQwords.java` for a quick look,
+`ReadStringAt.java` for any entry it doesn't auto-resolve) before writing
+the finding down as INFERRED. This is what turned round 1's vaguest, most
+speculative row into round 2's most concrete one, for the cost of two small
+script runs.
 
 See `re_notes/known_issues_x64.md` issue #1 for this map's place in the
 project's own live-status tracking.
