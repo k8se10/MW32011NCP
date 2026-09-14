@@ -6449,3 +6449,74 @@ this debugging session dropped there.
 Full technical trail and raw Ghidra evidence stay in
 `re_notes/x64_migration/fastfile_format_research.md` §5/§5.5 (parent
 repo) — this entry is the status-tracker summary.
+
+### UPDATE, 2026-09-14 (later still) — root-caused "invalid block 15" by instrumentation; one more real, generic bug found and fixed; the true remaining scope is much larger than previously assumed — every one of the 46 asset types, not just RawFile/ScriptFile
+
+**Status: One more genuine, generic x64 bug found and fixed
+(`ContentLoaderBase::LoadXStringArray`). The "invalid block 15" error
+itself is NOT yet closed — root-caused to the individual per-asset-type
+generated loaders (RawFile/ScriptFile's own already-known bug class)
+being the blocker for ANY zone with mixed content, not a narrow gap.
+Scope reassessment: this affects all ~46 IW5 asset types, not just the
+two this fork's stated scope originally focused on.**
+
+Added temporary trace instrumentation to `ContentLoaderIW5.cpp` (printed
+before/after each major step of `Load()`/`LoadScriptStringList`/
+`LoadXAssetArray`, removed after use, not committed) to find exactly
+where "invalid block 15" actually fires. Real findings, in order:
+
+1. **The §5.6 header fix is further confirmed correct**: `Load()`'s own
+   diagnostic line showed `assetCount=4770`, `stringCount=4` — small,
+   plausible real values — and the `strings`/`assets` pointer fields
+   decoded as the real `FOLLOWING` sentinel (`0xFFFF...FFFF`, an
+   intentional in-format marker, not garbage), exactly matching the
+   assert already guarding that path. The 32-byte header read is correct.
+2. **A second real, generic bug found and fixed**:
+   `ContentLoaderBase::LoadXStringArray` (shared across every game, not
+   an IW5-specific file) still hardcoded a 4-byte stride/offset for its
+   own array-of-string-pointers `ARCH_x64` branch — the exact class of
+   bug already fixed twice in IW5-specific code, undiscovered until now
+   because nothing had gotten far enough into a real load to reach it.
+   Fixed to read the stream's own already-configured real pointer width
+   (`GetPointerBitCount()/8u`) instead of an x86 literal — generic, not
+   an IW5-only patch, since this file serves all 7 supported games.
+   Confirmed live: loading now proceeds past `LoadScriptStringList`
+   entirely and reaches the real per-asset dispatch loop for the first
+   time (previously never reached by any test this session).
+3. **The dispatch loop then immediately dies loading asset index 0**
+   (`type=9`, `ASSET_TYPE_TECHNIQUE_SET` → `Loader_MaterialTechniqueSet`)
+   — confirmed to be the exact same bug class already found and
+   documented for RawFile/ScriptFile (§5.5): `ZoneCodeGenerator`'s
+   per-asset-type generated loader code has zero x64 awareness and
+   hardcodes x86 field offsets for every one of the ~46 asset types, not
+   just the two this fork's own scope had focused on.
+4. **A real scope correction**: `--include-assets`/`--exclude-assets`
+   (checked directly in `UnlinkerArgs.cpp`/`Unlinker.cpp`) only filter
+   `ObjWriting::Configuration.AssetTypesToHandleBitfield` — which asset
+   types get WRITTEN to disk after loading — not which get parsed. The
+   zone loader unconditionally loads (parses into memory) every asset in
+   a zone's `XAssetList` before any dump-time filtering happens. This
+   means **any zone containing even one asset type with an unfixed
+   x64 offset table cannot be loaded at all**, regardless of what the
+   caller actually wants extracted — RawFile/ScriptFile alone was never
+   going to be enough for real retail zones (which mix dozens of asset
+   types), correcting the §5.5/§6 framing that treated RawFile/
+   ScriptFile as "the one remaining per-type fix needed."
+
+**Practical implication**: fully unblocking extraction from any real,
+mixed-content retail zone needs the same class of fix (real x64 field
+offsets, derived the same way RawFile/ScriptFile's were: standard C++
+struct layout via the real compiler, or `offsetof()` introspection)
+applied across every one of the ~46 generated per-asset-type loaders —
+a genuinely large, mechanical-but-not-trivial task, not a quick
+follow-up. Flagged for an explicit scoping decision rather than
+attempted piecemeal by hand this round. `RawFile`/`ScriptFile`'s own
+offsets were hand-patched directly in the generated (gitignored)
+`build/` output as a proof-of-concept during this same round and
+confirmed to compile and NOT be the asset that first breaks (index 0 is
+`MaterialTechniqueSet`) — not committed, since generated files aren't
+tracked source and this specific patch would need reapplying after any
+real `ZoneCodeGenerator` re-run regardless.
+
+Full trail: `re_notes/x64_migration/fastfile_format_research.md` §5.7
+(parent repo).
