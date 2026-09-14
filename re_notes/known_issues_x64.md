@@ -6140,3 +6140,38 @@ the authoritative IDs to pull via `DepotDownloader`/`steamcmd` rather than
 guessing at a Steam depot history UI. Not otherwise consumed this round —
 no source changes, no new implementation decision made from this, purely
 logged for later.
+
+### UPDATE, 2026-09-14 (later still) — "get to cover" text confirmed missing with motion blur OFF too; two live hypotheses, vanilla (no-mod) test set up to decide between them
+
+**Status: Investigating — narrowed, not yet resolved.**
+
+`MotionBlurEnabled` set to `0` live in `mw3ncp_config.ini` (hot-reload, no
+relaunch needed) specifically to test this. Direct result: **"confirmed
+genuinely missing"** — the text does not appear even with motion blur
+completely off. This closes the last open thread from x86's issue #100
+mechanism definitively (already structurally ruled out two rounds ago,
+now also ruled out live) — whatever this is, it has nothing to do with
+motion blur or `DrawFullScreenPass` at all, on either theory.
+
+**User's own framing, exactly the right question to ask next**: two real
+possibilities — (1) unrelated code in this project's own x64 port is
+interfering with the native trigger somewhere upstream of the draw (the
+same bug CLASS this exact session already found once for real — Fire/ADS's
+own movement-tick early-return silently gating a dozen unrelated systems),
+or (2) Activision's 2026-09-03 recompile genuinely, silently dropped this
+specific native feature — plausible given this same session's own
+independent finding (this file's immediately preceding round) that the
+update changed real asset/zone content, not just executables.
+
+**Decisive test set up, not yet run**: the deployed mod DLL was renamed out
+of the way (`d3d9.dll` → `d3d9.dll.mod_disabled_for_vanilla_test`, game
+install root) so the OS loads the real system `d3d9.dll` directly — a true
+vanilla, zero-mod-code baseline. If the warning is STILL missing with the
+mod entirely absent, that's a clean, decisive confirmation of hypothesis
+(2) (Activision silently removed it, nothing this project can fix by
+changing its own code) — if it reappears, that confirms (1) and reopens
+the static-RE search for which of this project's own x64 hooks is
+responsible. **Needs a live relaunch + low-health test with the mod
+disabled to actually decide this** — not run yet, the rename alone doesn't
+answer the question. Restore path: rename
+`d3d9.dll.mod_disabled_for_vanilla_test` back to `d3d9.dll` once tested.
