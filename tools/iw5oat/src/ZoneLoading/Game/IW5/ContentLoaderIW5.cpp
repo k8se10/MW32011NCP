@@ -119,13 +119,26 @@ void ContentLoader::LoadXAssetArray(const bool atStreamStart, const size_t count
 #ifdef ARCH_x86
         m_stream.Load<XAsset>(varXAsset, count);
 #else
-        const auto fill = m_stream.LoadWithFill(8u * count);
+        // MW32011NCP / iw5oat, 2026-09-14: the pre-existing ARCH_x64 branch here used
+        // an 8-byte stride with the data pointer at +4u -- x86's own record layout,
+        // still wrong for the current retail x64 build this fork targets. MW3
+        // (2011)'s 2026-09-03 x64 recompile widened this per-asset dispatch record
+        // to a genuine 16 bytes: { int32 type; int32 pad; int64 dataPtr; } -- the
+        // pointer sits at byte offset +8, with 4 bytes of alignment padding after
+        // the type field, not immediately after it. Confirmed via direct decompile
+        // of iw5sp.exe's own real zone-loading dispatch (FUN_14009bce0) and cross-
+        // validated against this fork's own ASSET_TYPE_* enum length (the native
+        // switch's real case range, 0-0x2d, matches exactly, index for index). This
+        // was the direct, confirmed cause of the real-content-zone segfault this
+        // fork exists to fix -- see re_notes/x64_migration/fastfile_format_research.md
+        // (parent repo) SS5 for the complete trail.
+        const auto fill = m_stream.LoadWithFill(16u * count);
 
         for (size_t index = 0; index < count; index++)
         {
-            fill.Fill(varXAsset[index].type, 8u * index);
-            fill.FillPtr(varXAsset[index].header.data, 8u * index + 4u);
-            m_stream.AddPointerLookup(&varXAsset[index].header.data, fill.BlockBuffer(8u * index + 4u));
+            fill.Fill(varXAsset[index].type, 16u * index);
+            fill.FillPtr(varXAsset[index].header.data, 16u * index + 8u);
+            m_stream.AddPointerLookup(&varXAsset[index].header.data, fill.BlockBuffer(16u * index + 8u));
         }
 #endif
     }
@@ -149,13 +162,24 @@ void ContentLoader::Load()
 #ifdef ARCH_x86
     m_stream.LoadDataRaw(&assetList, sizeof(assetList));
 #else
-    const auto fillAccessor = m_stream.LoadWithFill(16u);
+    // MW32011NCP / iw5oat, 2026-09-14: same real bug class as LoadXAssetArray's own
+    // ARCH_x64 branch above -- this used x86's own 16-byte XAssetList layout
+    // (count/strings/assetCount/assets each still at their x86 offsets). Confirmed
+    // via direct decompile of iw5sp.exe's own header-read call (FUN_14008eba0 ->
+    // FUN_14008ef80(&header, 0x20) -- a genuine 32-byte read) and the exact byte
+    // offsets the real dispatch loop consumes afterward (assetCount read at +0x10,
+    // the assets pointer at +0x18, both confirmed live in the disassembly): the
+    // real x64 layout is { int32 stringCount; int32 pad; int64* strings; int32
+    // assetCount; int32 pad; XAsset* assets; } = 32 bytes, not 16 -- every pointer
+    // field pushed 4 bytes later than this branch previously assumed. Full trail:
+    // re_notes/x64_migration/fastfile_format_research.md (parent repo) SS5.
+    const auto fillAccessor = m_stream.LoadWithFill(32u);
     varScriptStringList = &varXAssetList->stringList;
     fillAccessor.Fill(varScriptStringList->count, 0u);
-    fillAccessor.FillPtr(varScriptStringList->strings, 4u);
+    fillAccessor.FillPtr(varScriptStringList->strings, 8u);
 
-    fillAccessor.Fill(varXAssetList->assetCount, 8u);
-    fillAccessor.FillPtr(varXAssetList->assets, 12u);
+    fillAccessor.Fill(varXAssetList->assetCount, 16u);
+    fillAccessor.FillPtr(varXAssetList->assets, 24u);
 #endif
 
     m_stream.PushBlock(XFILE_BLOCK_VIRTUAL);
