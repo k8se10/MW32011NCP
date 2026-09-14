@@ -5619,3 +5619,33 @@ confirmed) **, and the diagnostic itself carries essentially no risk**
 other feature). Matches this project's own standing production-readiness
 bar: a real, honest, build-verified next step for a bug that has never
 worked on any architecture, not a guessed-and-shipped behavior change.
+
+---
+
+**UPDATE 2026-09-14 (live playtest) — REFRAMES the cutscene-skip-audio
+investigation: on x64, Start currently does NOT skip a cutscene at all.**
+
+Live report: "cutscene skip is irrelavant now as the pause button no
+longer skips on x64." This changes the premise of the original bug
+(issue #98, x86-era: visual skip worked, audio persisted after) — that
+theory assumed skipping itself still functions and only the audio-stop
+side effect is missing. On x64 specifically, that assumption is now
+confirmed wrong: skipping doesn't happen at all currently, so there is
+nothing to "leave audio playing after."
+
+**Not yet root-caused.** Exact symptom shape unconfirmed — does Start
+during an x64 cutscene do literally nothing (no visual change, no menu,
+no audio change), or does something partial happen (e.g. the pause menu
+opens over the still-playing cutscene, distinct from a real skip)? A
+concurrent investigation (originally dispatched to look at the
+audio-persistence angle) has been redirected to this corrected symptom
+— see its own follow-up round for the real findings once it reports.
+
+**Real, obvious first place to look**: x64's own Start/pause handling
+(`analog_input_hooks_x64.cpp`, the pause toggle resolve / `[x64-pause]`
+log line) — same code area the original audio-persistence theory
+already implicated for a different reason (a missing cutscene-state
+carve-out in the real pause-menu-open call). Worth checking whether
+THIS specific gap (no skip at all) has the same root, a related but
+distinct one, or something entirely separate specific to x64's own
+pause-toggle resolve/dispatch.
