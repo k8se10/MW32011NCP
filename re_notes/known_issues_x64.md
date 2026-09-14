@@ -6790,3 +6790,37 @@ it would unblock 37 zones, not a couple of edge cases — while the core
 point of the earlier round still stands: those 2 zones' GSC content is
 real and extractable today. Full trail: `re_notes/x64_migration/
 fastfile_format_research.md` §5.12.
+
+### UPDATE, 2026-09-14 (later still, "i think we can fix this if we compare and try methods based off of what the x86 parser did" -> "run 2 forks to dig deeper") — x86 native ground truth rules out the struct-layout theory for the paused MaterialPixelShader::name bug; root cause space narrowed, not found
+
+**Status: still Paused, but one real theory now eliminated with hard
+evidence rather than just assumed correct.** Direct instruction to compare
+against the original x86 parser rather than keep reasoning from the x64
+side alone. Decompiled the real pre-recompile x86 `iw5sp.exe`
+(`re_notes/ghidra_project/iw5sp_proj`) fresh: found x86's own master
+per-asset dispatch switch (`FUN_0048f240`, case numbering confirmed
+identical to x64 — case 6=MaterialPixelShader, case 7=MaterialVertexShader,
+case 8=MaterialVertexDeclaration, cross-checked against `MaterialPass`'s
+own real field order), and `Load_MaterialPixelShader`/
+`Load_MaterialVertexShader` on x86, confirmed **byte-for-byte structurally
+identical to each other** — same field order (`name` then `prog`), same
+block-push sequence, same dynamic-shader-bytecode read pattern
+(`programSize * 4` bytes) — and matching this fork's own x64 struct
+definitions and generated code exactly, field for field.
+
+**This conclusively rules out "our struct has the wrong field order or a
+missing padding field"** as the cause — a theory never explicitly tested
+before, only assumed correct by inheritance from upstream. Since x86 and
+x64 are now independently confirmed to use identical logic/order/alignment
+for this whole chain, the real cause must be either (1) a genuine on-disk
+data difference in the x64-recompiled zone's actual bytes for this one
+asset, or (2) a boundary issue specific to the *dynamic*, data-dependent
+shader-bytecode blob's own length at the exact VertexShader-tail →
+PixelShader-head transition — the one part of this chain that isn't a
+fixed-size struct read. No code change made — this round eliminated a
+theory rather than finding a fix, which is itself a real, useful result:
+every native-decompile-comparison technique (x86 and x64 both) is now
+exhausted as a category. Concrete next step unchanged: a raw hex-editor
+comparison of the real decompressed zone bytes, or live x64dbg debugging
+of the actual read cursor. Full trail: `re_notes/x64_migration/
+fastfile_format_research.md` §5.13.

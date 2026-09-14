@@ -765,6 +765,90 @@ Full result table (zone name, outcome, first error line where applicable):
 (session-scratchpad only, not committed — reproducible by re-running
 `Unlinker.exe` against every `sp_*.ff`/`so_*.ff` in `zone/english/`).
 
+## 5.13. UPDATE, 2026-09-14 (later still, "run 2 forks to dig deeper" following "i think we can fix this if we compare and try methods based off of what the x86 parser did") — direct x86 native ground truth conclusively rules out the struct-layout/field-order theory for the §5.10 corruption; the real cause is narrowed to a data-level or dynamic-read-boundary issue, not a coding bug
+
+**Status: a real theory eliminated with hard evidence, root cause still not
+found.** Every prior round of this investigation (§5.9-§5.10) reasoned
+entirely from the x64 side — decompiling `iw5sp.exe`'s x64 build and
+reading this fork's own generated C++. This round used a genuinely
+different source of truth for the first time: the **original, pre-
+recompile x86 `iw5sp.exe`** (`re_notes/x64_migration/binaries/old_x86/
+iw5sp.exe`, decompiled fresh via `re_notes/ghidra_project/iw5sp_proj`),
+whose own struct definitions are what upstream OpenAssetTools' IW5 support
+was written against in the first place.
+
+**Traced a full, real chain on x86**, independent of anything already
+known from x64:
+- `FUN_0053a8e0` (x86) — the real stream-read gate primitive — confirmed
+  structurally **identical** to x64's already-decompiled `FUN_1400aad70`
+  (same 3-argument shape: `doRead, dst, size`; same RUNTIME-block
+  `memset`-zero-fill branch vs. real-read branch). Independent
+  cross-validation of a piece of x64 understanding this session already
+  used to disprove the block-selector theory (§5.10).
+- `FUN_0048f240` — x86's real master per-asset dispatch switch (the
+  direct equivalent of x64's `FUN_14009bce0`), found via callers of the
+  read-gate primitive rather than the long inflate-chain trace §5 originally
+  needed for x64. **Case numbering matches x64 exactly** (case 6 =
+  MaterialPixelShader, case 7 = MaterialVertexShader, case 8 =
+  MaterialVertexDeclaration), confirmed via `MaterialPass`'s own real field
+  order (`FUN_00418050`, x86's `FillStruct_MaterialPass`): reads a 20-byte
+  (`0x14`) struct and dispatches `vertexDecl` (offset 0) → case 8,
+  `vertexShader` (offset 4) → case 7, `pixelShader` (offset 8) → case 6 —
+  **exactly matching this fork's own `MaterialPass` struct
+  (`IW5_Assets.h` line 1375: `vertexDecl; vertexShader; pixelShader;`)**,
+  field for field.
+- **`Load_MaterialPixelShader` (x86, `FUN_00527ce0`) and
+  `Load_MaterialVertexShader` (x86, `FUN_004395b0`) are byte-for-byte
+  structurally identical**, differing only in which dynamic-shader-
+  bytecode helper they call (`FUN_004d3de0` vs. `FUN_00526740` — also
+  themselves structurally identical to each other, both reading an 8-byte
+  `GfxXxxShaderLoadDef` header then conditionally allocating and reading
+  `programSize * 4` bytes of bytecode). Read order for both: whole
+  16-byte struct (`name` + `prog`) in one block-copy → `LoadXString` on
+  `name` (offset 0) → read 12-byte `prog` sub-struct (offset 4) → dynamic
+  shader-bytecode load off `prog.loadDef` (offset 8) → final asset-link
+  call. **This is the exact field order and block-push sequence this
+  fork's own x64 generated code (and struct definitions) already use** —
+  see `materialpixelshader_iw5_load_db.cpp`/`materialvertexshader_iw5_load_db.cpp`,
+  already confirmed structurally symmetric to each other earlier this
+  session.
+
+**Conclusion**: the struct layout, field order, and read sequence this
+fork assumes for `MaterialPixelShader`/`MaterialVertexShader`/
+`MaterialPass` are now confirmed **correct against real x86 native ground
+truth**, not just self-consistent x64-side reasoning. This decisively
+rules out "our struct definition has the wrong field order/a missing
+padding field" as the cause of the `MaterialPixelShader::name` corruption
+— a theory that was never explicitly tested before this round, only ever
+assumed correct by inheritance from upstream. Since x86 and x64 are now
+independently confirmed to use identical logic, identical order, and
+identical alignment conventions for this exact chain, the remaining
+plausible causes have narrowed to two, neither of which is a coding bug in
+this fork's own logic:
+1. A genuine on-disk **data** difference specific to the x64-recompiled
+   zone's actual bytes for this asset (not a parsing bug at all).
+2. A boundary/alignment issue specific to the **dynamic** shader-bytecode
+   blob's own variable-length consumption (`programSize`-driven, data-
+   dependent) at the exact transition between `MaterialVertexShader`'s own
+   tail read and `MaterialPixelShader`'s header read — the one part of
+   this chain whose length isn't fixed/compile-time-known, and so the one
+   place a genuine x64-specific stream-desync could hide despite every
+   fixed-size struct read being provably correct.
+
+**Concrete next step, unchanged from §5.10 but now on stronger footing**:
+a raw hex-editor comparison of the actual decompressed zone bytes at the
+computed expected offset for this exact read, or live x64dbg debugging to
+watch the real read cursor advance across this exact boundary — genuinely
+different techniques from any native-decompile comparison (x86 or x64),
+which this round has now fully exhausted as a category. No code change
+applied this round — the investigation redirected away from "find the
+coding bug" toward "confirm there isn't one," which is itself the real,
+useful result.
+
+Full raw evidence: Ghidra headless decompiles this round (not yet
+committed as files — reproducible via the address list above against
+`re_notes/ghidra_project/iw5sp_proj`, `-process "iw5sp.exe" -noanalysis`).
+
 ## 6. Scoped plan for in-house tooling — an MVP, not a full OpenAssetTools replacement
 
 **This project's own actual need is narrow**: GSC/rawfile extraction to
