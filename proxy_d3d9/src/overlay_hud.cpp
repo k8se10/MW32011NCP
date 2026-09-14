@@ -127,6 +127,12 @@ extern "C" void GetMotionBlurDeltasX64(float* outYawDeg, float* outPitchDeg);
 // resolved -- DrawCustomCursorIfNeeded below treats that the same as x86's own
 // __except handler: skip drawing rather than guess.
 extern "C" bool TryGetCursorGateX64(int* outVisFlag, int* outUiState);
+// Real x64 menu-stack-depth primitive (analog_input_hooks_x64.cpp, ported 2026-09-12
+// alongside TryGetRealFocusedGroupAndIndexX64 -- already-exported, already used by
+// analog_input_hooks.cpp's own TryGetStableFocusedGroupAndIndex x64 branch). See
+// DrawCustomCursorIfNeeded's 2026-09-14 comment (main-menu cursor fix) for why this
+// is now ALSO consulted here, alongside IsMenuActiveX64_Exported.
+extern "C" int GetMenuStackDepthX64_Exported();
 #endif
 
 // Plugin text/glyph color override (2026-08-25, see mw3ncp_plugin_api.h and
@@ -6308,8 +6314,50 @@ void DrawCustomCursorIfNeeded(void* device)
         // already-resolved x64 equivalent (IsMenuActiveX64_Exported, analog_input_hooks_x64.cpp)
         // on that platform instead -- same bit, same struct, already proven live for Pause/
         // motion-blur/FSR gating this session.
+        //
+        // MAIN-MENU FIX (2026-09-14, live report "i dont see our custom mouse cursor
+        // in game just the default one," confirmed via direct log correlation to be
+        // the true main menu specifically, not pause -- known_issues_x64.md's
+        // "custom mouse cursor doesn't show at the MAIN MENU" round): a fresh Ghidra
+        // decompile of DAT_1406e2550's real writer (FUN_14007f3b0, x64's confirmed
+        // structural equivalent of x86's 0xB36210 gate) traced through its ONE real
+        // caller path with a static call graph (FUN_14029f3f0, the confirmed x64
+        // SetMenuState equivalent of x86's FUN_004396d0) -- every one of its real
+        // menu-opening cases (pausedmenu=2, briefing=6, victoryscreen=7, pregame=3,
+        // endofgame=4, coop_lobby=0xb, levels_challenge=0xc, main_specops=0xe) has a
+        // real static call site passing that literal mode value, confirmed via
+        // FindCallers.java -- EXCEPT case 0xd ("main_text", the real native main-menu
+        // screen name, confirmed via RawStringScan.java to have exactly ONE reference
+        // in the whole binary: the switch case itself), which has ZERO static callers
+        // anywhere in iw5sp.exe. This matches the live evidence exactly (the gate read
+        // 0x0 continuously while genuinely at the main menu) -- the true main menu
+        // does not appear to be reachable through this dispatcher/gate-setter on this
+        // build, so DAT_1406e2550 bit 0x10 never gets set there. Cross-checked against
+        // x86: x86's OWN structurally-equivalent gate (IsMenuActive(), 0x10 @
+        // 0xB36210) is CONFIRMED via live playtest (known_issues.md issue #22, D-pad+A
+        // menu navigation) to correctly read true at the real main menu -- so this is
+        // a genuine x64-specific gap, not a pre-existing x86 limitation inherited here.
+        //
+        // Real fix: OR in GetMenuStackDepthX64_Exported() > 0 -- the real native
+        // menu-stack-depth primitive (ctx+0x14C0, independently confirmed via two
+        // decompiled consumers, FUN_1402aaa80/FUN_1402ad530), already relied on
+        // elsewhere in this codebase for real, live-confirmed gating (the x64 Custom
+        // Options screen's own open-trigger and the highlighted-item A-glyph/F2-F3
+        // glyph editor both consume it via TryGetRealFocusedGroupAndIndexX64/
+        // GetMenuStackDepthX64_Exported, 2026-09-12) and structurally identical to
+        // x86's own GetMenuStackDepth(), which x86's known_issues.md explicitly
+        // documents as staying nonzero at the true main menu ("the main menu itself
+        // already sits nested below a root/splash screen," issue #51). This is a
+        // real, precedented, already-proven-elsewhere signal, not a fresh guess --
+        // but this specific consumer (gating the cursor) has NOT been independently
+        // live-tested yet; next playtest should confirm both that the cursor now
+        // shows at the main menu AND that it does not regress by appearing during
+        // ordinary active gameplay (the visFlag/uiState/IsControllerActiveInputMethod
+        // checks around this block stay in place unchanged and are the real
+        // second line of defense against that).
 #if defined(_M_X64) || defined(_WIN64)
-        if (!forceCursorForEditor && !IsMenuActiveX64_Exported()) return;
+        bool anyNativeMenuActive = IsMenuActiveX64_Exported() || GetMenuStackDepthX64_Exported() > 0;
+        if (!forceCursorForEditor && !anyNativeMenuActive) return;
 #else
         if (!forceCursorForEditor && !IsMenuActive_Exported()) return;
 #endif

@@ -5082,6 +5082,127 @@ may not have this same limitation -- needs checking, not assumed).
 
 ---
 
+**UPDATE 2026-09-14 (root-caused and fixed, build-verified, not yet
+live-tested) -- x86 cross-check confirms this IS an x64-specific gap,
+not an inherited x86 limitation; real writer/caller trace via fresh
+Ghidra decompile explains exactly why.**
+
+**Step 1 (x86 cross-check) -- x86's `IsMenuActive()` DOES correctly
+read true at the true main menu, confirmed via live playtest, not just
+inspection.** Read x86's `IsMenuActive()` (`analog_input_hooks.cpp`
+~line 131, the raw `0x10 @ 0xB36210` bit read) and its real callers in
+full. `known_issues.md` issue #22 ("Real controller menu navigation
+(D-pad + A)") documents native D-pad item navigation via
+`ForwardKeyToMenu`, gated on this exact same bit, and states plainly:
+"**Confirmed working live** by the user across the main menu, pause
+menu, and the `pc_options_video`-style two-pane settings screens."
+This is a real, live-tested confirmation, not an assumption -- x86's
+gate genuinely covers the true main menu. So this is a genuine
+x64-specific gap, not a pre-existing x86 limitation nobody noticed.
+
+**Step 2 (DAT_1406e2550's real native semantics) -- fresh Ghidra
+decompile of the x64 binary (`analyzeHeadless.bat -process iw5sp.exe
+-readOnly -noanalysis`, `FindDataWriters.java`/`FindCallers.java`/
+`RawStringScan.java`/`DumpDisasm.java` against
+`re_notes/ghidra_project_x64/iw5sp_x64_proj`), not assumption.**
+
+- `FUN_14007f3b0(playerIndex, flags)` is the one real writer that ever
+  sets bit 0x10 on `DAT_1406e2550` (confirmed via `FindDataWriters.java`
+  -- every other reference to this address is a plain read/test, this
+  is the only WRITE). It replaces the whole per-player dword with the
+  new flags value (player stride confirmed `0x190`/400 bytes, matching
+  `g_menuActiveGateFlag`'s own existing `player*400` indexing).
+- Its ONLY real callers (confirmed via `FindCallers.java`, 7 total) all
+  funnel through `FUN_14029f3f0` -- the confirmed x64 `SetMenuState`
+  equivalent of x86's `FUN_004396d0` (same `switch(mode)` shape, same
+  `(&DAT_142615b20)[player] = mode;` per-player state-store pattern,
+  same real menu-name strings passed to the "open menu" primitive).
+  Every mode this switch opens calls `FUN_14007f3b0(player, 0x10)`
+  before opening its menu: `mode 1`=error_popmenu, `mode 2`=pausedmenu,
+  `mode 3`=pregame, `mode 4`=endofgame, `mode 6`=briefing,
+  `mode 7`=victoryscreen, `mode 0xb`=coop_lobby, `mode 0xc`=
+  levels_challenge, `mode 0xe`=main_specops -- **and `mode 0xd`
+  ="main_text"**, the real native main-menu screen name (confirmed via
+  `RawStringScan.java`: the literal string `"main_text"` has EXACTLY
+  ONE reference in the entire binary, the switch case itself at
+  `0x14029f566`, nowhere else).
+- **The real gap**: a full static-callgraph search of every one of
+  `FUN_14029f3f0`'s 18 real callers (`FindCallers.java` against
+  `14029f3f0`) found a literal argument for every other mode (0, 1, 2,
+  3, 0xb, computed values resolving to 0xc/0xe via two helper functions
+  `FUN_1402b01d0`/`FUN_1402b0250`) but **zero static call sites passing
+  the literal `0xd`** anywhere in `iw5sp.exe`. This matches the live
+  heartbeat evidence exactly (gate read `0x00000000` continuously while
+  genuinely at the main menu) -- on this build, the true main-menu open
+  path does not appear to route through this dispatcher/gate-setter at
+  all (most likely reached via a command-string/script-driven path not
+  visible to a plain call-graph walk, consistent with `"main_text"`
+  having no second literal-string reference anywhere either), so
+  `DAT_1406e2550` bit 0x10 genuinely never gets set there. Not a
+  simple binary "any menu vs. no menu" flag on x64 the way x86's
+  equivalent bit is -- it's set for every OTHER real menu-open case
+  this session could trace, just not (on this build, via any
+  statically-found path) for the true main menu specifically.
+
+**Step 3 -- the real, already-confirmed-working broader signal is
+`GetMenuStackDepthX64()`/`GetTopmostActiveMenuX64()`, not a NEW
+mechanism inside `InjectControllerMenuNavX64`/`ForwardKeyToMenuX64`.**
+Correction to this round's own original framing above: reading
+`InjectControllerMenuNavX64`/`PollCustomOptionsMenuX64`
+(`analog_input_hooks_x64.cpp`) in full shows both actually gate on the
+exact SAME `g_menuActiveGateFlag & 0x10` check as the cursor does --
+they are not independent of it, so the original "already-confirmed-
+working x64 signal, reuse it" framing was not quite right, and their
+own main-menu behavior is suspect for the identical reason (not
+separately investigated this round; flagged as a real open question
+below). What ForwardKeyToMenuX64 itself internally depends on for
+"is there a menu to route input into" is `GetTopmostActiveMenuX64()`
+(`FUN_1402aaa80`, walking the real menu STACK at `ctx+0x14C0`/
+`ctx+0x1440`) returning non-null -- a completely different, broader
+primitive from the gate bit, independently confirmed via TWO decompiled
+consumers and already relied on elsewhere in this codebase for real,
+shipped gating (the Custom Options screen's own open-trigger and the
+highlighted-item A-glyph/F2-F3 glyph editor, both 2026-09-12, via
+`TryGetRealFocusedGroupAndIndexX64`/`GetMenuStackDepthX64_Exported`).
+Cross-checked against x86: `known_issues.md`'s own issue #51 write-up
+states plainly that x86's structurally identical `GetMenuStackDepth()`
+stays nonzero at the true main menu ("the main menu itself already
+sits nested below a root/splash screen") -- real, documented precedent
+that this specific primitive covers the main menu on this exact game
+data, not a fresh guess.
+
+**Fix shipped** (`overlay_hud.cpp`, `DrawCustomCursorIfNeeded`'s x64
+branch): widened the gate from `IsMenuActiveX64_Exported()` alone to
+`IsMenuActiveX64_Exported() || GetMenuStackDepthX64_Exported() > 0`
+(the latter already `extern "C"`-exported, no new export needed).
+Pause-menu behavior is unchanged (still covered by the original gate,
+which the writer trace above confirms IS set for `mode 2`/pausedmenu);
+main menu is now additionally covered by the stack-depth fallback. The
+existing `visFlag`/`uiState`/`IsControllerActiveInputMethod()` checks
+around this block are untouched and remain the real second line of
+defense against the cursor spuriously appearing during ordinary active
+gameplay if the stack-depth read were ever wrong.
+
+Build-verified: x64 `/t:Rebuild` 0 errors (`dumpbin`-confirmed
+`8664 machine (x64)`, fresh timestamp), Win32 regression rebuild 0
+errors/0 warnings, x64 rebuilt and redeployed last (shared `OutDir`,
+confirmed via a second `dumpbin` check after the final rebuild).
+**Not yet live-tested** -- next playtest should confirm (a) the cursor
+now shows at the true main menu, (b) it does not regress by appearing
+during ordinary active gameplay (no menu open), and (c) pause-menu
+cursor behavior is unaffected. Real, genuine open question left for a
+future session: does `InjectControllerMenuNavX64`'s own D-pad+A main-
+menu navigation have this identical gap (same `g_menuActiveGateFlag`
+early-return), or was its "confirmed working live... main menu wise"
+claim (cited earlier in this same round) actually accurate -- it was
+not independently re-verified this round, and the writer-trace finding
+above (main menu never sets this bit on this build) would predict D-pad
+menu nav is ALSO silently non-functional at the true main menu if that
+claim was imprecise. Worth a dedicated live check, not assumed either
+way.
+
+---
+
 **ROADMAP IDEA, 2026-09-14 — real window/backbuffer resolution override,
 requested via a public GitHub issue (community use case: Nucleus Co-op
 splitscreen).** A community user (GitHub issue #3 on the `-x86` repo,
