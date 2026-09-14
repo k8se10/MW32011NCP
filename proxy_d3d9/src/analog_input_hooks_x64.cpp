@@ -1280,6 +1280,146 @@ void SendSyntheticScoreboardKeyX64(bool down)
     }
 }
 
+// ---- Jump/Interact -> real key synthesis, so Campaign scripted-sequence
+// (QTE) detection sees a genuine press -- 2026-09-14, known_issues.md issue
+// #108 / issue #75 ("Dust to Dust" elevator/chopper-jump falls through).
+//
+// REAL EVIDENCE, first-hand, from a pre-blocker GSC extraction
+// (D:\Tools\gsc-tool\extracted\decompiled\iw5\dubai_finale.gsc -- confirmed
+// still usable; Unlinker.exe's own post-x64-recompile segfault, issue #40,
+// does not affect this already-extracted corpus). `dubai_finale.gsc` is this
+// project's strongest candidate for "Dust to Dust" itself (the Dubai-arc
+// finale culminating in Makarov's death) and contains a real, live,
+// CONFIRMED-CALLED chopper-to-chopper jump QTE (`_id_74CB`/`_id_74CC`/
+// `_id_74CD`/`_id_74CE`, the "trig_player_chopperjump" trigger) structurally
+// identical in shape to the reported elevator-to-elevator jump (a timed leap
+// between two moving objects at height, using the Jump key, with a real
+// airborne-velocity/direction check gating whether the player successfully
+// "catches" the far side or falls through). Its detection is NOT
+// `usebuttonpressed()` at all -- it's:
+//
+//   notifyoncommand( "playerjump", "+gostand" );
+//   notifyoncommand( "playerjump", "+moveup" );
+//   ...
+//   level.player waittill( "playerjump" );
+//
+// `notifyoncommand(event, command)` fires `event` only when the LITERAL
+// command string is actually dispatched through the engine's own real
+// command-execution chain -- not when the resulting usercmd/kbutton state
+// merely changes. x64's own Jump ( `kJumpUsercmdBit` / 0x400, Hook_MovementTick
+// above) is deliberately a raw `usercmd_t.buttons` OR, same as x86's design
+// (see that constant's own big comment block) -- it makes the player
+// physically jump (Pmove reads the bit directly) but never touches the
+// command-dispatch chain at all, so `notifyoncommand("playerjump", ...)`
+// never fires, `_id_74CC()`'s `waittill` never wakes, `player_jumping` never
+// sets, and `_id_74CE()`'s catch-the-far-side check is never even evaluated
+// -- matching "falls right through" exactly (the jump itself works, the
+// SCRIPT just never learns it happened).
+//
+// This directly corroborates, and is corroborated by, a DIFFERENT concurrent
+// investigation this same session (known_issues_x64.md issue #1's "Sniper
+// Fire/ADS" thread, `FUN_14007fc00`/`g_notifyBindDispatch`): x64's Fire/ADS
+// (real kbutton calls, but ALSO bypassing `FUN_14007c3a0`'s case dispatch)
+// needed that SAME dispatch's own "n %i" reliable-command notify called
+// explicitly to be visible GSC-side, for the identical structural reason --
+// any control that reaches usercmd/kbutton state without going through the
+// real case-dispatch function never fires whatever native<->GSC bridge GSC's
+// notify primitives hook into. Cross-referenced, not re-derived independently.
+//
+// NOT the same finding as Survival ready-up's "Attempt 1" (this file's own
+// SendSyntheticF5X64 comment, and re_notes/iw5sp.md's "Attempt 1: +gostand,
+// wrong system entirely"): that attempt called +gostand's real KBUTTON pair
+// directly (bypassing the dispatch chain the same way this project's raw-bit
+// injection does) against a DIFFERENT, dead/unused GSC notify target
+// (`_id_1814`, never called from anywhere in the real script corpus) -- its
+// failure to fire that notify is fully explained by the SAME bypass
+// mechanism documented here, not evidence against this fix. dubai_finale.gsc's
+// own `notifyoncommand("playerjump", ...)` is a REAL, live, confirmed-called
+// script path, not a dead one.
+//
+// FIX CHOICE: a real synthetic WM_KEYDOWN/WM_KEYUP (SPACE, config.cfg's own
+// confirmed default `bind SPACE "+gostand"`), not a resolved case-number call
+// into `g_notifyBindDispatch` the way the Fire/ADS fix used. Deliberately
+// safer: a synthetic keypress runs through the ENTIRE real native chain (bind
+// lookup -> dispatch -> case handling -> the same reliable-command notify)
+// exactly as a real keyboard press would, with NO risk of resolving the wrong
+// case number for x64's own "+gostand" case (this project's own issue #3,
+// the Back-button regression, is the standing lesson on trusting an
+// unconfirmed case number) -- and it's the same precedented, already-shipped
+// technique this exact file already uses for D-pad Left/ready-up/Back
+// (SendSyntheticActionSlot4KeyX64/SendSyntheticF5X64/SendSyntheticScoreboardKeyX64,
+// all above), all hardcoded to the real default bind rather than a dynamic
+// lookup -- x64's own GetKeybind (real_settings.cpp) is still a stub
+// (`#if defined(_M_X64)` branch, no resolved address yet), so hardcoding the
+// confirmed default matches this project's own established, accepted pattern
+// for this exact technique, not a new gap introduced here. A custom-rebound
+// Jump key is the one known, honestly-documented limitation, same class
+// already accepted for every other synthetic-key control in this file.
+//
+// Safety: fired 1:1 on the SAME real physical press/release edge that
+// already drives kJumpUsercmdBit (Hook_MovementTick's own g_jumpHeldX64
+// tracker, below) -- not a new trigger condition, no "is a QTE active" gate
+// needed, same reasoning already on record for every sibling synthetic-key
+// function in this file: a synthetic SPACE fired exactly when the player
+// physically jumps is indistinguishable from, and behaviorally identical to,
+// a real keyboard jump press outside a QTE too (harmless -- SPACE's only
+// real binding is +gostand, already the exact action our own usercmd bit
+// already performs every such tick).
+void SendSyntheticJumpKeyX64(bool down)
+{
+    HWND hwnd = GetGameWindow();
+    if (!hwnd) return;
+    if (down) {
+        PostMessageA(hwnd, WM_KEYDOWN, VK_SPACE, 0x00000001);
+    } else {
+        PostMessageA(hwnd, WM_KEYUP, VK_SPACE, 0xC0000001);
+    }
+}
+
+// ---- Interact/Use -> real key synthesis, same reasoning and fix shape as
+// SendSyntheticJumpKeyX64 immediately above, for issue #108's own headline
+// report ("pressing X/Interact does nothing during a scripted sequence").
+//
+// dubai_finale.gsc's OWN button-mash/QTE helper (`_id_7518`/`_id_751C`) polls
+// `level.player usebuttonpressed()` / `self usebuttonpressed()` every
+// `sample_button_mash` tick and does its OWN rising-edge detection in GSC
+// (`if ( !var_1 && var_2 )`) on the returned value -- i.e. `usebuttonpressed()`
+// is a POLLED GETTER, not a notify/event primitive the way `notifyoncommand`
+// is. Its native implementation was NOT independently pinned down this pass
+// (the literal string "usebuttonpressed" is confirmed absent from both
+// binaries -- re_notes/x64_migration/README.md -- meaning GSC builtin
+// methods dispatch by a compile-time numeric ID baked into the compiled
+// script, not a name lookup this project can string-search for, the same
+// "coopready" problem re_notes/iw5sp.md's ready-up hunt already documented;
+// with `usebuttonpressed` known absent, that whole class of search is a
+// confirmed dead end here, not one worth repeating) -- so unlike Jump above,
+// this is NOT a fully RE-confirmed root cause, only a well-evidenced,
+// low-risk, additive one:
+//   - Interact/`+activate` is ALSO in the raw-usercmd-bit bucket (not a real
+//     kbutton call), same structural class as Jump -- so if
+//     `usebuttonpressed()` reads anything upstream of the raw usercmd bit
+//     (kbutton edge state, or the same case-dispatch/notify chain Jump's own
+//     fix above targets), the identical bypass applies.
+//   - Even if `usebuttonpressed()` turns out to read raw usercmd/ps->buttons
+//     directly (in which case a concurrent, different fix this same session
+//     -- known_issues_x64.md issue #1's Hook_MovementTick early-return fix,
+//     which was silently skipping this whole button block whenever the left
+//     stick was centered -- may already be sufficient on its own), this
+//     synthetic press is INERT-IF-UNNECESSARY, same "additive, safe even if
+//     the hypothesis is wrong" reasoning the concurrent Fire/ADS notify fix
+//     already used for its own case.
+// config.cfg's own confirmed real default: `bind F "+activate"`.
+void SendSyntheticInteractKeyX64(bool down)
+{
+    HWND hwnd = GetGameWindow();
+    if (!hwnd) return;
+    if (down) {
+        PostMessageA(hwnd, WM_KEYDOWN, 'F', 0x00000001);
+    } else {
+        PostMessageA(hwnd, WM_KEYUP, 'F', 0xC0000001);
+    }
+}
+
 // Edge-tracking state for the Y hold-vs-tap split -- mirrors x86's own
 // g_yPressStartMs/g_yReadyUpFired (analog_input_hooks.cpp) exactly. The
 // existing g_weaponSwitchHeldX64 bool (declared further below alongside this
@@ -1307,6 +1447,12 @@ bool g_weaponSwitchHeldX64 = false;
 bool g_jumpHeldX64 = false;                 // rising-edge diag not needed, just for parity w/ other bools
 bool g_interactButtonWasHeldX64 = false;
 DWORD g_interactPressStartMsX64 = 0;        // matches x86's own hold-to-interact timing (g_modConfig.interactHoldThresholdMs)
+bool g_interactSyntheticKeyActiveX64 = false; // tracks whether SendSyntheticInteractKeyX64(true) has
+                                               // fired, so the paired KEYUP is sent exactly once on
+                                               // release -- separate from g_interactButtonWasHeldX64,
+                                               // which tracks the raw PHYSICAL hold, not the delayed
+                                               // post-threshold edge this pairs with (see
+                                               // SendSyntheticInteractKeyX64's own comment)
 bool g_dpadHeldX64[4] = { false, false, false, false }; // Up, Down, Left, Right -- matches kXI_DPAD_*_X64 order
 bool g_crouchProneHeldX64 = false;
 bool g_scoreboardHeldX64 = false; // Back -> +scores key-synth, see SendSyntheticScoreboardKeyX64
@@ -2646,6 +2792,19 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
             if (jumpHeld && !g_jumpHeldX64) {
                 ForceStandingViaRealToggleX64();
             }
+            // Real synthetic SPACE, 1:1 on the same physical press/release edge --
+            // see SendSyntheticJumpKeyX64's own big comment above for the full
+            // finding (issue #75/#108, dubai_finale.gsc's notifyoncommand("playerjump",
+            // "+gostand"/"+moveup") chopper/elevator-jump QTE). Fired on the raw
+            // physical edge, not gated behind menuActiveNow's suppression, matching
+            // every other control in this block that already suppresses the
+            // USERCMD bit while a menu is active but still tracks the physical
+            // edge cleanly via jumpHeld itself (jumpHeld is already false whenever
+            // menuActiveNow is true, so this naturally never fires while a menu is
+            // open either).
+            if (jumpHeld != g_jumpHeldX64) {
+                SendSyntheticJumpKeyX64(jumpHeld);
+            }
             g_jumpHeldX64 = jumpHeld;
 
             // Auto-mantle (2026-09-13 x64 port) -- STRICTLY opt-in, matches x86's
@@ -2716,8 +2875,23 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
             if (interactHeld && !g_interactButtonWasHeldX64) {
                 g_interactPressStartMsX64 = GetTickCount();
             }
-            if (interactHeld && (GetTickCount() - g_interactPressStartMsX64) >= g_modConfig.interactHoldThresholdMs) {
+            bool interactThresholdReached = interactHeld &&
+                (GetTickCount() - g_interactPressStartMsX64) >= g_modConfig.interactHoldThresholdMs;
+            if (interactThresholdReached) {
                 out |= kInteractUsercmdBit;
+            }
+            // Real synthetic 'F', paired to the SAME delayed post-threshold edge
+            // the raw usercmd bit above already uses (not the raw physical press),
+            // so both stay synchronized -- see SendSyntheticInteractKeyX64's own
+            // big comment for the full finding and its honest confidence caveat
+            // (issue #108, well-evidenced but not independently RE-confirmed the
+            // way Jump's own notifyoncommand finding is).
+            if (interactThresholdReached && !g_interactSyntheticKeyActiveX64) {
+                SendSyntheticInteractKeyX64(true);
+                g_interactSyntheticKeyActiveX64 = true;
+            } else if (!interactHeld && g_interactSyntheticKeyActiveX64) {
+                SendSyntheticInteractKeyX64(false);
+                g_interactSyntheticKeyActiveX64 = false;
             }
             g_interactButtonWasHeldX64 = interactHeld;
 
