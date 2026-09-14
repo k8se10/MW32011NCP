@@ -51,12 +51,25 @@ void ContentLoaderBase::LoadXStringArray(const bool atStreamStart, const size_t 
 #else
     if (atStreamStart)
     {
-        const auto fill = m_stream.LoadWithFill(4u * count);
+        // MW32011NCP / iw5oat, 2026-09-14: this ARCH_x64 branch is shared across
+        // every game (ContentLoaderBase, not a per-game file) and still hardcoded
+        // a 4u (x86 pointer) stride/offset for a plain array of string pointers --
+        // confirmed live as the actual cause of the "invalid block 15" error seen
+        // extracting real x64 zones (LoadScriptStringList's own string array is
+        // read via this exact function). Fixed to use the stream's own already-
+        // configured real pointer width (m_pointer_byte_count, driven by the
+        // pointerBitCount each ZoneLoaderFactory passes in -- 64u for this fork's
+        // IW5 x64 target, see ZoneLoaderFactoryIW5.cpp) instead of an x86-only
+        // constant, so this stays correct for whatever pointer width the active
+        // game/arch actually uses. Full trail: re_notes/x64_migration/
+        // fastfile_format_research.md (parent repo) SS5.6.
+        const auto pointerByteCount = m_stream.GetPointerBitCount() / 8u;
+        const auto fill = m_stream.LoadWithFill(pointerByteCount * count);
 
         for (size_t index = 0; index < count; index++)
         {
-            fill.FillPtr(varXString[index], 4u * index);
-            m_stream.AddPointerLookup(&varXString[index], fill.BlockBuffer(4u * index));
+            fill.FillPtr(varXString[index], pointerByteCount * index);
+            m_stream.AddPointerLookup(&varXString[index], fill.BlockBuffer(pointerByteCount * index));
         }
     }
 #endif
