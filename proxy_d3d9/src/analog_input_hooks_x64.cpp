@@ -3815,6 +3815,28 @@ void Hook_DrawTextX64(
                         ComputeRealDrawPositionX64(dcHandle, fontArg, scale, color1, color2, x, y, startX, startY);
                         ConvertRealScreenPosToDesignSpaceX64(startX, startY, startX, startY);
 
+                        // 2026-09-14 first-pass nudge, live-reported "text and glyph needs
+                        // repositioning on the mantle prompt" (confirms the position transform
+                        // above IS now landing near the real element, per that fix's own honest
+                        // caveat -- this is the fine-alignment pass, not a repeat of the earlier
+                        // "off-screen entirely" bug). Ported x86's own already-live-tested design-
+                        // space nudge constants directly (analog_input_hooks.cpp, kMantleHintXNudge/
+                        // YNudge) rather than starting from zero -- these are applied in design-
+                        // space units, post-conversion, the same coordinate system
+                        // ConvertRealScreenPosToDesignSpaceX64 targets here, so x86's own values are
+                        // a reasoned starting point, not a blind guess. HONEST CAVEAT: x86 itself
+                        // needed a live-reported correction round to get from its own first estimate
+                        // to these final values (see that file's own comment history) -- these are
+                        // NOT yet independently re-tuned against x64's own real on-screen result,
+                        // only carried over as the best available starting point. May need its own
+                        // follow-up correction once seen live on x64.
+                        if (isMantleHint) {
+                            constexpr float kMantleHintXNudgeX64 = 82.0f;
+                            constexpr float kMantleHintYNudgeX64 = -30.0f;
+                            startX += kMantleHintXNudgeX64;
+                            startY += kMantleHintYNudgeX64;
+                        }
+
                         GameplayHintSlotId slotId = isMantleHint ? GameplayHintSlotId::Mantle
                                                                    : GameplayHintSlotId::Interact;
                         // Condensed role for Throwback, matching x86's own
