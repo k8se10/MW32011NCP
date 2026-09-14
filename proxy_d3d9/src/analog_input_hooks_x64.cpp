@@ -1043,6 +1043,45 @@ constexpr const char* kPauseToggleSignature =
 using PauseToggleFn = void(__fastcall*)(int playerIndex);
 PauseToggleFn g_pauseToggle = nullptr;
 
+// FUN_140082e70(playerIndex) -- the confirmed x64 equivalent of x86's
+// FUN_004d6620/OpenPauseMenu (analog_input_hooks.cpp), i.e. the REAL native
+// branch the engine's own key-event handler (FUN_14007eaf0) calls for clcState
+// 1 or 2 (a genuine Bink cinematic playing -- confirmed via a full decompile
+// chain against iw5sp.exe, x86: state==1 -> FUN_004038b0 -> FUN_00489950 ->
+// FUN_0049cee0, the real Bink teardown that stops BOTH video and audio
+// together, same handle). x64's own chain is structurally identical function-
+// for-function: FUN_140082e70 -> (state==1) -> FUN_1400796b0 -> FUN_1400795d0
+// (re_notes/x64_migration, this session's decompile) -- same shape as x86 at
+// every level.
+//
+// REAL BUG FOUND 2026-09-14 (issue #98, corrected round): PollPauseToggleX64
+// below has ALWAYS called g_pauseToggle (FUN_1400823b0) unconditionally on
+// Start's press edge, for every clcState value including 1/2 -- never routing
+// through FUN_140082e70 at all. FUN_1400823b0 itself, unlike the real
+// FUN_14007eaf0 key handler, has NO clcState==1/2 special case -- it always
+// applies its own generic "is input currently blocked" guard (mirroring, in
+// negated form, FUN_14007eaf0's own state==6 cinematic-suppression guard --
+// see IsBinkCinematicPlaying()'s x86 equivalent, analog_input_hooks.cpp) and,
+// if that guard says "proceed," ALWAYS does the generic SetMenuState-style
+// toggle (FUN_14029f3f0) -- it never reaches FUN_140082e70/the real Bink-stop
+// chain. During an ACTUAL Bink cinematic the guard evaluates to "suppress" (by
+// design -- it's the real native anti-forced-pause-during-cinematic check),
+// so FUN_1400823b0 does literally NOTHING -- explaining the live report
+// "the pause button no longer skips on x64" (not a partial bug like x86's
+// original audio-persists-after-skip report -- x64 currently has NO skip
+// effect at all during a cinematic, visual or audio). Fixed below by adding
+// the same explicit clcState==1||2 special case x86's InjectControllerPauseMenu
+// already has, calling FUN_140082e70 directly -- mirrors the real
+// FUN_14007eaf0 branch exactly instead of relying on FUN_1400823b0's own
+// generic (and, for this specific state, silently-inert) guard.
+constexpr const char* kOpenPauseMenuForCinematicSignature =
+    "48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 20 48 63 F9 48 8D 05 "
+    "?? ?? ?? ?? 48 69 D7 90 01 00 00 33 DB 8B 34 10 83 FE 01 ?? ?? "
+    "8B CF E8 ?? ?? ?? ?? ?? ??";
+
+using OpenPauseMenuForCinematicFn = void(__fastcall*)(int playerIndex);
+OpenPauseMenuForCinematicFn g_openPauseMenuForCinematic = nullptr;
+
 // Diagnostic-only, added 2026-09-04 after a THIRD "needs a click for input"
 // live-test failure (the DAT_1406e4774 bit-0x800 force-clear above did NOT
 // resolve it) -- direct user correction: "it was the exact same issue we had
@@ -1508,6 +1547,14 @@ bool IsSprintActiveX64()
 // on x64) can poll it too. The exact same fix shape as x86's own real fix
 // for this identical bug class, just reached one architecture generation
 // later.
+// Forward declaration -- real definition lives later in this same anonymous
+// namespace (the menu-focus/itemDef-tracking section below); needed here since
+// PollPauseToggleX64 is defined earlier in the file and C++ requires a prior
+// declaration to call it. Same "extern C escapes internal linkage" pattern
+// already used throughout this file (see TryGetClcStateX64's own definition
+// comment for why it's extern "C").
+extern "C" bool TryGetClcStateX64(int* outValue);
+
 extern "C" void PollPauseToggleX64()
 {
     if (!g_pauseToggle) return;
@@ -1517,7 +1564,23 @@ extern "C" void PollPauseToggleX64()
 
     bool pauseHeld = IsPhysicalHeld_Exported(g_buttonMap.pause, xiButtons, leftTrigger, rightTrigger);
     if (pauseHeld && !g_pauseHeldX64) {
-        g_pauseToggle(0);
+        // Real fix, issue #98 (corrected round, 2026-09-14): mirror x86's own
+        // InjectControllerPauseMenu three-way split instead of always calling
+        // the generic g_pauseToggle (FUN_1400823b0), which has no clcState==1/2
+        // special case of its own and silently does nothing during an actual
+        // Bink cinematic (its own generic "is input blocked" guard correctly
+        // suppresses the generic toggle then, but never reaches the real
+        // cinematic-skip chain either) -- see g_openPauseMenuForCinematic's own
+        // declaration comment above for the full root-cause trail. When the
+        // clcState read fails to resolve, fall back to the pre-existing
+        // behavior (g_pauseToggle only) rather than risk a wrong branch.
+        int state = 0;
+        bool haveState = TryGetClcStateX64(&state);
+        if (haveState && (state == 1 || state == 2) && g_openPauseMenuForCinematic) {
+            g_openPauseMenuForCinematic(0);
+        } else {
+            g_pauseToggle(0);
+        }
     }
     g_pauseHeldX64 = pauseHeld;
 }
@@ -5235,6 +5298,29 @@ void InstallAnalogInputHooksX64()
                     (void*)g_menuActiveGateFlag);
                 LogFromController(buf2);
             }
+        }
+    }
+
+    // Cinematic-skip pause-menu-open (FUN_140082e70) -- the real clcState==1/2
+    // branch PollPauseToggleX64 needs to call directly instead of always going
+    // through the generic g_pauseToggle (see g_openPauseMenuForCinematic's own
+    // declaration comment above for the full root-cause trail, issue #98). A
+    // failure here is non-fatal to Pause itself -- PollPauseToggleX64 already
+    // falls back to g_pauseToggle-only behavior (today's status quo) when this
+    // doesn't resolve, so this can never make Pause worse than it already is.
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kOpenPauseMenuForCinematicSignature);
+        if (!r.found) {
+            LogFromController("[x64-pause-cinematic] Cinematic-skip pause-open signature did not resolve -- "
+                "Start will fall back to the generic pause toggle during a Bink cinematic this session "
+                "(same as before this fix; no regression, just missing the improvement)");
+        } else {
+            g_openPauseMenuForCinematic = reinterpret_cast<OpenPauseMenuForCinematicFn>(r.address);
+            char buf[176];
+            sprintf_s(buf, "[x64-pause-cinematic] Cinematic-skip pause-open resolved @ 0x%llX -- Start now "
+                "routes clcState 1/2 here directly instead of the generic toggle (issue #98).",
+                static_cast<unsigned long long>(r.address));
+            LogFromController(buf);
         }
     }
 
