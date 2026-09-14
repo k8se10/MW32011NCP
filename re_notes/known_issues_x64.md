@@ -5925,3 +5925,37 @@ backing every claim: `re_notes/x64_migration/ui_draw_pipeline_map.md` (new
 file) and `re_notes/x64_migration/ui_pipeline_trace/` (raw decompiles/
 caller-lists). No source changes this round — reference material only, for
 whatever UI work comes next.
+
+### UPDATE 2026-09-14 (round 2, "keep digging") — the last ~15 untraced dispatcher cases filled in; real identification of the Lethal/Tactical grenade-type HUD indicator
+
+**Status: Reference/groundwork, no source changes.**
+
+Direct instruction to continue the map above. Decompiled every remaining
+"not traced this pass" cell from the first round's case table
+(`FUN_1402cb690`, `FUN_140050c30`, `FUN_140050f80`, `FUN_140057d40`,
+`FUN_1400586f0`, `FUN_140077940`, `FUN_140077700`, `FUN_140051250`,
+`FUN_140031910`, `FUN_1400319e0`, `FUN_140031540`, `FUN_1400678e0`,
+`FUN_1400668b0`, `FUN_140067870`, `FUN_1400514e0`).
+
+**The real find**: the `0x67`-`0x6e` case family (previously the map's
+vaguest entry, flagged as "identity unresolved, could be killstreak slots
+or objective markers") is confirmed as the **Lethal/Tactical grenade-type
+HUD indicator** — an icon, an ammo count, a real localized name, and a
+switch/low-ammo flash. Confirmed by dumping the actual label table
+(`(&PTR_DAT_1404c0bc8)[param_7]`) instead of guessing from call shape: real
+reference-key strings came back directly — `WEAPON_FRAGGRENADE`,
+`WEAPON_SMOKEGRENADE`, `WEAPON_FLASHGRENADE`, plus an empty-string "no
+grenade equipped" slot. Zero remaining identity risk on this one; the next
+step is pure implementation work, not more RE.
+
+Also newly confirmed this round: a shared danger/proximity-indicator family
+(`0x4f`/`0x62`/`0x72`, icon-only, one shared fade/gate system) whose
+identity is still INFERRED (no string evidence found), and — a genuinely
+new fact for this project's own notes — a real native weapon-asset naming
+convention (`"iw5_"` prefix), surfaced incidentally while tracing `0x72`.
+
+Full updated case table, the raw label-table dump, and the reusable
+"don't guess a table-indexed lookup, dump it" technique this round
+demonstrated: `re_notes/x64_migration/ui_draw_pipeline_map.md` (updated)
+and `re_notes/x64_migration/ui_pipeline_trace/` (new round-2 files). No
+source changes — still pure reference material.
