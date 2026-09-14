@@ -6004,3 +6004,92 @@ Full updated map, the new named-element table, and every raw script output
 backing this round: `re_notes/x64_migration/ui_draw_pipeline_map.md`
 (section 3.5, new) and `re_notes/x64_migration/ui_pipeline_trace/`. No
 source changes — still pure reference material.
+
+### NEW, 2026-09-14 (later still) — the native "You are hurt, get to cover" TEXT is live-reported missing on x64; the vignette itself is confirmed NOT affected; three real hypotheses ruled out this round, real cause still unresolved
+
+**Status: Investigating.**
+
+Direct live report: "i think the x64 update removed the get to cover
+message present in x86" — the classic CoD low-health warning (progressive
+red-screen vignette + on-screen text), already deeply investigated on x86
+as issue #100 (`overlay_hud.cpp`'s own `DrawFullScreenPass` header comment,
+full trail in `known_issues.md` issue #100).
+
+**Critical clarification from the user, decisive for scoping this
+correctly**: "if it is motion blur caused its a different bug because
+before it used to prevent red screen and text, i still red screen as
+normal." **The vignette shows correctly on x64 — only the TEXT is
+missing.** This is a genuinely different symptom shape from x86's own
+issue #100 (which killed the vignette AND text together, all-or-nothing) —
+ruling out a simple "same bug carried over" assumption before any RE was
+even attempted.
+
+**Three real hypotheses tested and ruled out this round**:
+
+1. **x86's issue #100 mechanism (motion-blur/`DrawFullScreenPass` state
+   corruption) does not explain this.** `DrawFullScreenPass` is shared,
+   arch-neutral code — its issue #100 fix (no `SetFVF`/`SetVertexDeclaration`
+   calls, stream-0 restored after `DrawPrimitiveUP`) already applies to x64
+   automatically, no `#ifdef` split in the risky path. Confirmed structurally
+   this round: x64's motion-blur trigger (`Hook_MotionBlurTrigger`,
+   `analog_input_hooks_x64.cpp`) fires at the exact same relative frame
+   position as x86's own `Hook_693ff0` (a genuine pre-hook, before the
+   native queued 2D/HUD dispatch) and calls the identical
+   `DrawFullScreenPass` function. If this were the same bug class, it would
+   kill the vignette too — it doesn't, so this mechanism is not the cause
+   here, independent of the user's own direct observation ruling it out.
+2. **This project's own `Hook_DrawTextX64` substitution logic does not
+   suppress it.** Re-read in full: `suppressRealDraw` only ever becomes
+   `true` on a POSITIVE structural match against a known template (Mantle/
+   Pickup/Throwback/Reload/ReadyUp/Back/Friends/Quit/Leaderboards/
+   GameSummary) — none of which "You are hurt, get to cover" could match —
+   and the real trampoline (`g_realDrawTextX64`) is called unconditionally
+   whenever nothing matched. Our own hook cannot be silently eating this
+   text.
+3. **The generic "single hint" case family (`0x51`-`0x54` in
+   `FUN_140052220`'s own switch, this session's own UI map) is NOT the get-
+   to-cover text either — a real dead end, corrected here rather than left
+   standing.** Decompiled `FUN_140051f80`/`FUN_140071790` (the functions
+   this family's own text draw, `0x53`, depends on) fully this round: they
+   build a SPECTATOR/OBSERVED-PLAYER NAME string (team indicator, callsign,
+   " / " rank separator), not a hint message at all — `0x54` measures that
+   same name's width and draws its background box. Neither relates to
+   health/get-to-cover.
+
+**Where this leaves the search**: this session's own UI draw-pipeline map
+(`ui_draw_pipeline_map.md`) now has every one of `FUN_140052220`'s ~100
+cases traced to a real identity or a confirmed icon-only/non-text role —
+none of them is the get-to-cover text. Combined with `"weaponinfo"`
+(section 3.5) already having been found to bypass this dispatcher entirely
+via its own separate chain, the working theory is that get-to-cover's text
+does too — likely through the SAME kind of named-slot mechanism the
+death-quote case (`0x61`) uses (`thunk_FUN_1402c3890("ui_deadquote")`,
+i.e. a live GSC-string handle read by name, not a reference-key template) —
+but the exact slot name and call site were NOT found this round (18 direct
+callers of `FUN_1402c3890` checked, all unrelated "External Dvar"
+registration noise — `FUN_140052220` itself isn't among them, meaning case
+`0x61`'s own call goes through a distinct thunk stub `FindCallers.java`
+didn't resolve through, the same indirection gap that made this harder
+than expected).
+
+**Honest recommendation, not a dead end but a real fork in method**: x86's
+OWN investigation of this exact warning (issue #100) hit the identical
+wall — a GSC corpus grep and a native string scan both came back negative,
+concluded "dispatched via GSC's numeric-ID builtin mechanism or pure native
+code, unreachable by string search" — and the actual fix that shipped
+never required finding the precise draw call at all, it fixed a state-
+corruption SIDE EFFECT instead. Pure static RE has now been pushed to
+roughly the same point x86's own investigation reached. Given this project
+IS in a position x86 wasn't — the vignette is confirmed unaffected on x64,
+meaning the health-ratio/trigger SYSTEM itself is confirmed live and
+working — a live diagnostic (a temporary logging pass on `FUN_140052220`'s
+own dispatch, logging every `param_11` value that fires during a live
+low-health moment, cross-referenced against which one correlates with the
+text's real (missing) appearance) would very likely resolve this in one
+real playtest, faster than continued static guessing. Not started this
+round — flagged here as the clear next step rather than pushed further
+solo.
+
+Full raw output for this round: `re_notes/x64_migration/ui_pipeline_trace/`
+(`decomp_hintqueue.txt`, `describerefs_140514580.txt`,
+`callers_1402c3890.txt`).
