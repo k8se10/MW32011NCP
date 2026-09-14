@@ -126,7 +126,49 @@ maintainer, with no existing partial work to build on — genuinely
 consistent with "practically no chance of getting another community based
 one in time for release."
 
-## 4. Scoped plan for in-house tooling — an MVP, not a full OpenAssetTools replacement
+## 4. UPDATE, 2026-09-14 (later still) — forked, not just planned
+
+Direct instruction: "we could legit fork the oat code and build our
+tooling from it it is permitted in license" — confirmed (GPLv3, read
+directly from the cloned repo's own `LICENSE` file: forking, modifying,
+and redistributing are all explicitly permitted, the only real obligation
+is keeping the derivative GPLv3 too and preserving attribution/source
+availability).
+
+**Done, not just proposed**: `Laupetin/OpenAssetTools` forked into this
+repo at **`tools/iw5oat/`** via a history-preserving `git subtree` merge
+(same technique this project already used for the `security/` merge) —
+confirmed real, not squashed, history: the merge commit has a genuine
+second parent at OpenAssetTools' own HEAD, and total reachable commits
+from this repo's own HEAD jumped from a few hundred to 4122. Named
+`iw5oat` specifically (not a generic "zone tools" name) since this
+project only ever needs IW5 support — no reason to carry the weight of a
+name implying broader multi-game scope this fork will never use.
+
+**Licensing set up correctly, not just forked and left ambiguous**: kept
+GPLv3 as `tools/iw5oat/`'s own license (its own `LICENSE` file, unmodified
+GPLv3 text, came across with the fork) — explicitly NOT relicensed under
+this repo's own main permissive license, since that license's "no
+charging" clause (condition 3) is an ADDED restriction GPLv3 does not
+permit layering on top of GPLv3 code. This repo's own top-level `LICENSE`
+file now documents this explicitly under "Third-party components,"
+mirroring the exact pattern already established for `security/`'s own
+separate license file.
+
+Upstream check before forking, for the record: a WIP branch
+(`feat/generic-zone-code`, single commit "wip: multiple variants in
+zonecode") exists that COULD eventually relate to word-size-generic zone
+code, but deletes a large swath of tests mid-refactor and shows no
+confirmed connection to word-size or IW5 x64 specifically — not close to
+shippable, doesn't change the case for forking now.
+
+**Real next step, not started yet**: the actual RE + code work — fix
+`ZoneLoaderFactoryIW5.cpp`'s hardcoded `GameWordSize::ARCH_32`, and derive
+real x64 struct widths for the `scriptfile`/`rawfile` asset chain from
+`iw5sp.exe`'s own zone-loading code. The plan below (originally written
+before the fork existed) still describes the right scope.
+
+## 5. Scoped plan for in-house tooling — an MVP, not a full OpenAssetTools replacement
 
 **This project's own actual need is narrow**: GSC/rawfile extraction to
 support the standing GSC-first RE methodology (`CLAUDE.md`'s own
@@ -152,12 +194,12 @@ achievable MVP rather than reproducing OpenAssetTools' full scope:
 - **Public-tooling framing, per direct instruction**: build this as a
   clean, documented, standalone tool from the start (not a throwaway
   script) — the user's own stated intent is to release this as part of
-  this project's public community-patching effort once finished. Land on
-  a real language/toolchain decision (likely C++ to directly reuse
-  OpenAssetTools' own already-correct unsigned-zone inflate/hash-skip
-  logic and its zlib dependency, rather than reimplementing that
-  correctly-working part from scratch) before writing implementation
-  code — not decided this round.
+  this project's public community-patching effort once finished. **The
+  language/toolchain question is now resolved by §4's fork**: work
+  directly in C++ inside `tools/iw5oat/`, reusing OpenAssetTools' own
+  already-correct unsigned-zone inflate/hash-skip logic and its vendored
+  zlib dependency rather than reimplementing that correctly-working part
+  from scratch — the fork itself was the toolchain decision.
 
 ## Raw evidence backing every claim above
 
