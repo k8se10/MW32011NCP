@@ -4057,6 +4057,28 @@ same pass):**
    Flagged here as a real, precisely-scoped follow-up task, not attempted
    in this documentation-focused pass.
 
+   **CORRECTION, 2026-09-14 (direct user statement, verified) — this is a
+   lower-priority gap than the framing above implies.** Direct quote:
+   "custom options screen was NEVER finished even in 0.3.5 it basically
+   was unchanged from 0.3.0." Verified against `legacy-x86-docs/
+   PATCHNOTES.md`: the screen shipped v0.3.1 (2026-08-06) explicitly
+   framed as "PREVIEW/WIP... off by default... hasn't been played yet"
+   (`[Options] UseCustomOptionsScreen` default OFF) -- and there is ZERO
+   mention anywhere in PATCHNOTES from v0.3.2 through the final v0.3.5 of
+   it graduating past preview status, shipping on by default, or being
+   confirmed fully live-tested. x86's own real_settings.cpp data layer
+   WAS real, working code (unlike x64's deliberately-stubbed-dead one) --
+   so the underlying mechanism did function on x86 -- but the FEATURE as
+   a whole never matured into a finished, validated, on-by-default part
+   of x86's own final shipped state. **Practical effect on how to treat
+   this row**: x64's gap here is not "behind a mature x86 baseline that
+   needs catching up to" -- it's "neither platform ever finished this."
+   Still a real, worth-eventually-closing gap (the specific x64 mechanism
+   -- deliberately-stubbed dvar/keybind functions -- is accurate and
+   unchanged by this correction), just not the urgent parity blocker its
+   original framing suggested. Deprioritize relative to items that
+   genuinely regressed x64 below a real, confirmed-working x86 baseline.
+
 **Build/deploy note for this whole round**: only item 7 (the render-scale
 warning) involved a code change; items 1/2/4/5/6 needed no changes (already
 working); item 3 was deliberately left as documentation only. The single
