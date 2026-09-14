@@ -5235,3 +5235,116 @@ push** — matches the maintainer's own public statement on the GitHub
 thread ("noting the feature to be added back in when the x64 release is
 ready"). Not started. Revisit after the current `-x64` release gate
 closes, not before, unless explicitly reprioritized.
+
+---
+
+**RESOLVED (mechanism), NOT YET LIVE-TESTED, 2026-09-14 — DPV/Goalpost
+mortar/Goalpost M2 turret aim, the "third analog input channel" (cross-
+reference: `re_notes/known_issues.md` issue #30 and issue #27 Bug #1/#5/#6,
+`re_notes/killstreak_reference.md`).** This bug never worked on EITHER
+architecture -- new ground, not a parity port. Per this project's own
+directive to start from GSC/script logic before native RE:
+
+**GSC-first pass -- blocked by a real, newly-discovered environmental
+issue, not a dead end in this bug specifically.** OpenAssetTools' Unlinker
+(both the already-vendored v0.31.0 and a freshly-downloaded v0.33.0, the
+latest public release) reproducibly segfaults (0xC0000005, zero log output
+even at `-v`) loading ANY real-content zone in this install -- confirmed
+against `ny_harbor.ff` (Hunter Killer/DPV), `hamburg.ff` (Goalpost/mortar+
+turret), and `so_stealth_prague.ff`, all three, same crash signature,
+independent of zone size (650KB-195MB all crash identically) and of which
+asset types are requested via `--include-assets`/`--exclude-assets` (the
+crash happens during zone LOAD, before any dump-time filtering even
+applies). A near-empty thin-loader zone (`sp_intro.ff`, 303 bytes) loads
+cleanly with either Unlinker version, ruling out a general tool-broken
+theory. **Conclusion: the 2026-09-03 x64 recompile changed the zone/
+fastfile container format in a way neither current OpenAssetTools release
+parses -- GSC extraction from any real content zone is BLOCKED project-wide
+as of this session**, not specific to this investigation. Fell back to this
+project's own pre-2026-09-03 decompiled GSC corpus
+(`D:\Tools\gsc-tool\extracted\decompiled\iw5\`, confirmed to already contain
+Goalpost's real named mission scripts -- `hamburg_code.gsc`/
+`hamburg_tank_ai.gsc`/`hamburg_landing_zone.gsc`, and the real player-turret
+script `32281.gsc` documented in `known_issues.md` issue #27 -- but DPV/
+`ny_harbor.ff` content was never dumped in that corpus either, before or
+after this session, so DPV's own GSC side remains genuinely unexamined).
+Per the existing GSC evidence for the structurally closest already-solved
+case (Predator Missile guidance, issue #30's 2026-07-19 correction: "there
+is NO per-frame input read at the script level at all ... 100% native") and
+this session's own native finding below (the relevant function is called
+directly by the per-frame orchestrator, no GSC anywhere in that call
+chain), DPV/mortar/turret are very likely the same shape -- GSC only spawns/
+links the player to the mounted entity, aim is 100% native after that --
+but this is carried over reasoning, not independently re-confirmed via
+fresh GSC this session. The requested structural GSC comparison against
+the confirmed-working systems (Boat/UGV/door-gun) could not be completed
+either, same toolchain blocker.
+
+**Native mechanism -- fully confirmed via fresh Ghidra decompile
+(`re_notes/ghidra_scripts/decomp_dpv_channel_candidates_x64.txt`), and this
+session's own finding CORRECTS an existing wrong guess.**
+`re_notes/x64_migration/README.md` (2026-09-03) had flagged `FUN_14007e4e0`
+as a "possible x64-side match" for issue #30's third analog channel --
+decompiling it this session shows that's actually the x64 equivalent of
+x86's `FUN_0057df60` (the cursor-placement/vehicle-driving-bit mode
+dispatch, a DIFFERENT branch entirely, corrected in that file directly).
+The REAL match is `FUN_14007de20`: `FUN_14007e1e0` (the x64 per-frame
+usercmd orchestrator, equivalent of x86's `FUN_0057e480`) dispatches to
+ONE of two mutually exclusive functions every tick, gated on a single bit
+-- `(DAT_1406e4774 + player*0xce5c) & 0x80000`, the exact same per-client
+flag/bit x86's issue #30 identified (`+0x1094` bit `0x80000`), just at a
+new global base. Bit clear -> eventually calls `FUN_14007d9f0` (normal
+movement/look, `Hook_MovementTick`'s own target). Bit set -> calls
+`FUN_14007de20` INSTEAD, and `FUN_14007d9f0` is not called at all that
+tick. Since `Hook_MovementTick`'s entire body (including its look-
+accumulator pre-write) is a MinHook detour ON `FUN_14007d9f0`'s own entry
+point, none of it runs during a DPV/mortar/turret sequence -- confirmed
+root cause: not a sensitivity/sign bug, our only look hook lives on a
+function the engine stops calling during these three sequences.
+`FUN_14007de20` itself calls `FUN_14007d3b0` (the same raw-mouse-delta
+reader `FUN_14007d9f0` also calls), scales by the real m_pitch/m_yaw
+cvars, and floor-packs the result into cmd+0x3e (pitch)/cmd+0x3f (yaw) --
+always 0 for a controller-only player absent a fix, since real mouse delta
+is always 0.
+
+**Fix implemented, `analog_input_hooks_x64.cpp`**: a separate MinHook
+detour on `FUN_14007de20` (`Hook_MountedAimTick`, signature
+`kMountedAimTickSignature` -- 62-byte prologue, confirmed exactly 1 match
+in the whole binary via `DumpSigBytes.java` + `PatternScan.java`, one
+genuine RIP-relative wildcard after manually correcting `DumpSigBytes.java`'s
+own known false-positive over-flagging of RSP-relative and fixed-register-
+relative operands). Calls through first (correct native passthrough), then
+additively writes a right-stick-derived delta into cmd+0x3e/0x3f, same
+"native completes, hook adds on top" design as Movement's own cmd[0x1c]/
+[0x1d] write. A rate-limited `[x64-mountedaim] FUN_14007de20 fired ...`
+log line confirms live whether the hook is actually reached during a real
+DPV/mortar/turret sequence.
+
+**Build-verified**: x64 `/t:Rebuild` 0 errors (10 pre-existing warnings, all
+in unrelated x86-only code in `analog_input_hooks.cpp`, not this change),
+`dumpbin /headers` confirms `8664 machine (x64)` with a fresh timestamp
+matching the build, Win32 regression rebuild 0 errors/0 warnings (this
+change only touches the x64-specific file), x64 rebuilt and redeployed
+last per this project's own build-order convention.
+
+**NOT yet live-tested -- the one genuinely open question is sensitivity/
+sign, not mechanism.** `kMountedAimBytesPerSecond` (60.0f) and the pitch/
+yaw sign convention are a reasonable starting guess (mirrors normal look's
+own convention) but explicitly NOT calibrated against `FUN_14007de20`'s
+own internal sign-XOR logic (which is data-dependent on the live m_yaw
+cvar's sign, not replicated) -- there is no working reference build on
+EITHER architecture to calibrate against, since this bug has never worked
+before. Next real playtest of a DPV (Hunter Killer), the Goalpost mortar,
+or the Goalpost M2 turret should confirm (a) the `[x64-mountedaim]` log
+line fires at all during one of these three sequences (confirms the
+mechanism/hook targeting is right, independent of feel), and (b) whether
+the resulting aim direction/rate feels correct, inverted, or needs
+retuning.
+
+**Confidence: HIGH on mechanism** (dispatch structure, function identity,
+and byte-field targets are all confirmed via direct decompile, not
+inferred) **, LOW on tuning** (sensitivity/sign are unverified guesses).
+Matches this project's own standing §8 testing bar -- a fix for a bug
+that's never worked on any architecture ships as the best-evidenced
+mechanism with honestly-flagged open tuning, not a guessed-and-hidden
+"done."

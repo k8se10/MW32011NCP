@@ -280,6 +280,21 @@ live, detailed status on every item below.
     live-tested. See `re_notes/known_issues_x64.md` issue #1 and
     `re_notes/x64_feature_parity_audit.md` row #34.
 
+23. **DPV/Goalpost mortar/Goalpost M2 turret aim — root cause found and a
+    fix implemented for the first time on EITHER architecture.** This
+    controller-aim bug never worked on the `-x86` line either — genuinely
+    new ground, not a parity port. The engine routes aim during these three
+    mounted-weapon sequences through a separate per-frame function
+    (`FUN_14007de20`) that this project's normal Look hook never runs
+    during, so controller aim input had nowhere to go — confirmed via a
+    fresh decompile, and also correcting an earlier wrong guess for which
+    x64 function was responsible. Fixed with a new, dedicated hook
+    (`Hook_MountedAimTick`) that feeds right-stick input into the correct
+    native fields. Build-verified, **not yet live-tested** — the mechanism
+    is high-confidence; sensitivity/sign are a starting guess pending an
+    actual DPV/Goalpost playtest. See `re_notes/known_issues.md` issue #30
+    and `re_notes/known_issues_x64.md` for the full trail.
+
 ### Fixed
 1. **Crash on launch with the sniper Fire/ADS fix's own log line.** The
    diagnostic message that fix attempt logs on resolving its target
@@ -391,6 +406,19 @@ live, detailed status on every item below.
    this project's asset dumps. Applies identically on `-x86`/`-x64` and
    regardless of input device — the `.ff` zone/weapon-data files are game
    content, not part of the recompiled native binary.
+5. **Real, project-wide GSC-extraction blocker found: OpenAssetTools'
+   Unlinker cannot load any real-content zone from this install anymore.**
+   Both the already-vendored v0.31.0 and a freshly-downloaded v0.33.0 (the
+   latest public release) reproducibly crash (access violation, zero log
+   output) loading `ny_harbor.ff`, `hamburg.ff`, and `so_stealth_prague.ff`
+   — three different zones, three very different sizes — while a near-
+   empty thin-loader zone loads cleanly with either version, ruling out a
+   general tool-broken theory. Very likely the 2026-09-03 x64 recompile
+   changed the zone/fastfile container format in a way neither current
+   Unlinker release parses. This blocks GSC extraction from any real
+   content zone project-wide, not just for the investigation that surfaced
+   it — flagged here so a future session doesn't re-discover it the
+   expensive way. See `re_notes/known_issues_x64.md`'s 2026-09-14 entry.
 
 ### Investigated, Not Yet Resolved
 1. **Fire and/or ADS fails — first live playtest of the x64 build,

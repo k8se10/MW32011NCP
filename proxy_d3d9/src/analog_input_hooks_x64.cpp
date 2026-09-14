@@ -2829,6 +2829,206 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
     Rumble_Tick();
 }
 
+// ---- Mounted-weapon aim channel (DPV / Goalpost mortar / Goalpost M2 turret),
+// x64 (2026-09-14) -- known_issues.md issue #30's long-tracked "third analog
+// input channel" (cmd+0x3e/0x3f), CONFIRMED and IMPLEMENTED for the first time
+// on EITHER architecture. This bug never worked on the x86 line either (issue
+// #27 bugs #1/#5/#6, killstreak_reference.md) -- x86's own investigation got as
+// far as a strong, evidence-backed hypothesis (FUN_0057e360, gated on
+// `+0x1094` bit 0x80000) but never confirmed a live fix, and its own setter-
+// search came back a clean static negative (issue #30's 2026-07-20 "xref sweep
+// ... clean negative" entry). This session re-derived the whole mechanism
+// independently against the x64 binary via a fresh Ghidra decompile (per this
+// task's own directive to start from GSC/native RE fresh rather than port the
+// x86 theory blind) and additionally CORRECTS the one x64-side guess that
+// already existed for this (re_notes/x64_migration/README.md's own
+// `FUN_14007e4e0` candidate note, written 2026-09-03) -- that function is
+// actually the x64 equivalent of x86's FUN_0057df60 (the cursor-placement/
+// vehicle-driving-bit mode dispatch, branch 3), a DIFFERENT bug/feature
+// entirely, not this one.
+//
+// GSC-level methodology note (this task's own explicit directive): a fresh
+// GSC-first pass was attempted before any native RE -- OpenAssetTools'
+// Unlinker (both the already-vendored v0.31.0 and a freshly-downloaded
+// v0.33.0, the latest public release as of this session) reproducibly
+// segfaults (0xC0000005) loading ANY real-content zone from this install
+// post the 2026-09-03 x64 recompile (tested: ny_harbor.ff [Hunter Killer/DPV],
+// hamburg.ff [Goalpost/mortar+turret], so_stealth_prague.ff -- all three,
+// same crash signature, zero log output even at -v, vs. a clean load for the
+// near-empty sp_intro.ff thin-loader zone). This is a genuine, newly-
+// discovered environmental blocker, not specific to this bug: the zone/
+// fastfile container format itself changed with the binary update in a way
+// neither Unlinker release currently parses, so GSC extraction from any real
+// content zone is currently BLOCKED project-wide, not just for this
+// investigation. Fell back to this project's own pre-2026-09-03 decompiled
+// GSC corpus (D:\Tools\gsc-tool\extracted\decompiled\iw5\, ~369 files,
+// confirmed to include hamburg.ff's own named mission scripts -- hamburg_code/
+// hamburg_tank_ai/hamburg_landing_zone etc, plus the real player-turret script
+// 32281.gsc already documented in known_issues.md issue #27 Bug #5/#6's own
+// 2026-07-18 pass) -- no DPV/ny_harbor content was ever dumped in that
+// pre-existing corpus either (never attempted before this session), so DPV's
+// own GSC side remains genuinely unexamined either old or new. Per that
+// existing GSC evidence (Predator Missile's guidance phase, issue #30's own
+// 2026-07-19 correction: "there is NO per-frame input read at the script
+// level at all ... 100% native") and this session's own native finding below
+// (FUN_14007de20 is called directly by the per-frame orchestrator with no GSC
+// involvement anywhere in that call chain), the working theory -- not
+// independently re-confirmed via fresh GSC this session, environmental
+// blocker above -- is that DPV/mortar/turret follow the same pattern: GSC's
+// only role is spawning/linking the player to the mounted entity
+// (spawnturret/playerlinktodelta/disableturretdismount, per hamburg.ff's own
+// 32281.gsc), after which aim is 100% native, driven by the per-frame
+// dispatch below. Structural comparison against the confirmed-WORKING systems
+// (Boat/UGV/door-gun) per this task's own step 2 could not be completed this
+// session for the same reason -- their own GSC/zone content was equally
+// unreachable through the broken toolchain.
+//
+// ---- Native mechanism (fully confirmed, both x86 and x64) ----
+//
+// FUN_14007e1e0 (the x64 per-frame usercmd orchestrator, equivalent of x86's
+// FUN_0057e480 -- re_notes/ghidra_scripts/decomp_dpv_channel_candidates_x64.txt)
+// dispatches to ONE of two MUTUALLY EXCLUSIVE functions every tick, gated on a
+// single bit:
+//
+//   if ((DAT_1406e4774 + player*0xce5c) & 0x80000) == 0)
+//       ... eventually calls FUN_14007d9f0   <- normal movement/look/angle-pack,
+//                                                Hook_MovementTick's OWN target
+//   else
+//       FUN_14007de20(player, cmd)            <- mounted-weapon-aim branch
+//
+// This is the exact same per-client flag/bit x86's own issue #30 identified
+// (`+0x1094` bit 0x80000) -- confirmed structurally identical across the
+// recompile, just at a new global base (DAT_1406e4774 vs x86's 0xB363B0+0x1094).
+// The critical consequence: whenever the game is in this mode (DPV, Goalpost's
+// mortar, Goalpost's M2 turret -- the exact three systems this bug covers),
+// FUN_14007d9f0 is NEVER CALLED for that tick -- and since Hook_MovementTick's
+// entire body (including its look-accumulator pre-write above) is a MinHook
+// detour ON FUN_14007d9f0's own entry point, NONE of it runs either. This is
+// the real root cause: it isn't a sensitivity/sign bug in existing look
+// injection, it's that our only look hook lives on a function the engine
+// simply stops calling during these three sequences.
+//
+// FUN_14007de20 itself (full decompile, same file above) calls
+// FUN_14007d3b0 -- the SAME raw-mouse-delta reader FUN_14007d9f0 also calls
+// for normal look/movement (re_notes/x64_migration/README.md's own
+// established mapping, FUN_14007d3b0 = x86's FUN_0057d680) -- then, scaled by
+// the real m_pitch/m_yaw cvars (DAT_1406e2510/DAT_1406e2518, already-known
+// globals per this file's own cvar table), floor-packs the result into TWO
+// SIGNED BYTES: cmd+0x3e (pitch-like, from the raw delta's Y term) and
+// cmd+0x3f (yaw-like, from the X term, with a sign XOR). For a controller-
+// only player the real mouse delta is always zero, so absent this fix these
+// two bytes are unconditionally 0 for the entire duration of a DPV/mortar/
+// turret sequence -- confirmed by the dispatch structure above, not inferred:
+// there is no other function in this call chain that could set them.
+//
+// Signature (DumpSigBytes.java + PatternScan.java, confirmed exactly 1 match
+// in the whole binary): the function's real prologue, 62 bytes with only ONE
+// genuine wildcard needed. DumpSigBytes.java's own heuristic over-flagged five
+// RSP-relative XMM spills (`MOVAPS [RSP+xx],XMMn`) and one fixed R8-relative
+// LEA (`LEA R9,[R8+0x6e26e0]`, R8 itself set from a RIP-relative image-base
+// load two instructions earlier -- the disp32 here is a FIXED struct offset,
+// not an address that shifts with this function's own location) as needing
+// wildcards -- this is the exact same false-positive class this file's own
+// kSprintTickSignature/kRenderResComputeSignature comments already document
+// (RSP-relative operands, and here additionally a register-relative-not-RIP-
+// relative LEA); manually corrected to wildcard ONLY the genuine RIP-relative
+// disp32 (the very first LEA, computing the image base):
+//   40 53                           push rbx
+//   48 83 EC 60                     sub rsp,0x60
+//   0F 29 74 24 50                  movaps [rsp+0x50],xmm6      (RSP-relative, keep literal)
+//   4C 8D 05 ?? ?? ?? ??            lea r8,[rip+????]           (genuine RIP-relative image-base load -- wildcard)
+//   48 63 C1                        movsxd rax,ecx
+//   4D 8D 88 E0 26 6E 00            lea r9,[r8+0x6e26e0]        (r8-relative FIXED disp, keep literal)
+//   0F 29 7C 24 40                  movaps [rsp+0x40],xmm7      (RSP-relative, keep literal)
+//   48 8B DA                        mov rbx,rdx
+//   48 69 D0 5C CE 00 00            imul rdx,rax,0xce5c
+//   48 69 C8 30 02 00 00            imul rcx,rax,0x230
+//   44 0F 29 44 24 30               movaps [rsp+0x30],xmm8      (RSP-relative, keep literal)
+//   44 0F 29 4C 24 20               movaps [rsp+0x20],xmm9      (RSP-relative, keep literal)
+constexpr const char* kMountedAimTickSignature =
+    "40 53 48 83 EC 60 0F 29 74 24 50 4C 8D 05 ?? ?? ?? ?? 48 63 C1 4D 8D 88 "
+    "E0 26 6E 00 0F 29 7C 24 40 48 8B DA 48 69 D0 5C CE 00 00 48 69 C8 30 02 "
+    "00 00 44 0F 29 44 24 30 44 0F 29 4C 24 20";
+
+using MountedAimTickFn = void(__fastcall*)(int player, void* cmd);
+MountedAimTickFn g_realMountedAimTick = nullptr;
+
+// Fix: a SEPARATE MinHook detour on FUN_14007de20 (Hook_MovementTick's own
+// hook can't cover this -- MinHook needs one detour per target address, and
+// the two functions are structurally never both called on the same tick per
+// the dispatch above anyway). Call through first for correct native behavior
+// (a harmless zero-write for a controller-only player; real passthrough if
+// the player is somehow also moving a physical mouse at the same time), then
+// ADD our own right-stick-derived delta on top of whatever native left there
+// -- the exact same "native runs to completion, this hook adds its own
+// contribution additively" design as Movement's cmd[0x1c]/[0x1d] write in
+// Hook_MovementTick above, not a full replacement of native math.
+//
+// Sensitivity is a NEW, dedicated constant (kMountedAimBytesPerSecond) rather
+// than reusing normal look's degrees-per-second rate -- this channel's real
+// native scale (mortar/turret traverse speed, or DPV aim rate) is not
+// confirmed to match normal on-foot look at all, and there is no working
+// reference build on ANY architecture to calibrate against (per this task's
+// own framing: this has never worked before, not a parity port). Sign
+// convention (pitchInput respecting g_modConfig.invertLook, no extra flip on
+// yaw) mirrors Hook_MovementTick's own normal-look convention as the most
+// reasonable starting guess, NOT independently confirmed against
+// FUN_14007de20's own internal sign-XOR logic (see the decompile -- yaw's
+// native packing conditionally flips sign based on the live m_yaw cvar's own
+// sign, a data-dependent convention this fix does not attempt to replicate).
+// **Not yet live-tested** -- matches this project's own standing §8 bar
+// ("manual playtest required for anything touching movement/look," CLAUDE.md)
+// and its own honest-documentation convention for a fix with no known-good
+// reference: build+ship the best-evidenced mechanism, flag sign/scale as the
+// first thing to check on an actual DPV/Goalpost playtest, don't guess harder
+// in place of testing.
+constexpr float kMountedAimBytesPerSecond = 60.0f;
+
+void __fastcall Hook_MountedAimTick(int player, void* cmd)
+{
+    g_realMountedAimTick(player, cmd);
+    if (!cmd) return;
+
+    float leftX, leftY, rightX, rightY;
+    if (!Controller_GetLeftStick(leftX, leftY)) return;
+    if (!Controller_GetRightStick(rightX, rightY)) return;
+
+    float moveX, moveY, lookX, lookY;
+    RouteStickAxes_Exported(leftX, leftY, rightX, rightY, g_modConfig.stickLayout, moveX, moveY, lookX, lookY);
+    if (lookX == 0.0f && lookY == 0.0f) return;
+
+    float dt = Controller_DeltaTimeSeconds();
+    if (dt <= 0.0f) return;
+
+    float pitchInput = g_modConfig.invertLook ? -lookY : lookY;
+    int addPitch = static_cast<int>(pitchInput * kMountedAimBytesPerSecond * dt);
+    int addYaw   = static_cast<int>(lookX * kMountedAimBytesPerSecond * dt);
+
+    auto* cmdBytes = reinterpret_cast<unsigned char*>(cmd);
+    int8_t curPitch = static_cast<int8_t>(cmdBytes[0x3e]);
+    int8_t curYaw   = static_cast<int8_t>(cmdBytes[0x3f]);
+    cmdBytes[0x3e] = static_cast<unsigned char>(ClampToSByteX64(curPitch + addPitch));
+    cmdBytes[0x3f] = static_cast<unsigned char>(ClampToSByteX64(curYaw + addYaw));
+
+    // Rate-limited (~250ms) diagnostic -- this function only fires at all
+    // during a genuine DPV/mortar/turret sequence (the orchestrator's OTHER
+    // branch, per the big comment above), so a real playtest confirming this
+    // line appears during one of those three sequences IS the confirmation
+    // this hook's whole premise is correct, independent of whether the exact
+    // sign/scale feels right yet.
+    static DWORD s_lastMountedAimDiagMs = 0;
+    DWORD nowMsAim = GetTickCount();
+    if (nowMsAim - s_lastMountedAimDiagMs >= 250) {
+        s_lastMountedAimDiagMs = nowMsAim;
+        char buf[192];
+        sprintf_s(buf, "[x64-mountedaim] FUN_14007de20 fired (DPV/mortar/turret aim branch active) -- "
+            "lookX=%.3f lookY=%.3f -> cmd+0x3e=%d cmd+0x3f=%d",
+            lookX, lookY, static_cast<int>(static_cast<int8_t>(cmdBytes[0x3e])),
+            static_cast<int>(static_cast<int8_t>(cmdBytes[0x3f])));
+        LogFromController(buf);
+    }
+}
+
 // ---- Visual-enhancement suite x64 gating (2026-09-12) -- InternalRenderScalePercent
 // (x86 issue #88) and the clcState/in-level-flag safety gates FSR RCAS (x86 issue
 // #94/#103/#104) and motion blur (x86 issue #96/#97) both need before either can be
@@ -4445,6 +4645,46 @@ void InstallAnalogInputHooksX64()
                     "active, folded into the Movement hook (same tick, pre-call write).",
                     (void*)g_pitchAccum, (void*)g_yawAccum);
                 LogFromController(buf);
+            }
+        }
+    }
+
+    // Mounted-weapon aim (DPV / Goalpost mortar / Goalpost M2 turret) --
+    // separate MinHook detour on FUN_14007de20, see Hook_MountedAimTick's own
+    // big comment above for the full mechanism (known_issues.md issue #30,
+    // never fixed on either architecture until this session). Independent of
+    // whether the Movement/Look hooks above succeeded -- this rides a
+    // structurally distinct function the orchestrator calls INSTEAD of
+    // FUN_14007d9f0, not alongside it.
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kMountedAimTickSignature);
+        if (!r.found) {
+            LogFromController("[x64-mountedaim] FATAL: Mounted-aim-tick signature did not resolve -- "
+                "DPV/Goalpost mortar/M2 turret aim will not work this session (movement/other controls unaffected)");
+        } else {
+            void* target = reinterpret_cast<void*>(r.address);
+            MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_MountedAimTick),
+                                                    reinterpret_cast<void**>(&g_realMountedAimTick));
+            if (createStatus != MH_OK) {
+                char buf[160];
+                sprintf_s(buf, "[x64-mountedaim] FATAL: MH_CreateHook failed for Mounted-aim tick @ 0x%llX (status=%d)",
+                           static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+                LogFromController(buf);
+            } else {
+                MH_STATUS enableStatus = MH_EnableHook(target);
+                if (enableStatus != MH_OK) {
+                    char buf[160];
+                    sprintf_s(buf, "[x64-mountedaim] FATAL: MH_EnableHook failed for Mounted-aim tick @ 0x%llX (status=%d)",
+                               static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+                    LogFromController(buf);
+                } else {
+                    LogFromController("[x64-mountedaim] Mounted-aim hook installed and enabled -- feeds "
+                        "right-stick delta into cmd+0x3e/0x3f (the 'third analog channel,' issue #30) whenever "
+                        "the engine's per-frame orchestrator dispatches to FUN_14007de20 instead of the normal "
+                        "movement/look function (DPV, Goalpost's mortar, Goalpost's M2 turret). Watch for "
+                        "'[x64-mountedaim] FUN_14007de20 fired' in the log during one of those three sequences "
+                        "to confirm live -- NOT yet independently live-tested this session.");
+                }
             }
         }
     }

@@ -374,6 +374,28 @@ wired, M2 turret feels too hard, SMAW lock-on unconfirmed) or ❓ untested
 independent x64-specific testing done. Not counted separately in the Summary
 numbers above since they're not distinct code paths.
 
+**UPDATE, 2026-09-14 — DPV/Mortar/M2 turret aim are a real EXCEPTION to
+"rides entirely on core Movement/Look" above, and now have their own
+dedicated x64 mechanism.** A this-session investigation (this bug had never
+worked on either architecture, genuinely new ground) found the engine
+routes aim during these three sequences through a structurally SEPARATE
+per-frame function (`FUN_14007de20`, gated on the same per-client bit x86's
+own `+0x1094` research already identified) that core Look's own
+`Hook_MovementTick` (rows #6/#7) never runs during — meaning these three
+systems were never actually covered by Movement/Look being PRESENT, contra
+this section's own prior framing above. Fixed via a new, separate MinHook
+detour (`Hook_MountedAimTick`, `analog_input_hooks_x64.cpp`), signature-
+scanned, build-verified (x64 `/t:Rebuild` 0 errors, `dumpbin` confirms
+`8664 machine (x64)` fresh timestamp, Win32 regression 0 errors), **NOT yet
+live-tested** — sensitivity/sign are an untested starting guess, mechanism
+confidence is high. Full trail: `re_notes/known_issues.md` issue #30's
+2026-09-14 entry, `re_notes/known_issues_x64.md`'s matching entry. Boat/UGV/
+door-gun/SMAW/AC-130 are unaffected by this finding and remain as this
+section originally described (ride on core Movement/Look/Fire alone, no
+dedicated mechanism needed) — SMAW specifically was separately resolved as
+"not a bug at all" the same session (native data-driven dumb-fire weapon
+variant, `known_issues.md` issue #27 Bug #8).
+
 ## Methodology & caveats
 
 - **This was a static, source-code-level audit** — every PRESENT/ABSENT verdict
