@@ -446,6 +446,23 @@ item below.
     ever been found. See `re_notes/known_issues.md` issue #98.
 15. **SMAW lock-on vs. aircraft** — see Groundwork below; confirmed not
     a bug, not a fix.
+16. **Survival ready-up (F5) now shows its own real prompt on `-x64` and
+    suppresses the native one, closing a live-reported gap ("ready up
+    works but prompt needs to be shown and suppress the old").** The
+    native text-draw hook now detects the real "Press F5 to ready up"
+    hint and replaces it in place with this project's own icon+text
+    ("Hold F5..." — the real verb for how this project's own mechanism
+    actually works, a hold not a tap), at the same real screen position
+    the native prompt would have drawn (the same accurate draw-location
+    transform Mantle/Pickup/Throwback/Reload substitution already uses,
+    now applied to this hint too). x86's own font-based safety check
+    that protects this text match from false-positiving elsewhere isn't
+    available on x64 (a genuine, already-documented RE blocker); a
+    different, already-resolved real signal (Survival-mode detection)
+    stands in for it instead. QTE prompts and the buy-station hint
+    remain unported for the same underlying reason — neither has an
+    available substitute signal. See `re_notes/known_issues_x64.md`
+    issue #1's newest round.
 
 ### Documentation
 1. **`re_notes/known_issues_x64.md` established** as the dedicated x64 issue
