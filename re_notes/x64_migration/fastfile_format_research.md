@@ -1942,6 +1942,92 @@ dispatch switch, case 4 → `FUN_14009c650`),
 decisive evidence: six pointer-field resolutions, then straight to the
 LOD array, no seventh field).
 
+## 5.26. UPDATE, 2026-09-14 (later still, "fork that one now") — CORRECTION: §5.25's own "phantom field" conclusion was wrong. `materialHandles` is a real, correctly-positioned field, confirmed two independent ways against the SAME raw decompile evidence — the "invalid block 15" root cause remains genuinely open
+
+**Status: a real correction to the immediately-prior round, not a new
+finding of its own. The underlying `"invalid block 15"` bug stays
+paused, unresolved — but one wrong lead is now closed off with hard
+evidence, rather than left on record as the likely explanation.**
+
+Re-read §5.25's own raw decompile evidence file
+(`decomp_xmodel_fill_14009c1b0.txt`) directly rather than trusting its
+prose summary, specifically to implement the "remove `materialHandles`,
+mirror `subMaterials`" fix it recommended. **The raw decompile does NOT
+actually support that conclusion** — §5.25's own count of "six
+pointer-field resolutions, then straight to the LOD array" undercounts
+by one: the real function has SEVEN conditional field-resolution blocks
+after `name` (checking `DAT_1407bea40[5]` through `[0xb]`, i.e. seven
+distinct QWORD-indexed struct slots — `boneNames`/`parentList`/`quats`/
+`trans`/`partClassification`/`baseMat`, **and a seventh at index `0xb`**,
+lines 95-98 of the same file), immediately followed by the `lodInfo`
+array read. The seventh block was mis-read as not-a-field because its
+own code SHAPE genuinely differs from the other six (no
+FOLLOWING/INSERT/-1 branching, a direct
+`FUN_1400aaa90(3)`-then-array-load pattern instead) — a real, easy
+mistake to make skimming decompiler pseudocode, not a fabricated claim.
+
+**Confirmed the seventh block genuinely is `materialHandles`, two
+independent ways, not just re-reading more carefully:**
+
+1. **Compiler-verified `offsetof()`/`sizeof()`, not hand arithmetic**
+   (this project's own standing "trust the compiler over eyeballing
+   layout" principle — see `CODE_STANDARDS.md`'s existing lesson on
+   exactly this): a temporary diagnostic in the generated
+   `FillStruct_XModel` printed `offsetof(XModel, materialHandles) =
+   0x58` and `offsetof(XModel, lodInfo) = 0x60` directly from this
+   fork's own real compiled struct. `0x60` (96 decimal) is an EXACT
+   match for the real native code's own `DAT_1407bf340 = DAT_1407bea40
+   + 0xc` (12 `longlong`-stride elements × 8 bytes = 96 bytes) —
+   independent confirmation that `lodInfo` really does start exactly
+   where this fork's struct already says it does, WITH
+   `materialHandles` present and correctly sized at offset `0x58`
+   (88 decimal, immediately before it).
+2. **A fresh decompile of the seventh block's own target function**,
+   not yet looked at in §5.25's own round:
+   `FUN_140094a10(undefined8 param_1, uint param_2)` — reads
+   `param_2 * 8` bytes (a genuine array of 8-byte pointers, exactly
+   matching `Material**`), then loops `param_2` times (matching
+   `numsurfs`, the exact parameter this fork's own generated call site
+   already passes: `LoadPtrArray_Material(true, varXModel->numsurfs)`),
+   resolving each entry via `FUN_1400aad10` for the "already resolved"
+   case — the SAME primitive §5.23 already traced and confirmed
+   functionally identical to the shipped fix's own `FUN_1400aad40`.
+   This is unambiguously a real, working `materialHandles` array
+   resolver, not a phantom-field artifact.
+
+**Net effect**: `materialHandles` is real, correctly positioned, and its
+own per-entry resolution already goes through the exact primitive
+family the global fix (`e2fdeb07`) already handles correctly. The
+"invalid block 15" bug's real cause is therefore NOT a phantom field —
+that specific, concrete hypothesis is now closed with hard evidence on
+both sides (struct-offset math AND a fresh function decompile), not left
+open as the presumed likely explanation for a future session to
+mistakenly implement.
+
+**A genuinely new, smaller discrepancy surfaced by the same diagnostic,
+not yet investigated**: this fork's own compiler-computed
+`sizeof(XModel) = 0x1a8` (424 bytes) does NOT match the real native
+code's own initial header-block read size, `0x1a0` (416 bytes, line 15
+of the same decompile) — an 8-byte gap. Given `lodInfo` itself is fully
+accounted for (ends at byte 320, well within the first 416-byte read),
+this gap must live somewhere in the STRUCT'S OWN TAIL (the fields after
+`lodInfo`: `maxLoadedLod` through `quantization`) — a real, distinct,
+much narrower lead than the "phantom array field" theory this round
+closes out, genuinely worth checking (a real field-order/padding/size
+mismatch in that tail region, OR simply an artifact of how
+`FUN_1400aad70`'s own multi-block read sequence divides up a struct that
+gets fully covered by several separate reads rather than one — not yet
+distinguished). Not chased further this round to avoid repeating the
+same "one function, one theory, verify fully before concluding" mistake
+this correction exists to fix.
+
+All temporary instrumentation reverted (the gitignored generated
+`xmodel_iw5_load_db.cpp`'s own diagnostic, added and removed within this
+round — no tracked source ever touched), 0 regression confirmed against
+all six known zones. New raw decompile evidence:
+`re_notes/ghidra_scripts/decomp_140094a10.txt` (the real `materialHandles`
+array resolver, the decisive new evidence this round adds).
+
 ## 6. Scoped plan for in-house tooling — an MVP, not a full OpenAssetTools replacement
 
 **This project's own actual need is narrow**: GSC/rawfile extraction to

@@ -7341,3 +7341,47 @@ exactly) but not yet applied. New decompile evidence:
 `re_notes/ghidra_scripts/decomp_dispatch_14009bce0.txt`,
 `decomp_xmodel_14009c650.txt`, `decomp_xmodel_fill_14009c1b0.txt`. Full
 trail: `re_notes/x64_migration/fastfile_format_research.md` §5.25.
+
+### CORRECTION, 2026-09-14 (later still, "fork that one now") -- the round above's own "materialHandles is phantom" conclusion was wrong; it's a real field, confirmed two independent ways -- "invalid block 15" stays genuinely open, one wrong lead closed with hard evidence
+
+**Status: real correction to the immediately-prior round. The underlying
+bug is still unresolved, but this specific, concrete wrong lead is now
+closed off rather than left as the presumed likely fix.**
+
+Re-read the round above's own raw decompile file
+(`decomp_xmodel_fill_14009c1b0.txt`) directly to implement its
+recommended fix, rather than trusting its prose summary. Its own "six
+pointer fields, then straight to lodInfo" count undercounts by one -- a
+SEVENTH conditional field-resolution block exists (index `0xb`, lines
+95-98), with a genuinely different code shape (no FOLLOWING/INSERT
+branching, straight to an array-load call) that made it easy to misread
+as "not a field."
+
+**Confirmed the seventh block genuinely is `materialHandles`, two
+independent ways**:
+1. Compiler-verified `offsetof(XModel, materialHandles) = 0x58`,
+   `offsetof(XModel, lodInfo) = 0x60` (96 decimal) -- an EXACT match for
+   the real native code's own `+0xc` (12×8=96 byte) offset for the LOD
+   array, confirming this fork's struct layout is already correct WITH
+   `materialHandles` present.
+2. A fresh decompile of the seventh block's own target,
+   `FUN_140094a10`: reads `param_2*8` bytes (a real array of 8-byte
+   pointers, matching `Material**` exactly), loops `param_2` times
+   (matching `numsurfs`), resolving each entry via the SAME primitive
+   family (`FUN_1400aad10`/`FUN_1400aad40`) the shipped global fix
+   already handles correctly.
+
+`materialHandles` is real and correctly positioned -- the "invalid block
+15" bug is NOT a phantom field, closing that hypothesis with hard
+evidence rather than leaving it as an implied likely fix.
+
+**A genuinely new, smaller, distinct lead surfaced by the same
+diagnostic**: this fork's own `sizeof(XModel) = 0x1a8` (424) doesn't
+match the real native header-block read size, `0x1a0` (416) -- an 8-byte
+gap, living somewhere in the struct's own TAIL (after `lodInfo`, fields
+`maxLoadedLod` through `quantization`), not yet investigated.
+
+All instrumentation reverted (gitignored generated file only, no tracked
+source touched), 0 regression confirmed. New evidence:
+`re_notes/ghidra_scripts/decomp_140094a10.txt`. Full trail:
+`re_notes/x64_migration/fastfile_format_research.md` §5.26.
