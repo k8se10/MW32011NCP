@@ -368,6 +368,22 @@ Full technical trail (every function found, every dead end ruled out):
 [`re_notes/known_issues_x64.md`](re_notes/known_issues_x64.md) and
 [`re_notes/x64_migration/README.md`](re_notes/x64_migration/README.md).
 
+## Repository structure — nested components
+
+This isn't one flat codebase. Two real, separate git histories are merged
+into specific subdirectories here, each via a history-preserving
+`git subtree` (not a fresh copy, not a submodule) — each one's own original
+commit history is fully intact and browsable in place, and each is under
+its **own** license, distinct from this repo's own root one.
+
+| Path | What it is | Why it's here | License |
+|---|---|---|---|
+| [`security/`](security/) | This project's own netcode-security-patch component — originally the separate `MW32011NSP` repo, absorbed 2026-09-12 | Finds and fixes real, exploitable vulnerabilities in MW3's own base-game netcode — Steam's VAC doesn't cover packet-level attacks from a malicious server/peer, a real gap this closes. Ships built into the mod by default (see [Security](#security-netcode-vulnerability-patches) below) | This repo's own permissive license, plus one extra responsible-disclosure clause — see [`security/LICENSE`](security/LICENSE) |
+| [`tools/iw5oat/`](tools/iw5oat/) | An IW5-only fork of [OpenAssetTools](https://github.com/Laupetin/OpenAssetTools), a third-party CoD modding-tool suite | The 2026-09-03 x64 recompile broke upstream's own zone/fastfile loading for the current retail build — a real, confirmed bug ([full root-cause writeup](re_notes/x64_migration/fastfile_format_research.md)), with no existing x64 support anywhere in that codebase to build on. This fork exists to build the x64 support this project actually needs for GSC extraction (the standing GSC-first RE methodology), faster than waiting on an upstream/community fix. **Developer/research tooling only — never shipped to players**, not part of the mod's own `d3d9.dll` | **GNU GPLv3** — NOT this repo's own license; see [`tools/iw5oat/LICENSE`](tools/iw5oat/LICENSE) and this repo's own [`LICENSE`](LICENSE)'s "Third-party components" section for exactly how the two coexist |
+
+Each has its own README with the full story — [`security/README.md`](security/README.md)
+and [`tools/iw5oat/README.md`](tools/iw5oat/README.md).
+
 ## Multiplayer
 
 `iw5mp.exe` is a completely separate binary from `iw5sp.exe`, reverse-
