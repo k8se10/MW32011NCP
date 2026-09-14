@@ -433,6 +433,57 @@ every field's real offset per struct and drive an automated rewrite of
 each generated `FillStruct_*` function, rather than deriving and
 hand-patching each of the ~46 offset tables individually.
 
+## 5.8. UPDATE, 2026-09-14 (later still) — automated offsetof()/sizeof() fix generator built and checked in; applied to all 46 asset types; the real remaining blocker narrowed to one open question
+
+Direct instruction: "build the offsetof() fix generator and apply it to
+all asset types." Built and checked into the repo at
+`tools/iw5oat/x64_offset_fixes/` (not gitignored, a real reusable Python
+package — see its own README for the full script-by-script breakdown).
+Rewrites every literal byte offset `ZoneCodeGenerator` emits across all
+~46 IW5 asset types' generated loaders into a compiler-verified
+`offsetof()`/`sizeof()` expression, rather than trying to hand-derive and
+hand-patch each type's own offset table the way RawFile/ScriptFile (§5.5)
+were. 2,499+ substitutions across 40 files on the main pass alone,
+confirmed reproducible from a clean `ZoneCodeGenerator` regenerate.
+
+**Three more real bugs found in the course of this**, all confirmed via
+direct before/after testing:
+- A genuine gap in the main pass's own struct-array regex (10 sites where
+  a paired `LoadWithFill`/`FillStruct` call didn't convert together).
+- A genuine cross-function-boundary false positive in that same regex
+  (non-greedy DOTALL matching with no function-boundary anchor let a
+  pointer-array's `LoadWithFill` get paired with an unrelated struct's
+  `FillStruct` call elsewhere in the same file) — the actual, confirmed
+  cause of `MaterialTechniqueSet`'s own 54-entry technique-pointer array
+  reading the wrong buffer size and corrupting everything after it.
+- A distinct call shape (`LoadDynamicFill_<Type>`'s own `AppendToFill(N)`
+  literals, used for variable-length assets like `MaterialTechnique`'s
+  `passArray[]`) the main pass never targeted at all — wrong wherever the
+  relevant field embeds a pointer even several levels deep (confirmed via
+  `XAnimDeltaPartQuat2`: a union member one level in starting with a
+  pointer forces 8-byte x64 alignment the immediately-preceding
+  `uint16_t` field alone wouldn't suggest).
+
+**Live result**: all three real retail zones tested (`hamburg.ff`,
+`common.ff`, `code_post_gfx.ff`) — previously failing at three different,
+earlier points — now fail at the exact same later point, real, consistent
+progress even though extraction isn't fully working yet.
+
+**The one remaining open question, deliberately not guessed past**:
+`MaterialVertexStreamRouting::decl[]` (a real 16-pointer array) and
+`MaterialPixelShaderProgram::ps`/`MaterialVertexShaderProgram::vs`
+(single pointers) are declared as real struct fields but never read from
+the wire by their own `FillStruct_*` functions. Whether they're genuinely
+on-disk (raw serialized memory) or runtime-only fields the wire format
+never included isn't resolved — a direct experiment excluding `decl[]`
+from the computed read size made the failure mode *worse* (a segfault
+instead of a clean bounds exception), so it was reverted rather than
+shipped as a guess. This is the confirmed reason all three zones now stop
+at the same point (`MaterialPass`'s own `vertexShader`/`pixelShader`
+load). Resolving it needs native Ghidra RE against `iw5sp.exe`'s own
+zone-content reader — the same technique that resolved the dispatch-
+record/header bugs (§5) — not more struct-field-name reasoning.
+
 ## 6. Scoped plan for in-house tooling — an MVP, not a full OpenAssetTools replacement
 
 **This project's own actual need is narrow**: GSC/rawfile extraction to

@@ -11,6 +11,11 @@
 user*.*
 *.aps
 
+# MW32011NCP / iw5oat, 2026-09-14: Python bytecode cache from
+# x64_offset_fixes/ (a real Python package now checked into this repo).
+__pycache__/
+*.pyc
+
 node_modules
 /src/ModManUi/dist
 npm-debug.log*
