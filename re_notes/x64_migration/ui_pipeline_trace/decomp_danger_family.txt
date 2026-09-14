@@ -1,0 +1,113 @@
+================================================================
+Function: FUN_140051e10 @ 140051e10
+----------------------------------------------------------------
+
+undefined4 FUN_140051e10(undefined8 param_1,longlong param_2,undefined4 param_3,undefined4 param_4)
+
+{
+  longlong lVar1;
+  
+  if (*(char *)(DAT_14062cea0 + 0x10) != '\0') {
+    if (*(float *)(param_2 + 0x10) == 0.0) {
+      return DAT_1403e3e6c;
+    }
+    lVar1 = FUN_14003c170(DAT_14062ca40,param_3,param_4,700);
+    if (lVar1 != 0) {
+      return *(undefined4 *)(lVar1 + 0xc);
+    }
+  }
+  return 0;
+}
+
+
+
+================================================================
+Function: FUN_14004f3a0 @ 14004f3a0
+----------------------------------------------------------------
+
+void FUN_14004f3a0(longlong param_1)
+
+{
+  if (((*(int *)(param_1 + 0x160) != 0) && (*(int *)(param_1 + 0x168) != 0)) &&
+     (*(int *)(param_1 + 4) != 6)) {
+    return;
+  }
+  return;
+}
+
+
+
+================================================================
+Function: FUN_140052110 @ 140052110
+----------------------------------------------------------------
+
+undefined8 FUN_140052110(void)
+
+{
+  return CONCAT71((int7)((ulonglong)DAT_14062cea0 >> 8),*(char *)(DAT_14062cea0 + 0x10) == '\0');
+}
+
+
+
+================================================================
+Function: FUN_140025480 @ 140025480
+----------------------------------------------------------------
+
+void FUN_140025480(undefined8 param_1,undefined8 param_2)
+
+{
+  FUN_140025550(param_1,param_2,1);
+  return;
+}
+
+
+
+================================================================
+Function: FUN_140025490 @ 140025490
+----------------------------------------------------------------
+
+ulonglong FUN_140025490(longlong param_1,int param_2)
+
+{
+  byte bVar1;
+  int iVar2;
+  uint uVar3;
+  longlong lVar4;
+  ulonglong uVar5;
+  uint *puVar6;
+  
+  uVar5 = 0;
+  if (param_2 == 0) {
+    return 0;
+  }
+  if ((DAT_140f57ca0 == 0) || (*(char *)(DAT_140f57ca0 + 0x10) == '\0')) {
+    lVar4 = 0;
+    puVar6 = (uint *)(param_1 + 0x234);
+    do {
+      bVar1 = (byte)*puVar6;
+      if ((bVar1 != 0) && (*(int *)((&DAT_1404e8e60)[bVar1] + 0x68) == param_2)) {
+        return (ulonglong)*puVar6;
+      }
+      lVar4 = lVar4 + 1;
+      puVar6 = puVar6 + 1;
+    } while (lVar4 < 0xf);
+  }
+  else {
+    iVar2 = FUN_140020dd0();
+    uVar3 = 1;
+    if (1 < iVar2) {
+      do {
+        uVar5 = (ulonglong)((uint)uVar5 ^ (uVar3 ^ (uint)uVar5) & 0xff);
+        if (*(int *)((&DAT_1404e8e60)[uVar5] + 0x68) == param_2) {
+          return uVar5;
+        }
+        uVar3 = uVar3 + 1;
+      } while ((int)uVar3 < iVar2);
+      return 0;
+    }
+  }
+  return 0;
+}
+
+
+
