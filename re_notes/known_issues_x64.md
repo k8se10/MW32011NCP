@@ -7270,3 +7270,37 @@ No code changes, pure RE. Two new evidence files committed. Ghidra
 project's own known `.gbf` corruption pattern hit twice more, restored
 both times. Full trail:
 `re_notes/x64_migration/fastfile_format_research.md` §5.23.
+
+### SHIPPED (real, tested fix), 2026-09-14 (later still, second of the same "dig on both" round) — LoadedSound's own raw sample-data read used the wrong struct field for its byte count; found via direct native decompile, confirmed with a live before/after comparison
+
+**Status: shipped, tested, safe.** Resolves the round above's own
+`code_post_gfx.ff` `XFILE_BLOCK_CALLBACK` failure at its real root — a
+genuine stream-cursor desync, a different bug class from anything else
+found this session.
+
+Decompiled `LoadedSound`'s own real native fill function directly (found
+via the master dispatch switch's `case 0xd`), rather than continuing to
+guess. The real engine reads its byte count for the fresh-data raw copy
+from `AILSOUNDINFO`-relative offset 24 — this fork's own compiler-
+verified `offsetof()` confirms that's `bits`, not `data_len` (offset 16,
+what the inherited DSL specified: `set count data info::data_len;`).
+
+Confirmed live, not just by arithmetic: dumped the real struct values for
+`code_post_gfx.ff`'s own failing asset (index 4481) — `data_len=24932`
+(the wrongly-used value) vs `bits=22050` (what the real engine reads).
+Fixing it let that exact asset load cleanly and the zone progress to a
+new, later, different failure (`XFILE_BLOCK_SCRIPT`) — decisive
+confirmation of a genuine desync, not a coincidental symptom match.
+
+Rebuilt and tested against all six known zones (0 regression) and the
+full 39-zone sweep (0 crashes anywhere, every log ends clean). Fixed at
+the permanent, tracked DSL source
+(`tools/iw5oat/src/ZoneCode/Game/IW5/XAssets/LoadedSound.txt`), not just
+generated output. Commit `ab56e7cc`.
+
+**Concrete next step**: `code_post_gfx.ff`'s own new `XFILE_BLOCK_SCRIPT`
+failure (a different asset, index 4482, confirmed via live trace to
+never reach the `MssSound` fill path at all — a different code path,
+most likely `snd_alias_list_t`'s own `StreamedSound` branch), not yet
+investigated. Full trail:
+`re_notes/x64_migration/fastfile_format_research.md` §5.24.
