@@ -5410,3 +5410,212 @@ timestamp; Win32 regression 0 errors; x64 rebuilt and redeployed last.
 independent of the GSC-pipeline blocker above. Full trail:
 `known_issues.md` issue #40's 2026-09-14 round; `re_notes/
 x64_feature_parity_audit.md`'s Campaign killstreak section, same date.
+
+---
+
+**Predator Missile guidance -- x64 investigation, 2026-09-14 (full native
+chain mapped end-to-end; safer diagnostic hook build-verified; genuine new
+evidence, NOT a confirmed fix).** Cross-reference: `known_issues.md` issue
+#30's own 2026-09-14 round (same content, filed there too since issue #30
+is where this bug's entire x86 history lives), `re_notes/
+killstreak_reference.md`'s Predator Missile row, `re_notes/
+x64_feature_parity_audit.md` row #17. Separate bug/task from the DPV/
+Mortar/Turret round earlier in this file -- x86's own 2026-07-19 correction
+to issue #30 already refuted missile guidance sharing that mechanism
+(`+0x1094`/`cmd+0x3e`/`0x3f`); this is Predator Missile's own, separate
+`controlslinkto`-based chain.
+
+**Why this was picked up**: post-fire missile guidance (steering the
+missile after launch, Survival's `remote_missile` buy and Campaign's "Down
+the Rabbit Hole") has never worked on controller on EITHER architecture --
+launch itself is confirmed working (x86 live, x64 structurally confirmed
+per row #16 above), but once airborne, movement/aim breaks. x64 had zero
+prior work on this (parity audit row #17: ABSENT).
+
+**GSC-first, per this project's own standing directive -- blocked by the
+SAME real environmental issue the DPV/Mortar/Turret round above and the
+AC-130 round immediately above both independently hit the same day.**
+OpenAssetTools' Unlinker (v0.31.0, this project's own vendored copy)
+segfaults loading `rescue_2.ff`/`common.ff`/`common_survival.ff` from this
+install -- zero log output even at `-v`, crash happens during zone LOAD
+before any dump-time filtering, confirmed NOT a general tool failure (a
+small thin-loader zone loads fine with the identical binary). This is now
+FOUR independent zones (`ny_harbor.ff`, `hamburg.ff`, `so_stealth_prague.ff`,
+and this task's own `rescue_2.ff`) hit by sessions working on entirely
+different bugs the same day -- GSC extraction from any real-content zone is
+confirmed blocked project-wide as of 2026-09-14, not specific to any one
+investigation. Fell back to this project's own pre-2026-09-03 decompiled
+GSC corpus (`D:\Tools\gsc-tool\extracted\decompiled\iw5\1555.gsc`) and
+independently re-read it directly (not just trusted the prior session's
+claim): `var_0 controlslinkto( var_10 );` at line 902, then the guidance
+loop at lines 916-937 --
+```
+while ( isdefined( level._id_3C11 ) )
+{
+    wait 0.05;
+    if ( isdefined( level._id_3BDD ) ) { _id_3C2D( var_0, 1 ); return; }
+    if ( var_0._id_3C02 ) { _id_3C2D( var_0, 1 ); return; }
+    if ( !common_scripts\utility::flag( "uav_enabled" ) ) { _id_3C2D( var_0, 1 ); return; }
+}
+```
+-- zero per-frame input reads, confirming steering is 100% native. This
+re-confirms, does not just repeat, x86's own 2026-07-19 finding -- but is
+NOT a fresh extraction against the current x64 zone content, flagged
+honestly rather than silently assumed unchanged.
+
+**Native chain fully mapped, x64 addresses confirmed via fresh Ghidra
+decompile, not assumed from x86 offsets** (per this project's own locked
+signature-scanning policy) -- a fresh `FindConstantRefs.java` whole-binary
+scan for the literal scalar `0x80000` (same technique x86's own
+investigation used) against `iw5sp_x64_proj`
+(`re_notes/ghidra_scripts/constrefs_80000_x64.txt`, 59 hits), cross-checked
+by decompiling every `TEST [reg+0xc], 0x80000` candidate
+(`re_notes/ghidra_scripts/decomp_80000_candidates.txt`):
+
+- `FUN_14011f8e0` (a large per-client tick function, `param_1+0x110`
+  dereferences to the real clientStruct/`piVar7`) -> `FUN_140016620`
+  (confirmed the Pmove substep-subdivision loop, x86's own
+  `FUN_00644ed0`-equivalent -- subdivides frame time into <=0x42/66ms
+  chunks, calling the next function once per chunk) -> `FUN_1400168a0`
+  (already-confirmed x64 Pmove per-substep tick, `Hook_PmoveTick`'s own
+  resolved target, `re_notes/x64_migration/sprint_weapnext_x64.md`) ->
+  `FUN_140014dc0`.
+- **`FUN_140014dc0` is a genuine x64-compiler FUSION of x86's separate
+  `FUN_004554d0` (dispatcher) + `FUN_006423d0` (angle-wrap) into one
+  function** -- the same fusion class this file already documents for
+  `FUN_14007d9f0` (x86's `FUN_0057d430`+`FUN_0057de60`). Full decompile:
+  tests `*(uint*)(param_2+0xc) & 0x80000` -- byte-identical offset and bit
+  to x86's confirmed `clientStruct+0xc` bit (`controlslinkto`'s
+  `FUN_005d7f20` sets it via `entity+0x10c` pointer indirection on x86; the
+  x64 equivalent of `controlslinkto` itself was NOT separately re-derived
+  this pass, out of scope for a diagnostic-only task) -- and when set,
+  reads 3 sequential int32 values from `param_4+8`/`+0xc`/`+0x10` (i.e.
+  `pml+0x10`/`+0x14`/`+0x18` relative to the wrapper one level up, a
+  4-byte shift from x86's `pml+0xc`/`+0x10`/`+0x14`, consistent with this
+  project's own established x64-struct-repacking pattern seen elsewhere,
+  not a different mechanism), decodes each via
+  `floor(x/360+0.5)*360` using the exact `360.0/65536.0` constant
+  (`DAT_1403e9de4 = 0.005493164`, confirmed via `DumpFloatsAt.java`) --
+  **the canonical Quake/CoD compressed-usercmd-angle (SHORT2ANGLE) decode,
+  decisive proof the read side is a real cmd-angle-shaped value, not an
+  independent float stream** -- and writes the result into
+  `param_2+0x10c`/`+0x110`/`+0x114`, byte-identical offsets to x86's
+  confirmed `clientStruct+0x10c`/`+0x110`/`+0x114`.
+- `param_2` (the field carrying `+0xc`/`+0x10c` etc.) is confirmed to be
+  the same "clientStruct" x86's `controlslinkto` targets: `FUN_14011f8e0`
+  copies a slice of its own `piVar7`'s fields (`piVar7+0x2b56` onward, an
+  8-byte-at-a-time block copy) into a local stack scratch buffer
+  (`local_1a0`.."local_1a8") EVERY call, with `local_1a8 = piVar7` itself
+  tacked on right after -- i.e. the "pml" wrapper the whole Pmove chain
+  operates on is rebuilt fresh from live clientStruct state on every
+  single Pmove call, NOT a frozen/stale buffer built once.
+
+**Genuinely new finding, beyond anything x86 ever established, found by
+cross-referencing this task against the CONCURRENT DPV/Mortar/Turret
+investigation earlier in this same file (both ran the same day).** That
+investigation found `FUN_14007d9f0` (`Hook_MovementTick`'s own target,
+where this project's controller look injection lives) is SKIPPED ENTIRELY
+by the per-frame orchestrator (`FUN_14007e1e0`, x86's
+`FUN_0057e480`-equivalent) whenever a DIFFERENT per-player flat flag
+(`DAT_1406e4774 + player*0xce5c` bit `0x80000` -- x86's own `+0x1094` bit,
+ALREADY CONFIRMED UNRELATED to missile guidance by x86's own 2026-07-19
+correction to issue #30) is set. Missile guidance's real flag
+(`controlslinkto`'s `clientStruct+0xc` bit) is a structurally DIFFERENT
+field -- reached via `entity+0x10c` pointer indirection, never the flat
+per-player array `FUN_14007e1e0` tests. Nothing found this session
+suggests `FUN_14007e1e0` has any branch keyed on the missile-guidance flag
+at all. **This means (unlike DPV/Mortar/Turret) `FUN_14007d9f0`/
+`Hook_MovementTick` likely keeps running NORMALLY throughout missile
+guidance** -- and this project's own look write (confirmed via decompile
+of `FUN_14007d9f0` itself: `g_pitchAccum`/`g_yawAccum` ->
+`FUN_140003fc0` packing -> a compressed short written into `cmd+0x38`)
+may already be live data by the time `FUN_140014dc0` reads it.
+**Not independently confirmed**: the exact intermediate hop -- whether
+`cmd`'s packed angle gets copied fresh into the `piVar7+0x2b56`-area
+clientStruct fields the Pmove wrapper is built from, every tick, before
+`FUN_140014dc0` runs -- was not nailed down bit-for-bit in the time
+available. This is the SAME wall x86's own, considerably longer
+investigation hit (its own diagnostic hook was implemented for exactly
+this reason and never got live data). Real, positive, new evidence this
+bug may already be partially or fully fixed by nothing more than the
+existing look pipeline -- or may still need a direct write into
+`pml+0x10/+0x14/+0x18` -- and only live data settles which.
+
+**New diagnostic hook implemented and build-verified**
+(`Hook_MissileGuidanceDispatchX64`, `analog_input_hooks_x64.cpp`),
+deliberately learning from x86's own regression here: issue #6 (x86,
+`known_issues.md`) found one or both of x86's two missile-guidance
+diagnostic hooks implicated in a real Hold Breath regression, "confirmed
+to run every single frame unconditionally" for the prime suspect. This x64
+hook is a structurally independent MinHook detour on `FUN_140014dc0` --
+does not touch Sprint/Hold Breath/ADS/Reload/any other feature's own hook
+or call path at all. Design: calls the real original function completely
+unchanged FIRST (zero behavior change regardless of anything below), then
+does the cheapest possible check every single call (one dword read + one
+bitmask test) -- if not linked, returns immediately, no further work at
+all. Only once actually linked does it rate-limit to one log line per
+~250ms (matching this file's own established `[x64-diag-gate]`-style
+convention) before doing any `sprintf_s`/logging work. Logs the raw
+`pml+0x10/+0x14/+0x18` angle ints, the output
+`clientStruct+0x10c/+0x110/+0x114` floats, and this project's own
+`g_pitchAccum`/`g_yawAccum` side by side -- the first real data either
+architecture will have collected on this question.
+
+Signature: FUN_140014dc0's real 47-byte prologue
+(`DumpSigBytes.java`+`PatternScan.java`, confirmed exactly 1 match in the
+whole binary via a direct pattern scan, not assumed). Only the trailing
+`JGE rel32`'s own 4-byte displacement is a genuine PC-relative reference
+needing wildcarding -- every RAX/RDX-relative `MOV`/`MOVAPS`/`CMP` in this
+span that `DumpSigBytes.java`'s own heuristic flagged is the SAME
+established false-positive class this file's own
+`kSprintTickSignature`/`kMountedAimTickSignature` comments already
+document (register-relative, not RIP-relative -- hand-verified against the
+raw disassembly, not just trusted the tool).
+
+`sprintf_s` buffer sized for the TRUE worst case, not the expected case,
+per this project's own standing discipline from the 2026-09-05 crash
+postmortem (this file, issue #1): 3x `%d` (11 chars worst case, `INT_MIN`)
++ 5x `%.4f` (45 chars worst case each -- `FLT_MAX`/`-FLT_MAX` as fixed
+notation is 39 integer digits + sign + `.` + 4 decimals) + `%lu` (10
+chars) + ~132 literal chars + NUL = ~401 worst case; `buf[512]` leaves
+comfortable margin. Every float logged here comes from a raw, unvalidated
+process-memory read (the whole point of the diagnostic is to observe
+whatever is actually there, including a wrong/garbage value if the offset
+assumption is somehow off) -- sizing for "angles are usually small" would
+repeat the exact mistake that caused the 2026-09-05 crash.
+
+**Build-verified**: x64 `/t:Rebuild` (0 errors, 10 pre-existing warnings,
+all in unrelated x86-only `analog_input_hooks.cpp` code, not this change)
+-> `dumpbin /headers` confirms `8664 machine (x64)` with a fresh
+`LastWriteTime` matching the build -> Win32 regression rebuild (0 errors,
+0 warnings -- `analog_input_hooks_x64.cpp` correctly excluded from the
+Win32 compile, confirming this change cannot affect the x86 line at all)
+-> x64 rebuilt and redeployed last, per this project's own build-order
+convention. `Get-Process -Name iw5sp`/`iw5mp` confirmed not running before
+each build step.
+
+**NOT yet live-tested -- this is a diagnostic, not a confirmed fix
+either way.** Next step: fire a Predator Missile (Survival buy or Down the
+Rabbit Hole) on this x64 build and check `proxy_d3d9.log` for
+`[x64-missile-guidance-diag] LINKED` lines during the post-fire guidance
+phase. If `rawAngles` tracks `ourPitchAccum`/`ourYawAccum` live frame to
+frame, controller look already reaches the missile and any remaining
+"broken" symptom is elsewhere (sensitivity/feel, or RT meaning Boost
+rather than Fire during guidance per the confirmed Xbox 360 console
+reference -- Boost was never implemented on either architecture, a
+separate, real, already-documented gap, not this one). If `rawAngles`
+stays frozen/independent of the accumulators while linked, the fix is a
+direct write into `pml+0x10/+0x14/+0x18` while linked, using the exact
+same SHORT2ANGLE encoding this pass already confirmed -- a small, scoped,
+low-risk follow-up once the live data settles which branch is real.
+
+**Confidence: HIGH on the native chain mapping** (every address/offset
+confirmed via direct decompile against this specific x64 binary, not
+inferred or carried over from x86 unverified) **, MEDIUM on the
+"already may work" hypothesis** (real, structural, cross-referenced
+evidence, not a guess -- but the one missing hop was not independently
+confirmed) **, and the diagnostic itself carries essentially no risk**
+(log-and-forward, cheap-check-first, independent hook target from every
+other feature). Matches this project's own standing production-readiness
+bar: a real, honest, build-verified next step for a bug that has never
+worked on any architecture, not a guessed-and-shipped behavior change.

@@ -3029,6 +3029,209 @@ void __fastcall Hook_MountedAimTick(int player, void* cmd)
     }
 }
 
+// ---- Missile-guidance per-frame angle dispatcher diagnostic, x64 (2026-09-14) ------
+//
+// Task: re_notes/known_issues.md issue #30 / re_notes/killstreak_reference.md's
+// Predator Missile entry -- post-fire guidance (steering the missile after launch,
+// `remote_missile` in Survival and "Down the Rabbit Hole" in Campaign) has never
+// worked on controller on EITHER architecture. x86's own investigation (issue #30,
+// 2026-07-19) fully mapped the native mechanism via GSC-first research (confirmed
+// the guidance-phase `while` loop in `1555.gsc` does ZERO per-frame input reads --
+// steering is 100% native) then a whole-binary static scan for the real per-frame
+// reader chain, but its own diagnostic hook (`Hook_MissileGuidanceDispatch`,
+// analog_input_hooks.cpp) was disabled the same day after being implicated in a
+// live Hold Breath regression (issue #6) and NEVER re-enabled or live-tested -- the
+// central question ("does the missile's steering-angle source already track this
+// project's own controller look input live, or is it an independently-fed field
+// that needs direct writing?") was left genuinely open on x86, and x64 had zero
+// work on this at all (x64_feature_parity_audit.md row #17: ABSENT).
+//
+// GSC-first re-verification (per this project's own standing directive) was
+// attempted this session but BLOCKED by a real, newly-discovered environmental
+// issue, not a dead end in this investigation specifically: OpenAssetTools'
+// Unlinker (v0.31.0, vendored) segfaults (STATUS_ACCESS_VIOLATION, zero log output
+// even at -v) loading `rescue_2.ff`/`common.ff`/`common_survival.ff` from this
+// install -- confirmed NOT a general-tool-broken issue (a small thin-loader zone,
+// `patch_so_littlebird_payback.ff`, loads fine with the exact same binary) and NOT
+// specific to this one investigation (a concurrent session hit the identical crash
+// signature against three entirely different zones the same day -- see this file's
+// own "DPV/Goalpost mortar/Goalpost M2 turret aim" entry above). Whatever changed
+// in the 2026-09-03 recompile's zone/fastfile container broke Unlinker v0.31.0 (and
+// a freshly-downloaded v0.33.0, per that same concurrent entry) for any real-content
+// zone -- GSC extraction from live zone files is blocked project-wide, not just here.
+// Fell back to re-reading this project's own pre-2026-09-03 decompiled GSC corpus
+// (`D:\Tools\gsc-tool\extracted\decompiled\iw5\1555.gsc` lines 892-937) directly --
+// independently re-confirms the "zero per-frame input reads, 100% native" finding
+// (`var_0 controlslinkto( var_10 );` at line 902, then `while ( isdefined( level._id_3C11 ) )
+// { wait 0.05; <abort checks only> }` at lines 916-937) rather than just trusting the
+// prior session's claim, but is NOT a fresh extraction against the current x64
+// zone content -- flagged honestly, not silently assumed unchanged.
+//
+// Native side: the full x64 equivalent of x86's `FUN_004554d0`/`FUN_006423d0` chain
+// is now mapped end-to-end via fresh Ghidra decompile (fresh `FindConstantRefs.java`
+// whole-binary scan for the literal scalar 0x80000, same technique x86's own
+// investigation used, cross-referenced against a struct-offset match rather than an
+// assumed address correspondence, per this project's own locked signature-scanning
+// policy):
+//   - `FUN_14011f8e0` -> `FUN_140016620` (the confirmed Pmove substep-subdivision
+//     loop, x86's `FUN_00644ed0`-equivalent, ~66ms/substep cap) -> `FUN_1400168a0`
+//     (the confirmed x64 Pmove per-substep tick, `Hook_PmoveTick`'s own resolved
+//     target) -> `FUN_140014dc0`.
+//   - `FUN_140014dc0` is a genuine x64 compiler FUSION of x86's SEPARATE
+//     `FUN_004554d0` (dispatcher) + `FUN_006423d0` (angle-wrap), the same fusion
+//     pattern already confirmed elsewhere in this file for `FUN_14007d9f0`
+//     (x86's `FUN_0057d430`+`FUN_0057de60`) -- decompiled in full
+//     (re_notes/ghidra_scripts/decomp_80000_candidates.txt): tests
+//     `*(uint*)(param_2 + 0xc) & 0x80000` -- BYTE-IDENTICAL offset and bit to x86's
+//     confirmed `clientStruct+0xc` bit `controlslinkto`'s native implementation
+//     sets -- and when set, reads 3 sequential int32 angle values from
+//     `param_4+8`/`param_4+0xc`/`param_4+0x10` (relative to the wrapper passed one
+//     level up, i.e. `pml+0x10`/`+0x14`/`+0x18` -- a 4-byte shift from x86's
+//     `pml+0xc`/`+0x10`/`+0x14`, consistent with this project's own established
+//     x64-struct-repacking pattern, not a different mechanism), angle-wraps each
+//     via `floor(x/360+0.5)*360` using the EXACT `360.0/65536.0` SHORT2ANGLE
+//     constant (`DAT_1403e9de4 = 0.005493164`, confirmed via `DumpFloatsAt.java` --
+//     the canonical Quake/CoD compressed-cmd-angle decode, proving the read side is
+//     a compressed usercmd-angle-shaped value, not an independent float stream),
+//     and writes the result into `param_2+0x10c`/`+0x110`/`+0x114` -- BYTE-IDENTICAL
+//     offsets to x86's confirmed `clientStruct+0x10c`/`+0x110`/`+0x114` output.
+//   - `param_2` (the field with `+0xc`/`+0x10c` etc.) is confirmed to be the same
+//     "clientStruct" x86's `controlslinkto` targets (`FUN_14011f8e0`'s own `piVar7`,
+//     a `*(int**)(param_1+0x110)` dereference, copied fresh into the Pmove "pml"
+//     wrapper's own local stack scratch buffer -- `local_1a0`.."local_1a8" -- EVERY
+//     call to `FUN_14011f8e0`, not a stale/frozen buffer built once).
+//
+// A genuinely NEW finding beyond what x86 ever established: this project's OWN
+// concurrent DPV/mortar/turret investigation (this file's own entry immediately
+// above) found `FUN_14007d9f0` (`Hook_MovementTick`'s own target, where our look
+// injection lives) is SKIPPED ENTIRELY by the per-frame orchestrator
+// (`FUN_14007e1e0`, x86's `FUN_0057e480`-equivalent) whenever a DIFFERENT per-player
+// flat flag (`DAT_1406e4774 + player*0xce5c` bit `0x80000` -- x86's own `+0x1094`
+// bit, ALREADY CONFIRMED UNRELATED to missile guidance by x86's own 2026-07-19
+// correction to this same issue) is set. Missile guidance's real flag
+// (`controlslinkto`'s `clientStruct+0xc` bit) is a STRUCTURALLY DIFFERENT field
+// (reached via `entity+0x10c` pointer indirection on x86, never the flat per-player
+// array) -- nothing found this session suggests `FUN_14007e1e0` has any branch keyed
+// on IT, meaning (unlike DPV/mortar/turret) `FUN_14007d9f0`/`Hook_MovementTick`
+// likely keeps running NORMALLY throughout missile guidance, and our own look write
+// into the shared `g_pitchAccum`/`g_yawAccum` -> `FUN_140003fc0` packing ->
+// `cmd+0x38` (confirmed via decompile of `FUN_14007d9f0` itself) pipeline should, in
+// principle, already be live data by the time `FUN_140014dc0` reads it -- IF the
+// intermediate hop (how `cmd`'s own packed angle reaches `piVar7`'s `+0x2b56`-area
+// storage the Pmove wrapper is built from) is a fresh per-tick copy, which was NOT
+// independently confirmed via static analysis in the time available -- the exact
+// same wall x86's own, considerably longer investigation hit. **This is genuinely
+// new, positive evidence this bug may already be partially or fully fixed by
+// nothing more than the existing look-injection pipeline -- or may still need a
+// direct write -- and this diagnostic is what actually answers it, safely, for the
+// first time on either architecture.**
+//
+// Log-and-forward ONLY, zero behavior change -- calls the real original function
+// completely unchanged first (correct native passthrough regardless of what this
+// diagnostic does after). Learns from x86's own regression here (issue #6 -- one or
+// both of x86's two missile-guidance diagnostic hooks were implicated in a real
+// Hold Breath regression, "confirmed to run every single frame unconditionally" for
+// the prime suspect): this hook does the cheapest possible check (one dword read,
+// one bitmask) EVERY call regardless of guidance state, but does no further work
+// (no sprintf, no GetTickCount even) unless `linked` is actually true -- and once
+// linked, is ADDITIONALLY rate-limited to one log line per ~250ms, matching this
+// file's own established `[x64-diag-gate]` heartbeat convention. `FUN_140014dc0`
+// fires up to several times per rendered frame (once per Pmove substep) but ONLY
+// during a real guidance sequence does any of this hook's extra work run at all.
+namespace {
+using MissileGuidanceDispatchFnX64 = void(__fastcall*)(
+    void* param1, void* param2, unsigned int param3, void* param4, unsigned char param5);
+
+// Signature: FUN_140014dc0's real 47-byte prologue (DumpSigBytes.java +
+// PatternScan.java, confirmed exactly 1 match in the whole binary). Only the
+// trailing JGE rel32's own 4-byte displacement is a genuine PC-relative reference
+// needing wildcarding -- every RAX/RDX-relative MOV/MOVAPS/CMP in this span
+// DumpSigBytes.java's own heuristic flagged is the SAME established false-positive
+// class this file's own kSprintTickSignature/kMountedAimTickSignature comments
+// already document (register-relative, not RIP-relative -- confirmed by hand
+// against the raw disassembly before trusting the tool's flag):
+//   48 8B C4                mov rax,rsp
+//   48 89 58 08              mov [rax+0x8],rbx      (RAX-relative, keep literal)
+//   48 89 70 10              mov [rax+0x10],rsi      (RAX-relative, keep literal)
+//   57                       push rdi
+//   48 81 EC 80 00 00 00     sub rsp,0x80
+//   83 7A 04 06              cmp dword ptr [rdx+0x4],0x6   (RDX-relative, keep literal)
+//   49 8B D9                 mov rbx,r9
+//   44 0F 29 40 C8           movaps [rax-0x38],xmm8  (RAX-relative, keep literal)
+//   48 8B FA                 mov rdi,rdx
+//   44 0F 28 C2              movaps xmm8,xmm2
+//   48 8B F1                 mov rsi,rcx
+//   0F 8D ?? ?? ?? ??        jge <wildcarded rel32>  (genuine PC-relative -- wildcard)
+constexpr const char* kMissileGuidanceDispatchSignatureX64 =
+    "48 8B C4 48 89 58 08 48 89 70 10 57 48 81 EC 80 00 00 00 83 7A 04 06 49 8B D9 "
+    "44 0F 29 40 C8 48 8B FA 44 0F 28 C2 48 8B F1 0F 8D ?? ?? ?? ??";
+
+MissileGuidanceDispatchFnX64 g_realMissileGuidanceDispatchX64 = nullptr;
+
+DWORD g_lastMissileGuidanceDiagLogMsX64 = 0;
+bool g_missileGuidanceDiagWasLinkedX64 = false;
+
+void __fastcall Hook_MissileGuidanceDispatchX64(
+    void* param1, void* param2, unsigned int param3, void* param4, unsigned char param5)
+{
+    g_realMissileGuidanceDispatchX64(param1, param2, param3, param4, param5);
+
+    if (!param2) return;
+    unsigned int clientFlags = *reinterpret_cast<volatile unsigned int*>(reinterpret_cast<uintptr_t>(param2) + 0xc);
+    bool linked = (clientFlags & 0x80000) != 0;
+
+    if (!linked) {
+        if (g_missileGuidanceDiagWasLinkedX64) {
+            LogFromController("[x64-missile-guidance-diag] UNLINKED (guidance ended)");
+            g_missileGuidanceDiagWasLinkedX64 = false;
+        }
+        return;
+    }
+    g_missileGuidanceDiagWasLinkedX64 = true;
+
+    DWORD nowMs = GetTickCount();
+    if (nowMs - g_lastMissileGuidanceDiagLogMsX64 < 250) return;
+    g_lastMissileGuidanceDiagLogMsX64 = nowMs;
+    if (!param4) return;
+
+    // Raw side: pml+0x10/+0x14/+0x18 (param_4+8/+0xc/+0x10), compressed
+    // usercmd-angle-shaped int32s per the SHORT2ANGLE math confirmed via decompile
+    // -- logged as raw ints (not decoded here) so a live sample can be compared
+    // directly against the raw compressed shorts this project's own look-packing
+    // (FUN_14007d9f0/FUN_140003fc0) produces, without trusting this hook's own
+    // re-derivation of the decode math.
+    int rawPitch = *reinterpret_cast<volatile int*>(reinterpret_cast<uintptr_t>(param4) + 8);
+    int rawYaw   = *reinterpret_cast<volatile int*>(reinterpret_cast<uintptr_t>(param4) + 0xc);
+    int rawRoll  = *reinterpret_cast<volatile int*>(reinterpret_cast<uintptr_t>(param4) + 0x10);
+    // Output side: clientStruct+0x10c/+0x110/+0x114, the real angle FUN_140014dc0
+    // just computed and stored this call.
+    float outPitch = *reinterpret_cast<volatile float*>(reinterpret_cast<uintptr_t>(param2) + 0x10c);
+    float outYaw   = *reinterpret_cast<volatile float*>(reinterpret_cast<uintptr_t>(param2) + 0x110);
+    float outRoll  = *reinterpret_cast<volatile float*>(reinterpret_cast<uintptr_t>(param2) + 0x114);
+    // This project's own controller-look accumulators -- side by side with the raw
+    // side above settles, for the first time on either architecture, whether they
+    // already track each other live (fix would be elsewhere) or are independent
+    // (fix is writing controller look directly into param_4+8/+0xc/+0x10 while linked).
+    float ourPitchAccum = g_pitchAccum ? *g_pitchAccum : 0.0f;
+    float ourYawAccum = g_yawAccum ? *g_yawAccum : 0.0f;
+
+    // Buffer sized for the true worst case, not the expected case, per this
+    // project's own standing sprintf_s discipline (CLAUDE.md hard constraint /
+    // 2026-09-05 crash postmortem, issue #1): 3x %d (11 chars worst case each,
+    // INT_MIN) + 5x %.4f (45 chars worst case each, FLT_MAX/FLT_MIN as fixed
+    // notation: sign + 39 integer digits + '.' + 4 decimals) + %lu (10 chars) +
+    // ~132 literal chars + NUL = ~401 worst case; 512 leaves comfortable margin.
+    char buf[512];
+    sprintf_s(buf,
+        "[x64-missile-guidance-diag] LINKED rawAngles(pml+0x10/0x14/0x18)=%d/%d/%d "
+        "outAngles(clientStruct+0x10c/0x110/0x114)=%.4f/%.4f/%.4f "
+        "ourPitchAccum=%.4f ourYawAccum=%.4f t=%lu",
+        rawPitch, rawYaw, rawRoll, outPitch, outYaw, outRoll,
+        ourPitchAccum, ourYawAccum, static_cast<unsigned long>(GetTickCount()));
+    LogFromController(buf);
+}
+} // namespace
+
 // ---- Visual-enhancement suite x64 gating (2026-09-12) -- InternalRenderScalePercent
 // (x86 issue #88) and the clcState/in-level-flag safety gates FSR RCAS (x86 issue
 // #94/#103/#104) and motion blur (x86 issue #96/#97) both need before either can be
@@ -4684,6 +4887,47 @@ void InstallAnalogInputHooksX64()
                         "movement/look function (DPV, Goalpost's mortar, Goalpost's M2 turret). Watch for "
                         "'[x64-mountedaim] FUN_14007de20 fired' in the log during one of those three sequences "
                         "to confirm live -- NOT yet independently live-tested this session.");
+                }
+            }
+        }
+    }
+
+    // Predator Missile post-fire guidance diagnostic (Hook_MissileGuidanceDispatchX64,
+    // see its own big comment above for the full mechanism/investigation trail --
+    // known_issues.md issue #30/#29, known_issues_x64.md, never fixed or even
+    // live-tested on either architecture). Log-and-forward only, zero behavior
+    // change -- independent of every other hook in this function; a failure here
+    // costs only this one diagnostic, nothing else.
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kMissileGuidanceDispatchSignatureX64);
+        if (!r.found) {
+            LogFromController("[x64-missile-guidance-diag] FATAL: signature did not resolve -- Predator Missile "
+                "guidance diagnostic not installed this session (no gameplay impact either way, this hook is "
+                "diagnostic-only)");
+        } else {
+            void* target = reinterpret_cast<void*>(r.address);
+            MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_MissileGuidanceDispatchX64),
+                                                    reinterpret_cast<void**>(&g_realMissileGuidanceDispatchX64));
+            if (createStatus != MH_OK) {
+                char buf[160];
+                sprintf_s(buf, "[x64-missile-guidance-diag] FATAL: MH_CreateHook failed @ 0x%llX (status=%d)",
+                           static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+                LogFromController(buf);
+            } else {
+                MH_STATUS enableStatus = MH_EnableHook(target);
+                if (enableStatus != MH_OK) {
+                    char buf[160];
+                    sprintf_s(buf, "[x64-missile-guidance-diag] FATAL: MH_EnableHook failed @ 0x%llX (status=%d)",
+                               static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+                    LogFromController(buf);
+                } else {
+                    LogFromController("[x64-missile-guidance-diag] Diagnostic hook installed and enabled -- "
+                        "log-and-call-through only, zero behavior change. Fire a Predator Missile (Survival buy "
+                        "or Down the Rabbit Hole) and watch for '[x64-missile-guidance-diag] LINKED' lines during "
+                        "the post-fire guidance phase: if rawAngles already tracks ourPitchAccum/ourYawAccum live, "
+                        "controller look already reaches the missile and the fix (if any is still needed) is "
+                        "elsewhere; if rawAngles stays frozen/independent, the fix is writing controller look "
+                        "directly into pml+0x10/+0x14/+0x18 while linked.");
                 }
             }
         }
