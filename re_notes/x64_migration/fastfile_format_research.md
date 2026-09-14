@@ -1862,6 +1862,86 @@ meaning it's a different code path, most likely `snd_alias_list_t`'s own
 untouched by this round's work, a genuinely different asset chain
 (`XModel`/`Material`, not `snd_alias_list_t`/`LoadedSound`).
 
+## 5.25. UPDATE, 2026-09-14 (later still, continuing "dig on both" after §5.23 eliminated one hypothesis) — the real native `XModel` fill function decompiled directly: `materialHandles` is very likely a genuine phantom field, the same bug class as the already-fixed `Material::subMaterials` — a strong, well-evidenced lead, not yet implemented or verified
+
+**Status: a strong, concrete new hypothesis with direct decompile evidence
+behind it — NOT yet confirmed by testing, NOT yet implemented.**
+
+Continuing directly from §5.23 (which eliminated the "a different,
+narrower decode primitive explains this" theory and recommended finding
+the real native array-walk logic next): traced the real dispatch chain
+fresh — `FUN_14009bce0` (the master 46-case asset dispatch switch, `case
+4` = `XModel`) → `FUN_14009c650` (the real outer FOLLOWING/INSERT/
+already-resolved pointer handler, structurally identical to every other
+asset type's own outer handler already understood this session) →
+`FUN_14009c1b0` (the REAL native equivalent of this fork's own
+`FillStruct_XModel`, decompiled in full for the first time this
+session).
+
+**The real fill function resolves exactly six simple pointer fields in
+sequence** (`DAT_1407bea40[6]` through `[0xb]`), each using the identical
+`if (field != 0) { if (field == -1) <FOLLOWING alloc>; else
+FUN_1400aad40(); }` pattern already fully understood from the shipped
+global fix (`e2fdeb07`) — matching this fork's own `boneNames`/
+`parentList`/`quats`/`trans`/`partClassification`/`baseMat`, six fields,
+exact same order. **Immediately after the sixth field (`[0xb]`,
+`baseMat`), the real function jumps straight to a fixed-size, 4-entry
+array with a `0x38`-byte stride** (matching `sizeof(XModelLodInfo)` — the
+real `lodInfo` array) — **with NO seventh simple-pointer-field call in
+between.**
+
+**This fork's own generated code inserts exactly one extra field at
+precisely that position**: `tools/iw5oat/build/src/ZoneCode/Game/IW5/
+XAssets/xmodel/xmodel_iw5_load_db.cpp`'s own `FillStruct_XModel`
+processes `boneNames`/`parentList`/`quats`/`trans`/`partClassification`/
+`baseMat` (six fields, matching exactly), then **`materialHandles`** (one
+more `FillPtr` call), and only THEN begins the `lodInfo` array loop. The
+real native function has no equivalent seventh call at all before its own
+LOD array begins.
+
+**This is structurally identical to the already-fixed
+`Material::subMaterials` bug (§5.9)** — a field this fork's own struct
+declares (inherited from upstream OpenAssetTools' x86-era DSL,
+`tools/iw5oat/src/Common/Game/IW5/IW5_Assets.h`'s `struct XModel` and
+`tools/iw5oat/src/ZoneCode/Game/IW5/XAssets/XModel.txt`) that the real,
+current x64 struct very likely doesn't actually contain. If confirmed,
+this would be a genuinely serious bug, worse in effect than a simple
+missing field: **every field this fork reads AFTER `materialHandles`
+(the entire `lodInfo` array, `maxLoadedLod`, `numLods`, `collLod`,
+`flags`, `collSurfs`, `numCollSurfs`, `contents`, and everything past
+that) would be read 8 bytes off from its real position** — explaining
+both this session's own already-observed malformed values
+(`materialHandles`'s own "value," read from what's actually the FIRST
+8 bytes of the real `lodInfo` array, would plausibly produce exactly the
+kind of no-clean-pattern garbage already caught live — `0x01010150FFFFFFFF`/
+`0xFFFFFFFF00000000` are both very plausible fragments of real
+floating-point/count `XModelLodInfo` data misread as a pointer) and,
+very plausibly, other not-yet-investigated `XModel`-related oddities
+this fork hasn't hit yet simply because most zones' own `XModel` assets
+never happen to populate every downstream field with a value that trips
+a bounds/sentinel check.
+
+**Deliberately NOT implemented or committed as a fix this round** — this
+finding needs the same rigor §5.9's own `Material::subMaterials` fix
+used before landing: independently confirm `sizeof(XModel)` computed
+WITH vs WITHOUT `materialHandles` against the real native struct's own
+total size (not yet done), and full regression-test across all six known
+zones plus the 39-zone sweep before committing, exactly like every other
+real fix this session. Flagging this now as a strong, well-evidenced,
+concrete next step rather than rushing it — the general shape of the fix
+(remove `materialHandles` from `IW5_Assets.h`'s `struct XModel` and the
+now-dangling reference in `XModel.txt`'s own DSL, exactly mirroring
+commit `30cf5723`'s own `subMaterials` fix) is clear, but has not been
+applied.
+
+Raw decompile evidence, newly added this round:
+`re_notes/ghidra_scripts/decomp_dispatch_14009bce0.txt` (the master
+dispatch switch, case 4 → `FUN_14009c650`),
+`decomp_xmodel_14009c650.txt` (the outer pointer handler),
+`decomp_xmodel_fill_14009c1b0.txt` (the real fill function itself — the
+decisive evidence: six pointer-field resolutions, then straight to the
+LOD array, no seventh field).
+
 ## 6. Scoped plan for in-house tooling — an MVP, not a full OpenAssetTools replacement
 
 **This project's own actual need is narrow**: GSC/rawfile extraction to

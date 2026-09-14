@@ -7304,3 +7304,40 @@ never reach the `MssSound` fill path at all — a different code path,
 most likely `snd_alias_list_t`'s own `StreamedSound` branch), not yet
 investigated. Full trail:
 `re_notes/x64_migration/fastfile_format_research.md` §5.24.
+
+### STRONG LEAD (not yet implemented), 2026-09-14 (later still, continuing "dig on both") — XModel's own `materialHandles` field is very likely a genuine phantom field, the same bug class as the already-fixed Material::subMaterials -- direct native decompile evidence found, fix not yet applied or tested
+
+**Status: a strong, concrete, well-evidenced hypothesis -- not yet
+confirmed by testing, not yet implemented.**
+
+Continuing §5.23 (which eliminated "a different decode primitive"):
+decompiled the real native `XModel` fill function directly for the first
+time this session (`FUN_14009c1b0`, reached via the master dispatch
+switch's own case 4). It resolves exactly SIX simple pointer fields
+(matching `boneNames`/`parentList`/`quats`/`trans`/`partClassification`/
+`baseMat`), then jumps straight to the real `lodInfo` array with no
+seventh field call in between. This fork's own generated code inserts
+exactly one extra field at that precise position: `materialHandles`.
+
+This is structurally identical to the already-fixed `Material::
+subMaterials` bug (a field the x86-era DSL declares that the real x64
+struct doesn't actually have). If confirmed, every field read AFTER
+`materialHandles` in this fork's own `XModel` struct (the entire
+`lodInfo` array, `maxLoadedLod`, `numLods`, `collLod`, `flags`,
+`collSurfs`, `numCollSurfs`, `contents`, everything past that) would be
+read 8 bytes off from its real position -- a strong, plausible
+explanation for this session's own already-caught malformed values
+(`0x01010150FFFFFFFF`/`0xFFFFFFFF00000000` read as `materialHandles`
+itself would plausibly be real fragments of `XModelLodInfo` data
+misread as a pointer).
+
+**Deliberately not implemented this round** -- needs the same rigor the
+original `subMaterials` fix used (independently confirm `sizeof(XModel)`
+WITH vs WITHOUT `materialHandles` against the real struct size) plus
+full regression testing before committing, not rushed. The fix shape is
+clear (remove the field from `IW5_Assets.h`'s `struct XModel` and the
+dangling DSL reference in `XModel.txt`, mirroring commit `30cf5723`
+exactly) but not yet applied. New decompile evidence:
+`re_notes/ghidra_scripts/decomp_dispatch_14009bce0.txt`,
+`decomp_xmodel_14009c650.txt`, `decomp_xmodel_fill_14009c1b0.txt`. Full
+trail: `re_notes/x64_migration/fastfile_format_research.md` §5.25.
