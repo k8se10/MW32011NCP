@@ -5079,3 +5079,38 @@ may not have this same limitation -- needs checking, not assumed).
    than in-game pause, find and OR it into `IsMenuActiveX64_Exported()`
    (or add a parallel check specifically for the cursor's own gate) so
    the cursor shows correctly at both.
+
+---
+
+**ROADMAP IDEA, 2026-09-14 — real window/backbuffer resolution override,
+requested via a public GitHub issue (community use case: Nucleus Co-op
+splitscreen).** A community user (GitHub issue #3 on the `-x86` repo,
+now closed) wants a real way to change the game's actual output
+resolution/aspect ratio independently of the desktop, specifically to
+enable splitscreen via Nucleus Co-op (each instance rendered into a
+non-native aspect ratio, e.g. 1920x1080 squashed to 1920x540, so two
+instances tile without black bars).
+
+**This is explicitly NOT the same thing `InternalRenderScalePercent`/the
+old `CustomResolutionWidth`/`Height` keys did on x86** — issue #102's own
+x86-era investigation (see this file's own cross-reference, and
+`re_notes/known_issues.md`) found and confirmed live that hook only
+changes the INTERNAL 3D render resolution, which then gets stretched/
+composited back into the existing window — it never touches the real
+window/backbuffer size or aspect ratio, so it could never produce the
+splitscreen-enabling squash this specific request needs. `CustomResolutionWidth`/
+`Height` was removed from the x86 line for exactly this reason (shipped,
+tested, found to not do what it needed to, pulled again).
+
+**Real fix would need a genuinely different, harder mechanism**: overriding
+the actual window/backbuffer size directly. Per the maintainer's own public
+reply on the GitHub thread: "the closest lever for that has already crashed
+the game reliably in earlier testing, so it needs proper work to do safely
+rather than a quick fix" — a real, already-known-dangerous RE target, not
+a quick win.
+
+**Status: Roadmap Idea, explicitly deferred past the current x64 parity
+push** — matches the maintainer's own public statement on the GitHub
+thread ("noting the feature to be added back in when the x64 release is
+ready"). Not started. Revisit after the current `-x64` release gate
+closes, not before, unless explicitly reprioritized.
