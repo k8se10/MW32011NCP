@@ -5022,3 +5022,60 @@ exact numbers from its own first estimate -- x64 may need the same.
 **Not yet re-confirmed live** — next playtest should check whether the
 ported values land correctly or need their own adjustment (and in which
 direction/magnitude, if not).
+
+---
+
+**UPDATE 2026-09-14 (live playtest) — custom mouse cursor doesn't show
+at the MAIN MENU specifically (title screen, before loading a mission)
+-- native cursor shows instead. Real bug, confirmed via log, not
+expected behavior.**
+
+Live report: "i dont see our custom mouse cursor in game just the
+default one" -- clarified via direct follow-up: this was observed at
+the **main menu** specifically (not the in-game pause menu, not
+confirmed elsewhere yet).
+
+**Root cause, confirmed via direct log correlation**: `DrawCustomCursorIfNeeded`
+(`overlay_hud.cpp`) requires `IsMenuActiveX64_Exported()` to return true
+before it will draw anything (mirrors x86's own real design intentionally
+-- see that function's own extensive comment history on why the raw
+native visFlag/uiState pair alone spuriously reads "visible" during
+ordinary gameplay and can't be trusted on its own). In the live log from
+this exact session, `[x64-diag-gate] heartbeat` lines show
+`menuActiveGateFlag(DAT_1406e2550)=0x00000000` continuously, WHILE
+`[cursor-gate-diag]` shows `visFlag=1` firing multiple times
+(`uiState=2`, `uiState=12`) in the same window -- meaning the cursor's
+OWN gate check (`if (!forceCursorForEditor && !IsMenuActiveX64_Exported())
+return;`) returned early every single time, even though this was
+confirmed to be during the main menu specifically.
+
+**Real, important distinction this surfaces**: native D-pad+A/B MAIN
+MENU navigation is already separately confirmed working live
+(2026-09-13, "menus are on par... main menu wise") -- but that
+mechanism (`InjectControllerMenuNavX64`/`ForwardKeyToMenuX64`, driven
+via `InjectMenuInputTick`) does NOT appear to depend on
+`g_menuActiveGateFlag`/`DAT_1406e2550` reading nonzero the same way the
+cursor's gate does. This strongly suggests `DAT_1406e2550` tracks a
+DIFFERENT, narrower menu state than "any native menu is currently
+open" -- possibly specifically the in-game pause-menu-over-gameplay
+state, not the true main-menu/title-screen state before any mission is
+loaded. Not yet confirmed against x86's own real behavior at the true
+main menu specifically (its own `IsMenuActive_Exported()` on x86 may or
+may not have this same limitation -- needs checking, not assumed).
+
+**Not yet root-caused or fixed.** Real next steps:
+1. Check x86's own `IsMenuActive()`/`IsMenuActive_Exported()` behavior
+   at the true main menu specifically (not just in-game pause) -- does
+   x86 have the identical limitation (in which case this may be a real,
+   pre-existing x86 gap never noticed because x86 users rarely needed
+   the custom cursor at the pre-mission main menu specifically), or does
+   x86 correctly detect the main menu as "active" via a different/
+   broader signal x64 hasn't ported?
+2. Investigate what `DAT_1406e2550`'s real native semantics are via
+   fresh Ghidra decompile -- confirm precisely which menu states set
+   this bit vs. which don't, rather than assuming it's a simple binary
+   "any menu vs. no menu" flag.
+3. If the true main menu genuinely uses a different/additional signal
+   than in-game pause, find and OR it into `IsMenuActiveX64_Exported()`
+   (or add a parallel check specifically for the cursor's own gate) so
+   the cursor shows correctly at both.
