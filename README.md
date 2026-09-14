@@ -181,7 +181,13 @@ API, background threads, and more).
   (both backed by this mod's own config, not real game settings) actually
   work. See `re_notes/x64_feature_parity_audit.md` row #64 for the full
   trace — closing this needs real x64 reverse-engineering work, not
-  attempted yet.
+  attempted yet. **Lower priority than it first looked**: this whole
+  screen never actually finished maturing on `-x86` either (confirmed
+  2026-09-14 against `legacy-x86-docs/PATCHNOTES.md` — shipped v0.3.1 as
+  explicit preview/WIP, off by default, and never once mentioned again as
+  graduating past that all the way through v0.3.5). x64's specific gap
+  (the data layer, not the UI) is real and worth closing eventually, but
+  it isn't "behind a finished x86 feature" — neither line ever finished it.
 
 - **Controller-glyph icons now draw for real on x64 for eight in-game/menu
   hint categories** (2026-09-13, three same-day follow-up passes on top of
