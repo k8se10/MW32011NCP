@@ -1022,6 +1022,121 @@ Neither has any evidence yet connecting it to the shader-chain bug's own
 root cause — approach each as its own fresh investigation, not an
 extension of §5.10's.
 
+## 5.16. UPDATE, 2026-09-14 (later still, "two more forks", one interrupted by a session rate limit and finished directly by the coordinator) — the actual root cause of `code_post_gfx.ff`'s `MaterialPixelShader::name` corruption FOUND and CONFIRMED empirically: the offset-encoded pointer for this reference is genuinely 32-bit-wide on the wire, not 64-bit — this fork's own `ConvertOffsetToPointerNative` decodes every such pointer at a uniform, hardcoded 64-bit width
+
+**Status: root cause found and empirically confirmed via a real resolved string; fix not yet implemented — scope of the fix (this one field vs. this pointer class broadly) still needs deciding before writing code.**
+
+One of two forks dispatched this round (tracing `code_post_gfx.ff`'s
+corrupted bytes back to their true source, on-disk vs. our own memory
+reuse) was cut off mid-task by a session rate limit before finishing —
+it had already reverted its own earlier `LoadWithFill` instrumentation and
+was rebuilding when the interruption hit, leaving one file
+(`ZoneInputStream.cpp`) mid-edit with its diagnostic still in place, no
+commits made. Rather than discard that work and restart, the session
+coordinator picked it up directly: rebuilt with the existing diagnostic,
+re-ran it, and confirmed the fork's own headline result (§5.14 already
+documented this) — the raw bytes really are `AB 2A 01 30 00 00 00 00`,
+genuinely present at the correct computed decompressed-payload offset in
+an independently-decompressed copy of `code_post_gfx.ff`, not a memory-
+reuse artifact of this fork's own code.
+
+**Pushed one step further, past where the interrupted fork stopped**:
+decoded those exact 8 bytes as a little-endian `uint64_t`:
+`0x30012AAB` (top 4 bytes all zero). Feeding that into this project's own
+already-documented offset decode formula (§5.9: `offsetInt = raw - 1u;
+blockNum = (offsetInt & m_block_mask) >> m_block_shift; blockOffset =
+offsetInt & m_offset_mask`) with the fork's actual hardcoded
+`m_block_shift = pointerBitCount - blockBitCount = 64 - 4 = 60` gives
+`blockNum = 0` (`XFILE_BLOCK_TEMP`) and `blockOffset = 805382826` — **an
+exact, bit-perfect match for the live error message's own reported
+values** (`"Zone referenced offset 805382826 of block XFILE_BLOCK_TEMP
+which is larger than its size 351378"`), confirming the decode math itself
+isn't the bug — the INPUT WIDTH is.
+
+**The real insight**: the raw value's top 32 bits are all zero — exactly
+the shape of a value that was only ever meant to be 32 bits wide, stored
+in a nominally-64-bit-wide pointer slot. Decoding the SAME 8 bytes as if
+only the low 32 bits are meaningful (`offsetInt32 = raw & 0xFFFFFFFF`,
+`blockNum = (offsetInt32 >> 28) & 0xF`, `blockOffset = offsetInt32 &
+0x0FFFFFFF` — i.e. the old x86-era 4-bit-block-index-in-a-32-bit-word
+scheme, not scaled up to this fork's 64-bit pointer width) gives
+`blockNum = 3` (`XFILE_BLOCK_VIRTUAL`) and `blockOffset = 76458`.
+
+**Two independent lines of evidence confirm this alternate decode is
+correct, not the current one**:
+1. `Load_MaterialPixelShader`'s own generated code (already quoted in
+   §5.9) calls `m_stream.PushBlock(XFILE_BLOCK_VIRTUAL)` immediately
+   before reading `name` — the code's OWN expectation is that this string
+   lives in the VIRTUAL block, exactly matching the alternate decode's
+   `blockNum = 3`, not the current decode's `blockNum = 0` (TEMP).
+2. **Direct empirical test, not just arithmetic**: added a temporary,
+   non-behavior-changing diagnostic to `ConvertOffsetToPointerNative`
+   logging both decodes side by side right before the real throw, plus
+   every block's own real `m_buffer_size` for this zone
+   (`[0]=351378 [1]=0 [2]=0 [3]=1728453 [4]=0 [5]=0 [6]=4224 [7]=480
+   [8]=0` — VIRTUAL, index 3, is a real 1.7MB block, comfortably larger
+   than the alternate decode's 76,458-byte offset). Dumping the actual
+   bytes at `m_blocks[3]->m_buffer[76458]` under the alternate decode
+   produced a **genuinely readable, plausible string**:
+   `trivial_vertcol_simple.hlsl` — a real HLSL shader source filename,
+   not noise. This is about as strong a confirmation as this technique
+   can produce: the "corrupted" bytes were never corrupted at all, they
+   were being decoded at the wrong pointer width the whole time.
+
+**Why this makes semantic sense**: `trivial_vertcol_simple.hlsl` reads as
+a shared/interned source filename — plausibly reused across many
+pixel/vertex shader permutations compiled from the same file, stored once
+and cross-referenced by offset rather than duplicated per-asset. That this
+specific cross-reference sits in `XFILE_BLOCK_VIRTUAL` (a block already
+confirmed, per §5.9, to hold `MaterialVertexShader`/`MaterialPixelShader`'s
+own struct data, pushed via the identical `PushBlock(XFILE_BLOCK_VIRTUAL)`
+call this exact code path uses) is consistent, not coincidental.
+
+**Genuinely open, NOT yet answered — this is the real next step, not a
+loose end to ignore**: is this 32-bit-vs-64-bit encoding-width mismatch
+specific to THIS ONE FIELD (an interned/shared string reference,
+distinct in kind from a fresh `FOLLOWING`-sentinel string, which
+`MaterialVertexShader::name` in the SAME zone correctly reads as `FF×8`
+via a completely different code path that never touches
+`ConvertOffsetToPointerNative` at all) — or a broader, systemic bug in
+how this fork's `ConvertOffsetToPointerNative`/`ConvertOffsetToAliasLookup`
+decode ANY already-resolved (non-`FOLLOWING`/`INSERT`) offset pointer
+throughout the whole x64 zone format, which would mean the SAME fix could
+plausibly also unblock `hamburg.ff`'s `XModel` failure and `common.ff`'s
+`AddonMapEnts` failure (§5.15) — both of which throw from the exact same
+`InvalidOffsetBlockOffsetException` call site, both of which also report
+`blockNum = 0` (TEMP) in their own error messages, consistent with (but
+not proof of) the identical top-32-bits-zero shape. **Not tested against
+either zone this round** — a real, concrete, well-scoped next step, not
+idle speculation.
+
+**No code change applied.** The diagnostic (an addition to
+`ConvertOffsetToPointerNative` logging both decodes and dumping alt-
+resolved bytes, non-behavior-changing — the real code path and its throw
+were left completely untouched) was fully reverted via `git checkout --`,
+confirmed clean (`git status`/`git diff --stat` both empty for this file),
+rebuilt, and all four known zones (`sp_intro.ff`/`sp_prague.ff`/
+`code_post_gfx.ff`/`hamburg.ff`/`common.ff`) re-verified to reproduce
+their exact prior signatures with 0 regression before this round ended.
+
+**A real fix was deliberately NOT attempted this round**, for a concrete
+reason: `m_block_mask`/`m_block_shift`/`m_offset_mask` are single,
+stream-wide constants computed once from `IW5_X64_POINTER_BIT_COUNT = 64u`
+and used identically for EVERY offset-encoded pointer resolution in the
+entire file — dispatch records, `XAssetList` header pointers, every other
+already-working `FillPtr` call across every asset type this session has
+already confirmed correct. A blanket width change would very likely break
+things that currently work; a genuinely correct fix needs to first
+determine WHICH pointers are 32-bit-wide (all "already-resolved,
+non-sentinel" ones? only interned-string cross-references specifically?
+something else?) before writing code that discriminates between them —
+exactly the open question two paragraphs above. Recommended next step:
+one more focused round testing this exact technique (dump-and-compare
+against real block buffers under the alternate decode) against
+`hamburg.ff`'s `XModel` failure and `common.ff`'s `AddonMapEnts` failure
+specifically, to determine whether this is one narrow fix or a systemic
+one before implementing anything.
+
 ## 6. Scoped plan for in-house tooling — an MVP, not a full OpenAssetTools replacement
 
 **This project's own actual need is narrow**: GSC/rawfile extraction to

@@ -6908,3 +6908,60 @@ instrumentation fully reverted, rebuild re-verified against all four
 known zone signatures (`hamburg.ff`/`common.ff`/`code_post_gfx.ff`/
 `sp_intro.ff`), 0 regression. Full trail:
 `re_notes/x64_migration/fastfile_format_research.md` §5.15.
+
+### ROOT CAUSE FOUND (empirically confirmed), 2026-09-14 (later still, "two more forks", one interrupted by a rate limit and finished directly by the coordinator) — `code_post_gfx.ff`'s `MaterialPixelShader::name` corruption is a pointer-width bug, not corrupted data: the offset-encoded pointer is genuinely 32-bit on the wire, this fork's decoder reads every such pointer at a hardcoded 64-bit width
+
+**Status: root cause found and empirically confirmed via a real resolved
+string (not just arithmetic) — fix NOT yet implemented, scope (one field
+vs. a broader pointer class) still open.**
+
+A fork tracing the corrupted bytes to their true source was cut off
+mid-task by a session rate limit, having already proven (per the round
+above) that the raw bytes are genuinely present on disk, not a memory-
+reuse artifact. The coordinator picked its work up directly, using its
+own still-in-place diagnostic.
+
+**Decisive finding**: the 8 "corrupted" bytes (`AB 2A 01 30 00 00 00 00`)
+decode as a `uint64_t` with the TOP 4 BYTES ALL ZERO — the shape of a
+value only ever meant to be 32 bits wide, sitting in a nominally-64-bit
+pointer slot. Decoded at the fork's actual hardcoded 64-bit width, this
+exactly reproduces the live error (`blockNum=0`/TEMP, `blockOffset=
+805382826` — bit-perfect match to the error message's own numbers).
+Decoded instead as if only the low 32 bits matter (the old x86-era
+4-bit-block-index-in-a-32-bit-word scheme), it gives `blockNum=3`
+(`XFILE_BLOCK_VIRTUAL`) and `blockOffset=76458`.
+
+**Confirmed empirically, not just by arithmetic**: `Load_MaterialPixelShader`'s
+own generated code already pushes `XFILE_BLOCK_VIRTUAL` right before
+reading `name` — exactly matching the alternate decode's block, not the
+current one. A temporary diagnostic dumped the real bytes at
+`m_blocks[3]->m_buffer[76458]` under the alternate decode: **`trivial_
+vertcol_simple.hlsl`** — a genuine, readable HLSL shader filename, not
+noise. The "corruption" was never corrupted data; it was the correct
+bytes decoded at the wrong pointer width the whole session.
+
+**Real open question, not yet answered**: is this 32-bit-vs-64-bit
+mismatch specific to this one field (a shared/interned shader-filename
+cross-reference — a genuinely different kind of pointer from a fresh
+`FOLLOWING` string, which `MaterialVertexShader::name` in the same zone
+reads correctly via a totally separate code path), or does it affect
+EVERY already-resolved offset pointer this fork decodes via
+`ConvertOffsetToPointerNative`/`ConvertOffsetToAliasLookup` — which use
+one shared, stream-wide width constant for the whole file. If it's the
+latter, the same fix could plausibly also unblock `hamburg.ff`'s `XModel`
+failure and `common.ff`'s `AddonMapEnts` failure (previous round) — both
+throw from the identical exception site and both also report `blockNum=0`
+(TEMP), consistent with but not proof of the same shape. **Not tested
+against either zone yet.**
+
+**No fix applied, deliberately** — the decode-width constants are shared
+across every pointer resolution in the file; changing them blindly risks
+breaking dozens of asset types already confirmed working. The diagnostic
+was fully reverted (`git checkout --`, confirmed clean), rebuilt, and all
+five known zones re-verified to reproduce their exact prior signatures
+(sp_intro.ff/sp_prague.ff succeed; code_post_gfx.ff/hamburg.ff/common.ff
+fail identically) with 0 regression. **Concrete next step**: run the same
+dump-and-compare technique against `hamburg.ff`/`common.ff`'s own failures
+to determine whether this is one narrow fix or a systemic one, before
+writing any fix code. Full trail:
+`re_notes/x64_migration/fastfile_format_research.md` §5.16.
