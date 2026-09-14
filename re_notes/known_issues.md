@@ -2434,7 +2434,7 @@ found, in the findings below — this is a scan aid, not a replacement):
 - Bug #5, Goalpost mortar/turret — **Resolved**, decisively (both the mission mis-ID and the regen-buff hypothesis were run down).
 - Bug #6, mounted-turret feels harder — **Resolved** (Hypothesis A: missing aim-precision channel, same as DPV/mortar; Hypothesis B, a scripted regen buff, was refuted).
 - Bug #7, "Mind the Gap" vehicle-exit prompt — **Open**, real exit-trigger not located.
-- Bug #8, SMAW lock-on vs. an aircraft — **Open**, not even confirmed to be a real bug (may be a non-targetable scripted entity).
+- Bug #8, SMAW lock-on vs. an aircraft — **Resolved (2026-09-14): confirmed NOT a bug.** The Goalpost SMAW is a native, data-driven dumb-fire-only weapon variant (`weapons/smaw_nolock`, `lockonSupported\0`) — lock-on is structurally absent from the weapon itself, identically on every input device. No entity/scripting investigation or native RE was needed.
 - Bug #9, Predator Missile post-fire guidance — **corrected 2026-08-01, this
   line previously overclaimed a full fix**: only the LAUNCH half is
   **Resolved** (the `"n 1"` delivery-index fix, 2026-07-18, issue #29). The
@@ -3450,6 +3450,77 @@ Directly relevant to task #7 (killstreak input) and refines issue #26's vehicle 
   test first** (does keyboard lock onto the SAME aircraft in the SAME
   spot?) before any RE work — if keyboard also fails, this closes as a
   non-issue, not a bug.
+
+  **RESOLVED (2026-09-14, dedicated GSC-first investigation, per direct
+  instruction to start from script logic before any native-side work):
+  confirmed NOT a bug — explanation (b) above, but settled at a stronger,
+  more direct layer than "scripted entity" (no entity-flag investigation
+  was even needed).** Used `xensik/gsc-tool` (`gsc-tool.exe -m decomp -g
+  iw5 -s pc`) to decompile all 24 named `hamburg.ff` `maps/hamburg*.gscbin`
+  scripts fresh (`D:\Tools\OpenAssetTools\zone_dump_hamburg_fresh`,
+  re-confirmed as Goalpost's real zone via the same T-90/SMAW asset
+  evidence already on record) plus the zone's ~105 numbered/hash-named
+  scripts, and grepped both the decompiled source and the raw `.gscbin`
+  bytecode (a raw byte-level string scan, not just decompiled-text grep)
+  for `smaw` — **zero hits anywhere in the entire zone's script corpus,
+  named or numbered.** This means the SMAW is never referenced by literal
+  name in any GSC call in this mission at all (no `giveweapon("smaw...")`,
+  no swap/upgrade logic) — it's placed purely as a static map-entity
+  weapon (consistent with `hamburg.ff` having its own real `.mapents`,
+  already on record from an earlier session), not something any script
+  logic gates or swaps.
+  **The real answer instead came directly from the weapon's own native
+  data file, `weapons/smaw_nolock`** (dumped via OpenAssetTools'
+  `Unlinker.exe` against `hamburg.ff`, the exact file this project's own
+  research already knew existed by name but had never actually opened).
+  Its own fields, read directly:
+  ```
+  displayName\WEAPON_SMAW\...\lockonSupported\0\requireLockonToFire\0\...
+  \guidedMissileType\None\...\autoAimRange\0\aimAssistRange\0\aimAssistRangeAds\0\...
+  ```
+  `lockonSupported\0` and `guidedMissileType\None` are set directly in the
+  weapon's own native config — lock-on is not merely unused in this
+  mission, it is structurally compiled out of this specific weapon
+  variant. **Direct, decisive comparison against the real lock-on-capable
+  SMAW**: MW32011NCP's own asset dumps separately contain `weapons/
+  iw5_smaw_mp` (the Multiplayer SMAW, unrelated to this mission but a
+  real same-engine same-weapon-family comparison point), whose file reads
+  `lockonSupported\1`, `guidedMissileType\Sidewinder` — genuinely
+  lock-on-capable, at the exact same field, in the exact same file format.
+  The Goalpost variant isn't a lesser-tuned copy of that weapon; it's a
+  deliberately different, explicitly-named (`smaw_nolock`, the asset's own
+  literal name) configuration with the capability turned off outright.
+  Also checked and ruled out: the zone's `weapons/` folder additionally
+  contains `javelin`/`javelin_cheap`/`javelin_no_explode` files (a
+  real-world/CoD-series lock-on AT weapon) that could theoretically have
+  been the "real" lock-on weapon for this encounter — but all three read
+  `lockonSupported\0` too (their `guidedMissileType\Javelin` governs
+  in-flight projectile behavior once fired, not player pre-fire lock-on,
+  a genuinely separate field), and none is referenced anywhere in the
+  zone's GSC either (same zero-hit raw scan) — not a live alternative,
+  most likely a shared/common asset that happens to ship in this zone
+  bundle rather than mission content.
+  Confirmed via the mission's own named scripts (`hamburg_intro.gsc`,
+  `hamburg_landing_zone.gsc`, `hamburg_end_streets.gsc`,
+  `hamburg_end_nest.gsc`) that the encountered aircraft are real enemy
+  helicopters (`maps\_helicopter_globals::fire_missile("apache_zippy"/
+  "mi28_zippy", ...)`, firing missiles at the player during a
+  landing-zone/street set-piece) — genuine, present, hostile aircraft, not
+  a red herring — but irrelevant to the actual verdict: since the weapon
+  itself has no lock-on code path active at all, no target-side flag on
+  that (or any) entity could ever matter.
+  **Conclusion: this is not a controller-specific bug, not an
+  input-device bug of any kind, and not a scripted-entity-targetability
+  issue** — it's the correct, intentional native behavior of the specific
+  SMAW configuration Goalpost equips the player with. Keyboard would fail
+  identically (confirmed by data, not by needing a live keyboard test —
+  the weapon file is authoritative and applies regardless of input
+  device). No native RE, no hook, and no fix of any kind is applicable or
+  needed; nothing in this project's controller-input layer is implicated.
+  Applies equally to `-x86` and `-x64` — the `.ff` zone/weapon-data files
+  are shared game content, not part of the recompiled native binary, so
+  this finding is architecture-independent by nature. Closing Bug #8 and
+  task #29 (`killstreak_reference.md`) as resolved-not-a-bug.
 - **Bug #9 — Predator Missile (`remote_missile`), post-fire missile-guidance
   sequence: movement breaks on controller.** Reported live: after firing,
   the sequence where the player controls the flying missile in flight
@@ -7286,8 +7357,13 @@ pass):
 - Mounted M2 turret feel (Goalpost, issue #30, task #27) — works but harder
   than expected.
 - DPV aiming (Hunter Killer, issue #30) — movement works, aim doesn't.
-- SMAW lock-on vs. aircraft (task #29) — unconfirmed whether even a real
-  bug.
+- ~~SMAW lock-on vs. aircraft (task #29)~~ **RESOLVED 2026-09-14 — confirmed
+  NOT a bug** (native weapon-data finding, `lockonSupported\0` on the
+  Goalpost-specific `smaw_nolock` weapon file — see issue #27 Bug #8's
+  final round). Not an instance of this reframing hypothesis either: the
+  cause isn't a PC-specific input-mechanism redesign, it's a native
+  data-driven capability flag that applies identically to every input
+  device.
 - AC-130 gun-type switching (issue #40, this session) — the newest data
   point; also the one where a genuinely PC-specific input scheme (e.g. a
   keyboard-modifier or scroll-wheel-driven switch never designed to map

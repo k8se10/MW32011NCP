@@ -377,6 +377,20 @@ live, detailed status on every item below.
    "anchor on a real reference-key string, trace forward to the draw call"
    technique x86's own original discovery used, plus a real, independently-
    confirmed x64 `SEH_GetString` equivalent (`FUN_14029f120`).
+4. **SMAW lock-on vs. aircraft (Goalpost, `known_issues.md` issue #27 Bug
+   #8/task #29) closed as confirmed NOT a bug**, resolving one of this
+   project's longest-open Campaign killstreak questions with zero native
+   RE needed. Starting from GSC (per this project's own "start from script
+   logic first" methodology, using `xensik/gsc-tool`) found the SMAW is
+   never referenced by name anywhere in Goalpost's own scripts at all; the
+   real answer was in the weapon's own native data file instead —
+   `weapons/smaw_nolock` sets `lockonSupported\0`/`guidedMissileType\None`
+   directly, a deliberately dumb-fire-only weapon configuration, distinct
+   from the genuinely lock-on-capable `weapons/iw5_smaw_mp`
+   (`lockonSupported\1`/`guidedMissileType\Sidewinder`) found elsewhere in
+   this project's asset dumps. Applies identically on `-x86`/`-x64` and
+   regardless of input device — the `.ff` zone/weapon-data files are game
+   content, not part of the recompiled native binary.
 
 ### Investigated, Not Yet Resolved
 1. **Fire and/or ADS fails — first live playtest of the x64 build,
