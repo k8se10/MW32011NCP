@@ -7105,3 +7105,54 @@ round above (would likely also resolve `code_post_gfx.ff`'s newly-exposed
 pass); `hamburg.ff`/`common.ff`'s own separate forward-reference question,
 untouched by this fix. Full trail:
 `re_notes/x64_migration/fastfile_format_research.md` §5.19.
+
+### SHIPPED (real, tested fix), 2026-09-14 (later still, "just keep pushing") — the broader global offset-pointer decode fix landed for real, with two additional safety mechanisms found necessary by testing it live; zero crashes across the full 39-zone sweep, real progress on every previously-blocked zone
+
+**Status: shipped, tested, safe.** Replaced the hardcoded 64-bit-wide
+offset decode in all four `ConvertOffsetTo*` functions with the real
+native 32-bit scheme as the actual, only decode (not a narrow per-field
+fallback — the round above's own fix stays in place, now redundant for
+the case it was built for, but harmless).
+
+**Correctness alone wasn't safety — two real, live-confirmed crashes led
+to two more fixes, neither anticipated up front:**
+1. The corrected decode alone **segfaulted `hamburg.ff`/`common.ff`** —
+   the old, wrong decode had been accidentally catching a genuine
+   forward-reference bug (§5.17's leading theory, now confirmed) by
+   producing a wildly out-of-bounds offset. Fixed with a write-cursor
+   check (`m_block_offsets[blockNum]`, the block's own real "how much
+   has genuinely been written" counter) alongside the existing
+   total-capacity check.
+2. **Still segfaulted**, at a different point entirely — bisected via a
+   full function-entry trace to `ConvertOffsetToAliasLookup` returning
+   successfully via a stale, not-yet-resolved alias target: confirmed
+   live that resolving `hamburg.ff`'s own `XModel` asset 16 returned
+   `0x30029229`, identical in shape to the raw offset just looked up,
+   not a real heap address (`~0x165b694d018`-class, confirmed from this
+   same process). A genuine reference chain — asset A's pointer aliases
+   asset B's pointer, and B's own field hadn't itself been resolved yet
+   — not a decode bug. Fixed with a bounded (16-hop) chase: detect a
+   "resolved" value that still looks like a raw offset (fits in 32
+   bits — a real pointer never does) and resolve it through the same
+   lookup one more hop, rather than trusting or giving up on it.
+
+**Full 39-zone sweep, not just the five already-tracked zones**:
+`sp_intro.ff`/`sp_prague.ff` unaffected; `code_post_gfx.ff`'s original
+failure gone, now fails later at a different, not-yet-investigated bug;
+`hamburg.ff`/`common.ff` no longer crash, clean errors at
+further-progressed points; **`so_trainer2_so_deltacamp`, previously
+failing, now succeeds fully** — the confirmed-working set moves from
+2/39 to 3/39. **Zero crashes across all 39 zones**, and every remaining
+failure now produces a specific, useful error instead of the old,
+uniformly misleading `"block XFILE_BLOCK_TEMP"` text every failure used
+to show regardless of real cause.
+
+All temporary diagnostics fully removed before commit. Commit `e2fdeb07`.
+
+**Concrete next steps**: `code_post_gfx.ff`'s own new later failure
+(`XFILE_BLOCK_CALLBACK` size 0); a separate `"invalid block 15"` bug
+affecting `sp_dubai.ff`/`so_deltacamp.ff`; whether the remaining
+`"lookup ... not recorded"` failures (most of the still-failing zones)
+share one cause or need real architectural work (a second load pass) —
+none investigated yet. Full trail:
+`re_notes/x64_migration/fastfile_format_research.md` §5.20.
