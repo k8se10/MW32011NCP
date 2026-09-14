@@ -168,7 +168,96 @@ real x64 struct widths for the `scriptfile`/`rawfile` asset chain from
 `iw5sp.exe`'s own zone-loading code. The plan below (originally written
 before the fork existed) still describes the right scope.
 
-## 5. Scoped plan for in-house tooling — an MVP, not a full OpenAssetTools replacement
+## 5. UPDATE, 2026-09-14 (later still, "dig into fixing iw5oat in full for x64") — the real fix found: the per-asset dispatch record's exact byte layout, confirmed and cross-validated
+
+Direct instruction to dig into a full x64 fix. Traced the real native
+zone-loading chain in `iw5sp.exe` from scratch (ground truth — the game
+successfully loads these exact files every launch), starting from the
+FastFile magic constant itself: a raw byte scan (magic isn't
+null-terminated, so it doesn't show up in a normal string scan — a new
+script, `RawByteScan.java`, was needed and is now a reusable addition to
+`re_notes/ghidra_scripts/`) found exactly one hit, inside `FUN_14008eba0`
+— the real zone-header entry point.
+
+**Traced end to end, function by function** (`FUN_14008eba0` →
+`FUN_1400a4460`/`FUN_1400a4500` → `FUN_1400965d0`/`FUN_1400aabd0` →
+`FUN_14009bce0`, full decompiles in `re_notes/x64_migration/
+ui_pipeline_trace/decomp_zoneheader_14008eba0.txt` and siblings):
+
+1. **The 21-byte outer header** (magic 8 + version 4 + 1-byte unknown +
+   8-byte timestamp) — **CONFIRMED UNCHANGED**, byte-for-byte match to
+   §1's own raw hex-dump finding and to OAT's existing
+   `ZoneLoaderFactoryIW5.cpp` skip-byte sequence exactly. No fix needed
+   here.
+2. **A 44-byte (`0x2c`) block-size header**, read immediately after: 2
+   unidentified/size-tracking 4-byte ints, then **9 plain 4-byte ints** —
+   one size per `XFILE_BLOCK_*` type (TEMP/PHYSICAL/RUNTIME/VIRTUAL/
+   LARGE/CALLBACK/VERTEX/INDEX/SCRIPT — the same 9 OAT's own `SetupBlock`
+   already lists). **CONFIRMED UNCHANGED on disk** — every field here is
+   a plain 4-byte int, untouched by the x64 pointer-width change. The
+   widening this project originally suspected here doesn't exist — only
+   OAT's own RUNTIME (in-memory) tracking struct for these 9 blocks needs
+   to grow (traced via `FUN_1400a4500`: each block's runtime slot grew
+   from an x86 8-byte `{ptr:4, size:4}` to a confirmed x64 16-byte
+   `{ptr:8, size:4, pad:4}` — real, but purely an OAT-internal C++ struct
+   concern, not a parsing fix).
+3. **THE REAL FIX — the per-asset dispatch record, `FUN_14009bce0`**:
+   reads a **16-byte record** per asset (`FUN_1400aad70(param_1,
+   DAT_1407bd860, 0x10)`), where the first 4 bytes are the asset-type ID
+   and — critically — **the data pointer sits at BYTE OFFSET +8, not
+   +4**, i.e. the record is `{ int32 assetType; int32 _pad; int64
+   dataPtr; }`, 16 bytes total. This is the actual crash mechanism,
+   confirmed precisely: OAT's IW5 loader (assuming x86's original
+   `{ int32 assetType; int32 dataPtr; }`, 8 bytes total) reads records at
+   HALF the real stride — after the first asset, every subsequent "type"
+   field OAT reads is actually the low half of the PREVIOUS asset's own
+   64-bit pointer, cascading into garbage type IDs and pointers almost
+   immediately. This single stride/offset fix is the one change that
+   would let a loader correctly walk the full asset list and recover
+   every asset's real type and data pointer — the foundation every
+   individual per-type asset parser sits on top of.
+
+**Cross-validated against OAT's own IW5 asset-type enum** (`src/Common/
+Game/IW5/IW5.h`, `ASSET_TYPE_*`), not just assumed: the native switch's
+real case range is **exactly 0 through 0x2d (45)** — 46 values — which is
+**precisely** OAT's own enum length (`PHYSPRESET`=0 through
+`ADDON_MAP_ENTS`=45, then the `ASSET_TYPE_COUNT` sentinel). Exact,
+index-for-index agreement, not a coincidence — confirms the asset-type
+enum itself is completely unchanged between x86 and x64 (enum values are
+plain integers, architecture-independent, as expected) and that this IS
+the real, correct dispatch point.
+
+**A genuine, separate discovery surfaced by this same trace**: `iw5sp.exe`
+does NOT populate handlers for 6 of the 46 asset types — `UI_MAP` (0x17),
+`WEAPON` (0x1e), `SURFACE_FX` (0x22), `AITYPE` (0x23), `MPTYPE` (0x24),
+`CHARACTER` (0x25) all fall through with no case in this specific
+dispatch. Plausible and unsurprising given this is the Campaign/Survival
+binary (`WEAPON`/`AITYPE`/`CHARACTER`/`MPTYPE` in particular sound like
+they'd load through their own specialized paths or not apply to SP at
+all) — not independently confirmed why, flagged as a real fact for a
+future pass, not acted on further this round.
+
+**What this unblocks, concretely**: fixing this one 8→16-byte stride
+change in `iw5oat`'s IW5 zone-content-reading loop (the direct analog of
+`FUN_14009bce0` above) would let the tool correctly enumerate every asset
+in any current x64 zone — its real type and its real data pointer — even
+before any individual per-type asset struct (GfxImage, XModel, Weapon,
+etc.) gets its own x64 fix. That's a huge practical unblock on its own:
+basic listing/triage of a zone's real contents becomes possible
+immediately, and this project's own actual need (GSC/`rawfile`/
+`scriptfile` extraction, §6 below) needs exactly ONE more per-type struct
+fixed on top of this, not all 46.
+
+**Honest scope remaining, not finished this round**: this is the
+dispatch/routing layer, not the individual asset bodies. Each of the ~40
+per-type loader functions this dispatch calls into (`FUN_140096140` for
+type 0, `FUN_140095f90` for type 1, etc.) still serializes its own
+asset-specific struct with its own pointer fields that may have shifted
+independently — `scriptfile`/`rawfile` specifically (this project's real
+target) have NOT been individually traced yet. That's the actual next
+step, not started this round.
+
+## 6. Scoped plan for in-house tooling — an MVP, not a full OpenAssetTools replacement
 
 **This project's own actual need is narrow**: GSC/rawfile extraction to
 support the standing GSC-first RE methodology (`CLAUDE.md`'s own
@@ -177,20 +266,25 @@ etc.) the way OpenAssetTools targets generally. Recommending a real,
 achievable MVP rather than reproducing OpenAssetTools' full scope:
 
 - **A minimal, from-scratch zone-header parser**: read the confirmed-
-  unchanged outer header (§1), inflate the zlib payload (standard, any
-  language's zlib binding works), then parse ONLY the fields needed to
-  walk to `scriptfile`/`rawfile`-type asset entries specifically — not
-  every asset type in the zone.
-- **x64 struct widths for the FEW asset-adjacent structs this actually
-  touches** (the top-level `XFile`/zone-content header, the asset-type
-  dispatch table, and the `scriptfile`/`rawfile` asset struct itself) —
-  derived the same way every other x64 struct in this project has been
-  this session: decompile `iw5sp.exe`'s own real zone-loading code in
-  Ghidra (the game itself is the ground truth — it successfully loads
-  these exact files every time it launches) rather than guessing at
-  widened offsets from the x86 struct alone. **Not started yet** — this
-  is the actual next RE step, genuinely substantial but far smaller than
-  full asset-type coverage.
+  unchanged outer header (§1) and 44-byte block-size header (§5), inflate
+  the zlib payload (standard, any language's zlib binding works), walk
+  the now-fully-understood per-asset dispatch loop (§5's real fix — 16
+  bytes per record, `{type:4, pad:4, dataPtr:8}`) to enumerate every
+  asset by type, then parse ONLY the `scriptfile`/`rawfile` asset structs
+  specifically — not every asset type in the zone.
+- **The dispatch-loop fix itself is DONE (§5)** — the exact byte layout
+  is confirmed and cross-validated against OAT's own asset-type enum, not
+  a remaining unknown. **Still needed, not started**: the individual
+  `scriptfile`/`rawfile` asset struct's own real x64 field layout (asset
+  type indices 39/38 respectively per §5's enum mapping) — derived the
+  same way, decompiling their specific per-type loader functions
+  (`FUN_140095f90`-class functions §5 already located but did not open)
+  in `iw5sp.exe`.
+- **A concrete corollary of §5, worth stating plainly**: because the
+  dispatch loop is now understood, ANY of the other ~44 asset types could
+  be added later using the identical technique — this MVP scope is a
+  sequencing choice (do the one this project actually needs first), not a
+  hard technical ceiling on what's reachable.
 - **Public-tooling framing, per direct instruction**: build this as a
   clean, documented, standalone tool from the start (not a throwaway
   script) — the user's own stated intent is to release this as part of
@@ -212,7 +306,26 @@ achievable MVP rather than reproducing OpenAssetTools' full scope:
   — session-scratchpad only, not committed (regenerable from the live
   install with the same PowerShell `DeflateStream` approach, header offset
   0x17 for the raw deflate stream start).
-- `Laupetin/OpenAssetTools` — shallow-cloned to a scratchpad temp
+- `Laupetin/OpenAssetTools` — forked into `tools/iw5oat/` (§4); its full
+  source is now directly in this repo, no external clone needed to
+  re-check any claim above against it.
+- §5's dispatch-loop trace: `re_notes/x64_migration/ui_pipeline_trace/`
+  — `rawbyte_iwffu100.txt` (the raw byte scan that found the magic
+  constant despite it not being a null-terminated string),
+  `decomp_zoneheader_14008eba0.txt`/`callers_14008eba0.txt`,
+  `decomp_1400a8090.txt`/`callers_1400a8090.txt` (the real top-level
+  DB_LoadXFile-equivalent), `decomp_zoneload_chain1.txt`,
+  `decomp_inflate_chain.txt`, `decomp_1400a4740.txt`,
+  `decomp_1400eeb0_ef80.txt` (the XBlock allocator and its generic
+  9-block writer, `FUN_1400a4500`), `decomp_assetloop_candidates.txt`
+  (**the real find** — `FUN_14009bce0`'s full 46-case dispatch switch).
+  New reusable script: `re_notes/ghidra_scripts/RawByteScan.java` (finds
+  a non-null-terminated byte sequence anywhere in memory — the string-
+  based scanners this project already had all require Ghidra to have
+  auto-detected a `Data` string object first, which `-noanalysis` doesn't
+  do for a plain, unterminated magic constant).
+- Earlier scratchpad-only evidence (§1-§3), still session-local: `Laupetin/
+  OpenAssetTools` — shallow-cloned to a scratchpad temp
   directory this session (not vendored into this repo; the project's own
   existing vendored copy is the compiled `Unlinker.exe` binary only, per
   `re_notes/known_issues_x64.md`'s own record) — `git clone --depth 1

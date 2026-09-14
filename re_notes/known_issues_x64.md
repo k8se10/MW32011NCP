@@ -6293,3 +6293,50 @@ repo's own permissive license — documented in this repo's top-level
 already established. Real next step (fixing the hardcoded
 `GameWordSize::ARCH_32` and deriving x64 struct widths) not started yet.
 Full detail: `re_notes/x64_migration/fastfile_format_research.md` §4.
+
+### RESOLVED (the real fix identified), 2026-09-14 (later still) — the exact per-asset dispatch record layout that breaks OAT on x64, traced from `iw5sp.exe` ground truth and cross-validated
+
+**Status: Root cause of the actual crash mechanism found and confirmed.
+Not yet implemented in `tools/iw5oat/`.**
+
+Direct instruction: "dig into fixing iw5oat in full for x64." Traced the
+real native zone-loading chain in `iw5sp.exe` end to end, starting from
+the FastFile magic constant (needed a new script, `RawByteScan.java` —
+the magic isn't null-terminated so the existing string scanners, which
+rely on Ghidra having pre-detected a `Data` string object, never found
+it).
+
+**The real fix, found precisely**: the per-asset dispatch record
+(`FUN_14009bce0`, the native equivalent of OAT's own asset-type switch)
+is a confirmed **16-byte record on x64**: `{ int32 assetType; int32 pad;
+int64 dataPtr; }` — the data pointer sits at byte offset +8, not +4.
+OAT's IW5 loader assumes x86's original 8-byte record (`{ int32
+assetType; int32 dataPtr; }`) — reading at half the real stride, so after
+the first asset every "type" field it reads is actually the low half of
+the PREVIOUS asset's own 64-bit pointer. That's the exact, confirmed
+mechanism behind the segfault, not just "somewhere in here." **Cross-
+validated, not just asserted**: the native switch's real case range (0
+through 0x2d = 45) matches OAT's own `ASSET_TYPE_*` enum length exactly,
+index for index — confirms the asset-type enum itself is unchanged and
+this is genuinely the right dispatch point.
+
+**A real, separate discovery along the way**: `iw5sp.exe` has no handler
+for 6 of the 46 asset types in this specific dispatch —
+`UI_MAP`/`WEAPON`/`SURFACE_FX`/`AITYPE`/`MPTYPE`/`CHARACTER` — plausible
+for the Campaign/Survival binary specifically, not chased further this
+round.
+
+**Why this matters practically**: fixing this one stride/offset in
+`tools/iw5oat/`'s own zone-content loop would let it correctly enumerate
+every asset in any current x64 zone by real type and real data pointer —
+a major unblock on its own, before any individual per-type asset struct
+(GfxImage, XModel, etc.) is separately fixed. This project's own actual
+need (`scriptfile`/`rawfile` extraction) needs exactly one more per-type
+struct fixed on top of this, not all 46.
+
+**Honest remaining scope**: the dispatch/routing layer is solved; the
+individual `scriptfile`/`rawfile` asset structs' own real x64 field
+layouts are NOT yet traced — that's the actual next step, not started.
+Full technical detail, byte-exact struct definitions, and the complete
+raw Ghidra trail: `re_notes/x64_migration/fastfile_format_research.md`
+§5.

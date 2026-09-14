@@ -1,0 +1,54 @@
+Callers of 1400a8090 (1):
+  FUN_1400a7fd0 @ 1400a7fd0
+
+================================================================
+Function: FUN_1400a7fd0 @ 1400a7fd0
+----------------------------------------------------------------
+
+void FUN_1400a7fd0(void)
+
+{
+  bool bVar1;
+  uint uVar2;
+  int iVar3;
+  undefined8 uVar4;
+  ulonglong uVar5;
+  undefined *puVar6;
+  undefined4 *puVar7;
+  undefined1 auStack_48 [32];
+  
+  while( true ) {
+    uVar4 = FUN_140249fe0(2);
+    iVar3 = FUN_1403de2e0(uVar4,auStack_48);
+    if (iVar3 == 0) break;
+    FUN_14023c950();
+  }
+  do {
+    do {
+      FUN_14024aa50();
+      FUN_14024a630();
+      uVar2 = DAT_140d6dc30;
+    } while (DAT_140d6dc30 == 0);
+    DAT_140d6dc30 = 0;
+    bVar1 = false;
+    puVar7 = &DAT_140d6da30;
+    puVar6 = &DAT_140d6d9f0;
+    uVar5 = (ulonglong)uVar2;
+    do {
+      iVar3 = FUN_1400a8090(puVar6,*puVar7,puVar7[1]);
+      puVar7 = puVar7 + 0x12;
+      if (iVar3 != 0) {
+        bVar1 = true;
+      }
+      puVar6 = puVar6 + 0x48;
+      uVar5 = uVar5 - 1;
+    } while (uVar5 != 0);
+    if (!bVar1) {
+      DAT_140d6dc34 = 1;
+    }
+    FUN_140249f30();
+  } while( true );
+}
+
+
+
