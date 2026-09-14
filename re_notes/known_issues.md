@@ -7343,9 +7343,13 @@ re-decompiling would not add new evidence.
 
 ## 40. AC-130 (Iron Lady / Fire Mission) — CONFIRMED WORKING on controller except gun-type switching (2026-07-23, live playtest, task #7)
 
-**Status:** Partially Resolved. Flight/camera/fire all confirmed working live;
-two open gaps remain, both unstarted (gun-type switching — no RE done yet;
-gunship camera zoom sensitivity — parked on the roadmap, see below).
+**Status:** Partially Resolved. Flight/camera/fire all confirmed working live.
+Gap 2 (gunship zoom sensitivity) has a real, build-verified fix as of
+2026-09-14 (NOT yet live-tested). Gap 1 (gun-type switching) is now
+genuinely investigated (2026-09-14) but still unresolved — real GSC-level
+evidence found, but the exact SP/Spec-Ops script itself could not be
+decompiled this pass (see the 2026-09-14 round below for why). See that
+round for both gaps' full findings.
 
 **User-confirmed live playtest.** AC-130 gunship sequences work fully on
 controller — flight/camera control and firing all confirmed working, no
@@ -7403,6 +7407,210 @@ aiming (see `iw5sp.md`'s look-hook notes).
 **Status: parked on the roadmap, not started.** No RE performed yet, no code
 changed. Revisit alongside, or right after, the gun-type-switching fix above
 since both require getting back into a live AC-130 sequence to trace.
+
+### 2026-09-14 round: real investigation for both gaps, per direct instruction to start from GSC first
+
+**Status: gap 2 (zoom sensitivity) FIXED, build-verified, NOT yet live-tested.
+Gap 1 (gun-type switching) genuinely investigated in depth, still unresolved —
+no code changed, real evidence found, real blocker documented.**
+
+**Blocker found first, affects BOTH gaps' methodology and is a real,
+project-wide finding on its own: this project's OpenAssetTools-based GSC
+extraction pipeline is currently broken for every current retail zone.**
+Per direct instruction, GSC-first was attempted before any native RE:
+`paris_ac130.ff` is the real Iron Lady zone (confirmed via
+`main/video/paris_ac130_load.bik` and the save-file naming,
+`players2/save/autosave/paris_ac130-*.svg`). Both the project's existing
+`Unlinker.exe` (`D:\Tools\OpenAssetTools\extracted\`, v0.31.0) and a freshly
+downloaded latest release (v0.33.0, `D:\Tools\OpenAssetTools\v0.33.0\
+extracted\`) crash with an immediate, zero-output `STATUS_ACCESS_VIOLATION`
+(`0xC0000005`) attempting to unlink `paris_ac130.ff` — **not specific to
+this zone**: the same crash reproduces on `hamburg.ff` (successfully dumped
+by this exact same v0.31.0 build back on 2026-07-20, per
+`zone_dump_hamburg_fresh/`) and `common.ff`/`code_post_gfx.ff` (also
+previously successfully dumped). A small zone (`sp_intro.ff`, 303 bytes)
+and a small patch zone (`patch_paris_ac130.ff`, 57KB) both dump cleanly with
+either Unlinker build, so the tool itself isn't categorically broken — the
+crash is specific to large, real-content retail zones, all of which now
+carry a 2026-09-03 file modification date (the same date as this project's
+own x64 binary recompile event). `--include-assets scriptfile`/
+`--exclude-assets scriptfile`/`--skip-obj`/excluding every model-and-image
+asset type were all tried as workarounds; the crash reproduces identically
+regardless, meaning it happens during the zone's initial full deserialize
+(before any per-asset-type dump filtering applies), not in a specific asset
+parser that could be filtered around. The zone's own magic header
+(`IWffu100`) and its first compressed chunk (`0x78 0xda`, standard zlib
+best-compression) both look completely ordinary — this is NOT an obvious
+file-format version bump, more likely a specific new/changed asset instance
+somewhere in these large zones' actual content tripping a real parser bug in
+OpenAssetTools. **Not fixed this pass** (out of scope — patching a
+third-party native C++ tool's crash is its own multi-hour RE task, not
+something to absorb into this one); root-causing it (e.g. via a debugger
+attach) is the honest next step if a future session needs full zone dumps
+again, since every currently-published `zone_dump_*/` folder in this
+project predates 2026-09-03 and can no longer be refreshed or extended to a
+new zone with the current tooling. Cross-referenced in `re_notes/iw5sp.md`'s
+own GSC-pipeline section per this project's "note it in both places" policy.
+
+**Given the pipeline blocker, two alternate sources were used instead of a
+direct decompile of `paris_ac130`'s own script:**
+1. A whole-binary exact-string AND compound-substring scan of `iw5sp.exe`
+   (x64, via two new reusable Ghidra scripts, `re_notes/ghidra_scripts/
+   MultiStringScan.java`/`MultiSubstringScan.java` — scan raw memory once
+   for multiple needles in one pass, saving a full re-scan per candidate)
+   for `"105mm"`/`"40mm"`/`"25mm"`/`"ac130"`/`"gunship"`/`"cannon"`/
+   `"iron_lady"`/`"paris_ac"`/`"weapnextgunship"` and several other
+   candidate identifiers, as both exact standalone strings and as
+   substrings of a longer compound identifier. **Result: a single hit,
+   `"paris_ac130"` itself (the level-name string, zero code references to
+   it — a data-table entry, not something a dispatcher branches on) — every
+   other candidate, including every weapon-tier name, returned zero matches
+   anywhere in the executable.** This is decisive: none of the AC-130
+   gunship's weapon names, tiers, or mode-specific logic exist as native
+   code or native string literals in `iw5sp.exe` at all. Confirms this is a
+   genuinely GSC/data-driven system end to end, not a case of "the native
+   dispatch case exists somewhere, just needs finding" — there is no
+   native-only path to this answer, GSC source really is required.
+2. Two public community GSC dumps (`github.com/UBAProductionz/MW3-GSC-Dump`,
+   `github.com/Brentdevent/MW3-GSC-Dump`) were checked for the actual
+   Campaign/Spec-Ops script. **Neither contains SP/Spec-Ops map scripts at
+   all** (both are MP-only dumps — gametypes, createart/createfx, killstreak
+   scripts) — but both DO contain the real MP AC-130 killstreak script,
+   `maps/mp/killstreaks/_ac130.gsc` (1722 lines), which is genuinely useful
+   reference even though it is confirmed NOT the SP script this issue is
+   actually about.
+
+**What `_ac130.gsc` (MP) reveals, as a design-pattern reference (NOT
+confirmed to be what SP/Spec-Ops actually does):** gun-type switching for
+the MP AC-130 killstreak is driven entirely through the REAL native weapon
+inventory system, not any special notify or overlay-only mechanism —
+```
+var_0 maps\mp\_utility::_giveWeapon( "ac130_105mm_mp" );
+var_0 maps\mp\_utility::_giveWeapon( "ac130_40mm_mp" );
+var_0 maps\mp\_utility::_giveWeapon( "ac130_25mm_mp" );
+var_0 switchtoweapon( "ac130_105mm_mp" );
+```
+The player is given three real weapon-inventory items and starts on one;
+switching between them is therefore just normal `weapnext`/`weapprev`
+inventory cycling — the exact same native mechanism (and the exact same
+native function, `WeaponNext`/`FUN_004a5f70` on x86) this project's own Y
+button already calls for regular on-foot weapon switching, confirmed
+working live since 2026-07-15. `InjectControllerWeaponNext()`
+(`analog_input_hooks.cpp`) has no gunship/vehicle-state gate of any kind —
+it calls `WeaponNext(kLocalClientIndex, 1)` unconditionally on Y's release
+edge (outside the ready-up hold window), the same call regardless of
+context.
+
+**This creates a real, unresolved discrepancy worth recording precisely:**
+if SP/Spec-Ops' AC-130 sequence uses the same real weapon-inventory design
+MP's killstreak does, the ALREADY-EXISTING, unconditional `WeaponNext()`
+call our Y button makes should — in principle — already cycle it, the same
+way it cycles any other multi-weapon inventory. It does not (per the
+2026-07-23 live playtest). Two honest, unconfirmed candidate explanations,
+neither ruled in or out this pass:
+- **The SP/Spec-Ops implementation genuinely differs from MP's** (per issue
+  #41's own standing "PC-specific reimplementation" hypothesis) — e.g. a
+  single scripted pseudo-weapon with GSC-tracked fire-mode state instead of
+  three real inventory items, watching a `notifyonplayercommand`-gated
+  event for the switch instead of native `switchtoweapon`. This project's
+  own prior finding for the turret-cancel case (`re_notes/iw5sp.md`,
+  2026-07-16: D-pad Left's synthetic-key-press fix made `notifyonplayercommand(
+  "controller_sentry_cancel", "weapnext")` fire "for free," where a direct
+  native call to the same underlying function would not have) is a real,
+  already-proven-in-this-codebase precedent for exactly this class of gap —
+  a raw call to the native weapon-cycle function does not necessarily
+  satisfy a GSC-side `notifyonplayercommand` listener; only an actual
+  key-press event flowing through the real input pipeline reliably does.
+- Something about being vehicle-linked to the gunship (`playerlinktodelta`-
+  style linking, per the Goalpost turret precedent in
+  `re_notes/known_issues.md`'s mortar/turret entry) changes how
+  `WeaponNext`/`FUN_004a5f70` itself behaves for that entity, independent of
+  GSC.
+
+**Deliberately NOT implemented this pass.** A candidate fix exists
+(synthesize a real `WM_KEYDOWN`/`WM_KEYUP` for `'1'`/`'2'` — vanilla MW3's
+own confirmed default binds for `weapnext`, per `players2/config.cfg`'s
+`bind 1 "weapnext"` / `bind 2 "weapnext"` — via `PostMessageA`, the exact
+same technique already proven for Survival's ready-up F5 synthesis and
+D-pad Left's turret-cancel fix, in place of the current direct
+`WeaponNext()` call) but was deliberately NOT shipped: this project's own
+Y/weapnext handling is a CONFIRMED-LIVE, already-working feature for every
+other context, and switching its underlying mechanism on a hypothesis that
+cannot be live-tested in this session risks a real regression to something
+that currently works correctly (the exact failure mode issue #3's Back-
+button regression already taught this project to avoid — see `CLAUDE.md`
+§5's "never trust an assumption you can't independently confirm" standard).
+There is also no reliable native way to SCOPE such a change to
+gunship-context-only (confirmed above: nothing gunship-specific exists
+anywhere in the native binary to detect against), so a scoped fix isn't
+currently possible even if the mechanism hypothesis were confirmed.
+
+**Real next step, in priority order:** (1) root-cause or work around the
+OpenAssetTools crash so `paris_ac130.ff`'s actual GSC can be decompiled —
+this settles the mechanism question directly instead of reasoning from MP's
+analog; (2) failing that, a live-keycode-table trace during an actual
+AC-130 sequence (the original 2026-07-23 "next step," still valid and still
+not performed) would settle it empirically without needing the GSC source
+at all. Either one should be done BEFORE touching the currently-working
+`InjectControllerWeaponNext()` call path.
+
+---
+
+**Gap 2 (gunship zoom sensitivity): FIXED, build-verified, NOT yet
+live-tested (2026-09-14).** Confirmed via disassembly (not the blocked GSC
+path — this gap's real mechanism turned out to be entirely native/engine-
+side, unlike gap 1) that `GetEffectiveFov`/`GetEffectiveFovX64`
+(`FUN_004b0580`/`FUN_140069e60`, already used by this project's existing
+ADS look-slowdown, `GetAdsLookRateScale`/`GetAdsLookRateScaleX64`) is a
+GENERIC per-frame live-FOV query, not an ADS-specific one — its own
+disassembly (documented in full in `analog_input_hooks_x64.cpp`'s
+`GetEffectiveFovX64` comment, cross-checked against `re_notes/x64_migration/
+getEffectiveFov_dvarFindVar_x64.md`) shows its internal blend explicitly
+includes a `set_turret_fov`-driven lerp path alongside `set_lerp_fov`/
+`set_pip_fov` — the same class of mounted/vehicle-camera zoom transition the
+AC-130 gunship camera almost certainly uses (turret-style mounted view),
+confirmed via real xrefs to those three exact strings converging on this one
+call chain, not a guess from the function's name. The bug was never that
+this project lacked a way to read the gunship's live zoom level — it already
+had one, generically, for free — the bug was that `GetAdsLookRateScale(X64)`
+only ever CALLED that query while `g_adsHeld`/`g_adsHeldX64` (this project's
+own controller-ADS-held tracking flag) was true, which the AC-130 sequence
+never sets (it isn't a weapon-ADS state).
+
+**Fix**: compute the FOV ratio unconditionally every frame (confirmed safe —
+`GetEffectiveFov` has no observed side effects in its own disassembly, a
+pure query) and apply the existing scale formula whenever the ratio
+meaningfully drops below 1.0 (a real native zoom of ANY kind is active,
+threshold 0.995), OR `g_adsHeld` is true — not `g_adsHeld` alone. This
+preserves both already-confirmed-correct prior behaviors exactly (ordinary
+hipfire: ratio stays ~1.0, still short-circuits to 1.0 exactly as before;
+weapon ADS: `g_adsHeld` is still an unconditional trigger on its own,
+matching issue #8/#44's already-live-confirmed formula byte-for-byte) while
+adding coverage for any other real native zoom source, gunship included, for
+free. Ported identically to both `analog_input_hooks.cpp` (x86) and
+`analog_input_hooks_x64.cpp` (x64). A useful side effect worth flagging
+honestly: since this is driven purely by the live FOV ratio rather than any
+gunship-specific check, it should also correctly scale look sensitivity for
+ANY other native mounted/vehicle-turret zoom camera that goes through the
+same `set_turret_fov` path (e.g. Goalpost's M2 turret, if its zoom uses the
+same transition) — not verified against any of those, since none were
+in scope for this pass, but flagged since it's a real, unplanned
+consequence of the fix's own generality, not scope creep in the shipped
+code itself.
+
+**Build-verified**: x64 `/t:Rebuild` 0 errors (same pre-existing warnings
+only), `dumpbin` confirms `8664 machine (x64)` with a fresh timestamp; Win32
+regression rebuild 0 errors; x64 rebuilt and redeployed last. **NOT yet
+live-tested** — this session had no way to get back into a live AC-130
+sequence (no live-play capability in this session at all, independent of
+the GSC-pipeline blocker above), so confidence is native-evidence-based
+(the `set_turret_fov` disassembly match) rather than live-confirmed. Real,
+specific risk worth a future tester watching for: if some OTHER native
+system also legitimately drops `effectiveFov` below the 0.995 threshold
+outside of ADS/gunship zoom (nothing found in this session's RE, but not
+exhaustively ruled out either), that system's look sensitivity would now
+also get scaled, which may or may not be desired — worth an explicit check
+during the first live test.
 
 ---
 

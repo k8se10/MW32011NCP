@@ -5348,3 +5348,65 @@ Matches this project's own standing §8 testing bar -- a fix for a bug
 that's never worked on any architecture ships as the best-evidenced
 mechanism with honestly-flagged open tuning, not a guessed-and-hidden
 "done."
+
+**UPDATE 2026-09-14 (AC-130 gunship, `known_issues.md` issue #40) --
+gap 2 (zoom sensitivity) FIXED both platforms, build-verified, not yet
+live-tested; gap 1 (gun-type switching) investigated, real project-wide
+GSC-pipeline blocker found, no code changed.** Per direct instruction to
+start from GSC first: `paris_ac130.ff` is the real Iron Lady zone, but
+this project's own OpenAssetTools `Unlinker.exe` (both the existing
+v0.31.0 build and a freshly downloaded v0.33.0) crashes with an immediate
+`STATUS_ACCESS_VIOLATION` on every current large retail zone tried --
+`paris_ac130.ff`, `hamburg.ff`, `common.ff`, `code_post_gfx.ff` -- three of
+which this exact v0.31.0 build successfully dumped in July, before this
+project's own 2026-09-03 x64 recompile event (the current file-modify date
+on every affected zone). Small zones and patch zones still dump fine, and
+`--include`/`--exclude-assets`/`--skip-obj` don't route around it (crash
+happens during the zone's initial deserialize, before per-asset filtering
+applies) -- a real, reproducible, project-wide regression, not specific to
+this mission or this session's tooling setup. Not root-caused or fixed
+(a third-party native-tool crash is its own separate task) -- any future
+session needing a fresh zone dump (of ANY current zone, not just this one)
+will hit the same wall until this is either fixed or worked around.
+
+With direct decompilation blocked, a whole-binary exact-string and
+compound-substring scan of `iw5sp.exe` (x64, `MultiStringScan.java`/
+`MultiSubstringScan.java`, new reusable single-pass multi-needle scripts in
+`re_notes/ghidra_scripts/`) for every plausible gunship/weapon-tier
+identifier came back with a single, reference-free hit (the level-name
+string `"paris_ac130"` itself, zero code xrefs) -- decisive evidence this
+system is entirely GSC/data-driven, no native dispatch case exists to find
+by static analysis alone, matching x86's own already-recorded "GSC notify"
+candidate in `known_issues.md` issue #40 over its "raw-keycode dispatch
+table" candidate. A public MP-only GSC dump (`_ac130.gsc`, the real MP
+killstreak script -- no SP/Spec-Ops map scripts were found in either public
+dump checked) shows MP's own gun-switching rides the real native weapon-
+inventory system (`_giveWeapon`+`switchtoweapon`, the same underlying
+function/call this project's own `InjectControllerWeaponNext()` already
+calls for Y). Whether x64's SP/Spec-Ops implementation matches that design
+is unconfirmed (the actual script is what's blocked), so no change was made
+to the already-working weapnext path on x64 either -- full reasoning and
+the deliberately-not-shipped candidate fix (key-synthesis for `'1'`/`'2'`,
+the same technique as Survival ready-up/D-pad Left) in `known_issues.md`
+issue #40's 2026-09-14 round.
+
+**Gap 2 fixed on x64 the same session, ported identically from x86**:
+`GetAdsLookRateScaleX64()` (`analog_input_hooks_x64.cpp`) only ever applied
+its FOV-ratio scaling while `g_adsHeldX64` was true. Disassembly of
+`GetEffectiveFovX64` (`FUN_140069e60`, already resolved 2026-09-13 per this
+file's own earlier `Dvar_FindVar`/`GetEffectiveFov` entry) shows its
+internal blend includes a `set_turret_fov`-driven lerp path alongside
+`set_lerp_fov`/`set_pip_fov` -- a generic per-frame FOV query that already
+covers mounted/turret-camera zoom, not just weapon ADS, confirmed via real
+string xrefs, not a guess. Fixed by computing the ratio unconditionally
+(confirmed side-effect-free) and triggering the existing scale formula
+whenever ratio meaningfully drops below 1.0 (threshold 0.995) OR
+`g_adsHeldX64` is true -- preserves both the ordinary-hipfire and the
+already-live-confirmed-ADS cases exactly, adds gunship (and potentially
+other native turret-zoom) coverage for free. Build-verified: x64
+`/t:Rebuild` 0 errors, `dumpbin` confirms `8664 machine (x64)` fresh
+timestamp; Win32 regression 0 errors; x64 rebuilt and redeployed last.
+**NOT yet live-tested** -- no live-AC-130-sequence access this session,
+independent of the GSC-pipeline blocker above. Full trail:
+`known_issues.md` issue #40's 2026-09-14 round; `re_notes/
+x64_feature_parity_audit.md`'s Campaign killstreak section, same date.

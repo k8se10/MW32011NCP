@@ -3536,3 +3536,39 @@ flag back off. If a `[hooks] MH_CreateHook(004ff000 asset-capture)` or `[asset-
 capture] MH_CreateHook(CreateTexture @ ...)` line logs a non-zero (non-`MH_OK`)
 status, or zero files appear despite visiting several menus, that's the concrete
 signal this needs a follow-up pass, not a live-session guess.
+
+## GSC-extraction pipeline (OpenAssetTools/Unlinker) currently BROKEN for every current large retail zone (2026-09-14)
+
+Flagging here for any future session that reaches for the GSC-decompile
+pipeline this section documents above (`xensik/gsc-tool` + OpenAssetTools'
+`Unlinker.exe`) — cross-referenced from `known_issues.md` issue #40's
+2026-09-14 round and `known_issues_x64.md`'s matching entry, per this
+project's own "note a cross-cutting finding in every relevant place" policy.
+
+`Unlinker.exe` (`D:\Tools\OpenAssetTools\extracted\`, v0.31.0 — the exact
+build this section's own "GSC decompilation pipeline completed same
+session" note above used successfully) now crashes with an immediate,
+zero-output `STATUS_ACCESS_VIOLATION` (`0xC0000005`) attempting to unlink
+any large real-content retail zone — confirmed on `paris_ac130.ff`,
+`hamburg.ff` (the exact zone this pipeline successfully dumped in July,
+`zone_dump_hamburg_fresh/`), `common.ff`, and `code_post_gfx.ff`. A freshly
+downloaded latest release (v0.33.0) reproduces the identical crash. Small
+zones and patch zones (`sp_intro.ff`, `patch_paris_ac130.ff`) still dump
+cleanly with either build, and `--include-assets`/`--exclude-assets scriptfile`/
+`--skip-obj` don't route around it — the crash happens during each zone's
+initial full deserialize, before any per-asset-type dump filtering applies,
+so it can't be scoped around via CLI flags. Every affected zone file on disk
+now carries a 2026-09-03 modification date — the same date as this
+project's own x64 binary recompile event — strongly suggesting the retail
+game files themselves changed that day too, not just the executables, in a
+way this OpenAssetTools version (both the one this project already had, and
+the current latest upstream release) cannot parse. Not root-caused or
+fixed this pass — a third-party native tool's crash is its own separate
+investigation, out of scope for the task that found it. **Any future
+session needing a fresh GSC/asset dump of a zone not already sitting in an
+existing `zone_dump_*/` folder will hit this same wall** until it's either
+fixed (likely needs a debugger attach to `Unlinker.exe` itself to find the
+actual parser fault) or worked around (e.g. an even newer OpenAssetTools
+release, once one exists, or a different extraction tool entirely). Every
+currently-published `zone_dump_*/` folder predates 2026-09-03 and remains
+usable as-is — this only blocks extracting anything NEW.
