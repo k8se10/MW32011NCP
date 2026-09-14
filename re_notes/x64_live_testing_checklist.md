@@ -137,9 +137,7 @@ for any item lives in `re_notes/known_issues_x64.md` issue #1.
 
 ## Visual-enhancement suite (new this session — off by default, opt in via `mw3ncp_config.ini` to test)
 
-- [ ] `InternalRenderScalePercent` — confirm it actually scales real GPU
-      render cost (same test x86 used: framerate delta at 100% vs. a
-      higher percentage).
+- [x] `InternalRenderScalePercent` — **CONFIRMED 2026-09-14.**
 - [ ] FSR 1.0 RCAS sharpening — confirm it activates in real gameplay and
       doesn't crash on loading screens or "quit to menu" (the exact
       crash class x86's own issues #103/#104 document — this is the
