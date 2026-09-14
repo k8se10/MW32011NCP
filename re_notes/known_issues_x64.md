@@ -6874,3 +6874,37 @@ read length and the exact byte immediately preceding
 `MaterialPixelShader`'s own read, to check whether the VertexShader-tail →
 PixelShader-head boundary is off by a small, deterministic amount. Full
 trail: `re_notes/x64_migration/fastfile_format_research.md` §5.14.
+
+### RESOLVED (scope correction), 2026-09-14 (later still, third of three forks) — `hamburg.ff`/`common.ff` do NOT fail in the Material/shader chain; they hit two more, separate, previously-undocumented bugs entirely
+
+**Status: decisive, no fix applied.** Directly answers the question the
+round above left open. Reused this project's own top-level diagnostic
+pattern (`[iw5oat-diag] loading asset index=N type=T`, temporary, in
+`ContentLoaderIW5.cpp`'s `LoadXAssetArray`) to log every asset as each
+zone loads, so the last line printed before the fatal error identifies
+exactly which asset was in flight.
+
+- **`hamburg.ff` fails on asset index 16, type 4 = `ASSET_TYPE_XMODEL`** —
+  not Material (5) or any shader type (6-9). `XModel`'s own loader is a
+  separately complex bone-hierarchy chain, not investigated further.
+- **`common.ff` fails on asset index 0 — the very FIRST asset in the
+  zone — type 40 = `ASSET_TYPE_ADDON_MAP_ENTS`.** Its loader is a large
+  BSP/collision-geometry tree, the deepest asset loader checked so far
+  this session, not investigated further.
+- Both throw the same `InvalidOffsetBlockOffsetException` as
+  `code_post_gfx.ff`'s failure (shared infrastructure: an offset-encoded
+  alias pointer decoding to a block-relative offset past the target
+  block's real size) — but the specific field/cause is unknown and
+  unrelated to `MaterialPixelShader::name`.
+
+**Correction**: earlier text (this file and `fastfile_format_research.md`
+§5.9) describing "the same chain on all three zones tested" was never
+actually per-zone-verified and is now confirmed wrong for two of the
+three. **Fixing the paused shader-chain bug would only unblock
+`code_post_gfx.ff`** (and whatever else shares its cause) —
+`hamburg.ff`/`common.ff` need their own separate root-causing (`XModel`,
+`AddonMapEnts`) before they can extract, neither started. Temporary
+instrumentation fully reverted, rebuild re-verified against all four
+known zone signatures (`hamburg.ff`/`common.ff`/`code_post_gfx.ff`/
+`sp_intro.ff`), 0 regression. Full trail:
+`re_notes/x64_migration/fastfile_format_research.md` §5.15.
