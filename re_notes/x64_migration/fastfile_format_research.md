@@ -1439,6 +1439,132 @@ fully succeeds; the still-separate `hamburg.ff`/`common.ff` forward-
 reference question from §5.17, untouched by either this round's fix or
 §5.18's own finding.
 
+## 5.20. UPDATE, 2026-09-14 (later still, "just keep pushing its understandable that a,b,c,d,e,f,g is broken because it had assumptions from x86 etc") — the broader §5.18 fix landed for real: the offset-pointer decode is now the real native 32-bit scheme everywhere, with two additional safety mechanisms found necessary by testing it live — zero crashes across the full 39-zone sweep, real progress on every previously-blocked zone
+
+**Status: shipped, tested, safe.** Implements exactly what §5.16-§5.18
+justified: replaced the hardcoded 64-bit-wide offset decode in
+`ConvertOffsetToPointerNative`/`ConvertOffsetToAliasNative`/
+`ConvertOffsetToPointerLookup`/`ConvertOffsetToAliasLookup` with the
+real native 32-bit scheme (`FUN_1400aad40`'s own confirmed formula) as
+the actual, only decode — not a narrow per-field fallback (§5.19's
+`TryConvertOffsetToStringPointerNative` stays in place, now redundant
+for the case it was built for but harmless, since the primary decode
+resolves it directly on the first try).
+
+**Correctness alone wasn't safety — two real, live-confirmed crashes
+led to two additional fixes, neither of which was anticipated up
+front:**
+
+1. **First attempt (decode fix alone): segfaulted on `hamburg.ff` and
+   `common.ff`.** Root cause: the OLD, wrong 64-bit decode had been
+   accidentally catching a genuinely separate bug — a forward reference
+   into a block that fills progressively as the zone stream is
+   consumed, not pre-populated (§5.17's own leading theory, now
+   directly confirmed). The wrong decode produced a wildly
+   out-of-bounds offset that tripped the existing total-capacity check
+   on its own; fixing the decode width removed that accidental
+   protection. **Fixed** by adding a write-cursor check
+   (`m_block_offsets[blockNum]`, the block's own real "how much has
+   genuinely been written so far" counter — confirmed reliable: it only
+   ever advances via `IncBlockPos` as real stream content is read into
+   the block, and is never reset except for `TEMP`-type blocks on
+   `PopBlock`) alongside the existing total-buffer-size check in every
+   read function.
+2. **Second attempt (decode fix + write-cursor guard): STILL
+   segfaulted on `hamburg.ff`, at a completely different point** — none
+   of the four `ConvertOffsetTo*` functions' own "about to return"
+   diagnostics ever fired, meaning the crash was outside code already
+   modified. Bisected via a full function-entry trace (every override
+   in the class instrumented, not just the four already-suspected ones)
+   cross-referenced against the generated `XModel` loader
+   (`xmodel_iw5_load_db.cpp`): `ConvertOffsetToAliasLookup` was entered
+   and returned successfully (via its own `m_pointer_redirect_lookup`
+   success path, never reaching the throw), then the caller's own
+   `Loader_XModel::Load()` double-dereferenced the "resolved" value
+   (`AssetName<AssetXModel>(**pAsset)`) — a genuinely different, deeper
+   bug: `m_pointer_redirect_lookup`'s own stored "alias" is the ADDRESS
+   of ANOTHER asset's own pointer field (registered via
+   `AddPointerLookup` so a forward reference can find it before that
+   field is filled in), but when the referenced field genuinely hasn't
+   been resolved yet at the moment this lookup runs — a real reference
+   chain, asset A's pointer aliasing asset B's pointer, and B's own
+   field not yet converted from raw offset to real native pointer —
+   dereferencing it reads back whatever raw, unconverted offset value
+   was written there by the initial `FillPtr` byte-copy. **Confirmed
+   live, not theorized**: resolving `hamburg.ff`'s own asset index 16
+   (`XModel`) returned `0x30029229` — numerically IDENTICAL in shape to
+   the very offset just looked up, nothing like a real
+   `~0x165b694d018`-class heap address this process's own allocator
+   actually hands out. Trusting that as a resolved pointer is exactly
+   what segfaulted. **Fixed** with a bounded (16-hop) chase: detect a
+   "resolved" value that still looks like a raw, unconverted offset
+   (`LooksLikeUnresolvedRawOffset` — fits in 32 bits; a genuine native
+   pointer in this process never does) and resolve THAT through the
+   exact same lookup mechanism one more hop, rather than either
+   trusting a not-yet-real value (crash) or giving up on a reference
+   that IS genuinely resolvable, just not on the very first try. A
+   chain that never bottoms out (circular, or pathologically deep)
+   throws a clean `InvalidLookupPositionException` instead of looping
+   forever.
+
+**Both fixes were found by testing live, not by reasoning in advance** —
+consistent with this whole investigation's own pattern (§5.13-§5.17):
+this fork's code carries real, compounding x86-era assumptions, and
+removing one wrong assumption reliably surfaces the next one hiding
+behind it, rather than immediately reaching a clean success.
+
+**Full validation, not just the five already-tracked zones**: rebuilt
+and re-tested after each change, then ran the complete 39-zone
+`sp_*.ff`/`so_*.ff` sweep first established in §5.12:
+
+- `sp_intro.ff`/`sp_prague.ff`: unaffected, 0 warnings/0 errors, exactly
+  as before — no regression.
+- `code_post_gfx.ff`: original `MaterialPixelShader::name` failure
+  gone; now fails later, at a different offset
+  (`XFILE_BLOCK_CALLBACK` size 0) — a real, different, later bug, not
+  yet investigated.
+- `hamburg.ff`/`common.ff`: no more segfault. Clean, catchable errors
+  at different (further-progressed) points than their original
+  failures (`"Zone tried to lookup at block 3, offset N that was not
+  recorded"` — the alias-chain-hop-cap exhausted, a genuine remaining
+  gap, not a crash).
+- **`so_trainer2_so_deltacamp`, previously failing, now succeeds fully**
+  — a real, new zone unblocked, bringing the confirmed-working set from
+  2/39 (§5.12) to 3/39.
+- **Zero crashes across all 39 zones.** Every remaining failure
+  produces a specific, catchable error — a real, qualitative
+  improvement in diagnostic signal over the pre-fix state, where every
+  single failing zone showed the exact same generic, misleading `"block
+  XFILE_BLOCK_TEMP"` text regardless of its real cause (an artifact of
+  the old decode always producing `blockNum=0`). Post-fix, errors now
+  correctly name `XFILE_BLOCK_VIRTUAL` (block 3, the real target) and
+  distinguish at least three genuinely different failure shapes
+  (alias-chain exhausted; total-capacity exceeded; `"invalid block
+  15"`, a separate, not-yet-investigated bug affecting a couple of
+  zones) — a much better starting point for whoever picks up any of the
+  36 still-failing zones next.
+
+All temporary diagnostic instrumentation (a full function-entry trace,
+per-lookup value dumps, a top-level asset-index/type trace in
+`ContentLoaderIW5.cpp`) was fully removed before the real fix was
+committed — confirmed via `git diff --stat` showing only the intended,
+permanent change. Commit: `e2fdeb07`.
+
+**Concrete next steps, not yet done**: root-cause `code_post_gfx.ff`'s
+own newly-exposed later failure (`XFILE_BLOCK_CALLBACK` size 0 — a
+zero-sized block being referenced at all looks like it could be a
+distinct bug class from anything found so far); investigate the
+`"invalid block 15"` failure affecting `sp_dubai.ff`/`so_deltacamp.ff`
+(block index 15 is out of range for the real 9-block `XBLOCK_DEF` table
+— a genuinely different bug, not yet looked at); and determine whether
+the remaining `"tried to lookup ... that was not recorded"` failures
+(the majority of the still-failing zones) share ONE root cause or
+several — the hop-cap-exhausted case doesn't yet distinguish "a
+genuinely circular reference" from "a reference into content this
+fork's own single-pass load order simply hasn't reached yet," which
+would need real architectural work (a second pass, or deferred
+resolution) rather than another local fix.
+
 ## 6. Scoped plan for in-house tooling — an MVP, not a full OpenAssetTools replacement
 
 **This project's own actual need is narrow**: GSC/rawfile extraction to
