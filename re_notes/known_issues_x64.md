@@ -4988,3 +4988,37 @@ in this file and `x64_feature_parity_audit.md` before this pass started,
 and were not re-derived from scratch here -- only cross-referenced to
 confirm no re-audit was needed, per this task's own efficiency
 instruction.
+
+---
+
+**UPDATE 2026-09-14 (live playtest) — "text and glyph needs
+repositioning on the mantle prompt." First-pass fix shipped, ported
+from x86's own live-tested constants; needs one more live check.**
+
+This confirms 2026-09-13's position-transform fix (the "no glyph
+visible" / "top of screen" bug) genuinely worked -- the Mantle icon is
+now visible and roughly in the right area, which is exactly what that
+fix's own honest caveat predicted would still need fine-tuning:
+"unlike x86 (which reached its exact pixel alignment via multiple
+live-tested rounds of empirical nudge constants), NO equivalent nudge
+has been derived or applied here."
+
+Fix (`ba41bc1`): ported x86's own `kMantleHintXNudge`/`YNudge`
+(`82.0f`/`-30.0f`) directly rather than starting from zero -- both
+applied in DESIGN-SPACE units, after `ConvertRealScreenPosToDesignSpaceX64`,
+the same coordinate system x86's own nudges target at its equivalent
+point (post-conversion, so the nudge scales proportionally with
+resolution the same way the rest of the position does -- see x86's own
+header comment for the full "why post-conversion, not raw pixels"
+reasoning). Since x64's `ComputeRealDrawPositionX64` fix specifically
+aimed to reproduce x86's own real screen-pixel convention at this hook
+site, x86's already-live-tested values are a reasoned starting point,
+not a blind guess -- but they were NOT independently re-tuned against
+x64's own actual on-screen result, only carried over as the best
+available first pass. x86 itself needed one live-reported correction
+round (`ROUND 2`/`ROUND 3` in its own comment history) to land on these
+exact numbers from its own first estimate -- x64 may need the same.
+
+**Not yet re-confirmed live** — next playtest should check whether the
+ported values land correctly or need their own adjustment (and in which
+direction/magnitude, if not).
