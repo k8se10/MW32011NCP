@@ -958,6 +958,70 @@ the exact byte immediately preceding `MaterialPixelShader`'s own read, to
 see whether the boundary between them is off by a small, deterministic
 amount.
 
+## 5.15. UPDATE, 2026-09-14 (later still, third of three forks, "run 2 more forks to dig deeper") — decisive scope correction: `hamburg.ff`/`common.ff` do NOT fail in the Material/shader chain at all; they hit two more, entirely separate, previously-undocumented bugs
+
+**Status: real, decisive finding — not the same bug family, no fix applied.**
+Directly answers the open question §5.14 left unresolved (whether fixing
+`code_post_gfx.ff`'s `MaterialPixelShader::name` bug would unblock
+`hamburg.ff`/`common.ff` too).
+
+Reused this project's own established top-level diagnostic technique
+(`fprintf(stderr, "[iw5oat-diag] loading asset index=%zu type=%d\n", ...)`
+in `ContentLoaderIW5.cpp`'s `LoadXAssetArray`, temporary, added/used/
+reverted — the same pattern used earlier this session) to log every
+asset's type+index as `Unlinker.exe` processes each zone, so the LAST
+line printed before the fatal exception identifies exactly which asset
+was loading. Real result:
+
+- **`hamburg.ff` fails on asset index 16, type 4 = `ASSET_TYPE_XMODEL`.**
+  Not Material (5), not any shader type (6/7/8/9) — a completely
+  different, much earlier asset type in the enum. `XModel`'s own loader
+  is a real, separately complex chain (bone hierarchy, per-bone
+  quats/trans/parentList/baseMat, `XModelLodInfo`, `XModelCollSurf_s`) —
+  not investigated further this round.
+- **`common.ff` fails on asset index 0 — the very FIRST asset in the
+  entire zone — type 40 = `ASSET_TYPE_ADDON_MAP_ENTS`.** `AddonMapEnts`'s
+  own loader is a large BSP/collision-geometry tree (`ClipInfo`,
+  `cbrush_t`/`cbrushside_t`, `cLeafBrushNode_s`, `cmodel2_t`, recursive
+  leaf/child structures) — genuinely the largest, most deeply-nested
+  loader of any asset type checked so far this session, not investigated
+  further this round.
+- Both fatal errors are thrown from the same place as `code_post_gfx.ff`'s
+  (`InvalidOffsetBlockOffsetException`, inside a `ConvertOffsetToPointer*`
+  call converting an offset-encoded alias pointer that turns out to
+  exceed its target block's real size) — confirming the *symptom* really
+  is shared infrastructure (the offset-pointer-decode path), while the
+  *cause* — which specific field's raw bytes are bad, and why — is
+  unknown and unrelated to `MaterialPixelShader::name` specifically.
+
+**Correction to prior documentation**: earlier text in this file (§5.9)
+describing "the same `MaterialPass` → shader-asset chain, on all three
+zones tested" was never actually verified per-zone and is now confirmed
+wrong for two of the three — `hamburg.ff` and `common.ff` fail well
+before ever reaching a Material/shader asset. Only `code_post_gfx.ff`'s
+failure is confirmed to be the `MaterialPixelShader::name` corruption
+documented in §5.10/§5.13/§5.14. **Practical consequence**: resolving the
+paused shader-chain bug would only unblock `code_post_gfx.ff` (and
+whatever other zones share its specific cause) — `hamburg.ff` and
+`common.ff` need their own, separate root-causing (`XModel` and
+`AddonMapEnts` respectively) before they can extract, and neither has
+been started.
+
+No code change applied — purely a diagnostic/scoping round. Temporary
+instrumentation fully reverted (`git checkout --
+tools/iw5oat/src/ZoneLoading/Game/IW5/ContentLoaderIW5.cpp`, confirmed
+clean), rebuilt, and re-verified all four known zones
+(`hamburg.ff`/`common.ff`/`code_post_gfx.ff`/`sp_intro.ff`) reproduce
+their exact prior signatures with 0 regression.
+
+**Concrete next step**: two more real, separate investigations, not one —
+`XModel`'s bone-hierarchy chain for `hamburg.ff`, and `AddonMapEnts`'s
+BSP/collision tree for `common.ff` (the latter genuinely large enough to
+warrant its own dedicated round rather than folding into this one).
+Neither has any evidence yet connecting it to the shader-chain bug's own
+root cause — approach each as its own fresh investigation, not an
+extension of §5.10's.
+
 ## 6. Scoped plan for in-house tooling — an MVP, not a full OpenAssetTools replacement
 
 **This project's own actual need is narrow**: GSC/rawfile extraction to
