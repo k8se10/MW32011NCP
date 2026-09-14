@@ -6093,3 +6093,50 @@ solo.
 Full raw output for this round: `re_notes/x64_migration/ui_pipeline_trace/`
 (`decomp_hintqueue.txt`, `describerefs_140514580.txt`,
 `callers_1402c3890.txt`).
+
+### NEW, 2026-09-14 (later still) — external cross-reference: `MW3Downgrader` independently corroborates "the 2026-09-03 update changed more than the executables," with real, reusable last-known-x86 manifest IDs
+
+**Status: Reference only, no source changes.**
+
+Direct instruction to check `github.com/GalvarinoDev/MW3Downgrader` (a
+third-party community tool, unaffiliated with this project, built to
+restore Plutonium compatibility by reverting a 64-bit MW3 Steam install
+back to the last 32-bit depot set), followed by a direct correction: "he
+found that it was much more than just binary changes."
+
+**What was actually found in the repo (`README.md`/`mw3_downgrade.py`,
+fetched and read directly, not assumed)**: the tool's own 64-bit-vs-32-bit
+DETECTION mechanism is a plain file-size check on `main/iw_00.iwd` — **32-
+bit: ~314 MB, 64-bit: ~420 MB** (`_IW5_64BIT_SIZE_THRESHOLD = 380 MB`). That
+IWD grew by ~106 MB (~34%) across the same update this project's own
+`known_issues_x64.md` and `x64_migration/README.md` already track as the
+2026-09-03 recompile. **This is real, independent corroborating evidence**
+for a finding this project already made on its own, from a completely
+different angle: the OpenAssetTools Unlinker segfault investigation earlier
+today (this file's own "GSC-first pass" round above) already concluded "the
+2026-09-03 x64 recompile changed the zone/fastfile container format," based
+on a tool crash signature, not a size comparison — a 106 MB growth in the
+single largest base IWD is not remotely explainable by `iw5sp.exe`/
+`iw5mp.exe` alone (both are low-single-digit-MB executables even at x64
+pointer width) and independently supports the same conclusion via
+completely different evidence (file size vs. tool-crash behavior). **Honest
+limit**: the repository itself does NOT explain what changed or why —
+no code comments, no docs, no analysis of the actual format difference were
+found (checked the README, the main script, and asked directly for any
+deeper documentation — none exists in this repo). It corroborates that
+something beyond the binaries changed; it does not explain what.
+
+**A separate, genuinely useful and reusable find**: the tool's own source
+hardcodes the exact last-known-good 32-bit Steam depot manifest IDs for
+every relevant depot — base (42682, manifest `2661317971072643596`),
+English language (42683, `1595601894688570808`), SP binaries (42681,
+`5651167211650965131`), MP binaries (42691, `4104640605720756125`), DS
+binaries (42751, `9089183337461621316`), and all four DLC collections
+(42695-42698, their own manifests). Recorded here as a real, actionable
+reference: if this project ever needs a known-good archival x86 copy again
+(the exact "future need" `CLAUDE.md`'s own Version Timeline already
+flagged as the one thing that could reopen the frozen x86 line), these are
+the authoritative IDs to pull via `DepotDownloader`/`steamcmd` rather than
+guessing at a Steam depot history UI. Not otherwise consumed this round —
+no source changes, no new implementation decision made from this, purely
+logged for later.
