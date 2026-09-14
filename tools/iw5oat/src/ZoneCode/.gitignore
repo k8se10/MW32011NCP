@@ -1,0 +1,12 @@
+# MW32011NCP / iw5oat, 2026-09-14: this whole tree is ZoneCodeGenerator's
+# build-time OUTPUT for most of its files -- confirmed via upstream OAT's own
+# git history (only the hand-authored *_ZoneCode.h / *_Commands.txt / *.gen /
+# XAssets/*.txt inputs are ever actually tracked there, never the generated
+# Asset{Loader,Marker,Writer}<GAME>.h files or the per-asset-type XAssets/<type>/
+# subdirectories ZoneCodeGenerator emits from them). Regenerated locally by
+# running ZoneCodeGenerator.exe per game (see the ZoneCode.vcxproj custom-build
+# step, or run it manually -- see re_notes/x64_migration/fastfile_format_research.md
+# SS5.5 in the parent repo for the exact invocation) -- never meant to be
+# checked in, same as upstream.
+Game/*/Asset*.h
+Game/*/XAssets/*/

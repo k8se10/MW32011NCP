@@ -343,6 +343,42 @@ Full raw evidence for this round:
 `decomp_rawfile_scriptfile_real.txt` (`FUN_1400a9c70`/`FUN_1400a9d30`,
 the generic pool-resolution primitive these call into).
 
+## 5.6. UPDATE, 2026-09-14 (later still) — full x64 build achieved; the §5 dispatch-record fix confirmed live against three real retail zones; a new, narrower bug found immediately behind it
+
+**The §5 fix is no longer just applied — it's built and validated.**
+`tools/iw5oat` now produces a real `Unlinker.exe`
+(`build/bin/Release_x64/Unlinker.exe`) after two genuine, unrelated
+upstream OAT build-tooling bugs were worked around (documented in full in
+`re_notes/known_issues_x64.md` issue #1's matching round — summary: a
+wrong manual `ZoneCodeGenerator.exe` output directory, and a real MSBuild
+custom-build batching bug in `ObjWriting`/`ObjLoading`'s `.template`
+steps that joins every item into one broken invocation regardless of
+each item's own distinct `<Outputs>`).
+
+**Live result against real zones pulled from the actual game install**:
+
+| Zone | Size | Pre-fix | Post-fix |
+|---|---|---|---|
+| `hamburg.ff` | 165MB | Segfault (the original report) | Clean `ERROR: ... invalid block 15`, no crash |
+| `common.ff` | large | Segfault | Same clean error, no crash |
+| `code_post_gfx.ff` | large | Segfault | Same clean error, no crash |
+| `sp_intro.ff` | 303B | (untested pre-fix) | Segfault, zero output — different bug |
+| `sp_prague.ff` | 207B | (untested pre-fix) | Segfault, zero output — different bug |
+
+Getting from an unconditional segfault to a clean, structured error on
+every large real-content zone tested is exactly the outcome the §5 fix
+predicted: the dispatch loop now reads every asset's type/pointer at the
+correct 16-byte stride instead of silently misreading every other asset
+as garbage. The new `invalid block 15` error (valid `XFILE_BLOCK_*`
+values are 0-8) is a genuinely different, narrower bug one layer deeper —
+most likely one or more of the individual code-generated per-asset-type
+structs (`GfxImage` and siblings, not just RawFile/ScriptFile) still
+using x86 field offsets internally, the same bug *class* as §5 just fixed
+but not yet localized to a specific struct/field. The two tiny-zone
+segfaults are flagged as a separate, unexplored lead, not assumed to be
+the same root cause (they fail before any output at all, unlike every
+real content zone, which gets deep into the load path first).
+
 ## 6. Scoped plan for in-house tooling — an MVP, not a full OpenAssetTools replacement
 
 **This project's own actual need is narrow**: GSC/rawfile extraction to

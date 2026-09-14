@@ -1,6 +1,11 @@
 /local/
 /build/
 
+# MW32011NCP / iw5oat, 2026-09-14: loose debug/build transcript logs dropped
+# at this root by manual MSBuild invocations during x64 build debugging --
+# scratch, never meant to be committed.
+/*.log
+
 .vscode
 .idea
 user*.*

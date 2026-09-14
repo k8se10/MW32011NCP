@@ -1,0 +1,27 @@
+[submodule "tools/iw5oat/thirdparty/libtomcrypt"]
+	path = tools/iw5oat/thirdparty/libtomcrypt
+	url = https://github.com/libtom/libtomcrypt.git
+[submodule "tools/iw5oat/thirdparty/libtommath"]
+	path = tools/iw5oat/thirdparty/libtommath
+	url = https://github.com/libtom/libtommath
+[submodule "tools/iw5oat/thirdparty/zlib"]
+	path = tools/iw5oat/thirdparty/zlib
+	url = https://github.com/madler/zlib.git
+[submodule "tools/iw5oat/thirdparty/catch2"]
+	path = tools/iw5oat/thirdparty/catch2
+	url = https://github.com/catchorg/Catch2.git
+[submodule "tools/iw5oat/thirdparty/json"]
+	path = tools/iw5oat/thirdparty/json
+	url = https://github.com/nlohmann/json.git
+[submodule "tools/iw5oat/thirdparty/eigen"]
+	path = tools/iw5oat/thirdparty/eigen
+	url = https://gitlab.com/libeigen/eigen.git
+[submodule "tools/iw5oat/thirdparty/lz4"]
+	path = tools/iw5oat/thirdparty/lz4
+	url = https://github.com/lz4/lz4.git
+[submodule "tools/iw5oat/thirdparty/webwindowed"]
+	path = tools/iw5oat/thirdparty/webwindowed
+	url = https://github.com/Laupetin/webwindowed.git
+[submodule "tools/iw5oat/thirdparty/stb"]
+	path = tools/iw5oat/thirdparty/stb
+	url = https://github.com/nothings/stb.git
