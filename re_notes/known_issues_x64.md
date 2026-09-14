@@ -6278,3 +6278,18 @@ documented to that bar from the start, not disposable scratch work.
 
 Full technical detail, exact source excerpts, and the raw evidence trail:
 `re_notes/x64_migration/fastfile_format_research.md`.
+
+### UPDATE, 2026-09-14 (later still) — forked, live in `tools/iw5oat/`
+
+Direct instruction, confirmed permitted (GPLv3): "we could legit fork the
+oat code and build our tooling from it." Done: `Laupetin/OpenAssetTools`
+forked into **`tools/iw5oat/`** via a history-preserving `git subtree`
+(same technique the `security/` merge used) — real history confirmed
+preserved (genuine second parent at OAT's own HEAD, 4122 total reachable
+commits). Named `iw5oat` on direct instruction, since this project only
+ever needs IW5 support. Stays GPLv3, its own `LICENSE` file, NOT this
+repo's own permissive license — documented in this repo's top-level
+`LICENSE` under "Third-party components," same pattern `security/`
+already established. Real next step (fixing the hardcoded
+`GameWordSize::ARCH_32` and deriving x64 struct widths) not started yet.
+Full detail: `re_notes/x64_migration/fastfile_format_research.md` §4.
