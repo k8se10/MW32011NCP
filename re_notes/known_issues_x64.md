@@ -7063,3 +7063,45 @@ deleted in `git status` — the same known, gitignored corruption pattern
 documented twice already this session; left as-is, flagged rather than
 silently ignored. Full trail:
 `re_notes/x64_migration/fastfile_format_research.md` §5.18.
+
+### FIXED (real, tested, deliberately narrow), 2026-09-14 (later still, third of the same "three forks digging into potential" round) — `MaterialPixelShader::name` now resolves correctly in `code_post_gfx.ff`, commit `cc18ad96`
+
+**Status: a real fix landed and tested. Narrower in scope than the global
+fix the round above shows is eventually correct — see that entry's own
+"practical conclusion" for the real formula; this entry's fix is a safe,
+validated stopgap, not a substitute for implementing that broader one.**
+
+Added `ZoneInputStream::TryConvertOffsetToStringPointerNative`, consulted
+only from `LoadXString`'s own non-`FOLLOWING` branch, only as a fallback
+when the standard 64-bit-width decode would already fail, only when the
+raw offset's bits above 32 are exactly zero, and only accepted when it
+resolves to a real, validated, non-empty, printable, null-terminated
+string — deliberately rejecting an empty-string result (a NUL at
+position 0), since that's exactly the shape an all-zero/unwritten block
+position (the round above's own separate `hamburg.ff`/`common.ff`
+forward-reference bug) would otherwise be silently misread as.
+
+**Tested against all five known zones, real rebuild each time**:
+`sp_intro.ff`/`sp_prague.ff` unaffected (0 warnings/0 errors);
+`code_post_gfx.ff`'s `MaterialPixelShader::name` failure is gone — the
+zone now progresses to a genuinely different, later failure (confirmed
+via a temporary, fully-reverted diagnostic: `ConvertOffsetToAliasLookup`,
+a different function on a non-string pointer, hitting the same bug class
+at a different reference — expected, given the round above's own
+"global, not field-specific" finding); `hamburg.ff`/`common.ff` unchanged,
+identical error signatures, no regression.
+
+**A real, minor, honestly-flagged gap**: this fix's own gate subtracts 1
+at full 64-bit width before checking for zero upper bits, while the real
+engine (per the round above) truncates to 32 bits first — verified these
+produce identical results for the actual, tested, real-world case, but a
+raw value of exactly `0x100000000` would theoretically fool this fix's
+gate. Not fixed (the real block count/sizes make that exact value
+effectively unreachable in practice), flagged for completeness.
+
+**Not yet done**: the broader, now well-justified global fix from the
+round above (would likely also resolve `code_post_gfx.ff`'s newly-exposed
+`ConvertOffsetToAliasLookup` failure and needs its own full regression
+pass); `hamburg.ff`/`common.ff`'s own separate forward-reference question,
+untouched by this fix. Full trail:
+`re_notes/x64_migration/fastfile_format_research.md` §5.19.

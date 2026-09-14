@@ -1331,6 +1331,114 @@ twice earlier this session. Left as-is (nothing to `git checkout` since
 the directory is gitignored); flagged here rather than silently ignored,
 per this project's own standing practice.
 
+## 5.19. UPDATE, 2026-09-14 (later still, third of the same "three forks digging into potential" round) — a real, tested, deliberately narrow fix landed: `MaterialPixelShader::name` now resolves correctly in `code_post_gfx.ff`, which progresses to a genuinely different, later failure
+
+**Status: a real fix implemented, built, and tested — commit `cc18ad96`.
+Deliberately narrower than the global fix §5.18 (landed concurrently,
+same round) shows is the eventually-correct one — see "Relationship to
+§5.18" below for why, and what's still open.**
+
+Implemented and shipped a working fix for the specific case this session
+has fully characterized: `MaterialPixelShader::name` in `code_post_gfx.ff`
+failing to resolve because its offset-encoded pointer is genuinely
+32-bit-wide on the wire, decoded by this fork at a hardcoded 64-bit width.
+
+**The fix**: a new method, `ZoneInputStream::TryConvertOffsetToStringPointerNative`
+(`ZoneInputStream.h`/`.cpp`), consulted only from `ContentLoaderBase::LoadXString`'s
+own non-`FOLLOWING` branch, and only as a fallback:
+1. First computes the standard, native-width (64-bit) decode. If that's
+   already valid (in-bounds), returns `nullptr` immediately — the
+   fallback never touches an already-successful resolution.
+2. Only proceeds if the raw offset value's bits above 32 are exactly
+   zero (the confirmed empirical signature from §5.16 of a pointer
+   genuinely encoded at 32-bit width) — otherwise returns `nullptr`.
+3. Decodes the low 32 bits using the legacy x86-era scheme (`shift = 28`,
+   `mask = 0x0FFFFFFF`) and checks the resulting block+offset are
+   in-bounds — otherwise returns `nullptr`.
+4. **Validates the resolved bytes are a real, non-empty, printable,
+   null-terminated string** before trusting them — scans up to 4096
+   bytes for a NUL terminator, rejecting anything containing non-printable
+   bytes, and explicitly rejecting a NUL at position 0 (an "empty
+   string"). This last check is deliberate, not incidental: it's exactly
+   what distinguishes this fix's target case from §5.17's own separate
+   finding (`hamburg.ff`/`common.ff`'s forward references into
+   `XFILE_BLOCK_VIRTUAL` resolve to unwritten, all-zero memory under the
+   identical "top 32 bits zero" shape — an all-zero span's first byte is
+   already a NUL, so without this check the fallback would silently
+   accept a spurious empty string for a completely different, unrelated
+   bug rather than correctly declining and letting the honest exception
+   through).
+
+If the fallback returns `nullptr`, `LoadXString` falls through to the
+original `ConvertOffsetToPointerNative` call, producing the exact same
+exception as before this fix — nothing about the failure path changed
+for any case the fallback doesn't apply to.
+
+**Tested against all five known reference zones, real rebuild each time**:
+- `sp_intro.ff`/`sp_prague.ff`: still `0 warnings, 0 errors` — no
+  regression.
+- `code_post_gfx.ff`: **the `MaterialPixelShader::name` failure is gone.**
+  The zone now fails at a genuinely different, later point (confirmed via
+  a temporary, fully-reverted diagnostic: `ConvertOffsetToAliasLookup`,
+  a *different* function than the one this fix touches, on a
+  *non-string* pointer, hitting the identical decode-width bug class at
+  a different reference — real progress, not a fluke, and exactly the
+  kind of "one more instance of the same bug, out of this fix's
+  deliberately narrow scope" result §5.18's own global-scope finding
+  would predict).
+- `hamburg.ff`/`common.ff`: identical error signatures to before this
+  fix — no regression, and no change (their own separate XModel/
+  AddonMapEnts bugs, per §5.15/§5.17, aren't reached by string
+  resolution at all, so this fix was never expected to touch them).
+
+**Relationship to §5.18's own concurrent finding**: §5.18 (landed the
+same round, different fork) found the real engine's own native decode
+formula directly from `iw5sp.exe` — confirmed GLOBAL (86 callers across
+every asset type, one shared primitive, no per-field branching) and
+using a subtly different bit-exact order than this fix's own gate:
+the real engine truncates the raw pointer to 32 bits **before**
+subtracting 1 (`(int)*param_1 - 1`), while this fix's gate subtracts 1
+at full 64-bit width first, then checks/truncates. **Verified this
+doesn't affect correctness for the actual, tested, real-world case**
+(both orders produce the identical result whenever the ORIGINAL raw
+pointer's upper 32 bits are already zero, which is exactly this fix's
+own gating precondition) — but there IS a narrow, real, currently-
+unpatched theoretical gap: a raw pointer value of EXACTLY `0x100000000`
+(upper 32 bits = 1, lower 32 bits = 0) would have its upper bits
+zeroed by the 64-bit subtraction's borrow, causing this fix's gate to
+wrongly treat it as "top-32-bits-zero" when the true raw value wasn't.
+Not fixed this round — the real block count (9) and realistic block
+sizes make a genuine occurrence of this exact value in real zone data
+effectively impossible, so this is flagged for completeness/honesty
+rather than treated as a live bug.
+
+**Why this fix stays deliberately narrower than §5.18's own global
+finding recommends, rather than being superseded by it in the same
+commit**: §5.18 itself flags its own global fix as "not yet implemented
+this round... should still be built and tested carefully... these
+functions are shared across every asset type already confirmed working."
+This fix targets exactly the one case already fully characterized and
+safely validatable (a string, checkable for real content) rather than
+changing the shared `ConvertOffsetToPointerNative`/`ConvertOffsetToAliasNative`/
+`ConvertOffsetToPointerLookup`/`ConvertOffsetToAliasLookup` functions
+those many other, currently-working asset types all depend on — the
+exact risk §5.16 originally flagged as the reason NOT to attempt a
+blanket width change without first understanding scope. Now that §5.18
+has settled the scope question definitively, **the real, complete fix
+described there (replace the shared decode logic outright, using the
+exact native formula, then full-regression-test against all five known
+zones) is the correct next step** — this commit is a validated, safe,
+already-shipped stopgap that gets `code_post_gfx.ff` further today, not
+a substitute for that broader, now well-justified fix.
+
+**Not yet done**: the broader §5.18 fix itself (would very likely also
+help `code_post_gfx.ff`'s own newly-exposed `ConvertOffsetToAliasLookup`
+failure, and needs its own full regression pass); investigating whether
+`code_post_gfx.ff` needs just one more such fix or several before it
+fully succeeds; the still-separate `hamburg.ff`/`common.ff` forward-
+reference question from §5.17, untouched by either this round's fix or
+§5.18's own finding.
+
 ## 6. Scoped plan for in-house tooling — an MVP, not a full OpenAssetTools replacement
 
 **This project's own actual need is narrow**: GSC/rawfile extraction to
