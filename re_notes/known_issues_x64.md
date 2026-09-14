@@ -4840,3 +4840,151 @@ next step is a live playtest with `MotionBlurEnabled=1` to confirm the
 effect is actually visible now, and that it correctly excludes native HUD
 and this mod's own overlay (the two failure modes x86's own history for
 this exact hook point warns about).
+
+---
+
+**UPDATE 2026-09-14 (full `mw3ncp_config.ini` consumer audit, 120 keys
+across all 15 sections) -- ONE new genuine x64 gap found, everything else
+audited comes back clean.** Direct task: `mod_config.cpp`/`.h` (the parser/
+schema) are confirmed 100% arch-neutral (zero `_M_IX86`/`_M_X64`/`_WIN64`
+guards in either file) -- every key parses and is readable via
+`g_modConfig.<field>` identically on both platforms, so parsing was never
+the question. The question was whether the CODE THAT READS each field
+actually runs on x64, tracing one level up (the enclosing hook/function)
+where the immediate read site alone wasn't proof enough -- the same
+"gate reads fine, nothing calls the gate" shape already found for
+vibration/gyro-aim/motion-blur's trigger earlier this session.
+
+**Confirmed fine, no gap (newly verified this pass, not already covered by
+an existing row/entry)**:
+- `[Look] SensitivityHorizontal`/`SensitivityVertical`
+  (`lookDegreesPerSecondHorizontal`/`Vertical`) -- read in both
+  `analog_input_hooks.cpp` and `analog_input_hooks_x64.cpp`'s own
+  `Hook_MovementTick`.
+- `[Look] InvertLook` (`invertLook`) -- read in both platform files, INCLUDING
+  x64's gyro-look branch (`analog_input_hooks_x64.cpp`), not just stick look.
+- `[Movement] AutoMantleForwardConeDegrees`/`AutoMantleMinStickMagnitude` --
+  read in both platform files' Auto-Mantle cone-check, consistent with
+  `AutoMantleEnabled` itself already being confirmed working (row #24,
+  `x64_feature_parity_audit.md`).
+- `[CustomBinds]` all 12 keys (`Fire`/`Ads`/`Lethal`/`Tactical`/`ReloadUse`/
+  `WeaponSwitch`/`Jump`/`CrouchProne`/`Sprint`/`Melee`/`Pause`/`Scoreboard`)
+  -- all resolve through `g_modConfig.customButtonMap` -> the shared
+  `g_buttonMap` global (`ResolveButtonMap`, arch-neutral,
+  `mod_config.cpp`), and `analog_input_hooks_x64.cpp` reads
+  `g_buttonMap.<action>` at 13 separate call sites covering all 12 logical
+  actions (`Hook_MovementTick`'s fire/ads/reload/weaponSwitch/melee/
+  lethal/tactical/jump/interact/crouchProne/scoreboard/sprint/pause
+  branches). `ButtonLayout=Custom` is fully functional on x64.
+- `[Bindings] GlyphStyle` (the manual/non-auto glyph-icon-style pick,
+  relevant since THIS project's own live `mw3ncp_config.ini` currently has
+  `GlyphStyleAuto=0` -- i.e. manual `GlyphStyle` is the actual active path
+  on the real install, not just a theoretical fallback) -- consumed via
+  `overlay_hud.cpp`'s `GetControllerGlyphAssetName(..., g_modConfig.glyphStyle)`
+  at 10+ call sites, all in the same arch-neutral file that already backs
+  the confirmed-working x64 glyph-icon overlay (parity audit row #34's nine
+  working hint categories). No gap.
+- `[Overlay] TestCycleAllVariants` (`overlayTestCycleAllVariants`) --
+  `TickOverlayTestCycle()` (`overlay_hud.cpp`) is called from
+  `InjectMenuInputTick` (`analog_input_hooks.cpp`), AFTER the file's `#endif`
+  debug-test block closes, i.e. arch-neutral, and `InjectMenuInputTick` is
+  called unconditionally from the confirmed-x64-live `WndProc`/`SetTimer`
+  tick in `d3d9_hook.cpp` (the same always-on tick `CheckConfigHotReload`
+  already rides, itself named in the parity audit as one of "the real,
+  confirmed x64-safe calls" -- row #52). No gap. Test-only toggle, default
+  off, not a gameplay feature either way.
+- `[Experimental] VisualFxClcStateTestValue` (`visualFxClcStateTestValue`)
+  -- confirmed explicitly x64-branched (`#if defined(_M_X64) ...`) inside
+  BOTH `RunPreOverlayMotionBlurPassIfEnabled` and
+  `RunFullScreenPostProcessIfEnabled` (`overlay_hud.cpp`), using
+  `TryGetClcStateX64`/`IsMenuActiveX64_Exported`/`TryGetInLevelFlagX64` --
+  the exact x64 gate trio the 2026-09-12 visual-suite port (parity audit
+  rows #43-45) wired in. This diagnostic test-value override rides the same
+  gates, confirmed reachable on x64. No gap (not previously named explicitly
+  in any prior pass, but fully covered by the same work that fixed #44/#45).
+- `[Experimental] FullScreenPassthroughTest` (`fullScreenPassthroughTest`)
+  -- same function, same x64-gated code path as
+  `FsrSharpenEnabled`/`FsrSharpenStrength` (row #44, FIXED) -- it's the very
+  next `if` after the FSR branch inside `RunFullScreenPostProcessIfEnabled`.
+  No gap. Plumbing-validation-only toggle, not a real feature.
+
+**GENUINE NEW GAP FOUND**: `[Experimental] BindResolverGlyphSubstitution`
+(`bindResolverGlyphSubstitution`) has ZERO consumer on x64.
+
+- The only place this field is ever read is inside
+  `BindResolverLogAfterCall()` (`analog_input_hooks.cpp` line ~10889),
+  which is only ever called from one place: a
+  `call BindResolverLogAfterCall` instruction inside `Hook_0061f6f0`'s own
+  `__declspec(naked)` trampoline body (line ~11020) -- the naked hook this
+  project's own comments describe as sharing "the same implicit-register
+  shape as ... Hook_0057de60/Hook_0061f6f0."
+- `Hook_0061f6f0` is installed via
+  `MH_CreateHook(reinterpret_cast<LPVOID>(0x0061f6f0), &Hook_0061f6f0, ...)`
+  -- a HARDCODED x86 address -- inside `InstallAnalogInputHooks()`
+  (`analog_input_hooks.cpp` line 11187), and that ENTIRE function is
+  wrapped in `#if !defined(_M_X64) && !defined(_WIN64)`. Confirmed via a
+  second, x64-only stub `InstallAnalogInputHooks()` that exists later in
+  the SAME file (line ~11708) purely to log
+  `"[x64] InstallAnalogInputHooks() is the x86 version -- not called on
+  this build. See InstallAnalogInputHooksX64()."` -- i.e. this is a known,
+  deliberate architectural split, not an oversight in isolation; the gap is
+  that nothing inside the x86-only half was individually re-ported for this
+  one key.
+- `analog_input_hooks_x64.cpp` (`InstallAnalogInputHooksX64()`'s own file)
+  has ZERO references to `bindResolver`/`0061f6f0` anywhere -- confirmed via
+  direct grep, not inferred. No parallel x64 bind-resolver hook, of any
+  design, exists.
+- **Practical severity: LOW, not a live player-facing regression.** This
+  exact mechanism (in-font glyph-codepoint substitution inside the resolved
+  hint-text string) was already self-documented as **"SUPERSEDED, NOT JUST
+  BLOCKED, as of 2026-07-31"** in `mod_config.h`'s own field comment, even
+  on x86 -- the project pivoted to an entirely different approach (overlay
+  quads drawn over the real text, `RequestCustomHintOverlay`/`Hook_DrawGlyphText`
+  family) BEFORE the x64 recompile ever happened, and that newer approach
+  IS the one already confirmed working on x64 (parity audit row #34's nine
+  hint categories). The key also ships `0` (off) by default and is not
+  mentioned as active anywhere in the live `mw3ncp_config.ini`. So this is a
+  real, precise "key parses, zero consumer on x64" gap by the letter of
+  what was asked -- worth recording so a future session doesn't assume it
+  does something -- but not a regression from any state a player has ever
+  actually experienced, on either platform. Not fixed this pass (audit-only
+  task, no source changes made). See `x64_feature_parity_audit.md` row #69
+  for the corresponding table entry.
+
+**Also noted, not separately investigated (out of this pass's scope per its
+own instructions -- these are dev-only diagnostic/logging toggles, not
+gameplay features, "expected to be present/inert by design")**: several
+`[Experimental] *Logging` keys (`BindResolverHookLogging`, `HudFontIdLogging`,
+`HudGlyphPositionLogging`, `ListItemPositionLogging`,
+`ArmorFieldScanLogging`) plus `CaptureRuntimeMenuAssets` share diagnostic
+hook-install sites inside the SAME x86-only-guarded `InstallAnalogInputHooks()`
+function as the genuine gap above -- meaning these are almost certainly
+ALSO inert on x64 today, but since they're dev-only investigation toggles
+(not player-facing features, several already superseded per their own
+in-code comments) rather than the class of gap this audit was chartered to
+chase, they weren't individually traced/confirmed. Flagging the pattern
+here in case a future session needs one of these tools on x64 and finds it
+silently does nothing.
+
+**No ghost/dead config keys found.** Cross-checked every key REMOVED from
+`ModConfig` against `mod_config.cpp`'s default-ini-writer and
+`SaveModConfig()`: `GlyphIconOverlay` (removed 2026-08-16),
+`ForceD3D9On12`/`CustomResolutionWidth`/`CustomResolutionHeight`/
+`FpsLimitEnabled`/`FpsLimitTargetFps`/`FpsLimitEnhancementsOnly` (all
+removed 2026-08-29) are referenced ONLY inside migration-history comments
+(`mod_config.cpp`'s `ConfigVersion` bump log) -- none of them are written
+into a fresh `.ini` or read back by `ReadBool`/`ReadFloat`/etc. on either
+platform. No "struct field removed but still written" bug class found.
+
+**Everything else in the ini's 120 keys** (the remaining ~85: all of
+`[Vibration]`, `[Gyro]`, the rest of `[Video]`'s visual-enhancement suite,
+`[Overlay]` FontFamily/Condensed/Italic, `AdsSlowdown*`, hold-threshold
+keys, `ButtonLayout`/`StickLayout`/`FlipTriggers`, `GlyphStyleAuto`,
+`PluginsEnabled`, `UseCustomOptionsScreen`, `FireNotifyQueueKick`,
+`ForceGlyphOverlay`, `GlyphPositionEditMode`, and the remaining
+diagnostic-only `*Logging` toggles) were already confirmed working (or
+already known/documented as x86-only diagnostic tooling) by prior rounds
+in this file and `x64_feature_parity_audit.md` before this pass started,
+and were not re-derived from scratch here -- only cross-referenced to
+confirm no re-audit was needed, per this task's own efficiency
+instruction.
