@@ -1648,6 +1648,82 @@ This does not block any current, real project need — `so_trainer2_
 so_deltacamp` and the two already-clean zones remain unaffected either
 way, and this bug was never blocking anything before §5.20 was shipped.
 
+## 5.22. UPDATE, 2026-09-14 (later still, "keep goin") — `code_post_gfx.ff`'s own new `XFILE_BLOCK_CALLBACK` failure traced to a `snd_alias_list_t` → recursive `LoadedSound` load; the union-branch-selection theory tested directly and disproven; the actual malformed value shows no pattern at all, three levels of recursion deep — paused, not resolved
+
+**Status: real, precise progress on WHERE and WHY-NOT; the actual root
+cause remains open. No fix attempted — every experiment reverted.**
+
+Investigated `code_post_gfx.ff`'s own post-§5.20 failure (`"Zone
+referenced offset 70909906 of block XFILE_BLOCK_CALLBACK which is larger
+than its size 0"` — a reference into a block that's entirely unused by
+this zone, size exactly zero, a new and different signature from
+anything else logged this session).
+
+**Traced the failure to a specific asset and field, using the same
+asset-index-trace + throw-site-value-dump technique already proven this
+session**: asset index 4481, `ASSET_TYPE_SOUND` (`snd_alias_list_t`) —
+the first sound asset investigated all session, structurally unrelated
+to the `XModel`/`Material` chain §5.21 was investigating. The raw
+malformed value (`0x59EE65FC5439FFD3`) is a genuinely different SHAPE
+from every other case found this session: no zero half, no sentinel
+pattern in either the high or low 32 bits — high-entropy, effectively
+random-looking.
+
+**A concrete, testable hypothesis — a union-branch-selection bug — was
+formed and directly disproven, not just theorized.** `snd_alias_list_t`'s
+own DSL (`snd_alias_list_t.txt`) declares a real runtime-conditional
+field: `set condition SoundFile::u::loadSnd type == SAT_LOADED;` — a
+`SoundFileRef` struct holds BOTH a `LoadedSound* loadSnd` and a
+`StreamedSound streamSnd` (not a real C++ union, two coexisting struct
+members at different offsets, both populated by the same raw
+`LoadWithFill` byte-copy regardless of which is semantically "active"),
+and the generated code branches on a runtime `type` field to decide
+which one is real. The hypothesis: if `type` were misread (wrong offset,
+wrong enum value), the code could take the wrong branch and misinterpret
+the OTHER union member's own bytes as a pointer, explaining a
+random-looking value. **Tested directly with a live diagnostic dumping
+`type`, `SAT_LOADED`, and both union members' own raw values**: `type=1`,
+`SAT_LOADED=1` — a correct, clean match; `loadSnd=0xFFFFFFFFFFFFFFFF` —
+a correct, clean `FOLLOWING` sentinel. The branch selection is entirely
+correct. This rules the hypothesis out cleanly, not just weakens it —
+the code correctly takes the `SAT_LOADED` branch and correctly begins a
+RECURSIVE load of a separate, not-yet-investigated asset type
+(`Loader_LoadedSound`), and the actual malformed value lives somewhere
+INSIDE that recursive load, at least one level deeper than this round's
+own diagnostics reached.
+
+**This is the THIRD time this session a malformed value has turned out
+to live inside a recursively-loaded sub-asset rather than at the
+"obvious" top-level field being checked first** (§5.21's own
+`XModel`→`materialHandles`→`Material` chain is the second; this
+`snd_alias_list_t`→`LoadedSound` chain is the third) — worth flagging as
+a real, recurring shape to this whole bug family: surface-level fields
+are consistently clean, and genuine problems hide inside recursive
+sub-asset loads reached through arrays/handles, not simple direct struct
+fields. This is a useful, generalizable lead for whoever continues this
+investigation, even without a fix yet.
+
+**All temporary instrumentation reverted** (five throw-site value dumps
+across all `ConvertOffsetTo*` functions, a top-level asset-index trace,
+and a direct union-member diagnostic inside the generated
+`snd_alias_list_t` loader — including cleaning the diagnostic out of the
+gitignored, regenerated `build/` output, not just tracked source), 0
+regression confirmed against all six known zones.
+
+**Paused per this project's own standing persistence-threshold
+principle**, matching §5.21's own reasoning exactly: real, precise scope
+narrowing achieved (ruled out one concrete, testable hypothesis; found
+the true depth of the bug; identified a real, generalizable pattern
+across two independent occurrences), but resolving the ACTUAL root cause
+of either recursive case would need a fresh technique (most likely a
+native decompile of `LoadedSound`'s own real fill function, or of
+`Material`'s own fill function specifically as reached from `XModel`'s
+`materialHandles` — this session's own most reliable un-stuck technique
+whenever shape-guessing alone stalls) rather than more ad hoc diagnostic
+rounds. Doesn't block any current need — `code_post_gfx.ff` already
+progressed further than it had before §5.20's own shipped fix, and
+nothing about this investigation put that progress at risk.
+
 ## 6. Scoped plan for in-house tooling — an MVP, not a full OpenAssetTools replacement
 
 **This project's own actual need is narrow**: GSC/rawfile extraction to
