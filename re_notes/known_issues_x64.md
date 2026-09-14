@@ -6824,3 +6824,53 @@ exhausted as a category. Concrete next step unchanged: a raw hex-editor
 comparison of the real decompressed zone bytes, or live x64dbg debugging
 of the actual read cursor. Full trail: `re_notes/x64_migration/
 fastfile_format_research.md` §5.13.
+
+### UPDATE, 2026-09-14 (later still, second of two parallel forks, "run 2 forks to dig deeper") — the raw on-wire `name` bytes ARE genuinely corrupted (not a downstream interpretation bug); struct/DSL definitions confirmed byte-identical to pristine upstream; hamburg.ff/common.ff never even reach this code path
+
+**Status: still Paused, two more real findings.** Ran in parallel with the
+round above, deliberately different techniques. (1) Diffed this fork's
+`MaterialPixelShader.txt`/`MaterialVertexShader.txt`/
+`MaterialTechniqueSet.txt` against a fresh pristine upstream OpenAssetTools
+clone — **byte-identical, 0-line diffs**; `IW5_Assets.h`/`Material.txt`
+differ by exactly the one already-known intentional `subMaterials` edit,
+nothing else. Rules out a transcription error, independently of the x86
+native confirmation above. (2) A pure static hex-dump-of-the-decompressed-
+file turned out to be impractical by hand — `XFILE_BLOCK_TEMP`'s own
+write-position bookkeeping resets on every `PopBlock()` by design (verified
+directly in `ZoneInputStream.cpp`: each top-level asset's raw struct reads
+into shared scratch space then gets `memcpy`'d out before the next asset
+reuses it), so a `LoadWithFill` destination position isn't 1:1 with a fixed
+file offset the way a naive comparison assumes. Used a live runtime
+diagnostic instead (same "temporary, added, used, reverted" technique as
+§5.10's own investigation) — a one-off raw-byte dump inside `LoadWithFill`,
+captured *before* `FillPtr` ever interprets the bytes:
+
+```
+MaterialVertexShader: FF FF FF FF FF FF FF FF (name, valid FOLLOWING) ...prog fields all valid... programSize=0x73
+MaterialPixelShader:  AB 2A 01 30 00 00 00 00 (name, GARBAGE)         ...prog fields all valid... programSize=0x37
+```
+
+**Decisive on one point**: the corruption is in the raw bytes themselves,
+not in how `FillPtr` interprets them — and it's isolated to exactly the
+first 8 bytes of the 32-byte read, with everything after (`prog.ps`,
+`prog.loadDef.program`, `programSize`) independently valid-looking in the
+SAME read, ruling out a simple stream-position desync (which would corrupt
+everything after the misalignment too). **New, not previously documented**:
+the same diagnostic got **zero hits** against `hamburg.ff`/`common.ff` —
+both fail before ever reaching a `MaterialVertexShader`/`MaterialPixelShader`
+read at all. Only `code_post_gfx.ff` actually exercises this code path.
+The `MaterialPixelShader::name` corruption is therefore confirmed specific
+to `code_post_gfx.ff` — `hamburg.ff`/`common.ff` share the outer symptom
+(`Zone referenced offset X of block XFILE_BLOCK_TEMP...`) but haven't been
+shown to share this exact root cause; earlier text describing "the same
+chain on all three zones tested" described the symptom accurately but
+shouldn't be read as proof of one shared cause.
+
+No code change applied — temporary instrumentation fully reverted and
+rebuild re-verified against known error signatures, 0 regression. Concrete
+next step, sharper than before: extend this round's own (proven-working,
+reverted) live-diagnostic technique to print the dynamic shader-bytecode
+read length and the exact byte immediately preceding
+`MaterialPixelShader`'s own read, to check whether the VertexShader-tail →
+PixelShader-head boundary is off by a small, deterministic amount. Full
+trail: `re_notes/x64_migration/fastfile_format_research.md` §5.14.
