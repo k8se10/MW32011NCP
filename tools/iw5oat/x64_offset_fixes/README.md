@@ -94,13 +94,20 @@ every other field in the same read, and `MaterialVertexShader`'s entire
 header read immediately before it, are byte-perfect. An earlier theory
 (shader bytecode reading from the wrong `XFILE_BLOCK_*`) was tested and
 disproven with direct evidence — blocks only affect where output lands,
-never which stream bytes get read. The root cause is still unidentified
-despite many rounds of native-decompile verification; paused per this
+never which stream bytes get read. A second theory — that this fork's
+assumed struct field order/layout for `MaterialPixelShader`/
+`MaterialVertexShader`/`MaterialPass` might be wrong — was also tested
+and disproven, this time via fresh decompile of the *original x86*
+`iw5sp.exe` (not just x64-side reasoning): x86's own native
+`Load_MaterialPixelShader`/`Load_MaterialVertexShader` are byte-for-byte
+structurally identical to each other and match this fork's field order
+exactly. The root cause is still unidentified despite many rounds of
+native-decompile verification on both architectures; paused per this
 project's own standing persistence-threshold principle rather than
 continuing to re-derive the same conclusions. See
-`re_notes/x64_migration/fastfile_format_research.md` §5.10 for the full
-trail and concrete next-step recommendations (live debugging or a raw
-hex-editor comparison — a genuinely different technique, not more
+`re_notes/x64_migration/fastfile_format_research.md` §5.10 and §5.13 for
+the full trail and concrete next-step recommendations (live debugging or
+a raw hex-editor comparison — genuinely different techniques, not more
 decompile cross-referencing).
 
 ## Scope
