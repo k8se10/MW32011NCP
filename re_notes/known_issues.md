@@ -130,7 +130,7 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#95](#95-phase-e-visual-suite-plan-camera-only-motion-blur----resolved-phase-e-is-done-2026-08-28) — Phase E: camera-only motion blur — **Resolved**, Phase E is done
 - [#96](#96-game-literally-exited-mid-session----resolved-2026-08-27-root-caused-to-hook_fun_00497210s-unconditional-install-firing-during-partially-composited-frames-fixed-via-a-redesigned-hook-point-fun_00693ff0) — Motion blur crash ("game literally exited") — **Resolved** — root-caused to `Hook_FUN_00497210`'s unconditional install; final shipped hook is `FUN_00693ff0`, confirmed crash-free live
 - [#97](#97-motion-blur-issue-96-continuation-menu--loading-screen-gates-shipped-cutscene-report-retracted-on-retest----current-state-closed-for-tonight) — Motion blur menu/loading-screen gates + cutscene report — **Resolved** (cutscene report retracted on retest, no code change needed)
-- [#98](#98-cutscene-skip-audio-keeps-playing-after-skip----controller-specific-2026-08-28-not-yet-fixed) — Cutscene-skip audio keeps playing after skip — **Investigating** — controller-specific (Start), likely this mod's own pause-menu call, not native
+- [#98](#98-cutscene-skip-audio-keeps-playing-after-skip-x86--start-does-not-skip-cutscenes-at-all-x64----controller-specific-x86-root-caused-and-fixed-2026-09-14-x64-fixed-same-day-different-root-cause) — Cutscene-skip audio persists (x86) / Start does nothing during cutscenes (x64) — **Partially Resolved** — both root-caused via full decompile and build-verified fixed 2026-09-14; neither live-tested yet; a GSC-scripted (non-Bink) cutscene case remains an open gap on both platforms
 - [#99](#99-camera-look-stutterjitter----resolved-real-root-cause-is-vsync-confirmed-via-cross-machine-test-2026-08-27) — Camera-look stutter — **Resolved** (real root cause is vsync, confirmed via cross-machine test); its own in-mod FPS limiter sub-investigation — **removed entirely a second time** (2026-08-29), confirmed via real FPS counter to cap menus only, not gameplay — RTSS remains the standing recommendation
 - [#100](#100-motion-blur-ui-disappears-when-taking-damage-while-moving----reported-not-yet-investigated-2026-08-27) — Motion blur: UI disappears on damage while moving — **Resolved** — real cause was `SetFVF` itself, found via a 9-round live isolation test; `DrawFullScreenPass` now calls neither `SetFVF` nor `SetVertexDeclaration`, confirmed via a 4-wave Survival playtest
 - [#101](#101-roadmap-note-broader-performanceoptimizationmodern-hardware-pass-users-own-framing-2026-08-27) — Roadmap: growing into a "FusionFix-style" general enhancement patch — **Roadmap Idea**, not scoped
@@ -14655,7 +14655,159 @@ trace any of them to a live per-frame readable STATE flag, so task #25's
 own blockers (Predator Missile guidance movement-breaking, the "Turbulence"
 plane-breakup sequence) are unchanged by tonight's work.
 
-## 98. Cutscene-skip audio keeps playing after skip -- CONTROLLER-SPECIFIC (2026-08-28), not yet fixed
+## 98. Cutscene-skip audio keeps playing after skip (x86) / Start does not skip cutscenes at all (x64) -- CONTROLLER-SPECIFIC, x86 root-caused and fixed 2026-09-14; x64 fixed same day, different root cause
+
+**Status: Partially Resolved.** x86: root-caused via full Ghidra decompile of
+the real native ESC key handler and fixed 2026-09-14 (see "Full root-cause +
+fix round" below). x64: a SEPARATE, more severe bug was found the same day
+(Start does nothing at all during a cutscene, not just an audio-persistence
+bug) and fixed via a different mechanism specific to x64's architecture (see
+"x64 correction" round below). Neither fix has been live-tested yet --
+build-verified only (x64 `/t:Rebuild` 0 errors, x64 machine/timestamp
+confirmed via `dumpbin /headers`, Win32 regression rebuild 0 errors, x64
+rebuilt and redeployed last). Original investigation history preserved below.
+
+### Full root-cause + fix round, x86 (2026-09-14)
+
+Full decompile of `FUN_00541020` (the real native key-event handler ESC is
+hardcoded into -- `re_notes/ghidra_project/iw5sp_proj`, `analyzeHeadless.bat
+-process iw5sp.exe -noanalysis -readOnly` + `DecompileAt.java`) confirms the
+theory in the original investigation below was directionally right but
+incomplete. The real branching, once `IsMenuActive()`'s gate bit is clear:
+
+- `state == 1 or 2` -> `FUN_004d6620` (`OpenPauseMenu`, already called by our
+  own code for this case) -> (state==1) -> `FUN_004038b0` -> `FUN_00489950`
+  -> `FUN_0049cee0`. **`FUN_0049cee0` is a real, confirmed Bink Video
+  teardown call** -- its own writers/callers (`FUN_0066eae0`/`FUN_0066ece0`
+  directly call `BinkSetSoundTrack_8`/`BinkGoto_12`/`BinkRegisterFrameBuffers_8`
+  etc., real RAD Game Tools Bink API calls) confirm `clcState == 1` is the
+  real "a Bink cinematic is playing" client state, and `FUN_0049cee0` is the
+  real "stop it" call that tears down BOTH video and audio together (Bink
+  owns both under one handle). **Our own `state==1||2 -> OpenPauseMenu()`
+  branch already reached this exact real call, unchanged** -- for a TRUE
+  Bink-backed cutscene this was never the bug.
+- `state == 6` (ordinary gameplay) -> an ADDITIONAL real guard the original
+  2026-07-15 header comment never documented: suppresses the pause-menu-open
+  entirely (a hard `return`, zero side effects) while a Bink cinematic is
+  STILL confirmed playing (`FUN_00495d20()`/`FUN_00485d40()`, decompiled --
+  read `DAT_0217c15c`/`DAT_0217c15d`/`DAT_0217c164`/`DAT_0217c168`/
+  `DAT_0217bf4c`, all confirmed via `FindDataWriters.java` to be genuine Bink
+  state bytes, not dvar handles) plus a few extra dvar-handle conditions
+  (`DAT_01769f34+0xc`/`DAT_00a8639c+0xc`/`DAT_00a86398+0xc`) left
+  unreplicated (pointer-indirected, not independently confirmed this
+  session -- see the fix's own comment for why omitting them is the safe
+  direction). Otherwise calls `FUN_004396d0(player,2)` (`SetMenuState`).
+- **Any OTHER state (0,3,4,5,7)** -> a hard `return`, zero side effects.
+  **This is exactly what the original 2026-07-15 header comment already
+  said** ("any other state (loading, cutscene, etc.) -- real engine does
+  nothing; so do we") **-- but the actual code never implemented the "so do
+  we" part.** It unconditionally called `SetMenuState(paused)` for every
+  non-1/2 state, including this one and state==6. This is the real,
+  independently-confirmed doc/code drift the original investigation below
+  theorized but never proved.
+
+**Fix (`analog_input_hooks.cpp`, `InjectControllerPauseMenu`)**: replaced the
+old two-way branch (`state==1||2` vs. "everything else forces SetMenuState")
+with the real three-way split above. State 1/2 unchanged (already correct).
+State 6 now checks a new `IsBinkCinematicPlaying()` helper (replicates
+`FUN_00495d20()||FUN_00485d40()` via direct reads of the confirmed Bink
+globals) before calling `SetMenuState` -- suppresses it if a Bink cinematic
+is still somehow active during state 6, logs instead. Any other state now
+does nothing at all (log only), matching the real engine instead of forcing
+`SetMenuState`. New `[pause-diag]` log lines added for both new branches,
+`sprintf_s` worst-case lengths checked against the existing `buf[128]`
+(98 and 111 bytes worst-case respectively, both well under 128).
+
+**Does this fully explain the original "London mission" report?** Only
+partially -- confidently for a TRUE Bink-backed cutscene (mission
+intro/outro FMV, clcState==1), where the fix changes nothing (it was already
+correct) but the investigation itself is now a confirmed, not just
+theorized, non-issue. For an in-engine, GSC-scripted cinematic sequence
+(camera-locked story beat, dialogue-driven, staying at clcState==6 the whole
+time and never touching Bink) -- the more likely candidate for a mid-mission
+story cutscene like "London mission" -- the fix's `IsBinkCinematicPlaying()`
+check will correctly read "not playing" (it's not Bink) and fall through to
+the unchanged `SetMenuState(paused)` call, same as before. **This class of
+cutscene's real native "skip and stop audio" mechanism was NOT found this
+session** -- issue #97 already searched for a live-readable GSC/CG-level
+cinematic-active flag (`cg_cinematicFullscreen` etc.) and came up empty; this
+session's own search didn't find one either. Native mouse-click's clean skip
+for THIS class of cutscene most likely reaches a separate, GSC-script-level
+skip listener entirely outside the ESC/pause path -- not yet identified.
+**Honest summary: this fix closes the confirmed doc/code drift and the
+Bink-cinematic edge case, but does NOT confidently close the original
+"London mission" report if that cutscene is GSC-scripted rather than
+Bink-backed** -- flagged as the real remaining gap, not swept under the rug.
+
+### x64 correction round (2026-09-14, same day) -- DIFFERENT AND MORE SEVERE: Start does nothing at all during a cutscene, not an audio-only bug
+
+**Live report received mid-investigation**: "cutscene skip is irrelavant now
+as the pause button no longer skips on x64" -- i.e. the ORIGINAL bug's
+premise (visual skip works, only audio persists) does not hold on x64 at
+all; Start currently has NO effect whatsoever during a cutscene there
+(neither skip nor pause-menu-open, per the report). This corrected the
+investigation's direction mid-session -- documented here rather than
+silently overwritten.
+
+**Root cause, confirmed via decompile of x64's own pause-toggle chain**
+(`re_notes/ghidra_project_x64/iw5sp_x64_proj`): x64's Start handler
+(`PollPauseToggleX64`, `analog_input_hooks_x64.cpp`) has ALWAYS called
+`g_pauseToggle` (`FUN_1400823b0`) unconditionally on the press edge, for
+EVERY clcState value including 1/2 -- it never special-cased the real
+cinematic states the way x86's `InjectControllerPauseMenu` does (or the way
+the real native key handler, `FUN_14007eaf0`, itself does). `FUN_1400823b0`
+decompiles to a self-contained generic toggle with its OWN guard --
+structurally the negated mirror of `FUN_14007eaf0`'s own state==6
+cinematic-suppression guard (same globals: `DAT_141efb7a8`/`FUN_1401a1e50`/
+`FUN_1401a1e40`/`DAT_14050bde8`/`DAT_14050bdf0`) -- but with **no clcState==1/2
+branch of its own**: if the guard says "proceed" it always calls the generic
+`FUN_14029f3f0` (`SetMenuState`-equivalent) toggle; if the guard says
+"suppress" (which a genuine Bink cinematic correctly triggers, by design) it
+does **literally nothing**. During an actual cutscene the guard evaluates to
+"suppress," so `FUN_1400823b0` -- and therefore Start -- does nothing at all.
+This is a real, more severe gap than x86 ever had: x86's ORIGINAL (pre-fix)
+bug at least visually skipped (forcing `SetMenuState` unconditionally, no
+matter how wrong), while x64's architecture (delegate fully to one
+self-contained native toggle) means the real native suppression guard, which
+x86 never replicated at all, silently swallows the Start press entirely on
+x64.
+
+**Fix (`analog_input_hooks_x64.cpp`)**: added the missing clcState==1/2
+special case, mirroring x86's `InjectControllerPauseMenu` and the real
+`FUN_14007eaf0` key handler directly. New signature `kOpenPauseMenuForCinematicSignature`
+resolves `FUN_140082e70` (confirmed the exact x64 structural equivalent of
+x86's `FUN_004d6620`/`OpenPauseMenu`: `FUN_140082e70` -> (state==1) ->
+`FUN_1400796b0` -> `FUN_1400795d0`, decompiled function-for-function
+identical in shape to x86's `FUN_004d6620` -> `FUN_004038b0` ->
+`FUN_00489950` chain). `PollPauseToggleX64` now reads clcState via the
+already-existing `TryGetClcStateX64()` on the press edge; if 1 or 2, calls
+`g_openPauseMenuForCinematic` directly instead of `g_pauseToggle` --
+otherwise unchanged (falls through to the existing `g_pauseToggle` call,
+which already correctly handles state 6 and does nothing for any other
+state via its own real guard). If the new signature fails to resolve, falls
+back to the pre-existing `g_pauseToggle`-only behavior -- cannot regress
+Pause below its current state. New `[x64-pause-cinematic]` log lines added;
+`sprintf_s` worst-case length checked against its `buf[176]` (167 bytes
+worst-case with a full 16-hex-digit address, under 176).
+
+**Not yet live-tested.** Build-verified only (see status line). Whether
+`FUN_140082e70`'s real chain on x64 also correctly stops Bink audio (not
+just video) the way x86's confirmed chain does was NOT independently
+re-verified via a fresh x64-specific decompile of the Bink teardown call
+itself (`FUN_1400795d0`'s own callees) -- inferred from the two chains'
+confirmed structural identity at every level checked (three function calls
+deep), not independently re-traced to its own Bink API calls the way x86's
+was. A reasonable, evidence-backed inference given how closely every other
+level of this chain matches x86 function-for-function, but flagged honestly
+as one level less independently confirmed than the x86 finding.
+
+**Same open gap as x86**: does not address a GSC-scripted (non-Bink)
+in-engine cinematic sequence, since `FUN_140082e70`'s own real chain is only
+reached for clcState 1/2 either way. If "London mission" turns out to be a
+GSC cutscene rather than a Bink FMV, this fix does not change its behavior
+on x64 either -- same honest caveat as the x86 fix above.
+
+### Original investigation (2026-08-28, superseded by the confirmed root cause above, kept for the trail)
 
 **Status: Investigating -- new lead reopens this issue, likely NOT a native
 engine bug after all.** Original report (London mission, day before an
