@@ -1,0 +1,94 @@
+================================================================
+Function: FUN_140094cf0 @ 140094cf0
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_140094cf0(undefined8 param_1)
+
+{
+  FUN_1400aad70(param_1,DAT_1407be880,0x20);
+  FUN_1400aac10(3);
+  DAT_1407bed68 = DAT_1407be880;
+  FUN_1400aad70(0,DAT_1407be880,8);
+  if (*DAT_1407bed68 != 0) {
+    if (*DAT_1407bed68 == -1) {
+      _DAT_1407bed58 = FUN_1400aaa90(0);
+      *DAT_1407bed68 = _DAT_1407bed58;
+      FUN_1400aae50(DAT_1407bed68);
+    }
+    else {
+      FUN_1400aad40();
+    }
+  }
+  DAT_1407be868 = DAT_1407be880 + 1;
+  FUN_140094d90(0);
+  FUN_1400aabd0();
+  return;
+}
+
+
+
+================================================================
+Function: FUN_140095320 @ 140095320
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_140095320(undefined8 param_1)
+
+{
+  FUN_1400aad70(param_1,DAT_1407be870,0x20);
+  FUN_1400aac10(3);
+  DAT_1407bed68 = DAT_1407be870;
+  FUN_1400aad70(0,DAT_1407be870,8);
+  if (*DAT_1407bed68 != 0) {
+    if (*DAT_1407bed68 == -1) {
+      _DAT_1407bed58 = FUN_1400aaa90(0);
+      *DAT_1407bed68 = _DAT_1407bed58;
+      FUN_1400aae50(DAT_1407bed68);
+    }
+    else {
+      FUN_1400aad40();
+    }
+  }
+  DAT_1407be860 = DAT_1407be870 + 1;
+  FUN_1400953c0(0);
+  FUN_1400aabd0();
+  return;
+}
+
+
+
+================================================================
+Function: FUN_1400951a0 @ 1400951a0
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_1400951a0(undefined8 param_1)
+
+{
+  FUN_1400aad70(param_1,DAT_1407be898,0xb0);
+  FUN_1400aac10(3);
+  DAT_1407bed68 = DAT_1407be898;
+  FUN_1400aad70(0,DAT_1407be898,8);
+  if (*DAT_1407bed68 != 0) {
+    if (*DAT_1407bed68 == -1) {
+      _DAT_1407bed58 = FUN_1400aaa90(0);
+      *DAT_1407bed68 = _DAT_1407bed58;
+      FUN_1400aae50(DAT_1407bed68);
+    }
+    else {
+      FUN_1400aad40();
+    }
+  }
+  _DAT_1407be890 = DAT_1407be898 + 2;
+  FUN_1400aad70(0,_DAT_1407be890,0xa0);
+  FUN_1401e1ac0(DAT_1407be898 + 2,(char)DAT_1407be898[1]);
+  FUN_1400aabd0();
+  return;
+}
+
+
+

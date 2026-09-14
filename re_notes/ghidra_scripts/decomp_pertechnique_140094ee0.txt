@@ -1,0 +1,43 @@
+================================================================
+Function: FUN_140094ee0 @ 140094ee0
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_140094ee0(void)
+
+{
+  ushort uVar1;
+  longlong *plVar2;
+  ulonglong uVar3;
+  
+  FUN_1400aad70(1,DAT_1407be8d0,0x10);
+  DAT_1407be8c8 = DAT_1407be8d0 + 2;
+  uVar1 = *(ushort *)((longlong)DAT_1407be8d0 + 10);
+  uVar3 = (ulonglong)uVar1;
+  FUN_1400aad70(1,DAT_1407be8c8,((uint)uVar1 + (uint)uVar1 * 4) * 8);
+  plVar2 = DAT_1407be8c8;
+  if (uVar1 != 0) {
+    do {
+      DAT_1407be8c8 = plVar2;
+      FUN_140094b90(0);
+      plVar2 = plVar2 + 5;
+      uVar3 = uVar3 - 1;
+    } while (uVar3 != 0);
+  }
+  DAT_1407bed68 = DAT_1407be8d0;
+  FUN_1400aad70(0,DAT_1407be8d0,8);
+  if (*DAT_1407bed68 != 0) {
+    if (*DAT_1407bed68 == -1) {
+      _DAT_1407bed58 = FUN_1400aaa90(0);
+      *DAT_1407bed68 = _DAT_1407bed58;
+      FUN_1400aae50(DAT_1407bed68);
+      return;
+    }
+    FUN_1400aad40();
+  }
+  return;
+}
+
+
+
