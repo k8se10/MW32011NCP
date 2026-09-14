@@ -6732,3 +6732,39 @@ session, MCP connection refused) to watch the real read cursor advance
 across this exact boundary, or a raw hex-editor comparison of the actual
 decompressed zone bytes at the computed expected offset. Full trail:
 `re_notes/x64_migration/fastfile_format_research.md` §5.10.
+
+### RESOLVED (practical usability), 2026-09-14 (later still, "for what we need surely we dont really need that? at this time anyway") — `iw5oat` confirmed already usable TODAY for real GSC extraction, independent of the still-paused shader bug above
+
+**Status: Resolved for this project's actual need.** The shader-bytecode
+corruption directly above stays genuinely paused/unresolved as its own bug
+— this entry doesn't fix it, it establishes that this project's real,
+stated need (`CLAUDE.md`'s GSC-first RE methodology: RawFile/ScriptFile
+extraction) was never actually blocked by it in the first place.
+
+Direct pushback on continuing the shader-bug deep-dive ("for what we need
+surely we dont really need that? at this time anyway") prompted testing
+whether zones that never reference a `Material` asset already extract
+cleanly with everything already committed (the dispatch-record fix,
+`LoadXStringArray`'s stride fix, the full `x64_offset_fixes/` pass,
+`Material::subMaterials` removed). **Confirmed yes**: `zone/english/
+sp_intro.ff` and `zone/english/sp_prague.ff` — real, retail, script-only
+Campaign zones — load and extract through `Unlinker.exe` with **0
+warnings, 0 errors**, producing byte-verified valid output: `808.gscbin`
+(33 bytes) and `maps/sp_intro.gscbin` (71 bytes), both opening with a real
+zlib `78 DA` header (genuine compressed GSC bytecode, not garbage);
+`maps/sp_intro.mapents` (146 bytes, readable valid entity text); `sp_intro`
+itself extracting correctly as an empty 0-byte RawFile marker.
+
+**Practical conclusion**: `iw5oat` is usable right now for GSC/rawfile
+extraction on any zone that doesn't pull in a `Material` asset — the open
+shader-bytecode bug only blocks Material-referencing zones (most zones with
+real rendered geometry/UI, e.g. `hamburg.ff`/`common.ff`/`code_post_gfx.ff`),
+not script-only ones. This doesn't reopen or deprioritize the shader bug as
+something worth eventually fixing — it just means it was never actually
+gating this project's day-to-day GSC RE work, which can proceed today.
+
+**Not yet done**: a full sweep of every `sp_*.ff`/`so_*.ff` zone to map
+which are script-only (already usable) vs. Material-referencing (still
+blocked) — only `sp_intro.ff`/`sp_prague.ff` directly confirmed so far, by
+direct test, not filename inference. Full trail: `re_notes/x64_migration/
+fastfile_format_research.md` §5.11.
