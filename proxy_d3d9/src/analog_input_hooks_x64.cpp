@@ -162,6 +162,15 @@ bool TryGetPickupGlyphAssetName(char* outAssetName, size_t outSize);
 // Also defined at file scope there (outside the anonymous namespace), same linkage
 // class as the four above.
 bool TryGetMenuGlyphAssetNameForKeyName(const char* keyName, char* outAssetName, size_t outSize);
+// TryGetGlyphAssetNameForKeyName (2026-09-14, Survival ready-up port): existing x86
+// function (analog_input_hooks.cpp, right next to TryGetMenuGlyphAssetNameForKeyName
+// above -- same file-scope/external-linkage class, not inside that file's anonymous
+// namespace), the GENERIC gameplay key-name->glyph-asset lookup x86's own ready-up
+// branch resolves its F5 icon through (TryGetGlyphAssetNameForKeyName(highlighted,
+// ...) where highlighted=="F5"). Reused verbatim, zero x86 changes -- pure string-
+// table logic (ResolveGlyphAssetNameForKeyName), no x86-only address/__asm, so it's
+// already compiled and linkable for x64 the same way the four functions above are.
+bool TryGetGlyphAssetNameForKeyName(const char* keyName, char* outAssetName, size_t outSize);
 
 namespace {
 
@@ -4026,14 +4035,24 @@ extern "C" bool TryGetCursorGateX64(int* outVisFlag, int* outUiState)
 //     Throwback are all gated by an exact structural template match against a
 //     LIVE-RESOLVED reference-key template (the same protection x86's own
 //     Mantle/Throwback/SentryPlace special cases rely on), not by font identity.
-//   - Buy-station ("Hold ^3F^7 to use Weapon Armory") and Survival ready-up (F5)
-//     remain UNPORTED -- both are x86's OWN generic-bucket cases (no reference-key
-//     template of their own was ever found even for x86, per ui_assets.md's own
-//     zone-dump research; ready-up's hint text is Survival-script-driven, not in
-//     code_post_gfx.str at all), meaning x86 itself protects them from false
-//     positives via IsGameplayHintFont + !IsMenuActive(), not a structural match.
-//     Porting these safely needs the font-name-filtering gap above closed first --
-//     genuinely blocked on real RE, not skipped for convenience.
+//   - Buy-station ("Hold ^3F^7 to use Weapon Armory") remains UNPORTED -- x86's OWN
+//     generic-bucket case (no reference-key template of its own was ever found even
+//     for x86, per ui_assets.md's own zone-dump research), meaning x86 itself
+//     protects it from false positives via IsGameplayHintFont + !IsMenuActive(), not
+//     a structural match. Porting it safely needs the font-name-filtering gap above
+//     closed first -- genuinely blocked on real RE, not skipped for convenience.
+//   - Survival ready-up (F5) IS NOW COVERED (2026-09-14, see Hook_DrawTextX64's own
+//     ReadyUp block, right after the Reload block below) -- the claim previously
+//     here ("remains UNPORTED... genuinely blocked on real RE") no longer holds for
+//     this specific hint. Kept as a visible correction rather than silently deleted,
+//     per this project's own documentation standard. It's also a generic-bucket case
+//     with no reference-key template (same as buy-station, ready-up's hint text is
+//     Survival-script-driven, not in code_post_gfx.str at all) and x86 itself also
+//     only protects it via IsGameplayHintFont -- but unlike buy-station, ready-up has
+//     a real, already-resolved SUBSTITUTE safety signal available (IsInSurvivalModeX64(),
+//     since the hint can only ever be real inside Survival), which buy-station has no
+//     equivalent of (it can show in both Campaign and Survival). That's the whole
+//     reason ready-up could be ported today and buy-station still can't.
 //
 //   UPDATE (2026-09-13, later same day, separate session): a dedicated attempt
 //   was made to independently confirm Font_s.fontName's real offset via decompile
@@ -4272,6 +4291,23 @@ constexpr DWORD kMantleHintGraceMsX64 = 400; // matches x86's kMantleHintGraceMs
 extern "C" bool IsMantleHintCurrentlyShowingX64()
 {
     return (GetTickCount() - g_mantleHintLastSeenMsX64) <= kMantleHintGraceMsX64;
+}
+
+// Same pattern as g_mantleHintLastSeenMsX64/IsMantleHintCurrentlyShowingX64 above,
+// for the Survival ready-up hint (see Hook_DrawTextX64's own ReadyUp block further
+// down, 2026-09-14 port) -- a real-time "is the ready-up prompt actually showing
+// right now" signal, off real text detection rather than this file's own existing
+// timer-based Y-hold heuristic (g_yPressStartMs/g_yReadyUpFiredX64), so a future
+// context-aware trigger (any synthetic-key/prompt-suppression work that needs to
+// know the true native prompt state, not just "the player is currently holding Y")
+// has a real signal to read instead of re-deriving one from scratch. Grace window
+// matches Mantle's (400ms) -- same reasoning: covers gaps between two draw calls
+// of the same still-showing native hint without a caller needing its own timer.
+DWORD g_readyUpHintLastSeenMsX64 = 0;
+constexpr DWORD kReadyUpHintGraceMsX64 = 400;
+extern "C" bool IsReadyUpHintCurrentlyShowingX64()
+{
+    return (GetTickCount() - g_readyUpHintLastSeenMsX64) <= kReadyUpHintGraceMsX64;
 }
 
 // x64-local reimplementation of x86's RenderedTextMatchesSubstitutionTemplateWithMarker
@@ -4620,6 +4656,119 @@ void Hook_DrawTextX64(
                             "fired (structural match against live PLATFORM_RELOAD/MENU_RELOAD_WEAPON "
                             "template, text=\"%.40s\")", text);
                         LogFromController(subBuf);
+                    }
+                }
+            }
+
+            // Survival ready-up hint (F5) -- NEWLY PORTED 2026-09-14, closing the live-
+            // reported gap "ready up works but prompt needs to be shown and suppress the
+            // old etc." x86's own detection (isReadyUpHint = _stricmp(highlighted, "F5")
+            // == 0, analog_input_hooks.cpp) runs INSIDE its IsGameplayHintFont(font) gate --
+            // that font check is the only thing protecting a bare "F5" text match from
+            // false-positiving on unrelated on-screen text elsewhere (a keybind menu, a
+            // scoreboard column, etc.). x64 does NOT have IsGameplayHintFont available:
+            // Font_s.fontName's real offset was independently investigated TWICE this
+            // project (this hook's own header comment, "NOT COVERED THIS PASS" and its
+            // 2026-09-13 follow-up) and could NOT be confirmed via decompile -- a genuine,
+            // already-documented negative RE result, not skipped for convenience, and not
+            // re-attempted here (re-digging an already-dug, already-failed hole isn't
+            // "checking," CLAUDE.md SS5). Rather than port the bare "F5" match with no
+            // safety net at all, this substitutes a DIFFERENT, already-resolved real
+            // signal for the same purpose: IsInSurvivalModeX64() (the identical dvar-read
+            // gate this file's own weapon-switch-hold ready-up trigger already uses, see
+            // that block's own 2026-09-13 comment) -- the ready-up hint can only ever be
+            // real inside Survival, so scoping the match to that mode closes the practical
+            // false-positive risk a different way than x86's own font check, without
+            // needing the still-blocked offset. QTE (fonts/objectiveFont-only detection,
+            // no structural text pattern exists to substitute) and buy-station (no
+            // reference-key template exists even on x86) remain unported for the same
+            // underlying reason -- see this hook's own header comment, unchanged.
+            if (IsInSurvivalModeX64()) {
+                size_t readyUpTextLen = strlen(text);
+                ColorHighlightSpanX64 readyUpSpan = FindColorHighlightSpanX64(text, readyUpTextLen);
+                if (readyUpSpan.found) {
+                    char highlighted[64] = {};
+                    size_t copyLen = readyUpSpan.contentLen < sizeof(highlighted) - 1 ? readyUpSpan.contentLen : sizeof(highlighted) - 1;
+                    memcpy(highlighted, text + readyUpSpan.contentStart, copyLen);
+                    highlighted[copyLen] = '\0';
+                    {
+                        size_t start = 0, end = strlen(highlighted);
+                        while (start < end && isspace(static_cast<unsigned char>(highlighted[start]))) ++start;
+                        while (end > start && isspace(static_cast<unsigned char>(highlighted[end - 1]))) --end;
+                        size_t trimmedLen = end - start;
+                        if (start > 0) memmove(highlighted, highlighted + start, trimmedLen);
+                        highlighted[trimmedLen] = '\0';
+                    }
+
+                    if (_stricmp(highlighted, "F5") == 0) {
+                        // Real-time detection signal, advanced unconditionally on a match --
+                        // same "signal independent of whether OUR OWN icon lookup below also
+                        // succeeds" reasoning as g_mantleHintLastSeenMsX64's own assignment
+                        // just above (x86's own history, issue #62, is the documented lesson
+                        // for why these two must not be coupled).
+                        g_readyUpHintLastSeenMsX64 = GetTickCount();
+
+                        char assetName[32] = {};
+                        if (TryGetGlyphAssetNameForKeyName(highlighted, assetName, sizeof(assetName))) {
+                            char prefixText[128] = {};
+                            size_t prefixLen = readyUpSpan.markerStart < sizeof(prefixText) - 1 ? readyUpSpan.markerStart : sizeof(prefixText) - 1;
+                            memcpy(prefixText, text, prefixLen);
+                            prefixText[prefixLen] = '\0';
+
+                            // Same two-line split x86's own ready-up branch has (BUG-004,
+                            // 2026-08-02 co-op report): "Teammate ready\nPress F5 to ready up: 23"
+                            // is one native draw call, one color-highlight span, not two hints.
+                            char topLineText[128] = {};
+                            char* embeddedNewline = strchr(prefixText, '\n');
+                            if (embeddedNewline) {
+                                *embeddedNewline = '\0';
+                                strncpy_s(topLineText, prefixText, _TRUNCATE);
+                                memmove(prefixText, embeddedNewline + 1, strlen(embeddedNewline + 1) + 1);
+                            }
+
+                            char suffixText[128] = {};
+                            if (readyUpSpan.markerEnd < readyUpTextLen) {
+                                size_t suffixLen = readyUpTextLen - readyUpSpan.markerEnd;
+                                if (suffixLen >= sizeof(suffixText)) suffixLen = sizeof(suffixText) - 1;
+                                memcpy(suffixText, text + readyUpSpan.markerEnd, suffixLen);
+                                suffixText[suffixLen] = '\0';
+                            }
+
+                            // x86's own override (BUG-004): the native string reads "Press F5
+                            // to ready up," correct for a tap -- but this project's own
+                            // mechanism is a HOLD (g_modConfig.readyUpHoldThresholdMs). This
+                            // project already fully replaces the draw, so the wrong verb is
+                            // entirely on this project, not the game -- override it rather than
+                            // passing the native "Press " through, same as x86.
+                            strcpy_s(prefixText, sizeof(prefixText), "Hold ");
+
+                            // Real draw-location fetch -- the SAME ComputeRealDrawPositionX64 +
+                            // ConvertRealScreenPosToDesignSpaceX64 pair Mantle/Pickup/Throwback/
+                            // Reload above already use, i.e. the actual real screen position
+                            // FUN_14029a2b0's own internal transform would have produced, not a
+                            // guessed one -- this is the "accurately fetch the draw location for
+                            // a 1:1 in-place replacement" mechanism, already generic, just newly
+                            // applied to this hint. centerOnScreen=false and no shared vertical
+                            // nudge applied, matching x86's own documented choice to keep ready-
+                            // up at its own native row rather than pulling it into the interact-
+                            // hint row's separately-tuned position.
+                            float startX = 0.0f, startY = 0.0f;
+                            ComputeRealDrawPositionX64(dcHandle, fontArg, scale, color1, color2, x, y, startX, startY);
+                            ConvertRealScreenPosToDesignSpaceX64(startX, startY, startX, startY);
+
+                            RequestCustomHintOverlay(startX, startY, prefixText, suffixText, assetName,
+                                                       /*centerOnScreen=*/false, /*flashIcon=*/false,
+                                                       GameplayHintSlotId::ReadyUp, topLineText);
+                            suppressRealDraw = true;
+
+                            static bool s_loggedFirstReadyUpMatch = false;
+                            if (!s_loggedFirstReadyUpMatch) {
+                                s_loggedFirstReadyUpMatch = true;
+                                LogFromController("[x64-drawtext] First real Ready-Up glyph-icon "
+                                    "SUBSTITUTION fired (IsInSurvivalModeX64()-gated F5 match, native "
+                                    "hint text suppressed, our own icon+text drawn instead)");
+                            }
+                        }
                     }
                 }
             }

@@ -5808,3 +5808,70 @@ everything fixed today that hasn't had its own playtest pass yet (see
 The Custom Options screen's vanilla-setting data layer stays explicitly
 NOT a release blocker per the 2026-09-14 deferral decision above. See
 `README.md`'s own Status section for the current public-facing estimate.
+
+### UPDATE 2026-09-14 (later same day) — Survival ready-up (F5) prompt detection/substitution ported to x64, closing a live-reported gap; QTE and buy-station stay honestly unported, with the real reason each one differs now on record
+
+**Status: Resolved (ready-up specifically); QTE and buy-station stay Deferred (genuinely blocked, not skipped).**
+
+Direct instruction: "i need you to install all the text and interact etc
+detection along with the ready up etc so we can implement," clarified via
+explicit question to mean generalizing this hook's own prompt-text
+detection (not a specific new feature) so future work can be context-aware
+off real text rather than a blind heuristic, plus (mid-turn addition)
+"would be even better is we could accurately fetch the draw location to be
+able to 1:1 replace in place."
+
+**What shipped**: Survival's ready-up hint ("Press F5 to ready up") is now
+detected and substituted on x64, exactly like Mantle/Pickup/Throwback/
+Reload already are — closing the still-open live-test item from earlier
+today ("ready up works but prompt needs to be shown and suppress the old
+etc"). The real native prompt is suppressed and this project's own
+icon+text draws in its place, at the ACTUAL real screen position the
+native draw would have used (via the same `ComputeRealDrawPositionX64`/
+`ConvertRealScreenPosToDesignSpaceX64` pair the other four substituted
+hints already use) — this is the "accurately fetch the draw location for a
+1:1 in-place replacement" mechanism the user asked for; it was already
+built and already generic, this just applies it to a fifth hint rather
+than needing anything new. The verb is corrected to "Hold" (this project's
+own mechanism is a hold, not a tap, same override x86 already has), and
+the real two-line "Teammate ready\nPress F5..." co-op case is handled the
+same way x86's own ready-up branch does.
+
+**Why QTE and buy-station could NOT also be ported this pass (the honest
+part)**: x86's own detection for ready-up, QTE, and buy-station all share
+one safety net — `IsGameplayHintFont(font)`, a check on the real font
+asset's own name (`fonts/objectiveFont` for QTE; "any gameplay hint font
+at all" for ready-up/buy-station) that keeps a bare text match (like
+`highlighted == "F5"`) from false-positiving on unrelated on-screen text.
+That font-name check is NOT available on x64 — `Font_s.fontName`'s real
+struct offset was independently investigated TWICE this project (this
+file's own 2026-09-13 rounds) via multiple real angles (string-anchor
+tracing, full asset-load-chain tracing, an audit of every confirmed real
+payload consumer) and could not be confirmed; a real negative RE result,
+not something re-attempted today. Ready-up became portable anyway because
+a DIFFERENT, already-resolved real signal happens to cover the exact same
+false-positive risk for this ONE hint specifically: `IsInSurvivalModeX64()`
+(the same dvar-read gate this file's weapon-switch-hold ready-up trigger
+already uses) — the ready-up hint can only ever be real inside Survival,
+so scoping the text match to that mode closes the gap a different way.
+QTE has no such substitute (its font IS the only real signal that's ever
+existed for it, on either architecture) and buy-station has no such
+substitute either (it shows in both Campaign and Survival, so a mode gate
+doesn't narrow anything) — both remain genuinely blocked on the same
+font-offset gap, unchanged from the 2026-09-13 finding.
+
+**Groundwork also added, directly for the "so we can implement" /
+"generalize detection" part of the request**: a real-time
+`IsReadyUpHintCurrentlyShowingX64()` accessor (same 400ms grace-window
+pattern as the existing `IsMantleHintCurrentlyShowingX64()`), giving any
+future context-aware trigger a live signal for "is the real native
+ready-up prompt actually showing right now," independent of this file's
+existing timer-based Y-hold heuristic. Not consumed by anything yet —
+pure groundwork, same shape as Mantle's own detection signal was before
+Auto-Mantle came along to consume it.
+
+Build-verified clean (x64 Release, 0 errors, only pre-existing unrelated
+warnings). Not yet live-tested — the next Survival session should confirm
+the substituted prompt appears correctly positioned and the native one is
+gone. `re_notes/x64_live_testing_checklist.md` should be updated once
+that's confirmed live.
