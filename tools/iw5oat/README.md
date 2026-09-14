@@ -43,17 +43,19 @@ exactly the support this project actually needs, directly.
 ## Current status
 
 **Already usable today for this project's actual need — GSC/rawfile
-extraction on script-only zones.** `zone/english/sp_intro.ff` and
-`zone/english/sp_prague.ff` (real retail Campaign zones with no `Material`
-content) load and extract cleanly through `Unlinker.exe`: **0 warnings, 0
-errors**, real valid output confirmed byte-by-byte — `.gscbin` files
-opening with a genuine zlib `78 DA` header, a readable `.mapents` file, an
-empty `RawFile` marker extracting as empty. This is independent of the one
-remaining open bug below, which only affects zones that reference a
-`Material` asset. Full trail:
-[`re_notes/x64_migration/fastfile_format_research.md`](../../re_notes/x64_migration/fastfile_format_research.md)
-§5.11. Not yet swept: which other `sp_*.ff`/`so_*.ff` zones are script-only
-vs. Material-referencing — only these two are directly confirmed so far.
+extraction on script-only zones, though that's a narrow slice of the real
+game.** `zone/english/sp_intro.ff` and `zone/english/sp_prague.ff` (real
+retail Campaign zones with no `Material` content) load and extract cleanly
+through `Unlinker.exe`: **0 warnings, 0 errors**, real valid output
+confirmed byte-by-byte — `.gscbin` files opening with a genuine zlib
+`78 DA` header, a readable `.mapents` file, an empty `RawFile` marker
+extracting as empty. A full sweep of all 39 real `sp_*.ff`/`so_*.ff` retail
+zones found these are the **only 2 that succeed** — the other 37 (every
+other Campaign mission, every Spec-Ops/Survival zone) all fail with the
+exact same error as the still-open bug below, confirming most real zones
+genuinely do reference a `Material` asset and stay blocked on it. Full
+trail: [`re_notes/x64_migration/fastfile_format_research.md`](../../re_notes/x64_migration/fastfile_format_research.md)
+§5.11-§5.12.
 
 The real x64 fix has four parts. The first three are done and confirmed
 live; the fourth is a separate, narrower, still-open bug that only blocks

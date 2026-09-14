@@ -718,10 +718,52 @@ eventually fixing, but not one that was ever blocking this project's actual
 day-to-day GSC RE work, which can already proceed today against any
 script-only zone.
 
-**Not yet done**: a full sweep of every `sp_*.ff`/`so_*.ff` zone to map out
-exactly which ones are script-only (already usable) vs. Material-referencing
-(still blocked) — only `sp_intro.ff`/`sp_prague.ff` have been directly
-confirmed so far, both by direct test, not by inference from filename.
+**Now done — see §5.12**: the full sweep of every `sp_*.ff`/`so_*.ff` zone
+this section originally flagged as not yet done.
+
+## 5.12. UPDATE, 2026-09-14 (later still, "check all") — full sweep of every `sp_*.ff`/`so_*.ff` retail zone: only 2 of 39 are script-only, every other one hits the identical, already-known Material-chain bug
+
+**Status: swept, not a new finding — confirms the existing bug's real
+practical scope rather than narrowing it.** Ran `Unlinker.exe` directly
+against all 39 `sp_*.ff`/`so_*.ff` zones in the live retail install (every
+Campaign mission and every Spec-Ops/Survival zone, `zone/english/`), not
+just the two already confirmed in §5.11.
+
+**Result: only `sp_intro.ff` and `sp_prague.ff` load and extract cleanly**
+(`Finished with 0 warnings, 0 errors`, matching §5.11's own byte-verified
+output). **All 37 other zones fail**, every single one with the exact same
+error shape:
+
+```
+ERROR: Loading fastfile failed: Zone referenced offset <N> of block XFILE_BLOCK_TEMP which is larger than its size <M>
+ERROR: Failed to load zone "<path>": Loading zone failed.
+Failed with 0 warnings, 2 errors
+```
+
+Cross-checked directly against `hamburg.ff`/`common.ff`/`code_post_gfx.ff`
+(the three zones §5.9/§5.10's own investigation already used) — **identical
+error text and shape**, confirming this is the same already-tracked,
+paused §5.10 bug (the `MaterialPixelShader::name` 8-byte corruption), not a
+new or different failure mode. Every `so_survival_mp_*.ff` zone (16 of the
+37) fails at nearly the identical offset/size pair (~805323xxx / 2256),
+consistent with them sharing the same underlying Survival asset base.
+
+**Practical conclusion, corrected from §5.11's more optimistic framing**:
+`sp_prague.ff` being a real, full Campaign mission and still succeeding
+turns out to be the exception, not representative — most real mission/level
+zones DO pull in a `Material` asset (geometry, UI, effects) and are still
+blocked. The actually-usable set today is narrow: 2 of 39 real Campaign/
+Spec-Ops zones. This doesn't reduce §5.10's own priority — if anything it
+raises it, since resolving it would unblock the other 37, not just a
+handful of edge cases. It does NOT reopen §5.11's core point: those 2
+zones' worth of GSC content is real, genuinely extractable today, useful
+for whatever specific scripts they contain — just a much smaller slice of
+the game than "most zones already work" would have implied.
+
+Full result table (zone name, outcome, first error line where applicable):
+`C:\Users\kyesa\AppData\Local\Temp\claude\...\scratchpad\zone_sweep\results.tsv`
+(session-scratchpad only, not committed — reproducible by re-running
+`Unlinker.exe` against every `sp_*.ff`/`so_*.ff` in `zone/english/`).
 
 ## 6. Scoped plan for in-house tooling — an MVP, not a full OpenAssetTools replacement
 
