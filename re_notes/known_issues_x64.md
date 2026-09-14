@@ -5719,3 +5719,71 @@ x64 rebuilt again and redeployed last, confirmed via `dumpbin /headers`
 (fresh timestamp, later than the Win32 build). **NOT YET LIVE-TESTED.** Full
 trail: `known_issues.md` issue #108's own 2026-09-14 round (not duplicated
 here).
+
+### UPDATE 2026-09-14 (later same day) — Start does nothing at all during a cutscene on x64; real root cause found and fixed, different from x86's own version of this bug
+
+Investigating `known_issues.md` issue #98 (originally an x86-only report:
+visual cutscene-skip works via controller Start, but dialogue audio keeps
+playing) as a candidate to also fix on x64. Mid-investigation, a live report
+corrected the premise for x64 specifically: **"cutscene skip is irrelavant
+now as the pause button no longer skips on x64"** — i.e. x64 does not have
+x86's audio-persistence bug, it has a DIFFERENT, more severe one: Start
+currently has NO effect at all during a cutscene (no skip, no pause-menu,
+nothing visible).
+
+**Root cause** (full decompile chain, `re_notes/ghidra_project_x64/iw5sp_x64_proj`):
+x64's Start handler (`PollPauseToggleX64`) has always called `g_pauseToggle`
+(`FUN_1400823b0`) unconditionally, for every clcState value including 1/2 —
+unlike the real native key handler (`FUN_14007eaf0`, x64's own confirmed
+equivalent of x86's `FUN_00541020`), which explicitly special-cases clcState
+1/2 (a genuine Bink-cinematic-playing state, confirmed via the parallel x86
+investigation the same day) by calling a DIFFERENT function, `FUN_140082e70`
+(x64's confirmed structural equivalent of x86's `FUN_004d6620`/`OpenPauseMenu`:
+`FUN_140082e70` → (state==1) → `FUN_1400796b0` → `FUN_1400795d0`, matching
+x86's `FUN_004d6620` → `FUN_004038b0` → `FUN_00489950` chain function-for-
+function). `FUN_1400823b0` itself is a self-contained GENERIC toggle with its
+own guard (the negated mirror of `FUN_14007eaf0`'s own clcState==6
+cinematic-suppression guard — same globals, `DAT_141efb7a8`/`FUN_1401a1e50`/
+`FUN_1401a1e40`/`DAT_14050bde8`/`DAT_14050bdf0`) but **no clcState==1/2
+branch of its own** — during an actual cinematic the guard correctly
+evaluates to "suppress," so it does nothing, and since our own code never
+special-cased 1/2 to call `FUN_140082e70` instead, Start does nothing at all
+during a cutscene. (x86's own pre-fix bug was less severe by comparison — it
+unconditionally forced `SetMenuState` regardless of state, so it at least
+visually skipped, even though incorrectly.)
+
+**Fix** (`analog_input_hooks_x64.cpp`): new `kOpenPauseMenuForCinematicSignature`
+resolves `FUN_140082e70` (51-byte AOB signature, hand-built from
+`DumpSigBytes.java`'s raw dump — its own RSP-relative-store and short-jump
+false-positive flags corrected per this file's own established convention,
+only the genuine RIP-relative LEA disp32 and CALL rel32 wildcarded).
+`PollPauseToggleX64` now reads clcState via the already-existing
+`TryGetClcStateX64()` on Start's press edge; if 1 or 2, calls
+`g_openPauseMenuForCinematic` directly instead of `g_pauseToggle` (mirroring
+x86's `InjectControllerPauseMenu` and the real native key handler exactly);
+any other state falls through to the pre-existing `g_pauseToggle` call,
+unchanged. If the new signature fails to resolve, falls back to the
+pre-existing `g_pauseToggle`-only behavior — cannot regress Pause below
+today's already-broken-for-cutscenes state. New `[x64-pause-cinematic]` log
+lines added, `sprintf_s` worst-case length checked against its `buf[176]`
+(167 bytes worst-case with a full 16-hex-digit address).
+
+**Confidence caveat, honestly flagged**: whether `FUN_140082e70`'s real chain
+on x64 also stops Bink AUDIO (not just video) the way x86's confirmed chain
+does was inferred from the two chains' structural identity at every level
+checked (three function calls deep, matching x86 exactly at each), not
+independently re-traced to real Bink API calls on the x64 side the way x86's
+own `FUN_0049cee0` was (`FindDataWriters.java` confirmed real
+`BinkSetSoundTrack_8`/`BinkGoto_12` calls for x86). Also does not address a
+GSC-scripted (non-Bink) in-engine cinematic sequence — same open gap as
+x86's own fix, see `known_issues.md` issue #98's own newest round for the
+full detail shared between both platforms.
+
+**Build verification**: x64 `/t:Rebuild` — 0 errors (10 pre-existing C4312
+warnings, unrelated code) → `dumpbin /headers` confirmed `8664 machine
+(x64)`, fresh timestamp → Win32 regression `/t:Rebuild` — 0 errors, 0
+warnings (the x86 half of this same fix, `analog_input_hooks.cpp`'s
+`InjectControllerPauseMenu`, is x86-only code and built clean here too) →
+x64 rebuilt again and redeployed last, confirmed via `dumpbin /headers`
+(fresh timestamp, later than the Win32 build). **NOT YET LIVE-TESTED.** Full
+trail: `known_issues.md` issue #98's own 2026-09-14 rounds.
