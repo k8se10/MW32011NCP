@@ -1209,6 +1209,128 @@ specific bug family has now been through across two sessions, this is a
 reasonable point to pause again rather than open a third new investigative
 thread (forward-reference resolution) in the same sitting.
 
+## 5.18. UPDATE, 2026-09-14 (later still, "three forks digging into potential") — the §5.16/§5.17 open question DEFINITIVELY SETTLED via direct x64 native decompile: the 32-bit offset-pointer decode is the real engine's own single, generic, shared primitive, used for EVERY already-resolved offset pointer in the entire format, not a field-specific quirk
+
+**Status: DEFINITIVELY ANSWERED — the fix scope is global, not
+field-specific. Fix not yet implemented this round (out of scope per
+this round's own directive), but the exact correct formula is now on
+record, straight from the real game engine's own code.**
+
+§5.16/§5.17 left one real, unanswered question: is the 32-bit-vs-64-bit
+offset-pointer decode-width mismatch specific to ONE kind of pointer
+(e.g. only interned-string cross-references), or does it apply broadly
+to every already-resolved offset pointer this fork decodes? Settled this
+round by finding and decompiling the REAL native x64 equivalent of this
+fork's own `ConvertOffsetToPointerNative` directly in `iw5sp.exe`
+(current, x64, `re_notes/ghidra_project_x64/iw5sp_x64_proj`) — not
+inferred, not reasoned from arithmetic, read straight from the compiled
+engine.
+
+**How it was found**: the already-decompiled `MaterialPixelShader`
+FillStruct-equivalent (`FUN_140094cf0`,
+`re_notes/ghidra_scripts/decomp_shader_fillstruct_140094cf0_320_1a0.txt`,
+from §5.9's own earlier work) calls `FUN_1400aac10(3)` — confirming
+block index 3 = `XFILE_BLOCK_VIRTUAL` in the real engine's own numbering,
+exactly matching this fork's own enum order — then, in the "not
+FOLLOWING" branch of its own pointer-type check, calls `FUN_1400aad40()`
+with no other candidate in between. Decompiling `FUN_1400aad40` directly:
+
+```c
+void FUN_1400aad40(longlong *param_1)
+{
+  uint uVar1;
+  uVar1 = (int)*param_1 - 1;
+  *param_1 = (ulonglong)(uVar1 & 0xfffffff) +
+             *(longlong *)(DAT_140d6de00 + (ulonglong)(uVar1 >> 0x1c) * 0x10);
+  return;
+}
+```
+
+**This is the real, complete, unambiguous answer**:
+- `(int)*param_1` — the raw pointer value is cast to a plain 32-bit `int`
+  **before any other arithmetic happens**. The upper 32 bits of the
+  64-bit-wide field this value is stored in are discarded outright, not
+  used at all.
+- `uVar1 >> 0x1c` = `>> 28` — the real engine's own block-index
+  extraction shift is **28, not 60**. This is the exact x86-era
+  4-bit-block-index-in-a-32-bit-word scheme (`32 - 4 = 28`) this fork
+  already assumed correctly for x86 zones — genuinely never widened to
+  match the pointer's own new 64-bit storage width when the game
+  recompiled to x64.
+- `uVar1 & 0xfffffff` = `& 0x0FFFFFFF` — the real block-relative offset
+  mask, 28 bits, matching the alternate decode this fork's own diagnostic
+  already tested empirically in §5.16/§5.17.
+- The resolved block base comes from a THIRD per-block-indexed array
+  (`DAT_140d6de00`, distinct from `FUN_1400aac60`'s own saved-position
+  array `DAT_140d6ddb0` already mapped in §5.10 — this one holds each
+  block's real allocated buffer base), indexed by the SAME `uVar1 >> 0x1c`
+  block number, exactly mirroring `m_blocks[blockNum]->m_buffer` in this
+  fork's own C++.
+
+**Confirmed generic, not specific to this one call site**: `FUN_1400aad40`
+has **86 real callers**, spanning the function-address range
+`0x140094xxx`–`0x14009cxxx` — the entire asset-loading function block
+this session's own dispatch-switch mapping already covers (Material at
+`0x140094950`, RawFile at `0x1400962c0`, ScriptFile at `0x1400964a0`,
+etc., per §5's own case table). This is not an inlined, per-caller helper
+— it's one single, shared function the real engine calls from essentially
+every asset type's own fill logic whenever it needs to resolve an
+already-encoded offset pointer to a native address. There is no
+per-field or per-asset-type branching anywhere in this function or its
+call sites that would suggest a genuinely different scheme is used
+elsewhere.
+
+**Direct, practical conclusion**: this fork's own
+`IW5_X64_POINTER_BIT_COUNT = 64u` (and by extension
+`m_block_shift = 64 - 4 = 60` in `ZoneInputStream.cpp`) is simply wrong
+for this entire class of pointer — not a narrow special case. The zone
+format's offset-ENCODED pointer scheme (as opposed to genuine raw
+64-bit pointers/offsets elsewhere in the format, e.g. the dispatch
+record's own `dataPtr` field, which is a real memory-relative value, not
+this same block+offset encoding) was **never widened past 32 bits when
+the game recompiled to x64** — it stayed the exact same x86-era
+28-bit-offset/4-bit-block-index scheme, just now sitting inside a
+nominally-64-bit-wide storage slot with its top 4 bytes simply unused
+(always zero on the wire, as directly observed in every raw byte dump
+this investigation has produced so far). The correct fix is a single,
+targeted change: decode every already-resolved offset pointer using a
+32-bit-wide scheme (`shift = 28`, `mask = 0x0FFFFFFF`, and — critically —
+truncate the raw value to 32 bits BEFORE the `-1u` adjustment, matching
+`(int)*param_1 - 1` exactly, not `offsetInt - 1u` computed at full
+64-bit width first) — **not** a per-field discriminator, and **not**
+something that needs guessing at scope any further.
+
+**This does NOT, on its own, explain §5.17's own separate finding**
+(`hamburg.ff`/`common.ff` resolving to unwritten/zero memory even under
+this now-confirmed-correct decode) — that remains a real, separate,
+unresolved question (most likely the forward-reference/fill-order theory
+§5.17 already proposed), genuinely out of scope for this round and not
+investigated further here.
+
+**No fix implemented this round, deliberately** (out of this round's own
+scope — pure RE/scoping, not implementation). The exact formula above is
+sufficient to implement one directly: replace
+`ConvertOffsetToPointerNative`/`ConvertOffsetToAliasNative`/
+`ConvertOffsetToPointerLookup`/`ConvertOffsetToAliasLookup`'s shared
+decode logic (all four currently use the same `m_block_mask`/
+`m_block_shift`/`m_offset_mask` computed from the fork-wide
+`IW5_X64_POINTER_BIT_COUNT`) with the native-confirmed 32-bit scheme —
+a genuinely small, well-scoped change now that the scope question is
+settled, though it should still be built and tested carefully (per
+§5.16's own caution: these functions are shared across every asset type
+already confirmed working, so any change needs full regression testing
+against all five known reference zones before being considered done).
+
+**Ghidra project safety note, for the record**: this round's headless
+invocations against `re_notes/ghidra_project_x64/iw5sp_x64_proj`
+(`-noanalysis`, decompile/caller-search scripts only) again caused two
+`.gbf` database files to show as deleted in `git status`
+(`idata/00/~00000000.db/db.43.gbf`/`db.44.gbf`) — the same known,
+gitignored, unrecoverable-via-git corruption pattern already documented
+twice earlier this session. Left as-is (nothing to `git checkout` since
+the directory is gitignored); flagged here rather than silently ignored,
+per this project's own standing practice.
+
 ## 6. Scoped plan for in-house tooling — an MVP, not a full OpenAssetTools replacement
 
 **This project's own actual need is narrow**: GSC/rawfile extraction to
