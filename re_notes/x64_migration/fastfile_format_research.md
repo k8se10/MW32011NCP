@@ -257,6 +257,92 @@ independently — `scriptfile`/`rawfile` specifically (this project's real
 target) have NOT been individually traced yet. That's the actual next
 step, not started this round.
 
+## 5.5. UPDATE, 2026-09-14 (later still, "keep going on both") — the dispatch-loop fix applied for real in `tools/iw5oat/`; RawFile/ScriptFile struct derived; a real architecture split discovered along the way
+
+**§5's fix is now live code, not just documentation.** Found and fixed
+TWO real bugs — not missing code, genuine existing-but-wrong `#ifdef
+ARCH_x64` branches, in `src/ZoneLoading/Game/IW5/ContentLoaderIW5.cpp`:
+
+1. **`LoadXAssetArray`**: the existing x64 branch used an 8-byte
+   stride with the data pointer at `+4u` — x86's own layout, still wrong.
+   Fixed to the confirmed real 16-byte stride with the pointer at `+8u`
+   (§5's own finding).
+2. **`Load()`**: the existing x64 branch read a 16-byte header
+   (`stringCount@0/strings@4/assetCount@8/assets@12`) — also x86's own
+   layout. Fixed to a confirmed **32-byte** header
+   (`stringCount@0/strings@8/assetCount@16/assets@24`), independently
+   verified against `iw5sp.exe`'s own real header read (`FUN_14008ef80(
+   &header, 0x20)` — a genuine 32-byte read — and the exact offsets the
+   real dispatch loop consumes afterward: assetCount at `+0x10`, the
+   assets pointer at `+0x18`, both confirmed live in the disassembly, not
+   inferred).
+
+**A real design gap found while applying the fix, not before**: fixing
+the byte offsets alone wasn't sufficient — `FillPtr`'s actual read width
+is driven by a SEPARATE, genuinely generic runtime parameter
+(`pointerBitCount`, threaded through `ZoneInputStream`/
+`ZoneStreamFillReadAccessor`) that was hardcoded to `32u` at the IW5 call
+site in `ZoneLoaderFactoryIW5.cpp` — a real, working, already-generic
+mechanism (properly handles alignment, confirmed by reading
+`InsertPointerNative()`'s own implementation), just never pointed at 64
+for IW5. **This corrects part of §3's own earlier claim** — `pointerBitCount`
+is NOT the same thing as the `GameWordSize::ARCH_64` enum §3 found unused;
+it's a separate, real, working piece of infrastructure that just needed
+its IW5 call site changed from `32u` to `64u`. Fixed, with an explicit
+comment documenting a known limitation this creates on purpose: this
+fork's own value is now hardcoded to 64, meaning it can only correctly
+parse the CURRENT x64 zone format — matches this fork's own already-
+declared IW5-x64-only scope exactly, but is a real trade-off worth
+stating plainly rather than leaving implicit. (`GameWordSize::ARCH_32` ->
+`ARCH_64` was also updated for accuracy in `InspectZoneHeader`, though it
+still has zero real consumers anywhere in the codebase.)
+
+**RawFile/ScriptFile's own x64 struct layout — derived, not yet applied**,
+via OAT's own existing x86 struct definitions (`IW5_Assets.h`) widened by
+standard MSVC struct-alignment rules (every pointer becomes 8 bytes,
+8-byte-aligned, `int` fields stay 4 bytes):
+
+```c
+// x86 (OAT's existing, unmodified definition): 16 bytes
+struct RawFile { const char* name; int compressedLen; int len; const char* buffer; };
+// x64 (derived): 24 bytes
+//   name @0 (8B), compressedLen @8 (4B), len @12 (4B), buffer @16 (8B)
+
+// x86 (OAT's existing, unmodified definition): 24 bytes
+struct ScriptFile { const char* name; int compressedLen; int len; int bytecodeLen; const char* buffer; unsigned char* bytecode; };
+// x64 (derived): 40 bytes
+//   name @0 (8B), compressedLen @8 (4B), len @12 (4B), bytecodeLen @16 (4B),
+//   [4B alignment pad], buffer @24 (8B), bytecode @32 (8B)
+```
+
+Cross-checked, not just assumed: the native RAWFILE/SCRIPTFILE dispatch
+handlers (`FUN_1400962c0`/`FUN_1400964a0`, decompiled this round) both
+treat the record's very first field as a pointer needing name-based pool
+resolution — consistent with `name` genuinely being field 0 in both
+structs, matching the derived layout.
+
+**Not yet applied — a real, newly-discovered architecture split, not a
+skipped step**: unlike the dispatch loop (hand-written C++ in a static
+`.cpp` file, directly editable), `Loader_RawFile`/`Loader_ScriptFile`
+(the classes `ContentLoaderIW5.cpp`'s own `LOAD_ASSET` macro expands to)
+are **code-generated** — `AssetLoaderIW5.h` does not exist as a checked-in
+source file at all. `src/ZoneCodeGenerator`/`src/ZoneCodeGeneratorLib`
+is a genuine, separate build-time tool: it parses real C++ header files
+(`HeaderFileReader`, almost certainly `IW5_Assets.h` itself) plus a
+separate "commands" file (`CommandsFileReader`) to generate the actual
+per-type loader code. This round located the generator and confirmed its
+real architecture (header-parsing + commands-driven code generation, not
+a stub) but did NOT locate the exact IW5-specific commands-file
+invocation (which build step calls it, with which arguments) — that's
+the genuine next step for RawFile/ScriptFile specifically, a different
+and deeper task than the dispatch-loop fix was, not a small follow-up.
+
+Full raw evidence for this round:
+`re_notes/x64_migration/ui_pipeline_trace/decomp_rawfile_scriptfile.txt`
+(`FUN_1400962c0`/`FUN_1400964a0`, the name-fixup dispatch) and
+`decomp_rawfile_scriptfile_real.txt` (`FUN_1400a9c70`/`FUN_1400a9d30`,
+the generic pool-resolution primitive these call into).
+
 ## 6. Scoped plan for in-house tooling — an MVP, not a full OpenAssetTools replacement
 
 **This project's own actual need is narrow**: GSC/rawfile extraction to

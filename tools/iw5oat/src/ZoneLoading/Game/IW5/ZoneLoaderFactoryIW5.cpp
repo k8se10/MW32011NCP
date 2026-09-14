@@ -132,7 +132,14 @@ std::optional<ZoneLoaderInspectionResult> ZoneLoaderFactory::InspectZoneHeader(Z
         return ZoneLoaderInspectionResult{
             .m_game_id = GameId::IW5,
             .m_endianness = GameEndianness::LE,
-            .m_word_size = GameWordSize::ARCH_32,
+            // MW32011NCP / iw5oat, 2026-09-14: was ARCH_32, matching every IW5 zone
+            // before 2026-09-03. Updated for accuracy alongside the real fix
+            // (pointerBitCount below, in CreateLoaderForHeader) -- this field itself
+            // has no consumers anywhere in the codebase as of this fork point
+            // (confirmed by grep before changing it), so this change is inert on its
+            // own; kept accurate rather than left silently wrong in case future code
+            // starts relying on it.
+            .m_word_size = GameWordSize::ARCH_64,
             .m_platform = GamePlatform::PC,
             .m_is_official = true,
             .m_is_signed = true,
@@ -145,7 +152,14 @@ std::optional<ZoneLoaderInspectionResult> ZoneLoaderFactory::InspectZoneHeader(Z
         return ZoneLoaderInspectionResult{
             .m_game_id = GameId::IW5,
             .m_endianness = GameEndianness::LE,
-            .m_word_size = GameWordSize::ARCH_32,
+            // MW32011NCP / iw5oat, 2026-09-14: was ARCH_32, matching every IW5 zone
+            // before 2026-09-03. Updated for accuracy alongside the real fix
+            // (pointerBitCount below, in CreateLoaderForHeader) -- this field itself
+            // has no consumers anywhere in the codebase as of this fork point
+            // (confirmed by grep before changing it), so this change is inert on its
+            // own; kept accurate rather than left silently wrong in case future code
+            // starts relying on it.
+            .m_word_size = GameWordSize::ARCH_64,
             .m_platform = GamePlatform::PC,
             .m_is_official = false,
             .m_is_signed = false,
@@ -192,13 +206,33 @@ std::unique_ptr<ZoneLoader> ZoneLoaderFactory::CreateLoaderForHeader(ZoneDataPee
     zoneLoader->AddLoadingStep(step::CreateStepLoadZoneSizes());
     zoneLoader->AddLoadingStep(step::CreateStepAllocXBlocks());
 
+    // MW32011NCP / iw5oat, 2026-09-14: pointerBitCount was hardcoded to 32u here,
+    // matching every IW5 zone that existed before MW3 (2011)'s 2026-09-03 x64
+    // recompile. This fork's own scope is deliberately IW5 x64 only (see the root
+    // README) -- the current retail build's own zone content genuinely uses 64-bit
+    // pointer fields (confirmed via direct decompile of iw5sp.exe's own zone-
+    // loading code, not assumed; full trail: re_notes/x64_migration/
+    // fastfile_format_research.md, parent repo, SS5), so this must be 64u for this
+    // fork to correctly parse anything from the build it actually targets.
+    // KNOWN LIMITATION, not a bug: this value can't yet auto-detect which format a
+    // given zone actually is (the outer FastFile header is byte-identical either
+    // way -- magic, version, and the 44-byte block-size header are all unchanged
+    // between the two formats, confirmed by direct hex comparison, SS1/SS5) --
+    // loading a genuinely pre-2026-09-03 x86-format zone through THIS ARCH_x64
+    // code path would misread it the same way the old hardcoded 32u misread the
+    // new format. Not a regression for this fork's own stated scope (IW5 x64
+    // only), but real, worth fixing properly (a genuine per-zone format
+    // auto-detect) before this is presented as general-purpose rather than
+    // NCP-specific tooling.
+    constexpr unsigned IW5_X64_POINTER_BIT_COUNT = 64u;
+
     // Start of the zone content
     zoneLoader->AddLoadingStep(step::CreateStepLoadZoneContent(
         [zonePtr](ZoneInputStream& stream)
         {
             return std::make_unique<ContentLoader>(*zonePtr, stream);
         },
-        32u,
+        IW5_X64_POINTER_BIT_COUNT,
         ZoneConstants::OFFSET_BLOCK_BIT_COUNT,
         ZoneConstants::INSERT_BLOCK,
         zonePtr->Memory(),

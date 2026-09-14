@@ -1,0 +1,102 @@
+================================================================
+Function: FUN_1400a9c70 @ 1400a9c70
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_1400a9c70(undefined8 *param_1)
+
+{
+  longlong lVar1;
+  undefined8 local_res8 [4];
+  undefined4 local_18;
+  undefined4 uStack_14;
+  undefined4 uStack_10;
+  undefined4 uStack_c;
+  
+  local_res8[0] = *param_1;
+  FUN_14024a7b0();
+  do {
+    if (DAT_140c5cee8 == 0) {
+      LOCK();
+      UNLOCK();
+      if (DAT_140c5ceec == 0) {
+        _DAT_140c5cef0 = local_18;
+        uRam0000000140c5cef4 = uStack_14;
+        uRam0000000140c5cef8 = uStack_10;
+        uRam0000000140c5cefc = uStack_c;
+        DAT_140c5ceec = DAT_140c5ceec + 1;
+        lVar1 = FUN_1400a69d0(0x26,local_res8);
+        *param_1 = *(undefined8 *)(lVar1 + 8);
+        LOCK();
+        DAT_140c5ceec = DAT_140c5ceec + -1;
+        UNLOCK();
+        FUN_14024a7f0(&DAT_140c5cef0);
+        if (DAT_140c5cee6 != '\0') {
+          DAT_140c5cee7 = 1;
+          do {
+            Sleep(0x19);
+          } while (DAT_140c5cee6 != '\0');
+        }
+        return;
+      }
+      LOCK();
+      UNLOCK();
+    }
+    Sleep(0);
+  } while( true );
+}
+
+
+
+================================================================
+Function: FUN_1400a9d30 @ 1400a9d30
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_1400a9d30(undefined8 *param_1)
+
+{
+  longlong lVar1;
+  undefined8 local_res8 [4];
+  undefined4 local_18;
+  undefined4 uStack_14;
+  undefined4 uStack_10;
+  undefined4 uStack_c;
+  
+  local_res8[0] = *param_1;
+  FUN_14024a7b0();
+  do {
+    if (DAT_140c5cee8 == 0) {
+      LOCK();
+      UNLOCK();
+      if (DAT_140c5ceec == 0) {
+        _DAT_140c5cef0 = local_18;
+        uRam0000000140c5cef4 = uStack_14;
+        uRam0000000140c5cef8 = uStack_10;
+        uRam0000000140c5cefc = uStack_c;
+        DAT_140c5ceec = DAT_140c5ceec + 1;
+        lVar1 = FUN_1400a69d0(0x27,local_res8);
+        *param_1 = *(undefined8 *)(lVar1 + 8);
+        LOCK();
+        DAT_140c5ceec = DAT_140c5ceec + -1;
+        UNLOCK();
+        FUN_14024a7f0(&DAT_140c5cef0);
+        if (DAT_140c5cee6 != '\0') {
+          DAT_140c5cee7 = 1;
+          do {
+            Sleep(0x19);
+          } while (DAT_140c5cee6 != '\0');
+        }
+        return;
+      }
+      LOCK();
+      UNLOCK();
+    }
+    Sleep(0);
+  } while( true );
+}
+
+
+
