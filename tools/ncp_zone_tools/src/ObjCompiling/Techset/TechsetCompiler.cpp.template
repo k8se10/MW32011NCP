@@ -1,0 +1,191 @@
+#options GAME(IW3, IW4, IW5, T5, T6)
+
+#filename "Game/" + GAME + "/Techset/TechsetCompiler" + GAME + ".cpp"
+
+#set COMPILER_HEADER "\"TechsetCompiler" + GAME + ".h\""
+#set GAME_HEADER "\"Game/" + GAME + "/" + GAME + ".h\""
+#set TECHSET_CONSTANTS_HEADER "\"Game/" + GAME + "/Techset/TechsetConstants" + GAME + ".h\""
+
+#if GAME == "IW3"
+#define FEATURE_IW3
+#elif GAME == "IW4"
+#define FEATURE_IW4
+#elif GAME == "IW5"
+#define FEATURE_IW5
+#elif GAME == "T5"
+#define FEATURE_T5
+#elif GAME == "T6"
+#define FEATURE_T6
+#endif
+
+// This file was templated.
+// See TechsetCompiler.cpp.template.
+// Do not modify, changes will be lost.
+
+#include COMPILER_HEADER
+
+#include GAME_HEADER
+#include TECHSET_CONSTANTS_HEADER
+#include "Techset/CommonTechsetLoader.h"
+#include "Techset/TechsetCommon.h"
+
+using namespace GAME;
+
+#set COMPILER_CLASS_NAME "TechsetCompiler" + GAME
+
+namespace
+{
+    MaterialWorldVertexFormat GetWorldVertexFormat(const std::string& name)
+    {
+        if (name.contains("lit_"))
+        {
+            size_t texCount = 0u, normalCount = 0u;
+            techset::CountWorldVertFormatParameters(name, texCount, normalCount);
+
+            // 0 and 1 seem to be treated equally
+            texCount = std::max(texCount, 1uz);
+            normalCount = std::max(normalCount, 1uz);
+
+            if (texCount == 1 && normalCount == 1)
+                return MTL_WORLDVERT_TEX_1_NRM_1;
+            if (texCount == 2 && normalCount == 1)
+                return MTL_WORLDVERT_TEX_2_NRM_1;
+            if (texCount == 2 && normalCount == 2)
+                return MTL_WORLDVERT_TEX_2_NRM_2;
+            if (texCount == 3 && normalCount == 1)
+                return MTL_WORLDVERT_TEX_3_NRM_1;
+            if (texCount == 3 && normalCount == 2)
+                return MTL_WORLDVERT_TEX_3_NRM_2;
+            if (texCount == 3 && normalCount == 3)
+                return MTL_WORLDVERT_TEX_3_NRM_3;
+            if (texCount == 4 && normalCount == 1)
+                return MTL_WORLDVERT_TEX_4_NRM_1;
+            if (texCount == 4 && normalCount == 2)
+                return MTL_WORLDVERT_TEX_4_NRM_2;
+            if (texCount == 4 && normalCount == 3)
+                return MTL_WORLDVERT_TEX_4_NRM_3;
+        }
+
+        return static_cast<MaterialWorldVertexFormat>(0);
+    }
+
+#if defined(FEATURE_IW3)
+    uint16_t GetLoadForRenderer(const std::string& techniqueSetName)
+    {
+        if (techniqueSetName.starts_with("sm2/"))
+            return 0;
+        return 1;
+    }
+
+    void ApplyLoadForRendererToTechnique(const MaterialTechnique& technique, const uint16_t loadForRenderer)
+    {
+        for (auto passIndex = 0u; passIndex < technique.passCount; passIndex++)
+        {
+            auto* vertexShader = technique.passArray[passIndex].vertexShader;
+            if (vertexShader)
+                vertexShader->prog.loadDef.loadForRenderer = std::max(vertexShader->prog.loadDef.loadForRenderer, loadForRenderer);
+            auto* pixelShader = technique.passArray[passIndex].pixelShader;
+            if (pixelShader)
+                pixelShader->prog.loadDef.loadForRenderer = std::max(pixelShader->prog.loadDef.loadForRenderer, loadForRenderer);
+        }
+    }
+#endif
+
+#if defined(FEATURE_T6)
+    MaterialType GetMaterialType(const std::string& name)
+    {
+        for (unsigned materialTypeIndex = MTL_TYPE_MODEL; materialTypeIndex < MTL_TYPE_COUNT; materialTypeIndex++)
+        {
+            if (name.starts_with(g_materialTypeInfo[materialTypeIndex].techniqueSetPrefix))
+                return static_cast<MaterialType>(materialTypeIndex);
+        }
+
+        return MTL_TYPE_DEFAULT;
+    }
+
+    void ApplyMaterialTypeToTechnique(MaterialTechnique& technique, const MaterialType materialType)
+    {
+        for (auto passIndex = 0u; passIndex < technique.passCount; passIndex++)
+        {
+            technique.passArray[passIndex].materialType = materialType;
+        }
+    }
+#endif
+
+    MaterialTechniqueSet* ConvertTechniqueSet(const techset::CommonTechset& commonTechset, MemoryManager& memory)
+    {
+        auto* techset = memory.Alloc<MaterialTechniqueSet>();
+        techset->name = memory.Dup(commonTechset.m_name.c_str());
+        techset->worldVertFormat = GetWorldVertexFormat(commonTechset.m_name);
+
+        return techset;
+    }
+
+    class COMPILER_CLASS_NAME final : public AssetCreator<AssetTechniqueSet>
+    {
+    public:
+        COMPILER_CLASS_NAME(ISearchPath& searchPath, MemoryManager& memory)
+            : m_search_path(searchPath),
+              m_memory(memory)
+        {
+        }
+
+        AssetCreationResult CreateAsset(const std::string& assetName, AssetCreationContext& context) override
+        {
+            bool failure = false;
+            const auto commonTechset = techset::LoadCommonTechset(assetName, commonTechniqueTypeNames, m_search_path, failure);
+            if (!commonTechset)
+                return failure ? AssetCreationResult::Failure() : AssetCreationResult::NoAction();
+
+            auto* techset = ConvertTechniqueSet(*commonTechset, m_memory);
+#if defined(FEATURE_IW3)
+            const auto loadForRenderer = GetLoadForRenderer(assetName);
+#endif
+#if defined(FEATURE_T6)
+            const auto materialType = GetMaterialType(assetName);
+#endif
+
+            for (auto techniqueIndex = 0u; techniqueIndex < std::extent_v<decltype(MaterialTechniqueSet::techniques)>; techniqueIndex++)
+            {
+                const auto& techniqueName = commonTechset->m_technique_names[techniqueIndex];
+                if (techniqueName.empty())
+                    continue;
+
+                auto* technique = context.LoadSubAsset<SubAssetTechnique>(techniqueName);
+                if (!technique)
+                    return AssetCreationResult::Failure();
+
+                techset->techniques[techniqueIndex] = technique->Asset();
+
+#if defined(FEATURE_IW3)
+                // IW3 supports both sm2 and sm3.
+                // The shader's loadForRenderer property is set to 0 for sm2 and 1 for sm3.
+                // Which shader model a techset is for is entirely determined by its name according to modtools.
+                ApplyLoadForRendererToTechnique(*techset->techniques[techniqueIndex], loadForRenderer);
+#endif
+#if defined(FEATURE_T6)
+                // Another techset may override this for the technique
+                // but the game determines the material type by techset name.
+                // So this may just be a constraint that cannot be changed.
+                ApplyMaterialTypeToTechnique(*techset->techniques[techniqueIndex], materialType);
+#endif
+            }
+
+            return AssetCreationResult::Success(context.AddAsset(AssetRegistration<AssetTechniqueSet>(assetName, techset)));
+        }
+
+    private:
+        ISearchPath& m_search_path;
+        MemoryManager& m_memory;
+    };
+} // namespace
+
+#set CREATE_COMPILER_METHOD "CreateTechsetCompiler" + GAME
+
+namespace techset
+{
+    std::unique_ptr<IAssetCreator> CREATE_COMPILER_METHOD(MemoryManager& memory, ISearchPath& searchPath)
+    {
+        return std::make_unique<COMPILER_CLASS_NAME>(searchPath, memory);
+    }
+} // namespace techset

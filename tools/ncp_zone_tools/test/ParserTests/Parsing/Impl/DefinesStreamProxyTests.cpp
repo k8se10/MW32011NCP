@@ -1,0 +1,1311 @@
+#include "Parsing/Impl/DefinesStreamProxy.h"
+#include "Parsing/Mock/MockParserLineStream.h"
+#include "Parsing/ParsingException.h"
+
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
+#include <catch2/matchers/catch_matchers.hpp>
+#include <catch2/matchers/catch_matchers_exception.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
+
+using namespace Catch::Matchers;
+
+namespace test::parsing::impl::defines_stream_proxy
+{
+    void ExpectLine(IParserLineStream* stream, const int lineNumber, const std::string& value)
+    {
+        auto line = stream->NextLine();
+        REQUIRE(line.m_line_number == lineNumber);
+        REQUIRE(line.m_line == value);
+    }
+
+    void ExpectErrorInLine(IParserLineStream* stream, const int lineNumber, const int columnNumber)
+    {
+        REQUIRE_THROWS_MATCHES(
+            stream->NextLine(), ParsingException, MessageMatches(ContainsSubstring("L" + std::to_string(lineNumber) + ":" + std::to_string(columnNumber))));
+    }
+
+    TEST_CASE("DefinesStreamProxy: Ensure simple define and positive ifdef is working", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define ASDF",
+            "#ifdef ASDF",
+            "Hello World",
+            "#endif",
+            "Hello Galaxy",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "");
+        ExpectLine(&proxy, 3, "Hello World");
+        ExpectLine(&proxy, 4, "");
+        ExpectLine(&proxy, 5, "Hello Galaxy");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Ensure simple define and negative ifdef is working", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define ASDF",
+            "#ifdef NONO",
+            "Hello World",
+            "#endif",
+            "Hello Galaxy",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "");
+        ExpectLine(&proxy, 3, "");
+        ExpectLine(&proxy, 4, "");
+        ExpectLine(&proxy, 5, "Hello Galaxy");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Ensure simple define and positive ifndef is working", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define ASDF",
+            "#ifndef NONO",
+            "Hello World",
+            "#endif",
+            "Hello Galaxy",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "");
+        ExpectLine(&proxy, 3, "Hello World");
+        ExpectLine(&proxy, 4, "");
+        ExpectLine(&proxy, 5, "Hello Galaxy");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Ensure simple define and negative ifndef is working", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define ASDF",
+            "#ifndef ASDF",
+            "Hello World",
+            "#endif",
+            "Hello Galaxy",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "");
+        ExpectLine(&proxy, 3, "");
+        ExpectLine(&proxy, 4, "");
+        ExpectLine(&proxy, 5, "Hello Galaxy");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Ensure else is working", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define ASDF",
+            "#ifdef NONO",
+            "Hello World1",
+            "#else",
+            "Hello World2",
+            "#endif",
+            "Hello Galaxy",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "");
+        ExpectLine(&proxy, 3, "");
+        ExpectLine(&proxy, 4, "");
+        ExpectLine(&proxy, 5, "Hello World2");
+        ExpectLine(&proxy, 6, "");
+        ExpectLine(&proxy, 7, "Hello Galaxy");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Ensure nested ifdef is working", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define ASDF",
+            "#ifdef ASDF",
+            "#ifdef NONO",
+            "Hello World1",
+            "#else",
+            "Hello World2",
+            "#endif",
+            "#else",
+            "#ifdef ASDF",
+            "Hello World3",
+            "#else",
+            "Hello World4",
+            "#endif",
+            "#endif",
+            "Hello Galaxy",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "");
+        ExpectLine(&proxy, 3, "");
+        ExpectLine(&proxy, 4, "");
+        ExpectLine(&proxy, 5, "");
+        ExpectLine(&proxy, 6, "Hello World2");
+        ExpectLine(&proxy, 7, "");
+        ExpectLine(&proxy, 8, "");
+        ExpectLine(&proxy, 9, "");
+        ExpectLine(&proxy, 10, "");
+        ExpectLine(&proxy, 11, "");
+        ExpectLine(&proxy, 12, "");
+        ExpectLine(&proxy, 13, "");
+        ExpectLine(&proxy, 14, "");
+        ExpectLine(&proxy, 15, "Hello Galaxy");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Ensure undef is working", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define ASDF",
+            "#ifdef ASDF",
+            "Hello World",
+            "#endif",
+            "#undef ASDF",
+            "#ifdef ASDF",
+            "Hello World",
+            "#endif",
+            "Hello Galaxy",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "");
+        ExpectLine(&proxy, 3, "Hello World");
+        ExpectLine(&proxy, 4, "");
+        ExpectLine(&proxy, 5, "");
+        ExpectLine(&proxy, 6, "");
+        ExpectLine(&proxy, 7, "");
+        ExpectLine(&proxy, 8, "");
+        ExpectLine(&proxy, 9, "Hello Galaxy");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Ensure undef does not undefine everything", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define ASDF",
+            "#ifdef ASDF",
+            "Hello World",
+            "#endif",
+            "#undef NONO",
+            "#ifdef ASDF",
+            "Hello World",
+            "#endif",
+            "Hello Galaxy",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "");
+        ExpectLine(&proxy, 3, "Hello World");
+        ExpectLine(&proxy, 4, "");
+        ExpectLine(&proxy, 5, "");
+        ExpectLine(&proxy, 6, "");
+        ExpectLine(&proxy, 7, "Hello World");
+        ExpectLine(&proxy, 8, "");
+        ExpectLine(&proxy, 9, "Hello Galaxy");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Ensure simple defines are working", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define ASDF LOL",
+            "ASDF",
+            "A ASDF B",
+            "ASDF B",
+            "A ASDF",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "LOL");
+        ExpectLine(&proxy, 3, "A LOL B");
+        ExpectLine(&proxy, 4, "LOL B");
+        ExpectLine(&proxy, 5, "A LOL");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Ensure defines can be surrounded by symbols", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define ASDF LOL",
+            "!ASDF%",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "!LOL%");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Ensure can use multiple defines in one line", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define A Hello",
+            "#define B world",
+            "A my dear B!",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "");
+        ExpectLine(&proxy, 3, "Hello my dear world!");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Ensure defines in disabled block are ignored", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#ifdef LOLO",
+            "#define hello world",
+            "#endif",
+            "hello",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "");
+        ExpectLine(&proxy, 3, "");
+        ExpectLine(&proxy, 4, "hello");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Ensure undefs in disabled block are ignored", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define hello world",
+            "#ifdef LOLO",
+            "#undef hello",
+            "#endif",
+            "hello",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "");
+        ExpectLine(&proxy, 3, "");
+        ExpectLine(&proxy, 4, "");
+        ExpectLine(&proxy, 5, "world");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Ensure can define name with underscores and digits", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define __int16 short",
+            "unsigned __int16 value;",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "unsigned short value;");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Ensure define can render parameters", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define test(universe) hello universe",
+            "test(mr moneyman)",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "hello mr moneyman");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Ensure can add define with parameters surrounded by symbols", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define test(x) alignas(x)",
+            "struct test(1337) test_struct",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "struct alignas(1337) test_struct");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Ensure can use parameter multiple times", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define test(x) x|x|x|x",
+            "struct test(1337) test_struct",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "struct 1337|1337|1337|1337 test_struct");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Ensure can use parameterized define in between symbols", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define test(x) x|x|x|x",
+            "%test(5)%",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "%5|5|5|5%");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Ensure can define multiple parameters", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define test(a1, a2, a3) a1 + a2 = a3",
+            "make calc test(1, 2, 3);",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "make calc 1 + 2 = 3;");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Ensure can define multiple parameters without spacing", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define test(a1,a2,a3) a1+a2=a3",
+            "make calc test(1,2,3);",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "make calc 1+2=3;");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Ensure can define parameters with underscore", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define test(test_parameter) this is test_parameter",
+            "Apparently test(a very cool text);",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "Apparently this is a very cool text;");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Ensure does not expand macros in strings", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define TEST Wrong",
+            "System.out.println(\"TEST\")",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "System.out.println(\"TEST\")");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Ensure simple if is working with truthy value", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#if 1",
+            "Hello World",
+            "#endif",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "Hello World");
+        ExpectLine(&proxy, 3, "");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Ensure simple if is working with non-truthy value", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#if 0",
+            "Hello World",
+            "#endif",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "");
+        ExpectLine(&proxy, 3, "");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Ensure simple if is working with calculated values", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#if 0 || 1",
+            "Hello World",
+            "#endif",
+            "#if 0 && 1",
+            "Hello World",
+            "#endif",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "Hello World");
+        ExpectLine(&proxy, 3, "");
+        ExpectLine(&proxy, 4, "");
+        ExpectLine(&proxy, 5, "");
+        ExpectLine(&proxy, 6, "");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Ensure can handle defined operator with defined definition", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define someStuff 1",
+            "#if defined(someStuff)",
+            "Hello World",
+            "#endif",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "");
+        ExpectLine(&proxy, 3, "Hello World");
+        ExpectLine(&proxy, 4, "");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Ensure can handle defined operator with undefined definition", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define someStuff 1",
+            "#if defined(someStuff) && defined(thisIsNotDefined)",
+            "Hello World",
+            "#endif",
+            "#if defined(thisIsNotDefined)",
+            "Hello World",
+            "#endif",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "");
+        ExpectLine(&proxy, 3, "");
+        ExpectLine(&proxy, 4, "");
+        ExpectLine(&proxy, 5, "");
+        ExpectLine(&proxy, 6, "");
+        ExpectLine(&proxy, 7, "");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Can negate spaced defined operator", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#if defined( CONSOLE ) && !defined( SPLITSCREEN )",
+            "Console",
+            "#else",
+            "PC",
+            "#endif",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "");
+        ExpectLine(&proxy, 3, "");
+        ExpectLine(&proxy, 4, "PC");
+        ExpectLine(&proxy, 5, "");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Ensure can use elif", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define someStuff 1",
+            "#if defined(someStuff) && defined(thisIsNotDefined)",
+            "Hello World",
+            "#elif 1",
+            "Hello Universe",
+            "#elif 1",
+            "Hello Galaxy",
+            "#endif",
+            "#if defined(thisIsNotDefined)",
+            "Hello World",
+            "#endif",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "");
+        ExpectLine(&proxy, 3, "");
+        ExpectLine(&proxy, 4, "");
+        ExpectLine(&proxy, 5, "Hello Universe");
+        ExpectLine(&proxy, 6, "");
+        ExpectLine(&proxy, 7, "");
+        ExpectLine(&proxy, 8, "");
+        ExpectLine(&proxy, 9, "");
+        ExpectLine(&proxy, 10, "");
+        ExpectLine(&proxy, 11, "");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Ensure elif does not work when if was true", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define someStuff 1",
+            "#if defined(someStuff)",
+            "Hello World",
+            "#elif 1",
+            "Hello Universe",
+            "#endif",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "");
+        ExpectLine(&proxy, 3, "Hello World");
+        ExpectLine(&proxy, 4, "");
+        ExpectLine(&proxy, 5, "");
+        ExpectLine(&proxy, 6, "");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Ensure can use else when no elif matched", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define someStuff 1",
+            "#if 0",
+            "Hello World",
+            "#elif 0",
+            "Hello Universe",
+            "#else",
+            "Hello Galaxy",
+            "#endif",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "");
+        ExpectLine(&proxy, 3, "");
+        ExpectLine(&proxy, 4, "");
+        ExpectLine(&proxy, 5, "");
+        ExpectLine(&proxy, 6, "");
+        ExpectLine(&proxy, 7, "Hello Galaxy");
+        ExpectLine(&proxy, 8, "");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Ensure can use parenthesis in parameters values", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define someStuff(param1) Hello param1 World",
+            "someStuff(A sentence with (parenthesis) and stuff)",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "Hello A sentence with (parenthesis) and stuff World");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Ensure can use comma in parenthesis in parameters values", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define someStuff(param1) Hello param1 World",
+            "someStuff(A sentence with (parenthesis and a , character) and stuff)",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "Hello A sentence with (parenthesis and a , character) and stuff World");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Ensure can use comma in square brackets in parameters values", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define someStuff(param1) Hello param1 World",
+            "someStuff(A sentence with [brackets and a , character] and stuff)",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "Hello A sentence with [brackets and a , character] and stuff World");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Ensure can use comma in curly braces in parameters values", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define someStuff(param1) Hello param1 World",
+            "someStuff(A sentence with {braces and a , character} and stuff)",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "Hello A sentence with {braces and a , character} and stuff World");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Ensure can use empty final parameter value in nested macro", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define inner(param1, param2) param1+param2+end",
+            "#define outer(param1) inner(param1, )",
+            "outer(begin)",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "");
+        ExpectLine(&proxy, 3, "begin++end");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Ensure throws error on unclosed parenthesis in params", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define someStuff(param1) Hello param1 World",
+            "someStuff(A sentence with [brackets and a , character and stuff)",
+            "someStuff(A sentence with {braces and a , character and stuff)",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectErrorInLine(&proxy, 2, 64);
+        ExpectErrorInLine(&proxy, 3, 62);
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Ensure throws error on parenthesis in params closed with wrong equivalent", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define someStuff(param1) Hello param1 World",
+            "someStuff(A sentence with (parenthesis and a , character] and stuff)",
+            "someStuff(A sentence with [brackets and a , character} and stuff)",
+            "someStuff(A sentence with {braces and a , character) and stuff)",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectErrorInLine(&proxy, 2, 57);
+        ExpectErrorInLine(&proxy, 3, 54);
+        ExpectErrorInLine(&proxy, 4, 52);
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Ensure defines can go over multiple lines", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define someStuff(param1) Hello param1 World \\",
+            "and hello universe",
+            "someStuff(lovely)",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "");
+        ExpectLine(&proxy, 3, "Hello lovely World and hello universe");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Macro definition can span multiple lines when used with backslash", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define testMacro( \\",
+            "  a, \\",
+            "  b, \\",
+            "  c) a + b - c",
+            "testMacro(1, 2, 3)",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "");
+        ExpectLine(&proxy, 3, "");
+        ExpectLine(&proxy, 4, "");
+        ExpectLine(&proxy, 5, "1 + 2 - 3");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Function macro call can have space before arguments", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define CHOICE_X(itemIndex) itemIndex",
+            "CHOICE_X(2)",
+            "CHOICE_X (2)",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "2");
+        ExpectLine(&proxy, 3, "2");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Macro definition that has unclosed parameters throws an error", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define testMacro(",
+            "  a,",
+            "  b,",
+            "  c) a + b - c",
+            "testMacro(1, 2, 3)",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectErrorInLine(&proxy, 1, 19);
+    }
+
+    TEST_CASE("DefinesStreamProxy: Macro usages can span multiple lines if they have args", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define testMacro(a, b, c) Hello a, this is b. Lets meet at c!",
+            "testMacro(",
+            "Peter,",
+            "Anna,",
+            "the cinema",
+            ")",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "");
+        ExpectLine(&proxy, 3, "");
+        ExpectLine(&proxy, 4, "");
+        ExpectLine(&proxy, 5, "");
+        ExpectLine(&proxy, 6, "Hello Peter, this is Anna. Lets meet at the cinema!");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Can use second macro after multi-line macro", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define LOL HAHA",
+            "#define testMacro(a, b) a likes b",
+            "testMacro(",
+            "Peter,",
+            "Anna",
+            ") LOL funny",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "");
+        ExpectLine(&proxy, 3, "");
+        ExpectLine(&proxy, 4, "");
+        ExpectLine(&proxy, 5, "");
+        ExpectLine(&proxy, 6, "Peter likes Anna HAHA funny");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Can use second multi-line macro after multi-line macro", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define LOL HAHA",
+            "#define testMacro(a, b) a likes b",
+            "testMacro(",
+            "Peter,",
+            "Anna",
+            ") and testMacro(",
+            "Anna,",
+            "Peter",
+            ")",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "");
+        ExpectLine(&proxy, 3, "");
+        ExpectLine(&proxy, 4, "");
+        ExpectLine(&proxy, 5, "");
+        ExpectLine(&proxy, 6, "Peter likes Anna and ");
+        ExpectLine(&proxy, 7, "");
+        ExpectLine(&proxy, 8, "");
+        ExpectLine(&proxy, 9, "Anna likes Peter");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Can use strinizing operator", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define testMacro(a) #a",
+            "testMacro(Hello)",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "\"Hello\"");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Can use stringizing operator inside sample code", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define testMacro(a) System.out.println(#a)",
+            "testMacro(Hello)",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "System.out.println(\"Hello\")");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Stringization does not expand macros", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define TEST WRONG",
+            "#define TESTTWO(b) WRONG WITH ARG b",
+            "#define STR(a) #a",
+            "STR(TEST)",
+            "STR(TESTTWO(testArg))",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "");
+        ExpectLine(&proxy, 3, "");
+        ExpectLine(&proxy, 4, "\"TEST\"");
+        ExpectLine(&proxy, 5, "\"TESTTWO(testArg)\"");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Can use token-pasting operator with identifier", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define testMacro(a) Hello##a",
+            "testMacro(World)",
+            "testMacro(5)",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "HelloWorld");
+        ExpectLine(&proxy, 3, "Hello5");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Can use token-pasting operator with string", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define testMacro(a) \"Hello\"##a",
+            "testMacro(\"World\")",
+            "testMacro(\"5\")",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "\"HelloWorld\"");
+        ExpectLine(&proxy, 3, "\"Hello5\"");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Can token-join symbols", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define GLUE(a, b) a ## b",
+            "GLUE(+, =)",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "+=");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Can token-join symbols and identifiers", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define GLUE(a, b) a ## b",
+            "GLUE(+, hello)",
+            "GLUE(world, =)",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "+hello");
+        ExpectLine(&proxy, 3, "world=");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Can token-join strings", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define GLUE(a, b) a ## b",
+            "GLUE(\"Hello\", \"World\")",
+            "GLUE(\"\", \"Cat\")",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "\"HelloWorld\"");
+        ExpectLine(&proxy, 3, "\"Cat\"");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Combined string tokens keep escape sequences", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define GLUE(a, b) a ## b",
+            "GLUE(\"He\\\"llo\", \"W\\\\orld\")",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "\"He\\\"lloW\\\\orld\"");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Can use token-pasting operator with string and stringization outside macro", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define s(t) #t",
+            "#define testMacro(a) \"Hello\" ## a",
+            "testMacro(s(World))",
+            "testMacro(s(5))",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "");
+        ExpectLine(&proxy, 3, "\"HelloWorld\"");
+        ExpectLine(&proxy, 4, "\"Hello5\"");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Can use token-pasting operator with string and stringization inside macro", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define s(t) #t",
+            "#define testMacro(a) \"Hello\" ## s(a)",
+            "testMacro(World)",
+            "testMacro(5)",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "");
+        ExpectLine(&proxy, 3, "\"HelloWorld\"");
+        ExpectLine(&proxy, 4, "\"Hello5\"");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Can omit whitespace when using token-pasting operator in combination with stringization macro", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define s(t) #t",
+            "#define testMacro(a) \"Hello\"##s(a)",
+            "testMacro(World)",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "");
+        ExpectLine(&proxy, 3, "\"HelloWorld\"");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Can omit whitespace when using token-pasting operator and stringization on same macro parameter", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define testMacro(a) \"Hello\"###a",
+            "testMacro(World)",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "\"HelloWorld\"");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Can use token-pasting operator after length deflating macros", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define VERY_LONG_MACRO \"T\"",
+            "#define testMacro(a) VERY_LONG_MACRO VERY_LONG_MACRO \"Hello\"##a VERY_LONG_MACRO",
+            "testMacro(\"World\")",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "");
+        ExpectLine(&proxy, 3, "\"T\" \"T\" \"HelloWorld\" \"T\"");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Can use token-pasting operator after length inflating macros", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define BLA \"This is very long\"",
+            "#define testMacro(a) BLA BLA \"Hello\"##a BLA",
+            "testMacro(\"World\")",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "");
+        ExpectLine(&proxy, 3, "\"This is very long\" \"This is very long\" \"HelloWorld\" \"This is very long\"");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Interprets nested macros in context of top-level macro", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define TEST HELLO",
+            "TEST",
+            "#define HELLO ONE",
+            "TEST",
+            "#undef HELLO",
+            "TEST",
+            "#define HELLO TWO",
+            "TEST",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "HELLO");
+        ExpectLine(&proxy, 3, "");
+        ExpectLine(&proxy, 4, "ONE");
+        ExpectLine(&proxy, 5, "");
+        ExpectLine(&proxy, 6, "HELLO");
+        ExpectLine(&proxy, 7, "");
+        ExpectLine(&proxy, 8, "TWO");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Recursive macro usages stops upon first reuse of same macro", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define ONE TWO",
+            "#define TWO THREE",
+            "#define THREE ONE",
+            "ONE",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "");
+        ExpectLine(&proxy, 3, "");
+        ExpectLine(&proxy, 4, "ONE");
+
+        REQUIRE(proxy.Eof());
+    }
+
+    TEST_CASE("DefinesStreamProxy: Only macros with args parse parenthesis", "[parsing][parsingstream]")
+    {
+        const std::vector<std::string> lines{
+            "#define ONE result",
+            "#define TWO() result",
+            "#define THREE(f) result",
+            "ONE()",
+            "TWO()",
+            "THREE(f)",
+        };
+
+        MockParserLineStream mockStream(lines);
+        DefinesStreamProxy proxy(&mockStream);
+
+        ExpectLine(&proxy, 1, "");
+        ExpectLine(&proxy, 2, "");
+        ExpectLine(&proxy, 3, "");
+        ExpectLine(&proxy, 4, "result()");
+        ExpectLine(&proxy, 5, "result");
+        ExpectLine(&proxy, 6, "result");
+
+        REQUIRE(proxy.Eof());
+    }
+} // namespace test::parsing::impl::defines_stream_proxy

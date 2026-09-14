@@ -1,0 +1,835 @@
+#include "ZoneMarkTemplate.h"
+
+#include "Domain/Computations/MemberComputations.h"
+#include "Domain/Computations/StructureComputations.h"
+#include "Internal/BaseTemplate.h"
+#include "Utils/StringUtils.h"
+
+#include <cassert>
+#include <sstream>
+
+namespace
+{
+    constexpr int TAG_HEADER = 1;
+    constexpr int TAG_SOURCE = 2;
+    constexpr int TAG_ALL_MARKERS = 3;
+
+    class PerTemplate final : BaseTemplate
+    {
+    public:
+        PerTemplate(std::ostream& stream, const OncePerTemplateRenderingContext& context)
+            : BaseTemplate(stream, context),
+              m_env(context)
+        {
+        }
+
+        void AllMarkers() const
+        {
+            AddGeneratedHint();
+
+            LINE("#pragma once")
+            LINE("")
+
+            for (const auto* asset : m_env.m_assets)
+            {
+                LINEF("#include \"Game/{0}/XAssets/{1}/{1}_{2}_mark_db.h\"", m_env.m_game, Lower(asset->m_definition->m_name), Lower(m_env.m_game))
+            }
+        }
+
+    private:
+        const OncePerTemplateRenderingContext& m_env;
+    };
+
+    class PerAsset final : BaseTemplate
+    {
+    public:
+        PerAsset(std::ostream& stream, const OncePerAssetRenderingContext& context)
+            : BaseTemplate(stream, context),
+              m_env(context)
+        {
+        }
+
+        void Header()
+        {
+            AddGeneratedHint();
+
+            LINE("#pragma once")
+            LINE("")
+            LINEF("#include \"Game/{0}/{0}.h\"", m_env.m_game)
+            LINE("#include \"Marking/BaseAssetMarker.h\"")
+            LINE("#include \"Marking/AssetVisitor.h\"")
+            LINE("")
+            LINE("#include <string>")
+            LINE("")
+            LINEF("namespace {0}", m_env.m_game)
+            LINE("{")
+            m_intendation++;
+            LINEF("class {0} final : public BaseAssetMarker", MarkerClassName(m_env.m_asset))
+            LINE("{")
+            m_intendation++;
+
+            m_intendation--;
+            LINE("public:")
+            m_intendation++;
+            PrintHeaderConstructor();
+            PrintHeaderMainMarkMethodDeclaration(m_env.m_asset);
+            LINE("")
+
+            m_intendation--;
+            LINE("private:")
+            m_intendation++;
+
+            // Method Declarations
+            for (const auto* type : m_env.m_used_types)
+            {
+                if (type->m_pointer_array_reference_exists && type->m_info->m_requires_marking)
+                {
+                    PrintHeaderPtrArrayMarkMethodDeclaration(type->m_type);
+                }
+            }
+            for (const auto* type : m_env.m_used_types)
+            {
+                if (type->m_array_reference_exists && type->m_info && !type->m_info->m_is_leaf && type->m_info->m_requires_marking
+                    && type->m_non_runtime_reference_exists)
+                {
+                    PrintHeaderArrayMarkMethodDeclaration(type->m_type);
+                }
+            }
+            for (const auto* type : m_env.m_used_structures)
+            {
+                if (type->m_non_runtime_reference_exists && !type->m_info->m_is_leaf && type->m_info->m_requires_marking
+                    && !StructureComputations(type->m_info).IsAsset())
+                {
+                    PrintHeaderMarkMethodDeclaration(type->m_info);
+                }
+            }
+            PrintHeaderMarkMethodDeclaration(m_env.m_asset);
+
+            LINE("")
+
+            LINE(VariableDecl(m_env.m_asset->m_definition))
+            LINE(PointerVariableDecl(m_env.m_asset->m_definition))
+            LINE("")
+
+            // Variable Declarations: type varType;
+            for (const auto* type : m_env.m_used_types)
+            {
+                if (type->m_info && !type->m_info->m_definition->IsAnonymous() && !type->m_info->m_is_leaf && !StructureComputations(type->m_info).IsAsset())
+                {
+                    LINE(VariableDecl(type->m_type))
+                }
+            }
+            for (const auto* type : m_env.m_used_types)
+            {
+                if (type->m_pointer_array_reference_exists && !type->m_is_context_asset)
+                {
+                    LINE(PointerVariableDecl(type->m_type))
+                }
+            }
+
+            m_intendation--;
+            LINE("};")
+            m_intendation--;
+            LINE("}")
+            LINE("")
+            LINEF("DEFINE_MARKER_CLASS_FOR_ASSET({0}::{1}, {0}::{2})", m_env.m_game, m_env.m_asset->m_asset_name, MarkerClassName(m_env.m_asset))
+        }
+
+        void Source()
+        {
+            AddGeneratedHint();
+
+            LINEF("#include \"{0}_{1}_mark_db.h\"", Lower(m_env.m_asset->m_definition->m_name), Lower(m_env.m_game))
+
+            if (!m_env.m_referenced_assets.empty())
+            {
+                LINE("")
+                LINE("// Referenced Assets:")
+                for (const auto* type : m_env.m_referenced_assets)
+                {
+                    LINEF("#include \"../{0}/{0}_{1}_mark_db.h\"", Lower(type->m_type->m_name), Lower(m_env.m_game))
+                }
+            }
+            LINE("")
+            LINE("#include <cassert>")
+            LINE("")
+            LINEF("using namespace {0};", m_env.m_game)
+            LINE("")
+            PrintConstructorMethod();
+            LINE("")
+            PrintMainMarkMethod();
+
+            for (const auto* type : m_env.m_used_types)
+            {
+                if (type->m_pointer_array_reference_exists && type->m_info->m_requires_marking)
+                {
+                    LINE("")
+                    PrintMarkPtrArrayMethod(type->m_type, type->m_info, type->m_pointer_array_reference_is_reusable);
+                }
+            }
+            for (const auto* type : m_env.m_used_types)
+            {
+                if (type->m_array_reference_exists && type->m_info && !type->m_info->m_is_leaf && type->m_info->m_requires_marking
+                    && type->m_non_runtime_reference_exists)
+                {
+                    LINE("")
+                    PrintMarkArrayMethod(type->m_type, type->m_info);
+                }
+            }
+            for (const auto* type : m_env.m_used_structures)
+            {
+                if (type->m_non_runtime_reference_exists && !type->m_info->m_is_leaf && type->m_info->m_requires_marking
+                    && !StructureComputations(type->m_info).IsAsset())
+                {
+                    LINE("")
+                    PrintMarkMethod(type->m_info);
+                }
+            }
+            LINE("")
+            PrintMarkMethod(m_env.m_asset);
+        }
+
+    private:
+        enum class MemberLoadType : std::uint8_t
+        {
+            ARRAY_POINTER,
+            DYNAMIC_ARRAY,
+            EMBEDDED,
+            EMBEDDED_ARRAY,
+            POINTER_ARRAY,
+            SINGLE_POINTER
+        };
+
+        static std::string MarkerClassName(const StructureInformation* asset)
+        {
+            return std::format("Marker_{0}", asset->m_definition->m_name);
+        }
+
+        static std::string VariableDecl(const DataDefinition* def)
+        {
+            return std::format("{0}* var{1};", def->GetFullName(), MakeSafeTypeName(def));
+        }
+
+        static std::string PointerVariableDecl(const DataDefinition* def)
+        {
+            return std::format("{0}** var{1}Ptr;", def->GetFullName(), MakeSafeTypeName(def));
+        }
+
+        void PrintHeaderPtrArrayMarkMethodDeclaration(const DataDefinition* def) const
+        {
+            LINEF("void MarkPtrArray_{0}(size_t count);", MakeSafeTypeName(def))
+        }
+
+        void PrintHeaderArrayMarkMethodDeclaration(const DataDefinition* def) const
+        {
+            LINEF("void MarkArray_{0}(size_t count);", MakeSafeTypeName(def))
+        }
+
+        void PrintHeaderMarkMethodDeclaration(const StructureInformation* info) const
+        {
+            LINEF("void Mark_{0}();", MakeSafeTypeName(info->m_definition))
+        }
+
+        void PrintHeaderConstructor() const
+        {
+            LINEF("explicit {0}(AssetVisitor& visitor);", MarkerClassName(m_env.m_asset))
+        }
+
+        void PrintHeaderMainMarkMethodDeclaration(const StructureInformation* info) const
+        {
+            LINEF("void Mark({0}* pAsset);", info->m_definition->GetFullName())
+        }
+
+        void PrintVariableInitialization(const DataDefinition* def) const
+        {
+            LINEF("var{0} = nullptr;", def->m_name)
+        }
+
+        void PrintPointerVariableInitialization(const DataDefinition* def) const
+        {
+            LINEF("var{0}Ptr = nullptr;", def->m_name)
+        }
+
+        void PrintConstructorMethod()
+        {
+            LINEF("{0}::{0}(AssetVisitor& visitor)", MarkerClassName(m_env.m_asset))
+
+            m_intendation++;
+            LINE(": BaseAssetMarker(visitor)")
+            m_intendation--;
+
+            LINE("{")
+            m_intendation++;
+
+            PrintVariableInitialization(m_env.m_asset->m_definition);
+            PrintPointerVariableInitialization(m_env.m_asset->m_definition);
+            LINE("")
+
+            for (const auto* type : m_env.m_used_types)
+            {
+                if (type->m_info && !type->m_info->m_definition->IsAnonymous() && !type->m_info->m_is_leaf && !StructureComputations(type->m_info).IsAsset())
+                {
+                    PrintVariableInitialization(type->m_type);
+                }
+            }
+            for (const auto* type : m_env.m_used_types)
+            {
+                if (type->m_info && type->m_pointer_array_reference_exists && !type->m_is_context_asset)
+                {
+                    PrintPointerVariableInitialization(type->m_type);
+                }
+            }
+
+            m_intendation--;
+            LINE("}")
+        }
+
+        void PrintMarkPtrArrayMethod_Loading(const DataDefinition* def, const StructureInformation* info) const
+        {
+            if (info && !info->m_is_leaf)
+            {
+                LINEF("{0} = *{1};", MakeTypeVarName(info->m_definition), MakeTypePtrVarName(def))
+                LINEF("Mark_{0}();", MakeSafeTypeName(def))
+            }
+        }
+
+        void PrintMarkPtrArrayMethod_PointerCheck(const DataDefinition* def, const StructureInformation* info)
+        {
+            LINEF("if (*{0})", MakeTypePtrVarName(def))
+            LINE("{")
+            m_intendation++;
+
+            if (info && StructureComputations(info).IsAsset())
+            {
+                LINEF("Mark_Dependency<{0}>(*{1});", info->m_asset_name, MakeTypePtrVarName(def))
+            }
+            else
+            {
+                PrintMarkPtrArrayMethod_Loading(def, info);
+            }
+
+            m_intendation--;
+            LINE("}")
+        }
+
+        void PrintMarkPtrArrayMethod(const DataDefinition* def, const StructureInformation* info, const bool reusable)
+        {
+            LINEF("void {0}::MarkPtrArray_{1}(const size_t count)", MarkerClassName(m_env.m_asset), MakeSafeTypeName(def))
+            LINE("{")
+            m_intendation++;
+
+            LINEF("assert({0} != nullptr);", MakeTypePtrVarName(def))
+            LINE("")
+
+            LINEF("{0}** var = {1};", def->GetFullName(), MakeTypePtrVarName(def))
+            LINE("for (size_t index = 0; index < count; index++)")
+            LINE("{")
+            m_intendation++;
+
+            LINEF("{0} = var;", MakeTypePtrVarName(def))
+            PrintMarkPtrArrayMethod_PointerCheck(def, info);
+            LINE("")
+            LINE("var++;")
+
+            m_intendation--;
+            LINE("}")
+            m_intendation--;
+            LINE("}")
+        }
+
+        void PrintMarkArrayMethod(const DataDefinition* def, const StructureInformation* info)
+        {
+            LINEF("void {0}::MarkArray_{1}(const size_t count)", MarkerClassName(m_env.m_asset), MakeSafeTypeName(def))
+            LINE("{")
+            m_intendation++;
+
+            LINEF("assert({0} != nullptr);", MakeTypeVarName(def))
+            LINE("")
+
+            LINEF("{0}* var = {1};", def->GetFullName(), MakeTypeVarName(def))
+            LINE("for (size_t index = 0; index < count; index++)")
+            LINE("{")
+            m_intendation++;
+
+            LINEF("{0} = var;", MakeTypeVarName(info->m_definition))
+            LINEF("Mark_{0}();", info->m_definition->m_name)
+            LINE("var++;")
+
+            m_intendation--;
+            LINE("}")
+
+            m_intendation--;
+            LINE("}")
+        }
+
+        void MarkMember_ScriptString(const StructureInformation* info,
+                                     const MemberInformation* member,
+                                     const DeclarationModifierComputations& modifier,
+                                     const MemberLoadType loadType) const
+        {
+            if (loadType == MemberLoadType::ARRAY_POINTER)
+            {
+                LINEF("MarkArray_ScriptString({0}, {1});", MakeMemberAccess(info, member, modifier), MakeEvaluation(modifier.GetArrayPointerCountEvaluation()))
+            }
+            else if (loadType == MemberLoadType::EMBEDDED_ARRAY)
+            {
+                LINEF("MarkArray_ScriptString({0}, {1});",
+                      MakeMemberAccess(info, member, modifier),
+                      MakeArrayCount(dynamic_cast<ArrayDeclarationModifier*>(modifier.GetDeclarationModifier())))
+            }
+            else if (loadType == MemberLoadType::EMBEDDED)
+            {
+                LINEF("Mark_ScriptString({0});", MakeMemberAccess(info, member, modifier))
+            }
+            else
+            {
+                assert(false);
+                LINEF("#error unsupported loadType {0} for script string", static_cast<int>(loadType))
+            }
+        }
+
+        void MarkMember_AssetRef(const StructureInformation* info,
+                                 const MemberInformation* member,
+                                 const DeclarationModifierComputations& modifier,
+                                 const MemberLoadType loadType) const
+        {
+            if (loadType == MemberLoadType::POINTER_ARRAY)
+            {
+                if (modifier.IsArray())
+                {
+                    LINEF("MarkArray_IndirectAssetRef({0}::EnumEntry, {1}, {2});",
+                          member->m_asset_ref,
+                          MakeMemberAccess(info, member, modifier),
+                          modifier.GetArraySize())
+                }
+                else
+                {
+                    LINEF("MarkArray_IndirectAssetRef({0}::EnumEntry, {1}, {2});",
+                          member->m_asset_ref,
+                          MakeMemberAccess(info, member, modifier),
+                          MakeEvaluation(modifier.GetPointerArrayCountEvaluation()))
+                }
+            }
+            else if (loadType == MemberLoadType::SINGLE_POINTER)
+            {
+                LINEF("Mark_IndirectAssetRef({0}::EnumEntry, {1});", member->m_asset_ref, MakeMemberAccess(info, member, modifier))
+            }
+            else
+            {
+                assert(false);
+                LINEF("#error unsupported loadType {0} for script string", static_cast<int>(loadType))
+            }
+        }
+
+        void MarkMember_Asset(const StructureInformation* info,
+                              const MemberInformation* member,
+                              const DeclarationModifierComputations& modifier,
+                              const MemberLoadType loadType) const
+        {
+            if (loadType == MemberLoadType::SINGLE_POINTER)
+            {
+                LINEF("Mark_Dependency<{0}>({1});", member->m_type->m_asset_name, MakeMemberAccess(info, member, modifier))
+            }
+            else if (loadType == MemberLoadType::POINTER_ARRAY)
+            {
+                MarkMember_PointerArray(info, member, modifier);
+            }
+            else
+            {
+                assert(false);
+                LINEF("#error unsupported loadType {0} for asset", static_cast<int>(loadType))
+            }
+        }
+
+        void MarkMember_ArrayPointer(const StructureInformation* info, const MemberInformation* member, const DeclarationModifierComputations& modifier) const
+        {
+            LINEF("{0} = {1};", MakeTypeVarName(member->m_member->m_type_declaration->m_type), MakeMemberAccess(info, member, modifier))
+            LINEF("MarkArray_{0}({1});",
+                  MakeSafeTypeName(member->m_member->m_type_declaration->m_type),
+                  MakeEvaluation(modifier.GetArrayPointerCountEvaluation()))
+        }
+
+        void MarkMember_PointerArray(const StructureInformation* info, const MemberInformation* member, const DeclarationModifierComputations& modifier) const
+        {
+            LINEF("{0} = {1};", MakeTypePtrVarName(member->m_member->m_type_declaration->m_type), MakeMemberAccess(info, member, modifier))
+            if (modifier.IsArray())
+            {
+                LINEF("MarkPtrArray_{0}({1});", MakeSafeTypeName(member->m_member->m_type_declaration->m_type), modifier.GetArraySize())
+            }
+            else
+            {
+                LINEF("MarkPtrArray_{0}({1});",
+                      MakeSafeTypeName(member->m_member->m_type_declaration->m_type),
+                      MakeEvaluation(modifier.GetPointerArrayCountEvaluation()))
+            }
+        }
+
+        void MarkMember_EmbeddedArray(const StructureInformation* info, const MemberInformation* member, const DeclarationModifierComputations& modifier) const
+        {
+            std::string arraySizeStr;
+
+            if (modifier.HasDynamicArrayCount())
+                arraySizeStr = MakeEvaluation(modifier.GetDynamicArrayCountEvaluation());
+            else
+                arraySizeStr = std::to_string(modifier.GetArraySize());
+
+            LINEF("{0} = {1};", MakeTypeVarName(member->m_member->m_type_declaration->m_type), MakeMemberAccess(info, member, modifier))
+            LINEF("MarkArray_{0}({1});", MakeSafeTypeName(member->m_member->m_type_declaration->m_type), arraySizeStr)
+        }
+
+        void MarkMember_DynamicArray(const StructureInformation* info, const MemberInformation* member, const DeclarationModifierComputations& modifier) const
+        {
+            LINEF("{0} = {1};", MakeTypeVarName(member->m_member->m_type_declaration->m_type), MakeMemberAccess(info, member, modifier))
+            LINEF(
+                "MarkArray_{0}({1});", MakeSafeTypeName(member->m_member->m_type_declaration->m_type), MakeEvaluation(modifier.GetDynamicArraySizeEvaluation()))
+        }
+
+        void MarkMember_Embedded(const StructureInformation* info, const MemberInformation* member, const DeclarationModifierComputations& modifier) const
+        {
+            LINEF("{0} = &{1};", MakeTypeVarName(member->m_member->m_type_declaration->m_type), MakeMemberAccess(info, member, modifier))
+            LINEF("Mark_{0}();", MakeSafeTypeName(member->m_member->m_type_declaration->m_type))
+        }
+
+        void MarkMember_SinglePointer(const StructureInformation* info, const MemberInformation* member, const DeclarationModifierComputations& modifier) const
+        {
+            LINEF("{0} = {1};", MakeTypeVarName(member->m_member->m_type_declaration->m_type), MakeMemberAccess(info, member, modifier))
+            LINEF("Mark_{0}();", MakeSafeTypeName(member->m_type->m_definition))
+        }
+
+        void MarkMember_TypeCheck(const StructureInformation* info,
+                                  const MemberInformation* member,
+                                  const DeclarationModifierComputations& modifier,
+                                  const MemberLoadType loadType) const
+        {
+            if (member->m_is_script_string)
+            {
+                MarkMember_ScriptString(info, member, modifier, loadType);
+            }
+            else if (!member->m_asset_ref.empty())
+            {
+                MarkMember_AssetRef(info, member, modifier, loadType);
+            }
+            else if (member->m_type && StructureComputations(member->m_type).IsAsset())
+            {
+                MarkMember_Asset(info, member, modifier, loadType);
+            }
+            else
+            {
+                switch (loadType)
+                {
+                case MemberLoadType::ARRAY_POINTER:
+                    MarkMember_ArrayPointer(info, member, modifier);
+                    break;
+
+                case MemberLoadType::SINGLE_POINTER:
+                    MarkMember_SinglePointer(info, member, modifier);
+                    break;
+
+                case MemberLoadType::EMBEDDED:
+                    MarkMember_Embedded(info, member, modifier);
+                    break;
+
+                case MemberLoadType::POINTER_ARRAY:
+                    MarkMember_PointerArray(info, member, modifier);
+                    break;
+
+                case MemberLoadType::DYNAMIC_ARRAY:
+                    MarkMember_DynamicArray(info, member, modifier);
+                    break;
+
+                case MemberLoadType::EMBEDDED_ARRAY:
+                    MarkMember_EmbeddedArray(info, member, modifier);
+                    break;
+
+                default:
+                    LINEF("// t={0}", static_cast<int>(loadType))
+                    break;
+                }
+            }
+        }
+
+        static bool
+            MarkMember_ShouldMakePointerCheck(const MemberInformation* member, const DeclarationModifierComputations& modifier, const MemberLoadType loadType)
+        {
+            if (loadType != MemberLoadType::ARRAY_POINTER && loadType != MemberLoadType::POINTER_ARRAY && loadType != MemberLoadType::SINGLE_POINTER)
+            {
+                return false;
+            }
+
+            if (loadType == MemberLoadType::POINTER_ARRAY)
+            {
+                return !modifier.IsArray();
+            }
+
+            if (member->m_is_string)
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        void MarkMember_PointerCheck(const StructureInformation* info,
+                                     const MemberInformation* member,
+                                     const DeclarationModifierComputations& modifier,
+                                     const MemberLoadType loadType)
+        {
+            if (MarkMember_ShouldMakePointerCheck(member, modifier, loadType))
+            {
+                LINEF("if ({0})", MakeMemberAccess(info, member, modifier))
+                LINE("{")
+                m_intendation++;
+
+                MarkMember_TypeCheck(info, member, modifier, loadType);
+
+                m_intendation--;
+                LINE("}")
+            }
+            else
+            {
+                MarkMember_TypeCheck(info, member, modifier, loadType);
+            }
+        }
+
+        void MarkMember_ReferenceArray(const StructureInformation* info, const MemberInformation* member, const DeclarationModifierComputations& modifier)
+        {
+            auto first = true;
+            for (const auto& entry : modifier.GetArrayEntries())
+            {
+                if (first)
+                {
+                    first = false;
+                }
+                else
+                {
+                    LINE("")
+                }
+
+                MarkMember_Reference(info, member, entry);
+            }
+        }
+
+        void MarkMember_Reference(const StructureInformation* info, const MemberInformation* member, const DeclarationModifierComputations& modifier)
+        {
+            if (modifier.IsDynamicArray())
+            {
+                MarkMember_PointerCheck(info, member, modifier, MemberLoadType::DYNAMIC_ARRAY);
+            }
+            else if (modifier.IsSinglePointer())
+            {
+                MarkMember_PointerCheck(info, member, modifier, MemberLoadType::SINGLE_POINTER);
+            }
+            else if (modifier.IsArrayPointer())
+            {
+                MarkMember_PointerCheck(info, member, modifier, MemberLoadType::ARRAY_POINTER);
+            }
+            else if (modifier.IsPointerArray())
+            {
+                MarkMember_PointerCheck(info, member, modifier, MemberLoadType::POINTER_ARRAY);
+            }
+            else if (modifier.IsArray() && modifier.GetNextDeclarationModifier() == nullptr)
+            {
+                MarkMember_PointerCheck(info, member, modifier, MemberLoadType::EMBEDDED_ARRAY);
+            }
+            else if (modifier.GetDeclarationModifier() == nullptr)
+            {
+                MarkMember_PointerCheck(info, member, modifier, MemberLoadType::EMBEDDED);
+            }
+            else if (modifier.IsArray())
+            {
+                MarkMember_ReferenceArray(info, member, modifier);
+            }
+            else
+            {
+                assert(false);
+                LINEF("#error MarkMemberReference failed @ {0}", member->m_member->m_name)
+            }
+        }
+
+        void MarkMember_Condition_Struct(const StructureInformation* info, const MemberInformation* member)
+        {
+            LINE("")
+            if (member->m_condition)
+            {
+                LINEF("if ({0})", MakeEvaluation(member->m_condition.get()))
+                LINE("{")
+                m_intendation++;
+
+                MarkMember_Reference(info, member, DeclarationModifierComputations(member));
+
+                m_intendation--;
+                LINE("}")
+            }
+            else
+            {
+                MarkMember_Reference(info, member, DeclarationModifierComputations(member));
+            }
+        }
+
+        void MarkMember_Condition_Union(const StructureInformation* info, const MemberInformation* member)
+        {
+            const MemberComputations computations(member);
+
+            if (computations.IsFirstUsedMember(false))
+            {
+                LINE("")
+                if (member->m_condition)
+                {
+                    LINEF("if ({0})", MakeEvaluation(member->m_condition.get()))
+                    LINE("{")
+                    m_intendation++;
+
+                    MarkMember_Reference(info, member, DeclarationModifierComputations(member));
+
+                    m_intendation--;
+                    LINE("}")
+                }
+                else
+                {
+                    MarkMember_Reference(info, member, DeclarationModifierComputations(member));
+                }
+            }
+            else if (computations.IsLastUsedMember(false))
+            {
+                if (member->m_condition)
+                {
+                    LINEF("else if ({0})", MakeEvaluation(member->m_condition.get()))
+                    LINE("{")
+                    m_intendation++;
+
+                    MarkMember_Reference(info, member, DeclarationModifierComputations(member));
+
+                    m_intendation--;
+                    LINE("}")
+                }
+                else
+                {
+                    LINE("else")
+                    LINE("{")
+                    m_intendation++;
+
+                    MarkMember_Reference(info, member, DeclarationModifierComputations(member));
+
+                    m_intendation--;
+                    LINE("}")
+                }
+            }
+            else
+            {
+                if (member->m_condition)
+                {
+                    LINEF("else if ({0})", MakeEvaluation(member->m_condition.get()))
+                    LINE("{")
+                    m_intendation++;
+
+                    MarkMember_Reference(info, member, DeclarationModifierComputations(member));
+
+                    m_intendation--;
+                    LINE("}")
+                }
+                else
+                {
+                    LINEF("#error Middle member of union must have condition ({0})", member->m_member->m_name)
+                }
+            }
+        }
+
+        void PrintMarkMemberIfNeedsTreatment(const StructureInformation* info, const MemberInformation* member)
+        {
+            const MemberComputations computations(member);
+            if (computations.ShouldIgnore() || computations.IsInRuntimeBlock())
+                return;
+
+            if (member->m_is_script_string || !member->m_asset_ref.empty()
+                || member->m_type && (member->m_type->m_requires_marking || StructureComputations(member->m_type).IsAsset()))
+            {
+                if (info->m_definition->GetType() == DataDefinitionType::UNION)
+                    MarkMember_Condition_Union(info, member);
+                else
+                    MarkMember_Condition_Struct(info, member);
+            }
+        }
+
+        void PrintMarkMethod(const StructureInformation* info)
+        {
+            LINEF("void {0}::Mark_{1}()", MarkerClassName(m_env.m_asset), info->m_definition->m_name)
+            LINE("{")
+            m_intendation++;
+
+            LINEF("assert({0} != nullptr);", MakeTypeVarName(info->m_definition))
+
+            for (const auto& member : info->m_ordered_members)
+            {
+                PrintMarkMemberIfNeedsTreatment(info, member.get());
+            }
+
+            m_intendation--;
+            LINE("}")
+        }
+
+        void PrintMainMarkMethod()
+        {
+            LINEF("void {0}::Mark({1}* pAsset)", MarkerClassName(m_env.m_asset), m_env.m_asset->m_definition->GetFullName())
+            LINE("{")
+            m_intendation++;
+
+            LINE("assert(pAsset != nullptr);")
+            LINE("")
+            LINEF("{0} = pAsset;", MakeTypeVarName(m_env.m_asset->m_definition))
+            LINEF("Mark_{0}();", MakeSafeTypeName(m_env.m_asset->m_definition))
+
+            m_intendation--;
+            LINE("}")
+        }
+
+        const OncePerAssetRenderingContext& m_env;
+    };
+} // namespace
+
+std::vector<CodeTemplateFile> ZoneMarkTemplate::GetFilesToRenderOncePerTemplate(const OncePerTemplateRenderingContext& context)
+{
+    std::vector<CodeTemplateFile> files;
+
+    files.emplace_back(std::format("AssetMarker{0}.h", context.m_game), TAG_ALL_MARKERS);
+
+    return files;
+}
+
+void ZoneMarkTemplate::RenderOncePerTemplateFile(std::ostream& stream, const CodeTemplateFileTag fileTag, const OncePerTemplateRenderingContext& context)
+{
+    assert(fileTag == TAG_ALL_MARKERS);
+
+    const PerTemplate t(stream, context);
+    t.AllMarkers();
+}
+
+std::vector<CodeTemplateFile> ZoneMarkTemplate::GetFilesToRenderOncePerAsset(const OncePerAssetRenderingContext& context)
+{
+    std::vector<CodeTemplateFile> files;
+
+    auto assetName = context.m_asset->m_definition->m_name;
+    utils::MakeStringLowerCase(assetName);
+
+    auto gameName = context.m_game;
+    utils::MakeStringLowerCase(gameName);
+
+    files.emplace_back(std::format("XAssets/{0}/{0}_{1}_mark_db.h", assetName, gameName), TAG_HEADER);
+    files.emplace_back(std::format("XAssets/{0}/{0}_{1}_mark_db.cpp", assetName, gameName), TAG_SOURCE);
+
+    return files;
+}
+
+void ZoneMarkTemplate::RenderOncePerAssetFile(std::ostream& stream, const CodeTemplateFileTag fileTag, const OncePerAssetRenderingContext& context)
+{
+    PerAsset t(stream, context);
+
+    if (fileTag == TAG_HEADER)
+    {
+        t.Header();
+    }
+    else
+    {
+        assert(fileTag == TAG_SOURCE);
+        t.Source();
+    }
+}

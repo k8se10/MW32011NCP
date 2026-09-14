@@ -1,0 +1,473 @@
+#include "CommonTechniqueDumper.h"
+
+#include "Dumping/AbstractTextDumper.h"
+#include "Shader/D3D11ShaderAnalyser.h"
+#include "Shader/D3D9ShaderAnalyser.h"
+#include "Techset/TechsetCommon.h"
+#include "Utils/Logging/Log.h"
+
+#include <cassert>
+#include <cstdint>
+
+using namespace techset;
+
+namespace
+{
+    class TechniqueFileWriter : public AbstractTextDumper
+    {
+    public:
+        TechniqueFileWriter(std::ostream& stream,
+                            const DxVersion dxVersion,
+                            const CommonCodeSourceInfos& codeSourceInfos,
+                            const CommonStreamRoutingInfos& routingInfos,
+                            const AbstractMaterialConstantZoneState& constantZoneState,
+                            const bool debug)
+            : AbstractTextDumper(stream),
+              m_debug(debug),
+              m_dx_version(dxVersion),
+              m_code_source_infos(codeSourceInfos),
+              m_routing_infos(routingInfos),
+              m_constant_zone_state(constantZoneState)
+        {
+        }
+
+        void DumpTechnique(const CommonTechnique& technique)
+        {
+            if (m_debug && technique.m_flags)
+            {
+                for (auto i = 0u; i < sizeof(CommonTechnique::m_flags) * 8u; i++)
+                {
+                    const auto mask = 1ull << i;
+                    if (technique.m_flags & mask)
+                    {
+                        Indent();
+                        m_stream << std::format("// TECHNIQUE FLAGS: 0x{:x}\n", mask);
+                    }
+                }
+            }
+
+            for (const auto& pass : technique.m_passes)
+                DumpPass(technique, pass);
+        }
+
+    private:
+        void DumpPass(const CommonTechnique& technique, const CommonPass& pass)
+        {
+            m_stream << "{\n";
+            IncIndent();
+
+            if (m_debug)
+            {
+                for (auto i = 0u; i < sizeof(CommonPass::m_sampler_flags) * 8u; i++)
+                {
+                    const auto mask = 1ull << i;
+                    if (pass.m_sampler_flags & mask)
+                    {
+                        Indent();
+                        m_stream << std::format("// CUSTOM SAMPLER FLAGS: 0x{:x}\n", mask);
+                    }
+                }
+
+                if (!pass.m_comment.empty())
+                {
+                    Indent();
+                    m_stream << std::format("// {}\n", pass.m_comment);
+                }
+            }
+
+            DumpStateMap();
+            DumpShader(technique, pass, pass.m_vertex_shader, CommonTechniqueShaderType::VERTEX, m_dx_version);
+            DumpShader(technique, pass, pass.m_pixel_shader, CommonTechniqueShaderType::PIXEL, m_dx_version);
+            DumpVertexDecl(pass.m_vertex_declaration);
+
+            DecIndent();
+            m_stream << "}\n";
+        }
+
+        void DumpStateMap() const
+        {
+            Indent();
+            // TODO: Actual statemap: Maybe find all materials using this techset and try to make out rules
+            // for the flags based on the statebitstable
+            m_stream << "stateMap \"passthrough\"; // TODO\n";
+        }
+
+        void DumpShader(const CommonTechnique& technique,
+                        const CommonPass& pass,
+                        const CommonTechniqueShader& shader,
+                        const CommonTechniqueShaderType shaderType,
+                        const DxVersion dxVersion)
+        {
+            if (!shader.m_bin || !shader.m_bin->m_shader_bin)
+            {
+                if (!shader.m_name.empty())
+                {
+                    Indent();
+                    m_stream << std::format("// ERROR: Cannot dump shader {} as its data is not loaded\n", shader.m_name);
+                    con::error("Technique {}: Cannot dump shader {} as its data is not loaded", technique.m_name, shader.m_name);
+                }
+
+                return;
+            }
+
+            unsigned versionMajor, versionMinor;
+            if (dxVersion == DxVersion::DX9)
+            {
+                const auto shaderInfo = d3d9::ShaderAnalyser::GetShaderInfo(shader.m_bin->m_shader_bin, shader.m_bin->m_shader_bin_size);
+                assert(shaderInfo);
+                if (!shaderInfo)
+                    return;
+
+                versionMajor = shaderInfo->m_version_major;
+                versionMinor = shaderInfo->m_version_minor;
+
+                DumpShaderHeader(shader, shaderType, versionMajor, versionMinor);
+
+                for (const auto& arg : pass.m_args)
+                {
+                    if (arg.m_type.m_shader_type == shaderType)
+                        DumpShaderArgDx9(technique, arg, *shaderInfo);
+                }
+            }
+            else
+            {
+                assert(dxVersion == DxVersion::DX11);
+                const auto shaderInfo = d3d11::ShaderAnalyser::GetShaderInfo(shader.m_bin->m_shader_bin, shader.m_bin->m_shader_bin_size);
+                assert(shaderInfo);
+                if (!shaderInfo)
+                    return;
+
+                versionMajor = shaderInfo->m_version_major;
+                versionMinor = shaderInfo->m_version_minor;
+
+                DumpShaderHeader(shader, shaderType, versionMajor, versionMinor);
+
+                for (const auto& arg : pass.m_args)
+                {
+                    if (arg.m_type.m_shader_type == shaderType)
+                        DumpShaderArgDx11(technique, arg, *shaderInfo);
+                }
+            }
+
+            DecIndent();
+            Indent();
+            m_stream << "}\n";
+        }
+
+        void DumpShaderHeader(const CommonTechniqueShader& shader, const CommonTechniqueShaderType shaderType, unsigned versionMajor, unsigned versionMinor)
+        {
+            const auto shaderTypeName = shaderType == CommonTechniqueShaderType::VERTEX ? "vertexShader" : "pixelShader";
+
+            m_stream << "\n";
+            Indent();
+            m_stream << std::format("{} {}.{} \"{}\"\n", shaderTypeName, versionMajor, versionMinor, shader.m_name);
+            Indent();
+            m_stream << "{\n";
+            IncIndent();
+        }
+
+        void DumpShaderArgDx9(const CommonTechnique& technique, const CommonShaderArg& arg, const d3d9::ShaderInfo& shaderInfo) const
+        {
+            const auto expectedRegisterSet =
+                arg.m_type.m_value_type == CommonShaderValueType::CODE_SAMPLER || arg.m_type.m_value_type == CommonShaderValueType::MATERIAL_SAMPLER
+                    ? d3d9::RegisterSet::SAMPLER
+                    : d3d9::RegisterSet::FLOAT_4;
+            const auto destinationRegister = arg.m_destination.dx9.m_destination_register;
+            const auto targetShaderArg = std::ranges::find_if(shaderInfo.m_constants,
+                                                              [destinationRegister, expectedRegisterSet](const d3d9::ShaderConstant& constant)
+                                                              {
+                                                                  return constant.m_register_set == expectedRegisterSet
+                                                                         && constant.m_register_index <= destinationRegister
+                                                                         && constant.m_register_index + constant.m_register_count > destinationRegister;
+                                                              });
+
+            assert(targetShaderArg != shaderInfo.m_constants.end());
+            if (targetShaderArg == shaderInfo.m_constants.end())
+            {
+                Indent();
+                m_stream << std::format("// Unrecognized arg dest: {} type: {}\n", destinationRegister, static_cast<unsigned>(arg.m_type.m_value_type));
+                con::error("Technique {}: Could not find arg (type: {}; dest: {}) in shader",
+                           technique.m_name,
+                           destinationRegister,
+                           static_cast<unsigned>(arg.m_type.m_value_type));
+                return;
+            }
+
+            std::string codeDestAccessor;
+            if (targetShaderArg->m_type_elements > 1)
+            {
+                codeDestAccessor = std::format("{}[{}]", targetShaderArg->m_name, destinationRegister - targetShaderArg->m_register_index);
+            }
+            else
+                codeDestAccessor = targetShaderArg->m_name;
+
+            const auto isTransposed = targetShaderArg->m_class == d3d9::ParameterClass::MATRIX_COLUMNS;
+            DumpShaderArg(technique, arg, codeDestAccessor, isTransposed, targetShaderArg->m_register_count);
+        }
+
+        void DumpShaderArgDx11(const CommonTechnique& technique, const CommonShaderArg& arg, const d3d11::ShaderInfo& shaderInfo) const
+        {
+            const auto& destination = arg.m_destination.dx11;
+            if (IsConstValueType(arg.m_type.m_value_type))
+            {
+                const auto boundResource = std::ranges::find_if(shaderInfo.m_bound_resources,
+                                                                [destination](const d3d11::BoundResource& resource)
+                                                                {
+                                                                    return resource.m_type == d3d11::BoundResourceType::CBUFFER
+                                                                           && resource.m_bind_point >= destination.m_buffer
+                                                                           && resource.m_bind_point + resource.m_bind_count > destination.m_buffer;
+                                                                });
+                if (boundResource == shaderInfo.m_bound_resources.end())
+                {
+                    Indent();
+                    m_stream << std::format("// Could not find bound resource for arg buffer: {} offset: {} type: {}\n",
+                                            destination.m_buffer,
+                                            destination.m_location.constant_buffer_offset,
+                                            static_cast<unsigned>(arg.m_type.m_value_type));
+                    con::error("Technique {}: Could not find bound resource for arg (buffer: {} offset: {} type: {}) in shader",
+                               technique.m_name,
+                               destination.m_buffer,
+                               destination.m_location.constant_buffer_offset,
+                               static_cast<unsigned>(arg.m_type.m_value_type));
+                    return;
+                }
+
+                const auto buffer = std::ranges::find_if(shaderInfo.m_constant_buffers,
+                                                         [&boundResource](const d3d11::ConstantBuffer& constantBuffer)
+                                                         {
+                                                             return constantBuffer.m_name == boundResource->m_name;
+                                                         });
+                if (buffer == shaderInfo.m_constant_buffers.end())
+                {
+                    Indent();
+                    m_stream << std::format("// Could not find buffer for bound resource: {}\n", boundResource->m_name);
+                    con::error("Technique {}: Could not find buffer for bound resource: {} in shader", technique.m_name, boundResource->m_name);
+                    return;
+                }
+
+                const auto variable =
+                    std::ranges::find_if(buffer->m_variables,
+                                         [destination](const d3d11::ConstantBufferVariable& var)
+                                         {
+                                             return var.m_offset <= destination.m_location.constant_buffer_offset
+                                                    && var.m_offset + var.m_size >= destination.m_location.constant_buffer_offset + destination.m_size;
+                                         });
+                if (variable == buffer->m_variables.end())
+                {
+                    Indent();
+                    m_stream << std::format("// Could not find variable in buffer: {} offset: {} type: {}\n",
+                                            buffer->m_name,
+                                            destination.m_location.constant_buffer_offset,
+                                            static_cast<unsigned>(arg.m_type.m_value_type));
+                    con::error("Technique {}: Could not find variable in buffer for arg (buffer: {} offset: {} type: {}) in shader",
+                               technique.m_name,
+                               buffer->m_name,
+                               destination.m_location.constant_buffer_offset,
+                               static_cast<unsigned>(arg.m_type.m_value_type));
+                    return;
+                }
+
+                std::string codeDestAccessor;
+                if (variable->m_element_count <= 1)
+                {
+                    codeDestAccessor = variable->m_name;
+                }
+                else
+                {
+                    const auto elementSize = variable->m_size / variable->m_element_count;
+
+                    // Assert destination is aligned with element size
+                    assert((destination.m_location.constant_buffer_offset - variable->m_offset) % elementSize == 0);
+
+                    const auto destinationIndex = (destination.m_location.constant_buffer_offset - variable->m_offset) / elementSize;
+
+                    codeDestAccessor = std::format("{}[{}]", variable->m_name, destinationIndex);
+                }
+
+                const auto isTransposed = variable->m_variable_class == d3d11::VariableClass::MATRIX_COLUMNS;
+
+                DumpShaderArg(technique, arg, codeDestAccessor, isTransposed, variable->m_row_count);
+            }
+            else
+            {
+                assert(IsSamplerValueType(arg.m_type.m_value_type));
+
+                // The game seems to guarantee the texture name to be the accurate one
+                const auto boundTextureResource = std::ranges::find_if(shaderInfo.m_bound_resources,
+                                                                       [destination](const d3d11::BoundResource& resource)
+                                                                       {
+                                                                           if (resource.m_type == d3d11::BoundResourceType::TEXTURE)
+                                                                               return resource.m_bind_point == destination.m_location.texture_index;
+
+                                                                           return false;
+                                                                       });
+                if (boundTextureResource == shaderInfo.m_bound_resources.end())
+                {
+                    Indent();
+                    m_stream << std::format("// Could not find buffer for arg buffer: {} sampler: {} texture: {} type: {}\n",
+                                            destination.m_buffer,
+                                            destination.m_location.sampler_index,
+                                            destination.m_location.texture_index,
+                                            static_cast<unsigned>(arg.m_type.m_value_type));
+                    con::error("Technique {}: Could not find buffer for arg (buffer: {} sampler: {} texture: {} type: {}) in shader",
+                               technique.m_name,
+                               destination.m_buffer,
+                               destination.m_location.sampler_index,
+                               destination.m_location.texture_index,
+                               static_cast<unsigned>(arg.m_type.m_value_type));
+                    return;
+                }
+                DumpShaderArg(technique, arg, boundTextureResource->m_name, false, 0);
+            }
+        }
+
+        void DumpShaderArg(const CommonTechnique& technique,
+                           const CommonShaderArg& arg,
+                           std::string codeDestAccessor,
+                           const bool isTransposed,
+                           const size_t shaderRowCount) const
+        {
+            if (arg.m_type.m_value_type == CommonShaderValueType::CODE_CONST)
+            {
+                auto constSourceInfo = m_code_source_infos.GetInfoForCodeConstSource(arg.m_value.code_const_source.m_index);
+                const auto isMatrix = constSourceInfo && constSourceInfo->transposedMatrix.has_value();
+
+                if (isTransposed)
+                {
+                    assert(isMatrix);
+                    if (isMatrix)
+                        constSourceInfo = m_code_source_infos.GetInfoForCodeConstSource(*constSourceInfo->transposedMatrix);
+                }
+
+                if (constSourceInfo)
+                {
+                    std::string codeAccessor;
+                    if (constSourceInfo->arrayCount <= 1)
+                        codeAccessor = constSourceInfo->accessor;
+                    else
+                        codeAccessor = std::format("{}[{}]", constSourceInfo->accessor, arg.m_value.code_const_source.m_index - constSourceInfo->value);
+
+                    // Assert that when a code const is not a matrix, the game uses one row of it per arg
+                    // If it is a matrix, the game uses as many rows as can be seen in the shader
+                    assert(isMatrix || arg.m_value.code_const_source.m_row_count == 1);
+                    assert(!isMatrix || arg.m_value.code_const_source.m_row_count == shaderRowCount);
+
+                    if (codeDestAccessor != codeAccessor)
+                    {
+                        Indent();
+                        m_stream << std::format("{} = constant.{};\n", codeDestAccessor, codeAccessor);
+                    }
+                    else if (m_debug)
+                    {
+                        Indent();
+                        m_stream << std::format("// Omitted due to matching accessors: {} = constant.{};\n", codeDestAccessor, codeAccessor);
+                    }
+                }
+                else
+                {
+                    assert(false);
+                    Indent();
+                    m_stream << std::format("// ERROR: Could not find code source info for const: {}\n", codeDestAccessor);
+                    con::error("Technique {}: Could not find code source info for const {}", technique.m_name, codeDestAccessor);
+                }
+            }
+            else if (arg.m_type.m_value_type == CommonShaderValueType::CODE_SAMPLER)
+            {
+                const auto samplerSourceInfo = m_code_source_infos.GetInfoForCodeSamplerSource(arg.m_value.code_sampler_source);
+                if (samplerSourceInfo)
+                {
+                    if (codeDestAccessor != samplerSourceInfo->accessor)
+                    {
+                        Indent();
+                        m_stream << std::format("{} = sampler.{};\n", codeDestAccessor, samplerSourceInfo->accessor);
+                    }
+                    else if (m_debug)
+                    {
+                        Indent();
+                        m_stream << std::format("// Omitted due to matching accessors: {} = sampler.{};\n", codeDestAccessor, samplerSourceInfo->accessor);
+                    }
+                }
+                else
+                {
+                    assert(false);
+                    Indent();
+                    m_stream << std::format("// ERROR: Could not find code source info for sampler: {}\n", codeDestAccessor);
+                    con::error("Technique {}: Could not find code source info for sampler {}", technique.m_name, codeDestAccessor);
+                }
+            }
+            else if (arg.m_type.m_value_type == CommonShaderValueType::LITERAL_CONST)
+            {
+                Indent();
+                m_stream << std::format("{} = float4({}, {}, {}, {});\n",
+                                        codeDestAccessor,
+                                        arg.m_value.literal_value[0],
+                                        arg.m_value.literal_value[1],
+                                        arg.m_value.literal_value[2],
+                                        arg.m_value.literal_value[3]);
+            }
+            else if (arg.m_type.m_value_type == CommonShaderValueType::MATERIAL_CONST || arg.m_type.m_value_type == CommonShaderValueType::MATERIAL_SAMPLER)
+            {
+                Indent();
+
+                std::string materialPropertyName;
+                if (m_constant_zone_state.HashString(codeDestAccessor) == arg.m_value.name_hash)
+                {
+                    m_stream << std::format("{} = material.{};\n", codeDestAccessor, codeDestAccessor);
+                }
+                else if (m_constant_zone_state.GetConstantName(arg.m_value.name_hash, materialPropertyName)
+                         || m_constant_zone_state.GetTextureDefName(arg.m_value.name_hash, materialPropertyName))
+                {
+                    m_stream << std::format("{} = material.{};\n", codeDestAccessor, materialPropertyName);
+                }
+                else
+                {
+                    m_stream << std::format("{} = material.#0x{:x};\n", codeDestAccessor, arg.m_value.name_hash);
+                }
+            }
+            else
+            {
+                assert(false);
+            }
+        }
+
+        void DumpVertexDecl(const CommonVertexDeclaration& vertexDeclaration) const
+        {
+            if (vertexDeclaration.m_routing.empty())
+                return;
+
+            m_stream << "\n";
+
+            for (const auto& routing : vertexDeclaration.m_routing)
+            {
+                Indent();
+                m_stream << std::format(
+                    "vertex.{} = code.{};\n", m_routing_infos.GetDestinationName(routing.m_destination), m_routing_infos.GetSourceName(routing.m_source));
+            }
+        }
+
+        bool m_debug;
+        DxVersion m_dx_version;
+        const CommonCodeSourceInfos& m_code_source_infos;
+        const CommonStreamRoutingInfos& m_routing_infos;
+        const AbstractMaterialConstantZoneState& m_constant_zone_state;
+    };
+} // namespace
+
+namespace techset
+{
+    void DumpCommonTechnique(const AssetDumpingContext& context,
+                             const CommonTechnique& technique,
+                             const DxVersion dxVersion,
+                             const CommonCodeSourceInfos& codeSourceInfos,
+                             const CommonStreamRoutingInfos& routingInfos,
+                             const AbstractMaterialConstantZoneState& constantZoneState,
+                             const bool debug)
+    {
+        const auto techniqueFile = context.OpenAssetFile(GetFileNameForTechniqueName(technique.m_name));
+        if (techniqueFile)
+        {
+            TechniqueFileWriter writer(*techniqueFile, dxVersion, codeSourceInfos, routingInfos, constantZoneState, debug);
+            writer.DumpTechnique(technique);
+        }
+    }
+} // namespace techset

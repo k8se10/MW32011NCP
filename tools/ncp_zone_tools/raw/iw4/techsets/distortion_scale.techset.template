@@ -1,0 +1,41 @@
+#switch UV_ANIM
+#switch ZFEATHER
+
+#options MATERIAL_TYPE (default, world, world_vertcol)
+
+#if MATERIAL_TYPE == "world"
+    #define MATERIAL_TYPE_PREFIX "w_"
+    #define MATERIAL_TYPE_SUFFIX "_nc"
+#elif MATERIAL_TYPE == "world_vertcol"
+    #define MATERIAL_TYPE_PREFIX "wc_"
+    #define MATERIAL_TYPE_SUFFIX ""
+#else
+    #define MATERIAL_TYPE_PREFIX ""
+    #define MATERIAL_TYPE_SUFFIX "_dtex"
+#endif
+
+#ifdef ZFEATHER
+    #define ZFEATHER_SUFFIX "_zfeather"
+#else
+    #define ZFEATHER_SUFFIX ""
+#endif
+
+#ifdef UV_ANIM
+    #define UV_ANIM_SUFFIX "_ua"
+#else
+    #define UV_ANIM_SUFFIX ""
+#endif
+
+#filename MATERIAL_TYPE_PREFIX + "distortion_scale" + UV_ANIM_SUFFIX + ZFEATHER_SUFFIX + ".techset"
+
+#set EMISSIVE_TECHNIQUE "distortion_scale" + UV_ANIM_SUFFIX + ZFEATHER_SUFFIX + MATERIAL_TYPE_SUFFIX
+#set WIREFRAME_TECHNIQUE "wireframe_solid" + MATERIAL_TYPE_SUFFIX
+
+"emissive":
+"emissive dfog":
+"emissive shadow":
+"emissive shadow dfog":
+  EMISSIVE_TECHNIQUE;
+
+"solid wireframe":
+  WIREFRAME_TECHNIQUE;

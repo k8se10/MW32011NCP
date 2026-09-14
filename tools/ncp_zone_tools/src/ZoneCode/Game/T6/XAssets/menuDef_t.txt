@@ -1,0 +1,133 @@
+// =========================================
+// menuDef_t
+// =========================================
+use menuDef_t;
+set block XFILE_BLOCK_TEMP;
+set string window::name;
+set string font;
+set string allowedBinding;
+set string soundName;
+set count items itemCount;
+
+// windowDef_t
+use windowDef_t;
+set string group;
+
+// GenericEventHandler
+use GenericEventHandler;
+set string name;
+
+// GenericEventScript
+use GenericEventScript;
+set string action;
+
+// ExpressionStatement
+use ExpressionStatement;
+set string filename;
+set count rpn numRpn;
+set reusable rpn;
+
+// expressionRpn
+use expressionRpn;
+set condition data::constant type == RPN_CONSTANT;
+set condition data::cmd never;
+
+// Operand
+use Operand;
+set condition internals::intVal dataType == VAL_INT;
+set condition internals::floatVal dataType == VAL_FLOAT;
+set condition internals::string dataType == VAL_STRING;
+set string internals::string;
+set condition internals::dvar never;
+
+// itemDef_s
+use itemDef_s;
+set string dvar;
+set string profileVar;
+set string dvarTest;
+set string enableDvar;
+set condition parent never;
+set condition typeData::textDef 
+type == ITEM_TYPE_TEXT || type == ITEM_TYPE_BUTTON || type == ITEM_TYPE_LISTBOX
+|| type == ITEM_TYPE_EDITFIELD  || type == ITEM_TYPE_NUMERICFIELD || type == ITEM_TYPE_SLIDER
+|| type == ITEM_TYPE_YESNO || type == ITEM_TYPE_MULTI || type == ITEM_TYPE_DVARENUM
+|| type == ITEM_TYPE_BIND || type == ITEM_TYPE_VALIDFILEFIELD || type == ITEM_TYPE_UPREDITFIELD
+|| type == ITEM_TYPE_GAME_MESSAGE_WINDOW || type == ITEM_TYPE_BIND2 || type == ITEM_TYPE_OWNERDRAW_TEXT
+|| type == ITEM_TYPE_OD_TEXT_BUTTON || type == ITEM_TYPE_PROFILEMULTI;
+set condition typeData::imageDef type == ITEM_TYPE_IMAGE;
+set condition typeData::blankButtonDef type == ITEM_TYPE_OD_BUTTON || type == ITEM_TYPE_BUTTON_NO_TEXT;
+set condition typeData::ownerDrawDef type == ITEM_TYPE_OWNERDRAW;
+set condition typeData::data never;
+
+// textDef_s
+use textDef_s;
+set string text;
+set condition textTypeData::focusItemDef itemDef_s::type == ITEM_TYPE_BUTTON
+|| itemDef_s::type == ITEM_TYPE_LISTBOX || itemDef_s::type == ITEM_TYPE_EDITFIELD
+|| itemDef_s::type == ITEM_TYPE_NUMERICFIELD || itemDef_s::type == ITEM_TYPE_SLIDER
+|| itemDef_s::type == ITEM_TYPE_YESNO || itemDef_s::type == ITEM_TYPE_MULTI
+|| itemDef_s::type == ITEM_TYPE_DVARENUM || itemDef_s::type == ITEM_TYPE_BIND
+|| itemDef_s::type == ITEM_TYPE_VALIDFILEFIELD || itemDef_s::type == ITEM_TYPE_UPREDITFIELD
+|| itemDef_s::type == ITEM_TYPE_BIND2 || itemDef_s::type == ITEM_TYPE_OD_TEXT_BUTTON
+|| itemDef_s::type == ITEM_TYPE_BUTTON_NO_TEXT || itemDef_s::type == ITEM_TYPE_PROFILEMULTI
+|| itemDef_s::type == ITEM_TYPE_DVAR_FLOAT;
+set condition textTypeData::gameMsgDef itemDef_s::type == ITEM_TYPE_GAME_MESSAGE_WINDOW;
+set condition textTypeData::data never;
+
+// focusItemDef_s
+use focusItemDef_s;
+set string mouseEnterText;
+set string mouseExitText;
+set string mouseEnter;
+set string mouseExit;
+set condition focusTypeData::listBox itemDef_s::type == ITEM_TYPE_LISTBOX;
+set condition focusTypeData::multi itemDef_s::type == ITEM_TYPE_MULTI;
+set condition focusTypeData::profileMulti itemDef_s::type == ITEM_TYPE_PROFILEMULTI;
+set condition focusTypeData::editField itemDef_s::type == ITEM_TYPE_EDITFIELD
+|| itemDef_s::type == ITEM_TYPE_NUMERICFIELD
+|| itemDef_s::type == ITEM_TYPE_SLIDER
+|| itemDef_s::type == ITEM_TYPE_YESNO
+|| itemDef_s::type == ITEM_TYPE_BIND
+|| itemDef_s::type == ITEM_TYPE_VALIDFILEFIELD
+|| itemDef_s::type == ITEM_TYPE_UPREDITFIELD
+|| itemDef_s::type == ITEM_TYPE_BIND2
+|| itemDef_s::type == ITEM_TYPE_DVAR_FLOAT;
+set condition focusTypeData::enumDvar itemDef_s::type == ITEM_TYPE_DVARENUM;
+set condition focusTypeData::data never;
+
+// listBoxDef_s
+use listBoxDef_s;
+set count rows maxRows;
+
+// MenuRow
+use MenuRow;
+set count cells listBoxDef_s::numColumns;
+set count eventName 32;
+set count onFocusEventName 32;
+
+// MenuCell
+use MenuCell;
+set count stringValue maxChars;
+
+// multiDef_s
+use multiDef_s;
+set string dvarList;
+set string dvarStr;
+
+// profileMultiDef_s
+use profileMultiDef_s;
+set string profileVarList;
+set string profileVarStr;
+
+// enumDvarDef_s
+set string enumDvarDef_s::enumDvarName;
+
+// UIAnimInfo
+use UIAnimInfo;
+set count animStates animStateCount;
+set condition currentAnimState never;
+set condition nextAnimState never;
+
+// animParamsDef_t
+use animParamsDef_t;
+set string name;

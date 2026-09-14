@@ -1,0 +1,27 @@
+[submodule "thirdparty/libtomcrypt"]
+	path = thirdparty/libtomcrypt
+	url = https://github.com/libtom/libtomcrypt.git
+[submodule "thirdparty/libtommath"]
+	path = thirdparty/libtommath
+	url = https://github.com/libtom/libtommath
+[submodule "thirdparty/zlib"]
+	path = thirdparty/zlib
+	url = https://github.com/madler/zlib.git
+[submodule "thirdparty/catch2"]
+	path = thirdparty/catch2
+	url = https://github.com/catchorg/Catch2.git
+[submodule "thirdparty/json"]
+	path = thirdparty/json
+	url = https://github.com/nlohmann/json.git
+[submodule "thirdparty/eigen"]
+	path = thirdparty/eigen
+	url = https://gitlab.com/libeigen/eigen.git
+[submodule "thirdparty/lz4"]
+	path = thirdparty/lz4
+	url = https://github.com/lz4/lz4.git
+[submodule "thirdparty/webwindowed"]
+	path = thirdparty/webwindowed
+	url = https://github.com/Laupetin/webwindowed.git
+[submodule "thirdparty/stb"]
+	path = thirdparty/stb
+	url = https://github.com/nothings/stb.git

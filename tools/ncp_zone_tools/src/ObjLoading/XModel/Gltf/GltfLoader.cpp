@@ -1,0 +1,936 @@
+#include "GltfLoader.h"
+
+#include "Internal/GltfAccessor.h"
+#include "Internal/GltfBuffer.h"
+#include "Internal/GltfBufferView.h"
+#include "Utils/Logging/Log.h"
+
+#pragma warning(push, 0)
+#include <Eigen>
+#pragma warning(pop)
+
+#include <deque>
+#include <exception>
+#include <format>
+#include <limits>
+#include <nlohmann/json.hpp>
+#include <numbers>
+#include <numeric>
+#include <string>
+
+using namespace gltf;
+
+namespace
+{
+    struct AccessorsForVertex
+    {
+        friend bool operator==(const AccessorsForVertex& lhs, const AccessorsForVertex& rhs)
+        {
+            return lhs.m_position_accessor == rhs.m_position_accessor && lhs.m_normal_accessor == rhs.m_normal_accessor
+                   && lhs.m_color_accessor == rhs.m_color_accessor && lhs.m_uv_accessor == rhs.m_uv_accessor && lhs.m_joints_accessor == rhs.m_joints_accessor
+                   && lhs.m_weights_accessor == rhs.m_weights_accessor;
+        }
+
+        friend bool operator!=(const AccessorsForVertex& lhs, const AccessorsForVertex& rhs)
+        {
+            return !(lhs == rhs);
+        }
+
+        unsigned m_position_accessor;
+        std::optional<unsigned> m_normal_accessor;
+        std::optional<unsigned> m_color_accessor;
+        std::optional<unsigned> m_uv_accessor;
+        std::optional<unsigned> m_joints_accessor;
+        std::optional<unsigned> m_weights_accessor;
+    };
+
+    void RhcToLhcCoordinates(float (&coords)[3])
+    {
+        const float two[3]{coords[0], coords[1], coords[2]};
+
+        coords[0] = two[0];
+        coords[1] = -two[2];
+        coords[2] = two[1];
+    }
+
+    void RhcToLhcScale(float (&coords)[3])
+    {
+        const float two[3]{coords[0], coords[1], coords[2]};
+
+        coords[0] = two[0];
+        coords[1] = two[2];
+        coords[2] = two[1];
+    }
+
+    void RhcToLhcQuaternion(XModelQuaternion& quat)
+    {
+        Eigen::Quaternionf eigenQuat(quat.w, quat.x, quat.y, quat.z);
+        const Eigen::Quaternionf eigenRotationQuat(Eigen::AngleAxisf(std::numbers::pi_v<float> / 2.f, Eigen::Vector3f::UnitX()));
+
+        eigenQuat = eigenRotationQuat * eigenQuat;
+
+        quat.x = eigenQuat.x();
+        quat.y = eigenQuat.y();
+        quat.z = eigenQuat.z();
+        quat.w = eigenQuat.w();
+    }
+
+    void RhcToLhcIndices(unsigned (&indices)[3])
+    {
+        const unsigned two[3]{indices[0], indices[1], indices[2]};
+
+        indices[0] = two[2];
+        indices[1] = two[1];
+        indices[2] = two[0];
+    }
+} // namespace
+
+template<> struct std::hash<AccessorsForVertex>
+{
+    std::size_t operator()(const AccessorsForVertex& v) const noexcept
+    {
+        std::size_t seed = 0x7E42C0E6;
+        seed ^= (seed << 6) + (seed >> 2) + 0x47B15429 + static_cast<std::size_t>(v.m_position_accessor);
+        seed ^= (seed << 6) + (seed >> 2) + 0x66847B5C + std::hash<std::optional<unsigned>>()(v.m_normal_accessor);
+        seed ^= (seed << 6) + (seed >> 2) + 0x77399D60 + std::hash<std::optional<unsigned>>()(v.m_color_accessor);
+        seed ^= (seed << 6) + (seed >> 2) + 0x477AF9AB + std::hash<std::optional<unsigned>>()(v.m_uv_accessor);
+        seed ^= (seed << 6) + (seed >> 2) + 0x4421B4D9 + std::hash<std::optional<unsigned>>()(v.m_joints_accessor);
+        seed ^= (seed << 6) + (seed >> 2) + 0x13C2EBA1 + std::hash<std::optional<unsigned>>()(v.m_weights_accessor);
+        return seed;
+    }
+};
+
+namespace
+{
+    class GltfLoadException final : std::exception
+    {
+    public:
+        explicit GltfLoadException(std::string message)
+            : m_message(std::move(message))
+        {
+        }
+
+        [[nodiscard]] const std::string& Str() const
+        {
+            return m_message;
+        }
+
+        [[nodiscard]] const char* what() const noexcept override
+        {
+            return m_message.c_str();
+        }
+
+    private:
+        std::string m_message;
+    };
+
+    struct ObjectToLoad
+    {
+        ObjectToLoad(const unsigned meshIndex, const std::optional<unsigned> skinIndex)
+            : m_mesh_index(meshIndex),
+              m_skin_index(skinIndex)
+        {
+        }
+
+        unsigned m_mesh_index;
+        std::optional<unsigned> m_skin_index;
+    };
+
+    class GltfLoaderImpl final : public Loader
+    {
+    public:
+        GltfLoaderImpl(const Input& input, const bool useBadRotationFormulas)
+            : m_input(input),
+              m_bad_rotation_formulas(useBadRotationFormulas)
+        {
+        }
+
+        static std::vector<unsigned> GetRootNodes(const JsonRoot& jRoot)
+        {
+            if (!jRoot.nodes || jRoot.nodes->empty())
+                return {};
+
+            const auto nodeCount = jRoot.nodes->size();
+            std::vector<unsigned> rootNodes;
+            std::vector<bool> isChild(nodeCount);
+
+            for (const auto& node : jRoot.nodes.value())
+            {
+                if (!node.children)
+                    continue;
+
+                for (const auto childIndex : node.children.value())
+                {
+                    if (childIndex >= nodeCount)
+                        throw GltfLoadException("Illegal child index");
+
+                    if (isChild[childIndex])
+                        throw GltfLoadException("Node hierarchy is not a set of disjoint strict trees");
+
+                    isChild[childIndex] = true;
+                }
+            }
+
+            for (auto nodeIndex = 0u; nodeIndex < nodeCount; nodeIndex++)
+            {
+                if (!isChild[nodeIndex])
+                    rootNodes.emplace_back(nodeIndex);
+            }
+
+            return rootNodes;
+        }
+
+        void TraverseNodes(const JsonRoot& jRoot)
+        {
+            // Make sure there are any nodes to traverse
+            if (!jRoot.nodes || jRoot.nodes->empty())
+                return;
+
+            std::deque<unsigned> nodeQueue;
+            const std::vector<unsigned> rootNodes = GetRootNodes(jRoot);
+
+            for (const auto rootNode : rootNodes)
+                nodeQueue.emplace_back(rootNode);
+
+            while (!nodeQueue.empty())
+            {
+                const auto& node = jRoot.nodes.value()[nodeQueue.front()];
+                nodeQueue.pop_front();
+
+                if (node.children)
+                {
+                    for (const auto childIndex : *node.children)
+                        nodeQueue.emplace_back(childIndex);
+                }
+
+                if (node.mesh)
+                    m_load_objects.emplace_back(*node.mesh, node.skin);
+            }
+        }
+
+        std::optional<Accessor*> GetAccessorForIndex(const char* attributeName,
+                                                     const std::optional<unsigned> index,
+                                                     std::initializer_list<JsonAccessorType> allowedAccessorTypes,
+                                                     std::initializer_list<JsonAccessorComponentType> allowedAccessorComponentTypes) const
+        {
+            if (!index)
+                return std::nullopt;
+
+            if (*index > m_accessors.size())
+                throw GltfLoadException(std::format("Index for {} accessor out of bounds", attributeName));
+
+            auto* accessor = m_accessors[*index].get();
+
+            const auto maybeType = accessor->GetType();
+            if (maybeType)
+            {
+                if (std::ranges::find(allowedAccessorTypes, *maybeType) == allowedAccessorTypes.end())
+                    throw GltfLoadException(std::format("Accessor for {} has unsupported type {}", attributeName, static_cast<unsigned>(*maybeType)));
+            }
+
+            const auto maybeComponentType = accessor->GetComponentType();
+            if (maybeComponentType)
+            {
+                if (std::ranges::find(allowedAccessorComponentTypes, *maybeComponentType) == allowedAccessorComponentTypes.end())
+                    throw GltfLoadException(
+                        std::format("Accessor for {} has unsupported component type {}", attributeName, static_cast<unsigned>(*maybeComponentType)));
+            }
+
+            return accessor;
+        }
+
+        static void VerifyAccessorVertexCount(const char* accessorType, const Accessor* accessor, const size_t vertexCount)
+        {
+            if (accessor->GetCount() != vertexCount)
+                throw GltfLoadException(std::format("Element count of {} accessor does not match expected vertex count of {}", accessorType, vertexCount));
+        }
+
+        unsigned CreateVertices(XModelCommon& common, const AccessorsForVertex& accessorsForVertex)
+        {
+            // clang-format off
+            const auto* positionAccessor = GetAccessorForIndex(
+                "POSITION",
+                accessorsForVertex.m_position_accessor, 
+                {JsonAccessorType::VEC3}, 
+                {JsonAccessorComponentType::FLOAT}
+            ).value_or(nullptr);
+            // clang-format on
+
+            const auto vertexCount = positionAccessor->GetCount();
+            NullAccessor nullAccessor(vertexCount);
+            OnesAccessor onesAccessor(vertexCount);
+
+            // clang-format off
+            const auto* normalAccessor = GetAccessorForIndex(
+                "NORMAL",
+                accessorsForVertex.m_normal_accessor, 
+                {JsonAccessorType::VEC3}, 
+                {JsonAccessorComponentType::FLOAT}
+            ).value_or(&nullAccessor);
+            VerifyAccessorVertexCount("NORMAL", normalAccessor, vertexCount);
+
+            const auto* uvAccessor = GetAccessorForIndex(
+                "TEXCOORD_0",
+                accessorsForVertex.m_uv_accessor,
+                {JsonAccessorType::VEC2},
+                {JsonAccessorComponentType::FLOAT, JsonAccessorComponentType::UNSIGNED_BYTE, JsonAccessorComponentType::UNSIGNED_SHORT}
+            ).value_or(&nullAccessor);
+            VerifyAccessorVertexCount("TEXCOORD_0", uvAccessor, vertexCount);
+
+            const auto* colorAccessor = GetAccessorForIndex(
+                "COLOR_0",
+                accessorsForVertex.m_color_accessor,
+                {JsonAccessorType::VEC3, JsonAccessorType::VEC4},
+                {JsonAccessorComponentType::FLOAT, JsonAccessorComponentType::UNSIGNED_BYTE, JsonAccessorComponentType::UNSIGNED_SHORT}
+            ).value_or(&onesAccessor);
+            VerifyAccessorVertexCount("COLOR_0", colorAccessor, vertexCount);
+
+            const auto* jointsAccessor = GetAccessorForIndex(
+                "JOINTS_0",
+                accessorsForVertex.m_joints_accessor,
+                {JsonAccessorType::VEC4},
+                {JsonAccessorComponentType::UNSIGNED_BYTE, JsonAccessorComponentType::UNSIGNED_SHORT}
+            ).value_or(&nullAccessor);
+            VerifyAccessorVertexCount("JOINTS_0", jointsAccessor, vertexCount);
+
+            const auto* weightsAccessor = GetAccessorForIndex(
+                "WEIGHTS_0",
+                accessorsForVertex.m_weights_accessor,
+                {JsonAccessorType::VEC4},
+                {JsonAccessorComponentType::FLOAT, JsonAccessorComponentType::UNSIGNED_BYTE, JsonAccessorComponentType::UNSIGNED_SHORT}
+            ).value_or(&nullAccessor);
+            VerifyAccessorVertexCount("WEIGHTS_0", weightsAccessor, vertexCount);
+            // clang-format on
+
+            const auto colorUsesVec3 = colorAccessor->GetType().has_value() && colorAccessor->GetType().value() == JsonAccessorType::VEC3;
+
+            const auto vertexOffset = static_cast<unsigned>(common.m_vertices.size());
+            common.m_vertices.reserve(vertexOffset + vertexCount);
+            common.m_vertex_bone_weights.reserve(vertexOffset + vertexCount);
+            for (auto vertexIndex = 0u; vertexIndex < vertexCount; vertexIndex++)
+            {
+                XModelVertex vertex;
+
+                unsigned joints[4];
+                float weights[4];
+
+                if (!positionAccessor->GetFloatVec3(vertexIndex, vertex.coordinates))
+                    throw GltfLoadException("Failed to load vertex position data from accessors");
+                if (!normalAccessor->GetFloatVec3(vertexIndex, vertex.normal))
+                    throw GltfLoadException("Failed to load vertex normal data from accessors");
+                if (!uvAccessor->GetFloatVec2(vertexIndex, vertex.uv))
+                    throw GltfLoadException("Failed to load vertex uv data from accessors");
+                if (!jointsAccessor->GetUnsignedVec4(vertexIndex, joints))
+                    throw GltfLoadException("Failed to load vertex joints data from accessors");
+                if (!weightsAccessor->GetFloatVec4(vertexIndex, weights))
+                    throw GltfLoadException("Failed to load vertex weights data from accessors");
+
+                if (colorUsesVec3)
+                {
+                    float colorVec3[3];
+                    if (!colorAccessor->GetFloatVec3(vertexIndex, colorVec3))
+                        throw GltfLoadException("Failed to load vertex color data from accessors");
+                    vertex.color[0] = colorVec3[0];
+                    vertex.color[1] = colorVec3[1];
+                    vertex.color[2] = colorVec3[2];
+                    vertex.color[3] = 1.0;
+                }
+                else
+                {
+                    if (!colorAccessor->GetFloatVec4(vertexIndex, vertex.color))
+                        throw GltfLoadException("Failed to load vertex color data from accessors");
+                }
+
+                RhcToLhcCoordinates(vertex.coordinates);
+                RhcToLhcCoordinates(vertex.normal);
+
+                common.m_vertices.emplace_back(vertex);
+
+                XModelVertexBoneWeights vertexWeights{.weightOffset = static_cast<unsigned>(common.m_bone_weight_data.weights.size()), .weightCount = 0u};
+                for (auto i = 0u; i < std::extent_v<decltype(joints)>; i++)
+                {
+                    if (std::abs(weights[i]) < std::numeric_limits<float>::epsilon())
+                        continue;
+
+                    assert(joints[i] < m_gltf_to_common_joint_index_lookup.size());
+                    if (joints[i] >= m_gltf_to_common_joint_index_lookup.size())
+                    {
+                        throw GltfLoadException(std::format(
+                            "Vertex weight referenced joint {} (there are only {} joints in skin)", joints[i], m_gltf_to_common_joint_index_lookup.size()));
+                    }
+
+                    const auto xmodelBoneIndex = m_gltf_to_common_joint_index_lookup[joints[i]];
+
+                    common.m_bone_weight_data.weights.emplace_back(xmodelBoneIndex, weights[i]);
+                    vertexWeights.weightCount++;
+                }
+
+                common.m_vertex_bone_weights.emplace_back(vertexWeights);
+            }
+
+            m_vertex_offset_for_accessors.emplace(accessorsForVertex, vertexOffset);
+
+            return vertexOffset;
+        }
+
+        bool ConvertObject(const JsonRoot& jRoot, const JsonMeshPrimitives& primitives, XModelCommon& common, XModelObject& object)
+        {
+            if (!primitives.indices)
+                throw GltfLoadException("Requires primitives indices");
+            if (!primitives.material)
+                throw GltfLoadException("Requires primitives material");
+            if (primitives.mode.value_or(JsonMeshPrimitivesMode::TRIANGLES) != JsonMeshPrimitivesMode::TRIANGLES)
+                throw GltfLoadException("Only triangles are supported");
+            if (!primitives.attributes.POSITION)
+                throw GltfLoadException("Requires primitives attribute POSITION");
+
+            const AccessorsForVertex accessorsForVertex{
+                .m_position_accessor = *primitives.attributes.POSITION,
+                .m_normal_accessor = primitives.attributes.NORMAL,
+                .m_color_accessor = primitives.attributes.COLOR_0,
+                .m_uv_accessor = primitives.attributes.TEXCOORD_0,
+                .m_joints_accessor = primitives.attributes.JOINTS_0,
+                .m_weights_accessor = primitives.attributes.WEIGHTS_0,
+            };
+
+            const auto existingVertices = m_vertex_offset_for_accessors.find(accessorsForVertex);
+            const auto vertexOffset =
+                existingVertices == m_vertex_offset_for_accessors.end() ? CreateVertices(common, accessorsForVertex) : existingVertices->second;
+
+            // clang-format off
+            const auto* indexAccessor = GetAccessorForIndex(
+                "INDICES",
+                primitives.indices, 
+                {JsonAccessorType::SCALAR}, 
+                {JsonAccessorComponentType::UNSIGNED_BYTE, JsonAccessorComponentType::UNSIGNED_SHORT, JsonAccessorComponentType::UNSIGNED_INT}
+            ).value_or(nullptr);
+            // clang-format on
+
+            const auto indexCount = indexAccessor->GetCount();
+            if (indexCount % 3 != 0)
+                throw GltfLoadException("Index count must be dividable by 3 for triangles");
+            const auto faceCount = indexCount / 3u;
+            object.m_faces.reserve(faceCount);
+
+            for (auto faceIndex = 0u; faceIndex < faceCount; faceIndex++)
+            {
+                unsigned indices[3];
+                if (!indexAccessor->GetUnsigned(faceIndex * 3u + 0u, indices[0]) || !indexAccessor->GetUnsigned(faceIndex * 3u + 1u, indices[1])
+                    || !indexAccessor->GetUnsigned(faceIndex * 3u + 2u, indices[2]))
+                {
+                    return false;
+                }
+                RhcToLhcIndices(indices);
+
+                object.m_faces.emplace_back(XModelFace{
+                    vertexOffset + indices[0],
+                    vertexOffset + indices[1],
+                    vertexOffset + indices[2],
+                });
+            }
+
+            if (!jRoot.materials || *primitives.material >= jRoot.materials->size())
+                throw GltfLoadException("Invalid material index");
+
+            object.materialIndex = static_cast<int>(*primitives.material);
+
+            return true;
+        }
+
+        static std::vector<unsigned> GetRootNodesForSkin(const JsonRoot& jRoot, const JsonSkin& skin)
+        {
+            if (!jRoot.nodes || skin.joints.empty())
+                return {};
+
+            const auto jointCount = skin.joints.size();
+            std::vector<bool> isRoot(jointCount, true);
+
+            for (const auto joint : skin.joints)
+            {
+                if (jRoot.nodes->size() <= joint)
+                    throw GltfLoadException("Invalid joint index");
+
+                const auto& node = jRoot.nodes.value()[joint];
+                if (node.children)
+                {
+                    for (const auto child : *node.children)
+                    {
+                        const auto foundChildJoint = std::ranges::find(skin.joints, child);
+                        if (foundChildJoint != skin.joints.end())
+                        {
+                            const auto foundChildJointIndex = std::distance(skin.joints.begin(), foundChildJoint);
+                            if (isRoot[foundChildJointIndex])
+                            {
+                                isRoot[foundChildJointIndex] = false;
+                            }
+                        }
+                    }
+                }
+            }
+
+            std::vector<unsigned> result;
+            for (auto index = 0u; index < jointCount; index++)
+            {
+                if (isRoot[index])
+                    result.emplace_back(skin.joints[index]);
+            }
+
+            return std::move(result);
+        }
+
+        void ApplyNodeMatrixTRS(const JsonNode& node, float (&localOffsetRhc)[3], float (&localRotationRhc)[4], float (&scaleRhc)[3]) const
+        {
+            const auto matrix = Eigen::Matrix4f({
+                {(*node.matrix)[0], (*node.matrix)[4], (*node.matrix)[8],  (*node.matrix)[12]},
+                {(*node.matrix)[1], (*node.matrix)[5], (*node.matrix)[9],  (*node.matrix)[13]},
+                {(*node.matrix)[2], (*node.matrix)[6], (*node.matrix)[10], (*node.matrix)[14]},
+                {(*node.matrix)[3], (*node.matrix)[7], (*node.matrix)[11], (*node.matrix)[15]}
+            });
+            Eigen::Affine3f transform(matrix);
+
+            const auto translation = transform.translation();
+
+            localOffsetRhc[0] = translation.x();
+            localOffsetRhc[1] = translation.y();
+            localOffsetRhc[2] = translation.z();
+            if (m_bad_rotation_formulas)
+                RhcToLhcCoordinates(localOffsetRhc);
+
+            const auto rotation = transform.rotation();
+            const auto rotationQuat = Eigen::Quaternionf(rotation);
+            if (!m_bad_rotation_formulas)
+            {
+                localRotationRhc[0] = rotationQuat.x();
+                localRotationRhc[1] = rotationQuat.y();
+                localRotationRhc[2] = rotationQuat.z();
+                localRotationRhc[3] = rotationQuat.w();
+            }
+            else
+            {
+                // Backwards compatibility
+                localRotationRhc[0] = rotationQuat.x();
+                localRotationRhc[1] = -rotationQuat.z();
+                localRotationRhc[2] = rotationQuat.y();
+                localRotationRhc[3] = rotationQuat.w();
+            }
+
+            scaleRhc[0] = matrix.block<3, 1>(0, 0).norm();
+            scaleRhc[1] = matrix.block<3, 1>(0, 1).norm();
+            scaleRhc[2] = matrix.block<3, 1>(0, 2).norm();
+        }
+
+        void ApplyNodeSeparateTRS(const JsonNode& node, float (&localOffsetRhc)[3], float (&localRotationRhc)[4], float (&scaleRhc)[3]) const
+        {
+            if (node.translation)
+            {
+                localOffsetRhc[0] = (*node.translation)[0];
+                localOffsetRhc[1] = (*node.translation)[1];
+                localOffsetRhc[2] = (*node.translation)[2];
+                if (m_bad_rotation_formulas)
+                    RhcToLhcCoordinates(localOffsetRhc);
+            }
+            else
+            {
+                localOffsetRhc[0] = 0.0f;
+                localOffsetRhc[1] = 0.0f;
+                localOffsetRhc[2] = 0.0f;
+            }
+
+            if (node.rotation)
+            {
+                if (!m_bad_rotation_formulas)
+                {
+                    localRotationRhc[0] = (*node.rotation)[0];
+                    localRotationRhc[1] = (*node.rotation)[1];
+                    localRotationRhc[2] = (*node.rotation)[2];
+                    localRotationRhc[3] = (*node.rotation)[3];
+                }
+                else
+                {
+                    // Backwards compatibility
+                    localRotationRhc[0] = (*node.rotation)[0];
+                    localRotationRhc[1] = -(*node.rotation)[2];
+                    localRotationRhc[2] = (*node.rotation)[1];
+                    localRotationRhc[3] = (*node.rotation)[3];
+                }
+            }
+            else
+            {
+                localRotationRhc[0] = 0.0f;
+                localRotationRhc[1] = 0.0f;
+                localRotationRhc[2] = 0.0f;
+                localRotationRhc[3] = 1.0f;
+            }
+
+            if (node.scale)
+            {
+                scaleRhc[0] = (*node.scale)[0];
+                scaleRhc[1] = (*node.scale)[1];
+                scaleRhc[2] = (*node.scale)[2];
+            }
+            else
+            {
+                scaleRhc[0] = 1.0f;
+                scaleRhc[1] = 1.0f;
+                scaleRhc[2] = 1.0f;
+            }
+        }
+
+        bool ConvertJoint(const JsonRoot& jRoot,
+                          const JsonSkin& skin,
+                          XModelCommon& common,
+                          const unsigned skinBoneOffset,
+                          const unsigned nodeIndex,
+                          const std::optional<unsigned> parentIndex,
+                          const Eigen::Vector3f& parentTranslationEigenRhc,
+                          const Eigen::Quaternionf& parentRotationEigenRhc,
+                          const float (&parentScale)[3])
+        {
+            if (!jRoot.nodes || nodeIndex >= jRoot.nodes->size())
+                return false;
+
+            const auto& node = jRoot.nodes.value()[nodeIndex];
+            const auto boneInSkin = std::ranges::find(skin.joints, nodeIndex);
+            if (boneInSkin == skin.joints.end())
+                throw GltfLoadException("Bone node is not part of skin");
+            const auto boneIndexInSkin = static_cast<unsigned>(std::distance(skin.joints.begin(), boneInSkin));
+
+            const auto commonBoneOffset = skinBoneOffset + boneIndexInSkin;
+            auto& bone = common.m_bones[commonBoneOffset];
+            bone.name = node.name.value_or(std::string());
+            bone.parentIndex = parentIndex;
+
+            float localOffsetRhc[3];
+            float localRotationRhc[4];
+            float localScaleRhc[3];
+            if (node.matrix)
+                ApplyNodeMatrixTRS(node, localOffsetRhc, localRotationRhc, localScaleRhc);
+            else
+                ApplyNodeSeparateTRS(node, localOffsetRhc, localRotationRhc, localScaleRhc);
+
+            bone.scale[0] = localScaleRhc[0] * parentScale[0];
+            bone.scale[1] = localScaleRhc[1] * parentScale[1];
+            bone.scale[2] = localScaleRhc[2] * parentScale[2];
+            if (!m_bad_rotation_formulas)
+                RhcToLhcScale(bone.scale);
+
+            const Eigen::Vector3f localTranslationEigen(localOffsetRhc[0], localOffsetRhc[1], localOffsetRhc[2]);
+            const Eigen::Quaternionf localRotationEigen(localRotationRhc[3], localRotationRhc[0], localRotationRhc[1], localRotationRhc[2]);
+
+            const Eigen::Quaternionf globalRotationEigenRhc((parentRotationEigenRhc * localRotationEigen).normalized());
+            const Eigen::Vector3f globalTranslationEigenRhc((parentRotationEigenRhc * localTranslationEigen) + parentTranslationEigenRhc);
+
+            bone.globalOffset[0] = globalTranslationEigenRhc.x();
+            bone.globalOffset[1] = globalTranslationEigenRhc.y();
+            bone.globalOffset[2] = globalTranslationEigenRhc.z();
+            if (!m_bad_rotation_formulas)
+                RhcToLhcCoordinates(bone.globalOffset);
+
+            bone.globalRotation.x = globalRotationEigenRhc.x();
+            bone.globalRotation.y = globalRotationEigenRhc.y();
+            bone.globalRotation.z = globalRotationEigenRhc.z();
+            bone.globalRotation.w = globalRotationEigenRhc.w();
+            if (!m_bad_rotation_formulas)
+                RhcToLhcQuaternion(bone.globalRotation);
+
+            if (node.children)
+            {
+                for (const auto childIndex : *node.children)
+                {
+                    if (!ConvertJoint(
+                            jRoot, skin, common, skinBoneOffset, childIndex, commonBoneOffset, globalTranslationEigenRhc, globalRotationEigenRhc, bone.scale))
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        void ReorderBonesForXModels(XModelCommon& common)
+        {
+            const auto boneCount = common.m_bones.size();
+            m_gltf_to_common_joint_index_lookup.resize(boneCount);
+            auto reorderedBoneIndex = 0u;
+
+            std::deque<unsigned> parentIndicesToTraverse;
+            for (auto boneIndex = 0u; boneIndex < boneCount; ++boneIndex)
+            {
+                const auto& bone = common.m_bones[boneIndex];
+                if (!bone.parentIndex.has_value())
+                {
+                    parentIndicesToTraverse.emplace_back(boneIndex);
+                    m_gltf_to_common_joint_index_lookup[boneIndex] = reorderedBoneIndex++;
+                }
+            }
+
+            while (!parentIndicesToTraverse.empty())
+            {
+                const auto parentIndex = parentIndicesToTraverse.front();
+                parentIndicesToTraverse.pop_front();
+
+                for (auto boneIndex = 0u; boneIndex < boneCount; ++boneIndex)
+                {
+                    const auto& bone = common.m_bones[boneIndex];
+                    if (bone.parentIndex.has_value() && *bone.parentIndex == parentIndex)
+                    {
+                        parentIndicesToTraverse.emplace_back(boneIndex);
+                        m_gltf_to_common_joint_index_lookup[boneIndex] = reorderedBoneIndex++;
+                    }
+                }
+            }
+
+            assert(reorderedBoneIndex == boneCount);
+
+            std::vector<XModelBone> reorderedBones(boneCount);
+            for (size_t boneIndex = 0; boneIndex < boneCount; ++boneIndex)
+            {
+                auto& reorderedBone = reorderedBones[m_gltf_to_common_joint_index_lookup[boneIndex]];
+                reorderedBone = std::move(common.m_bones[boneIndex]);
+
+                if (reorderedBone.parentIndex.has_value())
+                    reorderedBone.parentIndex = m_gltf_to_common_joint_index_lookup[*reorderedBone.parentIndex];
+            }
+
+            common.m_bones = std::move(reorderedBones);
+        }
+
+        bool ConvertSkin(const JsonRoot& jRoot, const JsonSkin& skin, XModelCommon& common)
+        {
+            if (skin.joints.empty())
+                return true;
+            if (!jRoot.nodes)
+                return false;
+
+            auto rootNodes = GetRootNodesForSkin(jRoot, skin);
+            if (rootNodes.empty())
+                rootNodes.emplace_back(skin.joints[0]);
+
+            // Only one skin per GLTF allowed, more would require more complex mapping and reordering
+            assert(common.m_bones.empty());
+            common.m_bones.resize(skin.joints.size());
+
+            constexpr Eigen::Vector3f defaultTranslation(0.0f, 0.0f, 0.0f);
+            const Eigen::Quaternionf defaultRotation(1.0f, 0.0f, 0.0f, 0.0f);
+            constexpr float defaultScale[3]{1.0f, 1.0f, 1.0f};
+
+            for (const auto rootNode : rootNodes)
+            {
+                if (!ConvertJoint(jRoot, skin, common, 0, rootNode, std::nullopt, defaultTranslation, defaultRotation, defaultScale))
+                    return false;
+            }
+
+            ReorderBonesForXModels(common);
+            common.CalculateBoneLocalsFromGlobals();
+
+            return true;
+        }
+
+        void ConvertObjects(const JsonRoot& jRoot, XModelCommon& common)
+        {
+            if (!jRoot.meshes)
+                return;
+
+            std::optional<unsigned> alreadyLoadedSkinIndex;
+
+            for (const auto& loadObject : m_load_objects)
+            {
+                if (loadObject.m_skin_index && jRoot.skins)
+                {
+                    if (alreadyLoadedSkinIndex)
+                    {
+                        if (*alreadyLoadedSkinIndex != *loadObject.m_skin_index)
+                            throw GltfLoadException("Only scenes with at most one skin are supported");
+
+                        // Do not load already loaded skin
+                    }
+                    else
+                    {
+                        const auto& skin = jRoot.skins.value()[*loadObject.m_skin_index];
+                        if (!ConvertSkin(jRoot, skin, common))
+                            return;
+
+                        alreadyLoadedSkinIndex = *loadObject.m_skin_index;
+                    }
+                }
+
+                const auto& mesh = jRoot.meshes.value()[loadObject.m_mesh_index];
+
+                common.m_objects.reserve(common.m_objects.size() + mesh.primitives.size());
+                for (const auto& primitives : mesh.primitives)
+                {
+                    XModelObject object;
+                    if (!ConvertObject(jRoot, primitives, common, object))
+                        return;
+
+                    common.m_objects.emplace_back(std::move(object));
+                }
+            }
+        }
+
+        static void ConvertMaterials(const JsonRoot& jRoot, XModelCommon& common)
+        {
+            if (!jRoot.materials)
+                return;
+
+            common.m_materials.reserve(jRoot.materials->size());
+            for (const auto& jMaterial : *jRoot.materials)
+            {
+                XModelMaterial material;
+                material.ApplyDefaults();
+
+                if (jMaterial.name)
+                    material.name = *jMaterial.name;
+                else
+                    throw GltfLoadException("Materials must have a name");
+
+                common.m_materials.emplace_back(std::move(material));
+            }
+        }
+
+        void CreateBuffers(const JsonRoot& jRoot)
+        {
+            if (!jRoot.buffers)
+                return;
+
+            m_buffers.reserve(jRoot.buffers->size());
+            for (const auto& jBuffer : *jRoot.buffers)
+            {
+                if (!jBuffer.uri)
+                {
+                    const void* embeddedBufferPtr = nullptr;
+                    size_t embeddedBufferSize = 0u;
+                    if (!m_input.GetEmbeddedBuffer(embeddedBufferPtr, embeddedBufferSize) || embeddedBufferSize == 0u)
+                        throw GltfLoadException("Buffer tried to access embedded data when there is none");
+
+                    m_buffers.emplace_back(std::make_unique<EmbeddedBuffer>(embeddedBufferPtr, embeddedBufferSize));
+                }
+                else if (DataUriBuffer::IsDataUri(*jBuffer.uri))
+                {
+                    auto dataUriBuffer = std::make_unique<DataUriBuffer>();
+                    if (!dataUriBuffer->ReadDataFromUri(*jBuffer.uri))
+                        throw GltfLoadException("Buffer has invalid data uri");
+
+                    m_buffers.emplace_back(std::move(dataUriBuffer));
+                }
+                else
+                {
+                    throw GltfLoadException("File buffers are not supported");
+                }
+            }
+        }
+
+        void CreateBufferViews(const JsonRoot& jRoot)
+        {
+            if (!jRoot.bufferViews)
+                return;
+
+            m_buffer_views.reserve(jRoot.bufferViews->size());
+            for (const auto& jBufferView : *jRoot.bufferViews)
+            {
+                if (jBufferView.buffer >= m_buffers.size())
+                    throw GltfLoadException("Buffer view references invalid buffer");
+
+                const auto* buffer = m_buffers[jBufferView.buffer].get();
+                const auto offset = jBufferView.byteOffset.value_or(0u);
+                const auto length = jBufferView.byteLength;
+                const auto stride = jBufferView.byteStride.value_or(0u);
+
+                if (offset + length > buffer->GetSize())
+                    throw GltfLoadException("Buffer view is defined larger as underlying buffer");
+
+                m_buffer_views.emplace_back(std::make_unique<BufferView>(buffer, offset, length, stride));
+            }
+        }
+
+        void CreateAccessors(const JsonRoot& jRoot)
+        {
+            if (!jRoot.accessors)
+                return;
+
+            m_accessors.reserve(jRoot.accessors->size());
+            for (const auto& jAccessor : *jRoot.accessors)
+            {
+                if (!jAccessor.bufferView)
+                {
+                    m_accessors.emplace_back(std::make_unique<NullAccessor>(jAccessor.count));
+                    continue;
+                }
+
+                if (*jAccessor.bufferView >= m_buffer_views.size())
+                    throw GltfLoadException("Accessor references invalid buffer view");
+
+                const auto* bufferView = m_buffer_views[*jAccessor.bufferView].get();
+                const auto byteOffset = jAccessor.byteOffset.value_or(0u);
+                if (jAccessor.componentType == JsonAccessorComponentType::FLOAT)
+                    m_accessors.emplace_back(std::make_unique<FloatAccessor>(bufferView, jAccessor.type, byteOffset, jAccessor.count));
+                else if (jAccessor.componentType == JsonAccessorComponentType::UNSIGNED_BYTE)
+                    m_accessors.emplace_back(std::make_unique<UnsignedByteAccessor>(bufferView, jAccessor.type, byteOffset, jAccessor.count));
+                else if (jAccessor.componentType == JsonAccessorComponentType::UNSIGNED_SHORT)
+                    m_accessors.emplace_back(std::make_unique<UnsignedShortAccessor>(bufferView, jAccessor.type, byteOffset, jAccessor.count));
+                else if (jAccessor.componentType == JsonAccessorComponentType::UNSIGNED_INT)
+                    m_accessors.emplace_back(std::make_unique<UnsignedIntAccessor>(bufferView, jAccessor.type, byteOffset, jAccessor.count));
+                else
+                    throw GltfLoadException(std::format("Accessor has unsupported component type {}", static_cast<unsigned>(jAccessor.componentType)));
+            }
+        }
+
+        std::unique_ptr<XModelCommon> Load() override
+        {
+            JsonRoot jRoot;
+            try
+            {
+                jRoot = m_input.GetJson().get<JsonRoot>();
+            }
+            catch (const nlohmann::json::exception& e)
+            {
+                con::error("Failed to parse GLTF JSON: {}", e.what());
+                return nullptr;
+            }
+
+            try
+            {
+                CreateBuffers(jRoot);
+                CreateBufferViews(jRoot);
+                CreateAccessors(jRoot);
+
+                TraverseNodes(jRoot);
+
+                auto common = std::make_unique<XModelCommon>();
+                ConvertObjects(jRoot, *common);
+                ConvertMaterials(jRoot, *common);
+
+                return common;
+            }
+            catch (const GltfLoadException& e)
+            {
+                con::error("Failed to load GLTF: {}", e.Str());
+                return nullptr;
+            }
+        }
+
+    private:
+        const Input& m_input;
+        std::vector<ObjectToLoad> m_load_objects;
+        std::unordered_map<AccessorsForVertex, unsigned> m_vertex_offset_for_accessors;
+        std::vector<std::unique_ptr<Accessor>> m_accessors;
+        std::vector<std::unique_ptr<BufferView>> m_buffer_views;
+        std::vector<std::unique_ptr<Buffer>> m_buffers;
+
+        // Old gltf support for OAT used bad formulas to calculate right-handed coordinate system rotations
+        // To make the fixed code be backwards compatible, old behaviour can be restored with this setting.
+        bool m_bad_rotation_formulas;
+
+        // We may need to reorder bones to account for the constraints of xmodels:
+        // Root bones have the lowest indices and the index of the parent of each bone must be lower than its own.
+        // The index in this vector is the joint index of the gltf.
+        // The value is the index in the common xmodel.
+        std::vector<unsigned> m_gltf_to_common_joint_index_lookup;
+    };
+} // namespace
+
+std::unique_ptr<Loader> Loader::CreateLoader(const Input& input, bool useBadRotationFormulas)
+{
+    return std::make_unique<GltfLoaderImpl>(input, useBadRotationFormulas);
+}

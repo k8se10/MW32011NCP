@@ -1,0 +1,55 @@
+name: linting
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  check-clang-format-formatting:
+    name: Check clang-format formatting
+    runs-on: ubuntu-latest
+    container: ubuntu:24.04
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Install base packages
+        run: |
+          apt-get update
+          apt-get install -y wget tar git make curl
+
+      - name: Checkout repository
+        uses: actions/checkout@v7.0.1
+
+      - name: Configure clang
+        uses: ./.github/actions/configure-clang
+        with:
+          clang_version: 20
+
+      - name: Test formatting for all files
+        working-directory: ${{ github.workspace }}
+        run: ./scripts/check-format.sh
+
+  modman-linting:
+    name: Lint ModMan UI
+    runs-on: ubuntu-latest
+    container: ubuntu:24.04
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7.0.1
+
+      - name: Install node
+        uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24
+
+      - name: Lint UI
+        working-directory: ${{ github.workspace }}
+        run: |
+          npm install
+          npm run lint

@@ -1,0 +1,18 @@
+// =========================================
+// AddonMapEnts
+// =========================================
+use AddonMapEnts;
+set block XFILE_BLOCK_TEMP;
+set string name;
+set count entityString numEntityChars;
+set reusable info;
+set count cmodels numSubModels;
+set count models numSubModels;
+
+// cmodel_t2
+set reusable cmodel_t2::info;
+
+// MapTriggers: See MapEnts
+// ClipInfo: See clipMap_t
+
+// GfxBrushModel: See GfxWorld

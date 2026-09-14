@@ -1,0 +1,13 @@
+// =========================================
+// FontIcon
+// =========================================
+use FontIcon;
+set block XFILE_BLOCK_TEMP;
+set string name;
+set reusable fontIconEntry;
+set count fontIconEntry numEntries;
+set reusable fontIconAlias;
+set count fontIconAlias numAliasEntries;
+
+// FontIconName
+set string FontIconName::string;
