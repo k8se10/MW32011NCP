@@ -1800,6 +1800,68 @@ a fix without solid evidence). Ghidra headless invocations against
 pattern hit repeatedly this session) — restored via `git checkout --`
 both times, confirmed clean before finishing.
 
+## 5.24. UPDATE, 2026-09-14 (later still, second of the same "dig on both" round, native x64 decompile of `LoadedSound`'s own real fill function) — a real, tested fix landed: `LoadedSound`'s own raw sample-data read used the wrong struct field for its byte count, confirmed via direct decompile and a live before/after comparison, not guesswork
+
+**Status: shipped, tested, safe.** Resolves §5.22's own `code_post_gfx.ff`
+`XFILE_BLOCK_CALLBACK` failure at its actual root — a real stream-cursor
+desync, not a decode-width issue like every other bug found this session.
+
+**Decompiled `LoadedSound`'s own real native fill function directly**
+(`FUN_1400941f0` → `FUN_140094150` → `FUN_14009c0f0`, found via the master
+per-asset dispatch switch's own `case 0xd` — `ASSET_TYPE_LOADED_SOUND`'s
+real enum value, confirmed against `IW5.h`'s own enum order), rather than
+continuing to guess from symptom shape as §5.21/§5.22 both had to pause
+on. The real struct is 64 bytes (`0x40`, matching this fork's own already-
+correct `sizeof(LoadedSound)`), with a genuine raw-data pointer at
+absolute struct offset `0x38` (56) — the `MssSound::data` field, matching
+this fork's own `offsetof(MssSound, data)` exactly. **The real bug**: for
+the `FOLLOWING`/`INSERT` case (a fresh, right-here sample-data blob), the
+real engine reads its OWN byte count for that raw copy from
+`AILSOUNDINFO`-relative offset `0x18` (24) — which this fork's own
+compiler-verified `offsetof(AILSOUNDINFO, bits)` confirms is exactly
+where `bits` sits, NOT `info::data_len` (offset 16), which is what the
+inherited-from-upstream DSL (`LoadedSound.txt`) actually specified:
+`set count data info::data_len;`.
+
+**Confirmed live, not just via offset arithmetic** — the exact standard
+this whole session has held itself to: a temporary diagnostic dumped the
+real struct values for `code_post_gfx.ff`'s own failing asset (index
+4481, the same one §5.22 traced this bug to): `data_len=24932` (the value
+the fork was WRONGLY using — plausible-looking, not obviously wrong on
+its own) vs `bits=22050` (the value the real engine actually reads, per
+the native decompile). Applying the one-line fix (`set count data
+info::bits;`) and re-running against the SAME asset: it now loads
+cleanly, and the zone progresses to a **new, later, different** failure
+(`XFILE_BLOCK_SCRIPT`, a separate not-yet-investigated bug) — the
+decisive confirmation this was a genuine stream desync (reading the wrong
+byte count silently corrupts every subsequent read in the same block),
+not a coincidental symptom match.
+
+**Full regression testing before commit**: rebuilt and re-ran against all
+six known reference zones (`sp_intro.ff`/`sp_prague.ff` unaffected;
+`code_post_gfx.ff` progresses further; `hamburg.ff`/`common.ff`/
+`sp_dubai.ff` unchanged, identical signatures) and the complete 39-zone
+`sp_*.ff`/`so_*.ff` sweep (0 crashes across every zone — every log ends
+with a clean `Finished`/`Failed` line; the fully-succeeding count stays
+at 3/39, since this specific fix unblocks real forward progress within
+`code_post_gfx.ff` rather than a full zone on its own — that zone has at
+least one more, separate, not-yet-investigated bug downstream).
+
+**Fixed at the correct, permanent location**: the tracked DSL source
+(`tools/iw5oat/src/ZoneCode/Game/IW5/XAssets/LoadedSound.txt`), not just
+the generated, gitignored `.cpp` output — survives the next real
+`ZoneCodeGenerator` regeneration. Commit: `ab56e7cc`.
+
+**Concrete next step, not yet investigated**: `code_post_gfx.ff`'s own
+new `XFILE_BLOCK_SCRIPT` failure (a completely different block target
+and a different asset — confirmed via a live diagnostic that the newly-
+failing asset, index 4482, never reaches the `MssSound` fill path at all,
+meaning it's a different code path, most likely `snd_alias_list_t`'s own
+`StreamedSound` branch or another one of its top-level string fields).
+`§5.21`'s own `"invalid block 15"` thread remains separately open too —
+untouched by this round's work, a genuinely different asset chain
+(`XModel`/`Material`, not `snd_alias_list_t`/`LoadedSound`).
+
 ## 6. Scoped plan for in-house tooling — an MVP, not a full OpenAssetTools replacement
 
 **This project's own actual need is narrow**: GSC/rawfile extraction to
