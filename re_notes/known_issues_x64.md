@@ -5787,3 +5787,24 @@ warnings (the x86 half of this same fix, `analog_input_hooks.cpp`'s
 x64 rebuilt again and redeployed last, confirmed via `dumpbin /headers`
 (fresh timestamp, later than the Win32 build). **NOT YET LIVE-TESTED.** Full
 trail: `known_issues.md` issue #98's own 2026-09-14 rounds.
+
+---
+
+**UPDATE 2026-09-14 — release ETA revised down, from 2-4 weeks to within
+the next 14 days.** Direct statement: "its really very little work to a
+proper release is ready and i thin my 2-4 week estimate was maybe a bit
+too conservative... progress is going well and a release is expected in
+the next 14 days." Real basis for the revision, not just optimism: the
+first actual playtest of this build (2026-09-14) confirmed nearly every
+core control and the visual-enhancement suite's headline features already
+work, and every real regression that same playtest turned up (the
+Fire/ADS movement-tick bug, three separate launch-crashing sprintf_s
+overflows, motion blur's missing trigger, several glyph-position bugs)
+was found and closed the same day rather than surfacing gradually across
+a longer rollout. What's left before release: D-pad actionslot/D-pad
+Left's own live test (never yet exercised), and live re-confirmation of
+everything fixed today that hasn't had its own playtest pass yet (see
+`re_notes/x64_live_testing_checklist.md` for the current, itemized list).
+The Custom Options screen's vanilla-setting data layer stays explicitly
+NOT a release blocker per the 2026-09-14 deferral decision above. See
+`README.md`'s own Status section for the current public-facing estimate.

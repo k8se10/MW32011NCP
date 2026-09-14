@@ -76,9 +76,13 @@ methodology, across all four components above.
 
 **Release gate**: no `-x64` release ships until Campaign/Survival controller
 support reaches the same feature completeness the `-x86` line reached before
-being discontinued — every control, the visual-enhancement suite, and the
-custom Options screen all working, not just the input-remapping core.
-Current estimate: a few weeks out. See
+being discontinued — every control and the visual-enhancement suite working,
+not just the input-remapping core. (The custom Options screen's own vanilla-
+setting tabs are a deliberately deferred exception, not a release blocker —
+see Known gaps below.) **Progress is going well — current estimate: a
+release within the next 14 days**, revised down from the original 2-4 week
+estimate now that the first real playtest has confirmed most of the build
+already works and found/closed every regression it turned up same-day. See
 [`re_notes/known_issues_x64.md`](re_notes/known_issues_x64.md) issue #1 for
 the live, detailed tracking of exactly what's done and what's left,
 [`re_notes/x64_feature_parity_audit.md`](re_notes/x64_feature_parity_audit.md)
