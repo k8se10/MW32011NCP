@@ -11,29 +11,43 @@ patch history is preserved in
 ## v0.0.1-x64 — Unreleased
 
 **Summary:** The first release on the `-x64` line, rebuilding this project
-from scratch against MW3's recompiled 64-bit binaries. Every core gameplay
-control is implemented and build-verified, most confirmed live; the visual-
-enhancement suite, vibration/rumble, native controller menu navigation, and
-the menu-focus/itemDef tracking glyph icons depend on are all now ported and
-build-verified (none live-tested yet). A full feature-parity audit against
-the `-x86` line (`re_notes/x64_feature_parity_audit.md`) found and closed
-several real gaps this file's own prior summary had missed, most notably
-Sprint silently running on x86's own deprecated pre-kbutton design and
-vibration never having been wired to x64 at all. The native text-draw hook
-that blocked gameplay glyph icons and Auto-Mantle's own detection dependency
-is now ported too, with Mantle-hint detection wired on top, and Auto-Mantle's
-actual `+gostand`-forcing feature now ships on top of that (off by default).
-Real visual glyph substitution now works for nine hint families (Mantle,
-pickup/swap/pickup-health, grenade throwback, Reload, and every menu corner
-hint — Back/Friends/Quit/Leaderboards/Game Summary, the last three plus
-Friends-suppression logic added in a later follow-up) — see items 16-19 and
-22 under What's New. `Dvar_FindVar`/`GetEffectiveFov`'s x64 equivalents are
-now resolved too, closing the ADS zoom-aware look-slowdown and Survival
-ready-up's `IsInSurvivalMode()` gate in the same pass (item 20). **This
-release has not
-shipped** — see `README.md` for the current release gate (parity with the
-`-x86` line's final state) and `re_notes/known_issues_x64.md` issue #1 for
-live, detailed status on every item below.
+from scratch against MW3's recompiled 64-bit binaries. The first real
+playtest of this build has now happened: every core gameplay control except
+D-pad actionslot is confirmed working live, along with motion blur, main-menu
+navigation, and glyph-icon substitution. That same playtest found and closed
+several real, previously-undiscovered bugs — most notably an x64-specific
+regression where a movement-tick early-return meant to skip a no-op write
+instead silently disabled Fire, ADS, Reload, and most other controls whenever
+the stick was centered (the actual cause of "Fire/ADS randomly fails," not
+the earlier sniper-specific theory), plus three separate `sprintf_s` buffer
+overflows that made the build fail to launch entirely. A full feature-parity
+audit against the `-x86` line (`re_notes/x64_feature_parity_audit.md`), later
+extended with a full git-history sweep, found and closed dozens of real gaps
+the project's own documentation had missed — vibration, the visual-enhancement
+suite (including motion blur's own real trigger hook, found and wired only
+after the gate that depended on it had already been live-tested silent), the
+native text-draw hook nine glyph-icon categories now substitute through, and
+Sprint's silent regression to x86's own deprecated pre-kbutton design, among
+many others. On direct instruction, every Campaign killstreak-type system and
+outstanding Campaign issue with a real history of being broken was also
+investigated from GSC script logic first: DPV/Goalpost mortar/Goalpost M2
+turret aiming (never fixed on either architecture, now fixed with a real
+shared root cause), Campaign QTE/scripted-sequence button presses (Jump
+falling through the "Dust to Dust" elevator, now fixed via a synthetic
+keypress, the same technique already proven for Survival's ready-up),
+cutscene-skip audio (fixed on both `-x86` and `-x64`, with x64's own version
+turning out worse than x86's ever was), AC-130 zoom sensitivity (fixed) and
+gun-type switching (investigated, honestly still open), and SMAW's lock-on
+(confirmed to have never been a bug at all — the weapon's own data file has
+it compiled out). Predator Missile's launch is now confirmed live; its
+post-fire guidance remains open, more thoroughly mapped than ever, with a
+safe diagnostic shipped rather than a guess. The Custom Options screen's
+real vanilla-setting tabs remain a known, deliberately deferred gap — the
+INI config already covers everything this mod needs to expose. **This
+release has not shipped** — see `README.md` for the current release gate
+(parity with the `-x86` line's final state) and
+`re_notes/known_issues_x64.md` issue #1 for live, detailed status on every
+item below.
 
 ### What's New
 1. **Every core gameplay control implemented.** Movement, look, Sprint,
@@ -351,6 +365,87 @@ live, detailed status on every item below.
    truncation (`%.Ns`) this project already uses everywhere else for
    exactly this situation. See `re_notes/known_issues_x64.md` issue #1 for
    the full trail.
+7. **A third launch crash from the same bug class, introduced by the
+   glyph-position fix below after this same day's own sweep had already
+   run.** Confirmed via a second live crash dump. The lesson this
+   recurrence forced: a same-day buffer-safety sweep doesn't retroactively
+   cover code written after it runs — this needs to be checked per-commit
+   going forward, not as a periodic pass.
+8. **Motion blur's real x64 trigger hook found and wired.** The
+   2026-09-12 fix genuinely wired motion blur's three safety gates and
+   its per-frame look-delta feed, but its only real trigger was an
+   x86-only raw-`__asm` engine hook that never compiled for x64 at all —
+   the gate was armed, nothing ever pulled it, and the parity audit's own
+   "FIXED" verdict was a real overclaim that never checked for the
+   trigger specifically. Found the real x64 equivalent
+   (`FUN_14018def0`) via a new, reusable Ghidra self-recursive-function
+   scanner (13,295 functions checked, one real structural match) — unlike
+   x86, it uses a plain fastcall convention, so no naked-asm hook was
+   needed at all. Live-confirmed 2026-09-14.
+9. **Glyph-icon substitution positioning, fixed in two passes.** The
+   text-draw hook's captured draw coordinates were wrongly assumed to
+   already be the final screen-pixel position — the real transform
+   happens in a native function called AFTER this hook's own
+   interception point, confirmed via fresh disassembly, producing
+   invisible (Mantle) or top-of-screen (Interact/Reload) icons depending
+   on how the wrong position happened to land. Fixed by calling the real
+   native transform directly. A second pass then ported `-x86`'s own
+   already-live-tested empirical nudge constants for the Mantle hint
+   specifically, as a first-pass fine-alignment correction on top of the
+   now-fixed transform.
+10. **Custom mouse cursor overlay wasn't showing at the true main menu.**
+    Confirmed via direct log correlation and a fresh decompile: the
+    native menu-open state the cursor's own gate depends on has a real
+    static writer for every other menu-open case (pause, briefing, buy-
+    station, etc.) except the true main menu, which has zero callers
+    anywhere in the binary — not a logic bug, a genuine gap in what the
+    game itself sets. Fixed by OR-ing in a second, already-proven x64
+    signal (menu-stack depth) that correctly covers the main menu too,
+    without touching the already-working in-game pause case.
+11. **DPV/Goalpost mortar/Goalpost M2 turret aim** — see What's New item 23.
+12. **AC-130 gunship-camera look sensitivity now scales with zoom.**
+    Previously never scaled to the gunship's own camera zoom (felt "mega
+    sensitive" when zoomed in) — the existing ADS look-slowdown formula
+    was only ever triggered while a weapon-ADS flag was set, which the
+    gunship sequence never sets. Fixed by widening the trigger condition
+    to also cover any other real native zoom source (confirmed via
+    disassembly that the FOV query already generically covers turret
+    zoom), carefully bounded so ordinary hipfire and the already-correct
+    ADS case are unaffected. Gun-type switching (105mm/40mm/25mm) was
+    also investigated in depth — confirmed entirely GSC/data-driven with
+    no native dispatch case to hook, correctly left unfixed rather than
+    guessed at against an already-working feature. See
+    `re_notes/known_issues.md` issue #40.
+13. **Campaign scripted sequences (QTEs) ignoring controller input
+    entirely — root cause found and fixed, unifying two previously
+    separate reports.** Jump falling through the "Dust to Dust"
+    elevator/chopper QTE and a direct "X does nothing during a QTE"
+    report share one cause: the script's own detection
+    (`notifyoncommand("playerjump", ...)`) only fires on the engine's
+    real command-dispatch chain, never on raw usercmd/kbutton state —
+    which is exactly how this project's controller Jump works, so the
+    script genuinely never learns the jump happened. Fixed using the
+    same technique already proven for Survival's own ready-up: a real
+    synthetic keypress fired alongside (not instead of) the existing
+    input, functionally identical to what a real keyboard player already
+    produces. Melee/Lethal/Tactical likely share this bug class but
+    weren't part of the live report and weren't touched this pass. See
+    `re_notes/known_issues.md` issues #75/#108.
+14. **Cutscene-skip audio fixed on both `-x86` and `-x64`.** The real
+    engine has a genuine three-way branch for Start's key handler
+    depending on cinematic state; x86's own controller handling had
+    quietly drifted from that design and unconditionally forced the
+    pause menu open regardless of cinematic state (the original
+    audio-persists bug); x64's own version was more severe — it always
+    called a generic toggle with no cinematic-skip case at all, so
+    Start silently did nothing during an actual cutscene. Both now
+    route through the real skip chain the engine itself uses. One
+    honest, undischarged gap on both platforms: if a given cutscene
+    is a GSC-scripted in-engine cinematic rather than a true Bink FMV,
+    neither fix touches it — no live-readable flag for that case has
+    ever been found. See `re_notes/known_issues.md` issue #98.
+15. **SMAW lock-on vs. aircraft** — see Groundwork below; confirmed not
+    a bug, not a fix.
 
 ### Documentation
 1. **`re_notes/known_issues_x64.md` established** as the dedicated x64 issue
@@ -419,23 +514,51 @@ live, detailed status on every item below.
    content zone project-wide, not just for the investigation that surfaced
    it — flagged here so a future session doesn't re-discover it the
    expensive way. See `re_notes/known_issues_x64.md`'s 2026-09-14 entry.
+6. **Full `mw3ncp_config.ini` consumer audit — 120 keys across 15
+   sections checked, not just for whether they parse (already confirmed
+   arch-neutral), but whether anything on x64 actually acts on each
+   value.** This is the exact bug shape today's own session already found
+   repeatedly (motion blur, vibration, gyro-aim: config exists, gate
+   reads fine, nothing was ever wired to consume it). Found exactly one
+   genuine gap — an already-superseded, off-by-default glyph-substitution
+   mechanism with no practical impact — and zero vestigial/dead keys.
+   See `re_notes/known_issues_x64.md`'s 2026-09-14 entry.
+7. **Predator Missile's post-fire guidance phase mapped further than
+   either architecture has ever had it, real diagnostic shipped instead
+   of a guess.** Independently re-confirmed the guidance script does zero
+   per-frame input reads (steering is 100% native), then fully traced the
+   real x64 native call chain via fresh decompile down to the exact
+   struct offsets and angle-decode math. A cross-reference against the
+   concurrent DPV/mortar/turret investigation found the flag this bug
+   depends on is structurally distinct from the one that bug hinges on —
+   real evidence the guidance phase may already receive controller look
+   input correctly, just never provable statically. Shipped a safe,
+   cheap, rate-limited diagnostic hook rather than a guessed fix on a
+   feature that has never worked on any architecture. See
+   `re_notes/known_issues.md` issue #30.
 
 ### Investigated, Not Yet Resolved
-1. **Fire and/or ADS fails — first live playtest of the x64 build,
+1. ~~**Fire and/or ADS fails — first live playtest of the x64 build,
    2026-09-13, confirmed a real bug, not just a "not yet live-tested" fix
    attempt.** Originally reported and investigated as sniper-class-
    specific (What's New item 3 above); the live test found it happens on
    the base pistol too, directly contradicting the sniper-specific
-   framing that fix attempt was built around. The `g_notifyBindDispatch`
-   fix itself (a real client->server reliable-command notify controller
-   Fire/ADS was skipping) may still be valid — it's additive and
-   inert-if-wrong by design — but its own reasoning ("a sniper-class
-   bolt-action/scope state machine needs this notify") no longer explains
-   the actual, now-confirmed-broader symptom. Root cause not yet
-   re-established; needs a more precise report (is it Fire, ADS, or both;
-   constant or intermittent; which weapons confirmed affected) before
-   further RE. See `re_notes/known_issues_x64.md`'s 2026-09-13 correction
-   round for the full trail.
+   framing that fix attempt was built around.~~ **RESOLVED, 2026-09-13,
+   same session.** Real root cause found: `Hook_MovementTick` had an
+   early-return meant to skip a no-op movement-byte write, but it exited
+   the entire function — silently gating Fire, ADS, Reload, Weapnext,
+   Melee, Lethal, Tactical, Jump, Interact, D-pad, CrouchProne, Scoreboard,
+   the Pause-open poll, and `Rumble_Tick()` behind "is the stick currently
+   centered," exactly the condition true the instant a player stops
+   moving to aim and fire. x86's own equivalent design calls every one of
+   these as fully independent functions with no such gating, confirming
+   this was a pure x64 regression from fusing the per-tick functions
+   together during the migration, unrelated to weapon class. Fixed by
+   scoping the early-out to just the movement write. Live-confirmed
+   2026-09-14. The `g_notifyBindDispatch` fix from item 3 below remains
+   in place — additive, inert-if-unneeded, not the actual cause but not
+   wrong to have shipped either. See `re_notes/known_issues_x64.md`
+   issue #1 for the full trail.
 2. **Gameplay controller-glyph icon overlays — PARTIAL, not fully resolved
    (updated, item 22 above).** Items 18/19/21/22 now draw real icons/tracking
    for Mantle, weapon pickup/swap/pickup-health, grenade throwback, Reload,
