@@ -2286,9 +2286,31 @@ GetEffectiveFovX64Fn const GetEffectiveFovX64 = reinterpret_cast<GetEffectiveFov
 // not part of this pass's RE scope, and this formula's math itself was already
 // confirmed correct on x86 -- issue #8/#44 -- so there is no open question here that
 // diagnostic would be answering).
+//
+// issue #40 gap 2 (2026-09-14): also apply this scaling when a REAL native zoom is
+// active for any reason OTHER than our own g_adsHeldX64 tracking -- most notably the
+// AC-130/mounted-turret gunship camera, which is never g_adsHeldX64 (it's not a
+// weapon-ADS state at all) but DOES drive GetEffectiveFovX64 through the exact same
+// native transition system, confirmed via disassembly of FUN_140069e60 itself: its
+// internal blend explicitly includes a `set_turret_fov`-driven lerp path (alongside
+// set_lerp_fov/set_pip_fov), the same real xref-confirmed strings this function's own
+// header comment above documents. GetEffectiveFovX64 is a plain read-only query (no
+// stores observed in its own disassembly), so computing it unconditionally every frame
+// here -- instead of only when g_adsHeldX64 -- costs nothing and is safe to do. Gated
+// on a ratio threshold rather than dropping the g_adsHeldX64 check entirely: at
+// ratio==1.0 (true hipfire, no zoom from ANY source) adsSlowdownBaseline can still be
+// <1.0 by design (see the close-range-taper comment below), so unconditionally running
+// this formula on every non-ADS frame would apply a permanent, wrong slowdown to
+// ordinary hipfire look input -- the threshold keeps that exact prior behavior
+// unchanged (ratio~1.0 still short-circuits to 1.0) while now also catching any other
+// real native zoom, gunship included. NOT yet live-tested (this project's own
+// GSC-extraction toolchain is currently blocked for the AC-130 mission zone -- see
+// known_issues.md issue #40's 2026-09-14 round -- so this is a native-evidence-based
+// fix, not a live-confirmed one); the underlying formula math itself is unchanged from
+// the already-live-confirmed ADS case (issue #8/#44), only the trigger condition is new.
 float GetAdsLookRateScaleX64()
 {
-    if (!g_adsHeldX64 || g_modConfig.adsSlowdownStrength <= 0.0f) return 1.0f;
+    if (g_modConfig.adsSlowdownStrength <= 0.0f) return 1.0f;
 
     float baseFov = GetDvarFloatX64("cg_fov");
     if (baseFov <= 0.0f) return 1.0f;
@@ -2297,6 +2319,13 @@ float GetAdsLookRateScaleX64()
     if (effectiveFov <= 0.0f) return 1.0f;
 
     float ratio = effectiveFov / baseFov;
+
+    constexpr float kNativeZoomRatioThreshold = 0.995f; // ratio below this => a real
+                                                          // native zoom is active (ADS
+                                                          // or otherwise, e.g. gunship)
+    bool nativeZoomActive = ratio < kNativeZoomRatioThreshold;
+    if (!g_adsHeldX64 && !nativeZoomActive) return 1.0f;
+
     float scale = g_modConfig.adsSlowdownBaseline * powf(ratio, g_modConfig.adsSlowdownStrength);
 
     // Issue #44's close-range taper, ported verbatim (see x86's own comment for the

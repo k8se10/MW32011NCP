@@ -2355,10 +2355,32 @@ float GetDvarFloat(const char*) { return 0.0f; }
 // configure a stronger-than-1.0 slowdown (rejected a plain clamp-to-1.0 fix for
 // exactly this reason) while making the "overflow" that caused inversion
 // structurally impossible instead of just guarding against one specific value.
+// issue #40 gap 2 (2026-09-14): scaling also applies when a REAL native zoom is
+// active for any reason OTHER than g_adsHeld -- most notably the AC-130/mounted-
+// turret gunship camera, which is never g_adsHeld (not a weapon-ADS state at all)
+// but DOES drive GetEffectiveFov through the same native transition system: the x64
+// port of this function (analog_input_hooks_x64.cpp's GetAdsLookRateScaleX64, whose
+// GetEffectiveFovX64 comment documents this in full) found via disassembly that
+// FUN_140069e60's internal blend explicitly includes a `set_turret_fov`-driven lerp
+// path alongside set_lerp_fov/set_pip_fov -- the x86 FUN_004b0580 above implements
+// the identical formula per this function's own header comment, so the same
+// mechanism applies here. GetEffectiveFov is a pure read-only query (no observed
+// side effects), so computing it unconditionally every frame instead of only when
+// g_adsHeld costs nothing. Gated on a ratio threshold rather than dropping the
+// g_adsHeld check entirely: at ratio==1.0 (true hipfire) adsSlowdownBaseline can
+// still be <1.0 by design (see the close-range-taper comment below), so running this
+// formula on every non-ADS frame unconditionally would wrongly slow ordinary hipfire
+// look input -- the threshold preserves that exact prior behavior (ratio~1.0 still
+// short-circuits to 1.0) while now also catching any other real native zoom source.
+// NOT yet live-tested (this project's own GSC-extraction toolchain is currently
+// blocked for the AC-130 mission zone -- see known_issues.md issue #40's 2026-09-14
+// round -- so this is a native-evidence-based fix, not a live-confirmed one); the
+// underlying formula math is unchanged from the already-live-confirmed ADS case
+// (issue #8/#44), only the trigger condition is new.
 #if !defined(_M_X64) && !defined(_WIN64)
 float GetAdsLookRateScale()
 {
-    if (!g_adsHeld || g_modConfig.adsSlowdownStrength <= 0.0f) return 1.0f;
+    if (g_modConfig.adsSlowdownStrength <= 0.0f) return 1.0f;
 
     float baseFov = GetDvarFloat("cg_fov");
     if (baseFov <= 0.0f) return 1.0f;
@@ -2367,6 +2389,13 @@ float GetAdsLookRateScale()
     if (effectiveFov <= 0.0f) return 1.0f;
 
     float ratio = effectiveFov / baseFov;
+
+    constexpr float kNativeZoomRatioThreshold = 0.995f; // ratio below this => a real
+                                                          // native zoom is active (ADS
+                                                          // or otherwise, e.g. gunship)
+    bool nativeZoomActive = ratio < kNativeZoomRatioThreshold;
+    if (!g_adsHeld && !nativeZoomActive) return 1.0f;
+
     // Live feedback (2026-07-16): pure ratio^strength gave almost no slowdown on
     // low-zoom optics (ratio close to 1.0 -- iron sights/red dots barely change FOV),
     // since anything close to 1 raised to any power stays close to 1, regardless of
