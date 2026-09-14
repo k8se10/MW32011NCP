@@ -9,7 +9,18 @@ set string name;
 use MssSound;
 set block data XFILE_BLOCK_TEMP;
 set reusable data;
-set count data info::data_len;
+// MW32011NCP / iw5oat, 2026-09-14: was `info::data_len` -- confirmed wrong via
+// direct decompile of iw5sp.exe's own real LoadedSound fill function
+// (FUN_140094150/FUN_14009c0f0): the real engine reads its byte count for this
+// exact raw sample-data copy from AILSOUNDINFO-relative offset 0x18 (24), which
+// this fork's own compiler-verified offsetof() confirms is `info::bits`, not
+// `info::data_len` (offset 16) -- a real, empirically-confirmed field mismatch
+// (data_len read a plausible-looking but wrong byte count, silently desyncing
+// the stream's own read cursor by the difference for every subsequent asset).
+// Live-confirmed on code_post_gfx.ff asset 4481: fixing this let that asset
+// load cleanly and the zone progress to a later, separate failure. Full trail:
+// re_notes/x64_migration/fastfile_format_research.md (parent repo) SS5.23.
+set count data info::bits;
 set condition info::data_ptr never;
 set condition info::initial_ptr never;
 set action SetSoundData(MssSound);
