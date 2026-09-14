@@ -7156,3 +7156,41 @@ affecting `sp_dubai.ff`/`so_deltacamp.ff`; whether the remaining
 share one cause or need real architectural work (a second load pass) —
 none investigated yet. Full trail:
 `re_notes/x64_migration/fastfile_format_research.md` §5.20.
+
+### PAUSED (not resolved), 2026-09-14 (later still, "dig deeper") — the `"invalid block 15"` bug traced precisely to Material's own recursive resolution via XModel's materialHandles array, but the malformed value's real shape still doesn't fit any pattern already understood
+
+**Status: real, precise scope narrowing — not a fix.** All experiments
+this round fully reverted, 0 regression confirmed.
+
+Tested the first, most obvious hypothesis directly (a 32-bit-wide
+FOLLOWING/INSERT sentinel slipping past the 64-bit-wide
+`GetZonePointerType` check) by actually truncating the comparison and
+running it live — genuinely disproven: `sp_dubai.ff` progressed a
+little further, then hit the identical error from a DIFFERENT raw
+value shape (`0xFFFFFFFF00000000` — sentinel bits in the HIGH 32,
+zero in the low 32 — the mirror image of every other malformed value
+seen this session, which all had the meaningful/sentinel bits in the
+LOW 32). Two genuinely different byte shapes for one symptom rules out
+a single clean fix here.
+
+Traced the real failure site precisely instead of continuing to guess:
+confirmed via a live dispatch-record dump that every one of
+`sp_dubai.ff`'s ~557 top-level asset records is a clean, correct
+FOLLOWING sentinel, and via a direct post-`FillStruct_XModel` field dump
+that all six of `XModel`'s own direct cross-block fields (boneNames,
+parentList, quats, trans, partClassification, baseMat) are clean too —
+the actual failure is one level deeper, in `XModel`'s own
+`materialHandles` array, which recursively invokes `Material`'s own
+per-entry pointer resolution (the same machinery already fixed in the
+round above, reached via a different, recursive entry point).
+
+**Not yet answered**: whether the malformed values represent a genuinely
+different, third wire-encoding convention, a real struct-alignment
+mismatch, or something else — needs either a fresh native-decompile pass
+targeting `Material`'s real fill function as reached from `XModel`'s own
+`materialHandles`, or a raw hex comparison, neither attempted.
+
+Paused per this project's own persistence-threshold principle after
+several genuine rounds without a fix — real, useful scope narrowing on
+record, no regression risk taken, doesn't block any current need. Full
+trail: `re_notes/x64_migration/fastfile_format_research.md` §5.21.

@@ -1565,6 +1565,89 @@ fork's own single-pass load order simply hasn't reached yet," which
 would need real architectural work (a second pass, or deferred
 resolution) rather than another local fix.
 
+## 5.21. UPDATE, 2026-09-14 (later still, "dig deeper") — the `"invalid block 15"` bug narrowed precisely (traced past XModel's own struct fields into `Material`'s own recursive resolution, reached via `materialHandles`), but the actual malformed value's own shape doesn't fit any pattern already understood — paused, not resolved
+
+**Status: real, precise progress on WHERE the bug lives; the WHY remains
+open. No fix attempted — every experiment this round was reverted.**
+
+Dug into `sp_dubai.ff`/`so_deltacamp.ff`'s `"Zone tried to reference
+invalid block 15"` failure (block index 15 is the maximum a 4-bit field
+can hold — out of range for the real 9-block table, and the maximum
+possible value a 4-bit block-index field can ever produce, distinct from
+every other failure shape logged this session).
+
+**First hypothesis, tested directly, genuinely disproven — not simply a
+32-bit-wide FOLLOWING/INSERT sentinel slipping past the 64-bit-wide
+`GetZonePointerType` equality check.** Live-confirmed one raw value
+(`0x01010150FFFFFFFF`) whose low 32 bits ARE `0xFFFFFFFF` — matching that
+theory — but experimentally truncating `GetZonePointerType`'s own
+comparison to 32 bits (rebuilt, tested live) did NOT resolve the failure:
+`sp_dubai.ff` progressed a little further, then hit the identical
+`"invalid block 15"` error again from a *different* raw value,
+`0xFFFFFFFF00000000` — the sentinel shape in the HIGH 32 bits this time,
+with the low 32 bits at zero. Two genuinely different byte-shapes for
+the same symptom rules out a single clean "always truncate to the low 32
+bits" fix — reverted the experiment rather than ship a change that only
+partially explains the evidence.
+
+**Traced the actual failure site precisely, using the project's own
+established asset-index-trace + raw-dispatch-record-dump technique**:
+confirmed the `0xFFFFFFFF00000000` value is NOT a top-level asset
+dispatch record (every one of `sp_dubai.ff`'s own ~557 dispatch records
+reads a clean, correct `0xFFFFFFFFFFFFFFFF` FOLLOWING sentinel — verified
+directly, not assumed), and NOT any of `XModel`'s own six direct
+cross-block struct fields either (`boneNames`/`parentList`/`quats`/
+`trans`/`partClassification`/`baseMat` — a live dump immediately after
+`FillStruct_XModel`'s own raw byte-copy showed every one of these is a
+clean `0xFFFFFFFFFFFFFFFF` or a clean `0x0000000000000000`, nothing
+malformed). The actual failure is reached one level deeper: `XModel`'s
+own `materialHandles` array (real code: `LoadPtrArray_Material(true,
+varXModel->numsurfs)`, `xmodel_iw5_load_db.cpp`) recursively invokes
+`Material`'s own per-entry pointer resolution — the SAME
+`ConvertOffsetToPointerNative`/`ConvertOffsetToAliasLookup` machinery
+§5.16-§5.20 already fixed, just reached via a different, recursive entry
+point (through an `XModel` asset's own submaterial array, not a direct
+top-level `Material` asset load) instead of a struct field read directly.
+
+**Not yet answered — the real open question**: whether `0x01010150FFFFFFFF`/
+`0xFFFFFFFF00000000` represent a genuinely different, third wire-encoding
+convention this session hasn't characterized yet (neither "top 32 bits
+zero" like `MaterialPixelShader::name`, nor "low 32 bits zero" like
+`hamburg.ff`'s own forward-reference case) — or something else entirely
+(a genuine struct-layout/alignment mismatch producing a value assembled
+from two unrelated adjacent fields; a real ordering issue in how
+`materialHandles`' own array entries get resolved relative to whatever
+they reference; or content this project hasn't previously encountered).
+Determining this would need either a fresh native-decompile pass (this
+session's own most reliable technique whenever guessing from shape alone
+has stalled — see §5.13/§5.18's own precedent) targeting `Material`'s
+real fill function specifically as reached FROM an `XModel`'s own
+`materialHandles` array, or a raw hex-editor comparison of `sp_dubai.ff`'s
+own decompressed bytes at the computed position, neither attempted this
+round.
+
+**All temporary instrumentation fully reverted** (four separate rounds
+of diagnostics — a per-throw-site value dump, a `GetZonePointerType`
+truncation experiment, a full dispatch-record dump, and a direct
+`FillStruct_XModel` field dump — each added, tested, and removed in
+turn), confirmed via `git status`/`git diff` showing a clean tree,
+rebuilt, and re-verified all six known zones (`sp_intro.ff`/
+`sp_prague.ff`/`code_post_gfx.ff`/`hamburg.ff`/`common.ff`/`sp_dubai.ff`)
+reproduce their exact §5.20-shipped signatures with 0 regression.
+
+**Per this project's own standing persistence-threshold principle**: this
+specific `"invalid block 15"` thread has now been through several
+genuine rounds (sentinel-width experiment, dispatch-record trace,
+struct-field trace) without landing a fix, unlike the broader §5.20 fix
+which reached a real, tested, safe conclusion in a comparable number of
+rounds. Pausing this specific thread here — real, precise progress on
+scope, no regression risk taken, and a concrete recommended next
+technique (native decompile of the `Material`-via-`materialHandles`
+resolution path specifically) on record for whoever picks it up next.
+This does not block any current, real project need — `so_trainer2_
+so_deltacamp` and the two already-clean zones remain unaffected either
+way, and this bug was never blocking anything before §5.20 was shipped.
+
 ## 6. Scoped plan for in-house tooling — an MVP, not a full OpenAssetTools replacement
 
 **This project's own actual need is narrow**: GSC/rawfile extraction to
