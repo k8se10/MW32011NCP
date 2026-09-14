@@ -1,0 +1,87 @@
+================================================================
+Function: FUN_14008eba0 @ 14008eba0
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_14008eba0(undefined8 param_1,undefined8 *param_2)
+
+{
+  uint uVar1;
+  DWORD DVar2;
+  char *pcVar3;
+  longlong lVar4;
+  ulonglong uVar5;
+  undefined1 local_res10 [8];
+  int local_res18 [2];
+  undefined1 local_res20 [8];
+  undefined1 local_58 [8];
+  longlong local_50;
+  undefined1 local_48 [4];
+  int local_44;
+  undefined1 local_40 [40];
+  
+  FUN_14008eeb0(param_2,0);
+  FUN_14008f220(&local_50,8);
+  if ((local_50 != 0x3030313066665749) && (local_50 != 0x3030317566665749)) {
+    FUN_14008ee20();
+  }
+  FUN_14008f220(local_res18,4);
+  if (local_res18[0] != 1) {
+    pcVar3 = "Fastfile for zone \'%s\' is out of date (version %d, expecting %d)";
+    if (local_res18[0] != 0) {
+      pcVar3 = "Fastfile for zone \'%s\' is newer than client executable (version %d, expecting %d)"
+      ;
+    }
+    FUN_14023c700(1,pcVar3,param_2 + 1,local_res18[0],1);
+  }
+  FUN_14008f220(local_res10,1);
+  FUN_14008f220(local_res20,4);
+  FUN_14008f220(local_58,4);
+  FUN_14008ee60(local_50 != 0x3030317566665749);
+  FUN_14008ef80(local_48,0x2c,0);
+  if (DAT_14073d66c != 0) {
+    DVar2 = GetFileSize((HANDLE)*param_2,(LPDWORD)0x0);
+    if (0xfffff < local_44 + DVar2) {
+      DAT_14073d690 = DVar2 - DAT_14073d700;
+      DAT_14073d700 = 0;
+      _DAT_14073d704 = 0x40000;
+      DAT_14073d694 = local_44 - DAT_14073d698;
+      DAT_14073d698 = 0;
+    }
+  }
+  FUN_1400a4460(local_40,param_2 + 1,param_1);
+  FUN_1400aaac0(param_1);
+  DAT_1407bd890 = &DAT_14073d670;
+  FUN_14008ef80(&DAT_14073d670,0x20);
+  FUN_1400aac10(3);
+  DAT_1407bea20 = DAT_1407bd890;
+  FUN_1400965d0(0);
+  FUN_1400aabd0();
+  FUN_1400aac10(3);
+  if (*(longlong *)(DAT_1407bd890 + 0x18) != 0) {
+    DAT_1407bd860 = FUN_14008f430();
+    *(longlong *)(DAT_1407bd890 + 0x18) = DAT_1407bd860;
+    uVar1 = *(uint *)(DAT_1407bd890 + 0x10);
+    uVar5 = (ulonglong)uVar1;
+    FUN_1400aad70(1,DAT_1407bd860,uVar1 << 4);
+    lVar4 = DAT_1407bd860;
+    if (0 < (int)uVar1) {
+      do {
+        DAT_1407bd860 = lVar4;
+        FUN_14009bce0(0);
+        lVar4 = lVar4 + 0x10;
+        uVar5 = uVar5 - 1;
+      } while (uVar5 != 0);
+    }
+  }
+  FUN_1400aabd0();
+  FUN_1400a4740(param_1);
+  FUN_14008eea0();
+  FUN_14008ee50();
+  FUN_1400a6d90();
+  return;
+}
+
+
+

@@ -1,0 +1,302 @@
+================================================================
+Function: FUN_1400965d0 @ 1400965d0
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_1400965d0(undefined8 param_1)
+
+{
+  uint uVar1;
+  longlong *plVar2;
+  ulonglong uVar3;
+  
+  FUN_1400aad70(param_1,DAT_1407bea20,0x10);
+  FUN_1400aac10(3);
+  if (*(longlong *)(DAT_1407bea20 + 2) != 0) {
+    DAT_1407bed60 = (longlong *)FUN_1400aaa90(3);
+    *(longlong **)(DAT_1407bea20 + 2) = DAT_1407bed60;
+    uVar1 = *DAT_1407bea20;
+    uVar3 = (ulonglong)uVar1;
+    FUN_1400aad70(1,DAT_1407bed60,uVar1 * 8);
+    plVar2 = DAT_1407bed60;
+    if (0 < (int)uVar1) {
+      do {
+        DAT_1407bed60 = plVar2;
+        FUN_1400aad70(0,plVar2,8);
+        if (*DAT_1407bed60 != 0) {
+          if (*DAT_1407bed60 == -1) {
+            _DAT_1407bed58 = FUN_1400aaa90(0);
+            *DAT_1407bed60 = _DAT_1407bed58;
+            FUN_1400aadc0();
+          }
+          else {
+            FUN_1400aad40();
+          }
+        }
+        plVar2 = plVar2 + 1;
+        uVar3 = uVar3 - 1;
+      } while (uVar3 != 0);
+    }
+  }
+  FUN_1400aabd0();
+  return;
+}
+
+
+
+================================================================
+Function: FUN_1400aabd0 @ 1400aabd0
+----------------------------------------------------------------
+
+void FUN_1400aabd0(void)
+
+{
+  DAT_140d6e210 = DAT_140d6e210 - 1;
+  if (DAT_140d6ddf8 == 0) {
+    DAT_140d6de08 = *(undefined8 *)(&DAT_140d6de10 + (ulonglong)DAT_140d6e210 * 0x10);
+  }
+  FUN_1400aac60(*(undefined4 *)(&DAT_140d6de18 + (ulonglong)DAT_140d6e210 * 0x10));
+  return;
+}
+
+
+
+================================================================
+Function: FUN_14009bce0 @ 14009bce0
+----------------------------------------------------------------
+
+void FUN_14009bce0(undefined8 param_1)
+
+{
+  int iVar1;
+  
+  FUN_1400aad70(param_1,DAT_1407bd860,0x10);
+  DAT_1407be3f8 = DAT_1407bd860 + 2;
+  iVar1 = *DAT_1407bd860;
+  if (iVar1 == 0) {
+    DAT_1407bea28 = DAT_1407be3f8;
+    FUN_140096140();
+    return;
+  }
+  if (iVar1 == 1) {
+    DAT_1407bf2b8 = DAT_1407be3f8;
+    FUN_140095f90();
+    return;
+  }
+  if (iVar1 == 2) {
+    DAT_1407bf550 = DAT_1407be3f8;
+    FUN_14009bc20();
+    return;
+  }
+  if (iVar1 == 3) {
+    DAT_1407bf338 = DAT_1407be3f8;
+    FUN_14009c8d0();
+    return;
+  }
+  if (iVar1 == 4) {
+    DAT_1407bea38 = DAT_1407be3f8;
+    FUN_14009c650();
+    return;
+  }
+  if (iVar1 == 5) {
+    DAT_1407be920 = DAT_1407be3f8;
+    FUN_140094950();
+    return;
+  }
+  if (iVar1 == 6) {
+    DAT_1407be888 = DAT_1407be3f8;
+    FUN_140094e20();
+    return;
+  }
+  if (iVar1 == 7) {
+    DAT_1407be878 = DAT_1407be3f8;
+    FUN_140095450();
+    return;
+  }
+  if (iVar1 == 8) {
+    DAT_1407be8a0 = DAT_1407be3f8;
+    FUN_140095260();
+    return;
+  }
+  if (iVar1 == 9) {
+    DAT_1407be910 = DAT_1407be3f8;
+    FUN_1400950e0();
+    return;
+  }
+  if (iVar1 == 10) {
+    DAT_1407be708 = DAT_1407be3f8;
+    FUN_140091f10();
+    return;
+  }
+  if (iVar1 == 0xb) {
+    DAT_1407bde18 = DAT_1407be3f8;
+    FUN_14009f3f0();
+    return;
+  }
+  if (iVar1 == 0xc) {
+    DAT_1407bddb8 = DAT_1407be3f8;
+    FUN_140096840();
+    return;
+  }
+  if (iVar1 == 0xd) {
+    DAT_1407bdd90 = DAT_1407be3f8;
+    FUN_1400941f0();
+    return;
+  }
+  if (iVar1 == 0xe) {
+    DAT_1407be688 = DAT_1407be3f8;
+    FUN_14009d150();
+    return;
+  }
+  if (iVar1 == 0xf) {
+    DAT_1407bea58 = DAT_1407be3f8;
+    FUN_140090370();
+    return;
+  }
+  if (iVar1 == 0x10) {
+    DAT_1407bd8b0 = DAT_1407be3f8;
+    FUN_140093d30();
+    return;
+  }
+  if (iVar1 == 0x11) {
+    DAT_1407bd8a0 = DAT_1407be3f8;
+    FUN_140095d80();
+    return;
+  }
+  if (iVar1 == 0x12) {
+    DAT_1407bf6b0 = DAT_1407be3f8;
+    FUN_1400984e0();
+    return;
+  }
+  if (iVar1 == 0x13) {
+    DAT_1407be650 = DAT_1407be3f8;
+    FUN_140094550();
+    return;
+  }
+  if (iVar1 == 0x14) {
+    DAT_1407be360 = DAT_1407be3f8;
+    FUN_140091950();
+    return;
+  }
+  if (iVar1 == 0x15) {
+    DAT_1407bdad8 = DAT_1407be3f8;
+    FUN_140093a70();
+    return;
+  }
+  if (iVar1 == 0x16) {
+    DAT_1407bea90 = DAT_1407be3f8;
+    FUN_1400920c0();
+    return;
+  }
+  if (iVar1 == 0x18) {
+    DAT_1407be338 = DAT_1407be3f8;
+    FUN_140090810();
+    return;
+  }
+  if (iVar1 == 0x19) {
+    DAT_1407bf178 = DAT_1407be3f8;
+    FUN_140095880();
+    return;
+  }
+  if (iVar1 == 0x1a) {
+    DAT_1407bf168 = DAT_1407be3f8;
+    FUN_14009ed20();
+    return;
+  }
+  if (iVar1 == 0x1b) {
+    DAT_1407bd878 = DAT_1407be3f8;
+    FUN_1400943a0();
+    return;
+  }
+  if (iVar1 == 0x1c) {
+    DAT_1407be008 = DAT_1407be3f8;
+    FUN_1400990d0();
+    return;
+  }
+  if (iVar1 == 0x1d) {
+    DAT_1407be4c0 = DAT_1407be3f8;
+    FUN_1400999c0();
+    return;
+  }
+  if (iVar1 == 0x1f) {
+    DAT_1407bdbe8 = DAT_1407be3f8;
+    FUN_1400909a0();
+    return;
+  }
+  if (iVar1 == 0x20) {
+    DAT_1407bd948 = DAT_1407be3f8;
+    FUN_140091740();
+    return;
+  }
+  if (iVar1 == 0x21) {
+    DAT_1407bd960 = DAT_1407be3f8;
+    FUN_140097810();
+    return;
+  }
+  if (iVar1 == 0x26) {
+    DAT_1407bf300 = DAT_1407be3f8;
+    FUN_1400962c0();
+    return;
+  }
+  if (iVar1 == 0x27) {
+    DAT_1407bf310 = DAT_1407be3f8;
+    FUN_1400964a0();
+    return;
+  }
+  if (iVar1 == 0x28) {
+    DAT_1407bf3b8 = DAT_1407be3f8;
+    FUN_140097090();
+    return;
+  }
+  if (iVar1 == 0x29) {
+    DAT_1407bf710 = DAT_1407be3f8;
+    FUN_140094090();
+    return;
+  }
+  if (iVar1 == 0x2a) {
+    DAT_1407bf440 = DAT_1407be3f8;
+    FUN_140097400();
+    return;
+  }
+  if (iVar1 == 0x2b) {
+    DAT_1407bdde0 = DAT_1407be3f8;
+    FUN_140097970();
+    return;
+  }
+  if (iVar1 == 0x2c) {
+    DAT_1407befb0 = DAT_1407be3f8;
+    FUN_140098240();
+    return;
+  }
+  if (iVar1 == 0x2d) {
+    DAT_1407be660 = DAT_1407be3f8;
+    FUN_14008f6f0(0);
+    return;
+  }
+  return;
+}
+
+
+
+================================================================
+Function: FUN_1400aac10 @ 1400aac10
+----------------------------------------------------------------
+
+void FUN_1400aac10(void)
+
+{
+  uint uVar1;
+  ulonglong uVar2;
+  
+  uVar1 = DAT_140d6e210;
+  uVar2 = (ulonglong)DAT_140d6e210;
+  DAT_140d6e210 = DAT_140d6e210 + 1;
+  *(undefined4 *)(&DAT_140d6de18 + uVar2 * 0x10) = DAT_140d6ddf8;
+  FUN_1400aac60();
+  *(undefined8 *)(&DAT_140d6de10 + (ulonglong)uVar1 * 0x10) = DAT_140d6de08;
+  return;
+}
+
+
+

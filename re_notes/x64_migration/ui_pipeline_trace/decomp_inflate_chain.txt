@@ -1,0 +1,264 @@
+================================================================
+Function: FUN_14008e9a0 @ 14008e9a0
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+undefined8 FUN_14008e9a0(undefined *param_1,int param_2,undefined8 param_3)
+
+{
+  undefined8 *puVar1;
+  undefined **ppuVar2;
+  undefined4 uVar3;
+  undefined4 uVar4;
+  undefined4 uVar5;
+  undefined4 uVar6;
+  undefined4 uVar7;
+  undefined4 uVar8;
+  undefined4 uVar9;
+  undefined4 uVar10;
+  undefined *puVar11;
+  undefined *puVar12;
+  undefined *puVar13;
+  undefined *puVar14;
+  undefined **ppuVar15;
+  undefined8 uVar16;
+  longlong lVar17;
+  undefined8 *puVar18;
+  
+  FUN_140390680(&DAT_140737600,0,0x6068);
+  DAT_14073b618 = *(undefined8 *)(param_1 + 0x10);
+  _DAT_14073b620 = *(undefined8 *)(param_1 + 0x18);
+  _DAT_14073b628 = *(undefined8 *)(param_1 + 0x20);
+  uRam000000014073b630 = *(undefined8 *)(param_1 + 0x28);
+  _DAT_14073b638 = *(undefined4 *)(param_1 + 0x30);
+  uRam000000014073b63c = *(undefined4 *)(param_1 + 0x34);
+  uRam000000014073b640 = *(undefined4 *)(param_1 + 0x38);
+  uRam000000014073b644 = *(undefined4 *)(param_1 + 0x3c);
+  _DAT_14073b648 = *(undefined4 *)(param_1 + 0x40);
+  uRam000000014073b64c = *(undefined4 *)(param_1 + 0x44);
+  uRam000000014073b650 = *(undefined4 *)(param_1 + 0x48);
+  uRam000000014073b654 = *(undefined4 *)(param_1 + 0x4c);
+  _DAT_14073b610 = 0;
+  _DAT_14073b608 = 0;
+  DAT_140737600 = param_2;
+  FUN_1402caa00(&DAT_140737604,param_3,0x20);
+  if (DAT_140737600 == 0) {
+    if (DAT_1404c29f0 == 0) {
+      FUN_1400ad570(param_1,&DAT_140717600,0x20000);
+LAB_14008eb13:
+      uVar16 = FUN_1400accb0(param_1,"1.1.4",0x50);
+      return uVar16;
+    }
+  }
+  else {
+    lVar17 = 3;
+    ppuVar15 = &PTR_s_LibTomMath_140450b30;
+    puVar18 = (undefined8 *)&DAT_144436f20;
+    do {
+      puVar1 = puVar18 + 0x10;
+      puVar11 = ppuVar15[1];
+      puVar12 = ppuVar15[2];
+      puVar13 = ppuVar15[3];
+      ppuVar2 = ppuVar15 + 0x10;
+      *puVar18 = *ppuVar15;
+      puVar18[1] = puVar11;
+      puVar11 = ppuVar15[4];
+      puVar14 = ppuVar15[5];
+      puVar18[2] = puVar12;
+      puVar18[3] = puVar13;
+      puVar12 = ppuVar15[6];
+      puVar13 = ppuVar15[7];
+      puVar18[4] = puVar11;
+      puVar18[5] = puVar14;
+      puVar11 = ppuVar15[8];
+      puVar14 = ppuVar15[9];
+      puVar18[6] = puVar12;
+      puVar18[7] = puVar13;
+      puVar12 = ppuVar15[10];
+      puVar13 = ppuVar15[0xb];
+      puVar18[8] = puVar11;
+      puVar18[9] = puVar14;
+      uVar3 = *(undefined4 *)(ppuVar15 + 0xc);
+      uVar4 = *(undefined4 *)((longlong)ppuVar15 + 100);
+      uVar5 = *(undefined4 *)(ppuVar15 + 0xd);
+      uVar6 = *(undefined4 *)((longlong)ppuVar15 + 0x6c);
+      puVar18[10] = puVar12;
+      puVar18[0xb] = puVar13;
+      uVar7 = *(undefined4 *)(ppuVar15 + 0xe);
+      uVar8 = *(undefined4 *)((longlong)ppuVar15 + 0x74);
+      uVar9 = *(undefined4 *)(ppuVar15 + 0xf);
+      uVar10 = *(undefined4 *)((longlong)ppuVar15 + 0x7c);
+      *(undefined4 *)(puVar18 + 0xc) = uVar3;
+      *(undefined4 *)((longlong)puVar18 + 100) = uVar4;
+      *(undefined4 *)(puVar18 + 0xd) = uVar5;
+      *(undefined4 *)((longlong)puVar18 + 0x6c) = uVar6;
+      *(undefined4 *)(puVar18 + 0xe) = uVar7;
+      *(undefined4 *)((longlong)puVar18 + 0x74) = uVar8;
+      *(undefined4 *)(puVar18 + 0xf) = uVar9;
+      *(undefined4 *)((longlong)puVar18 + 0x7c) = uVar10;
+      lVar17 = lVar17 + -1;
+      ppuVar15 = ppuVar2;
+      puVar18 = puVar1;
+    } while (lVar17 != 0);
+    *puVar1 = *ppuVar2;
+    FUN_140358660(&PTR_s_sha256_140450ab0);
+    if (DAT_1404c29f0 == 0) {
+      FUN_1400ad570(&DAT_14073b608,&DAT_140717600,0x20000);
+      param_1 = &DAT_14073b608;
+      goto LAB_14008eb13;
+    }
+  }
+  return 0xfffffffd;
+}
+
+
+
+================================================================
+Function: FUN_14008f220 @ 14008f220
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_14008f220(longlong param_1,int param_2)
+
+{
+  BOOL BVar1;
+  DWORD DVar2;
+  undefined8 *puVar3;
+  int iVar4;
+  longlong lVar5;
+  
+  DAT_14073d770 = param_1;
+  DAT_14073d778 = param_2;
+  do {
+    if (DAT_14073d768 != 0) {
+      iVar4 = DAT_14073d778;
+      if (DAT_14073d768 <= DAT_14073d778) {
+        iVar4 = DAT_14073d768;
+      }
+      lVar5 = (longlong)iVar4;
+      if (DAT_14073d770 != 0) {
+        FUN_14038ffd0(DAT_14073d770,DAT_14073d760,lVar5);
+        DAT_14073d770 = DAT_14073d770 + lVar5;
+      }
+      DAT_14073d760 = (undefined8 *)((longlong)DAT_14073d760 + lVar5);
+      DAT_14073d768 = DAT_14073d768 - iVar4;
+      DAT_14073d778 = DAT_14073d778 - iVar4;
+      if (DAT_14073d778 == 0) {
+        return;
+      }
+    }
+    if (DAT_14073d70c == 0) {
+                    /* WARNING: Subroutine does not return */
+      FUN_1402ee570("Disc read error.");
+    }
+    if (DAT_14073d70c == 1) {
+      SleepEx(0xffffffff,1);
+    }
+    DAT_14073d70c = 0;
+    if ((DAT_14073d758 != 0) && (DAT_14073d758 != 0x26)) {
+      DAT_14073d724 = 0;
+    }
+    DAT_14073d728 = DAT_14073d728 + DAT_14073d724;
+    if (DAT_14073d724 == 0x40000) {
+      DAT_14073d720 = DAT_14073d720 - 0x40000;
+    }
+    else {
+      DAT_14073d720 = 0;
+    }
+    _DAT_14073d730 = DAT_14073d718;
+    DAT_14073d760 = DAT_14073d718;
+    puVar3 = DAT_14073d718 + 0x8000;
+    DAT_14073d718 = (undefined8 *)&DAT_14073d800;
+    if (puVar3 != &DAT_1407bd800) {
+      DAT_14073d718 = puVar3;
+    }
+    DAT_14073d700 = DAT_14073d700 + DAT_14073d724;
+    DAT_14073d768 = DAT_14073d724;
+    if (DAT_14073d720 != 0) {
+      FUN_14024a910();
+      uRam000000014073d750 = 0;
+      DVar2 = 0x40000;
+      if ((int)DAT_14073d720 < 0x40001) {
+        DVar2 = DAT_14073d720;
+      }
+      _DAT_14073d738 = 0;
+      uRam000000014073d740 = 0;
+      _DAT_14073d748 = (ulonglong)DAT_14073d728;
+      FUN_14024a930();
+      BVar1 = ReadFileEx((HANDLE)*DAT_14073d710,DAT_14073d718,DVar2,(LPOVERLAPPED)&DAT_14073d738,
+                         (LPOVERLAPPED_COMPLETION_ROUTINE)&LAB_14008ee30);
+      if (BVar1 == 0) {
+        DVar2 = GetLastError();
+        if (DVar2 != 0x26) {
+                    /* WARNING: Subroutine does not return */
+          FUN_1402ee570("Read error of file \'%s\'",DAT_14073d710 + 1);
+        }
+      }
+      else {
+        DAT_14073d70c = 1;
+      }
+    }
+  } while( true );
+}
+
+
+
+================================================================
+Function: FUN_14019ff90 @ 14019ff90
+----------------------------------------------------------------
+
+undefined8 FUN_14019ff90(undefined8 *param_1,ulonglong param_2)
+
+{
+  int iVar1;
+  undefined8 uVar2;
+  undefined8 local_res20;
+  
+  if (*(char *)(DAT_141884ca8 + 0x10) == '\0') {
+    return 0;
+  }
+  iVar1 = (**(code **)(*DAT_1418886d0 + 0xd0))(DAT_1418886d0,param_2,8,0,0,param_1,0);
+  if (iVar1 < 0) {
+    uVar2 = FUN_1401bccf0(iVar1);
+    uVar2 = FUN_1402cb690("DirectX didn\'t create a %i-byte vertex buffer: %s\n",
+                          param_2 & 0xffffffff,uVar2);
+    thunk_FUN_1402ee4f0(uVar2);
+  }
+  iVar1 = (**(code **)(*(longlong *)*param_1 + 0x58))((longlong *)*param_1,0,0,&local_res20,0);
+  if (iVar1 < 0) {
+    uVar2 = FUN_1401bccf0(iVar1);
+    uVar2 = FUN_1402cb690("DirectX didn\'t lock a vertex buffer: %s\n",uVar2);
+    thunk_FUN_1402ee4f0(uVar2);
+  }
+  return local_res20;
+}
+
+
+
+================================================================
+Function: FUN_14019ff00 @ 14019ff00
+----------------------------------------------------------------
+
+undefined8 FUN_14019ff00(undefined8 *param_1,undefined8 param_2)
+
+{
+  int iVar1;
+  undefined8 local_res20;
+  
+  if (*(char *)(DAT_141884ca8 + 0x10) != '\0') {
+    iVar1 = (**(code **)(*DAT_1418886d0 + 0xd8))(DAT_1418886d0,param_2,8,0x65,0,param_1,0);
+    if (-1 < iVar1) {
+      iVar1 = (**(code **)(*(longlong *)*param_1 + 0x58))((longlong *)*param_1,0,0,&local_res20,0);
+      if (-1 < iVar1) {
+        return local_res20;
+      }
+      (**(code **)(*(longlong *)*param_1 + 0x10))();
+    }
+  }
+  return 0;
+}
+
+
+
