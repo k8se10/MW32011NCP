@@ -396,6 +396,36 @@ dedicated mechanism needed) — SMAW specifically was separately resolved as
 "not a bug at all" the same session (native data-driven dumb-fire weapon
 variant, `known_issues.md` issue #27 Bug #8).
 
+**UPDATE, 2026-09-14 — AC-130's own two open gaps (gun-type switching,
+zoom-aware look sensitivity, `known_issues.md` issue #40) get their first
+dedicated x64 investigation this session, one closed.** Confirms this
+section's own framing above for gap 1: gun-type switching genuinely has no
+dedicated native mechanism anywhere in `iw5sp.exe` (an exhaustive whole-
+binary string/substring scan for every plausible gunship/weapon-tier
+identifier returned zero code-referenced hits) — it really does ride
+entirely on whatever weapon-switching path SP/Spec-Ops' AC-130 sequence
+uses, same as this section already assumed, just now confirmed rather than
+assumed. Remains **ABSENT** on both platforms — not fixed this pass; this
+project's own GSC-extraction toolchain (OpenAssetTools) is currently broken
+for every large current retail zone (not specific to `paris_ac130.ff`), so
+the actual SP/Spec-Ops script that would confirm the exact mechanism
+couldn't be read; a public MP-only reference script shows MP's own AC-130
+killstreak uses real native weapon-inventory switching (the same function
+this project's Y button already calls), but whether SP matches that design
+is unconfirmed. Gap 2 (zoom-aware look sensitivity) is the real exception
+here — it turned out to NOT ride on a dedicated mechanism at all, but on
+this section's own already-PRESENT core Look (#6/#7): `GetEffectiveFovX64`
+(the same native FOV query row #3's ADS-slowdown fix already resolved
+2026-09-13) is generic, not ADS-specific — its own disassembly shows a
+`set_turret_fov`-driven lerp path alongside the ADS-relevant `set_lerp_fov`/
+`set_pip_fov` terms — so `GetAdsLookRateScaleX64()` only needed to stop
+gating that query behind `g_adsHeldX64` specifically, not gain any new
+native capability. **FIXED both platforms, build-verified** (x64
+`/t:Rebuild` 0 errors, `dumpbin` confirms `8664 machine (x64)` fresh
+timestamp, Win32 regression 0 errors, x64 redeployed last), **NOT yet
+live-tested**. Full trail: `known_issues.md` issue #40's 2026-09-14 round,
+`known_issues_x64.md`'s matching entry.
+
 ## Methodology & caveats
 
 - **This was a static, source-code-level audit** — every PRESENT/ABSENT verdict
