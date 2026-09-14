@@ -64,29 +64,44 @@ resolution and the `var<Suffix>` → real struct type name lookup every
 script above depends on (derived by scanning the generated headers
 directly, not hand-maintained).
 
-## Known open question, not yet fixed by any of these scripts
+## Resolved: the decl[]/ps/vs question
 
-Some generated structs (`MaterialVertexStreamRouting::decl[VERTDECL_COUNT]`,
-`MaterialPixelShaderProgram::ps`, `MaterialVertexShaderProgram::vs`) declare
-real pointer/pointer-array fields that the corresponding `FillStruct_*`
-function never reads from the wire at all. Whether these are genuinely
-serialized on disk (as raw, uninitialized-until-runtime memory, matching
-this format's general "dump the in-memory struct as-is" convention) or are
-runtime-only fields the wire format never included — which would mean
-`sizeof(Type)` (used by every `LoadWithFill(sizeof(Type))` call) is
-counting bytes that were never actually on the wire, desyncing every read
-after it — is not yet resolved. Confirmed live: this is the actual reason
+**Earlier revisions of this README flagged `MaterialVertexStreamRouting::
+decl[]`/`MaterialPixelShaderProgram::ps`/`MaterialVertexShaderProgram::vs`
+as an open question — this is now resolved.** Direct Ghidra decompile of
+`iw5sp.exe`'s own real fill functions confirms all three are genuinely on
+the wire: every native read size matches `sizeof(Type)` computed *with*
+the field included (`MaterialPixelShader`/`MaterialVertexShader`: 32
+bytes; `MaterialVertexDeclaration`: 176 bytes). They're never explicitly
+filled with a meaningful value because they're runtime-only D3D
+shader-object caches populated after loading, not because they're absent
+from the struct — the scripts above already handle this correctly by
+trusting `sizeof()`. A related bug found via the same technique
+(`Material::subMaterials`, a genuinely phantom trailing field, unlike
+these three) was found and fixed directly in `IW5_Assets.h` — see
+`re_notes/x64_migration/fastfile_format_research.md` §5.9 for the full
+trail.
+
+## Known open issue, not yet resolved
+
 `MaterialTechniqueSet`'s own `MaterialPass` → `MaterialVertexDeclaration`/
-`MaterialPixelShader` chain still fails after all four scripts above,
-across all three real retail zones tested (`code_post_gfx.ff`, `common.ff`,
-`hamburg.ff` — all three now fail at this exact same point, not three
-different points, which is itself real progress). Resolving this
-definitively needs native Ghidra RE against `iw5sp.exe`'s own zone-content
-reader (the same technique that resolved the outer dispatch-record/header
-bugs — see `re_notes/x64_migration/fastfile_format_research.md` §5) rather
-than continued guessing from field names; a direct experiment excluding
-`decl[]` from the read size was tried and made the failure mode *worse*
-(a segfault instead of a caught bounds exception), so it was not kept.
+`MaterialVertexShader`/`MaterialPixelShader` chain still fails on all
+three real retail zones tested (`code_post_gfx.ff`, `common.ff`,
+`hamburg.ff` — all three fail at the exact same point, real progress even
+though not fully resolved). A byte-exact hex dump proved the corruption
+is isolated to exactly the 8 bytes of `MaterialPixelShader::name` —
+every other field in the same read, and `MaterialVertexShader`'s entire
+header read immediately before it, are byte-perfect. An earlier theory
+(shader bytecode reading from the wrong `XFILE_BLOCK_*`) was tested and
+disproven with direct evidence — blocks only affect where output lands,
+never which stream bytes get read. The root cause is still unidentified
+despite many rounds of native-decompile verification; paused per this
+project's own standing persistence-threshold principle rather than
+continuing to re-derive the same conclusions. See
+`re_notes/x64_migration/fastfile_format_research.md` §5.10 for the full
+trail and concrete next-step recommendations (live debugging or a raw
+hex-editor comparison — a genuinely different technique, not more
+decompile cross-referencing).
 
 ## Scope
 
