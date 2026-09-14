@@ -36,7 +36,20 @@ void ContentLoaderBase::LoadXString(const bool atStreamStart) const
         }
         else
         {
-            *varXString = m_stream.ConvertOffsetToPointerNative<const char>(*varXString);
+            // MW32011NCP / iw5oat, 2026-09-14: some already-resolved string cross-references
+            // (confirmed via MaterialPixelShader::name in code_post_gfx.ff -- a shared/interned
+            // shader-filename reference) are genuinely encoded at 32-bit width on the wire, not
+            // this stream's configured 64-bit native width -- the standard resolution below
+            // would otherwise throw for them. Try the narrow, validated string-specific fallback
+            // first; it returns nullptr (not the real value) for the vast majority of already-
+            // working string resolutions (anything that already resolves under the standard
+            // decode never reaches the fallback path at all) and for the separate, unrelated
+            // forward-reference bug class this same shape can otherwise be confused with (see
+            // TryConvertOffsetToStringPointerNative's own doc comment, ZoneInputStream.h, and
+            // re_notes/x64_migration/fastfile_format_research.md SS5.16/SS5.18 in the parent
+            // repo for the full trail).
+            const auto* narrowResolved = m_stream.TryConvertOffsetToStringPointerNative(*varXString);
+            *varXString = narrowResolved != nullptr ? narrowResolved : m_stream.ConvertOffsetToPointerNative<const char>(*varXString);
         }
     }
 }

@@ -208,6 +208,34 @@ public:
         return static_cast<T*>(ConvertOffsetToPointerNative(static_cast<const void*>(offset)));
     }
 
+    /**
+     * \brief Attempts to resolve an already-resolved (non-FOLLOWING/INSERT) offset-encoded
+     * zone pointer to a NATIVE STRING specifically, for the narrow case where the standard
+     * (stream-native-pointer-width) decode would fail bounds validation but the raw offset
+     * value's own top bits above 32 are exactly zero -- the confirmed empirical signature of
+     * a pointer genuinely encoded at 32-bit width on the wire rather than this stream's
+     * configured native width (see re_notes/x64_migration/fastfile_format_research.md SS5.16
+     * in the parent repo for the full root-cause trail; found via MaterialPixelShader::name in
+     * code_post_gfx.ff, an interned/shared shader-filename cross-reference).
+     *
+     * Deliberately scoped to STRING resolution only, not the general pointer-conversion path:
+     * unlike an arbitrary struct pointer, a resolved string can be validated (a real
+     * null-terminated, printable run of bytes within the target block's real remaining size)
+     * before being trusted, which keeps this safe to try as a fallback without risking silently
+     * accepting garbage for a case that's actually a different, unrelated bug (e.g. a genuine
+     * forward reference into a block that simply hasn't been written yet -- confirmed to also
+     * exhibit the same "top 32 bits zero" shape for hamburg.ff/common.ff's own, separate
+     * failures per SS5.17, where naively trusting the 32-bit decode would read real, in-bounds,
+     * but all-zero/unwritten memory as if it were valid).
+     *
+     * Only ever consulted when the standard ConvertOffsetToPointerNative resolution for this
+     * exact offset would throw -- never overrides an already-successful standard resolution.
+     * Returns nullptr (not a thrown exception) if the fallback itself doesn't produce a
+     * validated string, so the caller can fall through to the original, honestly-failing
+     * ConvertOffsetToPointerNative call to get the real exception.
+     */
+    virtual const char* TryConvertOffsetToStringPointerNative(const void* offset) = 0;
+
     virtual void* ConvertOffsetToAliasNative(const void* offset) = 0;
 
     template<typename T> T* ConvertOffsetToAliasNative(T* offset)
