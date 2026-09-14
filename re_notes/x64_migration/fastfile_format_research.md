@@ -849,6 +849,115 @@ Full raw evidence: Ghidra headless decompiles this round (not yet
 committed as files — reproducible via the address list above against
 `re_notes/ghidra_project/iw5sp_proj`, `-process "iw5sp.exe" -noanalysis`).
 
+## 5.14. UPDATE, 2026-09-14 (later still, second of two parallel forks, "run 2 forks to dig deeper") — the raw on-disk `name` bytes ARE genuinely wrong, not a downstream interpretation bug; struct/DSL definitions confirmed byte-identical to pristine upstream; hamburg.ff/common.ff never even reach this code path
+
+**Status: two real findings, root cause still not found.** Ran in parallel
+with §5.13's x86 native-decompile trace, deliberately using different
+techniques: (1) diffing this fork's own struct/DSL definitions against
+pristine upstream OpenAssetTools, (2) a live, targeted runtime diagnostic
+against the actual built `Unlinker.exe`, in place of a purely static
+hex-editor comparison (which turned out to be impractical — see below).
+
+**Technique 1 — upstream diff: negative result, rules out transcription
+error.** Shallow-cloned `Laupetin/OpenAssetTools` fresh and diffed every
+file this fork's `MaterialPixelShader`/`MaterialVertexShader`/
+`MaterialTechniqueSet` chain depends on against the current repo:
+`MaterialPixelShader.txt`, `MaterialVertexShader.txt`,
+`MaterialTechniqueSet.txt` are **byte-for-byte identical** to upstream
+(0-line diffs). `IW5_Assets.h` and `Material.txt` differ from upstream by
+**exactly the one already-known, intentional edit** (the `subMaterials`
+removal, commit `30cf5723`, with its own explanatory comment) — no other
+divergence anywhere. Combined with §5.13's independent x86-native
+confirmation of the same field order/layout, this closes off "a
+transcription or hand-edit error in this fork's own struct/DSL
+definitions" as a viable theory from two completely independent
+directions.
+
+**Technique 2 — live raw-byte diagnostic (the "hex-editor comparison,"
+done via direct runtime instrumentation instead of a static file
+comparison).** A pure static hex-dump-of-the-decompressed-file approach
+(as originally recommended in §5.10) turned out to be impractical to get
+right by hand: the zone format demultiplexes one linear compressed byte
+stream into several separately-tracked per-block buffers as it's read
+(confirmed directly — `XFILE_BLOCK_TEMP`'s own write-position bookkeeping,
+`m_block_offsets[]`, resets to its pre-push value every time a `PushBlock`/
+`PopBlock` pair around a single asset's read completes, by design — each
+top-level asset's raw struct is read into shared TEMP scratch space then
+immediately `memcpy`'d out to permanent zone memory via `LoadAsset_X`
+before the next asset reuses the same space), so a `LoadWithFill`
+call's own destination position doesn't correspond 1:1 to a fixed offset
+in the raw decompressed file the way a naive hex-dump comparison would
+assume. **Confirmed this is a real behavior, not a bug** — read
+`PopBlock()`'s own source directly (`ZoneInputStream.cpp`) rather than
+inferring it, and it explicitly resets TEMP's offset by design ("the data
+inside is temporary").
+
+Given that, used the same "temporary diagnostic, added, used, reverted"
+technique this project's own history already established (§5.10, and the
+`re_notes/known_issues.md` issue #96 postmortem) instead: added a
+temporary `DebugStreamPos()`/raw-byte-dump pass directly in
+`ZoneInputStream.cpp`'s `LoadWithFill` (captures the exact 32 raw bytes a
+block buffer holds immediately after `LoadDataFromBlock`, **before**
+`FillPtr` ever interprets them), rebuilt, and ran it against
+`code_post_gfx.ff` live. Real, reproducible result:
+
+```
+MaterialVertexShader raw bytes: FF FF FF FF FF FF FF FF  00 00 00 00 00 00 00 00  FF FF FF FF FF FF FF FF  73 00 00 00 00 00 00 00
+                                 └── name (FOLLOWING, valid) ──┘ └── prog.ps (null, valid) ──┘ └─ loadDef.program (FOLLOWING, valid) ─┘ └ programSize=0x73 ┘
+
+MaterialPixelShader raw bytes:  AB 2A 01 30 00 00 00 00  00 00 00 00 00 00 00 00  FF FF FF FF FF FF FF FF  37 00 00 00 00 00 00 00
+                                 └── name (GARBAGE) ──────┘ └── prog.ps (null, valid) ──┘ └─ loadDef.program (FOLLOWING, valid) ─┘ └ programSize=0x37 ┘
+```
+
+This is decisive on one specific point: **the corruption is in the raw
+on-wire bytes themselves, not in `FillPtr`'s interpretation of them.**
+`FillPtr` faithfully reports whatever bytes `LoadDataFromBlock` actually
+loaded — the dump above is captured *before* `FillPtr` ever runs. It also
+reconfirms §5.10's own finding from a completely different angle: only the
+first 8 bytes (`name`) are wrong; `prog.ps`, `prog.loadDef.program`, and
+`programSize` all decode to independently plausible, valid-looking values
+in the SAME 32-byte read — ruling out a simple stream-position-off-by-N
+desync, which would corrupt everything after the misalignment point too,
+not just the first field.
+
+**A real scope-narrowing correction, not previously documented**: the same
+diagnostic produced **zero hits at all** against `hamburg.ff` and
+`common.ff` — both fail with their own fatal error before ever reaching a
+`MaterialVertexShader`/`MaterialPixelShader` 32-byte read. Only
+`code_post_gfx.ff` actually exercises this exact code path before failing.
+This means the specific `MaterialPixelShader::name` corruption documented
+in §5.10/§5.13 is **confirmed specific to `code_post_gfx.ff`** — `hamburg.ff`
+and `common.ff` share the same outer symptom shape (`Zone referenced offset
+X of block XFILE_BLOCK_TEMP which is larger than its size Y`) but have not
+been shown to share this exact root cause; they may be failing at a
+different, still-uninvestigated point in their own asset streams. Prior
+text describing "the same `MaterialPass` → shader-asset chain, on all three
+zones tested" was accurate as far as the *symptom* goes but should not be
+read as proof of one shared root cause across all three.
+
+**No code change applied** — both techniques ruled things out rather than
+finding a fix; the temporary instrumentation was fully reverted
+(`ZoneInputStream.h`/`.cpp` back to their committed state via `git
+checkout`, the generated `materialpixelshader_iw5_load_db.cpp`/
+`materialvertexshader_iw5_load_db.cpp` diagnostic lines removed and
+rebuilt clean) and re-verified to reproduce the exact same known error
+signatures with no regression.
+
+**Concrete next step, sharper than before**: since the raw bytes are
+confirmed corrupted at the source (not misinterpreted), and struct
+layout/field order is now confirmed correct from two independent angles
+(§5.13 native x86, this round's upstream diff), the remaining live
+hypotheses are narrowed to real data-level causes — a genuine content
+difference in the x64-recompiled zone specific to this asset, or a
+boundary/alignment issue in the dynamic shader-bytecode blob's own
+variable-length read immediately preceding this one (per §5.13's own
+conclusion) — best tested next by extending this round's own live
+diagnostic technique (already built and proven working, just reverted) to
+print `MaterialVertexShader`'s own dynamic shader-bytecode read length and
+the exact byte immediately preceding `MaterialPixelShader`'s own read, to
+see whether the boundary between them is off by a small, deterministic
+amount.
+
 ## 6. Scoped plan for in-house tooling — an MVP, not a full OpenAssetTools replacement
 
 **This project's own actual need is narrow**: GSC/rawfile extraction to
