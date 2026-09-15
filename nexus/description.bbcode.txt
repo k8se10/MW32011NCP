@@ -1,5 +1,7 @@
 [center][size=6][b]MW32011NCP — Native Community Patches for MW3 (2011)[/b][/size][/center]
 
+[center][url=https://ko-fi.com/officialk8][img]https://ko-fi.com/img/githubbutton_sm.svg[/img][/url][/center]
+
 A native, from-scratch reverse-engineering platform for [b]Call of Duty: Modern Warfare 3 (2011, IW5 engine)[/b] — not a single mod, but a patch layer with four real, distinct pieces: real controller support (the flagship, most mature piece), a growing suite of visual/performance enhancements, native netcode security patches for the base game's own real vulnerabilities, and Multiplayer support (in active development). None of it works by faking keyboard/mouse input underneath a mapper — every piece hooks the game's own real internal engine functions directly.
 
 [hr]
@@ -43,6 +45,12 @@ No file is currently available — see the notice at the top of this page. Once 
 This project bundles and links [url=https://github.com/TsudaKageyu/minhook]MinHook[/url] (Copyright © 2009–2017 Tsuda Kageyu, BSD 2-Clause-style license) for all API hooking, and the Hacker Disassembler Engine (HDE) 32/64 C it bundles.
 
 Released under a custom, permissive license: free to use, modify, and fork. The one restriction — neither this project nor any fork/derivative may ever be sold or charged for; it must stay free for everyone. Because of that restriction this doesn't meet the OSI's formal "open source" definition, but the source is fully open. Does not grant any rights to Call of Duty: Modern Warfare 3 itself — you need your own legitimate copy of the game. The netcode security component has its own license file (same terms, one extra responsible-disclosure clause) — see the source repo's [font=Courier New]security/LICENSE[/font].
+
+[size=4][b]Support this project[/b][/size]
+
+Built and maintained entirely in spare time, at no cost to players — no ads, no paywalled features, nothing ever sold (the license itself forbids it). If it's been useful to you, a donation via [url=https://ko-fi.com/officialk8]Ko-fi[/url] is completely optional but genuinely appreciated.
+
+[center][url=https://ko-fi.com/officialk8][img]https://ko-fi.com/img/githubbutton_sm.svg[/img][/url][/center]
 
 [size=4][b]Links[/b][/size]
 
