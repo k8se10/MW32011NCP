@@ -8089,11 +8089,9 @@ deployed to the live install) -- **not yet re-verified with a second live
 MP session** confirming the fix actually resolves the failure this round
 found; that's the natural next step whenever another MP session happens.
 
-### FIXED (real, live-caught regression), 2026-09-15 -- an SP-only focus-reassertion workaround was running unconditionally under iw5mp.exe too, likely causing intermittent keyboard Sprint interruptions during real MP play
+### FIXED AND LIVE-CONFIRMED, 2026-09-15 -- an SP-only focus-reassertion workaround was running unconditionally under iw5mp.exe too, causing intermittent keyboard Sprint interruptions during real MP play
 
-**Status: Resolved, build-verified, root cause is a well-reasoned inference
-from live-reported symptoms, not yet independently re-confirmed live.**
-Direct report, following a real MP TDM session: "keyboard input regression
+**Status: Resolved, confirmed live.** Direct report, following a real MP TDM session: "keyboard input regression
 on mp sprint is intermittent it stops triggering randomly," clarified with
 "it gies ti sub 1s" (sprint duration drops to under 1 second) and confirmed
 reproduced again in a separate Domination match. Directly ruled out as a
@@ -8147,13 +8145,10 @@ MP (it's always run unconditionally since 2026-09-04, well before MP was
 ever playable at all with this mod loaded) — consistent with this being
 the real cause rather than coincidental timing.
 
-**Not yet independently re-confirmed live** — this is a well-reasoned,
-evidence-backed hypothesis (the only unconditional, exe-agnostic mechanism
-found that performs a real, repeating action plausible enough to explain
-this exact symptom shape), not a confirmed root cause via a controlled
-before/after MP test. The natural next step, whenever another MP session
-happens: confirm Sprint no longer intermittently drops with this fix
-deployed.
+**CONFIRMED LIVE, 2026-09-15 (same day)** — direct user confirmation ("fixed")
+after a follow-up MP session with this fix deployed: Sprint no longer
+intermittently drops. Root cause and fix both verified correct, not just a
+well-reasoned hypothesis anymore.
 
 Shipped: `proxy_d3d9/src/d3d9_hook.cpp` (adds `#include "game_exe_detect.h"`
 and one `if` gate around the existing periodic-nudge call). Build-verified
