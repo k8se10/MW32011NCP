@@ -23,7 +23,7 @@ native call exists, never a config tweak):
 |---|---|---|---|
 | **Controller support** | Real analog movement/look/every button for Campaign & Survival, matching console behavior | 🔴 Yes — the gate | Flagship, most mature — see [What works](#what-works-right-now) |
 | **Visual/performance enhancements** | Internal render scale, FSR 1.0 sharpening, motion blur, forced anisotropic filtering/shadow/lighting quality, stutter/threading fixes | 🔴 Yes — the gate | Render scale and motion blur live-confirmed; rest wired for x64, not yet live-tested |
-| **Netcode security patches** | Finds and fixes real, exploitable vulnerabilities in the base game's own netcode | ⚪ No — ships independently | 4 of 4 confirmed vulnerabilities resolved (3 fixed, 1 already safe) — see [Security](#security-netcode-vulnerability-patches) |
+| **Netcode security patches** | Finds and fixes real, exploitable vulnerabilities in the base game's own netcode | ⚪ No — ships independently | **All 4 tracked vulnerabilities resolved** (3 fixed, 1 already safe), live-confirmed active against real traffic — closing genuine RCE-class holes present since before this project existed, with no known official Activision fix — see [Security](#security-netcode-vulnerability-patches) |
 | **Multiplayer (`iw5mp.exe`)** | Same controller/security methodology, ported to the separate MP binary | ⚪ No — allowed to lag SP by 2-4 releases until beta | Active reverse-engineering, opt-in-only when it ships — see [Multiplayer](#multiplayer) |
 
 Plus a cross-cutting [plugin API](PLUGIN_API.md) that lets anyone extend
@@ -47,6 +47,21 @@ unlock — which is where this project started. Every control, every visual
 toggle, and every security fix here was found and wired up through static
 reverse engineering (Ghidra) plus live verification against the running
 game, not assumed.
+
+**Why the x64 rebuild matters beyond controller support.** The 2026-09-03
+recompile broke every hook this project had — a real crisis at the time —
+but it also forced a from-scratch reverse-engineering pass across the
+entire binary, not just the controller-input code paths this project
+started with. That's the direct reason all four netcode vulnerabilities
+above are now genuinely fixed: this project re-derived every one of them
+against the CURRENT binary rather than reusing years-old, possibly-stale
+research, and shipped real, working patches for every one still open — RCE-
+class holes that had sat unpatched through this game's entire prior
+history, with no known official Activision fix for most of them. The
+x64 rebuild isn't just "the same mod, ported" — it's the reason this
+project now closes real security gaps for the native install that existed
+long before this project did, on top of everything controller-support-
+related.
 
 ## ⚠ Security notice: unpatched MW3 (2011) netcode vulnerabilities
 
