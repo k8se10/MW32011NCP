@@ -521,8 +521,8 @@ item below.
     Fixed by calling the already-idempotent `MH_Initialize()`
     unconditionally, before both the SP/MP branch and the plugin loader,
     guaranteeing it always runs regardless of which binary loaded the DLL.
-    Build-verified, deployed; not yet re-confirmed with a second live MP
-    session.
+    **Confirmed live** — a follow-up MP session's own `proxy_d3d9.log`
+    showed the plugin's hooks installing successfully this time.
 19. **Intermittent keyboard Sprint interruptions under Multiplayer, live-
     reported and root-caused the same day.** Direct report following a real
     MP session: Sprint randomly stops triggering, duration dropping to
@@ -539,8 +539,9 @@ item below.
     is a plausible, well-reasoned trigger for an engine to treat a
     continuous hold as a fresh press, matching the exact symptom. Fixed by
     gating the call to `iw5sp.exe` only, leaving SP's own already-proven
-    behavior completely unchanged. Build-verified, deployed; not yet
-    independently re-confirmed with a follow-up live MP session.
+    behavior completely unchanged. **Confirmed live** — direct user
+    confirmation ("fixed") after a follow-up MP session with this fix
+    deployed.
 
 ### Documentation
 1. **`re_notes/known_issues_x64.md` established** as the dedicated x64 issue
