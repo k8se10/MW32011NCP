@@ -1,5 +1,7 @@
 # MW32011NCP — Native Community Patches for MW3 (2011)
 
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/officialk8)
+
 A native, from-scratch reverse-engineering platform for **Call of Duty:
 Modern Warfare 3 (2011, IW5 engine)** — not a single mod, but a patch layer
 with four real, distinct components, all built on the same technique (a
@@ -510,6 +512,16 @@ This project also embeds **[Isotherm Sans](https://github.com/k8se10/isotherm-sa
 modernized derivative of [Manrope](https://github.com/sharanda/manrope)
 (Copyright 2018 The Manrope Project Authors), SIL Open Font License 1.1 (see
 `assets/fonts/IsothermSans-OFL.txt`).
+
+## Support this project
+
+This is built and maintained entirely in spare time, at no cost to players —
+no ads, no paywalled features, nothing ever sold (the license itself forbids
+it, see below). If it's been useful to you, a donation is completely
+optional but genuinely appreciated — it goes straight back into the time
+this reverse-engineering work takes.
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/officialk8)
 
 ## License
 

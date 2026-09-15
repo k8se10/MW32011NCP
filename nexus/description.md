@@ -1,5 +1,7 @@
 # MW32011NCP — Native Community Patches for MW3 (2011)
 
+[![Support on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/officialk8)
+
 A native, from-scratch reverse-engineering platform for **Call of Duty:
 Modern Warfare 3 (2011, IW5 engine)** — not a single mod, but a patch layer
 with four real, distinct pieces: real controller support (the flagship,
@@ -111,6 +113,15 @@ the source is fully open. Does not grant any rights to Call of Duty: Modern
 Warfare 3 itself — you need your own legitimate copy of the game. The
 netcode security component has its own license file (same terms, one extra
 responsible-disclosure clause) — see the source repo's `security/LICENSE`.
+
+## Support this project
+
+Built and maintained entirely in spare time, at no cost to players — no ads,
+no paywalled features, nothing ever sold (the license itself forbids it). If
+it's been useful to you, a [Ko-fi donation](https://ko-fi.com/officialk8) is
+completely optional but genuinely appreciated.
+
+[![Support on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/officialk8)
 
 ## Links
 

@@ -490,6 +490,10 @@ item below.
    loaded the same way — see `security/PATCHNOTES.md` for that component's
    own detailed history, and `CLAUDE.md`'s 2026-09-12 Version Timeline
    entry for the full decision record.
+5. **Ko-fi donation link added.** `README.md` and the Nexus page copy
+   (`nexus/description.md`/`description.bbcode.txt`) now carry a Support
+   section with a Ko-fi button (https://ko-fi.com/officialk8) — purely
+   optional, no gated content or features tied to it.
 
 ### Groundwork
 1. **`signature_scan.h`/`.cpp`** — the runtime AOB byte-pattern scanner this
