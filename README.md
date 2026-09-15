@@ -23,7 +23,7 @@ native call exists, never a config tweak):
 |---|---|---|---|
 | **Controller support** | Real analog movement/look/every button for Campaign & Survival, matching console behavior | 🔴 Yes — the gate | Flagship, most mature — see [What works](#what-works-right-now) |
 | **Visual/performance enhancements** | Internal render scale, FSR 1.0 sharpening, motion blur, forced anisotropic filtering/shadow/lighting quality, stutter/threading fixes | 🔴 Yes — the gate | Render scale and motion blur live-confirmed; rest wired for x64, not yet live-tested |
-| **Netcode security patches** | Finds and fixes real, exploitable vulnerabilities in the base game's own netcode | ⚪ No — ships independently | 3 of 4 confirmed vulnerabilities fixed — see [Security](#security-netcode-vulnerability-patches) |
+| **Netcode security patches** | Finds and fixes real, exploitable vulnerabilities in the base game's own netcode | ⚪ No — ships independently | 4 of 4 confirmed vulnerabilities resolved (3 fixed, 1 already safe) — see [Security](#security-netcode-vulnerability-patches) |
 | **Multiplayer (`iw5mp.exe`)** | Same controller/security methodology, ported to the separate MP binary | ⚪ No — allowed to lag SP by 2-4 releases until beta | Active reverse-engineering, opt-in-only when it ships — see [Multiplayer](#multiplayer) |
 
 Plus a cross-cutting [plugin API](PLUGIN_API.md) that lets anyone extend
@@ -354,7 +354,7 @@ its **own** license, distinct from this repo's own root one.
 
 | Path | What it is | Why it's here | Status | License |
 |---|---|---|---|---|
-| [`security/`](security/) | This project's own netcode-security-patch component — originally the separate `MW32011NSP` repo, absorbed 2026-09-12 | Finds and fixes real, exploitable vulnerabilities in MW3's own base-game netcode — Steam's VAC doesn't cover packet-level attacks from a malicious server/peer, a real gap this closes. Ships built into the mod by default (see [Security](#security-netcode-vulnerability-patches) below) | 3 of 4 confirmed vulnerabilities fixed | This repo's own permissive license, plus one extra responsible-disclosure clause — see [`security/LICENSE`](security/LICENSE) |
+| [`security/`](security/) | This project's own netcode-security-patch component — originally the separate `MW32011NSP` repo, absorbed 2026-09-12 | Finds and fixes real, exploitable vulnerabilities in MW3's own base-game netcode — Steam's VAC doesn't cover packet-level attacks from a malicious server/peer, a real gap this closes. Ships built into the mod by default (see [Security](#security-netcode-vulnerability-patches) below) | 4 of 4 confirmed vulnerabilities resolved (3 fixed, 1 already safe) | This repo's own permissive license, plus one extra responsible-disclosure clause — see [`security/LICENSE`](security/LICENSE) |
 | [`tools/iw5oat/`](tools/iw5oat/) | An IW5-only fork of [OpenAssetTools](https://github.com/Laupetin/OpenAssetTools), a third-party CoD modding-tool suite, plus this project's own **[`x64_offset_fixes/`](tools/iw5oat/x64_offset_fixes/)** post-processing scripts | The 2026-09-03 x64 recompile broke upstream's own zone/fastfile loading for the current retail build — a real, confirmed bug ([full root-cause writeup](re_notes/x64_migration/fastfile_format_research.md)), with no existing x64 support anywhere in that codebase to build on. This fork exists to build the x64 support this project actually needs for GSC extraction (the standing GSC-first RE methodology), faster than waiting on an upstream/community fix; `x64_offset_fixes/` is the repeatable tooling that patches the generated per-asset loader code's own x86-only offsets after every `ZoneCodeGenerator` run. **Developer/research tooling only — never shipped to players**, not part of the mod's own `d3d9.dll` | **Usable now** for GSC/rawfile extraction on script-only zones — a full sweep of all 39 real `sp_*.ff`/`so_*.ff` retail zones found 2 (`sp_intro.ff`/`sp_prague.ff`) extract cleanly (0 warnings, 0 errors, valid output); the other 37 all hit the same open, paused Material-chain bug | **GNU GPLv3** — NOT this repo's own license; see [`tools/iw5oat/LICENSE`](tools/iw5oat/LICENSE) and this repo's own [`LICENSE`](LICENSE)'s "Third-party components" section for exactly how the two coexist |
 
 Each has its own README with the full story — [`security/README.md`](security/README.md)
@@ -443,9 +443,9 @@ proxy-DLL injection technique as the rest of this repo, finding and fixing
 real, exploitable vulnerabilities in MW3's own netcode. It exists because
 Steam's VAC doesn't cover packet-level attacks from a malicious server or
 peer — a real gap for anyone playing Multiplayer or Spec-Ops/Survival co-op,
-and the reason this component exists at all. **3 of 4 confirmed
-vulnerabilities are fixed** (build-verified, not yet live-tested); the
-fourth has a real, documented technical blocker, not a guess. See
+and the reason this component exists at all. **All 4 confirmed
+vulnerabilities are now resolved** (3 fixed, 1 confirmed already safe —
+build-verified, not yet live-tested). See
 [`security/README.md`](security/README.md) for the full findings table and
 current fix status.
 
