@@ -8088,3 +8088,74 @@ pre-existing unrelated warnings, `dumpbin` confirms genuine x64 output,
 deployed to the live install) -- **not yet re-verified with a second live
 MP session** confirming the fix actually resolves the failure this round
 found; that's the natural next step whenever another MP session happens.
+
+### FIXED (real, live-caught regression), 2026-09-15 -- an SP-only focus-reassertion workaround was running unconditionally under iw5mp.exe too, likely causing intermittent keyboard Sprint interruptions during real MP play
+
+**Status: Resolved, build-verified, root cause is a well-reasoned inference
+from live-reported symptoms, not yet independently re-confirmed live.**
+Direct report, following a real MP TDM session: "keyboard input regression
+on mp sprint is intermittent it stops triggering randomly," clarified with
+"it gies ti sub 1s" (sprint duration drops to under 1 second) and confirmed
+reproduced again in a separate Domination match. Directly ruled out as a
+vanilla engine bug by the user's own explicit confirmation: "it only
+happens with the mod running."
+
+**Investigation**: every gameplay hook this project has ever verified is
+confirmed NOT installed under `iw5mp.exe` (per the same-day hook-gating
+fix, and directly confirmed in the session's own `proxy_d3d9.log`: "iw5mp.exe
+detected — gameplay hooks NOT installed"), so the cause had to be in this
+project's exe-agnostic code — the parts that run regardless of SP/MP.
+Traced every raw signature-resolved pointer consumed by the always-on
+`InjectMenuInputTick()` tick (`g_pauseToggle`, `g_menuActiveGateFlag`, and
+friends) and confirmed each is properly null-checked and only ever assigned
+inside the now-gated `InstallAnalogInputHooksX64()` — all safe no-ops under
+MP, not the cause. The real candidate: `SendPeriodicActivationNudgeX64`
+(`d3d9_hook.cpp`), which fires every 2 seconds for the ENTIRE session,
+completely unconditionally (no SP/MP gate at all, predating this project's
+SP/MP detection work entirely) — injecting a real `WM_ACTIVATE`/
+`WM_SETFOCUS` pair directly into the engine's own `WndProc` plus real
+OS-level `SetForegroundWindow`/`SetActiveWindow`/`SetFocus` calls. This
+mechanism was built and only ever confirmed necessary for one thing:
+`iw5sp.exe`'s own "needs an initial click at launch" gate (issues #1/#27/#42
+lineage) — MP's own internal state was never investigated and this
+function's own effect on it was never verified, a real, direct violation of
+this project's own standing SS10.8 policy ("SP and MP are separate efforts,
+don't assume a mechanism carries over unverified") that simply hadn't been
+applied to this specific call site yet.
+
+**Why this plausibly explains the exact symptom**: many engines (this one
+included, going by long-established genre convention) clear their own
+held-key input tracking on a focus-regain transition, specifically to avoid
+a real "stuck key" bug if a KEYUP message was ever missed while the window
+was unfocused — completely standard, legitimate behavior. Firing a real
+focus-reassertion every 2 seconds WHILE a key (Sprint) is actively, still
+physically held down could plausibly cause the engine to treat it as a
+fresh press rather than a continuous hold, restarting Sprint's own internal
+timer/state — exactly matching "intermittent, random, resets to under a
+second," with a period bounded by the 2-second nudge interval (explaining
+why it's not a hard, fixed-interval failure — the actual interruption
+timing depends on when during that 2-second window the player started
+holding Sprint).
+
+**Fix**: gated the call site to `GetDetectedGameExecutable() ==
+GameExecutable::SP` only (`game_exe_detect.h`, the same detection this
+session's own earlier MP hook-gating fix already established) — SP keeps
+its exact existing, already-proven behavior completely unchanged; MP (and
+any unrecognized executable) now skips this call entirely. No live MP
+report of this symptom existed before this mechanism started running under
+MP (it's always run unconditionally since 2026-09-04, well before MP was
+ever playable at all with this mod loaded) — consistent with this being
+the real cause rather than coincidental timing.
+
+**Not yet independently re-confirmed live** — this is a well-reasoned,
+evidence-backed hypothesis (the only unconditional, exe-agnostic mechanism
+found that performs a real, repeating action plausible enough to explain
+this exact symptom shape), not a confirmed root cause via a controlled
+before/after MP test. The natural next step, whenever another MP session
+happens: confirm Sprint no longer intermittently drops with this fix
+deployed.
+
+Shipped: `proxy_d3d9/src/d3d9_hook.cpp` (adds `#include "game_exe_detect.h"`
+and one `if` gate around the existing periodic-nudge call). Build-verified
+(x64, 0 new errors, `dumpbin` confirms genuine x64 output, deployed to the
+live install).

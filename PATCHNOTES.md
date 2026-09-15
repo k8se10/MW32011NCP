@@ -523,6 +523,24 @@ item below.
     guaranteeing it always runs regardless of which binary loaded the DLL.
     Build-verified, deployed; not yet re-confirmed with a second live MP
     session.
+19. **Intermittent keyboard Sprint interruptions under Multiplayer, live-
+    reported and root-caused the same day.** Direct report following a real
+    MP session: Sprint randomly stops triggering, duration dropping to
+    under a second, confirmed reproducing across two separate matches (TDM
+    and Domination) and confirmed NOT a vanilla issue (only happens with
+    this mod running). Traced to `SendPeriodicActivationNudgeX64`
+    (`d3d9_hook.cpp`) — a real, repeating (every 2 seconds, for the whole
+    session) focus-reassertion workaround (`WM_ACTIVATE`/`WM_SETFOCUS` plus
+    real `SetForegroundWindow`/`SetActiveWindow`/`SetFocus`) that was built
+    and only ever confirmed necessary for `iw5sp.exe`'s own "needs an
+    initial click" issue, but was running completely unconditionally for
+    both binaries since 2026-09-04 — MP's own tolerance for it was never
+    investigated. A focus-reassertion firing while a key is actively held
+    is a plausible, well-reasoned trigger for an engine to treat a
+    continuous hold as a fresh press, matching the exact symptom. Fixed by
+    gating the call to `iw5sp.exe` only, leaving SP's own already-proven
+    behavior completely unchanged. Build-verified, deployed; not yet
+    independently re-confirmed with a follow-up live MP session.
 
 ### Documentation
 1. **`re_notes/known_issues_x64.md` established** as the dedicated x64 issue

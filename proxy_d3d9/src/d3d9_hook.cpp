@@ -50,6 +50,7 @@
 #include <cstdlib>
 #include "../third_party/minhook/include/MinHook.h"
 #include "overlay_hud.h"
+#include "game_exe_detect.h"
 
 extern void LogFromController(const char* msg);
 extern "C" void __cdecl InjectMenuInputTick(); // defined in analog_input_hooks.cpp
@@ -432,7 +433,32 @@ LRESULT CALLBACK HookWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     // SendSyntheticActivationClick (which stays one-shot-only, unchanged).
     // Rate-limited to once every 2 seconds (matching x86's own original
     // "3-second window" scale for this exact bug class).
-    {
+    //
+    // 2026-09-15, live-caught regression -- gated to iw5sp.exe ONLY. This
+    // function was designed and confirmed needed for exactly one thing:
+    // SP's own "needs an initial click at launch" gate (CLAUDE.md's own
+    // SS10.8 policy already warns a mechanism confirmed for one binary is
+    // never assumed to carry over to the other unverified -- this call site
+    // was the one place that policy hadn't actually been applied yet,
+    // because it predates this project's later SP/MP detection work
+    // entirely). It was running completely unconditionally for BOTH
+    // binaries -- every 2 seconds, for the whole session, it injects a real
+    // WM_ACTIVATE/WM_SETFOCUS pair straight into the engine's own WndProc
+    // plus real OS-level SetForegroundWindow/SetActiveWindow/SetFocus calls.
+    // Direct live report under iw5mp.exe (TDM, then confirmed again in
+    // Domination): "keyboard input regression on mp sprint is intermittent
+    // it stops triggering randomly... it goes to sub 1s" -- exactly the
+    // symptom shape a focus-reassertion firing while a key is actively held
+    // would produce, if the engine's own input layer treats a focus
+    // transition as a signal to clear held-key state (extremely common,
+    // legitimate engine behavior, meant to avoid stuck keys after a real
+    // alt-tab) -- MP was never confirmed to need or safely tolerate this
+    // nudge at all, since the "needs a click" bug this function exists to
+    // fix was only ever reported against SP. No live report of this
+    // symptom under SP itself, so SP keeps the existing, already-proven
+    // behavior unchanged; only MP (and any unrecognized executable, as a
+    // fail-safe) now skips this call entirely.
+    if (GetDetectedGameExecutable() == GameExecutable::SP) {
         static DWORD s_lastPeriodicNudgeMs = 0;
         DWORD nowMs = GetTickCount();
         if (g_gameHwnd && (nowMs - s_lastPeriodicNudgeMs >= 2000)) {
