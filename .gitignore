@@ -7,6 +7,17 @@
 CLAUDE.md
 AGENTS.md
 
+# Built release archives (d3d9.dll + friends, zipped per version) -- never meant to
+# be committed. Confirmed 2026-09-15 they were being tracked in git and remained
+# fully downloadable via the plain repo file browser at releases/ even after every
+# -x86 release was archived on GitHub's own Releases tab and Nexus -- that browser
+# view ignores Draft/Archived state entirely, so this was a real, live leak of
+# builds this project has explicitly discontinued support for and refuses to serve.
+# Full history purged the same day (git-filter-repo, path-scoped to releases/ only,
+# every other file's content and every other commit's hash left untouched except
+# for the necessary re-hashing that follows any file removed from history).
+releases/
+
 # Build outputs (proxy DLL is deployed straight into the game root, not committed)
 proxy_d3d9/obj/
 proxy_d3d9/Debug/
