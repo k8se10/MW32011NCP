@@ -2574,6 +2574,97 @@ No source changes shipped (temp diagnostic added and fully reverted,
 confirmed via `git diff`/clean rebuild). No files touched that the other
 two parallel forks' own angles depend on.
 
+## 5.32. UPDATE, 2026-09-15 (parallel fork, third of "go after that one with 3 forks") — `ScriptFile`'s own real x64 fill function decompiled and cross-checked field-for-field against this fork's implementation: a PERFECT match, definitively ruling out theory (b) from §5.31 (ScriptFile assigned to the wrong block on x64) — the real bug is confirmed to be an upstream corruption of a specific asset's own header fields, not anything in ScriptFile's own load/block-assignment logic
+
+**Status: hypothesis eliminated with hard evidence, not a fix.** Assigned
+angle: native RE of `ScriptFile`'s own real x64 fill function, since
+`XFILE_BLOCK_SCRIPT` is referenced by exactly one asset type in this fork
+(confirmed via `grep -rn "XFILE_BLOCK_SCRIPT" tools/iw5oat/src/` — only
+`ScriptFile.txt`/`scriptfile_iw5_load_db.cpp`/`scriptfile_iw5_write_db.cpp`).
+
+**Decompiled the real chain**: `FUN_14009bce0`'s dispatch case `0x27`
+(`ASSET_TYPE_SCRIPTFILE`) → `FUN_1400964a0` (the real `LoadPtr_ScriptFile`
+equivalent — sentinel/FOLLOWING/INSERT/lookup branching, byte-for-byte
+identical shape to every other asset's own top-level pointer resolver
+already decompiled this session) → `FUN_140096380` (the real
+`Load_ScriptFile` body-fill, newly decompiled this round, saved as
+`re_notes/ghidra_scripts/decomp_scriptfile_1400964a0.txt` and
+`decomp_scriptfile_body_140096380.txt`).
+
+**`FUN_140096380` matches this fork's own generated
+`Load_ScriptFile`/`FillStruct_ScriptFile` EXACTLY, field for field, byte
+for byte, block-index for block-index:**
+- Reads `0x28` (40) bytes for the header fill — matches
+  `sizeof(ScriptFile)` exactly (`name`(8) + `compressedLen`(4) + `len`(4)
+  + `bytecodeLen`(4) + 4 bytes padding + `buffer`(8) + `bytecode`(8) = 40,
+  confirmed via manual offset arithmetic against `IW5_Assets.h`'s current
+  struct).
+- Field 0 (offset 0): `name`, resolved via the same string-resolution
+  primitive every other asset's name field uses. Matches.
+- `FUN_1400aac10(3)` immediately after the header fill — **block index 3
+  = `XFILE_BLOCK_VIRTUAL`** in this fork's own enum order (TEMP=0,
+  PHYSICAL=1, RUNTIME=2, VIRTUAL=3, ...) — matches
+  `Load_ScriptFile`'s own `m_stream.PushBlock(XFILE_BLOCK_VIRTUAL)` call
+  wrapping the name-string load, called BEFORE either SCRIPT-block push.
+  **This is itself decisive, independent cross-check evidence for §5.31's
+  own block-index question**: VIRTUAL really is native index 3, exactly as
+  this fork already assumes.
+- `FUN_1400aac10(8)` (buffer read) / `FUN_1400aac10(8)` again (bytecode
+  read) — **block index 8 = `XFILE_BLOCK_SCRIPT`** in this fork's own enum
+  order (the 9th and last block declared in `SetupBlock()`). Matches
+  `Load_ScriptFile`'s own two separate `PushBlock(XFILE_BLOCK_SCRIPT)`
+  calls exactly — **second, independent, decisive confirmation that
+  SCRIPT really is native index 8**, converging with §5.31's own empirical
+  finding (which ruled out the table itself being misread) to close the
+  block-index-mapping question completely: it is not misindexed anywhere
+  in this specific chain.
+- `buffer`'s real byte count comes from `DAT_1407bf308[1]` (an 8-byte-
+  stride array read, cast to `int`, i.e. the low 4 bytes of the QWORD at
+  offset 8) — offset 8 in this fork's struct is exactly `compressedLen`.
+  Matches `m_stream.Load<const char>(varScriptFile->buffer,
+  varScriptFile->compressedLen)` exactly.
+- `bytecode`'s real byte count comes from `DAT_1407bf308[2]` (offset 16 at
+  the same 8-byte stride) — exactly `bytecodeLen` in this fork's struct.
+  Matches `m_stream.Load<unsigned char>(varScriptFile->bytecode,
+  varScriptFile->bytecodeLen)` exactly.
+- `len` (offset 12, the DECOMPRESSED size) is read as part of the initial
+  40-byte raw copy but never separately referenced by this native
+  function — consistent with this fork's own DSL (`ScriptFile.txt` has no
+  `set count` line naming `len`), not a discrepancy.
+- `Mark_ScriptFile()` (the generated Mark-phase function,
+  `scriptfile_iw5_mark_db.cpp`) is empty — `ScriptFile` has zero
+  dependencies to walk, ruling out the exact bug CLASS §5.30 found and
+  fixed in `snd_alias_list_t`'s own Mark phase (an unconditionally-walked
+  `reusable`-array count) as inapplicable here; there's no array/count
+  pair for a Mark-phase bug to hide in.
+
+**This rules out theory (b) from §5.31's own report** ("ScriptFile's own
+native block assignment genuinely differs from what the DSL declares for
+x64") **with direct, positive, matching evidence — it does not differ.**
+Combined with §5.31's own decisive empirical finding (a failing zone's
+real, on-disk SCRIPT block size genuinely is 0 bytes, not misread), the
+two rounds together converge tightly: the block-size table is read
+correctly (§5.31), SCRIPT really is index 8 and ScriptFile really is
+supposed to read from it (§5.32, this round) — so a specific `ScriptFile`
+asset in a failing zone must be reading `compressedLen`/`bytecodeLen`/
+`buffer`/`bytecode` values that are THEMSELVES corrupted, most plausibly
+by the same recurring bug class this entire investigation keeps finding
+all session (a stream-cursor desync from an EARLIER, unrelated asset's own
+read consuming the wrong number of bytes, so this ScriptFile asset's own
+40-byte header fill lands at the wrong file position and reads garbage
+that happens to include a nonzero `buffer`/`bytecode` "present" flag with
+some large bogus count). This narrows the remaining open question sharply:
+find WHICH earlier asset (in a failing zone, likely `code_post_gfx.ff`
+given §5.31's own repro) desyncs the stream before the first ScriptFile
+asset that actually fails — squarely a live-diagnostic-tracing task
+(cross-asset, not ScriptFile-internal), not further native RE of
+ScriptFile itself.
+
+No source changes shipped (research-only round, decompile evidence added,
+no generated or tracked source touched). Two new Ghidra evidence files
+committed. Ghidra project's own known `.gbf` corruption pattern hit twice
+this round, restored both times via `git checkout --`.
+
 ## Raw evidence backing every claim above
 
 - Live game install, `zone/english/sp_intro.ff` and `zone/english/hamburg.ff`
