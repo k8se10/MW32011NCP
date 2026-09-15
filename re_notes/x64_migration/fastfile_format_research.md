@@ -2028,6 +2028,175 @@ all six known zones. New raw decompile evidence:
 `re_notes/ghidra_scripts/decomp_140094a10.txt` (the real `materialHandles`
 array resolver, the decisive new evidence this round adds).
 
+## 5.27. UPDATE, 2026-09-14 (later still, continuing the §5.26 tail-gap lead) — a first attempt at the 8-byte `sizeof(XModel)` gap (removing `memUsage`) matched the arithmetic exactly but caused real segfaults in 16 of 41 zones live-tested — reverted, not shipped
+
+**Status: reverted, not shipped.** A same-day follow-up round picked up
+§5.26's own "genuinely new, smaller discrepancy" lead and reasoned that
+`int memUsage;` was a phantom field, same bug class as the already-fixed
+`Material::subMaterials` (commit 30cf5723) — "memory usage" being exactly
+the kind of value a real engine computes at load time for its own
+accounting, not something a zone file would ever serialize. Removing it
+made both `offsetof(XModel, physPreset)` and `sizeof(XModel)` match the
+native numbers (0x188/392 and 0x1a0/416) exactly, and it genuinely fixed
+2 zones live-tested. But a full 41-zone sweep found it caused real,
+non-catchable segfaults (not clean structured errors) in 16 zones — every
+`so_survival_mp_*.ff` variant plus two others — even though the numeric
+match looked decisive. Judged unsafe to ship on that evidence alone and
+reverted in full (`git checkout --` on the touched tracked source,
+confirmed via a clean `git diff` and a full rebuild) before being
+documented — the round that made this fix was interrupted by a session
+rate limit before it could write up its own finding, so this entry
+records it after the fact for continuity. The real lesson, carried
+forward into §5.28: two independent numeric checks matching is not proof
+a phantom-field theory is correct — `memUsage` genuinely is real, and the
+crash pattern this attempt produced turned out to be a property of
+*any* 8-byte reduction in `sizeof(XModel)`, not something specific to
+this one field (see §5.28).
+
+## 5.28. UPDATE, 2026-09-15 ("keep going, dig on remaining threads", parallel fork) — the real source of the 8-byte `sizeof(XModel)` gap correctly identified and confirmed two independent ways (`sp_dubai.ff`/`sp_ny_harbor.ff` now load cleanly) — but shipping it exposes a separate, deeper crash bug reachable in 18 zones, so it was reverted rather than shipped; the crash is a property of shrinking `sizeof(XModel)` at all, not of which field causes it
+
+**Status: correct root cause found and verified, but NOT shipped — a
+separate, unresolved blocker downstream makes it unsafe.** Picks up
+directly from §5.27's own real lesson (a numeric match alone doesn't
+prove a phantom-field theory) by re-deriving the 8-byte gap from first
+principles instead of pattern-matching to the `subMaterials`/`memUsage`
+precedent again.
+
+**Re-walked `FUN_14009c1b0`'s own field-by-field decompile
+(`re_notes/ghidra_scripts/decomp_xmodel_fill_14009c1b0.txt`) by hand
+against the CURRENT `XModel` struct (with `memUsage` restored), tracking
+real byte offsets rather than guessing.** Every field from `name` through
+`boneInfo` (native offset 0x158) matches this fork's own struct layout
+EXACTLY, confirmed via the decompile's own count/size arithmetic at each
+step (`boneNames` sized by `numBones`, `quats`/`trans`/`baseMat` sized by
+`(numBones-numRootBones)` with the right per-element byte multiplier,
+`materialHandles` sized by `numsurfs`, `lodInfo[4]` read as one 0xe0-byte
+block matching `4 * sizeof(XModelLodInfo)` exactly, `collSurfs`/
+`numCollSurfs` at native offsets 0x148/0x150 matching a `0x30`-byte
+element size against `sizeof(XModelCollSurf_s)`, `boneInfo` at 0x158
+sized by `numBones * 0x1c` matching `sizeof(XBoneInfo)`). This
+independently re-confirms §5.26's own correction (`materialHandles` is
+real) via a completely different method (manual offset arithmetic, not
+`offsetof`/fresh decompile of the resolver itself).
+
+**Past `boneInfo`, the decompile shows only TWO more pointer-fixup calls**
+(`DAT_1407bea40 + 0x31` and `+ 0x32`, native offsets 0x188 and 0x190),
+not three — but the current struct has THREE remaining pointer fields
+after `boneInfo` (`invHighMipRadius`, `physPreset`, `physCollmap`).
+Freshly decompiled the two handler functions (`FUN_140096140`/
+`FUN_140095f90`) and their own sub-callees
+(`FUN_140096050`/`FUN_140095e40`,
+`re_notes/ghidra_scripts/decomp_xmodel_tail_fields.txt` and
+`decomp_xmodel_tail_subcallees.txt`): both are single-asset-pointer
+resolvers (type 3, the same generic asset-lookup already seen for
+`materialHandles`/`collSurfs`/`boneInfo`), and their own shapes identify
+them precisely — the first reads an 0x50-byte header with a `name` field
+and a second string field a few bytes in, matching `PhysPreset`'s own
+`name`+`sndAliasPrefix` layout; the second reads an 0x58-byte header with
+a `name`, a count, and a pointer to an array of 0x48-byte elements,
+matching `PhysCollmap`'s own `name`+count+geometry-array layout. **This
+positively identifies native offset 0x188 as `physPreset` and 0x190 as
+`physCollmap`** — not `invHighMipRadius`.
+
+**This rules out both of the two obvious theories for `invHighMipRadius`
+at once.** If it's a genuine 8-byte POINTER (its current declared type),
+`physPreset` would land at native offset 0x190, one full field too late.
+If it's fully ABSENT (the `subMaterials`/`memUsage` precedent), `physPreset`
+would land at 0x180, eight bytes too early. The only layout that makes
+every byte from `boneInfo` (0x158) through the end of `physCollmap`
+(0x198) line up exactly against the decompile, with the real total header
+size landing at exactly 0x1a0 (416 bytes, matching `FUN_1400aad70`'s own
+initial read at the top of `FUN_14009c1b0`) and zero unexplained padding
+anywhere, is an INLINE, non-pointer 8-byte field sitting between `bounds`
+and `memUsage` — i.e. `invHighMipRadius` is a real field, just not a
+pointer to a heap array. Given its current 8-byte size budget and its own
+name, the natural fit is `unsigned short invHighMipRadius[4]` — one entry
+per LOD level, mirroring `lodInfo[4]` already in the struct. This is also
+fully consistent with the DSL's own `set condition invHighMipRadius
+never;` (`XModel.txt`) — that marker was written under the reasonable but
+incorrect assumption that the field is a pointer needing fill-code
+suppression; an inline scalar array needs no fill code or DSL directive
+at all (same as `noScalePartBits[6]`, which has none), so the marker
+becomes redundant rather than wrong. Confirmed via a whole-tree grep that
+`invHighMipRadius` is referenced nowhere in the generated
+`xmodel_iw5_load_db.cpp` — the type change requires no ZoneCodeGenerator
+regeneration, a pure struct-layout fix.
+
+**Implemented, built clean, and tested — the fix is real and positive on
+its own zones.** `sp_dubai.ff` (previously `INVALID_BLOCK`) now loads
+completely cleanly (`Finished with 0 warnings, 0 errors`), and
+`sp_ny_harbor.ff` (previously `NOT_RECORDED`) does too — a genuine,
+unexpected bonus fix, consistent with XModel's own per-instance
+stream-cursor misalignment being a plausible contributor to some of the
+broader "not recorded" failure class elsewhere in the format (a lead worth
+connecting to whichever round is chasing that bug class — see
+`known_issues_x64.md` issue #1's own "not recorded" thread). `hamburg.ff`/
+`common.ff` shift to a different, later, still-clean structured error
+(`larger than its size`, `XFILE_BLOCK_TEMP`) rather than their prior
+`not recorded`/`invalid block` errors — expected: fixing an earlier
+structural bug lets loading progress further before hitting the next real
+issue, not a regression.
+
+**But a full 41-zone sweep found the exact same 18-zone crash pattern
+§5.27's reverted `memUsage`-removal attempt produced** — all 16
+`so_survival_mp_*.ff` variants plus `so_nyse_ny_manhattan.ff` and
+`so_zodiac2_ny_harbor.ff`, real segfaults (no clean `Failed`/`Finished`
+line at all), not caught exceptions. **This is the single most important
+finding of this round**: two completely different fields
+(`memUsage`, a scalar; `invHighMipRadius`, now correctly re-typed) produce
+the IDENTICAL crash-zone set when each shrinks `sizeof(XModel)` by the
+same 8 bytes. That can't be a coincidence of which field is wrong — it
+means the crash is a property of the struct's total size changing at all,
+not of which specific field causes the change. Traced one crash
+(`so_survival_mp_alpha.ff`) with a temporary asset-index/type diagnostic
+in `ContentLoaderIW5.cpp`'s `LoadXAssetArray` loop (reverted before
+finishing, no tracked source changed): the crash happens while loading
+asset index 785 of 953, **type 11 (`ASSET_TYPE_SOUND`, `snd_alias_list_t`)
+— not an `XModel` at all**, deep into a zone that (pre-fix) never got
+anywhere near that far before erroring out on the earlier `not recorded`
+bug. Checked for the most likely mechanical explanation (a hardcoded byte
+count somewhere downstream still assuming the old, larger `sizeof(XModel)`,
+which would now under-allocate and overrun by 8 bytes) — both real
+consumers (`xmodel_iw5_load_db.cpp`'s `LoadWithFill(sizeof(XModel))` and
+its post-load `std::memcpy(reallocatedAsset, *pAsset, sizeof(XModel))`)
+already compute the size dynamically via `sizeof(XModel)`, not a literal,
+so that specific theory is ruled out. Two real possibilities remain,
+neither chased further this round: (1) some `XModel` instance specifically
+present in these 18 zones' own asset lists has a genuinely different real
+layout than the one confirmed here (a conditional/versioned struct shape
+this round hasn't found), so the fix is right for the zones tested but
+wrong for these; or (2) a real, separate, pre-existing bug already lives
+in `snd_alias_list_t` loading that was simply never reachable before,
+because every zone that reaches asset 785 today first died much earlier
+on the `not recorded` bug this exact fix incidentally works around for
+some zones (`sp_ny_harbor.ff`) but not others (these 18).
+
+**Reverted rather than shipped, per this project's own strict "even one
+new real crash disqualifies it" bar.** `git checkout --` restored
+`IW5_Assets.h`'s `invHighMipRadius` field and `ContentLoaderIW5.cpp`'s
+temporary diagnostic to their last committed state; confirmed via a clean
+`git diff` and a full rebuild that `sp_dubai.ff` is back to its original
+`INVALID_BLOCK` failure and `so_survival_mp_alpha.ff` no longer crashes
+(clean, non-zero exit, no segfault). No tracked source changed by this
+round. New raw decompile evidence kept and committed:
+`re_notes/ghidra_scripts/decomp_xmodel_tail_fields.txt` and
+`decomp_xmodel_tail_subcallees.txt` (the two tail-field resolvers and
+their sub-callees, the decisive evidence identifying `physPreset`/
+`physCollmap`'s real native offsets).
+
+**Recommended next step for whoever picks this up**: don't re-attempt a
+third field-level guess at the same 8-byte gap — the gap itself is now
+correctly identified and well-evidenced (`invHighMipRadius[4]`).
+Instead, root-cause the `snd_alias_list_t` crash at asset index 785 of
+`so_survival_mp_alpha.ff` directly (a live diagnostic trace inside the
+Sound loader's own fixup functions, or a WinDbg/cdb live-attach session
+rather than a post-mortem dump, since `Unlinker.exe` doesn't currently
+register a WER local dump path) before re-applying this struct fix. If
+that crash turns out to be a genuinely separate, pre-existing bug newly
+reachable rather than something this fix itself causes, this exact
+`invHighMipRadius[4]` change is very likely safe to ship once the Sound
+bug is fixed independently.
+
 ## 6. Scoped plan for in-house tooling — an MVP, not a full OpenAssetTools replacement
 
 **This project's own actual need is narrow**: GSC/rawfile extraction to
