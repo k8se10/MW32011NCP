@@ -1850,7 +1850,11 @@ void AppendGameplayHintEditExport(FILE* f)
         const char* slotName = n.slotId == GameplayHintSlotId::Interact ? "Interact"
                               : n.slotId == GameplayHintSlotId::ReadyUp ? "ReadyUp"
                               : n.slotId == GameplayHintSlotId::Reload ? "Reload"
-                              : n.slotId == GameplayHintSlotId::Mantle ? "Mantle" : "Qte";
+                              : n.slotId == GameplayHintSlotId::Mantle ? "Mantle"
+                              : n.slotId == GameplayHintSlotId::StanceStand ? "StanceStand"
+                              : n.slotId == GameplayHintSlotId::StanceCrouch ? "StanceCrouch"
+                              : n.slotId == GameplayHintSlotId::StanceProne ? "StanceProne"
+                              : n.slotId == GameplayHintSlotId::StanceBlocked ? "StanceBlocked" : "Qte";
         const char* roleName = n.fontRole == FontRole::Condensed ? "Condensed" : "Default";
         fprintf(f, "// %s + %s: textNudge=(%.1ff, %.1ff) iconNudge=(%.1ff, %.1ff)\n",
             slotName, roleName, n.textNudgeX, n.textNudgeY, n.iconNudgeX, n.iconNudgeY);
@@ -2059,7 +2063,11 @@ void DrawOneGameplayHintSlot(void* device, GameplayHintSlot& slot, GameplayHintS
         const char* slotLabel = slotId == GameplayHintSlotId::Interact ? "TEXT (Interact)"
                                : slotId == GameplayHintSlotId::ReadyUp ? "TEXT (ReadyUp)"
                                : slotId == GameplayHintSlotId::Reload ? "TEXT (Reload)"
-                               : slotId == GameplayHintSlotId::Mantle ? "TEXT (Mantle)" : "TEXT (Qte)";
+                               : slotId == GameplayHintSlotId::Mantle ? "TEXT (Mantle)"
+                               : slotId == GameplayHintSlotId::StanceStand ? "TEXT (StanceStand)"
+                               : slotId == GameplayHintSlotId::StanceCrouch ? "TEXT (StanceCrouch)"
+                               : slotId == GameplayHintSlotId::StanceProne ? "TEXT (StanceProne)"
+                               : slotId == GameplayHintSlotId::StanceBlocked ? "TEXT (StanceBlocked)" : "TEXT (Qte)";
         RequestGlyphEditHandleBox(textHandleX, textHandleY, kHandleHitRadiusDesign,
             draggingText ? 0x9000FF00u : 0x9000AAFFu, slotLabel);
     }
@@ -2170,7 +2178,11 @@ void DrawOneGameplayHintSlot(void* device, GameplayHintSlot& slot, GameplayHintS
             const char* slotLabel = slotId == GameplayHintSlotId::Interact ? "ICON (Interact)"
                                    : slotId == GameplayHintSlotId::ReadyUp ? "ICON (ReadyUp)"
                                    : slotId == GameplayHintSlotId::Reload ? "ICON (Reload)"
-                                   : slotId == GameplayHintSlotId::Mantle ? "ICON (Mantle)" : "ICON (Qte)";
+                                   : slotId == GameplayHintSlotId::Mantle ? "ICON (Mantle)"
+                                   : slotId == GameplayHintSlotId::StanceStand ? "ICON (StanceStand)"
+                                   : slotId == GameplayHintSlotId::StanceCrouch ? "ICON (StanceCrouch)"
+                                   : slotId == GameplayHintSlotId::StanceProne ? "ICON (StanceProne)"
+                                   : slotId == GameplayHintSlotId::StanceBlocked ? "ICON (StanceBlocked)" : "ICON (Qte)";
             RequestGlyphEditHandleBox(iconHandleX, iconHandleY, kHandleHitRadiusDesign,
                 draggingIcon ? 0x9000FF00u : 0x90FFA000u, slotLabel);
         }

@@ -98,6 +98,11 @@ extern void LogFromController(const char* msg);  // dllmain.cpp, shared log file
 // this) instead, same pattern as IsMenuActive_Exported()/LogFromController() already
 // use elsewhere in this codebase.
 extern "C" bool IsPhysicalHeld_Exported(PhysicalInput p, unsigned short buttons, unsigned char leftTrigger, unsigned char rightTrigger);
+// Defined in analog_input_hooks.cpp (a cross-platform utility, not x86-guarded --
+// see that file's own header comment on this function) -- resolves a raw physical
+// controller button directly to its glyph asset name, used by the stance-hint
+// substitution below (Hook_DrawTextX64's own section).
+extern "C" const char* GetControllerGlyphAssetName(PhysicalInput input, GlyphStyle style);
 // Same file, same class of internal-linkage fix as IsPhysicalHeld_Exported above
 // (RouteStickAxes() lives in the same anonymous namespace) -- reused here for the
 // Movement hook below rather than duplicating the per-layout axis-swap switch a
@@ -4656,6 +4661,172 @@ void Hook_DrawTextX64(
                             "fired (structural match against live PLATFORM_RELOAD/MENU_RELOAD_WEAPON "
                             "template, text=\"%.40s\")", text);
                         LogFromController(subBuf);
+                    }
+                }
+            }
+
+            // Stance-change hint rows (stand/crouch/prone) -- NEWLY PORTED 2026-09-15,
+            // per the x64 UI-draw-pipeline-map's own section 5 opportunity #3
+            // (`re_notes/x64_migration/ui_draw_pipeline_map.md`). Native case `0x14`
+            // (`FUN_1400514e0` -> `FUN_1400519b0`) draws UP TO THREE simultaneous rows
+            // (e.g. while crouched, both "stand up" and "go prone" can show at once) --
+            // each row is its OWN separate call into this exact hook (confirmed via
+            // decompile: `FUN_1400519b0` loops per-row, calling `FUN_14029a2b0` once per
+            // visible row), so no special multi-row handling is needed here beyond
+            // giving each stance a DEDICATED slot (StanceStand/StanceCrouch/StanceProne,
+            // see GameplayHintSlotId's own comment) so two simultaneously-visible rows
+            // can't clobber each other's overlay request.
+            //
+            // Same "&&1"-style structural-match technique as Mantle above -- confirmed
+            // via the native draw function's own decompile that the FINAL text (what
+            // this hook actually sees) already has the player's real, live bound key
+            // substituted into the raw PLATFORM_STANCEHINT_* template server-side
+            // (`FUN_1402b0050`/`FUN_14029de10`, native key-name-resolve + template-
+            // substitute helpers this hook doesn't need to call itself) -- matching the
+            // already-substituted text against the RAW (unsubstituted) template via
+            // `TextMatchesTemplateStructurallyX64` is exactly the same detection this
+            // hook already uses for Mantle/Pickup/Throwback.
+            //
+            // Glyph choice: unlike keyboard (which has genuinely distinct binds per
+            // stance transition -- "+gostand"/"togglecrouch"/"+prone"), this project's
+            // own controller CrouchProne dispatch (analog_input_hooks_x64.cpp, ~line
+            // 3021) already uses ONE SINGLE physical button (`g_buttonMap.crouchProne`,
+            // default B) for all three transitions via the native "+stance"/"-stance"
+            // case dispatch -- confirmed working input (2026-09-05 parity work), just
+            // never wired to this glyph layer until now. So all three substituted rows
+            // show the SAME controller glyph (whatever's currently bound to
+            // CrouchProne), which is correct, not a shortcut: there is genuinely only
+            // one button to press regardless of which stance-hint row is showing.
+            {
+                const char* standTmpl = g_getLocalizedStringX64("PLATFORM_STANCEHINT_STAND");
+                const char* crouchTmpl = g_getLocalizedStringX64("PLATFORM_STANCEHINT_CROUCH");
+                const char* proneTmpl = g_getLocalizedStringX64("PLATFORM_STANCEHINT_PRONE");
+                bool isStandHint = standTmpl && LooksSaneX64(reinterpret_cast<uintptr_t>(standTmpl)) &&
+                    TextMatchesTemplateStructurallyX64(text, standTmpl, "&&1");
+                bool isCrouchHint = !isStandHint && crouchTmpl && LooksSaneX64(reinterpret_cast<uintptr_t>(crouchTmpl)) &&
+                    TextMatchesTemplateStructurallyX64(text, crouchTmpl, "&&1");
+                bool isProneHint = !isStandHint && !isCrouchHint && proneTmpl &&
+                    LooksSaneX64(reinterpret_cast<uintptr_t>(proneTmpl)) &&
+                    TextMatchesTemplateStructurallyX64(text, proneTmpl, "&&1");
+
+                if (isStandHint || isCrouchHint || isProneHint) {
+                    size_t textLen = strlen(text);
+                    ColorHighlightSpanX64 span = FindColorHighlightSpanX64(text, textLen);
+                    if (span.found) {
+                        const char* assetName = GetControllerGlyphAssetName(g_buttonMap.crouchProne, g_modConfig.glyphStyle);
+                        if (assetName && assetName[0]) {
+                            char prefixText[128] = {};
+                            size_t prefixLen = span.markerStart < sizeof(prefixText) - 1 ? span.markerStart : sizeof(prefixText) - 1;
+                            memcpy(prefixText, text, prefixLen);
+                            prefixText[prefixLen] = '\0';
+
+                            char suffixText[128] = {};
+                            if (span.markerEnd < textLen) {
+                                size_t suffixLen = textLen - span.markerEnd;
+                                if (suffixLen >= sizeof(suffixText)) suffixLen = sizeof(suffixText) - 1;
+                                memcpy(suffixText, text + span.markerEnd, suffixLen);
+                                suffixText[suffixLen] = '\0';
+                            }
+
+                            // Same honest positioning caveat as every other substitution in
+                            // this hook (see Mantle/Pickup/Throwback's own comment above):
+                            // real transform, no empirical nudge tuning yet -- should land
+                            // near the real element, may need a live-reported correction.
+                            float startX = 0.0f, startY = 0.0f;
+                            ComputeRealDrawPositionX64(dcHandle, fontArg, scale, color1, color2, x, y, startX, startY);
+                            ConvertRealScreenPosToDesignSpaceX64(startX, startY, startX, startY);
+
+                            GameplayHintSlotId slotId = isStandHint ? GameplayHintSlotId::StanceStand
+                                                       : isCrouchHint ? GameplayHintSlotId::StanceCrouch
+                                                                       : GameplayHintSlotId::StanceProne;
+                            RequestCustomHintOverlay(startX, startY, prefixText, suffixText, assetName,
+                                                       /*centerOnScreen=*/false, /*flashIcon=*/false, slotId);
+                            suppressRealDraw = true;
+
+                            static bool s_loggedFirstStanceMatch = false;
+                            if (!s_loggedFirstStanceMatch) {
+                                s_loggedFirstStanceMatch = true;
+                                char subBuf[192];
+                                sprintf_s(subBuf, "[x64-drawtext] First real Stance-hint glyph-icon "
+                                    "SUBSTITUTION fired -- kind=%s asset=%s (native hint text suppressed, "
+                                    "our own icon+text drawn instead)",
+                                    isStandHint ? "Stand" : isCrouchHint ? "Crouch" : "Prone", assetName);
+                                LogFromController(subBuf);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Stance-BLOCKED warnings (subset) -- NEWLY PORTED 2026-09-15, same pass as
+            // the stance-CHANGE hints above, per the x64 UI-draw-pipeline-map's section 5
+            // opportunity #2 (`ui_draw_pipeline_map.md`). Native case `0x71`
+            // (`FUN_140050410`) is a `switch(DAT_140539e68)` covering EIGHT real message
+            // variants (the map only named seven -- a real, previously-undocumented
+            // eighth case, a dynamically-built string via `FUN_1402ca430`/
+            // `FUN_14029f0d0`, was found this pass but is NOT handled here: its content
+            // is data-driven, not a fixed localization key, and this project's own "no
+            // unconfirmed-offset guess" policy means it stays untouched rather than
+            // substituted on a guess). Of the seven fixed-key messages, only the three
+            // STANCE-blocked ones get a substitution this pass -- confirmed via decompile
+            // all seven resolve via plain `FUN_14029f120(pcVar10)` with NO "&&1"-style
+            // marker at all (unlike the stance-change hints above), so there is nothing
+            // to substitute IN PLACE OF -- the map's own recommendation was a controller-
+            // glyph ICON PREFIX before the native message instead. The four weapon/
+            // target-related messages (`WEAPON_NO_AMMO`, `WEAPON_TARGET_TOO_CLOSE`,
+            // `WEAPON_LOCKON_REQUIRED`, `WEAPON_TARGET_NOT_ENOUGH_CLEARANCE`) are
+            // DELIBERATELY NOT substituted here -- none of them corresponds to one clear,
+            // single rebindable action the way stance does (CrouchProne, one physical
+            // button, already resolved above), so picking a "representative" glyph for
+            // any of them would be a real guess about design intent this project has no
+            // live-test feedback to validate; left for a future pass with real player
+            // feedback on what (if anything) they'd expect there, not skipped from
+            // laziness. The three stance-blocked ones map cleanly onto the exact same
+            // physical button already resolved for the stance-hint substitution above
+            // (`g_buttonMap.crouchProne`) -- reusing that result rather than re-resolving.
+            {
+                const char* standBlockedTmpl = g_getLocalizedStringX64("GAME_STAND_BLOCKED");
+                const char* crouchBlockedTmpl = g_getLocalizedStringX64("GAME_CROUCH_BLOCKED");
+                const char* proneBlockedTmpl = g_getLocalizedStringX64("CGAME_PRONE_BLOCKED");
+                const char* proneBlockedWeaponTmpl = g_getLocalizedStringX64("CGAME_PRONE_BLOCKED_WEAPON");
+                bool isStanceBlocked =
+                    (standBlockedTmpl && LooksSaneX64(reinterpret_cast<uintptr_t>(standBlockedTmpl)) &&
+                     TextMatchesResolvedExactlyX64(text, standBlockedTmpl)) ||
+                    (crouchBlockedTmpl && LooksSaneX64(reinterpret_cast<uintptr_t>(crouchBlockedTmpl)) &&
+                     TextMatchesResolvedExactlyX64(text, crouchBlockedTmpl)) ||
+                    (proneBlockedTmpl && LooksSaneX64(reinterpret_cast<uintptr_t>(proneBlockedTmpl)) &&
+                     TextMatchesResolvedExactlyX64(text, proneBlockedTmpl)) ||
+                    (proneBlockedWeaponTmpl && LooksSaneX64(reinterpret_cast<uintptr_t>(proneBlockedWeaponTmpl)) &&
+                     TextMatchesResolvedExactlyX64(text, proneBlockedWeaponTmpl));
+
+                if (isStanceBlocked) {
+                    const char* assetName = GetControllerGlyphAssetName(g_buttonMap.crouchProne, g_modConfig.glyphStyle);
+                    if (assetName && assetName[0]) {
+                        float startX = 0.0f, startY = 0.0f;
+                        ComputeRealDrawPositionX64(dcHandle, fontArg, scale, color1, color2, x, y, startX, startY);
+                        ConvertRealScreenPosToDesignSpaceX64(startX, startY, startX, startY);
+
+                        // No marker span exists in these messages (confirmed via
+                        // decompile, see this block's own header comment) -- empty
+                        // prefix, the FULL native message as suffix, icon drawn as a
+                        // real prefix before it (RequestCustomHintOverlay's own layout:
+                        // icon, then prefix text, then suffix text).
+                        char suffixText[128] = {};
+                        strncpy_s(suffixText, text, _TRUNCATE);
+                        RequestCustomHintOverlay(startX, startY, "", suffixText, assetName,
+                                                   /*centerOnScreen=*/false, /*flashIcon=*/false,
+                                                   GameplayHintSlotId::StanceBlocked);
+                        suppressRealDraw = true;
+
+                        static bool s_loggedFirstStanceBlockedMatch = false;
+                        if (!s_loggedFirstStanceBlockedMatch) {
+                            s_loggedFirstStanceBlockedMatch = true;
+                            char subBuf[192];
+                            sprintf_s(subBuf, "[x64-drawtext] First real Stance-blocked-warning glyph-icon "
+                                "SUBSTITUTION fired -- asset=%s text=\"%.80s\" (native warning text "
+                                "suppressed, icon-prefixed version drawn instead)", assetName, text);
+                            LogFromController(subBuf);
+                        }
                     }
                 }
             }
