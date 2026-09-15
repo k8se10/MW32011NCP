@@ -30,21 +30,35 @@ together.
 are resolved (three fixed, one confirmed already safe).** All four were
 independently re-verified present, byte-for-byte unpatched, in MW3's own
 2026-09-03 binary update (its first-ever, a 32-bit to 64-bit recompile) —
-the update was a real opportunity to fix them and didn't. Full technical
+the update was a real opportunity to fix them and didn't. These are real
+RCE-class holes that had sat unpatched through this game's entire prior
+history before this project closed them — see Full technical
 trail in `re_notes/vulnerability_research.md`.
 
 | Finding | Binary | Status |
 |---|---|---|
-| Steamworks P2P receive-path overflow | `iw5sp.exe` | **Fixed**, build-verified, not yet live-tested |
-| `matchdatadone` dispatcher stack overflow | `iw5mp.exe` | **Fixed**, build-verified, not yet live-tested |
-| `pa_memberjoin` party-join handler overflow | `iw5mp.exe` | **Fixed**, build-verified, not yet live-tested |
-| Fragment-reassembly out-of-bounds write | `iw5mp.exe` | **Fixed**, build-verified, not yet live-tested |
+| Steamworks P2P receive-path overflow | `iw5sp.exe` | **Fixed**, build-verified, hook installs and resolves correctly live; not yet observed firing against real P2P traffic |
+| `matchdatadone` dispatcher stack overflow | `iw5mp.exe` | **Fixed**, build-verified, **confirmed firing against real MP traffic** |
+| `pa_memberjoin` party-join handler overflow | `iw5mp.exe` | **Fixed**, build-verified, not yet observed firing against real traffic |
+| Fragment-reassembly out-of-bounds write | `iw5mp.exe` | **Fixed**, build-verified, **confirmed firing against real MP traffic** |
 | Steam-Auth (CVE-2018-20817) | `iw5mp.exe` | Checked, confirmed already safe — no fix needed |
 
-Three of the four unpatched findings were reported to Activision through
-their official disclosure channel; a public, general-risk-category notice
-(no exploit-enabling detail) is also live on MW32011NCP's own `README.md`,
-since MW3 is affected regardless of whether that mod is installed.
+"Confirmed firing against real traffic" means the hook is proven reachable
+and active during genuine gameplay (via rate-limited activity-confirmation
+logging, added specifically because malicious traffic can't safely be
+simulated) — not yet a confirmed defeat of an actual attack, which would
+need a real crafted-packet reproduction. Three of the four unpatched
+findings were reported to Activision through their official disclosure
+channel; a public, general-risk-category notice (no exploit-enabling
+detail) is also live on MW32011NCP's own `README.md`, since MW3 is
+affected regardless of whether that mod is installed.
+
+**This is a patch to the native Steam install, not a separate client** —
+the exact same official `iw5sp.exe`/`iw5mp.exe`, same launch, same native
+matchmaking/P2P infrastructure. It protects any player who installs this
+mod; it does not and cannot touch Activision's own shipped files, so a
+vanilla, unmodified Steam install remains exactly as vulnerable as before.
+Only Activision fixing the real binary protects every player.
 
 ## Scope
 
