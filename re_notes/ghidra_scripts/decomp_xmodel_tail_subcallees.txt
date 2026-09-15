@@ -1,0 +1,95 @@
+================================================================
+Function: FUN_140096050 @ 140096050
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_140096050(undefined8 param_1)
+
+{
+  FUN_1400aad70(param_1,DAT_1407bea30,0x50);
+  FUN_1400aac10(3);
+  DAT_1407bed68 = DAT_1407bea30;
+  FUN_1400aad70(0,DAT_1407bea30,8);
+  if (*DAT_1407bed68 != 0) {
+    if (*DAT_1407bed68 == -1) {
+      _DAT_1407bed58 = FUN_1400aaa90(0);
+      *DAT_1407bed68 = _DAT_1407bed58;
+      FUN_1400aae50(DAT_1407bed68);
+    }
+    else {
+      FUN_1400aad40();
+    }
+  }
+  DAT_1407bed68 = DAT_1407bea30 + 4;
+  FUN_1400aad70(0,DAT_1407bed68,8);
+  if (*DAT_1407bed68 != 0) {
+    if (*DAT_1407bed68 == -1) {
+      _DAT_1407bed58 = FUN_1400aaa90(0);
+      *DAT_1407bed68 = _DAT_1407bed58;
+      FUN_1400aae50(DAT_1407bed68);
+      FUN_1400aabd0();
+      return;
+    }
+    FUN_1400aad40();
+  }
+  FUN_1400aabd0();
+  return;
+}
+
+
+
+================================================================
+Function: FUN_140095e40 @ 140095e40
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_140095e40(undefined8 param_1)
+
+{
+  uint uVar1;
+  longlong *plVar2;
+  ulonglong uVar3;
+  
+  FUN_1400aad70(param_1,DAT_1407bf2b0,0x58);
+  FUN_1400aac10(3);
+  DAT_1407bed68 = DAT_1407bf2b0;
+  FUN_1400aad70(0,DAT_1407bf2b0,8);
+  if (*DAT_1407bed68 != 0) {
+    if (*DAT_1407bed68 == -1) {
+      _DAT_1407bed58 = FUN_1400aaa90(0);
+      *DAT_1407bed68 = _DAT_1407bed58;
+      FUN_1400aae50(DAT_1407bed68);
+    }
+    else {
+      FUN_1400aad40();
+    }
+  }
+  if (DAT_1407bf2b0[2] != 0) {
+    DAT_1407bf2a8 = (longlong *)FUN_1400aaa90(3);
+    DAT_1407bf2b0[2] = (longlong)DAT_1407bf2a8;
+    uVar1 = *(uint *)(DAT_1407bf2b0 + 1);
+    uVar3 = (ulonglong)uVar1;
+    FUN_1400aad70(1,DAT_1407bf2a8,uVar1 * 0x48);
+    plVar2 = DAT_1407bf2a8;
+    if (0 < (int)uVar1) {
+      do {
+        DAT_1407bf2a8 = plVar2;
+        FUN_1400aad70(0,plVar2,0x48);
+        if (*DAT_1407bf2a8 != 0) {
+          DAT_1407bf020 = FUN_1400aaa90(3);
+          *DAT_1407bf2a8 = DAT_1407bf020;
+          FUN_14008fa90();
+        }
+        uVar3 = uVar3 - 1;
+        plVar2 = plVar2 + 9;
+      } while (uVar3 != 0);
+    }
+  }
+  FUN_1400aabd0();
+  return;
+}
+
+
+

@@ -7385,3 +7385,51 @@ All instrumentation reverted (gitignored generated file only, no tracked
 source touched), 0 regression confirmed. New evidence:
 `re_notes/ghidra_scripts/decomp_140094a10.txt`. Full trail:
 `re_notes/x64_migration/fastfile_format_research.md` §5.26.
+
+### UPDATE, 2026-09-14/15 ("keep going, dig on remaining threads") -- the §5.26 `sizeof(XModel)` 8-byte gap correctly root-caused (`invHighMipRadius` is a real inline `unsigned short[4]`, not a pointer) and confirmed to fix real zones -- but NOT shipped, a separate crash bug in Sound loading blocks it
+
+**Status: root cause found and verified correct; NOT shipped -- blocked
+by a separate, unresolved crash bug.** A first attempt at this same gap
+(removing `memUsage` entirely, reasoning it was phantom like
+`Material::subMaterials`) matched the arithmetic exactly and fixed 2
+zones, but caused real segfaults in 16 of 41 zones live-tested (all
+`so_survival_mp_*.ff` plus two others) -- reverted, not shipped, before
+this round started.
+
+This round re-derived the gap from scratch (manual offset arithmetic
+against the native decompile, not pattern-matching to the prior
+precedent) and found the correct answer: `invHighMipRadius` is a real
+field, but an INLINE `unsigned short[4]` (one entry per LOD level,
+matching `lodInfo[4]`), not a pointer to a heap array -- confirmed via
+fresh decompiles of the two tail pointer-fixup handlers past `boneInfo`,
+which positively identify native offsets 0x188/0x190 as `physPreset`/
+`physCollmap`, not `invHighMipRadius`. Implemented, built clean.
+`sp_dubai.ff` (previously "invalid block 15") now loads completely
+cleanly, and `sp_ny_harbor.ff` (previously in the dominant "not
+recorded" failure class) does too, unexpectedly.
+
+**But the exact same 18-zone real-crash pattern from the reverted
+`memUsage` attempt recurred identically** -- traced one crash
+(`so_survival_mp_alpha.ff`) to asset index 785 of 953, type 11
+(`ASSET_TYPE_SOUND`), not an XModel at all, deep into a zone that never
+got anywhere near that far before this fix let it progress past its
+earlier "not recorded" failure. Ruled out the obvious mechanical
+explanation (a hardcoded byte count elsewhere still assuming the old,
+larger `sizeof(XModel)`) -- both real consumers already compute the size
+dynamically via `sizeof(XModel)`. Two completely different fields
+producing the identical crash-zone set when each shrinks `sizeof(XModel)`
+by the same 8 bytes means the crash is a property of the struct shrinking
+at all, not of which field causes it -- most likely either a genuinely
+different real `XModel` layout in these specific 18 zones' own assets, or
+a separate, pre-existing Sound-loading bug simply never reached before.
+Not chased further this round (a live-attach debugger session or a
+targeted Sound-loader diagnostic is the natural next step, not another
+guess at the XModel struct itself).
+
+Reverted per this project's own strict "even one new real crash
+disqualifies it" bar -- confirmed via clean `git diff` and a rebuild that
+`sp_dubai.ff` is back to its original failure and the crash zones no
+longer crash. No tracked source changed net of this round. New evidence:
+`re_notes/ghidra_scripts/decomp_xmodel_tail_fields.txt`,
+`decomp_xmodel_tail_subcallees.txt`. Full trail:
+`re_notes/x64_migration/fastfile_format_research.md` §§5.27-5.28.
