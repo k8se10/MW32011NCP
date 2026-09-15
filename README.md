@@ -1,6 +1,15 @@
-# MW32011NCP — Native Community Patches for MW3 (2011)
+<div align="center">
 
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/officialk8)
+# 🎮 MW32011NCP
+
+### Native Community Patches for MW3 (2011)
+
+[![Release](https://img.shields.io/github/v/release/k8se10/MW32011NCP?include_prereleases&sort=semver&label=release)](https://github.com/k8se10/MW32011NCP/releases)
+[![Last commit](https://img.shields.io/github/last-commit/k8se10/MW32011NCP)](https://github.com/k8se10/MW32011NCP/commits/main)
+[![License](https://img.shields.io/badge/license-custom%20(free%2C%20no%20resale)-blue)](LICENSE)
+[![Support on Ko-fi](https://img.shields.io/badge/support-ko--fi-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/officialk8)
+
+</div>
 
 A native, from-scratch reverse-engineering platform for **Call of Duty:
 Modern Warfare 3 (2011, IW5 engine)** — not a single mod, but a patch layer
@@ -521,7 +530,7 @@ it, see below). If it's been useful to you, a donation is completely
 optional but genuinely appreciated — it goes straight back into the time
 this reverse-engineering work takes.
 
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/officialk8)
+[![Support on Ko-fi](https://img.shields.io/badge/support-ko--fi-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/officialk8)
 
 ## License
 
