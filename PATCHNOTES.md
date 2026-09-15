@@ -308,6 +308,18 @@ item below.
     is high-confidence; sensitivity/sign are a starting guess pending an
     actual DPV/Goalpost playtest. See `re_notes/known_issues.md` issue #30
     and `re_notes/known_issues_x64.md` for the full trail.
+17. **On-screen Multiplayer status warning.** Launching under `iw5mp.exe`
+    now shows a real, must-see on-screen warning ("Multiplayer has no
+    functionality working right now") — through the same notifier system
+    "Controller Connected"/"MW32011NCP Started" already use, but drawn as a
+    dismiss-required, centered warning-yellow modal instead of an ordinary
+    auto-expiring toast, so it can't be missed or silently replaced by a
+    routine startup toast racing it (a real gap fixed the same day: ordinary
+    toasts previously could clobber an active must-see warning outright).
+    The message swaps in place to "Multiplayer is in pre-alpha and will
+    contain bugs and issues. It is not on par with Campaign/Survival." once
+    MP gets real partial gameplay support — no new code path needed, just a
+    one-line text change when that day comes.
 
 ### Fixed
 1. **Crash on launch with the sniper Fire/ADS fix's own log line.** The
