@@ -5349,6 +5349,42 @@ that's never worked on any architecture ships as the best-evidenced
 mechanism with honestly-flagged open tuning, not a guessed-and-hidden
 "done."
 
+**UPDATE 2026-09-15 -- DPV's own real GSC finally examined (the
+"genuinely unexamined" gap this entry itself flagged above is now
+closed), now that `sp_ny_harbor.ff` extracts and decompiles cleanly
+(unblocked by the same-day Sound/`snd_alias_list_t` crash fix,
+`fastfile_format_research.md` §5.30). Real, new evidence found -- CONSISTENT
+with the shipped fix's own mechanism, not a contradiction of it.**
+Extracted `sp_ny_harbor.ff` for real (`Unlinker.exe`, full asset dump, 0
+crashes) and decompiled every DPV-relevant script with `gsc-tool`
+(`maps/ny_harbor_code_sdv.gsc`, `maps/ny_harbor_sdv_drive.gsc`,
+`maps/ny_harbor.gsc`). **`controlslinkto` -- the mechanism the mortar/
+turret investigation traced as its own key lead (`known_issues.md`
+line ~3815) -- appears NOWHERE in DPV's own scripts.** Instead, DPV's
+real mount sequence uses `level.player playerlinktodelta(level._id_49C1,
+"tag_player", 1.0, 0, 0, 0, 0, 1)` followed immediately by
+`lerpviewangleclamp(...)` and `enableslowaim()` (`ny_harbor_code_sdv.gsc`,
+function `_id_6A92`) -- structurally the SAME link builtin
+(`playerlinktodelta`) already confirmed, in a completely different
+investigation, to be Predator Missile's own WORKING pre-fire drone-view
+mechanism (`known_issues.md` line ~3808, "confirmed WORKING per live
+playtest"), not the harder-to-trace `controlslinkto` special case.
+
+**This does not overturn the shipped fix.** The native mechanism it
+targets is keyed to a per-client bit (`(DAT_1406e4774 + player*0xce5c) &
+0x80000`) the per-frame orchestrator checks every tick, dispatching to
+`FUN_14007de20` instead of the normal look function -- gated on native
+mount STATE, not on which specific GSC linking builtin was used to reach
+it. `playerlinktodelta` and `controlslinkto` are real evidence the two
+"mounted" cases (DPV vs. mortar/turret) reach that native state through
+different GSC-level paths, plausibly explaining why nobody had previously
+connected DPV's own case to the mortar/turret one via script alone -- but
+both are expected to still set the same native bit once mounted. Genuinely
+new, directly-observed evidence (this GSC could not be examined before
+today), filed here as a real cross-check rather than left unrecorded --
+does not change the fix's own status (still build-verified, not yet
+live-tested; see the entry above for the live-test checklist).
+
 **UPDATE 2026-09-14 (AC-130 gunship, `known_issues.md` issue #40) --
 gap 2 (zoom sensitivity) FIXED both platforms, build-verified, not yet
 live-tested; gap 1 (gun-type switching) investigated, real project-wide
