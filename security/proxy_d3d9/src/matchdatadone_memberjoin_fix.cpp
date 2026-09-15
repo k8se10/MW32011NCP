@@ -233,11 +233,38 @@ CopyPrimitive_t g_realCopyPrimitive = nullptr;
 using BufferResolve_t = void*(__fastcall*)(int connectionIndex);
 BufferResolve_t g_realBufferResolve = nullptr;
 
+// 2026-09-15 -- "we can't simulate malicious traffic, but we can check if the
+// protections are active." Copy of FixHostServices (plain function pointers,
+// safe to copy and outlive the installer's own stack frame -- same pattern
+// p2p_fix.cpp's own RetryThreadArgs already uses), stored so the hooks
+// themselves can log real-traffic confirmation, not just install-time
+// resolution. Rate-limited per finding (kMaxActivityLogsPerFinding) so a long
+// real play session can't flood the log -- this is the exact same "unthrottled
+// per-frame log write" bug class this project's own sibling MW32011NCP already
+// hit once (issue #87) and had to fix; capping it here from the start avoids
+// repeating that mistake in a hot netcode path that could fire many times per
+// second during active fragment traffic.
+FixHostServices g_host{};
+constexpr int kMaxActivityLogsPerFinding = 5;
+int g_matchdatadoneHitCount = 0;
+int g_memberjoinHitCount = 0;
+int g_fragmentReassemblyHitCount = 0;
+int g_fragmentReassemblyResolveHitCount = 0;
+
 void* __fastcall Hook_BufferResolve(int connectionIndex)
 {
     void* result = g_realBufferResolve(connectionIndex);
     if (reinterpret_cast<uintptr_t>(_ReturnAddress()) == g_fragmentReassemblyResolveReturnAddr) {
         g_fragmentReassemblyBufferBase = result;
+        if (g_host.Log && g_fragmentReassemblyResolveHitCount < kMaxActivityLogsPerFinding) {
+            ++g_fragmentReassemblyResolveHitCount;
+            char buf[220];
+            sprintf_s(buf, "[nsp-mp-fix-activity] Finding 4 buffer-resolve hook fired (#%d/%d logged) "
+                      "-- connection %d, resolved buffer base = %p. This confirms the hook is reachable "
+                      "from real traffic, not just installed.",
+                      g_fragmentReassemblyResolveHitCount, kMaxActivityLogsPerFinding, connectionIndex, result);
+            g_host.Log(buf);
+        }
     }
     return result;
 }
@@ -247,14 +274,35 @@ void __fastcall Hook_CopyPrimitive(void* reader, void* dest, int length)
     uintptr_t returnAddr = reinterpret_cast<uintptr_t>(_ReturnAddress());
 
     if (returnAddr == g_matchdatadoneVulnReturnAddr) {
+        int originalLength = length;
         if (static_cast<size_t>(length) > kMatchdatadoneRealBufferSize) {
             length = static_cast<int>(kMatchdatadoneRealBufferSize);
         }
+        if (g_host.Log && g_matchdatadoneHitCount < kMaxActivityLogsPerFinding) {
+            ++g_matchdatadoneHitCount;
+            char buf[220];
+            sprintf_s(buf, "[nsp-mp-fix-activity] Finding 2 copy-primitive hook fired (#%d/%d logged) "
+                      "-- length=%d%s. Hook is reachable from real traffic.",
+                      g_matchdatadoneHitCount, kMaxActivityLogsPerFinding, originalLength,
+                      originalLength != length ? " (CLAMPED -- would have overflowed)" : "");
+            g_host.Log(buf);
+        }
     } else if (returnAddr == g_memberjoinVulnReturnAddr) {
+        int originalLength = length;
         if (static_cast<size_t>(length) > kMemberjoinRealBufferSize) {
             length = static_cast<int>(kMemberjoinRealBufferSize);
         }
+        if (g_host.Log && g_memberjoinHitCount < kMaxActivityLogsPerFinding) {
+            ++g_memberjoinHitCount;
+            char buf[220];
+            sprintf_s(buf, "[nsp-mp-fix-activity] Finding 3 copy-primitive hook fired (#%d/%d logged) "
+                      "-- length=%d%s. Hook is reachable from real traffic.",
+                      g_memberjoinHitCount, kMaxActivityLogsPerFinding, originalLength,
+                      originalLength != length ? " (CLAMPED -- would have overflowed)" : "");
+            g_host.Log(buf);
+        }
     } else if (returnAddr == g_fragmentReassemblyVulnReturnAddr) {
+        int originalLength = length;
         // dest = buffer_base + attacker_offset, already combined by the caller
         // (FUN_1400ad330) before this call -- validated against the REAL
         // captured buffer range, not trusted.
@@ -280,6 +328,19 @@ void __fastcall Hook_CopyPrimitive(void* reader, void* dest, int length)
                 }
             }
         }
+        if (g_host.Log && g_fragmentReassemblyHitCount < kMaxActivityLogsPerFinding) {
+            ++g_fragmentReassemblyHitCount;
+            char buf[260];
+            sprintf_s(buf, "[nsp-mp-fix-activity] Finding 4 copy-primitive hook fired (#%d/%d logged) "
+                      "-- dest=%p, length=%d%s, captured buffer base=%p. Hook is reachable from real "
+                      "traffic.",
+                      g_fragmentReassemblyHitCount, kMaxActivityLogsPerFinding, dest, originalLength,
+                      originalLength != length ? (length == 0 ? " (REFUSED -- would have overflowed)"
+                                                                : " (CLAMPED -- would have overflowed)")
+                                                : "",
+                      g_fragmentReassemblyBufferBase);
+            g_host.Log(buf);
+        }
     }
     // Every other caller of this shared primitive -- including pa_memberjoin's
     // OWN first, unrelated call to it -- falls through here completely
@@ -292,6 +353,8 @@ void __fastcall Hook_CopyPrimitive(void* reader, void* dest, int length)
 
 void InstallMatchdatadoneAndMemberjoinFix(const FixHostServices& host)
 {
+    g_host = host; // for the hooks' own rate-limited activity-confirmation logging, see above
+
     void* moduleBase = host.GetGameModuleBase();
     if (!moduleBase) {
         host.Log("[nsp-mp-fix] FAILED: no game module base -- cannot resolve targets");
