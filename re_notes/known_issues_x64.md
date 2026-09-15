@@ -7705,3 +7705,71 @@ up.
 No source changes shipped -- research-only, no generated or tracked
 source touched. Full trail:
 `re_notes/x64_migration/fastfile_format_research.md` SS5.32.
+
+### NARROWED (root cause identified, not yet fixed), 2026-09-15 (parallel fork, second of "go after that one with 3 forks") -- the exact open question the ScriptFile round above left ("find which earlier asset desyncs the stream") answered directly: it's a Sound asset's own corrupted header, not a ScriptFile asset at all, tracing back to a likely LoadedSound/MssSound/AILSOUNDINFO struct-width mismatch
+
+**Status: root cause narrowed to a specific, testable struct-layout
+question -- one more native-RE round needed before a safe fix can be
+written.** Assigned angle: pure empirical diagnostic tracing (no native RE,
+no live debugger of any kind -- this investigation already had one real
+system crash from cdb earlier the same day, per direct standing
+instruction only `fprintf`+`fflush` tracing compiled into `Unlinker.exe`
+and run normally was used).
+
+**Scope correction first**: of the six zones this task's own briefing
+named as the `XFILE_BLOCK_SCRIPT` class (`hamburg.ff`, `common.ff`,
+`code_post_gfx.ff`, `rescue_2.ff`, `common_survival.ff`,
+`so_stealth_prague.ff`), dumping the real raw 9 block-size values found
+**only `code_post_gfx.ff` still actually hits this error** -- the other
+five now fail with different, already-tracked errors (`XFILE_BLOCK_TEMP`
+overflow, or "invalid block 15"), almost certainly because this same
+session's earlier fixes (the alias-chain graceful-degradation fix, the
+Sound-deduplication crash fix) already let them progress into different
+territory. `code_post_gfx.ff` is the only zone left in this class.
+
+**Traced the real failure via per-asset tracing**: crashes on asset index
+4482/4770, **type 11 (`ASSET_TYPE_SOUND`, `snd_alias_list_t`) -- not a
+ScriptFile asset at all.** Its own `aliasName` field reads a raw value
+(`0x0000300583E50000`) that decodes, via the already-shipped standard
+32-bit offset scheme, to blockNum=8/blockOffset=65339391 -- the exact
+numbers in the original error. Block 8 is simply named
+`XFILE_BLOCK_SCRIPT`; nothing about this asset is really a script
+reference, it's a corrupted Sound asset's header field coincidentally
+landing in that block's numeric slot.
+
+**Traced one asset further back**: the preceding asset (4481, also Sound)
+loads without throwing, but its own `soundFile` resolves to a fresh
+`LoadedSound` sub-asset -- the exact code path this session's own earlier
+shipped fix lives in (§5.24/commit `ab56e7cc`, `AILSOUNDINFO::bits` vs
+`::data_len`). Tracing the FULL struct (not just the two fields that fix
+compared) found: `format=65537 data_len=24932 rate=44 bits=22050
+channels=0 samples=0 block_size=0` -- this is the SAME asset §5.24's own
+fix was built and tested against, but every field except data_len/bits is
+nonsensical for real audio (format isn't a real codec ID, 44Hz isn't a
+real sample rate, channels/samples/block_size are all zero). This says the
+whole struct read looks shifted/misaligned for this asset, not just one
+mis-selected field -- §5.24's own fix (reading the correct C++-computed
+offset for `bits`) isn't wrong, but something upstream may be feeding it a
+misaligned starting position.
+
+**Leading theory, not yet confirmed (native RE needed, out of this round's
+own scope)**: one of `LoadedSound::name` or `MssSound::data`/
+`AILSOUNDINFO::data_ptr` -- pointer fields this fork currently assumes are
+8 bytes -- may genuinely be 4 bytes wide on the wire, the same "legacy
+32-bit width" pattern already confirmed for `MaterialPixelShader::name`
+this session (§5.16-§5.19 in fastfile_format_research.md). If so, every
+field after it would land 4 bytes early, explaining the fully-shifted
+struct read.
+
+**Recommended next step**: decompile the real native x64 `LoadedSound`/
+`MssSound`/`AILSOUNDINFO` fill function (via `ASSET_TYPE_LOADED_SOUND`'s
+own dispatch case, not yet found this round) using the same
+"decompile-and-compare-field-for-field" method already proven for
+ScriptFile, confirm or rule out the width-mismatch theory, then fix at the
+permanent DSL/struct source -- not a guess-and-ship, this exact recursive
+Sound/LoadedSound loading code has a real history of segfaults from rushed
+changes this session (§5.22, §5.27, §5.30's own Bug #1/#2).
+
+No source changes shipped -- all temporary diagnostics reverted from
+tracked source. Full trail:
+`re_notes/x64_migration/fastfile_format_research.md` §5.33.

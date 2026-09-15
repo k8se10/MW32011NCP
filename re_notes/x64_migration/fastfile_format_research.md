@@ -2665,6 +2665,129 @@ no generated or tracked source touched). Two new Ghidra evidence files
 committed. Ghidra project's own known `.gbf` corruption pattern hit twice
 this round, restored both times via `git checkout --`.
 
+## 5.33. UPDATE, 2026-09-15 (parallel fork, second of "go after that one with 3 forks", empirical/diagnostic-tracing angle) — the exact open question §5.32 left ("find WHICH earlier asset desyncs the stream") answered directly, with one important correction: the failing reference is NOT a `ScriptFile` asset at all — it's a `snd_alias_list_t` (Sound) asset whose own corrupted header field coincidentally decodes to block index 8 (named `XFILE_BLOCK_SCRIPT`), and the real corruption traces further back to a `LoadedSound`/`MssSound`/`AILSOUNDINFO` struct-layout mismatch
+
+**Status: root cause narrowed to a specific, well-evidenced struct-layout
+question — not yet fixed, needs one more round of native RE (out of this
+round's own assigned scope) before a safe fix can be written.** Assigned
+angle: pure empirical diagnostic tracing (no native RE — that was another
+fork's own lane; no live debugger of any kind, per direct standing
+instruction after this same investigation's own earlier cdb-related system
+crash — every finding below came from `fprintf`+`fflush` tracing compiled
+into `Unlinker.exe` and run normally).
+
+**First, a scope correction that matters for anyone picking up the
+remaining "`XFILE_BLOCK_SCRIPT`" zones list**: dumping the real, raw 9
+block-size values (`tools/iw5oat/src/ZoneLoading/Loading/Steps/
+StepAllocXBlocks.cpp`) for all six zones this investigation's own briefing
+named as the `XFILE_BLOCK_SCRIPT` failure class (`hamburg.ff`, `common.ff`,
+`code_post_gfx.ff`, `rescue_2.ff`, `common_survival.ff`,
+`so_stealth_prague.ff`) found that **only `code_post_gfx.ff` still actually
+hits this error.** The other five now fail with completely different,
+already-tracked errors (`XFILE_BLOCK_TEMP` overflow — four zones — or
+`invalid block 15` for `common_survival.ff`) — almost certainly because
+this same day's earlier `not-recorded`/Sound-deduplication fixes (§5.29,
+§5.30) already let them progress past where they used to fail, into
+different, separately-tracked territory. **`code_post_gfx.ff` is the only
+zone left in this specific bug class**, and it's the one this whole round
+focuses on.
+
+**Traced the real desync source via per-asset-index tracing**
+(`ContentLoaderIW5.cpp`'s `LoadXAssetArray` loop, the same established
+pattern this session has used throughout): `code_post_gfx.ff` crashes
+loading asset **index 4482 of 4770, type 11 (`ASSET_TYPE_SOUND`,
+`snd_alias_list_t`)** — not a `ScriptFile` asset at all. Fine-grained
+tracing inside the generated `snd_alias_list_t_iw5_load_db.cpp` shows the
+crash happens on this asset's own very first field, `aliasName`, whose raw
+64-bit value reads as `0x0000300583E50000` — a real, decisive, decodable
+number: truncated to the standard 32-bit-wide offset scheme (per this
+session's own already-shipped global decode fix, §5.18/§5.20),
+`offsetInt = 0x83E4FFFF`, which decodes to **blockNum=8
+(`XFILE_BLOCK_SCRIPT`), blockOffset=65339391 — the EXACT numbers in the
+original error message.** This is coincidental in the sense that block
+index 8 simply happens to be named `XFILE_BLOCK_SCRIPT` — nothing about
+this asset is a real ScriptFile reference; it's a corrupted Sound asset's
+own header field whose garbage bit pattern, run through the shared
+block-index decode math every asset type uses, happens to land in the
+SCRIPT block's numeric slot.
+
+**Traced the corruption one asset further back**: asset 4482 is preceded
+by asset 4481, ALSO type 11 (Sound). Asset 4481's own load completes
+without throwing — but its own `soundFile` sub-structure resolves via the
+`SAT_LOADED` branch (a fresh, real `LoadedSound` sub-asset, loaded via
+`Loader_LoadedSound::Load()`), and this is exactly where this session's
+OWN earlier-shipped fix (§5.24, commit `ab56e7cc` — `LoadedSound`'s raw
+sample-data byte count reads `AILSOUNDINFO::bits`, not `::data_len`)
+already lives. Added tracing directly inside `Load_MssSound`
+(`loadedsound_iw5_load_db.cpp`) and found the SAME exact asset §5.24's own
+original fix was built and tested against (`data_len=24932`, `bits=22050`
+— identical values) — but this time dumping the FULL `AILSOUNDINFO`
+struct, not just the two fields §5.24 compared:
+
+```
+format=65537 data_len=24932 rate=44 bits=22050 channels=0 samples=0 block_size=0
+```
+
+**Every field except `data_len`/`bits` is nonsensical for a real audio
+asset** — `format=65537` (0x10001, not a plausible codec/format ID),
+`rate=44` (a nonexistent 44Hz sample rate — 44100 or 22050 would be real),
+`channels=0`, `samples=0`, `block_size=0` (all zero, implausible for any
+real encoded audio). §5.24's own fix correctly reads the C++-struct-
+computed `offsetof(AILSOUNDINFO, bits)` — that part isn't wrong — but this
+round's fuller dump shows the WHOLE struct read looks shifted/misaligned
+for this specific asset, not just one mis-selected field. `bits=22050`
+looking plausible (as a sample-data byte count, which is what §5.24's own
+live A/B test confirmed) may be true for the ONE asset that fix was
+validated against, without the interpretation holding for every
+`LoadedSound` instance — this round could not find another zone with real
+(non-empty, non-all-zero) `LoadedSound` content to build a clean comparison
+baseline (`sp_dubai.ff`/`so_trainer2_so_deltacamp.ff` have none;
+`so_survival_mp_alpha.ff`/`hamburg.ff` either have none reachable before
+their own current failure point or show an all-zero trivial case) — a real
+gap in this round's own evidence, not filled.
+
+**Leading theory, NOT yet confirmed via native decompile (this round's own
+assigned scope was diagnostic tracing only, not native RE — deliberately
+did not cross into another fork's lane)**: one of `LoadedSound::name`
+(a string field) or `MssSound::data`/`AILSOUNDINFO::data_ptr` (both raw
+pointers, 8 bytes in this fork's own C++ struct) may share the exact same
+"genuinely 32-bit-wide on the wire, not this stream's native 64-bit width"
+shape this session has already confirmed for OTHER specific fields
+(`MaterialPixelShader::name`, §5.16-§5.19) — if any field upstream of
+`AILSOUNDINFO` inside `LoadedSound`/`MssSound` is really 4 bytes narrower
+than this fork's struct assumes, every field read after it (the entirety
+of `AILSOUNDINFO`, in order) would land 4 bytes early relative to the true
+wire position, explaining a fully-shifted, nonsensical struct read exactly
+like the one found here. This is a genuinely different, more specific
+theory than §5.32's own broader "some earlier asset's stream position
+consumed the wrong byte count" framing — it points at a NAMED, narrow,
+independently-testable candidate (a specific pointer field's real wire
+width inside this exact three-struct chain) rather than an open-ended
+search across every asset type.
+
+**Recommended next step for whoever picks this up**: decompile the real
+native x64 `LoadedSound`/`MssSound`/`AILSOUNDINFO` fill function directly
+(reachable via `ASSET_TYPE_LOADED_SOUND`'s own dispatch case in
+`FUN_14009bce0`, not yet found/recorded this round — a fresh Ghidra pass
+starting from that dispatch table, following the same "decompile the real
+fill function, compare field-for-field against this fork's own generated
+code" method §5.32 already proved out for `ScriptFile`) to confirm or rule
+out the width-mismatch theory precisely, then fix at the permanent DSL/
+struct source (matching §5.24's own precedent) once confirmed — not a
+guess-and-ship, this exact code area (recursive Sound/LoadedSound loading)
+has a real history of segfaults from rushed changes earlier this session
+(§5.22, §5.27, §5.30's own Bug #1/#2).
+
+No source changes shipped (research-only round; every temporary diagnostic
+added to `ContentLoaderIW5.cpp` and the generated
+`snd_alias_list_t_iw5_load_db.cpp`/`loadedsound_iw5_load_db.cpp` was
+reverted from tracked source before finishing — the two generated files
+live in gitignored `build/`, not tracked, so no revert was needed there for
+git's own purposes, but they were left in their last-diagnosed state, not
+cleaned up, since they'll be regenerated/overwritten by the next real
+`ZoneCodeGenerator`+`x64_offset_fixes` pass regardless). No Ghidra project
+files touched this round (pure C++ instrumentation, no native RE).
+
 ## Raw evidence backing every claim above
 
 - Live game install, `zone/english/sp_intro.ff` and `zone/english/hamburg.ff`
