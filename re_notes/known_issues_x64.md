@@ -8154,3 +8154,84 @@ Shipped: `proxy_d3d9/src/d3d9_hook.cpp` (adds `#include "game_exe_detect.h"`
 and one `if` gate around the existing periodic-nudge call). Build-verified
 (x64, 0 new errors, `dumpbin` confirms genuine x64 output, deployed to the
 live install).
+
+### SHIPPED (build-verified, NOT yet live-tested), 2026-09-15 -- two more native gameplay hints ported to real controller-glyph substitution: stance-change hints and stance-blocked warnings
+
+**Status: build-verified, needs a real live playtest confirming visual
+placement/correctness.** Direct instruction continuing this project's own
+x64 UI-draw-pipeline-map (`re_notes/x64_migration/ui_draw_pipeline_map.md`,
+2026-09-14) into real implementation: "what we need now really for parity
+is pretty much the whole text lines, stuff like ready up mantle fixes etc."
+Picked up the map's own section 5 ranked opportunities #2 and #3.
+
+**Stance-change hints (case `0x14`)**: the native "you can currently stand/
+crouch/prone" rows, up to three simultaneously visible (e.g. while crouched,
+both "stand up" and "go prone" can show at once). Same `"&&1"`-marker
+structural-match technique already proven for Mantle -- confirmed via
+decompile that the native code substitutes the player's real, live keybind
+into the raw `PLATFORM_STANCEHINT_STAND`/`_CROUCH`/`_PRONE` templates
+natively before this hook ever sees the text, so matching the rendered text
+against the RAW template is exactly the same detection already used
+elsewhere. Real design finding: controller-side, all three transitions
+share ONE physical button (`g_buttonMap.crouchProne`, already-confirmed-
+working input per the 2026-09-05 parity work) via the native "+stance"/
+"-stance" case dispatch -- so all three substituted rows correctly show the
+SAME glyph, not three different ones. Each stance got its OWN dedicated
+overlay slot (`GameplayHintSlotId::StanceStand`/`StanceCrouch`/
+`StanceProne`, new) since up to two can be visible at once and would
+otherwise clobber a shared slot.
+
+**Stance-blocked warnings (case `0x71`, subset)**: three of the native
+"you can't do that right now" messages (`GAME_STAND_BLOCKED`,
+`GAME_CROUCH_BLOCKED`, `CGAME_PRONE_BLOCKED`/`_WEAPON`) now get a controller-
+glyph ICON PREFIX (reusing the exact same `g_buttonMap.crouchProne` glyph
+resolved for the hints above) before the unmodified native message text --
+confirmed via decompile these resolve via a plain `FUN_14029f120` call with
+NO substitution marker at all, so there's no span to replace in place, only
+somewhere to prepend an icon. **Deliberately NOT substituted this pass**:
+the other four messages this same native switch can show
+(`WEAPON_NO_AMMO`, `WEAPON_TARGET_TOO_CLOSE`, `WEAPON_LOCKON_REQUIRED`,
+`WEAPON_TARGET_NOT_ENOUGH_CLEARANCE`) -- none maps cleanly onto one
+rebindable action the way stance does, so picking a "representative" glyph
+for any of them would be an unvalidated guess about design intent, not
+something this pass had real grounds to make. **A previously-undocumented
+eighth case in this same native switch was also found this pass** (a
+dynamically-built message via `FUN_1402ca430`/`FUN_14029f0d0`, not one of
+the seven fixed localization keys the UI pipeline map's own section 3
+named) -- left completely untouched, its content isn't a fixed key this
+project can safely template-match against without further RE.
+
+**Grenade-type indicator (case `0x6b`/`0x6c`, map's own #1-ranked
+opportunity) -- investigated, deliberately NOT implemented this pass.**
+Confirmed controller Lethal/Tactical switching genuinely works on x64
+(`re_notes/x64_feature_parity_audit.md` rows 14/15, both **PRESENT**), so
+the map's own stated gating condition is satisfied. But a fresh decompile
+of the native draw call (`FUN_140077b60`) found this element's text is a
+PLAIN localized noun (e.g. "Frag Grenade") with NO keyboard-key reference
+baked into it at all -- structurally unlike Mantle/Reload/stance hints
+(which each replace or prefix a KEYBOARD-specific span with a controller
+equivalent). There's no broken/keyboard-only text here for a controller
+player to be confused by; the map's own "zero remaining identity risk"
+ranking was about confidence in the RE, not about there being a clear,
+validated substitution to make. Left unimplemented rather than force an
+icon prefix whose real value (and which action it should represent -- the
+switch button? the throw button?) isn't yet clear without live-test
+feedback -- a real, honest finding, not a skipped step.
+
+Build-verified: x64 `/t:Rebuild` (0 new errors beyond pre-existing unrelated
+warnings), `dumpbin`-confirmed `8664 machine (x64)` fresh timestamp; Win32
+regression build also 0 errors (both `overlay_hud.h`/`.cpp` are shared,
+`analog_input_hooks_x64.cpp` itself is x64-only/`ExcludedFromBuild` on
+Win32); x64 redeployed last after the Win32 regression check (this
+project's own known `OutDir`-collision gotcha). **Not yet live-tested** --
+same honest caveat as every other substitution this project has shipped:
+on-screen alignment/position is unverified, may need the same kind of
+empirical nudge-constant tuning Mantle/Pickup needed once actually seen
+running.
+
+Shipped: `proxy_d3d9/src/analog_input_hooks_x64.cpp` (two new substitution
+blocks inside `Hook_DrawTextX64`, plus a forward declaration for
+`GetControllerGlyphAssetName`), `proxy_d3d9/src/overlay_hud.h` (four new
+`GameplayHintSlotId` values: `StanceStand`/`StanceCrouch`/`StanceProne`/
+`StanceBlocked`), `proxy_d3d9/src/overlay_hud.cpp` (the three existing
+slot-label ternary chains extended to cover the new slots).

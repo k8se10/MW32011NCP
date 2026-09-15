@@ -272,8 +272,22 @@ void RequestGlyphIconOverlay(float x, float y, float w, float h, const char* ass
 // different HUD element from every other gameplay hint here -- own slot so its
 // much-larger size (kQteHintScale) and pulsing icon (see RequestCustomHintOverlay's
 // flashIcon param) never affect/get affected by Interact/ReadyUp/Reload/Mantle.
-enum class GameplayHintSlotId { Interact = 0, ReadyUp = 1, Reload = 2, Mantle = 3, Qte = 4 };
-constexpr int kGameplayHintSlotCount = 5;
+// StanceStand/StanceCrouch/StanceProne (2026-09-15, x64 UI-pipeline-map follow-up):
+// the native stance-change hint block can show UP TO THREE of these simultaneously
+// (e.g. while crouched, both "stand up" and "go prone" rows can be visible at
+// once) -- each needs its own slot so two simultaneously-visible rows can't
+// clobber each other the way sharing one slot would (unlike Reload/Mantle/etc,
+// which this project's own investigation confirmed only ever show one at a time).
+// StanceBlocked (2026-09-15, same pass as Stance*) -- the native "you can't do
+// that right now" warning family (GAME_STAND_BLOCKED/_CROUCH_BLOCKED/
+// CGAME_PRONE_BLOCKED(_WEAPON)) is a genuinely different concept from the
+// stance-CHANGE hint rows above (one says "you CAN," the other says "you
+// CAN'T"), own slot so the two can't fight over the same one if they ever
+// somehow overlap.
+enum class GameplayHintSlotId { Interact = 0, ReadyUp = 1, Reload = 2, Mantle = 3, Qte = 4,
+                                  StanceStand = 5, StanceCrouch = 6, StanceProne = 7,
+                                  StanceBlocked = 8 };
+constexpr int kGameplayHintSlotCount = 9;
 
 // Which bundled Isotherm Sans variant a hint's text should use (2026-08-24,
 // live-reported: "condensed only works for the throwback prompt and turrets etc,
