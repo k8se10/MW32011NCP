@@ -7883,3 +7883,144 @@ yet by a fresh live repro).
 Shipped: `proxy_d3d9/src/game_exe_detect.h`/`.cpp` (new),
 `proxy_d3d9/src/dllmain.cpp`, `proxy_d3d9/proxy_d3d9.vcxproj`. Full
 PATCHNOTES.md entry: current `Unreleased` version, Fixed item 17.
+
+### UPDATE, 2026-09-15 (direct continuation, session wrapping up soon) -- fifth theory ruled out (SndCurve's own sub-load); more importantly, asset 4481's ENTIRE lifecycle now confirmed clean end-to-end -- root cause is NOT within that asset at all, contradicting every round's working assumption since the prior finding; genuinely at this project's own "Fresh Perspective" threshold now
+
+**Status: Open.** `code_post_gfx.ff`'s `XFILE_BLOCK_SCRIPT` "size 0" crash
+(and the same class affecting `hamburg.ff`, `common.ff`, `sp_paris_b.ff`,
+`so_assassin_payback.ff`, `so_heliswitch_berlin.ff`,
+`so_killspree_paris_a.ff`, `so_stealth_prague.ff`) has now had 5 genuine,
+evidence-based rounds today, each closing a real, specific, named theory:
+block-size-table order/width, `ScriptFile`'s own fill/block-assignment
+logic, the initial (self-corrected) ScriptFile framing, the
+`LoadedSound`/`MssSound`/`AILSOUNDINFO` width theory, and now `SndCurve`'s
+own sub-load (traced this round: asset 4481's `volumeFalloffCurve` field
+genuinely fires a fresh `SndCurve` load, previously completely
+unexamined -- confirmed via diagnostic tracing to read entirely clean,
+plausible falloff-curve data, real resolved names, no anomaly).
+
+**The cumulative finding matters more than the fifth ruled-out theory
+itself**: between `LoadedSound` (prior round), `SndCurve` (this round), and
+`speakerMap` (confirmed a zero-byte-consuming lookup, not a fresh read,
+so structurally exempt) -- every field of asset 4481 that could possibly
+consume stream bytes is now independently verified clean. Asset 4481's
+own COMPLETE lifecycle trace, from entry to its final `LinkAsset` call,
+shows no anomaly anywhere. **The true corruption source is not within
+asset 4481 at all** -- contradicting the working assumption every round
+since the prior finding has operated under.
+
+**Recommended for whoever picks this up next**: this is squarely the
+situation this project's own CLAUDE.md "Fresh Perspective Breaks Real
+Stalemates" principle describes -- a 6th round of the same per-asset
+field-tracing technique against the immediately-preceding asset is
+unlikely to be productive. Try instead: (1) instrument the real underlying
+file-stream read cursor directly (not any block's own offset counter,
+which resets per-asset for TEMP and can't reveal a carried-forward
+desync); (2) widen the traced window well beyond the one asset immediately
+preceding the failure (the 56-asset RAWFILE run and the SOUND_CURVE/
+SNDDRIVER_GLOBALS pair before it have never been individually checked);
+(3) reconsider whether this is a stream-desync bug at all, given every
+field checked so far has been correct.
+
+No source changes shipped. No Ghidra decompile attempted this round (the
+shared Ghidra project's marker file was transiently missing, very likely
+a parallel fork's own concurrent use -- deliberately avoided any Ghidra
+invocation for the rest of this round to eliminate collision risk). Full
+trail: `re_notes/x64_migration/fastfile_format_research.md` §5.35.
+
+### SHIPPED (build-verified, NOT yet live-tested), 2026-09-15 -- real on-screen Multiplayer status warning, direct follow-up to the same-day hook-gating fix
+
+**Status: build-verified, needs a real live playtest under iw5mp.exe to
+confirm.** Direct instruction, following the same-day MP hook-gating fix:
+a player under `iw5mp.exe` currently only gets a log-file explanation for
+why gameplay hooks aren't installed -- nothing on screen. Requested: an
+on-screen warning through the same notifier "Controller Connected"/
+"MW32011NCP Started" already use, taking real priority and shown in a
+different position with a warning color.
+
+**Implemented**:
+- `dllmain.cpp`'s `GameExecutable::MP` branch now calls
+  `ShowOverlayMessageUntilDismissed("[!] Multiplayer has no functionality
+  working right now.")` right after detection.
+- **Real priority fix in `overlay_hud.cpp`'s `ShowOverlayMessage`**: before
+  this round, an ordinary auto-expiring toast (`ShowOverlayMessage`, used
+  by "Controller Connected"/"MW32011NCP Started"/config-hot-reload)
+  unconditionally cleared `g_overlayRequiresDismiss`, meaning any routine
+  toast racing an active must-see warning would silently replace it --
+  a real bug, not just a missing feature, since `d3d9_hook.cpp`'s own
+  "MW32011NCP Started" toast fires at Direct3DCreate9 time, shortly AFTER
+  `DllMain` where the new MP warning is triggered. `ShowOverlayMessage` now
+  refuses to override an active dismiss-required warning at all -- it
+  genuinely can't be missed or silently clobbered anymore.
+- **Different position + color**: the dismiss-required path already drew
+  through a completely separate function (`DrawWarningModal`, issue #92) --
+  a centered, blurred-panel modal, structurally distinct from the ordinary
+  top-right toast, so "different position" was already true architecturally.
+  Its text tint was hardcoded white; changed to a real warning-yellow
+  (`0xFFFFD400`, distinct from `OverlayAnimStyle::Gold`'s own warmer amber
+  tone) via the same proven diffuse-tint-on-white-alpha-texture technique
+  Gold already uses -- every message shown through this modal is by
+  definition a real warning, so this applies to all of them, not just MP's.
+- **Warning marker, not a literal emoji**: `RenderWarningTextMask` renders
+  via GDI `DrawTextA` (ANSI) against this project's own embedded,
+  non-emoji Isotherm Sans font -- neither can reliably render a true
+  Unicode glyph like U+26A0. Used the text marker `"[!] "` instead, which
+  this exact text path is guaranteed to render correctly.
+- **Future message swap, groundwork only**: the future "Multiplayer is in
+  pre-alpha..." message is written as a commented-out line directly next to
+  the active one in `dllmain.cpp`, so swapping once MP gets real partial
+  functionality is a one-line change, not new code.
+
+**Not yet live-tested**: build-verified (x64 `/t:Rebuild`, 0 errors, deployed
+and confirmed via `dumpbin /headers` to be the real x64 binary) but this is
+an in-game visual feature that needs a real launch under `iw5mp.exe` to
+confirm the modal actually draws, reads correctly, is genuinely yellow, and
+that the priority fix actually prevents "MW32011NCP Started" from clobbering
+it live (not just verified by code inspection).
+
+Shipped: `proxy_d3d9/src/dllmain.cpp`, `proxy_d3d9/src/overlay_hud.cpp`.
+Full PATCHNOTES.md entry: current `Unreleased` version, What's New item 17.
+
+### UPDATE, 2026-09-15 (direct follow-up, "invalid block N" failure class -- 14 zones, block index varies: 15/11/12) -- traced to the SAME snd_alias_list_t/LoadedSound nested chain already investigated for a different zone; AILSOUNDINFO field-layout theory now definitively closed via a stronger, more general argument; candidate narrows to one of six string-resolution decisions, not yet individually verified
+
+**Status: Open, narrowed further.** Separate failure class from the
+`code_post_gfx.ff`-specific `XFILE_BLOCK_SCRIPT` thread -- 14 zones affected
+(`sp_berlin.ff`, `sp_ny_manhattan.ff`, `sp_paris_a.ff`, `sp_payback.ff`,
+`sp_warlord.ff`, `so_deltacamp.ff`, `so_ied_berlin.ff`, `so_jeep_paris_b.ff`,
+`so_littlebird_payback.ff`, `so_rescue_hijack.ff`, `so_stealth_warlord.ff`,
+`so_timetrial_london.ff` all at block 15; `so_assault_rescue_2.ff` at block
+11; `so_milehigh_hijack.ff` at block 12).
+
+Traced `sp_berlin.ff` via coarse per-asset tracing to asset 173/3047 (type
+11, Sound) preceded by asset 172 (also Sound) -- the same "two back-to-back
+Sound assets, second one corrupted" shape found twice before. Asset 172's
+own `AILSOUNDINFO` dump shows the same suspicious signature already seen
+in a different zone (`format=65537`, `channels=0`, `samples=0`,
+`block_size=0`, but `bits` a real-looking number used to drive a large raw
+read) -- asset 173 immediately after shows corrupted header fields
+decoding to block 15.
+
+**Definitively closed the `AILSOUNDINFO`-field-layout theory** via a
+stronger argument than the prior round's specific width-mismatch check:
+every read in this chain that could desync the stream is a FIXED-SIZE bulk
+block read (`MssSound`=0x38/56 bytes, `LoadedSound` header=0x40/64 bytes,
+both confirmed matching native's own literal byte counts) -- a fixed-size
+read consumes the same stream bytes regardless of internal field values,
+so no internal field-ordering mismatch could ever cause a stream-position
+discrepancy, only wrong displayed values. This rules out the WHOLE class of
+"AILSOUNDINFO's internal layout is subtly wrong" theories at once.
+`PushBlock`/`PopBlock` nesting through the full chain was also read and
+confirmed correctly paired, ruling out a block-tracking mismatch.
+
+**New leading candidate**: six variable-length string reads exist in this
+exact chain (5 in `snd_alias_t`, 1 in `LoadedSound::name`) -- unlike the
+fixed-size reads above, these consume a genuinely variable number of
+stream bytes depending on a FOLLOWING-vs-already-resolved decision per
+field. If even one of these six decisions doesn't match what the real
+native engine decides for the same raw value, that's an exact-fit
+stream-desync mechanism. Not yet individually verified for all six fields
+in this specific failure case -- the concrete, well-scoped next step.
+
+No source changes shipped (temp diagnostic reverted, confirmed via `git
+diff --stat`). Zero live debugger used. Full trail:
+`re_notes/x64_migration/fastfile_format_research.md` SS5.36.

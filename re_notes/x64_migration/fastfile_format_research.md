@@ -2886,6 +2886,202 @@ No tracked source touched at all this round (reused §5.33's own
 already-present, gitignored `build/`-only diagnostics rather than adding
 new ones).
 
+## 5.35. UPDATE, 2026-09-15 (direct continuation, session wrapping up soon) — a fifth theory ruled out (`SndCurve`'s own sub-load, previously completely unexamined), and more importantly: asset 4481's ENTIRE lifecycle (every field, every sub-load) is now confirmed clean end-to-end, not just its previously-checked `LoadedSound` portion — `code_post_gfx.ff`'s `XFILE_BLOCK_SCRIPT` root cause remains genuinely open, real "Fresh Perspective" territory now
+
+**Status: Open, root cause not found after 5 rounds of genuine, well-evidenced
+investigation.** Picked up directly from §5.34's own close: with the
+`LoadedSound`/`MssSound`/`AILSOUNDINFO` width theory ruled out, re-examined
+whether every OTHER field of asset 4481 (the `snd_alias_list_t` asset
+immediately preceding the corrupted 4482) had actually been checked — it
+had not. `snd_alias_t` (the single array element inside 4481) has a
+`volumeFalloffCurve` field (an `SndCurve` reference) that no prior round
+ever traced, since all four earlier rounds focused specifically on the
+`soundFile`→`LoadedSound` path.
+
+**Confirmed via fresh diagnostic tracing that `volumeFalloffCurve` genuinely
+IS populated** (raw value `0xFFFFFFFFFFFFFFFF`, the real FOLLOWING sentinel,
+not null) for asset 4481 in `code_post_gfx.ff` — meaning a full, fresh
+`Load_SndCurve` sub-load genuinely fires here, reading `sizeof(SndCurve)`
+(144 bytes) raw from the stream, a code path with zero prior diagnostic
+coverage. Added temporary tracing to
+`tools/iw5oat/build/src/ZoneCode/Game/IW5/XAssets/sndcurve/sndcurve_iw5_load_db.cpp`
+(gitignored, generated, no tracked-source change) and found: **the data read
+is completely clean and plausible.** Two separate `SndCurve` sub-loads
+happen (asset 4481 has two `snd_alias_t`-adjacent curve references reached
+during its own processing); both show real, sane falloff-curve data
+(`knotCount=5`/`knotCount=2`, knot pairs like `[0.0, 1.0]`/`[0.25, 0.65]` —
+exactly the monotonic, normalized 0-1 shape a real volume falloff curve
+should have) and both resolve to real, sensible asset names (`"default"`,
+`"$default"`). This rules out `SndCurve`'s own struct layout/read-size as
+the corruption source — the fifth distinct, well-evidenced theory closed
+today (after §5.31 block-table order/width, §5.32 `ScriptFile`'s own fill
+logic, §5.33's initial ScriptFile framing self-corrected to Sound, §5.34
+the `LoadedSound` width theory).
+
+**The more important finding is the CUMULATIVE one, not just this fifth
+ruled-out theory**: asset 4481's `speakerMap` field was also already
+confirmed (§5.33's own trace, re-verified this round) to resolve via
+`ConvertOffsetToPointerLookup` — an OFFSET/lookup reference into
+already-loaded data, consuming ZERO new stream bytes, so it structurally
+cannot be a desync source regardless of whether the lookup itself is
+correct. Between LoadedSound (§5.34), SndCurve (this round), and
+speakerMap's own zero-byte-consumption nature, **every single field of
+asset 4481 that could possibly consume stream bytes has now been
+independently verified**, and every one of them reads clean, correct,
+real data all the way through -- not just the specific sub-portion each
+individual round happened to check. Asset 4481's own complete lifecycle
+trace (from `LoadPtr_snd_alias_list_t`'s entry through `LoadAsset_
+snd_alias_list_t`'s own `LinkAsset` call at the very end) shows no
+anomaly, exception, or implausible value anywhere.
+
+**This means the true corruption source is NOT within asset 4481 at all**
+— contradicting the working assumption every round since §5.33 has
+operated under (that the immediately-preceding asset is the culprit,
+just via an as-yet-unidentified specific field). The real answer must be
+either: (a) further back in the asset sequence than assumed (the 56
+consecutive `RAWFILE` assets at indices 4423-4478, or the `SOUND_CURVE`/
+`SNDDRIVER_GLOBALS` pair at 4479-4480, none of which any round has
+individually verified field-by-field against native), or (b) a genuinely
+different mechanism entirely -- not a "wrong byte count somewhere"
+stream-desync at all, but something else (a shared/global state issue, a
+block-index computation bug independent of any single asset's own field
+values, or similar) that none of today's five rounds' shared working
+hypothesis would have caught.
+
+**Recommended next step, stated plainly for whoever picks this up**: this
+bug has now had 5 genuine, well-reasoned, evidence-based rounds today
+alone (on top of the original discovery earlier this session) without
+landing a fix, each one closing a real, specific, named theory rather than
+going in circles on the same one -- this is squarely the situation this
+project's own CLAUDE.md "Fresh Perspective Breaks Real Stalemates"
+principle describes. A 6th round using the SAME technique (per-asset field
+tracing against the immediately-preceding asset) is unlikely to be
+productive. Fresh angles worth trying instead: (1) directly instrument the
+REAL underlying file-stream read cursor itself (wherever `ILoadingStream`'s
+own position lives, upstream of any per-block offset counter -- none of
+today's diagnostics have looked at this directly, only at block-level
+bookkeeping, which resets per-asset for TEMP and therefore can't reveal a
+carried-forward desync); (2) widen the traced window to the full 56-asset
+`RAWFILE` run plus the `SOUND_CURVE`/`SNDDRIVER_GLOBALS` pair before 4481,
+not just the one asset immediately preceding the failure; (3) reconsider
+whether this is a stream-desync bug at all, given every field checked so
+far has been correct -- a bug in the shared offset-to-block-index decode
+math itself (independent of any specific asset), or a corruption in how
+`code_post_gfx.ff`'s own real file bytes were captured/extracted for this
+project's own reference copy, are both real alternative categories worth
+a skeptical re-check before assuming a sixth desync-source hunt will
+finally find it.
+
+**No source changes shipped** (pure RE + empirical tracing; no fix
+attempted since no genuine root cause was found). No Ghidra decompile
+attempted this round -- the shared Ghidra project's own marker file
+(`iw5sp_x64_proj.gpr`) was transiently missing, very likely a parallel
+fork's own concurrent Ghidra use, and this round deliberately avoided any
+Ghidra invocation for the rest of its duration to eliminate collision
+risk entirely, relying on pure empirical C++ diagnostic tracing instead.
+`git status --short re_notes/ghidra_project_x64/` was NOT touched by this
+round at all as a result.
+
+## 5.36. UPDATE, 2026-09-15 (direct follow-up, "invalid block N" failure class — 14 zones, block index varies: 15/11/12 across different zones — a SEPARATE failure class from §5.28-§5.35's own `XFILE_BLOCK_SCRIPT` thread) — the SAME `snd_alias_list_t`/`LoadedSound` nested chain implicated again, in a genuinely different zone; the `AILSOUNDINFO`-field-layout theory is now DEFINITIVELY closed via a new, stronger argument (bulk-read byte counts are provably identical to native regardless of field values); the real candidate narrows to one of six variable-length string reads in this same nested chain, not yet individually verified
+
+**Status: Open, narrowed further, no fix shipped (correctly — the remaining
+candidate needs verification this round's own time budget didn't allow).**
+This is a genuinely separate failure class from the `code_post_gfx.ff`-
+specific `XFILE_BLOCK_SCRIPT` thread §5.28-§5.35 have been chasing —
+"invalid block N" affects 14 different zones with a VARYING block index
+(15 in 12 zones, 11 in `so_assault_rescue_2.ff`, 12 in
+`so_milehigh_hijack.ff`), the classic signature of a garbage struct field
+being run through the shared offset→block-index decode math (the same
+mechanism §5.30/§5.33 already established: a raw value, truncated to 32
+bits and run through the 4-bit-block-index-in-a-32-bit-word scheme,
+produces whatever the top nibble happens to be — 15, 11, 12, etc., not one
+fixed constant).
+
+**Traced `sp_berlin.ff`'s own failure via coarse per-asset tracing**
+(temporary diagnostic in `ContentLoaderIW5.cpp`, reverted before
+finishing, confirmed via `git diff --stat`) to asset index **173 of 3047,
+type 11 (`ASSET_TYPE_SOUND`)** — immediately preceded by asset **172,
+ALSO type 11** — the identical "two back-to-back Sound assets, the second
+one corrupted" shape §5.28/§5.30 already found twice before in different
+zones. Asset 172's own trace (reusing §5.30's still-present, gitignored
+diagnostics in the generated `snd_alias_list_t_iw5_load_db.cpp`/
+`loadedsound_iw5_load_db.cpp`) shows the exact same suspicious
+`AILSOUNDINFO` signature §5.33/§5.34 already found elsewhere —
+`format=65537` (0x10001, identical bit pattern to the OTHER zone's own
+case), `channels=0`, `samples=0`, `block_size=0`, but `bits` holding a
+real-looking number (`109640` this time, `22050` before) — used to drive a
+`109640`-byte raw-sample-data read. Asset 173 immediately after shows
+clearly corrupted header fields (`head=0x00FFFFFF`,
+`aliasName(raw)=0xFFFFFFFFFF000000`, decoding to block 15 exactly as
+predicted by the shared decode math).
+
+**New, decisive argument that definitively closes the `AILSOUNDINFO`-field-
+layout theory §5.33 first raised** (§5.34 already ruled out the SPECIFIC
+width-mismatch shape of that theory via native offset cross-checks; this
+round adds a stronger, more general argument covering every possible
+internal field arrangement, not just the ones already checked): **every
+read in this chain that could plausibly desync the stream is a FIXED-SIZE
+bulk block read** (`LoadWithFill(sizeof(MssSound))` = 0x38/56 bytes,
+matching `FUN_14009c0f0`'s own `FUN_1400aad70(param_1, DAT_1407bd9c0,
+0x38)` exactly; the outer `LoadedSound` header = 0x40/64 bytes, matching
+`FUN_140094150`'s own `FUN_1400aad70(param_1, DAT_1407bdd88, 0x40)`
+exactly). **A fixed-size bulk read consumes the same number of stream bytes
+regardless of what values end up inside it** — so even if this fork's own
+`struct AILSOUNDINFO` declares its six numeric fields (`format`/`data_len`/
+`rate`/`channels`/`samples`/`block_size`) in a genuinely different internal
+order or padding than native, that could only produce WRONG DISPLAYED
+VALUES for those fields, never a stream-position discrepancy, since the
+exact same total byte count is consumed either way. This rules out the
+entire class of "AILSOUNDINFO's internal field layout is subtly wrong"
+theories at once, not just the one specific shape already checked.
+`PushBlock`/`PopBlock` nesting through the whole chain
+(`LoadPtr_LoadedSound` → `Load_LoadedSound` → `Load_MssSound`, each with
+its own correctly-paired push/pop) was also read in full and confirmed
+correctly nested, ruling out a block-offset-tracking mismatch as a
+separate candidate.
+
+**The one class of read in this chain NOT covered by the "fixed-size bulk
+read, provably correct" argument above: variable-length string reads.**
+`Load_snd_alias_t`'s own element has 5 `LoadXString`-driven fields
+(`aliasName`, `subtitle`, `secondaryAliasName`, `chainAliasName`,
+`mixerGroup`), and `Load_LoadedSound` has a 6th (`name`) — every one of
+these, when the raw on-wire value equals the `FOLLOWING` sentinel, reads a
+NEW, variable-length, null-terminated string directly off the stream
+(`LoadNullTerminated`, `ContentLoaderBase.cpp`) rather than a fixed byte
+count. **If even one of these six fields' FOLLOWING-vs-already-resolved
+decision doesn't match what the real native engine decides for the same
+raw value, that's a real, exactly-shaped stream-desync mechanism** — this
+was NOT ruled out this round, and is now the strongest remaining
+candidate. Every individually-checked string field so far (`aliasName` in
+both `FUN_14009f4b0`/`FUN_140094150`) showed native using the identical
+`if (raw == -1) { fresh string read } else { lookup }` gating this fork's
+own `LoadXString` already implements — but this was only confirmed for
+ONE field's own outer wrapper function in each case, not independently for
+all six fields across this exact nested chain in this exact failure
+scenario.
+
+**Not fixed this round — explicitly, deliberately, given the remaining
+time budget and this exact code area's own documented segfault history
+from rushed changes (§5.22, §5.27, §5.30's own Bug #1/#2).** No tracked
+source changed; the one temporary diagnostic added
+(`ContentLoaderIW5.cpp`'s coarse per-asset trace) was reverted before
+finishing. Zero live debugger used (static Ghidra decompile — reused
+already-saved evidence, no new invocation this round — plus `fprintf`
+diagnostics only, per this investigation's own standing rule).
+
+**Recommended next step for whoever picks this up**: verify each of the
+six string fields' own real native FOLLOWING-vs-lookup decision
+individually for THIS specific failure case (asset 172's own five
+`snd_alias_t` string fields plus asset 172's LoadedSound's own `name`
+field) — either via fresh diagnostic tracing that dumps each field's raw
+value immediately before its own resolution decision (not just the field
+name, which is all the currently-present diagnostics show), or via a
+targeted native decompile of whichever specific string-handling primitive
+turns out to be the odd one out. Given six candidates and a real, working
+methodology already established (§5.16-§5.20's own original string-
+resolution investigation), this is very likely tractable in one more
+focused round.
+
 ## Raw evidence backing every claim above
 
 - Live game install, `zone/english/sp_intro.ff` and `zone/english/hamburg.ff`
