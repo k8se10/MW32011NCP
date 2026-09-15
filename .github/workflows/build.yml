@@ -1,0 +1,58 @@
+name: Build
+
+# Real build verification for this repo's shipping components -- runs on a
+# genuine Windows MSVC toolchain, no simulation. Builds the actual DLLs that
+# ship to players: the main mod (proxy_d3d9), the netcode-security
+# component's own standalone DLL, and its "greenlit" plugin variant.
+#
+# Deliberately does NOT build tools/iw5oat -- that's developer/research
+# tooling only, never shipped to players (see README.md's "Repository
+# structure" table), and its premake-generated build tree has its own known
+# fragility documented in re_notes/known_issues_x64.md (a RawTemplater
+# CustomBuild-batching quirk that needed a build-artifact-only workaround
+# applied by hand, not from source) that's out of scope for a basic
+# buildability check on the shipping product.
+#
+# This backs README.md's own "build" badge -- if this workflow is failing,
+# that badge tells the truth about it rather than a hand-maintained claim
+# drifting stale.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "proxy_d3d9/**"
+      - "security/proxy_d3d9/**"
+      - "security/tools/ncp_plugin_netcode_fixes/**"
+      - ".github/workflows/build.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "proxy_d3d9/**"
+      - "security/proxy_d3d9/**"
+      - "security/tools/ncp_plugin_netcode_fixes/**"
+      - ".github/workflows/build.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: proxy_d3d9 (main mod)
+            project: proxy_d3d9/proxy_d3d9.vcxproj
+          - name: security proxy_d3d9 (standalone)
+            project: security/proxy_d3d9/proxy_d3d9.vcxproj
+          - name: security plugin (ncp_plugin_netcode_fixes)
+            project: security/tools/ncp_plugin_netcode_fixes/ncp_plugin_netcode_fixes.vcxproj
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build ${{ matrix.name }} (Release x64)
+        run: msbuild "${{ matrix.project }}" /p:Configuration=Release /p:Platform=x64 /m /warnaserror:false

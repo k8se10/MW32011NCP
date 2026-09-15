@@ -1,0 +1,58 @@
+name: Sync Wiki
+
+# Publishes wiki/*.md in this repo to the real GitHub wiki
+# (github.com/k8se10/MW32011NCP.wiki.git) whenever wiki/ changes on main.
+# wiki/ is the single source of truth for every wiki page from now on --
+# edit it here, never directly on the GitHub wiki web UI, since a direct
+# UI edit will be silently overwritten by the next sync.
+#
+# This closes a real, previously-manual gap: this project's own CLAUDE.md
+# documented the wiki drifting three releases and roughly three weeks
+# behind the actual project state at least once before ("Keeping this file
+# current," 2026-08-19), purely because syncing it was a manual step no
+# automation tracked. Every push to main that touches wiki/ now republishes
+# it automatically -- no separate manual paste step, no silent staleness.
+#
+# Requires "Read and write permissions" for the default GITHUB_TOKEN under
+# this repo's Settings -> Actions -> General -> Workflow permissions (a
+# one-time repo setting, not something this workflow file can set for
+# itself) -- otherwise the push step below fails with a 403.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "wiki/**"
+      - ".github/workflows/wiki-sync.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync-wiki:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main repo
+        uses: actions/checkout@v4
+
+      - name: Clone wiki repo
+        run: |
+          git clone "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.wiki.git" wiki-repo
+
+      - name: Sync wiki/ into the wiki repo
+        run: |
+          rsync -av --delete --exclude='.git' wiki/ wiki-repo/
+
+      - name: Commit and push if changed
+        working-directory: wiki-repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No wiki changes to publish."
+            exit 0
+          fi
+          git commit -m "docs: sync wiki from main repo wiki/ (${{ github.sha }})"
+          git push
