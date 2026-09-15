@@ -506,6 +506,23 @@ item below.
     decision — static RE first, opt-in-only live/injection work once it
     starts) — this change stops the wrong binary's hooks from ever being
     attempted, it doesn't add new ones.
+18. **Real regression from item 17 above, caught the same day via a live MP
+    test: the netcode-security plugin's hooks silently failed to install
+    under `iw5mp.exe` for an entire real Team Deathmatch session.** A live
+    `proxy_d3d9.log` capture showed every one of that plugin's signatures
+    resolving correctly, followed by `MH_CreateHook = 2`
+    (`MH_ERROR_NOT_INITIALIZED`) — `MH_Initialize()` had never run before
+    the plugin's own hook-install attempt. Root cause: item 17's own gating
+    change correctly stopped gameplay hooks from installing under
+    `iw5mp.exe`, but that installer happened to be the only thing that
+    called `MH_Initialize()` before the plugin loader runs — a real gap
+    that change didn't anticipate, since it only reasoned about gameplay-
+    hook safety, not this separate subsystem's shared MinHook dependency.
+    Fixed by calling the already-idempotent `MH_Initialize()`
+    unconditionally, before both the SP/MP branch and the plugin loader,
+    guaranteeing it always runs regardless of which binary loaded the DLL.
+    Build-verified, deployed; not yet re-confirmed with a second live MP
+    session.
 
 ### Documentation
 1. **`re_notes/known_issues_x64.md` established** as the dedicated x64 issue

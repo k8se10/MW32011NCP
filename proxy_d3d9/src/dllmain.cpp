@@ -19,6 +19,7 @@
 #include "mod_config.h"
 #include "overlay_hud.h"
 #include "plugin_loader.h"
+#include "../third_party/minhook/include/MinHook.h"
 #include "frame_benchmark.h" // 2026-08-27 -- times LogFlushThreadProc's own real
     // fflush() cost (issue #96 follow-up, background-thread visibility gap)
 
@@ -494,6 +495,24 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
             sprintf_s(buf, "Detected game executable: %s", GameExecutableName(detectedExe));
             Log(buf);
         }
+
+        // 2026-09-15, live-caught regression: MH_Initialize() was previously only
+        // ever called from inside InstallAnalogInputHooksX64()/InstallAnalogInputHooks()
+        // (SP only, as of the same-day MP-gating change above) or later, inside
+        // d3d9_hook.cpp's own hooks (which don't run until Direct3DCreate9 is
+        // called). Under iw5mp.exe, neither had run yet by the time LoadPlugins()
+        // below loads the netcode-security plugin and it tries its own
+        // MH_CreateHook calls -- a real, live-observed failure ("MH_CreateHook = 2",
+        // MH_ERROR_NOT_INITIALIZED), confirmed via a real MP TDM session's own
+        // proxy_d3d9.log: every one of that plugin's signatures resolved correctly,
+        // but all three findings' hooks silently failed to install, meaning the
+        // security fixes were NOT actually protecting that entire session despite
+        // loading, initializing, and logging success up to that exact point.
+        // Fixed at the root: MH_Initialize() is idempotent (every other call site
+        // already relies on this -- see d3d9_hook.cpp's own comments) and now runs
+        // here unconditionally, before ANY hook-installing code path (this SP/MP
+        // branch, and LoadPlugins() below) can possibly run first.
+        MH_Initialize();
 
         if (detectedExe == GameExecutable::SP) {
             Log("proxy_d3d9 init OK — analog movement/look hooks installing.");
