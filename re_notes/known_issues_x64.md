@@ -7626,3 +7626,40 @@ Shipped: `tools/iw5oat/src/Common/Game/IW5/IW5_Assets.h`
 evidence files. Not shipped: the other 17 `reusable`-field asset types'
 own Mark-phase sites (documented, narrower-scope future lead). Full trail:
 `re_notes/x64_migration/fastfile_format_research.md` §5.30.
+
+### RULED OUT (with hard evidence), 2026-09-15 (parallel fork, "go after that one with 3 forks") -- the XFILE_BLOCK_SCRIPT "size 0" crash class is NOT a block-size-table order/width bug; the block genuinely is 0 bytes for this content, root cause is downstream
+
+**Status: Investigating (one hypothesis closed, real root cause still
+open).** One of three parallel forks on the `XFILE_BLOCK_SCRIPT` failure
+class (`hamburg.ff`/`common.ff`/`code_post_gfx.ff`/`rescue_2.ff`/
+`common_survival.ff`/`so_stealth_prague.ff`). Assigned angle: verify the
+real native x64 block-size-table ORDER matches this fork's own assumed
+order (TEMP/PHYSICAL/RUNTIME/VIRTUAL/LARGE/CALLBACK/VERTEX/INDEX/SCRIPT).
+
+Added temporary diagnostic tracing to `StepAllocXBlocks.cpp` (no debugger
+-- static/empirical only, per standing rule) and dumped all 9 raw
+block-size values for `code_post_gfx.ff` (failing) against `sp_intro.ff`
+and `sp_dubai.ff` (both confirmed working). **Decisive result**: both
+working zones show a real, sane, nonzero SCRIPT value (62 and 7242
+respectively) in exactly the slot this fork already reads it from --
+proving the parser is correctly aligned. `code_post_gfx.ff`'s own other 8
+values are equally sane and match the same zero/nonzero shape as the two
+working zones (PHYSICAL/RUNTIME/LARGE/CALLBACK zero in all three, nothing
+shifted or garbage). **`code_post_gfx.ff`'s SCRIPT block genuinely is 0
+bytes on disk for this zone.** Table order/width is 100% ruled out as the
+cause.
+
+**Real root cause narrowed to two remaining candidates, both open**: (a)
+some OTHER asset's offset-to-block-index decode computes block index 8
+(SCRIPT) when it should resolve to a different, genuinely non-empty block
+-- a decode-math bug, not ScriptFile-specific; or (b) `ScriptFile`'s own
+real native block assignment differs from its DSL declaration
+(`set block buffer XFILE_BLOCK_SCRIPT;`) on x64 specifically -- its
+content might live in a different block now. `ASSET_TYPE_SCRIPTFILE`'s
+real native fill function is `FUN_1400964a0` (case `0x27`,
+`re_notes/ghidra_scripts/decomp_dispatch_14009bce0.txt` line 178-181),
+not yet decompiled.
+
+No source changes shipped -- temp diagnostic fully reverted, clean
+rebuild confirmed. Full trail:
+`re_notes/x64_migration/fastfile_format_research.md` SS5.31.

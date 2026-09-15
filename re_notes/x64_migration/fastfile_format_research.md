@@ -2507,6 +2507,73 @@ achievable MVP rather than reproducing OpenAssetTools' full scope:
   zlib dependency rather than reimplementing that correctly-working part
   from scratch — the fork itself was the toolchain decision.
 
+## 5.31. UPDATE, 2026-09-15 (parallel fork, "go after that one with 3 forks") — the `XFILE_BLOCK_SCRIPT` "size 0" crash class: block-size TABLE ORDER/WIDTH definitively RULED OUT via direct empirical evidence; the true block size really is 0 for this content, root cause lies elsewhere
+
+**Status: hypothesis eliminated with hard evidence, not a fix.** One of
+three parallel forks investigating the `XFILE_BLOCK_SCRIPT` "size 0" crash
+class (`hamburg.ff`/`common.ff`/`code_post_gfx.ff`/`rescue_2.ff`/
+`common_survival.ff`/`so_stealth_prague.ff`, error shape: `Zone referenced
+offset N of block XFILE_BLOCK_SCRIPT which is larger than its size 0`).
+Assigned angle: verify whether the real native x64 block-size-table ORDER
+(TEMP/PHYSICAL/RUNTIME/VIRTUAL/LARGE/CALLBACK/VERTEX/INDEX/SCRIPT, per
+`ZoneLoaderFactoryIW5.cpp`'s `SetupBlock()`) actually matches this fork's
+own assumed order — §5's own earlier claim that the 44-byte block-size
+header is "CONFIRMED UNCHANGED" rested on a raw hex-dump comparison of the
+BYTES, not an independent verification that this fork reads those 9 values
+into the correct slots.
+
+**Definitively ruled out via direct empirical cross-zone comparison —
+stronger evidence than a native decompile would have given, and much
+faster.** Added temporary diagnostic tracing (`fprintf`+`fflush` to
+stderr, no debugger of any kind — see this project's own standing rule:
+cdb/WinDbg caused a real system crash earlier this investigation, static
+analysis and normal tool runs only) to `StepAllocXBlocks.cpp`, dumping all
+9 raw block-size values with their block names for three zones:
+
+```
+sp_intro.ff (WORKING, thin loader):
+  TEMP=136 PHYSICAL=0 RUNTIME=0 VIRTUAL=423 LARGE=0 CALLBACK=0 VERTEX=0 INDEX=0 SCRIPT=62
+
+sp_dubai.ff (WORKING, real large content zone, unblocked by §5.30's fix):
+  TEMP=920 PHYSICAL=0 RUNTIME=0 VIRTUAL=16343069 LARGE=0 CALLBACK=0 VERTEX=3919616 INDEX=652224 SCRIPT=7242
+
+code_post_gfx.ff (FAILING, this exact bug class):
+  TEMP=351378 PHYSICAL=0 RUNTIME=0 VIRTUAL=1728453 LARGE=0 CALLBACK=0 VERTEX=4224 INDEX=480 SCRIPT=0
+```
+
+**This is decisive.** Both working zones show real, sane, non-anomalous
+values in every slot, including a genuinely small-but-nonzero SCRIPT value
+(62, 7242) — proving the parser correctly locates and reads the SCRIPT
+slot when real content exists there. `code_post_gfx.ff`'s own 8 OTHER
+values are equally sane (matching the same zero/nonzero shape pattern as
+the two working comparisons — PHYSICAL/RUNTIME/LARGE/CALLBACK are zero in
+ALL THREE zones, not just the failing one) — nothing here looks shifted,
+truncated, or garbage. **`code_post_gfx.ff`'s SCRIPT block genuinely, truly
+is 0 bytes on disk.** The block-size table's order, width, and parsing are
+completely correct; this whole hypothesis class (header/table
+misalignment) is closed.
+
+**Implication for the other two forks' own angles**: the real bug is
+downstream of block-size-table parsing entirely — either (a) some asset's
+own offset-to-block-index DECODE math computes block index 8 (SCRIPT)
+incorrectly for a pointer that should resolve to a different, genuinely
+non-empty block (an offset-decode bug, not a ScriptFile-specific one), or
+(b) `ScriptFile`'s own native block assignment genuinely differs from what
+`ScriptFile.txt`'s DSL (`set block buffer XFILE_BLOCK_SCRIPT;`) declares
+for x64 specifically — i.e. the asset's own content isn't stored in SCRIPT
+at all in the current build, so a real, non-empty block elsewhere holds
+what this fork is wrongly looking for in an empty SCRIPT block. Both
+remain open, live investigation angles; this round only closes the
+block-table-order hypothesis specifically. `ASSET_TYPE_SCRIPTFILE`'s real
+native fill function is `FUN_1400964a0` (case `0x27` in
+`FUN_14009bce0`'s dispatch, per `re_notes/ghidra_scripts/decomp_dispatch_14009bce0.txt`
+line 178-181) — not yet decompiled by this round, a direct next step for
+whichever angle proves correct.
+
+No source changes shipped (temp diagnostic added and fully reverted,
+confirmed via `git diff`/clean rebuild). No files touched that the other
+two parallel forks' own angles depend on.
+
 ## Raw evidence backing every claim above
 
 - Live game install, `zone/english/sp_intro.ff` and `zone/english/hamburg.ff`
