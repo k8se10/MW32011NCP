@@ -24,7 +24,7 @@ native call exists, never a config tweak):
 | **Controller support** | Real analog movement/look/every button for Campaign & Survival, matching console behavior | 🔴 Yes — the gate | Flagship, most mature — see [What works](#what-works-right-now) |
 | **Visual/performance enhancements** | Internal render scale, FSR 1.0 sharpening, motion blur, forced anisotropic filtering/shadow/lighting quality, stutter/threading fixes | 🔴 Yes — the gate | Render scale and motion blur live-confirmed; rest wired for x64, not yet live-tested |
 | **Netcode security patches** | Finds and fixes real, exploitable vulnerabilities in the base game's own netcode | ⚪ No — ships independently | 3 of 4 confirmed vulnerabilities fixed — see [Security](#security-netcode-vulnerability-patches) |
-| **Multiplayer (`iw5mp.exe`)** | Same controller/security methodology, ported to the separate MP binary | ⚪ No — fast-follow | Active reverse-engineering, opt-in-only when it ships — see [Multiplayer](#multiplayer) |
+| **Multiplayer (`iw5mp.exe`)** | Same controller/security methodology, ported to the separate MP binary | ⚪ No — allowed to lag SP by 2-4 releases until beta | Active reverse-engineering, opt-in-only when it ships — see [Multiplayer](#multiplayer) |
 
 Plus a cross-cutting [plugin API](PLUGIN_API.md) that lets anyone extend
 this mod, or build an independent MW3 sub-mod, without touching this
@@ -392,6 +392,18 @@ what's authorized and in progress today; see `CLAUDE.md`'s Version Timeline
 for the full decision record. Multiplayer does not gate the Campaign/
 Survival release above — expect it as a close fast-follow once that ships,
 not bundled into it.
+
+**Parity standard (2026-09-15, until beta)**: since Multiplayer never gates
+a release, it's explicitly allowed to lag Campaign/Survival by **2-4
+releases** through the `v0.4.0-x64` beta milestone — MP doesn't need to
+ship every SP-era feature/fix in lockstep, just stay within that bounded
+window. This is deliberate, not neglect: real, tracked static RE progress
+continues in parallel (`re_notes/iw5mp_x64.md`) specifically so MP doesn't
+repeat the `-x86` line's own history of stalling out entirely. This
+standard is explicitly conditional — if Campaign/Survival itself reaches
+full completion (in controller-support and original-scope terms) before
+`v0.4.0-x64` ships, it'll be revisited rather than mechanically applied to
+a finished target.
 
 ## Compatibility
 
