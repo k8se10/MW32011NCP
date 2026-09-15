@@ -7773,3 +7773,42 @@ changes this session (§5.22, §5.27, §5.30's own Bug #1/#2).
 No source changes shipped -- all temporary diagnostics reverted from
 tracked source. Full trail:
 `re_notes/x64_migration/fastfile_format_research.md` §5.33.
+
+### UPDATE, 2026-09-15 (direct follow-up, "keep digging" per direct instruction) -- LoadedSound/MssSound/AILSOUNDINFO width-mismatch theory DEFINITIVELY RULED OUT via native decompile + empirical re-test; fourth theory closed, code_post_gfx.ff's XFILE_BLOCK_SCRIPT crash root cause still open
+
+**Status: Open, narrowed further.** Decompiled the full native `LoadedSound`
+fill chain (`FUN_1400941f0` -> `FUN_140094150` -> `FUN_14009c0f0`) and
+confirmed every checkable byte count/offset matches this fork's own
+`sizeof()`/`offsetof()` exactly: outer header 0x40 (64) bytes, `MssSound`
+0x38 (56) bytes, `data` pointer at offset 0x30 (48), raw-sample-length
+source at offset 0x18 (24) -- independently reconfirming the already-shipped
+`bits`-not-`data_len` fix (commit `ab56e7cc`) is still correct. No width or
+offset discrepancy found anywhere. Empirically re-verified via a fresh
+`Unlinker.exe` run against `code_post_gfx.ff`: the raw-sample read fires and
+completes cleanly with the expected byte count, no early exit -- ruling out
+a stream-position desync originating inside `LoadedSound`'s own load.
+
+The "garbage" `AILSOUNDINFO` values found last round (`format=65537`,
+`rate=44`, `channels=0`, `samples=0`, `block_size=0`) are now better
+explained as genuinely real (if unusual) data for a minimal/placeholder
+audio asset than as corruption -- `bits=22050` isn't cherry-picked, it's the
+one field independently confirmed correct by two separate native offset
+literals across two rounds.
+
+**This means the immediately-preceding Sound/LoadedSound asset is likely
+NOT the true corruption source** -- the prior round's "traced it one asset
+back" may have been correlation (last thing that runs before the crash),
+not causation. Real root cause still open, further back in the asset
+sequence than traced so far.
+
+No source changes shipped. Three new Ghidra decompile files committed.
+Full trail: `re_notes/x64_migration/fastfile_format_research.md` §5.34.
+
+**Running tally for this specific bug (`XFILE_BLOCK_SCRIPT`, `code_post_gfx.ff`)**:
+four independent, well-evidenced theories ruled out across four rounds
+today (block-size-table order/width, ScriptFile's own fill/block-assignment
+logic, and now LoadedSound/MssSound/AILSOUNDINFO width) -- each closed with
+real decompile or empirical evidence, not guesswork. Not yet at this
+project's own "Fresh Perspective Breaks Real Stalemates" threshold (5-6+
+genuine rounds), but approaching it -- worth tracking if the next round(s)
+also come up short.

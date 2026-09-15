@@ -1,0 +1,39 @@
+================================================================
+Function: FUN_14009c0f0 @ 14009c0f0
+----------------------------------------------------------------
+
+void FUN_14009c0f0(undefined8 param_1)
+
+{
+  ulonglong uVar1;
+  undefined8 *puVar2;
+  
+  FUN_1400aad70(param_1,DAT_1407bd9c0,0x38);
+  FUN_1400aac10(0);
+  uVar1 = *(ulonglong *)(DAT_1407bd9c0 + 0x30);
+  if (uVar1 != 0) {
+    if (uVar1 < 0xfffffffffffffffe) {
+      FUN_1400aad10();
+      FUN_1400aabd0();
+      return;
+    }
+    DAT_1407beb70 = FUN_1400aaa90(0);
+    *(undefined8 *)(DAT_1407bd9c0 + 0x30) = DAT_1407beb70;
+    if (uVar1 == 0xfffffffffffffffe) {
+      puVar2 = (undefined8 *)FUN_1400aab50();
+    }
+    else {
+      puVar2 = (undefined8 *)0x0;
+    }
+    FUN_1400aad70(1,DAT_1407beb70,*(undefined4 *)(DAT_1407bd9c0 + 0x18));
+    FUN_14030fca0(DAT_1407bd9c0 + 0x30);
+    if (puVar2 != (undefined8 *)0x0) {
+      *puVar2 = *(undefined8 *)(DAT_1407bd9c0 + 0x30);
+    }
+  }
+  FUN_1400aabd0();
+  return;
+}
+
+
+

@@ -2788,6 +2788,104 @@ cleaned up, since they'll be regenerated/overwritten by the next real
 `ZoneCodeGenerator`+`x64_offset_fixes` pass regardless). No Ghidra project
 files touched this round (pure C++ instrumentation, no native RE).
 
+## 5.34. UPDATE, 2026-09-15 (direct follow-up to §5.33's own recommended next step, "keep digging" per direct instruction) — the `LoadedSound`/`MssSound`/`AILSOUNDINFO` width-mismatch theory DEFINITIVELY RULED OUT via native decompile + empirical re-test; the "garbage" AILSOUNDINFO field values are very likely genuine (if unusual) real data, not corruption — `code_post_gfx.ff`'s own `XFILE_BLOCK_SCRIPT` crash root cause is STILL open, narrower than ever
+
+**Status: fourth theory in a row ruled out with hard evidence — genuinely
+narrowing, not yet found.** §5.33 left one specific, named, independently-
+testable candidate: a pointer field somewhere in `LoadedSound`/`MssSound`/
+`AILSOUNDINFO` being 4 bytes narrower on the real wire than this fork's own
+64-bit-assumed C++ struct, which would shift every subsequent field read
+and explain the fully-nonsensical `AILSOUNDINFO` dump §5.33 found. Picked
+up directly where that round's own "recommended next step" left off:
+decompile the real native fill chain and check field-by-field.
+
+**Decompiled the full native chain**: `FUN_1400941f0` (LoadedSound's outer
+pointer resolver, case `0xd` in the master dispatch `FUN_14009bce0`) →
+`FUN_140094150` (the real body-fill) → `FUN_14009c0f0` (`MssSound`'s own
+fill). Every checkable byte count and offset matches this fork's own
+compiler-computed `sizeof()`/`offsetof()` EXACTLY: the outer `LoadedSound`
+header read is `0x40` (64) bytes total, matching `sizeof(LoadedSound)`
+(name 8 + `MssSound` 56, no discrepancy); `MssSound`'s own read is `0x38`
+(56) bytes, matching `sizeof(MssSound)` (`AILSOUNDINFO` 48 + `data` pointer
+8); the native `data` pointer field sits at byte offset `0x30` (48),
+exactly where this fork's own `offsetof(MssSound, data)` places it; the
+native raw-sample-data byte-count source sits at offset `0x18` (24),
+exactly matching `offsetof(AILSOUNDINFO, bits)` — independently
+reconfirming §5.24's own original `bits`-not-`data_len` fix is still
+correct. No width or offset discrepancy found anywhere in the chain.
+
+**A subtlety worth recording explicitly**: this only directly confirms the
+*container* sizes and the two fields (`data`, `bits`) native's own outer
+fill functions reference by raw offset — it does NOT independently confirm
+`AILSOUNDINFO`'s six OTHER individual field offsets (`format`/`data_len`/
+`rate`/`channels`/`samples`/`block_size`), since those are filled from an
+already-buffered region with no further native offset literals to cross-
+check directly. However, `bits` landing at exactly offset 24 in BOTH native
+and this fork's own compiler output is only possible if `format` (4 bytes)
++ padding (4 bytes, forced by `data_ptr`'s own 8-byte alignment
+requirement) + `data_ptr` (8 bytes) + `data_len` (4) + `rate` (4) all
+precede it exactly as this fork's struct already declares — a single
+matching offset this deep into a struct is strong indirect confirmation of
+every field before it, not proof of the fields after it, but there's no
+positive evidence of a problem there either.
+
+**Empirically re-verified the whole chain executes as expected**, reusing
+§5.33's own still-present (gitignored, unreverted) diagnostics: rebuilt and
+re-ran `Unlinker.exe` against `code_post_gfx.ff`, confirming for the exact
+same asset: `data(raw)=0xFFFFFFFFFFFFFFFE` (the real INSERT sentinel,
+`zonePtrType=1`), the raw-sample read fires and completes cleanly ("about
+to read 22050 raw sample bytes" → "raw sample bytes read done" — no
+exception, no early return). This is decisive: the stream consumes exactly
+as many bytes as native's own identical gating/length logic would consume,
+for this exact asset. **A genuine stream-position desync originating
+inside `LoadedSound`'s own load is now very unlikely** — every mechanism
+that could cause one (wrong total size, wrong data-pointer offset, wrong
+gating condition, wrong read-length source) has been independently
+confirmed correct, both structurally (native decompile) and empirically
+(live re-test).
+
+**Reframing, following from this**: the "garbage" `AILSOUNDINFO` values
+§5.33 found (`format=65537`, `rate=44`, `channels=0`, `samples=0`,
+`block_size=0`) are now better explained as genuinely real, if unusual,
+data for this one specific minimal/placeholder audio asset (a real engine
+can and does ship SFX with degenerate metadata for e.g. a silent/trivial
+clip) than as evidence of struct corruption — `bits=22050` being the one
+plausible-looking value isn't coincidental cherry-picking, it's the one
+field independently confirmed by TWO separate native offset literals
+(§5.24's original find and this round's `FUN_14009c0f0` cross-check), while
+the others were never independently confirmed wrong, just unusual-looking.
+
+**This means asset 4481 (the `LoadedSound`-owning Sound asset) is very
+likely NOT where the real corruption originates at all — §5.33's own
+"traced the corruption one asset further back" framing may have been a
+correlation (the LAST thing that runs before the crash) rather than
+causation.** The true root cause remains open, somewhere further back in
+the asset sequence than has been traced so far, or in a mechanism entirely
+unrelated to `LoadedSound`.
+
+**Recommended next step for whoever picks this up**: trace further back
+from asset 4481 — dump the real per-asset-index stream cursor position (not
+just type/index, an actual byte offset into the relevant block) for a
+wider window (e.g. assets 4470-4481) to find exactly where the real
+consumed-vs-expected byte count first diverges, rather than assuming the
+immediately-preceding asset is the culprit. Given four independent,
+well-reasoned theories have now been ruled out with hard evidence in this
+same investigation (§5.31 block-order, §5.32 ScriptFile's own fill logic,
+§5.33's own initial framing already self-corrected once from ScriptFile to
+Sound, and now this round's `LoadedSound` width theory), this may be
+approaching the point where this project's own "Fresh Perspective Breaks
+Real Stalemates" principle applies if a few more genuine rounds don't land
+it — not yet at that threshold, but worth tracking.
+
+No source changes shipped (pure RE + empirical re-verification, no fix
+attempted since the leading theory didn't hold up). Three new Ghidra
+decompile files committed:
+`re_notes/ghidra_scripts/decomp_loadedsound_1400941f0.txt`,
+`decomp_loadedsound_body_140094150.txt`, `decomp_mssound_14009c0f0.txt`.
+No tracked source touched at all this round (reused §5.33's own
+already-present, gitignored `build/`-only diagnostics rather than adding
+new ones).
+
 ## Raw evidence backing every claim above
 
 - Live game install, `zone/english/sp_intro.ff` and `zone/english/hamburg.ff`
