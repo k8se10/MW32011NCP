@@ -552,6 +552,15 @@ item below.
    remaining, lower-drift reference pages (Configuration, Compatibility,
    Controller Setup, Installation Guide, Troubleshooting, FAQs, Technical
    Documentation, Development Notes) were carried over as-is.
+9. **MP parity release-cadence standard recorded in `README.md`'s own
+   tables.** Since Multiplayer never gates a release (already true), it's
+   now explicitly allowed to lag Campaign/Survival by 2-4 releases through
+   the `v0.4.0-x64` beta milestone — the top component table's
+   Release-gating column and the Multiplayer section's own scope paragraph
+   both spell out the concrete standard instead of just "fast-follow."
+   Explicitly conditional: revisited if Campaign/Survival itself reaches
+   full completion before `v0.4.0-x64` ships. Full decision record:
+   `CLAUDE.md`'s 2026-09-15 Version Timeline entry.
 
 ### Groundwork
 1. **Two new CI workflows.** `.github/workflows/build.yml` — real MSVC
