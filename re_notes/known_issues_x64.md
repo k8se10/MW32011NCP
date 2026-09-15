@@ -8024,3 +8024,67 @@ in this specific failure case -- the concrete, well-scoped next step.
 No source changes shipped (temp diagnostic reverted, confirmed via `git
 diff --stat`). Zero live debugger used. Full trail:
 `re_notes/x64_migration/fastfile_format_research.md` SS5.36.
+
+### FIXED (real regression, live-caught by the user's own MP test), 2026-09-15 -- same-day MP hook-gating change silently broke MinHook initialization under iw5mp.exe, meaning the netcode-security plugin's hooks failed to install for an entire real TDM session
+
+**Status: Resolved, build-verified, root cause directly confirmed via a real
+live `proxy_d3d9.log` capture.** Direct report after a real test: "made it
+into mp tdm and played 10s left and closed game" -- following up on the
+earlier "check if the protections are active" activity-logging work.
+
+**What the log showed**: the security plugin's three MP signatures
+(matchdatadone/memberjoin/fragment-reassembly) all resolved correctly --
+```
+[sigscan] OK: pattern "..." resolved to 0x1400DB980 (1 match)
+[sigscan] OK: pattern "..." resolved to 0x1400EC1B0 (1 match)
+[sigscan] OK: pattern "..." resolved to 0x1400AD330 (1 match)
+[plugin-api] InstallHook(0000000140285970) failed: MH_CreateHook = 2
+[nsp-mp-fix] FAILED: InstallHook failed for shared copy primitive @ 0000000140285970
+```
+`MH_CreateHook = 2` is MinHook's own `MH_ERROR_NOT_INITIALIZED` -- meaning
+`MH_Initialize()` had never been called before this hook-install attempt.
+**This means the security plugin's Findings 2/3/4 fixes were NOT active for
+the ENTIRE real MP session that followed** -- not a partial gap, a total
+one for that session, despite every earlier log line showing the plugin
+loading and its signatures resolving successfully right up to this point.
+
+**Root cause, directly traced**: `MH_Initialize()` was previously only ever
+called from inside `InstallAnalogInputHooksX64()`/`InstallAnalogInputHooks()`
+(this project's own SP-only gameplay-hook installer, per the SAME-DAY MP
+hook-gating change earlier this session -- see this file's own newest
+"iw5mp.exe gameplay hooks were installing completely unconditionally" round
+above) or later, from inside `d3d9_hook.cpp`'s own hooks, which don't run
+until `Direct3DCreate9` is actually called. `LoadPlugins()` (which loads and
+initializes the netcode-security plugin, deliberately kept OUTSIDE the SP/MP
+gate so it still protects MP) runs from `DllMain`'s `DLL_PROCESS_ATTACH`,
+BEFORE `Direct3DCreate9` is ever called. Under `iw5sp.exe`,
+`InstallAnalogInputHooksX64()` still runs (SP passes the gate) and its own
+`MH_Initialize()` call happens to run before `LoadPlugins()`, so this was
+invisible for SP. Under `iw5mp.exe`, that entire code path is now correctly
+skipped per today's own gating fix -- but nothing else had called
+`MH_Initialize()` yet by the time `LoadPlugins()` ran, a real gap the
+earlier gating work didn't anticipate (it only reasoned about GAMEPLAY hook
+safety, not about a completely separate subsystem's shared MinHook
+initialization dependency).
+
+**Fix**: `MH_Initialize()` (already idempotent -- every existing call site's
+own comment already documents this, safe to call multiple times) now runs
+unconditionally in `dllmain.cpp`, immediately after game-executable
+detection and before the SP/MP branch (and therefore before `LoadPlugins()`
+too) -- guaranteed to run exactly once per process regardless of which
+branch executes or whether the security plugin's own `InstallHook` calls
+end up being the very first MinHook usage in the process at all.
+
+**Real positive**: every one of Finding 4's own resolved addresses matched
+this project's own INTERNAL doc exactly (`0x1400DB980`, `0x1400EC1B0`,
+`0x1400AD330`) -- confirming the signature/offset work from earlier this
+session is genuinely correct against the live retail binary, independent of
+this separate initialization-ordering bug.
+
+Shipped: `proxy_d3d9/src/dllmain.cpp` (adds `#include
+"../third_party/minhook/include/MinHook.h"` and one unconditional
+`MH_Initialize()` call). Build-verified (x64, 0 new errors beyond
+pre-existing unrelated warnings, `dumpbin` confirms genuine x64 output,
+deployed to the live install) -- **not yet re-verified with a second live
+MP session** confirming the fix actually resolves the failure this round
+found; that's the natural next step whenever another MP session happens.
