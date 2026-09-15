@@ -1,0 +1,26 @@
+================================================================
+Function: FUN_140096900 @ 140096900
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_140096900(undefined8 param_1)
+
+{
+  if (*DAT_1407bdda8 == '\x01') {
+    DAT_1407bdd90 = DAT_1407bdda0;
+    FUN_1400941f0();
+    return;
+  }
+  DAT_1407bdd98 = DAT_1407bdda0;
+  FUN_1400aad70(param_1,DAT_1407bdda0,0x10);
+  DAT_1407bdd80 = DAT_1407bdd98;
+  FUN_1400aad70(0,DAT_1407bdd98,0x10);
+  _DAT_1407bdd78 = DAT_1407bdd80;
+  DAT_1407bdd70 = DAT_1407bdd80;
+  FUN_140096e40(0);
+  return;
+}
+
+
+
