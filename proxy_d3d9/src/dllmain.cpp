@@ -15,6 +15,7 @@
 #include <psapi.h>
 #include <cstdio>
 #include <share.h>
+#include "game_exe_detect.h"
 #include "mod_config.h"
 #include "overlay_hud.h"
 #include "plugin_loader.h"
@@ -465,7 +466,7 @@ FORWARD_STUB(PSGPSampleTexture)
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
 {
     switch (reason) {
-    case DLL_PROCESS_ATTACH:
+    case DLL_PROCESS_ATTACH: {
         DisableThreadLibraryCalls(hModule);
         LogInit();
         LoadModConfig(); // task #14 -- must run before InstallAnalogInputHooks reads g_modConfig
@@ -475,19 +476,52 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
             // never fatal to DLL init either way
         if (!LoadRealD3D9()) return FALSE;
         if (!ResolveRealExports()) return FALSE;
-        Log("proxy_d3d9 init OK — analog movement/look hooks installing.");
+
+        // 2026-09-15 -- real groundwork for Multiplayer, see game_exe_detect.h for
+        // the full rationale. iw5sp.exe and iw5mp.exe share this same deployed
+        // d3d9.dll, but every signature-scanned hook below was found and verified
+        // against iw5sp.exe ONLY (CLAUDE.md S10.8: separate binaries, no address/
+        // signature carries over). Detected BEFORE any hook installation runs so
+        // the gate below can refuse to install a single SP-targeted hook when this
+        // DLL is running under a binary those hooks were never verified against --
+        // live-reported: MP loaded this DLL fine (XInput polling/plugin loading are
+        // exe-agnostic, hence "controller connected" showing even under iw5mp.exe)
+        // but crashed navigating menus, consistent with a signature spuriously
+        // matching unrelated bytes in iw5mp.exe's own, differently-compiled code.
+        const GameExecutable detectedExe = DetectGameExecutable();
+        {
+            char buf[128];
+            sprintf_s(buf, "Detected game executable: %s", GameExecutableName(detectedExe));
+            Log(buf);
+        }
+
+        if (detectedExe == GameExecutable::SP) {
+            Log("proxy_d3d9 init OK — analog movement/look hooks installing.");
 #if defined(_M_X64) || defined(_WIN64)
-        InstallAnalogInputHooksX64(); // 2026-09-03 x64 migration -- see
-            // analog_input_hooks_x64.cpp. Currently a single diagnostic hook only
-            // (issue #1, known_issues_x64.md) -- real gameplay hooks land here
-            // incrementally as they're built, matching x86's own original pace.
+            InstallAnalogInputHooksX64(); // 2026-09-03 x64 migration -- see
+                // analog_input_hooks_x64.cpp. Currently a single diagnostic hook only
+                // (issue #1, known_issues_x64.md) -- real gameplay hooks land here
+                // incrementally as they're built, matching x86's own original pace.
 #else
-        InstallAnalogInputHooks(); // task #5 -- see analog_input_hooks.cpp
+            InstallAnalogInputHooks(); // task #5 -- see analog_input_hooks.cpp
 #endif
+        } else if (detectedExe == GameExecutable::MP) {
+            Log("proxy_d3d9: iw5mp.exe detected — gameplay hooks NOT installed. "
+                "Multiplayer has no verified hook signatures yet (CLAUDE.md's MP scope "
+                "decision: static RE first, opt-in live work once it starts). "
+                "XInput polling and other exe-agnostic features still run normally.");
+        } else {
+            Log("proxy_d3d9: WARNING — could not identify the loading executable as "
+                "iw5sp.exe or iw5mp.exe. Refusing to install any gameplay hooks as a "
+                "fail-safe (same policy as an unrecognized MP binary — see "
+                "game_exe_detect.h). If this is a genuine iw5sp.exe/iw5mp.exe install, "
+                "please report this with the exact file name proxy_d3d9.log shows.");
+        }
         LoadPlugins(); // 2026-08-25 -- see plugin_loader.h; no-op unless
             // g_modConfig.pluginsEnabled, and must run AFTER InstallAnalogInputHooks
             // so the host's own MinHook instance is already initialized
         break;
+    }
     case DLL_PROCESS_DETACH:
         UnloadPlugins();
         UnloadOverlayFonts(); // release the private font resource before this DLL's

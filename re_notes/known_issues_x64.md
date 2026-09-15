@@ -7812,3 +7812,74 @@ real decompile or empirical evidence, not guesswork. Not yet at this
 project's own "Fresh Perspective Breaks Real Stalemates" threshold (5-6+
 genuine rounds), but approaching it -- worth tracking if the next round(s)
 also come up short.
+
+### SHIPPED (real, tested fix + real MP groundwork), 2026-09-15 (direct live report: "mp crashes when you try to navigate menus though ncp does load as it says controller connected") -- iw5mp.exe gameplay hooks were installing completely unconditionally, with zero awareness they were verified against iw5sp.exe only; fixed via real runtime executable detection gating hook installation
+
+**Status: Resolved (the crash), real groundwork landed for future MP work.**
+`iw5sp.exe` and `iw5mp.exe` share the same install directory and therefore
+the same deployed `d3d9.dll` -- but this project's own several-thousand-line
+signature-scanned gameplay-hook file (`analog_input_hooks_x64.cpp`) was
+entirely found, verified, and tested against `iw5sp.exe` ONLY, consistent
+with this project's own long-standing "SP and MP are separate reverse-
+engineering efforts, no assumed address/signature parity" policy
+(`CLAUDE.md` S10.8). Despite that stated policy, nothing at runtime actually
+enforced it: `dllmain.cpp`'s `DllMain` called
+`InstallAnalogInputHooksX64()`/`InstallAnalogInputHooks()` completely
+unconditionally, regardless of which binary loaded the DLL.
+
+Live-reported symptom matches this exactly: `iw5mp.exe` loaded the DLL fine
+(XInput polling, the plugin loader, and other exe-agnostic init all
+succeed, which is why "controller connected" shows even under Multiplayer),
+but crashed navigating menus -- consistent with at least one SP-verified
+signature spuriously matching unrelated bytes somewhere in `iw5mp.exe`'s
+own, differently-compiled code and installing a hook at a location that
+behaves completely differently there (this project's own
+`CLAUDE.md` S5 policy already guards against a signature failing to
+resolve at all -- "fail loudly, refuse to hook garbage" -- but can't guard
+against a coincidental GOOD match in the wrong binary entirely).
+
+**Fixed via a new, small, dedicated module**
+(`proxy_d3d9/src/game_exe_detect.h`/`.cpp`): `GetModuleFileNameA` against
+the current process's own main module (the same call `LogInit()` already
+makes for the log-file path), basename-compared case-insensitively against
+the two known real binary names. Called once, early in `DLL_PROCESS_ATTACH`,
+BEFORE any hook-installation function runs. Gameplay hooks now only install
+when the detected executable is confirmed `iw5sp.exe`; `iw5mp.exe` (and any
+unrecognized executable, as a fail-safe default) skips hook installation
+entirely, with a clear log line explaining why. Every exe-agnostic feature
+(XInput polling, `LoadPlugins()` -- including the netcode-security plugin,
+which is explicitly meant to protect MP too, per `security/README.md`)
+deliberately stays OUTSIDE this gate and continues to run normally under
+either binary.
+
+**This is real groundwork for MP, not full MP support** -- no gameplay
+hooks for `iw5mp.exe` exist yet at all (`CLAUDE.md`'s MP scope decision:
+static RE first, opt-in-only live/injection work once it starts, per the
+2026-08-21/2026-09-05 Version Timeline entries). This change stops the
+WRONG binary's hooks from ever being attempted; it doesn't add new ones.
+The natural next step, once real `iw5mp.exe` hook signatures exist
+(`re_notes/iw5mp_x64.md` already has real static-RE progress to build on),
+is a parallel `InstallAnalogInputHooksMP()`-style function gated the same
+way on `GameExecutable::MP`, called from the same `DllMain` branch this
+round added.
+
+**Build-verified**: both Win32 and x64 configs compile clean (a real
+switch-scope compile error introduced mid-change -- `case` labels can't
+jump across a variable's initialization -- caught and fixed the same
+round, wrapping the `DLL_PROCESS_ATTACH` case body in its own braces). A
+real deployment-ordering mistake was also caught and fixed the same round:
+building Win32 AFTER x64 (to verify the legacy config still compiles)
+silently overwrote the live-deployed x64 `d3d9.dll` with a 32-bit binary,
+since both configs share the same absolute `OutDir`; caught via `dumpbin
+/headers` showing `machine (x86)` instead of the expected `x64`, fixed by
+forcing a full `/t:Rebuild` of x64 last (an incremental build alone doesn't
+re-copy an unchanged-source DLL even when the wrong architecture is
+currently sitting in `OutDir`) and re-verifying `8664 machine (x64)`
+afterward. Not yet independently live-tested against a real MP session
+(the fix's own effect -- "MP no longer crashes because it never attempts
+SP hooks" -- is confirmed by code inspection and build verification, not
+yet by a fresh live repro).
+
+Shipped: `proxy_d3d9/src/game_exe_detect.h`/`.cpp` (new),
+`proxy_d3d9/src/dllmain.cpp`, `proxy_d3d9/proxy_d3d9.vcxproj`. Full
+PATCHNOTES.md entry: current `Unreleased` version, Fixed item 17.
