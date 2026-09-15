@@ -73,6 +73,18 @@ using ReadP2PPacket_t = bool(__fastcall*)(void* thisPtr, void* pubDest, uint32_t
                                             uint32_t* pcubMsgSize, void* psteamIDRemote, int nChannel);
 ReadP2PPacket_t g_realReadP2PPacket = nullptr;
 
+// 2026-09-15 -- "sp needs protections too" -- same rate-limited real-traffic
+// activity confirmation added to Finding 4's MP hooks the same day, ported
+// here so SP (Campaign/Survival co-op, this finding's own binary) gets the
+// same "check if the protection is active" verification capability, not
+// just MP. Copy of FixHostServices, safe to store (plain function pointers --
+// same p2p_fix.cpp comment on RetryThreadArgs already explains why). Capped
+// at kMaxActivityLogsPerFinding occurrences so a long real co-op session
+// can't flood the log -- same reasoning as the MP-side fixes' own cap.
+FixHostServices g_host{};
+constexpr int kMaxActivityLogsPerFinding = 5;
+int g_p2pHitCount = 0;
+
 bool __fastcall Hook_ReadP2PPacket(void* thisPtr, void* pubDest, uint32_t cubDest,
                                      uint32_t* pcubMsgSize, void* psteamIDRemote, int nChannel)
 {
@@ -84,8 +96,18 @@ bool __fastcall Hook_ReadP2PPacket(void* thisPtr, void* pubDest, uint32_t cubDes
     uintptr_t returnAddr = reinterpret_cast<uintptr_t>(_ReturnAddress());
     if (g_p2pFuncStart != 0 &&
         returnAddr >= g_p2pFuncStart && returnAddr < g_p2pFuncStart + kP2PFuncBodySize) {
+        uint32_t originalCubDest = cubDest;
         if (cubDest > kRealDestBufferSize) {
             cubDest = static_cast<uint32_t>(kRealDestBufferSize);
+        }
+        if (g_host.Log && g_p2pHitCount < kMaxActivityLogsPerFinding) {
+            ++g_p2pHitCount;
+            char buf[220];
+            sprintf_s(buf, "[nsp-p2p-fix-activity] Finding 1 ReadP2PPacket hook fired (#%d/%d logged) "
+                      "-- cubDest=%u%s. Hook is reachable from real traffic.",
+                      g_p2pHitCount, kMaxActivityLogsPerFinding, originalCubDest,
+                      originalCubDest != cubDest ? " (CLAMPED -- would have overflowed)" : "");
+            g_host.Log(buf);
         }
     }
     return g_realReadP2PPacket(thisPtr, pubDest, cubDest, pcubMsgSize, psteamIDRemote, nChannel);
@@ -209,6 +231,8 @@ DWORD WINAPI P2PFixRetryThreadProc(LPVOID param)
 
 void InstallP2PFix(const FixHostServices& host)
 {
+    g_host = host; // for Hook_ReadP2PPacket's own rate-limited activity-confirmation logging, see above
+
     void* moduleBase = host.GetGameModuleBase();
     if (!moduleBase) {
         host.Log("[nsp-p2p-fix] FAILED: no game module base -- cannot resolve FUN_1402893f0");
