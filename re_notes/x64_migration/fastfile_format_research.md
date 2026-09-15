@@ -2197,6 +2197,135 @@ reachable rather than something this fix itself causes, this exact
 `invHighMipRadius[4]` change is very likely safe to ship once the Sound
 bug is fixed independently.
 
+## 5.29. UPDATE, 2026-09-15 (parallel fork, "keep going, dig on remaining threads") — the dominant `"lookup ... not recorded"` failure class (33 of 41 real zones) root-caused to a genuine forward-reference-before-write ordering bug in the single-pass loader, and fixed pragmatically via graceful degradation — real, verified progress, zero new crashes, but the underlying architectural gap stays open
+
+**Status: real, tested, shipped mitigation — not a full architectural fix.**
+Picks up the thread left by an earlier round of this same session (before
+this parallel-fork split): a fresh 39/41-zone sweep found 33 zones sharing
+the identical `InvalidLookupPositionException` ("Zone tried to lookup at
+block N, offset N that was not recorded"), thrown from
+`ConvertOffsetToAliasLookup`'s own bounded 16-hop alias-chain chase
+(`ZoneInputStream.cpp`, shipped 2026-09-14) exhausting its hop cap. A
+partial finding from that earlier round (now confirmed, not just
+suspected) was decisive: `offsetInt`/`resolvedSlot`/`resolved` are
+byte-for-byte identical across all 16 hops for the traced case — this is
+not a deep chain, it's a stuck loop.
+
+**Why more hops can never help, confirmed by re-deriving it from the code
+directly rather than trusting the earlier partial finding at face value**:
+every hop of the loop executes synchronously within one function call,
+with nothing else running in between — no other asset gets loaded, no
+field gets filled, between hop N and hop N+1. If hop 0 finds the aliased
+target slot (`m_pointer_redirect_lookup`'s own stored `alias`, the ADDRESS
+of another field's own storage slot) still holding its own raw,
+unconverted offset, every subsequent hop recomputes the exact same
+`offsetInt` from that same unchanging raw value and reads the exact same
+still-raw value again. The loop is a no-op repeated up to 16 times.
+
+**Root cause pinned down precisely with a live diagnostic** (temporarily
+instrumenting `AddPointerLookup` and `ConvertOffsetToAliasLookup`'s hop-0
+branch, tested against the small `so_survival_mp_alpha.ff`, reverted
+before shipping): the stuck case traces to `LoadPtrArray_Material`
+(`xmodel_iw5_load_db.cpp`, generated from XModel's own `materialHandles`
+array-of-`Material*` DSL declaration). That function is itself already a
+two-phase design — phase 1 (`atStreamStart`) `FillPtr`s every array slot
+with its raw on-wire value AND registers `AddPointerLookup(&varMaterialPtr[index],
+...)` for each one, up front, before any slot is resolved; phase 2 then
+walks the array in strict ascending-index order, calling
+`Loader_Material::Load` on each slot, which — for a slot whose raw value is
+a REFERENCE rather than a first (`FOLLOWING`/`INSERT`) occurrence — calls
+`ConvertOffsetToAliasLookup` to resolve it. The bug: when a REFERENCE at
+array index *i* points at another slot's own storage position (materials
+are frequently shared/deduplicated across surfaces of the same model, and
+the original on-wire format encodes that sharing by having the later
+duplicate's own slot literally hold the earlier slot's block position as
+its "value"), and that earlier slot has an index *j* > *i* — array-order
+processing hasn't reached index *j* yet, so index *j*'s own slot genuinely,
+correctly, still holds its own unconverted raw fill content at the exact
+moment index *i*'s lookup needs it. This is a real architectural gap in
+this fork's single-pass, synchronous, non-rewindable streaming loader (the
+underlying `ILoadingStream` decompresses sequentially — `LoadDataInBlock`
+calls straight through to it — there is no way to safely
+defer-and-retry a partially-consumed asset's own read without either a
+much larger stream-checkpointing mechanism or a genuine two-pass rewrite of
+asset loading; both considered and deliberately NOT attempted here, given
+this exact code area's own documented history of real segfaults from
+rushed changes — see SS5.16-SS5.18 and SS5.27 above).
+
+**Fixed pragmatically instead of architecturally: graceful degradation.**
+`ConvertOffsetToAliasLookup`'s hop-cap-exhaustion path no longer throws a
+zone-load-aborting exception — it logs a `con::warn` (visible in the
+`Unlinker.exe` warning count, honest about the degradation, not silent)
+and returns `nullptr` for just that one field, exactly the same
+"missing/absent" shape every observed caller of this API already handles
+safely (e.g. `LoadPtrArray_Material`'s own `if (*varMaterialPtr) { ... }`
+check before recursing). This is a deliberately narrow, low-risk fix: it
+touches only the ONE throw site at the bottom of `ConvertOffsetToAliasLookup`,
+not the offset-decode arithmetic or the hop-chase loop itself (both
+already correct and both the exact code with segfault history this session
+has otherwise treated with real caution).
+
+**A second, separate call path producing the identical "not recorded"
+message text was found and deliberately left alone**:
+`MaybePointerFromLookup<T>::Expect()` (`ZoneInputStream.h`) throws the same
+`InvalidLookupPositionException` when a `ConvertOffsetToPointerLookup`
+result is still unresolved at the point its caller needs it — genuinely
+the same underlying architectural gap, reached via a sibling API. Its own
+call sites span 73 generated files across every game this fork's shared
+`ZoneLoading`/`ObjLoading` code supports (T4/T5/T6/QOS/IW3/IW4/IW5), a much
+larger surface than `ConvertOffsetToAliasLookup`'s own ~24. Two of the 41
+real zones swept below (`so_stealth_prague.ff`, `so_timetrial_london.ff`)
+still fail on a residual "not recorded" error reached via this OTHER path,
+unchanged by this round's fix — left as a real, separate, correctly-scoped
+follow-up rather than folded in here without the same level of dedicated
+verification this round gave `ConvertOffsetToAliasLookup` alone.
+
+**Rigorously tested, including catching a real methodology hazard along
+the way**: an initial full-sweep test showed 19 zones (all 17
+`so_survival_mp_*.ff` variants plus `so_nyse_ny_manhattan.ff` and
+`so_zodiac2_ny_harbor.ff`) as real crashes — alarming, given this exact
+"fixes some zones, segfaults others" shape is what sank the earlier
+`memUsage`-removal attempt (SS5.27). Investigated before concluding
+anything: `git status` showed the OTHER parallel fork (working on the
+`sizeof(XModel)` gap in the same shared working tree and shared
+`build/bin/Release_x64/Unlinker.exe` output) had left, then since
+reverted, its own in-progress diagnostic in `ContentLoaderIW5.cpp` — the
+crashing binary had been built from a mid-flight mix of that (already
+withdrawn) diagnostic plus this round's own fix, not this fix alone. A
+full clean `/t:Rebuild` from a working tree confirmed to contain ONLY this
+round's own `ZoneInputStream.cpp` change reproduced ZERO crashes across
+all 41 zones — the real, trustworthy result. **Standing lesson for any
+future parallel-fork session sharing one working tree/build output**:
+re-verify `git status` immediately before AND after a clean rebuild when a
+sibling fork is active, and always `/t:Rebuild` (not an incremental build)
+before trusting a crash/no-crash verdict if a shared build output could
+have been touched by other in-flight work.
+
+**Full, final 41-zone sweep result (clean rebuild, verified trustworthy)**:
+zero real crashes anywhere (every run ends with a clean `Finished with`/
+`Failed with` line). The 3 already-working zones (`sp_intro.ff`,
+`sp_prague.ff`, `so_trainer2_so_deltacamp.ff`) are unaffected (still `0
+warnings, 0 errors` — this fix's warn-path never fires for them, fully
+non-invasive to the working path). Of the 33 originally-`NOT_RECORDED`
+zones: 24 now progress to the already-tracked `"invalid block 15"` error
+(the OTHER parallel fork's own territory, SS5.26/SS5.28), 7 now progress to
+the already-tracked `"larger than its size"` error class, and 2
+(`so_stealth_prague.ff`, `so_timetrial_london.ff`) hit the separate
+`Expect()`-path "not recorded" case described above. No zone regressed
+(nothing that worked before now fails; nothing that failed cleanly before
+now crashes). This is real, substantial, verified progress on the single
+highest-impact remaining bug class of this whole investigation (87% of
+real zones affected before this round) — even though it doesn't by itself
+flip any zone all the way to a clean load, since most affected zones carry
+more than one distinct remaining format issue.
+
+**Shipped**: `tools/iw5oat/src/ZoneLoading/Zone/Stream/ZoneInputStream.cpp`.
+**Not shipped / explicitly left open**: the `Expect()`/`ConvertOffsetToPointerLookup`
+sibling path (2 zones, needs its own dedicated round given its much wider
+call-site surface); a true architectural fix (stream checkpointing or a
+genuine two-pass load) that would resolve this class of forward reference
+without leaving any field null.
+
 ## 6. Scoped plan for in-house tooling — an MVP, not a full OpenAssetTools replacement
 
 **This project's own actual need is narrow**: GSC/rawfile extraction to

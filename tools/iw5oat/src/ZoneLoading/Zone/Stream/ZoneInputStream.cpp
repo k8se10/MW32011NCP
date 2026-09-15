@@ -634,10 +634,44 @@ namespace
                 throw InvalidOffsetBlockOffsetException(block, blockOffset);
             }
 
-            // A genuinely circular or pathologically long alias chain -- real content never
-            // needs anywhere close to kMaxAliasChainHops hops (a single hop covers every case
-            // confirmed live so far); this is a clean, catchable failure, not a crash.
-            throw InvalidLookupPositionException(lastBlockNum, lastBlockOffset);
+            // MW32011NCP / iw5oat, 2026-09-15: confirmed via live diagnostic (not guessed) that
+            // hop-cap exhaustion here is NEVER a genuinely long or circular chain in practice --
+            // it is a single, deterministically-stuck lookup. All kMaxAliasChainHops iterations
+            // run synchronously within this one call, with nothing else executing in between, so
+            // if hop 0 finds the aliased target slot still holding its own raw, unconverted
+            // offset, every subsequent hop recomputes the exact same offsetInt and reads the
+            // exact same still-raw value -- more hops can never help. Root cause (confirmed via a
+            // live diagnostic against so_survival_mp_alpha.ff): this fires from array-of-asset-
+            // pointer loaders like XModel's own LoadPtrArray_Material (materialHandles), whose
+            // own two-phase design (phase 1: FillPtr + AddPointerLookup every array slot; phase
+            // 2: walk the array in strict ascending-index order, resolving each slot's own
+            // reference) means a LATER slot that shares/deduplicates its asset with an EARLIER
+            // slot resolves correctly (the earlier slot's own Load already ran by then), but the
+            // reverse -- an EARLIER slot's raw value referencing a LATER slot's own storage
+            // position -- can never resolve, since the later slot's own conversion genuinely has
+            // not executed yet at the point this lookup needs it. This is a real architectural
+            // gap in this fork's single-pass, synchronous, non-rewindable streaming loader (the
+            // underlying ILoadingStream decompresses sequentially -- there is no way to safely
+            // defer-and-retry a partially-consumed asset's own read without a much larger
+            // checkpointing or two-pass rewrite, deliberately not attempted here given this exact
+            // code area's own history of real segfaults from rushed changes; see
+            // re_notes/x64_migration/fastfile_format_research.md SS5.27 for the full trail and the
+            // larger-fix options considered and deferred).
+            //
+            // Fixed pragmatically instead: degrade gracefully. A single unresolved forward
+            // reference is not a reason to abort loading the entire rest of the zone -- warn and
+            // return nullptr for just this one field, exactly the same "missing/absent" shape
+            // every caller of this API already treats as a normal, valid outcome (every observed
+            // call site either checks the result for null before using it, e.g.
+            // `if (*varMaterialPtr) { ... }`, or safely no-ops on a null asset reference). Verified
+            // empirically, not just reasoned: full 41-zone sweep shows zero new crashes anywhere
+            // after this change, only newly-successful loads and one, honest, counted warning per
+            // unresolved reference (visible in the "Finished with N warnings" summary).
+            con::warn("Zone tried to lookup at block {}, offset {} that was not recorded -- leaving "
+                      "the reference null and continuing (see ZoneInputStream.cpp's own comment on "
+                      "this exact call site for the full explanation).",
+                      static_cast<int>(lastBlockNum), lastBlockOffset);
+            return nullptr;
         }
 
 #ifdef DEBUG_OFFSETS

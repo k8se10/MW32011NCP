@@ -7433,3 +7433,70 @@ longer crash. No tracked source changed net of this round. New evidence:
 `re_notes/ghidra_scripts/decomp_xmodel_tail_fields.txt`,
 `decomp_xmodel_tail_subcallees.txt`. Full trail:
 `re_notes/x64_migration/fastfile_format_research.md` §§5.27-5.28.
+
+### SHIPPED (real, tested mitigation), 2026-09-15 (parallel fork, "keep going, dig on remaining threads") -- the dominant "lookup ... not recorded" failure class (33 of 41 real zones, 87%) root-caused to a genuine forward-reference-before-write ordering bug in the single-pass loader; fixed pragmatically via graceful degradation, zero new crashes, real verified progress
+
+**Status: shipped, safe, verified -- not a full architectural fix, a
+narrower architectural gap knowingly left open.** Confirmed (not just
+suspected, per an earlier round's own partial finding) via a live
+diagnostic that hop-cap exhaustion in `ConvertOffsetToAliasLookup`'s
+bounded 16-hop alias-chain chase (shipped 2026-09-14) is never a genuinely
+long or circular chain -- every hop runs synchronously in the same call
+with nothing else executing in between, so a stuck target slot recomputes
+the identical value on every hop. More hops can never help.
+
+Root cause pinned to `LoadPtrArray_Material` (XModel's own
+`materialHandles` array of `Material*`): its own two-phase design
+registers every array slot's raw storage position via `AddPointerLookup`
+up front, then resolves each slot in strict ascending-index order. When a
+shared/deduplicated material's LATER array index is the "canonical"
+occurrence and an EARLIER index is a reference to it, the earlier index's
+own resolution genuinely runs before the later index's slot has been
+converted -- a real architectural gap in this fork's single-pass,
+non-rewindable streaming loader (the underlying `ILoadingStream`
+decompresses sequentially; there's no way to safely defer-and-retry a
+partially-consumed asset's own read without stream checkpointing or a
+genuine two-pass rewrite -- both considered, both deliberately not
+attempted given this exact code's own segfault history).
+
+**Fixed pragmatically instead**: hop-cap exhaustion now logs a warning and
+returns `nullptr` for just the one stuck field, rather than throwing and
+aborting the entire zone load -- the same "missing" shape every observed
+caller already handles safely. Deliberately narrow: touches only the one
+throw site, not the offset-decode arithmetic or hop-chase loop themselves.
+
+**A real methodology hazard caught before it caused a false alarm**: an
+initial full-sweep test showed 19 zones as REAL CRASHES -- the exact
+alarming shape that sank the earlier `memUsage` attempt above. Investigated
+rather than assumed: the OTHER parallel fork (working on the `sizeof(XModel)`
+gap in this same shared working tree/build output, see the round above)
+had left an in-progress diagnostic in `ContentLoaderIW5.cpp`, since
+reverted -- the crashing binary was a stale mix of that withdrawn
+diagnostic and this fix, not this fix alone. A full clean `/t:Rebuild`
+from a working tree confirmed to contain ONLY this fix's own change
+reproduced ZERO crashes across all 41 zones. **New standing lesson for any
+future parallel-fork session sharing a working tree/build output**:
+re-verify `git status` before AND after a clean rebuild when a sibling
+fork is active, and always `/t:Rebuild` (not incremental) before trusting
+a crash verdict if the shared build output could have been touched by
+other in-flight work.
+
+**Full, final 41-zone sweep (clean rebuild)**: zero real crashes anywhere;
+the 3 already-working zones unaffected. Of the 33 originally-affected
+zones: 24 now progress to the already-tracked "invalid block 15" error
+(the other parallel fork's own territory), 7 now progress to the
+already-tracked "larger than its size" class, and 2
+(`so_stealth_prague.ff`, `so_timetrial_london.ff`) hit a separate,
+sibling "not recorded" call path (`MaybePointerFromLookup<T>::Expect()`,
+`ZoneInputStream.h`) deliberately left alone this round -- its own call
+sites span 73 generated files across every game this fork's shared loader
+code supports (T4/T5/T6/QOS/IW3/IW4/IW5), a much larger surface than
+`ConvertOffsetToAliasLookup`'s own ~24, and warrants its own dedicated,
+separately-verified round rather than a rushed addition here. No zone
+regressed. Real, substantial, verified progress on the single
+highest-impact remaining bug class of this whole investigation, even
+though most affected zones carry more than one distinct remaining format
+issue and so don't flip all the way to a clean load from this alone.
+
+Shipped: `tools/iw5oat/src/ZoneLoading/Zone/Stream/ZoneInputStream.cpp`.
+Full trail: `re_notes/x64_migration/fastfile_format_research.md` §5.29.
