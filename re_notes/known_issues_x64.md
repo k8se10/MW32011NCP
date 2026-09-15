@@ -7663,3 +7663,45 @@ not yet decompiled.
 No source changes shipped -- temp diagnostic fully reverted, clean
 rebuild confirmed. Full trail:
 `re_notes/x64_migration/fastfile_format_research.md` SS5.31.
+
+### RULED OUT (with hard evidence), 2026-09-15 (parallel fork, third of "go after that one with 3 forks") -- ScriptFile's own real x64 fill function decompiled and cross-checked field-for-field: a PERFECT match, definitively closing theory (b) above (ScriptFile assigned to the wrong block on x64) -- root cause narrowed to a specific asset's own header fields being corrupted upstream
+
+**Status: hypothesis eliminated with hard evidence, not a fix.** Decompiled
+`FUN_1400964a0` (ScriptFile's real top-level pointer resolver, matches
+`LoadPtr_ScriptFile`'s own shape exactly) and `FUN_140096380` (the real
+body-fill, ScriptFile's `Load_ScriptFile` equivalent) -- both new,
+`re_notes/ghidra_scripts/decomp_scriptfile_1400964a0.txt` and
+`decomp_scriptfile_body_140096380.txt`.
+
+**`FUN_140096380` matches this fork's own generated
+`Load_ScriptFile`/`FillStruct_ScriptFile` exactly**: 40-byte header read
+matches `sizeof(ScriptFile)`; `name` resolved the same way every other
+asset's name field is; block index 3 (`XFILE_BLOCK_VIRTUAL`) pushed around
+the name load, block index 8 (`XFILE_BLOCK_SCRIPT`) pushed around BOTH the
+`buffer` read (sized by `compressedLen`, offset 8) and the `bytecode` read
+(sized by `bytecodeLen`, offset 16) -- every single field, offset, and
+block index this fork's own code already uses is independently confirmed
+correct via the native decompile. **Two decisive, independent block-index
+confirmations** (VIRTUAL=3, SCRIPT=8) that directly corroborate the round
+above's own empirical finding from a completely different angle. Also
+checked `Mark_ScriptFile()` (the generated Mark-phase function) -- empty,
+ScriptFile has no dependencies, ruling out the exact Mark-phase bug class
+found and fixed for `snd_alias_list_t` in the round before this one (no
+array/count pair here for that bug class to hide in).
+
+**Theory (b) from the round above is now closed with direct, positive
+evidence -- it does not differ.** Combined with that round's own empirical
+finding (SCRIPT really is 0 bytes on disk for a failing zone, not
+misread), the real bug is narrowed to: a specific `ScriptFile` asset's own
+`compressedLen`/`bytecodeLen`/`buffer`/`bytecode` values are themselves
+corrupted, most plausibly by the same stream-cursor-desync bug class this
+whole investigation keeps finding (an EARLIER, unrelated asset's own read
+consuming the wrong number of bytes, landing this ScriptFile's own header
+read at the wrong file position). Finding which earlier asset causes the
+desync is a live cross-asset diagnostic-tracing task, not further RE of
+ScriptFile itself -- explicitly left to whichever thread picks this back
+up.
+
+No source changes shipped -- research-only, no generated or tracked
+source touched. Full trail:
+`re_notes/x64_migration/fastfile_format_research.md` SS5.32.
