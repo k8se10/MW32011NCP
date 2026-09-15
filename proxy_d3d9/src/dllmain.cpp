@@ -510,6 +510,37 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
                 "Multiplayer has no verified hook signatures yet (CLAUDE.md's MP scope "
                 "decision: static RE first, opt-in live work once it starts). "
                 "XInput polling and other exe-agnostic features still run normally.");
+            // 2026-09-15, direct instruction -- an on-screen warning through the same
+            // notifier "controller connected" uses, not just a log line: a player
+            // under iw5mp.exe has no other way to know why nothing responds when they
+            // try to navigate a menu. ShowOverlayMessageUntilDismissed (not the
+            // ordinary auto-expiring ShowOverlayMessage) so this can't be missed by
+            // looking away for a few seconds, matches this project's own established
+            // "real, safety-relevant warning" pattern (issue #92's ForceD3D9On12/
+            // InternalRenderScalePercent vid_restart guard) -- draws as a centered,
+            // blurred-panel modal (a genuinely different position from the ordinary
+            // top-right toast) in warning-yellow text (overlay_hud.cpp's own
+            // DrawWarningModal, updated the same day this call was added), and now
+            // takes real priority: ShowOverlayMessage was changed the same day to
+            // refuse to silently clobber an active dismiss-required warning like this
+            // one (previously a routine toast racing this warning, e.g. the real
+            // "MW32011NCP Started" toast d3d9_hook.cpp fires slightly later at
+            // device-create time, would have silently replaced it).
+            //
+            // Message swaps in place, no new code path, once MP gets real partial
+            // functionality -- update ONLY the string literal below when that day
+            // comes (per direct instruction, keep the literal warning emoji out --
+            // this pipeline renders text via GDI DrawTextA against this project's own
+            // embedded non-emoji font, which cannot reliably render a true Unicode
+            // glyph like U+26A0; "[!]" is the reliable equivalent this exact text
+            // path is guaranteed to render):
+            ShowOverlayMessageUntilDismissed(
+                "[!] Multiplayer has no functionality working right now."
+                // FUTURE (once MP has real, partial gameplay support -- swap this
+                // in, delete the line above, nothing else needs to change):
+                // "[!] Multiplayer is in pre-alpha and will contain bugs and issues. "
+                // "It is not on par with Campaign/Survival."
+            );
         } else {
             Log("proxy_d3d9: WARNING — could not identify the loading executable as "
                 "iw5sp.exe or iw5mp.exe. Refusing to install any gameplay hooks as a "

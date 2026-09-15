@@ -3014,9 +3014,20 @@ void DrawWarningModal(void* device)
         float textDrawH = static_cast<float>(kWarningTextureHeight);
         float textX = panelX + (kPanelW - textDrawW) * 0.5f;
         float textY = panelY + 12.0f;
+        // 2026-09-15 -- real warning-yellow tint (was hardcoded white), applied the
+        // same proven way OverlayAnimStyle::Gold already tints the ordinary toast's
+        // own white-fill/black-outline text texture (ComputeQuadColors' own comment):
+        // the outline stays black (near-zero RGB, unaffected by any tint multiply),
+        // only the white FILL becomes this color. Every message shown through this
+        // modal is by definition a real, must-see warning (ShowOverlayMessageUntilDismissed's
+        // own stated purpose) -- distinct, bright, unambiguous yellow (not the same
+        // warm-gold tone as OverlayAnimStyle::Gold's celebratory "MW32011NCP Started"
+        // homage, a different thing entirely) rather than a per-message color choice
+        // this single current use doesn't yet need.
+        constexpr DWORD kWarningTextTint = 0xFFFFD400u;
         DrawGenericTexturedQuad(device, g_warningTextTexture, textX * scaleX, textY * scaleY,
                                   textDrawW * scaleX, textDrawH * scaleY,
-                                  0xFFFFFFFFu, 0.0f, 0.0f, 1.0f, 1.0f, /*premultipliedAlpha=*/true, /*isTextOrGlyph=*/true);
+                                  kWarningTextTint, 0.0f, 0.0f, 1.0f, 1.0f, /*premultipliedAlpha=*/true, /*isTextOrGlyph=*/true);
     }
 
     // Real A-button glyph, this project's own established resolver/loader/draw
@@ -7190,6 +7201,20 @@ void UnloadOverlayFonts()
 
 void ShowOverlayMessage(const char* text, unsigned long durationMs, OverlayAnimStyle style)
 {
+    // 2026-09-15 -- an ordinary, auto-expiring toast must never silently clobber a
+    // dismiss-required warning (ShowOverlayMessageUntilDismissed) already on screen.
+    // Before this guard, any routine ShowOverlayMessage call racing an active warning
+    // (e.g. the real "MW32011NCP Started" toast d3d9_hook.cpp fires at device-create
+    // time, which runs AFTER DllMain -- exactly the ordering a real must-see warning
+    // shown from DllMain would race against) unconditionally set
+    // g_overlayRequiresDismiss = false, silently replacing the warning modal with a
+    // normal timed toast the player could miss by looking away for a few seconds --
+    // defeating the entire point of ShowOverlayMessageUntilDismissed's own "must not
+    // be missable" guarantee. Real priority, not just a different draw path: an
+    // active warning modal now blocks every ordinary toast until it's actually
+    // dismissed by the player.
+    if (g_overlayActive && g_overlayRequiresDismiss) return;
+
     strncpy_s(g_overlayText, text, _TRUNCATE);
     g_overlayStartMs = GetTickCount();
     g_overlayDurationMs = durationMs;
