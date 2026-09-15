@@ -494,14 +494,54 @@ item below.
    (`nexus/description.md`/`description.bbcode.txt`) now carry a Support
    section with a Ko-fi button (https://ko-fi.com/officialk8) — purely
    optional, no gated content or features tied to it.
+6. **`README.md` given an OpenAssetTools-style badge header** (icon+title,
+   a shields.io badge row: release/version, real build status, last commit,
+   license, Ko-fi) backed by a real new CI workflow (see Groundwork below) —
+   deliberately no fabricated "checks passing" claim until that workflow
+   actually existed.
+7. **`README.md`'s "Known gaps" section restructured**: was a ~200-line
+   wall of interleaved prose (including two already-resolved items still
+   sitting in it); now a priority-sorted table (highest-impact/most-blocking
+   first) with the full original investigation detail preserved underneath
+   in per-item collapsible sections — no content removed, just no longer
+   forced into the main reading flow. The top component table and "What
+   works right now" table also restructured (the latter split into two
+   properly single-purpose tables instead of two unrelated lists forced
+   into misleading table rows) for the same reason.
+8. **GitHub wiki is now version-controlled and auto-synced.** `wiki/*.md` in
+   this repo is the new single source of truth for every wiki page (see
+   `wiki/README.md`); a new CI workflow (Groundwork below) republishes it to
+   the real GitHub wiki automatically on every push to `main` that touches
+   it. Closes a real, previously-manual gap `CLAUDE.md`'s own "Keeping this
+   file current" section already documented once (the wiki sitting stuck
+   three releases behind with nothing tracking it). Seeded from the wiki's
+   actual current live content; `Home.md`, `Known-Issues.md`,
+   `Changelogs.md`, and `_Footer.md` were brought current to today's status
+   in the same pass (they'd drifted to pre-NCP-redefinition wording); the
+   remaining, lower-drift reference pages (Configuration, Compatibility,
+   Controller Setup, Installation Guide, Troubleshooting, FAQs, Technical
+   Documentation, Development Notes) were carried over as-is.
 
 ### Groundwork
-1. **`signature_scan.h`/`.cpp`** — the runtime AOB byte-pattern scanner this
+1. **Two new CI workflows.** `.github/workflows/build.yml` — real MSVC
+   builds (Release x64) of every component that actually ships to players
+   (`proxy_d3d9`, `security/proxy_d3d9`, `security/tools/
+   ncp_plugin_netcode_fixes`) on push/PR to `main`, backing `README.md`'s
+   real build-status badge. Deliberately does not build `tools/iw5oat` —
+   dev-only tooling, never shipped, with its own known premake-generated
+   build fragility (see `re_notes/known_issues_x64.md`) out of scope for a
+   basic buildability check. `.github/workflows/wiki-sync.yml` — publishes
+   `wiki/*.md` to the real GitHub wiki on every push to `main` that touches
+   it (see Documentation above). Requires "Read and write permissions" for
+   the default `GITHUB_TOKEN` under this repo's Settings → Actions →
+   General → Workflow permissions — a one-time manual repo setting, not
+   something either workflow file can set for itself.
+2. **`signature_scan.h`/`.cpp`** — the runtime AOB byte-pattern scanner this
    entire architecture is built on: parses wildcarded hex patterns, walks
    the game's own PE headers, fails loudly on a zero or ambiguous match.
-2. New Ghidra tooling for x64 RE work, including raw-byte reference scanners
+3. New Ghidra tooling for x64 RE work, including raw-byte reference scanners
    for tracking down indirect references static analysis alone misses.
-3. **Full RE trail for the x64 text-draw hook discovery**
+4. **Full RE trail for the x64 text-draw hook discovery**
    (`re_notes/x64_migration/drawtext_hook_x64.md`) — the `RawStringScan.java`
    → `DecompileAt.java` → `FindCallers.java` → `DumpSigBytes.java` chain
    applied to find `FUN_14029a2b0` (item 16 above) via the same

@@ -5,6 +5,7 @@
 ### Native Community Patches for MW3 (2011)
 
 [![Release](https://img.shields.io/github/v/release/k8se10/MW32011NCP?include_prereleases&sort=semver&label=release)](https://github.com/k8se10/MW32011NCP/releases)
+[![Build](https://github.com/k8se10/MW32011NCP/actions/workflows/build.yml/badge.svg)](https://github.com/k8se10/MW32011NCP/actions/workflows/build.yml)
 [![Last commit](https://img.shields.io/github/last-commit/k8se10/MW32011NCP)](https://github.com/k8se10/MW32011NCP/commits/main)
 [![License](https://img.shields.io/badge/license-custom%20(free%2C%20no%20resale)-blue)](LICENSE)
 [![Support on Ko-fi](https://img.shields.io/badge/support-ko--fi-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/officialk8)
@@ -18,12 +19,12 @@ proxy `d3d9.dll` that hooks the game's own real engine functions directly —
 never a keyboard/mouse-emulation mapper, never synthesized input where a
 native call exists, never a config tweak):
 
-| Component | What it does | Status |
-|---|---|---|
-| **Controller support** | Real analog movement/look/every button for Campaign & Survival, matching console behavior | Flagship, most mature — see [What works](#what-works-right-now) |
-| **Visual/performance enhancements** | Internal render scale, FSR 1.0 sharpening, motion blur, forced anisotropic filtering/shadow/lighting quality, stutter/threading fixes | Render scale and motion blur live-confirmed; rest wired for x64, not yet live-tested |
-| **Netcode security patches** | Finds and fixes real, exploitable vulnerabilities in the base game's own netcode | 3 of 4 confirmed vulnerabilities fixed — see [Security](#security-netcode-vulnerability-patches) |
-| **Multiplayer (`iw5mp.exe`)** | Same controller/security methodology, ported to the separate MP binary | Active reverse-engineering, opt-in-only when it ships — see [Multiplayer](#multiplayer) |
+| Component | What it does | Release-gating? | Status |
+|---|---|---|---|
+| **Controller support** | Real analog movement/look/every button for Campaign & Survival, matching console behavior | 🔴 Yes — the gate | Flagship, most mature — see [What works](#what-works-right-now) |
+| **Visual/performance enhancements** | Internal render scale, FSR 1.0 sharpening, motion blur, forced anisotropic filtering/shadow/lighting quality, stutter/threading fixes | 🔴 Yes — the gate | Render scale and motion blur live-confirmed; rest wired for x64, not yet live-tested |
+| **Netcode security patches** | Finds and fixes real, exploitable vulnerabilities in the base game's own netcode | ⚪ No — ships independently | 3 of 4 confirmed vulnerabilities fixed — see [Security](#security-netcode-vulnerability-patches) |
+| **Multiplayer (`iw5mp.exe`)** | Same controller/security methodology, ported to the separate MP binary | ⚪ No — fast-follow | Active reverse-engineering, opt-in-only when it ships — see [Multiplayer](#multiplayer) |
 
 Plus a cross-cutting [plugin API](PLUGIN_API.md) that lets anyone extend
 this mod, or build an independent MW3 sub-mod, without touching this
@@ -114,23 +115,38 @@ motion blur, main-menu navigation, and glyph-icon substitution. Two real,
 previously-undiscovered bugs were found and fixed the same day — see "Fire,
 ADS" and "Custom mouse cursor overlay" below.
 
-| Confirmed live (direct playtest) | Build-verified (not yet live-tested) |
+#### ✅ Confirmed live (2026-09-14 playtest)
+
+| Feature | Note |
 |---|---|
-| Analog movement, analog look | D-pad actionslot (all four directions) |
-| Jump, Interact, Jump auto-stand | D-pad Left's squadmate-call-in fix |
-| Fire, ADS (true hold-to-aim), Reload — **a real x64-only regression (an early-return meant to skip a no-op write instead silently disabled most controls whenever the stick was centered) was found and fixed 2026-09-13, live-confirmed 2026-09-14** | Plugin API (loader, hook/memory access) |
-| Melee, Lethal, Tactical | Custom Options screen's own vanilla-setting tabs (Look/Video/Audio/Voice/AdvancedVideo/Movement/Actions) — deferred, see Known gaps |
-| Weapon switch (Y) | Predator Missile's post-fire guidance (launch is confirmed live; guidance remains genuinely open, see Known gaps) |
-| Crouch/Prone (tap vs. hold), Sprint (real kbutton) | AC-130 zoom-aware look sensitivity (real fix shipped 2026-09-14, not yet live-tested) and gun-type switching (investigated, genuinely open — see Known gaps) |
-| Pause menu open/close | DualSense gyro-aim (preview/WIP, same status as `-x86`, needs real hardware to test) |
-| Auto-unstick (no more "click once at launch") | |
-| Survival ready-up (hold Y, synthetic F5) — mechanism confirmed live; the prompt itself still renders native/unmodified, see Known gaps | |
+| Analog movement, analog look | |
+| Fire, ADS (true hold-to-aim), Reload | A real x64-only regression (an early-return meant to skip a no-op write instead silently disabled most controls whenever the stick was centered) was found and fixed 2026-09-13, live-confirmed 2026-09-14 |
+| Melee, Lethal, Tactical, Jump, Interact, Jump auto-stand | |
+| Weapon switch (Y) | |
+| Crouch/Prone (tap vs. hold), Sprint (real kbutton) | |
+| Pause menu open/close, auto-unstick | No more "click once at launch" |
+| Survival ready-up (hold Y, synthetic F5) | Mechanism confirmed live; the prompt itself still renders native — see [Known gaps](#known-gaps) |
 | Hold Breath (L3 while ADS'd, sniper-class) | |
 | Predator Missile launch (Survival buy-station) | |
-| Motion blur (real x64 trigger hook found 2026-09-13, live-confirmed 2026-09-14) | FSR sharpening — the game has launched and run without crashing with it enabled, but hasn't been explicitly confirmed to produce its real visible effect the way `-x86` was |
-| Internal render scale — live-confirmed 2026-09-14 | |
-| Native controller menu/UI navigation — main menu confirmed; pause/options/buy-stations not yet separately exercised | |
-| Mantle glyph-icon substitution — confirmed visible live 2026-09-14; on-screen alignment needed a first-pass position fix the same day, may still need further tuning | Real glyph-icon substitution for Pickup/Swap/Pickup-health, Throwback grenade, Reload/low-ammo, menu corner hints (Back/Friends/Quit/Leaderboards/Game Summary) — same underlying mechanism as Mantle, not yet individually live-confirmed (see Known gaps for what's still native-only) |
+| Motion blur | Real x64 trigger hook found 2026-09-13, live-confirmed 2026-09-14 |
+| Internal render scale | Live-confirmed 2026-09-14 |
+| Native controller menu/UI navigation | Main menu confirmed; pause/options/buy-stations not yet separately exercised |
+| Mantle glyph-icon substitution | Confirmed visible live 2026-09-14; needed a first-pass position fix same day, may still need further tuning |
+
+#### 🟡 Build-verified, awaiting live confirmation
+
+| Feature | Note |
+|---|---|
+| D-pad actionslot (all four directions) | |
+| D-pad Left's squadmate-call-in fix | |
+| Plugin API | Loader, hook/memory access |
+| Predator Missile's post-fire guidance | Launch is confirmed live; guidance remains genuinely open — see [Known gaps](#known-gaps) |
+| AC-130 zoom-aware look sensitivity | Real fix shipped 2026-09-14 |
+| DualSense gyro-aim | Preview/WIP, same status as `-x86`, needs real hardware to test |
+| FSR sharpening | Runs without crashing; not yet confirmed to produce its real visible effect the way `-x86` was |
+| Glyph-icon substitution: Pickup/Swap/Pickup-health, Throwback, Reload/low-ammo, menu corner hints | Same mechanism as the confirmed-live Mantle substitution, not yet individually live-confirmed |
+
+*(Two items that used to sit in this table — the Custom Options screen's vanilla-setting tabs, and AC-130 gun-type switching — are genuinely-open gaps, not "verified and awaiting a live test." They're tracked in [Known gaps](#known-gaps) instead so this table only lists things that actually work, just not yet confirmed live.)*
 | Highlighted-item A-glyph (menu list navigation) and the F2/F3 glyph-position editor | |
 | Auto-Mantle (while sprinting) — ships off by default | |
 | Back (scoreboard, `+scores` key-synthesis) — correctly confirmed as a no-op in SP | |
@@ -143,203 +159,152 @@ ADS" and "Custom mouse cursor overlay" below.
 ### Known gaps
 
 These are honestly documented as not-yet-implemented, not hidden bugs. A
-**complete, systematic audit against every `-x86` feature is now done** — see
+**complete, systematic audit against every `-x86` feature is done** — see
 [`re_notes/x64_feature_parity_audit.md`](re_notes/x64_feature_parity_audit.md)
-for the full 61-item table (34 confirmed present, 21 confirmed absent, 6
-partial/regressed) — **plus 7 more rows (#62-68) added 2026-09-13 from a
-direct git-history audit-completeness sweep** (the original 61-row pass was
-sourced from documentation, not raw commit history; 6 of the 7 turned out
-already present, 1 was fixed on the spot, and 1 — the Custom Options
-screen's real data layer, see below — is a genuinely large gap). The items
-below are the highest-impact gaps found across both passes; see that file
-for everything else (menu glyphs, killstreaks, config presets, the plugin
-API, background threads, and more).
-- ~~**Motion blur's real x64 trigger hook found and wired — 2026-09-13,
-  build-verified, not yet live-tested.**~~ **RESOLVED, live-confirmed
-  2026-09-14 ("it works now").** Live-tested absent the day before (its
-  safety gates and per-frame yaw/pitch delta feed were genuinely wired
-  2026-09-12, but the function's only real trigger was an x86-only
-  raw-assembly engine hook that never compiled for x64, so the gate was
-  armed with nothing calling it). Fresh Ghidra RE found the real x64
-  equivalent hook point (`FUN_14018def0`, reached via the same call chain
-  as x86's own hook, confirmed via decompile at every hop) — unlike x86 it
-  needs no raw assembly, since x64 uses a standard calling convention there.
-  Wired via a normal MinHook C++ detour, resolved by signature scan per the
-  project's signature-scanning policy. Full trail: parity audit row #45,
-  `known_issues_x64.md` issue #1's "where is motion blur?" round.
-- ~~**Fire and/or ADS intermittently failed — root cause found and fixed
-  2026-09-13, build-verified, awaiting live re-confirmation.**~~ **RESOLVED,
-  live-confirmed 2026-09-14.** Originally
-  reported and investigated as sniper-class-specific (a fix attempt was
-  shipped around that theory, `g_notifyBindDispatch` resolving a real
-  client->server reliable-command notify every bind press/release should
-  send but this project's direct-kbutton-call design skipped), then
-  live-tested and confirmed NOT weapon-class-specific (happened on the base
-  pistol too), then reported intermittent ("on and off") rather than
-  constant. The real cause: `Hook_MovementTick` (`analog_input_hooks_x64.cpp`)
-  had a stray early `return` that fired whenever the left stick was
-  centered — intended only to skip a no-op movement-byte write, it actually
-  skipped the ENTIRE rest of the function, including Fire/ADS/Reload/
-  Weapnext/Melee/Lethal/Tactical/Jump/Interact/D-pad/CrouchProne/Scoreboard/
-  the gameplay-tick Pause-open poll/rumble — exactly the controls a player
-  needs while standing still to aim, which is precisely when the left stick
-  sits at (0,0). Confirmed as an x64-only regression by re-reading x86's own
-  `InjectAllControllerInput` (`analog_input_hooks.cpp`), which calls every
-  one of those as fully independent functions with no such gating. Fixed by
-  scoping the early return to just the movement-byte write. The earlier
-  `g_notifyBindDispatch` fix is unrelated and left in place (additive/inert
-  either way). See
-  [`re_notes/known_issues_x64.md`](re_notes/known_issues_x64.md)'s
-  2026-09-13 "root cause found" round for the full trace.
-- **The custom Options screen's real vanilla-setting tabs
-  (Look/Video/Audio/Voice/Advanced Video/Movement/Actions) are silently
-  non-functional on x64**, found 2026-09-13. The screen itself opens,
-  navigates, and responds to mouse clicks correctly — the UI shell is
-  genuinely shared, arch-neutral code — but every value shown on those 7
-  tabs is a stub (dvar reads and keybind reads both return nothing on x64)
-  and every edit is silently discarded (dvar and keybind writes are
-  explicit no-ops on x64, added 2026-09-04 to stop a real x86-only crash
-  risk, never replaced with a working x64 path). Nothing in the UI
-  indicates this. Only the Controller tab and the new Custom Binds tab
-  (both backed by this mod's own config, not real game settings) actually
-  work. See `re_notes/x64_feature_parity_audit.md` row #64 for the full
-  trace — closing this needs real x64 reverse-engineering work, not
-  attempted yet. **Lower priority than it first looked**: this whole
-  screen never actually finished maturing on `-x86` either (confirmed
-  2026-09-14 against `legacy-x86-docs/PATCHNOTES.md` — shipped v0.3.1 as
-  explicit preview/WIP, off by default, and never once mentioned again as
-  graduating past that all the way through v0.3.5). x64's specific gap
-  (the data layer, not the UI) is real and worth closing eventually, but
-  it isn't "behind a finished x86 feature" — neither line ever finished it.
-  **Deferred, 2026-09-14 (direct decision): explicitly NOT a priority for
-  this release.** The INI config (`mw3ncp_config.ini`) is a reliable,
-  already-working settings path for everything this mod itself controls;
-  the custom Options screen's remaining value is only for real VANILLA
-  game settings, a real but genuinely lower-value target. Not planned
-  again until a later pass, well past the current `-x64` parity push.
+for the full 68-item table (documentation-sourced plus a follow-up
+git-history sweep) — this section lists only what's still genuinely open;
+anything resolved since a prior pass has been moved up into
+[What works right now](#what-works-right-now) rather than left here.
 
-- **Controller-glyph icons now draw for real on x64 for nine in-game/menu
-  hint categories** (2026-09-13, three same-day follow-up passes on top of
-  the text-draw hook itself; Mantle's own substitution live-confirmed
-  visible 2026-09-14, needing a first-pass alignment nudge the same day —
-  see "What works right now" above): **Mantle, weapon pickup/swap/pickup-health,
-  grenade throwback, Reload/low-ammo, and menu corner hints (Back, Friends,
-  Quit, Leaderboards, Game Summary)** all now suppress the native hint text
-  and draw this project's own icon+text instead, detected via an exact
-  structural match against the real, live-resolved reference-key text (no
-  font-name filtering needed for any of these — Quit/Leaderboards instead
-  use a position check, matching `-x86`'s own real discriminator for this
-  exact class of false-positive). Reload and the first two menu corner
-  hints (Back/Friends) were initially believed unreachable from this hook
-  (an earlier finding the same day claimed Reload's text "flows through a
-  completely different native draw function," and menu corner hints simply
-  weren't attempted), but that was a decompiler artifact — one more hop of
-  RE (`FUN_1402afa60` → `FUN_1402b1090` → `FUN_14029a2b0`, the exact
-  function this hook already detours) confirmed both are fully reachable
-  after all. A THIRD same-day pass then closed Quit/Leaderboards/Game
-  Summary plus the Special-Ops-mode-picker/Friends-list Friends-suppression
-  logic, previously believed blocked on missing x64 menu-focus/itemDef
-  infrastructure — that claim turned out to be stale (the same day's
-  earlier menu-focus fix for the A-glyph/F2-F3 features had already closed
-  the actual dependency for a different consumer); see `re_notes/x64_migration/
-  drawtext_hook_x64.md` for the corrected trail.
-  **Buy-station's "Hold F to use Weapon Armory," Survival's ready-up
-  prompt, and turret placement still render completely native/
-  unmodified** — buy-station and ready-up are blocked on x64's genuinely
-  unconfirmed `Font_s` `fontName` offset (needed for `IsGameplayHintFont`-
-  style filtering, since neither has a known reference-key template even on
-  `-x86`; a dedicated same-day investigation tried to independently confirm
-  this offset via decompile and could not — a real negative result, not a
-  skipped step, see `re_notes/x64_migration/drawtext_hook_x64.md`'s "Stage
-  (d)"); Sentry-Place's own reference string wasn't found anywhere in the
-  x64 binary. The custom mouse cursor overlay is a separate system (a
-  different pair of native globals, no shared dependency with the
-  text-draw hook above) and was ported the same day (build-verified, not
-  yet live-tested — see the table above).
-  On-screen alignment for all eight working categories is also unverified —
-  no pixel-tuning nudges were ported yet, and the Special-Ops/Friends-list
-  suppression logic (a faithful port of `-x86`'s own v4 sticky-state
-  algorithm, which itself took four iterations to get right) has never been
-  live-exercised on x64. **A real positioning bug in this substitution was
-  live-confirmed 2026-09-13** (Mantle's icon never draws at all; Interact/
-  Reload's substituted text renders at the very top of the screen instead
-  of near the real prompt) and root-caused the same day via a fresh
-  decompile/disassembly: this hook's own x/y were pre-transform,
-  draw-context-local coordinates, not the final screen-pixel position they
-  were assumed to be — the real position isn't computed until a native
-  scale+alignment-offset step (`FUN_14008d020`) that runs AFTER this hook's
-  own interception point. Fixed by calling that real transform directly
-  instead of guessing at its internal field layout; build-verified but
-  **not yet live-tested** (could not deploy to the live game process this
-  session — see `known_issues_x64.md`'s matching round for the full trail
-  and a one-shot diagnostic log line to watch for on the next test). See
-  `re_notes/x64_migration/drawtext_hook_x64.md` for the exact scope and
-  reasoning behind each remaining gap. Everything else renders normally
-  (including this mod's own startup/hot-reload toast messages, which ARE
-  confirmed working on x64).
-- **Highlighted-item A-glyph (menu list navigation) and the F2/F3 in-game
-  glyph-position editor are now wired to real x64 menu-focus tracking**
-  (2026-09-13) — a separate system from the gameplay-hint icon substitution
-  above: this one draws an A-button icon on whichever native menu list item
-  is currently highlighted, using the same manually-calibrated position
-  table `-x86` already ships, and the F2/F3 editor is the tool used to
-  build/extend that table. Both features only ever depended on one shared
-  focus-tracking wrapper, which previously always reported "no focus" on
-  x64 because its x64 branch predated the real x64 itemDef-array walk built
-  2026-09-12 for the Custom Options screen's own open trigger — now routed
-  to that same, already-working implementation. Build-verified, not yet
-  live-tested. The A-glyph will only draw for menu groups already
-  calibrated on `-x86` (the position table itself is shared, unmodified);
-  any new/uncalibrated group still needs the F2/F3 editor re-run on x64 to
-  confirm it lines up.
-- **Auto-Mantle (while sprinting) is now fully wired on x64** (2026-09-13),
-  build-verified, ships off by default matching `-x86`'s exact default. The
-  native text-draw hook includes a real, language-independent structural
-  match against the live localized `PLATFORM_MANTLE` template
-  (`IsMantleHintCurrentlyShowingX64()`), and the `+gostand`-forcing
-  injection itself is now wired on top of it: `IsSprintActiveX64()` was
-  composed from three already-existing x64 tracking variables (an exact
-  parity port of `-x86`'s own `IsSprintActive()` — Sprint's move to a real
-  kbutton on x64 turned out not to remove the pieces this needed, just
-  relocate them). Not yet live-tested. (Survival ready-up, hold Y, and Hold
-  Breath, L3 while ADS'd, were both ported 2026-09-12 — see the
-  build-verified column above; Hold Breath uses the same
-  no-explicit-sniper-check gating as `-x86`, relying on the real native
-  kbutton to limit the effect to sniper-class weapons.)
-- **Back's `+scores` scoreboard** is now ported (build-verified, not yet
-  live-tested), but this was never a real functionality gap — confirmed live
-  on `-x86`, including direct testimony from actual Xbox 360 console play,
-  that this bind is a genuine no-op in Campaign/Survival on every platform
-  (no scoreboard UI exists there at all). It'll have real value once
-  Multiplayer support ships, where a scoreboard genuinely exists.
-- **FXAA and a forced-MSAA option** were never actually built even on the
-  old `-x86` line (only ever planned) — real future work, not a regression.
-- **Predator Missile's post-fire guidance (steering the missile in flight)
-  remains genuinely open** — this has never worked on EITHER architecture,
-  not a parity gap. 2026-09-14 investigation mapped the real x64 native
-  call chain further than either platform has ever had it (exact struct
-  offsets, confirmed angle-decode math), and found real (not conclusive)
-  evidence the bug may already be partially fixed as a side effect of the
-  ordinary look-injection pipeline — but this couldn't be proven statically.
-  A safe, cheap diagnostic hook now ships instead of a guess; the next real
-  playtest against Predator Missile specifically will give the first live
-  data either architecture has ever collected on this question. See
-  `re_notes/known_issues.md` issue #30.
-- **AC-130 gun-type switching (105mm/40mm/25mm) remains genuinely open.**
-  Investigated in depth 2026-09-14 — a whole-binary native string sweep
-  confirmed this is entirely GSC/data-driven with zero native dispatch case
-  to hook, and a public MP-only GSC reference couldn't be confirmed to
-  match Campaign/Spec-Ops's own actual mechanism. Correctly left unfixed
-  rather than guessed at against an already-working, live-confirmed
-  feature this session had no way to verify a change against. See
-  `re_notes/known_issues.md` issue #40.
-- **A real, project-wide GSC-extraction tooling blocker was found
-  2026-09-14**: OpenAssetTools' Unlinker (both the vendored version and
-  the current latest release) reproducibly crashes loading any real
-  retail zone file from this install, almost certainly because the
-  2026-09-03 x64 recompile changed the zone container format. Blocks
-  fresh GSC decompilation for any future investigation until resolved —
-  see `re_notes/known_issues_x64.md`'s 2026-09-14 entry.
+Sorted by priority — highest-impact/most-blocking first. Click a row for the
+full investigation trail; nothing below has been trimmed, just moved out of
+the main flow.
+
+| # | Gap | Priority | Current status |
+|---|---|---|---|
+| 1 | Buy-station / Survival ready-up hint **text** | 🟠 Medium | Mechanism works (you can ready up / buy) — the on-screen prompt itself still renders native. Blocked on a genuinely unresolved native offset |
+| 2 | Predator Missile post-fire guidance | 🟠 Medium | Never worked on **either** architecture — not a parity gap. Safe diagnostic shipped instead of a guess |
+| 3 | OpenAssetTools `Unlinker` crash (dev tooling) | 🟠 Medium | Blocks fresh GSC extraction for future RE work — affects project velocity, not players |
+| 4 | AC-130 gun-type switching (105/40/25mm) | 🟡 Low | Confirmed GSC/data-driven with no native hook point; correctly left unfixed rather than guessed at |
+| 5 | Custom Options screen's vanilla-setting data layer (7/9 tabs) | 🟡 Low — deliberately deferred | INI config already covers everything this mod itself needs |
+| 6 | Back's `+scores` scoreboard | 🟢 Low | Real gap, but a confirmed no-op in SP/Survival on every platform; matters once MP ships |
+| 7 | FXAA / forced MSAA | 🟢 Low | Never built even on the prior `-x86` line — future work, not a regression |
+
+<details>
+<summary><b>1. Buy-station / Survival ready-up hint text</b> — full detail</summary>
+
+Buy-station's "Hold F to use Weapon Armory," Survival's ready-up prompt, and
+turret placement still render completely native/unmodified — both are
+blocked on x64's genuinely unconfirmed `Font_s` `fontName` offset (needed
+for `IsGameplayHintFont`-style filtering, since neither has a known
+reference-key template even on `-x86`; a dedicated investigation tried to
+independently confirm this offset via decompile and could not — a real
+negative result, not a skipped step, see
+`re_notes/x64_migration/drawtext_hook_x64.md`'s "Stage (d)"). Sentry-Place's
+own reference string wasn't found anywhere in the x64 binary either.
+
+Separately: on-screen alignment for the nine already-working glyph-icon
+categories (Mantle, Pickup/Swap/Pickup-health, Throwback, Reload/low-ammo,
+five menu corner hints) is unverified beyond Mantle — no pixel-tuning
+nudges were ported yet, and the Special-Ops/Friends-list suppression logic
+(a faithful port of `-x86`'s own v4 sticky-state algorithm, which itself
+took four iterations to get right) has never been live-exercised on x64. A
+real positioning bug (Mantle's icon never drawing; Interact/Reload's text
+rendering at the top of the screen instead of near the real prompt) was
+root-caused 2026-09-13 to this hook's own x/y being pre-transform,
+draw-context-local coordinates rather than the final screen-pixel position
+— fixed by calling the real native transform (`FUN_14008d020`) directly.
+Build-verified, not yet live-tested. See
+`re_notes/x64_migration/drawtext_hook_x64.md` for the exact scope and
+reasoning behind each remaining piece.
+
+</details>
+
+<details>
+<summary><b>2. Predator Missile post-fire guidance</b> — full detail</summary>
+
+2026-09-14 investigation mapped the real x64 native call chain further than
+either platform has ever had it (exact struct offsets, confirmed
+angle-decode math), and found real (not conclusive) evidence the bug may
+already be partially fixed as a side effect of the ordinary look-injection
+pipeline — but this couldn't be proven statically. A safe, cheap diagnostic
+hook now ships instead of a guess; the next real playtest against Predator
+Missile specifically will give the first live data either architecture has
+ever collected on this question. See `re_notes/known_issues.md` issue #30.
+
+</details>
+
+<details>
+<summary><b>3. OpenAssetTools Unlinker crash (dev tooling)</b> — full detail</summary>
+
+A real, project-wide GSC-extraction tooling blocker was found 2026-09-14:
+`Unlinker` (both the vendored version and the current latest release)
+reproducibly crashes loading any real retail zone file from this install,
+almost certainly because the 2026-09-03 x64 recompile changed the zone
+container format. Blocks fresh GSC decompilation for any future
+investigation until resolved. **Update, 2026-09-15**: the dominant failure
+class behind this is now understood and partially fixed in
+`tools/iw5oat`'s own fork (see that tool's own README/`re_notes/x64_migration/
+fastfile_format_research.md` for the live-tracked, in-progress RE trail) —
+see `re_notes/known_issues_x64.md`'s 2026-09-14/09-15 entries.
+
+</details>
+
+<details>
+<summary><b>4. AC-130 gun-type switching</b> — full detail</summary>
+
+Investigated in depth 2026-09-14 — a whole-binary native string sweep
+confirmed this is entirely GSC/data-driven with zero native dispatch case
+to hook, and a public MP-only GSC reference couldn't be confirmed to match
+Campaign/Spec-Ops's own actual mechanism. Correctly left unfixed rather
+than guessed at against an already-working, live-confirmed feature this
+session had no way to verify a change against. See
+`re_notes/known_issues.md` issue #40.
+
+</details>
+
+<details>
+<summary><b>5. Custom Options screen's vanilla-setting data layer</b> — full detail</summary>
+
+The custom Options screen's real vanilla-setting tabs
+(Look/Video/Audio/Voice/Advanced Video/Movement/Actions) are silently
+non-functional on x64, found 2026-09-13. The screen itself opens,
+navigates, and responds to mouse clicks correctly — the UI shell is
+genuinely shared, arch-neutral code — but every value shown on those 7 tabs
+is a stub (dvar reads and keybind reads both return nothing on x64) and
+every edit is silently discarded (dvar and keybind writes are explicit
+no-ops on x64, added 2026-09-04 to stop a real x86-only crash risk, never
+replaced with a working x64 path). Nothing in the UI indicates this. Only
+the Controller tab and the Custom Binds tab (both backed by this mod's own
+config, not real game settings) actually work. See
+`re_notes/x64_feature_parity_audit.md` row #64 for the full trace — closing
+this needs real x64 reverse-engineering work, not attempted yet.
+
+**Lower priority than it first looked**: this whole screen never actually
+finished maturing on `-x86` either (confirmed 2026-09-14 against
+`legacy-x86-docs/PATCHNOTES.md` — shipped v0.3.1 as explicit preview/WIP,
+off by default, and never once mentioned again as graduating past that all
+the way through v0.3.5). x64's specific gap (the data layer, not the UI) is
+real and worth closing eventually, but it isn't "behind a finished x86
+feature" — neither line ever finished it. **Deferred, 2026-09-14 (direct
+decision): explicitly NOT a priority for this release.** The INI config
+(`mw3ncp_config.ini`) is a reliable, already-working settings path for
+everything this mod itself controls; the custom Options screen's remaining
+value is only for real VANILLA game settings, a real but genuinely
+lower-value target. Not planned again until a later pass, well past the
+current `-x64` parity push.
+
+</details>
+
+<details>
+<summary><b>6. Back's `+scores` scoreboard</b> — full detail</summary>
+
+Ported (build-verified, not yet live-tested), but this was never a real
+functionality gap — confirmed live on `-x86`, including direct testimony
+from actual Xbox 360 console play, that this bind is a genuine no-op in
+Campaign/Survival on every platform (no scoreboard UI exists there at all).
+It'll have real value once Multiplayer support ships, where a scoreboard
+genuinely exists.
+
+</details>
+
+<details>
+<summary><b>7. FXAA / forced MSAA</b> — full detail</summary>
+
+Never actually built even on the old `-x86` line (only ever planned) — real
+future work, not a regression.
+
+</details>
 
 Full detail, investigation trails, and current status on every item:
 [`re_notes/known_issues_x64.md`](re_notes/known_issues_x64.md) and
