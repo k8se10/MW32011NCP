@@ -47,5 +47,15 @@ ff_dump/
 # Standards" for what belongs here vs. in the public re_notes/ docs.
 re_notes/INTERNAL_*.md
 re_notes/internal/
+
+# Ghidra project for iw5sp.exe/iw5mp.exe (2026-09-15) -- a real, regenerable
+# binary analysis database, not source; too large to diff/review meaningfully.
+# Added proactively BEFORE creating this directory, per the sibling MW32011NCP
+# project's own hard-learned lesson: its equivalent entry was found missing
+# 2026-09-12 with an 80.95MB .gbf database file already committed and pushed to
+# the public repo as a direct result. Never let that gap exist here even
+# briefly -- this entry lands in the same commit as (or before) the directory
+# it protects, not after.
+re_notes/ghidra_project_x64/
 # Local Codex steering mirror; the shared copy lives one directory above both repos.
 AGENTS.md
