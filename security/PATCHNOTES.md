@@ -25,8 +25,8 @@ vulnerability-research and reverse-engineering trail behind each entry, and
   Not yet live-tested through NCP itself.
 
 ### Fixed
-- **First real fixes shipped: three of the four confirmed, unpatched netcode
-  vulnerabilities are now patched via a standalone proxy DLL (`proxy_d3d9/`,
+- **All four confirmed netcode vulnerabilities are now resolved (three
+  fixed, one already safe), via a standalone proxy DLL (`proxy_d3d9/`,
   NSP's first-ever implementation code).** This project's Phase 1 stated
   purpose -- ship real fixes, not just report bugs -- starts here.
   - **Finding 1 (iw5sp.exe Steamworks P2P receive-path overflow)**: hooks the
@@ -43,17 +43,22 @@ vulnerability-research and reverse-engineering trail behind each entry, and
     something unrelated, which this fix deliberately leaves untouched).
     Length is clamped to each destination's real buffer size (1020 bytes,
     1024-byte buffer; 512 bytes, matching buffer) before the copy runs.
-  - **Finding 4 (fragment-reassembly OOB write) is NOT fixed this pass** --
-    see `re_notes/vulnerability_research.md`'s own new entry for why: the
-    destination address is computed at runtime as a per-connection buffer
-    base plus an attacker-controlled offset, and the shared-primitive-hook
-    technique used for findings 2/3 can't recover that buffer's real bounds
-    from the address alone. A full-function replacement was considered and
-    rejected this pass -- it risks silently dropping undocumented behavior in
-    the function's own "magic-byte-range/version-compat checks" section,
-    which this project doesn't yet fully understand. Real next step, not
-    guessed at.
-  - **Build-verified: YES, as of this pass.** The implementation was
+  - **Finding 4 (fragment-reassembly OOB write) fixed 2026-09-15**, extending
+    the SAME shared-copy-primitive hook findings 2/3 already installed
+    (MinHook only permits one hook per target address, so all three share
+    one hook, scoped per finding by exact return address) with a third case,
+    plus one genuinely new hook -- not on the generic memmove-style
+    primitive the copy primitive calls internally (used from an enormous
+    number of unrelated places throughout the whole binary), but on the
+    small, specific function that resolves a connection's own reassembly
+    buffer. That hook captures the buffer's real base pointer; the shared
+    primitive's new Finding-4 case then validates the caller-supplied
+    destination against the real captured range and clamps or refuses the
+    copy rather than trusting it. A real correction to this project's own
+    prior documentation was found along the way -- see
+    `re_notes/vulnerability_research.md`'s own newest entry for the full
+    writeup.
+  - **Build-verified: YES, both distribution targets.** The implementation was
     originally produced in an isolated environment that could not run
     MSBuild at all; a follow-up pass fixed one real bug found in that
     process (an invalid `--` inside an XML comment in `proxy_d3d9.vcxproj`,
@@ -62,10 +67,17 @@ vulnerability-research and reverse-engineering trail behind each entry, and
     output is a real x64 DLL exporting all 16 required D3D9 functions.
     Independently re-verified the P2P fix's own 52-byte signature against a
     fresh raw byte dump of the live binary -- exact match, not just internally
-    self-consistent. **Still NOT live-tested** -- build success confirms the
-    code compiles and the signatures/offsets are real, not that the fixes
-    behave correctly against actual malicious network traffic. That
-    remains open.
+    self-consistent. Finding 4's own addresses were independently re-derived
+    this same session via a freshly re-analyzed Ghidra project, including a
+    purpose-built uniqueness check on its own signature before shipping.
+    Both `security/proxy_d3d9/` (standalone) and
+    `security/tools/ncp_plugin_netcode_fixes/` (the plugin NCP loads
+    by default) rebuild clean, 0 errors, confirmed genuine x64 output; the
+    updated plugin DLL is deployed to the live install. **Still NOT
+    live-tested** -- build success confirms the code compiles and the
+    signatures/offsets are real, not that the fixes behave correctly
+    against actual malicious network traffic. That remains open for all
+    four findings.
 
 - **Finding 1's fix was silently never installing on its actual first live
   execution (2026-09-05) — root-caused and fixed the same day.** The first

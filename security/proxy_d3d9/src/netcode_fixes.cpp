@@ -10,8 +10,6 @@ void InstallNetcodeFixes(const FixHostServices& host)
 {
     host.Log("[nsp] Installing netcode security fixes...");
     InstallP2PFix(host);                          // Finding 1 (iw5sp.exe)
-    InstallMatchdatadoneAndMemberjoinFix(host);    // Findings 2+3 (iw5mp.exe)
-    // Finding 4 (fragment-reassembly OOB write, iw5mp.exe) is NOT implemented
-    // yet -- see this file's own header comment in netcode_fixes.h.
+    InstallMatchdatadoneAndMemberjoinFix(host);    // Findings 2+3+4 (iw5mp.exe)
     host.Log("[nsp] Netcode security fix installation pass complete.");
 }

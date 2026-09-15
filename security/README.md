@@ -26,18 +26,19 @@ together.
 
 ## Status
 
-**Four vulnerabilities confirmed via original reverse engineering; three are
-fixed.** All four were independently re-verified present, byte-for-byte
-unpatched, in MW3's own 2026-09-03 binary update (its first-ever, a 32-bit
-to 64-bit recompile) — the update was a real opportunity to fix them and
-didn't. Full technical trail in `re_notes/vulnerability_research.md`.
+**Four vulnerabilities confirmed via original reverse engineering; all four
+are resolved (three fixed, one confirmed already safe).** All four were
+independently re-verified present, byte-for-byte unpatched, in MW3's own
+2026-09-03 binary update (its first-ever, a 32-bit to 64-bit recompile) —
+the update was a real opportunity to fix them and didn't. Full technical
+trail in `re_notes/vulnerability_research.md`.
 
 | Finding | Binary | Status |
 |---|---|---|
 | Steamworks P2P receive-path overflow | `iw5sp.exe` | **Fixed**, build-verified, not yet live-tested |
 | `matchdatadone` dispatcher stack overflow | `iw5mp.exe` | **Fixed**, build-verified, not yet live-tested |
 | `pa_memberjoin` party-join handler overflow | `iw5mp.exe` | **Fixed**, build-verified, not yet live-tested |
-| Fragment-reassembly out-of-bounds write | `iw5mp.exe` | **Open** — real technical blocker documented, not guessed around |
+| Fragment-reassembly out-of-bounds write | `iw5mp.exe` | **Fixed**, build-verified, not yet live-tested |
 | Steam-Auth (CVE-2018-20817) | `iw5mp.exe` | Checked, confirmed already safe — no fix needed |
 
 Three of the four unpatched findings were reported to Activision through
@@ -101,8 +102,8 @@ reverse-engineering methodology, a different problem, now one project.
 
 ## Phased plan
 
-1. **Patch the confirmed, documented bugs** (the table above) — three of
-   four done.
+1. **Patch the confirmed, documented bugs** (the table above) — all four
+   resolved (three fixed, one confirmed already safe).
 2. **General hardening** against undiscovered bugs of the same class — rate
    limiting, stronger connection-challenge validation, broader bounds-checking
    audits — modeled on real precedent from `CoD4x_Server` (one engine

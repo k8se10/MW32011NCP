@@ -47,13 +47,9 @@ void InstallNetcodeFixes(const FixHostServices& host);
 // own respective .cpp files (one per finding, matching this project's own
 // "document every last detail" per-issue structure).
 void InstallP2PFix(const FixHostServices& host);              // Finding 1: iw5sp.exe Steamworks P2P receive-path overflow
-void InstallMatchdatadoneAndMemberjoinFix(const FixHostServices& host); // Findings 2+3: iw5mp.exe, share ONE hook (see .cpp)
-
-// Finding 4 (iw5mp.exe fragment-reassembly OOB write) is NOT implemented this pass
-// -- see re_notes/vulnerability_research.md's own entry for why (the destination
-// address is computed at runtime as a per-connection buffer base + attacker offset;
-// the shared copy-primitive hook used for findings 2/3 can't recover the real
-// buffer's bounds from that address alone, and a full-function replacement risks
-// missing undocumented behavior in the function's own "magic-byte-range/version-
-// compat checks" section this project doesn't yet fully understand). Real next step,
-// not attempted here rather than shipping an unverified guess.
+// Findings 2, 3, AND 4: iw5mp.exe, all share ONE hook on the same underlying
+// copy primitive (MinHook only allows one hook per target address), so they
+// live in one installer/one .cpp file -- see that file's own header comment for
+// the full per-finding root cause and fix design, including Finding 4's own
+// second hook (a buffer-resolve function, NOT the shared copy primitive).
+void InstallMatchdatadoneAndMemberjoinFix(const FixHostServices& host);
