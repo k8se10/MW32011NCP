@@ -463,6 +463,37 @@ item below.
     remain unported for the same underlying reason — neither has an
     available substitute signal. See `re_notes/known_issues_x64.md`
     issue #1's newest round.
+17. **Multiplayer (`iw5mp.exe`) no longer crashes navigating menus —
+    real groundwork for MP support: gameplay hooks are now gated by
+    which game executable actually loaded this DLL.** Live-reported:
+    `iw5mp.exe` loaded this DLL fine (XInput polling and other
+    exe-agnostic init succeed, hence "controller connected" showing
+    even under Multiplayer) but crashed navigating menus. Root cause:
+    `iw5sp.exe` and `iw5mp.exe` share the same install directory and
+    therefore the same deployed `d3d9.dll`, but every one of this
+    project's several thousand lines of signature-scanned gameplay
+    hooks was found and verified against `iw5sp.exe` ONLY — this
+    project's own standing policy has always been that the two
+    binaries are separate reverse-engineering efforts with no assumed
+    address/signature parity, but nothing actually enforced that at
+    runtime. Hook installation ran completely unconditionally
+    regardless of which binary loaded the DLL, so at least one
+    SP-verified signature was very likely spuriously matching unrelated
+    bytes somewhere in `iw5mp.exe`'s own, differently-compiled code and
+    installing a hook at a location that behaves completely differently
+    there. Fixed by detecting the real loading executable
+    (`GetModuleFileNameA` against the process's own main module,
+    compared against the two known real binary names) before any hook
+    installation runs: gameplay hooks now only install under confirmed
+    `iw5sp.exe`; `iw5mp.exe` (and any unrecognized executable, as a
+    fail-safe) skips hook installation entirely while every exe-agnostic
+    feature (XInput polling, the plugin loader — including the netcode-
+    security plugin, which is meant to protect MP too) continues to run
+    normally. This is groundwork, not full MP support: no gameplay hooks
+    for `iw5mp.exe` exist yet at all (see `CLAUDE.md`'s MP scope
+    decision — static RE first, opt-in-only live/injection work once it
+    starts) — this change stops the wrong binary's hooks from ever being
+    attempted, it doesn't add new ones.
 
 ### Documentation
 1. **`re_notes/known_issues_x64.md` established** as the dedicated x64 issue

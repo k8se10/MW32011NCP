@@ -131,6 +131,7 @@
       <ExcludedFromBuild Condition="'$(Platform)'!='x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="src\signature_scan.cpp" />
+    <ClCompile Include="src\game_exe_detect.cpp" />
     <ClCompile Include="src\controller_input.cpp" />
     <ClCompile Include="src\dualsense_input.cpp" />
     <ClCompile Include="src\d3d9_hook.cpp" />
@@ -181,6 +182,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\signature_scan.h" />
+    <ClInclude Include="src\game_exe_detect.h" />
     <ClInclude Include="src\controller_input.h" />
     <ClInclude Include="src\dualsense_input.h" />
     <ClInclude Include="src\mod_config.h" />
