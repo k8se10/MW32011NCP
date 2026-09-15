@@ -7500,3 +7500,93 @@ issue and so don't flip all the way to a clean load from this alone.
 
 Shipped: `tools/iw5oat/src/ZoneLoading/Zone/Stream/ZoneInputStream.cpp`.
 Full trail: `re_notes/x64_migration/fastfile_format_research.md` §5.29.
+
+### SHIPPED (real, tested fixes), 2026-09-15 ("keep going" -- static instrumentation only, no live debugger, per direct instruction after a cdb-related system crash) -- the final 18-zone real-crash class (Sound/snd_alias_list_t deduplication) root-caused via two distinct bugs and fixed; zero new crashes across the full 45-zone sweep, sp_dubai.ff/sp_ny_harbor.ff now fully clean
+
+**Status: shipped, tested, safe.** Picks up directly from the round above
+(`invHighMipRadius[4]` correctly identified but reverted, blocked by a
+Sound-loading crash) and the round before it (the alias-chain graceful-
+degradation fix). **A live cdb (WinDbg console debugger) session used
+earlier in this exact thread caused a real system crash requiring a hard
+power-cycle** -- this round was completed entirely via static
+instrumentation (temporary `fprintf`+`fflush` diagnostic tracing compiled
+directly into `Unlinker.exe`, run normally with no debugger attached at
+all) plus static Ghidra decompilation (no live process attach), per direct
+standing instruction: only `x64dbg` (this project's own approved tool) may
+ever be used for live debugging on this machine, never cdb/WinDbg.
+
+Re-applied `invHighMipRadius[4]` and reproduced the crash cleanly:
+`so_survival_mp_alpha.ff` still segfaults at asset index 785/953, now
+confirmed via coarse per-asset tracing to be asset type 11
+(`ASSET_TYPE_SOUND`).
+
+**Bug #1**: `Marker_snd_alias_list_t::Mark_snd_alias_list_t()` (generated
+code) unconditionally calls `MarkArray_snd_alias_t(varsnd_alias_list_t->count)`
+whenever `head` is non-null -- but `head` is DSL-declared `reusable`
+(`set reusable head; set count head count;`), and when it resolves via
+`ConvertOffsetToPointerLookup` (a genuine reference to an array already
+loaded by an EARLIER asset) rather than a fresh FOLLOWING load, this
+asset's own `count` field -- read unconditionally as part of the same
+header regardless of branch -- is not guaranteed meaningful. Confirmed
+live: `count` read as `-1` (0xFFFFFFFF); implicitly converted to
+`MarkArray_snd_alias_t(const size_t count)`'s parameter, this becomes
+`0xFFFFFFFFFFFFFFFF`, and the resulting near-infinite loop walks memory
+far past any real allocation within a handful of iterations. **Confirmed
+this is the REAL native engine's own architecture, not a misread**: fresh
+Ghidra decompiles of `FUN_14009f3f0`/`FUN_14009f4b0`/`FUN_14009f590`/
+`FUN_140096900` (saved in `re_notes/ghidra_scripts/decomp_snd_alias_*.txt`)
+show every relevant struct's real byte size matches this fork's own
+`sizeof()`/`offsetof()` exactly -- ruling out a stream-desync theory. This
+is a genuine gap in how ZoneCodeGenerator emits Mark-phase code for
+`reusable`-pointer+count pairs (the Load-phase generation already handles
+this correctly). Fixed via a new permanent post-processing script
+(`tools/iw5oat/x64_offset_fixes/05_fix_mark_reusable_count.py`, following
+the existing 01-04 scripts' own conventions, since the buggy file lives in
+gitignored `build/`): guards the one confirmed call site with
+`count > 0 && count <= 100000`. **Deliberately narrow, not blanket** -- a
+DSL sweep found 18 asset types declare `reusable` fields; only the one
+independently-verified site was touched, the other 17 are a documented,
+open lead for a future round (each needs its own native cross-check).
+
+**Bug #2 (a second, distinct, more severe crash, found immediately after
+fixing Bug #1)**: `AssetLoader::LinkAsset`/`GetAssetInfo` (hand-written,
+tracked source, `tools/iw5oat/src/ZoneLoading/Loading/AssetLoader.h`/`.cpp`)
+took `std::string name`/`const std::string& name`, but every real call
+site (all 194 asset types) passes `AssetName<T>(**pAsset)` -- a raw
+`const char*` -- directly. Constructing `std::string` from a null
+`const char*` is undefined behavior (a real MSVC crash). Confirmed via
+tracing that asset 785's own `aliasName` genuinely IS null after the fill
+-- and confirmed via the same native decompile trail
+(`FUN_14009f4b0`'s own `if (*field != 0) { ... }` guard around aliasName's
+own resolution) that **a null aliasName for this exact case is real,
+legitimate, intentional native data**, not corruption -- the real engine
+explicitly no-ops name resolution when the raw field is already zero.
+Fixed permanently at the hand-written source: changed both functions'
+parameter types to `const char*`, substituting an empty string for null
+inside the function body. Zero call-site changes needed anywhere --
+confirmed via a full grep that all 40 real `LinkAsset`/`GetAssetInfo` call
+sites share the identical `AssetName<AssetX>(**pAsset)` shape, so this is
+a single, universal, permanent fix for every asset type.
+
+A live re-test after Bug #2's fix found Bug #1's count-guard too narrow:
+`so_nyse_ny_manhattan.ff` still crashed, `count` reading as a large
+POSITIVE garbage value (805330033) that a bare `count > 0` check doesn't
+catch. Widened to `count > 0 && count <= 100000` (`MAX_SANE_COUNT`),
+confirmed to close both known garbage-value shapes.
+
+**Full 45-zone sweep on a verified-clean build (all temp diagnostics fully
+reverted from tracked source first)**: **zero real crashes anywhere** -- 5
+zones load completely cleanly (`sp_intro.ff`, `sp_prague.ff`,
+`so_trainer2_so_deltacamp.ff`, plus **`sp_dubai.ff` and `sp_ny_harbor.ff`,
+both newly unblocked**), the other 40 each hit their own already-tracked,
+bounded, non-crashing error class. All 18 previously-crashing zones (16×
+`so_survival_mp_*.ff` + `so_nyse_ny_manhattan.ff` + `so_zodiac2_ny_harbor.ff`)
+now fail cleanly (`NOT_RECORDED`) instead of segfaulting.
+
+Shipped: `tools/iw5oat/src/Common/Game/IW5/IW5_Assets.h`
+(`invHighMipRadius[4]`), `tools/iw5oat/src/ZoneLoading/Loading/AssetLoader.h`/
+`.cpp` (the null-name fix), `tools/iw5oat/x64_offset_fixes/
+05_fix_mark_reusable_count.py` (new script), 4 new Ghidra decompile
+evidence files. Not shipped: the other 17 `reusable`-field asset types'
+own Mark-phase sites (documented, narrower-scope future lead). Full trail:
+`re_notes/x64_migration/fastfile_format_research.md` §5.30.

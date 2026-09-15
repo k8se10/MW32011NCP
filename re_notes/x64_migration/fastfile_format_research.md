@@ -2326,6 +2326,149 @@ call-site surface); a true architectural fix (stream checkpointing or a
 genuine two-pass load) that would resolve this class of forward reference
 without leaving any field null.
 
+## 5.30. UPDATE, 2026-09-15 ("keep going", static-instrumentation-only, no live debugger per direct user instruction after a cdb-related system crash) — the final 18-zone real-crash class (Sound/`snd_alias_list_t` deduplication) root-caused and fixed: two real bugs found via static tracing + native cross-check, zero new crashes across the full 45-zone sweep, `sp_dubai.ff`/`sp_ny_harbor.ff` now fully clean
+
+**Status: real, tested, shipped fixes.** Picks up directly from §5.28's own
+handoff (the correctly-identified `invHighMipRadius[4]` fix, reverted
+because it exposed 18 real crashes in `so_survival_mp_*.ff` + 2 others) and
+§5.29's already-shipped alias-chain graceful-degradation fix. **Live
+debugger use (cdb specifically) caused a real system crash requiring a hard
+power-cycle earlier in this exact investigation thread** — this round was
+completed entirely via static instrumentation (`fprintf`+`fflush`
+diagnostic tracing compiled into `Unlinker.exe`, run normally, no debugger
+attach at all) and static Ghidra decompilation (no live process attach),
+per direct standing instruction: only `x64dbg` (this project's own approved
+tool) may ever be used for live debugging on this machine, never
+`cdb`/WinDbg, regardless of whether x64dbg is reachable in a given session.
+
+**Re-applied the `invHighMipRadius[4]` fix and re-reproduced the crash
+cleanly.** `so_survival_mp_alpha.ff` confirmed still segfaults (exit 139,
+no clean `Failed`/`Finished` line) at the exact same asset index (785 of
+953) as §5.28 found, now unambiguously identified as **asset type 11**
+(`ASSET_TYPE_SOUND` / `snd_alias_list_t`) via coarse per-asset-index
+tracing added to `ContentLoaderIW5.cpp`'s `LoadXAssetArray` loop (temporary,
+reverted before shipping).
+
+**Bug #1 — a genuine crash inside `Marker_snd_alias_list_t::Mark_snd_alias_list_t()`
+(generated code), confirmed via fine-grained diagnostic tracing added
+directly to the generated `snd_alias_list_t_iw5_load_db.cpp`/`_mark_db.cpp`
+(also temporary, reverted).** Asset 785's own top-level pointer resolves
+FOLLOWING (needs a fresh header read), but that header's own `head` field
+(the array of individual `snd_alias_t` entries, DSL-declared `set reusable
+head;` — this format's real shared/deduplicated-array mechanism, `set
+count head count;` ties `count` to it) resolves via `OFFSET`
+(`ConvertOffsetToPointerLookup`, a genuine reference to an ALREADY-loaded
+array owned by an earlier asset) rather than a fresh load. `head` itself
+resolves correctly to a real, valid heap pointer — but `count`, read
+unconditionally as part of the same 24-byte header regardless of which
+branch `head` takes, printed as `-1` (0xFFFFFFFF) in this exact case.
+`Mark_snd_alias_list_t()`'s own generated body unconditionally calls
+`MarkArray_snd_alias_t(varsnd_alias_list_t->count)` whenever `head` is
+non-null, with no branch awareness — the `int count = -1` implicitly
+converts to `MarkArray_snd_alias_t(const size_t count)`'s parameter as
+`0xFFFFFFFFFFFFFFFF`, and the resulting near-infinite `for` loop walks
+`snd_alias_t* var` far past any real allocation within a handful of
+iterations. **Confirmed this is the real native engine's OWN architecture,
+not a fork bug in the count value's meaning**: fresh Ghidra decompiles of
+`FUN_14009f3f0`/`FUN_14009f4b0`/`FUN_14009f590`/`FUN_140096900` (the real
+x64 `snd_alias_list_t`/`snd_alias_t`/`SoundFile`/`SoundFileRef` fill chain,
+saved in `re_notes/ghidra_scripts/decomp_snd_alias_*.txt`) show every
+single struct's real native byte size matches this fork's own C++
+`sizeof()`/`offsetof()` EXACTLY (`snd_alias_list_t`=24,
+`snd_alias_t`=0x98/152, `SoundFile`=0x18/24, `StreamedSound`=0x10/16,
+`volumeFalloffCurve`@120=8×15, `speakerMap`@144=8×18) — ruling out a
+stream-cursor-desync theory. The native `Mark`-equivalent logic for a
+`reusable`/lookup-resolved array is architecturally expected to already be
+covered by the ORIGINAL asset that first loaded it — this fork's own
+Mark-phase code generation simply doesn't carry the FOLLOWING-vs-lookup
+distinction from Load into Mark at all, a real, confirmed generator gap.
+**Fixed via a new, permanent, tracked-source post-processing script**
+(`tools/iw5oat/x64_offset_fixes/05_fix_mark_reusable_count.py`, following
+the exact conventions of the existing 01-04 scripts, since the actual
+buggy file lives in gitignored `build/` and needs to survive
+regeneration): wraps the one confirmed-buggy call site with `if (count > 0
+&& count <= 100000)` — a deliberately generous, clearly-unreachable-by-
+real-data ceiling (every real array this session observed tops out at a
+handful of entries) that skips the walk entirely on a garbage count rather
+than trusting it. **Deliberately scoped narrow, not blanket**: a DSL sweep
+found 18 IW5 asset types declare at least one `reusable` field (`AddonMapEnts`,
+`Font_s`, `GfxImage`, `GfxWorld`, `LoadedSound`, `MapEnts`, `Material`,
+`MaterialTechniqueSet`, `PathData`, `PhysCollmap`, `VehicleTrack`,
+`WeaponAttachment`, `WeaponCompleteDef`, `XModel`, `XModelSurfs`,
+`clipMap_t`, `menuDef_t`, `snd_alias_list_t`) — the script's own
+`CONFIRMED_BUGGY_CALLS` allowlist deliberately touches only the one
+independently-verified site; the other 17 are a real, documented,
+NOT-yet-individually-checked lead for a future round, each needing its own
+native cross-check before being folded in.
+
+**Bug #2 — a second, distinct, more severe crash found immediately after
+fixing Bug #1 (Mark now completes cleanly, but `LinkAsset` crashes next):
+`AssetLoader::LinkAsset`/`GetAssetInfo` (hand-written, tracked source)
+took `std::string name`/`const std::string& name` respectively, but every
+real generated call site across all 194 asset types passes
+`AssetName<T>(**pAsset)` — a raw `const char*`/`const char*&` — directly.**
+Constructing a `std::string` from a null `const char*` is undefined
+behavior (a real, reliable MSVC crash constructing/hashing the string).
+Confirmed via diagnostic tracing that asset 785's own `aliasName` field
+genuinely IS null after the fill — and confirmed via the SAME native
+decompile trail (`FUN_14009f4b0`'s own `if (*DAT_1407bed68 != 0) { ... }`
+guard around aliasName's own string-resolution step) that **a null
+aliasName for this exact "reusable head, lookup-resolved" case is real,
+legitimate, intentional native retail data** — the real engine explicitly
+skips name resolution when the raw field is already zero, it does not
+crash or substitute a name. This is NOT corruption, and NOT the same root
+cause as Bug #1 (a fresh discovery, not a second symptom of the same
+underlying issue) — it just happened to be reachable only once Bug #1 no
+longer crashed first. **Fixed at the permanent, tracked, hand-written
+source** (`tools/iw5oat/src/ZoneLoading/Loading/AssetLoader.h`/`.cpp`):
+changed `LinkAsset`'s first parameter from `std::string name` to `const
+char* name` and `GetAssetInfo`'s from `const std::string&` to `const
+char*`, safely substituting an empty string for a null input inside each
+function body rather than crashing on construction. **Zero call-site
+changes needed anywhere** — confirmed via a full grep across every
+generated `*_load_db.cpp` in `build/` that all 40 real `LinkAsset`/40 real
+`GetAssetInfo` call sites share the exact same
+`AssetName<AssetX>(**pAsset)` shape, so the parameter-type change is a
+single, permanent, universal fix for every asset type at once, not a
+Sound-specific patch.
+
+**A live re-test after Bug #2's fix found the count-guard from Bug #1 was
+too narrow**: `so_nyse_ny_manhattan.ff` still crashed, this time with
+`count` reading as a large POSITIVE garbage value (`805330033`) rather than
+`-1` — a bare `count > 0` check passes this straight through into the same
+runaway-loop crash. Widened the guard to `count > 0 && count <=
+MAX_SANE_COUNT` (100,000) in the same script, confirmed via a fresh
+`--apply` + rebuild + full sweep that this closes both known garbage-value
+shapes.
+
+**Full 45-zone sweep (all 41 `sp_*.ff`/`so_*.ff` files, plus
+`code_post_gfx.ff`/`hamburg.ff`/`common.ff`), after both fixes, on a
+verified-clean build (every temporary diagnostic fully reverted from
+tracked source first)**: **zero real crashes anywhere** — 5 zones load
+completely cleanly (`sp_intro.ff`, `sp_prague.ff`, `so_trainer2_so_deltacamp.ff`,
+plus **`sp_dubai.ff` and `sp_ny_harbor.ff`, both newly unblocked by this
+round**), the other 40 each hit their own already-tracked, bounded,
+non-crashing error class (`INVALID_BLOCK`, `NOT_RECORDED`,
+`LARGER_THAN_SIZE`). All 18 previously-crashing zones (16×
+`so_survival_mp_*.ff` + `so_nyse_ny_manhattan.ff` + `so_zodiac2_ny_harbor.ff`)
+now fail cleanly (`NOT_RECORDED`) instead of segfaulting — real,
+substantial, verified progress on what was genuinely the final blocking
+crash class this session's own zone-loading investigation had open.
+
+**Shipped**: `tools/iw5oat/src/Common/Game/IW5/IW5_Assets.h`
+(`invHighMipRadius[4]`, re-applying §5.28's already-correct fix),
+`tools/iw5oat/src/ZoneLoading/Loading/AssetLoader.h`/`.cpp` (the real,
+permanent, hand-written null-name fix), `tools/iw5oat/x64_offset_fixes/
+05_fix_mark_reusable_count.py` (new, permanent post-processing script for
+the generated Mark-phase gap), plus four new Ghidra decompile evidence
+files under `re_notes/ghidra_scripts/`. **Not shipped / explicitly left
+open**: the other 17 `reusable`-field asset types' own Mark-phase call
+sites (a real, documented, narrower-scope lead, not blanket-extended
+without individual verification); the deeper architectural question of
+whether ZoneCodeGenerator's own C# source should be fixed directly (out of
+scope for this fork's own post-processing-script approach, a much larger
+undertaking).
+
 ## 6. Scoped plan for in-house tooling — an MVP, not a full OpenAssetTools replacement
 
 **This project's own actual need is narrow**: GSC/rawfile extraction to

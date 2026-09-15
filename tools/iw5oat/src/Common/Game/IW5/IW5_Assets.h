@@ -645,7 +645,15 @@ namespace IW5
         XBoneInfo* boneInfo;
         float radius;
         Bounds bounds;
-        unsigned short* invHighMipRadius;
+        // MW32011NCP / iw5oat, 2026-09-15: confirmed via native decompile
+        // (FUN_14009c1b0's own field-by-field header read, cross-checked two
+        // independent ways against the two tail pointer-fixup calls that
+        // follow it, which positively resolve to physPreset/physCollmap, not
+        // this field) that invHighMipRadius is a real, inline, non-pointer
+        // field -- one unsigned short per LOD level, mirroring lodInfo[4] --
+        // not a pointer to a heap array. Full trail:
+        // re_notes/x64_migration/fastfile_format_research.md SS5.28.
+        unsigned short invHighMipRadius[4];
         int memUsage;
         PhysPreset* physPreset;
         PhysCollmap* physCollmap;
