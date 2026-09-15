@@ -445,9 +445,25 @@ Steam's VAC doesn't cover packet-level attacks from a malicious server or
 peer — a real gap for anyone playing Multiplayer or Spec-Ops/Survival co-op,
 and the reason this component exists at all. **All 4 confirmed
 vulnerabilities are now resolved** (3 fixed, 1 confirmed already safe —
-build-verified, not yet live-tested). See
+build-verified, live-confirmed reachable from real traffic, not yet tested
+against an actual malicious packet). See
 [`security/README.md`](security/README.md) for the full findings table and
 current fix status.
+
+**A patch to the native install, not a separate client.** This ships as a
+proxy DLL sitting next to the exact same official `iw5sp.exe`/`iw5mp.exe`
+Steam already installs — same executable, same Steam launch, same native
+matchmaking/P2P infrastructure, same players. Nothing about switching to a
+different platform or backend (contrast third-party clients like
+Plutonium, which steer players onto an entirely separate server
+infrastructure instead of patching the vulnerable code directly). **One
+real limitation worth being explicit about**: this only protects players
+who actually have this mod installed. It patches the running process in
+memory, not Activision's own shipped game files — a vanilla, unmodified
+Steam install of MW3 is still exactly as vulnerable as before. Full
+technical detail on all four findings has been submitted to Activision
+through their official disclosure channel; only they can actually fix the
+real binary for every player, modded or not.
 
 **Originally a separate sibling repo (`MW32011NSP`), absorbed into this
 one 2026-09-12** as part of the redefinition described at the top of this
