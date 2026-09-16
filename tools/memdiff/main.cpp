@@ -39,13 +39,21 @@ struct Snapshot {
     std::vector<Region> regions; // kept sorted ascending by base (scan order guarantees this)
 };
 
-// Simple on-disk format for named/labeled snapshots: [u32 regionCount] then per region
-// [u32 base][u32 size][size bytes]. Lets the user manually navigate to a specific,
+// On-disk format for named/labeled snapshots: [u32 regionCount] then per region
+// [u64 base][u64 size][size bytes]. Lets the user manually navigate to a specific,
 // labeled state (e.g. "pause menu open") and snapshot it on demand, then have any two
 // labeled snapshots diffed later -- much more precise than inferring state purely from
 // blind key-press timing, which risks picking up coincidental background activity
 // unrelated to the actual state change (see re_notes/known_issues.md #2, the Steam-data
 // false lead from a timing-only ESC-press correlation).
+//
+// WIDENED 2026-09-16 (x64 port): base/size used to be written as u32, a silent
+// truncation bug for any address above 4GB -- harmless on the old x86 target (its
+// whole address space fit under 4GB) but would corrupt every region base for the
+// current x64 game, whose own module alone loads at 0x140000000. Old x86-era
+// .snap files written with the previous u32 format are NOT compatible with this
+// reader (a real, accepted break -- this tool is dev-only, never shipped, and no
+// x64 investigation has any old snapshot worth preserving compatibility for).
 bool SaveSnapshot(const Snapshot& snap, const char* path)
 {
     FILE* f = nullptr;
@@ -54,8 +62,8 @@ bool SaveSnapshot(const Snapshot& snap, const char* path)
     uint32_t count = static_cast<uint32_t>(snap.regions.size());
     fwrite(&count, sizeof(count), 1, f);
     for (const auto& r : snap.regions) {
-        uint32_t base = static_cast<uint32_t>(r.base);
-        uint32_t size = static_cast<uint32_t>(r.size);
+        uint64_t base = static_cast<uint64_t>(r.base);
+        uint64_t size = static_cast<uint64_t>(r.size);
         fwrite(&base, sizeof(base), 1, f);
         fwrite(&size, sizeof(size), 1, f);
         fwrite(r.data.data(), 1, r.data.size(), f);
@@ -74,14 +82,14 @@ bool LoadSnapshot(Snapshot& snap, const char* path)
     snap.regions.clear();
     snap.regions.reserve(count);
     for (uint32_t i = 0; i < count; i++) {
-        uint32_t base = 0, size = 0;
+        uint64_t base = 0, size = 0;
         if (fread(&base, sizeof(base), 1, f) != 1) { fclose(f); return false; }
         if (fread(&size, sizeof(size), 1, f) != 1) { fclose(f); return false; }
         Region r;
-        r.base = base;
-        r.size = size;
-        r.data.resize(size);
-        if (size > 0 && fread(r.data.data(), 1, size, f) != size) { fclose(f); return false; }
+        r.base = static_cast<uintptr_t>(base);
+        r.size = static_cast<size_t>(size);
+        r.data.resize(r.size);
+        if (r.size > 0 && fread(r.data.data(), 1, r.size, f) != r.size) { fclose(f); return false; }
         snap.regions.push_back(std::move(r));
     }
     fclose(f);
@@ -154,13 +162,21 @@ Snapshot TakeSnapshot(HANDLE proc)
 {
     Snapshot snap;
     uintptr_t addr = 0x00010000;
-    const uintptr_t kMaxAddr = 0x7FFF0000;
+    // WIDENED 2026-09-16 (x64 port): the old kMaxAddr (0x7FFF0000) was the real
+    // ceiling of a 32-bit process's address space -- but the current game module
+    // alone loads at 0x140000000, already past that old cap, so the previous
+    // value would have scanned ZERO bytes of actual game code/data and silently
+    // returned an empty-looking snapshot. Raised to the real x64 user-mode VA
+    // ceiling (0x00007FFFFFFFFFFF -- same constant this project's own
+    // LooksSaneX64() in analog_input_hooks_x64.cpp already uses). Still cheap:
+    // the loop below jumps by each region's own real size (VirtualQueryEx), not
+    // by address, so scan cost tracks the number of actually-committed regions,
+    // not the width of the range they're spread across.
+    const uintptr_t kMaxAddr = 0x00007FFFFFFFFFFFull;
     // NO total-bytes cap (removed 2026-08-26, same "fix the dump too to not have
     // bounds" request as ShouldScan's own per-region cap above -- previously
     // 1536MB, raised from an original 400MB, 2026-07-16). Every eligible region
-    // is now scanned regardless of running total, up to the real 4GB ceiling a
-    // 32-bit process's own address space imposes anyway (kMaxAddr below, plus
-    // this binary's confirmed-active Large Address Aware flag) -- not an
+    // is now scanned regardless of running total, up to kMaxAddr above -- not an
     // arbitrary tool-imposed limit that could silently truncate exactly the
     // data a real memory investigation most needs to see.
 
@@ -548,6 +564,61 @@ int main(int argc, char** argv)
         }
         CloseHandle(proc);
         return 0;
+    }
+
+    // Special mode: memdiff.exe watch <vkHex> <namePrefix> -- SELF-SERVICE capture,
+    // added 2026-09-16 after live x64dbg debugging proved unsafe against this
+    // specific x64 build (repeated real game crashes on RESUME specifically, not
+    // on attach/pause -- consistent with a real anti-debug/anti-tamper check
+    // reacting to a debugger continuing execution, not just being present).
+    // ReadProcessMemory-only snapshotting (this whole tool) never attaches as a
+    // debugger at all, so it doesn't carry that risk -- but the earlier "snapshot"
+    // mode above still requires someone to run the command at the exact right
+    // moment, which doesn't work for a fast-appearing prompt during real,
+    // uninterrupted gameplay. This mode instead runs continuously in the
+    // background and takes a full snapshot itself the instant YOU press a chosen
+    // key -- no round-trip needed. Press it as many times as you like (e.g. once
+    // right as the ready-up/buy-station prompt appears on screen); each press
+    // saves a new, auto-numbered file (<namePrefix>_001.snap, _002.snap, ...) and
+    // the tool keeps watching for the next press. Ctrl+C to stop.
+    if (argc >= 4 && _stricmp(argv[1], "watch") == 0) {
+        int vk = static_cast<int>(strtoul(argv[2], nullptr, 16));
+        const char* prefix = argv[3];
+        DWORD pid = FindProcessId(L"iw5sp.exe");
+        if (pid == 0) {
+            printf("iw5sp.exe not found -- launch the game first.\n");
+            return 1;
+        }
+        HANDLE proc = OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, FALSE, pid);
+        if (!proc) {
+            printf("OpenProcess failed (%lu) -- run this tool as Administrator.\n", GetLastError());
+            return 1;
+        }
+        printf("Watching for VK=0x%02X. Press it whenever you want a full memory\n"
+               "snapshot saved (e.g. right as the prompt you're chasing appears).\n"
+               "Ctrl+C to stop.\n\n", vk);
+        GetAsyncKeyState(vk); // clear any stale "pressed since last call" latch before we start
+        int captureNum = 0;
+        for (;;) {
+            // Low bit = "pressed since the last call", not "currently down" --
+            // same reasoning as RunEdgeSequenceMode above: a quick tap must not
+            // be missed while a capture (a few hundred ms for a real full-address-
+            // space scan) is already in progress.
+            if (!(GetAsyncKeyState(vk) & 0x0001)) {
+                Sleep(15);
+                continue;
+            }
+            captureNum++;
+            printf("[%d] Key pressed -- capturing full snapshot...\n", captureNum);
+            Snapshot snap = TakeSnapshot(proc);
+            char path[MAX_PATH];
+            sprintf_s(path, "%s_%03d.snap", prefix, captureNum);
+            if (SaveSnapshot(snap, path)) {
+                printf("[%d] Saved %s (%zu regions). Still watching.\n\n", captureNum, path, snap.regions.size());
+            } else {
+                printf("[%d] FAILED to save %s. Still watching.\n\n", captureNum, path);
+            }
+        }
     }
 
     // Special mode: memdiff.exe diff <nameA> <nameB> -- loads two saved snapshots and
