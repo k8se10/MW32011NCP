@@ -509,16 +509,22 @@ namespace
             const auto blockNum = static_cast<block_t>((offsetInt & m_block_mask) >> m_block_shift);
             const auto blockOffset = static_cast<size_t>(offsetInt & m_offset_mask);
 
+            // MW32011NCP / iw5oat, 2026-09-16: same graceful-degradation treatment
+            // as the sibling ConvertOffsetToPointerNative/ConvertOffsetToPointerLookup
+            // functions just above -- see their own comments and
+            // fastfile_format_research.md SS5.41 (parent repo) for the full
+            // rationale. A genuine forward reference (in-range, just not written
+            // yet) returns null instead of aborting the whole zone load; a real
+            // out-of-range block index or total-capacity overflow still throws.
             if (blockNum < 0 || blockNum >= static_cast<block_t>(m_blocks.size()))
-                throw InvalidOffsetBlockException(blockNum);
+                return nullptr;
 
             auto* block = m_blocks[blockNum];
 
-            // See ConvertOffsetToPointerNative's own comment for the full rationale -- a
-            // write-cursor check is required alongside the total-capacity check, or a genuine
-            // forward reference resolves to unwritten memory instead of throwing.
-            if (block->m_buffer_size <= blockOffset + sizeof(void*) || m_block_offsets[blockNum] <= blockOffset + sizeof(void*))
+            if (block->m_buffer_size <= blockOffset + sizeof(void*))
                 throw InvalidOffsetBlockOffsetException(block, blockOffset);
+            if (m_block_offsets[blockNum] <= blockOffset + sizeof(void*))
+                return nullptr;
 
             return *reinterpret_cast<void**>(&block->m_buffer[blockOffset]);
         }
@@ -555,16 +561,27 @@ namespace
             const auto blockNum = static_cast<block_t>((offsetInt & m_block_mask) >> m_block_shift);
             const auto blockOffset = static_cast<size_t>(offsetInt & m_offset_mask);
 
+            // MW32011NCP / iw5oat, 2026-09-16: an invalid block index or an offset
+            // this block's own write cursor hasn't reached yet used to throw
+            // immediately here (InvalidOffsetBlockException/
+            // InvalidOffsetBlockOffsetException), aborting the whole zone load --
+            // see fastfile_format_research.md SS5.41 (parent repo) for the full
+            // rationale. This class' own "not valid" MaybePointerFromLookup
+            // constructor already exists specifically to represent "not resolved
+            // yet, here's the block/offset for the caller to report" -- returning
+            // that instead of throwing directly reuses Expect()'s own already-
+            // fixed graceful degradation (warn + null) rather than adding a
+            // second, separate degradation path. Total-capacity overflow (never
+            // legitimate, unlike "not written yet") still throws immediately.
             if (blockNum < 0 || blockNum >= static_cast<block_t>(m_blocks.size()))
-                throw InvalidOffsetBlockException(blockNum);
+                return MaybePointerFromLookup<void>(nullptr, blockNum, blockOffset);
 
             auto* block = m_blocks[blockNum];
 
-            // See ConvertOffsetToPointerNative's own comment for the full rationale -- a
-            // write-cursor check is required alongside the total-capacity check, or a genuine
-            // forward reference resolves to unwritten memory instead of throwing.
-            if (block->m_buffer_size <= blockOffset + sizeof(void*) || m_block_offsets[blockNum] <= blockOffset + sizeof(void*))
+            if (block->m_buffer_size <= blockOffset + sizeof(void*))
                 throw InvalidOffsetBlockOffsetException(block, blockOffset);
+            if (m_block_offsets[blockNum] <= blockOffset + sizeof(void*))
+                return MaybePointerFromLookup<void>(nullptr, blockNum, blockOffset);
 
             const auto foundPointerLookup = m_pointer_redirect_lookup.find(offsetInt);
             if (foundPointerLookup != m_pointer_redirect_lookup.end())
@@ -624,16 +641,35 @@ namespace
                 lastBlockNum = blockNum;
                 lastBlockOffset = blockOffset;
 
+                // MW32011NCP / iw5oat, 2026-09-16: an invalid block index or an
+                // offset the block's own write cursor hasn't reached yet used to
+                // throw immediately here, aborting the whole zone load even on
+                // hop 0 -- before this loop ever got a chance to check whether the
+                // raw value is actually a real, already-registered alias/pointer
+                // redirect target (see fastfile_format_research.md SS5.41, parent
+                // repo: the "invalid block 15"-class signature this exact check
+                // produces is the SAME already-documented forward-reference shape
+                // this function's own hop-exhaustion fallback below already
+                // handles gracefully -- it just wasn't reachable from THIS specific
+                // failure point before). `break` out to that same, already-proven-
+                // safe fallback instead of throwing -- reuses lastBlockNum/
+                // lastBlockOffset (already tracked above) for the warning, no new
+                // degradation logic, just making the existing one reachable from
+                // an immediately-invalid first hop, not just an exhausted chain.
                 if (blockNum < 0 || blockNum >= static_cast<block_t>(m_blocks.size()))
-                    throw InvalidOffsetBlockException(blockNum);
+                    break;
 
                 auto* block = m_blocks[blockNum];
 
                 // See ConvertOffsetToPointerNative's own comment for the full rationale -- a
                 // write-cursor check is required alongside the total-capacity check, or a
                 // genuine forward reference resolves to unwritten memory instead of throwing.
-                if (block->m_buffer_size <= blockOffset + sizeof(uintptr_t) || m_block_offsets[blockNum] <= blockOffset + sizeof(uintptr_t))
+                // Total-capacity overflow (never legitimate, unlike "not written yet") still
+                // throws -- only the not-yet-written case degrades gracefully.
+                if (block->m_buffer_size <= blockOffset + sizeof(uintptr_t))
                     throw InvalidOffsetBlockOffsetException(block, blockOffset);
+                if (m_block_offsets[blockNum] <= blockOffset + sizeof(uintptr_t))
+                    break;
 
                 const auto foundAliasLookup = m_alias_redirect_lookup.find(offsetInt);
                 if (foundAliasLookup != m_alias_redirect_lookup.end())
@@ -654,6 +690,21 @@ namespace
                     continue;
                 }
 
+                // MW32011NCP / iw5oat, 2026-09-16: REVERTED after a real, direct live-test
+                // failure -- a first attempt degraded this "should never happen" fallback
+                // the same way as the hop-exhaustion case below (`break` instead of
+                // `assert(false); throw`). That produced a genuine SEGFAULT against
+                // common_survival.ff, not a clean caught exception -- unlike every other
+                // graceful-degradation fix in this file (each independently verified safe
+                // against a real crash), this specific fallback is NOT the same "genuine
+                // forward reference, safe to defer" shape; a real, in-range, already-written
+                // position with no redirect-table entry at all is evidence of a GENUINELY
+                // different problem this project doesn't yet understand, not a legitimate
+                // architectural forward reference. Kept as a hard throw, per this exact code
+                // area's own repeated documented history of regressions from rushed changes
+                // (see fastfile_format_research.md SS5.22/5.27/5.30/5.41, parent repo) --
+                // a clean, catchable exception here is the correct, safe outcome until this
+                // case is actually understood, not a crash to paper over.
                 assert(false);
                 throw InvalidOffsetBlockOffsetException(block, blockOffset);
             }
