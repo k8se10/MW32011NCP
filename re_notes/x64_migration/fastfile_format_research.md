@@ -3919,3 +3919,67 @@ worth keeping) -- confirmed `git diff` clean on both `ZoneInputStream.cpp` and
 `AssetInfoCollector.cpp` before this commit. The SS5.47 recommended next steps (fix the Debug
 build's `ObjCommon` templating blocker for real symbols, or add a targeted diagnostic at
 `AddAsset`'s own insertion point rather than a later read site) stand as the real path forward.
+
+### SS5.48 (2026-09-17) — a second real bug found and fixed (AssetLoader::LinkAsset/GetAssetInfo missing the same non-canonical-pointer guard); the corrupted-string crash still reproduces through a third, still-unidentified call path
+
+Direct instruction to resume the fastfile parser investigation, explicitly framed as
+serving the still-open Survival ready-up GSC-extraction goal too (`common_survival.ff`
+extraction has been blocked by this exact bug class since before this session, per
+`known_issues_x64.md`'s own 2026-09-16 "resuming chase real suppression via GSC-VM
+state read" round, which independently hit and deferred on the identical wall).
+
+**Real bug found and fixed**: `AssetLoader::LinkAsset`/`GetAssetInfo` (the base class
+EVERY generated asset loader inherits its name-handling from) already had a null-name
+guard (2026-09-15) but, like `AssetInfoCollector` before its own SS5.46 fix, had no
+guard against a genuinely non-null but non-canonical (garbage) pointer -- exactly the
+shape of value the SS5.47 crash traced to. Added the same `LooksLikeCanonicalPointer`
+heuristic used in SS5.46's fix.
+
+**Live-tested and confirmed real**: rebuilt with SS5.45's `break` change reinstated
+(to reach deep enough to trigger it) and the self-dump handler, ran against
+`common_survival.ff`. The new guard in `AssetLoader::GetAssetInfo` fired **13 times**,
+every one intercepting the exact same garbage value (`0xbeccd7f1403a3622`, asset type
+4) already seen in SS5.46/5.47 -- confirming this is a real, recurring, correctly-
+identified bug pattern, not a one-off.
+
+**Still crashes, one layer further**: the process still segfaulted afterward, with the
+identical `FAILURE_ID_HASH` and `strlen` crash signature as SS5.46/5.47 (same
+`rax=0xbeccd7f1403a3622`), but through a *different* immediate call path (different
+`Unlinker+0x...` offsets in the stack trace) -- meaning there's a THIRD call site with
+the same missing guard, not yet identified. The corrupted value's shape (identical
+across all three now-confirmed occurrences) continues to point at a single common
+upstream source, not three unrelated bugs -- likely a genuine wrong-struct-shape read
+somewhere that produces this exact bit pattern, still not pinned down.
+
+**Reverted the temporary `break`/self-dump changes** (same discipline as every prior
+round) -- kept only the real `AssetLoader` guard, which is independently valuable
+(matches the exact class of defensive fix already shipped in SS5.46) regardless of
+whether the larger investigation concludes. Verified zero regression:
+`common_survival.ff` still fails identically at its own already-tracked open point
+(exit 1, same error), `sp_dubai.ff` still loads completely (exit 0, only pre-existing
+unrelated shader-dump errors, not zone-loading errors).
+
+**Real, concrete lead: asset type 4 is `ASSET_TYPE_XMODEL`.** The `assetType`
+argument to `GetAssetInfo`/`LinkAsset` identifies the type of the asset BEING NAMED,
+not the type of whatever references it -- checked directly (`grep` across every
+generated `*_load_db.cpp` for `AssetName<AssetXModel>`/`AssetXModel::EnumEntry`) and
+confirmed only `xmodel_iw5_load_db.cpp` itself ever names an `XModel` this way. So
+this is specifically an `XModel` asset's OWN name resolution (`Loader_XModel`'s own
+`GetAssetInfo(AssetName<AssetXModel>(**pAsset))`-shaped call, the exact same pattern
+`Loader_LoadedSound::Load()` uses for itself) -- garbage where the `XModel`'s own
+`name` field should be, not a `materialHandles`/`Material` dependency lookup as first
+guessed (corrected here rather than left standing). `FUN_14009c650` (the real native
+`XModel` top-level reference resolver, already decompiled in a prior round per
+`re_notes/ghidra_scripts/decomp_xmodel_14009c650.txt`) has the exact same
+`FUN_1400aad10`-based "already-resolved, dereference block+offset" shape already
+proven correct for `LoadedSound`/`SpeakerMap` once THEIR struct shape was fixed --
+consistent with this being another reference-resolution case reaching an unregistered
+position, the same general bug class as the `loadSnd` alias-miss this whole SS5.44+
+thread has been chasing, just for a different asset type this time.
+
+**Next step**: a fresh native decompile pass on `Loader_XModel`'s own name-resolution
+path and `XModel`'s current struct declaration (`IW5_Assets.h`) specifically -- not
+another blind "guard one more call site" round -- to check for the same class of
+wrong-shape/mis-sized field this session already found and fixed twice
+(`SpeakerMap`/`MSSChannelMap`/`MSSSpeakerLevels`) rather than assuming the bug is in
+`materialHandles` without having actually confirmed that.
