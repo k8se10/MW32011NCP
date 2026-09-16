@@ -9209,3 +9209,21 @@ match state, but this is not confirmed either way. The real handler
 confirmed unblocker until that's traced.
 
 No source changes this round -- pure investigation.
+
+**UPDATE 2026-09-16 (later same day) -- traced to a conclusive verdict:
+`readStats` is persistent profile data only, does NOT unblock the
+scoreboard feature.** Full chain decompiled: `readStats`'s real handler
+(`FUN_140243190`) calls `FUN_1402f2580`, which builds a per-player
+filename (`FUN_140241d00`) and reads it via `FUN_140287e10` across TWO
+redundant channels (primary + backup, classic profile-save resilience
+pattern), then `FUN_1402f2930` validates/picks the intact copy. The
+write-side counterpart (`uploadStats` -> `FUN_1402f2710`) confirms the
+same picture: builds a VERSIONED filename (`sprintf(..., "%s_%i_%i", ...,
+buildVer1, buildVer2)`) and writes back through the same two-channel
+redundancy. This is a startup-time (`WinMain`-triggered), file-backed
+profile blob load/save system -- structurally a `stats.dat`-equivalent
+local save file, not a live GSC-VM or entity-memory accessor, and nothing
+in either function touches per-match combat state. **Genuinely new,
+real infrastructure worth knowing about for future profile/save-data
+work, but a dead end for the specific scoreboard-unblocker theory** --
+closed, not just unconfirmed.
