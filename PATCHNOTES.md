@@ -360,6 +360,24 @@ item below.
     — see `README.md`'s Credits section and `wait_coalescing_x64.cpp`'s own
     header comment for the full attribution. Off by default; build-verified,
     **not yet live-tested**.
+21. **Persistent `.iwd` archive read cache, ported with credit from the same
+    external reference implementation.** New `[Video] IwdReadAccelEnabled`
+    INI key maps each `.iwd` archive file read-only into this process once,
+    on first open, and serves every subsequent read the game's own `.iwd`
+    streaming loader makes against it — a real, signature-verified native
+    call site, not a blanket "any `.iwd` read" — directly from that mapped
+    view instead of a real disk I/O syscall. Deliberately does NOT port the
+    source project's own lower-level CRT `_read`/file-descriptor-table path:
+    that piece's exact internal struct layout couldn't be independently
+    verified against this binary the way every other signature here was,
+    and getting it wrong risks real memory corruption rather than just a
+    missed optimization — this stays at the real, documented Win32 API
+    layer only (`CreateFileA/W`, `ReadFile`, `SetFilePointer(Ex)`,
+    `CloseHandle`). Ported from
+    [legoliamneeson/MW3_Standalone_D3D9_Project](https://github.com/legoliamneeson/MW3_Standalone_D3D9_Project)
+    — see `README.md`'s Credits section and `iwd_read_cache_x64.cpp`'s own
+    header comment for the full attribution. Off by default; build-verified,
+    **not yet live-tested**.
 
 ### Fixed
 1. **Crash on launch with the sniper Fire/ADS fix's own log line.** The

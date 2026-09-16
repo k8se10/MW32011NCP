@@ -693,6 +693,14 @@ void WriteDefaultConfig(const char* path)
         "; during a detected read burst. NOT YET LIVE-TESTED -- off by default.\n"
         "; 0 = off (default), 1 = on.\n"
         "WaitCoalescingEnabled=%d\n"
+        "; A third, independent port from the same external reference implementation\n"
+        "; -- maps each .iwd archive read-only into this process once, serving every\n"
+        "; subsequent real .iwd streaming read from that mapped view instead of a real\n"
+        "; disk I/O syscall. Deliberately does NOT port the source project's own\n"
+        "; lower-level CRT file-descriptor-table path (unverifiable, real corruption\n"
+        "; risk if wrong) -- stays at the real, documented Win32 API layer only. NOT\n"
+        "; YET LIVE-TESTED -- off by default. 0 = off (default), 1 = on.\n"
+        "IwdReadAccelEnabled=%d\n"
         "\n"
         "[Plugins]\n"
         "; Loads plugin DLLs from a \"plugins\" subfolder next to this DLL at startup.\n"
@@ -966,6 +974,7 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.forceHighQualityLighting ? 1 : 0,
         g_modConfig.framePacingEnabled ? 1 : 0,
         g_modConfig.waitCoalescingEnabled ? 1 : 0,
+        g_modConfig.iwdReadAccelEnabled ? 1 : 0,
         g_modConfig.pluginsEnabled ? 1 : 0,
         g_modConfig.vibrationEnabled ? 1 : 0,
         g_modConfig.vibrationFireIntensity,
@@ -1282,6 +1291,7 @@ void LoadModConfig()
     ReadBool(path, "Video", "ForceHighQualityLighting", g_modConfig.forceHighQualityLighting);
     ReadBool(path, "Video", "FramePacingEnabled", g_modConfig.framePacingEnabled);
     ReadBool(path, "Video", "WaitCoalescingEnabled", g_modConfig.waitCoalescingEnabled);
+    ReadBool(path, "Video", "IwdReadAccelEnabled", g_modConfig.iwdReadAccelEnabled);
 
     g_buttonMap = ResolveButtonMap(g_modConfig.buttonLayout, g_modConfig.flipTriggers);
 
@@ -1299,7 +1309,7 @@ void LoadModConfig()
         "hudFontIdLogging=%d hudFontIdLoggingX64=%d hudGlyphPositionLogging=%d listItemPositionLogging=%d "
         "armorFieldScanLogging=%d forceGlyphOverlay=%d glyphPositionEditMode=%d "
         "captureRuntimeMenuAssets=%d frametimeBenchmarkLogging=%d disableControllerInputX64=%d "
-        "framePacingEnabled=%d waitCoalescingEnabled=%d",
+        "framePacingEnabled=%d waitCoalescingEnabled=%d iwdReadAccelEnabled=%d",
         g_modConfig.lookDegreesPerSecondHorizontal, g_modConfig.lookDegreesPerSecondVertical,
         g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
@@ -1334,7 +1344,8 @@ void LoadModConfig()
         g_modConfig.frametimeBenchmarkLogging ? 1 : 0,
         g_modConfig.disableControllerInputX64 ? 1 : 0,
         g_modConfig.framePacingEnabled ? 1 : 0,
-        g_modConfig.waitCoalescingEnabled ? 1 : 0);
+        g_modConfig.waitCoalescingEnabled ? 1 : 0,
+        g_modConfig.iwdReadAccelEnabled ? 1 : 0);
     LogFromController(buf);
 
     // Rewrite the file once, now that g_modConfig holds every existing setting PLUS

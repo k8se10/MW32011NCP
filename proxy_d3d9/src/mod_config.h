@@ -893,6 +893,22 @@ struct ModConfig
     // -- not yet live-tested.
     bool waitCoalescingEnabled = false;
 
+    // [Video] IwdReadAccelEnabled (2026-09-16) -- a third, independent port
+    // from the same external reference implementation as framePacingEnabled/
+    // waitCoalescingEnabled above (see iwd_read_cache_x64.cpp's own header
+    // comment for full attribution). Maps each .iwd archive file read-only
+    // into this process once, on first open, and serves every subsequent
+    // read the game's own .iwd streaming loader makes against it (a real,
+    // signature-verified native call site) directly from that mapped view
+    // instead of a real disk I/O syscall. Deliberately does NOT port the
+    // source project's own lower-level CRT `_read`/file-descriptor-table
+    // path -- that piece's exact struct layout couldn't be independently
+    // verified against this binary the way every other signature here was,
+    // and getting an internal CRT offset wrong risks real corruption, not
+    // just a missed optimization; this stays at the real, documented Win32
+    // API layer only. Off by default -- not yet live-tested.
+    bool iwdReadAccelEnabled = false;
+
     // [Plugins] (2026-08-25) -- STRICTLY OPT-IN, OFF by default, same pattern as
     // useCustomOptionsScreen/autoMantleEnabled above. When enabled, plugin_loader.cpp
     // scans a "plugins" subfolder next to this DLL at startup and loads any DLL
