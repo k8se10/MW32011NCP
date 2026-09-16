@@ -3518,3 +3518,76 @@ overflow vs. not-yet-written) would need to be told apart first so only
 the genuinely-recoverable "not yet written" case gets the softer
 treatment -- `hamburg.ff`'s own capacity-overflow case above is a real
 counter-example that should probably keep throwing.
+
+## 5.42. UPDATE, 2026-09-16 (direct continuation, "keep pushing") — SS5.41's own recommended next step done: forward-reference graceful degradation extended to every sibling resolution function; one attempt caused a real segfault and was correctly reverted; common_survival.ff now progresses from 4 to 30 gracefully-handled forward references
+
+**Status: Real, substantial further progress. One genuinely unsafe attempt
+found and reverted via direct live testing, not guessed at. The zone still
+doesn't fully load, but the remaining blocker is now far more narrowly
+scoped than at the start of this round.**
+
+Extended SS5.29's own already-proven-safe "warn and return null instead of
+throwing" pattern (previously applied only to `ConvertOffsetToPointerNative`
+and `ConvertOffsetToAliasLookup`'s hop-exhaustion fallback) to every
+remaining sibling offset-resolution function in `ZoneInputStream.cpp`,
+each split into "genuine capacity overflow" (kept as a hard throw -- never
+legitimate) vs. "in-range but not yet written" (now degrades gracefully):
+- `ConvertOffsetToPointerLookup` -- returns an unresolved
+  `MaybePointerFromLookup` (carrying just the block/offset) instead of
+  throwing directly, reusing that class's own existing representation for
+  exactly this case rather than adding new degradation logic.
+- `MaybePointerFromLookup::Expect()` -- the actual throw site every
+  generated `*_load_db.cpp` file's own `.Expect()` call sites hit. Now
+  warns and returns null instead. Verified via direct inspection of
+  several real call sites (`soundFile`/`speakerMap`/`head` in
+  `snd_alias_list_t`'s own generated loader) that every one already gates
+  its own dereference behind `if (field) { ... }` -- the same safe,
+  established convention this whole format already uses everywhere.
+- `ConvertOffsetToAliasNative` -- the fourth sibling, same split.
+- `ConvertOffsetToAliasLookup`'s own EARLY block-range/capacity checks
+  (previously only its hop-exhaustion fallback, reached after 16 retries,
+  had graceful degradation) -- `break` to that SAME already-proven fallback
+  on an immediately-invalid hop 0, rather than throwing before the loop
+  ever gets a chance to try.
+
+**One further attempt was made and correctly reverted after real evidence
+it was unsafe** -- a direct, concrete example of this file's own standing
+caution about rushed changes in this exact code area, caught by testing,
+not by review. `ConvertOffsetToAliasLookup`'s own final fallback
+(`assert(false); throw ...`, meant for a case the original author believed
+could never happen) was ALSO changed to `break` into the same graceful
+path, since live testing showed it genuinely does fire. This produced 30
+gracefully-handled warnings and got further into the stream -- but the
+FINAL result was a genuine **segfault**, not a clean exception, the first
+time in this whole investigation any of these specific changes has done
+that. **Reverted immediately** back to the hard throw. The real lesson:
+this particular fallback is NOT the same "legitimate architectural forward
+reference" shape as every other case fixed this round -- a real, in-range,
+already-written position with literally no entry in either redirect-lookup
+table is evidence of some OTHER, not-yet-understood problem, and forcing a
+null through it lets that problem reach code that isn't prepared for it.
+
+**Verified, same zones as every round this session**:
+`sp_intro.ff`/`sp_prague.ff`/`sp_ny_harbor.ff`/`sp_dubai.ff` all still load
+with 0 warnings, 0 errors -- zero regression from any of these five
+changes (four kept, one reverted).
+
+**Real, measured progress on `common_survival.ff`**: started this round at
+4 gracefully-handled forward references before a hard failure (SS5.41's
+own end state); ends this round at **30** gracefully-handled forward
+references before the next hard failure -- a real 7.5x increase in how far
+into the stream this zone now gets. The remaining blocker is the exact
+same shape SS5.41 already narrowed to `InvalidOffsetBlockOffsetException`'s
+own "larger than its size" message -- but per this round's own finding,
+now know NOT to be `ConvertOffsetToAliasLookup`'s own assert-fallback
+specifically (that path is understood and intentionally still throws).
+
+**Real next step for whoever continues this**: figure out WHY
+`ConvertOffsetToAliasLookup`'s own final fallback genuinely fires in
+practice (contradicting the original author's own "should never happen"
+assumption) and what distinguishes a SAFE instance of it (if any exist)
+from the specific instance that segfaulted -- likely needs the SAME native
+decompile technique that resolved SS5.40's own root cause, applied to
+whatever asset/field is reaching this exact fallback for
+`common_survival.ff`'s own remaining content, rather than more blind
+degradation attempts in this already-repeatedly-warned-about code area.
