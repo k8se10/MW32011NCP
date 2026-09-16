@@ -8933,3 +8933,35 @@ a live process -- a fundamentally different, already-proven-safe category
 of operation for this project, see the sprintf_s crash investigations
 cited above) to find the real return address/call chain into whatever
 draws that text.
+
+### FIXED, 2026-09-16 (later same day) -- B's release edge fired a second, unwanted ESC, cancelling any menu it had just opened (e.g. the quit-confirmation prompt closes the instant B is released)
+
+**Status: Resolved. Build-verified (x64 Release, 0 errors, `dumpbin`-confirmed
+genuine x64 output), deployed. Not yet independently re-confirmed live.**
+
+Direct live report: "when you open a menu to exit game and it says are you
+sure you want to quit, if you stop holding B it closes." A second real
+regression from the earlier same-day "synthesize ESC for pause/unpausing"
+simplification, caught immediately once reported.
+
+**Root cause**: `InjectControllerMenuBackX64`'s condition for firing
+`SendSyntheticEscX64()` was `held != g_menuBackHeldX64` -- true on BOTH the
+press and release edges of B. That was correct for the mechanism it
+replaced (`ForwardKeyToMenuX64(kKeyEscapeX64, held ? 1 : 0)`, a stateful
+native call that genuinely needed both transitions forwarded so the game's
+own key-state tracking stayed accurate) but is wrong for
+`SendSyntheticEscX64()`, which already sends a complete
+`WM_KEYDOWN`+`WM_KEYUP` pair in one call. Firing it on every edge meant a
+full second ESC fired the moment B was RELEASED -- closing/cancelling
+whatever menu was active at that instant. For the "quit game?"
+confirmation specifically: the moment B is released after whatever press
+opened that dialog, this bug fires a second, unrequested ESC straight
+into it -- and ESC is exactly the native cancel/back key for that dialog,
+so it closes immediately, matching the report exactly.
+
+**Fix**: changed the condition to rising-edge only
+(`held && !g_menuBackHeldX64`), matching every other synthetic-key call
+site in this file (all fire once per physical press, never on release).
+
+Shipped: `proxy_d3d9/src/analog_input_hooks_x64.cpp`. Build-verified,
+deployed. Not yet independently re-confirmed live.

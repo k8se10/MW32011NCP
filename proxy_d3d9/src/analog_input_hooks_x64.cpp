@@ -2388,7 +2388,22 @@ extern "C" void InjectControllerMenuBackX64()
     // own backEdge handles that close. Without this guard the same B press
     // would also forward a real ESC here, backing out of both the overlay AND
     // the real menu in one press.
-    if (menuActiveNow && held != g_menuBackHeldX64 && !CustomOptionsMenu_IsOpen()) {
+    //
+    // FIXED 2026-09-16 (live-reported: "when you open a menu to exit game and
+    // it says are you sure you want to quit, if you stop holding B it
+    // closes"). Root cause: this condition fired on EVERY edge (`held !=
+    // g_menuBackHeldX64` is true on both press AND release), which was
+    // correct for the PREVIOUS mechanism (`ForwardKeyToMenuX64(kKeyEscapeX64,
+    // held ? 1 : 0)`, a stateful native call that genuinely needed both the
+    // down AND up transitions forwarded) but is wrong for
+    // `SendSyntheticEscX64()`, which already sends a complete
+    // WM_KEYDOWN+WM_KEYUP pair by itself -- calling it on every edge fired a
+    // full extra ESC press on B's RELEASE too, closing/cancelling whatever
+    // was just opened by the press half a second earlier (here, the
+    // quit-confirmation prompt). Fixed to rising-edge only, matching how
+    // every other synthetic-key call site in this file already fires (once
+    // per physical press, never on release).
+    if (menuActiveNow && held && !g_menuBackHeldX64 && !CustomOptionsMenu_IsOpen()) {
         SendSyntheticEscX64();
     }
     g_menuBackHeldX64 = held;
