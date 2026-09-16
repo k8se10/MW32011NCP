@@ -8965,3 +8965,124 @@ site in this file (all fire once per physical press, never on release).
 
 Shipped: `proxy_d3d9/src/analog_input_hooks_x64.cpp`. Build-verified,
 deployed. Not yet independently re-confirmed live.
+
+### INVESTIGATED (extensive), 2026-09-16 (later same day) -- real native templates for BOTH ready-up and buy-station found for the first time via self-dump captures; the actual drawing code remains genuinely unresolved after a thorough, multi-angle search; live debugging (any form) ruled out as a path forward for this specific problem
+
+**Status: Open, genuinely exhausted for this session. Real, durable
+progress made (the two templates below) even though the caller was not
+found. Live breakpoint-based investigation (execution OR memory-access --
+both require resuming the process to ever trigger) is confirmed NOT
+viable for this specific problem, independent of the anti-debug findings
+above -- any breakpoint approach needs a real resume to fire, which is
+exactly the step that's been crashing the game all session.**
+
+**Real find #1: both native reference-key templates located for the first
+time on x64**, via two F9 self-dump captures (`TriggerSelfMemoryDumpX64`,
+see the GROUNDWORK round above) analyzed offline with `cdb` in static
+dump-reading mode (`mcp-windbg`, never live-attached):
+- Ready-up: `"Press ^3[{skip}]^7 to ready up: &&1"` -- a complete,
+  well-formed reference-key template in the exact `^N...^7` color-highlight
+  format this project's substitution system already looks for, plus a
+  `[{skip}]` bracket-token (the same token style the UI pipeline map
+  already found used by the subtitle renderer's own parser). Found at
+  `0x1425fa110` in `iw5sp.exe`'s own static data.
+- Buy-station: `"...ld ^3F^7 to use Weapon Armory"` (found at
+  `0x142725ce2`, almost certainly the tail of `"Hold ^3F^7 to use Weapon
+  Armory"` -- the leading "Ho" wasn't captured cleanly, likely a real
+  MSVC string tail-merge with a different literal ending in the same
+  suffix, a class of artifact this project has hit before, see
+  `drawtext_hook_x64.md`'s own `ReadStringAt.java` note).
+
+Both templates were found via a real, decisive search technique worth
+keeping for future use: `s -a 0 L?7fffffffffffffff "<substring>"` inside
+a static `cdb` dump-reading session, searching the ENTIRE captured memory
+image (not just the module) for a plain ASCII substring -- succeeded
+where every targeted approach (RawStringScan against known key-name
+guesses, live diagnostic text logging) had failed for over two days of
+prior investigation across multiple sessions, simply because nobody had
+searched for the right substring ("ready up" / "Weapon Armory" as plain
+lowercase text, not a `PLATFORM_*`-style identifier) until a real capture
+of the actual on-screen moment existed to search inside.
+
+**Real find #2, methodological: cross-referencing x86's OWN discovery
+trail for this exact class of hint explains WHY static search for the
+caller keeps failing, but doesn't resolve it.** x86's own header comment
+(`analog_input_hooks.cpp`, "Live HUD-text font identification" section)
+documents the real x86 mechanism in full: hint text is NOT drawn
+directly at the point it's built -- `FUN_00568110` (the hint-string
+builder) writes an **opcode-0x11 "print text" entry into a deferred
+render-command RING BUFFER** (`DAT_021ddf30`), which a completely
+separate, generically-invoked consumer (`FUN_00691ca0`, confirmed via
+this project's own earlier x86 RE to have ZERO direct static callers --
+it's driven by walking the ring buffer, not called per-hint) processes
+later and only THEN calls the real low-level draw primitive
+(`FUN_00690c80`, x86's own hooked function). This is exactly why a static
+search for "what calls the draw function for this text" was always going
+to fail on either architecture for this class of hint -- the text is
+DATA written into a buffer entry by one piece of code and consumed by a
+completely different, generically-invoked piece of code; there is no
+single function that "calls draw with this string" the way Mantle/Pickup
+work.
+
+**Checked whether x64 preserves this same ring-buffer architecture --
+it does NOT appear to, closing this specific lead rather than solving
+it.** `FUN_140052220` (x64's own per-frame numbered-element switch, the
+direct architectural analog of x86's ring-buffer consumer by
+`param_11`-as-opcode shape) was already fully mapped in
+`ui_draw_pipeline_map.md`; this round decompiled the three cases that
+map had left untraced (`200`/`0xc9`/`0xca`) specifically hoping one was a
+buffer-walker -- all three turned out to be part of the compass/
+entity-marker cluster (world-space projection math, icon-only draws), not
+text. That switch is now EXHAUSTIVELY mapped, every case traced, and none
+of them is ready-up/buy-station. Combined with the fact that x64's own
+Mantle/Pickup/Reload substitutions all reach `FUN_14029a2b0` DIRECTLY
+through this same case-dispatch switch with no ring-buffer indirection
+visible anywhere in this project's x64 research to date, the working
+conclusion is that x64's recompile replaced x86's deferred-queue
+architecture with direct per-frame case dispatch for the hints it kept --
+and ready-up/buy-station simply are not among those cases, meaning
+they're reached through some THIRD mechanism this project has not yet
+identified on x64, architecturally distinct from both `FUN_140052220`
+(HUD-element dispatch) and the `FUN_1402a7660` entity/nametag/subtitle
+chain (both exhaustively traced and ruled out this session and the one
+before).
+
+**Every static lead attempted this round, for the record (so a future
+session doesn't repeat them)**: Ghidra's own xref database
+(`DescribeRefs.java`) against both string addresses -- zero references.
+Raw byte-level RIP-relative LEA scan (`FindLeaRefsToAddr.java`) against
+the ready-up address -- zero hits. Raw byte-level `movabs reg,imm64` scan
+(`CountByteMatches.java` against the address's 8-byte little-endian
+encoding) -- zero hits. Live-memory qword pointer search (`s -q`) against
+every known copy of the string (the module original plus four live heap
+copies found by the substring search) -- zero hits, in either dump.
+Following a promising-looking Ghidra reference from `FUN_1402ca370` to
+the buy-station string's exact address turned out to be a false lead --
+that function's real callers are unrelated low-level thread/CPU-topology
+setup code (`GetProcessAffinityMask`, `DuplicateHandle`), meaning the
+"reference" was to the base of a coincidentally-overlapping data region,
+not a real semantic use of the string.
+
+**Why live debugging is confirmed not viable here, independent of the
+anti-debug crash findings above**: even setting aside the resume-crash
+problem, ANY breakpoint (execution on a function, OR a memory-access
+watchpoint on the string's own address) fundamentally requires the
+process to actually RUN for the breakpoint condition to ever be
+evaluated -- there is no way to arm a breakpoint and inspect its result
+without a resume step. Since resume is confirmed to be the exact
+operation crashing the game this session (see the round above), this
+rules out the entire breakpoint-based debugging approach for this
+problem specifically, not just the two techniques already tried.
+
+**Recommended path if this is picked up again**: more F9 self-dump
+samples, taken in rapid succession while the prompt is visible (the self-
+dump technique itself is proven safe -- zero crashes across two real
+captures this session), hoping to eventually catch the render thread
+mid-way through whatever intermediate function builds this text, even if
+not the exact instant of the low-level draw call. A single capture landed
+on an idle/waiting thread state for the render thread both times this
+session; more samples improve the odds without touching live debugging
+at all. GSC-first extraction remains blocked (`common_survival.ff` still
+on the unresolved `XFILE_BLOCK_SCRIPT` crash list).
+
+No source changes this round -- pure investigation.
