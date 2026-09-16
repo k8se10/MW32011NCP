@@ -115,3 +115,53 @@ decompile cross-referencing).
 `*_load_db.cpp` only (the LOAD path — what `Unlinker`'s own extraction
 needs). `*_write_db.cpp` (re-packing zones, used by `Linker`) has the same
 bug class but is out of scope for this fork's current need.
+
+## A separate, permanent hand-fix: `SpeakerMap`/`MSSChannelMap`/`MSSSpeakerLevels` (2026-09-16)
+
+Not part of this directory's own automated scripts (this bug isn't an
+`offsetof()`/`sizeof()` computation error -- it's a fundamentally wrong
+struct SHAPE, which no amount of offset/size correction can fix). Root
+cause and full evidence trail: `re_notes/x64_migration/fastfile_format_research.md`
+§5.40 (parent repo).
+
+**What was wrong**: the real native `SpeakerMap` is 64 bytes on the wire
+(a 16-byte header + `channelMaps[2]` of 24-byte entries, each holding 2
+packed 12-byte sub-entries), not the 416 bytes this fork's own
+`MSSSpeakerLevels`/`MSSChannelMap`/`SpeakerMap` struct declarations
+computed (`channelMaps[2][2]` of a 100-byte `MSSChannelMap` with 6
+16-byte `MSSSpeakerLevels` entries, each with an inline `float[2]`
+instead of a real dynamically-allocated pointer). Every `speakerMap`
+field load over-read the stream by 352 bytes, silently desyncing every
+asset read afterward -- the actual root cause of the long-standing
+"invalid block N" real-content-zone extraction failures this project has
+chased since `fastfile_format_research.md` §5.21.
+
+**What's fixed where**:
+- `src/Common/Game/IW5/IW5_Assets.h` (tracked source, permanent) -- the
+  corrected struct shapes, with `#pragma pack(1)` on the two inner
+  structs (the real pointer sits unaligned at byte offset 4) and
+  `static_assert`s pinning the real 12/24/64-byte sizes.
+- `Loader_snd_alias_list_t::FillStruct_SpeakerMap`/`Load_SpeakerMap`
+  (`XAssets/snd_alias_list_t/snd_alias_list_t_iw5_load_db.cpp`) -- **NOT
+  in this directory's automated scripts, and NOT in tracked source either
+  (that whole per-asset generated directory is gitignored)**. This
+  function needed genuinely new loading logic (a real per-entry dynamic
+  "levels" array resolution, matching native's own unconditional-nonzero
+  check -- see the source comment for the full rationale), not a
+  mechanical offset/size rewrite, so it was hand-patched directly in the
+  `build/` output. **This hand-patch WILL be silently lost on the next
+  `ZoneCodeGenerator` regenerate**, same as this directory's own scripted
+  fixes -- unlike those, there's no script to re-run for this one yet
+  (a real candidate for a future `06_fix_speakermap_shape.py`, not
+  written this pass). If a future session finds `SpeakerMap`-related
+  crashes have come back, check whether `FillStruct_SpeakerMap` still has
+  the flat `channelMaps` array + the `Load_SpeakerMap` per-entry `levels`
+  resolution loop, or whether a regenerate silently reverted it back to
+  the old, wrong `channelMaps[0]`/`channelMaps[1]` two-call shape.
+
+**Verified**: `sp_intro.ff`/`sp_prague.ff`/`sp_ny_harbor.ff` still load
+with 0 errors (no regression). `common_survival.ff`/`code_post_gfx.ff`/
+`hamburg.ff`/`common.ff` now progress further into their own streams than
+before this fix, past the point this bug used to corrupt -- into a
+separate, already-tracked forward-reference issue
+(`fastfile_format_research.md` §5.21), not this bug recurring.
