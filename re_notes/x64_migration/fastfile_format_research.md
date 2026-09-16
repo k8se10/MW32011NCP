@@ -3127,3 +3127,98 @@ focused round.
 zone/fastfile container format" framing with the more precise finding
 above (outer container unchanged; internal struct word-width is the real
 divergence). See that file's own newest round for the pointer to this doc.
+
+## 5.37. UPDATE, 2026-09-16 (direct instruction, "fix the unlinker parser bug trying similar RE techniques we had success with today") — `common_survival.ff`'s own "invalid block 15" traced to the exact same failure class §5.36 already found; the leading hypothesis (a wrong FOLLOWING-vs-lookup decision in one of six string fields) is now DEFINITIVELY RULED OUT for this specific zone via direct, complete per-field diagnostic tracing; a new, precise byte-shift signature found instead — still not fixed
+
+**Status: Open, the leading candidate from §5.36 eliminated with hard
+evidence, a new precise lead found, no fix landed this round either.**
+
+Picked up §5.36's own explicitly recommended next step (never attempted
+there due to time budget) and executed it directly against
+`common_survival.ff` -- the zone this project's own current real need
+(Survival ready-up GSC extraction) actually depends on, not `sp_berlin.ff`.
+
+**Added real per-field raw/resolved value diagnostics** (temporary,
+`DIAGTRACE` calls added directly to the gitignored, already-instrumented
+`build/src/ZoneCode/Game/IW5/XAssets/{snd_alias_list_t,loadedsound}/*_load_db.cpp`
+-- these files are build output, never tracked source, so this doesn't
+touch anything `ZoneCodeGenerator`/the `x64_offset_fixes` scripts own;
+confirmed the ACTUAL linked build already has the `offsetof()`-based fix
+applied throughout, ruling out a brief false lead of my own this round --
+the pristine `src/ZoneCode/...` reference copies still show literal x86
+offsets, but those are NOT what's compiled into `Unlinker.exe`; only the
+regenerated+patched `build/` copies are) covering all six of §5.36's own
+named candidates: `snd_alias_t`'s five string fields (`aliasName`/
+`subtitle`/`secondaryAliasName`/`chainAliasName`/`mixerGroup`) plus
+`LoadedSound::name`. Rebuilt just the two affected static libraries
+(`ZoneLoading.vcxproj`, then relinked `UnlinkerCli.vcxproj`, both with
+`/p:BuildProjectReferences=false` to avoid an unrelated, pre-existing
+`ObjCommon` custom-build-step failure -- a `Templating source file ...`
+`MSB8066` error in a totally different, unrelated asset-JSON-dumping
+component that has nothing to do with this investigation -- triggered only
+when MSBuild walks the FULL project-reference graph from a leaf project
+with no existing solution context; sidestepped, not fixed, since it's
+out of scope here).
+
+**Result: every one of the six candidate fields resolved completely
+cleanly for the actual last-successfully-loaded asset in `common_survival.ff`
+before the crash** (asset index 0, a `snd_alias_list_t` with one
+`snd_alias_t` entry):
+- `aliasName`: `raw=0x30A3B721` (a real, non-sentinel offset, resolved to
+  a real pointer) -- correctly NOT following the FOLLOWING path, resolves fine.
+- `subtitle`/`secondaryAliasName`/`chainAliasName`/`mixerGroup`: all
+  `raw=0x0000000000000000` (null, no resolution needed at all) -- trivially
+  correct.
+- `LoadedSound::name`: `raw=0xFFFFFFFFFFFFFFFF` (a clean, correct
+  FOLLOWING sentinel), resolves to a real inline string read successfully.
+
+**This definitively rules out §5.36's own leading hypothesis for this
+specific zone** -- not one of the six fields shows any ambiguity, wrong
+sentinel width, or wrong branch decision. Every later step in this same
+asset's own load (`SoundFile`/`SoundFileRef`/`MssSound`/`SndCurve`
+resolving a real string `',weapon2'`/`speakerMap`) also completes cleanly,
+confirmed via the existing diagnostics already present. `PushBlock`/
+`PopBlock` pairing was also read in full for `Load_LoadedSound`
+(`XFILE_BLOCK_VIRTUAL`, correctly balanced) -- no unbalanced-block bug
+found there either.
+
+**A new, precise byte-shift signature characterized, not seen described
+this exactly in any prior round**: the very next top-level dispatch
+record (asset index 1, a SEPARATE `snd_alias_list_t`) reads
+`head=0x0000FFFFFFFFFFFF` and `aliasName(raw)=0xFFFF000000000000` --
+reconstructing these two 8-byte values back into their real FILE-ORDER
+byte sequence (not the printed hex, which is MSB-first for a
+little-endian-loaded value) gives a clean, symmetric 16-byte pattern:
+`00 00 00 00 00 00 FF FF FF FF FF FF FF FF 00 00` -- i.e. a genuine
+contiguous 8-byte all-`FF` sentinel run, but sitting at byte offset 6
+within this 16-byte window instead of offset 0, padded by zero bytes on
+both sides. This is a real, quantifiable ~6-byte-scale positional error,
+not a random/high-entropy value (unlike §5.22's own `0x59EE65FC5439FFD3`
+finding for a different zone/asset) -- a meaningfully different, more
+specific shape than anything previously characterized for this bug family.
+
+**Not yet explained**: since every one of asset 0's own reads verified
+byte-exact-correct (no field-level bug, no unbalanced block, no wrong
+sentinel decision), the ~6-byte discrepancy must originate either (a) from
+something in `MssSound`'s own raw-sample-data path for this specific
+`LoadedSound` (not individually re-verified this round -- it read
+`format=0 data_len=0 ... data(raw)=0000000000000000`, a real, valid
+"no audio data" empty case matching the pattern already seen at the very
+start of this same zone's own log, so not obviously wrong, but not
+independently confirmed byte-exact either), or (b) from something entirely
+upstream of asset 0 -- the top-level asset dispatch/count table itself,
+never re-examined this round. Recommended next step for whoever continues
+this: either a targeted native decompile of `LoadedSound`'s real
+`MssSound`-with-zero-data path specifically (the one sub-read this round
+did NOT individually byte-verify), or a raw hex-editor comparison of
+`common_survival.ff`'s own decompressed bytes at the exact computed stream
+position, cross-referenced against the ~6-byte shift this round found --
+a much narrower, more specific target than "somewhere in this whole nested
+chain," per the same "Fresh Perspective" style progress every prior round
+in this file has made without yet landing the actual fix.
+
+**No tracked source changed.** All new diagnostics live in `build/`
+(gitignored, already an established convention for this file's own prior
+diagnostic rounds) -- confirmed via `git status` showing a clean tracked
+tree. `proxy_d3d9`'s own build/deployment is completely unaffected by
+this investigation (separate project, separate toolchain).
