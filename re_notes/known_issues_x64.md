@@ -8471,3 +8471,96 @@ have the same incompleteness elsewhere.
 Shipped: `proxy_d3d9/src/analog_input_hooks_x64.cpp`. Build-verified (x64,
 0 errors, `dumpbin`-confirmed genuine x64 output, deployed). Not yet
 independently re-confirmed live.
+
+### INVESTIGATED, 2026-09-16 -- Survival ready-up (F5)/buy-station on-screen prompts never reach the hooked draw pipeline at all; leading theory is the SAME class of native Activision x64 regression already confirmed for "get to cover", not a bug in this project's own substitution code
+
+**Status: Investigating -- real static RE done, conclusion is a strong,
+evidence-backed theory, not yet independently confirmed live (needs one
+vanilla-DLL test, same technique as the "get to cover" round below).**
+
+Direct instruction, following up on the still-open live report ("ready up
+works but prompt needs to be shown"): "dig on that as its improtant we get
+it fixed, and f5 does WORK but not show visually ie the actual keypress is
+bound correct tho" -- explicit confirmation the underlying `SendSyntheticF5X64`
+hold-to-ready mechanic fires correctly; only the on-screen glyph/text
+substitution is missing.
+
+**The live diagnostic data, re-checked**: `HudFontIdLoggingX64` (turned on
+in the live `mw3ncp_config.ini`) logs the raw text of EVERY draw call that
+reaches `Hook_DrawTextX64`/`FUN_14029a2b0` -- unconditional on suppression
+state, gated only by a pointer-sanity check, not by content. Across
+194,701 captured `[x64-fontid-diag]` lines from real gameplay, there are
+ZERO occurrences of "F5" or "ready" anywhere, and the ready-up
+substitution's own "first match confirmed" one-shot log line (shipped
+2026-09-14) has never fired either -- despite the same log capturing
+13,521 lines of other real HUD text (Wave/Headshots/Kill Streak) with no
+trouble. This is not a narrow miss (a dedup bug, a wrong template string,
+a suppressed log) -- it means no draw call containing this text has ever
+reached this hook, full stop.
+
+**Ruled out this round -- the hook itself is not the gap.** Re-read
+`Hook_DrawTextX64`'s own diagnostic block (`analog_input_hooks_x64.cpp`,
+~line 5380): it runs unconditionally for every call, independent of every
+match/suppress branch above it. Re-confirmed via fresh decompile
+(`DecompileFuncs.java` against `iw5sp_pause_investigation.gpr`, already
+fully analyzed, no re-analysis needed) that `FUN_140052220` case `0x53`
+(the master HUD-element dispatcher's generic single-line hint case,
+`FUN_140051850`) DOES call `FUN_14029a2b0` directly, and that this
+project's own prior finding for Reload/killstreak-notify/vehicle-HUD/
+death-quote (all 6 real callers of the `FUN_1402afa60` -> `FUN_1402b1090`
+wrapper funnel into `FUN_14029a2b0` too, `FUN_14029a610` confirmed dead
+code) already independently proves this hook is not narrowly scoped --
+it demonstrably catches every other text-draw path this project has ever
+looked for. There is no known alternate native text-draw leaf function
+left unaccounted for that a normal HUD prompt could route through instead.
+
+**Leading theory, directly parallel to the already-CONFIRMED "get to
+cover" finding (2026-09-14, this file's own "RESOLVED (root cause)" round
+above)**: the native ready-up/buy-station prompt TEXT itself may simply no
+longer draw at all in the current retail x64 build -- a second casualty of
+whatever the 2026-09-03 recompile changed (already independently evidenced
+by the OpenAssetTools zone-format break and the `main/iw_00.iwd` size
+change cited in that same round). This would explain every observed fact
+at once: the underlying Survival ready-up WAIT/script logic still runs
+correctly (F5 keybind works, matching the user's own report), but the
+on-screen banner text that would normally accompany it was silently
+dropped from the native draw call graph, so this hook -- which demonstrably
+catches everything that IS still drawn -- never sees it because it's
+never called.
+
+**Not yet independently confirmed** -- the "get to cover" finding was only
+closed after a real vanilla-DLL test (renaming the deployed `d3d9.dll` out
+of the game directory so the real system DLL loads with zero mod code
+running, then checking whether the symptom persists). The exact same test
+would settle this: next Survival session, briefly rename
+`d3d9.dll` -> `d3d9.dll.mod_disabled_for_vanilla_test` in the game
+install directory, trigger a real ready-up window (or check for the
+buy-station prompt), and see whether "Press F5 to ready up"/the buy-station
+text appears with the mod completely absent. If it's missing there too,
+this closes the same way "get to cover" did -- a confirmed native
+Activision regression, not a bug in this project's substitution code --
+and reframes ready-up/buy-station glyph work the same way: not "port a
+still-existing native prompt," but a genuine ROADMAP IDEA to REBUILD the
+missing prompt from scratch using this project's own already-proven
+overlay infrastructure (`RequestCustomHintOverlay`, already substituting
+five other hints on x64), gated on `IsInSurvivalModeX64()`/the existing
+hold-to-ready state machine for timing. If the native text turns out to
+still be present, that would instead point at something more specific to
+Survival's own wave-intermission UI state routing around the traced
+pipeline entirely -- a genuinely different, harder investigation, not yet
+started, that would need to come back to `ui_draw_pipeline_map.md` and
+trace whatever draws the Survival between-wave screen specifically.
+
+**GSC-first cross-check attempted, still blocked**: this project's own
+locked methodology (2026-09-14, "re all mechanisms directly from the GSC
+logic first") would normally start here instead of native RE, but
+`common_survival.ff` is still on the unresolved `XFILE_BLOCK_SCRIPT`
+"size 0" crash list (`fastfile_format_research.md` SS5.29-SS5.34) -- GSC
+extraction for Survival's own scripts remains genuinely unavailable, not
+skipped for convenience.
+
+No source changes this round -- pure investigation, per this project's own
+"checking is cheaper than digging" standard: confirm the theory with one
+cheap live test before committing to either the "port existing native
+text" or "build a new feature from scratch" path, since they're different
+amounts of work and only one is justified depending on the answer.
