@@ -3636,3 +3636,94 @@ concrete next step, not more diagnostic rounds on this same fallback.
 
 Paused here (not a stopping point due to any blocker -- redirected to a
 separate, higher-priority task the same session).
+
+### SS5.44 (2026-09-16) — LoadedSound alias-miss: struct-shape bug ruled out; native's real resolution mechanism traced in full; root cause narrowed to an out-of-block-allocation addressing gap, not yet fixed
+
+Resuming SS5.43's own explicitly-paused next step (native-decompile `SoundFileRef::loadSnd`'s
+own resolution vs `LoadedSound`'s own registration) after a separate, higher-priority x64
+focus-detection fix was completed. Direct instruction: "lets keep going on FF."
+
+**Live diagnostic re-confirmed the exact failure** (`common_survival.ff`, `ConvertOffsetToAliasLookup`'s
+final `assert(false)` fallback, `ZoneInputStream.cpp`): a second `snd_alias_t` entry's
+`soundFile.u.loadSnd` raw value (`0x30A3BF19`) decodes to block `XFILE_BLOCK_VIRTUAL`, offset
+`10731288` -- in-range, already-written, but registered in neither `m_alias_redirect_lookup`
+(861 entries) nor `m_pointer_redirect_lookup` (27394 entries).
+
+**Round 1 -- struct-shape theory, RULED OUT.** Decompiled `FUN_140094150` (the real native
+`LoadedSound` field reader): reads exactly `0x40` = 64 bytes total (`FUN_1400aad70(param_1,
+DAT_1407bdd88, 0x40)`), matching this fork's own `sizeof(LoadedSound)` exactly (`name`(8) +
+`MssSound`(56, itself `AILSOUNDINFO`(48) + `data*`(8)) = 64). Unlike the SS5.40 `SpeakerMap`
+bug, `LoadedSound`'s current C++ shape is byte-for-byte correct -- this specific bug is NOT
+another wrong-struct-shape case.
+
+**Round 2 -- hex-dump of the actual target position.** Added a temporary diagnostic (dumped a
+64-byte window around the failing target, block write-cursor, both map sizes; reverted before
+this commit, same discipline as every prior temp diagnostic in this file) and re-ran against
+`common_survival.ff`. Real finding: position `10731288` sits inside a long run of zero bytes
+(padding/unused region), with one genuine nearby offset-shaped value 20 bytes EARLIER (`0x30A3B9A1`,
+independently confirmed via the log to be a DIFFERENT field -- `volumeFalloffCurve`, a sibling
+`SndCurve*` field of the SAME `snd_alias_t`) and another 3 bytes LATER (`0x30A3B811`). The target
+position itself is not a real field boundary at all in this fork's own byte-for-byte read.
+
+**Round 3 -- native array-walk + resolver decompile, the real mechanism found.** Decompiled
+`FUN_14009f590` (`snd_alias_t` array loader -- confirms `sizeof(snd_alias_t)` = `0x98` = 152
+bytes exactly, closing SS5.38's own "computed, unverified against native" gap) and traced its
+per-field dedup/interning pattern for the `soundFile` pointer field (qword index 5): `== -1` means
+fresh-allocate (tag-3 heap allocator, matching this fork's own `AllocOutOfBlock`), `!= 0 && != -1`
+means "already resolved, reuse" via `FUN_1400aad40`. Decompiled that function: `result = blockBase
++ blockOffset` (a direct, un-dereferenced pointer into a block-base table, `DAT_140d6de00`,
+16 bytes/entry). This matches `ConvertOffsetToAliasNative`'s own semantics exactly -- but this is
+the OUTER `snd_alias_t.soundFile` field's own resolver, a level above the actual failure.
+
+The INNER field (`SoundFileRef.loadSnd`, resolved via `FUN_140096900`/`FUN_1400941f0`) uses a
+DIFFERENT native function for its own "already resolved" case: `FUN_1400aad10`, decompiled and
+found to have the SAME block-decode arithmetic PLUS one extra dereference: `result =
+*(blockBase + blockOffset)` -- i.e. "the position holds ANOTHER POINTER, itself already fixed up;
+copy that value," not "the position holds the real data directly." This is exactly
+`ConvertOffsetToAliasLookup`'s own `m_pointer_redirect_lookup` branch (`resolvedSlot =
+foundPointerLookup->second; resolved = *resolvedSlot;`, `ZoneInputStream.cpp` ~line 678-691) --
+confirming this fork's function CHOICE for `loadSnd`'s alias case (`ConvertOffsetToAliasLookup`,
+which checks both maps) is already the semantically correct one, not a wrong-function bug.
+
+**Also confirmed via the same native trace**: `SoundFile`/`LoadedSound` are BOTH allocated via
+the SAME tag-3 heap-style allocator natively (`FUN_1400aaa90(3)`, called from both
+`FUN_14009f590`'s `soundFile` case and `FUN_1400941f0`'s own `loadSnd` case) -- matching this
+fork's existing `AllocOutOfBlock<LoadedSound>` choice. This RULES OUT the fix theory floated
+mid-round (switching to in-block `Alloc<LoadedSound>()` to match a naive "the shared struct must
+live in a real block buffer" reading of the block-decode formula) -- native does NOT store
+`LoadedSound`'s own data inside a real content-block buffer either; both fork and native use an
+out-of-block/heap allocation for it.
+
+**Real, still-open question, narrowed but not answered**: since native's own `DAT_140d6de00`
+block-base table clearly resolves `loadSnd` aliases correctly (real production zones load fine
+retail), but its table has AT LEAST the capacity to represent MORE than this fork's own 9
+`XBlock` types (the block-index bits are the same width either way, `>>0x1c`/28 bits), the
+leading open theory is that native's own block-base table includes additional entries
+representing tag-based HEAP ALLOCATION REGIONS (like tag 3) alongside the 9 real content
+blocks -- meaning a `loadSnd` alias reference's raw offset may be decoding to a "virtual heap
+block" index this fork's own `m_blocks[9]` array has no equivalent for at all, rather than
+genuinely colliding with `XFILE_BLOCK_VIRTUAL`'s own real content. This would mean the CURRENT
+`blockNum=3` decode for this specific failure is itself a fork-side misinterpretation (this
+fork's `m_block_shift`/`m_block_mask` scheme, calibrated against the 9 real content blocks,
+doesn't have a slot for a heap-tag "block" the way native's own table apparently does) --
+consistent with, not contradicted by, the hex-dump finding that block 3 offset 10731288 has no
+real relationship to the `loadSnd` field at all (a coincidental, invalid decode landing in
+padding).
+
+**Not yet attempted**: confirming whether `LoadPtr_LoadedSound`'s registered `AddPointerLookup`
+call (`FillStruct_SoundFileRef`, `snd_alias_list_t_iw5_load_db.cpp`) is even the right SOURCE
+event for what native's own tag-3 heap allocator effectively does at allocation time (native
+registers into `DAT_140d6de00`'s own table AT ALLOCATION, not at the containing struct's own
+on-disk field position) -- if so, the real fix is a new, tag-3-scoped alias-registration path
+keyed on ALLOCATION IDENTITY (e.g. a running per-tag allocation counter matching native's own
+`DAT_140d6e210`-driven bookkeeping in `FUN_1400aab50`) rather than reusing the existing
+in-block `AddPointerLookup`/`m_pointer_redirect_lookup` mechanism, which is fundamentally scoped
+to real content-block byte positions and may never be able to represent a heap-tag reference
+correctly as currently designed. This is a genuinely new architectural direction, not a small
+patch -- deliberately not attempted this round without further confirmation, per this exact
+code area's own repeated documented history of regressions from rushed changes.
+
+Temporary diagnostic reverted before this commit (`git diff` confirms `ZoneInputStream.cpp`'s
+only surviving change from this round is a harmless `#include <cstdint>` addition, already
+transitively available but now explicit). No functional code changed this round -- this is a
+pure investigation/documentation round, same as SS5.9/5.23's own "0 fix, full trail" precedent.
