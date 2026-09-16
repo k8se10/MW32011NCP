@@ -31,6 +31,7 @@
 
 #include "ObjWriting.h"
 #include "Utils/DistinctMapper.h"
+#include "Utils/PointerSanity.h"
 #include "Utils/QuatInt16.h"
 #include "XModel/XModelWriter.h"
 
@@ -55,9 +56,16 @@ namespace
     {
         std::vector<MaterialTextureDef*> potentialTextureDefs;
 
+        // MW32011NCP / iw5oat, 2026-09-17: `material->textureCount` is a raw zone-read
+        // count that can be corrupted (same class guarded throughout this session,
+        // fastfile_format_research.md SS5.47/5.48, parent repo) -- if it's wrong, `def`
+        // runs off the real textureTable allocation. Validate each element before
+        // dereferencing and stop the whole scan on the first bad one.
         for (auto textureIndex = 0u; textureIndex < material->textureCount; textureIndex++)
         {
             MaterialTextureDef* def = &material->textureTable[textureIndex];
+            if (!pointer_sanity::IsLikelyReadablePointer(def))
+                break;
 
 #if defined(FEATURE_IW3) || defined(FEATURE_IW4) || defined(FEATURE_IW5) || defined(FEATURE_QOS) || defined(FEATURE_T4)
             if (def->semantic == TS_COLOR_MAP)
@@ -127,6 +135,8 @@ namespace
         for (auto textureIndex = 0u; textureIndex < material->textureCount; textureIndex++)
         {
             MaterialTextureDef* def = &material->textureTable[textureIndex];
+            if (!pointer_sanity::IsLikelyReadablePointer(def))
+                break;
 
             if (def->semantic == TS_NORMAL_MAP)
                 potentialTextureDefs.push_back(def);
@@ -153,6 +163,8 @@ namespace
         for (auto textureIndex = 0u; textureIndex < material->textureCount; textureIndex++)
         {
             MaterialTextureDef* def = &material->textureTable[textureIndex];
+            if (!pointer_sanity::IsLikelyReadablePointer(def))
+                break;
 
             if (def->semantic == TS_SPECULAR_MAP)
                 potentialTextureDefs.push_back(def);
@@ -306,6 +318,15 @@ namespace
 
     const char* AssetName(const char* input)
     {
+        // MW32011NCP / iw5oat, 2026-09-17: `input` is a raw texture/material name pointer
+        // read out of the zone -- a genuinely corrupted/unresolved reference (same class
+        // guarded throughout the loader this session, fastfile_format_research.md
+        // SS5.47/5.48, parent repo) crashed here dereferencing `input[0]` unchecked.
+        // Return "" rather than nullptr -- every call site here assigns straight into a
+        // std::string field, and std::string(nullptr) is its own separate crash.
+        if (input != nullptr && !pointer_sanity::IsLikelyReadablePointer(input))
+            return "";
+
         if (input && input[0] == ',')
             return &input[1];
 
@@ -317,7 +338,9 @@ namespace
         for (auto surfaceMaterialNum = 0u; surfaceMaterialNum < model.numsurfs; surfaceMaterialNum++)
         {
             Material* material = model.materialHandles[surfaceMaterialNum];
-            if (materialMapper.Add(material))
+            // A null material is genuine, legitimate data for an unresolved reference --
+            // there's no material to add if it never resolved.
+            if (material != nullptr && materialMapper.Add(material))
             {
                 XModelMaterial xMaterial;
                 xMaterial.ApplyDefaults();

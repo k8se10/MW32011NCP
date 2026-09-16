@@ -317,7 +317,13 @@ namespace
                 LhcToRhcQuaternion(globalRotationData);
                 Eigen::Quaternionf rotation(globalRotationData[3], globalRotationData[0], globalRotationData[1], globalRotationData[2]);
 
-                if (bone.parentIndex)
+                // MW32011NCP / iw5oat, 2026-09-17: a corrupted/unresolved bone chain can leave
+                // parentIndex pointing at an index >= boneCount (same class of corrupted-
+                // upstream-data guarded throughout the loader this session,
+                // fastfile_format_research.md SS5.47/5.48, parent repo). std::vector::operator[]
+                // doesn't bounds-check, so an out-of-range parentIndex previously read
+                // arbitrary memory here. Treat an out-of-range parent the same as "no parent".
+                if (bone.parentIndex && *bone.parentIndex < boneCount)
                 {
                     const auto& parentBone = common.m_bones[*bone.parentIndex];
 

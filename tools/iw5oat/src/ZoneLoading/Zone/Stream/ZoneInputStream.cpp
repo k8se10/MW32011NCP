@@ -8,6 +8,7 @@
 #include "Loading/Exception/ShortReadException.h"
 #include "Utils/Alignment.h"
 #include "Utils/Logging/Log.h"
+#include "Utils/PointerSanity.h"
 
 #include <algorithm>
 #include <cassert>
@@ -675,7 +676,29 @@ namespace
 
                 const auto foundAliasLookup = m_alias_redirect_lookup.find(offsetInt);
                 if (foundAliasLookup != m_alias_redirect_lookup.end())
-                    return foundAliasLookup->second;
+                {
+                    // MW32011NCP / iw5oat, 2026-09-17: this branch had ZERO validation at all --
+                    // `m_alias_redirect_lookup`'s own stored value (registered via
+                    // InsertPointerAliasLookup/SetInsertedPointerAliasLookup, typically the
+                    // already-resolved `*varXAssetPtr` at the moment an INSERT-flagged asset
+                    // finished its own fresh load) gets returned completely unconditionally.
+                    // If whatever produced that stored value was itself already wrong (a
+                    // struct-shape bug, a forward-reference race, etc.), every later alias
+                    // reference to the same position inherits the bad value with NO chance to
+                    // degrade gracefully -- unlike the sibling m_pointer_redirect_lookup branch
+                    // just below, which already got this exact check this same round. Same
+                    // canonical-pointer heuristic, same fallback (break to the existing,
+                    // already-proven-safe hop-exhaustion degradation).
+                    //
+                    // 2026-09-17: upgraded from the original bit-pattern heuristic to the
+                    // real VirtualQuery-backed check (Utils/PointerSanity.h) -- the cheap
+                    // canonical-range guess has a real, demonstrated blind spot (a garbage
+                    // value that still falls in the canonical range), found later the same
+                    // session.
+                    if (pointer_sanity::IsLikelyReadablePointer(foundAliasLookup->second))
+                        return foundAliasLookup->second;
+                    break;
+                }
 
                 const auto foundPointerLookup = m_pointer_redirect_lookup.find(offsetInt);
                 if (foundPointerLookup != m_pointer_redirect_lookup.end())
@@ -684,7 +707,32 @@ namespace
                     const auto resolved = *resolvedSlot;
 
                     if (!LooksLikeUnresolvedRawOffset(resolved))
-                        return resolved;
+                    {
+                        // MW32011NCP / iw5oat, 2026-09-17: `LooksLikeUnresolvedRawOffset` only
+                        // ever answers "does this still look like a raw, not-yet-converted zone
+                        // offset" (top 32 bits zero) -- it says nothing about whether a value
+                        // that FAILS that check is actually a real, sane pointer. A genuinely
+                        // corrupted/uninitialized value at `resolvedSlot` (non-zero high bits,
+                        // but not a valid heap address either) was being blindly trusted and
+                        // returned here -- confirmed live via self-dump analysis to be the real
+                        // source of a `strlen` crash reading `XModel`'s own name field through
+                        // exactly this path (fastfile_format_research.md SS5.48, parent repo).
+                        // Every real heap/asset-memory address this fork's own allocator hands
+                        // out sits in canonical 48-bit address space (top 16 bits zero) -- the
+                        // SAME heuristic already used and proven at two other call sites this
+                        // session (AssetInfoCollector, AssetLoader). A value that fails BOTH
+                        // checks was never a valid pointer at all; treat it the same as "not
+                        // found" (fall through to the existing, already-proven-safe hop-
+                        // exhaustion degradation below) instead of returning garbage to the
+                        // caller.
+                        //
+                        // 2026-09-17: upgraded from the original bit-pattern heuristic to the
+                        // real VirtualQuery-backed check (Utils/PointerSanity.h) -- see the
+                        // sibling m_alias_redirect_lookup branch above for why.
+                        if (pointer_sanity::IsLikelyReadablePointer(resolved))
+                            return resolved;
+                        break;
+                    }
 
                     // The aliased field itself still holds a raw offset, not a real pointer --
                     // chase it exactly the same way, rather than trusting or giving up on it.

@@ -42,6 +42,7 @@
 
 #include "ObjWriting.h"
 #include "Utils/DistinctMapper.h"
+#include "Utils/PointerSanity.h"
 #include "Utils/QuatInt16.h"
 #include "XModel/Export/XModelBinWriter.h"
 #include "XModel/Export/XModelExportWriter.h"
@@ -60,6 +61,14 @@ namespace
 {
     const char* AssetName(const char* input)
     {
+        // MW32011NCP / iw5oat, 2026-09-17: same corrupted/unresolved-reference guard as
+        // XModelToCommonConverter.cpp.template's own AssetName (fastfile_format_research.md
+        // SS5.47/5.48, parent repo) -- `input` here can be a non-null but genuinely
+        // unreadable pointer, crashing at `input[0]` unchecked. Return "" rather than
+        // nullptr since every call site here assigns into a std::string field.
+        if (input != nullptr && !pointer_sanity::IsLikelyReadablePointer(input))
+            return "";
+
         if (input && input[0] == ',')
             return &input[1];
 
