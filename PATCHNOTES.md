@@ -320,25 +320,6 @@ item below.
     contain bugs and issues. It is not on par with Campaign/Survival." once
     MP gets real partial gameplay support — no new code path needed, just a
     one-line text change when that day comes.
-18. **Two more native gameplay hints ported to real controller-glyph
-    substitution: stance-change hints and stance-blocked warnings.**
-    Continuing the x64 UI-draw-pipeline-map's own ranked opportunities: the
-    native "you can currently stand/crouch/prone" rows (up to three shown
-    at once) now show the real controller glyph bound to CrouchProne — all
-    three use the same physical button, so all three correctly show the
-    same icon. A subset of the "you can't do that right now" warnings
-    (stand/crouch/prone-blocked specifically) now get the same glyph as an
-    icon prefix before the unmodified native message. The four weapon/
-    target-related warnings in that same message family (no ammo, target
-    too close, lock-on required, not enough clearance) were deliberately
-    left alone — none maps to one clear button the way stance does, and
-    guessing would risk shipping something misleading. A related, more
-    concrete-looking opportunity (the Lethal/Tactical grenade-type name
-    readout) was investigated and NOT implemented once RE showed its native
-    text has no keyboard-key reference embedded at all — there's nothing
-    broken there for a controller player, so nothing to substitute. Build-
-    verified, **not yet live-tested**. See `re_notes/known_issues_x64.md`
-    for the full trail.
 
 ### Fixed
 1. **Crash on launch with the sniper Fire/ADS fix's own log line.** The
