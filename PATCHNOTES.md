@@ -568,6 +568,18 @@ item below.
     cursor draws through, scoped by exact return address to just that one
     call site) that was never ported. Ported directly. Build-verified,
     not yet independently re-confirmed live.
+23. **CRITICAL: pressing B during active gameplay wrongly paused the
+    game.** A same-day fix for B not fully closing the pause menu had
+    introduced a stale-flag bug — once the flag it relied on went out of
+    sync with the real game state, any later ordinary B press during
+    normal, unpaused play would silently open the pause menu. Rather than
+    patch that flag-tracking approach again (its second real regression
+    in one day), both Start's pause open/close and B's menu-back handling
+    now synthesize a real Escape keypress instead — the same native key a
+    keyboard player already uses for both directions, with the engine's
+    own state deciding what to do with it, removing the need for this
+    project to track that state itself. See
+    `re_notes/known_issues_x64.md` for the full trail.
 
 ### Documentation
 1. **`re_notes/known_issues_x64.md` established** as the dedicated x64 issue

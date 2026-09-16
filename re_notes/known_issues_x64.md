@@ -8684,3 +8684,104 @@ round: `common_survival.ff` is still on the unresolved
 `XFILE_BLOCK_SCRIPT` "size 0" crash list.
 
 No source changes this round.
+
+### FIXED, 2026-09-16 (later same day) -- CRITICAL live-gameplay regression: pressing B during active gameplay wrongly paused the game; root cause traced and the whole flag-tracking design replaced with real ESC key synthesis
+
+**Status: Resolved. Build-verified (x64 Release, 0 errors, `dumpbin`-confirmed
+genuine x64 output), deployed live. Not yet independently re-confirmed by a
+full playtest pass, but the specific reported symptom is understood and the
+fix is structurally sound (see reasoning below).**
+
+Direct live report, discovered mid-session while setting up the x64dbg
+live-debugging attempt for the ready-up investigation above: "so major
+issue that crappy b to exit menu implementation is actually breaking the
+gameplay inout as it happens in active gameplay pressing b pauses the
+game." A real, severe regression from the same-day B-close-uses-
+`g_pauseToggle` fix (this file's own earlier 2026-09-16 round).
+
+**Root cause**: that fix's own shortcut condition —
+`if (held && !g_menuBackHeldX64 && g_pauseMenuOpenedByUsX64 && g_pauseToggle)`
+— only ever checked the `g_pauseMenuOpenedByUsX64` flag, never the real,
+live `menuActiveNow` signal the same function already computes a few lines
+above (`*g_menuActiveGateFlag & 0x10`). That flag is set true whenever our
+own Start-press logic (`PollPauseToggleX64`) opens the pause menu, and is
+only ever cleared by two specific paths — if the pause menu is EVER closed
+by any OTHER means (this file's own header comment on the original fix
+already flagged this exact risk as a "known limitation" without actually
+guarding against it), the flag goes stale true and stays that way
+indefinitely. The next ordinary B press during real, active, unpaused
+gameplay would then unconditionally call `g_pauseToggle(0)` — and since the
+game is NOT currently paused at that point, a raw toggle call OPENS the
+pause menu instead of doing nothing, exactly matching "pressing b pauses
+the game."
+
+**A live debugging incident during investigation, worth recording**: two
+live x64dbg attach attempts crashed the game outright before this bug was
+even found — the first with a breakpoint armed on `FUN_14029a2b0` (a
+function that fires on nearly every text draw call, dozens+ times a
+frame — an unconditional breakpoint on a function that hot is itself
+unsafe), the second on attach alone. The second crash was root-caused
+(not guessed) once x64dbg was reattached cleanly: x64dbg auto-loads a
+fresh set of TLS-callback breakpoints on every attach (steam/nvidia driver
+DLLs included) PLUS whatever breakpoints were left armed from the
+PREVIOUS session (the stale `FUN_14029a2b0` one, since the x64dbg process
+itself hadn't been restarted) — `ListBreakpoints` confirmed both. Clearing
+all breakpoints immediately after attach (`DeleteAllBreakpoints`) and
+resuming showed the game stays fully stable with the debugger attached and
+no breakpoints armed — attach itself was never the problem, stale/TLS
+breakpoints were. **Standing lesson for any future x64dbg session on this
+project**: always `ListBreakpoints` + `DeleteAllBreakpoints` immediately
+after attach, before doing anything else, matching (and now empirically
+re-confirming) this file's own x86-era x64dbg workflow note. Separately,
+the x64dbg MCP bridge itself had only ever been deployed for `x32dbg`
+(`x64dbg-MCP-Server.dp32` existed; the matching `.dp64` build for the
+64-bit debugger did not) — fixed by downloading the matching v1.3 release
+of the same plugin (`duty1g/x64dbg-mcp-server`) and deploying
+`x64dbg-MCP-Server.dp64` alongside its `mcp_config.json` into
+`x64\plugins\`.
+
+**Fix, direct instruction ("just synthesise esc key for pause/unpausing as
+it is clearly more work than its worth")**: rather than keep patching the
+flag-tracking design (this is its SECOND real regression in one day, after
+issue #98's cutscene-re-skip bug from the same root shape — this
+project's own state tracking drifting out of sync with the real engine's
+own state), both `PollPauseToggleX64` (Start) and `InjectControllerMenuBackX64`
+(B) were rewritten to synthesize a real `WM_KEYDOWN`/`WM_KEYUP` `VK_ESCAPE`
+via a new `SendSyntheticEscX64()` (same `PostMessageA`-at-the-real-HWND
+technique already proven for Survival ready-up/`SendSyntheticF5X64`,
+Jump, and the scoreboard key), instead of calling `g_pauseToggle`/
+`g_openPauseMenuForCinematic` directly or forwarding through the generic
+`ForwardKeyToMenuX64` native-call chain. This is justified, not just
+simpler: per this project's own architecture notes, ESCAPE is hardcoded
+directly in the real native key-event handler for BOTH opening pause (when
+unpaused) and closing/resuming it (when paused) — the same key a real
+keyboard player already uses for both directions, with the real engine's
+own internal state (not a flag this project maintains) deciding which one
+to do — and the separate 2026-09-14 cutscene-skip investigation already
+confirmed that same real dispatcher branches correctly on `clcState` for
+an active Bink cinematic, the exact case `g_openPauseMenuForCinematic`
+existed to hand-replicate. The entire `g_pauseMenuOpenedByUsX64` flag,
+the `clcState`-branch, and the `g_pauseToggle`/`g_openPauseMenuForCinematic`
+direct calls in both functions are gone as a result — no state for either
+function to get out of sync with the real engine again.
+
+**B's own state-tracking is not eliminated, just narrowed to a signal that
+can't go stale the same way**: B still gates on `menuActiveNow`, but that's
+a FRESH read of the real, live native menu-active flag every single call —
+not a boolean this project sets once and has to remember to clear, the
+exact bug class that caused this regression in the first place. Start
+(`PollPauseToggleX64`) fires unconditionally on every rising edge with no
+state check at all, matching what a real ESC key mapped to a physical
+button would do — accepted as correct on the reasoning that the native
+handler itself already resolves open-vs-close correctly regardless of
+current state, same as it does for a keyboard player.
+
+`g_pauseToggle`/`g_openPauseMenuForCinematic` themselves are UNCHANGED and
+still resolved/used elsewhere (`AutoUnstickPauseCycleX64`'s own automated
+pause/unpause cycle still calls `g_pauseToggle` directly, a genuinely
+different, already-reliable use case untouched by this fix) — only the two
+Start/B controller-input paths were rewritten.
+
+Shipped: `proxy_d3d9/src/analog_input_hooks_x64.cpp`. Build-verified (x64,
+0 errors, `dumpbin`-confirmed genuine x64 output, deployed). Not yet
+independently re-confirmed live by a full playtest.

@@ -1289,6 +1289,41 @@ void SendSyntheticF5X64()
     LogFromController("[x64-ready-up-diag] SendSyntheticF5X64 fired");
 }
 
+// ---- Pause open/close/menu-back via real ESC key synthesis, x64 (2026-09-16) --
+//
+// REPLACES the whole g_pauseToggle/g_openPauseMenuForCinematic/clcState-branch/
+// g_pauseMenuOpenedByUsX64-flag machinery PollPauseToggleX64 and
+// InjectControllerMenuBackX64 used to carry (see their own now-simplified
+// bodies below). Direct instruction, after that flag-tracking design caused a
+// real, live-gameplay-breaking regression on top of an earlier one: once
+// g_pauseMenuOpenedByUsX64 went stale true (the pause menu closed by any path
+// other than the two spots that cleared it), the NEXT ordinary B press during
+// ACTIVE GAMEPLAY unconditionally called the raw g_pauseToggle(0) -- which,
+// since the game was NOT currently paused, OPENED the pause menu instead of
+// doing nothing. Chasing that class of bug (this project's own state tracking
+// drifting out of sync with the real engine's own state) is fundamentally the
+// wrong shape of fix -- "just synthesise esc key for pause/unpausing" (direct
+// instruction) sidesteps it entirely.
+//
+// Per this project's own architecture notes (CLAUDE.md SS1): ESCAPE is hardcoded
+// directly in the real native key-event handler and is confirmed to be how
+// BOTH opening the pause menu (when unpaused) AND closing/resuming it (when
+// paused) already work natively -- the exact same key a real keyboard player
+// presses for both directions, with the real engine's own internal state
+// (not anything this project tracks) deciding which one to do. Synthesizing
+// the real key event, same technique already proven for Survival ready-up
+// (SendSyntheticF5X64 above) and Jump/scoreboard, lets that already-correct,
+// already-battle-tested native logic do 100% of the work -- no flag, no
+// open/close asymmetry, no clcState branch to get wrong.
+void SendSyntheticEscX64()
+{
+    HWND hwnd = GetGameWindow();
+    if (!hwnd) return;
+    PostMessageA(hwnd, WM_KEYDOWN, VK_ESCAPE, 0x00000001);
+    PostMessageA(hwnd, WM_KEYUP, VK_ESCAPE, 0xC0000001);
+    LogFromController("[x64-esc-synth-diag] SendSyntheticEscX64 fired");
+}
+
 // ---- Back -> real +scores (scoreboard/objectives) via key synthesis, x64 port
 // (2026-09-13) -- same narrowly-scoped exception x86 already needed
 // (analog_input_hooks.cpp's own InjectControllerScoreboard, user-approved
@@ -1579,55 +1614,31 @@ extern "C" bool TryGetClcStateX64(int* outValue);
 
 extern "C" void PollPauseToggleX64()
 {
-    if (!g_pauseToggle) return;
     unsigned short xiButtons = 0;
     unsigned char leftTrigger = 0, rightTrigger = 0;
     if (!Controller_GetRawButtonsAndTriggers(xiButtons, leftTrigger, rightTrigger)) return;
 
     bool pauseHeld = IsPhysicalHeld_Exported(g_buttonMap.pause, xiButtons, leftTrigger, rightTrigger);
     if (pauseHeld && !g_pauseHeldX64) {
-        // Real fix, issue #98 (corrected round, 2026-09-14): mirror x86's own
-        // InjectControllerPauseMenu three-way split instead of always calling
-        // the generic g_pauseToggle (FUN_1400823b0), which has no clcState==1/2
-        // special case of its own and silently does nothing during an actual
-        // Bink cinematic (its own generic "is input blocked" guard correctly
-        // suppresses the generic toggle then, but never reaches the real
-        // cinematic-skip chain either) -- see g_openPauseMenuForCinematic's own
-        // declaration comment above for the full root-cause trail. When the
-        // clcState read fails to resolve, fall back to the pre-existing
-        // behavior (g_pauseToggle only) rather than risk a wrong branch.
-        //
-        // REAL REGRESSION FOUND 2026-09-16 ("in menus start press now again
-        // skips cutscene"): the clcState check above ran on EVERY Start press,
-        // including the SECOND one meant to CLOSE the pause menu -- x86's own
-        // InjectControllerPauseMenu has a `currentlyPaused` gate
-        // (GetDvarInt("cl_paused")) that skips its entire state-branch when
-        // already paused, going straight to the close call instead; that gate
-        // was never carried over to this x64 port. If clcState still reads
-        // 1/2 while the pause menu is already open (plausible -- it likely
-        // reflects underlying scene/connection state, not "is our own pause
-        // UI currently shown"), the CLOSE press was wrongly re-routed into
-        // g_openPauseMenuForCinematic AGAIN instead of the real close call,
-        // exactly matching "press Start again, skips cutscene [again]" rather
-        // than closing. Fixed by tracking whether OUR OWN last press opened
-        // the menu (g_pauseMenuOpenedByUsX64) and forcing the very next press
-        // straight to the close path, unconditionally, bypassing the
-        // clcState check entirely -- the same open/close distinction x86's
-        // own dvar-based gate provides, without depending on an unconfirmed
-        // x64 dvar read.
-        if (g_pauseMenuOpenedByUsX64) {
-            g_pauseToggle(0);
-            g_pauseMenuOpenedByUsX64 = false;
-        } else {
-            int state = 0;
-            bool haveState = TryGetClcStateX64(&state);
-            if (haveState && (state == 1 || state == 2) && g_openPauseMenuForCinematic) {
-                g_openPauseMenuForCinematic(0);
-            } else {
-                g_pauseToggle(0);
-            }
-            g_pauseMenuOpenedByUsX64 = true;
-        }
+        // SIMPLIFIED 2026-09-16 (direct instruction: "just synthesise esc key
+        // for pause/unpausing as it is clearly more work than its worth").
+        // This used to carry a real g_pauseToggle/g_openPauseMenuForCinematic/
+        // clcState-branch/g_pauseMenuOpenedByUsX64-flag split (see git history
+        // for the full prior version and its two real regressions -- issue #98's
+        // cutscene-re-skip bug, then a live-gameplay-breaking "B pauses during
+        // real gameplay" bug once that flag went stale). All of that existed to
+        // manually replicate a distinction the REAL native key dispatcher
+        // already makes correctly on its own: per this project's own
+        // architecture notes, ESCAPE is hardcoded directly in that dispatcher
+        // for BOTH opening pause (when unpaused) and closing/resuming it (when
+        // paused), AND (per the separate 2026-09-14 cutscene-skip investigation)
+        // that same real dispatcher already branches correctly on clcState for
+        // an active Bink cinematic -- exactly the case g_openPauseMenuForCinematic
+        // existed to hand-replicate. A genuine keyboard ESC press has never
+        // needed any of this special-casing; synthesizing one runs through the
+        // identical, already-correct native path. See SendSyntheticEscX64's own
+        // declaration comment above for the full reasoning.
+        SendSyntheticEscX64();
     }
     g_pauseHeldX64 = pauseHeld;
 }
@@ -2352,44 +2363,33 @@ extern "C" void InjectControllerMenuBackX64()
         g_currentBPressTouchedMenuX64 = true;
     }
 
-    // 2026-09-16, live-reported ("b doesnt unpause still just removesz all
-    // menu elements but the background blur and tint") -- the generic
-    // ESC-forward chain below (ForwardKeyToMenuX64 -> FUN_1402aac50's own
-    // data-driven menu-script executor) is confirmed NOT fully closing the
-    // pause menu: it clears the menu's own UI widgets but not whatever
-    // separately clears the blur/tint post-process layer and actually
-    // resumes simulation -- still under investigation
-    // (g_cursorDrawSuppressReturnAddrX64's sibling diagnostic,
-    // [x64-esc-diag]). Direct user insight: "we shouldnt even have this
-    // issue as we successfully pause/unpause to unstick rn automatically" --
-    // AutoUnstickPauseCycleX64 (and PollPauseToggleX64's own close path,
-    // fixed earlier the same day) already prove `g_pauseToggle` is a fully
-    // reliable, complete open/close call (clears blur/tint, resumes
-    // simulation, everything) -- it's the SAME mechanism, just never
-    // reused for B's own close path. When we KNOW the pause menu
-    // specifically is what's open (g_pauseMenuOpenedByUsX64, set by our own
-    // Start-press logic -- PollPauseToggleX64 above), B's rising edge now
-    // calls g_pauseToggle directly instead of the still-broken generic
-    // ESC-forward, and keeps that flag in sync (closing the exact "known
-    // limitation" gap PollPauseToggleX64's own 2026-09-16 fix commit
-    // flagged: "if the pause menu is closed via some OTHER path [e.g. B],
-    // g_pauseMenuOpenedByUsX64 would go stale"). Bypasses
-    // ForwardKeyToMenuX64 entirely for this specific press -- calling both
-    // would risk a double action (one real close plus one partial one).
-    if (held && !g_menuBackHeldX64 && g_pauseMenuOpenedByUsX64 && g_pauseToggle) {
-        g_pauseToggle(0);
-        g_pauseMenuOpenedByUsX64 = false;
-        g_menuBackHeldX64 = held;
-        return;
-    }
-
-    // Custom Options overlay (mirrors x86's own guard): while it's open, B closes
-    // IT, not the real native menu underneath -- PollCustomOptionsMenuX64's own
-    // backEdge handles that close. Without this guard the same B press would also
-    // forward a real ESC here, backing out of both the overlay AND the real menu
-    // in one press.
+    // SIMPLIFIED 2026-09-16 (direct instruction: "just synthesise esc key for
+    // pause/unpausing as it is clearly more work than its worth"). This used
+    // to split into two paths: a flag-gated g_pauseToggle shortcut specifically
+    // for closing the pause menu (g_pauseMenuOpenedByUsX64, set by
+    // PollPauseToggleX64), and a generic ForwardKeyToMenuX64 native-function-
+    // call for every other menu -- the former caused a real, live-gameplay-
+    // breaking regression ("pressing b pauses the game" during active play)
+    // once that flag went stale, and the latter was already confirmed NOT to
+    // fully close the pause menu (cleared UI widgets but left blur/tint stuck
+    // and simulation paused). Both problems share one root cause: neither is
+    // the real native ESC key path a keyboard player's own Escape press
+    // already uses, which this project's own architecture notes confirm
+    // handles open/close/back correctly and uniformly for every menu type
+    // (main menu, pause menu, buy station, options) with no flag needed on
+    // this project's side -- same reasoning as PollPauseToggleX64's own
+    // SIMPLIFIED comment above. B now just synthesizes that same real key
+    // (SendSyntheticEscX64, declared near SendSyntheticF5X64 above) whenever a
+    // native menu is genuinely active, dropping both the flag and the
+    // separate native-call path entirely.
+    //
+    // Custom Options overlay (mirrors x86's own guard): while it's open, B
+    // closes IT, not the real native menu underneath -- PollCustomOptionsMenuX64's
+    // own backEdge handles that close. Without this guard the same B press
+    // would also forward a real ESC here, backing out of both the overlay AND
+    // the real menu in one press.
     if (menuActiveNow && held != g_menuBackHeldX64 && !CustomOptionsMenu_IsOpen()) {
-        ForwardKeyToMenuX64(kKeyEscapeX64, held ? 1 : 0);
+        SendSyntheticEscX64();
     }
     g_menuBackHeldX64 = held;
 }
