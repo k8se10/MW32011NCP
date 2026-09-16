@@ -808,6 +808,16 @@ item below.
    x86's own established `HudFontIdLogging` technique. Default off in the
    shipped config template; turned on in this session's own live config
    so the next play session captures it automatically.
+9. **`tools/iw5oat` (dev-only, never shipped): fixed a real crash-causing
+   bug in `AssetInfoCollector` — two dependency-tracking functions were
+   missing the same null-name guard `AssetLoader` already has, causing an
+   implicit `std::string(nullptr)` construction that crashes inside
+   `strlen`.** Found via a new, safe self-dump technique (a temporary
+   in-process `MiniDumpWriteDump` handler, since live x64dbg attach is
+   currently confirmed unsafe on this machine) rather than a live
+   debugger. See `re_notes/x64_migration/fastfile_format_research.md`
+   SS5.46 for the full trail — a second, different crash was found one
+   layer deeper and remains open.
 
 ### Investigated, Not Yet Resolved
 1. ~~**Fire and/or ADS fails — first live playtest of the x64 build,

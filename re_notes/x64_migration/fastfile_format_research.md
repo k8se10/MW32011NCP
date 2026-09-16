@@ -3775,3 +3775,64 @@ against the same zone -- per this project's own standing "Fresh Perspective" pri
 real evidence the SAME angle (degrading the resolution itself) needs a genuinely different
 technique (finding the actual downstream fault) before a third attempt, not a reason to stop
 investigating the parser entirely.
+
+### SS5.46 (2026-09-16, later still) — real bug found and fixed via self-dump crash analysis: AssetInfoCollector missing the same null-name guard AssetLoader already has; loadSnd alias-miss fallback still not safe to degrade (a second, different crash found one layer deeper)
+
+Direct instruction to keep pushing on the fastfile parser after SS5.45's second reverted
+attempt. x64dbg's own live-resume was independently confirmed unsafe again this round --
+crashed x64dbg itself even under a fully manual, user-driven GUI F9 (not just the MCP-triggered
+resume), ruling out "buggy MCP bridge" as the explanation and broadening the standing memory
+finding to treat ANY x64dbg resume as unsafe on this machine until further notice (see the
+project's own persistent memory, `feedback_no_autonomous_live_debugger`).
+
+**New safe technique used instead**: a temporary in-process crash handler
+(`AddVectoredExceptionHandler`, `main.cpp`) that calls `MiniDumpWriteDump` on a genuine
+`EXCEPTION_ACCESS_VIOLATION` (filtered so it doesn't fire on this codebase's own ordinary C++
+exceptions) -- the same safe self-dump pattern this project's proxy DLL already uses
+(`TriggerSelfMemoryDumpX64`), adapted for a standalone CLI tool with no injected DLL. No live
+debugger attach at all; `Unlinker.exe` just runs normally and writes its own `.dmp` on crash,
+analyzed afterward via the already-approved `mcp-windbg` static-read carve-out.
+
+**Reproduced SS5.45's crash and got a real, symbolized(-enough) answer**: `ucrtbase!strlen`
+reading address `0x0`, called from deep inside the asset-marking call chain. Root cause:
+`AssetInfoCollector::Visit_Dependency` and `Visit_IndirectAssetRef` (`AssetInfoCollector.cpp`)
+call `m_zone.m_pools.GetAsset(assetType, assetName)` / construct `IndirectAssetReference(type,
+assetName)` directly from a `const char* assetName` with **no null check** -- both take
+`const std::string&`/`std::string` by value, so a null `assetName` implicitly constructs
+`std::string(nullptr)`, undefined behavior that crashes inside `strlen` on this MSVC STL.
+`AssetLoader::GetAssetInfo`/`LinkAsset` already got this exact guard on 2026-09-15 (their own
+comment: "a null name is genuine, legitimate native data for a 'reusable'-pointer asset") --
+`AssetInfoCollector`'s two visitor functions were simply missed at the time, since they were
+never previously reachable with a null name until this session's own graceful-degradation work
+made unresolved-but-null references common enough to hit them. Fixed with the identical guard
+pattern (return `std::nullopt`/early-return on `assetName == nullptr`, matching the existing
+"null is a valid absent-reference outcome" convention this whole file already uses).
+
+**Verified real and independently valuable**: this fix stands on its own regardless of the
+loadSnd alias-miss investigation's own outcome -- it closes a genuine latent bug (unguarded
+implicit `std::string(nullptr)` construction) that any future graceful-degradation work could
+hit again. Build-verified, and confirmed to introduce zero regression against `common_survival.ff`
+and `code_post_gfx.ff` (both still hit their own already-tracked, unrelated open issues,
+identical warning/error counts to before this fix).
+
+**With this fix applied AND SS5.45's `break` change reinstated for testing**: progressed
+substantially further (offset climbed to ~16.87M in `XFILE_BLOCK_VIRTUAL`, 14,564 warnings
+handled gracefully vs. ~30 before) before hitting a **second, different crash** -- also inside
+`ucrtbase!strlen`, but this time reading a clearly-invalid non-null value
+(`0x4133280ebfc5c9de`/`0xbeccd7f1403a3622` across multiple registers -- non-zero high bits, not
+a valid heap-pointer shape on this build) rather than a null pointer. This is NOT the same bug
+class as the one just fixed (a genuine absent/null reference) -- it looks like a struct-shape or
+field-misalignment issue (a non-pointer value, e.g. a hash or float, being read as if it were a
+`const char*`), the same general shape as the original `SpeakerMap` bug (SS5.40), just for a
+different, not-yet-identified struct reached only this much deeper into the zone.
+
+**Reverted the `break` change again** (back to the hard throw) -- the loadSnd alias-miss
+fallback is STILL not safe to degrade on its own merits; fixing the `AssetInfoCollector` bug
+only got one layer further before hitting a genuinely different, unrelated crash. Kept the real
+`AssetInfoCollector` fix (verified safe and valuable independent of the larger investigation).
+
+**Real next step, well-scoped**: identify what struct/field is being misread as a `const char*`
+in this second crash -- likely another wrong-struct-shape case reachable only after the
+`AssetInfoCollector` fix's own extra progress, following the exact same native-decompile
+methodology that resolved `SpeakerMap` (SS5.40). The self-dump + offline-read technique proven
+this round is the safe, repeatable way to keep chasing this without live debugger risk.
