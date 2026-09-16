@@ -9086,3 +9086,126 @@ at all. GSC-first extraction remains blocked (`common_survival.ff` still
 on the unresolved `XFILE_BLOCK_SCRIPT` crash list).
 
 No source changes this round -- pure investigation.
+
+### INVESTIGATED, 2026-09-16 (later same day) -- the ready-up string's "fixed address" is a shared transient-text scratch buffer used by multiple HUD subsystems, not a dedicated hint buffer; the direct "find the writer via this address" angle is exhausted, but real follow-up leads remain (see the two rounds below)
+
+**Status: Open. The specific technique of finding a writer by searching for
+references to this exact address is exhausted (see reasoning below) --
+that does not mean the broader investigation is closed, just that this
+one technique won't yield more. Real architectural understanding gained;
+two concrete follow-up leads opened in the rounds immediately below
+(tracing `readStats`'s real handler, and three forked passes examining
+code/functions near what's visible in all 8 captured dumps).**
+
+**Correction, same round**: the scratch-buffer CONTENT itself (`$500`,
+`+$114`, `52`, `63%`) is confirmed live, real-time in-game HUD data --
+what the player actually had/saw on screen at the moment of capture --
+not persistent save-file/profile data. That distinction matters for the
+`readStats` round below: `readStats` is a separate subsystem discovered
+via an unrelated thread this same round, not confirmed to be the writer
+of this buffer, and should not be assumed to explain it.
+
+Direct follow-up, using SEVEN more F9 self-dump captures across different
+real game states (loading screens, between-round transitions, normal
+gameplay, ready-up on screen, buy-station on screen) -- the same address
+that held the ready-up template in the first capture (`0x1425fa110`,
+relative to `iw5sp.exe`'s own fixed `0x140000000` base, confirmed
+unchanged across every capture -- this module does not get ASLR-rebased
+between launches) was checked in each of the 6 new dumps. Real content
+found, one per dump:
+
+| Capture | Content at `0x1425fa110` |
+|---|---|
+| Ready-up on screen | `Press ^3[{skip}]^7 to ready up: &&1` |
+| Loading screen (x2) | `Bomb Squads, Attack Dogs, Choppers & Juggernauts.` (a loading-tip line) |
+| (unlabeled) | `$ 500` |
+| (unlabeled) | `+$114` |
+| (unlabeled) | `52` |
+| (unlabeled) | `63%` |
+
+**Conclusion: this is not a dedicated ready-up buffer at all -- it's a
+universal, generic transient-text scratch area, reused promiscuously by
+completely unrelated HUD/UI subsystems** (loading-tip rotation, money-
+earned popups, percentage readouts, plain counters, AND ready-up, all
+confirmed sharing the identical address across different captures).
+Confirmed why via decompile: `FUN_1402ca370`/`FUN_14024a3d0` (the
+functions found "referencing" this address in the prior round, then
+dismissed as an unrelated false lead) are real, but the dismissal itself
+needs one correction -- they're not unrelated thread-topology code by
+coincidence, they're the actual REGISTRATION mechanism for exactly this
+kind of generic per-thread scratch buffer: `FUN_14024a3d0(type, ptr)`
+stores `ptr` into `TLS[type]` for the calling thread, and `0x142725ce0`/
+`0x1425fa110`-range addresses are the STATIC BACKING MEMORY for those
+slots. Any code anywhere in the binary needing to format a short transient
+string can request its thread's slot via TLS and write into this shared
+backing memory -- explaining precisely why every static reference-finding
+technique this session found nothing: there is no fixed instruction
+anywhere that references `0x1425fa110` directly, because callers reach it
+through TWO levels of indirection (TLS index -> stored pointer -> write),
+and the actual writer varies by whatever's currently formatting text on
+that thread. `$ 500`'s specific writer was checked as one promising
+candidate (`FUN_1400506a0`, a previously-unidentified case in
+`FUN_140052220`'s switch) and ruled out -- it uses its own local stack
+buffers, not this shared one, so even the "$500 reaches the draw hook, so
+tracing its writer might reveal the mechanism" angle doesn't shortcut
+anything.
+
+**This closes the "find the writer via this buffer's address" angle
+entirely** -- not for lack of effort, but because the buffer's real
+identity (generic per-thread scratch space) means there is structurally
+no single writer to find; disambiguating which of the (likely dozens)
+of real call sites wrote ready-up's specific text into it would require
+either GSC-level tracing (blocked, `common_survival.ff` unresolved) or
+live execution tracing (ruled out, resume-crashes). The two real
+template strings themselves remain the durable, banked progress from this
+whole investigation arc.
+
+No source changes this round.
+
+### GROUNDWORK / NEW LEAD, 2026-09-16 (later same day) -- real native `readStats`/`uploadStats` command system found (`LiveStorage_Init`); genuinely new infrastructure, not yet traced far enough to know if it's relevant to the previously-blocked scoreboard feature
+
+**Status: Open, promising, real handler not yet traced. Found via an
+unrelated thread (tracing what calls the TLS-scratch-buffer registration
+function from `WinMain`), not connected to the ready-up investigation
+above -- a genuine tangent, kept separate rather than conflated.**
+
+`FUN_1402ef310` (confirmed to be the real `WinMain` -- registers the
+`"IW5"` window class, runs the real message loop) calls
+`FUN_14022f680(0, "readStats\n")` during startup -- a real, confirmed
+`Cbuf_AddText`-equivalent (locks via `FUN_1402ccf50(0x1f)`/
+`FUN_1402ccfc0(0x1f)`, appends to a command buffer for later execution,
+structurally identical to this project's own already-documented x86
+`Cbuf_AddText`/`Cbuf_Execute`/`Cmd_ExecuteString` triplet). Tracing where
+`"readStats"` is registered as a command (`RawStringScan.java`, one real
+reference) led to `FUN_140241f40` -- confirmed to be the real
+`LiveStorage_Init`: it registers a whole family of stats/profile commands
+in one place -- `setCustomClasses`, `setPrivateMatchCustomClasses`,
+`defaultStatsInit`, `statsdownloadcancel`, `challengeFilterCacheDirty`,
+`uploadStats`, and `readStats` itself (handler `&LAB_140243190`, not yet
+traced).
+
+**Why this might matter, per direct user connection**: `re_notes/
+known_issues.md` issue #89 (this project's own x86-era CLAUDE.md
+"Plugin API" section) closed a planned Survival scoreboard feature for
+the main mod specifically because the real per-player stats it needed
+(kills, headshots, accuracy) were found to live ENTIRELY in GSC-VM
+script-local state (`self._id_18D3[...]`), not a dvar or native struct
+field -- reading it would need the exact class of live-gameplay-memory
+access this project's policy reserves for opt-in plugins only, never the
+main mod. If `readStats`'s real handler turns out to expose stats through
+a NATIVE, command/file-backed path instead of live GSC-VM reads, that
+would be a genuinely different risk category, potentially reopening this
+specific feature for the main mod without touching the standing policy at
+all.
+
+**Explicitly NOT yet established, guard against overclaiming**: whether
+`readStats` surfaces LIVE, in-match, per-player combat stats (what the
+scoreboard actually needs) or only PERSISTENT PROFILE stats (career
+totals/unlocks, loaded once at startup/between matches) -- the sibling
+commands it's registered alongside (`setCustomClasses`,
+`challengeFilterCacheDirty`) lean toward profile/loadout data, not live
+match state, but this is not confirmed either way. The real handler
+(`&LAB_140243190`) has not been decompiled yet. Do not treat this as a
+confirmed unblocker until that's traced.
+
+No source changes this round -- pure investigation.
