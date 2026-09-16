@@ -683,7 +683,11 @@ item below.
     ("seamless") — the entire "needs an initial input at launch" bug
     family (stuck kbuttons, camera jump, and the underlying missing input
     event) is resolved, replacing the 2026-09-04 pause/unpause automation
-    workaround for good.** See `re_notes/known_issues_x64.md`.
+    workaround for good.** Real bonus: a separate, long-standing issue on
+    Campaign/Survival mission **restart** (not just first level load) is
+    also fixed by this same change, with zero extra code — the fix's own
+    trigger detects any transition into live gameplay, not specifically
+    "process just launched." See `re_notes/known_issues_x64.md`.
 
 ### Documentation
 1. **`re_notes/known_issues_x64.md` established** as the dedicated x64 issue
