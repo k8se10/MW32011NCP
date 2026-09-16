@@ -9696,3 +9696,51 @@ decoded sound-prefix cache/fast-seek, stays deferred on the separate
 `mw3_zlibng_v27.dll` dependency decision (this project doesn't currently
 vendor or require zlib-ng) -- a real, distinct scope question, not
 forgotten.
+
+### UPDATE, 2026-09-16 (later still, "keep pushing") — a genuinely different angle tried: raw zlib decompression + string scan, bypassing the broken Unlinker parser entirely; no hit, but real negative evidence recorded
+
+Sidestepped the still-open fastfile block-loading bug (§5.29-5.36,
+`fastfile_format_research.md`) rather than re-attacking it directly: since
+`fastfile_format_research.md` §1 already confirmed the OUTER container is
+just a fixed 21-byte header followed by a plain zlib deflate stream (`78 DA`
+at offset 0x15, unchanged from pre-recompile), decompression itself doesn't
+need Unlinker's own asset-graph/pointer-resolution machinery at all -- that's
+only needed to INTERPRET the decompressed bytes as structured assets, not to
+get the raw bytes in the first place. Used .NET's `DeflateStream` (PowerShell,
+skip the 2-byte zlib header, decompress the rest, ignore the trailing
+Adler32) to get clean raw decompressed bytes for four zones with zero
+crashes, zero dependency on the still-broken parser:
+
+- `common_survival.ff` (67.6MB compressed -> 122MB raw)
+- `common_specialops.ff` (real candidate -- Survival is built on the
+  Spec-Ops/co-op `_specialops` infrastructure per the original x86
+  investigation's own "generic `_specialops.gsc` wait system" finding)
+- `code_post_gfx.ff` (base engine/shared code zone)
+- `so_survival_mp_alpha.ff` (one per-map Survival zone)
+
+Raw ASCII string scan across all four for `ready`/`coopready`/`.gsc`/
+`specialops`/`notify`/`waittill`: **no hit for any ready-up-specific
+identifier in any of them.** `.gsc` as a literal filename extension:
+zero hits in ANY of the four zones -- meaning compiled `ScriptFile` assets
+in this format don't store their own filename as readable text the way a
+`.menu`/material name does (consistent with the already-known "GSC dispatches
+by compile-time numeric ID, not a string table" finding). `notify`/
+`specialops`/`ready` DO appear, but every real hit traced back to unrelated
+menu/UI asset text (`eog_notify_*` end-of-game popup trigger names,
+`lowready` a weapon-stance animation name) -- not GSC script content.
+
+**Real conclusion, not just a null result**: this confirms the compiled GSC
+bytecode's own function/variable identifiers are genuinely not present as
+plain readable text anywhere in these zones' raw decompressed bytes -- a
+raw string scan cannot find this content no matter which zone it's tried
+against, GSC's own compiled form doesn't work that way. The `coopready`
+identifier from the original x86 investigation was sourced from GSC
+tooling/community documentation of the method-name table format, not found
+live in this binary's own strings either time. **This rules out "raw string
+scan across zones" as a viable technique for this specific goal** -- the
+only way to see GSC's own real identifiers is to actually parse the
+compiled bytecode structure (opcode stream + its own separate interned-
+string/import table), which requires getting past the still-open
+Unlinker parser bug, or building a minimal from-scratch GSC bytecode reader
+that only needs the ScriptFile asset's own raw bytes (not the full asset
+graph) -- neither attempted this pass.
