@@ -5102,8 +5102,33 @@ void Hook_DrawTextX64(
             // more defensive with zero cost to the real corner-hint case, which is
             // always within the row tolerance by definition.
             const char* backTmpl = g_getLocalizedStringX64("PLATFORM_BACK_SHORTCUT");
-            bool isBackCornerHint = looksLikeCornerHintRowX64 && backTmpl &&
-                LooksSaneX64(reinterpret_cast<uintptr_t>(backTmpl)) && strcmp(text, backTmpl) == 0;
+            bool backContentMatches = backTmpl && LooksSaneX64(reinterpret_cast<uintptr_t>(backTmpl)) &&
+                strcmp(text, backTmpl) == 0;
+            // 2026-09-16, live-reported ("the back is still native unsuppressed
+            // (flickering) in pause") -- the looksLikeCornerHintRowX64 gate added
+            // for this exact hint may be REJECTING the real pause-menu corner-hint
+            // match (kStandardCornerHintYX64/995.0f was calibrated against a
+            // DIFFERENT menu context, never independently verified for pause
+            // specifically) rather than only rejecting a genuine false-positive
+            // collision elsewhere. Rather than guess a second time, this logs the
+            // real content-match/row-check outcome the moment it happens (rate-
+            // limited, not spamming every frame) so the next repro gives concrete
+            // numbers instead of more theory.
+            if (backContentMatches) {
+                static int s_backDiagLogCount = 0;
+                if (s_backDiagLogCount < 10) {
+                    ++s_backDiagLogCount;
+                    char buf[240];
+                    sprintf_s(buf, "[x64-back-diag] Back text content matched (#%d/10 logged) -- "
+                        "designRowY=%.2f kStandardCornerHintYX64=%.2f tolerance=%.2f "
+                        "looksLikeCornerHintRowX64=%s -- %s",
+                        s_backDiagLogCount, designRowY, kStandardCornerHintYX64, kCornerHintRowTolerancePxX64,
+                        looksLikeCornerHintRowX64 ? "true" : "false",
+                        looksLikeCornerHintRowX64 ? "will substitute" : "REJECTED, native text will show unsuppressed");
+                    LogFromController(buf);
+                }
+            }
+            bool isBackCornerHint = looksLikeCornerHintRowX64 && backContentMatches;
             const char* friendsTmpl = g_getLocalizedStringX64("PLATFORM_FRIENDS_SHORTCUT");
             bool isFriendsCornerHint = looksLikeCornerHintRowX64 && friendsTmpl &&
                 LooksSaneX64(reinterpret_cast<uintptr_t>(friendsTmpl)) && strcmp(text, friendsTmpl) == 0;
