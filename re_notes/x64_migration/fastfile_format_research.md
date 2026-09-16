@@ -3222,3 +3222,63 @@ in this file has made without yet landing the actual fix.
 diagnostic rounds) -- confirmed via `git status` showing a clean tracked
 tree. `proxy_d3d9`'s own build/deployment is completely unaffected by
 this investigation (separate project, separate toolchain).
+
+## 5.38. UPDATE, 2026-09-16 (direct instruction, "keep going") — a real, shipped hardening fix (silent short-read detection); the leading remaining candidate (`sizeof(snd_alias_t)` correctness) computed by hand, no discrepancy found; root cause still open
+
+**Status: Open. One real, permanent code fix landed (not the root cause,
+but a genuine improvement); the short-read hypothesis eliminated with
+hard evidence; the struct-size hypothesis checked by hand, inconclusive.**
+
+**Shipped: `ShortReadException` + `LoadChecked()`, `tools/iw5oat` commit
+`d4ec3c92`.** `ILoadingStream::Load(dst, size)` returns the real number of
+bytes actually read (can legitimately be less on genuine end-of-stream),
+but all six call sites in `ZoneInputStream.cpp` silently discarded that
+return value -- meaning ANY short read anywhere in the whole processor/
+decompression chain would leave a destination buffer's un-filled tail as
+stale leftover bytes from a PREVIOUS read, with zero error at the actual
+point of failure. Added a small `LoadChecked()` helper wrapping every
+call site, throwing a new, precisely-located `ShortReadException`
+(context/requested/actual) instead of silently proceeding. **Tested
+directly: rebuilt, re-ran against `common_survival.ff` -- no
+`ShortReadException` fires**, definitively ruling OUT a short read as
+THIS bug's cause (every read genuinely receives its full requested byte
+count). Kept and shipped anyway as a real, permanent hardening --
+converts any FUTURE silent corruption into a loud, immediately-actionable
+error, independent of whether it caught this specific bug. **Zero
+regression confirmed**: `sp_intro.ff`/`sp_prague.ff` (the two zones
+already known to extract cleanly) still load with 0 warnings, 0 errors
+after this change.
+
+**Struct-size hypothesis checked by hand** (the remaining candidate once
+per-field FOLLOWING decisions and short reads were both ruled out this
+session): `LoadArray_snd_alias_t`'s own bulk read size,
+`sizeof(snd_alias_t) * count`, is exactly the kind of value that -- if
+wrong -- would silently shift every byte read afterward by a fixed
+per-element delta, matching the observed symptom shape. Manually computed
+`sizeof(snd_alias_t)` from `IW5_Assets.h`'s own current field list and
+real x64 alignment rules (6 leading 8-byte pointers, 10 4-byte fields, one
+1-byte `unsigned char` `masterPriority` forcing 3 bytes of padding before
+the next 4-byte float run, then an 8-byte pointer forcing 4 bytes of
+padding, 3 more floats, then a final 8-byte pointer forcing another 4
+bytes of padding) = **152 bytes**. The field list itself (28 members,
+types, and order) matches the well-known, widely-documented IW-engine
+`snd_alias_t` shape used across multiple CoD titles -- nothing jumped out
+as an obviously wrong/missing/extra field by inspection alone. **Not
+independently confirmed against real native decompile evidence** (the
+technique that resolved the equivalent open question for `Material`/
+`MaterialPixelShader` in SS5.9) -- this round's own hand-computed 152 is a
+real, checkable number for whoever continues with that technique next,
+not a verified-correct one.
+
+**Net position after this round**: every reasonably-accessible
+non-decompile technique has now been tried and has come back clean for
+`common_survival.ff` specifically -- per-field sentinel/FOLLOWING
+decisions (SS5.37), short reads (this round), `PushBlock`/`PopBlock`
+balance (SS5.37), and a by-hand struct-size sanity check (this round).
+The real next step, if this investigation continues, is the one
+technique not yet applied THIS round: a native x64 decompile of
+`iw5sp.exe`'s own real `snd_alias_t`-fill function (reachable via the
+already-mapped master asset dispatch switch, `FUN_14009bce0`, same
+technique SS5.9/SS5.23 already proved out for other asset types) to get
+its real, ground-truth per-entry read size directly, rather than trusting
+a by-hand computation from this fork's own struct declaration.
