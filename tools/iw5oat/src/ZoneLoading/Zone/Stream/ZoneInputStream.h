@@ -2,6 +2,7 @@
 
 #include "Loading/Exception/InvalidLookupPositionException.h"
 #include "Loading/ILoadingStream.h"
+#include "Utils/Logging/Log.h"
 #include "Utils/MemoryManager.h"
 #include "Utils/ProgressCallback.h"
 #include "Zone/Stream/IZoneStream.h"
@@ -86,7 +87,25 @@ public:
     [[nodiscard]] T* Expect() const
     {
         if (!m_valid)
-            throw InvalidLookupPositionException(m_block, m_offset);
+        {
+            // MW32011NCP / iw5oat, 2026-09-16: was an unconditional throw, aborting
+            // the whole zone load on any unresolved lookup -- see
+            // re_notes/x64_migration/fastfile_format_research.md SS5.41 (parent
+            // repo) for the full rationale. Every real caller of ConvertOffsetToPointerLookup
+            // (this function's own real-world usage, confirmed by direct inspection
+            // of several generated *_load_db.cpp call sites) already gates its own
+            // dereference behind `if (field) { ... }`, matching the exact
+            // "0/null is a normal, valid, absent-reference outcome" convention this
+            // whole format already uses everywhere else -- the same shape
+            // ConvertOffsetToAliasLookup's own already-proven-safe (full 41-zone
+            // sweep, zero new crashes) graceful degradation relies on. Warn and
+            // return null instead of throwing, rather than aborting the entire
+            // remaining zone over one genuine forward reference.
+            con::warn("Zone tried to lookup at block {}, offset {} that was not recorded -- "
+                      "leaving the reference null and continuing (MaybePointerFromLookup::Expect).",
+                      static_cast<int>(m_block), m_offset);
+            return nullptr;
+        }
 
         return static_cast<T*>(m_ptr);
     }
