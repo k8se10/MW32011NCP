@@ -5,6 +5,7 @@
 #include "Loading/Exception/InvalidOffsetBlockException.h"
 #include "Loading/Exception/InvalidOffsetBlockOffsetException.h"
 #include "Loading/Exception/OutOfBlockBoundsException.h"
+#include "Loading/Exception/ShortReadException.h"
 #include "Utils/Alignment.h"
 #include "Utils/Logging/Log.h"
 
@@ -182,7 +183,7 @@ namespace
 
         void LoadDataRaw(void* dst, const size_t size) override
         {
-            m_stream.Load(dst, size);
+            LoadChecked(dst, size, "raw data");
         }
 
         void LoadDataInBlock(void* dst, const size_t size) override
@@ -205,7 +206,7 @@ namespace
             }
             else
             {
-                m_stream.Load(dst, size);
+                LoadChecked(dst, size, "raw data (no block pushed)");
             }
         }
 
@@ -231,7 +232,7 @@ namespace
                 if (offset >= block->m_buffer_size)
                     throw BlockOverflowException(block);
 
-                m_stream.Load(&byte, 1);
+                LoadChecked(&byte, 1, block->m_name + " (null-terminated string)");
                 block->m_buffer[offset++] = byte;
             } while (byte != 0);
 
@@ -254,7 +255,7 @@ namespace
             }
 
             m_fill_buffer.resize(size);
-            m_stream.Load(m_fill_buffer.data(), size);
+            LoadChecked(m_fill_buffer.data(), size, "fill buffer (no block pushed)");
             return ZoneStreamFillReadAccessor(m_fill_buffer.data(), size, m_pointer_byte_count, 0);
         }
 
@@ -274,7 +275,7 @@ namespace
             }
 
             m_fill_buffer.resize(appendOffset + appendSize);
-            m_stream.Load(m_fill_buffer.data() + appendOffset, appendSize);
+            LoadChecked(m_fill_buffer.data() + appendOffset, appendSize, "fill buffer append (no block pushed)");
             return ZoneStreamFillReadAccessor(m_fill_buffer.data(), m_last_fill_size, m_pointer_byte_count, 0);
         }
 
@@ -693,13 +694,27 @@ namespace
 #endif
 
     private:
+        // MW32011NCP / iw5oat, 2026-09-16: ILoadingStream::Load returns the
+        // ACTUAL byte count read, which every call site in this file used to
+        // silently discard -- see ShortReadException.h's own header comment
+        // for the full rationale (fastfile_format_research.md SS5.37, parent
+        // repo). `context` should describe what was being read (a block
+        // name, "fill buffer", "null-terminated string byte", etc.) so a
+        // thrown exception is immediately actionable, not just "somewhere".
+        void LoadChecked(void* dst, const size_t size, const std::string& context)
+        {
+            const size_t actual = m_stream.Load(dst, size);
+            if (actual != size)
+                throw ShortReadException(context, size, actual);
+        }
+
         void LoadDataFromBlock(const XBlock& block, void* dst, const size_t size)
         {
             switch (block.m_type)
             {
             case XBlockType::BLOCK_TYPE_TEMP:
             case XBlockType::BLOCK_TYPE_NORMAL:
-                m_stream.Load(dst, size);
+                LoadChecked(dst, size, block.m_name);
                 break;
 
             case XBlockType::BLOCK_TYPE_RUNTIME:
