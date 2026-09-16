@@ -39,7 +39,7 @@ WEAK symbol<unsigned int(int localId, const char* pos,
 | `SL_GetString` | Strong candidate (`FUN_140255e60`), corroborated further in round 2 (a case-insensitive wrapper around it is exactly the shape a field-name lookup needs) — still not independently confirmed as the fully generic path. |
 | `VM_Notify` | **Found, DEFINITIVE confidence** (round 3) — `FUN_140261e10`, found via the real `notify` opcode's own handler. See below. |
 | `VM_Execute` | **Found, DEFINITIVE confidence** (round 2, coordinator direct) — `FUN_14025e950`. See below. |
-| `Scr_ExecThreadInternal` | Not found — thread-creation entry point, distinct from the interpreter loop itself, not yet attempted. |
+| `Scr_ExecThreadInternal` | **Found, high confidence** (round 4) — `FUN_140256bd0`/`FUN_140256890`. See below. |
 
 ## `Scr_LoadScript` — found, high confidence (round 2)
 
@@ -250,8 +250,57 @@ again) on a SPECIFIC opcode case inside this switch would show exactly
 which script is executing that instruction, a far more surgical
 diagnostic than anything tried so far this session.
 
-**`Scr_ExecThreadInternal` (thread CREATION, separate from the interpreter
-loop itself) remains unfound** — not yet attempted as its own target.
+## `Scr_ExecThreadInternal` — FOUND, high confidence (round 4)
+
+**Same winning technique as `VM_Notify`**: `gsc-tool`'s real opcode table
+(`iw5_pc_code.cpp`) confirms the "call on a new thread" family are their
+own distinct opcodes, not a flag on the plain call opcodes:
+
+```cpp
+{ 0x24, opcode::OP_ScriptLocalThreadCall },
+{ 0x25, opcode::OP_ScriptLocalChildThreadCall },
+{ 0x26, opcode::OP_ScriptLocalMethodThreadCall },
+{ 0x27, opcode::OP_ScriptLocalMethodChildThreadCall },
+{ 0x2B, opcode::OP_ScriptFarThreadCall },
+{ 0x2C, opcode::OP_ScriptFarChildThreadCall },
+{ 0x2D, opcode::OP_ScriptFarMethodThreadCall },
+{ 0x2E, opcode::OP_ScriptFarMethodChildThreadCall },
+```
+
+`case 0x2b` (`OP_ScriptFarThreadCall`) in the confirmed interpreter
+(`FUN_14025e950`) does exactly what a thread-spawning call should:
+checks the live concurrent-thread count against a real limit
+(`DAT_14246a330 < 0x1f`, i.e. 31), resolves the function handle
+(`FUN_140257880`), then calls one of two functions depending on whether
+that limit is close:
+
+- `FUN_140256bd0(handle)` — the normal path. Allocates a new thread
+  control block (`FUN_140256c30()`), tags it with a real type value
+  (`0xf`/15), zeroes its state, and stores the resolved function handle
+  into it.
+- `FUN_140256890(handle, param_2)` — the near-limit path. Does the exact
+  same allocation/initialization, but FIRST walks a real cleanup pass
+  over already-finished/expired threads (freeing their slots) before
+  creating the new one — the natural, sensible behavior for "we're near
+  the concurrent-thread cap, reclaim dead threads before spawning
+  another."
+
+**`FUN_140256bd0`/`FUN_140256890` are `Scr_ExecThreadInternal`'s real x64
+equivalent** — genuinely creating and initializing a new script thread
+running a given function handle, matching the real published signature's
+core job (`Scr_ExecThreadInternal(int handle, unsigned int objId,
+unsigned int paramcount)`) even though only the handle argument is
+visible in the `-noanalysis` decompile (the same custom-register-passing-
+convention gap affecting every other function in this VM cluster).
+
+**All five core GSC-VM primitives now have real, evidence-based x64
+addresses**: `Scr_GetFunctionHandle` (`FUN_140255e60` + `FUN_140251fc0`),
+`Scr_LoadScript` (`FUN_140252210`), `SL_GetString` (`FUN_140255e60`,
+strong candidate), `VM_Execute` (`FUN_14025e950`, definitive), `VM_Notify`
+(`FUN_140261e10`, definitive), `Scr_ExecThreadInternal`
+(`FUN_140256bd0`/`FUN_140256890`, high confidence). This is a real,
+usable foundation for GSC-VM interaction going forward — the whole
+reason this investigation thread started.
 
 ## Cross-reference
 
