@@ -542,6 +542,32 @@ item below.
     behavior completely unchanged. **Confirmed live** — direct user
     confirmation ("fixed") after a follow-up MP session with this fix
     deployed.
+20. **Weapon name in the interact/pickup hint now correctly shows as part
+    of the substituted overlay, live-confirmed fixed.** Root-caused via a
+    live diagnostic and direct user correction: the weapon name (e.g.
+    "Model 1887") was never part of the raw text this project's own
+    substitution intercepts — it draws through a completely separate
+    native call. x86 has a dedicated, already-shipped mechanism for
+    exactly this (issue #48/#49: remember the suppressed hint's font +
+    row, treat the next matching call as its live continuation, append it
+    to the same overlay) that was simply never ported to x64. Ported
+    directly — **confirmed live** by the user immediately after deploy.
+21. **Back(B)/Friends/GameSummary menu corner-hint position check added,**
+    matching the same real precedent already fixed for Quit/Leaderboards
+    (a bare text-content match with no position check can hijack a
+    genuine navigable menu item sharing the same label). Investigated
+    further after direct correction that this did NOT resolve the
+    pause-menu flicker specifically — a live diagnostic was shipped
+    instead of a second guess; root cause still open, see
+    `re_notes/known_issues_x64.md`.
+22. **Native cursor draw was never suppressed on x64 — the game's own
+    default cursor rendered alongside this project's custom cursor
+    overlay.** The 2026-09-13 custom-cursor port only ever resolved WHEN
+    to draw our own cursor, never suppressed the native one. x86 has a
+    real, dedicated fix (hooks the shared quad-draw primitive the native
+    cursor draws through, scoped by exact return address to just that one
+    call site) that was never ported. Ported directly. Build-verified,
+    not yet independently re-confirmed live.
 
 ### Documentation
 1. **`re_notes/known_issues_x64.md` established** as the dedicated x64 issue

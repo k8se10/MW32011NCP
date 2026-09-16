@@ -8381,3 +8381,48 @@ instead of another blind fix.
 
 Shipped: `proxy_d3d9/src/analog_input_hooks_x64.cpp`. Build-verified (x64,
 0 errors, `dumpbin`-confirmed genuine x64 output, deployed).
+
+### FIXED, 2026-09-16 -- native cursor draw was never suppressed on x64, so the game's own default cursor rendered alongside this project's custom cursor overlay
+
+**Status: Resolved, x86 precedent directly ported, not a new design.** Direct
+report: "also the default non custom cursor renders still its not
+suppressed." The x64 custom-cursor-overlay work (2026-09-13) only ever
+resolved a GATE (`TryGetCursorGateX64`, telling `overlay_hud.cpp` WHEN to
+draw our own cursor) -- it never suppressed the game's own native cursor
+draw, so both rendered simultaneously. x86 has a real, dedicated fix for
+exactly this (`Hook_004d48f0`): the native cursor draws through a generic,
+widely-shared quad/texture-draw primitive with 31 real callers -- rather
+than suppressing the whole high-level cursor-draw function (which would
+also skip real gate-check side effects never independently verified),
+x86 hooks the SHARED PRIMITIVE itself, scoped by EXACT RETURN ADDRESS to
+the one specific call site inside the real cursor-draw dispatcher. Every
+other caller of that primitive (menu backgrounds, HUD icons, everything
+else that draws a textured quad) passes through untouched. This entire
+mechanism was simply never ported to x64 -- not broken, genuinely absent,
+same class of gap as the weapon-name-continuation fix earlier the same
+day.
+
+**x64 equivalent, found via fresh decompile + disassembly**: the x64
+cursor-draw dispatcher this file's own "Custom mouse cursor overlay"
+section already identified, `FUN_14029d170` (via `FUN_00478540`'s real x64
+equivalent, structural-shape + struct-offset cross-confirmation, already
+on record), itself calls the shared quad-draw primitive `FUN_14028c2b0`
+exactly once, at its own tail end, right after the identical gate/switch
+logic x86's own dispatcher has. Confirmed via full decompile of both
+functions and live disassembly for the exact call-site address (not the
+decompile's own pseudo-C) -- `CALL 0x14028c2b0 @ 0x14029d60a`, return
+address `0x14029d60f`.
+
+**Fix**: ported `Hook_004d48f0` directly -- a new hook on
+`FUN_14028c2b0` (resolved via a fresh 14-byte anchor signature on
+`FUN_14029d170`'s own entry, independently verified unique across the
+whole binary via `CountByteMatches.java` before shipping, plus a fixed
+offset to the shared primitive's real entry), scoped by exact return
+address to only the cursor's own call site. Suppresses the native draw
+there; every other caller of the shared primitive is completely
+unaffected.
+
+Shipped: `proxy_d3d9/src/analog_input_hooks_x64.cpp` (adds `#include
+<intrin.h>` for `_ReturnAddress()`, the new hook, and its installer).
+Build-verified (x64, 0 errors, `dumpbin`-confirmed genuine x64 output,
+deployed). Not yet independently re-confirmed live.
