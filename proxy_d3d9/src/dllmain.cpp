@@ -555,15 +555,27 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
             // "MW32011NCP Started" toast d3d9_hook.cpp fires slightly later at
             // device-create time, would have silently replaced it).
             //
-            // Message swaps in place, no new code path, once MP gets real partial
-            // functionality -- update ONLY the string literal below when that day
-            // comes (per direct instruction, keep the literal warning emoji out --
-            // this pipeline renders text via GDI DrawTextA against this project's own
-            // embedded non-emoji font, which cannot reliably render a true Unicode
-            // glyph like U+26A0; "[!]" is the reliable equivalent this exact text
-            // path is guaranteed to render):
+            // UPDATED 2026-09-16, direct instruction: the original text ("no
+            // functionality working right now") stopped being accurate once the
+            // security/ component's netcode-fix hooks (Findings 2/3/4) were
+            // confirmed live-installing and firing under iw5mp.exe too (see
+            // CLAUDE.md's 2026-09-15 "real groundwork for Multiplayer"/"two real
+            // MP-specific regressions" entries -- the MH_Initialize() fix
+            // specifically closed the gap where those hooks silently failed to
+            // install here) -- gameplay hooks still aren't installed (this
+            // whole branch), but the security protections genuinely are active,
+            // so the message needs to say so rather than imply nothing runs at
+            // all. Swaps in place again, no new code path, once MP gets real
+            // partial gameplay functionality -- update ONLY the string literal
+            // below when that day comes (per direct instruction, keep the
+            // literal warning emoji out -- this pipeline renders text via GDI
+            // DrawTextA against this project's own embedded non-emoji font,
+            // which cannot reliably render a true Unicode glyph like U+26A0;
+            // "[!]" is the reliable equivalent this exact text path is
+            // guaranteed to render):
             ShowOverlayMessageUntilDismissed(
-                "[!] Multiplayer has no functionality working right now."
+                "[!] Multiplayer has no functionality beyond the netcode "
+                "security protections right now."
                 // FUTURE (once MP has real, partial gameplay support -- swap this
                 // in, delete the line above, nothing else needs to change):
                 // "[!] Multiplayer is in pre-alpha and will contain bugs and issues. "

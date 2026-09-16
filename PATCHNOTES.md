@@ -309,17 +309,23 @@ item below.
     actual DPV/Goalpost playtest. See `re_notes/known_issues.md` issue #30
     and `re_notes/known_issues_x64.md` for the full trail.
 17. **On-screen Multiplayer status warning.** Launching under `iw5mp.exe`
-    now shows a real, must-see on-screen warning ("Multiplayer has no
-    functionality working right now") — through the same notifier system
-    "Controller Connected"/"MW32011NCP Started" already use, but drawn as a
-    dismiss-required, centered warning-yellow modal instead of an ordinary
-    auto-expiring toast, so it can't be missed or silently replaced by a
-    routine startup toast racing it (a real gap fixed the same day: ordinary
-    toasts previously could clobber an active must-see warning outright).
-    The message swaps in place to "Multiplayer is in pre-alpha and will
-    contain bugs and issues. It is not on par with Campaign/Survival." once
-    MP gets real partial gameplay support — no new code path needed, just a
-    one-line text change when that day comes.
+    now shows a real, must-see on-screen warning — through the same
+    notifier system "Controller Connected"/"MW32011NCP Started" already
+    use, but drawn as a dismiss-required, centered warning-yellow modal
+    instead of an ordinary auto-expiring toast, so it can't be missed or
+    silently replaced by a routine startup toast racing it (a real gap
+    fixed the same day: ordinary toasts previously could clobber an active
+    must-see warning outright). **Updated 2026-09-16**: originally read
+    "Multiplayer has no functionality working right now" — updated to
+    "Multiplayer has no functionality beyond the netcode security
+    protections right now" once the `security/` component's netcode-fix
+    hooks were confirmed live-installing and firing under `iw5mp.exe` too
+    (see the 2026-09-15 MP-hardening entries above). Gameplay hooks still
+    aren't installed under MP; the security protections genuinely are
+    active. The message swaps in place to "Multiplayer is in pre-alpha and
+    will contain bugs and issues. It is not on par with Campaign/Survival."
+    once MP gets real partial gameplay support — no new code path needed,
+    just a one-line text change when that day comes.
 18. **"K+M safe mode" config toggle.** A new, hot-reloadable
     `[General] DisableControllerInput` INI key disables ALL controller/mod-
     side INPUT injection (movement, look, Fire, ADS, Reload, Weapnext,
