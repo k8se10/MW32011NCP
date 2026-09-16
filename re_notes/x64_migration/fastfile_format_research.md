@@ -3446,3 +3446,75 @@ sizes that arithmetically sum to exactly 64 bytes) -- not a byte-pattern
 guess, not a hand computation, not a live-trace absence-of-evidence. This
 is very likely the actual, final root cause of the "invalid block 15"-class
 corruption this whole investigation thread has been chasing since SS5.21.
+
+## 5.41. FIXED, 2026-09-16 (direct instruction, "yes try it") — the SS5.40 root cause implemented, built, and live-verified: real, confirmed progress on every previously-blocked zone, zero regression, though a separate downstream issue remains
+
+**Status: This specific bug (the 352-byte SpeakerMap over-read) is FIXED
+and verified. A separate, already-tracked forward-reference issue
+(SS5.21) now blocks several zones further into their own streams than
+before -- real progress, not a full "every zone loads" resolution yet.**
+
+Implemented SS5.40's own precisely-specified fix:
+- `IW5_Assets.h` (tracked source): corrected `MSSSpeakerLevels`
+  (12 bytes, `#pragma pack(1)`, real dynamically-allocated `float*
+  levels` instead of an inline `float[2]`), `MSSChannelMap` (24 bytes,
+  `speakers[2]` not `[6]`), `SpeakerMap` (64 bytes, `channelMaps[2]` not
+  `[2][2]`) -- with `static_assert`s pinning the real sizes so this can't
+  silently regress again.
+- `Loader_snd_alias_list_t::FillStruct_SpeakerMap`/`Load_SpeakerMap`
+  (hand-patched in `build/`, since this needed new loading logic, not a
+  mechanical offset fix -- see `tools/iw5oat/x64_offset_fixes/README.md`'s
+  own new section on this hand-patch and its persistence gap): the array
+  fill collapsed to one flat `FillArray` call, plus a new per-entry loop
+  resolving each `MSSSpeakerLevels::levels` pointer exactly the way
+  native does (`FUN_140096980`'s own unconditional-nonzero check, not the
+  usual `GetZonePointerType`/FOLLOWING-sentinel check every other pointer
+  in this file uses) -- `count * 8` bytes read via `Alloc<float>`+
+  `Load<float>`, the same pattern already proven safe for `MssSound`'s
+  own raw sample data.
+
+**Rebuilt and live-tested against `common_survival.ff`**: asset 0's own
+`speakerMap` load now consumes exactly 64 bytes instead of 416, and asset
+1's own header reads CLEAN (`count=1 head=FFFFFFFFFFFFFFFF
+aliasName(raw)=FFFFFFFFFFFFFFFF` -- a textbook-correct FOLLOWING sentinel,
+not the `0000FFFFFFFFFFFF`/`FFFF000000000000` garbage SS5.37 found before
+this fix). This is decisive, direct confirmation the 40-round-old root
+cause is real and now fixed.
+
+**Zero regression**: `sp_intro.ff`/`sp_prague.ff`/`sp_ny_harbor.ff` all
+still load with 0 warnings, 0 errors after this change.
+
+**Real, measurable progress on every other previously-tracked zone**,
+though none of them fully complete yet -- each now fails LATER in its own
+stream, at a different, already-documented issue (`InvalidOffsetBlockOffsetException`,
+"Zone referenced offset X of block Y which is larger than its size Z" --
+a genuine forward reference into a `NORMAL`/`VIRTUAL`/`TEMP` block region
+the progressive single-pass loader hasn't written that far into yet, the
+SAME class of issue SS5.21 first flagged and SS5.29 partially addressed
+for a DIFFERENT exception type, `InvalidLookupPositionException`, via
+graceful degradation):
+- `common_survival.ff`: was failing at asset ~1's own corrupted header;
+  now fails later, referencing offset 10,729,744 of a 48,349,224-byte
+  `XFILE_BLOCK_VIRTUAL` (well within total capacity, just not yet
+  written that far).
+- `code_post_gfx.ff`: offset 361,788 of a 1,728,453-byte `XFILE_BLOCK_VIRTUAL`.
+- `hamburg.ff`: offset 55,378,103 of an 8,389,664-byte `XFILE_BLOCK_TEMP`
+  (this one genuinely IS over total capacity, a real, different-shaped
+  problem from the other three's "not yet written" pattern).
+- `common.ff`: offset 52,996,764 of a 55,425,096-byte `XFILE_BLOCK_VIRTUAL`
+  (within capacity, not yet written -- same shape as `common_survival.ff`).
+
+**Real next step for whoever continues this** (a separate investigation
+from the one this round closed): the `ConvertOffsetToPointerNative`/
+`ConvertOffsetToPointerLookup`/`ConvertOffsetToAliasLookup` family's own
+"not yet written" check (`m_block_offsets[blockNum] <= blockOffset`,
+`ZoneInputStream.cpp`) currently always throws
+`InvalidOffsetBlockOffsetException` outright -- SS5.29's own graceful-
+degradation precedent (for the sibling `InvalidLookupPositionException`
+case) suggests the SAME kind of fix (log a warning, return a safe
+null/placeholder, keep loading) might apply here too, though this
+specific exception's two DIFFERENT trigger conditions (genuine capacity
+overflow vs. not-yet-written) would need to be told apart first so only
+the genuinely-recoverable "not yet written" case gets the softer
+treatment -- `hamburg.ff`'s own capacity-overflow case above is a real
+counter-example that should probably keep throwing.
