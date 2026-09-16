@@ -228,6 +228,76 @@ constexpr const char* kVmNotifySignature =
 using VmNotifyFn = void(__fastcall*)(unsigned int notifyListOwnerId, unsigned int stringValue, void* top);
 VmNotifyFn g_realVmNotify = nullptr;
 
+// MW32011NCP, 2026-09-17: real reverse (ID -> text) resolution for the
+// interned string IDs VM_Notify's own live traffic surfaces -- found via the
+// same anchor-and-follow technique as everything else in this cluster, this
+// time tracing OP_GetString/OP_GetIString's shared handler (case 10/0x37
+// inside the confirmed interpreter, FUN_14025e950) to the real refcounted
+// string-pool table access:
+//   ADD RAX, qword ptr [DAT_14201ff08]   ; RAX already holds id << 4
+//   LOCK INC dword ptr [RAX]             ; refcount++ at the resolved entry
+// `DAT_14201ff08` is itself a POINTER VARIABLE (not the table inline) --
+// resolved once via SigScan::ResolveRipRelative against this exact
+// instruction, then dereferenced at read-time to get the real, live heap
+// table base (which itself can only be found at runtime, no signature can
+// ever bake in a heap address).
+//
+// IMPORTANT: the entry's internal layout past the refcount is NOT yet
+// independently confirmed -- FUN_1402560a0 (the free-on-refcount-zero
+// callback, called with this same entry pointer) showed a more complex
+// bucketed/paged byte-scan than a simple flat inline string, so "the raw
+// text starts at entry+4" is a REASONED HYPOTHESIS, not a proven fact.
+// This read is SEH-guarded (matches Plugin_ReadMemory's own established
+// pattern, plugin_loader.cpp), capped at 63 chars, and only ever logged if
+// every byte up to the terminator is printable ASCII -- a safe way to let a
+// real live session confirm or refute this empirically without risk: worst
+// case it silently finds nothing printable and logs the raw ID exactly as
+// it already does today.
+constexpr const char* kGscStringTableAccessSignature =
+    "41 0F B7 0C 24 49 8D 44 24 02 48 89 44 24 30 89 4C 24 78 C1 E1 04 8B C1 "
+    "48 03 05 ?? ?? ?? ?? F0 FF 00 48 8B 05 ?? ?? ?? ?? 8B 4C 24 78 8B 54 24 "
+    "38 4C 8B 64 24 30";
+constexpr ptrdiff_t kGscStringTableInsnOffset = 24;  // offset of "48 03 05 ?? ?? ?? ??" within the match above
+constexpr size_t kGscStringTableInsnLength = 7;
+
+uintptr_t* g_gscStringTableVarAddr = nullptr;  // address OF the pointer variable, not the table itself
+
+// Best-effort, SEH-guarded candidate-string resolution -- see
+// kGscStringTableAccessSignature's own comment above for the full trail and
+// the honest "hypothesis, not proven" caveat on the entry layout past the
+// refcount. Returns true and fills outBuf only if a plausible, fully-
+// printable string was found; never throws, never crashes on a bad guess.
+bool TryResolveGscInternedString(unsigned int stringId, char* outBuf, size_t outBufSize)
+{
+    if (g_gscStringTableVarAddr == nullptr || outBuf == nullptr || outBufSize == 0)
+        return false;
+
+    __try {
+        uintptr_t tableBase = *g_gscStringTableVarAddr;
+        if (tableBase == 0)
+            return false;
+
+        const char* candidate = reinterpret_cast<const char*>(tableBase + (static_cast<uintptr_t>(stringId) << 4) + 4);
+        size_t len = 0;
+        const size_t maxLen = outBufSize - 1;
+        while (len < maxLen) {
+            char c = candidate[len];
+            if (c == '\0')
+                break;
+            if (c < 0x20 || c > 0x7E)  // not printable ASCII -- reject the whole candidate
+                return false;
+            outBuf[len] = c;
+            len++;
+        }
+        if (len == 0)
+            return false;
+        outBuf[len] = '\0';
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 // Rate-limited per this codebase's own standing lesson (issue #87) -- logs the
 // first 50 real fires in full detail (owner ID + interned string ID, enough to
 // build a real observed catalogue of what fires during actual play, e.g.
@@ -239,9 +309,20 @@ void __fastcall Hook_VmNotify(unsigned int notifyListOwnerId, unsigned int strin
 {
     ++g_vmNotifyFireCount;
     if (g_vmNotifyFireCount <= 50 || (g_vmNotifyFireCount % 2000) == 0) {
-        char buf[160];
-        sprintf_s(buf, "[x64-gsc-notify] VM_Notify fired (count=%lld): ownerId=%u stringId=%u",
-                   g_vmNotifyFireCount, notifyListOwnerId, stringValue);
+        // Worst case: 41 (literal) + 20 (%lld) + 12 (literal) + 10 (%u) + 10 (literal) +
+        // 10 (%u) + 8 (' str="') + 63 (resolved string cap) + 2 ('"'+NUL) = 176 --
+        // buf[256] leaves a wide, deliberate margin (this project's own standing
+        // "compute the real worst case, don't eyeball it" lesson, per the critical
+        // LoadModConfig overflow this same session already hit once).
+        char resolvedStr[64];
+        char buf[256];
+        if (TryResolveGscInternedString(stringValue, resolvedStr, sizeof(resolvedStr))) {
+            sprintf_s(buf, "[x64-gsc-notify] VM_Notify fired (count=%lld): ownerId=%u stringId=%u str=\"%s\"",
+                       g_vmNotifyFireCount, notifyListOwnerId, stringValue, resolvedStr);
+        } else {
+            sprintf_s(buf, "[x64-gsc-notify] VM_Notify fired (count=%lld): ownerId=%u stringId=%u",
+                       g_vmNotifyFireCount, notifyListOwnerId, stringValue);
+        }
         LogFromController(buf);
     }
     g_realVmNotify(notifyListOwnerId, stringValue, top);
@@ -5667,6 +5748,33 @@ void InstallAnalogInputHooksX64()
                         "(owner ID + interned string ID) -- the first real live GSC-VM read access this "
                         "project has ever had.");
                 }
+            }
+        }
+    }
+
+    {
+        // MW32011NCP, 2026-09-17: resolve the interned-string table base pointer
+        // (DAT_14201ff08 in Ghidra) so Hook_VmNotify can attempt to resolve real
+        // readable text for the notify stringId it already logs, per
+        // TryResolveGscInternedString's own doc comment. Read-only, no writes to
+        // the game's own table -- only the refcount at +0 is ever touched by the
+        // real interpreter itself, never by this project.
+        SigScan::Result r = SigScan::FindPatternInMainModule(kGscStringTableAccessSignature);
+        if (!r.found) {
+            LogFromController("[x64-gsc-notify] GSC string-table-access signature did not resolve -- "
+                "VM_Notify will keep logging raw stringId only, string resolution unavailable this session");
+        } else {
+            g_gscStringTableVarAddr = reinterpret_cast<uintptr_t*>(
+                SigScan::ResolveRipRelative(r.address + kGscStringTableInsnOffset, kGscStringTableInsnLength));
+            if (g_gscStringTableVarAddr == nullptr) {
+                LogFromController("[x64-gsc-notify] FATAL: failed to resolve RIP-relative string-table base "
+                    "pointer -- VM_Notify will keep logging raw stringId only");
+            } else {
+                char buf[160];
+                sprintf_s(buf, "[x64-gsc-notify] GSC interned-string table base pointer resolved @ 0x%llX -- "
+                           "VM_Notify will now attempt real string resolution",
+                           static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(g_gscStringTableVarAddr)));
+                LogFromController(buf);
             }
         }
     }
