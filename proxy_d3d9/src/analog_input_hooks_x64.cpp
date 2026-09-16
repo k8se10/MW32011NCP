@@ -2577,6 +2577,25 @@ extern "C" void ForceReleaseStuckKbuttonsX64()
 
         case AutoUnstickState::WaitingToSettle:
             if (nowMs - g_levelActiveSinceMs >= kLevelSettleDelayMs) {
+                // 2026-09-17, direct live-test finding: neither the kbutton-release
+                // sweep nor the mouse-baseline seed (both real, both direct native-
+                // function calls, neither routed through the actual Windows message
+                // queue) fully resolved the "needs an initial input at launch" family
+                // of bugs on their own -- a real pause-button press was STILL needed,
+                // even though this fix already ships both. Direct user report/fix:
+                // "fix still requires a pause press though the menu doesnt appear on
+                // first press (good just forward esc same way on level init)" -- i.e.
+                // send a REAL ESC keypress, through the real message queue, the exact
+                // same already-proven-safe mechanism this file already uses for B/
+                // Start (SendSyntheticEscX64, PostMessageA WM_KEYDOWN/WM_KEYUP) --
+                // confirmed by the user's own manual testing to NOT visibly open the
+                // pause menu on this first, very-early press. This strongly suggests
+                // the real remaining gate is specifically "has a genuine message-
+                // queue-routed input event reached the window yet," something neither
+                // of the two direct-call fixes above can satisfy no matter how
+                // correct they are individually -- kept both (they fix real, distinct
+                // native bugs of their own) and added this as the missing piece.
+                SendSyntheticEscX64();
                 g_releaseAllKbuttons(0); // real native "release every stuck kbutton" sweep, no menu involved
                 // Real fix for the native "camera jumps on first real input" bug --
                 // see g_seedMouseBaseline's own declaration comment for the full trail.

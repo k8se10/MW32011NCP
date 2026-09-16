@@ -672,6 +672,16 @@ item below.
     baseline function ourselves, once per level, to the cursor's current
     position — zero visible movement, pure root-cause fix. Build-verified,
     deployed; awaiting a fresh playtest. See `re_notes/known_issues_x64.md`.
+27. **The missing third piece of the "needs an initial input at launch"
+    fix.** Direct testing found the kbutton-release and mouse-baseline
+    fixes above, while both real and correct, didn't fully close the
+    bug on their own — a real pause-button press was still needed. Added
+    a real, message-queue-routed synthetic Escape keypress (the same
+    already-proven-safe mechanism this project uses for other menu
+    interaction) at the same per-level trigger point, confirmed via
+    testing not to visibly open the pause menu. Build-verified, deployed;
+    awaiting a fresh playtest of the combined fix. See
+    `re_notes/known_issues_x64.md`.
 
 ### Documentation
 1. **`re_notes/known_issues_x64.md` established** as the dedicated x64 issue
