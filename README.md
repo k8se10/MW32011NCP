@@ -139,7 +139,7 @@ ADS" and "Custom mouse cursor overlay" below.
 | Melee, Lethal, Tactical, Jump, Interact, Jump auto-stand | |
 | Weapon switch (Y) | |
 | Crouch/Prone (tap vs. hold), Sprint (real kbutton) | |
-| Pause menu open/close, auto-unstick | No more "click once at launch" |
+| Pause menu open/close | |
 | Survival ready-up (hold Y, synthetic F5) | Mechanism confirmed live; the prompt itself still renders native — see [Known gaps](#known-gaps) |
 | Hold Breath (L3 while ADS'd, sniper-class) | |
 | Predator Missile launch (Survival buy-station) | |
@@ -170,6 +170,9 @@ ADS" and "Custom mouse cursor overlay" below.
 | | DPV (Hunter Killer)/Goalpost mortar/Goalpost M2 turret aiming — never worked on either architecture before, real shared root cause found and fixed 2026-09-14, not yet live-tested |
 | | Cutscene-skip audio (controller Start) — fixed on both `-x86` and `-x64` 2026-09-14 (x64's own version was worse than x86's ever was — no skip at all, not just missing audio-stop), not yet live-tested |
 | | Campaign QTE/scripted-sequence button presses (e.g. the "Dust to Dust" elevator/chopper jump) — real root cause found and fixed 2026-09-14 via the same synthetic-keypress technique already proven for Survival ready-up, not yet live-tested |
+| "Needs a click at launch" fix, real root cause | 2026-09-16: replaced the 2026-09-04 pause/unpause automation with a direct call into the real native "release every stuck kbutton" sweep, found via full decompile of the native pause-toggle chain — no pause menu ever opens or closes now. Not yet independently re-confirmed by a fresh playtest |
+| `[Video] FramePacingEnabled`, `WaitCoalescingEnabled`, `IwdReadAccelEnabled` | Three techniques ported from `legoliamneeson/MW3_Standalone_D3D9_Project` 2026-09-16, credited. Default off |
+| `[General] DisableControllerInput` ("K+M safe mode") | Hot-reloadable toggle disabling all controller/mod-side input injection while keeping every visual-enhancement feature working, shipped 2026-09-16 |
 
 ### Known gaps
 
@@ -189,7 +192,7 @@ the main flow.
 |---|---|---|---|
 | 1 | Buy-station / Survival ready-up hint **text** | 🟠 Medium | Mechanism works (you can ready up / buy) — the on-screen prompt itself still renders native. Blocked on a genuinely unresolved native offset |
 | 2 | Predator Missile post-fire guidance | 🟠 Medium | Never worked on **either** architecture — not a parity gap. Safe diagnostic shipped instead of a guess |
-| 3 | OpenAssetTools `Unlinker` crash (dev tooling) | 🟠 Medium | Blocks fresh GSC extraction for future RE work — affects project velocity, not players |
+| 3 | OpenAssetTools `Unlinker` crash (dev tooling) | 🟠 Medium | 5 zones fully clean, many more no longer crash after this week's `SpeakerMap` fix; a `LoadedSound` alias-miss bug remains open — affects project velocity, not players |
 | 4 | AC-130 gun-type switching (105/40/25mm) | 🟡 Low | Confirmed GSC/data-driven with no native hook point; correctly left unfixed rather than guessed at |
 | 5 | Custom Options screen's vanilla-setting data layer (7/9 tabs) | 🟡 Low — deliberately deferred | INI config already covers everything this mod itself needs |
 | 6 | Back's `+scores` scoreboard | 🟢 Low | Real gap, but a confirmed no-op in SP/Survival on every platform; matters once MP ships |
@@ -244,14 +247,31 @@ ever collected on this question. See `re_notes/known_issues.md` issue #30.
 
 A real, project-wide GSC-extraction tooling blocker was found 2026-09-14:
 `Unlinker` (both the vendored version and the current latest release)
-reproducibly crashes loading any real retail zone file from this install,
+reproducibly crashed loading any real retail zone file from this install,
 almost certainly because the 2026-09-03 x64 recompile changed the zone
-container format. Blocks fresh GSC decompilation for any future
-investigation until resolved. **Update, 2026-09-15**: the dominant failure
-class behind this is now understood and partially fixed in
-`tools/iw5oat`'s own fork (see that tool's own README/`re_notes/x64_migration/
-fastfile_format_research.md` for the live-tracked, in-progress RE trail) —
-see `re_notes/known_issues_x64.md`'s 2026-09-14/09-15 entries.
+container format. Blocked fresh GSC decompilation for any future
+investigation until resolved.
+
+**Real, substantial progress since**: the dominant failure classes (a
+Material/shader-chain offset-pointer-width bug, a `snd_alias_list_t`/
+`LoadedSound` struct-layout bug, and — this week's own major breakthrough
+— a completely wrong wire shape for `SpeakerMap`/`MSSChannelMap`/
+`MSSSpeakerLevels`, found via native x64 decompile after 40+ investigation
+rounds) are all fixed. **5 zones now load completely cleanly** (`sp_intro.ff`,
+`sp_prague.ff`, `so_trainer2_so_deltacamp.ff`, `sp_dubai.ff`,
+`sp_ny_harbor.ff`), and many previously-crashing zones (`hamburg.ff`,
+`common.ff`, `code_post_gfx.ff`, `common_survival.ff`) now progress
+substantially further without crashing. **Currently open**: a
+`LoadedSound` alias-miss during Sound-asset dependency sharing — two
+independent live-tested attempts to degrade the failing resolution both
+caused a real, different downstream segfault; the crash has been narrowed
+(via a new self-dump + offline-analysis technique, since live debugger
+attach is currently confirmed unsafe on this machine) to a corrupted
+`std::string` discovered during a hash-table walk, whose actual insertion
+point isn't yet identified. See
+[`tools/iw5oat/README.md`](tools/iw5oat/README.md)'s own "Current status"
+section and `re_notes/x64_migration/fastfile_format_research.md` §5.13-§5.47
+for the complete trail.
 
 </details>
 
@@ -370,7 +390,7 @@ its **own** license, distinct from this repo's own root one.
 | Path | What it is | Why it's here | Status | License |
 |---|---|---|---|---|
 | [`security/`](security/) | This project's own netcode-security-patch component — originally the separate `MW32011NSP` repo, absorbed 2026-09-12 | Finds and fixes real, exploitable vulnerabilities in MW3's own base-game netcode — Steam's VAC doesn't cover packet-level attacks from a malicious server/peer, a real gap this closes. Ships built into the mod by default (see [Security](#security-netcode-vulnerability-patches) below) | 4 of 4 confirmed vulnerabilities resolved (3 fixed, 1 already safe) | This repo's own permissive license, plus one extra responsible-disclosure clause — see [`security/LICENSE`](security/LICENSE) |
-| [`tools/iw5oat/`](tools/iw5oat/) | An IW5-only fork of [OpenAssetTools](https://github.com/Laupetin/OpenAssetTools), a third-party CoD modding-tool suite, plus this project's own **[`x64_offset_fixes/`](tools/iw5oat/x64_offset_fixes/)** post-processing scripts | The 2026-09-03 x64 recompile broke upstream's own zone/fastfile loading for the current retail build — a real, confirmed bug ([full root-cause writeup](re_notes/x64_migration/fastfile_format_research.md)), with no existing x64 support anywhere in that codebase to build on. This fork exists to build the x64 support this project actually needs for GSC extraction (the standing GSC-first RE methodology), faster than waiting on an upstream/community fix; `x64_offset_fixes/` is the repeatable tooling that patches the generated per-asset loader code's own x86-only offsets after every `ZoneCodeGenerator` run. **Developer/research tooling only — never shipped to players**, not part of the mod's own `d3d9.dll` | **Usable now** for GSC/rawfile extraction on script-only zones — a full sweep of all 39 real `sp_*.ff`/`so_*.ff` retail zones found 2 (`sp_intro.ff`/`sp_prague.ff`) extract cleanly (0 warnings, 0 errors, valid output); the other 37 all hit the same open, paused Material-chain bug | **GNU GPLv3** — NOT this repo's own license; see [`tools/iw5oat/LICENSE`](tools/iw5oat/LICENSE) and this repo's own [`LICENSE`](LICENSE)'s "Third-party components" section for exactly how the two coexist |
+| [`tools/iw5oat/`](tools/iw5oat/) | An IW5-only fork of [OpenAssetTools](https://github.com/Laupetin/OpenAssetTools), a third-party CoD modding-tool suite, plus this project's own **[`x64_offset_fixes/`](tools/iw5oat/x64_offset_fixes/)** post-processing scripts | The 2026-09-03 x64 recompile broke upstream's own zone/fastfile loading for the current retail build — a real, confirmed bug ([full root-cause writeup](re_notes/x64_migration/fastfile_format_research.md)), with no existing x64 support anywhere in that codebase to build on. This fork exists to build the x64 support this project actually needs for GSC extraction (the standing GSC-first RE methodology), faster than waiting on an upstream/community fix; `x64_offset_fixes/` is the repeatable tooling that patches the generated per-asset loader code's own x86-only offsets after every `ZoneCodeGenerator` run. **Developer/research tooling only — never shipped to players**, not part of the mod's own `d3d9.dll` | **5 zones fully clean** (0 warnings/0 errors: `sp_intro.ff`/`sp_prague.ff`/`so_trainer2_so_deltacamp.ff`/`sp_dubai.ff`/`sp_ny_harbor.ff`), many more now progress substantially further without crashing after this week's own major `SpeakerMap` wire-shape fix. Currently blocked by a `LoadedSound` alias-miss bug during Sound-asset dependency sharing — see [`tools/iw5oat/README.md`](tools/iw5oat/README.md) for the current, detailed status | **GNU GPLv3** — NOT this repo's own license; see [`tools/iw5oat/LICENSE`](tools/iw5oat/LICENSE) and this repo's own [`LICENSE`](LICENSE)'s "Third-party components" section for exactly how the two coexist |
 
 Each has its own README with the full story — [`security/README.md`](security/README.md)
 and [`tools/iw5oat/README.md`](tools/iw5oat/README.md).

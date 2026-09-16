@@ -42,24 +42,23 @@ exactly the support this project actually needs, directly.
 
 ## Current status
 
-**Already usable today for this project's actual need — GSC/rawfile
-extraction on script-only zones, though that's a narrow slice of the real
-game.** `zone/english/sp_intro.ff` and `zone/english/sp_prague.ff` (real
-retail Campaign zones with no `Material` content) load and extract cleanly
-through `Unlinker.exe`: **0 warnings, 0 errors**, real valid output
-confirmed byte-by-byte — `.gscbin` files opening with a genuine zlib
-`78 DA` header, a readable `.mapents` file, an empty `RawFile` marker
-extracting as empty. A full sweep of all 39 real `sp_*.ff`/`so_*.ff` retail
-zones found these are the **only 2 that succeed** — the other 37 (every
-other Campaign mission, every Spec-Ops/Survival zone) all fail with the
-exact same error as the still-open bug below, confirming most real zones
-genuinely do reference a `Material` asset and stay blocked on it. Full
-trail: [`re_notes/x64_migration/fastfile_format_research.md`](../../re_notes/x64_migration/fastfile_format_research.md)
-§5.11-§5.12.
+**Usable for GSC/rawfile extraction on a real, growing set of retail
+zones — no longer limited to script-only content.** As of 2026-09-16,
+`sp_intro.ff`, `sp_prague.ff`, `so_trainer2_so_deltacamp.ff`, `sp_dubai.ff`,
+and `sp_ny_harbor.ff` all load and extract **completely cleanly (0
+warnings, 0 errors)** through `Unlinker.exe`. A much larger set of
+previously-crashing zones (`hamburg.ff`, `common.ff`, `code_post_gfx.ff`,
+`common_survival.ff`, and others) now load substantially further than
+before and no longer crash outright, but don't yet reach a fully clean
+0-warning finish — see item 5 below for the current, specific remaining
+blocker. This status has moved through two real, separate investigation
+arcs since the fork was first created (the Material/shader chain, and the
+Sound/`LoadedSound` chain) — both are summarized below rather than left
+as one static snapshot, since both are now substantially resolved or
+well-understood.
 
-The real x64 fix has four parts. The first three are done and confirmed
-live; the fourth is a separate, narrower, still-open bug that only blocks
-Material-referencing zones:
+The real x64 fix has gone through five real phases. The first four are
+done; the fifth is the current, actively-investigated remaining blocker:
 
 1. **The outer dispatch-record/header bugs — fixed.** `iw5sp.exe`'s own
    zone-loading code was decompiled directly (Ghidra) to find the real
@@ -81,33 +80,49 @@ Material-referencing zones:
    scripts have to be re-run after every real `ZoneCodeGenerator`
    invocation** — their target is gitignored, regenerated build output,
    not tracked source; see that README for the exact sequence.
-3. **The `decl[]`/`ps`/`vs`/`Material::subMaterials` question — resolved.**
-   Direct Ghidra decompile of `iw5sp.exe`'s own real fill functions
-   confirmed `MaterialVertexStreamRouting::decl[]`,
-   `MaterialPixelShaderProgram::ps`, and `MaterialVertexShaderProgram::vs`
-   are all genuinely on the wire (never explicitly filled because they're
-   runtime-only D3D shader-object caches, not because they're absent) —
-   no code change needed, the scripts above already handle them correctly
-   by trusting `sizeof()`. The same native-verification technique found a
-   real, different bug along the way: `Material::subMaterials` was a
-   genuinely phantom trailing field, now removed from the struct. See
-   `x64_offset_fixes/README.md`'s own "Resolved: the decl[]/ps/vs
-   question" section.
-4. **Still open, paused**: `MaterialTechniqueSet`'s own `MaterialPass` →
-   `MaterialVertexDeclaration`/`MaterialVertexShader`/`MaterialPixelShader`
-   chain still fails on every Material-referencing zone tested
-   (`hamburg.ff`, `common.ff`, `code_post_gfx.ff`). A byte-exact hex dump
-   isolated the corruption to exactly the 8 bytes of
-   `MaterialPixelShader::name` — every other field in the same read, and
-   the entire `MaterialVertexShader` read immediately before it, are
-   byte-perfect. An "wrong `XFILE_BLOCK_*`" theory was tested and
-   disproven with direct decompile evidence. Root cause not yet found
-   despite many rounds of native verification — paused per this project's
-   own standing persistence-threshold principle rather than continuing to
-   re-derive the same conclusions; concrete next steps (live x64dbg
-   debugging or a raw hex-editor comparison) are on record. See
-   `x64_offset_fixes/README.md`'s own "Known open issue, not yet resolved"
-   section.
+3. **The Material/shader chain — fully resolved (2026-09-14).** The
+   `decl[]`/`ps`/`vs`/`Material::subMaterials` question, a real 32-bit-vs-
+   64-bit-wide offset-pointer encoding bug (`MaterialPixelShader::name`'s
+   own corruption, root-caused to this fork's `ConvertOffsetToPointerNative`
+   assuming every already-resolved offset pointer is 64-bit wide when the
+   real engine's own generic resolution primitive is genuinely 32-bit for
+   this class of reference), and the `materialHandles`/`XModel` write/read
+   registration-asymmetry bug were all found and fixed via direct native
+   x64 decompile cross-checks — zero regressions across a full 39-zone
+   sweep. This entire chain, once the dominant blocker for every real
+   Material-referencing zone, is closed. Full trail:
+   `fastfile_format_research.md` §5.13-§5.28.
+4. **The Sound/`snd_alias_list_t`/`LoadedSound` chain — largely resolved.**
+   A second, separate investigation arc (§5.29-§5.43) found and fixed a
+   forward-reference-before-write ordering bug (converted from a hard
+   `throw` aborting the whole zone load to graceful warn-and-degrade,
+   matched by real short-read detection hardening), a genuine
+   `LoadedSound`/`MssSound` struct-layout bug, and — the single largest
+   breakthrough of this whole investigation — a **wrong wire shape for
+   `SpeakerMap`/`MSSChannelMap`/`MSSSpeakerLevels`** (this fork's own
+   struct declarations, inherited from upstream's x86-era assumptions,
+   read 416 bytes where the real native format reads exactly 64), found
+   via `FUN_140096980`/`FUN_140096a50`'s own decompile and confirmed to
+   explain the "invalid block N" symptom that had recurred across 40+
+   investigation rounds. Fixed in the tracked struct header
+   (`src/Common/Game/IW5/IW5_Assets.h`); live-verified real progress on
+   every previously-blocked zone. Full trail: `fastfile_format_research.md`
+   §5.40-§5.41.
+5. **Currently open**: a `LoadedSound` alias-miss during
+   `snd_alias_list_t`'s own dependency-sharing resolution — a shared
+   `LoadedSound` reference between two array elements fails to resolve via
+   either of this fork's own alias/pointer-redirect maps, even though it's
+   in-range and already-written. Two independent live-tested attempts to
+   degrade this specific fallback (matching the already-proven-safe
+   pattern used elsewhere in this file) both caused a real segfault a
+   different, further downstream — most recently narrowed to a corrupted
+   `std::string` discovered during a hash-table walk, whose actual
+   insertion point hasn't been identified yet. One real, independently
+   valuable bug WAS found and fixed along the way (`AssetInfoCollector`
+   was missing a null-name guard `AssetLoader` already had). Not yet
+   resolved — kept as a hard `throw` rather than shipping a change that's
+   been live-tested to crash twice. Full trail: `fastfile_format_research.md`
+   §5.44-§5.47.
 
 ## Scope: IW5 only, deliberately
 
