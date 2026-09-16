@@ -524,6 +524,13 @@ This project vendors and links the following third-party library:
   Copyright (c) 2008-2009, Vyacheslav Patkov. Same style of license (see the
   same `LICENSE.txt`).
 
+The x64 line's `[Video] FramePacingEnabled` frame-pacing limiter
+(`proxy_d3d9/src/frame_pacing_x64.cpp`) ports its spin-wait/adaptive-correction
+algorithm from **[legoliamneeson/MW3_Standalone_D3D9_Project](https://github.com/legoliamneeson/MW3_Standalone_D3D9_Project)**
+(Copyright legoliamneeson) — that project's own README states no
+redistribution license is asserted for the ported source; credited here per
+its own attribution note.
+
 This project also embeds **[Isotherm Sans](https://github.com/k8se10/isotherm-sans)**
 (UI, Condensed, and Italic styles) as a private, in-process-only font — a
 modernized derivative of [Manrope](https://github.com/sharanda/manrope)

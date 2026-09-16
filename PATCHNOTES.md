@@ -332,6 +332,20 @@ item below.
     shadows/lighting) are completely unaffected — those live entirely in
     the render path. Off by default; real keyboard/mouse input always keeps
     working regardless of this setting. Build-verified, not yet live-tested.
+19. **Frame-pacing limiter — issue #99's third attempt, ported with credit
+    from an external reference implementation.** New `[Video]
+    FramePacingEnabled` INI key applies a high-resolution, adaptively-
+    corrected wait at the end of every real frame (`Hook_EndScene`), capping
+    to the game's own existing `com_maxfps` — structurally different from
+    both prior failed attempts: it never writes `com_maxfps` (the second
+    attempt's own confirmed failure — the engine treats that dvar
+    differently for gameplay than menus) and doesn't use a blind
+    fixed-interval wait (the first attempt's own failure). The pacing
+    algorithm is ported, with credit, from
+    [legoliamneeson/MW3_Standalone_D3D9_Project](https://github.com/legoliamneeson/MW3_Standalone_D3D9_Project)
+    — see `README.md`'s Credits section and `frame_pacing_x64.cpp`'s own
+    header comment for the full attribution and what specifically was and
+    wasn't reused. Off by default; build-verified, **not yet live-tested**.
 
 ### Fixed
 1. **Crash on launch with the sniper Fire/ADS fix's own log line.** The

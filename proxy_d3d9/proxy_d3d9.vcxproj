@@ -130,6 +130,11 @@
     <ClCompile Include="src\analog_input_hooks_x64.cpp" Condition="'$(Platform)'=='x64'">
       <ExcludedFromBuild Condition="'$(Platform)'!='x64'">true</ExcludedFromBuild>
     </ClCompile>
+    <!-- x64-only, 2026-09-16, issue #99's third FPS-limiter attempt; see
+         frame_pacing_x64.cpp's own header comment for attribution. -->
+    <ClCompile Include="src\frame_pacing_x64.cpp" Condition="'$(Platform)'=='x64'">
+      <ExcludedFromBuild Condition="'$(Platform)'!='x64'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="src\signature_scan.cpp" />
     <ClCompile Include="src\game_exe_detect.cpp" />
     <ClCompile Include="src\controller_input.cpp" />
@@ -183,6 +188,7 @@
   <ItemGroup>
     <ClInclude Include="src\signature_scan.h" />
     <ClInclude Include="src\game_exe_detect.h" />
+    <ClInclude Include="src\frame_pacing_x64.h" />
     <ClInclude Include="src\controller_input.h" />
     <ClInclude Include="src\dualsense_input.h" />
     <ClInclude Include="src\mod_config.h" />
