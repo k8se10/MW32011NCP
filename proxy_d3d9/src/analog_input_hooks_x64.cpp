@@ -1491,6 +1491,16 @@ bool g_fireHeldX64 = false;
 bool g_adsHeldX64 = false;
 bool g_reloadHeldX64 = false;
 bool g_pauseHeldX64 = false;
+// 2026-09-16, live-reported regression ("in menus start press now again skips
+// cutscene"): tracks whether THIS function's own last Start press OPENED the
+// pause menu, so the very next press (meant to CLOSE it) always takes the
+// close path unconditionally -- see PollPauseToggleX64's own updated header
+// comment for the full root-cause trail (x86's own InjectControllerPauseMenu
+// has an equivalent `currentlyPaused` gate via GetDvarInt("cl_paused") that
+// was never carried over here; this is the x64-appropriate way to track the
+// same open/close distinction without depending on an unconfirmed x64 dvar
+// read).
+bool g_pauseMenuOpenedByUsX64 = false;
 bool g_weaponSwitchHeldX64 = false;
 bool g_jumpHeldX64 = false;                 // rising-edge diag not needed, just for parity w/ other bools
 bool g_interactButtonWasHeldX64 = false;
@@ -1583,12 +1593,37 @@ extern "C" void PollPauseToggleX64()
         // declaration comment above for the full root-cause trail. When the
         // clcState read fails to resolve, fall back to the pre-existing
         // behavior (g_pauseToggle only) rather than risk a wrong branch.
-        int state = 0;
-        bool haveState = TryGetClcStateX64(&state);
-        if (haveState && (state == 1 || state == 2) && g_openPauseMenuForCinematic) {
-            g_openPauseMenuForCinematic(0);
-        } else {
+        //
+        // REAL REGRESSION FOUND 2026-09-16 ("in menus start press now again
+        // skips cutscene"): the clcState check above ran on EVERY Start press,
+        // including the SECOND one meant to CLOSE the pause menu -- x86's own
+        // InjectControllerPauseMenu has a `currentlyPaused` gate
+        // (GetDvarInt("cl_paused")) that skips its entire state-branch when
+        // already paused, going straight to the close call instead; that gate
+        // was never carried over to this x64 port. If clcState still reads
+        // 1/2 while the pause menu is already open (plausible -- it likely
+        // reflects underlying scene/connection state, not "is our own pause
+        // UI currently shown"), the CLOSE press was wrongly re-routed into
+        // g_openPauseMenuForCinematic AGAIN instead of the real close call,
+        // exactly matching "press Start again, skips cutscene [again]" rather
+        // than closing. Fixed by tracking whether OUR OWN last press opened
+        // the menu (g_pauseMenuOpenedByUsX64) and forcing the very next press
+        // straight to the close path, unconditionally, bypassing the
+        // clcState check entirely -- the same open/close distinction x86's
+        // own dvar-based gate provides, without depending on an unconfirmed
+        // x64 dvar read.
+        if (g_pauseMenuOpenedByUsX64) {
             g_pauseToggle(0);
+            g_pauseMenuOpenedByUsX64 = false;
+        } else {
+            int state = 0;
+            bool haveState = TryGetClcStateX64(&state);
+            if (haveState && (state == 1 || state == 2) && g_openPauseMenuForCinematic) {
+                g_openPauseMenuForCinematic(0);
+            } else {
+                g_pauseToggle(0);
+            }
+            g_pauseMenuOpenedByUsX64 = true;
         }
     }
     g_pauseHeldX64 = pauseHeld;
