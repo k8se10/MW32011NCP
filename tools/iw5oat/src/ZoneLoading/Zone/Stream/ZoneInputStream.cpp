@@ -464,8 +464,31 @@ namespace
             // unresolved failures are forward references, not this bug) silently resolved to
             // genuinely unwritten/zeroed memory and SEGFAULTED downstream instead of throwing
             // the clean, catchable exception this format is supposed to produce.
-            if (block->m_buffer_size <= blockOffset || m_block_offsets[blockNum] <= blockOffset)
+            if (block->m_buffer_size <= blockOffset)
                 throw InvalidOffsetBlockOffsetException(block, blockOffset);
+
+            if (m_block_offsets[blockNum] <= blockOffset)
+            {
+                // MW32011NCP / iw5oat, 2026-09-16: graceful degradation for a genuine
+                // forward reference -- same precedent/rationale as
+                // ConvertOffsetToAliasLookup's own hop-cap-exhaustion handling further
+                // down this file (SS5.29, fastfile_format_research.md in the parent
+                // repo). This specific function has exactly one real caller
+                // (ContentLoaderBase.cpp's own LoadXString, for the "already resolved,
+                // not FOLLOWING" string case -- confirmed via a direct grep, not
+                // assumed), which already treats a null resolved string as a safe,
+                // normal outcome. Unlike the total-capacity check just above (kept as
+                // a hard throw -- that's a genuine format violation, not a legitimate
+                // architectural forward reference), a reference that's merely ahead of
+                // this block's own progressive write cursor is exactly the same
+                // safe-to-defer shape SS5.29 already proved out empirically across a
+                // full 41-zone sweep with zero new crashes.
+                con::warn("Zone referenced offset {} of block {} which has not been written "
+                          "yet (forward reference) -- leaving the string reference null and "
+                          "continuing.",
+                          blockOffset, block->m_name);
+                return nullptr;
+            }
 
             return &block->m_buffer[blockOffset];
         }
