@@ -10187,37 +10187,45 @@ extern "C" void __cdecl InjectMenuInputTick()
     // documented above -- so Pause's own toggle poll needs to ALSO run from
     // this always-on tick, matching InjectControllerPauseMenu's placement here
     // on the x86 side just above/below this block.
-    PollPauseToggleX64();
-    // 2026-09-04, real fix (not another theory) for "needs a click for
-    // input"/"needs the classic pause unpause workaround" -- see
-    // AutoUnstickPauseCycleX64's own comment (analog_input_hooks_x64.cpp) for
-    // the full trace. Must run from this same always-on tick, not the
-    // gameplay tick -- its own OPEN step pauses the game, which would stop a
-    // gameplay-tick-based caller from ever reaching the CLOSE step.
-    AutoUnstickPauseCycleX64();
-    // 2026-09-05, release-parity pass -- the custom Options screen only needs
-    // to navigate while a real native menu is already active (same class of
-    // state as Pause's own toggle above), so it belongs on this same always-on
-    // tick too, not the gameplay tick (which halts entirely while paused).
-    PollCustomOptionsMenuX64();
-    // 2026-09-12, native D-pad+A/B menu navigation, x64 port -- MUST run AFTER
-    // PollCustomOptionsMenuX64 above so CustomOptionsMenu_IsOpen() reflects this
-    // tick's own open/close decision (see InjectControllerMenuNavX64's own header
-    // comment in analog_input_hooks_x64.cpp for the full reasoning). Order matches
-    // x86's own InjectControllerMenuBack() then InjectControllerMenuNav() call
-    // order (this file's x86-only block below).
-    InjectControllerMenuBackX64();
-    InjectControllerMenuNavX64();
-    // 2026-09-12, vibration/rumble x64 port -- same "gets stuck on" fix x86 already
-    // has (see Rumble_TickExpiryWatchdog's own header comment in rumble.h): x64's
-    // gameplay tick (Hook_MovementTick, analog_input_hooks_x64.cpp) halts entirely
-    // while genuinely paused, same as x86's InjectAllControllerInput, so a rumble
-    // event triggered right before a pause needs its own expiry enforced from THIS
-    // always-on tick or the motor would buzz for the whole paused duration instead
-    // of cutting off on schedule. Does not poll for new damage/fire events (that
-    // stays gameplay-tick-only via Rumble_Tick() in Hook_MovementTick) -- a no-op
-    // whenever no rumble is currently active, safe to call unconditionally here.
-    Rumble_TickExpiryWatchdog();
+    // K+M safe mode (2026-09-16): gate every controller/mod-side INPUT call
+    // below on the hot-reloadable kill-switch -- Controller_RequestPoll above
+    // stays unconditional (it's just an XInput poll request, not input
+    // injection). Config loading/hot-reload (CheckConfigHotReload, further
+    // down this function) and visual-enhancement features are untouched --
+    // neither lives in this input-tick function at all.
+    if (!g_modConfig.disableControllerInputX64) {
+        PollPauseToggleX64();
+        // 2026-09-04, real fix (not another theory) for "needs a click for
+        // input"/"needs the classic pause unpause workaround" -- see
+        // AutoUnstickPauseCycleX64's own comment (analog_input_hooks_x64.cpp) for
+        // the full trace. Must run from this same always-on tick, not the
+        // gameplay tick -- its own OPEN step pauses the game, which would stop a
+        // gameplay-tick-based caller from ever reaching the CLOSE step.
+        AutoUnstickPauseCycleX64();
+        // 2026-09-05, release-parity pass -- the custom Options screen only needs
+        // to navigate while a real native menu is already active (same class of
+        // state as Pause's own toggle above), so it belongs on this same always-on
+        // tick too, not the gameplay tick (which halts entirely while paused).
+        PollCustomOptionsMenuX64();
+        // 2026-09-12, native D-pad+A/B menu navigation, x64 port -- MUST run AFTER
+        // PollCustomOptionsMenuX64 above so CustomOptionsMenu_IsOpen() reflects this
+        // tick's own open/close decision (see InjectControllerMenuNavX64's own header
+        // comment in analog_input_hooks_x64.cpp for the full reasoning). Order matches
+        // x86's own InjectControllerMenuBack() then InjectControllerMenuNav() call
+        // order (this file's x86-only block below).
+        InjectControllerMenuBackX64();
+        InjectControllerMenuNavX64();
+        // 2026-09-12, vibration/rumble x64 port -- same "gets stuck on" fix x86 already
+        // has (see Rumble_TickExpiryWatchdog's own header comment in rumble.h): x64's
+        // gameplay tick (Hook_MovementTick, analog_input_hooks_x64.cpp) halts entirely
+        // while genuinely paused, same as x86's InjectAllControllerInput, so a rumble
+        // event triggered right before a pause needs its own expiry enforced from THIS
+        // always-on tick or the motor would buzz for the whole paused duration instead
+        // of cutting off on schedule. Does not poll for new damage/fire events (that
+        // stays gameplay-tick-only via Rumble_Tick() in Hook_MovementTick) -- a no-op
+        // whenever no rumble is currently active, safe to call unconditionally here.
+        Rumble_TickExpiryWatchdog();
+    }
 #endif
 
 #if !defined(_M_X64) && !defined(_WIN64)

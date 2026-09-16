@@ -432,6 +432,19 @@ void WriteDefaultConfig(const char* path)
         "; the new keys' defaults.\n"
         "ConfigVersion=%lu\n"
         "\n"
+        "[General]\n"
+        "; Hot-reloadable kill-switch for ALL controller/mod-side INPUT injection\n"
+        "; (movement/look/Fire/ADS/Reload/Weapnext/Melee/Lethal/Tactical/Jump/\n"
+        "; Interact/D-pad/CrouchProne/Scoreboard/menu-nav/vibration-tick), added\n"
+        "; 2026-09-16 since controller/mod-side input is acknowledged as less\n"
+        "; tested against keyboard+mouse play and could regress it. Config\n"
+        "; loading/hot-reload and every visual-enhancement feature (motion blur,\n"
+        "; FSR, render scale, forced shadows/lighting) are NOT affected -- those\n"
+        "; live entirely in the render path, not the input path. Your own real\n"
+        "; keyboard/mouse input always keeps working regardless of this setting.\n"
+        "; 1 = disable all controller/mod-side input, 0 = normal (default).\n"
+        "DisableControllerInput=%d\n"
+        "\n"
         "[Look]\n"
         "; Look-stick turn rate in degrees/second at full stick deflection, split into\n"
         "; horizontal (yaw, left/right) and vertical (pitch, up/down) axes -- separated\n"
@@ -895,6 +908,7 @@ void WriteDefaultConfig(const char* path)
         "; 0 = off (default -- original always-on behavior).\n"
         "OnlyWhileAds=%d\n",
         kCurrentConfigVersion,
+        g_modConfig.disableControllerInputX64 ? 1 : 0,
         g_modConfig.lookDegreesPerSecondHorizontal,
         g_modConfig.lookDegreesPerSecondVertical,
         g_modConfig.adsSlowdownStrength,
@@ -1134,6 +1148,11 @@ void LoadModConfig()
     ReadUlong(path, "Stance", "ProneHoldThresholdMs", g_modConfig.proneHoldThresholdMs);
     ReadUlong(path, "Interact", "HoldThresholdMs", g_modConfig.interactHoldThresholdMs);
     ReadUlong(path, "Survival", "ReadyUpHoldThresholdMs", g_modConfig.readyUpHoldThresholdMs);
+    // 2026-09-16 -- K+M safe mode (see mod_config.h's own field comment for the
+    // full reasoning). New top-level [General] section -- none existed before,
+    // this is a genuinely mod-wide toggle, not scoped to any single existing
+    // section (Movement/Look/Bindings/etc).
+    ReadBool(path, "General", "DisableControllerInput", g_modConfig.disableControllerInputX64);
     ReadBool(path, "Movement", "AutoMantleEnabled", g_modConfig.autoMantleEnabled);
     ReadFloat(path, "Movement", "AutoMantleForwardConeDegrees", g_modConfig.autoMantleForwardConeDegrees);
     if (g_modConfig.autoMantleForwardConeDegrees < 1.0f) g_modConfig.autoMantleForwardConeDegrees = 1.0f;
@@ -1260,7 +1279,7 @@ void LoadModConfig()
         "fireNotifyQueueKick=%d bindResolverHookLogging=%d bindResolverGlyphSubstitution=%d "
         "hudFontIdLogging=%d hudFontIdLoggingX64=%d hudGlyphPositionLogging=%d listItemPositionLogging=%d "
         "armorFieldScanLogging=%d forceGlyphOverlay=%d glyphPositionEditMode=%d "
-        "captureRuntimeMenuAssets=%d frametimeBenchmarkLogging=%d",
+        "captureRuntimeMenuAssets=%d frametimeBenchmarkLogging=%d disableControllerInputX64=%d",
         g_modConfig.lookDegreesPerSecondHorizontal, g_modConfig.lookDegreesPerSecondVertical,
         g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
@@ -1292,7 +1311,8 @@ void LoadModConfig()
         g_modConfig.forceGlyphOverlay ? 1 : 0,
         g_modConfig.glyphPositionEditMode ? 1 : 0,
         g_modConfig.captureRuntimeMenuAssets ? 1 : 0,
-        g_modConfig.frametimeBenchmarkLogging ? 1 : 0);
+        g_modConfig.frametimeBenchmarkLogging ? 1 : 0,
+        g_modConfig.disableControllerInputX64 ? 1 : 0);
     LogFromController(buf);
 
     // Rewrite the file once, now that g_modConfig holds every existing setting PLUS

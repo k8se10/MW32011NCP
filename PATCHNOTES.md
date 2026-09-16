@@ -320,6 +320,18 @@ item below.
     contain bugs and issues. It is not on par with Campaign/Survival." once
     MP gets real partial gameplay support — no new code path needed, just a
     one-line text change when that day comes.
+18. **"K+M safe mode" config toggle.** A new, hot-reloadable
+    `[General] DisableControllerInput` INI key disables ALL controller/mod-
+    side INPUT injection (movement, look, Fire, ADS, Reload, Weapnext,
+    Melee, Lethal, Tactical, Jump, Interact, D-pad, CrouchProne, Scoreboard,
+    menu navigation, vibration) in one flip, added since keyboard/mouse
+    testing has always been comparatively light for this project and this
+    gives K+M players a clean way to opt out of any input-side regression
+    without losing anything else. Config loading/hot-reload and every
+    visual-enhancement feature (motion blur, FSR, render scale, forced
+    shadows/lighting) are completely unaffected — those live entirely in
+    the render path. Off by default; real keyboard/mouse input always keeps
+    working regardless of this setting. Build-verified, not yet live-tested.
 
 ### Fixed
 1. **Crash on launch with the sniper Fire/ADS fix's own log line.** The

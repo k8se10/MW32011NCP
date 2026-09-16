@@ -2717,7 +2717,7 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
     // g_pitchAccum/g_yawAccum: the native call itself both consumes and packs
     // these accumulators in one pass, so our contribution has to already be
     // sitting in them before g_realMovementTick runs.
-    if (param1 && g_pitchAccum && g_yawAccum) {
+    if (param1 && g_pitchAccum && g_yawAccum && !g_modConfig.disableControllerInputX64) {
         float leftX, leftY, rightX, rightY;
         if (Controller_GetLeftStick(leftX, leftY) && Controller_GetRightStick(rightX, rightY)) {
             float moveX, moveY, lookX, lookY;
@@ -2803,6 +2803,14 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
     // x86's own InjectControllerMovement, a POST-hook additive layer on top of
     // the keyboard writer, not a replacement of it).
     g_realMovementTick(param1, param2);
+
+    // K+M safe mode (2026-09-16): skip every POST-hook controller/mod-side
+    // input contribution below (Fire/ADS/Reload/Weapnext/Melee/Lethal/
+    // Tactical/Jump/Interact/D-pad/CrouchProne/Scoreboard/Rumble_Tick) once
+    // the call-through above and the gate-bit clear have already run --
+    // both of those stay unconditional (native engine workaround + real
+    // keyboard/mouse input must never be affected by this toggle).
+    if (g_modConfig.disableControllerInputX64) return;
 
     if (!param1) return;
 
