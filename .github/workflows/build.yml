@@ -34,6 +34,11 @@ on:
       - ".github/workflows/build.yml"
   workflow_dispatch:
 
+# Least-privilege: this workflow only checks out and builds, it never writes
+# back to the repo or any GitHub API resource.
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: windows-latest
