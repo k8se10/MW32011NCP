@@ -1,7 +1,11 @@
 #include "AssetInfoCollector.h"
 
+#include "Utils/Logging/Log.h"
+#include "Utils/PointerSanity.h"
+
 #include <algorithm>
 #include <cassert>
+#include <cstdint>
 
 AssetInfoCollector::AssetInfoCollector(Zone& zone)
     : m_zone(zone)
@@ -59,6 +63,19 @@ std::optional<XAssetInfoGeneric*> AssetInfoCollector::Visit_Dependency(const ass
     // a null const char* through unchecked implicitly constructs std::string(nullptr) --
     // undefined behavior that crashes inside ucrtbase!strlen on this MSVC STL. There is no
     // dependency to record if its own name never resolved.
+    // 2026-09-17: extended to also catch a non-null but genuinely unreadable
+    // pointer -- see Utils/PointerSanity.h's own comment for why a real
+    // VirtualQuery check replaced the original bit-pattern heuristic here.
+    if (assetName != nullptr && !pointer_sanity::IsLikelyReadablePointer(assetName))
+    {
+        con::warn("AssetInfoCollector::Visit_Dependency: name for asset type {} does not look like a "
+                  "valid pointer ({:#x}) -- treating as absent instead of crashing inside strlen "
+                  "(see fastfile_format_research.md SS5.47, parent repo).",
+                  static_cast<int>(assetType),
+                  reinterpret_cast<uintptr_t>(assetName));
+        assetName = nullptr;
+    }
+
     if (assetName == nullptr)
         return std::nullopt;
 
@@ -89,8 +106,18 @@ std::optional<scr_string_t> AssetInfoCollector::Visit_ScriptString(scr_string_t 
 
 void AssetInfoCollector::Visit_IndirectAssetRef(asset_type_t assetType, const char* assetName)
 {
-    // Same null-name guard as Visit_Dependency above -- IndirectAssetReference's own
-    // constructor takes `std::string` by value, same implicit-construction-from-nullptr risk.
+    // Same guard as Visit_Dependency above -- IndirectAssetReference's own constructor
+    // takes `std::string` by value, same implicit-construction-from-nullptr/garbage-pointer risk.
+    if (assetName != nullptr && !pointer_sanity::IsLikelyReadablePointer(assetName))
+    {
+        con::warn("AssetInfoCollector::Visit_IndirectAssetRef: name for asset type {} does not look like a "
+                  "valid pointer ({:#x}) -- treating as absent instead of crashing inside strlen "
+                  "(see fastfile_format_research.md SS5.47, parent repo).",
+                  static_cast<int>(assetType),
+                  reinterpret_cast<uintptr_t>(assetName));
+        assetName = nullptr;
+    }
+
     if (assetName == nullptr)
         return;
 
