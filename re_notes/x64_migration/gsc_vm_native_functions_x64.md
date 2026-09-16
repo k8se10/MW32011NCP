@@ -213,3 +213,49 @@ interpreter-loop side.
 - `re_notes/gsc_interaction_risk_assessment.md` — the risk assessment that
   led to the 2026-09-16 policy reversal enabling this investigation at
   all.
+
+## STANDING CAUTION, 2026-09-16 -- do not match against the raw English ready-up/buy-station strings found via memory dump; that's the exact class of bug v0.3.1 fixed
+
+Direct user catch: "did we learn our lesson from x86 hardcoded language
+assumptions and the issues which made glyphs not work on other pcs" --
+referring to a real, previously-shipped x86 bug (Version Timeline
+2026-08-06/09, v0.3.1) where controller-glyph icons silently failed to
+match for any non-English game language, because detection compared
+against a hardcoded English literal instead of the real, live-resolved
+localized string. Fixed at the time by resolving templates against the
+game's own real localization system (`g_getLocalizedString`) instead.
+
+**This project's own already-shipped x64 substitutions correctly avoid
+this** (Mantle/Pickup/Reload/menu corner hints all resolve their own
+templates live via `g_getLocalizedStringX64("PLATFORM_MANTLE")`-style key
+lookups, matching the post-v0.3.1 pattern, not hardcoded text).
+
+**The ready-up template found THIS session
+(`"Press ^3[{skip}]^7 to ready up: &&1"`) is different and genuinely
+risky if misused**: it was pulled directly from a live memory-dump
+capture, not resolved via any localization key -- there is no confirmed
+`PLATFORM_*`-style key behind it (per this project's own already-
+documented finding that ready-up's text is "Survival-script-driven, not
+in `code_post_gfx.str` at all"). **If this exact English string is ever
+used as a match/detection target for a real implementation, it would
+silently fail for every non-English game language -- the EXACT bug class
+v0.3.1 already fixed once.** This is precisely why x86's own solution for
+ready-up/buy-station never used string matching in the first place -- it
+uses font-name detection (`IsGameplayHintFont`) instead, specifically
+because no language-independent key was ever found for these two hints.
+x64 does not yet have that same safety net (`Font_s.fontName`'s real
+offset remains unresolved, a standing, independently-investigated-twice
+negative result).
+
+**Binding guidance for any future implementation based on tonight's
+findings**: do not build ready-up/buy-station detection around matching
+this specific English string. Either (a) find a real, language-
+independent key/identifier behind this text (not yet attempted -- the
+struct-array/header work from earlier tonight, or the GSC-VM access this
+whole thread is chasing, might reveal one), or (b) resolve x64's
+`Font_s.fontName` offset so the same font-based detection x86 already
+uses safely can be ported, or (c) if genuinely building a from-scratch
+replacement (the same "rebuild, don't fix" pattern already used for the
+missing "get to cover" warning), source the DISPLAYED text from the
+game's own real localization resolver at the point of use, never from a
+hardcoded copy of what was captured in one specific (English) session.
