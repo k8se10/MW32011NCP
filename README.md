@@ -63,32 +63,36 @@ project now closes real security gaps for the native install that existed
 long before this project did, on top of everything controller-support-
 related.
 
-## ⚠ Security notice: unpatched MW3 (2011) netcode vulnerabilities
+## ⚠ Security notice: unpatched MW3 (2011) netcode vulnerabilities — this mod fixes them
 
 This project's own research (the [Security](#security-netcode-vulnerability-patches)
-component below) has identified real, network-reachable vulnerabilities in
-MW3 (2011)'s own base-game code — **not in this mod** — affecting both
+component below) identified real, network-reachable vulnerabilities in MW3
+(2011)'s own base-game code — **not in this mod** — affecting both
 Multiplayer and Spec-Ops/Survival co-op. These were re-confirmed present and
 unpatched in the game's most recent (September 2026) update, so they are not
-something you can fix by updating.
+something you can fix by updating the game itself.
 
-**What this means practically**: a malicious peer, server, or party/lobby
-host could potentially crash your game or worse. We are not publishing exact
-technical detail while these remain unpatched — doing so before Activision
-has a chance to fix them would put every MW3 player at risk, not just this
-mod's users. A full report has been submitted to Activision through their
-official security-disclosure channel.
+**This mod now closes all four of them.** Installing it patches the running
+process in memory with real, working fixes — see
+[Security](#security-netcode-vulnerability-patches) below for the current
+per-finding status. **A vanilla, unmodified Steam install remains exactly as
+vulnerable as before** — this is a real, meaningful reason to run this mod
+even if you have no interest in its controller/visual features.
 
-**What you can do in the meantime**:
+**What this means for a vanilla install**: a malicious peer, server, or
+party/lobby host could potentially crash the game or worse. We are not
+publishing exact technical detail while these remain unpatched at the
+source — doing so before Activision has a chance to fix them would put
+every MW3 player at risk, not just non-mod users. A full report has been
+submitted to Activision through their official security-disclosure channel.
+
+**If you're not using this mod**:
 - Be cautious joining Multiplayer servers/lobbies you don't trust, especially
   third-party-hosted ones.
 - Be cautious in Spec-Ops/Survival co-op sessions with strangers.
-- This risk exists independent of whether you use this mod — it's in the
-  base game's own networking code. This mod's own fixes for it are covered
-  in [Security](#security-netcode-vulnerability-patches) below.
 
-We'll update this notice with full technical detail once a fix ships and is
-verified, per standard responsible-disclosure practice.
+We'll update this notice with full technical detail once Activision ships
+and verifies its own fix, per standard responsible-disclosure practice.
 
 ## Status
 
