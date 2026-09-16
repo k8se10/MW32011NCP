@@ -9316,3 +9316,39 @@ this screen is first being POPULATED (not just displayed) rather than
 already-idle, which none of tonight's 8 captures happened to catch.
 
 No source changes this round -- pure investigation.
+
+### GROUNDWORK, 2026-09-16 (later same day) -- GSC-VM native function mapping begins, following the policy reversal above; Scr_GetFunctionHandle found (high confidence), SL_GetString candidate found (unconfirmed), VM_Notify not yet found
+
+**Status: Open, real progress. Full detail:
+`re_notes/x64_migration/gsc_vm_native_functions_x64.md` (new dedicated
+doc, this is a summary).**
+
+Direct follow-up to the 2026-09-16 GSC-access policy reversal. Three
+parallel forks, each targeting one real GSC-VM primitive using published
+signatures from a public reference project (`alicealys/iw5-gsc-utils`, a
+Plutonium MW3-MP plugin -- signatures real, addresses don't transfer,
+different binary/architecture) as ground truth for what to look for.
+
+**`Scr_GetFunctionHandle` -- found, high confidence.** Splits into two
+real x64 functions rather than one: `FUN_140255e60` (filename -> internal
+file-context ID) and `FUN_140251fc0` (function-name-string-ID -> callable
+handle within that file), both confirmed via a real bytecode fixup pass
+(`FUN_14025b7f0`, a ~50-opcode switch found via the `"unknown function"`
+error string, 3 real references). `FUN_140251fc0` has exactly one real
+caller (the fixup pass itself) -- genuinely internal load-time linking
+logic, not an already-exposed runtime API, though still a real, callable
+function this project's own code could invoke directly with the right
+calling-convention care.
+
+**`SL_GetString` -- strong unconfirmed candidate**, `FUN_140255e60` (found
+as a byproduct of the above). One real candidate (`FUN_1402574e0`) was
+ruled out along the way -- confirmed to be a generic, 70-caller,
+integer-keyed hashtable accessor, never touches a raw string at all.
+
+**`VM_Notify` -- not found.** Ten plausible error-string anchors came back
+empty; the loader-cluster neighborhood is ruled out as its home. Real
+next steps identified, not yet attempted.
+
+**`Scr_ExecThreadInternal`/`VM_Execute` -- not yet attempted.**
+
+No source changes this round -- pure investigation.
