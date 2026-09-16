@@ -3836,3 +3836,86 @@ in this second crash -- likely another wrong-struct-shape case reachable only af
 `AssetInfoCollector` fix's own extra progress, following the exact same native-decompile
 methodology that resolved `SpeakerMap` (SS5.40). The self-dump + offline-read technique proven
 this round is the safe, repeatable way to keep chasing this without live debugger risk.
+
+### SS5.47 (2026-09-16, later still) — second crash traced without symbols to a corrupted std::string discovered during a hash-table walk; Release config has no PDB, Debug config blocked by the known ObjCommon templating issue
+
+Continued straight from SS5.46's second, open crash. Reproduced it again via the same self-dump
+technique (deterministic: byte-identical register values and `FAILURE_ID_HASH` across two
+separate runs, confirming this is a fixed, reproducible fault, not memory-layout-dependent
+garbage).
+
+**No usable PDB for the Release build** -- `.reload /f Unlinker.exe` reported "cannot find the
+file specified" even with `.sympath+` pointed straight at the output directory; the actual
+link line has no `/DEBUG`, so no matching PDB is ever produced for this config. Tried building
+the `Debug` configuration instead (which should produce real symbols) -- hit this project's own
+already-documented `ObjCommon` "Templating" custom-build-step failure (`MSB8066`) the moment a
+project needing it (`ObjCommon` itself, transitively required by `UnlinkerCli`'s Debug link)
+was built standalone; `CLAUDE.md`'s own existing guidance to build `ZoneLoading`+`UnlinkerCli`
+separately for Release exists specifically to dodge this same issue, but Debug hits it earlier
+in the dependency chain (`ObjCommon` itself, not just the top-level project). Not pursued
+further this round -- fixing the Debug build's own dependency-resolution/templating issue is a
+separate, real piece of build-system work, not part of this investigation.
+
+**Traced the crash via raw disassembly instead** (`ub`/`u` on the dump's own return addresses,
+no symbols). Confirmed structure, working backward from the `strlen` call:
+- The immediate caller (`FUNC_A`, entry ~`Unlinker+0x1192f0`) is a `std::string`-assignment-
+  shaped helper: `(this, const char* param)` -- if `param == nullptr`, builds a fixed 15-byte
+  fallback string inline (no crash risk); if `param != nullptr`, calls `strlen(param)` and
+  presumably copies -- i.e. this helper ALREADY correctly guards the null case, matching every
+  other already-fixed call site in this investigation. The crash requires `param` to be
+  non-null (it is: `0xbeccd7f1403a3622`, `0x4133280ebfc5c9de`) but genuinely invalid.
+- `FUNC_A`'s own caller passes `rdx = qword ptr [rbx+0xA8]` as that `param` -- i.e. the bad
+  value comes from a FIELD, not a fresh computation. The surrounding code (`mov rdi,[rbx+0xA8]`
+  /`mov [rbx+0xA8],rdi`/`cmp qword ptr [rdi],r12`/`je ...`, inside a `cmp r15,rbp; jb` loop) has
+  the exact shape of a linked hash-bucket-chain walk (MSVC `std::unordered_map`'s own sentinel-
+  terminated internal list, `_Next` pointer chasing) -- almost certainly `GlobalAssetPool`'s own
+  hash map being searched or rehashed, landing on a node whose stored key (a `std::string`) is
+  itself corrupted.
+
+**Real conclusion**: the corruption did NOT happen at this call site -- a `std::string` got
+inserted into a hash map SOMEWHERE EARLIER already broken (holding a garbage internal pointer),
+and this crash is just the first place that broken entry gets read back out and re-strlen'd
+(during a compare/rehash). This is consistent with, though not yet proven to be, the same
+"wrong struct shape misreads unrelated binary data as a name pointer" class as the original
+`SpeakerMap` bug (SS5.40) and the general shape of this whole investigation's earlier finding
+that a lot of what reaches this deep into the zone is `snd_alias_t`/`SoundFile`/`LoadedSound`-
+adjacent data -- but WHICH specific asset/field inserts the corrupted string has not been
+identified; finding it requires either proper symbols (blocked, see above) or tracing forward
+from a specific asset's own `Mark`/`AddAsset` call with a live diagnostic, the same proven
+technique used for every earlier fix in this file.
+
+**Reverted the `break` change again** -- still not safe to ship; genuinely a different,
+unrelated bug from the one just fixed in SS5.46, and this round didn't reach a fix, only a much
+more precise characterization of where to look next. `ZoneInputStream.cpp`/`main.cpp` both
+confirmed clean (`git diff` empty) before this commit.
+
+**Concrete next step**: either (a) fix the Debug build's `ObjCommon` templating-step failure
+once, as a standing investment (would make every future self-dump session dramatically faster
+via real symbol names instead of raw disassembly), or (b) add a scoped, temporary diagnostic
+directly inside `AssetPool`/`GlobalAssetPool`'s own `AddAsset` (not `AssetInfoCollector`, which
+is already fixed) that validates a `std::string` name's own internal pointer looks sane
+immediately after construction, to catch the ACTUAL insertion site rather than the later
+discovery site.
+
+### SS5.47 addendum — the canonical-pointer-shape guard theory tested and disproven
+
+Tested a well-precedented, low-risk fix candidate for the SS5.47 crash: a canonical-pointer-
+shape check (`(uintptr_t >> 48) == 0`, matching this fork's own already-trusted
+`LooksLikeUnresolvedRawOffset` heuristic) added to `AssetInfoCollector::Visit_Dependency`/
+`Visit_IndirectAssetRef`, on the theory that the crashing values (`0xbeccd7f1403a3622` etc.,
+non-canonical -- top bits non-zero) were reaching `m_pools.GetAsset` through those exact two
+functions, just with a non-null-but-garbage `assetName` my SS5.46 fix didn't catch.
+
+**Live-tested, disproven**: rebuilt with both the guard and SS5.45's `break` change, ran against
+`common_survival.ff` -- still crashed identically, and the new guard's own warning never fired
+(0 occurrences in the log). This proves the crash does NOT reach `Visit_Dependency`/
+`Visit_IndirectAssetRef` at all -- some OTHER call site constructs the bad `std::string`. This
+is consistent with, and now better supports, the ORIGINAL SS5.47 theory (a `std::string` was
+corrupted at an EARLIER, different insertion point, and this crash is where it's read back out
+during a later hash-table operation) over the "fresh bad input at this call site" theory.
+
+Reverted the guard (unverified speculative code that doesn't address the actual fault isn't
+worth keeping) -- confirmed `git diff` clean on both `ZoneInputStream.cpp` and
+`AssetInfoCollector.cpp` before this commit. The SS5.47 recommended next steps (fix the Debug
+build's `ObjCommon` templating blocker for real symbols, or add a targeted diagnostic at
+`AddAsset`'s own insertion point rather than a later read site) stand as the real path forward.
