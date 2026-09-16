@@ -4347,6 +4347,34 @@ void ComputeRealDrawPositionX64(unsigned __int64 dcHandle, void* fontArg, float 
 
 long long g_drawTextFireCount = 0;
 
+// 2026-09-16, live-reported ("noticing that the reason the pos is wrong is
+// were not parsing the actual weapon name text here" -- confirmed via the
+// HudFontIdLoggingX64 diagnostic: the raw native text for the pickup hint is
+// literally "Press^3 F ^7to pick up" with ZERO weapon name in it) -- x64 port
+// of x86's own issue #48/#49 fix (analog_input_hooks.cpp, see
+// g_awaitingHintContinuationFont's own big header comment there for the full
+// original trail): "the weapon name that follows a pickup/swap hint (e.g.
+// " Model 1887") draws as its OWN separate text-draw call, with no
+// "^N...^7" span of its own, so it was never touched by the suppression
+// logic above and kept rendering natively (independently positioned from
+// our own replacement)." x86's fix: whenever a hint is suppressed, remember
+// its real font pointer and raw Y (param_3 on x86, the direct analog of
+// this file's own `y` parameter -- NOT the ComputeRealDrawPositionX64-
+// transformed value, matching x86's own use of the raw pre-transform
+// value here); the very next call THIS FRAME that shares BOTH exactly and
+// has no highlight span of its own is treated as that hint's real
+// continuation text -- suppressed too, its actual live string content
+// appended to the already-pending composite via AppendCustomHintSuffix
+// (never a hardcoded weapon name -- whatever the game's real string says is
+// what gets appended). One-shot per hint (cleared once consumed or once a
+// new hint is suppressed) -- this state was NEVER ported to x64 at all
+// until this fix, which is the real, confirmed (not guessed) root cause of
+// the weapon name never appearing as part of the substituted hint on x64.
+void* g_awaitingHintContinuationFontX64 = nullptr;
+float g_awaitingHintContinuationYX64 = 0.0f;
+bool g_awaitingHintContinuationX64 = false;
+GameplayHintSlotId g_awaitingHintContinuationSlotX64 = GameplayHintSlotId::Interact;
+
 // Mirrors x86's g_mantleHintDrawnThisFrame/g_mantleHintLastSeenMs pair
 // (analog_input_hooks.cpp) collapsed to a single timestamp -- see this section's
 // header comment for why the per-frame accumulate-then-commit step isn't needed
@@ -4619,6 +4647,16 @@ void Hook_DrawTextX64(
                                                    /*centerOnScreen=*/!isMantleHint, /*flashIcon=*/false, slotId,
                                                    /*topLineText=*/"", fontRole);
                         suppressRealDraw = true;
+
+                        // Arms the next matching call this frame to be treated as this
+                        // hint's own live weapon-name continuation, if one exists -- see
+                        // g_awaitingHintContinuationFontX64's own big comment above for
+                        // the full trail. Uses the RAW pre-transform y (matching x86's
+                        // own raw param_3 usage for this exact purpose), not startY.
+                        g_awaitingHintContinuationFontX64 = fontArg;
+                        g_awaitingHintContinuationYX64 = y;
+                        g_awaitingHintContinuationSlotX64 = slotId;
+                        g_awaitingHintContinuationX64 = true;
 
                         static bool s_loggedFirstSubstitution = false;
                         if (!s_loggedFirstSubstitution) {
@@ -5153,6 +5191,43 @@ void Hook_DrawTextX64(
             }
         } __except (EXCEPTION_EXECUTE_HANDLER) {
         }
+    }
+
+    // Hint-continuation consume -- see g_awaitingHintContinuationFontX64's own
+    // big comment above for the full trail (x86 port, issue #48/#49). A call
+    // is either a fresh hint itself (handled above) or a plain-text
+    // continuation of one already suppressed earlier this frame, handled
+    // here -- never both, hence the !suppressRealDraw guard. Runs on every
+    // draw call after arming, not just the immediate next one, since some
+    // hints may have zero, unrelated draw calls land between the hint and
+    // its own continuation -- matching x86's own equivalent placement/scope
+    // exactly (checked every call, one-shot consumed regardless of outcome).
+    if (g_awaitingHintContinuationX64 && !suppressRealDraw &&
+        ShouldDrawGlyphOverlay_Exported() && !IsMenuActiveX64_Exported()) {
+        __try {
+            if (text && LooksSaneX64(reinterpret_cast<uintptr_t>(text)) &&
+                fontArg == g_awaitingHintContinuationFontX64 &&
+                fabsf(y - g_awaitingHintContinuationYX64) < 0.5f) {
+                size_t textLen = strlen(text);
+                ColorHighlightSpanX64 span = FindColorHighlightSpanX64(text, textLen);
+                if (!span.found) {
+                    AppendCustomHintSuffix(text, g_awaitingHintContinuationSlotX64);
+                    suppressRealDraw = true;
+
+                    static bool s_loggedFirstContinuation = false;
+                    if (!s_loggedFirstContinuation) {
+                        s_loggedFirstContinuation = true;
+                        char buf[220];
+                        sprintf_s(buf, "[x64-drawtext] First hint-continuation match confirmed "
+                            "-- appended live text \"%.100s\" to the pending hint overlay (e.g. the "
+                            "real weapon name following a pickup/swap prompt)", text);
+                        LogFromController(buf);
+                    }
+                }
+            }
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+        }
+        g_awaitingHintContinuationX64 = false; // one-shot regardless of outcome
     }
 
     // 2026-09-16 -- opt-in, read-only live-data-gathering diagnostic for this

@@ -8302,3 +8302,50 @@ investigation resolving first; flagged here so it isn't silently forgotten.
 Shipped: `proxy_d3d9/src/analog_input_hooks_x64.cpp`. Build-verified (x64,
 0 errors, `dumpbin`-confirmed genuine x64 output, deployed). Not yet
 independently re-confirmed live.
+
+### FIXED, 2026-09-16 -- real root cause of the weapon-name hint misalignment: the whole "weapon-name continuation" mechanism (issue #48/#49 on x86) was never ported to x64 at all
+
+**Status: Resolved, root cause directly confirmed via live diagnostic data,
+not a guess.** Direct follow-up to the earlier "weapon name in the interact
+hint... merges incorrectly with the drawn clipart" report and the user's own
+sharp correction after my first (wrong) theory: "x86 did parse weapon names
+finer." Checked the live `HudFontIdLoggingX64` diagnostic log against a real
+screenshot showing "Press [X] to pick up Model 1887" -- the raw native text
+this hook actually receives for this hint is literally
+`"Press^3 F ^7to pick up"`, confirmed via the log, with ZERO weapon name in
+it and zero occurrences of "Model 1887" as its own logged text either.
+
+**Real root cause**: this is not a parsing bug (there was never anything to
+parse out of that string) -- x86 has a real, already-shipped, dedicated
+mechanism for exactly this (issue #48/#49, `analog_input_hooks.cpp`,
+`g_awaitingHintContinuationFont`): the weapon name draws as its OWN,
+completely separate native text-draw call, with no `"^N...^7"` marker span
+of its own, so this project's own suppression logic never touches it and it
+keeps rendering natively, independently positioned from the substituted
+hint. x86's fix: whenever a hint is suppressed, remember its real font
+pointer and raw Y; the very next call that frame sharing BOTH exactly, with
+no highlight span of its own, is treated as that hint's real continuation
+text -- suppressed too, its live content appended to the pending overlay via
+`AppendCustomHintSuffix`. **This entire mechanism was simply never ported to
+x64** -- not broken, not misconfigured, genuinely absent.
+
+**Fix**: ported the mechanism directly (`g_awaitingHintContinuationFontX64`/
+`YX64`/`SlotX64`/`X64`, armed right after the existing Mantle/Pickup/
+Throwback suppression block, consumed near the end of `Hook_DrawTextX64`
+matching x86's own placement/scope exactly -- checked every call after
+arming, one-shot regardless of outcome). Uses the raw pre-transform `y`
+(matching x86's own raw `param_3` usage for this exact comparison, not the
+`ComputeRealDrawPositionX64`-transformed value).
+
+Once this lands correctly, the weapon name becomes part of the SAME
+substituted, positioned overlay as "Press [X] to pick up" instead of a
+separate, unrelated native draw -- which should also resolve the
+"merges/misaligns" symptom as a side effect, since there's no longer a
+second independently-positioned draw to misalign against. The earlier
+"needs an empirical nudge" theory was a real but secondary factor, not the
+root cause -- worth revisiting only after this lands and gets a real live
+test.
+
+Shipped: `proxy_d3d9/src/analog_input_hooks_x64.cpp`. Build-verified (x64,
+0 errors, `dumpbin`-confirmed genuine x64 output, deployed). Not yet
+independently re-confirmed live.
