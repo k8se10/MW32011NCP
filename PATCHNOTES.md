@@ -653,6 +653,14 @@ item below.
     native "release everything" sweep directly, once per level, with no
     pause menu ever opening or closing. See `re_notes/known_issues_x64.md`
     for the full decompile trail.
+25. **CRITICAL: both SP and MP failed to launch at all.** A config-summary
+    log line's own buffer had grown past its limit as new config keys
+    were added incrementally over a long session — this UCRT fails fast
+    on a real `sprintf_s` overflow rather than truncating, crashing
+    inside `DllMain` before anything else in the mod could run. The same
+    bug class as three earlier incidents this project has already hit and
+    fixed. Buffer widened with a generous margin; live-confirmed both
+    binaries load correctly again. See `re_notes/known_issues_x64.md`.
 
 ### Documentation
 1. **`re_notes/known_issues_x64.md` established** as the dedicated x64 issue

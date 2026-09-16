@@ -1295,7 +1295,16 @@ void LoadModConfig()
 
     g_buttonMap = ResolveButtonMap(g_modConfig.buttonLayout, g_modConfig.flipTriggers);
 
-    char buf[1024];
+    // MW32011NCP, 2026-09-16: was buf[1024] -- this UCRT fails fast (0xC0000409/FAST_FAIL_INVALID_ARG)
+    // rather than truncating when sprintf_s's real worst-case output doesn't fit, the SAME bug class
+    // already hit and fixed multiple times in this codebase (2026-09-05, 2026-09-13/14) -- this exact
+    // line kept growing as new config keys were added incrementally over a long session (each addition
+    // safe on its own, the cumulative total was never re-checked) until it finally overflowed, crashing
+    // BOTH iw5sp.exe and iw5mp.exe on every single launch (this call runs unconditionally from DllMain,
+    // before any device/window exists, so nothing else in the mod ever gets a chance to run). Widened
+    // generously (4096, not just "big enough for today") since overlayFontFamily/overlayFontFamilyCondensed
+    // are user-configurable strings that could grow independently of any future field additions here.
+    char buf[4096];
     sprintf_s(buf,
         "[config] loaded mw3ncp_config.ini: sensitivityH=%g sensitivityV=%g adsSlowdownStrength=%g "
         "adsSlowdownBaseline=%g adsCloseRangeSlowdownStrength=%g invertLook=%d lookAccelRampMs=%lu proneHoldMs=%lu interactHoldMs=%lu "
