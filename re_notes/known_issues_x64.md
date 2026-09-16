@@ -8349,3 +8349,35 @@ test.
 Shipped: `proxy_d3d9/src/analog_input_hooks_x64.cpp`. Build-verified (x64,
 0 errors, `dumpbin`-confirmed genuine x64 output, deployed). Not yet
 independently re-confirmed live.
+
+### CORRECTED, 2026-09-16 -- the Back-hint position-gate fix from earlier the same day did NOT resolve the pause-menu flicker; live diagnostic shipped instead of a second guess
+
+**Status: Investigating, live diagnostic shipped, previous fix confirmed
+insufficient by direct user report.** Direct correction: "im confirming the
+fix you shipped did fuck all to the pause menu" -- the earlier
+`looksLikeCornerHintRowX64` gate added to `isBackCornerHint` did not fix
+the reported flicker; the native "Back" text remains completely
+unsuppressed in the pause menu specifically.
+
+**Real, unverified risk in the earlier fix**: `kStandardCornerHintYX64`
+(995.0f, `kCornerHintRowTolerancePxX64`=40.0f) was calibrated against
+whichever menu context Quit/Leaderboards were originally tested in -- it
+was never independently confirmed to also hold for the PAUSE menu's own
+corner-hint row specifically. If the pause menu's real corner-hint Y falls
+outside that window, the earlier fix would make things WORSE for pause
+specifically: the position gate now REJECTS the legitimate match
+(`isBackCornerHint` never becomes true), so `suppressRealDraw` never gets
+set, and the native text draws completely unsuppressed every time --
+exactly matching this report.
+
+**Rather than guess a second time**, added a live, rate-limited diagnostic
+(`[x64-back-diag]`, capped at 10 logged occurrences) right at the content-
+match point: logs the real computed `designRowY`, the constant it's being
+compared against, the tolerance, and whether the row check passed or
+rejected the match, every time the Back text's CONTENT matches (regardless
+of whether the row check passes) -- so the next repro gives the actual
+numbers (confirming or refuting the "wrong calibration for pause" theory)
+instead of another blind fix.
+
+Shipped: `proxy_d3d9/src/analog_input_hooks_x64.cpp`. Build-verified (x64,
+0 errors, `dumpbin`-confirmed genuine x64 output, deployed).
