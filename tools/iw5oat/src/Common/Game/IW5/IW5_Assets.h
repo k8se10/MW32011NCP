@@ -1652,25 +1652,60 @@ namespace IW5
         SoundFileRef u;
     };
 
+    // MW32011NCP / iw5oat, 2026-09-16: CORRECTED against real native x64
+    // iw5sp.exe decompile (FUN_140096980/FUN_140096a50 -- see
+    // re_notes/x64_migration/fastfile_format_research.md SS5.40 in the
+    // parent repo for the full trail and evidence). The upstream/original
+    // shape here (MSSSpeakerLevels sizeof=16 with an inline float[2],
+    // MSSChannelMap sizeof=100 with speakerCount+speakers[6],
+    // SpeakerMap's channelMaps[2][2]) was wrong -- it made this fork's own
+    // SpeakerMap loader read 416 bytes where the real engine only ever
+    // reads 64, a 352-byte-per-entry stream over-consumption that was the
+    // actual root cause of the long-standing "invalid block N" real-zone
+    // extraction crash, since it silently desynced the stream for every
+    // asset loaded afterward.
+    //
+    // Real shape, confirmed via two independent decompiled reads that
+    // arithmetically sum to the exact same total (64 bytes): a 16-byte
+    // SpeakerMap header (isDefault+pad+name) followed by channelMaps[2]
+    // (not [2][2]) of 24 bytes each, each holding 2 of these 12-byte
+    // entries. `#pragma pack` is required here because the real struct
+    // packs a pointer at byte offset 4 (right after a 4-byte int, with
+    // NO alignment padding) -- confirmed directly from the native code's
+    // own unaligned 8-byte pointer write, not assumed; this project's own
+    // in-memory representation doesn't need to match the engine's
+    // alignment choices in general, but it DOES need offsetof(levels) to
+    // come out to 4 (not the natural 8) so FillPtr reads the pointer from
+    // the correct wire position.
+    //
+    // `speaker`'s real value is used directly by the native loader as a
+    // level COUNT (`count << 3` = count * 8 bytes read into `levels`) --
+    // the original upstream field name may describe a different, unverified
+    // semantic (e.g. a channel/speaker index); kept unchanged here to
+    // minimize the diff, since getting the SIZE right (this fix's actual
+    // goal) doesn't depend on the field's true semantic meaning.
+#pragma pack(push, 1)
     struct MSSSpeakerLevels
     {
         int speaker;
-        int numLevels;
-        float levels[2];
+        float* levels;
     };
+#pragma pack(pop)
+    static_assert(sizeof(MSSSpeakerLevels) == 12, "MSSSpeakerLevels must match the real native 12-byte wire size (SS5.40)");
 
     struct MSSChannelMap
     {
-        int speakerCount;
-        MSSSpeakerLevels speakers[6];
+        MSSSpeakerLevels speakers[2];
     };
+    static_assert(sizeof(MSSChannelMap) == 24, "MSSChannelMap must match the real native 24-byte wire size (SS5.40)");
 
     struct SpeakerMap
     {
         bool isDefault;
         const char* name;
-        MSSChannelMap channelMaps[2][2];
+        MSSChannelMap channelMaps[2];
     };
+    static_assert(sizeof(SpeakerMap) == 64, "SpeakerMap must match the real native 64-byte wire size (SS5.40)");
 
     struct SndCurve
     {
