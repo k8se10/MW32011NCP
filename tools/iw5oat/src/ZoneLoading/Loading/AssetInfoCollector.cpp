@@ -51,6 +51,17 @@ std::vector<IndirectAssetReference> AssetInfoCollector::GetIndirectAssetReferenc
 
 std::optional<XAssetInfoGeneric*> AssetInfoCollector::Visit_Dependency(const asset_type_t assetType, const char* assetName)
 {
+    // MW32011NCP / iw5oat, 2026-09-17: a null assetName is genuine, legitimate data for a
+    // dependency reference this fork's own graceful degradation (fastfile_format_research.md
+    // SS5.29/5.41, parent repo) left unresolved -- exactly the same "null is a normal, valid,
+    // absent-reference outcome" case AssetLoader::GetAssetInfo/LinkAsset already guard against
+    // (2026-09-15), just missed here. m_pools.GetAsset takes `const std::string&`, so passing
+    // a null const char* through unchecked implicitly constructs std::string(nullptr) --
+    // undefined behavior that crashes inside ucrtbase!strlen on this MSVC STL. There is no
+    // dependency to record if its own name never resolved.
+    if (assetName == nullptr)
+        return std::nullopt;
+
     auto* assetInfo = m_zone.m_pools.GetAsset(assetType, assetName);
     if (assetInfo == nullptr)
         return std::nullopt;
@@ -78,5 +89,10 @@ std::optional<scr_string_t> AssetInfoCollector::Visit_ScriptString(scr_string_t 
 
 void AssetInfoCollector::Visit_IndirectAssetRef(asset_type_t assetType, const char* assetName)
 {
+    // Same null-name guard as Visit_Dependency above -- IndirectAssetReference's own
+    // constructor takes `std::string` by value, same implicit-construction-from-nullptr risk.
+    if (assetName == nullptr)
+        return;
+
     m_indirect_asset_references.emplace(assetType, assetName);
 }
