@@ -9845,3 +9845,59 @@ this exact bug class in this project's history. The per-commit discipline this f
 calls for isn't optional guidance -- any new or edited `sprintf_s`/format-string call touching a
 fixed-size buffer needs its own worst-case length actually computed (or a generously oversized
 buffer used from the start) at the moment it's written, not deferred to "a sweep later."
+
+### FIXED (pending live confirmation), 2026-09-17 -- the REAL "camera jumps on first real input" bug found and fixed: a native engine gap, not a controller-vs-K+M issue at all
+
+**Status: Build-verified, deployed live, NOT yet independently re-confirmed.** Direct
+user report, after the kbutton-release fix (issue #1's newest round) shipped: "the
+bug still is present requiring some form of native pc keypress (not limited to
+mouse at all) and what happens is on the keypress on k+m it moves the camera
+(probably something to do with staying in mouse sync so youre mouse stays on
+window etc)." This is genuinely NEW information -- it reframes the whole "needs an
+initial click at launch" bug as something that happens on K+M too (no controller
+involved at all), with a specific, observable symptom (a camera jump) rather than
+"input doesn't work yet." The user's own hypothesis (something about the cursor
+staying in sync with the window) turned out to be exactly right.
+
+**Root cause, confirmed via full native decompile, not guessed**: the real per-frame
+mouse-poll function (`FUN_1402eb440`) computes each frame's look delta as
+`currentCursorScreenPos - _DAT_1427932bc` (a persistent "last known cursor position"
+baseline), then updates `_DAT_1427932bc` to the new position for next frame -- an
+ordinary, correct-looking delta computation on its own. The bug: `_DAT_1427932bc` is
+a zero-initialized BSS global, and the ONLY function that ever re-seeds it
+(`FUN_1402eb810`, confirmed via `FindDataWriters`/`FindCallers`) is called
+EXCLUSIVELY from three UI-transition call sites (`FUN_14029cd70`/`FUN_14029ce80`/
+`FUN_14029f3f0` case 7 -- "victoryscreen" and a loading-type screen) -- **never** from
+the real gameplay-entry/unpause path (`FUN_14029f3f0` case 0, the exact same function
+the kbutton-release fix already calls into). On the very first transition into live
+gameplay in a fresh session, `_DAT_1427932bc` has never been seeded -- it's still
+(0,0) -- so the first real delta computed is `currentCursorScreenPos - (0,0)`, i.e.
+the cursor's own raw screen coordinates applied straight to the camera as one huge,
+one-time "movement." This is a genuine **native engine gap** -- none of this
+project's own hooks touch any of these functions or globals at all -- consistent
+with the user's own "needs a keypress" observation: whatever event first satisfies
+the native poll function's own foreground-window/dvar gates (any real key or click
+reaching the window) is what first reaches this code path and triggers the jump.
+
+This also explains why the earlier kbutton-release fix (a real, separate, correctly-
+identified bug) didn't resolve THIS symptom -- they're two completely different
+native mechanisms that both happened to share the surface-level "needs an initial
+click/keypress at launch" description.
+
+**Fix**: resolved the real native seed function (`FUN_1402eb810`, a clean
+self-contained ~60-byte function, signature-scanned rather than hardcoded per this
+project's own policy) and call it once per level, at the same "just past the settle
+delay" moment the kbutton-release fix already fires from. Seeds the baseline to the
+CURRENT real cursor position (`GetCursorPos`+`ScreenToClient`) rather than a
+fixed/guessed point -- zero visible cursor movement, purely a baseline correction.
+
+**Self-caught bug during this same round**: the resolution-log `sprintf_s` call's
+own literal text needed 252 bytes worst-case (computed precisely, not eyeballed) but
+was originally given only `buf[224]` -- the EXACT overflow bug class that broke both
+SP and MP launch entirely earlier this same session. Caught and fixed before it ever
+shipped, by explicitly computing the worst-case length this time instead of trusting
+a "looks big enough" buffer size, per that incident's own standing lesson.
+
+Build-verified (x64 Release, 0 errors), `dumpbin`-confirmed genuine x64 output,
+deployed live. Awaiting a fresh playtest to confirm the camera jump is actually
+gone.

@@ -639,6 +639,49 @@ inline int8_t ClampToSByteX64(int v)
 float* g_pitchAccum = nullptr;  // DAT_1406e2738 equivalent
 float* g_yawAccum = nullptr;    // DAT_1406e273c equivalent
 
+// ---- Real fix for the "camera jumps on the first real input" bug, x64 (2026-09-17) --
+//
+// Direct live report, K+M specifically, NOT controller-related despite the "needs a
+// click at launch" bug already fixed this session (ForceReleaseStuckKbuttonsX64) --
+// "the bug still is present requiring some form of native pc keypress (not limited to
+// mouse at all) and what happens is on the keypress on k+m it moves the camera
+// (probably something to do with staying in mouse sync so youre mouse stays on
+// window etc)". The user's own hypothesis was exactly right -- this traces to a real,
+// NATIVE engine bug this project's own code never touches, confirmed via full
+// decompile, not guessed:
+//
+// The real per-frame mouse-delta reader (`FUN_1402eb440`, called from the native
+// input-poll path) computes each frame's delta as `currentCursorPos -
+// _DAT_1427932bc` (a persistent "last known cursor position" baseline), then updates
+// `_DAT_1427932bc` to the new position for next frame -- a completely ordinary,
+// correct-looking delta computation. The bug is that `_DAT_1427932bc` is a BSS global
+// (zero-initialized at process start) and is ONLY ever re-seeded by
+// `FUN_1402eb810` (confirmed via `FindDataWriters`/`FindCallers`), which is called
+// EXCLUSIVELY from three UI-transition call sites (`FUN_14029cd70`/`FUN_14029ce80`/
+// `FUN_14029f3f0` case 7 -- "victoryscreen" and a loading-type screen) -- NEVER from
+// the real gameplay-entry/unpause path (`FUN_14029f3f0` case 0, the same function
+// this session's own kbutton-release fix already calls into). On the very first
+// transition into live gameplay in a fresh session, nothing has ever called
+// `FUN_1402eb810` -- `_DAT_1427932bc` is still (0,0) -- so the FIRST real delta
+// computed is `currentCursorScreenPos - (0,0)`, i.e. the cursor's own raw screen
+// coordinates applied straight to the camera as one huge, one-time "movement." This
+// is a genuine native engine gap (not something this project's own hooks caused),
+// consistent with the user's own "needs a keypress" observation: whatever event
+// first makes the native poll function's own foreground/dvar gates pass (any real
+// key or click reaching the window) is what first reaches this code path.
+//
+// Fix: call the SAME real native seed function ourselves, once per level, at the
+// same "just past the settle delay" moment `ForceReleaseStuckKbuttonsX64` already
+// uses -- but seed it to the CURRENT real cursor position (GetCursorPos + ScreenToClient),
+// not a fixed/guessed point, so this is a pure baseline correction with zero visible
+// cursor movement, not a warp to an arbitrary location.
+using SeedMouseBaselineFn = void(__fastcall*)(int clientX, int clientY);
+SeedMouseBaselineFn g_seedMouseBaseline = nullptr;
+constexpr const char* kSeedMouseBaselineSignature =
+    "48 83 EC 28 89 4C 24 40 48 8B 0D ?? ?? ?? ?? 89 54 24 44 48 8D 54 24 40 "
+    "FF 15 ?? ?? ?? ?? 8B 54 24 44 8B 4C 24 40 FF 15 ?? ?? ?? ?? 48 8B 44 24 40 "
+    "48 89 05 ?? ?? ?? ?? 48 83 C4 28 C3";
+
 // x64 equivalents of x86's g_motionBlurYawDeltaDeg/g_motionBlurPitchDeltaDeg
 // (analog_input_hooks.cpp) -- real per-frame look-rotation magnitude in degrees,
 // mirrored here rather than shared cross-TU since the x86 globals live inside
@@ -2535,6 +2578,21 @@ extern "C" void ForceReleaseStuckKbuttonsX64()
         case AutoUnstickState::WaitingToSettle:
             if (nowMs - g_levelActiveSinceMs >= kLevelSettleDelayMs) {
                 g_releaseAllKbuttons(0); // real native "release every stuck kbutton" sweep, no menu involved
+                // Real fix for the native "camera jumps on first real input" bug --
+                // see g_seedMouseBaseline's own declaration comment for the full trail.
+                // Seeds the baseline to the CURRENT real cursor position (no cursor
+                // movement at all, purely fixes the reference point the native delta
+                // computation uses) rather than an assumed/guessed point.
+                if (g_seedMouseBaseline) {
+                    HWND hwnd = GetGameWindow();
+                    POINT pt;
+                    if (hwnd && GetCursorPos(&pt) && ScreenToClient(hwnd, &pt)) {
+                        g_seedMouseBaseline(pt.x, pt.y);
+                        LogFromController("[x64-mouse-baseline] seeded the native mouse-delta baseline to "
+                            "the current cursor position for this level -- fixes the native camera-jump-on-"
+                            "first-input bug (real root cause, not a workaround).");
+                    }
+                }
                 g_autoUnstickState = AutoUnstickState::Idle;
                 g_autoUnstickDoneForThisLevel = true;
                 LogFromController("[x64-kbutton-release] fired real stuck-kbutton release sweep for this "
@@ -5620,6 +5678,33 @@ void InstallAnalogInputHooksX64()
                     (void*)g_pitchAccum, (void*)g_yawAccum);
                 LogFromController(buf);
             }
+        }
+    }
+
+    // Real fix for the native "camera jumps on first real input" bug -- see
+    // g_seedMouseBaseline's own declaration comment above for the full trail.
+    // Independent of every other resolution in this function (a pure mouse-baseline
+    // correction, unrelated to controller Movement/Look at all).
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kSeedMouseBaselineSignature);
+        if (!r.found) {
+            LogFromController("[x64-mouse-baseline] FATAL: cursor-baseline-seed signature did not resolve -- "
+                "the native 'camera jumps on first input' bug will not be fixed this session");
+        } else {
+            g_seedMouseBaseline = reinterpret_cast<SeedMouseBaselineFn>(r.address);
+            // 2026-09-17: this literal text is 237 chars including the "%p" placeholder
+            // itself, which expands to up to 16 real hex digits -- real worst case is
+            // ~251 chars + null. buf[224] (this project's own smallest "safe-looking"
+            // size elsewhere) would overflow by ~28 bytes, the EXACT sprintf_s bug class
+            // that broke SP/MP launch entirely earlier this same session -- computed the
+            // real worst case explicitly here instead of eyeballing it, per that
+            // incident's own standing lesson.
+            char buf[320];
+            sprintf_s(buf, "[x64-mouse-baseline] Cursor-baseline-seed function resolved @ 0x%p -- will seed "
+                "the native mouse-delta baseline to the real cursor position once per level, fixing the "
+                "native 'camera jumps on first input' bug at its real root cause.",
+                (void*)g_seedMouseBaseline);
+            LogFromController(buf);
         }
     }
 
