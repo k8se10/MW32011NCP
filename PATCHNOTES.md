@@ -670,18 +670,20 @@ item below.
     computed is the cursor's own raw screen position applied straight to
     the camera as one large jump. Fixed by seeding the same native
     baseline function ourselves, once per level, to the cursor's current
-    position — zero visible movement, pure root-cause fix. Build-verified,
-    deployed; awaiting a fresh playtest. See `re_notes/known_issues_x64.md`.
+    position — zero visible movement, pure root-cause fix. **Live-confirmed**
+    together with item 27 below. See `re_notes/known_issues_x64.md`.
 27. **The missing third piece of the "needs an initial input at launch"
-    fix.** Direct testing found the kbutton-release and mouse-baseline
-    fixes above, while both real and correct, didn't fully close the
-    bug on their own — a real pause-button press was still needed. Added
-    a real, message-queue-routed synthetic Escape keypress (the same
-    already-proven-safe mechanism this project uses for other menu
-    interaction) at the same per-level trigger point, confirmed via
-    testing not to visibly open the pause menu. Build-verified, deployed;
-    awaiting a fresh playtest of the combined fix. See
-    `re_notes/known_issues_x64.md`.
+    fix, live-confirmed.** Direct testing found the kbutton-release and
+    mouse-baseline fixes above, while both real and correct, didn't fully
+    close the bug on their own — a real pause-button press was still
+    needed. Added a real, message-queue-routed synthetic Escape keypress
+    (the same already-proven-safe mechanism this project uses for other
+    menu interaction) at the same per-level trigger point. **The combined
+    fix (items 24, 26, and 27 together) is directly confirmed by the user
+    ("seamless") — the entire "needs an initial input at launch" bug
+    family (stuck kbuttons, camera jump, and the underlying missing input
+    event) is resolved, replacing the 2026-09-04 pause/unpause automation
+    workaround for good.** See `re_notes/known_issues_x64.md`.
 
 ### Documentation
 1. **`re_notes/known_issues_x64.md` established** as the dedicated x64 issue

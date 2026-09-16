@@ -9846,9 +9846,9 @@ calls for isn't optional guidance -- any new or edited `sprintf_s`/format-string
 fixed-size buffer needs its own worst-case length actually computed (or a generously oversized
 buffer used from the start) at the moment it's written, not deferred to "a sweep later."
 
-### FIXED (pending live confirmation), 2026-09-17 -- the REAL "camera jumps on first real input" bug found and fixed: a native engine gap, not a controller-vs-K+M issue at all
+### FIXED, LIVE-CONFIRMED, 2026-09-17 -- the REAL "camera jumps on first real input" bug found and fixed: a native engine gap, not a controller-vs-K+M issue at all
 
-**Status: Build-verified, deployed live, NOT yet independently re-confirmed.** Direct
+**Status: Resolved. Live-confirmed by the user ("seamless") together with the two follow-up fixes below (mouse-baseline seed + synthetic ESC) firing as one combined set.** Direct
 user report, after the kbutton-release fix (issue #1's newest round) shipped: "the
 bug still is present requiring some form of native pc keypress (not limited to
 mouse at all) and what happens is on the keypress on k+m it moves the camera
@@ -9902,9 +9902,9 @@ Build-verified (x64 Release, 0 errors), `dumpbin`-confirmed genuine x64 output,
 deployed live. Awaiting a fresh playtest to confirm the camera jump is actually
 gone.
 
-### FIXED (pending live confirmation), 2026-09-17 (later) -- the real missing piece: a genuine message-queue-routed input event, not just direct native calls
+### FIXED, LIVE-CONFIRMED, 2026-09-17 (later) -- the real missing piece: a genuine message-queue-routed input event, not just direct native calls
 
-Direct live-test follow-up on the mouse-baseline fix above: "fix still requires a
+**Status: Resolved. Direct user confirmation ("seamless") that the full combined fix -- kbutton-release sweep, mouse-baseline seed, and this synthetic ESC send, all firing together at level start -- closes the entire "needs an initial input at launch" bug family: no stuck kbuttons, no camera jump, no visible pause-menu flicker.** Direct live-test follow-up on the mouse-baseline fix above: "fix still requires a
 pause press though the menu doesnt appear on first press (good just forward esc
 same way on level init)." Confirms neither the kbutton-release sweep nor the
 mouse-baseline seed (both real, both correct, but both DIRECT calls into native
@@ -9927,6 +9927,8 @@ distinct native bugs of their own, confirmed via decompile) -- this ESC send is
 the missing third piece, not a replacement for either.
 
 Build-verified (x64 Release, 0 errors), `dumpbin`-confirmed genuine x64 output,
-deployed live. Awaiting a fresh playtest to confirm this closes the whole bug
-family (kbutton-release, mouse-baseline, AND the underlying "needs real input"
-gate) together.
+deployed live. **Live-confirmed by the user ("seamless")** -- the combined fix
+(kbutton-release, mouse-baseline seed, and this synthetic ESC, all firing
+together at level start) closes the whole "needs an initial input at launch"
+bug family for good, replacing the 2026-09-04 pause/unpause automation
+workaround with three genuine, narrowly-scoped native fixes.
