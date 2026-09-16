@@ -826,6 +826,28 @@ item below.
    debugger. See `re_notes/x64_migration/fastfile_format_research.md`
    SS5.46 for the full trail — a second, different crash was found one
    layer deeper and remains open.
+10. **`tools/iw5oat`: the 40+ round-old Unlinker "invalid block" parser
+    bug root-caused and fixed.** Native decompile (`FUN_140096980`/
+    `FUN_140096a50`) found this fork's own `MSSChannelMap`/
+    `MSSSpeakerLevels` struct declarations — inherited from upstream
+    OpenAssetTools' own x86-era assumptions, never updated for this
+    fork's x64 target — read 416 bytes where the real native format
+    reads exactly 64. Fixed in the tracked struct header; live-verified
+    real progress unblocking every tracked zone. See
+    `re_notes/x64_migration/fastfile_format_research.md` SS5.40.
+11. **`tools/iw5oat`: forward-reference handling in the zone parser
+    extended to several more sibling resolution functions**, converting
+    hard `throw`s (aborting the entire zone load) to warn-and-null
+    degradation, matching an already-proven-safe precedent verified
+    against a full 41-zone sweep. One attempt was live-tested, found to
+    segfault, and reverted the same session — a real example of this
+    exact code area's own standing caution about rushed changes. See
+    `re_notes/x64_migration/fastfile_format_research.md` SS5.41-5.42.
+12. **`tools/iw5oat`: real short-read detection.** Every `Load()` call
+    site now checks its own actual byte count against the requested
+    size and throws a real, actionable exception instead of silently
+    corrupting zone data on a truncated read. Permanent hardening, not
+    specific to any one bug.
 
 ### Investigated, Not Yet Resolved
 1. ~~**Fire and/or ADS fails — first live playtest of the x64 build,
