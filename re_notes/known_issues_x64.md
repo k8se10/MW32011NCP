@@ -9289,6 +9289,24 @@ technique tonight -- this struct array, like the text array itself, is
 reached through computed/indexed addressing, not a fixed instruction
 operand anywhere in the binary.
 
+**CORRECTED, 2026-09-16 (live dump read, `selfdump_20260916_053347.dmp`,
+via `mcp-windbg` static analysis): this "3-pointer header struct" is a real
+finding, but NOT related to the ready-up array at all -- a coincidental
+`.bss` neighbor.** Live-read each pointer's target string:
+`0x142695400` -> `"loc_language"`, `0x142695460` -> `"loc_forceEnglish"`,
+`0x1426954c0` -> `"loc_translate"` (all confirmed via `da` against the real
+live process image inside the dump). These are three `dvar_t` handles for
+this engine's own real localization dvars, not per-stat-row metadata for
+the Survival recap array -- the earlier "very likely per-stat-row
+metadata" guess above is wrong, corrected here rather than left standing.
+Genuinely useful for its own sake (real, live-confirmed addresses for
+`loc_language`/`loc_forceEnglish`/`loc_translate` on this exact build,
+directly relevant to the STANDING CAUTION on localization-safe text
+matching elsewhere in this doc), but a dead end for the ready-up owner
+search specifically -- the actual struct/array immediately before the
+recap array in `.bss` is unrelated global state that merely happens to sit
+nearby, not a real anchor to keep pulling on.
+
 **Address-adjacency sweep (the third fork): genuinely checked, no hit.**
 Decompiled every unexamined function adjacent (both directions) to
 `FUN_140052220`, `FUN_1402a9dd0`, `FUN_14029a2b0`, and the TLS-
@@ -9492,3 +9510,63 @@ doesn't currently ship or require. A future session porting any of them needs
 the same "reuse the algorithm, not the hook technique" treatment this pass
 used for pacing, resolved against this project's own signature-scanning
 policy instead of a hardcoded RVA.
+
+### UPDATE, 2026-09-16 (later still) — resuming "chase real suppression via GSC-VM state read": the live-dump thread-table lead is a dead end (static, not per-thread state); `common_survival.ff` GSC extraction hits the same still-open block-loading bug class as `fastfile_format_research.md`'s own unresolved investigation
+
+**Status: Deferred -- two independent avenues attempted this round, both
+genuinely blocked, neither forced.**
+
+**Live-dump thread-table lead (`DAT_142186300`-range global, referenced by
+`FUN_140257880`'s lookup formula) is NOT a per-thread live-state table.**
+Diffed the same 0x90-byte region across two separately-captured self-dumps
+(`selfdump_20260916_053347.dmp`, the confirmed ready-up capture, vs.
+`selfdump_20260916_055627.dmp`, a later capture) -- byte-identical except
+two words, consistent with a mostly-static registration table (very likely
+the string/function-ID hashtable `FUN_1402574e0` itself consumes, already
+identified this session) rather than a dynamic per-active-thread status
+array. `DAT_14246a330` (the confirmed concurrent-far-thread-count check
+from `Scr_ExecThreadInternal`'s `case 0x2b`) read as `0` in the ready-up
+capture -- either the ready-up wait genuinely isn't driven by a far-thread
+at the moment of capture, or this specific global isn't what it was assumed
+to be. Not pursued further this round -- no productive next static probe
+identified from this data alone.
+
+**Attempted a decisive pivot instead: extract and read the actual Survival
+GSC source now that `tools/iw5oat`'s Unlinker can load real retail zones
+again (2026-09-15's own fix).** `common_survival.ff` (the shared Survival
+GSC/asset zone, the natural home for a `coopready`-style wait function) hits
+`ERROR: Loading fastfile failed: Zone tried to reference invalid block 15`
+during its own sound-asset dependency load, REGARDLESS of `--include-assets
+scriptfile` or `--exclude-assets loaded_sound,sound` -- the Unlinker's
+single-pass loader walks the zone's full block stream unconditionally
+before any asset-type filter is applied, so there's no way to skip past a
+crashing block to reach the scripts stored later in the same file. This is
+almost certainly the SAME still-open `XFILE_BLOCK_SCRIPT`-adjacent "size
+0"/invalid-block crash class `fastfile_format_research.md` §5.29-5.34
+already tracks as unresolved after four ruled-out theories and three
+parallel forks (2026-09-15) -- not a new bug, the same wall, now confirmed
+to also block the one zone this specific investigation actually needs.
+A per-map zone (`so_survival_mp_alpha.ff`) was also tried directly, on the
+theory it might carry its own scriptfile independent of `common_survival`'s
+own broken block -- failed differently (`Zone tried to lookup at block 0,
+offset 0 that was not recorded`), consistent with per-map survival zones
+depending on `common_survival.ff` as a base zone that itself won't load.
+
+**Both attempted avenues are genuinely blocked, not abandoned prematurely**:
+the live-dump route ran out of new leads from the data actually available;
+the GSC-extraction route is blocked on a real, already-tracked, still-open
+infrastructure bug this session didn't make further progress on (didn't
+re-attempt the same four already-ruled-out theories from 2026-09-15 --
+would need a genuinely fresh angle on the fastfile-block-loading bug
+itself, a separate investigation from the ready-up chase). Next real
+options, none attempted this round: (a) a fresh angle on the fastfile
+block-loading bug specifically (separate scope from ready-up, benefits
+every future GSC-extraction need, not just this one); (b) a live x64dbg
+BREAKPOINT-only session (per the standing debugger policy -- attach/pause
+approved, resume still confirmed crash-prone) timed to catch the exact
+moment ready-up's wait function is entered, reading the call stack/register
+state without ever resuming past that point; (c) parking this specific
+sub-goal and shipping the already-live-ready (though not yet live-tested)
+text-substitution port from 2026-09-14 as the real deliverable, treating
+"real GSC-VM state read" as a future hardening pass rather than a release
+blocker.
