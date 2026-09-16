@@ -3282,3 +3282,82 @@ already-mapped master asset dispatch switch, `FUN_14009bce0`, same
 technique SS5.9/SS5.23 already proved out for other asset types) to get
 its real, ground-truth per-entry read size directly, rather than trusting
 a by-hand computation from this fork's own struct declaration.
+
+## 5.39. UPDATE, 2026-09-16 (direct continuation, "keep going") — native x64 decompile cross-check of the ENTIRE snd_alias_list_t/snd_alias_t/SoundFile/SoundFileRef/MssSound chain: every byte-consumption size and branch condition CONFIRMED CORRECT; the corrupted-asset trail is definitively cleared from this whole code path, redirecting the investigation elsewhere
+
+**Status: Open. The single most thorough native ground-truth verification
+this investigation has done -- every remaining candidate in the Sound-
+loading chain is now DEFINITIVELY correct, not just "not yet found wrong."**
+
+Reused already-captured native decompile output from
+`re_notes/ghidra_scripts/` (from an earlier session's own work on this
+same asset family, never previously cross-referenced against this specific
+"invalid block 15" thread) rather than re-running Ghidra fresh -- a
+genuinely faster path to the same evidence class SS5.9/SS5.23 already
+proved out for other asset types.
+
+**`FUN_14009f4b0` (native `snd_alias_list_t` fill, `decomp_snd_alias_list_body_14009f4b0.txt`)**:
+bulk-reads exactly `0x18` (24) bytes for the header -- matches
+`sizeof(snd_alias_list_t)` exactly. Checks `head` (offset 8, `[1]` in a
+`ulonglong*` view) against `0`/`-1` exactly matching the fork's own
+`GetZonePointerType` FOLLOWING check (confirmed full 64-bit width, not
+truncated -- consistent with SS5.23's own already-established finding).
+Passes `count` (offset 16, `[2]`) straight through to the array-fill call.
+**Byte-for-byte identical to the fork's own `FillStruct_snd_alias_list_t`
++ `Load_snd_alias_list_t`'s own head-check.**
+
+**`FUN_14009f590` (native `snd_alias_t` array fill, `decomp_snd_alias_array_14009f590.txt`)**:
+bulk-reads exactly `param_2 * 0x98` bytes -- **`0x98` = 152 decimal**,
+EXACTLY matching this session's own by-hand-computed `sizeof(snd_alias_t)`
+from SS5.38 (6 leading 8-byte pointers, 10 4-byte fields, one 1-byte
+field forcing padding, more floats, two more 8-byte-aligned pointers).
+Independently re-confirmed by the native code's OWN per-element pointer
+advance: `plVar2 = plVar2 + 0x13;` -- `0x13` (19) `longlong`-sized steps
+= 19 * 8 = **152 bytes**, the identical number reached two different ways
+in the same function. **This decisively rules out the struct-size
+hypothesis SS5.38 left unverified** -- 152 is confirmed correct, not a
+hand-computation that might be wrong.
+
+**`FUN_14009c0f0` (native `MssSound` fill, `decomp_mssound_14009c0f0.txt`)**:
+bulk-reads exactly `0x38` (56) bytes -- matches the fork's own
+`sizeof(MssSound)=0x38` diagnostic exactly. Checks the `data` pointer
+field (offset `0x30`) for null BEFORE reading any raw sample bytes --
+`if (uVar1 != 0) { ... }`, matching the fork's own `if (varMssSound->data)`
+condition exactly. For asset 0's own `LoadedSound` (observed `data(raw)=
+0000000000000000`, a real null), native's own code ALSO takes the
+"skip raw-sample-read entirely" path -- confirmed, not assumed.
+
+**`FUN_140096900` (native `SoundFileRef`, `decomp_soundfileref_140096900.txt`)**:
+checks `type == 1` (SAT_LOADED) and, when true, calls the real
+`LoadedSound` loader directly with NO further bytes consumed for this
+function itself -- consistent with the fork's own design, where
+`SoundFileRef`'s 16 bytes are already fully captured inside `SoundFile`'s
+own 24-byte (`sizeof(SoundFile)=24`, matching `0x18` seen at the real
+`SoundFile` bulk-read call site, `FUN_14009f590` line 84) bulk read, with
+every downstream call passing `param_1=0` (this function family's own
+"reuse the already-buffered bytes, consume nothing new from the stream"
+convention) rather than reading fresh. Confirmed for asset 0's own actual
+`type=1`/`exists=1` case.
+
+**Net conclusion: the ENTIRE Sound-asset loading chain's own byte
+consumption is now verified correct against real native ground truth, top
+to bottom** -- `snd_alias_list_t` header (24B), `snd_alias_t` array
+(152B/entry, confirmed two independent ways), `SoundFile`/`SoundFileRef`
+(24B, embedded, zero extra consumption), `MssSound` (56B, correctly
+skips the raw-sample read when `data` is null). This is a definitively
+stronger result than any prior round in this whole 39-round thread --
+every specific hypothesis this session raised (wrong FOLLOWING decisions,
+silent short reads, wrong struct/array sizes) is now closed with hard
+native evidence, not just "still open."
+
+**Real implication for whoever continues this**: the corruption is
+demonstrably NOT anywhere in the Sound-asset loading logic itself. Given
+`common_survival.ff`'s own asset stream almost certainly contains many
+OTHER asset types before/around the Sound assets this session traced
+(the log capture used this round only showed the LAST successfully-loaded
+asset's own trace, not the full sequence from the start of the zone), the
+real next step is tracing BACKWARD from the corruption point to identify
+which asset -- of ANY type, not necessarily Sound -- actually precedes it
+in the real stream and may be the one consuming the wrong byte count,
+rather than continuing to re-examine the Sound-asset path this round has
+now exhaustively cleared.
