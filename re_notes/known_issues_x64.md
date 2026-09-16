@@ -8426,3 +8426,48 @@ Shipped: `proxy_d3d9/src/analog_input_hooks_x64.cpp` (adds `#include
 <intrin.h>` for `_ReturnAddress()`, the new hook, and its installer).
 Build-verified (x64, 0 errors, `dumpbin`-confirmed genuine x64 output,
 deployed). Not yet independently re-confirmed live.
+
+### FIXED, 2026-09-16 -- B's pause-close now reuses the already-proven-reliable g_pauseToggle call directly, instead of the still-broken generic ESC-forward chain
+
+**Status: Resolved, via a real, well-reasoned redesign, not another guess at
+the broken mechanism.** Direct follow-up to the still-open "B doesn't
+unpause" investigation -- new symptom detail from the live diagnostic round:
+"b doesnt unpause still just removesz all menu elements but the background
+blur and tint" (confirms the generic ESC-forward chain IS finding and
+closing the real pause menu's own UI widgets, but something separate --
+whatever clears the blur/tint post-process layer and resumes simulation --
+never runs). Then the real insight, directly from the user: "funnily enough
+we shouldnt even have this issue as we successfully pause/unpause to
+unstick rn automatically... see issue #1 x64" -- `AutoUnstickPauseCycleX64`
+(the automated pause-then-unpause cycle that fixes the "needs a click at
+launch" bug on every level load) and `PollPauseToggleX64`'s own close path
+(fixed earlier the same day) both already prove `g_pauseToggle` is a
+completely reliable, complete open/close call -- clears blur/tint, resumes
+simulation, everything -- it's the exact same native mechanism, simply
+never reused for B's own close path, which instead depended on the
+separate, generic, demonstrably-incomplete ESC-forward/menu-script chain
+(`FUN_1402aac50`'s own `case 0x1b` -> `FUN_1402a3ca0`, still under
+investigation for why it only partially closes the menu).
+
+**Fix**: `InjectControllerMenuBackX64` now checks `g_pauseMenuOpenedByUsX64`
+(the same flag `PollPauseToggleX64`'s own 2026-09-16 fix introduced to
+track whether OUR OWN last Start press opened the pause menu) on B's rising
+edge. When true, calls `g_pauseToggle(0)` directly -- the same proven-
+reliable mechanism -- instead of the generic ESC-forward, and clears the
+flag to match. This also closes the "known limitation" that same day's
+earlier fix commit honestly flagged: "if the pause menu is closed via some
+OTHER path [e.g. B], `g_pauseMenuOpenedByUsX64` would go stale" -- B now
+keeps that shared flag correctly in sync instead of being the path that
+staled it.
+
+**Scope, deliberately narrow**: only applies when we KNOW the pause menu
+specifically is open (opened via our own Start press). B's existing
+generic ESC-forward behavior is completely unchanged for every OTHER menu
+(buy station, options, main menu, etc.) -- this does not touch or attempt
+to fix the underlying `FUN_1402aac50`/ESC-forward investigation for those
+other menus, which remains open in its own right if it's ever found to
+have the same incompleteness elsewhere.
+
+Shipped: `proxy_d3d9/src/analog_input_hooks_x64.cpp`. Build-verified (x64,
+0 errors, `dumpbin`-confirmed genuine x64 output, deployed). Not yet
+independently re-confirmed live.

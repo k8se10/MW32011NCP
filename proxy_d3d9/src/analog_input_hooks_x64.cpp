@@ -2351,6 +2351,38 @@ extern "C" void InjectControllerMenuBackX64()
     if (held && menuActiveNow) {
         g_currentBPressTouchedMenuX64 = true;
     }
+
+    // 2026-09-16, live-reported ("b doesnt unpause still just removesz all
+    // menu elements but the background blur and tint") -- the generic
+    // ESC-forward chain below (ForwardKeyToMenuX64 -> FUN_1402aac50's own
+    // data-driven menu-script executor) is confirmed NOT fully closing the
+    // pause menu: it clears the menu's own UI widgets but not whatever
+    // separately clears the blur/tint post-process layer and actually
+    // resumes simulation -- still under investigation
+    // (g_cursorDrawSuppressReturnAddrX64's sibling diagnostic,
+    // [x64-esc-diag]). Direct user insight: "we shouldnt even have this
+    // issue as we successfully pause/unpause to unstick rn automatically" --
+    // AutoUnstickPauseCycleX64 (and PollPauseToggleX64's own close path,
+    // fixed earlier the same day) already prove `g_pauseToggle` is a fully
+    // reliable, complete open/close call (clears blur/tint, resumes
+    // simulation, everything) -- it's the SAME mechanism, just never
+    // reused for B's own close path. When we KNOW the pause menu
+    // specifically is what's open (g_pauseMenuOpenedByUsX64, set by our own
+    // Start-press logic -- PollPauseToggleX64 above), B's rising edge now
+    // calls g_pauseToggle directly instead of the still-broken generic
+    // ESC-forward, and keeps that flag in sync (closing the exact "known
+    // limitation" gap PollPauseToggleX64's own 2026-09-16 fix commit
+    // flagged: "if the pause menu is closed via some OTHER path [e.g. B],
+    // g_pauseMenuOpenedByUsX64 would go stale"). Bypasses
+    // ForwardKeyToMenuX64 entirely for this specific press -- calling both
+    // would risk a double action (one real close plus one partial one).
+    if (held && !g_menuBackHeldX64 && g_pauseMenuOpenedByUsX64 && g_pauseToggle) {
+        g_pauseToggle(0);
+        g_pauseMenuOpenedByUsX64 = false;
+        g_menuBackHeldX64 = held;
+        return;
+    }
+
     // Custom Options overlay (mirrors x86's own guard): while it's open, B closes
     // IT, not the real native menu underneath -- PollCustomOptionsMenuX64's own
     // backEdge handles that close. Without this guard the same B press would also
