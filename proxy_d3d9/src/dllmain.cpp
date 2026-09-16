@@ -32,6 +32,7 @@ void InstallAnalogInputHooksX64(); // defined in analog_input_hooks_x64.cpp -- 2
 extern "C" void HookD3D9CreateDevice(void* realD3D9); // defined in d3d9_hook.cpp
 #if defined(_M_X64) || defined(_WIN64)
 void InstallWaitCoalescingHooksX64(); // defined in wait_coalescing_x64.cpp, 2026-09-16
+void InstallIwdReadCacheHooksX64(); // defined in iwd_read_cache_x64.cpp, 2026-09-16
 #endif
 
 // Deliberately NOT including <d3d9.h>: its prototypes for Direct3DCreate9/D3DPERF_*/etc.
@@ -527,6 +528,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
             InstallWaitCoalescingHooksX64(); // 2026-09-16, see wait_coalescing_x64.cpp
                 // -- signatures only ever verified against iw5sp.exe's own binary,
                 // same SP-only gating as every other x64 hook here.
+            InstallIwdReadCacheHooksX64(); // 2026-09-16, see iwd_read_cache_x64.cpp --
+                // same signature-verified-against-iw5sp.exe-only gating.
 #else
             InstallAnalogInputHooks(); // task #5 -- see analog_input_hooks.cpp
 #endif

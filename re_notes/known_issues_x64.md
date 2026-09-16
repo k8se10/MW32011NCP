@@ -9640,3 +9640,59 @@ piece (persistent memory-mapped `.iwd` archive cache) -- same
 fork-confirmed byte-identical signatures, not yet implemented. The
 sound-prefix cache stays deferred on the separate `mw3_zlibng_v27.dll`
 dependency decision.
+
+### NEW, 2026-09-16 (later still) — persistent .iwd archive read cache ported with credit, deliberately scoped to the real Win32 API layer only
+
+**Status: Groundwork/Resolved (build-verified, NOT yet live-tested).** Final
+piece of the D3D9-optimizer absorption: `proxy_d3d9/src/iwd_read_cache_x64.cpp`
+(new file). Real technique: the first time the game opens a given `.iwd`
+archive, the whole file is mapped read-only into this process once (a real
+Windows file mapping, not a copy); every subsequent read the game's own
+`.iwd` streaming loader makes against that file -- identified via the real,
+signature-verified `MW3_IWD_READ_CALL_SIGNATURE` call site (`FF 15 BD 7C 02
+00`, a `call [ReadFile]` at a confirmed-unique code location, independently
+byte-matched against our own binary by this session's own research fork) --
+is served directly from the mapped view via `memcpy` instead of a real disk
+I/O syscall.
+
+**Deliberately narrower than the source project's own implementation**: the
+source project ALSO detours the raw CRT `_read` entry point directly and
+pokes Microsoft's own internal, undocumented CRT file-descriptor table
+(`fd >> 6` indexing, a hardcoded 72-byte record layout) for an even
+lower-level fast path. That specific piece is NOT ported here -- the
+research fork's own report explicitly flagged it as unverifiable via static
+byte comparison (the FD table is runtime-populated, all-zero in the file
+image), and getting an internal CRT struct offset wrong risks real memory
+corruption, a materially different risk class than a missed optimization.
+This file only hooks the real, documented Win32 API layer (`CreateFileA/W`,
+`ReadFile`, `SetFilePointer(Ex)`, `CloseHandle`, resolved via
+`GetProcAddress` + `MinHook`, same precedent as `wait_coalescing_x64.cpp`'s
+own kernel32 hooks) -- confirmed sufficient on its own, since the source
+project's own `TryServeIwdRead` is invoked from its `HookReadFile` (the
+Win32-level hook), not exclusively from the CRT detour.
+
+Ported data structures near-verbatim (`FilePathSlot`/`IwdArchiveMapping`/
+`IwdHandleSlot`, fixed-size tables — 256/96/64 slots respectively, matching
+the source project's own sizing — SRWLOCK-protected, no dynamic allocation
+on the hot path): `IsIwdPath` (a simple case-insensitive `.iwd` extension
+check on the resolved file path), `LockOrCreateHandle` (creates the
+persistent mapping on first sight of a given archive, reuses it for every
+later handle to the same path), `TryServeIwdRead` (the actual cache-hit
+path, gated on the real caller-address check). Calls
+`NotifyArchiveIoActivityX64()` (`wait_coalescing_x64.h`) on every real cache
+hit, coordinating burst detection with the already-shipped wait-coalescing
+port rather than duplicating that state, per the source project's own
+design.
+
+New `[Video] IwdReadAccelEnabled` INI key, hot-reloadable, OFF by default
+(set live in `mw3ncp_config.ini`). Build-verified (x64 Release,
+`/t:Rebuild`, 0 errors -- same pre-existing `C4312` warnings only),
+`dumpbin /headers` confirms genuine `8664 machine (x64)` output, deployed
+live. Gated to confirmed `iw5sp.exe` only. **Not yet live-tested.**
+
+**This closes the D3D9-optimizer absorption for every technique that
+doesn't need a new third-party dependency.** The one remaining piece, the
+decoded sound-prefix cache/fast-seek, stays deferred on the separate
+`mw3_zlibng_v27.dll` dependency decision (this project doesn't currently
+vendor or require zlib-ng) -- a real, distinct scope question, not
+forgotten.

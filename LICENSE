@@ -75,9 +75,10 @@ license, unmodified in license terms:
   [`k8se10/isotherm-sans`](https://github.com/k8se10/isotherm-sans), embedded
   here as a private, in-process-only font — SIL Open Font License 1.1, see
   `assets/fonts/IsothermSans-OFL.txt` for full terms.
-- The `[Video] FramePacingEnabled`/`WaitCoalescingEnabled` algorithms
-  (`proxy_d3d9/src/frame_pacing_x64.cpp`/`proxy_d3d9/src/wait_coalescing_x64.cpp`),
-  ported 2026-09-16 from
+- The `[Video] FramePacingEnabled`/`WaitCoalescingEnabled`/
+  `IwdReadAccelEnabled` algorithms
+  (`proxy_d3d9/src/frame_pacing_x64.cpp`/`proxy_d3d9/src/wait_coalescing_x64.cpp`/
+  `proxy_d3d9/src/iwd_read_cache_x64.cpp`), ported 2026-09-16 from
   [`legoliamneeson/MW3_Standalone_D3D9_Project`](https://github.com/legoliamneeson/MW3_Standalone_D3D9_Project)
   (Copyright legoliamneeson) — that project's own README states no
   redistribution license is asserted for the ported source; credited here
