@@ -302,6 +302,43 @@ strong candidate), `VM_Execute` (`FUN_14025e950`, definitive), `VM_Notify`
 usable foundation for GSC-VM interaction going forward — the whole
 reason this investigation thread started.
 
+## `VM_Notify` — first real live hook installed, 2026-09-17
+
+Picked up directly where this doc's own "real, usable foundation" summary
+left off — built a real x64 runtime AOB signature for `FUN_140261e10`
+(`DumpSigBytes`-class tooling, a fresh `CreateFuncAndDumpSig.java` script
+since this project's `-noanalysis` Ghidra imports don't have a `Function`
+object at this address without one) and installed a live MinHook detour
+(`Hook_VmNotify`, `proxy_d3d9/src/analog_input_hooks_x64.cpp`) via
+`InstallAnalogInputHooksX64()` — automatically SP-only, matching every
+other gameplay hook's own existing gate.
+
+**Real, useful finding along the way**: `VM_Notify`'s function prologue
+(`MOV [RSP+0x18],R8` / `[RSP+0x10],EDX` / `[RSP+0x8],ECX`) is the standard
+Microsoft x64 shadow-space save sequence — RCX/RDX/R8 map directly onto the
+three published arguments (`notifyListOwnerId`, `stringValue`, `top`). This
+is a genuinely normal calling convention, NOT the custom register-passing
+convention this codebase's own usercmd-pipeline functions needed raw
+`__asm` trampolines for — a plain C++ MinHook detour with a matching
+`__fastcall` signature is safe here.
+
+**Scope, deliberately minimal**: read-only, log-and-call-through, zero
+injected behavior — logs the first 50 real fires in full (owner ID +
+interned string ID) then a periodic heartbeat, matching this codebase's
+own standing rate-limiting lesson (issue #87). Does not call `VM_Notify`,
+does not touch the VM stack, does not inject anything new — squarely
+inside what the 2026-09-16 policy reversal actually unblocked (reading
+live state), not the still-excluded "inject new behavior" class.
+
+Build-verified (genuine x64 `dumpbin` confirmation), deployed to the live
+install; **not yet live-tested**. The real, practical next step once a
+session captures live notify traffic: correlate the observed
+`(ownerId, stringId)` pairs against known in-game actions during a
+Survival session specifically, to see whether the ready-up trigger (the
+original open mystery from issue #5 -- no native call was ever found for
+it on either architecture, only the x86-era synthetic-F5 workaround) shows
+up as an identifiable, repeatable pattern in the traffic.
+
 ## Cross-reference
 
 - Real x86-era prior art: `re_notes/iw5sp.md` (~line 1190-1230), the

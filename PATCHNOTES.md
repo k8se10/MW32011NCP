@@ -875,6 +875,41 @@ item below.
     size and throws a real, actionable exception instead of silently
     corrupting zone data on a truncated read. Permanent hardening, not
     specific to any one bug.
+13. **`tools/iw5oat`: a real, VirtualQuery-backed pointer-validity check
+    (`Utils/PointerSanity.h`) replaced an earlier bit-pattern
+    canonical-address heuristic that had a demonstrated blind spot
+    (a garbage value that still falls in the canonical 48-bit range),
+    applied at every point in the fastfile parser and XModel export
+    pipeline a corrupted zone reference could reach an unchecked
+    dereference.** Verified via native `iw5sp.exe` cross-referencing
+    (`WeaponDef`, `XModel`, `XModelSurfs`, `XSurface` structs all
+    confirmed byte-exact against native, ruling out struct-shape as the
+    cause) and live self-dump crash tracing. `common_survival.ff` went
+    from crashing after 13 guard catches to producing 260,000+ lines of
+    real output with full asset loading completing and real
+    xmodel/xanim assets exporting successfully; no regression against
+    `sp_dubai.ff`. A separate, distinct stack-buffer-overrun remains
+    open further into the XModel/glTF export path — every plausible
+    struct and the bone-weight counting logic both checked out correct,
+    so this needs a live debugger trace, not more static analysis, to
+    pin down.
+14. **First real live GSC-VM read-access hook installed and shipped:
+    `Hook_VmNotify` (`analog_input_hooks_x64.cpp`), following the
+    2026-09-16 policy reversal that unblocked reading live GSC-VM state
+    from the main mod.** A read-only, log-and-call-through diagnostic on
+    the real x64 `VM_Notify` equivalent (`re_notes/x64_migration/
+    gsc_vm_native_functions_x64.md`'s own definitive-confidence finding,
+    reached by decoding the real `notify` bytecode opcode's handler
+    inside the confirmed interpreter loop) — injects nothing, observes
+    every real notify call (owner ID + interned string ID) as it fires
+    during actual play. Unlike this codebase's own usercmd-pipeline
+    functions, `VM_Notify`'s prologue confirmed a perfectly standard
+    Microsoft x64 calling convention, so a plain C++ MinHook detour was
+    safe here with no raw `__asm` trampoline needed. Build-verified,
+    deployed; not yet live-tested. A real, practical first target once
+    live data comes in: correlating notify traffic against known
+    Survival actions to finally identify ready-up's real native
+    trigger, the original open mystery from issue #5.
 
 ### Investigated, Not Yet Resolved
 1. ~~**Fire and/or ADS fails — first live playtest of the x64 build,
