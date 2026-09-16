@@ -35,9 +35,28 @@ WEAK symbol<unsigned int(int localId, const char* pos,
 | Primitive | x64 SP status |
 |---|---|
 | `Scr_GetFunctionHandle` | **Found, high confidence** — see below. Splits into two real functions, not a single 1:1 match. |
-| `SL_GetString` | Strong candidate found (`FUN_140255e60`), not independently verified as the fully generic string-interning path. |
-| `VM_Notify` | Not found. Loader-cluster neighborhood ruled out as its home. |
-| `Scr_ExecThreadInternal`/`VM_Execute` | Not yet attempted. |
+| `Scr_LoadScript` | **Found, high confidence** (round 2) — `FUN_140252210`, decisive evidence (real error strings). See below. |
+| `SL_GetString` | Strong candidate (`FUN_140255e60`), corroborated further in round 2 (a case-insensitive wrapper around it is exactly the shape a field-name lookup needs) — still not independently confirmed as the fully generic path. |
+| `VM_Notify` | Not found after TWO rounds, 20 total string anchors, two caller-tracing angles. Real, substantial ruled-out territory now on record. |
+| `Scr_ExecThreadInternal`/`VM_Execute` | Not found (round 1 attempt) — but the real `Scr_LoadScript` chain was mapped instead as a byproduct, and the strongest remaining lead (function-size sweep) is identified but not yet tried. |
+
+## `Scr_LoadScript` — found, high confidence (round 2)
+
+**Decisive evidence**: `FUN_140252210` logs `"Could not find script '%s'"` on
+failure and `"MAX_PRECACHE_ENTRIES exceeded"` when precaching a script's own
+dependencies, then runs the bytecode fixup pass (`FUN_14025b7f0`) and
+resolves imports (`FUN_140251de0`) — both already-confirmed real members of
+this VM cluster. This is genuinely the real script-load entry point, not a
+guess from shape alone.
+
+**Two real caller wrappers found**, forming the complete, public-facing
+load path: `FUN_140252910`/`FUN_140252ac0` — both build a `"%s.gsc"`
+filename, check a hashtable for an already-loaded copy, and only call
+`FUN_140252210` on a genuine cache miss. Together, `FUN_140252910`/
+`FUN_140252ac0` (cache-check, public entry) -> `FUN_140252210`
+(`Scr_LoadScript` itself) -> `FUN_14025b7f0`/`FUN_140251de0` (fixup/import
+resolution) is the complete, real, x64 script-loading subsystem, filename
+in, cached-or-freshly-loaded script out.
 
 ## `Scr_GetFunctionHandle` — found, high confidence
 
@@ -115,38 +134,72 @@ architecture uses) that many different higher-level functions call INTO,
 `SL_GetString`/`VM_Notify` very possibly among them, but it is not either
 one itself.
 
-## `VM_Notify` — not found this pass
+## `VM_Notify` — not found after two full rounds
 
-Ten plausible error-string anchors tried (`"too many notify"`, `"notify
-list"`, `"bad entity"`, `"invalid entity"`, `"null entity"`, `"not a valid
-notify"`, `"max notify"`, `"notify queue"`, `"notify string"`, `"invalid
-object"`) — zero hits in `iw5sp.exe`. The immediate loader-cluster
-neighborhood (`FUN_1402574e0` and its neighbors) is ruled out as
-`VM_Notify`'s own home — confirmed to be shared, generic table
-infrastructure instead (see above). No x86-era address was ever found for
-this project's own SP binary either (x86-era research, `re_notes/
-iw5sp.md`, found the real published signature via the same Plutonium
-plugin but never located it in `iw5sp.exe` itself, x86 or x64).
+**Round 1**: ten plausible error-string anchors tried (`"too many
+notify"`, `"notify list"`, `"bad entity"`, `"invalid entity"`, `"null
+entity"`, `"not a valid notify"`, `"max notify"`, `"notify queue"`,
+`"notify string"`, `"invalid object"`) — zero hits. The immediate
+loader-cluster neighborhood (`FUN_1402574e0` and its neighbors) ruled out
+as `VM_Notify`'s own home — confirmed shared, generic table
+infrastructure instead (see `SL_GetString` section above).
 
-**Real next steps, not yet tried**: (1) a structural sweep for a
-3-parameter `(uint, uint, pointer)` function that indexes into an
-entity/object array then walks a linked list comparing a stored string ID
-against the passed-in one — the real shape `VM_Notify` should have,
-independent of any string anchor; (2) once `SL_GetString`'s real candidate
-(`FUN_140255e60`) is confirmed, trace ITS OWN callers for one that also
-takes an entity-ID-shaped argument, since `notify`'s own compiled bytecode
-almost certainly resolves its string argument through the same string-ID
-path before calling into `VM_Notify`.
+**Round 2**: a second batch of ten string anchors (`"notify list
+overflow"`, `"vm notify"`, `"cannot notify"`, `"too many active"`,
+`"thread list overflow"`, `"unable to find function"`, `"no such
+function"`, `"notify overflow"`, `"active notify"`, `"threads waiting"`)
+— zero hits, 20 total now tried with nothing. `FUN_140255e60`'s (the
+`SL_GetString` candidate) own 17 real callers were individually traced —
+all either VM-stack-push opcode helpers or an unrelated FastFile
+dictionary decoder; `VM_Notify` is confirmed NOT among them. **Real
+working theory**: this specific binary/build may simply not have a
+distinct, string-anchorable error message for this function at all (or
+uses phrasing 20 real guesses haven't hit yet) — string-anchoring is
+likely exhausted as a technique for this specific primitive.
 
-## `Scr_ExecThreadInternal`/`VM_Execute` — not yet attempted
+No x86-era address was ever found for this project's own SP binary either
+(x86-era research, `re_notes/iw5sp.md`, found the real published signature
+via the same Plutonium plugin but never located it in `iw5sp.exe` itself,
+x86 or x64).
 
-No investigation done yet this session. The real bytecode INTERPRETER loop
-(`VM_Execute`) is likely one of the largest functions in the binary (a
-huge opcode-dispatch switch/jump table) — `FUN_14025b7f0` (the bytecode
-FIXUP pass found above, which walks the SAME ~50 opcodes at LOAD time, not
-execution time) is a structurally related but DIFFERENT function; worth
-checking whether it shares any obvious neighbor with the real runtime
-interpreter, but this hasn't been attempted.
+**Real next steps for a future pass, not yet tried**: (1) a genuine
+structural sweep — scan for `(uint, uint, pointer)`-shaped functions
+ANYWHERE in the binary (not scoped to any one neighborhood) that index an
+array then walk a linked list comparing a stored ID field, independent of
+string anchors or caller relationships entirely; (2) trace
+`FUN_14025ca90`'s (the case-insensitive lookup wrapper found in round 2)
+own callers instead of `FUN_140255e60`'s — it's a more "field/property
+name resolution" shape, and `notify`/`waittill`'s string arguments might
+route through this case-insensitive variant specifically.
+
+## `Scr_ExecThreadInternal`/`VM_Execute` — not found (first attempt)
+
+**Real, decisive negative result, not for lack of trying**: confirmed
+`Scr_LoadScript`'s own full call chain (see above, found as a direct
+byproduct of this attempt) is LOAD-TIME only and does not lead toward the
+runtime interpreter — the interpreter is invoked from separate per-thread
+scheduler/tick code not reachable from the load chain at all. Two
+runtime-specific string anchors tried (`"stack overflow"`, `"script stack
+overflow"`) — both exist as raw strings in the binary but have ZERO
+references via both Ghidra's own xref database and a raw byte-level LEA
+scan (`FindLeaRefsToAddr.java`) — the exact same "real string exists,
+genuinely unreferenced by any findable instruction" wall this whole
+session's investigation has hit repeatedly for other targets (the
+ready-up/buy-station templates, most notably).
+
+**Strongest remaining lead, not yet tried**: a function-SIZE sweep — a
+real bytecode interpreter needs a large opcode-dispatch switch (likely
+covering 100+ distinct GSC opcodes, a strict superset of the ~50 the
+load-time fixup pass already handles), so it should be one of the
+largest functions in the entire binary by raw byte size. No existing
+project tool directly measures function size; would need either a new
+small Ghidra script (function entry-to-next-entry gap, or
+`Function.getBody().getNumAddresses()`) or reusing `NearestFuncs.java`'s
+own address-ordering logic as a base. A second real lead: finding
+whatever SCHEDULES/TICKS already-created GSC threads (separate from and
+downstream of the load chain mapped this round) would approach
+`Scr_ExecThreadInternal` from the thread-creation side rather than the
+interpreter-loop side.
 
 ## Cross-reference
 

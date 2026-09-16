@@ -9352,3 +9352,41 @@ next steps identified, not yet attempted.
 **`Scr_ExecThreadInternal`/`VM_Execute` -- not yet attempted.**
 
 No source changes this round -- pure investigation.
+
+**UPDATE 2026-09-16 (later same day), round 2 -- `Scr_LoadScript` found
+(high confidence); `VM_Notify` still not found after two full rounds (20
+string anchors total); `VM_Execute`/`Scr_ExecThreadInternal` not found
+but `Scr_LoadScript`'s full chain mapped as a real byproduct.** Two more
+parallel forks. Full detail:
+`re_notes/x64_migration/gsc_vm_native_functions_x64.md` (updated).
+
+**`Scr_LoadScript` -- found, high confidence.** `FUN_140252210`, decisive
+evidence (real error strings `"Could not find script '%s'"`/
+`"MAX_PRECACHE_ENTRIES exceeded"`), runs the already-confirmed bytecode
+fixup pass and import resolution. Two real caller wrappers
+(`FUN_140252910`/`FUN_140252ac0`) form the complete, public-facing
+"filename in, cached-or-freshly-loaded script out" load path.
+
+**`SL_GetString` candidate strengthened**, not yet fully confirmed: a
+case-insensitive wrapper around `FUN_140255e60` was found
+(`FUN_14025ca90`) -- exactly the shape a real field-name lookup needs,
+real corroborating evidence.
+
+**`VM_Notify` -- genuinely not found after real, substantial effort.** 20
+total string anchors across two rounds, all zero hits; `FUN_140255e60`'s
+own 17 real callers individually traced, none is it. Working theory: this
+specific function may not have a distinct string-anchorable error message
+in this binary at all -- that technique looks exhausted for this specific
+target. Real next steps (a genuine structural sweep independent of any
+neighborhood, tracing the case-insensitive wrapper's own callers instead)
+identified for a future pass.
+
+**`VM_Execute`/`Scr_ExecThreadInternal` -- not found.** Confirmed
+`Scr_LoadScript`'s own chain is load-time only, doesn't lead toward the
+runtime interpreter (invoked from separate per-thread scheduler code).
+Two runtime-specific string anchors exist as raw strings but have ZERO
+references via both Ghidra's xref database and a raw LEA scan -- the same
+wall this whole session's investigation keeps hitting. Strongest
+remaining lead: a function-SIZE sweep (the real interpreter needs a huge
+opcode-dispatch switch, likely one of the largest functions in the whole
+binary) -- identified, not yet attempted.
