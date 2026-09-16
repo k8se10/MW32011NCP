@@ -38,7 +38,8 @@ WEAK symbol<unsigned int(int localId, const char* pos,
 | `Scr_LoadScript` | **Found, high confidence** (round 2) — `FUN_140252210`, decisive evidence (real error strings). See below. |
 | `SL_GetString` | Strong candidate (`FUN_140255e60`), corroborated further in round 2 (a case-insensitive wrapper around it is exactly the shape a field-name lookup needs) — still not independently confirmed as the fully generic path. |
 | `VM_Notify` | Not found after TWO rounds, 20 total string anchors, two caller-tracing angles. Real, substantial ruled-out territory now on record. |
-| `Scr_ExecThreadInternal`/`VM_Execute` | Not found (round 1 attempt) — but the real `Scr_LoadScript` chain was mapped instead as a byproduct, and the strongest remaining lead (function-size sweep) is identified but not yet tried. |
+| `VM_Execute` | **Found, DEFINITIVE confidence** (round 2, coordinator direct) — `FUN_14025e950`. See below. |
+| `Scr_ExecThreadInternal` | Not found — thread-creation entry point, distinct from the interpreter loop itself, not yet attempted. |
 
 ## `Scr_LoadScript` — found, high confidence (round 2)
 
@@ -172,34 +173,67 @@ own callers instead of `FUN_140255e60`'s — it's a more "field/property
 name resolution" shape, and `notify`/`waittill`'s string arguments might
 route through this case-insensitive variant specifically.
 
-## `Scr_ExecThreadInternal`/`VM_Execute` — not found (first attempt)
+## `VM_Execute` — FOUND, definitive confidence (round 2)
 
-**Real, decisive negative result, not for lack of trying**: confirmed
-`Scr_LoadScript`'s own full call chain (see above, found as a direct
-byproduct of this attempt) is LOAD-TIME only and does not lead toward the
-runtime interpreter — the interpreter is invoked from separate per-thread
-scheduler/tick code not reachable from the load chain at all. Two
-runtime-specific string anchors tried (`"stack overflow"`, `"script stack
-overflow"`) — both exist as raw strings in the binary but have ZERO
-references via both Ghidra's own xref database and a raw byte-level LEA
-scan (`FindLeaRefsToAddr.java`) — the exact same "real string exists,
-genuinely unreferenced by any findable instruction" wall this whole
-session's investigation has hit repeatedly for other targets (the
-ready-up/buy-station templates, most notably).
+**First attempt** (a fork) came back empty: confirmed `Scr_LoadScript`'s
+own full call chain (see above, found as a direct byproduct) is LOAD-TIME
+only and does not lead toward the runtime interpreter. Two runtime-
+specific string anchors tried (`"stack overflow"`, `"script stack
+overflow"`) — both exist as raw strings but have ZERO references via
+either Ghidra's own xref database or a raw byte-level LEA scan — the same
+wall this whole investigation kept hitting. The fork's own identified
+"strongest remaining lead, not yet tried" was a function-SIZE sweep.
 
-**Strongest remaining lead, not yet tried**: a function-SIZE sweep — a
-real bytecode interpreter needs a large opcode-dispatch switch (likely
-covering 100+ distinct GSC opcodes, a strict superset of the ~50 the
-load-time fixup pass already handles), so it should be one of the
-largest functions in the entire binary by raw byte size. No existing
-project tool directly measures function size; would need either a new
-small Ghidra script (function entry-to-next-entry gap, or
-`Function.getBody().getNumAddresses()`) or reusing `NearestFuncs.java`'s
-own address-ordering logic as a base. A second real lead: finding
-whatever SCHEDULES/TICKS already-created GSC threads (separate from and
-downstream of the load chain mapped this round) would approach
-`Scr_ExecThreadInternal` from the thread-creation side rather than the
-interpreter-loop side.
+**That lead was followed immediately and it worked.** New reusable tool,
+`re_notes/ghidra_scripts/LargestFuncs.java` (lists the N largest defined
+functions in the program by real `Function.getBody().getNumAddresses()`
+size — a genuine, reusable technique for any future "find the big
+dispatch loop" RE task, not a one-off). Run against the whole binary:
+`FUN_14025e950` is the **4th-largest function in the entire binary**
+(12,626 bytes) and sits **directly adjacent** to the already-confirmed VM
+cluster (`0x1402510xx`-`0x1402590xx` range).
+
+**Decompiled and DEFINITIVELY CONFIRMED as the real interpreter loop, not
+just a size-based guess**: the decompile is unambiguous fetch-decode-
+execute-loop shape —
+```c
+pfVar25 = pfVar24;                    // fetch: current instruction pointer
+bVar1 = *(byte *)pfVar25;             // fetch: read the opcode byte
+pfVar23 = (float *)((longlong)pfVar25 + 1);  // advance past the opcode
+switch(bVar1) {                       // decode+dispatch on the opcode
+  case 0: ... goto switchD_14025ea4c_caseD_4f;  // execute, then loop back to fetch
+  case 1: ... goto switchD_14025ea4c_caseD_4f;
+  ...
+```
+233 real `case` labels, densely numbered from 0 — a genuine opcode table,
+not a sparse/coincidental switch. The stack operations push/pop in
+16-byte chunks (`pfVar17 + 4` floats = 16 bytes) matching a classic
+`VariableValue`-sized VM value slot; several cases show clear conditional-
+jump shapes (`if (fVar14 == 0.0) goto ...`), exactly what GSC's own
+`jumpOnFalse`/`jumpOnTrue`-style bytecode instructions need. Cross-
+reference: calls `FUN_1402574e0` (the already-confirmed 70-caller generic
+hashtable accessor from the `SL_GetString`/`Scr_GetFunctionHandle`
+investigation above) — exactly consistent with a real interpreter needing
+variable/field lookups mid-execution. The function's own decompiled
+signature shows zero formal parameters (`void FUN_14025e950(void)`) —
+consistent with (not contradicting) a hyper-optimized, hand-tuned
+interpreter hot loop using a custom register-passing convention Ghidra's
+`-noanalysis` pass didn't recognize, the same class of finding this
+project's own x86 per-frame usercmd-builder functions already
+established ("every function in this chain uses custom register-passed
+args, not a clean stack/fastcall signature").
+
+**Real, immediate practical value**: this is the actual function every
+single GSC bytecode instruction in the entire game runs through, for
+every script, every mode, every frame a thread advances. Confirming it
+opens up genuinely new RE angles beyond the original ready-up/buy-station
+question — e.g. a targeted breakpoint (once live debugging is viable
+again) on a SPECIFIC opcode case inside this switch would show exactly
+which script is executing that instruction, a far more surgical
+diagnostic than anything tried so far this session.
+
+**`Scr_ExecThreadInternal` (thread CREATION, separate from the interpreter
+loop itself) remains unfound** — not yet attempted as its own target.
 
 ## Cross-reference
 
