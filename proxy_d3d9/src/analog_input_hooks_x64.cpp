@@ -75,6 +75,9 @@
 #include <cstring>
 #include <cctype>
 #include <cstdlib>
+#include <intrin.h> // _ReturnAddress() -- 2026-09-16, native cursor-draw suppression's
+    // return-address-scoped hook (same technique this project's own security
+    // component already uses, security/proxy_d3d9/src/matchdatadone_memberjoin_fix.cpp)
 #include <cmath> // sqrtf/atan2f/fabsf -- Auto-Mantle's stick-cone check (2026-09-13),
                  // mirrors x86's own InjectControllerButtons math exactly
 #include "../third_party/minhook/include/MinHook.h"
@@ -3922,6 +3925,80 @@ extern "C" bool TryGetCursorGateX64(int* outVisFlag, int* outUiState)
     return true;
 }
 
+// ---- Native cursor-draw SUPPRESSION (x86's Hook_004d48f0), x64 port (2026-09-16) --
+//
+// Live-reported: "also the default non custom cursor renders still its not
+// suppressed" -- the gate resolution above (TryGetCursorGateX64) only tells
+// overlay_hud.cpp's DrawCustomCursorIfNeeded WHEN to draw OUR OWN cursor; it
+// never suppressed the game's own NATIVE cursor draw at all, so both were
+// rendering simultaneously. x86 has a real, dedicated fix for exactly this
+// (analog_input_hooks.cpp, Hook_004d48f0): the native cursor draws through a
+// generic, widely-shared quad/texture-draw primitive (31 real callers on
+// x86) -- rather than trying to suppress the whole HIGH-LEVEL cursor
+// function (which would also skip real gate-check side effects this
+// project has never independently verified), x86 hooks the SHARED
+// PRIMITIVE itself, scoped by EXACT RETURN ADDRESS to the ONE specific call
+// site inside the real cursor-draw dispatcher -- every other one of that
+// primitive's many other callers (menu backgrounds, HUD icons, everything
+// else that draws a textured quad) passes through completely untouched.
+//
+// x64 equivalent found via fresh decompile + disassembly (2026-09-16,
+// re_notes/ghidra_project_x64): the x64 cursor-draw dispatcher this file's
+// own "Custom mouse cursor overlay" section above already identified,
+// FUN_14029d170 (via FUN_00478540's real x64 equivalent, structural-shape +
+// struct-offset cross-confirmation, see that section's own header comment),
+// itself calls the shared quad/texture-draw primitive FUN_14028c2b0 exactly
+// once, at its own tail end, right after the identical gate/switch logic
+// x86's FUN_00478540 has (skip if visFlag==0 or uiState==0/6/10, etc.) --
+// confirmed via `re_notes/ghidra_project_x64/decomp_14029d170.txt`. Its
+// real signature (`re_notes/ghidra_project_x64/decomp_14028c2b0.txt`):
+// void FUN_14028c2b0(undefined8, undefined4, undefined4, float, float,
+// undefined4, undefined4, undefined8, undefined8) -- 9 params, the exact
+// same count as x86's own Hook_004d48f0 signature (unsurprising, both
+// architectures' compilers preserve the real parameter list, just via a
+// different calling convention/ABI MSVC's own __fastcall handles for us
+// automatically here -- no manual register plumbing needed, unlike this
+// project's x86-only __asm/naked hook sites).
+//
+// Anchor: FUN_14029d170's own entry, signature verified unique across the
+// whole binary via CountByteMatches.java before shipping (14 bytes, the
+// real fixed prologue through SUB RSP,0xa8, stopping right before the
+// first genuine address reference at +0x0E).
+constexpr char kCursorDrawDispatcherSignatureX64[] =
+    "40 53 55 41 56 41 57 48 81 EC A8 00 00 00";
+// CALL FUN_14028c2b0 @ 0x14029d60a (confirmed via live disassembly, not the
+// decompile's pseudo-C) -- return address = call+5 (direct CALL rel32 is
+// always 5 bytes), offset from the anchor above.
+constexpr ptrdiff_t kCursorDrawCallReturnOffsetX64 = 0x14029d60f - 0x14029d170; // 0x49f
+// Fixed offset from the SAME anchor to the shared quad-draw primitive's own
+// entry point -- both addresses are within the same static module image,
+// stable across ASLR exactly like every other anchor-plus-fixed-offset
+// resolution this project's own x64 work already relies on.
+constexpr ptrdiff_t kSharedQuadDrawOffsetFromCursorDispatcherX64 = 0x14028c2b0 - 0x14029d170; // -0x10EC0
+
+uintptr_t g_cursorDrawSuppressReturnAddrX64 = 0;
+using SharedQuadDrawFnX64 = void(__fastcall*)(void*, uint32_t, uint32_t, float, float,
+                                                uint32_t, uint32_t, void*, void*);
+SharedQuadDrawFnX64 g_realSharedQuadDrawX64 = nullptr;
+
+void __fastcall Hook_SharedQuadDrawX64(void* param1, uint32_t param2, uint32_t param3,
+                                         float param4, float param5, uint32_t param6,
+                                         uint32_t param7, void* param8, void* param9)
+{
+    if (g_cursorDrawSuppressReturnAddrX64 != 0 &&
+        reinterpret_cast<uintptr_t>(_ReturnAddress()) == g_cursorDrawSuppressReturnAddrX64) {
+        // Suppress the native cursor draw entirely -- overlay_hud.cpp's
+        // DrawCustomCursorIfNeeded (already gated by TryGetCursorGateX64
+        // above) redraws it instead, as the last thing drawn each frame,
+        // matching x86's own established design exactly.
+        return;
+    }
+    // Every other caller of this shared primitive -- menu backgrounds, HUD
+    // icons, everything else that draws a textured quad -- passes through
+    // here completely unmodified.
+    g_realSharedQuadDrawX64(param1, param2, param3, param4, param5, param6, param7, param8, param9);
+}
+
 // ---- Native text-draw hook (x86's Hook_DrawGlyphText), x64 port (2026-09-13) ------
 //
 // PRIOR STATE: this was the single remaining blocker for gameplay controller-glyph
@@ -6055,6 +6132,49 @@ void InstallAnalogInputHooksX64()
                 g_cursorUiStateX64 = nullptr;
                 LogFromController("[x64-cursor] FATAL: cursor-gate RIP-relative resolution failed -- the custom "
                     "mouse cursor overlay will not draw this session (safe early-return stub stays in place)");
+            }
+        }
+    }
+
+    // Native cursor-draw suppression (2026-09-16) -- see Hook_SharedQuadDrawX64's
+    // own header comment above for the full trail. Independent of the cursor-gate
+    // resolve above -- a failure here means the native cursor keeps rendering
+    // alongside our own (the exact bug this fix exists to close), but never
+    // affects whether OUR OWN cursor still draws via the gate above.
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kCursorDrawDispatcherSignatureX64);
+        if (!r.found) {
+            LogFromController("[x64-cursor-suppress] FATAL: cursor-draw-dispatcher signature did not resolve -- "
+                "the native cursor will keep rendering alongside our own custom cursor this session");
+        } else {
+            g_cursorDrawSuppressReturnAddrX64 = r.address + kCursorDrawCallReturnOffsetX64;
+            void* sharedQuadDrawAddr = reinterpret_cast<void*>(r.address + kSharedQuadDrawOffsetFromCursorDispatcherX64);
+            void* original = nullptr;
+            MH_STATUS createStatus = MH_CreateHook(sharedQuadDrawAddr, reinterpret_cast<void*>(&Hook_SharedQuadDrawX64),
+                                                    reinterpret_cast<void**>(&original));
+            if (createStatus != MH_OK) {
+                char buf[220];
+                sprintf_s(buf, "[x64-cursor-suppress] FATAL: MH_CreateHook failed for shared quad-draw primitive "
+                    "@ %p (status=%d) -- the native cursor will keep rendering alongside our own this session",
+                    sharedQuadDrawAddr, static_cast<int>(createStatus));
+                LogFromController(buf);
+            } else {
+                MH_STATUS enableStatus = MH_EnableHook(sharedQuadDrawAddr);
+                if (enableStatus != MH_OK) {
+                    char buf[220];
+                    sprintf_s(buf, "[x64-cursor-suppress] FATAL: MH_EnableHook failed for shared quad-draw "
+                        "primitive @ %p (status=%d) -- the native cursor will keep rendering alongside our own "
+                        "this session", sharedQuadDrawAddr, static_cast<int>(enableStatus));
+                    LogFromController(buf);
+                } else {
+                    g_realSharedQuadDrawX64 = reinterpret_cast<SharedQuadDrawFnX64>(original);
+                    char buf[260];
+                    sprintf_s(buf, "[x64-cursor-suppress] Installed. Shared quad-draw primitive @ %p hooked, "
+                        "scoped to native cursor's own return address 0x%llX -- native cursor draw should now "
+                        "be suppressed, our own overlay cursor drawn instead.",
+                        sharedQuadDrawAddr, static_cast<unsigned long long>(g_cursorDrawSuppressReturnAddrX64));
+                    LogFromController(buf);
+                }
             }
         }
     }
