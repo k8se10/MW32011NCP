@@ -8257,3 +8257,48 @@ mirroring `kMantleHintXNudge`/`kMantleHintYNudge`'s own precedent.
 Shipped: `proxy_d3d9/src/analog_input_hooks_x64.cpp` (the ESC-forward
 diagnostic and the Back/Friends/GameSummary position gate). Build-verified
 (x64, 0 errors, `dumpbin`-confirmed genuine x64 output, deployed).
+
+### FIXED, 2026-09-16 -- real regression: pressing Start a second time (to close the pause menu) was wrongly re-routed into the cinematic-skip open path, live-reported as "in menus start press now again skips cutscene"
+
+**Status: Resolved, root cause directly confirmed via x86 comparison, not
+guessed.** Direct follow-up to the same day's earlier cutscene-skip fix
+(the "3+" round documented above) -- that fix ported x86's own three-way
+`InjectControllerPauseMenu` split (state 1/2 = cinematic, real
+`OpenPauseMenu` call; state 6 = normal gameplay; anything else = native
+no-op) to x64's `PollPauseToggleX64`, but missed a real structural piece of
+x86's own function: x86 gates its ENTIRE state-branch behind
+`bool currentlyPaused = GetDvarInt("cl_paused") != 0;` -- when already
+paused, x86 skips the state check completely and goes straight to
+`SetMenuState(kLocalClientIndex, kMenuStateUnpause)`. `PollPauseToggleX64`
+had no equivalent gate at all: it evaluated `TryGetClcStateX64` on EVERY
+Start press, including the second one meant to CLOSE the menu. If clcState
+still read 1/2 while the pause menu was already open (plausible -- it
+likely reflects underlying scene/connection state, not "is our own pause
+UI currently shown"), the CLOSE press was wrongly re-routed into
+`g_openPauseMenuForCinematic` again instead of the real close call --
+exactly matching the live report.
+
+**Fix**: added `g_pauseMenuOpenedByUsX64`, tracking whether THIS function's
+own last Start press opened the menu. The very next press now goes straight
+to `g_pauseToggle(0)` (the close path) unconditionally, bypassing the
+clcState check entirely -- the same open/close distinction x86's own
+`cl_paused` dvar read provides, without depending on an unconfirmed x64
+dvar-read mechanism (x86's `GetDvarInt` has no independently-confirmed x64
+equivalent yet).
+
+**Known limitation, honestly flagged, not fixed this pass**: this flag only
+tracks presses THROUGH this exact function. If the pause menu is closed via
+some OTHER path (e.g. B's own ESC-forward, currently under separate
+investigation in this same file's newest "B doesn't unpause" round above),
+`g_pauseMenuOpenedByUsX64` would go stale (still true), and the next Start
+press would skip the clcState check even though it should have used it (a
+narrower edge case: menu closed via B, then Start pressed again during a
+still-active cinematic). `g_pauseToggle` itself is a genuine native toggle,
+so this doesn't break basic open/close correctness -- it only means the
+cinematic-aware open path could be skipped on that specific sequence. Not
+addressed this pass since it depends on the separate, still-open B-unpause
+investigation resolving first; flagged here so it isn't silently forgotten.
+
+Shipped: `proxy_d3d9/src/analog_input_hooks_x64.cpp`. Build-verified (x64,
+0 errors, `dumpbin`-confirmed genuine x64 output, deployed). Not yet
+independently re-confirmed live.
