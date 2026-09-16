@@ -8194,3 +8194,66 @@ Shipped: `proxy_d3d9/src/mod_config.h`/`.cpp` (new toggle, both the
 `[Experimental]` template and the current-config log line),
 `proxy_d3d9/src/analog_input_hooks_x64.cpp` (`Hook_DrawTextX64`'s new
 diagnostic block).
+
+### Three live bugs reported in one session, 2026-09-16 -- one root-caused with a live diagnostic shipped, one fixed, one identified as a known already-documented tuning gap
+
+**1. B doesn't correctly unpause (closes the pause menu visually but doesn't resume gameplay, still requiring Start/ESC to actually resume) -- INVESTIGATING, live diagnostic shipped.**
+
+Traced x64's ESC-forward path (`ForwardKeyToMenuX64` -> `g_menuKeyEventX64`/
+`FUN_1402aac50`, `case 0x1b`) down to the actual handler,
+`FUN_1402a3ca0` -- confirmed via fresh decompile this is a **data-driven
+menu-script executor**: ESC's real effect is whatever "close script" is
+attached to the CURRENTLY TOPMOST menu (read from `menu+0x30`), not a
+hardcoded native resume call. This matches x86's own identical
+architecture (`FUN_004d9850`, confirmed working live 2026-07-16, issue #13)
+-- the pause menu's own real `.menu` close-script presumably includes the
+actual resume action as one of its script commands. The leading theory:
+`GetTopmostActiveMenuX64()` (resolved fresh on every B-forward) may not be
+resolving the TRUE pause menu at the exact moment B is pressed, so ESC
+executes some other menu's close-script instead -- closing *a* menu
+visually without running the one script that would have actually resumed
+simulation. Not yet confirmed -- rather than guess further from static
+analysis, shipped a live diagnostic instead (`ForwardKeyToMenuX64`, always-
+on for ESC specifically, not toggle-gated since it only fires on a real B
+press while a menu is open): logs the resolved topmost-menu pointer and the
+raw close-script pointer at `menu+0x30` every time ESC is forwarded. The
+next B-press-while-paused repro will show `[x64-esc-diag]` lines in
+`proxy_d3d9.log` with real data -- either the close-script pointer is null/
+wrong, or the resolved menu itself isn't the real pause menu, both directly
+diagnosable from the log rather than more theory.
+
+**2. Back(B) corner-hint flickering at an incorrect position -- FIXED.**
+
+`isBackCornerHint`/`isFriendsCornerHint`/`isGameSummaryCornerHint` were
+exact-content-matched with NO position sanity check at all -- ported
+directly from x86's own equivalent, which has the identical gap (confirmed
+via direct comparison, `analog_input_hooks.cpp`'s own `isBackShortcut`).
+This project has real, documented precedent for exactly this bug class:
+BUG-006 (x86, 2026-08-02, already fixed for Quit/Leaderboards on x64 via
+`looksLikeCornerHintRowX64`) -- "a bare content match alone once hijacked a
+genuine navigable menu item sharing the same label; position is the fix,
+not font family." Whatever x64-specific context makes a second draw call
+also resolve to the identical `PLATFORM_BACK_SHORTCUT` text wasn't
+independently identified this pass, but gating all three on
+`looksLikeCornerHintRowX64` (already proven correct for Quit/Leaderboards)
+is strictly more defensive with zero cost to the real corner-hint case,
+which is always within the row tolerance by definition. Build-verified;
+not yet independently re-confirmed live.
+
+**3. Weapon name in the interact/pickup hint centers to screen and merges
+with the drawn icon, correctly aligned on x86 -- NOT a new bug, a known,
+already-documented gap.** The pickup-hint block's own position code already
+carries an honest caveat comment from 2026-09-13: it calls the real
+position transform correctly (`ComputeRealDrawPositionX64`, mathematically
+sound), but **"unlike x86 (which reached its exact pixel alignment via
+multiple live-tested rounds of empirical nudge constants -- kHintVerticalNudge,
+kMantleHintXNudge/YNudge...), NO equivalent nudge has been derived or
+applied here."** This isn't a logic bug reachable via static RE -- x86 only
+got pixel-perfect alignment through live iteration the same way. Needs the
+same treatment: real visual feedback (a screenshot or a clear "shift X by
+N/shift Y by N" description) to derive the actual x64 nudge constants,
+mirroring `kMantleHintXNudge`/`kMantleHintYNudge`'s own precedent.
+
+Shipped: `proxy_d3d9/src/analog_input_hooks_x64.cpp` (the ESC-forward
+diagnostic and the Back/Friends/GameSummary position gate). Build-verified
+(x64, 0 errors, `dumpbin`-confirmed genuine x64 output, deployed).

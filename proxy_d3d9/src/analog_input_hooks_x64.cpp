@@ -1963,6 +1963,38 @@ void ForwardKeyToMenuX64(int keyCode, int isDown)
     if (!g_menuKeyEventX64 || !g_uiMenuContextX64) return;
     void* menu = GetTopmostActiveMenuX64();
     if (!menu) return;
+
+    // 2026-09-16, live-reported bug: "press pause button it unpauses normally,
+    // but press B on controller and it doesn't unpause but loses the physical
+    // menu when you do that, still requiring the pause key or esc to get back
+    // to gameplay." Traced the real ESC-forward path (FUN_1402aac50 case 0x1b
+    // -> FUN_1402a3ca0) to a DATA-DRIVEN menu-script executor: ESC's real
+    // behavior is whatever "close script" is attached to the CURRENTLY
+    // TOPMOST menu (read from menu+0x30), not a hardcoded native resume call
+    // -- meaning whether B correctly resumes depends entirely on which menu
+    // this function resolves as topmost at the exact moment of the press.
+    // This diagnostic (always-on, not toggle-gated -- ESC-forward only fires
+    // on a real B press while a menu is active, never a hot path) logs the
+    // resolved menu pointer and the raw close-script pointer at +0x30 every
+    // time ESC specifically is forwarded, so a real B-press-while-paused
+    // repro gives concrete data instead of another round of static guessing:
+    // if the close-script pointer is null/different from a working Start-
+    // toggle's own path, or if this resolves to something other than the
+    // real pause menu at all, that's the real root cause, not a theory.
+    if (keyCode == 0x1b /* kKeyEscapeX64 -- declared later in this file, used here by literal
+                            to avoid a forward-declaration reorder */ && isDown) {
+        __try {
+            auto closeScriptPtr = *reinterpret_cast<uintptr_t*>(reinterpret_cast<uintptr_t>(menu) + 0x30);
+            char buf[200];
+            sprintf_s(buf, "[x64-esc-diag] ESC forwarded -- topmost menu=%p, close-script ptr @ menu+0x30 = 0x%llX%s",
+                      menu, static_cast<unsigned long long>(closeScriptPtr),
+                      closeScriptPtr == 0 ? " (NULL -- ESC will be a no-op for this menu)" : "");
+            LogFromController(buf);
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            LogFromController("[x64-esc-diag] ESC forwarded -- menu+0x30 read faulted (SEH caught)");
+        }
+    }
+
     g_menuKeyEventX64(g_uiMenuContextX64, menu, static_cast<uint32_t>(keyCode), isDown);
 }
 
@@ -4981,19 +5013,34 @@ void Hook_DrawTextX64(
                 }
             }
 
+            // 2026-09-16, live-reported bug ("back esc corner hint detection to make
+            // it say back(B) is flickering at the incorrect pos constantly"): Back/
+            // Friends/GameSummary were exact-content-matched with NO position check
+            // at all -- ported that way directly from x86's own equivalent (which has
+            // the identical gap), but this project's own real, documented precedent
+            // (BUG-006, x86, 2026-08-02 -- see Quit/Leaderboards' own comment just
+            // above) is exactly this bug class: "a bare content match alone once
+            // hijacked a genuine navigable menu item sharing the same label; position
+            // is the fix, not font family." Whatever x64-specific context makes this
+            // reachable now (a second, non-corner-hint draw call this session also
+            // resolves to the identical PLATFORM_BACK_SHORTCUT text, which this
+            // project has not yet identified), gating on looksLikeCornerHintRowX64 --
+            // already proven correct and safe for Quit/Leaderboards -- is strictly
+            // more defensive with zero cost to the real corner-hint case, which is
+            // always within the row tolerance by definition.
             const char* backTmpl = g_getLocalizedStringX64("PLATFORM_BACK_SHORTCUT");
-            bool isBackCornerHint = backTmpl && LooksSaneX64(reinterpret_cast<uintptr_t>(backTmpl)) &&
-                strcmp(text, backTmpl) == 0;
+            bool isBackCornerHint = looksLikeCornerHintRowX64 && backTmpl &&
+                LooksSaneX64(reinterpret_cast<uintptr_t>(backTmpl)) && strcmp(text, backTmpl) == 0;
             const char* friendsTmpl = g_getLocalizedStringX64("PLATFORM_FRIENDS_SHORTCUT");
-            bool isFriendsCornerHint = friendsTmpl && LooksSaneX64(reinterpret_cast<uintptr_t>(friendsTmpl)) &&
-                strcmp(text, friendsTmpl) == 0;
+            bool isFriendsCornerHint = looksLikeCornerHintRowX64 && friendsTmpl &&
+                LooksSaneX64(reinterpret_cast<uintptr_t>(friendsTmpl)) && strcmp(text, friendsTmpl) == 0;
             // Game Summary (2026-09-13 port of x86's PLATFORM_GAMESUMMARY_SHORTCUT
             // exact-match case, analog_input_hooks.cpp ~line 8849 -- same span-gated
             // block as Back/Friends there, ported alongside them here for the same
             // reason).
             const char* gameSummaryTmpl = g_getLocalizedStringX64("PLATFORM_GAMESUMMARY_SHORTCUT");
-            bool isGameSummaryCornerHint = gameSummaryTmpl && LooksSaneX64(reinterpret_cast<uintptr_t>(gameSummaryTmpl)) &&
-                strcmp(text, gameSummaryTmpl) == 0;
+            bool isGameSummaryCornerHint = looksLikeCornerHintRowX64 && gameSummaryTmpl &&
+                LooksSaneX64(reinterpret_cast<uintptr_t>(gameSummaryTmpl)) && strcmp(text, gameSummaryTmpl) == 0;
 
             // !suppressRealDraw guard (defensive, matches x86's own textLen=0-when-
             // already-suppressed pattern for this same block, analog_input_hooks.cpp
