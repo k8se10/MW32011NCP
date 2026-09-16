@@ -905,11 +905,36 @@ item below.
     during actual play. Unlike this codebase's own usercmd-pipeline
     functions, `VM_Notify`'s prologue confirmed a perfectly standard
     Microsoft x64 calling convention, so a plain C++ MinHook detour was
-    safe here with no raw `__asm` trampoline needed. Build-verified,
-    deployed; not yet live-tested. A real, practical first target once
-    live data comes in: correlating notify traffic against known
-    Survival actions to finally identify ready-up's real native
-    trigger, the original open mystery from issue #5.
+    safe here with no raw `__asm` trampoline needed. **Live-confirmed the
+    same day**: 57 real fires captured during actual play, varied real
+    data.
+15. **`Hook_VmNotify` extended with real interned-string resolution
+    (`TryResolveGscInternedString`), so the log shows readable GSC
+    identifier text alongside the raw stringId, not just the raw ID.**
+    Found via the same native cross-referencing methodology, applied to
+    GSC's own compiler source this time: located `OP_GetString = 0x0A`/
+    `OP_GetIString = 0x37` in `xensik/gsc-tool`'s own published opcode
+    table, then decompiled their shared handler inside the already-
+    confirmed `VM_Execute` interpreter loop, revealing a real refcounted
+    string-pool table (`tableBase + (stringId << 4)`, 16 bytes/entry,
+    refcount at offset 0) behind a fixed-location pointer variable
+    resolved at runtime via the existing `SigScan::ResolveRipRelative`
+    utility. The read itself reuses this codebase's own established
+    SEH-guarded memory-read pattern (`Plugin_ReadMemory`'s convention),
+    capped at 63 characters, and only ever logged if every byte up to
+    the terminator is printable ASCII. **One honest, explicitly
+    unconfirmed detail**: the exact byte offset of the string TEXT
+    within each 16-byte entry (hypothesized as offset+4, "inline right
+    after the refcount") was not independently proven via disassembly —
+    a more complex bucketed free-callback cast some doubt without
+    disproving it — deliberately left for live testing to confirm or
+    refute safely, since a wrong guess just fails the printable-ASCII
+    check and falls back to raw-ID-only logging rather than crashing or
+    misbehaving. Build-verified, deployed; not yet live-tested. A real,
+    practical first target once live data comes in: correlating notify
+    traffic against known Survival actions to finally identify
+    ready-up's real native trigger, the original open mystery from
+    issue #5.
 
 ### Investigated, Not Yet Resolved
 1. ~~**Fire and/or ADS fails — first live playtest of the x64 build,

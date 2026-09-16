@@ -331,13 +331,57 @@ inside what the 2026-09-16 policy reversal actually unblocked (reading
 live state), not the still-excluded "inject new behavior" class.
 
 Build-verified (genuine x64 `dumpbin` confirmation), deployed to the live
-install; **not yet live-tested**. The real, practical next step once a
-session captures live notify traffic: correlate the observed
-`(ownerId, stringId)` pairs against known in-game actions during a
-Survival session specifically, to see whether the ready-up trigger (the
-original open mystery from issue #5 -- no native call was ever found for
-it on either architecture, only the x86-era synthetic-F5 workaround) shows
-up as an identifiable, repeatable pattern in the traffic.
+install; **live-confirmed the same day** — 57 real fires captured during
+actual play, varied real data.
+
+## Interned-string resolution — `TryResolveGscInternedString`, 2026-09-17
+
+Extended `Hook_VmNotify` to resolve `stringValue` (the raw interned-string
+ID) into real, human-readable text, rather than logging the bare integer.
+Same technique as `VM_Notify` itself: found the real opcode bytes from
+`gsc-tool`'s own published compiler source (`OP_GetString = 0x0A`,
+`OP_GetIString = 0x37`), then decompiled their shared handler
+(`LAB_14025ed6b`) inside the already-confirmed `VM_Execute` interpreter
+loop (`FUN_14025e950`).
+
+**Real disassembly found a refcounted string-pool table**:
+`tableBase + (stringId << 4)` (16 bytes/entry), refcount at offset 0
+(`LOCK INC`/`LOCK DEC` on push/release, freed via a callback,
+`FUN_1402560a0`, when it hits zero). `DAT_14201ff08` — the table base — is
+itself a POINTER VARIABLE, read via `ADD RAX, qword ptr [rip+disp]`, not an
+inline array; the real runtime table address can only be resolved by
+dereferencing this fixed-location pointer variable, which is exactly what
+`g_gscStringTableVarAddr` (resolved once at startup via
+`SigScan::ResolveRipRelative`, the same utility already proven for other
+RIP-relative resolutions in this codebase) is for.
+
+**One dead end investigated and ruled out along the way**:
+`FUN_140257d80` looked like a plausible string-table accessor at first
+glance but decompiled to the codebase's already-known-generic hashtable
+accessor (`param_1*0x65 + param_2*2` hash) — not string-specific,
+abandoned in favor of the direct disassembly-based discovery above.
+
+**Honest, unproven hypothesis, deliberately flagged rather than silently
+assumed**: the exact byte offset of the string TEXT within each 16-byte
+entry (hypothesized as offset+4, "inline right after the refcount") is
+NOT independently confirmed via disassembly — the free callback's own more
+complex bucketed/paged byte-scanning logic cast some doubt without
+disproving it. The implementation is deliberately safe specifically so a
+live session can confirm or refute this without risk: SEH-guarded (reusing
+`Plugin_ReadMemory`'s established pattern), capped at 63 characters, and
+only ever logged if every byte up to the terminator is printable ASCII —
+a wrong offset just fails validation and falls back to raw-ID-only
+logging, never a crash or garbage text.
+
+Build-verified, deployed; **not yet live-tested**. The real, practical
+next step once a session captures live resolved-string traffic: correlate
+the observed `(ownerId, stringId, resolvedText)` triples against known
+in-game actions during a Survival session specifically, to see whether the
+ready-up trigger (the original open mystery from issue #5 -- no native
+call was ever found for it on either architecture, only the x86-era
+synthetic-F5 workaround) shows up as an identifiable, repeatable pattern
+in the traffic — now with real readable text to recognize it by, not just
+opaque integer IDs.
 
 ## Cross-reference
 
