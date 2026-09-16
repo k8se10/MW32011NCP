@@ -44,6 +44,9 @@
 #include "vanilla_settings_table.h"
 #include "asset_capture.h"
 #include "frame_benchmark.h"
+#if defined(_M_X64) || defined(_WIN64)
+#include "frame_pacing_x64.h"
+#endif
 #include "vanilla_settings_sync.h"
 #include "real_settings.h"
 #include "staged_settings.h"
@@ -6884,6 +6887,17 @@ HRESULT WINAPI Hook_EndScene(void* device)
     // already reflects the real outcome for this exact frame by the time it's
     // read here.
     PollDamageDiagLoggingIfEnabled();
+
+    // [Video] FramePacingEnabled -- issue #99's third attempt, x64-only, see
+    // frame_pacing_x64.cpp's own header comment for the full attribution and
+    // why this is structurally different from both prior failed attempts.
+    // Runs LAST, immediately before the real EndScene/Present call-through
+    // below -- this is deliberately where the wait belongs, since delaying
+    // here delays the actual frame presentation, not just this hook's own
+    // draw work.
+#if defined(_M_X64) || defined(_WIN64)
+    OnEndSceneFramePacingX64();
+#endif
 
     return g_origEndScene(device);
 }

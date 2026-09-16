@@ -2691,6 +2691,15 @@ bool IsInSurvivalModeX64()
 
 } // namespace
 
+// Thin exported wrapper (2026-09-16, frame_pacing_x64.cpp) -- same class of
+// internal-linkage fix as IsPhysicalHeld_Exported/RouteStickAxes_Exported
+// above: GetDvarFloatX64 itself lives inside this file's own anonymous
+// namespace, so it needs a real extern "C" wrapper to be callable cross-file.
+extern "C" float GetDvarFloatX64_Exported(const char* name)
+{
+    return GetDvarFloatX64(name);
+}
+
 void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
 {
     // Rate-limited (~1s) diagnostic heartbeat -- real data for the "needs a

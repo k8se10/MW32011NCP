@@ -672,12 +672,19 @@ void WriteDefaultConfig(const char* path)
         "; instead of reusing a cached result. A real accuracy-over-performance\n"
         "; tradeoff with an uncharacterized real cost. 0 = off (default), 1 = on.\n"
         "ForceHighQualityLighting=%d\n"
-        "; NOTE: an in-mod frame-pacing limiter was attempted twice (issue #99) and\n"
-        "; removed both times after failing live testing -- the first added real input\n"
-        "; latency, the second (writing the game's own com_maxfps dvar) turned out to\n"
-        "; only cap menu framerate, not actual gameplay, confirmed via a real FPS\n"
-        "; counter. Use an external limiter instead: RivaTuner Statistics Server\n"
-        "; (RTSS), set to whatever framerate feels smoothest for your hardware.\n"
+        "; issue #99's THIRD in-mod FPS-limiter attempt (2026-09-16) -- structurally\n"
+        "; different from the first two (both removed): never writes com_maxfps (the\n"
+        "; second attempt's own confirmed failure -- the engine treats that dvar\n"
+        "; differently for gameplay than menus), and uses an adaptive high-resolution\n"
+        "; wait instead of a blind fixed interval (the first attempt's own failure).\n"
+        "; Ported, with credit, from a real external reference implementation\n"
+        "; (github.com/legoliamneeson/MW3_Standalone_D3D9_Project) -- see\n"
+        "; frame_pacing_x64.cpp's own header comment for the full attribution. Caps\n"
+        "; to the game's own existing com_maxfps (0 = uncapped, unaffected). NOT YET\n"
+        "; LIVE-TESTED -- off by default. If you'd rather use a proven external\n"
+        "; limiter instead, RivaTuner Statistics Server (RTSS) remains a safe choice.\n"
+        "; 0 = off (default), 1 = on.\n"
+        "FramePacingEnabled=%d\n"
         "\n"
         "[Plugins]\n"
         "; Loads plugin DLLs from a \"plugins\" subfolder next to this DLL at startup.\n"
@@ -949,6 +956,7 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.forceAnisotropicFiltering ? 1 : 0,
         g_modConfig.forceHighQualityShadows ? 1 : 0,
         g_modConfig.forceHighQualityLighting ? 1 : 0,
+        g_modConfig.framePacingEnabled ? 1 : 0,
         g_modConfig.pluginsEnabled ? 1 : 0,
         g_modConfig.vibrationEnabled ? 1 : 0,
         g_modConfig.vibrationFireIntensity,
@@ -1263,6 +1271,7 @@ void LoadModConfig()
     ReadBool(path, "Video", "ForceAnisotropicFiltering", g_modConfig.forceAnisotropicFiltering);
     ReadBool(path, "Video", "ForceHighQualityShadows", g_modConfig.forceHighQualityShadows);
     ReadBool(path, "Video", "ForceHighQualityLighting", g_modConfig.forceHighQualityLighting);
+    ReadBool(path, "Video", "FramePacingEnabled", g_modConfig.framePacingEnabled);
 
     g_buttonMap = ResolveButtonMap(g_modConfig.buttonLayout, g_modConfig.flipTriggers);
 
@@ -1279,7 +1288,8 @@ void LoadModConfig()
         "fireNotifyQueueKick=%d bindResolverHookLogging=%d bindResolverGlyphSubstitution=%d "
         "hudFontIdLogging=%d hudFontIdLoggingX64=%d hudGlyphPositionLogging=%d listItemPositionLogging=%d "
         "armorFieldScanLogging=%d forceGlyphOverlay=%d glyphPositionEditMode=%d "
-        "captureRuntimeMenuAssets=%d frametimeBenchmarkLogging=%d disableControllerInputX64=%d",
+        "captureRuntimeMenuAssets=%d frametimeBenchmarkLogging=%d disableControllerInputX64=%d "
+        "framePacingEnabled=%d",
         g_modConfig.lookDegreesPerSecondHorizontal, g_modConfig.lookDegreesPerSecondVertical,
         g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
@@ -1312,7 +1322,8 @@ void LoadModConfig()
         g_modConfig.glyphPositionEditMode ? 1 : 0,
         g_modConfig.captureRuntimeMenuAssets ? 1 : 0,
         g_modConfig.frametimeBenchmarkLogging ? 1 : 0,
-        g_modConfig.disableControllerInputX64 ? 1 : 0);
+        g_modConfig.disableControllerInputX64 ? 1 : 0,
+        g_modConfig.framePacingEnabled ? 1 : 0);
     LogFromController(buf);
 
     // Rewrite the file once, now that g_modConfig holds every existing setting PLUS

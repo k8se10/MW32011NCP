@@ -865,6 +865,21 @@ struct ModConfig
     // guidance remains the RTSS recommendation already shipped in the
     // [Video]/vsync config comments. See known_issues.md issue #99.
 
+    // [Video] FramePacingEnabled (2026-09-16, issue #99, third attempt) --
+    // structurally DIFFERENT from both prior failed designs, not a retry of
+    // either: this one never touches com_maxfps at all (the exact dvar the
+    // second attempt confirmed the engine handles differently for gameplay
+    // vs. menu), and it doesn't add a blind fixed-interval wait either (the
+    // first attempt's own failure). Ported from a real external reference
+    // implementation's own frame-pacing algorithm (a high-resolution
+    // waitable-timer spin-wait with an adaptive wake-error correction term,
+    // applied once per real frame at the end of Hook_EndScene, right before
+    // the real EndScene/Present call-through) -- see frame_pacing_x64.h's
+    // own header comment for full attribution and the real technical
+    // difference from both prior attempts. Off by default -- unlike the
+    // prior two attempts, this one hasn't been live-tested at all yet.
+    bool framePacingEnabled = false;
+
     // [Plugins] (2026-08-25) -- STRICTLY OPT-IN, OFF by default, same pattern as
     // useCustomOptionsScreen/autoMantleEnabled above. When enabled, plugin_loader.cpp
     // scans a "plugins" subfolder next to this DLL at startup and loads any DLL

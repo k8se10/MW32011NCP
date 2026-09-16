@@ -9432,3 +9432,63 @@ warnings only, unrelated to this change), `dumpbin /headers` confirms genuine
 (`mw3ncp_config.ini`) updated directly with the new `[General]` section,
 `DisableControllerInput=0` (off, non-regressing default) — per this project's own
 standing "set config toggles live, don't wait to be asked" convention.
+
+### NEW, 2026-09-16 (later) — issue #99's THIRD in-mod FPS-limiter attempt, ported with credit from an external reference implementation
+
+**Status: Groundwork/Resolved (build-verified, NOT yet live-tested).** Direct
+instruction, following this session's own evaluation of
+`legoliamneeson/MW3_Standalone_D3D9_Project` (github.com/legoliamneeson/
+MW3_Standalone_D3D9_Project): "we should absorb the fixes provided with
+credits." Ported the project's own frame-pacing algorithm (a high-resolution
+`CreateWaitableTimerEx` spin-wait with an adaptive wake-error correction term,
+`src/frame_pacing.hpp`/`src/frame_deadline.hpp`) into a new file,
+`proxy_d3d9/src/frame_pacing_x64.cpp` — full attribution in that file's own
+header comment, in `README.md`'s Credits section, and via a
+`Co-Authored-By: legoliamneeson <ctiede81@gmail.com>` line on the commit that
+lands it (direct instruction: "also add the creator as an author on these
+specific commits", identity confirmed from that repo's own `git log`).
+
+**What's reused vs. not, and why**: the source project's own hook technique
+(Microsoft Detours intercepting `IDirect3DDevice9::Present`/`PresentEx`/
+swapchain-Present on the live vtable, gated by one exact EXE build's hardcoded
+timestamp/image-size/RVA triplet) is NOT reused — this project's own Present
+hook has been confirmed dead since 2026-07-15 (this file's own §1 entry,
+almost certainly Steam Overlay silently taking that vtable slot), and this
+project's locked signature-scanning policy (CLAUDE.md §5/§10.3) rules out
+hardcoded per-build RVAs anyway. Reused this project's own existing
+`Hook_EndScene` (`overlay_hud.cpp`) instead, calling the new
+`OnEndSceneFramePacingX64()` right before the real EndScene/Present
+call-through, and this project's own signature-scanned `GetDvarFloatX64`
+(via a new thin `extern "C"` wrapper, `GetDvarFloatX64_Exported`,
+`analog_input_hooks_x64.cpp`, same internal-linkage-fix pattern this file
+already documents for `IsPhysicalHeld_Exported`/`RouteStickAxes_Exported`) to
+read `com_maxfps` — genuinely reused is the pacing algorithm itself.
+
+**Why this is a different attempt, not a retry of either prior one** (both
+already removed, see `PATCHNOTES.md`'s 2026-08-29 Fixed entry and
+`mod_config.h`'s own field comment): the FIRST attempt failed live testing for
+added input latency (a blind fixed-interval wait, no adaptive correction).
+The SECOND attempt wrote the game's own `com_maxfps` dvar and was confirmed
+via a real FPS counter to only cap menu framerate, not gameplay. This attempt
+does neither — it never writes `com_maxfps` (matches the source project's own
+README: "This project does not overwrite it"), and its wait uses the same
+adaptive wake-error correction term the source project's own real
+implementation uses.
+
+New `[Video] FramePacingEnabled` INI key, hot-reloadable, OFF by default (set
+live in `mw3ncp_config.ini` per this project's own "set config toggles live"
+convention). Build-verified (x64 Release, `/t:Rebuild`, 0 errors — pre-existing
+`C4312` warnings only), `dumpbin /headers` confirms genuine `8664 machine
+(x64)` output, deployed live. **Not yet live-tested** — unlike the two prior
+attempts, this one hasn't been through a real playtest at all yet.
+
+**Deferred, not silently dropped**: the source project's other three
+evaluated techniques (CRT `_read()`/IWD acceleration, the decoded
+sound-prefix cache/fast-seek, and renderer wait-coalescing/thread-priority)
+were NOT ported this pass — all three are tied to the same exact-build
+hardcoded RVAs the pacing port deliberately avoided reusing, and the sound
+cache additionally depends on the optional `mw3_zlibng_v27.dll` this project
+doesn't currently ship or require. A future session porting any of them needs
+the same "reuse the algorithm, not the hook technique" treatment this pass
+used for pacing, resolved against this project's own signature-scanning
+policy instead of a hardcoded RVA.
