@@ -685,6 +685,14 @@ void WriteDefaultConfig(const char* path)
         "; limiter instead, RivaTuner Statistics Server (RTSS) remains a safe choice.\n"
         "; 0 = off (default), 1 = on.\n"
         "FramePacingEnabled=%d\n"
+        "; A second, independent port from the same external reference implementation\n"
+        "; (see README.md's Credits section) -- replaces the game's own coarse-\n"
+        "; resolution Sleep(1)/WaitForSingleObject(1) busy-polls with a real high-\n"
+        "; resolution wait, at three specific signature-verified native call sites\n"
+        "; only, and temporarily boosts an archive-loading worker thread's priority\n"
+        "; during a detected read burst. NOT YET LIVE-TESTED -- off by default.\n"
+        "; 0 = off (default), 1 = on.\n"
+        "WaitCoalescingEnabled=%d\n"
         "\n"
         "[Plugins]\n"
         "; Loads plugin DLLs from a \"plugins\" subfolder next to this DLL at startup.\n"
@@ -957,6 +965,7 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.forceHighQualityShadows ? 1 : 0,
         g_modConfig.forceHighQualityLighting ? 1 : 0,
         g_modConfig.framePacingEnabled ? 1 : 0,
+        g_modConfig.waitCoalescingEnabled ? 1 : 0,
         g_modConfig.pluginsEnabled ? 1 : 0,
         g_modConfig.vibrationEnabled ? 1 : 0,
         g_modConfig.vibrationFireIntensity,
@@ -1272,6 +1281,7 @@ void LoadModConfig()
     ReadBool(path, "Video", "ForceHighQualityShadows", g_modConfig.forceHighQualityShadows);
     ReadBool(path, "Video", "ForceHighQualityLighting", g_modConfig.forceHighQualityLighting);
     ReadBool(path, "Video", "FramePacingEnabled", g_modConfig.framePacingEnabled);
+    ReadBool(path, "Video", "WaitCoalescingEnabled", g_modConfig.waitCoalescingEnabled);
 
     g_buttonMap = ResolveButtonMap(g_modConfig.buttonLayout, g_modConfig.flipTriggers);
 
@@ -1289,7 +1299,7 @@ void LoadModConfig()
         "hudFontIdLogging=%d hudFontIdLoggingX64=%d hudGlyphPositionLogging=%d listItemPositionLogging=%d "
         "armorFieldScanLogging=%d forceGlyphOverlay=%d glyphPositionEditMode=%d "
         "captureRuntimeMenuAssets=%d frametimeBenchmarkLogging=%d disableControllerInputX64=%d "
-        "framePacingEnabled=%d",
+        "framePacingEnabled=%d waitCoalescingEnabled=%d",
         g_modConfig.lookDegreesPerSecondHorizontal, g_modConfig.lookDegreesPerSecondVertical,
         g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
@@ -1323,7 +1333,8 @@ void LoadModConfig()
         g_modConfig.captureRuntimeMenuAssets ? 1 : 0,
         g_modConfig.frametimeBenchmarkLogging ? 1 : 0,
         g_modConfig.disableControllerInputX64 ? 1 : 0,
-        g_modConfig.framePacingEnabled ? 1 : 0);
+        g_modConfig.framePacingEnabled ? 1 : 0,
+        g_modConfig.waitCoalescingEnabled ? 1 : 0);
     LogFromController(buf);
 
     // Rewrite the file once, now that g_modConfig holds every existing setting PLUS

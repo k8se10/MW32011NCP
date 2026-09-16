@@ -9570,3 +9570,73 @@ sub-goal and shipping the already-live-ready (though not yet live-tested)
 text-substitution port from 2026-09-14 as the real deliverable, treating
 "real GSC-VM state read" as a future hardening pass rather than a release
 blocker.
+
+### NEW, 2026-09-16 (later still) — wait-coalescing/archive-priority-boost ported with credit, gated on a real fork-verified binary-identity finding
+
+**Status: Groundwork/Resolved (build-verified, NOT yet live-tested).** Direct
+continuation of the frame-pacing port above: "we still need to do the other
+fixes from that too." The initial blocker (our `iw5sp.exe` SHA256 differs
+from `legoliamneeson/MW3_Standalone_D3D9_Project`'s own stated target) was
+resolved by two parallel research forks, both independently confirming the
+SHA256 difference does NOT reflect a code difference -- our binary's real PE
+identity (Machine/TimeDateStamp `0x6A743A58`/SizeOfImage `0x044BE000`)
+matches their stated target exactly, and direct byte-level comparison of
+every one of their real code signatures (`MW3_BACKEND_SLEEP1_SIGNATURE`,
+`MW3_RENDER_SLEEP1_SIGNATURE`, `MW3_RENDER_WAIT1_SIGNATURE`, the worker-wait
+call site, plus the CRT `_read`/IWD-read/minizip-inflate/`zlib inflateEnd`/
+`fs seek` signatures for the still-pending IWD-acceleration piece) against
+our own live binary came back an exact match at the identical address, 8/8
+independently. The SHA256 difference is almost certainly an Authenticode
+certificate/signing difference, not a code difference.
+
+Ported `wait_coalescing_x64.cpp` (new file): the real technique is a
+well-known Windows low-latency fix -- the game's own render and backend
+threads busy-poll via `Sleep(1)`/`WaitForSingleObject(handle, 1)`, but the
+OS's default ~15.6ms timer resolution means a nominal "1ms" wait often
+actually blocks far longer; this substitutes a real
+`CreateWaitableTimerEx`-based high-resolution wait (or a plain
+`SwitchToThread` for the backend's own poll specifically) ONLY for calls
+whose real return address matches one of four signature-scanned native call
+sites (the render thread's Sleep(1) poll, the backend thread's Sleep(1)
+poll, the render thread's `WaitForSingleObject(evt, 1)` poll, and an
+archive/job worker's own idle-wait boundary) -- every other Sleep/Wait
+caller anywhere in the process, including this mod's own threads, is
+completely untouched. Also ports the archive-worker thread-priority-boost
+logic (`MarkArchiveBurstLean`/`RestoreArchiveThreadPriorityIfCurrent`,
+renamed `NotifyArchiveIoActivityX64` here): temporarily bumps a
+burst-detected archive-loading worker thread to `THREAD_PRIORITY_ABOVE_NORMAL`,
+restored to normal once the worker goes idle (detected via the same
+worker-wait call site).
+
+**Mechanism differs from the source project on purpose**: their own
+implementation IAT-patches `Sleep`/`WaitForSingleObject` process-wide via
+Microsoft Detours. This uses a single `MinHook` detour on the real
+`kernel32.dll` exports instead (resolved via `GetProcAddress`, the same
+"well-known, always-valid OS export" precedent this project's own D3D9
+vtable hooks already use) -- narrower, and consistent with this project's
+own established hooking conventions rather than introducing a second hooking
+library. The two `Sleep(1)` signatures deliberately do NOT wildcard their own
+`CALL` displacement (a documented exception to this project's usual
+wildcard-displacement convention) -- both share an identical first 5 bytes
+and CALL shape, so wildcarding would collide them into one ambiguous
+pattern; the literal bytes are what makes each one uniquely resolvable, and
+a future binary update changing either displacement simply fails that one
+scan gracefully (feature doesn't activate) rather than crashing.
+
+New `[Video] WaitCoalescingEnabled` INI key, hot-reloadable, OFF by default
+(set live in `mw3ncp_config.ini`). `NotifyArchiveIoActivityX64()` is exposed
+(`wait_coalescing_x64.h`) for the still-pending IWD-read-acceleration hook to
+call once it's built -- the two techniques share the same burst-detection
+state per the source project's own design, coordinated rather than
+duplicated. Build-verified (x64 Release, `/t:Rebuild`, 0 errors -- same
+pre-existing `C4312` warnings only), `dumpbin /headers` confirms genuine
+`8664 machine (x64)` output, deployed live. Gated to confirmed `iw5sp.exe`
+only (same policy as every other x64 gameplay/engine hook -- these
+signatures were only ever verified against that binary). **Not yet
+live-tested.**
+
+**Still pending, same session**: the CRT `_read()`/IWD-read acceleration
+piece (persistent memory-mapped `.iwd` archive cache) -- same
+fork-confirmed byte-identical signatures, not yet implemented. The
+sound-prefix cache stays deferred on the separate `mw3_zlibng_v27.dll`
+dependency decision.

@@ -880,6 +880,19 @@ struct ModConfig
     // prior two attempts, this one hasn't been live-tested at all yet.
     bool framePacingEnabled = false;
 
+    // [Video] WaitCoalescingEnabled (2026-09-16) -- a second, independent
+    // port from the same external reference implementation as
+    // framePacingEnabled above (see wait_coalescing_x64.cpp's own header
+    // comment for full attribution). Replaces the game's own coarse-
+    // resolution Sleep(1)/WaitForSingleObject(handle, 1) busy-polls, at
+    // three specific, signature-verified native call sites only (the render
+    // thread's own poll, the backend thread's own poll, and an archive/job
+    // worker's idle wait), with a real high-resolution waitable-timer wait
+    // -- and temporarily boosts an archive-loading worker thread's priority
+    // during a detected read burst, restoring it once idle. Off by default
+    // -- not yet live-tested.
+    bool waitCoalescingEnabled = false;
+
     // [Plugins] (2026-08-25) -- STRICTLY OPT-IN, OFF by default, same pattern as
     // useCustomOptionsScreen/autoMantleEnabled above. When enabled, plugin_loader.cpp
     // scans a "plugins" subfolder next to this DLL at startup and loads any DLL
