@@ -9932,3 +9932,17 @@ deployed live. **Live-confirmed by the user ("seamless")** -- the combined fix
 together at level start) closes the whole "needs an initial input at launch"
 bug family for good, replacing the 2026-09-04 pause/unpause automation
 workaround with three genuine, narrowly-scoped native fixes.
+
+**Real bonus finding, same live-test session**: direct user report --
+"funnily enough this fixes the long standing issue on misson restart too!" --
+a separate, previously long-standing issue on Campaign/Survival mission
+RESTART (not just first level load) is also resolved by this same fix, with
+zero extra code needed. This makes sense given the fix's own trigger
+mechanism: it fires off a real Pmove-liveness transition (idle -> live),
+detected via `g_lastPmoveTickMs`, which fires identically whether the
+transition is "level just loaded for the first time" or "player restarted
+the mission" -- the underlying native bug (stuck kbuttons, unseeded mouse
+baseline, and the missing message-queue-routed input event) was never
+actually scoped to "process launch" specifically, it's a property of ANY
+transition into live gameplay, and this fix's own level-agnostic trigger
+happens to cover all of them for free.
