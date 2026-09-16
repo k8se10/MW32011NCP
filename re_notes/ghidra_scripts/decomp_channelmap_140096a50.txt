@@ -1,0 +1,33 @@
+================================================================
+Function: FUN_140096a50 @ 140096a50
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_140096a50(undefined8 param_1)
+
+{
+  byte *pbVar1;
+  longlong lVar2;
+  
+  FUN_1400aad70(param_1,DAT_1407bdde8,0x18);
+  DAT_1407bddd8 = DAT_1407bdde8;
+  FUN_1400aad70(0,DAT_1407bdde8,0x18);
+  lVar2 = 2;
+  pbVar1 = DAT_1407bddd8;
+  do {
+    DAT_1407bddd8 = pbVar1;
+    FUN_1400aad70(0,pbVar1,0xc);
+    if (*(longlong *)(DAT_1407bddd8 + 4) != 0) {
+      _DAT_1407bddc8 = FUN_1400aaa90(3);
+      *(undefined8 *)(DAT_1407bddd8 + 4) = _DAT_1407bddc8;
+      FUN_1400aad70(1,_DAT_1407bddc8,(ulonglong)*DAT_1407bddd8 << 3);
+    }
+    pbVar1 = pbVar1 + 0xc;
+    lVar2 = lVar2 + -1;
+  } while (lVar2 != 0);
+  return;
+}
+
+
+
