@@ -201,6 +201,52 @@ constexpr const char* kPmoveTickSignature =
 using PmoveTickFn = void(__fastcall*)(void* param1);
 PmoveTickFn g_realPmoveTick = nullptr;
 
+// MW32011NCP, 2026-09-17: the real x64 VM_Notify equivalent (`FUN_140261e10`
+// in the reference Ghidra project), found via the GSC-VM primitive-mapping
+// investigation (re_notes/x64_migration/gsc_vm_native_functions_x64.md) --
+// confirmed DEFINITIVE (not guessed) by reading the real `notify` bytecode
+// opcode's own handler (opcode 0x51, per xensik/gsc-tool's published
+// iw5_pc_code.cpp) inside the confirmed interpreter loop (FUN_14025e950).
+// Unlike this codebase's own usercmd-pipeline functions, this one uses a
+// perfectly standard Microsoft x64 calling convention (RCX/RDX/R8 shadow-
+// space-saved in the prologue, matching the published reference signature
+// arg-for-arg) -- a plain C++ MinHook detour is safe here, no raw __asm
+// trampoline needed. This is a READ-ONLY diagnostic hook (log-and-call-
+// through, zero behavior change) per this project's own "trivial
+// passthrough first" convention (CLAUDE.md/AGENTS.md, Production Ready
+// Only) -- this reversal (see CLAUDE.md's own 2026-09-16 "REVERSED" entry)
+// only unblocked reading live GSC-VM state and calling already-shipped
+// script functions, not injecting anything new; this hook injects nothing,
+// it only observes.
+constexpr const char* kVmNotifySignature =
+    "4C 89 44 24 18 89 54 24 10 89 4C 24 08 53 41 56 48 81 EC A8 00 00 00 "
+    "8B DA 8B D1 8B 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 85 C0 0F 84 ?? ?? ?? ?? "
+    "8B 0D ?? ?? ?? ?? 8B D0 48 89 B4 24 98 00 00 00 E8 ?? ?? ?? ?? 8B D3 "
+    "89 44 24 30 8B C8 8B F0 E8 ?? ?? ?? ?? 85 C0 0F 84 ?? ?? ?? ?? 48 89 "
+    "AC 24 A0 00 00 00";
+
+using VmNotifyFn = void(__fastcall*)(unsigned int notifyListOwnerId, unsigned int stringValue, void* top);
+VmNotifyFn g_realVmNotify = nullptr;
+
+// Rate-limited per this codebase's own standing lesson (issue #87) -- logs the
+// first 50 real fires in full detail (owner ID + interned string ID, enough to
+// build a real observed catalogue of what fires during actual play, e.g.
+// correlating against known actions to finally identify Survival ready-up's
+// real trigger -- issue #5's original open mystery), then a periodic heartbeat.
+long long g_vmNotifyFireCount = 0;
+
+void __fastcall Hook_VmNotify(unsigned int notifyListOwnerId, unsigned int stringValue, void* top)
+{
+    ++g_vmNotifyFireCount;
+    if (g_vmNotifyFireCount <= 50 || (g_vmNotifyFireCount % 2000) == 0) {
+        char buf[160];
+        sprintf_s(buf, "[x64-gsc-notify] VM_Notify fired (count=%lld): ownerId=%u stringId=%u",
+                   g_vmNotifyFireCount, notifyListOwnerId, stringValue);
+        LogFromController(buf);
+    }
+    g_realVmNotify(notifyListOwnerId, stringValue, top);
+}
+
 // Rate-limited on purpose -- this function fires on every Pmove sub-step (potentially
 // several times per rendered frame, see FUN_140016620's own 66ms-cap subdivision
 // loop), and this project has already hit a real, live, ~22GB log-growth regression
@@ -5584,6 +5630,42 @@ void InstallAnalogInputHooksX64()
                     LogFromController("[x64-diag] Pmove tick diagnostic hook installed and enabled -- log-and-call-through only, "
                         "zero behavior change. Watch the log for '[x64-diag] Pmove tick hook fired' during play "
                         "to confirm the whole signature-scan -> MinHook pipeline works on this build.");
+                }
+            }
+        }
+    }
+
+    {
+        // MW32011NCP, 2026-09-17: first real live GSC-VM read-access hook, per
+        // the 2026-09-16 policy reversal (CLAUDE.md/AGENTS.md) -- read-only,
+        // log-and-call-through, zero injected behavior. See kVmNotifySignature's
+        // own comment above for the full evidence trail.
+        SigScan::Result r = SigScan::FindPatternInMainModule(kVmNotifySignature);
+        if (!r.found) {
+            LogFromController("[x64-gsc-notify] FATAL: VM_Notify signature did not resolve -- GSC-VM notify "
+                "diagnostic hook not installed this session");
+        } else {
+            void* target = reinterpret_cast<void*>(r.address);
+            MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_VmNotify),
+                                                    reinterpret_cast<void**>(&g_realVmNotify));
+            if (createStatus != MH_OK) {
+                char buf[160];
+                sprintf_s(buf, "[x64-gsc-notify] FATAL: MH_CreateHook failed for VM_Notify @ 0x%llX (status=%d)",
+                           static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+                LogFromController(buf);
+            } else {
+                MH_STATUS enableStatus = MH_EnableHook(target);
+                if (enableStatus != MH_OK) {
+                    char buf[160];
+                    sprintf_s(buf, "[x64-gsc-notify] FATAL: MH_EnableHook failed for VM_Notify @ 0x%llX (status=%d)",
+                               static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+                    LogFromController(buf);
+                } else {
+                    LogFromController("[x64-gsc-notify] VM_Notify diagnostic hook installed and enabled -- "
+                        "log-and-call-through only, zero behavior change. Watch the log for "
+                        "'[x64-gsc-notify] VM_Notify fired' during play to see real, live notify traffic "
+                        "(owner ID + interned string ID) -- the first real live GSC-VM read access this "
+                        "project has ever had.");
                 }
             }
         }
