@@ -9901,3 +9901,32 @@ a "looks big enough" buffer size, per that incident's own standing lesson.
 Build-verified (x64 Release, 0 errors), `dumpbin`-confirmed genuine x64 output,
 deployed live. Awaiting a fresh playtest to confirm the camera jump is actually
 gone.
+
+### FIXED (pending live confirmation), 2026-09-17 (later) -- the real missing piece: a genuine message-queue-routed input event, not just direct native calls
+
+Direct live-test follow-up on the mouse-baseline fix above: "fix still requires a
+pause press though the menu doesnt appear on first press (good just forward esc
+same way on level init)." Confirms neither the kbutton-release sweep nor the
+mouse-baseline seed (both real, both correct, but both DIRECT calls into native
+functions, never routed through the actual Windows message queue) fully closes
+the "needs an initial input at launch" family of bugs alone -- a real pause-button
+press was still required, even with both fixes shipped.
+
+**Fix**: added a call to `SendSyntheticEscX64()` (already-proven-safe, existing
+mechanism -- a real `WM_KEYDOWN`/`WM_KEYUP` for `VK_ESCAPE` posted via
+`PostMessageA`, i.e. genuinely routed through the OS message queue, unlike every
+other fix in this thread) at the same per-level trigger point. Direct user
+confirmation via manual testing: pressing pause at this exact early point does
+NOT visibly open the pause menu, consistent with this being safe to fire
+automatically. This strongly suggests the real remaining gate across this whole
+bug family is specifically "has a genuine message-queue-routed input event
+reached the window yet" -- something no amount of direct native-function-calling
+can satisfy, regardless of how correct those calls are individually. Both the
+kbutton-release sweep and the mouse-baseline seed are kept (they fix real,
+distinct native bugs of their own, confirmed via decompile) -- this ESC send is
+the missing third piece, not a replacement for either.
+
+Build-verified (x64 Release, 0 errors), `dumpbin`-confirmed genuine x64 output,
+deployed live. Awaiting a fresh playtest to confirm this closes the whole bug
+family (kbutton-release, mouse-baseline, AND the underlying "needs real input"
+gate) together.
