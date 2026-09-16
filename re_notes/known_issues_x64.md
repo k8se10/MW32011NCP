@@ -9810,3 +9810,38 @@ install. **Not yet independently re-confirmed live** -- next playtest should
 watch for the new `[x64-kbutton-release]` log lines (resolution + per-level
 fire confirmation) in `proxy_d3d9.log` and confirm input now works from the
 very first level entry with zero pause/unpause flicker ever visible.
+
+### FIXED (critical), 2026-09-16 (later) -- LoadModConfig's own sprintf_s overflow broke BOTH iw5sp.exe and iw5mp.exe launch entirely, same bug class as 2026-09-05/2026-09-13/14
+
+**Status: Resolved, live-confirmed.** Direct user report: "immediate issue mp/sp doesnt load."
+Real crash dumps for both `iw5sp.exe` and `iw5mp.exe` (captured via Windows Error Reporting's
+own automatic Local Dumps, not a self-triggered dump) confirmed via `mcp-windbg` static analysis:
+`FAST_FAIL_INVALID_ARG` (`0xC0000409`) inside `sprintf_s<1024>` → `LoadModConfig` → `DllMain` --
+the SAME "UCRT fails fast rather than truncating on a real overflow" bug class already hit and
+fixed multiple times this project (2026-09-05's sniper-fix log line, 2026-09-13/14's launch-crash
+saga, three separate `sprintf_s` sites in one day). `proxy_d3d9.log` showed only
+`---- proxy_d3d9 attach ----` and nothing else, consistent with a crash inside `DllMain` itself,
+before any device/window/hook install code ever runs -- explaining why BOTH binaries failed
+identically (`DllMain` runs unconditionally on load, regardless of which exe loaded the DLL).
+
+**Root cause**: `LoadModConfig`'s own config-summary log line (`mod_config.cpp`, `char buf[1024]`)
+had grown incrementally over a long session as new config keys were added one at a time (K+M
+safe mode, frame pacing, wait coalescing, IWD read cache, each individually safe) -- the
+cumulative format string finally exceeded 1024 bytes and was never re-checked against the
+buffer size after the last addition. This is the exact standing lesson already written into this
+file from the 2026-09-13/14 incident ("a same-day buffer-safety sweep does not retroactively
+cover code written after it runs -- this needs to be per-commit discipline for any new sprintf_s
+call"), recurring because that discipline wasn't applied to THIS specific line when the later
+fields were added.
+
+**Fix**: widened `buf[1024]` to `buf[4096]` (a generous margin, not just "big enough for today,"
+since two of the interpolated fields -- `overlayFontFamily`/`overlayFontFamilyCondensed` -- are
+user-configurable strings that can grow independently of any future field additions). Build-
+verified (x64 Release, 0 errors, `dumpbin`-confirmed genuine x64 output), deployed live, and
+**directly confirmed by the user** ("yes") that both SP and MP now load correctly again.
+
+**Real, standing lesson, worth restating**: this is the FOURTH real, live-blocking crash from
+this exact bug class in this project's history. The per-commit discipline this file already
+calls for isn't optional guidance -- any new or edited `sprintf_s`/format-string call touching a
+fixed-size buffer needs its own worst-case length actually computed (or a generously oversized
+buffer used from the start) at the moment it's written, not deferred to "a sweep later."
