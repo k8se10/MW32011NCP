@@ -3591,3 +3591,48 @@ decompile technique that resolved SS5.40's own root cause, applied to
 whatever asset/field is reaching this exact fallback for
 `common_survival.ff`'s own remaining content, rather than more blind
 degradation attempts in this already-repeatedly-warned-about code area.
+
+## 5.43. GROUNDWORK, 2026-09-16 (brief, paused to address a higher-priority redirect) — the assert-fallback's real trigger identified via a one-off diagnostic, reverted before committing; a concrete next-step target for whoever resumes this
+
+Added a temporary `con::warn` right before `ConvertOffsetToAliasLookup`'s
+own `assert(false)` fallback (SS5.42), rebuilt, ran once against
+`common_survival.ff`, captured the real trigger, then reverted the
+diagnostic (matching this file's own standing "temporary instrumentation,
+not committed" convention -- confirmed via `git diff` showing a clean
+tree before moving on):
+
+```
+DIAG ConvertOffsetToAliasLookup fallback: hop=0 offsetInt=0x30a3bf18
+blockNum=3 blockOffset=10731288 block=XFILE_BLOCK_VIRTUAL
+aliasMapSize=861 pointerMapSize=27394
+```
+
+This is `SoundFileRef::loadSnd`'s own resolution (the raw value
+`0x30a3bf19` matches a `loadSnd=` diagnostic seen immediately before this
+exact failure in an earlier round's own log, off by exactly 1 -- the
+standard `-1` offset-encoding adjustment). The block/offset genuinely pass
+BOTH the capacity check and the write-cursor check (this position IS
+in-range and IS already written) -- with 27,394 real pointer-redirect
+entries and 861 real alias-redirect entries already registered by this
+point, so this isn't "nothing has been registered yet" either. The
+specific offset this `loadSnd` reference computes simply has no matching
+entry in either table, despite pointing at real, already-written content.
+
+**Real next-step hypothesis for whoever picks this up**: `LoadedSound`'s
+own `AddPointerLookup` registration (in `FillStruct_LoadedSound`) may be
+registering a DIFFERENT block-relative address than what THIS specific
+`loadSnd` reference computes when resolving TO that same asset -- i.e., a
+genuine asymmetry between how a `LoadedSound` announces "here's where I
+live" (write side) versus how `SoundFileRef::loadSnd` computes "where to
+find it" (read side), rather than a "forward reference not yet written"
+shape at all. Worth checking whether `LoadedSound` assets can be shared/
+deduplicated across multiple `snd_alias_t` entries (matching this exact
+"asset A's pointer aliases asset B's, and B's registration point differs
+from what A's own reference computes" shape already documented for
+`materialHandles` in SS5.21/5.23) -- a native decompile of exactly how
+`SoundFileRef::loadSnd`'s real resolution differs from a fresh
+`LoadedSound` load, the same technique that resolved SS5.40, is the
+concrete next step, not more diagnostic rounds on this same fallback.
+
+Paused here (not a stopping point due to any blocker -- redirected to a
+separate, higher-priority task the same session).
