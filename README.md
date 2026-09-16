@@ -525,8 +525,10 @@ This project vendors and links the following third-party library:
   same `LICENSE.txt`).
 
 The x64 line's `[Video] FramePacingEnabled` frame-pacing limiter
-(`proxy_d3d9/src/frame_pacing_x64.cpp`) ports its spin-wait/adaptive-correction
-algorithm from **[legoliamneeson/MW3_Standalone_D3D9_Project](https://github.com/legoliamneeson/MW3_Standalone_D3D9_Project)**
+(`proxy_d3d9/src/frame_pacing_x64.cpp`) and `[Video] WaitCoalescingEnabled`
+wait-coalescing/archive-priority-boost feature
+(`proxy_d3d9/src/wait_coalescing_x64.cpp`) port their algorithms from
+**[legoliamneeson/MW3_Standalone_D3D9_Project](https://github.com/legoliamneeson/MW3_Standalone_D3D9_Project)**
 (Copyright legoliamneeson) — that project's own README states no
 redistribution license is asserted for the ported source; credited here per
 its own attribution note.

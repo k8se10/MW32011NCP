@@ -30,6 +30,9 @@ void InstallAnalogInputHooksX64(); // defined in analog_input_hooks_x64.cpp -- 2
     // Deliberately a separate function, not an overload, so the platform split is
     // visible at the call site below, not hidden in a single shared name.
 extern "C" void HookD3D9CreateDevice(void* realD3D9); // defined in d3d9_hook.cpp
+#if defined(_M_X64) || defined(_WIN64)
+void InstallWaitCoalescingHooksX64(); // defined in wait_coalescing_x64.cpp, 2026-09-16
+#endif
 
 // Deliberately NOT including <d3d9.h>: its prototypes for Direct3DCreate9/D3DPERF_*/etc.
 // would collide with the untyped naked-stub exports below (whose whole point is to not
@@ -521,6 +524,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
                 // analog_input_hooks_x64.cpp. Currently a single diagnostic hook only
                 // (issue #1, known_issues_x64.md) -- real gameplay hooks land here
                 // incrementally as they're built, matching x86's own original pace.
+            InstallWaitCoalescingHooksX64(); // 2026-09-16, see wait_coalescing_x64.cpp
+                // -- signatures only ever verified against iw5sp.exe's own binary,
+                // same SP-only gating as every other x64 hook here.
 #else
             InstallAnalogInputHooks(); // task #5 -- see analog_input_hooks.cpp
 #endif

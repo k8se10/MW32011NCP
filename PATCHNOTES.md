@@ -346,6 +346,20 @@ item below.
     — see `README.md`'s Credits section and `frame_pacing_x64.cpp`'s own
     header comment for the full attribution and what specifically was and
     wasn't reused. Off by default; build-verified, **not yet live-tested**.
+20. **Wait-coalescing/archive-priority-boost, ported with credit from the
+    same external reference implementation.** New `[Video]
+    WaitCoalescingEnabled` INI key replaces the game's own coarse-resolution
+    `Sleep(1)`/`WaitForSingleObject(1)` busy-polls with a real
+    high-resolution wait, but ONLY at three specific, signature-verified
+    native call sites (the render thread's own poll, the backend thread's
+    own poll, and an archive/job worker's idle wait) — every other
+    Sleep/Wait caller in the process, including this mod's own threads, is
+    untouched. Also temporarily boosts an archive-loading worker thread's
+    priority during a detected read burst, restoring it once idle. Ported
+    from [legoliamneeson/MW3_Standalone_D3D9_Project](https://github.com/legoliamneeson/MW3_Standalone_D3D9_Project)
+    — see `README.md`'s Credits section and `wait_coalescing_x64.cpp`'s own
+    header comment for the full attribution. Off by default; build-verified,
+    **not yet live-tested**.
 
 ### Fixed
 1. **Crash on launch with the sniper Fire/ADS fix's own log line.** The
