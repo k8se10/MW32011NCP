@@ -37,7 +37,7 @@ WEAK symbol<unsigned int(int localId, const char* pos,
 | `Scr_GetFunctionHandle` | **Found, high confidence** — see below. Splits into two real functions, not a single 1:1 match. |
 | `Scr_LoadScript` | **Found, high confidence** (round 2) — `FUN_140252210`, decisive evidence (real error strings). See below. |
 | `SL_GetString` | Strong candidate (`FUN_140255e60`), corroborated further in round 2 (a case-insensitive wrapper around it is exactly the shape a field-name lookup needs) — still not independently confirmed as the fully generic path. |
-| `VM_Notify` | Not found after TWO rounds, 20 total string anchors, two caller-tracing angles. Real, substantial ruled-out territory now on record. |
+| `VM_Notify` | **Found, DEFINITIVE confidence** (round 3) — `FUN_140261e10`, found via the real `notify` opcode's own handler. See below. |
 | `VM_Execute` | **Found, DEFINITIVE confidence** (round 2, coordinator direct) — `FUN_14025e950`. See below. |
 | `Scr_ExecThreadInternal` | Not found — thread-creation entry point, distinct from the interpreter loop itself, not yet attempted. |
 
@@ -135,43 +135,61 @@ architecture uses) that many different higher-level functions call INTO,
 `SL_GetString`/`VM_Notify` very possibly among them, but it is not either
 one itself.
 
-## `VM_Notify` — not found after two full rounds
+## `VM_Notify` — FOUND, definitive confidence (round 3)
 
-**Round 1**: ten plausible error-string anchors tried (`"too many
-notify"`, `"notify list"`, `"bad entity"`, `"invalid entity"`, `"null
-entity"`, `"not a valid notify"`, `"max notify"`, `"notify queue"`,
-`"notify string"`, `"invalid object"`) — zero hits. The immediate
-loader-cluster neighborhood (`FUN_1402574e0` and its neighbors) ruled out
-as `VM_Notify`'s own home — confirmed shared, generic table
-infrastructure instead (see `SL_GetString` section above).
+**Rounds 1-2 (string-anchoring and caller-tracing) both came back empty**,
+20 total string anchors tried across two passes, `FUN_140255e60`'s own 17
+callers individually traced with no match — see the git history for the
+full list if useful; not repeated here since round 3 superseded the
+approach entirely.
 
-**Round 2**: a second batch of ten string anchors (`"notify list
-overflow"`, `"vm notify"`, `"cannot notify"`, `"too many active"`,
-`"thread list overflow"`, `"unable to find function"`, `"no such
-function"`, `"notify overflow"`, `"active notify"`, `"threads waiting"`)
-— zero hits, 20 total now tried with nothing. `FUN_140255e60`'s (the
-`SL_GetString` candidate) own 17 real callers were individually traced —
-all either VM-stack-push opcode helpers or an unrelated FastFile
-dictionary decoder; `VM_Notify` is confirmed NOT among them. **Real
-working theory**: this specific binary/build may simply not have a
-distinct, string-anchorable error message for this function at all (or
-uses phrasing 20 real guesses haven't hit yet) — string-anchoring is
-likely exhausted as a technique for this specific primitive.
+**Round 3, the approach that actually worked: use a real, external,
+independently-published GSC opcode table instead of guessing.**
+`xensik/gsc-tool` (a real, actively-maintained open-source GSC compiler/
+decompiler this project's own CLAUDE.md already lists as its standard GSC
+decompilation tool) ships real per-engine, per-platform opcode tables as
+plain source code — `src/gsc/engine/iw5_pc_code.cpp` (fetched via `gh api`
+against the repo's real `dev` branch, its actual default branch) contains
+the literal line:
+```cpp
+{ 0x51, opcode::OP_notify },
+```
+**`notify` is a genuine bytecode OPCODE (byte value `0x51`/81), not a
+builtin function call** — confirmed directly from the real compiler's own
+source, not guessed. This immediately let us jump straight to
+`case 0x51:` inside the confirmed interpreter loop (`FUN_14025e950`,
+found in the previous round) and read the REAL notify handler directly:
 
-No x86-era address was ever found for this project's own SP binary either
-(x86-era research, `re_notes/iw5sp.md`, found the real published signature
-via the same Plutonium plugin but never located it in `iw5sp.exe` itself,
-x86 or x64).
+```c
+case 0x51:
+    ...
+    fVar12 = *pfVar17;                  // pop: the notify target (self/entity)
+    ...
+    fVar11 = DAT_142476a18[-4];         // pop: the interned notify string ID
+    DAT_142476a18 = DAT_142476a18 + -8;
+    ...
+    FUN_140261e10(fVar12, fVar11, DAT_142476a18);   // <-- the real call
+```
 
-**Real next steps for a future pass, not yet tried**: (1) a genuine
-structural sweep — scan for `(uint, uint, pointer)`-shaped functions
-ANYWHERE in the binary (not scoped to any one neighborhood) that index an
-array then walk a linked list comparing a stored ID field, independent of
-string anchors or caller relationships entirely; (2) trace
-`FUN_14025ca90`'s (the case-insensitive lookup wrapper found in round 2)
-own callers instead of `FUN_140255e60`'s — it's a more "field/property
-name resolution" shape, and `notify`/`waittill`'s string arguments might
-route through this case-insensitive variant specifically.
+**`FUN_140261e10` is `VM_Notify`'s real x64 equivalent** — the three
+arguments match the real published signature exactly: `(entity/owner ID,
+interned string ID, VM-stack-pointer-as-params)` maps directly onto
+`VM_Notify(unsigned int notifyListOwnerId, unsigned int stringValue,
+VariableValue* top)`. Found via the most direct evidence this
+investigation could have asked for: the actual bytecode handler for the
+actual opcode, not an inference from string anchors or caller shapes.
+
+**Methodological note for any future primitive-hunting in this VM**: this
+approach (find the real opcode byte value from `gsc-tool`'s own source,
+then jump straight to that `case` inside the confirmed interpreter loop)
+is dramatically more direct and reliable than string-anchoring or
+structural guessing, and should be the FIRST technique tried for any
+future GSC-VM primitive this project needs, now that the interpreter
+itself is confirmed and mapped. `gsc-tool`'s `iw5_pc_code.cpp` (opcodes)
+and `iw5_pc_meth.cpp`/`iw5_pc_func.cpp` (builtin methods/functions, a
+SEPARATE table from opcodes, dispatched differently — `notify` is NOT in
+these, confirming it's a true opcode not a builtin) are both real,
+directly fetchable via `gh api repos/xensik/gsc-tool/contents/<path>?ref=dev`.
 
 ## `VM_Execute` — FOUND, definitive confidence (round 2)
 
