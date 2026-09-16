@@ -504,6 +504,30 @@ struct ModConfig
         // check proxy_d3d9.log for "[x64-fontid-diag]" lines and turn back off. Always
         // forwards to the real trampoline completely unmodified regardless of this
         // toggle -- read-only, never changes what's drawn.
+    bool disableControllerInputX64 = false; // 2026-09-16 -- a hot-reloadable "K+M safe
+        // mode" for the x64 line, added directly for keyboard/mouse players: this
+        // project's own live testing has always been controller-first, and K+M's own
+        // input path gets comparatively little direct verification each session (it's
+        // exercised incidentally, not as its own dedicated test pass) -- this toggle
+        // lets a K+M player opt out of every controller/mod-side INPUT path entirely if
+        // a regression is ever suspected, without losing config loading/hot-reload or
+        // this mod's own non-input features (the visual-enhancement suite -- motion
+        // blur, FSR, render scale, forced shadows/lighting/anisotropic -- all live
+        // entirely in the EndScene/Present render path, never in the per-tick
+        // controller-injection functions this toggle gates, so they keep working
+        // unaffected). DEFAULT OFF (normal, full controller support). When ON: skips
+        // Hook_MovementTick's own controller-injection logic (both the PRE-hook LOOK/
+        // gyro block and the entire POST-hook movement/button block -- see its own
+        // early-return gate) while the real native call-through
+        // (`g_realMovementTick(param1, param2)`) always still runs unconditionally, so
+        // K+M's own real input is completely untouched either way -- this toggle can
+        // never take input AWAY from a keyboard/mouse player, only stop this mod's own
+        // controller-side additions from running. Also gates the always-on menu tick's
+        // own controller-specific calls (Pause-toggle poll, auto-unstick cycle, custom
+        // Options-screen input, D-pad/B menu-navigation, rumble-expiry watchdog) in
+        // `InjectMenuInputTick` -- `Controller_RequestPoll()` itself stays unconditional
+        // (pure polling, no injection, and other systems may still want fresh
+        // controller-connection state even in this mode).
     bool listItemPositionLogging = false; // issue #67 log-slimming pass (2026-08-08):
         // `[list-item-diag]` used to fire unconditionally on EVERY menu text-draw call
         // (i.e. once per visible list item, on ANY active menu screen) with no gating

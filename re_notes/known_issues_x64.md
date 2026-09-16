@@ -9390,3 +9390,45 @@ wall this whole session's investigation keeps hitting. Strongest
 remaining lead: a function-SIZE sweep (the real interpreter needs a huge
 opcode-dispatch switch, likely one of the largest functions in the whole
 binary) -- identified, not yet attempted.
+
+### NEW, 2026-09-16 — "K+M safe mode" config toggle shipped: `[General] DisableControllerInput`
+
+**Status: Resolved (build-verified, not yet live-tested).** Direct instruction: a
+hot-reloadable config toggle to disable all controller/mod-side INPUT injection
+while explicitly preserving config loading/hot-reload and every visual-enhancement
+feature, since K+M testing for this project has always been comparatively light
+and any future input-side regression shouldn't force a K+M player to lose
+motion blur/FSR/render-scale/forced-shadows too.
+
+Wired across four layers:
+- `mod_config.h`: new `bool disableControllerInputX64 = false;` field.
+- `mod_config.cpp`: `ReadBool(path, "General", "DisableControllerInput", ...)`;
+  `WriteDefaultConfig` now emits a new `[General]` section (right after `[Meta]`,
+  before `[Look]`) documenting the toggle; the config-summary log line
+  (`sprintf_s`-built, `buf[1024]`) also reports it. No `ConfigVersion` bump needed
+  — this is a brand-new key defaulting to off, not a migrated/renamed one, so
+  `GetPrivateProfileIntA`'s own missing-key default (0/false) is already correct
+  for existing installs.
+- `analog_input_hooks_x64.cpp` (`Hook_MovementTick`): the PRE-hook look/gyro block's
+  condition gets `&& !g_modConfig.disableControllerInputX64` appended; a new
+  `if (g_modConfig.disableControllerInputX64) return;` sits immediately after the
+  unconditional `g_realMovementTick(param1, param2)` call-through, skipping the
+  entire POST-hook block (Fire/ADS/Reload/Weapnext/Melee/Lethal/Tactical/Jump/
+  Interact/D-pad/CrouchProne/Scoreboard/Rumble_Tick). The gate-bit clear
+  (`*g_inputGateFlag &= ~kInputGateBit`) and the call-through itself both stay
+  UNCONDITIONAL, by design — the former is the native "needs a click" engine
+  workaround (issue #1's own earlier finding), the latter is the real keyboard
+  input path this toggle must never touch.
+- `analog_input_hooks.cpp` (`InjectMenuInputTick`, shared x86/x64 file): the 6 x64
+  menu/pause/rumble-watchdog calls inside the existing `#if defined(_M_X64) ||
+  defined(_WIN64)` block are now wrapped in
+  `if (!g_modConfig.disableControllerInputX64) { ... }`; `Controller_RequestPoll()`
+  (an XInput poll request, not input injection) stays unconditional outside that
+  gate.
+
+Build-verified (x64 Release, `/t:Rebuild`, 0 errors — pre-existing `C4312`
+warnings only, unrelated to this change), `dumpbin /headers` confirms genuine
+`8664 machine (x64)` output, deployed live to the game install. Live config
+(`mw3ncp_config.ini`) updated directly with the new `[General]` section,
+`DisableControllerInput=0` (off, non-regressing default) — per this project's own
+standing "set config toggles live, don't wait to be asked" convention.
