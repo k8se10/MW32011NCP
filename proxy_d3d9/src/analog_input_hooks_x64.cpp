@@ -946,6 +946,56 @@ constexpr int kFireBindCaseUp = 2;     // "-attack" up
 constexpr int kAdsBindCaseDown = 0xd;  // "+ads" down -- confirmed via g_adsStruct address match
 constexpr int kAdsBindCaseUp = 0xe;    // "-ads" up
 
+// ---- Real "release every stuck kbutton" native sweep, x64 (2026-09-16) ------------
+//
+// ROOT CAUSE of the "needs an initial click at launch"/"needs pause-unpause per
+// level" bug (issues #1/#27/#42 on x86, this file's own AutoUnstickPauseCycleX64
+// on x64), found by decompiling the ACTUAL native pause-toggle chain end to end
+// rather than continuing to guess at focus/activation theories. g_pauseToggle
+// (FUN_1400823b0) -> its real menu-state-transition call, FUN_14029f3f0 -> that
+// function's own case 0 ("cl_paused"=0, i.e. UNPAUSING) is the ONLY place that
+// calls a function this project had never previously examined: FUN_14007eeb0.
+//
+// Decompiled in full (re_notes/ghidra_project_x64/decomp_closepausehelpers.txt):
+// FUN_14007eeb0 walks a fixed 256-entry per-player kbutton table (12 bytes per
+// entry, base &DAT_140644a64 + player*0xd28) and, for every entry currently
+// marked "active" (down-state != 0), forcibly clears its internal down-state AND
+// -- for entries below index 0x41 with the low bit of their own case-number field
+// set -- calls FUN_14007c3a0 (this file's own g_stanceDispatch) with that entry's
+// case+1 and a release edge (0), synthesizing the exact same real bind-release
+// dispatch a genuine keyup would produce. In short: this is a real, native
+// "force-release every button the engine's own internal bookkeeping currently
+// thinks is held" sweep -- NOT anything about window focus/activation at all.
+// The pause/unpause cycle "worked" only as an accidental side effect of this one
+// call living on its unpause path; opening AND closing the menu was never the
+// actual mechanism, it was just the only place this project had found to reach
+// this specific function.
+//
+// This directly explains why every earlier WndProc-focus-message theory (both
+// x86's SendSyntheticActivationClick, already firing unconditionally on x64
+// too, and x64's own SendRealFocusNudgeX64/SendPeriodicActivationNudgeX64) never
+// fixed this on x64: none of them touch this kbutton table at all. Very likely,
+// though not independently proven, some real bind's down-edge gets recorded into
+// this table before the engine's input pipeline is genuinely ready very early in
+// a level's life (a plausible real analogue of x86's own never-pinned-down
+// IsStanceLocked() guard-byte theory -- a different table, same shape of bug:
+// stale internal "still held" bookkeeping nothing else naturally clears), and
+// every subsequent real bind-down for that same slot is then ignored until
+// something forces the stale state off.
+//
+// Fix: call this function DIRECTLY -- no menu open, no menu close, no visible
+// UI flicker, no dependency on the pause-menu's own settle/async timing -- using
+// the SAME fixed anchor-offset pattern already proven for every other function
+// this file resolves off g_stanceDispatch's own address (kNotifyBindFuncOffset
+// immediately above). Offset computed directly from Ghidra's own two addresses:
+// 0x14007eeb0 - 0x14007c3a0 = 0x2B10. Replaces AutoUnstickPauseCycleX64's own
+// pause/unpause body below (renamed ForceReleaseStuckKbuttonsX64) -- same
+// per-level trigger timing (already live-proven correct), genuinely different,
+// non-workaround action.
+using ReleaseAllKbuttonsFn = void(__fastcall*)(int playerIndex);
+ReleaseAllKbuttonsFn g_releaseAllKbuttons = nullptr;
+constexpr ptrdiff_t kReleaseAllKbuttonsFuncOffset = 0x2B10; // FUN_14007eeb0 - FUN_14007c3a0
+
 // ---- Jump auto-stand (2026-09-05, same day as CrouchProne) -- direct
 // instruction: "you need to implement the press a to stand up thing we did for
 // x86 too" ---------------------------------------------------------------------
@@ -2409,79 +2459,58 @@ extern "C" void InjectControllerMenuBackX64()
     g_menuBackHeldX64 = held;
 }
 
-// ---- Auto pause/unpause "unstick" cycle, x64 (2026-09-04) -------------------------
+// ---- Real stuck-kbutton release, x64 (2026-09-04, REPLACED 2026-09-16) ------------
 //
-// Real, DIRECT user confirmation of the actual fix, not a theory: "still no
-// difference it still requires the classic pause unpause workaround." This
-// project's two prior fix attempts this session (SendSyntheticActivationClick,
-// SendRealFocusNudgeX64/SendPeriodicActivationNudgeX64 -- all in d3d9_hook.cpp)
-// were both built around the theory that some WndProc-level activation/focus
-// EVENT is what's needed. That theory is now directly disproven by the user's
-// own report -- what ACTUALLY fixes it, every time, is manually opening the
-// pause menu and closing it again. Genuinely pausing and unpausing evidently
-// triggers some real internal re-sync this project's own earlier x86 work
-// already suspected but never pinned down for ITS OWN version of this exact
-// bug class (known_issues.md issue #1's own theory: "some engine-side state
-// expects a genuine transition/event... to occur" -- the "genuine transition"
-// turns out to be a real menu open+close, not a WndProc message).
+// ORIGINAL (2026-09-04) design: this project's two prior fix attempts that session
+// (SendSyntheticActivationClick, SendRealFocusNudgeX64/SendPeriodicActivationNudgeX64
+// -- all in d3d9_hook.cpp) were built around the theory that some WndProc-level
+// activation/focus EVENT is what's needed -- directly disproven by live user report
+// ("still no difference it still requires the classic pause unpause workaround").
+// The fix shipped that day automated the user's own confirmed manual workaround:
+// open the pause menu, wait one beat, close it again.
 //
-// Rather than keep guessing at WHICH internal flag needs forcing (three
-// attempts already, all wrong), this automates the user's OWN confirmed manual
-// fix directly, using this project's ALREADY-confirmed-working Pause toggle
-// (g_pauseToggle/FUN_1400823b0) -- open pause, wait one real beat, close it
-// again. Triggered once per level: `g_lastPmoveTickMs` (updated by
-// Hook_PmoveTick on every real tick) tells us whether the Pmove/gameplay-
-// simulation pipeline is CURRENTLY live -- when it transitions from "not
+// SUPERSEDED 2026-09-16, direct instruction ("i refuse to accept the pause/unpase
+// mechanism as the fix ... i know [a real fix] is still present in x64", "i want the
+// same fix from x86" -- i.e. find the real native gate and clear it directly, the
+// same category of fix x86's own SendSyntheticActivationClick was, not a workaround
+// that happens to produce the right side effect). Root-caused by decompiling the
+// ACTUAL native pause-toggle chain end to end (g_pauseToggle/FUN_1400823b0 ->
+// FUN_14029f3f0's unpause case) instead of continuing to guess at focus theories --
+// see g_releaseAllKbuttons's own declaration comment above for the full trail. The
+// pause/unpause cycle only ever worked as an ACCIDENTAL side effect of one call
+// living on its close path (FUN_14007eeb0, a real "force-release every kbutton the
+// engine's own bookkeeping thinks is still held" sweep) -- opening and closing the
+// menu was never itself the mechanism. This function now calls that real sweep
+// DIRECTLY: no menu open, no menu close, no visible UI flicker, no dependency on
+// the pause menu's own async settle timing.
+//
+// Per-level trigger timing is UNCHANGED from the original design (already
+// live-proven correct, not part of what the user rejected): `g_lastPmoveTickMs`
+// (updated by Hook_PmoveTick on every real tick) tells us whether the Pmove/
+// gameplay-simulation pipeline is CURRENTLY live -- when it transitions from "not
 // ticking recently" (a menu/loading screen) to "ticking steadily for the last
-// half-second" (a level is genuinely active), that's this project's own
-// reusable proxy for "a level just (re)loaded," without needing dedicated
-// level-load-flag RE work. Runs from the SAME always-on menu tick
-// PollPauseToggleX64 above already uses (must NOT run from Hook_MovementTick --
-// this function's own OPEN step pauses the game, which stops Hook_MovementTick
-// from running at all until the CLOSE step happens, so this has to live on the
-// tick that keeps running regardless of pause state).
+// half-second" (a level is genuinely active), that's this project's own reusable
+// proxy for "a level just (re)loaded." Runs from the same always-on menu tick
+// PollPauseToggleX64 above already uses.
 namespace {
-enum class AutoUnstickState { Idle, WaitingToSettle, JustOpenedPause };
+enum class AutoUnstickState { Idle, WaitingToSettle };
 AutoUnstickState g_autoUnstickState = AutoUnstickState::Idle;
-DWORD g_autoUnstickStateChangedMs = 0;
 DWORD g_levelActiveSinceMs = 0; // when Pmove was FIRST confirmed ticking this streak, not "last tick"
 bool g_autoUnstickDoneForThisLevel = true; // starts true -- nothing to unstick before a level exists
 
-// CORRECTED 2026-09-04, real live-test feedback ("weird, sprint fires when
-// gated and when standing still so its reading it but not allowing the other
-// input, also the workaround fires too early to work"): the original 500ms/
-// 250ms delays were both far too short. Two real, separate timing bugs:
-// (1) firing the auto-cycle the instant Pmove starts ticking steadily is too
-//     early -- a real manual "pause then unpause" only ever happens well
-//     after the player is actually settled into a level, not the literal
-//     instant it starts simulating (loading-screen-to-gameplay transitions,
-//     spawn cinematics, etc. may still be resolving); (2) a 250ms open-close
-//     gap may be too brief for the pause state to genuinely "stick" long
-//     enough for whatever real internal re-sync this depends on to run --
-//     nothing about a real player's own pace suggests they re-press that
-//     fast either. Both widened substantially, matching x86's own original
-//     "3-second window" scale for this exact bug class (known_issues.md
-//     issue #1) rather than this session's own first-guess short values.
-constexpr DWORD kLevelSettleDelayMs = 1250;     // wait this long after Pmove first goes live before opening pause
-                                                 // (2026-09-04 tuning: 4000 -> 2000 -> 1750 -> 1250ms, all direct
-                                                 // live-test feedback -- "wait needs to be halved", "still a touch
-                                                 // slow maybe 1.75s", "could still be earlier try 1.25s")
-constexpr DWORD kLevelIdleResetMs = 2000;        // Pmove silent this long -- treat as "back at a menu"
-// Close as fast as possible -- direct user request: "make it close basically
-// instantly, it should basically look flawless user end". NOT reduced to 0
-// (same tick as the open call) -- keeps the open and close as two genuinely
-// separate ticks with real, if minimal, elapsed engine time between them,
-// rather than risking the native side treating them as one indistinguishable
-// event. 50ms is roughly 3 WM_TIMER ticks at this project's own ~16ms/60Hz
-// cadence -- well under normal human flash-perception threshold, about as
-// close to "instant" as this project's own tick-based (non-blocking, see
-// CLAUDE.md SS5's hook-safety rule) design can get.
-constexpr DWORD kAutoUnstickCloseDelayMs = 50;
+// Real live-test-tuned delay from the original 2026-09-04 design, kept as-is: firing
+// the instant Pmove starts ticking steadily is too early (loading-screen-to-gameplay
+// transitions, spawn cinematics, etc. may still be resolving) -- 1250ms (tuned down
+// from 4000 -> 2000 -> 1750ms via direct live-test feedback) is when a real player
+// would be genuinely settled into the level. This timing question is independent of
+// WHAT action fires once settled, so the 2026-09-16 fix keeps it unchanged.
+constexpr DWORD kLevelSettleDelayMs = 1250;
+constexpr DWORD kLevelIdleResetMs = 2000; // Pmove silent this long -- treat as "back at a menu"
 }  // namespace
 
-extern "C" void AutoUnstickPauseCycleX64()
+extern "C" void ForceReleaseStuckKbuttonsX64()
 {
-    if (!g_pauseToggle) return;
+    if (!g_releaseAllKbuttons) return;
     DWORD nowMs = GetTickCount();
     DWORD sinceLastPmoveTick = nowMs - g_lastPmoveTickMs;
     bool pmoveLiveNow = sinceLastPmoveTick <= 500;
@@ -2497,8 +2526,7 @@ extern "C" void AutoUnstickPauseCycleX64()
     switch (g_autoUnstickState) {
         case AutoUnstickState::Idle:
             if (!g_autoUnstickDoneForThisLevel && pmoveLiveNow) {
-                // Level just became active -- start the settle timer, don't
-                // open pause yet.
+                // Level just became active -- start the settle timer.
                 g_levelActiveSinceMs = nowMs;
                 g_autoUnstickState = AutoUnstickState::WaitingToSettle;
             }
@@ -2506,22 +2534,12 @@ extern "C" void AutoUnstickPauseCycleX64()
 
         case AutoUnstickState::WaitingToSettle:
             if (nowMs - g_levelActiveSinceMs >= kLevelSettleDelayMs) {
-                g_pauseToggle(0); // not currently paused -- this call opens it
-                g_autoUnstickState = AutoUnstickState::JustOpenedPause;
-                g_autoUnstickStateChangedMs = nowMs;
-                LogFromController("[x64-auto-unstick] opened pause -- starting automated open/close "
-                    "cycle for this level (after a real settle delay), closing again shortly.");
-            }
-            break;
-
-        case AutoUnstickState::JustOpenedPause:
-            if (nowMs - g_autoUnstickStateChangedMs >= kAutoUnstickCloseDelayMs) {
-                g_pauseToggle(0); // currently paused (we just opened it) -- this call closes it
+                g_releaseAllKbuttons(0); // real native "release every stuck kbutton" sweep, no menu involved
                 g_autoUnstickState = AutoUnstickState::Idle;
                 g_autoUnstickDoneForThisLevel = true;
-                LogFromController("[x64-auto-unstick] closed pause -- automated open/close cycle "
-                    "complete for this level (real fix confirmed by direct user report: \"still "
-                    "requires the classic pause unpause workaround\").");
+                LogFromController("[x64-kbutton-release] fired real stuck-kbutton release sweep for this "
+                    "level (direct native call, no pause menu open/close -- replaces the 2026-09-04 "
+                    "pause/unpause workaround with its own real root-cause mechanism).");
             }
             break;
     }
@@ -5727,6 +5745,7 @@ void InstallAnalogInputHooksX64()
             g_adsToggleFlag = reinterpret_cast<volatile uint8_t*>(SigScan::ResolveRipRelative(anchor + kAdsToggleFlagInsnOffset, kRipInsnLength));
             g_stanceDispatch = reinterpret_cast<StanceDispatchFn>(anchor);
             g_notifyBindDispatch = reinterpret_cast<NotifyBindFn>(anchor + kNotifyBindFuncOffset);
+            g_releaseAllKbuttons = reinterpret_cast<ReleaseAllKbuttonsFn>(anchor + kReleaseAllKbuttonsFuncOffset);
             if (g_stanceDispatch) {
                 char buf[128];
                 sprintf_s(buf, "[x64-crouchprone] Stance dispatch resolved @ 0x%llX -- CrouchProne active "
@@ -5745,6 +5764,17 @@ void InstallAnalogInputHooksX64()
                     "sniper Fire/ADS fix attempt active (fixed +0x%llX offset from stance-dispatch anchor).",
                     (void*)g_notifyBindDispatch, static_cast<unsigned long long>(kNotifyBindFuncOffset));
                 LogFromController(buf);
+            }
+            if (g_releaseAllKbuttons) {
+                char buf[256];
+                sprintf_s(buf, "[x64-kbutton-release] Real stuck-kbutton release sweep resolved @ 0x%p -- "
+                    "replaces the pause/unpause 'needs an initial click' workaround with a direct native "
+                    "call (fixed +0x%llX offset from stance-dispatch anchor).",
+                    (void*)g_releaseAllKbuttons, static_cast<unsigned long long>(kReleaseAllKbuttonsFuncOffset));
+                LogFromController(buf);
+            } else {
+                LogFromController("[x64-kbutton-release] FATAL: stuck-kbutton release sweep did not resolve -- "
+                    "the 'needs an initial click at launch' issue will not be fixed this session");
             }
         }
 
