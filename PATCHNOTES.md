@@ -644,6 +644,15 @@ item below.
     own state deciding what to do with it, removing the need for this
     project to track that state itself. See
     `re_notes/known_issues_x64.md` for the full trail.
+24. **"Needs an initial click at launch" fixed at its real root cause,
+    replacing the pause/unpause workaround.** Decompiling the native
+    pause-toggle chain end to end found the real mechanism: unpausing
+    calls a native function that force-releases every kbutton the
+    engine's own bookkeeping thinks is still held — a genuine stuck-input
+    bug, not a window-focus/activation issue. The fix now calls that
+    native "release everything" sweep directly, once per level, with no
+    pause menu ever opening or closing. See `re_notes/known_issues_x64.md`
+    for the full decompile trail.
 
 ### Documentation
 1. **`re_notes/known_issues_x64.md` established** as the dedicated x64 issue

@@ -69,7 +69,7 @@ extern "C" void InjectControllerMenuNavX64();
 // then close it again" unstick cycle for the "needs a click for input" bug,
 // real fix confirmed by direct user report ("still requires the classic pause
 // unpause workaround") after two WndProc-message-based theories both failed.
-extern "C" void AutoUnstickPauseCycleX64();
+extern "C" void ForceReleaseStuckKbuttonsX64();
 // Defined in analog_input_hooks_x64.cpp -- x64-only, drives the custom Options
 // screen's own CustomOptionsMenu_TickInput (overlay_hud.cpp) since x86's real
 // trigger (InjectControllerMenuNav's native-menu-focus detection, this file)
@@ -10195,13 +10195,13 @@ extern "C" void __cdecl InjectMenuInputTick()
     // neither lives in this input-tick function at all.
     if (!g_modConfig.disableControllerInputX64) {
         PollPauseToggleX64();
-        // 2026-09-04, real fix (not another theory) for "needs a click for
-        // input"/"needs the classic pause unpause workaround" -- see
-        // AutoUnstickPauseCycleX64's own comment (analog_input_hooks_x64.cpp) for
-        // the full trace. Must run from this same always-on tick, not the
-        // gameplay tick -- its own OPEN step pauses the game, which would stop a
-        // gameplay-tick-based caller from ever reaching the CLOSE step.
-        AutoUnstickPauseCycleX64();
+        // 2026-09-16, real root-cause fix (superseding the 2026-09-04 pause/unpause
+        // workaround) for "needs a click for input" -- see ForceReleaseStuckKbuttonsX64's
+        // own comment (analog_input_hooks_x64.cpp) for the full trace: a direct call
+        // into the real native "release every stuck kbutton" sweep, no menu open/close
+        // involved. Runs from this same always-on tick (matches the original design's
+        // own timing, unaffected by the mechanism change).
+        ForceReleaseStuckKbuttonsX64();
         // 2026-09-05, release-parity pass -- the custom Options screen only needs
         // to navigate while a real native menu is already active (same class of
         // state as Pause's own toggle above), so it belongs on this same always-on

@@ -9744,3 +9744,69 @@ string/import table), which requires getting past the still-open
 Unlinker parser bug, or building a minimal from-scratch GSC bytecode reader
 that only needs the ScriptFile asset's own raw bytes (not the full asset
 graph) -- neither attempted this pass.
+
+### FIXED, 2026-09-16 (later still) -- "needs an initial click at launch" real root cause found and fixed: a native "release every stuck kbutton" sweep, not a focus/activation issue at all; the pause/unpause workaround is retired
+
+**Status: Resolved (build-verified, deployed live, NOT yet live-tested).** Direct
+instruction, rejecting the 2026-09-04 `AutoUnstickPauseCycleX64` pause/unpause
+workaround as a final answer: "i refuse to accept the pause/unpase mechanism as
+the fix for that in engine focus detection that i know is still present in x64,"
+clarified via follow-up to mean: not a different symptom, a demand for "the same
+fix from x86" -- i.e. find the real native gate and clear/handle it directly, the
+same category of fix `SendSyntheticActivationClick` was, not a workaround that
+happens to produce the right side effect via an unrelated menu open/close.
+
+**Investigation, following this session's own proven native-decompile-cross-check
+technique (the same one that root-caused the Unlinker SpeakerMap bug earlier this
+session)**: rather than re-attempt already-disproven focus/activation theories
+(x86's `SendSyntheticActivationClick` already confirmed firing on x64 too;
+x64-only `SendRealFocusNudgeX64`/`SendPeriodicActivationNudgeX64` both already
+tried and disproven live, per direct 2026-09-04 user report), decompiled the
+REAL native pause-toggle call chain end to end: `g_pauseToggle`/`FUN_1400823b0`
+-> its own menu-state-transition call, `FUN_14029f3f0` -> that function's case 0
+(unpausing) is the ONLY place in this entire chain that calls a function this
+project had never previously examined, `FUN_14007eeb0`.
+
+**Root cause**: `FUN_14007eeb0` walks a fixed 256-entry per-player kbutton
+table and, for every entry the engine's own internal bookkeeping currently
+thinks is "held," forcibly clears its down-state AND (for entries below index
+0x41 with the right case-number shape) calls the real bind dispatcher
+(`FUN_14007c3a0`, this file's own `g_stanceDispatch`) with a release edge --
+synthesizing the exact same real bind-release a genuine keyup would produce.
+This is a real, native "force-release every kbutton the engine thinks is still
+held" sweep -- **not anything about window focus or activation**. The
+pause/unpause cycle only ever "worked" as an accidental side effect of this one
+call living on its unpause path; opening and closing the menu was never the
+actual mechanism, just the only place this project had previously found to
+reach it. Full decompile trail: `re_notes/ghidra_project_x64/decomp_pausetoggle_1400823b0.txt`,
+`decomp_setmenustate_14029f3f0.txt`, `decomp_closepausehelpers.txt`.
+
+This directly explains why every prior focus-message theory never fixed this on
+x64: none of them touch this kbutton table at all. Likely (not independently
+proven) explanation for the underlying bug: some real bind's down-edge gets
+recorded into this table before the input pipeline is genuinely ready very
+early in a level's life, and the stale "still held" state then blocks every
+subsequent real bind-down for that same slot until something forces it off --
+a real analogue of x86's own never-pinned-down `IsStanceLocked()` guard-byte
+theory (issue #42), same shape of bug, different table.
+
+**Fix**: `analog_input_hooks_x64.cpp` resolves `FUN_14007eeb0`'s real address
+via a fixed anchor-offset from the already-reliable `g_stanceDispatch` signature
+(`kReleaseAllKbuttonsFuncOffset = 0x2B10`, the same anchor-plus-fixed-offset
+pattern this file already uses for every other struct/field/function it
+resolves off that anchor -- see `kNotifyBindFuncOffset`'s own precedent).
+`AutoUnstickPauseCycleX64` is renamed `ForceReleaseStuckKbuttonsX64` and its
+body now calls `g_releaseAllKbuttons(0)` directly -- no menu open, no menu
+close, no visible UI flicker, no dependency on the pause menu's own async
+settle timing. The per-level trigger timing (Pmove-liveness transition +
+1250ms settle delay) is unchanged from the original design, since it was
+already live-proven correct and is orthogonal to which action fires once
+triggered.
+
+**Verification**: build-verified (x64 Release, `/t:Rebuild`-equivalent, 0
+errors -- pre-existing `C4312` warnings only, unrelated), `dumpbin /headers`
+confirms genuine `8664 machine (x64)` output, deployed to the live game
+install. **Not yet independently re-confirmed live** -- next playtest should
+watch for the new `[x64-kbutton-release]` log lines (resolution + per-level
+fire confirmation) in `proxy_d3d9.log` and confirm input now works from the
+very first level entry with zero pause/unpause flicker ever visible.
