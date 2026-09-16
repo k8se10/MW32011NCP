@@ -692,21 +692,22 @@ namespace
                     continue;
                 }
 
-                // MW32011NCP / iw5oat, 2026-09-16: REVERTED after a real, direct live-test
-                // failure -- a first attempt degraded this "should never happen" fallback
-                // the same way as the hop-exhaustion case below (`break` instead of
-                // `assert(false); throw`). That produced a genuine SEGFAULT against
-                // common_survival.ff, not a clean caught exception -- unlike every other
-                // graceful-degradation fix in this file (each independently verified safe
-                // against a real crash), this specific fallback is NOT the same "genuine
-                // forward reference, safe to defer" shape; a real, in-range, already-written
-                // position with no redirect-table entry at all is evidence of a GENUINELY
-                // different problem this project doesn't yet understand, not a legitimate
-                // architectural forward reference. Kept as a hard throw, per this exact code
-                // area's own repeated documented history of regressions from rushed changes
-                // (see fastfile_format_research.md SS5.22/5.27/5.30/5.41, parent repo) --
-                // a clean, catchable exception here is the correct, safe outcome until this
-                // case is actually understood, not a crash to paper over.
+                // MW32011NCP / iw5oat, 2026-09-16: RETRIED after SS5.44's investigation round
+                // (fastfile_format_research.md SS5.44/5.45, parent repo), and REVERTED AGAIN --
+                // live-tested against common_survival.ff and it segfaulted a second time.
+                // Progressed much further than the first attempt before crashing (offsets
+                // climbed from ~10.7M to ~16.7M, dozens more references gracefully degraded
+                // in between) -- confirming SS5.44's analysis correctly identified genuinely
+                // unresolvable references and let many of them degrade safely, but this
+                // fallback's OWN case (in-range, already-written, registered in neither map)
+                // is NOT uniformly safe to null out; something downstream, reached only after
+                // enough of these accumulate or a specific one is hit, still dereferences bad
+                // state. See SS5.45 for the full second-attempt record. Kept as a hard throw --
+                // two independent, live-tested attempts to degrade this exact fallback have
+                // now both crashed. Do not retry this same mechanical change a third time
+                // without first finding the actual downstream dereference this feeds, not just
+                // re-confirming (as both rounds now have) that the resolution itself is a
+                // genuine miss.
                 assert(false);
                 throw InvalidOffsetBlockOffsetException(block, blockOffset);
             }

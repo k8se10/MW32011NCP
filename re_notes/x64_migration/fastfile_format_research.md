@@ -3727,3 +3727,51 @@ Temporary diagnostic reverted before this commit (`git diff` confirms `ZoneInput
 only surviving change from this round is a harmless `#include <cstdint>` addition, already
 transitively available but now explicit). No functional code changed this round -- this is a
 pure investigation/documentation round, same as SS5.9/5.23's own "0 fix, full trail" precedent.
+
+### SS5.45 (2026-09-16, later) — second attempt to degrade the loadSnd alias-miss fallback, live-tested and reverted again; a real downstream dereference is now the confirmed remaining unknown
+
+Direct instruction following SS5.44: "lets push through with the fu[l]l fix." Given SS5.44's
+round substantially narrowed (without fully closing) the mystery -- ruling out a struct-shape
+bug, confirming this fork's function choice already matches native's real resolver, and finding
+the failing target position is genuine unrelated padding -- that last finding lines up with this
+whole file's own already-documented "OpenAssetTools ConvertOffsetToPointer... structs reuse data
+across non-matching types... realistically only happens when the data is nulled" precedent
+(`MaybePointerFromLookup`'s own header comment). On that basis, retried the SAME mechanical
+change SS5.42 had already tried once and reverted (converting this fallback's `assert(false);
+throw` to `break`, falling through to the same already-proven-safe nullptr-return path the
+hop-exhaustion case uses) -- this time with a much fuller understanding of WHY the reference is
+unresolvable, not a blind retry.
+
+**Live-tested immediately against `common_survival.ff` (the same zone the first attempt
+crashed against), per this exact code area's own standing "verify live before trusting" rule.**
+Result: **segfaulted again** -- but progressed substantially further first (offsets climbed from
+~10.7M to ~16.7M in the VIRTUAL block, with dozens more references gracefully degraded via the
+existing warn-and-null paths in between) before crashing. This is real, new information: the
+resolution/degradation logic ITSELF is not the direct cause (many instances of the identical
+"unregistered but written" shape resolved safely to null and the loader kept going) -- something
+DOWNSTREAM, reached only after enough nulled `loadSnd` references accumulate or a specific later
+one is hit, still dereferences bad state without a null check, unlike the `if (*varMaterialPtr)`-
+style guard this whole graceful-degradation strategy assumes every caller has.
+
+**Reverted immediately**, same standard as the first attempt -- back to the hard `throw`,
+confirmed via a clean re-run (exit code 1, a caught `InvalidOffsetBlockOffsetException`, not a
+crash). `ZoneInputStream.cpp`'s only diff from this round is the comment documenting this second
+attempt; behavior is unchanged from before SS5.44/5.45 began.
+
+**Real, narrowed next step**: the open question is no longer "why does this reference fail to
+resolve" (SS5.44 answered that convincingly) -- it's "what downstream code path dereferences a
+null `loadSnd` (or a null value reached transitively from it) without checking first." Given
+`Load_SoundFileRef`'s own caller already guards `if (varSoundFileRef->loadSnd)` BEFORE resolution
+(using the pre-resolution truthy raw value, not the post-resolution result) and does not re-check
+after, the most direct next step is auditing every use of a resolved `SoundFileRef::loadSnd` (or
+the `LoadedSound*` it produces) between this resolution point and wherever the actual fault
+occurs -- likely reachable via a targeted breakpoint/guard-page approach (x64dbg, per this
+project's own standing "cdb/WinDbg not approved, x64dbg attach/pause only" policy) rather than
+another blind mechanical retry of the same fallback change, now that two independent live tests
+have confirmed it crashes.
+
+Two independent, live-tested attempts at this exact fallback change have now both segfaulted
+against the same zone -- per this project's own standing "Fresh Perspective" principle, this is
+real evidence the SAME angle (degrading the resolution itself) needs a genuinely different
+technique (finding the actual downstream fault) before a third attempt, not a reason to stop
+investigating the parser entirely.
