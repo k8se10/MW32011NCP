@@ -45,6 +45,7 @@
 // definition. Avoids pulling in d3d9.lib entirely.
 
 #include <windows.h>
+#include <dbghelp.h>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -52,11 +53,61 @@
 #include "overlay_hud.h"
 #include "game_exe_detect.h"
 
+#pragma comment(lib, "dbghelp.lib")
+
 extern void LogFromController(const char* msg);
 extern "C" void __cdecl InjectMenuInputTick(); // defined in analog_input_hooks.cpp
 extern "C" bool IsGlyphPositionEditModeActive(); // defined in analog_input_hooks.cpp
 
 namespace {
+
+// TriggerSelfMemoryDumpX64 -- added 2026-09-16 after live memory investigation
+// via BOTH a live debugger (x64dbg) and a plain external ReadProcessMemory-only
+// tool independently crashed the game, specifically once real gameplay started
+// (see known_issues_x64.md's newest round for the full incident trail). Direct
+// user insight: an EXTERNAL process holding any kind of handle to this game
+// appears to be what triggers the reaction, whatever it is -- so do the capture
+// from CODE ALREADY RUNNING INSIDE THE GAME PROCESS instead. This calls
+// MiniDumpWriteDump against GetCurrentProcess() -- the exact same DbgHelp API
+// Windows itself already uses to write the crash dumps this project has
+// analyzed before (%LOCALAPPDATA%\CrashDumps, see the 2026-09-05/2026-09-13/14
+// sprintf_s crash investigations) -- there is no external handle, no
+// DebugActiveProcess, no separate process involved at all; the game is asking
+// itself to write its own memory to disk, the same category of operation as an
+// ordinary unhandled-exception crash dump, just triggered voluntarily on a
+// keypress instead of by a real crash. MiniDumpWithFullMemory captures every
+// thread's full context/stack plus all committed memory, enough to statically
+// walk the render/UI thread's real call stack at the exact moment of capture --
+// the same information a live breakpoint would have given us, without ever
+// needing to attach to or resume the live process from outside it.
+void TriggerSelfMemoryDumpX64()
+{
+    char path[MAX_PATH];
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+    sprintf_s(path, "selfdump_%04d%02d%02d_%02d%02d%02d.dmp",
+              st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+
+    HANDLE hFile = CreateFileA(path, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (hFile == INVALID_HANDLE_VALUE) {
+        LogFromController("[self-dump] CreateFileA failed, could not write dump");
+        return;
+    }
+
+    BOOL ok = MiniDumpWriteDump(
+        GetCurrentProcess(), GetCurrentProcessId(), hFile,
+        MiniDumpWithFullMemory, nullptr, nullptr, nullptr);
+
+    CloseHandle(hFile);
+
+    char logBuf[256];
+    if (ok) {
+        sprintf_s(logBuf, "[self-dump] Wrote %s (self-triggered, no external handle)", path);
+    } else {
+        sprintf_s(logBuf, "[self-dump] MiniDumpWriteDump FAILED (GetLastError=%lu)", GetLastError());
+    }
+    LogFromController(logBuf);
+}
 
 #if defined(_M_X64) || defined(_WIN64)
 // Forward-declared so HookWndProc (defined earlier in this file than the
@@ -384,6 +435,19 @@ LRESULT CALLBACK HookWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             g_keybindCaptureActive = false;
             return 0; // swallow this one message -- see this block's own header comment
         }
+    }
+
+    // F9 -- self-triggered live memory dump (2026-09-16). See
+    // TriggerSelfMemoryDumpX64's own header comment above for the full
+    // reasoning. Deliberately NOT gated on g_keybindCaptureActive or any menu
+    // state -- this needs to fire at the exact real-gameplay moment a prompt
+    // like Survival ready-up/buy-station is on screen, which is whenever the
+    // user presses it, not just while a menu is focused.
+    if (msg == WM_KEYDOWN && wParam == VK_F9 && (lParam & 0x40000000) == 0) {
+        // High bit of lParam's repeat-count/previous-key-state (bit 30) is the
+        // "was already down" flag -- only fire once per physical press, not
+        // once per Windows key-repeat tick while held.
+        TriggerSelfMemoryDumpX64();
     }
 
     if (msg == WM_MOUSEMOVE) {

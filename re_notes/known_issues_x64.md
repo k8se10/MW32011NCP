@@ -8785,3 +8785,151 @@ Start/B controller-input paths were rewritten.
 Shipped: `proxy_d3d9/src/analog_input_hooks_x64.cpp`. Build-verified (x64,
 0 errors, `dumpbin`-confirmed genuine x64 output, deployed). Not yet
 independently re-confirmed live by a full playtest.
+
+### INVESTIGATED, 2026-09-16 (later same day) -- x64 build appears to react to ANY external process holding a read handle to it once real gameplay starts, not just a live debugger; real anti-debug import confirmed present but NOT new to this recompile; live memory investigation dropped for now
+
+**Status: Open, genuinely concerning, not yet root-caused. Live process
+inspection (debugger attach OR a plain read-only external handle) is
+PAUSED for this project pending a safer angle -- four real game crashes
+this session across two different techniques is enough to stop and not
+keep probing empirically against a live session.**
+
+**The pattern, now confirmed across two structurally different
+techniques**: (1) `x64dbg` live-attach -- stable while attached and
+PAUSED, crashed the game specifically on RESUME, three separate times
+(once with a breakpoint armed on a hot per-frame draw function, twice on
+plain resume with breakpoints cleared and TLS-callback breakpoints
+verified cleared first). (2) A purpose-built, DEBUGGER-FREE tool
+(`tools/memdiff/memdiff64.exe`, rebuilt this session for x64 -- see this
+file's own next round for the rebuild details) that only ever calls
+`OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, ...)` and
+`ReadProcessMemory` in a loop, watching for a real keypress to trigger a
+snapshot -- never `DebugActiveProcess`, never any debugger API at all --
+was left running passively (not even mid-capture) while the user played,
+and the game froze then crashed anyway, specifically once real gameplay
+started (not during menus). **This rules out "it's specifically about a
+live debugger" as the full explanation** -- something reacts to an
+external process merely holding an open, read-only handle to `iw5sp.exe`
+once gameplay is live, which is a much broader and more concerning
+finding than an anti-debugger check alone, since it would affect any
+external tool (this project's own future RE tooling included), not just
+interactive debugging sessions.
+
+**Real, confirmed anti-debug capability exists in the binary, but is NOT
+new to this recompile** -- checked directly via `dumpbin /imports`
+(static, offline, both the live x64 exe and the preserved x86-era copy at
+`re_notes/x64_migration/binaries/old_x86/iw5sp.exe`) rather than assumed:
+`IsDebuggerPresent` and `QueryPerformanceCounter` are imported by BOTH the
+x86 and x64 builds -- their mere presence is not evidence of a new,
+targeted measure, since the exact same imports already existed before the
+recompile. **One genuine difference did turn up**: `OutputDebugStringA` is
+a NEW import in the x64 build, not present in the x86 one -- a real
+change, but ambiguous on its own (it's used in one known anti-debug
+technique, but is also just an ordinary logging call used for many
+unrelated reasons; an import-table diff alone can't distinguish which).
+**Explicitly NOT concluded from this evidence**: whether this recompile
+was in any way a deliberate measure against community projects/tooling --
+that's a much stronger claim than the actual evidence here supports (one
+new logging-capable import, plus a behavior pattern that could have
+several other causes: a genuine engine-side process-integrity check
+unrelated to any specific target, a coincidental timing/threading
+regression from the recompile itself, or something else not yet
+considered). Recorded honestly as "real, unexplained, reproducible
+behavior" rather than as a confirmed motive.
+
+**Real live-debugging incident detail, useful for any FUTURE attempt (once
+a safer angle exists)**: two of the three x64dbg crashes were root-caused,
+not guessed. The first followed an unconditional breakpoint on
+`FUN_14029a2b0` -- a function that fires on nearly every text draw call,
+dozens+ times a frame, which is unsafe to breakpoint unconditionally
+regardless of the anti-debug question. The second crash, on attach alone,
+was traced to x64dbg auto-loading a full set of TLS-callback breakpoints
+on every attach (confirmed via `ListBreakpoints` after a clean re-attach:
+17 TLS callbacks across steam/nvidia driver DLLs, PLUS a stale breakpoint
+left armed from the PREVIOUS x64dbg session since the debugger process
+itself hadn't been restarted) -- clearing all breakpoints
+(`DeleteAllBreakpoints`) immediately after attach let the game run stably
+while PAUSED with the debugger attached and zero breakpoints armed,
+isolating resume itself (not attach, not stale breakpoints) as the actual
+trigger for that crash. The x64dbg MCP bridge itself also needed a real
+fix this session: only the x32 build of its plugin
+(`x64dbg-MCP-Server.dp32`) had ever been deployed, so nothing listened on
+the bridge port when attaching the 64-bit debugger -- fixed by downloading
+the matching v1.3 release of the same plugin
+(`duty1g/x64dbg-mcp-server`) and deploying `x64dbg-MCP-Server.dp64`
+alongside its `mcp_config.json` into `x64\plugins\`.
+
+**`tools/memdiff` rebuilt for x64 this session, two real bugs fixed that
+would have silently produced garbage or missed the game entirely**: the
+on-disk snapshot format stored region base/size as `u32`, a silent
+truncation for any address above 4GB -- harmless on the old x86 target
+(its whole address space fit under 4GB) but would have corrupted every
+region base for the current x64 game, whose own module alone loads at
+`0x140000000`. Widened to `u64`. Separately, `TakeSnapshot`'s own scan
+loop hard-capped at `0x7FFF0000` -- below where the x64 module even
+loads, meaning the tool would have silently returned an effectively empty
+snapshot (zero bytes of real game code/data) without any error. Raised to
+the real x64 user-mode VA ceiling (`0x00007FFFFFFFFFFF`, same constant
+this project's own `LooksSaneX64()` already uses). A new `watch <vkHex>
+<namePrefix>` mode was also added -- runs continuously in the background
+and takes a full snapshot itself the instant a chosen key is pressed
+(auto-numbered output files), letting the user trigger captures live
+during play without needing a round-trip through this project's own
+Claude session first. **This is the tool that crashed the game per this
+round's own finding above** -- kept in the codebase since the underlying
+x64/format fixes are real and correct regardless, but `watch` mode should
+NOT be run again against a live session until the actual cause of this
+crash class is understood, per the same "stop and ask, don't keep probing
+empirically" standard as the debugger findings above.
+
+No further live investigation attempted this round. Real next steps,
+none yet started: (1) determine whether the freeze/crash correlates with
+GAMEPLAY specifically (as reported) vs. any live state, by testing
+whether a passive handle survives fine through menus/pause but not actual
+play; (2) check whether a handle opened AFTER gameplay has already
+started (rather than before) changes the outcome, since the timing of
+"when the game first notices the handle" may matter; (3) consider
+whether this is a genuine anti-tamper/anti-cheat measure at all, versus
+an unrelated recompile-era stability regression that happens to correlate
+with external tooling for a coincidental reason (e.g. a shared resource
+contention). None of these should be tested against a live session again
+without explicit go-ahead, given four real crashes this session already.
+
+### GROUNDWORK, 2026-09-16 (later same day) -- self-triggered in-process memory dump added, sidestepping the external-handle reaction entirely; direct user insight
+
+Direct user insight, following the fourth crash above: "that means we
+must do it internally via our actual proxy dll, as that surely would
+sidestep these newfound protections." Correct, and a clean fix for the
+whole problem class documented in the round above -- whatever reacts to
+an EXTERNAL process holding a handle to `iw5sp.exe` cannot react to code
+that's already running INSIDE the same process, since there's no external
+handle to notice in the first place.
+
+**New: `TriggerSelfMemoryDumpX64()` (`d3d9_hook.cpp`), bound to F9.** Calls
+`MiniDumpWriteDump(GetCurrentProcess(), ...)` with `MiniDumpWithFullMemory`
+-- the exact same DbgHelp API Windows itself already uses to write the
+`%LOCALAPPDATA%\CrashDumps` files this project has successfully analyzed
+before (the 2026-09-05/2026-09-13/14 `sprintf_s` crash investigations).
+There is no external process, no `DebugActiveProcess`, no
+`OpenProcess`/`ReadProcessMemory` from outside at all -- the game is
+asking itself to write its own memory to disk, functionally identical to
+an ordinary unhandled-exception crash dump except triggered voluntarily on
+a keypress instead of by a real crash. `MiniDumpWithFullMemory` captures
+every thread's full context/stack plus all committed memory -- enough to
+statically walk the render/UI thread's real call stack at the exact
+moment of capture, the same information a live breakpoint would have
+given, without ever attaching to or resuming the live process from
+outside it. Output: `selfdump_<timestamp>.dmp` in the game's working
+directory (same place `proxy_d3d9.log` lives). Wired into
+`HookWndProc` directly (not gated on menu state or any capture mode) so
+it fires the instant F9 is pressed during real, uninterrupted gameplay --
+exactly the case needed to catch the ready-up/buy-station prompt.
+
+Build-verified (x64 Release, 0 errors, `dumpbin`-confirmed genuine x64
+output), deployed live. Not yet used against a real capture -- next step
+is the user pressing F9 while the ready-up or buy-station prompt is on
+screen, then this file being analyzed OFFLINE (a static `.dmp` file, not
+a live process -- a fundamentally different, already-proven-safe category
+of operation for this project, see the sprintf_s crash investigations
+cited above) to find the real return address/call chain into whatever
+draws that text.
