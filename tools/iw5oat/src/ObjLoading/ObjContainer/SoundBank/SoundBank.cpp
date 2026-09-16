@@ -172,7 +172,7 @@ bool SoundBank::ReadHeader()
         return false;
     }
 
-    if (m_header.dependencyCount * m_header.dependencySize > sizeof(SoundAssetBankHeader::dependencies))
+    if (static_cast<size_t>(m_header.dependencyCount) * m_header.dependencySize > sizeof(SoundAssetBankHeader::dependencies))
     {
         con::error("Invalid sndbank dependency sizes (count is {}; size is {})", m_header.dependencyCount, m_header.dependencySize);
         return false;

@@ -17,6 +17,11 @@ on:
   release:
     types: [published]
 
+# Least-privilege: only needs to read the release's own zip asset via
+# `gh release download` (github.token) -- never writes back to the repo.
+permissions:
+  contents: read
+
 jobs:
   upload-to-nexus:
     runs-on: ubuntu-latest
