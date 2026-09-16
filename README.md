@@ -23,7 +23,7 @@ native call exists, never a config tweak):
 |---|---|---|---|
 | **Controller support** | Real analog movement/look/every button for Campaign & Survival, matching console behavior | 🔴 Yes — the gate | Flagship, most mature — see [What works](#what-works-right-now) |
 | **Visual/performance enhancements** | Internal render scale, FSR 1.0 sharpening, motion blur, forced anisotropic filtering/shadow/lighting quality, stutter/threading fixes | 🔴 Yes — the gate | Render scale and motion blur live-confirmed; rest wired for x64, not yet live-tested |
-| **Netcode security patches** | Finds and fixes real, exploitable vulnerabilities in the base game's own netcode | ⚪ No — ships independently | **All 4 tracked vulnerabilities resolved** (3 fixed, 1 already safe), live-confirmed active against real traffic — closing genuine RCE-class holes present since before this project existed, with no known official Activision fix — see [Security](#security-netcode-vulnerability-patches) |
+| **Netcode security patches** | Finds and fixes real, exploitable vulnerabilities in the base game's own netcode | ⚪ No — ships independently | **Complete, end to end — all 4 tracked vulnerabilities resolved** (3 fixed, 1 confirmed already safe), closing genuine RCE-class holes present since before this project existed, with no known official Activision fix. 2 of 3 active fixes independently confirmed firing against real MP traffic; the third (SP/Spec-Ops P2P) is build-verified and resolves correctly live, just not yet observed against a real P2P session — see [Security](#security-netcode-vulnerability-patches) |
 | **Multiplayer (`iw5mp.exe`)** | Same controller/security methodology, ported to the separate MP binary | ⚪ No — allowed to lag SP by 2-4 releases until beta | Active reverse-engineering, opt-in-only when it ships — see [Multiplayer](#multiplayer) |
 
 Plus a cross-cutting [plugin API](PLUGIN_API.md) that lets anyone extend
@@ -478,12 +478,14 @@ proxy-DLL injection technique as the rest of this repo, finding and fixing
 real, exploitable vulnerabilities in MW3's own netcode. It exists because
 Steam's VAC doesn't cover packet-level attacks from a malicious server or
 peer — a real gap for anyone playing Multiplayer or Spec-Ops/Survival co-op,
-and the reason this component exists at all. **All 4 confirmed
-vulnerabilities are now resolved** (3 fixed, 1 confirmed already safe —
-build-verified, live-confirmed reachable from real traffic, not yet tested
-against an actual malicious packet). See
-[`security/README.md`](security/README.md) for the full findings table and
-current fix status.
+and the reason this component exists at all. **Complete, end to end — all 4
+confirmed vulnerabilities are now resolved** (3 fixed, 1 confirmed already
+safe). 2 of the 3 active fixes are independently confirmed firing against
+real MP traffic; the third (SP/Spec-Ops P2P) is build-verified and resolves
+correctly live, just not yet observed against a real P2P session — none
+have been tested against an actual malicious packet, since that can't
+safely be simulated. See [`security/README.md`](security/README.md) for the
+full findings table and current fix status.
 
 **A patch to the native install, not a separate client.** This ships as a
 proxy DLL sitting next to the exact same official `iw5sp.exe`/`iw5mp.exe`
