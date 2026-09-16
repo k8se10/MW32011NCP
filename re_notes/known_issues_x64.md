@@ -9227,3 +9227,92 @@ in either function touches per-match combat state. **Genuinely new,
 real infrastructure worth knowing about for future profile/save-data
 work, but a dead end for the specific scoreboard-unblocker theory** --
 closed, not just unconfirmed.
+
+### REAL BREAKTHROUGH, 2026-09-16 (later same day) -- ready-up's text is NOT a standalone buffer at all, it's the LAST element of the Survival between-wave stats-recap screen's own element array; a genuine runtime struct array found nearby, but still no direct static reference to either
+
+**Status: Open, but genuinely reframed. This is the single best structural
+lead the whole investigation has produced -- ready-up is not a special
+case needing its own separate mechanism, it's one row in an already-real,
+already-existing UI element list. Finding what populates/draws THAT list
+is now the actual target, not "find who draws ready-up" in isolation.**
+
+Direct result of three parallel forked investigations launched together
+(readStats trace -- closed, dead end, see UPDATE above; a wider memory
+scan around the two known scratch-buffer addresses across all 8
+captured dumps; and an address-adjacency sweep near every known
+candidate function -- closed, no hit, see below).
+
+**The wide-window scan (Address A, `0x1425fa110`) found the real shape**:
+this isn't an isolated cell -- it's one slot in a regular array with
+EXACTLY `0x400`-byte stride. Full sequence recovered from the ready-up
+capture (`selfdump_20260916_053347.dmp`), scanning `0x1425f8000`-
+`0x1425fa800`:
+
+| Address | Content |
+|---|---|
+| `0x1425f8510` | `Accuracy:` |
+| `0x1425f8910` | `41%` |
+| `0x1425f8d10` | `+$48` |
+| `0x1425f9110` | `Damage Taken:` |
+| `0x1425f9510` | `64` |
+| `0x1425f9910` | `+$272` |
+| `0x1425f9d10` | `Wave Bonus: $593` |
+| `0x1425fa110` | `Press ^3[{skip}]^7 to ready up: &&1` |
+
+**This is the Survival between-wave stats-recap screen's own element
+array** -- labels ("Accuracy:", "Damage Taken:") alternating with values
+(percentages, money awards), and the ready-up prompt is simply the LAST
+element in the same sequential list, not a separately-owned buffer at
+all. This is exactly why the buffer looked "universal"/promiscuous in the
+prior round (holding wildly different content across different captures)
+-- it's not one buffer reused by unrelated systems, it's ONE SCREEN's
+full element list, and different captures caught it at different points
+in that list's own lifecycle/reuse (a loading tip, `$500`, `52`, `63%`
+seen in other captures are very likely leftover/stale slot content from
+this SAME array's own prior use, between-wave, not evidence of unrelated
+systems sharing it -- a real, warranted correction to the prior round's
+"universal scratch buffer used by unrelated subsystems" conclusion).
+
+**A genuine, real header/struct anchor found immediately before the
+array**, at `0x1425f80b0`: three pointers, `0x142695400`, `0x142695460`,
+`0x1426954c0`, each exactly `0x60` (96) bytes apart -- a real struct
+array, very likely per-stat-row metadata (label ptr / value ptr /
+formatting, or similar). Followed up immediately: confirmed via
+`DumpRawDwords.java` against the STATIC file image that this whole region
+reads as all-zero at compile time (i.e. it's real `.bss`, zero-initialized
+global memory populated only at runtime) -- ruling out "leftover scratch
+garbage" and confirming it's a genuine, purpose-built global array, not a
+coincidental byte pattern. However: `DescribeRefs.java` and
+`FindLeaRefsToAddr.java` against all three pointer addresses came back
+with ZERO references, the exact same wall hit by every other static
+technique tonight -- this struct array, like the text array itself, is
+reached through computed/indexed addressing, not a fixed instruction
+operand anywhere in the binary.
+
+**Address-adjacency sweep (the third fork): genuinely checked, no hit.**
+Decompiled every unexamined function adjacent (both directions) to
+`FUN_140052220`, `FUN_1402a9dd0`, `FUN_14029a2b0`, and the TLS-
+registration cluster (`FUN_14024a040`/`FUN_1402ca370`/etc). Found real,
+previously-unlooked-at siblings (`FUN_14029a3e0`, a genuine low-level
+draw variant near `FUN_14029a2b0`; `FUN_1402ca150`, a player-name
+sanitizer using the same `[{...}]`/`^N` bracket-token vocabulary as the
+ready-up template, for an unrelated purpose) -- none reference either
+scratch region or contain ready-up/buy-station-specific text. A real,
+well-executed negative result, not a shortcut skipped.
+
+**Where this leaves the investigation**: the real target is now "what
+draws/populates the Survival stats-recap screen," not "what draws
+ready-up specifically" -- a reframing, not a dead end. The stats-recap
+screen is a real, distinct, nameable UI screen (shown between Survival
+waves) that this project has never specifically targeted before. Given
+every direct-reference technique available has now been exhausted against
+BOTH the text array and its struct header, the next productive angle is
+almost certainly GSC-side (this screen is very likely built/populated by
+a Survival-specific GSC script, matching this project's own already-
+established finding that ready-up's text is "Survival-script-driven, not
+in code_post_gfx.str at all") -- still blocked on `common_survival.ff`'s
+unresolved extraction crash, or a live capture timed to the EXACT moment
+this screen is first being POPULATED (not just displayed) rather than
+already-idle, which none of tonight's 8 captures happened to catch.
+
+No source changes this round -- pure investigation.
