@@ -8474,9 +8474,15 @@ independently re-confirmed live.
 
 ### INVESTIGATED, 2026-09-16 -- Survival ready-up (F5)/buy-station on-screen prompts never reach the hooked draw pipeline at all; leading theory is the SAME class of native Activision x64 regression already confirmed for "get to cover", not a bug in this project's own substitution code
 
-**Status: Investigating -- real static RE done, conclusion is a strong,
-evidence-backed theory, not yet independently confirmed live (needs one
-vanilla-DLL test, same technique as the "get to cover" round below).**
+**Status: CORRECTED, same day (see the round immediately below) -- the
+"Activision removed the native text" theory this round proposed is WRONG.
+Direct live counter-evidence: "it stll draws i see it when i tested 'Press
+F5 To Ready Up' and the buy station one too shows so its not that they
+dont exist." Both prompts draw fine, visibly, confirming this is a real
+divergence in THIS PROJECT's own hook coverage, not a missing native
+feature. Kept below, uncut, as the investigation record -- the next round
+picks up from the corrected premise with a real x86-vs-x64 structural
+comparison.**
 
 Direct instruction, following up on the still-open live report ("ready up
 works but prompt needs to be shown"): "dig on that as its improtant we get
@@ -8564,3 +8570,117 @@ No source changes this round -- pure investigation, per this project's own
 cheap live test before committing to either the "port existing native
 text" or "build a new feature from scratch" path, since they're different
 amounts of work and only one is justified depending on the answer.
+
+### INVESTIGATED (correction + real structural finding), 2026-09-16 (later same day) -- x86-vs-x64 draw-pipeline comparison finds a real architectural fragmentation; ready-up/buy-station's own draw path still not pinned down, but every known static lead is now exhausted
+
+**Status: Investigating. The "native text missing" theory above is
+retracted (disproven by direct live counter-evidence). A real, structural
+x86-vs-x64 divergence was found and is the new leading theory, but the
+EXACT function that draws these two hints on x64 is still not identified
+-- every static lead this pass could find has been traced and closed
+without success. Next step needs live memory inspection (x64dbg), not
+more static RE.**
+
+Direct correction: "it stll draws i see it when i tested 'Press F5 To
+Ready Up' and the buy station one too shows so its not that they dont
+exist. compare x86 to x64 to really see where weve diverged." Re-verified
+the live diagnostic log DIRECTLY this round (not from a secondhand summary
+claim) -- `grep -i "F5"`/`"ready"` against the real, current
+`proxy_d3d9.log` (194,701 `[x64-fontid-diag]` lines) confirms zero matches
+for either, exactly as previously found. But a broader keyword sweep found
+something the earlier round missed: **"Weapon Armory Enabled!" and
+"Purchase and upgrade weapons." (the buy station's own toast/description
+text) ARE captured by this hook** -- so the hook is not blind to buy-station
+content in general, only to the specific interact-hint LINE ("Hold [F] to
+use Weapon Armory" / "Press F5 To Ready Up") that carries the "^3F^7"-style
+highlighted key-name markup.
+
+**Real x86-vs-x64 structural comparison, done properly this round (per the
+direct instruction) rather than continuing to guess at x64 in isolation**:
+
+- **x86 hooks exactly ONE low-level draw function, `FUN_00690c80`, with
+  only 2 real static callers**: a trivial direct wrapper (`FUN_0042aed0`)
+  and `FUN_00691ca0` -- which itself has **ZERO direct call
+  cross-references** (`FindCallers.java` against the x86 project,
+  `re_notes/ghidra_project/iw5sp_proj`). `DescribeRefs.java` traced its
+  only reference to a DATA address, `00881f54` -- a slot inside a real
+  ~20-entry function-pointer table (`re_notes/ghidra_project/
+  dwords_881f54.txt`), sitting directly before a block of ARGB color
+  constants and vertex-offset floats. This is a genuine per-item-TYPE paint
+  dispatch table (the classic Quake3/CoD `Item_Paint`-family pattern) --
+  `FUN_00691ca0` is one entry in it, and it's the one entry that computes
+  `cos`/`sin` of an angle before calling the draw function (real rotation
+  math -- consistent with an animated/radial "hold to interact" icon, the
+  exact shape both ready-up and buy-station's prompts have).
+  `FUN_00690c80` itself (`decomp_690c80.txt`) is a genuinely MONOLITHIC
+  function -- per-character layout, `^N...^7` color-code parsing, AND
+  inline icon-quad drawing (`FUN_00690620`/`FUN_00690ba0`) all live inside
+  this ONE function, unlike x64's split.
+- **x64 has no single equivalent -- the same responsibility is fragmented
+  across at least 5 real sibling leaf functions**, all independently
+  confirmed this session: `FUN_14029a2b0` (plain, this hook's target),
+  `FUN_14029a610` (icon/portrait-capable, 3 real callers: `FUN_1402b1090`,
+  the friend-invite popup `FUN_14003b250`, and the subtitle renderer
+  `FUN_1402a9dd0`), `FUN_14029a4d0` (focused-entity nametag variant, 1
+  real caller, confirmed this round to be a text-CURSOR/rename-widget path
+  via its literal `0x7c`/`0x5f` glyph args -- not a hint prompt), and the
+  `FUN_1402afa60`/`FUN_1402b1090` and `FUN_1402afb10`/`FUN_140299b40`
+  wrapper pairs (subtitle-CSV-driven captions, confirmed unrelated).
+  **Exhaustively enumerated all 22 real static callers of `FUN_14029a2b0`
+  itself this round** (`FindCallers.java`, `callers_14029a2b0_full.txt`)
+  and traced every single one that hadn't already been mapped by earlier
+  sessions (`FUN_1400707e0` = a debug coordinate overlay,
+  `FUN_1402ac2b0`/`FUN_1402abec0` = the `ui_showlist` debug-console dump,
+  `FUN_1402a6300` = another entity-marker/compass draw variant) -- **none
+  of the 22 is a rotation-math, radial-icon hint drawer.** The x86 analog
+  of `FUN_00691ca0` (reached only via an indirect/data-table call, doing
+  `cos`/`sin` icon-rotation math) has **no confirmed x64 counterpart** --
+  either it doesn't directly call any of the 5 known x64 draw siblings (a
+  6th, still-unfound sibling), or the whole per-item-type function-pointer
+  table x86 uses was itself restructured/removed in the x64 recompile and
+  replaced by something not yet located.
+- **`FUN_1402a9950`, the confirmed-working generic itemDef-paint function**
+  (already ported for Back/Friends/Quit/Leaderboards/Game-Summary corner
+  hints, `analog_input_hooks_x64.cpp` ~line 5028's own header comment) was
+  re-checked as a candidate this round -- it funnels into
+  `FUN_1402b1090` -> `FUN_14029a2b0` too, already accounted for in the
+  22-caller list, so real menu itemDef text (the kind drawn while an
+  actual menu screen is open) is confirmed NOT the gap. Buy-station's
+  interact PROMPT specifically is not itemDef text the way a modal menu's
+  button labels are -- it draws as a world-space HUD overlay while the
+  player is simply looking at the structure, closer in shape to a
+  gameplay hint than a menu widget.
+
+**Net result**: this project's OWN low-level text-draw hook coverage is
+real and broad (5 siblings, 22+3+1+6+1 callers, all traced, all accounted
+for) -- but none of it is the function that draws "Press F5 To Ready Up"
+or "Hold [F] to use Weapon Armory." x86 catches these because it hooks a
+SINGLE function reached through only 2 paths, one of which is a
+data-driven per-item-type table that plausibly still contains the real
+animated-icon hint renderer's x64 equivalent, just not yet located by
+static cross-reference (a table-driven indirect call, by its nature,
+leaves no CALL instruction pointing at it for `FindCallers.java` to find
+unless the table itself is located first, the same reason x86's own
+`FUN_00691ca0` had zero direct callers despite being real and alive).
+
+**Genuinely exhausted this round, not a shortcut**: every text-draw leaf
+function reachable from `FUN_14029a2b0`'s own call graph, `FUN_140052220`'s
+full ~100-case switch table (already mapped in
+`re_notes/x64_migration/ui_draw_pipeline_map.md`), and the itemDef-paint
+path used by every other menu-text feature this project has shipped. None
+of it accounts for ready-up/buy-station's interact-hint line.
+
+**Real next step, not yet attempted this session (`x64dbg` MCP server was
+unreachable -- connection refused -- for the whole of this pass, so no
+live inspection was possible)**: find x64's own equivalent of x86's
+`00881f54`-style function-pointer table, most tractably by breaking on
+`FUN_14029a2b0`'s entry live while standing at a buy station or during a
+Survival ready-up window and reading the real return address off the
+stack -- the fastest, most direct way to identify the actual caller
+without more static guessing, since static analysis has now covered every
+lead this file's own architecture map produces. GSC-first (this project's
+own locked methodology) remains blocked for the same reason as the prior
+round: `common_survival.ff` is still on the unresolved
+`XFILE_BLOCK_SCRIPT` "size 0" crash list.
+
+No source changes this round.
