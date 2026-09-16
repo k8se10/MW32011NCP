@@ -5073,6 +5073,50 @@ void Hook_DrawTextX64(
         }
     }
 
+    // 2026-09-16 -- opt-in, read-only live-data-gathering diagnostic for this
+    // project's two known, genuinely-blocked-on-RE glyph gaps: buy-station
+    // (needs Font_s.fontName's real x64 offset, unconfirmed after a dedicated
+    // static RE pass -- see this function's own header comment) and
+    // Sentry-Place (its SENTRY_PLACE reference string was never found
+    // anywhere in the x64 binary). Mirrors x86's own hudFontIdLogging
+    // (mod_config.h) technique -- dedup'd here by the drawn TEXT changing
+    // (rather than font changing) since capturing the real text itself is
+    // half the point for Sentry-Place specifically. Independent of
+    // suppressRealDraw/every check above -- runs for EVERY draw call that
+    // reaches here, known-substituted or not, so a live session near a buy
+    // station or Sentry turret-placement prompt captures real data
+    // regardless of whether this hook already recognized the text.
+    if (g_modConfig.hudFontIdLoggingX64 && text && LooksSaneX64(reinterpret_cast<uintptr_t>(text))) {
+        __try {
+            static char s_lastLoggedTextX64[256] = "";
+            if (strncmp(text, s_lastLoggedTextX64, sizeof(s_lastLoggedTextX64) - 1) != 0) {
+                strncpy_s(s_lastLoggedTextX64, text, _TRUNCATE);
+
+                char hexBuf[3 * 32 + 1] = "";
+                auto fontAddr = reinterpret_cast<uintptr_t>(fontArg);
+                if (LooksSaneX64(fontAddr)) {
+                    __try {
+                        const unsigned char* fontBytes = reinterpret_cast<const unsigned char*>(fontAddr);
+                        char* w = hexBuf;
+                        for (int i = 0; i < 32; ++i) {
+                            w += sprintf_s(w, 4, "%02X ", fontBytes[i]);
+                        }
+                    } __except (EXCEPTION_EXECUTE_HANDLER) {
+                        strcpy_s(hexBuf, "<unreadable>");
+                    }
+                } else {
+                    strcpy_s(hexBuf, "<fontArg not sane>");
+                }
+
+                char buf[512];
+                sprintf_s(buf, "[x64-fontid-diag] text=\"%.100s\" fontArg=%p bytes[0..31]=%s",
+                          text, fontArg, hexBuf);
+                LogFromController(buf);
+            }
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+        }
+    }
+
     if (!suppressRealDraw) {
         g_realDrawTextX64(dcHandle, text, maxChars, fontArg, x, y, color1, color2, scale, colorVecPtr, extra);
     }

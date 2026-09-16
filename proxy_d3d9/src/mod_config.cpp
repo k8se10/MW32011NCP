@@ -782,6 +782,17 @@ void WriteDefaultConfig(const char* path)
         "; real font name in use for on-screen HUD/menu text whenever it changes. Always\n"
         "; forwards unmodified regardless of this toggle. 0 = off, 1 = on.\n"
         "HudFontIdLogging=%d\n"
+        "; 2026-09-16 -- x64 equivalent of HudFontIdLogging above, for the two known,\n"
+        "; genuinely-blocked-on-RE glyph-substitution gaps on x64: buy-station (needs\n"
+        "; Font_s.fontName's real x64 offset, unconfirmed after a dedicated static RE\n"
+        "; pass) and Sentry-Place (its SENTRY_PLACE reference string was never found in\n"
+        "; the x64 binary at all). Logs the resolved text (dedup'd on change) plus the\n"
+        "; raw font pointer and a short hex dump at it. Turn on, reproduce a real\n"
+        "; buy-station or Sentry turret-placement prompt live, check proxy_d3d9.log for\n"
+        "; \"[x64-fontid-diag]\" lines, then turn back off. DEFAULT OFF -- a one-off\n"
+        "; investigation toggle, not meant to stay on during normal play. Always\n"
+        "; forwards unmodified regardless of this toggle. 0 = off, 1 = on.\n"
+        "HudFontIdLoggingX64=%d\n"
         "; Issue #48: read-only diagnostic, same hook site as HudFontIdLogging above but\n"
         "; dedup'd by drawn text changing and logs the full raw position/scale/color\n"
         "; parameter set instead of just the font name. Investigation-only toggle for\n"
@@ -941,6 +952,7 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.bindResolverHookLogging ? 1 : 0,
         g_modConfig.bindResolverGlyphSubstitution ? 1 : 0,
         g_modConfig.hudFontIdLogging ? 1 : 0,
+        g_modConfig.hudFontIdLoggingX64 ? 1 : 0,
         g_modConfig.hudGlyphPositionLogging ? 1 : 0,
         g_modConfig.listItemPositionLogging ? 1 : 0,
         g_modConfig.armorFieldScanLogging ? 1 : 0,
@@ -1199,6 +1211,7 @@ void LoadModConfig()
     ReadBool(path, "Experimental", "BindResolverHookLogging", g_modConfig.bindResolverHookLogging);
     ReadBool(path, "Experimental", "BindResolverGlyphSubstitution", g_modConfig.bindResolverGlyphSubstitution);
     ReadBool(path, "Experimental", "HudFontIdLogging", g_modConfig.hudFontIdLogging);
+    ReadBool(path, "Experimental", "HudFontIdLoggingX64", g_modConfig.hudFontIdLoggingX64);
     ReadBool(path, "Experimental", "HudGlyphPositionLogging", g_modConfig.hudGlyphPositionLogging);
     ReadBool(path, "Experimental", "ListItemPositionLogging", g_modConfig.listItemPositionLogging);
     ReadBool(path, "Experimental", "ArmorFieldScanLogging", g_modConfig.armorFieldScanLogging);
@@ -1245,7 +1258,7 @@ void LoadModConfig()
         "vibrationDamagePerPoint=%g vibrationDamageMaxIntensity=%g vibrationDamageDurationMs=%lu "
         "overlayFontFamily=%s overlayFontFamilyCondensed=%s overlayFontItalic=%d overlayTestCycleAllVariants=%d "
         "fireNotifyQueueKick=%d bindResolverHookLogging=%d bindResolverGlyphSubstitution=%d "
-        "hudFontIdLogging=%d hudGlyphPositionLogging=%d listItemPositionLogging=%d "
+        "hudFontIdLogging=%d hudFontIdLoggingX64=%d hudGlyphPositionLogging=%d listItemPositionLogging=%d "
         "armorFieldScanLogging=%d forceGlyphOverlay=%d glyphPositionEditMode=%d "
         "captureRuntimeMenuAssets=%d frametimeBenchmarkLogging=%d",
         g_modConfig.lookDegreesPerSecondHorizontal, g_modConfig.lookDegreesPerSecondVertical,
@@ -1272,6 +1285,7 @@ void LoadModConfig()
         g_modConfig.bindResolverHookLogging ? 1 : 0,
         g_modConfig.bindResolverGlyphSubstitution ? 1 : 0,
         g_modConfig.hudFontIdLogging ? 1 : 0,
+        g_modConfig.hudFontIdLoggingX64 ? 1 : 0,
         g_modConfig.hudGlyphPositionLogging ? 1 : 0,
         g_modConfig.listItemPositionLogging ? 1 : 0,
         g_modConfig.armorFieldScanLogging ? 1 : 0,

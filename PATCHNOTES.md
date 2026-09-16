@@ -685,6 +685,18 @@ item below.
    cheap, rate-limited diagnostic hook rather than a guessed fix on a
    feature that has never worked on any architecture. See
    `re_notes/known_issues.md` issue #30.
+8. **`HudFontIdLoggingX64` diagnostic toggle** — an opt-in, read-only
+   live-data-gathering tool for this project's two remaining genuinely
+   blocked (not just unattempted) glyph-substitution gaps: buy-station
+   (needs `Font_s.fontName`'s real x64 offset, unconfirmed after a
+   dedicated static RE pass) and Sentry-Place (its reference string was
+   never found anywhere in the x64 binary). Logs the resolved on-screen
+   text plus the raw font pointer and a short hex dump at it, for every
+   native text draw, so a real live session near either prompt captures
+   genuine data instead of another round of static guessing. Mirrors
+   x86's own established `HudFontIdLogging` technique. Default off in the
+   shipped config template; turned on in this session's own live config
+   so the next play session captures it automatically.
 
 ### Investigated, Not Yet Resolved
 1. ~~**Fire and/or ADS fails — first live playtest of the x64 build,

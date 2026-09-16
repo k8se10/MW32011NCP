@@ -480,6 +480,30 @@ struct ModConfig
         // "[hud-glyph-pos]" lines and turn back off. Always forwards to the real
         // trampoline completely unmodified regardless of this toggle; only controls
         // whether it logs.
+    bool hudFontIdLoggingX64 = false; // 2026-09-16 -- x64 equivalent of hudFontIdLogging
+        // above, same purpose: a live-data-gathering toggle for exactly the two known,
+        // genuinely-blocked-on-RE gaps this project has on x64 -- buy-station's own
+        // glyph substitution (needs Font_s.fontName's real x64 offset, which a dedicated
+        // multi-angle static RE pass already tried and could NOT confirm -- see
+        // analog_input_hooks_x64.cpp's own Hook_DrawTextX64 comment) and Sentry-Place
+        // (its SENTRY_PLACE reference string was searched for across the whole x64
+        // binary and found zero times -- the real x64 key name, if any, is unknown).
+        // When on, Hook_DrawTextX64 logs the resolved TEXT (dedup'd on change) plus the
+        // raw `fontArg` pointer and a short hex dump of the bytes at it, for every draw
+        // call that reaches this hook while a menu isn't active -- gives real, live data
+        // to work from instead of guessing: (1) capture the real text drawn while
+        // standing at a Survival buy station or the Sentry gametype's turret-placement
+        // prompt -- confirms/corrects the assumed reference key for each; (2) compare the
+        // raw Font_s bytes captured at a buy-station prompt against bytes already known
+        // to work for an already-substituted hint (e.g. Mantle) -- may empirically reveal
+        // where the real font-name data actually lives even though static tracing
+        // couldn't find it. DEFAULT OFF -- a one-off investigation toggle, not meant to
+        // stay on during normal play (this hook fires extremely often -- every real HUD/
+        // menu text draw -- dedup'd by text change keeps it from flooding regardless, but
+        // it's still diagnostic-only). Turn on, reproduce the target prompt live, then
+        // check proxy_d3d9.log for "[x64-fontid-diag]" lines and turn back off. Always
+        // forwards to the real trampoline completely unmodified regardless of this
+        // toggle -- read-only, never changes what's drawn.
     bool listItemPositionLogging = false; // issue #67 log-slimming pass (2026-08-08):
         // `[list-item-diag]` used to fire unconditionally on EVERY menu text-draw call
         // (i.e. once per visible list item, on ANY active menu screen) with no gating

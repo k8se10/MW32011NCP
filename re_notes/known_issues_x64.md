@@ -8154,3 +8154,43 @@ Shipped: `proxy_d3d9/src/d3d9_hook.cpp` (adds `#include "game_exe_detect.h"`
 and one `if` gate around the existing periodic-nudge call). Build-verified
 (x64, 0 new errors, `dumpbin` confirms genuine x64 output, deployed to the
 live install).
+
+### GROUNDWORK (opt-in diagnostic toggle), 2026-09-16 -- live-data-gathering logging for the two remaining genuinely-blocked glyph-substitution gaps (buy-station, Sentry-Place)
+
+**Status: shipped, live, waiting on real session data.** Direct instruction
+following the scope-correction round above: "you need to then add whatever
+logging as a toggle so we can get any and all data wen need from live
+test." Rather than re-attempting the static RE that already failed twice
+for buy-station's `Font_s.fontName` offset, or continuing to guess at
+Sentry-Place's real x64 reference string, this adds `HudFontIdLoggingX64`
+(`[Experimental]`, mirrors x86's own `HudFontIdLogging` technique exactly)
+to `Hook_DrawTextX64`: when on, logs the resolved TEXT (dedup'd on change)
+plus the raw `fontArg` pointer and a 32-byte hex dump at it, for EVERY draw
+call reaching this hook, independent of whether any known substitution
+matched — so a real live session near a buy station or the Sentry
+gametype's turret-placement prompt captures genuine data instead of
+another round of static guessing.
+
+**What this can give us, once a real session exercises it**:
+- **Buy-station**: the real font pointer/bytes at the moment the prompt
+  draws. Comparing this against a captured Mantle-hint font (already
+  working) MAY empirically reveal where the real font-name data actually
+  lives, even though static tracing found the load chain to be a generic,
+  type-agnostic asset-cache system with no per-field constructor a static
+  pass can see inside.
+- **Sentry-Place**: the real resolved text itself. `SENTRY_PLACE` was
+  searched for and found zero times in the x64 binary — this confirms
+  whether the x64 build uses a different key, a differently-cased key, or
+  genuinely doesn't have this hint at all in this specific build.
+
+Read-only, always forwards to the real trampoline unmodified regardless of
+this toggle. Default OFF in the shipped `.ini` template (a one-off
+investigation toggle, not meant to stay on for normal play) but **turned ON
+in the live config this session** specifically so the next play session
+captures data automatically. Build-verified (x64 `/t:Rebuild` 0 new errors,
+`dumpbin`-confirmed genuine x64 output, deployed).
+
+Shipped: `proxy_d3d9/src/mod_config.h`/`.cpp` (new toggle, both the
+`[Experimental]` template and the current-config log line),
+`proxy_d3d9/src/analog_input_hooks_x64.cpp` (`Hook_DrawTextX64`'s new
+diagnostic block).
