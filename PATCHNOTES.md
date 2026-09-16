@@ -661,6 +661,17 @@ item below.
     bug class as three earlier incidents this project has already hit and
     fixed. Buffer widened with a generous margin; live-confirmed both
     binaries load correctly again. See `re_notes/known_issues_x64.md`.
+26. **The real "camera jumps on the first real input at launch" bug found
+    and fixed — a native engine gap, not a controller issue at all.** The
+    earlier kbutton-release fix (item 24) turned out to address a real
+    but separate bug; this one happens on keyboard/mouse too, with no
+    controller involved. Root cause: the native mouse-delta baseline is
+    never seeded before the first real gameplay tick, so the first delta
+    computed is the cursor's own raw screen position applied straight to
+    the camera as one large jump. Fixed by seeding the same native
+    baseline function ourselves, once per level, to the cursor's current
+    position — zero visible movement, pure root-cause fix. Build-verified,
+    deployed; awaiting a fresh playtest. See `re_notes/known_issues_x64.md`.
 
 ### Documentation
 1. **`re_notes/known_issues_x64.md` established** as the dedicated x64 issue
