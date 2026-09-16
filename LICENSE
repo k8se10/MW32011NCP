@@ -70,6 +70,20 @@ license, unmodified in license terms:
 - MinHook (`proxy_d3d9/third_party/minhook/`), including the bundled Hacker
   Disassembler Engine (HDE) 32/64 C — see
   `proxy_d3d9/third_party/minhook/LICENSE.txt` for full terms.
+- Isotherm Sans (`assets/fonts/`), a modernized derivative of Manrope
+  (Copyright 2018 The Manrope Project Authors) this project maintains as
+  [`k8se10/isotherm-sans`](https://github.com/k8se10/isotherm-sans), embedded
+  here as a private, in-process-only font — SIL Open Font License 1.1, see
+  `assets/fonts/IsothermSans-OFL.txt` for full terms.
+- The `[Video] FramePacingEnabled`/`WaitCoalescingEnabled` algorithms
+  (`proxy_d3d9/src/frame_pacing_x64.cpp`/`proxy_d3d9/src/wait_coalescing_x64.cpp`),
+  ported 2026-09-16 from
+  [`legoliamneeson/MW3_Standalone_D3D9_Project`](https://github.com/legoliamneeson/MW3_Standalone_D3D9_Project)
+  (Copyright legoliamneeson) — that project's own README states no
+  redistribution license is asserted for the ported source; credited here
+  and in both files' own header comments per its own attribution note, not
+  vendored as a separate third-party directory since only the algorithm
+  (not its own hooking mechanism or any of its files) was ported.
 - OpenAssetTools (`tools/iw5oat/`), forked 2026-09-14 from
   `Laupetin/OpenAssetTools` via a history-preserving `git subtree` merge, as
   the base for this project's own in-house IW5 x64 zone/fastfile tooling

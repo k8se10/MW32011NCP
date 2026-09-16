@@ -539,6 +539,15 @@ modernized derivative of [Manrope](https://github.com/sharanda/manrope)
 (Copyright 2018 The Manrope Project Authors), SIL Open Font License 1.1 (see
 `assets/fonts/IsothermSans-OFL.txt`).
 
+Two further, larger components are absorbed as full nested repositories
+(their own git history and license, each merged via a history-preserving
+`git subtree`, not vendored as a plain library) — **[OpenAssetTools](https://github.com/Laupetin/OpenAssetTools)**
+(`tools/iw5oat/`, GPLv3) and this project's own former `MW32011NSP` sibling
+project (`security/`, this repo's own license). See the
+[Repository structure](#repository-structure--nested-components) section
+above for the full story on each, and `LICENSE`'s own "Third-party
+components" section for the complete, authoritative license list.
+
 ## Support this project
 
 This is built and maintained entirely in spare time, at no cost to players —
