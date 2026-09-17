@@ -373,15 +373,24 @@ only ever logged if every byte up to the terminator is printable ASCII —
 a wrong offset just fails validation and falls back to raw-ID-only
 logging, never a crash or garbage text.
 
-Build-verified, deployed; **not yet live-tested**. The real, practical
-next step once a session captures live resolved-string traffic: correlate
-the observed `(ownerId, stringId, resolvedText)` triples against known
-in-game actions during a Survival session specifically, to see whether the
-ready-up trigger (the original open mystery from issue #5 -- no native
-call was ever found for it on either architecture, only the x86-era
-synthetic-F5 workaround) shows up as an identifiable, repeatable pattern
-in the traffic — now with real readable text to recognize it by, not just
-opaque integer IDs.
+Build-verified, deployed, **LIVE-CONFIRMED via a real retest**: all 57
+captured fires resolved to genuine, readable GSC identifier text --
+`"death"` (49 consecutive fires, count=1-50, varying ownerId), then rate-
+limited heartbeats at count=2000 (`"goal_changed"`), 4000
+(`"path_changed"`), 6000/8000 (`"runanim"`), and 10000
+(`"stop_notetracks"`) -- real, recognizable engine notify names, not
+ASCII-noise false positives. Zero fires fell back to raw-ID-only. **The
+offset+4 hypothesis is now confirmed correct, not just plausible** -- this
+closes the one deliberately-left-open question from the original design.
+
+The real, practical next step now that resolution is proven working:
+correlate the observed `(ownerId, stringId, resolvedText)` triples against
+known in-game actions during a Survival session specifically, to see
+whether the ready-up trigger (the original open mystery from issue #5 --
+no native call was ever found for it on either architecture, only the
+x86-era synthetic-F5 workaround) shows up as an identifiable, repeatable
+pattern in the traffic — now with real readable text to recognize it by,
+not just opaque integer IDs.
 
 ## Cross-reference
 
