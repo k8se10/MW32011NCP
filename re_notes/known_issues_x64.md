@@ -9043,6 +9043,49 @@ No source changes this round -- pure investigation. Real trail:
 resolver) -> `+0x1b4`/`0x1b8`/`0x1bc`/`0x1c0` (still open) <- called from
 `FUN_14011efa0` (per-player think, gated on a spawn timer).
 
+### INVESTIGATED, 2026-09-17 (later still) -- one more hop traced; real structural evidence this whole chain is SERVER-SIDE snapshot-building, not client-side draw code -- reframes the real next step
+
+**Status: Investigating -- a real architectural finding, not a dead end,
+but the remaining work is bigger than "one more hop."**
+
+Tried a whole-binary constant-offset scan for all three resolver output
+fields together (`0x1b4`/`0x1b8`/`0x1bc`) to cut the noise a single-offset
+scan would produce -- still noisy (this offset combination recurs in many
+unrelated structs across a 950k-instruction binary); the one plausible
+same-register, all-three-offset candidate (`FUN_14013a9c0`) was decompiled
+and ruled out as a false positive -- a completely different struct
+(a particle/FX-spawn function's own position/orientation fields, pure
+coincidence of offset values).
+
+**Pivoted to tracing `FUN_14011efa0`'s own caller instead**: exactly two
+callers exist, `FUN_140137bd0` and `FUN_140121f70`. Decompiled
+`FUN_140137bd0` -- **a large, resumable per-client state machine**
+(`DAT_1411418b8` as a persistent "current phase" variable, explicit
+time-budget checks via `rdtsc()`, resuming across multiple calls rather
+than running to completion in one), iterating the SAME `g_entities`-style
+array (`DAT_140f57cf0`) `sethintstring` itself indexes into, one client at
+a time.
+
+**This has the real structural shape of a server-side per-client snapshot-
+building loop**, not client-side render/draw code -- this engine keeps an
+internal client-server split even in SP (already established elsewhere in
+this project's own RE work). If correct, this reframes what "one more
+hop" actually means: the real remaining work isn't a quick function trace,
+it's finding where this resolved `(type, value)` pair gets serialized into
+an outgoing snapshot, then finding the CLIENT-side code that deserializes
+that exact field and finally does the actual draw -- a genuinely bigger,
+multi-step RE task than anything tried so far this session, not yet
+started.
+
+**Deliberately not pursued further this round** -- decompiling
+`FUN_140137bd0` in full (large, complex, state-machine-shaped) without a
+scoped target address to anchor on would be guessing, not checking, per
+this project's own standing methodology. A real next step exists (trace
+the snapshot-field write, then its client-side reader) but needs its own
+dedicated pass, not a continuation of this one.
+
+No source changes this round -- pure investigation.
+
 ### FIXED, 2026-09-16 (later same day) -- CRITICAL live-gameplay regression: pressing B during active gameplay wrongly paused the game; root cause traced and the whole flag-tracking design replaced with real ESC key synthesis
 
 **Status: Resolved. Build-verified (x64 Release, 0 errors, `dumpbin`-confirmed
