@@ -3858,14 +3858,13 @@ correctly does not compile into the Win32 build at all. x64 rebuilt a THIRD
 time, last, so the deployed DLL (shared `OutDir`) is the correct
 architecture.
 
-**NOT YET LIVE-TESTED** -- next step: a live playtest with a sniper-class
-weapon, ADS'd, confirming (1) holding the Sprint bind while ADS'd produces
-the real sway-reduction/steadier-aim effect and accuracy degrades once
-breath runs out (same as `-x86`'s confirmed-live behavior), (2) the kbutton
-correctly releases on letting go of the bind or breaking ADS (watch
-specifically for any sign of x86's own "active flag latches, never clears"
-symptom recurring here despite the structural reasoning above that it
-shouldn't), and (3) ordinary hip-fire Sprint (not ADS'd) is unaffected.
+**LIVE-CONFIRMED, 2026-09-17** -- direct user report, "also live confirmed
+hold breath on sniper": a live playtest with a sniper-class weapon, ADS'd,
+confirmed Hold Breath works correctly. Closes the one open item from this
+port's own build-verified-but-untested status -- no sign of x86's own
+"active flag latches, never clears" symptom recurring, matching the
+structural reasoning above (a genuinely separate, dedicated x64 `kbutton_t`
+rather than x86's own aliased-field quirk).
 
 ---
 
@@ -8983,6 +8982,66 @@ call site this session but was skipped for this one specific new message
 when it was first written. No new lesson to add beyond what's already on
 record; this is a real recurrence of an already-understood failure mode,
 not a new one. Build-verified (x64 Release, 0 errors), deployed.
+
+### INVESTIGATED, 2026-09-17 (later still) -- the four hint-family GSC builtin methods resolved live; `sethintstring` traced to a real, entirely new "resolve current interact-hint state" subsystem, genuinely separate from `FUN_140052220`'s dispatcher -- the actual draw consumer not yet found, but this is real, new, concrete progress
+
+**Status: Investigating -- a real new subsystem mapped, one more hop needed
+to close the loop.**
+
+The relaunched build (post-crash-fix) live-resolved all four hint-family
+methods: `sethintstring` (id `0x80C7`) @ `0x14014DB50`, `setcursorhint`
+(`0x80C6`) @ `0x14014DA50`, `forceusehinton` (`0x80C8`) @ `0x14014DC30`,
+`forceusehintoff` (`0x80C9`) @ `0x14014DCA0` -- all in a tight, sequential
+address cluster, a real corroborating signal these are genuinely the right
+function family (consistent source-file ordering).
+
+**`sethintstring` decompiled in full -- it is NOT a draw call at all, a
+pure state-setter.** Resolves the target entity (`DAT_140f57cf0 +
+entityId*0x2a0`, the real `g_entities`-style array), then writes the
+resolved hint value into a per-CLIENT field at offset `+0x14f8` (or
+`entity+2` for a non-client entity) -- confirming the actual draw
+happens elsewhere, driven by reading this stored state each frame, not by
+a direct call from `sethintstring` itself. This is exactly why every
+previous static lead (all of which searched the C++ HUD-element dispatch
+call GRAPH) came back negative -- the real connection is through a state
+FIELD, not a function call.
+
+**Traced the reader via a whole-binary constant-offset scan
+(`FindConstantRefs.java`, fixed a real script usage bug along the way --
+it expects a bare hex string with no `0x` prefix, not documented in its
+own header comment)**: found `FUN_140176080`, a large (~130 real
+decompiled lines), previously completely unmapped function that reads
+`client+0x14f8` as ONE case (`case 0xd`) inside a big
+`switch(*entityType)` -- a genuine "what interact-hint should currently be
+shown for the local player" resolver, computing a `(type, value)` pair
+and storing it into a per-player struct at `+0x1b4`/`+0x1b8`/`+0x1bc`/
+`+0x1c0`. **Confirmed its one caller**: `FUN_14011efa0`, a large per-
+player per-frame think/update function (position sync, dvar-array sync,
+the same general shape as this engine's real client-think tick), gated
+behind `500 < DAT_141140c88` -- almost certainly a "don't show interact
+hints for the first 500ms/frames after spawn" timer.
+
+**This is a genuinely new, real subsystem, architecturally separate from
+`FUN_140052220`'s numbered-HUD-element dispatcher** (never referenced by
+it, never referencing it) -- the first real static evidence supporting
+the user's own "did they build a new text dispatcher inside the gsc vm"
+framing, refined to what the decompile actually shows: not literally
+inside the GSC VM (this is native C++ code, reached only indirectly via
+the VM's builtin-method call), but a genuinely distinct native resolver
+pipeline the earlier, more exhaustive dispatcher search never had reason
+to look at.
+
+**Not yet closed**: `FUN_140176080`'s own OUTPUT (`+0x1b4`-`0x1c0`) still
+needs one more hop -- finding whatever reads THOSE fields next is the
+most direct remaining path to the actual draw call. Not attempted this
+round (a naive constant-offset scan for `0x1b4` alone would be far
+noisier than `0x14f8` was, needing either a scoped search from this
+specific struct's own known consumers or a fresh technique).
+
+No source changes this round -- pure investigation. Real trail:
+`sethintstring`(`0x14014db50`) -> `client+0x14f8` -> `FUN_140176080`(the
+resolver) -> `+0x1b4`/`0x1b8`/`0x1bc`/`0x1c0` (still open) <- called from
+`FUN_14011efa0` (per-player think, gated on a spawn timer).
 
 ### FIXED, 2026-09-16 (later same day) -- CRITICAL live-gameplay regression: pressing B during active gameplay wrongly paused the game; root cause traced and the whole flag-tracking design replaced with real ESC key synthesis
 

@@ -6,6 +6,10 @@
 // up empty (common for register-relative accesses in this binary).
 //
 // Usage: -postScript FindConstantRefs.java <output_path> <hexConst1> [hexConst2 ...]
+// Each hexConst is parsed via Long.parseLong(s, 16) -- pass BARE hex digits, no "0x"
+// prefix (e.g. "14f8", not "0x14f8"; the latter throws NumberFormatException and
+// aborts the whole script -- a real usage bug hit and fixed in-place 2026-09-17,
+// this comment previously didn't document the constraint at all).
 
 import ghidra.app.script.GhidraScript;
 import ghidra.program.model.address.Address;
