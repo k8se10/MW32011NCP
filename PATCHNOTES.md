@@ -922,19 +922,19 @@ item below.
     utility. The read itself reuses this codebase's own established
     SEH-guarded memory-read pattern (`Plugin_ReadMemory`'s convention),
     capped at 63 characters, and only ever logged if every byte up to
-    the terminator is printable ASCII. **One honest, explicitly
-    unconfirmed detail**: the exact byte offset of the string TEXT
-    within each 16-byte entry (hypothesized as offset+4, "inline right
-    after the refcount") was not independently proven via disassembly —
-    a more complex bucketed free-callback cast some doubt without
-    disproving it — deliberately left for live testing to confirm or
-    refute safely, since a wrong guess just fails the printable-ASCII
-    check and falls back to raw-ID-only logging rather than crashing or
-    misbehaving. Build-verified, deployed; not yet live-tested. A real,
-    practical first target once live data comes in: correlating notify
-    traffic against known Survival actions to finally identify
-    ready-up's real native trigger, the original open mystery from
-    issue #5.
+    the terminator is printable ASCII. **The offset+4 hypothesis is now
+    LIVE-CONFIRMED CORRECT**: a real retest captured genuine, readable
+    GSC identifier text — `"death"`, `"goal_changed"`, `"path_changed"`,
+    `"runanim"`, `"stop_notetracks"` — real engine notify names, not
+    garbage or ASCII-noise false positives, across all 57 captured
+    fires (50 in full, then rate-limited heartbeats at count 2000/4000/
+    6000/8000/10000). Every single fire resolved successfully, none
+    fell back to raw-ID-only. This closes the one remaining open
+    question from this feature's own design — the string-pool entry
+    layout is confirmed, not just hypothesized. A real, practical next
+    step now unlocked by working resolution: correlating notify traffic
+    against known Survival actions to finally identify ready-up's real
+    native trigger, the original open mystery from issue #5.
 
 ### Investigated, Not Yet Resolved
 1. ~~**Fire and/or ADS fails — first live playtest of the x64 build,
