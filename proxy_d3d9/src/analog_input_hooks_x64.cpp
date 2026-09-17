@@ -352,15 +352,46 @@ extern "C" bool IsArmoryMenuOpenX64()
     return g_armoryMenuOpenX64;
 }
 
+// Converts a runtime address in THIS session's own loaded module to the
+// equivalent Ghidra-comparable address (every existing re_notes/x64_migration
+// address citation uses the binary's own preferred image base, 0x140000000) --
+// lets a logged caller address be pasted directly into Ghidra's Go To with no
+// manual arithmetic, regardless of whether ASLR relocated this session's real
+// load address. Module base resolved once (GetModuleHandleA(nullptr), the same
+// call every other module-base lookup in this codebase uses) and cached --
+// matches this project's own signature-scan policy of resolving once, not
+// re-querying per call.
+uintptr_t ToGhidraAddressX64(void* runtimeAddr)
+{
+    static const uintptr_t s_moduleBase = reinterpret_cast<uintptr_t>(GetModuleHandleA(nullptr));
+    constexpr uintptr_t kPreferredImageBase = 0x140000000ULL;
+    if (s_moduleBase == 0 || runtimeAddr == nullptr) return 0;
+    return kPreferredImageBase + (reinterpret_cast<uintptr_t>(runtimeAddr) - s_moduleBase);
+}
+
 void __fastcall Hook_VmNotify(unsigned int notifyListOwnerId, unsigned int stringValue, void* top)
 {
     ++g_vmNotifyFireCount;
+    // TEMP, 2026-09-17: capture the real caller of this specific VM_Notify call
+    // (per-call, not the generic VM_Execute interpreter loop this project already
+    // mapped -- _ReturnAddress() here is whatever bytecode-dispatch code directly
+    // invoked notify for THIS event) -- direct instruction, "let's try to fetch
+    // where that particular vm call goes to," to see whether any of the
+    // interesting notifies (armory_*/survival_*) route through something more
+    // specific than the shared opcode handler. A cheap, safe, in-process
+    // technique (no live debugger needed) -- likely resolves to the same shared
+    // notify-opcode handler address for every call since GSC bytecode dispatch
+    // is generic by design, but confirming that cheaply is worth it before
+    // assuming it, per this project's own "checking is cheaper than digging"
+    // standard.
+    uintptr_t callerGhidraAddr = ToGhidraAddressX64(_ReturnAddress());
     {
         // Worst case: 41 (literal) + 20 (%lld) + 12 (literal) + 10 (%u) + 10 (literal) +
-        // 10 (%u) + 8 (' str="') + 63 (resolved string cap) + 2 ('"'+NUL) = 176 --
-        // buf[256] leaves a wide, deliberate margin (this project's own standing
-        // "compute the real worst case, don't eyeball it" lesson, per the critical
-        // LoadModConfig overflow this same session already hit once).
+        // 10 (%u) + 8 (' str="') + 63 (resolved string cap) + 1 ('"') + 10 (' caller=0x') +
+        // 16 (%llX) + 1 (NUL) = 202 -- buf[256] leaves a wide, deliberate margin
+        // (this project's own standing "compute the real worst case, don't eyeball
+        // it" lesson, per the critical LoadModConfig overflow this same session
+        // already hit once).
         char resolvedStr[64];
         char buf[256];
         bool resolved = TryResolveGscInternedString(stringValue, resolvedStr, sizeof(resolvedStr));
@@ -375,11 +406,13 @@ void __fastcall Hook_VmNotify(unsigned int notifyListOwnerId, unsigned int strin
                 g_armoryMenuOpenX64 = false;
             }
 
-            sprintf_s(buf, "[x64-gsc-notify] VM_Notify fired (count=%lld): ownerId=%u stringId=%u str=\"%s\"",
-                       g_vmNotifyFireCount, notifyListOwnerId, stringValue, resolvedStr);
+            sprintf_s(buf, "[x64-gsc-notify] VM_Notify fired (count=%lld): ownerId=%u stringId=%u str=\"%s\" caller=0x%llX",
+                       g_vmNotifyFireCount, notifyListOwnerId, stringValue, resolvedStr,
+                       static_cast<unsigned long long>(callerGhidraAddr));
         } else {
-            sprintf_s(buf, "[x64-gsc-notify] VM_Notify fired (count=%lld): ownerId=%u stringId=%u",
-                       g_vmNotifyFireCount, notifyListOwnerId, stringValue);
+            sprintf_s(buf, "[x64-gsc-notify] VM_Notify fired (count=%lld): ownerId=%u stringId=%u caller=0x%llX",
+                       g_vmNotifyFireCount, notifyListOwnerId, stringValue,
+                       static_cast<unsigned long long>(callerGhidraAddr));
         }
         LogFromController(buf);
     }
