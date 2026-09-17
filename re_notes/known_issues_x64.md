@@ -8685,6 +8685,98 @@ round: `common_survival.ff` is still on the unresolved
 
 No source changes this round.
 
+### PARTIALLY RESOLVED, 2026-09-17 -- the GSC-first methodology this file's own prior round said was blocked found BOTH real triggers via a different door: a full-session `VM_Notify` dump, not GSC script extraction; visual substitution remains genuinely blocked, unchanged from the round above
+
+Direct instruction, following the live-confirmed GSC interned-string
+resolution (`gsc_vm_native_functions_x64.md`'s own 2026-09-17 entry): "i
+think we just dump all vm stuff in the session for a total inspection
+(covers tons of ground)." `Hook_VmNotify`'s rate limit was temporarily
+removed (TEMP, `analog_input_hooks_x64.cpp`) to capture every real notify
+call for one full Survival session rather than a sampled catalogue --
+19,838 real fires captured, 19,837 resolved successfully (99.995%).
+
+**The real trigger chain for issue #5's own original mystery, found
+verbatim in live traffic** (`ownerId=593` behaves as the level/game
+entity throughout -- also fires `start_survival`/`wave_started`/
+`wave_ended`/`survival_all_ready`; `ownerId=2396` behaves as the local
+player entity -- also fires `weapon_fired`/`damage`/`reload`/`pickup`/
+`xp_updated`, all genuinely player-scoped):
+
+```
+ownerId=593   wave_ended
+ownerId=593   armory_open           -- buy-station/armory opens between waves
+ownerId=8163  armory_use            -- a player interacts with it
+ownerId=2396  armory_opened
+ownerId=2396  armory_closed
+ownerId=2396  survival_player_ready -- issue #5's real native ready-up trigger
+ownerId=593   survival_all_ready    -- fires x2
+ownerId=593   wave_started          -- next wave begins
+```
+
+This is the first time either architecture has had a REAL, live-captured
+native trigger for Survival ready-up -- the x86 line never found it either
+(see `iw5sp.md`'s own "None panned out; the real native call remains
+genuinely unknown" from 2026-07-15) and has shipped a synthetic-F5-hold
+workaround ever since, which still works and is NOT being replaced by
+this finding (see scope note below). It also gives buy-station detection
+the missing safety-net signal `drawtext_hook_x64.md`/this file's own
+2026-09-13/14 rounds flagged as genuinely blocking that port (no
+reference-key template on either architecture, and x64 has no working
+font-name check either).
+
+**Implemented, real and safe**: `IsSurvivalPlayerReadyConfirmedX64()`,
+`IsSurvivalAllReadyConfirmedX64()` (2000ms grace window, text-matched
+against `TryResolveGscInternedString`'s own output rather than the raw
+interned stringId, since IDs are assigned at script-compile time and
+aren't guaranteed stable session-to-session while the resolved text
+already proved itself reliable across all 19,838 fires), and
+`IsArmoryMenuOpenX64()` (a sticky bool, set by `armory_open`/
+`armory_opened`, cleared by `armory_closed`). All three are genuinely
+new, working signals -- read-only, no visual behavior change, safe.
+
+**IMPORTANT SCOPE CORRECTION, so this isn't read as "ready-up/buy-station
+glyphs are now fixed"**: they are not, and this round does NOT resolve the
+draw-pipeline gap the round immediately above this one (2026-09-16)
+established. That round's finding stands unchanged: BOTH prompts'
+native text still draws live (user directly confirmed on screen) but
+NEVER reaches `Hook_DrawTextX64` (194,701 captured draws that session,
+zero F5/ready matches) -- the real native draw caller for either prompt
+is still unfound, every static RE lead exhausted, real next step still
+needs `x64dbg` (disconnected again this session). **Drawing a custom
+`RequestCustomHintOverlay` off these new notify signals right now would
+show ALONGSIDE the still-drawing native text, not in place of it -- a
+visible duplicate-text regression, not a substitution** -- so this was
+deliberately NOT wired to any draw call. This closes the DETECTION half
+of both mysteries, not the SUBSTITUTION half; that still needs the same
+`x64dbg`-based investigation the round above already scoped, or a fresh
+technique for finding/suppressing the native draw caller without a live
+debugger.
+
+**A real correction to this file's own prior record, caught while
+investigating this**: the 2026-09-14 "Survival ready-up's on-screen
+prompt ported to x64" entry (`PATCHNOTES.md`/`CLAUDE.md` Version Timeline)
+described a real, well-built `Hook_DrawTextX64` substitution branch
+(`analog_input_hooks_x64.cpp` ~line 5140, `IsInSurvivalModeX64()`-gated
+F5 structural match) -- but the 2026-09-16 round directly above already
+proved this branch has never actually fired on the current retail build
+(zero matches across 194,701 real captured draws). The code is not
+wrong, and is worth keeping for if/when the draw-pipeline gap ever
+closes, but the 2026-09-14 "ported" framing overclaimed what shipping
+that code actually achieved in practice -- it was live-dead from day one.
+Recorded here rather than silently left standing, per this project's own
+documentation-honesty standard.
+
+No further static RE attempted this round -- this was a live-traffic
+discovery, not a decompile pass. Build-verified (x64 Release, 0 errors),
+deployed; the three new accessors are not yet independently exercised by
+any caller (pure groundwork, same "not yet consumed by anything" pattern
+`IsReadyUpHintCurrentlyShowingX64()` itself was shipped under on
+2026-09-14). Full raw dump analysis: this session's own transcript (not
+yet extracted to a dedicated file -- the frequency table of all ~200
+distinct notify strings observed is available on request if a future
+session wants the full catalogue rather than just the two headline
+findings).
+
 ### FIXED, 2026-09-16 (later same day) -- CRITICAL live-gameplay regression: pressing B during active gameplay wrongly paused the game; root cause traced and the whole flag-tracking design replaced with real ESC key synthesis
 
 **Status: Resolved. Build-verified (x64 Release, 0 errors, `dumpbin`-confirmed

@@ -539,6 +539,16 @@ item below.
     remain unported for the same underlying reason — neither has an
     available substitute signal. See `re_notes/known_issues_x64.md`
     issue #1's newest round.
+    **CORRECTION, 2026-09-16/17**: this substitution branch has never
+    actually fired on the current retail build — a dedicated diagnostic
+    pass (194,701 captured draws) found zero F5/ready-up matches ever
+    reached the hook this code lives in; the real native draw call for
+    this prompt routes somewhere this project's text-draw hook doesn't
+    reach at all. The code above is real and correct as written, kept
+    for if/when that draw-pipeline gap closes, but "now shows its own
+    real prompt" overclaimed what it achieves today — in practice the
+    native prompt has kept drawing unmodified the whole time. See
+    `known_issues_x64.md`'s 2026-09-16/17 rounds for the full trail.
 17. **Multiplayer (`iw5mp.exe`) no longer crashes navigating menus —
     real groundwork for MP support: gameplay hooks are now gated by
     which game executable actually loaded this DLL.** Live-reported:
@@ -935,6 +945,33 @@ item below.
     step now unlocked by working resolution: correlating notify traffic
     against known Survival actions to finally identify ready-up's real
     native trigger, the original open mystery from issue #5.
+16. **Full-session `VM_Notify` dump (19,838 fires, 99.995% resolved)
+    found the real native trigger chain for issue #5's own original
+    mystery — never found on either architecture before now — plus the
+    missing safety-net signal that had blocked buy-station detection
+    since 2026-09-13/14.** Live-captured, verbatim: `armory_open` (level)
+    → `armory_opened` (player) → `armory_closed` (player) →
+    `survival_player_ready` (player) → `survival_all_ready` (level, x2)
+    → `wave_started` (level). New, real, working accessors:
+    `IsSurvivalPlayerReadyConfirmedX64()`,
+    `IsSurvivalAllReadyConfirmedX64()`, `IsArmoryMenuOpenX64()` —
+    read-only detection signals, matched against the already-proven
+    resolved text (not the raw interned stringId, which isn't guaranteed
+    stable session-to-session). **This is DETECTION-only, not a visual
+    fix**: `known_issues_x64.md`'s own 2026-09-16 round already
+    established both prompts' native text still draws live but never
+    reaches this project's own text-draw hook (194,701 captured draws
+    that session, zero matches) — the real draw caller remains unfound,
+    still needs `x64dbg` (disconnected again this session). Wiring a
+    custom overlay off these new signals now would draw ALONGSIDE the
+    still-showing native text, not replace it — deliberately not done.
+    **Correction to this file's own "Survival ready-up (F5) now shows
+    its own real prompt" entry, a prior release section**: that
+    `Hook_DrawTextX64` substitution branch is real code but has never
+    actually fired on the current retail build, per the 2026-09-16
+    finding in `known_issues_x64.md` — the "ported" framing overclaimed
+    what shipping it achieved in practice. Full trail:
+    `known_issues_x64.md`'s newest round.
 
 ### Investigated, Not Yet Resolved
 1. ~~**Fire and/or ADS fails — first live playtest of the x64 build,

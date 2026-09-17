@@ -310,6 +310,48 @@ bool TryResolveGscInternedString(unsigned int stringId, char* outBuf, size_t out
 //   if (g_vmNotifyFireCount <= 50 || (g_vmNotifyFireCount % 2000) == 0) {
 long long g_vmNotifyFireCount = 0;
 
+// Real, notify-derived state signals, 2026-09-17 -- found via the full-session VM
+// dump above: the real chain (live-captured, verbatim) is
+//   armory_open (level) -> armory_opened (player) -> armory_closed (player)
+//   -> survival_player_ready (player) -> survival_all_ready (level) x2 -> wave_started (level)
+// This is issue #5's real native ready-up trigger, never found on either
+// architecture before now, and a real safety-net signal for buy-station detection
+// (blocked since 2026-09-13/14 for lack of one -- see drawtext_hook_x64.md). Text-
+// matched (not stringId-matched): interned string IDs are assigned at script
+// compile time and are NOT guaranteed stable across sessions/zone reloads, while
+// the resolved text is the real, stable signal TryResolveGscInternedString already
+// proved reliable across all 19,838 fires in the full-session dump.
+//
+// IMPORTANT SCOPE NOTE: these are DETECTION-ONLY. Do NOT wire a custom
+// RequestCustomHintOverlay draw off these signals yet -- known_issues_x64.md's
+// 2026-09-16 "INVESTIGATED" round already confirmed BOTH the native ready-up and
+// buy-station prompt text still draw live (user directly saw them on screen) but
+// NEVER reach Hook_DrawTextX64 (194,701 captured draws that session, zero F5/ready
+// matches) -- the real native draw caller for either prompt is still unfound (every
+// static RE lead exhausted; needs x64dbg, disconnected this session too). Drawing a
+// custom overlay now would show ALONGSIDE the still-drawing native text, not in
+// place of it -- a visible duplicate-text regression, not a substitution. Wire a
+// visual draw off these flags only once the native draw call is found and
+// suppressed (or independently confirmed actually absent via the vanilla-DLL test
+// that closed "get to cover").
+DWORD g_survivalPlayerReadyLastSeenMsX64 = 0;
+DWORD g_survivalAllReadyLastSeenMsX64 = 0;
+bool g_armoryMenuOpenX64 = false;
+constexpr DWORD kSurvivalReadyGraceMsX64 = 2000; // generous -- a one-shot event, not a per-frame redraw
+
+extern "C" bool IsSurvivalPlayerReadyConfirmedX64()
+{
+    return (GetTickCount() - g_survivalPlayerReadyLastSeenMsX64) <= kSurvivalReadyGraceMsX64;
+}
+extern "C" bool IsSurvivalAllReadyConfirmedX64()
+{
+    return (GetTickCount() - g_survivalAllReadyLastSeenMsX64) <= kSurvivalReadyGraceMsX64;
+}
+extern "C" bool IsArmoryMenuOpenX64()
+{
+    return g_armoryMenuOpenX64;
+}
+
 void __fastcall Hook_VmNotify(unsigned int notifyListOwnerId, unsigned int stringValue, void* top)
 {
     ++g_vmNotifyFireCount;
@@ -321,7 +363,18 @@ void __fastcall Hook_VmNotify(unsigned int notifyListOwnerId, unsigned int strin
         // LoadModConfig overflow this same session already hit once).
         char resolvedStr[64];
         char buf[256];
-        if (TryResolveGscInternedString(stringValue, resolvedStr, sizeof(resolvedStr))) {
+        bool resolved = TryResolveGscInternedString(stringValue, resolvedStr, sizeof(resolvedStr));
+        if (resolved) {
+            if (strcmp(resolvedStr, "survival_player_ready") == 0) {
+                g_survivalPlayerReadyLastSeenMsX64 = GetTickCount();
+            } else if (strcmp(resolvedStr, "survival_all_ready") == 0) {
+                g_survivalAllReadyLastSeenMsX64 = GetTickCount();
+            } else if (strcmp(resolvedStr, "armory_open") == 0 || strcmp(resolvedStr, "armory_opened") == 0) {
+                g_armoryMenuOpenX64 = true;
+            } else if (strcmp(resolvedStr, "armory_closed") == 0) {
+                g_armoryMenuOpenX64 = false;
+            }
+
             sprintf_s(buf, "[x64-gsc-notify] VM_Notify fired (count=%lld): ownerId=%u stringId=%u str=\"%s\"",
                        g_vmNotifyFireCount, notifyListOwnerId, stringValue, resolvedStr);
         } else {
