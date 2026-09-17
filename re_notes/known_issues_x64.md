@@ -8953,6 +8953,37 @@ implementation turns out to call a draw primitive OTHER than
 `FUN_14029a2b0`, that would be the missing piece this whole investigation
 has been chasing since the 2026-09-16 round first found the gap.
 
+### FIXED, 2026-09-17 (later still) -- CRITICAL: the fifth real recurrence of this project's own standing sprintf_s overflow bug class, live-reported ("launch fails now") immediately after the GSC method-table resolver shipped
+
+**Status: Resolved. Fixed and redeployed same round.**
+
+Direct user report: "launch fails now." Immediately audited every
+`sprintf_s` call added this session rather than guessing which one, per
+this project's own "compute the real worst case, don't eyeball it"
+standard the four prior incidents already established. Found the real
+culprit on the first pass: the GSC builtin-method table's own resolution
+log line (`[x64-gsc-methods] GSC builtin-method table resolved...`,
+immediately above) was 226 literal characters (measured directly, not
+estimated) plus up to 16 hex digits for the resolved RVA, into a
+`buf[192]` -- a real, unconditional overflow that fires on every launch
+(this resolution runs at hook-install time, not gated on any gameplay
+state), crashing before the player could even reach a menu. Widened to
+`buf[384]` (worst case 239, verified, wide margin). Every OTHER
+`sprintf_s` call added this session (`TryResolveAndLogGscBuiltinMethod`'s
+three messages, `Hook_VmNotify`'s two caller-address lines, the earlier
+2026-09-17 rounds' own messages) was re-measured the same way and
+confirmed already safe -- this was the only overflow, not a symptom of a
+wider pattern this specific round.
+
+**This is the FIFTH real, live-blocking crash from this exact bug class**
+in this project's history (2026-09-05, twice on 2026-09-13/14, once on
+2026-09-16, now this) -- the standing "per-commit discipline, not a
+periodic sweep" lesson this file already records held for every OTHER
+call site this session but was skipped for this one specific new message
+when it was first written. No new lesson to add beyond what's already on
+record; this is a real recurrence of an already-understood failure mode,
+not a new one. Build-verified (x64 Release, 0 errors), deployed.
+
 ### FIXED, 2026-09-16 (later same day) -- CRITICAL live-gameplay regression: pressing B during active gameplay wrongly paused the game; root cause traced and the whole flag-tracking design replaced with real ESC key synthesis
 
 **Status: Resolved. Build-verified (x64 Release, 0 errors, `dumpbin`-confirmed
