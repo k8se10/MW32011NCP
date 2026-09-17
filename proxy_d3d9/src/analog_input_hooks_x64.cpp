@@ -5988,7 +5988,14 @@ void InstallAnalogInputHooksX64()
             // Not RIP-relative (see header comment) -- read the disp32 directly.
             g_gscMethodTableRvaFromModuleBase = static_cast<uintptr_t>(
                 *reinterpret_cast<const int32_t*>(r.address + kGscMethodTableCallDisp32Offset));
-            char buf[192];
+            // Worst case: 226 literal chars (including the 4-char "%llX" placeholder
+            // itself) - 4 + 16 (max hex digits for an unsigned long long) + 1 (NUL) =
+            // 239 -- buf[192] (the prior size) was a real, un-computed overflow that
+            // crashed launch (FAST_FAIL_INVALID_ARG, this project's own recurring
+            // sprintf_s bug class, hit FOUR times before this). buf[384] leaves a
+            // wide, deliberate margin per this project's own "compute the real
+            // worst case, don't eyeball it" standard.
+            char buf[384];
             sprintf_s(buf, "[x64-gsc-methods] GSC builtin-method table resolved (RVA 0x%llX from module base) -- "
                        "will attempt to log sethintstring/setcursorhint/forceusehinton/forceusehintoff's real "
                        "native implementations on first Survival notify traffic",
