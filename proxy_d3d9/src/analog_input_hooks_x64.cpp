@@ -262,6 +262,91 @@ constexpr size_t kGscStringTableInsnLength = 7;
 
 uintptr_t* g_gscStringTableVarAddr = nullptr;  // address OF the pointer variable, not the table itself
 
+// Forward declaration -- real definition below (near Hook_VmNotify), used here by
+// TryResolveAndLogGscBuiltinMethod.
+uintptr_t ToGhidraAddressX64(void* runtimeAddr);
+
+// GSC-VM builtin METHOD dispatch table, 2026-09-17 -- found chasing the user's own
+// "im wondering if what they did was build a new text dispatcher inside the gsc vm"
+// hypothesis. `sethintstring`/`setcursorhint`/`forceusehinton`/`forceusehintoff`
+// (method IDs 0x80C6-0x80C9, per xensik/gsc-tool's own published iw5_pc_meth.cpp
+// table) are the exact real GSC builtins Survival ready-up/buy-station-style hint
+// prompts would call -- a genuinely different code path from the native C++
+// FUN_140052220 numbered-HUD-element dispatcher this project has already exhausted
+// every lead in (known_issues_x64.md's own 2026-09-16/17 rounds).
+//
+// Found the real dispatch site inside the confirmed VM_Execute interpreter
+// (FUN_14025e950)'s OP_CallBuiltinMethod handler via real disassembly
+// (DumpDisasm.java): `CALL qword ptr [RAX + RDX*8 + 0x201e670]`, where RAX is the
+// module's own runtime base (loaded via a RIP-relative LEA to the binary's preferred
+// image base, auto-correct under ASLR) and RDX is `(methodId - 0x8000)`. This is
+// NOT RIP-relative addressing (unlike every other table this project has resolved
+// so far) -- it's `moduleBase + disp32`, so the real technique is: signature-match
+// this exact CALL instruction (disp32 wildcarded, per this project's own "always
+// wildcard address-bearing bytes" standard), read the 4-byte disp32 directly at a
+// fixed offset within the match, then combine with GetModuleHandleA(nullptr) at
+// runtime -- no RIP-relative resolution needed, a genuinely different address-math
+// shape from every other resolved table this session.
+//
+// Confirmed via decompile (FUN_1402524d0, the real Scr_Init-equivalent): both this
+// table and the builtin FUNCTION table (DAT_14201d830) are only ever `memset`-zeroed
+// at init (0x1868 bytes = 777 8-byte slots here, matching gsc-tool's own ~780-entry
+// method table almost exactly) -- the real function pointers are written by a
+// separate registration pass not traced this session (would need finding the actual
+// RegisterMethod-style call site, a bigger static search). Real content is only
+// present in this table AFTER the game has fully initialized the GSC VM, so this is
+// resolved via a real live read the first time it's needed, not a static one --
+// matches this project's own established "read a live-populated table" precedent
+// (TryResolveGscInternedString's own string-pool table, above).
+constexpr const char* kGscMethodTableAccessSignature =
+    "48 8B 05 ?? ?? ?? ?? 8D 97 00 80 FF FF 8B CB 4C 89 20 48 8D 05 ?? ?? ?? ?? "
+    "FF 94 D0 ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 8B 1D ?? ?? ?? ??";
+constexpr ptrdiff_t kGscMethodTableCallDisp32Offset = 28;  // offset of the CALL's own disp32 within the match above
+
+uintptr_t g_gscMethodTableRvaFromModuleBase = 0;  // 0 = not yet resolved
+
+// Real GSC builtin method IDs, per xensik/gsc-tool's own published iw5_pc_meth.cpp
+// (dev branch) -- the exact hint-prompt family this session's own hypothesis chase
+// landed on.
+constexpr unsigned int kMethodId_SetCursorHint = 0x80C6;
+constexpr unsigned int kMethodId_SetHintString = 0x80C7;
+constexpr unsigned int kMethodId_ForceUseHintOn = 0x80C8;
+constexpr unsigned int kMethodId_ForceUseHintOff = 0x80C9;
+
+// Resolves and logs a single builtin method's real, live native function-pointer
+// address (Ghidra-comparable, via ToGhidraAddressX64) -- SEH-guarded since the table
+// slot may still be zero (unpopulated) if called before the GSC VM has fully
+// initialized. Returns false (and logs why) rather than crashing on a bad read.
+bool TryResolveAndLogGscBuiltinMethod(unsigned int methodId, const char* methodName)
+{
+    if (g_gscMethodTableRvaFromModuleBase == 0) return false;
+    uintptr_t moduleBase = reinterpret_cast<uintptr_t>(GetModuleHandleA(nullptr));
+    if (moduleBase == 0) return false;
+
+    __try {
+        uintptr_t tableBase = moduleBase + g_gscMethodTableRvaFromModuleBase;
+        uintptr_t* slot = reinterpret_cast<uintptr_t*>(tableBase + (static_cast<uintptr_t>(methodId) - 0x8000) * 8);
+        uintptr_t fnPtr = *slot;
+        char buf[192];
+        if (fnPtr == 0) {
+            sprintf_s(buf, "[x64-gsc-methods] %s (id=0x%X): table slot still zero -- GSC VM not fully "
+                "initialized yet, or this method genuinely unregistered", methodName, methodId);
+            LogFromController(buf);
+            return false;
+        }
+        uintptr_t ghidraAddr = ToGhidraAddressX64(reinterpret_cast<void*>(fnPtr));
+        sprintf_s(buf, "[x64-gsc-methods] %s (id=0x%X) real native implementation resolved @ 0x%llX",
+                   methodName, methodId, static_cast<unsigned long long>(ghidraAddr));
+        LogFromController(buf);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        char buf[128];
+        sprintf_s(buf, "[x64-gsc-methods] %s (id=0x%X): SEH exception reading table slot", methodName, methodId);
+        LogFromController(buf);
+        return false;
+    }
+}
+
 // Best-effort, SEH-guarded candidate-string resolution -- see
 // kGscStringTableAccessSignature's own comment above for the full trail and
 // the honest "hypothesis, not proven" caveat on the entry layout past the
@@ -372,6 +457,18 @@ uintptr_t ToGhidraAddressX64(void* runtimeAddr)
 void __fastcall Hook_VmNotify(unsigned int notifyListOwnerId, unsigned int stringValue, void* top)
 {
     ++g_vmNotifyFireCount;
+    // TEMP, 2026-09-17: on the very first real notify fire, the GSC VM is
+    // guaranteed to be running -- safe to attempt the (lazily-required) live read
+    // of the builtin-method dispatch table's own hint-related slots. One-shot,
+    // not per-fire, per this codebase's own rate-limiting standard.
+    static bool s_triedGscMethodResolve = false;
+    if (!s_triedGscMethodResolve) {
+        s_triedGscMethodResolve = true;
+        TryResolveAndLogGscBuiltinMethod(kMethodId_SetHintString, "sethintstring");
+        TryResolveAndLogGscBuiltinMethod(kMethodId_SetCursorHint, "setcursorhint");
+        TryResolveAndLogGscBuiltinMethod(kMethodId_ForceUseHintOn, "forceusehinton");
+        TryResolveAndLogGscBuiltinMethod(kMethodId_ForceUseHintOff, "forceusehintoff");
+    }
     // TEMP, 2026-09-17: capture the real caller of this specific VM_Notify call
     // (per-call, not the generic VM_Execute interpreter loop this project already
     // mapped -- _ReturnAddress() here is whatever bytecode-dispatch code directly
@@ -5867,6 +5964,36 @@ void InstallAnalogInputHooksX64()
                            static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(g_gscStringTableVarAddr)));
                 LogFromController(buf);
             }
+        }
+    }
+
+    {
+        // MW32011NCP, 2026-09-17: resolve the GSC-VM builtin METHOD dispatch table
+        // (DAT_14201e670 in Ghidra) so the four hint-prompt builtins
+        // (setcursorhint/sethintstring/forceusehinton/forceusehintoff, method IDs
+        // 0x80C6-0x80C9 per xensik/gsc-tool's own published iw5_pc_meth.cpp) can be
+        // resolved to their real native implementations -- see
+        // kGscMethodTableAccessSignature's own header comment for the full
+        // investigation trail (chasing the user's own "did they build a new text
+        // dispatcher inside the gsc vm" hypothesis, after every lead in the native
+        // C++ HUD-element dispatcher was exhausted). Read-only signature resolution
+        // only -- the actual table read happens lazily (TryResolveAndLogGscBuiltinMethod)
+        // once the GSC VM has had a chance to populate it, since it's memset-zeroed
+        // at init and filled by a separate registration pass not traced this session.
+        SigScan::Result r = SigScan::FindPatternInMainModule(kGscMethodTableAccessSignature);
+        if (!r.found) {
+            LogFromController("[x64-gsc-methods] FATAL: GSC builtin-method-table-access signature did not "
+                "resolve -- hint-method resolution unavailable this session");
+        } else {
+            // Not RIP-relative (see header comment) -- read the disp32 directly.
+            g_gscMethodTableRvaFromModuleBase = static_cast<uintptr_t>(
+                *reinterpret_cast<const int32_t*>(r.address + kGscMethodTableCallDisp32Offset));
+            char buf[192];
+            sprintf_s(buf, "[x64-gsc-methods] GSC builtin-method table resolved (RVA 0x%llX from module base) -- "
+                       "will attempt to log sethintstring/setcursorhint/forceusehinton/forceusehintoff's real "
+                       "native implementations on first Survival notify traffic",
+                       static_cast<unsigned long long>(g_gscMethodTableRvaFromModuleBase));
+            LogFromController(buf);
         }
     }
 

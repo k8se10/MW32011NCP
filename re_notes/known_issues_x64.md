@@ -8777,6 +8777,182 @@ distinct notify strings observed is available on request if a future
 session wants the full catalogue rather than just the two headline
 findings).
 
+### INVESTIGATED, 2026-09-17 (later still) -- VM_Notify's own real caller traced (dead end, GSC-VM internals unrelated to native draw); two real static leads for the ready-up/buy-station draw-path gap checked directly and ruled out
+
+**Status: Investigating -- narrowed further, still open.** This round's
+own original title claimed "every reasonably promising static lead is now
+exhausted" -- **corrected the same session, see the round immediately
+below**: a genuinely new, different static lead (a GSC-exposed builtin
+method table, not the native C++ HUD-element dispatcher) was found right
+after this round closed. Kept below, uncut, as the real investigation
+record.
+
+Direct instruction: "let's try to fetch where that particular vm call goes
+to." `Hook_VmNotify` was extended to capture `_ReturnAddress()` per-call
+(converted to a Ghidra-comparable address via the game's own preferred
+image base, independent of ASLR). Real result from a 16,080-fire retest:
+exactly two distinct caller addresses across the WHOLE dump
+(`0x140260DF9`, the large majority; `0x14025DAB5`, including
+`survival_player_ready` specifically). Decompiled both via
+`CreateFuncAndDumpSig.java` -- both are ordinary GSC-VM interpreter
+bookkeeping (linked-list/"current object" pointer housekeeping right
+after the notify call returns), not native C++ subsystems, and
+structurally unconnected to the HUD draw call graph. **Confirmed dead
+end for the draw-path question**: GSC `notify()` is a pure script-side
+event broadcast with no path into native HUD text rendering, no matter
+how deep the trace goes. Real, cheap negative result, not a hypothetical
+one.
+
+**Direct correction from the user, worth recording**: an earlier framing
+in this file's own 2026-09-16 rounds described the ready-up/buy-station
+draw target as "the real animated-icon hint renderer" (x86's
+`Item_Paint`-family `FUN_00691ca0`, which computes `cos`/`sin` for icon
+rotation). **This was wrong for ready-up specifically** -- the user
+corrected: "bare in mind the default behaviour is PRESS F5 to ready up
+and not exactly animated" -- the native default prompt is plain text, no
+animation. This reopened two real static leads that the animated-icon
+framing had made look irrelevant:
+
+1. **No `cos`/`sin`/`cosf`/`sinf` import exists anywhere in the binary**
+   (checked directly via a symbol-table + xref sweep, `FindTrigCallers.java`
+   -- new script this round). x86's rotation math was either inlined as an
+   SSE2 approximation (not name-searchable) or the animation itself was
+   restructured out in the x64 recompile -- a real architectural
+   difference either way, not just "same code, unfound address."
+2. **`FUN_1402a9950`, the confirmed real menu-itemDef-paint function**
+   (already used for Back/Friends/Quit/Leaderboards/Game-Summary corner
+   hints) **was decompiled in full and ruled out** as the "moved into
+   the menu system" candidate -- it's pure text-layout/alignment logic
+   (prefix width, color, a single `iVar7 == 0x15` special case), no
+   per-item-TYPE dispatch, no icon capability, and it already funnels
+   into `FUN_1402b1090` -> `FUN_14029a2b0` (already known, already
+   accounted for in the exhausted 22-caller list). Confirms the earlier
+   "real menu itemDef text is not the gap" finding by direct decompile
+   rather than inference.
+3. **`FUN_140051850`/`FUN_140051f80` (case `0x53`, `FUN_140052220`'s
+   own table) looked like the single most promising lead this round --
+   a genuinely PLAIN, non-animated single-line hint that already reaches
+   `FUN_14029a2b0` directly, gated by `FUN_140051f80`.** Traced fully:
+   `FUN_140051f80`'s own single argument is NOT a fixed reference-key
+   string (its target address, `DAT_140514580`, is all-zero .bss at rest
+   -- a runtime struct base, not a compile-time constant) -- it reads a
+   large per-player state struct (`param_1+0x2591c`, a 15-entry ID table
+   at `param_1+0x15d38`) to check whether a "currently active" hint slot
+   matches. The real content comes from `FUN_140071790` (the string
+   builder both case `0x53` and `0x54` share, per
+   `ui_draw_pipeline_map.md`'s own row for `0x54`) -- **decompiled in
+   full and identified as a PLAYER-NAME/callsign composer** (`"Name"` +
+   `" / "` + a second name field, pulled from per-client name tables
+   `DAT_14050c638`/`DAT_14050cdb8`), not a hint prompt at all. Ruled out,
+   not a guess -- this is a name-tag or "who's speaking"-style element,
+   unrelated to ready-up/buy-station.
+
+**Net result**: two real, previously-untested static leads (the menu
+itemDef path, and cases `0x53`/`0x54`'s own plain single-line hint path)
+both checked directly via full decompile and ruled out, on top of the
+already-exhausted 22-caller/5-sibling search from the round above. Every
+static lead the current UI-pipeline map produces has now been checked.
+This doesn't contradict the "the text-draw pipeline was reworked between
+x86 and x64" read (confirmed true at the architecture level -- x86's
+single monolithic `FUN_00690c80` fragmented into 5+ x64 siblings, per the
+round above) -- it reinforces it: ready-up/buy-station's own specific new
+home in that fragmented system remains genuinely outside everything
+mapped so far, not a case that was sitting there unrecognized.
+
+**Real next step, unchanged**: `x64dbg` live-breaking on
+`FUN_14029a2b0`'s entry while standing at a buy station (or during a
+Survival ready-up window), reading the real caller off the stack --
+still the fastest, most direct way to close this, and the only angle not
+yet exhausted. No further static RE recommended for this specific
+question without a new concrete lead to test (per this project's own
+"checking is cheaper than digging" standard -- re-digging an
+already-exhausted static search isn't checking). Paused here given the
+account's own weekly usage limit, not a dead end in the investigation
+itself.
+
+No source changes this round -- pure investigation (one new reusable
+script, `FindTrigCallers.java`, not yet copied into the tracked
+`re_notes/ghidra_scripts/` directory -- lives in the session scratchpad
+only, low value to keep given its own negative result, but trivial to
+recreate if a future session wants it).
+
+### INVESTIGATED, 2026-09-17 (later still) -- a genuinely new static lead found: the GSC-VM builtin METHOD dispatch table, and the real hint-family method IDs (sethintstring/setcursorhint/forceusehinton/forceusehintoff) -- resolution code shipped, pending a live session to read the runtime-populated table
+
+**Status: Investigating -- a real, different, previously-untried angle now
+in place; resolution deployed, awaiting a live read.**
+
+Direct instruction, reframing the whole investigation after the "every
+static lead exhausted" round above: "im wondering if what they did was
+build a new text dispatcher inside the gsc vm." This is a genuinely
+different angle from everything tried so far this session -- every prior
+static lead assumed the missing draw call was somewhere in the native C++
+`FUN_140052220` HUD-element dispatcher; this instead asks whether
+Activision's rework moved these specific prompts to a GSC-SCRIPT-INVOKED
+native builtin instead, bypassing that whole dispatcher entirely.
+
+**Real, concrete confirmation the hypothesis has a real target**: fetched
+`xensik/gsc-tool`'s own published IW5-PC method table
+(`src/gsc/engine/iw5_pc_meth.cpp`, dev branch) and found the EXACT hint
+family: `setcursorhint` (`0x80C6`), `sethintstring` (`0x80C7`),
+`forceusehinton` (`0x80C8`), `forceusehintoff` (`0x80C9`) -- real GSC
+builtin METHODS (called as `self sethintstring(...)`), a completely
+different resolution mechanism from `Scr_GetFunctionHandle` (which is for
+user-defined script-to-script calls, already mapped this session) --
+builtin methods are resolved via a compiled bytecode operand (a fixed
+`u16` ID) indexing directly into a native function-pointer table, the
+same class of mechanism that let this session find `VM_Notify`'s own
+opcode.
+
+**Found the real dispatch table via direct disassembly, not guessing**:
+inside the already-confirmed `VM_Execute` interpreter (`FUN_14025e950`)'s
+`OP_CallBuiltinMethod` family handler (opcodes `0x8b`-`0x91`, matching
+gsc-tool's own published opcode IDs exactly -- real cross-confirmation),
+`DumpDisasm.java` found the exact dispatch instruction:
+`CALL qword ptr [RAX + RDX*8 + 0x201e670]` at `0x14026019d`, where RAX
+holds the module's own runtime base (loaded via a RIP-relative LEA to the
+binary's preferred image base, auto-correct under ASLR) and RDX is
+`(methodId - 0x8000)`. **This is NOT RIP-relative addressing** -- unlike
+every other table this session resolved (the interned-string table, the
+VM_Notify caller addresses) -- it's `moduleBase + disp32`, a genuinely
+different address-math shape. Real signature built from the surrounding
+bytes (`CreateFuncAndDumpSig.java`), disp32 wildcarded per this project's
+own "always wildcard address-bearing bytes" standard.
+
+**Confirmed the table is real but runtime-populated, not static**:
+decompiled `FUN_1402524d0` (the real `Scr_Init`-equivalent, found via an
+LEA cross-reference to the table's own base) -- it only `memset`-zeroes
+this table (`0x1868` bytes = 777 8-byte slots, matching gsc-tool's own
+~780-entry method table almost exactly) alongside the sibling builtin
+FUNCTION table (`DAT_14201d830`, `0xe38` bytes). The real function
+pointers are written by a separate registration pass not traced this
+session (would need finding the actual per-method `RegisterMethod`-style
+call site, a larger, more expensive static search than justified right
+now) -- so a static read of the table's on-disk bytes returns all zeros
+(confirmed directly, `DumpRawQwords.java`), and the real function pointer
+can only be read live, after the GSC VM has finished initializing.
+
+**Shipped**: `kGscMethodTableAccessSignature` (resolves the dispatch call
+site and extracts its disp32 directly, no RIP-relative resolution needed)
+and `TryResolveAndLogGscBuiltinMethod()`, called once (lazily, on the
+first real `VM_Notify` fire -- guarantees the GSC VM is already running)
+for all four hint-family methods. Logs each one's real native
+implementation address (Ghidra-comparable) the next time the game runs
+with this build. Build-verified (x64 Release, 0 errors), deployed --
+**not yet live-tested**; the actual resolved addresses, and what those
+functions turn out to do, are the concrete next step once a session
+captures the log.
+
+**Why this is a real, different lead, not a repeat of an already-ruled-out
+angle**: every previously-checked path (the menu itemDef system, cases
+`0x53`/`0x54`, VM_Notify's own caller) all lived inside the native C++
+HUD-element dispatch chain this project has already mapped in full. This
+is architecturally SEPARATE -- a script-invoked builtin call, reached
+through the GSC bytecode interpreter's own method-dispatch opcode, never
+routing through `FUN_140052220` at all. If `sethintstring`'s real
+implementation turns out to call a draw primitive OTHER than
+`FUN_14029a2b0`, that would be the missing piece this whole investigation
+has been chasing since the 2026-09-16 round first found the gap.
+
 ### FIXED, 2026-09-16 (later same day) -- CRITICAL live-gameplay regression: pressing B during active gameplay wrongly paused the game; root cause traced and the whole flag-tracking design replaced with real ESC key synthesis
 
 **Status: Resolved. Build-verified (x64 Release, 0 errors, `dumpbin`-confirmed
