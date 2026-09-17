@@ -298,17 +298,22 @@ bool TryResolveGscInternedString(unsigned int stringId, char* outBuf, size_t out
     }
 }
 
-// Rate-limited per this codebase's own standing lesson (issue #87) -- logs the
-// first 50 real fires in full detail (owner ID + interned string ID, enough to
-// build a real observed catalogue of what fires during actual play, e.g.
-// correlating against known actions to finally identify Survival ready-up's
-// real trigger -- issue #5's original open mystery), then a periodic heartbeat.
+// TEMP, 2026-09-17: unconditional full dump for one deliberate deep-dive
+// session -- direct instruction, now that string resolution is live-confirmed
+// working, to capture every real notify call (not just a sampled 50-then-
+// heartbeat catalogue) so a full session's traffic can be inspected for
+// ready-up (issue #5), buy-station, and any other still-unmapped triggers in
+// one pass. This deliberately departs from this codebase's own standing
+// rate-limiting lesson (issue #87) -- revert to the rate-limited form below
+// once this investigative session is done, do not leave this unconditional
+// long-term:
+//   if (g_vmNotifyFireCount <= 50 || (g_vmNotifyFireCount % 2000) == 0) {
 long long g_vmNotifyFireCount = 0;
 
 void __fastcall Hook_VmNotify(unsigned int notifyListOwnerId, unsigned int stringValue, void* top)
 {
     ++g_vmNotifyFireCount;
-    if (g_vmNotifyFireCount <= 50 || (g_vmNotifyFireCount % 2000) == 0) {
+    {
         // Worst case: 41 (literal) + 20 (%lld) + 12 (literal) + 10 (%u) + 10 (literal) +
         // 10 (%u) + 8 (' str="') + 63 (resolved string cap) + 2 ('"'+NUL) = 176 --
         // buf[256] leaves a wide, deliberate margin (this project's own standing
