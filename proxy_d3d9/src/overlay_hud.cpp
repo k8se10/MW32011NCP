@@ -2225,8 +2225,27 @@ void DrawOneGameplayHintSlot(void* device, GameplayHintSlot& slot, GameplayHintS
 // too -- live-reported as a regression ("reload prompt never shows" while the
 // ready-up hint is up) and explicitly narrowed to Interact-only; ReadyUp+Reload
 // now coexist, matching the user's own direct correction.
+#if defined(_M_X64)
+extern "C" bool GetReadyUpPromptGlyphX64(char* assetOut, size_t assetOutSize);
+#endif
+
 void DrawGameplayHintSlotsIfRequested(void* device)
 {
+#if defined(_M_X64)
+    // 2026-09-19: Survival ready-up prompt glyph, driven by a read-only hudelem scan
+    // (analog_input_hooks_x64.cpp GetReadyUpPromptGlyphX64) -- true exactly while the
+    // native "Press F5 to ready up: NN" hudelem is up. GLYPH ONLY (empty text): the
+    // native text stays as-is because the client-side draw of script hudelems is not
+    // mapped (ui_text_flow_map.md). Requested every render frame (slots are consumed
+    // per frame). Default position is a starting point (design space, 1920x1080; the
+    // x86 native prompt sat near (1322, 329)) -- calibrate with the F2/F3 hint editor.
+    {
+        char readyAsset[32] = {};
+        if (GetReadyUpPromptGlyphX64(readyAsset, sizeof(readyAsset)))
+            RequestCustomHintOverlay(1285.0f, 329.0f, "", "", readyAsset, /*centerOnScreen=*/false,
+                                     /*flashIcon=*/false, GameplayHintSlotId::ReadyUp, "");
+    }
+#endif
     bool anyRequested = false;
     for (auto& slot : g_gameplayHintSlots) {
         if (slot.requestedThisFrame) { anyRequested = true; break; }

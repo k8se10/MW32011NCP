@@ -545,6 +545,86 @@ static void ScanHudElems(const char* tag)
     LogFromController(b);
 }
 
+// ---- Ready-up prompt detection (2026-09-19) -------------------------------------------
+// The native "Press F5 to ready up: NN" prompt is one script VALUE hudelem whose label
+// resolves to SO_SURVIVAL_READY_UP (see re_notes/x64_migration/ui_text_flow_map.md).
+// Detection is a read-only scan of the server hudelem array, throttled to every 100 ms
+// (no draw hook -- draw-path probes flickered the UI). Unlike survival_player_ready
+// (which fires AFTER readying), this is true exactly while the prompt is on screen.
+extern "C" bool IsMenuActiveX64_Exported();  // defined later in this file
+static uintptr_t g_readyUpHudArray = 0, g_readyUpCsTable = 0;
+static bool g_readyUpTablesTried = false;
+static volatile bool g_readyUpPromptShowing = false;
+static volatile float g_readyUpCountdownSecs = 0.0f;
+static DWORD g_readyUpLastScanMs = 0;
+
+static bool EnsureReadyUpTables()
+{
+    if (g_readyUpHudArray && g_readyUpCsTable) return true;
+    if (g_readyUpTablesTried) return false;
+    g_readyUpTablesTried = true;
+    uintptr_t fn = GetGscBuiltinMethodFnForScan(0x80B6);
+    if (!fn) return false;
+    __try {
+        const uint8_t* p = reinterpret_cast<const uint8_t*>(fn) + 0x24;
+        if (p[0] != 0x48 || p[1] != 0x8D || p[2] != 0x05) return false;
+        g_readyUpHudArray = SigScan::ResolveRipRelative(reinterpret_cast<uintptr_t>(p), 7);
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+    SigScan::Result cs = SigScan::FindPatternInMainModule(
+        "48 63 C1 48 8D 0D ?? ?? ?? ?? 0F B7 04 41 C3 CC 48 89 5C 24 08 48 89 74 24 10 "
+        "48 89 7C 24 18 41 56 48 83 EC 30 E8 ?? ?? ?? ?? 41 B9 03 00 00 00");
+    if (cs.found) g_readyUpCsTable = SigScan::ResolveRipRelative(cs.address + 3, 7);
+    char b[160];
+    sprintf_s(b, "[x64-readyup] prompt detection tables: hudelem array %s, configstring table %s",
+              g_readyUpHudArray ? "ok" : "MISSING", g_readyUpCsTable ? "ok" : "MISSING");
+    LogFromController(b);
+    return g_readyUpHudArray && g_readyUpCsTable;
+}
+
+static void ReadyUpPromptScanNow()
+{
+    bool showing = false;
+    float secs = 0.0f;
+    __try {
+        const uint16_t* tbl = reinterpret_cast<const uint16_t*>(g_readyUpCsTable);
+        for (int i = 0; i < 512; ++i) {
+            const uint32_t* d = reinterpret_cast<const uint32_t*>(g_readyUpHudArray + static_cast<uintptr_t>(i) * 0xAC);
+            if (d[0] != 2 || (d[0x29] & 0x7) != 0x7) continue;      // value hudelem, flags 0x7
+            const uint32_t slot = d[16];
+            if (slot == 0 || slot >= 2000) continue;
+            const unsigned id = tbl[slot + 0xb2];
+            char lt[48] = {};
+            if (id && TryResolveGscInternedString(id, lt, sizeof(lt)) && strcmp(lt, "SO_SURVIVAL_READY_UP") == 0) {
+                showing = true;
+                float v; memcpy(&v, &d[0x20], sizeof(v));
+                secs = v;
+                break;
+            }
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) { showing = false; }
+    g_readyUpPromptShowing = showing;
+    g_readyUpCountdownSecs = secs;
+}
+
+extern "C" bool IsReadyUpPromptShowingX64()
+{
+    if (!EnsureReadyUpTables()) return false;
+    const DWORD now = GetTickCount();
+    if (now - g_readyUpLastScanMs >= 100) { g_readyUpLastScanMs = now; ReadyUpPromptScanNow(); }
+    return g_readyUpPromptShowing;
+}
+extern "C" float GetReadyUpCountdownSecsX64() { return g_readyUpCountdownSecs; }
+
+// Overlay hook (called every render frame from overlay_hud.cpp): true + the controller
+// glyph asset for the ready-up bind while the native prompt is showing. Glyph-only --
+// the native text is left untouched (draw side of script hudelems is unmapped).
+extern "C" bool GetReadyUpPromptGlyphX64(char* assetOut, size_t assetOutSize)
+{
+    if (!ShouldDrawGlyphOverlay_Exported() || IsMenuActiveX64_Exported()) return false;
+    if (!IsReadyUpPromptShowingX64()) return false;
+    return TryGetGlyphAssetNameForKeyName("F5", assetOut, assetOutSize);
+}
+
 // Converts a runtime address in THIS session's own loaded module to the
 // equivalent Ghidra-comparable address (every existing re_notes/x64_migration
 // address citation uses the binary's own preferred image base, 0x140000000) --
