@@ -586,9 +586,17 @@ static bool EnsureReadyUpTables()
 {
     if (g_readyUpHudArray && g_readyUpCsTable) return true;
     if (g_readyUpTablesTried) return false;
-    g_readyUpTablesTried = true;
+    // The GSC builtin-method table is zero until the script VM has initialised, and this
+    // runs from the render thread from the very first frames -- so an unresolved settext is
+    // NOT a permanent failure: retry (throttled to 1 s) instead of latching. Only structural
+    // failures below latch. (First live test, 2026-09-19: latching here on the first frame
+    // meant detection never ran.)
+    static DWORD s_nextTryMs = 0;
+    const DWORD nowMs = GetTickCount();
+    if (nowMs < s_nextTryMs) return false;
     uintptr_t fn = GetGscBuiltinMethodFnForScan(0x80B6);
-    if (!fn) return false;
+    if (!fn) { s_nextTryMs = nowMs + 1000; return false; }
+    g_readyUpTablesTried = true;
     __try {
         const uint8_t* p = reinterpret_cast<const uint8_t*>(fn) + 0x24;
         if (p[0] != 0x48 || p[1] != 0x8D || p[2] != 0x05) return false;
