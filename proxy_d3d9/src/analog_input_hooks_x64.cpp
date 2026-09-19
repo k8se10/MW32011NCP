@@ -479,6 +479,7 @@ static void ScanHudElems(const char* tag)
         LogFromController(b);
     }
     int logged = 0;
+    int dumped = 0;
     __try {
         for (int i = 0; i < 512 && logged < 40; ++i) {
             const uint32_t* d = reinterpret_cast<const uint32_t*>(s_array + static_cast<uintptr_t>(i) * 0xAC);
@@ -497,6 +498,16 @@ static void ScanHudElems(const char* tag)
                       tag, i, type, static_cast<int>(d[0x20]), d[0x29], text);
             LogFromController(b);
             ++logged;
+            // Raw dump of the two prompt-signature elements (flags 0x7) -- to find where the
+            // text/localized-string reference actually lives (it is NOT the inline +0x84 slot).
+            if ((d[0x29] & 0x7) == 0x7 && dumped < 6) {
+                ++dumped;
+                char rb[420];
+                int w = sprintf_s(rb, "[x64-hudelem-raw] %s idx=%d:", tag, i);
+                for (int k = 0; k < 0x2b && w > 0 && w < 380; ++k)
+                    w += sprintf_s(rb + w, sizeof(rb) - w, " %X", d[k]);
+                LogFromController(rb);
+            }
         }
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         LogFromController("[x64-hudelem] SEH exception while scanning -- stopped");

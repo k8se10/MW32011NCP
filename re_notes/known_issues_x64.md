@@ -9194,7 +9194,20 @@ decompile it to find the hudelem struct and the hudelem draw function.
   showed the text hook does see "Weapon Armory Enabled!", "Purchase and
   upgrade weapons." and "Reload"; the "Press F5 to ready up" string was not
   among the captured 150.
-- **Shipped instead (unrun)**: a read-only live hudelem scan, run on rare
+- **RESULT of the hudelem scan (2 full Underground waves, live)**: the array
+  is real (~16-17 active elems). The intermission scans are near-identical
+  except one new element: **`idx=27`, type 2 (value), flags `0x7`, appearing
+  ~5 s after `wave_ended`, value falling 30.0f -> 24.0f -> 17.0f across
+  scans -- the ready-up countdown number.** It shares the exact flags `0x7`
+  and `dword[0x22] = 0x40000000` (2.0f) with the persistent `idx=6` (type 1,
+  text), so the prompt is very likely a **script hudelem pair (text label +
+  countdown value)**. This explains why it never reaches the text hooks or
+  any menu path. The inline string slot (+0x84) is empty for every element,
+  so the text lives in another field; a raw dump of the flags-0x7 entries
+  (`[x64-hudelem-raw]`) is shipped to find it. `survival_player_ready` is a
+  post-ready signal (per user), so its scan is only a control. The
+  draw side is still unfound (client reads a snapshot copy).
+- **Shipped earlier (see above)**: a read-only live hudelem scan, run on rare
   events only (`wave_ended`, +5 s, `armory_open`, `player_ready`), logging
   every active text/value hudelem (`[x64-hudelem]`). Array base is derived
   from `settext`'s own `LEA` (+0x24), no hardcoded address. It answers
