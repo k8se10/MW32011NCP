@@ -384,6 +384,18 @@ item below.
     — see `README.md`'s Credits section and `iwd_read_cache_x64.cpp`'s own
     header comment for the full attribution. Off by default; build-verified,
     **not yet live-tested**.
+22. **Survival ready-up: controller glyph overlay, driven by the real prompt.**
+    While the native "Press F5 to ready up: NN" prompt is on screen, a
+    controller glyph for the ready-up bind is drawn beside it. The prompt is
+    detected by a read-only scan of the game's script HUD elements (it is one
+    value element labelled `SO_SURVIVAL_READY_UP`), so the glyph appears
+    exactly while the prompt is up and disappears when it goes — unlike the
+    `survival_player_ready` event, which only fires after the player readies.
+    Glyph only: the native text is left untouched (how the client draws script
+    HUD elements is not yet mapped, so replacing it is deferred). Default
+    position is an estimate; adjust with the F2/F3 hint position editor.
+    Build-verified, **not yet live-tested**. Trail:
+    `re_notes/x64_migration/ui_text_flow_map.md`.
 
 ### Fixed
 1. **Crash on launch with the sniper Fire/ADS fix's own log line.** The
