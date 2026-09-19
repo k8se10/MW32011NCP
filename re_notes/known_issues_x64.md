@@ -9172,6 +9172,34 @@ decompile it to find the hudelem struct and the hudelem draw function.
 **Cleanup owed**: the `[x64-drawprobe]`/`[x64-quadprobe]` TEMP code
 (analog_input_hooks_x64.cpp) should be removed once the path is found.
 
+**Follow-up, same day (user corrections + results):**
+- **User correction**: the UI flicker seen during the probe session was caused
+  by OUR hooks/reads delaying the draws of elements that pass through them
+  (an earlier note here calling it a native typewriter effect was wrong). It
+  is also evidence: the ready-up prompt never flickered, i.e. it does not
+  pass through any path we hook. The draw-path probes (`QuadProbeSample`, the
+  phase-1 text log, the three sibling hooks) are now disabled.
+- **Hudelem builtins resolved live**: `settext` `0x14012F5F0`, `setshader`
+  `0x14012F6B0`, `settenthstimer` `0x14012FAC0`, `setclock` `0x14012FD10`,
+  `setvalue` `0x14012FD50`. Decompiled `settext`/`setvalue`: the
+  **server-side hudelem array** is `DAT_140f4d080`, stride `0x2b` dwords
+  (`0xAC` bytes), `dword[0]` = type (1 text, 2 value), `dword[0x20]` = value,
+  string at dword `0x21` (+0x84, 40 bytes), `dword[0x29]` = flags.
+  The only code touching that array is server-side hudelem alloc/free/update
+  (`FUN_140164d70`/`FUN_140164e10`/`FUN_1401458a0`/`FUN_140144420`/
+  `FUN_140165350`, none reaching a draw primitive) -- so, as with
+  `sethintstring`, the client draw reads a snapshot copy and code-scanning for
+  the draw side is a dead end.
+- **Phase-1 text list (150-cap, filled with `+$` values so inconclusive)**
+  showed the text hook does see "Weapon Armory Enabled!", "Purchase and
+  upgrade weapons." and "Reload"; the "Press F5 to ready up" string was not
+  among the captured 150.
+- **Shipped instead (unrun)**: a read-only live hudelem scan, run on rare
+  events only (`wave_ended`, +5 s, `armory_open`, `player_ready`), logging
+  every active text/value hudelem (`[x64-hudelem]`). Array base is derived
+  from `settext`'s own `LEA` (+0x24), no hardcoded address. It answers
+  directly whether the ready-up prompt is a hudelem and what its text is.
+
 ### FIXED, 2026-09-16 (later same day) -- CRITICAL live-gameplay regression: pressing B during active gameplay wrongly paused the game; root cause traced and the whole flag-tracking design replaced with real ESC key synthesis
 
 **Status: Resolved. Build-verified (x64 Release, 0 errors, `dumpbin`-confirmed
