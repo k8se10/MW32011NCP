@@ -644,8 +644,23 @@ extern "C" float GetReadyUpCountdownSecsX64() { return g_readyUpCountdownSecs; }
 // the native text is left untouched (draw side of script hudelems is unmapped).
 extern "C" bool GetReadyUpPromptGlyphX64(char* assetOut, size_t assetOutSize)
 {
-    if (!ShouldDrawGlyphOverlay_Exported() || IsMenuActiveX64_Exported()) return false;
-    if (!IsReadyUpPromptShowingX64()) return false;
+    // The menu-active gate is deliberately NOT applied here: the Survival round-transition
+    // stats screen is itself a menu overlay and is up while this prompt is, so gating on it
+    // would hide the glyph exactly when it is needed (suspected cause of the first live
+    // "no change" report, 2026-09-19). The prompt hudelem is the real presence signal.
+    const bool overlayOn = ShouldDrawGlyphOverlay_Exported();
+    const bool menuActive = IsMenuActiveX64_Exported();
+    const bool showing = overlayOn && IsReadyUpPromptShowingX64();
+    static int s_lastState = -1;
+    const int state = (overlayOn ? 1 : 0) | (menuActive ? 2 : 0) | (showing ? 4 : 0);
+    if (state != s_lastState) {   // change-only diagnostic, no per-frame log
+        s_lastState = state;
+        char b[128];
+        sprintf_s(b, "[x64-readyup] glyph gate: overlayOn=%d menuActive=%d promptShowing=%d countdown=%.0f",
+                  overlayOn, menuActive, showing, static_cast<double>(g_readyUpCountdownSecs));
+        LogFromController(b);
+    }
+    if (!showing) return false;
     return TryGetGlyphAssetNameForKeyName("F5", assetOut, assetOutSize);
 }
 
