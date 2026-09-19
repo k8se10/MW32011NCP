@@ -9086,6 +9086,48 @@ dedicated pass, not a continuation of this one.
 
 No source changes this round -- pure investigation.
 
+### INVESTIGATED, 2026-09-19 -- the resolver's `+0x1b4`/`0x1b8`/`0x1bc` output is server-side use-target state, not a draw input; the static offset-scan approach is now exhausted; next step is a live probe of the sibling draw functions
+
+**Status: Investigating. Static offset-tracing has stopped paying off.**
+
+Followed the "one more hop" recorded above. Decompiled the two functions
+that read `+0x1b4` and `+0x1bc` together through one register:
+
+- `FUN_140175c90` (address-adjacent to the resolver) -- **server-side
+  use-target selection.** Reads `+0x1bc` as an entity index into the
+  `g_entities`-style array (`DAT_140f57cf0`, stride `0x2a0`; `0x7ff` = none),
+  and stores the chosen usable entity at `+0xaee8`. So `+0x1b4`/`0x1bc` are
+  the "what can the player press Use on" state, not text.
+- `FUN_14011f320` -- a per-player event handler; case `0x30` reads the same
+  fields for use-target validation. Other cases pass strings to
+  `FUN_140021130` (a string-by-index getter) then to `FUN_1401654b0`
+  (looks like a script-callback dispatch).
+
+Also checked all 22 callers of `FUN_140021130` for any that read `+0x1b8`:
+only `FUN_14013a9c0` matched, and that is the FX-spawn false positive
+already ruled out. The three `+0x1b8` reads flagged "IN DATA" near
+`0x14011b7bf` are the truncated tail of `FUN_14011b3c0`, a
+quaternion/matrix routine -- unrelated.
+
+**Conclusion**: the `sethintstring` chain (`sethintstring` -> `client+0x14f8`
+-> `FUN_140176080` -> use-target/hint state) is real, but its consumers found
+so far are use-target logic. Constant-offset scanning cannot find the client
+draw side: the snapshot field is very likely copied through a netfield table
+(offsets in static data, not in code), and `0x1b4`/`0x1b8`/`0x1bc` collide
+with dozens of unrelated structs.
+
+**Real next step (needs one live session, no debugger)**: hook the *other*
+text-draw siblings from the 2026-09-16 map -- `FUN_14029a610` (icon/portrait
+variant; callers `FUN_1402b1090`, the friend-invite popup, the subtitle
+renderer), `FUN_14029a4d0`, and the `FUN_1402afa60`/`FUN_1402afb10` wrapper
+pairs -- with log-and-call-through hooks that record the text argument plus
+`_ReturnAddress()`, then stand at a buy station / reach a ready-up window.
+Whichever sibling logs "Weapon Armory"/"ready up" names the real draw path
+and its caller directly. This uses the same in-process technique as
+`Hook_VmNotify`'s caller capture and needs no x64dbg.
+
+No source changes this round.
+
 ### FIXED, 2026-09-16 (later same day) -- CRITICAL live-gameplay regression: pressing B during active gameplay wrongly paused the game; root cause traced and the whole flag-tracking design replaced with real ESC key synthesis
 
 **Status: Resolved. Build-verified (x64 Release, 0 errors, `dumpbin`-confirmed
