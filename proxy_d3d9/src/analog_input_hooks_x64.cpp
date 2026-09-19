@@ -514,7 +514,11 @@ static void ScanHudElems(const char* tag)
                 static bool s_csTried = false;
                 if (!s_csTable && !s_csTried) {
                     s_csTried = true;
-                    SigScan::Result cs = SigScan::FindPatternInMainModule("48 63 C1 48 8D 0D ?? ?? ?? ?? 0F B7 04 41 C3");
+                    // Accessor body alone matches 77 places -- extended with the NEXT function's
+                    // prologue (verified unique offline via PatternScan.java, 1 match).
+                    SigScan::Result cs = SigScan::FindPatternInMainModule(
+                        "48 63 C1 48 8D 0D ?? ?? ?? ?? 0F B7 04 41 C3 CC 48 89 5C 24 08 48 89 74 24 10 "
+                        "48 89 7C 24 18 41 56 48 83 EC 30 E8 ?? ?? ?? ?? 41 B9 03 00 00 00");
                     if (cs.found) s_csTable = SigScan::ResolveRipRelative(cs.address + 3, 7);
                     sprintf_s(b, "[x64-hudelem] configstring word table %s @ 0x%llX", cs.found ? "resolved" : "NOT resolved",
                               static_cast<unsigned long long>(s_csTable));
