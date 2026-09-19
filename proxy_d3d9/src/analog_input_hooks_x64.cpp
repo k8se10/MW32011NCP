@@ -527,6 +527,39 @@ static void ProbeLog(const char* tag, uint64_t textArg, void* retAddr, long& cal
     }
 }
 
+// TEMP, 2026-09-19 -- phase-tagged call-stack diff of the shared quad-draw primitive
+// (FUN_14028c2b0). Phase 1 = Survival intermission (wave_ended -> survival_player_ready:
+// the ready-up prompt is on screen), phase 2 = in-wave control (wave_started -> next
+// wave_ended: prompt absent). Unique stacks seen ONLY in phase 1 are the prompt's draw
+// path. Set from Hook_VmNotify's existing state detection; consumed in
+// Hook_SharedQuadDrawX64. Sampled 1-in-8 calls and capped so it can't flood or hitch.
+static volatile int g_quadProbePhase = 0;
+static uint64_t g_quadProbeSeen[3][256] = {};
+static int g_quadProbeSeenCount[3] = {};
+static long g_quadProbeCalls = 0;
+
+static void QuadProbeSample()
+{
+    const int phase = g_quadProbePhase;
+    if (phase != 1 && phase != 2) return;
+    if ((++g_quadProbeCalls & 7) != 0) return;
+    void* frames[8] = {};
+    USHORT n = RtlCaptureStackBackTrace(2, 8, frames, nullptr);
+    if (n == 0) return;
+    uint64_t h = 1469598103934665603ULL;
+    for (USHORT i = 0; i < n; ++i) { h ^= reinterpret_cast<uint64_t>(frames[i]); h *= 1099511628211ULL; }
+    uint64_t* seen = g_quadProbeSeen[phase];
+    int& cnt = g_quadProbeSeenCount[phase];
+    for (int i = 0; i < cnt; ++i) if (seen[i] == h) return;
+    if (cnt >= 250) return;
+    seen[cnt++] = h;
+    char b[360];
+    int w = sprintf_s(b, "[x64-quadprobe] phase=%d stack:", phase);
+    for (USHORT i = 0; i < n && w > 0 && w < 300; ++i)
+        w += sprintf_s(b + w, sizeof(b) - w, " 0x%llX", static_cast<unsigned long long>(ToGhidraAddressX64(frames[i])));
+    LogFromController(b);
+}
+
 static DrawProbeFn g_realProbeA610 = nullptr;
 static DrawProbeFn g_realProbeA4D0 = nullptr;
 static DrawProbeFn g_realProbeB1090 = nullptr;
@@ -610,7 +643,10 @@ void __fastcall Hook_VmNotify(unsigned int notifyListOwnerId, unsigned int strin
         char buf[256];
         bool resolved = TryResolveGscInternedString(stringValue, resolvedStr, sizeof(resolvedStr));
         if (resolved) {
+            if (strcmp(resolvedStr, "wave_ended") == 0) g_quadProbePhase = 1;
+            else if (strcmp(resolvedStr, "wave_started") == 0) g_quadProbePhase = 2;
             if (strcmp(resolvedStr, "survival_player_ready") == 0) {
+                g_quadProbePhase = 0;
                 g_survivalPlayerReadyLastSeenMsX64 = GetTickCount();
             } else if (strcmp(resolvedStr, "survival_all_ready") == 0) {
                 g_survivalAllReadyLastSeenMsX64 = GetTickCount();
@@ -4594,6 +4630,7 @@ void __fastcall Hook_SharedQuadDrawX64(void* param1, uint32_t param2, uint32_t p
     // Every other caller of this shared primitive -- menu backgrounds, HUD
     // icons, everything else that draws a textured quad -- passes through
     // here completely unmodified.
+    QuadProbeSample();  // TEMP 2026-09-19 -- see g_quadProbePhase's comment
     g_realSharedQuadDrawX64(param1, param2, param3, param4, param5, param6, param7, param8, param9);
 }
 
