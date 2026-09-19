@@ -618,6 +618,14 @@ void __fastcall Hook_VmNotify(unsigned int notifyListOwnerId, unsigned int strin
         TryResolveAndLogGscBuiltinMethod(kMethodId_SetCursorHint, "setcursorhint");
         TryResolveAndLogGscBuiltinMethod(kMethodId_ForceUseHintOn, "forceusehinton");
         TryResolveAndLogGscBuiltinMethod(kMethodId_ForceUseHintOff, "forceusehintoff");
+        // 2026-09-19 -- hudelem builtins (ids per gsc-tool iw5_pc_meth.cpp): the ready-up
+        // prompt (with its live countdown) is the one Survival UI element the text hooks
+        // never see, consistent with a script-driven hudelem rather than a menu/dvar item.
+        TryResolveAndLogGscBuiltinMethod(0x80B6, "settext");
+        TryResolveAndLogGscBuiltinMethod(0x80B8, "setshader");
+        TryResolveAndLogGscBuiltinMethod(0x80BE, "settenthstimer");
+        TryResolveAndLogGscBuiltinMethod(0x80C1, "setclock");
+        TryResolveAndLogGscBuiltinMethod(0x80C3, "setvalue");
     }
     // TEMP, 2026-09-17: capture the real caller of this specific VM_Notify call
     // (per-call, not the generic VM_Execute interpreter loop this project already
@@ -5225,6 +5233,28 @@ void Hook_DrawTextX64(
     const void* colorVecPtr, unsigned extra)
 {
     ++g_drawTextFireCount;
+    // TEMP 2026-09-19 -- log every UNIQUE text seen by this hook during the Survival
+    // intermission phase (quad-probe phase 1), unfiltered, to check whether the ready-up
+    // prompt reaches here in a form the keyword matchers missed (odd colour-code split,
+    // wide chars, etc.). Capped at 150 unique strings.
+    if (g_quadProbePhase == 1 && text) {
+        static uint64_t s_seenText[160] = {};
+        static int s_seenTextCount = 0;
+        char tb[100];
+        if (ProbeReadString(reinterpret_cast<uint64_t>(text), tb, sizeof(tb)) || (text[0] && text[1] == '\0')) {
+            uint64_t h = 1469598103934665603ULL;
+            for (const char* p = tb; *p; ++p) { h ^= static_cast<unsigned char>(*p); h *= 1099511628211ULL; }
+            bool seen = false;
+            for (int i = 0; i < s_seenTextCount; ++i) if (s_seenText[i] == h) { seen = true; break; }
+            if (!seen && s_seenTextCount < 150) {
+                s_seenText[s_seenTextCount++] = h;
+                char lb[240];
+                sprintf_s(lb, "[x64-quadprobe] phase1 text=\"%s\" caller=0x%llX", tb,
+                          static_cast<unsigned long long>(ToGhidraAddressX64(_ReturnAddress())));
+                LogFromController(lb);
+            }
+        }
+    }
     if (g_drawTextFireCount <= 5 || (g_drawTextFireCount % 5000) == 0) {
         char buf[128];
         sprintf_s(buf, "[x64-drawtext] Text-draw hook fired (count=%lld)", g_drawTextFireCount);
