@@ -35,6 +35,11 @@
 // proxy_d3d9.log file without duplicating the log-file setup.
 extern void LogFromController(const char* msg);
 
+#if defined(_M_X64) || defined(_WIN64)
+// Defined in analog_input_hooks_x64.cpp -- x64 dvar write (F4 AI-spawn debug toggle).
+extern "C" bool SetDvarIntX64(const char* name, int value);
+#endif
+
 // Defined in d3d9_hook.cpp -- same mouse primitives overlay_hud.cpp's own harness-only
 // diagram editor already uses (see EditGlyphPositionsForFrame below, its in-game
 // counterpart).
@@ -7931,20 +7936,23 @@ extern "C" void __cdecl ResetMenuListItemOrdinalForFrame()
         // (g_aiSpawnDisabled), own edge-detected key, own log lines. Still
         // gated behind the same glyphPositionEditMode master switch as every
         // other debug-only feature in this block (default OFF).
-#if !defined(_M_X64) && !defined(_WIN64)
-        // x64: not yet ported. CbufAddText is a raw x86-only address -- this whole F4
-        // AI-suppression toggle (issue tracked in project memory as "AI suppression
-        // settled") is real gameplay logic, not a diagnostic, so it's fully disabled
-        // on x64 for now rather than given a fake stub; F4 simply does nothing until
-        // a real x64 Cbuf_AddText-equivalent hook exists (FUN_1402c5b30 is the
-        // confirmed x64 Cvar_Set, not Cbuf_AddText -- a separate function, not yet
-        // located for this specific command-execution path).
+        // x64 (2026-09-19): ported. CbufAddText is a raw x86-only address, so x64 writes the
+        // dvar directly via the confirmed x64 Cvar_SetInt (FUN_1402c5b30, resolved by
+        // signature in analog_input_hooks_x64.cpp) -- same dvar, same effect, no command
+        // buffer needed.
         static bool s_lastF4Held = false;
         bool f4Held = (GetAsyncKeyState(VK_F4) & 0x8000) != 0;
         bool f4Edge = f4Held && !s_lastF4Held;
         s_lastF4Held = f4Held;
         if (f4Edge) {
             g_aiSpawnDisabled = !g_aiSpawnDisabled;
+#if defined(_M_X64) || defined(_WIN64)
+            const bool ok = SetDvarIntX64("ai_disableSpawn", g_aiSpawnDisabled ? 1 : 0);
+            if (!ok) g_aiSpawnDisabled = !g_aiSpawnDisabled; // write failed -- keep readout truthful
+            LogFromController(!ok ? "[ai-spawn-toggle] FAILED to set ai_disableSpawn (x64 Cvar_SetInt unavailable)"
+                                  : (g_aiSpawnDisabled ? "[ai-spawn-toggle] AI spawn disabled: ai_disableSpawn 1"
+                                                       : "[ai-spawn-toggle] AI spawn restored: ai_disableSpawn 0"));
+#else
             if (g_aiSpawnDisabled) {
                 CbufAddText(kLocalClientIndex, "ai_disableSpawn 1\n");
                 LogFromController("[ai-spawn-toggle] AI spawn disabled: ai_disableSpawn 1");
@@ -7952,8 +7960,8 @@ extern "C" void __cdecl ResetMenuListItemOrdinalForFrame()
                 CbufAddText(kLocalClientIndex, "ai_disableSpawn 0\n");
                 LogFromController("[ai-spawn-toggle] AI spawn restored: ai_disableSpawn 0");
             }
-        }
 #endif
+        }
         // Debounced (2026-08-16, live-reported "it goes to the set position but after
         // x amount of time [it] moves") -- see TryGetStableFocusedGroupAndIndex's own
         // comment. Shares its single debounce state with the shipped manual-table

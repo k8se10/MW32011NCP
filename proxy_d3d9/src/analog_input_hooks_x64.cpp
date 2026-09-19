@@ -545,6 +545,30 @@ static void ScanHudElems(const char* tag)
     LogFromController(b);
 }
 
+// ---- x64 dvar write by name (2026-09-19) ------------------------------------------------
+// FUN_1402c5b30 = Cvar_SetInt(const char* name, int value): FindDvar, then sets int/enum
+// types directly or formats other types as a string ("1"/"0" for a bool). Replaces the
+// x86-only CbufAddText path for the F4 `ai_disableSpawn` debug toggle (real_settings.cpp's
+// x64 setters are stubs). Signature verified unique offline (PatternScan, 1 match).
+extern "C" bool SetDvarIntX64(const char* name, int value)
+{
+    using Fn = void(__fastcall*)(const char*, int);
+    static Fn s_fn = nullptr;
+    static bool s_tried = false;
+    if (!s_fn && !s_tried) {
+        s_tried = true;
+        SigScan::Result r = SigScan::FindPatternInMainModule(
+            "48 89 5C 24 08 48 89 74 24 10 57 48 81 EC 80 00 00 00 8B FA 48 8B F1 E8 ?? ?? ?? ?? "
+            "48 8B D8 48 85 C0 74 52 0F B6 48 0C 80 E9 05");
+        if (r.found) s_fn = reinterpret_cast<Fn>(r.address);
+        LogFromController(r.found ? "[x64-dvarset] Cvar_SetInt resolved -- F4 AI-spawn toggle available"
+                                  : "[x64-dvarset] FATAL: Cvar_SetInt signature did not resolve -- F4 toggle unavailable");
+    }
+    if (!s_fn) return false;
+    __try { s_fn(name, value); return true; }
+    __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+}
+
 // ---- Ready-up prompt detection (2026-09-19) -------------------------------------------
 // The native "Press F5 to ready up: NN" prompt is one script VALUE hudelem whose label
 // resolves to SO_SURVIVAL_READY_UP (see re_notes/x64_migration/ui_text_flow_map.md).
