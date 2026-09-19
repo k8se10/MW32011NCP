@@ -56,15 +56,17 @@ Server array base `DAT_140f4d080` (`0x140f4d080`), **stride `0x2b` dwords
 | `[5]` | scale (float) | 1.0 label, 0.75 countdown |
 | `[9]`, `[10]`, `[11]` | alignment / font / misc (`7`, `9` vs `1`, `0x32`) | unresolved |
 | `[12]` | colour RGB | `0xFFFFFF` |
-| `[16]` | **label slot** (string reference) | idx6 = `0x49`, countdown = `0x36` — resolution pending live test |
+| `[16]` | **label slot** (string reference; configstring index = slot + `0xb2`) | **CONFIRMED live**: idx6 slot `0x49` -> `SPECIAL_OPS_TIME` (the "Time:" element); prompt value element slot `0x36` -> **`SO_SURVIVAL_READY_UP`** |
 | `[0x20]` | **value** (float) for type 2 | countdown 30.0 -> 24.0 -> 17.0 across scans |
 | `[0x21]` | text slot for type 1 (`settext` string) | 0 for every element seen |
 | `[0x22]`, `[0x23]` | `2.0f`, `0x999999` | shared by both prompt elements |
 | `[0x29]` | flags (`0x7` on both prompt elements) | distinct signature vs. other elements |
 
-**Ready-up prompt = two hudelems**: a persistent text element (idx 6 in
-scans) plus a **value element that appears ~5 s after `wave_ended`** carrying
-the countdown. `survival_player_ready` fires *after* the player readies (user
+**Ready-up prompt = ONE value hudelem** (CONFIRMED live, 2026-09-19): the type-2
+element that appears ~5 s after `wave_ended`, label `SO_SURVIVAL_READY_UP`
+(the localized "Press F5 to ready up: &&1"), value = the countdown seconds.
+(The persistent idx-6 element earlier assumed to be its text label is a
+different hudelem, label `SPECIAL_OPS_TIME` — the timer readout.) `survival_player_ready` fires *after* the player readies (user
 confirmed) — it is an end-of-prompt/control signal, not a "prompt visible"
 signal.
 
@@ -77,8 +79,8 @@ signal.
   entry is an interned-string ID.
 - **Hudelem strings**: registered by `FUN_14016b5d0` at configstring index
   `slot + 0xb2` (2000 slots, refcount array `DAT_1411499e0`); the hudelem field
-  stores the slot. (The `+0xb2` mapping for the *label* field `[16]` is
-  INFERRED — the shipped scan tries both `slot+0xb2` and raw `slot`.)
+  stores the slot. The `+0xb2` mapping also applies to the *label* field
+  `[16]` — CONFIRMED live (raw-slot lookup resolves nothing).
 - `FUN_140021130` / `FUN_140021140` are the **weapon-name** getter (weapon
   index -> name with attachment suffixes), *not* a general string getter.
 
@@ -117,8 +119,9 @@ Any GSC-driven UI behaviour can be traced by resolving its builtin here.
 
 ## 6. Open questions (ordered)
 
-1. **Resolve the prompt's label text** (`[x64-hudelem] label-slot ...` lines,
-   shipped, awaiting one live wave) — completes the M4 origin story.
+1. ~~Resolve the prompt's label text~~ **DONE 2026-09-19**: `SO_SURVIVAL_READY_UP`.
+   New capability: a cheap, read-only "ready-up prompt is showing" signal +
+   live countdown value straight from the server hudelem array (no draw hook).
 2. **Find the client-side draw of script hudelems.** Server array is read-only
    scannable; the client copy's base/layout is unknown. Candidate approach:
    read our own known hudelem (`countdown`) values live and search client-side
