@@ -70,6 +70,15 @@ FUN_140052220  (CONFIRMED) -- "Are we not seeing this" IS this: the master
               of just the two cases that investigation needed.
 ```
 
+> **CORRECTION, 2026-09-19** (see `ui_text_flow_map.md`): a live phase-tagged
+> quad-draw stack diff showed `FUN_1402a7660` sits in the **menu itemDef paint
+> chain** (`FUN_14029d170` -> `FUN_1402abb70` -> `FUN_1402a7660` ->
+> `FUN_1402b0a70`, which paints an itemDef's window rect/border). The label
+> "entity/name-tag compositor" below is therefore likely wrong — treat it as
+> the itemDef list painter. Also: this document maps only the draw-side
+> numbered dispatcher; several text sources (use-hints, script hudelems) do not
+> pass through it at all.
+
 **A separate, parallel system, NOT part of the chain above** (its own top
 caller was not traced further this pass, but it clearly does not run
 through `FUN_140052220`'s numbered-element switch):
