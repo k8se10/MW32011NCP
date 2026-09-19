@@ -9128,6 +9128,50 @@ and its caller directly. This uses the same in-process technique as
 
 No source changes this round.
 
+### INVESTIGATED, 2026-09-19 (later) -- live probes: the three sibling text-draw functions do NOT carry the prompts; a phase-tagged quad-draw stack diff found an itemDef paint chain unique to the intermission; user confirms ONLY the ready-up text escapes the text hook; hudelem-builtin hypothesis queued
+
+**Status: Investigating -- three live experiments run, two negative, one
+partial; one new hypothesis with a shipped-but-unrun probe.**
+
+1. **Sibling text-draw probes -- negative.** Log-and-call-through hooks on
+   `FUN_14029a610`, `FUN_14029a4d0`, `FUN_1402b1090` (hand-built
+   signatures; 20 integer-slot detours forward all args, valid because
+   only args 1-4 travel in registers on Win x64) installed cleanly. In a
+   real Survival (Underground) wave -- `armory_*`/`wave_started` events
+   confirmed in the same log, 160k text-draw calls -- `FUN_14029a610` and
+   `FUN_14029a4d0` never fired at all and `FUN_1402b1090` only saw
+   main-menu text. None carries the ready-up/buy-station prompts.
+2. **Phase-tagged quad-draw stack diff (`FUN_14028c2b0`) -- partial.**
+   Phase 1 = intermission (`wave_ended` -> `survival_player_ready`), phase 2
+   = in-wave. 7 unique stacks each; 2 phase-1-only. Chain:
+   `FUN_14029d170` (UI root) -> `FUN_1402abb70` -> `FUN_1402a7660` ->
+   `FUN_1402b0a70` -> quad draw. **`FUN_1402b0a70` takes an itemDef**
+   (rect at `+8`/`+0x10`, window flags `+0x50`, border/colour) and paints
+   its window -- so this is a **menu itemDef paint chain**, supporting the
+   user's "did they move it into the menu UI path" idea, and meaning
+   `ui_draw_pipeline_map.md`'s label for `FUN_1402a7660` ("entity/name-tag
+   compositor") is likely wrong (it behaves as an itemDef list painter).
+   Caveat: phase 1 also includes the armory menu itself if opened, so this
+   chain is not yet proven to be the prompt.
+3. **User observation (live, same session)**: every other UI text was
+   captured by the text hook; only the ready-up text was not. So the
+   prompt is not a different UI *style*, it uses a different *mechanism*
+   from every other Survival HUD element (Wave/Headshots/Kill Streak are
+   menu/dvar-driven and are caught).
+
+**New hypothesis (probe shipped, not yet run)**: the prompt (with its live
+countdown, "...ready up: 23") is a script-driven **hudelem**, not a
+menu/dvar item. The hudelem builtins sit in the same method table already
+resolved (`settext` `0x80B6`, `setshader` `0x80B8`, `settenthstimer`
+`0x80BE`, `setclock` `0x80C1`, `setvalue` `0x80C3`, per gsc-tool
+`iw5_pc_meth.cpp`). The one-shot resolver now logs their native
+implementations too, and the text hook now logs every unique string it sees
+during phase 1 (TEMP). Next: read `[x64-gsc-methods]` for `settext`, then
+decompile it to find the hudelem struct and the hudelem draw function.
+
+**Cleanup owed**: the `[x64-drawprobe]`/`[x64-quadprobe]` TEMP code
+(analog_input_hooks_x64.cpp) should be removed once the path is found.
+
 ### FIXED, 2026-09-16 (later same day) -- CRITICAL live-gameplay regression: pressing B during active gameplay wrongly paused the game; root cause traced and the whole flag-tracking design replaced with real ESC key synthesis
 
 **Status: Resolved. Build-verified (x64 Release, 0 errors, `dumpbin`-confirmed
