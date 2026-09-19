@@ -507,6 +507,31 @@ static void ScanHudElems(const char* tag)
                 for (int k = 0; k < 0x2b && w > 0 && w < 380; ++k)
                     w += sprintf_s(rb + w, sizeof(rb) - w, " %X", d[k]);
                 LogFromController(rb);
+                // Resolve dword[16] (label slot) through the configstring word table
+                // (FUN_14026ad10: `word DAT_1425353aa[index]`, hudelem strings at slot+0xb2)
+                // into the interned-string pool -- located from that accessor's own LEA.
+                static uintptr_t s_csTable = 0;
+                static bool s_csTried = false;
+                if (!s_csTable && !s_csTried) {
+                    s_csTried = true;
+                    SigScan::Result cs = SigScan::FindPatternInMainModule("48 63 C1 48 8D 0D ?? ?? ?? ?? 0F B7 04 41 C3");
+                    if (cs.found) s_csTable = SigScan::ResolveRipRelative(cs.address + 3, 7);
+                    sprintf_s(b, "[x64-hudelem] configstring word table %s @ 0x%llX", cs.found ? "resolved" : "NOT resolved",
+                              static_cast<unsigned long long>(s_csTable));
+                    LogFromController(b);
+                }
+                if (s_csTable && d[16] > 0 && d[16] < 2000) {
+                    const uint16_t* tbl = reinterpret_cast<const uint16_t*>(s_csTable);
+                    const unsigned cands[2] = { d[16] + 0xb2u, d[16] };
+                    for (int c = 0; c < 2; ++c) {
+                        const unsigned id = tbl[cands[c]];
+                        char lt[64] = {};
+                        const bool ok = id != 0 && TryResolveGscInternedString(id, lt, sizeof(lt));
+                        sprintf_s(b, "[x64-hudelem] %s idx=%d label-slot=%u cs[%u]=strId %u -> \"%s\"", tag, i,
+                                  d[16], cands[c], id, ok ? lt : "<unresolved>");
+                        LogFromController(b);
+                    }
+                }
             }
         }
     } __except (EXCEPTION_EXECUTE_HANDLER) {
