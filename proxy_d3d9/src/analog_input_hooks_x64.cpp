@@ -437,6 +437,74 @@ extern "C" bool IsArmoryMenuOpenX64()
     return g_armoryMenuOpenX64;
 }
 
+// ---- Live hudelem scan, 2026-09-19 ---------------------------------------------------
+// settext (0x14012F5F0) / setvalue decompiles show the server-side hudelem array:
+// base DAT_140f4d080, stride 0x2b dwords (0xAC bytes); dword[0] = type (1 text, 2 value),
+// dword[0x20] = value, string at dword 0x21 (+0x84, 40 bytes), dword[0x29] = flags.
+// The array base is found from settext's own `LEA reg,[rip+disp]` (offset +0x24) -- no
+// hardcoded address. Read-only, SEH-guarded, called only on rare Survival notifies, so
+// it costs nothing per frame (the draw-path hooks it replaces caused visible UI flicker).
+static uintptr_t GetGscBuiltinMethodFnForScan(unsigned int methodId)
+{
+    if (g_gscMethodTableRvaFromModuleBase == 0) return 0;
+    uintptr_t base = reinterpret_cast<uintptr_t>(GetModuleHandleA(nullptr));
+    if (!base) return 0;
+    __try {
+        return *reinterpret_cast<uintptr_t*>(base + g_gscMethodTableRvaFromModuleBase +
+                                             (static_cast<uintptr_t>(methodId) - 0x8000) * 8);
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return 0; }
+}
+
+static void ScanHudElems(const char* tag)
+{
+    static uintptr_t s_array = 0;
+    static bool s_tried = false;
+    char b[256];
+    if (!s_array) {
+        if (s_tried) return;
+        s_tried = true;
+        uintptr_t fn = GetGscBuiltinMethodFnForScan(0x80B6);
+        if (!fn) { LogFromController("[x64-hudelem] settext unresolved -- scan unavailable"); return; }
+        __try {
+            const uint8_t* p = reinterpret_cast<const uint8_t*>(fn) + 0x24;
+            if (p[0] != 0x48 || p[1] != 0x8D || p[2] != 0x05) {
+                LogFromController("[x64-hudelem] settext+0x24 is not a RIP-relative LEA -- layout changed, scan disabled");
+                return;
+            }
+            s_array = SigScan::ResolveRipRelative(reinterpret_cast<uintptr_t>(p), 7);
+        } __except (EXCEPTION_EXECUTE_HANDLER) { return; }
+        sprintf_s(b, "[x64-hudelem] hudelem array resolved @ 0x%llX (Ghidra 0x%llX)",
+                  static_cast<unsigned long long>(s_array),
+                  static_cast<unsigned long long>(ToGhidraAddressX64(reinterpret_cast<void*>(s_array))));
+        LogFromController(b);
+    }
+    int logged = 0;
+    __try {
+        for (int i = 0; i < 512 && logged < 40; ++i) {
+            const uint32_t* d = reinterpret_cast<const uint32_t*>(s_array + static_cast<uintptr_t>(i) * 0xAC);
+            const uint32_t type = d[0];
+            if (type != 1 && type != 2) continue;
+            char text[41] = {};
+            const char* s = reinterpret_cast<const char*>(d + 0x21);
+            size_t n = 0;
+            bool printable = true;
+            for (; n < 40 && s[n]; ++n) {
+                if (static_cast<unsigned char>(s[n]) < 0x20 || static_cast<unsigned char>(s[n]) > 0x7E) { printable = false; break; }
+                text[n] = s[n];
+            }
+            if (!printable || n == 0) sprintf_s(text, "<idx/bin %08X %08X>", d[0x21], d[0x22]);
+            sprintf_s(b, "[x64-hudelem] %s idx=%d type=%u val=%d flags=0x%X text=\"%s\"",
+                      tag, i, type, static_cast<int>(d[0x20]), d[0x29], text);
+            LogFromController(b);
+            ++logged;
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        LogFromController("[x64-hudelem] SEH exception while scanning -- stopped");
+    }
+    sprintf_s(b, "[x64-hudelem] %s scan done: %d active elems logged", tag, logged);
+    LogFromController(b);
+}
+
 // Converts a runtime address in THIS session's own loaded module to the
 // equivalent Ghidra-comparable address (every existing re_notes/x64_migration
 // address citation uses the binary's own preferred image base, 0x140000000) --
@@ -651,9 +719,19 @@ void __fastcall Hook_VmNotify(unsigned int notifyListOwnerId, unsigned int strin
         char buf[256];
         bool resolved = TryResolveGscInternedString(stringValue, resolvedStr, sizeof(resolvedStr));
         if (resolved) {
-            if (strcmp(resolvedStr, "wave_ended") == 0) g_quadProbePhase = 1;
-            else if (strcmp(resolvedStr, "wave_started") == 0) g_quadProbePhase = 2;
+            static DWORD s_hudScanDueMs = 0;
+            if (s_hudScanDueMs != 0 && GetTickCount() >= s_hudScanDueMs) {
+                s_hudScanDueMs = 0;
+                ScanHudElems("wave_ended+5s");
+            }
+            if (strcmp(resolvedStr, "wave_ended") == 0) {
+                g_quadProbePhase = 1;
+                ScanHudElems("wave_ended");
+                s_hudScanDueMs = GetTickCount() + 5000;
+            } else if (strcmp(resolvedStr, "wave_started") == 0) g_quadProbePhase = 2;
+            else if (strcmp(resolvedStr, "armory_open") == 0) ScanHudElems("armory_open");
             if (strcmp(resolvedStr, "survival_player_ready") == 0) {
+                ScanHudElems("player_ready");
                 g_quadProbePhase = 0;
                 g_survivalPlayerReadyLastSeenMsX64 = GetTickCount();
             } else if (strcmp(resolvedStr, "survival_all_ready") == 0) {
@@ -4638,7 +4716,7 @@ void __fastcall Hook_SharedQuadDrawX64(void* param1, uint32_t param2, uint32_t p
     // Every other caller of this shared primitive -- menu backgrounds, HUD
     // icons, everything else that draws a textured quad -- passes through
     // here completely unmodified.
-    QuadProbeSample();  // TEMP 2026-09-19 -- see g_quadProbePhase's comment
+    // QuadProbeSample() call removed 2026-09-19: user-confirmed it delayed UI draws (flicker).
     g_realSharedQuadDrawX64(param1, param2, param3, param4, param5, param6, param7, param8, param9);
 }
 
@@ -5237,7 +5315,7 @@ void Hook_DrawTextX64(
     // intermission phase (quad-probe phase 1), unfiltered, to check whether the ready-up
     // prompt reaches here in a form the keyword matchers missed (odd colour-code split,
     // wide chars, etc.). Capped at 150 unique strings.
-    if (g_quadProbePhase == 1 && text) {
+    if (false && g_quadProbePhase == 1 && text) {  // disabled 2026-09-19: probe cost caused visible UI flicker
         static uint64_t s_seenText[160] = {};
         static int s_seenTextCount = 0;
         char tb[100];
@@ -6195,10 +6273,9 @@ void InstallAnalogInputHooksX64()
         }
     }
 
-    {
-        // TEMP, 2026-09-19 -- draw-sibling live probe, see Hook_ProbeA610's header comment.
-        // Signatures hand-built from real bytes (DumpSigBytes over-wildcards RSP-relative
-        // operands -- a documented tooling false positive); only the CALL rel32 is wildcarded.
+    if (false) {
+        // DISABLED 2026-09-19 (probe answered: none of these carry the prompts, and hooking
+        // draw paths caused visible UI flicker). Kept only until the trail is closed.
         InstallDrawProbe("FUN_14029a610",
             "48 8B C4 48 89 58 08 48 89 68 10 48 89 70 18 57 48 81 EC A0 00 00 00 F3 0F 10 8C 24 F0 00 00 00 "
             "48 8B D9 49 8B C9 0F 29 78 E8 49 8B F9 41 8B F0 48 8B EA E8 ?? ?? ?? ??",
