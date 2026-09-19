@@ -9213,6 +9213,30 @@ decompile it to find the hudelem struct and the hudelem draw function.
   from `settext`'s own `LEA` (+0x24), no hardcoded address. It answers
   directly whether the ready-up prompt is a hudelem and what its text is.
 
+### RESOLVED (identification), 2026-09-19 (later) -- the Survival ready-up prompt is a single script value-hudelem with label `SO_SURVIVAL_READY_UP`; label resolution confirmed live; draw side still unfound
+
+**Status: Partially Resolved -- the prompt's identity, structure, timing and
+live countdown are now fully known; the client-side draw path is not.**
+
+Live result (Underground, 3+ waves): with the configstring word table
+(`word DAT_1425353aa[]`, located via a uniquified signature -- the accessor
+body alone matched 77 places) the hudelem label slots resolve through
+`configstring[slot + 0xb2]` into the interned-string pool:
+`idx=26/27` (type 2 value element, appears ~5 s after `wave_ended`, value =
+countdown seconds) -> **`SO_SURVIVAL_READY_UP`**; the persistent `idx=6` ->
+`SPECIAL_OPS_TIME` (the timer readout, NOT part of the prompt). Raw-slot
+lookup resolves nothing, confirming the `+0xb2` mapping. So the prompt is one
+`newHudElem` + `setvalue` element whose localized label carries "Press F5 to
+ready up: &&1"; this is why it never touches the text hook or any menu path.
+
+New capability this unlocks: a **read-only "ready-up prompt is showing" signal
+and live countdown** straight from the server hudelem array (rare-event / low-
+rate scan, no draw hook, no flicker) -- unlike `survival_player_ready`, which
+fires after the player readies. Full write-up: `x64_migration/ui_text_flow_map.md`.
+
+Remaining: the client-side draw of script hudelems (snapshot copy), needed only
+if the native prompt must be suppressed and replaced.
+
 ### FIXED, 2026-09-16 (later same day) -- CRITICAL live-gameplay regression: pressing B during active gameplay wrongly paused the game; root cause traced and the whole flag-tracking design replaced with real ESC key synthesis
 
 **Status: Resolved. Build-verified (x64 Release, 0 errors, `dumpbin`-confirmed
