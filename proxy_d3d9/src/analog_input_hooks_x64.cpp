@@ -658,7 +658,9 @@ extern "C" bool GetReadyUpPromptGlyphX64(char* assetOut, size_t assetOutSize)
     // "no change" report, 2026-09-19). The prompt hudelem is the real presence signal.
     const bool overlayOn = ShouldDrawGlyphOverlay_Exported();
     const bool menuActive = IsMenuActiveX64_Exported();
-    const bool showing = overlayOn && IsReadyUpPromptShowingX64();
+    // Dev test (user direction, 2026-09-19): detection and glyph ALWAYS run -- no overlay/
+    // controller gate. overlayOn is kept in the diagnostic only.
+    const bool showing = IsReadyUpPromptShowingX64();
     static int s_lastState = -1;
     const int state = (overlayOn ? 1 : 0) | (menuActive ? 2 : 0) | (showing ? 4 : 0);
     if (state != s_lastState) {   // change-only diagnostic, no per-frame log
