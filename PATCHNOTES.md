@@ -396,6 +396,15 @@ item below.
     position is an estimate; adjust with the F2/F3 hint position editor.
     Build-verified, **not yet live-tested**. Trail:
     `re_notes/x64_migration/ui_text_flow_map.md`.
+23. **F4 "AI spawn off" debug toggle ported to `-x64`.** Blocks new enemy
+    spawns (`ai_disableSpawn`) — handy for calibration sessions, and as a
+    side effect it can trigger an early Survival round transition, which
+    makes it a fast way to cycle rounds. Same key and gate as `-x86`
+    (`[Experimental] GlyphPositionEditMode=1`, default off, F4 toggles, an
+    on-screen "AI = On/Off" readout). On x64 the dvar is written directly
+    through the game's own `Cvar_SetInt` (`FUN_1402c5b30`, resolved by
+    signature) since the x86 command-buffer address doesn't exist here.
+    Build-verified, **not yet live-tested**.
 
 ### Fixed
 1. **Crash on launch with the sniper Fire/ADS fix's own log line.** The
