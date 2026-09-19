@@ -719,19 +719,31 @@ void __fastcall Hook_VmNotify(unsigned int notifyListOwnerId, unsigned int strin
         char buf[256];
         bool resolved = TryResolveGscInternedString(stringValue, resolvedStr, sizeof(resolvedStr));
         if (resolved) {
-            static DWORD s_hudScanDueMs = 0;
-            if (s_hudScanDueMs != 0 && GetTickCount() >= s_hudScanDueMs) {
-                s_hudScanDueMs = 0;
-                ScanHudElems("wave_ended+5s");
+            // Pre-ready scans (prompt should be visible): wave_ended, armory_open, then +5/+12/+20 s.
+            // survival_player_ready fires AFTER the player readies (prompt already gone), so its scan
+            // is only a CONTROL -- an element present earlier but absent there is the prompt.
+            static DWORD s_hudScanDueMs[3] = {};
+            static const char* const kHudScanTags[3] = { "wave_ended+5s", "wave_ended+12s", "wave_ended+20s" };
+            const DWORD nowMs = GetTickCount();
+            for (int i = 0; i < 3; ++i) {
+                if (s_hudScanDueMs[i] != 0 && nowMs >= s_hudScanDueMs[i]) {
+                    s_hudScanDueMs[i] = 0;
+                    ScanHudElems(kHudScanTags[i]);
+                }
             }
             if (strcmp(resolvedStr, "wave_ended") == 0) {
                 g_quadProbePhase = 1;
                 ScanHudElems("wave_ended");
-                s_hudScanDueMs = GetTickCount() + 5000;
-            } else if (strcmp(resolvedStr, "wave_started") == 0) g_quadProbePhase = 2;
-            else if (strcmp(resolvedStr, "armory_open") == 0) ScanHudElems("armory_open");
+                s_hudScanDueMs[0] = nowMs + 5000;
+                s_hudScanDueMs[1] = nowMs + 12000;
+                s_hudScanDueMs[2] = nowMs + 20000;
+            } else if (strcmp(resolvedStr, "wave_started") == 0) {
+                g_quadProbePhase = 2;
+                s_hudScanDueMs[0] = s_hudScanDueMs[1] = s_hudScanDueMs[2] = 0;
+            } else if (strcmp(resolvedStr, "armory_open") == 0) ScanHudElems("armory_open");
             if (strcmp(resolvedStr, "survival_player_ready") == 0) {
-                ScanHudElems("player_ready");
+                s_hudScanDueMs[0] = s_hudScanDueMs[1] = s_hudScanDueMs[2] = 0;
+                ScanHudElems("AFTER_READY(control)");
                 g_quadProbePhase = 0;
                 g_survivalPlayerReadyLastSeenMsX64 = GetTickCount();
             } else if (strcmp(resolvedStr, "survival_all_ready") == 0) {
