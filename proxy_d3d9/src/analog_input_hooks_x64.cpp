@@ -2574,7 +2574,9 @@ bool GetTopmostMenuNameX64(char* out, size_t outSize)
     void* menu = GetTopmostActiveMenuX64();
     if (!menu) return false;
     __try {
-        const char* name = *reinterpret_cast<const char* const*>(menu);
+        // Live dump (2026-09-22, [x64-menuname-raw]): the name pointer is the SECOND qword (menu+0x8); menu+0x0 holds a
+        // different pointer-sized value that is not a string.
+        const char* name = *reinterpret_cast<const char* const*>(reinterpret_cast<uintptr_t>(menu) + 8);
         if (!name || !LooksSaneX64(reinterpret_cast<uintptr_t>(name))) return false;
         size_t n = 0;
         for (; n + 1 < outSize && name[n]; ++n) {
@@ -6561,7 +6563,7 @@ extern "C" bool GetPausedBackHintX64(float* x, float* y, char* prefix, size_t pr
         // e.g. the restart-mission modal is "all_restart_popmenu" and gets nothing.
         if (strcmp(lower, "pausedmenu") == 0) {
             // pause menu: bottom-right corner (defaults above)
-        } else if (strncmp(lower, "armory", 6) == 0 && !has("hint")) {
+        } else if (strncmp(lower, "survival_armory", 15) == 0) {
             // Buy-station popups: centre of the white Back box measured from a live screenshot (design ~1183-1350 x 814-861).
             useX = 1208.0f;
             useY = 827.0f;
