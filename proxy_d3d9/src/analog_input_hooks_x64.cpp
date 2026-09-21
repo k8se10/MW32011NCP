@@ -691,155 +691,9 @@ uintptr_t ToGhidraAddressX64(void* runtimeAddr)
     return kPreferredImageBase + (reinterpret_cast<uintptr_t>(runtimeAddr) - s_moduleBase);
 }
 
-// TEMP, 2026-09-19 -- live probe of the OTHER text-draw siblings (known_issues_x64.md,
-// 2026-09-19 round): the native ready-up/buy-station prompts still draw on screen but
-// never reach Hook_DrawTextX64/FUN_14029a2b0. These three siblings share its leading
-// argument shape (param_2 = text). Windows x64 passes only the first 4 args in
-// registers -- floats at position 5+ are STACK slots -- so a plain detour with 20
-// integer-slot parameters forwards every real argument (register or stack) intact.
-// Log-and-call-through only: records the text + _ReturnAddress() (Ghidra-comparable)
-// for text matching ready-up/armory keywords, plus the first few calls of each hook
-// unconditionally to prove the hook fires at all.
-#define PROBE_PARAMS uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5, uint64_t a6, \
-    uint64_t a7, uint64_t a8, uint64_t a9, uint64_t a10, uint64_t a11, uint64_t a12, uint64_t a13, \
-    uint64_t a14, uint64_t a15, uint64_t a16, uint64_t a17, uint64_t a18, uint64_t a19, uint64_t a20
-#define PROBE_FWD a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20
-using DrawProbeFn = void(__fastcall*)(PROBE_PARAMS);
-
-static bool ProbeTextMatches(const char* s)
-{
-    static const char* const kNeedles[] = { "armory", "ready", "f5", "hold" };
-    for (const char* n : kNeedles) {
-        size_t nl = strlen(n);
-        for (const char* p = s; *p; ++p) {
-            size_t i = 0;
-            while (i < nl && p[i] && (p[i] | 0x20) == n[i]) ++i;
-            if (i == nl) return true;
-        }
-    }
-    return false;
-}
-
-// Returns true and fills out (printable ASCII, <= outSize-1) if `p` looks like a string.
-static bool ProbeReadString(uint64_t p, char* out, size_t outSize)
-{
-    if (p < 0x10000 || (p >> 48) != 0) return false;
-    __try {
-        const char* s = reinterpret_cast<const char*>(p);
-        size_t n = 0;
-        while (n + 1 < outSize) {
-            char c = s[n];
-            if (c == '\0') break;
-            if (c == '\n') c = ' ';
-            if (static_cast<unsigned char>(c) < 0x20 || static_cast<unsigned char>(c) > 0x7E) return false;
-            out[n++] = c;
-        }
-        if (n < 2) return false;
-        out[n] = '\0';
-        return true;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
-}
-
-static void ProbeLog(const char* tag, uint64_t textArg, void* retAddr, long& calls, long& matches)
-{
-    ++calls;
-    char text[97];
-    if (!ProbeReadString(textArg, text, sizeof(text))) {
-        if (calls <= 3) {
-            char b[96];
-            sprintf_s(b, "[x64-drawprobe] %s fired (call #%ld), arg2 not a string", tag, calls);
-            LogFromController(b);
-        }
-        return;
-    }
-    if ((calls <= 5 || ProbeTextMatches(text)) && matches < 80) {
-        if (ProbeTextMatches(text)) ++matches;
-        // Worst case: 22 (prefix) + 16 (tag) + 8 + 96 (text) + 10 + 16 (%llX) + slack = well under 320.
-        char b[320];
-        sprintf_s(b, "[x64-drawprobe] %s call#%ld text=\"%s\" caller=0x%llX", tag, calls, text,
-                  static_cast<unsigned long long>(ToGhidraAddressX64(retAddr)));
-        LogFromController(b);
-    }
-}
-
-// TEMP, 2026-09-19 -- phase-tagged call-stack diff of the shared quad-draw primitive
-// (FUN_14028c2b0). Phase 1 = Survival intermission (wave_ended -> survival_player_ready:
-// the ready-up prompt is on screen), phase 2 = in-wave control (wave_started -> next
-// wave_ended: prompt absent). Unique stacks seen ONLY in phase 1 are the prompt's draw
-// path. Set from Hook_VmNotify's existing state detection; consumed in
-// Hook_SharedQuadDrawX64. Sampled 1-in-8 calls and capped so it can't flood or hitch.
+// Survival intermission phase tag (0 none, 1 intermission, 2 in-wave), set from Hook_VmNotify state detection.
 static volatile int g_quadProbePhase = 0;
-static uint64_t g_quadProbeSeen[3][256] = {};
-static int g_quadProbeSeenCount[3] = {};
-static long g_quadProbeCalls = 0;
 
-static void QuadProbeSample()
-{
-    const int phase = g_quadProbePhase;
-    if (phase != 1 && phase != 2) return;
-    if ((++g_quadProbeCalls & 7) != 0) return;
-    void* frames[8] = {};
-    USHORT n = RtlCaptureStackBackTrace(2, 8, frames, nullptr);
-    if (n == 0) return;
-    uint64_t h = 1469598103934665603ULL;
-    for (USHORT i = 0; i < n; ++i) { h ^= reinterpret_cast<uint64_t>(frames[i]); h *= 1099511628211ULL; }
-    uint64_t* seen = g_quadProbeSeen[phase];
-    int& cnt = g_quadProbeSeenCount[phase];
-    for (int i = 0; i < cnt; ++i) if (seen[i] == h) return;
-    if (cnt >= 250) return;
-    seen[cnt++] = h;
-    char b[360];
-    int w = sprintf_s(b, "[x64-quadprobe] phase=%d stack:", phase);
-    for (USHORT i = 0; i < n && w > 0 && w < 300; ++i)
-        w += sprintf_s(b + w, sizeof(b) - w, " 0x%llX", static_cast<unsigned long long>(ToGhidraAddressX64(frames[i])));
-    LogFromController(b);
-}
-
-static DrawProbeFn g_realProbeA610 = nullptr;
-static DrawProbeFn g_realProbeA4D0 = nullptr;
-static DrawProbeFn g_realProbeB1090 = nullptr;
-static long g_probeCallsA610 = 0, g_probeMatchesA610 = 0;
-static long g_probeCallsA4D0 = 0, g_probeMatchesA4D0 = 0;
-static long g_probeCallsB1090 = 0, g_probeMatchesB1090 = 0;
-
-static void __fastcall Hook_ProbeA610(PROBE_PARAMS)
-{
-    ProbeLog("FUN_14029a610", a2, _ReturnAddress(), g_probeCallsA610, g_probeMatchesA610);
-    g_realProbeA610(PROBE_FWD);
-}
-static void __fastcall Hook_ProbeA4D0(PROBE_PARAMS)
-{
-    ProbeLog("FUN_14029a4d0", a2, _ReturnAddress(), g_probeCallsA4D0, g_probeMatchesA4D0);
-    g_realProbeA4D0(PROBE_FWD);
-}
-static void __fastcall Hook_ProbeB1090(PROBE_PARAMS)
-{
-    ProbeLog("FUN_1402b1090", a2, _ReturnAddress(), g_probeCallsB1090, g_probeMatchesB1090);
-    g_realProbeB1090(PROBE_FWD);
-}
-
-static void InstallDrawProbe(const char* name, const char* sig, void* detour, DrawProbeFn* outReal)
-{
-    SigScan::Result r = SigScan::FindPatternInMainModule(sig);
-    char b[192];
-    if (!r.found) {
-        sprintf_s(b, "[x64-drawprobe] %s signature did not resolve -- probe not installed", name);
-        LogFromController(b);
-        return;
-    }
-    void* target = reinterpret_cast<void*>(r.address);
-    if (MH_CreateHook(target, detour, reinterpret_cast<void**>(outReal)) != MH_OK ||
-        MH_EnableHook(target) != MH_OK) {
-        sprintf_s(b, "[x64-drawprobe] FATAL: MH hook failed for %s @ 0x%llX", name,
-                  static_cast<unsigned long long>(r.address));
-        LogFromController(b);
-        return;
-    }
-    sprintf_s(b, "[x64-drawprobe] %s probe installed @ 0x%llX", name, static_cast<unsigned long long>(r.address));
-    LogFromController(b);
-}
 
 void __fastcall Hook_VmNotify(unsigned int notifyListOwnerId, unsigned int stringValue, void* top)
 {
@@ -4897,7 +4751,6 @@ void __fastcall Hook_SharedQuadDrawX64(void* param1, uint32_t param2, uint32_t p
     // Every other caller of this shared primitive -- menu backgrounds, HUD
     // icons, everything else that draws a textured quad -- passes through
     // here completely unmodified.
-    // QuadProbeSample() call removed 2026-09-19: user-confirmed it delayed UI draws (flicker).
     g_realSharedQuadDrawX64(param1, param2, param3, param4, param5, param6, param7, param8, param9);
 }
 
@@ -5492,28 +5345,6 @@ void Hook_DrawTextX64(
     const void* colorVecPtr, unsigned extra)
 {
     ++g_drawTextFireCount;
-    // TEMP 2026-09-19 -- log every UNIQUE text seen by this hook during the Survival
-    // intermission phase (quad-probe phase 1), unfiltered, to check whether the ready-up
-    // prompt reaches here in a form the keyword matchers missed (odd colour-code split,
-    // wide chars, etc.). Capped at 150 unique strings.
-    if (false && g_quadProbePhase == 1 && text) {  // disabled 2026-09-19: probe cost caused visible UI flicker
-        static uint64_t s_seenText[160] = {};
-        static int s_seenTextCount = 0;
-        char tb[100];
-        if (ProbeReadString(reinterpret_cast<uint64_t>(text), tb, sizeof(tb)) || (text[0] && text[1] == '\0')) {
-            uint64_t h = 1469598103934665603ULL;
-            for (const char* p = tb; *p; ++p) { h ^= static_cast<unsigned char>(*p); h *= 1099511628211ULL; }
-            bool seen = false;
-            for (int i = 0; i < s_seenTextCount; ++i) if (s_seenText[i] == h) { seen = true; break; }
-            if (!seen && s_seenTextCount < 150) {
-                s_seenText[s_seenTextCount++] = h;
-                char lb[240];
-                sprintf_s(lb, "[x64-quadprobe] phase1 text=\"%s\" caller=0x%llX", tb,
-                          static_cast<unsigned long long>(ToGhidraAddressX64(_ReturnAddress())));
-                LogFromController(lb);
-            }
-        }
-    }
     if (g_drawTextFireCount <= 5 || (g_drawTextFireCount % 5000) == 0) {
         char buf[128];
         sprintf_s(buf, "[x64-drawtext] Text-draw hook fired (count=%lld)", g_drawTextFireCount);
@@ -6537,22 +6368,6 @@ void InstallAnalogInputHooksX64()
         }
     }
 
-    if (false) {
-        // DISABLED 2026-09-19 (probe answered: none of these carry the prompts, and hooking
-        // draw paths caused visible UI flicker). Kept only until the trail is closed.
-        InstallDrawProbe("FUN_14029a610",
-            "48 8B C4 48 89 58 08 48 89 68 10 48 89 70 18 57 48 81 EC A0 00 00 00 F3 0F 10 8C 24 F0 00 00 00 "
-            "48 8B D9 49 8B C9 0F 29 78 E8 49 8B F9 41 8B F0 48 8B EA E8 ?? ?? ?? ??",
-            reinterpret_cast<void*>(&Hook_ProbeA610), &g_realProbeA610);
-        InstallDrawProbe("FUN_14029a4d0",
-            "48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 57 48 81 EC 80 00 00 00 F3 0F 10 8C 24 D0 00 00 00 "
-            "48 8B D9 49 8B C9 0F 29 7C 24 70 49 8B F9 41 8B F0 48 8B EA E8 ?? ?? ?? ??",
-            reinterpret_cast<void*>(&Hook_ProbeA4D0), &g_realProbeA4D0);
-        InstallDrawProbe("FUN_1402b1090",
-            "48 8B C4 48 89 48 08 55 48 81 EC 70 05 00 00 44 0F 29 40 A8 48 89 58 10 48 8B DA 48 89 70 18 "
-            "33 D2 48 89 78 20 48 8B F1 4C 89 60 F0 4D 8B E1 4C 89 68 E8 41 B5 37 4C 89 70 E0",
-            reinterpret_cast<void*>(&Hook_ProbeB1090), &g_realProbeB1090);
-    }
 
     {
         SigScan::Result r = SigScan::FindPatternInMainModule(kSprintTickSignature);
