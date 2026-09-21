@@ -824,6 +824,8 @@ item below.
 
 10. **D-pad squadmate call-in, Left and Right, confirmed working live on `-x64` (2026-09-21).** Direct playtest report. This closes the last "not yet live-confirmed" item for D-pad actionslot / D-pad Left (the Survival AI-squadmate call-in key-synthesis exception).
 
+11. **`[Video] IwdReadAccelEnabled`, `WaitCoalescingEnabled` and `FramePacingEnabled` confirmed working live on `-x64` (2026-09-21).** Each was enabled on its own and then together: all launch cleanly and performance feels good. The `.iwd` read cache's launch hang (a self-deadlock, fixed the same day) is confirmed resolved. With frame pacing on, unbounded diagnostic logging no longer causes hitches. All three still default to off.
+
 ### Groundwork
 1. **Two new CI workflows.** `.github/workflows/build.yml` — real MSVC
    builds (Release x64) of every component that actually ships to players
