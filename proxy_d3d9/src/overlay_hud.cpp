@@ -2408,6 +2408,28 @@ void DrawOneMenuHintSlot(void* device, MenuHintSlot& slot, float scaleX, float s
     }
 }
 
+// True when the device's CURRENT render target is the real swap-chain back buffer. The pause menu renders its
+// blur/tint through offscreen 2048x2048 targets and EndScene fires for those passes too (see the alternating
+// "[overlay-hud][res-scale] real screen size=2048x2048" lines); consuming the per-frame menu-hint requests on
+// one of THOSE EndScenes drew the glyph into an offscreen target and left nothing for the visible pass, which
+// showed up as the Back glyph flickering on the pause menu (2026-09-21).
+bool IsRenderingToBackBuffer(void* device)
+{
+    typedef HRESULT(WINAPI* GetBackBuffer_t)(void* This, UINT iSwapChain, UINT iBackBuffer, DWORD Type, void** ppBackBuffer);
+    void** deviceVtbl = *reinterpret_cast<void***>(device);
+    auto getRenderTarget = reinterpret_cast<GetRenderTarget_t>(deviceVtbl[kGetRenderTargetVtableIndex]);
+    auto getBackBuffer = reinterpret_cast<GetBackBuffer_t>(deviceVtbl[18]);
+    void* rt = nullptr;
+    void* bb = nullptr;
+    bool same = true; // fail open: if either query fails, behave as before
+    if (SUCCEEDED(getRenderTarget(device, 0, &rt)) && rt && SUCCEEDED(getBackBuffer(device, 0, 0, 0, &bb)) && bb) {
+        same = (rt == bb);
+    }
+    if (rt) reinterpret_cast<Release_t>((*reinterpret_cast<void***>(rt))[kSurfaceReleaseVtableIndex])(rt);
+    if (bb) reinterpret_cast<Release_t>((*reinterpret_cast<void***>(bb))[kSurfaceReleaseVtableIndex])(bb);
+    return same;
+}
+
 // Consumes and draws every menu-hint slot accumulated so far THIS FRAME (see the big
 // comment above g_menuHintSlots for why menu hints need N slots, unlike the single
 // gameplay slot), then resets the count to 0 -- same "must be re-requested every
@@ -2416,6 +2438,7 @@ void DrawOneMenuHintSlot(void* device, MenuHintSlot& slot, float scaleX, float s
 // stale ones.
 void DrawMenuHintsIfRequested(void* device)
 {
+    if (!IsRenderingToBackBuffer(device)) return; // keep the requests for the real presentation pass
     int count = g_menuHintSlotCountThisFrame;
     g_menuHintSlotCountThisFrame = 0;
     // Flicker guard (2026-09-21, live-reported: menu corner-hint glyph flickers on the pause menu and is

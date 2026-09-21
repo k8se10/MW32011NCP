@@ -748,6 +748,8 @@ item below.
 
 37. **Self-pausing at level entry and the intermittent Back-glyph flicker (`-x64`).** The per-level unstick sweep sent a real ESC, which opens the pause menu whenever the level is already live (live log: `PAUSE_LIST` focus immediately after the sweep); the sweep no longer sends any synthetic key (the native kbutton release and mouse-baseline seed are the fix on their own). The pause menu and buy-station popups also draw a second "Back ^2ESC^7" instance on an unexpected row every 1-2 s; every Back instance is now suppressed, and an instance on an unknown row draws the glyph at the last good Back position, so the glyph no longer jumps or flickers and no native text flashes through. Build-verified; not yet live-tested.
 
+38. **Pause-menu Back glyph flicker, "Resume Game" leaving the game half-paused, and the returned launch click gate (`-x64`).** (a) The pause menu renders its blur/tint through offscreen 2048x2048 targets and EndScene fires for those passes too; the menu-hint requests were consumed on one of them, so the visible pass had no glyph. Menu hints are now drawn only when the current render target is the real back buffer. (b) Selecting "Resume Game" with A forwarded Enter to the item and only half-closed the menu (UI cleared, blur and pause stayed); on the pause list's first item A now closes it the way Esc does. (c) With the sweep's Esc removed, the "needs a click" gate returned, so the sweep now posts an unbound key (F24) as the message-queue input event instead; nothing binds it, so nothing pauses. Build-verified; not yet live-tested.
+
 
 ### Documentation
 1. **`re_notes/known_issues_x64.md` established** as the dedicated x64 issue
