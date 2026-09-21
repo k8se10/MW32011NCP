@@ -407,6 +407,8 @@ item below.
     Build-verified, **not yet live-tested**.
 24. **Survival ready-up prompt fully replaced with a controller glyph (`-x64`).** A new hook on the client hudelem text draw (`FUN_140046a30`) hides the native "Press F5 to ready up: NN" text and the overlay draws "Hold [glyph] to ready up: NN" in its place. Applies only in Survival and only when a glyph asset resolves; otherwise the native text is untouched. Live-confirmed drawing correctly.
 
+25. **Edge anti-aliasing (`-x64`): FXAA-style pass and SMAA 1x, scene-only.** The game ships no working AA. `[Video] FxaaEnabled`/`FxaaSpanMax`/`FxaaEdgeThreshold` add a gentle native-resolution edge filter; `[Video] SmaaEnabled` adds SMAA 1x (edge detection, blend-weight and neighborhood-blend passes with the area/search lookup textures) and replaces FXAA when on. Both run before the HUD and menus are drawn, so UI is never filtered, and are skipped while the camera is turning fast enough for motion blur to be active. `SmaaDebugView` 1/2 shows the edge or blend-weight pass. Off by default; SMAA is not yet live-tested. SMAA is by Jorge Jimenez, Jose I. Echevarria, Belen Masia, Fernando Navarro and Diego Gutierrez (MIT), credited in `LICENSE` and `README.md`.
+
 
 ### Fixed
 1. **Crash on launch with the sniper Fire/ADS fix's own log line.** The
@@ -731,6 +733,10 @@ item below.
 31. **Removed the obsolete 2-second activation nudge for SP.** The periodic `WM_ACTIVATE`/`SetForegroundWindow` workaround for the "needs an initial click" gate was superseded by the native stuck-kbutton release (2026-09-16) and was live-reported as making the game pause itself intermittently. Pending live confirmation that self-pausing stops.
 
 32. **`.iwd` read cache deadlocked the game at launch (`IwdReadAccelEnabled=1` = stuck on splash).** While holding the non-recursive table/slot locks, the cache called `SetFilePointerEx` and `CloseHandle`, which are its own hooked APIs and re-acquire those same locks, so the calling thread deadlocked itself right after logging the first archive view. Those calls now go through the un-hooked originals. Build-verified; not yet live-confirmed.
+
+33. **Motion blur stepped ghost copies.** 8 point-sampled taps over a wide extent produced stacked copies of the scene during fast turns; the pass now uses 24 bilinear taps and a smaller maximum blur extent (0.06 of the screen, was 0.10).
+
+34. **Unreleased config-template bug (caught before release).** The `mw3ncp_config.ini` writer received the new Fxaa values as arguments before their template lines existed, shifting every later value (motion-blur falloff, quality toggles, vibration settings) when the file was rewritten. Template and arguments now match.
 
 
 ### Documentation
