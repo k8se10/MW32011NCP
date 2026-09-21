@@ -3828,6 +3828,18 @@ bool RunSmaa(void* device)
 
     const int debugView = g_modConfig.smaaDebugView;
 
+    // View 3: plumbing test -- redraw the captured scene through the passthrough shader only (no SMAA math).
+    // If this already looks softer than SmaaEnabled=0, the capture/redraw path is the problem, not the passes.
+    if (debugView == 3) {
+        g_fsInputTex = g_fullscreenCaptureTexture;
+        g_fullScreenPassLinear = false;
+        if (EnsureFullscreenPassthroughShader(device)) DrawFullScreenPass(device, g_fullscreenPassthroughPixelShader);
+        g_fsInputTex = nullptr;
+        ReleaseComObject(edgesSurf);
+        ReleaseComObject(blendSurf);
+        return true;
+    }
+
     // Pass 1 -- edges.
     g_fsInputTex = g_fullscreenCaptureTexture;
     g_fsTargetSurf = edgesSurf;

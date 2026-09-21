@@ -640,7 +640,7 @@ void WriteDefaultConfig(const char* path)
         "FxaaEdgeThreshold=%.3f\n"
         "; SMAA 1x (shape-aware edge smoothing; replaces FXAA when on, scene only, never the UI). Off by default.\n"
         "SmaaEnabled=%d\n"
-        "; Debug: 0 = off, 1 = show detected edges, 2 = show blend weights.\n"
+        "; Debug: 0 = off, 1 = show detected edges, 2 = show blend weights, 3 = plain capture-redraw test (no SMAA).\n"
         "SmaaDebugView=%d\n"
         "; Phase E, visual-suite plan: camera-only (view-angle-delta-based) directional\n"
         "; motion blur, built on the same pipeline -- composes with FsrSharpenEnabled\n"
@@ -1298,7 +1298,7 @@ void LoadModConfig()
     ReadFloat(path, "Video", "FxaaSpanMax", g_modConfig.fxaaSpanMax);
     ReadFloat(path, "Video", "FxaaEdgeThreshold", g_modConfig.fxaaEdgeThreshold);
     ReadBool(path, "Video", "SmaaEnabled", g_modConfig.smaaEnabled);
-    { unsigned long dv = static_cast<unsigned long>(g_modConfig.smaaDebugView); ReadUlong(path, "Video", "SmaaDebugView", dv); g_modConfig.smaaDebugView = (dv > 2) ? 0 : static_cast<int>(dv); }
+    { unsigned long dv = static_cast<unsigned long>(g_modConfig.smaaDebugView); ReadUlong(path, "Video", "SmaaDebugView", dv); g_modConfig.smaaDebugView = (dv > 3) ? 0 : static_cast<int>(dv); }
     if (g_modConfig.fxaaSpanMax < 1.0f) g_modConfig.fxaaSpanMax = 1.0f;
     if (g_modConfig.fxaaSpanMax > 16.0f) g_modConfig.fxaaSpanMax = 16.0f;
     if (g_modConfig.fxaaEdgeThreshold < 0.03f) g_modConfig.fxaaEdgeThreshold = 0.03f;
