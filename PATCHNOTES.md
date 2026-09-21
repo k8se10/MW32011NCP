@@ -724,6 +724,12 @@ item below.
 
 28. **Unbounded diagnostic log growth (perf).** `[x64-fontid-diag]` deduped only against the previous string, so alternating HUD text grew the log without limit (55,842 lines in one session); it now uses a capped distinct-string set. `[overlay-hud][res-scale]` and `[automantle-diag-x64]` are capped, `[x64-video-scale]` is change-only, and the new hudelem-draw log is gated on `HudFontIdLoggingX64`.
 
+29. **Ready-up glyph no longer draws over the pause screen (`-x64`).** The overlay and the native-text suppression are skipped while the gameplay tick is stale (>250 ms), a cheap pause signal that needs no extra RE.
+
+30. **F4 `ai_disableSpawn` toggle was a silent no-op on `-x64`; now works (confirmed live).** The real dvar setter (`FUN_1402c5f30`) drops writes from any thread other than the game's main thread (`FUN_14024a250`), and the F4 poll runs on the render thread. The write is now queued and applied from the gameplay tick, with a read-back logged as `[x64-dvarset]`.
+
+31. **Removed the obsolete 2-second activation nudge for SP.** The periodic `WM_ACTIVATE`/`SetForegroundWindow` workaround for the "needs an initial click" gate was superseded by the native stuck-kbutton release (2026-09-16) and was live-reported as making the game pause itself intermittently. Pending live confirmation that self-pausing stops.
+
 
 ### Documentation
 1. **`re_notes/known_issues_x64.md` established** as the dedicated x64 issue
