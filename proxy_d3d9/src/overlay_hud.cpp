@@ -7474,6 +7474,51 @@ void OnDeviceRecreated()
     ReleaseAllCachedTextures();
 }
 
+// ---- StretchRect downscale filter (2026-09-21) -------------------------------------------
+// Live report: at InternalRenderScalePercent=200 the image still looks low-res / aliased. The scene is
+// rendered at 2x, then the engine resolves it down to native; if that resolve uses a POINT/NONE filter
+// the extra samples are thrown away (no supersampling benefit). This hook logs every distinct
+// StretchRect size/filter combination once (capped) so the real resolve is identifiable, and forces
+// LINEAR for any genuine downscale (an exact 2:1 bilinear is a 2x2 box average = real SSAA).
+typedef HRESULT(WINAPI* StretchRectHook_t)(void* This, void* pSrc, const RECT* pSrcRect, void* pDst, const RECT* pDstRect, DWORD filter);
+StretchRectHook_t g_origStretchRect = nullptr;
+
+HRESULT WINAPI Hook_StretchRect(void* This, void* pSrc, const RECT* pSrcRect, void* pDst, const RECT* pDstRect, DWORD filter)
+{
+    DWORD useFilter = filter;
+    if (pSrc && pDst && filter != kD3DTEXF_LINEAR && !pSrcRect && !pDstRect) {
+        SurfaceDesc sd{}, dd{};
+        void** sv = *reinterpret_cast<void***>(pSrc);
+        void** dv = *reinterpret_cast<void***>(pDst);
+        const bool okS = SUCCEEDED(reinterpret_cast<SurfaceGetDesc_t>(sv[kSurfaceGetDescVtableIndex])(pSrc, &sd));
+        const bool okD = SUCCEEDED(reinterpret_cast<SurfaceGetDesc_t>(dv[kSurfaceGetDescVtableIndex])(pDst, &dd));
+        if (okS && okD) {
+            static DWORD s_seen[32][5];
+            static int s_seenCount = 0;
+            bool isNew = true;
+            for (int i = 0; i < s_seenCount; ++i)
+                if (s_seen[i][0] == sd.Width && s_seen[i][1] == sd.Height && s_seen[i][2] == dd.Width &&
+                    s_seen[i][3] == dd.Height && s_seen[i][4] == filter) { isNew = false; break; }
+            if (isNew && s_seenCount < 32) {
+                s_seen[s_seenCount][0] = sd.Width; s_seen[s_seenCount][1] = sd.Height;
+                s_seen[s_seenCount][2] = dd.Width; s_seen[s_seenCount][3] = dd.Height;
+                s_seen[s_seenCount][4] = filter;
+                ++s_seenCount;
+                char b[160];
+                sprintf_s(b, "[stretchrect] %lux%lu -> %lux%lu filter=%lu fmtS=%lu fmtD=%lu", sd.Width, sd.Height,
+                          dd.Width, dd.Height, filter, sd.Format, dd.Format);
+                LogFromController(b);
+            }
+            const bool downscale = sd.Width > dd.Width && sd.Height > dd.Height;
+            if (downscale && g_modConfig.internalRenderScalePercent > 100 && dd.Width >= 640) {
+                const HRESULT hr = g_origStretchRect(This, pSrc, pSrcRect, pDst, pDstRect, kD3DTEXF_LINEAR);
+                if (SUCCEEDED(hr)) return hr;
+            }
+        }
+    }
+    return g_origStretchRect(This, pSrc, pSrcRect, pDst, pDstRect, useFilter);
+}
+
 void InstallEndSceneHook(void* realDevice)
 {
     if (!realDevice) return;
@@ -7529,6 +7574,15 @@ void InstallEndSceneHook(void* realDevice)
             sprintf_s(buf, "[overlay-hud] MH_EnableHook(Reset) = %d", static_cast<int>(re));
             LogFromController(buf);
         }
+    }
+
+    if (!g_origStretchRect) {
+        void* realStretch = deviceVtbl[kStretchRectVtableIndex];
+        MH_STATUS ss = MH_CreateHook(realStretch, reinterpret_cast<void*>(&Hook_StretchRect),
+                                     reinterpret_cast<void**>(&g_origStretchRect));
+        if (ss == MH_OK) ss = MH_EnableHook(realStretch);
+        sprintf_s(buf, "[overlay-hud] StretchRect hook (downscale filter) = %d", static_cast<int>(ss));
+        LogFromController(buf);
     }
 
     // 2026-08-17: runtime material/texture capture for tools/ui_harness's .menu
