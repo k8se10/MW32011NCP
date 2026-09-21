@@ -2564,6 +2564,32 @@ void* GetTopmostActiveMenuX64()
     }
 }
 
+// Name of the topmost ACTIVE menu (menuDef_t begins with its windowDef_t, whose first field is the name pointer -- the
+// same layout the itemDef name read at item+0x0 already relies on). This is the real "which screen/modal is open"
+// signal (user's point 2026-09-21: trace the open modal instead of inferring it from focus/tick heuristics).
+bool GetTopmostMenuNameX64(char* out, size_t outSize)
+{
+    if (!out || outSize == 0) return false;
+    out[0] = '\0';
+    void* menu = GetTopmostActiveMenuX64();
+    if (!menu) return false;
+    __try {
+        const char* name = *reinterpret_cast<const char* const*>(menu);
+        if (!name || !LooksSaneX64(reinterpret_cast<uintptr_t>(name))) return false;
+        size_t n = 0;
+        for (; n + 1 < outSize && name[n]; ++n) {
+            const unsigned char c = static_cast<unsigned char>(name[n]);
+            if (c < 0x20 || c > 0x7E) { out[0] = '\0'; return false; }
+            out[n] = static_cast<char>(c);
+        }
+        out[n] = '\0';
+        return n > 0;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        out[0] = '\0';
+        return false;
+    }
+}
+
 // Direct x64 port of x86's TryGetRealFocusedGroupAndIndex(4-arg overload) --
 // structurally identical logic (walk the topmost menu's real itemDef array, find the
 // one item whose focus-flag bits are both set, parse its name as "<group>_<index>",
@@ -6474,20 +6500,32 @@ extern "C" bool GetPausedBackHintX64(float* x, float* y, char* prefix, size_t pr
     // menu group: WEAPON_POPUP / *POPUP* = buy-station popups, PAUSE* / OPTIONS_LIST = pause menu.
     float useX = kPausedBackXX64, useY = kPausedBackYX64;
     {
-        char focusGroup[64] = {};
-        int focusIndex = -1, focusSiblings = -1;
-        const bool haveFocus = TryGetRealFocusedGroupAndIndexX64(focusGroup, sizeof(focusGroup), focusIndex, focusSiblings);
-        // The pause menu always opens with focus (PAUSE_LIST item 0); a buy-station popup opens with NO focus until an
-        // item is hovered (live: the glyph only reached the box after hovering) -- so "in a level, menu up, nothing
-        // focused" is the popup, same box position.
-        if (!haveFocus || focusGroup[0] == '\0' || strstr(focusGroup, "POPUP") != nullptr) {
-            // Centre of the white Back box measured from a live screenshot (design ~1183-1350 x 814-861).
+        // Decide by the REAL topmost menu name, not by focus/tick heuristics. Every change of name is logged so the
+        // set of screens can be read straight from the log.
+        char menuName[96] = {};
+        const bool haveName = GetTopmostMenuNameX64(menuName, sizeof(menuName));
+        static char s_lastLoggedMenuName[96] = "";
+        static int s_menuNameLogs = 0;
+        if (s_menuNameLogs < 300 && strcmp(menuName, s_lastLoggedMenuName) != 0) {
+            ++s_menuNameLogs;
+            strncpy_s(s_lastLoggedMenuName, menuName, _TRUNCATE);
+            char mb[200];
+            sprintf_s(mb, "[x64-menuname] topmost menu=\"%s\" (paused-tick=1, in level)", menuName);
+            LogFromController(mb);
+        }
+        if (!haveName) return false;
+        char lower[96] = {};
+        for (size_t i = 0; menuName[i] && i + 1 < sizeof(lower); ++i) lower[i] = static_cast<char>(tolower(static_cast<unsigned char>(menuName[i])));
+        auto has = [&](const char* s) { return strstr(lower, s) != nullptr; };
+        if (has("pause")) {
+            // pause menu: bottom-right corner (defaults above)
+        } else if (has("weapon") || has("armory") || has("equip") || has("airsupport") || has("air_support") ||
+                   has("killstreak") || has("perk")) {
+            // Buy-station popups: centre of the white Back box measured from a live screenshot (design ~1183-1350 x 814-861).
             useX = 1208.0f;
             useY = 827.0f;
-        } else if (strncmp(focusGroup, "PAUSE", 5) == 0 || strcmp(focusGroup, "OPTIONS_LIST") == 0) {
-            // pause menu: bottom-right corner (defaults above)
         } else {
-            return false;
+            return false; // any other menu/modal (restart-mission confirm, options, ...): no hardcoded Back
         }
     }
     if (!TryGetMenuGlyphAssetNameForKeyName("ESC", asset, assetSize)) return false;
