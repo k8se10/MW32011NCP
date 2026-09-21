@@ -887,7 +887,7 @@ struct ModConfig
     // own header comment for full attribution and the real technical
     // difference from both prior attempts. Off by default -- unlike the
     // prior two attempts, this one hasn't been live-tested at all yet.
-    bool framePacingEnabled = false;
+    bool framePacingEnabled = true; // default ON (2026-09-21): confirmed live
 
     // [Video] WaitCoalescingEnabled (2026-09-16) -- a second, independent
     // port from the same external reference implementation as
@@ -900,7 +900,7 @@ struct ModConfig
     // -- and temporarily boosts an archive-loading worker thread's priority
     // during a detected read burst, restoring it once idle. Off by default
     // -- not yet live-tested.
-    bool waitCoalescingEnabled = false;
+    bool waitCoalescingEnabled = true; // default ON (2026-09-21): confirmed live
 
     // [Video] IwdReadAccelEnabled (2026-09-16) -- a third, independent port
     // from the same external reference implementation as framePacingEnabled/
@@ -916,7 +916,7 @@ struct ModConfig
     // and getting an internal CRT offset wrong risks real corruption, not
     // just a missed optimization; this stays at the real, documented Win32
     // API layer only. Off by default -- not yet live-tested.
-    bool iwdReadAccelEnabled = false;
+    bool iwdReadAccelEnabled = true; // default ON (2026-09-21): confirmed live
 
     // [Plugins] (2026-08-25) -- STRICTLY OPT-IN, OFF by default, same pattern as
     // useCustomOptionsScreen/autoMantleEnabled above. When enabled, plugin_loader.cpp

@@ -175,7 +175,7 @@ ADS" and "Custom mouse cursor overlay" below.
 | | Cutscene-skip audio (controller Start) — fixed on both `-x86` and `-x64` 2026-09-14 (x64's own version was worse than x86's ever was — no skip at all, not just missing audio-stop), not yet live-tested |
 | | Campaign QTE/scripted-sequence button presses (e.g. the "Dust to Dust" elevator/chopper jump) — real root cause found and fixed 2026-09-14 via the same synthetic-keypress technique already proven for Survival ready-up, not yet live-tested |
 | "Needs a click at launch" fix, real root cause | 2026-09-16: replaced the 2026-09-04 pause/unpause automation with a direct call into the real native "release every stuck kbutton" sweep, found via full decompile of the native pause-toggle chain — no pause menu ever opens or closes now. Not yet independently re-confirmed by a fresh playtest |
-| `[Video] FramePacingEnabled`, `WaitCoalescingEnabled`, `IwdReadAccelEnabled` | Three techniques ported from `legoliamneeson/MW3_Standalone_D3D9_Project` 2026-09-16, credited. Default off |
+| `[Video] FramePacingEnabled`, `WaitCoalescingEnabled`, `IwdReadAccelEnabled` | Three techniques ported from `legoliamneeson/MW3_Standalone_D3D9_Project` 2026-09-16, credited. Confirmed live 2026-09-21; default on |
 | `[General] DisableControllerInput` ("K+M safe mode") | Hot-reloadable toggle disabling all controller/mod-side input injection while keeping every visual-enhancement feature working, shipped 2026-09-16 |
 
 ### Known gaps
