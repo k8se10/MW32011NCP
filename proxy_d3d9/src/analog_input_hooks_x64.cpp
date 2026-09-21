@@ -3125,8 +3125,20 @@ extern "C" bool PostMenuInputBlockedX64()
     // Gameplay controls always no-op while a menu is up (paused or not), and for a short grace after it closes: the
     // unpause can resume the gameplay tick a frame BEFORE the menu-active flag drops, and the closing press is often
     // still down (live-reported 2026-09-21: A/B closing a menu also jumped/crouched).
-    if (g_menuActiveGateFlag && ((*g_menuActiveGateFlag & 0x10u) != 0)) return true;
-    return GetTickCount() < g_postMenuBlockUntilMsX64;
+    const DWORD nowMs = GetTickCount();
+    if (g_menuActiveGateFlag && ((*g_menuActiveGateFlag & 0x10u) != 0)) {
+        g_postMenuPrevActiveX64 = true;
+        return true;
+    }
+    // Detect the menu-closed edge HERE too, not only from the WndProc/timer tick: the gameplay tick can run (and see
+    // the closing button still down) before the timer observer notices the flag dropped -- that gap was the residual
+    // jump/knife on close.
+    if (g_postMenuPrevActiveX64) {
+        g_postMenuPrevActiveX64 = false;
+        g_postMenuBlockUntilMsX64 = nowMs + kPostMenuInputGraceMsX64;
+        LogFromController("[x64-postmenu] menu closed -- gameplay button reads blocked for the grace window (seen by the gameplay hook)");
+    }
+    return nowMs < g_postMenuBlockUntilMsX64;
 }
 
 extern "C" void InjectControllerMenuBackX64()
