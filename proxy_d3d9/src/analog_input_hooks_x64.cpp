@@ -6164,6 +6164,29 @@ void Hook_DrawTextX64(
             // position instead of its own, so the glyph stays put and no native "Back ESC" flashes through.
             const bool backOnKnownRowX64 = looksLikeCornerHintRowX64 || fabsf(designRowY - 700.0f) < 25.0f;
             bool isBackCornerHint = backContentMatches;
+            if (backContentMatches) {
+                // Menu-aware capture (2026-09-22): which native Back draw positions exist under which open menu.
+                static uint32_t s_seenBackNative[128];
+                static int s_seenBackNativeCount = 0;
+                char nm[96] = {};
+                GetTopmostMenuNameX64(nm, sizeof(nm));
+                float rsx = 0.0f, rsy = 0.0f;
+                ComputeRealDrawPositionX64(dcHandle, fontArg, scale, color1, color2, x, y, rsx, rsy);
+                float dsx = 0.0f, dsy = 0.0f;
+                ConvertRealScreenPosToDesignSpaceX64(rsx, rsy + kMenuHintVerticalNudgeX64, dsx, dsy);
+                uint32_t hh = 2166136261u;
+                for (const char* p = nm; *p; ++p) hh = (hh ^ static_cast<unsigned char>(*p)) * 16777619u;
+                hh = (hh ^ static_cast<uint32_t>(dsx * 4.0f)) * 16777619u;
+                hh = (hh ^ static_cast<uint32_t>(dsy * 4.0f)) * 16777619u;
+                bool isNewBackNative = s_seenBackNativeCount < 128;
+                for (int i = 0; isNewBackNative && i < s_seenBackNativeCount; ++i) if (s_seenBackNative[i] == hh) isNewBackNative = false;
+                if (isNewBackNative) {
+                    s_seenBackNative[s_seenBackNativeCount++] = hh;
+                    char bn[220];
+                    sprintf_s(bn, "[x64-back-native] menu=\"%.60s\" native Back draw at design (%.1f, %.1f) rowY=%.1f", nm, dsx, dsy, designRowY);
+                    LogFromController(bn);
+                }
+            }
             if (backContentMatches && !looksLikeCornerHintRowX64) {
                 static int s_backOffRowLogged = 0;
                 if (s_backOffRowLogged < 12) {
